@@ -43,6 +43,7 @@ class HomeCollectionViewController: UICollectionViewController {
     
     struct Model {
         var currentWeatherModel: CurrentWeatherData? // 현재 날씨 데이터 모델
+        var cityName: String?
     }
     
     var dataSource: DataSourceType!
@@ -64,7 +65,7 @@ class HomeCollectionViewController: UICollectionViewController {
     
     //MARK: OpenWeather API로 데이터 불러오기
     func update(_ coor: CLLocationCoordinate2D) {
-
+        
         // 현재 날씨 불러오기
         currentWeatherRequestTask?.cancel()
         currentWeatherRequestTask = Task {
@@ -98,7 +99,7 @@ class HomeCollectionViewController: UICollectionViewController {
             case .currentWeatherItem(_, let main, let weather):
                 let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "CurrentWeather", for: indexPath) as! CurrentWeatherCollectionViewCell
                 
-                cell.cityLabel.text = "인천광역시"
+                cell.cityLabel.text = self.model.cityName
                 cell.tempLabel.text = "\(Int(main.temp))°"
                 cell.descriptionLabel.text = weather.last?.description
                 cell.tempMinMaxLabel.text = "최고: \(Int(main.tempMax))° 최저: \(Int(main.tempMin))°"
@@ -132,6 +133,25 @@ class HomeCollectionViewController: UICollectionViewController {
         
         return layout
     }
+    
+    func getCityName() {
+        let geocoder = CLGeocoder()
+        guard let location = locationManager.location else {return}
+        
+        geocoder.reverseGeocodeLocation(location) { (placemarks, error) in
+            if let error = error {
+                print("Reverse geocode failed with error: \(error.localizedDescription)")
+                return
+            }
+            
+            guard let placemark = placemarks?.first else {return}
+
+            if let administrativeArea = placemark.administrativeArea {
+                self.model.cityName = administrativeArea
+            }
+        }
+    }
+    
 }
 
 //MARK: 위치 서비스 이용 관련 extension
@@ -156,6 +176,7 @@ extension HomeCollectionViewController: CLLocationManagerDelegate {
         guard let coor = locations.last?.coordinate else {return}
 
         update(coor)
+        getCityName()
     }
     
     // 위치 데이터 불러오기 실패 시 호출
