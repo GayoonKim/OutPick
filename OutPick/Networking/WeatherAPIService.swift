@@ -29,3 +29,20 @@ struct CurrentWeatherRequest: WeatherAPIRequest {
         "lang": "kr" // 언어
     ].map{ URLQueryItem(name: $0.key, value: $0.value) }}
 }
+
+struct WeatherForecastRequest: WeatherAPIRequest {
+    typealias Response = WeatherForecastData
+    
+    var lat: Double
+    var lon: Double
+    
+    var path: String { "/data/3.0/onecall" }
+    var queryItems: [URLQueryItem]? {[
+        "lat": "\(lat)",
+        "lon": "\(lon)",
+        "appid": "\(Bundle.shared.apiKey!)",
+        "units": "metric",
+        "lang": "kr",
+        "exclude": "current, minutely, alerts"
+    ].map{ URLQueryItem(name: $0.key, value: $0.value) }}
+}

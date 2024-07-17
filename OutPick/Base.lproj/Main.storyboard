@@ -34,8 +34,8 @@
                         <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <color key="backgroundColor" systemColor="systemBackgroundColor"/>
-                        <collectionViewFlowLayout key="collectionViewLayout" automaticEstimatedItemSize="YES" minimumLineSpacing="10" minimumInteritemSpacing="10" id="sYr-Bs-AF2">
-                            <size key="itemSize" width="389" height="128"/>
+                        <collectionViewFlowLayout key="collectionViewLayout" minimumLineSpacing="10" minimumInteritemSpacing="10" id="fgr-Ng-m8Q">
+                            <size key="itemSize" width="128" height="128"/>
                             <size key="headerReferenceSize" width="0.0" height="0.0"/>
                             <size key="footerReferenceSize" width="0.0" height="0.0"/>
                             <inset key="sectionInset" minX="0.0" minY="0.0" maxX="0.0" maxY="0.0"/>
@@ -91,13 +91,41 @@
                                     <outlet property="tempMinMaxLabel" destination="pd0-eC-Jxx" id="HXG-sh-rqo"/>
                                 </connections>
                             </collectionViewCell>
-                            <collectionViewCell opaque="NO" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="center" insetsLayoutMarginsFromSafeArea="NO" id="HiY-dZ-Nc8">
-                                <rect key="frame" x="2" y="185" width="389" height="128"/>
+                            <collectionViewCell opaque="NO" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="center" insetsLayoutMarginsFromSafeArea="NO" reuseIdentifier="HourlyForecast" id="HiY-dZ-Nc8" customClass="HourlyForecastCollectionViewCell" customModule="OutPick" customModuleProvider="target">
+                                <rect key="frame" x="2" y="185" width="389" height="193"/>
                                 <autoresizingMask key="autoresizingMask"/>
                                 <collectionViewCellContentView key="contentView" opaque="NO" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="center" insetsLayoutMarginsFromSafeArea="NO" id="cGK-Sw-K6x">
-                                    <rect key="frame" x="0.0" y="0.0" width="389" height="128"/>
+                                    <rect key="frame" x="0.0" y="0.0" width="389" height="193"/>
                                     <autoresizingMask key="autoresizingMask"/>
+                                    <subviews>
+                                        <stackView opaque="NO" contentMode="scaleToFill" fixedFrame="YES" axis="vertical" distribution="fillProportionally" translatesAutoresizingMaskIntoConstraints="NO" id="aQN-d4-3E5">
+                                            <rect key="frame" x="74.666666666666686" y="12" width="239.66666666666669" height="169"/>
+                                            <subviews>
+                                                <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Label" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="RZl-KZ-VIK">
+                                                    <rect key="frame" x="0.0" y="0.0" width="239.66666666666666" height="20.333333333333332"/>
+                                                    <fontDescription key="fontDescription" type="system" pointSize="17"/>
+                                                    <nil key="textColor"/>
+                                                    <nil key="highlightedColor"/>
+                                                </label>
+                                                <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" horizontalHuggingPriority="251" verticalHuggingPriority="251" translatesAutoresizingMaskIntoConstraints="NO" id="FY9-2S-MkT">
+                                                    <rect key="frame" x="0.0" y="20.333333333333329" width="239.66666666666666" height="128.33333333333337"/>
+                                                </imageView>
+                                                <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Label" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="bsl-lc-43I">
+                                                    <rect key="frame" x="0.0" y="148.66666666666666" width="239.66666666666666" height="20.333333333333343"/>
+                                                    <fontDescription key="fontDescription" type="system" pointSize="17"/>
+                                                    <nil key="textColor"/>
+                                                    <nil key="highlightedColor"/>
+                                                </label>
+                                            </subviews>
+                                        </stackView>
+                                    </subviews>
                                 </collectionViewCellContentView>
+                                <size key="customSize" width="389" height="193"/>
+                                <connections>
+                                    <outlet property="iconImageView" destination="FY9-2S-MkT" id="anZ-6T-tSv"/>
+                                    <outlet property="tempLabel" destination="bsl-lc-43I" id="rpS-vu-KS3"/>
+                                    <outlet property="timeLabel" destination="RZl-KZ-VIK" id="qCi-xd-ofe"/>
+                                </connections>
                             </collectionViewCell>
                         </cells>
                         <connections>

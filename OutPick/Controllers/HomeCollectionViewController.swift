@@ -12,22 +12,33 @@ import CoreLocation
 class HomeCollectionViewController: UICollectionViewController {
     
     let locationManager = CLLocationManager() // 위치 매니저 인스턴스
+    
     var currentWeatherRequestTask: Task<Void, Never>? = nil // 현재 날씨 요청 작업
-    deinit { currentWeatherRequestTask?.cancel() } // 뷰 컨트롤러 해제 시 작업 취소
+    var weatherForecastRequestTask: Task<Void, Never>? = nil
+    var hourlyForecastImageRequestTask: Task<Void, Never>? = nil
+    deinit {
+        currentWeatherRequestTask?.cancel()
+        weatherForecastRequestTask?.cancel()
+        hourlyForecastImageRequestTask?.cancel()
+    } // 뷰 컨트롤러 해제 시 작업 취소
     
     typealias DataSourceType = UICollectionViewDiffableDataSource<ViewModel.Section, ViewModel.Item>
     
     enum ViewModel {
         enum Section: Hashable {
             case currentWeatherSection // 현재 날씨 섹션
+            case hourlyForecastSection
         }
         
         enum Item: Hashable {
             case currentWeatherItem(_ dt: Double, _ main: CurrentMain, _ weather: [CurrentWeather])
+            case hourlyForecastItem(_ dt: Double, _ temp: Double, _ weather: [WeatherForecast])
             
             func hash(into hasher: inout Hasher) {
                 switch self {
                 case .currentWeatherItem(let dt, _, _):
+                    hasher.combine(dt)
+                case .hourlyForecastItem(let dt, _, _):
                     hasher.combine(dt)
                 }
             }
@@ -36,6 +47,10 @@ class HomeCollectionViewController: UICollectionViewController {
                 switch (lhs, rhs) {
                 case (.currentWeatherItem(let ldt, _, _), .currentWeatherItem(let rdt, _, _)):
                     return ldt == rdt
+                case (.hourlyForecastItem(let ldt, _, _), .hourlyForecastItem(let rdt, _, _)):
+                    return ldt == rdt
+                default:
+                    return false
                 }
             }
         }
@@ -44,10 +59,16 @@ class HomeCollectionViewController: UICollectionViewController {
     struct Model {
         var currentWeatherModel: CurrentWeatherData? // 현재 날씨 데이터 모델
         var cityName: String?
+        var hourlyForecastModel = [HourlyForecast]()
     }
     
     var dataSource: DataSourceType!
     var model = Model()
+    
+    enum ImageRequestError: Error {
+        case imageNotFound
+        case couldNotInitializeFromData
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -73,9 +94,22 @@ class HomeCollectionViewController: UICollectionViewController {
                 self.model.currentWeatherModel = currentWeatherInfo
                 self.updateCollectionView()
             } else {
-                updateCollectionView()
                 self.model.currentWeatherModel = nil
             }
+            self.updateCollectionView()
+            currentWeatherRequestTask = nil
+        }
+        
+        weatherForecastRequestTask?.cancel()
+        weatherForecastRequestTask = Task {
+            if let weatherForecastInfo = try? await WeatherForecastRequest(lat: coor.latitude, lon: coor.longitude).sendWeatherRequest() {
+                self.model.hourlyForecastModel = weatherForecastInfo.hourly
+                self.updateCollectionView()
+            } else {
+                self.model.hourlyForecastModel = []
+            }
+            self.updateCollectionView()
+            weatherForecastRequestTask = nil
         }
     }
     
@@ -84,10 +118,16 @@ class HomeCollectionViewController: UICollectionViewController {
         var sectionIDs = [ViewModel.Section]()
         var itemBySection = [ViewModel.Section:[ViewModel.Item]]()
         
-        guard let currentWeatherInfo = self.model.currentWeatherModel else { return }
+        guard let currentWeatherInfo = self.model.currentWeatherModel else {return}
         
         sectionIDs.append(.currentWeatherSection)
         itemBySection[.currentWeatherSection] = [ViewModel.Item.currentWeatherItem(currentWeatherInfo.dt, currentWeatherInfo.main, currentWeatherInfo.weather)]
+        
+        let hourlyForecasts = self.model.hourlyForecastModel.sorted().reduce(into: [ViewModel.Item]()) { partial, hourlyForecast in
+            partial.append(ViewModel.Item.hourlyForecastItem(hourlyForecast.dt, hourlyForecast.temp, hourlyForecast.weather))
+        }
+        itemBySection[.hourlyForecastSection] = hourlyForecasts
+        sectionIDs.append(.hourlyForecastSection)
         
         dataSource.applySnapshotUsing(sectionIDs: sectionIDs, itemsBySection: itemBySection)
     }
@@ -103,6 +143,24 @@ class HomeCollectionViewController: UICollectionViewController {
                 cell.tempLabel.text = "\(Int(main.temp))°"
                 cell.descriptionLabel.text = weather.last?.description
                 cell.tempMinMaxLabel.text = "최고: \(Int(main.tempMax))° 최저: \(Int(main.tempMin))°"
+                
+                return cell
+                
+            case .hourlyForecastItem(let dt, let temp, let weather):
+                let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "HourlyForecast", for: indexPath) as! HourlyForecastCollectionViewCell
+                
+                cell.timeLabel.text = self.convertUnixTimestamp(dt)
+                
+                self.hourlyForecastImageRequestTask?.cancel()
+                self.hourlyForecastImageRequestTask = Task {
+                    if let image = try? await self.loadIcon(weather) {
+                        cell.iconImageView.image = image
+                    } else {
+                        cell.iconImageView.image = UIImage(systemName: "photo.fill")
+                    }
+                }
+                
+                cell.tempLabel.text = "\(temp)°"
                 
                 return cell
             }
@@ -128,6 +186,19 @@ class HomeCollectionViewController: UICollectionViewController {
                 currentWeatherItem.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0)
                 
                 return currentWeatherSection
+                
+            case .hourlyForecastSection:
+                let hourlyForecastItemSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(0.3), heightDimension: .estimated(200))
+                let hourlyForecastItem = NSCollectionLayoutItem(layoutSize: hourlyForecastItemSize)
+                    
+                let hourlyForecastGroupSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .estimated(200))
+                let hourlyForecastGroup = NSCollectionLayoutGroup.horizontal(layoutSize: hourlyForecastGroupSize, subitems: [hourlyForecastItem])
+                    
+                let hourlyForecastSection = NSCollectionLayoutSection(group: hourlyForecastGroup)
+                hourlyForecastSection.orthogonalScrollingBehavior = .continuous
+                    
+                    return hourlyForecastSection
+
             }
         }
         
@@ -151,6 +222,41 @@ class HomeCollectionViewController: UICollectionViewController {
             }
         }
     }
+    
+    func convertUnixTimestamp(_ time: TimeInterval) -> String {
+        let unixTime: TimeInterval = time
+        
+        let date = Date(timeIntervalSince1970: unixTime)
+        
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "a h시"
+        dateFormatter.timeZone = TimeZone.current
+        dateFormatter.locale = Locale(identifier: "ko_KR")
+        
+        let formattedDate = dateFormatter.string(from: date)
+        
+        return formattedDate
+    }
+    
+    func loadIcon(_ weather: [WeatherForecast]) async throws -> UIImage {
+        guard let iconString = weather.last?.icon else {return UIImage()}
+        
+        let urlComponents = URLComponents(string: "https://openweathermap.org/img/wn/\(iconString)@2x.png")!
+        
+        let (data, response) = try await URLSession.shared.data(from: urlComponents.url!)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              httpResponse.statusCode == 200 else {
+            throw ImageRequestError.imageNotFound
+        }
+        
+        guard let image = UIImage(data: data) else {
+            throw ImageRequestError.couldNotInitializeFromData
+        }
+        
+        return image
+    }
+    
     
 }
 
