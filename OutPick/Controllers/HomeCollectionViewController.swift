@@ -9,17 +9,29 @@ import UIKit
 import CoreLocation
 
 @MainActor
+class SeparatorView: UICollectionReusableView {
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        self.backgroundColor = .lightGray
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+}
+
 class HomeCollectionViewController: UICollectionViewController {
+    
+    static let shared = HomeCollectionViewController()
     
     let locationManager = CLLocationManager() // 위치 매니저 인스턴스
     
     var currentWeatherRequestTask: Task<Void, Never>? = nil // 현재 날씨 요청 작업
     var weatherForecastRequestTask: Task<Void, Never>? = nil
-    var hourlyForecastImageRequestTask: Task<Void, Never>? = nil
+    var hourlyForecastImageRequestTask: [IndexPath: Task<Void, Never>] = [:]
     deinit {
         currentWeatherRequestTask?.cancel()
         weatherForecastRequestTask?.cancel()
-        hourlyForecastImageRequestTask?.cancel()
     } // 뷰 컨트롤러 해제 시 작업 취소
     
     typealias DataSourceType = UICollectionViewDiffableDataSource<ViewModel.Section, ViewModel.Item>
@@ -82,27 +94,33 @@ class HomeCollectionViewController: UICollectionViewController {
         dataSource = createDataSource()
         collectionView.dataSource = dataSource
         collectionView.collectionViewLayout = createLayout()
+        
+        guard let lat = locationManager.location?.coordinate.latitude,
+              let lon = locationManager.location?.coordinate.longitude else {return}
+        
+        currentWeatherRequestTask?.cancel()
+        currentWeatherRequestTask = Task {
+            if let currentWeatherInfo = try? await CurrentWeatherRequest(lat: lat, lon: lon).sendWeatherRequest() {
+                model.currentWeatherModel = currentWeatherInfo
+                updateCollectionView()
+            } else {
+                model.currentWeatherModel = nil
+            }
+            updateCollectionView()
+            currentWeatherRequestTask = nil
+        }
+    }
+    
+    override func collectionView(_ collectionView: UICollectionView, didEndDisplaying cell: UICollectionViewCell, forItemAt indexPath: IndexPath) {
+        self.hourlyForecastImageRequestTask[indexPath]?.cancel()
     }
     
     //MARK: OpenWeather API로 데이터 불러오기
-    func update(_ coor: CLLocationCoordinate2D) {
-        
-        // 현재 날씨 불러오기
-        currentWeatherRequestTask?.cancel()
-        currentWeatherRequestTask = Task {
-            if let currentWeatherInfo = try? await CurrentWeatherRequest(lat: coor.latitude, lon: coor.longitude).sendWeatherRequest() {
-                self.model.currentWeatherModel = currentWeatherInfo
-                self.updateCollectionView()
-            } else {
-                self.model.currentWeatherModel = nil
-            }
-            self.updateCollectionView()
-            currentWeatherRequestTask = nil
-        }
+    func update(_ lat: Double, _ lon: Double) {
         
         weatherForecastRequestTask?.cancel()
         weatherForecastRequestTask = Task {
-            if let weatherForecastInfo = try? await WeatherForecastRequest(lat: coor.latitude, lon: coor.longitude).sendWeatherRequest() {
+            if let weatherForecastInfo = try? await WeatherForecastRequest(lat: lat, lon: lon).sendWeatherRequest() {
                 self.model.hourlyForecastModel = weatherForecastInfo.hourly
                 self.updateCollectionView()
             } else {
@@ -140,9 +158,9 @@ class HomeCollectionViewController: UICollectionViewController {
                 let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "CurrentWeather", for: indexPath) as! CurrentWeatherCollectionViewCell
                 
                 cell.cityLabel.text = self.model.cityName
-                cell.tempLabel.text = "\(Int(main.temp))°"
+                cell.tempLabel.text = "\(String(format: "%.0f", main.temp))°"
                 cell.descriptionLabel.text = weather.last?.description
-                cell.tempMinMaxLabel.text = "최고: \(Int(main.tempMax))° 최저: \(Int(main.tempMin))°"
+                cell.tempMinMaxLabel.text = "최고: \(String(format: "%.0f", main.tempMax))° 최저: \(String(format: "%.0f", main.tempMin))°"
                 
                 return cell
                 
@@ -151,16 +169,16 @@ class HomeCollectionViewController: UICollectionViewController {
                 
                 cell.timeLabel.text = self.convertUnixTimestamp(dt)
                 
-                self.hourlyForecastImageRequestTask?.cancel()
-                self.hourlyForecastImageRequestTask = Task {
+                self.hourlyForecastImageRequestTask[indexPath]?.cancel()
+                self.hourlyForecastImageRequestTask[indexPath] = Task {
                     if let image = try? await self.loadIcon(weather) {
                         cell.iconImageView.image = image
-                    } else {
-                        cell.iconImageView.image = UIImage(systemName: "photo.fill")
                     }
+                    
+                    self.hourlyForecastImageRequestTask[indexPath] = nil
                 }
                 
-                cell.tempLabel.text = "\(temp)°"
+                cell.tempLabel.text = "\(String(format: "%.0f", temp))°"
                 
                 return cell
             }
@@ -188,16 +206,16 @@ class HomeCollectionViewController: UICollectionViewController {
                 return currentWeatherSection
                 
             case .hourlyForecastSection:
-                let hourlyForecastItemSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(0.3), heightDimension: .estimated(200))
+                let hourlyForecastItemSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(0.2), heightDimension: .fractionalHeight(1))
                 let hourlyForecastItem = NSCollectionLayoutItem(layoutSize: hourlyForecastItemSize)
                     
-                let hourlyForecastGroupSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .estimated(200))
-                let hourlyForecastGroup = NSCollectionLayoutGroup.horizontal(layoutSize: hourlyForecastGroupSize, subitems: [hourlyForecastItem])
-                    
+                let hourlyForecastGroupSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .fractionalHeight(0.15))
+                let hourlyForecastGroup = NSCollectionLayoutGroup.horizontal(layoutSize: hourlyForecastGroupSize, repeatingSubitem: hourlyForecastItem, count: 5)
+                
                 let hourlyForecastSection = NSCollectionLayoutSection(group: hourlyForecastGroup)
                 hourlyForecastSection.orthogonalScrollingBehavior = .continuous
                     
-                    return hourlyForecastSection
+                return hourlyForecastSection
 
             }
         }
@@ -235,7 +253,11 @@ class HomeCollectionViewController: UICollectionViewController {
         
         let formattedDate = dateFormatter.string(from: date)
         
-        return formattedDate
+        if formattedDate == dateFormatter.string(from: Date()) {
+            return "지금"
+        } else {
+            return formattedDate
+        }
     }
     
     func loadIcon(_ weather: [WeatherForecast]) async throws -> UIImage {
@@ -281,7 +303,7 @@ extension HomeCollectionViewController: CLLocationManagerDelegate {
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let coor = locations.last?.coordinate else {return}
 
-        update(coor)
+        update(coor.latitude, coor.longitude)
         getCityName()
     }
     
