@@ -29,6 +29,7 @@ class HomeCollectionViewController: UICollectionViewController {
     var currentWeatherRequestTask: Task<Void, Never>? = nil // 현재 날씨 요청 작업
     var weatherForecastRequestTask: Task<Void, Never>? = nil
     var hourlyForecastImageRequestTask: [IndexPath: Task<Void, Never>] = [:]
+    var dailyForecastImageRequestTask: [IndexPath: Task<Void, Never>] = [:]
     deinit {
         currentWeatherRequestTask?.cancel()
         weatherForecastRequestTask?.cancel()
@@ -40,17 +41,21 @@ class HomeCollectionViewController: UICollectionViewController {
         enum Section: Hashable {
             case currentWeatherSection // 현재 날씨 섹션
             case hourlyForecastSection
+            case dailyForecastSection
         }
         
         enum Item: Hashable {
             case currentWeatherItem(_ dt: Double, _ main: CurrentMain, _ weather: [CurrentWeather])
             case hourlyForecastItem(_ dt: Double, _ temp: Double, _ weather: [WeatherForecast])
+            case dailyForecastItem(_ dt: Double, _ temp: Temperature, _ weather: [WeatherForecast])
             
             func hash(into hasher: inout Hasher) {
                 switch self {
                 case .currentWeatherItem(let dt, _, _):
                     hasher.combine(dt)
                 case .hourlyForecastItem(let dt, _, _):
+                    hasher.combine(dt)
+                case .dailyForecastItem(let dt, _, _):
                     hasher.combine(dt)
                 }
             }
@@ -60,6 +65,8 @@ class HomeCollectionViewController: UICollectionViewController {
                 case (.currentWeatherItem(let ldt, _, _), .currentWeatherItem(let rdt, _, _)):
                     return ldt == rdt
                 case (.hourlyForecastItem(let ldt, _, _), .hourlyForecastItem(let rdt, _, _)):
+                    return ldt == rdt
+                case (.dailyForecastItem(let ldt, _, _), .dailyForecastItem(let rdt, _, _)):
                     return ldt == rdt
                 default:
                     return false
@@ -72,6 +79,7 @@ class HomeCollectionViewController: UICollectionViewController {
         var currentWeatherModel: CurrentWeatherData? // 현재 날씨 데이터 모델
         var cityName: String?
         var hourlyForecastModel = [HourlyForecast]()
+        var dailyForecastModel = [DailyForecast]()
     }
     
     var dataSource: DataSourceType!
@@ -113,6 +121,7 @@ class HomeCollectionViewController: UICollectionViewController {
     
     override func collectionView(_ collectionView: UICollectionView, didEndDisplaying cell: UICollectionViewCell, forItemAt indexPath: IndexPath) {
         self.hourlyForecastImageRequestTask[indexPath]?.cancel()
+        self.dailyForecastImageRequestTask[indexPath]?.cancel()
     }
     
     //MARK: OpenWeather API로 데이터 불러오기
@@ -122,6 +131,7 @@ class HomeCollectionViewController: UICollectionViewController {
         weatherForecastRequestTask = Task {
             if let weatherForecastInfo = try? await WeatherForecastRequest(lat: lat, lon: lon).sendWeatherRequest() {
                 self.model.hourlyForecastModel = weatherForecastInfo.hourly
+                self.model.dailyForecastModel = weatherForecastInfo.daily
                 self.updateCollectionView()
             } else {
                 self.model.hourlyForecastModel = []
@@ -146,6 +156,12 @@ class HomeCollectionViewController: UICollectionViewController {
         }
         itemBySection[.hourlyForecastSection] = hourlyForecasts
         sectionIDs.append(.hourlyForecastSection)
+        
+        let dailyForecasts = self.model.dailyForecastModel.sorted().reduce(into: [ViewModel.Item]()) { partial, dailyForecast in
+            partial.append(ViewModel.Item.dailyForecastItem(dailyForecast.dt, dailyForecast.temp, dailyForecast.weather))
+        }
+        itemBySection[.dailyForecastSection] = dailyForecasts
+        sectionIDs.append(.dailyForecastSection)
         
         dataSource.applySnapshotUsing(sectionIDs: sectionIDs, itemsBySection: itemBySection)
     }
@@ -181,6 +197,24 @@ class HomeCollectionViewController: UICollectionViewController {
                 cell.tempLabel.text = "\(String(format: "%.0f", temp))°"
                 
                 return cell
+                
+            case .dailyForecastItem(let dt, let temp, let weather):
+                let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "DailyForecast", for: indexPath) as! DailyForecastCollectionViewCell
+                
+                cell.dayLabel.text = self.getDay(dt)
+                
+                self.dailyForecastImageRequestTask[indexPath]?.cancel()
+                self.dailyForecastImageRequestTask[indexPath] = Task {
+                    if let image = try? await self.loadIcon(weather) {
+                        cell.imageView.image = image
+                    }
+                    
+                    self.dailyForecastImageRequestTask[indexPath] = nil
+                }
+                
+                cell.tempMinMaxLabel.text = "\(String(format: "%.0f", temp.min))° ~ \(String(format: "%.0f", temp.max))°"
+                
+                return cell
             }
         }
         
@@ -214,9 +248,21 @@ class HomeCollectionViewController: UICollectionViewController {
                 
                 let hourlyForecastSection = NSCollectionLayoutSection(group: hourlyForecastGroup)
                 hourlyForecastSection.orthogonalScrollingBehavior = .continuous
+                
                     
                 return hourlyForecastSection
-
+                
+            case .dailyForecastSection:
+                let dailyForecastItemSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .fractionalHeight(0.2))
+                let dailyForecastItem = NSCollectionLayoutItem(layoutSize: dailyForecastItemSize)
+                
+                let dailyForecastGroupSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .fractionalHeight(0.33))
+                let dailyForecastGroup = NSCollectionLayoutGroup.vertical(layoutSize: dailyForecastGroupSize, repeatingSubitem: dailyForecastItem, count: self.model.dailyForecastModel.count)
+                
+                let dailyForecastSection = NSCollectionLayoutSection(group: dailyForecastGroup)
+                dailyForecastSection.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 22, bottom: 0, trailing: 10)
+                
+                return dailyForecastSection
             }
         }
         
@@ -255,6 +301,22 @@ class HomeCollectionViewController: UICollectionViewController {
         
         if formattedDate == dateFormatter.string(from: Date()) {
             return "지금"
+        } else {
+            return formattedDate
+        }
+    }
+    
+    func getDay(_ time: TimeInterval) -> String {
+        let date = Date(timeIntervalSince1970: time)
+        
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "E"
+        dateFormatter.locale = Locale(identifier: "ko_KR")
+        
+        let formattedDate = dateFormatter.string(from: date)
+        
+        if formattedDate == dateFormatter.string(from: Date()) {
+            return "오늘"
         } else {
             return formattedDate
         }
