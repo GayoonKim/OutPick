@@ -6,15 +6,14 @@
 //
 
 import UIKit
-import CoreLocation
+import KakaoSDKCommon
 
 @main
-class AppDelegate: UIResponder, UIApplicationDelegate, CLLocationManagerDelegate {
-
-
-
+class AppDelegate: UIResponder, UIApplicationDelegate {
+    
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         // Override point for customization after application launch.
+        KakaoSDK.initSDK(appKey: "a2b20f7bedfb9582147f572ef004d0f0")
         return true
     }
 

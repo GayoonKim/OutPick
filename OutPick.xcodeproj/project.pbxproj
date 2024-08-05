@@ -8,6 +8,15 @@
 
 /* Begin PBXBuildFile section */
 		0516687D2C41003A007875D7 /* UICollectionViewDiffableDataSource+ViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0516687C2C41003A007875D7 /* UICollectionViewDiffableDataSource+ViewModel.swift */; };
+		053D93562C60C44C001E3514 /* SocketIO in Frameworks */ = {isa = PBXBuildFile; productRef = 053D93552C60C44C001E3514 /* SocketIO */; };
+		058157562C60E1F900B44D01 /* ChatCollectionViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 058157552C60E1F900B44D01 /* ChatCollectionViewController.swift */; };
+		058157582C60E2AB00B44D01 /* RoomCreateViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 058157572C60E2AB00B44D01 /* RoomCreateViewController.swift */; };
+		0581575A2C60E2CA00B44D01 /* SocketIOManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 058157592C60E2CA00B44D01 /* SocketIOManager.swift */; };
+		0581575C2C60F49C00B44D01 /* FirstProfileViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0581575B2C60F49C00B44D01 /* FirstProfileViewController.swift */; };
+		05B2FD3F2C5BB30D000D0625 /* LoginViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05B2FD3E2C5BB30D000D0625 /* LoginViewController.swift */; };
+		05B2FD422C5BC24C000D0625 /* KakaoSDKAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 05B2FD412C5BC24C000D0625 /* KakaoSDKAuth */; };
+		05B2FD442C5BC24C000D0625 /* KakaoSDKCommon in Frameworks */ = {isa = PBXBuildFile; productRef = 05B2FD432C5BC24C000D0625 /* KakaoSDKCommon */; };
+		05B2FD462C5BC24C000D0625 /* KakaoSDKUser in Frameworks */ = {isa = PBXBuildFile; productRef = 05B2FD452C5BC24C000D0625 /* KakaoSDKUser */; };
 		05CAD68E2C3FE11900E60127 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05CAD68D2C3FE11900E60127 /* AppDelegate.swift */; };
 		05CAD6902C3FE11900E60127 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05CAD68F2C3FE11900E60127 /* SceneDelegate.swift */; };
 		05CAD6952C3FE11900E60127 /* Base in Resources */ = {isa = PBXBuildFile; fileRef = 05CAD6942C3FE11900E60127 /* Base */; };
@@ -32,6 +41,12 @@
 
 /* Begin PBXFileReference section */
 		0516687C2C41003A007875D7 /* UICollectionViewDiffableDataSource+ViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UICollectionViewDiffableDataSource+ViewModel.swift"; sourceTree = "<group>"; };
+		053D935C2C60C88B001E3514 /* index.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = index.js; sourceTree = "<group>"; };
+		058157552C60E1F900B44D01 /* ChatCollectionViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatCollectionViewController.swift; sourceTree = "<group>"; };
+		058157572C60E2AB00B44D01 /* RoomCreateViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomCreateViewController.swift; sourceTree = "<group>"; };
+		058157592C60E2CA00B44D01 /* SocketIOManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocketIOManager.swift; sourceTree = "<group>"; };
+		0581575B2C60F49C00B44D01 /* FirstProfileViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirstProfileViewController.swift; sourceTree = "<group>"; };
+		05B2FD3E2C5BB30D000D0625 /* LoginViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginViewController.swift; sourceTree = "<group>"; };
 		05CAD68A2C3FE11900E60127 /* OutPick.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OutPick.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		05CAD68D2C3FE11900E60127 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		05CAD68F2C3FE11900E60127 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
@@ -62,12 +77,25 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				05B2FD442C5BC24C000D0625 /* KakaoSDKCommon in Frameworks */,
+				053D93562C60C44C001E3514 /* SocketIO in Frameworks */,
+				05B2FD422C5BC24C000D0625 /* KakaoSDKAuth in Frameworks */,
+				05B2FD462C5BC24C000D0625 /* KakaoSDKUser in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		050235E82C60CA4B00475258 /* Socket */ = {
+			isa = PBXGroup;
+			children = (
+				053D935C2C60C88B001E3514 /* index.js */,
+				058157592C60E2CA00B44D01 /* SocketIOManager.swift */,
+			);
+			path = Socket;
+			sourceTree = "<group>";
+		};
 		05CAD6812C3FE11900E60127 = {
 			isa = PBXGroup;
 			children = (
@@ -88,6 +116,7 @@
 		05CAD68C2C3FE11900E60127 /* OutPick */ = {
 			isa = PBXGroup;
 			children = (
+				050235E82C60CA4B00475258 /* Socket */,
 				05CAD6A92C3FE24000E60127 /* Support */,
 				05CAD6A62C3FE21D00E60127 /* Networking */,
 				05CAD6A32C3FE1EA00E60127 /* Controllers */,
@@ -125,7 +154,11 @@
 		05CAD6A32C3FE1EA00E60127 /* Controllers */ = {
 			isa = PBXGroup;
 			children = (
+				05B2FD3E2C5BB30D000D0625 /* LoginViewController.swift */,
 				05CAD6A42C3FE1F900E60127 /* HomeCollectionViewController.swift */,
+				058157552C60E1F900B44D01 /* ChatCollectionViewController.swift */,
+				058157572C60E2AB00B44D01 /* RoomCreateViewController.swift */,
+				0581575B2C60F49C00B44D01 /* FirstProfileViewController.swift */,
 			);
 			path = Controllers;
 			sourceTree = "<group>";
@@ -186,6 +219,12 @@
 			dependencies = (
 			);
 			name = OutPick;
+			packageProductDependencies = (
+				05B2FD412C5BC24C000D0625 /* KakaoSDKAuth */,
+				05B2FD432C5BC24C000D0625 /* KakaoSDKCommon */,
+				05B2FD452C5BC24C000D0625 /* KakaoSDKUser */,
+				053D93552C60C44C001E3514 /* SocketIO */,
+			);
 			productName = OutPick;
 			productReference = 05CAD68A2C3FE11900E60127 /* OutPick.app */;
 			productType = "com.apple.product-type.application";
@@ -214,6 +253,10 @@
 				Base,
 			);
 			mainGroup = 05CAD6812C3FE11900E60127;
+			packageReferences = (
+				05B2FD402C5BC24C000D0625 /* XCRemoteSwiftPackageReference "kakao-ios-sdk" */,
+				053D93542C60C44C001E3514 /* XCRemoteSwiftPackageReference "socket" */,
+			);
 			productRefGroup = 05CAD68B2C3FE11900E60127 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -245,18 +288,23 @@
 				05CAD6A52C3FE1F900E60127 /* HomeCollectionViewController.swift in Sources */,
 				05CD38732C47B74C00F8CC9D /* WeatherForecastData.swift in Sources */,
 				05CAD6A82C3FE22C00E60127 /* WeatherAPIRequest.swift in Sources */,
+				05B2FD3F2C5BB30D000D0625 /* LoginViewController.swift in Sources */,
 				05CAD6AB2C3FE24F00E60127 /* APIKEY.swift in Sources */,
 				05CAD6AE2C3FE40300E60127 /* WeatherAPIService.swift in Sources */,
 				05CD38792C47B7CE00F8CC9D /* WeatherForecast.swift in Sources */,
 				05CAD6B52C3FE45500E60127 /* CurrentWeather.swift in Sources */,
 				05CAD6B92C401BC300E60127 /* CurrentWeatherCollectionViewCell.swift in Sources */,
+				0581575A2C60E2CA00B44D01 /* SocketIOManager.swift in Sources */,
 				05CAF59A2C493638007EEA5C /* DailyForecastCollectionViewCell.swift in Sources */,
 				05CAD6B32C3FE44C00E60127 /* CurrentMain.swift in Sources */,
+				058157562C60E1F900B44D01 /* ChatCollectionViewController.swift in Sources */,
 				05CD387D2C47EDA500F8CC9D /* HourlyForecastCollectionViewCell.swift in Sources */,
 				05CD387B2C47B7E000F8CC9D /* Temperature.swift in Sources */,
 				05CD38752C47B76E00F8CC9D /* HourlyForecast.swift in Sources */,
+				0581575C2C60F49C00B44D01 /* FirstProfileViewController.swift in Sources */,
 				0516687D2C41003A007875D7 /* UICollectionViewDiffableDataSource+ViewModel.swift in Sources */,
 				05CAD68E2C3FE11900E60127 /* AppDelegate.swift in Sources */,
+				058157582C60E2AB00B44D01 /* RoomCreateViewController.swift in Sources */,
 				05CAD6B12C3FE44300E60127 /* CurrentWeatherData.swift in Sources */,
 				05CAD6902C3FE11900E60127 /* SceneDelegate.swift in Sources */,
 			);
@@ -485,6 +533,48 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		053D93542C60C44C001E3514 /* XCRemoteSwiftPackageReference "socket" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/socketio/socket.io-client-swift";
+			requirement = {
+				branch = master;
+				kind = branch;
+			};
+		};
+		05B2FD402C5BC24C000D0625 /* XCRemoteSwiftPackageReference "kakao-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/kakao/kakao-ios-sdk";
+			requirement = {
+				branch = master;
+				kind = branch;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		053D93552C60C44C001E3514 /* SocketIO */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 053D93542C60C44C001E3514 /* XCRemoteSwiftPackageReference "socket" */;
+			productName = SocketIO;
+		};
+		05B2FD412C5BC24C000D0625 /* KakaoSDKAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 05B2FD402C5BC24C000D0625 /* XCRemoteSwiftPackageReference "kakao-ios-sdk" */;
+			productName = KakaoSDKAuth;
+		};
+		05B2FD432C5BC24C000D0625 /* KakaoSDKCommon */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 05B2FD402C5BC24C000D0625 /* XCRemoteSwiftPackageReference "kakao-ios-sdk" */;
+			productName = KakaoSDKCommon;
+		};
+		05B2FD452C5BC24C000D0625 /* KakaoSDKUser */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 05B2FD402C5BC24C000D0625 /* XCRemoteSwiftPackageReference "kakao-ios-sdk" */;
+			productName = KakaoSDKUser;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 05CAD6822C3FE11900E60127 /* Project object */;
 }
