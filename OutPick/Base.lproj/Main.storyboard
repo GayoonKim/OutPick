@@ -484,11 +484,23 @@
                                             </imageView>
                                         </subviews>
                                     </stackView>
+                                    <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="0SJ-OE-11e">
+                                        <rect key="frame" x="20" y="709" width="353" height="50"/>
+                                        <fontDescription key="fontDescription" type="system" weight="light" pointSize="30"/>
+                                        <inset key="imageEdgeInsets" minX="0.0" minY="0.0" maxX="2.2250738585072014e-308" maxY="0.0"/>
+                                        <state key="normal" title="다음 1/2"/>
+                                        <buttonConfiguration key="configuration" style="plain" title="완료 2/2">
+                                            <fontDescription key="titleFontDescription" type="system" weight="semibold" pointSize="30"/>
+                                        </buttonConfiguration>
+                                    </button>
                                 </subviews>
                                 <constraints>
+                                    <constraint firstItem="0SJ-OE-11e" firstAttribute="leading" secondItem="sCC-0z-Pch" secondAttribute="leading" constant="20" id="0Up-jZ-Ez8"/>
                                     <constraint firstItem="veq-4i-3Wi" firstAttribute="leading" secondItem="sCC-0z-Pch" secondAttribute="leading" constant="20" id="3zK-H0-mDB"/>
+                                    <constraint firstItem="sCC-0z-Pch" firstAttribute="trailing" secondItem="0SJ-OE-11e" secondAttribute="trailing" constant="20" id="7rD-HH-5iw"/>
                                     <constraint firstItem="fXE-jc-yM3" firstAttribute="top" secondItem="oEV-Vj-5An" secondAttribute="bottom" constant="50" id="BKu-8c-13t"/>
                                     <constraint firstItem="oEV-Vj-5An" firstAttribute="top" secondItem="sCC-0z-Pch" secondAttribute="top" constant="10" id="WiH-fD-613"/>
+                                    <constraint firstItem="sCC-0z-Pch" firstAttribute="bottom" secondItem="0SJ-OE-11e" secondAttribute="bottom" id="YMT-Y9-SOU"/>
                                     <constraint firstItem="sCC-0z-Pch" firstAttribute="trailing" relation="greaterThanOrEqual" secondItem="oEV-Vj-5An" secondAttribute="trailing" symbolic="YES" id="ZUz-qf-wHx"/>
                                     <constraint firstItem="sCC-0z-Pch" firstAttribute="trailing" secondItem="fXE-jc-yM3" secondAttribute="trailing" constant="20" id="dLo-2r-lI9"/>
                                     <constraint firstItem="oEV-Vj-5An" firstAttribute="leading" secondItem="sCC-0z-Pch" secondAttribute="leading" constant="20" id="doc-1S-VJy"/>
