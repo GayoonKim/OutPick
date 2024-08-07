@@ -16,8 +16,6 @@ class LoginViewController: UIViewController {
     }
     
     @IBAction func kakaoLoginBtnPressed(_ sender: UIButton) {
-        print("로그인 버튼")
-        
         if (UserApi.isKakaoTalkLoginAvailable()) {
             UserApi.shared.loginWithKakaoTalk {(oauthToken, error) in
                 if let error = error {
@@ -28,8 +26,6 @@ class LoginViewController: UIViewController {
 
                     //do something
                     _ = oauthToken
-                    
-                    
                 }
             }
         } else {
@@ -41,12 +37,8 @@ class LoginViewController: UIViewController {
                     
                     //do something
                     _ = oauthToken
-                    
-                    
                 }
             }
         }
     }
-    
-    
 }

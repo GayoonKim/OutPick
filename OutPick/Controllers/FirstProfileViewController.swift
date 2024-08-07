@@ -11,6 +11,7 @@ class FirstProfileViewController: UIViewController {
     
     @IBOutlet var sexButtons: [UIButton]!
     @IBOutlet weak var dateOfBirthTextField: UITextField!
+    @IBOutlet weak var nextButton: UIButton!
     
     var sexButtonIndex: Int?
     
@@ -21,6 +22,9 @@ class FirstProfileViewController: UIViewController {
         
         setupSexButtons(sexButtons)
         setupDateOfBirthTextFied(dateOfBirthTextField)
+        
+        nextButton.isEnabled = false
+        nextButton.backgroundColor = UIColor(white: 0.1, alpha: 0.03)
     }
 
     @IBAction func sexButtonPressed(_ sender: UIButton) {
@@ -39,6 +43,8 @@ class FirstProfileViewController: UIViewController {
             sender.isSelected = true
             sexButtonIndex = sexButtons.firstIndex(of: sender)
         }
+     
+        enableNextBtn()
     }
     
     private func setupSexButtons(_ buttons: [UIButton]) {
@@ -53,7 +59,20 @@ class FirstProfileViewController: UIViewController {
         // DatePicker 설정
         datePicker.datePickerMode = .date
         datePicker.preferredDatePickerStyle = .wheels
+        datePicker.locale = Locale(identifier: "ko-KR")
         datePicker.addTarget(self, action: #selector(dateChanged), for: .valueChanged)
+        
+        // Date Picker 최대 날짜 설정
+        let calendar = Calendar(identifier: .gregorian)
+        let today = Date()
+        var components = DateComponents()
+        components.calendar = calendar
+        
+        components.year = -15
+        components.month = -7
+        components.day = -5
+        let maxDate = calendar.date(byAdding: components, to: today)
+        datePicker.maximumDate = maxDate
         
         // dateOfBirthTextField 설정
         dateOfBirthTextField.inputView = datePicker
@@ -65,9 +84,7 @@ class FirstProfileViewController: UIViewController {
     }
     
     @objc func dateChanged() {
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd"
-        dateOfBirthTextField.text = dateFormatter.string(from: datePicker.date)
+        dateOfBirthTextField.text = configureDateFormat(datePicker.date)
     }
     
     private func addArrow(_ textField: UITextField) {
@@ -91,17 +108,31 @@ class FirstProfileViewController: UIViewController {
     }
     
     @objc func donePressed(_ sender: UIBarButtonItem) {
+        dateOfBirthTextField.text = configureDateFormat(datePicker.date)
+        enableNextBtn()
+        view.endEditing(true)
+    }
+    
+    private func configureDateFormat(_ date: Date) -> String{
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd"
-        dateOfBirthTextField.text = dateFormatter.string(from: datePicker.date)
-        view.endEditing(true)
+        
+        return dateFormatter.string(from: datePicker.date)
+    }
+    
+    private func enableNextBtn() {
+        if sexButtonIndex != nil && dateOfBirthTextField.text != "" {
+            nextButton.isEnabled = true
+        } else {
+            nextButton.isEnabled = false
+        }
     }
     
 }
 
 extension FirstProfileViewController: UITextFieldDelegate {
     func textField(_ textField: UITextField, shouldChangeCharactersIn range: NSRange, replacementString string: String) -> Bool {
-            // 키보드로 입력을 차단
+            // 키보드로 입력 차단
             return false
         }
 }

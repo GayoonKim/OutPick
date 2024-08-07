@@ -13,6 +13,7 @@
 		058157582C60E2AB00B44D01 /* RoomCreateViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 058157572C60E2AB00B44D01 /* RoomCreateViewController.swift */; };
 		0581575A2C60E2CA00B44D01 /* SocketIOManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 058157592C60E2CA00B44D01 /* SocketIOManager.swift */; };
 		0581575C2C60F49C00B44D01 /* FirstProfileViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0581575B2C60F49C00B44D01 /* FirstProfileViewController.swift */; };
+		0581575E2C6238B400B44D01 /* SecondProfileViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0581575D2C6238B400B44D01 /* SecondProfileViewController.swift */; };
 		05B2FD3F2C5BB30D000D0625 /* LoginViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05B2FD3E2C5BB30D000D0625 /* LoginViewController.swift */; };
 		05B2FD422C5BC24C000D0625 /* KakaoSDKAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 05B2FD412C5BC24C000D0625 /* KakaoSDKAuth */; };
 		05B2FD442C5BC24C000D0625 /* KakaoSDKCommon in Frameworks */ = {isa = PBXBuildFile; productRef = 05B2FD432C5BC24C000D0625 /* KakaoSDKCommon */; };
@@ -46,6 +47,7 @@
 		058157572C60E2AB00B44D01 /* RoomCreateViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomCreateViewController.swift; sourceTree = "<group>"; };
 		058157592C60E2CA00B44D01 /* SocketIOManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocketIOManager.swift; sourceTree = "<group>"; };
 		0581575B2C60F49C00B44D01 /* FirstProfileViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirstProfileViewController.swift; sourceTree = "<group>"; };
+		0581575D2C6238B400B44D01 /* SecondProfileViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecondProfileViewController.swift; sourceTree = "<group>"; };
 		05B2FD3E2C5BB30D000D0625 /* LoginViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginViewController.swift; sourceTree = "<group>"; };
 		05CAD68A2C3FE11900E60127 /* OutPick.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OutPick.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		05CAD68D2C3FE11900E60127 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
@@ -159,6 +161,7 @@
 				058157552C60E1F900B44D01 /* ChatCollectionViewController.swift */,
 				058157572C60E2AB00B44D01 /* RoomCreateViewController.swift */,
 				0581575B2C60F49C00B44D01 /* FirstProfileViewController.swift */,
+				0581575D2C6238B400B44D01 /* SecondProfileViewController.swift */,
 			);
 			path = Controllers;
 			sourceTree = "<group>";
@@ -300,6 +303,7 @@
 				058157562C60E1F900B44D01 /* ChatCollectionViewController.swift in Sources */,
 				05CD387D2C47EDA500F8CC9D /* HourlyForecastCollectionViewCell.swift in Sources */,
 				05CD387B2C47B7E000F8CC9D /* Temperature.swift in Sources */,
+				0581575E2C6238B400B44D01 /* SecondProfileViewController.swift in Sources */,
 				05CD38752C47B76E00F8CC9D /* HourlyForecast.swift in Sources */,
 				0581575C2C60F49C00B44D01 /* FirstProfileViewController.swift in Sources */,
 				0516687D2C41003A007875D7 /* UICollectionViewDiffableDataSource+ViewModel.swift in Sources */,
