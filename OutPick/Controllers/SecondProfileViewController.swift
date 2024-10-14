@@ -206,7 +206,7 @@ class SecondProfileViewController: UIViewController, PHPickerViewControllerDeleg
     
     private func saveUserProfile(userProfile: UserProfile, email: String) {
         guard let nickname = userProfile.nickname else { return }
-        checkNicknameDuplicate(nickname: nickname) { isDuplicate, error in
+        FirestoreManager.shared.checkNicknameDuplicate(nickname: nickname) { isDuplicate, error in
             if let error = error {
                 print("Failed to check nickname: \(error.localizedDescription)")
                 return
@@ -220,11 +220,11 @@ class SecondProfileViewController: UIViewController, PHPickerViewControllerDeleg
             }
             
             if let image = self.profileImageView.image {
-                uploadProfileImage(image: image, email: email) { result in
+                FirestoreManager.shared.uploadImage(image: image, imageName: email, type: "profileImages") { result in
                     switch result {
                     case .success(let imageURL):
                         let userProfile = UserProfile(gender: userProfile.gender, birthdate: userProfile.birthdate, nickname: userProfile.nickname, profileImageURL: imageURL, joinedRooms: userProfile.joinedRooms)
-                        saveUserProfileToFirestore(userProfile: userProfile, email: email) { error in
+                        FirestoreManager.shared.saveUserProfileToFirestore(userProfile: userProfile, email: email) { error in
                             if let error = error {
                                 print("Failed to save user profile: \(error.localizedDescription)")
                             } else {
@@ -237,7 +237,7 @@ class SecondProfileViewController: UIViewController, PHPickerViewControllerDeleg
                 }
             } else {
                 let userProfile = UserProfile(gender: userProfile.gender, birthdate: userProfile.birthdate, nickname: userProfile.nickname, profileImageURL: nil)
-                saveUserProfileToFirestore(userProfile: userProfile, email: email) { error in
+                FirestoreManager.shared.saveUserProfileToFirestore(userProfile: userProfile, email: email) { error in
                     if let error = error {
                         print("Failed to save user profile: \(error.localizedDescription)")
                     } else {

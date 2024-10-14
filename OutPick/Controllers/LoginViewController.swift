@@ -71,7 +71,7 @@ class LoginViewController: UIViewController {
     
     // Firestore에서 사용자 이메일로 만들어진 프로필 문서 쿼리
     private func fetchUserProfile(_ email: String) {
-        fetchUserProfileFromFirestore(email: email) { result in
+        FirestoreManager.shared.fetchUserProfileFromFirestore(email: email) { result in
             switch result {
             case .success(let userProfile):
                 print("User Profile: \(userProfile)")

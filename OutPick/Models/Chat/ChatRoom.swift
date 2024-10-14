@@ -16,6 +16,7 @@ struct ChatRoom: Codable {
     let creatorID: String               // 방 생성자 ID
     let createdAt: Date                 // 방 생성 시간
     var lastMessage: ChatMessage?       // 마지막 메시지
+    var roomImageURL: String?           // Firestore Storage에 이미지 저장
     
     // Firestore에 저장하기 위힌 뱐환 메서드
     func toDictionary() -> [String: Any] {
@@ -24,6 +25,7 @@ struct ChatRoom: Codable {
             "roomDescription": roomDescription,
             "creatorID": creatorID,
             "createdAt": createdAt,
+            "roomImageURL": roomImageURL ?? ""
         ]
         
         // participants를 Firestore에 저장하기 위해 Dictionary로 변환

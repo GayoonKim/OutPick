@@ -217,19 +217,23 @@
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <color key="backgroundColor" systemColor="systemBackgroundColor"/>
                         <collectionViewFlowLayout key="collectionViewLayout" automaticEstimatedItemSize="YES" minimumLineSpacing="10" minimumInteritemSpacing="10" id="U3B-7j-COU">
-                            <size key="itemSize" width="128" height="128"/>
+                            <size key="itemSize" width="393" height="295"/>
                             <size key="headerReferenceSize" width="0.0" height="0.0"/>
                             <size key="footerReferenceSize" width="0.0" height="0.0"/>
                             <inset key="sectionInset" minX="0.0" minY="0.0" maxX="0.0" maxY="0.0"/>
                         </collectionViewFlowLayout>
                         <cells>
                             <collectionViewCell opaque="NO" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="center" id="pAX-gT-Apv">
-                                <rect key="frame" x="0.0" y="0.0" width="127.99999999999997" height="128"/>
+                                <rect key="frame" x="0.0" y="0.0" width="393" height="295"/>
                                 <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMaxY="YES"/>
                                 <collectionViewCellContentView key="contentView" opaque="NO" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="center" insetsLayoutMarginsFromSafeArea="NO" id="Mvq-Je-nxa">
-                                    <rect key="frame" x="0.0" y="0.0" width="127.99999999999997" height="128"/>
+                                    <rect key="frame" x="0.0" y="0.0" width="393" height="295"/>
                                     <autoresizingMask key="autoresizingMask"/>
                                 </collectionViewCellContentView>
+                                <size key="customSize" width="393" height="295"/>
+                                <connections>
+                                    <segue destination="UDw-4m-Qed" kind="show" id="4L3-UR-qFw"/>
+                                </connections>
                             </collectionViewCell>
                         </cells>
                         <connections>
@@ -249,7 +253,23 @@
                 </collectionViewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="M3q-5G-xvC" userLabel="First Responder" customClass="UIResponder" sceneMemberID="firstResponder"/>
             </objects>
-            <point key="canvasLocation" x="-3512" y="370"/>
+            <point key="canvasLocation" x="-3512.2137404580153" y="369.71830985915494"/>
+        </scene>
+        <!--Chat View Controller-->
+        <scene sceneID="jAM-wP-jqe">
+            <objects>
+                <viewController id="UDw-4m-Qed" customClass="ChatViewController" customModule="OutPick" customModuleProvider="target" sceneMemberID="viewController">
+                    <view key="view" contentMode="scaleToFill" id="eWn-8t-hw8">
+                        <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
+                        <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
+                        <viewLayoutGuide key="safeArea" id="fR5-rY-j7G"/>
+                        <color key="backgroundColor" systemColor="systemBackgroundColor"/>
+                    </view>
+                    <navigationItem key="navigationItem" id="Efr-BR-gJD"/>
+                </viewController>
+                <placeholder placeholderIdentifier="IBFirstResponder" id="O5D-sE-ia2" userLabel="First Responder" customClass="UIResponder" sceneMemberID="firstResponder"/>
+            </objects>
+            <point key="canvasLocation" x="-3836" y="1105"/>
         </scene>
         <!--채팅방 만들기-->
         <scene sceneID="5Rt-Cj-pb1">
