@@ -10,6 +10,7 @@ import FirebaseFirestore
 
 struct ChatRoom: Codable {
     
+    var id: String?
     var roomName: String                // 방 이름
     var roomDescription: String         // 방 주제 및 설명
     var participants: [UserProfile]     // 방 참여 사용자들
@@ -21,6 +22,7 @@ struct ChatRoom: Codable {
     // Firestore에 저장하기 위힌 뱐환 메서드
     func toDictionary() -> [String: Any] {
         var data: [String: Any] = [
+            "id": UUID().uuidString,
             "roomName": roomName,
             "roomDescription": roomDescription,
             "creatorID": creatorID,
@@ -39,4 +41,24 @@ struct ChatRoom: Codable {
         return data
     }
     
+}
+
+extension ChatRoom: Hashable {
+    
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+    
+    static func == (lhs: ChatRoom, rhs: ChatRoom) -> Bool {
+        return lhs.id == rhs.id
+    }
+    
+    static func < (lhs: ChatRoom, rhs: ChatRoom) -> Bool {
+        guard let lhsDate = lhs.lastMessage?.sentAt.addingTimeInterval(100),
+              let rhsDate = rhs.lastMessage?.sentAt.addingTimeInterval(100) else {
+            return false
+        }
+        
+        return lhsDate < rhsDate
+    }
 }

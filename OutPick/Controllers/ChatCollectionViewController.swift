@@ -9,10 +9,29 @@ import UIKit
 
 class ChatCollectionViewController: UICollectionViewController {
     
-    var chatRooms: [ChatRoom] = []
+    typealias DataSourceType = UICollectionViewDiffableDataSource<ViewModel.Section, ViewModel.Item>
+
+    class ViewModel {
+        enum Section: Hashable {
+            case main
+        }
+        
+        typealias Item = ChatRoom
+    }
+    
+    struct Model {
+        var chatRooms: [ChatRoom] = []
+    }
+    
+    var dataSource: DataSourceType!
+    var model = Model()
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        
+        dataSource = configureDataSource()
+        collectionView.dataSource = dataSource
+        collectionView.collectionViewLayout = configureLayout()
         
         listenForRooms()
     }
@@ -26,13 +45,49 @@ class ChatCollectionViewController: UICollectionViewController {
             }
             
             // 데이터 업데이트 시 chatRooms 배열 갱신
-            self.chatRooms = documents.compactMap{ document -> ChatRoom? in
-                try? document.data(as: ChatRoom.self)
+            self.model.chatRooms = documents.compactMap{ document -> ChatRoom? in
+                guard var chatRoom = try? document.data(as: ChatRoom.self) else { return nil}
+                chatRoom.id = document.documentID
+                return chatRoom
             }
-            print("*********Test: \(self.chatRooms)*********")
+            
+            self.updateCollectionView()
         }
+        
     }
     
+    private func updateCollectionView() {
+        let chatRoomsList = self.model.chatRooms.sorted(by: <)
+        
+        let itemBySection = [ViewModel.Section.main: chatRoomsList]
+        
+        dataSource.applySnapshotUsing(sectionIDs: [.main], itemsBySection: itemBySection)
+    }
     
+    private func configureDataSource() -> DataSourceType {
+        let dataSource = DataSourceType(collectionView: collectionView) { (collectionView, indexPath, item) in
+            let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "ChatRoom", for: indexPath) as! RoomListCollectionViewCell
+            
+            cell.roomNameLabel.text = item.roomName
+            
+            return cell
+        }
+        
+        return dataSource
+    }
+    
+    private func configureLayout() -> UICollectionViewCompositionalLayout {
+        let itemSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .fractionalHeight(1))
+        let item = NSCollectionLayoutItem(layoutSize: itemSize)
+        
+        let groupSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .fractionalHeight(0.45))
+        let group = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize, repeatingSubitem: item, count: 1)
+        
+        let section = NSCollectionLayoutSection(group: group)
+        section.interGroupSpacing = 20
+        section.contentInsets = NSDirectionalEdgeInsets(top: 20, leading: 20, bottom: 20, trailing: 20)
+        
+        return UICollectionViewCompositionalLayout(section: section)
+    }
     
 }

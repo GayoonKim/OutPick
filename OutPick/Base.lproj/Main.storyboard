@@ -223,15 +223,34 @@
                             <inset key="sectionInset" minX="0.0" minY="0.0" maxX="0.0" maxY="0.0"/>
                         </collectionViewFlowLayout>
                         <cells>
-                            <collectionViewCell opaque="NO" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="center" id="pAX-gT-Apv">
+                            <collectionViewCell opaque="NO" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="center" reuseIdentifier="ChatRoom" id="pAX-gT-Apv" customClass="RoomListCollectionViewCell" customModule="OutPick" customModuleProvider="target">
                                 <rect key="frame" x="0.0" y="0.0" width="393" height="295"/>
                                 <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMaxY="YES"/>
                                 <collectionViewCellContentView key="contentView" opaque="NO" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="center" insetsLayoutMarginsFromSafeArea="NO" id="Mvq-Je-nxa">
                                     <rect key="frame" x="0.0" y="0.0" width="393" height="295"/>
                                     <autoresizingMask key="autoresizingMask"/>
+                                    <subviews>
+                                        <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="방 이름" textAlignment="natural" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="lkd-KL-af2">
+                                            <rect key="frame" x="34.666666666666664" y="8" width="28.666666666666664" height="12"/>
+                                            <fontDescription key="fontDescription" type="boldSystem" pointSize="10"/>
+                                            <nil key="textColor"/>
+                                            <nil key="highlightedColor"/>
+                                        </label>
+                                        <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="person" catalog="system" translatesAutoresizingMaskIntoConstraints="NO" id="IYJ-bb-nP7">
+                                            <rect key="frame" x="8.0000000000000018" y="9.3333333333333304" width="18.666666666666671" height="17.666666666666657"/>
+                                        </imageView>
+                                    </subviews>
+                                    <constraints>
+                                        <constraint firstItem="IYJ-bb-nP7" firstAttribute="leading" secondItem="Mvq-Je-nxa" secondAttribute="leading" constant="8" id="1Wc-7T-1Wz"/>
+                                        <constraint firstItem="lkd-KL-af2" firstAttribute="leading" secondItem="IYJ-bb-nP7" secondAttribute="trailing" constant="8" id="LzE-Rd-STQ"/>
+                                        <constraint firstItem="lkd-KL-af2" firstAttribute="top" secondItem="Mvq-Je-nxa" secondAttribute="top" constant="8" id="bND-SY-rQc"/>
+                                        <constraint firstItem="IYJ-bb-nP7" firstAttribute="top" secondItem="Mvq-Je-nxa" secondAttribute="top" constant="8" id="gIM-0S-aQJ"/>
+                                    </constraints>
                                 </collectionViewCellContentView>
                                 <size key="customSize" width="393" height="295"/>
                                 <connections>
+                                    <outlet property="roomImageView" destination="IYJ-bb-nP7" id="5d2-8E-O8I"/>
+                                    <outlet property="roomNameLabel" destination="lkd-KL-af2" id="5ip-Ne-VBn"/>
                                     <segue destination="UDw-4m-Qed" kind="show" id="4L3-UR-qFw"/>
                                 </connections>
                             </collectionViewCell>
@@ -269,7 +288,7 @@
                 </viewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="O5D-sE-ia2" userLabel="First Responder" customClass="UIResponder" sceneMemberID="firstResponder"/>
             </objects>
-            <point key="canvasLocation" x="-3836" y="1105"/>
+            <point key="canvasLocation" x="-3970" y="1105"/>
         </scene>
         <!--채팅방 만들기-->
         <scene sceneID="5Rt-Cj-pb1">
@@ -383,7 +402,7 @@
                                     <constraint firstAttribute="trailing" secondItem="h9o-Kq-EHt" secondAttribute="trailing" id="e2B-aR-o33"/>
                                 </constraints>
                             </scrollView>
-                            <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="BEs-P8-Rwx">
+                            <button opaque="NO" contentMode="scaleToFill" enabled="NO" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="BEs-P8-Rwx">
                                 <rect key="frame" x="20" y="782" width="353" height="50"/>
                                 <fontDescription key="fontDescription" type="system" weight="light" pointSize="30"/>
                                 <inset key="imageEdgeInsets" minX="0.0" minY="0.0" maxX="2.2250738585072014e-308" maxY="0.0"/>
@@ -425,7 +444,7 @@
                 </viewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="GEq-cC-GOM" userLabel="First Responder" customClass="UIResponder" sceneMemberID="firstResponder"/>
             </objects>
-            <point key="canvasLocation" x="-3202.2900763358775" y="1104.9295774647887"/>
+            <point key="canvasLocation" x="-3277" y="1105"/>
         </scene>
         <!--Login View Controller-->
         <scene sceneID="En2-Vr-dtw">
@@ -927,6 +946,7 @@
     <resources>
         <image name="house.fill" catalog="system" width="128" height="104"/>
         <image name="kakao_login_medium_wide" width="300" height="45"/>
+        <image name="person" catalog="system" width="128" height="121"/>
         <image name="person.3.fill" catalog="system" width="128" height="66"/>
         <image name="photo" catalog="system" width="128" height="93"/>
         <image name="plus.message.fill" catalog="system" width="128" height="114"/>

@@ -216,7 +216,14 @@ class RoomCreateViewController: UIViewController, PHPickerViewControllerDelegate
                 }
             }
         }
-        
+    }
+    
+    private func enableCreateBtn() {
+        if !roomNameTextView.text.isEmpty && !roomDescriptionTextView.text.isEmpty {
+            createButton.isEnabled = true
+        } else {
+            createButton.isEnabled = false
+        }
     }
     
 }
@@ -244,6 +251,8 @@ extension RoomCreateViewController: UITextViewDelegate {
         default:
             break
         }
+        
+        enableCreateBtn()
     }
     
 }

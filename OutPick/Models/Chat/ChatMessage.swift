@@ -35,3 +35,5 @@ struct ChatMessage: Codable {
 enum MessageType: Codable {
     case Text, Image, Video
 }
+
+extension ChatMessage: Hashable {}
