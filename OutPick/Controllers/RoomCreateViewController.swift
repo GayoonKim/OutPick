@@ -20,11 +20,7 @@ class RoomCreateViewController: UIViewController, PHPickerViewControllerDelegate
     
     @IBOutlet weak var activityIndicator: UIActivityIndicatorView!
     
-    enum RoomCreationError: Error {
-        case duplicateName
-        case saveFailed
-        case imageUploadFailed
-    }
+    var roomInfo: ChatRoom?
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -178,62 +174,74 @@ class RoomCreateViewController: UIViewController, PHPickerViewControllerDelegate
     }
     
     @IBAction func createBtnTapped(_ sender: UIButton) {
-        
+
         createButton.isEnabled = false
-        activityIndicator.isHidden = false
         activityIndicator.startAnimating()
         
-        DispatchQueue.main.async {
-            self.saveRoomInfo { [weak self] result in
-                self?.activityIndicator.stopAnimating()
+        FirestoreManager.shared.checkRoomName(roomName: roomNameTextView.text) { isDuplicated, error in
+            
+            DispatchQueue.main.async {
+                self.activityIndicator.stopAnimating()
+                self.createButton.isEnabled = true
                 
-                if result {
-                    self?.performSegue(withIdentifier: "ToChatRoom", sender: nil)
-                } else {
-                    self?.showError()
-                    self?.createButton.isEnabled = true
+                if isDuplicated {
+                    self.activityIndicator.stopAnimating()
+                    self.handleDuplicateRoomName()
+                    return
                 }
+                
+                let room = ChatRoom(roomName: self.roomNameTextView.text, roomDescription: self.roomDescriptionTextView.text, participants: [UserProfile.sharedUserProfile], creatorID: UserProfile.sharedUserProfile.nickname ?? "", createdAt: Date())
+                
+                // 채팅방 화면으로 이동
+                self.performSegue(withIdentifier: "ToChatRoom", sender: room)
+                
+                // 백그라운드에서 방 정보 저장
+                self.saveRoomInfo(room: room)
             }
         }
         
     }
     
-    private func saveRoomInfo(completion: @escaping (Bool) -> Void) {
+    private func handleDuplicateRoomName() {
         
-        var roomInfo = ChatRoom(roomName: roomNameTextView.text, roomDescription: roomDescriptionTextView.text, participants: [UserProfile.sharedUserProfile], creatorID: UserProfile.sharedUserProfile.nickname ?? "", createdAt: Date())
-
-        if let image = roomImageView.image {
-            FirestoreManager.shared.uploadImage(image: image, imageName: roomInfo.roomName, type: "roomImages") { result in
-                switch result {
-                case .success(let imageURL):
-                    roomInfo.roomImageURL = imageURL
-                    self.saveRoomInfoToFirestore(room: roomInfo, completion: completion)
-                case .failure(let error):
-                    print("방 대표 이미지 저장 실패: \(error.localizedDescription)")
-                    completion(false)
-                }
-            }
-        } else {
-            self.saveRoomInfoToFirestore(room: roomInfo, completion: completion)
-        }
-        
-    }
-    
-    private func showError() {
-        let alert = UIAlertController(title: "저장 실패", message: "방 정보 저장에 실패했습니다. 다시 시도해주세요.", preferredStyle: .alert)
+        let alert = UIAlertController(title: "중복된 방 이름", message: "이미 존재하는 방 이름입니다. 다른 이름을 선택해 주세요.", preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "확인", style: .default, handler: nil))
         self.present(alert, animated: true, completion: nil)
+        
     }
     
-    private func saveRoomInfoToFirestore(room: ChatRoom, completion: @escaping (Bool) -> Void) {
+    private func saveRoomInfo(room: ChatRoom) {
+        
+        if let image = roomImageView.image {
+            uploadImageandSaveRoomInfo(image: image, roomInfo: room)
+        } else {
+            saveRoomInfoToFirestore(room: room)
+        }
+        
+    }
+    
+    private func uploadImageandSaveRoomInfo(image: UIImage, roomInfo: ChatRoom) {
+        FirestoreManager.shared.uploadImage(image: image, imageName: roomInfo.roomName, type: "roomImages") { [weak self] result in
+            guard let self = self else { return }
+            
+            switch result {
+            case .success(let imageURL):
+                var updatedRoomInfo = roomInfo
+                updatedRoomInfo.roomImageURL = imageURL
+                self.saveRoomInfoToFirestore(room: updatedRoomInfo)
+            case .failure:
+                NotificationCenter.default.post(name: .roomSaveFailed, object: nil, userInfo: ["error": RoomCreationError.imageUploadFailed])
+            }
+        }
+    }
+    
+    private func saveRoomInfoToFirestore(room: ChatRoom) {
         FirestoreManager.shared.saveRoomInfoToFirestore(room: room) { result in
             switch result {
             case .success:
-                print("방 정보 저장 성공")
-                completion(true)
-            case .failure(let error):
-                print("방 저장 실패: \(error.localizedDescription)")
-                completion(false)
+                NotificationCenter.default.post(name: .roomSavedComplete, object: nil, userInfo: ["room": room])
+            case .failure:
+                NotificationCenter.default.post(name: .roomSaveFailed, object: nil, userInfo: ["error": RoomCreationError.saveFailed])
             }
         }
     }
@@ -246,7 +254,14 @@ class RoomCreateViewController: UIViewController, PHPickerViewControllerDelegate
         }
     }
     
-    
+    override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
+        if segue.identifier == "ToChatRoom",
+           let chatRoomVC = segue.destination as? ChatViewController,
+           let tempRoomInfo = sender as? ChatRoom {
+            chatRoomVC.room = tempRoomInfo
+            chatRoomVC.isRoomSaving = true
+        }
+    }
     
 }
 
@@ -277,4 +292,9 @@ extension RoomCreateViewController: UITextViewDelegate {
         enableCreateBtn()
     }
     
+}
+
+extension Notification.Name {
+    static let roomSavedComplete = Notification.Name("roomSaveCompleted")
+    static let roomSaveFailed = Notification.Name("roomSaveFailed")
 }
