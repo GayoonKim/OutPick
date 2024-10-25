@@ -48,6 +48,7 @@ class ChatViewController: UIViewController {
         
         guard let error = notification.userInfo?["error"] as? RoomCreationError else { return }
         showAlert(error: error)
+        
     }
     
     private func showAlert(error: RoomCreationError) {
