@@ -141,4 +141,20 @@ class FirestoreManager {
         }
     }
     
+    // 방 이름 중복 검사
+    func checkRoomName(roomName: String, completion: @escaping (Bool, Error?) -> Void) {
+        db.collection("Rooms").whereField("roomName", isEqualTo: roomName).getDocuments { snapshot, error in
+            if let error = error {
+                completion(false, error)
+                return
+            }
+            
+            if let snapshot = snapshot, snapshot.isEmpty {
+                completion(false, nil) // 중복 x
+            } else {
+                completion(true, nil) // 중복 o
+            }
+        }
+    }
+    
 }
