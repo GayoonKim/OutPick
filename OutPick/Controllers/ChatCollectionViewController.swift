@@ -68,6 +68,9 @@ class ChatCollectionViewController: UICollectionViewController {
         let dataSource = DataSourceType(collectionView: collectionView) { (collectionView, indexPath, item) in
             let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "ChatRoom", for: indexPath) as! RoomListCollectionViewCell
             
+            cell.roomImageView.layer.cornerRadius = cell.roomImageView.frame.width / 2
+            cell.roomImageView.clipsToBounds =  true
+            
             cell.roomNameLabel.text = item.roomName
             
             return cell

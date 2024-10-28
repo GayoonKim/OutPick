@@ -15,6 +15,7 @@ class RoomCreateViewController: UIViewController, PHPickerViewControllerDelegate
     @IBOutlet weak var roomDescriptionTextView: UITextView!
     @IBOutlet weak var roomDescriptionCountLabel: UILabel!
     @IBOutlet weak var createButton: UIButton!
+    @IBOutlet weak var scrollView: UIScrollView!
     
     @IBOutlet weak var roomImageView: UIImageView!
     
@@ -33,6 +34,16 @@ class RoomCreateViewController: UIViewController, PHPickerViewControllerDelegate
         let backButton = UIBarButtonItem(image: UIImage(systemName: "chevron.left"), style: .plain, target: self, action: #selector(backButtonTapped))
         backButton.tintColor = .black
         self.navigationItem.leftBarButtonItem = backButton
+        
+        NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillShow), name: UIResponder.keyboardWillShowNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillHide), name: UIResponder.keyboardWillHideNotification, object: nil)
+        
+        
+    }
+    
+    deinit {
+        NotificationCenter.default.removeObserver(self, name: UIResponder.keyboardWillShowNotification, object: nil)
+        NotificationCenter.default.removeObserver(self, name: UIResponder.keyboardWillHideNotification, object: nil)
     }
     
     @objc func backButtonTapped() {
@@ -274,6 +285,11 @@ extension RoomCreateViewController: UITextViewDelegate {
         
         let updatedText = currentText.replacingCharacters(in: stringRange, with: text)
         
+        if text == "\n" {
+            textView.resignFirstResponder() // 키보드 숨기기
+            return false // 엔터 키 입력 방지
+        }
+        
         return updatedText.count <= 20
     }
     
@@ -290,6 +306,32 @@ extension RoomCreateViewController: UITextViewDelegate {
         }
         
         enableCreateBtn()
+    }
+    
+    @objc func keyboardWillShow(notification: Notification) {
+        guard roomDescriptionTextView.isFirstResponder,
+              let keyboardFrame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
+        
+        let labelFrame = roomDescriptionCountLabel.convert(roomDescriptionCountLabel.bounds, to: view)
+        
+        // 겹치는지 확인
+        if labelFrame.intersects(keyboardFrame) {
+            let keyboardHeight = keyboardFrame.height
+            let contentInsets = UIEdgeInsets(top: 0, left: 0, bottom: keyboardHeight, right: 0)
+            
+            scrollView.contentInset = contentInsets
+            scrollView.scrollIndicatorInsets = contentInsets
+            
+            // 커서 위치가 키보드 위로 올라오도록 스크롤
+            scrollView.scrollRectToVisible(labelFrame, animated: true)
+        }
+    }
+    
+    @objc func keyboardWillHide(notification: Notification) {
+        // 키보드 내려가면 초기화
+        let contentInsets = UIEdgeInsets.zero
+        scrollView.contentInset = contentInsets
+        scrollView.scrollIndicatorInsets = contentInsets
     }
     
 }

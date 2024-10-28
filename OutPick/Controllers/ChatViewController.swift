@@ -11,6 +11,8 @@ class ChatViewController: UIViewController {
     
     @IBOutlet weak var activityIndicator: UIActivityIndicatorView!
     
+    var swipeRecognizer: UISwipeGestureRecognizer!
+    
     var room: ChatRoom?
     var isRoomSaving = false
 
@@ -26,6 +28,8 @@ class ChatViewController: UIViewController {
             configureNotifications()
         }
         
+        swipeRecognizer = UISwipeGestureRecognizer(target: self, action: #selector(swipeAction(_:)))
+        self.view.addGestureRecognizer(swipeRecognizer)
     }
     
     private func configureNotifications() {
@@ -81,6 +85,12 @@ class ChatViewController: UIViewController {
         self.view.window?.makeKeyAndVisible()
     }
     
-    
+    @objc func swipeAction(_ sender: UISwipeGestureRecognizer) {
+        if sender.direction == .right {
+            let chatListVC = self.storyboard?.instantiateViewController(identifier: "ChatList") as? UINavigationController
+            self.view.window?.rootViewController = chatListVC
+            self.view.window?.makeKeyAndVisible()
+        }
+    }
 
 }
