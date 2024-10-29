@@ -199,7 +199,7 @@ class SecondProfileViewController: UIViewController, PHPickerViewControllerDeleg
             }
         }
         
-        let homeVC = self.storyboard?.instantiateViewController(identifier: "HomeVCTabBar") as? UITabBarController
+        let homeVC = self.storyboard?.instantiateViewController(identifier: "HomeTBC") as? UITabBarController
         self.view.window?.rootViewController = homeVC
         self.view.window?.makeKeyAndVisible()
     }

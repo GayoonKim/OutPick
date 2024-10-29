@@ -78,18 +78,12 @@ class ChatViewController: UIViewController {
     }
     
     @objc func backButtonTapped() {
-//        self.navigationController?.popViewController(animated: true)
-        
-        let chatListVC = self.storyboard?.instantiateViewController(identifier: "ChatList") as? UINavigationController
-        self.view.window?.rootViewController = chatListVC
-        self.view.window?.makeKeyAndVisible()
+        self.navigationController?.popToRootViewController(animated: true)
     }
     
     @objc func swipeAction(_ sender: UISwipeGestureRecognizer) {
         if sender.direction == .right {
-            let chatListVC = self.storyboard?.instantiateViewController(identifier: "ChatList") as? UINavigationController
-            self.view.window?.rootViewController = chatListVC
-            self.view.window?.makeKeyAndVisible()
+            self.navigationController?.popToRootViewController(animated: true)
         }
     }
 
