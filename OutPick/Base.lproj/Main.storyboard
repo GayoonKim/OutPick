@@ -237,7 +237,7 @@
                                             <nil key="highlightedColor"/>
                                         </label>
                                         <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="person" catalog="system" translatesAutoresizingMaskIntoConstraints="NO" id="IYJ-bb-nP7">
-                                            <rect key="frame" x="8.0000000000000018" y="9.3333333333333304" width="18.666666666666671" height="17.666666666666657"/>
+                                            <rect key="frame" x="8.0000000000000018" y="9.3333333333333304" width="18.666666666666671" height="17.666666666666671"/>
                                         </imageView>
                                     </subviews>
                                     <constraints>
@@ -293,14 +293,14 @@
                             <constraint firstItem="g9k-2I-R88" firstAttribute="centerX" secondItem="eWn-8t-hw8" secondAttribute="centerX" id="DK9-OM-7qS"/>
                         </constraints>
                     </view>
-                    <navigationItem key="navigationItem" id="Efr-BR-gJD"/>
+                    <navigationItem key="navigationItem" largeTitleDisplayMode="never" id="Efr-BR-gJD"/>
                     <connections>
                         <outlet property="activityIndicator" destination="g9k-2I-R88" id="dJb-Fl-iPc"/>
                     </connections>
                 </viewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="O5D-sE-ia2" userLabel="First Responder" customClass="UIResponder" sceneMemberID="firstResponder"/>
             </objects>
-            <point key="canvasLocation" x="-3970" y="1105"/>
+            <point key="canvasLocation" x="-4202" y="1265"/>
         </scene>
         <!--채팅방 만들기-->
         <scene sceneID="5Rt-Cj-pb1">
@@ -477,7 +477,7 @@
         <!--Login View Controller-->
         <scene sceneID="En2-Vr-dtw">
             <objects>
-                <viewController id="rst-5j-P7T" customClass="LoginViewController" customModule="OutPick" customModuleProvider="target" sceneMemberID="viewController">
+                <viewController storyboardIdentifier="LoginVC" useStoryboardIdentifierAsRestorationIdentifier="YES" id="rst-5j-P7T" customClass="LoginViewController" customModule="OutPick" customModuleProvider="target" sceneMemberID="viewController">
                     <view key="view" contentMode="scaleToFill" id="6Ww-oT-ey0">
                         <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
@@ -792,7 +792,7 @@
         <!--Tab Bar Controller-->
         <scene sceneID="ZQS-A1-iHy">
             <objects>
-                <tabBarController storyboardIdentifier="HomeVCTabBar" useStoryboardIdentifierAsRestorationIdentifier="YES" id="Xg2-pS-8yD" sceneMemberID="viewController">
+                <tabBarController storyboardIdentifier="HomeTBC" useStoryboardIdentifierAsRestorationIdentifier="YES" id="Xg2-pS-8yD" sceneMemberID="viewController">
                     <navigationItem key="navigationItem" id="yPZ-lu-95x"/>
                     <tabBar key="tabBar" contentMode="scaleToFill" insetsLayoutMarginsFromSafeArea="NO" id="1GF-JV-DRY">
                         <rect key="frame" x="0.0" y="0.0" width="393" height="49"/>

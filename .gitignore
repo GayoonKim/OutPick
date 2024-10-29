@@ -2,3 +2,4 @@ Secret.xcconfig
 OutPick.xcodeproj
 OutPick.xcworkspace
 GoogleService-Info.plist
+AppDelegate.swift

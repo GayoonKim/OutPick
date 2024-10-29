@@ -2,15 +2,13 @@
 //  RoomCreationError.swift
 //  OutPick
 //
-//  Created by 김가윤 on 10/23/24.
+//  Created by 김가윤 on 10/25/24.
 //
 
-import UIKit
+import Foundation
 
 enum RoomCreationError: Error {
     case duplicateName
     case saveFailed
     case imageUploadFailed
 }
-
-
