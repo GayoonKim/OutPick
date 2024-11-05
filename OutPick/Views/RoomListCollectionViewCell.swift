@@ -10,4 +10,6 @@ import UIKit
 class RoomListCollectionViewCell: UICollectionViewCell {
     @IBOutlet weak var roomImageView: UIImageView!
     @IBOutlet weak var roomNameLabel: UILabel!
+    @IBOutlet weak var roomDescriptionLabel: UILabel!
+    
 }

@@ -33,31 +33,19 @@ class ChatCollectionViewController: UICollectionViewController {
         collectionView.dataSource = dataSource
         collectionView.collectionViewLayout = configureLayout()
         
-        listenForRooms()
+        NotificationCenter.default.addObserver(self, selector: #selector(chatRoomsUpdated), name: .chatRoomsUpdated, object: nil)
+        self.updateCollectionView()
     }
-
-    // Firestore에 저장된 모든 오픈 채팅 목록 불러오는 함수
-    private func listenForRooms() {
-        FirestoreManager.shared.db.collection("Rooms").addSnapshotListener{ querySnapshot, error in
-            guard let documents = querySnapshot?.documents else {
-                print("Documents 불러오기 실패: \(error!)")
-                return
-            }
-            
-            // 데이터 업데이트 시 chatRooms 배열 갱신
-            self.model.chatRooms = documents.compactMap{ document -> ChatRoom? in
-                guard var chatRoom = try? document.data(as: ChatRoom.self) else { return nil}
-                chatRoom.id = document.documentID
-                return chatRoom
-            }
-            
+    
+    @objc private func chatRoomsUpdated(notification: Notification) {
+        // UI 업데이트
+        DispatchQueue.main.async {
             self.updateCollectionView()
         }
-        
     }
     
     private func updateCollectionView() {
-        let chatRoomsList = self.model.chatRooms.sorted(by: <)
+        let chatRoomsList = FirestoreManager.shared.currentChatRooms.sorted(by: <)
         
         let itemBySection = [ViewModel.Section.main: chatRoomsList]
         
@@ -68,10 +56,21 @@ class ChatCollectionViewController: UICollectionViewController {
         let dataSource = DataSourceType(collectionView: collectionView) { (collectionView, indexPath, item) in
             let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "ChatRoom", for: indexPath) as! RoomListCollectionViewCell
             
-            cell.roomImageView.layer.cornerRadius = cell.roomImageView.frame.width / 2
             cell.roomImageView.clipsToBounds =  true
+            cell.roomImageView.layer.cornerRadius = 10
+            
+            // 메인 스레드에서 이미지 로딩
+            FirestoreManager.shared.fetchImageFromStorage(.Room, name: item.roomName) { image in
+                DispatchQueue.main.async {
+                    if let image = image {
+                        cell.roomImageView.image = image
+                    }
+                }
+            }
             
             cell.roomNameLabel.text = item.roomName
+            cell.roomDescriptionLabel.text = item.roomDescription
+            
             
             return cell
         }

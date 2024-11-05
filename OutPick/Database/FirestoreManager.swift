@@ -11,11 +11,32 @@ import FirebaseStorage
 
 class FirestoreManager {
     
+    // 이미지 타입
+    enum Imagetype: CaseIterable {
+        case Room
+        case Profile
+    }
+    
+    private init() {}
+    
     // FirestoreManager의 싱글톤 인스턴스
     static let shared = FirestoreManager()
     
     // Firestore 인스턴스
     let db = Firestore.firestore()
+    
+    // Storage 인스턴스
+    let storage = Storage.storage()
+    
+    
+    // 채팅방 목록
+    private var chatRooms: [ChatRoom] = []
+    private var roomsListener: ListenerRegistration?
+    
+    // 채팅방 읽기 전용 접근자 제공
+    var currentChatRooms: [ChatRoom] {
+        return chatRooms
+    }
     
     // Firebase Firestore에 UserProfile 객체 저장
     func saveUserProfileToFirestore(userProfile: UserProfile, email: String, completion: @escaping (Error?) -> Void) {
@@ -53,10 +74,13 @@ class FirestoreManager {
     
     // Firebase Storage에 프로필 사진 저장 후 URL 반환 함수
     func uploadImage(image: UIImage, imageName: String, type: String, completion: @escaping (Result<String, Error>) -> Void) {
-        let storageRef = Storage.storage().reference()
+        let storageRef = storage.reference()
         let imageRef = storageRef.child("\(type)/\(imageName).jpg")
         
-        guard let imageData = image.jpegData(compressionQuality: 0.8) else {
+        // 이미지 크기 조정
+        let resizedImage = image.resized(withMaxWidth: 700)
+        
+        guard let imageData = resizedImage.jpegData(compressionQuality: 0.6) else {
             completion(.failure(NSError(domain: "ImageConversion", code: -1, userInfo: nil)))
             return
         }
@@ -157,4 +181,90 @@ class FirestoreManager {
         }
     }
     
+    // Storage에서 이미지 불러오기
+    func fetchImageFromStorage(_ type: Imagetype, name: String, completion: @escaping (UIImage?) -> Void) {
+        // 캐시된 이미지 확인
+        let cacheKey = NSString(string: "\(type)_\(name)")
+        if let cachedImage = ImageCacheManager.shared.object(forKey: cacheKey) {
+            print("*************************cachedImage: \(cachedImage)")
+            completion(cachedImage)
+            return
+        }
+        
+        switch type {
+        case .Room:
+            let storageRef = storage.reference()
+            let imageRef = storageRef.child("roomImages/\(name).jpg")
+            
+            imageRef.getData(maxSize: 1 * 1024 * 1024) { data, error in
+                if let error = error {
+                    print("이미지 불러오기 실패.: \(error)")
+                    completion(UIImage(systemName: "photo.artframe"))
+                } else if let data = data, let image = UIImage(data: data) {
+                    // 이미지 캐시에 저장
+                    ImageCacheManager.shared.setObject(image, forKey: cacheKey)
+                    completion(image)
+                } else {
+                    completion(UIImage(systemName: "photo.artframe"))
+                }
+            }
+        case .Profile:
+            completion(nil)
+        }
+    }
+    
+    // 실시간 채팅방 리스너 설정
+    func listenForChatRooms(completion: @escaping ([ChatRoom]) -> Void) {
+        // 기존 리스너 있으면 제거
+        roomsListener?.remove()
+        
+        roomsListener = db.collection("Rooms").addSnapshotListener { [weak self] snapshot, error in
+            guard let self = self,
+                  let documents = snapshot?.documents else {
+                print("채팅방 목록 불러오기 실패: \(error?.localizedDescription ?? "Unknown error")")
+                return
+            }
+            
+            self.chatRooms = documents.compactMap { document -> ChatRoom? in
+                guard var chatRoom = try? document.data(as: ChatRoom.self) else { return nil}
+                chatRoom.id = document.documentID
+                
+                // 채팅방 대표 이미지 미리 캐시
+                self.fetchImageFromStorage(.Room, name: chatRoom.roomName) { _ in }
+                
+                return chatRoom
+            }
+            
+            
+            // UI 업데이트를 위한 노티피케이션 발송
+            NotificationCenter.default.post(name: .chatRoomsUpdated, object: nil, userInfo: ["rooms": self.chatRooms])
+            
+            completion(self.chatRooms)
+        }
+
+    }
+    
+    // 채팅방 리스너 제거
+    func removeChatRoomsListener() {
+        roomsListener?.remove()
+        roomsListener = nil
+    }
+    
+}
+
+
+extension UIImage {
+    func resized(withMaxWidth maxWidth: CGFloat) -> UIImage {
+        let aspectRatio = size.height / size.width
+        let newSize = CGSize(width: min(maxWidth, size.width), height: min(maxWidth, size.width) * aspectRatio)
+        
+        let renderer = UIGraphicsImageRenderer(size: newSize)
+        return renderer.image { _ in
+            self.draw(in: CGRect(origin: .zero, size: newSize))
+        }
+    }
+}
+
+extension Notification.Name {
+    static let chatRoomsUpdated = Notification.Name("chatRoomsUpdated")
 }

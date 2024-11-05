@@ -7,7 +7,7 @@
 
 import UIKit
 
-struct UserProfile: Codable {
+class UserProfile: Codable {
     
     static var sharedUserProfile = UserProfile()
     

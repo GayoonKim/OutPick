@@ -230,25 +230,40 @@
                                     <rect key="frame" x="0.0" y="0.0" width="393" height="295"/>
                                     <autoresizingMask key="autoresizingMask"/>
                                     <subviews>
-                                        <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="방 이름" textAlignment="natural" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="lkd-KL-af2">
-                                            <rect key="frame" x="34.666666666666664" y="8" width="28.666666666666664" height="12"/>
-                                            <fontDescription key="fontDescription" type="boldSystem" pointSize="10"/>
+                                        <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="photo.artframe" catalog="system" translatesAutoresizingMaskIntoConstraints="NO" id="IYJ-bb-nP7">
+                                            <rect key="frame" x="0.0" y="1.6666666666666643" width="35" height="32"/>
+                                            <constraints>
+                                                <constraint firstAttribute="height" constant="35" id="3h6-fs-0OK"/>
+                                                <constraint firstAttribute="width" constant="35" id="RIw-7l-AE7"/>
+                                            </constraints>
+                                        </imageView>
+                                        <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="방 설명" textAlignment="natural" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="Wqb-Ws-HD3">
+                                            <rect key="frame" x="0.0" y="36.666666666666664" width="393" height="12"/>
+                                            <fontDescription key="fontDescription" type="system" weight="light" pointSize="10"/>
                                             <nil key="textColor"/>
                                             <nil key="highlightedColor"/>
                                         </label>
-                                        <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="person" catalog="system" translatesAutoresizingMaskIntoConstraints="NO" id="IYJ-bb-nP7">
-                                            <rect key="frame" x="8.0000000000000018" y="9.3333333333333304" width="18.666666666666671" height="17.666666666666671"/>
-                                        </imageView>
+                                        <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="방 이름" textAlignment="natural" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="lkd-KL-af2">
+                                            <rect key="frame" x="45" y="8.6666666666666643" width="43" height="18"/>
+                                            <fontDescription key="fontDescription" type="system" weight="semibold" pointSize="15"/>
+                                            <nil key="textColor"/>
+                                            <nil key="highlightedColor"/>
+                                        </label>
                                     </subviews>
                                     <constraints>
-                                        <constraint firstItem="IYJ-bb-nP7" firstAttribute="leading" secondItem="Mvq-Je-nxa" secondAttribute="leading" constant="8" id="1Wc-7T-1Wz"/>
-                                        <constraint firstItem="lkd-KL-af2" firstAttribute="leading" secondItem="IYJ-bb-nP7" secondAttribute="trailing" constant="8" id="LzE-Rd-STQ"/>
-                                        <constraint firstItem="lkd-KL-af2" firstAttribute="top" secondItem="Mvq-Je-nxa" secondAttribute="top" constant="8" id="bND-SY-rQc"/>
-                                        <constraint firstItem="IYJ-bb-nP7" firstAttribute="top" secondItem="Mvq-Je-nxa" secondAttribute="top" constant="8" id="gIM-0S-aQJ"/>
+                                        <constraint firstItem="Wqb-Ws-HD3" firstAttribute="leading" secondItem="Mvq-Je-nxa" secondAttribute="leading" id="7no-Jb-Zyy"/>
+                                        <constraint firstItem="lkd-KL-af2" firstAttribute="centerY" secondItem="IYJ-bb-nP7" secondAttribute="centerY" id="EbV-CU-kue"/>
+                                        <constraint firstAttribute="trailing" relation="greaterThanOrEqual" secondItem="lkd-KL-af2" secondAttribute="trailing" constant="20" symbolic="YES" id="LL6-Uf-zdx"/>
+                                        <constraint firstAttribute="trailing" secondItem="Wqb-Ws-HD3" secondAttribute="trailing" id="UNm-Ry-X1M"/>
+                                        <constraint firstItem="IYJ-bb-nP7" firstAttribute="top" secondItem="Mvq-Je-nxa" secondAttribute="top" id="XVK-Rz-BRq"/>
+                                        <constraint firstItem="Wqb-Ws-HD3" firstAttribute="top" secondItem="lkd-KL-af2" secondAttribute="bottom" constant="10" id="lAC-T7-sRA"/>
+                                        <constraint firstItem="IYJ-bb-nP7" firstAttribute="leading" secondItem="Mvq-Je-nxa" secondAttribute="leading" id="sNE-lO-9Dd"/>
+                                        <constraint firstItem="lkd-KL-af2" firstAttribute="leading" secondItem="IYJ-bb-nP7" secondAttribute="trailing" constant="10" id="spv-nd-lmU"/>
                                     </constraints>
                                 </collectionViewCellContentView>
                                 <size key="customSize" width="393" height="295"/>
                                 <connections>
+                                    <outlet property="roomDescriptionLabel" destination="Wqb-Ws-HD3" id="lqz-In-1cG"/>
                                     <outlet property="roomImageView" destination="IYJ-bb-nP7" id="5d2-8E-O8I"/>
                                     <outlet property="roomNameLabel" destination="lkd-KL-af2" id="5ip-Ne-VBn"/>
                                     <segue destination="UDw-4m-Qed" kind="show" id="4L3-UR-qFw"/>
@@ -300,7 +315,7 @@
                 </viewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="O5D-sE-ia2" userLabel="First Responder" customClass="UIResponder" sceneMemberID="firstResponder"/>
             </objects>
-            <point key="canvasLocation" x="-4202" y="1265"/>
+            <point key="canvasLocation" x="-3940" y="1105"/>
         </scene>
         <!--채팅방 만들기-->
         <scene sceneID="5Rt-Cj-pb1">
@@ -972,14 +987,14 @@
         </scene>
     </scenes>
     <inferredMetricsTieBreakers>
-        <segue reference="4L3-UR-qFw"/>
+        <segue reference="efJ-0s-BGe"/>
     </inferredMetricsTieBreakers>
     <resources>
         <image name="house.fill" catalog="system" width="128" height="104"/>
         <image name="kakao_login_medium_wide" width="300" height="45"/>
-        <image name="person" catalog="system" width="128" height="121"/>
         <image name="person.3.fill" catalog="system" width="128" height="66"/>
         <image name="photo" catalog="system" width="128" height="93"/>
+        <image name="photo.artframe" catalog="system" width="128" height="93"/>
         <image name="plus.message.fill" catalog="system" width="128" height="114"/>
         <systemColor name="labelColor">
             <color white="0.0" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>

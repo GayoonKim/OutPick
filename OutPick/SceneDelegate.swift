@@ -65,6 +65,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // Called as the scene transitions from the foreground to the background.
         // Use this method to save data, release shared resources, and store enough scene-specific state information
         // to restore the scene back to its current state.
+        FirestoreManager.shared.removeChatRoomsListener()
     }
     
 
@@ -84,6 +85,11 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 } else {
                     // 유효한 토큰, 자동 로그인 상태 유지
                     print("이미 로그인 상태.")
+                    
+                    // 실시간으로 채팅방 목록 감지
+                    FirestoreManager.shared.listenForChatRooms { rooms in
+                        print("채팅방 목록 수: \(rooms.count)")
+                    }
                     
                     self.kakaoLoginManager.getEmail { email in
                         guard let email = email else {
