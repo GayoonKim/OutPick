@@ -201,7 +201,7 @@ class RoomCreateViewController: UIViewController, PHPickerViewControllerDelegate
                     return
                 }
                 
-                let room = ChatRoom(roomName: self.roomNameTextView.text, roomDescription: self.roomDescriptionTextView.text, participants: [UserProfile.sharedUserProfile], creatorID: UserProfile.sharedUserProfile.nickname ?? "", createdAt: Date())
+                let room = ChatRoom(roomName: self.roomNameTextView.text, roomDescription: self.roomDescriptionTextView.text, participants: [UserProfile.sharedUserProfile], creatorID: UserProfile.sharedUserProfile.nickname ?? "", createdAt: Date(), roomImageURL: nil)
                 
                 // 채팅방 화면으로 이동
                 self.performSegue(withIdentifier: "ToChatRoom", sender: room)

@@ -182,7 +182,7 @@ class SecondProfileViewController: UIViewController, PHPickerViewControllerDeleg
     @IBAction func completeButtonTapped(_ sender: UIButton) {
         
         if let nickname = nicknameTextField.text {
-            profile?.nickname = nickname
+            UserProfile.sharedUserProfile.nickname = nickname
         }
         
         UserApi.shared.me() {(user, error) in
@@ -192,10 +192,9 @@ class SecondProfileViewController: UIViewController, PHPickerViewControllerDeleg
                 print("me() 성공")
                 
                 // 사용자 이메일 불러오기
-                guard let userEmail = user?.kakaoAccount?.email,
-                      let userProfile = self.profile else { return }
+                guard let userEmail = user?.kakaoAccount?.email else { return }
 
-                self.saveUserProfile(userProfile: userProfile, email: userEmail)
+                self.saveUserProfile(userProfile: UserProfile.sharedUserProfile, email: userEmail)
             }
         }
         
@@ -223,7 +222,7 @@ class SecondProfileViewController: UIViewController, PHPickerViewControllerDeleg
                 FirestoreManager.shared.uploadImage(image: image, imageName: email, type: "profileImages") { result in
                     switch result {
                     case .success(let imageURL):
-                        let userProfile = UserProfile(gender: userProfile.gender, birthdate: userProfile.birthdate, nickname: userProfile.nickname, profileImageURL: imageURL, joinedRooms: userProfile.joinedRooms)
+                        userProfile.profileImageURL = imageURL
                         FirestoreManager.shared.saveUserProfileToFirestore(userProfile: userProfile, email: email) { error in
                             if let error = error {
                                 print("Failed to save user profile: \(error.localizedDescription)")
@@ -236,7 +235,7 @@ class SecondProfileViewController: UIViewController, PHPickerViewControllerDeleg
                     }
                 }
             } else {
-                let userProfile = UserProfile(gender: userProfile.gender, birthdate: userProfile.birthdate, nickname: userProfile.nickname, profileImageURL: nil)
+                userProfile.profileImageURL = nil
                 FirestoreManager.shared.saveUserProfileToFirestore(userProfile: userProfile, email: email) { error in
                     if let error = error {
                         print("Failed to save user profile: \(error.localizedDescription)")

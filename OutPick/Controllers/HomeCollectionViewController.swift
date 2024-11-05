@@ -97,27 +97,17 @@ class HomeCollectionViewController: UICollectionViewController {
         locationManager.delegate = self
         locationManager.desiredAccuracy = kCLLocationAccuracyBest
         locationManager.distanceFilter = 100.0
-        locationManager.startUpdatingLocation()
         
         dataSource = createDataSource()
         collectionView.dataSource = dataSource
         collectionView.collectionViewLayout = createLayout()
         
-        guard let lat = locationManager.location?.coordinate.latitude,
-              let lon = locationManager.location?.coordinate.longitude else {return}
+        // 위치 정보 업데이트 시작
+        locationManager.startUpdatingLocation()
         
-        currentWeatherRequestTask?.cancel()
-        currentWeatherRequestTask = Task {
-            if let currentWeatherInfo = try? await CurrentWeatherRequest(lat: lat, lon: lon).sendWeatherRequest() {
-                model.currentWeatherModel = currentWeatherInfo
-                updateCollectionView()
-            } else {
-                model.currentWeatherModel = nil
-            }
-            updateCollectionView()
-            currentWeatherRequestTask = nil
+        if let location = locationManager.location {
+            update(location.coordinate.latitude, location.coordinate.longitude)
         }
-        
     }
     
     override func collectionView(_ collectionView: UICollectionView, didEndDisplaying cell: UICollectionViewCell, forItemAt indexPath: IndexPath) {
@@ -128,7 +118,23 @@ class HomeCollectionViewController: UICollectionViewController {
     //MARK: OpenWeather API로 데이터 불러오기
     func update(_ lat: Double, _ lon: Double) {
         
+        // 기존 작업 취소
+        currentWeatherRequestTask?.cancel()
         weatherForecastRequestTask?.cancel()
+        
+        // 현재 날씨 요청
+        currentWeatherRequestTask = Task {
+            if let currentWeatherInfo = try? await CurrentWeatherRequest(lat: lat, lon: lon).sendWeatherRequest() {
+                model.currentWeatherModel = currentWeatherInfo
+                updateCollectionView()
+            } else {
+                model.currentWeatherModel = nil
+            }
+//            updateCollectionView()
+            currentWeatherRequestTask = nil
+        }
+        
+        // 날씨 예보 요청
         weatherForecastRequestTask = Task {
             if let weatherForecastInfo = try? await WeatherForecastRequest(lat: lat, lon: lon).sendWeatherRequest() {
                 self.model.hourlyForecastModel = weatherForecastInfo.hourly
@@ -137,9 +143,11 @@ class HomeCollectionViewController: UICollectionViewController {
             } else {
                 self.model.hourlyForecastModel = []
             }
-            self.updateCollectionView()
+//            self.updateCollectionView()
             weatherForecastRequestTask = nil
         }
+        
+        getCityName()
     }
     
     //MARK: Snapshot을 통해 view model 설정, snapshot 생성하고 diffable data source에 등록
@@ -379,10 +387,12 @@ extension HomeCollectionViewController: CLLocationManagerDelegate {
     
     // 위치 데이터 불러오기 성공 시 호출
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard let coor = locations.last?.coordinate else {return}
+        guard let location = locations.last else {return}
 
-        update(coor.latitude, coor.longitude)
-        getCityName()
+        update(location.coordinate.latitude, location.coordinate.longitude)
+        
+        // 위치 업데이트 중단 (배터리 절약)
+        manager.stopUpdatingLocation()
     }
     
     // 위치 데이터 불러오기 실패 시 호출
