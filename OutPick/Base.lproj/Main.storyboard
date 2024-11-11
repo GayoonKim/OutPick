@@ -29,7 +29,7 @@
             </objects>
             <point key="canvasLocation" x="-4416" y="-338"/>
         </scene>
-        <!--홈-->
+        <!--날씨-->
         <scene sceneID="S3S-Ay-0XO">
             <objects>
                 <collectionViewController id="T43-zg-hFW" customClass="HomeCollectionViewController" customModule="OutPick" customModuleProvider="target" sceneMemberID="viewController">
@@ -184,7 +184,7 @@
                             <outlet property="delegate" destination="T43-zg-hFW" id="A1E-Nm-RhI"/>
                         </connections>
                     </collectionView>
-                    <tabBarItem key="tabBarItem" title="홈" image="house.fill" catalog="system" id="BId-67-C5i"/>
+                    <tabBarItem key="tabBarItem" title="날씨" image="sun.min" catalog="system" id="BId-67-C5i"/>
                     <navigationItem key="navigationItem" id="yuY-sy-QYy"/>
                 </collectionViewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="Gj8-YM-wtU" userLabel="First Responder" customClass="UIResponder" sceneMemberID="firstResponder"/>
@@ -987,15 +987,15 @@
         </scene>
     </scenes>
     <inferredMetricsTieBreakers>
-        <segue reference="efJ-0s-BGe"/>
+        <segue reference="4L3-UR-qFw"/>
     </inferredMetricsTieBreakers>
     <resources>
-        <image name="house.fill" catalog="system" width="128" height="104"/>
         <image name="kakao_login_medium_wide" width="300" height="45"/>
         <image name="person.3.fill" catalog="system" width="128" height="66"/>
         <image name="photo" catalog="system" width="128" height="93"/>
         <image name="photo.artframe" catalog="system" width="128" height="93"/>
         <image name="plus.message.fill" catalog="system" width="128" height="114"/>
+        <image name="sun.min" catalog="system" width="128" height="123"/>
         <systemColor name="labelColor">
             <color white="0.0" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
         </systemColor>

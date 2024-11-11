@@ -9,11 +9,14 @@ import UIKit
 import KakaoSDKCommon
 import KakaoSDKAuth
 import KakaoSDKUser
+import CoreLocation
 
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     var window: UIWindow?
     let kakaoLoginManager = KakaoLoginManager()
+    
+    private let locationManager = CLLocationManager()
 
     func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
         if let url = URLContexts.first?.url {
@@ -36,6 +39,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         window?.rootViewController = initialViewController
         window?.makeKeyAndVisible()
         
+        WeatherAPIManager.shared.startLocationUpdates()
+        
         checkKakaoLogin()
     }
 
@@ -44,11 +49,13 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // This occurs shortly after the scene enters the background, or when its session is discarded.
         // Release any resources associated with this scene that can be re-created the next time the scene connects.
         // The scene may re-connect later, as its session was not necessarily discarded (see `application:didDiscardSceneSessions` instead).
+        
     }
 
     func sceneDidBecomeActive(_ scene: UIScene) {
         // Called when the scene has moved from an inactive state to an active state.
         // Use this method to restart any tasks that were paused (or not yet started) when the scene was inactive.
+        
     }
 
     func sceneWillResignActive(_ scene: UIScene) {
@@ -59,16 +66,17 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     func sceneWillEnterForeground(_ scene: UIScene) {
         // Called as the scene transitions from the background to the foreground.
         // Use this method to undo the changes made on entering the background.
+        
     }
 
     func sceneDidEnterBackground(_ scene: UIScene) {
         // Called as the scene transitions from the foreground to the background.
         // Use this method to save data, release shared resources, and store enough scene-specific state information
         // to restore the scene back to its current state.
-        FirestoreManager.shared.removeChatRoomsListener()
+
     }
     
-
+    // 카카오 로그인 여부 확인
     private func checkKakaoLogin() {
         if AuthApi.hasToken() {
             UserApi.shared.accessTokenInfo { (_, error) in
@@ -91,12 +99,15 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                         print("채팅방 목록 수: \(rooms.count)")
                     }
                     
+                    
+                    // 사용자 이메일 불러오기
                     self.kakaoLoginManager.getEmail { email in
                         guard let email = email else {
                             self.showLoginViewController()
                             return
                         }
                         
+                        // 이메일을 통해 프로필 불러오기
                         self.kakaoLoginManager.fetchUserProfile(email) { screen in
                             DispatchQueue.main.async {
                                 self.window?.rootViewController = screen
@@ -121,4 +132,3 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
     
 }
-

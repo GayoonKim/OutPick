@@ -235,7 +235,6 @@ class FirestoreManager {
                 return chatRoom
             }
             
-            
             // UI 업데이트를 위한 노티피케이션 발송
             NotificationCenter.default.post(name: .chatRoomsUpdated, object: nil, userInfo: ["rooms": self.chatRooms])
             
