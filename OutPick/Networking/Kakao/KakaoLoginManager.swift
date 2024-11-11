@@ -59,4 +59,6 @@ class KakaoLoginManager {
         }
     }
     
+    
+    
 }

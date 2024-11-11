@@ -44,7 +44,6 @@ class ChatViewController: UIViewController {
         self.room = savedRoom
         
         guard let room = self.room else { return }
-        print("******테스트 성공******: \(room)")
     }
     
     @objc private func handleRoomSaveFailed(notification: Notification) {

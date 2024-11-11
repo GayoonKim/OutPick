@@ -70,19 +70,6 @@ class LoginViewController: UIViewController {
 
                     self.dismiss(animated: true) {
                         //do something
-//                        UserApi.shared.me() {(user, error) in
-//                            if let error = error {
-//                                print(error)
-//                            } else {
-//                                print("me() 성공")
-//                                
-//                                // 사용자 이메일로 프로필 설정 여부 확인
-//                                guard let userEmail = user?.kakaoAccount?.email else { return }
-//
-//                                self.fetchUserProfile(userEmail)
-//                            }
-//                        }
-                        
                         self.kakaoLoginManager.getEmail { email in
                             guard let email = email else {
                                 return
@@ -107,20 +94,6 @@ class LoginViewController: UIViewController {
                     
                     self.dismiss(animated: true) {
                         //do something
-                        
-                        // 프로필 설정 여부 확인을 위한 이메일 불러오기
-//                        UserApi.shared.me() {(user, error) in
-//                            if let error = error {
-//                                print(error)
-//                            } else {
-//                                print("me() 성공")
-//                                
-//                                // 사용자 이메일로 프로필 설정 여부 확인
-//                                guard let userEmail = user?.kakaoAccount?.email else { return }
-//                                self.fetchUserProfile(userEmail)
-//                            }
-//                        }
-                        
                         self.kakaoLoginManager.getEmail { email in
                             guard let email = email else {
                                 return
