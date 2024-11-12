@@ -8,18 +8,6 @@
 import UIKit
 import CoreLocation
 
-@MainActor
-class SeparatorView: UICollectionReusableView {
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        self.backgroundColor = .lightGray
-    }
-    
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-}
-
 class HomeCollectionViewController: UICollectionViewController {
     
     static let shared = HomeCollectionViewController()
@@ -192,7 +180,7 @@ class HomeCollectionViewController: UICollectionViewController {
                 }
                 
                 cell.tempMinMaxLabel.text = "\(String(format: "%.0f", temp.min))° ~ \(String(format: "%.0f", temp.max))°"
-                
+
                 return cell
             }
         }
@@ -203,6 +191,7 @@ class HomeCollectionViewController: UICollectionViewController {
     //MARK: 컬렉션 뷰 compositional 레이아웃 구성
     func createLayout() -> UICollectionViewCompositionalLayout {
         let layout = UICollectionViewCompositionalLayout { (sectionIndex, environment) -> NSCollectionLayoutSection? in
+
             switch self.dataSource.snapshot().sectionIdentifiers[sectionIndex] {
             case .currentWeatherSection:
                 let currentWeatherItemSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .estimated(200))
@@ -214,11 +203,10 @@ class HomeCollectionViewController: UICollectionViewController {
                 let currentWeatherSection = NSCollectionLayoutSection(group: currentWeatherGroup)
                 currentWeatherSection.interGroupSpacing = 20
                 currentWeatherItem.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0)
-                
+
                 return currentWeatherSection
                 
             case .hourlyForecastSection:
-
                 let hourlyForecastItemSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(0.19), heightDimension: .fractionalHeight(1))
                 let hourlyForecastItem = NSCollectionLayoutItem(layoutSize: hourlyForecastItemSize)
                     
@@ -226,9 +214,13 @@ class HomeCollectionViewController: UICollectionViewController {
                 let hourlyForecastGroup = NSCollectionLayoutGroup.horizontal(layoutSize: hourlyForecastGroupSize, repeatingSubitem: hourlyForecastItem, count: 5)
                 
                 let hourlyForecastSection = NSCollectionLayoutSection(group: hourlyForecastGroup)
-                hourlyForecastSection.orthogonalScrollingBehavior = .continuousGroupLeadingBoundary
+                hourlyForecastSection.orthogonalScrollingBehavior = .continuous
                 hourlyForecastSection.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 10)
                 
+                let sectionBackgroundDecoration = NSCollectionLayoutDecorationItem.background(elementKind: "background")
+                sectionBackgroundDecoration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 10)
+                hourlyForecastSection.decorationItems = [sectionBackgroundDecoration]
+
                 return hourlyForecastSection
                 
             case .dailyForecastSection:
@@ -236,14 +228,21 @@ class HomeCollectionViewController: UICollectionViewController {
                 let dailyForecastItem = NSCollectionLayoutItem(layoutSize: dailyForecastItemSize)
                 
                 let dailyForecastGroupSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .fractionalHeight(0.33))
-                let dailyForecastGroup = NSCollectionLayoutGroup.vertical(layoutSize: dailyForecastGroupSize, repeatingSubitem: dailyForecastItem, count: self.model.dailyForecastModel.count)
+                let dailyForecastGroup = NSCollectionLayoutGroup.vertical(layoutSize: dailyForecastGroupSize, subitems: [dailyForecastItem])
                 
                 let dailyForecastSection = NSCollectionLayoutSection(group: dailyForecastGroup)
-                dailyForecastSection.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 10, bottom: 10, trailing: 10)
+                dailyForecastSection.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 10, bottom: 0, trailing: 10)
+                
+                let sectionBackgroundDecoration = NSCollectionLayoutDecorationItem.background(elementKind: "background")
+                sectionBackgroundDecoration.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 10, bottom: 0, trailing: 10)
+                dailyForecastSection.decorationItems = [sectionBackgroundDecoration]
+                
 
                 return dailyForecastSection
             }
         }
+        
+        layout.register(BackgroundDecorationView.self, forDecorationViewOfKind: "background")
         return layout
     }
     
@@ -281,21 +280,38 @@ class HomeCollectionViewController: UICollectionViewController {
         }
     }
     
+    private func compareDateWithoutTime(_ date: Date) -> Bool {
+        let calendar = Calendar.current
+        let today = Date()
+        
+        // 오늘 날짜와 비교 (시간은 제외)
+        let currentComponents = calendar.dateComponents([.year, .month, .day], from: today)
+        let dateComponents = calendar.dateComponents([.year, .month, .day], from: date)
+        
+        return currentComponents.year == dateComponents.year &&
+               currentComponents.month == dateComponents.month &&
+               currentComponents.day == dateComponents.day
+    }
+    
     private func getDay(_ time: TimeInterval) -> String {
-        let date = Date(timeIntervalSince1970: time)
+        let unixTime: TimeInterval = time
+        
+        let date = Date(timeIntervalSince1970: unixTime)
         
         let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "E"
+        dateFormatter.dateFormat = "yyyy-MM-dd"
         dateFormatter.locale = Locale(identifier: "ko_KR")
         
-        let formattedDate = dateFormatter.string(from: date)
-        
-        if formattedDate == dateFormatter.string(from: Date()) {
+        if compareDateWithoutTime(date) {
             return "오늘"
         } else {
-            return formattedDate
+            let weekdayFormatter = DateFormatter()
+            weekdayFormatter.dateFormat = "E"
+            weekdayFormatter.locale = Locale(identifier: "ko_KR")
+            return weekdayFormatter.string(from: date)
         }
     }
+
 }
 
 extension HomeCollectionViewController: WeatherAPIManagerDelegate {
