@@ -8,17 +8,21 @@
 import UIKit
 
 class BackgroundDecorationView: UICollectionReusableView {
+    
     override init(frame: CGRect) {
         super.init(frame: frame)
-        configure(UIColor(white: 0.1, alpha: 0.03))
-    }
-
-    required init?(coder: NSCoder) {
-        super.init(coder: coder)
+        configure()
     }
     
-    func configure(_ color: UIColor) {
-        backgroundColor = color
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
     }
+}
 
+extension BackgroundDecorationView {
+    func configure() {
+        backgroundColor = UIColor(white: 0.1, alpha: 0.1)
+        self.layer.cornerRadius = 16
+        self.layer.masksToBounds = true
+    }
 }
