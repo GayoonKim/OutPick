@@ -26,12 +26,26 @@ class ChatViewController: UIViewController {
         if isRoomSaving {
             activityIndicator.startAnimating()
             configureNotifications()
+        } else {
+            activityIndicator.stopAnimating()
         }
         
         swipeRecognizer = UISwipeGestureRecognizer(target: self, action: #selector(swipeAction(_:)))
         self.view.addGestureRecognizer(swipeRecognizer)
+        
+        configureNavigationBarTitle()
+        
+        guard let room = room else { return }
+        print(room)
     }
     
+    private func configureNavigationBarTitle() {
+        guard let roomName = self.room?.roomName,
+              let participantsCount = room?.participants.count else { return }
+        
+        self.navigationItem.setTitle(title: roomName, subtitle: "\(participantsCount)명 참여")
+    }
+
     private func configureNotifications() {
         NotificationCenter.default.addObserver(self, selector: #selector(handleRoomSaveCompleted), name: .roomSavedComplete, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleRoomSaveFailed), name: .roomSaveFailed, object: nil)
@@ -42,8 +56,6 @@ class ChatViewController: UIViewController {
         
         guard let savedRoom = notification.userInfo?["room"] as? ChatRoom else { return }
         self.room = savedRoom
-        
-        guard let room = self.room else { return }
     }
     
     @objc private func handleRoomSaveFailed(notification: Notification) {
@@ -86,4 +98,33 @@ class ChatViewController: UIViewController {
         }
     }
 
+}
+
+extension UINavigationItem {
+    func setTitle(title:String, subtitle:String) {
+        
+        let one = UILabel()
+        one.text = title
+        one.font = UIFont.systemFont(ofSize: 17)
+        one.sizeToFit()
+        
+        let two = UILabel()
+        two.text = subtitle
+        two.font = UIFont.systemFont(ofSize: 12)
+        two.textAlignment = .center
+        two.sizeToFit()
+        
+        let stackView = UIStackView(arrangedSubviews: [one, two])
+        stackView.distribution = .equalCentering
+        stackView.axis = .vertical
+        stackView.alignment = .center
+        
+        let width = max(one.frame.size.width, two.frame.size.width)
+        stackView.frame = CGRect(x: 0, y: 0, width: width, height: 35)
+        
+        one.sizeToFit()
+        two.sizeToFit()
+        
+        self.titleView = stackView
+    }
 }

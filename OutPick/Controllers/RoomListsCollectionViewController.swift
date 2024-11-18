@@ -55,9 +55,9 @@ class ChatCollectionViewController: UICollectionViewController {
     private func configureDataSource() -> DataSourceType {
         let dataSource = DataSourceType(collectionView: collectionView) { (collectionView, indexPath, item) in
             let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "ChatRoom", for: indexPath) as! RoomListCollectionViewCell
-            
+
+            cell.roomImageView.layer.cornerRadius = 15
             cell.roomImageView.clipsToBounds =  true
-            cell.roomImageView.layer.cornerRadius = 10
             
             // 메인 스레드에서 이미지 로딩
             FirestoreManager.shared.fetchImageFromStorage(.Room, name: item.roomName) { image in
@@ -92,4 +92,18 @@ class ChatCollectionViewController: UICollectionViewController {
         return UICollectionViewCompositionalLayout(section: section)
     }
     
+    override func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+        guard let selectedItem = dataSource.itemIdentifier(for: indexPath) else { return }
+        
+        performSegue(withIdentifier: "ToChatRoom", sender: selectedItem)
+    }
+    
+    override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
+        if segue.identifier == "ToChatRoom",
+           let chatRoomVC = segue.destination as? ChatViewController,
+           let tempRoomInfo = sender as? ChatRoom {
+            chatRoomVC.room = tempRoomInfo
+            chatRoomVC.isRoomSaving = false
+        }
+    }
 }

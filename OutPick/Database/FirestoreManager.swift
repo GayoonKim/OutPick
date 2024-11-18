@@ -28,7 +28,6 @@ class FirestoreManager {
     // Storage 인스턴스
     let storage = Storage.storage()
     
-    
     // 채팅방 목록
     private var chatRooms: [ChatRoom] = []
     private var roomsListener: ListenerRegistration?
@@ -226,8 +225,50 @@ class FirestoreManager {
             }
             
             self.chatRooms = documents.compactMap { document -> ChatRoom? in
-                guard var chatRoom = try? document.data(as: ChatRoom.self) else { return nil}
-                chatRoom.id = document.documentID
+//                guard var chatRoomData = try? document.data(as: ChatRoom.self) else { return nil}
+//                chatRoomData.id = document.documentID
+                
+                let data = document.data()
+                    
+                guard let roomName = data["roomName"] as? String,
+                      let roomDescription = data["roomDescription"] as? String,
+                      let participants = data["participantIDs"] as? [String],
+                      let creatorID = data["creatorID"] as? String,
+                      let timestamp = data["createdAt"] as? Timestamp,
+                      let roomImageURL = data["roomImageURL"] as? String else {
+                    return nil
+                }
+                    
+                var chatRoom = ChatRoom(
+                    id: document.documentID,
+                    roomName: roomName,
+                    roomDescription: roomDescription,
+                    participants: participants,
+                    creatorID: creatorID,
+                    createdAt: timestamp.dateValue(),
+                    roomImageURL: roomImageURL
+                )
+                
+                // lastMessage가 있다면 처리
+                    if let lastMessageData = data["lastMessage"] as? [String: Any],
+                       let messageID = lastMessageData["messageID"] as? String,
+                       let senderID = lastMessageData["senderID"] as? String,
+                       let senderNickname = lastMessageData["senderNickname"] as? String,
+                       let content = lastMessageData["content"] as? String,
+                       let messageTimestamp = lastMessageData["sentAt"] as? Timestamp,
+                       let messageTypeString = lastMessageData["messageType"] as? String,
+                       let messageType = MessageType(rawValue: messageTypeString) {
+                        
+                        let lastMessage = ChatMessage(
+                            messageID: messageID,
+                            senderID: senderID,
+                            senderNickname: senderNickname,
+                            msg: content,
+                            sentAt: messageTimestamp.dateValue(),
+                            messageType: messageType
+                        )
+                        chatRoom.lastMessage = lastMessage
+                    }
                 
                 // 채팅방 대표 이미지 미리 캐시
                 self.fetchImageFromStorage(.Room, name: chatRoom.roomName) { _ in }

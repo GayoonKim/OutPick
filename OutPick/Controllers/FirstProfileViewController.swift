@@ -17,8 +17,6 @@ class FirstProfileViewController: UIViewController {
     var selectedGender: String?
     
     let datePicker = UIDatePicker()
-    
-    var profile = UserProfile()
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -29,7 +27,6 @@ class FirstProfileViewController: UIViewController {
         
         nextButton.isEnabled = false
         nextButton.backgroundColor = UIColor(white: 0.1, alpha: 0.03)
-        
     }
 
     @IBAction func genderButtonPressed(_ sender: UIButton) {
@@ -51,7 +48,7 @@ class FirstProfileViewController: UIViewController {
         
         if let genderBtnIndex = genderButtonIndex,
            let gender = genderButtons[genderBtnIndex].titleLabel?.text {
-            profile.gender = gender
+            UserProfile.sharedUserProfile.gender = gender
         }
      
         enableNextBtn()
@@ -118,7 +115,7 @@ class FirstProfileViewController: UIViewController {
     
     @objc func donePressed(_ sender: UIBarButtonItem) {
         dateOfBirthTextField.text = configureDateFormat(datePicker.date)
-        if let birthdate = dateOfBirthTextField.text { profile.birthdate = birthdate }
+        if let birthdate = dateOfBirthTextField.text { UserProfile.sharedUserProfile.birthdate = birthdate }
         enableNextBtn()
         view.endEditing(true)
     }
@@ -137,12 +134,6 @@ class FirstProfileViewController: UIViewController {
             nextButton.isEnabled = false
         }
     }
-    
-    override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
-        guard let secondProfileVC = segue.destination as? SecondProfileViewController else { return }
-        secondProfileVC.profile = profile
-    }
-    
 }
 
 extension FirstProfileViewController: UITextFieldDelegate {
