@@ -13,7 +13,7 @@ struct ChatRoom: Codable {
     var id: String?
     var roomName: String                // 방 이름
     var roomDescription: String         // 방 주제 및 설명
-    var participants: [UserProfile]     // 방 참여 사용자들
+    var participants: [String]          // 방 참여 사용자들
     let creatorID: String               // 방 생성자 ID
     let createdAt: Date                 // 방 생성 시간
     var lastMessage: ChatMessage?       // 마지막 메시지
@@ -25,13 +25,14 @@ struct ChatRoom: Codable {
             "id": UUID().uuidString,
             "roomName": roomName,
             "roomDescription": roomDescription,
+            "participantIDs": participants,
             "creatorID": creatorID,
-            "createdAt": createdAt,
+            "createdAt": Timestamp(date: createdAt),
             "roomImageURL": roomImageURL ?? ""
         ]
-        
-        // participants를 Firestore에 저장하기 위해 Dictionary로 변환
-        data["participants"] = participants.map { $0.toDict() }
+//        
+//        // participants를 Firestore에 저장하기 위해 Dictionary로 변환
+//        data["participants"] = participants.map { $0.toDict() }
         
         // lastMessage가 존재할 경우, 이를 Dictionary로 변환
         if let lastMessage = lastMessage {

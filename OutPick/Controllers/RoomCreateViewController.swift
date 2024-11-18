@@ -7,6 +7,7 @@
 
 import UIKit
 import PhotosUI
+import FirebaseFirestore
 
 class RoomCreateViewController: UIViewController, PHPickerViewControllerDelegate, UIImagePickerControllerDelegate & UINavigationControllerDelegate {
     
@@ -38,7 +39,8 @@ class RoomCreateViewController: UIViewController, PHPickerViewControllerDelegate
         NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillShow), name: UIResponder.keyboardWillShowNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillHide), name: UIResponder.keyboardWillHideNotification, object: nil)
         
-        
+        self.roomImageView.clipsToBounds = true
+        self.roomImageView.layer.cornerRadius = 15
     }
     
     deinit {
@@ -201,7 +203,13 @@ class RoomCreateViewController: UIViewController, PHPickerViewControllerDelegate
                     return
                 }
                 
-                let room = ChatRoom(roomName: self.roomNameTextView.text, roomDescription: self.roomDescriptionTextView.text, participants: [UserProfile.sharedUserProfile], creatorID: UserProfile.sharedUserProfile.nickname ?? "", createdAt: Date(), roomImageURL: nil)
+                let room = ChatRoom(roomName: self.roomNameTextView.text, roomDescription: self.roomDescriptionTextView.text, participants: [UserProfile.sharedUserProfile.nickname ?? ""], creatorID: UserProfile.sharedUserProfile.nickname ?? "", createdAt: Date(), roomImageURL: nil)
+                
+                // 사용자 프로필 참여중인 방 정보 업데이트
+                let userprofile_ref = FirestoreManager.shared.db.collection("Users").document(KakaoLoginManager.shared.getUserEmail)
+                userprofile_ref.updateData([
+                    "joinedRooms": FieldValue.arrayUnion([room.roomName])
+                ])
                 
                 // 채팅방 화면으로 이동
                 self.performSegue(withIdentifier: "ToChatRoom", sender: room)

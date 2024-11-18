@@ -13,6 +13,14 @@ import FirebaseCore
 
 class KakaoLoginManager {
     
+    static let shared = KakaoLoginManager()
+    
+    private var userEmail: String = ""
+    
+    var getUserEmail: String {
+        return userEmail
+    }
+    
     // Firestore에서 사용자 이메일로 만들어진 프로필 문서 쿼리
     func fetchUserProfile(_ email: String, completion: @escaping (UIViewController) -> Void) {
         FirestoreManager.shared.fetchUserProfileFromFirestore(email: email) { result in
@@ -54,6 +62,7 @@ class KakaoLoginManager {
                     completion(nil)
                     return
                 }
+                self.userEmail = userEmail
                 completion(userEmail)
             }
         }

@@ -5,7 +5,8 @@
 //  Created by 김가윤 on 9/25/24.
 //
 
-import Foundation
+import UIKit
+import FirebaseCore
 
 // 채팅 메시지 정보
 struct ChatMessage: Codable {
@@ -25,15 +26,17 @@ struct ChatMessage: Codable {
             "senderID": senderID,
             "senderNickname": senderNickname,
             "content": msg,
-            "sentAt": sentAt,
+            "sentAt": Timestamp(date: sentAt),
             "messageType": messageType
         ]
     }
     
 }
 
-enum MessageType: Codable {
-    case Text, Image, Video
+enum MessageType: String, Codable {
+    case Text = "Text"
+    case Image = "Image"
+    case Video = "Video"
 }
 
 extension ChatMessage: Hashable {}

@@ -14,7 +14,6 @@ import CoreLocation
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     var window: UIWindow?
-    let kakaoLoginManager = KakaoLoginManager()
     
     private let locationManager = CLLocationManager()
 
@@ -101,14 +100,14 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                     
                     
                     // 사용자 이메일 불러오기
-                    self.kakaoLoginManager.getEmail { email in
+                    KakaoLoginManager.shared.getEmail { email in
                         guard let email = email else {
                             self.showLoginViewController()
                             return
                         }
                         
                         // 이메일을 통해 프로필 불러오기
-                        self.kakaoLoginManager.fetchUserProfile(email) { screen in
+                        KakaoLoginManager.shared.fetchUserProfile(email) { screen in
                             DispatchQueue.main.async {
                                 self.window?.rootViewController = screen
                                 self.window?.makeKeyAndVisible()
