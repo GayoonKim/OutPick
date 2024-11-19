@@ -185,19 +185,20 @@ class SecondProfileViewController: UIViewController, PHPickerViewControllerDeleg
             UserProfile.sharedUserProfile.nickname = nickname
         }
         
-        UserApi.shared.me() {(user, error) in
-            if let error = error {
-                print(error)
-            } else {
-                print("me() 성공")
-                
-                // 사용자 이메일 불러오기
-                guard let userEmail = user?.kakaoAccount?.email else { return }
-
-                self.saveUserProfile(userProfile: UserProfile.sharedUserProfile, email: userEmail)
-            }
+        // 카카오 로그인
+        LoginManager.shared.getKakaoEmail { email in
+            guard let email = email else { return }
+            
+            self.saveUserProfile(userProfile: UserProfile.sharedUserProfile, email: email)
         }
         
+        // 구글 로그인
+        LoginManager.shared.getGoogleEmail { email in
+            guard let email = email else { return }
+            
+            self.saveUserProfile(userProfile: UserProfile.sharedUserProfile, email: email)
+        }
+            
         let homeVC = self.storyboard?.instantiateViewController(identifier: "HomeTBC") as? UITabBarController
         self.view.window?.rootViewController = homeVC
         self.view.window?.makeKeyAndVisible()

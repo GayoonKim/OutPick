@@ -185,7 +185,7 @@ class FirestoreManager {
         // 캐시된 이미지 확인
         let cacheKey = NSString(string: "\(type)_\(name)")
         if let cachedImage = ImageCacheManager.shared.object(forKey: cacheKey) {
-            print("*************************cachedImage: \(cachedImage)")
+//            print("*************************cachedImage: \(cachedImage)")
             completion(cachedImage)
             return
         }

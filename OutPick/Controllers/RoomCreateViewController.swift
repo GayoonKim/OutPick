@@ -206,7 +206,7 @@ class RoomCreateViewController: UIViewController, PHPickerViewControllerDelegate
                 let room = ChatRoom(roomName: self.roomNameTextView.text, roomDescription: self.roomDescriptionTextView.text, participants: [UserProfile.sharedUserProfile.nickname ?? ""], creatorID: UserProfile.sharedUserProfile.nickname ?? "", createdAt: Date(), roomImageURL: nil)
                 
                 // 사용자 프로필 참여중인 방 정보 업데이트
-                let userprofile_ref = FirestoreManager.shared.db.collection("Users").document(KakaoLoginManager.shared.getUserEmail)
+                let userprofile_ref = FirestoreManager.shared.db.collection("Users").document(LoginManager.shared.getUserEmail)
                 userprofile_ref.updateData([
                     "joinedRooms": FieldValue.arrayUnion([room.roomName])
                 ])

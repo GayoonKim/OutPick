@@ -10,6 +10,7 @@ import KakaoSDKCommon
 import KakaoSDKAuth
 import KakaoSDKUser
 import CoreLocation
+import FirebaseAuth
 
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
@@ -40,7 +41,44 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         
         WeatherAPIManager.shared.startLocationUpdates()
         
-        checkKakaoLogin()
+        DispatchQueue.global(qos: .userInitiated).async {
+            let group = DispatchGroup()
+            var isLoggedIn = false
+            
+            // 구글 로그인 확인
+            group.enter()
+            self.checkGoogleLogin { success in
+                if success {
+                    isLoggedIn = true
+                    
+                    // 채팅방 목록 감지 시작
+                    FirestoreManager.shared.listenForChatRooms { rooms in
+                        print("채팅방 목록 수: \(rooms.count)")
+                    }
+                }
+                group.leave()
+            }
+            
+            // 카카오 로그인 확인
+            group.enter()
+            self.checkKakaoLogin { success in
+                if success {
+                    isLoggedIn = true
+                    
+                    // 채팅방 목록 감지 시작
+                    FirestoreManager.shared.listenForChatRooms { rooms in
+                        print("채팅방 목록 수: \(rooms.count)")
+                    }
+                }
+                group.leave()
+            }
+            
+            group.notify(queue: .main) {
+                if !isLoggedIn {
+                    self.showLoginViewController()
+                }
+            }
+        }
     }
 
     func sceneDidDisconnect(_ scene: UIScene) {
@@ -76,42 +114,44 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
     
     // 카카오 로그인 여부 확인
-    private func checkKakaoLogin() {
+    private func checkKakaoLogin(completion: @escaping (Bool) -> Void) {
         if AuthApi.hasToken() {
             UserApi.shared.accessTokenInfo { (_, error) in
                 if let error = error {
                     if let sdkError = error as? SdkError, sdkError.isInvalidTokenError() == true {
                         // 토큰이 유효하지 않기 때문에 재로그인 필요
                         print("재로그인 필요.")
-                        self.showLoginViewController()
-                        
+//                        self.showLoginViewController()
+                        completion(false)
                     } else {
                         print("토큰 확인 오류: \(error)")
-                        self.showLoginViewController()
+//                        self.showLoginViewController()
+                        completion(false)
                     }
                 } else {
                     // 유효한 토큰, 자동 로그인 상태 유지
                     print("이미 로그인 상태.")
-                    
-                    // 실시간으로 채팅방 목록 감지
-                    FirestoreManager.shared.listenForChatRooms { rooms in
-                        print("채팅방 목록 수: \(rooms.count)")
-                    }
-                    
+//                    
+//                    // 실시간으로 채팅방 목록 감지
+//                    FirestoreManager.shared.listenForChatRooms { rooms in
+//                        print("채팅방 목록 수: \(rooms.count)")
+//                    }
                     
                     // 사용자 이메일 불러오기
-                    KakaoLoginManager.shared.getEmail { email in
+                    LoginManager.shared.getKakaoEmail { email in
                         guard let email = email else {
-                            self.showLoginViewController()
+//                            self.showLoginViewController()
+                            completion(false)
                             return
                         }
                         
                         // 이메일을 통해 프로필 불러오기
-                        KakaoLoginManager.shared.fetchUserProfile(email) { screen in
+                        LoginManager.shared.fetchUserProfile(email) { screen in
                             DispatchQueue.main.async {
                                 self.window?.rootViewController = screen
                                 self.window?.makeKeyAndVisible()
                             }
+                            completion(true)
                         }
                     }
                 }
@@ -119,7 +159,32 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         } else {
             // 토큰이 없어 로그인 필요
             print("재로그인 필요.")
-            self.showLoginViewController()
+//            self.showLoginViewController()
+            completion(false)
+        }
+    }
+    
+    // 구글 로그인 여부 확인
+    private func checkGoogleLogin(completion: @escaping (Bool) -> Void) {
+        let currentUser = Auth.auth().currentUser
+        currentUser?.getIDTokenForcingRefresh(true) { idToken, error in
+            if let error = error {
+                print("토큰 불러오기 오류: \(error)")
+                completion(false)
+                return
+            }
+            
+            guard let userEmail = currentUser?.email else {
+                completion(false)
+                return
+            }
+            LoginManager.shared.fetchUserProfile(userEmail) { screen in
+                DispatchQueue.main.async {
+                    self.window?.rootViewController = screen
+                    self.window?.makeKeyAndVisible()
+                }
+                completion(true)
+            }
         }
     }
     
