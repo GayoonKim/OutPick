@@ -15,7 +15,15 @@ class ChatViewController: UIViewController {
     
     var room: ChatRoom?
     var isRoomSaving = false
+    
+    override func viewWillAppear(_ animated: Bool) {
+        SocketIOManager.shared.establishConnection()
+    }
 
+    override func viewWillDisappear(_ animated: Bool) {
+        SocketIOManager.shared.closeConnection()
+    }
+    
     override func viewDidLoad() {
         super.viewDidLoad()
 
@@ -34,9 +42,6 @@ class ChatViewController: UIViewController {
         self.view.addGestureRecognizer(swipeRecognizer)
         
         configureNavigationBarTitle()
-        
-        guard let room = room else { return }
-        print(room)
     }
     
     private func configureNavigationBarTitle() {
@@ -63,7 +68,6 @@ class ChatViewController: UIViewController {
         
         guard let error = notification.userInfo?["error"] as? RoomCreationError else { return }
         showAlert(error: error)
-        
     }
     
     private func showAlert(error: RoomCreationError) {

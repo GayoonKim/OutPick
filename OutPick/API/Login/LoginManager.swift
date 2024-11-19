@@ -10,10 +10,11 @@ import KakaoSDKCommon
 import KakaoSDKAuth
 import KakaoSDKUser
 import FirebaseCore
+import FirebaseAuth
 
-class KakaoLoginManager {
+class LoginManager {
     
-    static let shared = KakaoLoginManager()
+    static let shared = LoginManager()
     
     private var userEmail: String = ""
     
@@ -30,17 +31,13 @@ class KakaoLoginManager {
             case .success(let userProfile):
                 print("User Profile: \(userProfile)")
                 UserProfile.sharedUserProfile = userProfile
-//                let homeVC = self.storyboard?.instantiateViewController(identifier: "HomeVCTabBar") as? UITabBarController
-//                self.view.window?.rootViewController = homeVC
-//                self.view.window?.makeKeyAndVisible()
+
                 let mainStorybard = UIStoryboard(name: "Main", bundle: nil)
                 initialViewControlle = mainStorybard.instantiateViewController(withIdentifier: "HomeTBC")
                 completion(initialViewControlle)
             case .failure(let error):
                 print("Failed to fetch user profile: \(error.localizedDescription)")
-//                let firstProfileVC = self.storyboard?.instantiateViewController(identifier: "FirstProfileVC") as? UIViewController
-//                self.view.window?.rootViewController = firstProfileVC
-//                self.view.window?.makeKeyAndVisible()
+
                 let mainStorybard = UIStoryboard(name: "Main", bundle: nil)
                 initialViewControlle = mainStorybard.instantiateViewController(withIdentifier: "FirstProfileVC")
                 completion(initialViewControlle)
@@ -48,8 +45,8 @@ class KakaoLoginManager {
         }
     }
     
-    // 사용자 이메일 불러오기
-    func getEmail(completion: @escaping (String?) -> Void) {
+    // 카카오 사용자 이메일 불러오기
+    func getKakaoEmail(completion: @escaping (String?) -> Void) {
         UserApi.shared.me() {(user, error) in
             if let error = error {
                 print(error)
@@ -68,6 +65,15 @@ class KakaoLoginManager {
         }
     }
     
-    
+    // 구글 사용자 이메일 불러오기
+    func getGoogleEmail(completion: @escaping (String?) -> Void) {
+        guard let userEmail = Auth.auth().currentUser?.email else {
+            completion(nil)
+            return
+        }
+        
+        self.userEmail = userEmail
+        completion(userEmail)
+    }
     
 }

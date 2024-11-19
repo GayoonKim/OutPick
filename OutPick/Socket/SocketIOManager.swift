@@ -32,6 +32,8 @@ class SocketIOManager {
         socket.disconnect()
     }
     
-    
+    func createRoom() {
+        
+    }
     
 }
