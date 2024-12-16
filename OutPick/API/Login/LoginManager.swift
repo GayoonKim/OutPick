@@ -46,34 +46,35 @@ class LoginManager {
     }
     
     // 카카오 사용자 이메일 불러오기
-    func getKakaoEmail(completion: @escaping (String?) -> Void) {
+    func getKakaoEmail(completion: @escaping (Bool) -> Void) {
         UserApi.shared.me() {(user, error) in
             if let error = error {
                 print(error)
-                completion(nil)
+//                completion(nil)
             } else {
                 print("me() 성공")
                 
                 // 사용자 이메일로 프로필 설정 여부 확인
                 guard let userEmail = user?.kakaoAccount?.email else {
-                    completion(nil)
+                    completion(false)
                     return
                 }
+                
                 self.userEmail = userEmail
-                completion(userEmail)
+                completion(true)
             }
         }
     }
     
     // 구글 사용자 이메일 불러오기
-    func getGoogleEmail(completion: @escaping (String?) -> Void) {
+    func getGoogleEmail(completion: @escaping (Bool) -> Void) {
         guard let userEmail = Auth.auth().currentUser?.email else {
-            completion(nil)
+            completion(false)
             return
         }
         
         self.userEmail = userEmail
-        completion(userEmail)
+        completion(true)
     }
     
 }

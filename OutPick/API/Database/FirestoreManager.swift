@@ -129,37 +129,42 @@ class FirestoreManager {
         // 방 컬렉션에서 방 ID를 기준으로 문서 참조 생성
         let roomRef = db.collection("Rooms").document(room.roomName)
         
-        db.runTransaction({ (transaction, errorPointer) -> Any? in
-            // 방 정보가 이미 존재하는지 확인
-            do {
-                let roomSnapshot = try transaction.getDocument(roomRef)
-                
-                // 방이 이미 존재하면 오류 처리 (방 이름 중복 방지)
-                if roomSnapshot.exists {
-                    errorPointer?.pointee = NSError(domain: "ChatAppErrorDomain", code: 1, userInfo: [
-                        NSLocalizedDescriptionKey: "방 이름 중복"
-                    ])
+        // Rooms 컬렉션이 존재하는지 확인하고 없으면 생성
+        db.collection("Rooms").getDocuments { [weak self] (snapshot, error) in
+            guard let self = self else { return }
+            
+            db.runTransaction({ (transaction, errorPointer) -> Any? in
+                // 방 정보가 이미 존재하는지 확인
+                do {
+                    let roomSnapshot = try transaction.getDocument(roomRef)
+                    
+                    // 방이 이미 존재하면 오류 처리 (방 이름 중복 방지)
+                    if roomSnapshot.exists {
+                        errorPointer?.pointee = NSError(domain: "ChatAppErrorDomain", code: 1, userInfo: [
+                            NSLocalizedDescriptionKey: "방 이름 중복"
+                        ])
+                        return nil
+                    }
+                    
+                    // Firestore에 방 데이터 추가
+                    transaction.setData(room.toDictionary(), forDocument: roomRef)
+                    
+                } catch {
+                    // 트랜잭션 실패 처리
+                    errorPointer?.pointee = error as NSError
                     return nil
                 }
                 
-                // Firestore에 방 데이터 추가
-                transaction.setData(room.toDictionary(), forDocument: roomRef)
-                
-            } catch {
-                // 트랜잭션 실패 처리
-                errorPointer?.pointee = error as NSError
                 return nil
-            }
-            
-            return nil
-        }) { (object, error) in
-            // 트랜잭션 완료 처리
-            if let error = error {
-                print("트랜잭션 실패: \(error)")
-                completion(.failure(error))
-            } else {
-                print("트랜잭션 성공")
-                completion(.success(()))
+            }) { (object, error) in
+                // 트랜잭션 완료 처리
+                if let error = error {
+                    print("트랜잭션 실패: \(error)")
+                    completion(.failure(error))
+                } else {
+                    print("트랜잭션 성공")
+                    completion(.success(()))
+                }
             }
         }
     }
@@ -256,6 +261,7 @@ class FirestoreManager {
                        let senderNickname = lastMessageData["senderNickname"] as? String,
                        let content = lastMessageData["content"] as? String,
                        let messageTimestamp = lastMessageData["sentAt"] as? Timestamp,
+                       let imageURLs = lastMessageData["imageURLs"],
                        let messageTypeString = lastMessageData["messageType"] as? String,
                        let messageType = MessageType(rawValue: messageTypeString) {
                         
@@ -291,7 +297,6 @@ class FirestoreManager {
     }
     
 }
-
 
 extension UIImage {
     func resized(withMaxWidth maxWidth: CGFloat) -> UIImage {

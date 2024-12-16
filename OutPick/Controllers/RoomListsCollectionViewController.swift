@@ -35,6 +35,8 @@ class ChatCollectionViewController: UICollectionViewController {
         
         NotificationCenter.default.addObserver(self, selector: #selector(chatRoomsUpdated), name: .chatRoomsUpdated, object: nil)
         self.updateCollectionView()
+        
+        print(LoginManager.shared.getUserEmail)
     }
     
     @objc private func chatRoomsUpdated(notification: Notification) {
