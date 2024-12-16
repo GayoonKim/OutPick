@@ -7,7 +7,23 @@
       body { margin: 0; padding: 1rem; font-family: Arial, sans-serif; }
       #room-container { margin-bottom: 1rem; }
       #messages { list-style-type: none; margin: 0; padding: 0; }
-      #messages > li { padding: 0.5rem; border-bottom: 1px solid #ddd; }
+      #messages > li {
+        padding: 0.5rem;
+        border-bottom: 1px solid #ddd;
+        max-width: 70%;
+        margin: 0.5rem 0;
+        border-radius: 10px;
+      }
+      .my-message {
+        background-color: #d1e7dd;
+        margin-left: auto;
+        text-align: right;
+      }
+      .other-message {
+        background-color: #f8d7da;
+        margin-right: auto;
+        text-align: left;
+      }
       #form { display: flex; position: fixed; bottom: 0; left: 0; right: 0; padding: 0.5rem; background: #f0f0f0; }
       #input { flex: 1; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; }
       #form > button { margin-left: 0.5rem; padding: 0.5rem 1rem; background: #007bff; color: #fff; border: none; border-radius: 4px; }
@@ -32,20 +48,29 @@
     <script>
       const socket = io();
       let currentRoom = null;
+      let username = "";
 
       // Username 설정
       document.getElementById("set-username").addEventListener("click", () => {
-        const username = document.getElementById("username").value;
+        username = document.getElementById("username").value.trim();
+        if (!username) {
+          alert("Please enter a username!");
+          return;
+        }
         socket.emit("set username", username);
       });
 
-      socket.on("username set", (username) => {
-        alert(`Username set to: ${username}`);
+      socket.on("username set", (user) => {
+        alert(`Username set to: ${user}`);
       });
 
       // 방 생성
       document.getElementById("create-room").addEventListener("click", () => {
-        const roomName = document.getElementById("room-name").value;
+        const roomName = document.getElementById("room-name").value.trim();
+        if (!roomName) {
+          alert("Please enter a room name!");
+          return;
+        }
         socket.emit("create room", roomName);
       });
 
@@ -76,7 +101,7 @@
           alert("Message cannot be empty!");
           return;
         }
-        socket.emit("chat message", { roomName: currentRoom, message });
+        socket.emit("chat message", { roomName: currentRoom, message, user: username });
         document.getElementById("input").value = "";
       });
 
@@ -85,6 +110,7 @@
         const messages = document.getElementById("messages");
         const li = document.createElement("li");
         li.textContent = `${data.user}: ${data.message}`;
+        li.className = data.user === username ? "my-message" : "other-message";
         messages.appendChild(li);
         window.scrollTo(0, document.body.scrollHeight);
       });

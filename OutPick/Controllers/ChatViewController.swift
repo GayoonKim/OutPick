@@ -10,23 +10,25 @@ import UIKit
 class ChatViewController: UIViewController {
     
     @IBOutlet weak var activityIndicator: UIActivityIndicatorView!
+    @IBOutlet weak var sideMenuBtn: UIBarButtonItem!
+    @IBOutlet weak var msgTextView: UITextView!
+    @IBOutlet weak var sendBtn: UIButton!
     
     var swipeRecognizer: UISwipeGestureRecognizer!
+    
+    private var sideMenuViewController = SideMenuViewController()
+    private var dimmingView: UIView?
     
     var room: ChatRoom?
     var isRoomSaving = false
     
-    override func viewWillAppear(_ animated: Bool) {
-        SocketIOManager.shared.establishConnection()
-    }
-
-    override func viewWillDisappear(_ animated: Bool) {
+    deinit {
         SocketIOManager.shared.closeConnection()
     }
     
     override func viewDidLoad() {
         super.viewDidLoad()
-
+        
         let backButton = UIBarButtonItem(image: UIImage(systemName: "chevron.left"), style: .plain, target: self, action: #selector(backButtonTapped))
         backButton.tintColor = .black
         self.navigationItem.leftBarButtonItem = backButton
@@ -42,6 +44,81 @@ class ChatViewController: UIViewController {
         self.view.addGestureRecognizer(swipeRecognizer)
         
         configureNavigationBarTitle()
+        configureMsgTextView()
+        setUpKeyboardNotification()
+
+        sendBtn.isEnabled = false
+    }
+    
+    override func viewWillAppear(_ animated: Bool) {
+        guard let room = self.room else { return }
+        print("****************\(room)***************")
+        
+        DispatchQueue.main.async {
+            SocketIOManager.shared.establishConnection {
+                guard let roomName = self.room?.roomName else { return }
+
+                SocketIOManager.shared.joinRoom(roomName)
+            }
+        }
+    }
+    
+    @IBAction func sendBtnTapped(_ sender: UIButton) {
+        guard let message = self.msgTextView.text,
+              let roomName = self.room?.roomName else { return }
+        self.msgTextView.text = nil
+        
+        let newMessage = ChatMessage(messageID: UUID().uuidString, senderID: LoginManager.shared.getUserEmail, senderNickname: UserProfile.sharedUserProfile.nickname ?? "", msg: message, sentAt: Date(), messageType: .Text)
+        print(newMessage)
+        
+        SocketIOManager.shared.sendMessage(roomName, message)
+        sendBtn.isEnabled = false
+    }
+    
+    private func setUpKeyboardNotification() {
+        NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillShow), name: UIResponder.keyboardWillShowNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillHide), name: UIResponder.keyboardWillHideNotification, object: nil)
+    }
+    
+    @objc private func keyboardWillShow(_ sender: Notification) {
+        guard let keyboardFrame = sender.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
+        
+        let keyboardFrameHeibht = keyboardFrame.height
+        
+        if self.view.frame.origin.y == 0 {
+            self.view.frame.origin.y -= keyboardFrameHeibht + 10
+        }
+    }
+    
+    @objc private func keyboardWillHide() {
+        if self.view.frame.origin.y != 0 {
+            self.view.frame.origin.y = 0
+        }
+    }
+    
+    private func configureMsgTextView() {
+        self.msgTextView.delegate = self
+        msgTextView.text = "메시지를 입력하세요."
+        msgTextView.textColor = UIColor.lightGray
+        
+        let tapGesture = UITapGestureRecognizer(target: self, action: #selector(dismissKeyboard))
+        view.addGestureRecognizer(tapGesture)
+        
+        self.msgTextView.layer.cornerRadius = 20
+        self.msgTextView.clipsToBounds = true
+        self.msgTextView.backgroundColor = UIColor(white: 0.1, alpha: 0.05)
+        self.msgTextView.alignTextVertically()
+    }
+    
+    @objc private func dismissKeyboard() {
+        msgTextView.resignFirstResponder()
+    }
+    
+    @IBAction func sideMenuBtnTapped(_ sender: UIBarButtonItem) {
+        configureSideMenu()
+    }
+    
+    private func configureSideMenu() {
     }
     
     private func configureNavigationBarTitle() {
@@ -59,8 +136,12 @@ class ChatViewController: UIViewController {
     @objc private func handleRoomSaveCompleted(notification: Notification) {
         activityIndicator.stopAnimating()
         
-        guard let savedRoom = notification.userInfo?["room"] as? ChatRoom else { return }
+        guard let savedRoom = notification.userInfo?["room"] as? ChatRoom,
+              let nickName = UserProfile.sharedUserProfile.nickname else { return }
         self.room = savedRoom
+        
+        SocketIOManager.shared.setUserName(nickName)
+        SocketIOManager.shared.createRoom(savedRoom.roomName)
     }
     
     @objc private func handleRoomSaveFailed(notification: Notification) {
@@ -101,34 +182,67 @@ class ChatViewController: UIViewController {
             self.navigationController?.popToRootViewController(animated: true)
         }
     }
-
+    
 }
 
 extension UINavigationItem {
-    func setTitle(title:String, subtitle:String) {
+    func setTitle(title: String, subtitle: String) {
         
-        let one = UILabel()
-        one.text = title
-        one.font = UIFont.systemFont(ofSize: 17)
-        one.sizeToFit()
+        let titleLabel = UILabel()
+        titleLabel.text = title
+        titleLabel.font = UIFont.systemFont(ofSize: 17)
+        titleLabel.sizeToFit()
         
-        let two = UILabel()
-        two.text = subtitle
-        two.font = UIFont.systemFont(ofSize: 12)
-        two.textAlignment = .center
-        two.sizeToFit()
+        let subTitleLabel = UILabel()
+        subTitleLabel.text = subtitle
+        subTitleLabel.font = UIFont.systemFont(ofSize: 12)
+        subTitleLabel.textAlignment = .center
+        subTitleLabel.sizeToFit()
         
-        let stackView = UIStackView(arrangedSubviews: [one, two])
+        let stackView = UIStackView(arrangedSubviews: [titleLabel, subTitleLabel])
         stackView.distribution = .equalCentering
         stackView.axis = .vertical
         stackView.alignment = .center
         
-        let width = max(one.frame.size.width, two.frame.size.width)
+        let width = max(titleLabel.frame.size.width, subTitleLabel.frame.size.width)
         stackView.frame = CGRect(x: 0, y: 0, width: width, height: 35)
         
-        one.sizeToFit()
-        two.sizeToFit()
+        titleLabel.sizeToFit()
+        subTitleLabel.sizeToFit()
         
         self.titleView = stackView
+    }
+}
+
+extension UITextView {
+    func alignTextVertically() {
+        var topConstraint = (self.bounds.size.height - (self.contentSize.height)) / 2
+        topConstraint = topConstraint < 0.0 ? 0.0 : topConstraint
+        self.contentInset.left = 5
+        self.contentInset.top = topConstraint
+    }
+}
+
+extension ChatViewController: UITextViewDelegate {
+    func textViewDidBeginEditing(_ textView: UITextView) {
+        if textView.textColor == .lightGray {
+            textView.text = ""
+            textView.textColor = .black
+        }
+    }
+    
+    func textViewDidEndEditing(_ textView: UITextView) {
+        if textView.text.isEmpty {
+            textView.text = "메시지를 입력하세요."
+            textView.textColor = .lightGray
+        }
+    }
+    
+    func textViewDidChange(_ textView: UITextView) {
+        if textView.text.isEmpty {
+            sendBtn.isEnabled = false
+        } else {
+            sendBtn.isEnabled = true
+        }
     }
 }

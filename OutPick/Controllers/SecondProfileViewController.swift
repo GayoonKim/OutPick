@@ -28,6 +28,8 @@ class SecondProfileViewController: UIViewController, PHPickerViewControllerDeleg
         addImageButtonSetup()
         removeImageButtonSetup()
         
+        completeButton.clipsToBounds = true
+        completeButton.layer.cornerRadius = 10
         completeButton.isEnabled = false
         completeButton.backgroundColor = UIColor(white: 0.1, alpha: 0.03)
     }
@@ -186,18 +188,18 @@ class SecondProfileViewController: UIViewController, PHPickerViewControllerDeleg
         }
         
         // 카카오 로그인
-        LoginManager.shared.getKakaoEmail { email in
-            guard let email = email else { return }
+//        LoginManager.shared.getKakaoEmail { email in
+//            guard let email = email else { return }
             
-            self.saveUserProfile(userProfile: UserProfile.sharedUserProfile, email: email)
-        }
+        self.saveUserProfile(userProfile: UserProfile.sharedUserProfile, email: LoginManager.shared.getUserEmail)
+//        }
         
         // 구글 로그인
-        LoginManager.shared.getGoogleEmail { email in
-            guard let email = email else { return }
+//        LoginManager.shared.getGoogleEmail { email in
+//            guard let email = email else { return }
             
-            self.saveUserProfile(userProfile: UserProfile.sharedUserProfile, email: email)
-        }
+            self.saveUserProfile(userProfile: UserProfile.sharedUserProfile, email: LoginManager.shared.getUserEmail)
+//        }
             
         let homeVC = self.storyboard?.instantiateViewController(identifier: "HomeTBC") as? UITabBarController
         self.view.window?.rootViewController = homeVC

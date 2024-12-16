@@ -30,6 +30,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // Use this method to optionally configure and attach the UIWindow `window` to the provided UIWindowScene `scene`.
         // If using a storyboard, the `window` property will automatically be initialized and attached to the scene.
         // This delegate does not imply the connecting scene or session are new (see `application:configurationForConnectingSceneSession` instead).
+        print("1. scene 메서드 시작")
+        
         guard let _ = (scene as? UIWindowScene) else { return }
         window?.overrideUserInterfaceStyle = .light
         
@@ -41,43 +43,63 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         
         WeatherAPIManager.shared.startLocationUpdates()
         
+        print("2. DispatchQueue 시작 전")
+        
         DispatchQueue.global(qos: .userInitiated).async {
+            print("3. DispatchQueue 내부 시작")
+            
             let group = DispatchGroup()
             var isLoggedIn = false
             
             // 구글 로그인 확인
+            print("4. 구글 로그인 체크 시작")
             group.enter()
             self.checkGoogleLogin { success in
+                print("5. 구글 로그인 체크 완료: \(success)")
                 if success {
                     isLoggedIn = true
-                    
                     // 채팅방 목록 감지 시작
                     FirestoreManager.shared.listenForChatRooms { rooms in
                         print("채팅방 목록 수: \(rooms.count)")
                     }
                 }
+                
                 group.leave()
             }
             
             // 카카오 로그인 확인
+            print("6. 카카오 로그인 체크 시작")
             group.enter()
             self.checkKakaoLogin { success in
+                print("7. 카카오 로그인 체크 완료: \(success)")
                 if success {
                     isLoggedIn = true
-                    
                     // 채팅방 목록 감지 시작
                     FirestoreManager.shared.listenForChatRooms { rooms in
                         print("채팅방 목록 수: \(rooms.count)")
                     }
                 }
+                
                 group.leave()
             }
             
+            print("8. notify 설정 전")
             group.notify(queue: .main) {
-                if !isLoggedIn {
+                print("9. notify 내부 실행")
+                if isLoggedIn {
+                    print("10. 로그인 됨")
+                    LoginManager.shared.fetchUserProfile(LoginManager.shared.getUserEmail) { screen in
+                        DispatchQueue.main.async {
+                            self.window?.rootViewController = screen
+                            self.window?.makeKeyAndVisible()
+                        }
+                    }
+                } else {
+                    print("11. 로그인 안 됨")
                     self.showLoginViewController()
                 }
             }
+
         }
     }
 
@@ -119,70 +141,45 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             UserApi.shared.accessTokenInfo { (_, error) in
                 if let error = error {
                     if let sdkError = error as? SdkError, sdkError.isInvalidTokenError() == true {
-                        // 토큰이 유효하지 않기 때문에 재로그인 필요
                         print("재로그인 필요.")
-//                        self.showLoginViewController()
                         completion(false)
                     } else {
                         print("토큰 확인 오류: \(error)")
-//                        self.showLoginViewController()
                         completion(false)
                     }
-                } else {
-                    // 유효한 토큰, 자동 로그인 상태 유지
-                    print("이미 로그인 상태.")
-//                    
-//                    // 실시간으로 채팅방 목록 감지
-//                    FirestoreManager.shared.listenForChatRooms { rooms in
-//                        print("채팅방 목록 수: \(rooms.count)")
-//                    }
-                    
-                    // 사용자 이메일 불러오기
-                    LoginManager.shared.getKakaoEmail { email in
-                        guard let email = email else {
-//                            self.showLoginViewController()
-                            completion(false)
-                            return
-                        }
-                        
-                        // 이메일을 통해 프로필 불러오기
-                        LoginManager.shared.fetchUserProfile(email) { screen in
-                            DispatchQueue.main.async {
-                                self.window?.rootViewController = screen
-                                self.window?.makeKeyAndVisible()
-                            }
-                            completion(true)
-                        }
-                    }
+                }
+                
+                print("이미 로그인 상태.")
+                
+                LoginManager.shared.getKakaoEmail { result in
+                    print("********** \(result) ********")
+                    print("********** \(LoginManager.shared.getUserEmail) ********")
+                    completion(true)
                 }
             }
         } else {
-            // 토큰이 없어 로그인 필요
+            print("AAA")
             print("재로그인 필요.")
-//            self.showLoginViewController()
             completion(false)
         }
     }
     
+    
     // 구글 로그인 여부 확인
     private func checkGoogleLogin(completion: @escaping (Bool) -> Void) {
-        let currentUser = Auth.auth().currentUser
-        currentUser?.getIDTokenForcingRefresh(true) { idToken, error in
+        guard let currentUser = Auth.auth().currentUser else {
+            print("로그인 기록 없음")
+            completion(false)
+            return
+        }
+        currentUser.getIDTokenForcingRefresh(true) { idToken, error in
             if let error = error {
                 print("토큰 불러오기 오류: \(error)")
                 completion(false)
                 return
             }
-            
-            guard let userEmail = currentUser?.email else {
-                completion(false)
-                return
-            }
-            LoginManager.shared.fetchUserProfile(userEmail) { screen in
-                DispatchQueue.main.async {
-                    self.window?.rootViewController = screen
-                    self.window?.makeKeyAndVisible()
-                }
+                
+            LoginManager.shared.getGoogleEmail { result in
                 completion(true)
             }
         }

@@ -80,18 +80,15 @@ class LoginViewController: UIViewController {
 
                     self.dismiss(animated: true) {
                         //do something
-                        LoginManager.shared.getKakaoEmail { email in
-                            guard let email = email else {
-                                return
-                            }
+                        LoginManager.shared.getKakaoEmail { email in }
                             
-                            LoginManager.shared.fetchUserProfile(email) { screen in
+                        LoginManager.shared.fetchUserProfile(LoginManager.shared.getUserEmail) { screen in
                                 DispatchQueue.main.async {
                                     self.view.window?.rootViewController = screen
                                     self.view.window?.makeKeyAndVisible()
                                 }
                             }
-                        }
+//                        }
                     }
                 }
             }
@@ -103,19 +100,16 @@ class LoginViewController: UIViewController {
                     print("loginWithKakaoAccount() success.")
                     
                     self.dismiss(animated: true) {
-                        //do something
-                        LoginManager.shared.getKakaoEmail { email in
-                            guard let email = email else {
-                                return
-                            }
+//                        do something
+                        LoginManager.shared.getKakaoEmail { email in }
                             
-                            LoginManager.shared.fetchUserProfile(email) { screen in
+                            LoginManager.shared.fetchUserProfile(LoginManager.shared.getUserEmail) { screen in
                                 DispatchQueue.main.async {
                                     self.view.window?.rootViewController = screen
                                     self.view.window?.makeKeyAndVisible()
                                 }
                             }
-                        }
+//                        }
                     }
                 }
             }

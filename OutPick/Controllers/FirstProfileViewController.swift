@@ -27,6 +27,8 @@ class FirstProfileViewController: UIViewController {
         
         nextButton.isEnabled = false
         nextButton.backgroundColor = UIColor(white: 0.1, alpha: 0.03)
+        nextButton.clipsToBounds = true
+        nextButton.layer.cornerRadius = 10
     }
 
     @IBAction func genderButtonPressed(_ sender: UIButton) {
