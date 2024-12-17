@@ -6,6 +6,7 @@
 //
 
 import UIKit
+import Combine
 
 class ChatViewController: UIViewController {
     
@@ -14,6 +15,9 @@ class ChatViewController: UIViewController {
     @IBOutlet weak var msgTextView: UITextView!
     @IBOutlet weak var sendBtn: UIButton!
     
+    @IBOutlet weak var chatUIStackView: UIStackView!
+    @IBOutlet weak var joinRoomBtn: UIButton!
+    
     var swipeRecognizer: UISwipeGestureRecognizer!
     
     private var sideMenuViewController = SideMenuViewController()
@@ -21,6 +25,8 @@ class ChatViewController: UIViewController {
     
     var room: ChatRoom?
     var isRoomSaving = false
+    
+    @Published var participants = [String]()
     
     deinit {
         SocketIOManager.shared.closeConnection()
@@ -46,13 +52,10 @@ class ChatViewController: UIViewController {
         configureNavigationBarTitle()
         configureMsgTextView()
         setUpKeyboardNotification()
-
-        sendBtn.isEnabled = false
     }
     
     override func viewWillAppear(_ animated: Bool) {
-        guard let room = self.room else { return }
-        print("****************\(room)***************")
+        guard self.room != nil else { return }
         
         DispatchQueue.main.async {
             SocketIOManager.shared.establishConnection {
@@ -61,8 +64,42 @@ class ChatViewController: UIViewController {
                 SocketIOManager.shared.joinRoom(roomName)
             }
         }
+        
+        checkJoinedRoom()
     }
     
+    private func checkJoinedRoom() {
+        let participantsPublisher = FirestoreManager.shared.currentChatRooms.publisher
+        
+        let _ = participantsPublisher
+            .compactMap { $0.participants }
+            .tryContains { $0.contains(LoginManager.shared.getUserEmail) }
+            .sink(receiveCompletion: { print("completion: \($0)") },
+                  receiveValue: {
+                if $0 {
+                    DispatchQueue.main.async {
+                        self.chatUIStackView.isHidden = false
+                    }
+                } else {
+                    DispatchQueue.main.async {
+                        self.setJoinRoombtn()
+                    }
+                }
+            } )
+    }
+    
+    private func setJoinRoombtn() {
+        self.joinRoomBtn.isHidden = false
+        self.joinRoomBtn.clipsToBounds = true
+        self.joinRoomBtn.layer.cornerRadius = 20
+        self.joinRoomBtn.backgroundColor = UIColor(white: 0.1, alpha: 0.03)
+    }
+    
+    @IBAction func joinRoomBtnTapped(_ sender: UIButton) {
+        print("Join The Room!!")
+    }
+    
+
     @IBAction func sendBtnTapped(_ sender: UIButton) {
         guard let message = self.msgTextView.text,
               let roomName = self.room?.roomName else { return }

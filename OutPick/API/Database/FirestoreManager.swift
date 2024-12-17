@@ -37,6 +37,7 @@ class FirestoreManager {
         return chatRooms
     }
     
+    //MARK: 프로필 설정 관련 기능들
     // Firebase Firestore에 UserProfile 객체 저장
     func saveUserProfileToFirestore(userProfile: UserProfile, email: String, completion: @escaping (Error?) -> Void) {
         let userProfileRef = db.collection("Users").document(email)
@@ -71,43 +72,6 @@ class FirestoreManager {
         }
     }
     
-    // Firebase Storage에 프로필 사진 저장 후 URL 반환 함수
-    func uploadImage(image: UIImage, imageName: String, type: String, completion: @escaping (Result<String, Error>) -> Void) {
-        let storageRef = storage.reference()
-        let imageRef = storageRef.child("\(type)/\(imageName).jpg")
-        
-        // 이미지 크기 조정
-        let resizedImage = image.resized(withMaxWidth: 700)
-        
-        guard let imageData = resizedImage.jpegData(compressionQuality: 0.6) else {
-            completion(.failure(NSError(domain: "ImageConversion", code: -1, userInfo: nil)))
-            return
-        }
-        
-        let metadata = StorageMetadata()
-        metadata.contentType = "image/jpeg"
-        
-        imageRef.putData(imageData, metadata: metadata) { metadata, error in
-            if let error = error {
-                completion(.failure(error))
-                return
-            }
-            
-            imageRef.downloadURL { url, error in
-                if let error = error {
-                    completion(.failure(error))
-                    return
-                }
-                
-                if let downloadURL = url?.absoluteString {
-                    completion(.success(downloadURL))
-                } else {
-                    completion(.failure(NSError(domain: "DownloadURL", code: -1, userInfo: nil)))
-                }
-            }
-        }
-    }
-    
     // 프로필 닉네임 중복 검사
     func checkNicknameDuplicate(nickname: String, completion: @escaping (Bool, Error?) -> Void) {
         db.collection("Users").whereField("nickname", isEqualTo: nickname).getDocuments { snapshot, error in
@@ -124,6 +88,7 @@ class FirestoreManager {
         }
     }
     
+    //MARK: 채팅 방 관련 기능들
     // 오픈 채팅 방 정보 저장
     func saveRoomInfoToFirestore(room: ChatRoom, completion: @escaping (Result<Void, Error>) -> Void) {
         // 방 컬렉션에서 방 ID를 기준으로 문서 참조 생성
@@ -182,38 +147,6 @@ class FirestoreManager {
             } else {
                 completion(true, nil) // 중복 o
             }
-        }
-    }
-    
-    // Storage에서 이미지 불러오기
-    func fetchImageFromStorage(_ type: Imagetype, name: String, completion: @escaping (UIImage?) -> Void) {
-        // 캐시된 이미지 확인
-        let cacheKey = NSString(string: "\(type)_\(name)")
-        if let cachedImage = ImageCacheManager.shared.object(forKey: cacheKey) {
-//            print("*************************cachedImage: \(cachedImage)")
-            completion(cachedImage)
-            return
-        }
-        
-        switch type {
-        case .Room:
-            let storageRef = storage.reference()
-            let imageRef = storageRef.child("roomImages/\(name).jpg")
-            
-            imageRef.getData(maxSize: 1 * 1024 * 1024) { data, error in
-                if let error = error {
-                    print("이미지 불러오기 실패.: \(error)")
-                    completion(UIImage(systemName: "photo.artframe"))
-                } else if let data = data, let image = UIImage(data: data) {
-                    // 이미지 캐시에 저장
-                    ImageCacheManager.shared.setObject(image, forKey: cacheKey)
-                    completion(image)
-                } else {
-                    completion(UIImage(systemName: "photo.artframe"))
-                }
-            }
-        case .Profile:
-            completion(nil)
         }
     }
     
@@ -294,6 +227,79 @@ class FirestoreManager {
     func removeChatRoomsListener() {
         roomsListener?.remove()
         roomsListener = nil
+    }
+    
+    func updateRoomParticipants() {
+        
+    }
+    
+    //MARK: 이미지 업로드 및 다운로드 관련 함수
+    // Firebase Storage에 프로필 사진 저장 후 URL 반환 함수
+    func uploadImage(image: UIImage, imageName: String, type: String, completion: @escaping (Result<String, Error>) -> Void) {
+        let storageRef = storage.reference()
+        let imageRef = storageRef.child("\(type)/\(imageName).jpg")
+        
+        // 이미지 크기 조정
+        let resizedImage = image.resized(withMaxWidth: 700)
+        
+        guard let imageData = resizedImage.jpegData(compressionQuality: 0.6) else {
+            completion(.failure(NSError(domain: "ImageConversion", code: -1, userInfo: nil)))
+            return
+        }
+        
+        let metadata = StorageMetadata()
+        metadata.contentType = "image/jpeg"
+        
+        imageRef.putData(imageData, metadata: metadata) { metadata, error in
+            if let error = error {
+                completion(.failure(error))
+                return
+            }
+            
+            imageRef.downloadURL { url, error in
+                if let error = error {
+                    completion(.failure(error))
+                    return
+                }
+                
+                if let downloadURL = url?.absoluteString {
+                    completion(.success(downloadURL))
+                } else {
+                    completion(.failure(NSError(domain: "DownloadURL", code: -1, userInfo: nil)))
+                }
+            }
+        }
+    }
+    
+    // Storage에서 이미지 불러오기
+    func fetchImageFromStorage(_ type: Imagetype, name: String, completion: @escaping (UIImage?) -> Void) {
+        // 캐시된 이미지 확인
+        let cacheKey = NSString(string: "\(type)_\(name)")
+        if let cachedImage = ImageCacheManager.shared.object(forKey: cacheKey) {
+            completion(cachedImage)
+            return
+        }
+        
+        switch type {
+        case .Room:
+            let storageRef = storage.reference()
+            let imageRef = storageRef.child("roomImages/\(name).jpg")
+            
+            imageRef.getData(maxSize: 1 * 1024 * 1024) { data, error in
+                if let error = error {
+                    print("이미지 불러오기 실패.: \(error)")
+                    completion(UIImage(systemName: "photo.artframe"))
+                } else if let data = data, let image = UIImage(data: data) {
+                    // 이미지 캐시에 저장
+                    ImageCacheManager.shared.setObject(image, forKey: cacheKey)
+                    completion(image)
+                } else {
+                    completion(UIImage(systemName: "photo.artframe"))
+                }
+            }
+        case .Profile:
+            completion(nil)
+        }
     }
     
 }

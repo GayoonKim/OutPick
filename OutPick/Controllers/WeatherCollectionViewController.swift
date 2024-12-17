@@ -129,7 +129,7 @@ class HomeCollectionViewController: UICollectionViewController {
             case .currentWeatherItem(_, let main, let weather):
                 let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "CurrentWeather", for: indexPath) as! CurrentWeatherCollectionViewCell
                 
-                cell.cityLabel.text = self.model.cityName
+                cell.cityLabel.text = WeatherAPIManager.shared.currentCity
                 cell.tempLabel.text = "\(String(format: "%.0f", main.temp))°"
                 cell.descriptionLabel.text = weather.last?.description
                 cell.tempMinMaxLabel.text = "최고: \(String(format: "%.0f", main.tempMax))° 최저: \(String(format: "%.0f", main.tempMin))°"
