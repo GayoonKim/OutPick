@@ -21,7 +21,7 @@ class BackgroundDecorationView: UICollectionReusableView {
 
 extension BackgroundDecorationView {
     func configure() {
-        backgroundColor = UIColor(white: 0.1, alpha: 0.1)
+        backgroundColor = UIColor(white: 0.1, alpha: 0.03)
         self.layer.cornerRadius = 16
         self.layer.masksToBounds = true
     }

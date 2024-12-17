@@ -91,7 +91,9 @@ class WeatherAPIManager: NSObject {
         WeatherForecastRequest.shared.currentLon = lon
         
         // 현재 날씨 요청
-        currentWeatherRequestTask = Task {
+        currentWeatherRequestTask = Task { [weak self] in
+            guard let self = self else { return }
+            
             if let currentWeatherInfo = try? await CurrentWeatherRequest.shared.sendWeatherRequest() {
                 self.currentWeatherData = currentWeatherInfo
             } else {
@@ -101,7 +103,9 @@ class WeatherAPIManager: NSObject {
         }
         
         // 날씨 예보 요청
-        weatherForecastRequestTask = Task {
+        weatherForecastRequestTask = Task { [weak self] in
+            guard let self = self else { return }
+            
             if let weatherForecastInfo = try? await WeatherForecastRequest.shared.sendWeatherRequest() {
                 self.hourlyForecastData = weatherForecastInfo.hourly
                 self.dailyForecastData = weatherForecastInfo.daily
@@ -109,7 +113,8 @@ class WeatherAPIManager: NSObject {
                 for forecast in hourlyForecastData {
                     if let iconString = forecast.weather.last?.icon {
                         DispatchQueue.main.async {
-                            Task {
+                            Task { [weak self] in
+                                guard let self = self else { return }
                                 await self.cacheWeatherIcon(iconString)
                             }
                         }
@@ -120,7 +125,8 @@ class WeatherAPIManager: NSObject {
                 for forecast in dailyForecastData {
                     if let iconString = forecast.weather.last?.icon {
                         DispatchQueue.main.async {
-                            Task {
+                            Task { [weak self] in
+                                guard let self = self else { return }
                                 await self.cacheWeatherIcon(iconString)
                             }
                         }
