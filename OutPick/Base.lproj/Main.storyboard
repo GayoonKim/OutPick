@@ -392,10 +392,10 @@
                         <rect key="frame" x="0.0" y="0.0" width="440" height="956"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
-                            <scrollView clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="FY0-uB-REf">
+                            <scrollView clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="scaleToFill" alwaysBounceVertical="YES" translatesAutoresizingMaskIntoConstraints="NO" id="FY0-uB-REf">
                                 <rect key="frame" x="0.0" y="106" width="440" height="816"/>
                                 <subviews>
-                                    <stackView opaque="NO" contentMode="scaleToFill" axis="vertical" translatesAutoresizingMaskIntoConstraints="NO" id="h9o-Kq-EHt">
+                                    <stackView opaque="NO" contentMode="scaleToFill" axis="vertical" distribution="fillProportionally" translatesAutoresizingMaskIntoConstraints="NO" id="h9o-Kq-EHt">
                                         <rect key="frame" x="0.0" y="0.0" width="440" height="733"/>
                                         <subviews>
                                             <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="cRP-YI-oY7">
@@ -487,6 +487,7 @@
                                                     <constraint firstItem="7Xu-rb-RZ6" firstAttribute="top" secondItem="1bY-TZ-xTw" secondAttribute="bottom" constant="8" id="c6Y-7Y-d4Q"/>
                                                     <constraint firstItem="1bY-TZ-xTw" firstAttribute="leading" secondItem="cRP-YI-oY7" secondAttribute="leading" constant="20" id="cMo-wA-lpJ"/>
                                                     <constraint firstItem="Tcj-K6-J8j" firstAttribute="top" secondItem="vdX-Bf-rJc" secondAttribute="bottom" constant="50" id="eKD-jz-k92"/>
+                                                    <constraint firstItem="8g8-A5-HTp" firstAttribute="height" secondItem="Spb-SR-yhq" secondAttribute="height" id="hAP-Sm-u91"/>
                                                     <constraint firstItem="1bY-TZ-xTw" firstAttribute="top" secondItem="Tcj-K6-J8j" secondAttribute="bottom" constant="50" id="khy-zh-FMr"/>
                                                     <constraint firstItem="vdX-Bf-rJc" firstAttribute="top" secondItem="cRP-YI-oY7" secondAttribute="top" constant="20" id="sK6-dc-AoX"/>
                                                     <constraint firstItem="7Xu-rb-RZ6" firstAttribute="bottom" secondItem="cRP-YI-oY7" secondAttribute="bottomMargin" id="wgq-Yb-WNr"/>
@@ -557,7 +558,7 @@
                 </viewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="GEq-cC-GOM" userLabel="First Responder" customClass="UIResponder" sceneMemberID="firstResponder"/>
             </objects>
-            <point key="canvasLocation" x="-4107" y="1096"/>
+            <point key="canvasLocation" x="-4099" y="1096"/>
         </scene>
         <!--Login View Controller-->
         <scene sceneID="En2-Vr-dtw">

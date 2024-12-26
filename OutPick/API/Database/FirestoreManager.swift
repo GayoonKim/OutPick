@@ -194,7 +194,6 @@ class FirestoreManager {
                        let senderNickname = lastMessageData["senderNickname"] as? String,
                        let content = lastMessageData["content"] as? String,
                        let messageTimestamp = lastMessageData["sentAt"] as? Timestamp,
-                       let imageURLs = lastMessageData["imageURLs"],
                        let messageTypeString = lastMessageData["messageType"] as? String,
                        let messageType = MessageType(rawValue: messageTypeString) {
                         
@@ -229,7 +228,27 @@ class FirestoreManager {
         roomsListener = nil
     }
     
-    func updateRoomParticipants() {
+    // 방 참여자 업데이트
+    func updateRoomParticipants(roomName: String, email: String) async {
+        
+        let user_ref = db.collection("Users").document(email)
+        let room_ref = db.collection("Rooms").document(roomName)
+        
+        do {
+            
+            let _ = try await db.runTransaction({ (transaction, errorPointer) -> Any? in
+                
+                transaction.updateData(["joinedRooms": FieldValue.arrayUnion([roomName])], forDocument: user_ref)
+                transaction.updateData(["participantIDs": FieldValue.arrayUnion([email])], forDocument: room_ref)
+                
+                return nil
+            })
+            
+        } catch {
+            
+            print("트랜젝션 실패: \(error)")
+            
+        }
         
     }
     

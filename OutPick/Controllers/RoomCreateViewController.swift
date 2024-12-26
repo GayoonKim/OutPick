@@ -205,12 +205,6 @@ class RoomCreateViewController: UIViewController, PHPickerViewControllerDelegate
                 
                 let room = ChatRoom(roomName: self.roomNameTextView.text, roomDescription: self.roomDescriptionTextView.text, participants: [LoginManager.shared.getUserEmail], creatorID: LoginManager.shared.getUserEmail, createdAt: Date(), roomImageURL: nil)
                 
-                // 사용자 프로필 참여중인 방 정보 업데이트
-                let userprofile_ref = FirestoreManager.shared.db.collection("Users").document(LoginManager.shared.getUserEmail)
-                userprofile_ref.updateData([
-                    "joinedRooms": FieldValue.arrayUnion([room.roomName])
-                ])
-                
                 // 채팅방 화면으로 이동
                 self.performSegue(withIdentifier: "ToChatRoom", sender: room)
                 
