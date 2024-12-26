@@ -26,8 +26,6 @@ class ChatViewController: UIViewController {
     var room: ChatRoom?
     var isRoomSaving = false
     
-    @Published var participants = [String]()
-    
     deinit {
         SocketIOManager.shared.closeConnection()
     }
@@ -42,50 +40,57 @@ class ChatViewController: UIViewController {
         if isRoomSaving {
             activityIndicator.startAnimating()
             configureNotifications()
+            chatUIStackView.isHidden = false
+            joinRoomBtn.isHidden = true
         } else {
             activityIndicator.stopAnimating()
         }
         
         swipeRecognizer = UISwipeGestureRecognizer(target: self, action: #selector(swipeAction(_:)))
         self.view.addGestureRecognizer(swipeRecognizer)
-        
-        configureNavigationBarTitle()
+
         configureMsgTextView()
-        setUpKeyboardNotification()
+        setUpNotifications()
+        
+        decideUI()
     }
     
-    override func viewWillAppear(_ animated: Bool) {
-        guard self.room != nil else { return }
+    private func decideUI() {
         
-        DispatchQueue.main.async {
-            SocketIOManager.shared.establishConnection {
-                guard let roomName = self.room?.roomName else { return }
-
-                SocketIOManager.shared.joinRoom(roomName)
+        guard let room = room else { return }
+        
+        if room.participants.contains(LoginManager.shared.getUserEmail) {
+            chatUIStackView.isHidden = false
+        } else {
+            setJoinRoombtn()
+        }
+        
+        updateNavigationTitle(with: room)
+    }
+    
+    @objc private func currentRoomObserver(_ notification: Notification) {
+        
+        print("호출: currentRoomObserver")
+        guard let rooms = notification.userInfo?["rooms"] as? [ChatRoom],
+              let currentRoom = self.room,
+              let updatedCurrentRoom = rooms.first(where: { $0.roomName == currentRoom.roomName }) else { return }
+        
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
+            self.room = updatedCurrentRoom
+            self.updateNavigationTitle(with: updatedCurrentRoom)
+            
+            if updatedCurrentRoom.participants.contains(LoginManager.shared.getUserEmail) {
+                self.chatUIStackView.isHidden = false
+                self.joinRoomBtn.isHidden = true
             }
         }
         
-        checkJoinedRoom()
     }
     
-    private func checkJoinedRoom() {
-        let participantsPublisher = FirestoreManager.shared.currentChatRooms.publisher
-        
-        let _ = participantsPublisher
-            .compactMap { $0.participants }
-            .tryContains { $0.contains(LoginManager.shared.getUserEmail) }
-            .sink(receiveCompletion: { print("completion: \($0)") },
-                  receiveValue: {
-                if $0 {
-                    DispatchQueue.main.async {
-                        self.chatUIStackView.isHidden = false
-                    }
-                } else {
-                    DispatchQueue.main.async {
-                        self.setJoinRoombtn()
-                    }
-                }
-            } )
+    private func updateNavigationTitle(with room: ChatRoom) {
+        self.navigationItem.setTitle(title: room.roomName, subtitle: "\(room.participants.count)명 참여")
     }
     
     private func setJoinRoombtn() {
@@ -96,10 +101,13 @@ class ChatViewController: UIViewController {
     }
     
     @IBAction func joinRoomBtnTapped(_ sender: UIButton) {
-        print("Join The Room!!")
+        guard let room = self.room else { return }
+        
+        Task {
+            await FirestoreManager.shared.updateRoomParticipants(roomName: room.roomName, email: LoginManager.shared.getUserEmail)
+        }
     }
     
-
     @IBAction func sendBtnTapped(_ sender: UIButton) {
         guard let message = self.msgTextView.text,
               let roomName = self.room?.roomName else { return }
@@ -112,9 +120,15 @@ class ChatViewController: UIViewController {
         sendBtn.isEnabled = false
     }
     
-    private func setUpKeyboardNotification() {
+    private func setUpNotifications() {
+        
+        // 키보드 관련
         NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillShow), name: UIResponder.keyboardWillShowNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillHide), name: UIResponder.keyboardWillHideNotification, object: nil)
+        
+        // 실시간 방 업데이트 관련
+        NotificationCenter.default.addObserver(self, selector: #selector(currentRoomObserver), name: .chatRoomsUpdated, object: nil)
+        
     }
     
     @objc private func keyboardWillShow(_ sender: Notification) {
@@ -157,13 +171,6 @@ class ChatViewController: UIViewController {
     
     private func configureSideMenu() {
     }
-    
-    private func configureNavigationBarTitle() {
-        guard let roomName = self.room?.roomName,
-              let participantsCount = room?.participants.count else { return }
-        
-        self.navigationItem.setTitle(title: roomName, subtitle: "\(participantsCount)명 참여")
-    }
 
     private func configureNotifications() {
         NotificationCenter.default.addObserver(self, selector: #selector(handleRoomSaveCompleted), name: .roomSavedComplete, object: nil)
@@ -177,8 +184,13 @@ class ChatViewController: UIViewController {
               let nickName = UserProfile.sharedUserProfile.nickname else { return }
         self.room = savedRoom
         
+        Task {
+            await FirestoreManager.shared.updateRoomParticipants(roomName: savedRoom.roomName, email: LoginManager.shared.getUserEmail)
+        }
+        
         SocketIOManager.shared.setUserName(nickName)
         SocketIOManager.shared.createRoom(savedRoom.roomName)
+        self.updateNavigationTitle(with: savedRoom)
     }
     
     @objc private func handleRoomSaveFailed(notification: Notification) {
