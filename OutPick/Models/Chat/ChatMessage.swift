@@ -21,6 +21,7 @@ struct ChatMessage: Codable {
     
     // Firestore에 저장하기 위힌 뱐환 메서드
     func toDictionary() -> [String: Any] {
+        
         return [
             "messageID": UUID().uuidString,
             "senderID": senderID,
@@ -29,14 +30,17 @@ struct ChatMessage: Codable {
             "sentAt": Timestamp(date: sentAt),
             "messageType": messageType
         ]
+        
     }
     
 }
 
 enum MessageType: String, Codable {
+    
     case Text = "Text"
     case Image = "Image"
     case Video = "Video"
+    
 }
 
 extension ChatMessage: Hashable {}
