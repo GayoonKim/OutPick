@@ -16,12 +16,11 @@ struct ChatRoom: Codable {
     var participants: [String]          // 방 참여 사용자들
     let creatorID: String               // 방 생성자 ID
     let createdAt: Date                 // 방 생성 시간
-    var lastMessage: ChatMessage?       // 마지막 메시지
     var roomImageURL: String?           // Firestore Storage에 이미지 저장
     
     // Firestore에 저장하기 위힌 뱐환 메서드
     func toDictionary() -> [String: Any] {
-        var data: [String: Any] = [
+        let data: [String: Any] = [
             "id": UUID().uuidString,
             "roomName": roomName,
             "roomDescription": roomDescription,
@@ -30,14 +29,6 @@ struct ChatRoom: Codable {
             "createdAt": Timestamp(date: createdAt),
             "roomImageURL": roomImageURL ?? ""
         ]
-//        
-//        // participants를 Firestore에 저장하기 위해 Dictionary로 변환
-//        data["participants"] = participants.map { $0.toDict() }
-        
-        // lastMessage가 존재할 경우, 이를 Dictionary로 변환
-        if let lastMessage = lastMessage {
-            data["lastMesage"] = lastMessage.toDictionary()
-        }
         
         return data
     }
@@ -55,10 +46,8 @@ extension ChatRoom: Hashable {
     }
     
     static func < (lhs: ChatRoom, rhs: ChatRoom) -> Bool {
-        guard let lhsDate = lhs.lastMessage?.sentAt.addingTimeInterval(100),
-              let rhsDate = rhs.lastMessage?.sentAt.addingTimeInterval(100) else {
-            return false
-        }
+        let lhsDate = lhs.createdAt.addingTimeInterval(100)
+        let rhsDate = rhs.createdAt.addingTimeInterval(100)
         
         return lhsDate < rhsDate
     }
