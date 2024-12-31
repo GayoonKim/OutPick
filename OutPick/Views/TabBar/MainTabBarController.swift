@@ -27,11 +27,11 @@ class MainTabBarController: UITabBarController {
             backgroundView.removeFromSuperview()
         }
         
-        backgroundView = UIView(frame: CGRect(x: 0, y: 0, width: 65, height: 65))
-        backgroundView.backgroundColor = UIColor(white: 0.1, alpha: 0.03)
+        backgroundView = UIView(frame: CGRect(x: 0, y: 0, width: 58, height: 58))
+        backgroundView.backgroundColor = UIColor(white: 0.1, alpha: 0.05)
         backgroundView.layer.cornerRadius = backgroundView.frame.width / 2
         backgroundView.clipsToBounds = true
-        backgroundView.center = CGPoint(x: tabView.bounds.midX, y: tabView.bounds.midY + 7)
+        backgroundView.center = CGPoint(x: tabView.bounds.midX, y: tabView.bounds.midY)
         
         tabView.insertSubview(backgroundView, at: index)
     }

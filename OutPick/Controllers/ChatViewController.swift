@@ -37,6 +37,47 @@ class ChatViewController: UIViewController {
         view.backgroundColor = UIColor(white: 0.1, alpha: 0.05)
         view.layer.cornerRadius = 20
         view.isHidden = true
+
+        let stackView = UIStackView()
+        stackView.axis = .horizontal
+        stackView.spacing = 30
+        stackView.distribution = .equalSpacing
+        stackView.alignment = .center
+        
+        view.addSubview(stackView)
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+        
+        NSLayoutConstraint.activate([
+            stackView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            stackView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            stackView.heightAnchor.constraint(equalToConstant: 75),
+            stackView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 40),
+            stackView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -40),
+        ])
+        
+        for btn in ["photo", "camera", "paperclip"] {
+            
+            let btn: UIButton = {
+                let button = UIButton(type: .system)
+                button.setImage(UIImage(systemName: btn), for: .normal)
+                button.tintColor = .black
+                button.backgroundColor = .white
+                
+                // 원형으로 만들기 위한 설정
+                button.translatesAutoresizingMaskIntoConstraints = false
+                NSLayoutConstraint.activate([
+                    button.widthAnchor.constraint(equalToConstant: 50),
+                    button.heightAnchor.constraint(equalToConstant: 50)
+                ])
+                button.layer.cornerRadius = 25 // 반지름 = 너비/2
+                button.clipsToBounds = true // 코너가 잘리도록 설정
+                
+                stackView.addArrangedSubview(button)
+                
+                return button
+            }()
+            
+        }
         
         return view
     }()
@@ -66,6 +107,16 @@ class ChatViewController: UIViewController {
         
         decideJoinUI()
         setUpOptionMenuUI()
+        adjustLayoutForSafeArea()
+    }
+    
+    private func adjustLayoutForSafeArea() {
+        // 하단 여백 추가
+        chatUIStackView.layoutMargins = UIEdgeInsets(top: 0, left: 0, bottom: view.safeAreaInsets.bottom + 10, right: 0)
+        chatUIStackView.isLayoutMarginsRelativeArrangement = true
+        
+        // 키보드가 올라올 때의 여백 조정
+        additionalSafeAreaInsets = UIEdgeInsets(top: 0, left: 0, bottom: 10, right: 0)
     }
     
     private func setUpOptionMenuUI() {
@@ -79,7 +130,7 @@ class ChatViewController: UIViewController {
             optionView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             optionView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             optionView.topAnchor.constraint(equalTo: self.chatUIStackView.bottomAnchor, constant: 40),
-            optionView.heightAnchor.constraint(equalToConstant: 200),
+            optionView.heightAnchor.constraint(equalToConstant: 100),
         ])
         
     }
@@ -99,6 +150,7 @@ class ChatViewController: UIViewController {
             
             self.optionView.translatesAutoresizingMaskIntoConstraints = true
             self.view.frame.origin.y -= self.optionView.frame.height + 40
+            
             
         } else {
             
@@ -217,7 +269,7 @@ class ChatViewController: UIViewController {
         
         if self.view.frame.origin.y == 0 {
             
-            self.view.frame.origin.y -= keyboardFrameHeight + 10
+            self.view.frame.origin.y -= keyboardFrameHeight
             
         }
     }
