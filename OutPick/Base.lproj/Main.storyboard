@@ -11,11 +11,11 @@
         <capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/>
     </dependencies>
     <scenes>
-        <!--홈-->
+        <!--날씨-->
         <scene sceneID="2cU-cI-qPh">
             <objects>
                 <navigationController id="9cU-dN-YaR" sceneMemberID="viewController">
-                    <tabBarItem key="tabBarItem" title="홈" id="cpM-Qv-uHC"/>
+                    <tabBarItem key="tabBarItem" title="날씨" id="cpM-Qv-uHC"/>
                     <navigationItem key="navigationItem" id="nZd-v6-Xgu"/>
                     <navigationBar key="navigationBar" contentMode="scaleToFill" id="Ysb-ji-NFs">
                         <rect key="frame" x="0.0" y="62" width="440" height="44"/>
@@ -29,7 +29,7 @@
             </objects>
             <point key="canvasLocation" x="-4416" y="-338"/>
         </scene>
-        <!--날씨-->
+        <!--Home Collection View Controller-->
         <scene sceneID="S3S-Ay-0XO">
             <objects>
                 <collectionViewController id="T43-zg-hFW" customClass="HomeCollectionViewController" customModule="OutPick" customModuleProvider="target" sceneMemberID="viewController">
@@ -184,7 +184,7 @@
                             <outlet property="delegate" destination="T43-zg-hFW" id="A1E-Nm-RhI"/>
                         </connections>
                     </collectionView>
-                    <tabBarItem key="tabBarItem" title="날씨" image="sun.min" catalog="system" id="BId-67-C5i"/>
+                    <tabBarItem key="tabBarItem" title="" image="sun.min" catalog="system" id="BId-67-C5i"/>
                     <navigationItem key="navigationItem" id="yuY-sy-QYy"/>
                 </collectionViewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="Gj8-YM-wtU" userLabel="First Responder" customClass="UIResponder" sceneMemberID="firstResponder"/>
@@ -274,7 +274,7 @@
                             <outlet property="delegate" destination="1bN-e9-yBk" id="z8y-x9-4V5"/>
                         </connections>
                     </collectionView>
-                    <tabBarItem key="tabBarItem" title="오픈채팅" image="person.3" catalog="system" id="NCZ-Xl-lDd"/>
+                    <tabBarItem key="tabBarItem" title="" image="person.3" catalog="system" id="NCZ-Xl-lDd"/>
                     <navigationItem key="navigationItem" title="오픈채팅" largeTitleDisplayMode="never" id="Qbc-VI-sk8">
                         <barButtonItem key="rightBarButtonItem" image="plus.message.fill" catalog="system" id="7s9-kt-voK">
                             <color key="tintColor" white="0.0" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
@@ -956,7 +956,7 @@
             </objects>
             <point key="canvasLocation" x="-2615" y="-338"/>
         </scene>
-        <!--채팅-->
+        <!--Collection View Controller-->
         <scene sceneID="ijm-yH-qwK">
             <objects>
                 <collectionViewController id="j8R-If-eUG" sceneMemberID="viewController">
@@ -985,7 +985,7 @@
                             <outlet property="delegate" destination="j8R-If-eUG" id="FVK-yJ-TeB"/>
                         </connections>
                     </collectionView>
-                    <tabBarItem key="tabBarItem" title="채팅" image="message" catalog="system" id="aZm-5Q-ZUa"/>
+                    <tabBarItem key="tabBarItem" title="" image="message" catalog="system" id="aZm-5Q-ZUa"/>
                     <navigationItem key="navigationItem" id="Yvh-UJ-SYw"/>
                 </collectionViewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="yT1-3t-yyQ" userLabel="First Responder" customClass="UIResponder" sceneMemberID="firstResponder"/>
@@ -1078,7 +1078,7 @@
         </scene>
     </scenes>
     <inferredMetricsTieBreakers>
-        <segue reference="efJ-0s-BGe"/>
+        <segue reference="amY-jT-Pp9"/>
     </inferredMetricsTieBreakers>
     <resources>
         <image name="file" width="128" height="128"/>
