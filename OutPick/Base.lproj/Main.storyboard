@@ -919,7 +919,6 @@
                     <tabBar key="tabBar" contentMode="scaleToFill" insetsLayoutMarginsFromSafeArea="NO" translucent="NO" id="1GF-JV-DRY" customClass="MainTabBarWithCorners" customModule="OutPick" customModuleProvider="target">
                         <rect key="frame" x="0.0" y="0.0" width="393" height="49"/>
                         <autoresizingMask key="autoresizingMask"/>
-                        <color key="tintColor" white="0.66666666666666663" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
                         <color key="selectedImageTintColor" white="0.0" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
                         <userDefinedRuntimeAttributes>
                             <userDefinedRuntimeAttribute type="number" keyPath="radii">
@@ -992,11 +991,11 @@
             </objects>
             <point key="canvasLocation" x="-2613" y="370"/>
         </scene>
-        <!--Item-->
+        <!--Navigation Controller-->
         <scene sceneID="8vl-PV-1p3">
             <objects>
                 <navigationController id="F3O-nC-Wn7" sceneMemberID="viewController">
-                    <tabBarItem key="tabBarItem" title="Item" id="NAZ-xu-z2w"/>
+                    <tabBarItem key="tabBarItem" title="" image="magnifyingglass" catalog="system" id="NAZ-xu-z2w"/>
                     <navigationBar key="navigationBar" contentMode="scaleToFill" id="zcY-ah-rtq">
                         <rect key="frame" x="0.0" y="62" width="440" height="44"/>
                         <autoresizingMask key="autoresizingMask"/>
@@ -1009,7 +1008,7 @@
             </objects>
             <point key="canvasLocation" x="-1775" y="-338"/>
         </scene>
-        <!--마이페이지-->
+        <!--My Menu View Controller-->
         <scene sceneID="v5D-Cc-jcn">
             <objects>
                 <viewController id="9K7-kt-9Io" customClass="MyMenuViewController" customModule="OutPick" customModuleProvider="target" sceneMemberID="viewController">
@@ -1033,7 +1032,7 @@
                             <constraint firstItem="vEN-mY-AJa" firstAttribute="centerX" secondItem="v7R-H3-6A8" secondAttribute="centerX" id="e5V-tD-x3d"/>
                         </constraints>
                     </view>
-                    <tabBarItem key="tabBarItem" title="마이페이지" selectedImage="gearshape.fill" catalog="system" id="H6V-LC-yge"/>
+                    <tabBarItem key="tabBarItem" title="" image="gearshape" catalog="system" id="H6V-LC-yge"/>
                     <navigationItem key="navigationItem" id="P0J-6z-XVB"/>
                 </viewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="IVZ-LK-DwW" userLabel="First Responder" customClass="UIResponder" sceneMemberID="firstResponder"/>
@@ -1078,13 +1077,14 @@
         </scene>
     </scenes>
     <inferredMetricsTieBreakers>
-        <segue reference="amY-jT-Pp9"/>
+        <segue reference="efJ-0s-BGe"/>
     </inferredMetricsTieBreakers>
     <resources>
         <image name="file" width="128" height="128"/>
-        <image name="gearshape.fill" catalog="system" width="128" height="123"/>
+        <image name="gearshape" catalog="system" width="128" height="123"/>
         <image name="ios_light_sq_SI" width="185" height="44"/>
         <image name="kakao_login_medium_narrow" width="183" height="45"/>
+        <image name="magnifyingglass" catalog="system" width="128" height="117"/>
         <image name="message" catalog="system" width="128" height="116"/>
         <image name="paperplane" catalog="system" width="128" height="119"/>
         <image name="person.3" catalog="system" width="128" height="66"/>
