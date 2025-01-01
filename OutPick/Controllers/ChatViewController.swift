@@ -17,6 +17,7 @@ class ChatViewController: UIViewController {
     @IBOutlet weak var attachmentBtn: UIButton!
     
     @IBOutlet weak var chatUIStackView: UIStackView!
+    
     @IBOutlet weak var joinRoomBtn: UIButton!
     
     var swipeRecognizer: UISwipeGestureRecognizer!
@@ -38,7 +39,7 @@ class ChatViewController: UIViewController {
         optionView.layer.cornerRadius = 20
         optionView.isHidden = true
         optionView.tag = 99
-
+        
         let stackView = UIStackView()
         stackView.axis = .horizontal
         stackView.spacing = 30
@@ -77,7 +78,7 @@ class ChatViewController: UIViewController {
             stackView.leadingAnchor.constraint(equalTo: optionView.leadingAnchor, constant: 40),
             stackView.trailingAnchor.constraint(equalTo: optionView.trailingAnchor, constant: -40),
         ])
-
+        
         return optionView
     }()
     
@@ -93,7 +94,7 @@ class ChatViewController: UIViewController {
         
         if isRoomSaving {
             activityIndicator.startAnimating()
-//            configureNotifications()
+            //            configureNotifications()
             chatUIStackView.isHidden = false
             joinRoomBtn.isHidden = true
         } else {
@@ -107,7 +108,7 @@ class ChatViewController: UIViewController {
         
         swipeRecognizer = UISwipeGestureRecognizer(target: self, action: #selector(swipeAction(_:)))
         self.view.addGestureRecognizer(swipeRecognizer)
-
+        
         configureMsgTextView()
         decideJoinUI()
         setUpOptionMenuUI()
@@ -125,31 +126,35 @@ class ChatViewController: UIViewController {
         // 하단 여백 추가
         chatUIStackView.layoutMargins = UIEdgeInsets(top: 0, left: 0, bottom: view.safeAreaInsets.bottom + 10, right: 0)
         chatUIStackView.isLayoutMarginsRelativeArrangement = true
-    
+        
     }
     
     private func setUpOptionMenuUI() {
         
-        self.view.addSubview(optionView)
-        optionView.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            optionView.bottomAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.bottomAnchor),
-            optionView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
-            optionView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
-            optionView.heightAnchor.constraint(equalToConstant: 100),
-        ])
+        DispatchQueue.main.async {
+            
+            self.view.addSubview(self.optionView)
+            self.optionView.translatesAutoresizingMaskIntoConstraints = false
+            NSLayoutConstraint.activate([
+                self.optionView.bottomAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.bottomAnchor),
+                self.optionView.leadingAnchor.constraint(equalTo: self.view.leadingAnchor, constant: 20),
+                self.optionView.trailingAnchor.constraint(equalTo: self.view.trailingAnchor, constant: -20),
+                self.optionView.heightAnchor.constraint(equalToConstant: 100),
+            ])
+            
+        }
         
     }
     
     private func hideOrShowOptionMenu() {
+    
+        guard let image = self.attachmentBtn.imageView?.image else { return }
         
-        guard let image = attachmentBtn.imageView?.image else { return }
-
         if image != UIImage(systemName: "xmark") {
             
-            attachmentBtn.setImage(UIImage(systemName: "xmark"), for: .normal)
+            self.attachmentBtn.setImage(UIImage(systemName: "xmark"), for: .normal)
             
-            if msgTextView.isFirstResponder {
+            if self.msgTextView.isFirstResponder {
                 
                 self.msgTextView.resignFirstResponder()
                 
@@ -163,7 +168,7 @@ class ChatViewController: UIViewController {
             
         } else {
             
-            attachmentBtn.setImage(UIImage(systemName: "plus"), for: .normal)
+            self.attachmentBtn.setImage(UIImage(systemName: "plus"), for: .normal)
             self.optionView.isHidden = true
             self.optionView.alpha = 0
             
@@ -179,7 +184,7 @@ class ChatViewController: UIViewController {
         self.hideOrShowOptionMenu()
         
     }
-
+    
     private func decideJoinUI() {
         
         guard let room = room else { return }
@@ -271,10 +276,12 @@ class ChatViewController: UIViewController {
     
     @objc private func keyboardWillShow(_ sender: Notification) {
         
+        
+        
         guard let keyboardFrame = sender.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
         let keyboardFrameHeight = keyboardFrame.height
         
-        if !optionView.isHidden {
+        if !self.optionView.isHidden {
             
             self.optionView.isHidden = true
             self.attachmentBtn.setImage(UIImage(systemName: "plus"), for: .normal)
@@ -284,9 +291,12 @@ class ChatViewController: UIViewController {
         
         if keyboardFrame.intersects(self.chatUIStackView.frame) {
             
-            self.chatUIStackView.frame.origin.y -= keyboardFrameHeight - 30
+            self.chatUIStackView.translatesAutoresizingMaskIntoConstraints = true
+            let safeAreaBottom = self.view.safeAreaInsets.bottom
+            self.chatUIStackView.frame.origin.y -= (keyboardFrameHeight - safeAreaBottom) + 5
             
         }
+        
     }
     
     @objc private func keyboardWillHide(_ sender: Notification) {
@@ -296,7 +306,8 @@ class ChatViewController: UIViewController {
         
         if self.chatUIStackView.frame.origin.y != 0 {
             
-            self.chatUIStackView.frame.origin.y += keyboardFrameHeight - 30
+            let safeAreaBottom = self.view.safeAreaInsets.bottom
+            self.chatUIStackView.frame.origin.y += (keyboardFrameHeight - safeAreaBottom) + 5
             
         }
         
@@ -318,7 +329,7 @@ class ChatViewController: UIViewController {
     @objc private func handleTapGesture() {
         
         msgTextView.resignFirstResponder()
-
+        
         if !self.optionView.isHidden {
             
             attachmentBtn.setImage(UIImage(systemName: "plus"), for: .normal)
@@ -433,10 +444,10 @@ extension UITextView {
         self.contentInset.left = 5
         self.contentInset.top = topConstraint
         
-//        let size = self.sizeThatFits(CGSize(width: self.frame.width, height: CGFloat.greatestFiniteMagnitude))
-//        var topCorrection = (self.bounds.size.height - size.height * self.zoomScale) / 2.0
-//        topCorrection = max(0, topCorrection)
-//        self.contentInset.top = topCorrection
+        //        let size = self.sizeThatFits(CGSize(width: self.frame.width, height: CGFloat.greatestFiniteMagnitude))
+        //        var topCorrection = (self.bounds.size.height - size.height * self.zoomScale) / 2.0
+        //        topCorrection = max(0, topCorrection)
+        //        self.contentInset.top = topCorrection
         
     }
     
