@@ -31,12 +31,13 @@ class ChatViewController: UIViewController {
         SocketIOManager.shared.closeConnection()
     }
     
-    private let optionView: UIView = {
+    private lazy var optionView: UIView = {
         
-        let view = UIView()
-        view.backgroundColor = UIColor(white: 0.1, alpha: 0.05)
-        view.layer.cornerRadius = 20
-        view.isHidden = true
+        let optionView = UIView()
+        optionView.backgroundColor = UIColor(white: 0.1, alpha: 0.05)
+        optionView.layer.cornerRadius = 20
+        optionView.isHidden = true
+        optionView.tag = 99
 
         let stackView = UIStackView()
         stackView.axis = .horizontal
@@ -44,42 +45,40 @@ class ChatViewController: UIViewController {
         stackView.distribution = .equalSpacing
         stackView.alignment = .center
         
-        view.addSubview(stackView)
-        stackView.translatesAutoresizingMaskIntoConstraints = false
-        
-        NSLayoutConstraint.activate([
-            stackView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            stackView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            stackView.heightAnchor.constraint(equalToConstant: 75),
-            stackView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 40),
-            stackView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -40),
-        ])
-        
         for btn in ["photo", "camera", "paperclip"] {
             
-            let btn: UIButton = {
-                let button = UIButton(type: .system)
-                button.setImage(UIImage(systemName: btn), for: .normal)
-                button.tintColor = .black
-                button.backgroundColor = .white
-                
-                // 원형으로 만들기 위한 설정
-                button.translatesAutoresizingMaskIntoConstraints = false
-                NSLayoutConstraint.activate([
-                    button.widthAnchor.constraint(equalToConstant: 50),
-                    button.heightAnchor.constraint(equalToConstant: 50)
-                ])
-                button.layer.cornerRadius = 25 // 반지름 = 너비/2
-                button.clipsToBounds = true // 코너가 잘리도록 설정
-                
-                stackView.addArrangedSubview(button)
-                
-                return button
-            }()
+            let button = UIButton(type: .system)
+            button.setImage(UIImage(systemName: btn), for: .normal)
+            button.tintColor = .black
+            button.backgroundColor = .red
+            button.accessibilityIdentifier = btn
+            button.addTarget(self, action: #selector(checkAttachmentButtonKind), for: .touchUpInside)
+            
+            // 원형으로 만들기 위한 설정
+            button.translatesAutoresizingMaskIntoConstraints = false
+            NSLayoutConstraint.activate([
+                button.widthAnchor.constraint(equalToConstant: 50),
+                button.heightAnchor.constraint(equalToConstant: 50)
+            ])
+            button.layer.cornerRadius = 25 // 반지름 = 너비/2
+            button.clipsToBounds = true // 코너가 잘리도록 설정
+            
+            stackView.addArrangedSubview(button)
             
         }
         
-        return view
+        optionView.addSubview(stackView)
+        
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            stackView.centerXAnchor.constraint(equalTo: optionView.centerXAnchor),
+            stackView.centerYAnchor.constraint(equalTo: optionView.centerYAnchor),
+            stackView.heightAnchor.constraint(equalToConstant: 75),
+            stackView.leadingAnchor.constraint(equalTo: optionView.leadingAnchor, constant: 40),
+            stackView.trailingAnchor.constraint(equalTo: optionView.trailingAnchor, constant: -40),
+        ])
+
+        return optionView
     }()
     
     override func viewDidLoad() {
@@ -90,46 +89,53 @@ class ChatViewController: UIViewController {
         backButton.tintColor = .black
         self.navigationItem.leftBarButtonItem = backButton
         
+        setUpNotifications()
+        
         if isRoomSaving {
             activityIndicator.startAnimating()
-            configureNotifications()
+//            configureNotifications()
             chatUIStackView.isHidden = false
             joinRoomBtn.isHidden = true
         } else {
             activityIndicator.stopAnimating()
         }
         
+        let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTapGesture))
+        tapGesture.delegate = self
+        tapGesture.cancelsTouchesInView = false
+        view.addGestureRecognizer(tapGesture)
+        
         swipeRecognizer = UISwipeGestureRecognizer(target: self, action: #selector(swipeAction(_:)))
         self.view.addGestureRecognizer(swipeRecognizer)
 
         configureMsgTextView()
-        setUpNotifications()
-        
         decideJoinUI()
         setUpOptionMenuUI()
         adjustLayoutForSafeArea()
+        
+    }
+    
+    @objc func checkAttachmentButtonKind() {
+        print("Button tapped!") // 이 코드로 메서드 호출 여부 확인
+        
     }
     
     private func adjustLayoutForSafeArea() {
+        
         // 하단 여백 추가
         chatUIStackView.layoutMargins = UIEdgeInsets(top: 0, left: 0, bottom: view.safeAreaInsets.bottom + 10, right: 0)
         chatUIStackView.isLayoutMarginsRelativeArrangement = true
-        
-        // 키보드가 올라올 때의 여백 조정
-        additionalSafeAreaInsets = UIEdgeInsets(top: 0, left: 0, bottom: 10, right: 0)
+    
     }
     
     private func setUpOptionMenuUI() {
         
-        self.view.clipsToBounds = false
-        view.addSubview(optionView)
-        
+        self.view.addSubview(optionView)
         optionView.translatesAutoresizingMaskIntoConstraints = false
-        
         NSLayoutConstraint.activate([
+            optionView.bottomAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.bottomAnchor),
             optionView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             optionView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
-            optionView.topAnchor.constraint(equalTo: self.chatUIStackView.bottomAnchor, constant: 40),
             optionView.heightAnchor.constraint(equalToConstant: 100),
         ])
         
@@ -143,14 +149,17 @@ class ChatViewController: UIViewController {
             
             attachmentBtn.setImage(UIImage(systemName: "xmark"), for: .normal)
             
-            self.msgTextView.resignFirstResponder()
+            if msgTextView.isFirstResponder {
+                
+                self.msgTextView.resignFirstResponder()
+                
+            }
             
             self.optionView.isHidden = false
             self.optionView.alpha = 1
             
-            self.optionView.translatesAutoresizingMaskIntoConstraints = true
-            self.view.frame.origin.y -= self.optionView.frame.height + 40
-            
+            self.chatUIStackView.translatesAutoresizingMaskIntoConstraints = true
+            self.chatUIStackView.frame.origin.y -= self.optionView.frame.height
             
         } else {
             
@@ -158,15 +167,15 @@ class ChatViewController: UIViewController {
             self.optionView.isHidden = true
             self.optionView.alpha = 0
             
-            self.optionView.translatesAutoresizingMaskIntoConstraints = true
-            self.view.frame.origin.y = .zero
+            self.chatUIStackView.translatesAutoresizingMaskIntoConstraints = true
+            self.chatUIStackView.frame.origin.y += self.optionView.frame.height
             
         }
         
     }
     
     @IBAction func attachmentBtnTapped(_ sender: UIButton) {
-        
+        print("첨부 파일 버튼 클릭")
         self.hideOrShowOptionMenu()
         
     }
@@ -177,6 +186,7 @@ class ChatViewController: UIViewController {
         
         if room.participants.contains(LoginManager.shared.getUserEmail) {
             chatUIStackView.isHidden = false
+            
         } else {
             setJoinRoombtn()
         }
@@ -253,32 +263,40 @@ class ChatViewController: UIViewController {
         // 실시간 방 업데이트 관련
         NotificationCenter.default.addObserver(self, selector: #selector(currentRoomObserver), name: .chatRoomsUpdated, object: nil)
         
+        // 방 저장 관련
+        NotificationCenter.default.addObserver(self, selector: #selector(handleRoomSaveCompleted), name: .roomSavedComplete, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleRoomSaveFailed), name: .roomSaveFailed, object: nil)
+        
     }
     
     @objc private func keyboardWillShow(_ sender: Notification) {
+        
         guard let keyboardFrame = sender.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
         let keyboardFrameHeight = keyboardFrame.height
         
-        if !self.optionView.isHidden {
+        if !optionView.isHidden {
             
             self.optionView.isHidden = true
-            self.view.frame.origin.y += self.optionView.frame.height + 40
             self.attachmentBtn.setImage(UIImage(systemName: "plus"), for: .normal)
+            self.chatUIStackView.frame.origin.y += self.optionView.frame.height
             
         }
         
-        if self.view.frame.origin.y == 0 {
+        if keyboardFrame.intersects(self.chatUIStackView.frame) {
             
-            self.view.frame.origin.y -= keyboardFrameHeight
+            self.chatUIStackView.frame.origin.y -= keyboardFrameHeight - 30
             
         }
     }
     
-    @objc private func keyboardWillHide() {
+    @objc private func keyboardWillHide(_ sender: Notification) {
         
-        if self.view.frame.origin.y != 0 {
+        guard let keyboardFrame = sender.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
+        let keyboardFrameHeight = keyboardFrame.height
+        
+        if self.chatUIStackView.frame.origin.y != 0 {
             
-            self.view.frame.origin.y = .zero
+            self.chatUIStackView.frame.origin.y += keyboardFrameHeight - 30
             
         }
         
@@ -290,9 +308,6 @@ class ChatViewController: UIViewController {
         msgTextView.text = "메시지를 입력하세요."
         msgTextView.textColor = UIColor.lightGray
         
-        let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTapGesture))
-        view.addGestureRecognizer(tapGesture)
-        
         self.msgTextView.layer.cornerRadius = 20
         self.msgTextView.clipsToBounds = true
         self.msgTextView.backgroundColor = UIColor(white: 0.1, alpha: 0.05)
@@ -301,8 +316,9 @@ class ChatViewController: UIViewController {
     }
     
     @objc private func handleTapGesture() {
-        msgTextView.resignFirstResponder()
         
+        msgTextView.resignFirstResponder()
+
         if !self.optionView.isHidden {
             
             attachmentBtn.setImage(UIImage(systemName: "plus"), for: .normal)
@@ -310,17 +326,9 @@ class ChatViewController: UIViewController {
             self.optionView.alpha = 0
             
             self.optionView.translatesAutoresizingMaskIntoConstraints = true
-            DispatchQueue.main.async {
-                self.view.frame.origin.y = .zero
-            }
+            self.chatUIStackView.frame.origin.y += self.optionView.frame.height
             
         }
-    }
-
-    private func configureNotifications() {
-        
-        NotificationCenter.default.addObserver(self, selector: #selector(handleRoomSaveCompleted), name: .roomSavedComplete, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(handleRoomSaveFailed), name: .roomSaveFailed, object: nil)
         
     }
     
@@ -425,6 +433,11 @@ extension UITextView {
         self.contentInset.left = 5
         self.contentInset.top = topConstraint
         
+//        let size = self.sizeThatFits(CGSize(width: self.frame.width, height: CGFloat.greatestFiniteMagnitude))
+//        var topCorrection = (self.bounds.size.height - size.height * self.zoomScale) / 2.0
+//        topCorrection = max(0, topCorrection)
+//        self.contentInset.top = topCorrection
+        
     }
     
 }
@@ -453,10 +466,31 @@ extension ChatViewController: UITextViewDelegate {
     func textViewDidChange(_ textView: UITextView) {
         
         if textView.text.isEmpty {
+            
             sendBtn.isEnabled = false
+            
         } else {
+            
             sendBtn.isEnabled = true
+            
         }
+        
+        textView.alignTextVertically()
+        
+    }
+    
+}
+
+extension ChatViewController: UIGestureRecognizerDelegate {
+    
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        
+        // 터치된 뷰가 UIButton일 경우 제스처 제외
+        if let touchedView = touch.view, touchedView is UIButton {
+            return false
+        }
+        
+        return true
         
     }
     
