@@ -186,20 +186,8 @@ class SecondProfileViewController: UIViewController, PHPickerViewControllerDeleg
         if let nickname = nicknameTextField.text {
             UserProfile.sharedUserProfile.nickname = nickname
         }
-        
-        // 카카오 로그인
-//        LoginManager.shared.getKakaoEmail { email in
-//            guard let email = email else { return }
             
         self.saveUserProfile(userProfile: UserProfile.sharedUserProfile, email: LoginManager.shared.getUserEmail)
-//        }
-        
-        // 구글 로그인
-//        LoginManager.shared.getGoogleEmail { email in
-//            guard let email = email else { return }
-            
-            self.saveUserProfile(userProfile: UserProfile.sharedUserProfile, email: LoginManager.shared.getUserEmail)
-//        }
             
         let homeVC = self.storyboard?.instantiateViewController(identifier: "HomeTBC") as? UITabBarController
         self.view.window?.rootViewController = homeVC
@@ -222,7 +210,7 @@ class SecondProfileViewController: UIViewController, PHPickerViewControllerDeleg
             }
             
             if let image = self.profileImageView.image {
-                FirestoreManager.shared.uploadImage(image: image, imageName: email, type: "profileImages") { result in
+                FirestoreManager.shared.uploadImage(images: [image], type: "profileImages") { result in
                     switch result {
                     case .success(let imageURL):
                         userProfile.profileImageURL = imageURL

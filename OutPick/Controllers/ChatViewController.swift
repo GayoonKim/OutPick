@@ -5,10 +5,12 @@
 //  Created by 김가윤 on 10/14/24.
 //
 
+import Foundation
 import UIKit
 import Combine
+import PhotosUI
 
-class ChatViewController: UIViewController {
+class ChatViewController: UIViewController, UINavigationControllerDelegate {
     
     @IBOutlet weak var activityIndicator: UIActivityIndicatorView!
     @IBOutlet weak var sideMenuBtn: UIBarButtonItem!
@@ -38,13 +40,14 @@ class ChatViewController: UIViewController {
         optionView.backgroundColor = UIColor(white: 0.1, alpha: 0.05)
         optionView.layer.cornerRadius = 20
         optionView.isHidden = true
-        optionView.tag = 99
+        optionView.tag = 98
         
         let stackView = UIStackView()
         stackView.axis = .horizontal
         stackView.spacing = 30
         stackView.distribution = .equalSpacing
         stackView.alignment = .center
+        stackView.tag = 99
         
         for btn in ["photo", "camera", "paperclip"] {
             
@@ -53,7 +56,7 @@ class ChatViewController: UIViewController {
             button.tintColor = .black
             button.backgroundColor = .red
             button.accessibilityIdentifier = btn
-            button.addTarget(self, action: #selector(checkAttachmentButtonKind), for: .touchUpInside)
+            button.addTarget(self, action: #selector(checkAttachmentButtonKind(_:)), for: .touchUpInside)
             
             // 원형으로 만들기 위한 설정
             button.translatesAutoresizingMaskIntoConstraints = false
@@ -82,6 +85,9 @@ class ChatViewController: UIViewController {
         return optionView
     }()
     
+    private var preselectedIdentifiers: [String] = []
+    private var selectedImages: [UIImage] = []
+    
     override func viewDidLoad() {
         
         super.viewDidLoad()
@@ -103,7 +109,6 @@ class ChatViewController: UIViewController {
         
         let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTapGesture))
         tapGesture.delegate = self
-        tapGesture.cancelsTouchesInView = false
         view.addGestureRecognizer(tapGesture)
         
         swipeRecognizer = UISwipeGestureRecognizer(target: self, action: #selector(swipeAction(_:)))
@@ -116,8 +121,56 @@ class ChatViewController: UIViewController {
         
     }
     
-    @objc func checkAttachmentButtonKind() {
-        print("Button tapped!") // 이 코드로 메서드 호출 여부 확인
+    @objc func checkAttachmentButtonKind(_ sender: UIButton) {
+        
+        guard let identifier = sender.accessibilityIdentifier else { return }
+        
+        switch identifier {
+            
+        case "photo":
+            
+            print("Photo btn tapped!")
+            self.hideOrShowOptionMenu()
+            self.openPHPicker()
+            
+        case "camera":
+            
+            print("Camera btn tapped!")
+            self.hideOrShowOptionMenu()
+            self.openCamera()
+            
+        case "paperclip":
+            print("File btn tapped!")
+        default:
+            return
+            
+        }
+        
+    }
+    
+    private func openCamera() {
+        if UIImagePickerController.isSourceTypeAvailable(.camera) {
+            let imagePicker = UIImagePickerController()
+            imagePicker.delegate = self
+            imagePicker.allowsEditing = true
+            imagePicker.sourceType = .camera
+        
+            present(imagePicker, animated: true, completion: nil)
+        }
+    }
+    
+    private func openPHPicker() {
+        
+        var configuration = PHPickerConfiguration()
+        configuration.filter = .any(of: [.images, .videos])
+        configuration.selectionLimit = 0
+        configuration.selection = .ordered
+        configuration.preferredAssetRepresentationMode = .current
+        configuration.preselectedAssetIdentifiers = preselectedIdentifiers
+        
+        let picker = PHPickerViewController(configuration: configuration)
+        picker.delegate = self
+        present(picker, animated: true)
         
     }
     
@@ -180,7 +233,7 @@ class ChatViewController: UIViewController {
     }
     
     @IBAction func attachmentBtnTapped(_ sender: UIButton) {
-        print("첨부 파일 버튼 클릭")
+        
         self.hideOrShowOptionMenu()
         
     }
@@ -202,7 +255,6 @@ class ChatViewController: UIViewController {
     
     @objc private func currentRoomObserver(_ notification: Notification) {
         
-        print("호출: currentRoomObserver")
         guard let rooms = notification.userInfo?["rooms"] as? [ChatRoom],
               let currentRoom = self.room,
               let updatedCurrentRoom = rooms.first(where: { $0.roomName == currentRoom.roomName }) else { return }
@@ -405,6 +457,7 @@ class ChatViewController: UIViewController {
     
 }
 
+// 내비게이션 아이템 타이틀 설정
 extension UINavigationItem {
     
     func setTitle(title: String, subtitle: String) {
@@ -443,11 +496,6 @@ extension UITextView {
         topConstraint = topConstraint < 0.0 ? 0.0 : topConstraint
         self.contentInset.left = 5
         self.contentInset.top = topConstraint
-        
-        //        let size = self.sizeThatFits(CGSize(width: self.frame.width, height: CGFloat.greatestFiniteMagnitude))
-        //        var topCorrection = (self.bounds.size.height - size.height * self.zoomScale) / 2.0
-        //        topCorrection = max(0, topCorrection)
-        //        self.contentInset.top = topCorrection
         
     }
     
@@ -501,8 +549,69 @@ extension ChatViewController: UIGestureRecognizerDelegate {
             return false
         }
         
+        if let excludeView = touch.view, excludeView.tag == 99 || excludeView.tag == 98 {
+            return false
+        }
+        
         return true
         
+    }
+    
+}
+
+extension ChatViewController: PHPickerViewControllerDelegate {
+    
+    func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+        
+        picker.dismiss(animated: true)
+        
+        var selectedIdentifiers: [String] = []
+        
+        for result in results {
+            
+            let provider = result.itemProvider
+            
+            if provider.canLoadObject(ofClass: UIImage.self) {
+                provider.loadObject(ofClass: UIImage.self) { image, error in
+                
+                    if let image = image as? UIImage {
+                        
+                        DispatchQueue.main.async {
+                        
+                            self.selectedImages.append(image)
+                            print(self.selectedImages)
+                            
+                        }
+                        
+                    }
+                    
+                }
+            }
+            
+        }
+            
+        preselectedIdentifiers = selectedIdentifiers
+        print("Selected Identifiers: \(preselectedIdentifiers)")
+        
+    }
+    
+}
+
+extension ChatViewController: UIImagePickerControllerDelegate {
+    
+    func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
+        
+        if let editedImage = info[.editedImage] as? UIImage {
+            
+        } else if let originalImage = info[.originalImage] as? UIImage {
+            
+        }
+        
+        dismiss(animated: true)
+    }
+    
+    func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+        picker.dismiss(animated: true)
     }
     
 }

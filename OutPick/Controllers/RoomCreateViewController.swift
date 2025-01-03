@@ -120,6 +120,7 @@ class RoomCreateViewController: UIViewController, PHPickerViewControllerDelegate
         if UIImagePickerController.isSourceTypeAvailable(.camera) {
             let imagePicker = UIImagePickerController()
             imagePicker.delegate = self
+            imagePicker.allowsEditing = true
             imagePicker.sourceType = .camera
         
             present(imagePicker, animated: true, completion: nil)
@@ -234,7 +235,7 @@ class RoomCreateViewController: UIViewController, PHPickerViewControllerDelegate
     }
     
     private func uploadImageandSaveRoomInfo(image: UIImage, roomInfo: ChatRoom) {
-        FirestoreManager.shared.uploadImage(image: image, imageName: roomInfo.roomName, type: "roomImages") { [weak self] result in
+        FirestoreManager.shared.uploadImage(images: [image], type: "roomImages") { [weak self] result in
             guard let self = self else { return }
             
             switch result {
