@@ -62,7 +62,7 @@ class ChatCollectionViewController: UICollectionViewController {
             cell.roomImageView.clipsToBounds =  true
             
             // 메인 스레드에서 이미지 로딩
-            FirestoreManager.shared.fetchImageFromStorage(.Room, name: item.roomName) { image in
+            FirestoreManager.shared.fetchImageFromStorage(.Room, names: [item.roomName]) { image in
                 DispatchQueue.main.async {
                     if let image = image {
                         cell.roomImageView.image = image
