@@ -56,25 +56,23 @@ class ChatCollectionViewController: UICollectionViewController {
     
     private func configureDataSource() -> DataSourceType {
         let dataSource = DataSourceType(collectionView: collectionView) { (collectionView, indexPath, item) in
+            
             let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "ChatRoom", for: indexPath) as! RoomListCollectionViewCell
 
             cell.roomImageView.layer.cornerRadius = 15
             cell.roomImageView.clipsToBounds =  true
             
-            // 메인 스레드에서 이미지 로딩
-            FirestoreManager.shared.fetchImageFromStorage(.Room, names: [item.roomName]) { image in
-                DispatchQueue.main.async {
-                    if let image = image {
-                        cell.roomImageView.image = image
-                    }
+            Task {
+                if let imageURL = item.roomImageURL {
+                    cell.roomImageView.image = try await FirestoreManager.shared.fetchImageFromStorage(url: imageURL)
                 }
             }
             
             cell.roomNameLabel.text = item.roomName
             cell.roomDescriptionLabel.text = item.roomDescription
             
-            
             return cell
+            
         }
         
         return dataSource
