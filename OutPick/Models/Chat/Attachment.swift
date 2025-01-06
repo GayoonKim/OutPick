@@ -16,6 +16,14 @@ struct Attachment {
     let size: Int64?
     let fileName: String?
     
+    func toDict() -> [String: Any] {
+        
+        return [
+            "id": UUID().uuidString
+        ]
+        
+    }
+    
     enum AttachmentType: String, Codable {
         
         case image

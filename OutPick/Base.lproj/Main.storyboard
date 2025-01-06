@@ -573,21 +573,30 @@
                                     <action selector="cameraBtnTapped:" destination="gs6-Rd-ei6" eventType="touchUpInside" id="kOB-ot-Rxm"/>
                                 </connections>
                             </button>
+                            <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" horizontalHuggingPriority="251" verticalHuggingPriority="251" translatesAutoresizingMaskIntoConstraints="NO" id="cUU-hF-NZf">
+                                <rect key="frame" x="100" y="578" width="240" height="128"/>
+                            </imageView>
                         </subviews>
                         <viewLayoutGuide key="safeArea" id="xAh-tD-5KB"/>
                         <color key="backgroundColor" systemColor="systemBackgroundColor"/>
                         <constraints>
+                            <constraint firstItem="cUU-hF-NZf" firstAttribute="width" secondItem="zpy-my-BtS" secondAttribute="width" id="414-q4-Vc7"/>
                             <constraint firstItem="zpy-my-BtS" firstAttribute="centerX" secondItem="xAh-tD-5KB" secondAttribute="centerX" id="FjJ-ld-rTy"/>
                             <constraint firstItem="qMJ-IK-zy5" firstAttribute="top" secondItem="xAh-tD-5KB" secondAttribute="top" id="JeE-Qr-ErW"/>
+                            <constraint firstItem="cUU-hF-NZf" firstAttribute="height" secondItem="zpy-my-BtS" secondAttribute="height" multiplier="0.820513" id="RrD-pc-QcF"/>
                             <constraint firstItem="zpy-my-BtS" firstAttribute="centerY" secondItem="xAh-tD-5KB" secondAttribute="centerY" id="cdZ-iH-9wD"/>
                             <constraint firstItem="zpy-my-BtS" firstAttribute="leading" secondItem="xAh-tD-5KB" secondAttribute="leading" constant="100" id="d22-2t-qeI"/>
                             <constraint firstItem="zpy-my-BtS" firstAttribute="top" secondItem="xAh-tD-5KB" secondAttribute="top" constant="352" id="fms-rq-eXy"/>
+                            <constraint firstItem="cUU-hF-NZf" firstAttribute="top" secondItem="zpy-my-BtS" secondAttribute="bottom" constant="8" symbolic="YES" id="hUN-8T-778"/>
+                            <constraint firstItem="cUU-hF-NZf" firstAttribute="leading" secondItem="zpy-my-BtS" secondAttribute="leading" id="i2n-Pz-WGf"/>
                             <constraint firstItem="xAh-tD-5KB" firstAttribute="trailing" secondItem="qMJ-IK-zy5" secondAttribute="trailing" constant="20" id="kaC-xE-QTh"/>
                             <constraint firstItem="qMJ-IK-zy5" firstAttribute="leading" secondItem="xAh-tD-5KB" secondAttribute="leading" constant="20" id="pP0-bz-0Ad"/>
+                            <constraint firstItem="cUU-hF-NZf" firstAttribute="firstBaseline" secondItem="zpy-my-BtS" secondAttribute="baseline" constant="8" symbolType="layoutAnchor" id="xDn-7i-SOo"/>
                         </constraints>
                     </view>
                     <connections>
-                        <outlet property="testImageView" destination="zpy-my-BtS" id="cgj-gh-pH1"/>
+                        <outlet property="testImageView0" destination="zpy-my-BtS" id="lNt-vE-4SO"/>
+                        <outlet property="testImageView1" destination="cUU-hF-NZf" id="pbr-7r-Vfg"/>
                     </connections>
                 </viewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="uBm-yu-LpW" userLabel="First Responder" customClass="UIResponder" sceneMemberID="firstResponder"/>

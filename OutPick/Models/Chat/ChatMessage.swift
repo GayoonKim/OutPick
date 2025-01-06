@@ -14,7 +14,7 @@ struct ChatMessage: Codable {
     let messageID: String                // 메시지 고유 ID
     let senderID: String                 // 메시지 전송 사용자 아이디
     let senderNickname: String           // 메시지 전송 사용자 닉네임
-    let msg: String                      // 메시지 내용
+    let msg: String?                      // 메시지 내용
     let sentAt: Date                     // 메시지 보낸 시간
     let messageType: MessageType         // 텍스트, 이미지, 비디오 등
     
@@ -26,7 +26,7 @@ struct ChatMessage: Codable {
             "messageID": UUID().uuidString,
             "senderID": senderID,
             "senderNickname": senderNickname,
-            "content": msg,
+            "msg": msg ?? "",
             "sentAt": Timestamp(date: sentAt),
             "messageType": messageType
         ]

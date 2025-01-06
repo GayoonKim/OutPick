@@ -9,6 +9,7 @@ import Foundation
 import FirebaseFirestore
 import FirebaseStorage
 import Alamofire
+import Kingfisher
 
 class FirestoreManager {
     
@@ -187,10 +188,11 @@ class FirestoreManager {
                 )
                 
                 // 채팅방 대표 이미지 미리 캐시
-                self.fetchImageFromStorage(.Room, names: [chatRoom.roomName]) { _ in }
                 
                 return chatRoom
             }
+            
+            
             
             // UI 업데이트를 위한 노티피케이션 발송
             NotificationCenter.default.post(name: .chatRoomsUpdated, object: nil, userInfo: ["rooms": self.chatRooms])
@@ -275,7 +277,7 @@ class FirestoreManager {
     }
     
     // Storage에서 이미지 불러오기
-    func fetchImageFromStorage(_ type: Imagetype, names: [String], completion: @escaping (UIImage?) -> Void) {
+    func fetchImageFromStorage(url: String/*, completion: @escaping (UIImage?) -> Void*/) async throws -> UIImage {
         
 //        for name in names {
 //            
@@ -309,11 +311,59 @@ class FirestoreManager {
 //            
 //        }
         
-        for name in names {
+        // 메모리 캐시 확인
+        if let cachedImage = KingfisherManager.shared.cache.retrieveImageInMemoryCache(forKey: url) {
+            print("cachedImage: \(cachedImage)")
+            return cachedImage
+        }
+        // 디스크 캐시 확인
+        if let cachedImage = try await KingfisherManager.shared.cache.retrieveImageInDiskCache(forKey: url) {
+            print("cachedImage: \(cachedImage)")
+            return cachedImage
+        }
+        
+        return try await withCheckedThrowingContinuation { continuation in
+            AF.request(url).responseData { response in
+                
+                switch response.result {
+                case .success(let data):
+                    // 작업 성공
+                    guard let image = UIImage(data: data) else { return }
+                    KingfisherManager.shared.cache.store(image, forKey: url)
+                    continuation.resume(returning: image)
+                case .failure(let error):
+                    // 에러 발생
+                    continuation.resume(throwing: error)
+                }
+                
+            }
+        }
+        
+    }
+    
+    func fetchImagesFromStorage(from urls: [String]) async throws -> [UIImage] {
+        
+        var images = Array<UIImage?>(repeating: nil, count: urls.count)
+        
+        try await withThrowingTaskGroup(of: (Int, UIImage).self, returning: Void.self) { group in
+            for (index, url) in urls.enumerated() {
+                group.addTask {
+                    
+                    let image = try await self.fetchImageFromStorage(url: url)
+                    return (index, image)
+                    
+                }
+            }
             
-            
+            for try await (index, image) in group {
+                
+                images[index] = image
+                
+            }
             
         }
+
+        return images.compactMap { $0 }
         
     }
     
