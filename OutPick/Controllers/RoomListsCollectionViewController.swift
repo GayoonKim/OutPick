@@ -64,7 +64,15 @@ class ChatCollectionViewController: UICollectionViewController {
             
             Task {
                 if let imageURL = item.roomImageURL {
-                    cell.roomImageView.image = try await FirestoreManager.shared.fetchImageFromStorage(url: imageURL)
+                    let image = try await FirestoreManager.shared.fetchImageFromStorage(url: imageURL)
+                    image.prepareThumbnail(of: CGSize(width: 50, height: 50)) { cgImage in
+                        DispatchQueue.main.async {
+                         
+                            guard let cgImage = cgImage else { return }
+                            cell.roomImageView.image = cgImage
+                            
+                        }
+                    }
                 }
             }
             

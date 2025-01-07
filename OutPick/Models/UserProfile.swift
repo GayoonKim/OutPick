@@ -11,6 +11,7 @@ class UserProfile: Codable {
     
     static var sharedUserProfile = UserProfile()
     
+    var id: String?
     var gender: String?
     var birthdate: String?
     var nickname: String?
@@ -24,6 +25,7 @@ extension UserProfile {
     // Firestore에 저장하기 위해 딕셔너리 형태로 변환
     func toDict() -> [String: Any] {
         return [
+            "id": id ?? "",
             "nickname": nickname ?? "",
             "gender": gender ?? "",
             "birthdate": birthdate ?? "",

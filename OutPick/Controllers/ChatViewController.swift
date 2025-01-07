@@ -6,11 +6,15 @@
 //
 
 import Foundation
+import AVFoundation
 import UIKit
+import AVKit
 import Combine
 import PhotosUI
 
 class ChatViewController: UIViewController, UINavigationControllerDelegate {
+    
+    @IBOutlet weak var testImageView: UIImageView!
     
     @IBOutlet weak var activityIndicator: UIActivityIndicatorView!
     @IBOutlet weak var sideMenuBtn: UIBarButtonItem!
@@ -54,7 +58,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
             let button = UIButton(type: .system)
             button.setImage(UIImage(systemName: btn), for: .normal)
             button.tintColor = .black
-            button.backgroundColor = .red
+            button.backgroundColor = .white
             button.accessibilityIdentifier = btn
             button.addTarget(self, action: #selector(checkAttachmentButtonKind(_:)), for: .touchUpInside)
             
@@ -118,6 +122,36 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         decideJoinUI()
         setUpOptionMenuUI()
         adjustLayoutForSafeArea()
+        
+    }
+    
+    private func playVideo(from url: URL) {
+        
+        let asset = AVAsset(url: url)
+        let playerItem = AVPlayerItem(asset: asset)
+        let player = AVPlayer(playerItem: playerItem)
+        let playerViewController = AVPlayerViewController()
+        playerViewController.player = player
+        
+        present(playerViewController, animated: true) {
+            player.play()
+        }
+        
+    }
+    
+    private func generateThumbnail(from url: URL, at time: CMTime = CMTime(seconds: 1, preferredTimescale: 600)) -> UIImage? {
+        
+        let asset = AVAsset(url: url)
+        let assetImageGenerator = AVAssetImageGenerator(asset: asset)
+        assetImageGenerator.appliesPreferredTrackTransform = true
+        
+        do {
+            let cgImage = try assetImageGenerator.copyCGImage(at: time, actualTime: nil)
+            return UIImage(cgImage: cgImage)
+        } catch {
+            print("Error generating thumbnail: \(error.localizedDescription)")
+                    return nil
+        }
         
     }
     
@@ -568,12 +602,10 @@ extension ChatViewController: PHPickerViewControllerDelegate {
         var selectedIdentifiers: [String] = []
         
         for result in results {
+            let itemProvider = result.itemProvider
             
-            let provider = result.itemProvider
-            
-            if provider.canLoadObject(ofClass: UIImage.self) {
-                provider.loadObject(ofClass: UIImage.self) { image, error in
-                
+            if itemProvider.canLoadObject(ofClass: UIImage.self) {
+                itemProvider.loadObject(ofClass: UIImage.self) { image, error in
                     if let image = image as? UIImage {
                         
                         DispatchQueue.main.async {
@@ -582,9 +614,28 @@ extension ChatViewController: PHPickerViewControllerDelegate {
                             print(self.selectedImages)
                             
                         }
+                    }
+                }
+            }
+            
+            if itemProvider.hasItemConformingToTypeIdentifier(UTType.movie.identifier) {
+                itemProvider.loadFileRepresentation(forTypeIdentifier: UTType.movie.identifier) { [weak self]fileURL, error in
+                    guard let self = self, let fileURL = fileURL, error == nil else { return }
+                    FirestoreManager.shared.uploadVideoToStorage(videoURL: fileURL) { result in
+                        
+                        switch result {
+                            
+                        case .success(let downloadURL):
+                            guard let url = URL(string: downloadURL) else { return }
+//                            self.testImageView.image = self.generateThumbnail(from: url)
+                            self.playVideo(from: url)
+                            
+                        case .failure(let error):
+                            print("File URL 다운로드 실패: \(error.localizedDescription)")
+                            
+                        }
                         
                     }
-                    
                 }
             }
             
