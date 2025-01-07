@@ -187,12 +187,8 @@ class FirestoreManager {
                     roomImageURL: roomImageURL
                 )
                 
-                // 채팅방 대표 이미지 미리 캐시
-                
                 return chatRoom
             }
-            
-            
             
             // UI 업데이트를 위한 노티피케이션 발송
             NotificationCenter.default.post(name: .chatRoomsUpdated, object: nil, userInfo: ["rooms": self.chatRooms])
@@ -364,6 +360,39 @@ class FirestoreManager {
         }
 
         return images.compactMap { $0 }
+        
+    }
+    
+    func uploadVideoToStorage(videoURL: URL, completion: @escaping (Result<String, Error>) -> Void) {
+        
+        guard let videoData = try? Data(contentsOf: videoURL) else {
+            print("비디오 데이터 생성 실패")
+            return
+        }
+        
+//        let fileName = videoURL.lastPathComponent
+        let videoRef = storage.reference().child("videos/\(UUID().uuidString).mp4")
+
+        videoRef.putData(videoData) { (metaData, error) in
+        
+            guard let metaData = metaData, error == nil else {
+                print("Storage에 업로드 실패!")
+                return
+            }
+            
+            videoRef.downloadURL { downloadURL, error in
+                
+                if let error = error {
+                    completion(.failure(error))
+                }
+                
+                if let downloadURL = downloadURL {
+                    completion(.success(downloadURL.absoluteString))
+                }
+                
+            }
+            
+        }
         
     }
     

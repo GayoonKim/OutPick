@@ -352,6 +352,9 @@
                                     <action selector="joinRoomBtnTapped:" destination="UDw-4m-Qed" eventType="touchUpInside" id="k9Z-IW-RZg"/>
                                 </connections>
                             </button>
+                            <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" horizontalHuggingPriority="251" verticalHuggingPriority="251" translatesAutoresizingMaskIntoConstraints="NO" id="gPu-Wk-oO7">
+                                <rect key="frame" x="100" y="414" width="240" height="200"/>
+                            </imageView>
                         </subviews>
                         <viewLayoutGuide key="safeArea" id="fR5-rY-j7G"/>
                         <color key="backgroundColor" systemColor="systemBackgroundColor"/>
@@ -363,7 +366,11 @@
                             <constraint firstItem="fR5-rY-j7G" firstAttribute="trailing" secondItem="aSv-oJ-neZ" secondAttribute="trailing" constant="10" id="UdH-n4-N5p"/>
                             <constraint firstItem="oxp-p3-194" firstAttribute="leading" secondItem="fR5-rY-j7G" secondAttribute="leading" constant="10" id="c7R-4f-KyT"/>
                             <constraint firstItem="fR5-rY-j7G" firstAttribute="trailing" secondItem="oxp-p3-194" secondAttribute="trailing" constant="10" id="dd6-sV-hii"/>
+                            <constraint firstItem="gPu-Wk-oO7" firstAttribute="centerY" secondItem="fR5-rY-j7G" secondAttribute="centerY" id="ghM-fb-GKg"/>
+                            <constraint firstItem="gPu-Wk-oO7" firstAttribute="leading" secondItem="fR5-rY-j7G" secondAttribute="leading" constant="100" id="n7w-db-7sk"/>
+                            <constraint firstItem="gPu-Wk-oO7" firstAttribute="top" secondItem="fR5-rY-j7G" secondAttribute="top" constant="308" id="oCs-RU-Nf0"/>
                             <constraint firstItem="aSv-oJ-neZ" firstAttribute="leading" secondItem="fR5-rY-j7G" secondAttribute="leading" constant="10" id="qTG-dL-VPe"/>
+                            <constraint firstItem="gPu-Wk-oO7" firstAttribute="centerX" secondItem="fR5-rY-j7G" secondAttribute="centerX" id="srm-dK-HSX"/>
                         </constraints>
                     </view>
                     <navigationItem key="navigationItem" largeTitleDisplayMode="never" id="Efr-BR-gJD">
@@ -379,6 +386,7 @@
                         <outlet property="msgTextView" destination="i51-Pj-sr9" id="acv-Oe-qXW"/>
                         <outlet property="sendBtn" destination="pY4-Nn-hYc" id="qbq-jd-SBO"/>
                         <outlet property="sideMenuBtn" destination="gyW-2S-liv" id="OsV-EZ-ObG"/>
+                        <outlet property="testImageView" destination="gPu-Wk-oO7" id="tHi-pd-WZc"/>
                     </connections>
                 </viewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="O5D-sE-ia2" userLabel="First Responder" customClass="UIResponder" sceneMemberID="firstResponder"/>
@@ -568,33 +576,56 @@
                             <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="qMJ-IK-zy5">
                                 <rect key="frame" x="20" y="62" width="400" height="35"/>
                                 <state key="normal" title="Button"/>
-                                <buttonConfiguration key="configuration" style="plain" title="Button"/>
+                                <buttonConfiguration key="configuration" style="plain" title="카메라"/>
                                 <connections>
                                     <action selector="cameraBtnTapped:" destination="gs6-Rd-ei6" eventType="touchUpInside" id="kOB-ot-Rxm"/>
                                 </connections>
                             </button>
                             <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" horizontalHuggingPriority="251" verticalHuggingPriority="251" translatesAutoresizingMaskIntoConstraints="NO" id="cUU-hF-NZf">
-                                <rect key="frame" x="100" y="578" width="240" height="128"/>
+                                <rect key="frame" x="100" y="578" width="240" height="156"/>
                             </imageView>
+                            <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="w4H-nu-MFw">
+                                <rect key="frame" x="20" y="887" width="400" height="35"/>
+                                <state key="normal" title="Button"/>
+                                <buttonConfiguration key="configuration" style="plain" title="Button"/>
+                                <connections>
+                                    <action selector="playBtnTapped:" destination="gs6-Rd-ei6" eventType="touchUpInside" id="iph-Nh-qDb"/>
+                                </connections>
+                            </button>
+                            <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="0rH-z7-tSr">
+                                <rect key="frame" x="183" y="105" width="75" height="35"/>
+                                <state key="normal" title="Button"/>
+                                <buttonConfiguration key="configuration" style="plain" title="앨범"/>
+                                <connections>
+                                    <action selector="albumBtnTapped:" destination="gs6-Rd-ei6" eventType="touchUpInside" id="0C1-ER-qvJ"/>
+                                </connections>
+                            </button>
                         </subviews>
                         <viewLayoutGuide key="safeArea" id="xAh-tD-5KB"/>
                         <color key="backgroundColor" systemColor="systemBackgroundColor"/>
                         <constraints>
+                            <constraint firstItem="w4H-nu-MFw" firstAttribute="leading" secondItem="xAh-tD-5KB" secondAttribute="leading" constant="20" id="3d1-o7-bAh"/>
                             <constraint firstItem="cUU-hF-NZf" firstAttribute="width" secondItem="zpy-my-BtS" secondAttribute="width" id="414-q4-Vc7"/>
+                            <constraint firstItem="0rH-z7-tSr" firstAttribute="leading" secondItem="xAh-tD-5KB" secondAttribute="leading" constant="183" id="BqQ-RD-9hw"/>
+                            <constraint firstItem="xAh-tD-5KB" firstAttribute="trailing" secondItem="w4H-nu-MFw" secondAttribute="trailing" constant="20" id="Enz-qw-k3q"/>
                             <constraint firstItem="zpy-my-BtS" firstAttribute="centerX" secondItem="xAh-tD-5KB" secondAttribute="centerX" id="FjJ-ld-rTy"/>
                             <constraint firstItem="qMJ-IK-zy5" firstAttribute="top" secondItem="xAh-tD-5KB" secondAttribute="top" id="JeE-Qr-ErW"/>
-                            <constraint firstItem="cUU-hF-NZf" firstAttribute="height" secondItem="zpy-my-BtS" secondAttribute="height" multiplier="0.820513" id="RrD-pc-QcF"/>
+                            <constraint firstItem="0rH-z7-tSr" firstAttribute="top" secondItem="qMJ-IK-zy5" secondAttribute="bottom" constant="8" symbolic="YES" id="ReI-Mo-HwM"/>
+                            <constraint firstItem="cUU-hF-NZf" firstAttribute="height" secondItem="zpy-my-BtS" secondAttribute="height" multiplier="0.820513" constant="27.999971999999985" id="RrD-pc-QcF"/>
                             <constraint firstItem="zpy-my-BtS" firstAttribute="centerY" secondItem="xAh-tD-5KB" secondAttribute="centerY" id="cdZ-iH-9wD"/>
                             <constraint firstItem="zpy-my-BtS" firstAttribute="leading" secondItem="xAh-tD-5KB" secondAttribute="leading" constant="100" id="d22-2t-qeI"/>
                             <constraint firstItem="zpy-my-BtS" firstAttribute="top" secondItem="xAh-tD-5KB" secondAttribute="top" constant="352" id="fms-rq-eXy"/>
                             <constraint firstItem="cUU-hF-NZf" firstAttribute="top" secondItem="zpy-my-BtS" secondAttribute="bottom" constant="8" symbolic="YES" id="hUN-8T-778"/>
                             <constraint firstItem="cUU-hF-NZf" firstAttribute="leading" secondItem="zpy-my-BtS" secondAttribute="leading" id="i2n-Pz-WGf"/>
+                            <constraint firstItem="xAh-tD-5KB" firstAttribute="trailing" secondItem="0rH-z7-tSr" secondAttribute="trailing" constant="182" id="ipV-rS-dVG"/>
                             <constraint firstItem="xAh-tD-5KB" firstAttribute="trailing" secondItem="qMJ-IK-zy5" secondAttribute="trailing" constant="20" id="kaC-xE-QTh"/>
                             <constraint firstItem="qMJ-IK-zy5" firstAttribute="leading" secondItem="xAh-tD-5KB" secondAttribute="leading" constant="20" id="pP0-bz-0Ad"/>
+                            <constraint firstItem="w4H-nu-MFw" firstAttribute="bottom" secondItem="xAh-tD-5KB" secondAttribute="bottom" id="r8f-Ur-V31"/>
                             <constraint firstItem="cUU-hF-NZf" firstAttribute="firstBaseline" secondItem="zpy-my-BtS" secondAttribute="baseline" constant="8" symbolType="layoutAnchor" id="xDn-7i-SOo"/>
                         </constraints>
                     </view>
                     <connections>
+                        <outlet property="playBtn" destination="w4H-nu-MFw" id="Efk-Wg-hmJ"/>
                         <outlet property="testImageView0" destination="zpy-my-BtS" id="lNt-vE-4SO"/>
                         <outlet property="testImageView1" destination="cUU-hF-NZf" id="pbr-7r-Vfg"/>
                     </connections>
@@ -1105,7 +1136,7 @@
         </scene>
     </scenes>
     <inferredMetricsTieBreakers>
-        <segue reference="efJ-0s-BGe"/>
+        <segue reference="amY-jT-Pp9"/>
     </inferredMetricsTieBreakers>
     <resources>
         <image name="gearshape" catalog="system" width="128" height="123"/>
