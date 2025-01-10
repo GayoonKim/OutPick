@@ -11,7 +11,7 @@ import FirebaseStorage
 import Alamofire
 import Kingfisher
 
-class FirestoreManager {
+class FirebaseManager {
     
     // 이미지 타입
     enum Imagetype: CaseIterable {
@@ -22,7 +22,7 @@ class FirestoreManager {
     private init() {}
     
     // FirestoreManager의 싱글톤 인스턴스
-    static let shared = FirestoreManager()
+    static let shared = FirebaseManager()
     
     // Firestore 인스턴스
     let db = Firestore.firestore()
@@ -223,174 +223,6 @@ class FirestoreManager {
         } catch {
             
             print("트랜젝션 실패: \(error)")
-            
-        }
-        
-    }
-    
-    //MARK: 이미지 업로드 및 다운로드 관련 함수
-    // Firebase Storage에 프로필 사진 저장 후 URL 반환 함수
-    func uploadImage(images: [UIImage], type: String, completion: @escaping (Result<String, Error>) -> Void) {
-        
-        let storageRef = storage.reference()
-        let imageRef = storageRef.child("\(type)/\(UUID().uuidString).jpg")
-        
-        for image in images {
-            
-            // 이미지 크기 조정
-            let resizedImage = image.resized(withMaxWidth: 700)
-            
-            guard let imageData = resizedImage.jpegData(compressionQuality: 0.6) else {
-                completion(.failure(NSError(domain: "ImageConversion", code: -1, userInfo: nil)))
-                return
-            }
-            
-            let metadata = StorageMetadata()
-            metadata.contentType = "image/jpeg"
-            
-            imageRef.putData(imageData, metadata: metadata) { metadata, error in
-                if let error = error {
-                    completion(.failure(error))
-                    return
-                }
-                
-                imageRef.downloadURL { url, error in
-                    if let error = error {
-                        completion(.failure(error))
-                        return
-                    }
-                    
-                    if let downloadURL = url?.absoluteString {
-                        completion(.success(downloadURL))
-                    } else {
-                        completion(.failure(NSError(domain: "DownloadURL", code: -1, userInfo: nil)))
-                    }
-                }
-            }
-            
-        }
-        
-    }
-    
-    // Storage에서 이미지 불러오기
-    func fetchImageFromStorage(url: String/*, completion: @escaping (UIImage?) -> Void*/) async throws -> UIImage {
-        
-//        for name in names {
-//            
-//            // 캐시된 이미지 확인
-//            let cacheKey = NSString(string: "\(type)_\(name)")
-//            if let cachedImage = ImageCacheManager.shared.object(forKey: cacheKey) {
-//                completion(cachedImage)
-//                return
-//            }
-//            
-//            switch type {
-//            case .Room:
-//                let storageRef = storage.reference()
-//                let imageRef = storageRef.child("roomImages/\(name).jpg")
-//                
-//                imageRef.getData(maxSize: 1 * 1024 * 1024) { data, error in
-//                    if let error = error {
-//                        print("이미지 불러오기 실패.: \(error)")
-//                        completion(UIImage(systemName: "photo"))
-//                    } else if let data = data, let image = UIImage(data: data) {
-//                        // 이미지 캐시에 저장
-//                        ImageCacheManager.shared.setObject(image, forKey: cacheKey)
-//                        completion(image)
-//                    } else {
-//                        completion(UIImage(systemName: "photo"))
-//                    }
-//                }
-//            case .Profile:
-//                completion(nil)
-//            }
-//            
-//        }
-        
-        // 메모리 캐시 확인
-        if let cachedImage = KingfisherManager.shared.cache.retrieveImageInMemoryCache(forKey: url) {
-            print("cachedImage: \(cachedImage)")
-            return cachedImage
-        }
-        // 디스크 캐시 확인
-        if let cachedImage = try await KingfisherManager.shared.cache.retrieveImageInDiskCache(forKey: url) {
-            print("cachedImage: \(cachedImage)")
-            return cachedImage
-        }
-        
-        return try await withCheckedThrowingContinuation { continuation in
-            AF.request(url).responseData { response in
-                
-                switch response.result {
-                case .success(let data):
-                    // 작업 성공
-                    guard let image = UIImage(data: data) else { return }
-                    KingfisherManager.shared.cache.store(image, forKey: url)
-                    continuation.resume(returning: image)
-                case .failure(let error):
-                    // 에러 발생
-                    continuation.resume(throwing: error)
-                }
-                
-            }
-        }
-        
-    }
-    
-    func fetchImagesFromStorage(from urls: [String]) async throws -> [UIImage] {
-        
-        var images = Array<UIImage?>(repeating: nil, count: urls.count)
-        
-        try await withThrowingTaskGroup(of: (Int, UIImage).self, returning: Void.self) { group in
-            for (index, url) in urls.enumerated() {
-                group.addTask {
-                    
-                    let image = try await self.fetchImageFromStorage(url: url)
-                    return (index, image)
-                    
-                }
-            }
-            
-            for try await (index, image) in group {
-                
-                images[index] = image
-                
-            }
-            
-        }
-
-        return images.compactMap { $0 }
-        
-    }
-    
-    func uploadVideoToStorage(videoURL: URL, completion: @escaping (Result<String, Error>) -> Void) {
-        
-        guard let videoData = try? Data(contentsOf: videoURL) else {
-            print("비디오 데이터 생성 실패")
-            return
-        }
-        
-//        let fileName = videoURL.lastPathComponent
-        let videoRef = storage.reference().child("videos/\(UUID().uuidString).mp4")
-
-        videoRef.putData(videoData) { (metaData, error) in
-        
-            guard let metaData = metaData, error == nil else {
-                print("Storage에 업로드 실패!")
-                return
-            }
-            
-            videoRef.downloadURL { downloadURL, error in
-                
-                if let error = error {
-                    completion(.failure(error))
-                }
-                
-                if let downloadURL = downloadURL {
-                    completion(.success(downloadURL.absoluteString))
-                }
-                
-            }
             
         }
         
