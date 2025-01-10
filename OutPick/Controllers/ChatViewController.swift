@@ -139,22 +139,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         
     }
     
-    private func generateThumbnail(from url: URL, at time: CMTime = CMTime(seconds: 1, preferredTimescale: 600)) -> UIImage? {
-        
-        let asset = AVAsset(url: url)
-        let assetImageGenerator = AVAssetImageGenerator(asset: asset)
-        assetImageGenerator.appliesPreferredTrackTransform = true
-        
-        do {
-            let cgImage = try assetImageGenerator.copyCGImage(at: time, actualTime: nil)
-            return UIImage(cgImage: cgImage)
-        } catch {
-            print("Error generating thumbnail: \(error.localizedDescription)")
-                    return nil
-        }
-        
-    }
-    
     @objc func checkAttachmentButtonKind(_ sender: UIButton) {
         
         guard let identifier = sender.accessibilityIdentifier else { return }
@@ -326,7 +310,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         guard let room = self.room else { return }
         
         Task {
-            await FirestoreManager.shared.updateRoomParticipants(roomName: room.roomName, email: LoginManager.shared.getUserEmail)
+            await FirebaseManager.shared.updateRoomParticipants(roomName: room.roomName, email: LoginManager.shared.getUserEmail)
         }
         
     }
@@ -438,7 +422,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         self.room = savedRoom
         
         Task {
-            await FirestoreManager.shared.updateRoomParticipants(roomName: savedRoom.roomName, email: LoginManager.shared.getUserEmail)
+            await FirebaseManager.shared.updateRoomParticipants(roomName: savedRoom.roomName, email: LoginManager.shared.getUserEmail)
         }
         
         SocketIOManager.shared.setUserName(nickName)
@@ -621,21 +605,21 @@ extension ChatViewController: PHPickerViewControllerDelegate {
             if itemProvider.hasItemConformingToTypeIdentifier(UTType.movie.identifier) {
                 itemProvider.loadFileRepresentation(forTypeIdentifier: UTType.movie.identifier) { [weak self]fileURL, error in
                     guard let self = self, let fileURL = fileURL, error == nil else { return }
-                    FirestoreManager.shared.uploadVideoToStorage(videoURL: fileURL) { result in
-                        
-                        switch result {
-                            
-                        case .success(let downloadURL):
-                            guard let url = URL(string: downloadURL) else { return }
-//                            self.testImageView.image = self.generateThumbnail(from: url)
-                            self.playVideo(from: url)
-                            
-                        case .failure(let error):
-                            print("File URL 다운로드 실패: \(error.localizedDescription)")
-                            
-                        }
-                        
-                    }
+//                    FirebaseMediaManager.shared.uploadVideoToStorage(videoURL: fileURL) { result in
+//                        
+//                        switch result {
+//                            
+//                        case .success(let downloadURL):
+//                            guard let url = URL(string: downloadURL) else { return }
+////                            self.testImageView.image = self.generateThumbnail(from: url)
+//                            self.playVideo(from: url)
+//                            
+//                        case .failure(let error):
+//                            print("File URL 다운로드 실패: \(error.localizedDescription)")
+//                            
+//                        }
+//                        
+//                    }
                 }
             }
             

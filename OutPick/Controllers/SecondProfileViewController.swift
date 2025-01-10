@@ -196,7 +196,7 @@ class SecondProfileViewController: UIViewController, PHPickerViewControllerDeleg
     
     private func saveUserProfile(userProfile: UserProfile, email: String) {
         guard let nickname = userProfile.nickname else { return }
-        FirestoreManager.shared.checkNicknameDuplicate(nickname: nickname) { isDuplicate, error in
+        FirebaseManager.shared.checkNicknameDuplicate(nickname: nickname) { isDuplicate, error in
             if let error = error {
                 print("Failed to check nickname: \(error.localizedDescription)")
                 return
@@ -209,32 +209,33 @@ class SecondProfileViewController: UIViewController, PHPickerViewControllerDeleg
                 return
             }
             
-            if let image = self.profileImageView.image {
-                FirestoreManager.shared.uploadImage(images: [image], type: "profileImages") { result in
-                    switch result {
-                    case .success(let imageURL):
-                        userProfile.profileImageURL = imageURL
-                        FirestoreManager.shared.saveUserProfileToFirestore(userProfile: userProfile, email: email) { error in
-                            if let error = error {
-                                print("Failed to save user profile: \(error.localizedDescription)")
-                            } else {
-                                print("User profile saved successfully with profile image!")
-                            }
-                        }
-                    case .failure(let error):
-                        print("Failed to upload profile image: \(error.localizedDescription)")
-                    }
-                }
-            } else {
-                userProfile.profileImageURL = nil
-                FirestoreManager.shared.saveUserProfileToFirestore(userProfile: userProfile, email: email) { error in
-                    if let error = error {
-                        print("Failed to save user profile: \(error.localizedDescription)")
-                    } else {
-                        print("User profile saved successfully without profile image!")
-                    }
-                }
-            }
+            
+//            if let image = self.profileImageView.image {
+//                FirebaseMediaManager.shared.uploadImageToStorage(images: [image], type: "profileImages") { result in
+//                    switch result {
+//                    case .success(let imageURL):
+//                        userProfile.profileImageURL = imageURL
+//                        FirestoreManager.shared.saveUserProfileToFirestore(userProfile: userProfile, email: email) { error in
+//                            if let error = error {
+//                                print("Failed to save user profile: \(error.localizedDescription)")
+//                            } else {
+//                                print("User profile saved successfully with profile image!")
+//                            }
+//                        }
+//                    case .failure(let error):
+//                        print("Failed to upload profile image: \(error.localizedDescription)")
+//                    }
+//                }
+//            } else {
+//                userProfile.profileImageURL = nil
+//                FirestoreManager.shared.saveUserProfileToFirestore(userProfile: userProfile, email: email) { error in
+//                    if let error = error {
+//                        print("Failed to save user profile: \(error.localizedDescription)")
+//                    } else {
+//                        print("User profile saved successfully without profile image!")
+//                    }
+//                }
+//            }
         }
     }
     

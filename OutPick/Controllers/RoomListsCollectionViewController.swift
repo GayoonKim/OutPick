@@ -47,7 +47,7 @@ class ChatCollectionViewController: UICollectionViewController {
     }
     
     private func updateCollectionView() {
-        let chatRoomsList = FirestoreManager.shared.currentChatRooms.sorted(by: <)
+        let chatRoomsList = FirebaseManager.shared.currentChatRooms.sorted(by: <)
         
         let itemBySection = [ViewModel.Section.main: chatRoomsList]
         
@@ -64,7 +64,7 @@ class ChatCollectionViewController: UICollectionViewController {
             
             Task {
                 if let imageURL = item.roomImageURL {
-                    let image = try await FirestoreManager.shared.fetchImageFromStorage(url: imageURL)
+                    let image = try await FirebaseMediaManager.shared.fetchImageFromStorage(url: imageURL)
                     image.prepareThumbnail(of: CGSize(width: 50, height: 50)) { cgImage in
                         DispatchQueue.main.async {
                          

@@ -24,7 +24,7 @@ class LoginManager {
     
     // Firestore에서 사용자 이메일로 만들어진 프로필 문서 쿼리
     func fetchUserProfile(_ email: String, completion: @escaping (UIViewController) -> Void) {
-        FirestoreManager.shared.fetchUserProfileFromFirestore(email: email) { result in
+        FirebaseManager.shared.fetchUserProfileFromFirestore(email: email) { result in
             let initialViewControlle: UIViewController
             
             switch result {

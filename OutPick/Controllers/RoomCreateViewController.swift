@@ -192,7 +192,7 @@ class RoomCreateViewController: UIViewController, PHPickerViewControllerDelegate
         createButton.isEnabled = false
         activityIndicator.startAnimating()
         
-        FirestoreManager.shared.checkRoomName(roomName: roomNameTextView.text) { isDuplicated, error in
+        FirebaseManager.shared.checkRoomName(roomName: roomNameTextView.text) { isDuplicated, error in
             
             DispatchQueue.main.async {
                 self.activityIndicator.stopAnimating()
@@ -227,30 +227,31 @@ class RoomCreateViewController: UIViewController, PHPickerViewControllerDelegate
     private func saveRoomInfo(room: ChatRoom) {
         
         if let image = roomImageView.image {
-            uploadImageandSaveRoomInfo(image: image, roomInfo: room)
+            uploadImageAndSaveRoomInfo(image: image, roomInfo: room)
         } else {
             saveRoomInfoToFirestore(room: room)
         }
         
     }
     
-    private func uploadImageandSaveRoomInfo(image: UIImage, roomInfo: ChatRoom) {
-        FirestoreManager.shared.uploadImage(images: [image], type: "roomImages") { [weak self] result in
-            guard let self = self else { return }
-            
-            switch result {
-            case .success(let imageURL):
-                var updatedRoomInfo = roomInfo
-                updatedRoomInfo.roomImageURL = imageURL
-                self.saveRoomInfoToFirestore(room: updatedRoomInfo)
-            case .failure:
-                NotificationCenter.default.post(name: .roomSaveFailed, object: nil, userInfo: ["error": RoomCreationError.imageUploadFailed])
-            }
-        }
+    
+    private func uploadImageAndSaveRoomInfo(image: UIImage, roomInfo: ChatRoom) {
+//        FirebaseMediaManager.shared.uploadImageToStorage(images: [image], type: "roomImages") { [weak self] result in
+//            guard let self = self else { return }
+//            
+//            switch result {
+//            case .success(let imageURL):
+//                var updatedRoomInfo = roomInfo
+//                updatedRoomInfo.roomImageURL = imageURL
+//                self.saveRoomInfoToFirestore(room: updatedRoomInfo)
+//            case .failure:
+//                NotificationCenter.default.post(name: .roomSaveFailed, object: nil, userInfo: ["error": RoomCreationError.imageUploadFailed])
+//            }
+//        }
     }
     
     private func saveRoomInfoToFirestore(room: ChatRoom) {
-        FirestoreManager.shared.saveRoomInfoToFirestore(room: room) { result in
+        FirebaseManager.shared.saveRoomInfoToFirestore(room: room) { result in
             switch result {
             case .success:
                 NotificationCenter.default.post(name: .roomSavedComplete, object: nil, userInfo: ["room": room])
