@@ -15,7 +15,7 @@ class UserProfile: Codable {
     var gender: String?
     var birthdate: String?
     var nickname: String?
-    var profileImageURL: String? // Firestore에 이미지를 직접 저장할 수 없기 때문에 Firestore Storage에 이미지 저장
+    var profileImageName: String? // Firestore에 이미지를 직접 저장할 수 없기 때문에 Firestore Storage에 이미지 저장
     var joinedRooms: [String]?
 
 }
@@ -29,7 +29,7 @@ extension UserProfile {
             "nickname": nickname ?? "",
             "gender": gender ?? "",
             "birthdate": birthdate ?? "",
-            "profileImageURL": profileImageURL ?? "",
+            "profileImageName": profileImageName ?? "",
             "joinedRooms": joinedRooms ?? []
         ]
     }

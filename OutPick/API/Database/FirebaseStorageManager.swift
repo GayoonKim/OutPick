@@ -14,10 +14,31 @@ import PhotosUI
 import Kingfisher
 import Firebase
 import FirebaseStorage
+
+enum ImageType: String, CaseIterable {
+    case ProfileImage
+    case RoomImage
+    case Test
     
-class FirebaseMediaManager {
+    var type: String {
+        switch self {
+            
+        case .ProfileImage:
+            "Profile_Images"
+            
+        case .RoomImage:
+            "Room_Images"
+            
+        case .Test:
+            "Test"
+            
+        }
+    }
+}
     
-    static let shared = FirebaseMediaManager()
+class FirebaseStorageManager {
+    
+    static let shared = FirebaseStorageManager()
     
     // Firestore 인스턴스
     let db = Firestore.firestore()
@@ -26,16 +47,17 @@ class FirebaseMediaManager {
     let storage = Storage.storage()
     
     
-    func uploadImageToStorage(image: UIImage, type: String) async throws -> URL {
+    func uploadImageToStorage(image: UIImage, type: ImageType) async throws -> String {
         
+        let imageName = UUID().uuidString
         return try await withCheckedThrowingContinuation { continuation in
         
             let storageRef = storage.reference()
-            let imageRef = storageRef.child("\(type)/\(UUID().uuidString).jpg")
+            let imageRef = storageRef.child("\(type.type)/\(imageName).jpg")
             
             let reszied = image.resized(withMaxWidth: 700)
             
-            guard let imageData = reszied.jpegData(compressionQuality: 0.4) else {
+            guard let imageData = reszied.jpegData(compressionQuality: 0.5) else {
                 print("이미지 데이터 생성 실패")
                 return
             }
@@ -43,46 +65,37 @@ class FirebaseMediaManager {
             let metadata = StorageMetadata()
             metadata.contentType = "image/jpeg"
             
-            let uploadTask = imageRef.putData(imageData, metadata: metadata) { metadata, error in
+            let uploadTask = imageRef.putData(imageData, metadata: nil) { metadata, error in
                 if let error = error {
+                    
                     continuation.resume(throwing: error)
                     return
-                }
-                
-                imageRef.downloadURL { imageURL, error in
-                    
-                    if let error = error {
-                        print("이미지 업로드 실패: \(error.localizedDescription)")
-                        continuation.resume(throwing: error)
-                    }
-                        
-                    if let imageURL = imageURL {
-                        continuation.resume(returning: imageURL)
-                    }
                     
                 }
             }
             
             let _ = uploadTask.observe(.progress) { snapshot in
 
-                guard let count = snapshot.progress?.completedUnitCount else { return }
-                
+                let percentComplete = 100.0 * Double(snapshot.progress!.completedUnitCount) / Double(snapshot.progress!.totalUnitCount)
+                print("Upload is \(percentComplete) done")
                 
             }
+            
+            continuation.resume(returning: imageName)
             
         }
         
     }
     
-    func uploadImagesToStorage(_ images: [UIImage]) async throws -> [URL] {
+    func uploadImagesToStorage(images: [UIImage], type: ImageType) async throws -> [String] {
         
-        var resultURLs = Array<URL?>(repeating: nil, count: images.count)
+        var resultNames = Array<String?>(repeating: nil, count: images.count)
         
         for image in images {
             do {
                 
-                let url = try await uploadImageToStorage(image: image, type: "test")
-                resultURLs.append(url)
+                let imageName = try await uploadImageToStorage(image: image, type: type)
+                resultNames.append(imageName)
                 
             } catch {
                 
@@ -91,7 +104,7 @@ class FirebaseMediaManager {
             }
         }
         
-        return resultURLs.compactMap{$0}
+        return resultNames.compactMap{$0}
         
     }
     
@@ -105,9 +118,9 @@ class FirebaseMediaManager {
             }
             
             let videoRef = storage.reference().child("videos/\(UUID().uuidString).mp4")
-
-            let uploadTask = videoRef.putData(videoData) { (metaData, error) in
             
+            let uploadTask = videoRef.putData(videoData) { (metaData, error) in
+                
                 if let error = error {
                     print("비디오 업로드 실패: \(error.localizedDescription)")
                     continuation.resume(throwing: error)
@@ -119,7 +132,7 @@ class FirebaseMediaManager {
                     if let error = error {
                         continuation.resume(throwing: error)
                     }
-                        
+                    
                     if let downloadURL = downloadURL {
                         try? FileManager.default.removeItem(at: videoURL)
                         continuation.resume(returning: downloadURL)
@@ -130,8 +143,9 @@ class FirebaseMediaManager {
             }
             
             let _ = uploadTask.observe(.progress) { snapshot in
-
-                guard let count = snapshot.progress?.completedUnitCount else { return }
+                
+                let percentComplete = 100.0 * Double(snapshot.progress!.completedUnitCount) / Double(snapshot.progress!.totalUnitCount)
+                print("Upload is \(percentComplete) done")
                 
             }
             
@@ -162,47 +176,50 @@ class FirebaseMediaManager {
     
     
     // Storage에서 이미지 불러오기
-    func fetchImageFromStorage(url: String/*, completion: @escaping (UIImage?) -> Void*/) async throws -> UIImage {
+    func fetchImageFromStorage(image imageName: String, type: ImageType) async throws -> UIImage {
         
         // 메모리 캐시 확인
-        if let cachedImage = KingfisherManager.shared.cache.retrieveImageInMemoryCache(forKey: url) {
+        if let cachedImage = KingfisherManager.shared.cache.retrieveImageInMemoryCache(forKey: imageName) {
             print("cachedImage: \(cachedImage)")
             return cachedImage
         }
         // 디스크 캐시 확인
-        if let cachedImage = try await KingfisherManager.shared.cache.retrieveImageInDiskCache(forKey: url) {
+        if let cachedImage = try await KingfisherManager.shared.cache.retrieveImageInDiskCache(forKey: imageName) {
             print("cachedImage: \(cachedImage)")
             return cachedImage
         }
         
         return try await withCheckedThrowingContinuation { continuation in
-            AF.request(url).responseData { response in
-                
-                switch response.result {
-                case .success(let data):
-                    // 작업 성공
-                    guard let image = UIImage(data: data) else { return }
-                    KingfisherManager.shared.cache.store(image, forKey: url)
-                    continuation.resume(returning: image)
-                case .failure(let error):
-                    // 에러 발생
-                    continuation.resume(throwing: error)
+            let imageRef = storage.reference().child("\(type)/\(imageName).jpg")
+            imageRef.getData(maxSize: 1 * 1024 * 1024) { data, error in
+                if let error = error {
+                    
+                    print("\(imageName): 이미지 불러오기 실패: \(error.localizedDescription)")
+                    
                 }
-                
+                    
+                if let data = data,
+                   let image = UIImage(data: data) {
+                 
+                    KingfisherManager.shared.cache.store(image, forKey: imageName)
+                    continuation.resume(returning: image)
+                    
+                }
             }
         }
-        
     }
     
-    func fetchImagesFromStorage(from urls: [String]) async throws -> [UIImage] {
+
+    // Storage에서 여러 이미지 불러오는 함수
+    func fetchImagesFromStorage(from imageNames: [String], type: ImageType) async throws -> [UIImage] {
         
-        var images = Array<UIImage?>(repeating: nil, count: urls.count)
+        var images = Array<UIImage?>(repeating: nil, count: imageNames.count)
         
         try await withThrowingTaskGroup(of: (Int, UIImage).self, returning: Void.self) { group in
-            for (index, url) in urls.enumerated() {
+            for (index, imageName) in imageNames.enumerated() {
                 group.addTask {
                     
-                    let image = try await self.fetchImageFromStorage(url: url)
+                    let image = try await self.fetchImageFromStorage(image: imageName, type: type)
                     return (index, image)
                     
                 }
