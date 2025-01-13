@@ -8,6 +8,7 @@
 import UIKit
 import PhotosUI
 import FirebaseFirestore
+import Kingfisher
 
 class RoomCreateViewController: UIViewController, PHPickerViewControllerDelegate, UIImagePickerControllerDelegate & UINavigationControllerDelegate {
     
@@ -204,7 +205,7 @@ class RoomCreateViewController: UIViewController, PHPickerViewControllerDelegate
                     return
                 }
                 
-                let room = ChatRoom(roomName: self.roomNameTextView.text, roomDescription: self.roomDescriptionTextView.text, participants: [LoginManager.shared.getUserEmail], creatorID: LoginManager.shared.getUserEmail, createdAt: Date(), roomImageURL: nil)
+                let room = ChatRoom(roomName: self.roomNameTextView.text, roomDescription: self.roomDescriptionTextView.text, participants: [LoginManager.shared.getUserEmail], creatorID: LoginManager.shared.getUserEmail, createdAt: Date(), roomImageName: nil)
                 
                 // 채팅방 화면으로 이동
                 self.performSegue(withIdentifier: "ToChatRoom", sender: room)
@@ -227,36 +228,49 @@ class RoomCreateViewController: UIViewController, PHPickerViewControllerDelegate
     private func saveRoomInfo(room: ChatRoom) {
         
         if let image = roomImageView.image {
-            uploadImageAndSaveRoomInfo(image: image, roomInfo: room)
+            
+                uploadImageAndSaveRoomInfo(image: image, roomInfo: room)
+            
         } else {
-            saveRoomInfoToFirestore(room: room)
+            saveRoomInfoToFirestore(room: room, image: nil)
         }
         
     }
     
     
     private func uploadImageAndSaveRoomInfo(image: UIImage, roomInfo: ChatRoom) {
-//        FirebaseMediaManager.shared.uploadImageToStorage(images: [image], type: "roomImages") { [weak self] result in
-//            guard let self = self else { return }
-//            
-//            switch result {
-//            case .success(let imageURL):
-//                var updatedRoomInfo = roomInfo
-//                updatedRoomInfo.roomImageURL = imageURL
-//                self.saveRoomInfoToFirestore(room: updatedRoomInfo)
-//            case .failure:
-//                NotificationCenter.default.post(name: .roomSaveFailed, object: nil, userInfo: ["error": RoomCreationError.imageUploadFailed])
-//            }
-//        }
+        
+        Task {
+            do {
+                
+                let imageName = try await FirebaseStorageManager.shared.uploadImageToStorage(image: image, type: ImageType.RoomImage)
+                
+                var updatedRoomInfo = roomInfo
+                updatedRoomInfo.roomImageName = imageName
+                self.saveRoomInfoToFirestore(room: updatedRoomInfo, image: image)
+                
+            } catch {
+                
+                NotificationCenter.default.post(name: .roomSaveFailed, object: nil, userInfo: ["error": RoomCreationError.imageUploadFailed])
+                
+            }
+        }
+
     }
     
-    private func saveRoomInfoToFirestore(room: ChatRoom) {
+    private func saveRoomInfoToFirestore(room: ChatRoom, image: UIImage?) {
         FirebaseManager.shared.saveRoomInfoToFirestore(room: room) { result in
             switch result {
+                
             case .success:
+                if let imageName = room.roomImageName, let image = image {
+                    KingfisherManager.shared.cache.store(image, forKey: imageName)
+                }
                 NotificationCenter.default.post(name: .roomSavedComplete, object: nil, userInfo: ["room": room])
+                
             case .failure:
                 NotificationCenter.default.post(name: .roomSaveFailed, object: nil, userInfo: ["error": RoomCreationError.saveFailed])
+                
             }
         }
     }

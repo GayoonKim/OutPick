@@ -173,7 +173,7 @@ class FirebaseManager {
                       let participants = data["participantIDs"] as? [String],
                       let creatorID = data["creatorID"] as? String,
                       let timestamp = data["createdAt"] as? Timestamp,
-                      let roomImageURL = data["roomImageURL"] as? String else {
+                      let roomImageName = data["roomImageName"] as? String else {
                     return nil
                 }
                     
@@ -184,8 +184,13 @@ class FirebaseManager {
                     participants: participants,
                     creatorID: creatorID,
                     createdAt: timestamp.dateValue(),
-                    roomImageURL: roomImageURL
+                    roomImageName: roomImageName
                 )
+                
+                // 방 대표 사진 미리 캐싱
+                Task {
+                    try await FirebaseStorageManager.shared.fetchImageFromStorage(image: roomImageName, type: ImageType.RoomImage)
+                }
                 
                 return chatRoom
             }

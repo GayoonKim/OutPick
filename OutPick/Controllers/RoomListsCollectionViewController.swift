@@ -63,8 +63,8 @@ class ChatCollectionViewController: UICollectionViewController {
             cell.roomImageView.clipsToBounds =  true
             
             Task {
-                if let imageURL = item.roomImageURL {
-                    let image = try await FirebaseMediaManager.shared.fetchImageFromStorage(url: imageURL)
+                if let imageName = item.roomImageName {
+                    let image = try await FirebaseStorageManager.shared.fetchImageFromStorage(image: imageName, type: ImageType.RoomImage)
                     image.prepareThumbnail(of: CGSize(width: 50, height: 50)) { cgImage in
                         DispatchQueue.main.async {
                          

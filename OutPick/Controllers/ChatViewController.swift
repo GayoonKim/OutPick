@@ -34,8 +34,13 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     var room: ChatRoom?
     var isRoomSaving = false
     
+    var convertImagesTask: Task<Void, Error>? = nil
+    var convertVideosTask: Task<Void, Error>? = nil
+    
     deinit {
         SocketIOManager.shared.closeConnection()
+        convertImagesTask?.cancel()
+        convertVideosTask?.cancel()
     }
     
     private lazy var optionView: UIView = {
@@ -146,19 +151,18 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         switch identifier {
             
         case "photo":
-            
             print("Photo btn tapped!")
             self.hideOrShowOptionMenu()
             self.openPHPicker()
             
         case "camera":
-            
             print("Camera btn tapped!")
             self.hideOrShowOptionMenu()
             self.openCamera()
             
         case "paperclip":
             print("File btn tapped!")
+            
         default:
             return
             
@@ -220,9 +224,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     private func hideOrShowOptionMenu() {
     
         guard let image = self.attachmentBtn.imageView?.image else { return }
-        
         if image != UIImage(systemName: "xmark") {
-            
+
             self.attachmentBtn.setImage(UIImage(systemName: "xmark"), for: .normal)
             
             if self.msgTextView.isFirstResponder {
@@ -251,9 +254,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     }
     
     @IBAction func attachmentBtnTapped(_ sender: UIButton) {
-        
         self.hideOrShowOptionMenu()
-        
     }
     
     private func decideJoinUI() {
@@ -262,7 +263,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         
         if room.participants.contains(LoginManager.shared.getUserEmail) {
             chatUIStackView.isHidden = false
-            
         } else {
             setJoinRoombtn()
         }
@@ -345,8 +345,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     }
     
     @objc private func keyboardWillShow(_ sender: Notification) {
-        
-        
         
         guard let keyboardFrame = sender.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
         let keyboardFrameHeight = keyboardFrame.height
@@ -583,64 +581,68 @@ extension ChatViewController: PHPickerViewControllerDelegate {
         
         picker.dismiss(animated: true)
         
-        var selectedIdentifiers: [String] = []
+        var resultsForVideos: [PHPickerResult] = []
+        var resultsForImages: [PHPickerResult] = []
         
         for result in results {
             let itemProvider = result.itemProvider
-            
-            if itemProvider.canLoadObject(ofClass: UIImage.self) {
-                itemProvider.loadObject(ofClass: UIImage.self) { image, error in
-                    if let image = image as? UIImage {
-                        
-                        DispatchQueue.main.async {
-                        
-                            self.selectedImages.append(image)
-                            print(self.selectedImages)
-                            
-                        }
-                    }
-                }
+            if itemProvider.hasItemConformingToTypeIdentifier(UTType.movie.identifier) {
+                
+                resultsForVideos.append(result)
+                
+            } else if itemProvider.canLoadObject(ofClass: UIImage.self) {
+                
+                resultsForImages.append(result)
+                
             }
             
-            if itemProvider.hasItemConformingToTypeIdentifier(UTType.movie.identifier) {
-                itemProvider.loadFileRepresentation(forTypeIdentifier: UTType.movie.identifier) { [weak self]fileURL, error in
-                    guard let self = self, let fileURL = fileURL, error == nil else { return }
-//                    FirebaseMediaManager.shared.uploadVideoToStorage(videoURL: fileURL) { result in
-//                        
-//                        switch result {
-//                            
-//                        case .success(let downloadURL):
-//                            guard let url = URL(string: downloadURL) else { return }
-////                            self.testImageView.image = self.generateThumbnail(from: url)
-//                            self.playVideo(from: url)
-//                            
-//                        case .failure(let error):
-//                            print("File URL 다운로드 실패: \(error.localizedDescription)")
-//                            
-//                        }
-//                        
-//                    }
+        }
+        
+        if !resultsForImages.isEmpty {
+            convertImagesTask = Task {
+                do {
+                    
+                    let images = try await MediaManager.shared.dealWithImages(resultsForImages)
+                    
+                    let imageNames = try await FirebaseStorageManager.shared.uploadImagesToStorage(images: images, type: ImageType.Test)
+                    
+                    let imagesFromStorage = try await FirebaseStorageManager.shared.fetchImagesFromStorage(from: imageNames, type: ImageType.Test)
+                    
+                    for image in imagesFromStorage {
+                        self.testImageView.image = image
+                    }
+                    
+                } catch {
+                    
+                    print("이미지 불러오기 실패: \(error.localizedDescription)")
+                    
                 }
             }
             
         }
+        
+        if !resultsForVideos.isEmpty {
             
-        preselectedIdentifiers = selectedIdentifiers
-        print("Selected Identifiers: \(preselectedIdentifiers)")
+            print("비디오 존재")
+            
+        }
         
     }
-    
+        
 }
 
 extension ChatViewController: UIImagePickerControllerDelegate {
     
     func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
-        
-        if let editedImage = info[.editedImage] as? UIImage {
-            
-        } else if let originalImage = info[.originalImage] as? UIImage {
-            
-        }
+//        if let editedImage = info[.editedImage] as? UIImage {
+//            
+//            
+//            
+//        } else if let originalImage = info[.originalImage] as? UIImage {
+//            
+//            
+//            
+//        }
         
         dismiss(animated: true)
     }

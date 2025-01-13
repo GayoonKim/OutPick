@@ -111,7 +111,7 @@ extension PracViewController: PHPickerViewControllerDelegate {
                     
                     let compressedURLs = try await MediaManager.shared.dealWithVideos(resultsForVideos)
                     
-                    self.selectedVideos = try await FirebaseMediaManager.shared.uploadVideosToStorage(compressedURLs)
+                    self.selectedVideos = try await FirebaseStorageManager.shared.uploadVideosToStorage(compressedURLs)
                     
                     for video in selectedVideos {
                         DispatchQueue.main.async {
@@ -135,13 +135,15 @@ extension PracViewController: PHPickerViewControllerDelegate {
                 do {
                     
                     let images = try await MediaManager.shared.dealWithImages(resultsForImages)
-                    print("dealWithImages 끝")
+                    let imageNmaes = try await FirebaseStorageManager.shared.uploadImagesToStorage(images: images, type: ImageType.Test)
                     
-                    for image in images {
-                        self.testImageView0.image = image
+                    let firstImg = images[0]
+                    let secImg = images[1]
+                    
+                    DispatchQueue.main.async {
+                        self.testImageView0.image = firstImg
+                        self.testImageView1.image = secImg
                     }
-                    
-                    let _ = try await FirebaseMediaManager.shared.uploadImagesToStorage(images)
                     
                 } catch {
                     
