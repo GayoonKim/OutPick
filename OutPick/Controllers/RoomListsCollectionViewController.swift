@@ -64,7 +64,7 @@ class ChatCollectionViewController: UICollectionViewController {
             
             Task {
                 if let imageName = item.roomImageName {
-                    let image = try await FirebaseStorageManager.shared.fetchImageFromStorage(image: imageName, type: ImageType.RoomImage)
+                    let image = try await FirebaseStorageManager.shared.fetchImageFromStorage(image: imageName, location: ImageLocation.RoomImage)
                     image.prepareThumbnail(of: CGSize(width: 50, height: 50)) { cgImage in
                         DispatchQueue.main.async {
                          

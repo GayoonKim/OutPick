@@ -17,8 +17,11 @@ class FirstProfileViewController: UIViewController {
     var selectedGender: String?
     
     let datePicker = UIDatePicker()
+    
+    var savedBirthDate: Date?
 
     override func viewDidLoad() {
+        
         super.viewDidLoad()
         
         guard let genderButtons = genderButtons else {return}
@@ -29,28 +32,50 @@ class FirstProfileViewController: UIViewController {
         nextButton.backgroundColor = UIColor(white: 0.1, alpha: 0.03)
         nextButton.clipsToBounds = true
         nextButton.layer.cornerRadius = 10
+        
+        guard let index = genderButtonIndex, let birthDate = savedBirthDate else { return }
+        genderButtons[index].isSelected = true
+        datePicker.date = birthDate
+        
     }
+    
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        
+        savedBirthDate = datePicker.date
+    }
+    
+    @IBAction func nextBtnTapped(_ sender: UIButton) {
+        performSegue(withIdentifier: "ToSecProfile", sender: nil)
+    }
+    
 
     @IBAction func genderButtonPressed(_ sender: UIButton) {
         if genderButtonIndex != nil {
             if !sender.isSelected {
+                
                 for index in genderButtons.indices {
                     genderButtons[index].isSelected = false
                 }
                 sender.isSelected = true
                 genderButtonIndex = genderButtons.firstIndex(of: sender)
+                
             } else {
+                
                 sender.isSelected = false
                 genderButtonIndex = nil
+                
             }
         }else {
+            
             sender.isSelected = true
             genderButtonIndex = genderButtons.firstIndex(of: sender)
+            
         }
         
         if let genderBtnIndex = genderButtonIndex,
            let gender = genderButtons[genderBtnIndex].titleLabel?.text {
-            UserProfile.sharedUserProfile.gender = gender
+            UserProfile.shared.gender = gender
         }
      
         enableNextBtn()
@@ -117,7 +142,7 @@ class FirstProfileViewController: UIViewController {
     
     @objc func donePressed(_ sender: UIBarButtonItem) {
         dateOfBirthTextField.text = configureDateFormat(datePicker.date)
-        if let birthdate = dateOfBirthTextField.text { UserProfile.sharedUserProfile.birthdate = birthdate }
+        if let birthdate = dateOfBirthTextField.text { UserProfile.shared.birthdate = birthdate }
         enableNextBtn()
         view.endEditing(true)
     }

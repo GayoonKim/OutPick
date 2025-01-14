@@ -68,10 +68,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             }
             
             // 카카오 로그인 확인
-            print("6. 카카오 로그인 체크 시작")
+//            print("6. 카카오 로그인 체크 시작")
             group.enter()
             self.checkKakaoLogin { success in
-                print("7. 카카오 로그인 체크 완료: \(success)")
+//                print("7. 카카오 로그인 체크 완료: \(success)")
                 if success {
                     isLoggedIn = true
                     // 채팅방 목록 감지 시작
@@ -79,15 +79,14 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                         print("채팅방 목록 수: \(rooms.count)")
                     }
                 }
-                
                 group.leave()
             }
             
-            print("8. notify 설정 전")
+//            print("8. notify 설정 전")
             group.notify(queue: .main) {
-                print("9. notify 내부 실행")
+//                print("9. notify 내부 실행")
                 if isLoggedIn {
-                    print("10. 로그인 됨")
+//                    print("10. 로그인 됨")
                     LoginManager.shared.fetchUserProfile(LoginManager.shared.getUserEmail) { screen in
                         DispatchQueue.main.async {
                             self.window?.rootViewController = screen
@@ -95,7 +94,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                         }
                     }
                 } else {
-                    print("11. 로그인 안 됨")
+//                    print("11. 로그인 안 됨")
                     self.showLoginViewController()
                 }
             }

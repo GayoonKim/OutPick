@@ -11,14 +11,12 @@ import FirebaseFirestore
 import FirebaseStorage
 import KakaoSDKUser
 
-class SecondProfileViewController: UIViewController, PHPickerViewControllerDelegate, UIImagePickerControllerDelegate & UINavigationControllerDelegate {
+class SecondProfileViewController: UIViewController {
 
     @IBOutlet weak var nicknameTextField: UITextField!
     @IBOutlet weak var nicknameWordsCountLabel: UILabel!
     @IBOutlet weak var profileImageView: UIImageView!
     @IBOutlet weak var completeButton: UIButton!
-    
-    var profile: UserProfile?
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -32,22 +30,36 @@ class SecondProfileViewController: UIViewController, PHPickerViewControllerDeleg
         completeButton.layer.cornerRadius = 10
         completeButton.isEnabled = false
         completeButton.backgroundColor = UIColor(white: 0.1, alpha: 0.03)
-    }
-    
-    private func setupNicknameTextField(_ textField: UITextField) {
-        textField.delegate = self
-        textField.clipsToBounds = true
-        textField.layer.cornerRadius = 10
-        textField.backgroundColor = UIColor(white: 0.1, alpha: 0.03)
+
+        NavigationBarManager.configureBackButton(for: self)
         
-        self.nicknameTextField.addTarget(self, action: #selector(textFieldDidChanacge), for: .editingChanged)
-    }
-    
-    @objc fileprivate func textFieldDidChanacge(_ sender: UITextField) {
-        guard let text = sender.text else { return }
+        if let nickName = UserDefaults.standard.string(forKey: "savedNickName") {
+            nicknameTextField.text = nickName
+            nicknameWordsCountLabel.text = "\(nickName.count) / 20"
+            UserDefaults.standard.removeObject(forKey: "savedNickName")
+        }
         
-        nicknameWordsCountLabel.text = "\(text.count) / 20"
+        if let imageData = UserDefaults.standard.data(forKey: "savedProfileImage"),
+           let image = UIImage(data: imageData) {
+            profileImageView.image = image
+            UserDefaults.standard.removeObject(forKey: "savedProfileImage")
+        }
+        
         enableCompleteButton()
+        
+    }
+    
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        
+        if let nickName = nicknameTextField.text {
+            UserDefaults.standard.set(nickName, forKey: "savedNickName")
+        }
+        
+        if let image = profileImageView.image,
+           let imageData = image.jpegData(compressionQuality: 0.5) {
+            UserDefaults.standard.set(imageData, forKey: "savedProfileImage")
+        }
     }
     
     private func profileImageViewSetup() {
@@ -127,121 +139,50 @@ class SecondProfileViewController: UIViewController, PHPickerViewControllerDeleg
         sender.isHidden = true
     }
     
-    private func openPhotoLibrary() {
-        var config = PHPickerConfiguration(photoLibrary: .shared())
-        config.filter = .images // 이미지만 선택 가능하도록 설정
-        config.selectionLimit = 1 // 선택 가능한 최대 이미지 수
-        config.preferredAssetRepresentationMode = .current
-        
-        let picker = PHPickerViewController(configuration: config)
-        picker.delegate = self
-        
-        present(picker, animated: true, completion: nil)
-    }
-    
-    private func openCamera() {
-        if UIImagePickerController.isSourceTypeAvailable(.camera) {
-            let imagePicker = UIImagePickerController()
-            imagePicker.delegate = self
-            imagePicker.sourceType = .camera
-        
-            present(imagePicker, animated: true, completion: nil)
-        }
-    }
-    
-    func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
-        picker.dismiss(animated: true, completion: nil)
-        
-        guard let itemProvider = results.first?.itemProvider else { return }
-        
-        if itemProvider.canLoadObject(ofClass: UIImage.self) {
-            itemProvider.loadObject(ofClass: UIImage.self) { (image, error) in
-                DispatchQueue.main.async {
-                    self.profileImageView.image = image as? UIImage
-                    self.removeImageButtonSetup()
-                }
-            }
-        }
-    }
-    
-    func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
-        if let selectedImage = info[.originalImage] as? UIImage {
-            profileImageView.image = selectedImage
-            self.removeImageButtonSetup()
-        }
-        picker.dismiss(animated: true, completion: nil)
-    }
-    
-    func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-        picker.dismiss(animated: true, completion: nil)
-    }
-    
     private func enableCompleteButton() {
-        guard let _ = nicknameTextField.text else { return }
-        completeButton.isEnabled = true
+        if self.nicknameTextField.text != ""  {
+            completeButton.isEnabled = true
+        }
+        
+//        guard let _ = nicknameTextField.text else { return }
     }
     
     @IBAction func completeButtonTapped(_ sender: UIButton) {
         
         if let nickname = nicknameTextField.text {
-            UserProfile.sharedUserProfile.nickname = nickname
+            UserProfile.shared.nickname = nickname
         }
             
-        self.saveUserProfile(userProfile: UserProfile.sharedUserProfile, email: LoginManager.shared.getUserEmail)
-            
-        let homeVC = self.storyboard?.instantiateViewController(identifier: "HomeTBC") as? UITabBarController
-        self.view.window?.rootViewController = homeVC
-        self.view.window?.makeKeyAndVisible()
+        self.saveUserProfile(email: LoginManager.shared.getUserEmail)
+        
     }
     
-    private func saveUserProfile(userProfile: UserProfile, email: String) {
+    private func saveUserProfile(email: String) {
         
-        guard let nickname = userProfile.nickname else { return }
-        FirebaseManager.shared.checkNicknameDuplicate(nickname: nickname) { isDuplicate, error in
-            if let error = error {
-                print("Failed to check nickname: \(error.localizedDescription)")
-                return
-            }
-            
-            if isDuplicate {
-                let alert = UIAlertController(title: "닉네임 중복", message: "다른 닉네임을 선택해 주세요.", preferredStyle: .alert)
-                alert.addAction(UIAlertAction(title: "OK", style: .default, handler: nil))
-                self.present(alert, animated: true, completion: nil)
-                return
-            }
-            
-            Task {
-                if let image = self.profileImageView.image {
-                    let imageName = try await FirebaseStorageManager.shared.uploadImageToStorage(image: image, type: ImageType.ProfileImage)
-                    userProfile.profileImageName = imageName
-                    
-                    FirebaseManager.shared.saveUserProfileToFirestore(userProfile: userProfile, email: email) { error in
-                        if let error = error {
-                            
-                            print("Failed to save user profile: \(error.localizedDescription)")
-                            
-                        } else {
-                            
-                            print("User profile saved successfully with profile image!")
-                            
-                        }
-                    }
-                } else {
-                    userProfile.profileImageName = nil
-                    FirebaseManager.shared.saveUserProfileToFirestore(userProfile: userProfile, email: email) { error in
-                        if let error = error {
-                            
-                            print("Failed to save user profile: \(error.localizedDescription)")
-                            
-                        } else {
-                            
-                            print("User profile saved successfully without profile image!")
-                            
-                        }
-                    }
+        guard let nickname = UserProfile.shared.nickname else { return }
+        
+        Task {
+            do {
+                
+                if try await FirebaseManager.shared.checkNicknameDuplicate(nickname: nickname) {
+                    AlertManager.showAlert(title: "닉네임 중복", message: "다른 닉네임을 선택해 주세요.", viewController: self)
+                    return
                 }
+                
+                
+                
+                let homeVC = self.storyboard?.instantiateViewController(identifier: "HomeTBC") as? UITabBarController
+                self.view.window?.rootViewController = homeVC
+                self.view.window?.makeKeyAndVisible()
+                
+            } catch {
+                
+                return
+                
             }
         }
+        
+        
         
     }
     
@@ -265,6 +206,79 @@ extension SecondProfileViewController: UITextFieldDelegate {
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
         textField.resignFirstResponder()
         return true
+    }
+    
+    private func setupNicknameTextField(_ textField: UITextField) {
+        textField.delegate = self
+        textField.clipsToBounds = true
+        textField.layer.cornerRadius = 10
+        textField.backgroundColor = UIColor(white: 0.1, alpha: 0.03)
+        
+        self.nicknameTextField.addTarget(self, action: #selector(textFieldDidChanacge), for: .editingChanged)
+    }
+    
+    @objc fileprivate func textFieldDidChanacge(_ sender: UITextField) {
+        guard let text = sender.text else { return }
+        
+        nicknameWordsCountLabel.text = "\(text.count) / 20"
+        enableCompleteButton()
+    }
+    
+}
+
+extension SecondProfileViewController: PHPickerViewControllerDelegate {
+    
+    func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+        picker.dismiss(animated: true, completion: nil)
+        
+        guard let itemProvider = results.first?.itemProvider else { return }
+        
+        if itemProvider.canLoadObject(ofClass: UIImage.self) {
+            itemProvider.loadObject(ofClass: UIImage.self) { (image, error) in
+                DispatchQueue.main.async {
+                    self.profileImageView.image = image as? UIImage
+                    self.removeImageButtonSetup()
+                }
+            }
+        }
+    }
+    
+    private func openPhotoLibrary() {
+        var config = PHPickerConfiguration(photoLibrary: .shared())
+        config.filter = .images // 이미지만 선택 가능하도록 설정
+        config.selectionLimit = 1 // 선택 가능한 최대 이미지 수
+        config.preferredAssetRepresentationMode = .current
+        
+        let picker = PHPickerViewController(configuration: config)
+        picker.delegate = self
+        
+        present(picker, animated: true, completion: nil)
+    }
+    
+}
+
+extension SecondProfileViewController: UIImagePickerControllerDelegate & UINavigationControllerDelegate {
+    
+    func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
+        if let selectedImage = info[.originalImage] as? UIImage {
+            profileImageView.image = selectedImage
+            self.removeImageButtonSetup()
+        }
+        picker.dismiss(animated: true, completion: nil)
+    }
+    
+    private func openCamera() {
+        if UIImagePickerController.isSourceTypeAvailable(.camera) {
+            let imagePicker = UIImagePickerController()
+            imagePicker.delegate = self
+            imagePicker.sourceType = .camera
+        
+            present(imagePicker, animated: true, completion: nil)
+        }
+    }
+    
+    func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+        picker.dismiss(animated: true, completion: nil)
     }
     
 }

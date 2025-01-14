@@ -205,7 +205,7 @@ class RoomCreateViewController: UIViewController, PHPickerViewControllerDelegate
                     return
                 }
                 
-                let room = ChatRoom(roomName: self.roomNameTextView.text, roomDescription: self.roomDescriptionTextView.text, participants: [LoginManager.shared.getUserEmail], creatorID: LoginManager.shared.getUserEmail, createdAt: Date(), roomImageName: nil)
+                let room = ChatRoom(id: UUID().uuidString, roomName: self.roomNameTextView.text, roomDescription: self.roomDescriptionTextView.text, participants: [LoginManager.shared.getUserEmail], creatorID: LoginManager.shared.getUserEmail, createdAt: Date(), roomImageName: nil)
                 
                 // 채팅방 화면으로 이동
                 self.performSegue(withIdentifier: "ToChatRoom", sender: room)
@@ -243,7 +243,7 @@ class RoomCreateViewController: UIViewController, PHPickerViewControllerDelegate
         Task {
             do {
                 
-                let imageName = try await FirebaseStorageManager.shared.uploadImageToStorage(image: image, type: ImageType.RoomImage)
+                let imageName = try await FirebaseStorageManager.shared.uploadImageToStorage(image: image, location: ImageLocation.RoomImage)
                 
                 var updatedRoomInfo = roomInfo
                 updatedRoomInfo.roomImageName = imageName
@@ -357,4 +357,10 @@ extension RoomCreateViewController: UITextViewDelegate {
 extension Notification.Name {
     static let roomSavedComplete = Notification.Name("roomSaveCompleted")
     static let roomSaveFailed = Notification.Name("roomSaveFailed")
+}
+
+enum RoomCreationError: Error {
+    case duplicateName
+    case saveFailed
+    case imageUploadFailed
 }

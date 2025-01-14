@@ -321,7 +321,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
               let roomName = self.room?.roomName else { return }
         self.msgTextView.text = nil
         
-        let newMessage = ChatMessage(messageID: UUID().uuidString, senderID: LoginManager.shared.getUserEmail, senderNickname: UserProfile.sharedUserProfile.nickname ?? "", msg: message, sentAt: Date(), messageType: .Text)
+        let newMessage = ChatMessage(messageID: UUID().uuidString, senderID: LoginManager.shared.getUserEmail, senderNickname: UserProfile.shared.nickname ?? "", msg: message, sentAt: Date(), messageType: .Text)
         print(newMessage)
         
         SocketIOManager.shared.sendMessage(roomName, message)
@@ -416,7 +416,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         activityIndicator.stopAnimating()
         
         guard let savedRoom = notification.userInfo?["room"] as? ChatRoom,
-              let nickName = UserProfile.sharedUserProfile.nickname else { return }
+              let nickName = UserProfile.shared.nickname else { return }
         self.room = savedRoom
         
         Task {
@@ -604,9 +604,9 @@ extension ChatViewController: PHPickerViewControllerDelegate {
                     
                     let images = try await MediaManager.shared.dealWithImages(resultsForImages)
                     
-                    let imageNames = try await FirebaseStorageManager.shared.uploadImagesToStorage(images: images, type: ImageType.Test)
+                    let imageNames = try await FirebaseStorageManager.shared.uploadImagesToStorage(images: images, location: ImageLocation.Test)
                     
-                    let imagesFromStorage = try await FirebaseStorageManager.shared.fetchImagesFromStorage(from: imageNames, type: ImageType.Test)
+                    let imagesFromStorage = try await FirebaseStorageManager.shared.fetchImagesFromStorage(from: imageNames, location: ImageLocation.Test)
                     
                     for image in imagesFromStorage {
                         self.testImageView.image = image

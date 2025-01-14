@@ -23,17 +23,13 @@ class PracViewController: UIViewController, UINavigationControllerDelegate {
     @IBOutlet weak var playBtn: UIButton!
     @IBOutlet weak var testProgressView: UIProgressView!
     
-    private let url =
-    ["https://firebasestorage.googleapis.com:443/v0/b/outpick-664ae.appspot.com/o/roomImages%2F89F79D4E-C60D-432E-832C-31B8A5DE6C8C.jpg?alt=media&token=63ddac2a-6aab-4e3f-91b0-44ea399c08f4",
-     "https://firebasestorage.googleapis.com:443/v0/b/outpick-664ae.appspot.com/o/profileImages%2FF123AE8D-428D-4FE4-8881-8612544B43C9.jpg?alt=media&token=3ded1f50-cde4-4a48-852d-d4ade85b6d17"]
-    
     // Firestore 인스턴스
     let db = Firestore.firestore()
     
     // Storage 인스턴스
     let storage = Storage.storage()
     
-    private var selectedVideos: [URL] = []
+    private var selectedVideos: [String] = []
     private var selectedImages: [URL] = []
     
     private var convertVideoTask: Task<Void, Error>? = nil
@@ -46,6 +42,13 @@ class PracViewController: UIViewController, UINavigationControllerDelegate {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        
+        let currentDate = Date()
+        let calendar = Calendar.current
+        let currentMonth = calendar.component(.month, from: currentDate)
+        
+        print(currentDate)
+        
     }
     
     @IBAction func albumBtnTapped(_ sender: UIButton) {
@@ -81,6 +84,29 @@ class PracViewController: UIViewController, UINavigationControllerDelegate {
         
     }
     
+//    // Storage에서 이미지 불러오기
+//    func fetchVideoFromStorage(video videoName: String, location: VideoLocation) async throws -> UIImage {
+//        
+//        return try await withCheckedThrowingContinuation { continuation in
+//            let imageRef = storage.reference().child("\(location)/\(imageName).jpg")
+//            imageRef.getData(maxSize: 1 * 1024 * 1024) { data, error in
+//                if let error = error {
+//                    
+//                    print("\(imageName): 이미지 불러오기 실패: \(error.localizedDescription)")
+//                    
+//                }
+//                    
+//                if let data = data,
+//                   let image = UIImage(data: data) {
+//                 
+//                    KingfisherManager.shared.cache.store(image, forKey: imageName)
+//                    continuation.resume(returning: image)
+//                    
+//                }
+//            }
+//        }
+//    }
+    
 }
 
 extension PracViewController: PHPickerViewControllerDelegate {
@@ -113,12 +139,6 @@ extension PracViewController: PHPickerViewControllerDelegate {
                     
                     self.selectedVideos = try await FirebaseStorageManager.shared.uploadVideosToStorage(compressedURLs)
                     
-                    for video in selectedVideos {
-                        DispatchQueue.main.async {
-                            self.playVideo(from: video)
-                        }
-                    }
-                    
                 } catch {
                     
                     print("비디오 불러오기 실패: \(error.localizedDescription)")
@@ -135,14 +155,10 @@ extension PracViewController: PHPickerViewControllerDelegate {
                 do {
                     
                     let images = try await MediaManager.shared.dealWithImages(resultsForImages)
-                    let imageNmaes = try await FirebaseStorageManager.shared.uploadImagesToStorage(images: images, type: ImageType.Test)
-                    
-                    let firstImg = images[0]
-                    let secImg = images[1]
-                    
-                    DispatchQueue.main.async {
-                        self.testImageView0.image = firstImg
-                        self.testImageView1.image = secImg
+                    let imageNames = try await FirebaseStorageManager.shared.uploadImagesToStorage(images: images, location: ImageLocation.Test)
+
+                    for imageName in imageNames {
+                        print(imageName)
                     }
                     
                 } catch {

@@ -22,7 +22,7 @@ class SocketIOManager {
         socket.on(clientEvent: .connect) {data, ack in
             print("Socket Connected")
             
-            guard let nickName = UserProfile.sharedUserProfile.nickname else { return }
+            guard let nickName = UserProfile.shared.nickname else { return }
             self.socket.emit("set username", nickName)
         }
         

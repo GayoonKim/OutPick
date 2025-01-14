@@ -10,7 +10,7 @@ import FirebaseFirestore
 
 struct ChatRoom: Codable {
     
-    var id: String?
+    let id: String
     var roomName: String                // 방 이름
     var roomDescription: String         // 방 주제 및 설명
     var participants: [String]          // 방 참여 사용자들
@@ -21,7 +21,7 @@ struct ChatRoom: Codable {
     // Firestore에 저장하기 위힌 뱐환 메서드
     func toDictionary() -> [String: Any] {
         let data: [String: Any] = [
-            "id": UUID().uuidString,
+            "id": id,
             "roomName": roomName,
             "roomDescription": roomDescription,
             "participantIDs": participants,
