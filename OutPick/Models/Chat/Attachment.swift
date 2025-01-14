@@ -8,13 +8,13 @@
 import UIKit
 
 // 첨부 파일 정보
-struct Attachment {
+struct Attachment: Codable {
     
     let id: String
     let type: AttachmentType
-    let url: String
     let size: Int64?
     let fileName: String?
+    let createdAt: Date
     
     func toDict() -> [String: Any] {
         
@@ -26,9 +26,24 @@ struct Attachment {
     
     enum AttachmentType: String, Codable {
         
-        case image
-        case video
-        case file
+        case Image
+        case Video
+        case File
+        
+        var type: String {
+            switch self {
+                
+            case .Image:
+                "Image"
+                
+            case .Video:
+                "Video"
+                
+            case .File:
+                "File"
+                
+            }
+        }
         
     }
     

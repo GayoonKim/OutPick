@@ -14,27 +14,6 @@ import PhotosUI
 import Kingfisher
 import Firebase
 import FirebaseStorage
-
-enum ImageType: String, CaseIterable {
-    case ProfileImage
-    case RoomImage
-    case Test
-    
-    var type: String {
-        switch self {
-            
-        case .ProfileImage:
-            "Profile_Images"
-            
-        case .RoomImage:
-            "Room_Images"
-            
-        case .Test:
-            "Test"
-            
-        }
-    }
-}
     
 class FirebaseStorageManager {
     
@@ -47,13 +26,13 @@ class FirebaseStorageManager {
     let storage = Storage.storage()
     
     
-    func uploadImageToStorage(image: UIImage, type: ImageType) async throws -> String {
+    func uploadImageToStorage(image: UIImage, location: ImageLocation) async throws -> String {
         
         let imageName = UUID().uuidString
         return try await withCheckedThrowingContinuation { continuation in
         
             let storageRef = storage.reference()
-            let imageRef = storageRef.child("\(type.type)/\(imageName).jpg")
+            let imageRef = storageRef.child("\(location.location)/\(imageName).jpg")
             
             let reszied = image.resized(withMaxWidth: 700)
             
@@ -68,7 +47,7 @@ class FirebaseStorageManager {
             let uploadTask = imageRef.putData(imageData, metadata: nil) { metadata, error in
                 if let error = error {
                     
-                    continuation.resume(throwing: error)
+                    continuation.resume(throwing: StorageError.FailedToUploadImage)
                     return
                     
                 }
@@ -87,19 +66,19 @@ class FirebaseStorageManager {
         
     }
     
-    func uploadImagesToStorage(images: [UIImage], type: ImageType) async throws -> [String] {
+    func uploadImagesToStorage(images: [UIImage], location: ImageLocation) async throws -> [String] {
         
         var resultNames = Array<String?>(repeating: nil, count: images.count)
         
         for image in images {
             do {
                 
-                let imageName = try await uploadImageToStorage(image: image, type: type)
+                let imageName = try await uploadImageToStorage(image: image, location: location)
                 resultNames.append(imageName)
                 
             } catch {
                 
-                throw error
+                throw StorageError.FailedToUploadImage
                 
             }
         }
@@ -108,8 +87,9 @@ class FirebaseStorageManager {
         
     }
     
-    func uploadVideoToStorage(_ videoURL: URL) async throws -> URL {
+    func uploadVideoToStorage(_ videoURL: URL) async throws -> String {
         
+        let videoName = UUID().uuidString
         return try await withCheckedThrowingContinuation { continuation in
             
             guard let videoData = try? Data(contentsOf: videoURL) else {
@@ -117,28 +97,28 @@ class FirebaseStorageManager {
                 return
             }
             
-            let videoRef = storage.reference().child("videos/\(UUID().uuidString).mp4")
+            let videoRef = storage.reference().child("videos/\(videoName).mp4")
             
             let uploadTask = videoRef.putData(videoData) { (metaData, error) in
                 
                 if let error = error {
                     print("비디오 업로드 실패: \(error.localizedDescription)")
-                    continuation.resume(throwing: error)
+                    continuation.resume(throwing: StorageError.FailedToUploadVideo)
                     return
                 }
                 
-                videoRef.downloadURL { downloadURL, error in
-                    
-                    if let error = error {
-                        continuation.resume(throwing: error)
-                    }
-                    
-                    if let downloadURL = downloadURL {
-                        try? FileManager.default.removeItem(at: videoURL)
-                        continuation.resume(returning: downloadURL)
-                    }
-                    
-                }
+//                videoRef.downloadURL { downloadURL, error in
+//                    
+//                    if let error = error {
+//                        continuation.resume(throwing: error)
+//                    }
+//                    
+//                    if let downloadURL = downloadURL {
+//                        try? FileManager.default.removeItem(at: videoURL)
+//                        continuation.resume(returning: downloadURL)
+//                    }
+//                    
+//                }
                 
             }
             
@@ -149,34 +129,35 @@ class FirebaseStorageManager {
                 
             }
             
+            continuation.resume(returning: videoName)
+            
         }
         
     }
     
-    func uploadVideosToStorage(_ videoURLs: [URL]) async throws -> [URL] {
+    func uploadVideosToStorage(_ videoURLs: [URL]) async throws -> [String] {
         
-        var resultURLs = Array<URL?>(repeating: nil, count: videoURLs.count)
+        var videoNames = Array<String?>(repeating: nil, count: videoURLs.count)
         
         for videoURL in videoURLs {
             do {
                 
-                let url = try await self.uploadVideoToStorage(videoURL)
-                resultURLs.append(url)
+                let videoName = try await self.uploadVideoToStorage(videoURL)
+                videoNames.append(videoName)
                 
             } catch {
                 
-                throw error
+                throw StorageError.FailedToUploadVideo
                 
             }
         }
         
-        return resultURLs.compactMap{$0}
+        return videoNames.compactMap{$0}
         
     }
     
-    
     // Storage에서 이미지 불러오기
-    func fetchImageFromStorage(image imageName: String, type: ImageType) async throws -> UIImage {
+    func fetchImageFromStorage(image imageName: String, location: ImageLocation) async throws -> UIImage {
         
         // 메모리 캐시 확인
         if let cachedImage = KingfisherManager.shared.cache.retrieveImageInMemoryCache(forKey: imageName) {
@@ -190,11 +171,12 @@ class FirebaseStorageManager {
         }
         
         return try await withCheckedThrowingContinuation { continuation in
-            let imageRef = storage.reference().child("\(type)/\(imageName).jpg")
+            let imageRef = storage.reference().child("\(location)/\(imageName).jpg")
             imageRef.getData(maxSize: 1 * 1024 * 1024) { data, error in
                 if let error = error {
                     
                     print("\(imageName): 이미지 불러오기 실패: \(error.localizedDescription)")
+                    continuation.resume(throwing: StorageError.FailedToFetchImage)
                     
                 }
                     
@@ -211,7 +193,7 @@ class FirebaseStorageManager {
     
 
     // Storage에서 여러 이미지 불러오는 함수
-    func fetchImagesFromStorage(from imageNames: [String], type: ImageType) async throws -> [UIImage] {
+    func fetchImagesFromStorage(from imageNames: [String], location: ImageLocation) async throws -> [UIImage] {
         
         var images = Array<UIImage?>(repeating: nil, count: imageNames.count)
         
@@ -219,7 +201,7 @@ class FirebaseStorageManager {
             for (index, imageName) in imageNames.enumerated() {
                 group.addTask {
                     
-                    let image = try await self.fetchImageFromStorage(image: imageName, type: type)
+                    let image = try await self.fetchImageFromStorage(image: imageName, location: location)
                     return (index, image)
                     
                 }

@@ -24,13 +24,29 @@ class LoginManager {
     
     // Firestore에서 사용자 이메일로 만들어진 프로필 문서 쿼리
     func fetchUserProfile(_ email: String, completion: @escaping (UIViewController) -> Void) {
+        
+//        Task {
+//            do {
+//                
+//                guard let userProfile = try await FirebaseManager.shared.fetchUserProfileFromFirestore(email: email) else { return }
+//                UserProfile.shared = userProfile
+//                
+//                
+//            } catch {
+//                
+//                throw error
+//                
+//            }
+//        }
+        
+        
         FirebaseManager.shared.fetchUserProfileFromFirestore(email: email) { result in
             let initialViewControlle: UIViewController
             
             switch result {
             case .success(let userProfile):
                 print("User Profile: \(userProfile)")
-                UserProfile.sharedUserProfile = userProfile
+                UserProfile.shared = userProfile
 
                 let mainStorybard = UIStoryboard(name: "Main", bundle: nil)
                 initialViewControlle = mainStorybard.instantiateViewController(withIdentifier: "HomeTBC")
@@ -39,10 +55,11 @@ class LoginManager {
                 print("Failed to fetch user profile: \(error.localizedDescription)")
 
                 let mainStorybard = UIStoryboard(name: "Main", bundle: nil)
-                initialViewControlle = mainStorybard.instantiateViewController(withIdentifier: "FirstProfileVC")
+                initialViewControlle = mainStorybard.instantiateViewController(withIdentifier: "ProfileNav")
                 completion(initialViewControlle)
             }
         }
+
     }
     
     // 카카오 사용자 이메일 불러오기

@@ -680,7 +680,7 @@
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
                             <scrollView clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="scaleToFill" alwaysBounceVertical="YES" translatesAutoresizingMaskIntoConstraints="NO" id="5py-jc-7kb">
-                                <rect key="frame" x="0.0" y="62" width="440" height="860"/>
+                                <rect key="frame" x="0.0" y="106" width="440" height="816"/>
                                 <subviews>
                                     <stackView opaque="NO" contentMode="scaleToFill" axis="vertical" translatesAutoresizingMaskIntoConstraints="NO" id="vy5-Az-SA9">
                                         <rect key="frame" x="0.0" y="0.0" width="440" height="419"/>
@@ -714,6 +714,7 @@
                                                                 <subviews>
                                                                     <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="6AE-dP-Y8P">
                                                                         <rect key="frame" x="0.0" y="0.0" width="196" height="34.333333333333336"/>
+                                                                        <color key="tintColor" white="0.0" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
                                                                         <state key="normal" title="Button"/>
                                                                         <buttonConfiguration key="configuration" style="plain" title="남성"/>
                                                                         <connections>
@@ -722,6 +723,7 @@
                                                                     </button>
                                                                     <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="ROs-Tr-HlK">
                                                                         <rect key="frame" x="204" y="0.0" width="196" height="34.333333333333336"/>
+                                                                        <color key="tintColor" white="0.0" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
                                                                         <state key="normal" title="Button"/>
                                                                         <buttonConfiguration key="configuration" style="plain" title="여성"/>
                                                                         <connections>
@@ -774,18 +776,19 @@
                                         </constraints>
                                     </stackView>
                                     <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="yCa-1e-AkI">
-                                        <rect key="frame" x="20" y="790" width="400" height="50"/>
+                                        <rect key="frame" x="20" y="746" width="400" height="50"/>
                                         <constraints>
                                             <constraint firstAttribute="height" constant="50" id="3CE-Bd-2Va"/>
                                         </constraints>
                                         <fontDescription key="fontDescription" type="system" weight="light" pointSize="30"/>
+                                        <color key="tintColor" white="0.0" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
                                         <inset key="imageEdgeInsets" minX="0.0" minY="0.0" maxX="2.2250738585072014e-308" maxY="0.0"/>
                                         <state key="normal" title="다음 1/2"/>
                                         <buttonConfiguration key="configuration" style="plain" title="다음 1/2">
                                             <fontDescription key="titleFontDescription" type="system" pointSize="16"/>
                                         </buttonConfiguration>
                                         <connections>
-                                            <segue destination="IPI-TG-nAv" kind="show" id="aRz-9j-Cgi"/>
+                                            <action selector="nextBtnTapped:" destination="C7D-sd-rSD" eventType="touchUpInside" id="8Bn-h0-4ap"/>
                                         </connections>
                                     </button>
                                 </subviews>
@@ -818,28 +821,29 @@
                         <outlet property="nextButton" destination="yCa-1e-AkI" id="DoM-KI-Cnr"/>
                         <outletCollection property="genderButtons" destination="6AE-dP-Y8P" collectionClass="NSMutableArray" id="C3X-TT-bgh"/>
                         <outletCollection property="genderButtons" destination="ROs-Tr-HlK" collectionClass="NSMutableArray" id="eDW-IY-r34"/>
+                        <segue destination="IPI-TG-nAv" kind="show" identifier="ToSecProfile" id="hGo-ag-qIF"/>
                     </connections>
                 </viewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="wvD-Jp-zKU" userLabel="First Responder" customClass="UIResponder" sceneMemberID="firstResponder"/>
             </objects>
-            <point key="canvasLocation" x="-3513.4328358208954" y="-1799.9999999999998"/>
+            <point key="canvasLocation" x="-2614" y="-1800"/>
         </scene>
         <!--Second Profile View Controller-->
         <scene sceneID="noh-lh-mhi">
             <objects>
                 <viewController storyboardIdentifier="SecondProfileViewController" useStoryboardIdentifierAsRestorationIdentifier="YES" id="IPI-TG-nAv" customClass="SecondProfileViewController" customModule="OutPick" customModuleProvider="target" sceneMemberID="viewController">
                     <view key="view" contentMode="scaleToFill" id="l7v-Lo-lrw">
-                        <rect key="frame" x="0.0" y="0.0" width="440" height="946"/>
+                        <rect key="frame" x="0.0" y="0.0" width="440" height="956"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
                             <scrollView clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="O5Y-Sr-wOX">
-                                <rect key="frame" x="0.0" y="0.0" width="440" height="835"/>
+                                <rect key="frame" x="0.0" y="106" width="440" height="705"/>
                                 <subviews>
                                     <stackView opaque="NO" contentMode="scaleToFill" axis="vertical" translatesAutoresizingMaskIntoConstraints="NO" id="g8t-MH-FsZ">
-                                        <rect key="frame" x="0.0" y="0.0" width="440" height="536.66666666666663"/>
+                                        <rect key="frame" x="0.0" y="0.0" width="440" height="453.33333333333331"/>
                                         <subviews>
                                             <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="5cS-fR-IFy">
-                                                <rect key="frame" x="0.0" y="0.0" width="440" height="536.66666666666663"/>
+                                                <rect key="frame" x="0.0" y="0.0" width="440" height="453.33333333333331"/>
                                                 <subviews>
                                                     <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="프로필을 설정해 주세요" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="jqN-GO-lDr">
                                                         <rect key="frame" x="20" y="20" width="400" height="24"/>
@@ -915,11 +919,12 @@
                                 </constraints>
                             </scrollView>
                             <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="aks-q7-d05">
-                                <rect key="frame" x="20" y="876" width="400" height="50"/>
+                                <rect key="frame" x="20" y="852" width="400" height="50"/>
                                 <constraints>
                                     <constraint firstAttribute="height" constant="50" id="f7Y-nj-lHM"/>
                                 </constraints>
                                 <fontDescription key="fontDescription" type="system" weight="light" pointSize="30"/>
+                                <color key="tintColor" white="0.0" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
                                 <inset key="imageEdgeInsets" minX="0.0" minY="0.0" maxX="2.2250738585072014e-308" maxY="0.0"/>
                                 <state key="normal" title="다음 1/2"/>
                                 <buttonConfiguration key="configuration" style="plain" title="완료 2/2">
@@ -942,7 +947,7 @@
                             <constraint firstItem="aks-q7-d05" firstAttribute="leading" secondItem="3f7-Ax-aVk" secondAttribute="leading" constant="20" id="ym0-7M-d32"/>
                         </constraints>
                     </view>
-                    <navigationItem key="navigationItem" id="mPR-AZ-kXb"/>
+                    <navigationItem key="navigationItem" largeTitleDisplayMode="never" style="editor" id="mPR-AZ-kXb"/>
                     <connections>
                         <outlet property="completeButton" destination="aks-q7-d05" id="Orr-cD-Wab"/>
                         <outlet property="nicknameTextField" destination="P8c-xo-zgj" id="uum-MS-fjf"/>
@@ -952,7 +957,7 @@
                 </viewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="18H-Kl-Cwj" userLabel="First Responder" customClass="UIResponder" sceneMemberID="firstResponder"/>
             </objects>
-            <point key="canvasLocation" x="-2709.1603053435115" y="-1800"/>
+            <point key="canvasLocation" x="-1621.3636363636365" y="-1800"/>
         </scene>
         <!--Main Tab Bar Controller-->
         <scene sceneID="ZQS-A1-iHy">
@@ -1118,9 +1123,27 @@
             </objects>
             <point key="canvasLocation" x="-1776" y="370"/>
         </scene>
+        <!--Navigation Controller-->
+        <scene sceneID="VGP-ex-WsE">
+            <objects>
+                <navigationController storyboardIdentifier="ProfileNav" automaticallyAdjustsScrollViewInsets="NO" useStoryboardIdentifierAsRestorationIdentifier="YES" id="lbK-AM-zmR" sceneMemberID="viewController">
+                    <toolbarItems/>
+                    <navigationBar key="navigationBar" contentMode="scaleToFill" id="LP2-PE-mAY">
+                        <rect key="frame" x="0.0" y="62" width="440" height="44"/>
+                        <autoresizingMask key="autoresizingMask"/>
+                    </navigationBar>
+                    <nil name="viewControllers"/>
+                    <connections>
+                        <segue destination="C7D-sd-rSD" kind="relationship" relationship="rootViewController" id="2DO-5H-5Mz"/>
+                    </connections>
+                </navigationController>
+                <placeholder placeholderIdentifier="IBFirstResponder" id="eIw-wX-bqY" userLabel="First Responder" customClass="UIResponder" sceneMemberID="firstResponder"/>
+            </objects>
+            <point key="canvasLocation" x="-3514.0909090909095" y="-1800"/>
+        </scene>
     </scenes>
     <inferredMetricsTieBreakers>
-        <segue reference="amY-jT-Pp9"/>
+        <segue reference="efJ-0s-BGe"/>
     </inferredMetricsTieBreakers>
     <resources>
         <image name="gearshape" catalog="system" width="128" height="123"/>

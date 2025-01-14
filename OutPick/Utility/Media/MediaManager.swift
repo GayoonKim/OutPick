@@ -20,7 +20,7 @@ class MediaManager {
                 itemProvider.loadObject(ofClass: UIImage.self, completionHandler: { image, error in
                     
                     guard let image = image as? UIImage, error == nil else {
-                        continuation.resume(throwing: error ?? NSError(domain: "ImageLoad", code: -1, userInfo: [NSLocalizedDescriptionKey: "이미지 불러오기 실패"]))
+                        continuation.resume(throwing: MediaError.FailedToConvertImage)
                         return
                     }
                     
@@ -43,9 +43,9 @@ class MediaManager {
                 let image = try await convertImage(result)
                 images.append(image)
                 
-            } catch {
+            } catch MediaError.FailedToConvertImage{
                 
-                throw error
+                print("PHPicker에서 불러온 이미지 변환 실패: \()")
                 
             }
         }

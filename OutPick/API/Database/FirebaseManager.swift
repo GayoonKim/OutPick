@@ -12,13 +12,7 @@ import Alamofire
 import Kingfisher
 
 class FirebaseManager {
-    
-    // 이미지 타입
-    enum Imagetype: CaseIterable {
-        case Room
-        case Profile
-    }
-    
+
     private init() {}
     
     // FirestoreManager의 싱글톤 인스턴스
@@ -41,17 +35,40 @@ class FirebaseManager {
     
     //MARK: 프로필 설정 관련 기능들
     // Firebase Firestore에 UserProfile 객체 저장
-    func saveUserProfileToFirestore(userProfile: UserProfile, email: String, completion: @escaping (Error?) -> Void) {
-        let userProfileRef = db.collection("Users").document(email)
+    func saveUserProfileToFirestore(userProfile: UserProfile, email: String/*, completion: @escaping (Error?) -> Void*/) async throws {
+//        let userProfileRef = db.collection("Users").document(email)
+        let userProfileRef = db.collection("Users").document(DateManager.shared.currentMonth).collection("\(DateManager.shared.currentMonth) Users").document(email)
         
-        userProfileRef.setData(userProfile.toDict()) { error in
-            completion(error)
-        }
+//        userProfileRef.setData(userProfile.toDict()) { error in
+//            completion(error)
+//        }
+        
+        try await userProfileRef.setData(userProfile.toDict(), merge: true)
+        
     }
     
     // Firebase Firestore에서 UserProfile 불러오기
-    func fetchUserProfileFromFirestore(email: String, completion: @escaping (Result<UserProfile, Error>) -> Void) {
-        let userProfileRef = db.collection("Users").document(email)
+    func fetchUserProfileFromFirestore(email: String, completion: @escaping (Result<UserProfile, Error>) -> Void) /*async throws -> UserProfile?*/ {
+        let userProfileRef = db.collection("Users").document(DateManager.shared.currentMonth).collection("\(DateManager.shared.currentMonth) Users").document(email)
+        
+//        let document = try await userProfileRef.getDocument()
+//        
+//        guard let data = document.data() else {
+//            return nil
+//        }
+//        
+//        do {
+//            
+//            let jsonData = try JSONSerialization.data(withJSONObject: data, options: [])
+//            let userProfile = try JSONDecoder().decode(UserProfile.self, from: jsonData)
+//            return userProfile
+//            
+//        } catch let error {
+//            
+//            print("사용자 프로필 디코딩 실패: \(error.localizedDescription)")
+//            throw error
+//            
+//        }
         
         userProfileRef.getDocument { snapshot, error in
             if let error = error {
@@ -75,19 +92,40 @@ class FirebaseManager {
     }
     
     // 프로필 닉네임 중복 검사
-    func checkNicknameDuplicate(nickname: String, completion: @escaping (Bool, Error?) -> Void) {
-        db.collection("Users").whereField("nickname", isEqualTo: nickname).getDocuments { snapshot, error in
-            if let error = error {
-                completion(false, error)
-                return
+    func checkNicknameDuplicate(nickname: String/*, completion: @escaping (Bool, Error?) -> Void*/) async throws -> Bool{
+        
+        do {
+            
+            let nickNameDocRef = db.collection("Users").document(DateManager.shared.currentMonth).collection("\(DateManager.shared.currentMonth) Users").whereField("nickname", isEqualTo: nickname)
+            let document = try await nickNameDocRef.getDocuments()
+            
+            if document.isEmpty {
+                return false
+            } else {
+                return true
             }
             
-            if let snapshot = snapshot, snapshot.isEmpty {
-                completion(false, nil) // 닉네임 중복 x
-            } else {
-                completion(true, nil) // 닉네임 중복 o
-            }
+        } catch {
+            
+            throw FirebaseError.NickNameDuplicate
+            
         }
+        
+//        db.collection("Users").whereField("nickname", isEqualTo: nickname).getDocuments { snapshot, error in
+//            
+//            if let error = error {
+//                completion(false, error)
+//                return
+//            }
+//            
+//            if let snapshot = snapshot, snapshot.isEmpty {
+//                completion(false, nil) // 닉네임 중복 x
+//            } else {
+//                completion(true, nil) // 닉네임 중복 o
+//            }
+//            
+//        }
+        
     }
     
     //MARK: 채팅 방 관련 기능들
@@ -189,7 +227,12 @@ class FirebaseManager {
                 
                 // 방 대표 사진 미리 캐싱
                 Task {
-                    try await FirebaseStorageManager.shared.fetchImageFromStorage(image: roomImageName, type: ImageType.RoomImage)
+                    do {
+                        let _ = try await FirebaseStorageManager.shared.fetchImageFromStorage(image: roomImageName, location: ImageLocation.RoomImage)
+                    } catch StorageError.FailedToFetchImage {
+                        guard let error = error else { return }
+                        print("이미지 불러오기 실패: \(error.localizedDescription)")
+                    }
                 }
                 
                 return chatRoom
@@ -227,7 +270,7 @@ class FirebaseManager {
             
         } catch {
             
-            print("트랜젝션 실패: \(error)")
+            print("방 참여자 업데이트 트랜젝션 실패: \(error)")
             
         }
         
