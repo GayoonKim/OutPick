@@ -12,7 +12,7 @@ import FirebaseStorage
 import KakaoSDKUser
 
 class SecondProfileViewController: UIViewController {
-
+    
     @IBOutlet weak var nicknameTextField: UITextField!
     @IBOutlet weak var nicknameWordsCountLabel: UILabel!
     @IBOutlet weak var profileImageView: UIImageView!
@@ -30,7 +30,7 @@ class SecondProfileViewController: UIViewController {
         completeButton.layer.cornerRadius = 10
         completeButton.isEnabled = false
         completeButton.backgroundColor = UIColor(white: 0.1, alpha: 0.03)
-
+        
         NavigationBarManager.configureBackButton(for: self)
         
         if let nickName = UserDefaults.standard.string(forKey: "savedNickName") {
@@ -88,7 +88,7 @@ class SecondProfileViewController: UIViewController {
         ])
     }
     
-    private func removeImageButtonSetup() {
+    func removeImageButtonSetup() {
         let removeImageButton: UIButton = {
             let button = UIButton(type: .system)
             button.setImage(UIImage(systemName: "minus.circle.fill"), for: .normal)
@@ -107,7 +107,7 @@ class SecondProfileViewController: UIViewController {
             removeImageButton.widthAnchor.constraint(equalToConstant: 30),
             removeImageButton.heightAnchor.constraint(equalToConstant: 30)
         ])
-
+        
         if let image = profileImageView.image {
             if image.isEqual(UIImage(systemName: "photo")) {
                 removeImageButton.isHidden = true
@@ -139,12 +139,12 @@ class SecondProfileViewController: UIViewController {
         sender.isHidden = true
     }
     
-    private func enableCompleteButton() {
+    func enableCompleteButton() {
         if self.nicknameTextField.text != ""  {
             completeButton.isEnabled = true
         }
         
-//        guard let _ = nicknameTextField.text else { return }
+        //        guard let _ = nicknameTextField.text else { return }
     }
     
     @IBAction func completeButtonTapped(_ sender: UIButton) {
@@ -152,7 +152,7 @@ class SecondProfileViewController: UIViewController {
         if let nickname = nicknameTextField.text {
             UserProfile.shared.nickname = nickname
         }
-            
+        
         self.saveUserProfile(email: LoginManager.shared.getUserEmail)
         
     }
@@ -169,14 +169,27 @@ class SecondProfileViewController: UIViewController {
                     return
                 }
                 
+                if let image = profileImageView.image {
+                    let imageName = try await FirebaseStorageManager.shared.uploadImageToStorage(image: image, location: ImageLocation.ProfileImage)
+                    UserProfile.shared.profileImageName = imageName
+                } else {
+                    UserProfile.shared.profileImageName = nil
+                }
                 
+                try await FirebaseManager.shared.saveUserProfileToFirestore(email: LoginManager.shared.getUserEmail)
                 
                 let homeVC = self.storyboard?.instantiateViewController(identifier: "HomeTBC") as? UITabBarController
                 self.view.window?.rootViewController = homeVC
                 self.view.window?.makeKeyAndVisible()
                 
+            } catch FirebaseError.FailedToSaveProfile {
+                
+                print("프로필 저장 실패")
+                self.saveUserProfile(email: LoginManager.shared.getUserEmail)
+                
             } catch {
                 
+                print("알 수 없는 에러: \(error)")
                 return
                 
             }
@@ -188,59 +201,6 @@ class SecondProfileViewController: UIViewController {
     
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         self.view.endEditing(true)
-    }
-    
-}
-
-extension SecondProfileViewController: UITextFieldDelegate {
-    
-    func textField(_ textField: UITextField, shouldChangeCharactersIn range: NSRange, replacementString string: String) -> Bool {
-        let currentText = nicknameTextField.text ?? ""
-        
-        guard let stringRange = Range(range, in: currentText) else { return false }
-        let updatedText = currentText.replacingCharacters(in: stringRange, with: string)
-        
-        return updatedText.count <= 20
-    }
-    
-    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
-        textField.resignFirstResponder()
-        return true
-    }
-    
-    private func setupNicknameTextField(_ textField: UITextField) {
-        textField.delegate = self
-        textField.clipsToBounds = true
-        textField.layer.cornerRadius = 10
-        textField.backgroundColor = UIColor(white: 0.1, alpha: 0.03)
-        
-        self.nicknameTextField.addTarget(self, action: #selector(textFieldDidChanacge), for: .editingChanged)
-    }
-    
-    @objc fileprivate func textFieldDidChanacge(_ sender: UITextField) {
-        guard let text = sender.text else { return }
-        
-        nicknameWordsCountLabel.text = "\(text.count) / 20"
-        enableCompleteButton()
-    }
-    
-}
-
-extension SecondProfileViewController: PHPickerViewControllerDelegate {
-    
-    func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
-        picker.dismiss(animated: true, completion: nil)
-        
-        guard let itemProvider = results.first?.itemProvider else { return }
-        
-        if itemProvider.canLoadObject(ofClass: UIImage.self) {
-            itemProvider.loadObject(ofClass: UIImage.self) { (image, error) in
-                DispatchQueue.main.async {
-                    self.profileImageView.image = image as? UIImage
-                    self.removeImageButtonSetup()
-                }
-            }
-        }
     }
     
     private func openPhotoLibrary() {
@@ -255,30 +215,14 @@ extension SecondProfileViewController: PHPickerViewControllerDelegate {
         present(picker, animated: true, completion: nil)
     }
     
-}
-
-extension SecondProfileViewController: UIImagePickerControllerDelegate & UINavigationControllerDelegate {
-    
-    func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
-        if let selectedImage = info[.originalImage] as? UIImage {
-            profileImageView.image = selectedImage
-            self.removeImageButtonSetup()
-        }
-        picker.dismiss(animated: true, completion: nil)
-    }
-    
     private func openCamera() {
         if UIImagePickerController.isSourceTypeAvailable(.camera) {
             let imagePicker = UIImagePickerController()
             imagePicker.delegate = self
             imagePicker.sourceType = .camera
-        
+            
             present(imagePicker, animated: true, completion: nil)
         }
-    }
-    
-    func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-        picker.dismiss(animated: true, completion: nil)
     }
     
 }

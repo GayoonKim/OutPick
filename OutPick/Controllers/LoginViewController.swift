@@ -53,7 +53,7 @@ class LoginViewController: UIViewController {
           
           Auth.auth().signIn(with: credential) { result, error in
               guard let email = result?.user.email else { return }
-              
+                        
               LoginManager.shared.fetchUserProfile(email) { screen in
                   DispatchQueue.main.async {
                       self.view.window?.rootViewController = screen
@@ -81,7 +81,7 @@ class LoginViewController: UIViewController {
                     self.dismiss(animated: true) {
                         //do something
                         LoginManager.shared.getKakaoEmail { email in }
-                            
+
                         LoginManager.shared.fetchUserProfile(LoginManager.shared.getUserEmail) { screen in
                                 DispatchQueue.main.async {
                                     self.view.window?.rootViewController = screen

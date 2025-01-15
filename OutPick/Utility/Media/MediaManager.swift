@@ -43,9 +43,9 @@ class MediaManager {
                 let image = try await convertImage(result)
                 images.append(image)
                 
-            } catch MediaError.FailedToConvertImage{
+            } catch {
                 
-                print("PHPicker에서 불러온 이미지 변환 실패: \()")
+                throw error
                 
             }
         }
@@ -96,7 +96,7 @@ class MediaManager {
                 
             } catch {
                 
-                throw error
+                print("PHPicker에서 불러온 동영상 변환 실패: \(error)")
                 
             }
         }

@@ -12,7 +12,7 @@ import Alamofire
 import Kingfisher
 
 class FirebaseManager {
-
+    
     private init() {}
     
     // FirestoreManager의 싱글톤 인스턴스
@@ -35,59 +35,48 @@ class FirebaseManager {
     
     //MARK: 프로필 설정 관련 기능들
     // Firebase Firestore에 UserProfile 객체 저장
-    func saveUserProfileToFirestore(userProfile: UserProfile, email: String/*, completion: @escaping (Error?) -> Void*/) async throws {
-//        let userProfileRef = db.collection("Users").document(email)
+    func saveUserProfileToFirestore(/*userProfile: UserProfile, */email: String/*, completion: @escaping (Error?) -> Void*/) async throws {
+        //        let userProfileRef = db.collection("Users").document(email)
         let userProfileRef = db.collection("Users").document(DateManager.shared.currentMonth).collection("\(DateManager.shared.currentMonth) Users").document(email)
         
-//        userProfileRef.setData(userProfile.toDict()) { error in
-//            completion(error)
-//        }
+        //        userProfileRef.setData(userProfile.toDict()) { error in
+        //            completion(error)
+        //        }
         
-        try await userProfileRef.setData(userProfile.toDict(), merge: true)
+        do {
+            try await userProfileRef.setData(UserProfile.shared.toDict(), merge: true)
+        } catch {
+            throw FirebaseError.FailedToSaveProfile
+        }
         
     }
     
     // Firebase Firestore에서 UserProfile 불러오기
-    func fetchUserProfileFromFirestore(email: String, completion: @escaping (Result<UserProfile, Error>) -> Void) /*async throws -> UserProfile?*/ {
+    func fetchUserProfileFromFirestore(email: String, completion: @escaping (Result<UserProfile, Error>) -> Void) {
         let userProfileRef = db.collection("Users").document(DateManager.shared.currentMonth).collection("\(DateManager.shared.currentMonth) Users").document(email)
-        
-//        let document = try await userProfileRef.getDocument()
-//        
-//        guard let data = document.data() else {
-//            return nil
-//        }
-//        
-//        do {
-//            
-//            let jsonData = try JSONSerialization.data(withJSONObject: data, options: [])
-//            let userProfile = try JSONDecoder().decode(UserProfile.self, from: jsonData)
-//            return userProfile
-//            
-//        } catch let error {
-//            
-//            print("사용자 프로필 디코딩 실패: \(error.localizedDescription)")
-//            throw error
-//            
-//        }
-        
         userProfileRef.getDocument { snapshot, error in
+            
             if let error = error {
                 completion(.failure(error))
                 return
             }
             
             guard let data = snapshot?.data() else {
-                completion(.failure(NSError(domain: "NoData", code: -1, userInfo: nil)))
+                completion(.failure(FirebaseError.FailedToFetchProfile))
                 return
             }
             
-            do {
-                let jsonData = try JSONSerialization.data(withJSONObject: data, options: [])
-                let userProfile = try JSONDecoder().decode(UserProfile.self, from: jsonData)
-                completion(.success(userProfile))
-            } catch let error {
-                completion(.failure(error))
-            }
+            // 직접 데이터 매핑
+            let profile = UserProfile.shared
+            profile.id = data["id"] as? String
+            profile.nickname = data["nickname"] as? String
+            profile.gender = data["gender"] as? String
+            profile.birthdate = data["birthdate"] as? String
+            profile.profileImageName = data["profileImageName"] as? String
+            profile.joinedRooms = data["joinedRooms"] as? [String]
+            
+            completion(.success(profile))
+
         }
     }
     
@@ -111,20 +100,20 @@ class FirebaseManager {
             
         }
         
-//        db.collection("Users").whereField("nickname", isEqualTo: nickname).getDocuments { snapshot, error in
-//            
-//            if let error = error {
-//                completion(false, error)
-//                return
-//            }
-//            
-//            if let snapshot = snapshot, snapshot.isEmpty {
-//                completion(false, nil) // 닉네임 중복 x
-//            } else {
-//                completion(true, nil) // 닉네임 중복 o
-//            }
-//            
-//        }
+        //        db.collection("Users").whereField("nickname", isEqualTo: nickname).getDocuments { snapshot, error in
+        //
+        //            if let error = error {
+        //                completion(false, error)
+        //                return
+        //            }
+        //
+        //            if let snapshot = snapshot, snapshot.isEmpty {
+        //                completion(false, nil) // 닉네임 중복 x
+        //            } else {
+        //                completion(true, nil) // 닉네임 중복 o
+        //            }
+        //
+        //        }
         
     }
     
@@ -203,9 +192,9 @@ class FirebaseManager {
             }
             
             self.chatRooms = documents.compactMap { document -> ChatRoom? in
-
+                
                 let data = document.data()
-                    
+                
                 guard let roomName = data["roomName"] as? String,
                       let roomDescription = data["roomDescription"] as? String,
                       let participants = data["participantIDs"] as? [String],
@@ -214,7 +203,7 @@ class FirebaseManager {
                       let roomImageName = data["roomImageName"] as? String else {
                     return nil
                 }
-                    
+                
                 let chatRoom = ChatRoom(
                     id: document.documentID,
                     roomName: roomName,
@@ -243,7 +232,7 @@ class FirebaseManager {
             
             completion(self.chatRooms)
         }
-
+        
     }
     
     // 채팅방 리스너 제거

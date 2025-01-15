@@ -14,7 +14,7 @@ import PhotosUI
 import Kingfisher
 import Firebase
 import FirebaseStorage
-    
+
 class FirebaseStorageManager {
     
     static let shared = FirebaseStorageManager()
@@ -30,7 +30,7 @@ class FirebaseStorageManager {
         
         let imageName = UUID().uuidString
         return try await withCheckedThrowingContinuation { continuation in
-        
+            
             let storageRef = storage.reference()
             let imageRef = storageRef.child("\(location.location)/\(imageName).jpg")
             
@@ -45,16 +45,16 @@ class FirebaseStorageManager {
             metadata.contentType = "image/jpeg"
             
             let uploadTask = imageRef.putData(imageData, metadata: nil) { metadata, error in
-                if let error = error {
-                    
+                
+                guard error == nil else {
                     continuation.resume(throwing: StorageError.FailedToUploadImage)
                     return
-                    
                 }
+                
             }
             
             let _ = uploadTask.observe(.progress) { snapshot in
-
+                
                 let percentComplete = 100.0 * Double(snapshot.progress!.completedUnitCount) / Double(snapshot.progress!.totalUnitCount)
                 print("Upload is \(percentComplete) done")
                 
@@ -78,7 +78,7 @@ class FirebaseStorageManager {
                 
             } catch {
                 
-                throw StorageError.FailedToUploadImage
+                throw error
                 
             }
         }
@@ -107,18 +107,18 @@ class FirebaseStorageManager {
                     return
                 }
                 
-//                videoRef.downloadURL { downloadURL, error in
-//                    
-//                    if let error = error {
-//                        continuation.resume(throwing: error)
-//                    }
-//                    
-//                    if let downloadURL = downloadURL {
-//                        try? FileManager.default.removeItem(at: videoURL)
-//                        continuation.resume(returning: downloadURL)
-//                    }
-//                    
-//                }
+                //                videoRef.downloadURL { downloadURL, error in
+                //
+                //                    if let error = error {
+                //                        continuation.resume(throwing: error)
+                //                    }
+                //
+                //                    if let downloadURL = downloadURL {
+                //                        try? FileManager.default.removeItem(at: videoURL)
+                //                        continuation.resume(returning: downloadURL)
+                //                    }
+                //
+                //                }
                 
             }
             
@@ -147,7 +147,7 @@ class FirebaseStorageManager {
                 
             } catch {
                 
-                throw StorageError.FailedToUploadVideo
+                throw error
                 
             }
         }
@@ -179,10 +179,10 @@ class FirebaseStorageManager {
                     continuation.resume(throwing: StorageError.FailedToFetchImage)
                     
                 }
-                    
+                
                 if let data = data,
                    let image = UIImage(data: data) {
-                 
+                    
                     KingfisherManager.shared.cache.store(image, forKey: imageName)
                     continuation.resume(returning: image)
                     
@@ -191,7 +191,7 @@ class FirebaseStorageManager {
         }
     }
     
-
+    
     // Storage에서 여러 이미지 불러오는 함수
     func fetchImagesFromStorage(from imageNames: [String], location: ImageLocation) async throws -> [UIImage] {
         
