@@ -14,6 +14,7 @@ import PhotosUI
 import Kingfisher
 import Firebase
 import FirebaseStorage
+import SwiftUI
 
 class PracViewController: UIViewController, UINavigationControllerDelegate {
 
@@ -32,22 +33,16 @@ class PracViewController: UIViewController, UINavigationControllerDelegate {
     private var selectedVideos: [String] = []
     private var selectedImages: [URL] = []
     
-    private var convertVideoTask: Task<Void, Error>? = nil
-    private var convertImageTask: Task<Void, Error>? = nil
+    private var convertVideosTask: Task<Void, Error>? = nil
+    private var convertImagesTask: Task<Void, Error>? = nil
     
     deinit {
-        convertVideoTask?.cancel()
-        convertImageTask?.cancel()
+        convertVideosTask?.cancel()
+        convertImagesTask?.cancel()
     }
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        
-        let currentDate = Date()
-        let calendar = Calendar.current
-        let currentMonth = calendar.component(.month, from: currentDate)
-        
-        print(currentDate)
         
     }
     
@@ -84,29 +79,6 @@ class PracViewController: UIViewController, UINavigationControllerDelegate {
         
     }
     
-//    // Storage에서 이미지 불러오기
-//    func fetchVideoFromStorage(video videoName: String, location: VideoLocation) async throws -> UIImage {
-//        
-//        return try await withCheckedThrowingContinuation { continuation in
-//            let imageRef = storage.reference().child("\(location)/\(imageName).jpg")
-//            imageRef.getData(maxSize: 1 * 1024 * 1024) { data, error in
-//                if let error = error {
-//                    
-//                    print("\(imageName): 이미지 불러오기 실패: \(error.localizedDescription)")
-//                    
-//                }
-//                    
-//                if let data = data,
-//                   let image = UIImage(data: data) {
-//                 
-//                    KingfisherManager.shared.cache.store(image, forKey: imageName)
-//                    continuation.resume(returning: image)
-//                    
-//                }
-//            }
-//        }
-//    }
-    
 }
 
 extension PracViewController: PHPickerViewControllerDelegate {
@@ -132,7 +104,7 @@ extension PracViewController: PHPickerViewControllerDelegate {
         }
         
         if !resultsForVideos.isEmpty {
-            convertVideoTask = Task {
+            convertVideosTask = Task {
                 do {
                     
                     let compressedURLs = try await MediaManager.shared.dealWithVideos(resultsForVideos)
@@ -145,30 +117,35 @@ extension PracViewController: PHPickerViewControllerDelegate {
                     
                 }
                 
-                convertVideoTask = nil
+                convertVideosTask = nil
                 
             }
         }
         
         if !resultsForImages.isEmpty {
-            convertImageTask = Task {
+            convertImagesTask = Task {
                 do {
                     
                     let images = try await MediaManager.shared.dealWithImages(resultsForImages)
                     let imageNames = try await FirebaseStorageManager.shared.uploadImagesToStorage(images: images, location: ImageLocation.Test)
-
-                    for imageName in imageNames {
-                        print(imageName)
-                    }
+                    let imagesFromStorage = try await FirebaseStorageManager.shared.fetchImagesFromStorage(from: imageNames, location: ImageLocation.Test)
                     
-                } catch {
+                } catch MediaError.FailedToConvertImage {
                     
-                    print("이미지 불러오기 실패: \(error.localizedDescription)")
+                    AlertManager.showAlert(title: "이미지 변환 실패", message: "이미지를 다시 선택해 주세요/", viewController: self)
+                    
+                } catch StorageError.FailedToUploadImage {
+                    
+                    print("이미지 업로드 실패")
+                    
+                } catch StorageError.FailedToFetchImage {
+                    
+                    print("이미지 불러오기 실패")
                     
                 }
             }
             
-            convertImageTask = nil
+            convertImagesTask = nil
             
         }
         
@@ -195,3 +172,15 @@ extension PracViewController: UIImagePickerControllerDelegate {
     }
     
 }
+
+//struct PracViewControllerRepresentable: UIViewControllerRepresentable {
+//    
+//    func makeUIViewController(context: Context) -> PracViewController {
+//        <#code#>
+//    }
+//    
+//    func updateUIViewController(_ uiViewController: PracViewController, context: Context) {
+//        <#code#>
+//    }
+//    
+//}

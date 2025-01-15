@@ -14,8 +14,6 @@ import PhotosUI
 
 class ChatViewController: UIViewController, UINavigationControllerDelegate {
     
-    @IBOutlet weak var testImageView: UIImageView!
-    
     @IBOutlet weak var activityIndicator: UIActivityIndicatorView!
     @IBOutlet weak var sideMenuBtn: UIBarButtonItem!
     @IBOutlet weak var msgTextView: UITextView!
@@ -43,56 +41,63 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         convertVideosTask?.cancel()
     }
     
-    private lazy var optionView: UIView = {
-        
-        let optionView = UIView()
-        optionView.backgroundColor = UIColor(white: 0.1, alpha: 0.05)
-        optionView.layer.cornerRadius = 20
-        optionView.isHidden = true
-        optionView.tag = 98
-        
-        let stackView = UIStackView()
-        stackView.axis = .horizontal
-        stackView.spacing = 30
-        stackView.distribution = .equalSpacing
-        stackView.alignment = .center
-        stackView.tag = 99
-        
-        for btn in ["photo", "camera", "paperclip"] {
-            
-            let button = UIButton(type: .system)
-            button.setImage(UIImage(systemName: btn), for: .normal)
-            button.tintColor = .black
-            button.backgroundColor = .white
-            button.accessibilityIdentifier = btn
-            button.addTarget(self, action: #selector(checkAttachmentButtonKind(_:)), for: .touchUpInside)
-            
-            // 원형으로 만들기 위한 설정
-            button.translatesAutoresizingMaskIntoConstraints = false
-            NSLayoutConstraint.activate([
-                button.widthAnchor.constraint(equalToConstant: 50),
-                button.heightAnchor.constraint(equalToConstant: 50)
-            ])
-            button.layer.cornerRadius = 25 // 반지름 = 너비/2
-            button.clipsToBounds = true // 코너가 잘리도록 설정
-            
-            stackView.addArrangedSubview(button)
-            
-        }
-        
-        optionView.addSubview(stackView)
-        
-        stackView.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            stackView.centerXAnchor.constraint(equalTo: optionView.centerXAnchor),
-            stackView.centerYAnchor.constraint(equalTo: optionView.centerYAnchor),
-            stackView.heightAnchor.constraint(equalToConstant: 75),
-            stackView.leadingAnchor.constraint(equalTo: optionView.leadingAnchor, constant: 40),
-            stackView.trailingAnchor.constraint(equalTo: optionView.trailingAnchor, constant: -40),
-        ])
-        
-        return optionView
+    private lazy var attachmentView: AttachmentView = {
+        let view = AttachmentView()
+        view.delegate = self
+        view.translatesAutoresizingMaskIntoConstraints = false
+        return view
     }()
+    
+//    private lazy var optionView: UIView = {
+//        
+//        let optionView = UIView()
+//        optionView.backgroundColor = UIColor(white: 0.1, alpha: 0.05)
+//        optionView.layer.cornerRadius = 20
+//        optionView.isHidden = true
+//        optionView.tag = 98
+//        
+//        let stackView = UIStackView()
+//        stackView.axis = .horizontal
+//        stackView.spacing = 30
+//        stackView.distribution = .equalSpacing
+//        stackView.alignment = .center
+//        stackView.tag = 99
+//        
+//        for btn in ["photo", "camera", "paperclip"] {
+//            
+//            let button = UIButton(type: .system)
+//            button.setImage(UIImage(systemName: btn), for: .normal)
+//            button.tintColor = .black
+//            button.backgroundColor = .white
+//            button.accessibilityIdentifier = btn
+//            button.addTarget(self, action: #selector(checkAttachmentBtnKind(_:)), for: .touchUpInside)
+//            
+//            // 원형으로 만들기 위한 설정
+//            button.translatesAutoresizingMaskIntoConstraints = false
+//            NSLayoutConstraint.activate([
+//                button.widthAnchor.constraint(equalToConstant: 50),
+//                button.heightAnchor.constraint(equalToConstant: 50)
+//            ])
+//            button.layer.cornerRadius = 25 // 반지름 = 너비/2
+//            button.clipsToBounds = true // 코너가 잘리도록 설정
+//            
+//            stackView.addArrangedSubview(button)
+//            
+//        }
+//        
+//        optionView.addSubview(stackView)
+//        
+//        stackView.translatesAutoresizingMaskIntoConstraints = false
+//        NSLayoutConstraint.activate([
+//            stackView.centerXAnchor.constraint(equalTo: optionView.centerXAnchor),
+//            stackView.centerYAnchor.constraint(equalTo: optionView.centerYAnchor),
+//            stackView.heightAnchor.constraint(equalToConstant: 75),
+//            stackView.leadingAnchor.constraint(equalTo: optionView.leadingAnchor, constant: 40),
+//            stackView.trailingAnchor.constraint(equalTo: optionView.trailingAnchor, constant: -40),
+//        ])
+//        
+//        return optionView
+//    }()
     
     private var preselectedIdentifiers: [String] = []
     private var selectedImages: [UIImage] = []
@@ -144,32 +149,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         
     }
     
-    @objc func checkAttachmentButtonKind(_ sender: UIButton) {
-        
-        guard let identifier = sender.accessibilityIdentifier else { return }
-        
-        switch identifier {
-            
-        case "photo":
-            print("Photo btn tapped!")
-            self.hideOrShowOptionMenu()
-            self.openPHPicker()
-            
-        case "camera":
-            print("Camera btn tapped!")
-            self.hideOrShowOptionMenu()
-            self.openCamera()
-            
-        case "paperclip":
-            print("File btn tapped!")
-            
-        default:
-            return
-            
-        }
-        
-    }
-    
     private func openCamera() {
         if UIImagePickerController.isSourceTypeAvailable(.camera) {
             let imagePicker = UIImagePickerController()
@@ -208,13 +187,12 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         
         DispatchQueue.main.async {
             
-            self.view.addSubview(self.optionView)
-            self.optionView.translatesAutoresizingMaskIntoConstraints = false
+            self.view.addSubview(self.attachmentView)
             NSLayoutConstraint.activate([
-                self.optionView.bottomAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.bottomAnchor),
-                self.optionView.leadingAnchor.constraint(equalTo: self.view.leadingAnchor, constant: 20),
-                self.optionView.trailingAnchor.constraint(equalTo: self.view.trailingAnchor, constant: -20),
-                self.optionView.heightAnchor.constraint(equalToConstant: 100),
+                self.attachmentView.bottomAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.bottomAnchor),
+                self.attachmentView.leadingAnchor.constraint(equalTo: self.view.leadingAnchor, constant: 20),
+                self.attachmentView.trailingAnchor.constraint(equalTo: self.view.trailingAnchor, constant: -20),
+                self.attachmentView.heightAnchor.constraint(equalToConstant: 100),
             ])
             
         }
@@ -234,20 +212,20 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
                 
             }
             
-            self.optionView.isHidden = false
-            self.optionView.alpha = 1
+            self.attachmentView.isHidden = false
+            self.attachmentView.alpha = 1
             
             self.chatUIStackView.translatesAutoresizingMaskIntoConstraints = true
-            self.chatUIStackView.frame.origin.y -= self.optionView.frame.height
+            self.chatUIStackView.frame.origin.y -= self.attachmentView.frame.height
             
         } else {
             
             self.attachmentBtn.setImage(UIImage(systemName: "plus"), for: .normal)
-            self.optionView.isHidden = true
-            self.optionView.alpha = 0
+            self.attachmentView.isHidden = true
+            self.attachmentView.alpha = 0
             
             self.chatUIStackView.translatesAutoresizingMaskIntoConstraints = true
-            self.chatUIStackView.frame.origin.y += self.optionView.frame.height
+            self.chatUIStackView.frame.origin.y += self.attachmentView.frame.height
             
         }
         
@@ -349,11 +327,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         guard let keyboardFrame = sender.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
         let keyboardFrameHeight = keyboardFrame.height
         
-        if !self.optionView.isHidden {
+        if !self.attachmentView.isHidden {
             
-            self.optionView.isHidden = true
+            self.attachmentView.isHidden = true
             self.attachmentBtn.setImage(UIImage(systemName: "plus"), for: .normal)
-            self.chatUIStackView.frame.origin.y += self.optionView.frame.height
+            self.chatUIStackView.frame.origin.y += self.attachmentView.frame.height
             
         }
         
@@ -398,14 +376,14 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         
         msgTextView.resignFirstResponder()
         
-        if !self.optionView.isHidden {
+        if !self.attachmentView.isHidden {
             
             attachmentBtn.setImage(UIImage(systemName: "plus"), for: .normal)
-            self.optionView.isHidden = true
-            self.optionView.alpha = 0
+            self.attachmentView.isHidden = true
+            self.attachmentView.alpha = 0
             
-            self.optionView.translatesAutoresizingMaskIntoConstraints = true
-            self.chatUIStackView.frame.origin.y += self.optionView.frame.height
+            self.attachmentView.translatesAutoresizingMaskIntoConstraints = true
+            self.chatUIStackView.frame.origin.y += self.attachmentView.frame.height
             
         }
         
@@ -473,182 +451,28 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     
 }
 
-// 내비게이션 아이템 타이틀 설정
-extension UINavigationItem {
+extension ChatViewController: AttachmentViewDelegate {
     
-    func setTitle(title: String, subtitle: String) {
-        
-        let titleLabel = UILabel()
-        titleLabel.text = title
-        titleLabel.font = UIFont.systemFont(ofSize: 17)
-        titleLabel.sizeToFit()
-        
-        let subTitleLabel = UILabel()
-        subTitleLabel.text = subtitle
-        subTitleLabel.font = UIFont.systemFont(ofSize: 12)
-        subTitleLabel.textAlignment = .center
-        subTitleLabel.sizeToFit()
-        
-        let stackView = UIStackView(arrangedSubviews: [titleLabel, subTitleLabel])
-        stackView.distribution = .equalCentering
-        stackView.axis = .vertical
-        stackView.alignment = .center
-        
-        let width = max(titleLabel.frame.size.width, subTitleLabel.frame.size.width)
-        stackView.frame = CGRect(x: 0, y: 0, width: width, height: 35)
-        
-        titleLabel.sizeToFit()
-        subTitleLabel.sizeToFit()
-        
-        self.titleView = stackView
-    }
-    
-}
-
-extension UITextView {
-    func alignTextVertically() {
-        
-        var topConstraint = (self.bounds.size.height - (self.contentSize.height)) / 2
-        topConstraint = topConstraint < 0.0 ? 0.0 : topConstraint
-        self.contentInset.left = 5
-        self.contentInset.top = topConstraint
-        
-    }
-    
-}
-
-extension ChatViewController: UITextViewDelegate {
-    
-    func textViewDidBeginEditing(_ textView: UITextView) {
-        
-        if textView.textColor == .lightGray {
-            textView.text = ""
-            textView.textColor = .black
-        }
-        
-    }
-    
-    
-    func textViewDidEndEditing(_ textView: UITextView) {
-        
-        if textView.text.isEmpty {
-            textView.text = "메시지를 입력하세요."
-            textView.textColor = .lightGray
-        }
-        
-    }
-    
-    func textViewDidChange(_ textView: UITextView) {
-        
-        if textView.text.isEmpty {
+    internal func checkAttachmentBtnKind(didTapBtnWith identifier: String) {
+        switch identifier {
             
-            sendBtn.isEnabled = false
+        case "photo":
+            print("Photo btn tapped!")
+            self.hideOrShowOptionMenu()
+            self.openPHPicker()
             
-        } else {
+        case "camera":
+            print("Camera btn tapped!")
+            self.hideOrShowOptionMenu()
+            self.openCamera()
             
-            sendBtn.isEnabled = true
+        case "paperclip":
+            print("File btn tapped!")
+            
+        default:
+            return
             
         }
-        
-        textView.alignTextVertically()
-        
-    }
-    
-}
-
-extension ChatViewController: UIGestureRecognizerDelegate {
-    
-    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-        
-        // 터치된 뷰가 UIButton일 경우 제스처 제외
-        if let touchedView = touch.view, touchedView is UIButton {
-            return false
-        }
-        
-        if let excludeView = touch.view, excludeView.tag == 99 || excludeView.tag == 98 {
-            return false
-        }
-        
-        return true
-        
-    }
-    
-}
-
-extension ChatViewController: PHPickerViewControllerDelegate {
-    
-    func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
-        
-        picker.dismiss(animated: true)
-        
-        var resultsForVideos: [PHPickerResult] = []
-        var resultsForImages: [PHPickerResult] = []
-        
-        for result in results {
-            let itemProvider = result.itemProvider
-            if itemProvider.hasItemConformingToTypeIdentifier(UTType.movie.identifier) {
-                
-                resultsForVideos.append(result)
-                
-            } else if itemProvider.canLoadObject(ofClass: UIImage.self) {
-                
-                resultsForImages.append(result)
-                
-            }
-            
-        }
-        
-        if !resultsForImages.isEmpty {
-            convertImagesTask = Task {
-                do {
-                    
-                    let images = try await MediaManager.shared.dealWithImages(resultsForImages)
-                    
-                    let imageNames = try await FirebaseStorageManager.shared.uploadImagesToStorage(images: images, location: ImageLocation.Test)
-                    
-                    let imagesFromStorage = try await FirebaseStorageManager.shared.fetchImagesFromStorage(from: imageNames, location: ImageLocation.Test)
-                    
-                    for image in imagesFromStorage {
-                        self.testImageView.image = image
-                    }
-                    
-                } catch {
-                    
-                    print("이미지 불러오기 실패: \(error.localizedDescription)")
-                    
-                }
-            }
-            
-        }
-        
-        if !resultsForVideos.isEmpty {
-            
-            print("비디오 존재")
-            
-        }
-        
-    }
-        
-}
-
-extension ChatViewController: UIImagePickerControllerDelegate {
-    
-    func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
-//        if let editedImage = info[.editedImage] as? UIImage {
-//            
-//            
-//            
-//        } else if let originalImage = info[.originalImage] as? UIImage {
-//            
-//            
-//            
-//        }
-        
-        dismiss(animated: true)
-    }
-    
-    func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-        picker.dismiss(animated: true)
     }
     
 }
