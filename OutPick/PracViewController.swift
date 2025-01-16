@@ -44,6 +44,12 @@ class PracViewController: UIViewController, UINavigationControllerDelegate {
     override func viewDidLoad() {
         super.viewDidLoad()
         
+        let test = ChatRoom(id: UUID().uuidString, roomName: "A", roomDescription: "A", participants: [], creatorID: "A", createdAt: Date())
+        db.collection("Test").document("1월").collection("1월 Test").addDocument(data: test.toDictionary())
+        
+        
+        
+        
     }
     
     @IBAction func albumBtnTapped(_ sender: UIButton) {

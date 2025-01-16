@@ -35,63 +35,121 @@ class FirebaseManager {
     
     //MARK: 프로필 설정 관련 기능들
     // Firebase Firestore에 UserProfile 객체 저장
-    func saveUserProfileToFirestore(/*userProfile: UserProfile, */email: String/*, completion: @escaping (Error?) -> Void*/) async throws {
-        //        let userProfileRef = db.collection("Users").document(email)
-        let userProfileRef = db.collection("Users").document(DateManager.shared.currentMonth).collection("\(DateManager.shared.currentMonth) Users").document(email)
-        
-        //        userProfileRef.setData(userProfile.toDict()) { error in
-        //            completion(error)
-        //        }
-        
+    func saveUserProfileToFirestore(email: String) async throws {
+        let userProfileRef = db.collection("Users")
         do {
-            try await userProfileRef.setData(UserProfile.shared.toDict(), merge: true)
+            
+            try await userProfileRef.getDocuments()
+            try await userProfileRef.document(DateManager.shared.currentMonth).setData([:])
+            try await userProfileRef.document(DateManager.shared.currentMonth).collection("\(DateManager.shared.currentMonth) Users").document(email).setData(UserProfile.shared.toDict())
+            
         } catch {
+            
             throw FirebaseError.FailedToSaveProfile
+            
         }
-        
     }
     
     // Firebase Firestore에서 UserProfile 불러오기
     func fetchUserProfileFromFirestore(email: String, completion: @escaping (Result<UserProfile, Error>) -> Void) {
-        let userProfileRef = db.collection("Users").document(DateManager.shared.currentMonth).collection("\(DateManager.shared.currentMonth) Users").document(email)
-        userProfileRef.getDocument { snapshot, error in
-            
-            if let error = error {
-                completion(.failure(error))
-                return
-            }
-            
-            guard let data = snapshot?.data() else {
+        
+        Task {
+            do {
+                
+                let documentIDs = try await fetchAllDocIDs(collectionName: "Users")
+                return try await withThrowingTaskGroup(of: UserProfile.self) { group in
+                    for documentID in documentIDs {
+                        group.addTask {
+                            
+                            let refToCheck = self.db.collection("Users").document(documentID).collection("\(DateManager.shared.currentMonth) Users").document(email)
+                            let snapshot = try await refToCheck.getDocument()
+                            
+                            guard let data = snapshot.data() else {
+                                throw FirebaseError.FailedToFetchProfile
+                            }
+                            
+                            let profile = UserProfile.shared
+                            profile.id = data["id"] as? String
+                            profile.nickname = data["nickname"] as? String
+                            profile.gender = data["gender"] as? String
+                            profile.birthdate = data["birthdate"] as? String
+                            profile.profileImageName = data["profileImageName"] as? String
+                            profile.joinedRooms = data["joinedRooms"] as? [String]
+                            
+                            return profile
+                            
+                        }
+                    }
+                    
+                    for try await result in group {
+                        if let _ = result.nickname {
+                            completion(.success(result))
+                            group.cancelAll()
+                        }
+                    }
+                    
+                }
+                
+            } catch {
+                
                 completion(.failure(FirebaseError.FailedToFetchProfile))
-                return
+                
             }
-            
-            // 직접 데이터 매핑
-            let profile = UserProfile.shared
-            profile.id = data["id"] as? String
-            profile.nickname = data["nickname"] as? String
-            profile.gender = data["gender"] as? String
-            profile.birthdate = data["birthdate"] as? String
-            profile.profileImageName = data["profileImageName"] as? String
-            profile.joinedRooms = data["joinedRooms"] as? [String]
-            
-            completion(.success(profile))
-
         }
     }
     
-    // 프로필 닉네임 중복 검사
-    func checkNicknameDuplicate(nickname: String/*, completion: @escaping (Bool, Error?) -> Void*/) async throws -> Bool{
+    func fetchAllDocIDs(collectionName: String) async throws -> [String] {
+        
+        var results = [String]()
         
         do {
             
-            let nickNameDocRef = db.collection("Users").document(DateManager.shared.currentMonth).collection("\(DateManager.shared.currentMonth) Users").whereField("nickname", isEqualTo: nickname)
-            let document = try await nickNameDocRef.getDocuments()
+            let querySnapshot = try await db.collection(collectionName).getDocuments()
+            for document in querySnapshot.documents {
+                results.append(document.documentID)
+            }
             
-            if document.isEmpty {
+            return results
+            
+        } catch {
+            
+            throw FirebaseError.FailedToFetchProfileDocumentID
+            
+        }
+        
+    }
+    
+    // 프로필 닉네임 중복 검사
+    func checkDuplicate(strToCompare: String, collectionName: String, fieldToCompare: String/*, completion: @escaping (Bool, Error?) -> Void*/) async throws -> Bool{
+        
+        do {
+            
+            let documentIDs = try await fetchAllDocIDs(collectionName: collectionName)
+            
+            return try await withThrowingTaskGroup(of: Bool.self) { group in
+                for documentID in documentIDs {
+                    group.addTask {
+                        
+                        let refToCheck = self.db.collection(collectionName).document(documentID).collection("\(documentID) \(collectionName)").whereField(fieldToCompare, isEqualTo: strToCompare)
+                        let document = try await refToCheck.getDocuments()
+                        
+                        if !document.isEmpty {
+                            return true
+                        }
+                        
+                        return false
+                    }
+                }
+                
+                for try await result in group {
+                    if result {
+                        group.cancelAll()
+                        return true
+                    }
+                }
+                
                 return false
-            } else {
-                return true
+                
             }
             
         } catch {
@@ -100,28 +158,14 @@ class FirebaseManager {
             
         }
         
-        //        db.collection("Users").whereField("nickname", isEqualTo: nickname).getDocuments { snapshot, error in
-        //
-        //            if let error = error {
-        //                completion(false, error)
-        //                return
-        //            }
-        //
-        //            if let snapshot = snapshot, snapshot.isEmpty {
-        //                completion(false, nil) // 닉네임 중복 x
-        //            } else {
-        //                completion(true, nil) // 닉네임 중복 o
-        //            }
-        //
-        //        }
-        
     }
     
     //MARK: 채팅 방 관련 기능들
     // 오픈 채팅 방 정보 저장
     func saveRoomInfoToFirestore(room: ChatRoom, completion: @escaping (Result<Void, Error>) -> Void) {
         // 방 컬렉션에서 방 ID를 기준으로 문서 참조 생성
-        let roomRef = db.collection("Rooms").document(room.roomName)
+        let roomRef = db.collection("Rooms").document("\(DateManager.shared.currentMonth)").collection("\(DateManager.shared.currentMonth) Rooms").document(room.roomName)
+//        let roomRef = db.collection("Rooms").document(room.roomName)
         
         // Rooms 컬렉션이 존재하는지 확인하고 없으면 생성
         db.collection("Rooms").getDocuments { [weak self] (snapshot, error) in
@@ -181,6 +225,7 @@ class FirebaseManager {
     
     // 실시간 채팅방 리스너 설정
     func listenForChatRooms(completion: @escaping ([ChatRoom]) -> Void) {
+        
         // 기존 리스너 있으면 제거
         roomsListener?.remove()
         

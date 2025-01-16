@@ -32,7 +32,7 @@ class FirebaseStorageManager {
         return try await withCheckedThrowingContinuation { continuation in
             
             let storageRef = storage.reference()
-            let imageRef = storageRef.child("\(location.location)/\(imageName).jpg")
+            let imageRef = storageRef.child("\(location.location)/\(DateManager.shared.currentMonth)/\(imageName).jpg")
             
             let reszied = image.resized(withMaxWidth: 700)
             
@@ -171,7 +171,7 @@ class FirebaseStorageManager {
         }
         
         return try await withCheckedThrowingContinuation { continuation in
-            let imageRef = storage.reference().child("\(location)/\(imageName).jpg")
+            let imageRef = storage.reference().child("\(location)/\(DateManager.shared.currentMonth)/\(imageName).jpg")
             imageRef.getData(maxSize: 1 * 1024 * 1024) { data, error in
                 if let error = error {
                     
