@@ -59,9 +59,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 if success {
                     isLoggedIn = true
                     // 채팅방 목록 감지 시작
-                    FirebaseManager.shared.listenForChatRooms { rooms in
-                        print("채팅방 목록 수: \(rooms.count)")
-                    }
+//                    FirebaseManager.shared.listenForChatRooms { rooms in
+//                        print("채팅방 목록 수: \(rooms.count)")
+//                    }
                 }
                 
                 group.leave()
@@ -75,9 +75,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 if success {
                     isLoggedIn = true
                     // 채팅방 목록 감지 시작
-                    FirebaseManager.shared.listenForChatRooms { rooms in
-                        print("채팅방 목록 수: \(rooms.count)")
-                    }
+//                    FirebaseManager.shared.listenForChatRooms { rooms in
+//                        print("채팅방 목록 수: \(rooms.count)")
+//                    }
                 }
                 group.leave()
             }

@@ -26,22 +26,26 @@ class LoginManager {
     func fetchUserProfile(_ email: String, completion: @escaping (UIViewController) -> Void) {
     
         FirebaseManager.shared.fetchUserProfileFromFirestore(email: email) { result in
-            let initialViewControlle: UIViewController
-            
-            switch result {
-            case .success(let userProfile):
-                print("User Profile: \(userProfile)")
-//                UserProfile.shared = userProfile
+            DispatchQueue.main.async {
+                
+                let initialViewControlle: UIViewController
+                
+                switch result {
+                case .success(let userProfile):
+                    print("User Profile: \(userProfile)")
+    //                UserProfile.shared = userProfile
 
-                let mainStorybard = UIStoryboard(name: "Main", bundle: nil)
-                initialViewControlle = mainStorybard.instantiateViewController(withIdentifier: "HomeTBC")
-                completion(initialViewControlle)
-            case .failure(let error):
-                print("Failed to fetch user profile: \(error.localizedDescription)")
+                    let mainStorybard = UIStoryboard(name: "Main", bundle: nil)
+                    initialViewControlle = mainStorybard.instantiateViewController(withIdentifier: "HomeTBC")
+                    completion(initialViewControlle)
+                case .failure(let error):
+                    print("Failed to fetch user profile: \(error.localizedDescription)")
 
-                let mainStorybard = UIStoryboard(name: "Main", bundle: nil)
-                initialViewControlle = mainStorybard.instantiateViewController(withIdentifier: "ProfileNav")
-                completion(initialViewControlle)
+                    let mainStorybard = UIStoryboard(name: "Main", bundle: nil)
+                    initialViewControlle = mainStorybard.instantiateViewController(withIdentifier: "ProfileNav")
+                    completion(initialViewControlle)
+                }
+                
             }
         }
 

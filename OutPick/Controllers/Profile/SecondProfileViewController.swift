@@ -164,7 +164,7 @@ class SecondProfileViewController: UIViewController {
         Task {
             do {
                 
-                if try await FirebaseManager.shared.checkNicknameDuplicate(nickname: nickname) {
+                if try await FirebaseManager.shared.checkDuplicate(strToCompare: nickname, collectionName: "Users", fieldToCompare: "nickname") {
                     AlertManager.showAlert(title: "닉네임 중복", message: "다른 닉네임을 선택해 주세요.", viewController: self)
                     return
                 }
