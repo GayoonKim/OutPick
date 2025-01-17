@@ -26,4 +26,12 @@ class DateManager {
         
     }
     
+    func getMonthFromTimestamp(date: Date) -> String {
+        
+        let calendar = Calendar.current
+        let month = calendar.component(.month, from: date)
+        return "\(month)월"
+        
+    }
+    
 }

@@ -270,7 +270,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     }
     
     private func updateNavigationTitle(with room: ChatRoom) {
-        self.navigationItem.setTitle(title: room.roomName, subtitle: "\(room.participants.count)명 참여")
+        
+        DispatchQueue.main.async{
+            self.navigationItem.setTitle(title: room.roomName, subtitle: "\(room.participants.count)명 참여")
+        }
         
     }
     
@@ -288,7 +291,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         guard let room = self.room else { return }
         
         Task {
-            await FirebaseManager.shared.updateRoomParticipants(roomName: room.roomName, email: LoginManager.shared.getUserEmail)
+            try await FirebaseManager.shared.updateRoomParticipants(room: room)
         }
         
     }
@@ -391,19 +394,21 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     
     @objc private func handleRoomSaveCompleted(notification: Notification) {
         
-        activityIndicator.stopAnimating()
+        DispatchQueue.main.async {
+            self.activityIndicator.stopAnimating()
+        }
         
         guard let savedRoom = notification.userInfo?["room"] as? ChatRoom,
               let nickName = UserProfile.shared.nickname else { return }
         self.room = savedRoom
         
         Task {
-            await FirebaseManager.shared.updateRoomParticipants(roomName: savedRoom.roomName, email: LoginManager.shared.getUserEmail)
+            try await FirebaseManager.shared.updateRoomParticipants(room: savedRoom)
         }
-        
-        SocketIOManager.shared.setUserName(nickName)
-        SocketIOManager.shared.createRoom(savedRoom.roomName)
-        self.updateNavigationTitle(with: savedRoom)
+
+        DispatchQueue.main.async {
+            self.updateNavigationTitle(with: savedRoom)
+        }
         
     }
     

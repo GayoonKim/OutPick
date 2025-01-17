@@ -189,48 +189,72 @@ class RoomCreateViewController: UIViewController, PHPickerViewControllerDelegate
     }
     
     @IBAction func createBtnTapped(_ sender: UIButton) {
-
+        
         createButton.isEnabled = false
         activityIndicator.startAnimating()
         
-        FirebaseManager.shared.checkRoomName(roomName: roomNameTextView.text) { isDuplicated, error in
-            
-            DispatchQueue.main.async {
-                self.activityIndicator.stopAnimating()
-                self.createButton.isEnabled = true
+        
+        Task {
+            do {
                 
-                if isDuplicated {
-                    self.activityIndicator.stopAnimating()
-                    self.handleDuplicateRoomName()
+                if try await FirebaseManager.shared.checkDuplicate(strToCompare: self.roomNameTextView.text, fieldToCompare: "roomName", collectionName: "Rooms") {
+                    await MainActor.run {
+                        self.activityIndicator.stopAnimating()
+                        createButton.isEnabled = true
+                        AlertManager.showAlert(title: "중복된 방 이름", message: "이미 존재하는 방 이름입니다. 다른 이름을 선택해 주세요.", viewController: self)
+                    }
                     return
                 }
                 
                 let room = ChatRoom(id: UUID().uuidString, roomName: self.roomNameTextView.text, roomDescription: self.roomDescriptionTextView.text, participants: [LoginManager.shared.getUserEmail], creatorID: LoginManager.shared.getUserEmail, createdAt: Date(), roomImageName: nil)
                 
-                // 채팅방 화면으로 이동
-                self.performSegue(withIdentifier: "ToChatRoom", sender: room)
+                await MainActor.run {
+                    self.activityIndicator.stopAnimating()
+                    self.performSegue(withIdentifier: "ToChatRoom", sender: room)
+                }
                 
-                // 백그라운드에서 방 정보 저장
                 self.saveRoomInfo(room: room)
+                
+            } catch {
+                
+                await MainActor.run {
+                    self.activityIndicator.stopAnimating()
+                    AlertManager.showAlert(title: "오류", message: "방 생성 중 오류가 발생했습니다.", viewController: self)
+                }
+                
             }
         }
         
-    }
-    
-    private func handleDuplicateRoomName() {
         
-        let alert = UIAlertController(title: "중복된 방 이름", message: "이미 존재하는 방 이름입니다. 다른 이름을 선택해 주세요.", preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "확인", style: .default, handler: nil))
-        self.present(alert, animated: true, completion: nil)
+//        DispatchQueue.main.async {
+//            self.activityIndicator.stopAnimating()
+//            self.createButton.isEnabled = true
+//            
+//            Task {
+//                if try await FirebaseManager.shared.checkDuplicate(strToCompare: self.roomNameTextView.text, fieldToCompare: "roomName", collectionName: "Rooms") {
+//                    self.activityIndicator.stopAnimating()
+//                    AlertManager.showAlert(title: "중복된 방 이름", message: "이미 존재하는 방 이름입니다. 다른 이름을 선택해 주세요.", viewController: self)
+//                    return
+//                }
+//        }
+//        
+//        
+//        let room = ChatRoom(id: UUID().uuidString, roomName: self.roomNameTextView.text, roomDescription: self.roomDescriptionTextView.text, participants: [LoginManager.shared.getUserEmail], creatorID: LoginManager.shared.getUserEmail, createdAt: Date(), roomImageName: nil)
+//        
+//        // 채팅방 화면으로 이동
+//        self.performSegue(withIdentifier: "ToChatRoom", sender: room)
+//        
+//        // 백그라운드에서 방 정보 저장
+//        self.saveRoomInfo(room: room)
+//    }
+        
         
     }
     
     private func saveRoomInfo(room: ChatRoom) {
         
         if let image = roomImageView.image {
-            
                 uploadImageAndSaveRoomInfo(image: image, roomInfo: room)
-            
         } else {
             saveRoomInfoToFirestore(room: room, image: nil)
         }

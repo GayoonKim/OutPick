@@ -142,7 +142,7 @@ extension ChatViewController: PHPickerViewControllerDelegate {
                     
                     let imageNames = try await FirebaseStorageManager.shared.uploadImagesToStorage(images: images, location: ImageLocation.Test)
                     
-                    let imagesFromStorage = try await FirebaseStorageManager.shared.fetchImagesFromStorage(from: imageNames, location: ImageLocation.Test)
+                    
                     
                 } catch MediaError.FailedToConvertImage {
                     
