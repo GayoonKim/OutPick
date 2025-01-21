@@ -10,19 +10,18 @@ import UIKit
 // 첨부 파일 정보
 struct Attachment: Codable {
     
-    let id: String
     let type: AttachmentType
     let size: Int64?
     let fileName: String?
     let createdAt: Date
     
-    func toDict() -> [String: Any] {
-        
-        return [
-            "id": UUID().uuidString
-        ]
-        
-    }
+//    func toDict() -> [String: Any] {
+//        
+//        return [
+//            "id": UUID().uuidString
+//        ]
+//        
+//    }
     
     enum AttachmentType: String, Codable {
         

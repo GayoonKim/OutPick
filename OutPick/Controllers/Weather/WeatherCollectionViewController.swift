@@ -89,6 +89,7 @@ class HomeCollectionViewController: UICollectionViewController {
             
             self.updateCollectionView()
         }
+        
     }
     
     override func collectionView(_ collectionView: UICollectionView, didEndDisplaying cell: UICollectionViewCell, forItemAt indexPath: IndexPath) {

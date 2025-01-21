@@ -46,6 +46,7 @@ class FirstProfileViewController: UIViewController {
     }
     
     @IBAction func nextBtnTapped(_ sender: UIButton) {
+        
         performSegue(withIdentifier: "ToSecProfile", sender: nil)
     }
     

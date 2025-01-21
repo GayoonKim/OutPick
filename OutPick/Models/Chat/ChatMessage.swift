@@ -11,7 +11,6 @@ import FirebaseCore
 // 채팅 메시지 정보
 struct ChatMessage: Codable {
     
-    let messageID: String                // 메시지 고유 ID
     let senderID: String                 // 메시지 전송 사용자 아이디
     let senderNickname: String           // 메시지 전송 사용자 닉네임
     let msg: String?                      // 메시지 내용
@@ -23,12 +22,13 @@ struct ChatMessage: Codable {
     func toDictionary() -> [String: Any] {
         
         return [
-            "messageID": UUID().uuidString,
+            
             "senderID": senderID,
             "senderNickname": senderNickname,
             "msg": msg ?? "",
             "sentAt": Timestamp(date: sentAt),
             "messageType": messageType
+            
         ]
         
     }

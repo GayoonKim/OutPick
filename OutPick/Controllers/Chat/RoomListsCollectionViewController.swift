@@ -7,7 +7,7 @@
 
 import UIKit
 
-class ChatCollectionViewController: UICollectionViewController {
+class RoomListsCollectionViewController: UICollectionViewController {
     
     typealias DataSourceType = UICollectionViewDiffableDataSource<ViewModel.Section, ViewModel.Item>
 
@@ -37,9 +37,7 @@ class ChatCollectionViewController: UICollectionViewController {
         self.updateCollectionView()
         
         
-        FirebaseManager.shared.listenForChatRooms { rooms in
-            print("listenForChatRooms 호출 끝")
-        }
+        
     }
     
     @objc private func chatRoomsUpdated(notification: Notification) {
@@ -70,10 +68,10 @@ class ChatCollectionViewController: UICollectionViewController {
                     let image = try await FirebaseStorageManager.shared.fetchImageFromStorage(image: imageName, location: ImageLocation.RoomImage, createdDate: item.createdAt)
                     image.prepareThumbnail(of: CGSize(width: 50, height: 50)) { cgImage in
                         DispatchQueue.main.async {
-                         
+
                             guard let cgImage = cgImage else { return }
                             cell.roomImageView.image = cgImage
-                            
+
                         }
                     }
                 }
