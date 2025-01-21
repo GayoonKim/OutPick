@@ -12,7 +12,7 @@ class UserProfile: Codable {
     
     static var shared = UserProfile()
     
-    var id: String?
+    let email: String
     var gender: String?
     var birthdate: String?
     var nickname: String?
@@ -21,6 +21,7 @@ class UserProfile: Codable {
     let createdAt: Date
     
     private init() {
+        self.email = LoginManager.shared.getUserEmail
         self.createdAt = Date()
     }
 
@@ -33,7 +34,7 @@ extension UserProfile {
         
         return [
             
-            "id": UUID().uuidString,
+            "email": email,
             "nickname": nickname ?? "",
             "gender": gender ?? "",
             "birthdate": birthdate ?? "",

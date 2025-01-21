@@ -8,6 +8,9 @@
 import UIKit
 
 class RoomListCollectionViewCell: UICollectionViewCell {
+    
+    static let identifier = "RoomListCollectionViewCell"
+    
     @IBOutlet weak var roomImageView: UIImageView!
     @IBOutlet weak var roomNameLabel: UILabel!
     @IBOutlet weak var roomDescriptionLabel: UILabel!

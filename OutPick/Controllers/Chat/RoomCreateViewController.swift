@@ -206,7 +206,7 @@ class RoomCreateViewController: UIViewController, PHPickerViewControllerDelegate
                     return
                 }
                 
-                let room = ChatRoom(id: UUID().uuidString, roomName: self.roomNameTextView.text, roomDescription: self.roomDescriptionTextView.text, participants: [LoginManager.shared.getUserEmail], creatorID: LoginManager.shared.getUserEmail, createdAt: Date(), roomImageName: nil)
+                let room = ChatRoom(roomName: self.roomNameTextView.text, roomDescription: self.roomDescriptionTextView.text, participants: [LoginManager.shared.getUserEmail], creatorID: LoginManager.shared.getUserEmail, createdAt: Date(), roomImageName: nil)
                 
                 await MainActor.run {
                     self.activityIndicator.stopAnimating()
@@ -290,6 +290,11 @@ class RoomCreateViewController: UIViewController, PHPickerViewControllerDelegate
                 if let imageName = room.roomImageName, let image = image {
                     KingfisherManager.shared.cache.store(image, forKey: imageName)
                 }
+                
+                Task {
+                    try await FirebaseManager.shared.updateRoomParticipant(room: room, isAdding: true)
+                }
+
                 NotificationCenter.default.post(name: .roomSavedComplete, object: nil, userInfo: ["room": room])
                 
             case .failure:

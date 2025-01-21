@@ -291,7 +291,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         guard let room = self.room else { return }
         
         Task {
-            try await FirebaseManager.shared.updateRoomParticipants(room: room)
+            try await FirebaseManager.shared.updateRoomParticipant(room: room, isAdding: true)
         }
         
     }
@@ -302,7 +302,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
               let roomName = self.room?.roomName else { return }
         self.msgTextView.text = nil
         
-        let newMessage = ChatMessage(messageID: UUID().uuidString, senderID: LoginManager.shared.getUserEmail, senderNickname: UserProfile.shared.nickname ?? "", msg: message, sentAt: Date(), messageType: .Text)
+        let newMessage = ChatMessage(senderID: LoginManager.shared.getUserEmail, senderNickname: UserProfile.shared.nickname ?? "", msg: message, sentAt: Date(), messageType: .Text)
         print(newMessage)
         
         SocketIOManager.shared.sendMessage(roomName, message)
@@ -398,13 +398,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
             self.activityIndicator.stopAnimating()
         }
         
-        guard let savedRoom = notification.userInfo?["room"] as? ChatRoom,
-              let nickName = UserProfile.shared.nickname else { return }
+        guard let savedRoom = notification.userInfo?["room"] as? ChatRoom else { return }
         self.room = savedRoom
-        
-        Task {
-            try await FirebaseManager.shared.updateRoomParticipants(room: savedRoom)
-        }
 
         DispatchQueue.main.async {
             self.updateNavigationTitle(with: savedRoom)

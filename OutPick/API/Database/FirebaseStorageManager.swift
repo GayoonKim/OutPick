@@ -161,19 +161,19 @@ class FirebaseStorageManager {
         
         // 메모리 캐시 확인
         if let cachedImage = KingfisherManager.shared.cache.retrieveImageInMemoryCache(forKey: imageName) {
-            print("cachedImage: \(cachedImage)")
+            print("cachedImage in Memory: \(cachedImage)")
             return cachedImage
         }
         // 디스크 캐시 확인
         if let cachedImage = try await KingfisherManager.shared.cache.retrieveImageInDiskCache(forKey: imageName) {
-            print("cachedImage: \(cachedImage)")
+            print("cachedImage in Disk: \(cachedImage)")
             return cachedImage
         }
         
         let month = DateManager.shared.getMonthFromTimestamp(date: createdDate)
         
         return try await withCheckedThrowingContinuation { continuation in
-            let imageRef = storage.reference().child("\(location)/\(month)/\(imageName).jpg")
+            let imageRef = storage.reference().child("\(location.location)/\(month)/\(imageName).jpg")
             imageRef.getData(maxSize: 1 * 1024 * 1024) { data, error in
                 if let error = error {
                     

@@ -8,10 +8,12 @@
 import UIKit
 
 enum FirebaseError: Error {
-    case NickNameDuplicate
+    case Duplicate
     case FailedToSaveProfile
     case FailedToFetchProfile
-    case FailedToFetchProfileDocumentID
+    case FailedToFetchAllDocumentIDs
+    case FailedToFetchRoom
+    case FailedToParseRoomData
     case unknownError
 }
 
