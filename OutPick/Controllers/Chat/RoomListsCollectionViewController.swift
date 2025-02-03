@@ -6,6 +6,7 @@
 //
 
 import UIKit
+import Kingfisher
 
 class RoomListsCollectionViewController: UICollectionViewController {
     
@@ -34,9 +35,12 @@ class RoomListsCollectionViewController: UICollectionViewController {
         collectionView.collectionViewLayout = configureLayout()
         
         NotificationCenter.default.addObserver(self, selector: #selector(chatRoomsUpdated), name: .chatRoomsUpdated, object: nil)
+        
         self.updateCollectionView()
         
-        
+    }
+    
+    override func viewWillAppear(_ animated: Bool) {
         
     }
     
@@ -66,14 +70,19 @@ class RoomListsCollectionViewController: UICollectionViewController {
             Task {
                 if let imageName = item.roomImageName {
                     let image = try await FirebaseStorageManager.shared.fetchImageFromStorage(image: imageName, location: ImageLocation.RoomImage, createdDate: item.createdAt)
-                    image.prepareThumbnail(of: CGSize(width: 50, height: 50)) { cgImage in
-                        DispatchQueue.main.async {
-
-                            guard let cgImage = cgImage else { return }
-                            cell.roomImageView.image = cgImage
-
-                        }
+                    print(image.size.width, image.size.height)
+//                    image.prepareThumbnail(of: CGSize(width: 50, height: 50)) { cgImage in
+//                        DispatchQueue.main.async {
+//
+//                            guard let cgImage = cgImage else { return }
+//                            cell.roomImageView.image = cgImage
+//
+//                        }
+//                    }
+                    DispatchQueue.main.async {
+                        cell.roomImageView.image = image
                     }
+                    
                 }
             }
             

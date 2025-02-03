@@ -26,9 +26,17 @@ class FirebaseManager {
     
     // 채팅방 목록
     private var chatRooms: [ChatRoom] = []
-    private var roomsMap: [String: ChatRoom] = [:]
     private var roomsListener: ListenerRegistration?
     private var monthlyRoomListeners: [String: ListenerRegistration] = [:]
+    
+    private var listenToRoomsTask: Task<Void, Never>? = nil
+    private var fetchProfileTask: Task<Void, Never>? = nil
+    private var saveUserProfileTask: Task<Void, Never>? = nil
+    
+    deinit {
+        listenToRoomsTask?.cancel()
+        fetchProfileTask?.cancel()
+    }
     
     // 채팅방 읽기 전용 접근자 제공
     var currentChatRooms: [ChatRoom] {
@@ -56,7 +64,12 @@ class FirebaseManager {
     
     // Firebase Firestore에서 UserProfile 불러오기
     func fetchUserProfileFromFirestore(email: String, completion: @escaping (Result<UserProfile, Error>) -> Void) {
-        Task {
+        
+        print("fetchUserprofileFromFirestore 호출")
+        
+        fetchProfileTask?.cancel()
+        
+        fetchProfileTask = Task {
             do {
                 
                 let documentIDs = try await fetchAllDocIDs(collectionName: "Users")
@@ -64,6 +77,7 @@ class FirebaseManager {
                 if documentIDs.isEmpty {
                     throw FirebaseError.FailedToFetchAllDocumentIDs
                 }
+                
                 
                 return try await withThrowingTaskGroup(of: UserProfile.self) { group in
                     for documentID in documentIDs {
@@ -89,10 +103,12 @@ class FirebaseManager {
                     }
                     
                     for try await profile in group {
+                        
                         if let _ = profile.nickname {
                             completion(.success(profile))
                             group.cancelAll()
                         }
+                        
                     }
                     
                 }
@@ -102,7 +118,11 @@ class FirebaseManager {
                 completion(.failure(error))
                 
             }
+            
+            fetchProfileTask?.cancel()
+            
         }
+        
     }
     
     func fetchAllDocIDs(collectionName: String) async throws -> [String] {
@@ -170,6 +190,7 @@ class FirebaseManager {
     //MARK: 채팅 방 관련 기능들
     // 오픈 채팅 방 정보 저장
     func saveRoomInfoToFirestore(room: ChatRoom, completion: @escaping (Result<Void, Error>) -> Void) {
+        print("saveRoomInfoToFirestore 시작")
         
         // 방 컬렉션에서 방 ID를 기준으로 문서 참조 생성
         let roomRef = db.collection("Rooms").document(DateManager.shared.currentMonth).collection("\(DateManager.shared.currentMonth) Rooms").document()
@@ -183,22 +204,15 @@ class FirebaseManager {
             do {
                 let _ = try await db.runTransaction({ (transaction, errorPointer) -> Any? in
                     
-//                    let sfDocument: DocumentSnapshot
-                    
-//                    do {
-//                        try sfDocument = transaction.getDocument(roomRef)
-//                    } catch let fetchError as NSError {
-//                        errorPointer?.pointee = fetchError
-//                        throw fetchError
-//                        return nil
-//                    }
-                    
                     transaction.setData(room.toDictionary(), forDocument: roomRef)
                     completion(.success(()))
                     return nil
+                    
                 })
                 
-                print("트랜잭션 성공")
+                FirebaseManager.shared.updateRoomParticipant(room: room, isAdding: true)
+                
+                print("saveRoomInfoToFirestore 끝")
                 
             } catch {
                 
@@ -292,15 +306,14 @@ class FirebaseManager {
                     case .removed:
                         print("삭제")
                         self.chatRooms.removeAll(where: { $0.roomName == room.roomName })
-                        try await self.updateRoomParticipant(room: room, isAdding: false)
-                        try await ImageCache.default.removeImage(forKey: room.roomImageName ?? "")
+//                        try await self.updateRoomParticipant(room: room, isAdding: false)
+//                        try await ImageCache.default.removeImage(forKey: room.roomImageName ?? "")
                         
                     }
                     
+                    NotificationCenter.default.post(name: .chatRoomsUpdated, object: nil, userInfo: ["rooms": self.chatRooms])
+                    
                 }
-                
-                NotificationCenter.default.post(name: .chatRoomsUpdated, object: nil, userInfo: ["rooms": self.chatRooms])
-                
             }
         } catch {
             
@@ -324,7 +337,6 @@ class FirebaseManager {
     }
     
     private func processAllRooms(documents: [QueryDocumentSnapshot]) async throws {
-        print("AllRooms 호출")
         
         do {
             try await withThrowingTaskGroup(of: ChatRoom.self, returning: Void.self) { group in
@@ -341,11 +353,14 @@ class FirebaseManager {
                 
                 for try await room in group {
                     self.chatRooms.append(room)
+    
                 }
                 
-                NotificationCenter.default.post(name: .chatRoomsUpdated, object: nil, userInfo: ["rooms": self.chatRooms])
                 
             }
+            
+            NotificationCenter.default.post(name: .chatRoomsUpdated, object: nil, userInfo: ["rooms": self.chatRooms])
+            
         } catch {
             retry(asyncTask: { try await self.processAllRooms(documents: documents)}) { result in
                 switch result {
@@ -450,7 +465,16 @@ class FirebaseManager {
         //기존 모든 리스너 제거
         removeAllListeners()
         
+        listenToRoomsTask?.cancel()
+        
+        listenToRoomsTask = Task {
             do {
+                
+                // Rooms 컬렉션이 비어있는 경우 현재 월 문서 생성
+                let roomsSnapshot = try await db.collection("Rooms").getDocuments()
+                if roomsSnapshot.isEmpty {
+                    try await db.collection("Rooms").document(DateManager.shared.currentMonth).setData([:])
+                }
                 
                 // 모든 월별 문서 ID 불러오기
                 let monthIDs = try await FirebaseManager.shared.fetchAllDocIDs(collectionName: "Rooms")
@@ -477,6 +501,10 @@ class FirebaseManager {
                 }
                 
             }
+            
+            listenToRoomsTask = nil
+            
+        }
         
     }
         
@@ -489,54 +517,61 @@ class FirebaseManager {
         
     }
     
-    private func getDocumentReference(querySnapshot: QuerySnapshot) -> DocumentReference? {
-        
-        for document in querySnapshot.documents {
-            if document.exists {
-                return document.reference
-            }
-        }
-        
-        return nil
-        
-    }
-    
     // 방 참여자 업데이트
-    func updateRoomParticipant(room: ChatRoom, isAdding: Bool) async throws {
+    func updateRoomParticipant(room: ChatRoom, isAdding: Bool) {
+        
+        print("updateRoomParticipant 시작")
         
         let roomCreatedMonth = DateManager.shared.getMonthFromTimestamp(date: room.createdAt)
         let profileCreatedMonth = DateManager.shared.getMonthFromTimestamp(date: UserProfile.shared.createdAt)
         
-        do {
-    
-            let room_snapshot = try await db.collection("Rooms").document(roomCreatedMonth).collection("\(roomCreatedMonth) Rooms").whereField("roomName", isEqualTo: room.roomName).getDocuments()
-            let user_snapshot = try await db.collection("Users").document(profileCreatedMonth).collection("\(profileCreatedMonth) Users").whereField("email", isEqualTo: LoginManager.shared.getUserEmail).getDocuments()
-    
-            guard let room_ref = getDocumentReference(querySnapshot: room_snapshot),
-                  let user_ref = getDocumentReference(querySnapshot: user_snapshot) else {
-                return
-            }
-            
-            print(room_ref, user_ref)
-            
-            let _ = try await db.runTransaction({ (transaction, errorPointer) -> Any? in
+        Task {
+            do {
                 
-                if isAdding {
-                    transaction.updateData(["joinedRooms": FieldValue.arrayUnion([room.roomName])], forDocument: user_ref)
-                    transaction.updateData(["participantIDs": FieldValue.arrayUnion([LoginManager.shared.getUserEmail])], forDocument: room_ref)
-                } else {
-                    transaction.updateData(["joinedRooms": FieldValue.arrayRemove([room.roomName])], forDocument: user_ref)
-                    transaction.updateData(["participantIDs": FieldValue.arrayRemove([LoginManager.shared.getUserEmail])], forDocument: room_ref)
+                var room_ref: DocumentReference?
+                var user_ref: DocumentReference?
+        
+                let room_snapshot = try await db.collection("Rooms").document(roomCreatedMonth).collection("\(roomCreatedMonth) Rooms").whereField("roomName", isEqualTo: room.roomName).getDocuments()
+                let user_snapshot = try await db.collection("Users").document(profileCreatedMonth).collection("\(profileCreatedMonth) Users").whereField("email", isEqualTo: LoginManager.shared.getUserEmail).getDocuments()
+                
+                for document in room_snapshot.documents {
+                    room_ref = document.reference
+                    break
                 }
                 
-                return nil
-            })
-            
-        } catch {
-            
-            print("방 참여자 업데이트 트랜젝션 실패: \(error)")
-            
+                for document in user_snapshot.documents {
+                    user_ref = document.reference
+                    break
+                }
+                
+                guard let room_ref = room_ref,
+                      let user_ref = user_ref else {
+                    return
+                }
+                
+                let _ = try await db.runTransaction({ (transaction, errorPointer) -> Any? in
+                    
+                    if isAdding {
+                        transaction.updateData(["joinedRooms": FieldValue.arrayUnion([room.roomName])], forDocument: user_ref)
+                        transaction.updateData(["participantIDs": FieldValue.arrayUnion([LoginManager.shared.getUserEmail])], forDocument: room_ref)
+                    } else {
+                        transaction.updateData(["joinedRooms": FieldValue.arrayRemove([room.roomName])], forDocument: user_ref)
+                        transaction.updateData(["participantIDs": FieldValue.arrayRemove([LoginManager.shared.getUserEmail])], forDocument: room_ref)
+                    }
+                    
+                    return nil
+                })
+                
+                print("참여자 업데이트 성공")
+                            
+            } catch {
+                
+                print("방 참여자 업데이트 트랜젝션 실패: \(error)")
+                
+            }
         }
+        
+        print("updateRoomParticipant 끝")
         
     }
     

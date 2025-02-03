@@ -143,8 +143,6 @@ class SecondProfileViewController: UIViewController {
         if self.nicknameTextField.text != ""  {
             completeButton.isEnabled = true
         }
-        
-        //        guard let _ = nicknameTextField.text else { return }
     }
     
     @IBAction func completeButtonTapped(_ sender: UIButton) {
@@ -152,6 +150,8 @@ class SecondProfileViewController: UIViewController {
         if let nickname = nicknameTextField.text {
             UserProfile.shared.nickname = nickname
         }
+        
+        UserProfile.shared.email = LoginManager.shared.getUserEmail
         
         self.saveUserProfile(email: LoginManager.shared.getUserEmail)
         
@@ -178,14 +178,16 @@ class SecondProfileViewController: UIViewController {
                 
                 try await FirebaseManager.shared.saveUserProfileToFirestore(email: LoginManager.shared.getUserEmail)
                 
-                let homeVC = self.storyboard?.instantiateViewController(identifier: "HomeTBC") as? UITabBarController
-                self.view.window?.rootViewController = homeVC
-                self.view.window?.makeKeyAndVisible()
+                DispatchQueue.main.async {
+                    let homeVC = self.storyboard?.instantiateViewController(identifier: "HomeTBC") as? UITabBarController
+                    self.view.window?.rootViewController = homeVC
+                    self.view.window?.makeKeyAndVisible()
+                }
                 
             } catch FirebaseError.FailedToSaveProfile {
                 
                 print("프로필 저장 실패")
-                self.saveUserProfile(email: LoginManager.shared.getUserEmail)
+    
                 
             } catch {
                 

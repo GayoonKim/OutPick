@@ -24,12 +24,12 @@ class MainTabBarWithCorners: UITabBar {
         shapeLayer.path = createPath()
         shapeLayer.strokeColor = UIColor.lightGray.cgColor
         shapeLayer.fillColor = color?.cgColor ?? UIColor.white.cgColor
-        shapeLayer.lineWidth = 1
-        shapeLayer.shadowColor = UIColor.lightGray.cgColor
-        shapeLayer.shadowOffset = CGSize(width: 0, height: -2);
-        shapeLayer.shadowOpacity = 0.21
-        shapeLayer.shadowRadius = 8
-        shapeLayer.shadowPath =  UIBezierPath(roundedRect: bounds, cornerRadius: radii).cgPath
+        shapeLayer.lineWidth = 0.5
+//        shapeLayer.shadowColor = UIColor.lightGray.cgColor
+//        shapeLayer.shadowOffset = CGSize(width: 0, height: -2);
+//        shapeLayer.shadowOpacity = 0.21
+//        shapeLayer.shadowRadius = 8
+//        shapeLayer.shadowPath =  UIBezierPath(roundedRect: bounds, cornerRadius: radii).cgPath
         
         if let oldShapeLayer = self.shapeLayer {
             layer.replaceSublayer(oldShapeLayer, with: shapeLayer)
@@ -53,8 +53,8 @@ class MainTabBarWithCorners: UITabBar {
         super.layoutSubviews()
         self.isTranslucent = true
         var tabFrame = self.frame
-        tabFrame.size.height = 65 + safeAreaInsets.bottom
-        tabFrame.origin.y = self.frame.origin.y + self.frame.height - 65 - safeAreaInsets.bottom
+        tabFrame.size.height = 55 + safeAreaInsets.bottom
+        tabFrame.origin.y = self.frame.origin.y
         self.layer.cornerRadius = 10
         self.frame = tabFrame
         self.items?.forEach({ $0.titlePositionAdjustment = UIOffset(horizontal: 0.0, vertical: -5.0) })

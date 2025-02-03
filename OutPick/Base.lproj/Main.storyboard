@@ -184,7 +184,7 @@
                             <outlet property="delegate" destination="T43-zg-hFW" id="A1E-Nm-RhI"/>
                         </connections>
                     </collectionView>
-                    <tabBarItem key="tabBarItem" title="" image="sun.min" catalog="system" id="BId-67-C5i"/>
+                    <tabBarItem key="tabBarItem" title="" image="cloud.sun.fill" catalog="system" id="BId-67-C5i"/>
                     <navigationItem key="navigationItem" id="yuY-sy-QYy"/>
                 </collectionViewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="Gj8-YM-wtU" userLabel="First Responder" customClass="UIResponder" sceneMemberID="firstResponder"/>
@@ -274,7 +274,7 @@
                             <outlet property="delegate" destination="1bN-e9-yBk" id="z8y-x9-4V5"/>
                         </connections>
                     </collectionView>
-                    <tabBarItem key="tabBarItem" title="" image="person.3" catalog="system" id="NCZ-Xl-lDd"/>
+                    <tabBarItem key="tabBarItem" title="" image="bubble.left.and.bubble.right.fill" catalog="system" id="NCZ-Xl-lDd"/>
                     <navigationItem key="navigationItem" title="오픈채팅" largeTitleDisplayMode="never" id="Qbc-VI-sk8">
                         <barButtonItem key="rightBarButtonItem" image="plus.message.fill" catalog="system" id="7s9-kt-voK">
                             <color key="tintColor" white="0.0" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
@@ -415,7 +415,7 @@
                                                                 <rect key="frame" x="0.0" y="28.333333333333357" width="400" height="204.66666666666663"/>
                                                                 <color key="backgroundColor" systemColor="systemBackgroundColor"/>
                                                                 <color key="textColor" systemColor="labelColor"/>
-                                                                <fontDescription key="fontDescription" type="system" weight="light" pointSize="14"/>
+                                                                <fontDescription key="fontDescription" type="system" weight="light" pointSize="12"/>
                                                                 <textInputTraits key="textInputTraits" autocapitalizationType="sentences"/>
                                                             </textView>
                                                             <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="0 / 20" textAlignment="right" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="X7L-eE-fS0">
@@ -439,7 +439,7 @@
                                                                 <rect key="frame" x="0.0" y="28.333333333333314" width="400" height="205"/>
                                                                 <color key="backgroundColor" systemColor="systemBackgroundColor"/>
                                                                 <color key="textColor" systemColor="labelColor"/>
-                                                                <fontDescription key="fontDescription" type="system" weight="light" pointSize="14"/>
+                                                                <fontDescription key="fontDescription" type="system" weight="light" pointSize="12"/>
                                                                 <textInputTraits key="textInputTraits" autocapitalizationType="sentences"/>
                                                             </textView>
                                                             <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="0 / 20" textAlignment="right" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="uq2-QF-bce">
@@ -500,11 +500,12 @@
                                 </constraints>
                             </scrollView>
                             <button opaque="NO" contentMode="scaleToFill" enabled="NO" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="BEs-P8-Rwx">
-                                <rect key="frame" x="20" y="886" width="400" height="50"/>
+                                <rect key="frame" x="20" y="866" width="400" height="50"/>
                                 <constraints>
                                     <constraint firstAttribute="height" constant="50" id="cfW-8V-Dvr"/>
                                 </constraints>
                                 <fontDescription key="fontDescription" type="system" weight="light" pointSize="30"/>
+                                <color key="tintColor" white="0.0" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
                                 <inset key="imageEdgeInsets" minX="0.0" minY="0.0" maxX="2.2250738585072014e-308" maxY="0.0"/>
                                 <state key="normal" title="다음 1/2"/>
                                 <buttonConfiguration key="configuration" style="plain" title="생성">
@@ -522,7 +523,7 @@
                         <viewLayoutGuide key="safeArea" id="tFJ-az-V0Y"/>
                         <color key="backgroundColor" systemColor="systemBackgroundColor"/>
                         <constraints>
-                            <constraint firstAttribute="bottom" secondItem="BEs-P8-Rwx" secondAttribute="bottom" constant="20" id="0O4-9m-kTe"/>
+                            <constraint firstAttribute="bottom" secondItem="BEs-P8-Rwx" secondAttribute="bottom" constant="40" id="0O4-9m-kTe"/>
                             <constraint firstItem="FY0-uB-REf" firstAttribute="top" secondItem="tFJ-az-V0Y" secondAttribute="top" id="0pb-gJ-jp7"/>
                             <constraint firstItem="of7-b7-nPu" firstAttribute="centerY" secondItem="H26-Go-n2i" secondAttribute="centerY" id="5R1-LE-Irm"/>
                             <constraint firstItem="of7-b7-nPu" firstAttribute="centerX" secondItem="H26-Go-n2i" secondAttribute="centerX" id="KeO-0c-vKn"/>
@@ -562,12 +563,6 @@
                         <rect key="frame" x="0.0" y="0.0" width="440" height="956"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
-                            <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" horizontalHuggingPriority="251" verticalHuggingPriority="251" translatesAutoresizingMaskIntoConstraints="NO" id="zpy-my-BtS">
-                                <rect key="frame" x="100" y="414" width="240" height="156"/>
-                            </imageView>
-                            <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" horizontalHuggingPriority="251" verticalHuggingPriority="251" translatesAutoresizingMaskIntoConstraints="NO" id="cUU-hF-NZf">
-                                <rect key="frame" x="100" y="578" width="240" height="156"/>
-                            </imageView>
                             <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="0rH-z7-tSr">
                                 <rect key="frame" x="183" y="62" width="75" height="35"/>
                                 <state key="normal" title="Button"/>
@@ -576,39 +571,29 @@
                                     <action selector="albumBtnTapped:" destination="gs6-Rd-ei6" eventType="touchUpInside" id="0C1-ER-qvJ"/>
                                 </connections>
                             </button>
-                            <progressView opaque="NO" contentMode="scaleToFill" verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="y4W-UQ-fco">
-                                <rect key="frame" x="145" y="255" width="150" height="4"/>
-                            </progressView>
+                            <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleToFill" horizontalHuggingPriority="251" verticalHuggingPriority="251" translatesAutoresizingMaskIntoConstraints="NO" id="emr-6g-EAO">
+                                <rect key="frame" x="100" y="320" width="240" height="366"/>
+                            </imageView>
                         </subviews>
                         <viewLayoutGuide key="safeArea" id="xAh-tD-5KB"/>
                         <color key="backgroundColor" systemColor="systemBackgroundColor"/>
                         <constraints>
-                            <constraint firstItem="y4W-UQ-fco" firstAttribute="leading" secondItem="xAh-tD-5KB" secondAttribute="leading" constant="145" id="2nI-ds-LkV"/>
-                            <constraint firstItem="cUU-hF-NZf" firstAttribute="width" secondItem="zpy-my-BtS" secondAttribute="width" id="414-q4-Vc7"/>
-                            <constraint firstItem="0rH-z7-tSr" firstAttribute="leading" secondItem="xAh-tD-5KB" secondAttribute="leading" constant="183" id="BqQ-RD-9hw"/>
-                            <constraint firstItem="zpy-my-BtS" firstAttribute="centerX" secondItem="xAh-tD-5KB" secondAttribute="centerX" id="FjJ-ld-rTy"/>
-                            <constraint firstItem="cUU-hF-NZf" firstAttribute="height" secondItem="zpy-my-BtS" secondAttribute="height" multiplier="0.820513" constant="27.999971999999985" id="RrD-pc-QcF"/>
-                            <constraint firstItem="zpy-my-BtS" firstAttribute="centerY" secondItem="xAh-tD-5KB" secondAttribute="centerY" id="cdZ-iH-9wD"/>
-                            <constraint firstItem="zpy-my-BtS" firstAttribute="leading" secondItem="xAh-tD-5KB" secondAttribute="leading" constant="100" id="d22-2t-qeI"/>
-                            <constraint firstItem="xAh-tD-5KB" firstAttribute="trailing" secondItem="y4W-UQ-fco" secondAttribute="trailing" constant="145" id="eL7-HI-sbo"/>
-                            <constraint firstItem="zpy-my-BtS" firstAttribute="top" secondItem="xAh-tD-5KB" secondAttribute="top" constant="352" id="fms-rq-eXy"/>
-                            <constraint firstItem="cUU-hF-NZf" firstAttribute="top" secondItem="zpy-my-BtS" secondAttribute="bottom" constant="8" symbolic="YES" id="hUN-8T-778"/>
-                            <constraint firstItem="y4W-UQ-fco" firstAttribute="top" secondItem="xAh-tD-5KB" secondAttribute="top" constant="193" id="hvs-zE-tyx"/>
-                            <constraint firstItem="cUU-hF-NZf" firstAttribute="leading" secondItem="zpy-my-BtS" secondAttribute="leading" id="i2n-Pz-WGf"/>
-                            <constraint firstItem="xAh-tD-5KB" firstAttribute="trailing" secondItem="0rH-z7-tSr" secondAttribute="trailing" constant="182" id="ipV-rS-dVG"/>
-                            <constraint firstItem="0rH-z7-tSr" firstAttribute="top" secondItem="xAh-tD-5KB" secondAttribute="top" id="nQc-CG-4H5"/>
-                            <constraint firstItem="cUU-hF-NZf" firstAttribute="firstBaseline" secondItem="zpy-my-BtS" secondAttribute="baseline" constant="8" symbolType="layoutAnchor" id="xDn-7i-SOo"/>
+                            <constraint firstItem="0rH-z7-tSr" firstAttribute="leading" secondItem="xAh-tD-5KB" secondAttribute="leading" constant="183" id="4cf-Xm-rBX"/>
+                            <constraint firstItem="xAh-tD-5KB" firstAttribute="bottom" secondItem="emr-6g-EAO" secondAttribute="bottom" constant="236" id="65u-wn-GTO"/>
+                            <constraint firstItem="emr-6g-EAO" firstAttribute="leading" secondItem="xAh-tD-5KB" secondAttribute="leading" constant="100" id="Esx-Sr-3jE"/>
+                            <constraint firstItem="emr-6g-EAO" firstAttribute="centerX" secondItem="xAh-tD-5KB" secondAttribute="centerX" id="I6B-qL-FIP"/>
+                            <constraint firstItem="emr-6g-EAO" firstAttribute="centerY" secondItem="xAh-tD-5KB" secondAttribute="centerY" constant="11" id="MHC-ua-5E7"/>
+                            <constraint firstItem="0rH-z7-tSr" firstAttribute="top" secondItem="xAh-tD-5KB" secondAttribute="top" id="QF4-Vo-36s"/>
+                            <constraint firstItem="xAh-tD-5KB" firstAttribute="trailing" secondItem="0rH-z7-tSr" secondAttribute="trailing" constant="182" id="gaZ-F7-b4K"/>
                         </constraints>
                     </view>
                     <connections>
-                        <outlet property="testImageView0" destination="zpy-my-BtS" id="lNt-vE-4SO"/>
-                        <outlet property="testImageView1" destination="cUU-hF-NZf" id="pbr-7r-Vfg"/>
-                        <outlet property="testProgressView" destination="y4W-UQ-fco" id="v91-iN-cex"/>
+                        <outlet property="imageView" destination="emr-6g-EAO" id="2kw-j2-bEM"/>
                     </connections>
                 </viewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="uBm-yu-LpW" userLabel="First Responder" customClass="UIResponder" sceneMemberID="firstResponder"/>
             </objects>
-            <point key="canvasLocation" x="-4099" y="1877"/>
+            <point key="canvasLocation" x="-4099.090909090909" y="1876.5690376569039"/>
         </scene>
         <!--Login View Controller-->
         <scene sceneID="En2-Vr-dtw">
@@ -951,18 +936,19 @@
             </objects>
             <point key="canvasLocation" x="-1621.3636363636365" y="-1800"/>
         </scene>
-        <!--Main Tab Bar Controller-->
+        <!--Tab Bar Controller-->
         <scene sceneID="ZQS-A1-iHy">
             <objects>
-                <tabBarController storyboardIdentifier="HomeTBC" useStoryboardIdentifierAsRestorationIdentifier="YES" id="Xg2-pS-8yD" customClass="MainTabBarController" customModule="OutPick" customModuleProvider="target" sceneMemberID="viewController">
+                <tabBarController storyboardIdentifier="HomeTBC" useStoryboardIdentifierAsRestorationIdentifier="YES" id="Xg2-pS-8yD" sceneMemberID="viewController">
                     <navigationItem key="navigationItem" id="yPZ-lu-95x"/>
                     <tabBar key="tabBar" contentMode="scaleToFill" insetsLayoutMarginsFromSafeArea="NO" translucent="NO" id="1GF-JV-DRY" customClass="MainTabBarWithCorners" customModule="OutPick" customModuleProvider="target">
                         <rect key="frame" x="0.0" y="0.0" width="393" height="49"/>
                         <autoresizingMask key="autoresizingMask"/>
                         <color key="selectedImageTintColor" white="0.0" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
+                        <tabBarAppearance key="standardAppearance"/>
                         <userDefinedRuntimeAttributes>
                             <userDefinedRuntimeAttribute type="number" keyPath="radii">
-                                <real key="value" value="20"/>
+                                <real key="value" value="0.0"/>
                             </userDefinedRuntimeAttribute>
                         </userDefinedRuntimeAttributes>
                     </tabBar>
@@ -1024,7 +1010,7 @@
                             <outlet property="delegate" destination="j8R-If-eUG" id="FVK-yJ-TeB"/>
                         </connections>
                     </collectionView>
-                    <tabBarItem key="tabBarItem" title="" image="message" catalog="system" id="aZm-5Q-ZUa"/>
+                    <tabBarItem key="tabBarItem" title="" image="bubble.fill" catalog="system" id="aZm-5Q-ZUa"/>
                     <navigationItem key="navigationItem" id="Yvh-UJ-SYw"/>
                 </collectionViewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="yT1-3t-yyQ" userLabel="First Responder" customClass="UIResponder" sceneMemberID="firstResponder"/>
@@ -1035,7 +1021,7 @@
         <scene sceneID="8vl-PV-1p3">
             <objects>
                 <navigationController id="F3O-nC-Wn7" sceneMemberID="viewController">
-                    <tabBarItem key="tabBarItem" title="" image="magnifyingglass" catalog="system" id="NAZ-xu-z2w"/>
+                    <tabBarItem key="tabBarItem" title="" id="NAZ-xu-z2w"/>
                     <navigationBar key="navigationBar" contentMode="scaleToFill" id="zcY-ah-rtq">
                         <rect key="frame" x="0.0" y="62" width="440" height="44"/>
                         <autoresizingMask key="autoresizingMask"/>
@@ -1072,14 +1058,14 @@
                             <constraint firstItem="vEN-mY-AJa" firstAttribute="centerX" secondItem="v7R-H3-6A8" secondAttribute="centerX" id="e5V-tD-x3d"/>
                         </constraints>
                     </view>
-                    <tabBarItem key="tabBarItem" title="" image="gearshape" catalog="system" id="H6V-LC-yge"/>
+                    <tabBarItem key="tabBarItem" title="" image="gearshape.fill" catalog="system" id="H6V-LC-yge"/>
                     <navigationItem key="navigationItem" id="P0J-6z-XVB"/>
                 </viewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="IVZ-LK-DwW" userLabel="First Responder" customClass="UIResponder" sceneMemberID="firstResponder"/>
             </objects>
             <point key="canvasLocation" x="-2096" y="-1074"/>
         </scene>
-        <!--Item-->
+        <!--Collection View Controller-->
         <scene sceneID="Yod-wp-IUn">
             <objects>
                 <collectionViewController id="GhM-E7-MUJ" sceneMemberID="viewController">
@@ -1108,7 +1094,7 @@
                             <outlet property="delegate" destination="GhM-E7-MUJ" id="mo5-bc-i5r"/>
                         </connections>
                     </collectionView>
-                    <tabBarItem key="tabBarItem" title="Item" id="cjW-1h-nQe"/>
+                    <tabBarItem key="tabBarItem" title="" image="jacket.fill" catalog="system" id="cjW-1h-nQe"/>
                     <navigationItem key="navigationItem" id="lZm-yc-ZUf"/>
                 </collectionViewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="O76-Xb-klH" userLabel="First Responder" customClass="UIResponder" sceneMemberID="firstResponder"/>
@@ -1135,21 +1121,21 @@
         </scene>
     </scenes>
     <inferredMetricsTieBreakers>
-        <segue reference="amY-jT-Pp9"/>
+        <segue reference="efJ-0s-BGe"/>
     </inferredMetricsTieBreakers>
     <resources>
-        <image name="gearshape" catalog="system" width="128" height="123"/>
+        <image name="bubble.fill" catalog="system" width="128" height="110"/>
+        <image name="bubble.left.and.bubble.right.fill" catalog="system" width="128" height="102"/>
+        <image name="cloud.sun.fill" catalog="system" width="128" height="101"/>
+        <image name="gearshape.fill" catalog="system" width="128" height="123"/>
         <image name="ios_light_sq_SI" width="185" height="44"/>
+        <image name="jacket.fill" catalog="system" width="128" height="97"/>
         <image name="kakao_login_medium_narrow" width="183" height="45"/>
-        <image name="magnifyingglass" catalog="system" width="128" height="117"/>
-        <image name="message" catalog="system" width="128" height="116"/>
         <image name="paperplane" catalog="system" width="128" height="119"/>
-        <image name="person.3" catalog="system" width="128" height="66"/>
         <image name="photo" catalog="system" width="128" height="93"/>
         <image name="photo.artframe" catalog="system" width="128" height="93"/>
         <image name="plus" catalog="system" width="128" height="113"/>
         <image name="plus.message.fill" catalog="system" width="128" height="114"/>
-        <image name="sun.min" catalog="system" width="128" height="123"/>
         <image name="text.justify" catalog="system" width="128" height="101"/>
         <systemColor name="labelColor">
             <color white="0.0" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>

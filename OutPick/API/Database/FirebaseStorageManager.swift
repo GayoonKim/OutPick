@@ -34,9 +34,7 @@ class FirebaseStorageManager {
             let storageRef = storage.reference()
             let imageRef = storageRef.child("\(location.location)/\(DateManager.shared.currentMonth)/\(imageName).jpg")
             
-            let reszied = image.resized(withMaxWidth: 700)
-            
-            guard let imageData = reszied.jpegData(compressionQuality: 0.5) else {
+            guard let imageData = image.jpegData(compressionQuality: 0.5) else {
                 print("이미지 데이터 생성 실패")
                 return
             }
@@ -44,7 +42,7 @@ class FirebaseStorageManager {
             let metadata = StorageMetadata()
             metadata.contentType = "image/jpeg"
             
-            let uploadTask = imageRef.putData(imageData, metadata: nil) { metadata, error in
+            let uploadTask = imageRef.putData(imageData, metadata: metadata) { metadata, error in
                 
                 guard error == nil else {
                     continuation.resume(throwing: StorageError.FailedToUploadImage)
@@ -167,6 +165,7 @@ class FirebaseStorageManager {
         // 디스크 캐시 확인
         if let cachedImage = try await KingfisherManager.shared.cache.retrieveImageInDiskCache(forKey: imageName) {
             print("cachedImage in Disk: \(cachedImage)")
+//            KingfisherManager.shared.cache.memoryStorage.store(value: cachedImage, forKey: imageName)
             return cachedImage
         }
         
@@ -185,7 +184,8 @@ class FirebaseStorageManager {
                 if let data = data,
                    let image = UIImage(data: data) {
                     
-                    KingfisherManager.shared.cache.store(image, forKey: imageName)
+//                    KingfisherManager.shared.cache.store(image, forKey: imageName)
+                    KingfisherManager.shared.cache.memoryStorage.store(value: image, forKey: imageName)
                     continuation.resume(returning: image)
                     
                 }

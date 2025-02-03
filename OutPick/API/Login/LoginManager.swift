@@ -24,6 +24,8 @@ class LoginManager {
     
     // Firestore에서 사용자 이메일로 만들어진 프로필 문서 쿼리
     func fetchUserProfile(_ email: String, completion: @escaping (UIViewController) -> Void) {
+        
+        print("fetchUserProfile 호출")
 
         FirebaseManager.shared.fetchUserProfileFromFirestore(email: email) { result in
             DispatchQueue.main.async {
@@ -32,17 +34,18 @@ class LoginManager {
                 
                 switch result {
                 case .success(let userProfile):
-                    print("User Profile: \(userProfile)")
-    //                UserProfile.shared = userProfile
+                    print("프로필 불러오기 성공")
 
                     let mainStorybard = UIStoryboard(name: "Main", bundle: nil)
                     initialViewControlle = mainStorybard.instantiateViewController(withIdentifier: "HomeTBC")
+                    print(initialViewControlle)
                     completion(initialViewControlle)
                 case .failure(let error):
                     print("Failed to fetch user profile: \(error.localizedDescription)")
 
                     let mainStorybard = UIStoryboard(name: "Main", bundle: nil)
                     initialViewControlle = mainStorybard.instantiateViewController(withIdentifier: "ProfileNav")
+                    print(initialViewControlle)
                     completion(initialViewControlle)
                 }
                 
