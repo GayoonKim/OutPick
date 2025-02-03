@@ -46,18 +46,20 @@ extension SecondProfileViewController: UITextFieldDelegate {
 extension SecondProfileViewController: PHPickerViewControllerDelegate {
     
     func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+        
         picker.dismiss(animated: true, completion: nil)
         
-        guard let itemProvider = results.first?.itemProvider else { return }
-        
-        if itemProvider.canLoadObject(ofClass: UIImage.self) {
-            itemProvider.loadObject(ofClass: UIImage.self) { (image, error) in
-                DispatchQueue.main.async {
-                    self.profileImageView.image = image as? UIImage
-                    self.removeImageButtonSetup()
-                }
+        Task {
+            
+            let images = try await MediaManager.shared.dealWithImages(results)
+            let image = images.first
+            
+            DispatchQueue.main.async {
+                self.profileImageView.image = image
             }
+            
         }
+        
     }
     
 }

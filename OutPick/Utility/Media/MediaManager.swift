@@ -7,6 +7,7 @@
 
 import UIKit
 import PhotosUI
+import ImageIO
 
 class MediaManager {
     
@@ -24,8 +25,17 @@ class MediaManager {
                         return
                     }
                     
+                    let options: [NSString:Any] = [
+                        kCGImageSourceThumbnailMaxPixelSize: 500,
+                        kCGImageSourceCreateThumbnailFromImageAlways: true,
+                        kCGImageSourceCreateThumbnailWithTransform: true
+                    ]
                     
-                    continuation.resume(returning: image)
+                    guard let imageData = image.jpegData(compressionQuality: 1.0),
+                          let imageSource = CGImageSourceCreateWithData(imageData as CFData, nil),
+                          let cgImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary) else { return }
+                    
+                    continuation.resume(returning: UIImage(cgImage: cgImage))
                     
                 })
             }

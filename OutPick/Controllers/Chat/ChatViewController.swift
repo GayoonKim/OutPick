@@ -394,8 +394,12 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     
     @objc private func handleRoomSaveCompleted(notification: Notification) {
         
+        print("handleRoomSaveCompleted 시작")
+        
         DispatchQueue.main.async {
-            self.activityIndicator.stopAnimating()
+            self.view.isUserInteractionEnabled = false
+            self.activityIndicator.center = self.view.center
+            self.activityIndicator.startAnimating()
         }
         
         guard let savedRoom = notification.userInfo?["room"] as? ChatRoom else { return }
@@ -404,6 +408,14 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         DispatchQueue.main.async {
             self.updateNavigationTitle(with: savedRoom)
         }
+        
+        DispatchQueue.main.async {
+            self.activityIndicator.stopAnimating()
+            self.activityIndicator.removeFromSuperview()
+            self.view.isUserInteractionEnabled = true
+        }
+        
+        print("handleRoomSaveCompleted 끝")
         
     }
     

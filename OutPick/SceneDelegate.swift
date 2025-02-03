@@ -58,10 +58,6 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 print("5. 구글 로그인 체크 완료: \(success)")
                 if success {
                     isLoggedIn = true
-                    // 채팅방 목록 감지 시작
-//                    FirebaseManager.shared.listenForChatRooms { rooms in
-//                        print("채팅방 목록 수: \(rooms.count)")
-//                    }
                     
                     Task {
                         try await FirebaseManager.shared.listenToRooms()
@@ -79,10 +75,6 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 //                print("7. 카카오 로그인 체크 완료: \(success)")
                 if success {
                     isLoggedIn = true
-                    // 채팅방 목록 감지 시작
-//                    FirebaseManager.shared.listenForChatRooms { rooms in
-//                        print("채팅방 목록 수: \(rooms.count)")
-//                    }
                     
                     Task {
                         try await FirebaseManager.shared.listenToRooms()

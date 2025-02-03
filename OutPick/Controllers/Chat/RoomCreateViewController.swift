@@ -67,6 +67,7 @@ class RoomCreateViewController: UIViewController, PHPickerViewControllerDelegate
         textView.layer.cornerRadius = 10
         textView.backgroundColor = UIColor(white: 0.1, alpha: 0.03)
         textView.font = UIFont.preferredFont(forTextStyle: .headline)
+        textView.font = UIFont.systemFont(ofSize: 12)
     }
     
     private func addImageButtonSetup() {
@@ -131,16 +132,17 @@ class RoomCreateViewController: UIViewController, PHPickerViewControllerDelegate
     func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
         picker.dismiss(animated: true, completion: nil)
         
-        guard let itemProvider = results.first?.itemProvider else { return }
-        
-        if itemProvider.canLoadObject(ofClass: UIImage.self) {
-            itemProvider.loadObject(ofClass: UIImage.self) { (image, error) in
-                DispatchQueue.main.async {
-                    self.roomImageView.image = image as? UIImage
-                    self.removeImageButtonSetup()
-                }
+        Task {
+            
+            let images = try await MediaManager.shared.dealWithImages(results)
+            let image = images.first
+            
+            DispatchQueue.main.async {
+                self.roomImageView.image = image
             }
+            
         }
+        
     }
     
     func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
@@ -191,8 +193,8 @@ class RoomCreateViewController: UIViewController, PHPickerViewControllerDelegate
     @IBAction func createBtnTapped(_ sender: UIButton) {
         
         createButton.isEnabled = false
+        activityIndicator.center = self.view.center
         activityIndicator.startAnimating()
-        
         
         Task {
             do {
@@ -210,8 +212,9 @@ class RoomCreateViewController: UIViewController, PHPickerViewControllerDelegate
                 
                 await MainActor.run {
                     self.activityIndicator.stopAnimating()
-                    self.performSegue(withIdentifier: "ToChatRoom", sender: room)
                 }
+                
+                self.performSegue(withIdentifier: "ToChatRoom", sender: room)
                 
                 self.saveRoomInfo(room: room)
                 
@@ -224,30 +227,6 @@ class RoomCreateViewController: UIViewController, PHPickerViewControllerDelegate
                 
             }
         }
-        
-        
-//        DispatchQueue.main.async {
-//            self.activityIndicator.stopAnimating()
-//            self.createButton.isEnabled = true
-//            
-//            Task {
-//                if try await FirebaseManager.shared.checkDuplicate(strToCompare: self.roomNameTextView.text, fieldToCompare: "roomName", collectionName: "Rooms") {
-//                    self.activityIndicator.stopAnimating()
-//                    AlertManager.showAlert(title: "중복된 방 이름", message: "이미 존재하는 방 이름입니다. 다른 이름을 선택해 주세요.", viewController: self)
-//                    return
-//                }
-//        }
-//        
-//        
-//        let room = ChatRoom(id: UUID().uuidString, roomName: self.roomNameTextView.text, roomDescription: self.roomDescriptionTextView.text, participants: [LoginManager.shared.getUserEmail], creatorID: LoginManager.shared.getUserEmail, createdAt: Date(), roomImageName: nil)
-//        
-//        // 채팅방 화면으로 이동
-//        self.performSegue(withIdentifier: "ToChatRoom", sender: room)
-//        
-//        // 백그라운드에서 방 정보 저장
-//        self.saveRoomInfo(room: room)
-//    }
-        
         
     }
     
@@ -284,18 +263,18 @@ class RoomCreateViewController: UIViewController, PHPickerViewControllerDelegate
     
     private func saveRoomInfoToFirestore(room: ChatRoom, image: UIImage?) {
         FirebaseManager.shared.saveRoomInfoToFirestore(room: room) { result in
+            print("saveRoomInfoToFirestore completion 시작")
+
             switch result {
                 
             case .success:
                 if let imageName = room.roomImageName, let image = image {
                     KingfisherManager.shared.cache.store(image, forKey: imageName)
                 }
-                
-                Task {
-                    try await FirebaseManager.shared.updateRoomParticipant(room: room, isAdding: true)
-                }
 
                 NotificationCenter.default.post(name: .roomSavedComplete, object: nil, userInfo: ["room": room])
+                
+                print("saveRoomInfoToFirestore completion 끝")
                 
             case .failure:
                 NotificationCenter.default.post(name: .roomSaveFailed, object: nil, userInfo: ["error": RoomCreationError.saveFailed])
