@@ -36,6 +36,7 @@ class FirebaseStorageManager {
             
             guard let imageData = image.jpegData(compressionQuality: 0.5) else {
                 print("이미지 데이터 생성 실패")
+                continuation.resume(throwing: StorageError.FailedToConvertImage)
                 return
             }
             
