@@ -331,7 +331,9 @@ extension RoomCreateViewController: UITextViewDelegate {
             break
         }
         
-        enableCreateBtn()
+        if !roomNameTextView.text.isEmpty && !roomDescriptionTextView.text.isEmpty {
+            enableCreateBtn()
+        }
     }
     
     @objc func keyboardWillShow(notification: Notification) {

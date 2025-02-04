@@ -9,4 +9,5 @@ import Foundation
 
 enum MediaError: Error {
     case FailedToConvertImage
+    case FailedToCraeteImageData
 }

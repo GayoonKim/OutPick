@@ -32,10 +32,13 @@ class FirebaseManager {
     private var listenToRoomsTask: Task<Void, Never>? = nil
     private var fetchProfileTask: Task<Void, Never>? = nil
     private var saveUserProfileTask: Task<Void, Never>? = nil
+    private var updateRoomParticipantTask: Task<Void, Never>? = nil
     
     deinit {
         listenToRoomsTask?.cancel()
         fetchProfileTask?.cancel()
+        saveUserProfileTask?.cancel()
+        updateRoomParticipantTask?.cancel()
     }
     
     // 채팅방 읽기 전용 접근자 제공
@@ -155,7 +158,8 @@ class FirebaseManager {
             
             return try await withThrowingTaskGroup(of: Bool.self) { group in
                 for documentID in documentIDs {
-                    group.addTask {
+                    group.addTask { [weak self] in
+                        guard let self = self else { return false }
                         
                         let refToCheck = self.db.collection(collectionName).document(documentID).collection("\(documentID) \(collectionName)").whereField(fieldToCompare, isEqualTo: strToCompare)
                         let documents = try await refToCheck.getDocuments()
@@ -521,33 +525,25 @@ class FirebaseManager {
     func updateRoomParticipant(room: ChatRoom, isAdding: Bool) {
         
         print("updateRoomParticipant 시작")
+        updateRoomParticipantTask?.cancel()
         
         let roomCreatedMonth = DateManager.shared.getMonthFromTimestamp(date: room.createdAt)
         let profileCreatedMonth = DateManager.shared.getMonthFromTimestamp(date: UserProfile.shared.createdAt)
         
-        Task {
+        updateRoomParticipantTask = Task {
             do {
-                
-                var room_ref: DocumentReference?
-                var user_ref: DocumentReference?
         
-                let room_snapshot = try await db.collection("Rooms").document(roomCreatedMonth).collection("\(roomCreatedMonth) Rooms").whereField("roomName", isEqualTo: room.roomName).getDocuments()
-                let user_snapshot = try await db.collection("Users").document(profileCreatedMonth).collection("\(profileCreatedMonth) Users").whereField("email", isEqualTo: LoginManager.shared.getUserEmail).getDocuments()
+                let room_snapshot = try await db.collection("Rooms").document(roomCreatedMonth).collection("\(roomCreatedMonth) Rooms").whereField("roomName", isEqualTo: room.roomName).limit(to: 1).getDocuments()
+                let user_snapshot = try await db.collection("Users").document(profileCreatedMonth).collection("\(profileCreatedMonth) Users").whereField("email", isEqualTo: LoginManager.shared.getUserEmail).limit(to: 1).getDocuments()
                 
-                for document in room_snapshot.documents {
-                    room_ref = document.reference
-                    break
-                }
-                
-                for document in user_snapshot.documents {
-                    user_ref = document.reference
-                    break
-                }
-                
-                guard let room_ref = room_ref,
-                      let user_ref = user_ref else {
+                guard let roomDocument = room_snapshot.documents.first,
+                      let userDocument = user_snapshot.documents.first else {
+                    print("사용자 또는 방 문서 불러오기 실패")
                     return
                 }
+                
+                let room_ref = roomDocument.reference
+                let user_ref = userDocument.reference
                 
                 let _ = try await db.runTransaction({ (transaction, errorPointer) -> Any? in
                     
@@ -563,6 +559,7 @@ class FirebaseManager {
                 })
                 
                 print("참여자 업데이트 성공")
+                updateRoomParticipantTask = nil
                             
             } catch {
                 

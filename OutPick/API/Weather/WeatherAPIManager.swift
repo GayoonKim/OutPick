@@ -102,7 +102,8 @@ class WeatherAPIManager: NSObject {
             currentWeatherRequestTask = nil
         }
         
-        weatherForecastRequestTask = Task {
+        weatherForecastRequestTask = Task { [weak self] in
+            guard let self = self else { return }
             
             do {
                 
@@ -152,43 +153,6 @@ class WeatherAPIManager: NSObject {
             
         }
         
-//        // 날씨 예보 요청
-//        weatherForecastRequestTask = Task { [weak self] in
-//            guard let self = self else { return }
-//            
-//            if let weatherForecastInfo = try? await WeatherForecastRequest.shared.sendWeatherRequest() {
-//                self.hourlyForecastData = weatherForecastInfo.hourly
-//                self.dailyForecastData = weatherForecastInfo.daily
-//                // 시간별 예보 아이콘 캐싱
-//                for forecast in hourlyForecastData {
-//                    if let iconString = forecast.weather.last?.icon {
-//                        DispatchQueue.main.async {
-//                            Task { [weak self] in
-//                                guard let self = self else { return }
-//                                await self.cacheWeatherIcon(iconString)
-//                            }
-//                        }
-//                    }
-//                }
-//                
-//                // 일별 예보 아이콘 캐싱
-//                for forecast in dailyForecastData {
-//                    if let iconString = forecast.weather.last?.icon {
-//                        DispatchQueue.main.async {
-//                            Task { [weak self] in
-//                                guard let self = self else { return }
-//                                await self.cacheWeatherIcon(iconString)
-//                            }
-//                        }
-//                    }
-//                }
-//            } else {
-//                self.hourlyForecastData = []
-//                self.dailyForecastData = []
-//            }
-//            weatherForecastRequestTask = nil
-//        }
-        
         // 현재 위치 도시 이름 불러오기
         getCityName()
         
@@ -221,27 +185,6 @@ class WeatherAPIManager: NSObject {
             throw error
             
         }
-            
-//        // 아이콘 다운로드 및 캐싱
-//        do {
-//            
-//            let url = URL(string: "https://openweathermap.org/img/wn/\(iconString)@2x.png")!
-//            let (data, response) = try await URLSession.shared.data(from: url)
-//            
-//            guard let httpResponse = response as? HTTPURLResponse,
-//                  httpResponse.statusCode == 200,
-//                  let image = UIImage(data: data) else {
-//                return
-//            }
-//            
-//            cacheIcon(image, for: iconString)
-//            
-//        } catch {
-//            
-//            print("날씨 아이콘 캐시 실패: \(error)")
-//            throw ImageRequestError.imageNotFound
-//            
-//        }
         
     }
     

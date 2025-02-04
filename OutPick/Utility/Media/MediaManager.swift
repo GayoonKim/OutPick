@@ -18,7 +18,7 @@ class MediaManager {
         return try await withCheckedThrowingContinuation { continuation in
             let itemProvider = result.itemProvider
             if itemProvider.canLoadObject(ofClass: UIImage.self) {
-                itemProvider.loadObject(ofClass: UIImage.self, completionHandler: { image, error in
+                itemProvider.loadObject(ofClass: UIImage.self, completionHandler: { [weak itemProvider] image, error in
                     
                     guard let image = image as? UIImage, error == nil else {
                         continuation.resume(throwing: MediaError.FailedToConvertImage)
@@ -31,9 +31,14 @@ class MediaManager {
                         kCGImageSourceCreateThumbnailWithTransform: true
                     ]
                     
-                    guard let imageData = image.jpegData(compressionQuality: 1.0),
+                    guard let imageData = image.jpegData(compressionQuality: 0.5),
                           let imageSource = CGImageSourceCreateWithData(imageData as CFData, nil),
-                          let cgImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary) else { return }
+                          let cgImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary) else {
+                        
+                        print("압축 이미지 데이터 생성 실패")
+                        continuation.resume(throwing: MediaError.FailedToCraeteImageData)
+                        return
+                    }
                     
                     continuation.resume(returning: UIImage(cgImage: cgImage))
                     
@@ -130,7 +135,7 @@ class VideoCompressor {
         
         let asset = AVAsset(url: inputURL)
         
-        guard let exportSession = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetHighestQuality) else {
+        guard let exportSession = AVAssetExportSession(asset: asset, presetName: AVAssetExportPreset640x480) else {
             completion(.failure(NSError(domain: "CompressError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Export session could not be created."])))
             return
         }

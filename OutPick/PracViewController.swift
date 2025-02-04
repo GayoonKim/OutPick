@@ -47,7 +47,6 @@ class PracViewController: UIViewController, UINavigationControllerDelegate {
         openPHPicker()
     }
     
-    
     private func openPHPicker() {
         
         var configuration = PHPickerConfiguration()
@@ -105,6 +104,8 @@ extension PracViewController: PHPickerViewControllerDelegate {
                 do {
                     
                     let compressedURLs = try await MediaManager.shared.dealWithVideos(resultsForVideos)
+                    
+                    
                     
                     self.selectedVideos = try await FirebaseStorageManager.shared.uploadVideosToStorage(compressedURLs)
                     

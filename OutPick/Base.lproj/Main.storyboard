@@ -563,28 +563,30 @@
                         <rect key="frame" x="0.0" y="0.0" width="440" height="956"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
-                            <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="0rH-z7-tSr">
-                                <rect key="frame" x="183" y="62" width="75" height="35"/>
-                                <state key="normal" title="Button"/>
-                                <buttonConfiguration key="configuration" style="plain" title="앨범"/>
-                                <connections>
-                                    <action selector="albumBtnTapped:" destination="gs6-Rd-ei6" eventType="touchUpInside" id="0C1-ER-qvJ"/>
-                                </connections>
-                            </button>
                             <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleToFill" horizontalHuggingPriority="251" verticalHuggingPriority="251" translatesAutoresizingMaskIntoConstraints="NO" id="emr-6g-EAO">
                                 <rect key="frame" x="100" y="320" width="240" height="366"/>
                             </imageView>
+                            <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="EE3-iz-MAM">
+                                <rect key="frame" x="10" y="170" width="420" height="38"/>
+                                <state key="normal" title="Button"/>
+                                <buttonConfiguration key="configuration" style="plain" title="앨범">
+                                    <fontDescription key="titleFontDescription" type="boldSystem" pointSize="20"/>
+                                </buttonConfiguration>
+                                <connections>
+                                    <action selector="albumBtnTapped:" destination="gs6-Rd-ei6" eventType="touchUpInside" id="i59-dH-yXp"/>
+                                </connections>
+                            </button>
                         </subviews>
                         <viewLayoutGuide key="safeArea" id="xAh-tD-5KB"/>
                         <color key="backgroundColor" systemColor="systemBackgroundColor"/>
                         <constraints>
-                            <constraint firstItem="0rH-z7-tSr" firstAttribute="leading" secondItem="xAh-tD-5KB" secondAttribute="leading" constant="183" id="4cf-Xm-rBX"/>
                             <constraint firstItem="xAh-tD-5KB" firstAttribute="bottom" secondItem="emr-6g-EAO" secondAttribute="bottom" constant="236" id="65u-wn-GTO"/>
+                            <constraint firstItem="xAh-tD-5KB" firstAttribute="trailing" secondItem="EE3-iz-MAM" secondAttribute="trailing" constant="10" id="Cl8-ma-oCq"/>
                             <constraint firstItem="emr-6g-EAO" firstAttribute="leading" secondItem="xAh-tD-5KB" secondAttribute="leading" constant="100" id="Esx-Sr-3jE"/>
                             <constraint firstItem="emr-6g-EAO" firstAttribute="centerX" secondItem="xAh-tD-5KB" secondAttribute="centerX" id="I6B-qL-FIP"/>
                             <constraint firstItem="emr-6g-EAO" firstAttribute="centerY" secondItem="xAh-tD-5KB" secondAttribute="centerY" constant="11" id="MHC-ua-5E7"/>
-                            <constraint firstItem="0rH-z7-tSr" firstAttribute="top" secondItem="xAh-tD-5KB" secondAttribute="top" id="QF4-Vo-36s"/>
-                            <constraint firstItem="xAh-tD-5KB" firstAttribute="trailing" secondItem="0rH-z7-tSr" secondAttribute="trailing" constant="182" id="gaZ-F7-b4K"/>
+                            <constraint firstItem="EE3-iz-MAM" firstAttribute="top" secondItem="xAh-tD-5KB" secondAttribute="top" constant="108" id="ZL1-Kj-ldn"/>
+                            <constraint firstItem="EE3-iz-MAM" firstAttribute="leading" secondItem="xAh-tD-5KB" secondAttribute="leading" constant="10" id="ehR-q7-qIC"/>
                         </constraints>
                     </view>
                     <connections>

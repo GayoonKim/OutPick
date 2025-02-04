@@ -20,6 +20,7 @@ enum FirebaseError: Error {
 enum StorageError: Error {
     case FailedToUploadImage
     case FailedToFetchImage
+    case FailedToConvertImage
     case FailedToUploadVideo
     case FailedToFetchVideo
 }

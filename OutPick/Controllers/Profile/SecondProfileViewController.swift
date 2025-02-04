@@ -50,6 +50,7 @@ class SecondProfileViewController: UIViewController {
     }
     
     override func viewWillDisappear(_ animated: Bool) {
+        
         super.viewWillDisappear(animated)
         
         if let nickName = nicknameTextField.text {
@@ -59,7 +60,12 @@ class SecondProfileViewController: UIViewController {
         if let image = profileImageView.image,
            let imageData = image.jpegData(compressionQuality: 0.5) {
             UserDefaults.standard.set(imageData, forKey: "savedProfileImage")
+        } else {
+            print("저장된 방 대표 사진 불러오기 실패")
+            return
         }
+        
+        
     }
     
     private func profileImageViewSetup() {
