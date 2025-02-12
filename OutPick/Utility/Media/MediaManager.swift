@@ -8,6 +8,7 @@
 import UIKit
 import PhotosUI
 import ImageIO
+import FYVideoCompressor
 
 class MediaManager {
     
@@ -18,7 +19,7 @@ class MediaManager {
         return try await withCheckedThrowingContinuation { continuation in
             let itemProvider = result.itemProvider
             if itemProvider.canLoadObject(ofClass: UIImage.self) {
-                itemProvider.loadObject(ofClass: UIImage.self, completionHandler: { [weak itemProvider] image, error in
+                itemProvider.loadObject(ofClass: UIImage.self, completionHandler: { image, error in
                     
                     guard let image = image as? UIImage, error == nil else {
                         continuation.resume(throwing: MediaError.FailedToConvertImage)
@@ -81,16 +82,17 @@ class MediaManager {
                         return
                     }
                     
-                    VideoCompressor.compressVideo(inputURL: fileURL) { result in
+                    let config = FYVideoCompressor.CompressionConfig(videoBitrate: 2000_000, videomaxKeyFrameInterval: 10, fps: 30, audioSampleRate: 44100, audioBitrate: 128_000, fileType: .mp4, scale: CGSize(width: 1280, height: 720))
+                    FYVideoCompressor().compressVideo(fileURL, config: config) { result in
                         switch result {
-                        case .success(let outputURL):
-                            continuation.resume(returning: outputURL)
+                            
+                        case .success(let compressedVideoURL):
+                            continuation.resume(returning: compressedVideoURL)
                             
                         case .failure(let error):
                             continuation.resume(throwing: error)
                             
                         }
-                        
                     }
                     
                 }
@@ -117,47 +119,6 @@ class MediaManager {
         }
         
         return compressedURLs.compactMap{$0}
-        
-    }
-    
-}
-
-class VideoCompressor {
-    
-    static func compressVideo(inputURL: URL, completion: @escaping (Result<URL, Error>) -> Void) {
-        
-        let outputURL = FileManager.default.temporaryDirectory.appendingPathComponent("compressed_\(UUID().uuidString).mp4")
-        
-        // 기존 압축 파일이 있다면 삭제
-        if FileManager.default.fileExists(atPath: outputURL.path) {
-            try? FileManager.default.removeItem(at: outputURL)
-        }
-        
-        let asset = AVAsset(url: inputURL)
-        
-        guard let exportSession = AVAssetExportSession(asset: asset, presetName: AVAssetExportPreset640x480) else {
-            completion(.failure(NSError(domain: "CompressError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Export session could not be created."])))
-            return
-        }
-        
-        exportSession.shouldOptimizeForNetworkUse = true
-        
-        exportSession.outputURL = outputURL
-        exportSession.outputFileType = .mp4
-        
-        exportSession.exportAsynchronously {
-            switch exportSession.status {
-                
-            case .completed:
-                completion(.success(outputURL))
-            case .failed:
-                completion(.failure(exportSession.error ?? NSError(domain: "VideoCompression", code: -1, userInfo: [NSLocalizedDescriptionKey: "알 수 없는 에러"])))
-            case .cancelled:
-                completion(.failure(NSError(domain: "VideoCompression", code: -1, userInfo: [NSLocalizedDescriptionKey: "압축 작업 취소"])))
-            default:
-                completion(.failure(NSError(domain: "VideoCompression", code: -1, userInfo: [NSLocalizedDescriptionKey: "알 수 없는 에러"])))
-            }
-        }
         
     }
     

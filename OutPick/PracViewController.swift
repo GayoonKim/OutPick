@@ -14,7 +14,6 @@ import PhotosUI
 import Kingfisher
 import Firebase
 import FirebaseStorage
-import SwiftUI
 
 class PracViewController: UIViewController, UINavigationControllerDelegate {
     
@@ -104,9 +103,9 @@ extension PracViewController: PHPickerViewControllerDelegate {
                 do {
                     
                     let compressedURLs = try await MediaManager.shared.dealWithVideos(resultsForVideos)
-                    
-                    
-                    
+                    if let url = compressedURLs.first {
+                        self.playVideo(from: url)
+                    }
                     self.selectedVideos = try await FirebaseStorageManager.shared.uploadVideosToStorage(compressedURLs)
                     
                 } catch {
@@ -174,4 +173,20 @@ extension PracViewController: UIImagePickerControllerDelegate {
         picker.dismiss(animated: true)
     }
     
+}
+
+extension FourCharCode {
+    // Create a string representation of a FourCC.
+    func toString() -> String {
+        let bytes: [CChar] = [
+            CChar((self >> 24) & 0xff),
+            CChar((self >> 16) & 0xff),
+            CChar((self >> 8) & 0xff),
+            CChar(self & 0xff),
+            0
+        ]
+        let result = String(cString: bytes)
+        let characterSet = CharacterSet.whitespaces
+        return result.trimmingCharacters(in: characterSet)
+    }
 }
