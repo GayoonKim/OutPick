@@ -113,14 +113,16 @@ class SecondProfileViewController: UIViewController {
             removeImageButton.widthAnchor.constraint(equalToConstant: 30),
             removeImageButton.heightAnchor.constraint(equalToConstant: 30)
         ])
+
         
-        if let image = profileImageView.image {
-            if image.isEqual(UIImage(systemName: "photo")) {
-                removeImageButton.isHidden = true
-            } else {
-                removeImageButton.isHidden = false
-            }
+        if let current_image_data = profileImageView.image?.pngData(),
+           let new_image_data = UIImage(named: "Default_Profile")?.pngData(),
+           current_image_data == new_image_data {
+            removeImageButton.isHidden = true
+        } else {
+            removeImageButton.isHidden = false
         }
+        
     }
     
     @objc private func addImageButtonTapped() {
@@ -140,15 +142,19 @@ class SecondProfileViewController: UIViewController {
     }
     
     @objc private func removeImageButtonTapped(_ sender: UIButton) {
-        profileImageView.image = UIImage(systemName: "photo")
+        profileImageView.image = UIImage(named: "Default_Profile.png")
         
         sender.isHidden = true
     }
     
     func enableCompleteButton() {
-        if self.nicknameTextField.text != ""  {
-            completeButton.isEnabled = true
+        
+        if self.nicknameTextField.text == "" {
+            self.completeButton.isEnabled = false
+        } else {
+            self.completeButton.isEnabled = true
         }
+        
     }
     
     @IBAction func completeButtonTapped(_ sender: UIButton) {
@@ -193,11 +199,13 @@ class SecondProfileViewController: UIViewController {
             } catch FirebaseError.FailedToSaveProfile {
                 
                 print("프로필 저장 실패")
+                AlertManager.showAlert(title: "프로필 저장 실패", message: "프로필 저장에 실패했습니다. 다시 시도해 주세요.", viewController: self)
     
                 
             } catch {
                 
                 print("알 수 없는 에러: \(error)")
+                AlertManager.showAlert(title: "프로필 저장 실패", message: "프로필 저장에 실패했습니다. 다시 시도해 주세요.", viewController: self)
                 return
                 
             }

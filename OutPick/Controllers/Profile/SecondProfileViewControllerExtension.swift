@@ -52,12 +52,18 @@ extension SecondProfileViewController: PHPickerViewControllerDelegate {
         Task {
             
             let images = try await MediaManager.shared.dealWithImages(results)
-            let image = images.first
-            
             DispatchQueue.main.async {
-                self.profileImageView.image = image
+                
+                if let image = images.first {
+                    self.profileImageView.image = image
+                } else {
+                    self.profileImageView.image = UIImage(named: "Default_Profile.png")
+                }
+                
+                self.removeImageButtonSetup()
+                
             }
-            
+
         }
         
     }
@@ -70,6 +76,7 @@ extension SecondProfileViewController: UIImagePickerControllerDelegate & UINavig
         if let selectedImage = info[.originalImage] as? UIImage {
             profileImageView.image = selectedImage
             self.removeImageButtonSetup()
+            self.enableCompleteButton()
         }
         picker.dismiss(animated: true, completion: nil)
     }

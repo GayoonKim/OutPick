@@ -169,17 +169,17 @@ class RoomCreateViewController: UIViewController, PHPickerViewControllerDelegate
             removeImageButton.heightAnchor.constraint(equalToConstant: 30)
         ])
 
-        if let image = roomImageView.image {
-            if image.isEqual(UIImage(systemName: "photo")) {
-                removeImageButton.isHidden = true
-            } else {
-                removeImageButton.isHidden = false
-            }
+        if let current_image_data = roomImageView.image?.pngData(),
+           let new_image_data = UIImage(named: "Default_Profile")?.pngData(),
+           current_image_data == new_image_data {
+            removeImageButton.isHidden = true
+        } else {
+            removeImageButton.isHidden = false
         }
     }
     
     @objc private func removeImageButtonTapped(_ sender: UIButton) {
-        roomImageView.image = UIImage(systemName: "photo")
+        roomImageView.image = UIImage(named: "Default_Profile")
         
         sender.isHidden = true
     }
@@ -192,27 +192,31 @@ class RoomCreateViewController: UIViewController, PHPickerViewControllerDelegate
     
     @IBAction func createBtnTapped(_ sender: UIButton) {
         
-        createButton.isEnabled = false
-        activityIndicator.center = self.view.center
-        activityIndicator.startAnimating()
+//        activityIndicator.center = self.view.center
+//        activityIndicator.startAnimating()
+        
+        DispatchQueue.main.async {
+            self.createButton.isEnabled = false
+            LoadingIndicator.shared.start(on: self)
+        }
         
         Task {
             do {
                 
                 if try await FirebaseManager.shared.checkDuplicate(strToCompare: self.roomNameTextView.text, fieldToCompare: "roomName", collectionName: "Rooms") {
                     await MainActor.run {
-                        self.activityIndicator.stopAnimating()
+                        LoadingIndicator.shared.stop()
                         createButton.isEnabled = true
                         AlertManager.showAlert(title: "중복된 방 이름", message: "이미 존재하는 방 이름입니다. 다른 이름을 선택해 주세요.", viewController: self)
                     }
                     return
                 }
                 
-                let room = ChatRoom(roomName: self.roomNameTextView.text, roomDescription: self.roomDescriptionTextView.text, participants: [LoginManager.shared.getUserEmail], creatorID: LoginManager.shared.getUserEmail, createdAt: Date(), roomImageName: nil)
+                let room = ChatRoom(ID: nil, roomName: self.roomNameTextView.text, roomDescription: self.roomDescriptionTextView.text, participants: [LoginManager.shared.getUserEmail], creatorID: LoginManager.shared.getUserEmail, createdAt: Date(), roomImageName: nil)
                 
-                await MainActor.run {
-                    self.activityIndicator.stopAnimating()
-                }
+//                await MainActor.run {
+//                    LoadingIndicator.shared.stop()
+//                }
                 
                 self.performSegue(withIdentifier: "ToChatRoom", sender: room)
                 
@@ -221,7 +225,7 @@ class RoomCreateViewController: UIViewController, PHPickerViewControllerDelegate
             } catch {
                 
                 await MainActor.run {
-                    self.activityIndicator.stopAnimating()
+                    LoadingIndicator.shared.stop()
                     AlertManager.showAlert(title: "오류", message: "방 생성 중 오류가 발생했습니다.", viewController: self)
                 }
                 

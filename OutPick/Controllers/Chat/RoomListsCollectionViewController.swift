@@ -10,22 +10,16 @@ import Kingfisher
 
 class RoomListsCollectionViewController: UICollectionViewController {
     
-    typealias DataSourceType = UICollectionViewDiffableDataSource<ViewModel.Section, ViewModel.Item>
-
-    class ViewModel {
-        enum Section: Hashable {
-            case main
-        }
-        
-        typealias Item = ChatRoom
+    typealias DataSourceType = UICollectionViewDiffableDataSource<Section, Item>
+    
+    enum Section: Hashable {
+        case main
     }
     
-    struct Model {
-        var chatRooms: [ChatRoom] = []
-    }
+    typealias Item = ChatRoom
     
+    var chatRooms: [ChatRoom] = []
     var dataSource: DataSourceType!
-    var model = Model()
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -49,14 +43,16 @@ class RoomListsCollectionViewController: UICollectionViewController {
         DispatchQueue.main.async {
             self.updateCollectionView()
         }
+        
     }
     
     private func updateCollectionView() {
+        
         let chatRoomsList = FirebaseManager.shared.currentChatRooms.sorted(by: <)
+        let itemBySection = [Section.main: chatRoomsList]
         
-        let itemBySection = [ViewModel.Section.main: chatRoomsList]
+        dataSource.applySnapshotUsing(sectionIDs: [Section.main], itemsBySection: itemBySection)
         
-        dataSource.applySnapshotUsing(sectionIDs: [.main], itemsBySection: itemBySection)
     }
     
     private func configureDataSource() -> DataSourceType {
@@ -70,15 +66,7 @@ class RoomListsCollectionViewController: UICollectionViewController {
             Task {
                 if let imageName = item.roomImageName {
                     let image = try await FirebaseStorageManager.shared.fetchImageFromStorage(image: imageName, location: ImageLocation.RoomImage, createdDate: item.createdAt)
-                    print(image.size.width, image.size.height)
-//                    image.prepareThumbnail(of: CGSize(width: 50, height: 50)) { cgImage in
-//                        DispatchQueue.main.async {
-//
-//                            guard let cgImage = cgImage else { return }
-//                            cell.roomImageView.image = cgImage
-//
-//                        }
-//                    }
+                    
                     DispatchQueue.main.async {
                         cell.roomImageView.image = image
                     }

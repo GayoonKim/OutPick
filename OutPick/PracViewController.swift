@@ -17,7 +17,7 @@ import FirebaseStorage
 
 class PracViewController: UIViewController, UINavigationControllerDelegate {
     
-    @IBOutlet weak var imageView: UIImageView!
+    @IBOutlet weak var sendBtn: UIButton!
     
     // Firestore 인스턴스
     let db = Firestore.firestore()
@@ -38,8 +38,37 @@ class PracViewController: UIViewController, UINavigationControllerDelegate {
     
     override func viewDidLoad() {
         super.viewDidLoad()
+        
+        Task {
+            do {
+                
+                let room_snapshot = try await db.collection("Rooms").document("2월").collection("2월 Rooms").whereField("roomName", isEqualTo: "Test").limit(to: 1).getDocuments()
+                guard let roomDocument = room_snapshot.documents.first else {
+                    print("방 문서 불러오기 실패")
+                    return
+                }
+                let room_ref = roomDocument.reference
+                
+                let _ = try await db.runTransaction({ (transaction, errorPointer) -> Any? in
+                
+                    
+                    
+                    return nil
+                })
+                
+            } catch {
+                
+            }
+        }
 
     }
+    
+    @IBAction func sendBtnTapped(_ sender: UIButton) {
+        
+        
+        
+    }
+    
 
     
     @IBAction func albumBtnTapped(_ sender: UIButton) {
@@ -125,7 +154,7 @@ extension PracViewController: PHPickerViewControllerDelegate {
                     
                     let images = try await MediaManager.shared.dealWithImages(resultsForImages)
                     for image in images {
-                        self.imageView.image = image
+                        
                         Task {
                             try await FirebaseStorageManager.shared.uploadImageToStorage(image: image, location: ImageLocation.Test)
                         }

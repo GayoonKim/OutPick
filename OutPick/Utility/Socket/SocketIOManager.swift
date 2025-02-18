@@ -3,7 +3,6 @@
 //  OutPick
 //
 //  Created by 김가윤 on 8/5/24.
-//
 
 import UIKit
 import SocketIO

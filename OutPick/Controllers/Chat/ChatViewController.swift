@@ -30,6 +30,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     private var dimmingView: UIView?
     
     var room: ChatRoom?
+    var roomID: String?
     var isRoomSaving = false
     
     var convertImagesTask: Task<Void, Error>? = nil
@@ -48,59 +49,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         return view
     }()
     
-//    private lazy var optionView: UIView = {
-//        
-//        let optionView = UIView()
-//        optionView.backgroundColor = UIColor(white: 0.1, alpha: 0.05)
-//        optionView.layer.cornerRadius = 20
-//        optionView.isHidden = true
-//        optionView.tag = 98
-//        
-//        let stackView = UIStackView()
-//        stackView.axis = .horizontal
-//        stackView.spacing = 30
-//        stackView.distribution = .equalSpacing
-//        stackView.alignment = .center
-//        stackView.tag = 99
-//        
-//        for btn in ["photo", "camera", "paperclip"] {
-//            
-//            let button = UIButton(type: .system)
-//            button.setImage(UIImage(systemName: btn), for: .normal)
-//            button.tintColor = .black
-//            button.backgroundColor = .white
-//            button.accessibilityIdentifier = btn
-//            button.addTarget(self, action: #selector(checkAttachmentBtnKind(_:)), for: .touchUpInside)
-//            
-//            // 원형으로 만들기 위한 설정
-//            button.translatesAutoresizingMaskIntoConstraints = false
-//            NSLayoutConstraint.activate([
-//                button.widthAnchor.constraint(equalToConstant: 50),
-//                button.heightAnchor.constraint(equalToConstant: 50)
-//            ])
-//            button.layer.cornerRadius = 25 // 반지름 = 너비/2
-//            button.clipsToBounds = true // 코너가 잘리도록 설정
-//            
-//            stackView.addArrangedSubview(button)
-//            
-//        }
-//        
-//        optionView.addSubview(stackView)
-//        
-//        stackView.translatesAutoresizingMaskIntoConstraints = false
-//        NSLayoutConstraint.activate([
-//            stackView.centerXAnchor.constraint(equalTo: optionView.centerXAnchor),
-//            stackView.centerYAnchor.constraint(equalTo: optionView.centerYAnchor),
-//            stackView.heightAnchor.constraint(equalToConstant: 75),
-//            stackView.leadingAnchor.constraint(equalTo: optionView.leadingAnchor, constant: 40),
-//            stackView.trailingAnchor.constraint(equalTo: optionView.trailingAnchor, constant: -40),
-//        ])
-//        
-//        return optionView
-//    }()
-    
-    private var preselectedIdentifiers: [String] = []
-    private var selectedImages: [UIImage] = []
+//    private var preselectedIdentifiers: [String] = []
+//    private var selectedImages: [UIImage] = []
     
     override func viewDidLoad() {
         
@@ -113,12 +63,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         setUpNotifications()
         
         if isRoomSaving {
-            activityIndicator.startAnimating()
-            //            configureNotifications()
+            LoadingIndicator.shared.start(on: self)
             chatUIStackView.isHidden = false
             joinRoomBtn.isHidden = true
         } else {
-            activityIndicator.stopAnimating()
+            LoadingIndicator.shared.stop()
         }
         
         let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTapGesture))
@@ -132,6 +81,12 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         decideJoinUI()
         setUpOptionMenuUI()
         adjustLayoutForSafeArea()
+        
+    }
+    
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        
         
     }
     
@@ -167,7 +122,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         configuration.selectionLimit = 0
         configuration.selection = .ordered
         configuration.preferredAssetRepresentationMode = .current
-        configuration.preselectedAssetIdentifiers = preselectedIdentifiers
+//        configuration.preselectedAssetIdentifiers = preselectedIdentifiers
         
         let picker = PHPickerViewController(configuration: configuration)
         picker.delegate = self
@@ -289,10 +244,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     @IBAction func joinRoomBtnTapped(_ sender: UIButton) {
         
         guard let room = self.room else { return }
-        
-        Task {
-            try await FirebaseManager.shared.updateRoomParticipant(room: room, isAdding: true)
-        }
+        FirebaseManager.shared.addRoomParticipant(room: room)
         
     }
     
@@ -302,8 +254,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
               let roomName = self.room?.roomName else { return }
         self.msgTextView.text = nil
         
-        let newMessage = ChatMessage(senderID: LoginManager.shared.getUserEmail, senderNickname: UserProfile.shared.nickname ?? "", msg: message, sentAt: Date(), messageType: .Text)
-        print(newMessage)
+//        let newMessage = ChatMessage(senderID: LoginManager.shared.getUserEmail, senderNickname: UserProfile.shared.nickname ?? "", msg: message, sentAt: Date(), messageType: .Text)
+        
         
         SocketIOManager.shared.sendMessage(roomName, message)
         sendBtn.isEnabled = false
@@ -396,23 +348,18 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         
         print("handleRoomSaveCompleted 시작")
         
-        DispatchQueue.main.async {
-            self.view.isUserInteractionEnabled = false
-            self.activityIndicator.center = self.view.center
-            self.activityIndicator.startAnimating()
-        }
-        
         guard let savedRoom = notification.userInfo?["room"] as? ChatRoom else { return }
         self.room = savedRoom
-
-        DispatchQueue.main.async {
-            self.updateNavigationTitle(with: savedRoom)
-        }
         
         DispatchQueue.main.async {
-            self.activityIndicator.stopAnimating()
-            self.activityIndicator.removeFromSuperview()
+            
+            self.updateNavigationTitle(with: savedRoom)
+//            self.view.isUserInteractionEnabled = false
+//            self.activityIndicator.stopAnimating()
+//            self.activityIndicator.removeFromSuperview()
+            LoadingIndicator.shared.stop()
             self.view.isUserInteractionEnabled = true
+            
         }
         
         print("handleRoomSaveCompleted 끝")

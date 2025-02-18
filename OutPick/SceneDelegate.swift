@@ -30,78 +30,78 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // Use this method to optionally configure and attach the UIWindow `window` to the provided UIWindowScene `scene`.
         // If using a storyboard, the `window` property will automatically be initialized and attached to the scene.
         // This delegate does not imply the connecting scene or session are new (see `application:configurationForConnectingSceneSession` instead).
-//        print("1. scene 메서드 시작")
-//        
-//        guard let _ = (scene as? UIWindowScene) else { return }
-//        window?.overrideUserInterfaceStyle = .light
-//        
-//        // 초기 화면을 로딩 화면으로 설정
-//        let storyboard = UIStoryboard(name: "LaunchScreen", bundle: nil)
-//        let initialViewController = storyboard.instantiateViewController(withIdentifier: "LaunchScreen")
-//        window?.rootViewController = initialViewController
-//        window?.makeKeyAndVisible()
-//        
-//        WeatherAPIManager.shared.startLocationUpdates()
-//        
-//        print("2. DispatchQueue 시작 전")
-//        
-//        DispatchQueue.global(qos: .userInitiated).async {
-//            print("3. DispatchQueue 내부 시작")
-//            
-//            let group = DispatchGroup()
-//            var isLoggedIn = false
-//            
-//            // 구글 로그인 확인
-//            print("4. 구글 로그인 체크 시작")
-//            group.enter()
-//            self.checkGoogleLogin { success in
-//                print("5. 구글 로그인 체크 완료: \(success)")
-//                if success {
-//                    isLoggedIn = true
-//                    
-//                    Task {
-//                        try await FirebaseManager.shared.listenToRooms()
-//                    }
-//                    
-//                }
-//                
-//                group.leave()
-//            }
-//            
-//            // 카카오 로그인 확인
-////            print("6. 카카오 로그인 체크 시작")
-//            group.enter()
-//            self.checkKakaoLogin { success in
-////                print("7. 카카오 로그인 체크 완료: \(success)")
-//                if success {
-//                    isLoggedIn = true
-//                    
-//                    Task {
-//                        try await FirebaseManager.shared.listenToRooms()
-//                    }
-//                    
-//                }
-//                group.leave()
-//            }
-//            
-////            print("8. notify 설정 전")
-//            group.notify(queue: .main) {
-////                print("9. notify 내부 실행")
-//                if isLoggedIn {
-////                    print("10. 로그인 됨")
-//                    LoginManager.shared.fetchUserProfile(LoginManager.shared.getUserEmail) { screen in
-//                        DispatchQueue.main.async {
-//                            self.window?.rootViewController = screen
-//                            self.window?.makeKeyAndVisible()
-//                        }
-//                    }
-//                } else {
-//                    print("11. 로그인 안 됨")
-//                    self.showLoginViewController()
-//                }
-//            }
-//
-//        }
+        print("1. scene 메서드 시작")
+        
+        guard let _ = (scene as? UIWindowScene) else { return }
+        window?.overrideUserInterfaceStyle = .light
+        
+        // 초기 화면을 로딩 화면으로 설정
+        let storyboard = UIStoryboard(name: "LaunchScreen", bundle: nil)
+        let initialViewController = storyboard.instantiateViewController(withIdentifier: "LaunchScreen")
+        window?.rootViewController = initialViewController
+        window?.makeKeyAndVisible()
+        
+        WeatherAPIManager.shared.startLocationUpdates()
+        
+        print("2. DispatchQueue 시작 전")
+        
+        DispatchQueue.global(qos: .userInitiated).async {
+            print("3. DispatchQueue 내부 시작")
+            
+            let group = DispatchGroup()
+            var isLoggedIn = false
+            
+            // 구글 로그인 확인
+            print("4. 구글 로그인 체크 시작")
+            group.enter()
+            self.checkGoogleLogin { success in
+                print("5. 구글 로그인 체크 완료: \(success)")
+                if success {
+                    isLoggedIn = true
+                    
+                    Task {
+                        try await FirebaseManager.shared.listenToRooms()
+                    }
+                    
+                }
+                
+                group.leave()
+            }
+            
+            // 카카오 로그인 확인
+//            print("6. 카카오 로그인 체크 시작")
+            group.enter()
+            self.checkKakaoLogin { success in
+//                print("7. 카카오 로그인 체크 완료: \(success)")
+                if success {
+                    isLoggedIn = true
+                    
+                    Task {
+                        try await FirebaseManager.shared.listenToRooms()
+                    }
+                    
+                }
+                group.leave()
+            }
+            
+//            print("8. notify 설정 전")
+            group.notify(queue: .main) {
+//                print("9. notify 내부 실행")
+                if isLoggedIn {
+//                    print("10. 로그인 됨")
+                    LoginManager.shared.fetchUserProfile(LoginManager.shared.getUserEmail) { screen in
+                        DispatchQueue.main.async {
+                            self.window?.rootViewController = screen
+                            self.window?.makeKeyAndVisible()
+                        }
+                    }
+                } else {
+                    print("11. 로그인 안 됨")
+                    self.showLoginViewController()
+                }
+            }
+
+        }
     }
 
     func sceneDidDisconnect(_ scene: UIScene) {
