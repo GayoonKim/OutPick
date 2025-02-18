@@ -244,7 +244,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     @IBAction func joinRoomBtnTapped(_ sender: UIButton) {
         
         guard let room = self.room else { return }
-        FirebaseManager.shared.addRoomParticipant(room: room)
+        FirebaseManager.shared.updateRoomParticipant(room: room, isAdding: true)
         
     }
     
