@@ -135,10 +135,16 @@ class RoomCreateViewController: UIViewController, PHPickerViewControllerDelegate
         Task {
             
             let images = try await MediaManager.shared.dealWithImages(results)
-            let image = images.first
-            
             DispatchQueue.main.async {
-                self.roomImageView.image = image
+                
+                if let image = images.first {
+                    self.roomImageView.image = image
+                } else {
+                    self.roomImageView.image = UIImage(named: "Default_Profile.png")
+                }
+                
+                self.removeImageButtonSetup()
+                
             }
             
         }
@@ -207,7 +213,7 @@ class RoomCreateViewController: UIViewController, PHPickerViewControllerDelegate
                     await MainActor.run {
                         LoadingIndicator.shared.stop()
                         createButton.isEnabled = true
-                        AlertManager.showAlert(title: "중복된 방 이름", message: "이미 존재하는 방 이름입니다. 다른 이름을 선택해 주세요.", viewController: self)
+                        AlertManager.showAlertNoHandler(title: "중복된 방 이름", message: "이미 존재하는 방 이름입니다. 다른 이름을 선택해 주세요.", viewController: self)
                     }
                     return
                 }
@@ -226,7 +232,7 @@ class RoomCreateViewController: UIViewController, PHPickerViewControllerDelegate
                 
                 await MainActor.run {
                     LoadingIndicator.shared.stop()
-                    AlertManager.showAlert(title: "오류", message: "방 생성 중 오류가 발생했습니다.", viewController: self)
+                    AlertManager.showAlertNoHandler(title: "오류", message: "방 생성 중 오류가 발생했습니다.", viewController: self)
                 }
                 
             }

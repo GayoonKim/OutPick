@@ -58,11 +58,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 print("5. 구글 로그인 체크 완료: \(success)")
                 if success {
                     isLoggedIn = true
-                    
-                    Task {
-                        try await FirebaseManager.shared.listenToRooms()
-                    }
-                    
+ 
                 }
                 
                 group.leave()
@@ -75,11 +71,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 //                print("7. 카카오 로그인 체크 완료: \(success)")
                 if success {
                     isLoggedIn = true
-                    
-                    Task {
-                        try await FirebaseManager.shared.listenToRooms()
-                    }
-                    
+
                 }
                 group.leave()
             }
@@ -89,12 +81,18 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 //                print("9. notify 내부 실행")
                 if isLoggedIn {
 //                    print("10. 로그인 됨")
+                    
+                    Task {
+                        try await FirebaseManager.shared.listenToRooms()
+                    }
+                    
                     LoginManager.shared.fetchUserProfile(LoginManager.shared.getUserEmail) { screen in
                         DispatchQueue.main.async {
                             self.window?.rootViewController = screen
                             self.window?.makeKeyAndVisible()
                         }
                     }
+                    
                 } else {
                     print("11. 로그인 안 됨")
                     self.showLoginViewController()
@@ -159,7 +157,6 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 }
             }
         } else {
-            print("AAA")
             print("재로그인 필요.")
             completion(false)
         }
@@ -168,21 +165,24 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     
     // 구글 로그인 여부 확인
     private func checkGoogleLogin(completion: @escaping (Bool) -> Void) {
+        
         guard let currentUser = Auth.auth().currentUser else {
             print("로그인 기록 없음")
             completion(false)
             return
         }
+        
         currentUser.getIDTokenForcingRefresh(true) { idToken, error in
             if let error = error {
                 print("토큰 불러오기 오류: \(error)")
                 completion(false)
                 return
             }
-                
+            
             LoginManager.shared.getGoogleEmail { result in
-                completion(true)
+                completion(result)
             }
+            
         }
     }
     

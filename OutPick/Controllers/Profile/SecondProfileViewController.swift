@@ -9,6 +9,7 @@ import UIKit
 import PhotosUI
 import FirebaseFirestore
 import FirebaseStorage
+import FirebaseAuth
 import KakaoSDKUser
 
 class SecondProfileViewController: UIViewController {
@@ -163,9 +164,21 @@ class SecondProfileViewController: UIViewController {
             UserProfile.shared.nickname = nickname
         }
         
-        UserProfile.shared.email = LoginManager.shared.getUserEmail
-        
-        self.saveUserProfile(email: LoginManager.shared.getUserEmail)
+        if Auth.auth().currentUser?.providerData.first?.providerID == "google.com" {
+            LoginManager.shared.getGoogleEmail { success in
+                if success {
+                    UserProfile.shared.email = LoginManager.shared.getUserEmail
+                    self.saveUserProfile(email: LoginManager.shared.getUserEmail)
+                }
+            }
+        } else {
+            LoginManager.shared.getKakaoEmail { success in
+                if success {
+                    UserProfile.shared.email = LoginManager.shared.getUserEmail
+                    self.saveUserProfile(email: LoginManager.shared.getUserEmail)
+                }
+            }
+        }
         
     }
     
@@ -177,7 +190,7 @@ class SecondProfileViewController: UIViewController {
             do {
                 
                 if try await FirebaseManager.shared.checkDuplicate(strToCompare: nickname, fieldToCompare: "nickname", collectionName: "Users") {
-                    AlertManager.showAlert(title: "닉네임 중복", message: "다른 닉네임을 선택해 주세요.", viewController: self)
+                    AlertManager.showAlertNoHandler(title: "닉네임 중복", message: "다른 닉네임을 선택해 주세요.", viewController: self)
                     return
                 }
                 
@@ -189,6 +202,8 @@ class SecondProfileViewController: UIViewController {
                 }
                 
                 try await FirebaseManager.shared.saveUserProfileToFirestore(email: LoginManager.shared.getUserEmail)
+                try await Task.sleep(nanoseconds: 1_000_000_000)  // 1초 대기
+                try await LoginManager.shared.updateLogDevID()
                 
                 DispatchQueue.main.async {
                     let homeVC = self.storyboard?.instantiateViewController(identifier: "HomeTBC") as? UITabBarController
@@ -199,13 +214,13 @@ class SecondProfileViewController: UIViewController {
             } catch FirebaseError.FailedToSaveProfile {
                 
                 print("프로필 저장 실패")
-                AlertManager.showAlert(title: "프로필 저장 실패", message: "프로필 저장에 실패했습니다. 다시 시도해 주세요.", viewController: self)
+                AlertManager.showAlertNoHandler(title: "프로필 저장 실패", message: "프로필 저장에 실패했습니다. 다시 시도해 주세요.", viewController: self)
     
                 
             } catch {
                 
                 print("알 수 없는 에러: \(error)")
-                AlertManager.showAlert(title: "프로필 저장 실패", message: "프로필 저장에 실패했습니다. 다시 시도해 주세요.", viewController: self)
+                AlertManager.showAlertNoHandler(title: "프로필 저장 실패", message: "프로필 저장에 실패했습니다. 다시 시도해 주세요.", viewController: self)
                 return
                 
             }

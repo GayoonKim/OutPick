@@ -11,6 +11,7 @@ import KakaoSDKAuth
 import KakaoSDKUser
 import FirebaseCore
 import FirebaseAuth
+import FirebaseFirestore
 
 class LoginManager {
     
@@ -20,6 +21,78 @@ class LoginManager {
     
     var getUserEmail: String {
         return userEmail
+    }
+    
+    var deviceIDListener: ListenerRegistration?
+    
+    // 중복 로그인 탐지
+    func setupDevIDListener_Google() async throws{
+        do {
+            
+            guard let userDoc = try await FirebaseManager.shared.getUserDoc() else { return }
+            deviceIDListener = userDoc.reference.addSnapshotListener({ [weak self] documentSnapshot, error in
+                guard let self = self else { return }
+                
+                if let error = error {
+                    print("사용자 문서 불러오기 실패: \(error.localizedDescription)")
+                    return
+                }
+                
+                guard let document = documentSnapshot,
+                      let deviceID = document.data()?["deviceID"] as? String else {
+                    return
+                }
+                
+                // 다른 기기에서 로그인 감지
+                if deviceID != UIDevice.current.identifierForVendor?.uuidString {
+                    DispatchQueue.main.async {
+                        AlertManager.showDuplicateLoginAlert()
+                        self.deviceIDListener?.remove()
+                        self.deviceIDListener = nil
+                    }
+                }
+                
+            })
+            
+        } catch {
+            
+            print("기기 ID 리스너 설정 실패: \(error.localizedDescription)")
+            
+        }
+    }
+    
+    // 중복 로그인 방지를 위한 로그인 기기 ID 변경
+    func updateLogDevID() async throws {
+        
+        print("updateLogDevID 호출")
+        
+        do {
+            
+            let device_id = await UIDevice.current.identifierForVendor?.uuidString ?? "Unknown_User"
+            guard let user_doc = try await FirebaseManager.shared.getUserDoc() else { return }
+            
+            if let savedDeviceID = user_doc.get("deviceID") as? String,
+               savedDeviceID == UserProfile.shared.deviceID {
+                print("이전과 동일한 기기")
+                return
+            }
+            
+            let _ = try await FirebaseManager.shared.db.runTransaction({ (transaction, errorPointer) -> Any? in
+                
+                transaction.updateData(["deviceID": device_id], forDocument: user_doc.reference)
+                
+                return nil
+                
+            })
+            
+            print("로그인 기기 ID 변경")
+            
+        } catch {
+            
+            print("로그인 기기 ID 변경 실패: \(error)")
+            
+        }
+        
     }
     
     // Firestore에서 사용자 이메일로 만들어진 프로필 문서 쿼리
@@ -35,6 +108,15 @@ class LoginManager {
                 switch result {
                 case .success(let userProfile):
                     print("프로필 불러오기 성공")
+                    print(userProfile)
+                    
+                    // 구글 로그인
+                    if Auth.auth().currentUser?.providerData.first?.providerID == "google.com" {
+                        Task {
+                            try await self.updateLogDevID()
+                            try await self.setupDevIDListener_Google()
+                        }
+                    }
 
                     let mainStorybard = UIStoryboard(name: "Main", bundle: nil)
                     initialViewControlle = mainStorybard.instantiateViewController(withIdentifier: "HomeTBC")

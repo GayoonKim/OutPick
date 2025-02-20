@@ -163,7 +163,7 @@ extension PracViewController: PHPickerViewControllerDelegate {
                     
                 } catch MediaError.FailedToConvertImage {
                     
-                    AlertManager.showAlert(title: "이미지 변환 실패", message: "이미지를 다시 선택해 주세요/", viewController: self)
+                    AlertManager.showAlertNoHandler(title: "이미지 변환 실패", message: "이미지를 다시 선택해 주세요.", viewController: self)
                     
                 } catch StorageError.FailedToUploadImage {
                     

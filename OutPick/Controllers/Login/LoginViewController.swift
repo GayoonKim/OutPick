@@ -27,6 +27,7 @@ class LoginViewController: UIViewController {
         self.loginWithGoogle()
     }
     
+    @MainActor
     private func loginWithGoogle() {
         // Firebase client ID 불러오기.
         guard let clientID = FirebaseApp.app()?.options.clientID else { return }
@@ -47,19 +48,18 @@ class LoginViewController: UIViewController {
               return
           }
 
-          let credential = GoogleAuthProvider.credential(withIDToken: idToken,
-                                                         accessToken: user.accessToken.tokenString)
-
+          let credential = GoogleAuthProvider.credential(withIDToken: idToken, accessToken: user.accessToken.tokenString)
           
           Auth.auth().signIn(with: credential) { result, error in
               guard let email = result?.user.email else { return }
-                        
+              
               LoginManager.shared.fetchUserProfile(email) { screen in
-                  DispatchQueue.main.async {
-                      self.view.window?.rootViewController = screen
-                      self.view.window?.makeKeyAndVisible()
-                  }
+                  
+                  self.view.window?.rootViewController = screen
+                  self.view.window?.makeKeyAndVisible()
+                  
               }
+              
           }
         }
     }

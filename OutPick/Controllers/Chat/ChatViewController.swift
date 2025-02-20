@@ -49,9 +49,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         return view
     }()
     
-//    private var preselectedIdentifiers: [String] = []
-//    private var selectedImages: [UIImage] = []
-    
     override func viewDidLoad() {
         
         super.viewDidLoad()
@@ -82,11 +79,24 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         setUpOptionMenuUI()
         adjustLayoutForSafeArea()
         
+        if let sceneDelegate = UIApplication.shared.connectedScenes.first?.delegate as? SceneDelegate,
+           let window = sceneDelegate.window {
+            let mainStorybard = UIStoryboard(name: "Main", bundle: nil)
+            let homeScreen = mainStorybard.instantiateViewController(withIdentifier: "HomeTBC")
+            window.rootViewController = homeScreen
+            window.makeKeyAndVisible()
+        }
+        
+        
+        
     }
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         
+        SocketIOManager.shared.establishConnection {
+            SocketIOManager.shared.setUserName(UserProfile.shared.nickname ?? "")
+        }
         
     }
     
@@ -122,7 +132,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         configuration.selectionLimit = 0
         configuration.selection = .ordered
         configuration.preferredAssetRepresentationMode = .current
-//        configuration.preselectedAssetIdentifiers = preselectedIdentifiers
         
         let picker = PHPickerViewController(configuration: configuration)
         picker.delegate = self
@@ -244,7 +253,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     @IBAction func joinRoomBtnTapped(_ sender: UIButton) {
         
         guard let room = self.room else { return }
-        FirebaseManager.shared.updateRoomParticipant(room: room, isAdding: true)
+        FirebaseManager.shared.add_room_participant(room: room)
         
     }
     
@@ -255,7 +264,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         self.msgTextView.text = nil
         
 //        let newMessage = ChatMessage(senderID: LoginManager.shared.getUserEmail, senderNickname: UserProfile.shared.nickname ?? "", msg: message, sentAt: Date(), messageType: .Text)
-        
         
         SocketIOManager.shared.sendMessage(roomName, message)
         sendBtn.isEnabled = false

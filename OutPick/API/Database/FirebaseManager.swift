@@ -32,15 +32,15 @@ class FirebaseManager {
     private var listenToRoomsTask: Task<Void, Never>? = nil
     private var fetchProfileTask: Task<Void, Never>? = nil
     private var saveUserProfileTask: Task<Void, Never>? = nil
-    private var updateRoomParticipantTask: Task<Void, Never>? = nil
-    private var force_to_remove_participant_task: Task<Void, Never>? = nil
+    private var add_room_participant_task: Task<Void, Never>? = nil
+    private var remove_participant_task: Task<Void, Never>? = nil
     
     deinit {
         listenToRoomsTask?.cancel()
         fetchProfileTask?.cancel()
         saveUserProfileTask?.cancel()
-        updateRoomParticipantTask?.cancel()
-        force_to_remove_participant_task?.cancel()
+        add_room_participant_task?.cancel()
+        remove_participant_task?.cancel()
     }
     
     // 채팅방 읽기 전용 접근자 제공
@@ -49,6 +49,20 @@ class FirebaseManager {
     }
     
     //MARK: 프로필 설정 관련 기능들
+    
+    // UserProfile 문서 불러오기
+    func getUserDoc() async throws -> QueryDocumentSnapshot? {
+        let profile_created_month = DateManager.shared.getMonthFromTimestamp(date: UserProfile.shared.createdAt)
+        let user_snapshot = try await db.collection("Users").document(profile_created_month).collection("\(profile_created_month) Users").whereField("email", isEqualTo: LoginManager.shared.getUserEmail).limit(to: 1).getDocuments()
+        
+        guard let user_doc = user_snapshot.documents.first else {
+            print("사용자 문서 불러오기 실패")
+            return nil
+        }
+        
+        return user_doc
+    }
+    
     // Firebase Firestore에 UserProfile 객체 저장
     func saveUserProfileToFirestore(email: String) async throws {
         let userProfileRef = db.collection("Users")
@@ -82,7 +96,6 @@ class FirebaseManager {
                 if documentIDs.isEmpty {
                     throw FirebaseError.FailedToFetchAllDocumentIDs
                 }
-                
                 
                 return try await withThrowingTaskGroup(of: UserProfile.self) { group in
                     for documentID in documentIDs {
@@ -124,7 +137,7 @@ class FirebaseManager {
                 
             }
             
-            fetchProfileTask?.cancel()
+            fetchProfileTask = nil
             
         }
         
@@ -194,6 +207,22 @@ class FirebaseManager {
     }
     
     //MARK: 채팅 방 관련 기능들
+    
+    // 특정 방 문서 불러오기
+    func getRoomDoc(room: ChatRoom) async throws -> QueryDocumentSnapshot? {
+        
+        let roomCreatedMonth = DateManager.shared.getMonthFromTimestamp(date: room.createdAt)
+        let room_snapshot = try await db.collection("Rooms").document(roomCreatedMonth).collection("\(roomCreatedMonth) Rooms").whereField("roomName", isEqualTo: room.roomName).limit(to: 1).getDocuments()
+
+        guard let room_doc = room_snapshot.documents.first else {
+            print("방 문서 불러오기 실패")
+            return nil
+        }
+        
+        return room_doc
+        
+    }
+    
     // 오픈 채팅 방 정보 저장
     func saveRoomInfoToFirestore(room: ChatRoom, completion: @escaping (Result<Void, Error>) -> Void) {
         print("saveRoomInfoToFirestore 시작")
@@ -220,7 +249,7 @@ class FirebaseManager {
                     
                 })
                 
-                FirebaseManager.shared.updateRoomParticipant(room: room, isAdding: true)
+                FirebaseManager.shared.add_room_participant(room: room)
                 
                 print("saveRoomInfoToFirestore 끝")
                 
@@ -317,7 +346,7 @@ class FirebaseManager {
                     case .removed:
                         print("삭제")
                         self.chatRooms.removeAll(where: { $0.roomName == room.roomName })
-                        force_to_remove_participant(room: room)
+                        remove_participant(room: room)
 
                     }
                     
@@ -527,32 +556,24 @@ class FirebaseManager {
         
     }
     
-    func force_to_remove_participant(room: ChatRoom) {
+    func remove_participant(room: ChatRoom) {
         
-        force_to_remove_participant_task?.cancel()
-        force_to_remove_participant_task = Task {
+        remove_participant_task?.cancel()
+        remove_participant_task = Task {
             do {
                 
-                let profile_created_month = DateManager.shared.getMonthFromTimestamp(date: UserProfile.shared.createdAt)
-                let user_snapshot = try await db.collection("Users").document(profile_created_month).collection("\(profile_created_month) Users").whereField("email", isEqualTo: LoginManager.shared.getUserEmail).limit(to: 1).getDocuments()
-                
-                guard let user_document = user_snapshot.documents.first else {
-                    print("사용자 문서 불러오기 실패")
-                    return
-                }
-                
-                let user_reference = user_document.reference
+                guard let user_doc = try await getUserDoc() else { return }
                 
                 let _ = try await db.runTransaction({ (transaction, errorPointer) -> Any? in
                 
-                    transaction.updateData(["joinedRooms": FieldValue.arrayRemove([room.roomName])], forDocument: user_reference)
+                    transaction.updateData(["joinedRooms": FieldValue.arrayRemove([room.roomName])], forDocument: user_doc.reference)
                     
                     return nil
                     
                 })
                 
                 print("참여중인 방 강제 삭제 성공")
-                force_to_remove_participant_task = nil
+                remove_participant_task = nil
                 
             } catch {
                 
@@ -564,44 +585,27 @@ class FirebaseManager {
     }
     
     // 방 참여자 업데이트
-    func updateRoomParticipant(room: ChatRoom, isAdding: Bool) {
+    func add_room_participant(room: ChatRoom) {
+    
+        add_room_participant_task?.cancel()
         
-        print("updateRoomParticipant 시작")
-        updateRoomParticipantTask?.cancel()
-        
-        let roomCreatedMonth = DateManager.shared.getMonthFromTimestamp(date: room.createdAt)
-        let profileCreatedMonth = DateManager.shared.getMonthFromTimestamp(date: UserProfile.shared.createdAt)
-        
-        updateRoomParticipantTask = Task {
+        add_room_participant_task = Task {
             do {
-        
-                let room_snapshot = try await db.collection("Rooms").document(roomCreatedMonth).collection("\(roomCreatedMonth) Rooms").whereField("roomName", isEqualTo: room.roomName).limit(to: 1).getDocuments()
-                let user_snapshot = try await db.collection("Users").document(profileCreatedMonth).collection("\(profileCreatedMonth) Users").whereField("email", isEqualTo: LoginManager.shared.getUserEmail).limit(to: 1).getDocuments()
                 
-                guard let roomDocument = room_snapshot.documents.first,
-                      let userDocument = user_snapshot.documents.first else {
-                    print("사용자 또는 방 문서 불러오기 실패")
-                    return
-                }
-                
-                let room_ref = roomDocument.reference
-                let user_ref = userDocument.reference
-                
+                guard let user_doc = try await getUserDoc(),
+                      let room_doc = try await getRoomDoc(room: room) else { return }
+
                 let _ = try await db.runTransaction({ (transaction, errorPointer) -> Any? in
                     
-                    if isAdding {
-                        transaction.updateData(["joinedRooms": FieldValue.arrayUnion([room.roomName])], forDocument: user_ref)
-                        transaction.updateData(["participantIDs": FieldValue.arrayUnion([LoginManager.shared.getUserEmail])], forDocument: room_ref)
-                    } else {
-                        transaction.updateData(["joinedRooms": FieldValue.arrayRemove([room.roomName])], forDocument: user_ref)
-                        transaction.updateData(["participantIDs": FieldValue.arrayRemove([LoginManager.shared.getUserEmail])], forDocument: room_ref)
-                    }
+                    transaction.updateData(["joinedRooms": FieldValue.arrayUnion([room.roomName])], forDocument: user_doc.reference)
+                    transaction.updateData(["participantIDs": FieldValue.arrayUnion([LoginManager.shared.getUserEmail])], forDocument: room_doc.reference)
                     
                     return nil
+                    
                 })
                 
                 print("참여자 업데이트 성공")
-                updateRoomParticipantTask = nil
+                add_room_participant_task = nil
                             
             } catch {
                 
@@ -610,17 +614,9 @@ class FirebaseManager {
             }
         }
         
-        print("updateRoomParticipant 끝")
-        
     }
     
-    func saveMessageToFirestore(msg: ChatMessage) async throws {
-        
-        do {
-            
-        }
-        
-    }
+    //MARK: 메시지 관련 기능
     
 }
 

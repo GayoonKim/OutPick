@@ -6,19 +6,55 @@
 //
 
 import UIKit
+import FirebaseAuth
 
 class AlertManager {
     
     static let shared = AlertManager()
     
-    static func showAlert(title: String, message: String, viewController: UIViewController) {
+    @MainActor
+    static func showAlertNoHandler(title: String, message: String, viewController: UIViewController) {
+        
+        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "확인", style: .default, handler: nil))
+        viewController.present(alert, animated: true, completion: nil)
+        
+    }
+    
+    static func showDuplicateLoginAlert() {
+        
         DispatchQueue.main.async {
             
-            let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
-            alert.addAction(UIAlertAction(title: "확인", style: .default, handler: nil))
-            viewController.present(alert, animated: true, completion: nil)
+            let alert = UIAlertController(title: "중복 로그인", message: "다른 기기에서 로그인이 감지되어 로그아웃 처리됩니다.", preferredStyle: .alert)
+            let okAction = UIAlertAction(title: "확인", style: .default) { _ in
+                // 구글 로그아웃 처리
+                do {
+                    
+                    try Auth.auth().signOut()
+                    
+                    if let sceneDelegate = UIApplication.shared.connectedScenes.first?.delegate as? SceneDelegate,
+                       let window = sceneDelegate.window {
+                        let storyboard = UIStoryboard(name: "Main", bundle: nil)
+                        let loginVC = storyboard.instantiateViewController(withIdentifier: "LoginVC") as? LoginViewController
+                        window.rootViewController = loginVC
+                        window.makeKeyAndVisible()
+                    }
+                    
+                } catch {
+                    
+                    print("로그아웃 실패: \(error.localizedDescription)")
+                    
+                }
+            }
+            alert.addAction(okAction)
+            
+            if let sceneDelegate = UIApplication.shared.connectedScenes.first?.delegate as? SceneDelegate,
+               let window = sceneDelegate.window {
+                window.rootViewController?.present(alert, animated: true)
+            }
             
         }
+        
     }
     
 }

@@ -12,6 +12,7 @@ class UserProfile: Codable {
     
     static var shared = UserProfile()
     
+    var deviceID: String?
     var email: String?
     var gender: String?
     var birthdate: String?
@@ -33,6 +34,7 @@ extension UserProfile {
         
         return [
             
+            "deviceID": deviceID ?? "",
             "email": email ?? "",
             "nickname": nickname ?? "",
             "gender": gender ?? "",
