@@ -53,12 +53,7 @@ class LoginViewController: UIViewController {
           Auth.auth().signIn(with: credential) { result, error in
               guard let email = result?.user.email else { return }
               
-              LoginManager.shared.fetchUserProfile(email) { screen in
-                  
-                  self.view.window?.rootViewController = screen
-                  self.view.window?.makeKeyAndVisible()
-                  
-              }
+              self.commonLogingProcess()
               
           }
         }
@@ -80,15 +75,11 @@ class LoginViewController: UIViewController {
 
                     self.dismiss(animated: true) {
                         //do something
-                        LoginManager.shared.getKakaoEmail { email in }
-
-                        LoginManager.shared.fetchUserProfile(LoginManager.shared.getUserEmail) { screen in
-                                DispatchQueue.main.async {
-                                    self.view.window?.rootViewController = screen
-                                    self.view.window?.makeKeyAndVisible()
-                                }
+                        LoginManager.shared.getKakaoEmail { success in
+                            if success {
+                                self.commonLogingProcess()
                             }
-//                        }
+                        }
                     }
                 }
             }
@@ -101,18 +92,38 @@ class LoginViewController: UIViewController {
                     
                     self.dismiss(animated: true) {
 //                        do something
-                        LoginManager.shared.getKakaoEmail { email in }
-                            
-                            LoginManager.shared.fetchUserProfile(LoginManager.shared.getUserEmail) { screen in
-                                DispatchQueue.main.async {
-                                    self.view.window?.rootViewController = screen
-                                    self.view.window?.makeKeyAndVisible()
-                                }
+                        LoginManager.shared.getKakaoEmail { success in
+                            if success {
+                                self.commonLogingProcess()
                             }
-//                        }
+                        }
                     }
                 }
             }
         }
     }
+    
+    private func commonLogingProcess() {
+        Task {
+            do {
+                
+                try await LoginManager.shared.updateLogDevID()
+                try await LoginManager.shared.setupDevIDListener()
+                
+                LoginManager.shared.fetchUserProfile(LoginManager.shared.getUserEmail) { screen in
+                    DispatchQueue.main.async {
+                        self.view.window?.rootViewController = screen
+                        self.view.window?.makeKeyAndVisible()
+                    }
+                }
+                
+            } catch {
+                
+                print("로그인 후처리 실패: \(error)")
+                AlertManager.showAlertNoHandler(title: "로그인 실패", message: "로그인에 실패했습니다. 다시 시도해주세요.", viewController: self)
+                
+            }
+        }
+    }
+    
 }

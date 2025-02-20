@@ -110,14 +110,6 @@ class LoginManager {
                     print("프로필 불러오기 성공")
                     print(userProfile)
                     
-                    // 구글 로그인
-//                    if Auth.auth().currentUser?.providerData.first?.providerID == "google.com" {
-//                        Task {
-//                            try await self.updateLogDevID()
-//                            try await self.setupDevIDListener_Google()
-//                        }
-//                    }
-                    
                     Task {
                         try await self.updateLogDevID()
                         try await self.setupDevIDListener()
