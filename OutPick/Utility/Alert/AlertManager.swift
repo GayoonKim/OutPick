@@ -7,6 +7,8 @@
 
 import UIKit
 import FirebaseAuth
+import KakaoSDKUser
+import KakaoSDKAuth
 
 class AlertManager {
     
@@ -27,10 +29,20 @@ class AlertManager {
             
             let alert = UIAlertController(title: "중복 로그인", message: "다른 기기에서 로그인이 감지되어 로그아웃 처리됩니다.", preferredStyle: .alert)
             let okAction = UIAlertAction(title: "확인", style: .default) { _ in
-                // 구글 로그아웃 처리
+                // 로그아웃 처리
                 do {
                     
-                    try Auth.auth().signOut()
+                    if Auth.auth().currentUser?.providerData.first?.providerID == "google.com" {
+                        try Auth.auth().signOut()
+                    } else {
+                        UserApi.shared.logout { error in
+                            if let error = error {
+                                print("로그아웃 실패: \(error)")
+                            } else {
+                                print("logout() 성공")
+                            }
+                        }
+                    }
                     
                     if let sceneDelegate = UIApplication.shared.connectedScenes.first?.delegate as? SceneDelegate,
                        let window = sceneDelegate.window {

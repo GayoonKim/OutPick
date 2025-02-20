@@ -58,7 +58,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 print("5. 구글 로그인 체크 완료: \(success)")
                 if success {
                     isLoggedIn = true
- 
+                    Task {
+                        try await FirebaseManager.shared.listenToRooms()
+                    }
                 }
                 
                 group.leave()
@@ -71,6 +73,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 //                print("7. 카카오 로그인 체크 완료: \(success)")
                 if success {
                     isLoggedIn = true
+                    Task {
+                        try await FirebaseManager.shared.listenToRooms()
+                    }
 
                 }
                 group.leave()
@@ -81,10 +86,6 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 //                print("9. notify 내부 실행")
                 if isLoggedIn {
 //                    print("10. 로그인 됨")
-                    
-                    Task {
-                        try await FirebaseManager.shared.listenToRooms()
-                    }
                     
                     LoginManager.shared.fetchUserProfile(LoginManager.shared.getUserEmail) { screen in
                         DispatchQueue.main.async {

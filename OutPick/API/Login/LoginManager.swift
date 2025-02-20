@@ -26,7 +26,7 @@ class LoginManager {
     var deviceIDListener: ListenerRegistration?
     
     // 중복 로그인 탐지
-    func setupDevIDListener_Google() async throws{
+    func setupDevIDListener() async throws{
         do {
             
             guard let userDoc = try await FirebaseManager.shared.getUserDoc() else { return }
@@ -111,11 +111,16 @@ class LoginManager {
                     print(userProfile)
                     
                     // 구글 로그인
-                    if Auth.auth().currentUser?.providerData.first?.providerID == "google.com" {
-                        Task {
-                            try await self.updateLogDevID()
-                            try await self.setupDevIDListener_Google()
-                        }
+//                    if Auth.auth().currentUser?.providerData.first?.providerID == "google.com" {
+//                        Task {
+//                            try await self.updateLogDevID()
+//                            try await self.setupDevIDListener_Google()
+//                        }
+//                    }
+                    
+                    Task {
+                        try await self.updateLogDevID()
+                        try await self.setupDevIDListener()
                     }
 
                     let mainStorybard = UIStoryboard(name: "Main", bundle: nil)
