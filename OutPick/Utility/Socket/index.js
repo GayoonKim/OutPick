@@ -37,7 +37,7 @@ io.on('connection', (socket) => {
         }
         
         socket.join(roomName);
-        rooms[roomName].push(socket.roomName) || "Anonymous";
+        rooms[roomName].push(socket.username) || "Anonymous";
         io.emit("room list", Object.keys(rooms)); // 모든 클라이언트에게 방 목록 전송
     });
     

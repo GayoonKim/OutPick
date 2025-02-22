@@ -198,9 +198,6 @@ class RoomCreateViewController: UIViewController, PHPickerViewControllerDelegate
     
     @IBAction func createBtnTapped(_ sender: UIButton) {
         
-//        activityIndicator.center = self.view.center
-//        activityIndicator.startAnimating()
-        
         DispatchQueue.main.async {
             self.createButton.isEnabled = false
             LoadingIndicator.shared.start(on: self)
@@ -219,10 +216,6 @@ class RoomCreateViewController: UIViewController, PHPickerViewControllerDelegate
                 }
                 
                 let room = ChatRoom(ID: nil, roomName: self.roomNameTextView.text, roomDescription: self.roomDescriptionTextView.text, participants: [LoginManager.shared.getUserEmail], creatorID: LoginManager.shared.getUserEmail, createdAt: Date(), roomImageName: nil)
-                
-//                await MainActor.run {
-//                    LoadingIndicator.shared.stop()
-//                }
                 
                 self.performSegue(withIdentifier: "ToChatRoom", sender: room)
                 

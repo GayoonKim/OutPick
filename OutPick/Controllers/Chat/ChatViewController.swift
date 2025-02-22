@@ -79,25 +79,20 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         setUpOptionMenuUI()
         adjustLayoutForSafeArea()
         
-        if let sceneDelegate = UIApplication.shared.connectedScenes.first?.delegate as? SceneDelegate,
-           let window = sceneDelegate.window {
-            let mainStorybard = UIStoryboard(name: "Main", bundle: nil)
-            let homeScreen = mainStorybard.instantiateViewController(withIdentifier: "HomeTBC")
-            window.rootViewController = homeScreen
-            window.makeKeyAndVisible()
-        }
-        
-        
-        
     }
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         
         SocketIOManager.shared.establishConnection {
-            SocketIOManager.shared.setUserName(UserProfile.shared.nickname ?? "")
+            
+            SocketIOManager.shared.socket.off("chat message")
+            
+            if let roomName = self.room?.roomName {
+                SocketIOManager.shared.joinRoom(roomName)
+            }
+            SocketIOManager.shared.listenToChatMessage()
         }
-        
     }
     
     private func playVideo(from url: URL) {
@@ -254,6 +249,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         
         guard let room = self.room else { return }
         FirebaseManager.shared.add_room_participant(room: room)
+        SocketIOManager.shared.joinRoom(room.roomName)
         
     }
     
@@ -362,9 +358,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         DispatchQueue.main.async {
             
             self.updateNavigationTitle(with: savedRoom)
-//            self.view.isUserInteractionEnabled = false
-//            self.activityIndicator.stopAnimating()
-//            self.activityIndicator.removeFromSuperview()
             LoadingIndicator.shared.stop()
             self.view.isUserInteractionEnabled = true
             

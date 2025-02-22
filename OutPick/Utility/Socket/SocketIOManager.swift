@@ -15,6 +15,7 @@ class SocketIOManager {
     var socket: SocketIOClient!
     
     private init() {
+        
         manager = SocketManager(socketURL: URL(string: "http://127.0.0.1:3000")!, config: [.log(true), .compress])
         socket = manager.defaultSocket
         
@@ -28,11 +29,17 @@ class SocketIOManager {
         socket.on(clientEvent: .error) { data, ack in
             print("소켓 에러:", data)
         }
+        
     }
     
     func establishConnection(completion: @escaping () -> Void) {
-        socket.connect()
-        completion()
+        if socket.status != .connected {
+            socket.connect()
+            completion()
+        } else {
+            print("⚠️ 이미 연결되어 있습니다.")
+        }
+    
     }
     
     func closeConnection() {
@@ -56,4 +63,19 @@ class SocketIOManager {
         socket.emit("set username", userName)
         print("유저 이름 이벤트 emit 완료")
     }
+    
+    func listenToChatMessage() {
+        socket.on("chat message") { data, _ in
+        
+            guard let messageData = data.first as? [String: Any],
+            let user = messageData["user"] as? String,
+            let message = messageData["message"] as? String else {
+                return
+            }
+            
+            print("\(user) => \(message)")
+            
+        }
+    }
+    
 }

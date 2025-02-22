@@ -106,19 +106,6 @@ class FirebaseStorageManager {
                     return
                 }
                 
-                //                videoRef.downloadURL { downloadURL, error in
-                //
-                //                    if let error = error {
-                //                        continuation.resume(throwing: error)
-                //                    }
-                //
-                //                    if let downloadURL = downloadURL {
-                //                        try? FileManager.default.removeItem(at: videoURL)
-                //                        continuation.resume(returning: downloadURL)
-                //                    }
-                //
-                //                }
-                
             }
             
             let _ = uploadTask.observe(.progress) { snapshot in
@@ -184,8 +171,7 @@ class FirebaseStorageManager {
                 
                 if let data = data,
                    let image = UIImage(data: data) {
-                    
-//                    KingfisherManager.shared.cache.store(image, forKey: imageName)
+    
                     KingfisherManager.shared.cache.memoryStorage.store(value: image, forKey: imageName)
                     continuation.resume(returning: image)
                     

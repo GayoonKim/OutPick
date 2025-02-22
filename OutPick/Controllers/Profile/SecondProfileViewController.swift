@@ -180,6 +180,9 @@ class SecondProfileViewController: UIViewController {
             }
         }
         
+        UserDefaults.standard.removeObject(forKey: "savedProfileImage")
+        UserDefaults.standard.removeObject(forKey: "savedNickName")
+        
     }
     
     private func saveUserProfile(email: String) {

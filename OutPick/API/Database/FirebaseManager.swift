@@ -238,6 +238,11 @@ class FirebaseManager {
                 try await db.collection("Rooms").document(DateManager.shared.currentMonth).setData([:])
             }
             
+            // Socket.IO 서버에 방 생성 이벤트 전송
+            SocketIOManager.shared.createRoom(room.roomName)
+            // Socket.IO 서버에 방 참여 이벤트 전송 (방장)
+            SocketIOManager.shared.joinRoom(room.roomName)
+            
             do {
                 let _ = try await db.runTransaction({ (transaction, errorPointer) -> Any? in
                     
@@ -571,6 +576,10 @@ class FirebaseManager {
                     return nil
                     
                 })
+                
+                if let imageName = room.roomImageName {
+                    try await KingfisherManager.shared.cache.removeImage(forKey: imageName)
+                }
                 
                 print("참여중인 방 강제 삭제 성공")
                 remove_participant_task = nil
