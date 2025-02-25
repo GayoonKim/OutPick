@@ -350,8 +350,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     
     @objc private func handleRoomSaveCompleted(notification: Notification) {
         
-        print("handleRoomSaveCompleted 시작")
-        
         guard let savedRoom = notification.userInfo?["room"] as? ChatRoom else { return }
         self.room = savedRoom
         
@@ -361,9 +359,12 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
             LoadingIndicator.shared.stop()
             self.view.isUserInteractionEnabled = true
             
+            SocketIOManager.shared.establishConnection() {
+                SocketIOManager.shared.createRoom(savedRoom.roomName)
+                SocketIOManager.shared.joinRoom(savedRoom.roomName)
+            }
+            
         }
-        
-        print("handleRoomSaveCompleted 끝")
         
     }
     

@@ -33,12 +33,23 @@ class SocketIOManager {
     }
     
     func establishConnection(completion: @escaping () -> Void) {
-        if socket.status != .connected {
-            socket.connect()
+        
+        print("establishConnection 호출됨")
+        
+        if socket.status == .connected {
+            print("이미 연결된 상태")
             completion()
-        } else {
-            print("⚠️ 이미 연결되어 있습니다.")
+            return
         }
+        
+        socket.once(clientEvent: .connect) { [weak self] _, _ in
+            guard let self = self else { return }
+            print("소켓 연결 성공")
+            completion()
+        }
+        
+        print("소켓 연결 시도")
+        socket.connect()
     
     }
     
@@ -47,11 +58,50 @@ class SocketIOManager {
     }
 
     func joinRoom(_ roomName: String) {
+        
+        print("joinRomm 호출 - roomName: ", roomName)
+        
+        guard socket.status == .connected else {
+            print("소켓이 연결되지 않음")
+            return
+        }
+        
+        //기존 리스너 제거, 중복 방지
+        socket.off("join success")
+        socket.off("error")
+        
+        // 방 참여 시도
         socket.emit("join room", roomName)
+        
+        // 방 참여 성공/실패 모니터링
+        socket.on("join success") { data, _ in
+            print("방 참여 성공: ", data)
+        }
+        socket.on("error") { data, _ in
+            print("방 참여 실패: ", data)
+        }
+        
     }
     
     func createRoom(_ roomName: String) {
+        
+        print("createRoom 호출 - roomName: ", roomName)
+        
+        guard socket.status == .connected else {
+            print("소켓이 연결되지 않음")
+            return
+        }
+        
         socket.emit("create room", roomName)
+        
+        // 방 참여 성공/실패 모니터링
+        socket.on("join success") { data, _ in
+            print("방 참여 성공: ", data)
+        }
+        socket.on("error") { data, _ in
+            print("방 참여 실패: ", data)
+        }
+        
     }
     
     func sendMessage(_ roomName: String, _ message: String) {
@@ -73,7 +123,10 @@ class SocketIOManager {
                 return
             }
             
-            print("\(user) => \(message)")
+            guard let messageData = data.first as? [String: Any],
+                  let user = messageData["user"] as? String else { return }
+            
+            print("\(user) => \(messageData)")
             
         }
     }
