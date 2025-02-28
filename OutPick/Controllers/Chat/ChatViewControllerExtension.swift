@@ -123,48 +123,35 @@ extension ChatViewController: PHPickerViewControllerDelegate {
         for result in results {
             let itemProvider = result.itemProvider
             if itemProvider.hasItemConformingToTypeIdentifier(UTType.movie.identifier) {
-                
                 resultsForVideos.append(result)
-                
             } else if itemProvider.canLoadObject(ofClass: UIImage.self) {
-                
                 resultsForImages.append(result)
-                
             }
-            
         }
         
         if !resultsForImages.isEmpty {
             convertImagesTask = Task {
                 do {
-                    
                     let images = try await MediaManager.shared.dealWithImages(resultsForImages)
                     
-                    let imageNames = try await FirebaseStorageManager.shared.uploadImagesToStorage(images: images, location: ImageLocation.Test)
+//                    let imageNames = try await FirebaseStorageManager.shared.uploadImagesToStorage(images: images, location: ImageLocation.Test)
                     
+                    if let room = self.room {
+                        SocketIOManager.shared.sendImages(room.roomName, images)
+                    }
                 } catch MediaError.FailedToConvertImage {
-                    
                     AlertManager.showAlertNoHandler(title: "이미지 변환 실패", message: "이미지를 다시 선택해 주세요/", viewController: self)
-                    
                 } catch StorageError.FailedToUploadImage {
-                    
                     print("이미지 업로드 실패")
-                    
                 } catch StorageError.FailedToFetchImage {
-                    
                     print("이미지 불러오기 실패")
-                    
                 }
             }
-            
+        
             convertImagesTask = nil
-            
         }
         
         if !resultsForVideos.isEmpty {
-            
-            
-            
         }
         
     }

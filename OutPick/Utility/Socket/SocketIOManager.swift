@@ -6,6 +6,7 @@
 
 import UIKit
 import SocketIO
+import Combine
 
 class SocketIOManager {
     
@@ -13,6 +14,11 @@ class SocketIOManager {
     
     var manager: SocketManager!
     var socket: SocketIOClient!
+    
+    private var cancellables = Set<AnyCancellable>()
+    
+    // Combine의 PassthroughSubject를 사용하여 이벤트 스트림 생성
+    var receivedImagesPublisher = PassthroughSubject<[UIImage], Never>()
     
     private init() {
         
@@ -50,13 +56,13 @@ class SocketIOManager {
         
         print("소켓 연결 시도")
         socket.connect()
-    
+        
     }
     
     func closeConnection() {
         socket.disconnect()
     }
-
+    
     func joinRoom(_ roomName: String) {
         
         print("joinRomm 호출 - roomName: ", roomName)
@@ -104,8 +110,43 @@ class SocketIOManager {
         
     }
     
-    func sendMessage(_ roomName: String, _ message: String) {
-        socket.emit("chat message", ["roomName": roomName, "message": message])
+    func sendMessage(_ roomName: String, _ message: ChatMessage) {
+        socket.emit("chat message", message.toSocketRepresentation())
+    }
+    
+    func sendImages(_ roomName: String, _ images: [UIImage]) {
+        guard socket.status == .connected else {
+            print("소켓이 연결되지 않음")
+            return
+        }
+        
+        var imageDataArray = Array<Data?>(repeating: nil, count: images.count)
+        
+        images.forEach {
+            if let imageData = $0.jpegData(compressionQuality: 1) {
+                imageDataArray.append(imageData)
+            }
+        }
+        
+        socket.emit("send images", ["roomName": roomName, "images": imageDataArray.compactMap{$0}])
+        
+        // 중복 방지를 위해 기존 리스너 제거
+        socket.off("receiveImages")
+        socket.on("receiveImages") { dataArray, _ in
+            if let data = dataArray.first as? [String: Any],
+               let imageDataArray = data["images"] as? [Data] {
+                var images: [UIImage] = []
+                for imageData in imageDataArray {
+                    if let image = UIImage(data: imageData) {
+                        images.append(image)
+                    }
+                }
+                
+                DispatchQueue.main.async {
+                    self.receivedImagesPublisher.send(images)
+                }
+            }
+        }
     }
     
     func setUserName(_ userName: String) {
@@ -116,19 +157,17 @@ class SocketIOManager {
     
     func listenToChatMessage() {
         socket.on("chat message") { data, _ in
-        
-            guard let messageData = data.first as? [String: Any],
-            let user = messageData["user"] as? String,
-            let message = messageData["message"] as? String else {
-                return
-            }
+            guard let messageData = data.first as? [String: Any] else { return }
+            let roomName = messageData["roomName"] as! String
+            let senderID = messageData["senderID"] as! String
+            let senderNickName = messageData["senderNickname"] as! String
+            let messageText = messageData["msg"] as! String
             
-            guard let messageData = data.first as? [String: Any],
-                  let user = messageData["user"] as? String else { return }
-            
-            print("\(user) => \(messageData)")
-            
+            let chatMessage = ChatMessage(roomName: roomName, senderID: senderID, senderNickname: senderNickName, msg: messageText, sentAt: Date())
+            print("메시지 수신 성공: ", chatMessage)
         }
     }
+    
+    
     
 }

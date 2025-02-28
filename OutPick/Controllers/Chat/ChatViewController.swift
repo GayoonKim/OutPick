@@ -24,6 +24,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     
     @IBOutlet weak var joinRoomBtn: UIButton!
     
+    @IBOutlet weak var testImageView1: UIImageView!
+    @IBOutlet weak var testImageView2: UIImageView!
+    
+    
     var swipeRecognizer: UISwipeGestureRecognizer!
     
     private var sideMenuViewController = SideMenuViewController()
@@ -48,6 +52,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         view.translatesAutoresizingMaskIntoConstraints = false
         return view
     }()
+    
+    private var cancellables = Set<AnyCancellable>()
     
     override func viewDidLoad() {
         
@@ -79,6 +85,18 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         setUpOptionMenuUI()
         adjustLayoutForSafeArea()
         
+        bindImageUpdates()
+    }
+    
+    private func bindImageUpdates() {
+        SocketIOManager.shared.receivedImagesPublisher
+            .receive(on: DispatchQueue.main)
+            .sink{ [weak self] receivedImages in
+                guard let self = self else { return }
+                
+                Task { try await FirebaseStorageManager.shared.uploadImagesToStorage(images: receivedImages, location: ImageLocation.Test) }
+            }
+            .store(in: &cancellables)
     }
     
     override func viewWillAppear(_ animated: Bool) {
@@ -259,9 +277,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
               let roomName = self.room?.roomName else { return }
         self.msgTextView.text = nil
         
-//        let newMessage = ChatMessage(senderID: LoginManager.shared.getUserEmail, senderNickname: UserProfile.shared.nickname ?? "", msg: message, sentAt: Date(), messageType: .Text)
+        let newMessage = ChatMessage(roomName: roomName,senderID: LoginManager.shared.getUserEmail, senderNickname: UserProfile.shared.nickname ?? "", msg: message, sentAt: nil)
         
-        SocketIOManager.shared.sendMessage(roomName, message)
+        SocketIOManager.shared.sendMessage(roomName, newMessage)
         sendBtn.isEnabled = false
         
     }
