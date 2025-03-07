@@ -14,13 +14,29 @@ class MediaManager {
     
     static let shared = MediaManager()
     
-    func convertImage(_ result: PHPickerResult) async throws -> UIImage {
+    func compressImageWithImageIO(_ image: UIImage) -> CGImage?{
+        let options: [NSString:Any] = [
+            kCGImageSourceThumbnailMaxPixelSize: 500,
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true
+        ]
         
+        guard let imageData = image.jpegData(compressionQuality: 0.5),
+              let imageSource = CGImageSourceCreateWithData(imageData as CFData, nil),
+              let cgImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary) else {
+            
+            print("압축 이미지 데이터 생성 실패")
+            return nil
+        }
+        
+        return cgImage
+    }
+    
+    func convertImage(_ result: PHPickerResult) async throws -> UIImage {
         return try await withCheckedThrowingContinuation { continuation in
             let itemProvider = result.itemProvider
             if itemProvider.canLoadObject(ofClass: UIImage.self) {
                 itemProvider.loadObject(ofClass: UIImage.self, completionHandler: { image, error in
-                    
                     guard let image = image as? UIImage, error == nil else {
                         continuation.resume(throwing: MediaError.FailedToConvertImage)
                         return
@@ -42,32 +58,25 @@ class MediaManager {
                     }
                     
                     continuation.resume(returning: UIImage(cgImage: cgImage))
-                    
                 })
             }
         }
-        
     }
     
     func dealWithImages(_ results: [PHPickerResult]) async throws -> [UIImage] {
-        
         var images = Array<UIImage?>(repeating: nil, count: results.count)
         
         for result in results {
             do {
-                
                 let image = try await convertImage(result)
+                
                 images.append(image)
-                
             } catch {
-                
                 throw error
-                
             }
         }
         
         return images.compactMap{$0}
-        
     }
     
     func convertVideo(_ result: PHPickerResult) async throws -> URL {

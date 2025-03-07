@@ -42,7 +42,7 @@ class AttachmentView: UIView {
         
         addSubview(stackView)
         
-        for btn in ["photo", "camera", "paperclip"] {
+        for btn in ["photo", "camera"/*, "paperclip"*/] {
             
             let button = UIButton(type: .system)
             button.setImage(UIImage(systemName: btn), for: .normal)

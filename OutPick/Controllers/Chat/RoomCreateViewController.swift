@@ -10,7 +10,7 @@ import PhotosUI
 import FirebaseFirestore
 import Kingfisher
 
-class RoomCreateViewController: UIViewController, PHPickerViewControllerDelegate, UIImagePickerControllerDelegate & UINavigationControllerDelegate {
+class RoomCreateViewController: UIViewController {
     
     @IBOutlet weak var roomNameTextView: UITextView!
     @IBOutlet weak var roomNameCountLabel: UILabel!
@@ -24,6 +24,12 @@ class RoomCreateViewController: UIViewController, PHPickerViewControllerDelegate
     @IBOutlet weak var activityIndicator: UIActivityIndicatorView!
     
     var roomInfo: ChatRoom?
+    
+    enum RoomCreationError: Error {
+        case duplicateName
+        case saveFailed
+        case imageUploadFailed
+    }
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -128,33 +134,7 @@ class RoomCreateViewController: UIViewController, PHPickerViewControllerDelegate
             present(imagePicker, animated: true, completion: nil)
         }
     }
-    
-    func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
-        picker.dismiss(animated: true, completion: nil)
-        
-        Task {
-            
-            let images = try await MediaManager.shared.dealWithImages(results)
-            DispatchQueue.main.async {
-                
-                if let image = images.first {
-                    self.roomImageView.image = image
-                } else {
-                    self.roomImageView.image = UIImage(named: "Default_Profile.png")
-                }
-                
-                self.removeImageButtonSetup()
-                
-            }
-            
-        }
-        
-    }
-    
-    func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-        picker.dismiss(animated: true, completion: nil)
-    }
-    
+
     private func removeImageButtonSetup() {
         let removeImageButton: UIButton = {
             let button = UIButton(type: .system)
@@ -372,8 +352,45 @@ extension Notification.Name {
     static let roomSaveFailed = Notification.Name("roomSaveFailed")
 }
 
-enum RoomCreationError: Error {
-    case duplicateName
-    case saveFailed
-    case imageUploadFailed
+extension RoomCreateViewController: PHPickerViewControllerDelegate {
+    func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+        picker.dismiss(animated: true, completion: nil)
+        
+        Task {
+            let images = try await MediaManager.shared.dealWithImages(results)
+            
+            DispatchQueue.main.async {
+                if let image = images.first {
+                    self.roomImageView.image = image
+                } else {
+                    self.roomImageView.image = UIImage(named: "Default_Profile.png")
+                }
+                
+                self.removeImageButtonSetup()
+            }
+        }
+    }
+}
+
+extension RoomCreateViewController: UIImagePickerControllerDelegate & UINavigationControllerDelegate {
+    func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
+        if let selectedImage = info[.originalImage] as? UIImage,
+           let cgImage = MediaManager.shared.compressImageWithImageIO(selectedImage) {
+            self.roomImageView.image = UIImage(cgImage: cgImage)
+            self.removeImageButtonSetup()
+            self.enableCreateBtn()
+        } else if let editedImage = info[.editedImage] as? UIImage,
+                  let cgImage = MediaManager.shared.compressImageWithImageIO(editedImage) {
+            self.roomImageView.image = UIImage(cgImage: cgImage)
+            self.removeImageButtonSetup()
+            self.enableCreateBtn()
+        }
+        
+        picker.dismiss(animated: true, completion: nil)
+    }
+    
+    func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+        picker.dismiss(animated: true, completion: nil)
+    }
+    
 }

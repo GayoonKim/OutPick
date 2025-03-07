@@ -44,16 +44,13 @@ extension SecondProfileViewController: UITextFieldDelegate {
 }
 
 extension SecondProfileViewController: PHPickerViewControllerDelegate {
-    
     func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
-        
         picker.dismiss(animated: true, completion: nil)
         
         Task {
-            
             let images = try await MediaManager.shared.dealWithImages(results)
+            
             DispatchQueue.main.async {
-                
                 if let image = images.first {
                     self.profileImageView.image = image
                 } else {
@@ -61,23 +58,25 @@ extension SecondProfileViewController: PHPickerViewControllerDelegate {
                 }
                 
                 self.removeImageButtonSetup()
-                
             }
-
         }
-        
     }
-    
 }
 
 extension SecondProfileViewController: UIImagePickerControllerDelegate & UINavigationControllerDelegate {
-    
     func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
-        if let selectedImage = info[.originalImage] as? UIImage {
-            profileImageView.image = selectedImage
+        if let selectedImage = info[.originalImage] as? UIImage,
+           let cgImage = MediaManager.shared.compressImageWithImageIO(selectedImage) {
+            profileImageView.image = UIImage(cgImage: cgImage)
+            self.removeImageButtonSetup()
+            self.enableCompleteButton()
+        } else if let editedImage = info[.editedImage] as? UIImage,
+                  let cgImage = MediaManager.shared.compressImageWithImageIO(editedImage) {
+            profileImageView.image = UIImage(cgImage: cgImage)
             self.removeImageButtonSetup()
             self.enableCompleteButton()
         }
+        
         picker.dismiss(animated: true, completion: nil)
     }
     
