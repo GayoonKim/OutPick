@@ -8,15 +8,16 @@
 import UIKit
 import FirebaseCore
 import SocketIO
+import FirebaseFirestore
 
 // 채팅 메시지 정보
-struct ChatMessage: SocketData {
+struct ChatMessage: SocketData, Codable {
     let roomName: String
-    let senderID: String                 // 메시지 전송 사용자 아이디
-    let senderNickname: String           // 메시지 전송 사용자 닉네임
-    let msg: String?                      // 메시지 내용
+    let senderID: String                // 메시지 전송 사용자 아이디
+    let senderNickname: String          // 메시지 전송 사용자 닉네임
+    let msg: String?                    // 메시지 내용
     let sentAt: Date?                   // 메시지 보낸 시간
-    
+    let attachments: [Attachment]?
     
     func toSocketRepresentation() -> SocketData {
         return [
@@ -30,14 +31,12 @@ struct ChatMessage: SocketData {
     // Firestore에 저장하기 위힌 뱐환 메서드
     func toDict() -> [String: Any] {
         return [
-            
             "roomName": roomName,
             "senderID": senderID,
             "senderNickname": senderNickname,
             "msg": msg ?? "",
-            "sentAt": Timestamp(date: sentAt ?? Date())
+            "sentAt": Timestamp(date: sentAt ?? Date()),
+            "attachments": attachments ?? []
         ]
     }
 }
-
-extension ChatMessage: Hashable {}

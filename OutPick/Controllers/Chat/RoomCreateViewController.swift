@@ -25,11 +25,11 @@ class RoomCreateViewController: UIViewController {
     
     var roomInfo: ChatRoom?
     
-    enum RoomCreationError: Error {
-        case duplicateName
-        case saveFailed
-        case imageUploadFailed
-    }
+//    enum RoomCreationError: Error {
+//        case duplicateName
+//        case saveFailed
+//        case imageUploadFailed
+//    }
     
     override func viewDidLoad() {
         super.viewDidLoad()

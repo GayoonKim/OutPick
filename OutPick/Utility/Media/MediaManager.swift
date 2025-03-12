@@ -80,18 +80,17 @@ class MediaManager {
     }
     
     func convertVideo(_ result: PHPickerResult) async throws -> URL {
-        
         return try await withCheckedThrowingContinuation { continuation in
             let itemProvider = result.itemProvider
             if itemProvider.hasRepresentationConforming(toTypeIdentifier: UTType.movie.identifier) {
                 itemProvider.loadFileRepresentation(forTypeIdentifier: UTType.movie.identifier) { fileURL, error in
-                    
                     guard let fileURL = fileURL, error == nil else {
                         continuation.resume(throwing: error ?? NSError(domain: "VideoLoad", code: -1, userInfo: [NSLocalizedDescriptionKey: "Video URL 불러오기 실패"]))
                         return
                     }
                     
                     let config = FYVideoCompressor.CompressionConfig(videoBitrate: 2000_000, videomaxKeyFrameInterval: 10, fps: 30, audioSampleRate: 44100, audioBitrate: 128_000, fileType: .mp4, scale: CGSize(width: 1280, height: 720))
+                    
                     FYVideoCompressor().compressVideo(fileURL, config: config) { result in
                         switch result {
                             
@@ -107,7 +106,6 @@ class MediaManager {
                 }
             }
         }
-        
     }
     
     func dealWithVideos(_ results: [PHPickerResult]) async throws -> [URL] {

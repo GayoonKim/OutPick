@@ -27,7 +27,6 @@ class FirebaseStorageManager {
     
     
     func uploadImageToStorage(image: UIImage, location: ImageLocation) async throws -> String {
-        
         let imageName = UUID().uuidString
         return try await withCheckedThrowingContinuation { continuation in
             
@@ -44,25 +43,20 @@ class FirebaseStorageManager {
             metadata.contentType = "image/jpeg"
             
             let uploadTask = imageRef.putData(imageData, metadata: metadata) { metadata, error in
-                
                 guard error == nil else {
                     continuation.resume(throwing: StorageError.FailedToUploadImage)
                     return
                 }
-                
             }
             
             let _ = uploadTask.observe(.progress) { snapshot in
-                
                 let percentComplete = 100.0 * Double(snapshot.progress!.completedUnitCount) / Double(snapshot.progress!.totalUnitCount)
                 print("Upload is \(percentComplete) done")
-                
             }
             
             continuation.resume(returning: imageName)
             
         }
-        
     }
     
     func uploadImagesToStorage(images: [UIImage], location: ImageLocation) async throws -> [String] {

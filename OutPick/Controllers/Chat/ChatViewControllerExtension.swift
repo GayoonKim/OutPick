@@ -167,7 +167,7 @@ extension ChatViewController: UIImagePickerControllerDelegate {
 
         } else if let originalImage = info[.originalImage] as? UIImage {
 
-
+            
 
         }
         

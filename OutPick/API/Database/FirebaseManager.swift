@@ -34,6 +34,7 @@ class FirebaseManager {
     private var saveUserProfileTask: Task<Void, Never>? = nil
     private var add_room_participant_task: Task<Void, Never>? = nil
     private var remove_participant_task: Task<Void, Never>? = nil
+    private var saveChatMessageTask: Task<Void, Never>? = nil
     
     deinit {
         listenToRoomsTask?.cancel()
@@ -41,6 +42,7 @@ class FirebaseManager {
         saveUserProfileTask?.cancel()
         add_room_participant_task?.cancel()
         remove_participant_task?.cancel()
+        saveChatMessageTask?.cancel()
     }
     
     // 채팅방 읽기 전용 접근자 제공
@@ -626,6 +628,7 @@ class FirebaseManager {
     }
     
     //MARK: 메시지 관련 기능
+    
     
 }
 

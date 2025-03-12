@@ -10,13 +10,12 @@ import Kingfisher
 
 class RoomListsCollectionViewController: UICollectionViewController {
     
-    typealias DataSourceType = UICollectionViewDiffableDataSource<Section, Item>
-    
     enum Section: Hashable {
         case main
     }
     
     typealias Item = ChatRoom
+    typealias DataSourceType = UICollectionViewDiffableDataSource<Section, Item>
     
     var chatRooms: [ChatRoom] = []
     var dataSource: DataSourceType!
@@ -31,11 +30,6 @@ class RoomListsCollectionViewController: UICollectionViewController {
         NotificationCenter.default.addObserver(self, selector: #selector(chatRoomsUpdated), name: .chatRoomsUpdated, object: nil)
         
         self.updateCollectionView()
-        
-    }
-    
-    override func viewWillAppear(_ animated: Bool) {
-        
     }
     
     @objc private func chatRoomsUpdated(notification: Notification) {
@@ -43,16 +37,13 @@ class RoomListsCollectionViewController: UICollectionViewController {
         DispatchQueue.main.async {
             self.updateCollectionView()
         }
-        
     }
     
     private func updateCollectionView() {
-        
         let chatRoomsList = FirebaseManager.shared.currentChatRooms.sorted(by: <)
         let itemBySection = [Section.main: chatRoomsList]
         
         dataSource.applySnapshotUsing(sectionIDs: [Section.main], itemsBySection: itemBySection)
-        
     }
     
     private func configureDataSource() -> DataSourceType {
@@ -70,7 +61,6 @@ class RoomListsCollectionViewController: UICollectionViewController {
                     DispatchQueue.main.async {
                         cell.roomImageView.image = image
                     }
-                    
                 }
             }
             
@@ -78,7 +68,6 @@ class RoomListsCollectionViewController: UICollectionViewController {
             cell.roomDescriptionLabel.text = item.roomDescription
             
             return cell
-            
         }
         
         return dataSource

@@ -47,11 +47,9 @@ class SecondProfileViewController: UIViewController {
         }
         
         enableCompleteButton()
-        
     }
     
     override func viewWillDisappear(_ animated: Bool) {
-        
         super.viewWillDisappear(animated)
         
         if let nickName = nicknameTextField.text {
@@ -65,8 +63,6 @@ class SecondProfileViewController: UIViewController {
             print("저장된 방 대표 사진 불러오기 실패")
             return
         }
-        
-        
     }
     
     private func profileImageViewSetup() {
@@ -115,7 +111,6 @@ class SecondProfileViewController: UIViewController {
             removeImageButton.heightAnchor.constraint(equalToConstant: 30)
         ])
 
-        
         if let current_image_data = profileImageView.image?.pngData(),
            let new_image_data = UIImage(named: "Default_Profile")?.pngData(),
            current_image_data == new_image_data {
@@ -123,7 +118,6 @@ class SecondProfileViewController: UIViewController {
         } else {
             removeImageButton.isHidden = false
         }
-        
     }
     
     @objc private func addImageButtonTapped() {
@@ -149,17 +143,14 @@ class SecondProfileViewController: UIViewController {
     }
     
     func enableCompleteButton() {
-        
         if self.nicknameTextField.text == "" {
             self.completeButton.isEnabled = false
         } else {
             self.completeButton.isEnabled = true
         }
-        
     }
     
     @IBAction func completeButtonTapped(_ sender: UIButton) {
-        
         if let nickname = nicknameTextField.text {
             UserProfile.shared.nickname = nickname
         }
@@ -182,7 +173,6 @@ class SecondProfileViewController: UIViewController {
         
         UserDefaults.standard.removeObject(forKey: "savedProfileImage")
         UserDefaults.standard.removeObject(forKey: "savedNickName")
-        
     }
     
     private func saveUserProfile(email: String) {

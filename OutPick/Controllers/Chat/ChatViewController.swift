@@ -56,7 +56,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     private var cancellables = Set<AnyCancellable>()
     
     override func viewDidLoad() {
-        
         super.viewDidLoad()
         
         let backButton = UIBarButtonItem(image: UIImage(systemName: "chevron.left"), style: .plain, target: self, action: #selector(backButtonTapped))
@@ -94,7 +93,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
             .sink{ [weak self] receivedImages in
                 guard let self = self else { return }
                 
-                Task { try await FirebaseStorageManager.shared.uploadImagesToStorage(images: receivedImages, location: ImageLocation.Test) }
+                print("이미지 수신 성공: \(receivedImages)")
             }
             .store(in: &cancellables)
     }
@@ -109,6 +108,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
             if let roomName = self.room?.roomName {
                 SocketIOManager.shared.joinRoom(roomName)
             }
+            
             SocketIOManager.shared.listenToChatMessage()
         }
     }
@@ -264,28 +264,24 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     }
     
     @IBAction func joinRoomBtnTapped(_ sender: UIButton) {
-        
         guard let room = self.room else { return }
+        
         FirebaseManager.shared.add_room_participant(room: room)
         SocketIOManager.shared.joinRoom(room.roomName)
-        
     }
     
     @IBAction func sendBtnTapped(_ sender: UIButton) {
-        
         guard let message = self.msgTextView.text,
               let roomName = self.room?.roomName else { return }
         self.msgTextView.text = nil
         
-        let newMessage = ChatMessage(roomName: roomName,senderID: LoginManager.shared.getUserEmail, senderNickname: UserProfile.shared.nickname ?? "", msg: message, sentAt: nil)
+        let newMessage = ChatMessage(roomName: roomName,senderID: LoginManager.shared.getUserEmail, senderNickname: UserProfile.shared.nickname ?? "", msg: message, sentAt: Date(), attachments: nil)
         
-        SocketIOManager.shared.sendMessage(roomName, newMessage)
+        SocketIOManager.shared.sendMessages(roomName, newMessage)
         sendBtn.isEnabled = false
-        
     }
     
     private func setUpNotifications() {
-        
         // 키보드 관련
         NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillShow), name: UIResponder.keyboardWillShowNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillHide), name: UIResponder.keyboardWillHideNotification, object: nil)
@@ -296,7 +292,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         // 방 저장 관련
         NotificationCenter.default.addObserver(self, selector: #selector(handleRoomSaveCompleted), name: .roomSavedComplete, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleRoomSaveFailed), name: .roomSaveFailed, object: nil)
-        
     }
     
     @objc private func keyboardWillShow(_ sender: Notification) {
@@ -367,12 +362,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     }
     
     @objc private func handleRoomSaveCompleted(notification: Notification) {
-        
         guard let savedRoom = notification.userInfo?["room"] as? ChatRoom else { return }
         self.room = savedRoom
         
         DispatchQueue.main.async {
-            
             self.updateNavigationTitle(with: savedRoom)
             LoadingIndicator.shared.stop()
             self.view.isUserInteractionEnabled = true
@@ -381,22 +374,17 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
                 SocketIOManager.shared.createRoom(savedRoom.roomName)
                 SocketIOManager.shared.joinRoom(savedRoom.roomName)
             }
-            
         }
-        
     }
     
     @objc private func handleRoomSaveFailed(notification: Notification) {
-        
         activityIndicator.stopAnimating()
         
         guard let error = notification.userInfo?["error"] as? RoomCreationError else { return }
         showAlert(error: error)
-        
     }
     
     private func showAlert(error: RoomCreationError) {
-        
         var title: String
         var message: String
         
@@ -431,7 +419,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
 }
 
 extension ChatViewController: AttachmentViewDelegate {
-    
     internal func checkAttachmentBtnKind(didTapBtnWith identifier: String) {
         switch identifier {
             
@@ -453,5 +440,4 @@ extension ChatViewController: AttachmentViewDelegate {
             
         }
     }
-    
 }

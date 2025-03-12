@@ -9,19 +9,16 @@ import SocketIO
 import Combine
 
 class SocketIOManager {
-    
     static let shared = SocketIOManager()
     
     var manager: SocketManager!
     var socket: SocketIOClient!
     
-    private var cancellables = Set<AnyCancellable>()
-    
     // Combine의 PassthroughSubject를 사용하여 이벤트 스트림 생성
     var receivedImagesPublisher = PassthroughSubject<[UIImage], Never>()
+    private var cancellables = Set<AnyCancellable>()
     
     private init() {
-        
         manager = SocketManager(socketURL: URL(string: "http://127.0.0.1:3000")!, config: [.log(true), .compress])
         socket = manager.defaultSocket
         
@@ -35,11 +32,9 @@ class SocketIOManager {
         socket.on(clientEvent: .error) { data, ack in
             print("소켓 에러:", data)
         }
-        
     }
     
     func establishConnection(completion: @escaping () -> Void) {
-        
         print("establishConnection 호출됨")
         
         if socket.status == .connected {
@@ -56,7 +51,6 @@ class SocketIOManager {
         
         print("소켓 연결 시도")
         socket.connect()
-        
     }
     
     func closeConnection() {
@@ -64,7 +58,6 @@ class SocketIOManager {
     }
     
     func joinRoom(_ roomName: String) {
-        
         print("joinRomm 호출 - roomName: ", roomName)
         
         guard socket.status == .connected else {
@@ -86,7 +79,6 @@ class SocketIOManager {
         socket.on("error") { data, _ in
             print("방 참여 실패: ", data)
         }
-        
     }
     
     func createRoom(_ roomName: String) {
@@ -110,8 +102,10 @@ class SocketIOManager {
         
     }
     
-    func sendMessage(_ roomName: String, _ message: ChatMessage) {
+    func sendMessages(_ roomName: String, _ message: ChatMessage) {
         socket.emit("chat message", message.toSocketRepresentation())
+        
+        
     }
     
     func sendImages(_ roomName: String, _ images: [UIImage]) {
@@ -127,8 +121,32 @@ class SocketIOManager {
                 imageDataArray.append(imageData)
             }
         }
+
+        // 이미지 Firestore에 저장
+        Task { try await FirebaseStorageManager.shared.uploadImagesToStorage(images: images, location: ImageLocation.Message) }
         
         socket.emit("send images", ["roomName": roomName, "images": imageDataArray.compactMap{$0}])
+    }
+    
+    func setUserName(_ userName: String) {
+        print("setUserName 호출됨: \(userName)")
+        socket.emit("set username", userName)
+        print("유저 이름 이벤트 emit 완료")
+    }
+    
+    func listenToChatMessage() {
+        // 중복 방지를 위해 기존 리스너 제거
+        socket.off("chat message")
+        socket.on("chat message") { data, _ in
+            guard let messageData = data.first as? [String: Any] else { return }
+            let roomName = messageData["roomName"] as! String
+            let senderID = messageData["senderID"] as! String
+            let senderNickName = messageData["senderNickname"] as! String
+            let messageText = messageData["msg"] as! String
+            
+            let chatMessage = ChatMessage(roomName: roomName, senderID: senderID, senderNickname: senderNickName, msg: messageText, sentAt: Date(), attachments: nil)
+            print("메시지 수신 성공: ", chatMessage)
+        }
         
         // 중복 방지를 위해 기존 리스너 제거
         socket.off("receiveImages")
@@ -148,26 +166,4 @@ class SocketIOManager {
             }
         }
     }
-    
-    func setUserName(_ userName: String) {
-        print("setUserName 호출됨: \(userName)")
-        socket.emit("set username", userName)
-        print("유저 이름 이벤트 emit 완료")
-    }
-    
-    func listenToChatMessage() {
-        socket.on("chat message") { data, _ in
-            guard let messageData = data.first as? [String: Any] else { return }
-            let roomName = messageData["roomName"] as! String
-            let senderID = messageData["senderID"] as! String
-            let senderNickName = messageData["senderNickname"] as! String
-            let messageText = messageData["msg"] as! String
-            
-            let chatMessage = ChatMessage(roomName: roomName, senderID: senderID, senderNickname: senderNickName, msg: messageText, sentAt: Date())
-            print("메시지 수신 성공: ", chatMessage)
-        }
-    }
-    
-    
-    
 }
