@@ -9,13 +9,21 @@ import UIKit
 
 // 첨부 파일 정보
 struct Attachment: Codable {
-    let type: String
+    enum AttachmentType: String, Codable {
+        case image
+        case video
+        // 필요한 경우 더 추가
+    }
+    
+    let type: AttachmentType
     let fileName: String
     
     func toDict() -> [String: Any] {
         return [
-            "type": type,
+            "type": type.rawValue,
             "fileName": fileName 
         ]
     }
 }
+
+extension Attachment: Hashable {}

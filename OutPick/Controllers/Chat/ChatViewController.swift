@@ -81,21 +81,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         
         configureMsgTextView()
         decideJoinUI()
-        setUpOptionMenuUI()
+        setupAttachmentView()
         adjustLayoutForSafeArea()
         
         bindImageUpdates()
-    }
-    
-    private func bindImageUpdates() {
-        SocketIOManager.shared.receivedImagesPublisher
-            .receive(on: DispatchQueue.main)
-            .sink{ [weak self] receivedImages in
-                guard let self = self else { return }
-                
-                print("이미지 수신 성공: \(receivedImages)")
-            }
-            .store(in: &cancellables)
     }
     
     override func viewWillAppear(_ animated: Bool) {
@@ -112,9 +101,19 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
             SocketIOManager.shared.listenToChatMessage()
         }
     }
+
+    private func bindImageUpdates() {
+        SocketIOManager.shared.receivedImagesPublisher
+            .receive(on: DispatchQueue.main)
+            .sink{ [weak self] receivedImages in
+                guard let self = self else { return }
+                
+                print("이미지 수신 성공: \(receivedImages)")
+            }
+            .store(in: &cancellables)
+    }
     
     private func playVideo(from url: URL) {
-        
         let asset = AVAsset(url: url)
         let playerItem = AVPlayerItem(asset: asset)
         let player = AVPlayer(playerItem: playerItem)
@@ -124,7 +123,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         present(playerViewController, animated: true) {
             player.play()
         }
-        
     }
     
     private func openCamera() {
@@ -139,7 +137,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     }
     
     private func openPHPicker() {
-        
         var configuration = PHPickerConfiguration()
         configuration.filter = .any(of: [.images, .videos])
         configuration.selectionLimit = 0
@@ -149,44 +146,35 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         let picker = PHPickerViewController(configuration: configuration)
         picker.delegate = self
         present(picker, animated: true)
-        
     }
     
     private func adjustLayoutForSafeArea() {
-        
         // 하단 여백 추가
         chatUIStackView.layoutMargins = UIEdgeInsets(top: 0, left: 0, bottom: view.safeAreaInsets.bottom + 10, right: 0)
         chatUIStackView.isLayoutMarginsRelativeArrangement = true
-        
     }
     
-    private func setUpOptionMenuUI() {
-        
+    private func setupAttachmentView() {
         DispatchQueue.main.async {
-            
             self.view.addSubview(self.attachmentView)
+            
             NSLayoutConstraint.activate([
                 self.attachmentView.bottomAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.bottomAnchor),
                 self.attachmentView.leadingAnchor.constraint(equalTo: self.view.leadingAnchor, constant: 20),
                 self.attachmentView.trailingAnchor.constraint(equalTo: self.view.trailingAnchor, constant: -20),
                 self.attachmentView.heightAnchor.constraint(equalToConstant: 100),
             ])
-            
         }
-        
     }
     
     private func hideOrShowOptionMenu() {
-    
         guard let image = self.attachmentBtn.imageView?.image else { return }
         if image != UIImage(systemName: "xmark") {
 
             self.attachmentBtn.setImage(UIImage(systemName: "xmark"), for: .normal)
             
             if self.msgTextView.isFirstResponder {
-                
                 self.msgTextView.resignFirstResponder()
-                
             }
             
             self.attachmentView.isHidden = false
@@ -194,9 +182,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
             
             self.chatUIStackView.translatesAutoresizingMaskIntoConstraints = true
             self.chatUIStackView.frame.origin.y -= self.attachmentView.frame.height
-            
         } else {
-            
             self.attachmentBtn.setImage(UIImage(systemName: "plus"), for: .normal)
             self.attachmentView.isHidden = true
             self.attachmentView.alpha = 0
@@ -205,7 +191,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
             self.chatUIStackView.frame.origin.y += self.attachmentView.frame.height
             
         }
-        
     }
     
     @IBAction func attachmentBtnTapped(_ sender: UIButton) {
@@ -213,7 +198,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     }
     
     private func decideJoinUI() {
-        
         guard let room = room else { return }
         
         if room.participants.contains(LoginManager.shared.getUserEmail) {
@@ -223,11 +207,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         }
         
         updateNavigationTitle(with: room)
-        
     }
     
     @objc private func currentRoomObserver(_ notification: Notification) {
-        
         guard let rooms = notification.userInfo?["rooms"] as? [ChatRoom],
               let currentRoom = self.room,
               let updatedCurrentRoom = rooms.first(where: { $0.roomName == currentRoom.roomName }) else { return }
@@ -243,24 +225,19 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
                 self.joinRoomBtn.isHidden = true
             }
         }
-        
     }
     
     private func updateNavigationTitle(with room: ChatRoom) {
-        
         DispatchQueue.main.async{
             self.navigationItem.setTitle(title: room.roomName, subtitle: "\(room.participants.count)명 참여")
         }
-        
     }
     
     private func setJoinRoombtn() {
-        
         self.joinRoomBtn.isHidden = false
         self.joinRoomBtn.clipsToBounds = true
         self.joinRoomBtn.layer.cornerRadius = 20
         self.joinRoomBtn.backgroundColor = UIColor(white: 0.1, alpha: 0.05)
-        
     }
     
     @IBAction func joinRoomBtnTapped(_ sender: UIButton) {
@@ -272,12 +249,12 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     
     @IBAction func sendBtnTapped(_ sender: UIButton) {
         guard let message = self.msgTextView.text,
-              let roomName = self.room?.roomName else { return }
+              let room = self.room else { return }
         self.msgTextView.text = nil
         
-        let newMessage = ChatMessage(roomName: roomName,senderID: LoginManager.shared.getUserEmail, senderNickname: UserProfile.shared.nickname ?? "", msg: message, sentAt: Date(), attachments: nil)
+        let newMessage = ChatMessage(roomName: room.roomName,senderID: LoginManager.shared.getUserEmail, senderNickname: UserProfile.shared.nickname ?? "", msg: message, sentAt: Date(), attachments: nil)
         
-        SocketIOManager.shared.sendMessages(roomName, newMessage)
+        SocketIOManager.shared.sendMessages(room, newMessage)
         sendBtn.isEnabled = false
     }
     

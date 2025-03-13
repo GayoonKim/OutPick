@@ -12,7 +12,6 @@ protocol AttachmentViewDelegate: AnyObject {
 }
 
 class AttachmentView: UIView {
-    
     weak var delegate: AttachmentViewDelegate?
     
     private let stackView: UIStackView = {
@@ -35,7 +34,6 @@ class AttachmentView: UIView {
     }
     
     private func setupAttachmentView() {
-        
         backgroundColor = UIColor(white: 0.1, alpha: 0.05)
         layer.cornerRadius = 20
         isHidden = true
@@ -43,7 +41,6 @@ class AttachmentView: UIView {
         addSubview(stackView)
         
         for btn in ["photo", "camera"/*, "paperclip"*/] {
-            
             let button = UIButton(type: .system)
             button.setImage(UIImage(systemName: btn), for: .normal)
             button.tintColor = .black
@@ -60,7 +57,6 @@ class AttachmentView: UIView {
             button.layer.cornerRadius = 25
             
             stackView.addArrangedSubview(button)
-            
         }
         
         stackView.translatesAutoresizingMaskIntoConstraints = false
@@ -71,12 +67,10 @@ class AttachmentView: UIView {
             stackView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -40),
             stackView.heightAnchor.constraint(equalToConstant: 75)
         ])
-        
     }
     
     @objc private func btnTapped(_ sender: UIButton) {
         guard let identifier = sender.accessibilityIdentifier else { return }
         delegate?.checkAttachmentBtnKind(didTapBtnWith: identifier)
     }
-    
 }

@@ -102,13 +102,12 @@ class SocketIOManager {
         
     }
     
-    func sendMessages(_ roomName: String, _ message: ChatMessage) {
+    func sendMessages(_ room: ChatRoom, _ message: ChatMessage) {
         socket.emit("chat message", message.toSocketRepresentation())
-        
-        
+        Task { try await FirebaseManager.shared.saveMessage(message, room) }
     }
     
-    func sendImages(_ roomName: String, _ images: [UIImage]) {
+    func sendImages(_ room: ChatRoom, _ images: [UIImage]) {
         guard socket.status == .connected else {
             print("소켓이 연결되지 않음")
             return
@@ -122,10 +121,21 @@ class SocketIOManager {
             }
         }
 
-        // 이미지 Firestore에 저장
-        Task { try await FirebaseStorageManager.shared.uploadImagesToStorage(images: images, location: ImageLocation.Message) }
+        // 이미지 Storage에 저장 및 이미지 데이터 Firestore에 저장
+        Task {
+            let imageNames = try await FirebaseStorageManager.shared.uploadImagesToStorage(images: images, location: ImageLocation.Message)
+            var attachments = [Attachment]()
+            
+            imageNames.forEach {
+                let temp = Attachment(type: Attachment.AttachmentType.image, fileName: $0)
+                attachments.append(temp)
+            }
+            
+            let tempMessage = ChatMessage(roomName: room.roomName, senderID: room.creatorID, senderNickname: UserProfile.shared.nickname ?? "", msg: nil, sentAt: Date(), attachments: attachments)
+            try await FirebaseManager.shared.saveMessage(tempMessage, room)
+        }
         
-        socket.emit("send images", ["roomName": roomName, "images": imageDataArray.compactMap{$0}])
+        socket.emit("send images", ["roomName": room.roomName, "images": imageDataArray.compactMap{$0}])
     }
     
     func setUserName(_ userName: String) {

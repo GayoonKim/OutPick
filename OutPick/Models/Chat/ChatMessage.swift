@@ -30,13 +30,20 @@ struct ChatMessage: SocketData, Codable {
     
     // Firestore에 저장하기 위힌 뱐환 메서드
     func toDict() -> [String: Any] {
-        return [
+        var dict: [String: Any] = [
             "roomName": roomName,
             "senderID": senderID,
             "senderNickname": senderNickname,
             "msg": msg ?? "",
-            "sentAt": Timestamp(date: sentAt ?? Date()),
-            "attachments": attachments ?? []
+            "sentAt": Timestamp(date: sentAt ?? Date())
         ]
+        
+        if let attachments = attachments {
+            dict["attachments"] = attachments.map{ $0.toDict() }
+        }
+        
+        return dict
     }
 }
+
+extension ChatMessage: Hashable {}
