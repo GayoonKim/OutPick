@@ -13,7 +13,6 @@ import Combine
 import PhotosUI
 
 class ChatViewController: UIViewController, UINavigationControllerDelegate {
-    
     @IBOutlet weak var activityIndicator: UIActivityIndicatorView!
     @IBOutlet weak var sideMenuBtn: UIBarButtonItem!
     @IBOutlet weak var msgTextView: UITextView!
@@ -23,10 +22,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     @IBOutlet weak var chatUIStackView: UIStackView!
     
     @IBOutlet weak var joinRoomBtn: UIButton!
-    
-    @IBOutlet weak var testImageView1: UIImageView!
-    @IBOutlet weak var testImageView2: UIImageView!
-    
     
     var swipeRecognizer: UISwipeGestureRecognizer!
     
@@ -54,6 +49,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     }()
     
     private var cancellables = Set<AnyCancellable>()
+    
+    private lazy var chatMessageCollectionView = ChatMessageCollectionView()
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -85,6 +82,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         adjustLayoutForSafeArea()
         
         bindImageUpdates()
+        
+        setupChatMessageCollectionView()
+        test()
     }
     
     override func viewWillAppear(_ animated: Bool) {
@@ -101,7 +101,28 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
             SocketIOManager.shared.listenToChatMessage()
         }
     }
+    
+    private func test() {
+        let messages = [
+            ChatMessage(roomName: "Test", senderID: "example@example.comq", senderNickname: "사용자 1", msg: "Test", sentAt: Date(), attachments: []),
+            ChatMessage(roomName: "Test", senderID: "example@example.comq", senderNickname: "사용자 2", msg: "알고 싶지 않았는데 알게 되버린..알고 싶지 않았는데 알게 되버린..알고 싶지 않았는데 알게 되버린..알고 싶지 않았는데 알게 되버린..알고 싶지 않았는데 알게 되버린..", sentAt: Date(), attachments: [])
+        ]
+        
+        chatMessageCollectionView.addMessages(with: messages)
+    }
 
+    private func setupChatMessageCollectionView() {
+        chatMessageCollectionView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(chatMessageCollectionView)
+        
+        NSLayoutConstraint.activate([
+            chatMessageCollectionView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            chatMessageCollectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            chatMessageCollectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            chatMessageCollectionView.bottomAnchor.constraint(equalTo: chatUIStackView.topAnchor, constant: -8)
+            ])
+    }
+    
     private func bindImageUpdates() {
         SocketIOManager.shared.receivedImagesPublisher
             .receive(on: DispatchQueue.main)

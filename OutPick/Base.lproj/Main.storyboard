@@ -352,32 +352,18 @@
                                     <action selector="joinRoomBtnTapped:" destination="UDw-4m-Qed" eventType="touchUpInside" id="k9Z-IW-RZg"/>
                                 </connections>
                             </button>
-                            <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" horizontalHuggingPriority="251" verticalHuggingPriority="251" translatesAutoresizingMaskIntoConstraints="NO" id="8QE-ZS-hof">
-                                <rect key="frame" x="20" y="373" width="163" height="128"/>
-                            </imageView>
-                            <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" horizontalHuggingPriority="251" verticalHuggingPriority="251" translatesAutoresizingMaskIntoConstraints="NO" id="RDO-hy-1nZ">
-                                <rect key="frame" x="219" y="373" width="163" height="128"/>
-                            </imageView>
                         </subviews>
                         <viewLayoutGuide key="safeArea" id="fR5-rY-j7G"/>
                         <color key="backgroundColor" systemColor="systemBackgroundColor"/>
                         <constraints>
                             <constraint firstItem="g9k-2I-R88" firstAttribute="centerX" secondItem="eWn-8t-hw8" secondAttribute="centerX" id="3W1-ru-gXz"/>
-                            <constraint firstItem="g9k-2I-R88" firstAttribute="leading" secondItem="8QE-ZS-hof" secondAttribute="trailing" constant="8" id="7RT-te-Oy7"/>
                             <constraint firstItem="oxp-p3-194" firstAttribute="bottom" secondItem="fR5-rY-j7G" secondAttribute="bottom" id="7cE-4e-9mW"/>
-                            <constraint firstItem="8QE-ZS-hof" firstAttribute="top" secondItem="RDO-hy-1nZ" secondAttribute="top" id="GN9-hc-rSN"/>
                             <constraint firstItem="fR5-rY-j7G" firstAttribute="bottom" secondItem="aSv-oJ-neZ" secondAttribute="bottom" constant="20" id="Gs9-IA-Nz0"/>
                             <constraint firstItem="g9k-2I-R88" firstAttribute="centerY" secondItem="eWn-8t-hw8" secondAttribute="centerY" id="Pu4-Dq-Q42"/>
                             <constraint firstItem="fR5-rY-j7G" firstAttribute="trailing" secondItem="aSv-oJ-neZ" secondAttribute="trailing" constant="10" id="UdH-n4-N5p"/>
-                            <constraint firstItem="RDO-hy-1nZ" firstAttribute="leading" secondItem="g9k-2I-R88" secondAttribute="trailing" constant="8" id="Ybj-Ax-XcR"/>
                             <constraint firstItem="oxp-p3-194" firstAttribute="leading" secondItem="fR5-rY-j7G" secondAttribute="leading" constant="10" id="c7R-4f-KyT"/>
                             <constraint firstItem="fR5-rY-j7G" firstAttribute="trailing" secondItem="oxp-p3-194" secondAttribute="trailing" constant="10" id="dd6-sV-hii"/>
-                            <constraint firstItem="8QE-ZS-hof" firstAttribute="bottom" secondItem="RDO-hy-1nZ" secondAttribute="bottom" id="eDt-hB-Zgh"/>
-                            <constraint firstItem="8QE-ZS-hof" firstAttribute="top" secondItem="fR5-rY-j7G" secondAttribute="top" constant="267" id="fSS-7e-Waw"/>
-                            <constraint firstItem="8QE-ZS-hof" firstAttribute="leading" secondItem="fR5-rY-j7G" secondAttribute="leading" constant="20" id="iwq-Fn-0ks"/>
-                            <constraint firstItem="fR5-rY-j7G" firstAttribute="trailing" secondItem="RDO-hy-1nZ" secondAttribute="trailing" constant="20" id="mP2-g8-quQ"/>
                             <constraint firstItem="aSv-oJ-neZ" firstAttribute="leading" secondItem="fR5-rY-j7G" secondAttribute="leading" constant="10" id="qTG-dL-VPe"/>
-                            <constraint firstItem="8QE-ZS-hof" firstAttribute="centerY" secondItem="g9k-2I-R88" secondAttribute="centerY" id="t6K-z7-N16"/>
                         </constraints>
                     </view>
                     <navigationItem key="navigationItem" largeTitleDisplayMode="never" id="Efr-BR-gJD">
@@ -393,8 +379,6 @@
                         <outlet property="msgTextView" destination="i51-Pj-sr9" id="acv-Oe-qXW"/>
                         <outlet property="sendBtn" destination="pY4-Nn-hYc" id="qbq-jd-SBO"/>
                         <outlet property="sideMenuBtn" destination="gyW-2S-liv" id="OsV-EZ-ObG"/>
-                        <outlet property="testImageView1" destination="8QE-ZS-hof" id="260-Kb-f1H"/>
-                        <outlet property="testImageView2" destination="RDO-hy-1nZ" id="miu-Bu-tTo"/>
                     </connections>
                 </viewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="O5D-sE-ia2" userLabel="First Responder" customClass="UIResponder" sceneMemberID="firstResponder"/>
