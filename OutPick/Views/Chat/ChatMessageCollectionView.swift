@@ -15,7 +15,6 @@ class ChatMessageCollectionView: UIView {
     
     private var collectionView: UICollectionView!
     private var dataSource: UICollectionViewDiffableDataSource<Section, ChatMessage>!
-    private var messages: [ChatMessage] = []
     
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -34,6 +33,7 @@ class ChatMessageCollectionView: UIView {
         collectionView.backgroundColor = .white
         collectionView.register(ChatMessageCell.self, forCellWithReuseIdentifier: ChatMessageCell.resuseIdentifier)
         collectionView.translatesAutoresizingMaskIntoConstraints = false
+        
         addSubview(collectionView)
         
         NSLayoutConstraint.activate([
@@ -60,26 +60,36 @@ class ChatMessageCollectionView: UIView {
     private func configureDataSource() {
         dataSource = UICollectionViewDiffableDataSource<Section, ChatMessage>(collectionView: collectionView) { collectionView, indexPath, message in
             let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ChatMessageCell.resuseIdentifier, for: indexPath) as! ChatMessageCell
-            
-            DispatchQueue.main.async {
-                cell.configure(with: message)
-            }
+            cell.configure(with: message)
+            self.setNeedsLayout()
+            self.layoutIfNeeded()
             
             return cell
         }
         
-        updateCollectionView()
+        var snapshot = dataSource.snapshot()
+        snapshot.appendSections([Section.main])
+        dataSource.apply(snapshot)
     }
     
-    private func updateCollectionView() {
-        let chatMessageList = self.messages.sorted(by: { $0.sentAt! < $1.sentAt! })
-        let itemBySection = [Section.main: chatMessageList]
+    private func updateCollectionView(with newMessages: [ChatMessage]) {
+        guard !newMessages.isEmpty else { return }
         
-        dataSource.applySnapshotUsing(sectionIDs: [Section.main], itemsBySection: itemBySection)
+        // 새로운 메시지만 추가
+        var snapshot = dataSource.snapshot()
+        let sortedMessages = newMessages.sorted { $0.sentAt! < $1.sentAt! }
+        snapshot.appendItems(sortedMessages, toSection: .main)
+        
+        dataSource.apply(snapshot) { [weak self] in
+            guard let self else { return }
+            
+            let lastIndex = self.collectionView.numberOfItems(inSection: 0) - 1
+            let lastIndexPath = IndexPath(item: lastIndex, section: 0)
+            self.collectionView.scrollToItem(at: lastIndexPath, at: .bottom, animated: true)
+        }
     }
     
-    func addMessages(with messages: [ChatMessage]) {
-        self.messages.append(contentsOf: messages)
-        updateCollectionView()
+    func addMessages(with newMessages: [ChatMessage]) {
+        updateCollectionView(with: newMessages)
     }
 }

@@ -68,8 +68,8 @@ class ChatMessageCell: UICollectionViewCell {
             nickNameLabel.leadingAnchor.constraint(equalTo: profileImageView.trailingAnchor, constant: 5),
             
             bubbleView.leadingAnchor.constraint(equalTo: profileImageView.trailingAnchor, constant: 5),
-            bubbleView.topAnchor.constraint(equalTo: nickNameLabel.bottomAnchor, constant: 5),
             bubbleView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -20),
+            bubbleView.topAnchor.constraint(equalTo: nickNameLabel.bottomAnchor, constant: 5),
             
             messageLabel.topAnchor.constraint(equalTo: bubbleView.topAnchor, constant: 8),
             messageLabel.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 8),
@@ -94,6 +94,7 @@ class ChatMessageCell: UICollectionViewCell {
             
             NSLayoutConstraint.activate([
                 bubbleView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+                bubbleView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 20),
                 bubbleView.topAnchor.constraint(equalTo: topAnchor, constant: 8)
             ])
         } else {
@@ -102,3 +103,4 @@ class ChatMessageCell: UICollectionViewCell {
         }
     }
 }
+
