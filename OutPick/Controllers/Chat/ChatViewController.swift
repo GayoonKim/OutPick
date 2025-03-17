@@ -48,8 +48,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         return view
     }()
     
-    private var cancellables = Set<AnyCancellable>()
-    
+    private lazy var cancellables = Set<AnyCancellable>()
     private lazy var chatMessageCollectionView = ChatMessageCollectionView()
     
     override func viewDidLoad() {
@@ -81,10 +80,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         setupAttachmentView()
         adjustLayoutForSafeArea()
         
-        bindImageUpdates()
+        bindPublishers()
         
         setupChatMessageCollectionView()
-        test()
     }
     
     override func viewWillAppear(_ animated: Bool) {
@@ -123,13 +121,24 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
             ])
     }
     
-    private func bindImageUpdates() {
+    private func bindPublishers() {
         SocketIOManager.shared.receivedImagesPublisher
             .receive(on: DispatchQueue.main)
             .sink{ [weak self] receivedImages in
                 guard let self = self else { return }
                 
                 print("이미지 수신 성공: \(receivedImages)")
+            }
+            .store(in: &cancellables)
+        
+        
+        SocketIOManager.shared.receviedMessagePublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] receivedMessage in
+                guard let self = self else { return }
+                
+                print("메시지 수신 성공: \(receivedMessage)")
+                chatMessageCollectionView.addMessages(with: [receivedMessage])
             }
             .store(in: &cancellables)
     }

@@ -31,7 +31,7 @@ class ChatMessageCollectionView: UIView {
     private func setupCollectionView() {
         let layout = configureLayout()
         collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
-        collectionView.backgroundColor = .systemPink
+        collectionView.backgroundColor = .white
         collectionView.register(ChatMessageCell.self, forCellWithReuseIdentifier: ChatMessageCell.resuseIdentifier)
         collectionView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(collectionView)
@@ -60,7 +60,10 @@ class ChatMessageCollectionView: UIView {
     private func configureDataSource() {
         dataSource = UICollectionViewDiffableDataSource<Section, ChatMessage>(collectionView: collectionView) { collectionView, indexPath, message in
             let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ChatMessageCell.resuseIdentifier, for: indexPath) as! ChatMessageCell
-            cell.configure(with: message)
+            
+            DispatchQueue.main.async {
+                cell.configure(with: message)
+            }
             
             return cell
         }
@@ -69,15 +72,14 @@ class ChatMessageCollectionView: UIView {
     }
     
     private func updateCollectionView() {
-        var snapshot = NSDiffableDataSourceSnapshot<Section, ChatMessage>()
-        snapshot.appendSections([.main])
-        snapshot.appendItems(messages)
+        let chatMessageList = self.messages.sorted(by: { $0.sentAt! < $1.sentAt! })
+        let itemBySection = [Section.main: chatMessageList]
         
-        dataSource.apply(snapshot, animatingDifferences: true)
+        dataSource.applySnapshotUsing(sectionIDs: [Section.main], itemsBySection: itemBySection)
     }
     
     func addMessages(with messages: [ChatMessage]) {
-        self.messages = messages
+        self.messages.append(contentsOf: messages)
         updateCollectionView()
     }
 }

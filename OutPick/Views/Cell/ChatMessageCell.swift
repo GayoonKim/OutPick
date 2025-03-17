@@ -13,7 +13,7 @@ class ChatMessageCell: UICollectionViewCell {
     
     private let profileImageView: UIImageView = {
         var imageView = UIImageView()
-        imageView.layer.cornerRadius = 20
+        imageView.layer.cornerRadius = 10
         imageView.clipsToBounds = true
         imageView.contentMode = .scaleAspectFill
         imageView.image = UIImage(named: "Default_Profile")
@@ -45,7 +45,6 @@ class ChatMessageCell: UICollectionViewCell {
     private let bubbleView: UIView = {
         let view = UIView()
         view.layer.cornerRadius = 12
-        view.backgroundColor = .white
         view.translatesAutoresizingMaskIntoConstraints = false
         
         return view
@@ -84,7 +83,22 @@ class ChatMessageCell: UICollectionViewCell {
     }
     
     func configure(with message: ChatMessage) {
-        nickNameLabel.text = message.senderNickname
         messageLabel.text = message.msg
+        
+        if let nickName = UserProfile.shared.nickname,
+           nickName == message.senderNickname {
+            bubbleView.backgroundColor = .systemBlue
+            profileImageView.isHidden = true
+            nickNameLabel.isHidden = true
+            messageLabel.textAlignment = .right
+            
+            NSLayoutConstraint.activate([
+                bubbleView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+                bubbleView.topAnchor.constraint(equalTo: topAnchor, constant: 8)
+            ])
+        } else {
+            nickNameLabel.text = message.senderNickname
+            bubbleView.backgroundColor = UIColor(white: 0.1, alpha: 0.03)
+        }
     }
 }

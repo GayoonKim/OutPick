@@ -16,6 +16,7 @@ class SocketIOManager {
     
     // Combine의 PassthroughSubject를 사용하여 이벤트 스트림 생성
     var receivedImagesPublisher = PassthroughSubject<[UIImage], Never>()
+    var receviedMessagePublisher = PassthroughSubject<ChatMessage, Never>()
     private var cancellables = Set<AnyCancellable>()
     
     private init() {
@@ -154,8 +155,10 @@ class SocketIOManager {
             let senderNickName = messageData["senderNickname"] as! String
             let messageText = messageData["msg"] as! String
             
-            let chatMessage = ChatMessage(roomName: roomName, senderID: senderID, senderNickname: senderNickName, msg: messageText, sentAt: Date(), attachments: nil)
-            print("메시지 수신 성공: ", chatMessage)
+            DispatchQueue.main.async {
+                let message = ChatMessage(roomName: roomName, senderID: senderID, senderNickname: senderNickName, msg: messageText, sentAt: Date(), attachments: nil)
+                self.receviedMessagePublisher.send(message)
+            }
         }
         
         // 중복 방지를 위해 기존 리스너 제거
@@ -169,7 +172,7 @@ class SocketIOManager {
                         images.append(image)
                     }
                 }
-                
+
                 DispatchQueue.main.async {
                     self.receivedImagesPublisher.send(images)
                 }
