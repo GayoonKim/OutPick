@@ -44,11 +44,17 @@ class ChatMessageCollectionView: UIView {
         ])
     }
     
-    private func configureLayout() -> UICollectionViewCompositionalLayout{
-        let itemSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .estimated(50))
+    private func configureLayout() -> UICollectionViewCompositionalLayout {
+        let itemSize = NSCollectionLayoutSize(
+            widthDimension: .fractionalWidth(1),
+            heightDimension: .estimated(50)
+        )
         let item = NSCollectionLayoutItem(layoutSize: itemSize)
         
-        let groupSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .estimated(50))
+        let groupSize = NSCollectionLayoutSize(
+            widthDimension: .fractionalWidth(1),
+            heightDimension: .estimated(50)
+        )
         let group = NSCollectionLayoutGroup.vertical(layoutSize: groupSize, subitems: [item])
         
         let section = NSCollectionLayoutSection(group: group)
@@ -60,9 +66,8 @@ class ChatMessageCollectionView: UIView {
     private func configureDataSource() {
         dataSource = UICollectionViewDiffableDataSource<Section, ChatMessage>(collectionView: collectionView) { collectionView, indexPath, message in
             let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ChatMessageCell.resuseIdentifier, for: indexPath) as! ChatMessageCell
+            cell.prepareForReuse()
             cell.configure(with: message)
-            self.setNeedsLayout()
-            self.layoutIfNeeded()
             
             return cell
         }
@@ -80,12 +85,21 @@ class ChatMessageCollectionView: UIView {
         let sortedMessages = newMessages.sorted { $0.sentAt! < $1.sentAt! }
         snapshot.appendItems(sortedMessages, toSection: .main)
         
-        dataSource.apply(snapshot) { [weak self] in
-            guard let self else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
             
-            let lastIndex = self.collectionView.numberOfItems(inSection: 0) - 1
-            let lastIndexPath = IndexPath(item: lastIndex, section: 0)
-            self.collectionView.scrollToItem(at: lastIndexPath, at: .bottom, animated: true)
+            self.dataSource.apply(snapshot, animatingDifferences: false) {
+                self.collectionView.layoutIfNeeded()
+                
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    let lastIndex = self.collectionView.numberOfItems(inSection: 0) - 1
+                    let lastIndexPath = IndexPath(item: lastIndex, section: 0)
+                    
+                    self.collectionView.performBatchUpdates( {
+                        self.collectionView.scrollToItem(at: lastIndexPath, at: .bottom, animated: true)
+                    })
+                }
+            }
         }
     }
     

@@ -50,6 +50,11 @@ class ChatMessageCell: UICollectionViewCell {
         return view
     }()
     
+    private var bubbleViewTrailingConstraint: NSLayoutConstraint?
+    private var bubbleViewLeadingConstraint: NSLayoutConstraint?
+    private var bubbleViewTopConstraint: NSLayoutConstraint?
+    private var bubbleViewWidthConstraint: NSLayoutConstraint?
+    
     override init(frame: CGRect) {
         super.init(frame: frame)
         
@@ -67,19 +72,43 @@ class ChatMessageCell: UICollectionViewCell {
             nickNameLabel.topAnchor.constraint(equalTo: profileImageView.topAnchor),
             nickNameLabel.leadingAnchor.constraint(equalTo: profileImageView.trailingAnchor, constant: 5),
             
-            bubbleView.leadingAnchor.constraint(equalTo: profileImageView.trailingAnchor, constant: 5),
-            bubbleView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -20),
-            bubbleView.topAnchor.constraint(equalTo: nickNameLabel.bottomAnchor, constant: 5),
-            
             messageLabel.topAnchor.constraint(equalTo: bubbleView.topAnchor, constant: 8),
             messageLabel.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 8),
             messageLabel.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor, constant: -8),
             messageLabel.bottomAnchor.constraint(equalTo: bubbleView.bottomAnchor, constant: -8)
         ])
+        
+        // 기본 bubbleView 제약조건 설정
+        bubbleViewLeadingConstraint = bubbleView.leadingAnchor.constraint(equalTo: profileImageView.trailingAnchor, constant: 5)
+        bubbleViewTrailingConstraint = bubbleView.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor, constant: -20)
+        bubbleViewTopConstraint = bubbleView.topAnchor.constraint(equalTo: nickNameLabel.bottomAnchor, constant: 5)
+        
+        NSLayoutConstraint.activate([
+            bubbleViewLeadingConstraint,
+            bubbleViewTrailingConstraint,
+            bubbleViewTopConstraint
+        ].compactMap{ $0 })
     }
     
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+    
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        
+        messageLabel.text = nil
+        nickNameLabel.text = nil
+        messageLabel.textAlignment = .left
+        profileImageView.isHidden = false
+        nickNameLabel.isHidden = false
+        bubbleView.backgroundColor = UIColor(white: 0.1, alpha: 0.03)
+        
+        NSLayoutConstraint.deactivate([
+            bubbleViewLeadingConstraint,
+            bubbleViewTrailingConstraint,
+            bubbleViewTopConstraint
+        ].compactMap{ $0 })
     }
     
     func configure(with message: ChatMessage) {
@@ -87,20 +116,38 @@ class ChatMessageCell: UICollectionViewCell {
         
         if let nickName = UserProfile.shared.nickname,
            nickName == message.senderNickname {
+            // 본인이 보낸 메시지
             bubbleView.backgroundColor = .systemBlue
             profileImageView.isHidden = true
             nickNameLabel.isHidden = true
             messageLabel.textAlignment = .right
             
-            NSLayoutConstraint.activate([
-                bubbleView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-                bubbleView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 20),
-                bubbleView.topAnchor.constraint(equalTo: topAnchor, constant: 8)
-            ])
+            // 기본 제약조건 업데이트
+            bubbleViewLeadingConstraint = bubbleView.leadingAnchor.constraint(greaterThanOrEqualTo: profileImageView.leadingAnchor, constant: 5)
+            bubbleViewLeadingConstraint?.constant = 20
+            bubbleViewTrailingConstraint?.constant = -8
+            bubbleViewTopConstraint?.constant = 8
         } else {
+            // 상대방이 보낸 메시지
             nickNameLabel.text = message.senderNickname
             bubbleView.backgroundColor = UIColor(white: 0.1, alpha: 0.03)
+            
+            // 기본 제약조건으로 복원
+            bubbleViewLeadingConstraint = bubbleView.leadingAnchor.constraint(equalTo: profileImageView.trailingAnchor, constant: 5)
+            bubbleViewLeadingConstraint?.constant = 5
+            bubbleViewTrailingConstraint?.constant = -20
+            bubbleViewTopConstraint?.constant = 5
         }
+        
+        // 제약조건 활성화
+        NSLayoutConstraint.activate([
+            bubbleViewLeadingConstraint,
+            bubbleViewTrailingConstraint,
+            bubbleViewTopConstraint
+        ].compactMap{ $0 })
+        
+        self.setNeedsLayout()
+        self.layoutIfNeeded()
     }
 }
 
