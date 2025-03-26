@@ -67,7 +67,12 @@ class ChatMessageCollectionView: UIView {
         dataSource = UICollectionViewDiffableDataSource<Section, ChatMessage>(collectionView: collectionView) { collectionView, indexPath, message in
             let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ChatMessageCell.resuseIdentifier, for: indexPath) as! ChatMessageCell
             cell.prepareForReuse()
-            cell.configure(with: message)
+            
+            if let _ = message.attachments {
+                cell.configureWithImage(with: message)
+            } else {
+                cell.configureWithMessage(with: message)
+            }
             
             return cell
         }
@@ -77,13 +82,13 @@ class ChatMessageCollectionView: UIView {
         dataSource.apply(snapshot)
     }
     
-    private func updateCollectionView(with newMessages: [ChatMessage]) {
-        guard !newMessages.isEmpty else { return }
+    private func updateCollectionView(with newMessage: ChatMessage) {
+//        guard !newMessages.isEmpty else { return }
         
         // 새로운 메시지만 추가
         var snapshot = dataSource.snapshot()
-        let sortedMessages = newMessages.sorted { $0.sentAt! < $1.sentAt! }
-        snapshot.appendItems(sortedMessages, toSection: .main)
+//        let sortedMessages = newMessages.sorted { $0.sentAt! < $1.sentAt! }
+        snapshot.appendItems([newMessage], toSection: .main)
         
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
@@ -103,7 +108,7 @@ class ChatMessageCollectionView: UIView {
         }
     }
     
-    func addMessages(with newMessages: [ChatMessage]) {
-        updateCollectionView(with: newMessages)
+    func addMessages(with newMessage: ChatMessage) {
+        updateCollectionView(with: newMessage)
     }
 }

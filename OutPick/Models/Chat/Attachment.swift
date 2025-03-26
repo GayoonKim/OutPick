@@ -16,12 +16,14 @@ struct Attachment: Codable {
     }
     
     let type: AttachmentType
-    let fileName: String
+    var fileName: String?
+    var fileData: Data?
     
     func toDict() -> [String: Any] {
         return [
             "type": type.rawValue,
-            "fileName": fileName 
+            "fileName": fileName ?? "",
+            "imageData": fileData ?? ""
         ]
     }
 }

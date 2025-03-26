@@ -42,6 +42,16 @@ class ChatMessageCell: UICollectionViewCell {
         return label
     }()
     
+    private let messageImageView: UIImageView = {
+        var imageView = UIImageView()
+        imageView.contentMode = .scaleToFill
+        imageView.clipsToBounds = true
+        imageView.layer.cornerRadius = 12
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        
+        return imageView
+    }()
+    
     private let bubbleView: UIView = {
         let view = UIView()
         view.layer.cornerRadius = 12
@@ -53,7 +63,10 @@ class ChatMessageCell: UICollectionViewCell {
     private var bubbleViewTrailingConstraint: NSLayoutConstraint?
     private var bubbleViewLeadingConstraint: NSLayoutConstraint?
     private var bubbleViewTopConstraint: NSLayoutConstraint?
-    private var bubbleViewWidthConstraint: NSLayoutConstraint?
+    
+    private var messageImageViewTrailingConstraint: NSLayoutConstraint?
+    private var messageImageViewLeadingConstraint: NSLayoutConstraint?
+    private var messageImageViewTopConstraint: NSLayoutConstraint?
     
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -61,6 +74,7 @@ class ChatMessageCell: UICollectionViewCell {
         contentView.addSubview(profileImageView)
         contentView.addSubview(nickNameLabel)
         contentView.addSubview(bubbleView)
+        contentView.addSubview(messageImageView)
         bubbleView.addSubview(messageLabel)
         
         NSLayoutConstraint.activate([
@@ -83,10 +97,19 @@ class ChatMessageCell: UICollectionViewCell {
         bubbleViewTrailingConstraint = bubbleView.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor, constant: -20)
         bubbleViewTopConstraint = bubbleView.topAnchor.constraint(equalTo: nickNameLabel.bottomAnchor, constant: 5)
         
+        // 기본 messageImageView 제약조건 설정
+        messageImageViewLeadingConstraint = messageImageView.leadingAnchor.constraint(equalTo: profileImageView.trailingAnchor, constant: 5)
+        messageImageViewTrailingConstraint = messageImageView.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor, constant: -20)
+        messageImageViewTopConstraint = messageImageView.topAnchor.constraint(equalTo: nickNameLabel.bottomAnchor, constant: 5)
+        
         NSLayoutConstraint.activate([
             bubbleViewLeadingConstraint,
             bubbleViewTrailingConstraint,
-            bubbleViewTopConstraint
+            bubbleViewTopConstraint,
+            
+            messageImageViewLeadingConstraint,
+            messageImageViewTrailingConstraint,
+            messageImageViewTopConstraint
         ].compactMap{ $0 })
     }
     
@@ -111,8 +134,9 @@ class ChatMessageCell: UICollectionViewCell {
         ].compactMap{ $0 })
     }
     
-    func configure(with message: ChatMessage) {
+    func configureWithMessage(with message: ChatMessage) {
         messageLabel.text = message.msg
+        messageImageView.isHidden = true
         
         if let nickName = UserProfile.shared.nickname,
            nickName == message.senderNickname {
@@ -148,6 +172,13 @@ class ChatMessageCell: UICollectionViewCell {
         
         self.setNeedsLayout()
         self.layoutIfNeeded()
+    }
+    
+    func configureWithImage(with message: ChatMessage) {
+//        messageImageView.image = image
+        messageImageView.isHidden = false
+        
+        print("ㅋㅋ configureWithImage 호출 ㅋㅋ")
     }
 }
 

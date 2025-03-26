@@ -20,12 +20,18 @@ struct ChatMessage: SocketData, Codable {
     let attachments: [Attachment]?
     
     func toSocketRepresentation() -> SocketData {
-        return [
+        var dict: [String: Any] = [
             "roomName": roomName,
             "senderID": senderID,
-            "senderNickname": senderNickname,
-            "msg": msg ?? ""
+            "senderNickName": senderNickname,
+            "msg": msg ?? "",
         ]
+        
+        if let attachments = attachments {
+            dict["attachments"] = attachments.map{ $0.toDict() }
+        }
+        
+        return dict
     }
     
     // Firestore에 저장하기 위힌 뱐환 메서드
@@ -33,7 +39,7 @@ struct ChatMessage: SocketData, Codable {
         var dict: [String: Any] = [
             "roomName": roomName,
             "senderID": senderID,
-            "senderNickname": senderNickname,
+            "senderNickName": senderNickname,
             "msg": msg ?? "",
             "sentAt": Timestamp(date: sentAt ?? Date())
         ]

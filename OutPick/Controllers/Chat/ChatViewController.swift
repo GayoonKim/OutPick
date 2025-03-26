@@ -89,7 +89,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         super.viewWillAppear(animated)
         
         SocketIOManager.shared.establishConnection {
-            
             SocketIOManager.shared.socket.off("chat message")
             
             if let roomName = self.room?.roomName {
@@ -98,15 +97,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
             
             SocketIOManager.shared.listenToChatMessage()
         }
-    }
-    
-    private func test() {
-        let messages = [
-            ChatMessage(roomName: "Test", senderID: "example@example.comq", senderNickname: "사용자 1", msg: "Test", sentAt: Date(), attachments: []),
-            ChatMessage(roomName: "Test", senderID: "example@example.comq", senderNickname: "사용자 2", msg: "알고 싶지 않았는데 알게 되버린..알고 싶지 않았는데 알게 되버린..알고 싶지 않았는데 알게 되버린..알고 싶지 않았는데 알게 되버린..알고 싶지 않았는데 알게 되버린..", sentAt: Date(), attachments: [])
-        ]
-        
-        chatMessageCollectionView.addMessages(with: messages)
     }
 
     private func setupChatMessageCollectionView() {
@@ -122,23 +112,23 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     }
     
     private func bindPublishers() {
-        SocketIOManager.shared.receivedImagesPublisher
-            .receive(on: DispatchQueue.main)
-            .sink{ [weak self] receivedImages in
-                guard let self = self else { return }
-                
-                print("이미지 수신 성공: \(receivedImages)")
-            }
-            .store(in: &cancellables)
+//        SocketIOManager.shared.receivedImagesPublisher
+//            .receive(on: DispatchQueue.main)
+//            .sink{ [weak self] receivedImageMessages in
+//                guard let self = self else { return }
+//                
+//                print("이미지 수신 성공: \(receivedImageMessages)")
+//                
+//            }
+//            .store(in: &cancellables)
         
-        
-        SocketIOManager.shared.receviedMessagePublisher
+        SocketIOManager.shared.receivedMessagePublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] receivedMessage in
                 guard let self = self else { return }
                 
                 print("메시지 수신 성공: \(receivedMessage)")
-                chatMessageCollectionView.addMessages(with: [receivedMessage])
+                chatMessageCollectionView.addMessages(with: receivedMessage)
             }
             .store(in: &cancellables)
     }

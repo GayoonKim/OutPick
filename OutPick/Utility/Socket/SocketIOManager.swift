@@ -15,8 +15,8 @@ class SocketIOManager {
     var socket: SocketIOClient!
     
     // Combine의 PassthroughSubject를 사용하여 이벤트 스트림 생성
-    var receivedImagesPublisher = PassthroughSubject<[UIImage], Never>()
-    var receviedMessagePublisher = PassthroughSubject<ChatMessage, Never>()
+//    var receivedImagesPublisher = PassthroughSubject<[UIImage], Never>()
+    var receivedMessagePublisher = PassthroughSubject<ChatMessage, Never>()
     private var cancellables = Set<AnyCancellable>()
     
     private init() {
@@ -104,8 +104,8 @@ class SocketIOManager {
     }
     
     func sendMessages(_ room: ChatRoom, _ message: ChatMessage) {
-        socket.emit("chat message", message.toSocketRepresentation())
         Task { try await FirebaseManager.shared.saveMessage(message, room) }
+        socket.emit("chat message", message.toSocketRepresentation())
     }
     
     func sendImages(_ room: ChatRoom, _ images: [UIImage]) {
@@ -114,29 +114,26 @@ class SocketIOManager {
             return
         }
         
-        var imageDataArray = Array<Data?>(repeating: nil, count: images.count)
-        
-        images.forEach {
-            if let imageData = $0.jpegData(compressionQuality: 1) {
-                imageDataArray.append(imageData)
-            }
-        }
-
         // 이미지 Storage에 저장 및 이미지 데이터 Firestore에 저장
         Task {
             let imageNames = try await FirebaseStorageManager.shared.uploadImagesToStorage(images: images, location: ImageLocation.Message)
             var attachments = [Attachment]()
             
-            imageNames.forEach {
-                let temp = Attachment(type: Attachment.AttachmentType.image, fileName: $0)
-                attachments.append(temp)
+            let imageDataArray = imageNames.enumerated().compactMap { index, fileName -> [String: Any]? in
+                if let imageData = images[index].jpegData(compressionQuality: 1) {
+                    let attachment = Attachment(type: .image, fileName: fileName, fileData: imageData)
+                    attachments.append(attachment)
+                    return ["fileName": fileName, "fileData": imageData.base64EncodedString()]
+                }
+                
+                return nil
             }
             
-            let tempMessage = ChatMessage(roomName: room.roomName, senderID: room.creatorID, senderNickname: UserProfile.shared.nickname ?? "", msg: nil, sentAt: Date(), attachments: attachments)
-            try await FirebaseManager.shared.saveMessage(tempMessage, room)
+            let message = ChatMessage(roomName: room.roomName, senderID: LoginManager.shared.getUserEmail, senderNickname: UserProfile.shared.nickname ?? "", msg: "", sentAt: Date(), attachments: attachments)
+            try await FirebaseManager.shared.saveMessage(message, room)
+            
+            socket.emit("send images", ["roomName": message.roomName, "senderID": message.senderID, "senderNickName": message.senderNickname, "sentAt": "\(message.sentAt ?? Date())", "images": imageDataArray])
         }
-        
-        socket.emit("send images", ["roomName": room.roomName, "images": imageDataArray.compactMap{$0}])
     }
     
     func setUserName(_ userName: String) {
@@ -152,30 +149,45 @@ class SocketIOManager {
             guard let messageData = data.first as? [String: Any] else { return }
             let roomName = messageData["roomName"] as! String
             let senderID = messageData["senderID"] as! String
-            let senderNickName = messageData["senderNickname"] as! String
-            let messageText = messageData["msg"] as! String
+            let senderNickName = messageData["senderNickName"] as! String
+            let messageText = messageData["msg"] as? String
+            
+            let message = ChatMessage(roomName: roomName, senderID: senderID, senderNickname: senderNickName, msg: messageText, sentAt: Date(), attachments: nil)
             
             DispatchQueue.main.async {
-                let message = ChatMessage(roomName: roomName, senderID: senderID, senderNickname: senderNickName, msg: messageText, sentAt: Date(), attachments: nil)
-                self.receviedMessagePublisher.send(message)
+                self.receivedMessagePublisher.send(message)
             }
         }
         
-        // 중복 방지를 위해 기존 리스너 제거
+        //중복 방지를 위해 기존 리스너 제거
         socket.off("receiveImages")
         socket.on("receiveImages") { dataArray, _ in
-            if let data = dataArray.first as? [String: Any],
-               let imageDataArray = data["images"] as? [Data] {
-                var images: [UIImage] = []
-                for imageData in imageDataArray {
-                    if let image = UIImage(data: imageData) {
-                        images.append(image)
-                    }
+            guard let data = dataArray.first as? [String: Any],
+                  let imageDataArray = data["images"] as? [[String:Any]],
+                  let roomName = data["roomName"] as? String,
+                  let senderID = data["senderID"] as? String,
+                  let senderNickName = data["senderNickName"] as? String,
+                  let sentAtString = data["sentAt"] as? String else { return }
+            
+            // String -> Date 변환
+            let dateFormatter = ISO8601DateFormatter()
+            let sentAt = dateFormatter.date(from: sentAtString) ?? Date()
+            
+            let attachments = imageDataArray.compactMap { imageData -> Attachment? in
+                guard let imageName = imageData["fileName"] as? String,
+                      let base64String = imageData["fileData"] as? String,
+                      let imageData = Data(base64Encoded: base64String) else {
+                    print("이미지 데이터 변환 실패: \(imageData)")
+                    return nil
                 }
-
-                DispatchQueue.main.async {
-                    self.receivedImagesPublisher.send(images)
-                }
+                
+                return Attachment(type: .image, fileName: imageName, fileData: imageData)
+            }
+            
+            let message = ChatMessage(roomName: roomName, senderID: senderID, senderNickname: senderNickName, msg: nil, sentAt: sentAt, attachments: attachments)
+            
+            DispatchQueue.main.async {
+                self.receivedMessagePublisher.send(message)
             }
         }
     }

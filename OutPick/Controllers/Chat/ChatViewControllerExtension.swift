@@ -160,13 +160,9 @@ extension ChatViewController: UIImagePickerControllerDelegate {
     
     func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
         if let editedImage = info[.editedImage] as? UIImage {
-
             
-
         } else if let originalImage = info[.originalImage] as? UIImage {
-
             
-
         }
         
         dismiss(animated: true)
