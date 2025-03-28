@@ -60,24 +60,18 @@ class FirebaseStorageManager {
     }
     
     func uploadImagesToStorage(images: [UIImage], location: ImageLocation) async throws -> [String] {
-        
         var resultNames = Array<String?>(repeating: nil, count: images.count)
         
         for image in images {
             do {
-                
                 let imageName = try await uploadImageToStorage(image: image, location: location)
                 resultNames.append(imageName)
-                
             } catch {
-                
                 throw error
-                
             }
         }
         
         return resultNames.compactMap{$0}
-        
     }
     
     func uploadVideoToStorage(_ videoURL: URL) async throws -> String {

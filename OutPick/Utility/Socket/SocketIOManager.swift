@@ -15,7 +15,6 @@ class SocketIOManager {
     var socket: SocketIOClient!
     
     // Combine의 PassthroughSubject를 사용하여 이벤트 스트림 생성
-//    var receivedImagesPublisher = PassthroughSubject<[UIImage], Never>()
     var receivedMessagePublisher = PassthroughSubject<ChatMessage, Never>()
     private var cancellables = Set<AnyCancellable>()
     
