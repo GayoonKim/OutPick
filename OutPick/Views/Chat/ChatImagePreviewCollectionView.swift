@@ -8,16 +8,11 @@
 import Foundation
 import UIKit
 
-protocol ChatImagePreviewCollectionViewDelegate: AnyObject {
-    func ChatImagePreviewCollectionView(_ collectionView: ChatImagePreviewCollectionView, didRemoveImageAt index: Int)
-}
-
 class ChatImagePreviewCollectionView: UIView {
     enum Section: Hashable {
         case main
     }
     
-    weak var delegate: ChatImagePreviewCollectionViewDelegate?
     private var collectionView: UICollectionView!
     private var dataSource: UICollectionViewDiffableDataSource<Section, UIImage>!
     
@@ -37,7 +32,6 @@ class ChatImagePreviewCollectionView: UIView {
         collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
         collectionView.isScrollEnabled = false
         collectionView.backgroundColor = .clear
-        collectionView.delegate = self
         collectionView.showsHorizontalScrollIndicator = false
         collectionView.register(ChatImagePreviewCell.self, forCellWithReuseIdentifier: ChatImagePreviewCell.reuseIdentifier)
         collectionView.translatesAutoresizingMaskIntoConstraints = false
@@ -54,16 +48,17 @@ class ChatImagePreviewCollectionView: UIView {
     
     private func configureLayout() -> UICollectionViewCompositionalLayout {
         let itemSize = NSCollectionLayoutSize(
-            widthDimension: .estimated(80),
-            heightDimension: .estimated(80)
+            widthDimension: .absolute(80),
+            heightDimension: .absolute(80)
         )
         let item = NSCollectionLayoutItem(layoutSize: itemSize)
         
         let groupSize = NSCollectionLayoutSize(
             widthDimension: .fractionalWidth(1),
-            heightDimension: .fractionalHeight(1)
+            heightDimension: .absolute(80)
         )
         let group = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize, repeatingSubitem: item, count: 3)
+        group.interItemSpacing = .fixed(8)
         
         let section = NSCollectionLayoutSection(group: group)
         return UICollectionViewCompositionalLayout(section: section)
@@ -85,13 +80,8 @@ class ChatImagePreviewCollectionView: UIView {
     }
     
     func updateCollectionView(with images: [UIImage]) {
+        print("updateCollectionView 호출")
         let itemBySection = [Section.main: images]
         dataSource.applySnapshotUsing(sectionIDs: [Section.main], itemsBySection: itemBySection)
-    }
-}
-
-extension ChatImagePreviewCollectionView: UICollectionViewDelegate {
-    func ChatImagePreviewCollectionView(_ collectionView: ChatImagePreviewCollectionView, didRemoveImageAt index: Int) {
-        
     }
 }

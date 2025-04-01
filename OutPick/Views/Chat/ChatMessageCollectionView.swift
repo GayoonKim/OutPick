@@ -15,7 +15,7 @@ class ChatMessageCollectionView: UIView {
     
     private var collectionView: UICollectionView!
     private var dataSource: UICollectionViewDiffableDataSource<Section, ChatMessage>!
-    
+
     override init(frame: CGRect) {
         super.init(frame: frame)
         
@@ -26,7 +26,7 @@ class ChatMessageCollectionView: UIView {
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
-    
+
     private func setupCollectionView() {
         let layout = configureLayout()
         collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
@@ -83,11 +83,8 @@ class ChatMessageCollectionView: UIView {
     }
     
     private func updateCollectionView(with newMessage: ChatMessage) {
-//        guard !newMessages.isEmpty else { return }
-        
         // 새로운 메시지만 추가
         var snapshot = dataSource.snapshot()
-//        let sortedMessages = newMessages.sorted { $0.sentAt! < $1.sentAt! }
         snapshot.appendItems([newMessage], toSection: .main)
         
         DispatchQueue.main.async { [weak self] in

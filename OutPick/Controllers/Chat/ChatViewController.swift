@@ -52,16 +52,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     private lazy var cancellables = Set<AnyCancellable>()
     private lazy var chatMessageCollectionView = ChatMessageCollectionView()
     
-    
-    private lazy var chatImagePreviewCollectionView: ChatImagePreviewCollectionView = {
-        let view = OutPick.ChatImagePreviewCollectionView()
-        view.delegate = self
-        view.translatesAutoresizingMaskIntoConstraints = false
-        view.isHidden = false
-        view.backgroundColor = .systemPink
-        return view
-    }()
-    
     override func viewDidLoad() {
         super.viewDidLoad()
         
@@ -94,19 +84,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         bindPublishers()
         
         setupChatMessageCollectionView()
-        
-        view.addSubview(chatImagePreviewCollectionView)
-        chatImagePreviewCollectionView.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            chatImagePreviewCollectionView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-            chatImagePreviewCollectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            chatImagePreviewCollectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            chatImagePreviewCollectionView.bottomAnchor.constraint(equalTo: chatUIStackView.topAnchor, constant: -8)
-        ])
-        
-        let image1 = UIImage(systemName: "photo")!
-        let image2 = UIImage(named: "Default_Profile")!
-        chatImagePreviewCollectionView.updateCollectionView(with: [image1, image2])
     }
     
     override func viewWillAppear(_ animated: Bool) {
@@ -450,11 +427,5 @@ extension ChatViewController: AttachmentViewDelegate {
             return
             
         }
-    }
-}
-
-extension ChatViewController: ChatImagePreviewCollectionViewDelegate {
-    func ChatImagePreviewCollectionView(_ collectionView: ChatImagePreviewCollectionView, didRemoveImageAt index: Int) {
-        
     }
 }

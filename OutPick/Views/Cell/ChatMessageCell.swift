@@ -51,6 +51,15 @@ class ChatMessageCell: UICollectionViewCell {
         return view
     }()
     
+    private let imagesPreviewCollectionView: ChatImagePreviewCollectionView = {
+        let view = ChatImagePreviewCollectionView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.isHidden = true
+        view.layer.cornerRadius = 12
+        view.backgroundColor = .lightGray
+        return view
+    }()
+    
     private var bubbleViewTrailingConstraint: NSLayoutConstraint?
     private var bubbleViewLeadingConstraint: NSLayoutConstraint?
     private var bubbleViewTopConstraint: NSLayoutConstraint?
@@ -61,8 +70,8 @@ class ChatMessageCell: UICollectionViewCell {
         contentView.addSubview(profileImageView)
         contentView.addSubview(nickNameLabel)
         contentView.addSubview(bubbleView)
+        contentView.addSubview(imagesPreviewCollectionView)
         bubbleView.addSubview(messageLabel)
-        
         
         NSLayoutConstraint.activate([
             profileImageView.widthAnchor.constraint(equalToConstant: 40),
@@ -76,7 +85,12 @@ class ChatMessageCell: UICollectionViewCell {
             messageLabel.topAnchor.constraint(equalTo: bubbleView.topAnchor, constant: 8),
             messageLabel.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 8),
             messageLabel.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor, constant: -8),
-            messageLabel.bottomAnchor.constraint(equalTo: bubbleView.bottomAnchor, constant: -8)
+            messageLabel.bottomAnchor.constraint(equalTo: bubbleView.bottomAnchor, constant: -8),
+            
+            imagesPreviewCollectionView.widthAnchor.constraint(equalToConstant: 100),
+            imagesPreviewCollectionView.heightAnchor.constraint(equalToConstant: 100),
+            imagesPreviewCollectionView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 8),
+            imagesPreviewCollectionView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 8)
         ])
         
         // 기본 bubbleView 제약조건 설정
@@ -104,6 +118,7 @@ class ChatMessageCell: UICollectionViewCell {
         profileImageView.isHidden = false
         nickNameLabel.isHidden = false
         bubbleView.backgroundColor = UIColor(white: 0.1, alpha: 0.03)
+        imagesPreviewCollectionView.isHidden = false
         
         NSLayoutConstraint.deactivate([
             bubbleViewLeadingConstraint,
@@ -153,6 +168,10 @@ class ChatMessageCell: UICollectionViewCell {
     
     func configureWithImage(with message: ChatMessage) {
         profileImageView.isHidden = true
+        bubbleView.isHidden = true
+        messageLabel.isHidden = true
+        
+        print("configureWithImage 호출")
     }
 }
 

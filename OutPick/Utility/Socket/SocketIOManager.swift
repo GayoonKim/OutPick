@@ -122,7 +122,7 @@ class SocketIOManager {
                 if let imageData = images[index].jpegData(compressionQuality: 1) {
                     let attachment = Attachment(type: .image, fileName: fileName, fileData: imageData)
                     attachments.append(attachment)
-                    return ["fileName": fileName, "fileData": imageData.base64EncodedString()]
+                    return ["fileName": fileName, "fileData": imageData]
                 }
                 
                 return nil
@@ -174,8 +174,7 @@ class SocketIOManager {
             
             let attachments = imageDataArray.compactMap { imageData -> Attachment? in
                 guard let imageName = imageData["fileName"] as? String,
-                      let base64String = imageData["fileData"] as? String,
-                      let imageData = Data(base64Encoded: base64String) else {
+                      let imageData = imageData["fileData"] as? Data else {
                     print("이미지 데이터 변환 실패: \(imageData)")
                     return nil
                 }

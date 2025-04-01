@@ -61,22 +61,21 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             }
             
             // 카카오 로그인 확인
-            //            print("6. 카카오 로그인 체크 시작")
+            print("6. 카카오 로그인 체크 시작")
             group.enter()
             self.checkKakaoLogin { success in
-                //                print("7. 카카오 로그인 체크 완료: \(success)")
+                print("7. 카카오 로그인 체크 완료: \(success)")
                 if success {
                     isLoggedIn = true
                 }
                 group.leave()
             }
             
-            //            print("8. notify 설정 전")
+            print("8. notify 설정 전")
             group.notify(queue: .main) {
-                //                print("9. notify 내부 실행")
+                print("9. notify 내부 실행")
                 if isLoggedIn {
-                    //                    print("10. 로그인 됨")
-                    
+                    print("10. 로그인 됨")
                     Task {
                         try await FirebaseManager.shared.listenToRooms()
                         LoginManager.shared.fetchUserProfile(LoginManager.shared.getUserEmail) { screen in
