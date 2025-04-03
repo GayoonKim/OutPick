@@ -15,6 +15,7 @@ class ChatImagePreviewCollectionView: UIView {
     
     private var collectionView: UICollectionView!
     private var dataSource: UICollectionViewDiffableDataSource<Section, UIImage>!
+    private var imagesCount = 0
     
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -47,21 +48,63 @@ class ChatImagePreviewCollectionView: UIView {
     }
     
     private func configureLayout() -> UICollectionViewCompositionalLayout {
-        let itemSize = NSCollectionLayoutSize(
-            widthDimension: .absolute(80),
-            heightDimension: .absolute(80)
-        )
-        let item = NSCollectionLayoutItem(layoutSize: itemSize)
+        //        let itemSize = NSCollectionLayoutSize(
+        //            // 3개의 아이템이 한 줄에 들어가도록 설정
+        //            widthDimension: .fractionalWidth(0.33),
+        //            heightDimension: .fractionalHeight(0.33)
+        //        )
+        //        let item = NSCollectionLayoutItem(layoutSize: itemSize)
+        //        item.contentInsets = .init(top: 2, leading: 2, bottom: 0, trailing: 2)
+        //
+        //        let groupSize = NSCollectionLayoutSize(
+        //            widthDimension: .fractionalWidth(1),
+        //            heightDimension: .estimated(100)
+        //        )
+        //        let group = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize, repeatingSubitem: item, count: 3)
+        //
+        //        let section = NSCollectionLayoutSection(group: group)
+        //
+        //        return UICollectionViewCompositionalLayout(section: section)
         
-        let groupSize = NSCollectionLayoutSize(
-            widthDimension: .fractionalWidth(1),
-            heightDimension: .absolute(80)
-        )
-        let group = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize, repeatingSubitem: item, count: 3)
-        group.interItemSpacing = .fixed(8)
-        
-        let section = NSCollectionLayoutSection(group: group)
-        return UICollectionViewCompositionalLayout(section: section)
+        return UICollectionViewCompositionalLayout { [weak self] (sectionIndex, environment) -> NSCollectionLayoutSection? in
+            guard let self = self else { return nil }
+            
+            if self.imagesCount == 1 {
+                // 단일 이미지일 때는 큰 크기로
+                let itemSize = NSCollectionLayoutSize(
+                    widthDimension: .fractionalWidth(1.0),
+                    heightDimension: .fractionalWidth(1.0)  // 정사각형 유지
+                )
+                let item = NSCollectionLayoutItem(layoutSize: itemSize)
+                item.contentInsets = NSDirectionalEdgeInsets(top: 2, leading: 2, bottom: 2, trailing: 2)
+                
+                let groupSize = NSCollectionLayoutSize(
+                    widthDimension: .fractionalWidth(1.0),
+                    heightDimension: .fractionalWidth(1.0)
+                )
+                let group = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize, subitems: [item])
+                
+                let section = NSCollectionLayoutSection(group: group)
+                return section
+            } else {
+                // 여러 이미지일 때는 그리드로
+                let itemSize = NSCollectionLayoutSize(
+                    widthDimension: .fractionalWidth(1/3),
+                    heightDimension: .fractionalWidth(1/3)
+                )
+                let item = NSCollectionLayoutItem(layoutSize: itemSize)
+                item.contentInsets = NSDirectionalEdgeInsets(top: 2, leading: 2, bottom: 2, trailing: 2)
+                
+                let groupSize = NSCollectionLayoutSize(
+                    widthDimension: .fractionalWidth(1.0),
+                    heightDimension: .fractionalWidth(1/3)
+                )
+                let group = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize, repeatingSubitem: item, count: 3)
+                
+                let section = NSCollectionLayoutSection(group: group)
+                return section
+            }
+        }
     }
     
     private func configureDataSource() {
@@ -80,8 +123,23 @@ class ChatImagePreviewCollectionView: UIView {
     }
     
     func updateCollectionView(with images: [UIImage]) {
-        print("updateCollectionView 호출")
+        self.imagesCount = images.count
+        
+        // 컬렉션 뷰 레이아웃 업데이트
+        collectionView.setCollectionViewLayout(configureLayout(), animated: false)
+        
         let itemBySection = [Section.main: images]
         dataSource.applySnapshotUsing(sectionIDs: [Section.main], itemsBySection: itemBySection)
+        
+        self.layoutIfNeeded()
     }
+    
+//    var contentHeight: CGFloat {
+//        if imagesCount == 1 {
+//            return frame.width
+//        } else {
+//            let rows = ceil(Double(imagesCount) / 3.0)
+//            return (frame.width / 3.0) * rows
+//        }
+//    }
 }

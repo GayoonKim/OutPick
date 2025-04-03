@@ -21,6 +21,22 @@ class ChatMessageCollectionView: UIView {
         
         setupCollectionView()
         configureDataSource()
+        
+        let image1 = UIImage(systemName: "chevron.compact.down")
+        if let imageData = image1?.jpegData(compressionQuality: 1) {
+            let a1 = Attachment(type: .image, fileName: UUID().uuidString, fileData: imageData)
+            let a2 = Attachment(type: .image, fileName: UUID().uuidString, fileData: imageData)
+            let a3 = Attachment(type: .image, fileName: UUID().uuidString, fileData: imageData)
+            let a4 = Attachment(type: .image, fileName: UUID().uuidString, fileData: imageData)
+            let a5 = Attachment(type: .image, fileName: UUID().uuidString, fileData: imageData)
+            let a6 = Attachment(type: .image, fileName: UUID().uuidString, fileData: imageData)
+            let a7 = Attachment(type: .image, fileName: UUID().uuidString, fileData: imageData)
+            let a8 = Attachment(type: .image, fileName: UUID().uuidString, fileData: imageData)
+            let a9 = Attachment(type: .image, fileName: UUID().uuidString, fileData: imageData)
+            let a10 = Attachment(type: .image, fileName: UUID().uuidString, fileData: imageData)
+            let message = ChatMessage(roomName: "Test", senderID: "example@example.com", senderNickname: "김가윤", msg: "", sentAt: Date(), attachments: [a1,a2,a3,a4,a5,a6,a7,a8,a9,a10])
+            self.updateCollectionView(with: message)
+        }
     }
     
     required init?(coder: NSCoder) {
@@ -47,18 +63,19 @@ class ChatMessageCollectionView: UIView {
     private func configureLayout() -> UICollectionViewCompositionalLayout {
         let itemSize = NSCollectionLayoutSize(
             widthDimension: .fractionalWidth(1),
-            heightDimension: .estimated(50)
+            heightDimension: .estimated(100)
         )
         let item = NSCollectionLayoutItem(layoutSize: itemSize)
         
         let groupSize = NSCollectionLayoutSize(
             widthDimension: .fractionalWidth(1),
-            heightDimension: .estimated(50)
+            heightDimension: .estimated(100)
         )
         let group = NSCollectionLayoutGroup.vertical(layoutSize: groupSize, subitems: [item])
         
         let section = NSCollectionLayoutSection(group: group)
-        section.interGroupSpacing = 15
+        section.interGroupSpacing = 12
+        section.contentInsets = NSDirectionalEdgeInsets(top: 12, leading: 0, bottom: 12, trailing: 0)
         
         return UICollectionViewCompositionalLayout(section: section)
     }

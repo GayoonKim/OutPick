@@ -13,7 +13,9 @@ class ChatImagePreviewCell: UICollectionViewCell {
     
     private let imageView: UIImageView = {
         let imageView = UIImageView()
-        imageView.contentMode = .scaleAspectFit
+        imageView.contentMode = .scaleAspectFill
+        imageView.clipsToBounds = true
+        imageView.layer.cornerRadius = 8
         return imageView
     }()
     
@@ -29,16 +31,23 @@ class ChatImagePreviewCell: UICollectionViewCell {
     private func setupImageView() {
         contentView.addSubview(imageView)
         imageView.translatesAutoresizingMaskIntoConstraints = false
+        
         NSLayoutConstraint.activate([
             imageView.topAnchor.constraint(equalTo: contentView.topAnchor),
-            imageView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
             imageView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-            imageView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor)
+            imageView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            imageView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
         ])
+        
+        // 셀 자체에도 라운드 코너 적용
+        contentView.layer.cornerRadius = 8
+        contentView.clipsToBounds = true
     }
     
     func configure(with image: UIImage) {
         print("ChatMessagePreviewCell 호출")
-        imageView.image = image
+        DispatchQueue.main.async {
+            self.imageView.image = image
+        }
     }
 }
