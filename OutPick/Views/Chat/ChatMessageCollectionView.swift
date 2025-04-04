@@ -100,25 +100,18 @@ class ChatMessageCollectionView: UIView {
     }
     
     private func updateCollectionView(with newMessage: ChatMessage) {
-        // 새로운 메시지만 추가
         var snapshot = dataSource.snapshot()
         snapshot.appendItems([newMessage], toSection: .main)
         
-        DispatchQueue.main.async { [weak self] in
+        dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
             guard let self = self else { return }
             
-            self.dataSource.apply(snapshot, animatingDifferences: false) {
-                self.collectionView.layoutIfNeeded()
-                
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    let lastIndex = self.collectionView.numberOfItems(inSection: 0) - 1
-                    let lastIndexPath = IndexPath(item: lastIndex, section: 0)
-                    
-                    self.collectionView.performBatchUpdates( {
-                        self.collectionView.scrollToItem(at: lastIndexPath, at: .bottom, animated: true)
-                    })
-                }
-            }
+            self.collectionView.layoutIfNeeded()
+            
+            let lastIndex = self.collectionView.numberOfItems(inSection: 0) - 1
+            let lastIndexPath = IndexPath(item: lastIndex, section: 0)
+            
+            self.collectionView.scrollToItem(at: lastIndexPath, at: .bottom, animated: false)
         }
     }
     

@@ -16,7 +16,9 @@ class ChatImagePreviewCollectionView: UIView {
     private var collectionView: UICollectionView!
     private var dataSource: UICollectionViewDiffableDataSource<Section, UIImage>!
     private var imagesCount = 0
-    
+    private var contentHeight: CGFloat = 0
+    private var rows: [Int] = []
+
     override init(frame: CGRect) {
         super.init(frame: frame)
         
@@ -48,24 +50,6 @@ class ChatImagePreviewCollectionView: UIView {
     }
     
     private func configureLayout() -> UICollectionViewCompositionalLayout {
-        //        let itemSize = NSCollectionLayoutSize(
-        //            // 3개의 아이템이 한 줄에 들어가도록 설정
-        //            widthDimension: .fractionalWidth(0.33),
-        //            heightDimension: .fractionalHeight(0.33)
-        //        )
-        //        let item = NSCollectionLayoutItem(layoutSize: itemSize)
-        //        item.contentInsets = .init(top: 2, leading: 2, bottom: 0, trailing: 2)
-        //
-        //        let groupSize = NSCollectionLayoutSize(
-        //            widthDimension: .fractionalWidth(1),
-        //            heightDimension: .estimated(100)
-        //        )
-        //        let group = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize, repeatingSubitem: item, count: 3)
-        //
-        //        let section = NSCollectionLayoutSection(group: group)
-        //
-        //        return UICollectionViewCompositionalLayout(section: section)
-        
         return UICollectionViewCompositionalLayout { [weak self] (sectionIndex, environment) -> NSCollectionLayoutSection? in
             guard let self = self else { return nil }
             
@@ -87,21 +71,31 @@ class ChatImagePreviewCollectionView: UIView {
                 let section = NSCollectionLayoutSection(group: group)
                 return section
             } else {
-                // 여러 이미지일 때는 그리드로
-                let itemSize = NSCollectionLayoutSize(
-                    widthDimension: .fractionalWidth(1/3),
-                    heightDimension: .fractionalWidth(1/3)
-                )
-                let item = NSCollectionLayoutItem(layoutSize: itemSize)
-                item.contentInsets = NSDirectionalEdgeInsets(top: 2, leading: 2, bottom: 2, trailing: 2)
                 
-                let groupSize = NSCollectionLayoutSize(
-                    widthDimension: .fractionalWidth(1.0),
-                    heightDimension: .fractionalWidth(1/3)
-                )
-                let group = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize, repeatingSubitem: item, count: 3)
+                // 동적 레이아웃
+                var groups: [NSCollectionLayoutGroup] = []
                 
-                let section = NSCollectionLayoutSection(group: group)
+                for itemsInRow in rows {
+                    let itemWidth = 1.0 / CGFloat(itemsInRow)
+                    
+                    let itemSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(itemWidth), heightDimension: .fractionalWidth(itemWidth))
+                    let item = NSCollectionLayoutItem(layoutSize: itemSize)
+                    item.contentInsets = NSDirectionalEdgeInsets(top: 2, leading: 2, bottom: 2, trailing: 2)
+                    
+                    let groupSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1.0), heightDimension: .fractionalWidth(itemWidth))
+                    let group = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize, subitems: Array(repeating: item, count: itemsInRow))
+                    groups.append(group)
+                }
+                
+                let containerGroup = NSCollectionLayoutGroup.vertical(
+                    layoutSize: NSCollectionLayoutSize(
+                        widthDimension: .fractionalWidth(1.0),
+                        heightDimension: .estimated(contentHeight)
+                    ),
+                    subitems: groups
+                )
+                
+                let section = NSCollectionLayoutSection(group: containerGroup)
                 return section
             }
         }
@@ -122,8 +116,10 @@ class ChatImagePreviewCollectionView: UIView {
         dataSource.apply(snapshot, animatingDifferences: false)
     }
     
-    func updateCollectionView(with images: [UIImage]) {
+    func updateCollectionView(_ images: [UIImage], _ height: CGFloat, _ rows: [Int]) {
         self.imagesCount = images.count
+        self.contentHeight = height
+        self.rows = rows
         
         // 컬렉션 뷰 레이아웃 업데이트
         collectionView.setCollectionViewLayout(configureLayout(), animated: false)
@@ -133,13 +129,4 @@ class ChatImagePreviewCollectionView: UIView {
         
         self.layoutIfNeeded()
     }
-    
-//    var contentHeight: CGFloat {
-//        if imagesCount == 1 {
-//            return frame.width
-//        } else {
-//            let rows = ceil(Double(imagesCount) / 3.0)
-//            return (frame.width / 3.0) * rows
-//        }
-//    }
 }

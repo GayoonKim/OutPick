@@ -61,16 +61,19 @@ class ChatMessageCell: UICollectionViewCell {
     private var bubbleViewTrailingConstraint: NSLayoutConstraint?
     private var bubbleViewLeadingConstraint: NSLayoutConstraint?
     private var bubbleViewTopConstraint: NSLayoutConstraint?
+    private var bubbleViewBottomConstraint: NSLayoutConstraint?
     
     private var imagePreviewCollectionViewTopConstraint: NSLayoutConstraint?
     private var imagePreviewCollectionViewLeadingConstraint: NSLayoutConstraint?
     private var imagePreviewCollectionViewTrailingConstraint: NSLayoutConstraint?
+    private var imagePreviewCollectionViewBottomConstraint: NSLayoutConstraint?
     private var imagePreviewCollectionViewWidthConstraint: NSLayoutConstraint?
+    private var imagePreviewCollectionViewHeightConstraint: NSLayoutConstraint?
     
     override init(frame: CGRect) {
         super.init(frame: frame)
         
-        contentView.backgroundColor = .black
+//        contentView.backgroundColor = .black
         
         contentView.addSubview(profileImageView)
         contentView.addSubview(nickNameLabel)
@@ -94,23 +97,23 @@ class ChatMessageCell: UICollectionViewCell {
         ])
         
         // 기본 bubbleView 제약조건 설정
-        bubbleViewLeadingConstraint = bubbleView.leadingAnchor.constraint(equalTo: profileImageView.trailingAnchor, constant: 5)
-        bubbleViewTrailingConstraint = bubbleView.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor, constant: -20)
-        bubbleViewTopConstraint = bubbleView.topAnchor.constraint(equalTo: nickNameLabel.bottomAnchor, constant: 5)
-        //
-        //        imagePreviewCollectionViewTopConstraint = imagesPreviewCollectionView.topAnchor.constraint(equalTo: self.bottomAnchor, constant: 8)
-        //        imagePreviewCollectionViewLeadingConstraint = imagesPreviewCollectionView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 8)
-        //        imagePreviewCollectionViewWidthConstraint = imagesPreviewCollectionView.widthAnchor.constraint(equalToConstant: contentView.frame.width * 0.7)
-        //
-        NSLayoutConstraint.activate([
-            bubbleViewLeadingConstraint,
-            bubbleViewTrailingConstraint,
-            bubbleViewTopConstraint,
-            //
-            //            imagePreviewCollectionViewTopConstraint,
-            //            imagePreviewCollectionViewLeadingConstraint,
-            //            imagePreviewCollectionViewWidthConstraint
-        ].compactMap{ $0 })
+//        bubbleViewLeadingConstraint = bubbleView.leadingAnchor.constraint(equalTo: profileImageView.trailingAnchor, constant: 5)
+//        bubbleViewTrailingConstraint = bubbleView.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor, constant: -20)
+//        bubbleViewTopConstraint = bubbleView.topAnchor.constraint(equalTo: nickNameLabel.bottomAnchor, constant: 5)
+//        
+//        imagePreviewCollectionViewTopConstraint = imagesPreviewCollectionView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 8)
+//        imagePreviewCollectionViewLeadingConstraint = imagesPreviewCollectionView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 8)
+//        imagePreviewCollectionViewBottomConstraint = imagesPreviewCollectionView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8)
+//        
+//        NSLayoutConstraint.activate([
+//            bubbleViewLeadingConstraint,
+//            bubbleViewTrailingConstraint,
+//            bubbleViewTopConstraint,
+//            
+//            imagePreviewCollectionViewTopConstraint,
+//            imagePreviewCollectionViewLeadingConstraint,
+//            imagePreviewCollectionViewWidthConstraint
+//        ].compactMap{ $0 })
     }
     
     required init?(coder: NSCoder) {
@@ -132,12 +135,16 @@ class ChatMessageCell: UICollectionViewCell {
             bubbleViewLeadingConstraint,
             bubbleViewTrailingConstraint,
             bubbleViewTopConstraint,
+            bubbleViewBottomConstraint,
             
             imagePreviewCollectionViewTopConstraint,
             imagePreviewCollectionViewLeadingConstraint,
             imagePreviewCollectionViewTrailingConstraint,
-            imagePreviewCollectionViewWidthConstraint
+            imagePreviewCollectionViewBottomConstraint,
+            imagePreviewCollectionViewWidthConstraint,
+            imagePreviewCollectionViewHeightConstraint
         ].compactMap{ $0 })
+
     }
     
     func configureWithMessage(with message: ChatMessage) {
@@ -154,8 +161,9 @@ class ChatMessageCell: UICollectionViewCell {
             
             // 기본 제약조건 업데이트
             bubbleViewLeadingConstraint = bubbleView.leadingAnchor.constraint(greaterThanOrEqualTo: contentView.leadingAnchor, constant: 20)
-            bubbleViewTrailingConstraint?.constant = -8
-            bubbleViewTopConstraint?.constant = 8
+            bubbleViewTrailingConstraint = bubbleView.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor, constant: -8)
+            bubbleViewTopConstraint = bubbleView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 8)
+            bubbleViewBottomConstraint = bubbleView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8)
         } else {
             // 상대방이 보낸 메시지
             nickNameLabel.text = message.senderNickname
@@ -163,8 +171,9 @@ class ChatMessageCell: UICollectionViewCell {
             
             // 기본 제약조건으로 복원
             bubbleViewLeadingConstraint = bubbleView.leadingAnchor.constraint(equalTo: profileImageView.trailingAnchor, constant: 5)
-            bubbleViewTrailingConstraint?.constant = -20
-            bubbleViewTopConstraint?.constant = 5
+            bubbleViewTrailingConstraint = bubbleView.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor, constant: -20)
+            bubbleViewTopConstraint = bubbleView.topAnchor.constraint(equalTo: nickNameLabel.bottomAnchor, constant: 5)
+            bubbleViewBottomConstraint = bubbleView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8)
         }
         
         // 제약조건 활성화
@@ -179,7 +188,6 @@ class ChatMessageCell: UICollectionViewCell {
     }
     
     func configureWithImage(with message: ChatMessage) {
-        profileImageView.isHidden = true
         bubbleView.isHidden = true
         messageLabel.isHidden = true
         imagesPreviewCollectionView.isHidden = false
@@ -194,39 +202,65 @@ class ChatMessageCell: UICollectionViewCell {
                 return nil
             }
             
-            let containerWidth = contentView.frame.width * 0.7
+            let containerWidth = contentView.frame.width * 0.5
+            let rows = calculateRowCount(images.count)
             
-            // 이미지 개수에 따른 크기 조정
-            let height: CGFloat
-            if images.count == 1 {
-                height = containerWidth
-            } else {
-                let rows = ceil(Double(images.count) / 3.0)
-                height = (containerWidth / 3.0) * rows
+            var contentHeight: CGFloat {
+                if images.count == 1 {
+                    return containerWidth
+                } else {
+                    return rows.reduce(0) { $0 + (containerWidth / CGFloat($1)) }
+                }
             }
             
             if nickName == message.senderNickname {
                 // 본인이 보낸 사진
-                NSLayoutConstraint.activate([
-                    imagesPreviewCollectionView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 8),
-                    imagesPreviewCollectionView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -8),
-                    imagesPreviewCollectionView.widthAnchor.constraint(equalToConstant: containerWidth),
-                    imagesPreviewCollectionView.heightAnchor.constraint(equalToConstant: height),
-                    imagesPreviewCollectionView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8)
-                ])
+                profileImageView.isHidden = true
+                
+                imagePreviewCollectionViewTopConstraint = imagesPreviewCollectionView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 8)
+                imagePreviewCollectionViewTrailingConstraint = imagesPreviewCollectionView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -8)
+                imagePreviewCollectionViewBottomConstraint = imagesPreviewCollectionView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8)
+                imagePreviewCollectionViewWidthConstraint = imagesPreviewCollectionView.widthAnchor.constraint(equalToConstant: containerWidth)
+                imagePreviewCollectionViewHeightConstraint = imagesPreviewCollectionView.heightAnchor.constraint(equalToConstant: contentHeight)
             } else {
+                nickNameLabel.isHidden = false
+                profileImageView.isHidden = false
+                nickNameLabel.text = message.senderNickname
+                
                 // 상대가 보낸 사진
-                NSLayoutConstraint.activate([
-                    imagesPreviewCollectionView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 8),
-                    imagesPreviewCollectionView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 8),
-                    imagesPreviewCollectionView.widthAnchor.constraint(equalToConstant: containerWidth),
-                    imagesPreviewCollectionView.heightAnchor.constraint(equalToConstant: height),
-                    imagesPreviewCollectionView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8)
-                ])
+                imagePreviewCollectionViewTopConstraint = imagesPreviewCollectionView.topAnchor.constraint(equalTo: nickNameLabel.bottomAnchor, constant: 5)
+                imagePreviewCollectionViewLeadingConstraint = imagesPreviewCollectionView.leadingAnchor.constraint(equalTo: profileImageView.trailingAnchor, constant: 5)
+                imagePreviewCollectionViewBottomConstraint = imagesPreviewCollectionView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8)
+                imagePreviewCollectionViewWidthConstraint = imagesPreviewCollectionView.widthAnchor.constraint(equalToConstant: containerWidth)
+                imagePreviewCollectionViewHeightConstraint = imagesPreviewCollectionView.heightAnchor.constraint(equalToConstant: contentHeight)
             }
             
-            imagesPreviewCollectionView.updateCollectionView(with: images)
+            NSLayoutConstraint.activate([
+                imagePreviewCollectionViewTopConstraint,
+                imagePreviewCollectionViewLeadingConstraint,
+                imagePreviewCollectionViewTrailingConstraint,
+                imagePreviewCollectionViewBottomConstraint,
+                imagePreviewCollectionViewWidthConstraint,
+                imagePreviewCollectionViewHeightConstraint
+            ].compactMap{$0})
+            
+            imagesPreviewCollectionView.updateCollectionView(images, contentHeight, rows)
         }
     }
+    
+    private func calculateRowCount(_ n: Int) -> [Int] {
+        guard n > 1 else { return [] }
+        
+        let maxThreeCount = n / 3
+        for i in stride(from: maxThreeCount, to: 0, by: -1) {
+            let remaining = n - (3 * i)
+            if remaining % 2 == 0 {
+                let j = remaining / 2
+                return Array(repeating: 3, count: i) + Array(repeating: 2, count: j)
+            }
+        }
+        
+        return n % 2 == 0 ? Array(repeating: 2, count: n / 2) : []
+    }
 }
- 
+
