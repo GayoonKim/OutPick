@@ -62,7 +62,7 @@ class ChatMessageCell: UICollectionViewCell {
     private var bubbleViewLeadingConstraint: NSLayoutConstraint?
     private var bubbleViewTopConstraint: NSLayoutConstraint?
     private var bubbleViewBottomConstraint: NSLayoutConstraint?
-    
+
     private var imagePreviewCollectionViewTopConstraint: NSLayoutConstraint?
     private var imagePreviewCollectionViewLeadingConstraint: NSLayoutConstraint?
     private var imagePreviewCollectionViewTrailingConstraint: NSLayoutConstraint?
@@ -72,9 +72,7 @@ class ChatMessageCell: UICollectionViewCell {
     
     override init(frame: CGRect) {
         super.init(frame: frame)
-        
-//        contentView.backgroundColor = .black
-        
+
         contentView.addSubview(profileImageView)
         contentView.addSubview(nickNameLabel)
         contentView.addSubview(bubbleView)
@@ -93,27 +91,8 @@ class ChatMessageCell: UICollectionViewCell {
             messageLabel.topAnchor.constraint(equalTo: bubbleView.topAnchor, constant: 8),
             messageLabel.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 8),
             messageLabel.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor, constant: -8),
-            messageLabel.bottomAnchor.constraint(equalTo: bubbleView.bottomAnchor, constant: -8),
+            messageLabel.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8),
         ])
-        
-        // 기본 bubbleView 제약조건 설정
-//        bubbleViewLeadingConstraint = bubbleView.leadingAnchor.constraint(equalTo: profileImageView.trailingAnchor, constant: 5)
-//        bubbleViewTrailingConstraint = bubbleView.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor, constant: -20)
-//        bubbleViewTopConstraint = bubbleView.topAnchor.constraint(equalTo: nickNameLabel.bottomAnchor, constant: 5)
-//        
-//        imagePreviewCollectionViewTopConstraint = imagesPreviewCollectionView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 8)
-//        imagePreviewCollectionViewLeadingConstraint = imagesPreviewCollectionView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 8)
-//        imagePreviewCollectionViewBottomConstraint = imagesPreviewCollectionView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8)
-//        
-//        NSLayoutConstraint.activate([
-//            bubbleViewLeadingConstraint,
-//            bubbleViewTrailingConstraint,
-//            bubbleViewTopConstraint,
-//            
-//            imagePreviewCollectionViewTopConstraint,
-//            imagePreviewCollectionViewLeadingConstraint,
-//            imagePreviewCollectionViewWidthConstraint
-//        ].compactMap{ $0 })
     }
     
     required init?(coder: NSCoder) {
@@ -144,12 +123,13 @@ class ChatMessageCell: UICollectionViewCell {
             imagePreviewCollectionViewWidthConstraint,
             imagePreviewCollectionViewHeightConstraint
         ].compactMap{ $0 })
-
     }
     
     func configureWithMessage(with message: ChatMessage) {
         messageLabel.text = message.msg
         imagesPreviewCollectionView.isHidden = true
+        
+        let containerWidth = contentView.frame.width * 0.7
         
         if let nickName = UserProfile.shared.nickname,
            nickName == message.senderNickname {
@@ -161,9 +141,10 @@ class ChatMessageCell: UICollectionViewCell {
             
             // 기본 제약조건 업데이트
             bubbleViewLeadingConstraint = bubbleView.leadingAnchor.constraint(greaterThanOrEqualTo: contentView.leadingAnchor, constant: 20)
-            bubbleViewTrailingConstraint = bubbleView.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor, constant: -8)
+            bubbleViewTrailingConstraint = bubbleView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -8)
             bubbleViewTopConstraint = bubbleView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 8)
-            bubbleViewBottomConstraint = bubbleView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8)
+            bubbleViewBottomConstraint = bubbleView.bottomAnchor.constraint(equalTo: messageLabel.bottomAnchor, constant: 8)
+            bubbleView.widthAnchor.constraint(lessThanOrEqualToConstant: containerWidth).isActive = true
         } else {
             // 상대방이 보낸 메시지
             nickNameLabel.text = message.senderNickname
@@ -173,7 +154,8 @@ class ChatMessageCell: UICollectionViewCell {
             bubbleViewLeadingConstraint = bubbleView.leadingAnchor.constraint(equalTo: profileImageView.trailingAnchor, constant: 5)
             bubbleViewTrailingConstraint = bubbleView.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor, constant: -20)
             bubbleViewTopConstraint = bubbleView.topAnchor.constraint(equalTo: nickNameLabel.bottomAnchor, constant: 5)
-            bubbleViewBottomConstraint = bubbleView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8)
+            bubbleViewBottomConstraint = bubbleView.bottomAnchor.constraint(equalTo: messageLabel.bottomAnchor, constant: 8)
+            bubbleView.widthAnchor.constraint(lessThanOrEqualToConstant: containerWidth).isActive = true
         }
         
         // 제약조건 활성화
@@ -181,6 +163,7 @@ class ChatMessageCell: UICollectionViewCell {
             bubbleViewLeadingConstraint,
             bubbleViewTrailingConstraint,
             bubbleViewTopConstraint,
+            bubbleViewBottomConstraint
         ].compactMap{ $0 })
         
         self.setNeedsLayout()
@@ -191,6 +174,7 @@ class ChatMessageCell: UICollectionViewCell {
         bubbleView.isHidden = true
         messageLabel.isHidden = true
         imagesPreviewCollectionView.isHidden = false
+        contentView.backgroundColor = .black
         
         if let attachments = message.attachments,
            let nickName = UserProfile.shared.nickname {
@@ -202,8 +186,8 @@ class ChatMessageCell: UICollectionViewCell {
                 return nil
             }
             
-            let containerWidth = contentView.frame.width * 0.5
-            let rows = calculateRowCount(images.count)
+            let containerWidth = contentView.frame.width * 0.7
+            let rows = calculateRowCountWithImage(images.count)
             
             var contentHeight: CGFloat {
                 if images.count == 1 {
@@ -248,7 +232,7 @@ class ChatMessageCell: UICollectionViewCell {
         }
     }
     
-    private func calculateRowCount(_ n: Int) -> [Int] {
+    private func calculateRowCountWithImage(_ n: Int) -> [Int] {
         guard n > 1 else { return [] }
         
         let maxThreeCount = n / 3
