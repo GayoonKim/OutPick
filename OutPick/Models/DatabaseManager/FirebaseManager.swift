@@ -238,7 +238,7 @@ class FirebaseManager {
             if querySnapshot.isEmpty{
                 try await db.collection("Rooms").document(DateManager.shared.currentMonth).setData([:])
             }
-            
+
             // Socket.IO 서버에 방 생성 이벤트 전송
             SocketIOManager.shared.createRoom(room.roomName)
             // Socket.IO 서버에 방 참여 이벤트 전송 (방장)
@@ -250,7 +250,6 @@ class FirebaseManager {
                     tempRoom.ID = roomRef.documentID
                     transaction.setData(tempRoom.toDictionary(), forDocument: roomRef)
                     
-                    completion(.success(()))
                     return nil
                     
                 })
@@ -258,6 +257,7 @@ class FirebaseManager {
                 FirebaseManager.shared.add_room_participant(room: room)
                 
                 print("saveRoomInfoToFirestore 끝")
+                completion(.success(()))
                 
             } catch {
                 
@@ -299,24 +299,7 @@ class FirebaseManager {
             throw FirebaseError.FailedToParseRoomData
         }
         
-        Task {
-            do {
-                let _ = try await FirebaseStorageManager.shared.fetchImageFromStorage(image: roomImageName, location: ImageLocation.RoomImage, createdDate: timestamp.dateValue())
-            } catch {
-                retry(asyncTask: { let _ = try await FirebaseStorageManager.shared.fetchImageFromStorage(image: roomImageName, location: ImageLocation.RoomImage, createdDate: timestamp.dateValue())  }) { result in
-                    switch result {
-                    case .success():
-                        print("이미지 캐싱 재시도 성공")
-                        return
-                    case .failure(let error):
-                        print("이미지 캐싱 재시도 실패: \(error.localizedDescription)")
-                    }
-                }
-            }
-        }
-        
         return ChatRoom(ID: ID, roomName: roomName, roomDescription: roomDescription, participants: participants, creatorID: creatorID, createdAt: timestamp.dateValue(), roomImageName: roomImageName)
-        
     }
     
     private func processRoomChanges(documentChanges: [DocumentChange]) async throws {
@@ -326,6 +309,7 @@ class FirebaseManager {
             try await withThrowingTaskGroup(of: (DocumentChangeType, ChatRoom).self, returning: Void.self) { group in
                 for change in documentChanges {
                     group.addTask {
+                        
                         let document = change.document
                         let data = document.data()
                         
@@ -342,7 +326,6 @@ class FirebaseManager {
                         print("추가")
                         self.chatRooms.append(room)
                         
-                        
                     case .modified:
                         print("수정")
                         if let index = self.chatRooms.firstIndex(where: { $0.roomName == room.roomName }) {
@@ -355,28 +338,31 @@ class FirebaseManager {
                         remove_participant(room: room)
 
                     }
-                    
-                    NotificationCenter.default.post(name: .chatRoomsUpdated, object: nil, userInfo: ["rooms": self.chatRooms])
-                    
                 }
+                
+                NotificationCenter.default.post(name: .chatRoomsUpdated, object: nil, userInfo: ["rooms": self.chatRooms])
             }
         } catch {
+//            retry(asyncTask: { try await self.processRoomChanges(documentChanges: documentChanges)}) { result in
+//                switch result {
+//                    
+//                case .success():
+//                    print("모든 월별 문서 하위 컬렉션 방 문서들 불러오기 재시도 성공")
+//                    return
+//                    
+//                case .failure(let error):
+//                    print ("모든 월별 문서 하위 컬렉션 방 문서들 불러오기 재시도 실패: \(error.localizedDescription)")
+////                    AlertManager.showAlert(title: "네트워크 오류", message: "네트워크 오류로 오픈채팅 목록을 불러오는데 실패했습니다. 네트워크 연결을 확인해 주세요.", viewController: self)
+//                    return
+//                    
+//                }
+//            }
             
-            retry(asyncTask: { try await self.processRoomChanges(documentChanges: documentChanges)}) { result in
-                switch result {
-                    
-                case .success():
-                    print("모든 월별 문서 하위 컬렉션 방 문서들 불러오기 재시도 성공")
-                    return
-                    
-                case .failure(let error):
-                    print ("모든 월별 문서 하위 컬렉션 방 문서들 불러오기 재시도 실패: \(error.localizedDescription)")
-//                    AlertManager.showAlert(title: "네트워크 오류", message: "네트워크 오류로 오픈채팅 목록을 불러오는데 실패했습니다. 네트워크 연결을 확인해 주세요.", viewController: self)
-                    return
-                    
-                }
+            for _ in 0...2 {
+                
+                try await self.processRoomChanges(documentChanges: documentChanges)
+                
             }
-            
         }
         
     }
@@ -397,11 +383,10 @@ class FirebaseManager {
                 }
                 
                 for try await room in group {
+                    
                     self.chatRooms.append(room)
     
                 }
-                
-                
             }
             
             NotificationCenter.default.post(name: .chatRoomsUpdated, object: nil, userInfo: ["rooms": self.chatRooms])
@@ -422,14 +407,12 @@ class FirebaseManager {
                 }
             }
         }
-        
     }
     
     private func listenToMonthlyRoom(monthID: String) async throws -> ListenerRegistration {
-        
         let listerner = db.collection("Rooms").document(monthID).collection("\(monthID) Rooms").addSnapshotListener { (querySnapshot, error) in
-            
             guard let querySnapshot = querySnapshot, error == nil else {
+                
                 print("월별 문서 하위 컬렉션 실시간 리스너 설정 실패: \(error!.localizedDescription)")
                 retry(asyncTask: { let _ = try await self.listenToMonthlyRoom(monthID: monthID )}) { result in
                     switch result {
@@ -443,31 +426,32 @@ class FirebaseManager {
 //                        AlertManager.showAlert(title: "네트워크 오류", message: "네트워크 오류로 오픈채팅 목록을 불러오는데 실패했습니다. 네트워크 연결을 확인해 주세요.", viewController: self)
                         return
                     }
+                    
                 }
                 return
             }
             
-            if querySnapshot.documentChanges.isEmpty {
-                let documents = querySnapshot.documents
-                Task {
-                    try await self.processAllRooms(documents: documents)
-                }
-                
-            } else {
-                let documentChanges = querySnapshot.documentChanges
-                Task {
-                    try await self.processRoomChanges(documentChanges: documentChanges)
-                }
-            }
+//            if querySnapshot.documentChanges.isEmpty {
+//                let documents = querySnapshot.documents
+//                Task {
+//                    try await self.processAllRooms(documents: documents)
+//                }
+//                
+//            } else {
+//                let documentChanges = querySnapshot.documentChanges
+//                Task {
+//                    try await self.processRoomChanges(documentChanges: documentChanges)
+//                }
+//            }
             
+            let documentChanges = querySnapshot.documentChanges
+            Task { try await self.processRoomChanges(documentChanges: documentChanges) }
         }
         
         return listerner
-        
     }
 
     private func listenToMonthlyRooms(monthIDs: [String]) async throws {
-        
         do {
             try await withThrowingTaskGroup(of: (String, ListenerRegistration).self, returning: Void.self) { group in
                 for monthID in monthIDs {
@@ -480,12 +464,11 @@ class FirebaseManager {
                 }
                 
                 for try await (monthID, listener) in group {
+                    
                     monthlyRoomListeners[monthID] = listener
+                    
                 }
-                
             }
-            
-            
         } catch {
             retry(asyncTask: { try await self.listenToMonthlyRooms(monthIDs: monthIDs) }) { result in
                 switch result {
@@ -500,36 +483,29 @@ class FirebaseManager {
                     
                 }
             }
-            
         }
-        
     }
     
     func listenToRooms() async throws{
-        
         //기존 모든 리스너 제거
         removeAllListeners()
         
         listenToRoomsTask?.cancel()
-        
         listenToRoomsTask = Task {
             do {
-                
                 // Rooms 컬렉션이 비어있는 경우 현재 월 문서 생성
                 let roomsSnapshot = try await db.collection("Rooms").getDocuments()
                 if roomsSnapshot.isEmpty {
+                    
                     try await db.collection("Rooms").document(DateManager.shared.currentMonth).setData([:])
+                    
                 }
                 
                 // 모든 월별 문서 ID 불러오기
                 let monthIDs = try await FirebaseManager.shared.fetchAllDocIDs(collectionName: "Rooms")
-                
                 // 모든 월별 문서의 하위 컬렉션 리스너 설정
                 try await listenToMonthlyRooms(monthIDs: monthIDs)
-                
-                
             } catch {
-                
                 retry(asyncTask: listenToRooms) { result in
                     switch result {
                         
@@ -544,13 +520,10 @@ class FirebaseManager {
                         
                     }
                 }
-                
             }
             
             listenToRoomsTask = nil
-            
         }
-        
     }
         
     private func removeAllListeners() {

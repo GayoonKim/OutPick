@@ -54,7 +54,7 @@ class ChatMessageCell: UICollectionViewCell {
         let view = ChatImagePreviewCollectionView()
         view.translatesAutoresizingMaskIntoConstraints = false
         view.isHidden = true
-        view.backgroundColor = .lightGray
+        view.backgroundColor = .clear
         return view
     }()
     
@@ -174,7 +174,6 @@ class ChatMessageCell: UICollectionViewCell {
         bubbleView.isHidden = true
         messageLabel.isHidden = true
         imagesPreviewCollectionView.isHidden = false
-        contentView.backgroundColor = .black
         
         if let attachments = message.attachments,
            let nickName = UserProfile.shared.nickname {

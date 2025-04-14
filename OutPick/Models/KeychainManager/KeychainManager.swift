@@ -56,5 +56,7 @@ class KeychainManager {
             kSecAttrAccount as String : account
         ]
         SecItemDelete(query as CFDictionary)
+        
+        print("Keychain 삭제 성공")
     }
 }

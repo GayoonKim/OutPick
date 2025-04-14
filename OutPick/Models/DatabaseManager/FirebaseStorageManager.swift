@@ -47,16 +47,16 @@ class FirebaseStorageManager {
                     continuation.resume(throwing: StorageError.FailedToUploadImage)
                     return
                 }
+                
+                continuation.resume(returning: imageName)
             }
             
             let _ = uploadTask.observe(.progress) { snapshot in
                 let percentComplete = 100.0 * Double(snapshot.progress!.completedUnitCount) / Double(snapshot.progress!.totalUnitCount)
                 print("Upload is \(percentComplete) done")
             }
-            
-            continuation.resume(returning: imageName)
-            
         }
+        
     }
     
     func uploadImagesToStorage(images: [UIImage], location: ImageLocation) async throws -> [String] {
@@ -136,12 +136,13 @@ class FirebaseStorageManager {
         // 메모리 캐시 확인
         if let cachedImage = KingfisherManager.shared.cache.retrieveImageInMemoryCache(forKey: imageName) {
             print("cachedImage in Memory: \(cachedImage)")
+            
             return cachedImage
         }
         // 디스크 캐시 확인
         if let cachedImage = try await KingfisherManager.shared.cache.retrieveImageInDiskCache(forKey: imageName) {
             print("cachedImage in Disk: \(cachedImage)")
-//            KingfisherManager.shared.cache.memoryStorage.store(value: cachedImage, forKey: imageName)
+            
             return cachedImage
         }
         
@@ -159,10 +160,9 @@ class FirebaseStorageManager {
                 
                 if let data = data,
                    let image = UIImage(data: data) {
-    
-                    KingfisherManager.shared.cache.memoryStorage.store(value: image, forKey: imageName)
-                    continuation.resume(returning: image)
                     
+                    Task { try await KingfisherManager.shared.cache.store(image, forKey: imageName) }
+                    continuation.resume(returning: image)
                 }
             }
         }

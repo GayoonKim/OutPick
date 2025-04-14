@@ -19,7 +19,7 @@ class RoomListsCollectionViewController: UICollectionViewController {
     
     var chatRooms: [ChatRoom] = []
     var dataSource: DataSourceType!
-
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         
@@ -50,16 +50,27 @@ class RoomListsCollectionViewController: UICollectionViewController {
         let dataSource = DataSourceType(collectionView: collectionView) { (collectionView, indexPath, item) in
             
             let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "ChatRoom", for: indexPath) as! RoomListCollectionViewCell
-
-            cell.roomImageView.layer.cornerRadius = 15
-            cell.roomImageView.clipsToBounds =  true
             
-            Task {
-                if let imageName = item.roomImageName {
-                    let image = try await FirebaseStorageManager.shared.fetchImageFromStorage(image: imageName, location: ImageLocation.RoomImage, createdDate: item.createdAt)
-                    
-                    DispatchQueue.main.async {
-                        cell.roomImageView.image = image
+            cell.roomImageView.layer.cornerRadius = 15
+            cell.roomImageView.clipsToBounds = true
+            
+            if let imageName = item.roomImageName {
+                Task {
+                    do {
+                        if let cachedImage = KingfisherManager.shared.cache.retrieveImageInMemoryCache(forKey: imageName) {
+                            DispatchQueue.main.async {
+                                cell.roomImageView.image = cachedImage
+                            }
+                        } else {
+                            let image = try await FirebaseStorageManager.shared.fetchImageFromStorage(image: imageName, location: .RoomImage, createdDate: item.createdAt)
+                            try await KingfisherManager.shared.cache.store(image, forKey: imageName)
+                            DispatchQueue.main.async {
+                                cell.roomImageView.image = image
+                            }
+                            
+                        }
+                    } catch {
+                        print("이미지 로딩 실패: \(error.localizedDescription)")
                     }
                 }
             }

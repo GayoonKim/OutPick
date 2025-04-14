@@ -214,10 +214,12 @@ class RoomCreateViewController: UIViewController {
     }
     
     private func saveRoomInfo(room: ChatRoom) {
-        
         if let image = roomImageView.image {
+            
                 uploadImageAndSaveRoomInfo(image: image, roomInfo: room)
+            
         } else {
+            
             saveRoomInfoToFirestore(room: room, image: nil)
         }
         
@@ -225,7 +227,6 @@ class RoomCreateViewController: UIViewController {
     
     
     private func uploadImageAndSaveRoomInfo(image: UIImage, roomInfo: ChatRoom) {
-        
         Task {
             do {
                 
@@ -254,11 +255,9 @@ class RoomCreateViewController: UIViewController {
                 if let imageName = room.roomImageName, let image = image {
                     KingfisherManager.shared.cache.store(image, forKey: imageName)
                 }
-
-                NotificationCenter.default.post(name: .roomSavedComplete, object: nil, userInfo: ["room": room])
                 
                 print("saveRoomInfoToFirestore completion 끝")
-                
+                NotificationCenter.default.post(name: .roomSavedComplete, object: nil, userInfo: ["room": room])
             case .failure:
                 NotificationCenter.default.post(name: .roomSaveFailed, object: nil, userInfo: ["error": RoomCreationError.saveFailed])
                 
