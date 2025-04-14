@@ -176,7 +176,6 @@ class SecondProfileViewController: UIViewController {
     }
     
     private func saveUserProfile(email: String) {
-        
         guard let nickname = UserProfile.shared.nickname else { return }
         
         Task {
@@ -194,9 +193,13 @@ class SecondProfileViewController: UIViewController {
                     UserProfile.shared.profileImageName = nil
                 }
                 
+                if let data = try? JSONEncoder().encode(UserProfile.shared) {
+                    KeychainManager.shared.save(data, service: "GayoonKim.OutPick", account: "UserProfile")
+                }
+                
                 try await FirebaseManager.shared.saveUserProfileToFirestore(email: LoginManager.shared.getUserEmail)
                 try await Task.sleep(nanoseconds: 1_000_000_000)  // 1초 대기
-                try await LoginManager.shared.updateLogDevID()
+//                try await LoginManager.shared.updateLogDevID()
                 
                 DispatchQueue.main.async {
                     let homeVC = self.storyboard?.instantiateViewController(identifier: "HomeTBC") as? UITabBarController
@@ -205,22 +208,14 @@ class SecondProfileViewController: UIViewController {
                 }
                 
             } catch FirebaseError.FailedToSaveProfile {
-                
                 print("프로필 저장 실패")
                 AlertManager.showAlertNoHandler(title: "프로필 저장 실패", message: "프로필 저장에 실패했습니다. 다시 시도해 주세요.", viewController: self)
-    
-                
             } catch {
-                
                 print("알 수 없는 에러: \(error)")
                 AlertManager.showAlertNoHandler(title: "프로필 저장 실패", message: "프로필 저장에 실패했습니다. 다시 시도해 주세요.", viewController: self)
                 return
-                
             }
         }
-        
-        
-        
     }
     
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {

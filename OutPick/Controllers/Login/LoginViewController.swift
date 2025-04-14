@@ -51,10 +51,9 @@ class LoginViewController: UIViewController {
           let credential = GoogleAuthProvider.credential(withIDToken: idToken, accessToken: user.accessToken.tokenString)
           
           Auth.auth().signIn(with: credential) { result, error in
-              guard let email = result?.user.email else { return }
+//              guard let email = result?.user.email else { return }
               
               self.commonLogingProcess()
-              
           }
         }
     }
@@ -110,7 +109,7 @@ class LoginViewController: UIViewController {
                 try await LoginManager.shared.updateLogDevID()
                 try await LoginManager.shared.setupDevIDListener()
                 
-                LoginManager.shared.fetchUserProfile(LoginManager.shared.getUserEmail) { screen in
+                LoginManager.shared.fetchUserProfileFromKeychain() { screen in
                     DispatchQueue.main.async {
                         self.view.window?.rootViewController = screen
                         self.view.window?.makeKeyAndVisible()

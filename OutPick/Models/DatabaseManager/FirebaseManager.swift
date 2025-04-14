@@ -85,7 +85,6 @@ class FirebaseManager {
     
     // Firebase Firestore에서 UserProfile 불러오기
     func fetchUserProfileFromFirestore(email: String, completion: @escaping (Result<UserProfile, Error>) -> Void) {
-        
         print("fetchUserprofileFromFirestore 호출")
         
         fetchProfileTask?.cancel()

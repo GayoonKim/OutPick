@@ -44,7 +44,7 @@ class SocketIOManager {
         }
         
         socket.once(clientEvent: .connect) { [weak self] _, _ in
-            guard let self = self else { return }
+            guard self != nil else { return }
             print("소켓 연결 성공")
             completion()
         }

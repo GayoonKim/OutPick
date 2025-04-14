@@ -555,81 +555,6 @@
             </objects>
             <point key="canvasLocation" x="-4099" y="1096"/>
         </scene>
-        <!--Prac View Controller-->
-        <scene sceneID="xka-lH-0UY">
-            <objects>
-                <viewController id="gs6-Rd-ei6" customClass="PracViewController" customModule="OutPick" customModuleProvider="target" sceneMemberID="viewController">
-                    <view key="view" contentMode="scaleToFill" id="jV6-GU-Fc2">
-                        <rect key="frame" x="0.0" y="0.0" width="402" height="874"/>
-                        <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
-                        <subviews>
-                            <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="EE3-iz-MAM">
-                                <rect key="frame" x="10" y="170" width="382" height="38"/>
-                                <state key="normal" title="Button"/>
-                                <buttonConfiguration key="configuration" style="plain" title="앨범">
-                                    <fontDescription key="titleFontDescription" type="boldSystem" pointSize="20"/>
-                                </buttonConfiguration>
-                                <connections>
-                                    <action selector="albumBtnTapped:" destination="gs6-Rd-ei6" eventType="touchUpInside" id="i59-dH-yXp"/>
-                                </connections>
-                            </button>
-                            <stackView hidden="YES" opaque="NO" contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="LDH-D5-Bmo">
-                                <rect key="frame" x="29" y="415" width="344" height="44"/>
-                                <subviews>
-                                    <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="qYj-ZD-ZN4">
-                                        <rect key="frame" x="0.0" y="0.0" width="47" height="44"/>
-                                        <state key="normal" title="Button"/>
-                                        <buttonConfiguration key="configuration" style="plain" image="plus" catalog="system" title="">
-                                            <color key="baseForegroundColor" white="0.0" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
-                                        </buttonConfiguration>
-                                        <connections>
-                                            <action selector="attachmentBtnTapped:" destination="UDw-4m-Qed" eventType="touchUpInside" id="F0K-Nw-eTt"/>
-                                        </connections>
-                                    </button>
-                                    <textView clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="center" translatesAutoresizingMaskIntoConstraints="NO" id="HA6-73-W0A">
-                                        <rect key="frame" x="47.000000000000014" y="0.0" width="246.33333333333337" height="44"/>
-                                        <color key="backgroundColor" white="0.66666666669999997" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
-                                        <constraints>
-                                            <constraint firstAttribute="height" constant="44" id="Rag-76-qTZ"/>
-                                        </constraints>
-                                        <color key="textColor" systemColor="labelColor"/>
-                                        <fontDescription key="fontDescription" type="system" pointSize="12"/>
-                                        <textInputTraits key="textInputTraits" autocapitalizationType="sentences"/>
-                                    </textView>
-                                    <button opaque="NO" contentMode="scaleToFill" enabled="NO" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="WsD-Rp-21g">
-                                        <rect key="frame" x="293.33333333333331" y="0.0" width="50.666666666666686" height="44"/>
-                                        <color key="backgroundColor" white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
-                                        <state key="normal" title="Button"/>
-                                        <buttonConfiguration key="configuration" style="plain" image="paperplane" catalog="system" title="">
-                                            <color key="baseForegroundColor" white="0.0" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
-                                        </buttonConfiguration>
-                                        <connections>
-                                            <action selector="sendBtnTapped:" destination="gs6-Rd-ei6" eventType="touchUpInside" id="WyX-Jf-y4S"/>
-                                            <action selector="sendBtnTapped:" destination="UDw-4m-Qed" eventType="touchUpInside" id="mDM-vH-sta"/>
-                                        </connections>
-                                    </button>
-                                </subviews>
-                            </stackView>
-                        </subviews>
-                        <viewLayoutGuide key="safeArea" id="xAh-tD-5KB"/>
-                        <color key="backgroundColor" systemColor="systemBackgroundColor"/>
-                        <constraints>
-                            <constraint firstItem="LDH-D5-Bmo" firstAttribute="centerX" secondItem="jV6-GU-Fc2" secondAttribute="centerX" id="AbJ-VG-wOb"/>
-                            <constraint firstItem="xAh-tD-5KB" firstAttribute="trailing" secondItem="EE3-iz-MAM" secondAttribute="trailing" constant="10" id="Cl8-ma-oCq"/>
-                            <constraint firstItem="LDH-D5-Bmo" firstAttribute="centerY" secondItem="jV6-GU-Fc2" secondAttribute="centerY" id="W24-c1-qUb"/>
-                            <constraint firstItem="EE3-iz-MAM" firstAttribute="top" secondItem="xAh-tD-5KB" secondAttribute="top" constant="108" id="ZL1-Kj-ldn"/>
-                            <constraint firstItem="EE3-iz-MAM" firstAttribute="leading" secondItem="xAh-tD-5KB" secondAttribute="leading" constant="10" id="ehR-q7-qIC"/>
-                            <constraint firstItem="LDH-D5-Bmo" firstAttribute="leading" secondItem="xAh-tD-5KB" secondAttribute="leading" constant="29" id="fwr-x1-La3"/>
-                        </constraints>
-                    </view>
-                    <connections>
-                        <outlet property="sendBtn" destination="WsD-Rp-21g" id="ub5-pB-ZVS"/>
-                    </connections>
-                </viewController>
-                <placeholder placeholderIdentifier="IBFirstResponder" id="uBm-yu-LpW" userLabel="First Responder" customClass="UIResponder" sceneMemberID="firstResponder"/>
-            </objects>
-            <point key="canvasLocation" x="-4099.090909090909" y="1876.5690376569039"/>
-        </scene>
         <!--Login View Controller-->
         <scene sceneID="En2-Vr-dtw">
             <objects>
@@ -1047,7 +972,7 @@
                             <outlet property="delegate" destination="j8R-If-eUG" id="FVK-yJ-TeB"/>
                         </connections>
                     </collectionView>
-                    <tabBarItem key="tabBarItem" title="" image="bubble.fill" catalog="system" id="aZm-5Q-ZUa"/>
+                    <tabBarItem key="tabBarItem" title="" image="bubble.middle.bottom.fill" catalog="system" id="aZm-5Q-ZUa"/>
                     <navigationItem key="navigationItem" id="Yvh-UJ-SYw"/>
                 </collectionViewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="yT1-3t-yyQ" userLabel="First Responder" customClass="UIResponder" sceneMemberID="firstResponder"/>
@@ -1131,7 +1056,7 @@
                             <outlet property="delegate" destination="GhM-E7-MUJ" id="mo5-bc-i5r"/>
                         </connections>
                     </collectionView>
-                    <tabBarItem key="tabBarItem" title="" image="hanger" catalog="system" id="cjW-1h-nQe"/>
+                    <tabBarItem key="tabBarItem" title="" image="magnifyingglass" catalog="system" id="cjW-1h-nQe"/>
                     <navigationItem key="navigationItem" id="lZm-yc-ZUf"/>
                 </collectionViewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="O76-Xb-klH" userLabel="First Responder" customClass="UIResponder" sceneMemberID="firstResponder"/>
@@ -1162,13 +1087,13 @@
     </inferredMetricsTieBreakers>
     <resources>
         <image name="Default_Profile" width="1024" height="1024"/>
-        <image name="bubble.fill" catalog="system" width="128" height="110"/>
         <image name="bubble.left.and.bubble.right.fill" catalog="system" width="128" height="102"/>
+        <image name="bubble.middle.bottom.fill" catalog="system" width="128" height="110"/>
         <image name="cloud.sun.fill" catalog="system" width="128" height="101"/>
         <image name="gearshape.fill" catalog="system" width="128" height="123"/>
-        <image name="hanger" catalog="system" width="128" height="99"/>
         <image name="ios_light_sq_SI" width="185" height="44"/>
         <image name="kakao_login_medium_narrow" width="183" height="45"/>
+        <image name="magnifyingglass" catalog="system" width="128" height="117"/>
         <image name="paperplane" catalog="system" width="128" height="119"/>
         <image name="photo.artframe" catalog="system" width="128" height="93"/>
         <image name="plus" catalog="system" width="128" height="113"/>

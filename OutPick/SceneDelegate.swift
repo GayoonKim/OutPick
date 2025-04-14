@@ -27,21 +27,23 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
     
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
-        // Use this method to optionally configure and attach the UIWindow `window` to the provided UIWindowScene `scene`.
-        // If using a storyboard, the `window` property will automatically be initialized and attached to the scene.
-        // This delegate does not imply the connecting scene or session are new (see `application:configurationForConnectingSceneSession` instead).
         print("1. scene 메서드 시작")
         
         guard let _ = (scene as? UIWindowScene) else { return }
-        window?.overrideUserInterfaceStyle = .light
         
-        // 초기 화면을 로딩 화면으로 설정
-        let storyboard = UIStoryboard(name: "LaunchScreen", bundle: nil)
-        let initialViewController = storyboard.instantiateViewController(withIdentifier: "LaunchScreen")
-        window?.rootViewController = initialViewController
-        window?.makeKeyAndVisible()
-        
-        WeatherAPIManager.shared.startLocationUpdates()
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.window?.overrideUserInterfaceStyle = .light
+            
+            // 초기 화면을 로딩 화면으로 설정
+            let storyboard = UIStoryboard(name: "LaunchScreen", bundle: nil)
+            let initialViewController = storyboard.instantiateViewController(withIdentifier: "LaunchScreen")
+            self.window?.rootViewController = initialViewController
+            self.window?.makeKeyAndVisible()
+            
+            // 날씨 업데이트 시작
+            WeatherAPIManager.shared.startLocationUpdates()
+        }
         
         print("2. DispatchQueue 시작 전")
         
@@ -76,20 +78,26 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 print("9. notify 내부 실행")
                 if isLoggedIn {
                     print("10. 로그인 됨")
-                    Task {
-                        try await FirebaseManager.shared.listenToRooms()
-                        LoginManager.shared.fetchUserProfile(LoginManager.shared.getUserEmail) { screen in
-                            self.window?.rootViewController = screen
-                            self.window?.makeKeyAndVisible()
+                    Task { @MainActor in
+                        do {
+                            try await FirebaseManager.shared.listenToRooms()
+                            LoginManager.shared.fetchUserProfileFromKeychain() { screen in
+                                DispatchQueue.main.async { [weak self] in
+                                    guard let self = self else { return }
+                                    self.window?.rootViewController = screen
+                                    self.window?.makeKeyAndVisible()
+                                }
+                            }
+                        } catch {
+                            print("Firebase 연결 오류: \(error)")
+                            self.showLoginViewController()
                         }
                     }
-                    
                 } else {
                     print("11. 로그인 안 됨")
                     self.showLoginViewController()
                 }
             }
-            
         }
     }
     
@@ -178,8 +186,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     private func showLoginViewController() {
         let mainStoryboard = UIStoryboard(name: "Main", bundle: nil)
         let loginViewController = mainStoryboard.instantiateViewController(withIdentifier: "LoginVC")
-        window?.rootViewController = loginViewController
-        window?.makeKeyAndVisible()
+        
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.window?.rootViewController = loginViewController
+            self.window?.makeKeyAndVisible()
+        }
     }
     
 }

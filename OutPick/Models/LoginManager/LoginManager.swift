@@ -28,7 +28,6 @@ class LoginManager {
     // 중복 로그인 탐지
     func setupDevIDListener() async throws{
         do {
-            
             guard let userDoc = try await FirebaseManager.shared.getUserDoc() else { return }
             deviceIDListener = userDoc.reference.addSnapshotListener({ [weak self] documentSnapshot, error in
                 guard let self = self else { return }
@@ -51,23 +50,17 @@ class LoginManager {
                         self.deviceIDListener = nil
                     }
                 }
-                
             })
-            
         } catch {
-            
             print("기기 ID 리스너 설정 실패: \(error.localizedDescription)")
-            
         }
     }
     
     // 중복 로그인 방지를 위한 로그인 기기 ID 변경
     func updateLogDevID() async throws {
-        
         print("updateLogDevID 호출")
         
         do {
-            
             let device_id = await UIDevice.current.identifierForVendor?.uuidString ?? "Unknown_User"
             guard let user_doc = try await FirebaseManager.shared.getUserDoc() else { return }
             
@@ -78,31 +71,43 @@ class LoginManager {
             }
             
             let _ = try await FirebaseManager.shared.db.runTransaction({ (transaction, errorPointer) -> Any? in
-                
                 transaction.updateData(["deviceID": device_id], forDocument: user_doc.reference)
                 
                 return nil
-                
             })
             
             print("로그인 기기 ID 변경")
-            
         } catch {
-            
             print("로그인 기기 ID 변경 실패: \(error)")
-            
         }
-        
     }
     
     // Firestore에서 사용자 이메일로 만들어진 프로필 문서 쿼리
-    func fetchUserProfile(_ email: String, completion: @escaping (UIViewController) -> Void) {
-        
-        print("fetchUserProfile 호출")
+    func fetchUserProfileFromKeychain(completion: @escaping (UIViewController) -> Void) {
+        print("fetchUserProfileFromKeychain 호출")
 
+        if let data = KeychainManager.shared.read(service: "GayoonKim.OutPick", account: "UserProfile"),
+           let userProfile = try? JSONDecoder().decode(UserProfile.self, from: data) {
+            UserProfile.shared = userProfile
+            
+            Task {
+                try await self.updateLogDevID()
+                try await self.setupDevIDListener()
+            }
+            
+            let mainStorybard = UIStoryboard(name: "Main", bundle: nil)
+            let initialViewControlle = mainStorybard.instantiateViewController(withIdentifier: "HomeTBC")
+            completion(initialViewControlle)
+        } else {
+            fetchProfileFromFirebase(LoginManager.shared.getUserEmail) {
+                completion($0)
+            }
+        }
+    }
+    
+    func fetchProfileFromFirebase(_ email: String, completion: @escaping (UIViewController) -> Void) {
         FirebaseManager.shared.fetchUserProfileFromFirestore(email: email) { result in
             DispatchQueue.main.async {
-                
                 let initialViewControlle: UIViewController
                 
                 switch result {
@@ -117,20 +122,16 @@ class LoginManager {
 
                     let mainStorybard = UIStoryboard(name: "Main", bundle: nil)
                     initialViewControlle = mainStorybard.instantiateViewController(withIdentifier: "HomeTBC")
-                    print(initialViewControlle)
                     completion(initialViewControlle)
                 case .failure(let error):
                     print("Failed to fetch user profile: \(error.localizedDescription)")
 
                     let mainStorybard = UIStoryboard(name: "Main", bundle: nil)
                     initialViewControlle = mainStorybard.instantiateViewController(withIdentifier: "ProfileNav")
-                    print(initialViewControlle)
                     completion(initialViewControlle)
                 }
-                
             }
         }
-
     }
     
     // 카카오 사용자 이메일 불러오기
