@@ -66,12 +66,12 @@ extension SecondProfileViewController: PHPickerViewControllerDelegate {
 extension SecondProfileViewController: UIImagePickerControllerDelegate & UINavigationControllerDelegate {
     func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
         if let selectedImage = info[.originalImage] as? UIImage,
-           let cgImage = MediaManager.shared.compressImageWithImageIO(selectedImage) {
+           let cgImage = MediaManager.compressImageWithImageIO(selectedImage) {
             profileImageView.image = UIImage(cgImage: cgImage)
             self.removeImageButtonSetup()
             self.enableCompleteButton()
         } else if let editedImage = info[.editedImage] as? UIImage,
-                  let cgImage = MediaManager.shared.compressImageWithImageIO(editedImage) {
+                  let cgImage = MediaManager.compressImageWithImageIO(editedImage) {
             profileImageView.image = UIImage(cgImage: cgImage)
             self.removeImageButtonSetup()
             self.enableCompleteButton()

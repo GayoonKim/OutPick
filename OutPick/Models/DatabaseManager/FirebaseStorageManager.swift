@@ -60,26 +60,6 @@ class FirebaseStorageManager {
     }
     
     func uploadImagesToStorage(images: [UIImage], location: ImageLocation) async throws -> [String] {
-//        let start = Date()
-//        
-//        var resultNames = Array<String?>(repeating: nil, count: images.count)
-//        
-//        for image in images {
-//            do {
-//                let imageName = try await uploadImageToStorage(image: image, location: location)
-//                resultNames.append(imageName)
-//            } catch {
-//                throw error
-//            }
-//        }
-//        
-//        let end = Date()
-//        let duration = end.timeIntervalSince(start)
-//        let formattedTime = String(format: "%.2f", duration)
-//        print("⏱ 소요 시간: \(formattedTime)초")
-//        
-//        return resultNames.compactMap{$0}
-        
         let start = Date()
         
         return try await withThrowingTaskGroup(of: (Int, String).self) { group in
@@ -105,11 +85,9 @@ class FirebaseStorageManager {
             
             return resultNames.compactMap{ $0 }
         }
-        
     }
     
     func uploadVideoToStorage(_ videoURL: URL) async throws -> String {
-        
         let videoName = UUID().uuidString
         return try await withCheckedThrowingContinuation { continuation in
             
@@ -121,30 +99,28 @@ class FirebaseStorageManager {
             let videoRef = storage.reference().child("videos/\(videoName).mp4")
             
             let uploadTask = videoRef.putData(videoData) { (metaData, error) in
-                
                 if let error = error {
+                    
                     print("비디오 업로드 실패: \(error.localizedDescription)")
                     continuation.resume(throwing: StorageError.FailedToUploadVideo)
                     return
+                    
                 }
                 
             }
             
             let _ = uploadTask.observe(.progress) { snapshot in
-                
+        
                 let percentComplete = 100.0 * Double(snapshot.progress!.completedUnitCount) / Double(snapshot.progress!.totalUnitCount)
                 print("Upload is \(percentComplete) done")
                 
             }
             
             continuation.resume(returning: videoName)
-            
         }
-        
     }
     
     func uploadVideosToStorage(_ videoURLs: [URL]) async throws -> [String] {
-        
         var videoNames = Array<String?>(repeating: nil, count: videoURLs.count)
         
         for videoURL in videoURLs {

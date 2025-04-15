@@ -113,27 +113,6 @@ class SocketIOManager {
             return
         }
         
-        // 이미지 Storage에 저장 및 이미지 데이터 Firestore에 저장
-//        Task {
-//            let imageNames = try await FirebaseStorageManager.shared.uploadImagesToStorage(images: images, location: ImageLocation.Message)
-//            var attachments = [Attachment]()
-//            
-//            let imageDataArray = imageNames.enumerated().compactMap { index, fileName -> [String: Any]? in
-//                if let imageData = images[index].jpegData(compressionQuality: 1) {
-//                    let attachment = Attachment(type: .image, fileName: fileName, fileData: imageData)
-//                    attachments.append(attachment)
-//                    return ["fileName": fileName, "fileData": imageData]
-//                }
-//                
-//                return nil
-//            }
-//            
-//            let message = ChatMessage(roomName: room.roomName, senderID: LoginManager.shared.getUserEmail, senderNickname: UserProfile.shared.nickname ?? "", msg: "", sentAt: Date(), attachments: attachments)
-//            try await FirebaseManager.shared.saveMessage(message, room)
-//            
-//            socket.emit("send images", ["roomName": message.roomName, "senderID": message.senderID, "senderNickName": message.senderNickname, "sentAt": "\(message.sentAt ?? Date())", "images": imageDataArray])
-//        }
-        
         Task {
             let imageNames = try await FirebaseStorageManager.shared.uploadImagesToStorage(images: images, location: ImageLocation.Message)
             var attachments = [Attachment]()

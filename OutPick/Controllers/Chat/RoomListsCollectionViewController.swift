@@ -54,7 +54,11 @@ class RoomListsCollectionViewController: UICollectionViewController {
             cell.roomImageView.layer.cornerRadius = 15
             cell.roomImageView.clipsToBounds = true
             
-            if let imageName = item.roomImageName {
+            // 기본 이미지 설정
+            cell.roomImageView.image = UIImage(named: "Default_Profile")
+            
+            // 사용자 지정 이미지가 있는 경우에만 이미지 로딩 진행
+            if let imageName = item.roomImageName, !imageName.isEmpty {
                 Task {
                     do {
                         if let cachedImage = KingfisherManager.shared.cache.retrieveImageInMemoryCache(forKey: imageName) {
@@ -67,7 +71,6 @@ class RoomListsCollectionViewController: UICollectionViewController {
                             DispatchQueue.main.async {
                                 cell.roomImageView.image = image
                             }
-                            
                         }
                     } catch {
                         print("이미지 로딩 실패: \(error.localizedDescription)")

@@ -16,6 +16,8 @@ class MyMenuViewController: UIViewController {
     }
     
     @IBAction func logOutBtnTapped(_ sender: UIButton) {
+        KeychainManager.shared.delete(service: "GayoonKim.OutPick", account: "UserProfile")
+        
         LoginManager.shared.getKakaoEmail{ result in
             if result {
                 UserApi.shared.logout {(error) in

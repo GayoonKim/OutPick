@@ -24,12 +24,7 @@ class RoomCreateViewController: UIViewController {
     @IBOutlet weak var activityIndicator: UIActivityIndicatorView!
     
     var roomInfo: ChatRoom?
-    
-//    enum RoomCreationError: Error {
-//        case duplicateName
-//        case saveFailed
-//        case imageUploadFailed
-//    }
+    private var isDefaultRoomImage = false
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -46,6 +41,13 @@ class RoomCreateViewController: UIViewController {
         NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillShow), name: UIResponder.keyboardWillShowNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillHide), name: UIResponder.keyboardWillHideNotification, object: nil)
         
+        // 초기 이미지가 기본 이미지인지 확인
+        if let currentImage = roomImageView.image,
+           let defaultImage = UIImage(named: "Default_Profile"),
+           currentImage.pngData() == defaultImage.pngData() {
+            isDefaultRoomImage = true
+        }
+
         self.roomImageView.clipsToBounds = true
         self.roomImageView.layer.cornerRadius = 15
     }
@@ -166,7 +168,7 @@ class RoomCreateViewController: UIViewController {
     
     @objc private func removeImageButtonTapped(_ sender: UIButton) {
         roomImageView.image = UIImage(named: "Default_Profile")
-        
+        isDefaultRoomImage = true
         sender.isHidden = true
     }
     
@@ -198,7 +200,7 @@ class RoomCreateViewController: UIViewController {
                 let room = ChatRoom(ID: nil, roomName: self.roomNameTextView.text, roomDescription: self.roomDescriptionTextView.text, participants: [LoginManager.shared.getUserEmail], creatorID: LoginManager.shared.getUserEmail, createdAt: Date(), roomImageName: nil)
                 
                 self.performSegue(withIdentifier: "ToChatRoom", sender: room)
-                
+
                 self.saveRoomInfo(room: room)
                 
             } catch {
@@ -215,16 +217,11 @@ class RoomCreateViewController: UIViewController {
     
     private func saveRoomInfo(room: ChatRoom) {
         if let image = roomImageView.image {
-            
                 uploadImageAndSaveRoomInfo(image: image, roomInfo: room)
-            
         } else {
-            
             saveRoomInfoToFirestore(room: room, image: nil)
         }
-        
     }
-    
     
     private func uploadImageAndSaveRoomInfo(image: UIImage, roomInfo: ChatRoom) {
         Task {
@@ -374,12 +371,12 @@ extension RoomCreateViewController: PHPickerViewControllerDelegate {
 extension RoomCreateViewController: UIImagePickerControllerDelegate & UINavigationControllerDelegate {
     func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
         if let selectedImage = info[.originalImage] as? UIImage,
-           let cgImage = MediaManager.shared.compressImageWithImageIO(selectedImage) {
+           let cgImage = MediaManager.compressImageWithImageIO(selectedImage) {
             self.roomImageView.image = UIImage(cgImage: cgImage)
             self.removeImageButtonSetup()
             self.enableCreateBtn()
         } else if let editedImage = info[.editedImage] as? UIImage,
-                  let cgImage = MediaManager.shared.compressImageWithImageIO(editedImage) {
+                  let cgImage = MediaManager.compressImageWithImageIO(editedImage) {
             self.roomImageView.image = UIImage(cgImage: cgImage)
             self.removeImageButtonSetup()
             self.enableCreateBtn()

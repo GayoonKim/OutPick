@@ -19,6 +19,8 @@ class SecondProfileViewController: UIViewController {
     @IBOutlet weak var profileImageView: UIImageView!
     @IBOutlet weak var completeButton: UIButton!
     
+    private var isDefaultProfileImage = true
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         
@@ -137,8 +139,8 @@ class SecondProfileViewController: UIViewController {
     }
     
     @objc private func removeImageButtonTapped(_ sender: UIButton) {
-        profileImageView.image = UIImage(named: "Default_Profile.png")
-        
+        profileImageView.image = UIImage(named: "Default_Profile")
+        isDefaultProfileImage = true
         sender.isHidden = true
     }
     
@@ -180,16 +182,22 @@ class SecondProfileViewController: UIViewController {
         
         Task {
             do {
-                
                 if try await FirebaseManager.shared.checkDuplicate(strToCompare: nickname, fieldToCompare: "nickname", collectionName: "Users") {
                     AlertManager.showAlertNoHandler(title: "닉네임 중복", message: "다른 닉네임을 선택해 주세요.", viewController: self)
                     return
                 }
                 
                 if let image = profileImageView.image {
-                    let imageName = try await FirebaseStorageManager.shared.uploadImageToStorage(image: image, location: ImageLocation.ProfileImage)
-                    UserProfile.shared.profileImageName = imageName
+                    if isDefaultProfileImage {
+                        print("기본 프로필 이미지 감지됨 - 서버 업로드 건너뜀")
+                        UserProfile.shared.profileImageName = nil
+                    } else {
+                        print("사용자 지정 프로필 이미지 감지됨 - 서버 업로드 진행")
+                        let imageName = try await FirebaseStorageManager.shared.uploadImageToStorage(image: image, location: ImageLocation.ProfileImage)
+                        UserProfile.shared.profileImageName = imageName
+                    }
                 } else {
+                    print("프로필 이미지가 nil입니다")
                     UserProfile.shared.profileImageName = nil
                 }
                 
@@ -198,8 +206,6 @@ class SecondProfileViewController: UIViewController {
                 }
                 
                 try await FirebaseManager.shared.saveUserProfileToFirestore(email: LoginManager.shared.getUserEmail)
-                try await Task.sleep(nanoseconds: 1_000_000_000)  // 1초 대기
-//                try await LoginManager.shared.updateLogDevID()
                 
                 DispatchQueue.main.async {
                     let homeVC = self.storyboard?.instantiateViewController(identifier: "HomeTBC") as? UITabBarController
@@ -224,8 +230,8 @@ class SecondProfileViewController: UIViewController {
     
     private func openPhotoLibrary() {
         var config = PHPickerConfiguration(photoLibrary: .shared())
-        config.filter = .images // 이미지만 선택 가능하도록 설정
-        config.selectionLimit = 1 // 선택 가능한 최대 이미지 수
+        config.filter = .images
+        config.selectionLimit = 1
         config.preferredAssetRepresentationMode = .current
         
         let picker = PHPickerViewController(configuration: config)

@@ -14,14 +14,14 @@ class MediaManager {
     
     static let shared = MediaManager()
     
-    func compressImageWithImageIO(_ image: UIImage) -> CGImage?{
+    static func compressImageWithImageIO(_ image: UIImage) -> CGImage?{
         let options: [NSString:Any] = [
-            kCGImageSourceThumbnailMaxPixelSize: 1024,
+            kCGImageSourceThumbnailMaxPixelSize: 500,
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true
         ]
         
-        guard let imageData = image.jpegData(compressionQuality: 0.3),
+        guard let imageData = image.jpegData(compressionQuality: 0.5),
               let imageSource = CGImageSourceCreateWithData(imageData as CFData, nil),
               let cgImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary) else {
             
@@ -41,42 +41,33 @@ class MediaManager {
                         continuation.resume(throwing: MediaError.FailedToConvertImage)
                         return
                     }
-                    
-                    let options: [NSString:Any] = [
-                        kCGImageSourceThumbnailMaxPixelSize: 500,
-                        kCGImageSourceCreateThumbnailFromImageAlways: true,
-                        kCGImageSourceCreateThumbnailWithTransform: true
-                    ]
-                    
-                    guard let imageData = image.jpegData(compressionQuality: 0.5),
-                          let imageSource = CGImageSourceCreateWithData(imageData as CFData, nil),
-                          let cgImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary) else {
-                        
+
+                    guard let compressed = MediaManager.compressImageWithImageIO(image) else {
                         print("압축 이미지 데이터 생성 실패")
                         continuation.resume(throwing: MediaError.FailedToCraeteImageData)
                         return
                     }
                     
-                    continuation.resume(returning: UIImage(cgImage: cgImage))
+                    continuation.resume(returning: UIImage(cgImage: compressed))
                 })
             }
         }
     }
     
     func dealWithImages(_ results: [PHPickerResult]) async throws -> [UIImage] {
-        var images = Array<UIImage?>(repeating: nil, count: results.count)
-        
-        for result in results {
-            do {
-                let image = try await convertImage(result)
-                
-                images.append(image)
-            } catch {
-                throw error
+        return try await withThrowingTaskGroup(of: UIImage.self) { group in
+            for result in results {
+                group.addTask {
+                    try await self.convertImage(result)
+                }
             }
+            
+            var images = [UIImage]()
+            for try await image in group {
+                images.append(image)
+            }
+            return images
         }
-        
-        return images.compactMap{$0}
     }
     
     func convertVideo(_ result: PHPickerResult) async throws -> URL {
