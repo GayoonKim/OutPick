@@ -60,18 +60,52 @@ class FirebaseStorageManager {
     }
     
     func uploadImagesToStorage(images: [UIImage], location: ImageLocation) async throws -> [String] {
-        var resultNames = Array<String?>(repeating: nil, count: images.count)
+//        let start = Date()
+//        
+//        var resultNames = Array<String?>(repeating: nil, count: images.count)
+//        
+//        for image in images {
+//            do {
+//                let imageName = try await uploadImageToStorage(image: image, location: location)
+//                resultNames.append(imageName)
+//            } catch {
+//                throw error
+//            }
+//        }
+//        
+//        let end = Date()
+//        let duration = end.timeIntervalSince(start)
+//        let formattedTime = String(format: "%.2f", duration)
+//        print("⏱ 소요 시간: \(formattedTime)초")
+//        
+//        return resultNames.compactMap{$0}
         
-        for image in images {
-            do {
-                let imageName = try await uploadImageToStorage(image: image, location: location)
-                resultNames.append(imageName)
-            } catch {
-                throw error
+        let start = Date()
+        
+        return try await withThrowingTaskGroup(of: (Int, String).self) { group in
+            for (index, image) in images.enumerated() {
+                group.addTask {
+                    
+                    let imageName = try await self.uploadImageToStorage(image: image, location: location)
+                    return (index, imageName)
+                    
+                }
             }
+            
+            var resultNames = Array<String?>(repeating: nil, count: images.count)
+            
+            for try await (index, imageName) in group {
+                resultNames[index] = imageName
+            }
+                
+            let end = Date()
+            let duration = end.timeIntervalSince(start)
+            let formattedTime = String(format: "%.2f", duration)
+            print("⏱ 소요 시간: \(formattedTime)초")
+            
+            return resultNames.compactMap{ $0 }
         }
         
-        return resultNames.compactMap{$0}
     }
     
     func uploadVideoToStorage(_ videoURL: URL) async throws -> String {

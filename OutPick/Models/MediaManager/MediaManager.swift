@@ -16,12 +16,12 @@ class MediaManager {
     
     func compressImageWithImageIO(_ image: UIImage) -> CGImage?{
         let options: [NSString:Any] = [
-            kCGImageSourceThumbnailMaxPixelSize: 500,
+            kCGImageSourceThumbnailMaxPixelSize: 1024,
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true
         ]
         
-        guard let imageData = image.jpegData(compressionQuality: 0.5),
+        guard let imageData = image.jpegData(compressionQuality: 0.3),
               let imageSource = CGImageSourceCreateWithData(imageData as CFData, nil),
               let cgImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary) else {
             
