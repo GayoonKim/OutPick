@@ -158,6 +158,7 @@ class HomeCollectionViewController: UICollectionViewController {
                 
                 cell.tempLabel.text = "\(String(format: "%.0f", temp))°"
                 
+                
                 return cell
                 
             case .dailyForecastItem(let dt, let temp, let weather):
@@ -207,22 +208,27 @@ class HomeCollectionViewController: UICollectionViewController {
                 return currentWeatherSection
                 
             case .hourlyForecastSection:
-                let hourlyForecastItemSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(0.19), heightDimension: .fractionalHeight(1))
+                // 스크롤 가능한 내부 그룹
+                let hourlyForecastItemSize = NSCollectionLayoutSize(widthDimension: .absolute(80), heightDimension: .fractionalHeight(1))
                 let hourlyForecastItem = NSCollectionLayoutItem(layoutSize: hourlyForecastItemSize)
                     
-                let hourlyForecastGroupSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .fractionalHeight(0.15))
-                let hourlyForecastGroup = NSCollectionLayoutGroup.horizontal(layoutSize: hourlyForecastGroupSize, repeatingSubitem: hourlyForecastItem, count: 5)
+                let scrollableGroupSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .fractionalHeight(1))
+                let scrollableGroup = NSCollectionLayoutGroup.horizontal(layoutSize: scrollableGroupSize, subitems: [hourlyForecastItem])
                 
-                let hourlyForecastSection = NSCollectionLayoutSection(group: hourlyForecastGroup)
+                // 외부 그룹 (배경 뷰 크기와 동일)
+                let outerGroupSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .fractionalHeight(0.15))
+                let outerGroup = NSCollectionLayoutGroup.vertical(layoutSize: outerGroupSize, subitems: [scrollableGroup])
+                
+                let hourlyForecastSection = NSCollectionLayoutSection(group: outerGroup)
                 hourlyForecastSection.orthogonalScrollingBehavior = .continuous
-                hourlyForecastSection.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 10)
+                hourlyForecastSection.interGroupSpacing = 5
                 
                 let sectionBackgroundDecoration = NSCollectionLayoutDecorationItem.background(elementKind: "background")
                 sectionBackgroundDecoration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 10)
                 hourlyForecastSection.decorationItems = [sectionBackgroundDecoration]
 
                 return hourlyForecastSection
-                
+
             case .dailyForecastSection:
                 let dailyForecastItemSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .fractionalHeight(0.2))
                 let dailyForecastItem = NSCollectionLayoutItem(layoutSize: dailyForecastItemSize)
