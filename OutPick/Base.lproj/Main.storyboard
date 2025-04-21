@@ -208,7 +208,7 @@
             </objects>
             <point key="canvasLocation" x="-3512" y="-338"/>
         </scene>
-        <!--오픈채팅-->
+        <!--오픈 채팅-->
         <scene sceneID="Zen-W6-h02">
             <objects>
                 <collectionViewController id="1bN-e9-yBk" customClass="RoomListsCollectionViewController" customModule="OutPick" customModuleProvider="target" sceneMemberID="viewController">
@@ -275,7 +275,7 @@
                         </connections>
                     </collectionView>
                     <tabBarItem key="tabBarItem" title="" image="bubble.left.and.bubble.right.fill" catalog="system" id="NCZ-Xl-lDd"/>
-                    <navigationItem key="navigationItem" title="오픈채팅" largeTitleDisplayMode="never" id="Qbc-VI-sk8">
+                    <navigationItem key="navigationItem" title="오픈 채팅" largeTitleDisplayMode="never" id="Qbc-VI-sk8">
                         <barButtonItem key="rightBarButtonItem" image="plus.message.fill" catalog="system" id="7s9-kt-voK">
                             <color key="tintColor" white="0.0" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
                             <connections>
@@ -344,7 +344,7 @@
                                             <action selector="attachmentBtnTapped:" destination="UDw-4m-Qed" eventType="touchUpInside" id="IiF-is-HEl"/>
                                         </connections>
                                     </button>
-                                    <textView clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="center" translatesAutoresizingMaskIntoConstraints="NO" id="i51-Pj-sr9">
+                                    <textView clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="center" horizontalHuggingPriority="249" scrollEnabled="NO" translatesAutoresizingMaskIntoConstraints="NO" id="i51-Pj-sr9">
                                         <rect key="frame" x="47" y="0.0" width="284.33333333333331" height="44"/>
                                         <color key="backgroundColor" white="0.66666666666666663" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
                                         <constraints>
@@ -1112,7 +1112,7 @@
         </scene>
     </scenes>
     <inferredMetricsTieBreakers>
-        <segue reference="efJ-0s-BGe"/>
+        <segue reference="amY-jT-Pp9"/>
     </inferredMetricsTieBreakers>
     <resources>
         <image name="Default_Profile" width="1024" height="1024"/>

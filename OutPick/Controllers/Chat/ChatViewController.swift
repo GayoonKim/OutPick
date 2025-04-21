@@ -54,7 +54,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     
     override func viewDidLoad() {
         super.viewDidLoad()
-        
+
         let backButton = UIBarButtonItem(image: UIImage(systemName: "chevron.left"), style: .plain, target: self, action: #selector(backButtonTapped))
         backButton.tintColor = .black
         self.navigationItem.leftBarButtonItem = backButton
@@ -89,15 +89,30 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         
-        SocketIOManager.shared.establishConnection {
+        // 이미 연결된 경우에는 room join과 listener 설정만 수행
+        if SocketIOManager.shared.isConnected {
             SocketIOManager.shared.socket.off("chat message")
-            
             if let roomName = self.room?.roomName {
                 SocketIOManager.shared.joinRoom(roomName)
             }
-            
             SocketIOManager.shared.listenToChatMessage()
+        } else {
+            // 연결되지 않은 경우에만 연결 시도
+            SocketIOManager.shared.establishConnection { [weak self] in
+                guard let self = self else { return }
+                SocketIOManager.shared.socket.off("chat message")
+                if let roomName = self.room?.roomName {
+                    SocketIOManager.shared.joinRoom(roomName)
+                }
+                SocketIOManager.shared.listenToChatMessage()
+            }
         }
+    }
+    
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        
+        SocketIOManager.shared.closeConnection()
     }
 
     private func setupChatMessageCollectionView() {
@@ -353,14 +368,22 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         guard let savedRoom = notification.userInfo?["room"] as? ChatRoom else { return }
         self.room = savedRoom
         
-        DispatchQueue.main.async {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
             self.updateNavigationTitle(with: savedRoom)
             LoadingIndicator.shared.stop()
             self.view.isUserInteractionEnabled = true
             
-            SocketIOManager.shared.establishConnection() {
+            // 이미 연결된 경우에는 room 생성과 join만 수행
+            if SocketIOManager.shared.isConnected {
                 SocketIOManager.shared.createRoom(savedRoom.roomName)
                 SocketIOManager.shared.joinRoom(savedRoom.roomName)
+            } else {
+                // 연결되지 않은 경우에만 연결 시도
+                SocketIOManager.shared.establishConnection {
+                    SocketIOManager.shared.createRoom(savedRoom.roomName)
+                    SocketIOManager.shared.joinRoom(savedRoom.roomName)
+                }
             }
         }
     }

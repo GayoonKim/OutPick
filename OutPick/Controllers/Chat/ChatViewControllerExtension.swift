@@ -50,50 +50,41 @@ extension UITextView {
         self.contentInset.top = topConstraint
         
     }
-    
 }
 
 extension ChatViewController: UITextViewDelegate {
     
     func textViewDidBeginEditing(_ textView: UITextView) {
-        
         if textView.textColor == .lightGray {
+            
             textView.text = ""
             textView.textColor = .black
+            
         }
-        
     }
     
     
     func textViewDidEndEditing(_ textView: UITextView) {
-        
         if textView.text.isEmpty {
+            
             textView.text = "메시지를 입력하세요."
             textView.textColor = .lightGray
+            
         }
-        
     }
     
     func textViewDidChange(_ textView: UITextView) {
-        
         if textView.text.isEmpty {
-            
             sendBtn.isEnabled = false
-            
         } else {
-            
             sendBtn.isEnabled = true
-            
         }
         
         textView.alignTextVertically()
-        
     }
-    
 }
 
 extension ChatViewController: UIGestureRecognizerDelegate {
-    
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
         
         // 터치된 뷰가 UIButton일 경우 제스처 제외
@@ -108,11 +99,9 @@ extension ChatViewController: UIGestureRecognizerDelegate {
         return true
         
     }
-    
 }
 
 extension ChatViewController: PHPickerViewControllerDelegate {
-    
     func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
         
         picker.dismiss(animated: true)
@@ -153,11 +142,9 @@ extension ChatViewController: PHPickerViewControllerDelegate {
         }
         
     }
-        
 }
 
 extension ChatViewController: UIImagePickerControllerDelegate {
-    
     func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
         if let editedImage = info[.editedImage] as? UIImage {
             
@@ -171,5 +158,4 @@ extension ChatViewController: UIImagePickerControllerDelegate {
     func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
         picker.dismiss(animated: true)
     }
-    
 }

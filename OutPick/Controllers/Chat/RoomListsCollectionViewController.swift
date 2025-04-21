@@ -19,7 +19,7 @@ class RoomListsCollectionViewController: UICollectionViewController {
     
     var chatRooms: [ChatRoom] = []
     var dataSource: DataSourceType!
-    
+
     override func viewDidLoad() {
         super.viewDidLoad()
         
@@ -30,6 +30,7 @@ class RoomListsCollectionViewController: UICollectionViewController {
         NotificationCenter.default.addObserver(self, selector: #selector(chatRoomsUpdated), name: .chatRoomsUpdated, object: nil)
         
         self.updateCollectionView()
+        
     }
     
     @objc private func chatRoomsUpdated(notification: Notification) {
