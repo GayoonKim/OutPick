@@ -7,12 +7,8 @@
 
 import UIKit
 
-protocol AttachmentViewDelegate: AnyObject {
-    func checkAttachmentBtnKind(didTapBtnWith identifier: String)
-}
-
 class AttachmentView: UIView {
-    weak var delegate: AttachmentViewDelegate?
+    var onButtonTapped: ((String) -> Void)?
     
     private let stackView: UIStackView = {
         let stackView = UIStackView()
@@ -40,7 +36,7 @@ class AttachmentView: UIView {
         
         addSubview(stackView)
         
-        for btn in ["photo", "camera"/*, "paperclip"*/] {
+        for btn in ["photo", "camera" ] {
             let button = UIButton(type: .system)
             button.setImage(UIImage(systemName: btn), for: .normal)
             button.tintColor = .black
@@ -71,6 +67,6 @@ class AttachmentView: UIView {
     
     @objc private func btnTapped(_ sender: UIButton) {
         guard let identifier = sender.accessibilityIdentifier else { return }
-        delegate?.checkAttachmentBtnKind(didTapBtnWith: identifier)
+        onButtonTapped?(identifier)
     }
 }

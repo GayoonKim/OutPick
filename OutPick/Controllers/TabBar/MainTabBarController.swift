@@ -26,7 +26,7 @@ class MainTabBarController: UITabBarController {
 
     private func set_view() {
         self.tabBar.isTranslucent = false
-        self.tabBar.backgroundColor = .quaternarySystemFill
+        self.tabBar.backgroundColor = .clear
 //        view.addSubview(tab_bar_view)
 //        NSLayoutConstraint.activate([
 //            tab_bar_view.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -33),

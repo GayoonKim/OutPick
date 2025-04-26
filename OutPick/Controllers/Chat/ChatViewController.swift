@@ -44,8 +44,19 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     
     private lazy var attachmentView: AttachmentView = {
         let view = AttachmentView()
-        view.delegate = self
         view.translatesAutoresizingMaskIntoConstraints = false
+        
+        view.onButtonTapped = { [weak self] identifier in
+            self?.handleAttachmentButtonTap(identifier: identifier)
+        }
+        
+        return view
+    }()
+    
+    private lazy var chatUIView: ChatUIView = {
+        let view = ChatUIView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        
         return view
     }()
     
@@ -54,7 +65,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     
     override func viewDidLoad() {
         super.viewDidLoad()
-
+        
         let backButton = UIBarButtonItem(image: UIImage(systemName: "chevron.left"), style: .plain, target: self, action: #selector(backButtonTapped))
         backButton.tintColor = .black
         self.navigationItem.leftBarButtonItem = backButton
@@ -80,10 +91,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         decideJoinUI()
         setupAttachmentView()
         adjustLayoutForSafeArea()
+        setupChatMessageCollectionView()
+        setupChatUIView()
         
         bindPublishers()
-        
-        setupChatMessageCollectionView()
     }
     
     override func viewWillAppear(_ animated: Bool) {
@@ -113,6 +124,35 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         super.viewWillDisappear(animated)
         
         SocketIOManager.shared.closeConnection()
+    }
+    
+    private func setupChatUIView() {
+        self.chatUIStackView.isHidden = true
+        self.view.addSubview(self.chatUIView)
+        
+        NSLayoutConstraint.activate([
+            self.chatUIView.bottomAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.bottomAnchor, constant: -10),
+            self.chatUIView.leadingAnchor.constraint(equalTo: self.view.leadingAnchor, constant: 8),
+            self.chatUIView.trailingAnchor.constraint(equalTo: self.view.trailingAnchor, constant: -8),
+            self.chatUIView.heightAnchor.constraint(greaterThanOrEqualToConstant: 44)
+        ])
+    }
+    
+    private func handleAttachmentButtonTap(identifier: String) {
+        switch identifier {
+        case "photo":
+            print("Photo btn tapped!")
+            self.hideOrShowOptionMenu()
+            self.openPHPicker()
+            
+        case "camera":
+            print("Camera btn tapped!")
+            self.hideOrShowOptionMenu()
+            self.openCamera()
+
+        default:
+            return
+        }
     }
 
     private func setupChatMessageCollectionView() {
@@ -340,6 +380,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         msgTextView.text = "메시지를 입력하세요."
         msgTextView.textColor = UIColor.lightGray
         
+        self.msgTextView.translatesAutoresizingMaskIntoConstraints = false
+        self.msgTextView.isScrollEnabled = false
+        NSLayoutConstraint.activate([
+            self.msgTextView.heightAnchor.constraint(equalToConstant: 44)
+        ])
         self.msgTextView.layer.cornerRadius = 20
         self.msgTextView.clipsToBounds = true
         self.msgTextView.backgroundColor = UIColor(white: 0.1, alpha: 0.05)
@@ -427,28 +472,4 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         }
     }
     
-}
-
-extension ChatViewController: AttachmentViewDelegate {
-    internal func checkAttachmentBtnKind(didTapBtnWith identifier: String) {
-        switch identifier {
-            
-        case "photo":
-            print("Photo btn tapped!")
-            self.hideOrShowOptionMenu()
-            self.openPHPicker()
-            
-        case "camera":
-            print("Camera btn tapped!")
-            self.hideOrShowOptionMenu()
-            self.openCamera()
-            
-        case "paperclip":
-            print("File btn tapped!")
-            
-        default:
-            return
-            
-        }
-    }
 }

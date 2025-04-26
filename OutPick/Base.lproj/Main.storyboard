@@ -291,35 +291,6 @@
             </objects>
             <point key="canvasLocation" x="-3513.4328358208954" y="369.33638443935922"/>
         </scene>
-        <!--Test View Controller-->
-        <scene sceneID="NOs-G9-Pbl">
-            <objects>
-                <viewController id="3Xg-OD-rAd" customClass="TestViewController" customModule="OutPick" customModuleProvider="target" sceneMemberID="viewController">
-                    <view key="view" contentMode="scaleToFill" id="9n9-d8-e3P">
-                        <rect key="frame" x="0.0" y="0.0" width="402" height="874"/>
-                        <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
-                        <subviews>
-                            <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" horizontalHuggingPriority="251" verticalHuggingPriority="251" translatesAutoresizingMaskIntoConstraints="NO" id="LRv-zz-jZq">
-                                <rect key="frame" x="81" y="373" width="240" height="156"/>
-                            </imageView>
-                        </subviews>
-                        <viewLayoutGuide key="safeArea" id="NcK-vB-ZT3"/>
-                        <color key="backgroundColor" systemColor="systemBackgroundColor"/>
-                        <constraints>
-                            <constraint firstItem="LRv-zz-jZq" firstAttribute="centerY" secondItem="NcK-vB-ZT3" secondAttribute="centerY" id="Kyi-Ym-lzJ"/>
-                            <constraint firstItem="LRv-zz-jZq" firstAttribute="leading" secondItem="NcK-vB-ZT3" secondAttribute="leading" constant="81" id="agC-Fr-4ap"/>
-                            <constraint firstItem="LRv-zz-jZq" firstAttribute="centerX" secondItem="NcK-vB-ZT3" secondAttribute="centerX" id="l1R-85-ZrX"/>
-                            <constraint firstItem="LRv-zz-jZq" firstAttribute="top" secondItem="NcK-vB-ZT3" secondAttribute="top" constant="311" id="uRm-tv-DPb"/>
-                        </constraints>
-                    </view>
-                    <connections>
-                        <outlet property="imageView" destination="LRv-zz-jZq" id="8bj-i1-8LP"/>
-                    </connections>
-                </viewController>
-                <placeholder placeholderIdentifier="IBFirstResponder" id="FJe-Bw-YNe" userLabel="First Responder" customClass="UIResponder" sceneMemberID="firstResponder"/>
-            </objects>
-            <point key="canvasLocation" x="-3225" y="1734"/>
-        </scene>
         <!--Chat View Controller-->
         <scene sceneID="jAM-wP-jqe">
             <objects>
@@ -331,11 +302,11 @@
                             <activityIndicatorView hidden="YES" opaque="NO" contentMode="scaleToFill" horizontalHuggingPriority="750" verticalHuggingPriority="750" hidesWhenStopped="YES" style="medium" translatesAutoresizingMaskIntoConstraints="NO" id="g9k-2I-R88">
                                 <rect key="frame" x="191" y="427" width="20" height="20"/>
                             </activityIndicatorView>
-                            <stackView hidden="YES" opaque="NO" contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="oxp-p3-194">
-                                <rect key="frame" x="10" y="796" width="382" height="44"/>
+                            <stackView hidden="YES" opaque="NO" contentMode="scaleToFill" alignment="top" translatesAutoresizingMaskIntoConstraints="NO" id="oxp-p3-194">
+                                <rect key="frame" x="10" y="805.66666666666663" width="382" height="34.333333333333371"/>
                                 <subviews>
                                     <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="wtv-Ja-H4q">
-                                        <rect key="frame" x="0.0" y="0.0" width="47" height="44"/>
+                                        <rect key="frame" x="0.0" y="0.0" width="47" height="34.333333333333336"/>
                                         <state key="normal" title="Button"/>
                                         <buttonConfiguration key="configuration" style="plain" image="plus" catalog="system" title="">
                                             <color key="baseForegroundColor" white="0.0" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
@@ -345,17 +316,13 @@
                                         </connections>
                                     </button>
                                     <textView clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="center" horizontalHuggingPriority="249" scrollEnabled="NO" translatesAutoresizingMaskIntoConstraints="NO" id="i51-Pj-sr9">
-                                        <rect key="frame" x="47" y="0.0" width="284.33333333333331" height="44"/>
+                                        <rect key="frame" x="47" y="0.0" width="284.33333333333331" height="30.333333333333332"/>
                                         <color key="backgroundColor" white="0.66666666666666663" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
-                                        <constraints>
-                                            <constraint firstAttribute="height" constant="44" id="US2-1y-gsB"/>
-                                        </constraints>
-                                        <color key="textColor" systemColor="labelColor"/>
-                                        <fontDescription key="fontDescription" type="system" pointSize="12"/>
+                                        <fontDescription key="fontDescription" type="system" weight="light" pointSize="12"/>
                                         <textInputTraits key="textInputTraits" autocapitalizationType="sentences"/>
                                     </textView>
                                     <button opaque="NO" contentMode="scaleToFill" enabled="NO" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="pY4-Nn-hYc">
-                                        <rect key="frame" x="331.33333333333331" y="0.0" width="50.666666666666686" height="44"/>
+                                        <rect key="frame" x="331.33333333333331" y="0.0" width="50.666666666666686" height="34.333333333333336"/>
                                         <color key="backgroundColor" white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
                                         <state key="normal" title="Button"/>
                                         <buttonConfiguration key="configuration" style="plain" image="paperplane" catalog="system" title="">
@@ -405,7 +372,7 @@
                         <outlet property="attachmentBtn" destination="wtv-Ja-H4q" id="P1K-im-Vmk"/>
                         <outlet property="chatUIStackView" destination="oxp-p3-194" id="DYm-wb-hBW"/>
                         <outlet property="joinRoomBtn" destination="aSv-oJ-neZ" id="6KM-NW-5Iv"/>
-                        <outlet property="msgTextView" destination="i51-Pj-sr9" id="acv-Oe-qXW"/>
+                        <outlet property="msgTextView" destination="i51-Pj-sr9" id="GBQ-0R-EOa"/>
                         <outlet property="sendBtn" destination="pY4-Nn-hYc" id="qbq-jd-SBO"/>
                         <outlet property="sideMenuBtn" destination="gyW-2S-liv" id="OsV-EZ-ObG"/>
                     </connections>
@@ -933,10 +900,20 @@
                     <tabBar key="tabBar" contentMode="scaleToFill" insetsLayoutMarginsFromSafeArea="NO" translucent="NO" id="1GF-JV-DRY">
                         <rect key="frame" x="0.0" y="0.0" width="393" height="49"/>
                         <autoresizingMask key="autoresizingMask"/>
+                        <color key="backgroundColor" white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
                         <color key="tintColor" white="0.0" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
+                        <color key="barTintColor" white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
                         <color key="selectedImageTintColor" white="0.0" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
-                        <tabBarAppearance key="standardAppearance"/>
-                        <tabBarAppearance key="scrollEdgeAppearance"/>
+                        <tabBarAppearance key="standardAppearance">
+                            <color key="backgroundColor" white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
+                            <color key="shadowColor" white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
+                            <color key="selectionIndicatorTintColor" white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
+                        </tabBarAppearance>
+                        <tabBarAppearance key="scrollEdgeAppearance">
+                            <color key="backgroundColor" white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
+                            <color key="shadowColor" white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
+                            <color key="selectionIndicatorTintColor" white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
+                        </tabBarAppearance>
                         <userDefinedRuntimeAttributes>
                             <userDefinedRuntimeAttribute type="number" keyPath="radii">
                                 <real key="value" value="0.0"/>
