@@ -52,63 +52,6 @@ extension UITextView {
     }
 }
 
-extension ChatViewController: UITextViewDelegate {
-    func textViewDidBeginEditing(_ textView: UITextView) {
-        if textView.textColor == .lightGray {
-            textView.text = ""
-            textView.textColor = .black
-        }
-    }
-    
-    
-    func textViewDidEndEditing(_ textView: UITextView) {
-        if textView.text.isEmpty {
-            textView.text = "메시지를 입력하세요."
-            textView.textColor = .lightGray
-        }
-    }
-    
-    func textViewDidChange(_ textView: UITextView) {
-        let msgTExtViewMaxHeight: CGFloat = 150
-        
-        let size = CGSize(width: textView.frame.width, height: .infinity)
-        let estimatedSize = textView.sizeThatFits(size)
-        
-        if estimatedSize.height <= msgTExtViewMaxHeight {
-            msgTextView.isScrollEnabled = false
-            
-            NSLayoutConstraint.deactivate(msgTextView.constraints.filter {
-                $0.firstAttribute == .width
-            })
-            
-            NSLayoutConstraint.activate([
-                msgTextView.leadingAnchor.constraint(equalTo: self.attachmentBtn.trailingAnchor, constant: 8),
-                msgTextView.trailingAnchor.constraint(equalTo: self.sendBtn.leadingAnchor, constant: -8),
-                msgTextView.heightAnchor.constraint(equalToConstant: estimatedSize.height)
-            ])
-        } else {
-            msgTextView.isScrollEnabled = true
-            NSLayoutConstraint.activate([
-                msgTextView.leadingAnchor.constraint(equalTo: self.attachmentBtn.trailingAnchor, constant: 8),
-                msgTextView.trailingAnchor.constraint(equalTo: self.sendBtn.leadingAnchor, constant: -8),
-                msgTextView.heightAnchor.constraint(equalToConstant: msgTExtViewMaxHeight)
-            ])
-        }
-        
-        if textView.text.isEmpty {
-            sendBtn.isEnabled = false
-        } else {
-            sendBtn.isEnabled = true
-        }
-        
-//        textView.alignTextVertically()
-        
-        UIView.animate(withDuration: 0.2) {
-            self.view.layoutIfNeeded()
-        }
-    }
-}
-
 extension ChatViewController: UIGestureRecognizerDelegate {
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
         

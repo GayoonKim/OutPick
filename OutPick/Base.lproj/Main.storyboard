@@ -302,38 +302,6 @@
                             <activityIndicatorView hidden="YES" opaque="NO" contentMode="scaleToFill" horizontalHuggingPriority="750" verticalHuggingPriority="750" hidesWhenStopped="YES" style="medium" translatesAutoresizingMaskIntoConstraints="NO" id="g9k-2I-R88">
                                 <rect key="frame" x="191" y="427" width="20" height="20"/>
                             </activityIndicatorView>
-                            <stackView hidden="YES" opaque="NO" contentMode="scaleToFill" alignment="top" translatesAutoresizingMaskIntoConstraints="NO" id="oxp-p3-194">
-                                <rect key="frame" x="10" y="805.66666666666663" width="382" height="34.333333333333371"/>
-                                <subviews>
-                                    <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="wtv-Ja-H4q">
-                                        <rect key="frame" x="0.0" y="0.0" width="47" height="34.333333333333336"/>
-                                        <state key="normal" title="Button"/>
-                                        <buttonConfiguration key="configuration" style="plain" image="plus" catalog="system" title="">
-                                            <color key="baseForegroundColor" white="0.0" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
-                                        </buttonConfiguration>
-                                        <connections>
-                                            <action selector="attachmentBtnTapped:" destination="UDw-4m-Qed" eventType="touchUpInside" id="IiF-is-HEl"/>
-                                        </connections>
-                                    </button>
-                                    <textView clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="center" horizontalHuggingPriority="249" scrollEnabled="NO" translatesAutoresizingMaskIntoConstraints="NO" id="i51-Pj-sr9">
-                                        <rect key="frame" x="47" y="0.0" width="284.33333333333331" height="30.333333333333332"/>
-                                        <color key="backgroundColor" white="0.66666666666666663" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
-                                        <fontDescription key="fontDescription" type="system" weight="light" pointSize="12"/>
-                                        <textInputTraits key="textInputTraits" autocapitalizationType="sentences"/>
-                                    </textView>
-                                    <button opaque="NO" contentMode="scaleToFill" enabled="NO" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="pY4-Nn-hYc">
-                                        <rect key="frame" x="331.33333333333331" y="0.0" width="50.666666666666686" height="34.333333333333336"/>
-                                        <color key="backgroundColor" white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
-                                        <state key="normal" title="Button"/>
-                                        <buttonConfiguration key="configuration" style="plain" image="paperplane" catalog="system" title="">
-                                            <color key="baseForegroundColor" white="0.0" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
-                                        </buttonConfiguration>
-                                        <connections>
-                                            <action selector="sendBtnTapped:" destination="UDw-4m-Qed" eventType="touchUpInside" id="ZrL-4f-yHw"/>
-                                        </connections>
-                                    </button>
-                                </subviews>
-                            </stackView>
                             <button hidden="YES" opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="aSv-oJ-neZ">
                                 <rect key="frame" x="10" y="770" width="382" height="50"/>
                                 <constraints>
@@ -353,12 +321,9 @@
                         <color key="backgroundColor" systemColor="systemBackgroundColor"/>
                         <constraints>
                             <constraint firstItem="g9k-2I-R88" firstAttribute="centerX" secondItem="eWn-8t-hw8" secondAttribute="centerX" id="3W1-ru-gXz"/>
-                            <constraint firstItem="oxp-p3-194" firstAttribute="bottom" secondItem="fR5-rY-j7G" secondAttribute="bottom" id="7cE-4e-9mW"/>
                             <constraint firstItem="fR5-rY-j7G" firstAttribute="bottom" secondItem="aSv-oJ-neZ" secondAttribute="bottom" constant="20" id="Gs9-IA-Nz0"/>
                             <constraint firstItem="g9k-2I-R88" firstAttribute="centerY" secondItem="eWn-8t-hw8" secondAttribute="centerY" id="Pu4-Dq-Q42"/>
                             <constraint firstItem="fR5-rY-j7G" firstAttribute="trailing" secondItem="aSv-oJ-neZ" secondAttribute="trailing" constant="10" id="UdH-n4-N5p"/>
-                            <constraint firstItem="oxp-p3-194" firstAttribute="leading" secondItem="fR5-rY-j7G" secondAttribute="leading" constant="10" id="c7R-4f-KyT"/>
-                            <constraint firstItem="fR5-rY-j7G" firstAttribute="trailing" secondItem="oxp-p3-194" secondAttribute="trailing" constant="10" id="dd6-sV-hii"/>
                             <constraint firstItem="aSv-oJ-neZ" firstAttribute="leading" secondItem="fR5-rY-j7G" secondAttribute="leading" constant="10" id="qTG-dL-VPe"/>
                         </constraints>
                     </view>
@@ -369,11 +334,7 @@
                     </navigationItem>
                     <connections>
                         <outlet property="activityIndicator" destination="g9k-2I-R88" id="dJb-Fl-iPc"/>
-                        <outlet property="attachmentBtn" destination="wtv-Ja-H4q" id="P1K-im-Vmk"/>
-                        <outlet property="chatUIStackView" destination="oxp-p3-194" id="DYm-wb-hBW"/>
                         <outlet property="joinRoomBtn" destination="aSv-oJ-neZ" id="6KM-NW-5Iv"/>
-                        <outlet property="msgTextView" destination="i51-Pj-sr9" id="GBQ-0R-EOa"/>
-                        <outlet property="sendBtn" destination="pY4-Nn-hYc" id="qbq-jd-SBO"/>
                         <outlet property="sideMenuBtn" destination="gyW-2S-liv" id="OsV-EZ-ObG"/>
                     </connections>
                 </viewController>
@@ -1100,9 +1061,7 @@
         <image name="ios_light_sq_SI" width="185" height="44"/>
         <image name="kakao_login_medium_narrow" width="183" height="45"/>
         <image name="magnifyingglass" catalog="system" width="128" height="117"/>
-        <image name="paperplane" catalog="system" width="128" height="119"/>
         <image name="photo.artframe" catalog="system" width="128" height="93"/>
-        <image name="plus" catalog="system" width="128" height="113"/>
         <image name="plus.message.fill" catalog="system" width="128" height="114"/>
         <image name="text.justify" catalog="system" width="128" height="101"/>
         <systemColor name="labelColor">

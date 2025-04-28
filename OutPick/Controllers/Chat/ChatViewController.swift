@@ -16,12 +16,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     
     @IBOutlet weak var activityIndicator: UIActivityIndicatorView!
     @IBOutlet weak var sideMenuBtn: UIBarButtonItem!
-    @IBOutlet weak var msgTextView: UITextView!
-    @IBOutlet weak var sendBtn: UIButton!
-    @IBOutlet weak var attachmentBtn: UIButton!
-    
-    @IBOutlet weak var chatUIStackView: UIStackView!
-    
     @IBOutlet weak var joinRoomBtn: UIButton!
     
     var swipeRecognizer: UISwipeGestureRecognizer!
@@ -74,7 +68,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         
         if isRoomSaving {
             LoadingIndicator.shared.start(on: self)
-            chatUIStackView.isHidden = false
+            chatUIView.isHidden = false
             joinRoomBtn.isHidden = true
         } else {
             LoadingIndicator.shared.stop()
@@ -87,12 +81,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         swipeRecognizer = UISwipeGestureRecognizer(target: self, action: #selector(swipeAction(_:)))
         self.view.addGestureRecognizer(swipeRecognizer)
         
-        configureMsgTextView()
-        decideJoinUI()
+        setupChatUI()
         setupAttachmentView()
-        adjustLayoutForSafeArea()
-        setupChatMessageCollectionView()
-        setupChatUIView()
+        decideJoinUI()
         
         bindPublishers()
     }
@@ -126,16 +117,38 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         SocketIOManager.shared.closeConnection()
     }
     
-    private func setupChatUIView() {
-        self.chatUIStackView.isHidden = true
+    private func setupChatUI() {
+        view.addSubview(chatMessageCollectionView)
         self.view.addSubview(self.chatUIView)
+        
+        chatMessageCollectionView.translatesAutoresizingMaskIntoConstraints = false
+        chatUIView.translatesAutoresizingMaskIntoConstraints = false
+        self.chatUIView.isHidden = true
         
         NSLayoutConstraint.activate([
             self.chatUIView.bottomAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.bottomAnchor, constant: -10),
             self.chatUIView.leadingAnchor.constraint(equalTo: self.view.leadingAnchor, constant: 8),
             self.chatUIView.trailingAnchor.constraint(equalTo: self.view.trailingAnchor, constant: -8),
-            self.chatUIView.heightAnchor.constraint(greaterThanOrEqualToConstant: 44)
+            self.chatUIView.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
+            
+            chatMessageCollectionView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            chatMessageCollectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            chatMessageCollectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            chatMessageCollectionView.bottomAnchor.constraint(equalTo: chatUIView.topAnchor, constant: -8)
         ])
+    }
+    
+    
+    private func setupChatMessageCollectionView() {
+        chatMessageCollectionView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(chatMessageCollectionView)
+        
+        NSLayoutConstraint.activate([
+            chatMessageCollectionView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            chatMessageCollectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            chatMessageCollectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            chatMessageCollectionView.bottomAnchor.constraint(equalTo: chatUIView.topAnchor, constant: -8)
+            ])
     }
     
     private func handleAttachmentButtonTap(identifier: String) {
@@ -153,18 +166,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         default:
             return
         }
-    }
-
-    private func setupChatMessageCollectionView() {
-        chatMessageCollectionView.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(chatMessageCollectionView)
-        
-        NSLayoutConstraint.activate([
-            chatMessageCollectionView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-            chatMessageCollectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            chatMessageCollectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            chatMessageCollectionView.bottomAnchor.constraint(equalTo: chatUIStackView.topAnchor, constant: -8)
-            ])
     }
     
     private func bindPublishers() {
@@ -214,11 +215,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         present(picker, animated: true)
     }
     
-    private func adjustLayoutForSafeArea() {
-        // 하단 여백 추가
-        chatUIStackView.layoutMargins = UIEdgeInsets(top: 0, left: 0, bottom: view.safeAreaInsets.bottom + 10, right: 0)
-        chatUIStackView.isLayoutMarginsRelativeArrangement = true
-    }
+//    private func adjustLayoutForSafeArea() {
+//        // 하단 여백 추가
+//        chatUIStackView.layoutMargins = UIEdgeInsets(top: 0, left: 0, bottom: view.safeAreaInsets.bottom + 10, right: 0)
+//        chatUIStackView.isLayoutMarginsRelativeArrangement = true
+//    }
     
     private func setupAttachmentView() {
         DispatchQueue.main.async {
@@ -239,22 +240,22 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
 
             self.attachmentBtn.setImage(UIImage(systemName: "xmark"), for: .normal)
             
-            if self.msgTextView.isFirstResponder {
-                self.msgTextView.resignFirstResponder()
+            if self.chatUIView.textView.isFirstResponder {
+                self.chatUIView.textView.resignFirstResponder()
             }
             
             self.attachmentView.isHidden = false
             self.attachmentView.alpha = 1
             
-            self.chatUIStackView.translatesAutoresizingMaskIntoConstraints = true
-            self.chatUIStackView.frame.origin.y -= self.attachmentView.frame.height
+            self.chatUIView.translatesAutoresizingMaskIntoConstraints = true
+            self.chatUIView.frame.origin.y -= self.attachmentView.frame.height
         } else {
             self.attachmentBtn.setImage(UIImage(systemName: "plus"), for: .normal)
             self.attachmentView.isHidden = true
             self.attachmentView.alpha = 0
             
-            self.chatUIStackView.translatesAutoresizingMaskIntoConstraints = true
-            self.chatUIStackView.frame.origin.y += self.attachmentView.frame.height
+            self.chatUIView.translatesAutoresizingMaskIntoConstraints = true
+            self.chatUIView.frame.origin.y += self.attachmentView.frame.height
             
         }
     }
@@ -267,7 +268,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         guard let room = room else { return }
         
         if room.participants.contains(LoginManager.shared.getUserEmail) {
-            chatUIStackView.isHidden = false
+            chatUIView.isHidden = false
         } else {
             setJoinRoombtn()
         }
@@ -287,7 +288,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
             self.updateNavigationTitle(with: updatedCurrentRoom)
             
             if updatedCurrentRoom.participants.contains(LoginManager.shared.getUserEmail) {
-                self.chatUIStackView.isHidden = false
+                self.chatUIView.isHidden = false
                 self.joinRoomBtn.isHidden = true
             }
         }
@@ -314,9 +315,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     }
     
     @IBAction func sendBtnTapped(_ sender: UIButton) {
-        guard let message = self.msgTextView.text,
+        guard let message = self.chatUIView.textView.text,
               let room = self.room else { return }
-        self.msgTextView.text = nil
+        self.chatUIView.textView.text = nil
         
         let newMessage = ChatMessage(roomName: room.roomName,senderID: LoginManager.shared.getUserEmail, senderNickname: UserProfile.shared.nickname ?? "", msg: message, sentAt: Date(), attachments: nil)
         
@@ -346,15 +347,18 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
             
             self.attachmentView.isHidden = true
             self.attachmentBtn.setImage(UIImage(systemName: "plus"), for: .normal)
-            self.chatUIStackView.frame.origin.y += self.attachmentView.frame.height
+//            self.chatUIStackView.frame.origin.y += self.attachmentView.frame.height
+            self.chatUIView.frame.origin.y += self.attachmentView.frame.height
             
         }
         
-        if keyboardFrame.intersects(self.chatUIStackView.frame) {
+        /*if keyboardFrame.intersects(self.chatUIStackView.frame)*/ if keyboardFrame.intersects(self.chatUIView.frame) {
             
-            self.chatUIStackView.translatesAutoresizingMaskIntoConstraints = true
+//            self.chatUIStackView.translatesAutoresizingMaskIntoConstraints = true
+            self.chatUIView.translatesAutoresizingMaskIntoConstraints = true
             let safeAreaBottom = self.view.safeAreaInsets.bottom
-            self.chatUIStackView.frame.origin.y -= (keyboardFrameHeight - safeAreaBottom) + 5
+//            self.chatUIStackView.frame.origin.y -= (keyboardFrameHeight - safeAreaBottom) + 5
+            self.chatUIView.frame.origin.y -= (keyboardFrameHeight - safeAreaBottom) + 5
             
         }
         
@@ -365,36 +369,37 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         guard let keyboardFrame = sender.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
         let keyboardFrameHeight = keyboardFrame.height
         
-        if self.chatUIStackView.frame.origin.y != 0 {
+        if self.chatUIView.frame.origin.y != 0 {
             
             let safeAreaBottom = self.view.safeAreaInsets.bottom
-            self.chatUIStackView.frame.origin.y += (keyboardFrameHeight - safeAreaBottom) + 5
+//            self.chatUIStackView.frame.origin.y += (keyboardFrameHeight - safeAreaBottom) + 5
+            self.chatUIView.frame.origin.y += (keyboardFrameHeight - safeAreaBottom) + 5
             
         }
         
     }
     
-    private func configureMsgTextView() {
-        
-        self.msgTextView.delegate = self
-        msgTextView.text = "메시지를 입력하세요."
-        msgTextView.textColor = UIColor.lightGray
-        
-        self.msgTextView.translatesAutoresizingMaskIntoConstraints = false
-        self.msgTextView.isScrollEnabled = false
-        NSLayoutConstraint.activate([
-            self.msgTextView.heightAnchor.constraint(equalToConstant: 44)
-        ])
-        self.msgTextView.layer.cornerRadius = 20
-        self.msgTextView.clipsToBounds = true
-        self.msgTextView.backgroundColor = UIColor(white: 0.1, alpha: 0.05)
-        self.msgTextView.alignTextVertically()
-        
-    }
+//    private func configureMsgTextView() {
+//        
+////        self.msgTextView.delegate = self
+//        msgTextView.text = "메시지를 입력하세요."
+//        msgTextView.textColor = UIColor.lightGray
+//        
+//        self.msgTextView.translatesAutoresizingMaskIntoConstraints = false
+//        self.msgTextView.isScrollEnabled = false
+//        NSLayoutConstraint.activate([
+//            self.msgTextView.heightAnchor.constraint(equalToConstant: 44)
+//        ])
+//        self.msgTextView.layer.cornerRadius = 20
+//        self.msgTextView.clipsToBounds = true
+//        self.msgTextView.backgroundColor = UIColor(white: 0.1, alpha: 0.05)
+//        self.msgTextView.alignTextVertically()
+//        
+//    }
     
     @objc private func handleTapGesture() {
-        
-        msgTextView.resignFirstResponder()
+//        msgTextView.resignFirstResponder()
+        chatUIView.textView.resignFirstResponder()
         
         if !self.attachmentView.isHidden {
             
@@ -403,10 +408,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
             self.attachmentView.alpha = 0
             
             self.attachmentView.translatesAutoresizingMaskIntoConstraints = true
-            self.chatUIStackView.frame.origin.y += self.attachmentView.frame.height
+//            self.chatUIStackView.frame.origin.y += self.attachmentView.frame.height
+            self.chatUIView.frame.origin.y += self.attachmentView.frame.height
             
         }
-        
     }
     
     @objc private func handleRoomSaveCompleted(notification: Notification) {
