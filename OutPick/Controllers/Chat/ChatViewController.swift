@@ -66,6 +66,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     
     // Layout 제약 조건 저장
     private var chatConstraints: [NSLayoutConstraint] = []
+    private var chatUIViewBottomConstraint: NSLayoutConstraint?
     private var joinConsraints: [NSLayoutConstraint] = []
     
     override func viewDidLoad() {
@@ -151,8 +152,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         chatUIView.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.deactivate(joinConsraints)
         
+        chatUIViewBottomConstraint = chatUIView.bottomAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.bottomAnchor, constant: -10)
         chatConstraints = [
-            chatUIView.bottomAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.bottomAnchor, constant: -10),
+            chatUIViewBottomConstraint!,
             chatUIView.leadingAnchor.constraint(equalTo: self.view.leadingAnchor, constant: 8),
             chatUIView.trailingAnchor.constraint(equalTo: self.view.trailingAnchor, constant: -8),
             chatUIView.heightAnchor.constraint(greaterThanOrEqualToConstant: chatUIView.minHeight),
@@ -176,8 +178,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
 
     private func hideOrShowOptionMenu() {
         guard let image = self.chatUIView.attachmentButton.imageView?.image else { return }
-        if image != UIImage(systemName: "xmark") {
 
+        if image != UIImage(systemName: "xmark") {
             self.chatUIView.attachmentButton.setImage(UIImage(systemName: "xmark"), for: .normal)
             
             if self.chatUIView.messageTextView.isFirstResponder {
@@ -186,17 +188,14 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
             
             self.attachmentView.isHidden = false
             self.attachmentView.alpha = 1
-            
-            self.chatUIView.translatesAutoresizingMaskIntoConstraints = true
-            self.chatUIView.frame.origin.y -= self.attachmentView.frame.height
+
+            self.chatUIViewBottomConstraint?.constant = -(self.attachmentView.frame.height + 10)
         } else {
             self.chatUIView.attachmentButton.setImage(UIImage(systemName: "plus"), for: .normal)
             self.attachmentView.isHidden = true
             self.attachmentView.alpha = 0
-            
-            self.chatUIView.translatesAutoresizingMaskIntoConstraints = true
-            self.chatUIView.frame.origin.y += self.attachmentView.frame.height
-            
+
+            self.chatUIViewBottomConstraint?.constant = -10
         }
     }
     
@@ -301,13 +300,13 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         self.joinRoomBtn.clipsToBounds = true
         self.joinRoomBtn.layer.cornerRadius = 20
         self.joinRoomBtn.backgroundColor = UIColor(white: 0.1, alpha: 0.05)
+        joinRoomBtn.translatesAutoresizingMaskIntoConstraints = false
         
         joinRoomBtn.isHidden = false
         chatUIView.isHidden = true
         
         NSLayoutConstraint.deactivate(chatConstraints)
-        
-        joinRoomBtn.translatesAutoresizingMaskIntoConstraints = false
+    
         joinConsraints = [
             chatMessageCollectionView.bottomAnchor.constraint(equalTo: joinRoomBtn.topAnchor)
         ]
@@ -361,35 +360,34 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     }
     
     @objc private func keyboardWillShow(_ sender: Notification) {
-        guard let keyboardFrame = sender.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
+        guard let keyboardFrame = sender.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect,
+              let animationDuration = sender.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double else { return }
+
+        // Hide attachment view if visible
         let keyboardFrameHeight = keyboardFrame.height
+        let safeAreaBottom = self.view.safeAreaInsets.bottom
         
         if !self.attachmentView.isHidden {
             
             self.attachmentView.isHidden = true
             self.chatUIView.attachmentButton.setImage(UIImage(systemName: "plus"), for: .normal)
-            self.chatUIView.frame.origin.y += self.attachmentView.frame.height
-            
+
+        }
+
+        self.chatUIViewBottomConstraint?.constant = -(keyboardFrameHeight - safeAreaBottom + 10)
+        
+        UIView.animate(withDuration: animationDuration) {
+            self.view.layoutIfNeeded()
         }
         
-        if keyboardFrame.intersects(self.chatUIView.frame) {
-            
-            self.chatUIView.translatesAutoresizingMaskIntoConstraints = true
-            let safeAreaBottom = self.view.safeAreaInsets.bottom
-            self.chatUIView.frame.origin.y -= (keyboardFrameHeight - safeAreaBottom) + 5
-            
-        }
     }
     
     @objc private func keyboardWillHide(_ sender: Notification) {
-        guard let keyboardFrame = sender.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
-        let keyboardFrameHeight = keyboardFrame.height
+        guard let animationDuration = sender.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double else { return }
+        self.chatUIViewBottomConstraint?.constant = -10
         
-        if self.chatUIView.frame.origin.y != 0 {
-            
-            let safeAreaBottom = self.view.safeAreaInsets.bottom
-            self.chatUIView.frame.origin.y += (keyboardFrameHeight - safeAreaBottom) + 5
-            
+        UIView.animate(withDuration: animationDuration) {
+            self.view.layoutIfNeeded()
         }
     }
     
@@ -401,10 +399,12 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
             chatUIView.attachmentButton.setImage(UIImage(systemName: "plus"), for: .normal)
             self.attachmentView.isHidden = true
             self.attachmentView.alpha = 0
-            
-            self.attachmentView.translatesAutoresizingMaskIntoConstraints = true
-            self.chatUIView.frame.origin.y += self.attachmentView.frame.height
-            
+
+            self.chatUIViewBottomConstraint?.constant = -10
+
+            UIView.animate(withDuration: 0.25) {
+                self.view.layoutIfNeeded()
+            }
         }
     }
     

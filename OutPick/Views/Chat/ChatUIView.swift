@@ -34,7 +34,7 @@ class ChatUIView: UIView {
         textView.translatesAutoresizingMaskIntoConstraints = false
         textView.textContainer.lineBreakMode = .byWordWrapping
         textView.textContainer.lineFragmentPadding = 0
-        textView.textContainerInset = UIEdgeInsets(top: 13, left: 15, bottom: 15, right: 15)
+        textView.textContainerInset = UIEdgeInsets(top: 14, left: 15, bottom: 15, right: 15)
         
         return textView
     }()
@@ -54,7 +54,7 @@ class ChatUIView: UIView {
     
     private var messageTextViewHeightConstraint: NSLayoutConstraint!
     
-    private(set) var minHeight: CGFloat = 44
+    private(set) var minHeight: CGFloat = 50
     private(set) var maxHeight: CGFloat = 120
     
     override init(frame: CGRect) {
@@ -88,18 +88,19 @@ class ChatUIView: UIView {
         NSLayoutConstraint.activate([
             
             attachmentButton.leadingAnchor.constraint(equalTo: leadingAnchor),
-            attachmentButton.centerYAnchor.constraint(equalTo: bottomAnchor, constant: -22),
-            attachmentButton.widthAnchor.constraint(equalToConstant: 44),
+            attachmentButton.centerYAnchor.constraint(equalTo: bottomAnchor, constant: -minHeight / 2),
+            attachmentButton.widthAnchor.constraint(equalToConstant: 40),
             attachmentButton.heightAnchor.constraint(equalTo: attachmentButton.widthAnchor),
 
             messageTextView.topAnchor.constraint(greaterThanOrEqualTo: topAnchor, constant: 3),
             messageTextView.leadingAnchor.constraint(equalTo: attachmentButton.trailingAnchor, constant: 5),
             messageTextView.trailingAnchor.constraint(equalTo: sendButton.leadingAnchor, constant: -5),
             messageTextView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -3),
+            messageTextView.heightAnchor.constraint(greaterThanOrEqualToConstant: minHeight),
             
             sendButton.trailingAnchor.constraint(equalTo: trailingAnchor),
-            sendButton.centerYAnchor.constraint(equalTo: bottomAnchor, constant: -22),
-            sendButton.widthAnchor.constraint(equalToConstant: 44),
+            sendButton.centerYAnchor.constraint(equalTo: bottomAnchor, constant: -minHeight / 2),
+            sendButton.widthAnchor.constraint(equalToConstant: 40),
             sendButton.heightAnchor.constraint(equalTo: sendButton.widthAnchor),
             
         ])
