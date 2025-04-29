@@ -11,7 +11,6 @@ import PhotosUI
 
 // 내비게이션 아이템 타이틀 설정
 extension UINavigationItem {
-    
     func setTitle(title: String, subtitle: String) {
         
         let titleLabel = UILabel()
@@ -37,8 +36,8 @@ extension UINavigationItem {
         subTitleLabel.sizeToFit()
         
         self.titleView = stackView
+        
     }
-    
 }
 
 extension UITextView {
@@ -71,7 +70,6 @@ extension ChatViewController: UIGestureRecognizerDelegate {
 
 extension ChatViewController: PHPickerViewControllerDelegate {
     func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
-        
         picker.dismiss(animated: true)
         
         var resultsForVideos: [PHPickerResult] = []
@@ -127,3 +125,5 @@ extension ChatViewController: UIImagePickerControllerDelegate {
         picker.dismiss(animated: true)
     }
 }
+
+

@@ -18,6 +18,7 @@ class ChatMessageCollectionView: UIView {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
+        backgroundColor = .blue
         
         setupCollectionView()
         configureDataSource()
@@ -30,17 +31,17 @@ class ChatMessageCollectionView: UIView {
     private func setupCollectionView() {
         let layout = configureLayout()
         collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
-        collectionView.backgroundColor = .white
+        collectionView.backgroundColor = .systemPink
         collectionView.register(ChatMessageCell.self, forCellWithReuseIdentifier: ChatMessageCell.resuseIdentifier)
         collectionView.translatesAutoresizingMaskIntoConstraints = false
         
         addSubview(collectionView)
         
         NSLayoutConstraint.activate([
-            collectionView.topAnchor.constraint(equalTo: topAnchor),
-            collectionView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            collectionView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            collectionView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            collectionView.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor),
+            collectionView.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor),
+            collectionView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor),
+            collectionView.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor),
         ])
     }
     
@@ -67,7 +68,9 @@ class ChatMessageCollectionView: UIView {
     private func configureDataSource() {
         dataSource = UICollectionViewDiffableDataSource<Section, ChatMessage>(collectionView: collectionView) { collectionView, indexPath, message in
             let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ChatMessageCell.resuseIdentifier, for: indexPath) as! ChatMessageCell
-            cell.prepareForReuse()
+//            cell.prepareForReuse()
+            
+            print("\(#function) 호출")
             
             if let _ = message.attachments {
                 cell.configureWithImage(with: message)
@@ -81,14 +84,22 @@ class ChatMessageCollectionView: UIView {
         var snapshot = dataSource.snapshot()
         snapshot.appendSections([Section.main])
         dataSource.apply(snapshot)
+        
+        print("Current snapshot items: \(snapshot.itemIdentifiers)")
     }
     
     private func updateCollectionView(with newMessage: ChatMessage) {
+        print("************************ \(#function) 호출 ************************")
+        
         var snapshot = dataSource.snapshot()
         snapshot.appendItems([newMessage], toSection: .main)
         
+        print("Before apply, snapshot items: \(snapshot.itemIdentifiers)") // 추가된 아이템 확인
+        
         dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
             guard let self = self else { return }
+            
+            print("************************ Apply 완료, snapshot items: \(snapshot.itemIdentifiers) ************************")
             
             self.collectionView.layoutIfNeeded()
             
@@ -100,6 +111,7 @@ class ChatMessageCollectionView: UIView {
     }
     
     func addMessages(with newMessage: ChatMessage) {
+        print("************************ \(#function) 호출 ************************")
         updateCollectionView(with: newMessage)
     }
 }

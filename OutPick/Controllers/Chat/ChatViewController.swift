@@ -41,7 +41,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         view.translatesAutoresizingMaskIntoConstraints = false
         
         view.onButtonTapped = { [weak self] identifier in
-            self?.handleAttachmentButtonTap(identifier: identifier)
+            guard let self = self else { return }
+            self.handleAttachmentButtonTap(identifier: identifier)
         }
         
         return view
@@ -49,13 +50,23 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     
     private lazy var chatUIView: ChatUIView = {
         let view = ChatUIView()
+        view.isHidden = true
         view.translatesAutoresizingMaskIntoConstraints = false
+        
+        view.onButtonTapped = { [weak self] identifier in
+            guard let self = self else { return }
+            self.handleAttachmentButtonTap(identifier: identifier)
+        }
         
         return view
     }()
-    
+
     private lazy var cancellables = Set<AnyCancellable>()
     private lazy var chatMessageCollectionView = ChatMessageCollectionView()
+    
+    // Layout 제약 조건 저장
+    private var chatConstraints: [NSLayoutConstraint] = []
+    private var joinConsraints: [NSLayoutConstraint] = []
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -81,9 +92,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         swipeRecognizer = UISwipeGestureRecognizer(target: self, action: #selector(swipeAction(_:)))
         self.view.addGestureRecognizer(swipeRecognizer)
         
-        setupChatUI()
-        setupAttachmentView()
+        setupChatMessageCollectionView()
         decideJoinUI()
+        setupAttachmentView()
         
         bindPublishers()
     }
@@ -109,6 +120,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
                 SocketIOManager.shared.listenToChatMessage()
             }
         }
+        
     }
     
     override func viewWillDisappear(_ animated: Bool) {
@@ -117,38 +129,75 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         SocketIOManager.shared.closeConnection()
     }
     
-    private func setupChatUI() {
+    private func setupChatMessageCollectionView() {
         view.addSubview(chatMessageCollectionView)
-        self.view.addSubview(self.chatUIView)
-        
         chatMessageCollectionView.translatesAutoresizingMaskIntoConstraints = false
-        chatUIView.translatesAutoresizingMaskIntoConstraints = false
-        self.chatUIView.isHidden = true
         
         NSLayoutConstraint.activate([
-            self.chatUIView.bottomAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.bottomAnchor, constant: -10),
-            self.chatUIView.leadingAnchor.constraint(equalTo: self.view.leadingAnchor, constant: 8),
-            self.chatUIView.trailingAnchor.constraint(equalTo: self.view.trailingAnchor, constant: -8),
-            self.chatUIView.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
             
             chatMessageCollectionView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
             chatMessageCollectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             chatMessageCollectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            chatMessageCollectionView.bottomAnchor.constraint(equalTo: chatUIView.topAnchor, constant: -8)
+            chatMessageCollectionView.heightAnchor.constraint(equalToConstant: view.frame.height - chatUIView.minHeight)
+            
         ])
     }
     
-    
-    private func setupChatMessageCollectionView() {
-        chatMessageCollectionView.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(chatMessageCollectionView)
+    private func setupChatUI() {
+        if chatUIView.superview == nil {
+            view.addSubview(chatUIView)
+        }
+
+        chatUIView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.deactivate(joinConsraints)
         
-        NSLayoutConstraint.activate([
-            chatMessageCollectionView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-            chatMessageCollectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            chatMessageCollectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            chatMessageCollectionView.bottomAnchor.constraint(equalTo: chatUIView.topAnchor, constant: -8)
-            ])
+        chatConstraints = [
+            chatUIView.bottomAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.bottomAnchor, constant: -10),
+            chatUIView.leadingAnchor.constraint(equalTo: self.view.leadingAnchor, constant: 8),
+            chatUIView.trailingAnchor.constraint(equalTo: self.view.trailingAnchor, constant: -8),
+            chatUIView.heightAnchor.constraint(greaterThanOrEqualToConstant: chatUIView.minHeight),
+            
+            chatMessageCollectionView.bottomAnchor.constraint(equalTo: chatUIView.topAnchor)
+        ]
+        NSLayoutConstraint.activate(chatConstraints)
+        
+    }
+    
+    private func handleSendButtonTap() {
+        guard let message = self.chatUIView.messageTextView.text,
+              let room = self.room else { return }
+        self.chatUIView.messageTextView.text = nil
+        
+        let newMessage = ChatMessage(roomName: room.roomName,senderID: LoginManager.shared.getUserEmail, senderNickname: UserProfile.shared.nickname ?? "", msg: message, sentAt: Date(), attachments: nil)
+        
+        SocketIOManager.shared.sendMessages(room, newMessage)
+        chatUIView.sendButton.isEnabled = false
+    }
+
+    private func hideOrShowOptionMenu() {
+        guard let image = self.chatUIView.attachmentButton.imageView?.image else { return }
+        if image != UIImage(systemName: "xmark") {
+
+            self.chatUIView.attachmentButton.setImage(UIImage(systemName: "xmark"), for: .normal)
+            
+            if self.chatUIView.messageTextView.isFirstResponder {
+                self.chatUIView.messageTextView.resignFirstResponder()
+            }
+            
+            self.attachmentView.isHidden = false
+            self.attachmentView.alpha = 1
+            
+            self.chatUIView.translatesAutoresizingMaskIntoConstraints = true
+            self.chatUIView.frame.origin.y -= self.attachmentView.frame.height
+        } else {
+            self.chatUIView.attachmentButton.setImage(UIImage(systemName: "plus"), for: .normal)
+            self.attachmentView.isHidden = true
+            self.attachmentView.alpha = 0
+            
+            self.chatUIView.translatesAutoresizingMaskIntoConstraints = true
+            self.chatUIView.frame.origin.y += self.attachmentView.frame.height
+            
+        }
     }
     
     private func handleAttachmentButtonTap(identifier: String) {
@@ -162,7 +211,12 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
             print("Camera btn tapped!")
             self.hideOrShowOptionMenu()
             self.openCamera()
+            
+        case "attachmentButton":
+            self.hideOrShowOptionMenu()
 
+        case "sendButton":
+            self.handleSendButtonTap()
         default:
             return
         }
@@ -175,6 +229,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
                 guard let self = self else { return }
                 
                 print("메시지 수신 성공: \(receivedMessage)")
+                
                 chatMessageCollectionView.addMessages(with: receivedMessage)
             }
             .store(in: &cancellables)
@@ -214,13 +269,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         picker.delegate = self
         present(picker, animated: true)
     }
-    
-//    private func adjustLayoutForSafeArea() {
-//        // 하단 여백 추가
-//        chatUIStackView.layoutMargins = UIEdgeInsets(top: 0, left: 0, bottom: view.safeAreaInsets.bottom + 10, right: 0)
-//        chatUIStackView.isLayoutMarginsRelativeArrangement = true
-//    }
-    
+
     private func setupAttachmentView() {
         DispatchQueue.main.async {
             self.view.addSubview(self.attachmentView)
@@ -234,46 +283,35 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         }
     }
     
-    private func hideOrShowOptionMenu() {
-        guard let image = self.attachmentBtn.imageView?.image else { return }
-        if image != UIImage(systemName: "xmark") {
-
-            self.attachmentBtn.setImage(UIImage(systemName: "xmark"), for: .normal)
-            
-            if self.chatUIView.textView.isFirstResponder {
-                self.chatUIView.textView.resignFirstResponder()
-            }
-            
-            self.attachmentView.isHidden = false
-            self.attachmentView.alpha = 1
-            
-            self.chatUIView.translatesAutoresizingMaskIntoConstraints = true
-            self.chatUIView.frame.origin.y -= self.attachmentView.frame.height
-        } else {
-            self.attachmentBtn.setImage(UIImage(systemName: "plus"), for: .normal)
-            self.attachmentView.isHidden = true
-            self.attachmentView.alpha = 0
-            
-            self.chatUIView.translatesAutoresizingMaskIntoConstraints = true
-            self.chatUIView.frame.origin.y += self.attachmentView.frame.height
-            
-        }
-    }
-    
-    @IBAction func attachmentBtnTapped(_ sender: UIButton) {
-        self.hideOrShowOptionMenu()
-    }
-    
     private func decideJoinUI() {
         guard let room = room else { return }
         
         if room.participants.contains(LoginManager.shared.getUserEmail) {
+            setupChatUI()
             chatUIView.isHidden = false
+            joinRoomBtn.isHidden = true
         } else {
             setJoinRoombtn()
         }
         
         updateNavigationTitle(with: room)
+    }
+    
+    private func setJoinRoombtn() {
+        self.joinRoomBtn.clipsToBounds = true
+        self.joinRoomBtn.layer.cornerRadius = 20
+        self.joinRoomBtn.backgroundColor = UIColor(white: 0.1, alpha: 0.05)
+        
+        joinRoomBtn.isHidden = false
+        chatUIView.isHidden = true
+        
+        NSLayoutConstraint.deactivate(chatConstraints)
+        
+        joinRoomBtn.translatesAutoresizingMaskIntoConstraints = false
+        joinConsraints = [
+            chatMessageCollectionView.bottomAnchor.constraint(equalTo: joinRoomBtn.topAnchor)
+        ]
+        NSLayoutConstraint.activate(joinConsraints)
     }
     
     @objc private func currentRoomObserver(_ notification: Notification) {
@@ -300,29 +338,13 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         }
     }
     
-    private func setJoinRoombtn() {
-        self.joinRoomBtn.isHidden = false
-        self.joinRoomBtn.clipsToBounds = true
-        self.joinRoomBtn.layer.cornerRadius = 20
-        self.joinRoomBtn.backgroundColor = UIColor(white: 0.1, alpha: 0.05)
-    }
-    
     @IBAction func joinRoomBtnTapped(_ sender: UIButton) {
         guard let room = self.room else { return }
         
         FirebaseManager.shared.add_room_participant(room: room)
         SocketIOManager.shared.joinRoom(room.roomName)
-    }
-    
-    @IBAction func sendBtnTapped(_ sender: UIButton) {
-        guard let message = self.chatUIView.textView.text,
-              let room = self.room else { return }
-        self.chatUIView.textView.text = nil
         
-        let newMessage = ChatMessage(roomName: room.roomName,senderID: LoginManager.shared.getUserEmail, senderNickname: UserProfile.shared.nickname ?? "", msg: message, sentAt: Date(), attachments: nil)
-        
-        SocketIOManager.shared.sendMessages(room, newMessage)
-        sendBtn.isEnabled = false
+        setupChatUI()
     }
     
     private func setUpNotifications() {
@@ -339,76 +361,48 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     }
     
     @objc private func keyboardWillShow(_ sender: Notification) {
-        
         guard let keyboardFrame = sender.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
         let keyboardFrameHeight = keyboardFrame.height
         
         if !self.attachmentView.isHidden {
             
             self.attachmentView.isHidden = true
-            self.attachmentBtn.setImage(UIImage(systemName: "plus"), for: .normal)
-//            self.chatUIStackView.frame.origin.y += self.attachmentView.frame.height
+            self.chatUIView.attachmentButton.setImage(UIImage(systemName: "plus"), for: .normal)
             self.chatUIView.frame.origin.y += self.attachmentView.frame.height
             
         }
         
-        /*if keyboardFrame.intersects(self.chatUIStackView.frame)*/ if keyboardFrame.intersects(self.chatUIView.frame) {
+        if keyboardFrame.intersects(self.chatUIView.frame) {
             
-//            self.chatUIStackView.translatesAutoresizingMaskIntoConstraints = true
             self.chatUIView.translatesAutoresizingMaskIntoConstraints = true
             let safeAreaBottom = self.view.safeAreaInsets.bottom
-//            self.chatUIStackView.frame.origin.y -= (keyboardFrameHeight - safeAreaBottom) + 5
             self.chatUIView.frame.origin.y -= (keyboardFrameHeight - safeAreaBottom) + 5
             
         }
-        
     }
     
     @objc private func keyboardWillHide(_ sender: Notification) {
-        
         guard let keyboardFrame = sender.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
         let keyboardFrameHeight = keyboardFrame.height
         
         if self.chatUIView.frame.origin.y != 0 {
             
             let safeAreaBottom = self.view.safeAreaInsets.bottom
-//            self.chatUIStackView.frame.origin.y += (keyboardFrameHeight - safeAreaBottom) + 5
             self.chatUIView.frame.origin.y += (keyboardFrameHeight - safeAreaBottom) + 5
             
         }
-        
     }
     
-//    private func configureMsgTextView() {
-//        
-////        self.msgTextView.delegate = self
-//        msgTextView.text = "메시지를 입력하세요."
-//        msgTextView.textColor = UIColor.lightGray
-//        
-//        self.msgTextView.translatesAutoresizingMaskIntoConstraints = false
-//        self.msgTextView.isScrollEnabled = false
-//        NSLayoutConstraint.activate([
-//            self.msgTextView.heightAnchor.constraint(equalToConstant: 44)
-//        ])
-//        self.msgTextView.layer.cornerRadius = 20
-//        self.msgTextView.clipsToBounds = true
-//        self.msgTextView.backgroundColor = UIColor(white: 0.1, alpha: 0.05)
-//        self.msgTextView.alignTextVertically()
-//        
-//    }
-    
     @objc private func handleTapGesture() {
-//        msgTextView.resignFirstResponder()
-        chatUIView.textView.resignFirstResponder()
+        chatUIView.messageTextView.resignFirstResponder()
         
         if !self.attachmentView.isHidden {
             
-            attachmentBtn.setImage(UIImage(systemName: "plus"), for: .normal)
+            chatUIView.attachmentButton.setImage(UIImage(systemName: "plus"), for: .normal)
             self.attachmentView.isHidden = true
             self.attachmentView.alpha = 0
             
             self.attachmentView.translatesAutoresizingMaskIntoConstraints = true
-//            self.chatUIStackView.frame.origin.y += self.attachmentView.frame.height
             self.chatUIView.frame.origin.y += self.attachmentView.frame.height
             
         }
