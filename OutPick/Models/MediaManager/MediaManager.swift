@@ -55,18 +55,19 @@ class MediaManager {
     }
     
     func dealWithImages(_ results: [PHPickerResult]) async throws -> [UIImage] {
-        return try await withThrowingTaskGroup(of: UIImage.self) { group in
-            for result in results {
+        return try await withThrowingTaskGroup(of: (Int, UIImage).self) { group in
+            for (index, result) in results.enumerated() {
                 group.addTask {
-                    try await self.convertImage(result)
+                    let image = try await self.convertImage(result)
+                    return (index, image)
                 }
             }
             
-            var images = [UIImage]()
-            for try await image in group {
-                images.append(image)
+            var inOrderImages = Array<UIImage?>(repeating: nil, count: results.count)
+            for try await (index, image) in group {
+                inOrderImages[index] = image
             }
-            return images
+            return inOrderImages.compactMap{$0}
         }
     }
     

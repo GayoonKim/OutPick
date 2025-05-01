@@ -34,9 +34,9 @@ class RoomCreateViewController: UIViewController {
         addImageButtonSetup()
         setCreateButton(createButton)
 
-        let backButton = UIBarButtonItem(image: UIImage(systemName: "chevron.left"), style: .plain, target: self, action: #selector(backButtonTapped))
-        backButton.tintColor = .black
-        self.navigationItem.leftBarButtonItem = backButton
+        let cancelButton = UIBarButtonItem(image: UIImage(systemName: "xmark"), style: .plain, target: self, action: #selector(cancelButtonTapped))
+        cancelButton.tintColor = .black
+        self.navigationItem.leftBarButtonItem = cancelButton
         
         NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillShow), name: UIResponder.keyboardWillShowNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillHide), name: UIResponder.keyboardWillHideNotification, object: nil)
@@ -57,11 +57,11 @@ class RoomCreateViewController: UIViewController {
         NotificationCenter.default.removeObserver(self, name: UIResponder.keyboardWillHideNotification, object: nil)
     }
     
-    @objc func backButtonTapped() {
+    @objc func cancelButtonTapped() {
         let alert = UIAlertController(title: "채팅방 개설을 취소하시겠어요?", message: nil, preferredStyle: .alert)
         
-        alert.addAction(UIAlertAction(title: "계속 작성", style: .default, handler: nil))
-        alert.addAction(UIAlertAction(title: "취소", style: .destructive, handler:  { _ in
+        alert.addAction(UIAlertAction(title: "취소", style: .default, handler: nil))
+        alert.addAction(UIAlertAction(title: "나가기", style: .destructive, handler:  { _ in
             self.navigationController?.popViewController(animated: true)
         }))
         

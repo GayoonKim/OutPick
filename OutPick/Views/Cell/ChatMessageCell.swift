@@ -81,6 +81,9 @@ class ChatMessageCell: UICollectionViewCell {
     private var imagePreviewCollectionViewWidthConstraint: NSLayoutConstraint?
     private var imagePreviewCollectionViewHeightConstraint: NSLayoutConstraint?
     
+    private var failedIconImageViewCenterYConstraint: NSLayoutConstraint?
+    private var failedIconImageViewTrainlingConstraint: NSLayoutConstraint?
+    
     override init(frame: CGRect) {
         super.init(frame: frame)
 
@@ -107,8 +110,8 @@ class ChatMessageCell: UICollectionViewCell {
             
             failedIconImageView.widthAnchor.constraint(equalToConstant: 20),
             failedIconImageView.heightAnchor.constraint(equalToConstant: 20),
-            failedIconImageView.centerYAnchor.constraint(equalTo: bubbleView.centerYAnchor),
-            failedIconImageView.trailingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: -2)
+//            failedIconImageView.centerYAnchor.constraint(equalTo: bubbleView.centerYAnchor),
+//            failedIconImageView.trailingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: -2)
         ])
     }
     
@@ -138,7 +141,10 @@ class ChatMessageCell: UICollectionViewCell {
             imagePreviewCollectionViewTrailingConstraint,
             imagePreviewCollectionViewBottomConstraint,
             imagePreviewCollectionViewWidthConstraint,
-            imagePreviewCollectionViewHeightConstraint
+            imagePreviewCollectionViewHeightConstraint,
+            
+            failedIconImageViewCenterYConstraint,
+            failedIconImageViewTrainlingConstraint
         ].compactMap{ $0 })
     }
     
@@ -163,7 +169,14 @@ class ChatMessageCell: UICollectionViewCell {
             bubbleViewBottomConstraint = bubbleView.bottomAnchor.constraint(equalTo: messageLabel.bottomAnchor, constant: 8)
             bubbleView.widthAnchor.constraint(lessThanOrEqualToConstant: containerWidth).isActive = true
             
-            if message.isFailed { failedIconImageView.isHidden = false }
+
+            
+            if message.isFailed {
+                failedIconImageView.isHidden = false
+                
+                failedIconImageViewCenterYConstraint = failedIconImageView.centerYAnchor.constraint(equalTo: bubbleView.centerYAnchor)
+                failedIconImageViewTrainlingConstraint = failedIconImageView.trailingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: -2)
+            }
         } else {
             // 상대방이 보낸 메시지
             nickNameLabel.text = message.senderNickname
@@ -182,7 +195,10 @@ class ChatMessageCell: UICollectionViewCell {
             bubbleViewLeadingConstraint,
             bubbleViewTrailingConstraint,
             bubbleViewTopConstraint,
-            bubbleViewBottomConstraint
+            bubbleViewBottomConstraint,
+            
+            failedIconImageViewCenterYConstraint,
+            failedIconImageViewTrainlingConstraint
         ].compactMap{ $0 })
         
         self.setNeedsLayout()
@@ -194,10 +210,8 @@ class ChatMessageCell: UICollectionViewCell {
         messageLabel.isHidden = true
         imagesPreviewCollectionView.isHidden = false
         
-        if let attachments = message.attachments,
-           let nickName = UserProfile.shared.nickname {
-            
-            let images = attachments.compactMap {
+        if let nickName = UserProfile.shared.nickname {
+            let images = message.attachments.compactMap {
                 if let imageData = $0.fileData {
                     return UIImage(data: imageData)
                 }
@@ -224,6 +238,13 @@ class ChatMessageCell: UICollectionViewCell {
                 imagePreviewCollectionViewBottomConstraint = imagesPreviewCollectionView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8)
                 imagePreviewCollectionViewWidthConstraint = imagesPreviewCollectionView.widthAnchor.constraint(equalToConstant: containerWidth)
                 imagePreviewCollectionViewHeightConstraint = imagesPreviewCollectionView.heightAnchor.constraint(equalToConstant: contentHeight)
+                
+                if message.isFailed {
+                    failedIconImageView.isHidden = false
+                    
+                    failedIconImageViewCenterYConstraint = failedIconImageView.centerYAnchor.constraint(equalTo: imagesPreviewCollectionView.centerYAnchor)
+                    failedIconImageViewTrainlingConstraint = failedIconImageView.trailingAnchor.constraint(equalTo: imagesPreviewCollectionView.leadingAnchor, constant: -2)
+                }
             } else {
                 nickNameLabel.isHidden = false
                 profileImageView.isHidden = false
@@ -243,7 +264,10 @@ class ChatMessageCell: UICollectionViewCell {
                 imagePreviewCollectionViewTrailingConstraint,
                 imagePreviewCollectionViewBottomConstraint,
                 imagePreviewCollectionViewWidthConstraint,
-                imagePreviewCollectionViewHeightConstraint
+                imagePreviewCollectionViewHeightConstraint,
+                
+                failedIconImageViewCenterYConstraint,
+                failedIconImageViewTrainlingConstraint
             ].compactMap{$0})
             
             imagesPreviewCollectionView.updateCollectionView(images, contentHeight, rows)

@@ -121,7 +121,7 @@ class SocketIOManager {
     }
     
     func sendMessages(_ room: ChatRoom, _ message: ChatMessage) {
-//        Task { try await FirebaseManager.shared.saveMessage(message, room) }
+        //        Task { try await FirebaseManager.shared.saveMessage(message, room) }
         guard socket.status == .connected else {
             print("소켓이 연결되지 않음")
             var failedMessage = message
@@ -134,56 +134,112 @@ class SocketIOManager {
             return
         }
         
-        socket.emit("chat message", message.toSocketRepresentation())
+        socket.emitWithAck("chat message", message.toSocketRepresentation()).timingOut(after: 5) { ackResponse in
+            DispatchQueue.main.async {
+                if let ackDict = ackResponse.first as? [String:Any],
+                   let success = ackDict["success"] as? Bool, success {
+                    self.messageSubject.send(message)
+                } else {
+                    var failedMessage = message
+                    failedMessage.isFailed = true
+                    self.messageSubject.send(failedMessage)
+                }
+            }
+        }
     }
     
     func sendImages(_ room: ChatRoom, _ images: [UIImage]) {
-        Task {
-            let imageNames = try await FirebaseStorageManager.shared.uploadImagesToStorage(images: images, location: ImageLocation.Message)
-            var attachments = [Attachment]()
+        if self.socket.status != .connected {
+            print("소켓 연결 실패 -> 로컬 실패 처리")
             
-            let imageDataArray = try await withThrowingTaskGroup(of: [String:Any]?.self) { group in
-                for (index, _) in images.enumerated() {
-                    
+            Task { [weak self] in
+                guard let self = self else { return }
+                await self.processFailedImages(room, images)
+            }
+
+            return
+        }
+        
+        Task { [weak self] in
+            guard let self = self else { return }
+            
+            let imageNames = try await FirebaseStorageManager.shared.uploadImagesToStorage(images: images, location: ImageLocation.Message)
+            var attachments = Array<Attachment?>(repeating: nil, count: imageNames.count)
+            
+            let imageDataArray = try await withThrowingTaskGroup(of: (Int, [String:Any]?).self) { group in
+                for (index, image) in images.enumerated() {
                     group.addTask {
-                        guard let imageData = images[index].jpegData(compressionQuality: 0.5) else {
-                            return nil
+                        guard let imageData = image.jpegData(compressionQuality: 0.5) else {
+                            return (index, nil)
                         }
                         
-                        let attachment = Attachment(type: .image, fileName: imageNames[index], fileData: imageData)
-                        attachments.append(attachment)
-                        
-                        return ["fileName": imageNames[index], "fileData": imageData]
+                        return (index, ["fileName": imageNames[index], "fileData": imageData])
                     }
-                    
                 }
                 
-                var results = [[String: Any]]()
-                for try await result in group {
+                var inOrderResults = Array<[String: Any]?>(repeating: nil, count: images.count)
+                for try await (index, result) in group {
+                    inOrderResults[index] = result
                     
                     if let result = result {
-                        results.append(result)
+                        let attachment = Attachment(type: .image, fileName: result["fileName"] as? String, fileData: result["fileData"] as? Data)
+                        attachments[index] = attachment
                     }
-                    
                 }
                 
-                return results
+                return inOrderResults.compactMap { $0 }
             }
             
-            let message = ChatMessage(roomName: room.roomName, senderID: LoginManager.shared.getUserEmail, senderNickname: UserProfile.shared.nickname ?? "", msg: "", sentAt: Date(), attachments: attachments)
+            let finalAttachments = attachments.compactMap { $0 }
+            let message = ChatMessage(roomName: room.roomName, senderID: LoginManager.shared.getUserEmail, senderNickname: UserProfile.shared.nickname ?? "", msg: "", sentAt: Date(), attachments: finalAttachments)
             
-            if self.socket.status != .connected {
-                print("소켓 연결 실패 -> 로컬 실패 처리")
-                var failedMessage = message
-                failedMessage.isFailed = true
+            socket.emitWithAck("send images", ["roomName": message.roomName, "senderID": message.senderID, "senderNickName": message.senderNickname, "sentAt": "\(message.sentAt ?? Date())", "images": imageDataArray]).timingOut(after: 5) { ackResponse in
                 
-                
-                self.messageSubject.send(failedMessage)
-                return
+                if let ackDict = ackResponse.first as? [String: Any],
+                   let success = ackDict["success"] as? Bool, success {
+                    self.messageSubject.send(message)
+                } else {
+                    var failedMessage = message
+                    failedMessage.isFailed = true
+                    self.messageSubject.send(failedMessage)
+                }
             }
-            
-            socket.emit("send images", ["roomName": message.roomName, "senderID": message.senderID, "senderNickName": message.senderNickname, "sentAt": "\(message.sentAt ?? Date())", "images": imageDataArray])
         }
+    }
+    
+    
+    private func processFailedImages(_ room: ChatRoom, _ images: [UIImage]) async {
+        var localAttachments: [Attachment] = []
+        do {
+            localAttachments = try await withThrowingTaskGroup(of: (Int, Attachment?).self) { group in
+                for (index, image) in images.enumerated() {
+                    group.addTask {
+                        guard let imageData = image.jpegData(compressionQuality: 0.5) else { return (index, nil) }
+                        return (index, Attachment(type: .image, fileName: UUID().uuidString, fileData: imageData))
+                    }
+                }
+
+                var orderedResults = Array<Attachment?>(repeating: nil, count: images.count)
+                for try await (index, attachment) in group {
+                    orderedResults[index] = attachment
+                }
+                return orderedResults.compactMap { $0 }
+            }
+        } catch {
+            print("로컬 실패 이미지 처리 중 오류 발생: \(error)")
+        }
+
+        var failedMessage = ChatMessage(
+            roomName: room.roomName,
+            senderID: LoginManager.shared.getUserEmail,
+            senderNickname: UserProfile.shared.nickname ?? "",
+            msg: "",
+            sentAt: Date(),
+            attachments: localAttachments,
+            isFailed: true
+        )
+
+        self.messageSubject.send(failedMessage)
     }
     
     func setUserName(_ userName: String) {
@@ -202,7 +258,9 @@ class SocketIOManager {
             let senderNickName = messageData["senderNickName"] as! String
             let messageText = messageData["msg"] as? String
             
-            let message = ChatMessage(roomName: roomName, senderID: senderID, senderNickname: senderNickName, msg: messageText, sentAt: Date(), attachments: nil)
+            let message = ChatMessage(roomName: roomName, senderID: senderID, senderNickname: senderNickName, msg: messageText, sentAt: Date(), attachments: [])
+            
+            if senderID == LoginManager.shared.getUserEmail { return }
             
             DispatchQueue.main.async {
                 self.messageSubject.send(message)
@@ -219,6 +277,8 @@ class SocketIOManager {
                   let senderID = data["senderID"] as? String,
                   let senderNickName = data["senderNickName"] as? String,
                   let sentAtString = data["sentAt"] as? String else { return }
+            
+            if senderID == LoginManager.shared.getUserEmail { return }
             
             // String -> Date 변환
             let sentAt = SocketIOManager.isoFormatter.date(from: sentAtString) ?? Date()
@@ -250,32 +310,32 @@ class SocketIOManager {
                   let type = errorInfo["type"] as? String,
                   let reason = errorInfo["reason"] as? String,
                   let failedData = errorInfo["data"] as? [String: Any] else {
-                print("⚠️ 에러 데이터 파싱 실패")
+                print("데이터 파싱 실패")
                 return
             }
-
-            print("⚠️ 서버 전송 실패 (\(type)): \(reason)")
-
+            
+            print("서버 전송 실패 (\(type)): \(reason)")
+            
             DispatchQueue.main.async {
                 if type == "message" {
                     let roomName = failedData["roomName"] as? String ?? ""
                     let senderID = failedData["senderID"] as? String ?? ""
                     let senderNickName = failedData["senderNickName"] as? String ?? ""
                     let msg = failedData["msg"] as? String ?? ""
-
+                    
                     var failedMessage = ChatMessage(
                         roomName: roomName,
                         senderID: senderID,
                         senderNickname: senderNickName,
                         msg: msg,
                         sentAt: Date(),
-                        attachments: nil
+                        attachments: []
                     )
                     failedMessage.isFailed = true
-
+                    
                     self.messageSubject.send(failedMessage)
                 }
-
+                
                 if type == "image" {
                     guard let roomName = failedData["roomName"] as? String,
                           let senderID = failedData["senderID"] as? String,
@@ -285,19 +345,19 @@ class SocketIOManager {
                         print("이미지 실패 데이터 파싱 실패")
                         return
                     }
-
+                    
                     let sentAt = SocketIOManager.isoFormatter.date(from: sentAtString) ?? Date()
-
+                    
                     let attachments = imageDataArray.compactMap { imageData -> Attachment? in
                         guard let imageName = imageData["fileName"] as? String,
                               let imageData = imageData["fileData"] as? Data else {
                             print("이미지 실패 attachment 변환 실패: \(imageData)")
                             return nil
                         }
-
+                        
                         return Attachment(type: .image, fileName: imageName, fileData: imageData)
                     }
-
+                    
                     var failedImageMessage = ChatMessage(
                         roomName: roomName,
                         senderID: senderID,
@@ -307,7 +367,7 @@ class SocketIOManager {
                         attachments: attachments
                     )
                     failedImageMessage.isFailed = true
-
+                    
                     self.messageSubject.send(failedImageMessage)
                 }
             }

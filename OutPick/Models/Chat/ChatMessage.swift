@@ -17,7 +17,7 @@ struct ChatMessage: SocketData, Codable {
     let senderNickname: String          // 메시지 전송 사용자 닉네임
     let msg: String?                    // 메시지 내용
     let sentAt: Date?                   // 메시지 보낸 시간
-    let attachments: [Attachment]?
+    let attachments: [Attachment]
     var isFailed: Bool = false
     
     func toSocketRepresentation() -> SocketData {
@@ -28,9 +28,10 @@ struct ChatMessage: SocketData, Codable {
             "msg": msg ?? "",
         ]
         
-        if let attachments = attachments {
-            dict["attachments"] = attachments.map{ $0.toDict() }
-        }
+//        if let attachments = attachments {
+//            dict["attachments"] = attachments.map{ $0.toDict() }
+//        }
+        dict["attachments"] = attachments.map { $0.toDict() }
         
         return dict
     }
@@ -45,9 +46,10 @@ struct ChatMessage: SocketData, Codable {
             "sentAt": Timestamp(date: sentAt ?? Date())
         ]
         
-        if let attachments = attachments {
-            dict["attachments"] = attachments.map{ $0.toDict() }
-        }
+//        if let attachments = attachments {
+//            dict["attachments"] = attachments.map{ $0.toDict() }
+//        }
+        dict["attachments"] = attachments.map { $0.toDict() }
         
         return dict
     }
