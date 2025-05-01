@@ -227,8 +227,12 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
             .sink { [weak self] receivedMessage in
                 guard let self = self else { return }
                 
-                print("메시지 수신 성공: \(receivedMessage)")
-                
+                print("\(receivedMessage.isFailed ? "전송 실패" : "전송 성공") 메시지 수신: \(receivedMessage)")
+                if let room = self.room {
+                    if !receivedMessage.isFailed {
+                        Task { try await FirebaseManager.shared.saveMessage(receivedMessage, room) }
+                    }
+                }
                 chatMessageCollectionView.addMessages(with: receivedMessage)
             }
             .store(in: &cancellables)

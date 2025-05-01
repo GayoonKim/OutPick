@@ -18,6 +18,7 @@ struct ChatMessage: SocketData, Codable {
     let msg: String?                    // 메시지 내용
     let sentAt: Date?                   // 메시지 보낸 시간
     let attachments: [Attachment]?
+    var isFailed: Bool = false
     
     func toSocketRepresentation() -> SocketData {
         var dict: [String: Any] = [

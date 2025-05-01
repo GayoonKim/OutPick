@@ -29,7 +29,7 @@ class SocketIOManager {
     
     private init() {
         //manager = SocketManager(socketURL: URL(string: "http://127.0.0.1:3000")!, config: [.log(true), .compress])
-        manager = SocketManager(socketURL: URL(string: "http://192.168.123.104:3000")!, config: [.log(true), .compress])
+        manager = SocketManager(socketURL: URL(string: "http://192.168.123.154:3000")!, config: [.log(true), .compress])
         socket = manager.defaultSocket
         
         socket.on(clientEvent: .connect) {data, ack in
@@ -121,16 +121,23 @@ class SocketIOManager {
     }
     
     func sendMessages(_ room: ChatRoom, _ message: ChatMessage) {
-        Task { try await FirebaseManager.shared.saveMessage(message, room) }
+//        Task { try await FirebaseManager.shared.saveMessage(message, room) }
+        guard socket.status == .connected else {
+            print("소켓이 연결되지 않음")
+            var failedMessage = message
+            failedMessage.isFailed = true
+            
+            DispatchQueue.main.async {
+                self.messageSubject.send(failedMessage)
+            }
+            
+            return
+        }
+        
         socket.emit("chat message", message.toSocketRepresentation())
     }
     
     func sendImages(_ room: ChatRoom, _ images: [UIImage]) {
-        guard socket.status == .connected else {
-            print("소켓이 연결되지 않음")
-            return
-        }
-        
         Task {
             let imageNames = try await FirebaseStorageManager.shared.uploadImagesToStorage(images: images, location: ImageLocation.Message)
             var attachments = [Attachment]()
@@ -139,7 +146,7 @@ class SocketIOManager {
                 for (index, _) in images.enumerated() {
                     
                     group.addTask {
-                        guard let imageData = images[index].jpegData(compressionQuality: 0.3) else {
+                        guard let imageData = images[index].jpegData(compressionQuality: 0.5) else {
                             return nil
                         }
                         
@@ -164,7 +171,16 @@ class SocketIOManager {
             }
             
             let message = ChatMessage(roomName: room.roomName, senderID: LoginManager.shared.getUserEmail, senderNickname: UserProfile.shared.nickname ?? "", msg: "", sentAt: Date(), attachments: attachments)
-            try await FirebaseManager.shared.saveMessage(message, room)
+            
+            if self.socket.status != .connected {
+                print("소켓 연결 실패 -> 로컬 실패 처리")
+                var failedMessage = message
+                failedMessage.isFailed = true
+                
+                
+                self.messageSubject.send(failedMessage)
+                return
+            }
             
             socket.emit("send images", ["roomName": message.roomName, "senderID": message.senderID, "senderNickName": message.senderNickname, "sentAt": "\(message.sentAt ?? Date())", "images": imageDataArray])
         }
@@ -191,6 +207,7 @@ class SocketIOManager {
             DispatchQueue.main.async {
                 self.messageSubject.send(message)
             }
+            
         }
         
         //중복 방지를 위해 기존 리스너 제거
@@ -220,6 +237,79 @@ class SocketIOManager {
             
             DispatchQueue.main.async {
                 self.messageSubject.send(message)
+            }
+        }
+    }
+    
+    // Listen to server error events and handle failed messages
+    private func listenToErrors() {
+        SocketIOManager.shared.socket.off("error")
+        SocketIOManager.shared.socket.on("error") { [weak self] data, _ in
+            guard let self = self else { return }
+            guard let errorInfo = data.first as? [String: Any],
+                  let type = errorInfo["type"] as? String,
+                  let reason = errorInfo["reason"] as? String,
+                  let failedData = errorInfo["data"] as? [String: Any] else {
+                print("⚠️ 에러 데이터 파싱 실패")
+                return
+            }
+
+            print("⚠️ 서버 전송 실패 (\(type)): \(reason)")
+
+            DispatchQueue.main.async {
+                if type == "message" {
+                    let roomName = failedData["roomName"] as? String ?? ""
+                    let senderID = failedData["senderID"] as? String ?? ""
+                    let senderNickName = failedData["senderNickName"] as? String ?? ""
+                    let msg = failedData["msg"] as? String ?? ""
+
+                    var failedMessage = ChatMessage(
+                        roomName: roomName,
+                        senderID: senderID,
+                        senderNickname: senderNickName,
+                        msg: msg,
+                        sentAt: Date(),
+                        attachments: nil
+                    )
+                    failedMessage.isFailed = true
+
+                    self.messageSubject.send(failedMessage)
+                }
+
+                if type == "image" {
+                    guard let roomName = failedData["roomName"] as? String,
+                          let senderID = failedData["senderID"] as? String,
+                          let senderNickName = failedData["senderNickName"] as? String,
+                          let sentAtString = failedData["sentAt"] as? String,
+                          let imageDataArray = failedData["images"] as? [[String: Any]] else {
+                        print("이미지 실패 데이터 파싱 실패")
+                        return
+                    }
+
+                    let sentAt = SocketIOManager.isoFormatter.date(from: sentAtString) ?? Date()
+
+                    let attachments = imageDataArray.compactMap { imageData -> Attachment? in
+                        guard let imageName = imageData["fileName"] as? String,
+                              let imageData = imageData["fileData"] as? Data else {
+                            print("이미지 실패 attachment 변환 실패: \(imageData)")
+                            return nil
+                        }
+
+                        return Attachment(type: .image, fileName: imageName, fileData: imageData)
+                    }
+
+                    var failedImageMessage = ChatMessage(
+                        roomName: roomName,
+                        senderID: senderID,
+                        senderNickname: senderNickName,
+                        msg: nil,
+                        sentAt: sentAt,
+                        attachments: attachments
+                    )
+                    failedImageMessage.isFailed = true
+
+                    self.messageSubject.send(failedImageMessage)
+                }
             }
         }
     }

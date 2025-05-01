@@ -58,6 +58,17 @@ class ChatMessageCell: UICollectionViewCell {
         return view
     }()
     
+    private let failedIconImageView: UIImageView = {
+        let imageView = UIImageView()
+        imageView.image = UIImage(systemName: "exclamationmark.circle.fill")
+        imageView.tintColor = .red
+        imageView.contentMode = .scaleAspectFit
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        imageView.isHidden = true
+        
+        return imageView
+    }()
+    
     private var bubbleViewTrailingConstraint: NSLayoutConstraint?
     private var bubbleViewLeadingConstraint: NSLayoutConstraint?
     private var bubbleViewTopConstraint: NSLayoutConstraint?
@@ -77,6 +88,7 @@ class ChatMessageCell: UICollectionViewCell {
         contentView.addSubview(nickNameLabel)
         contentView.addSubview(bubbleView)
         contentView.addSubview(imagesPreviewCollectionView)
+        contentView.addSubview(failedIconImageView)
         bubbleView.addSubview(messageLabel)
         
         NSLayoutConstraint.activate([
@@ -92,6 +104,11 @@ class ChatMessageCell: UICollectionViewCell {
             messageLabel.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 8),
             messageLabel.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor, constant: -8),
             messageLabel.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8),
+            
+            failedIconImageView.widthAnchor.constraint(equalToConstant: 20),
+            failedIconImageView.heightAnchor.constraint(equalToConstant: 20),
+            failedIconImageView.centerYAnchor.constraint(equalTo: bubbleView.centerYAnchor),
+            failedIconImageView.trailingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: -2)
         ])
     }
     
@@ -145,6 +162,8 @@ class ChatMessageCell: UICollectionViewCell {
             bubbleViewTopConstraint = bubbleView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 8)
             bubbleViewBottomConstraint = bubbleView.bottomAnchor.constraint(equalTo: messageLabel.bottomAnchor, constant: 8)
             bubbleView.widthAnchor.constraint(lessThanOrEqualToConstant: containerWidth).isActive = true
+            
+            if message.isFailed { failedIconImageView.isHidden = false }
         } else {
             // 상대방이 보낸 메시지
             nickNameLabel.text = message.senderNickname
