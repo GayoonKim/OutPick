@@ -145,7 +145,6 @@ class FirebaseManager {
     }
     
     func fetchAllDocIDs(collectionName: String) async throws -> [String] {
-        
         var results = [String]()
         
         do {
@@ -155,18 +154,18 @@ class FirebaseManager {
                 results.append(document.documentID)
             }
             
+            print(results, " 월별 문서 ID 불러오기 성공")
             return results
             
         } catch {
     
             throw FirebaseError.FailedToFetchAllDocumentIDs
-            
-        }
         
+        }
     }
     
     // 프로필 닉네임 중복 검사
-    func checkDuplicate(strToCompare: String, fieldToCompare: String, collectionName: String/*, completion: @escaping (Bool, Error?) -> Void*/) async throws -> Bool{
+    func checkDuplicate(strToCompare: String, fieldToCompare: String, collectionName: String) async throws -> Bool{
         
         do {
             
@@ -235,8 +234,8 @@ class FirebaseManager {
         Task {
             
             let querySnapshot = try await db.collection("Rooms").getDocuments()
-            if querySnapshot.isEmpty{
-                try await db.collection("Rooms").document(DateManager.shared.currentMonth).setData([:])
+            if querySnapshot.isEmpty {
+                try await db.collection("Rooms").document(DateManager.shared.currentMonth).setData(["createAt": FieldValue.serverTimestamp()])
             }
 
             // Socket.IO 서버에 방 생성 이벤트 전송
@@ -423,7 +422,6 @@ class FirebaseManager {
                         
                     case .failure(let error):
                         print ("월별 문서 하위 컬렉션 실시간 리스너 재설정 실패: \(error.localizedDescription)")
-//                        AlertManager.showAlert(title: "네트워크 오류", message: "네트워크 오류로 오픈채팅 목록을 불러오는데 실패했습니다. 네트워크 연결을 확인해 주세요.", viewController: self)
                         return
                     }
                     
@@ -431,23 +429,11 @@ class FirebaseManager {
                 return
             }
             
-//            if querySnapshot.documentChanges.isEmpty {
-//                let documents = querySnapshot.documents
-//                Task {
-//                    try await self.processAllRooms(documents: documents)
-//                }
-//                
-//            } else {
-//                let documentChanges = querySnapshot.documentChanges
-//                Task {
-//                    try await self.processRoomChanges(documentChanges: documentChanges)
-//                }
-//            }
-            
             let documentChanges = querySnapshot.documentChanges
             Task { try await self.processRoomChanges(documentChanges: documentChanges) }
         }
         
+        print(monthID + " 월별 문서 하위 컬렉션 실시간 리스너 설정 성공")
         return listerner
     }
 

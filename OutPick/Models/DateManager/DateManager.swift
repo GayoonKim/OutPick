@@ -21,8 +21,8 @@ class DateManager {
         let currentDate = Date()
         let calendar = Calendar.current
         let currentMonth = calendar.component(.month, from: currentDate)
-        
-        return "\(currentMonth)월"
+        let currentYear = calendar.component(.year, from: currentDate)
+        return "\(currentYear)\(String(format: "%02d", currentMonth))"
         
     }
     
@@ -30,7 +30,8 @@ class DateManager {
         
         let calendar = Calendar.current
         let month = calendar.component(.month, from: date)
-        return "\(month)월"
+        let year = calendar.component(.year, from: date)
+        return "\(year)\(String(format: "%02d", month))"
         
     }
     

@@ -461,7 +461,7 @@
                                 </constraints>
                             </scrollView>
                             <button opaque="NO" contentMode="scaleToFill" enabled="NO" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="BEs-P8-Rwx">
-                                <rect key="frame" x="20" y="784" width="362" height="50"/>
+                                <rect key="frame" x="20" y="814" width="362" height="50"/>
                                 <constraints>
                                     <constraint firstAttribute="height" constant="50" id="cfW-8V-Dvr"/>
                                 </constraints>
@@ -484,7 +484,7 @@
                         <viewLayoutGuide key="safeArea" id="tFJ-az-V0Y"/>
                         <color key="backgroundColor" systemColor="systemBackgroundColor"/>
                         <constraints>
-                            <constraint firstAttribute="bottom" secondItem="BEs-P8-Rwx" secondAttribute="bottom" constant="40" id="0O4-9m-kTe"/>
+                            <constraint firstAttribute="bottom" secondItem="BEs-P8-Rwx" secondAttribute="bottom" constant="10" id="0O4-9m-kTe"/>
                             <constraint firstItem="FY0-uB-REf" firstAttribute="top" secondItem="tFJ-az-V0Y" secondAttribute="top" id="0pb-gJ-jp7"/>
                             <constraint firstItem="of7-b7-nPu" firstAttribute="centerY" secondItem="H26-Go-n2i" secondAttribute="centerY" id="5R1-LE-Irm"/>
                             <constraint firstItem="of7-b7-nPu" firstAttribute="centerX" secondItem="H26-Go-n2i" secondAttribute="centerX" id="KeO-0c-vKn"/>

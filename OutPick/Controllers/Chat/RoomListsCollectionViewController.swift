@@ -31,6 +31,7 @@ class RoomListsCollectionViewController: UICollectionViewController {
         
         self.updateCollectionView()
         
+        print(FirebaseManager.shared.currentChatRooms)
     }
     
     @objc private func chatRoomsUpdated(notification: Notification) {

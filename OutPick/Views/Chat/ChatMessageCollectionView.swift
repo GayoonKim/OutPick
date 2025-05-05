@@ -102,12 +102,14 @@ class ChatMessageCollectionView: UIView {
             
             print("************************ Apply 완료, snapshot items: \(snapshot.itemIdentifiers) ************************")
             
-            self.collectionView.layoutIfNeeded()
-            
-            let lastIndex = self.collectionView.numberOfItems(inSection: 0) - 1
-            let lastIndexPath = IndexPath(item: lastIndex, section: 0)
-            
-            self.collectionView.scrollToItem(at: lastIndexPath, at: .bottom, animated: false)
+            DispatchQueue.main.async {
+                self.collectionView.layoutIfNeeded()
+                
+                let lastIndex = self.collectionView.numberOfItems(inSection: 0) - 1
+                let lastIndexPath = IndexPath(item: lastIndex, section: 0)
+                
+                self.collectionView.scrollToItem(at: lastIndexPath, at: .bottom, animated: false)
+            }
         }
     }
     
