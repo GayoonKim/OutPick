@@ -16,7 +16,6 @@ class RoomCreateViewController: UIViewController {
     @IBOutlet weak var roomNameCountLabel: UILabel!
     @IBOutlet weak var roomDescriptionTextView: UITextView!
     @IBOutlet weak var roomDescriptionCountLabel: UILabel!
-    @IBOutlet weak var createButton: UIButton!
     @IBOutlet weak var scrollView: UIScrollView!
     
     @IBOutlet weak var roomImageView: UIImageView!
@@ -24,7 +23,22 @@ class RoomCreateViewController: UIViewController {
     @IBOutlet weak var activityIndicator: UIActivityIndicatorView!
     
     var roomInfo: ChatRoom?
-    private var isDefaultRoomImage = false
+    private var isDefaultRoomImage = true
+    
+    private lazy var createBtn: UIButton = {
+        let button = UIButton(type: .system)
+        button.setTitle("생성", for: .normal)
+        button.setTitleColor(.lightGray, for: .disabled)
+        button.setTitleColor(.black, for: .normal)
+        button.isEnabled = false
+        button.clipsToBounds = true
+        button.backgroundColor = UIColor(white: 0.1, alpha: 0.05)
+        button.accessibilityIdentifier = "sendButton"
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.addTarget(self, action: #selector(handleCreateButtonTap), for: .touchUpInside)
+        
+        return button
+    }()
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -32,7 +46,7 @@ class RoomCreateViewController: UIViewController {
         setupTextView(roomNameTextView)
         setupTextView(roomDescriptionTextView)
         addImageButtonSetup()
-        setCreateButton(createButton)
+        setupCreateButton()
 
         let cancelButton = UIBarButtonItem(image: UIImage(systemName: "xmark"), style: .plain, target: self, action: #selector(cancelButtonTapped))
         cancelButton.tintColor = .black
@@ -40,13 +54,6 @@ class RoomCreateViewController: UIViewController {
         
         NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillShow), name: UIResponder.keyboardWillShowNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillHide), name: UIResponder.keyboardWillHideNotification, object: nil)
-        
-        // 초기 이미지가 기본 이미지인지 확인
-        if let currentImage = roomImageView.image,
-           let defaultImage = UIImage(named: "Default_Profile"),
-           currentImage.pngData() == defaultImage.pngData() {
-            isDefaultRoomImage = true
-        }
 
         self.roomImageView.clipsToBounds = true
         self.roomImageView.layer.cornerRadius = 15
@@ -55,6 +62,55 @@ class RoomCreateViewController: UIViewController {
     deinit {
         NotificationCenter.default.removeObserver(self, name: UIResponder.keyboardWillShowNotification, object: nil)
         NotificationCenter.default.removeObserver(self, name: UIResponder.keyboardWillHideNotification, object: nil)
+    }
+    
+    private func setupCreateButton() {
+        view.addSubview(createBtn)
+        createBtn.translatesAutoresizingMaskIntoConstraints = false
+        
+        NSLayoutConstraint.activate([
+            createBtn.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 20),
+            createBtn.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -20),
+            createBtn.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -10),
+            createBtn.heightAnchor.constraint(equalToConstant: 50)
+        ])
+    }
+    
+    @objc func handleCreateButtonTap() {
+        
+        DispatchQueue.main.async {
+            self.createBtn.isEnabled = false
+            LoadingIndicator.shared.start(on: self)
+        }
+        
+        Task {
+            do {
+                
+                if try await FirebaseManager.shared.checkDuplicate(strToCompare: self.roomNameTextView.text, fieldToCompare: "roomName", collectionName: "Rooms") {
+                    await MainActor.run {
+                        LoadingIndicator.shared.stop()
+                        createBtn.isEnabled = true
+                        AlertManager.showAlertNoHandler(title: "중복된 방 이름", message: "이미 존재하는 방 이름입니다. 다른 이름을 선택해 주세요.", viewController: self)
+                    }
+                    return
+                }
+                
+                let room = ChatRoom(ID: nil, roomName: self.roomNameTextView.text, roomDescription: self.roomDescriptionTextView.text, participants: [LoginManager.shared.getUserEmail], creatorID: LoginManager.shared.getUserEmail, createdAt: Date(), roomImageName: nil)
+                
+                self.performSegue(withIdentifier: "ToChatRoom", sender: room)
+
+                self.saveRoomInfo(room: room)
+                
+            } catch {
+                
+                await MainActor.run {
+                    LoadingIndicator.shared.stop()
+                    AlertManager.showAlertNoHandler(title: "오류", message: "방 생성 중 오류가 발생했습니다.", viewController: self)
+                }
+                
+            }
+        }
+        
     }
     
     @objc func cancelButtonTapped() {
@@ -138,6 +194,7 @@ class RoomCreateViewController: UIViewController {
     }
 
     private func removeImageButtonSetup() {
+        
         let removeImageButton: UIButton = {
             let button = UIButton(type: .system)
             button.setImage(UIImage(systemName: "minus.circle.fill"), for: .normal)
@@ -157,69 +214,24 @@ class RoomCreateViewController: UIViewController {
             removeImageButton.heightAnchor.constraint(equalToConstant: 30)
         ])
 
-        if let current_image_data = roomImageView.image?.pngData(),
-           let new_image_data = UIImage(named: "Default_Profile")?.pngData(),
-           current_image_data == new_image_data {
-            removeImageButton.isHidden = true
-        } else {
-            removeImageButton.isHidden = false
-        }
     }
     
     @objc private func removeImageButtonTapped(_ sender: UIButton) {
         roomImageView.image = UIImage(named: "Default_Profile")
+        roomImageView.accessibilityIdentifier = "Default_Profile"
         isDefaultRoomImage = true
         sender.isHidden = true
     }
-    
-    private func setCreateButton(_ button: UIButton) {
-        button.clipsToBounds = true
-        button.layer.cornerRadius = 10
-        button.backgroundColor = UIColor(white: 0.1, alpha: 0.03)
-    }
-    
-    @IBAction func createBtnTapped(_ sender: UIButton) {
-        
-        DispatchQueue.main.async {
-            self.createButton.isEnabled = false
-            LoadingIndicator.shared.start(on: self)
-        }
-        
-        Task {
-            do {
-                
-                if try await FirebaseManager.shared.checkDuplicate(strToCompare: self.roomNameTextView.text, fieldToCompare: "roomName", collectionName: "Rooms") {
-                    await MainActor.run {
-                        LoadingIndicator.shared.stop()
-                        createButton.isEnabled = true
-                        AlertManager.showAlertNoHandler(title: "중복된 방 이름", message: "이미 존재하는 방 이름입니다. 다른 이름을 선택해 주세요.", viewController: self)
-                    }
-                    return
-                }
-                
-                let room = ChatRoom(ID: nil, roomName: self.roomNameTextView.text, roomDescription: self.roomDescriptionTextView.text, participants: [LoginManager.shared.getUserEmail], creatorID: LoginManager.shared.getUserEmail, createdAt: Date(), roomImageName: nil)
-                
-                self.performSegue(withIdentifier: "ToChatRoom", sender: room)
 
-                self.saveRoomInfo(room: room)
-                
-            } catch {
-                
-                await MainActor.run {
-                    LoadingIndicator.shared.stop()
-                    AlertManager.showAlertNoHandler(title: "오류", message: "방 생성 중 오류가 발생했습니다.", viewController: self)
-                }
-                
-            }
-        }
-        
-    }
-    
     private func saveRoomInfo(room: ChatRoom) {
         if let image = roomImageView.image {
+            
+            if !isDefaultRoomImage {
                 uploadImageAndSaveRoomInfo(image: image, roomInfo: room)
-        } else {
-            saveRoomInfoToFirestore(room: room, image: nil)
+            } else {
+                saveRoomInfoToFirestore(room: room, image: nil)
+            }
+            
         }
     }
     
@@ -239,7 +251,6 @@ class RoomCreateViewController: UIViewController {
                 
             }
         }
-
     }
     
     private func saveRoomInfoToFirestore(room: ChatRoom, image: UIImage?) {
@@ -264,9 +275,9 @@ class RoomCreateViewController: UIViewController {
     
     private func enableCreateBtn() {
         if !roomNameTextView.text.isEmpty && !roomDescriptionTextView.text.isEmpty {
-            createButton.isEnabled = true
+            createBtn.isEnabled = true
         } else {
-            createButton.isEnabled = false
+            createBtn.isEnabled = false
         }
     }
     
@@ -353,16 +364,16 @@ extension RoomCreateViewController: PHPickerViewControllerDelegate {
         picker.dismiss(animated: true, completion: nil)
         
         Task {
-            let images = try await MediaManager.shared.dealWithImages(results)
+            let image = try await MediaManager.shared.convertImage(results.first!)
             
             DispatchQueue.main.async {
-                if let image = images.first {
-                    self.roomImageView.image = image
-                } else {
-                    self.roomImageView.image = UIImage(named: "Default_Profile.png")
-                }
+                
+                self.roomImageView.image = image
+                self.roomImageView.accessibilityIdentifier = "Custom_Image"
+                self.isDefaultRoomImage = false
                 
                 self.removeImageButtonSetup()
+                
             }
         }
     }
@@ -373,11 +384,13 @@ extension RoomCreateViewController: UIImagePickerControllerDelegate & UINavigati
         if let selectedImage = info[.originalImage] as? UIImage,
            let cgImage = MediaManager.compressImageWithImageIO(selectedImage) {
             self.roomImageView.image = UIImage(cgImage: cgImage)
+            self.roomImageView.accessibilityIdentifier = "Custom_Image"
             self.removeImageButtonSetup()
             self.enableCreateBtn()
         } else if let editedImage = info[.editedImage] as? UIImage,
                   let cgImage = MediaManager.compressImageWithImageIO(editedImage) {
             self.roomImageView.image = UIImage(cgImage: cgImage)
+            self.roomImageView.accessibilityIdentifier = "Custom_Image"
             self.removeImageButtonSetup()
             self.enableCreateBtn()
         }

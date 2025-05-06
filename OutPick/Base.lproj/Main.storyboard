@@ -196,7 +196,7 @@
             <objects>
                 <navigationController storyboardIdentifier="ChatList" useStoryboardIdentifierAsRestorationIdentifier="YES" id="xHU-6n-EM5" sceneMemberID="viewController">
                     <tabBarItem key="tabBarItem" title="오픈채팅" id="rk3-fv-GsL"/>
-                    <navigationBar key="navigationBar" contentMode="scaleToFill" id="Wre-v0-s4H">
+                    <navigationBar key="navigationBar" contentMode="scaleToFill" translucent="NO" id="Wre-v0-s4H">
                         <rect key="frame" x="0.0" y="62" width="402" height="44"/>
                         <autoresizingMask key="autoresizingMask"/>
                     </navigationBar>
@@ -213,7 +213,7 @@
             <objects>
                 <collectionViewController id="1bN-e9-yBk" customClass="RoomListsCollectionViewController" customModule="OutPick" customModuleProvider="target" sceneMemberID="viewController">
                     <collectionView key="view" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="scaleToFill" dataMode="prototypes" id="0Hr-Vz-MTQ">
-                        <rect key="frame" x="0.0" y="0.0" width="402" height="791"/>
+                        <rect key="frame" x="0.0" y="0.0" width="402" height="685"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <color key="backgroundColor" systemColor="systemBackgroundColor"/>
                         <collectionViewFlowLayout key="collectionViewLayout" automaticEstimatedItemSize="YES" minimumLineSpacing="10" minimumInteritemSpacing="10" id="U3B-7j-COU">
@@ -296,14 +296,14 @@
             <objects>
                 <viewController storyboardIdentifier="ChatRoom" hidesBottomBarWhenPushed="YES" useStoryboardIdentifierAsRestorationIdentifier="YES" id="UDw-4m-Qed" customClass="ChatViewController" customModule="OutPick" customModuleProvider="target" sceneMemberID="viewController">
                     <view key="view" contentMode="scaleToFill" id="eWn-8t-hw8">
-                        <rect key="frame" x="0.0" y="0.0" width="402" height="874"/>
+                        <rect key="frame" x="0.0" y="0.0" width="402" height="768"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
                             <activityIndicatorView hidden="YES" opaque="NO" contentMode="scaleToFill" horizontalHuggingPriority="750" verticalHuggingPriority="750" hidesWhenStopped="YES" style="medium" translatesAutoresizingMaskIntoConstraints="NO" id="g9k-2I-R88">
-                                <rect key="frame" x="191" y="427" width="20" height="20"/>
+                                <rect key="frame" x="191" y="374" width="20" height="20"/>
                             </activityIndicatorView>
                             <button hidden="YES" opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="aSv-oJ-neZ">
-                                <rect key="frame" x="10" y="780" width="382" height="50"/>
+                                <rect key="frame" x="10" y="674" width="382" height="50"/>
                                 <constraints>
                                     <constraint firstAttribute="height" constant="50" id="3bV-zw-GGh"/>
                                 </constraints>
@@ -351,11 +351,11 @@
             <objects>
                 <viewController hidesBottomBarWhenPushed="YES" id="DYZ-E1-8Ad" customClass="RoomCreateViewController" customModule="OutPick" customModuleProvider="target" sceneMemberID="viewController">
                     <view key="view" contentMode="scaleToFill" id="H26-Go-n2i">
-                        <rect key="frame" x="0.0" y="0.0" width="402" height="874"/>
+                        <rect key="frame" x="0.0" y="0.0" width="402" height="768"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
                             <scrollView clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="scaleToFill" alwaysBounceVertical="YES" translatesAutoresizingMaskIntoConstraints="NO" id="FY0-uB-REf">
-                                <rect key="frame" x="0.0" y="106" width="402" height="734"/>
+                                <rect key="frame" x="0.0" y="0.0" width="402" height="734"/>
                                 <subviews>
                                     <stackView opaque="NO" contentMode="scaleToFill" axis="vertical" translatesAutoresizingMaskIntoConstraints="NO" id="h9o-Kq-EHt">
                                         <rect key="frame" x="0.0" y="0.0" width="402" height="660.33333333333337"/>
@@ -460,38 +460,18 @@
                                     <constraint firstAttribute="trailing" secondItem="h9o-Kq-EHt" secondAttribute="trailing" id="e2B-aR-o33"/>
                                 </constraints>
                             </scrollView>
-                            <button opaque="NO" contentMode="scaleToFill" enabled="NO" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="BEs-P8-Rwx">
-                                <rect key="frame" x="20" y="804" width="362" height="50"/>
-                                <constraints>
-                                    <constraint firstAttribute="height" constant="50" id="cfW-8V-Dvr"/>
-                                </constraints>
-                                <fontDescription key="fontDescription" type="system" weight="light" pointSize="30"/>
-                                <color key="tintColor" white="0.0" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
-                                <inset key="imageEdgeInsets" minX="0.0" minY="0.0" maxX="2.2250738585072014e-308" maxY="0.0"/>
-                                <state key="normal" title="다음 1/2"/>
-                                <buttonConfiguration key="configuration" style="plain" title="생성">
-                                    <fontDescription key="titleFontDescription" type="system" pointSize="15"/>
-                                </buttonConfiguration>
-                                <connections>
-                                    <action selector="completeButtonTapped:" destination="IPI-TG-nAv" eventType="touchUpInside" id="QhU-lF-Zi5"/>
-                                    <action selector="createBtnTapped:" destination="DYZ-E1-8Ad" eventType="touchUpInside" id="vrT-c9-k8W"/>
-                                </connections>
-                            </button>
                             <activityIndicatorView hidden="YES" opaque="NO" contentMode="scaleToFill" horizontalHuggingPriority="750" verticalHuggingPriority="750" hidesWhenStopped="YES" style="medium" translatesAutoresizingMaskIntoConstraints="NO" id="of7-b7-nPu">
-                                <rect key="frame" x="191" y="427" width="20" height="20"/>
+                                <rect key="frame" x="191" y="374" width="20" height="20"/>
                             </activityIndicatorView>
                         </subviews>
                         <viewLayoutGuide key="safeArea" id="tFJ-az-V0Y"/>
                         <color key="backgroundColor" systemColor="systemBackgroundColor"/>
                         <constraints>
-                            <constraint firstAttribute="bottom" secondItem="BEs-P8-Rwx" secondAttribute="bottom" constant="20" id="0O4-9m-kTe"/>
                             <constraint firstItem="FY0-uB-REf" firstAttribute="top" secondItem="tFJ-az-V0Y" secondAttribute="top" id="0pb-gJ-jp7"/>
                             <constraint firstItem="of7-b7-nPu" firstAttribute="centerY" secondItem="H26-Go-n2i" secondAttribute="centerY" id="5R1-LE-Irm"/>
                             <constraint firstItem="of7-b7-nPu" firstAttribute="centerX" secondItem="H26-Go-n2i" secondAttribute="centerX" id="KeO-0c-vKn"/>
                             <constraint firstItem="FY0-uB-REf" firstAttribute="bottom" secondItem="tFJ-az-V0Y" secondAttribute="bottom" id="Rkg-pD-Z7u"/>
                             <constraint firstItem="FY0-uB-REf" firstAttribute="leading" secondItem="tFJ-az-V0Y" secondAttribute="leading" id="UbF-Iv-dnT"/>
-                            <constraint firstItem="BEs-P8-Rwx" firstAttribute="leading" secondItem="tFJ-az-V0Y" secondAttribute="leading" constant="20" id="W5m-0e-W9Y"/>
-                            <constraint firstItem="tFJ-az-V0Y" firstAttribute="trailing" secondItem="BEs-P8-Rwx" secondAttribute="trailing" constant="20" id="cEP-mj-vc8"/>
                             <constraint firstItem="FY0-uB-REf" firstAttribute="trailing" secondItem="tFJ-az-V0Y" secondAttribute="trailing" id="e3q-x3-khP"/>
                             <constraint firstItem="FY0-uB-REf" firstAttribute="leading" secondItem="tFJ-az-V0Y" secondAttribute="leading" id="gzC-Yz-Z3g"/>
                             <constraint firstItem="FY0-uB-REf" firstAttribute="trailing" secondItem="tFJ-az-V0Y" secondAttribute="trailing" id="kas-4I-lZe"/>
@@ -502,7 +482,6 @@
                     <navigationItem key="navigationItem" title="채팅방 만들기" largeTitleDisplayMode="never" id="HOG-Ij-e08"/>
                     <connections>
                         <outlet property="activityIndicator" destination="of7-b7-nPu" id="M4d-aB-Yh8"/>
-                        <outlet property="createButton" destination="BEs-P8-Rwx" id="aO5-Sr-5Ww"/>
                         <outlet property="roomDescriptionCountLabel" destination="uq2-QF-bce" id="c7c-VT-FdO"/>
                         <outlet property="roomDescriptionTextView" destination="Ymd-Rg-all" id="w5g-aj-xi9"/>
                         <outlet property="roomImageView" destination="7Xu-rb-RZ6" id="vfz-Am-d3T"/>
@@ -1054,7 +1033,7 @@
         </scene>
     </scenes>
     <inferredMetricsTieBreakers>
-        <segue reference="efJ-0s-BGe"/>
+        <segue reference="amY-jT-Pp9"/>
     </inferredMetricsTieBreakers>
     <resources>
         <image name="Default_Profile" width="1024" height="1024"/>

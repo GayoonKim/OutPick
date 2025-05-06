@@ -26,12 +26,11 @@ class RoomListsCollectionViewController: UICollectionViewController {
         dataSource = configureDataSource()
         collectionView.dataSource = dataSource
         collectionView.collectionViewLayout = configureLayout()
+        collectionView.backgroundColor = UIColor(white: 0.3, alpha: 0.1)
         
         NotificationCenter.default.addObserver(self, selector: #selector(chatRoomsUpdated), name: .chatRoomsUpdated, object: nil)
         
         self.updateCollectionView()
-        
-        print(FirebaseManager.shared.currentChatRooms)
     }
     
     @objc private func chatRoomsUpdated(notification: Notification) {
@@ -52,6 +51,9 @@ class RoomListsCollectionViewController: UICollectionViewController {
         let dataSource = DataSourceType(collectionView: collectionView) { (collectionView, indexPath, item) in
             
             let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "ChatRoom", for: indexPath) as! RoomListCollectionViewCell
+            cell.backgroundColor = .white
+            
+            print(indexPath, item)
             
             cell.roomImageView.layer.cornerRadius = 15
             cell.roomImageView.clipsToBounds = true
@@ -97,8 +99,8 @@ class RoomListsCollectionViewController: UICollectionViewController {
         let group = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize, repeatingSubitem: item, count: 1)
         
         let section = NSCollectionLayoutSection(group: group)
-        section.interGroupSpacing = 20
-        section.contentInsets = NSDirectionalEdgeInsets(top: 20, leading: 20, bottom: 20, trailing: 20)
+        section.interGroupSpacing = 5
+        section.contentInsets = NSDirectionalEdgeInsets(top: 5, leading: 0, bottom: 0, trailing: 0)
         
         return UICollectionViewCompositionalLayout(section: section)
     }
