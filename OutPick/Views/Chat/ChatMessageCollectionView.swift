@@ -66,12 +66,6 @@ class ChatMessageCollectionView: UIView {
     private func configureDataSource() {
         dataSource = UICollectionViewDiffableDataSource<Section, ChatMessage>(collectionView: collectionView) { collectionView, indexPath, message in
             let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ChatMessageCell.resuseIdentifier, for: indexPath) as! ChatMessageCell
-
-//            if let _ = message.attachments {
-//                cell.configureWithImage(with: message)
-//            } else {
-//                cell.configureWithMessage(with: message)
-//            }
             
             if message.attachments.isEmpty {
                 cell.configureWithMessage(with: message)

@@ -168,7 +168,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     private func handleSendButtonTap() {
         guard let message = self.chatUIView.messageTextView.text,
               let room = self.room else { return }
-        self.chatUIView.messageTextView.text = nil
+        DispatchQueue.main.async {
+            print(self.chatUIView.messageTextView.frame.width)
+            self.chatUIView.messageTextView.text = nil
+            self.chatUIView.updateHeight()
+        }
         
         let newMessage = ChatMessage(roomName: room.roomName,senderID: LoginManager.shared.getUserEmail, senderNickname: UserProfile.shared.nickname ?? "", msg: message, sentAt: Date(), attachments: [])
         
