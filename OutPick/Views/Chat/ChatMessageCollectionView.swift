@@ -13,14 +13,22 @@ class ChatMessageCollectionView: UIView {
         case main
     }
     
+    enum Item: Hashable {
+        case message(ChatMessage)
+        case dateSeparator(Date)
+    }
+    
     private var collectionView: UICollectionView!
-    private var dataSource: UICollectionViewDiffableDataSource<Section, ChatMessage>!
+    private var dataSource: UICollectionViewDiffableDataSource<Section, Item>!
+    
+    private var lastDate: Date = Date()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         
         setupCollectionView()
         configureDataSource()
+        loadIntiialDateText()
     }
     
     required init?(coder: NSCoder) {
@@ -30,13 +38,14 @@ class ChatMessageCollectionView: UIView {
     private func setupCollectionView() {
         let layout = configureLayout()
         collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
-        collectionView.register(ChatMessageCell.self, forCellWithReuseIdentifier: ChatMessageCell.resuseIdentifier)
+        collectionView.register(ChatMessageCell.self, forCellWithReuseIdentifier: ChatMessageCell.reuseIdentifier)
+        collectionView.register(DateSeperatorCell.self, forCellWithReuseIdentifier: DateSeperatorCell.reuseIdentifier)
         collectionView.translatesAutoresizingMaskIntoConstraints = false
         
         addSubview(collectionView)
         
         NSLayoutConstraint.activate([
-            collectionView.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor),
+            collectionView.topAnchor.constraint(equalTo: topAnchor),
             collectionView.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 8),
             collectionView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -8),
             collectionView.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -8),
@@ -57,37 +66,46 @@ class ChatMessageCollectionView: UIView {
         let group = NSCollectionLayoutGroup.vertical(layoutSize: groupSize, subitems: [item])
         
         let section = NSCollectionLayoutSection(group: group)
-        section.interGroupSpacing = 12
+        section.interGroupSpacing = 5
         section.contentInsets = NSDirectionalEdgeInsets(top: 12, leading: 0, bottom: 12, trailing: 0)
         
         return UICollectionViewCompositionalLayout(section: section)
     }
     
     private func configureDataSource() {
-        dataSource = UICollectionViewDiffableDataSource<Section, ChatMessage>(collectionView: collectionView) { collectionView, indexPath, message in
-            let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ChatMessageCell.resuseIdentifier, for: indexPath) as! ChatMessageCell
-            
-            if message.attachments.isEmpty {
-                cell.configureWithMessage(with: message)
-            } else {
-                cell.configureWithImage(with: message)
+        print(#function)
+        dataSource = UICollectionViewDiffableDataSource<Section, Item>(collectionView: collectionView) { collectionView, indexPath, item in
+
+            switch item {
+            case .message(let message):
+                let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ChatMessageCell.reuseIdentifier, for: indexPath) as! ChatMessageCell
+                
+                if message.attachments.isEmpty {
+                    cell.configureWithMessage(with: message)
+                } else {
+                    cell.configureWithImage(with: message)
+                }
+                
+                return cell
+                
+            case .dateSeparator(let date):
+                let cell = collectionView.dequeueReusableCell(withReuseIdentifier: DateSeperatorCell.reuseIdentifier, for: indexPath) as! DateSeperatorCell
+                
+                let dateText = self.formatDateToDayString(date)
+                cell.configureWithDate(dateText)
+                
+                return cell
             }
-            
-            return cell
+
         }
         
-        var snapshot = dataSource.snapshot()
-        snapshot.appendSections([Section.main])
-        dataSource.apply(snapshot)
-        
-        print("Current snapshot items: \(snapshot.itemIdentifiers)")
     }
     
-    private func updateCollectionView(with newMessage: ChatMessage) {
+    private func updateCollectionView(with newItems: [Item]) {
         print("************************ \(#function) 호출 ************************")
         
         var snapshot = dataSource.snapshot()
-        snapshot.appendItems([newMessage], toSection: .main)
+        snapshot.appendItems(newItems, toSection: .main)
         
         print("Before apply, snapshot items: \(snapshot.itemIdentifiers)") // 추가된 아이템 확인
         
@@ -107,8 +125,47 @@ class ChatMessageCollectionView: UIView {
         }
     }
     
-    func addMessages(with newMessage: ChatMessage) {
-        print("************************ \(#function) 호출 ************************")
-        updateCollectionView(with: newMessage)
+    func applySnapshot(_ items: [Item]) {
+        var snapshot = dataSource.snapshot()
+        if snapshot.sectionIdentifiers.isEmpty { snapshot.appendSections([Section.main]) }
+        snapshot.appendItems(items, toSection: .main)
+        
+        dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
+            guard let self = self else { return }
+            
+            DispatchQueue.main.async {
+                self.collectionView.layoutIfNeeded()
+                
+                let lastIndex = self.collectionView.numberOfItems(inSection: 0) - 1
+                let lastIndexPath = IndexPath(item: lastIndex, section: 0)
+                
+                self.collectionView.scrollToItem(at: lastIndexPath, at: .bottom, animated: false)
+            }
+        }
     }
+    
+    func loadIntiialDateText() {
+        let today = Date()
+        self.applySnapshot([Item.dateSeparator(today)])
+    }
+    
+    func addMessage(with newMessage: ChatMessage) {
+        print("************************ \(#function) 호출 ************************")
+        //        updateCollectionView(with: newMessage)
+        var items = [Item]()
+        
+        items.append(.message(newMessage))
+        applySnapshot(items)
+    }
+    
+    private func formatDateToDayString(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ko_KR")
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        formatter.dateFormat = "yyyy년 M월 d일 EEEE"
+        return formatter.string(from: date)
+    }
+    
+
 }

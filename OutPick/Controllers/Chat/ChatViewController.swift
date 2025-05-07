@@ -11,6 +11,7 @@ import UIKit
 import AVKit
 import Combine
 import PhotosUI
+import Firebase
 
 class ChatViewController: UIViewController, UINavigationControllerDelegate {
     
@@ -226,6 +227,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     }
     
     private func bindPublishers() {
+        // 메시지 수신 관련
         SocketIOManager.shared.receivedMessagePublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] receivedMessage in
@@ -237,10 +239,59 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
                         Task { try await FirebaseManager.shared.saveMessage(receivedMessage, room) }
                     }
                 }
-                chatMessageCollectionView.addMessages(with: receivedMessage)
+                chatMessageCollectionView.addMessage(with: receivedMessage)
+            }
+            .store(in: &cancellables)
+        
+        // 실시간 방 업데이트 관련
+        FirebaseManager.shared.roomChangePublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] updatedRoom in
+                guard let self = self,
+                      let _ = self.room else { return }
+                self.room = updatedRoom
+            }
+            .store(in: &cancellables)
+        
+        // 키보드 관련
+        NotificationCenter.default.publisher(for: UIApplication.keyboardWillShowNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] notification in
+                self?.keyboardWillShow(notification)
+            }
+            .store(in: &cancellables)
+        
+        NotificationCenter.default.publisher(for: UIApplication.keyboardWillHideNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] notification in
+                self?.keyboardWillHide(notification)
             }
             .store(in: &cancellables)
     }
+    
+    private func setUpNotifications() {
+        // 방 저장 관련
+        NotificationCenter.default.addObserver(self, selector: #selector(handleRoomSaveCompleted), name: .roomSavedComplete, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleRoomSaveFailed), name: .roomSaveFailed, object: nil)
+    }
+
+//    @objc private func currentRoomObserver(_ notification: Notification) {
+//        guard let rooms = notification.userInfo?["rooms"] as? [ChatRoom],
+//              let currentRoom = self.room,
+//              let updatedCurrentRoom = rooms.first(where: { $0.roomName == currentRoom.roomName }) else { return }
+//        
+//        DispatchQueue.main.async { [weak self] in
+//            guard let self = self else { return }
+//            
+//            self.room = updatedCurrentRoom
+//            self.updateNavigationTitle(with: updatedCurrentRoom)
+//            
+//            if updatedCurrentRoom.participants.contains(LoginManager.shared.getUserEmail) {
+//                self.chatUIView.isHidden = false
+//                self.joinRoomBtn.isHidden = true
+//            }
+//        }
+//    }
     
     private func playVideo(from url: URL) {
         let asset = AVAsset(url: url)
@@ -321,23 +372,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         NSLayoutConstraint.activate(joinConsraints)
     }
     
-    @objc private func currentRoomObserver(_ notification: Notification) {
-        guard let rooms = notification.userInfo?["rooms"] as? [ChatRoom],
-              let currentRoom = self.room,
-              let updatedCurrentRoom = rooms.first(where: { $0.roomName == currentRoom.roomName }) else { return }
-        
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            
-            self.room = updatedCurrentRoom
-            self.updateNavigationTitle(with: updatedCurrentRoom)
-            
-            if updatedCurrentRoom.participants.contains(LoginManager.shared.getUserEmail) {
-                self.chatUIView.isHidden = false
-                self.joinRoomBtn.isHidden = true
-            }
-        }
-    }
+
     
     private func updateNavigationTitle(with room: ChatRoom) {
         DispatchQueue.main.async{
@@ -352,19 +387,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         SocketIOManager.shared.joinRoom(room.roomName)
         
         setupChatUI()
-    }
-    
-    private func setUpNotifications() {
-        // 키보드 관련
-        NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillShow), name: UIResponder.keyboardWillShowNotification, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillHide), name: UIResponder.keyboardWillHideNotification, object: nil)
-        
-        // 실시간 방 업데이트 관련
-        NotificationCenter.default.addObserver(self, selector: #selector(currentRoomObserver), name: .chatRoomsUpdated, object: nil)
-        
-        // 방 저장 관련
-        NotificationCenter.default.addObserver(self, selector: #selector(handleRoomSaveCompleted), name: .roomSavedComplete, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(handleRoomSaveFailed), name: .roomSaveFailed, object: nil)
     }
     
     @objc private func keyboardWillShow(_ sender: Notification) {

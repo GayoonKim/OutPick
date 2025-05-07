@@ -9,7 +9,7 @@ import Foundation
 import UIKit
 
 class ChatMessageCell: UICollectionViewCell {
-    static let resuseIdentifier = "ChatMessageCell"
+    static let reuseIdentifier = "ChatMessageCell"
     
     private var widthConstraint: NSLayoutConstraint?
     
@@ -48,7 +48,7 @@ class ChatMessageCell: UICollectionViewCell {
     
     private let bubbleView: UIView = {
         let view = UIView()
-        view.layer.cornerRadius = 12
+        view.layer.cornerRadius = 15
         view.translatesAutoresizingMaskIntoConstraints = false
         
         return view
@@ -72,7 +72,7 @@ class ChatMessageCell: UICollectionViewCell {
         
         return imageView
     }()
-    
+
     private var bubbleViewTrailingConstraint: NSLayoutConstraint?
     private var bubbleViewLeadingConstraint: NSLayoutConstraint?
     private var bubbleViewTopConstraint: NSLayoutConstraint?
@@ -90,7 +90,7 @@ class ChatMessageCell: UICollectionViewCell {
     
     override init(frame: CGRect) {
         super.init(frame: frame)
-
+        
         contentView.addSubview(profileImageView)
         contentView.addSubview(nickNameLabel)
         contentView.addSubview(bubbleView)
@@ -110,7 +110,7 @@ class ChatMessageCell: UICollectionViewCell {
             messageLabel.topAnchor.constraint(equalTo: bubbleView.topAnchor, constant: 10),
             messageLabel.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 10),
             messageLabel.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor, constant: -10),
-            messageLabel.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -10),
+            messageLabel.bottomAnchor.constraint(equalTo: bubbleView.bottomAnchor, constant: -10),
             messageLabel.widthAnchor.constraint(lessThanOrEqualToConstant: UIScreen.main.bounds.width * 0.7),
                        
             
@@ -172,10 +172,11 @@ class ChatMessageCell: UICollectionViewCell {
             // 기본 제약조건 업데이트
             bubbleViewLeadingConstraint = bubbleView.leadingAnchor.constraint(greaterThanOrEqualTo: contentView.leadingAnchor, constant: 20)
             bubbleViewTrailingConstraint = bubbleView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -8)
-            bubbleViewTopConstraint = bubbleView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 8)
-            bubbleViewBottomConstraint = bubbleView.bottomAnchor.constraint(equalTo: messageLabel.bottomAnchor, constant: 8)
+            bubbleViewTopConstraint = bubbleView.topAnchor.constraint(equalTo: contentView.topAnchor)
+            bubbleViewBottomConstraint = bubbleView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
             bubbleView.widthAnchor.constraint(lessThanOrEqualToConstant: containerWidth).isActive = true
             
+            failedIconImageView.isHidden = true
             if message.isFailed {
                 failedIconImageView.isHidden = false
                 

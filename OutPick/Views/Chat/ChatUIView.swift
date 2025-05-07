@@ -27,7 +27,7 @@ class ChatUIView: UIView {
         let textView = UITextView()
         textView.text = "메시지 입력"
         textView.textColor = .lightGray
-        textView.font = UIFont.systemFont(ofSize: 15)
+        textView.font = UIFont.systemFont(ofSize: 14)
         textView.isScrollEnabled = false
         textView.layer.cornerRadius = 18
         textView.backgroundColor = UIColor(white: 0.1, alpha: 0.05)

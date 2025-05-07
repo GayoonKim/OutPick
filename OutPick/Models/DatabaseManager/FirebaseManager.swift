@@ -10,6 +10,7 @@ import FirebaseFirestore
 import FirebaseStorage
 import Alamofire
 import Kingfisher
+import Combine
 
 class FirebaseManager {
     
@@ -25,7 +26,7 @@ class FirebaseManager {
     let storage = Storage.storage()
     
     // 채팅방 목록
-    private var chatRooms: [ChatRoom] = []
+    @Published private(set) var chatRooms: [ChatRoom] = []
     private var roomsListener: ListenerRegistration?
     private var monthlyRoomListeners: [String: ListenerRegistration] = [:]
     
@@ -49,9 +50,13 @@ class FirebaseManager {
     var currentChatRooms: [ChatRoom] {
         return chatRooms
     }
+
+    private let roomChangeSubject = PassthroughSubject<ChatRoom, Never>()
+    var roomChangePublisher: AnyPublisher<ChatRoom, Never> {
+        return roomChangeSubject.eraseToAnyPublisher()
+    }
     
     //MARK: 프로필 설정 관련 기능들
-    
     // UserProfile 문서 불러오기
     func getUserDoc() async throws -> QueryDocumentSnapshot? {
         let profile_created_month = DateManager.shared.getMonthFromTimestamp(date: UserProfile.shared.createdAt)
@@ -329,17 +334,15 @@ class FirebaseManager {
                         print("수정")
                         if let index = self.chatRooms.firstIndex(where: { $0.roomName == room.roomName }) {
                             self.chatRooms[index] = room
+                            self.roomChangeSubject.send(room)
                         }
                         
                     case .removed:
                         print("삭제")
                         self.chatRooms.removeAll(where: { $0.roomName == room.roomName })
                         remove_participant(room: room)
-
                     }
                 }
-                
-                NotificationCenter.default.post(name: .chatRoomsUpdated, object: nil, userInfo: ["rooms": self.chatRooms])
             }
         } catch {
 
@@ -351,49 +354,7 @@ class FirebaseManager {
         }
         
     }
-    
-    private func processAllRooms(documents: [QueryDocumentSnapshot]) async throws {
-        
-        do {
-            try await withThrowingTaskGroup(of: ChatRoom.self, returning: Void.self) { group in
-                for document in documents {
-                    group.addTask {
-                        
-                        let data = document.data()
-                        let chatRoom = try await self.createRoom(data: data)
-                        
-                        return chatRoom
-                        
-                    }
-                }
-                
-                for try await room in group {
-                    
-                    self.chatRooms.append(room)
-    
-                }
-            }
-            
-            NotificationCenter.default.post(name: .chatRoomsUpdated, object: nil, userInfo: ["rooms": self.chatRooms])
-            
-        } catch {
-            retry(asyncTask: { try await self.processAllRooms(documents: documents)}) { result in
-                switch result {
-                    
-                case .success():
-                    print("모든 월별 문서 하위 컬렉션 방 문서들 불러오기 재시도 성공")
-                    return
-                    
-                case .failure(let error):
-                    print ("모든 월별 문서 하위 컬렉션 방 문서들 불러오기 재시도 실패: \(error.localizedDescription)")
-//                    AlertManager.showAlert(title: "네트워크 오류", message: "네트워크 오류로 오픈채팅 목록을 불러오는데 실패했습니다. 네트워크 연결을 확인해 주세요.", viewController: self)
-                    return
-                    
-                }
-            }
-        }
-    }
-    
+
     private func listenToMonthlyRoom(monthID: String) async throws -> ListenerRegistration {
         let listerner = db.collection("Rooms").document(monthID).collection("\(monthID) Rooms").addSnapshotListener { (querySnapshot, error) in
             guard let querySnapshot = querySnapshot, error == nil else {

@@ -7,6 +7,7 @@
 
 import UIKit
 import Kingfisher
+import Combine
 
 class RoomListsCollectionViewController: UICollectionViewController {
     
@@ -19,27 +20,35 @@ class RoomListsCollectionViewController: UICollectionViewController {
     
     var chatRooms: [ChatRoom] = []
     var dataSource: DataSourceType!
+    
+    private lazy var cancellables = Set<AnyCancellable>()
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        self.view.backgroundColor = .white
+        self.tabBarController?.tabBar.barTintColor = .white
         
         dataSource = configureDataSource()
         collectionView.dataSource = dataSource
         collectionView.collectionViewLayout = configureLayout()
         collectionView.backgroundColor = UIColor(white: 0.3, alpha: 0.1)
         
-        NotificationCenter.default.addObserver(self, selector: #selector(chatRoomsUpdated), name: .chatRoomsUpdated, object: nil)
-        
+        self.bindPublishers()
         self.updateCollectionView()
     }
     
-    @objc private func chatRoomsUpdated(notification: Notification) {
-        // UI 업데이트
-        DispatchQueue.main.async {
-            self.updateCollectionView()
-        }
+    private func bindPublishers() {
+        // 방 목록 관련
+        FirebaseManager.shared.$chatRooms
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] updatedRooms in
+                guard let self = self else { return }
+                self.chatRooms = updatedRooms
+                self.updateCollectionView()
+            }
+            .store(in: &cancellables)
     }
-    
+
     private func updateCollectionView() {
         let chatRoomsList = FirebaseManager.shared.currentChatRooms.sorted(by: <)
         let itemBySection = [Section.main: chatRoomsList]
@@ -52,9 +61,7 @@ class RoomListsCollectionViewController: UICollectionViewController {
             
             let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "ChatRoom", for: indexPath) as! RoomListCollectionViewCell
             cell.backgroundColor = .white
-            
-            print(indexPath, item)
-            
+
             cell.roomImageView.layer.cornerRadius = 15
             cell.roomImageView.clipsToBounds = true
             
