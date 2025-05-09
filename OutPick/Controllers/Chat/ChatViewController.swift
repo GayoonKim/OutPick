@@ -73,6 +73,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     override func viewDidLoad() {
         super.viewDidLoad()
         
+        self.navigationController?.interactivePopGestureRecognizer?.delegate = self
+        
         let backButton = UIBarButtonItem(image: UIImage(systemName: "chevron.left"), style: .plain, target: self, action: #selector(backButtonTapped))
         backButton.tintColor = .black
         self.navigationItem.leftBarButtonItem = backButton
@@ -90,10 +92,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTapGesture))
         tapGesture.delegate = self
         view.addGestureRecognizer(tapGesture)
+
+        self.navigationController?.attachPopGesture(to: self.view)
         
-        swipeRecognizer = UISwipeGestureRecognizer(target: self, action: #selector(swipeAction(_:)))
-        self.view.addGestureRecognizer(swipeRecognizer)
-        
+        setupNavigationRightButtons()
         setupChatMessageCollectionView()
         decideJoinUI()
         setupAttachmentView()
@@ -129,6 +131,40 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         super.viewWillDisappear(animated)
         
         SocketIOManager.shared.closeConnection()
+    }
+    
+    private func setupNavigationRightButtons() {
+        let firstButton = UIButton(type: .system)
+        firstButton.setImage(UIImage(systemName: "text.justify"), for: .normal)
+        firstButton.tintColor = .black
+        firstButton.addTarget(self, action: #selector(settingButtonTapped), for: .touchUpInside)
+        
+        let secondButton = UIButton(type: .system)
+        secondButton.setImage(UIImage(systemName: "magnifyingglass"), for: .normal)
+        secondButton.tintColor = .black
+        secondButton.addTarget(self, action: #selector(searchButtonTapped), for: .touchUpInside)
+        
+        let firstBarItem = UIBarButtonItem(customView: firstButton)
+        let secondBarItem = UIBarButtonItem(customView: secondButton)
+        
+        navigationItem.rightBarButtonItems = [firstBarItem, secondBarItem]
+    }
+    
+    @objc private func searchButtonTapped() {
+        print(#function)
+    }
+    
+    @objc private func settingButtonTapped() {
+        DispatchQueue.main.async {
+            let settingVC = ChatRoomSettingViewController()
+            
+            let transition = CATransition()
+            transition.duration = 0.3
+            transition.type = .push
+            transition.subtype = .fromRight
+            self.navigationController?.view.layer.add(transition, forKey: kCATransition)
+            self.navigationController?.pushViewController(settingVC, animated: false)
+        }
     }
     
     private func setupChatMessageCollectionView() {
@@ -492,13 +528,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     }
     
     @objc func backButtonTapped() {
-        self.navigationController?.popToRootViewController(animated: true)
+        self.navigationController?.popViewController(animated: true)
+        
     }
-    
-    @objc func swipeAction(_ sender: UISwipeGestureRecognizer) {
-        if sender.direction == .right {
-            self.navigationController?.popToRootViewController(animated: true)
-        }
-    }
-    
 }

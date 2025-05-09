@@ -9,7 +9,7 @@ import UIKit
 import Kingfisher
 import Combine
 
-class RoomListsCollectionViewController: UICollectionViewController {
+class RoomListsCollectionViewController: UICollectionViewController, UIGestureRecognizerDelegate {
     
     enum Section: Hashable {
         case main
@@ -27,6 +27,8 @@ class RoomListsCollectionViewController: UICollectionViewController {
         super.viewDidLoad()
         self.view.backgroundColor = .white
         self.tabBarController?.tabBar.barTintColor = .white
+        
+        self.navigationController?.interactivePopGestureRecognizer?.delegate = self
         
         dataSource = configureDataSource()
         collectionView.dataSource = dataSource

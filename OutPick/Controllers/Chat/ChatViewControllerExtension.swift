@@ -52,6 +52,10 @@ extension UITextView {
 }
 
 extension ChatViewController: UIGestureRecognizerDelegate {
+    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        return true
+    }
+    
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
         
         // 터치된 뷰가 UIButton일 경우 제스처 제외
