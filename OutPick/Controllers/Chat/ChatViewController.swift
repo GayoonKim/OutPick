@@ -156,7 +156,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     
     @objc private func settingButtonTapped() {
         DispatchQueue.main.async {
-            let settingVC = ChatRoomSettingViewController()
+            guard let room = self.room else { return }
+            let settingVC = ChatRoomSettingCollectionView(room: room)
             
             let transition = CATransition()
             transition.duration = 0.3
