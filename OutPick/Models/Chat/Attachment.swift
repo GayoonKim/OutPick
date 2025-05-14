@@ -29,3 +29,10 @@ struct Attachment: Codable {
 }
 
 extension Attachment: Hashable {}
+
+extension Attachment {
+    func toUIImage() -> UIImage? {
+        guard type == .image, let data = fileData else { return nil }
+        return UIImage(data: data)
+    }
+}

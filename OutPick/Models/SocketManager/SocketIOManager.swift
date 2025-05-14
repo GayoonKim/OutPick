@@ -29,7 +29,7 @@ class SocketIOManager {
     
     private init() {
         //manager = SocketManager(socketURL: URL(string: "http://127.0.0.1:3000")!, config: [.log(true), .compress])
-        manager = SocketManager(socketURL: URL(string: "http://192.168.123.184:3000")!, config: [.log(true), .compress])
+        manager = SocketManager(socketURL: URL(string: "http://192.168.123.172:3000")!, config: [.log(true), .compress])
         socket = manager.defaultSocket
         
         socket.on(clientEvent: .connect) {data, ack in
@@ -191,6 +191,7 @@ class SocketIOManager {
             }
             
             let finalAttachments = attachments.compactMap { $0 }
+            let images = finalAttachments.compactMap{ $0.toUIImage() }
             let message = ChatMessage(roomName: room.roomName, senderID: LoginManager.shared.getUserEmail, senderNickname: UserProfile.shared.nickname ?? "", msg: "", sentAt: Date(), attachments: finalAttachments)
             
             socket.emitWithAck("send images", ["roomName": message.roomName, "senderID": message.senderID, "senderNickName": message.senderNickname, "sentAt": "\(message.sentAt ?? Date())", "images": imageDataArray]).timingOut(after: 5) { ackResponse in
@@ -229,7 +230,7 @@ class SocketIOManager {
             print("로컬 실패 이미지 처리 중 오류 발생: \(error)")
         }
 
-        var failedMessage = ChatMessage(
+        let failedMessage = ChatMessage(
             roomName: room.roomName,
             senderID: LoginManager.shared.getUserEmail,
             senderNickname: UserProfile.shared.nickname ?? "",
@@ -292,7 +293,7 @@ class SocketIOManager {
                 
                 return Attachment(type: .image, fileName: imageName, fileData: imageData)
             }
-            
+
             let message = ChatMessage(roomName: roomName, senderID: senderID, senderNickname: senderNickName, msg: nil, sentAt: sentAt, attachments: attachments)
             
             DispatchQueue.main.async {

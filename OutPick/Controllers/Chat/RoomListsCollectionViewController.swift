@@ -29,6 +29,7 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
         self.tabBarController?.tabBar.barTintColor = .white
         
         self.navigationController?.interactivePopGestureRecognizer?.delegate = self
+        self.navigationController?.navigationBar.scrollEdgeAppearance?.backgroundColor = .white
         
         dataSource = configureDataSource()
         collectionView.dataSource = dataSource
@@ -109,7 +110,6 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
         
         let section = NSCollectionLayoutSection(group: group)
         section.interGroupSpacing = 5
-        section.contentInsets = NSDirectionalEdgeInsets(top: 5, leading: 0, bottom: 0, trailing: 0)
         
         return UICollectionViewCompositionalLayout(section: section)
     }

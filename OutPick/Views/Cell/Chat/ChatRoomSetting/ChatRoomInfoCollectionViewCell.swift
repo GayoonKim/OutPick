@@ -41,7 +41,7 @@ class ChatRoomInfoCell: UICollectionViewCell {
     
     private let editButtonView: UIView = {
         let view = UIView()
-        view.backgroundColor = UIColor(white: 0.1, alpha: 0.05)
+        view.backgroundColor = .white
         view.clipsToBounds = true
         view.layer.cornerRadius = 15
         view.translatesAutoresizingMaskIntoConstraints = false
@@ -61,8 +61,6 @@ class ChatRoomInfoCell: UICollectionViewCell {
     override init(frame: CGRect) {
         super.init(frame: frame)
         
-        self.backgroundColor = .yellow
-        
         addSubview(roomImageView)
         addSubview(roomNameLabel)
         addSubview(roomParticipantCountLabel)
@@ -71,7 +69,7 @@ class ChatRoomInfoCell: UICollectionViewCell {
         
         NSLayoutConstraint.activate([
             roomImageView.centerXAnchor.constraint(equalTo: centerXAnchor),
-            roomImageView.topAnchor.constraint(equalTo: topAnchor, constant: 8),
+            roomImageView.topAnchor.constraint(equalTo: topAnchor, constant: 20),
             roomImageView.heightAnchor.constraint(equalToConstant: 70),
             roomImageView.widthAnchor.constraint(equalToConstant: 70),
             
@@ -85,7 +83,7 @@ class ChatRoomInfoCell: UICollectionViewCell {
             editButtonView.topAnchor.constraint(equalTo: roomParticipantCountLabel.bottomAnchor, constant: 15),
             editButtonView.heightAnchor.constraint(equalTo: editButton.heightAnchor),
             editButtonView.widthAnchor.constraint(equalTo: editButton.widthAnchor, constant: 20),
-            editButtonView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
+            editButtonView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -20),
             
             editButton.centerXAnchor.constraint(equalTo: editButtonView.centerXAnchor),
         ])
@@ -103,6 +101,7 @@ class ChatRoomInfoCell: UICollectionViewCell {
         
         roomNameLabel.text = room.roomName
         roomParticipantCountLabel.text = "\(room.participants.count)명 참여"
+        backgroundColor = UIColor(white: 0.3, alpha: 0.03)
     }
     
     required init?(coder: NSCoder) {

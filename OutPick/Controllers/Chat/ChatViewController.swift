@@ -21,7 +21,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     
     var swipeRecognizer: UISwipeGestureRecognizer!
     
-    private var sideMenuViewController = SideMenuViewController()
     private var dimmingView: UIView?
     
     var room: ChatRoom?
@@ -274,6 +273,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
                 if let room = self.room {
                     if !receivedMessage.isFailed {
                         Task { try await FirebaseManager.shared.saveMessage(receivedMessage, room) }
+                        
+                        if !receivedMessage.attachments.isEmpty {
+                            let images = receivedMessage.attachments.compactMap{ $0.toUIImage() }
+                            ChatImageStoreManager.shared.addImages(images, for: receivedMessage.roomName)
+                        }
                     }
                 }
                 chatMessageCollectionView.addMessage(with: receivedMessage)
@@ -311,24 +315,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         NotificationCenter.default.addObserver(self, selector: #selector(handleRoomSaveCompleted), name: .roomSavedComplete, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleRoomSaveFailed), name: .roomSaveFailed, object: nil)
     }
-
-//    @objc private func currentRoomObserver(_ notification: Notification) {
-//        guard let rooms = notification.userInfo?["rooms"] as? [ChatRoom],
-//              let currentRoom = self.room,
-//              let updatedCurrentRoom = rooms.first(where: { $0.roomName == currentRoom.roomName }) else { return }
-//        
-//        DispatchQueue.main.async { [weak self] in
-//            guard let self = self else { return }
-//            
-//            self.room = updatedCurrentRoom
-//            self.updateNavigationTitle(with: updatedCurrentRoom)
-//            
-//            if updatedCurrentRoom.participants.contains(LoginManager.shared.getUserEmail) {
-//                self.chatUIView.isHidden = false
-//                self.joinRoomBtn.isHidden = true
-//            }
-//        }
-//    }
     
     private func playVideo(from url: URL) {
         let asset = AVAsset(url: url)

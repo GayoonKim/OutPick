@@ -12,16 +12,17 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
     var interactiveTransition: UIPercentDrivenInteractiveTransition?
     
     private var room: ChatRoom
+    private var images: [UIImage] = []
     
     enum Section: Int, CaseIterable {
         case roomInfoSection
-//        case mediaSection
+        case mediaSection
 //        case participantsSection
     }
     
     enum Item: Hashable {
-        case roomItem(ChatRoom)
-//        case mediaItem
+        case roomInfoItem(ChatRoom)
+        case mediaItem([UIImage])
 //        case participantsItem
     }
     
@@ -30,6 +31,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
     
     init(room: ChatRoom) {
         self.room = room
+        
         let layout = Self.configureLayout()
         super.init(collectionViewLayout: layout)
     }
@@ -40,7 +42,9 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
     
     override func viewDidLoad() {
         super.viewDidLoad()
-
+        
+        self.view.backgroundColor = /*UIColor(white: 0.3, alpha: 0.03)*/.systemGroupedBackground
+        
         configureCollectionView()
         applyInitialSnapshot()
 
@@ -51,6 +55,11 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         
         // custom swipe-back 제스처 추가
         self.navigationController?.attachPopGesture(to: self.view)
+        
+        let images = ChatImageStoreManager.shared.getImages(for: room.roomName)
+        for (index, image) in images.enumerated() {
+            print("\(index)번째 이미지: \(image)")
+        }
     }
     
     private static func configureLayout() -> UICollectionViewCompositionalLayout {
@@ -65,8 +74,19 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
                 let group = NSCollectionLayoutGroup.vertical(layoutSize: groupSize, subitems: [item])
                 
                 let section = NSCollectionLayoutSection(group: group)
-                section.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8)
-                section.interGroupSpacing = 8
+                section.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0)
+                
+                return section
+                
+            case .mediaSection:
+                let itemSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .estimated(44))
+                let item = NSCollectionLayoutItem(layoutSize: itemSize)
+                
+                let groupSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .estimated(44))
+                let group = NSCollectionLayoutGroup.vertical(layoutSize: groupSize, subitems: [item])
+                
+                let section = NSCollectionLayoutSection(group: group)
+                section.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 10)
                 
                 return section
             }
@@ -77,12 +97,17 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         dataSource = DataSourceType(collectionView: collectionView) { (collectionView, indexPath, item) -> UICollectionViewCell? in
             switch item {
                 
-            case .roomItem:
+            case let .roomInfoItem(room):
                 let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ChatRoomInfoCell.reuseIdentifier, for: indexPath) as! ChatRoomInfoCell
-                cell.configureCell(room: self.room)
+                cell.configureCell(room: room)
                 
                 return cell
+             
+            case let .mediaItem(images):
+                let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ChatRoomMediaCollectionViewCell.reuseIdentifier, for: indexPath) as! ChatRoomMediaCollectionViewCell
+                cell.configureCell()
                 
+                return cell
             }
         }
         
@@ -93,15 +118,17 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         var snapshot = NSDiffableDataSourceSnapshot<Section, Item>()
         
         snapshot.appendSections(Section.allCases)
-        snapshot.appendItems([.roomItem(room)], toSection: .roomInfoSection)
+        snapshot.appendItems([.roomInfoItem(room)], toSection: .roomInfoSection)
+        snapshot.appendItems([.mediaItem(images)], toSection: .mediaSection)
         
         dataSource.apply(snapshot, animatingDifferences: false)
     }
     
     private func configureCollectionView() {
-        collectionView.backgroundColor = .white
+        collectionView.backgroundColor = UIColor(white: 0.3, alpha: 0.03)
         collectionView.translatesAutoresizingMaskIntoConstraints = false
         collectionView.register(ChatRoomInfoCell.self, forCellWithReuseIdentifier: ChatRoomInfoCell.reuseIdentifier)
+        collectionView.register(ChatRoomMediaCollectionViewCell.self, forCellWithReuseIdentifier: ChatRoomMediaCollectionViewCell.reuseIdentifier)
         
         dataSource = configureDataSource()
         collectionView.dataSource = dataSource
