@@ -43,7 +43,8 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
     override func viewDidLoad() {
         super.viewDidLoad()
         
-        self.view.backgroundColor = /*UIColor(white: 0.3, alpha: 0.03)*/.systemGroupedBackground
+        self.view.backgroundColor = .systemGroupedBackground
+        self.navigationController?.hidesBottomBarWhenPushed = true
         
         configureCollectionView()
         applyInitialSnapshot()

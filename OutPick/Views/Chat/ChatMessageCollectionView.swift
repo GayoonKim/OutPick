@@ -167,5 +167,15 @@ class ChatMessageCollectionView: UIView {
         return formatter.string(from: date)
     }
     
-
+    func scrollToBottom() {
+        DispatchQueue.main.async {
+            self.collectionView.layoutIfNeeded()
+            
+            let lastIndex = self.collectionView.numberOfItems(inSection: 0) - 1
+            let lastIndexPath = IndexPath(item: lastIndex, section: 0)
+            
+            self.collectionView.scrollToItem(at: lastIndexPath, at: .bottom, animated: false)
+        }
+    }
+    
 }

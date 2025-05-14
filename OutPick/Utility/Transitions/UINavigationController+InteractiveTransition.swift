@@ -90,6 +90,7 @@ extension UINavigationController: UINavigationControllerDelegate {
         } else if operation == .pop {
             return PopAnimator()
         }
+        
         return nil
     }
 

@@ -95,7 +95,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         self.navigationController?.attachPopGesture(to: self.view)
         
         setupNavigationRightButtons()
-        setupChatMessageCollectionView()
+//        setupChatMessageCollectionView()
         decideJoinUI()
         setupAttachmentView()
         
@@ -176,17 +176,20 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
             chatMessageCollectionView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
             chatMessageCollectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             chatMessageCollectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            chatMessageCollectionView.heightAnchor.constraint(equalToConstant: view.frame.height - chatUIView.minHeight)
+//            chatMessageCollectionView.heightAnchor.constraint(greaterThanOrEqualToConstant: view.frame.height - chatUIView.minHeight),
+//            chatMessageCollectionView.bottomAnchor.constraint(greaterThanOrEqualTo: chatUIView.topAnchor) // ✅ 여기!
             
         ])
+        
     }
     
     private func setupChatUI() {
         if chatUIView.superview == nil {
             view.addSubview(chatUIView)
+            view.addSubview(chatMessageCollectionView)
+            chatMessageCollectionView.translatesAutoresizingMaskIntoConstraints = false
+            chatUIView.translatesAutoresizingMaskIntoConstraints = false
         }
-
-        chatUIView.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.deactivate(joinConsraints)
         
         chatUIViewBottomConstraint = chatUIView.bottomAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.bottomAnchor, constant: -10)
@@ -194,12 +197,14 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
             chatUIViewBottomConstraint!,
             chatUIView.leadingAnchor.constraint(equalTo: self.view.leadingAnchor, constant: 8),
             chatUIView.trailingAnchor.constraint(equalTo: self.view.trailingAnchor, constant: -8),
-            chatUIView.heightAnchor.constraint(greaterThanOrEqualToConstant: chatUIView.minHeight),
+            chatUIView.heightAnchor.constraint(equalToConstant: chatUIView.minHeight),
             
-            chatMessageCollectionView.bottomAnchor.constraint(equalTo: chatUIView.topAnchor)
+            chatMessageCollectionView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            chatMessageCollectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            chatMessageCollectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            chatMessageCollectionView.bottomAnchor.constraint(greaterThanOrEqualTo: chatUIView.topAnchor)
         ]
         NSLayoutConstraint.activate(chatConstraints)
-        
     }
     
     private func handleSendButtonTap() {
@@ -432,6 +437,13 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         UIView.animate(withDuration: animationDuration) {
             self.view.layoutIfNeeded()
         }
+        
+        UIView.animate(withDuration: animationDuration, animations: {
+            self.view.layoutIfNeeded()
+        }, completion: { _ in
+            // ✅ 키보드 올라온 뒤 스크롤 아래로
+            self.chatMessageCollectionView.scrollToBottom()
+        })
         
     }
     
