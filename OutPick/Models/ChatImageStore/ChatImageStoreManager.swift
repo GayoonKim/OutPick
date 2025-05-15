@@ -20,4 +20,16 @@ class ChatImageStoreManager {
     func getImages(for roomName: String) -> [UIImage] {
         return imagesByRoomName[roomName] ?? []
     }
+    
+    func isEmpty(for roomName: String) -> Bool {
+        guard let _ = imagesByRoomName[roomName] else {
+            return false
+        }
+        
+        return true
+    }
+    
+    func count(for roomName: String) -> Int {
+        return getImages(for: roomName).count
+    }
 }

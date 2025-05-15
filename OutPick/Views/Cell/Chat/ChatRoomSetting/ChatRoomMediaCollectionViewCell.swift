@@ -8,9 +8,12 @@
 import UIKit
 
 class ChatRoomMediaCollectionViewCell: UICollectionViewCell {
-    static let reuseIdentifier = "ChatRoomMediaCell"
     
-    private let imageVideoButtonImageView: UIImageView = {
+    static let reuseIdentifier = "ChatRoomMediaCell"
+    private var images: [UIImage] = []
+    private var didAddHorizontalCollectionView = false
+    
+    private lazy var imageVideoButtonImageView: UIImageView = {
         let imageView = UIImageView()
         imageView.image = UIImage(systemName: "photo.on.rectangle.angled")
         imageView.tintColor = .systemGreen
@@ -21,7 +24,7 @@ class ChatRoomMediaCollectionViewCell: UICollectionViewCell {
         return imageView
     }()
     
-    private let imageVideoLabel: UILabel = {
+    private lazy var imageVideoLabel: UILabel = {
         let label = UILabel()
         label.font = .systemFont(ofSize: 16)
         label.textColor = .black
@@ -30,34 +33,89 @@ class ChatRoomMediaCollectionViewCell: UICollectionViewCell {
         return label
     }()
     
+    private lazy var horizontalCollectionView: UICollectionView = {
+        let layout = UICollectionViewFlowLayout()
+        layout.scrollDirection = .horizontal
+        layout.itemSize = CGSize(width: 80, height: 80)
+        layout.minimumLineSpacing = 5
+        
+        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
+        collectionView.translatesAutoresizingMaskIntoConstraints = false
+        collectionView.showsHorizontalScrollIndicator = false
+        collectionView.dataSource = self
+        collectionView.delegate = self
+        collectionView.register(MediaSectionImagePreviewCell.self, forCellWithReuseIdentifier: MediaSectionImagePreviewCell.reuseIdentifier)
+        collectionView.register(MediaSectionMoreButtonCell.self, forCellWithReuseIdentifier: MediaSectionMoreButtonCell.reuseIdentifier)
+
+        return collectionView
+    }()
+    
     override init(frame: CGRect) {
         super.init(frame: frame)
         
-        contentView.layer.cornerRadius = 20
+        contentView.layer.cornerRadius = 15
         contentView.layer.masksToBounds = true
-
-        addSubview(imageVideoButtonImageView)
-        addSubview(imageVideoLabel)
         
+        self.contentView.addSubview(imageVideoButtonImageView)
+        self.contentView.addSubview(imageVideoLabel)
+
         NSLayoutConstraint.activate([
             imageVideoButtonImageView.heightAnchor.constraint(equalToConstant: 25),
             imageVideoButtonImageView.widthAnchor.constraint(equalToConstant: 25),
             imageVideoButtonImageView.leadingAnchor.constraint(equalTo: self.contentView.leadingAnchor, constant: 10),
-            imageVideoButtonImageView.topAnchor.constraint(equalTo: topAnchor, constant: 10),
-            imageVideoButtonImageView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
-            
+            imageVideoButtonImageView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 10),
             
             imageVideoLabel.centerYAnchor.constraint(equalTo: imageVideoButtonImageView.centerYAnchor),
-            imageVideoLabel.leadingAnchor.constraint(equalTo: imageVideoButtonImageView.trailingAnchor, constant: 10)
+            imageVideoLabel.leadingAnchor.constraint(equalTo: imageVideoButtonImageView.trailingAnchor, constant: 10),
         ])
     }
     
-    func configureCell() {
+    func configureCell(for images: [UIImage]) {
+        contentView.backgroundColor = .white
         imageVideoLabel.text = "사진/동영상"
-        backgroundColor = .white
+        self.images = images
+        
+        if !images.isEmpty {
+            if !didAddHorizontalCollectionView {
+                self.contentView.addSubview(horizontalCollectionView)
+                
+                NSLayoutConstraint.activate([
+                    horizontalCollectionView.topAnchor.constraint(equalTo: imageVideoButtonImageView.bottomAnchor, constant: 10),
+                    horizontalCollectionView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 10),
+                    horizontalCollectionView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -10),
+                    horizontalCollectionView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -10),
+                ])
+                
+                didAddHorizontalCollectionView = true
+            }
+        }
     }
     
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+}
+
+extension ChatRoomMediaCollectionViewCell: UICollectionViewDataSource, UICollectionViewDelegate {
+    func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
+        self.images.count + 1
+    }
+    
+    func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
+        if indexPath.item < images.count {
+            let cell = collectionView.dequeueReusableCell(withReuseIdentifier: MediaSectionImagePreviewCell.reuseIdentifier, for: indexPath) as! MediaSectionImagePreviewCell
+            cell.configure(with: self.images[indexPath.item])
+            
+            return cell
+        } else {
+            let cell = collectionView.dequeueReusableCell(withReuseIdentifier: MediaSectionMoreButtonCell.reuseIdentifier, for: indexPath) as! MediaSectionMoreButtonCell
+            return cell
+        }
+    }
+    
+    func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+        if indexPath.item == self.images.count {
+            print("더 보기 버튼 탭")
+        }
     }
 }

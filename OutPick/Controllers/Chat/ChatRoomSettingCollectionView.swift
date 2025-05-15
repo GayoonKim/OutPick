@@ -12,7 +12,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
     var interactiveTransition: UIPercentDrivenInteractiveTransition?
     
     private var room: ChatRoom
-    private var images: [UIImage] = []
+    private var images: [UIImage]
     
     enum Section: Int, CaseIterable {
         case roomInfoSection
@@ -31,8 +31,9 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
     
     init(room: ChatRoom) {
         self.room = room
+        self.images = ChatImageStoreManager.shared.getImages(for: room.roomName)
         
-        let layout = Self.configureLayout()
+        let layout = Self.configureLayout(room.roomName)
         super.init(collectionViewLayout: layout)
     }
     
@@ -56,14 +57,9 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         
         // custom swipe-back 제스처 추가
         self.navigationController?.attachPopGesture(to: self.view)
-        
-        let images = ChatImageStoreManager.shared.getImages(for: room.roomName)
-        for (index, image) in images.enumerated() {
-            print("\(index)번째 이미지: \(image)")
-        }
     }
     
-    private static func configureLayout() -> UICollectionViewCompositionalLayout {
+    private static func configureLayout(_ roomName: String) -> UICollectionViewCompositionalLayout {
         return UICollectionViewCompositionalLayout { (sectionIndex: Int, environment: NSCollectionLayoutEnvironment) -> NSCollectionLayoutSection? in
             switch Section(rawValue: sectionIndex)! {
             
@@ -80,10 +76,12 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
                 return section
                 
             case .mediaSection:
-                let itemSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .estimated(44))
+                let height: CGFloat = ChatImageStoreManager.shared.getImages(for: roomName).count > 0 ? 130 : 44
+                
+                let itemSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .estimated(height))
                 let item = NSCollectionLayoutItem(layoutSize: itemSize)
                 
-                let groupSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .estimated(44))
+                let groupSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .estimated(height))
                 let group = NSCollectionLayoutGroup.vertical(layoutSize: groupSize, subitems: [item])
                 
                 let section = NSCollectionLayoutSection(group: group)
@@ -106,7 +104,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
              
             case let .mediaItem(images):
                 let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ChatRoomMediaCollectionViewCell.reuseIdentifier, for: indexPath) as! ChatRoomMediaCollectionViewCell
-                cell.configureCell()
+                cell.configureCell(for: images)
                 
                 return cell
             }
@@ -119,8 +117,8 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         var snapshot = NSDiffableDataSourceSnapshot<Section, Item>()
         
         snapshot.appendSections(Section.allCases)
-        snapshot.appendItems([.roomInfoItem(room)], toSection: .roomInfoSection)
-        snapshot.appendItems([.mediaItem(images)], toSection: .mediaSection)
+        snapshot.appendItems([.roomInfoItem(self.room)], toSection: .roomInfoSection)
+        snapshot.appendItems([.mediaItem(self.images)], toSection: .mediaSection)
         
         dataSource.apply(snapshot, animatingDifferences: false)
     }
