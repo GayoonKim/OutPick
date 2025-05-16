@@ -13,17 +13,18 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
     
     private var room: ChatRoom
     private var images: [UIImage]
+    private var userProfiles: [UserProfile] = []
     
     enum Section: Int, CaseIterable {
         case roomInfoSection
         case mediaSection
-//        case participantsSection
+        case participantsSection
     }
     
     enum Item: Hashable {
         case roomInfoItem(ChatRoom)
         case mediaItem([UIImage])
-//        case participantsItem
+        case participantsItem([UserProfile])
     }
     
     typealias DataSourceType = UICollectionViewDiffableDataSource<Section, Item>
@@ -32,6 +33,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
     init(room: ChatRoom) {
         self.room = room
         self.images = ChatImageStoreManager.shared.getImages(for: room.roomName)
+        self.userProfiles = ChatUserProfilesStoreManager.shared.getUserProfiles(forRoomName: room.roomName)
         
         let layout = Self.configureLayout(room.roomName)
         super.init(collectionViewLayout: layout)
@@ -85,6 +87,29 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
                 let group = NSCollectionLayoutGroup.vertical(layoutSize: groupSize, subitems: [item])
                 
                 let section = NSCollectionLayoutSection(group: group)
+                section.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 10, bottom: 10, trailing: 10)
+                
+                return section
+                
+            case .participantsSection:
+                let count = ChatUserProfilesStoreManager.shared.countProfiles(for: roomName)
+                let rowCount = ceil(Double(count) / 1.0) // 한 줄에 1명 보여주는 구성일 경우
+                let itemHeight: CGFloat = 60
+                let spacing: CGFloat = 5
+                let headerHeight: CGFloat = 40 // "대화상대 (n명)" 라벨
+                let showAllButtonHeight: CGFloat = count > 50 ? 44 : 0
+                
+                let totalHeight = CGFloat(rowCount) * itemHeight +
+                CGFloat(max(0, rowCount - 1)) * spacing +
+                headerHeight + showAllButtonHeight
+                
+                let itemSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .absolute(totalHeight))
+                let item = NSCollectionLayoutItem(layoutSize: itemSize)
+                
+                let groupSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .absolute(totalHeight))
+                let group = NSCollectionLayoutGroup.vertical(layoutSize: groupSize, subitems: [item])
+                
+                let section = NSCollectionLayoutSection(group: group)
                 section.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 10)
                 
                 return section
@@ -107,7 +132,15 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
                 cell.configureCell(for: images)
                 
                 return cell
+                
+                
+            case let .participantsItem(userProfiles):
+                let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ParticipantsSectionParticipantCell.reuseIdentifier, for: indexPath) as! ParticipantsSectionParticipantCell
+                cell.configureCell(userProfiles)
+                
+                return cell
             }
+            
         }
         
         return dataSource
@@ -119,6 +152,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         snapshot.appendSections(Section.allCases)
         snapshot.appendItems([.roomInfoItem(self.room)], toSection: .roomInfoSection)
         snapshot.appendItems([.mediaItem(self.images)], toSection: .mediaSection)
+        snapshot.appendItems([.participantsItem(self.userProfiles)], toSection: .participantsSection)
         
         dataSource.apply(snapshot, animatingDifferences: false)
     }
@@ -128,6 +162,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         collectionView.translatesAutoresizingMaskIntoConstraints = false
         collectionView.register(ChatRoomInfoCell.self, forCellWithReuseIdentifier: ChatRoomInfoCell.reuseIdentifier)
         collectionView.register(ChatRoomMediaCollectionViewCell.self, forCellWithReuseIdentifier: ChatRoomMediaCollectionViewCell.reuseIdentifier)
+        collectionView.register(ParticipantsSectionParticipantCell.self, forCellWithReuseIdentifier: ParticipantsSectionParticipantCell.reuseIdentifier)
         
         dataSource = configureDataSource()
         collectionView.dataSource = dataSource

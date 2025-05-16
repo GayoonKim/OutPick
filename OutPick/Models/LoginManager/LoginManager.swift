@@ -99,39 +99,63 @@ class LoginManager {
             let initialViewControlle = mainStorybard.instantiateViewController(withIdentifier: "HomeTBC")
             completion(initialViewControlle)
         } else {
-            fetchProfileFromFirebase(LoginManager.shared.getUserEmail) {
-                completion($0)
+            Task {
+                let vc = try await fetchProfileFromFirebase(LoginManager.shared.getUserEmail)
+                completion(vc)
             }
         }
     }
     
-    func fetchProfileFromFirebase(_ email: String, completion: @escaping (UIViewController) -> Void) {
-        FirebaseManager.shared.fetchUserProfileFromFirestore(email: email) { result in
-            DispatchQueue.main.async {
-                let initialViewControlle: UIViewController
-                
-                switch result {
-                case .success(let userProfile):
-                    print("프로필 불러오기 성공")
-                    print(userProfile)
-                    
-                    Task {
-                        try await self.updateLogDevID()
-                        try await self.setupDevIDListener()
-                    }
-
-                    let mainStorybard = UIStoryboard(name: "Main", bundle: nil)
-                    initialViewControlle = mainStorybard.instantiateViewController(withIdentifier: "HomeTBC")
-                    completion(initialViewControlle)
-                case .failure(let error):
-                    print("Failed to fetch user profile: \(error.localizedDescription)")
-
-                    let mainStorybard = UIStoryboard(name: "Main", bundle: nil)
-                    initialViewControlle = mainStorybard.instantiateViewController(withIdentifier: "ProfileNav")
-                    completion(initialViewControlle)
-                }
+    func fetchProfileFromFirebase(_ email: String/*, completion: @escaping (UIViewController) -> Void*/) async throws -> UIViewController {
+//        FirebaseManager.shared.fetchUserProfileFromFirestore(email: email) { result in
+//            DispatchQueue.main.async {
+//                let initialViewControlle: UIViewController
+//                
+//                switch result {
+//                case .success(let userProfile):
+//                    print("프로필 불러오기 성공")
+//                    print(userProfile)
+//                    
+//                    Task {
+//                        try await self.updateLogDevID()
+//                        try await self.setupDevIDListener()
+//                    }
+//
+//                    let mainStorybard = UIStoryboard(name: "Main", bundle: nil)
+//                    initialViewControlle = mainStorybard.instantiateViewController(withIdentifier: "HomeTBC")
+//                    completion(initialViewControlle)
+//                case .failure(let error):
+//                    print("Failed to fetch user profile: \(error.localizedDescription)")
+//
+//                    let mainStorybard = UIStoryboard(name: "Main", bundle: nil)
+//                    initialViewControlle = mainStorybard.instantiateViewController(withIdentifier: "ProfileNav")
+//                    completion(initialViewControlle)
+//                }
+//            }
+//        }
+        
+        do {
+            
+            let _ = try await FirebaseManager.shared.fetchUserProfileFromFirestore(email: email)
+            
+            try await updateLogDevID()
+            try await setupDevIDListener()
+            
+            return await MainActor.run {
+                let mainStorybard = UIStoryboard(name: "Main", bundle: nil)
+                return mainStorybard.instantiateViewController(withIdentifier: "HomeTBC")
             }
+            
+        } catch {
+            
+            print("\(email) 사용자 프로필 불러오기 실패: \(error.localizedDescription)")
+            return await MainActor.run {
+                let mainStorybard = UIStoryboard(name: "Main", bundle: nil)
+                return mainStorybard.instantiateViewController(withIdentifier: "ProfileNav")
+            }
+            
         }
+        
     }
     
     // 카카오 사용자 이메일 불러오기

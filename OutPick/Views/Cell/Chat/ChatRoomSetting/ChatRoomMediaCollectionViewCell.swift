@@ -53,8 +53,9 @@ class ChatRoomMediaCollectionViewCell: UICollectionViewCell {
     override init(frame: CGRect) {
         super.init(frame: frame)
         
-        contentView.layer.cornerRadius = 15
+        contentView.layer.cornerRadius = 10
         contentView.layer.masksToBounds = true
+        contentView.backgroundColor = .white
         
         self.contentView.addSubview(imageVideoButtonImageView)
         self.contentView.addSubview(imageVideoLabel)
@@ -71,7 +72,6 @@ class ChatRoomMediaCollectionViewCell: UICollectionViewCell {
     }
     
     func configureCell(for images: [UIImage]) {
-        contentView.backgroundColor = .white
         imageVideoLabel.text = "사진/동영상"
         self.images = images
         

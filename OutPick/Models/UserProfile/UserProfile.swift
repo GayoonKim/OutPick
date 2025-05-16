@@ -47,3 +47,13 @@ extension UserProfile {
     }
     
 }
+
+extension UserProfile: Hashable {
+    static func == (lhs: UserProfile, rhs: UserProfile) -> Bool {
+        return lhs.createdAt == rhs.createdAt
+    }
+    
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(createdAt)
+    }
+}

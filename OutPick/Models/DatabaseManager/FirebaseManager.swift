@@ -88,65 +88,124 @@ class FirebaseManager {
         }
     }
     
-    // Firebase Firestore에서 UserProfile 불러오기
-    func fetchUserProfileFromFirestore(email: String, completion: @escaping (Result<UserProfile, Error>) -> Void) {
+//     Firebase Firestore에서 UserProfile 불러오기
+    func fetchUserProfileFromFirestore(email: String) async throws -> UserProfile {
         print("fetchUserprofileFromFirestore 호출")
         
-        fetchProfileTask?.cancel()
+//        fetchProfileTask?.cancel()
+//        
+//        fetchProfileTask = Task {
+//            do {
+//                let documentIDs = try await fetchAllDocIDs(collectionName: "Users")
+//                if documentIDs.isEmpty {
+//                    throw FirebaseError.FailedToFetchAllDocumentIDs
+//                }
+//                
+//                return try await withThrowingTaskGroup(of: UserProfile?.self) { group in
+//                    for documentID in documentIDs {
+//                        group.addTask {
+//                            
+//                            let refToCheck = self.db.collection("Users").document(documentID).collection("\(DateManager.shared.currentMonth) Users").whereField("email", isEqualTo: email)
+//                            let snapshot = try await refToCheck.getDocuments()
+//                            
+//                            guard let data = snapshot.documents.first?.data() else {
+//                                throw FirebaseError.FailedToFetchProfile
+//                            }
+//
+//                            let profile = UserProfile.shared
+//                            profile.nickname = data["nickname"] as? String
+//                            profile.gender = data["gender"] as? String
+//                            profile.birthdate = data["birthdate"] as? String
+//                            profile.profileImageName = data["profileImageName"] as? String
+//                            profile.joinedRooms = data["joinedRooms"] as? [String]
+//                    
+//                            return profile
+//                            
+//                        }
+//                    }
+//                    
+//                    for try await profile in group {
+//                        if let profile = profile {
+//                            group.cancelAll()
+//                            return profile
+//                        }
+//                        
+//                    }
+//                    
+//                }
+//                
+//            } catch {
+//            
+//                completion(.failure(error))
+//                
+//            }
+//            
+//            fetchProfileTask = nil
+//            
+//        }
         
-        fetchProfileTask = Task {
-            do {
-                
-                let documentIDs = try await fetchAllDocIDs(collectionName: "Users")
-                
-                if documentIDs.isEmpty {
-                    throw FirebaseError.FailedToFetchAllDocumentIDs
+        let documentIDs = try await fetchAllDocIDs(collectionName: "Users")
+        if documentIDs.isEmpty { throw FirebaseError.FailedToFetchProfile }
+        
+        return try await withThrowingTaskGroup(of: UserProfile?.self) { group in
+            for documentID in documentIDs {
+                group.addTask {
+                    
+                    let refToCheck = self.db.collection("Users").document(documentID).collection("\(DateManager.shared.currentMonth) Users").whereField("email", isEqualTo: email)
+                    let snapshot = try await refToCheck.getDocuments()
+                    
+                    guard let data = snapshot.documents.first?.data() else { throw FirebaseError.FailedToFetchProfile }
+                    
+                    let profile = UserProfile.shared
+                    profile.nickname = data["nickname"] as? String
+                    profile.gender = data["gender"] as? String
+                    profile.birthdate = data["birthdate"] as? String
+                    profile.profileImageName = data["profileImageName"] as? String
+                    profile.joinedRooms = data["joinedRooms"] as? [String]
+                    
+                    return profile
                 }
-                
-                return try await withThrowingTaskGroup(of: UserProfile.self) { group in
-                    for documentID in documentIDs {
-                        group.addTask {
-                            
-                            let refToCheck = self.db.collection("Users").document(documentID).collection("\(DateManager.shared.currentMonth) Users").whereField("email", isEqualTo: email)
-                            let snapshot = try await refToCheck.getDocuments()
-                            
-                            guard let data = snapshot.documents.first?.data() else {
-                                throw FirebaseError.FailedToFetchProfile
-                            }
-
-                            let profile = UserProfile.shared
-                            profile.nickname = data["nickname"] as? String
-                            profile.gender = data["gender"] as? String
-                            profile.birthdate = data["birthdate"] as? String
-                            profile.profileImageName = data["profileImageName"] as? String
-                            profile.joinedRooms = data["joinedRooms"] as? [String]
-                    
-                            return profile
-                            
-                        }
-                    }
-                    
-                    for try await profile in group {
-                        
-                        if let _ = profile.nickname {
-                            completion(.success(profile))
-                            group.cancelAll()
-                        }
-                        
-                    }
-                    
-                }
-                
-            } catch {
-            
-                completion(.failure(error))
-                
             }
             
-            fetchProfileTask = nil
+            for try await result in group {
+                if let profile = result {
+                    group.cancelAll()
+                    return profile
+                }
+            }
             
+            throw FirebaseError.FailedToFetchProfile
         }
         
+    }
+    
+    func fetchUserProfiles(emails: [String]) async throws -> [UserProfile] {
+        return try await withThrowingTaskGroup(of: UserProfile?.self) { group in
+            for email in emails {
+                group.addTask {
+                    do {
+                        
+                        let profile = try await self.fetchUserProfileFromFirestore(email: email)
+                        return profile
+                        
+                    } catch {
+                        
+                        print("\(email) 사용자 프로필 불러오기 실패: \(error)")
+                        return nil
+                        
+                    }
+                }
+            }
+            
+            var profiles = [UserProfile]()
+            for try await result in group {
+                if let profile = result {
+                    profiles.append(profile)
+                }
+            }
+            
+            return profiles
+        }
     }
     
     func fetchAllDocIDs(collectionName: String) async throws -> [String] {

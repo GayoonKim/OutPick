@@ -373,6 +373,12 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         guard let room = room else { return }
         
         if room.participants.contains(LoginManager.shared.getUserEmail) {
+            if !ChatUserProfilesStoreManager.shared.hasProfiles(for: room.roomName) {
+                Task {
+                    let profiles = try await FirebaseManager.shared.fetchUserProfiles(emails: room.participants)
+                    ChatUserProfilesStoreManager.shared.saveUserProfiles(profiles, forRoomName: room.roomName)
+                }
+            }
             setupChatUI()
             chatUIView.isHidden = false
             joinRoomBtn.isHidden = true
@@ -410,6 +416,13 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     
     @IBAction func joinRoomBtnTapped(_ sender: UIButton) {
         guard let room = self.room else { return }
+        
+        if !ChatUserProfilesStoreManager.shared.hasProfiles(for: room.roomName) {
+            Task {
+                let profiles = try await FirebaseManager.shared.fetchUserProfiles(emails: room.participants)
+                ChatUserProfilesStoreManager.shared.saveUserProfiles(profiles, forRoomName: room.roomName)
+            }
+        }
         
         FirebaseManager.shared.add_room_participant(room: room)
         SocketIOManager.shared.joinRoom(room.roomName)
