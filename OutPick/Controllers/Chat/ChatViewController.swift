@@ -132,6 +132,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         SocketIOManager.shared.closeConnection()
     }
     
+    @MainActor
     private func setupNavigationRightButtons() {
         let firstButton = UIButton(type: .system)
         firstButton.setImage(UIImage(systemName: "text.justify"), for: .normal)
@@ -153,6 +154,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         print(#function)
     }
     
+    @MainActor
     @objc private func settingButtonTapped() {
         DispatchQueue.main.async {
             guard let room = self.room else { return }
@@ -167,22 +169,23 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         }
     }
     
-    private func setupChatMessageCollectionView() {
-        view.addSubview(chatMessageCollectionView)
-        chatMessageCollectionView.translatesAutoresizingMaskIntoConstraints = false
-        
-        NSLayoutConstraint.activate([
-            
-            chatMessageCollectionView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-            chatMessageCollectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            chatMessageCollectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-//            chatMessageCollectionView.heightAnchor.constraint(greaterThanOrEqualToConstant: view.frame.height - chatUIView.minHeight),
-//            chatMessageCollectionView.bottomAnchor.constraint(greaterThanOrEqualTo: chatUIView.topAnchor) // ✅ 여기!
-            
-        ])
-        
-    }
+//    private func setupChatMessageCollectionView() {
+//        view.addSubview(chatMessageCollectionView)
+//        chatMessageCollectionView.translatesAutoresizingMaskIntoConstraints = false
+//        
+//        NSLayoutConstraint.activate([
+//            
+//            chatMessageCollectionView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+//            chatMessageCollectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+//            chatMessageCollectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+////            chatMessageCollectionView.heightAnchor.constraint(greaterThanOrEqualToConstant: view.frame.height - chatUIView.minHeight),
+////            chatMessageCollectionView.bottomAnchor.constraint(greaterThanOrEqualTo: chatUIView.topAnchor) // ✅ 여기!
+//            
+//        ])
+//        
+//    }
     
+    @MainActor
     private func setupChatUI() {
         if chatUIView.superview == nil {
             view.addSubview(chatUIView)
@@ -207,6 +210,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         NSLayoutConstraint.activate(chatConstraints)
     }
     
+    @MainActor
     private func handleSendButtonTap() {
         guard let message = self.chatUIView.messageTextView.text,
               let room = self.room else { return }
@@ -245,6 +249,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         }
     }
     
+    @MainActor
     private func handleAttachmentButtonTap(identifier: String) {
         switch identifier {
         case "photo":
@@ -384,6 +389,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
             joinRoomBtn.isHidden = true
         } else {
             setJoinRoombtn()
+            joinRoomBtn.isHidden = false
+            chatUIView.isHidden = true
         }
         
         updateNavigationTitle(with: room)
@@ -395,8 +402,15 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         self.joinRoomBtn.backgroundColor = UIColor(white: 0.1, alpha: 0.05)
         joinRoomBtn.translatesAutoresizingMaskIntoConstraints = false
         
-        joinRoomBtn.isHidden = false
-        chatUIView.isHidden = true
+        if chatMessageCollectionView.superview == nil {
+            view.addSubview(chatMessageCollectionView)
+            chatMessageCollectionView.translatesAutoresizingMaskIntoConstraints = false
+            NSLayoutConstraint.activate([
+                chatMessageCollectionView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+                chatMessageCollectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                chatMessageCollectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            ])
+        }
         
         NSLayoutConstraint.deactivate(chatConstraints)
     
@@ -414,8 +428,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         }
     }
     
+    @MainActor
     @IBAction func joinRoomBtnTapped(_ sender: UIButton) {
         guard let room = self.room else { return }
+        
+        joinRoomBtn.isHidden = true
         
         if !ChatUserProfilesStoreManager.shared.hasProfiles(for: room.roomName) {
             Task {
@@ -428,6 +445,17 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         SocketIOManager.shared.joinRoom(room.roomName)
         
         setupChatUI()
+        
+        // UI 상태 갱신 추가
+        chatUIView.isHidden = false
+        chatMessageCollectionView.isHidden = false
+
+        // 기존 joinRoomBtn과 연결된 제약 비활성화
+        NSLayoutConstraint.deactivate(joinConsraints)
+
+        // chatUIView.topAnchor에 새로 연결
+        chatConstraints.append(chatMessageCollectionView.bottomAnchor.constraint(equalTo: chatUIView.topAnchor))
+        NSLayoutConstraint.activate(chatConstraints)
     }
     
     @objc private func keyboardWillShow(_ sender: Notification) {
