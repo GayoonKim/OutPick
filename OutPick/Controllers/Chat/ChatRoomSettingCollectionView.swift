@@ -6,6 +6,7 @@
 //
 
 import UIKit
+import Combine
 
 class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecognizerDelegate, UINavigationControllerDelegate {
     
@@ -29,6 +30,8 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
     
     typealias DataSourceType = UICollectionViewDiffableDataSource<Section, Item>
     var dataSource: DataSourceType!
+    
+    private var cancellables = Set<AnyCancellable>()
     
     init(room: ChatRoom) {
         self.room = room
@@ -59,6 +62,15 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         
         // custom swipe-back 제스처 추가
         self.navigationController?.attachPopGesture(to: self.view)
+    }
+    
+    func bindPublishers(_ publisher: AnyPublisher<[UIImage], Never>) {
+        publisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] images in
+                self?.updateMediaSection(with: images)
+            }
+            .store(in: &cancellables)
     }
     
     private static func configureLayout(_ roomName: String) -> UICollectionViewCompositionalLayout {
@@ -94,7 +106,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
             case .participantsSection:
                 let count = ChatUserProfilesStoreManager.shared.countProfiles(for: roomName)
                 let rowCount = ceil(Double(count) / 1.0) // 한 줄에 1명 보여주는 구성일 경우
-                let itemHeight: CGFloat = 60
+                let itemHeight: CGFloat = 53
                 let spacing: CGFloat = 5
                 let headerHeight: CGFloat = 40 // "대화상대 (n명)" 라벨
                 let showAllButtonHeight: CGFloat = count > 50 ? 44 : 0
@@ -137,7 +149,6 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
             case let .participantsItem(userProfiles):
                 let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ParticipantsSectionParticipantCell.reuseIdentifier, for: indexPath) as! ParticipantsSectionParticipantCell
                 cell.configureCell(userProfiles)
-                
                 return cell
             }
             
@@ -155,6 +166,12 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         snapshot.appendItems([.participantsItem(self.userProfiles)], toSection: .participantsSection)
         
         dataSource.apply(snapshot, animatingDifferences: false)
+    }
+    
+    func updateMediaSection(with images: [UIImage]) {
+        var snapshot = dataSource.snapshot()
+        snapshot.appendItems([.mediaItem(images)], toSection: .mediaSection)
+        dataSource.apply(snapshot, animatingDifferences: true)
     }
     
     private func configureCollectionView() {

@@ -92,58 +92,6 @@ class FirebaseManager {
     func fetchUserProfileFromFirestore(email: String) async throws -> UserProfile {
         print("fetchUserprofileFromFirestore 호출")
         
-//        fetchProfileTask?.cancel()
-//        
-//        fetchProfileTask = Task {
-//            do {
-//                let documentIDs = try await fetchAllDocIDs(collectionName: "Users")
-//                if documentIDs.isEmpty {
-//                    throw FirebaseError.FailedToFetchAllDocumentIDs
-//                }
-//                
-//                return try await withThrowingTaskGroup(of: UserProfile?.self) { group in
-//                    for documentID in documentIDs {
-//                        group.addTask {
-//                            
-//                            let refToCheck = self.db.collection("Users").document(documentID).collection("\(DateManager.shared.currentMonth) Users").whereField("email", isEqualTo: email)
-//                            let snapshot = try await refToCheck.getDocuments()
-//                            
-//                            guard let data = snapshot.documents.first?.data() else {
-//                                throw FirebaseError.FailedToFetchProfile
-//                            }
-//
-//                            let profile = UserProfile.shared
-//                            profile.nickname = data["nickname"] as? String
-//                            profile.gender = data["gender"] as? String
-//                            profile.birthdate = data["birthdate"] as? String
-//                            profile.profileImageName = data["profileImageName"] as? String
-//                            profile.joinedRooms = data["joinedRooms"] as? [String]
-//                    
-//                            return profile
-//                            
-//                        }
-//                    }
-//                    
-//                    for try await profile in group {
-//                        if let profile = profile {
-//                            group.cancelAll()
-//                            return profile
-//                        }
-//                        
-//                    }
-//                    
-//                }
-//                
-//            } catch {
-//            
-//                completion(.failure(error))
-//                
-//            }
-//            
-//            fetchProfileTask = nil
-//            
-//        }
-        
         let documentIDs = try await fetchAllDocIDs(collectionName: "Users")
         if documentIDs.isEmpty { throw FirebaseError.FailedToFetchProfile }
         
@@ -581,6 +529,7 @@ class FirebaseManager {
                 
                 print("참여자 업데이트 성공")
                 add_room_participant_task = nil
+                
                             
             } catch {
                 

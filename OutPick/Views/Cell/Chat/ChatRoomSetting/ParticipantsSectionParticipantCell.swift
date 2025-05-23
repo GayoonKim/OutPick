@@ -28,7 +28,7 @@ class ParticipantsSectionParticipantCell: UICollectionViewCell {
             
             let groupSIze = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .absolute(60))
             let group = NSCollectionLayoutGroup.vertical(layoutSize: groupSIze, subitems: [item])
-            group.interItemSpacing = .fixed(5)
+//            group.interItemSpacing = .fixed(5)
             
             let section = NSCollectionLayoutSection(group: group)
             section.contentInsets = .init(top: 0, leading: 0, bottom: 0, trailing: 0)
@@ -57,6 +57,7 @@ class ParticipantsSectionParticipantCell: UICollectionViewCell {
         
         contentView.addSubview(participantLabel)
         contentView.addSubview(verticalCollectionView)
+    
         NSLayoutConstraint.activate([
             participantLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 10),
             participantLabel.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 10),

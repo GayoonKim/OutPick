@@ -235,6 +235,9 @@ class ChatMessageCell: UICollectionViewCell {
                 }
             }
             
+            print("내 닉네임: \(nickName)")
+            print("보낸 사람: \(message.senderNickname)")
+            
             if nickName == message.senderNickname {
                 // 본인이 보낸 사진
                 profileImageView.isHidden = true

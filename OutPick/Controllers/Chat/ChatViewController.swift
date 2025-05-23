@@ -62,6 +62,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     }()
 
     private lazy var cancellables = Set<AnyCancellable>()
+    private let imagesSubject = PassthroughSubject<[UIImage], Never>()
+    private var imagesPublishser: AnyPublisher<[UIImage], Never> {
+        return imagesSubject.eraseToAnyPublisher()
+    }
+    
     private lazy var chatMessageCollectionView = ChatMessageCollectionView()
     
     // Layout 제약 조건 저장
@@ -95,7 +100,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         self.navigationController?.attachPopGesture(to: self.view)
         
         setupNavigationRightButtons()
-//        setupChatMessageCollectionView()
         decideJoinUI()
         setupAttachmentView()
         
@@ -159,6 +163,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         DispatchQueue.main.async {
             guard let room = self.room else { return }
             let settingVC = ChatRoomSettingCollectionView(room: room)
+            settingVC.bindPublishers(self.imagesPublishser)
             
             let transition = CATransition()
             transition.duration = 0.3
@@ -168,22 +173,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
             self.navigationController?.pushViewController(settingVC, animated: false)
         }
     }
-    
-//    private func setupChatMessageCollectionView() {
-//        view.addSubview(chatMessageCollectionView)
-//        chatMessageCollectionView.translatesAutoresizingMaskIntoConstraints = false
-//        
-//        NSLayoutConstraint.activate([
-//            
-//            chatMessageCollectionView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-//            chatMessageCollectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-//            chatMessageCollectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-////            chatMessageCollectionView.heightAnchor.constraint(greaterThanOrEqualToConstant: view.frame.height - chatUIView.minHeight),
-////            chatMessageCollectionView.bottomAnchor.constraint(greaterThanOrEqualTo: chatUIView.topAnchor) // ✅ 여기!
-//            
-//        ])
-//        
-//    }
     
     @MainActor
     private func setupChatUI() {
@@ -226,6 +215,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         chatUIView.sendButton.isEnabled = false
     }
 
+    @MainActor
     private func hideOrShowOptionMenu() {
         guard let image = self.chatUIView.attachmentButton.imageView?.image else { return }
 
@@ -287,6 +277,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
                         if !receivedMessage.attachments.isEmpty {
                             let images = receivedMessage.attachments.compactMap{ $0.toUIImage() }
                             ChatImageStoreManager.shared.addImages(images, for: receivedMessage.roomName)
+                            
                         }
                     }
                 }
@@ -301,6 +292,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
                 guard let self = self,
                       let _ = self.room else { return }
                 self.room = updatedRoom
+                self.updateNavigationTitle(with: updatedRoom)
             }
             .store(in: &cancellables)
         
@@ -421,11 +413,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     }
     
 
-    
+    @MainActor
     private func updateNavigationTitle(with room: ChatRoom) {
-        DispatchQueue.main.async{
-            self.navigationItem.setTitle(title: room.roomName, subtitle: "\(room.participants.count)명 참여")
-        }
+        self.navigationItem.setTitle(title: room.roomName, subtitle: "\(room.participants.count)명 참여")
     }
     
     @MainActor
