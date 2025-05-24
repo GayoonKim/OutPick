@@ -62,7 +62,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     }()
 
     private lazy var cancellables = Set<AnyCancellable>()
-    private let imagesSubject = PassthroughSubject<[UIImage], Never>()
+    private let imagesSubject = CurrentValueSubject<[UIImage], Never>([])
     private var imagesPublishser: AnyPublisher<[UIImage], Never> {
         return imagesSubject.eraseToAnyPublisher()
     }
@@ -116,6 +116,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
                 SocketIOManager.shared.joinRoom(roomName)
             }
             SocketIOManager.shared.listenToChatMessage()
+            SocketIOManager.shared.listenToNewParticipant()
         } else {
             // 연결되지 않은 경우에만 연결 시도
             SocketIOManager.shared.establishConnection { [weak self] in
@@ -125,6 +126,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
                     SocketIOManager.shared.joinRoom(roomName)
                 }
                 SocketIOManager.shared.listenToChatMessage()
+                SocketIOManager.shared.listenToNewParticipant()
             }
         }
         
@@ -132,6 +134,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
+        
+        if let topVC = self.navigationController?.topViewController,
+           topVC is ChatRoomSettingCollectionView {
+            return
+        }
         
         SocketIOManager.shared.closeConnection()
     }
@@ -160,18 +167,19 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     
     @MainActor
     @objc private func settingButtonTapped() {
-        DispatchQueue.main.async {
-            guard let room = self.room else { return }
-            let settingVC = ChatRoomSettingCollectionView(room: room)
-            settingVC.bindPublishers(self.imagesPublishser)
-            
-            let transition = CATransition()
-            transition.duration = 0.3
-            transition.type = .push
-            transition.subtype = .fromRight
-            self.navigationController?.view.layer.add(transition, forKey: kCATransition)
-            self.navigationController?.pushViewController(settingVC, animated: false)
-        }
+        guard let room = self.room else { return }
+        let settingVC = ChatRoomSettingCollectionView(room: room)
+        
+        settingVC.bindImagesPublishers(self.imagesPublishser)
+        let profilePublisher = ChatUserProfilesStoreManager.shared.profilesPublisher(forRoomName: room.roomName)
+        settingVC.bindProfilesPublisher(profilePublisher)
+        
+        let transition = CATransition()
+        transition.duration = 0.3
+        transition.type = .push
+        transition.subtype = .fromRight
+        self.navigationController?.view.layer.add(transition, forKey: kCATransition)
+        self.navigationController?.pushViewController(settingVC, animated: false)
     }
     
     @MainActor
@@ -277,7 +285,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
                         if !receivedMessage.attachments.isEmpty {
                             let images = receivedMessage.attachments.compactMap{ $0.toUIImage() }
                             ChatImageStoreManager.shared.addImages(images, for: receivedMessage.roomName)
-                            
+                            imagesSubject.send(images)
                         }
                     }
                 }
@@ -370,22 +378,29 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         guard let room = room else { return }
         
         if room.participants.contains(LoginManager.shared.getUserEmail) {
-            if !ChatUserProfilesStoreManager.shared.hasProfiles(for: room.roomName) {
-                Task {
-                    let profiles = try await FirebaseManager.shared.fetchUserProfiles(emails: room.participants)
-                    ChatUserProfilesStoreManager.shared.saveUserProfiles(profiles, forRoomName: room.roomName)
+            Task {
+                if !ChatUserProfilesStoreManager.shared.hasProfiles(forRoomName: room.roomName) {
+                    do {
+                        let profiles = try await FirebaseManager.shared.fetchUserProfiles(emails: room.participants)
+                        ChatUserProfilesStoreManager.shared.saveUserProfiles(profiles, forRoomName: room.roomName)
+                    } catch {
+                        print("프로필 데이터 가져오기 실패: \(error)")
+                    }
+                }
+                
+                await MainActor.run {
+                    setupChatUI()
+                    chatUIView.isHidden = false
+                    joinRoomBtn.isHidden = true
+                    updateNavigationTitle(with: room)
                 }
             }
-            setupChatUI()
-            chatUIView.isHidden = false
-            joinRoomBtn.isHidden = true
         } else {
             setJoinRoombtn()
             joinRoomBtn.isHidden = false
             chatUIView.isHidden = true
+            updateNavigationTitle(with: room)
         }
-        
-        updateNavigationTitle(with: room)
     }
     
     private func setJoinRoombtn() {
@@ -421,31 +436,37 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     @MainActor
     @IBAction func joinRoomBtnTapped(_ sender: UIButton) {
         guard let room = self.room else { return }
-        
+
         joinRoomBtn.isHidden = true
-        
-        if !ChatUserProfilesStoreManager.shared.hasProfiles(for: room.roomName) {
-            Task {
-                let profiles = try await FirebaseManager.shared.fetchUserProfiles(emails: room.participants)
+
+        Task {
+            do {
+                // 1. Firebase에 참여자 등록
+                try await FirebaseManager.shared.add_room_participant(room: room)
+                // 2. 소켓을 통해 다른 참여자에게 알림
+                SocketIOManager.shared.notifyNewParticipant(roomName: room.roomName, email: UserProfile.shared.email ?? "")
+                
+                try await Task.sleep(nanoseconds: 500_000_000) // 0.5초 대기
+                
+                let updatedRoom = try await FirebaseManager.shared.fetchRoomInfo(room: room)
+                self.room = updatedRoom
+                
+                // 3. 전체 프로필 동기화
+                let profiles = try await FirebaseManager.shared.fetchUserProfiles(emails: updatedRoom.participants)
                 ChatUserProfilesStoreManager.shared.saveUserProfiles(profiles, forRoomName: room.roomName)
+
+                // 4. UI 업데이트
+                setupChatUI()
+                chatUIView.isHidden = false
+                chatMessageCollectionView.isHidden = false
+                NSLayoutConstraint.deactivate(joinConsraints)
+                chatConstraints.append(chatMessageCollectionView.bottomAnchor.constraint(equalTo: chatUIView.topAnchor))
+                NSLayoutConstraint.activate(chatConstraints)
+
+            } catch {
+                print("방 참여 처리 실패: \(error)")
             }
         }
-        
-        FirebaseManager.shared.add_room_participant(room: room)
-        SocketIOManager.shared.joinRoom(room.roomName)
-        
-        setupChatUI()
-        
-        // UI 상태 갱신 추가
-        chatUIView.isHidden = false
-        chatMessageCollectionView.isHidden = false
-
-        // 기존 joinRoomBtn과 연결된 제약 비활성화
-        NSLayoutConstraint.deactivate(joinConsraints)
-
-        // chatUIView.topAnchor에 새로 연결
-        chatConstraints.append(chatMessageCollectionView.bottomAnchor.constraint(equalTo: chatUIView.topAnchor))
-        NSLayoutConstraint.activate(chatConstraints)
     }
     
     @objc private func keyboardWillShow(_ sender: Notification) {

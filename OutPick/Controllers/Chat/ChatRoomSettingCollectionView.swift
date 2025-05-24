@@ -54,6 +54,8 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         
         configureCollectionView()
         applyInitialSnapshot()
+        
+        SocketIOManager.shared.listenToNewParticipant()
 
         // 내비에기션 바 custom back 버튼
         let backButton = UIBarButtonItem(image: UIImage(systemName: "chevron.left"), style: .plain, target: self, action: #selector(backButtonTapped))
@@ -62,13 +64,29 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         
         // custom swipe-back 제스처 추가
         self.navigationController?.attachPopGesture(to: self.view)
+        
+        self.userProfiles.forEach {
+            guard let nickName = $0.nickname else { return }
+            print(nickName)
+        }
     }
     
-    func bindPublishers(_ publisher: AnyPublisher<[UIImage], Never>) {
+    func bindImagesPublishers(_ publisher: AnyPublisher<[UIImage], Never>) {
         publisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] images in
-                self?.updateMediaSection(with: images)
+                guard let self = self else { return }
+                self.updateMediaSection(with: images)
+            }
+            .store(in: &cancellables)
+    }
+    
+    func bindProfilesPublisher(_ publisher: AnyPublisher<[UserProfile], Never>) {
+        publisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] profiles in
+                guard let self = self else { return }
+                self.updateParticipantsSection(with: profiles)
             }
             .store(in: &cancellables)
     }
@@ -104,7 +122,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
                 return section
                 
             case .participantsSection:
-                let count = ChatUserProfilesStoreManager.shared.countProfiles(for: roomName)
+                let count = ChatUserProfilesStoreManager.shared.countProfiles(forRoomName: roomName)
                 let rowCount = ceil(Double(count) / 1.0) // 한 줄에 1명 보여주는 구성일 경우
                 let itemHeight: CGFloat = 53
                 let spacing: CGFloat = 5
@@ -132,28 +150,23 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
     private func configureDataSource() -> DataSourceType {
         dataSource = DataSourceType(collectionView: collectionView) { (collectionView, indexPath, item) -> UICollectionViewCell? in
             switch item {
-                
             case let .roomInfoItem(room):
                 let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ChatRoomInfoCell.reuseIdentifier, for: indexPath) as! ChatRoomInfoCell
                 cell.configureCell(room: room)
-                
                 return cell
-             
+
             case let .mediaItem(images):
                 let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ChatRoomMediaCollectionViewCell.reuseIdentifier, for: indexPath) as! ChatRoomMediaCollectionViewCell
                 cell.configureCell(for: images)
-                
                 return cell
-                
-                
+
             case let .participantsItem(userProfiles):
                 let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ParticipantsSectionParticipantCell.reuseIdentifier, for: indexPath) as! ParticipantsSectionParticipantCell
                 cell.configureCell(userProfiles)
                 return cell
             }
-            
         }
-        
+
         return dataSource
     }
     
@@ -168,9 +181,22 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         dataSource.apply(snapshot, animatingDifferences: false)
     }
     
-    func updateMediaSection(with images: [UIImage]) {
+    private func updateMediaSection(with images: [UIImage]) {
+        guard let dataSource = self.dataSource else {
+            print("dataSource가 아직 초기화되지 않았습니다.")
+            return
+        }
+        
         var snapshot = dataSource.snapshot()
+        snapshot.deleteItems(snapshot.itemIdentifiers(inSection: .mediaSection))
         snapshot.appendItems([.mediaItem(images)], toSection: .mediaSection)
+        dataSource.apply(snapshot, animatingDifferences: true)
+    }
+    
+    private func updateParticipantsSection(with userProfiles: [UserProfile]) {
+        var snapshot = dataSource.snapshot()
+        snapshot.deleteItems(snapshot.itemIdentifiers(inSection: .participantsSection))
+        snapshot.appendItems([.participantsItem(userProfiles)], toSection: .participantsSection)
         dataSource.apply(snapshot, animatingDifferences: true)
     }
     

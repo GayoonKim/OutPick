@@ -29,7 +29,7 @@ class SocketIOManager {
     
     private init() {
         //manager = SocketManager(socketURL: URL(string: "http://127.0.0.1:3000")!, config: [.log(true), .compress])
-        manager = SocketManager(socketURL: URL(string: "http://192.168.123.135:3000")!, config: [.log(true), .compress])
+        manager = SocketManager(socketURL: URL(string: "http://192.168.123.185:3000")!, config: [.log(true), .compress])
         socket = manager.defaultSocket
         
         socket.on(clientEvent: .connect) {data, ack in
@@ -370,6 +370,38 @@ class SocketIOManager {
                     failedImageMessage.isFailed = true
                     
                     self.messageSubject.send(failedImageMessage)
+                }
+            }
+        }
+    }
+    
+    func notifyNewParticipant(roomName: String, email: String) {
+        guard socket.status == .connected else {
+            print("소켓이 연결되어 있지 않아 새 참여자 알림 emit 실패")
+            return
+        }
+        
+        print("새 참여자 알림 emit - room: \(roomName), email: \(email)")
+        socket.emit("new participant joined", roomName, email)
+    }
+    
+    func listenToNewParticipant() {
+        socket.off("room participant updated")
+        socket.on("room participant updated") { [weak self] data, _ in
+            guard let self = self,
+                  let dict = data.first as? [String: String],
+                  let roomName = dict["roomName"],
+                  let email = dict["email"] else {
+                print("room participant updated 수신 실패: 데이터 형식 불일치")
+                return
+            }
+
+            Task {
+                do {
+                    let profile = try await FirebaseManager.shared.fetchUserProfileFromFirestore(email: email)
+                    ChatUserProfilesStoreManager.shared.appendUserProfile(profile, forRoomName: roomName)
+                } catch {
+                    print("새 참여자 프로필 불러오기 실패: \(error)")
                 }
             }
         }

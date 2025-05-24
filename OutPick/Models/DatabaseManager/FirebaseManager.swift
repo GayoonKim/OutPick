@@ -104,14 +104,14 @@ class FirebaseManager {
                     
                     guard let data = snapshot.documents.first?.data() else { throw FirebaseError.FailedToFetchProfile }
                     
-                    let profile = UserProfile.shared
-                    profile.nickname = data["nickname"] as? String
-                    profile.gender = data["gender"] as? String
-                    profile.birthdate = data["birthdate"] as? String
-                    profile.profileImageName = data["profileImageName"] as? String
-                    profile.joinedRooms = data["joinedRooms"] as? [String]
-                    
-                    return profile
+                    return UserProfile(
+                        email: email,
+                        nickname: data["nickname"] as? String,
+                        gender: data["gender"] as? String,
+                        birthdate: data["birthdate"] as? String,
+                        profileImageName: data["profileImageName"] as? String,
+                        joinedRooms: data["joinedRooms"] as? [String]
+                    )
                 }
             }
             
@@ -235,6 +235,37 @@ class FirebaseManager {
         
     }
     
+    func fetchRoomInfo(room: ChatRoom) async throws -> ChatRoom {
+        guard let roomDoc = try await getRoomDoc(room: room) else {
+            throw NSError(domain: "RoomNotFound", code: 404)
+        }
+        
+        let data = roomDoc.data()
+        
+        guard
+            let roomName = data["roomName"] as? String,
+            let roomDescription = data["roomDescription"] as? String,
+            let participants = data["participantIDs"] as? [String],
+            let creatorID = data["creatorID"] as? String,
+            let timestamp = data["createdAt"] as? Timestamp
+        else {
+            throw NSError(domain: "InvalidRoomData", code: 422)
+        }
+        
+        let roomImageName = data["roomImageName"] as? String
+        let id = data["ID"] as? String
+
+        return ChatRoom(
+            ID: id,
+            roomName: roomName,
+            roomDescription: roomDescription,
+            participants: participants,
+            creatorID: creatorID,
+            createdAt: timestamp.dateValue(),
+            roomImageName: roomImageName
+        )
+    }
+    
     // 오픈 채팅 방 정보 저장
     func saveRoomInfoToFirestore(room: ChatRoom, completion: @escaping (Result<Void, Error>) -> Void) {
         print("saveRoomInfoToFirestore 시작")
@@ -265,7 +296,7 @@ class FirebaseManager {
                     
                 })
                 
-                FirebaseManager.shared.add_room_participant(room: room)
+                try await FirebaseManager.shared.add_room_participant(room: room)
                 
                 print("saveRoomInfoToFirestore 끝")
                 completion(.success(()))
@@ -426,6 +457,7 @@ class FirebaseManager {
         }
     }
     
+    @MainActor
     func listenToRooms() async throws{
         //기존 모든 리스너 제거
         removeAllListeners()
@@ -508,7 +540,7 @@ class FirebaseManager {
     }
     
     // 방 참여자 업데이트
-    func add_room_participant(room: ChatRoom) {
+    func add_room_participant(room: ChatRoom) async throws {
     
         add_room_participant_task?.cancel()
         
