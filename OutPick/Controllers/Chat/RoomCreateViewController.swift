@@ -89,12 +89,11 @@ class RoomCreateViewController: UIViewController {
         ])
     }
     
+    @MainActor
     @objc func handleCreateButtonTap() {
         
-        DispatchQueue.main.async {
-            self.createBtn.isEnabled = false
-            LoadingIndicator.shared.start(on: self)
-        }
+        self.createBtn.isEnabled = false
+        LoadingIndicator.shared.start(on: self)
         
         Task {
             do {
@@ -110,7 +109,11 @@ class RoomCreateViewController: UIViewController {
                 
                 let room = ChatRoom(ID: nil, roomName: self.roomNameTextView.text, roomDescription: self.roomDescriptionTextView.text, participants: [LoginManager.shared.getUserEmail], creatorID: LoginManager.shared.getUserEmail, createdAt: Date(), roomImageName: nil)
                 
-                self.performSegue(withIdentifier: "ToChatRoom", sender: room)
+                let storyboard = UIStoryboard(name: "Main", bundle: nil)
+                let chatVC = storyboard.instantiateViewController(withIdentifier: "ChatRoomVC") as! ChatViewController
+                chatVC.room = room
+                chatVC.isRoomSaving = true
+                self.navigationController?.pushViewController(chatVC, animated: true)
 
                 self.saveRoomInfo(room: room)
                 
@@ -294,14 +297,14 @@ class RoomCreateViewController: UIViewController {
         }
     }
     
-    override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
-        if segue.identifier == "ToChatRoom",
-           let chatRoomVC = segue.destination as? ChatViewController,
-           let tempRoomInfo = sender as? ChatRoom {
-            chatRoomVC.room = tempRoomInfo
-            chatRoomVC.isRoomSaving = true
-        }
-    }
+//    override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
+//        if segue.identifier == "ToChatRoom",
+//           let chatRoomVC = segue.destination as? ChatViewController,
+//           let tempRoomInfo = sender as? ChatRoom {
+//            chatRoomVC.room = tempRoomInfo
+//            chatRoomVC.isRoomSaving = true
+//        }
+//    }
     
     @objc func keyboardWillShow(notification: Notification) {
         guard roomDescriptionTextView.isFirstResponder,

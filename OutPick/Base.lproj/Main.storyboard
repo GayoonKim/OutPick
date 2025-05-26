@@ -305,7 +305,7 @@
         <!--Chat View Controller-->
         <scene sceneID="jAM-wP-jqe">
             <objects>
-                <viewController storyboardIdentifier="ChatRoom" hidesBottomBarWhenPushed="YES" useStoryboardIdentifierAsRestorationIdentifier="YES" id="UDw-4m-Qed" customClass="ChatViewController" customModule="OutPick" customModuleProvider="target" sceneMemberID="viewController">
+                <viewController storyboardIdentifier="ChatRoomVC" hidesBottomBarWhenPushed="YES" useStoryboardIdentifierAsRestorationIdentifier="YES" id="UDw-4m-Qed" customClass="ChatViewController" customModule="OutPick" customModuleProvider="target" sceneMemberID="viewController">
                     <view key="view" contentMode="scaleToFill" id="eWn-8t-hw8">
                         <rect key="frame" x="0.0" y="0.0" width="402" height="874"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
@@ -495,7 +495,6 @@
                         <outlet property="roomNameCountLabel" destination="X7L-eE-fS0" id="5n9-oW-U9a"/>
                         <outlet property="roomNameTextView" destination="fLm-oH-hAk" id="yDn-IJ-f3Y"/>
                         <outlet property="scrollView" destination="FY0-uB-REf" id="APU-wZ-B2K"/>
-                        <segue destination="UDw-4m-Qed" kind="show" identifier="ToChatRoom" id="efJ-0s-BGe"/>
                     </connections>
                 </viewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="GEq-cC-GOM" userLabel="First Responder" customClass="UIResponder" sceneMemberID="firstResponder"/>
@@ -1040,9 +1039,6 @@
             <point key="canvasLocation" x="-3514.0909090909095" y="-1800"/>
         </scene>
     </scenes>
-    <inferredMetricsTieBreakers>
-        <segue reference="efJ-0s-BGe"/>
-    </inferredMetricsTieBreakers>
     <resources>
         <image name="Default_Profile" width="1024" height="1024"/>
         <image name="barButtonItem:gyW-2S-liv:image" width="128" height="101">

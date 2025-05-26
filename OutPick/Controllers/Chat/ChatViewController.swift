@@ -143,6 +143,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         SocketIOManager.shared.closeConnection()
     }
     
+    
+    
     @MainActor
     private func setupNavigationRightButtons() {
         let firstButton = UIButton(type: .system)
@@ -579,7 +581,14 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     }
     
     @objc func backButtonTapped() {
-        self.navigationController?.popViewController(animated: true)
-        
+        if isRoomSaving {
+            // 방 생성 화면에서 왔을 경우 RoomListsCollectionViewController로 이동
+            if let roomListsVC = self.navigationController?.viewControllers.first(where: { $0 is RoomListsCollectionViewController }) {
+                self.navigationController?.popToViewController(roomListsVC, animated: true)
+            }
+        } else {
+            // 일반적인 경우 이전 화면으로 이동
+            self.navigationController?.popViewController(animated: true)
+        }
     }
 }
