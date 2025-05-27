@@ -50,6 +50,11 @@ class ChatUserProfilesStoreManager {
         return getUserProfiles(forRoomName: roomName).count
     }
     
+    func clearUserProfiles(forRoomName roomName: String) {
+        profilesSubjects[roomName]?.send([])
+        profilesSubjects[roomName] = nil
+    }
+    
     func profilesPublisher(forRoomName roomName: String) -> AnyPublisher<[UserProfile], Never> {
         return profilesSubjects[roomName, default: CurrentValueSubject([])].eraseToAnyPublisher()
     }

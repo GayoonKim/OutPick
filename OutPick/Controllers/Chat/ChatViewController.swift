@@ -60,6 +60,15 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         
         return view
     }()
+    
+    private lazy var overayview: UIView = {
+        let view = UIView()
+        view.backgroundColor = UIColor.black.withAlphaComponent(0.5)
+        view.frame = view.bounds
+        view.isUserInteractionEnabled = true
+        
+        return view
+    }()
 
     private lazy var cancellables = Set<AnyCancellable>()
     private let imagesSubject = CurrentValueSubject<[UIImage], Never>([])
@@ -141,6 +150,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         }
         
         SocketIOManager.shared.closeConnection()
+        
+        guard let room = self.room else { return }
+        if !room.participants.contains(LoginManager.shared.getUserEmail) {
+            ChatUserProfilesStoreManager.shared.clearUserProfiles(forRoomName: room.roomName)
+        }
     }
     
     
@@ -375,32 +389,31 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
             ])
         }
     }
-    
+
+    @MainActor
     private func decideJoinUI() {
         guard let room = room else { return }
-        
-        if room.participants.contains(LoginManager.shared.getUserEmail) {
-            Task {
-                if !ChatUserProfilesStoreManager.shared.hasProfiles(forRoomName: room.roomName) {
-                    do {
-                        let profiles = try await FirebaseManager.shared.fetchUserProfiles(emails: room.participants)
-                        ChatUserProfilesStoreManager.shared.saveUserProfiles(profiles, forRoomName: room.roomName)
-                    } catch {
-                        print("프로필 데이터 가져오기 실패: \(error)")
-                    }
-                }
-                
-                await MainActor.run {
-                    setupChatUI()
-                    chatUIView.isHidden = false
-                    joinRoomBtn.isHidden = true
-                    updateNavigationTitle(with: room)
+
+        Task {
+            if !ChatUserProfilesStoreManager.shared.hasProfiles(forRoomName: room.roomName) {
+                do {
+                    let profiles = try await FirebaseManager.shared.fetchUserProfiles(emails: room.participants)
+                    ChatUserProfilesStoreManager.shared.saveUserProfiles(profiles, forRoomName: room.roomName)
+                } catch {
+                    print("프로필 데이터 가져오기 실패: \(error)")
                 }
             }
-        } else {
-            setJoinRoombtn()
-            joinRoomBtn.isHidden = false
-            chatUIView.isHidden = true
+
+            // 이제 메인 스레드니까 바로 UI 업데이트 가능
+            if room.participants.contains(LoginManager.shared.getUserEmail) {
+                setupChatUI()
+                chatUIView.isHidden = false
+                joinRoomBtn.isHidden = true
+            } else {
+                setJoinRoombtn()
+                joinRoomBtn.isHidden = false
+                chatUIView.isHidden = true
+            }
             updateNavigationTitle(with: room)
         }
     }

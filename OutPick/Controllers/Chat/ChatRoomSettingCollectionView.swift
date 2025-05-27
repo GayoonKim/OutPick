@@ -65,9 +65,12 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         // custom swipe-back 제스처 추가
         self.navigationController?.attachPopGesture(to: self.view)
         
-        self.userProfiles.forEach {
-            guard let nickName = $0.nickname else { return }
-            print(nickName)
+    }
+    
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        if self.userProfiles.isEmpty {
+            print("텅 텅~")
         }
     }
     
