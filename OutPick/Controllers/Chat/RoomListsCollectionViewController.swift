@@ -35,10 +35,17 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
         dataSource = configureDataSource()
         collectionView.dataSource = dataSource
         collectionView.collectionViewLayout = configureLayout()
-        collectionView.backgroundColor = UIColor(white: 0.3, alpha: 0.1)
+        collectionView.backgroundColor = /*UIColor(white: 0.3, alpha: 0.1)*/.white
+        collectionView.translatesAutoresizingMaskIntoConstraints = false
         
         self.bindPublishers()
         self.updateCollectionView()
+        self.setupNavigationBar()
+    }
+    
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        self.navigationController?.setNavigationBarHidden(true, animated: false)
     }
     
     private func bindPublishers() {
@@ -128,5 +135,34 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
             chatRoomVC.room = tempRoomInfo
             chatRoomVC.isRoomSaving = false
         }
+    }
+}
+
+private extension RoomListsCollectionViewController {
+    func setupNavigationBar() {
+        let navBar = CustomNavigationBarView()
+        navBar.translatesAutoresizingMaskIntoConstraints = false
+        self.view.addSubview(navBar)
+        
+        NSLayoutConstraint.activate([
+            navBar.topAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.topAnchor),
+            navBar.leadingAnchor.constraint(equalTo: self.view.leadingAnchor),
+            navBar.trailingAnchor.constraint(equalTo: self.view.trailingAnchor),
+            navBar.bottomAnchor.constraint(equalTo: self.collectionView.topAnchor),
+            
+            self.collectionView.topAnchor.constraint(equalTo: navBar.bottomAnchor),
+            self.collectionView.leadingAnchor.constraint(equalTo: self.view.leadingAnchor),
+            self.collectionView.trailingAnchor.constraint(equalTo: self.view.trailingAnchor),
+            self.collectionView.bottomAnchor.constraint(equalTo: self.view.bottomAnchor)
+        ])
+        
+        navBar.configure(
+            leftViews: [UILabel.navTitle("오픈채팅")],
+            rightViews: [
+                UIButton.navButtonIcon("magnifyingglass") { print("오픈채팅 검색") },
+                UIButton.navButtonIcon("plus.message.fill") { print("방 생성") },
+                UIButton.navButtonIcon("gearshape") { print("설정") }
+            ]
+        )
     }
 }

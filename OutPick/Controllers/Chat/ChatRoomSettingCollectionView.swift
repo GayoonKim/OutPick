@@ -16,6 +16,14 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
     private var images: [UIImage]
     private var userProfiles: [UserProfile] = []
     
+    private lazy var customNavigationBar: CustomNavigationBarView = {
+        let navBar = CustomNavigationBarView()
+        navBar.backgroundColor = .clear
+        navBar.translatesAutoresizingMaskIntoConstraints = false
+        
+        return navBar
+    }()
+    
     enum Section: Int, CaseIterable {
         case roomInfoSection
         case mediaSection
@@ -54,14 +62,10 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         
         configureCollectionView()
         applyInitialSnapshot()
+        setupCustomNavigationBar()
         
         SocketIOManager.shared.listenToNewParticipant()
 
-        // 내비에기션 바 custom back 버튼
-        let backButton = UIBarButtonItem(image: UIImage(systemName: "chevron.left"), style: .plain, target: self, action: #selector(backButtonTapped))
-        backButton.tintColor = .black
-        self.navigationItem.leftBarButtonItem = backButton
-        
         // custom swipe-back 제스처 추가
         self.navigationController?.attachPopGesture(to: self.view)
         
@@ -214,7 +218,50 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         collectionView.dataSource = dataSource
     }
     
-    @objc private func backButtonTapped() {
+    private func backButtonTapped() {
         self.navigationController?.popViewController(animated: true)
+    }
+    
+    private func bellButtonTapped() {
+        print(#function)
+    }
+    
+    private func favoriteButtonTapped() {
+        print(#function)
+    }
+    
+    private func settingButtonTapped() {
+        print(#function)
+    }
+}
+
+private extension ChatRoomSettingCollectionView {
+    @MainActor
+    func setupCustomNavigationBar() {
+        self.view.addSubview(customNavigationBar)
+        
+        NSLayoutConstraint.activate([
+            customNavigationBar.topAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.topAnchor),
+            customNavigationBar.leadingAnchor.constraint(equalTo: self.view.leadingAnchor),
+            customNavigationBar.trailingAnchor.constraint(equalTo: self.view.trailingAnchor),
+            
+            self.collectionView.topAnchor.constraint(equalTo: customNavigationBar.bottomAnchor),
+            self.collectionView.leadingAnchor.constraint(equalTo: self.view.leadingAnchor),
+            self.collectionView.trailingAnchor.constraint(equalTo: self.view.trailingAnchor),
+            self.collectionView.bottomAnchor.constraint(equalTo: self.view.bottomAnchor)
+        ])
+        
+        configureNavigationBarItems()
+    }
+    
+    private func configureNavigationBarItems() {
+        customNavigationBar.configure(
+            leftViews: [UIButton.navBackButton(action: backButtonTapped)],
+            rightViews: [
+                UIButton.navButtonIcon("bell.fill", action: bellButtonTapped),
+                UIButton.navButtonIcon("star", action: favoriteButtonTapped),
+                UIButton.navButtonIcon("gearshape", action: settingButtonTapped)
+            ]
+        )
     }
 }

@@ -60,14 +60,12 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         
         return view
     }()
-    
-    private lazy var overayview: UIView = {
-        let view = UIView()
-        view.backgroundColor = UIColor.black.withAlphaComponent(0.5)
-        view.frame = view.bounds
-        view.isUserInteractionEnabled = true
+
+    private lazy var customNavigationBar: CustomNavigationBarView = {
+        let navBar = CustomNavigationBarView()
+        navBar.translatesAutoresizingMaskIntoConstraints = false
         
-        return view
+        return navBar
     }()
 
     private lazy var cancellables = Set<AnyCancellable>()
@@ -87,11 +85,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         super.viewDidLoad()
         
         self.navigationController?.interactivePopGestureRecognizer?.delegate = self
-        
-        let backButton = UIBarButtonItem(image: UIImage(systemName: "chevron.left"), style: .plain, target: self, action: #selector(backButtonTapped))
-        backButton.tintColor = .black
-        self.navigationItem.leftBarButtonItem = backButton
-        
+
         setUpNotifications()
         
         if isRoomSaving {
@@ -107,11 +101,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         view.addGestureRecognizer(tapGesture)
 
         self.navigationController?.attachPopGesture(to: self.view)
-        
-        setupNavigationRightButtons()
+    
+        setupCustomNavigationBar()
         decideJoinUI()
         setupAttachmentView()
-        
         bindPublishers()
     }
     
@@ -156,48 +149,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
             ChatUserProfilesStoreManager.shared.clearUserProfiles(forRoomName: room.roomName)
         }
     }
-    
-    
-    
-    @MainActor
-    private func setupNavigationRightButtons() {
-        let firstButton = UIButton(type: .system)
-        firstButton.setImage(UIImage(systemName: "text.justify"), for: .normal)
-        firstButton.tintColor = .black
-        firstButton.addTarget(self, action: #selector(settingButtonTapped), for: .touchUpInside)
-        
-        let secondButton = UIButton(type: .system)
-        secondButton.setImage(UIImage(systemName: "magnifyingglass"), for: .normal)
-        secondButton.tintColor = .black
-        secondButton.addTarget(self, action: #selector(searchButtonTapped), for: .touchUpInside)
-        
-        let firstBarItem = UIBarButtonItem(customView: firstButton)
-        let secondBarItem = UIBarButtonItem(customView: secondButton)
-        
-        navigationItem.rightBarButtonItems = [firstBarItem, secondBarItem]
-    }
-    
-    @objc private func searchButtonTapped() {
-        print(#function)
-    }
-    
-    @MainActor
-    @objc private func settingButtonTapped() {
-        guard let room = self.room else { return }
-        let settingVC = ChatRoomSettingCollectionView(room: room)
-        
-        settingVC.bindImagesPublishers(self.imagesPublishser)
-        let profilePublisher = ChatUserProfilesStoreManager.shared.profilesPublisher(forRoomName: room.roomName)
-        settingVC.bindProfilesPublisher(profilePublisher)
-        
-        let transition = CATransition()
-        transition.duration = 0.3
-        transition.type = .push
-        transition.subtype = .fromRight
-        self.navigationController?.view.layer.add(transition, forKey: kCATransition)
-        self.navigationController?.pushViewController(settingVC, animated: false)
-    }
-    
+
     @MainActor
     private func setupChatUI() {
         if chatUIView.superview == nil {
@@ -214,8 +166,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
             chatUIView.leadingAnchor.constraint(equalTo: self.view.leadingAnchor, constant: 8),
             chatUIView.trailingAnchor.constraint(equalTo: self.view.trailingAnchor, constant: -8),
             chatUIView.heightAnchor.constraint(equalToConstant: chatUIView.minHeight),
-            
-            chatMessageCollectionView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+
+            chatMessageCollectionView.topAnchor.constraint(equalTo: customNavigationBar.bottomAnchor),
             chatMessageCollectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             chatMessageCollectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             chatMessageCollectionView.bottomAnchor.constraint(greaterThanOrEqualTo: chatUIView.topAnchor)
@@ -414,6 +366,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
                 joinRoomBtn.isHidden = false
                 chatUIView.isHidden = true
             }
+            
             updateNavigationTitle(with: room)
         }
     }
@@ -427,8 +380,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         if chatMessageCollectionView.superview == nil {
             view.addSubview(chatMessageCollectionView)
             chatMessageCollectionView.translatesAutoresizingMaskIntoConstraints = false
+            
             NSLayoutConstraint.activate([
-                chatMessageCollectionView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+                chatMessageCollectionView.topAnchor.constraint(equalTo: customNavigationBar.bottomAnchor),
+                chatMessageCollectionView.topAnchor.constraint(equalTo: navigationController!.navigationBar.bottomAnchor),
                 chatMessageCollectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
                 chatMessageCollectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             ])
@@ -593,7 +548,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         })
     }
     
-    @objc func backButtonTapped() {
+    @MainActor
+    /*@objc */private func backButtonTapped() {
         if isRoomSaving {
             // 방 생성 화면에서 왔을 경우 RoomListsCollectionViewController로 이동
             if let roomListsVC = self.navigationController?.viewControllers.first(where: { $0 is RoomListsCollectionViewController }) {
@@ -603,5 +559,43 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
             // 일반적인 경우 이전 화면으로 이동
             self.navigationController?.popViewController(animated: true)
         }
+    }
+    
+    @MainActor
+    /*@objc */private func settingButtonTapped() {
+        guard let room = self.room else { return }
+        let settingVC = ChatRoomSettingCollectionView(room: room)
+        
+        settingVC.bindImagesPublishers(self.imagesPublishser)
+        let profilePublisher = ChatUserProfilesStoreManager.shared.profilesPublisher(forRoomName: room.roomName)
+        settingVC.bindProfilesPublisher(profilePublisher)
+        
+        let transition = CATransition()
+        transition.duration = 0.3
+        transition.type = .push
+        transition.subtype = .fromRight
+        self.navigationController?.view.layer.add(transition, forKey: kCATransition)
+        self.navigationController?.pushViewController(settingVC, animated: false)
+    }
+
+    @MainActor
+    private func searchButtonTapped() {
+        print(#function)
+    }
+}
+
+private extension ChatViewController {
+    @MainActor
+    func setupCustomNavigationBar() {
+        self.view.addSubview(customNavigationBar)
+        
+        NSLayoutConstraint.activate([
+            customNavigationBar.topAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.topAnchor),
+            customNavigationBar.leadingAnchor.constraint(equalTo: self.view.leadingAnchor),
+            customNavigationBar.trailingAnchor.constraint(equalTo: self.view.trailingAnchor),
+        ])
+        
+        guard let room = self.room else { return }
+        customNavigationBar.configureForChatRoom(unreadCount: 99, roomTitle: room.roomName, participantCount: room.participants.count, onBack: backButtonTapped, onSearch: searchButtonTapped, onSetting: settingButtonTapped)
     }
 }
