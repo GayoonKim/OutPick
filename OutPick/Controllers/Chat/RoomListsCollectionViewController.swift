@@ -136,6 +136,16 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
             chatRoomVC.isRoomSaving = false
         }
     }
+    
+    private func createRoomBtnTapped() {
+        performSegue(withIdentifier: "toCreateRoomVC", sender: nil)
+    }
+    
+    private func searchBtnTapped() {
+        print("검색 버튼 탭!")
+        
+        
+    }
 }
 
 private extension RoomListsCollectionViewController {
@@ -159,9 +169,8 @@ private extension RoomListsCollectionViewController {
         navBar.configure(
             leftViews: [UILabel.navTitle("오픈채팅")],
             rightViews: [
-                UIButton.navButtonIcon("magnifyingglass") { print("오픈채팅 검색") },
-                UIButton.navButtonIcon("plus.message.fill") { print("방 생성") },
-                UIButton.navButtonIcon("gearshape") { print("설정") }
+                UIButton.navButtonIcon("magnifyingglass") { self.searchBtnTapped() },
+                UIButton.navButtonIcon("plus.message.fill") { self.createRoomBtnTapped() },
             ]
         )
     }

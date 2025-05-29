@@ -40,8 +40,8 @@ class CustomNavigationBarView: UIView {
         addSubview(container)
         container.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            container.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
-            container.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+            container.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 15),
+            container.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -15),
             container.topAnchor.constraint(equalTo: topAnchor),
             container.bottomAnchor.constraint(equalTo: bottomAnchor),
             container.heightAnchor.constraint(equalToConstant: 44)

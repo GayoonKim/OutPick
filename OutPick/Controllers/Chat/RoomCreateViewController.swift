@@ -18,6 +18,7 @@ class RoomCreateViewController: UIViewController {
     @IBOutlet weak var roomDescriptionTextView: UITextView!
     @IBOutlet weak var roomDescriptionCountLabel: UILabel!
     @IBOutlet weak var scrollView: UIScrollView!
+    @IBOutlet weak var scrollViewTopConstraint: NSLayoutConstraint!
     
     @IBOutlet weak var roomImageView: UIImageView!
     
@@ -41,19 +42,27 @@ class RoomCreateViewController: UIViewController {
         return button
     }()
     
+    private lazy var customNavigationBar: CustomNavigationBarView = {
+        let navBar = CustomNavigationBarView()
+        navBar.translatesAutoresizingMaskIntoConstraints = false
+        
+        return navBar
+    }()
+    
     private lazy var cancellables: Set<AnyCancellable> = []
     
     override func viewDidLoad() {
         super.viewDidLoad()
         
+        setupCustomNavigationBar()
         setupTextView(roomNameTextView)
         setupTextView(roomDescriptionTextView)
         addImageButtonSetup()
         setupCreateButton()
 
-        let cancelButton = UIBarButtonItem(image: UIImage(systemName: "xmark"), style: .plain, target: self, action: #selector(cancelButtonTapped))
-        cancelButton.tintColor = .black
-        self.navigationItem.leftBarButtonItem = cancelButton
+//        let cancelButton = UIBarButtonItem(image: UIImage(systemName: "xmark"), style: .plain, target: self, action: #selector(cancelButtonTapped))
+//        cancelButton.tintColor = .black
+//        self.navigationItem.leftBarButtonItem = cancelButton
 
         self.roomImageView.clipsToBounds = true
         self.roomImageView.layer.cornerRadius = 15
@@ -128,18 +137,6 @@ class RoomCreateViewController: UIViewController {
         }
         
     }
-    
-    @objc func cancelButtonTapped() {
-        let alert = UIAlertController(title: "채팅방 개설을 취소하시겠어요?", message: nil, preferredStyle: .alert)
-        
-        alert.addAction(UIAlertAction(title: "취소", style: .default, handler: nil))
-        alert.addAction(UIAlertAction(title: "나가기", style: .destructive, handler:  { _ in
-            self.navigationController?.popViewController(animated: true)
-        }))
-        
-        self.present(alert, animated: true, completion: nil)
-        }
-    
     
     private func setupTextView(_ textView: UITextView) {
         textView.delegate = self
@@ -416,4 +413,37 @@ extension RoomCreateViewController: UIImagePickerControllerDelegate & UINavigati
         picker.dismiss(animated: true, completion: nil)
     }
     
+    @objc func cancelButtonTapped() {
+        let alert = UIAlertController(title: "채팅방 개설을 취소하시겠어요?", message: nil, preferredStyle: .alert)
+        
+        alert.addAction(UIAlertAction(title: "취소", style: .default, handler: nil))
+        alert.addAction(UIAlertAction(title: "나가기", style: .destructive, handler:  { _ in
+            self.navigationController?.popViewController(animated: true)
+        }))
+        
+        self.present(alert, animated: true, completion: nil)
+        }
+}
+
+private extension RoomCreateViewController {
+    @MainActor
+    func setupCustomNavigationBar() {
+        self.view.addSubview(customNavigationBar)
+        self.scrollView.translatesAutoresizingMaskIntoConstraints = false
+        
+        NSLayoutConstraint.activate([
+            customNavigationBar.topAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.topAnchor),
+            customNavigationBar.leadingAnchor.constraint(equalTo: self.view.leadingAnchor),
+            customNavigationBar.trailingAnchor.constraint(equalTo: self.view.trailingAnchor),
+        ])
+        
+        scrollViewTopConstraint.isActive = false
+        scrollView.topAnchor.constraint(equalTo: customNavigationBar.bottomAnchor).isActive = true
+        
+        customNavigationBar.configure(
+            leftViews: [UIButton.navBackButton(action: cancelButtonTapped)],
+            centerViews: [UILabel.navTitle("채팅방 만들기")],
+            rightViews: []
+        )
+    }
 }

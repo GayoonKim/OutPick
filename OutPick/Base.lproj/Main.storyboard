@@ -242,20 +242,20 @@
                                     <autoresizingMask key="autoresizingMask"/>
                                     <subviews>
                                         <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleToFill" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="photo.artframe" catalog="system" translatesAutoresizingMaskIntoConstraints="NO" id="IYJ-bb-nP7">
-                                            <rect key="frame" x="8" y="9.6666666666666643" width="50" height="47"/>
+                                            <rect key="frame" x="15" y="9.6666666666666643" width="50" height="47"/>
                                             <constraints>
                                                 <constraint firstAttribute="height" constant="50.000000000000007" id="3h6-fs-0OK"/>
                                                 <constraint firstAttribute="width" constant="50" id="RIw-7l-AE7"/>
                                             </constraints>
                                         </imageView>
                                         <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="방 설명" textAlignment="natural" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="Wqb-Ws-HD3">
-                                            <rect key="frame" x="8" y="66" width="385" height="14.666666666666671"/>
+                                            <rect key="frame" x="15" y="66" width="378" height="14.666666666666671"/>
                                             <fontDescription key="fontDescription" type="system" weight="thin" pointSize="12"/>
                                             <nil key="textColor"/>
                                             <nil key="highlightedColor"/>
                                         </label>
                                         <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="방 이름" textAlignment="natural" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="lkd-KL-af2">
-                                            <rect key="frame" x="66" y="24" width="327" height="17"/>
+                                            <rect key="frame" x="73" y="24" width="320" height="17"/>
                                             <fontDescription key="fontDescription" type="system" weight="semibold" pointSize="14"/>
                                             <nil key="textColor"/>
                                             <nil key="highlightedColor"/>
@@ -263,10 +263,10 @@
                                     </subviews>
                                     <constraints>
                                         <constraint firstItem="lkd-KL-af2" firstAttribute="leading" secondItem="IYJ-bb-nP7" secondAttribute="trailing" constant="8" id="EW6-v3-Set"/>
-                                        <constraint firstItem="Wqb-Ws-HD3" firstAttribute="leading" secondItem="Mvq-Je-nxa" secondAttribute="leading" constant="8" id="L8H-CD-H14"/>
+                                        <constraint firstItem="Wqb-Ws-HD3" firstAttribute="leading" secondItem="Mvq-Je-nxa" secondAttribute="leading" constant="15" id="L8H-CD-H14"/>
                                         <constraint firstItem="Wqb-Ws-HD3" firstAttribute="top" secondItem="lkd-KL-af2" secondAttribute="bottom" constant="25" id="WUh-3S-uqP"/>
                                         <constraint firstItem="Wqb-Ws-HD3" firstAttribute="top" secondItem="IYJ-bb-nP7" secondAttribute="bottom" constant="8" id="ZOa-ad-kk3"/>
-                                        <constraint firstItem="IYJ-bb-nP7" firstAttribute="leading" secondItem="Mvq-Je-nxa" secondAttribute="leading" constant="8" id="bfW-VZ-rFg"/>
+                                        <constraint firstItem="IYJ-bb-nP7" firstAttribute="leading" secondItem="Mvq-Je-nxa" secondAttribute="leading" constant="15" id="bfW-VZ-rFg"/>
                                         <constraint firstItem="IYJ-bb-nP7" firstAttribute="top" secondItem="Mvq-Je-nxa" secondAttribute="top" constant="8" id="ea5-Xb-cV8"/>
                                         <constraint firstAttribute="trailing" secondItem="lkd-KL-af2" secondAttribute="trailing" id="uS2-Ei-ONy"/>
                                         <constraint firstAttribute="trailing" secondItem="Wqb-Ws-HD3" secondAttribute="trailing" id="yaW-yC-SxJ"/>
@@ -290,7 +290,7 @@
                         <barButtonItem key="rightBarButtonItem" image="plus.message.fill" catalog="system" id="7s9-kt-voK">
                             <color key="tintColor" white="0.0" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
                             <connections>
-                                <segue destination="DYZ-E1-8Ad" kind="show" id="Mbj-3x-i5N"/>
+                                <segue destination="DYZ-E1-8Ad" kind="show" identifier="toCreateRoomVC" id="Mbj-3x-i5N"/>
                             </connections>
                         </barButtonItem>
                     </navigationItem>
@@ -474,7 +474,6 @@
                         <viewLayoutGuide key="safeArea" id="tFJ-az-V0Y"/>
                         <color key="backgroundColor" systemColor="systemBackgroundColor"/>
                         <constraints>
-                            <constraint firstItem="FY0-uB-REf" firstAttribute="top" secondItem="tFJ-az-V0Y" secondAttribute="top" id="0pb-gJ-jp7"/>
                             <constraint firstItem="of7-b7-nPu" firstAttribute="centerY" secondItem="H26-Go-n2i" secondAttribute="centerY" id="5R1-LE-Irm"/>
                             <constraint firstItem="of7-b7-nPu" firstAttribute="centerX" secondItem="H26-Go-n2i" secondAttribute="centerX" id="KeO-0c-vKn"/>
                             <constraint firstItem="FY0-uB-REf" firstAttribute="bottom" secondItem="tFJ-az-V0Y" secondAttribute="bottom" id="Rkg-pD-Z7u"/>
@@ -495,6 +494,7 @@
                         <outlet property="roomNameCountLabel" destination="X7L-eE-fS0" id="5n9-oW-U9a"/>
                         <outlet property="roomNameTextView" destination="fLm-oH-hAk" id="yDn-IJ-f3Y"/>
                         <outlet property="scrollView" destination="FY0-uB-REf" id="APU-wZ-B2K"/>
+                        <outlet property="scrollViewTopConstraint" destination="nVu-7Q-bTA" id="Y2A-vu-tPS"/>
                     </connections>
                 </viewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="GEq-cC-GOM" userLabel="First Responder" customClass="UIResponder" sceneMemberID="firstResponder"/>
