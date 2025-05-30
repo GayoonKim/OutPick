@@ -85,7 +85,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
         super.viewDidLoad()
         
         self.navigationController?.interactivePopGestureRecognizer?.delegate = self
-
+        
         setUpNotifications()
         
         if isRoomSaving {
@@ -550,14 +550,33 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     
     @MainActor
     /*@objc */private func backButtonTapped() {
+        let transition = CATransition()
+        transition.duration = 0.35
+        transition.type = .push
+        transition.subtype = .fromLeft
+        transition.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        
+        self.view.window?.layer.add(transition, forKey: kCATransition)
+        
+        
         if isRoomSaving {
             // 방 생성 화면에서 왔을 경우 RoomListsCollectionViewController로 이동
-            if let roomListsVC = self.navigationController?.viewControllers.first(where: { $0 is RoomListsCollectionViewController }) {
-                self.navigationController?.popToViewController(roomListsVC, animated: true)
+//            if let roomListsVC = self.navigationController?.viewControllers.first(where: { $0 is RoomListsCollectionViewController }) {
+//                self.navigationController?.popToViewController(roomListsVC, animated: true)
+//            }
+            
+            if let previous = self.presentingViewController {
+                if previous is RoomCreateViewController {
+                    let storyboard = UIStoryboard(name: "Main", bundle: nil)
+                    let chatListVC = storyboard.instantiateViewController(withIdentifier: "chatListVC")
+                    chatListVC.modalPresentationStyle = .fullScreen
+                    self.present(chatListVC, animated: false)
+                }
             }
         } else {
             // 일반적인 경우 이전 화면으로 이동
-            self.navigationController?.popViewController(animated: true)
+//            self.navigationController?.popViewController(animated: true)
+            self.dismiss(animated: false)
         }
     }
     

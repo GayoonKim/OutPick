@@ -118,11 +118,26 @@ class RoomCreateViewController: UIViewController {
                 
                 let room = ChatRoom(ID: nil, roomName: self.roomNameTextView.text, roomDescription: self.roomDescriptionTextView.text, participants: [LoginManager.shared.getUserEmail], creatorID: LoginManager.shared.getUserEmail, createdAt: Date(), roomImageName: nil)
                 
+//                let storyboard = UIStoryboard(name: "Main", bundle: nil)
+//                let chatVC = storyboard.instantiateViewController(withIdentifier: "chatRoomVC") as! ChatViewController
+//                chatVC.room = room
+//                chatVC.isRoomSaving = true
+//                self.navigationController?.pushViewController(chatVC, animated: true)
+                
                 let storyboard = UIStoryboard(name: "Main", bundle: nil)
-                let chatVC = storyboard.instantiateViewController(withIdentifier: "ChatRoomVC") as! ChatViewController
-                chatVC.room = room
-                chatVC.isRoomSaving = true
-                self.navigationController?.pushViewController(chatVC, animated: true)
+                guard let chatRoomVC = storyboard.instantiateViewController(withIdentifier: "chatRoomVC") as? ChatViewController else { return }
+                chatRoomVC.room = room
+                chatRoomVC.isRoomSaving = true
+                chatRoomVC.modalPresentationStyle = .fullScreen
+                
+                let transition = CATransition()
+                transition.duration = 0.35
+                transition.type = .push
+                transition.subtype = .fromRight
+                transition.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                
+                self.view.window?.layer.add(transition, forKey: kCATransition)
+                self.present(chatRoomVC, animated: false, completion: nil)
 
                 self.saveRoomInfo(room: room)
                 

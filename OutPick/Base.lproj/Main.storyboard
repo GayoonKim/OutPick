@@ -32,7 +32,7 @@
         <!--Home Collection View Controller-->
         <scene sceneID="S3S-Ay-0XO">
             <objects>
-                <collectionViewController id="T43-zg-hFW" customClass="HomeCollectionViewController" customModule="OutPick" customModuleProvider="target" sceneMemberID="viewController">
+                <collectionViewController storyboardIdentifier="weatherVC" useStoryboardIdentifierAsRestorationIdentifier="YES" id="T43-zg-hFW" customClass="HomeCollectionViewController" customModule="OutPick" customModuleProvider="target" sceneMemberID="viewController">
                     <collectionView key="view" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="scaleToFill" dataMode="prototypes" id="PWS-2l-4ca">
                         <rect key="frame" x="0.0" y="0.0" width="402" height="791"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
@@ -222,7 +222,7 @@
         <!--오픈 채팅-->
         <scene sceneID="Zen-W6-h02">
             <objects>
-                <collectionViewController id="1bN-e9-yBk" customClass="RoomListsCollectionViewController" customModule="OutPick" customModuleProvider="target" sceneMemberID="viewController">
+                <collectionViewController storyboardIdentifier="chatListVC" useStoryboardIdentifierAsRestorationIdentifier="YES" id="1bN-e9-yBk" customClass="RoomListsCollectionViewController" customModule="OutPick" customModuleProvider="target" sceneMemberID="viewController">
                     <collectionView key="view" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="scaleToFill" dataMode="prototypes" id="0Hr-Vz-MTQ">
                         <rect key="frame" x="0.0" y="0.0" width="402" height="791"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
@@ -305,7 +305,7 @@
         <!--Chat View Controller-->
         <scene sceneID="jAM-wP-jqe">
             <objects>
-                <viewController storyboardIdentifier="ChatRoomVC" hidesBottomBarWhenPushed="YES" useStoryboardIdentifierAsRestorationIdentifier="YES" id="UDw-4m-Qed" customClass="ChatViewController" customModule="OutPick" customModuleProvider="target" sceneMemberID="viewController">
+                <viewController storyboardIdentifier="chatRoomVC" hidesBottomBarWhenPushed="YES" useStoryboardIdentifierAsRestorationIdentifier="YES" id="UDw-4m-Qed" customClass="ChatViewController" customModule="OutPick" customModuleProvider="target" sceneMemberID="viewController">
                     <view key="view" contentMode="scaleToFill" id="eWn-8t-hw8">
                         <rect key="frame" x="0.0" y="0.0" width="402" height="874"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
@@ -356,7 +356,7 @@
         <!--채팅방 만들기-->
         <scene sceneID="5Rt-Cj-pb1">
             <objects>
-                <viewController hidesBottomBarWhenPushed="YES" id="DYZ-E1-8Ad" customClass="RoomCreateViewController" customModule="OutPick" customModuleProvider="target" sceneMemberID="viewController">
+                <viewController storyboardIdentifier="chatRoomCreateVC" hidesBottomBarWhenPushed="YES" useStoryboardIdentifierAsRestorationIdentifier="YES" id="DYZ-E1-8Ad" customClass="RoomCreateViewController" customModule="OutPick" customModuleProvider="target" sceneMemberID="viewController">
                     <view key="view" contentMode="scaleToFill" id="H26-Go-n2i">
                         <rect key="frame" x="0.0" y="0.0" width="402" height="874"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
@@ -983,6 +983,21 @@
                 <placeholder placeholderIdentifier="IBFirstResponder" id="IVZ-LK-DwW" userLabel="First Responder" customClass="UIResponder" sceneMemberID="firstResponder"/>
             </objects>
             <point key="canvasLocation" x="-2096" y="-1074"/>
+        </scene>
+        <!--Custom Tab Bar View Controller-->
+        <scene sceneID="7Db-xR-LNo">
+            <objects>
+                <viewController id="lkA-sU-J8B" customClass="CustomTabBarViewController" customModule="OutPick" customModuleProvider="target" sceneMemberID="viewController">
+                    <view key="view" contentMode="scaleToFill" id="cn9-aJ-fmK">
+                        <rect key="frame" x="0.0" y="0.0" width="402" height="874"/>
+                        <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
+                        <viewLayoutGuide key="safeArea" id="jrp-pi-bde"/>
+                        <color key="backgroundColor" systemColor="systemBackgroundColor"/>
+                    </view>
+                </viewController>
+                <placeholder placeholderIdentifier="IBFirstResponder" id="ges-jQ-JsN" userLabel="First Responder" customClass="UIResponder" sceneMemberID="firstResponder"/>
+            </objects>
+            <point key="canvasLocation" x="-5090" y="1439"/>
         </scene>
         <!--Collection View Controller-->
         <scene sceneID="Yod-wp-IUn">
