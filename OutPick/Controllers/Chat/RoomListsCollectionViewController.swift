@@ -9,7 +9,7 @@ import UIKit
 import Kingfisher
 import Combine
 
-class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRecognizerDelegate {
+class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRecognizerDelegate, ChatModalPushAnimatable {
     
     enum Section: Hashable {
         case main
@@ -71,64 +71,6 @@ class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRe
         }
     }
     
-//    private func switchScreen(_ index: Int) {
-//        if currentTabIndex == index {
-//            return
-//        }
-//        
-//        if let current = currentChildViewController {
-//            current.willMove(toParent: nil)
-//            current.view.removeFromSuperview()
-//            current.removeFromParent()
-//        }
-//        
-//        let newVC: UIViewController
-//        if let existing = tabViewControllers[index] {
-//            newVC = existing
-//        } else {
-//            let storyboard = UIStoryboard(name: "Main", bundle: nil)
-//            switch index {
-//            case 0:
-//                newVC = storyboard.instantiateViewController(withIdentifier: "weatherVC")
-//            case 1:
-//                newVC = storyboard.instantiateViewController(withIdentifier: "chatListVC")
-//            default:
-//                return
-//            }
-//            tabViewControllers[index] = newVC
-//        }
-//
-//        // 새 VC 추가
-//        addChild(newVC)
-//        view.insertSubview(newVC.view, belowSubview: customTabBar)
-//        newVC.view.frame = view.bounds
-//        newVC.didMove(toParent: self)
-//
-//        currentChildViewController = newVC
-//        currentTabIndex = index
-//    }
-//    
-//    private func setupCustomTabBar() {
-//        view.addSubview(customTabBar)
-//        customTabBar.translatesAutoresizingMaskIntoConstraints = false
-//        NSLayoutConstraint.activate([
-//            customTabBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-//            customTabBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-//            customTabBar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-//            customTabBar.heightAnchor.constraint(equalToConstant: 80)
-//            ])
-//        
-//        customTabBar.tabSelected
-//            .receive(on: DispatchQueue.main)
-//            .sink { [weak self] selectedIndex in
-//                guard let self = self else { return }
-//                guard self.currentTabIndex != selectedIndex else { return }
-//                self.switchScreen(selectedIndex)
-//                customTabBar.updateButtonStates(selectedIndex)
-//            }
-//            .store(in: &cancellables)
-//    }
-//    
     private func bindPublishers() {
         // 방 목록 관련
         FirebaseManager.shared.$chatRooms
@@ -205,49 +147,21 @@ class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRe
     
     override func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         guard let selectedItem = dataSource.itemIdentifier(for: indexPath) else { return }
-        
-//        performSegue(withIdentifier: "ToChatRoom", sender: selectedItem)
-        
+
         let storyboard = UIStoryboard(name: "Main", bundle: nil)
         guard let chatRoomVC = storyboard.instantiateViewController(withIdentifier: "chatRoomVC") as? ChatViewController else { return }
         chatRoomVC.room = selectedItem
         chatRoomVC.isRoomSaving = false
         chatRoomVC.modalPresentationStyle = .fullScreen
-        
-        let transition = CATransition()
-        transition.duration = 0.35
-        transition.type = .push
-        transition.subtype = .fromRight
-        transition.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-        
-        self.view.window?.layer.add(transition, forKey: kCATransition)
-        self.present(chatRoomVC, animated: false, completion: nil)
+        ChatModalPushTransitionManager.present(chatRoomVC, from: self)
     }
-    
-//    override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
-//        if segue.identifier == "ToChatRoom",
-//           let chatRoomVC = segue.destination as? ChatViewController,
-//           let tempRoomInfo = sender as? ChatRoom {
-//            chatRoomVC.room = tempRoomInfo
-//            chatRoomVC.isRoomSaving = false
-//        }
-//    }
-    
+
     private func createRoomBtnTapped() {
-//        performSegue(withIdentifier: "toCreateRoomVC", sender: nil)
-        
         let storyboard = UIStoryboard(name: "Main", bundle: nil)
         guard let chatRoomCreateVC = storyboard.instantiateViewController(identifier: "chatRoomCreateVC") as? RoomCreateViewController else { return }
         chatRoomCreateVC.modalPresentationStyle = .fullScreen
-        
-        let transition = CATransition()
-        transition.duration = 0.35
-        transition.type = .push
-        transition.subtype = .fromRight
-        transition.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-        
-        self.view.window?.layer.add(transition, forKey: kCATransition)
-        self.present(chatRoomCreateVC, animated: false, completion: nil)
+
+        ChatModalPushTransitionManager.present(chatRoomCreateVC, from: self)
     }
     
     private func searchBtnTapped() {

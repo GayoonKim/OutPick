@@ -36,6 +36,8 @@ class CustomTabBarViewController: UICollectionViewController {
             customTabBar.heightAnchor.constraint(equalToConstant: 80),
         ])
         
+        customTabBar.updateButtonStates(0)
+        
         customTabBar.tabSelected
             .receive(on: RunLoop.main)
             .sink{ [weak self] index in
@@ -67,6 +69,8 @@ class CustomTabBarViewController: UICollectionViewController {
         view.insertSubview(vc.view, belowSubview: customTabBar)
         vc.view.frame = view.bounds
         vc.didMove(toParent: self)
+        
+        customTabBar.updateButtonStates(index)
         
         currentChildViewController = vc
         currentTabIndex = index

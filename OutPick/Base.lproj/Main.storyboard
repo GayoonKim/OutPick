@@ -842,10 +842,10 @@
             </objects>
             <point key="canvasLocation" x="-1621.3636363636365" y="-1800"/>
         </scene>
-        <!--Main Tab Bar Controller-->
+        <!--Tab Bar Controller-->
         <scene sceneID="ZQS-A1-iHy">
             <objects>
-                <tabBarController storyboardIdentifier="HomeTBC" useStoryboardIdentifierAsRestorationIdentifier="YES" id="Xg2-pS-8yD" customClass="MainTabBarController" customModule="OutPick" customModuleProvider="target" sceneMemberID="viewController">
+                <tabBarController storyboardIdentifier="HomeTBC" useStoryboardIdentifierAsRestorationIdentifier="YES" id="Xg2-pS-8yD" sceneMemberID="viewController">
                     <navigationItem key="navigationItem" id="yPZ-lu-95x"/>
                     <simulatedNavigationBarMetrics key="simulatedTopBarMetrics" prompted="NO"/>
                     <simulatedTabBarMetrics key="simulatedBottomBarMetrics"/>

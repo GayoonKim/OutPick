@@ -8,7 +8,7 @@
 import UIKit
 import Combine
 
-class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecognizerDelegate, UINavigationControllerDelegate {
+class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecognizerDelegate, UINavigationControllerDelegate, ChatModalPushAnimatable {
     
     var interactiveTransition: UIPercentDrivenInteractiveTransition?
     
@@ -42,9 +42,12 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
     private var cancellables = Set<AnyCancellable>()
     
     init(room: ChatRoom) {
+        print(#function, "여기서 호출")
+        
         self.room = room
         self.images = ChatImageStoreManager.shared.getImages(for: room.roomName)
         self.userProfiles = ChatUserProfilesStoreManager.shared.getUserProfiles(forRoomName: room.roomName)
+        print(ChatUserProfilesStoreManager.shared.getUserProfiles(forRoomName: room.roomName))
         
         let layout = Self.configureLayout(room.roomName)
         super.init(collectionViewLayout: layout)
@@ -67,15 +70,11 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         SocketIOManager.shared.listenToNewParticipant()
 
         // custom swipe-back 제스처 추가
-        self.navigationController?.attachPopGesture(to: self.view)
-        
+//        self.navigationController?.attachPopGesture(to: self.view)
     }
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        if self.userProfiles.isEmpty {
-            print("텅 텅~")
-        }
     }
     
     func bindImagesPublishers(_ publisher: AnyPublisher<[UIImage], Never>) {
@@ -219,7 +218,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
     }
     
     private func backButtonTapped() {
-        self.navigationController?.popViewController(animated: true)
+        ChatModalPushTransitionManager.dismiss(from: self)
     }
     
     private func bellButtonTapped() {

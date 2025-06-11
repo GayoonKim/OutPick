@@ -60,10 +60,6 @@ class RoomCreateViewController: UIViewController {
         addImageButtonSetup()
         setupCreateButton()
 
-//        let cancelButton = UIBarButtonItem(image: UIImage(systemName: "xmark"), style: .plain, target: self, action: #selector(cancelButtonTapped))
-//        cancelButton.tintColor = .black
-//        self.navigationItem.leftBarButtonItem = cancelButton
-
         self.roomImageView.clipsToBounds = true
         self.roomImageView.layer.cornerRadius = 15
         
@@ -117,27 +113,14 @@ class RoomCreateViewController: UIViewController {
                 }
                 
                 let room = ChatRoom(ID: nil, roomName: self.roomNameTextView.text, roomDescription: self.roomDescriptionTextView.text, participants: [LoginManager.shared.getUserEmail], creatorID: LoginManager.shared.getUserEmail, createdAt: Date(), roomImageName: nil)
-                
-//                let storyboard = UIStoryboard(name: "Main", bundle: nil)
-//                let chatVC = storyboard.instantiateViewController(withIdentifier: "chatRoomVC") as! ChatViewController
-//                chatVC.room = room
-//                chatVC.isRoomSaving = true
-//                self.navigationController?.pushViewController(chatVC, animated: true)
-                
+
                 let storyboard = UIStoryboard(name: "Main", bundle: nil)
                 guard let chatRoomVC = storyboard.instantiateViewController(withIdentifier: "chatRoomVC") as? ChatViewController else { return }
                 chatRoomVC.room = room
                 chatRoomVC.isRoomSaving = true
                 chatRoomVC.modalPresentationStyle = .fullScreen
-                
-                let transition = CATransition()
-                transition.duration = 0.35
-                transition.type = .push
-                transition.subtype = .fromRight
-                transition.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                
-                self.view.window?.layer.add(transition, forKey: kCATransition)
-                self.present(chatRoomVC, animated: false, completion: nil)
+
+                ChatModalPushTransitionManager.present(chatRoomVC, from: self)
 
                 self.saveRoomInfo(room: room)
                 
@@ -308,16 +291,7 @@ class RoomCreateViewController: UIViewController {
             createBtn.isEnabled = false
         }
     }
-    
-//    override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
-//        if segue.identifier == "ToChatRoom",
-//           let chatRoomVC = segue.destination as? ChatViewController,
-//           let tempRoomInfo = sender as? ChatRoom {
-//            chatRoomVC.room = tempRoomInfo
-//            chatRoomVC.isRoomSaving = true
-//        }
-//    }
-    
+
     @objc func keyboardWillShow(notification: Notification) {
         guard roomDescriptionTextView.isFirstResponder,
               let keyboardFrame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
@@ -433,7 +407,7 @@ extension RoomCreateViewController: UIImagePickerControllerDelegate & UINavigati
         
         alert.addAction(UIAlertAction(title: "취소", style: .default, handler: nil))
         alert.addAction(UIAlertAction(title: "나가기", style: .destructive, handler:  { _ in
-            self.navigationController?.popViewController(animated: true)
+            ChatModalPushTransitionManager.dismiss(from: self)
         }))
         
         self.present(alert, animated: true, completion: nil)

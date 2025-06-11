@@ -13,7 +13,7 @@ import Combine
 import PhotosUI
 import Firebase
 
-class ChatViewController: UIViewController, UINavigationControllerDelegate {
+class ChatViewController: UIViewController, UINavigationControllerDelegate, ChatModalPushAnimatable {
     
     @IBOutlet weak var activityIndicator: UIActivityIndicatorView!
     @IBOutlet weak var sideMenuBtn: UIBarButtonItem!
@@ -550,14 +550,14 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     
     @MainActor
     /*@objc */private func backButtonTapped() {
+        
         let transition = CATransition()
-        transition.duration = 0.35
+        transition.duration = 0.3
         transition.type = .push
-        transition.subtype = .fromLeft
+        transition.subtype = .fromLeft // 왼쪽에서 오른쪽으로 이동 (pop 느낌)
         transition.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-        
+
         self.view.window?.layer.add(transition, forKey: kCATransition)
-        
         
         if isRoomSaving {
             // 방 생성 화면에서 왔을 경우 RoomListsCollectionViewController로 이동
@@ -584,17 +584,13 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate {
     /*@objc */private func settingButtonTapped() {
         guard let room = self.room else { return }
         let settingVC = ChatRoomSettingCollectionView(room: room)
+        settingVC.modalPresentationStyle = .fullScreen
         
         settingVC.bindImagesPublishers(self.imagesPublishser)
         let profilePublisher = ChatUserProfilesStoreManager.shared.profilesPublisher(forRoomName: room.roomName)
         settingVC.bindProfilesPublisher(profilePublisher)
-        
-        let transition = CATransition()
-        transition.duration = 0.3
-        transition.type = .push
-        transition.subtype = .fromRight
-        self.navigationController?.view.layer.add(transition, forKey: kCATransition)
-        self.navigationController?.pushViewController(settingVC, animated: false)
+  
+        ChatModalPushTransitionManager.present(settingVC, from: self)
     }
 
     @MainActor
