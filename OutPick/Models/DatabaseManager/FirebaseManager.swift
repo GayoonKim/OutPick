@@ -99,7 +99,7 @@ class FirebaseManager {
             for documentID in documentIDs {
                 group.addTask {
                     
-                    let refToCheck = self.db.collection("Users").document(documentID).collection("\(DateManager.shared.currentMonth) Users").whereField("email", isEqualTo: email)
+                    let refToCheck = self.db.collection("Users").document(documentID).collection("\(documentID) Users").whereField("email", isEqualTo: email)
                     let snapshot = try await refToCheck.getDocuments()
                     
                     guard let data = snapshot.documents.first?.data() else { throw FirebaseError.FailedToFetchProfile }

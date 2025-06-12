@@ -120,7 +120,7 @@ class RoomCreateViewController: UIViewController {
                 chatRoomVC.isRoomSaving = true
                 chatRoomVC.modalPresentationStyle = .fullScreen
 
-                ChatModalPushTransitionManager.present(chatRoomVC, from: self)
+                ChatModalTransitionManager.present(chatRoomVC, from: self)
 
                 self.saveRoomInfo(room: room)
                 
@@ -407,7 +407,7 @@ extension RoomCreateViewController: UIImagePickerControllerDelegate & UINavigati
         
         alert.addAction(UIAlertAction(title: "취소", style: .default, handler: nil))
         alert.addAction(UIAlertAction(title: "나가기", style: .destructive, handler:  { _ in
-            ChatModalPushTransitionManager.dismiss(from: self)
+            ChatModalTransitionManager.dismiss(from: self)
         }))
         
         self.present(alert, animated: true, completion: nil)

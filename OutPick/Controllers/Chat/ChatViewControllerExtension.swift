@@ -129,5 +129,3 @@ extension ChatViewController: UIImagePickerControllerDelegate {
         picker.dismiss(animated: true)
     }
 }
-
-

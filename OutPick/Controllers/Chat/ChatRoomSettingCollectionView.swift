@@ -8,7 +8,7 @@
 import UIKit
 import Combine
 
-class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecognizerDelegate, UINavigationControllerDelegate, ChatModalPushAnimatable {
+class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecognizerDelegate, UINavigationControllerDelegate, ChatModalAnimatable {
     
     var interactiveTransition: UIPercentDrivenInteractiveTransition?
     
@@ -61,16 +61,13 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         super.viewDidLoad()
         
         self.view.backgroundColor = .systemGroupedBackground
-        self.navigationController?.hidesBottomBarWhenPushed = true
-        
+        self.attachInteractiveDismissGesture()
+
         configureCollectionView()
         applyInitialSnapshot()
         setupCustomNavigationBar()
         
         SocketIOManager.shared.listenToNewParticipant()
-
-        // custom swipe-back 제스처 추가
-//        self.navigationController?.attachPopGesture(to: self.view)
     }
     
     override func viewWillAppear(_ animated: Bool) {
@@ -218,7 +215,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
     }
     
     private func backButtonTapped() {
-        ChatModalPushTransitionManager.dismiss(from: self)
+        ChatModalTransitionManager.dismiss(from: self)
     }
     
     private func bellButtonTapped() {

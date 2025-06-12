@@ -9,7 +9,7 @@ import UIKit
 import Kingfisher
 import Combine
 
-class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRecognizerDelegate, ChatModalPushAnimatable {
+class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRecognizerDelegate, ChatModalAnimatable {
     
     enum Section: Hashable {
         case main
@@ -47,16 +47,7 @@ class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRe
         self.updateCollectionView()
         self.setupNavigationBar()
     }
-    
-    override func viewWillAppear(_ animated: Bool) {
-        super.viewWillAppear(animated)
-        self.navigationController?.setNavigationBarHidden(true, animated: false)
-    }
-    
-    override func viewWillDisappear(_ animated: Bool) {
-        super.viewWillDisappear(animated)
-    }
-    
+
     override func viewController(_ index: Int) -> UIViewController {
         let storyboard = UIStoryboard(name: "Main", bundle: nil)
         switch index {
@@ -153,7 +144,7 @@ class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRe
         chatRoomVC.room = selectedItem
         chatRoomVC.isRoomSaving = false
         chatRoomVC.modalPresentationStyle = .fullScreen
-        ChatModalPushTransitionManager.present(chatRoomVC, from: self)
+        ChatModalTransitionManager.present(chatRoomVC, from: self)
     }
 
     private func createRoomBtnTapped() {
@@ -161,7 +152,7 @@ class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRe
         guard let chatRoomCreateVC = storyboard.instantiateViewController(identifier: "chatRoomCreateVC") as? RoomCreateViewController else { return }
         chatRoomCreateVC.modalPresentationStyle = .fullScreen
 
-        ChatModalPushTransitionManager.present(chatRoomCreateVC, from: self)
+        ChatModalTransitionManager.present(chatRoomCreateVC, from: self)
     }
     
     private func searchBtnTapped() {

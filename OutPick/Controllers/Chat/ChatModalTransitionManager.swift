@@ -7,16 +7,16 @@
 
 import UIKit
 
-protocol ChatModalPushAnimatable {}
+protocol ChatModalAnimatable {}
 
-enum ChatModalPushTransitionDirection {
+enum ChatModalTransitionDirection {
     case leftToRight
     case rightToLeft
 }
 
-final class ChatModalPushTransitionManager {
-    static func present(_ viewController: UIViewController, from presentingVC: UIViewController, direction: ChatModalPushTransitionDirection = .rightToLeft, duration: TimeInterval = 0.35) {
-        if viewController is ChatModalPushAnimatable {
+final class ChatModalTransitionManager {
+    static func present(_ viewController: UIViewController, from presentingVC: UIViewController, direction: ChatModalTransitionDirection = .rightToLeft, duration: TimeInterval = 0.35) {
+        if viewController is ChatModalAnimatable {
             let transition = CATransition()
             transition.duration = duration
             transition.type = .push
@@ -29,8 +29,8 @@ final class ChatModalPushTransitionManager {
         presentingVC.present(viewController, animated: false)
     }
     
-    static func dismiss(from presentingVC: UIViewController, direction: ChatModalPushTransitionDirection = .leftToRight, duration: CFTimeInterval = 0.35) {
-        if presentingVC is ChatModalPushAnimatable {
+    static func dismiss(from presentingVC: UIViewController, direction: ChatModalTransitionDirection = .leftToRight, duration: CFTimeInterval = 0.35) {
+        if presentingVC is ChatModalAnimatable {
             let transition = CATransition()
             transition.duration = duration
             transition.type = .push

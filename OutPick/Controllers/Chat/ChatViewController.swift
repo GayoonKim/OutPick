@@ -13,7 +13,7 @@ import Combine
 import PhotosUI
 import Firebase
 
-class ChatViewController: UIViewController, UINavigationControllerDelegate, ChatModalPushAnimatable {
+class ChatViewController: UIViewController, UINavigationControllerDelegate, ChatModalAnimatable {
     
     @IBOutlet weak var activityIndicator: UIActivityIndicatorView!
     @IBOutlet weak var sideMenuBtn: UIBarButtonItem!
@@ -81,11 +81,13 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private var chatUIViewBottomConstraint: NSLayoutConstraint?
     private var joinConsraints: [NSLayoutConstraint] = []
     
+    private var interactionController: UIPercentDrivenInteractiveTransition?
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         
-        self.navigationController?.interactivePopGestureRecognizer?.delegate = self
-        
+        self.attachInteractiveDismissGesture()
+
         setUpNotifications()
         
         if isRoomSaving {
@@ -100,8 +102,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         tapGesture.delegate = self
         view.addGestureRecognizer(tapGesture)
 
-        self.navigationController?.attachPopGesture(to: self.view)
-    
         setupCustomNavigationBar()
         decideJoinUI()
         setupAttachmentView()
@@ -110,7 +110,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        
+
         // 이미 연결된 경우에는 room join과 listener 설정만 수행
         if SocketIOManager.shared.isConnected {
             SocketIOManager.shared.socket.off("chat message")
@@ -575,8 +575,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             }
         } else {
             // 일반적인 경우 이전 화면으로 이동
-//            self.navigationController?.popViewController(animated: true)
-            self.dismiss(animated: false)
+//            self.dismiss(animated: false)
+            ChatModalTransitionManager.dismiss(from: self)
         }
     }
     
@@ -590,7 +590,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         let profilePublisher = ChatUserProfilesStoreManager.shared.profilesPublisher(forRoomName: room.roomName)
         settingVC.bindProfilesPublisher(profilePublisher)
   
-        ChatModalPushTransitionManager.present(settingVC, from: self)
+        ChatModalTransitionManager.present(settingVC, from: self)
     }
 
     @MainActor
