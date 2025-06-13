@@ -31,11 +31,13 @@ class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRe
     override func viewDidLoad() {
         super.viewDidLoad()
         self.view.backgroundColor = .white
-        self.tabBarController?.tabBar.barTintColor = .white
-        self.tabBarController?.tabBar.isHidden = false
+//        self.tabBarController?.tabBar.barTintColor = .white
+//        self.tabBarController?.tabBar.isHidden = false
+//        
+//        self.navigationController?.interactivePopGestureRecognizer?.delegate = self
+//        self.navigationController?.navigationBar.scrollEdgeAppearance?.backgroundColor = .white
         
-        self.navigationController?.interactivePopGestureRecognizer?.delegate = self
-        self.navigationController?.navigationBar.scrollEdgeAppearance?.backgroundColor = .white
+        self.attachInteractiveDismissGesture()
         
         dataSource = configureDataSource()
         collectionView.dataSource = dataSource
@@ -144,6 +146,7 @@ class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRe
         chatRoomVC.room = selectedItem
         chatRoomVC.isRoomSaving = false
         chatRoomVC.modalPresentationStyle = .fullScreen
+        
         ChatModalTransitionManager.present(chatRoomVC, from: self)
     }
 
@@ -151,7 +154,7 @@ class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRe
         let storyboard = UIStoryboard(name: "Main", bundle: nil)
         guard let chatRoomCreateVC = storyboard.instantiateViewController(identifier: "chatRoomCreateVC") as? RoomCreateViewController else { return }
         chatRoomCreateVC.modalPresentationStyle = .fullScreen
-
+        
         ChatModalTransitionManager.present(chatRoomCreateVC, from: self)
     }
     
@@ -162,6 +165,7 @@ class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRe
 }
 
 private extension RoomListsCollectionViewController {
+    @MainActor
     func setupNavigationBar() {
         let navBar = CustomNavigationBarView()
         navBar.translatesAutoresizingMaskIntoConstraints = false
@@ -178,7 +182,7 @@ private extension RoomListsCollectionViewController {
             self.collectionView.trailingAnchor.constraint(equalTo: self.view.trailingAnchor),
             self.collectionView.bottomAnchor.constraint(equalTo: self.view.bottomAnchor)
         ])
-        
+
         navBar.configure(
             leftViews: [UILabel.navTitle("오픈채팅")],
             rightViews: [

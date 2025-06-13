@@ -575,7 +575,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             }
         } else {
             // 일반적인 경우 이전 화면으로 이동
-//            self.dismiss(animated: false)
             ChatModalTransitionManager.dismiss(from: self)
         }
     }

@@ -49,7 +49,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         self.userProfiles = ChatUserProfilesStoreManager.shared.getUserProfiles(forRoomName: room.roomName)
         print(ChatUserProfilesStoreManager.shared.getUserProfiles(forRoomName: room.roomName))
         
-        let layout = Self.configureLayout(room.roomName)
+        let layout = Self.configureLayout(self.room)
         super.init(collectionViewLayout: layout)
     }
     
@@ -94,11 +94,12 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
             .store(in: &cancellables)
     }
     
-    private static func configureLayout(_ roomName: String) -> UICollectionViewCompositionalLayout {
+    private static func configureLayout(_ room: ChatRoom) -> UICollectionViewCompositionalLayout {
         return UICollectionViewCompositionalLayout { (sectionIndex: Int, environment: NSCollectionLayoutEnvironment) -> NSCollectionLayoutSection? in
             switch Section(rawValue: sectionIndex)! {
             
             case .roomInfoSection:
+                
                 let itemSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .estimated(44))
                 let item = NSCollectionLayoutItem(layoutSize: itemSize)
                 
@@ -111,7 +112,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
                 return section
                 
             case .mediaSection:
-                let height: CGFloat = ChatImageStoreManager.shared.getImages(for: roomName).count > 0 ? 130 : 44
+                let height: CGFloat = ChatImageStoreManager.shared.getImages(for: room.roomName).count > 0 ? 130 : 44
                 
                 let itemSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .estimated(height))
                 let item = NSCollectionLayoutItem(layoutSize: itemSize)
@@ -125,7 +126,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
                 return section
                 
             case .participantsSection:
-                let count = ChatUserProfilesStoreManager.shared.countProfiles(forRoomName: roomName)
+                let count = ChatUserProfilesStoreManager.shared.countProfiles(forRoomName: room.roomName)
                 let rowCount = ceil(Double(count) / 1.0) // 한 줄에 1명 보여주는 구성일 경우
                 let itemHeight: CGFloat = 53
                 let spacing: CGFloat = 5
@@ -156,6 +157,14 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
             case let .roomInfoItem(room):
                 let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ChatRoomInfoCell.reuseIdentifier, for: indexPath) as! ChatRoomInfoCell
                 cell.configureCell(room: room)
+                
+                cell.editButtonTapped = {
+                    let editVC = ChatEditViewController()
+                    editVC.modalPresentationStyle = .fullScreen
+                    
+                    self.present(editVC, animated: true, completion: nil)
+                }
+                
                 return cell
 
             case let .mediaItem(images):
@@ -218,7 +227,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         ChatModalTransitionManager.dismiss(from: self)
     }
     
-    private func bellButtonTapped() {
+    private func notificationButtonTapped() {
         print(#function)
     }
     
@@ -254,7 +263,7 @@ private extension ChatRoomSettingCollectionView {
         customNavigationBar.configure(
             leftViews: [UIButton.navBackButton(action: backButtonTapped)],
             rightViews: [
-                UIButton.navButtonIcon("bell.fill", action: bellButtonTapped),
+                UIButton.navButtonIcon("bell.fill", action: notificationButtonTapped),
                 UIButton.navButtonIcon("star", action: favoriteButtonTapped),
                 UIButton.navButtonIcon("gearshape", action: settingButtonTapped)
             ]

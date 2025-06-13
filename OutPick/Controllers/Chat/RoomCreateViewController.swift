@@ -11,7 +11,7 @@ import FirebaseFirestore
 import Kingfisher
 import Combine
 
-class RoomCreateViewController: UIViewController {
+class RoomCreateViewController: UIViewController, ChatModalAnimatable {
     
     @IBOutlet weak var roomNameTextView: UITextView!
     @IBOutlet weak var roomNameCountLabel: UILabel!
@@ -53,6 +53,8 @@ class RoomCreateViewController: UIViewController {
     
     override func viewDidLoad() {
         super.viewDidLoad()
+        
+        self.attachInteractiveDismissGesture()
         
         setupCustomNavigationBar()
         setupTextView(roomNameTextView)

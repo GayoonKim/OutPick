@@ -58,6 +58,8 @@ class ChatRoomInfoCell: UICollectionViewCell {
         return btn
     }()
     
+    var editButtonTapped: (() -> Void)?
+
     override init(frame: CGRect) {
         super.init(frame: frame)
         
@@ -66,6 +68,7 @@ class ChatRoomInfoCell: UICollectionViewCell {
         addSubview(roomParticipantCountLabel)
         addSubview(editButtonView)
         editButtonView.addSubview(editButton)
+        editButton.addTarget(self, action: #selector(handleEditButtonTapped), for: .touchUpInside)
         
         NSLayoutConstraint.activate([
             roomImageView.centerXAnchor.constraint(equalTo: centerXAnchor),
@@ -74,7 +77,7 @@ class ChatRoomInfoCell: UICollectionViewCell {
             roomImageView.widthAnchor.constraint(equalToConstant: 70),
             
             roomNameLabel.centerXAnchor.constraint(equalTo: roomImageView.centerXAnchor),
-            roomNameLabel.topAnchor.constraint(equalTo: roomImageView.bottomAnchor, constant: 5),
+            roomNameLabel.topAnchor.constraint(equalTo: roomImageView.bottomAnchor, constant: 10),
             
             roomParticipantCountLabel.centerXAnchor.constraint(equalTo: roomNameLabel.centerXAnchor),
             roomParticipantCountLabel.topAnchor.constraint(equalTo: roomNameLabel.bottomAnchor, constant: 5),
@@ -87,6 +90,10 @@ class ChatRoomInfoCell: UICollectionViewCell {
             
             editButton.centerXAnchor.constraint(equalTo: editButtonView.centerXAnchor),
         ])
+    }
+    
+    @objc private func handleEditButtonTapped() {
+        editButtonTapped?()
     }
     
     func configureCell(room: ChatRoom) {
@@ -102,6 +109,13 @@ class ChatRoomInfoCell: UICollectionViewCell {
         roomNameLabel.text = room.roomName
         roomParticipantCountLabel.text = "\(room.participants.count)명 참여"
         backgroundColor = UIColor(white: 0.3, alpha: 0.03)
+        
+        if UserProfile.shared.email != room.creatorID {
+            editButtonView.isHidden = true
+            NSLayoutConstraint.activate([
+                editButtonView.bottomAnchor.constraint(equalTo: roomParticipantCountLabel.bottomAnchor),
+            ])
+        }
     }
     
     required init?(coder: NSCoder) {
