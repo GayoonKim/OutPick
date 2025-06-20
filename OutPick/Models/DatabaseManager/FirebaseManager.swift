@@ -277,9 +277,11 @@ class FirebaseManager {
         Task {
             
             let querySnapshot = try await db.collection("Rooms").getDocuments()
-            if querySnapshot.isEmpty {
-                try await db.collection("Rooms").document(DateManager.shared.currentMonth).setData(["createAt": FieldValue.serverTimestamp()])
-            }
+//            if querySnapshot.isEmpty {
+//                try await db.collection("Rooms").document(DateManager.shared.currentMonth).setData(["createAt": FieldValue.serverTimestamp()])
+//            }
+            
+            try await db.collection("Rooms").document(DateManager.shared.currentMonth).setData(["createAt": FieldValue.serverTimestamp()])
 
             // Socket.IO 서버에 방 생성 이벤트 전송
             SocketIOManager.shared.createRoom(room.roomName)

@@ -383,7 +383,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             
             NSLayoutConstraint.activate([
                 chatMessageCollectionView.topAnchor.constraint(equalTo: customNavigationBar.bottomAnchor),
-                chatMessageCollectionView.topAnchor.constraint(equalTo: navigationController!.navigationBar.bottomAnchor),
                 chatMessageCollectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
                 chatMessageCollectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             ])
