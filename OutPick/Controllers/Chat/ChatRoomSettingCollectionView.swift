@@ -159,7 +159,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
                 cell.configureCell(room: room)
                 
                 cell.editButtonTapped = {
-                    let editVC = ChatEditViewController()
+                    let editVC = RoomEditViewController()
                     editVC.modalPresentationStyle = .fullScreen
                     
                     self.present(editVC, animated: true, completion: nil)
