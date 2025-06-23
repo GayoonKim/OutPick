@@ -51,6 +51,8 @@ class RoomCreateViewController: UIViewController, ChatModalAnimatable {
     
     private lazy var cancellables: Set<AnyCancellable> = []
     
+    let maxHeight: CGFloat = 300
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         
@@ -144,7 +146,7 @@ class RoomCreateViewController: UIViewController, ChatModalAnimatable {
         textView.layer.cornerRadius = 10
         textView.backgroundColor = UIColor(white: 0.1, alpha: 0.03)
         textView.font = UIFont.preferredFont(forTextStyle: .headline)
-        textView.font = UIFont.systemFont(ofSize: 12)
+        textView.font = UIFont.systemFont(ofSize: 15)
     }
     
     private func addImageButtonSetup() {
@@ -335,7 +337,17 @@ extension RoomCreateViewController: UITextViewDelegate {
             return false // 엔터 키 입력 방지
         }
         
-        return updatedText.count <= 20
+        switch textView {
+        case roomNameTextView:
+            return updatedText.count <= 20
+        case roomDescriptionTextView:
+            return updatedText.count <= 200
+        default:
+            break
+        }
+        
+//        return updatedText.count <= 20
+        return false
     }
     
     func textViewDidChange(_ textView: UITextView) {
@@ -345,7 +357,7 @@ extension RoomCreateViewController: UITextViewDelegate {
         case roomNameTextView:
             roomNameCountLabel.text = "\(text.count) / 20"
         case roomDescriptionTextView:
-            roomDescriptionCountLabel.text = "\(text.count) / 20"
+            roomDescriptionCountLabel.text = "\(text.count) / 200"
         default:
             break
         }

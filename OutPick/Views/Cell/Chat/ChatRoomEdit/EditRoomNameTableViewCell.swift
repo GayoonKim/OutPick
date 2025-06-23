@@ -10,21 +10,10 @@ import UIKit
 class EditRoomNameTableViewCell: UITableViewCell {
     static let identifier = "EditRoomNameCell"
 
-//    private let nameTextField: UITextField = {
-//        let textField = UITextField()
-//        textField.placeholder = "채팅방 이름 (필수)"
-//        textField.borderStyle = .roundedRect
-//        textField.returnKeyType = .done
-//        textField.clearButtonMode = .whileEditing
-//        textField.translatesAutoresizingMaskIntoConstraints = false
-//
-//        return textField
-//    }()
-    
     private let nameTextView: UITextView = {
         let textView = UITextView()
+        textView.textColor = .placeholderText
         textView.text = "채팅방 이름 (필수)"
-        textView.textColor = .lightGray
         textView.font = UIFont.systemFont(ofSize: 18)
         textView.isScrollEnabled = false
         textView.translatesAutoresizingMaskIntoConstraints = false
@@ -52,15 +41,6 @@ class EditRoomNameTableViewCell: UITableViewCell {
         button.translatesAutoresizingMaskIntoConstraints = false
         
         return button
-    }()
-
-    private let horizontalStackView: UIStackView = {
-        let stackView = UIStackView()
-        stackView.axis = .horizontal
-        stackView.spacing = 8
-        stackView.translatesAutoresizingMaskIntoConstraints = false
-
-        return stackView
     }()
     
     private var tableView: UITableView? {
@@ -90,6 +70,7 @@ class EditRoomNameTableViewCell: UITableViewCell {
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
         setupViews()
+        selectionStyle = .none
     }
 
     required init?(coder: NSCoder) {
@@ -111,16 +92,18 @@ class EditRoomNameTableViewCell: UITableViewCell {
         nameCountLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
 
         NSLayoutConstraint.activate([
-
             nameCountLabel.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
             nameCountLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -8),
         
             clearButton.trailingAnchor.constraint(equalTo: nameCountLabel.leadingAnchor, constant: -8),
             clearButton.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
-            
+
+            nameTextView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 5),
+            nameTextView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -5),
             nameTextView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 8),
             nameTextView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
-            nameTextView.widthAnchor.constraint(equalToConstant: contentView.bounds.width - (clearButton.frame.width + 8 + 8) - (nameCountLabel.frame.width + 8) - 16),
+//            nameTextView.widthAnchor.constraint(equalToConstant: contentView.bounds.width - (clearButton.frame.width + 8 + 8) - (nameCountLabel.frame.width + 8) - 16),
+            nameTextView.trailingAnchor.constraint(lessThanOrEqualTo: clearButton.leadingAnchor, constant: -5),
         ])
 
         nameTextViewHeightConstraint = nameTextView.heightAnchor.constraint(greaterThanOrEqualToConstant: 40)
@@ -156,12 +139,14 @@ class EditRoomNameTableViewCell: UITableViewCell {
         }
 
     }
+    
+    func tableView(_ tableView: UITableView, shouldHighlightRowAt indexPath: IndexPath) -> Bool {
+        return false
+    }
 }
 
 extension EditRoomNameTableViewCell: UITextViewDelegate {
-    @MainActor
     func textViewDidChange(_ textView: UITextView) {
-        
         DispatchQueue.main.async {
             if self.nameTextView.text.isEmpty {
                 self.clearButton.isHidden = true
@@ -169,17 +154,20 @@ extension EditRoomNameTableViewCell: UITextViewDelegate {
                 self.clearButton.isHidden = false
             }
             
+            if let tableView = self.tableView {
+                tableView.beginUpdates()
+                tableView.endUpdates()
+            }
+            
             self.updateNameCountLabel()
         }
-        
     }
-    
-    @MainActor
+
     func textViewDidBeginEditing(_ textView: UITextView) {
         DispatchQueue.main.async {
-            if self.nameTextView.textColor == .lightGray {
-                self.nameTextView.text = ""
-                self.nameTextView.textColor = .black
+            if textView.textColor == .placeholderText {
+                textView.text = nil
+                textView.textColor = .black
             }
             
             self.updateNameCountLabel()
@@ -187,19 +175,17 @@ extension EditRoomNameTableViewCell: UITextViewDelegate {
         
     }
     
-    @MainActor
     func textViewDidEndEditing(_ textView: UITextView) {
         DispatchQueue.main.async {
-            if self.nameTextView.text.isEmpty {
-                self.nameTextView.text = "채팅방 이름 (필수)"
-                self.nameTextView.textColor = .lightGray
+            if textView.text.isEmpty {
+                textView.text = "채팅방 이름 (필수)"
+                textView.textColor = .placeholderText
             }
             
             self.updateNameCountLabel()
         }
     }
     
-    @MainActor
     func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
         if text == "\n" {
             textView.resignFirstResponder()

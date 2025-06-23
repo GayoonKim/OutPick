@@ -31,12 +31,7 @@ class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRe
     override func viewDidLoad() {
         super.viewDidLoad()
         self.view.backgroundColor = .white
-//        self.tabBarController?.tabBar.barTintColor = .white
-//        self.tabBarController?.tabBar.isHidden = false
-//        
-//        self.navigationController?.interactivePopGestureRecognizer?.delegate = self
-//        self.navigationController?.navigationBar.scrollEdgeAppearance?.backgroundColor = .white
-        
+
         self.attachInteractiveDismissGesture()
         
         dataSource = configureDataSource()

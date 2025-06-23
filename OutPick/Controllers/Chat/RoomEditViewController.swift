@@ -21,7 +21,7 @@ class RoomEditViewController: UIViewController {
     
     enum Item: Hashable {
         case name
-//        case description
+        case description
 //        case image
     }
     
@@ -41,7 +41,7 @@ class RoomEditViewController: UIViewController {
     private func applyInitialSnapshot() {
         var snapshot = NSDiffableDataSourceSnapshot<Section, Item>()
         snapshot.appendSections([.main])
-        snapshot.appendItems([.name], toSection: .main)
+        snapshot.appendItems([.name, .description], toSection: .main)
         dataSource.apply(snapshot, animatingDifferences: false)
     }
     
@@ -57,7 +57,7 @@ class RoomEditViewController: UIViewController {
         ])
         
         tableView.register(EditRoomNameTableViewCell.self, forCellReuseIdentifier: EditRoomNameTableViewCell.identifier)
-        
+        tableView.register(EditRoomDesTableViewCell.self, forCellReuseIdentifier: EditRoomDesTableViewCell.identifier)
     }
 
     private func configureDataSource() {
@@ -65,12 +65,16 @@ class RoomEditViewController: UIViewController {
             switch item {
             case .name:
                 guard let cell = tableView.dequeueReusableCell(withIdentifier: EditRoomNameTableViewCell.identifier, for: indexPath) as? EditRoomNameTableViewCell else {
-                    fatalError("셀 설정 에러")
+                    fatalError("\(EditRoomNameTableViewCell.self) 설정 에러")
                 }
                 
                 return cell
-//            case .description:
-//                print("D")
+            case .description:
+                guard let cell = tableView.dequeueReusableCell(withIdentifier: EditRoomDesTableViewCell.identifier, for: indexPath) as? EditRoomDesTableViewCell else {
+                    fatalError("\(EditRoomDesTableViewCell.self) 설정 에러")
+                }
+                
+                return cell
 //            case .image:
 //                print("I")
             }

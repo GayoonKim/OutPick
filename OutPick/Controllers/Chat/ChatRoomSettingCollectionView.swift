@@ -42,8 +42,6 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
     private var cancellables = Set<AnyCancellable>()
     
     init(room: ChatRoom) {
-        print(#function, "여기서 호출")
-        
         self.room = room
         self.images = ChatImageStoreManager.shared.getImages(for: room.roomName)
         self.userProfiles = ChatUserProfilesStoreManager.shared.getUserProfiles(forRoomName: room.roomName)
