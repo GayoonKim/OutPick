@@ -16,16 +16,18 @@ class RoomEditViewController: UIViewController {
     }()
     
     enum Section {
-        case main
+        case image
+        case name
+        case description
     }
     
     enum Item: Hashable {
+        case image
         case name
         case description
-//        case image
     }
     
-    private let tableView = UITableView(frame: .zero, style: .insetGrouped)
+    private let tableView = UITableView(frame: .zero, style: .plain)
     private var dataSource: UITableViewDiffableDataSource<Section, Item>!
     
     override func viewDidLoad() {
@@ -40,14 +42,19 @@ class RoomEditViewController: UIViewController {
     
     private func applyInitialSnapshot() {
         var snapshot = NSDiffableDataSourceSnapshot<Section, Item>()
-        snapshot.appendSections([.main])
-        snapshot.appendItems([.name, .description], toSection: .main)
+        snapshot.appendSections([.image ,.name, .description])
+        snapshot.appendItems( [.image], toSection: .image)
+        snapshot.appendItems([.name], toSection: .name)
+        snapshot.appendItems([.description], toSection: .description)
         dataSource.apply(snapshot, animatingDifferences: false)
     }
     
     private func configureTableView() {
         view.addSubview(tableView)
         tableView.translatesAutoresizingMaskIntoConstraints = false
+        tableView.separatorStyle = .none
+        tableView.delegate = self
+        tableView.backgroundColor = UIColor(white: 0.1, alpha: 0.05)
         
         NSLayoutConstraint.activate([
             tableView.topAnchor.constraint(equalTo: customNavigationBar.bottomAnchor),
@@ -56,6 +63,7 @@ class RoomEditViewController: UIViewController {
             tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
         
+        tableView.register(EditRoomImageTableViewCell.self, forCellReuseIdentifier: EditRoomImageTableViewCell.identifier)
         tableView.register(EditRoomNameTableViewCell.self, forCellReuseIdentifier: EditRoomNameTableViewCell.identifier)
         tableView.register(EditRoomDesTableViewCell.self, forCellReuseIdentifier: EditRoomDesTableViewCell.identifier)
     }
@@ -63,6 +71,12 @@ class RoomEditViewController: UIViewController {
     private func configureDataSource() {
         dataSource = UITableViewDiffableDataSource<Section, Item>(tableView: tableView) { tableView, indexPath, item in
             switch item {
+            case .image:
+                guard let cell = tableView.dequeueReusableCell(withIdentifier: EditRoomImageTableViewCell.identifier, for: indexPath) as? EditRoomImageTableViewCell else {
+                    fatalError("\(EditRoomImageTableViewCell.self) 설정 에러")
+                }
+                
+                return cell
             case .name:
                 guard let cell = tableView.dequeueReusableCell(withIdentifier: EditRoomNameTableViewCell.identifier, for: indexPath) as? EditRoomNameTableViewCell else {
                     fatalError("\(EditRoomNameTableViewCell.self) 설정 에러")
@@ -75,8 +89,6 @@ class RoomEditViewController: UIViewController {
                 }
                 
                 return cell
-//            case .image:
-//                print("I")
             }
         }
     }
@@ -100,5 +112,36 @@ private extension RoomEditViewController {
     
     private func backBtnTapped() {
         self.dismiss(animated: true)
+    }
+}
+
+extension RoomEditViewController: UITableViewDelegate {
+
+    func tableView(_ tableView: UITableView, viewForFooterInSection section: Int) -> UIView? {
+        let spacer = UIView()
+        spacer.translatesAutoresizingMaskIntoConstraints = false
+        
+        switch section {
+        case 0:
+            
+            NSLayoutConstraint.activate([
+                spacer.heightAnchor.constraint(equalToConstant: 25)
+            ])
+            
+            return spacer
+            
+        case 1:
+            NSLayoutConstraint.activate([
+                spacer.heightAnchor.constraint(equalToConstant: 10)
+            ])
+            
+            return spacer
+        default:
+            NSLayoutConstraint.activate([
+                spacer.heightAnchor.constraint(equalToConstant: 0)
+            ])
+            
+            return spacer
+        }
     }
 }

@@ -16,6 +16,7 @@ class EditRoomDesTableViewCell: UITableViewCell {
     private let desTextView: UITextView = {
         let textView = UITextView()
         textView.textColor = .placeholderText
+        textView.text = "• 어떤 사람이 참여하면 좋을까요?\n• 지켜야 할 규칙, 공지 사항 등을 안내해 주세요."
         textView.font = UIFont.systemFont(ofSize: 18)
         textView.isScrollEnabled = false
         textView.translatesAutoresizingMaskIntoConstraints = false

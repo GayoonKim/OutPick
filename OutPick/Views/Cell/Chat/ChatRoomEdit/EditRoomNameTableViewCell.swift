@@ -93,28 +93,27 @@ class EditRoomNameTableViewCell: UITableViewCell {
 
         NSLayoutConstraint.activate([
             nameCountLabel.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
-            nameCountLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -8),
+            nameCountLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -15),
         
             clearButton.trailingAnchor.constraint(equalTo: nameCountLabel.leadingAnchor, constant: -8),
             clearButton.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
 
             nameTextView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 5),
             nameTextView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -5),
-            nameTextView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 8),
+            nameTextView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 15),
             nameTextView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
-//            nameTextView.widthAnchor.constraint(equalToConstant: contentView.bounds.width - (clearButton.frame.width + 8 + 8) - (nameCountLabel.frame.width + 8) - 16),
             nameTextView.trailingAnchor.constraint(lessThanOrEqualTo: clearButton.leadingAnchor, constant: -5),
         ])
 
-        nameTextViewHeightConstraint = nameTextView.heightAnchor.constraint(greaterThanOrEqualToConstant: 40)
-        nameTextViewHeightConstraint.priority = .defaultHigh
-        nameTextViewHeightConstraint.isActive = true
+//        nameTextViewHeightConstraint = nameTextView.heightAnchor.constraint(greaterThanOrEqualToConstant: 40)
+//        nameTextViewHeightConstraint.priority = .defaultHigh
+//        nameTextViewHeightConstraint.isActive = true
     }
     
     @MainActor
     @objc private func clearButtonTapped() {
-        nameTextView.text = ""
-        nameTextView.textColor = .lightGray
+        nameTextView.text = "채팅방 이름 (필수)"
+        nameTextView.textColor = .placeholderText
         
         updateNameCountLabel()
         clearButton.isHidden = true
