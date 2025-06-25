@@ -54,12 +54,12 @@ class RoomEditViewController: UIViewController {
         tableView.translatesAutoresizingMaskIntoConstraints = false
         tableView.separatorStyle = .none
         tableView.delegate = self
-        tableView.backgroundColor = UIColor(white: 0.1, alpha: 0.05)
+        tableView.backgroundColor = .white
         
         NSLayoutConstraint.activate([
             tableView.topAnchor.constraint(equalTo: customNavigationBar.bottomAnchor),
-            tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 10),
+            tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -10),
             tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
         

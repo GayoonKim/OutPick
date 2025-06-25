@@ -16,7 +16,6 @@ class EditRoomImageTableViewCell: UITableViewCell {
         imageView.clipsToBounds = true
         imageView.layer.cornerRadius = 20
         imageView.image = UIImage(named: "Default_Profile")
-        imageView.backgroundColor = .red
         imageView.translatesAutoresizingMaskIntoConstraints = false
         
         return imageView
@@ -48,7 +47,7 @@ class EditRoomImageTableViewCell: UITableViewCell {
         
         NSLayoutConstraint.activate([
             imgView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 20),
-            imgView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -20),
+            imgView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
             imgView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 110),
             imgView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -110),
             imgView.heightAnchor.constraint(equalToConstant: 200),

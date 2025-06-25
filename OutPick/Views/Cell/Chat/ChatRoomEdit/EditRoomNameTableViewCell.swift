@@ -19,6 +19,7 @@ class EditRoomNameTableViewCell: UITableViewCell {
         textView.translatesAutoresizingMaskIntoConstraints = false
         textView.textContainer.lineBreakMode = .byWordWrapping
         textView.textContainer.lineFragmentPadding = 0
+        textView.backgroundColor = .secondarySystemBackground
         
         return textView
     }()
@@ -29,6 +30,7 @@ class EditRoomNameTableViewCell: UITableViewCell {
         label.font = .systemFont(ofSize: 12)
         label.textColor = .secondaryLabel
         label.translatesAutoresizingMaskIntoConstraints = false
+        label.backgroundColor = .secondarySystemBackground
 
         return label
     }()
@@ -81,6 +83,9 @@ class EditRoomNameTableViewCell: UITableViewCell {
         nameTextView.delegate = self
         clearButton.addTarget(self, action: #selector(clearButtonTapped), for: .touchUpInside)
 
+        contentView.backgroundColor = .secondarySystemBackground        
+        contentView.layer.cornerRadius = 10
+        
         contentView.addSubview(nameTextView)
         contentView.addSubview(clearButton)
         contentView.addSubview(nameCountLabel)
@@ -93,16 +98,18 @@ class EditRoomNameTableViewCell: UITableViewCell {
 
         NSLayoutConstraint.activate([
             nameCountLabel.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
-            nameCountLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -15),
+            nameCountLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -8),
         
-            clearButton.trailingAnchor.constraint(equalTo: nameCountLabel.leadingAnchor, constant: -8),
             clearButton.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            clearButton.heightAnchor.constraint(equalToConstant: 15),
+            clearButton.widthAnchor.constraint(equalToConstant: 15),
 
             nameTextView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 5),
             nameTextView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -5),
             nameTextView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 15),
             nameTextView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
-            nameTextView.trailingAnchor.constraint(lessThanOrEqualTo: clearButton.leadingAnchor, constant: -5),
+            nameTextView.widthAnchor.constraint(equalToConstant: contentView.frame.width - clearButton.frame.width - nameCountLabel.frame.width - 46),
+            nameTextView.trailingAnchor.constraint(equalTo: clearButton.leadingAnchor, constant: -3),
         ])
 
 //        nameTextViewHeightConstraint = nameTextView.heightAnchor.constraint(greaterThanOrEqualToConstant: 40)

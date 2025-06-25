@@ -22,6 +22,7 @@ class EditRoomDesTableViewCell: UITableViewCell {
         textView.translatesAutoresizingMaskIntoConstraints = false
         textView.textContainer.lineBreakMode = .byWordWrapping
         textView.textContainer.lineFragmentPadding = 0
+        textView.backgroundColor = .secondarySystemBackground
         
         return textView
     }()
@@ -32,6 +33,7 @@ class EditRoomDesTableViewCell: UITableViewCell {
         label.font = .systemFont(ofSize: 12)
         label.textColor = .secondaryLabel
         label.translatesAutoresizingMaskIntoConstraints = false
+        label.backgroundColor = .secondarySystemBackground
 
         return label
     }()
@@ -62,6 +64,9 @@ class EditRoomDesTableViewCell: UITableViewCell {
     
     private func setupViews() {
         desTextView.delegate = self
+        
+        contentView.backgroundColor = .secondarySystemBackground
+        contentView.layer.cornerRadius = 10
         
         contentView.addSubview(desTextView)
         contentView.addSubview(desCountLabel)
