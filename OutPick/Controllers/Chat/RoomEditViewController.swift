@@ -30,6 +30,17 @@ class RoomEditViewController: UIViewController {
     private let tableView = UITableView(frame: .zero, style: .plain)
     private var dataSource: UITableViewDiffableDataSource<Section, Item>!
     
+    var room: ChatRoom
+    
+    init(room: ChatRoom) {
+        self.room = room
+        super.init(nibName: nil, bundle: nil)
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         self.view.backgroundColor = .white
@@ -81,12 +92,14 @@ class RoomEditViewController: UIViewController {
                 guard let cell = tableView.dequeueReusableCell(withIdentifier: EditRoomNameTableViewCell.identifier, for: indexPath) as? EditRoomNameTableViewCell else {
                     fatalError("\(EditRoomNameTableViewCell.self) 설정 에러")
                 }
+                cell.configure(self.room)
                 
                 return cell
             case .description:
                 guard let cell = tableView.dequeueReusableCell(withIdentifier: EditRoomDesTableViewCell.identifier, for: indexPath) as? EditRoomDesTableViewCell else {
                     fatalError("\(EditRoomDesTableViewCell.self) 설정 에러")
                 }
+                cell.configure(self.room)
                 
                 return cell
             }
@@ -106,7 +119,7 @@ private extension RoomEditViewController {
         ])
         
         customNavigationBar.configure(leftViews: [UIButton.navBackButton(action: backBtnTapped)],
-                                      centerViews: [UILabel.navTitle("오픈채팅 정보")],
+                                      centerViews: [UILabel.navTitle("오픈채팅 관리")],
                                       rightViews: [])
     }
     

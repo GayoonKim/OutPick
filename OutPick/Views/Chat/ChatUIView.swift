@@ -16,7 +16,7 @@ class ChatUIView: UIView {
         button.setImage(UIImage(systemName: "plus"), for: .normal)
         button.tintColor = .black
         button.clipsToBounds = true
-        button.backgroundColor = UIColor(white: 0.1, alpha: 0.05)
+        button.backgroundColor = .secondarySystemBackground
         button.accessibilityIdentifier = "attachmentButton"
         button.translatesAutoresizingMaskIntoConstraints = false
         
@@ -30,7 +30,7 @@ class ChatUIView: UIView {
         textView.font = UIFont.systemFont(ofSize: 14)
         textView.isScrollEnabled = false
         textView.layer.cornerRadius = 18
-        textView.backgroundColor = UIColor(white: 0.1, alpha: 0.05)
+        textView.backgroundColor = .secondarySystemBackground
         textView.translatesAutoresizingMaskIntoConstraints = false
         textView.textContainer.lineBreakMode = .byWordWrapping
         textView.textContainer.lineFragmentPadding = 0
@@ -46,7 +46,7 @@ class ChatUIView: UIView {
         button.tintColor = .black
         button.isEnabled = false
         button.clipsToBounds = true
-        button.backgroundColor = UIColor(white: 0.1, alpha: 0.05)
+        button.backgroundColor = .secondarySystemBackground
         button.accessibilityIdentifier = "sendButton"
         button.translatesAutoresizingMaskIntoConstraints = false
         

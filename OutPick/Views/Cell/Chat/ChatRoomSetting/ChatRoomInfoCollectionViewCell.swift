@@ -51,7 +51,7 @@ class ChatRoomInfoCell: UICollectionViewCell {
     
     private let editButton: UIButton = {
         let btn = UIButton()
-        btn.setTitle("오픈채팅 정보", for: .normal)
+        btn.setTitle("오픈채팅 관리", for: .normal)
         btn.setTitleColor(.black, for: .normal)
         btn.translatesAutoresizingMaskIntoConstraints = false
         

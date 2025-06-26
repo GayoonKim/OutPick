@@ -83,6 +83,12 @@ class EditRoomDesTableViewCell: UITableViewCell {
         ])
     }
     
+    func configure(_ room: ChatRoom) {
+        self.desTextView.text = room.roomDescription
+        self.desTextView.textColor = .black
+        self.desCountLabel.text = "\(room.roomDescription.count)/\(maxLength)"
+    }
+    
     @MainActor
     private func updateNameCountLabel() {
         guard let text = desTextView.text,

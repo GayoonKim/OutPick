@@ -39,7 +39,6 @@ class EditRoomNameTableViewCell: UITableViewCell {
         let button = UIButton(type: .system)
         button.setImage(UIImage(systemName: "xmark.circle.fill"), for: .normal)
         button.tintColor = .secondaryLabel
-        button.isHidden = true
         button.translatesAutoresizingMaskIntoConstraints = false
         
         return button
@@ -83,7 +82,7 @@ class EditRoomNameTableViewCell: UITableViewCell {
         nameTextView.delegate = self
         clearButton.addTarget(self, action: #selector(clearButtonTapped), for: .touchUpInside)
 
-        contentView.backgroundColor = .secondarySystemBackground        
+        contentView.backgroundColor = .secondarySystemBackground
         contentView.layer.cornerRadius = 10
         
         contentView.addSubview(nameTextView)
@@ -111,10 +110,12 @@ class EditRoomNameTableViewCell: UITableViewCell {
             nameTextView.widthAnchor.constraint(equalToConstant: contentView.frame.width - clearButton.frame.width - nameCountLabel.frame.width - 46),
             nameTextView.trailingAnchor.constraint(equalTo: clearButton.leadingAnchor, constant: -3),
         ])
-
-//        nameTextViewHeightConstraint = nameTextView.heightAnchor.constraint(greaterThanOrEqualToConstant: 40)
-//        nameTextViewHeightConstraint.priority = .defaultHigh
-//        nameTextViewHeightConstraint.isActive = true
+    }
+    
+    func configure(_ room: ChatRoom) {
+        self.nameTextView.text = room.roomName
+        self.nameTextView.textColor = .black
+        self.nameCountLabel.text = "\(room.roomName.count)/\(maxLength)"
     }
     
     @MainActor

@@ -45,7 +45,6 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         self.room = room
         self.images = ChatImageStoreManager.shared.getImages(for: room.roomName)
         self.userProfiles = ChatUserProfilesStoreManager.shared.getUserProfiles(forRoomName: room.roomName)
-        print(ChatUserProfilesStoreManager.shared.getUserProfiles(forRoomName: room.roomName))
         
         let layout = Self.configureLayout(self.room)
         super.init(collectionViewLayout: layout)
@@ -58,7 +57,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
     override func viewDidLoad() {
         super.viewDidLoad()
         
-        self.view.backgroundColor = .systemGroupedBackground
+        self.view.backgroundColor = .secondarySystemBackground
         self.attachInteractiveDismissGesture()
 
         configureCollectionView()
@@ -157,7 +156,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
                 cell.configureCell(room: room)
                 
                 cell.editButtonTapped = {
-                    let editVC = RoomEditViewController()
+                    let editVC = RoomEditViewController(room: self.room)
                     editVC.modalPresentationStyle = .fullScreen
                     
                     self.present(editVC, animated: true, completion: nil)
@@ -211,7 +210,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
     }
     
     private func configureCollectionView() {
-        collectionView.backgroundColor = UIColor(white: 0.3, alpha: 0.03)
+        collectionView.backgroundColor = .secondarySystemBackground
         collectionView.translatesAutoresizingMaskIntoConstraints = false
         collectionView.register(ChatRoomInfoCell.self, forCellWithReuseIdentifier: ChatRoomInfoCell.reuseIdentifier)
         collectionView.register(ChatRoomMediaCollectionViewCell.self, forCellWithReuseIdentifier: ChatRoomMediaCollectionViewCell.reuseIdentifier)

@@ -13,7 +13,7 @@ class DateSeperatorCell: UICollectionViewCell {
     
     private let dateLabelBackground: UIView = {
         let view = UIView()
-        view.backgroundColor = UIColor(white: 0.1, alpha: 0.2)
+        view.backgroundColor = .secondarySystemBackground
         view.layer.cornerRadius = 15
         view.translatesAutoresizingMaskIntoConstraints = false
         
