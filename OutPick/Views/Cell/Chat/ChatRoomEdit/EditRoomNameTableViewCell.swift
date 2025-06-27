@@ -14,7 +14,7 @@ class EditRoomNameTableViewCell: UITableViewCell {
         let textView = UITextView()
         textView.textColor = .placeholderText
         textView.text = "채팅방 이름 (필수)"
-        textView.font = UIFont.systemFont(ofSize: 18)
+        textView.font = UIFont.systemFont(ofSize: 14)
         textView.isScrollEnabled = false
         textView.translatesAutoresizingMaskIntoConstraints = false
         textView.textContainer.lineBreakMode = .byWordWrapping
@@ -55,7 +55,6 @@ class EditRoomNameTableViewCell: UITableViewCell {
     private let maxLength = 20
     private(set) var minHeight: CGFloat = 50
     private(set) var maxHeight: CGFloat = 120
-    private var nameTextViewHeightConstraint: NSLayoutConstraint!
 
     override func awakeFromNib() {
         super.awakeFromNib()
@@ -103,8 +102,8 @@ class EditRoomNameTableViewCell: UITableViewCell {
             clearButton.heightAnchor.constraint(equalToConstant: 15),
             clearButton.widthAnchor.constraint(equalToConstant: 15),
 
-            nameTextView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 5),
-            nameTextView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -5),
+            nameTextView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 3),
+            nameTextView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -3),
             nameTextView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 15),
             nameTextView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
             nameTextView.widthAnchor.constraint(equalToConstant: contentView.frame.width - clearButton.frame.width - nameCountLabel.frame.width - 46),
@@ -165,13 +164,15 @@ extension EditRoomNameTableViewCell: UITextViewDelegate {
                 tableView.beginUpdates()
                 tableView.endUpdates()
             }
-            
+    
             self.updateNameCountLabel()
         }
     }
 
     func textViewDidBeginEditing(_ textView: UITextView) {
         DispatchQueue.main.async {
+            print(textView.layer.bounds.maxY)
+            
             if textView.textColor == .placeholderText {
                 textView.text = nil
                 textView.textColor = .black
@@ -201,5 +202,21 @@ extension EditRoomNameTableViewCell: UITextViewDelegate {
         }
         
         return true
+    }
+}
+
+extension UIView {
+    func superview<T: UIView>(of type: T.Type) -> T? {
+        var view = self.superview
+        
+        while let current = view {
+            if let match = current as? T {
+                return match
+            }
+            
+            view = current.superview
+        }
+        
+        return nil
     }
 }

@@ -276,14 +276,16 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         NotificationCenter.default.publisher(for: UIApplication.keyboardWillShowNotification)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] notification in
-                self?.keyboardWillShow(notification)
+                guard let self = self else { return }
+                self.keyboardWillShow(notification)
             }
             .store(in: &cancellables)
         
         NotificationCenter.default.publisher(for: UIApplication.keyboardWillHideNotification)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] notification in
-                self?.keyboardWillHide(notification)
+                guard let self = self else { return }
+                self.keyboardWillHide(notification)
             }
             .store(in: &cancellables)
     }

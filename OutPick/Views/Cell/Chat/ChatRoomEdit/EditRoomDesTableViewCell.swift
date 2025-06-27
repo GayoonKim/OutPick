@@ -6,6 +6,7 @@
 //
 
 import UIKit
+import Combine
 
 // 방 설명 셀
 class EditRoomDesTableViewCell: UITableViewCell {
@@ -17,7 +18,7 @@ class EditRoomDesTableViewCell: UITableViewCell {
         let textView = UITextView()
         textView.textColor = .placeholderText
         textView.text = "• 어떤 사람이 참여하면 좋을까요?\n• 지켜야 할 규칙, 공지 사항 등을 안내해 주세요."
-        textView.font = UIFont.systemFont(ofSize: 18)
+        textView.font = UIFont.systemFont(ofSize: 14)
         textView.isScrollEnabled = false
         textView.translatesAutoresizingMaskIntoConstraints = false
         textView.textContainer.lineBreakMode = .byWordWrapping
@@ -47,8 +48,10 @@ class EditRoomDesTableViewCell: UITableViewCell {
     }
     
     private let maxLength = 200
-    private let maxHeight: CGFloat = 300
+    private let maxHeight: CGFloat = 200
     private var fixedHeightConstraint: NSLayoutConstraint?
+    
+    let textViewChanged = PassthroughSubject<CGRect, Never>()
 
     override func awakeFromNib() {
         super.awakeFromNib()
@@ -75,7 +78,7 @@ class EditRoomDesTableViewCell: UITableViewCell {
             desTextView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 5),
             desTextView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 15),
             desTextView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -15),
-            desTextView.heightAnchor.constraint(greaterThanOrEqualToConstant: 150),
+            desTextView.heightAnchor.constraint(greaterThanOrEqualToConstant: 100),
             desTextView.bottomAnchor.constraint(equalTo: desCountLabel.topAnchor, constant: -5),
             
             desCountLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -8),
@@ -136,6 +139,9 @@ extension EditRoomDesTableViewCell: UITextViewDelegate {
         }
         
         self.updateNameCountLabel()
+        
+        let convertedRect = textView.convert(textView.bounds, to: tableView)
+        textViewChanged.send(convertedRect)
     }
     
     func textViewDidBeginEditing(_ textView: UITextView) {

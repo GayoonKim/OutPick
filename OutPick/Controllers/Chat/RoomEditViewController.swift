@@ -6,8 +6,10 @@
 //
 
 import UIKit
+import Combine
+import PhotosUI
 
-class RoomEditViewController: UIViewController {
+class RoomEditViewController: UIViewController, PHPickerViewControllerDelegate, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
     let customNavigationBar: CustomNavigationBarView = {
         let navBar = CustomNavigationBarView()
         navBar.translatesAutoresizingMaskIntoConstraints = false
@@ -31,6 +33,14 @@ class RoomEditViewController: UIViewController {
     private var dataSource: UITableViewDiffableDataSource<Section, Item>!
     
     var room: ChatRoom
+    
+    private var cancellables = Set<AnyCancellable>()
+    private var cellCancelables: [IndexPath: AnyCancellable] = [:]
+    
+    private var currentKeyboardHeight: CGFloat?
+    
+    private var selectedImage: UIImage?
+    private var convertImageTask: Task<Void, Error>? = nil
     
     init(room: ChatRoom) {
         self.room = room
@@ -66,17 +76,49 @@ class RoomEditViewController: UIViewController {
         tableView.separatorStyle = .none
         tableView.delegate = self
         tableView.backgroundColor = .white
-        
+
         NSLayoutConstraint.activate([
             tableView.topAnchor.constraint(equalTo: customNavigationBar.bottomAnchor),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 10),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -10),
-            tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
         
         tableView.register(EditRoomImageTableViewCell.self, forCellReuseIdentifier: EditRoomImageTableViewCell.identifier)
         tableView.register(EditRoomNameTableViewCell.self, forCellReuseIdentifier: EditRoomNameTableViewCell.identifier)
         tableView.register(EditRoomDesTableViewCell.self, forCellReuseIdentifier: EditRoomDesTableViewCell.identifier)
+        
+        NotificationCenter.default.publisher(for: UIApplication.keyboardWillShowNotification)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] notification in
+                guard let self = self else { return }
+                self.keyboardWillShow(notification)
+            }
+            .store(in: &cancellables)
+        
+        NotificationCenter.default.publisher(for: UIApplication.keyboardWillHideNotification)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] notification in
+                guard let self = self else { return }
+                self.keyboardWillHide(notification)
+            }
+            .store(in: &cancellables)
+    }
+    
+    private func keyboardWillShow(_ notification: Notification) {
+        guard let userInfo = notification.userInfo,
+              let keyboardFrame = userInfo[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
+        
+        let keyboardHeight = keyboardFrame.height
+        self.currentKeyboardHeight = keyboardHeight
+        tableView.contentInset.bottom = keyboardHeight + 5
+        tableView.verticalScrollIndicatorInsets.bottom = keyboardHeight + 5
+    }
+    
+    private func keyboardWillHide(_ notification: Notification) {
+        self.tableView.contentInset.bottom = 0
+        self.tableView.verticalScrollIndicatorInsets.bottom = 0
+        self.currentKeyboardHeight = nil
     }
 
     private func configureDataSource() {
@@ -85,6 +127,12 @@ class RoomEditViewController: UIViewController {
             case .image:
                 guard let cell = tableView.dequeueReusableCell(withIdentifier: EditRoomImageTableViewCell.identifier, for: indexPath) as? EditRoomImageTableViewCell else {
                     fatalError("\(EditRoomImageTableViewCell.self) 설정 에러")
+                }
+                cell.configure(self.room, selectedImage: self.selectedImage)
+                
+                cell.onImgViewTapped = { [weak self] in
+                    guard let self = self else { return }
+                    self.presentImgEditActionSheet()
                 }
                 
                 return cell
@@ -101,9 +149,127 @@ class RoomEditViewController: UIViewController {
                 }
                 cell.configure(self.room)
                 
+                let cancellable = cell.textViewChanged
+                    .receive(on: RunLoop.main)
+                    .sink { [weak self] rect in
+                        guard let self = self else { return }
+                        
+                        self.tableView.beginUpdates()
+                        self.tableView.endUpdates()
+                        
+                        let keyboardHeight = self.currentKeyboardHeight ?? 0
+                        let keyboardMinY = self.view.bounds.height - keyboardHeight
+                        let convertedMaxY = self.tableView.convert(rect, to: self.view).maxY
+                        
+                        if convertedMaxY > keyboardMinY {
+                            self.tableView.scrollRectToVisible(rect, animated: true)
+                        }
+                        
+                    }
+                self.cellCancelables[indexPath] = cancellable
+                
                 return cell
             }
         }
+    }
+    
+    private func presentImgEditActionSheet() {
+        let alert = UIAlertController(title: nil, message: nil, preferredStyle: .actionSheet)
+        
+        alert.addAction(UIAlertAction(title: "사진 선택", style: .default, handler: { _ in
+            self.openPHPicker()
+        }))
+        
+        alert.addAction(UIAlertAction(title: "사진 촬영", style: .default, handler: { _ in
+            self.openCamera()
+        }))
+        
+        alert.addAction(UIAlertAction(title: "삭제", style: .destructive, handler: { _ in
+            self.removeImage()
+        }))
+        
+        alert.addAction(UIAlertAction(title: "취소", style: .cancel, handler: nil))
+        
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = self.view
+            popover.sourceRect = CGRect(x: self.view.bounds.midX, y: self.view.bounds.midY, width: 0, height: 0)
+            popover.permittedArrowDirections = []
+        }
+        
+        self.present(alert, animated: true)
+    }
+    
+    private func openPHPicker() {
+        var configuration = PHPickerConfiguration()
+        configuration.filter = .any(of: [.images])
+        configuration.selectionLimit = 1
+        configuration.selection = .ordered
+        configuration.preferredAssetRepresentationMode = .current
+        
+        let picker = PHPickerViewController(configuration: configuration)
+        picker.delegate = self
+        present(picker, animated: true)
+    }
+    
+    private func openCamera() {
+        if UIImagePickerController.isSourceTypeAvailable(.camera) {
+            let imagePicker = UIImagePickerController()
+            imagePicker.delegate = self
+            imagePicker.allowsEditing = true
+            imagePicker.sourceType = .camera
+        
+            present(imagePicker, animated: true, completion: nil)
+        }
+    }
+    
+    private func removeImage() {
+        selectedImage = nil
+        self.room.roomImageName = ""
+        
+        var snapshot = dataSource.snapshot()
+        snapshot.reloadItems([.image])
+        dataSource.apply(snapshot, animatingDifferences: false)
+    }
+                
+    @MainActor
+    func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+        picker.dismiss(animated: true)
+        
+        for result in results {
+            let itemProvider = result.itemProvider
+            
+            if itemProvider.canLoadObject(ofClass: UIImage.self) {
+                convertImageTask = Task {
+                    do {
+                        let image = try await MediaManager.shared.convertImage(result)
+                        self.selectedImage = image
+                        
+                        var snapshot = dataSource.snapshot()
+                        snapshot.reloadItems([.image])
+                        await dataSource.apply(snapshot, animatingDifferences: true)
+                    } catch {
+                        AlertManager.showAlertNoHandler(title: "이미지 변환 실패", message: "이미지를 다시 선택해 주세요/", viewController: self)
+                    }
+                }
+                
+                convertImageTask = nil
+            }
+        }
+
+    }
+    
+    func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
+//        if let editedImage = info[.editedImage] as? UIImage {
+//            
+//        } else if let originalImage = info[.originalImage] as? UIImage {
+//            
+//        }
+        
+        dismiss(animated: true)
+    }
+    
+    func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+        picker.dismiss(animated: true)
     }
 }
 
@@ -129,14 +295,12 @@ private extension RoomEditViewController {
 }
 
 extension RoomEditViewController: UITableViewDelegate {
-
     func tableView(_ tableView: UITableView, viewForFooterInSection section: Int) -> UIView? {
         let spacer = UIView()
         spacer.translatesAutoresizingMaskIntoConstraints = false
         
         switch section {
         case 0:
-            
             NSLayoutConstraint.activate([
                 spacer.heightAnchor.constraint(equalToConstant: 25)
             ])

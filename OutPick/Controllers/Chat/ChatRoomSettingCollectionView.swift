@@ -69,6 +69,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        
     }
     
     func bindImagesPublishers(_ publisher: AnyPublisher<[UIImage], Never>) {
@@ -155,7 +156,9 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
                 let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ChatRoomInfoCell.reuseIdentifier, for: indexPath) as! ChatRoomInfoCell
                 cell.configureCell(room: room)
                 
-                cell.editButtonTapped = {
+                cell.editButtonTapped = { [weak self] in
+                    guard let self = self else { return }
+                    
                     let editVC = RoomEditViewController(room: self.room)
                     editVC.modalPresentationStyle = .fullScreen
                     
