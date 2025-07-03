@@ -19,7 +19,25 @@ class SecondProfileViewController: UIViewController {
     @IBOutlet weak var profileImageView: UIImageView!
     @IBOutlet weak var completeButton: UIButton!
     
-    private var isDefaultProfileImage = true
+    internal var isDefaultProfileImage = true
+    public var getIsDefaultProfileImage: Bool {
+        return isDefaultProfileImage
+    }
+    
+    let removeImageButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.setImage(UIImage(systemName: "minus.circle.fill"), for: .normal)
+        button.tintColor = .red
+        
+        return button
+    }()
+    
+    let addImageButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.setImage(UIImage(systemName: "plus.circle.fill"), for: .normal)
+        
+        return button
+    }()
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -36,9 +54,16 @@ class SecondProfileViewController: UIViewController {
         
         NavigationBarManager.configureBackButton(for: self)
         
+        enableCompleteButton()
+    }
+    
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        
         if let nickName = UserDefaults.standard.string(forKey: "savedNickName") {
             nicknameTextField.text = nickName
             nicknameWordsCountLabel.text = "\(nickName.count) / 20"
+            completeButton.isEnabled = true
             UserDefaults.standard.removeObject(forKey: "savedNickName")
         }
         
@@ -48,7 +73,13 @@ class SecondProfileViewController: UIViewController {
             UserDefaults.standard.removeObject(forKey: "savedProfileImage")
         }
         
-        enableCompleteButton()
+        if UserDefaults.standard.object(forKey: "isDefaultProfileImage") == nil {
+            isDefaultProfileImage = true
+        } else {
+            isDefaultProfileImage = UserDefaults.standard.bool(forKey: "isDefaultProfileImage")
+            UserDefaults.standard.removeObject(forKey: "isDefaultProfileImage")
+        }
+        removeImageButton.isHidden = isDefaultProfileImage
     }
     
     override func viewWillDisappear(_ animated: Bool) {
@@ -65,7 +96,10 @@ class SecondProfileViewController: UIViewController {
             print("저장된 방 대표 사진 불러오기 실패")
             return
         }
+        
+        UserDefaults.standard.set(isDefaultProfileImage, forKey: "isDefaultProfileImage")
     }
+
     
     private func profileImageViewSetup() {
         profileImageView.clipsToBounds = true
@@ -74,15 +108,8 @@ class SecondProfileViewController: UIViewController {
     }
     
     private func addImageButtonSetup() {
-        let addImageButton: UIButton = {
-            let button = UIButton(type: .system)
-            button.setImage(UIImage(systemName: "plus.circle.fill"), for: .normal)
-            button.addTarget(self, action: #selector(addImageButtonTapped), for: .touchUpInside)
-            
-            return button
-        }()
-        
         view.addSubview(addImageButton)
+        addImageButton.addTarget(self, action: #selector(addImageButtonTapped), for: .touchUpInside)
         
         addImageButton.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
@@ -94,16 +121,9 @@ class SecondProfileViewController: UIViewController {
     }
     
     func removeImageButtonSetup() {
-        let removeImageButton: UIButton = {
-            let button = UIButton(type: .system)
-            button.setImage(UIImage(systemName: "minus.circle.fill"), for: .normal)
-            button.addTarget(self, action: #selector(removeImageButtonTapped(_:)), for: .touchUpInside)
-            button.tintColor = .red
-            
-            return button
-        }()
-        
         view.addSubview(removeImageButton)
+        removeImageButton.addTarget(self, action: #selector(removeImageButtonTapped(_:)), for: .touchUpInside)
+        removeImageButton.isHidden = true
         
         removeImageButton.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
@@ -113,13 +133,6 @@ class SecondProfileViewController: UIViewController {
             removeImageButton.heightAnchor.constraint(equalToConstant: 30)
         ])
 
-        if let current_image_data = profileImageView.image?.pngData(),
-           let new_image_data = UIImage(named: "Default_Profile")?.pngData(),
-           current_image_data == new_image_data {
-            removeImageButton.isHidden = true
-        } else {
-            removeImageButton.isHidden = false
-        }
     }
     
     @objc private func addImageButtonTapped() {
@@ -140,7 +153,6 @@ class SecondProfileViewController: UIViewController {
     
     @objc private func removeImageButtonTapped(_ sender: UIButton) {
         profileImageView.image = UIImage(named: "Default_Profile")
-        isDefaultProfileImage = true
         sender.isHidden = true
     }
     
@@ -190,15 +202,15 @@ class SecondProfileViewController: UIViewController {
                 if let image = profileImageView.image {
                     if isDefaultProfileImage {
                         print("기본 프로필 이미지 감지됨 - 서버 업로드 건너뜀")
-                        UserProfile.shared.profileImageName = nil
+                        UserProfile.shared.profileImagePath = nil
                     } else {
                         print("사용자 지정 프로필 이미지 감지됨 - 서버 업로드 진행")
-                        let imageName = try await FirebaseStorageManager.shared.uploadImageToStorage(image: image, location: ImageLocation.ProfileImage)
-                        UserProfile.shared.profileImageName = imageName
+                        let imagePath = try await FirebaseStorageManager.shared.uploadImageToStorage(image: image, location: ImageLocation.ProfileImage)
+                        UserProfile.shared.profileImagePath = imagePath
                     }
                 } else {
                     print("프로필 이미지가 nil입니다")
-                    UserProfile.shared.profileImageName = nil
+                    UserProfile.shared.profileImagePath = nil
                 }
                 
                 if let data = try? JSONEncoder().encode(UserProfile.shared) {
@@ -208,8 +220,9 @@ class SecondProfileViewController: UIViewController {
                 try await FirebaseManager.shared.saveUserProfileToFirestore(email: LoginManager.shared.getUserEmail)
                 
                 DispatchQueue.main.async {
-                    let homeVC = self.storyboard?.instantiateViewController(identifier: "HomeTBC") as? UITabBarController
-                    self.view.window?.rootViewController = homeVC
+                    let mainStorybard = UIStoryboard(name: "Main", bundle: nil)
+                    let weatherVC = mainStorybard.instantiateViewController(withIdentifier: "weatherVC")
+                    self.view.window?.rootViewController = weatherVC
                     self.view.window?.makeKeyAndVisible()
                 }
                 

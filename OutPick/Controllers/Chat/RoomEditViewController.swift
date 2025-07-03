@@ -224,7 +224,7 @@ class RoomEditViewController: UIViewController, PHPickerViewControllerDelegate, 
     
     private func removeImage() {
         selectedImage = nil
-        self.room.roomImageName = ""
+        self.room.roomImagePath = ""
         
         var snapshot = dataSource.snapshot()
         snapshot.reloadItems([.image])
@@ -243,6 +243,9 @@ class RoomEditViewController: UIViewController, PHPickerViewControllerDelegate, 
                     do {
                         let image = try await MediaManager.shared.convertImage(result)
                         self.selectedImage = image
+                        
+                        let prevImgName = self.room.roomImagePath
+                        
                         
                         var snapshot = dataSource.snapshot()
                         snapshot.reloadItems([.image])

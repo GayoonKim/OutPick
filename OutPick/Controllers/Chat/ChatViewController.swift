@@ -87,7 +87,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         super.viewDidLoad()
         
         self.attachInteractiveDismissGesture()
-
         setUpNotifications()
         
         if isRoomSaving {

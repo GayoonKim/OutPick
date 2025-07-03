@@ -87,13 +87,13 @@ class EditRoomImageTableViewCell: UITableViewCell {
     func configure(_ room: ChatRoom, selectedImage: UIImage?) {
         if let selectedImage = selectedImage {
             imgView.image = selectedImage
-        } else if room.roomImageName != "" {
+        } else if room.roomImagePath != "" {
                 Task {
-                    guard let imageName = room.roomImageName else { return }
-                    let image = try await FirebaseStorageManager.shared.fetchImageFromStorage(image: imageName, location: .Message, createdDate: room.createdAt)
+                    guard let imagePath = room.roomImagePath else { return }
+                    let image = try await FirebaseStorageManager.shared.fetchImageFromStorage(image: imagePath, location: .Message, createdDate: room.createdAt)
                     self.imgView.image = image
                 }
-        } else /*if room.roomName == ""*/{
+        } else {
             self.imgView.image = UIImage(named: "Default_Profile")
         }
     }

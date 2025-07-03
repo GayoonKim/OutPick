@@ -17,7 +17,7 @@ class UserProfile: Codable {
     var gender: String?
     var birthdate: String?
     var nickname: String?
-    var profileImageName: String? // Firestore에 이미지를 직접 저장할 수 없기 때문에 Firestore Storage에 이미지 저장
+    var profileImagePath: String? // Firestore에 이미지를 직접 저장할 수 없기 때문에 Firestore Storage에 이미지 저장
     var joinedRooms: [String]?
     let createdAt: Date
     
@@ -25,12 +25,12 @@ class UserProfile: Codable {
         self.createdAt = Date()
     }
     
-    init(email: String?, nickname: String?, gender: String?, birthdate: String?, profileImageName: String?, joinedRooms: [String]?) {
+    init(email: String?, nickname: String?, gender: String?, birthdate: String?, profileImagePath: String?, joinedRooms: [String]?) {
         self.email = email
         self.nickname = nickname
         self.gender = gender
         self.birthdate = birthdate
-        self.profileImageName = profileImageName
+        self.profileImagePath = profileImagePath
         self.joinedRooms = joinedRooms
         self.createdAt = Date()
     }
@@ -49,7 +49,7 @@ extension UserProfile {
             "nickname": nickname ?? "",
             "gender": gender ?? "",
             "birthdate": birthdate ?? "",
-            "profileImageName": profileImageName ?? "",
+            "profileImagePath": profileImagePath ?? "",
             "joinedRooms": joinedRooms ?? [],
             "createdAt": Timestamp(date: createdAt)
             

@@ -53,6 +53,14 @@ class RoomCreateViewController: UIViewController, ChatModalAnimatable {
     
     let maxHeight: CGFloat = 300
     
+    let removeImageButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.setImage(UIImage(systemName: "minus.circle.fill"), for: .normal)
+        button.tintColor = .red
+        
+        return button
+    }()
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         
@@ -100,7 +108,6 @@ class RoomCreateViewController: UIViewController, ChatModalAnimatable {
     
     @MainActor
     @objc func handleCreateButtonTap() {
-        
         self.createBtn.isEnabled = false
         LoadingIndicator.shared.start(on: self)
         
@@ -116,7 +123,7 @@ class RoomCreateViewController: UIViewController, ChatModalAnimatable {
                     return
                 }
                 
-                let room = ChatRoom(ID: nil, roomName: self.roomNameTextView.text, roomDescription: self.roomDescriptionTextView.text, participants: [LoginManager.shared.getUserEmail], creatorID: LoginManager.shared.getUserEmail, createdAt: Date(), roomImageName: nil)
+                let room = ChatRoom(ID: nil, roomName: self.roomNameTextView.text, roomDescription: self.roomDescriptionTextView.text, participants: [LoginManager.shared.getUserEmail], creatorID: LoginManager.shared.getUserEmail, createdAt: Date(), roomImagePath: nil)
 
                 let storyboard = UIStoryboard(name: "Main", bundle: nil)
                 guard let chatRoomVC = storyboard.instantiateViewController(withIdentifier: "chatRoomVC") as? ChatViewController else { return }
@@ -209,17 +216,8 @@ class RoomCreateViewController: UIViewController, ChatModalAnimatable {
     }
 
     private func removeImageButtonSetup() {
-        
-        let removeImageButton: UIButton = {
-            let button = UIButton(type: .system)
-            button.setImage(UIImage(systemName: "minus.circle.fill"), for: .normal)
-            button.addTarget(self, action: #selector(removeImageButtonTapped(_:)), for: .touchUpInside)
-            button.tintColor = .red
-            
-            return button
-        }()
-        
         view.addSubview(removeImageButton)
+        removeImageButton.addTarget(self, action: #selector(removeImageButtonTapped(_:)), for: .touchUpInside)
         
         removeImageButton.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
@@ -254,10 +252,10 @@ class RoomCreateViewController: UIViewController, ChatModalAnimatable {
         Task {
             do {
                 
-                let imageName = try await FirebaseStorageManager.shared.uploadImageToStorage(image: image, location: ImageLocation.RoomImage)
+                let imagePath = try await FirebaseStorageManager.shared.uploadImageToStorage(image: image, location: ImageLocation.RoomImage)
                 
                 var updatedRoomInfo = roomInfo
-                updatedRoomInfo.roomImageName = imageName
+                updatedRoomInfo.roomImagePath = imagePath
                 self.saveRoomInfoToFirestore(room: updatedRoomInfo, image: image)
                 
             } catch {
@@ -275,8 +273,8 @@ class RoomCreateViewController: UIViewController, ChatModalAnimatable {
             switch result {
                 
             case .success:
-                if let imageName = room.roomImageName, let image = image {
-                    KingfisherManager.shared.cache.store(image, forKey: imageName)
+                if let imagePath = room.roomImagePath, let image = image {
+                    KingfisherManager.shared.cache.store(image, forKey: imagePath)
                 }
                 
                 print("saveRoomInfoToFirestore completion 끝")

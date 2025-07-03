@@ -53,11 +53,11 @@ extension SecondProfileViewController: PHPickerViewControllerDelegate {
             DispatchQueue.main.async {
                 if let image = images.first {
                     self.profileImageView.image = image
+                    self.isDefaultProfileImage = false
+                    self.removeImageButton.isHidden = false
                 } else {
                     self.profileImageView.image = UIImage(named: "Default_Profile.png")
                 }
-                
-                self.removeImageButtonSetup()
             }
         }
     }
@@ -68,12 +68,12 @@ extension SecondProfileViewController: UIImagePickerControllerDelegate & UINavig
         if let selectedImage = info[.originalImage] as? UIImage,
            let cgImage = MediaManager.compressImageWithImageIO(selectedImage) {
             profileImageView.image = UIImage(cgImage: cgImage)
-            self.removeImageButtonSetup()
+//            self.removeImageButton.isHidden = getIsDefaultProfileImage
             self.enableCompleteButton()
         } else if let editedImage = info[.editedImage] as? UIImage,
                   let cgImage = MediaManager.compressImageWithImageIO(editedImage) {
             profileImageView.image = UIImage(cgImage: cgImage)
-            self.removeImageButtonSetup()
+//            self.removeImageButton.isHidden = getIsDefaultProfileImage
             self.enableCompleteButton()
         }
         

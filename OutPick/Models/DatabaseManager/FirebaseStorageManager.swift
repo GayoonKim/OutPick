@@ -25,7 +25,6 @@ class FirebaseStorageManager {
     // Storage 인스턴스
     let storage = Storage.storage()
     
-    
     func uploadImageToStorage(image: UIImage, location: ImageLocation) async throws -> String {
         let imageName = UUID().uuidString
         return try await withCheckedThrowingContinuation { continuation in
@@ -48,7 +47,7 @@ class FirebaseStorageManager {
                     return
                 }
                 
-                continuation.resume(returning: imageName)
+                continuation.resume(returning: "\(location.location)/\(DateManager.shared.currentMonth)/\(imageName).jpg")
             }
             
             let _ = uploadTask.observe(.progress) { snapshot in
@@ -66,16 +65,16 @@ class FirebaseStorageManager {
             for (index, image) in images.enumerated() {
                 group.addTask {
                     
-                    let imageName = try await self.uploadImageToStorage(image: image, location: location)
-                    return (index, imageName)
+                    let imagePath = try await self.uploadImageToStorage(image: image, location: location)
+                    return (index, imagePath)
                     
                 }
             }
             
-            var resultNames = Array<String?>(repeating: nil, count: images.count)
+            var resultPaths = Array<String?>(repeating: nil, count: images.count)
             
-            for try await (index, imageName) in group {
-                resultNames[index] = imageName
+            for try await (index, imagePath) in group {
+                resultPaths[index] = imagePath
             }
                 
             let end = Date()
@@ -83,7 +82,7 @@ class FirebaseStorageManager {
             let formattedTime = String(format: "%.2f", duration)
             print("⏱ 소요 시간: \(formattedTime)초")
             
-            return resultNames.compactMap{ $0 }
+            return resultPaths.compactMap{ $0 }
         }
     }
     
@@ -141,16 +140,16 @@ class FirebaseStorageManager {
     }
     
     // Storage에서 이미지 불러오기
-    func fetchImageFromStorage(image imageName: String, location: ImageLocation, createdDate: Date) async throws -> UIImage {
+    func fetchImageFromStorage(image imagePath: String, location: ImageLocation, createdDate: Date) async throws -> UIImage {
         
         // 메모리 캐시 확인
-        if let cachedImage = KingfisherManager.shared.cache.retrieveImageInMemoryCache(forKey: imageName) {
+        if let cachedImage = KingfisherManager.shared.cache.retrieveImageInMemoryCache(forKey: imagePath) {
             print("cachedImage in Memory: \(cachedImage)")
             
             return cachedImage
         }
         // 디스크 캐시 확인
-        if let cachedImage = try await KingfisherManager.shared.cache.retrieveImageInDiskCache(forKey: imageName) {
+        if let cachedImage = try await KingfisherManager.shared.cache.retrieveImageInDiskCache(forKey: imagePath) {
             print("cachedImage in Disk: \(cachedImage)")
             
             return cachedImage
@@ -159,11 +158,11 @@ class FirebaseStorageManager {
         let month = DateManager.shared.getMonthFromTimestamp(date: createdDate)
         
         return try await withCheckedThrowingContinuation { continuation in
-            let imageRef = storage.reference().child("\(location.location)/\(month)/\(imageName).jpg")
+            let imageRef = storage.reference().child(imagePath)
             imageRef.getData(maxSize: 1 * 1024 * 1024) { data, error in
                 if let error = error {
                     
-                    print("\(imageName): 이미지 불러오기 실패: \(error.localizedDescription)")
+                    print("\(imagePath): 이미지 불러오기 실패: \(error.localizedDescription)")
                     continuation.resume(throwing: StorageError.FailedToFetchImage)
                     
                 }
@@ -171,7 +170,7 @@ class FirebaseStorageManager {
                 if let data = data,
                    let image = UIImage(data: data) {
                     
-                    Task { try await KingfisherManager.shared.cache.store(image, forKey: imageName) }
+                    Task { try await KingfisherManager.shared.cache.store(image, forKey: imagePath) }
                     continuation.resume(returning: image)
                 }
             }
@@ -180,15 +179,15 @@ class FirebaseStorageManager {
     
     
     // Storage에서 여러 이미지 불러오는 함수
-    func fetchImagesFromStorage(from imageNames: [String], location: ImageLocation, createdDate: Date) async throws -> [UIImage] {
+    func fetchImagesFromStorage(from imagePaths: [String], location: ImageLocation, createdDate: Date) async throws -> [UIImage] {
         
-        var images = Array<UIImage?>(repeating: nil, count: imageNames.count)
+        var images = Array<UIImage?>(repeating: nil, count: imagePaths.count)
         
         try await withThrowingTaskGroup(of: (Int, UIImage).self, returning: Void.self) { group in
-            for (index, imageName) in imageNames.enumerated() {
+            for (index, imagePath) in imagePaths.enumerated() {
                 group.addTask {
                     
-                    let image = try await self.fetchImageFromStorage(image: imageName, location: location, createdDate: createdDate)
+                    let image = try await self.fetchImageFromStorage(image: imagePath, location: location, createdDate: createdDate)
                     return (index, image)
                     
                 }

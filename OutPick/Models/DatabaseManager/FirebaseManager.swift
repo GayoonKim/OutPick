@@ -77,7 +77,7 @@ class FirebaseManager {
             
             let querySnapshot = try await userProfileRef.getDocuments()
             if querySnapshot.isEmpty {
-                try await userProfileRef.document(DateManager.shared.currentMonth).setData([:])
+                try await userProfileRef.document(DateManager.shared.currentMonth).setData(["createAt": FieldValue.serverTimestamp()])
             }
             try await userProfileRef.document(DateManager.shared.currentMonth).collection("\(DateManager.shared.currentMonth) Users").document().setData(UserProfile.shared.toDict())
             
@@ -109,7 +109,7 @@ class FirebaseManager {
                         nickname: data["nickname"] as? String,
                         gender: data["gender"] as? String,
                         birthdate: data["birthdate"] as? String,
-                        profileImageName: data["profileImageName"] as? String,
+                        profileImagePath: data["profileImagePath"] as? String,
                         joinedRooms: data["joinedRooms"] as? [String]
                     )
                 }
@@ -252,7 +252,7 @@ class FirebaseManager {
             throw NSError(domain: "InvalidRoomData", code: 422)
         }
         
-        let roomImageName = data["roomImageName"] as? String
+        let roomImagePath = data["roomImagePath"] as? String
         let id = data["ID"] as? String
 
         return ChatRoom(
@@ -262,7 +262,7 @@ class FirebaseManager {
             participants: participants,
             creatorID: creatorID,
             createdAt: timestamp.dateValue(),
-            roomImageName: roomImageName
+            roomImagePath: roomImagePath
         )
     }
     
@@ -276,7 +276,7 @@ class FirebaseManager {
         let roomRef = db.collection("Rooms").document(DateManager.shared.currentMonth).collection("\(DateManager.shared.currentMonth) Rooms").document()
         Task {
             
-            let querySnapshot = try await db.collection("Rooms").getDocuments()
+//            let querySnapshot = try await db.collection("Rooms").getDocuments()
 //            if querySnapshot.isEmpty {
 //                try await db.collection("Rooms").document(DateManager.shared.currentMonth).setData(["createAt": FieldValue.serverTimestamp()])
 //            }
@@ -338,12 +338,12 @@ class FirebaseManager {
               let participants = data["participantIDs"] as? [String],
               let creatorID = data["creatorID"] as? String,
               let timestamp = data["createdAt"] as? Timestamp,
-              let roomImageName = data["roomImageName"] as? String else {
+              let roomImagePath = data["roomImagePath"] as? String else {
             print("채팅방 데이터 파싱 실패: \(data)")
             throw FirebaseError.FailedToParseRoomData
         }
         
-        return ChatRoom(ID: ID, roomName: roomName, roomDescription: roomDescription, participants: participants, creatorID: creatorID, createdAt: timestamp.dateValue(), roomImageName: roomImageName)
+        return ChatRoom(ID: ID, roomName: roomName, roomDescription: roomDescription, participants: participants, creatorID: creatorID, createdAt: timestamp.dateValue(), roomImagePath: roomImagePath)
     }
     
     private func processRoomChanges(documentChanges: [DocumentChange]) async throws {
@@ -525,7 +525,7 @@ class FirebaseManager {
                     
                 })
                 
-                if let imageName = room.roomImageName {
+                if let imageName = room.roomImagePath {
                     try await KingfisherManager.shared.cache.removeImage(forKey: imageName)
                 }
                 
