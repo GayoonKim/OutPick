@@ -19,6 +19,8 @@ class FirstProfileViewController: UIViewController {
     let datePicker = UIDatePicker()
     
     var savedBirthDate: Date?
+    
+    var userProfile = UserProfile(email: nil, nickname: nil, gender: nil, birthdate: nil, profileImagePath: nil, joinedRooms: [])
 
     override func viewDidLoad() {
         
@@ -36,7 +38,6 @@ class FirstProfileViewController: UIViewController {
         guard let index = genderButtonIndex, let birthDate = savedBirthDate else { return }
         genderButtons[index].isSelected = true
         datePicker.date = birthDate
-        
     }
     
     override func viewWillDisappear(_ animated: Bool) {
@@ -46,11 +47,17 @@ class FirstProfileViewController: UIViewController {
     }
     
     @IBAction func nextBtnTapped(_ sender: UIButton) {
-        
         performSegue(withIdentifier: "ToSecProfile", sender: nil)
     }
     
-
+    override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
+        if segue.identifier == "ToSecProfile" {
+            if let secVC = segue.destination as? SecondProfileViewController {
+                secVC.userProfile = self.userProfile
+            }
+        }
+    }
+    
     @IBAction func genderButtonPressed(_ sender: UIButton) {
         if genderButtonIndex != nil {
             if !sender.isSelected {
@@ -76,7 +83,7 @@ class FirstProfileViewController: UIViewController {
         
         if let genderBtnIndex = genderButtonIndex,
            let gender = genderButtons[genderBtnIndex].titleLabel?.text {
-            UserProfile.shared.gender = gender
+            userProfile.gender = gender
         }
      
         enableNextBtn()
@@ -143,7 +150,7 @@ class FirstProfileViewController: UIViewController {
     
     @objc func donePressed(_ sender: UIBarButtonItem) {
         dateOfBirthTextField.text = configureDateFormat(datePicker.date)
-        if let birthdate = dateOfBirthTextField.text { UserProfile.shared.birthdate = birthdate }
+        if let birthdate = dateOfBirthTextField.text { userProfile.birthdate = birthdate }
         enableNextBtn()
         view.endEditing(true)
     }

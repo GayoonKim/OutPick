@@ -64,8 +64,6 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         applyInitialSnapshot()
         setupCustomNavigationBar()
         
-        print("All Participants: \(self.userProfiles)")
-        
         SocketIOManager.shared.listenToNewParticipant()
     }
     

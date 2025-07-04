@@ -25,6 +25,15 @@ class LoginManager {
     
     var deviceIDListener: ListenerRegistration?
     
+    private(set) var currentUserProfile: UserProfile?
+    var userProfile: UserProfile? {
+        return currentUserProfile
+    }
+    
+    func setCurrentUserProfile(_ profile: UserProfile?) {
+        self.currentUserProfile = profile
+    }
+    
     // 중복 로그인 탐지
     func setupDevIDListener() async throws{
         do {
@@ -65,7 +74,7 @@ class LoginManager {
             guard let user_doc = try await FirebaseManager.shared.getUserDoc() else { return }
             
             if let savedDeviceID = user_doc.get("deviceID") as? String,
-               savedDeviceID == UserProfile.shared.deviceID {
+               savedDeviceID == self.currentUserProfile?.deviceID {
                 print("이전과 동일한 기기")
                 return
             }
@@ -88,7 +97,7 @@ class LoginManager {
 
         if let data = KeychainManager.shared.read(service: "GayoonKim.OutPick", account: "UserProfile"),
            let userProfile = try? JSONDecoder().decode(UserProfile.self, from: data) {
-            UserProfile.shared = userProfile
+            self.currentUserProfile = userProfile
             
             Task {
                 try await self.updateLogDevID()

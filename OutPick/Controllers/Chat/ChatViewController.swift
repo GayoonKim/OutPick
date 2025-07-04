@@ -131,6 +131,12 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             }
         }
         
+        if let room = self.room {
+            if room.participants.contains(LoginManager.shared.getUserEmail) {
+                
+            }
+        }
+        
     }
     
     override func viewWillDisappear(_ animated: Bool) {
@@ -143,10 +149,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         
         SocketIOManager.shared.closeConnection()
         
-        guard let room = self.room else { return }
-        if !room.participants.contains(LoginManager.shared.getUserEmail) {
-            ChatUserProfilesStoreManager.shared.clearUserProfiles(forRoomName: room.roomName)
-        }
+//        guard let room = self.room else { return }
+//        if !room.participants.contains(LoginManager.shared.getUserEmail) {
+//            ChatUserProfilesStoreManager.shared.clearUserProfiles(forRoomName: room.roomName)
+//        }
     }
 
     @MainActor
@@ -184,7 +190,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             self.chatUIView.updateHeight()
         }
         
-        let newMessage = ChatMessage(roomName: room.roomName,senderID: LoginManager.shared.getUserEmail, senderNickname: UserProfile.shared.nickname ?? "", msg: message, sentAt: Date(), attachments: [])
+        let newMessage = ChatMessage(roomName: room.roomName,senderID: LoginManager.shared.getUserEmail, senderNickname: LoginManager.shared.currentUserProfile?.nickname ?? "", msg: message, sentAt: Date(), attachments: [])
         
         SocketIOManager.shared.sendMessages(room, newMessage)
         chatUIView.sendButton.isEnabled = false
@@ -370,6 +376,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             
             updateNavigationTitle(with: room)
         }
+        
+        print("All Participants: \(ChatUserProfilesStoreManager.shared.getUserProfiles(forRoomName: room.roomName))")
     }
     
     private func setJoinRoombtn() {
@@ -414,7 +422,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 // 1. Firebase에 참여자 등록
                 try await FirebaseManager.shared.add_room_participant(room: room)
                 // 2. 소켓을 통해 다른 참여자에게 알림
-                SocketIOManager.shared.notifyNewParticipant(roomName: room.roomName, email: UserProfile.shared.email ?? "")
+                SocketIOManager.shared.notifyNewParticipant(roomName: room.roomName, email: LoginManager.shared.currentUserProfile?.email ?? "")
                 
                 try await Task.sleep(nanoseconds: 500_000_000) // 0.5초 대기
                 

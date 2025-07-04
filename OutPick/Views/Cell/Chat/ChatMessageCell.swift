@@ -162,7 +162,7 @@ class ChatMessageCell: UICollectionViewCell {
         
         let containerWidth = contentView.frame.width * 0.7
         
-        if let nickName = UserProfile.shared.nickname,
+        if let nickName = LoginManager.shared.currentUserProfile?.nickname,
            nickName == message.senderNickname {
             // 본인이 보낸 메시지
             bubbleView.backgroundColor = .systemBlue
@@ -216,7 +216,7 @@ class ChatMessageCell: UICollectionViewCell {
         messageLabel.isHidden = true
         imagesPreviewCollectionView.isHidden = false
         
-        if let nickName = UserProfile.shared.nickname {
+        if let nickName = LoginManager.shared.currentUserProfile?.nickname {
             let images = message.attachments.compactMap {
                 if let imageData = $0.fileData {
                     return UIImage(data: imageData)

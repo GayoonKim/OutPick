@@ -39,6 +39,8 @@ class SecondProfileViewController: UIViewController {
         return button
     }()
     
+    var userProfile = UserProfile(email: nil, nickname: nil, gender: nil, birthdate: nil, profileImagePath: nil, joinedRooms: [])
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         
@@ -166,20 +168,22 @@ class SecondProfileViewController: UIViewController {
     
     @IBAction func completeButtonTapped(_ sender: UIButton) {
         if let nickname = nicknameTextField.text {
-            UserProfile.shared.nickname = nickname
+            userProfile.nickname = nickname
         }
         
         if Auth.auth().currentUser?.providerData.first?.providerID == "google.com" {
             LoginManager.shared.getGoogleEmail { success in
                 if success {
-                    UserProfile.shared.email = LoginManager.shared.getUserEmail
+                    self.userProfile.email = LoginManager.shared.getUserEmail
+                    LoginManager.shared.setCurrentUserProfile(self.userProfile)
                     self.saveUserProfile(email: LoginManager.shared.getUserEmail)
                 }
             }
         } else {
             LoginManager.shared.getKakaoEmail { success in
                 if success {
-                    UserProfile.shared.email = LoginManager.shared.getUserEmail
+                    self.userProfile.email = LoginManager.shared.getUserEmail
+                    LoginManager.shared.setCurrentUserProfile(self.userProfile)
                     self.saveUserProfile(email: LoginManager.shared.getUserEmail)
                 }
             }
@@ -190,7 +194,7 @@ class SecondProfileViewController: UIViewController {
     }
     
     private func saveUserProfile(email: String) {
-        guard let nickname = UserProfile.shared.nickname else { return }
+        guard let nickname = self.userProfile.nickname else { return }
         
         Task {
             do {
@@ -202,22 +206,20 @@ class SecondProfileViewController: UIViewController {
                 if let image = profileImageView.image {
                     if isDefaultProfileImage {
                         print("기본 프로필 이미지 감지됨 - 서버 업로드 건너뜀")
-                        UserProfile.shared.profileImagePath = nil
+                        self.userProfile.profileImagePath = nil
                     } else {
                         print("사용자 지정 프로필 이미지 감지됨 - 서버 업로드 진행")
                         let imagePath = try await FirebaseStorageManager.shared.uploadImageToStorage(image: image, location: ImageLocation.ProfileImage)
-                        UserProfile.shared.profileImagePath = imagePath
+                        self.userProfile.profileImagePath = imagePath
                     }
                 } else {
                     print("프로필 이미지가 nil입니다")
-                    UserProfile.shared.profileImagePath = nil
+                    self.userProfile.profileImagePath = nil
                 }
                 
-                if let data = try? JSONEncoder().encode(UserProfile.shared) {
+                if let data = try? JSONEncoder().encode(userProfile) {
                     KeychainManager.shared.save(data, service: "GayoonKim.OutPick", account: "UserProfile")
                 }
-                
-                try await FirebaseManager.shared.saveUserProfileToFirestore(email: LoginManager.shared.getUserEmail)
                 
                 DispatchQueue.main.async {
                     let mainStorybard = UIStoryboard(name: "Main", bundle: nil)
@@ -225,6 +227,8 @@ class SecondProfileViewController: UIViewController {
                     self.view.window?.rootViewController = weatherVC
                     self.view.window?.makeKeyAndVisible()
                 }
+                
+                try await FirebaseManager.shared.saveUserProfileToFirestore(email: LoginManager.shared.getUserEmail)
                 
             } catch FirebaseError.FailedToSaveProfile {
                 print("프로필 저장 실패")

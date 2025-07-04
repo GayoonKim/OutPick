@@ -110,7 +110,7 @@ class ChatRoomInfoCell: UICollectionViewCell {
         roomParticipantCountLabel.text = "\(room.participants.count)명 참여"
         backgroundColor = UIColor(white: 0.3, alpha: 0.03)
         
-        if UserProfile.shared.email != room.creatorID {
+        if LoginManager.shared.currentUserProfile?.email != room.creatorID {
             editButtonView.isHidden = true
             NSLayoutConstraint.activate([
                 editButtonView.bottomAnchor.constraint(equalTo: roomParticipantCountLabel.bottomAnchor),

@@ -59,7 +59,7 @@ class FirebaseManager {
     //MARK: 프로필 설정 관련 기능들
     // UserProfile 문서 불러오기
     func getUserDoc() async throws -> QueryDocumentSnapshot? {
-        let profile_created_month = DateManager.shared.getMonthFromTimestamp(date: UserProfile.shared.createdAt)
+        let profile_created_month = DateManager.shared.getMonthFromTimestamp(date: LoginManager.shared.currentUserProfile?.createdAt ?? Date())
         let user_snapshot = try await db.collection("Users").document(profile_created_month).collection("\(profile_created_month) Users").whereField("email", isEqualTo: LoginManager.shared.getUserEmail).limit(to: 1).getDocuments()
         
         guard let user_doc = user_snapshot.documents.first else {
@@ -79,7 +79,7 @@ class FirebaseManager {
             if querySnapshot.isEmpty {
                 try await userProfileRef.document(DateManager.shared.currentMonth).setData(["createAt": FieldValue.serverTimestamp()])
             }
-            try await userProfileRef.document(DateManager.shared.currentMonth).collection("\(DateManager.shared.currentMonth) Users").document().setData(UserProfile.shared.toDict())
+            try await userProfileRef.document(DateManager.shared.currentMonth).collection("\(DateManager.shared.currentMonth) Users").document().setData(LoginManager.shared.currentUserProfile?.toDict() ?? [:])
             
         } catch {
             
