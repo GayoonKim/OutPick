@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width,initial-scale=1.0">
+    <title>Chat with Rooms</title>
+    <style>
+      body { margin: 0; padding: 1rem; font-family: Arial, sans-serif; }
+      #room-container { margin-bottom: 1rem; }
+      #messages { list-style-type: none; margin: 0; padding: 0; }
+      #messages > li {
+        padding: 0.5rem;
+        border-bottom: 1px solid #ddd;
+        max-width: 70%;
+        margin: 0.5rem 0;
+        border-radius: 10px;
+      }
+      .my-message {
+        background-color: #d1e7dd;
+        margin-left: auto;
+        text-align: right;
+      }
+      .other-message {
+        background-color: #f8d7da;
+        margin-right: auto;
+        text-align: left;
+      }
+      #form { display: flex; position: fixed; bottom: 0; left: 0; right: 0; padding: 0.5rem; background: #f0f0f0; }
+      #input { flex: 1; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; }
+      #form > button { margin-left: 0.5rem; padding: 0.5rem 1rem; background: #007bff; color: #fff; border: none; border-radius: 4px; }
+    </style>
+  </head>
+  <body>
+    <div id="room-container">
+      <input id="username" placeholder="Enter your username" />
+      <button id="set-username">Set Username</button>
+      <div>
+        <input id="room-name" placeholder="Enter room name" />
+        <button id="create-room">Create Room</button>
+      </div>
+      <ul id="room-list"></ul>
+    </div>
+    <ul id="messages"></ul>
+    <form id="form">
+      <input id="input" autocomplete="off" /><button>Send</button>
+    </form>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+      const socket = io();
+      let currentRoom = null;
+      let username = "";
+
+      // Username 설정
+      document.getElementById("set-username").addEventListener("click", () => {
+        username = document.getElementById("username").value.trim();
+        if (!username) {
+          alert("Please enter a username!");
+          return;
+        }
+        socket.emit("set username", username);
+      });
+
+      socket.on("username set", (user) => {
+        alert(`Username set to: ${user}`);
+      });
+
+      // 방 생성
+      document.getElementById("create-room").addEventListener("click", () => {
+        const roomName = document.getElementById("room-name").value.trim();
+        if (!roomName) {
+          alert("Please enter a room name!");
+          return;
+        }
+        socket.emit("create room", roomName);
+      });
+
+      // 방 목록 업데이트
+      socket.on("room list", (rooms) => {
+        const roomList = document.getElementById("room-list");
+        roomList.innerHTML = "";
+        rooms.forEach((room) => {
+          const li = document.createElement("li");
+          li.textContent = room;
+          li.addEventListener("click", () => {
+            currentRoom = room;
+            socket.emit("join room", room);
+          });
+          roomList.appendChild(li);
+        });
+      });
+
+      // 메시지 전송
+      document.getElementById("form").addEventListener("submit", (e) => {
+        e.preventDefault();
+        const message = document.getElementById("input").value.trim();
+        if (!currentRoom) {
+          alert("Join a room first!");
+          return;
+        }
+        if (!message) {
+          alert("Message cannot be empty!");
+          return;
+        }
+        socket.emit("chat message", { roomName: currentRoom, message, user: username });
+        document.getElementById("input").value = "";
+      });
+
+      // 메시지 수신
+      socket.on("chat message", (data) => {
+        const messages = document.getElementById("messages");
+        const li = document.createElement("li");
+        li.textContent = `${data.user}: ${data.message}`;
+        li.className = data.user === username ? "my-message" : "other-message";
+        messages.appendChild(li);
+        window.scrollTo(0, document.body.scrollHeight);
+      });
+
+      // 방 사용자 목록 업데이트
+      socket.on("user list", (users) => {
+        console.log("Users in room:", users);
+      });
+    </script>
+  </body>
+</html>
