@@ -435,6 +435,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 //                let profiles = try await FirebaseManager.shared.fetchUserProfiles(emails: updatedRoom.participants)
 //                ChatUserProfilesStoreManager.shared.saveUserProfiles(profiles, forRoomName: room.roomName)
 
+                
+                
                 // 4. UI 업데이트
                 setupChatUI()
                 chatUIView.isHidden = false
