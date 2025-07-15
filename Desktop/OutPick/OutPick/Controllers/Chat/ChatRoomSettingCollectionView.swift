@@ -7,6 +7,7 @@
 
 import UIKit
 import Combine
+import GRDB
 
 class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecognizerDelegate, UINavigationControllerDelegate, ChatModalAnimatable {
     
@@ -46,15 +47,9 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         self.images = ChatImageStoreManager.shared.getImages(for: room.roomName)
         let layout = Self.configureLayout(self.room)
         super.init(collectionViewLayout: layout)
-//        self.userProfiles = ChatUserProfilesStoreManager.shared.getUserProfiles(forRoomName: room.roomName)
         
         Task { @MainActor in
-            do {
-                self.userProfiles = try GRDBManager.shared.fetchUserProfiles(inRoom: room.roomName)
-                self.updateParticipantsSection(with: self.userProfiles)
-            } catch {
-                
-            }
+            self.observeParticipants()
         }
     }
     
@@ -67,7 +62,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         
         self.view.backgroundColor = .secondarySystemBackground
         self.attachInteractiveDismissGesture()
-
+        
         configureCollectionView()
         applyInitialSnapshot()
         setupCustomNavigationBar()
@@ -80,6 +75,30 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         
     }
     
+    private func observeParticipants() {
+        let observation = ValueObservation.tracking { db in
+            let sql = """
+                    SELECT userProfile.*
+                    FROM userProfile
+                    JOIN roomParticipant ON userProfile.email = roomParticipant.email
+                    WHERE roomParticipant.roomId = ?
+                    """
+            return try UserProfile.fetchAll(db, sql: sql, arguments: [self.room.roomName])
+        }
+        
+        observation
+            .publisher(in: GRDBManager.shared.dbPool)
+            .receive(on: DispatchQueue.main)
+            .sink(receiveCompletion: {
+                print("Observation 종료: \($0)")
+            }, receiveValue: { [weak self] profiles in
+                guard let self = self else { return }
+                self.userProfiles = profiles
+                self.updateParticipantsSection(with: self.userProfiles)
+            })
+            .store(in: &cancellables)
+    }
+    
     func bindImagesPublishers(_ publisher: AnyPublisher<[UIImage], Never>) {
         publisher
             .receive(on: DispatchQueue.main)
@@ -89,17 +108,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
             }
             .store(in: &cancellables)
     }
-    
-//    func bindProfilesPublisher(_ publisher: AnyPublisher<[UserProfile], Never>) {
-//        publisher
-//            .receive(on: DispatchQueue.main)
-//            .sink { [weak self] profiles in
-//                guard let self = self else { return }
-//                self.updateParticipantsSection(with: profiles)
-//            }
-//            .store(in: &cancellables)
-//    }
-//    
+
     private static func configureLayout(_ room: ChatRoom) -> UICollectionViewCompositionalLayout {
         return UICollectionViewCompositionalLayout { (sectionIndex: Int, environment: NSCollectionLayoutEnvironment) -> NSCollectionLayoutSection? in
             switch Section(rawValue: sectionIndex)! {
@@ -133,7 +142,6 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
                 
             case .participantsSection:
                 let count = room.participants.count
-//                let count = try GRDBManager.shared.fetchUserProfiles(inRoom: room.roomName).count
                 let rowCount = ceil(Double(count) / 1.0) // 한 줄에 1명 보여주는 구성일 경우
                 let itemHeight: CGFloat = 53
                 let spacing: CGFloat = 5
@@ -215,6 +223,8 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
     }
     
     private func updateParticipantsSection(with userProfiles: [UserProfile]) {
+        print(#function, "호출되었습니다.", userProfiles)
+        
         var snapshot = dataSource.snapshot()
         snapshot.deleteItems(snapshot.itemIdentifiers(inSection: .participantsSection))
         snapshot.appendItems([.participantsItem(userProfiles)], toSection: .participantsSection)

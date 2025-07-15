@@ -10,7 +10,7 @@ import GRDB
 
 final class GRDBManager {
     static let shared = GRDBManager()
-    private let dbPool: DatabasePool
+    let dbPool: DatabasePool
     
     private init() {
         // DB 파일 경로 설정
@@ -47,7 +47,7 @@ final class GRDBManager {
     // MARK: 사용자 프로필
     func insertUserProfile(_ profile: UserProfile) throws {
         try dbPool.write { db in
-            try profile.insert(db)
+            try profile.save(db)
         }
     }
     

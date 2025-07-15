@@ -335,9 +335,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             .sink { [weak self] updatedRoom in
                 guard let self = self,
                       let _ = self.room else { return }
+                print(#function, "방 정보 변경: \(updatedRoom)")
                 self.room = updatedRoom
-                self.updateNavigationTitle(with: updatedRoom)
-                Task {
+                Task { @MainActor in
+                    self.updateNavigationTitle(with: updatedRoom)
                     try await self.syncProfilesWithLocalDB(emails: updatedRoom.participants)
                 }
             }
@@ -370,7 +371,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 setupChatUI()
                 chatUIView.isHidden = false
                 joinRoomBtn.isHidden = true
-                try await self.syncProfilesWithLocalDB(emails: room.participants)
+//                try await self.syncProfilesWithLocalDB(emails: room.participants)
                 self.bindRoomChangePublisher()
             } else {
                 setJoinRoombtn()
@@ -410,7 +411,15 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     @MainActor
     private func updateNavigationTitle(with room: ChatRoom) {
-        self.navigationItem.setTitle(title: room.roomName, subtitle: "\(room.participants.count)명 참여")
+        // ✅ 커스텀 내비게이션 바 타이틀 업데이트
+            customNavigationBar.configureForChatRoom(
+                unreadCount: 99, // 필요한 경우 여기도 업데이트 필요
+                roomTitle: room.roomName,
+                participantCount: room.participants.count,
+                onBack: backButtonTapped,
+                onSearch: searchButtonTapped,
+                onSetting: settingButtonTapped
+            )
     }
     
     @MainActor
@@ -430,12 +439,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 
                 let updatedRoom = try await FirebaseManager.shared.fetchRoomInfo(room: room)
                 self.room = updatedRoom
-                
-                // 3. 전체 프로필 동기화
-//                let profiles = try await FirebaseManager.shared.fetchUserProfiles(emails: updatedRoom.participants)
-//                ChatUserProfilesStoreManager.shared.saveUserProfiles(profiles, forRoomName: room.roomName)
-
-                
+                self.updateNavigationTitle(with: updatedRoom)
                 
                 // 4. UI 업데이트
                 setupChatUI()
