@@ -14,6 +14,7 @@ import PhotosUI
 import Kingfisher
 import Firebase
 import FirebaseStorage
+import FirebaseFirestore
 
 class FirebaseStorageManager {
     

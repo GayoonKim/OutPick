@@ -347,6 +347,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     @MainActor
     private func syncProfilesWithLocalDB(emails: [String]) async throws {
+        print(#function, "호출 완료")
+        
         do {
             let profiles = try await FirebaseManager.shared.fetchUserProfiles(emails: emails)
             
@@ -371,12 +373,13 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 setupChatUI()
                 chatUIView.isHidden = false
                 joinRoomBtn.isHidden = true
-//                try await self.syncProfilesWithLocalDB(emails: room.participants)
+                try await self.syncProfilesWithLocalDB(emails: room.participants)
                 self.bindRoomChangePublisher()
             } else {
                 setJoinRoombtn()
                 joinRoomBtn.isHidden = false
                 chatUIView.isHidden = true
+                self.customNavigationBar.rightStack.isUserInteractionEnabled = false
             }
             
             updateNavigationTitle(with: room)
@@ -427,6 +430,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         guard let room = self.room else { return }
 
         joinRoomBtn.isHidden = true
+        self.customNavigationBar.rightStack.isUserInteractionEnabled = true
 
         Task {
             do {
@@ -440,6 +444,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 let updatedRoom = try await FirebaseManager.shared.fetchRoomInfo(room: room)
                 self.room = updatedRoom
                 self.updateNavigationTitle(with: updatedRoom)
+                try await self.syncProfilesWithLocalDB(emails: updatedRoom.participants)
                 
                 // 4. UI 업데이트
                 setupChatUI()
@@ -590,14 +595,17 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
     }
     
-    @MainActor
-    /*@objc */private func settingButtonTapped() {
-        guard let room = self.room else { return }
-        let settingVC = ChatRoomSettingCollectionView(room: room)
-        settingVC.modalPresentationStyle = .fullScreen
-        settingVC.bindImagesPublishers(self.imagesPublishser)
-
-        ChatModalTransitionManager.present(settingVC, from: self)
+    private func settingButtonTapped() {
+        Task { @MainActor in
+            guard let room = self.room else { return }
+            let profiles = try GRDBManager.shared.fetchUserProfiles(inRoom: room.roomName)
+            
+            let settingVC = ChatRoomSettingCollectionView(room: room, profiles: profiles)
+            settingVC.modalPresentationStyle = .fullScreen
+            settingVC.bindImagesPublishers(self.imagesPublishser)
+            
+            ChatModalTransitionManager.present(settingVC, from: self)
+        }
     }
 
     @MainActor

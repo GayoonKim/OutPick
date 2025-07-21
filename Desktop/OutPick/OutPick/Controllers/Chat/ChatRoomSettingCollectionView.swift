@@ -42,14 +42,16 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
     
     private var cancellables = Set<AnyCancellable>()
     
-    init(room: ChatRoom) {
+    init(room: ChatRoom, profiles: [UserProfile]) {
         self.room = room
+        self.userProfiles = profiles
         self.images = ChatImageStoreManager.shared.getImages(for: room.roomName)
-        let layout = Self.configureLayout(self.room)
+        let layout = Self.configureLayout(self.room, userProfiles: self.userProfiles)
         super.init(collectionViewLayout: layout)
         
         Task { @MainActor in
             self.observeParticipants()
+            self.observeRoomInfo()
         }
     }
     
@@ -68,31 +70,66 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         setupCustomNavigationBar()
         
         SocketIOManager.shared.listenToNewParticipant()
+//        Task { try GRDBManager.shared.removeUser("qjxj315@naver.com", fromRoom: self.room.roomName) }
     }
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         
+        // 소켓 연결 상태 확인 및 리스너 설정
+        if SocketIOManager.shared.isConnected {
+            SocketIOManager.shared.joinRoom(room.roomName)
+            SocketIOManager.shared.listenToNewParticipant()
+        } else {
+            SocketIOManager.shared.establishConnection { [weak self] in
+                guard let self = self else { return }
+                SocketIOManager.shared.joinRoom(self.room.roomName)
+                SocketIOManager.shared.listenToNewParticipant()
+            }
+        }
+    }
+    
+    private func observeRoomInfo() {
+        FirebaseManager.shared.roomChangePublisher
+            .receive(on: DispatchQueue.main)
+            .filter{ [weak self] updatedRoom in
+                updatedRoom.roomName == self?.room.roomName
+            }
+            .sink { [weak self] updatedRoom in
+                guard let self = self else { return }
+                print(#function, "방 정보 변경: \(updatedRoom)")
+                
+                self.room = updatedRoom
+                self.updateRoomInfoSection()
+                
+            }
+            .store(in: &cancellables)
     }
     
     private func observeParticipants() {
         let observation = ValueObservation.tracking { db in
             let sql = """
-                    SELECT userProfile.*
+                    SELECT DISTINCT userProfile.*
                     FROM userProfile
                     JOIN roomParticipant ON userProfile.email = roomParticipant.email
                     WHERE roomParticipant.roomId = ?
+                    ORDER BY userProfile.nickname
                     """
             return try UserProfile.fetchAll(db, sql: sql, arguments: [self.room.roomName])
         }
         
         observation
-            .publisher(in: GRDBManager.shared.dbPool)
-            .receive(on: DispatchQueue.main)
-            .sink(receiveCompletion: {
-                print("Observation 종료: \($0)")
+            .publisher(in: GRDBManager.shared.dbPool, scheduling: .async(onQueue: .main))
+            .sink(receiveCompletion: { completion in
+                switch completion {
+                case .finished:
+                    print("Participants observation completed normally")
+                case .failure(let error):
+                    print("Participants observation error: \(error)")
+                }
             }, receiveValue: { [weak self] profiles in
                 guard let self = self else { return }
+                print("새로운 참여자 프로필 업데이트:", profiles.map { $0.nickname })
                 self.userProfiles = profiles
                 self.updateParticipantsSection(with: self.userProfiles)
             })
@@ -109,7 +146,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
             .store(in: &cancellables)
     }
 
-    private static func configureLayout(_ room: ChatRoom) -> UICollectionViewCompositionalLayout {
+    private static func configureLayout(_ room: ChatRoom, userProfiles: [UserProfile]) -> UICollectionViewCompositionalLayout {
         return UICollectionViewCompositionalLayout { (sectionIndex: Int, environment: NSCollectionLayoutEnvironment) -> NSCollectionLayoutSection? in
             switch Section(rawValue: sectionIndex)! {
             
@@ -141,7 +178,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
                 return section
                 
             case .participantsSection:
-                let count = room.participants.count
+                let count = userProfiles.count
                 let rowCount = ceil(Double(count) / 1.0) // 한 줄에 1명 보여주는 구성일 경우
                 let itemHeight: CGFloat = 53
                 let spacing: CGFloat = 5
@@ -210,6 +247,20 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         dataSource.apply(snapshot, animatingDifferences: false)
     }
     
+    private func updateRoomInfoSection() {
+        var snapshot = dataSource.snapshot()
+        snapshot.deleteItems(snapshot.itemIdentifiers(inSection: .roomInfoSection))
+        snapshot.appendItems([.roomInfoItem(self.room)], toSection: .roomInfoSection)
+        dataSource.apply(snapshot, animatingDifferences: true) { [weak self] in
+            guard let self = self else { return }
+            // roomInfoItem 셀 찾아서 강제로 업데이트
+            if let indexPath = self.dataSource.indexPath(for: .roomInfoItem(self.room)),
+               let cell = self.collectionView.cellForItem(at: indexPath) as? ChatRoomInfoCell {
+                cell.configureCell(room: self.room)
+            }
+        }
+    }
+    
     private func updateMediaSection(with images: [UIImage]) {
         guard let dataSource = self.dataSource else {
             print("dataSource가 아직 초기화되지 않았습니다.")
@@ -222,13 +273,21 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         dataSource.apply(snapshot, animatingDifferences: true)
     }
     
+    @MainActor
     private func updateParticipantsSection(with userProfiles: [UserProfile]) {
         print(#function, "호출되었습니다.", userProfiles)
-        
         var snapshot = dataSource.snapshot()
         snapshot.deleteItems(snapshot.itemIdentifiers(inSection: .participantsSection))
         snapshot.appendItems([.participantsItem(userProfiles)], toSection: .participantsSection)
-        dataSource.apply(snapshot, animatingDifferences: true)
+        dataSource.apply(snapshot, animatingDifferences: true) { [weak self] in
+            guard let self = self else { return }
+            // layout을 새로 할당!
+            self.collectionView.setCollectionViewLayout(Self.configureLayout(self.room, userProfiles: userProfiles), animated: false)
+            if let indexPath = self.dataSource.indexPath(for: .participantsItem(userProfiles)),
+               let cell = self.collectionView.cellForItem(at: indexPath) as? ParticipantsSectionParticipantCell {
+                cell.configureCell(userProfiles)
+            }
+        }
     }
     
     private func configureCollectionView() {

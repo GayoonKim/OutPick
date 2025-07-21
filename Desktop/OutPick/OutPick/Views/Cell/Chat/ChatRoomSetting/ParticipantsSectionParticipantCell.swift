@@ -21,7 +21,7 @@ class ParticipantsSectionParticipantCell: UICollectionViewCell {
         return label
     }()
     
-    private lazy var verticalCollectionView: UICollectionView = {
+    public lazy var verticalCollectionView: UICollectionView = {
         let layout = UICollectionViewCompositionalLayout { sectionIndex, environment in
             let itemSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .absolute(60))
             let item = NSCollectionLayoutItem(layoutSize: itemSize)
@@ -74,21 +74,34 @@ class ParticipantsSectionParticipantCell: UICollectionViewCell {
     }
     
     func configureCell(_ profiles: [UserProfile]) {
-        participantLabel.text = "대화상대 \(profiles.count)"
+        print(#function, "호출 완료: ", profiles.map { $0.nickname })
         self.userProfiles = profiles
-        verticalCollectionView.reloadData()
+        participantLabel.text = "대화상대 \(profiles.count)"
+        
+        // 메인 스레드에서 UI 업데이트
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.verticalCollectionView.reloadData()
+            self.verticalCollectionView.layoutIfNeeded()
+            
+            // 강제로 레이아웃 업데이트
+            self.setNeedsLayout()
+            self.layoutIfNeeded()
+        }
     }
 }
 
 extension ParticipantsSectionParticipantCell: UICollectionViewDataSource, UICollectionViewDelegate {
     func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
-        self.userProfiles.count
+        print("numberOfItemsInSection:", userProfiles.count)
+        return self.userProfiles.count
     }
     
     func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
 //        if indexPath.item < self.userProfiles.count {
 //
 //        }
+        print("cellForItemAt:", indexPath, userProfiles[indexPath.item].nickname ?? "")
         let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ParticipantListCell.reuseIdentifier, for: indexPath) as! ParticipantListCell
         cell.configureCell(userProfile: self.userProfiles[indexPath.item])
         

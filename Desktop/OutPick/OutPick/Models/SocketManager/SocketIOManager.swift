@@ -27,9 +27,15 @@ class SocketIOManager {
         return messageSubject.eraseToAnyPublisher()
     }
     
+    // 새로운 참여자 알림을 위한 Publisher 추가
+    private let participantSubject = PassthroughSubject<(String, String), Never>() // (roomName, email)
+    var participantUpdatePublisher: AnyPublisher<(String, String), Never> {
+        return participantSubject.eraseToAnyPublisher()
+    }
+    
     private init() {
         //manager = SocketManager(socketURL: URL(string: "http://127.0.0.1:3000")!, config: [.log(true), .compress])
-        manager = SocketManager(socketURL: URL(string: "http://192.168.123.185:3000")!, config: [.log(true), .compress])
+        manager = SocketManager(socketURL: URL(string: "http://192.168.123.106:3000")!, config: [.log(true), .compress])
         socket = manager.defaultSocket
         
         socket.on(clientEvent: .connect) {data, ack in
@@ -396,14 +402,26 @@ class SocketIOManager {
                 return
             }
 
-//            Task {
-//                do {
-//                    let profile = try await FirebaseManager.shared.fetchUserProfileFromFirestore(email: email)
-//                    ChatUserProfilesStoreManager.shared.appendUserProfile(profile, forRoomName: roomName)
-//                } catch {
-//                    print("새 참여자 프로필 불러오기 실패: \(error)")
-//                }
-//            }
+            Task { @MainActor in
+                do {
+                    let profile = try await FirebaseManager.shared.fetchUserProfileFromFirestore(email: email)
+                    
+                    // GRDB를 통해 로컬 DB에 저장
+                    try await GRDBManager.shared.dbPool.write { db in
+                        try profile.save(db)
+                        try db.execute(
+                            sql: "INSERT OR REPLACE INTO roomParticipant (roomId, email) VALUES (?, ?)",
+                            arguments: [roomName, email]
+                        )
+                    }
+                    
+                    // 새로운 참여자 알림 발행
+                    self.participantSubject.send((roomName, email))
+                    
+                } catch {
+                    print("새 참여자 프로필 불러오기/저장 실패: \(error)")
+                }
+            }
         }
     }
 }
