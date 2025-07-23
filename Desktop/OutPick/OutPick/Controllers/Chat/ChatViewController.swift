@@ -12,6 +12,7 @@ import AVKit
 import Combine
 import PhotosUI
 import Firebase
+import Kingfisher
 
 class ChatViewController: UIViewController, UINavigationControllerDelegate, ChatModalAnimatable {
     
@@ -110,26 +111,35 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
 
-        // 이미 연결된 경우에는 room join과 listener 설정만 수행
-        if let room = self.room,
-           room.participants.contains(LoginManager.shared.getUserEmail) {
-            if SocketIOManager.shared.isConnected {
-                SocketIOManager.shared.socket.off("chat message")
-                SocketIOManager.shared.joinRoom(room.roomName)
-                SocketIOManager.shared.listenToChatMessage()
-                SocketIOManager.shared.listenToNewParticipant()
-            } else {
-                // 연결되지 않은 경우에만 연결 시도
-                SocketIOManager.shared.establishConnection { [weak self] in
-                    guard let self = self else { return }
-                    SocketIOManager.shared.socket.off("chat message")
+        Task {
+            // 이미 연결된 경우에는 room join과 listener 설정만 수행
+            if let room = self.room,
+               room.participants.contains(LoginManager.shared.getUserEmail) {
+                let localMessages = try GRDBManager.shared.fetchMessages(in: room.roomName)
+                for message in localMessages {
+                    self.chatMessageCollectionView.addMessage(with: message)
+                }
+                
+                await self.syncMessagesIfNeeded(for: room)
+                
+                if SocketIOManager.shared.isConnected {
                     SocketIOManager.shared.joinRoom(room.roomName)
+                    SocketIOManager.shared.socket.off("chat message")
                     SocketIOManager.shared.listenToChatMessage()
                     SocketIOManager.shared.listenToNewParticipant()
+                } else {
+                    // 연결되지 않은 경우에만 연결 시도
+                    SocketIOManager.shared.establishConnection { [weak self] in
+                        guard let _ = self else { return }
+                        SocketIOManager.shared.joinRoom(room.roomName)
+                        SocketIOManager.shared.socket.off("chat message")
+                        SocketIOManager.shared.listenToChatMessage()
+                        SocketIOManager.shared.listenToNewParticipant()
+                    }
                 }
+                
+                self.bindRoomChangePublisher()
             }
-            
-            self.bindRoomChangePublisher()
         }
     }
     
@@ -142,6 +152,19 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
         
         SocketIOManager.shared.closeConnection()
+        
+        if let room = self.room,
+           !room.participants.contains(LoginManager.shared.getUserEmail) {
+            Task { @MainActor in
+                do {
+                    try GRDBManager.shared.deleteMessages(inRoom: room.roomName)
+                    try GRDBManager.shared.deleteImages(inRoom: room.roomName)
+                    print("참여하지 않은 사용자의 임시 메시지/이미지 삭제 완료")
+                } catch {
+                    print("GRDB 메시지/이미지 삭제 실패: \(error)")
+                }
+            }
+        }
     }
 
     @MainActor
@@ -240,17 +263,39 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 guard let self = self else { return }
                 
                 print("\(receivedMessage.isFailed ? "전송 실패" : "전송 성공") 메시지 수신: \(receivedMessage)")
-                if let room = self.room {
-                    if !receivedMessage.isFailed {
-                        Task { try await FirebaseManager.shared.saveMessage(receivedMessage, room) }
+                guard let room = self.room else { return }
+                
+                if !receivedMessage.isFailed {
+                    Task {
+                        if receivedMessage.senderID == LoginManager.shared.getUserEmail {
+                            // ✅ 보낸 본인만 Firebase에 저장
+                            try await FirebaseManager.shared.saveMessage(receivedMessage, room)
+                        }
                         
-                        if !receivedMessage.attachments.isEmpty {
-                            let images = receivedMessage.attachments.compactMap{ $0.toUIImage() }
-                            ChatImageStoreManager.shared.addImages(images, for: receivedMessage.roomName)
-                            imagesSubject.send(images)
+                        try GRDBManager.shared.saveChatMessage(receivedMessage)
+                        
+                        for attachment in receivedMessage.attachments {
+                            guard attachment.type == .image, let imageName = attachment.fileName else { continue }
+                            
+                            try GRDBManager.shared.addImage(imageName, toRoom: room.roomName, at: receivedMessage.sentAt ?? Date())
+                            
+                            if let image = attachment.toUIImage() {
+                                try await KingfisherManager.shared.cache.store(image, forKey: imageName)
+                            }
                         }
                     }
                 }
+//                if let room = self.room {
+//                    if !receivedMessage.isFailed {
+//                        Task { try await FirebaseManager.shared.saveMessage(receivedMessage, room) }
+//                        
+//                        if !receivedMessage.attachments.isEmpty {
+//                            let images = receivedMessage.attachments.compactMap{ $0.toUIImage() }
+//                            ChatImageStoreManager.shared.addImages(images, for: receivedMessage.roomName)
+//                            imagesSubject.send(images)
+//                        }
+//                    }
+//                }
                 chatMessageCollectionView.addMessage(with: receivedMessage)
             }
             .store(in: &cancellables)
@@ -343,6 +388,45 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 }
             }
             .store(in: &cancellables)
+    }
+    
+    @MainActor
+    private func syncMessagesIfNeeded(for room: ChatRoom) async {
+        print(#function, "✅ 호출 완료: ", room)
+        
+        do {
+//            async let lastDate = try GRDBManager.shared.fetchLastMessageTimestamp(for: room.roomName)
+            let messages: [ChatMessage]
+            if let lastDate = try GRDBManager.shared.fetchLastMessageTimestamp(for: room.roomName) {
+                print(#function, "✅ 마지막 시간: ", lastDate)
+                messages = try await FirebaseManager.shared.fetchMessages(after: lastDate, for: room)
+            } else {
+                messages = try await FirebaseManager.shared.fetchAllMessages(for: room)
+            }
+            print(#function, "✅ 호출 완료: ", messages)
+            
+            for message in messages {
+                try GRDBManager.shared.saveChatMessage(message)
+                chatMessageCollectionView.addMessage(with: message)
+                
+                if !message.attachments.isEmpty {
+                    await withTaskGroup(of: Void.self) { group in
+                        for attachment in message.attachments {
+                            guard attachment.type == .image, let imageName = attachment.fileName else { continue }
+                            try? GRDBManager.shared.addImage(imageName, toRoom: room.roomName, at: message.sentAt ?? Date())
+                            
+                            group.addTask {
+                                if let image = attachment.toUIImage() {
+                                    try? await KingfisherManager.shared.cache.store(image, forKey: imageName)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch {
+            print("❌ 메시지 동기화 실패: \(error)")
+        }
     }
     
     @MainActor

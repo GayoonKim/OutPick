@@ -19,18 +19,24 @@ struct ChatMessage: SocketData, Codable {
     let sentAt: Date?                   // 메시지 보낸 시간
     let attachments: [Attachment]
     var isFailed: Bool = false
+
+    enum CodingKeys: String, CodingKey {
+        case roomName
+        case senderID
+        case senderNickname = "senderNickname"
+        case msg
+        case sentAt
+        case attachments
+    }
     
     func toSocketRepresentation() -> SocketData {
         var dict: [String: Any] = [
             "roomName": roomName,
             "senderID": senderID,
-            "senderNickName": senderNickname,
+            "senderNickname": senderNickname,
             "msg": msg ?? "",
         ]
         
-//        if let attachments = attachments {
-//            dict["attachments"] = attachments.map{ $0.toDict() }
-//        }
         dict["attachments"] = attachments.map { $0.toDict() }
         
         return dict
@@ -41,14 +47,11 @@ struct ChatMessage: SocketData, Codable {
         var dict: [String: Any] = [
             "roomName": roomName,
             "senderID": senderID,
-            "senderNickName": senderNickname,
+            "senderNickname": senderNickname,
             "msg": msg ?? "",
             "sentAt": Timestamp(date: sentAt ?? Date())
         ]
-        
-//        if let attachments = attachments {
-//            dict["attachments"] = attachments.map{ $0.toDict() }
-//        }
+
         dict["attachments"] = attachments.map { $0.toDict() }
         
         return dict

@@ -585,6 +585,69 @@ class FirebaseManager {
             print("메시지 전송 전송 및 저장 실패")
         }
     }
+
+    func fetchMessages(after date: Date?, for room: ChatRoom) async throws -> [ChatMessage] {
+        print(#function, "✅ 호출 완료")
+        
+        let monthID = DateManager.shared.getMonthFromTimestamp(date: room.createdAt)
+        
+        let collection = db
+            .collection("Rooms")
+            .document(monthID)
+            .collection("\(monthID) Rooms")
+            .document(room.ID ?? room.roomName)
+            .collection("Messages")
+        
+        var query: Query = collection.order(by: "sentAt", descending: false)
+        
+        if let date = date {
+            query = query.whereField("sentAt", isGreaterThan: Timestamp(date: date))
+        }
+        
+        let snapshot = try await query.getDocuments()
+        
+        print("📦 불러온 메시지 개수: \(snapshot.count)")
+        
+        return snapshot.documents.compactMap { doc in
+            do {
+                return try doc.data(as: ChatMessage.self)
+            } catch {
+                print("🔥 메시지 디코딩 실패: \(error.localizedDescription) → \(doc.data())")
+                return nil
+            }
+        }
+    }
+    
+    func fetchAllMessages(for room: ChatRoom) async throws -> [ChatMessage] {
+        print(#function, "✅ 호출 완료")
+
+        let monthID = DateManager.shared.getMonthFromTimestamp(date: room.createdAt)
+        
+        guard let roomID = room.ID else {
+            print("❌ room.ID 가 nil입니다.")
+            return []
+        }
+
+        let messagesSnapshot = try await db
+            .collection("Rooms")
+            .document(monthID)
+            .collection("\(monthID) Rooms")
+            .document(roomID)
+            .collection("Messages")
+            .order(by: "sentAt", descending: false)
+            .getDocuments()
+        
+        print("📦 불러온 메시지 개수: \(messagesSnapshot.count)")
+
+        return messagesSnapshot.documents.compactMap { doc in
+            do {
+                return try doc.data(as: ChatMessage.self)
+            } catch {
+                print("🔥 메시지 디코딩 실패: \(error.localizedDescription) → \(doc.data())")
+                return nil
+            }
+        }
+    }
 }
 
 extension UIImage {
