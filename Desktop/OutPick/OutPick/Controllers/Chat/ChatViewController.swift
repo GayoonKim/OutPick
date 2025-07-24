@@ -285,17 +285,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                         }
                     }
                 }
-//                if let room = self.room {
-//                    if !receivedMessage.isFailed {
-//                        Task { try await FirebaseManager.shared.saveMessage(receivedMessage, room) }
-//                        
-//                        if !receivedMessage.attachments.isEmpty {
-//                            let images = receivedMessage.attachments.compactMap{ $0.toUIImage() }
-//                            ChatImageStoreManager.shared.addImages(images, for: receivedMessage.roomName)
-//                            imagesSubject.send(images)
-//                        }
-//                    }
-//                }
+
                 chatMessageCollectionView.addMessage(with: receivedMessage)
             }
             .store(in: &cancellables)
@@ -684,9 +674,17 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             guard let room = self.room else { return }
             let profiles = try GRDBManager.shared.fetchUserProfiles(inRoom: room.roomName)
             
-            let settingVC = ChatRoomSettingCollectionView(room: room, profiles: profiles)
+            var images = [UIImage]()
+            let imageNames = try GRDBManager.shared.fetchImageNames(inRoom: room.roomName)
+            for imageName in imageNames {
+                if let image = await KingFisherCacheManager.shared.loadImage(named: imageName) {
+                    images.append(image)
+                }
+            }
+            
+            let settingVC = ChatRoomSettingCollectionView(room: room, profiles: profiles, images: images)
             settingVC.modalPresentationStyle = .fullScreen
-            settingVC.bindImagesPublishers(self.imagesPublishser)
+//            settingVC.bindImagesPublishers(self.imagesPublishser)
             
             ChatModalTransitionManager.present(settingVC, from: self)
         }

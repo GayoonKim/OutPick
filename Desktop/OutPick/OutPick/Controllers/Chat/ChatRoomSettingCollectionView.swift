@@ -8,6 +8,7 @@
 import UIKit
 import Combine
 import GRDB
+import Kingfisher
 
 class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecognizerDelegate, UINavigationControllerDelegate, ChatModalAnimatable {
     
@@ -42,14 +43,17 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
     
     private var cancellables = Set<AnyCancellable>()
     
-    init(room: ChatRoom, profiles: [UserProfile]) {
+    
+    init(room: ChatRoom, profiles: [UserProfile], images: [UIImage]) {
         self.room = room
         self.userProfiles = profiles
-        self.images = ChatImageStoreManager.shared.getImages(for: room.roomName)
-        let layout = Self.configureLayout(self.room, userProfiles: self.userProfiles)
+        self.images = images
+        let layout = Self.configureLayout(self.room, userProfiles: self.userProfiles, images: self.images)
         super.init(collectionViewLayout: layout)
         
         Task { @MainActor in
+            self.updateMediaSection()
+            self.observeRoomImages(for: self.room.roomName)
             self.observeParticipants()
             self.observeRoomInfo()
         }
@@ -70,7 +74,6 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         setupCustomNavigationBar()
         
         SocketIOManager.shared.listenToNewParticipant()
-//        Task { try GRDBManager.shared.removeUser("qjxj315@naver.com", fromRoom: self.room.roomName) }
     }
     
     override func viewWillAppear(_ animated: Bool) {
@@ -88,6 +91,45 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
             }
         }
     }
+
+private func observeRoomImages(for roomID: String) {
+    let observation = ValueObservation.tracking { db in
+        print("🔄 roomImage 테이블 변경 감지")
+        return try Row.fetchAll(
+            db,
+            sql: "SELECT rowid, imageName FROM roomImage WHERE roomId = ? ORDER BY uploadedAt",
+            arguments: [roomID]
+        )
+        .compactMap { row in
+            row["imageName"] as? String
+        }
+    }
+
+    observation
+        .publisher(in: GRDBManager.shared.dbPool, scheduling: .async(onQueue: .main))
+        .sink(
+            receiveCompletion: { completion in
+                if case let .failure(error) = completion {
+                    print("roomImage 관찰 에러:", error)
+                }
+            },
+            receiveValue: { [weak self] imageNames in
+                guard let self = self else { return }
+                Task { @MainActor in
+                    var images = [UIImage]()
+                    for name in imageNames {
+                        if let image = await KingFisherCacheManager.shared.loadImage(named: name) {
+                            images.append(image)
+                        }
+                    }
+
+                    self.images = images
+                    self.updateMediaSection()
+                }
+            }
+        )
+        .store(in: &cancellables)
+}
     
     private func observeRoomInfo() {
         FirebaseManager.shared.roomChangePublisher
@@ -136,17 +178,17 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
             .store(in: &cancellables)
     }
     
-    func bindImagesPublishers(_ publisher: AnyPublisher<[UIImage], Never>) {
-        publisher
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] images in
-                guard let self = self else { return }
-                self.updateMediaSection(with: images)
-            }
-            .store(in: &cancellables)
-    }
+//    func bindImagesPublishers(_ publisher: AnyPublisher<[UIImage], Never>) {
+//        publisher
+//            .receive(on: DispatchQueue.main)
+//            .sink { [weak self] images in
+//                guard let self = self else { return }
+//                self.updateMediaSection(with: images)
+//            }
+//            .store(in: &cancellables)
+//    }
 
-    private static func configureLayout(_ room: ChatRoom, userProfiles: [UserProfile]) -> UICollectionViewCompositionalLayout {
+    private static func configureLayout(_ room: ChatRoom, userProfiles: [UserProfile], images: [UIImage]) -> UICollectionViewCompositionalLayout {
         return UICollectionViewCompositionalLayout { (sectionIndex: Int, environment: NSCollectionLayoutEnvironment) -> NSCollectionLayoutSection? in
             switch Section(rawValue: sectionIndex)! {
             
@@ -164,7 +206,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
                 return section
                 
             case .mediaSection:
-                let height: CGFloat = ChatImageStoreManager.shared.getImages(for: room.roomName).count > 0 ? 130 : 44
+                let height: CGFloat = images.count > 0 ? 130 : 44
                 
                 let itemSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .estimated(height))
                 let item = NSCollectionLayoutItem(layoutSize: itemSize)
@@ -261,7 +303,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         }
     }
     
-    private func updateMediaSection(with images: [UIImage]) {
+    private func updateMediaSection() {
         guard let dataSource = self.dataSource else {
             print("dataSource가 아직 초기화되지 않았습니다.")
             return
@@ -269,8 +311,16 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         
         var snapshot = dataSource.snapshot()
         snapshot.deleteItems(snapshot.itemIdentifiers(inSection: .mediaSection))
-        snapshot.appendItems([.mediaItem(images)], toSection: .mediaSection)
-        dataSource.apply(snapshot, animatingDifferences: true)
+        snapshot.appendItems([.mediaItem(self.images)], toSection: .mediaSection)
+        dataSource.apply(snapshot, animatingDifferences: true) { [weak self] in
+            guard let self = self else { return }
+            
+            self.collectionView.setCollectionViewLayout(Self.configureLayout(self.room, userProfiles: self.userProfiles, images: self.images), animated: false)
+            if let indexPath = self.dataSource.indexPath(for: .mediaItem(self.images)),
+               let cell = self.collectionView.cellForItem(at: indexPath) as? ChatRoomMediaCollectionViewCell {
+                cell.configureCell(for: images)
+            }
+        }
     }
     
     @MainActor
@@ -282,7 +332,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         dataSource.apply(snapshot, animatingDifferences: true) { [weak self] in
             guard let self = self else { return }
             // layout을 새로 할당!
-            self.collectionView.setCollectionViewLayout(Self.configureLayout(self.room, userProfiles: userProfiles), animated: false)
+            self.collectionView.setCollectionViewLayout(Self.configureLayout(self.room, userProfiles: userProfiles, images: self.images), animated: false)
             if let indexPath = self.dataSource.indexPath(for: .participantsItem(userProfiles)),
                let cell = self.collectionView.cellForItem(at: indexPath) as? ParticipantsSectionParticipantCell {
                 cell.configureCell(userProfiles)
