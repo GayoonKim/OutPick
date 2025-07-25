@@ -21,14 +21,13 @@ class ChatMessageCollectionView: UIView {
     private var collectionView: UICollectionView!
     private var dataSource: UICollectionViewDiffableDataSource<Section, Item>!
     
-    private var lastDate: Date = Date()
+    private var lastMessageDate: Date?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         
         setupCollectionView()
         configureDataSource()
-        loadIntiialDateText()
     }
     
     required init?(coder: NSCoder) {
@@ -143,18 +142,22 @@ class ChatMessageCollectionView: UIView {
             }
         }
     }
-    
-    func loadIntiialDateText() {
-        let today = Date()
-        self.applySnapshot([Item.dateSeparator(today)])
-    }
-    
-    func addMessage(with newMessage: ChatMessage) {
+
+    func addMessages(_ messages: [ChatMessage]) {
         print("************************ \(#function) 호출 ************************")
-        //        updateCollectionView(with: newMessage)
-        var items = [Item]()
         
-        items.append(.message(newMessage))
+        var items: [Item] = []
+        for message in messages {
+            let messageDate = Calendar.current.startOfDay(for: message.sentAt ?? Date())
+            
+            if lastMessageDate == nil || lastMessageDate! != messageDate {
+                items.append(.dateSeparator(message.sentAt ?? Date()))
+                lastMessageDate = messageDate
+            }
+            
+            items.append(.message(message))
+        }
+        
         applySnapshot(items)
     }
     

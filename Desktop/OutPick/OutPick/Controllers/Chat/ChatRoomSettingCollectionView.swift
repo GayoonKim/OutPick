@@ -177,16 +177,6 @@ private func observeRoomImages(for roomID: String) {
             })
             .store(in: &cancellables)
     }
-    
-//    func bindImagesPublishers(_ publisher: AnyPublisher<[UIImage], Never>) {
-//        publisher
-//            .receive(on: DispatchQueue.main)
-//            .sink { [weak self] images in
-//                guard let self = self else { return }
-//                self.updateMediaSection(with: images)
-//            }
-//            .store(in: &cancellables)
-//    }
 
     private static func configureLayout(_ room: ChatRoom, userProfiles: [UserProfile], images: [UIImage]) -> UICollectionViewCompositionalLayout {
         return UICollectionViewCompositionalLayout { (sectionIndex: Int, environment: NSCollectionLayoutEnvironment) -> NSCollectionLayoutSection? in

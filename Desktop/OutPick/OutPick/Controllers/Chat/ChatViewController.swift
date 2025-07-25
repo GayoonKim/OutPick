@@ -116,9 +116,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             if let room = self.room,
                room.participants.contains(LoginManager.shared.getUserEmail) {
                 let localMessages = try GRDBManager.shared.fetchMessages(in: room.roomName)
-                for message in localMessages {
-                    self.chatMessageCollectionView.addMessage(with: message)
-                }
+//                for message in localMessages {
+//                    self.chatMessageCollectionView.addMessage(with: message)
+//                }
+                self.chatMessageCollectionView.addMessages(localMessages)
                 
                 await self.syncMessagesIfNeeded(for: room)
                 
@@ -286,7 +287,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                     }
                 }
 
-                chatMessageCollectionView.addMessage(with: receivedMessage)
+//                chatMessageCollectionView.addMessage(with: receivedMessage)
+                self.chatMessageCollectionView.addMessages([receivedMessage])
             }
             .store(in: &cancellables)
         
@@ -385,7 +387,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         print(#function, "✅ 호출 완료: ", room)
         
         do {
-//            async let lastDate = try GRDBManager.shared.fetchLastMessageTimestamp(for: room.roomName)
             let messages: [ChatMessage]
             if let lastDate = try GRDBManager.shared.fetchLastMessageTimestamp(for: room.roomName) {
                 print(#function, "✅ 마지막 시간: ", lastDate)
@@ -397,7 +398,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             
             for message in messages {
                 try GRDBManager.shared.saveChatMessage(message)
-                chatMessageCollectionView.addMessage(with: message)
                 
                 if !message.attachments.isEmpty {
                     await withTaskGroup(of: Void.self) { group in
@@ -414,6 +414,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                     }
                 }
             }
+            
+            chatMessageCollectionView.addMessages(messages)
         } catch {
             print("❌ 메시지 동기화 실패: \(error)")
         }
@@ -561,7 +563,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             // ✅ 키보드 올라온 뒤 스크롤 아래로
             self.chatMessageCollectionView.scrollToBottom()
         })
-        
     }
     
     @objc private func keyboardWillHide(_ sender: Notification) {
@@ -684,7 +685,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             
             let settingVC = ChatRoomSettingCollectionView(room: room, profiles: profiles, images: images)
             settingVC.modalPresentationStyle = .fullScreen
-//            settingVC.bindImagesPublishers(self.imagesPublishser)
             
             ChatModalTransitionManager.present(settingVC, from: self)
         }
