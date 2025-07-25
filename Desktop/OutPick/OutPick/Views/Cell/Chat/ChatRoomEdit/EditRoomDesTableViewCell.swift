@@ -51,7 +51,7 @@ class EditRoomDesTableViewCell: UITableViewCell {
     private let maxHeight: CGFloat = 200
     private var fixedHeightConstraint: NSLayoutConstraint?
     
-    let textViewChanged = PassthroughSubject<CGRect, Never>()
+    let textViewChanged = PassthroughSubject<(CGRect, String), Never>()
 
     override func awakeFromNib() {
         super.awakeFromNib()
@@ -141,7 +141,7 @@ extension EditRoomDesTableViewCell: UITextViewDelegate {
         self.updateNameCountLabel()
         
         let convertedRect = textView.convert(textView.bounds, to: tableView)
-        textViewChanged.send(convertedRect)
+        textViewChanged.send((convertedRect, textView.text))
     }
     
     func textViewDidBeginEditing(_ textView: UITextView) {

@@ -59,6 +59,7 @@ class RoomEditViewController: UIViewController, PHPickerViewControllerDelegate, 
         configureTableView()
         configureDataSource()
         applyInitialSnapshot()
+        updateCompleteBtnState()
     }
     
     private func applyInitialSnapshot() {
@@ -142,6 +143,15 @@ class RoomEditViewController: UIViewController, PHPickerViewControllerDelegate, 
                 }
                 cell.configure(self.room)
                 
+                cell.nameTextChanged
+                    .receive(on: RunLoop.main)
+                    .sink { [weak self] text in
+                        guard let self = self else { return }
+                        self.room.roomName = text
+                        self.updateCompleteBtnState()
+                    }
+                    .store(in: &self.cancellables)
+                
                 return cell
             case .description:
                 guard let cell = tableView.dequeueReusableCell(withIdentifier: EditRoomDesTableViewCell.identifier, for: indexPath) as? EditRoomDesTableViewCell else {
@@ -151,18 +161,21 @@ class RoomEditViewController: UIViewController, PHPickerViewControllerDelegate, 
                 
                 let cancellable = cell.textViewChanged
                     .receive(on: RunLoop.main)
-                    .sink { [weak self] rect in
+                    .sink { [weak self] result in
                         guard let self = self else { return }
+                        
+                        self.room.roomDescription = result.1
+                        self.updateCompleteBtnState()
                         
                         self.tableView.beginUpdates()
                         self.tableView.endUpdates()
                         
                         let keyboardHeight = self.currentKeyboardHeight ?? 0
                         let keyboardMinY = self.view.bounds.height - keyboardHeight
-                        let convertedMaxY = self.tableView.convert(rect, to: self.view).maxY
+                        let convertedMaxY = self.tableView.convert(result.0, to: self.view).maxY
                         
                         if convertedMaxY > keyboardMinY {
-                            self.tableView.scrollRectToVisible(rect, animated: true)
+                            self.tableView.scrollRectToVisible(result.0, animated: true)
                         }
                         
                     }
@@ -170,6 +183,17 @@ class RoomEditViewController: UIViewController, PHPickerViewControllerDelegate, 
                 
                 return cell
             }
+        }
+    }
+    
+    private func updateCompleteBtnState() {
+        if let button = customNavigationBar.rightStack.arrangedSubviews
+            .compactMap({ $0 as? UIButton })
+            .first(where: { $0.currentTitle == "완료" }) {
+            let isNameValid = self.room.roomName != "채팅방 이름 (필수)" && self.room.roomDescription != room.roomName
+            let isDescriptionValid = self.room.roomDescription != room.roomDescription
+            
+            button.isEnabled = isNameValid || isDescriptionValid
         }
     }
     
@@ -243,9 +267,7 @@ class RoomEditViewController: UIViewController, PHPickerViewControllerDelegate, 
                     do {
                         let image = try await MediaManager.shared.convertImage(result)
                         self.selectedImage = image
-                        
-                        let prevImgName = self.room.roomImagePath
-                        
+//                        let prevImgName = self.room.roomImagePath
                         
                         var snapshot = dataSource.snapshot()
                         snapshot.reloadItems([.image])
@@ -287,13 +309,27 @@ private extension RoomEditViewController {
             customNavigationBar.trailingAnchor.constraint(equalTo: self.view.trailingAnchor),
         ])
         
+        let completeBtn = UIButton(type: .system)
+        completeBtn.setTitle("완료", for: .normal)
+        completeBtn.setTitleColor(.black, for: .normal)
+        completeBtn.setTitleColor(.placeholderText, for: .disabled)
+        completeBtn.addTarget(self, action: #selector(completeBtnTapped), for: .touchUpInside)
+        
         customNavigationBar.configure(leftViews: [UIButton.navBackButton(action: backBtnTapped)],
                                       centerViews: [UILabel.navTitle("오픈채팅 관리")],
-                                      rightViews: [])
+                                      rightViews: [completeBtn])
     }
     
     private func backBtnTapped() {
         self.dismiss(animated: true)
+    }
+    
+    @objc private func completeBtnTapped() {
+        print(#function, "완료 버튼 탭")
+        
+        if let _ = self.selectedImage {
+            
+        }
     }
 }
 

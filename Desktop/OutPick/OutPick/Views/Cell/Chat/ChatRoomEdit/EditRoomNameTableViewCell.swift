@@ -6,9 +6,12 @@
 //
 
 import UIKit
+import Combine
 
 class EditRoomNameTableViewCell: UITableViewCell {
     static let identifier = "EditRoomNameCell"
+    
+    let nameTextChanged = PassthroughSubject<String, Never>()
 
     private let nameTextView: UITextView = {
         let textView = UITextView()
@@ -121,6 +124,7 @@ class EditRoomNameTableViewCell: UITableViewCell {
     @objc private func clearButtonTapped() {
         nameTextView.text = "채팅방 이름 (필수)"
         nameTextView.textColor = .placeholderText
+        nameTextChanged.send(nameTextView.text ?? "")
         
         updateNameCountLabel()
         clearButton.isHidden = true
@@ -166,6 +170,7 @@ extension EditRoomNameTableViewCell: UITextViewDelegate {
             }
     
             self.updateNameCountLabel()
+            self.nameTextChanged.send(textView.text)
         }
     }
 
