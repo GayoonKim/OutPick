@@ -87,6 +87,20 @@ class FirebaseStorageManager {
         }
     }
     
+    func deleteImageFromStorage(path: String) {
+        let fileRef = storage.reference().child("\(path)")
+        
+        fileRef.delete { error in
+            if let error = error {
+                print("🚫 이미지 삭제 실패: \(error.localizedDescription)")
+            } else {
+                print("✅ 이미지 삭제 성공: \(path)")
+                
+                KingFisherCacheManager.shared.removeImage(forKey: path)
+            }
+        }
+    }
+    
     func uploadVideoToStorage(_ videoURL: URL) async throws -> String {
         let videoName = UUID().uuidString
         return try await withCheckedThrowingContinuation { continuation in

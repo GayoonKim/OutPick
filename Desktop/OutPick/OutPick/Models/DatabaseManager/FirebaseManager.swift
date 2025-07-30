@@ -224,6 +224,7 @@ class FirebaseManager {
     func getRoomDoc(room: ChatRoom) async throws -> QueryDocumentSnapshot? {
         
         let roomCreatedMonth = DateManager.shared.getMonthFromTimestamp(date: room.createdAt)
+        print(#function, "\(roomCreatedMonth) Rooms")
         let room_snapshot = try await db.collection("Rooms").document(roomCreatedMonth).collection("\(roomCreatedMonth) Rooms").whereField("roomName", isEqualTo: room.roomName).limit(to: 1).getDocuments()
 
         guard let room_doc = room_snapshot.documents.first else {
@@ -312,6 +313,22 @@ class FirebaseManager {
     
         }
 
+    }
+    
+    @MainActor
+    func updateRoomInfo(room: ChatRoom, newImagePath: String, roomName: String, roomDescription: String) async throws {
+        guard let roomDoc = try await getRoomDoc(room: room) else {
+            throw FirebaseError.FailedToFetchRoom
+        }
+        
+        var updateData: [String: Any] = [:]
+        updateData["roomImagePath"] = newImagePath
+        updateData["roomName"] = roomName
+        updateData["roomDescription"] = roomDescription
+        
+        try await roomDoc.reference.updateData(updateData)
+        
+        print(#function, "✅ roomImagePath 업데이트 완료: \(newImagePath)")
     }
     
     // 방 이름 중복 검사

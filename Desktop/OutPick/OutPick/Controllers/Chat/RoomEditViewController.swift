@@ -40,10 +40,16 @@ class RoomEditViewController: UIViewController, PHPickerViewControllerDelegate, 
     private var currentKeyboardHeight: CGFloat?
     
     private var selectedImage: UIImage?
+    private var afterRoomname: String = ""
+    private var afterDescription: String = ""
     private var convertImageTask: Task<Void, Error>? = nil
+    
+    var onCompleteEdit: ((UIImage?, String, String) async throws -> Void)?
     
     init(room: ChatRoom) {
         self.room = room
+        self.afterRoomname = self.room.roomName
+        self.afterDescription = self.room.roomDescription
         super.init(nibName: nil, bundle: nil)
     }
     
@@ -147,7 +153,8 @@ class RoomEditViewController: UIViewController, PHPickerViewControllerDelegate, 
                     .receive(on: RunLoop.main)
                     .sink { [weak self] text in
                         guard let self = self else { return }
-                        self.room.roomName = text
+//                        self.room.roomName = text
+                        self.afterRoomname = text
                         self.updateCompleteBtnState()
                     }
                     .store(in: &self.cancellables)
@@ -164,7 +171,8 @@ class RoomEditViewController: UIViewController, PHPickerViewControllerDelegate, 
                     .sink { [weak self] result in
                         guard let self = self else { return }
                         
-                        self.room.roomDescription = result.1
+//                        self.room.roomDescription = result.1
+                        self.afterDescription = result.1
                         self.updateCompleteBtnState()
                         
                         self.tableView.beginUpdates()
@@ -190,8 +198,8 @@ class RoomEditViewController: UIViewController, PHPickerViewControllerDelegate, 
         if let button = customNavigationBar.rightStack.arrangedSubviews
             .compactMap({ $0 as? UIButton })
             .first(where: { $0.currentTitle == "완료" }) {
-            let isNameValid = self.room.roomName != "채팅방 이름 (필수)" && self.room.roomDescription != room.roomName
-            let isDescriptionValid = self.room.roomDescription != room.roomDescription
+            let isNameValid = self.afterRoomname != "채팅방 이름 (필수)" && self.afterRoomname != self.room.roomName
+            let isDescriptionValid = self.afterDescription != self.room.roomDescription
             
             button.isEnabled = isNameValid || isDescriptionValid
         }
@@ -325,10 +333,18 @@ private extension RoomEditViewController {
     }
     
     @objc private func completeBtnTapped() {
-        print(#function, "완료 버튼 탭")
-        
-        if let _ = self.selectedImage {
-            
+        Task { @MainActor in
+            do {
+                LoadingIndicator.shared.start(on: self)
+                
+                try await onCompleteEdit?(self.selectedImage, self.afterRoomname, self.afterDescription)
+                
+                LoadingIndicator.shared.stop()
+                self.dismiss(animated: true)
+            } catch {
+                LoadingIndicator.shared.stop()
+                AlertManager.showAlertNoHandler(title: "방 수정 실패", message: error.localizedDescription, viewController: self)
+            }
         }
     }
 }

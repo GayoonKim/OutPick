@@ -78,7 +78,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        
+
         // 소켓 연결 상태 확인 및 리스너 설정
         if SocketIOManager.shared.isConnected {
             SocketIOManager.shared.joinRoom(room.roomName)
@@ -91,55 +91,62 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
             }
         }
     }
-
-private func observeRoomImages(for roomID: String) {
-    let observation = ValueObservation.tracking { db in
-        print("🔄 roomImage 테이블 변경 감지")
-        return try Row.fetchAll(
-            db,
-            sql: "SELECT rowid, imageName FROM roomImage WHERE roomId = ? ORDER BY uploadedAt",
-            arguments: [roomID]
-        )
-        .compactMap { row in
-            row["imageName"] as? String
-        }
-    }
-
-    observation
-        .publisher(in: GRDBManager.shared.dbPool, scheduling: .async(onQueue: .main))
-        .sink(
-            receiveCompletion: { completion in
-                if case let .failure(error) = completion {
-                    print("roomImage 관찰 에러:", error)
-                }
-            },
-            receiveValue: { [weak self] imageNames in
-                guard let self = self else { return }
-                Task { @MainActor in
-                    var images = [UIImage]()
-                    for name in imageNames {
-                        if let image = await KingFisherCacheManager.shared.loadImage(named: name) {
-                            images.append(image)
-                        }
-                    }
-
-                    self.images = images
-                    self.updateMediaSection()
-                }
+    
+    private func observeRoomImages(for roomID: String) {
+        let observation = ValueObservation.tracking { db in
+            print("🔄 roomImage 테이블 변경 감지")
+            return try Row.fetchAll(
+                db,
+                sql: "SELECT rowid, imageName FROM roomImage WHERE roomId = ? ORDER BY uploadedAt",
+                arguments: [roomID]
+            )
+            .compactMap { row in
+                row["imageName"] as? String
             }
-        )
-        .store(in: &cancellables)
-}
+        }
+        
+        observation
+            .publisher(in: GRDBManager.shared.dbPool, scheduling: .async(onQueue: .main))
+            .sink(
+                receiveCompletion: { completion in
+                    if case let .failure(error) = completion {
+                        print("roomImage 관찰 에러:", error)
+                    }
+                },
+                receiveValue: { [weak self] imageNames in
+                    guard let self = self else { return }
+                    
+                    Task { @MainActor in
+                        var images = [UIImage]()
+                        for name in imageNames {
+                            if let image = await KingFisherCacheManager.shared.loadImage(named: name) {
+                                images.append(image)
+                            }
+                        }
+                        
+                        self.images = images
+                        self.updateMediaSection()
+                    }
+                }
+            )
+            .store(in: &cancellables)
+    }
     
     private func observeRoomInfo() {
         FirebaseManager.shared.roomChangePublisher
             .receive(on: DispatchQueue.main)
             .filter{ [weak self] updatedRoom in
-                updatedRoom.roomName == self?.room.roomName
+                guard let self = self else { return false }
+                
+                return updatedRoom.ID == self.room.ID
             }
             .sink { [weak self] updatedRoom in
-                guard let self = self else { return }
-                print(#function, "방 정보 변경: \(updatedRoom)")
+                guard let self = self  else { return }
+                
+                guard self.isViewLoaded, self.view.window != nil else {
+                    print("⚠️ UI 없음. 업데이트 무시")
+                    return
+                }
                 
                 self.room = updatedRoom
                 self.updateRoomInfoSection()
@@ -177,11 +184,11 @@ private func observeRoomImages(for roomID: String) {
             })
             .store(in: &cancellables)
     }
-
+    
     private static func configureLayout(_ room: ChatRoom, userProfiles: [UserProfile], images: [UIImage]) -> UICollectionViewCompositionalLayout {
         return UICollectionViewCompositionalLayout { (sectionIndex: Int, environment: NSCollectionLayoutEnvironment) -> NSCollectionLayoutSection? in
             switch Section(rawValue: sectionIndex)! {
-            
+                
             case .roomInfoSection:
                 
                 let itemSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .estimated(44))
@@ -248,23 +255,46 @@ private func observeRoomImages(for roomID: String) {
                     let editVC = RoomEditViewController(room: self.room)
                     editVC.modalPresentationStyle = .fullScreen
                     
+                    editVC.onCompleteEdit = { [weak self] selectedImage, newName, newDesc in
+                        guard let self = self else { return }
+                        
+                        var newImagePath: String? = nil
+                        if let image = selectedImage {
+                            if let pathToRemove = self.room.roomImagePath {
+                                FirebaseStorageManager.shared.deleteImageFromStorage(path: pathToRemove)
+                            }
+                            
+                            let pathToAdd = try await FirebaseStorageManager.shared.uploadImageToStorage(image: image, location: .RoomImage)
+                            KingFisherCacheManager.shared.storeImage(image, forKey: pathToAdd)
+                            newImagePath = pathToAdd
+                        }
+                        
+                        try await FirebaseManager.shared.updateRoomInfo(room: self.room, newImagePath: self.room.roomImagePath ?? "", roomName: newName, roomDescription: newDesc)
+                        if let path = newImagePath {
+                            self.room.roomImagePath = path
+                        }
+                        self.room.roomName = newName
+                        self.room.roomDescription = newDesc
+                        self.updateRoomInfoSection()
+                    }
+                    
                     self.present(editVC, animated: true, completion: nil)
                 }
                 
                 return cell
-
+                
             case let .mediaItem(images):
                 let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ChatRoomMediaCollectionViewCell.reuseIdentifier, for: indexPath) as! ChatRoomMediaCollectionViewCell
                 cell.configureCell(for: images)
                 return cell
-
+                
             case let .participantsItem(userProfiles):
                 let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ParticipantsSectionParticipantCell.reuseIdentifier, for: indexPath) as! ParticipantsSectionParticipantCell
                 cell.configureCell(userProfiles)
                 return cell
             }
         }
-
+        
         return dataSource
     }
     

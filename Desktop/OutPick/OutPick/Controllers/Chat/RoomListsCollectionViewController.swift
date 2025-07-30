@@ -63,6 +63,7 @@ class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRe
         // 방 목록 관련
         FirebaseManager.shared.$chatRooms
             .receive(on: DispatchQueue.main)
+            
             .sink { [weak self] updatedRooms in
                 guard let self = self else { return }
                 self.chatRooms = updatedRooms
@@ -72,7 +73,7 @@ class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRe
     }
 
     private func updateCollectionView() {
-        let chatRoomsList = FirebaseManager.shared.currentChatRooms.sorted(by: <)
+        let chatRoomsList = FirebaseManager.shared.currentChatRooms/*.sorted(by: <)*/
         let itemBySection = [Section.main: chatRoomsList]
         
         dataSource.applySnapshotUsing(sectionIDs: [Section.main], itemsBySection: itemBySection)
@@ -91,16 +92,16 @@ class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRe
             cell.roomImageView.image = UIImage(named: "Default_Profile")
             
             // 사용자 지정 이미지가 있는 경우에만 이미지 로딩 진행
-            if let imageName = item.roomImagePath, !imageName.isEmpty {
+            if let imagePath = item.roomImagePath, !imagePath.isEmpty {
                 Task {
                     do {
-                        if let cachedImage = KingfisherManager.shared.cache.retrieveImageInMemoryCache(forKey: imageName) {
+                        if let cachedImage = KingfisherManager.shared.cache.retrieveImageInMemoryCache(forKey: imagePath) {
                             DispatchQueue.main.async {
                                 cell.roomImageView.image = cachedImage
                             }
                         } else {
-                            let image = try await FirebaseStorageManager.shared.fetchImageFromStorage(image: imageName, location: .RoomImage, createdDate: item.createdAt)
-                            try await KingfisherManager.shared.cache.store(image, forKey: imageName)
+                            let image = try await FirebaseStorageManager.shared.fetchImageFromStorage(image: imagePath, location: .RoomImage, createdDate: item.createdAt)
+                            try await KingfisherManager.shared.cache.store(image, forKey: imagePath)
                             DispatchQueue.main.async {
                                 cell.roomImageView.image = image
                             }
