@@ -225,7 +225,7 @@ class FirebaseManager {
         
         let roomCreatedMonth = DateManager.shared.getMonthFromTimestamp(date: room.createdAt)
         print(#function, "\(roomCreatedMonth) Rooms")
-        let room_snapshot = try await db.collection("Rooms").document(roomCreatedMonth).collection("\(roomCreatedMonth) Rooms").whereField("roomName", isEqualTo: room.roomName).limit(to: 1).getDocuments()
+        let room_snapshot = try await db.collection("Rooms").document(roomCreatedMonth).collection("\(roomCreatedMonth) Rooms").whereField("ID", isEqualTo: room.ID ?? "").limit(to: 1).getDocuments()
 
         guard let room_doc = room_snapshot.documents.first else {
             print("방 문서 불러오기 실패")
@@ -328,7 +328,7 @@ class FirebaseManager {
         
         try await roomDoc.reference.updateData(updateData)
         
-        print(#function, "✅ roomImagePath 업데이트 완료: \(newImagePath)")
+        roomChangeSubject.send(room)
     }
     
     // 방 이름 중복 검사

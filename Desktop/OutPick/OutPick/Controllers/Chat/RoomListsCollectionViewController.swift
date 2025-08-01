@@ -70,6 +70,33 @@ class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRe
                 self.updateCollectionView()
             }
             .store(in: &cancellables)
+        
+        
+        FirebaseManager.shared.roomChangePublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] updatedRoom in
+                guard let self = self else { return }
+                
+                if let index = self.chatRooms.firstIndex(where: { $0.ID == updatedRoom.ID }) {
+                    self.chatRooms[index] = updatedRoom
+                    
+                    // Snapshot 업데이트
+                    var snapshot = self.dataSource.snapshot()
+                    // snapshot 내부에서 기존 item 찾아서 reload
+                    if let oldItem = snapshot.itemIdentifiers.first(where: { $0.ID == updatedRoom.ID }) {
+                        snapshot.deleteItems([oldItem])
+                        snapshot.appendItems([updatedRoom], toSection: .main)
+                        self.dataSource.apply(snapshot, animatingDifferences: true)
+                    } else {
+                        // snapshot에 없다면 append 또는 전체 업데이트 fallback
+                        self.updateCollectionView()
+                    }
+                    self.dataSource.apply(snapshot, animatingDifferences: false)
+                }
+                
+                print(#function, "RoomListsCollectionViewController.swift 방 정보 변경: \(updatedRoom)")
+            }
+            .store(in: &cancellables)
     }
 
     private func updateCollectionView() {

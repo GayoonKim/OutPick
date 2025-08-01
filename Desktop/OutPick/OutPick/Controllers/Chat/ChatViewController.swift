@@ -372,7 +372,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             .sink { [weak self] updatedRoom in
                 guard let self = self,
                       let _ = self.room else { return }
-                print(#function, "************방 정보 변경: \(updatedRoom)")
+                print(#function, "ChatViewController.swift 방 정보 변경: \(updatedRoom)")
                 self.room = updatedRoom
                 Task { @MainActor in
                     self.updateNavigationTitle(with: updatedRoom)

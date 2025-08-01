@@ -269,12 +269,13 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
                             newImagePath = pathToAdd
                         }
                         
-                        try await FirebaseManager.shared.updateRoomInfo(room: self.room, newImagePath: self.room.roomImagePath ?? "", roomName: newName, roomDescription: newDesc)
                         if let path = newImagePath {
                             self.room.roomImagePath = path
                         }
                         self.room.roomName = newName
                         self.room.roomDescription = newDesc
+                        try await FirebaseManager.shared.updateRoomInfo(room: self.room, newImagePath: self.room.roomImagePath ?? "", roomName: newName, roomDescription: newDesc)
+
                         self.updateRoomInfoSection()
                     }
                     
