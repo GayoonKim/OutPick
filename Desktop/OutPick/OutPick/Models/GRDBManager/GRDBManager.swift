@@ -123,7 +123,7 @@ final class GRDBManager {
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 arguments: [
-                    UUID().uuidString,  // 또는 메시지 고유 ID
+                    message.ID ?? "",  // 또는 메시지 고유 ID
                     message.roomName,
                     message.senderID,
                     message.senderNickname,
@@ -136,12 +136,12 @@ final class GRDBManager {
         }
     }
     
-    func fetchMessages(in roomName: String) throws -> [ChatMessage] {
+    func fetchMessages(in roomID: String) throws -> [ChatMessage] {
         try dbPool.read { db in
             let rows = try Row.fetchAll(
                 db,
-                sql: "SELECT * FROM chatMessage WHERE roomName = ? ORDER BY sentAt ASC",
-                arguments: [roomName]
+                sql: "SELECT * FROM chatMessage WHERE id = ? ORDER BY sentAt ASC",
+                arguments: [roomID]
             )
 
             return try rows.compactMap { row in

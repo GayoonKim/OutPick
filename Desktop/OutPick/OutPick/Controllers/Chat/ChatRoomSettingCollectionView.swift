@@ -53,7 +53,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         
         Task { @MainActor in
             self.updateMediaSection()
-            self.observeRoomImages(for: self.room.roomName)
+            self.observeRoomImages(for: self.room.ID ?? "")
             self.observeParticipants()
             self.observeRoomInfo()
         }
@@ -164,7 +164,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
                     WHERE roomParticipant.roomId = ?
                     ORDER BY userProfile.nickname
                     """
-            return try UserProfile.fetchAll(db, sql: sql, arguments: [self.room.roomName])
+            return try UserProfile.fetchAll(db, sql: sql, arguments: [self.room.ID ?? ""])
         }
         
         observation

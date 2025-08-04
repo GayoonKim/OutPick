@@ -115,10 +115,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             // 이미 연결된 경우에는 room join과 listener 설정만 수행
             if let room = self.room,
                room.participants.contains(LoginManager.shared.getUserEmail) {
-                let localMessages = try GRDBManager.shared.fetchMessages(in: room.roomName)
-//                for message in localMessages {
-//                    self.chatMessageCollectionView.addMessage(with: message)
-//                }
+                let localMessages = try GRDBManager.shared.fetchMessages(in: room.ID ?? "")
+
                 self.chatMessageCollectionView.addMessages(localMessages)
                 
                 await self.syncMessagesIfNeeded(for: room)
@@ -150,16 +148,17 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         if let topVC = self.navigationController?.topViewController,
            topVC is ChatRoomSettingCollectionView {
             return
+        } else {
+            SocketIOManager.shared.closeConnection()
         }
-        
-        SocketIOManager.shared.closeConnection()
+    
         
         if let room = self.room,
            !room.participants.contains(LoginManager.shared.getUserEmail) {
             Task { @MainActor in
                 do {
-                    try GRDBManager.shared.deleteMessages(inRoom: room.roomName)
-                    try GRDBManager.shared.deleteImages(inRoom: room.roomName)
+                    try GRDBManager.shared.deleteMessages(inRoom: room.ID ?? "")
+                    try GRDBManager.shared.deleteImages(inRoom: room.ID ?? "")
                     print("참여하지 않은 사용자의 임시 메시지/이미지 삭제 완료")
                 } catch {
                     print("GRDB 메시지/이미지 삭제 실패: \(error)")
@@ -203,7 +202,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             self.chatUIView.updateHeight()
         }
         
-        let newMessage = ChatMessage(roomName: room.roomName,senderID: LoginManager.shared.getUserEmail, senderNickname: LoginManager.shared.currentUserProfile?.nickname ?? "", msg: message, sentAt: Date(), attachments: [])
+        let newMessage = ChatMessage(ID: nil,roomName: room.roomName,senderID: LoginManager.shared.getUserEmail, senderNickname: LoginManager.shared.currentUserProfile?.nickname ?? "", msg: message, sentAt: Date(), attachments: [])
         
         SocketIOManager.shared.sendMessages(room, newMessage)
         chatUIView.sendButton.isEnabled = false
@@ -278,7 +277,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                         for attachment in receivedMessage.attachments {
                             guard attachment.type == .image, let imageName = attachment.fileName else { continue }
                             
-                            try GRDBManager.shared.addImage(imageName, toRoom: room.roomName, at: receivedMessage.sentAt ?? Date())
+                            try GRDBManager.shared.addImage(imageName, toRoom: room.ID ?? "", at: receivedMessage.sentAt ?? Date())
                             
                             if let image = attachment.toUIImage() {
                                 try await KingfisherManager.shared.cache.store(image, forKey: imageName)
@@ -388,7 +387,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         
         do {
             let messages: [ChatMessage]
-            if let lastDate = try GRDBManager.shared.fetchLastMessageTimestamp(for: room.roomName) {
+            if let lastDate = try GRDBManager.shared.fetchLastMessageTimestamp(for: room.ID ?? "") {
                 print(#function, "✅ 마지막 시간: ", lastDate)
                 messages = try await FirebaseManager.shared.fetchMessages(after: lastDate, for: room)
             } else {
@@ -403,7 +402,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                     await withTaskGroup(of: Void.self) { group in
                         for attachment in message.attachments {
                             guard attachment.type == .image, let imageName = attachment.fileName else { continue }
-                            try? GRDBManager.shared.addImage(imageName, toRoom: room.roomName, at: message.sentAt ?? Date())
+                            try? GRDBManager.shared.addImage(imageName, toRoom: room.ID ?? "", at: message.sentAt ?? Date())
                             
                             group.addTask {
                                 if let image = attachment.toUIImage() {
@@ -430,7 +429,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             
             for profile in profiles {
                 try GRDBManager.shared.insertUserProfile(profile)
-                try GRDBManager.shared.addUser(profile.email ?? "", toRoom: room?.roomName ?? "")
+                try GRDBManager.shared.addUser(profile.email ?? "", toRoom: room?.ID ?? "")
             }
             
             print(#function, "✅ 사용자 프로필 동기화 성공: ", profiles)
@@ -673,10 +672,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private func settingButtonTapped() {
         Task { @MainActor in
             guard let room = self.room else { return }
-            let profiles = try GRDBManager.shared.fetchUserProfiles(inRoom: room.roomName)
+            let profiles = try GRDBManager.shared.fetchUserProfiles(inRoom: room.ID ?? "")
             
             var images = [UIImage]()
-            let imageNames = try GRDBManager.shared.fetchImageNames(inRoom: room.roomName)
+            let imageNames = try GRDBManager.shared.fetchImageNames(inRoom: room.ID ?? "")
             for imageName in imageNames {
                 if let image = await KingFisherCacheManager.shared.loadImage(named: imageName) {
                     images.append(image)

@@ -299,7 +299,7 @@ class FirebaseManager {
                     
                 })
                 
-                try await FirebaseManager.shared.add_room_participant(room: room)
+                try await FirebaseManager.shared.add_room_participant(room: tempRoom)
                 
                 print("saveRoomInfoToFirestore 끝")
                 completion(.success(()))
@@ -571,20 +571,20 @@ class FirebaseManager {
 
                 let _ = try await db.runTransaction({ (transaction, errorPointer) -> Any? in
                     
-                    transaction.updateData(["joinedRooms": FieldValue.arrayUnion([room.roomName])], forDocument: user_doc.reference)
+                    transaction.updateData(["joinedRooms": FieldValue.arrayUnion([room.ID ?? ""])], forDocument: user_doc.reference)
                     transaction.updateData(["participantIDs": FieldValue.arrayUnion([LoginManager.shared.getUserEmail])], forDocument: room_doc.reference)
                     
                     return nil
                     
                 })
                 
-                print("참여자 업데이트 성공")
+                print(#function, "참여자 업데이트 성공")
                 add_room_participant_task = nil
                 
                             
             } catch {
                 
-                print("방 참여자 업데이트 트랜젝션 실패: \(error)")
+                print(#function, "방 참여자 업데이트 트랜젝션 실패: \(error)")
                 
             }
         }
@@ -595,7 +595,12 @@ class FirebaseManager {
     func saveMessage(_ message: ChatMessage, _ room: ChatRoom) async throws{
         do {
             let roomDoc = try await getRoomDoc(room: room)
-            try await roomDoc?.reference.collection("Messages").document().setData(message.toDict())
+//            try await roomDoc?.reference.collection("Messages").document().setData(message.toDict())
+            let messageRef = roomDoc?.reference.collection("Messages").document() // 자동 ID 생성
+            var messageWithID = message
+            messageWithID.ID = messageRef?.documentID // ChatMessage 구조체의 id 필드
+
+            try await messageRef?.setData(messageWithID.toDict())
             
             print("메시지 저장 성공 => \(message)")
         } catch {
