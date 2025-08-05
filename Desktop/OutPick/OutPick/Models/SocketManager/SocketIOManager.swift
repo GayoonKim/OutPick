@@ -197,7 +197,7 @@ class SocketIOManager {
             }
             
             let finalAttachments = attachments.compactMap { $0 }
-            let images = finalAttachments.compactMap{ $0.toUIImage() }
+//            let images = finalAttachments.compactMap{ $0.toUIImage() }
             let message = ChatMessage(roomName: room.roomName, senderID: LoginManager.shared.getUserEmail, senderNickname: LoginManager.shared.currentUserProfile?.nickname ?? "", msg: "", sentAt: Date(), attachments: finalAttachments)
             
             socket.emitWithAck("send images", ["roomName": message.roomName, "senderID": message.senderID, "senderNickName": message.senderNickname, "sentAt": "\(message.sentAt ?? Date())", "images": imageDataArray]).timingOut(after: 5) { ackResponse in
