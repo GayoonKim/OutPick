@@ -491,7 +491,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private func updateNavigationTitle(with room: ChatRoom) {
         // ✅ 커스텀 내비게이션 바 타이틀 업데이트
             customNavigationBar.configureForChatRoom(
-                unreadCount: 99, // 필요한 경우 여기도 업데이트 필요
+                /*unreadCount: 99,*/ // 필요한 경우 여기도 업데이트 필요
                 roomTitle: room.roomName,
                 participantCount: room.participants.count,
                 onBack: backButtonTapped,
@@ -707,6 +707,6 @@ private extension ChatViewController {
         ])
         
         guard let room = self.room else { return }
-        customNavigationBar.configureForChatRoom(unreadCount: 99, roomTitle: room.roomName, participantCount: room.participants.count, onBack: backButtonTapped, onSearch: searchButtonTapped, onSetting: settingButtonTapped)
+        customNavigationBar.configureForChatRoom(/*unreadCount: 99, */roomTitle: room.roomName, participantCount: room.participants.count, onBack: backButtonTapped, onSearch: searchButtonTapped, onSetting: settingButtonTapped)
     }
 }

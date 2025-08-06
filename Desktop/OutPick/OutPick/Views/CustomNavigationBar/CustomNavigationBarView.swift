@@ -56,9 +56,9 @@ class CustomNavigationBarView: UIView {
         rightViews.forEach { rightStack.addArrangedSubview($0) }
     }
     
-    func configureForChatRoom(unreadCount: Int, roomTitle: String, participantCount: Int, onBack: @escaping () -> Void, onSearch: @escaping () -> Void, onSetting: @escaping () -> Void) {
+    func configureForChatRoom(/*unreadCount: Int,*/ roomTitle: String, participantCount: Int, onBack: @escaping () -> Void, onSearch: @escaping () -> Void, onSetting: @escaping () -> Void) {
         let backButton = UIButton.navBackButton(action: onBack)
-        let unreadLabel = UILabel.navSubtitle("\(unreadCount)")
+//        let unreadLabel = UILabel.navSubtitle("\(unreadCount)")
         
         let titleLabel = UILabel.navTitle(roomTitle)
         let participantLabel = UILabel.navSubtitle("\(participantCount)명")
@@ -67,7 +67,7 @@ class CustomNavigationBarView: UIView {
         let settingButton = UIButton.navButtonIcon("text.justify", action: onSetting)
         
         configure(
-            leftViews: [backButton, unreadLabel],
+            leftViews: [backButton/*, unreadLabel*/],
             centerViews: [titleLabel, participantLabel],
             rightViews: [searchButton, settingButton]
         )
