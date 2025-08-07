@@ -13,6 +13,26 @@ class CustomNavigationBarView: UIView {
     let centerStack = UIStackView()
     let rightStack = UIStackView()
     
+    let container: UIStackView = {
+        let stackView = UIStackView()
+        stackView.axis = .horizontal
+        stackView.alignment = .center
+        stackView.spacing = 4
+        stackView.distribution = .equalCentering
+        
+        return stackView
+    }()
+    
+    let searchContainer: UIStackView = {
+        let stackView = UIStackView()
+        stackView.axis = .horizontal
+        stackView.alignment = .center
+        stackView.spacing = 4
+        stackView.distribution = .equalCentering
+        
+        return stackView
+    }()
+
     override init(frame: CGRect) {
         super.init(frame: frame)
         setup()
@@ -30,22 +50,31 @@ class CustomNavigationBarView: UIView {
             $0.spacing = 5
             $0.alignment = .center
         }
-        
-        let container = UIStackView(arrangedSubviews: [leftStack, UIView(), centerStack, UIView(), rightStack])
-        container.axis = .horizontal
-        container.alignment = .center
-        container.spacing = 4
-        container.distribution = .equalCentering
-        
+
+        container.addArrangedSubview(leftStack)
+        container.addArrangedSubview(centerStack)
+        container.addArrangedSubview(rightStack)
+
         addSubview(container)
         container.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            container.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 15),
-            container.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -15),
+            container.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 20),
+            container.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -20),
             container.topAnchor.constraint(equalTo: topAnchor),
             container.bottomAnchor.constraint(equalTo: bottomAnchor),
-            container.heightAnchor.constraint(equalToConstant: 44)
+            container.heightAnchor.constraint(equalToConstant: 44),
         ])
+        
+        addSubview(searchContainer)
+        searchContainer.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            searchContainer.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 20),
+            searchContainer.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -20),
+            searchContainer.topAnchor.constraint(equalTo: topAnchor),
+            searchContainer.bottomAnchor.constraint(equalTo: bottomAnchor),
+            searchContainer.heightAnchor.constraint(equalToConstant: 44),
+        ])
+        searchContainer.isHidden = true
     }
     
     func configure(leftViews: [UIView], centerViews: [UIView] = [], rightViews: [UIView]) {
@@ -57,6 +86,9 @@ class CustomNavigationBarView: UIView {
     }
     
     func configureForChatRoom(/*unreadCount: Int,*/ roomTitle: String, participantCount: Int, onBack: @escaping () -> Void, onSearch: @escaping () -> Void, onSetting: @escaping () -> Void) {
+        container.isHidden = false
+        searchContainer.isHidden = true
+        
         let backButton = UIButton.navBackButton(action: onBack)
 //        let unreadLabel = UILabel.navSubtitle("\(unreadCount)")
         
@@ -71,6 +103,51 @@ class CustomNavigationBarView: UIView {
             centerViews: [titleLabel, participantLabel],
             rightViews: [searchButton, settingButton]
         )
+    }
+    
+    func switchToSearchMode() {
+        container.isHidden = true
+        searchContainer.isHidden = false
+        searchContainer.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        
+        let searchTextField = UITextField()
+        searchTextField.translatesAutoresizingMaskIntoConstraints = false
+        searchTextField.placeholder = "대화내용 검색"
+        searchTextField.backgroundColor = .secondarySystemBackground
+        searchTextField.clearButtonMode = .whileEditing
+        searchTextField.heightAnchor.constraint(equalToConstant: 34).isActive = true
+
+        let cancelBtn = UIButton(type: .system)
+        cancelBtn.setTitle("취소", for: .normal)
+        cancelBtn.setTitleColor(.black, for: .normal)
+        // Content hugging and compression resistance for cancel button
+        cancelBtn.setContentHuggingPriority(.required, for: .horizontal)
+        cancelBtn.setContentCompressionResistancePriority(.required, for: .horizontal)
+        cancelBtn.addTarget(self, action: #selector(cancelBtnTap), for: .touchUpInside)
+
+        let wrapperView = UIView()
+        wrapperView.translatesAutoresizingMaskIntoConstraints = false
+
+        wrapperView.addSubview(searchTextField)
+        NSLayoutConstraint.activate([
+            searchTextField.leadingAnchor.constraint(equalTo: wrapperView.leadingAnchor, constant: 8),
+            searchTextField.trailingAnchor.constraint(equalTo: wrapperView.trailingAnchor, constant: -8),
+            searchTextField.topAnchor.constraint(equalTo: wrapperView.topAnchor),
+            searchTextField.bottomAnchor.constraint(equalTo: wrapperView.bottomAnchor),
+        ])
+        
+        let searchStack = UIStackView(arrangedSubviews: [wrapperView, cancelBtn])
+        searchStack.axis = .horizontal
+        searchStack.spacing = 8
+        searchStack.alignment = .center
+        searchStack.distribution = .fill
+
+        searchContainer.addArrangedSubview(searchStack)
+    }
+    
+    @objc private func cancelBtnTap() {
+        searchContainer.isHidden = true
+        container.isHidden = false
     }
 }
 

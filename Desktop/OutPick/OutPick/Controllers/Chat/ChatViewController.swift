@@ -486,20 +486,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         NSLayoutConstraint.activate(joinConsraints)
     }
     
-
-    @MainActor
-    private func updateNavigationTitle(with room: ChatRoom) {
-        // ✅ 커스텀 내비게이션 바 타이틀 업데이트
-            customNavigationBar.configureForChatRoom(
-                /*unreadCount: 99,*/ // 필요한 경우 여기도 업데이트 필요
-                roomTitle: room.roomName,
-                participantCount: room.participants.count,
-                onBack: backButtonTapped,
-                onSearch: searchButtonTapped,
-                onSetting: settingButtonTapped
-            )
-    }
-    
     @MainActor
     @IBAction func joinRoomBtnTapped(_ sender: UIButton) {
         guard let room = self.room else { return }
@@ -528,7 +514,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 NSLayoutConstraint.deactivate(joinConsraints)
                 chatConstraints.append(chatMessageCollectionView.bottomAnchor.constraint(equalTo: chatUIView.topAnchor))
                 NSLayoutConstraint.activate(chatConstraints)
-
             } catch {
                 print("방 참여 처리 실패: \(error)")
             }
@@ -691,7 +676,21 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     @MainActor
     private func searchButtonTapped() {
-        print(#function)
+        self.customNavigationBar.switchToSearchMode()
+        
+    }
+    
+    @MainActor
+    private func updateNavigationTitle(with room: ChatRoom) {
+        // ✅ 커스텀 내비게이션 바 타이틀 업데이트
+            customNavigationBar.configureForChatRoom(
+                /*unreadCount: 99,*/ // 필요한 경우 여기도 업데이트 필요
+                roomTitle: room.roomName,
+                participantCount: room.participants.count,
+                onBack: backButtonTapped,
+                onSearch: searchButtonTapped,
+                onSetting: settingButtonTapped
+            )
     }
 }
 
