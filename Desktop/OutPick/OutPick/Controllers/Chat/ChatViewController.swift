@@ -106,6 +106,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         decideJoinUI()
         setupAttachmentView()
         bindPublishers()
+        bindSearchEvents()
     }
     
     override func viewWillAppear(_ animated: Bool) {
@@ -165,6 +166,20 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 }
             }
         }
+    }
+    
+    private func hilightAndScrollToMessage(containing keyword: String) {
+        print(#function, "keyword: \(keyword)")
+    }
+    
+    private func bindSearchEvents() {
+        customNavigationBar.searchKeywordPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] keyword in
+                guard let self = self else { return }
+                self.hilightAndScrollToMessage(containing: keyword)
+            }
+            .store(in: &cancellables)
     }
 
     @MainActor

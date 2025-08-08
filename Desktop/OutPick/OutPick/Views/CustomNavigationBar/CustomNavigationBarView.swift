@@ -7,6 +7,7 @@
 
 import Foundation
 import UIKit
+import Combine
 
 class CustomNavigationBarView: UIView {
     let leftStack = UIStackView()
@@ -32,6 +33,8 @@ class CustomNavigationBarView: UIView {
         
         return stackView
     }()
+    
+    let searchKeywordPublisher = PassthroughSubject<String, Never>()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -110,13 +113,30 @@ class CustomNavigationBarView: UIView {
         searchContainer.isHidden = false
         searchContainer.arrangedSubviews.forEach { $0.removeFromSuperview() }
         
+        let searchImg = UIImage(systemName: "magnifyingglass")
+        let searchImgView = UIImageView(image: searchImg)
+        searchImgView.contentMode = .scaleAspectFit
+        searchImgView.tintColor = .black
+        searchImgView.setContentHuggingPriority(.required, for: .horizontal)
+        searchImgView.setContentCompressionResistancePriority(.required, for: .horizontal)
+        
         let searchTextField = UITextField()
         searchTextField.translatesAutoresizingMaskIntoConstraints = false
         searchTextField.placeholder = "대화내용 검색"
         searchTextField.backgroundColor = .secondarySystemBackground
         searchTextField.clearButtonMode = .whileEditing
         searchTextField.heightAnchor.constraint(equalToConstant: 34).isActive = true
-
+        searchTextField.delegate = self
+        searchTextField.returnKeyType = .search
+        
+        let leftPaddingView = UIView(frame: CGRect(x: 0, y: 0, width: 8, height: searchTextField.frame.height))
+        searchTextField.leftView = leftPaddingView
+        searchTextField.leftViewMode = .always
+        
+        let rightPaddingView = UIView(frame: CGRect(x: 0, y: 0, width: 8, height: searchTextField.frame.height))
+        searchTextField.rightView = rightPaddingView
+        searchTextField.rightViewMode = .always
+        
         let cancelBtn = UIButton(type: .system)
         cancelBtn.setTitle("취소", for: .normal)
         cancelBtn.setTitleColor(.black, for: .normal)
@@ -136,7 +156,7 @@ class CustomNavigationBarView: UIView {
             searchTextField.bottomAnchor.constraint(equalTo: wrapperView.bottomAnchor),
         ])
         
-        let searchStack = UIStackView(arrangedSubviews: [wrapperView, cancelBtn])
+        let searchStack = UIStackView(arrangedSubviews: [searchImgView, wrapperView, cancelBtn])
         searchStack.axis = .horizontal
         searchStack.spacing = 8
         searchStack.alignment = .center
@@ -188,5 +208,15 @@ extension UILabel {
         label.textColor = .gray
         
         return label
+    }
+}
+
+extension CustomNavigationBarView: UITextFieldDelegate {
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        guard let keyword = textField.text?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !keyword.isEmpty else { return false }
+        
+        searchKeywordPublisher.send(keyword)
+        return true
     }
 }

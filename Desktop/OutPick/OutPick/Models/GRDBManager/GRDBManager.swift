@@ -136,7 +136,7 @@ final class GRDBManager {
         }
     }
     
-    func fetchMessages(in roomID: String) throws -> [ChatMessage] {
+    func fetchMessages(in roomID: String, containing keyword: String? = nil) throws -> [ChatMessage] {
         try dbPool.read { db in
             let rows = try Row.fetchAll(
                 db,
