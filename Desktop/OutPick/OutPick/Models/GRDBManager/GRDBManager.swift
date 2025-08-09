@@ -137,33 +137,7 @@ final class GRDBManager {
             )
         }
     }
-    
-//    func fetchMessages(in roomName: String) async throws -> [ChatMessage] {
-//        try await dbPool.read { db in
-//            let rows = try Row.fetchAll(
-//                db,
-//                sql: "SELECT * FROM chatMessage WHERE roomName = ? ORDER BY sentAt ASC",
-//                arguments: [roomName]
-//            )
-//
-//            return try rows.compactMap { row in
-//                let attachmentsJSON = row["attachments"] as? String ?? "[]"
-//                let attachments = try JSONDecoder().decode([Attachment].self, from: Data(attachmentsJSON.utf8))
-//
-//                return ChatMessage(
-//                    ID: row["id"],
-//                    roomName: row["roomName"],
-//                    senderID: row["senderID"],
-//                    senderNickname: row["senderNickname"],
-//                    msg: row["msg"],
-//                    sentAt: row["sentAt"],
-//                    attachments: attachments,
-//                    isFailed: row["isFailed"] as? Bool ?? false
-//                )
-//            }
-//        }
-//    }
-    
+
     func fetchMessages(in roomID: String, containing keyword: String? = nil) async throws -> [ChatMessage] {
         try await dbPool.read { db in
             var sql = "SELECT * FROM chatMessage WHERE roomName = ?"

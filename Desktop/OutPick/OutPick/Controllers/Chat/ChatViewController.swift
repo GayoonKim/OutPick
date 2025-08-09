@@ -120,7 +120,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 print(#function, "로컬 메시지 수: ", localMessages.count)
                 self.chatMessageCollectionView.addMessages(localMessages)
                 
-//                await self.syncMessagesIfNeeded(for: room)
+                await self.syncMessagesIfNeeded(for: room)
 
                 if !SocketIOManager.shared.isConnected {
                     SocketIOManager.shared.establishConnection { [weak self] in
@@ -149,7 +149,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             SocketIOManager.shared.closeConnection()
         }
     
-        
         if let room = self.room,
            !room.participants.contains(LoginManager.shared.getUserEmail) {
             Task { @MainActor in
@@ -406,18 +405,20 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
     
     @MainActor
-    private func syncMessagesIfNeeded(for room: ChatRoom) async {
+    private func syncMessagesIfNeeded(for room: ChatRoom, reset: Bool = true) async {
         print(#function, "✅ 호출 완료: ", room)
         
         do {
-            let messages: [ChatMessage]
-            if let lastDate = try GRDBManager.shared.fetchLastMessageTimestamp(for: room.roomName) {
-                print(#function, "✅ 마지막 시간: ", lastDate)
-                messages = try await FirebaseManager.shared.fetchMessages(after: lastDate, for: room)
-            } else {
-                messages = try await FirebaseManager.shared.fetchAllMessages(for: room)
-            }
-            print(#function, "✅ 호출 완료: ", messages)
+//            let messages: [ChatMessage]
+//            if let lastDate = try GRDBManager.shared.fetchLastMessageTimestamp(for: room.roomName) {
+//                print(#function, "✅ 마지막 시간: ", lastDate)
+//                messages = try await FirebaseManager.shared.fetchMessagesPaged(for: room)
+//            } else {
+//                messages = try await FirebaseManager.shared.fetchAllMessages(for: room)
+//            }
+//            print(#function, "✅ 호출 완료: ", messages)
+            
+            let messages = try await FirebaseManager.shared.fetchMessagesPaged(for: room)
             
             for message in messages {
                 try GRDBManager.shared.saveChatMessage(message)
