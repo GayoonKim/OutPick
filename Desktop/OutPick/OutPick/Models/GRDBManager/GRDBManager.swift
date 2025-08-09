@@ -114,7 +114,9 @@ final class GRDBManager {
     func saveChatMessage(_ message: ChatMessage) throws {
         let jsonData = try JSONEncoder().encode(message.attachments)
         let attachmentsJSON = String(data: jsonData, encoding: .utf8) ?? "[]"
-
+        
+        print(#function, "메시지 저장: ", message)
+        
         try dbPool.write { db in
             try db.execute(
                 sql: """
@@ -136,19 +138,52 @@ final class GRDBManager {
         }
     }
     
-    func fetchMessages(in roomID: String, containing keyword: String? = nil) throws -> [ChatMessage] {
-        try dbPool.read { db in
-            let rows = try Row.fetchAll(
-                db,
-                sql: "SELECT * FROM chatMessage WHERE id = ? ORDER BY sentAt ASC",
-                arguments: [roomID]
-            )
-
+//    func fetchMessages(in roomName: String) async throws -> [ChatMessage] {
+//        try await dbPool.read { db in
+//            let rows = try Row.fetchAll(
+//                db,
+//                sql: "SELECT * FROM chatMessage WHERE roomName = ? ORDER BY sentAt ASC",
+//                arguments: [roomName]
+//            )
+//
+//            return try rows.compactMap { row in
+//                let attachmentsJSON = row["attachments"] as? String ?? "[]"
+//                let attachments = try JSONDecoder().decode([Attachment].self, from: Data(attachmentsJSON.utf8))
+//
+//                return ChatMessage(
+//                    ID: row["id"],
+//                    roomName: row["roomName"],
+//                    senderID: row["senderID"],
+//                    senderNickname: row["senderNickname"],
+//                    msg: row["msg"],
+//                    sentAt: row["sentAt"],
+//                    attachments: attachments,
+//                    isFailed: row["isFailed"] as? Bool ?? false
+//                )
+//            }
+//        }
+//    }
+    
+    func fetchMessages(in roomID: String, containing keyword: String? = nil) async throws -> [ChatMessage] {
+        try await dbPool.read { db in
+            var sql = "SELECT * FROM chatMessage WHERE roomName = ?"
+            var arguments: [DatabaseValueConvertible] = [roomID]
+            
+            if let keyword = keyword, !keyword.isEmpty {
+                sql += " AND msg LIKE ?"
+                arguments.append("%\(keyword)%")
+            }
+            
+            sql += " ORDER BY sentAt ASC"
+            
+            let rows = try Row.fetchAll(db, sql: sql, arguments: StatementArguments(arguments))
+            
             return try rows.compactMap { row in
                 let attachmentsJSON = row["attachments"] as? String ?? "[]"
                 let attachments = try JSONDecoder().decode([Attachment].self, from: Data(attachmentsJSON.utf8))
-
+                
                 return ChatMessage(
+                    ID: row["id"],
                     roomName: row["roomName"],
                     senderID: row["senderID"],
                     senderNickname: row["senderNickname"],
@@ -161,7 +196,32 @@ final class GRDBManager {
         }
     }
     
-    func fetchLastMessageTimestamp(for roomID: String) throws -> Date? {
+    func fetchAllMessages() async throws -> [ChatMessage] {
+        try await dbPool.read { db in
+            let rows = try Row.fetchAll(
+                db,
+                sql: "SELECT * FROM chatMessage ORDER BY sentAt ASC"
+            )
+
+            return try rows.compactMap { row in
+                let attachmentsJSON = row["attachments"] as? String ?? "[]"
+                let attachments = try JSONDecoder().decode([Attachment].self, from: Data(attachmentsJSON.utf8))
+
+                return ChatMessage(
+                    ID: row["id"],
+                    roomName: row["roomName"],
+                    senderID: row["senderID"],
+                    senderNickname: row["senderNickname"],
+                    msg: row["msg"],
+                    sentAt: row["sentAt"],
+                    attachments: attachments,
+                    isFailed: row["isFailed"] as? Bool ?? false
+                )
+            }
+        }
+    }
+    
+    func fetchLastMessageTimestamp(for roomName: String) throws -> Date? {
         try dbPool.read { db in
             let sql = """
             SELECT sentAt FROM chatMessage
@@ -169,7 +229,7 @@ final class GRDBManager {
             ORDER BY sentAt DESC
             LIMIT 1
             """
-            return try Date.fetchOne(db, sql: sql, arguments: [roomID])
+            return try Date.fetchOne(db, sql: sql, arguments: [roomName])
         }
     }
     

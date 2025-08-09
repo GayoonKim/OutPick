@@ -592,7 +592,7 @@ class FirebaseManager {
     }
     
     //MARK: 메시지 관련 기능
-    func saveMessage(_ message: ChatMessage, _ room: ChatRoom) async throws{
+    func saveMessage(_ message: ChatMessage, _ room: ChatRoom) async throws -> String {
         do {
             let roomDoc = try await getRoomDoc(room: room)
 //            try await roomDoc?.reference.collection("Messages").document().setData(message.toDict())
@@ -603,8 +603,10 @@ class FirebaseManager {
             try await messageRef?.setData(messageWithID.toDict())
             
             print("메시지 저장 성공 => \(message)")
+            return messageWithID.ID ?? ""
         } catch {
             print("메시지 전송 전송 및 저장 실패")
+            return ""
         }
     }
 

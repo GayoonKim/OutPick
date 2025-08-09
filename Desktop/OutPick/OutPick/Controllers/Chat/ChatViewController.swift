@@ -116,19 +116,13 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             // 이미 연결된 경우에는 room join과 listener 설정만 수행
             if let room = self.room,
                room.participants.contains(LoginManager.shared.getUserEmail) {
-                let localMessages = try GRDBManager.shared.fetchMessages(in: room.ID ?? "")
-
+                let localMessages = try await GRDBManager.shared.fetchMessages(in: room.roomName, containing: nil)
+                print(#function, "로컬 메시지 수: ", localMessages.count)
                 self.chatMessageCollectionView.addMessages(localMessages)
                 
-                await self.syncMessagesIfNeeded(for: room)
-                
-                if SocketIOManager.shared.isConnected {
-                    SocketIOManager.shared.joinRoom(room.roomName)
-                    SocketIOManager.shared.socket.off("chat message")
-                    SocketIOManager.shared.listenToChatMessage()
-                    SocketIOManager.shared.listenToNewParticipant()
-                } else {
-                    // 연결되지 않은 경우에만 연결 시도
+//                await self.syncMessagesIfNeeded(for: room)
+
+                if !SocketIOManager.shared.isConnected {
                     SocketIOManager.shared.establishConnection { [weak self] in
                         guard let _ = self else { return }
                         SocketIOManager.shared.joinRoom(room.roomName)
@@ -145,6 +139,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
+        
+        cancellables.removeAll()
         
         if let topVC = self.navigationController?.topViewController,
            topVC is ChatRoomSettingCollectionView {
@@ -169,7 +165,17 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
     
     private func hilightAndScrollToMessage(containing keyword: String) {
-        print(#function, "keyword: \(keyword)")
+        Task { @MainActor in
+            do {
+                guard let room = self.room else { return }
+
+                let localMessages = try await GRDBManager.shared.fetchMessages(in: room.roomName, containing: keyword)
+                print(#function, "메시지 수: ", localMessages.count)
+                
+            } catch {
+                
+            }
+        }
     }
     
     private func bindSearchEvents() {
@@ -282,17 +288,21 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 
                 if !receivedMessage.isFailed {
                     Task {
+                        
+                        var ID = ""
                         if receivedMessage.senderID == LoginManager.shared.getUserEmail {
                             // ✅ 보낸 본인만 Firebase에 저장
-                            try await FirebaseManager.shared.saveMessage(receivedMessage, room)
+                            ID = try await FirebaseManager.shared.saveMessage(receivedMessage, room)
                         }
                         
-                        try GRDBManager.shared.saveChatMessage(receivedMessage)
+                        var messageWithID = receivedMessage
+                        messageWithID.ID = ID
+                        try GRDBManager.shared.saveChatMessage(messageWithID)
                         
-                        for attachment in receivedMessage.attachments {
+                        for attachment in messageWithID.attachments {
                             guard attachment.type == .image, let imageName = attachment.fileName else { continue }
                             
-                            try GRDBManager.shared.addImage(imageName, toRoom: room.ID ?? "", at: receivedMessage.sentAt ?? Date())
+                            try GRDBManager.shared.addImage(imageName, toRoom: room.ID ?? "", at: messageWithID.sentAt ?? Date())
                             
                             if let image = attachment.toUIImage() {
                                 try await KingfisherManager.shared.cache.store(image, forKey: imageName)
@@ -301,7 +311,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                     }
                 }
 
-//                chatMessageCollectionView.addMessage(with: receivedMessage)
                 self.chatMessageCollectionView.addMessages([receivedMessage])
             }
             .store(in: &cancellables)
@@ -402,7 +411,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         
         do {
             let messages: [ChatMessage]
-            if let lastDate = try GRDBManager.shared.fetchLastMessageTimestamp(for: room.ID ?? "") {
+            if let lastDate = try GRDBManager.shared.fetchLastMessageTimestamp(for: room.roomName) {
                 print(#function, "✅ 마지막 시간: ", lastDate)
                 messages = try await FirebaseManager.shared.fetchMessages(after: lastDate, for: room)
             } else {
