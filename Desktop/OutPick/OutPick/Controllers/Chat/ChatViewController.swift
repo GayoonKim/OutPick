@@ -116,16 +116,19 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             // 이미 연결된 경우에는 room join과 listener 설정만 수행
             if let room = self.room,
                room.participants.contains(LoginManager.shared.getUserEmail) {
-                let localMessages = try await GRDBManager.shared.fetchMessages(in: room.roomName, containing: nil)
+                let localMessages = try await GRDBManager.shared.fetchMessages(in: room.ID ?? "", containing: nil)
                 print(#function, "로컬 메시지 수: ", localMessages.count)
                 self.chatMessageCollectionView.addMessages(localMessages)
+                
+                let allMessages = try await GRDBManager.shared.fetchAllMessages()
+                print(#function, "전체 로컬 메시지 수: ", allMessages.count)
                 
                 await self.syncMessagesIfNeeded(for: room)
 
                 if !SocketIOManager.shared.isConnected {
                     SocketIOManager.shared.establishConnection { [weak self] in
                         guard let _ = self else { return }
-                        SocketIOManager.shared.joinRoom(room.roomName)
+                        SocketIOManager.shared.joinRoom(room.ID ?? "")
                         SocketIOManager.shared.socket.off("chat message")
                         SocketIOManager.shared.listenToChatMessage()
                         SocketIOManager.shared.listenToNewParticipant()
@@ -161,30 +164,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 }
             }
         }
-    }
-    
-    private func hilightAndScrollToMessage(containing keyword: String) {
-        Task { @MainActor in
-            do {
-                guard let room = self.room else { return }
-
-                let localMessages = try await GRDBManager.shared.fetchMessages(in: room.roomName, containing: keyword)
-                print(#function, "메시지 수: ", localMessages.count)
-                
-            } catch {
-                
-            }
-        }
-    }
-    
-    private func bindSearchEvents() {
-        customNavigationBar.searchKeywordPublisher
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] keyword in
-                guard let self = self else { return }
-                self.hilightAndScrollToMessage(containing: keyword)
-            }
-            .store(in: &cancellables)
     }
 
     @MainActor
@@ -222,7 +201,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             self.chatUIView.updateHeight()
         }
         
-        let newMessage = ChatMessage(ID: nil,roomName: room.roomName,senderID: LoginManager.shared.getUserEmail, senderNickname: LoginManager.shared.currentUserProfile?.nickname ?? "", msg: message, sentAt: Date(), attachments: [])
+        let newMessage = ChatMessage(roomID: room.ID ?? "", senderID: LoginManager.shared.getUserEmail, senderNickname: LoginManager.shared.currentUserProfile?.nickname ?? "", msg: message, sentAt: Date(), attachments: [])
         
         SocketIOManager.shared.sendMessages(room, newMessage)
         chatUIView.sendButton.isEnabled = false
@@ -287,7 +266,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 
                 if !receivedMessage.isFailed {
                     Task {
-                        
                         var ID = ""
                         if receivedMessage.senderID == LoginManager.shared.getUserEmail {
                             // ✅ 보낸 본인만 Firebase에 저장
@@ -406,19 +384,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     @MainActor
     private func syncMessagesIfNeeded(for room: ChatRoom, reset: Bool = true) async {
-        print(#function, "✅ 호출 완료: ", room)
         
         do {
-//            let messages: [ChatMessage]
-//            if let lastDate = try GRDBManager.shared.fetchLastMessageTimestamp(for: room.roomName) {
-//                print(#function, "✅ 마지막 시간: ", lastDate)
-//                messages = try await FirebaseManager.shared.fetchMessagesPaged(for: room)
-//            } else {
-//                messages = try await FirebaseManager.shared.fetchAllMessages(for: room)
-//            }
-//            print(#function, "✅ 호출 완료: ", messages)
-            
             let messages = try await FirebaseManager.shared.fetchMessagesPaged(for: room)
+            print(#function, "✅ 호출 완료: ", messages.count)
             
             for message in messages {
                 try GRDBManager.shared.saveChatMessage(message)
@@ -523,7 +492,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 // 1. Firebase에 참여자 등록
                 try await FirebaseManager.shared.add_room_participant(room: room)
                 // 2. 소켓을 통해 다른 참여자에게 알림
-                SocketIOManager.shared.notifyNewParticipant(roomName: room.roomName, email: LoginManager.shared.currentUserProfile?.email ?? "")
+                SocketIOManager.shared.notifyNewParticipant(roomID: room.ID ?? "", email: LoginManager.shared.currentUserProfile?.email ?? "")
                 
                 try await Task.sleep(nanoseconds: 500_000_000) // 0.5초 대기
                 
@@ -702,7 +671,32 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     @MainActor
     private func searchButtonTapped() {
         self.customNavigationBar.switchToSearchMode()
-        
+    }
+    
+    private func hilightAndScrollToMessage(containing keyword: String) {
+        Task { @MainActor in
+            do {
+                guard let room = self.room else { return }
+
+                let localMessages = try await GRDBManager.shared.fetchMessages(in: room.ID ?? "", containing: keyword)
+                print(#function, "메시지 수: ", localMessages.count)
+                
+                try await GRDBManager.shared.debugFTSContent()
+                
+            } catch {
+                print("메시지 없음")
+            }
+        }
+    }
+    
+    private func bindSearchEvents() {
+        customNavigationBar.searchKeywordPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] keyword in
+                guard let self = self else { return }
+                self.hilightAndScrollToMessage(containing: keyword)
+            }
+            .store(in: &cancellables)
     }
     
     @MainActor

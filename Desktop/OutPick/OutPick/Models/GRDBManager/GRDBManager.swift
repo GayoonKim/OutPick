@@ -36,13 +36,23 @@ final class GRDBManager {
         migrator.registerMigration("createChatMessage") { db in
             try db.create(table: "chatMessage") { t in
                 t.column("id", .text).primaryKey() // 메시지 UUID 등
-                t.column("roomName", .text).notNull()
+                t.column("roomID", .text).notNull()
                 t.column("senderID", .text).notNull()
                 t.column("senderNickname", .text).notNull()
                 t.column("msg", .text)
                 t.column("sentAt", .datetime)
                 t.column("attachments", .text) // JSON string
                 t.column("isFailed", .boolean).notNull().defaults(to: false)
+            }
+            
+            try db.create(index: "idx_chatMessage_roomID_sentAt", on: "chatMessage", columns: ["roomID", "sentAt"], ifNotExists: true)
+        }
+        
+        migrator.registerMigration(("createChatMessageFTS")) { db in
+            try db.create(virtualTable: "chatMessageFTS", using: FTS5()) { t in
+                t.column("msg")
+                t.column("roomID")
+                t.column("id").notIndexed()
             }
         }
         
@@ -121,12 +131,12 @@ final class GRDBManager {
             try db.execute(
                 sql: """
                 INSERT OR REPLACE INTO chatMessage
-                (id, roomName, senderID, senderNickname, msg, sentAt, attachments, isFailed)
+                (id, roomID, senderID, senderNickname, msg, sentAt, attachments, isFailed)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 arguments: [
                     message.ID ?? "",  // 또는 메시지 고유 ID
-                    message.roomName,
+                    message.roomID,
                     message.senderID,
                     message.senderNickname,
                     message.msg,
@@ -135,22 +145,54 @@ final class GRDBManager {
                     message.isFailed
                 ]
             )
+            
+            do {
+                try db.execute(
+                    sql: "INSERT OR REPLACE INTO chatMessageFTS(id, msg, roomID) VALUES (?, ?, ?)",
+                    arguments: [message.ID ?? "", message.msg, message.roomID]
+                )
+            } catch {
+                print("FTS insert 실패: \(error)")
+            }
         }
     }
 
     func fetchMessages(in roomID: String, containing keyword: String? = nil) async throws -> [ChatMessage] {
         try await dbPool.read { db in
-            var sql = "SELECT * FROM chatMessage WHERE roomName = ?"
-            var arguments: [DatabaseValueConvertible] = [roomID]
-            
+//            var sql = "SELECT * FROM chatMessage WHERE roomID = ?"
+//            var arguments: [DatabaseValueConvertible] = [roomID]
+//            
+            let rows: [Row]
             if let keyword = keyword, !keyword.isEmpty {
-                sql += " AND msg LIKE ?"
-                arguments.append("%\(keyword)%")
+//                sql += " AND msg LIKE ?"
+//                arguments.append("%\(keyword)%")
+                
+                let sql = """
+                SELECT chatMessage.*
+                FROM chatMessage
+                WHERE chatMessage.id IN (
+                    SELECT id FROM chatMessageFTS
+                    WHERE msg MATCH ?
+                )
+                AND chatMessage.roomID = ?
+                ORDER BY chatMessage.sentAt ASC
+                """
+                
+                let ftsQuery = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
+                let formattedQuery = ftsQuery.isEmpty ? "*" : ftsQuery
+                print("🔍 FTS 검색 쿼리: \(sql)")
+                print("🔍 FTS 검색어: '\(formattedQuery)'")
+                
+                rows = try Row.fetchAll(db, sql: sql, arguments: [formattedQuery, roomID])
+                print("🔍 최종 검색 결과: \(rows.count)개")
+            } else {
+                let sql = "SELECT * FROM chatMessage WHERE roomID = ? ORDER BY sentAt ASC"
+                rows = try Row.fetchAll(db, sql: sql, arguments: [roomID])
             }
             
-            sql += " ORDER BY sentAt ASC"
-            
-            let rows = try Row.fetchAll(db, sql: sql, arguments: StatementArguments(arguments))
+//            sql += " ORDER BY sentAt ASC"
+//            
+//            let rows = try Row.fetchAll(db, sql: sql, arguments: StatementArguments(arguments))
             
             return try rows.compactMap { row in
                 let attachmentsJSON = row["attachments"] as? String ?? "[]"
@@ -158,7 +200,7 @@ final class GRDBManager {
                 
                 return ChatMessage(
                     ID: row["id"],
-                    roomName: row["roomName"],
+                    roomID: row["roomID"],
                     senderID: row["senderID"],
                     senderNickname: row["senderNickname"],
                     msg: row["msg"],
@@ -183,7 +225,7 @@ final class GRDBManager {
 
                 return ChatMessage(
                     ID: row["id"],
-                    roomName: row["roomName"],
+                    roomID: row["roomID"],
                     senderID: row["senderID"],
                     senderNickname: row["senderNickname"],
                     msg: row["msg"],
@@ -195,22 +237,44 @@ final class GRDBManager {
         }
     }
     
-    func fetchLastMessageTimestamp(for roomName: String) throws -> Date? {
+    
+    // 디버깅용 함수 추가
+    func debugFTSContent() async throws {
+        try await dbPool.read { db in
+            print("�� === FTS 테이블 디버깅 ===")
+            
+            // FTS 테이블 내용 확인
+            let ftsRows = try Row.fetchAll(db, sql: "SELECT * FROM chatMessageFTS LIMIT 5")
+            print("�� FTS 테이블 샘플 데이터:")
+            for (index, row) in ftsRows.enumerated() {
+                print("  \(index): id=\(row["id"] ?? "nil"), msg=\(row["msg"] ?? "nil"), roomID=\(row["roomID"] ?? "nil")")
+            }
+            
+            // chatMessage 테이블과 비교
+            let chatRows = try Row.fetchAll(db, sql: "SELECT id, msg, roomID FROM chatMessage LIMIT 5")
+            print("�� chatMessage 테이블 샘플 데이터:")
+            for (index, row) in chatRows.enumerated() {
+                print("  \(index): id=\(row["id"] ?? "nil"), msg=\(row["msg"] ?? "nil"), roomID=\(row["roomID"] ?? "nil")")
+            }
+        }
+    }
+    
+    func fetchLastMessageTimestamp(for roomID: String) throws -> Date? {
         try dbPool.read { db in
             let sql = """
             SELECT sentAt FROM chatMessage
-            WHERE roomName = ?
+            WHERE roomID = ?
             ORDER BY sentAt DESC
             LIMIT 1
             """
-            return try Date.fetchOne(db, sql: sql, arguments: [roomName])
+            return try Date.fetchOne(db, sql: sql, arguments: [roomID])
         }
     }
     
     func deleteMessages(inRoom roomID: String) throws {
         try dbPool.write { db in
             try db.execute(
-                sql: "DELETE FROM chatMessage WHERE roomName = ?",
+                sql: "DELETE FROM chatMessage WHERE roomID = ?",
                 arguments: [roomID]
             )
         }

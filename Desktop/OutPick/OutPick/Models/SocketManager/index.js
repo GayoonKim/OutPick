@@ -30,58 +30,74 @@ io.on('connection', (socket) => {
     });
     
     // 새 방 만들기
-    socket.on('create room', (roomName) => {
-        if (!rooms[roomName]) {
-            rooms[roomName] = [];
-            console.log(`Room created: ${roomName}`);
+    socket.on('create room', (roomID) => {
+        if (!rooms[roomID]) {
+            rooms[roomID] = [];
+            console.log(`[Room created] ${roomID}`);
         }
-        
-        socket.join(roomName);
-        rooms[roomName].push(socket.username) || "Anonymous";
+        socket.username = socket.username || "Anonymous";
+        socket.join(roomID);
+        // Only add if not already present
+        if (!rooms[roomID].includes(socket.username)) {
+            rooms[roomID].push(socket.username);
+        }
         io.emit("room list", Object.keys(rooms)); // 모든 클라이언트에게 방 목록 전송
+        io.to(roomID).emit("user list", rooms[roomID]); // 방 사용자 목록 전송
     });
     
     // 방 참여
-    socket.on('join room', (roomName) => {
-        if (rooms[roomName]) {
-            socket.join(roomName);
-            rooms[roomName].push(socket.username || "Anonymous");
-            console.log(`${socket.username} joined room: ${roomName}`);
-            io.to(roomName).emit("user list", rooms[roomName]); // 해당 방 사용자 목록 전송
+    socket.on('join room', (roomID) => {
+        if (rooms[roomID]) {
+            socket.username = socket.username || "Anonymous";
+            socket.join(roomID);
+            // Prevent duplicate usernames
+            if (!rooms[roomID].includes(socket.username)) {
+                rooms[roomID].push(socket.username);
+            }
+            console.log(`[Join] ${socket.username} joined room: ${roomID}`);
+            io.to(roomID).emit("user list", rooms[roomID]); // 해당 방 사용자 목록 전송
         } else {
-            socket.emit("error", `Room ${roomName} does not exist`);
+            socket.emit("error", `Room ${roomID} does not exist`);
         }
     });
     
     // 방 나가기
-    socket.on('leave room', (room) => {
-        socket.leave(room);
-        console.log(`User left room: ${room}`);
-      });
+    socket.on('leave room', (roomID) => {
+        socket.leave(roomID);
+        if (rooms[roomID]) {
+            rooms[roomID] = rooms[roomID].filter((user) => user !== socket.username);
+            io.to(roomID).emit("user list", rooms[roomID]);
+        }
+        console.log(`[Leave] ${socket.username} left room: ${roomID}`);
+    });
     
     // 방에 메시지 전송
     socket.on("chat message", (data) => {
-      const { roomName, message } = data;
+      // Accept both message and msg keys from client
+      const roomID = data.roomID;
+      const message = data.msg;
 
-      if (!roomName || !message) {
-        console.error("Invalid data received:", data);
+      if (!roomID || !message) {
+        console.error("[Chat] Invalid data received:", data);
         return;
       }
 
-      console.log(`[${roomName}] ${socket.username}: ${message}`);
-      io.to(roomName).emit("chat message", {
+      io.to(roomID).emit("chat message", {
         user: socket.username || "Anonymous",
         message,
       });
+      console.log(`[Chat][${roomID}] ${socket.username || "Anonymous"}: ${message}`);
     });
     
     socket.on('disconnect', () => {
-        console.log('User disconnected', socket.id);
-        for (const room in rooms) {
-            rooms[room] = rooms[room].filter((user) => user !== socket.username);
-            io.to(room).emit("user list", rooms[room]); // 참여 유저 목록 갱신
+        console.log(`[Disconnect] User disconnected: ${socket.id} (${socket.username || "Anonymous"})`);
+        for (const roomID in rooms) {
+            if (rooms[roomID].includes(socket.username)) {
+                rooms[roomID] = rooms[roomID].filter((user) => user !== socket.username);
+                io.to(roomID).emit("user list", rooms[roomID]); // 참여 유저 목록 갱신
+            }
         }
-      });
+    });
 });
 
 server.listen(3000, ()=> {

@@ -35,7 +35,7 @@ class SocketIOManager {
     
     private init() {
         //manager = SocketManager(socketURL: URL(string: "http://127.0.0.1:3000")!, config: [.log(true), .compress])
-        manager = SocketManager(socketURL: URL(string: "http://192.168.123.179:3000")!, config: [.log(true), .compress])
+        manager = SocketManager(socketURL: URL(string: "http://192.168.123.161:3000")!, config: [.log(true), .compress])
         socket = manager.defaultSocket
         
         socket.on(clientEvent: .connect) {data, ack in
@@ -81,8 +81,8 @@ class SocketIOManager {
         socket.disconnect()
     }
     
-    func joinRoom(_ roomName: String) {
-        print("joinRomm 호출 - roomName: ", roomName)
+    func joinRoom(_ roomID: String) {
+        print("joinRomm 호출 - roomID: ", roomID)
         
         guard socket.status == .connected else {
             print("소켓이 연결되지 않음")
@@ -94,7 +94,7 @@ class SocketIOManager {
         socket.off("error")
         
         // 방 참여 시도
-        socket.emit("join room", roomName)
+        socket.emit("join room", roomID)
         
         // 방 참여 성공/실패 모니터링
         socket.on("join success") { data, _ in
@@ -105,25 +105,27 @@ class SocketIOManager {
         }
     }
     
-    func createRoom(_ roomName: String) {
-        
-        print("createRoom 호출 - roomName: ", roomName)
+    func createRoom(_ roomID: String) {
+        print("createRoom 호출 - roomID: ", roomID)
         
         guard socket.status == .connected else {
             print("소켓이 연결되지 않음")
             return
         }
         
-        socket.emit("create room", roomName)
+        // 기존 방 생성 관련 리스너 제거 (중복 방지)
+        socket.off("room created")
+        socket.off("room error")
         
-        // 방 참여 성공/실패 모니터링
-        socket.on("join success") { data, _ in
-            print("방 참여 성공: ", data)
-        }
-        socket.on("error") { data, _ in
-            print("방 참여 실패: ", data)
-        }
+        socket.emit("create room", roomID)
         
+        // 방 생성 성공/실패 모니터링
+        socket.on("room created") { data, _ in
+            print("방 생성 성공: ", data)
+        }
+        socket.on("room error") { data, _ in
+            print("방 생성 실패: ", data)
+        }
     }
     
     func sendMessages(_ room: ChatRoom, _ message: ChatMessage) {
@@ -140,12 +142,16 @@ class SocketIOManager {
             return
         }
         
+        let socketData = message.toSocketRepresentation()
+        print("📤 전송할 소켓 데이터: \(socketData)")  // 디버깅용
+        
         socket.emitWithAck("chat message", message.toSocketRepresentation()).timingOut(after: 5) { ackResponse in
             DispatchQueue.main.async {
                 if let ackDict = ackResponse.first as? [String:Any],
                    let success = ackDict["success"] as? Bool, success {
                     self.messageSubject.send(message)
                 } else {
+                    print(#function, "********** 메시지 전송 타임아웃 **********")
                     var failedMessage = message
                     failedMessage.isFailed = true
                     self.messageSubject.send(failedMessage)
@@ -198,9 +204,9 @@ class SocketIOManager {
             
             let finalAttachments = attachments.compactMap { $0 }
 //            let images = finalAttachments.compactMap{ $0.toUIImage() }
-            let message = ChatMessage(roomName: room.roomName, senderID: LoginManager.shared.getUserEmail, senderNickname: LoginManager.shared.currentUserProfile?.nickname ?? "", msg: "", sentAt: Date(), attachments: finalAttachments)
+            let message = ChatMessage(roomID: room.ID ?? "", senderID: LoginManager.shared.getUserEmail, senderNickname: LoginManager.shared.currentUserProfile?.nickname ?? "", msg: "", sentAt: Date(), attachments: finalAttachments)
             
-            socket.emitWithAck("send images", ["roomName": message.roomName, "senderID": message.senderID, "senderNickName": message.senderNickname, "sentAt": "\(message.sentAt ?? Date())", "images": imageDataArray]).timingOut(after: 5) { ackResponse in
+            socket.emitWithAck("send images", ["roomID": message.roomID, "senderID": message.senderID, "senderNickName": message.senderNickname, "sentAt": "\(message.sentAt ?? Date())", "images": imageDataArray]).timingOut(after: 5) { ackResponse in
                 
                 if let ackDict = ackResponse.first as? [String: Any],
                    let success = ackDict["success"] as? Bool, success {
@@ -237,7 +243,7 @@ class SocketIOManager {
         }
 
         let failedMessage = ChatMessage(
-            roomName: room.roomName,
+            roomID: room.ID ?? "",
             senderID: LoginManager.shared.getUserEmail,
             senderNickname: LoginManager.shared.currentUserProfile?.nickname ?? "",
             msg: "",
@@ -256,31 +262,47 @@ class SocketIOManager {
     }
     
     func listenToChatMessage() {
-        // 중복 방지를 위해 기존 리스너 제거
+        // 중복 방지를 위해 기존 리스너 제거 (혹시 모를 중복 대비)
         socket.off("chat message")
         socket.on("chat message") { data, _ in
-            guard let messageData = data.first as? [String: Any] else { return }
-            let roomName = messageData["roomName"] as! String
-            let senderID = messageData["senderID"] as! String
-            let senderNickName = messageData["senderNickName"] as! String
-            let messageText = messageData["msg"] as? String
+            guard let messageData = data.first as? [String: Any] else {
+                print("❌ 메시지 데이터 파싱 실패: data 형식 오류")
+                return
+            }
+
+            // 안전한 옵셔널 바인딩
+            guard let roomID = messageData["roomID"] as? String,
+                  let senderID = messageData["senderID"] as? String,
+                  let senderNickName = messageData["senderNickName"] as? String,
+                  let messageText = messageData["msg"] as? String else {
+                print("❌ 메시지 데이터 파싱 실패: \(messageData)")
+                return
+            }
             
-            let message = ChatMessage(roomName: roomName, senderID: senderID, senderNickname: senderNickName, msg: messageText, sentAt: Date(), attachments: [])
+            let message = ChatMessage(
+                roomID: roomID,
+                senderID: senderID,
+                senderNickname: senderNickName,
+                msg: messageText,
+                sentAt: Date(),
+                attachments: [],
+            )
             
             if senderID == LoginManager.shared.getUserEmail { return }
             
-            DispatchQueue.main.async {
-                self.messageSubject.send(message)
+            Task.detached {
+                await MainActor.run {
+                    self.messageSubject.send(message)
+                }
             }
-            
         }
         
-        //중복 방지를 위해 기존 리스너 제거
+        //중복 방지를 위해 기존 리스너 제거 (혹시 모를 중복 대비)
         socket.off("receiveImages")
         socket.on("receiveImages") { dataArray, _ in
             guard let data = dataArray.first as? [String: Any],
                   let imageDataArray = data["images"] as? [[String:Any]],
-                  let roomName = data["roomName"] as? String,
+                  let roomID = data["roomID"] as? String,
                   let senderID = data["senderID"] as? String,
                   let senderNickName = data["senderNickName"] as? String,
                   let sentAtString = data["sentAt"] as? String else { return }
@@ -300,10 +322,12 @@ class SocketIOManager {
                 return Attachment(type: .image, fileName: imageName, fileData: imageData)
             }
 
-            let message = ChatMessage(roomName: roomName, senderID: senderID, senderNickname: senderNickName, msg: nil, sentAt: sentAt, attachments: attachments)
+            let message = ChatMessage(roomID: roomID, senderID: senderID, senderNickname: senderNickName, msg: nil, sentAt: sentAt, attachments: attachments)
             
-            DispatchQueue.main.async {
-                self.messageSubject.send(message)
+            Task.detached {
+                await MainActor.run {
+                    self.messageSubject.send(message)
+                }
             }
         }
     }
@@ -325,13 +349,13 @@ class SocketIOManager {
             
             DispatchQueue.main.async {
                 if type == "message" {
-                    let roomName = failedData["roomName"] as? String ?? ""
+                    let roomID = failedData["roomID"] as? String ?? ""
                     let senderID = failedData["senderID"] as? String ?? ""
                     let senderNickName = failedData["senderNickName"] as? String ?? ""
                     let msg = failedData["msg"] as? String ?? ""
                     
                     var failedMessage = ChatMessage(
-                        roomName: roomName,
+                        roomID: roomID,
                         senderID: senderID,
                         senderNickname: senderNickName,
                         msg: msg,
@@ -344,7 +368,7 @@ class SocketIOManager {
                 }
                 
                 if type == "image" {
-                    guard let roomName = failedData["roomName"] as? String,
+                    guard let roomID = failedData["roomID"] as? String,
                           let senderID = failedData["senderID"] as? String,
                           let senderNickName = failedData["senderNickName"] as? String,
                           let sentAtString = failedData["sentAt"] as? String,
@@ -366,7 +390,7 @@ class SocketIOManager {
                     }
                     
                     var failedImageMessage = ChatMessage(
-                        roomName: roomName,
+                        roomID: roomID,
                         senderID: senderID,
                         senderNickname: senderNickName,
                         msg: nil,
@@ -381,14 +405,14 @@ class SocketIOManager {
         }
     }
     
-    func notifyNewParticipant(roomName: String, email: String) {
+    func notifyNewParticipant(roomID: String, email: String) {
         guard socket.status == .connected else {
             print("소켓이 연결되어 있지 않아 새 참여자 알림 emit 실패")
             return
         }
         
-        print("새 참여자 알림 emit - room: \(roomName), email: \(email)")
-        socket.emit("new participant joined", roomName, email)
+        print("새 참여자 알림 emit - room: \(roomID), email: \(email)")
+        socket.emit("new participant joined", roomID, email)
     }
     
     func listenToNewParticipant() {
@@ -396,7 +420,7 @@ class SocketIOManager {
         socket.on("room participant updated") { [weak self] data, _ in
             guard let self = self,
                   let dict = data.first as? [String: String],
-                  let roomName = dict["roomName"],
+                  let roomID = dict["roomID"],
                   let email = dict["email"] else {
                 print("room participant updated 수신 실패: 데이터 형식 불일치")
                 return
@@ -410,13 +434,13 @@ class SocketIOManager {
                     try await GRDBManager.shared.dbPool.write { db in
                         try profile.save(db)
                         try db.execute(
-                            sql: "INSERT OR REPLACE INTO roomParticipant (roomId, email) VALUES (?, ?)",
-                            arguments: [roomName, email]
+                            sql: "INSERT OR REPLACE INTO roomParticipant (roomID, email) VALUES (?, ?)",
+                            arguments: [roomID, email]
                         )
                     }
                     
                     // 새로운 참여자 알림 발행
-                    self.participantSubject.send((roomName, email))
+                    self.participantSubject.send((roomID, email))
                     
                 } catch {
                     print("새 참여자 프로필 불러오기/저장 실패: \(error)")

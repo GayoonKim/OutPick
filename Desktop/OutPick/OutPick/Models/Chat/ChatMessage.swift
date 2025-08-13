@@ -13,7 +13,7 @@ import FirebaseFirestore
 // 채팅 메시지 정보
 struct ChatMessage: SocketData, Codable {
     var ID: String?
-    let roomName: String
+    let roomID: String
     let senderID: String                // 메시지 전송 사용자 아이디
     let senderNickname: String          // 메시지 전송 사용자 닉네임
     let msg: String?                    // 메시지 내용
@@ -22,9 +22,9 @@ struct ChatMessage: SocketData, Codable {
     var isFailed: Bool = false
 
     enum CodingKeys: String, CodingKey {
-        case roomName
+        case roomID
         case senderID
-        case senderNickname = "senderNickname"
+        case senderNickname = "senderNickName"
         case msg
         case sentAt
         case attachments
@@ -33,10 +33,11 @@ struct ChatMessage: SocketData, Codable {
     func toSocketRepresentation() -> SocketData {
         var dict: [String: Any] = [
             "ID": ID ?? "",
-            "roomName": roomName,
+            "roomID": roomID,
             "senderID": senderID,
-            "senderNickname": senderNickname,
+            "senderNickName": senderNickname,
             "msg": msg ?? "",
+//            "sentAt": ISO8601DateFormatter().string(from: sentAt ?? Date())  // ✅ 추가
         ]
         
         dict["attachments"] = attachments.map { $0.toDict() }
@@ -48,7 +49,7 @@ struct ChatMessage: SocketData, Codable {
     func toDict() -> [String: Any] {
         var dict: [String: Any] = [
             "ID": ID ?? "",
-            "roomName": roomName,
+            "roomID": roomID,
             "senderID": senderID,
             "senderNickname": senderNickname,
             "msg": msg ?? "",
