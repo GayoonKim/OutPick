@@ -121,13 +121,13 @@ final class GRDBManager {
     }
     
     // MARK: 메시지
-    func saveChatMessage(_ message: ChatMessage) throws {
+    func saveChatMessage(_ message: ChatMessage) async throws {
         let jsonData = try JSONEncoder().encode(message.attachments)
         let attachmentsJSON = String(data: jsonData, encoding: .utf8) ?? "[]"
         
-        print(#function, "메시지 저장: ", message)
+        print(#function, "✅✅✅✅✅✅✅✅✅✅ 메시지 저장: ", message)
         
-        try dbPool.write { db in
+        try await dbPool.write { db in
             try db.execute(
                 sql: """
                 INSERT OR REPLACE INTO chatMessage
@@ -135,7 +135,8 @@ final class GRDBManager {
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 arguments: [
-                    message.ID ?? "",  // 또는 메시지 고유 ID
+                    message.ID,  // 또는 메시지 고유 ID
+                    message.ID,  // 또는 메시지 고유 ID
                     message.roomID,
                     message.senderID,
                     message.senderNickname,
@@ -149,7 +150,7 @@ final class GRDBManager {
             do {
                 try db.execute(
                     sql: "INSERT OR REPLACE INTO chatMessageFTS(id, msg, roomID) VALUES (?, ?, ?)",
-                    arguments: [message.ID ?? "", message.msg, message.roomID]
+                    arguments: [message.ID, message.msg, message.roomID]
                 )
             } catch {
                 print("FTS insert 실패: \(error)")
@@ -159,14 +160,10 @@ final class GRDBManager {
 
     func fetchMessages(in roomID: String, containing keyword: String? = nil) async throws -> [ChatMessage] {
         try await dbPool.read { db in
-//            var sql = "SELECT * FROM chatMessage WHERE roomID = ?"
-//            var arguments: [DatabaseValueConvertible] = [roomID]
-//            
+
             let rows: [Row]
             if let keyword = keyword, !keyword.isEmpty {
-//                sql += " AND msg LIKE ?"
-//                arguments.append("%\(keyword)%")
-                
+
                 let sql = """
                 SELECT chatMessage.*
                 FROM chatMessage
@@ -189,11 +186,7 @@ final class GRDBManager {
                 let sql = "SELECT * FROM chatMessage WHERE roomID = ? ORDER BY sentAt ASC"
                 rows = try Row.fetchAll(db, sql: sql, arguments: [roomID])
             }
-            
-//            sql += " ORDER BY sentAt ASC"
-//            
-//            let rows = try Row.fetchAll(db, sql: sql, arguments: StatementArguments(arguments))
-            
+
             return try rows.compactMap { row in
                 let attachmentsJSON = row["attachments"] as? String ?? "[]"
                 let attachments = try JSONDecoder().decode([Attachment].self, from: Data(attachmentsJSON.utf8))
@@ -212,11 +205,12 @@ final class GRDBManager {
         }
     }
     
-    func fetchAllMessages() async throws -> [ChatMessage] {
+    func fetchAllMessages(inRoom roomID: String) async throws -> [ChatMessage] {
         try await dbPool.read { db in
             let rows = try Row.fetchAll(
                 db,
-                sql: "SELECT * FROM chatMessage ORDER BY sentAt ASC"
+                sql: "SELECT * FROM chatMessage WHERE roomID = ? ORDER BY sentAt ASC",
+                arguments: [roomID]
             )
 
             return try rows.compactMap { row in
@@ -236,8 +230,7 @@ final class GRDBManager {
             }
         }
     }
-    
-    
+
     // 디버깅용 함수 추가
     func debugFTSContent() async throws {
         try await dbPool.read { db in
@@ -268,6 +261,19 @@ final class GRDBManager {
             LIMIT 1
             """
             return try Date.fetchOne(db, sql: sql, arguments: [roomID])
+        }
+    }
+    
+    func fetchLastMessageID(for roomID: String) async throws -> String? {
+        try await dbPool.read { db in
+            let sql = """
+            SELECT id FROM chatMessage
+            WHERE roomID = ?
+            ORDER BY sentAt DESC
+            LIMIT 1
+            """
+            
+            return try String.fetchOne(db, sql: sql, arguments: [roomID])
         }
     }
     

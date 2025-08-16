@@ -12,7 +12,7 @@ import FirebaseFirestore
 
 // 채팅 메시지 정보
 struct ChatMessage: SocketData, Codable {
-    var ID: String?
+    var ID: String = UUID().uuidString
     let roomID: String
     let senderID: String                // 메시지 전송 사용자 아이디
     let senderNickname: String          // 메시지 전송 사용자 닉네임
@@ -32,7 +32,7 @@ struct ChatMessage: SocketData, Codable {
     
     func toSocketRepresentation() -> SocketData {
         var dict: [String: Any] = [
-            "ID": ID ?? "",
+            "ID": ID,
             "roomID": roomID,
             "senderID": senderID,
             "senderNickName": senderNickname,
@@ -48,10 +48,10 @@ struct ChatMessage: SocketData, Codable {
     // Firestore에 저장하기 위힌 뱐환 메서드
     func toDict() -> [String: Any] {
         var dict: [String: Any] = [
-            "ID": ID ?? "",
+            "ID": ID,
             "roomID": roomID,
             "senderID": senderID,
-            "senderNickname": senderNickname,
+            "senderNickName": senderNickname,
             "msg": msg ?? "",
             "sentAt": Timestamp(date: sentAt ?? Date())
         ]
@@ -60,6 +60,9 @@ struct ChatMessage: SocketData, Codable {
         
         return dict
     }
+    
+//    func hash(into hasher: inout Hasher) { hasher.combine(ID) }
+//    static func ==(lhs: ChatMessage, rhs: ChatMessage) -> Bool { lhs.ID == rhs.ID }
 }
 
 extension ChatMessage: Hashable {}

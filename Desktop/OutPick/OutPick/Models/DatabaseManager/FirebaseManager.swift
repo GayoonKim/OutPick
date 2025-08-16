@@ -594,61 +594,25 @@ class FirebaseManager {
     }
     
     //MARK: 메시지 관련 기능
-    func saveMessage(_ message: ChatMessage, _ room: ChatRoom) async throws -> String {
+    func saveMessage(_ message: ChatMessage, _ room: ChatRoom) async throws /*-> String*/ {
         do {
             let roomDoc = try await getRoomDoc(room: room)
-//            try await roomDoc?.reference.collection("Messages").document().setData(message.toDict())
             let messageRef = roomDoc?.reference.collection("Messages").document() // 자동 ID 생성
-            var messageWithID = message
-            messageWithID.ID = messageRef?.documentID // ChatMessage 구조체의 id 필드
 
-            try await messageRef?.setData(messageWithID.toDict())
+            try await messageRef?.setData(message.toDict())
             
             print("메시지 저장 성공 => \(message)")
-            return messageWithID.ID ?? ""
         } catch {
-            print("메시지 전송 전송 및 저장 실패")
-            return ""
+            print("메시지 전송 및 저장 실패")
         }
     }
-
-//    func fetchMessages(after date: Date?, for room: ChatRoom) async throws -> [ChatMessage] {
-//        print(#function, "✅ 호출 완료")
-//        
-//        let monthID = DateManager.shared.getMonthFromTimestamp(date: room.createdAt)
-//        
-//        let collection = db
-//            .collection("Rooms")
-//            .document(monthID)
-//            .collection("\(monthID) Rooms")
-//            .document(room.ID ?? room.roomName)
-//            .collection("Messages")
-//        
-//        var query: Query = collection.order(by: "sentAt", descending: false)
-//        
-//        if let date = date {
-//            query = query.whereField("sentAt", isGreaterThan: Timestamp(date: date))
-//        }
-//        
-//        let snapshot = try await query.getDocuments()
-//        
-//        print("📦 불러온 메시지 개수: \(snapshot.count)")
-//        
-//        return snapshot.documents.compactMap { doc in
-//            do {
-//                return try doc.data(as: ChatMessage.self)
-//            } catch {
-//                print("🔥 메시지 디코딩 실패: \(error.localizedDescription) → \(doc.data())")
-//                return nil
-//            }
-//        }
-//    }
 
     // Firestore에서 메시지 페이징과 중복 방지까지 지원하는 fetch 함수 예시
     func fetchMessagesPaged(for room: ChatRoom, pageSize: Int = 50, reset: Bool = false) async throws -> [ChatMessage] {
         // 1. 로컬 DB에서 마지막 메시지 시간 조회
-        let lastTimestamp: Date? = try GRDBManager.shared.fetchLastMessageTimestamp(for: room.roomName)
+        let lastTimestamp: Date? = try GRDBManager.shared.fetchLastMessageTimestamp(for: room.ID ?? "")
         let adjustedTimestamp = lastTimestamp?.addingTimeInterval(0.001) // 1ms 보정
+        print(#function, "마지막 메시지 시간: ", adjustedTimestamp ?? Date())
         
         // 2. Firestore 컬렉션 경로 세팅
         let monthID = DateManager.shared.getMonthFromTimestamp(date: room.createdAt)
@@ -680,12 +644,17 @@ class FirebaseManager {
         
         // 7. 마지막 불러온 문서 저장 (다음 페이지네이션용)
         lastFetchedSnapshot = snapshot.documents.last
-        
+
         // 8. 결과 디코딩
         let messages = snapshot.documents.compactMap { doc -> ChatMessage? in
-            try? doc.data(as: ChatMessage.self)
+            do {
+                return try doc.data(as: ChatMessage.self)
+            } catch {
+                print("⚠️ 디코딩 실패: \(error), docID: \(doc.documentID)")
+                return nil
+            }
         }
-        
+
         return messages
     }
     

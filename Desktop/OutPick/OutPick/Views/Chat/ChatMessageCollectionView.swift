@@ -16,18 +16,24 @@ class ChatMessageCollectionView: UIView {
     enum Item: Hashable {
         case message(ChatMessage)
         case dateSeparator(Date)
+        case readMarker
     }
     
     private var collectionView: UICollectionView!
     private var dataSource: UICollectionViewDiffableDataSource<Section, Item>!
     
     private var lastMessageDate: Date?
+    private var lastReadMessageID: String?
+    func setLastReadMessageID(_ id: String?) {
+        self.lastReadMessageID = id
+    }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         
         setupCollectionView()
         configureDataSource()
+        applySnapshot([])
     }
     
     required init?(coder: NSCoder) {
@@ -39,6 +45,7 @@ class ChatMessageCollectionView: UIView {
         collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
         collectionView.register(ChatMessageCell.self, forCellWithReuseIdentifier: ChatMessageCell.reuseIdentifier)
         collectionView.register(DateSeperatorCell.self, forCellWithReuseIdentifier: DateSeperatorCell.reuseIdentifier)
+        collectionView.register(readMarkCollectionViewCell.self, forCellWithReuseIdentifier: readMarkCollectionViewCell.reuseIdentifier)
         collectionView.translatesAutoresizingMaskIntoConstraints = false
         
         addSubview(collectionView)
@@ -94,8 +101,13 @@ class ChatMessageCollectionView: UIView {
                 cell.configureWithDate(dateText)
                 
                 return cell
+                
+            case .readMarker:
+                let cell = collectionView.dequeueReusableCell(withReuseIdentifier: readMarkCollectionViewCell.reuseIdentifier, for: indexPath) as! readMarkCollectionViewCell
+                
+                cell.configure()
+                return cell
             }
-
         }
         
     }
@@ -147,7 +159,27 @@ class ChatMessageCollectionView: UIView {
         print("************************ \(#function) 호출 ************************")
         
         var items: [Item] = []
-        for message in messages {
+        
+        let snapshot = dataSource.snapshot()
+        let existingIDs = snapshot.itemIdentifiers.compactMap { item -> String? in
+            if case .message(let m) = item { return m.ID }
+            return nil
+        }
+        
+        let newMessages = messages.filter { !existingIDs.contains($0.ID) }
+
+        let hasReadMarker = snapshot.itemIdentifiers.contains { item in
+            if case .readMarker = item { return true }
+            return false
+        }
+
+        if !hasReadMarker, let lastMessageID = self.lastReadMessageID,
+           let firstMessage = newMessages.first,
+           firstMessage.ID != lastMessageID {
+            items.append(.readMarker)
+        }
+        
+        for message in newMessages {
             let messageDate = Calendar.current.startOfDay(for: message.sentAt ?? Date())
             
             if lastMessageDate == nil || lastMessageDate! != messageDate {
@@ -158,7 +190,7 @@ class ChatMessageCollectionView: UIView {
             items.append(.message(message))
         }
         
-        applySnapshot(items)
+        updateCollectionView(with: items)
     }
     
     private func formatDateToDayString(_ date: Date) -> String {

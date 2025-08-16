@@ -116,13 +116,17 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             // 이미 연결된 경우에는 room join과 listener 설정만 수행
             if let room = self.room,
                room.participants.contains(LoginManager.shared.getUserEmail) {
-                let localMessages = try await GRDBManager.shared.fetchMessages(in: room.ID ?? "", containing: nil)
-                print(#function, "로컬 메시지 수: ", localMessages.count)
-                self.chatMessageCollectionView.addMessages(localMessages)
                 
-                let allMessages = try await GRDBManager.shared.fetchAllMessages()
-                print(#function, "전체 로컬 메시지 수: ", allMessages.count)
+                let messages = try await GRDBManager.shared.fetchMessages(in: room.ID ?? "", containing: nil)
+                let lastMessageID = try await GRDBManager.shared.fetchLastMessageID(for: room.ID ?? "")
+
+                for (idx, message) in messages.enumerated() {
+                    print(#function, "✅✅✅✅✅✅✅✅✅✅ \(idx)번째 메시지: ", message)
+                }
                 
+                self.chatMessageCollectionView.addMessages(messages)
+                self.chatMessageCollectionView.setLastReadMessageID(lastMessageID)
+
                 await self.syncMessagesIfNeeded(for: room)
 
                 if !SocketIOManager.shared.isConnected {
@@ -137,6 +141,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 
                 self.bindRoomChangePublisher()
             }
+            
         }
     }
     
@@ -266,20 +271,17 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 
                 if !receivedMessage.isFailed {
                     Task {
-                        var ID = ""
                         if receivedMessage.senderID == LoginManager.shared.getUserEmail {
                             // ✅ 보낸 본인만 Firebase에 저장
-                            ID = try await FirebaseManager.shared.saveMessage(receivedMessage, room)
+                            /*ID = */try await FirebaseManager.shared.saveMessage(receivedMessage, room)
                         }
                         
-                        var messageWithID = receivedMessage
-                        messageWithID.ID = ID
-                        try GRDBManager.shared.saveChatMessage(messageWithID)
+                        try await GRDBManager.shared.saveChatMessage(receivedMessage)
                         
-                        for attachment in messageWithID.attachments {
+                        for attachment in receivedMessage.attachments {
                             guard attachment.type == .image, let imageName = attachment.fileName else { continue }
                             
-                            try GRDBManager.shared.addImage(imageName, toRoom: room.ID ?? "", at: messageWithID.sentAt ?? Date())
+                            try GRDBManager.shared.addImage(imageName, toRoom: room.ID ?? "", at: receivedMessage.sentAt ?? Date())
                             
                             if let image = attachment.toUIImage() {
                                 try await KingfisherManager.shared.cache.store(image, forKey: imageName)
@@ -289,6 +291,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 }
 
                 self.chatMessageCollectionView.addMessages([receivedMessage])
+                
+                Task {
+                    let localMessages  = try await GRDBManager.shared.fetchMessages(in: room.ID ?? "")
+                    print(#function ,"현재 총 로컬 메시지 수: ", localMessages.count)
+                }
             }
             .store(in: &cancellables)
         
@@ -390,7 +397,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             print(#function, "✅ 호출 완료: ", messages.count)
             
             for message in messages {
-                try GRDBManager.shared.saveChatMessage(message)
+                try await GRDBManager.shared.saveChatMessage(message)
                 
                 if !message.attachments.isEmpty {
                     await withTaskGroup(of: Void.self) { group in
