@@ -151,7 +151,7 @@ class SocketIOManager {
                    let success = ackDict["success"] as? Bool, success {
                     self.messageSubject.send(message)
                 } else {
-                    print(#function, "********** 메시지 전송 타임아웃 **********")
+//                    print(#function, "********** 메시지 전송 타임아웃 **********")
                     var failedMessage = message
                     failedMessage.isFailed = true
                     self.messageSubject.send(failedMessage)

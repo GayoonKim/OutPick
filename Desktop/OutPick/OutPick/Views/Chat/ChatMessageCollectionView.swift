@@ -27,6 +27,8 @@ class ChatMessageCollectionView: UIView {
     func setLastReadMessageID(_ id: String?) {
         self.lastReadMessageID = id
     }
+    
+    var isUserInCurrentRoom = false
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -113,17 +115,17 @@ class ChatMessageCollectionView: UIView {
     }
     
     private func updateCollectionView(with newItems: [Item]) {
-        print("************************ \(#function) 호출 ************************")
+//        print("************************ \(#function) 호출 ************************")
         
         var snapshot = dataSource.snapshot()
         snapshot.appendItems(newItems, toSection: .main)
         
-        print("Before apply, snapshot items: \(snapshot.itemIdentifiers)") // 추가된 아이템 확인
+//        print("Before apply, snapshot items: \(snapshot.itemIdentifiers)") // 추가된 아이템 확인
         
         dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
             guard let self = self else { return }
             
-            print("************************ Apply 완료, snapshot items: \(snapshot.itemIdentifiers) ************************")
+//            print("************************ Apply 완료, snapshot items: \(snapshot.itemIdentifiers) ************************")
             
             DispatchQueue.main.async {
                 self.collectionView.layoutIfNeeded()
@@ -155,7 +157,7 @@ class ChatMessageCollectionView: UIView {
         }
     }
 
-    func addMessages(_ messages: [ChatMessage]) {
+    func addMessages(_ messages: [ChatMessage], isNew: Bool) {
         print("************************ \(#function) 호출 ************************")
         
         var items: [Item] = []
@@ -173,12 +175,12 @@ class ChatMessageCollectionView: UIView {
             return false
         }
 
-        if !hasReadMarker, let lastMessageID = self.lastReadMessageID,
-           let firstMessage = newMessages.first,
-           firstMessage.ID != lastMessageID {
-            items.append(.readMarker)
-        }
-        
+//        if !hasReadMarker, let lastMessageID = self.lastReadMessageID,
+//           let firstMessage = newMessages.first,
+//           firstMessage.ID != lastMessageID {
+//            items.append(.readMarker)
+//        }
+
         for message in newMessages {
             let messageDate = Calendar.current.startOfDay(for: message.sentAt ?? Date())
             
@@ -191,6 +193,23 @@ class ChatMessageCollectionView: UIView {
         }
         
         updateCollectionView(with: items)
+
+        if !hasReadMarker, let lastMessageID = self.lastReadMessageID, !isUserInCurrentRoom, isNew,
+           let firstMessage = newMessages.first,
+           firstMessage.ID != lastMessageID {
+            
+            var updatedSnapshot = dataSource.snapshot()
+            let firstNewItem = items.first(where: {
+                if case .message = $0 { return true }
+                return false
+            })
+            
+            if let firstNewItem = firstNewItem {
+                updatedSnapshot.insertItems([.readMarker], beforeItem: firstNewItem)
+                dataSource.apply(updatedSnapshot, animatingDifferences: false)
+            }
+        }
+        
     }
     
     private func formatDateToDayString(_ date: Date) -> String {

@@ -112,6 +112,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
 
+        chatMessageCollectionView.isUserInCurrentRoom = true
+        
         Task {
             // 이미 연결된 경우에는 room join과 listener 설정만 수행
             if let room = self.room,
@@ -120,11 +122,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 let messages = try await GRDBManager.shared.fetchMessages(in: room.ID ?? "", containing: nil)
                 let lastMessageID = try await GRDBManager.shared.fetchLastMessageID(for: room.ID ?? "")
 
-                for (idx, message) in messages.enumerated() {
-                    print(#function, "✅✅✅✅✅✅✅✅✅✅ \(idx)번째 메시지: ", message)
-                }
+//                for (idx, message) in messages.enumerated() {
+//                    print(#function, "✅✅✅✅✅✅✅✅✅✅ \(idx)번째 메시지: ", message)
+//                }
                 
-                self.chatMessageCollectionView.addMessages(messages)
+                self.chatMessageCollectionView.addMessages(messages, isNew: true)
                 self.chatMessageCollectionView.setLastReadMessageID(lastMessageID)
 
                 await self.syncMessagesIfNeeded(for: room)
@@ -149,6 +151,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         super.viewWillDisappear(animated)
         
         cancellables.removeAll()
+        chatMessageCollectionView.isUserInCurrentRoom = false
         
         if let topVC = self.navigationController?.topViewController,
            topVC is ChatRoomSettingCollectionView {
@@ -270,27 +273,27 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 guard let room = self.room else { return }
                 
                 if !receivedMessage.isFailed {
-                    Task {
-                        if receivedMessage.senderID == LoginManager.shared.getUserEmail {
-                            // ✅ 보낸 본인만 Firebase에 저장
-                            /*ID = */try await FirebaseManager.shared.saveMessage(receivedMessage, room)
-                        }
+                Task {
+                    if receivedMessage.senderID == LoginManager.shared.getUserEmail {
+                        // ✅ 보낸 본인만 Firebase에 저장
+                        /*ID = */try await FirebaseManager.shared.saveMessage(receivedMessage, room)
+                    }
+                    
+                    try await GRDBManager.shared.saveChatMessage(receivedMessage)
+                    
+                    for attachment in receivedMessage.attachments {
+                        guard attachment.type == .image, let imageName = attachment.fileName else { continue }
                         
-                        try await GRDBManager.shared.saveChatMessage(receivedMessage)
+                        try GRDBManager.shared.addImage(imageName, toRoom: room.ID ?? "", at: receivedMessage.sentAt ?? Date())
                         
-                        for attachment in receivedMessage.attachments {
-                            guard attachment.type == .image, let imageName = attachment.fileName else { continue }
-                            
-                            try GRDBManager.shared.addImage(imageName, toRoom: room.ID ?? "", at: receivedMessage.sentAt ?? Date())
-                            
-                            if let image = attachment.toUIImage() {
-                                try await KingfisherManager.shared.cache.store(image, forKey: imageName)
-                            }
+                        if let image = attachment.toUIImage() {
+                            try await KingfisherManager.shared.cache.store(image, forKey: imageName)
                         }
                     }
                 }
-
-                self.chatMessageCollectionView.addMessages([receivedMessage])
+                }
+                
+                self.chatMessageCollectionView.addMessages([receivedMessage], isNew: false)
                 
                 Task {
                     let localMessages  = try await GRDBManager.shared.fetchMessages(in: room.ID ?? "")
@@ -391,7 +394,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     @MainActor
     private func syncMessagesIfNeeded(for room: ChatRoom, reset: Bool = true) async {
-        
         do {
             let messages = try await FirebaseManager.shared.fetchMessagesPaged(for: room)
             print(#function, "✅ 호출 완료: ", messages.count)
@@ -415,7 +417,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 }
             }
             
-            chatMessageCollectionView.addMessages(messages)
+            chatMessageCollectionView.addMessages(messages, isNew: false)
         } catch {
             print("❌ 메시지 동기화 실패: \(error)")
         }
