@@ -272,33 +272,37 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 print("\(receivedMessage.isFailed ? "전송 실패" : "전송 성공") 메시지 수신: \(receivedMessage)")
                 guard let room = self.room else { return }
                 
-                if !receivedMessage.isFailed {
+                //                if !receivedMessage.isFailed {
                 Task {
-                    if receivedMessage.senderID == LoginManager.shared.getUserEmail {
+                    if  !receivedMessage.isFailed ,receivedMessage.senderID == LoginManager.shared.getUserEmail {
                         // ✅ 보낸 본인만 Firebase에 저장
                         /*ID = */try await FirebaseManager.shared.saveMessage(receivedMessage, room)
                     }
                     
                     try await GRDBManager.shared.saveChatMessage(receivedMessage)
                     
-                    for attachment in receivedMessage.attachments {
-                        guard attachment.type == .image, let imageName = attachment.fileName else { continue }
-                        
-                        try GRDBManager.shared.addImage(imageName, toRoom: room.ID ?? "", at: receivedMessage.sentAt ?? Date())
-                        
-                        if let image = attachment.toUIImage() {
-                            try await KingfisherManager.shared.cache.store(image, forKey: imageName)
+                    if !receivedMessage.attachments.isEmpty {
+                        for attachment in receivedMessage.attachments {
+                            guard attachment.type == .image, let imageName = attachment.fileName else { continue }
+                            
+                            try GRDBManager.shared.addImage(imageName, toRoom: room.ID ?? "", at: receivedMessage.sentAt ?? Date())
+                            
+                            if let image = attachment.toUIImage() {
+                                try await KingfisherManager.shared.cache.store(image, forKey: imageName)
+                            }
                         }
                     }
                 }
-                }
+                //                }
                 
                 self.chatMessageCollectionView.addMessages([receivedMessage], isNew: false)
                 
-                Task {
-                    let localMessages  = try await GRDBManager.shared.fetchMessages(in: room.ID ?? "")
-                    print(#function ,"현재 총 로컬 메시지 수: ", localMessages.count)
-                }
+//                Task {
+//                    let localMessages  = try await GRDBManager.shared.fetchMessages(in: room.ID ?? "")
+//                    for (idx, message) in localMessages.enumerated() {
+//                        print("\(idx)번째 메시지: ", message)
+//                    }
+//                }
             }
             .store(in: &cancellables)
         

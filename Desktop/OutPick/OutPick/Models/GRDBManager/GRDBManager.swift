@@ -125,8 +125,6 @@ final class GRDBManager {
         let jsonData = try JSONEncoder().encode(message.attachments)
         let attachmentsJSON = String(data: jsonData, encoding: .utf8) ?? "[]"
         
-        print(#function, "✅✅✅✅✅✅✅✅✅✅ 메시지 저장: ", message)
-        
         try await dbPool.write { db in
             try db.execute(
                 sql: """
@@ -135,7 +133,6 @@ final class GRDBManager {
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 arguments: [
-                    message.ID,  // 또는 메시지 고유 ID
                     message.ID,  // 또는 메시지 고유 ID
                     message.roomID,
                     message.senderID,
@@ -152,6 +149,8 @@ final class GRDBManager {
                     sql: "INSERT OR REPLACE INTO chatMessageFTS(id, msg, roomID) VALUES (?, ?, ?)",
                     arguments: [message.ID, message.msg, message.roomID]
                 )
+                
+                print(#function, "✅✅✅✅✅✅✅✅✅✅ 메시지 저장 성공: ", message)
             } catch {
                 print("FTS insert 실패: \(error)")
             }
@@ -199,7 +198,8 @@ final class GRDBManager {
                     msg: row["msg"],
                     sentAt: row["sentAt"],
                     attachments: attachments,
-                    isFailed: row["isFailed"] as? Bool ?? false
+//                    isFailed: row["isFailed"] as? Bool ?? false
+                    isFailed: (row["isFailed"] as? Int64 == 1)
                 )
             }
         }
@@ -225,7 +225,8 @@ final class GRDBManager {
                     msg: row["msg"],
                     sentAt: row["sentAt"],
                     attachments: attachments,
-                    isFailed: row["isFailed"] as? Bool ?? false
+//                    isFailed: row["isFailed"] as? Bool ?? false
+                    isFailed: (row["isFailed"] as? Int64 == 1)
                 )
             }
         }

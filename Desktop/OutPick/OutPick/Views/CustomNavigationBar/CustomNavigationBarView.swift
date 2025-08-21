@@ -124,7 +124,7 @@ class CustomNavigationBarView: UIView {
         searchTextField.translatesAutoresizingMaskIntoConstraints = false
         searchTextField.placeholder = "대화내용 검색"
         searchTextField.backgroundColor = .secondarySystemBackground
-        searchTextField.clearButtonMode = .whileEditing
+        searchTextField.clearButtonMode = .unlessEditing
         searchTextField.heightAnchor.constraint(equalToConstant: 34).isActive = true
         searchTextField.delegate = self
         searchTextField.returnKeyType = .search
