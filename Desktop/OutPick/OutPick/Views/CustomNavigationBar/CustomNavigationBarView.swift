@@ -124,7 +124,7 @@ class CustomNavigationBarView: UIView {
         searchTextField.translatesAutoresizingMaskIntoConstraints = false
         searchTextField.placeholder = "대화내용 검색"
         searchTextField.backgroundColor = .secondarySystemBackground
-        searchTextField.clearButtonMode = .unlessEditing
+        searchTextField.clearButtonMode = .whileEditing
         searchTextField.heightAnchor.constraint(equalToConstant: 34).isActive = true
         searchTextField.delegate = self
         searchTextField.returnKeyType = .search
@@ -133,9 +133,9 @@ class CustomNavigationBarView: UIView {
         searchTextField.leftView = leftPaddingView
         searchTextField.leftViewMode = .always
         
-        let rightPaddingView = UIView(frame: CGRect(x: 0, y: 0, width: 8, height: searchTextField.frame.height))
-        searchTextField.rightView = rightPaddingView
-        searchTextField.rightViewMode = .always
+//        let rightPaddingView = UIView(frame: CGRect(x: 0, y: 0, width: 8, height: searchTextField.frame.height))
+//        searchTextField.rightView = rightPaddingView
+//        searchTextField.rightViewMode = .always
         
         let cancelBtn = UIButton(type: .system)
         cancelBtn.setTitle("취소", for: .normal)
