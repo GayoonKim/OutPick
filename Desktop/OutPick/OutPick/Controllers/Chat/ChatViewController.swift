@@ -84,6 +84,12 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     private var interactionController: UIPercentDrivenInteractiveTransition?
     
+    lazy var tapGesture: UITapGestureRecognizer = {
+        let gesture = UITapGestureRecognizer(target: self, action: #selector(handleTapGesture))
+        gesture.delegate = self
+        return gesture
+    }()
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         
@@ -98,8 +104,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             LoadingIndicator.shared.stop()
         }
         
-        let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTapGesture))
-        tapGesture.delegate = self
         view.addGestureRecognizer(tapGesture)
 
         setupCustomNavigationBar()
@@ -107,12 +111,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         setupAttachmentView()
         bindPublishers()
         bindSearchEvents()
+        bindCustomMenuEvents()
     }
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-
-        chatMessageCollectionView.isUserInCurrentRoom = true
         
         Task {
             // 이미 연결된 경우에는 room join과 listener 설정만 수행
@@ -126,10 +129,14 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 //                    print(#function, "✅✅✅✅✅✅✅✅✅✅ \(idx)번째 메시지: ", message)
 //                }
                 
-                self.chatMessageCollectionView.addMessages(messages, isNew: true)
+                self.chatMessageCollectionView.addMessages(messages, isNew: false)
                 self.chatMessageCollectionView.setLastReadMessageID(lastMessageID)
+                
+                print(#function, "✅✅✅✅✅✅✅✅✅✅ 마지막 메시지 ID:", lastMessageID ?? "")
 
-                await self.syncMessagesIfNeeded(for: room)
+                try await self.syncMessagesIfNeeded(for: room)
+                
+                chatMessageCollectionView.isUserInCurrentRoom = true
 
                 if !SocketIOManager.shared.isConnected {
                     SocketIOManager.shared.establishConnection { [weak self] in
@@ -172,6 +179,30 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 }
             }
         }
+    }
+    
+    @MainActor
+    private func bindCustomMenuEvents() {
+        chatMessageCollectionView.replyPublisher
+            .sink { [weak self] message in
+                guard let self = self else { return }
+                print(#function, "메시지 답장 이벤트:", message)
+            }
+            .store(in: &cancellables)
+        
+        chatMessageCollectionView.copyPublisher
+            .sink { message in
+                UIPasteboard.general.string = message.msg
+                print(#function, "메시지 복사 이벤트:", message.msg ?? "")
+            }
+            .store(in: &cancellables)
+        
+        chatMessageCollectionView.deletePublisher
+            .sink { [weak self] message in
+                guard let self = self else { return }
+                print(#function, "메시지 삭제 이벤트:", message)
+            }
+            .store(in: &cancellables)
     }
 
     @MainActor
@@ -272,11 +303,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 print("\(receivedMessage.isFailed ? "전송 실패" : "전송 성공") 메시지 수신: \(receivedMessage)")
                 guard let room = self.room else { return }
                 
-                //                if !receivedMessage.isFailed {
                 Task {
                     if  !receivedMessage.isFailed ,receivedMessage.senderID == LoginManager.shared.getUserEmail {
                         // ✅ 보낸 본인만 Firebase에 저장
-                        /*ID = */try await FirebaseManager.shared.saveMessage(receivedMessage, room)
+                        try await FirebaseManager.shared.saveMessage(receivedMessage, room)
                     }
                     
                     try await GRDBManager.shared.saveChatMessage(receivedMessage)
@@ -285,7 +315,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                         for attachment in receivedMessage.attachments {
                             guard attachment.type == .image, let imageName = attachment.fileName else { continue }
                             
-                            try GRDBManager.shared.addImage(imageName, toRoom: room.ID ?? "", at: receivedMessage.sentAt ?? Date())
+                            if !receivedMessage.isFailed {
+                                try GRDBManager.shared.addImage(imageName, toRoom: room.ID ?? "", at: receivedMessage.sentAt ?? Date())
+                            }
                             
                             if let image = attachment.toUIImage() {
                                 try await KingfisherManager.shared.cache.store(image, forKey: imageName)
@@ -293,7 +325,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                         }
                     }
                 }
-                //                }
                 
                 self.chatMessageCollectionView.addMessages([receivedMessage], isNew: false)
                 
@@ -397,7 +428,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
     
     @MainActor
-    private func syncMessagesIfNeeded(for room: ChatRoom, reset: Bool = true) async {
+    private func syncMessagesIfNeeded(for room: ChatRoom, reset: Bool = true) async throws {
         do {
             let messages = try await FirebaseManager.shared.fetchMessagesPaged(for: room)
             print(#function, "✅ 호출 완료: ", messages.count)
@@ -421,7 +452,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 }
             }
             
-            chatMessageCollectionView.addMessages(messages, isNew: false)
+            chatMessageCollectionView.addMessages(messages, isNew: true)
         } catch {
             print("❌ 메시지 동기화 실패: \(error)")
         }

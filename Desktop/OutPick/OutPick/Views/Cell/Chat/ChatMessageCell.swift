@@ -53,6 +53,9 @@ class ChatMessageCell: UICollectionViewCell {
         
         return view
     }()
+    var referenceView: UIView {
+        bubbleView.isHidden ? imagesPreviewCollectionView : bubbleView
+    }
     
     private let imagesPreviewCollectionView: ChatImagePreviewCollectionView = {
         let view = ChatImagePreviewCollectionView()
@@ -72,6 +75,8 @@ class ChatMessageCell: UICollectionViewCell {
         
         return imageView
     }()
+    
+    private var highlightView: UIView?
 
     private var bubbleViewTrailingConstraint: NSLayoutConstraint?
     private var bubbleViewLeadingConstraint: NSLayoutConstraint?
@@ -296,6 +301,30 @@ class ChatMessageCell: UICollectionViewCell {
         }
         
         return n % 2 == 0 ? Array(repeating: 2, count: n / 2) : []
+    }
+    
+    func setHightlightedOverlay(_ highlighted: Bool) {
+        if highlighted {
+            if highlightView == nil {
+                let overayView = UIView()
+                overayView.translatesAutoresizingMaskIntoConstraints = false
+                overayView.backgroundColor = UIColor.black.withAlphaComponent(0.1)
+                overayView.layer.cornerRadius = bubbleView.layer.cornerRadius
+                overayView.isUserInteractionEnabled = false
+                bubbleView.addSubview(overayView)
+                highlightView = overayView
+                
+                NSLayoutConstraint.activate([
+                    overayView.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor),
+                    overayView.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor),
+                    overayView.topAnchor.constraint(equalTo: bubbleView.topAnchor),
+                    overayView.bottomAnchor.constraint(equalTo: bubbleView.bottomAnchor)
+                ])
+            }
+        } else {
+            highlightView?.removeFromSuperview()
+            highlightView = nil
+        }
     }
 }
 

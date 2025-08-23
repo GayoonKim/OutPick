@@ -7,6 +7,7 @@
 
 import Foundation
 import UIKit
+import Combine
 
 class ChatMessageCollectionView: UIView {
     enum Section: Hashable {
@@ -29,6 +30,14 @@ class ChatMessageCollectionView: UIView {
     }
     
     var isUserInCurrentRoom = false
+    
+    let replyPublisher = PassthroughSubject<ChatMessage, Never>()
+    let copyPublisher = PassthroughSubject<ChatMessage, Never>()
+    let deletePublisher = PassthroughSubject<ChatMessage, Never>()
+    
+    private var cancellables = Set<AnyCancellable>()
+    
+    private var highlightedCell: ChatMessageCell?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -58,6 +67,9 @@ class ChatMessageCollectionView: UIView {
             collectionView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -8),
             collectionView.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -8),
         ])
+        
+        let longPress = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
+        collectionView.addGestureRecognizer(longPress)
     }
     
     private func configureLayout() -> UICollectionViewCompositionalLayout {
@@ -93,6 +105,8 @@ class ChatMessageCollectionView: UIView {
                 } else {
                     cell.configureWithImage(with: message)
                 }
+                
+                
                 
                 return cell
                 
@@ -175,12 +189,6 @@ class ChatMessageCollectionView: UIView {
             return false
         }
 
-//        if !hasReadMarker, let lastMessageID = self.lastReadMessageID,
-//           let firstMessage = newMessages.first,
-//           firstMessage.ID != lastMessageID {
-//            items.append(.readMarker)
-//        }
-
         for message in newMessages {
             let messageDate = Calendar.current.startOfDay(for: message.sentAt ?? Date())
             
@@ -232,4 +240,113 @@ class ChatMessageCollectionView: UIView {
         }
     }
     
+    @objc private func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
+        let location = gesture.location(in: collectionView)
+        guard let indexPath = collectionView.indexPathForItem(at: location),
+              let item = dataSource.itemIdentifier(for: indexPath) else { return }
+        
+        if case .message(let chatMessage) = item {
+            if gesture.state == .began {
+                showCustomMenu(for: chatMessage, at: indexPath)
+            }
+        }
+    }
+    
+    private func showCustomMenu(for message: ChatMessage, at indexPath: IndexPath) {
+        guard let cell = collectionView.cellForItem(at: indexPath) as? ChatMessageCell,
+        let parentVC = self.parentViewController as? ChatViewController else { return }
+        // 1. 셀만 강조
+        cell.setHightlightedOverlay(true)
+        highlightedCell = cell
+        
+        // 2. overlay 생성 (메뉴 외부 탭 감지용)
+        let overlay = UIView(frame: self.bounds)
+        overlay.backgroundColor = UIColor.clear
+        addSubview(overlay)
+        
+        // 3. CustomMenuView 생성
+        let menuView = ChatCustomPopUpMenu()
+        menuView.translatesAutoresizingMaskIntoConstraints = false
+        overlay.addSubview(menuView)
+
+        // 4. 메뉴 위치를 셀 기준으로
+        if LoginManager.shared.currentUserProfile?.nickname == message.senderNickname {
+            NSLayoutConstraint.activate([
+                menuView.bottomAnchor.constraint(equalTo: cell.referenceView.topAnchor, constant: 8),
+                menuView.trailingAnchor.constraint(equalTo: cell.referenceView.trailingAnchor, constant: -10)
+            ])
+        } else {
+            NSLayoutConstraint.activate([
+                menuView.bottomAnchor.constraint(equalTo: cell.referenceView.topAnchor, constant: 8),
+                menuView.leadingAnchor.constraint(equalTo: cell.referenceView.leadingAnchor, constant: 10)
+            ])
+        }
+        
+        // 5. overlay tapGesture
+        let overlayTap = UITapGestureRecognizer(target: self, action: #selector(dismissMenuOverlay(_:)))
+        overlay.addGestureRecognizer(overlayTap)
+
+        // 6. 버튼 액션 설정
+        menuView.replyPublisher
+            .sink { [weak self] in
+                guard let self = self else { return }
+                cell.setHightlightedOverlay(false)
+                highlightedCell = nil
+                self.replyPublisher.send(message)
+                menuView.removeFromSuperview()
+                parentVC.tapGesture.isEnabled = true
+            }
+            .store(in: &cancellables)
+        
+        menuView.copyPublisher
+            .sink { [weak self] in
+                guard let self = self else { return }
+                cell.setHightlightedOverlay(false)
+                highlightedCell = nil
+                self.copyPublisher.send(message)
+                menuView.removeFromSuperview()
+                parentVC.tapGesture.isEnabled = true
+            }
+            .store(in: &cancellables)
+        
+        menuView.deletePublisher
+            .sink { [weak self] in
+                guard let self = self else { return }
+                cell.setHightlightedOverlay(false)
+                highlightedCell = nil
+                self.isUserInteractionEnabled = true
+                self.deletePublisher.send(message)
+                menuView.removeFromSuperview()
+                parentVC.tapGesture.isEnabled = true
+            }
+            .store(in: &cancellables)
+        
+        parentVC.tapGesture.isEnabled = false
+    }
+    
+    @objc private func dismissMenuOverlay(_ gesture: UITapGestureRecognizer) {
+        gesture.view?.removeFromSuperview()
+        
+        if let cell = highlightedCell {
+            cell.setHightlightedOverlay(false)
+            highlightedCell = nil
+        }
+        
+        if let parentVC = self.parentViewController as? ChatViewController {
+            parentVC.tapGesture.isEnabled = true
+        }
+    }
+}
+
+extension UIView {
+    var parentViewController: UIViewController? {
+        var parentResponder: UIResponder? = self
+        while let responder = parentResponder {
+            parentResponder = responder.next
+            if let vc = parentResponder as? UIViewController {
+                return vc
+            }
+        }
+        return nil
+    }
 }

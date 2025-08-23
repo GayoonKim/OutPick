@@ -132,11 +132,7 @@ class CustomNavigationBarView: UIView {
         let leftPaddingView = UIView(frame: CGRect(x: 0, y: 0, width: 8, height: searchTextField.frame.height))
         searchTextField.leftView = leftPaddingView
         searchTextField.leftViewMode = .always
-        
-//        let rightPaddingView = UIView(frame: CGRect(x: 0, y: 0, width: 8, height: searchTextField.frame.height))
-//        searchTextField.rightView = rightPaddingView
-//        searchTextField.rightViewMode = .always
-        
+
         let cancelBtn = UIButton(type: .system)
         cancelBtn.setTitle("취소", for: .normal)
         cancelBtn.setTitleColor(.black, for: .normal)
