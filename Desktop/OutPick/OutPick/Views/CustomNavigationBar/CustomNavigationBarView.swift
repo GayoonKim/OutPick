@@ -10,11 +10,11 @@ import UIKit
 import Combine
 
 class CustomNavigationBarView: UIView {
-    let leftStack = UIStackView()
-    let centerStack = UIStackView()
+    private let leftStack = UIStackView()
+    private let centerStack = UIStackView()
     let rightStack = UIStackView()
     
-    let container: UIStackView = {
+    private let container: UIStackView = {
         let stackView = UIStackView()
         stackView.axis = .horizontal
         stackView.alignment = .center
@@ -24,7 +24,7 @@ class CustomNavigationBarView: UIView {
         return stackView
     }()
     
-    let searchContainer: UIStackView = {
+    private let searchContainer: UIStackView = {
         let stackView = UIStackView()
         stackView.axis = .horizontal
         stackView.alignment = .center
@@ -32,6 +32,44 @@ class CustomNavigationBarView: UIView {
         stackView.distribution = .equalCentering
         
         return stackView
+    }()
+
+    private let searchImgView: UIImageView = {
+        let searchImg = UIImage(systemName: "magnifyingglass")
+        let imageView = UIImageView(image: searchImg)
+        imageView.contentMode = .scaleAspectFit
+        imageView.tintColor = .black
+        
+        return imageView
+    }()
+    
+    let searchTextField: UITextField = {
+        let textField = UITextField()
+        textField.translatesAutoresizingMaskIntoConstraints = false
+        textField.placeholder = "대화내용 검색"
+        textField.backgroundColor = .secondarySystemBackground
+        textField.clearButtonMode = .whileEditing
+        textField.heightAnchor.constraint(equalToConstant: 34).isActive = true
+        textField.returnKeyType = .search
+        
+        return textField
+    }()
+    
+    private let cancelBtn: UIButton = {
+        let button = UIButton(type: .system)
+        button.setTitle("취소", for: .normal)
+        button.setTitleColor(.black, for: .normal)
+        button.setContentHuggingPriority(.required, for: .horizontal)
+        button.setContentCompressionResistancePriority(.required, for: .horizontal)
+        
+        return button
+    }()
+
+    private let wrapperView: UIView = {
+        let view = UIView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        
+        return view
     }()
     
     let searchKeywordPublisher = PassthroughSubject<String, Never>()
@@ -112,37 +150,17 @@ class CustomNavigationBarView: UIView {
         container.isHidden = true
         searchContainer.isHidden = false
         searchContainer.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        
-        let searchImg = UIImage(systemName: "magnifyingglass")
-        let searchImgView = UIImageView(image: searchImg)
-        searchImgView.contentMode = .scaleAspectFit
-        searchImgView.tintColor = .black
+
         searchImgView.setContentHuggingPriority(.required, for: .horizontal)
         searchImgView.setContentCompressionResistancePriority(.required, for: .horizontal)
         
-        let searchTextField = UITextField()
-        searchTextField.translatesAutoresizingMaskIntoConstraints = false
-        searchTextField.placeholder = "대화내용 검색"
-        searchTextField.backgroundColor = .secondarySystemBackground
-        searchTextField.clearButtonMode = .whileEditing
-        searchTextField.heightAnchor.constraint(equalToConstant: 34).isActive = true
         searchTextField.delegate = self
-        searchTextField.returnKeyType = .search
         
         let leftPaddingView = UIView(frame: CGRect(x: 0, y: 0, width: 8, height: searchTextField.frame.height))
         searchTextField.leftView = leftPaddingView
         searchTextField.leftViewMode = .always
-
-        let cancelBtn = UIButton(type: .system)
-        cancelBtn.setTitle("취소", for: .normal)
-        cancelBtn.setTitleColor(.black, for: .normal)
-        // Content hugging and compression resistance for cancel button
-        cancelBtn.setContentHuggingPriority(.required, for: .horizontal)
-        cancelBtn.setContentCompressionResistancePriority(.required, for: .horizontal)
+        
         cancelBtn.addTarget(self, action: #selector(cancelBtnTap), for: .touchUpInside)
-
-        let wrapperView = UIView()
-        wrapperView.translatesAutoresizingMaskIntoConstraints = false
 
         wrapperView.addSubview(searchTextField)
         NSLayoutConstraint.activate([
@@ -159,10 +177,13 @@ class CustomNavigationBarView: UIView {
         searchStack.distribution = .fill
 
         searchContainer.addArrangedSubview(searchStack)
+        
+        searchTextField.becomeFirstResponder()
     }
     
     @objc private func cancelBtnTap() {
         searchContainer.isHidden = true
+        searchTextField.resignFirstResponder()
         container.isHidden = false
     }
 }

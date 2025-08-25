@@ -597,10 +597,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
     
     @objc private func handleTapGesture() {
-        chatUIView.messageTextView.resignFirstResponder()
+//        chatUIView.messageTextView.resignFirstResponder()
+//        customNavigationBar.searchTextField.resignFirstResponder()
+        view.endEditing(true)
         
         if !self.attachmentView.isHidden {
-            
             chatUIView.attachmentButton.setImage(UIImage(systemName: "plus"), for: .normal)
             self.attachmentView.isHidden = true
             self.attachmentView.alpha = 0
