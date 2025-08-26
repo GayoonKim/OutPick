@@ -68,6 +68,14 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         
         return navBar
     }()
+    
+    private lazy var searchUI: ChatSearchUIView = {
+        let view = ChatSearchUIView()
+        view.isHidden = true
+        view.translatesAutoresizingMaskIntoConstraints = false
+        
+        return view
+    }()
 
     private lazy var cancellables = Set<AnyCancellable>()
     private let imagesSubject = CurrentValueSubject<[UIImage], Never>([])
@@ -89,6 +97,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         gesture.delegate = self
         return gesture
     }()
+    
+    private var searchUIBottomConstraint: NSLayoutConstraint?
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -567,13 +577,13 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         let safeAreaBottom = self.view.safeAreaInsets.bottom
         
         if !self.attachmentView.isHidden {
-            
             self.attachmentView.isHidden = true
             self.chatUIView.attachmentButton.setImage(UIImage(systemName: "plus"), for: .normal)
-
         }
 
-        self.chatUIViewBottomConstraint?.constant = -(keyboardFrameHeight - safeAreaBottom + 10)
+        let bottomConstraint = -(keyboardFrameHeight - safeAreaBottom + 10)
+        chatUIViewBottomConstraint?.constant = bottomConstraint
+        searchUIBottomConstraint?.constant = bottomConstraint
         
         UIView.animate(withDuration: animationDuration) {
             self.view.layoutIfNeeded()
@@ -589,7 +599,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     @objc private func keyboardWillHide(_ sender: Notification) {
         guard let animationDuration = sender.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double else { return }
-        self.chatUIViewBottomConstraint?.constant = -10
+        chatUIViewBottomConstraint?.constant = -10
+        searchUIBottomConstraint?.constant = -10
         
         UIView.animate(withDuration: animationDuration) {
             self.view.layoutIfNeeded()
@@ -712,10 +723,53 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             ChatModalTransitionManager.present(settingVC, from: self)
         }
     }
+    
+    private func bindSearchEvents() {
+        customNavigationBar.searchKeywordPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] keyword in
+                guard let self = self else { return }
+                self.hilightAndScrollToMessage(containing: keyword)
+            }
+            .store(in: &cancellables)
+        
+        customNavigationBar.cancelSearchPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in
+                guard let self = self else { return }
+                exitSearchMode()
+            }
+            .store(in: &cancellables)
+    }
 
     @MainActor
     private func searchButtonTapped() {
-        self.customNavigationBar.switchToSearchMode()
+        customNavigationBar.switchToSearchMode()
+        setupSearchUI()
+        
+        searchUI.isHidden = false
+        chatUIView.isHidden = true
+    }
+    
+    @MainActor
+    private func setupSearchUI() {
+        if searchUI.superview == nil {
+            view.addSubview(searchUI)
+            searchUIBottomConstraint = searchUI.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -10)
+            
+            NSLayoutConstraint.activate([
+                searchUI.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
+                searchUI.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
+                searchUIBottomConstraint!,
+                searchUI.heightAnchor.constraint(equalToConstant: 50)
+            ])
+        }
+    }
+    
+    @MainActor
+    private func exitSearchMode() {
+        searchUI.isHidden = true
+        chatUIView.isHidden = false
     }
     
     private func hilightAndScrollToMessage(containing keyword: String) {
@@ -732,16 +786,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 print("메시지 없음")
             }
         }
-    }
-    
-    private func bindSearchEvents() {
-        customNavigationBar.searchKeywordPublisher
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] keyword in
-                guard let self = self else { return }
-                self.hilightAndScrollToMessage(containing: keyword)
-            }
-            .store(in: &cancellables)
     }
     
     @MainActor

@@ -60,8 +60,6 @@ class ChatCustomPopUpMenu: UIView {
     
     
     private func setupView() {
-        backgroundColor = UIColor(white: 0.1, alpha: 0.03)
-        layer.cornerRadius = 10
         clipsToBounds = true
         
         addSubview(stackView)

@@ -105,9 +105,7 @@ class ChatMessageCollectionView: UIView {
                 } else {
                     cell.configureWithImage(with: message)
                 }
-                
-                
-                
+
                 return cell
                 
             case .dateSeparator(let date):
@@ -267,18 +265,20 @@ class ChatMessageCollectionView: UIView {
         // 3. CustomMenuView 생성
         let menuView = ChatCustomPopUpMenu()
         menuView.translatesAutoresizingMaskIntoConstraints = false
+        menuView.backgroundColor = .secondarySystemBackground
+        menuView.layer.cornerRadius = 20
         overlay.addSubview(menuView)
 
         // 4. 메뉴 위치를 셀 기준으로
         if LoginManager.shared.currentUserProfile?.nickname == message.senderNickname {
             NSLayoutConstraint.activate([
-                menuView.bottomAnchor.constraint(equalTo: cell.referenceView.topAnchor, constant: 8),
-                menuView.trailingAnchor.constraint(equalTo: cell.referenceView.trailingAnchor, constant: -10)
+                menuView.bottomAnchor.constraint(equalTo: cell.referenceView.topAnchor, constant: -10),
+                menuView.trailingAnchor.constraint(equalTo: cell.referenceView.trailingAnchor, constant: 0)
             ])
         } else {
             NSLayoutConstraint.activate([
-                menuView.bottomAnchor.constraint(equalTo: cell.referenceView.topAnchor, constant: 8),
-                menuView.leadingAnchor.constraint(equalTo: cell.referenceView.leadingAnchor, constant: 10)
+                menuView.bottomAnchor.constraint(equalTo: cell.referenceView.topAnchor, constant: -10),
+                menuView.leadingAnchor.constraint(equalTo: cell.referenceView.leadingAnchor, constant: 0)
             ])
         }
         
