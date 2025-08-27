@@ -728,8 +728,12 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         customNavigationBar.searchKeywordPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] keyword in
-                guard let self = self else { return }
-                self.hilightAndScrollToMessage(containing: keyword)
+                guard let self = self,
+                      let keyword = keyword else {
+                    if let searchView = self?.searchUI { searchView.updateSearchResult(0) }
+                    return
+                }
+                filterMessages(containing: keyword)
             }
             .store(in: &cancellables)
         
@@ -740,6 +744,22 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 exitSearchMode()
             }
             .store(in: &cancellables)
+    }
+    
+    private func filterMessages(containing keyword: String) {
+        Task { @MainActor in
+            do {
+                guard let room = self.room else { return }
+
+                let filteredMessages = try await GRDBManager.shared.fetchMessages(in: room.ID ?? "", containing: keyword)
+                print(#function, "메시지 수: ", filteredMessages.count)
+                searchUI.updateSearchResult(filteredMessages.count)
+                
+//                try await GRDBManager.shared.debugFTSContent()
+            } catch {
+                print("메시지 없음")
+            }
+        }
     }
 
     @MainActor
@@ -770,22 +790,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private func exitSearchMode() {
         searchUI.isHidden = true
         chatUIView.isHidden = false
-    }
-    
-    private func hilightAndScrollToMessage(containing keyword: String) {
-        Task { @MainActor in
-            do {
-                guard let room = self.room else { return }
-
-                let localMessages = try await GRDBManager.shared.fetchMessages(in: room.ID ?? "", containing: keyword)
-                print(#function, "메시지 수: ", localMessages.count)
-                
-                try await GRDBManager.shared.debugFTSContent()
-                
-            } catch {
-                print("메시지 없음")
-            }
-        }
+        searchUI.updateSearchResult(0)
     }
     
     @MainActor

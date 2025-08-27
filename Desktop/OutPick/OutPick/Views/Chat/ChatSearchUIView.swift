@@ -7,6 +7,7 @@
 
 import Foundation
 import UIKit
+import Combine
 
 class ChatSearchUIView: UIView {
     private var messageCountLabel: UILabel = {
@@ -24,7 +25,7 @@ class ChatSearchUIView: UIView {
         sv.axis = .horizontal
         sv.alignment = .center
         sv.distribution = .equalCentering
-        sv.spacing = 5
+        sv.spacing = 10
         sv.translatesAutoresizingMaskIntoConstraints = false
         
         return sv
@@ -32,21 +33,32 @@ class ChatSearchUIView: UIView {
     
     private var upBtn: UIButton = {
         let btn = UIButton(type: .system)
-        btn.setImage(UIImage(systemName: "chevron.up"), for: .normal)
-        btn.tintColor = .black
+        btn.setImage(UIImage(systemName: "chevron.up")?.withTintColor(.black, renderingMode: .alwaysOriginal), for: .normal)
+        btn.setImage(UIImage(systemName: "chevron.up")?.withTintColor(.lightGray, renderingMode: .alwaysOriginal), for: .disabled)
+        btn.backgroundColor = .white
+        btn.layer.masksToBounds = true
+        btn.clipsToBounds = true
         btn.isEnabled = false
-        
+        btn.translatesAutoresizingMaskIntoConstraints = false
+
         return btn
     }()
     
     private var downBtn: UIButton = {
         let btn = UIButton(type: .system)
-        btn.setImage(UIImage(systemName: "chevron.down"), for: .normal)
-        btn.tintColor = .black
+        btn.setImage(UIImage(systemName: "chevron.down")?.withTintColor(.black, renderingMode: .alwaysOriginal), for: .normal)
+        btn.setImage(UIImage(systemName: "chevron.down")?.withTintColor(.lightGray, renderingMode: .alwaysOriginal), for: .disabled)
+        btn.backgroundColor = .white
+        btn.layer.masksToBounds = true
+        btn.clipsToBounds = true
         btn.isEnabled = false
-        
+        btn.translatesAutoresizingMaskIntoConstraints = false
+
         return btn
     }()
+    
+    let upPublisher = PassthroughSubject<Void, Never>()
+    let downPublisher = PassthroughSubject<Void, Never>()
     
     private override init(frame: CGRect) {
         super.init(frame: frame)
@@ -57,6 +69,14 @@ class ChatSearchUIView: UIView {
         fatalError("init(coder:) has not been implemented")
     }
     
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        layoutIfNeeded()
+        
+        upBtn.layer.cornerRadius = upBtn.bounds.width / 2
+        downBtn.layer.cornerRadius = downBtn.bounds.width / 2
+    }
+    
     private func setupViews() {
         btnContainer.addArrangedSubview(upBtn)
         btnContainer.addArrangedSubview(downBtn)
@@ -65,15 +85,38 @@ class ChatSearchUIView: UIView {
         self.backgroundColor = .secondarySystemBackground
         
         NSLayoutConstraint.activate([
-//            messageCountLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 30),
+            upBtn.widthAnchor.constraint(equalToConstant: 30),
+            upBtn.heightAnchor.constraint(equalToConstant: 30),
+            downBtn.widthAnchor.constraint(equalToConstant: 30),
+            downBtn.heightAnchor.constraint(equalToConstant: 30),
+            
             messageCountLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
             messageCountLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
             
             btnContainer.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -30),
             btnContainer.centerYAnchor.constraint(equalTo: messageCountLabel.centerYAnchor),
         ])
-//        mainContainer.addArrangedSubview(messageCountLabel)
-//        mainContainer.addArrangedSubview(btnContainer)
-//        addSubview(mainContainer)
+        
+        upBtn.addTarget(self, action: #selector(upBtnTapped), for: .touchUpInside)
+        downBtn.addTarget(self, action: #selector(downBtnTapped), for: .touchUpInside)
+    }
+    
+    @objc private func upBtnTapped() {
+        upPublisher.send()
+    }
+    
+    @objc private func downBtnTapped() {
+        downPublisher.send()
+    }
+    
+    func updateSearchResult(_ count: Int) {
+        if count > 0 {
+            upBtn.isEnabled = true
+            messageCountLabel.text = "1/\(count)"
+        } else {
+            upBtn.isEnabled = false
+            downBtn.isEnabled = false
+            messageCountLabel.text = "검색 결과 없음"
+        }
     }
 }

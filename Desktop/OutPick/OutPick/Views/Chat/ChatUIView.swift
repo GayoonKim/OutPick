@@ -133,7 +133,6 @@ extension ChatUIView: UITextViewDelegate {
     }
     
     func textViewDidChange(_ textView: UITextView) {
-        
         DispatchQueue.main.async {
             if self.messageTextView.text.isEmpty {
                 self.sendButton.isEnabled = false
@@ -143,11 +142,9 @@ extension ChatUIView: UITextViewDelegate {
             
             self.updateHeight()
         }
-        
     }
     
     func textViewDidBeginEditing(_ textView: UITextView) {
-        
         DispatchQueue.main.async {
             if textView.textColor == .lightGray {
                 textView.text = ""
@@ -156,11 +153,9 @@ extension ChatUIView: UITextViewDelegate {
             
             self.updateHeight()
         }
-        
     }
     
     func textViewDidEndEditing(_ textView: UITextView) {
-    
         DispatchQueue.main.async {
             if textView.text.isEmpty {
                 textView.text = "메시지 입력"
@@ -169,6 +164,5 @@ extension ChatUIView: UITextViewDelegate {
             
             self.updateHeight()
         }
-        
     }
 }

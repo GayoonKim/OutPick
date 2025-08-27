@@ -72,7 +72,7 @@ class CustomNavigationBarView: UIView {
         return view
     }()
     
-    let searchKeywordPublisher = PassthroughSubject<String, Never>()
+    let searchKeywordPublisher = PassthroughSubject<String?, Never>()
     let cancelSearchPublisher = PassthroughSubject<Void, Never>()
 
     override init(frame: CGRect) {
@@ -184,6 +184,7 @@ class CustomNavigationBarView: UIView {
     
     @objc private func cancelBtnTap() {
         searchContainer.isHidden = true
+        searchTextField.text = nil
         searchTextField.resignFirstResponder()
         container.isHidden = false
         
@@ -237,6 +238,12 @@ extension CustomNavigationBarView: UITextFieldDelegate {
               !keyword.isEmpty else { return false }
         
         searchKeywordPublisher.send(keyword)
+        searchTextField.resignFirstResponder()
+        return true
+    }
+    
+    func textFieldShouldClear(_ textField: UITextField) -> Bool {
+        searchKeywordPublisher.send(nil)
         return true
     }
 }

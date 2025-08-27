@@ -233,25 +233,25 @@ final class GRDBManager {
     }
 
     // 디버깅용 함수 추가
-    func debugFTSContent() async throws {
-        try await dbPool.read { db in
-            print("�� === FTS 테이블 디버깅 ===")
-            
-            // FTS 테이블 내용 확인
-            let ftsRows = try Row.fetchAll(db, sql: "SELECT * FROM chatMessageFTS LIMIT 5")
-            print("�� FTS 테이블 샘플 데이터:")
-            for (index, row) in ftsRows.enumerated() {
-                print("  \(index): id=\(row["id"] ?? "nil"), msg=\(row["msg"] ?? "nil"), roomID=\(row["roomID"] ?? "nil")")
-            }
-            
-            // chatMessage 테이블과 비교
-            let chatRows = try Row.fetchAll(db, sql: "SELECT id, msg, roomID FROM chatMessage LIMIT 5")
-            print("�� chatMessage 테이블 샘플 데이터:")
-            for (index, row) in chatRows.enumerated() {
-                print("  \(index): id=\(row["id"] ?? "nil"), msg=\(row["msg"] ?? "nil"), roomID=\(row["roomID"] ?? "nil")")
-            }
-        }
-    }
+//    func debugFTSContent() async throws {
+//        try await dbPool.read { db in
+//            print("�� === FTS 테이블 디버깅 ===")
+//            
+//            // FTS 테이블 내용 확인
+//            let ftsRows = try Row.fetchAll(db, sql: "SELECT * FROM chatMessageFTS LIMIT 5")
+//            print("�� FTS 테이블 샘플 데이터:")
+//            for (index, row) in ftsRows.enumerated() {
+//                print("  \(index): id=\(row["id"] ?? "nil"), msg=\(row["msg"] ?? "nil"), roomID=\(row["roomID"] ?? "nil")")
+//            }
+//            
+//            // chatMessage 테이블과 비교
+//            let chatRows = try Row.fetchAll(db, sql: "SELECT id, msg, roomID FROM chatMessage LIMIT 5")
+//            print("�� chatMessage 테이블 샘플 데이터:")
+//            for (index, row) in chatRows.enumerated() {
+//                print("  \(index): id=\(row["id"] ?? "nil"), msg=\(row["msg"] ?? "nil"), roomID=\(row["roomID"] ?? "nil")")
+//            }
+//        }
+//    }
     
     func fetchLastMessageTimestamp(for roomID: String) throws -> Date? {
         try dbPool.read { db in
