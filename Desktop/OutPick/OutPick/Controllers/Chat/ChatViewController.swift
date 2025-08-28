@@ -742,6 +742,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             .sink { [weak self] in
                 guard let self = self else { return }
                 exitSearchMode()
+                chatMessageCollectionView.clearKeywordHighlight()
             }
             .store(in: &cancellables)
     }
@@ -754,6 +755,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 let filteredMessages = try await GRDBManager.shared.fetchMessages(in: room.ID ?? "", containing: keyword)
                 print(#function, "메시지 수: ", filteredMessages.count)
                 searchUI.updateSearchResult(filteredMessages.count)
+                
+                let lastMessageID = filteredMessages.last?.ID ?? ""
+                chatMessageCollectionView.saveAndShakeHighlightedCell(filteredMessages, lastMessageID, keyword)
                 
 //                try await GRDBManager.shared.debugFTSContent()
             } catch {

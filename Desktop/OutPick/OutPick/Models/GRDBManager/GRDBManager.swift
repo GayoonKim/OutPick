@@ -164,23 +164,13 @@ final class GRDBManager {
             if let keyword = keyword, !keyword.isEmpty {
 
                 let sql = """
-                SELECT chatMessage.*
-                FROM chatMessage
-                WHERE chatMessage.id IN (
-                    SELECT id FROM chatMessageFTS
-                    WHERE msg MATCH ?
-                )
-                AND chatMessage.roomID = ?
-                ORDER BY chatMessage.sentAt ASC
+                SELECT * FROM chatMessage
+                WHERE roomID = ? AND msg LIKE ?
+                ORDER BY sentAt ASC
                 """
                 
-                let ftsQuery = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
-                let formattedQuery = ftsQuery.isEmpty ? "*" : ftsQuery
-                print("🔍 FTS 검색 쿼리: \(sql)")
-                print("🔍 FTS 검색어: '\(formattedQuery)'")
-                
-                rows = try Row.fetchAll(db, sql: sql, arguments: [formattedQuery, roomID])
-                print("🔍 최종 검색 결과: \(rows.count)개")
+                let likeQuery = "%\(keyword)%"
+                rows = try Row.fetchAll(db, sql: sql, arguments: [roomID, likeQuery])
             } else {
                 let sql = "SELECT * FROM chatMessage WHERE roomID = ? ORDER BY sentAt ASC"
                 rows = try Row.fetchAll(db, sql: sql, arguments: [roomID])

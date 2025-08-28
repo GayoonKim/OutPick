@@ -326,5 +326,29 @@ class ChatMessageCell: UICollectionViewCell {
             highlightView = nil
         }
     }
+    
+    func shakeHorizontally(duration: CFTimeInterval = 0.5, repeatCount: Float = 1) {
+        let animation = CAKeyframeAnimation(keyPath: "transform.translation.x")
+        animation.timingFunction = CAMediaTimingFunction(name: .linear)
+        animation.duration = duration
+        animation.values = [0, 8, -8, 6, -6, 4, -4, 0] // 흔들림 강도
+        animation.repeatCount = repeatCount
+        layer.add(animation, forKey: "shake")
+    }
+    
+    func highlightKeyword(_ keyword: String?) {
+        guard let text = messageLabel.text else { return }
+        if let keyword = keyword, !keyword.isEmpty {
+            let attributed = NSMutableAttributedString(string: text)
+            let range = (text as NSString).range(of: keyword, options: .caseInsensitive)
+            if range.location != NSNotFound {
+                attributed.addAttribute(.backgroundColor, value: UIColor.yellow, range: range)
+                attributed.addAttribute(.foregroundColor, value: UIColor.black, range: range)
+            }
+            messageLabel.attributedText = attributed
+        } else {
+            messageLabel.attributedText = NSAttributedString(string: text)
+        }
+    }
 }
 

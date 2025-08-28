@@ -38,6 +38,8 @@ class ChatMessageCollectionView: UIView {
     private var cancellables = Set<AnyCancellable>()
     
     private var highlightedCell: ChatMessageCell?
+    
+    private var filteredMessages: [ChatMessage]?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -334,6 +336,38 @@ class ChatMessageCollectionView: UIView {
         
         if let parentVC = self.parentViewController as? ChatViewController {
             parentVC.tapGesture.isEnabled = true
+        }
+    }
+    
+    func saveAndShakeHighlightedCell(_ messages: [ChatMessage], _ hilightedMessageID: String, _ keyword: String) {
+        filteredMessages = messages
+        
+        collectionView.visibleCells.forEach {
+            if let chatCell = $0 as? ChatMessageCell {
+                chatCell.highlightKeyword(keyword)
+            }
+        }
+        
+        if let item = dataSource.snapshot().itemIdentifiers.first(where: {
+            if case .message(let m) = $0 { return m.ID == hilightedMessageID }
+            return false
+        }),
+           let indexPath = dataSource.indexPath(for: item),
+           let cell = collectionView.cellForItem(at: indexPath) as? ChatMessageCell {
+            collectionView.scrollToItem(at: indexPath, at: .bottom, animated: true)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                cell.layer.removeAnimation(forKey: "shake")
+                cell.shakeHorizontally()
+                cell.highlightKeyword(keyword)
+            }
+        }
+    }
+    
+    func clearKeywordHighlight() {
+        collectionView.visibleCells.forEach {
+            if let chatCell = $0 as? ChatMessageCell {
+                chatCell.highlightKeyword(nil)
+            }
         }
     }
 }
