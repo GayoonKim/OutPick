@@ -22,7 +22,26 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     var swipeRecognizer: UISwipeGestureRecognizer!
     
-    private var dimmingView: UIView?
+    private var chatMessageCollectionView = ChatMessageCollectionView()
+    private var dataSource: UICollectionViewDiffableDataSource<Section, Item>!
+    private var cancellables = Set<AnyCancellable>()
+    
+    private var lastMessageDate: Date?
+    private var lastReadMessageID: String?
+
+    private var isUserInCurrentRoom = false
+    
+    enum Section: Hashable {
+        case main
+    }
+    
+    enum Item: Hashable {
+        case message(ChatMessage)
+        case dateSeparator(Date)
+        case readMarker
+    }
+    
+//    private var dimmingView: UIView?
     
     var room: ChatRoom?
     var roomID: String?
@@ -77,13 +96,13 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         return view
     }()
 
-    private lazy var cancellables = Set<AnyCancellable>()
+//    private lazy var cancellables = Set<AnyCancellable>()
     private let imagesSubject = CurrentValueSubject<[UIImage], Never>([])
     private var imagesPublishser: AnyPublisher<[UIImage], Never> {
         return imagesSubject.eraseToAnyPublisher()
     }
     
-    private lazy var chatMessageCollectionView = ChatMessageCollectionView()
+//    private lazy var chatMessageCollectionView = ChatMessageCollectionView()
     
     // Layout 제약 조건 저장
     private var chatConstraints: [NSLayoutConstraint] = []
@@ -102,6 +121,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     override func viewDidLoad() {
         super.viewDidLoad()
+        
+        configureDataSource()
         
         self.attachInteractiveDismissGesture()
         setUpNotifications()
@@ -139,14 +160,14 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 //                    print(#function, "✅✅✅✅✅✅✅✅✅✅ \(idx)번째 메시지: ", message)
 //                }
                 
-                self.chatMessageCollectionView.addMessages(messages, isNew: false)
-                self.chatMessageCollectionView.setLastReadMessageID(lastMessageID)
+                addMessages(messages, isNew: false)
+                lastReadMessageID = lastMessageID
                 
                 print(#function, "✅✅✅✅✅✅✅✅✅✅ 마지막 메시지 ID:", lastMessageID ?? "")
 
                 try await self.syncMessagesIfNeeded(for: room)
                 
-                chatMessageCollectionView.isUserInCurrentRoom = true
+                /*chatMessageCollectionView.*/isUserInCurrentRoom = true
 
                 if !SocketIOManager.shared.isConnected {
                     SocketIOManager.shared.establishConnection { [weak self] in
@@ -168,7 +189,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         super.viewWillDisappear(animated)
         
         cancellables.removeAll()
-        chatMessageCollectionView.isUserInCurrentRoom = false
+//        chatMessageCollectionView.isUserInCurrentRoom = false
         
         if let topVC = self.navigationController?.topViewController,
            topVC is ChatRoomSettingCollectionView {
@@ -211,6 +232,13 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             .sink { [weak self] message in
                 guard let self = self else { return }
                 print(#function, "메시지 삭제 이벤트:", message)
+            }
+            .store(in: &cancellables)
+        
+        chatMessageCollectionView.longPressPublisher
+            .sink { [weak self] indexPath in
+                guard let self = self else { return }
+                showCustomMenu(at: indexPath)
             }
             .store(in: &cancellables)
     }
@@ -336,7 +364,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                     }
                 }
                 
-                self.chatMessageCollectionView.addMessages([receivedMessage], isNew: false)
+                /*self.chatMessageCollectionView.*/addMessages([receivedMessage], isNew: false)
                 
 //                Task {
 //                    let localMessages  = try await GRDBManager.shared.fetchMessages(in: room.ID ?? "")
@@ -462,7 +490,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 }
             }
             
-            chatMessageCollectionView.addMessages(messages, isNew: true)
+            /*chatMessageCollectionView.*/addMessages(messages, isNew: true)
         } catch {
             print("❌ 메시지 동기화 실패: \(error)")
         }
@@ -745,6 +773,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 chatMessageCollectionView.clearKeywordHighlight()
             }
             .store(in: &cancellables)
+        
+        
     }
     
     private func filterMessages(containing keyword: String) {
@@ -756,14 +786,31 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 print(#function, "메시지 수: ", filteredMessages.count)
                 searchUI.updateSearchResult(filteredMessages.count)
                 
-                let lastMessageID = filteredMessages.last?.ID ?? ""
-                chatMessageCollectionView.saveAndShakeHighlightedCell(filteredMessages, lastMessageID, keyword)
+                chatMessageCollectionView.saveAndShakeHighlightedCell(keyword)
+                scrollToMostRecentFilteredMessage(filteredMessages)
                 
 //                try await GRDBManager.shared.debugFTSContent()
             } catch {
                 print("메시지 없음")
             }
         }
+    }
+    
+    private func scrollToMostRecentFilteredMessage(_ messages: [ChatMessage]) {
+        // 가장 최근 메시지
+        let lastFilteredMessage = messages.last!
+
+        // Diffable Data Source snapshot에서 index 찾기
+        let snapshot = dataSource.snapshot()
+        guard let index = snapshot.itemIdentifiers.firstIndex(where: { item in
+            if case let .message(message) = item {
+                return message.ID == lastFilteredMessage.ID
+            }
+            return false
+        }) else { return }
+
+        let indexPath = IndexPath(item: index, section: 0)
+        chatMessageCollectionView.scrollToMessage(at: indexPath)
     }
 
     @MainActor
@@ -808,6 +855,225 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 onSearch: searchButtonTapped,
                 onSetting: settingButtonTapped
             )
+    }
+    
+    func showCustomMenu(/*for message: ChatMessage,*/ at indexPath: IndexPath) {
+        guard let cell = chatMessageCollectionView.collectionView.cellForItem(at: indexPath) as? ChatMessageCell,
+              let item = dataSource.itemIdentifier(for: indexPath),
+              case let .message(message) = item else { return }
+
+        // 1. 셀만 강조
+        chatMessageCollectionView.setHighlightedCell(cell)
+        
+        // 2. overlay 생성 (메뉴 외부 탭 감지용)
+        let overlay = UIView(frame: chatMessageCollectionView.bounds)
+        overlay.backgroundColor = UIColor.clear
+        chatMessageCollectionView.addSubview(overlay)
+        
+        // 3. CustomMenuView 생성
+        let menuView = ChatCustomPopUpMenu()
+        menuView.translatesAutoresizingMaskIntoConstraints = false
+        menuView.backgroundColor = .secondarySystemBackground
+        menuView.layer.cornerRadius = 20
+        overlay.addSubview(menuView)
+
+        // 4. 메뉴 위치를 셀 기준으로
+        if LoginManager.shared.currentUserProfile?.nickname == message.senderNickname {
+            NSLayoutConstraint.activate([
+                menuView.bottomAnchor.constraint(equalTo: cell.referenceView.topAnchor, constant: -10),
+                menuView.trailingAnchor.constraint(equalTo: cell.referenceView.trailingAnchor, constant: 0)
+            ])
+        } else {
+            NSLayoutConstraint.activate([
+                menuView.bottomAnchor.constraint(equalTo: cell.referenceView.topAnchor, constant: -10),
+                menuView.leadingAnchor.constraint(equalTo: cell.referenceView.leadingAnchor, constant: 0)
+            ])
+        }
+        
+        // 5. overlay tapGesture
+        let overlayTap = UITapGestureRecognizer(target: self, action: #selector(dismissMenuOverlay(_:)))
+        overlay.addGestureRecognizer(overlayTap)
+
+        // 6. 버튼 액션 설정
+        menuView.replyPublisher
+            .sink { [weak self] in
+                guard let self = self else { return }
+//                cell.setHightlightedOverlay(false)
+//                highlightedCell = nil
+                chatMessageCollectionView.clearHighlightedCell()
+                handleReply(message: message)
+//                self.replyPublisher.send(message)
+                menuView.removeFromSuperview()
+//                parentVC.tapGesture.isEnabled = true
+            }
+            .store(in: &cancellables)
+        
+        menuView.copyPublisher
+            .sink { [weak self] in
+                guard let self = self else { return }
+                chatMessageCollectionView.clearHighlightedCell()
+                handleCopy(message: message)
+                menuView.removeFromSuperview()
+            }
+            .store(in: &cancellables)
+        
+        menuView.deletePublisher
+            .sink { [weak self] in
+                guard let self = self else { return }
+                chatMessageCollectionView.clearHighlightedCell()
+                handleDelete(message: message)
+                menuView.removeFromSuperview()
+            }
+            .store(in: &cancellables)
+    }
+    
+    @objc private func dismissMenuOverlay(_ gesture: UITapGestureRecognizer) {
+        gesture.view?.removeFromSuperview()
+        chatMessageCollectionView.clearHighlightedCell()
+    }
+    
+    private func handleReply(message: ChatMessage) {
+        // 답장 로직 구현
+        print(#function, "답장:", message)
+    }
+
+    private func handleCopy(message: ChatMessage) {
+        UIPasteboard.general.string = message.msg
+        print(#function, "복사:", message.msg ?? "")
+        // 필요 시 UI 피드백
+    }
+
+    private func handleDelete(message: ChatMessage) {
+        // 삭제 로직 구현 (Diffable Data Source snapshot 업데이트 등)
+        print(#function, "삭제:", message)
+    }
+    
+    //MARK: Diffable Data Source
+    
+        private func configureDataSource() {
+            print(#function)
+            dataSource = UICollectionViewDiffableDataSource<Section, Item>(collectionView: chatMessageCollectionView.subviews.compactMap{ $0 as? UICollectionView }.first!) { collectionView, indexPath, item in
+    
+                switch item {
+                case .message(let message):
+                    let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ChatMessageCell.reuseIdentifier, for: indexPath) as! ChatMessageCell
+    
+                    if message.attachments.isEmpty {
+                        cell.configureWithMessage(with: message)
+                    } else {
+                        cell.configureWithImage(with: message)
+                    }
+    
+                    return cell
+    
+                case .dateSeparator(let date):
+                    let cell = collectionView.dequeueReusableCell(withReuseIdentifier: DateSeperatorCell.reuseIdentifier, for: indexPath) as! DateSeperatorCell
+    
+                    let dateText = self.formatDateToDayString(date)
+                    cell.configureWithDate(dateText)
+    
+                    return cell
+    
+                case .readMarker:
+                    let cell = collectionView.dequeueReusableCell(withReuseIdentifier: readMarkCollectionViewCell.reuseIdentifier, for: indexPath) as! readMarkCollectionViewCell
+    
+                    cell.configure()
+                    return cell
+                }
+            }
+    
+            chatMessageCollectionView.setCollectionViewDataSource(dataSource)
+            applySnapshot([])
+        }
+    
+        func applySnapshot(_ items: [Item]) {
+            var snapshot = dataSource.snapshot()
+            if snapshot.sectionIdentifiers.isEmpty { snapshot.appendSections([Section.main]) }
+            snapshot.appendItems(items, toSection: .main)
+            dataSource.apply(snapshot, animatingDifferences: false)
+            chatMessageCollectionView.scrollToBottom()
+        }
+    
+        func addMessages(_ messages: [ChatMessage], isNew: Bool) {
+            print("************************ \(#function) 호출 ************************")
+    
+            var items: [Item] = []
+    
+            let snapshot = dataSource.snapshot()
+            let existingIDs = snapshot.itemIdentifiers.compactMap { item -> String? in
+                if case .message(let m) = item { return m.ID }
+                return nil
+            }
+    
+            let newMessages = messages.filter { !existingIDs.contains($0.ID) }
+    
+            let hasReadMarker = snapshot.itemIdentifiers.contains { item in
+                if case .readMarker = item { return true }
+                return false
+            }
+    
+            for message in newMessages {
+                let messageDate = Calendar.current.startOfDay(for: message.sentAt ?? Date())
+    
+                if lastMessageDate == nil || lastMessageDate! != messageDate {
+                    items.append(.dateSeparator(message.sentAt ?? Date()))
+                    lastMessageDate = messageDate
+                }
+    
+                items.append(.message(message))
+            }
+    
+            updateCollectionView(with: items)
+    
+            if !hasReadMarker, let lastMessageID = self.lastReadMessageID, !isUserInCurrentRoom, isNew,
+               let firstMessage = newMessages.first,
+               firstMessage.ID != lastMessageID {
+    
+                var updatedSnapshot = dataSource.snapshot()
+                let firstNewItem = items.first(where: {
+                    if case .message = $0 { return true }
+                    return false
+                })
+    
+                if let firstNewItem = firstNewItem {
+                    updatedSnapshot.insertItems([.readMarker], beforeItem: firstNewItem)
+                    dataSource.apply(updatedSnapshot, animatingDifferences: false)
+                }
+            }
+    
+        }
+    
+        private func updateCollectionView(with newItems: [Item]) {
+    //        print("************************ \(#function) 호출 ************************")
+    
+            var snapshot = dataSource.snapshot()
+            snapshot.appendItems(newItems, toSection: .main)
+    
+    //        print("Before apply, snapshot items: \(snapshot.itemIdentifiers)") // 추가된 아이템 확인
+    
+            dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
+                guard let self = self else { return }
+    
+    //            print("************************ Apply 완료, snapshot items: \(snapshot.itemIdentifiers) ************************")
+    
+                chatMessageCollectionView.scrollToBottom()
+            }
+        }
+    
+        private func formatDateToDayString(_ date: Date) -> String {
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "ko_KR")
+            formatter.dateStyle = .medium
+            formatter.timeStyle = .none
+            formatter.dateFormat = "yyyy년 M월 d일 EEEE"
+            return formatter.string(from: date)
+        }
+    
+    func handleLongPressAt(_ indexPath: IndexPath) {
+        guard let message = dataSource.itemIdentifier(for: indexPath) else { return }
+        // Custom popup menu 띄우기 → ChatMessageCollectionView와 Publisher 연동
+        
+        print("Long press on message: \(message)")
     }
 }
 
