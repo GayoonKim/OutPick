@@ -50,6 +50,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     var convertImagesTask: Task<Void, Error>? = nil
     var convertVideosTask: Task<Void, Error>? = nil
     
+    private var filteredMessages: [ChatMessage] = []
+    private var currentFilteredMessageIndex: Int?
+    private var highlightedMessageIDs: Set<String> = []
+    private var currentSearchKeyword: String? = nil
+    
     deinit {
         SocketIOManager.shared.closeConnection()
         convertImagesTask?.cancel()
@@ -756,9 +761,12 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         customNavigationBar.searchKeywordPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] keyword in
-                guard let self = self,
-                      let keyword = keyword else {
-                    if let searchView = self?.searchUI { searchView.updateSearchResult(0) }
+                guard let self = self else { return }
+                
+                self.clearPreviousHighlightIfNeeded()
+                
+                guard let keyword = keyword, !keyword.isEmpty else {
+                    print(#function, "✅✅✅✅✅ keyword is empty ✅✅✅✅✅")
                     return
                 }
                 filterMessages(containing: keyword)
@@ -769,48 +777,69 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in
                 guard let self = self else { return }
-                exitSearchMode()
-                chatMessageCollectionView.clearKeywordHighlight()
+                self.exitSearchMode()
             }
             .store(in: &cancellables)
-        
-        
     }
     
     private func filterMessages(containing keyword: String) {
-        Task { @MainActor in
+        print(#function, "✅✅✅✅✅ 호출 시작 with: '\(keyword)' ✅✅✅✅✅")
+        
+        Task {
             do {
                 guard let room = self.room else { return }
 
-                let filteredMessages = try await GRDBManager.shared.fetchMessages(in: room.ID ?? "", containing: keyword)
-                print(#function, "메시지 수: ", filteredMessages.count)
-                searchUI.updateSearchResult(filteredMessages.count)
-                
-                chatMessageCollectionView.saveAndShakeHighlightedCell(keyword)
-                scrollToMostRecentFilteredMessage(filteredMessages)
-                
-//                try await GRDBManager.shared.debugFTSContent()
+                filteredMessages = try await GRDBManager.shared.fetchMessages(in: room.ID ?? "", containing: keyword)
+                currentFilteredMessageIndex = filteredMessages.isEmpty == true ? nil : filteredMessages.count - 1
+                currentSearchKeyword = keyword
+                highlightedMessageIDs = Set(filteredMessages.map { $0.ID })
+                applyHighlight()
+
             } catch {
                 print("메시지 없음")
             }
         }
     }
     
-    private func scrollToMostRecentFilteredMessage(_ messages: [ChatMessage]) {
-        // 가장 최근 메시지
-        let lastFilteredMessage = messages.last!
-
-        // Diffable Data Source snapshot에서 index 찾기
-        let snapshot = dataSource.snapshot()
-        guard let index = snapshot.itemIdentifiers.firstIndex(where: { item in
-            if case let .message(message) = item {
-                return message.ID == lastFilteredMessage.ID
+    @MainActor
+    private func applyHighlight() {
+        var snapshot = dataSource.snapshot()
+        
+        let itemsToRealod = snapshot.itemIdentifiers.compactMap { item -> Item? in
+            if case let .message(message) = item, highlightedMessageIDs.contains(message.ID){
+                return .message(message)
             }
-            return false
-        }) else { return }
-
-        let indexPath = IndexPath(item: index, section: 0)
-        chatMessageCollectionView.scrollToMessage(at: indexPath)
+            return nil
+        }
+        
+        if !itemsToRealod.isEmpty {
+            snapshot.reloadItems(itemsToRealod)
+            dataSource.apply(snapshot, animatingDifferences: false)
+        }
+        
+        searchUI.updateSearchResult(highlightedMessageIDs.count, currentFilteredMessageIndex ?? 0)
+    }
+    
+    @MainActor
+    private func clearPreviousHighlightIfNeeded() {
+        var snapshot = dataSource.snapshot()
+        
+        let itemsToRealod = snapshot.itemIdentifiers.compactMap { item -> Item? in
+            if case let .message(message) = item, highlightedMessageIDs.contains(message.ID){
+                return .message(message)
+            }
+            return nil
+        }
+        
+        highlightedMessageIDs.removeAll()
+        currentSearchKeyword = nil
+        
+        if !itemsToRealod.isEmpty {
+            snapshot.reloadItems(itemsToRealod)
+            dataSource.apply(snapshot, animatingDifferences: false)
+        }
+        
+        searchUI.updateSearchResult(highlightedMessageIDs.count, currentFilteredMessageIndex ?? 0)
     }
 
     @MainActor
@@ -839,9 +868,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     @MainActor
     private func exitSearchMode() {
-        searchUI.isHidden = true
-        chatUIView.isHidden = false
-        searchUI.updateSearchResult(0)
+        // 🔹 Search UI 숨기고 Chat UI 복원
+        self.searchUI.isHidden = true
+        self.chatUIView.isHidden = false
+
+        clearPreviousHighlightIfNeeded()
     }
     
     @MainActor
@@ -957,15 +988,17 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 switch item {
                 case .message(let message):
                     let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ChatMessageCell.reuseIdentifier, for: indexPath) as! ChatMessageCell
-    
+                    
                     if message.attachments.isEmpty {
                         cell.configureWithMessage(with: message)
                     } else {
                         cell.configureWithImage(with: message)
                     }
-    
+                    
+                    let keyword = self.highlightedMessageIDs.contains(message.ID) ? self.currentSearchKeyword : nil
+                    cell.highlightKeyword(keyword)
+
                     return cell
-    
                 case .dateSeparator(let date):
                     let cell = collectionView.dequeueReusableCell(withReuseIdentifier: DateSeperatorCell.reuseIdentifier, for: indexPath) as! DateSeperatorCell
     
@@ -1048,14 +1081,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
             var snapshot = dataSource.snapshot()
             snapshot.appendItems(newItems, toSection: .main)
-    
     //        print("Before apply, snapshot items: \(snapshot.itemIdentifiers)") // 추가된 아이템 확인
     
             dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
                 guard let self = self else { return }
-    
     //            print("************************ Apply 완료, snapshot items: \(snapshot.itemIdentifiers) ************************")
-    
                 chatMessageCollectionView.scrollToBottom()
             }
         }

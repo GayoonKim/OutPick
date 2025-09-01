@@ -109,10 +109,10 @@ class ChatSearchUIView: UIView {
         downPublisher.send()
     }
     
-    func updateSearchResult(_ count: Int) {
+    func updateSearchResult(_ count: Int, _ index: Int) {
         if count > 0 {
             upBtn.isEnabled = true
-            messageCountLabel.text = "1/\(count)"
+            messageCountLabel.text = "\(index+1)/\(count)"
         } else {
             upBtn.isEnabled = false
             downBtn.isEnabled = false

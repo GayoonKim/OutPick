@@ -135,6 +135,10 @@ class ChatMessageCell: UICollectionViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         
+        messageLabel.attributedText = nil
+        highlightView?.removeFromSuperview()
+        highlightView = nil
+        
         messageLabel.text = nil
         nickNameLabel.text = nil
         messageLabel.textAlignment = .left
@@ -159,6 +163,12 @@ class ChatMessageCell: UICollectionViewCell {
             failedIconImageViewCenterYConstraint,
             failedIconImageViewTrainlingConstraint
         ].compactMap{ $0 })
+        
+        failedIconImageView.isHidden = true
+        failedIconImageViewCenterYConstraint?.isActive = false
+        failedIconImageViewTrainlingConstraint?.isActive = false
+        failedIconImageViewCenterYConstraint = nil
+        failedIconImageViewTrainlingConstraint = nil
     }
     
     func configureWithMessage(with message: ChatMessage) {
@@ -338,6 +348,9 @@ class ChatMessageCell: UICollectionViewCell {
     
     func highlightKeyword(_ keyword: String?) {
         guard let text = messageLabel.text else { return }
+        
+        print(#function, "✅✅✅✅✅ \"\(self.messageLabel.text ?? "")__keyword: \(keyword ?? "nil") ✅✅✅✅✅")
+
         if let keyword = keyword, !keyword.isEmpty {
             let attributed = NSMutableAttributedString(string: text)
             let range = (text as NSString).range(of: keyword, options: .caseInsensitive)
@@ -346,8 +359,10 @@ class ChatMessageCell: UICollectionViewCell {
                 attributed.addAttribute(.foregroundColor, value: UIColor.black, range: range)
             }
             messageLabel.attributedText = attributed
+            setHightlightedOverlay(true) // overlay도 제거
         } else {
             messageLabel.attributedText = NSAttributedString(string: text)
+            setHightlightedOverlay(false) // overlay도 제거
         }
     }
 }
