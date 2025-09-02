@@ -14,7 +14,7 @@ import PhotosUI
 import Firebase
 import Kingfisher
 
-class ChatViewController: UIViewController, UINavigationControllerDelegate, ChatModalAnimatable {
+class ChatViewController: UIViewController, UINavigationControllerDelegate, ChatModalAnimatable, UICollectionViewDelegate {
     
     @IBOutlet weak var activityIndicator: UIActivityIndicatorView!
     @IBOutlet weak var sideMenuBtn: UIBarButtonItem!
@@ -124,6 +124,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     private var searchUIBottomConstraint: NSLayoutConstraint?
     
+    private var scrollTargetIndex: IndexPath?
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         
@@ -148,6 +150,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         bindPublishers()
         bindSearchEvents()
         bindCustomMenuEvents()
+        
+        chatMessageCollectionView.collectionView.delegate = self
     }
     
     override func viewWillAppear(_ animated: Bool) {
@@ -780,17 +784,36 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 self.exitSearchMode()
             }
             .store(in: &cancellables)
+        
+        searchUI.upPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in
+                guard let self = self else { return }
+                currentFilteredMessageIndex! -= 1
+                searchUI.updateSearchResult(filteredMessages.count, currentFilteredMessageIndex!)
+                moveToMessageAndShake(currentFilteredMessageIndex!)
+            }
+            .store(in: &cancellables)
+        
+        searchUI.downPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in
+                guard let self = self else { return }
+                currentFilteredMessageIndex! += 1
+                searchUI.updateSearchResult(filteredMessages.count, currentFilteredMessageIndex!)
+                moveToMessageAndShake(currentFilteredMessageIndex!)
+            }
+            .store(in: &cancellables)
     }
     
+    @MainActor
     private func filterMessages(containing keyword: String) {
-        print(#function, "✅✅✅✅✅ 호출 시작 with: '\(keyword)' ✅✅✅✅✅")
-        
         Task {
             do {
                 guard let room = self.room else { return }
 
                 filteredMessages = try await GRDBManager.shared.fetchMessages(in: room.ID ?? "", containing: keyword)
-                currentFilteredMessageIndex = filteredMessages.isEmpty == true ? nil : filteredMessages.count - 1
+                currentFilteredMessageIndex = filteredMessages.isEmpty == true ? nil : filteredMessages.count
                 currentSearchKeyword = keyword
                 highlightedMessageIDs = Set(filteredMessages.map { $0.ID })
                 applyHighlight()
@@ -801,6 +824,19 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
     }
     
+    @MainActor
+    private func moveToMessageAndShake(_ idx: Int) {
+        let message = filteredMessages[idx-1]
+        guard let indexPath = indexPath(of: message) else { return }
+
+        if let cell = chatMessageCollectionView.collectionView.cellForItem(at: indexPath) as? ChatMessageCell {
+            cell.shakeHorizontally()
+        } else {
+            chatMessageCollectionView.scrollToMessage(at: indexPath)
+            scrollTargetIndex = indexPath
+        }
+    }
+
     @MainActor
     private func applyHighlight() {
         var snapshot = dataSource.snapshot()
@@ -818,6 +854,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
         
         searchUI.updateSearchResult(highlightedMessageIDs.count, currentFilteredMessageIndex ?? 0)
+        if let idx = currentFilteredMessageIndex { moveToMessageAndShake(idx) }
     }
     
     @MainActor
@@ -833,6 +870,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         
         highlightedMessageIDs.removeAll()
         currentSearchKeyword = nil
+        scrollTargetIndex = nil
         
         if !itemsToRealod.isEmpty {
             snapshot.reloadItems(itemsToRealod)
@@ -840,6 +878,16 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
         
         searchUI.updateSearchResult(highlightedMessageIDs.count, currentFilteredMessageIndex ?? 0)
+    }
+    
+    private func indexPath(of message: ChatMessage) -> IndexPath? {
+        let snapshot = dataSource.snapshot()
+        let items = snapshot.itemIdentifiers(inSection: .main)
+        if let row = items.firstIndex(where: { $0 == .message(message) }) {
+            return IndexPath(item: row, section: 0)
+        } else {
+            return nil
+        }
     }
 
     @MainActor
@@ -1120,5 +1168,31 @@ private extension ChatViewController {
         
         guard let room = self.room else { return }
         customNavigationBar.configureForChatRoom(/*unreadCount: 99, */roomTitle: room.roomName, participantCount: room.participants.count, onBack: backButtonTapped, onSearch: searchButtonTapped, onSetting: settingButtonTapped)
+    }
+}
+
+extension ChatViewController: UIScrollViewDelegate {
+    func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
+        triggerShakeIfNeeded()
+    }
+    
+    func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+        triggerShakeIfNeeded()
+    }
+    
+    func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+        if !decelerate {
+            triggerShakeIfNeeded()
+        }
+    }
+    
+    @MainActor
+    private func triggerShakeIfNeeded() {
+        guard let indexPath = scrollTargetIndex,
+              let cell = chatMessageCollectionView.collectionView.cellForItem(at: indexPath) as? ChatMessageCell else {
+            return
+        }
+        cell.shakeHorizontally()
+        scrollTargetIndex = nil  // 초기화
     }
 }

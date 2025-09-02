@@ -336,7 +336,7 @@ class ChatMessageCell: UICollectionViewCell {
             highlightView = nil
         }
     }
-    
+
     func shakeHorizontally(duration: CFTimeInterval = 0.5, repeatCount: Float = 1) {
         let animation = CAKeyframeAnimation(keyPath: "transform.translation.x")
         animation.timingFunction = CAMediaTimingFunction(name: .linear)
@@ -348,8 +348,6 @@ class ChatMessageCell: UICollectionViewCell {
     
     func highlightKeyword(_ keyword: String?) {
         guard let text = messageLabel.text else { return }
-        
-        print(#function, "✅✅✅✅✅ \"\(self.messageLabel.text ?? "")__keyword: \(keyword ?? "nil") ✅✅✅✅✅")
 
         if let keyword = keyword, !keyword.isEmpty {
             let attributed = NSMutableAttributedString(string: text)

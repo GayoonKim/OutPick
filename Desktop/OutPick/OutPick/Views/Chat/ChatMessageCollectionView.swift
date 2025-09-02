@@ -94,28 +94,29 @@ class ChatMessageCollectionView: UIView {
         }
     }
     
+    @MainActor
     func scrollToMessage(at indexPath: IndexPath) {
-        DispatchQueue.main.async {
-            self.collectionView.layoutIfNeeded()
-            self.collectionView.scrollToItem(at: indexPath, at: .centeredVertically, animated: true)
-        }
+        self.collectionView.layoutIfNeeded()
+        self.collectionView.scrollToItem(at: indexPath, at: .centeredVertically, animated: true)
     }
     
-    func saveAndShakeHighlightedCell(_ keyword: String) {
-        collectionView.visibleCells.forEach {
-            if let chatCell = $0 as? ChatMessageCell {
-                chatCell.highlightKeyword(keyword)
-            }
-        }
-    }
     
-    func clearKeywordHighlight() {
-        collectionView.visibleCells.forEach {
-            if let chatCell = $0 as? ChatMessageCell {
-                chatCell.highlightKeyword(nil)
-            }
-        }
-    }
+    
+//    func saveAndShakeHighlightedCell(_ keyword: String) {
+//        collectionView.visibleCells.forEach {
+//            if let chatCell = $0 as? ChatMessageCell {
+//                chatCell.highlightKeyword(keyword)
+//            }
+//        }
+//    }
+//    
+//    func clearKeywordHighlight() {
+//        collectionView.visibleCells.forEach {
+//            if let chatCell = $0 as? ChatMessageCell {
+//                chatCell.highlightKeyword(nil)
+//            }
+//        }
+//    }
     
     @objc private func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
         let location = gesture.location(in: collectionView)
