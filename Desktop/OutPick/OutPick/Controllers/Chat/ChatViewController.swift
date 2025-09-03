@@ -40,9 +40,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         case dateSeparator(Date)
         case readMarker
     }
-    
-//    private var dimmingView: UIView?
-    
+
     var room: ChatRoom?
     var roomID: String?
     var isRoomSaving = false
@@ -100,15 +98,22 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         
         return view
     }()
-
-//    private lazy var cancellables = Set<AnyCancellable>()
+    
+    private lazy var chatCustomMenu: ChatCustomPopUpMenu = {
+       let view = ChatCustomPopUpMenu()
+        view.backgroundColor = .secondarySystemBackground
+        view.layer.cornerRadius = 20
+        view.translatesAutoresizingMaskIntoConstraints = false
+        
+        return view
+    }()
+    private var highlightedCell: ChatMessageCell?
+    
     private let imagesSubject = CurrentValueSubject<[UIImage], Never>([])
     private var imagesPublishser: AnyPublisher<[UIImage], Never> {
         return imagesSubject.eraseToAnyPublisher()
     }
-    
-//    private lazy var chatMessageCollectionView = ChatMessageCollectionView()
-    
+
     // Layout 제약 조건 저장
     private var chatConstraints: [NSLayoutConstraint] = []
     private var chatUIViewBottomConstraint: NSLayoutConstraint?
@@ -118,6 +123,12 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     lazy var tapGesture: UITapGestureRecognizer = {
         let gesture = UITapGestureRecognizer(target: self, action: #selector(handleTapGesture))
+        gesture.delegate = self
+        return gesture
+    }()
+    
+    lazy var longPressGesture: UILongPressGestureRecognizer = {
+        let gesture = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
         gesture.delegate = self
         return gesture
     }()
@@ -143,13 +154,14 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
         
         view.addGestureRecognizer(tapGesture)
+        view.addGestureRecognizer(longPressGesture)
 
         setupCustomNavigationBar()
         decideJoinUI()
         setupAttachmentView()
-        bindPublishers()
+        bindMessagePublishers()
+        bindKeyboardPublisher()
         bindSearchEvents()
-        bindCustomMenuEvents()
         
         chatMessageCollectionView.collectionView.delegate = self
     }
@@ -165,10 +177,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 let messages = try await GRDBManager.shared.fetchMessages(in: room.ID ?? "", containing: nil)
                 let lastMessageID = try await GRDBManager.shared.fetchLastMessageID(for: room.ID ?? "")
 
-//                for (idx, message) in messages.enumerated() {
-//                    print(#function, "✅✅✅✅✅✅✅✅✅✅ \(idx)번째 메시지: ", message)
-//                }
-                
                 addMessages(messages, isNew: false)
                 lastReadMessageID = lastMessageID
                 
@@ -176,7 +184,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
                 try await self.syncMessagesIfNeeded(for: room)
                 
-                /*chatMessageCollectionView.*/isUserInCurrentRoom = true
+                isUserInCurrentRoom = true
 
                 if !SocketIOManager.shared.isConnected {
                     SocketIOManager.shared.establishConnection { [weak self] in
@@ -198,8 +206,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         super.viewWillDisappear(animated)
         
         cancellables.removeAll()
-//        chatMessageCollectionView.isUserInCurrentRoom = false
-        
+
         if let topVC = self.navigationController?.topViewController,
            topVC is ChatRoomSettingCollectionView {
             return
@@ -220,38 +227,46 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             }
         }
     }
-    
-    @MainActor
-    private func bindCustomMenuEvents() {
-        chatMessageCollectionView.replyPublisher
-            .sink { [weak self] message in
+
+    //MARK: 메시지 관련
+    private func bindMessagePublishers() {
+        // 메시지 수신 관련
+        SocketIOManager.shared.receivedMessagePublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] receivedMessage in
                 guard let self = self else { return }
-                print(#function, "메시지 답장 이벤트:", message)
-            }
-            .store(in: &cancellables)
-        
-        chatMessageCollectionView.copyPublisher
-            .sink { message in
-                UIPasteboard.general.string = message.msg
-                print(#function, "메시지 복사 이벤트:", message.msg ?? "")
-            }
-            .store(in: &cancellables)
-        
-        chatMessageCollectionView.deletePublisher
-            .sink { [weak self] message in
-                guard let self = self else { return }
-                print(#function, "메시지 삭제 이벤트:", message)
-            }
-            .store(in: &cancellables)
-        
-        chatMessageCollectionView.longPressPublisher
-            .sink { [weak self] indexPath in
-                guard let self = self else { return }
-                showCustomMenu(at: indexPath)
+                
+                print("\(receivedMessage.isFailed ? "전송 실패" : "전송 성공") 메시지 수신: \(receivedMessage)")
+                guard let room = self.room else { return }
+                
+                Task {
+                    if  !receivedMessage.isFailed ,receivedMessage.senderID == LoginManager.shared.getUserEmail {
+                        // ✅ 보낸 본인만 Firebase에 저장
+                        try await FirebaseManager.shared.saveMessage(receivedMessage, room)
+                    }
+                    
+                    try await GRDBManager.shared.saveChatMessage(receivedMessage)
+                    
+                    if !receivedMessage.attachments.isEmpty {
+                        for attachment in receivedMessage.attachments {
+                            guard attachment.type == .image, let imageName = attachment.fileName else { continue }
+                            
+                            if !receivedMessage.isFailed {
+                                try GRDBManager.shared.addImage(imageName, toRoom: room.ID ?? "", at: receivedMessage.sentAt ?? Date())
+                            }
+                            
+                            if let image = attachment.toUIImage() {
+                                try await KingfisherManager.shared.cache.store(image, forKey: imageName)
+                            }
+                        }
+                    }
+                }
+                
+                addMessages([receivedMessage], isNew: false)
             }
             .store(in: &cancellables)
     }
-
+    
     @MainActor
     private func setupChatUI() {
         if chatUIView.superview == nil {
@@ -292,7 +307,40 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         SocketIOManager.shared.sendMessages(room, newMessage)
         chatUIView.sendButton.isEnabled = false
     }
+    
+    @MainActor
+    private func syncMessagesIfNeeded(for room: ChatRoom, reset: Bool = true) async throws {
+        do {
+            let messages = try await FirebaseManager.shared.fetchMessagesPaged(for: room)
+            print(#function, "✅ 호출 완료: ", messages.count)
+            
+            for message in messages {
+                try await GRDBManager.shared.saveChatMessage(message)
+                
+                if !message.attachments.isEmpty {
+                    await withTaskGroup(of: Void.self) { group in
+                        for attachment in message.attachments {
+                            guard attachment.type == .image, let imageName = attachment.fileName else { continue }
+                            try? GRDBManager.shared.addImage(imageName, toRoom: room.ID ?? "", at: message.sentAt ?? Date())
+                            
+                            group.addTask {
+                                if let image = attachment.toUIImage() {
+                                    try? await KingfisherManager.shared.cache.store(image, forKey: imageName)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            /*chatMessageCollectionView.*/addMessages(messages, isNew: true)
+        } catch {
+            print("❌ 메시지 동기화 실패: \(error)")
+        }
+    }
+    
 
+    //MARK: 첨부파일 관련
     @MainActor
     private func hideOrShowOptionMenu() {
         guard let image = self.chatUIView.attachmentButton.imageView?.image else { return }
@@ -315,97 +363,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
             self.chatUIViewBottomConstraint?.constant = -10
         }
-    }
-    
-    @MainActor
-    private func handleAttachmentButtonTap(identifier: String) {
-        switch identifier {
-        case "photo":
-            print("Photo btn tapped!")
-            self.hideOrShowOptionMenu()
-            self.openPHPicker()
-            
-        case "camera":
-            print("Camera btn tapped!")
-            self.hideOrShowOptionMenu()
-            self.openCamera()
-            
-        case "attachmentButton":
-            self.hideOrShowOptionMenu()
-
-        case "sendButton":
-            self.handleSendButtonTap()
-        default:
-            return
-        }
-    }
-    
-    private func bindPublishers() {
-        // 메시지 수신 관련
-        SocketIOManager.shared.receivedMessagePublisher
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] receivedMessage in
-                guard let self = self else { return }
-                
-                print("\(receivedMessage.isFailed ? "전송 실패" : "전송 성공") 메시지 수신: \(receivedMessage)")
-                guard let room = self.room else { return }
-                
-                Task {
-                    if  !receivedMessage.isFailed ,receivedMessage.senderID == LoginManager.shared.getUserEmail {
-                        // ✅ 보낸 본인만 Firebase에 저장
-                        try await FirebaseManager.shared.saveMessage(receivedMessage, room)
-                    }
-                    
-                    try await GRDBManager.shared.saveChatMessage(receivedMessage)
-                    
-                    if !receivedMessage.attachments.isEmpty {
-                        for attachment in receivedMessage.attachments {
-                            guard attachment.type == .image, let imageName = attachment.fileName else { continue }
-                            
-                            if !receivedMessage.isFailed {
-                                try GRDBManager.shared.addImage(imageName, toRoom: room.ID ?? "", at: receivedMessage.sentAt ?? Date())
-                            }
-                            
-                            if let image = attachment.toUIImage() {
-                                try await KingfisherManager.shared.cache.store(image, forKey: imageName)
-                            }
-                        }
-                    }
-                }
-                
-                /*self.chatMessageCollectionView.*/addMessages([receivedMessage], isNew: false)
-                
-//                Task {
-//                    let localMessages  = try await GRDBManager.shared.fetchMessages(in: room.ID ?? "")
-//                    for (idx, message) in localMessages.enumerated() {
-//                        print("\(idx)번째 메시지: ", message)
-//                    }
-//                }
-            }
-            .store(in: &cancellables)
-        
-        // 키보드 관련
-        NotificationCenter.default.publisher(for: UIApplication.keyboardWillShowNotification)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] notification in
-                guard let self = self else { return }
-                self.keyboardWillShow(notification)
-            }
-            .store(in: &cancellables)
-        
-        NotificationCenter.default.publisher(for: UIApplication.keyboardWillHideNotification)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] notification in
-                guard let self = self else { return }
-                self.keyboardWillHide(notification)
-            }
-            .store(in: &cancellables)
-    }
-    
-    private func setUpNotifications() {
-        // 방 저장 관련
-        NotificationCenter.default.addObserver(self, selector: #selector(handleRoomSaveCompleted), name: .roomSavedComplete, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(handleRoomSaveFailed), name: .roomSaveFailed, object: nil)
     }
     
     private func playVideo(from url: URL) {
@@ -457,6 +414,36 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
     
     @MainActor
+    private func handleAttachmentButtonTap(identifier: String) {
+        switch identifier {
+        case "photo":
+            print("Photo btn tapped!")
+            self.hideOrShowOptionMenu()
+            self.openPHPicker()
+            
+        case "camera":
+            print("Camera btn tapped!")
+            self.hideOrShowOptionMenu()
+            self.openCamera()
+            
+        case "attachmentButton":
+            self.hideOrShowOptionMenu()
+
+        case "sendButton":
+            self.handleSendButtonTap()
+        default:
+            return
+        }
+    }
+    
+    // MARK: 방 관련
+    private func setUpNotifications() {
+        // 방 저장 관련
+        NotificationCenter.default.addObserver(self, selector: #selector(handleRoomSaveCompleted), name: .roomSavedComplete, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleRoomSaveFailed), name: .roomSaveFailed, object: nil)
+    }
+    
+    @MainActor
     private func bindRoomChangePublisher() {
         // 실시간 방 업데이트 관련
         FirebaseManager.shared.roomChangePublisher
@@ -474,37 +461,38 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             .store(in: &cancellables)
     }
     
-    @MainActor
-    private func syncMessagesIfNeeded(for room: ChatRoom, reset: Bool = true) async throws {
-        do {
-            let messages = try await FirebaseManager.shared.fetchMessagesPaged(for: room)
-            print(#function, "✅ 호출 완료: ", messages.count)
+    @objc private func handleRoomSaveCompleted(notification: Notification) {
+        guard let savedRoom = notification.userInfo?["room"] as? ChatRoom else { return }
+        self.room = savedRoom
+        
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.updateNavigationTitle(with: savedRoom)
+            LoadingIndicator.shared.stop()
+            self.view.isUserInteractionEnabled = true
             
-            for message in messages {
-                try await GRDBManager.shared.saveChatMessage(message)
-                
-                if !message.attachments.isEmpty {
-                    await withTaskGroup(of: Void.self) { group in
-                        for attachment in message.attachments {
-                            guard attachment.type == .image, let imageName = attachment.fileName else { continue }
-                            try? GRDBManager.shared.addImage(imageName, toRoom: room.ID ?? "", at: message.sentAt ?? Date())
-                            
-                            group.addTask {
-                                if let image = attachment.toUIImage() {
-                                    try? await KingfisherManager.shared.cache.store(image, forKey: imageName)
-                                }
-                            }
-                        }
-                    }
+            // 이미 연결된 경우에는 room 생성과 join만 수행
+            if SocketIOManager.shared.isConnected {
+                SocketIOManager.shared.createRoom(savedRoom.roomName)
+                SocketIOManager.shared.joinRoom(savedRoom.roomName)
+            } else {
+                // 연결되지 않은 경우에만 연결 시도
+                SocketIOManager.shared.establishConnection {
+                    SocketIOManager.shared.createRoom(savedRoom.roomName)
+                    SocketIOManager.shared.joinRoom(savedRoom.roomName)
                 }
             }
-            
-            /*chatMessageCollectionView.*/addMessages(messages, isNew: true)
-        } catch {
-            print("❌ 메시지 동기화 실패: \(error)")
         }
     }
     
+    @objc private func handleRoomSaveFailed(notification: Notification) {
+        activityIndicator.stopAnimating()
+        
+        guard let error = notification.userInfo?["error"] as? RoomCreationError else { return }
+        showAlert(error: error)
+    }
+    
+    //MARK: 프로필 관련
     @MainActor
     private func syncProfilesWithLocalDB(emails: [String]) async throws {
         print(#function, "호출 완료")
@@ -523,6 +511,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
     }
 
+    
+    //MARK: 초기 UI 설정 관련
     @MainActor
     private func decideJoinUI() {
         guard let room = room else { return }
@@ -604,117 +594,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             }
         }
     }
-    
-    @objc private func keyboardWillShow(_ sender: Notification) {
-        guard let keyboardFrame = sender.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect,
-              let animationDuration = sender.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double else { return }
 
-        // Hide attachment view if visible
-        let keyboardFrameHeight = keyboardFrame.height
-        let safeAreaBottom = self.view.safeAreaInsets.bottom
-        
-        if !self.attachmentView.isHidden {
-            self.attachmentView.isHidden = true
-            self.chatUIView.attachmentButton.setImage(UIImage(systemName: "plus"), for: .normal)
-        }
-
-        let bottomConstraint = -(keyboardFrameHeight - safeAreaBottom + 10)
-        chatUIViewBottomConstraint?.constant = bottomConstraint
-        searchUIBottomConstraint?.constant = bottomConstraint
-        
-        UIView.animate(withDuration: animationDuration) {
-            self.view.layoutIfNeeded()
-        }
-        
-        UIView.animate(withDuration: animationDuration, animations: {
-            self.view.layoutIfNeeded()
-        }, completion: { _ in
-            // ✅ 키보드 올라온 뒤 스크롤 아래로
-            self.chatMessageCollectionView.scrollToBottom()
-        })
-    }
-    
-    @objc private func keyboardWillHide(_ sender: Notification) {
-        guard let animationDuration = sender.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double else { return }
-        chatUIViewBottomConstraint?.constant = -10
-        searchUIBottomConstraint?.constant = -10
-        
-        UIView.animate(withDuration: animationDuration) {
-            self.view.layoutIfNeeded()
-        }
-    }
-    
-    @objc private func handleTapGesture() {
-//        chatUIView.messageTextView.resignFirstResponder()
-//        customNavigationBar.searchTextField.resignFirstResponder()
-        view.endEditing(true)
-        
-        if !self.attachmentView.isHidden {
-            chatUIView.attachmentButton.setImage(UIImage(systemName: "plus"), for: .normal)
-            self.attachmentView.isHidden = true
-            self.attachmentView.alpha = 0
-
-            self.chatUIViewBottomConstraint?.constant = -10
-
-            UIView.animate(withDuration: 0.25) {
-                self.view.layoutIfNeeded()
-            }
-        }
-    }
-    
-    @objc private func handleRoomSaveCompleted(notification: Notification) {
-        guard let savedRoom = notification.userInfo?["room"] as? ChatRoom else { return }
-        self.room = savedRoom
-        
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.updateNavigationTitle(with: savedRoom)
-            LoadingIndicator.shared.stop()
-            self.view.isUserInteractionEnabled = true
-            
-            // 이미 연결된 경우에는 room 생성과 join만 수행
-            if SocketIOManager.shared.isConnected {
-                SocketIOManager.shared.createRoom(savedRoom.roomName)
-                SocketIOManager.shared.joinRoom(savedRoom.roomName)
-            } else {
-                // 연결되지 않은 경우에만 연결 시도
-                SocketIOManager.shared.establishConnection {
-                    SocketIOManager.shared.createRoom(savedRoom.roomName)
-                    SocketIOManager.shared.joinRoom(savedRoom.roomName)
-                }
-            }
-        }
-    }
-    
-    @objc private func handleRoomSaveFailed(notification: Notification) {
-        activityIndicator.stopAnimating()
-        
-        guard let error = notification.userInfo?["error"] as? RoomCreationError else { return }
-        showAlert(error: error)
-    }
-    
-    private func showAlert(error: RoomCreationError) {
-        var title: String
-        var message: String
-        
-        switch error {
-        case .saveFailed:
-            title = "저장 실패"
-            message = "채팅방 정보 저장에 실패했습니다. 다시 시도해주세요."
-        case .imageUploadFailed:
-            title = "이미지 업로드 실패"
-            message = "방 이미지 업로드에 실패했습니다. 다시 시도해주세요."
-        default:
-            title = "오류"
-            message = "알 수 없는 오류가 발생했습니다."
-        }
-        
-        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "확인", style: .default) { action in
-            self.navigationController?.popViewController(animated: true)
-        })
-    }
-    
+    //MARK: 커스텀 내비게이션 바
     @MainActor
     /*@objc */private func backButtonTapped() {
         
@@ -761,6 +642,20 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
     }
     
+    @MainActor
+    private func updateNavigationTitle(with room: ChatRoom) {
+        // ✅ 커스텀 내비게이션 바 타이틀 업데이트
+            customNavigationBar.configureForChatRoom(
+                /*unreadCount: 99,*/ // 필요한 경우 여기도 업데이트 필요
+                roomTitle: room.roomName,
+                participantCount: room.participants.count,
+                onBack: backButtonTapped,
+                onSearch: searchButtonTapped,
+                onSetting: settingButtonTapped
+            )
+    }
+    
+    //MARK: 대화 내용 검색
     private func bindSearchEvents() {
         customNavigationBar.searchKeywordPublisher
             .receive(on: DispatchQueue.main)
@@ -836,7 +731,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             scrollTargetIndex = indexPath
         }
     }
-
+    
     @MainActor
     private func applyHighlight() {
         var snapshot = dataSource.snapshot()
@@ -880,23 +775,13 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         searchUI.updateSearchResult(highlightedMessageIDs.count, currentFilteredMessageIndex ?? 0)
     }
     
-    private func indexPath(of message: ChatMessage) -> IndexPath? {
-        let snapshot = dataSource.snapshot()
-        let items = snapshot.itemIdentifiers(inSection: .main)
-        if let row = items.firstIndex(where: { $0 == .message(message) }) {
-            return IndexPath(item: row, section: 0)
-        } else {
-            return nil
-        }
-    }
-
     @MainActor
-    private func searchButtonTapped() {
-        customNavigationBar.switchToSearchMode()
-        setupSearchUI()
-        
-        searchUI.isHidden = false
-        chatUIView.isHidden = true
+    private func exitSearchMode() {
+        // 🔹 Search UI 숨기고 Chat UI 복원
+        self.searchUI.isHidden = true
+        self.chatUIView.isHidden = false
+
+        clearPreviousHighlightIfNeeded()
     }
     
     @MainActor
@@ -915,100 +800,82 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
     
     @MainActor
-    private func exitSearchMode() {
-        // 🔹 Search UI 숨기고 Chat UI 복원
-        self.searchUI.isHidden = true
-        self.chatUIView.isHidden = false
-
-        clearPreviousHighlightIfNeeded()
+    private func searchButtonTapped() {
+        customNavigationBar.switchToSearchMode()
+        setupSearchUI()
+        
+        searchUI.isHidden = false
+        chatUIView.isHidden = true
     }
     
+    private func indexPath(of message: ChatMessage) -> IndexPath? {
+        let snapshot = dataSource.snapshot()
+        let items = snapshot.itemIdentifiers(inSection: .main)
+        if let row = items.firstIndex(where: { $0 == .message(message) }) {
+            return IndexPath(item: row, section: 0)
+        } else {
+            return nil
+        }
+    }
+    
+    //MARK: 메시지 삭제/답장/복사 관련
     @MainActor
-    private func updateNavigationTitle(with room: ChatRoom) {
-        // ✅ 커스텀 내비게이션 바 타이틀 업데이트
-            customNavigationBar.configureForChatRoom(
-                /*unreadCount: 99,*/ // 필요한 경우 여기도 업데이트 필요
-                roomTitle: room.roomName,
-                participantCount: room.participants.count,
-                onBack: backButtonTapped,
-                onSearch: searchButtonTapped,
-                onSetting: settingButtonTapped
-            )
-    }
-    
-    func showCustomMenu(/*for message: ChatMessage,*/ at indexPath: IndexPath) {
+    private func showCustomMenu(at indexPath: IndexPath/*, aboveCell: Bool*/) {
         guard let cell = chatMessageCollectionView.collectionView.cellForItem(at: indexPath) as? ChatMessageCell,
               let item = dataSource.itemIdentifier(for: indexPath),
               case let .message(message) = item else { return }
+        
+        // 1.셀 강조하기
+        cell.setHightlightedOverlay(true)
+        highlightedCell = cell
+        
+        // 셀의 bounds 기준으로 컬렉션뷰 내 프레임 계산
+        let cellFrameInCollection = cell.convert(cell.bounds, to: chatMessageCollectionView.collectionView)
+        let cellCenterY = cellFrameInCollection.midY
 
-        // 1. 셀만 강조
-        chatMessageCollectionView.setHighlightedCell(cell)
+        // 컬렉션 뷰 기준 중앙 사용 (화면 절반)
+        let screenMiddleY = chatMessageCollectionView.collectionView.bounds.midY
+        let showAbove: Bool = cellCenterY > screenMiddleY
         
-        // 2. overlay 생성 (메뉴 외부 탭 감지용)
-        let overlay = UIView(frame: chatMessageCollectionView.bounds)
-        overlay.backgroundColor = UIColor.clear
-        chatMessageCollectionView.addSubview(overlay)
-        
-        // 3. CustomMenuView 생성
-        let menuView = ChatCustomPopUpMenu()
-        menuView.translatesAutoresizingMaskIntoConstraints = false
-        menuView.backgroundColor = .secondarySystemBackground
-        menuView.layer.cornerRadius = 20
-        overlay.addSubview(menuView)
+        // 2.메뉴 위치를 셀 기준으로
+        view.addSubview(chatCustomMenu)
+        NSLayoutConstraint.activate([
+            showAbove ? chatCustomMenu.bottomAnchor.constraint(equalTo: cell.referenceView.topAnchor, constant: -8) : chatCustomMenu.topAnchor.constraint(equalTo: cell.referenceView.bottomAnchor, constant: 8),
+            
+            LoginManager.shared.userProfile?.nickname == message.senderNickname ? chatCustomMenu.trailingAnchor.constraint(equalTo: cell.referenceView.trailingAnchor, constant: 0) : chatCustomMenu.leadingAnchor.constraint(equalTo: cell.referenceView.leadingAnchor, constant: 0)
+        ])
 
-        // 4. 메뉴 위치를 셀 기준으로
-        if LoginManager.shared.currentUserProfile?.nickname == message.senderNickname {
-            NSLayoutConstraint.activate([
-                menuView.bottomAnchor.constraint(equalTo: cell.referenceView.topAnchor, constant: -10),
-                menuView.trailingAnchor.constraint(equalTo: cell.referenceView.trailingAnchor, constant: 0)
-            ])
-        } else {
-            NSLayoutConstraint.activate([
-                menuView.bottomAnchor.constraint(equalTo: cell.referenceView.topAnchor, constant: -10),
-                menuView.leadingAnchor.constraint(equalTo: cell.referenceView.leadingAnchor, constant: 0)
-            ])
-        }
-        
-        // 5. overlay tapGesture
-        let overlayTap = UITapGestureRecognizer(target: self, action: #selector(dismissMenuOverlay(_:)))
-        overlay.addGestureRecognizer(overlayTap)
-
-        // 6. 버튼 액션 설정
-        menuView.replyPublisher
-            .sink { [weak self] in
-                guard let self = self else { return }
-//                cell.setHightlightedOverlay(false)
-//                highlightedCell = nil
-                chatMessageCollectionView.clearHighlightedCell()
-                handleReply(message: message)
-//                self.replyPublisher.send(message)
-                menuView.removeFromSuperview()
-//                parentVC.tapGesture.isEnabled = true
-            }
-            .store(in: &cancellables)
-        
-        menuView.copyPublisher
-            .sink { [weak self] in
-                guard let self = self else { return }
-                chatMessageCollectionView.clearHighlightedCell()
-                handleCopy(message: message)
-                menuView.removeFromSuperview()
-            }
-            .store(in: &cancellables)
-        
-        menuView.deletePublisher
-            .sink { [weak self] in
-                guard let self = self else { return }
-                chatMessageCollectionView.clearHighlightedCell()
-                handleDelete(message: message)
-                menuView.removeFromSuperview()
-            }
-            .store(in: &cancellables)
+        // 3. 버튼 액션 설정
+        bindChatMenuActions(for: message)
     }
     
-    @objc private func dismissMenuOverlay(_ gesture: UITapGestureRecognizer) {
-        gesture.view?.removeFromSuperview()
-        chatMessageCollectionView.clearHighlightedCell()
+    private func bindChatMenuActions(for message: ChatMessage) {
+        chatCustomMenu.replyPublisher
+            .sink { [weak self] in
+                self?.dismissCustomMenu()
+                self?.handleReply(message: message)
+            }.store(in: &cancellables)
+
+        chatCustomMenu.copyPublisher
+            .sink { [weak self] in
+                self?.dismissCustomMenu()
+                self?.handleCopy(message: message)
+            }.store(in: &cancellables)
+
+        chatCustomMenu.deletePublisher
+            .sink { [weak self] in
+                self?.dismissCustomMenu()
+                self?.handleDelete(message: message)
+            }.store(in: &cancellables)
+    }
+    
+    @objc private func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
+        let location = gesture.location(in: chatMessageCollectionView.collectionView)
+
+        guard let indexPath = chatMessageCollectionView.collectionView.indexPathForItem(at: location),
+              gesture.state == .began else { return }
+
+        showCustomMenu(at: indexPath/*, aboveCell: showAbove*/)
     }
     
     private func handleReply(message: ChatMessage) {
@@ -1027,8 +894,13 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         print(#function, "삭제:", message)
     }
     
-    //MARK: Diffable Data Source
+    private func dismissCustomMenu() {
+        if let cell = highlightedCell { cell.setHightlightedOverlay(false) }
+        highlightedCell = nil
+        chatCustomMenu.removeFromSuperview()
+    }
     
+    //MARK: Diffable Data Source
         private func configureDataSource() {
             print(#function)
             dataSource = UICollectionViewDiffableDataSource<Section, Item>(collectionView: chatMessageCollectionView.subviews.compactMap{ $0 as? UICollectionView }.first!) { collectionView, indexPath, item in
@@ -1147,11 +1019,106 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             return formatter.string(from: date)
         }
     
-    func handleLongPressAt(_ indexPath: IndexPath) {
-        guard let message = dataSource.itemIdentifier(for: indexPath) else { return }
-        // Custom popup menu 띄우기 → ChatMessageCollectionView와 Publisher 연동
+    //MARK: Tap Gesture
+    @objc private func handleTapGesture() {
+        view.endEditing(true)
         
-        print("Long press on message: \(message)")
+        if !self.attachmentView.isHidden {
+            chatUIView.attachmentButton.setImage(UIImage(systemName: "plus"), for: .normal)
+            self.attachmentView.isHidden = true
+            self.attachmentView.alpha = 0
+
+            self.chatUIViewBottomConstraint?.constant = -10
+
+            UIView.animate(withDuration: 0.25) {
+                self.view.layoutIfNeeded()
+            }
+        }
+        
+        if chatCustomMenu.superview != nil {
+            dismissCustomMenu()
+        }
+    }
+    
+    //MARK: 키보드 관련
+    private func bindKeyboardPublisher() {
+        NotificationCenter.default.publisher(for: UIApplication.keyboardWillShowNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] notification in
+                guard let self = self else { return }
+                self.keyboardWillShow(notification)
+            }
+            .store(in: &cancellables)
+        
+        NotificationCenter.default.publisher(for: UIApplication.keyboardWillHideNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] notification in
+                guard let self = self else { return }
+                self.keyboardWillHide(notification)
+            }
+            .store(in: &cancellables)
+    }
+    
+    @objc private func keyboardWillShow(_ sender: Notification) {
+        guard let keyboardFrame = sender.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect,
+              let animationDuration = sender.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double else { return }
+
+        // Hide attachment view if visible
+        let keyboardFrameHeight = keyboardFrame.height
+        let safeAreaBottom = self.view.safeAreaInsets.bottom
+        
+        if !self.attachmentView.isHidden {
+            self.attachmentView.isHidden = true
+            self.chatUIView.attachmentButton.setImage(UIImage(systemName: "plus"), for: .normal)
+        }
+
+        let bottomConstraint = -(keyboardFrameHeight - safeAreaBottom + 10)
+        chatUIViewBottomConstraint?.constant = bottomConstraint
+        searchUIBottomConstraint?.constant = bottomConstraint
+        
+        UIView.animate(withDuration: animationDuration) {
+            self.view.layoutIfNeeded()
+        }
+        
+        UIView.animate(withDuration: animationDuration, animations: {
+            self.view.layoutIfNeeded()
+        }, completion: { _ in
+            // ✅ 키보드 올라온 뒤 스크롤 아래로
+            self.chatMessageCollectionView.scrollToBottom()
+        })
+    }
+    
+    @objc private func keyboardWillHide(_ sender: Notification) {
+        guard let animationDuration = sender.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double else { return }
+        chatUIViewBottomConstraint?.constant = -10
+        searchUIBottomConstraint?.constant = -10
+        
+        UIView.animate(withDuration: animationDuration) {
+            self.view.layoutIfNeeded()
+        }
+    }
+    
+    //MARK: 기타
+    private func showAlert(error: RoomCreationError) {
+        var title: String
+        var message: String
+        
+        switch error {
+        case .saveFailed:
+            title = "저장 실패"
+            message = "채팅방 정보 저장에 실패했습니다. 다시 시도해주세요."
+        case .imageUploadFailed:
+            title = "이미지 업로드 실패"
+            message = "방 이미지 업로드에 실패했습니다. 다시 시도해주세요."
+        default:
+            title = "오류"
+            message = "알 수 없는 오류가 발생했습니다."
+        }
+        
+        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "확인", style: .default) { action in
+            self.navigationController?.popViewController(animated: true)
+        })
     }
 }
 

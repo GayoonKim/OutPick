@@ -11,7 +11,7 @@ import Combine
 
 class ChatMessageCollectionView: UIView {
     private(set) var collectionView: UICollectionView!
-    private var highlightedCell: ChatMessageCell?
+//    private var highlightedCell: ChatMessageCell?
     private var cancellables = Set<AnyCancellable>()
 
     let replyPublisher = PassthroughSubject<ChatMessage, Never>()
@@ -45,9 +45,6 @@ class ChatMessageCollectionView: UIView {
             collectionView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -8),
             collectionView.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -8),
         ])
-        
-        let longPress = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
-        collectionView.addGestureRecognizer(longPress)
     }
     
     private func configureLayout() -> UICollectionViewCompositionalLayout {
@@ -99,44 +96,17 @@ class ChatMessageCollectionView: UIView {
         self.collectionView.layoutIfNeeded()
         self.collectionView.scrollToItem(at: indexPath, at: .centeredVertically, animated: true)
     }
-    
-    
-    
-//    func saveAndShakeHighlightedCell(_ keyword: String) {
-//        collectionView.visibleCells.forEach {
-//            if let chatCell = $0 as? ChatMessageCell {
-//                chatCell.highlightKeyword(keyword)
-//            }
-//        }
-//    }
-//    
-//    func clearKeywordHighlight() {
-//        collectionView.visibleCells.forEach {
-//            if let chatCell = $0 as? ChatMessageCell {
-//                chatCell.highlightKeyword(nil)
-//            }
-//        }
-//    }
-    
-    @objc private func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
-        let location = gesture.location(in: collectionView)
 
-        guard let indexPath = collectionView.indexPathForItem(at: location),
-              gesture.state == .began else { return }
-        
-        longPressPublisher.send(indexPath)
-    }
-    
-    func setHighlightedCell(_ cell: ChatMessageCell?) {
-        highlightedCell?.setHightlightedOverlay(false) // 기존 강조 해제
-        highlightedCell = cell
-        cell?.setHightlightedOverlay(true)           // 새로 강조
-    }
-
-    func clearHighlightedCell() {
-        highlightedCell?.setHightlightedOverlay(false)
-        highlightedCell = nil
-    }
+//    func setHighlightedCell(_ cell: ChatMessageCell?) {
+//        highlightedCell?.setHightlightedOverlay(false) // 기존 강조 해제
+//        highlightedCell = cell
+//        cell?.setHightlightedOverlay(true)           // 새로 강조
+//    }
+//
+//    func clearHighlightedCell() {
+//        highlightedCell?.setHightlightedOverlay(false)
+//        highlightedCell = nil
+//    }
 }
 
 extension UIView {
