@@ -8,10 +8,14 @@
 import Foundation
 import UIKit
 
+
 class ChatMessageCell: UICollectionViewCell {
     static let reuseIdentifier = "ChatMessageCell"
-    
     private var widthConstraint: NSLayoutConstraint?
+    
+    protocol ChatMessageCellDelegate: AnyObject {
+        func cellDidLongPress(_ cell: ChatMessageCell)
+    }
     
     private let profileImageView: UIImageView = {
         var imageView = UIImageView()
@@ -127,7 +131,7 @@ class ChatMessageCell: UICollectionViewCell {
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
-    
+
     override func layoutSubviews() {
         super.layoutSubviews()
     }

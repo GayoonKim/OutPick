@@ -14,6 +14,10 @@ import PhotosUI
 import Firebase
 import Kingfisher
 
+protocol ChatMessageCellDelegate: AnyObject {
+    func cellDidLongPress(_ cell: ChatMessageCell)
+}
+
 class ChatViewController: UIViewController, UINavigationControllerDelegate, ChatModalAnimatable, UICollectionViewDelegate {
     
     @IBOutlet weak var activityIndicator: UIActivityIndicatorView!
@@ -25,6 +29,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private var chatMessageCollectionView = ChatMessageCollectionView()
     private var dataSource: UICollectionViewDiffableDataSource<Section, Item>!
     private var cancellables = Set<AnyCancellable>()
+    private var chatCustomMemucancellables = Set<AnyCancellable>()
     
     private var lastMessageDate: Date?
     private var lastReadMessageID: String?
@@ -75,7 +80,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         let view = ChatUIView()
         view.isHidden = true
         view.translatesAutoresizingMaskIntoConstraints = false
-        
+
         view.onButtonTapped = { [weak self] identifier in
             guard let self = self else { return }
             self.handleAttachmentButtonTap(identifier: identifier)
@@ -101,7 +106,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     private lazy var chatCustomMenu: ChatCustomPopUpMenu = {
        let view = ChatCustomPopUpMenu()
-        view.backgroundColor = .secondarySystemBackground
+        view.backgroundColor = .black
         view.layer.cornerRadius = 20
         view.translatesAutoresizingMaskIntoConstraints = false
         
@@ -282,7 +287,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             chatUIViewBottomConstraint!,
             chatUIView.leadingAnchor.constraint(equalTo: self.view.leadingAnchor, constant: 8),
             chatUIView.trailingAnchor.constraint(equalTo: self.view.trailingAnchor, constant: -8),
-            chatUIView.heightAnchor.constraint(equalToConstant: chatUIView.minHeight),
+            chatUIView.heightAnchor.constraint(greaterThanOrEqualToConstant: chatUIView.minHeight),
 
             chatMessageCollectionView.topAnchor.constraint(equalTo: customNavigationBar.bottomAnchor),
             chatMessageCollectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -846,41 +851,40 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         ])
 
         // 3. 버튼 액션 설정
-        bindChatMenuActions(for: message)
+        setChatMenuActions(for: message)
     }
-    
-    private func bindChatMenuActions(for message: ChatMessage) {
-        chatCustomMenu.replyPublisher
-            .sink { [weak self] in
-                self?.dismissCustomMenu()
-                self?.handleReply(message: message)
-            }.store(in: &cancellables)
 
-        chatCustomMenu.copyPublisher
-            .sink { [weak self] in
-                self?.dismissCustomMenu()
-                self?.handleCopy(message: message)
-            }.store(in: &cancellables)
-
-        chatCustomMenu.deletePublisher
-            .sink { [weak self] in
-                self?.dismissCustomMenu()
-                self?.handleDelete(message: message)
-            }.store(in: &cancellables)
+    private func setChatMenuActions(for message: ChatMessage) {
+        chatCustomMenu.onReply = { [weak self] in
+            guard let self = self else { return }
+            self.handleReply(message: message)
+            self.dismissCustomMenu()
+        }
+        chatCustomMenu.onCopy = { [weak self] in
+            guard let self = self else { return }
+            self.handleCopy(message: message)
+            self.dismissCustomMenu()
+        }
+        chatCustomMenu.onDelete = { [weak self] in
+            guard let self = self else { return }
+            self.handleDelete(message: message)
+            self.dismissCustomMenu()
+        }
     }
     
     @objc private func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
+        guard gesture.state == .began else { return }
         let location = gesture.location(in: chatMessageCollectionView.collectionView)
+        guard let indexPath = chatMessageCollectionView.collectionView.indexPathForItem(at: location) else { return }
 
-        guard let indexPath = chatMessageCollectionView.collectionView.indexPathForItem(at: location),
-              gesture.state == .began else { return }
-
-        showCustomMenu(at: indexPath/*, aboveCell: showAbove*/)
+        showCustomMenu(at: indexPath)
     }
     
     private func handleReply(message: ChatMessage) {
-        // 답장 로직 구현
         print(#function, "답장:", message)
+        
+        // 답장 로직 구현
+        
     }
 
     private func handleCopy(message: ChatMessage) {

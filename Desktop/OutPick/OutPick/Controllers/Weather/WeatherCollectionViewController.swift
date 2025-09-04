@@ -281,7 +281,8 @@ class HomeCollectionViewController: CustomTabBarViewController {
                 let currentWeatherItem = NSCollectionLayoutItem(layoutSize: currentWeatherItemSize)
                 
                 let currentWeatherGroupSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .estimated(200))
-                let currentWeatherGroup = NSCollectionLayoutGroup.vertical(layoutSize: currentWeatherGroupSize, repeatingSubitem: currentWeatherItem, count: 1)
+//                let currentWeatherGroup = NSCollectionLayoutGroup.vertical(layoutSize: currentWeatherGroupSize, repeatingSubitem: currentWeatherItem, count: 1)
+                let currentWeatherGroup = NSCollectionLayoutGroup.horizontal(layoutSize: currentWeatherGroupSize, subitems: [currentWeatherItem])
                 
                 let currentWeatherSection = NSCollectionLayoutSection(group: currentWeatherGroup)
                 currentWeatherSection.interGroupSpacing = 20
