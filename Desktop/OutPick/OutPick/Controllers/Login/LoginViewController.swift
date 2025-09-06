@@ -102,6 +102,7 @@ class LoginViewController: UIViewController {
         }
     }
     
+    @MainActor
     private func commonLogingProcess() {
         Task {
             do {
@@ -109,10 +110,19 @@ class LoginViewController: UIViewController {
                 try await LoginManager.shared.updateLogDevID()
                 try await LoginManager.shared.setupDevIDListener()
                 
+                try await FirebaseManager.shared.listenToRooms()
                 LoginManager.shared.fetchUserProfileFromKeychain() { screen in
                     DispatchQueue.main.async {
-                        self.view.window?.rootViewController = screen
-                        self.view.window?.makeKeyAndVisible()
+                        if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                           let window = scene.windows.first {
+                            UIView.transition(with: window,
+                                              duration: 0.3,
+                                              options: .transitionCrossDissolve,
+                                              animations: {
+                                                  window.rootViewController = screen
+                                              },
+                                              completion: nil)
+                        }
                     }
                 }
                 

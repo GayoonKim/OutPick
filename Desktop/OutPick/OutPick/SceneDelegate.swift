@@ -79,11 +79,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 if isLoggedIn {
                     print("10. 로그인 됨")
                     
-                    
                     Task { @MainActor in
                         do {
-                            
-                            
+
                             try await FirebaseManager.shared.listenToRooms()
                             LoginManager.shared.fetchUserProfileFromKeychain() { screen in
                                 DispatchQueue.main.async { [weak self] in
