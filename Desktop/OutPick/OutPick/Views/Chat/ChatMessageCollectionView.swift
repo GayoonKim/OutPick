@@ -9,104 +9,73 @@ import Foundation
 import UIKit
 import Combine
 
-class ChatMessageCollectionView: UIView {
-    private(set) var collectionView: UICollectionView!
-//    private var highlightedCell: ChatMessageCell?
-    private var cancellables = Set<AnyCancellable>()
-
+class ChatMessageCollectionView: UICollectionView {
     let replyPublisher = PassthroughSubject<ChatMessage, Never>()
     let copyPublisher = PassthroughSubject<ChatMessage, Never>()
     let deletePublisher = PassthroughSubject<ChatMessage, Never>()
     let longPressPublisher = PassthroughSubject<IndexPath, Never>()
+    
+    init() {
+        let layout = ChatMessageCollectionView.configureLayout()
+        super.init(frame: .zero, collectionViewLayout: layout)
 
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        
-        setupCollectionView()
+        // cell 등록
+        self.register(ChatMessageCell.self, forCellWithReuseIdentifier: ChatMessageCell.reuseIdentifier)
+        self.register(DateSeperatorCell.self, forCellWithReuseIdentifier: DateSeperatorCell.reuseIdentifier)
+        self.register(readMarkCollectionViewCell.self, forCellWithReuseIdentifier: readMarkCollectionViewCell.reuseIdentifier)
     }
+    
     
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
-
-    private func setupCollectionView() {
-        let layout = configureLayout()
-        collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
-        collectionView.register(ChatMessageCell.self, forCellWithReuseIdentifier: ChatMessageCell.reuseIdentifier)
-        collectionView.register(DateSeperatorCell.self, forCellWithReuseIdentifier: DateSeperatorCell.reuseIdentifier)
-        collectionView.register(readMarkCollectionViewCell.self, forCellWithReuseIdentifier: readMarkCollectionViewCell.reuseIdentifier)
-        collectionView.translatesAutoresizingMaskIntoConstraints = false
-        
-        addSubview(collectionView)
-        
-        NSLayoutConstraint.activate([
-            collectionView.topAnchor.constraint(equalTo: topAnchor),
-            collectionView.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 8),
-            collectionView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -8),
-            collectionView.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -8),
-        ])
-    }
     
-    private func configureLayout() -> UICollectionViewCompositionalLayout {
+    private static func configureLayout() -> UICollectionViewCompositionalLayout {
         let itemSize = NSCollectionLayoutSize(
             widthDimension: .fractionalWidth(1),
-            heightDimension: .estimated(100)
+            heightDimension: .estimated(50)
         )
         let item = NSCollectionLayoutItem(layoutSize: itemSize)
         
         let groupSize = NSCollectionLayoutSize(
             widthDimension: .fractionalWidth(1),
-            heightDimension: .estimated(100)
+            heightDimension: .estimated(50)
         )
         let group = NSCollectionLayoutGroup.vertical(layoutSize: groupSize, subitems: [item])
         
         let section = NSCollectionLayoutSection(group: group)
         section.interGroupSpacing = 5
-        section.contentInsets = NSDirectionalEdgeInsets(top: 12, leading: 0, bottom: 12, trailing: 0)
+//        section.contentInsets = NSDirectionalEdgeInsets(top: 12, leading: 0, bottom: 12, trailing: 0)
         
         return UICollectionViewCompositionalLayout(section: section)
     }
     
     // 외부에서 dataSource 설정 가능하도록 노출
     func setCollectionViewDataSource(_ dataSource: UICollectionViewDataSource) {
-        collectionView.dataSource = dataSource
+        self.dataSource = dataSource
     }
     
     func setCollectionViewDelegate(_ delegate: UICollectionViewDelegate) {
-        collectionView.delegate = delegate
-    }
-    
-    func reloadData() {
-        collectionView.reloadData()
+        self.delegate = delegate
     }
     
     func scrollToBottom() {
         DispatchQueue.main.async {
-            self.collectionView.layoutIfNeeded()
+            self.layoutIfNeeded()
             
-            let lastIndex = self.collectionView.numberOfItems(inSection: 0) - 1
+            let lastIndex = self.numberOfItems(inSection: 0) - 1
             let lastIndexPath = IndexPath(item: lastIndex, section: 0)
             
-            self.collectionView.scrollToItem(at: lastIndexPath, at: .bottom, animated: false)
+            self.scrollToItem(at: lastIndexPath, at: .bottom, animated: true)
         }
+        
     }
     
     @MainActor
     func scrollToMessage(at indexPath: IndexPath) {
-        self.collectionView.layoutIfNeeded()
-        self.collectionView.scrollToItem(at: indexPath, at: .centeredVertically, animated: true)
+        self.layoutIfNeeded()
+        self.scrollToItem(at: indexPath, at: .centeredVertically, animated: true)
     }
-
-//    func setHighlightedCell(_ cell: ChatMessageCell?) {
-//        highlightedCell?.setHightlightedOverlay(false) // 기존 강조 해제
-//        highlightedCell = cell
-//        cell?.setHightlightedOverlay(true)           // 새로 강조
-//    }
-//
-//    func clearHighlightedCell() {
-//        highlightedCell?.setHightlightedOverlay(false)
-//        highlightedCell = nil
-//    }
 }
 
 extension UIView {
@@ -121,3 +90,4 @@ extension UIView {
         return nil
     }
 }
+

@@ -115,10 +115,13 @@ class LoginManager {
         }
     }
     
-    func fetchProfileFromFirebase(_ email: String/*, completion: @escaping (UIViewController) -> Void*/) async throws -> UIViewController {
+    func fetchProfileFromFirebase(_ email: String) async throws -> UIViewController {
         do {
-            
-            let _ = try await FirebaseManager.shared.fetchUserProfileFromFirestore(email: email)
+            let profile = try await FirebaseManager.shared.fetchUserProfileFromFirestore(email: email)
+            self.currentUserProfile = profile
+            if let data = try? JSONEncoder().encode(profile) {
+                KeychainManager.shared.save(data, service: "GayoonKim.OutPick", account: "UserProfile")
+            }
             
             try await updateLogDevID()
             try await setupDevIDListener()
@@ -137,7 +140,6 @@ class LoginManager {
             }
             
         }
-        
     }
     
     // 카카오 사용자 이메일 불러오기

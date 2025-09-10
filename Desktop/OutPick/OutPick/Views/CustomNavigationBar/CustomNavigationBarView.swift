@@ -102,7 +102,7 @@ class CustomNavigationBarView: UIView {
         NSLayoutConstraint.activate([
             container.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 20),
             container.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -20),
-            container.topAnchor.constraint(equalTo: topAnchor),
+            container.topAnchor.constraint(equalTo: topAnchor, constant: 20),
             container.bottomAnchor.constraint(equalTo: bottomAnchor),
             container.heightAnchor.constraint(equalToConstant: 44),
         ])
@@ -112,7 +112,7 @@ class CustomNavigationBarView: UIView {
         NSLayoutConstraint.activate([
             searchContainer.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 20),
             searchContainer.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -20),
-            searchContainer.topAnchor.constraint(equalTo: topAnchor),
+            searchContainer.topAnchor.constraint(equalTo: topAnchor, constant: 20),
             searchContainer.bottomAnchor.constraint(equalTo: bottomAnchor),
             searchContainer.heightAnchor.constraint(equalToConstant: 44),
         ])

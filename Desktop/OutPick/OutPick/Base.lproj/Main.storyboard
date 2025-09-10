@@ -2,6 +2,7 @@
 <document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="23727" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" useTraitCollections="YES" useSafeAreas="YES" colorMatched="YES" initialViewController="rst-5j-P7T">
     <device id="retina6_3" orientation="portrait" appearance="light"/>
     <dependencies>
+        <deployment identifier="iOS"/>
         <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="23721"/>
         <capability name="Safe area layout guides" minToolsVersion="9.0"/>
         <capability name="Stack View standard spacing" minToolsVersion="9.0"/>
@@ -367,7 +368,7 @@
                                                 <rect key="frame" x="0.0" y="0.0" width="402" height="614.33333333333337"/>
                                                 <subviews>
                                                     <stackView opaque="NO" contentMode="scaleToFill" axis="vertical" spacing="8" translatesAutoresizingMaskIntoConstraints="NO" id="vdX-Bf-rJc">
-                                                        <rect key="frame" x="20" y="20" width="362" height="193.66666666666663"/>
+                                                        <rect key="frame" x="20" y="20" width="362" height="193.66666666666666"/>
                                                         <subviews>
                                                             <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="252" text="방 이름 *" textAlignment="natural" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="Spb-SR-yhq">
                                                                 <rect key="frame" x="0.0" y="0.0" width="362" height="20.333333333333332"/>
@@ -548,7 +549,7 @@
                 </viewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="pYY-0Q-Yxb" userLabel="First Responder" customClass="UIResponder" sceneMemberID="firstResponder"/>
             </objects>
-            <point key="canvasLocation" x="-4473" y="-1391"/>
+            <point key="canvasLocation" x="-4379" y="-1449"/>
         </scene>
         <!--First Profile View Controller-->
         <scene sceneID="FHW-Qx-1ox">
@@ -655,7 +656,7 @@
                                         </constraints>
                                     </stackView>
                                     <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="yCa-1e-AkI">
-                                        <rect key="frame" x="20" y="506" width="362" height="50"/>
+                                        <rect key="frame" x="20" y="456" width="362" height="50"/>
                                         <constraints>
                                             <constraint firstAttribute="height" constant="50" id="3CE-Bd-2Va"/>
                                         </constraints>
@@ -952,7 +953,7 @@
         <!--My Menu View Controller-->
         <scene sceneID="v5D-Cc-jcn">
             <objects>
-                <viewController id="9K7-kt-9Io" customClass="MyMenuViewController" customModule="OutPick" customModuleProvider="target" sceneMemberID="viewController">
+                <viewController storyboardIdentifier="settingsVC" useStoryboardIdentifierAsRestorationIdentifier="YES" id="9K7-kt-9Io" customClass="MyMenuViewController" customModule="OutPick" customModuleProvider="target" sceneMemberID="viewController">
                     <view key="view" contentMode="scaleToFill" id="v7R-H3-6A8">
                         <rect key="frame" x="0.0" y="0.0" width="402" height="757"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
@@ -1021,6 +1022,7 @@
             <objects>
                 <navigationController storyboardIdentifier="ProfileNav" automaticallyAdjustsScrollViewInsets="NO" useStoryboardIdentifierAsRestorationIdentifier="YES" id="lbK-AM-zmR" sceneMemberID="viewController">
                     <toolbarItems/>
+                    <navigationItem key="navigationItem" id="Mkr-LB-yBz"/>
                     <navigationBar key="navigationBar" contentMode="scaleToFill" id="LP2-PE-mAY">
                         <rect key="frame" x="0.0" y="124" width="402" height="44"/>
                         <autoresizingMask key="autoresizingMask"/>

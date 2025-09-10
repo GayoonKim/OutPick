@@ -100,7 +100,8 @@ class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRe
     }
 
     private func updateCollectionView() {
-        let chatRoomsList = FirebaseManager.shared.currentChatRooms/*.sorted(by: <)*/
+//        let chatRoomsList = FirebaseManager.shared.currentChatRooms/*.sorted(by: <)*/
+        let chatRoomsList = Array(Set(FirebaseManager.shared.currentChatRooms))
         let itemBySection = [Section.main: chatRoomsList]
         
         dataSource.applySnapshotUsing(sectionIDs: [Section.main], itemsBySection: itemBySection)

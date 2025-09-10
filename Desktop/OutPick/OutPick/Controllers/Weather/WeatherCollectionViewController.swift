@@ -108,71 +108,15 @@ class HomeCollectionViewController: CustomTabBarViewController {
         case 1:
             let vc = storyboard.instantiateViewController(withIdentifier: "chatListVC")
             return vc
+            
+        case 4:
+            let vc = storyboard.instantiateViewController(withIdentifier: "settingsVC")
+            return vc
         default:
             return UIViewController()
         }
     }
-    
-//    private func switchScreen(_ index: Int) {
-//        if currentTabIndex == index {
-//            return
-//        }
-//        
-//        if let current = currentChildViewController {
-//            current.willMove(toParent: nil)
-//            current.view.removeFromSuperview()
-//            current.removeFromParent()
-//        }
-//        
-//        let newVC: UIViewController
-//        if let existing = tabViewControllers[index] {
-//            newVC = existing
-//        } else {
-//            let storyboard = UIStoryboard(name: "Main", bundle: nil)
-//            switch index {
-//            case 0:
-//                newVC = storyboard.instantiateViewController(withIdentifier: "weatherVC")
-//            case 1:
-//                newVC = storyboard.instantiateViewController(withIdentifier: "chatListVC")
-//            default:
-//                return
-//            }
-//            tabViewControllers[index] = newVC
-//        }
-//
-//        // 새 VC 추가
-//        addChild(newVC)
-//        view.insertSubview(newVC.view, belowSubview: customTabBar)
-//        newVC.view.frame = view.bounds
-//        newVC.didMove(toParent: self)
-//
-//        currentChildViewController = newVC
-//        currentTabIndex = index
-//    }
-//    
-//    private func setupCustomTabBar() {
-//        view.addSubview(customTabBar)
-//        customTabBar.translatesAutoresizingMaskIntoConstraints = false
-//        self.collectionView.translatesAutoresizingMaskIntoConstraints = false
-//        NSLayoutConstraint.activate([
-//            customTabBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-//            customTabBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-//            customTabBar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-//            customTabBar.heightAnchor.constraint(equalToConstant: 80),
-//            
-//            self.collectionView.bottomAnchor.constraint(equalTo: customTabBar.topAnchor)
-//        ])
-//        
-//        customTabBar.tabSelected
-//            .receive(on: DispatchQueue.main)
-//            .sink { [weak self] selectedIndex in
-//                guard let self = self else { return }
-//                self.switchScreen(selectedIndex)
-//                customTabBar.updateButtonStates(selectedIndex)
-//            }
-//            .store(in: &cancellables)
-//    }
-    
+
     override func collectionView(_ collectionView: UICollectionView, didEndDisplaying cell: UICollectionViewCell, forItemAt indexPath: IndexPath) {
         self.hourlyForecastImageRequestTask[indexPath]?.cancel()
         self.dailyForecastImageRequestTask[indexPath]?.cancel()

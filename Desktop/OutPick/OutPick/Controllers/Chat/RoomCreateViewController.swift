@@ -63,8 +63,7 @@ class RoomCreateViewController: UIViewController, ChatModalAnimatable {
     
     override func viewDidLoad() {
         super.viewDidLoad()
-        
-        self.attachInteractiveDismissGesture()
+//        self.attachInteractiveDismissGesture()
         
         setupCustomNavigationBar()
         setupTextView(roomNameTextView)
@@ -417,8 +416,8 @@ extension RoomCreateViewController: UIImagePickerControllerDelegate & UINavigati
     @objc func cancelButtonTapped() {
         let alert = UIAlertController(title: "채팅방 개설을 취소하시겠어요?", message: nil, preferredStyle: .alert)
         
-        alert.addAction(UIAlertAction(title: "취소", style: .default, handler: nil))
-        alert.addAction(UIAlertAction(title: "나가기", style: .destructive, handler:  { _ in
+        alert.addAction(UIAlertAction(title: "계속 작성하기", style: .default, handler: nil))
+        alert.addAction(UIAlertAction(title: "개설 취소하기", style: .destructive, handler:  { _ in
             ChatModalTransitionManager.dismiss(from: self)
         }))
         

@@ -34,7 +34,7 @@ class ChatUIView: UIView {
         textView.translatesAutoresizingMaskIntoConstraints = false
         textView.textContainer.lineBreakMode = .byWordWrapping
         textView.textContainer.lineFragmentPadding = 0
-        textView.textContainerInset = UIEdgeInsets(top: 12, left: 15, bottom: 10, right: 15)
+        textView.textContainerInset = UIEdgeInsets(top: 13.5, left: 15, bottom: 13.5, right: 15)
 
         return textView
     }()
@@ -54,7 +54,7 @@ class ChatUIView: UIView {
     
     private var messageTextViewHeightConstraint: NSLayoutConstraint!
     
-    private(set) var minHeight: CGFloat = 40
+    private(set) var minHeight: CGFloat = 45
     private(set) var maxHeight: CGFloat = 120
     
     override init(frame: CGRect) {
@@ -76,6 +76,7 @@ class ChatUIView: UIView {
     
     private func setupChatUIView() {
         layer.masksToBounds = true
+        self.backgroundColor = .white
         
         addSubview(attachmentButton)
         addSubview(messageTextView)
@@ -89,16 +90,21 @@ class ChatUIView: UIView {
             attachmentButton.centerYAnchor.constraint(equalTo: bottomAnchor, constant: -minHeight / 2),
             attachmentButton.widthAnchor.constraint(equalToConstant: 40),
             attachmentButton.heightAnchor.constraint(equalTo: attachmentButton.widthAnchor),
+            attachmentButton.topAnchor.constraint(equalTo: topAnchor, constant: 5),
+            attachmentButton.bottomAnchor.constraint(equalTo: bottomAnchor, constant: 5),
+            
 
-            messageTextView.topAnchor.constraint(equalTo: topAnchor, constant: 3),
+            messageTextView.topAnchor.constraint(equalTo: topAnchor, constant: 5),
             messageTextView.leadingAnchor.constraint(equalTo: attachmentButton.trailingAnchor, constant: 10),
             messageTextView.trailingAnchor.constraint(equalTo: sendButton.leadingAnchor, constant: -10),
-            messageTextView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            messageTextView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -5),
             
             sendButton.trailingAnchor.constraint(equalTo: trailingAnchor),
             sendButton.centerYAnchor.constraint(equalTo: bottomAnchor, constant: -minHeight / 2),
             sendButton.widthAnchor.constraint(equalToConstant: 40),
             sendButton.heightAnchor.constraint(equalTo: sendButton.widthAnchor),
+            sendButton.topAnchor.constraint(equalTo: topAnchor, constant: 5),
+            sendButton.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -5)
         ])
         
         messageTextView.delegate = self

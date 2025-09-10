@@ -9,6 +9,7 @@ import UIKit
 import KakaoSDKUser
 import KakaoSDKCommon
 import FirebaseAuth
+import GoogleSignIn
 
 class MyMenuViewController: UIViewController {
 
@@ -26,6 +27,19 @@ class MyMenuViewController: UIViewController {
     @IBAction func logOutBtnTapped(_ sender: UIButton) {
         KeychainManager.shared.delete(service: "GayoonKim.OutPick", account: "UserProfile")
         
+        LoginManager.shared.getGoogleEmail { result in
+            if result {
+                do {
+                    try Auth.auth().signOut()
+                    GIDSignIn.sharedInstance.signOut()
+                    self.goToLoginScreen()
+                } catch {
+                    print("Sign out error: \(error)")
+                    self.goToLoginScreen()
+                }
+            }
+        }
+        
         LoginManager.shared.getKakaoEmail { result in
             if result {
                 if UserApi.isKakaoTalkLoginAvailable() {
@@ -35,43 +49,13 @@ class MyMenuViewController: UIViewController {
                                case .ClientFailed(let reason, _) = sdkError,
                                case .TokenNotFound = reason {
                                 print("이미 로그아웃 상태 (토큰 없음), 무시")
-                            } else {
-                                print("Kakao logout error: \(error)")
                             }
-                            // regardless of error, proceed to login screen
-                            self.goToLoginScreen()
-                        } else {
-                            print("logout() success.")
-                            self.goToLoginScreen()
                         }
                     }
-                } else {
-                    print("카카오톡 로그인이 아니었음 → 그냥 로그인 화면으로 이동")
-                    self.goToLoginScreen()
                 }
-            } else {
-                let firebaseAuth = Auth.auth()
-                do {
-                  try firebaseAuth.signOut()
-                  let mainStoryboard = UIStoryboard(name: "Main", bundle: nil)
-                  let loginViewController = mainStoryboard.instantiateViewController(withIdentifier: "LoginVC")
-                  self.view.window?.rootViewController = loginViewController
-                  self.view.window?.makeKeyAndVisible()
-                } catch let signOutError as NSError {
-                  print("Error signing out: %@", signOutError)
-                }
+                
+                self.goToLoginScreen()
             }
         }
     }
-    
-    /*
-    // MARK: - Navigation
-
-    // In a storyboard-based application, you will often want to do a little preparation before navigation
-    override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
-        // Get the new view controller using segue.destination.
-        // Pass the selected object to the new view controller.
-    }
-    */
-
 }
