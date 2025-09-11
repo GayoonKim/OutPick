@@ -23,55 +23,10 @@ class ChatCustomPopUpMenu: UIView {
         return sv
     }()
 
-    private let replyButton: UIButton = {
-        let button = UIButton(type: .system)
-        button.setTitle("답장", for: .normal)
-        button.semanticContentAttribute = .forceRightToLeft
-        button.titleLabel?.font = UIFont.systemFont(ofSize: 12, weight: .medium)
-        button.tintColor = .white
-        
-        let config = UIImage.SymbolConfiguration(pointSize: 10)
-        let image = UIImage(systemName: "arrowshape.turn.up.right.fill", withConfiguration: config)?.withRenderingMode(.alwaysTemplate)
-        button.setImage(image, for: .normal)
-        button.titleEdgeInsets = UIEdgeInsets(top: 0, left: -50, bottom: 0, right: 50)
-        button.imageEdgeInsets = UIEdgeInsets(top: 0, left: 50, bottom: 0, right: -50)
-        //        button.contentEdgeInsets = UIEdgeInsets(top: 0, left: 50, bottom: 0, right: -50)
+    private lazy var replyButton = UIButton.menuButton(title: "답장", systemImageName: "arrowshape.turn.up.right.fill")
+    private lazy var copyButton = UIButton.menuButton(title: "복사", systemImageName: "document.on.clipboard")
+    private lazy var deleteButton = UIButton.menuButton(title: "삭제", systemImageName: "exclamationmark.triangle", tintColor: .red, isDestructive: true)
 
-        return button
-    }()
-
-    private let copyButton: UIButton = {
-        let button = UIButton(type: .system)
-        button.setTitle("복사", for: .normal)
-        button.semanticContentAttribute = .forceRightToLeft
-        button.titleLabel?.font = UIFont.systemFont(ofSize: 12, weight: .medium)
-        button.tintColor = .white
-        
-        let config = UIImage.SymbolConfiguration(pointSize: 10)
-        let image = UIImage(systemName: "document.on.clipboard", withConfiguration: config)?.withRenderingMode(.alwaysTemplate)
-        button.setImage(image, for: .normal)
-        button.titleEdgeInsets = UIEdgeInsets(top: 0, left: -50, bottom: 0, right: 50)
-        button.imageEdgeInsets = UIEdgeInsets(top: 0, left: 50, bottom: 0, right: -50)
-        
-        return button
-    }()
-    
-    private let deleteButton: UIButton = {
-        let button = UIButton(type: .system)
-        button.setTitle("삭제", for: .normal)
-        button.semanticContentAttribute = .forceRightToLeft
-        button.titleLabel?.font = UIFont.systemFont(ofSize: 12, weight: .medium)
-        button.tintColor = .red
-        
-        let config = UIImage.SymbolConfiguration(pointSize: 10)
-        let image = UIImage(systemName: "exclamationmark.triangle", withConfiguration: config)?.withRenderingMode(.alwaysTemplate)
-        button.setImage(image, for: .normal)
-        button.titleEdgeInsets = UIEdgeInsets(top: 0, left: -50, bottom: 0, right: 50)
-        button.imageEdgeInsets = UIEdgeInsets(top: 0, left: 50, bottom: 0, right: -50)
-        
-        return button
-    }()
-    
     private func makeSeparator() -> UIView {
         let view = UIView()
         view.backgroundColor = .white
@@ -131,5 +86,35 @@ class ChatCustomPopUpMenu: UIView {
     
     @objc private func deleteTapped() {
         onDelete?()
+    }
+}
+
+extension UIButton.Configuration {
+    static func menuButton(title: String, systemImageName: String, isDestructive: Bool = false) -> UIButton.Configuration {
+        let symBolConfig = UIImage.SymbolConfiguration(pointSize: 10)
+        let image = UIImage(systemName: systemImageName, withConfiguration: symBolConfig)?.withRenderingMode(.alwaysTemplate)
+        
+        var config = UIButton.Configuration.plain()
+        config.contentInsets = NSDirectionalEdgeInsets(top: 5, leading: 5, bottom: 5, trailing: 5)
+        config.image = image
+        config.imagePlacement = .trailing
+        config.imagePadding = 100
+        
+        var attrTitle = AttributedString(title)
+        attrTitle.font = .systemFont(ofSize: 12.0, weight: .medium)
+        config.attributedTitle = attrTitle
+        config.titleAlignment = .leading
+        config.baseForegroundColor = isDestructive ? .red : .white
+        
+        return config
+    }
+}
+
+extension UIButton {
+    static func menuButton(title: String, systemImageName: String, tintColor: UIColor = .white, isDestructive: Bool = false) -> UIButton {
+        let btn = UIButton(type: .system)
+        btn.configuration = .menuButton(title: title, systemImageName: systemImageName, isDestructive: isDestructive)
+        
+        return btn
     }
 }

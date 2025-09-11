@@ -33,7 +33,7 @@ class CustomTabBarViewController: UICollectionViewController {
             customTabBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             customTabBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             customTabBar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            customTabBar.heightAnchor.constraint(equalToConstant: 80),
+            customTabBar.heightAnchor.constraint(equalToConstant: 60),
         ])
         
         customTabBar.updateButtonStates(0)

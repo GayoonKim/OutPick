@@ -33,19 +33,19 @@ class ChatMessageCollectionView: UICollectionView {
     private static func configureLayout() -> UICollectionViewCompositionalLayout {
         let itemSize = NSCollectionLayoutSize(
             widthDimension: .fractionalWidth(1),
-            heightDimension: .estimated(50)
+            heightDimension: .estimated(70)
         )
         let item = NSCollectionLayoutItem(layoutSize: itemSize)
         
         let groupSize = NSCollectionLayoutSize(
             widthDimension: .fractionalWidth(1),
-            heightDimension: .estimated(50)
+            heightDimension: .estimated(70)
         )
         let group = NSCollectionLayoutGroup.vertical(layoutSize: groupSize, subitems: [item])
         
         let section = NSCollectionLayoutSection(group: group)
         section.interGroupSpacing = 5
-//        section.contentInsets = NSDirectionalEdgeInsets(top: 12, leading: 0, bottom: 12, trailing: 0)
+        section.contentInsets = NSDirectionalEdgeInsets(top: 12, leading: 0, bottom: 12, trailing: 0)
         
         return UICollectionViewCompositionalLayout(section: section)
     }
@@ -66,7 +66,7 @@ class ChatMessageCollectionView: UICollectionView {
             let lastIndex = self.numberOfItems(inSection: 0) - 1
             let lastIndexPath = IndexPath(item: lastIndex, section: 0)
             
-            self.scrollToItem(at: lastIndexPath, at: .bottom, animated: true)
+            self.scrollToItem(at: lastIndexPath, at: .bottom, animated: false)
         }
         
     }

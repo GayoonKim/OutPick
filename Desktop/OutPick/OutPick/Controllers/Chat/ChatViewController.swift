@@ -122,8 +122,17 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     private lazy var copyView: ChatCopyView = {
         let view = ChatCopyView()
-        view.alpha = 0
         view.translatesAutoresizingMaskIntoConstraints = false
+        view.clipsToBounds = true
+        view.isHidden = true
+        
+        return view
+    }()
+    
+    private lazy var replyView: ChatReplyView = {
+        let view = ChatReplyView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.clipsToBounds = true
         
         return view
     }()
@@ -181,6 +190,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         setupCustomNavigationBar()
         decideJoinUI()
         setupAttachmentView()
+        
         bindMessagePublishers()
         bindKeyboardPublisher()
         bindSearchEvents()
@@ -193,9 +203,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        
-//                self.addKeyboardObserver()
-        
         Task {
             // 이미 연결된 경우에는 room join과 listener 설정만 수행
             if let room = self.room,
@@ -231,9 +238,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        
-//                self.removeKeyboardObserver()
-        
+
         if let topVC = self.navigationController?.topViewController,
            topVC is ChatRoomSettingCollectionView {
             return
@@ -259,6 +264,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         super.viewDidDisappear(animated)
         
         cancellables.removeAll()
+    }
+    
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        self.copyView.layer.cornerRadius = 15
     }
     
     //MARK: 메시지 관련
@@ -321,10 +331,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         
         view.bringSubviewToFront(chatUIView)
         view.bringSubviewToFront(customNavigationBar)
-        chatMessageCollectionView.contentInset.top = customNavigationBar.frame.height
+        chatMessageCollectionView.contentInset.top = customNavigationBar.frame.height - 20
         chatMessageCollectionView.contentInset.bottom = chatUIView.frame.height + 10
         
         NSLayoutConstraint.deactivate(joinConsraints)
+        setupCopyReplyDeleteView()
     }
     
     @MainActor
@@ -912,8 +923,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     private func handleReply(message: ChatMessage) {
         print(#function, "답장:", message)
-        
-        // 답장 로직 구현
+        replyView.isHidden = false
     }
     
     private func handleCopy(message: ChatMessage) {
@@ -935,43 +945,53 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
     
     @MainActor
+    private func setupReplyUI() {
+        
+    }
+    
+    @MainActor
     private func showCopySuccess() {
-        setupReplyView()
+        if copyView.isHidden { copyView.isHidden = false }
         
-        // 1. 중앙에 배치
-        view.bringSubviewToFront(copyView)
-        
-        // 2. 초기 상태: 보이지 않고, 약간 축소 상태
+        // 초기 상태: 보이지 않고, 약간 축소 상태
         self.copyView.alpha = 0
         self.copyView.transform = CGAffineTransform(scaleX: 0.8, y: 0.8)
         
-        // 3. fade-in + 확대 애니메이션
+        // fade-in + 확대 애니메이션
         UIView.animate(withDuration: 0.5, animations: {
             self.copyView.alpha = 1
             self.copyView.transform = .identity
         }) { _ in
-            // 4. 짧은 지연 후 fade-out + 확대 애니메이션
-            UIView.animate(withDuration: 0.2, delay: 0.6, options: [], animations: {
+            // fade-out만, scale 변화 없이 진행
+            UIView.animate(withDuration: 0.5, delay: 0.6, options: [], animations: {
                 self.copyView.alpha = 0
-                self.copyView.transform = CGAffineTransform(scaleX: 1.2, y: 1.2)
-            }) { _ in
-                // 5. 초기 상태로 복원
+            }, completion: { _ in
+                // 초기 상태로 transform은 유지 (확대 상태 유지)
                 self.copyView.transform = CGAffineTransform(scaleX: 0.8, y: 0.8)
-            }
+            })
         }
     }
     
-    private func setupReplyView() {
+    private func setupCopyReplyDeleteView() {
         view.addSubview(copyView)
-        
         NSLayoutConstraint.activate([
             copyView.widthAnchor.constraint(equalToConstant: UIScreen.main.bounds.width * 0.7),
             copyView.heightAnchor.constraint(equalTo: chatUIView.heightAnchor),
             
             copyView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            copyView.bottomAnchor.constraint(equalTo: chatUIView.topAnchor, constant: -20),
+            copyView.bottomAnchor.constraint(equalTo: chatUIView.topAnchor, constant: -10),
         ])
-        copyView.layer.cornerRadius = copyView.frame.width / 2
+        view.bringSubviewToFront(copyView)
+        
+        view.addSubview(replyView)
+        NSLayoutConstraint.activate([
+            replyView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            replyView.bottomAnchor.constraint(equalTo: chatUIView.topAnchor, constant: -10),
+            replyView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 10),
+            replyView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -10),
+            replyView.heightAnchor.constraint(equalToConstant: 43)
+        ])
+        view.bringSubviewToFront(replyView)
     }
     
     //MARK: Diffable Data Source
@@ -1068,6 +1088,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             }
         }
         
+        DispatchQueue.main.async {
+            self.chatMessageCollectionView.scrollToBottom()
+        }
+        
     }
     
     private func updateCollectionView(with newItems: [Item]) {
@@ -1080,7 +1104,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
             guard let self = self else { return }
             //            print("************************ Apply 완료, snapshot items: \(snapshot.itemIdentifiers) ************************")
-            chatMessageCollectionView.scrollToBottom()
+//            chatMessageCollectionView.scrollToBottom()
         }
     }
     
@@ -1143,7 +1167,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             }
 
             let keyboardFrame = keyboardInfo.cgRectValue
-            let keyboardFrameY = keyboardFrame.origin.y
             let keyboardFrameHeight = keyboardFrame.height
 
             UIView.animate(withDuration: animationDuration) {
@@ -1154,7 +1177,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     @objc private func keyboardWillHide(_ sender: Notification) {
         guard let animationDuration = sender.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double,
-              let keyboardFrame = sender.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
+              let _ = sender.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
         
         UIView.animate(withDuration: animationDuration) {
             self.chatMessageCollectionView.frame.origin.y = 0
@@ -1194,7 +1217,7 @@ private extension ChatViewController {
             customNavigationBar.topAnchor.constraint(equalTo: self.view.topAnchor),
             customNavigationBar.leadingAnchor.constraint(equalTo: self.view.leadingAnchor),
             customNavigationBar.trailingAnchor.constraint(equalTo: self.view.trailingAnchor),
-            customNavigationBar.heightAnchor.constraint(equalToConstant: 60)
+            customNavigationBar.heightAnchor.constraint(equalToConstant: 75)
         ])
         
         guard let room = self.room else { return }

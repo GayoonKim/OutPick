@@ -39,6 +39,8 @@ class ChatCopyView: UIView {
     private func setupViews() {
         addSubview(container)
         container.addSubview(copyLabel)
+        container.alpha = 0.5
+        container.layer.opacity = 0.5
         
         NSLayoutConstraint.activate([
             container.topAnchor.constraint(equalTo: topAnchor),

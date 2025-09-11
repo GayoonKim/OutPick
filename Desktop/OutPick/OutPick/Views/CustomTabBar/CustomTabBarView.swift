@@ -49,7 +49,7 @@ class CustomTabBarView: UIView {
             stack.topAnchor.constraint(equalTo: topAnchor),
             stack.leadingAnchor.constraint(equalTo: leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: trailingAnchor),
-            stack.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor)
+            stack.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
     }
     

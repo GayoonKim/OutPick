@@ -9,7 +9,7 @@ import UIKit
 
 private var interactiveTransitionKey: UInt8 = 0
 
-extension UINavigationController: UINavigationControllerDelegate {
+extension UINavigationController: @retroactive UINavigationControllerDelegate {
     private var interactiveTransition: UIPercentDrivenInteractiveTransition? {
         get { objc_getAssociatedObject(self, &interactiveTransitionKey) as? UIPercentDrivenInteractiveTransition }
         set { objc_setAssociatedObject(self, &interactiveTransitionKey, newValue, .OBJC_ASSOCIATION_RETAIN_NONATOMIC) }

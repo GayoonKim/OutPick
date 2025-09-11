@@ -170,7 +170,7 @@ class FirebaseStorageManager {
             return cachedImage
         }
         
-        let month = DateManager.shared.getMonthFromTimestamp(date: createdDate)
+//        let month = DateManager.shared.getMonthFromTimestamp(date: createdDate)
         
         return try await withCheckedThrowingContinuation { continuation in
             let imageRef = storage.reference().child(imagePath)

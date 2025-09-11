@@ -10,7 +10,7 @@ import ObjectiveC
 
 private var interactionControllerKey: UInt8 = 0
 
-extension UIViewController: UIViewControllerTransitioningDelegate {
+extension UIViewController: @retroactive UIViewControllerTransitioningDelegate {
     private var interactiveTransition: UIPercentDrivenInteractiveTransition? {
         get { objc_getAssociatedObject(self, &interactionControllerKey) as? UIPercentDrivenInteractiveTransition }
         set { objc_setAssociatedObject(self, &interactionControllerKey, newValue, .OBJC_ASSOCIATION_RETAIN_NONATOMIC) }
