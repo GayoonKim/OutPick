@@ -35,7 +35,7 @@ class SocketIOManager {
     
     private init() {
         //manager = SocketManager(socketURL: URL(string: "http://127.0.0.1:3000")!, config: [.log(true), .compress])
-        manager = SocketManager(socketURL: URL(string: "http://192.168.123.199:3000")!, config: [.log(true), .compress])
+        manager = SocketManager(socketURL: URL(string: "http://192.168.123.156:3000")!, config: [.log(true), .compress])
         socket = manager.defaultSocket
         
         socket.on(clientEvent: .connect) {data, ack in
@@ -145,13 +145,13 @@ class SocketIOManager {
         let socketData = message.toSocketRepresentation()
         print("📤 전송할 소켓 데이터: \(socketData)")  // 디버깅용
         
-        socket.emitWithAck("chat message", message.toSocketRepresentation()).timingOut(after: 5) { ackResponse in
-            DispatchQueue.main.async {
+        Task { @MainActor in
+            socket.emitWithAck("chat message", message.toSocketRepresentation()).timingOut(after: 5) { ackResponse in
                 if let ackDict = ackResponse.first as? [String:Any],
                    let success = ackDict["success"] as? Bool, success {
                     self.messageSubject.send(message)
                 } else {
-//                    print(#function, "********** 메시지 전송 타임아웃 **********")
+                    //                    print(#function, "********** 메시지 전송 타임아웃 **********")
                     var failedMessage = message
                     failedMessage.isFailed = true
                     self.messageSubject.send(failedMessage)
@@ -204,7 +204,7 @@ class SocketIOManager {
             
             let finalAttachments = attachments.compactMap { $0 }
 //            let images = finalAttachments.compactMap{ $0.toUIImage() }
-            let message = ChatMessage(roomID: room.ID ?? "", senderID: LoginManager.shared.getUserEmail, senderNickname: LoginManager.shared.currentUserProfile?.nickname ?? "", msg: "", sentAt: Date(), attachments: finalAttachments)
+            let message = ChatMessage(roomID: room.ID ?? "", senderID: LoginManager.shared.getUserEmail, senderNickname: LoginManager.shared.currentUserProfile?.nickname ?? "", msg: "", sentAt: Date(), attachments: finalAttachments, replyTo: nil)
             
             socket.emitWithAck("send images", ["roomID": message.roomID, "senderID": message.senderID, "senderNickName": message.senderNickname, "sentAt": "\(message.sentAt ?? Date())", "images": imageDataArray]).timingOut(after: 5) { ackResponse in
                 
@@ -249,6 +249,7 @@ class SocketIOManager {
             msg: "",
             sentAt: Date(),
             attachments: localAttachments,
+            replyTo: nil,
             isFailed: true
         )
 
@@ -279,6 +280,8 @@ class SocketIOManager {
                 return
             }
             
+            let replyTo = messageData["replyTo"] as? String
+            
             let message = ChatMessage(
                 roomID: roomID,
                 senderID: senderID,
@@ -286,14 +289,13 @@ class SocketIOManager {
                 msg: messageText,
                 sentAt: Date(),
                 attachments: [],
+                replyTo: replyTo
             )
             
             if senderID == LoginManager.shared.getUserEmail { return }
             
-            Task.detached {
-                await MainActor.run {
-                    self.messageSubject.send(message)
-                }
+            Task { @MainActor in
+                self.messageSubject.send(message)
             }
         }
         
@@ -305,7 +307,8 @@ class SocketIOManager {
                   let roomID = data["roomID"] as? String,
                   let senderID = data["senderID"] as? String,
                   let senderNickName = data["senderNickName"] as? String,
-                  let sentAtString = data["sentAt"] as? String else { return }
+                  let sentAtString = data["sentAt"] as? String,
+                  let replyTo = data["replyTo"] as? String else { return }
             
             if senderID == LoginManager.shared.getUserEmail { return }
             
@@ -322,7 +325,7 @@ class SocketIOManager {
                 return Attachment(type: .image, fileName: imageName, fileData: imageData)
             }
 
-            let message = ChatMessage(roomID: roomID, senderID: senderID, senderNickname: senderNickName, msg: nil, sentAt: sentAt, attachments: attachments)
+            let message = ChatMessage(roomID: roomID, senderID: senderID, senderNickname: senderNickName, msg: nil, sentAt: sentAt, attachments: attachments, replyTo: replyTo)
             
             Task.detached {
                 await MainActor.run {
@@ -353,6 +356,7 @@ class SocketIOManager {
                     let senderID = failedData["senderID"] as? String ?? ""
                     let senderNickName = failedData["senderNickName"] as? String ?? ""
                     let msg = failedData["msg"] as? String ?? ""
+                    let replyTo = failedData["replyTo"] as? String
                     
                     var failedMessage = ChatMessage(
                         roomID: roomID,
@@ -360,7 +364,8 @@ class SocketIOManager {
                         senderNickname: senderNickName,
                         msg: msg,
                         sentAt: Date(),
-                        attachments: []
+                        attachments: [],
+                        replyTo: replyTo
                     )
                     failedMessage.isFailed = true
                     
@@ -372,7 +377,8 @@ class SocketIOManager {
                           let senderID = failedData["senderID"] as? String,
                           let senderNickName = failedData["senderNickName"] as? String,
                           let sentAtString = failedData["sentAt"] as? String,
-                          let imageDataArray = failedData["images"] as? [[String: Any]] else {
+                          let imageDataArray = failedData["images"] as? [[String: Any]],
+                          let replyTo = failedData["replyTo"] as? String else {
                         print("이미지 실패 데이터 파싱 실패")
                         return
                     }
@@ -395,7 +401,7 @@ class SocketIOManager {
                         senderNickname: senderNickName,
                         msg: nil,
                         sentAt: sentAt,
-                        attachments: attachments
+                        attachments: attachments, replyTo: replyTo
                     )
                     failedImageMessage.isFailed = true
                     

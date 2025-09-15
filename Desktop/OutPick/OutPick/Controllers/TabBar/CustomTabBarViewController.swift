@@ -32,7 +32,7 @@ class CustomTabBarViewController: UICollectionViewController {
         NSLayoutConstraint.activate([
             customTabBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             customTabBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            customTabBar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            customTabBar.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
             customTabBar.heightAnchor.constraint(equalToConstant: 60),
         ])
         

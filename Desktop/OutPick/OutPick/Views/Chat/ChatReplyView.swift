@@ -13,7 +13,6 @@ class ChatReplyView: UIView {
         let label = UILabel()
         label.font = .systemFont(ofSize: 11, weight: .heavy)
         label.translatesAutoresizingMaskIntoConstraints = false
-        label.text = "김가윤"
         
         return label
     }()
@@ -22,7 +21,6 @@ class ChatReplyView: UIView {
         let label = UILabel()
         label.font = .systemFont(ofSize: 9, weight: .light)
         label.translatesAutoresizingMaskIntoConstraints = false
-        label.text = "안녕하세요안녕하세요안녕하세요안녕하세요안녕하세요안녕하세요안녕하세요안녕하세요안녕하세요안녕하세요"
         
         return label
     }()
@@ -81,5 +79,10 @@ class ChatReplyView: UIView {
     
     @objc private func handleCancel() {
         self.isHidden = true
+    }
+    
+    func configure(with message: ChatMessage) {
+        senderLabel.text = message.senderNickname
+        messageLabel.text = message.msg
     }
 }

@@ -43,6 +43,7 @@ final class GRDBManager {
                 t.column("sentAt", .datetime)
                 t.column("attachments", .text) // JSON string
                 t.column("isFailed", .boolean).notNull().defaults(to: false)
+                t.column("replyTo", .text)
             }
             
             try db.create(index: "idx_chatMessage_roomID_sentAt", on: "chatMessage", columns: ["roomID", "sentAt"], ifNotExists: true)
@@ -129,8 +130,8 @@ final class GRDBManager {
             try db.execute(
                 sql: """
                 INSERT OR REPLACE INTO chatMessage
-                (id, roomID, senderID, senderNickname, msg, sentAt, attachments, isFailed)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (id, roomID, senderID, senderNickname, msg, sentAt, attachments, isFailed, replyTo)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 arguments: [
                     message.ID,  // 또는 메시지 고유 ID
@@ -140,7 +141,8 @@ final class GRDBManager {
                     message.msg,
                     message.sentAt,
                     attachmentsJSON,
-                    message.isFailed
+                    message.isFailed,
+                    message.replyTo
                 ]
             )
             
@@ -188,6 +190,7 @@ final class GRDBManager {
                     msg: row["msg"],
                     sentAt: row["sentAt"],
                     attachments: attachments,
+                    replyTo: row["replyTo"],
 //                    isFailed: row["isFailed"] as? Bool ?? false
                     isFailed: (row["isFailed"] as? Int64 == 1)
                 )
@@ -215,6 +218,7 @@ final class GRDBManager {
                     msg: row["msg"],
                     sentAt: row["sentAt"],
                     attachments: attachments,
+                    replyTo: row["replyTo"],
 //                    isFailed: row["isFailed"] as? Bool ?? false
                     isFailed: (row["isFailed"] as? Int64 == 1)
                 )

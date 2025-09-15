@@ -81,6 +81,35 @@ class ChatMessageCell: UICollectionViewCell {
         return imageView
     }()
     
+    private let replyPreviewNameLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 10, weight: .heavy)
+        label.textColor = .black
+        return label
+    }()
+
+    private let replyPreviewMsgLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 9, weight: .medium)
+        label.textColor = .black
+        label.numberOfLines = 1
+        return label
+    }()
+    
+    private lazy var replyPreviewContainer: UIStackView = {
+        let separator = UIView()
+        separator.backgroundColor = .black
+        separator.heightAnchor.constraint(equalToConstant: 1).isActive = true
+        
+        let stack = UIStackView(arrangedSubviews: [replyPreviewNameLabel, replyPreviewMsgLabel, separator])
+        stack.axis = .vertical
+        stack.spacing = 4
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.isHidden = true
+        stack.setCustomSpacing(10, after: replyPreviewMsgLabel)
+        return stack
+    }()
+    
     private var highlightView: UIView?
 
     private var bubbleViewTrailingConstraint: NSLayoutConstraint?
@@ -98,6 +127,8 @@ class ChatMessageCell: UICollectionViewCell {
     private var failedIconImageViewCenterYConstraint: NSLayoutConstraint?
     private var failedIconImageViewTrainlingConstraint: NSLayoutConstraint?
     
+    private var messageLabelTopConsraint: NSLayoutConstraint?
+    
     override init(frame: CGRect) {
         super.init(frame: frame)
         
@@ -106,8 +137,10 @@ class ChatMessageCell: UICollectionViewCell {
         contentView.addSubview(bubbleView)
         contentView.addSubview(imagesPreviewCollectionView)
         contentView.addSubview(failedIconImageView)
+        bubbleView.addSubview(replyPreviewContainer)
         bubbleView.addSubview(messageLabel)
         
+        messageLabelTopConsraint = messageLabel.topAnchor.constraint(equalTo: bubbleView.topAnchor, constant: 10)
         NSLayoutConstraint.activate([
             profileImageView.widthAnchor.constraint(equalToConstant: 40),
             profileImageView.heightAnchor.constraint(equalToConstant: 40),
@@ -117,7 +150,11 @@ class ChatMessageCell: UICollectionViewCell {
             nickNameLabel.topAnchor.constraint(equalTo: profileImageView.topAnchor),
             nickNameLabel.leadingAnchor.constraint(equalTo: profileImageView.trailingAnchor, constant: 5),
             
-            messageLabel.topAnchor.constraint(equalTo: bubbleView.topAnchor, constant: 10),
+            replyPreviewContainer.topAnchor.constraint(equalTo: bubbleView.topAnchor, constant: 10),
+            replyPreviewContainer.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 10),
+            replyPreviewContainer.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor, constant: -10),
+            
+            messageLabelTopConsraint!,
             messageLabel.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 10),
             messageLabel.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor, constant: -10),
             messageLabel.bottomAnchor.constraint(equalTo: bubbleView.bottomAnchor, constant: -10),
@@ -174,9 +211,13 @@ class ChatMessageCell: UICollectionViewCell {
         failedIconImageViewTrainlingConstraint?.isActive = false
         failedIconImageViewCenterYConstraint = nil
         failedIconImageViewTrainlingConstraint = nil
+        
+        replyPreviewContainer.isHidden = true
+        replyPreviewNameLabel.text = nil
+        replyPreviewMsgLabel.text = nil
     }
     
-    func configureWithMessage(with message: ChatMessage) {
+    func configureWithMessage(with message: ChatMessage, originalPreviewProvider: (() -> (String, String)?)?) {
         messageLabel.text = message.msg
         imagesPreviewCollectionView.isHidden = true
         
@@ -227,9 +268,66 @@ class ChatMessageCell: UICollectionViewCell {
             failedIconImageViewTrainlingConstraint
         ].compactMap{ $0 })
         
+        if let (name, text) = originalPreviewProvider?() {
+            replyPreviewContainer.isHidden = false
+            replyPreviewNameLabel.text = name
+            replyPreviewMsgLabel.text = text
+            
+            NSLayoutConstraint.deactivate([messageLabelTopConsraint!])
+            messageLabelTopConsraint = messageLabel.topAnchor.constraint(equalTo: replyPreviewContainer.bottomAnchor, constant: 5)
+            NSLayoutConstraint.activate([ messageLabelTopConsraint! ])
+        } else {
+            replyPreviewContainer.isHidden = true
+        }
+        
         self.setNeedsLayout()
         self.layoutIfNeeded()
     }
+    
+//    private func setupReplyView(_ originalPreviewProvider: (() -> (String, String)?)?) {
+//        // replyPreviewView: 작은 UIView 또는 UILabel
+//        guard let originalPreview = originalPreviewProvider?() else { return }
+//
+//        NSLayoutConstraint.deactivate([ messageLabelTopConsraint! ])
+//        
+//        let replyPreviewName = UILabel()
+//        replyPreviewName.font = .systemFont(ofSize: 10, weight: .medium)
+//        replyPreviewName.textColor = .black
+//        replyPreviewName.text = "\(originalPreview.0)"
+//        replyPreviewName.translatesAutoresizingMaskIntoConstraints = false
+//        
+//        let replyPreviewMsg = UILabel()
+//        replyPreviewMsg.font = .systemFont(ofSize: 9, weight: .light)
+//        replyPreviewMsg.textColor = .black
+//        replyPreviewMsg.text = "\(originalPreview.1)"
+//        replyPreviewMsg.translatesAutoresizingMaskIntoConstraints = false
+//        
+//        let seperator = makeSeparator()
+//        
+//        messageLabelTopConsraint = messageLabel.topAnchor.constraint(equalTo: seperator.bottomAnchor, constant: 3)
+//        
+//        bubbleView.addSubview(seperator)
+//        bubbleView.addSubview(replyPreviewName)
+//        bubbleView.addSubview(replyPreviewMsg)
+//        NSLayoutConstraint.activate([
+//            replyPreviewName.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 10),
+//            replyPreviewName.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor, constant: -10),
+//            replyPreviewName.topAnchor.constraint(equalTo: bubbleView.topAnchor, constant: 10),
+//            replyPreviewName.centerXAnchor.constraint(equalTo: messageLabel.centerXAnchor),
+//            
+//            replyPreviewMsg.topAnchor.constraint(equalTo: replyPreviewName.bottomAnchor, constant: 3),
+//            replyPreviewMsg.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 10),
+//            replyPreviewMsg.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor, constant: -10),
+//            replyPreviewMsg.centerXAnchor.constraint(equalTo: messageLabel.centerXAnchor),
+//            
+//            seperator.topAnchor.constraint(equalTo: replyPreviewMsg.bottomAnchor, constant: 10),
+//            seperator.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 10),
+//            seperator.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor, constant: -10),
+//            messageLabelTopConsraint!
+//        ])
+//        
+//        contentView.bringSubviewToFront(seperator)
+//    }
     
     func configureWithImage(with message: ChatMessage) {
         bubbleView.isHidden = true
@@ -367,6 +465,14 @@ class ChatMessageCell: UICollectionViewCell {
             messageLabel.attributedText = NSAttributedString(string: text)
             setHightlightedOverlay(false) // overlay도 제거
         }
+    }
+    
+    private func makeSeparator() -> UIView {
+        let view = UIView()
+        view.backgroundColor = .black
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.heightAnchor.constraint(equalToConstant: 0.5 / UIScreen.main.scale).isActive = true
+        return view
     }
 }
 

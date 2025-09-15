@@ -167,9 +167,13 @@ class SecondProfileViewController: UIViewController {
     }
     
     @IBAction func completeButtonTapped(_ sender: UIButton) {
+        UserDefaults.standard.removeObject(forKey: "savedProfileImage")
+        UserDefaults.standard.removeObject(forKey: "savedNickName")
+        
         if let nickname = nicknameTextField.text {
             userProfile.nickname = nickname
         }
+        userProfile.joinedRooms = []
         
         if Auth.auth().currentUser?.providerData.first?.providerID == "google.com" {
             LoginManager.shared.getGoogleEmail { success in
@@ -188,9 +192,6 @@ class SecondProfileViewController: UIViewController {
                 }
             }
         }
-        
-        UserDefaults.standard.removeObject(forKey: "savedProfileImage")
-        UserDefaults.standard.removeObject(forKey: "savedNickName")
     }
     
     private func saveUserProfile(email: String) {

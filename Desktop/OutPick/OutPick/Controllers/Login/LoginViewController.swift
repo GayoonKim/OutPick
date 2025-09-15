@@ -111,20 +111,19 @@ class LoginViewController: UIViewController {
                 try await FirebaseManager.shared.listenToRooms()
                 
                 let screen = try await LoginManager.shared.fetchProfileFromFirebase(LoginManager.shared.getUserEmail)
+                guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                      let window = scene.windows.first else { return }
 
-                if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                   let window = scene.windows.first {
-                    UIView.transition(
-                        with: window,
-                        duration: 0.1,
-                        options: .transitionCrossDissolve,
-                        animations: {
-                            window.rootViewController = screen
-                        },
-                        completion: { _ in self.commonLogingProcess() }
-                    )
-                    window.makeKeyAndVisible()
-                }
+                UIView.transition(with: window,
+                                  duration: 0.3,
+                                  options: .transitionCrossDissolve,
+                                  animations: {
+                                      window.rootViewController = screen
+                                  },
+                                  completion: nil)
+
+                window.makeKeyAndVisible()
+    
             } catch {
                 print("로그인 후처리 실패: \(error)")
                 AlertManager.showAlertNoHandler(title: "로그인 실패", message: "로그인에 실패했습니다. 다시 시도해주세요.", viewController: self)
@@ -132,12 +131,12 @@ class LoginViewController: UIViewController {
         }
     }
     
-    private func showLoginViewController() {
-        let mainStoryboard = UIStoryboard(name: "Main", bundle: nil)
-        let loginViewController = mainStoryboard.instantiateViewController(withIdentifier: "LoginVC")
-        
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
+//    private func showLoginViewController() {
+//        let mainStoryboard = UIStoryboard(name: "Main", bundle: nil)
+//        let loginViewController = mainStoryboard.instantiateViewController(withIdentifier: "LoginVC")
+//        
+//        DispatchQueue.main.async { [weak self] in
+//            guard let self = self else { return }
 //            if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
 //               let window = scene.windows.first {
 //                UIView.transition(
@@ -151,7 +150,7 @@ class LoginViewController: UIViewController {
 //                )
 //                window.makeKeyAndVisible()
 //            }
-            
-        }
-    }
+//            
+//        }
+//    }
 }

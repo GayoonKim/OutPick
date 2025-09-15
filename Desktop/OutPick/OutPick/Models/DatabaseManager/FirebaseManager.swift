@@ -69,6 +69,8 @@ class FirebaseManager {
             return nil
         }
         
+        print(#function, "✅✅✅✅✅사용자 문서 불러오기 성공", user_doc)
+        
         return user_doc
     }
     
@@ -577,7 +579,6 @@ class FirebaseManager {
                     transaction.updateData(["participantIDs": FieldValue.arrayUnion([LoginManager.shared.getUserEmail])], forDocument: room_doc.reference)
                     
                     return nil
-                    
                 })
                 
                 print(#function, "참여자 업데이트 성공")

@@ -36,6 +36,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     private var isUserInCurrentRoom = false
     
+    private var replyingToMessageID: String?
+    private var messageMap: [String: ChatMessage] = [:]
+    
     enum Section: Hashable {
         case main
     }
@@ -133,6 +136,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         let view = ChatReplyView()
         view.translatesAutoresizingMaskIntoConstraints = false
         view.clipsToBounds = true
+        view.isHidden = true
         
         return view
     }()
@@ -196,9 +200,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         bindSearchEvents()
         
         chatMessageCollectionView.delegate = self
-        
-        // 키보드 레이아웃 가이드 설정
-//        view.keyboardLayoutGuide.followsUndockedKeyboard = true
     }
     
     override func viewWillAppear(_ animated: Bool) {
@@ -342,16 +343,19 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private func handleSendButtonTap() {
         guard let message = self.chatUIView.messageTextView.text,
               let room = self.room else { return }
-        DispatchQueue.main.async {
-            print(self.chatUIView.messageTextView.frame.width)
-            self.chatUIView.messageTextView.text = nil
-            self.chatUIView.updateHeight()
-        }
+    
+        self.chatUIView.messageTextView.text = nil
+        self.chatUIView.updateHeight()
         
-        let newMessage = ChatMessage(roomID: room.ID ?? "", senderID: LoginManager.shared.getUserEmail, senderNickname: LoginManager.shared.currentUserProfile?.nickname ?? "", msg: message, sentAt: Date(), attachments: [])
+        let newMessage = ChatMessage(roomID: room.ID ?? "", senderID: LoginManager.shared.getUserEmail, senderNickname: LoginManager.shared.currentUserProfile?.nickname ?? "", msg: message, sentAt: Date(), attachments: [], replyTo: replyingToMessageID ?? "")
         
         SocketIOManager.shared.sendMessages(room, newMessage)
         chatUIView.sendButton.isEnabled = false
+        
+        if let _ = replyingToMessageID {
+            replyingToMessageID = nil
+            replyView.isHidden = true
+        }
     }
     
     @MainActor
@@ -558,13 +562,12 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
     
     
-    //MARK: 초기 UI 설정 관련
+    // MARK: 초기 UI 설정 관련
     @MainActor
     private func decideJoinUI() {
         guard let room = room else { return }
         
         Task {
-            // 이제 메인 스레드니까 바로 UI 업데이트 가능
             if room.participants.contains(LoginManager.shared.getUserEmail) {
                 setupChatUI()
                 chatUIView.isHidden = false
@@ -616,9 +619,23 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         
         Task {
             do {
-                // 1. Firebase에 참여자 등록
+                
+                // 1. 소켓 연결
+                if !SocketIOManager.shared.isConnected {
+                    SocketIOManager.shared.establishConnection { [weak self] in
+                        guard let _ = self else { return }
+                        SocketIOManager.shared.joinRoom(room.ID ?? "")
+                        SocketIOManager.shared.socket.off("chat message")
+                        SocketIOManager.shared.listenToChatMessage()
+                        SocketIOManager.shared.listenToNewParticipant()
+                    }
+                }
+                
+                self.bindRoomChangePublisher()
+                
+                // 2. Firebase에 참여자 등록
                 try await FirebaseManager.shared.add_room_participant(room: room)
-                // 2. 소켓을 통해 다른 참여자에게 알림
+                // 3. 소켓을 통해 다른 참여자에게 알림
                 SocketIOManager.shared.notifyNewParticipant(roomID: room.ID ?? "", email: LoginManager.shared.currentUserProfile?.email ?? "")
                 
                 try await Task.sleep(nanoseconds: 500_000_000) // 0.5초 대기
@@ -629,6 +646,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 try await self.syncProfilesWithLocalDB(emails: updatedRoom.participants)
                 
                 // 4. UI 업데이트
+                print(#function, "UI 업데이트 시작")
                 setupChatUI()
                 chatUIView.isHidden = false
                 chatMessageCollectionView.isHidden = false
@@ -864,6 +882,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
     }
     
+    
+    
     //MARK: 메시지 삭제/답장/복사 관련
     @MainActor
     private func showCustomMenu(at indexPath: IndexPath/*, aboveCell: Bool*/) {
@@ -921,9 +941,12 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         showCustomMenu(at: indexPath)
     }
     
+    @MainActor
     private func handleReply(message: ChatMessage) {
         print(#function, "답장:", message)
+        replyView.configure(with: message)
         replyView.isHidden = false
+        replyingToMessageID = message.ID
     }
     
     private func handleCopy(message: ChatMessage) {
@@ -942,11 +965,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         if let cell = highlightedCell { cell.setHightlightedOverlay(false) }
         highlightedCell = nil
         chatCustomMenu.removeFromSuperview()
-    }
-    
-    @MainActor
-    private func setupReplyUI() {
-        
     }
     
     @MainActor
@@ -994,6 +1012,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         view.bringSubviewToFront(replyView)
     }
     
+    private func fetchOriginalMessagePreview(for replyToID: String) -> (sender: String, message: String)? {
+        guard let msg = messageMap[replyToID] else { return nil }
+        return (sender: msg.senderNickname, message: msg.msg ?? "")
+    }
+    
     //MARK: Diffable Data Source
     private func configureDataSource() {
         print(#function)
@@ -1004,7 +1027,13 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ChatMessageCell.reuseIdentifier, for: indexPath) as! ChatMessageCell
                 
                 if message.attachments.isEmpty {
-                    cell.configureWithMessage(with: message)
+                    
+                    let originalPreviewClosure: (() -> (String, String)?)? = message.replyTo == nil ? nil : { [weak self] in
+                        guard let self = self else { return nil }
+                        return self.fetchOriginalMessagePreview(for: message.replyTo ?? "")
+                    }
+                    
+                    cell.configureWithMessage(with: message, originalPreviewProvider: originalPreviewClosure)
                 } else {
                     cell.configureWithImage(with: message)
                 }
@@ -1060,6 +1089,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
         
         for message in newMessages {
+            messageMap[message.ID] = message
+            
             let messageDate = Calendar.current.startOfDay(for: message.sentAt ?? Date())
             
             if lastMessageDate == nil || lastMessageDate! != messageDate {
@@ -1088,9 +1119,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             }
         }
         
-        DispatchQueue.main.async {
-            self.chatMessageCollectionView.scrollToBottom()
-        }
+//        DispatchQueue.main.async {
+//            self.chatMessageCollectionView.scrollToBottom()
+//        }
         
     }
     
@@ -1214,9 +1245,9 @@ private extension ChatViewController {
         self.view.addSubview(customNavigationBar)
 
         NSLayoutConstraint.activate([
-            customNavigationBar.topAnchor.constraint(equalTo: self.view.topAnchor),
-            customNavigationBar.leadingAnchor.constraint(equalTo: self.view.leadingAnchor),
-            customNavigationBar.trailingAnchor.constraint(equalTo: self.view.trailingAnchor),
+            customNavigationBar.topAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.topAnchor),
+            customNavigationBar.leadingAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.leadingAnchor),
+            customNavigationBar.trailingAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.trailingAnchor),
             customNavigationBar.heightAnchor.constraint(equalToConstant: 75)
         ])
         

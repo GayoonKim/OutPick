@@ -19,6 +19,7 @@ struct ChatMessage: SocketData, Codable {
     let msg: String?                    // 메시지 내용
     let sentAt: Date?                   // 메시지 보낸 시간
     let attachments: [Attachment]
+    let replyTo: String?
     var isFailed: Bool = false
 
     enum CodingKeys: String, CodingKey {
@@ -28,6 +29,7 @@ struct ChatMessage: SocketData, Codable {
         case msg
         case sentAt
         case attachments
+        case replyTo
     }
     
     func toSocketRepresentation() -> SocketData {
@@ -37,7 +39,7 @@ struct ChatMessage: SocketData, Codable {
             "senderID": senderID,
             "senderNickName": senderNickname,
             "msg": msg ?? "",
-//            "sentAt": ISO8601DateFormatter().string(from: sentAt ?? Date())  // ✅ 추가
+            "replyTo": replyTo ?? ""
         ]
         
         dict["attachments"] = attachments.map { $0.toDict() }
@@ -53,7 +55,8 @@ struct ChatMessage: SocketData, Codable {
             "senderID": senderID,
             "senderNickName": senderNickname,
             "msg": msg ?? "",
-            "sentAt": Timestamp(date: sentAt ?? Date())
+            "sentAt": Timestamp(date: sentAt ?? Date()),
+            "replyTo": replyTo ?? ""
         ]
 
         dict["attachments"] = attachments.map { $0.toDict() }
