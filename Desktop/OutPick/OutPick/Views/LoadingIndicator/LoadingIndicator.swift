@@ -12,9 +12,9 @@ class LoadingIndicator {
     
     static let shared = LoadingIndicator()
     private lazy var activityIndicator: UIActivityIndicatorView = {
-        let indicator = UIActivityIndicatorView(style: .large)
+        let indicator = UIActivityIndicatorView(style: .medium)
         indicator.hidesWhenStopped = true
-        indicator.color = .purple
+        indicator.color = .black
         return indicator
     }()
     
@@ -22,12 +22,11 @@ class LoadingIndicator {
     
     func start(on viewController: UIViewController) {
         DispatchQueue.main.async {
-            
             if self.activityIndicator.superview == nil {
                 self.activityIndicator.center = viewController.view.center
                 viewController.view.addSubview(self.activityIndicator)
-                viewController.view.bringSubviewToFront(self.activityIndicator)
             }
+            viewController.view.bringSubviewToFront(self.activityIndicator)
             self.activityIndicator.startAnimating()
             
         }

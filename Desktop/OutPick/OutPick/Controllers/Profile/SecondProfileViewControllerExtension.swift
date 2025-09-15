@@ -68,12 +68,10 @@ extension SecondProfileViewController: UIImagePickerControllerDelegate & UINavig
         if let selectedImage = info[.originalImage] as? UIImage,
            let cgImage = MediaManager.compressImageWithImageIO(selectedImage) {
             profileImageView.image = UIImage(cgImage: cgImage)
-//            self.removeImageButton.isHidden = getIsDefaultProfileImage
             self.enableCompleteButton()
         } else if let editedImage = info[.editedImage] as? UIImage,
                   let cgImage = MediaManager.compressImageWithImageIO(editedImage) {
             profileImageView.image = UIImage(cgImage: cgImage)
-//            self.removeImageButton.isHidden = getIsDefaultProfileImage
             self.enableCompleteButton()
         }
         

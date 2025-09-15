@@ -90,7 +90,7 @@ class EditRoomImageTableViewCell: UITableViewCell {
         } else if room.roomImagePath != "" {
                 Task {
                     guard let imagePath = room.roomImagePath else { return }
-                    let image = try await FirebaseStorageManager.shared.fetchImageFromStorage(image: imagePath, location: .Message, createdDate: room.createdAt)
+                    let image = try await FirebaseStorageManager.shared.fetchImageFromStorage(image: imagePath, location: .RoomImage, createdDate: room.createdAt)
                     self.imgView.image = image
                 }
         } else {

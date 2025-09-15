@@ -73,23 +73,23 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         applyInitialSnapshot()
         setupCustomNavigationBar()
         
-        SocketIOManager.shared.listenToNewParticipant()
+//        SocketIOManager.shared.listenToNewParticipant()
     }
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
 
         // 소켓 연결 상태 확인 및 리스너 설정
-        if SocketIOManager.shared.isConnected {
-            SocketIOManager.shared.joinRoom(room.roomName)
-            SocketIOManager.shared.listenToNewParticipant()
-        } else {
-            SocketIOManager.shared.establishConnection { [weak self] in
-                guard let self = self else { return }
-                SocketIOManager.shared.joinRoom(self.room.roomName)
-                SocketIOManager.shared.listenToNewParticipant()
-            }
-        }
+//        if SocketIOManager.shared.isConnected {
+//            SocketIOManager.shared.joinRoom(room.roomName)
+//            SocketIOManager.shared.listenToNewParticipant()
+//        } else {
+//            SocketIOManager.shared.establishConnection { [weak self] in
+//                guard let self = self else { return }
+//                SocketIOManager.shared.joinRoom(self.room.roomName)
+//                SocketIOManager.shared.listenToNewParticipant()
+//            }
+//        }
     }
     
     private func observeRoomImages(for roomID: String) {
@@ -264,7 +264,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
                                 FirebaseStorageManager.shared.deleteImageFromStorage(path: pathToRemove)
                             }
                             
-                            let pathToAdd = try await FirebaseStorageManager.shared.uploadImageToStorage(image: image, location: .RoomImage)
+                            let pathToAdd = try await FirebaseStorageManager.shared.uploadImageToStorage(image: image, location: .RoomImage, roomID: room.ID)
                             KingFisherCacheManager.shared.storeImage(image, forKey: pathToAdd)
                             newImagePath = pathToAdd
                         }

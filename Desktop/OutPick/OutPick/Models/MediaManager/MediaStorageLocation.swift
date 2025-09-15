@@ -10,7 +10,6 @@ import Foundation
 enum ImageLocation: String {
     case ProfileImage
     case RoomImage
-    case Message
     
     var location: String {
         switch self {
@@ -21,8 +20,6 @@ enum ImageLocation: String {
         case .RoomImage:
             "Room_Images"
             
-        case .Message:
-            "Chat_Images"
         }
     }
 }

@@ -76,19 +76,13 @@ class FirebaseManager {
     
     // Firebase Firestore에 UserProfile 객체 저장
     func saveUserProfileToFirestore(email: String) async throws {
-        let userProfileRef = db.collection("Users")
         do {
-            
-            let querySnapshot = try await userProfileRef.getDocuments()
-            if querySnapshot.isEmpty {
-                try await userProfileRef.document(DateManager.shared.currentMonth).setData(["createAt": FieldValue.serverTimestamp()])
-            }
-            try await userProfileRef.document(DateManager.shared.currentMonth).collection("\(DateManager.shared.currentMonth) Users").document().setData(LoginManager.shared.currentUserProfile?.toDict() ?? [:])
-            
+            var profileData = LoginManager.shared.currentUserProfile?.toDict() ?? [:]
+            profileData["createdAt"] = FieldValue.serverTimestamp()
+            try await db.collection("Users").document(email).setData(profileData)
+
         } catch {
-            
             throw FirebaseError.FailedToSaveProfile
-            
         }
     }
     
@@ -181,38 +175,43 @@ class FirebaseManager {
     }
     
     // 프로필 닉네임 중복 검사
-    func checkDuplicate(strToCompare: String, fieldToCompare: String, collectionName: String) async throws -> Bool{
+    func checkDuplicate(toCompare: String/*, fieldToCompare: String, collectionName: String*/) async throws -> Bool{
         
         do {
             
-            let documentIDs = try await fetchAllDocIDs(collectionName: collectionName)
+//            let documentIDs = try await fetchAllDocIDs(collectionName: collectionName)
+//
+//            
+//            return try await withThrowingTaskGroup(of: Bool.self) { group in
+//                for documentID in documentIDs {
+//                    group.addTask { [weak self] in
+//                        guard let self = self else { return false }
+//                        
+//                        let refToCheck = self.db.collection(collectionName).document(documentID).collection("\(documentID) \(collectionName)").whereField(fieldToCompare, isEqualTo: strToCompare)
+//                        let documents = try await refToCheck.getDocuments()
+//                        
+//                        if !documents.isEmpty {
+//                            return true
+//                        }
+//                        
+//                        return false
+//                    }
+//                }
+//                
+//                for try await result in group {
+//                    if result {
+//                        group.cancelAll()
+//                        return true
+//                    }
+//                }
+//                
+//                return false
+//                
+//            }
             
-            return try await withThrowingTaskGroup(of: Bool.self) { group in
-                for documentID in documentIDs {
-                    group.addTask { [weak self] in
-                        guard let self = self else { return false }
-                        
-                        let refToCheck = self.db.collection(collectionName).document(documentID).collection("\(documentID) \(collectionName)").whereField(fieldToCompare, isEqualTo: strToCompare)
-                        let documents = try await refToCheck.getDocuments()
-                        
-                        if !documents.isEmpty {
-                            return true
-                        }
-                        
-                        return false
-                    }
-                }
-                
-                for try await result in group {
-                    if result {
-                        group.cancelAll()
-                        return true
-                    }
-                }
-                
-                return false
-                
-            }
+            let query = db.collection("Users").whereField("nickname", isEqualTo: toCompare)
+            let snapshot = try await query.getDocuments()
+            return !snapshot.isEmpty
             
         } catch {
             
@@ -389,14 +388,16 @@ class FirebaseManager {
                         
                     case .added:
                         print("추가")
-                        self.chatRooms.append(room)
+//                        self.chatRooms.append(room)
+                        
                         
                     case .modified:
                         print("수정")
-                        if let index = self.chatRooms.firstIndex(where: { $0.roomName == room.roomName }) {
-                            self.chatRooms[index] = room
-                            self.roomChangeSubject.send(room)
-                        }
+//                        if let index = self.chatRooms.firstIndex(where: { $0.roomName == room.roomName }) {
+//                            self.chatRooms[index] = room
+//                            self.roomChangeSubject.send(room)
+//                        }
+                        self.roomChangeSubject.send(room)
                         
                     case .removed:
                         print("삭제")

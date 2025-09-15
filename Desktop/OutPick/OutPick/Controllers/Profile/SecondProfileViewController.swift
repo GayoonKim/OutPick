@@ -44,6 +44,8 @@ class SecondProfileViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         
+        self.navigationController?.delegate = self
+        
         setupNicknameTextField(nicknameTextField)
         profileImageViewSetup()
         addImageButtonSetup()
@@ -57,6 +59,31 @@ class SecondProfileViewController: UIViewController {
         NavigationBarManager.configureBackButton(for: self)
         
         enableCompleteButton()
+    }
+    
+    // UINavigationControllerDelegate
+    func navigationController(_ navigationController: UINavigationController,
+                              willShow viewController: UIViewController,
+                              animated: Bool) {
+        if viewController === self {
+            // 이 뷰 컨트롤러가 나타날 때만 back button 커스텀
+            NavigationBarManager.configureBackButton(for: self)
+        } else {
+            // 뒤로 이동할 때 수행할 코드
+            if let nickName = nicknameTextField.text {
+                UserDefaults.standard.set(nickName, forKey: "savedNickName")
+            }
+            
+            if let image = profileImageView.image,
+               let imageData = image.jpegData(compressionQuality: 0.5) {
+                UserDefaults.standard.set(imageData, forKey: "savedProfileImage")
+            } else {
+                print("저장된 방 대표 사진 불러오기 실패")
+                return
+            }
+            
+            UserDefaults.standard.set(isDefaultProfileImage, forKey: "isDefaultProfileImage")
+        }
     }
     
     override func viewWillAppear(_ animated: Bool) {
@@ -86,20 +113,6 @@ class SecondProfileViewController: UIViewController {
     
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        
-        if let nickName = nicknameTextField.text {
-            UserDefaults.standard.set(nickName, forKey: "savedNickName")
-        }
-        
-        if let image = profileImageView.image,
-           let imageData = image.jpegData(compressionQuality: 0.5) {
-            UserDefaults.standard.set(imageData, forKey: "savedProfileImage")
-        } else {
-            print("저장된 방 대표 사진 불러오기 실패")
-            return
-        }
-        
-        UserDefaults.standard.set(isDefaultProfileImage, forKey: "isDefaultProfileImage")
     }
 
     
@@ -199,19 +212,22 @@ class SecondProfileViewController: UIViewController {
         
         Task {
             do {
-                if try await FirebaseManager.shared.checkDuplicate(strToCompare: nickname, fieldToCompare: "nickname", collectionName: "Users") {
+                if try await FirebaseManager.shared.checkDuplicate(toCompare: nickname) {
                     AlertManager.showAlertNoHandler(title: "닉네임 중복", message: "다른 닉네임을 선택해 주세요.", viewController: self)
                     return
                 }
                 
+                LoadingIndicator.shared.start(on: self)
                 if let image = profileImageView.image {
                     if isDefaultProfileImage {
                         print("기본 프로필 이미지 감지됨 - 서버 업로드 건너뜀")
                         self.userProfile.profileImagePath = nil
                     } else {
                         print("사용자 지정 프로필 이미지 감지됨 - 서버 업로드 진행")
-                        let imagePath = try await FirebaseStorageManager.shared.uploadImageToStorage(image: image, location: ImageLocation.ProfileImage)
+                        let imagePath = try await FirebaseStorageManager.shared.uploadImageToStorage(image: image, location: ImageLocation.ProfileImage, roomID: nil)
+                        print(#function, "업로드된 이미지 경로: \(imagePath)")
                         self.userProfile.profileImagePath = imagePath
+                        LoginManager.shared.setCurrentUserProfile(self.userProfile)
                     }
                 } else {
                     print("프로필 이미지가 nil입니다")
@@ -230,6 +246,8 @@ class SecondProfileViewController: UIViewController {
                 }
                 
                 try await FirebaseManager.shared.saveUserProfileToFirestore(email: LoginManager.shared.getUserEmail)
+                
+                LoadingIndicator.shared.stop()
                 
             } catch FirebaseError.FailedToSaveProfile {
                 print("프로필 저장 실패")

@@ -10,7 +10,6 @@ import Kingfisher
 import Combine
 
 class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRecognizerDelegate, ChatModalAnimatable {
-    
     enum Section: Hashable {
         case main
     }
@@ -61,21 +60,22 @@ class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRe
     
     private func bindPublishers() {
         // 방 목록 관련
-        FirebaseManager.shared.$chatRooms
-            .receive(on: DispatchQueue.main)
-            
-            .sink { [weak self] updatedRooms in
-                guard let self = self else { return }
-                self.chatRooms = updatedRooms
-                self.updateCollectionView()
-            }
-            .store(in: &cancellables)
+//        FirebaseManager.shared.$chatRooms
+////            .receive(on: DispatchQueue.main)
+////            
+//            .sink { [weak self] updatedRooms in
+//                guard let self = self else { return }
+//                self.chatRooms = updatedRooms
+//                self.updateCollectionView()
+//            }
+//            .store(in: &cancellables)
         
         
         FirebaseManager.shared.roomChangePublisher
-            .receive(on: DispatchQueue.main)
+//            .receive(on: DispatchQueue.main)
             .sink { [weak self] updatedRoom in
                 guard let self = self else { return }
+                print(#function, "✅✅✅✅✅roomChangePublisher 실행✅✅✅✅✅")
                 
                 if let index = self.chatRooms.firstIndex(where: { $0.ID == updatedRoom.ID }) {
                     self.chatRooms[index] = updatedRoom

@@ -113,7 +113,7 @@ class RoomCreateViewController: UIViewController, ChatModalAnimatable {
         Task {
             do {
                 
-                if try await FirebaseManager.shared.checkDuplicate(strToCompare: self.roomNameTextView.text, fieldToCompare: "roomName", collectionName: "Rooms") {
+                if try await FirebaseManager.shared.checkDuplicate(toCompare: self.roomNameTextView.text) {
                     await MainActor.run {
                         LoadingIndicator.shared.stop()
                         createBtn.isEnabled = true
@@ -251,7 +251,7 @@ class RoomCreateViewController: UIViewController, ChatModalAnimatable {
         Task {
             do {
                 
-                let imagePath = try await FirebaseStorageManager.shared.uploadImageToStorage(image: image, location: ImageLocation.RoomImage)
+                let imagePath = try await FirebaseStorageManager.shared.uploadImageToStorage(image: image, location: ImageLocation.RoomImage, roomID: roomInfo.ID)
                 
                 var updatedRoomInfo = roomInfo
                 updatedRoomInfo.roomImagePath = imagePath

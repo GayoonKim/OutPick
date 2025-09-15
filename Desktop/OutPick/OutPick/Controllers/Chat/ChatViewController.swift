@@ -549,6 +549,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     @MainActor
     private func setupInitialMessages() {
         Task {
+            LoadingIndicator.shared.start(on: self)
             // 이미 연결된 경우에는 room join과 listener 설정만 수행
             if let room = self.room {
                 if room.participants.contains(LoginManager.shared.getUserEmail) {
@@ -571,6 +572,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                     addMessages(messages, isNew: false)
                 }
             }
+            
+            LoadingIndicator.shared.stop()
         }
     }
     
@@ -1140,11 +1143,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         snapshot.appendItems(newItems, toSection: .main)
         //        print("Before apply, snapshot items: \(snapshot.itemIdentifiers)") // 추가된 아이템 확인
         
-        dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
-            guard let self = self else { return }
+        dataSource.apply(snapshot, animatingDifferences: false) /*{ [weak self] in*/
+//            guard let self = self else { return }
             //            print("************************ Apply 완료, snapshot items: \(snapshot.itemIdentifiers) ************************")
 //            chatMessageCollectionView.scrollToBottom()
-        }
+//        }
     }
     
     private func formatDateToDayString(_ date: Date) -> String {

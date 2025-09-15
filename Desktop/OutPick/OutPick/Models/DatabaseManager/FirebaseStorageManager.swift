@@ -26,19 +26,59 @@ class FirebaseStorageManager {
     // Storage 인스턴스
     let storage = Storage.storage()
     
-    func uploadImageToStorage(image: UIImage, location: ImageLocation) async throws -> String {
-        let imageName = UUID().uuidString
+    func uploadImageToStorage(image: UIImage, location: ImageLocation, roomID: String?) async throws -> String {
+//        let imageName = UUID().uuidString
+//        return try await withCheckedThrowingContinuation { continuation in
+//            
+//            let storageRef = storage.reference()
+//            let imageRef = storageRef.child("\(location.location)/\(DateManager.shared.currentMonth)/\(imageName).jpg")
+//            
+//            guard let imageData = image.jpegData(compressionQuality: 0.5) else {
+//                print("이미지 데이터 생성 실패")
+//                continuation.resume(throwing: StorageError.FailedToConvertImage)
+//                return
+//            }
+//            
+//            let metadata = StorageMetadata()
+//            metadata.contentType = "image/jpeg"
+//            
+//            let uploadTask = imageRef.putData(imageData, metadata: metadata) { metadata, error in
+//                guard error == nil else {
+//                    continuation.resume(throwing: StorageError.FailedToUploadImage)
+//                    return
+//                }
+//                
+//                continuation.resume(returning: "\(location.location)/\(DateManager.shared.currentMonth)/\(imageName).jpg")
+//            }
+//            
+//            let _ = uploadTask.observe(.progress) { snapshot in
+//                let percentComplete = 100.0 * Double(snapshot.progress!.completedUnitCount) / Double(snapshot.progress!.totalUnitCount)
+//                print("Upload is \(percentComplete) done")
+//            }
+//        }
+        
+        let uuid = UUID().uuidString
+        let timestamp = Int(Date().timeIntervalSince1970)
+        let fileName = "\(uuid)-\(timestamp).jpg"
+        
+        let imagePath: String
+        switch location {
+        case .ProfileImage:
+            imagePath = "\(location.location)/\(fileName)"
+        case .RoomImage:
+            imagePath = "\(location.location)/\(roomID ?? "")/\(fileName)"
+        }
+        
         return try await withCheckedThrowingContinuation { continuation in
-            
             let storageRef = storage.reference()
-            let imageRef = storageRef.child("\(location.location)/\(DateManager.shared.currentMonth)/\(imageName).jpg")
+            let imageRef = storageRef.child(imagePath)
+            
             
             guard let imageData = image.jpegData(compressionQuality: 0.5) else {
                 print("이미지 데이터 생성 실패")
                 continuation.resume(throwing: StorageError.FailedToConvertImage)
                 return
             }
-            
             let metadata = StorageMetadata()
             metadata.contentType = "image/jpeg"
             
@@ -48,7 +88,7 @@ class FirebaseStorageManager {
                     return
                 }
                 
-                continuation.resume(returning: "\(location.location)/\(DateManager.shared.currentMonth)/\(imageName).jpg")
+                continuation.resume(returning: imagePath)
             }
             
             let _ = uploadTask.observe(.progress) { snapshot in
@@ -56,17 +96,16 @@ class FirebaseStorageManager {
                 print("Upload is \(percentComplete) done")
             }
         }
-        
     }
     
-    func uploadImagesToStorage(images: [UIImage], location: ImageLocation) async throws -> [String] {
+    func uploadImagesToStorage(images: [UIImage], location: ImageLocation, ID: String?) async throws -> [String] {
         let start = Date()
         
         return try await withThrowingTaskGroup(of: (Int, String).self) { group in
             for (index, image) in images.enumerated() {
                 group.addTask {
                     
-                    let imagePath = try await self.uploadImageToStorage(image: image, location: location)
+                    let imagePath = try await self.uploadImageToStorage(image: image, location: location, roomID: ID ?? "")
                     return (index, imagePath)
                     
                 }
