@@ -295,7 +295,11 @@ class SocketIOManager {
             if senderID == LoginManager.shared.getUserEmail { return }
             
             Task { @MainActor in
-                self.messageSubject.send(message)
+                if let myProfile = LoginManager.shared.currentUserProfile,
+                   let myNickname = myProfile.nickname,
+                   myNickname != senderNickName {
+                    self.messageSubject.send(message)
+                }
             }
         }
         
@@ -327,8 +331,10 @@ class SocketIOManager {
 
             let message = ChatMessage(roomID: roomID, senderID: senderID, senderNickname: senderNickName, msg: nil, sentAt: sentAt, attachments: attachments, replyTo: replyTo)
             
-            Task.detached {
-                await MainActor.run {
+            Task { @MainActor in
+                if let myProfile = LoginManager.shared.currentUserProfile,
+                   let myNickname = myProfile.nickname,
+                   myNickname != senderNickName {
                     self.messageSubject.send(message)
                 }
             }

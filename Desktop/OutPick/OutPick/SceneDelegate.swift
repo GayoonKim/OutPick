@@ -81,8 +81,11 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                     
                     Task { @MainActor in
                         do {
-
                             try await FirebaseManager.shared.listenToRooms()
+                            SocketIOManager.shared.establishConnection {
+                                SocketIOManager.shared.listenToChatMessage()
+                            }
+                            
                             LoginManager.shared.fetchUserProfileFromKeychain() { screen in
                                 DispatchQueue.main.async { [weak self] in
                                     guard let self = self else { return }
@@ -185,15 +188,14 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
     }
     
+    @MainActor
     private func showLoginViewController() {
         let mainStoryboard = UIStoryboard(name: "Main", bundle: nil)
         let loginViewController = mainStoryboard.instantiateViewController(withIdentifier: "LoginVC")
         
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.window?.rootViewController = loginViewController
-            self.window?.makeKeyAndVisible()
-        }
+        self.window?.rootViewController = loginViewController
+        self.window?.makeKeyAndVisible()
+        
     }
     
 }

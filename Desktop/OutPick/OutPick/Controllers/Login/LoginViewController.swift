@@ -109,6 +109,9 @@ class LoginViewController: UIViewController {
                 try await LoginManager.shared.updateLogDevID()
                 try await LoginManager.shared.setupDevIDListener()
                 try await FirebaseManager.shared.listenToRooms()
+                SocketIOManager.shared.establishConnection {
+                    SocketIOManager.shared.listenToChatMessage()
+                }
                 
                 let screen = try await LoginManager.shared.fetchProfileFromFirebase(LoginManager.shared.getUserEmail)
                 guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,

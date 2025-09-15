@@ -61,11 +61,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private var highlightedMessageIDs: Set<String> = []
     private var currentSearchKeyword: String? = nil
     
-    deinit {
-        SocketIOManager.shared.closeConnection()
-        convertImagesTask?.cancel()
-        convertVideosTask?.cancel()
-    }
+//    deinit {
+//        convertImagesTask?.cancel()
+//        convertVideosTask?.cancel()
+//    }
     
     private lazy var containerView: UIView = {
         let view = UIView()
@@ -195,6 +194,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         decideJoinUI()
         setupAttachmentView()
         
+        setupInitialMessages()
+        
         bindMessagePublishers()
         bindKeyboardPublisher()
         bindSearchEvents()
@@ -204,48 +205,23 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        Task {
+        DispatchQueue.main.async {
             // 이미 연결된 경우에는 room join과 listener 설정만 수행
-            if let room = self.room,
-               room.participants.contains(LoginManager.shared.getUserEmail) {
-                
-                let messages = try await GRDBManager.shared.fetchMessages(in: room.ID ?? "", containing: nil)
-                let lastMessageID = try await GRDBManager.shared.fetchLastMessageID(for: room.ID ?? "")
-                
-                addMessages(messages, isNew: false)
-                lastReadMessageID = lastMessageID
-                
-                print(#function, "✅✅✅✅✅✅✅✅✅✅ 마지막 메시지 ID:", lastMessageID ?? "")
-                
-                try await self.syncMessagesIfNeeded(for: room)
-                
-                isUserInCurrentRoom = true
-                
-                if !SocketIOManager.shared.isConnected {
-                    SocketIOManager.shared.establishConnection { [weak self] in
-                        guard let _ = self else { return }
+            if let room = self.room {
+                if room.participants.contains(LoginManager.shared.getUserEmail) {
+                    if SocketIOManager.shared.isConnected {
                         SocketIOManager.shared.joinRoom(room.ID ?? "")
-                        SocketIOManager.shared.socket.off("chat message")
-                        SocketIOManager.shared.listenToChatMessage()
-                        SocketIOManager.shared.listenToNewParticipant()
                     }
                 }
-                
-                self.bindRoomChangePublisher()
             }
-            
         }
     }
     
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-
-        if let topVC = self.navigationController?.topViewController,
-           topVC is ChatRoomSettingCollectionView {
-            return
-        } else {
-            SocketIOManager.shared.closeConnection()
-        }
+        
+        convertImagesTask?.cancel()
+        convertVideosTask?.cancel()
         
         if let room = self.room,
            !room.participants.contains(LoginManager.shared.getUserEmail) {
@@ -259,6 +235,13 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 }
             }
         }
+
+//        if let topVC = self.navigationController?.topViewController,
+//           topVC is ChatRoomSettingCollectionView {
+//            return
+//        } else {
+//            SocketIOManager.shared.closeConnection()
+//        }
     }
     
     func viwDidDisappear(_ animated: Bool) {
@@ -276,7 +259,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private func bindMessagePublishers() {
         // 메시지 수신 관련
         SocketIOManager.shared.receivedMessagePublisher
-            .receive(on: DispatchQueue.main)
+//            .receive(on: DispatchQueue.main)
             .sink { [weak self] receivedMessage in
                 guard let self = self else { return }
                 
@@ -527,10 +510,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 SocketIOManager.shared.joinRoom(savedRoom.roomName)
             } else {
                 // 연결되지 않은 경우에만 연결 시도
-                SocketIOManager.shared.establishConnection {
-                    SocketIOManager.shared.createRoom(savedRoom.roomName)
-                    SocketIOManager.shared.joinRoom(savedRoom.roomName)
-                }
+//                SocketIOManager.shared.establishConnection {
+//                    SocketIOManager.shared.createRoom(savedRoom.roomName)
+//                    SocketIOManager.shared.joinRoom(savedRoom.roomName)
+//                }
             }
         }
     }
@@ -563,6 +546,34 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     
     // MARK: 초기 UI 설정 관련
+    @MainActor
+    private func setupInitialMessages() {
+        Task {
+            // 이미 연결된 경우에는 room join과 listener 설정만 수행
+            if let room = self.room {
+                if room.participants.contains(LoginManager.shared.getUserEmail) {
+                    let messages = try await GRDBManager.shared.fetchMessages(in: room.ID ?? "", containing: nil)
+                    let lastMessageID = try await GRDBManager.shared.fetchLastMessageID(for: room.ID ?? "")
+                    
+                    addMessages(messages, isNew: false)
+                    lastReadMessageID = lastMessageID
+                    
+                    print(#function, "✅✅✅✅✅✅✅✅✅✅ 마지막 메시지 ID:", lastMessageID ?? "")
+                    
+                    try await self.syncMessagesIfNeeded(for: room)
+                    
+                    isUserInCurrentRoom = true
+                    
+                    self.bindRoomChangePublisher()
+                } else {
+                    print(#function, "✅✅✅✅✅✅✅✅✅✅ 참여하지 않은 방에 입장", room)
+                    let messages = try await FirebaseManager.shared.fetchAllMessages(for: room)
+                    addMessages(messages, isNew: false)
+                }
+            }
+        }
+    }
+    
     @MainActor
     private func decideJoinUI() {
         guard let room = room else { return }
@@ -636,7 +647,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 // 2. Firebase에 참여자 등록
                 try await FirebaseManager.shared.add_room_participant(room: room)
                 // 3. 소켓을 통해 다른 참여자에게 알림
-                SocketIOManager.shared.notifyNewParticipant(roomID: room.ID ?? "", email: LoginManager.shared.currentUserProfile?.email ?? "")
+//                SocketIOManager.shared.notifyNewParticipant(roomID: room.ID ?? "", email: LoginManager.shared.currentUserProfile?.email ?? "")
                 
                 try await Task.sleep(nanoseconds: 500_000_000) // 0.5초 대기
                 
@@ -650,6 +661,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 setupChatUI()
                 chatUIView.isHidden = false
                 chatMessageCollectionView.isHidden = false
+                
                 NSLayoutConstraint.deactivate(joinConsraints)
                 chatConstraints.append(chatMessageCollectionView.bottomAnchor.constraint(equalTo: chatUIView.topAnchor))
                 NSLayoutConstraint.activate(chatConstraints)
@@ -1070,6 +1082,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         chatMessageCollectionView.scrollToBottom()
     }
     
+    @MainActor
     func addMessages(_ messages: [ChatMessage], isNew: Bool) {
         print("************************ \(#function) 호출 ************************")
         
@@ -1118,11 +1131,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 dataSource.apply(updatedSnapshot, animatingDifferences: false)
             }
         }
-        
-//        DispatchQueue.main.async {
-//            self.chatMessageCollectionView.scrollToBottom()
-//        }
-        
     }
     
     private func updateCollectionView(with newItems: [Item]) {
