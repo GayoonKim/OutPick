@@ -112,13 +112,12 @@ class RoomCreateViewController: UIViewController, ChatModalAnimatable {
         
         Task {
             do {
-                
-                if try await FirebaseManager.shared.checkDuplicate(toCompare: self.roomNameTextView.text) {
-                    await MainActor.run {
+                if try await FirebaseManager.shared.checkDuplicate(strToCompare: self.roomNameTextView.text, fieldToCompare: "roomName", collectionName: "Rooms") {
+//                    await MainActor.run {
                         LoadingIndicator.shared.stop()
                         createBtn.isEnabled = true
                         AlertManager.showAlertNoHandler(title: "중복된 방 이름", message: "이미 존재하는 방 이름입니다. 다른 이름을 선택해 주세요.", viewController: self)
-                    }
+//                    }
                     return
                 }
                 
@@ -135,11 +134,10 @@ class RoomCreateViewController: UIViewController, ChatModalAnimatable {
                 self.saveRoomInfo(room: room)
                 
             } catch {
-                
-                await MainActor.run {
+//                await MainActor.run {
                     LoadingIndicator.shared.stop()
                     AlertManager.showAlertNoHandler(title: "오류", message: "방 생성 중 오류가 발생했습니다.", viewController: self)
-                }
+//                }
                 
             }
         }
@@ -237,50 +235,39 @@ class RoomCreateViewController: UIViewController, ChatModalAnimatable {
 
     private func saveRoomInfo(room: ChatRoom) {
         if let image = roomImageView.image {
-            
             if !isDefaultRoomImage {
                 uploadImageAndSaveRoomInfo(image: image, roomInfo: room)
             } else {
                 saveRoomInfoToFirestore(room: room, image: nil)
             }
-            
         }
     }
     
     private func uploadImageAndSaveRoomInfo(image: UIImage, roomInfo: ChatRoom) {
         Task {
             do {
-                
-                let imagePath = try await FirebaseStorageManager.shared.uploadImageToStorage(image: image, location: ImageLocation.RoomImage, roomID: roomInfo.ID)
+                let imagePath = try await FirebaseStorageManager.shared.uploadImageToStorage(image: image, location: ImageLocation.RoomImage, roomName: roomInfo.roomName)
                 
                 var updatedRoomInfo = roomInfo
                 updatedRoomInfo.roomImagePath = imagePath
+                
                 self.saveRoomInfoToFirestore(room: updatedRoomInfo, image: image)
-                
             } catch {
-                
                 NotificationCenter.default.post(name: .roomSaveFailed, object: nil, userInfo: ["error": RoomCreationError.imageUploadFailed])
-                
             }
         }
     }
     
     private func saveRoomInfoToFirestore(room: ChatRoom, image: UIImage?) {
         FirebaseManager.shared.saveRoomInfoToFirestore(room: room) { result in
-            print("saveRoomInfoToFirestore completion 시작")
-
             switch result {
-                
             case .success:
                 if let imagePath = room.roomImagePath, let image = image {
                     KingfisherManager.shared.cache.store(image, forKey: imagePath)
                 }
-                
-                print("saveRoomInfoToFirestore completion 끝")
                 NotificationCenter.default.post(name: .roomSavedComplete, object: nil, userInfo: ["room": room])
             case .failure:
                 NotificationCenter.default.post(name: .roomSaveFailed, object: nil, userInfo: ["error": RoomCreationError.saveFailed])
-                
             }
         }
     }

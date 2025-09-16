@@ -58,19 +58,25 @@ class FirebaseManager {
     
     private var lastFetchedSnapshot: DocumentSnapshot?
     
+    // Hot rooms with previews
+    @Published var hotRoomsWithPreviews: [(ChatRoom, [ChatMessage])] = []
+    private var hotRoomsListener: ListenerRegistration?
+    private var hotRoomMessageListeners: [String: ListenerRegistration] = [:]
+    
     //MARK: 프로필 설정 관련 기능들
     // UserProfile 문서 불러오기
-    func getUserDoc() async throws -> QueryDocumentSnapshot? {
-        let profile_created_month = DateManager.shared.getMonthFromTimestamp(date: LoginManager.shared.currentUserProfile?.createdAt ?? Date())
-        let user_snapshot = try await db.collection("Users").document(profile_created_month).collection("\(profile_created_month) Users").whereField("email", isEqualTo: LoginManager.shared.getUserEmail).limit(to: 1).getDocuments()
+    func getUserDoc() async throws -> DocumentSnapshot? {
+        let querySnapshot = try await db.collection("Users")
+            .whereField("email", isEqualTo: LoginManager.shared.getUserEmail)
+            .limit(to: 1)
+            .getDocuments()
         
-        guard let user_doc = user_snapshot.documents.first else {
+        guard let user_doc = querySnapshot.documents.first else {
             print("사용자 문서 불러오기 실패")
             return nil
         }
         
-        print(#function, "✅✅✅✅✅사용자 문서 불러오기 성공", user_doc)
-        
+        print(#function, "✅ 사용자 문서 불러오기 성공", user_doc)
         return user_doc
     }
     
@@ -175,68 +181,31 @@ class FirebaseManager {
     }
     
     // 프로필 닉네임 중복 검사
-    func checkDuplicate(toCompare: String/*, fieldToCompare: String, collectionName: String*/) async throws -> Bool{
-        
+    func checkDuplicate(strToCompare: String, fieldToCompare: String, collectionName: String) async throws -> Bool{
         do {
-            
-//            let documentIDs = try await fetchAllDocIDs(collectionName: collectionName)
-//
-//            
-//            return try await withThrowingTaskGroup(of: Bool.self) { group in
-//                for documentID in documentIDs {
-//                    group.addTask { [weak self] in
-//                        guard let self = self else { return false }
-//                        
-//                        let refToCheck = self.db.collection(collectionName).document(documentID).collection("\(documentID) \(collectionName)").whereField(fieldToCompare, isEqualTo: strToCompare)
-//                        let documents = try await refToCheck.getDocuments()
-//                        
-//                        if !documents.isEmpty {
-//                            return true
-//                        }
-//                        
-//                        return false
-//                    }
-//                }
-//                
-//                for try await result in group {
-//                    if result {
-//                        group.cancelAll()
-//                        return true
-//                    }
-//                }
-//                
-//                return false
-//                
-//            }
-            
-            let query = db.collection("Users").whereField("nickname", isEqualTo: toCompare)
+            let query = db.collection(collectionName).whereField(fieldToCompare, isEqualTo: strToCompare)
             let snapshot = try await query.getDocuments()
+            
             return !snapshot.isEmpty
-            
         } catch {
-            
             throw FirebaseError.Duplicate
-            
         }
-        
     }
     
     //MARK: 채팅 방 관련 기능들
     
     // 특정 방 문서 불러오기
-    func getRoomDoc(room: ChatRoom) async throws -> QueryDocumentSnapshot? {
+    func getRoomDoc(room: ChatRoom) async throws -> DocumentSnapshot? {
+        let roomRef = db.collection("Rooms").document(room.ID ?? "")
+        let room_snapshot = try await roomRef.getDocument()
         
-        let roomCreatedMonth = DateManager.shared.getMonthFromTimestamp(date: room.createdAt)
-        print(#function, "\(roomCreatedMonth) Rooms")
-        let room_snapshot = try await db.collection("Rooms").document(roomCreatedMonth).collection("\(roomCreatedMonth) Rooms").whereField("ID", isEqualTo: room.ID ?? "").limit(to: 1).getDocuments()
-
-        guard let room_doc = room_snapshot.documents.first else {
+        guard room_snapshot.exists else {
             print("방 문서 불러오기 실패")
             return nil
         }
         
-        return room_doc
-        
+        return room_snapshot
+
     }
     
     func fetchRoomInfo(room: ChatRoom) async throws -> ChatRoom {
@@ -244,7 +213,9 @@ class FirebaseManager {
             throw NSError(domain: "RoomNotFound", code: 404)
         }
         
-        let data = roomDoc.data()
+        guard let data = roomDoc.data() else {
+            throw NSError(domain: "InvalidRoomData", code: 422)
+        }
         
         guard
             let roomName = data["roomName"] as? String,
@@ -272,24 +243,13 @@ class FirebaseManager {
     
     // 오픈 채팅 방 정보 저장
     func saveRoomInfoToFirestore(room: ChatRoom, completion: @escaping (Result<Void, Error>) -> Void) {
-        print("saveRoomInfoToFirestore 시작")
-        
-        var tempRoom = room
-        
-        // 방 컬렉션에서 방 ID를 기준으로 문서 참조 생성
-        let roomRef = db.collection("Rooms").document(DateManager.shared.currentMonth).collection("\(DateManager.shared.currentMonth) Rooms").document()
         Task {
+            var tempRoom = room
+            let roomRef = db.collection("Rooms").document()
             
-//            let querySnapshot = try await db.collection("Rooms").getDocuments()
-//            if querySnapshot.isEmpty {
-//                try await db.collection("Rooms").document(DateManager.shared.currentMonth).setData(["createAt": FieldValue.serverTimestamp()])
-//            }
-            
-            try await db.collection("Rooms").document(DateManager.shared.currentMonth).setData(["createAt": FieldValue.serverTimestamp()])
-
             // Socket.IO 서버에 방 생성 이벤트 전송
             SocketIOManager.shared.createRoom(room.roomName)
-            // Socket.IO 서버에 방 참여 이벤트 전송 (방장)
+            // Socket.IO 서버에 방 참여 이벤트 전송
             SocketIOManager.shared.joinRoom(room.roomName)
             
             do {
@@ -303,19 +263,12 @@ class FirebaseManager {
                 })
                 
                 try await FirebaseManager.shared.add_room_participant(room: tempRoom)
-                
-                print("saveRoomInfoToFirestore 끝")
                 completion(.success(()))
                 
             } catch {
-                
-                print("트랜잭션 실패")
                 completion(.failure(error))
-                
             }
-    
         }
-
     }
     
     @MainActor
@@ -349,190 +302,96 @@ class FirebaseManager {
             }
         }
     }
+
+    private func updateHotRoomsPreviews(room: ChatRoom, messages: [ChatMessage], allRooms: [ChatRoom]) {
+        var current = hotRoomsWithPreviews
+        current.removeAll { $0.0.ID == room.ID }
+        current.append((room, messages.sorted { $0.sentAt ?? Date() < $1.sentAt ?? Date() }))
+        hotRoomsWithPreviews = allRooms.compactMap{ r in
+            let msgs = current.first(where: { $0.0.ID == r.ID })?.1 ?? []
+            return (r, msgs)
+        }
+    }
     
-    private func createRoom(data: [String:Any]) async throws -> ChatRoom {
+    private func handleMessageSnapshot(_ snapshot: QuerySnapshot?, error: Error?, room: ChatRoom, allRooms: [ChatRoom]) {
+        guard let snapshot = snapshot else {
+            print("HotRoom 메시지 불러오기 실패: \(error?.localizedDescription ?? "알 수 없는 에러")")
+            return
+        }
         
-        guard let ID = data["ID"] as? String,
-              let roomName = data["roomName"] as? String,
-              let roomDescription = data["roomDescription"] as? String,
-              let participants = data["participantIDs"] as? [String],
-              let creatorID = data["creatorID"] as? String,
-              let timestamp = data["createdAt"] as? Timestamp,
-              let roomImagePath = data["roomImagePath"] as? String else {
-            print("채팅방 데이터 파싱 실패: \(data)")
+        let messages = snapshot.documents.compactMap{ try? $0.data(as: ChatMessage.self) }
+        DispatchQueue.main.async {
+            self.updateHotRoomsPreviews(room: room, messages: messages, allRooms: allRooms)
+        }
+    }
+    
+    private func attachMessageListener(for room: ChatRoom, roomID: String, allRooms: [ChatRoom]) {
+        hotRoomMessageListeners[roomID]?.remove()
+        
+        let listener = db.collection("Rooms")
+            .document(roomID)
+            .collection("Messages")
+            .order(by: "sentAt", descending: true)
+            .limit(to: 3)
+            .addSnapshotListener { [weak self] snapshot, error in
+                self?.handleMessageSnapshot(snapshot, error: error, room: room, allRooms: allRooms)
+            }
+        
+        hotRoomMessageListeners[roomID] = listener
+    }
+    
+    private func updateRoomListeners(for rooms: [ChatRoom]) {
+        let newIDs = Set(rooms.compactMap{ $0.ID })
+        let oldIDs = Set(hotRoomMessageListeners.keys)
+        let removedIDs = oldIDs.subtracting(newIDs)
+        
+        removedIDs.forEach { id in
+            hotRoomMessageListeners[id]?.remove()
+            hotRoomMessageListeners.removeValue(forKey: id)
+        }
+        
+        for room in rooms {
+            guard let roomID = room.ID else { return }
+            attachMessageListener(for: room, roomID: roomID, allRooms: rooms)
+        }
+    }
+
+    private func handleHotRoomsSnapshot(_ snapshot: QuerySnapshot?, error: Error?) {
+        guard let snapshot = snapshot else {
+            print("HotRooms 불러오기 실패: \(error?.localizedDescription ?? "알 수 없는 에러")")
+            return
+        }
+        let rooms = snapshot.documents.compactMap { try? createRoom(from: $0) }
+        updateRoomListeners(for: rooms)
+    }
+
+    func listenToHotRooms() async throws {
+        detachHotRoomsListeners()
+
+        hotRoomsListener = db.collection("Rooms")
+            .order(by: "lastMessageAt", descending: true)
+            .limit(to: 20)
+            .addSnapshotListener { [weak self] snapshot, error in
+                self?.handleHotRoomsSnapshot(snapshot, error: error)
+            }
+    }
+
+    private func createRoom(from document: DocumentSnapshot) throws -> ChatRoom {
+        do {
+            return try document.data(as: ChatRoom.self)
+        } catch {
+            print("채팅방 디코딩 실패: \(error), docID: \(document.documentID)")
             throw FirebaseError.FailedToParseRoomData
         }
-        
-        return ChatRoom(ID: ID, roomName: roomName, roomDescription: roomDescription, participants: participants, creatorID: creatorID, createdAt: timestamp.dateValue(), roomImagePath: roomImagePath)
     }
     
-    private func processRoomChanges(documentChanges: [DocumentChange]) async throws {
-        print("RoomChange 호출")
-        
-        do {
-            try await withThrowingTaskGroup(of: (DocumentChangeType, ChatRoom).self, returning: Void.self) { group in
-                for change in documentChanges {
-                    group.addTask {
-                        
-                        let document = change.document
-                        let data = document.data()
-                        
-                        let room = try await self.createRoom(data: data)
-                        return (change.type, room)
-                        
-                    }
-                }
-                
-                for try await (changeType, room) in group {
-                    switch changeType {
-                        
-                    case .added:
-                        print("추가")
-//                        self.chatRooms.append(room)
-                        
-                        
-                    case .modified:
-                        print("수정")
-//                        if let index = self.chatRooms.firstIndex(where: { $0.roomName == room.roomName }) {
-//                            self.chatRooms[index] = room
-//                            self.roomChangeSubject.send(room)
-//                        }
-                        self.roomChangeSubject.send(room)
-                        
-                    case .removed:
-                        print("삭제")
-                        self.chatRooms.removeAll(where: { $0.roomName == room.roomName })
-                        remove_participant(room: room)
-                    }
-                }
-            }
-        } catch {
-
-            for _ in 0...2 {
-                
-                try await self.processRoomChanges(documentChanges: documentChanges)
-                
-            }
-        }
-        
-    }
-
-    private func listenToMonthlyRoom(monthID: String) async throws -> ListenerRegistration {
-        let listerner = db.collection("Rooms").document(monthID).collection("\(monthID) Rooms").addSnapshotListener { (querySnapshot, error) in
-            guard let querySnapshot = querySnapshot, error == nil else {
-                
-                print("월별 문서 하위 컬렉션 실시간 리스너 설정 실패: \(error!.localizedDescription)")
-                retry(asyncTask: { let _ = try await self.listenToMonthlyRoom(monthID: monthID )}) { result in
-                    switch result {
-                        
-                    case .success():
-                        print("월별 문서 하위 컬렉션 실시간 리스너 재설정 성공")
-                        return
-                        
-                    case .failure(let error):
-                        print ("월별 문서 하위 컬렉션 실시간 리스너 재설정 실패: \(error.localizedDescription)")
-                        return
-                    }
-                    
-                }
-                return
-            }
-            
-            let documentChanges = querySnapshot.documentChanges
-            Task { try await self.processRoomChanges(documentChanges: documentChanges) }
-        }
-        
-        print(monthID + " 월별 문서 하위 컬렉션 실시간 리스너 설정 성공")
-        return listerner
-    }
-
-    private func listenToMonthlyRooms(monthIDs: [String]) async throws {
-        do {
-            try await withThrowingTaskGroup(of: (String, ListenerRegistration).self, returning: Void.self) { group in
-                for monthID in monthIDs {
-                    group.addTask {
-                        
-                        let listener = try await self.listenToMonthlyRoom(monthID: monthID)
-                        return (monthID, listener)
-                        
-                    }
-                }
-                
-                for try await (monthID, listener) in group {
-                    
-                    monthlyRoomListeners[monthID] = listener
-                    
-                }
-            }
-        } catch {
-            retry(asyncTask: { try await self.listenToMonthlyRooms(monthIDs: monthIDs) }) { result in
-                switch result {
-                 
-                case .success():
-                    print("월별 하위 컬렉션 리스너 재설정 성공")
-                    return
-                    
-                case .failure(let error):
-                    print("월별 하위 컬렉션 리스너 재설정 실패: \(error.localizedDescription)")
-                    return
-                    
-                }
-            }
-        }
-    }
-    
-    @MainActor
-    func listenToRooms() async throws{
-        //기존 모든 리스너 제거
-        removeAllListeners()
-        
-        listenToRoomsTask?.cancel()
-        listenToRoomsTask = Task {
-            do {
-                // Rooms 컬렉션이 비어있는 경우 현재 월 문서 생성
-                let roomsSnapshot = try await db.collection("Rooms").getDocuments()
-                if roomsSnapshot.isEmpty {
-                    
-                    try await db.collection("Rooms").document(DateManager.shared.currentMonth).setData([:])
-                    
-                }
-                
-                // 모든 월별 문서 ID 불러오기
-                let monthIDs = try await FirebaseManager.shared.fetchAllDocIDs(collectionName: "Rooms")
-                // 모든 월별 문서의 하위 컬렉션 리스너 설정
-                try await listenToMonthlyRooms(monthIDs: monthIDs)
-            } catch {
-                retry(asyncTask: listenToRooms) { result in
-                    switch result {
-                        
-                    case .success():
-                        print("월별 문서 불러오기 재시도 성공")
-                        
-                        return
-                        
-                    case .failure(let error):
-                        print("월별 문서 목록 불러오기 실패: \(error.localizedDescription)")
-                        return
-                        
-                    }
-                }
-            }
-            
-            listenToRoomsTask = nil
-        }
-    }
-        
-    private func removeAllListeners() {
-        
-        for listener in monthlyRoomListeners.values {
-            listener.remove()
-        }
-        monthlyRoomListeners.removeAll()
-        
+    private func detachHotRoomsListeners() {
+        hotRoomsListener?.remove()
+        hotRoomMessageListeners.values.forEach{ $0.remove() }
+        hotRoomMessageListeners.removeAll()
     }
     
     func remove_participant(room: ChatRoom) {
-        
         remove_participant_task?.cancel()
         remove_participant_task = Task {
             do {
@@ -560,14 +419,11 @@ class FirebaseManager {
                 
             }
         }
-        
     }
     
     // 방 참여자 업데이트
     func add_room_participant(room: ChatRoom) async throws {
-    
         add_room_participant_task?.cancel()
-        
         add_room_participant_task = Task {
             do {
                 

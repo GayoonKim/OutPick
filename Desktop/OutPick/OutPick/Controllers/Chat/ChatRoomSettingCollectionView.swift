@@ -264,7 +264,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
                                 FirebaseStorageManager.shared.deleteImageFromStorage(path: pathToRemove)
                             }
                             
-                            let pathToAdd = try await FirebaseStorageManager.shared.uploadImageToStorage(image: image, location: .RoomImage, roomID: room.ID)
+                            let pathToAdd = try await FirebaseStorageManager.shared.uploadImageToStorage(image: image, location: .RoomImage, roomName: room.roomName)
                             KingFisherCacheManager.shared.storeImage(image, forKey: pathToAdd)
                             newImagePath = pathToAdd
                         }

@@ -81,7 +81,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                     
                     Task { @MainActor in
                         do {
-                            try await FirebaseManager.shared.listenToRooms()
+                            try await FirebaseManager.shared.listenToHotRooms()
                             SocketIOManager.shared.establishConnection {
                                 SocketIOManager.shared.listenToChatMessage()
                             }

@@ -212,7 +212,7 @@ class SecondProfileViewController: UIViewController {
         
         Task {
             do {
-                if try await FirebaseManager.shared.checkDuplicate(toCompare: nickname) {
+                if try await FirebaseManager.shared.checkDuplicate(strToCompare: nickname, fieldToCompare: "nickName", collectionName: "Users") {
                     AlertManager.showAlertNoHandler(title: "닉네임 중복", message: "다른 닉네임을 선택해 주세요.", viewController: self)
                     return
                 }
@@ -224,7 +224,7 @@ class SecondProfileViewController: UIViewController {
                         self.userProfile.profileImagePath = nil
                     } else {
                         print("사용자 지정 프로필 이미지 감지됨 - 서버 업로드 진행")
-                        let imagePath = try await FirebaseStorageManager.shared.uploadImageToStorage(image: image, location: ImageLocation.ProfileImage, roomID: nil)
+                        let imagePath = try await FirebaseStorageManager.shared.uploadImageToStorage(image: image, location: ImageLocation.ProfileImage, roomName: nil)
                         print(#function, "업로드된 이미지 경로: \(imagePath)")
                         self.userProfile.profileImagePath = imagePath
                         LoginManager.shared.setCurrentUserProfile(self.userProfile)

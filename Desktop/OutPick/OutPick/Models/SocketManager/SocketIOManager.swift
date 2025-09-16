@@ -175,7 +175,7 @@ class SocketIOManager {
         Task { [weak self] in
             guard let self = self else { return }
             
-            let imageNames = try await FirebaseStorageManager.shared.uploadImagesToStorage(images: images, location: ImageLocation.RoomImage, ID: room.ID)
+            let imageNames = try await FirebaseStorageManager.shared.uploadImagesToStorage(images: images, location: ImageLocation.RoomImage, name: room.roomName)
             var attachments = Array<Attachment?>(repeating: nil, count: imageNames.count)
             
             let imageDataArray = try await withThrowingTaskGroup(of: (Int, [String:Any]?).self) { group in

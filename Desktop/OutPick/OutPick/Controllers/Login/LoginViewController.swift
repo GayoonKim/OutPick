@@ -108,7 +108,7 @@ class LoginViewController: UIViewController {
             do {
                 try await LoginManager.shared.updateLogDevID()
                 try await LoginManager.shared.setupDevIDListener()
-                try await FirebaseManager.shared.listenToRooms()
+                try await FirebaseManager.shared.listenToHotRooms()
                 SocketIOManager.shared.establishConnection {
                     SocketIOManager.shared.listenToChatMessage()
                 }

@@ -14,10 +14,25 @@ class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRe
         case main
     }
     
-    typealias Item = ChatRoom
+    struct RoomPreview: Hashable {
+        let room: ChatRoom
+        let messages: [ChatMessage]
+        
+        func hash(into hasher: inout Hasher) {
+            hasher.combine(room.ID) // 방 ID만으로 해시 계산
+        }
+        
+        static func == (lhs: RoomPreview, rhs: RoomPreview) -> Bool {
+            return lhs.room.ID == rhs.room.ID
+        }
+    }
+    
+//    typealias Item = ChatRoom
+    typealias Item = RoomPreview
     typealias DataSourceType = UICollectionViewDiffableDataSource<Section, Item>
     
-    var chatRooms: [ChatRoom] = []
+//    var chatRooms: [ChatRoom] = []
+    var chatRooms: [RoomPreview] = []
     var dataSource: DataSourceType!
     
     private lazy var cancellables = Set<AnyCancellable>()
@@ -60,50 +75,19 @@ class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRe
     
     private func bindPublishers() {
         // 방 목록 관련
-//        FirebaseManager.shared.$chatRooms
-////            .receive(on: DispatchQueue.main)
-////            
-//            .sink { [weak self] updatedRooms in
-//                guard let self = self else { return }
-//                self.chatRooms = updatedRooms
-//                self.updateCollectionView()
-//            }
-//            .store(in: &cancellables)
-        
-        
-        FirebaseManager.shared.roomChangePublisher
-//            .receive(on: DispatchQueue.main)
-            .sink { [weak self] updatedRoom in
+        FirebaseManager.shared.$hotRoomsWithPreviews
+
+            .sink { [weak self] updatedRooms in
                 guard let self = self else { return }
-                print(#function, "✅✅✅✅✅roomChangePublisher 실행✅✅✅✅✅")
-                
-                if let index = self.chatRooms.firstIndex(where: { $0.ID == updatedRoom.ID }) {
-                    self.chatRooms[index] = updatedRoom
-                    
-                    // Snapshot 업데이트
-                    var snapshot = self.dataSource.snapshot()
-                    // snapshot 내부에서 기존 item 찾아서 reload
-                    if let oldItem = snapshot.itemIdentifiers.first(where: { $0.ID == updatedRoom.ID }) {
-                        snapshot.deleteItems([oldItem])
-                        snapshot.appendItems([updatedRoom], toSection: .main)
-                        self.dataSource.apply(snapshot, animatingDifferences: true)
-                    } else {
-                        // snapshot에 없다면 append 또는 전체 업데이트 fallback
-                        self.updateCollectionView()
-                    }
-                    self.dataSource.apply(snapshot, animatingDifferences: false)
-                }
-                
-                print(#function, "RoomListsCollectionViewController.swift 방 정보 변경: \(updatedRoom)")
+                self.chatRooms = updatedRooms.map { RoomPreview(room: $0.0, messages: $0.1) }
+                self.updateCollectionView()
             }
             .store(in: &cancellables)
     }
 
     private func updateCollectionView() {
-//        let chatRoomsList = FirebaseManager.shared.currentChatRooms/*.sorted(by: <)*/
-        let chatRoomsList = Array(Set(FirebaseManager.shared.currentChatRooms))
+        let chatRoomsList = chatRooms.map { $0 }
         let itemBySection = [Section.main: chatRoomsList]
-        
         dataSource.applySnapshotUsing(sectionIDs: [Section.main], itemsBySection: itemBySection)
     }
     
@@ -120,7 +104,7 @@ class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRe
             cell.roomImageView.image = UIImage(named: "Default_Profile")
             
             // 사용자 지정 이미지가 있는 경우에만 이미지 로딩 진행
-            if let imagePath = item.roomImagePath, !imagePath.isEmpty {
+            if let imagePath = item.room.roomImagePath, !imagePath.isEmpty {
                 Task {
                     do {
                         if let cachedImage = KingfisherManager.shared.cache.retrieveImageInMemoryCache(forKey: imagePath) {
@@ -128,7 +112,7 @@ class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRe
                                 cell.roomImageView.image = cachedImage
                             }
                         } else {
-                            let image = try await FirebaseStorageManager.shared.fetchImageFromStorage(image: imagePath, location: .RoomImage, createdDate: item.createdAt)
+                            let image = try await FirebaseStorageManager.shared.fetchImageFromStorage(image: imagePath, location: .RoomImage, createdDate: item.room.createdAt)
                             try await KingfisherManager.shared.cache.store(image, forKey: imagePath)
                             DispatchQueue.main.async {
                                 cell.roomImageView.image = image
@@ -140,8 +124,8 @@ class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRe
                 }
             }
             
-            cell.roomNameLabel.text = item.roomName
-            cell.roomDescriptionLabel.text = item.roomDescription
+            cell.roomNameLabel.text = item.room.roomName
+            cell.roomDescriptionLabel.text = item.room.roomDescription
             
             return cell
         }
@@ -168,7 +152,7 @@ class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRe
 
         let storyboard = UIStoryboard(name: "Main", bundle: nil)
         guard let chatRoomVC = storyboard.instantiateViewController(withIdentifier: "chatRoomVC") as? ChatViewController else { return }
-        chatRoomVC.room = selectedItem
+        chatRoomVC.room = selectedItem.room
         chatRoomVC.isRoomSaving = false
         chatRoomVC.modalPresentationStyle = .fullScreen
         
