@@ -193,6 +193,29 @@ class FirebaseManager {
     }
     
     //MARK: 채팅 방 관련 기능들
+    @MainActor
+    func updateRoomLastMessageAt(roomID: String, date: Date? = nil) async {
+        guard !roomID.isEmpty else {
+            print("❌ updateRoomLastMessageAt: roomID is empty")
+            return
+        }
+        
+        do {
+            let ref = db.collection("Rooms").document(roomID)
+            var updateData: [String: Any] = [:]
+            
+            if let date = date {
+                updateData["lastMessageAt"] = Timestamp(date: date)
+            } else {
+                updateData["lastMessageAt"] = FieldValue.serverTimestamp()
+            }
+            
+            try await ref.updateData(updateData)
+            print("✅ lastMessageAt 업데이트 성공 → \(roomID)")
+        } catch {
+            print("🔥 lastMessageAt 업데이트 실패: \(error)")
+        }
+    }
     
     // 특정 방 문서 불러오기
     func getRoomDoc(room: ChatRoom) async throws -> DocumentSnapshot? {

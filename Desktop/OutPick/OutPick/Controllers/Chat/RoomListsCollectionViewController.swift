@@ -49,6 +49,7 @@ class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRe
         self.attachInteractiveDismissGesture()
         
         dataSource = configureDataSource()
+        collectionView.register(RoomListCollectionViewCell.self, forCellWithReuseIdentifier: RoomListCollectionViewCell.identifier)
         collectionView.dataSource = dataSource
         collectionView.collectionViewLayout = configureLayout()
         collectionView.backgroundColor = .white
@@ -66,7 +67,7 @@ class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRe
             let vc = storyboard.instantiateViewController(withIdentifier: "weatherVC")
             return vc
         case 1:
-            let vc = storyboard.instantiateViewController(withIdentifier: "chatListVC")
+            let vc = RoomListsCollectionViewController(collectionViewLayout: UICollectionViewFlowLayout())
             return vc
         default:
             return UIViewController()
@@ -94,16 +95,11 @@ class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRe
     private func configureDataSource() -> DataSourceType {
         let dataSource = DataSourceType(collectionView: collectionView) { (collectionView, indexPath, item) in
             
-            let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "ChatRoom", for: indexPath) as! RoomListCollectionViewCell
+            let cell = collectionView.dequeueReusableCell(withReuseIdentifier: RoomListCollectionViewCell.identifier, for: indexPath) as! RoomListCollectionViewCell
             cell.backgroundColor = .white
+            
+            cell.configure(room: item.room, messages: item.messages)
 
-            cell.roomImageView.layer.cornerRadius = 15
-            cell.roomImageView.clipsToBounds = true
-            
-            // 기본 이미지 설정
-            cell.roomImageView.image = UIImage(named: "Default_Profile")
-            
-            // 사용자 지정 이미지가 있는 경우에만 이미지 로딩 진행
             if let imagePath = item.room.roomImagePath, !imagePath.isEmpty {
                 Task {
                     do {
@@ -123,10 +119,7 @@ class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRe
                     }
                 }
             }
-            
-            cell.roomNameLabel.text = item.room.roomName
-            cell.roomDescriptionLabel.text = item.room.roomDescription
-            
+
             return cell
         }
         
@@ -134,10 +127,18 @@ class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRe
     }
     
     private func configureLayout() -> UICollectionViewCompositionalLayout {
-        let itemSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .fractionalHeight(1))
+//        let itemSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .fractionalHeight(1))
+        let itemSize = NSCollectionLayoutSize(
+            widthDimension: .fractionalWidth(1),
+            heightDimension: .estimated(200) // 👈 대략 예상 높이
+        )
         let item = NSCollectionLayoutItem(layoutSize: itemSize)
         
-        let groupSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .fractionalHeight(0.45))
+//        let groupSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .fractionalHeight(0.45))
+        let groupSize = NSCollectionLayoutSize(
+            widthDimension: .fractionalWidth(1),
+            heightDimension: .estimated(200) // 👈 여기도 estimated
+        )
 //        let group = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize, repeatingSubitem: item, count: 1)
         let group = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize, subitems: [item])
         

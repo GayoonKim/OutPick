@@ -35,7 +35,7 @@ class SocketIOManager {
     
     private init() {
         //manager = SocketManager(socketURL: URL(string: "http://127.0.0.1:3000")!, config: [.log(true), .compress])
-        manager = SocketManager(socketURL: URL(string: "http://192.168.123.156:3000")!, config: [.log(true), .compress])
+        manager = SocketManager(socketURL: URL(string: "http://192.168.123.140:3000")!, config: [.log(true), .compress])
         socket = manager.defaultSocket
         
         socket.on(clientEvent: .connect) {data, ack in
@@ -149,6 +149,11 @@ class SocketIOManager {
             socket.emitWithAck("chat message", message.toSocketRepresentation()).timingOut(after: 5) { ackResponse in
                 if let ackDict = ackResponse.first as? [String:Any],
                    let success = ackDict["success"] as? Bool, success {
+                    
+                    Task {
+                        await FirebaseManager.shared.updateRoomLastMessageAt(roomID: room.ID ?? "", date: message.sentAt)
+                    }
+                    
                     self.messageSubject.send(message)
                 } else {
                     //                    print(#function, "********** 메시지 전송 타임아웃 **********")

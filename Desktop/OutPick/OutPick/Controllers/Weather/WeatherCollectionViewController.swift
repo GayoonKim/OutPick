@@ -106,7 +106,8 @@ class HomeCollectionViewController: CustomTabBarViewController {
             let vc = storyboard.instantiateViewController(withIdentifier: "weatherVC")
             return vc
         case 1:
-            let vc = storyboard.instantiateViewController(withIdentifier: "chatListVC")
+//            let vc = storyboard.instantiateViewController(withIdentifier: "chatListVC")
+            let vc = RoomListsCollectionViewController(collectionViewLayout: UICollectionViewFlowLayout())
             return vc
             
         case 4:

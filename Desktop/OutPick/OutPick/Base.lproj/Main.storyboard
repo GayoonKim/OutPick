@@ -656,7 +656,7 @@
                                         </constraints>
                                     </stackView>
                                     <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="yCa-1e-AkI">
-                                        <rect key="frame" x="20" y="456" width="362" height="50"/>
+                                        <rect key="frame" x="20" y="568" width="362" height="50"/>
                                         <constraints>
                                             <constraint firstAttribute="height" constant="50" id="3CE-Bd-2Va"/>
                                         </constraints>
