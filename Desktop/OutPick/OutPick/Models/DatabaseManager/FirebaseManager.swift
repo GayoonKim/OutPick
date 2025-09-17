@@ -277,7 +277,6 @@ class FirebaseManager {
             
             do {
                 let _ = try await db.runTransaction({ (transaction, errorPointer) -> Any? in
-                    
                     tempRoom.ID = roomRef.documentID
                     transaction.setData(tempRoom.toDictionary(), forDocument: roomRef)
                     

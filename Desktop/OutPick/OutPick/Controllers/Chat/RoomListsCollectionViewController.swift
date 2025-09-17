@@ -19,19 +19,17 @@ class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRe
         let messages: [ChatMessage]
         
         func hash(into hasher: inout Hasher) {
-            hasher.combine(room.ID) // 방 ID만으로 해시 계산
+            hasher.combine(room.ID)
         }
         
         static func == (lhs: RoomPreview, rhs: RoomPreview) -> Bool {
             return lhs.room.ID == rhs.room.ID
         }
     }
-    
-//    typealias Item = ChatRoom
+
     typealias Item = RoomPreview
     typealias DataSourceType = UICollectionViewDiffableDataSource<Section, Item>
-    
-//    var chatRooms: [ChatRoom] = []
+
     var chatRooms: [RoomPreview] = []
     var dataSource: DataSourceType!
     
@@ -44,7 +42,7 @@ class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRe
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        self.view.backgroundColor = .white 
+        self.view.backgroundColor = .white
 
         self.attachInteractiveDismissGesture()
         
@@ -77,17 +75,22 @@ class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRe
     private func bindPublishers() {
         // 방 목록 관련
         FirebaseManager.shared.$hotRoomsWithPreviews
-
+            .subscribe(on: DispatchQueue.global(qos: .userInitiated)) // ⬅️ 백그라운드에서 변환
+            .map { (pairs: [(ChatRoom, [ChatMessage])]) -> [RoomPreview] in
+                pairs.map { RoomPreview(room: $0.0, messages: $0.1) }
+            }
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] updatedRooms in
                 guard let self = self else { return }
-                self.chatRooms = updatedRooms.map { RoomPreview(room: $0.0, messages: $0.1) }
+                self.chatRooms = updatedRooms
                 self.updateCollectionView()
             }
             .store(in: &cancellables)
     }
 
+    @MainActor
     private func updateCollectionView() {
-        let chatRoomsList = chatRooms.map { $0 }
+        let chatRoomsList = chatRooms
         let itemBySection = [Section.main: chatRoomsList]
         dataSource.applySnapshotUsing(sectionIDs: [Section.main], itemsBySection: itemBySection)
     }
@@ -127,19 +130,16 @@ class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRe
     }
     
     private func configureLayout() -> UICollectionViewCompositionalLayout {
-//        let itemSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .fractionalHeight(1))
         let itemSize = NSCollectionLayoutSize(
             widthDimension: .fractionalWidth(1),
-            heightDimension: .estimated(200) // 👈 대략 예상 높이
+            heightDimension: .estimated(200)
         )
         let item = NSCollectionLayoutItem(layoutSize: itemSize)
         
-//        let groupSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .fractionalHeight(0.45))
         let groupSize = NSCollectionLayoutSize(
             widthDimension: .fractionalWidth(1),
-            heightDimension: .estimated(200) // 👈 여기도 estimated
+            heightDimension: .estimated(200)
         )
-//        let group = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize, repeatingSubitem: item, count: 1)
         let group = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize, subitems: [item])
         
         let section = NSCollectionLayoutSection(group: group)

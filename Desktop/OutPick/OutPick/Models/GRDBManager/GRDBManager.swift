@@ -57,6 +57,17 @@ final class GRDBManager {
             }
         }
         
+        migrator.registerMigration("addReplyPreviewToChatMessage") { db in
+            do {
+                try db.alter(table: "chatMessage") { t in
+                    t.add(column: "replyPreview", .text) // JSON string of ReplyPreview
+                }
+            } catch {
+                // 컬럼이 이미 있으면 에러가 날 수 있으므로 무시(신규/기존 DB 모두 호환)
+                print("[Migration] addReplyPreviewToChatMessage skipped or failed: \(error)")
+            }
+        }
+        
         migrator.registerMigration("createRoomParticipant") { db in
             try db.create(table: "roomParticipant") { t in
                 t.column("roomId", .text).notNull()
@@ -126,11 +137,22 @@ final class GRDBManager {
         let jsonData = try JSONEncoder().encode(message.attachments)
         let attachmentsJSON = String(data: jsonData, encoding: .utf8) ?? "[]"
         
+        let replyPreviewJSON: String? = {
+            guard let rp = message.replyPreview else { return nil }
+            do {
+                let data = try JSONEncoder().encode(rp)
+                return String(data: data, encoding: .utf8)
+            } catch {
+                print("replyPreview JSON 인코딩 실패: \(error)")
+                return nil
+            }
+        }()
+        
         try await dbPool.write { db in
             try db.execute(
                 sql: """
                 INSERT OR REPLACE INTO chatMessage
-                (id, roomID, senderID, senderNickname, msg, sentAt, attachments, isFailed, replyTo)
+                (id, roomID, senderID, senderNickname, msg, sentAt, attachments, isFailed, replyPreview)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 arguments: [
@@ -142,7 +164,7 @@ final class GRDBManager {
                     message.sentAt,
                     attachmentsJSON,
                     message.isFailed,
-                    message.replyTo
+                    replyPreviewJSON
                 ]
             )
             
@@ -182,6 +204,12 @@ final class GRDBManager {
                 let attachmentsJSON = row["attachments"] as? String ?? "[]"
                 let attachments = try JSONDecoder().decode([Attachment].self, from: Data(attachmentsJSON.utf8))
                 
+                let rpJSON = row["replyPreview"] as? String
+                let replyPreview: ReplyPreview? = {
+                    guard let rpJSON, let data = rpJSON.data(using: .utf8) else { return nil }
+                    return try? JSONDecoder().decode(ReplyPreview.self, from: data)
+                }()
+                
                 return ChatMessage(
                     ID: row["id"],
                     roomID: row["roomID"],
@@ -190,8 +218,7 @@ final class GRDBManager {
                     msg: row["msg"],
                     sentAt: row["sentAt"],
                     attachments: attachments,
-                    replyTo: row["replyTo"],
-//                    isFailed: row["isFailed"] as? Bool ?? false
+                    replyPreview: replyPreview,
                     isFailed: (row["isFailed"] as? Int64 == 1)
                 )
             }
@@ -210,6 +237,12 @@ final class GRDBManager {
                 let attachmentsJSON = row["attachments"] as? String ?? "[]"
                 let attachments = try JSONDecoder().decode([Attachment].self, from: Data(attachmentsJSON.utf8))
 
+                let rpJSON = row["replyPreview"] as? String
+                let replyPreview: ReplyPreview? = {
+                    guard let rpJSON, let data = rpJSON.data(using: .utf8) else { return nil }
+                    return try? JSONDecoder().decode(ReplyPreview.self, from: data)
+                }()
+
                 return ChatMessage(
                     ID: row["id"],
                     roomID: row["roomID"],
@@ -218,8 +251,7 @@ final class GRDBManager {
                     msg: row["msg"],
                     sentAt: row["sentAt"],
                     attachments: attachments,
-                    replyTo: row["replyTo"],
-//                    isFailed: row["isFailed"] as? Bool ?? false
+                    replyPreview: replyPreview,
                     isFailed: (row["isFailed"] as? Int64 == 1)
                 )
             }
@@ -230,14 +262,14 @@ final class GRDBManager {
 //    func debugFTSContent() async throws {
 //        try await dbPool.read { db in
 //            print("�� === FTS 테이블 디버깅 ===")
-//            
+//
 //            // FTS 테이블 내용 확인
 //            let ftsRows = try Row.fetchAll(db, sql: "SELECT * FROM chatMessageFTS LIMIT 5")
 //            print("�� FTS 테이블 샘플 데이터:")
 //            for (index, row) in ftsRows.enumerated() {
 //                print("  \(index): id=\(row["id"] ?? "nil"), msg=\(row["msg"] ?? "nil"), roomID=\(row["roomID"] ?? "nil")")
 //            }
-//            
+//
 //            // chatMessage 테이블과 비교
 //            let chatRows = try Row.fetchAll(db, sql: "SELECT id, msg, roomID FROM chatMessage LIMIT 5")
 //            print("�� chatMessage 테이블 샘플 데이터:")

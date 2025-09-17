@@ -217,7 +217,7 @@ class ChatMessageCell: UICollectionViewCell {
         replyPreviewMsgLabel.text = nil
     }
     
-    func configureWithMessage(with message: ChatMessage, originalPreviewProvider: (() -> (String, String)?)?) {
+    func configureWithMessage(with message: ChatMessage/*, originalPreviewProvider: (() -> (String, String)?)?*/) {
         messageLabel.text = message.msg
         imagesPreviewCollectionView.isHidden = true
         
@@ -268,10 +268,10 @@ class ChatMessageCell: UICollectionViewCell {
             failedIconImageViewTrainlingConstraint
         ].compactMap{ $0 })
         
-        if let (name, text) = originalPreviewProvider?() {
+        if let replyMessage = message.replyPreview {
             replyPreviewContainer.isHidden = false
-            replyPreviewNameLabel.text = name
-            replyPreviewMsgLabel.text = text
+            replyPreviewNameLabel.text = replyMessage.sender
+            replyPreviewMsgLabel.text = replyMessage.text
             
             NSLayoutConstraint.deactivate([messageLabelTopConsraint!])
             messageLabelTopConsraint = messageLabel.topAnchor.constraint(equalTo: replyPreviewContainer.bottomAnchor, constant: 5)
@@ -283,52 +283,7 @@ class ChatMessageCell: UICollectionViewCell {
         self.setNeedsLayout()
         self.layoutIfNeeded()
     }
-    
-//    private func setupReplyView(_ originalPreviewProvider: (() -> (String, String)?)?) {
-//        // replyPreviewView: 작은 UIView 또는 UILabel
-//        guard let originalPreview = originalPreviewProvider?() else { return }
-//
-//        NSLayoutConstraint.deactivate([ messageLabelTopConsraint! ])
-//        
-//        let replyPreviewName = UILabel()
-//        replyPreviewName.font = .systemFont(ofSize: 10, weight: .medium)
-//        replyPreviewName.textColor = .black
-//        replyPreviewName.text = "\(originalPreview.0)"
-//        replyPreviewName.translatesAutoresizingMaskIntoConstraints = false
-//        
-//        let replyPreviewMsg = UILabel()
-//        replyPreviewMsg.font = .systemFont(ofSize: 9, weight: .light)
-//        replyPreviewMsg.textColor = .black
-//        replyPreviewMsg.text = "\(originalPreview.1)"
-//        replyPreviewMsg.translatesAutoresizingMaskIntoConstraints = false
-//        
-//        let seperator = makeSeparator()
-//        
-//        messageLabelTopConsraint = messageLabel.topAnchor.constraint(equalTo: seperator.bottomAnchor, constant: 3)
-//        
-//        bubbleView.addSubview(seperator)
-//        bubbleView.addSubview(replyPreviewName)
-//        bubbleView.addSubview(replyPreviewMsg)
-//        NSLayoutConstraint.activate([
-//            replyPreviewName.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 10),
-//            replyPreviewName.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor, constant: -10),
-//            replyPreviewName.topAnchor.constraint(equalTo: bubbleView.topAnchor, constant: 10),
-//            replyPreviewName.centerXAnchor.constraint(equalTo: messageLabel.centerXAnchor),
-//            
-//            replyPreviewMsg.topAnchor.constraint(equalTo: replyPreviewName.bottomAnchor, constant: 3),
-//            replyPreviewMsg.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 10),
-//            replyPreviewMsg.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor, constant: -10),
-//            replyPreviewMsg.centerXAnchor.constraint(equalTo: messageLabel.centerXAnchor),
-//            
-//            seperator.topAnchor.constraint(equalTo: replyPreviewMsg.bottomAnchor, constant: 10),
-//            seperator.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 10),
-//            seperator.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor, constant: -10),
-//            messageLabelTopConsraint!
-//        ])
-//        
-//        contentView.bringSubviewToFront(seperator)
-//    }
-    
+
     func configureWithImage(with message: ChatMessage) {
         bubbleView.isHidden = true
         messageLabel.isHidden = true

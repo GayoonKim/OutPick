@@ -35,7 +35,7 @@ class SocketIOManager {
     
     private init() {
         //manager = SocketManager(socketURL: URL(string: "http://127.0.0.1:3000")!, config: [.log(true), .compress])
-        manager = SocketManager(socketURL: URL(string: "http://192.168.123.140:3000")!, config: [.log(true), .compress])
+        manager = SocketManager(socketURL: URL(string: "http://192.168.123.135:3000")!, config: [.log(true), .compress])
         socket = manager.defaultSocket
         
         socket.on(clientEvent: .connect) {data, ack in
@@ -209,7 +209,7 @@ class SocketIOManager {
             
             let finalAttachments = attachments.compactMap { $0 }
 //            let images = finalAttachments.compactMap{ $0.toUIImage() }
-            let message = ChatMessage(roomID: room.ID ?? "", senderID: LoginManager.shared.getUserEmail, senderNickname: LoginManager.shared.currentUserProfile?.nickname ?? "", msg: "", sentAt: Date(), attachments: finalAttachments, replyTo: nil)
+            let message = ChatMessage(roomID: room.ID ?? "", senderID: LoginManager.shared.getUserEmail, senderNickname: LoginManager.shared.currentUserProfile?.nickname ?? "", msg: "", sentAt: Date(), attachments: finalAttachments, replyPreview: nil)
             
             socket.emitWithAck("send images", ["roomID": message.roomID, "senderID": message.senderID, "senderNickName": message.senderNickname, "sentAt": "\(message.sentAt ?? Date())", "images": imageDataArray]).timingOut(after: 5) { ackResponse in
                 
@@ -254,7 +254,7 @@ class SocketIOManager {
             msg: "",
             sentAt: Date(),
             attachments: localAttachments,
-            replyTo: nil,
+            replyPreview: nil,
             isFailed: true
         )
 
@@ -284,9 +284,19 @@ class SocketIOManager {
                 print("❌ 메시지 데이터 파싱 실패: \(messageData)")
                 return
             }
-            
-            let replyTo = messageData["replyTo"] as? String
-            
+
+            // replyPreview 파싱 (선택)
+            var rp: ReplyPreview? = nil
+            if let rpDict = messageData["replyPreview"] as? [String: Any],
+               let mid = rpDict["messageID"] as? String, !mid.isEmpty {
+                rp = ReplyPreview(
+                    messageID: mid,
+                    sender: (rpDict["author"] as? String) ?? "",
+                    text: (rpDict["text"] as? String) ?? "",
+                    isDeleted: (rpDict["isDeleted"] as? Bool) ?? false
+                )
+            }
+
             let message = ChatMessage(
                 roomID: roomID,
                 senderID: senderID,
@@ -294,11 +304,11 @@ class SocketIOManager {
                 msg: messageText,
                 sentAt: Date(),
                 attachments: [],
-                replyTo: replyTo
+                replyPreview: rp
             )
-            
+
             if senderID == LoginManager.shared.getUserEmail { return }
-            
+
             Task { @MainActor in
                 if let myProfile = LoginManager.shared.currentUserProfile,
                    let myNickname = myProfile.nickname,
@@ -307,7 +317,7 @@ class SocketIOManager {
                 }
             }
         }
-        
+
         //중복 방지를 위해 기존 리스너 제거 (혹시 모를 중복 대비)
         socket.off("receiveImages")
         socket.on("receiveImages") { dataArray, _ in
@@ -316,26 +326,44 @@ class SocketIOManager {
                   let roomID = data["roomID"] as? String,
                   let senderID = data["senderID"] as? String,
                   let senderNickName = data["senderNickName"] as? String,
-                  let sentAtString = data["sentAt"] as? String,
-                  let replyTo = data["replyTo"] as? String else { return }
-            
+                  let sentAtString = data["sentAt"] as? String else { return }
+
             if senderID == LoginManager.shared.getUserEmail { return }
-            
+
             // String -> Date 변환
             let sentAt = SocketIOManager.isoFormatter.date(from: sentAtString) ?? Date()
-            
+
             let attachments = imageDataArray.compactMap { imageData -> Attachment? in
                 guard let imageName = imageData["fileName"] as? String,
                       let imageData = imageData["fileData"] as? Data else {
                     print("이미지 데이터 변환 실패: \(imageData)")
                     return nil
                 }
-                
                 return Attachment(type: .image, fileName: imageName, fileData: imageData)
             }
 
-            let message = ChatMessage(roomID: roomID, senderID: senderID, senderNickname: senderNickName, msg: nil, sentAt: sentAt, attachments: attachments, replyTo: replyTo)
-            
+            // replyPreview 파싱 (선택)
+            var rp: ReplyPreview? = nil
+            if let rpDict = data["replyPreview"] as? [String: Any],
+               let mid = rpDict["messageID"] as? String, !mid.isEmpty {
+                rp = ReplyPreview(
+                    messageID: mid,
+                    sender: (rpDict["author"] as? String) ?? "",
+                    text: (rpDict["text"] as? String) ?? "",
+                    isDeleted: (rpDict["isDeleted"] as? Bool) ?? false
+                )
+            }
+
+            let message = ChatMessage(
+                roomID: roomID,
+                senderID: senderID,
+                senderNickname: senderNickName,
+                msg: nil,
+                sentAt: sentAt,
+                attachments: attachments,
+                replyPreview: rp
+            )
+
             Task { @MainActor in
                 if let myProfile = LoginManager.shared.currentUserProfile,
                    let myNickname = myProfile.nickname,
@@ -358,17 +386,27 @@ class SocketIOManager {
                 print("데이터 파싱 실패")
                 return
             }
-            
+
             print("서버 전송 실패 (\(type)): \(reason)")
-            
+
             DispatchQueue.main.async {
                 if type == "message" {
                     let roomID = failedData["roomID"] as? String ?? ""
                     let senderID = failedData["senderID"] as? String ?? ""
                     let senderNickName = failedData["senderNickName"] as? String ?? ""
                     let msg = failedData["msg"] as? String ?? ""
-                    let replyTo = failedData["replyTo"] as? String
-                    
+
+                    var rp: ReplyPreview? = nil
+                    if let rpDict = failedData["replyPreview"] as? [String: Any],
+                       let mid = rpDict["messageID"] as? String, !mid.isEmpty {
+                        rp = ReplyPreview(
+                            messageID: mid,
+                            sender: (rpDict["author"] as? String) ?? "",
+                            text: (rpDict["text"] as? String) ?? "",
+                            isDeleted: (rpDict["isDeleted"] as? Bool) ?? false
+                        )
+                    }
+
                     var failedMessage = ChatMessage(
                         roomID: roomID,
                         senderID: senderID,
@@ -376,46 +414,56 @@ class SocketIOManager {
                         msg: msg,
                         sentAt: Date(),
                         attachments: [],
-                        replyTo: replyTo
+                        replyPreview: rp
                     )
                     failedMessage.isFailed = true
-                    
+
                     self.messageSubject.send(failedMessage)
                 }
-                
+
                 if type == "image" {
                     guard let roomID = failedData["roomID"] as? String,
                           let senderID = failedData["senderID"] as? String,
                           let senderNickName = failedData["senderNickName"] as? String,
                           let sentAtString = failedData["sentAt"] as? String,
-                          let imageDataArray = failedData["images"] as? [[String: Any]],
-                          let replyTo = failedData["replyTo"] as? String else {
+                          let imageDataArray = failedData["images"] as? [[String: Any]] else {
                         print("이미지 실패 데이터 파싱 실패")
                         return
                     }
-                    
+
                     let sentAt = SocketIOManager.isoFormatter.date(from: sentAtString) ?? Date()
-                    
+
                     let attachments = imageDataArray.compactMap { imageData -> Attachment? in
                         guard let imageName = imageData["fileName"] as? String,
                               let imageData = imageData["fileData"] as? Data else {
                             print("이미지 실패 attachment 변환 실패: \(imageData)")
                             return nil
                         }
-                        
                         return Attachment(type: .image, fileName: imageName, fileData: imageData)
                     }
-                    
+
+                    var rp: ReplyPreview? = nil
+                    if let rpDict = failedData["replyPreview"] as? [String: Any],
+                       let mid = rpDict["messageID"] as? String, !mid.isEmpty {
+                        rp = ReplyPreview(
+                            messageID: mid,
+                            sender: (rpDict["author"] as? String) ?? "",
+                            text: (rpDict["text"] as? String) ?? "",
+                            isDeleted: (rpDict["isDeleted"] as? Bool) ?? false
+                        )
+                    }
+
                     var failedImageMessage = ChatMessage(
                         roomID: roomID,
                         senderID: senderID,
                         senderNickname: senderNickName,
                         msg: nil,
                         sentAt: sentAt,
-                        attachments: attachments, replyTo: replyTo
+                        attachments: attachments,
+                        replyPreview: rp
                     )
                     failedImageMessage.isFailed = true
-                    
+
                     self.messageSubject.send(failedImageMessage)
                 }
             }

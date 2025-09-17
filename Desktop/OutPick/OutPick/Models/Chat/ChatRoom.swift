@@ -57,15 +57,4 @@ extension ChatRoom: Hashable {
     static func == (lhs: ChatRoom, rhs: ChatRoom) -> Bool {
         return lhs.ID == rhs.ID
     }
-    
-//    static func == (lhs: ChatRoom, rhs: ChatRoom) -> Bool {
-//        return lhs.roomName == rhs.roomName
-//    }
-    
-//    static func < (lhs: ChatRoom, rhs: ChatRoom) -> Bool {
-//        let lhsDate = lhs.createdAt.addingTimeInterval(100)
-//        let rhsDate = rhs.createdAt.addingTimeInterval(100)
-//        
-//        return lhsDate < rhsDate
-//    }
 }

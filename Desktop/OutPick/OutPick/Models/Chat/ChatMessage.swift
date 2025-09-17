@@ -10,6 +10,13 @@ import FirebaseCore
 import SocketIO
 import FirebaseFirestore
 
+struct ReplyPreview: Codable, Hashable {
+    let messageID: String
+    var sender: String
+    var text: String
+    var isDeleted: Bool = false
+}
+
 // 채팅 메시지 정보
 struct ChatMessage: SocketData, Codable {
     var ID: String = UUID().uuidString
@@ -19,7 +26,7 @@ struct ChatMessage: SocketData, Codable {
     let msg: String?                    // 메시지 내용
     let sentAt: Date?                   // 메시지 보낸 시간
     let attachments: [Attachment]
-    let replyTo: String?
+    var replyPreview: ReplyPreview?
     var isFailed: Bool = false
 
     enum CodingKeys: String, CodingKey {
@@ -29,7 +36,7 @@ struct ChatMessage: SocketData, Codable {
         case msg
         case sentAt
         case attachments
-        case replyTo
+        case replyPreview
     }
     
     func toSocketRepresentation() -> SocketData {
@@ -39,10 +46,18 @@ struct ChatMessage: SocketData, Codable {
             "senderID": senderID,
             "senderNickName": senderNickname,
             "msg": msg ?? "",
-            "replyTo": replyTo ?? ""
         ]
         
         dict["attachments"] = attachments.map { $0.toDict() }
+        
+        if let rp = replyPreview {
+            dict["replyPreview"] = [
+                "messageID": rp.messageID,
+                "sender": rp.sender,
+                "text": rp.text,
+                "isDeleted": rp.isDeleted
+            ]
+        }
         
         return dict
     }
@@ -56,10 +71,18 @@ struct ChatMessage: SocketData, Codable {
             "senderNickName": senderNickname,
             "msg": msg ?? "",
             "sentAt": Timestamp(date: sentAt ?? Date()),
-            "replyTo": replyTo ?? ""
         ]
 
         dict["attachments"] = attachments.map { $0.toDict() }
+        
+        if let rp = replyPreview {
+            dict["replyPreview"] = [
+                "messageID": rp.messageID,
+                "sender": rp.sender,
+                "text": rp.text,
+                "isDeleted": rp.isDeleted
+            ]
+        }
         
         return dict
     }

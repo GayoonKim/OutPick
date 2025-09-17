@@ -36,7 +36,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     private var isUserInCurrentRoom = false
     
-    private var replyingToMessageID: String?
+//    private var replyingToMessageID: String?
+    private var replyMessage: ReplyPreview?
     private var messageMap: [String: ChatMessage] = [:]
     
     enum Section: Hashable {
@@ -235,13 +236,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 }
             }
         }
-
-//        if let topVC = self.navigationController?.topViewController,
-//           topVC is ChatRoomSettingCollectionView {
-//            return
-//        } else {
-//            SocketIOManager.shared.closeConnection()
-//        }
     }
     
     func viwDidDisappear(_ animated: Bool) {
@@ -296,15 +290,25 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     @MainActor
     private func setupChatUI() {
+        
+        // 이전 상태(참여 전)에 설정된 제약을 정리하기 위해, 중복 추가를 방지하고 기존 제약과 충돌하지 않도록 제거
+        if chatMessageCollectionView.superview != nil {
+            chatMessageCollectionView.removeFromSuperview()
+        }
+        if chatUIView.superview != nil {
+            chatUIView.removeFromSuperview()
+        }
+        
         view.addSubview(chatUIView)
         chatUIView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(chatMessageCollectionView)
         chatMessageCollectionView.translatesAutoresizingMaskIntoConstraints = false
         
+        chatUIViewBottomConstraint = chatUIView.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor)
         NSLayoutConstraint.activate([
             chatUIView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 8),
             chatUIView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -8),
-            chatUIView.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor),
+            chatUIViewBottomConstraint!,
             chatUIView.heightAnchor.constraint(greaterThanOrEqualToConstant: chatUIView.minHeight),
             
             chatMessageCollectionView.topAnchor.constraint(equalTo: view.topAnchor),
@@ -330,13 +334,13 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         self.chatUIView.messageTextView.text = nil
         self.chatUIView.updateHeight()
         
-        let newMessage = ChatMessage(roomID: room.ID ?? "", senderID: LoginManager.shared.getUserEmail, senderNickname: LoginManager.shared.currentUserProfile?.nickname ?? "", msg: message, sentAt: Date(), attachments: [], replyTo: replyingToMessageID ?? "")
+        let newMessage = ChatMessage(roomID: room.ID ?? "", senderID: LoginManager.shared.getUserEmail, senderNickname: LoginManager.shared.currentUserProfile?.nickname ?? "", msg: message, sentAt: Date(), attachments: [], replyPreview: replyMessage)
         
         SocketIOManager.shared.sendMessages(room, newMessage)
         chatUIView.sendButton.isEnabled = false
         
-        if let _ = replyingToMessageID {
-            replyingToMessageID = nil
+        if replyMessage != nil {
+            replyMessage = nil
             replyView.isHidden = true
         }
     }
@@ -371,8 +375,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             print("❌ 메시지 동기화 실패: \(error)")
         }
     }
-    
-    
+
     //MARK: 첨부파일 관련
     @MainActor
     private func hideOrShowOptionMenu() {
@@ -508,12 +511,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             if SocketIOManager.shared.isConnected {
                 SocketIOManager.shared.createRoom(savedRoom.roomName)
                 SocketIOManager.shared.joinRoom(savedRoom.roomName)
-            } else {
-                // 연결되지 않은 경우에만 연결 시도
-//                SocketIOManager.shared.establishConnection {
-//                    SocketIOManager.shared.createRoom(savedRoom.roomName)
-//                    SocketIOManager.shared.joinRoom(savedRoom.roomName)
-//                }
             }
         }
     }
@@ -631,9 +628,14 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         joinRoomBtn.isHidden = true
         self.customNavigationBar.rightStack.isUserInteractionEnabled = true
         
+        NSLayoutConstraint.deactivate(joinConsraints)
+        joinConsraints.removeAll()
+        if chatMessageCollectionView.superview != nil {
+            chatMessageCollectionView.removeFromSuperview()
+        }
+        
         Task {
             do {
-                
                 // 1. 소켓 연결
                 if !SocketIOManager.shared.isConnected {
                     SocketIOManager.shared.establishConnection { [weak self] in
@@ -664,10 +666,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 setupChatUI()
                 chatUIView.isHidden = false
                 chatMessageCollectionView.isHidden = false
-                
-                NSLayoutConstraint.deactivate(joinConsraints)
-                chatConstraints.append(chatMessageCollectionView.bottomAnchor.constraint(equalTo: chatUIView.topAnchor))
-                NSLayoutConstraint.activate(chatConstraints)
+
+                view.layoutIfNeeded()
             } catch {
                 print("방 참여 처리 실패: \(error)")
             }
@@ -896,9 +896,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             return nil
         }
     }
-    
-    
-    
+
     //MARK: 메시지 삭제/답장/복사 관련
     @MainActor
     private func showCustomMenu(at indexPath: IndexPath/*, aboveCell: Bool*/) {
@@ -959,9 +957,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     @MainActor
     private func handleReply(message: ChatMessage) {
         print(#function, "답장:", message)
+        self.replyMessage = ReplyPreview(messageID: message.ID, sender: message.senderNickname, text: message.msg ?? "", isDeleted: false)
         replyView.configure(with: message)
         replyView.isHidden = false
-        replyingToMessageID = message.ID
     }
     
     private func handleCopy(message: ChatMessage) {
@@ -1026,12 +1024,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         ])
         view.bringSubviewToFront(replyView)
     }
-    
-    private func fetchOriginalMessagePreview(for replyToID: String) -> (sender: String, message: String)? {
-        guard let msg = messageMap[replyToID] else { return nil }
-        return (sender: msg.senderNickname, message: msg.msg ?? "")
-    }
-    
+
     //MARK: Diffable Data Source
     private func configureDataSource() {
         print(#function)
@@ -1042,13 +1035,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ChatMessageCell.reuseIdentifier, for: indexPath) as! ChatMessageCell
                 
                 if message.attachments.isEmpty {
-                    
-                    let originalPreviewClosure: (() -> (String, String)?)? = message.replyTo == nil ? nil : { [weak self] in
-                        guard let self = self else { return nil }
-                        return self.fetchOriginalMessagePreview(for: message.replyTo ?? "")
-                    }
-                    
-                    cell.configureWithMessage(with: message, originalPreviewProvider: originalPreviewClosure)
+                    cell.configureWithMessage(with: message/*, originalPreviewProvider: originalPreviewClosure*/)
                 } else {
                     cell.configureWithImage(with: message)
                 }
@@ -1116,7 +1103,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             
             items.append(.message(message))
         }
-        
         updateCollectionView(with: items)
         
         if !hasReadMarker, let lastMessageID = self.lastReadMessageID, !isUserInCurrentRoom, isNew,
@@ -1137,17 +1123,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
     
     private func updateCollectionView(with newItems: [Item]) {
-        //        print("************************ \(#function) 호출 ************************")
-        
         var snapshot = dataSource.snapshot()
         snapshot.appendItems(newItems, toSection: .main)
-        //        print("Before apply, snapshot items: \(snapshot.itemIdentifiers)") // 추가된 아이템 확인
-        
-        dataSource.apply(snapshot, animatingDifferences: false) /*{ [weak self] in*/
-//            guard let self = self else { return }
-            //            print("************************ Apply 완료, snapshot items: \(snapshot.itemIdentifiers) ************************")
-//            chatMessageCollectionView.scrollToBottom()
-//        }
+        dataSource.apply(snapshot, animatingDifferences: false)
     }
     
     private func formatDateToDayString(_ date: Date) -> String {

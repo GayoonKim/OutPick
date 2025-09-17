@@ -173,10 +173,41 @@ private class MessagePreviewView: UIView {
         return stack
     }()
     
+    private let replyPreviewNameLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 10, weight: .heavy)
+        label.textColor = .white
+        return label
+    }()
+
+    private let replyPreviewMsgLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 9, weight: .medium)
+        label.textColor = .white
+        label.numberOfLines = 1
+        return label
+    }()
+    
+    private lazy var replyPreviewContainer: UIStackView = {
+        let separator = UIView()
+        separator.backgroundColor = .black
+        separator.heightAnchor.constraint(equalToConstant: 1).isActive = true
+        
+        let stack = UIStackView(arrangedSubviews: [replyPreviewNameLabel, replyPreviewMsgLabel, separator])
+        stack.axis = .vertical
+        stack.spacing = 4
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.isHidden = true
+        stack.setCustomSpacing(10, after: replyPreviewMsgLabel)
+        return stack
+    }()
+    
     private var leadingConstraint: NSLayoutConstraint?
     private var trailingConstraint: NSLayoutConstraint?
     private var bubbleTopToNickname: NSLayoutConstraint?
     private var bubbleTopToTop: NSLayoutConstraint?
+    private var messageTopToBubbleTop: NSLayoutConstraint?
+    private var messageTopToReplyBottom: NSLayoutConstraint?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -195,6 +226,7 @@ private class MessagePreviewView: UIView {
         addSubview(nicknameLabel)
         addSubview(bubbleView)
         bubbleView.addSubview(messageLabel)
+        bubbleView.addSubview(replyPreviewContainer)
         
         profileImageView.translatesAutoresizingMaskIntoConstraints = false
         nicknameLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -216,11 +248,13 @@ private class MessagePreviewView: UIView {
             nicknameLabel.leadingAnchor.constraint(equalTo: profileImageView.trailingAnchor, constant: 5),
             nicknameLabel.bottomAnchor.constraint(equalTo: bubbleView.topAnchor, constant: -5),
             
-//            bubbleView.topAnchor.constraint(equalTo: nicknameLabel.bottomAnchor, constant: 10),
             bubbleView.widthAnchor.constraint(lessThanOrEqualTo: self.widthAnchor, multiplier: 0.7),
             bubbleView.heightAnchor.constraint(greaterThanOrEqualToConstant: 30),
             
-            messageLabel.topAnchor.constraint(equalTo: bubbleView.topAnchor, constant: 4),
+            replyPreviewContainer.topAnchor.constraint(equalTo: bubbleView.topAnchor, constant: 10),
+            replyPreviewContainer.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 10),
+            replyPreviewContainer.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor, constant: -10),
+            
             messageLabel.bottomAnchor.constraint(equalTo: bubbleView.bottomAnchor, constant: -4),
             messageLabel.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 8),
             messageLabel.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor, constant: -8),
@@ -228,14 +262,40 @@ private class MessagePreviewView: UIView {
             bubbleView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
         ])
         
+        messageTopToBubbleTop = messageLabel.topAnchor.constraint(equalTo: bubbleView.topAnchor, constant: 4)
+        messageTopToReplyBottom = messageLabel.topAnchor.constraint(equalTo: replyPreviewContainer.bottomAnchor, constant: 6)
+        messageTopToBubbleTop?.isActive = true // 기본: 프리뷰 없음
+        
         // 미리 leading/trailing 제약 저장
         leadingConstraint = bubbleView.leadingAnchor.constraint(equalTo: profileImageView.trailingAnchor, constant: 5)
         trailingConstraint = bubbleView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10)
     }
     
     func configure(with message: ChatMessage, isMine: Bool) {
+        // 기본 본문/닉네임 세팅
         nicknameLabel.text = message.senderNickname
-        messageLabel.text = message.msg
+        if let text = message.msg, !text.isEmpty {
+            messageLabel.text = text
+        } else if !message.attachments.isEmpty {
+            messageLabel.text = "사진 \(message.attachments.count)장"
+        } else {
+            messageLabel.text = ""
+        }
+
+        // 답장 미리보기 표시/토글
+        if let rp = message.replyPreview {
+            replyPreviewNameLabel.text = rp.sender
+            replyPreviewMsgLabel.text = rp.isDeleted ? "삭제된 메시지입니다." : rp.text
+            replyPreviewContainer.isHidden = false
+            messageTopToBubbleTop?.isActive = false
+            messageTopToReplyBottom?.isActive = true
+        } else {
+            replyPreviewNameLabel.text = nil
+            replyPreviewMsgLabel.text = nil
+            replyPreviewContainer.isHidden = true
+            messageTopToReplyBottom?.isActive = false
+            messageTopToBubbleTop?.isActive = true
+        }
         
         if isMine {
             profileImageView.isHidden = true
