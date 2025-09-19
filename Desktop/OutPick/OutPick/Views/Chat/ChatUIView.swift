@@ -83,8 +83,7 @@ class ChatUIView: UIView {
     
     private func setupChatUIView() {
         layer.masksToBounds = true
-        self.backgroundColor = .white
-        
+
         addSubview(attachmentButton)
         addSubview(messageTextView)
         addSubview(sendButton)
@@ -93,7 +92,7 @@ class ChatUIView: UIView {
         sendButton.addTarget(self, action: #selector(buttonTapped), for: .touchUpInside)
         
         NSLayoutConstraint.activate([
-            attachmentButton.leadingAnchor.constraint(equalTo: leadingAnchor),
+            attachmentButton.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
             attachmentButton.widthAnchor.constraint(equalToConstant: minHeight),
             attachmentButton.heightAnchor.constraint(equalTo: attachmentButton.widthAnchor),
             attachmentButton.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -5),
@@ -103,7 +102,7 @@ class ChatUIView: UIView {
             messageTextView.trailingAnchor.constraint(equalTo: sendButton.leadingAnchor, constant: -10),
             messageTextView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -5),
             
-            sendButton.trailingAnchor.constraint(equalTo: trailingAnchor),
+            sendButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             sendButton.widthAnchor.constraint(equalToConstant: minHeight),
             sendButton.heightAnchor.constraint(equalTo: sendButton.widthAnchor),
             sendButton.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -5)

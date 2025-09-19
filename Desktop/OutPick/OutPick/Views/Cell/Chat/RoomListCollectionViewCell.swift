@@ -75,7 +75,7 @@ class RoomListCollectionViewCell: UICollectionViewCell {
             roomDescriptionLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 12),
             roomDescriptionLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -12),
 
-            previewStackView.topAnchor.constraint(equalTo: roomDescriptionLabel.bottomAnchor, constant: 8),
+            previewStackView.topAnchor.constraint(equalTo: roomDescriptionLabel.bottomAnchor, constant: 10),
             previewStackView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 12),
             previewStackView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -12),
             previewStackView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -12)

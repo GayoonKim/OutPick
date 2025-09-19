@@ -63,12 +63,23 @@ class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRe
         switch index {
         case 0:
             let vc = storyboard.instantiateViewController(withIdentifier: "weatherVC")
-            return vc
+            let nav = UINavigationController(rootViewController: vc)
+            nav.navigationBar.isTranslucent = true
+            nav.navigationBar.prefersLargeTitles = false
+            return nav
+//            return vc
         case 1:
-            let vc = RoomListsCollectionViewController(collectionViewLayout: UICollectionViewFlowLayout())
-            return vc
+//            let vc = RoomListsCollectionViewController(collectionViewLayout: UICollectionViewFlowLayout())
+//            return vc
+            // Chat list tab
+            let listVC = RoomListsCollectionViewController(collectionViewLayout: UICollectionViewFlowLayout())
+            let nav = UINavigationController(rootViewController: listVC)
+            nav.navigationBar.isTranslucent = true
+            nav.navigationBar.prefersLargeTitles = false
+            return nav
         default:
-            return UIViewController()
+//            return UIViewController()
+            return UINavigationController(rootViewController: UIViewController())
         }
     }
     
@@ -147,7 +158,7 @@ class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRe
         
         return UICollectionViewCompositionalLayout(section: section)
     }
-    
+
     override func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         guard let selectedItem = dataSource.itemIdentifier(for: indexPath) else { return }
 
@@ -156,19 +167,22 @@ class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRe
         chatRoomVC.room = selectedItem.room
         chatRoomVC.isRoomSaving = false
         chatRoomVC.modalPresentationStyle = .fullScreen
-        
         ChatModalTransitionManager.present(chatRoomVC, from: self)
+//        chatRoomVC.hidesBottomBarWhenPushed = true
+//        self.navigationController?.pushViewController(chatRoomVC, animated: true)
     }
 
-    private func createRoomBtnTapped() {
+    @objc private func createRoomBtnTapped() {
         let storyboard = UIStoryboard(name: "Main", bundle: nil)
         guard let chatRoomCreateVC = storyboard.instantiateViewController(identifier: "chatRoomCreateVC") as? RoomCreateViewController else { return }
         chatRoomCreateVC.modalPresentationStyle = .fullScreen
         
         ChatModalTransitionManager.present(chatRoomCreateVC, from: self)
+//        chatRoomCreateVC.hidesBottomBarWhenPushed = true
+//        self.navigationController?.pushViewController(chatRoomCreateVC, animated: true)
     }
     
-    private func searchBtnTapped() {
+    @objc private func searchBtnTapped() {
         print("검색 버튼 탭!")
 
     }
@@ -182,23 +196,18 @@ private extension RoomListsCollectionViewController {
         self.view.addSubview(navBar)
         
         NSLayoutConstraint.activate([
-            navBar.topAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.topAnchor),
+            navBar.topAnchor.constraint(equalTo: self.view.topAnchor),
+//            navBar.topAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.topAnchor),
             navBar.leadingAnchor.constraint(equalTo: self.view.leadingAnchor),
             navBar.trailingAnchor.constraint(equalTo: self.view.trailingAnchor),
-            navBar.bottomAnchor.constraint(equalTo: self.collectionView.topAnchor),
+//            navBar.bottomAnchor.constraint(equalTo: self.collectionView.topAnchor),
             
             self.collectionView.topAnchor.constraint(equalTo: navBar.bottomAnchor),
             self.collectionView.leadingAnchor.constraint(equalTo: self.view.leadingAnchor),
             self.collectionView.trailingAnchor.constraint(equalTo: self.view.trailingAnchor),
             self.collectionView.bottomAnchor.constraint(equalTo: self.view.bottomAnchor)
         ])
-
-        navBar.configure(
-            leftViews: [UILabel.navTitle("오픈채팅")],
-            rightViews: [
-                UIButton.navButtonIcon("magnifyingglass") { self.searchBtnTapped() },
-                UIButton.navButtonIcon("plus.message.fill") { self.createRoomBtnTapped() },
-            ]
-        )
+        
+        navBar.configureForRoomList(target: self, onSearch: #selector(searchBtnTapped), onCreate: #selector(createRoomBtnTapped))
     }
 }

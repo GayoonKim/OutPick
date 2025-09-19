@@ -10,7 +10,7 @@ import Combine
 import GRDB
 import Kingfisher
 
-class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecognizerDelegate, UINavigationControllerDelegate, ChatModalAnimatable {
+class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecognizerDelegate, UINavigationControllerDelegate/*, ChatModalAnimatable*/ {
     
     var interactiveTransition: UIPercentDrivenInteractiveTransition?
     
@@ -63,33 +63,24 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         fatalError("init(coder:) has not been implemented")
     }
     
+    deinit {
+        print("💧 ChatViewController deinit")
+    }
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         
         self.view.backgroundColor = .secondarySystemBackground
-        self.attachInteractiveDismissGesture()
+//        self.attachInteractiveDismissGesture()
+//        navigationController?.interactivePopGestureRecognizer?.isEnabled = false
         
         configureCollectionView()
         applyInitialSnapshot()
-        setupCustomNavigationBar()
-        
-//        SocketIOManager.shared.listenToNewParticipant()
+//        setupCustomNavigationBar()
     }
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-
-        // 소켓 연결 상태 확인 및 리스너 설정
-//        if SocketIOManager.shared.isConnected {
-//            SocketIOManager.shared.joinRoom(room.roomName)
-//            SocketIOManager.shared.listenToNewParticipant()
-//        } else {
-//            SocketIOManager.shared.establishConnection { [weak self] in
-//                guard let self = self else { return }
-//                SocketIOManager.shared.joinRoom(self.room.roomName)
-//                SocketIOManager.shared.listenToNewParticipant()
-//            }
-//        }
     }
     
     private func observeRoomImages(for roomID: String) {
@@ -314,7 +305,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         var snapshot = dataSource.snapshot()
         snapshot.deleteItems(snapshot.itemIdentifiers(inSection: .roomInfoSection))
         snapshot.appendItems([.roomInfoItem(self.room)], toSection: .roomInfoSection)
-        dataSource.apply(snapshot, animatingDifferences: true) { [weak self] in
+        dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
             guard let self = self else { return }
             // roomInfoItem 셀 찾아서 강제로 업데이트
             if let indexPath = self.dataSource.indexPath(for: .roomInfoItem(self.room)),
@@ -333,7 +324,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         var snapshot = dataSource.snapshot()
         snapshot.deleteItems(snapshot.itemIdentifiers(inSection: .mediaSection))
         snapshot.appendItems([.mediaItem(self.images)], toSection: .mediaSection)
-        dataSource.apply(snapshot, animatingDifferences: true) { [weak self] in
+        dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
             guard let self = self else { return }
             
             self.collectionView.setCollectionViewLayout(Self.configureLayout(self.room, userProfiles: self.userProfiles, images: self.images), animated: false)
@@ -350,7 +341,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         var snapshot = dataSource.snapshot()
         snapshot.deleteItems(snapshot.itemIdentifiers(inSection: .participantsSection))
         snapshot.appendItems([.participantsItem(userProfiles)], toSection: .participantsSection)
-        dataSource.apply(snapshot, animatingDifferences: true) { [weak self] in
+        dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
             guard let self = self else { return }
             // layout을 새로 할당!
             self.collectionView.setCollectionViewLayout(Self.configureLayout(self.room, userProfiles: userProfiles, images: self.images), animated: false)
@@ -372,9 +363,9 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         collectionView.dataSource = dataSource
     }
     
-    private func backButtonTapped() {
-        ChatModalTransitionManager.dismiss(from: self)
-    }
+//    private func backButtonTapped() {
+//        ChatModalTransitionManager.dismiss(from: self)
+//    }
     
     private func notificationButtonTapped() {
         print(#function)
@@ -389,33 +380,32 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
     }
 }
 
-private extension ChatRoomSettingCollectionView {
-    @MainActor
-    func setupCustomNavigationBar() {
-        self.view.addSubview(customNavigationBar)
-        
-        NSLayoutConstraint.activate([
-            customNavigationBar.topAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.topAnchor),
-            customNavigationBar.leadingAnchor.constraint(equalTo: self.view.leadingAnchor),
-            customNavigationBar.trailingAnchor.constraint(equalTo: self.view.trailingAnchor),
-            
-            self.collectionView.topAnchor.constraint(equalTo: customNavigationBar.bottomAnchor),
-            self.collectionView.leadingAnchor.constraint(equalTo: self.view.leadingAnchor),
-            self.collectionView.trailingAnchor.constraint(equalTo: self.view.trailingAnchor),
-            self.collectionView.bottomAnchor.constraint(equalTo: self.view.bottomAnchor)
-        ])
-        
-        configureNavigationBarItems()
-    }
+//private extension ChatRoomSettingCollectionView {
+//    @MainActor
+//    func setupCustomNavigationBar() {
+//        self.view.addSubview(customNavigationBar)
+//        
+//        NSLayoutConstraint.activate([
+//            customNavigationBar.topAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.topAnchor),
+//            customNavigationBar.leadingAnchor.constraint(equalTo: self.view.leadingAnchor),
+//            customNavigationBar.trailingAnchor.constraint(equalTo: self.view.trailingAnchor),
+//            
+//            self.collectionView.topAnchor.constraint(equalTo: customNavigationBar.bottomAnchor),
+//            self.collectionView.leadingAnchor.constraint(equalTo: self.view.leadingAnchor),
+//            self.collectionView.trailingAnchor.constraint(equalTo: self.view.trailingAnchor),
+//            self.collectionView.bottomAnchor.constraint(equalTo: self.view.bottomAnchor)
+//        ])
+//        
+//        configureNavigationBarItems()
+//    }
     
-    private func configureNavigationBarItems() {
-        customNavigationBar.configure(
-            leftViews: [UIButton.navBackButton(action: backButtonTapped)],
-            rightViews: [
-                UIButton.navButtonIcon("bell.fill", action: notificationButtonTapped),
-                UIButton.navButtonIcon("star", action: favoriteButtonTapped),
-                UIButton.navButtonIcon("gearshape", action: settingButtonTapped)
-            ]
-        )
-    }
-}
+//    private func configureNavigationBarItems() {
+//        customNavigationBar.configure(
+//            leftViews: [UIButton.navBackButton(action: backButtonTapped)],
+//            rightViews: [
+//                UIButton.navButtonIcon("bell.fill", action: notificationButtonTapped),
+//                UIButton.navButtonIcon("gearshape", action: settingButtonTapped)
+//            ]
+//        )
+//    }
+//}

@@ -29,6 +29,12 @@ struct ChatMessage: SocketData, Codable {
     var replyPreview: ReplyPreview?
     var isFailed: Bool = false
 
+    private static let iso8601Formatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+
     enum CodingKeys: String, CodingKey {
         case roomID
         case senderID
@@ -59,6 +65,10 @@ struct ChatMessage: SocketData, Codable {
             ]
         }
         
+        if let sentAt = sentAt {
+            dict["sentAt"] = ChatMessage.iso8601Formatter.string(from: sentAt)
+        }
+        
         return dict
     }
     
@@ -87,8 +97,8 @@ struct ChatMessage: SocketData, Codable {
         return dict
     }
     
-//    func hash(into hasher: inout Hasher) { hasher.combine(ID) }
-//    static func ==(lhs: ChatMessage, rhs: ChatMessage) -> Bool { lhs.ID == rhs.ID }
+    func hash(into hasher: inout Hasher) { hasher.combine(ID) }
+    static func ==(lhs: ChatMessage, rhs: ChatMessage) -> Bool { lhs.ID == rhs.ID }
 }
 
 extension ChatMessage: Hashable {}

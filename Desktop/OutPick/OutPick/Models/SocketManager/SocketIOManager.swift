@@ -14,12 +14,19 @@ class SocketIOManager {
     var manager: SocketManager!
     var socket: SocketIOClient!
     
+    private var connectWaiters: [() -> Void] = []
+    private var hasOnConnectBound = false
+    
     // 연결 상태 확인 프로퍼티 추가
     var isConnected: Bool {
         return socket.status == .connected
     }
     
-    private static let isoFormatter = ISO8601DateFormatter()
+    private static let isoFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
     
     // Combine의 PassthroughSubject를 사용하여 이벤트 스트림 생성
     private let messageSubject = PassthroughSubject<ChatMessage, Never>()
@@ -32,6 +39,10 @@ class SocketIOManager {
     var participantUpdatePublisher: AnyPublisher<(String, String), Never> {
         return participantSubject.eraseToAnyPublisher()
     }
+    
+    private var didBindListeners = false
+    
+    private var joinedRooms = Set<String>()
     
     private init() {
         //manager = SocketManager(socketURL: URL(string: "http://127.0.0.1:3000")!, config: [.log(true), .compress])
@@ -51,8 +62,6 @@ class SocketIOManager {
     }
     
     func establishConnection(completion: @escaping () -> Void) {
-        print("establishConnection 호출됨")
-        
         // 이미 연결된 경우
         if socket.status == .connected {
             print("이미 연결된 상태")
@@ -66,13 +75,18 @@ class SocketIOManager {
             return
         }
         
-        // 연결 시도
-        socket.once(clientEvent: .connect) { [weak self] _, _ in
-            guard self != nil else { return }
-            print("소켓 연결 성공")
-            completion()
+        connectWaiters.append(completion)
+
+        if !hasOnConnectBound {
+            hasOnConnectBound = true
+            socket.on(clientEvent: .connect) { [weak self] _, _ in
+                guard let self else { return }
+                let waiters = self.connectWaiters
+                self.connectWaiters.removeAll()
+                waiters.forEach { $0() }   // 딱 한 번만 비움
+            }
         }
-        
+
         print("소켓 연결 시도")
         socket.connect()
     }
@@ -80,29 +94,22 @@ class SocketIOManager {
     func closeConnection() {
         socket.disconnect()
     }
-    
+
+    func bindAllListenersIfNeeded() {
+        if didBindListeners { return }
+        didBindListeners = true
+        listenToChatMessage()
+//        listenToNewParticipant()
+        listenToErrors()
+    }
+
     func joinRoom(_ roomID: String) {
-        print("joinRomm 호출 - roomID: ", roomID)
-        
-        guard socket.status == .connected else {
-            print("소켓이 연결되지 않음")
-            return
+        guard socket.status == .connected else { print("소켓 미연결"); return }
+        guard joinedRooms.insert(roomID).inserted else {
+            print("이미 참여한 방:", roomID); return
         }
-        
-        //기존 리스너 제거, 중복 방지
-        socket.off("join success")
-        socket.off("error")
-        
-        // 방 참여 시도
         socket.emit("join room", roomID)
-        
-        // 방 참여 성공/실패 모니터링
-        socket.on("join success") { data, _ in
-            print("방 참여 성공: ", data)
-        }
-        socket.on("error") { data, _ in
-            print("방 참여 실패: ", data)
-        }
+        // listener off/on은 유지해도 됨. emit 자체가 중복되지 않는 게 핵심
     }
     
     func createRoom(_ roomID: String) {
@@ -142,27 +149,49 @@ class SocketIOManager {
             return
         }
         
-        let socketData = message.toSocketRepresentation()
-        print("📤 전송할 소켓 데이터: \(socketData)")  // 디버깅용
+        let payload = message.toSocketRepresentation()
+        print("📤 전송할 소켓 데이터: \(payload)")  // 디버깅용
         
-        Task { @MainActor in
-            socket.emitWithAck("chat message", message.toSocketRepresentation()).timingOut(after: 5) { ackResponse in
-                if let ackDict = ackResponse.first as? [String:Any],
-                   let success = ackDict["success"] as? Bool, success {
-                    
-                    Task {
-                        await FirebaseManager.shared.updateRoomLastMessageAt(roomID: room.ID ?? "", date: message.sentAt)
-                    }
-                    
+//        socket.emitWithAck("chat message", payload).timingOut(after: 5) { ackResponse in
+//            if let ackDict = ackResponse.first as? [String:Any],
+//               let success = ackDict["success"] as? Bool, success {
+//
+//                Task {
+//                    await FirebaseManager.shared.updateRoomLastMessageAt(roomID: room.ID ?? "", date: message.sentAt)
+//                }
+//
+//                self.messageSubject.send(message)
+//            } else {
+//                //                    print(#function, "********** 메시지 전송 타임아웃 **********")
+//                var failedMessage = message
+//                failedMessage.isFailed = true
+//                self.messageSubject.send(failedMessage)
+//            }
+//        }
+        
+        socket.emitWithAck("chat message", payload).timingOut(after: 5) { [weak self] ackResponse in
+            guard let self = self else { return }
+            
+            let ackDict = ackResponse.first as? [String:Any]
+            
+            let ok = (ackDict?["ok"] as? Bool) ?? (ackDict?["success"] as? Bool) ?? false
+            let duplicate = (ackDict?["duplicate"] as? Bool) ?? false
+            
+            if ok || duplicate {
+                Task { await FirebaseManager.shared.updateRoomLastMessageAt(roomID: room.ID ?? "", date: message.sentAt) }
+                
+                DispatchQueue.main.async {
                     self.messageSubject.send(message)
-                } else {
-                    //                    print(#function, "********** 메시지 전송 타임아웃 **********")
-                    var failedMessage = message
-                    failedMessage.isFailed = true
+                }
+            } else {
+                var failedMessage = message
+                failedMessage.isFailed = true
+                DispatchQueue.main.async {
                     self.messageSubject.send(failedMessage)
                 }
             }
         }
+        
     }
     
     func sendImages(_ room: ChatRoom, _ images: [UIImage]) {
@@ -211,7 +240,7 @@ class SocketIOManager {
 //            let images = finalAttachments.compactMap{ $0.toUIImage() }
             let message = ChatMessage(roomID: room.ID ?? "", senderID: LoginManager.shared.getUserEmail, senderNickname: LoginManager.shared.currentUserProfile?.nickname ?? "", msg: "", sentAt: Date(), attachments: finalAttachments, replyPreview: nil)
             
-            socket.emitWithAck("send images", ["roomID": message.roomID, "senderID": message.senderID, "senderNickName": message.senderNickname, "sentAt": "\(message.sentAt ?? Date())", "images": imageDataArray]).timingOut(after: 5) { ackResponse in
+            socket.emitWithAck("send images", ["roomID": message.roomID, "senderID": message.senderID, "senderNickName": message.senderNickname, "sentAt": "\(message.sentAt ?? Date())", "images": imageDataArray]).timingOut(after: 7) { ackResponse in
                 
                 if let ackDict = ackResponse.first as? [String: Any],
                    let success = ackDict["success"] as? Bool, success {
@@ -285,6 +314,15 @@ class SocketIOManager {
                 return
             }
 
+            let sentAt: Date = {
+                if let s = messageData["sentAt"] as? String,
+                   let d = SocketIOManager.isoFormatter.date(from: s) {
+                    return d
+                } else {
+                    return Date()
+                }
+            }()
+
             // replyPreview 파싱 (선택)
             var rp: ReplyPreview? = nil
             if let rpDict = messageData["replyPreview"] as? [String: Any],
@@ -302,14 +340,14 @@ class SocketIOManager {
                 senderID: senderID,
                 senderNickname: senderNickName,
                 msg: messageText,
-                sentAt: Date(),
+                sentAt: sentAt,
                 attachments: [],
                 replyPreview: rp
             )
 
             if senderID == LoginManager.shared.getUserEmail { return }
 
-            Task { @MainActor in
+            DispatchQueue.main.async {
                 if let myProfile = LoginManager.shared.currentUserProfile,
                    let myNickname = myProfile.nickname,
                    myNickname != senderNickName {

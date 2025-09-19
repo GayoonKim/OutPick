@@ -134,11 +134,8 @@ class RoomCreateViewController: UIViewController, ChatModalAnimatable {
                 self.saveRoomInfo(room: room)
                 
             } catch {
-//                await MainActor.run {
                     LoadingIndicator.shared.stop()
                     AlertManager.showAlertNoHandler(title: "오류", message: "방 생성 중 오류가 발생했습니다.", viewController: self)
-//                }
-                
             }
         }
         
@@ -427,10 +424,6 @@ private extension RoomCreateViewController {
         scrollViewTopConstraint.isActive = false
         scrollView.topAnchor.constraint(equalTo: customNavigationBar.bottomAnchor).isActive = true
         
-        customNavigationBar.configure(
-            leftViews: [UIButton.navBackButton(action: cancelButtonTapped)],
-            centerViews: [UILabel.navTitle("채팅방 만들기")],
-            rightViews: []
-        )
+        customNavigationBar.configureForRoomCreate(target: self, onBack: #selector(cancelButtonTapped))
     }
 }

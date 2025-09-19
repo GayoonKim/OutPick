@@ -83,7 +83,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                         do {
                             try await FirebaseManager.shared.listenToHotRooms()
                             SocketIOManager.shared.establishConnection {
-                                SocketIOManager.shared.listenToChatMessage()
+                                SocketIOManager.shared.bindAllListenersIfNeeded()
                             }
                             
                             LoginManager.shared.fetchUserProfileFromKeychain() { screen in
@@ -188,7 +188,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
     }
     
-    @MainActor
+//    @MainActor
     private func showLoginViewController() {
         let mainStoryboard = UIStoryboard(name: "Main", bundle: nil)
         let loginViewController = mainStoryboard.instantiateViewController(withIdentifier: "LoginVC")

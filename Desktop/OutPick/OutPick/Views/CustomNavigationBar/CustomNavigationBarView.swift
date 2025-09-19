@@ -72,6 +72,115 @@ class CustomNavigationBarView: UIView {
         return view
     }()
     
+    private lazy var searchBtn: UIButton = {
+        let button = UIButton(type: .system)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        
+        var config = UIButton.Configuration.plain()
+        config.image = UIImage(systemName: "magnifyingglass")
+        config.buttonSize = .small
+        config.imagePlacement = .leading
+        config.baseForegroundColor = .black
+        
+        button.configuration = config
+        button.backgroundColor = .secondarySystemBackground
+        button.heightAnchor.constraint(equalToConstant: 40).isActive = true
+        button.clipsToBounds = true
+        button.layer.cornerRadius = 10
+        
+        return button
+    }()
+    
+    private lazy var settingBtn: UIButton = {
+        let button = UIButton(type: .system)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        
+        var config = UIButton.Configuration.plain()
+        config.image = UIImage(systemName: "text.justify")
+        config.buttonSize = .small
+        config.imagePlacement = .leading
+        config.baseForegroundColor = .black
+        
+        button.configuration = config
+        button.backgroundColor = .secondarySystemBackground
+        button.heightAnchor.constraint(equalToConstant: 40).isActive = true
+        button.clipsToBounds = true
+        button.layer.cornerRadius = 10
+        
+        return button
+    }()
+    
+    private lazy var backBtn: UIButton = {
+        let button = UIButton(type: .system)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        
+        var config = UIButton.Configuration.plain()
+        config.image = UIImage(systemName: "chevron.left")
+        config.buttonSize = .small
+        config.imagePlacement = .leading
+        config.baseForegroundColor = .black
+        
+        button.configuration = config
+        button.backgroundColor = .secondarySystemBackground
+        button.heightAnchor.constraint(equalToConstant: 40).isActive = true
+        button.clipsToBounds = true
+        button.layer.cornerRadius = 10
+        
+        return button
+    }()
+    
+    private lazy var createBtn: UIButton = {
+        let button = UIButton(type: .system)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        
+        var config = UIButton.Configuration.plain()
+        config.image = UIImage(systemName: "plus")
+        config.buttonSize = .small
+        config.imagePlacement = .leading
+        config.baseForegroundColor = .black
+        config.imagePadding = 5
+        
+        var attrTitle = AttributedString("채팅방")
+        attrTitle.font = .systemFont(ofSize: 12.0, weight: .heavy)
+        config.attributedTitle = attrTitle
+        config.titleAlignment = .trailing
+        config.baseForegroundColor = .black
+        
+        button.configuration = config
+        button.backgroundColor = .secondarySystemBackground
+        button.heightAnchor.constraint(equalToConstant: 40).isActive = true
+        button.clipsToBounds = true
+        button.layer.cornerRadius = 10
+        
+        return button
+    }()
+    
+    private lazy var notificationBtn: UIButton = {
+        let button = UIButton(type: .system)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        
+        var config = UIButton.Configuration.plain()
+        config.image = UIImage(systemName: "bell.fill")
+        config.buttonSize = .small
+        config.imagePlacement = .leading
+        config.baseForegroundColor = .black
+        
+        button.configuration = config
+        button.backgroundColor = .secondarySystemBackground
+        button.heightAnchor.constraint(equalToConstant: 40).isActive = true
+        button.clipsToBounds = true
+        button.layer.cornerRadius = 10
+        
+        return button
+    }()
+    
+    private lazy var titleLabel: UILabel = {
+        let label = UILabel()
+        label.font = .boldSystemFont(ofSize: 18)
+        label.textColor = .black
+        return label
+    }()
+    
     let searchKeywordPublisher = PassthroughSubject<String?, Never>()
     let cancelSearchPublisher = PassthroughSubject<Void, Never>()
 
@@ -102,8 +211,8 @@ class CustomNavigationBarView: UIView {
         NSLayoutConstraint.activate([
             container.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 20),
             container.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -20),
-            container.topAnchor.constraint(equalTo: topAnchor, constant: 10),
-            container.bottomAnchor.constraint(equalTo: bottomAnchor),
+            container.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor),
+            container.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -5),
             container.heightAnchor.constraint(equalToConstant: 44),
         ])
         
@@ -112,8 +221,8 @@ class CustomNavigationBarView: UIView {
         NSLayoutConstraint.activate([
             searchContainer.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 20),
             searchContainer.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -20),
-            searchContainer.topAnchor.constraint(equalTo: topAnchor, constant: 10),
-            searchContainer.bottomAnchor.constraint(equalTo: bottomAnchor),
+            searchContainer.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor),
+            searchContainer.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -5),
             searchContainer.heightAnchor.constraint(equalToConstant: 44),
         ])
         searchContainer.isHidden = true
@@ -122,28 +231,57 @@ class CustomNavigationBarView: UIView {
     func configure(leftViews: [UIView], centerViews: [UIView] = [], rightViews: [UIView]) {
         [leftStack, centerStack, rightStack].forEach { $0.arrangedSubviews.forEach { $0.removeFromSuperview() } }
         
+        leftStack.spacing = 20
+        rightStack.spacing = 5
+        
         leftViews.forEach { leftStack.addArrangedSubview($0) }
         centerViews.forEach { centerStack.addArrangedSubview($0) }
         rightViews.forEach { rightStack.addArrangedSubview($0) }
     }
     
-    func configureForChatRoom(/*unreadCount: Int,*/ roomTitle: String, participantCount: Int, onBack: @escaping () -> Void, onSearch: @escaping () -> Void, onSetting: @escaping () -> Void) {
+    func configureForRoomCreate(target: AnyObject ,onBack: Selector) {
+        titleLabel.text = "방 만들기"
+        
+        backBtn.removeTarget(nil, action: nil, for: .allEvents)
+        backBtn.addTarget(target, action: onBack, for: .touchUpInside)
+        
+        configure(leftViews: [backBtn], centerViews: [titleLabel], rightViews: [])
+    }
+    
+    func configureForChatRoom(roomTitle: String, participantCount: Int, target: AnyObject ,onBack: Selector, onSearch: Selector, onSetting: Selector) {
         container.isHidden = false
         searchContainer.isHidden = true
+
+        titleLabel.text = roomTitle
+
+        backBtn.removeTarget(nil, action: nil, for: .allEvents)
+        searchBtn.removeTarget(nil, action: nil, for: .allEvents)
+        settingBtn.removeTarget(nil, action: nil, for: .allEvents)
         
-        let backButton = UIButton.navBackButton(action: onBack)
-//        let unreadLabel = UILabel.navSubtitle("\(unreadCount)")
-        
-        let titleLabel = UILabel.navTitle(roomTitle)
-        let participantLabel = UILabel.navSubtitle("\(participantCount)명")
-        
-        let searchButton = UIButton.navButtonIcon("magnifyingglass", action: onSearch)
-        let settingButton = UIButton.navButtonIcon("text.justify", action: onSetting)
+        backBtn.addTarget(target, action: onBack, for: .touchUpInside)
+        searchBtn.addTarget(target, action: onSearch, for: .touchUpInside)
+        settingBtn.addTarget(target, action: onSetting, for: .touchUpInside)
         
         configure(
-            leftViews: [backButton/*, unreadLabel*/],
-            centerViews: [titleLabel, participantLabel],
-            rightViews: [searchButton, settingButton]
+            leftViews: [backBtn, titleLabel],
+            centerViews: [],
+            rightViews: [searchBtn, settingBtn]
+        )
+    }
+    
+    func configureForRoomList(target: AnyObject, onSearch: Selector, onCreate: Selector) {
+        titleLabel.text = "OutPick"
+        
+        searchBtn.removeTarget(nil, action: nil, for: .allEvents)
+        createBtn.removeTarget(nil, action: nil, for: .allEvents)
+        
+        searchBtn.addTarget(target, action: onSearch, for: .touchUpInside)
+        createBtn.addTarget(target, action: onCreate, for: .touchUpInside)
+        
+        configure(
+            leftViews: [titleLabel],
+            centerViews: [],
+            rightViews: [searchBtn, createBtn]
         )
     }
     
@@ -194,12 +332,22 @@ class CustomNavigationBarView: UIView {
 
 extension UIButton {
     static func navButtonIcon(_ name: String, action: @escaping () -> Void) -> UIButton {
-        let btn = UIButton(type: .system)
-        btn.setImage(UIImage(systemName: name), for: .normal)
-        btn.tintColor = .black
-        btn.addAction(UIAction { _ in action() }, for: .touchUpInside)
+        let button = UIButton(type: .system)
+        button.translatesAutoresizingMaskIntoConstraints = false
         
-        return btn
+        var config = UIButton.Configuration.plain()
+        config.image = UIImage(systemName: name)
+        config.buttonSize = .small
+        config.imagePlacement = .leading
+        config.baseForegroundColor = .black
+
+        button.configuration = config
+        button.backgroundColor = .secondarySystemBackground
+        button.heightAnchor.constraint(equalToConstant: 40).isActive = true
+        button.clipsToBounds = true
+        button.layer.cornerRadius = 10
+        
+        return button
     }
     
     static func navBackButton(action: @escaping () -> Void) -> UIButton {

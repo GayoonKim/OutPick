@@ -11,8 +11,6 @@ import Combine
 
 class HomeCollectionViewController: CustomTabBarViewController {
     
-    static let shared = HomeCollectionViewController()
-    
     let locationManager = CLLocationManager() // 위치 매니저 인스턴스
     
     var currentWeatherRequestTask: Task<Void, Never>? = nil                     // 현재 날씨 요청 작업
@@ -103,18 +101,31 @@ class HomeCollectionViewController: CustomTabBarViewController {
         let storyboard = UIStoryboard(name: "Main", bundle: nil)
         switch index {
         case 0:
+            // Weather tab
             let vc = storyboard.instantiateViewController(withIdentifier: "weatherVC")
-            return vc
+            let nav = UINavigationController(rootViewController: vc)
+            nav.navigationBar.isTranslucent = true
+            nav.navigationBar.prefersLargeTitles = false
+            return nav
+
         case 1:
-//            let vc = storyboard.instantiateViewController(withIdentifier: "chatListVC")
-            let vc = RoomListsCollectionViewController(collectionViewLayout: UICollectionViewFlowLayout())
-            return vc
-            
+            // Chat list tab
+            let listVC = RoomListsCollectionViewController(collectionViewLayout: UICollectionViewFlowLayout())
+            let nav = UINavigationController(rootViewController: listVC)
+            nav.navigationBar.isTranslucent = true
+            nav.navigationBar.prefersLargeTitles = false
+            return nav
+
         case 4:
+            // Settings tab
             let vc = storyboard.instantiateViewController(withIdentifier: "settingsVC")
-            return vc
+            let nav = UINavigationController(rootViewController: vc)
+            nav.navigationBar.isTranslucent = true
+            nav.navigationBar.prefersLargeTitles = false
+            return nav
+
         default:
-            return UIViewController()
+            return UINavigationController(rootViewController: UIViewController())
         }
     }
 

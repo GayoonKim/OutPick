@@ -35,8 +35,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private var lastReadMessageID: String?
     
     private var isUserInCurrentRoom = false
-    
-//    private var replyingToMessageID: String?
+
     private var replyMessage: ReplyPreview?
     private var messageMap: [String: ChatMessage] = [:]
     
@@ -61,11 +60,13 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private var currentFilteredMessageIndex: Int?
     private var highlightedMessageIDs: Set<String> = []
     private var currentSearchKeyword: String? = nil
+    private var hasBoundRoomChange = false
     
-//    deinit {
-//        convertImagesTask?.cancel()
-//        convertVideosTask?.cancel()
-//    }
+    deinit {
+        print("💧 ChatViewController deinit")
+        convertImagesTask?.cancel()
+        convertVideosTask?.cancel()
+    }
     
     private lazy var containerView: UIView = {
         let view = UIView()
@@ -141,6 +142,17 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         return view
     }()
     
+    private var settingPanelVC: ChatRoomSettingCollectionView?
+    private lazy var dimView: UIView = {
+//        let v = UIControl(frame: .zero)
+        let v = UIView()
+        v.translatesAutoresizingMaskIntoConstraints = false
+        v.backgroundColor = UIColor.black.withAlphaComponent(0.35)
+        v.alpha = 0
+        
+        return v
+    }()
+    
     private let imagesSubject = CurrentValueSubject<[UIImage], Never>([])
     private var imagesPublishser: AnyPublisher<[UIImage], Never> {
         return imagesSubject.eraseToAnyPublisher()
@@ -154,9 +166,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     private var interactionController: UIPercentDrivenInteractiveTransition?
     
-    lazy var tapGesture: UITapGestureRecognizer = {
+    private lazy var tapGesture: UITapGestureRecognizer = {
         let gesture = UITapGestureRecognizer(target: self, action: #selector(handleTapGesture))
         gesture.delegate = self
+        gesture.cancelsTouchesInView = false
         return gesture
     }()
     
@@ -174,10 +187,12 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     override func viewDidLoad() {
         super.viewDidLoad()
+//        self.hidesBottomBarWhenPushed = true
+//        self.navigationController?.setNavigationBarHidden(true, animated: false)
+        self.definesPresentationContext = true
         
         configureDataSource()
-        
-        self.attachInteractiveDismissGesture()
+    
         setUpNotifications()
         
         if isRoomSaving {
@@ -206,6 +221,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        
         DispatchQueue.main.async {
             // 이미 연결된 경우에는 room join과 listener 설정만 수행
             if let room = self.room {
@@ -236,14 +252,21 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 }
             }
         }
+        self.navigationController?.setNavigationBarHidden(false, animated: false)
     }
-    
-    func viwDidDisappear(_ animated: Bool) {
+
+    override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
-        
         cancellables.removeAll()
+        NotificationCenter.default.removeObserver(self)
+        
     }
     
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        self.attachInteractiveDismissGesture()
+    }
+
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         self.copyView.layer.cornerRadius = 15
@@ -306,21 +329,21 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         
         chatUIViewBottomConstraint = chatUIView.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor)
         NSLayoutConstraint.activate([
-            chatUIView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 8),
-            chatUIView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -8),
+            chatUIView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            chatUIView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             chatUIViewBottomConstraint!,
             chatUIView.heightAnchor.constraint(greaterThanOrEqualToConstant: chatUIView.minHeight),
             
-            chatMessageCollectionView.topAnchor.constraint(equalTo: view.topAnchor),
+            chatMessageCollectionView.heightAnchor.constraint(equalTo: view.heightAnchor),
             chatMessageCollectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             chatMessageCollectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            chatMessageCollectionView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            chatMessageCollectionView.bottomAnchor.constraint(equalTo: chatUIView.topAnchor),
         ])
         
         view.bringSubviewToFront(chatUIView)
         view.bringSubviewToFront(customNavigationBar)
-        chatMessageCollectionView.contentInset.top = customNavigationBar.frame.height - 20
-        chatMessageCollectionView.contentInset.bottom = chatUIView.frame.height + 10
+        chatMessageCollectionView.contentInset.top = self.view.safeAreaInsets.top + chatUIView.frame.height + 5
+        chatMessageCollectionView.contentInset.bottom = 5
         
         NSLayoutConstraint.deactivate(joinConsraints)
         setupCopyReplyDeleteView()
@@ -329,19 +352,22 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     @MainActor
     private func handleSendButtonTap() {
         guard let message = self.chatUIView.messageTextView.text,
+              !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               let room = self.room else { return }
-    
-        self.chatUIView.messageTextView.text = nil
-        self.chatUIView.updateHeight()
+
+            self.chatUIView.messageTextView.text = nil
+            self.chatUIView.updateHeight()
+            self.chatUIView.sendButton.isEnabled = false
+            if self.replyMessage != nil {
+                self.replyMessage = nil
+                self.replyView.isHidden = true
+            }
+
         
         let newMessage = ChatMessage(roomID: room.ID ?? "", senderID: LoginManager.shared.getUserEmail, senderNickname: LoginManager.shared.currentUserProfile?.nickname ?? "", msg: message, sentAt: Date(), attachments: [], replyPreview: replyMessage)
         
-        SocketIOManager.shared.sendMessages(room, newMessage)
-        chatUIView.sendButton.isEnabled = false
-        
-        if replyMessage != nil {
-            replyMessage = nil
-            replyView.isHidden = true
+        Task.detached {
+            SocketIOManager.shared.sendMessages(room, newMessage)
         }
     }
     
@@ -481,6 +507,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     @MainActor
     private func bindRoomChangePublisher() {
+        if hasBoundRoomChange { return }
+        hasBoundRoomChange = true
         // 실시간 방 업데이트 관련
         FirebaseManager.shared.roomChangePublisher
             .receive(on: DispatchQueue.main)
@@ -676,7 +704,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     //MARK: 커스텀 내비게이션 바
     @MainActor
-    /*@objc */private func backButtonTapped() {
+    @objc private func backButtonTapped() {
         
         let transition = CATransition()
         transition.duration = 0.3
@@ -695,13 +723,17 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                     self.present(chatListVC, animated: false)
                 }
             }
-        } else {
+//        if let nav = self.navigationController {
+//            nav.popViewController(animated: true)
+        }
+        else {
             // 일반적인 경우 이전 화면으로 이동
-            ChatModalTransitionManager.dismiss(from: self)
+            //            ChatModalTransitionManager.dismiss(from: self)
+            self.dismiss(animated: true)
         }
     }
     
-    private func settingButtonTapped() {
+    @objc private func settingButtonTapped() {
         Task { @MainActor in
             guard let room = self.room else { return }
             let profiles = try GRDBManager.shared.fetchUserProfiles(inRoom: room.ID ?? "")
@@ -713,24 +745,88 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                     images.append(image)
                 }
             }
-            
+
             let settingVC = ChatRoomSettingCollectionView(room: room, profiles: profiles, images: images)
-            settingVC.modalPresentationStyle = .fullScreen
-            
-            ChatModalTransitionManager.present(settingVC, from: self)
+//            settingVC.modalPresentationStyle = .fullScreen
+//            present(settingVC, animated: true)
+//            settingVC.modalPresentationStyle = .custom
+//            settingVC.transitioningDelegate = self.sidePanelTransitioningDelegate
+//            self.present(settingVC, animated: true)
+            self.presentSettingVC(settingVC)
         }
     }
     
     @MainActor
+    private func presentSettingVC(_ VC: ChatRoomSettingCollectionView) {
+        guard settingPanelVC == nil else { return }
+        settingPanelVC = VC
+        
+        if dimView.superview == nil {
+            view.addSubview(dimView)
+//            dimView.addTarget(self, action: #selector(didTapDimView), for: .touchUpInside)
+            
+            let dimTap = UITapGestureRecognizer(target: self, action: #selector(didTapDimView))
+            dimTap.cancelsTouchesInView = true
+            dimView.addGestureRecognizer(dimTap)
+            tapGesture.require(toFail: dimTap)
+            
+            NSLayoutConstraint.activate([
+                dimView.topAnchor.constraint(equalTo: view.topAnchor),
+                dimView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                dimView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+                dimView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+            ])
+        }
+        
+        addChild(VC)
+        view.addSubview(VC.view)
+        VC.didMove(toParent: self)
+        
+        let width = floor(view.bounds.width * 0.7)
+        let height = view.bounds.height
+        let targetX = view.bounds.width - width
+        
+        VC.view.layer.cornerRadius = 16
+        VC.view.clipsToBounds = true
+        VC.view.frame = CGRect(x: view.bounds.width, y: 0, width: width, height: height)
+        
+        UIView.animate(withDuration: 0.28, delay: 0, options: [.curveEaseOut]) {
+            self.dimView.alpha = 1
+            VC.view.frame.origin.x = targetX
+        }
+    }
+    
+    @objc private func didTapDimView() {
+        dismissSettingVC()
+    }
+    
+    @MainActor
+    private func dismissSettingVC() {
+        guard let VC = settingPanelVC else { return }
+        
+        print(#function, "호출")
+        
+        VC.willMove(toParent: nil)
+        UIView.animate(withDuration: 0.24, delay: 0, options: [.curveEaseIn]) {
+            self.dimView.alpha = 0
+            VC.view.frame.origin.x = self.view.bounds.width
+        } completion: { _ in
+            VC.view.removeFromSuperview()
+            VC.removeFromParent()
+            self.settingPanelVC = nil
+        }
+    }
+
+    @MainActor
     private func updateNavigationTitle(with room: ChatRoom) {
         // ✅ 커스텀 내비게이션 바 타이틀 업데이트
         customNavigationBar.configureForChatRoom(
-            /*unreadCount: 99,*/ // 필요한 경우 여기도 업데이트 필요
             roomTitle: room.roomName,
             participantCount: room.participants.count,
-            onBack: backButtonTapped,
-            onSearch: searchButtonTapped,
-            onSetting: settingButtonTapped
+            target: self,
+            onBack: #selector(backButtonTapped),
+            onSearch: #selector(searchButtonTapped),
+            onSetting: #selector(settingButtonTapped)
         )
     }
     
@@ -879,7 +975,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
     
     @MainActor
-    private func searchButtonTapped() {
+    @objc private func searchButtonTapped() {
         customNavigationBar.switchToSearchMode()
         setupSearchUI()
         
@@ -1028,7 +1124,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     //MARK: Diffable Data Source
     private func configureDataSource() {
         print(#function)
-        dataSource = UICollectionViewDiffableDataSource<Section, Item>(collectionView: chatMessageCollectionView) { collectionView, indexPath, item in
+        dataSource = UICollectionViewDiffableDataSource<Section, Item>(collectionView: chatMessageCollectionView) { [weak self] collectionView, indexPath, item in
+            guard let self = self else { return  nil }
             
             switch item {
             case .message(let message):
@@ -1074,8 +1171,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     @MainActor
     func addMessages(_ messages: [ChatMessage], isNew: Bool) {
-        print("************************ \(#function) 호출 ************************")
-        
         var items: [Item] = []
         
         let snapshot = dataSource.snapshot()
@@ -1126,6 +1221,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         var snapshot = dataSource.snapshot()
         snapshot.appendItems(newItems, toSection: .main)
         dataSource.apply(snapshot, animatingDifferences: false)
+        chatMessageCollectionView.scrollToBottom()
     }
     
     private func formatDateToDayString(_ date: Date) -> String {
@@ -1140,6 +1236,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     //MARK: Tap Gesture
     @MainActor
     @objc private func handleTapGesture() {
+        
+        if settingPanelVC != nil { return }
         view.endEditing(true)
         
         if !self.attachmentView.isHidden {
@@ -1178,20 +1276,15 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
         @objc private func keyboardWillShow(_ sender: Notification) {
             guard let animationDuration = sender.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double,
-                  let keyboardInfo = sender.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue else { return }
+                  let _ = sender.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue else { return }
     
             // Hide attachment view if visible
             if !self.attachmentView.isHidden {
                 self.attachmentView.isHidden = true
                 self.chatUIView.attachmentButton.setImage(UIImage(systemName: "plus"), for: .normal)
             }
-
-            let keyboardFrame = keyboardInfo.cgRectValue
-            let keyboardFrameHeight = keyboardFrame.height
-
             UIView.animate(withDuration: animationDuration) {
-                let bottomInset = self.chatMessageCollectionView.frame.origin.y - keyboardFrameHeight
-                self.chatMessageCollectionView.frame.origin.y = bottomInset
+                self.view.layoutIfNeeded()
             }
         }
     
@@ -1200,7 +1293,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
               let _ = sender.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
         
         UIView.animate(withDuration: animationDuration) {
-            self.chatMessageCollectionView.frame.origin.y = 0
+            self.view.layoutIfNeeded()
         }
     }
 
@@ -1232,16 +1325,21 @@ private extension ChatViewController {
     @MainActor
     func setupCustomNavigationBar() {
         self.view.addSubview(customNavigationBar)
-
         NSLayoutConstraint.activate([
-            customNavigationBar.topAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.topAnchor),
-            customNavigationBar.leadingAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.leadingAnchor),
-            customNavigationBar.trailingAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.trailingAnchor),
-            customNavigationBar.heightAnchor.constraint(equalToConstant: 75)
+            customNavigationBar.topAnchor.constraint(equalTo: self.view.topAnchor),
+            customNavigationBar.leadingAnchor.constraint(equalTo: self.view.leadingAnchor),
+            customNavigationBar.trailingAnchor.constraint(equalTo: self.view.trailingAnchor),
         ])
         
         guard let room = self.room else { return }
-        customNavigationBar.configureForChatRoom(/*unreadCount: 99, */roomTitle: room.roomName, participantCount: room.participants.count, onBack: backButtonTapped, onSearch: searchButtonTapped, onSetting: settingButtonTapped)
+        customNavigationBar.configureForChatRoom(
+            roomTitle: room.roomName,
+            participantCount: room.participants.count,
+            target: self,
+            onBack: #selector(backButtonTapped),
+            onSearch: #selector(searchButtonTapped),
+            onSetting: #selector(settingButtonTapped)
+        )
     }
 }
 
@@ -1263,7 +1361,7 @@ extension ChatViewController: UIScrollViewDelegate {
     @MainActor
     private func triggerShakeIfNeeded() {
         guard let indexPath = scrollTargetIndex,
-              let cell = chatMessageCollectionView/*.collectionView*/.cellForItem(at: indexPath) as? ChatMessageCell else {
+              let cell = chatMessageCollectionView.cellForItem(at: indexPath) as? ChatMessageCell else {
             return
         }
         cell.shakeHorizontally()
