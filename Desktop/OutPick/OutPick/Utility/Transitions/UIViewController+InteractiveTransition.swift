@@ -9,19 +9,35 @@ import UIKit
 import ObjectiveC
 
 private var interactionControllerKey: UInt8 = 0
+private var interactiveDismissPanKey: UInt8 = 0
 
 extension UIViewController: @retroactive UIViewControllerTransitioningDelegate {
     private var interactiveTransition: UIPercentDrivenInteractiveTransition? {
         get { objc_getAssociatedObject(self, &interactionControllerKey) as? UIPercentDrivenInteractiveTransition }
         set { objc_setAssociatedObject(self, &interactionControllerKey, newValue, .OBJC_ASSOCIATION_RETAIN_NONATOMIC) }
     }
-    
+
+    private var interactiveDismissPan: UIPanGestureRecognizer? {
+        get { objc_getAssociatedObject(self, &interactiveDismissPanKey) as? UIPanGestureRecognizer }
+        set { objc_setAssociatedObject(self, &interactiveDismissPanKey, newValue, .OBJC_ASSOCIATION_RETAIN_NONATOMIC) }
+    }
+
     public func attachInteractiveDismissGesture() {
+        if interactiveDismissPan != nil { return }
+
         self.modalPresentationStyle = .custom
         self.transitioningDelegate = self
-        
+
         let panGesture = UIPanGestureRecognizer(target: self, action: #selector(handleInteractiveDismiss(_:)))
         self.view.addGestureRecognizer(panGesture)
+        self.interactiveDismissPan = panGesture
+    }
+
+    public func detachInteractiveDismissGesture() {
+        if let pan = interactiveDismissPan {
+            self.view.removeGestureRecognizer(pan)
+            self.interactiveDismissPan = nil
+        }
     }
 
     @objc private func handleInteractiveDismiss(_ gesture: UIPanGestureRecognizer) {

@@ -104,24 +104,21 @@ class HomeCollectionViewController: CustomTabBarViewController {
             // Weather tab
             let vc = storyboard.instantiateViewController(withIdentifier: "weatherVC")
             let nav = UINavigationController(rootViewController: vc)
-            nav.navigationBar.isTranslucent = true
-            nav.navigationBar.prefersLargeTitles = false
+            nav.isNavigationBarHidden = true
             return nav
 
         case 1:
             // Chat list tab
             let listVC = RoomListsCollectionViewController(collectionViewLayout: UICollectionViewFlowLayout())
             let nav = UINavigationController(rootViewController: listVC)
-            nav.navigationBar.isTranslucent = true
-            nav.navigationBar.prefersLargeTitles = false
+            nav.isNavigationBarHidden = true
             return nav
 
         case 4:
             // Settings tab
             let vc = storyboard.instantiateViewController(withIdentifier: "settingsVC")
             let nav = UINavigationController(rootViewController: vc)
-            nav.navigationBar.isTranslucent = true
-            nav.navigationBar.prefersLargeTitles = false
+            nav.isNavigationBarHidden = true
             return nav
 
         default:

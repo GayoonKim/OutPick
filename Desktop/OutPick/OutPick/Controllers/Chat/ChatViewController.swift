@@ -746,6 +746,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 }
             }
 
+            self.detachInteractiveDismissGesture()
+            
             let settingVC = ChatRoomSettingCollectionView(room: room, profiles: profiles, images: images)
 //            settingVC.modalPresentationStyle = .fullScreen
 //            present(settingVC, animated: true)
@@ -763,8 +765,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         
         if dimView.superview == nil {
             view.addSubview(dimView)
-//            dimView.addTarget(self, action: #selector(didTapDimView), for: .touchUpInside)
-            
+
             let dimTap = UITapGestureRecognizer(target: self, action: #selector(didTapDimView))
             dimTap.cancelsTouchesInView = true
             dimView.addGestureRecognizer(dimTap)
@@ -815,6 +816,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             VC.removeFromParent()
             self.settingPanelVC = nil
         }
+        
+        self.attachInteractiveDismissGesture()
     }
 
     @MainActor
@@ -1282,6 +1285,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             if !self.attachmentView.isHidden {
                 self.attachmentView.isHidden = true
                 self.chatUIView.attachmentButton.setImage(UIImage(systemName: "plus"), for: .normal)
+                self.chatUIViewBottomConstraint?.constant = 0
             }
             UIView.animate(withDuration: animationDuration) {
                 self.view.layoutIfNeeded()

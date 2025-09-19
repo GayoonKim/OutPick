@@ -43,7 +43,7 @@ class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRe
     override func viewDidLoad() {
         super.viewDidLoad()
         self.view.backgroundColor = .white
-
+        
         self.attachInteractiveDismissGesture()
         
         dataSource = configureDataSource()
@@ -52,6 +52,7 @@ class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRe
         collectionView.collectionViewLayout = configureLayout()
         collectionView.backgroundColor = .white
         collectionView.translatesAutoresizingMaskIntoConstraints = false
+        collectionView.contentInsetAdjustmentBehavior = .never
         
         self.bindPublishers()
         self.updateCollectionView()
@@ -64,8 +65,7 @@ class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRe
         case 0:
             let vc = storyboard.instantiateViewController(withIdentifier: "weatherVC")
             let nav = UINavigationController(rootViewController: vc)
-            nav.navigationBar.isTranslucent = true
-            nav.navigationBar.prefersLargeTitles = false
+            nav.isNavigationBarHidden = true
             return nav
 //            return vc
         case 1:
@@ -74,8 +74,7 @@ class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRe
             // Chat list tab
             let listVC = RoomListsCollectionViewController(collectionViewLayout: UICollectionViewFlowLayout())
             let nav = UINavigationController(rootViewController: listVC)
-            nav.navigationBar.isTranslucent = true
-            nav.navigationBar.prefersLargeTitles = false
+            nav.isNavigationBarHidden = true
             return nav
         default:
 //            return UIViewController()
