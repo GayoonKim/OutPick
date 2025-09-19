@@ -101,7 +101,7 @@ class ChatRoomInfoCell: UICollectionViewCell {
         if roomImageName != "" {
             Task {
                 guard let imageName = room.roomImagePath else { return }
-                let image = try await FirebaseStorageManager.shared.fetchImageFromStorage(image: imageName, location: .RoomImage, createdDate: room.createdAt)
+                let image = try await FirebaseStorageManager.shared.fetchImageFromStorage(image: imageName, location: .RoomImage)
                 self.roomImageView.image = image
             }
         }

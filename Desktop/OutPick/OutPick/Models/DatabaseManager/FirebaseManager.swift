@@ -384,6 +384,16 @@ class FirebaseManager {
             return
         }
         let rooms = snapshot.documents.compactMap { try? createRoom(from: $0) }
+        
+        let storagePaths = Array(Set(
+            rooms.compactMap { $0.roomImagePath }
+                .filter { !$0.isEmpty }
+        ))
+        
+        if !storagePaths.isEmpty {
+            FirebaseStorageManager.shared.prefetchImages(paths: storagePaths, location: .RoomImage)
+        }
+        
         updateRoomListeners(for: rooms)
     }
 

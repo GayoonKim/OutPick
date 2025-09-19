@@ -112,23 +112,23 @@ class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRe
             cell.backgroundColor = .white
             
             cell.configure(room: item.room, messages: item.messages)
-
             if let imagePath = item.room.roomImagePath, !imagePath.isEmpty {
-                Task {
+                Task.detached(priority: .userInitiated) { [weak self, weak cell] in
+                    guard let self = self, let cell = cell else { return }
                     do {
-                        if let cachedImage = KingfisherManager.shared.cache.retrieveImageInMemoryCache(forKey: imagePath) {
-                            DispatchQueue.main.async {
-                                cell.roomImageView.image = cachedImage
-                            }
-                        } else {
-                            let image = try await FirebaseStorageManager.shared.fetchImageFromStorage(image: imagePath, location: .RoomImage, createdDate: item.room.createdAt)
-                            try await KingfisherManager.shared.cache.store(image, forKey: imagePath)
-                            DispatchQueue.main.async {
+                        let image = try await KingFisherCacheManager.shared.loadOrFetchImage(forKey: imagePath) {
+                            try await FirebaseStorageManager.shared.fetchImageFromStorage(image: imagePath, location: .RoomImage)
+                        }
+                        
+                        if await self.collectionView.indexPath(for: cell) == indexPath {
+                            await MainActor.run {
+                                
                                 cell.roomImageView.image = image
+                                
                             }
                         }
                     } catch {
-                        print("이미지 로딩 실패: \(error.localizedDescription)")
+                        
                     }
                 }
             }
@@ -183,7 +183,6 @@ class RoomListsCollectionViewController: CustomTabBarViewController, UIGestureRe
     
     @objc private func searchBtnTapped() {
         print("검색 버튼 탭!")
-
     }
 }
 

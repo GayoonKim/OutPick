@@ -164,7 +164,7 @@ class FirebaseStorageManager {
     }
     
     // Storage에서 이미지 불러오기
-    func fetchImageFromStorage(image imagePath: String, location: ImageLocation, createdDate: Date) async throws -> UIImage {
+    func fetchImageFromStorage(image imagePath: String, location: ImageLocation/*, createdDate: Date*/) async throws -> UIImage {
         
         // 메모리 캐시 확인
         if let cachedImage = KingfisherManager.shared.cache.retrieveImageInMemoryCache(forKey: imagePath) {
@@ -211,22 +211,29 @@ class FirebaseStorageManager {
             for (index, imagePath) in imagePaths.enumerated() {
                 group.addTask {
                     
-                    let image = try await self.fetchImageFromStorage(image: imagePath, location: location, createdDate: createdDate)
+                    let image = try await self.fetchImageFromStorage(image: imagePath, location: location/*, createdDate: createdDate*/)
                     return (index, image)
                     
                 }
             }
-            
             for try await (index, image) in group {
-                
                 images[index] = image
-                
             }
-            
         }
         
         return images.compactMap { $0 }
-        
     }
     
+    // Preload (warm) cache for multiple Storage image paths without holding images in memory
+    func prefetchImages(paths: [String], location: ImageLocation, createdDate: Date = Date()) {
+        Task.detached { [weak self] in
+            guard let self = self else { return }
+            do {
+                // We reuse the existing parallel downloader which also stores to Kingfisher cache.
+                _ = try await self.fetchImagesFromStorage(from: paths, location: location, createdDate: createdDate)
+            } catch {
+                print("⚠️ warmImageCache 실패: \(error)")
+            }
+        }
+    }
 }

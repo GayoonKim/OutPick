@@ -164,8 +164,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             completion(false)
         }
     }
-    
-    
+
     // 구글 로그인 여부 확인
     private func checkGoogleLogin(completion: @escaping (Bool) -> Void) {
         
@@ -197,5 +196,4 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         self.window?.makeKeyAndVisible()
         
     }
-    
 }

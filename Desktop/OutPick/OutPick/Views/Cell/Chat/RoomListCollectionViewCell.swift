@@ -55,6 +55,11 @@ class RoomListCollectionViewCell: UICollectionViewCell {
         fatalError("init(coder:) has not been implemented")
     }
     
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        roomImageView.image = UIImage(named: "Default_Profile")
+    }
+    
     private func setupLayout() {
         contentView.addSubview(roomImageView)
         contentView.addSubview(roomNameLabel)
