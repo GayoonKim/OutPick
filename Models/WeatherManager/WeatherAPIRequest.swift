@@ -38,6 +38,7 @@ extension WeatherAPIRequest {
 
 extension WeatherAPIRequest where Response: Decodable {
     func sendWeatherRequest() async throws -> Response {
+        print(#function, "4. sendWeatherRequest 호출 시작")
         
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
@@ -49,10 +50,10 @@ extension WeatherAPIRequest where Response: Decodable {
             
             let jsonDecoder = JSONDecoder()
             let decodedData = try jsonDecoder.decode(Response.self, from: data)
-            
+
             return decodedData
         } catch {
-            
+            print(#function, "4. sendWeatherRequest 에러", error)
             throw WeatherAPIRequestError.itemNotFound
             
         }

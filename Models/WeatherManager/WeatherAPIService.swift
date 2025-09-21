@@ -7,6 +7,38 @@
 
 import Foundation
 
+public enum WeatherAPIError: Error, Equatable {
+    case networkOffline
+    case networkTimeout
+    case networkConnectionLost
+    case badStatus(code: Int)
+    case decoding
+    case invalidResponse
+    case unknown
+
+    public var isOffline: Bool {
+        switch self {
+        case .networkOffline, .networkConnectionLost: return true
+        default: return false
+        }
+    }
+}
+
+public enum WeatherAPIErrorClassifier {
+    public static func classify(_ error: Error) -> WeatherAPIError {
+        if let urlErr = error as? URLError {
+            switch urlErr.code {
+            case .notConnectedToInternet: return .networkOffline
+            case .timedOut: return .networkTimeout
+            case .networkConnectionLost: return .networkConnectionLost
+            default: return .unknown
+            }
+        }
+        return .unknown
+    }
+}
+
+
 // 현재 날씨 요청을 위한 클래스
 class CurrentWeatherRequest: WeatherAPIRequest {
     // Response는 CurrentWeatherData 타입으로 정의
@@ -18,26 +50,13 @@ class CurrentWeatherRequest: WeatherAPIRequest {
     private var lat: Double = 0.0
     private var lon: Double = 0.0
     
-    // 위도 getter, setter
-    var currentLat: Double {
-        get {
-            return lat
-        }
-        set {
-            self.lat = newValue
-        }
+    // Prefer parameterized requests over shared mutable state
+    init() {}
+    init(lat: Double, lon: Double) {
+        self.lat = lat
+        self.lon = lon
     }
-    
-    // 경도 getter, setter
-    var currentLon: Double {
-        get {
-            return lon
-        }
-        set {
-            self.lon = newValue
-        }
-    }
-    
+
     // API 경로
     var path: String { "/data/2.5/weather" }
     
@@ -49,6 +68,11 @@ class CurrentWeatherRequest: WeatherAPIRequest {
         "units": "metric", // 단위
         "lang": "kr" // 언어
     ].map{ URLQueryItem(name: $0.key, value: $0.value) }}
+    
+    static func send(lat: Double, lon: Double) async throws -> CurrentWeatherData {
+        let req = CurrentWeatherRequest(lat: lat, lon: lon)
+        return try await req.sendWeatherRequest()
+    }
 }
 
 // 날씨 예보를 위한 클래스
@@ -61,27 +85,18 @@ class WeatherForecastRequest: WeatherAPIRequest {
     private var lat: Double = 0.0
     private var lon: Double = 0.0
     
-    // 위도 getter, setter
-    var currentLat: Double {
-        get {
-            return self.lat
-        }
-        set {
-            self.lat = newValue
-        }
+    // Prefer parameterized requests over shared mutable state
+    init() {}
+    init(lat: Double, lon: Double) {
+        self.lat = lat
+        self.lon = lon
     }
-    
-    // 경도 getter, setter
-    var currentLon: Double {
-        get {
-            return self.lon
-        }
-        set {
-            return self.lon = newValue
-        }
+
+    static func send(lat: Double, lon: Double) async throws -> WeatherForecastData {
+        let req = WeatherForecastRequest(lat: lat, lon: lon)
+        return try await req.sendWeatherRequest()
     }
-    
-    
+
     var path: String { "/data/3.0/onecall" }
     var queryItems: [URLQueryItem]? {[
         "lat": "\(lat)",

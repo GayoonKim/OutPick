@@ -19,6 +19,7 @@ class CustomTabBarViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         setupCustomTabBar()
+        self.view.backgroundColor = .white
     }
 
     func viewController(_ index: Int) -> UIViewController {
@@ -96,7 +97,7 @@ class CustomTabBarViewController: UIViewController {
         view.insertSubview(vc.view, belowSubview: customTabBar)
         vc.view.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            vc.view.topAnchor.constraint(equalTo: view.topAnchor),
+            vc.view.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
             vc.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             vc.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             vc.view.bottomAnchor.constraint(equalTo: customTabBar.topAnchor)
