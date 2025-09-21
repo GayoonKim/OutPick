@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>715386497547-u14nuem8t03f3k69gq4dkf0nmdveid73.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.715386497547-u14nuem8t03f3k69gq4dkf0nmdveid73</string>
+	<key>API_KEY</key>
+	<string>AIzaSyDoVUH2V21Ud9APfn63ZcuOi3OXZ9AHlFA</string>
+	<key>GCM_SENDER_ID</key>
+	<string>715386497547</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>GayoonKim.OutPick</string>
+	<key>PROJECT_ID</key>
+	<string>outpick-664ae</string>
+	<key>STORAGE_BUCKET</key>
+	<string>outpick-664ae.appspot.com</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:715386497547:ios:8e1bd34bbfc579432f750e</string>
+</dict>
+</plist>
