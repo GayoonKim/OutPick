@@ -132,6 +132,58 @@ final class GRDBManager {
         }
     }
     
+    // MARK: 방
+    func fetchRoomInfo(roomID: String) throws -> ChatRoom? {
+        try dbPool.read { db in
+            // rooms 테이블에서 방 기본 정보 조회
+            struct RoomRow: FetchableRecord, Decodable {
+                var ID: String
+                var roomName: String
+                var roomDescription: String
+                var creatorID: String
+                var createdAt: Date
+                var roomImagePath: String?
+                var lastMessageAt: Date?
+            }
+            
+            guard let row = try RoomRow.fetchOne(
+                db,
+                sql: """
+                SELECT id AS ID,
+                       roomName,
+                       roomDescription,
+                       creatorID,
+                       createdAt,
+                       roomImagePath,
+                       lastMessageAt
+                FROM rooms
+                WHERE id = ?
+                """,
+                arguments: [roomID]
+            ) else {
+                return nil
+            }
+            
+            // 참여자 IDs 조회
+            let participants: [String] = try String.fetchAll(
+                db,
+                sql: "SELECT userID FROM roomParticipant WHERE roomID = ?",
+                arguments: [roomID]
+            )
+            
+            return ChatRoom(
+                ID: row.ID,
+                roomName: row.roomName,
+                roomDescription: row.roomDescription,
+                participants: participants,
+                creatorID: row.creatorID,
+                createdAt: row.createdAt,
+                roomImagePath: row.roomImagePath,
+                lastMessageAt: row.lastMessageAt
+            )
+        }
+    }
+    
     // MARK: 메시지
     /// 여러 메시지를 한 번에 저장하고, 마지막에만 조건부 pruneMessages 실행
     func saveChatMessages(_ messages: [ChatMessage]) async throws {

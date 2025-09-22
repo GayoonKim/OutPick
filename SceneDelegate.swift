@@ -11,12 +11,15 @@ import KakaoSDKAuth
 import KakaoSDKUser
 import CoreLocation
 import FirebaseAuth
+import Combine
 
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     
     var window: UIWindow?
     
     private let locationManager = CLLocationManager()
+    private var cancellables = Set<AnyCancellable>()
+    private var appCoordinator: AppCoordinator?
     
     func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
         if let url = URLContexts.first?.url {
@@ -40,6 +43,35 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             let initialViewController = storyboard.instantiateViewController(withIdentifier: "LaunchScreen")
             self.window?.rootViewController = initialViewController
             self.window?.makeKeyAndVisible()
+
+            // AppCoordinator 초기화
+            self.appCoordinator = AppCoordinator(window: self.window)
+            self.appCoordinator?.start()
+            
+            // Banner 탭 시 해당 채팅방으로 이동
+            BannerManager.shared.bannerTapped
+                .sink { [weak self] roomID in
+                    guard let self = self else { return }
+                    
+                    Task { @MainActor in
+                        do {
+                            // 우선 로컬(DB)에서 조회
+                            var room = try GRDBManager.shared.fetchRoomInfo(roomID: roomID)
+                            
+                            // 만약 최신 데이터가 필요하면 서버에서도 업데이트
+                            let serverRoom = try await FirebaseManager.shared.fetchRoomInfoWithID(roomID: roomID)
+                            room = serverRoom
+                            
+                            guard let room = room else { return }
+                            
+                            // Coordinator를 통해 이동
+                            self.appCoordinator?.showChatRoom(room: room, isRoomSaving: false)
+                        } catch {
+                            print("❌ room 정보를 불러오지 못했습니다:", error)
+                        }
+                    }
+                }
+                .store(in: &cancellables)
         }
         
         // 날씨 업데이트 시작
@@ -82,7 +114,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                         Task.detached {
                             try await FirebaseManager.shared.listenToHotRooms()
                             SocketIOManager.shared.establishConnection {
-                                SocketIOManager.shared.bindAllListenersIfNeeded()
+//                                SocketIOManager.shared.bindAllListenersIfNeeded()
                             }
                         }
                         

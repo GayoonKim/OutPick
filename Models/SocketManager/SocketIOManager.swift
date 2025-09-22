@@ -44,9 +44,12 @@ class SocketIOManager {
     
     private var joinedRooms = Set<String>()
     
+    private var roomSubjects = [String: PassthroughSubject<ChatMessage, Never>]()
+    private var subscriberCounts = [String: Int]() // 구독자 ref count
+    
     private init() {
         //manager = SocketManager(socketURL: URL(string: "http://127.0.0.1:3000")!, config: [.log(true), .compress])
-        manager = SocketManager(socketURL: URL(string: "http://192.168.123.173:3000")!, config: [.log(true), .compress])
+        manager = SocketManager(socketURL: URL(string: "http://192.168.123.187:3000")!, config: [.log(true), .compress])
         socket = manager.defaultSocket
         
         socket.on(clientEvent: .connect) {data, ack in
@@ -93,6 +96,51 @@ class SocketIOManager {
     
     func closeConnection() {
         socket.disconnect()
+    }
+    
+    func subscribeToMessages(for roomID: String) -> AnyPublisher<ChatMessage, Never> {
+        print(#function, "✅✅✅✅✅ 2. subscribeToMessages 호출")
+        
+        subscriberCounts[roomID, default: 0] += 1
+
+        if roomSubjects[roomID] == nil {
+            let subject = PassthroughSubject<ChatMessage, Never>()
+            roomSubjects[roomID] = subject
+
+            // 소켓 리스너 등록
+            attachSocketListener(for: roomID) { [weak self] message in
+                self?.roomSubjects[roomID]?.send(message)
+            }
+        }
+
+        print(#function, "✅✅✅✅✅ 3. roomSubjects", roomSubjects[roomID]!)
+        return roomSubjects[roomID]!.eraseToAnyPublisher()
+    }
+
+    func unsubscribeFromMessages(for roomID: String) {
+        guard let count = subscriberCounts[roomID], count > 0 else { return }
+        subscriberCounts[roomID] = count - 1
+
+        if subscriberCounts[roomID] == 0 {
+            detachSocketListener(for: roomID)
+            roomSubjects[roomID]?.send(completion: .finished)
+            roomSubjects[roomID] = nil
+        }
+    }
+    
+    private func attachSocketListener(for roomID: String, onMessage: @escaping (ChatMessage) -> Void) {
+        print(#function, "attachSocketListener 호출")
+        socket.on("chat message:\(roomID)") { data, _ in
+            guard let dict = data.first as? [String: Any],
+                  let message = ChatMessage.from(dict) else {
+                return
+            }
+            onMessage(message)
+        }
+    }
+
+    private func detachSocketListener(for roomID: String) {
+        socket.off("chat message:\(roomID)")
     }
 
     func bindAllListenersIfNeeded() {
@@ -151,24 +199,7 @@ class SocketIOManager {
         
         let payload = message.toSocketRepresentation()
         print("📤 전송할 소켓 데이터: \(payload)")  // 디버깅용
-        
-//        socket.emitWithAck("chat message", payload).timingOut(after: 5) { ackResponse in
-//            if let ackDict = ackResponse.first as? [String:Any],
-//               let success = ackDict["success"] as? Bool, success {
-//
-//                Task {
-//                    await FirebaseManager.shared.updateRoomLastMessageAt(roomID: room.ID ?? "", date: message.sentAt)
-//                }
-//
-//                self.messageSubject.send(message)
-//            } else {
-//                //                    print(#function, "********** 메시지 전송 타임아웃 **********")
-//                var failedMessage = message
-//                failedMessage.isFailed = true
-//                self.messageSubject.send(failedMessage)
-//            }
-//        }
-        
+
         socket.emitWithAck("chat message", payload).timingOut(after: 5) { [weak self] ackResponse in
             guard let self = self else { return }
             

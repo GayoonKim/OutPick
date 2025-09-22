@@ -231,6 +231,38 @@ class FirebaseManager {
 
     }
     
+    func fetchRoomInfoWithID(roomID: String) async throws -> ChatRoom {
+        let roomRef = db.collection("Rooms").document(roomID)
+        let snapshot = try await roomRef.getDocument()
+
+        guard let data = snapshot.data() else {
+            throw FirebaseError.FailedToFetchRoom
+        }
+
+        guard
+            let roomName = data["roomName"] as? String,
+            let roomDescription = data["roomDescription"] as? String,
+            let participants = data["participantIDs"] as? [String],
+            let creatorID = data["creatorID"] as? String,
+            let timestamp = data["createdAt"] as? Timestamp
+        else {
+            throw FirebaseError.FailedToParseRoomData
+        }
+
+        let roomImagePath = data["roomImagePath"] as? String
+
+        return ChatRoom(
+            ID: snapshot.documentID,
+            roomName: roomName,
+            roomDescription: roomDescription,
+            participants: participants,
+            creatorID: creatorID,
+            createdAt: timestamp.dateValue(),
+            roomImagePath: roomImagePath,
+            lastMessageAt: (data["lastMessageAt"] as? Timestamp)?.dateValue()
+        )
+    }
+    
     func fetchRoomInfo(room: ChatRoom) async throws -> ChatRoom {
         guard let roomDoc = try await getRoomDoc(room: room) else {
             throw NSError(domain: "RoomNotFound", code: 404)

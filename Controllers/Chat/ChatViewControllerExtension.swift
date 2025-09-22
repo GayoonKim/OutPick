@@ -94,7 +94,7 @@ extension ChatViewController: PHPickerViewControllerDelegate {
                     let images = try await MediaManager.shared.dealWithImages(resultsForImages)
                     
                     if let room = self.room {
-                        SocketIOManager.shared.sendImages(room, images)
+                    SocketIOManager.shared.sendImages(room, images)
                     }
                 } catch MediaError.FailedToConvertImage {
                     AlertManager.showAlertNoHandler(title: "이미지 변환 실패", message: "이미지를 다시 선택해 주세요/", viewController: self)

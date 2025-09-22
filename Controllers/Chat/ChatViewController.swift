@@ -60,7 +60,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     var room: ChatRoom?
     var roomID: String?
-    var isRoomSaving = false
+    var isRoomSaving: Bool = false
     
     var convertImagesTask: Task<Void, Error>? = nil
     var convertVideosTask: Task<Void, Error>? = nil
@@ -70,6 +70,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private var highlightedMessageIDs: Set<String> = []
     private var currentSearchKeyword: String? = nil
     private var hasBoundRoomChange = false
+    
+    static var currentRoomID: String? = nil
     
     deinit {
         print("💧 ChatViewController deinit")
@@ -193,11 +195,19 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private var scrollTargetIndex: IndexPath?
     
     private var lastContainerViewOriginY: Double = 0
-    
+//    
+//    init(room: ChatRoom, isRoomSaving: Bool = false) {
+//        self.room = room
+//        self.isRoomSaving = isRoomSaving
+//        super.init(nibName: nil, bundle: nil)
+//    }
+//    
+//    required init?(coder: NSCoder) {
+//        fatalError("init(coder:) has not been implemented")
+//    }
+//    
     override func viewDidLoad() {
         super.viewDidLoad()
-//        self.hidesBottomBarWhenPushed = true
-//        self.navigationController?.setNavigationBarHidden(true, animated: false)
         self.definesPresentationContext = true
         
         configureDataSource()
@@ -220,8 +230,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         setupAttachmentView()
         
         setupInitialMessages()
-        
-        bindMessagePublishers()
+
         bindKeyboardPublisher()
         bindSearchEvents()
         
@@ -230,7 +239,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-
         // ✅ 초기 네트워크/메모리 상태 기반으로 pagingBuffer 세팅
         pagingBuffer = PagingBufferCalculator.calculate(
             for: room,
@@ -239,11 +247,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         
         DispatchQueue.main.async {
             // 이미 연결된 경우에는 room join과 listener 설정만 수행
-            if let room = self.room {
-                if room.participants.contains(LoginManager.shared.getUserEmail) {
-                    if SocketIOManager.shared.isConnected {
-                        SocketIOManager.shared.joinRoom(room.ID ?? "")
-                    }
+            if let room = self.room,
+               room.participants.contains(LoginManager.shared.getUserEmail) {
+                if SocketIOManager.shared.isConnected {
+                    SocketIOManager.shared.joinRoom(room.ID ?? "")
                 }
             }
         }
@@ -253,6 +260,18 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         super.viewWillDisappear(animated)
         isUserInCurrentRoom = false
         
+        if ChatViewController.currentRoomID == room?.ID {
+            ChatViewController.currentRoomID = nil    // ✅ 나갈 때 초기화
+        }
+        
+        if let room = self.room {
+            SocketIOManager.shared.unsubscribeFromMessages(for: room.ID ?? "")
+            
+            if ChatViewController.currentRoomID == room.ID {
+                ChatViewController.currentRoomID = nil    // ✅ 나갈 때 초기화
+            }
+        }
+        
         cancellables.removeAll()
         NotificationCenter.default.removeObserver(self)
         
@@ -261,6 +280,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         
         removeReadMarkerIfNeeded()
         
+        // 참여하지 않은 방이면 로컬 메시지 삭제 처리
         if let room = self.room,
            !room.participants.contains(LoginManager.shared.getUserEmail) {
             Task { @MainActor in
@@ -273,6 +293,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 }
             }
         }
+        
         self.navigationController?.setNavigationBarHidden(false, animated: false)
     }
 
@@ -283,8 +304,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         self.attachInteractiveDismissGesture()
-        isUserInCurrentRoom = true
-        
+         
+        if let room = self.room {
+            ChatViewController.currentRoomID = room.ID
+        } // ✅ 현재 방 ID 저장
         bindMessagePublishers()
     }
 
@@ -321,7 +344,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 try await GRDBManager.shared.saveChatMessages(serverMessages)
                 addMessages(serverMessages, isNewer: true)
                 
-                // Removed: isUserInCurrentRoom = true
+                isUserInCurrentRoom = true
             } catch {
                 print("❌ 메시지 초기화 실패:", error)
             }
@@ -386,41 +409,94 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
 
     private func bindMessagePublishers() {
-        // 아래로 스크롤(최신 메시지): Socket.IO 수신 → GRDB 저장 → UI 반영
-        SocketIOManager.shared.receivedMessagePublisher
-//            .receive(on: DispatchQueue.main)
+//        SocketIOManager.shared.receivedMessagePublisher
+////            .receive(on: DispatchQueue.main)
+//            .sink { [weak self] receivedMessage in
+//                guard let self = self else { return }
+//                
+//                print("\(receivedMessage.isFailed ? "전송 실패" : "전송 성공") 메시지 수신: \(receivedMessage)")
+//                guard let room = self.room else { return }
+//                
+//                Task {
+//                    if  !receivedMessage.isFailed ,receivedMessage.senderID == LoginManager.shared.getUserEmail {
+//                        // ✅ 보낸 본인만 Firebase에 저장
+//                        try await FirebaseManager.shared.saveMessage(receivedMessage, room)
+//                    }
+//                    
+//                    try await GRDBManager.shared.saveChatMessages([receivedMessage])
+//                    
+//                    if !receivedMessage.attachments.isEmpty {
+//                        for attachment in receivedMessage.attachments {
+//                            guard attachment.type == .image, let imageName = attachment.fileName else { continue }
+//                            
+//                            if !receivedMessage.isFailed {
+//                                try GRDBManager.shared.addImage(imageName, toRoom: room.ID ?? "", at: receivedMessage.sentAt ?? Date())
+//                            }
+//                            
+//                            if let image = attachment.toUIImage() {
+//                                try await KingfisherManager.shared.cache.store(image, forKey: imageName)
+//                            }
+//                        }
+//                    }
+//                }
+//                
+//                addMessages([receivedMessage], isNewer: true)
+//            }
+//            .store(in: &cancellables)
+        print(#function, "✅✅✅✅✅ 1. SocketIOManager.shared.subscribeToMessages 호출 직전")
+        guard let room = self.room else { return }
+        SocketIOManager.shared.subscribeToMessages(for: room.ID ?? "")
             .sink { [weak self] receivedMessage in
                 guard let self = self else { return }
-                
-                print("\(receivedMessage.isFailed ? "전송 실패" : "전송 성공") 메시지 수신: \(receivedMessage)")
-                guard let room = self.room else { return }
-                
                 Task {
-                    if  !receivedMessage.isFailed ,receivedMessage.senderID == LoginManager.shared.getUserEmail {
-                        // ✅ 보낸 본인만 Firebase에 저장
-                        try await FirebaseManager.shared.saveMessage(receivedMessage, room)
-                    }
-                    
-                    try await GRDBManager.shared.saveChatMessages([receivedMessage])
-                    
-                    if !receivedMessage.attachments.isEmpty {
-                        for attachment in receivedMessage.attachments {
-                            guard attachment.type == .image, let imageName = attachment.fileName else { continue }
-                            
-                            if !receivedMessage.isFailed {
-                                try GRDBManager.shared.addImage(imageName, toRoom: room.ID ?? "", at: receivedMessage.sentAt ?? Date())
-                            }
-                            
-                            if let image = attachment.toUIImage() {
-                                try await KingfisherManager.shared.cache.store(image, forKey: imageName)
-                            }
-                        }
-                    }
+                    print(#function, "handleIncomingMessage 호출")
+                    await self.handleIncomingMessage(receivedMessage)
                 }
-                
-                addMessages([receivedMessage], isNewer: true)
             }
             .store(in: &cancellables)
+    }
+    
+    /// 수신 메시지를 저장 및 UI 반영
+    @MainActor
+    private func handleIncomingMessage(_ message: ChatMessage) async {
+        guard let room = self.room else { return }
+        
+        print("\(message.isFailed ? "전송 실패" : "전송 성공") 메시지 수신: \(message)")
+        
+        do {
+            if !message.isFailed, message.senderID == LoginManager.shared.getUserEmail {
+                try await FirebaseManager.shared.saveMessage(message, room)
+            }
+            try await GRDBManager.shared.saveChatMessages([message])
+            
+            if !message.attachments.isEmpty {
+                await cacheAttachmentsIfNeeded(for: message, in: room.ID ?? "")
+            }
+            
+            addMessages([message], isNewer: true)
+        } catch {
+            print("❌ 메시지 처리 실패: \(error)")
+        }
+    }
+    
+    /// 첨부파일 캐싱 전용
+    private func cacheAttachmentsIfNeeded(for message: ChatMessage, in roomID: String) async {
+        guard !message.attachments.isEmpty else { return }
+        
+        for attachment in message.attachments {
+            guard attachment.type == .image, let imageName = attachment.fileName else { continue }
+            
+            do {
+                if !message.isFailed {
+                    try GRDBManager.shared.addImage(imageName, toRoom: roomID, at: message.sentAt ?? Date())
+                }
+                if let image = attachment.toUIImage() {
+                    try await KingfisherManager.shared.cache.store(image, forKey: imageName)
+                }
+            } catch {
+                print("❌ 첨부파일 캐싱 실패: \(error)")
+            }
+        }
     }
     
     @MainActor
@@ -593,8 +669,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         FirebaseManager.shared.roomChangePublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] updatedRoom in
-                guard let self = self,
-                      let _ = self.room else { return }
+                guard let self = self
+                      /*let _ = self.room*/ else { return }
                 print(#function, "ChatViewController.swift 방 정보 변경: \(updatedRoom)")
                 self.room = updatedRoom
                 Task { @MainActor in
@@ -638,9 +714,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         do {
             let profiles = try await FirebaseManager.shared.fetchUserProfiles(emails: emails)
             
+            guard let room = self.room else { return }
             for profile in profiles {
                 try GRDBManager.shared.insertUserProfile(profile)
-                try GRDBManager.shared.addUser(profile.email ?? "", toRoom: room?.ID ?? "")
+                try GRDBManager.shared.addUser(profile.email ?? "", toRoom: room.ID ?? "")
             }
             
             print(#function, "✅ 사용자 프로필 동기화 성공: ", profiles)
@@ -716,10 +793,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 // 1. 소켓 연결
                 if !SocketIOManager.shared.isConnected {
                     SocketIOManager.shared.establishConnection { [weak self] in
-                        guard let _ = self else { return }
+                        guard let self = self else { return }
                         SocketIOManager.shared.joinRoom(room.ID ?? "")
                         SocketIOManager.shared.socket.off("chat message")
-                        SocketIOManager.shared.listenToChatMessage()
+//                        SocketIOManager.shared.listenToChatMessage()
                         SocketIOManager.shared.listenToNewParticipant()
                     }
                 }
@@ -1290,7 +1367,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
         
         // Insert readMarker only for newer messages
-        if !isUserInCurrentRoom, isNewer, !hasReadMarker, let lastMessageID = self.lastReadMessageID, !isUserInCurrentRoom,
+        if isNewer, !hasReadMarker, let lastMessageID = self.lastReadMessageID, !isUserInCurrentRoom,
            let firstMessage = newMessages.first, firstMessage.ID != lastMessageID {
             
             if let firstNewItem = items.first(where: { if case .message = $0 { return true }; return false }) {

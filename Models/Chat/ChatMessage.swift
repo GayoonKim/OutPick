@@ -102,3 +102,37 @@ struct ChatMessage: SocketData, Codable {
 }
 
 extension ChatMessage: Hashable {}
+
+extension ChatMessage {
+    static func from(_ dict: [String: Any]) -> ChatMessage? {
+        guard let roomID = dict["roomID"] as? String,
+              let senderID = dict["senderID"] as? String,
+              let senderNickname = dict["senderNickName"] as? String,
+              let sentAtString = dict["sentAt"] as? String,
+              let sentAt = ChatMessage.iso8601Formatter.date(from: sentAtString) else {
+            return nil
+        }
+
+        let msg = dict["msg"] as? String
+        var rp: ReplyPreview? = nil
+        if let rpDict = dict["replyPreview"] as? [String: Any],
+           let mid = rpDict["messageID"] as? String, !mid.isEmpty {
+            rp = ReplyPreview(
+                messageID: mid,
+                sender: rpDict["author"] as? String ?? "",
+                text: rpDict["text"] as? String ?? "",
+                isDeleted: rpDict["isDeleted"] as? Bool ?? false
+            )
+        }
+
+        return ChatMessage(
+            roomID: roomID,
+            senderID: senderID,
+            senderNickname: senderNickname,
+            msg: msg,
+            sentAt: sentAt,
+            attachments: [], // 필요 시 dict["attachments"] 파싱
+            replyPreview: rp
+        )
+    }
+}
