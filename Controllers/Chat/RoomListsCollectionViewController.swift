@@ -56,27 +56,17 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
         self.bindPublishers()
         self.updateCollectionView()
         self.setupNavigationBar()
+        
+
+    }
+    
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        if let profile = LoginManager.shared.currentUserProfile {
+            print(#function, "currentUserProfile: \(profile)")
+        }
     }
 
-//    override func viewController(_ index: Int) -> UIViewController {
-//        let storyboard = UIStoryboard(name: "Main", bundle: nil)
-//        switch index {
-//        case 0:
-//            let vc = storyboard.instantiateViewController(withIdentifier: "weatherVC")
-//            let nav = UINavigationController(rootViewController: vc)
-//            nav.isNavigationBarHidden = true
-//            return nav
-//        case 1:
-//            let listVC = RoomListsCollectionViewController(collectionViewLayout: UICollectionViewFlowLayout())
-//            let nav = UINavigationController(rootViewController: listVC)
-//            nav.isNavigationBarHidden = true
-//            return nav
-//        default:
-//
-//            return UINavigationController(rootViewController: UIViewController())
-//        }
-//    }
-    
     private func bindPublishers() {
         // 방 목록 관련
         FirebaseManager.shared.$hotRoomsWithPreviews

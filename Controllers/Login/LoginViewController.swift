@@ -107,13 +107,14 @@ class LoginViewController: UIViewController {
         Task {
             do {
                 try await LoginManager.shared.updateLogDevID()
-                try await LoginManager.shared.setupDevIDListener()
-                try await FirebaseManager.shared.listenToHotRooms()
-                SocketIOManager.shared.establishConnection {
-                    SocketIOManager.shared.listenToChatMessage()
-                }
+                async let _ = FirebaseManager.shared.listenToHotRooms()
+                async let _ = SocketIOManager.shared.establishConnection()
+
+                // ✅ 신규/기존 유저 분기 처리 통합
+                let screen = try await LoginManager.shared.makeInitialViewController()
+                LoginManager.shared.startUserProfileListener(email: LoginManager.shared.getUserEmail)
                 
-                let screen = try await LoginManager.shared.fetchProfileFromFirebase(LoginManager.shared.getUserEmail)
+                
                 guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
                       let window = scene.windows.first else { return }
 
@@ -124,12 +125,24 @@ class LoginViewController: UIViewController {
                                       window.rootViewController = screen
                                   },
                                   completion: nil)
-
                 window.makeKeyAndVisible()
-    
+
+                // 기존 유저만 joinedRooms 배너 리스너 등록
+                if screen is CustomTabBarViewController {
+                    let roomIDs = LoginManager.shared.currentUserProfile?.joinedRooms ?? []
+                    for roomID in roomIDs {
+                        BannerManager.shared.startListening(for: roomID)
+                    }
+                    print("📢 BannerManager: \(roomIDs.count)개 방에 대해 리스닝 시작")
+                }
+
             } catch {
                 print("로그인 후처리 실패: \(error)")
-                AlertManager.showAlertNoHandler(title: "로그인 실패", message: "로그인에 실패했습니다. 다시 시도해주세요.", viewController: self)
+                AlertManager.showAlertNoHandler(
+                    title: "로그인 실패",
+                    message: "로그인에 실패했습니다. 다시 시도해주세요.",
+                    viewController: self
+                )
             }
         }
     }

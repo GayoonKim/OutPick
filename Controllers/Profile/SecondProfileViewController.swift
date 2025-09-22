@@ -238,11 +238,16 @@ class SecondProfileViewController: UIViewController {
                     KeychainManager.shared.save(data, service: "GayoonKim.OutPick", account: "UserProfile")
                 }
                 
-                DispatchQueue.main.async {
-                    let mainStorybard = UIStoryboard(name: "Main", bundle: nil)
-                    let weatherVC = mainStorybard.instantiateViewController(withIdentifier: "weatherVC")
-                    self.view.window?.rootViewController = weatherVC
-                    self.view.window?.makeKeyAndVisible()
+                await MainActor.run {
+                    let rootVC = CustomTabBarViewController()
+                    if let window = self.view.window {
+                        window.rootViewController = rootVC
+                        window.makeKeyAndVisible()
+                    } else if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                              let window = windowScene.windows.first {
+                        window.rootViewController = rootVC
+                        window.makeKeyAndVisible()
+                    }
                 }
                 
                 try await FirebaseManager.shared.saveUserProfileToFirestore(email: LoginManager.shared.getUserEmail)

@@ -64,21 +64,34 @@ class FirebaseManager {
     private var hotRoomMessageListeners: [String: ListenerRegistration] = [:]
     
     //MARK: 프로필 설정 관련 기능들
-    // UserProfile 문서 불러오기
-    func getUserDoc() async throws -> DocumentSnapshot? {
-        let querySnapshot = try await db.collection("Users")
-            .whereField("email", isEqualTo: LoginManager.shared.getUserEmail)
-            .limit(to: 1)
-            .getDocuments()
+    func listenToUserProfile(email: String,
+                             completion: @escaping (Result<UserProfile, Error>) -> Void) -> ListenerRegistration {
+        let docRef = db.collection("Users").document(email)
         
-        guard let user_doc = querySnapshot.documents.first else {
-            print("사용자 문서 불러오기 실패")
-            return nil
+        let listener = docRef.addSnapshotListener { snapshot, error in
+            if let error = error {
+                completion(.failure(error))
+                return
+            }
+            
+            guard let snapshot = snapshot, snapshot.exists else {
+                completion(.failure(NSError(domain: "FirebaseManager",
+                                            code: 404,
+                                            userInfo: [NSLocalizedDescriptionKey: "UserProfile 문서가 존재하지 않습니다."])))
+                return
+            }
+            
+            do {
+                let profile = try snapshot.data(as: UserProfile.self)
+                completion(.success(profile))
+            } catch {
+                completion(.failure(error))
+            }
         }
         
-        print(#function, "✅ 사용자 문서 불러오기 성공", user_doc)
-        return user_doc
+        return listener
     }
+    
     
     // Firebase Firestore에 UserProfile 객체 저장
     func saveUserProfileToFirestore(email: String) async throws {
@@ -94,41 +107,24 @@ class FirebaseManager {
     
 //     Firebase Firestore에서 UserProfile 불러오기
     func fetchUserProfileFromFirestore(email: String) async throws -> UserProfile {
-        print("fetchUserprofileFromFirestore 호출")
-        
-        let documentIDs = try await fetchAllDocIDs(collectionName: "Users")
-        if documentIDs.isEmpty { throw FirebaseError.FailedToFetchProfile }
-        
-        return try await withThrowingTaskGroup(of: UserProfile?.self) { group in
-            for documentID in documentIDs {
-                group.addTask {
-                    
-                    let refToCheck = self.db.collection("Users").document(documentID).collection("\(documentID) Users").whereField("email", isEqualTo: email)
-                    let snapshot = try await refToCheck.getDocuments()
-                    
-                    guard let data = snapshot.documents.first?.data() else { throw FirebaseError.FailedToFetchProfile }
-                    
-                    return UserProfile(
-                        email: email,
-                        nickname: data["nickname"] as? String,
-                        gender: data["gender"] as? String,
-                        birthdate: data["birthdate"] as? String,
-                        profileImagePath: data["profileImagePath"] as? String,
-                        joinedRooms: data["joinedRooms"] as? [String]
-                    )
-                }
-            }
-            
-            for try await result in group {
-                if let profile = result {
-                    group.cancelAll()
-                    return profile
-                }
-            }
-            
+        print("fetchUserProfileFromFirestore 호출")
+
+        // 단일 Users 컬렉션에서 문서 ID = email 로 직접 조회
+        let docRef = db.collection("Users").document(email)
+        let snapshot = try await docRef.getDocument()
+        guard let data = snapshot.data() else {
             throw FirebaseError.FailedToFetchProfile
         }
-        
+
+        // 수동 매핑 (필드명이 스키마와 일치한다고 가정)
+        return UserProfile(
+            email: data["email"] as? String ?? email,
+            nickname: data["nickname"] as? String,
+            gender: data["gender"] as? String,
+            birthdate: data["birthdate"] as? String,
+            profileImagePath: data["profileImagePath"] as? String,
+            joinedRooms: data["joinedRooms"] as? [String]
+        )
     }
     
     func fetchUserProfiles(emails: [String]) async throws -> [UserProfile] {
@@ -459,28 +455,18 @@ class FirebaseManager {
         remove_participant_task?.cancel()
         remove_participant_task = Task {
             do {
-                
-                guard let user_doc = try await getUserDoc() else { return }
-                
+                let userRef = db.collection("Users").document(LoginManager.shared.getUserEmail)
                 let _ = try await db.runTransaction({ (transaction, errorPointer) -> Any? in
-                
-                    transaction.updateData(["joinedRooms": FieldValue.arrayRemove([room.roomName])], forDocument: user_doc.reference)
-                    
+                    transaction.updateData(["joinedRooms": FieldValue.arrayRemove([room.roomName])], forDocument: userRef)
                     return nil
-                    
                 })
-                
                 if let imageName = room.roomImagePath {
                     try await KingfisherManager.shared.cache.removeImage(forKey: imageName)
                 }
-                
                 print("참여중인 방 강제 삭제 성공")
                 remove_participant_task = nil
-                
             } catch {
-                
                 print("방 참여자 강제 삭제 트랜젝션 실패: \(error)")
-                
             }
         }
     }
@@ -490,29 +476,19 @@ class FirebaseManager {
         add_room_participant_task?.cancel()
         add_room_participant_task = Task {
             do {
-                
-                guard let user_doc = try await getUserDoc(),
-                      let room_doc = try await getRoomDoc(room: room) else { return }
-
+                guard let room_doc = try await getRoomDoc(room: room) else { return }
+                let userRef = db.collection("Users").document(LoginManager.shared.getUserEmail)
                 let _ = try await db.runTransaction({ (transaction, errorPointer) -> Any? in
-                    
-                    transaction.updateData(["joinedRooms": FieldValue.arrayUnion([room.ID ?? ""])], forDocument: user_doc.reference)
+                    transaction.updateData(["joinedRooms": FieldValue.arrayUnion([room.ID ?? ""])], forDocument: userRef)
                     transaction.updateData(["participantIDs": FieldValue.arrayUnion([LoginManager.shared.getUserEmail])], forDocument: room_doc.reference)
-                    
                     return nil
                 })
-                
                 print(#function, "참여자 업데이트 성공")
                 add_room_participant_task = nil
-                
-                            
             } catch {
-                
                 print(#function, "방 참여자 업데이트 트랜젝션 실패: \(error)")
-                
             }
         }
-        
     }
     
     //MARK: 메시지 관련 기능

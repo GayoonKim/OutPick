@@ -24,6 +24,7 @@ class LoginManager {
     }
     
     var deviceIDListener: ListenerRegistration?
+    private var userProfileListener: ListenerRegistration?
     
     private(set) var currentUserProfile: UserProfile?
     var userProfile: UserProfile? {
@@ -34,114 +35,122 @@ class LoginManager {
         self.currentUserProfile = profile
     }
     
-    // 중복 로그인 탐지
-    func setupDevIDListener() async throws{
-        do {
-            guard let userDoc = try await FirebaseManager.shared.getUserDoc() else { return }
-            deviceIDListener = userDoc.reference.addSnapshotListener({ [weak self] documentSnapshot, error in
-                guard let self = self else { return }
-                
-                if let error = error {
-                    print("사용자 문서 불러오기 실패: \(error.localizedDescription)")
-                    return
+    func startUserProfileListener(email: String) {
+        userProfileListener?.remove()
+        userProfileListener = nil
+
+        userProfileListener = FirebaseManager.shared.listenToUserProfile(email: email) { [weak self] result in
+            guard let self = self else { return }
+            switch result {
+            case .success(let profile):
+                self.currentUserProfile = profile
+                if let data = try? JSONEncoder().encode(profile) {
+                    KeychainManager.shared.save(data, service: "GayoonKim.OutPick", account: "UserProfile")
                 }
-                
-                guard let document = documentSnapshot,
-                      let deviceID = document.data()?["deviceID"] as? String else {
-                    return
-                }
-                
-                // 다른 기기에서 로그인 감지
-                if deviceID != UIDevice.current.identifierForVendor?.uuidString {
-                    DispatchQueue.main.async {
-                        AlertManager.showDuplicateLoginAlert()
-                        self.deviceIDListener?.remove()
-                        self.deviceIDListener = nil
-                    }
-                }
-            })
-        } catch {
-            print("기기 ID 리스너 설정 실패: \(error.localizedDescription)")
+                print("🔄 프로필 갱신: \(profile)")
+            case .failure(let error):
+                print("❌ 프로필 리스너 에러: \(error)")
+            }
         }
+    }
+    
+    // 중복 로그인 탐지
+    func setupDevIDListener() async throws {
+        print("🔄🔄🔄🔄🔄 setupDevIDListener 호출")
+        let userRef = FirebaseManager.shared.db.collection("Users").document(self.getUserEmail)
+        deviceIDListener = userRef.addSnapshotListener({ [weak self] documentSnapshot, error in
+            guard let self = self else { return }
+            
+            if let error = error {
+                print("사용자 문서 불러오기 실패: \(error.localizedDescription)")
+                return
+            }
+            
+            guard let document = documentSnapshot,
+                  let deviceID = document.data()?["deviceID"] as? String else {
+                return
+            }
+            
+            // 다른 기기에서 로그인 감지
+            if deviceID != UIDevice.persistentDeviceID {
+                DispatchQueue.main.async {
+                    AlertManager.showDuplicateLoginAlert()
+                    self.deviceIDListener?.remove()
+                    self.deviceIDListener = nil
+                }
+            }
+        })
+        
+        print("🔄🔄🔄🔄🔄 setupDevIDListener 호출 끝")
     }
     
     // 중복 로그인 방지를 위한 로그인 기기 ID 변경
     func updateLogDevID() async throws {
-        print("updateLogDevID 호출")
+        print("🔄🔄🔄🔄🔄 1. updateLogDevID 호출")
         
         do {
-            let device_id = await UIDevice.current.identifierForVendor?.uuidString ?? "Unknown_User"
-            guard let user_doc = try await FirebaseManager.shared.getUserDoc() else { return }
             
-            if let savedDeviceID = user_doc.get("deviceID") as? String,
-               savedDeviceID == self.currentUserProfile?.deviceID {
+            let device_id = await UIDevice.persistentDeviceID
+            print("🔄🔄🔄🔄🔄 2. deviceID", device_id)
+            let userRef = FirebaseManager.shared.db.collection("Users").document(self.getUserEmail)
+            print("🔄🔄🔄🔄🔄 3. userRef", userRef)
+            
+            
+            let document = try await userRef.getDocument()
+            if let savedDeviceID = document.get("deviceID") as? String,
+               savedDeviceID == device_id {
                 print("이전과 동일한 기기")
                 return
             }
             
-            let _ = try await FirebaseManager.shared.db.runTransaction({ (transaction, errorPointer) -> Any? in
-                transaction.updateData(["deviceID": device_id], forDocument: user_doc.reference)
-                
-                return nil
-            })
+            try await userRef.updateData(["deviceID": device_id])
             
             print("로그인 기기 ID 변경")
+//            try await self.setupDevIDListener()
+            print("🔄🔄🔄🔄🔄 updateLogDevID 호출 끝")
         } catch {
             print("로그인 기기 ID 변경 실패: \(error)")
         }
+        
+        try await self.setupDevIDListener()
     }
     
-    // Firestore에서 사용자 이메일로 만들어진 프로필 문서 쿼리
-    func fetchUserProfileFromKeychain(completion: @escaping (UIViewController) -> Void) {
-        print("fetchUserProfileFromKeychain 호출")
-
+    func loadUserProfile() async -> Result<UserProfile, Error> {
+        // Try to load from Keychain
         if let data = KeychainManager.shared.read(service: "GayoonKim.OutPick", account: "UserProfile"),
            let userProfile = try? JSONDecoder().decode(UserProfile.self, from: data) {
             self.currentUserProfile = userProfile
-            
-            Task {
-                try await self.updateLogDevID()
-                try await self.setupDevIDListener()
-            }
-            
-//            let mainStorybard = UIStoryboard(name: "Main", bundle: nil)
-//            let initialViewControlle = mainStorybard.instantiateViewController(withIdentifier: "weatherVC")
-            let customTabBarVC = CustomTabBarViewController()
-            completion(customTabBarVC)
-        } else {
-            Task {
-                let vc = try await fetchProfileFromFirebase(LoginManager.shared.getUserEmail)
-                completion(vc)
-            }
+            return .success(userProfile)
         }
-    }
-    
-    func fetchProfileFromFirebase(_ email: String) async throws -> UIViewController {
+        // Keychain not found or decode failed, fetch from Firebase
         do {
+            let email = self.getUserEmail
             let profile = try await FirebaseManager.shared.fetchUserProfileFromFirestore(email: email)
             self.currentUserProfile = profile
             if let data = try? JSONEncoder().encode(profile) {
                 KeychainManager.shared.save(data, service: "GayoonKim.OutPick", account: "UserProfile")
             }
-            
-            try await updateLogDevID()
-            try await setupDevIDListener()
-            
-            return await MainActor.run {
-//                let mainStorybard = UIStoryboard(name: "Main", bundle: nil)
-//                return mainStorybard.instantiateViewController(withIdentifier: "weatherVC")
-                let customTabBarVC = CustomTabBarViewController()
-                return customTabBarVC
-            }
-            
+            return .success(profile)
         } catch {
-            
-            print("\(email) 사용자 프로필 불러오기 실패: \(error.localizedDescription)")
+            return .failure(error)
+        }
+    }
+    
+    func makeInitialViewController() async throws -> UIViewController {
+        let result = await loadUserProfile()
+        switch result {
+        case .success:
+            try await self.updateLogDevID()
+//            try await self.setupDevIDListener()
             return await MainActor.run {
-                let mainStorybard = UIStoryboard(name: "Main", bundle: nil)
-                return mainStorybard.instantiateViewController(withIdentifier: "ProfileNav")
+                CustomTabBarViewController()
             }
-            
+        case .failure(let error):
+            print("\(self.getUserEmail) 사용자 프로필 불러오기 실패: \(error.localizedDescription)")
+            return await MainActor.run {
+                let mainStoryboard = UIStoryboard(name: "Main", bundle: nil)
+                return mainStoryboard.instantiateViewController(withIdentifier: "ProfileNav")
+            }
         }
     }
     
@@ -177,4 +186,16 @@ class LoginManager {
         completion(true)
     }
     
+}
+
+extension UIDevice {
+    static var persistentDeviceID: String {
+        if let saved = KeychainManager.shared.read(service: "OutPick", account: "PersistentDeviceID"),
+           let id = String(data: saved, encoding: .utf8) {
+            return id
+        }
+        let newID = UUID().uuidString
+        KeychainManager.shared.save(Data(newID.utf8), service: "OutPick", account: "PersistentDeviceID")
+        return newID
+    }
 }

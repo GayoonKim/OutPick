@@ -84,30 +84,52 @@ class ChatMessageCell: UICollectionViewCell {
     private let replyPreviewNameLabel: UILabel = {
         let label = UILabel()
         label.font = .systemFont(ofSize: 10, weight: .heavy)
-        label.textColor = .black
+        label.textColor = .white
+        label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
 
     private let replyPreviewMsgLabel: UILabel = {
         let label = UILabel()
         label.font = .systemFont(ofSize: 9, weight: .medium)
-        label.textColor = .black
+        label.textColor = .lightGray
         label.numberOfLines = 1
+        label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
-    
-    private lazy var replyPreviewContainer: UIStackView = {
-        let separator = UIView()
-        separator.backgroundColor = .black
-        separator.heightAnchor.constraint(equalToConstant: 1).isActive = true
-        
-        let stack = UIStackView(arrangedSubviews: [replyPreviewNameLabel, replyPreviewMsgLabel, separator])
+
+    // Container for reply preview styling
+    private let replyPreviewInnerContainer: UIView = {
+        let container = UIView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.backgroundColor = .black
+        container.layer.cornerRadius = 8
+        container.clipsToBounds = true
+        return container
+    }()
+
+    private let replyPreviewSeparator: UIView = {
+        let sep = UIView()
+        sep.translatesAutoresizingMaskIntoConstraints = false
+        sep.backgroundColor = .black
+        sep.heightAnchor.constraint(equalToConstant: 1).isActive = true
+        return sep
+    }()
+
+    private lazy var replyPreviewStack: UIStackView = {
+        let stack = UIStackView(arrangedSubviews: [replyPreviewNameLabel, replyPreviewMsgLabel, replyPreviewSeparator])
         stack.axis = .vertical
         stack.spacing = 4
         stack.translatesAutoresizingMaskIntoConstraints = false
-        stack.isHidden = true
         stack.setCustomSpacing(10, after: replyPreviewMsgLabel)
         return stack
+    }()
+
+    private let replyPreviewContainer: UIView = {
+        let view = UIView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.isHidden = true
+        return view
     }()
     
     private var highlightView: UIView?
@@ -141,6 +163,9 @@ class ChatMessageCell: UICollectionViewCell {
         bubbleView.addSubview(messageLabel)
         
         messageLabelTopConsraint = messageLabel.topAnchor.constraint(equalTo: bubbleView.topAnchor, constant: 10)
+        // Reply preview container layout: add stack inside inner container, inner container inside container
+        replyPreviewContainer.addSubview(replyPreviewInnerContainer)
+        replyPreviewInnerContainer.addSubview(replyPreviewStack)
         NSLayoutConstraint.activate([
             profileImageView.widthAnchor.constraint(equalToConstant: 40),
             profileImageView.heightAnchor.constraint(equalToConstant: 40),
@@ -153,6 +178,17 @@ class ChatMessageCell: UICollectionViewCell {
             replyPreviewContainer.topAnchor.constraint(equalTo: bubbleView.topAnchor, constant: 10),
             replyPreviewContainer.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 10),
             replyPreviewContainer.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor, constant: -10),
+
+            replyPreviewInnerContainer.topAnchor.constraint(equalTo: replyPreviewContainer.topAnchor),
+            replyPreviewInnerContainer.bottomAnchor.constraint(equalTo: replyPreviewContainer.bottomAnchor),
+            replyPreviewInnerContainer.leadingAnchor.constraint(equalTo: replyPreviewContainer.leadingAnchor),
+            replyPreviewInnerContainer.trailingAnchor.constraint(equalTo: replyPreviewContainer.trailingAnchor),
+
+            // Padding inside the inner container
+            replyPreviewStack.topAnchor.constraint(equalTo: replyPreviewInnerContainer.topAnchor, constant: 6),
+            replyPreviewStack.bottomAnchor.constraint(equalTo: replyPreviewInnerContainer.bottomAnchor, constant: -6),
+            replyPreviewStack.leadingAnchor.constraint(equalTo: replyPreviewInnerContainer.leadingAnchor, constant: 8),
+            replyPreviewStack.trailingAnchor.constraint(equalTo: replyPreviewInnerContainer.trailingAnchor, constant: -8),
             
             messageLabelTopConsraint!,
             messageLabel.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 10),
@@ -229,32 +265,36 @@ class ChatMessageCell: UICollectionViewCell {
             bubbleView.backgroundColor = .systemBlue
             profileImageView.isHidden = true
             nickNameLabel.isHidden = true
-            
+
             // 기본 제약조건 업데이트
             bubbleViewLeadingConstraint = bubbleView.leadingAnchor.constraint(greaterThanOrEqualTo: contentView.leadingAnchor, constant: 20)
             bubbleViewTrailingConstraint = bubbleView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -8)
             bubbleViewTopConstraint = bubbleView.topAnchor.constraint(equalTo: contentView.topAnchor)
             bubbleViewBottomConstraint = bubbleView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
             bubbleView.widthAnchor.constraint(lessThanOrEqualToConstant: containerWidth).isActive = true
-            
+
             failedIconImageView.isHidden = true
             if message.isFailed {
                 failedIconImageView.isHidden = false
-                
+
                 failedIconImageViewCenterYConstraint = failedIconImageView.centerYAnchor.constraint(equalTo: bubbleView.centerYAnchor)
                 failedIconImageViewTrainlingConstraint = failedIconImageView.trailingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: -2)
             }
+            // Reply preview container: use slightly lighter/darker blue
+            replyPreviewInnerContainer.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.8)
         } else {
             // 상대방이 보낸 메시지
             nickNameLabel.text = message.senderNickname
-            bubbleView.backgroundColor = UIColor(white: 0.1, alpha: 0.03)
-            
+            bubbleView.backgroundColor = /*UIColor(white: 0.1, alpha: 0.03)*/.secondarySystemBackground
+
             // 기본 제약조건으로 복원
             bubbleViewLeadingConstraint = bubbleView.leadingAnchor.constraint(equalTo: profileImageView.trailingAnchor, constant: 5)
             bubbleViewTrailingConstraint = bubbleView.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor, constant: -10)
             bubbleViewTopConstraint = bubbleView.topAnchor.constraint(equalTo: nickNameLabel.bottomAnchor, constant: 5)
             bubbleViewBottomConstraint = bubbleView.bottomAnchor.constraint(equalTo: messageLabel.bottomAnchor, constant: 8)
             bubbleView.widthAnchor.constraint(lessThanOrEqualToConstant: containerWidth).isActive = true
+            // Reply preview container: solid black
+            replyPreviewInnerContainer.backgroundColor = .black
         }
         
         // 제약조건 활성화
@@ -271,14 +311,14 @@ class ChatMessageCell: UICollectionViewCell {
         if let replyMessage = message.replyPreview {
             replyPreviewContainer.isHidden = false
             replyPreviewNameLabel.text = replyMessage.sender
-            
+            replyPreviewNameLabel.textColor = .white
             if replyMessage.isDeleted {
                 replyPreviewMsgLabel.text = "삭제된 메시지입니다."
-                replyPreviewMsgLabel.backgroundColor = .secondarySystemBackground
+                replyPreviewMsgLabel.textColor = .lightGray
             } else {
                 replyPreviewMsgLabel.text = replyMessage.text
+                replyPreviewMsgLabel.textColor = .lightGray
             }
-            
             NSLayoutConstraint.deactivate([messageLabelTopConsraint!])
             messageLabelTopConsraint = messageLabel.topAnchor.constraint(equalTo: replyPreviewContainer.bottomAnchor, constant: 3)
             NSLayoutConstraint.activate([ messageLabelTopConsraint! ])

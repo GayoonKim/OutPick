@@ -10,6 +10,11 @@ import Combine
 
 class SocketIOManager {
     static let shared = SocketIOManager()
+
+    // MARK: - Socket Error
+    enum SocketError: Error {
+        case connectionFailed([Any])
+    }
     
     var manager: SocketManager!
     var socket: SocketIOClient!
@@ -29,10 +34,6 @@ class SocketIOManager {
     }()
     
     // Combine의 PassthroughSubject를 사용하여 이벤트 스트림 생성
-    private let messageSubject = PassthroughSubject<ChatMessage, Never>()
-    var receivedMessagePublisher: AnyPublisher<ChatMessage, Never> {
-        return messageSubject.eraseToAnyPublisher()
-    }
     
     // 새로운 참여자 알림을 위한 Publisher 추가
     private let participantSubject = PassthroughSubject<(String, String), Never>() // (roomName, email)
@@ -43,6 +44,7 @@ class SocketIOManager {
     private var didBindListeners = false
     
     private var joinedRooms = Set<String>()
+    private var pendingRooms: Set<String> = []
     
     private var roomSubjects = [String: PassthroughSubject<ChatMessage, Never>]()
     private var subscriberCounts = [String: Int]() // 구독자 ref count
@@ -57,6 +59,13 @@ class SocketIOManager {
             
             guard let nickName = LoginManager.shared.currentUserProfile?.nickname else { return }
             self.socket.emit("set username", nickName)
+            
+            // Join any pending rooms after connecting and setting username
+            for roomID in self.pendingRooms {
+                self.socket.emit("join room", roomID)
+                self.joinedRooms.insert(roomID)
+            }
+            self.pendingRooms.removeAll()
         }
         
         socket.on(clientEvent: .error) { data, ack in
@@ -64,34 +73,52 @@ class SocketIOManager {
         }
     }
     
-    func establishConnection(completion: @escaping () -> Void) {
+    func establishConnection() async throws {
         // 이미 연결된 경우
         if socket.status == .connected {
             print("이미 연결된 상태")
-            completion()
             return
         }
         
         // 연결 중인 경우
         if socket.status == .connecting {
             print("이미 연결 중인 상태")
+            try await withCheckedThrowingContinuation { continuation in
+                self.connectWaiters.append {
+                    continuation.resume()
+                }
+            }
             return
         }
         
-        connectWaiters.append(completion)
-
-        if !hasOnConnectBound {
-            hasOnConnectBound = true
-            socket.on(clientEvent: .connect) { [weak self] _, _ in
-                guard let self else { return }
-                let waiters = self.connectWaiters
-                self.connectWaiters.removeAll()
-                waiters.forEach { $0() }   // 딱 한 번만 비움
+        // 연결 시도
+        try await withCheckedThrowingContinuation { continuation in
+            self.connectWaiters.append {
+                continuation.resume()
             }
+            
+            if !self.hasOnConnectBound {
+                self.hasOnConnectBound = true
+                self.socket.on(clientEvent: .connect) { [weak self] _, _ in
+                    guard let self else { return }
+                    let waiters = self.connectWaiters
+                    self.connectWaiters.removeAll()
+                    waiters.forEach { $0() }
+                }
+                
+                self.socket.on(clientEvent: .error) { [weak self] data, _ in
+                    guard let self else { return }
+                    let waiters = self.connectWaiters
+                    self.connectWaiters.removeAll()
+                    waiters.forEach { _ in
+                        continuation.resume(throwing: SocketError.connectionFailed(data))
+                    }
+                }
+            }
+            
+            print("소켓 연결 시도")
+            self.socket.connect()
         }
-
-        print("소켓 연결 시도")
-        socket.connect()
     }
     
     func closeConnection() {
@@ -109,10 +136,11 @@ class SocketIOManager {
 
             // 소켓 리스너 등록
             attachSocketListener(for: roomID) { [weak self] message in
-                self?.roomSubjects[roomID]?.send(message)
+                guard let self = self else { return }
+                self.roomSubjects[roomID]?.send(message)
             }
         }
-
+        
         print(#function, "✅✅✅✅✅ 3. roomSubjects", roomSubjects[roomID]!)
         return roomSubjects[roomID]!.eraseToAnyPublisher()
     }
@@ -142,21 +170,17 @@ class SocketIOManager {
     private func detachSocketListener(for roomID: String) {
         socket.off("chat message:\(roomID)")
     }
-
-    func bindAllListenersIfNeeded() {
-        if didBindListeners { return }
-        didBindListeners = true
-        listenToChatMessage()
-//        listenToNewParticipant()
-        listenToErrors()
-    }
-
+    
     func joinRoom(_ roomID: String) {
-        guard socket.status == .connected else { print("소켓 미연결"); return }
-        guard joinedRooms.insert(roomID).inserted else {
-            print("이미 참여한 방:", roomID); return
+        if socket.status == .connected {
+            guard joinedRooms.insert(roomID).inserted else {
+                print("이미 참여한 방:", roomID); return
+            }
+            socket.emit("join room", roomID)
+        } else {
+            // Not connected: queue for joining after connect
+            pendingRooms.insert(roomID)
         }
-        socket.emit("join room", roomID)
         // listener off/on은 유지해도 됨. emit 자체가 중복되지 않는 게 핵심
     }
     
@@ -184,14 +208,13 @@ class SocketIOManager {
     }
     
     func sendMessages(_ room: ChatRoom, _ message: ChatMessage) {
-        //        Task { try await FirebaseManager.shared.saveMessage(message, room) }
         guard socket.status == .connected else {
             print("소켓이 연결되지 않음")
             var failedMessage = message
             failedMessage.isFailed = true
             
             DispatchQueue.main.async {
-                self.messageSubject.send(failedMessage)
+                self.roomSubjects[room.ID ?? ""]?.send(failedMessage)
             }
             
             return
@@ -210,15 +233,14 @@ class SocketIOManager {
             
             if ok || duplicate {
                 Task { await FirebaseManager.shared.updateRoomLastMessageAt(roomID: room.ID ?? "", date: message.sentAt) }
-                
-                DispatchQueue.main.async {
-                    self.messageSubject.send(message)
-                }
+//                DispatchQueue.main.async {
+//                    self.roomSubjects[room.ID ?? ""]?.send(message)
+//                }
             } else {
                 var failedMessage = message
                 failedMessage.isFailed = true
                 DispatchQueue.main.async {
-                    self.messageSubject.send(failedMessage)
+                    self.roomSubjects[room.ID ?? ""]?.send(failedMessage)
                 }
             }
         }
@@ -275,11 +297,11 @@ class SocketIOManager {
                 
                 if let ackDict = ackResponse.first as? [String: Any],
                    let success = ackDict["success"] as? Bool, success {
-                    self.messageSubject.send(message)
+                    self.roomSubjects[room.ID ?? ""]?.send(message)
                 } else {
                     var failedMessage = message
                     failedMessage.isFailed = true
-                    self.messageSubject.send(failedMessage)
+                    self.roomSubjects[room.ID ?? ""]?.send(failedMessage)
                 }
             }
         }
@@ -318,7 +340,7 @@ class SocketIOManager {
             isFailed: true
         )
 
-        self.messageSubject.send(failedMessage)
+        self.roomSubjects[room.ID ?? ""]?.send(failedMessage)
     }
     
     func setUserName(_ userName: String) {
@@ -327,217 +349,217 @@ class SocketIOManager {
         print("유저 이름 이벤트 emit 완료")
     }
     
-    func listenToChatMessage() {
-        // 중복 방지를 위해 기존 리스너 제거 (혹시 모를 중복 대비)
-        socket.off("chat message")
-        socket.on("chat message") { data, _ in
-            guard let messageData = data.first as? [String: Any] else {
-                print("❌ 메시지 데이터 파싱 실패: data 형식 오류")
-                return
-            }
-
-            // 안전한 옵셔널 바인딩
-            guard let roomID = messageData["roomID"] as? String,
-                  let senderID = messageData["senderID"] as? String,
-                  let senderNickName = messageData["senderNickName"] as? String,
-                  let messageText = messageData["msg"] as? String else {
-                print("❌ 메시지 데이터 파싱 실패: \(messageData)")
-                return
-            }
-
-            let sentAt: Date = {
-                if let s = messageData["sentAt"] as? String,
-                   let d = SocketIOManager.isoFormatter.date(from: s) {
-                    return d
-                } else {
-                    return Date()
-                }
-            }()
-
-            // replyPreview 파싱 (선택)
-            var rp: ReplyPreview? = nil
-            if let rpDict = messageData["replyPreview"] as? [String: Any],
-               let mid = rpDict["messageID"] as? String, !mid.isEmpty {
-                rp = ReplyPreview(
-                    messageID: mid,
-                    sender: (rpDict["author"] as? String) ?? "",
-                    text: (rpDict["text"] as? String) ?? "",
-                    isDeleted: (rpDict["isDeleted"] as? Bool) ?? false
-                )
-            }
-
-            let message = ChatMessage(
-                roomID: roomID,
-                senderID: senderID,
-                senderNickname: senderNickName,
-                msg: messageText,
-                sentAt: sentAt,
-                attachments: [],
-                replyPreview: rp
-            )
-
-            if senderID == LoginManager.shared.getUserEmail { return }
-
-            DispatchQueue.main.async {
-                if let myProfile = LoginManager.shared.currentUserProfile,
-                   let myNickname = myProfile.nickname,
-                   myNickname != senderNickName {
-                    self.messageSubject.send(message)
-                }
-            }
-        }
-
-        //중복 방지를 위해 기존 리스너 제거 (혹시 모를 중복 대비)
-        socket.off("receiveImages")
-        socket.on("receiveImages") { dataArray, _ in
-            guard let data = dataArray.first as? [String: Any],
-                  let imageDataArray = data["images"] as? [[String:Any]],
-                  let roomID = data["roomID"] as? String,
-                  let senderID = data["senderID"] as? String,
-                  let senderNickName = data["senderNickName"] as? String,
-                  let sentAtString = data["sentAt"] as? String else { return }
-
-            if senderID == LoginManager.shared.getUserEmail { return }
-
-            // String -> Date 변환
-            let sentAt = SocketIOManager.isoFormatter.date(from: sentAtString) ?? Date()
-
-            let attachments = imageDataArray.compactMap { imageData -> Attachment? in
-                guard let imageName = imageData["fileName"] as? String,
-                      let imageData = imageData["fileData"] as? Data else {
-                    print("이미지 데이터 변환 실패: \(imageData)")
-                    return nil
-                }
-                return Attachment(type: .image, fileName: imageName, fileData: imageData)
-            }
-
-            // replyPreview 파싱 (선택)
-            var rp: ReplyPreview? = nil
-            if let rpDict = data["replyPreview"] as? [String: Any],
-               let mid = rpDict["messageID"] as? String, !mid.isEmpty {
-                rp = ReplyPreview(
-                    messageID: mid,
-                    sender: (rpDict["author"] as? String) ?? "",
-                    text: (rpDict["text"] as? String) ?? "",
-                    isDeleted: (rpDict["isDeleted"] as? Bool) ?? false
-                )
-            }
-
-            let message = ChatMessage(
-                roomID: roomID,
-                senderID: senderID,
-                senderNickname: senderNickName,
-                msg: nil,
-                sentAt: sentAt,
-                attachments: attachments,
-                replyPreview: rp
-            )
-
-            Task { @MainActor in
-                if let myProfile = LoginManager.shared.currentUserProfile,
-                   let myNickname = myProfile.nickname,
-                   myNickname != senderNickName {
-                    self.messageSubject.send(message)
-                }
-            }
-        }
-    }
-    
-    // Listen to server error events and handle failed messages
-    private func listenToErrors() {
-        SocketIOManager.shared.socket.off("error")
-        SocketIOManager.shared.socket.on("error") { [weak self] data, _ in
-            guard let self = self else { return }
-            guard let errorInfo = data.first as? [String: Any],
-                  let type = errorInfo["type"] as? String,
-                  let reason = errorInfo["reason"] as? String,
-                  let failedData = errorInfo["data"] as? [String: Any] else {
-                print("데이터 파싱 실패")
-                return
-            }
-
-            print("서버 전송 실패 (\(type)): \(reason)")
-
-            DispatchQueue.main.async {
-                if type == "message" {
-                    let roomID = failedData["roomID"] as? String ?? ""
-                    let senderID = failedData["senderID"] as? String ?? ""
-                    let senderNickName = failedData["senderNickName"] as? String ?? ""
-                    let msg = failedData["msg"] as? String ?? ""
-
-                    var rp: ReplyPreview? = nil
-                    if let rpDict = failedData["replyPreview"] as? [String: Any],
-                       let mid = rpDict["messageID"] as? String, !mid.isEmpty {
-                        rp = ReplyPreview(
-                            messageID: mid,
-                            sender: (rpDict["author"] as? String) ?? "",
-                            text: (rpDict["text"] as? String) ?? "",
-                            isDeleted: (rpDict["isDeleted"] as? Bool) ?? false
-                        )
-                    }
-
-                    var failedMessage = ChatMessage(
-                        roomID: roomID,
-                        senderID: senderID,
-                        senderNickname: senderNickName,
-                        msg: msg,
-                        sentAt: Date(),
-                        attachments: [],
-                        replyPreview: rp
-                    )
-                    failedMessage.isFailed = true
-
-                    self.messageSubject.send(failedMessage)
-                }
-
-                if type == "image" {
-                    guard let roomID = failedData["roomID"] as? String,
-                          let senderID = failedData["senderID"] as? String,
-                          let senderNickName = failedData["senderNickName"] as? String,
-                          let sentAtString = failedData["sentAt"] as? String,
-                          let imageDataArray = failedData["images"] as? [[String: Any]] else {
-                        print("이미지 실패 데이터 파싱 실패")
-                        return
-                    }
-
-                    let sentAt = SocketIOManager.isoFormatter.date(from: sentAtString) ?? Date()
-
-                    let attachments = imageDataArray.compactMap { imageData -> Attachment? in
-                        guard let imageName = imageData["fileName"] as? String,
-                              let imageData = imageData["fileData"] as? Data else {
-                            print("이미지 실패 attachment 변환 실패: \(imageData)")
-                            return nil
-                        }
-                        return Attachment(type: .image, fileName: imageName, fileData: imageData)
-                    }
-
-                    var rp: ReplyPreview? = nil
-                    if let rpDict = failedData["replyPreview"] as? [String: Any],
-                       let mid = rpDict["messageID"] as? String, !mid.isEmpty {
-                        rp = ReplyPreview(
-                            messageID: mid,
-                            sender: (rpDict["author"] as? String) ?? "",
-                            text: (rpDict["text"] as? String) ?? "",
-                            isDeleted: (rpDict["isDeleted"] as? Bool) ?? false
-                        )
-                    }
-
-                    var failedImageMessage = ChatMessage(
-                        roomID: roomID,
-                        senderID: senderID,
-                        senderNickname: senderNickName,
-                        msg: nil,
-                        sentAt: sentAt,
-                        attachments: attachments,
-                        replyPreview: rp
-                    )
-                    failedImageMessage.isFailed = true
-
-                    self.messageSubject.send(failedImageMessage)
-                }
-            }
-        }
-    }
+//    func listenToChatMessage() {
+//        // 중복 방지를 위해 기존 리스너 제거 (혹시 모를 중복 대비)
+//        socket.off("chat message")
+//        socket.on("chat message") { data, _ in
+//            guard let messageData = data.first as? [String: Any] else {
+//                print("❌ 메시지 데이터 파싱 실패: data 형식 오류")
+//                return
+//            }
+//
+//            // 안전한 옵셔널 바인딩
+//            guard let roomID = messageData["roomID"] as? String,
+//                  let senderID = messageData["senderID"] as? String,
+//                  let senderNickName = messageData["senderNickName"] as? String,
+//                  let messageText = messageData["msg"] as? String else {
+//                print("❌ 메시지 데이터 파싱 실패: \(messageData)")
+//                return
+//            }
+//
+//            let sentAt: Date = {
+//                if let s = messageData["sentAt"] as? String,
+//                   let d = SocketIOManager.isoFormatter.date(from: s) {
+//                    return d
+//                } else {
+//                    return Date()
+//                }
+//            }()
+//
+//            // replyPreview 파싱 (선택)
+//            var rp: ReplyPreview? = nil
+//            if let rpDict = messageData["replyPreview"] as? [String: Any],
+//               let mid = rpDict["messageID"] as? String, !mid.isEmpty {
+//                rp = ReplyPreview(
+//                    messageID: mid,
+//                    sender: (rpDict["author"] as? String) ?? "",
+//                    text: (rpDict["text"] as? String) ?? "",
+//                    isDeleted: (rpDict["isDeleted"] as? Bool) ?? false
+//                )
+//            }
+//
+//            let message = ChatMessage(
+//                roomID: roomID,
+//                senderID: senderID,
+//                senderNickname: senderNickName,
+//                msg: messageText,
+//                sentAt: sentAt,
+//                attachments: [],
+//                replyPreview: rp
+//            )
+//
+//            if senderID == LoginManager.shared.getUserEmail { return }
+//
+//            DispatchQueue.main.async {
+//                if let myProfile = LoginManager.shared.currentUserProfile,
+//                   let myNickname = myProfile.nickname,
+//                   myNickname != senderNickName {
+//                    self.messageSubject.send(message)
+//                }
+//            }
+//        }
+//
+//        //중복 방지를 위해 기존 리스너 제거 (혹시 모를 중복 대비)
+//        socket.off("receiveImages")
+//        socket.on("receiveImages") { dataArray, _ in
+//            guard let data = dataArray.first as? [String: Any],
+//                  let imageDataArray = data["images"] as? [[String:Any]],
+//                  let roomID = data["roomID"] as? String,
+//                  let senderID = data["senderID"] as? String,
+//                  let senderNickName = data["senderNickName"] as? String,
+//                  let sentAtString = data["sentAt"] as? String else { return }
+//
+//            if senderID == LoginManager.shared.getUserEmail { return }
+//
+//            // String -> Date 변환
+//            let sentAt = SocketIOManager.isoFormatter.date(from: sentAtString) ?? Date()
+//
+//            let attachments = imageDataArray.compactMap { imageData -> Attachment? in
+//                guard let imageName = imageData["fileName"] as? String,
+//                      let imageData = imageData["fileData"] as? Data else {
+//                    print("이미지 데이터 변환 실패: \(imageData)")
+//                    return nil
+//                }
+//                return Attachment(type: .image, fileName: imageName, fileData: imageData)
+//            }
+//
+//            // replyPreview 파싱 (선택)
+//            var rp: ReplyPreview? = nil
+//            if let rpDict = data["replyPreview"] as? [String: Any],
+//               let mid = rpDict["messageID"] as? String, !mid.isEmpty {
+//                rp = ReplyPreview(
+//                    messageID: mid,
+//                    sender: (rpDict["author"] as? String) ?? "",
+//                    text: (rpDict["text"] as? String) ?? "",
+//                    isDeleted: (rpDict["isDeleted"] as? Bool) ?? false
+//                )
+//            }
+//
+//            let message = ChatMessage(
+//                roomID: roomID,
+//                senderID: senderID,
+//                senderNickname: senderNickName,
+//                msg: nil,
+//                sentAt: sentAt,
+//                attachments: attachments,
+//                replyPreview: rp
+//            )
+//
+//            Task { @MainActor in
+//                if let myProfile = LoginManager.shared.currentUserProfile,
+//                   let myNickname = myProfile.nickname,
+//                   myNickname != senderNickName {
+//                    self.messageSubject.send(message)
+//                }
+//            }
+//        }
+//    }
+//
+//    // Listen to server error events and handle failed messages
+//    private func listenToErrors() {
+//        SocketIOManager.shared.socket.off("error")
+//        SocketIOManager.shared.socket.on("error") { [weak self] data, _ in
+//            guard let self = self else { return }
+//            guard let errorInfo = data.first as? [String: Any],
+//                  let type = errorInfo["type"] as? String,
+//                  let reason = errorInfo["reason"] as? String,
+//                  let failedData = errorInfo["data"] as? [String: Any] else {
+//                print("데이터 파싱 실패")
+//                return
+//            }
+//
+//            print("서버 전송 실패 (\(type)): \(reason)")
+//
+//            DispatchQueue.main.async {
+//                if type == "message" {
+//                    let roomID = failedData["roomID"] as? String ?? ""
+//                    let senderID = failedData["senderID"] as? String ?? ""
+//                    let senderNickName = failedData["senderNickName"] as? String ?? ""
+//                    let msg = failedData["msg"] as? String ?? ""
+//
+//                    var rp: ReplyPreview? = nil
+//                    if let rpDict = failedData["replyPreview"] as? [String: Any],
+//                       let mid = rpDict["messageID"] as? String, !mid.isEmpty {
+//                        rp = ReplyPreview(
+//                            messageID: mid,
+//                            sender: (rpDict["author"] as? String) ?? "",
+//                            text: (rpDict["text"] as? String) ?? "",
+//                            isDeleted: (rpDict["isDeleted"] as? Bool) ?? false
+//                        )
+//                    }
+//
+//                    var failedMessage = ChatMessage(
+//                        roomID: roomID,
+//                        senderID: senderID,
+//                        senderNickname: senderNickName,
+//                        msg: msg,
+//                        sentAt: Date(),
+//                        attachments: [],
+//                        replyPreview: rp
+//                    )
+//                    failedMessage.isFailed = true
+//
+//                    self.messageSubject.send(failedMessage)
+//                }
+//
+//                if type == "image" {
+//                    guard let roomID = failedData["roomID"] as? String,
+//                          let senderID = failedData["senderID"] as? String,
+//                          let senderNickName = failedData["senderNickName"] as? String,
+//                          let sentAtString = failedData["sentAt"] as? String,
+//                          let imageDataArray = failedData["images"] as? [[String: Any]] else {
+//                        print("이미지 실패 데이터 파싱 실패")
+//                        return
+//                    }
+//
+//                    let sentAt = SocketIOManager.isoFormatter.date(from: sentAtString) ?? Date()
+//
+//                    let attachments = imageDataArray.compactMap { imageData -> Attachment? in
+//                        guard let imageName = imageData["fileName"] as? String,
+//                              let imageData = imageData["fileData"] as? Data else {
+//                            print("이미지 실패 attachment 변환 실패: \(imageData)")
+//                            return nil
+//                        }
+//                        return Attachment(type: .image, fileName: imageName, fileData: imageData)
+//                    }
+//
+//                    var rp: ReplyPreview? = nil
+//                    if let rpDict = failedData["replyPreview"] as? [String: Any],
+//                       let mid = rpDict["messageID"] as? String, !mid.isEmpty {
+//                        rp = ReplyPreview(
+//                            messageID: mid,
+//                            sender: (rpDict["author"] as? String) ?? "",
+//                            text: (rpDict["text"] as? String) ?? "",
+//                            isDeleted: (rpDict["isDeleted"] as? Bool) ?? false
+//                        )
+//                    }
+//
+//                    var failedImageMessage = ChatMessage(
+//                        roomID: roomID,
+//                        senderID: senderID,
+//                        senderNickname: senderNickName,
+//                        msg: nil,
+//                        sentAt: sentAt,
+//                        attachments: attachments,
+//                        replyPreview: rp
+//                    )
+//                    failedImageMessage.isFailed = true
+//
+//                    self.messageSubject.send(failedImageMessage)
+//                }
+//            }
+//        }
+//    }
     
     func notifyNewParticipant(roomID: String, email: String) {
         guard socket.status == .connected else {

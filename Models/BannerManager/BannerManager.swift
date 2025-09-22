@@ -19,10 +19,13 @@ final class BannerManager {
     let bannerTapped = PassthroughSubject<String, Never>() // roomID 전달
     
     func startListening(for roomID: String) {
+        print(#function, "startListening:", roomID)
+        
         if cancellables[roomID] != nil { return }
         
         let cancellable = SocketIOManager.shared.subscribeToMessages(for: roomID)
             .sink { [weak self] message in
+                print(#function, "✅✅✅✅✅ 4. message:", message)
                 self?.handleIncomingMessage(message, in: roomID)
             }
         cancellables[roomID] = cancellable
@@ -47,6 +50,8 @@ final class BannerManager {
     }
     
     private func showBanner(for message: ChatMessage, in roomID: String) {
+        print(#function, "message: \(message), roomID: \(roomID)")
+        
         let banner = ChatBannerView()
         banner.configure(
             title: message.senderNickname,

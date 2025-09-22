@@ -198,12 +198,35 @@ private class MessagePreviewView: UIView {
         separator.backgroundColor = .white
         separator.heightAnchor.constraint(equalToConstant: 1).isActive = true
         
-        let stack = UIStackView(arrangedSubviews: [replyPreviewNameLabel, replyPreviewMsgLabel, separator])
+        let contentStack = UIStackView(arrangedSubviews: [replyPreviewNameLabel, replyPreviewMsgLabel, separator])
+        contentStack.axis = .vertical
+        contentStack.spacing = 4
+        contentStack.translatesAutoresizingMaskIntoConstraints = false
+        
+        let container = UIView()
+        container.backgroundColor = .black
+        container.layer.cornerRadius = 8
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.layoutMargins = UIEdgeInsets(top: 6, left: 8, bottom: 6, right: 8)
+        container.isHidden = true
+        
+        container.addSubview(contentStack)
+        contentStack.isLayoutMarginsRelativeArrangement = true
+        contentStack.layoutMargins = .zero
+        
+        NSLayoutConstraint.activate([
+            contentStack.topAnchor.constraint(equalTo: container.layoutMarginsGuide.topAnchor),
+            contentStack.leadingAnchor.constraint(equalTo: container.layoutMarginsGuide.leadingAnchor),
+            contentStack.trailingAnchor.constraint(equalTo: container.layoutMarginsGuide.trailingAnchor),
+            contentStack.bottomAnchor.constraint(equalTo: container.layoutMarginsGuide.bottomAnchor)
+        ])
+        
+        let stack = UIStackView(arrangedSubviews: [container])
         stack.axis = .vertical
-        stack.spacing = 4
+        stack.spacing = 10
         stack.translatesAutoresizingMaskIntoConstraints = false
         stack.isHidden = true
-        stack.setCustomSpacing(10, after: replyPreviewMsgLabel)
+        
         return stack
     }()
     

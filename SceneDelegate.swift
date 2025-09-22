@@ -111,19 +111,41 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 print("9. notify 내부 실행")
                 if isLoggedIn {
                     print("10. 로그인 됨")
-                        Task.detached {
-                            try await FirebaseManager.shared.listenToHotRooms()
-                            SocketIOManager.shared.establishConnection {
-//                                SocketIOManager.shared.bindAllListenersIfNeeded()
-                            }
-                        }
-                        
-                        Task { @MainActor in
-                            LoginManager.shared.fetchUserProfileFromKeychain { screen in
+                    Task {
+                        do {
+                            // 1️⃣ 프로필 기반 초기 화면 결정
+                            let screen = try await LoginManager.shared.makeInitialViewController()
+
+                            await MainActor.run {
                                 self.window?.rootViewController = screen
                                 self.window?.makeKeyAndVisible()
                             }
+                            
+                            // ✅ 로그인 성공 후 프로필 리스너 시작
+                            LoginManager.shared.startUserProfileListener(email: LoginManager.shared.getUserEmail)
+
+                            // 2️⃣ 소켓/핫룸은 항상 실행
+                            async let _ = FirebaseManager.shared.listenToHotRooms()
+                            async let _ = SocketIOManager.shared.establishConnection()
+
+                            // 3️⃣ 참여중인 방은 프로필 있는 경우에만 등록
+                            if screen is CustomTabBarViewController {
+                                guard let profile = LoginManager.shared.currentUserProfile else { return }
+                                
+                                let joinedRooms = profile.joinedRooms
+                                for roomID in joinedRooms {
+                                    SocketIOManager.shared.joinRoom(roomID)
+                                    BannerManager.shared.startListening(for: roomID)
+                                }
+                                print("📢 BannerManager: \(joinedRooms.count)개 방에 대해 리스닝 시작")
+                            } else {
+                                print("🆕 신규 유저: BannerManager 등록 스킵")
+                            }
+
+                        } catch {
+                            print("❌ 초기화 실패:", error)
                         }
+                    }
                 } else {
                     print("11. 로그인 안 됨")
                     self.showLoginViewController()
