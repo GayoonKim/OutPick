@@ -43,8 +43,8 @@ class HourlyForecastCollectionViewCell: UICollectionViewCell {
 
     private let tempLabel: UILabel = {
         let lb = UILabel()
-        lb.font = .monospacedDigitSystemFont(ofSize: 15, weight: .semibold)
-        lb.textColor = .label
+        lb.font = .preferredFont(forTextStyle: .footnote)
+        lb.textColor = .black
         lb.textAlignment = .center
         lb.adjustsFontForContentSizeCategory = true
         return lb

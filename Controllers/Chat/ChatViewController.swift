@@ -20,6 +20,11 @@ protocol ChatMessageCellDelegate: AnyObject {
 
 class ChatViewController: UIViewController, UINavigationControllerDelegate, ChatModalAnimatable, UICollectionViewDelegate {
 
+    // Paging buffer size for scroll triggers
+    private var pagingBuffer = 200
+
+    private var isInitialLoading = true
+
     @IBOutlet weak var activityIndicator: UIActivityIndicatorView!
     @IBOutlet weak var sideMenuBtn: UIBarButtonItem!
     @IBOutlet weak var joinRoomBtn: UIButton!
@@ -38,6 +43,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     private var replyMessage: ReplyPreview?
     private var messageMap: [String: ChatMessage] = [:]
+
+    // Loading state flags for message paging
+    private var isLoadingOlder = false
+    private var isLoadingNewer = false
     
     enum Section: Hashable {
         case main
@@ -221,6 +230,12 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+
+        // ✅ 초기 네트워크/메모리 상태 기반으로 pagingBuffer 세팅
+        pagingBuffer = PagingBufferCalculator.calculate(
+            for: room,
+            scrollVelocity: 0 // 아직 스크롤 속도 없음
+        )
         
         DispatchQueue.main.async {
             // 이미 연결된 경우에는 room join과 listener 설정만 수행
@@ -236,9 +251,15 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
+        isUserInCurrentRoom = false
+        
+        cancellables.removeAll()
+        NotificationCenter.default.removeObserver(self)
         
         convertImagesTask?.cancel()
         convertVideosTask?.cancel()
+        
+        removeReadMarkerIfNeeded()
         
         if let room = self.room,
            !room.participants.contains(LoginManager.shared.getUserEmail) {
@@ -257,14 +278,14 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
-        cancellables.removeAll()
-        NotificationCenter.default.removeObserver(self)
-        
     }
     
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         self.attachInteractiveDismissGesture()
+        isUserInCurrentRoom = true
+        
+        bindMessagePublishers()
     }
 
     override func viewDidLayoutSubviews() {
@@ -273,8 +294,99 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
     
     //MARK: 메시지 관련
+    @MainActor
+    private func setupInitialMessages() {
+        Task {
+            LoadingIndicator.shared.start(on: self)
+            defer { LoadingIndicator.shared.stop() }
+            
+            guard let room = self.room else { return }
+            guard room.participants.contains(LoginManager.shared.getUserEmail) else { return }
+            
+            do {
+                // GRDB + Firebase 동시 실행
+                async let local = GRDBManager.shared.fetchRecentMessages(inRoom: room.ID ?? "", limit: 200)
+                async let server = FirebaseManager.shared.fetchMessagesPaged(for: room, pageSize: 300, reset: true)
+                
+                let (localMessages, serverMessages) = try await (local, server)
+                
+                print(#function, "✅ GRDB 최근 메시지 200개 로드 완료.", localMessages)
+                print(#function, "✅ Firebase 최근 메시지 300개 로드 및 GRDB 저장 완료.", serverMessages)
+                
+                // GRDB 먼저 반영 → UI 빠른 응답
+                addMessages(localMessages)
+                self.lastReadMessageID = localMessages.last?.ID
+                
+                // 서버 메시지 저장 + 반영
+                try await GRDBManager.shared.saveChatMessages(serverMessages)
+                addMessages(serverMessages, isNewer: true)
+                
+                // Removed: isUserInCurrentRoom = true
+            } catch {
+                print("❌ 메시지 초기화 실패:", error)
+            }
+            isInitialLoading = false
+        }
+    }
+
+    // MARK: - 메시지 페이징 로드
+    @MainActor
+    private func removeReadMarkerIfNeeded() {
+        var snapshot = dataSource.snapshot()
+        if let marker = snapshot.itemIdentifiers.first(where: {
+            if case .readMarker = $0 { return true }
+            return false
+        }) {
+            snapshot.deleteItems([marker])
+            dataSource.apply(snapshot, animatingDifferences: false)
+        }
+    }
+    
+    @MainActor
+    private func loadOlderMessages(before messageID: String?) async {
+        if isLoadingOlder { return }
+        isLoadingOlder = true
+        defer { isLoadingOlder = false }
+        guard let room = self.room else { return }
+        print(#function, "✅ loading older 진행")
+        do {
+            // 1. GRDB에서 먼저 최대 100개
+            let local = try await GRDBManager.shared.fetchOlderMessages(inRoom: room.ID ?? "", before: messageID ?? "", limit: 100)
+            var loadedMessages = local
+
+            // 2. 부족분은 서버에서 채우기
+            if local.count < 100 {
+                let needed = 100 - local.count
+                let server = try await FirebaseManager.shared.fetchOlderMessages(for: room, before: messageID ?? "", limit: needed)
+                try await GRDBManager.shared.saveChatMessages(server)
+                loadedMessages.append(contentsOf: server)
+            }
+
+            addMessages(loadedMessages, isOlder: true)
+        } catch {
+            print("❌ loadOlderMessages 실패:", error)
+        }
+    }
+
+    @MainActor
+    private func loadNewerMessagesIfNeeded(after messageID: String?) async {
+        if isLoadingNewer { return }
+        isLoadingNewer = true
+        defer { isLoadingNewer = false }
+        guard let room = self.room else { return }
+        print(#function, "✅ loading newer 진행")
+        do {
+            // 1. 서버에서 lastMessageID 이후 메시지 보충 (최대 100개)
+            let server = try await FirebaseManager.shared.fetchMessagesAfter(room: room, after: messageID ?? "", limit: 100)
+            try await GRDBManager.shared.saveChatMessages(server)
+            addMessages(server, isNewer: true)
+        } catch {
+            print("❌ loadNewerMessagesIfNeeded 실패:", error)
+        }
+    }
+
     private func bindMessagePublishers() {
-        // 메시지 수신 관련
+        // 아래로 스크롤(최신 메시지): Socket.IO 수신 → GRDB 저장 → UI 반영
         SocketIOManager.shared.receivedMessagePublisher
 //            .receive(on: DispatchQueue.main)
             .sink { [weak self] receivedMessage in
@@ -289,7 +401,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                         try await FirebaseManager.shared.saveMessage(receivedMessage, room)
                     }
                     
-                    try await GRDBManager.shared.saveChatMessage(receivedMessage)
+                    try await GRDBManager.shared.saveChatMessages([receivedMessage])
                     
                     if !receivedMessage.attachments.isEmpty {
                         for attachment in receivedMessage.attachments {
@@ -306,14 +418,13 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                     }
                 }
                 
-                addMessages([receivedMessage], isNew: false)
+                addMessages([receivedMessage], isNewer: true)
             }
             .store(in: &cancellables)
     }
     
     @MainActor
     private func setupChatUI() {
-        
         // 이전 상태(참여 전)에 설정된 제약을 정리하기 위해, 중복 추가를 방지하고 기존 제약과 충돌하지 않도록 제거
         if chatMessageCollectionView.superview != nil {
             chatMessageCollectionView.removeFromSuperview()
@@ -368,37 +479,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         if self.replyMessage != nil {
             self.replyMessage = nil
             self.replyView.isHidden = true
-        }
-    }
-    
-    @MainActor
-    private func syncMessagesIfNeeded(for room: ChatRoom, reset: Bool = true) async throws {
-        do {
-            let messages = try await FirebaseManager.shared.fetchMessagesPaged(for: room)
-            print(#function, "✅ 호출 완료: ", messages.count)
-            
-            for message in messages {
-                try await GRDBManager.shared.saveChatMessage(message)
-                
-                if !message.attachments.isEmpty {
-                    await withTaskGroup(of: Void.self) { group in
-                        for attachment in message.attachments {
-                            guard attachment.type == .image, let imageName = attachment.fileName else { continue }
-                            try? GRDBManager.shared.addImage(imageName, toRoom: room.ID ?? "", at: message.sentAt ?? Date())
-                            
-                            group.addTask {
-                                if let image = attachment.toUIImage() {
-                                    try? await KingfisherManager.shared.cache.store(image, forKey: imageName)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            
-            addMessages(messages, isNew: true)
-        } catch {
-            print("❌ 메시지 동기화 실패: \(error)")
         }
     }
 
@@ -569,39 +649,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
     }
     
-    
+
     // MARK: 초기 UI 설정 관련
-    @MainActor
-    private func setupInitialMessages() {
-        Task {
-            LoadingIndicator.shared.start(on: self)
-            // 이미 연결된 경우에는 room join과 listener 설정만 수행
-            if let room = self.room {
-                if room.participants.contains(LoginManager.shared.getUserEmail) {
-                    let messages = try await GRDBManager.shared.fetchMessages(in: room.ID ?? "", containing: nil)
-                    let lastMessageID = try await GRDBManager.shared.fetchLastMessageID(for: room.ID ?? "")
-                    
-                    addMessages(messages, isNew: false)
-                    lastReadMessageID = lastMessageID
-                    
-                    print(#function, "✅✅✅✅✅✅✅✅✅✅ 마지막 메시지 ID:", lastMessageID ?? "")
-                    
-                    try await self.syncMessagesIfNeeded(for: room)
-                    
-                    isUserInCurrentRoom = true
-                    
-                    self.bindRoomChangePublisher()
-                } else {
-                    print(#function, "✅✅✅✅✅✅✅✅✅✅ 참여하지 않은 방에 입장", room)
-                    let messages = try await FirebaseManager.shared.fetchAllMessages(for: room)
-                    addMessages(messages, isNew: false)
-                }
-            }
-            
-            LoadingIndicator.shared.stop()
-        }
-    }
-    
     @MainActor
     private func decideJoinUI() {
         guard let room = room else { return }
@@ -1074,7 +1123,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         UIPasteboard.general.string = message.msg
         print(#function, "복사:", message.msg ?? "")
         // 필요 시 UI 피드백
-        showSuccess(message.msg ?? "")
+        showSuccess("메시지가 복사되었습니다.")
     }
     
     private func handleDelete(message: ChatMessage) {
@@ -1199,7 +1248,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
     
     @MainActor
-    func addMessages(_ messages: [ChatMessage], isNew: Bool) {
+    func addMessages(_ messages: [ChatMessage], isOlder: Bool = false, isNewer: Bool = false) {
         var items: [Item] = []
         
         let snapshot = dataSource.snapshot()
@@ -1217,7 +1266,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         
         for message in newMessages {
             messageMap[message.ID] = message
-            
             let messageDate = Calendar.current.startOfDay(for: message.sentAt ?? Date())
             
             if lastMessageDate == nil || lastMessageDate! != messageDate {
@@ -1227,23 +1275,30 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             
             items.append(.message(message))
         }
-        updateCollectionView(with: items)
         
-        if !hasReadMarker, let lastMessageID = self.lastReadMessageID, !isUserInCurrentRoom, isNew,
-           let firstMessage = newMessages.first,
-           firstMessage.ID != lastMessageID {
+        var updatedSnapshot = snapshot
+        if isOlder {
+            if let firstItem = snapshot.itemIdentifiers.first {
+                updatedSnapshot.insertItems(items, beforeItem: firstItem)
+            } else {
+                updatedSnapshot.appendItems(items, toSection: .main)
+            }
+        } else if isNewer {
+            updatedSnapshot.appendItems(items, toSection: .main)
+        } else {
+            updatedSnapshot.appendItems(items, toSection: .main)
+        }
+        
+        // Insert readMarker only for newer messages
+        if !isUserInCurrentRoom, isNewer, !hasReadMarker, let lastMessageID = self.lastReadMessageID, !isUserInCurrentRoom,
+           let firstMessage = newMessages.first, firstMessage.ID != lastMessageID {
             
-            var updatedSnapshot = dataSource.snapshot()
-            let firstNewItem = items.first(where: {
-                if case .message = $0 { return true }
-                return false
-            })
-            
-            if let firstNewItem = firstNewItem {
+            if let firstNewItem = items.first(where: { if case .message = $0 { return true }; return false }) {
                 updatedSnapshot.insertItems([.readMarker], beforeItem: firstNewItem)
-                dataSource.apply(updatedSnapshot, animatingDifferences: false)
             }
         }
+        
+        dataSource.apply(updatedSnapshot, animatingDifferences: false)
     }
     
     private func updateCollectionView(with newItems: [Item]) {
@@ -1377,17 +1432,60 @@ extension ChatViewController: UIScrollViewDelegate {
     func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
         triggerShakeIfNeeded()
     }
-    
+
     func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
         triggerShakeIfNeeded()
     }
-    
+
     func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
         if !decelerate {
             triggerShakeIfNeeded()
         }
     }
-    
+
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+//        guard !isInitialLoading else { return }
+//
+//        let velocityY = scrollView.panGestureRecognizer.velocity(in: scrollView).y
+//        pagingBuffer = PagingBufferCalculator.calculate(
+//            for: room,
+//            scrollVelocity: abs(velocityY)
+//        )
+//
+//        // 현재 보이는 indexPaths
+//        let visibleIndexPaths = chatMessageCollectionView.indexPathsForVisibleItems
+//        guard !visibleIndexPaths.isEmpty else { return }
+//
+//        let rows = visibleIndexPaths.map { $0.row }
+//        guard let firstVisibleIndex = rows.min(), let lastVisibleIndex = rows.max() else { return }
+//
+//        let snapshot = dataSource.snapshot()
+//        let items = snapshot.itemIdentifiers
+//        let totalCount = items.count
+//
+//        // Prefetch older (맨 위 근처)
+//        if firstVisibleIndex <= pagingBuffer, !isLoadingOlder {
+//            if firstVisibleIndex < items.count {
+//                let firstMessageItem = items[firstVisibleIndex]
+//                if case let .message(message) = firstMessageItem {
+//                    Task { await loadOlderMessages(before: message.ID) }
+//                }
+//            }
+//        }
+//
+//        // Prefetch newer (맨 아래 근처)
+//        if (totalCount - 1) - lastVisibleIndex <= pagingBuffer, !isLoadingNewer {
+//            if lastVisibleIndex < items.count {
+//                let lastMessageItem = items[lastVisibleIndex]
+//                if case let .message(message) = lastMessageItem {
+//                    Task { await loadNewerMessagesIfNeeded(after: message.ID) }
+//                }
+//            }
+//        }
+        
+        
+    }
+
     @MainActor
     private func triggerShakeIfNeeded() {
         guard let indexPath = scrollTargetIndex,

@@ -221,7 +221,7 @@ class ChatMessageCell: UICollectionViewCell {
         messageLabel.text = message.msg
         imagesPreviewCollectionView.isHidden = true
         
-        let containerWidth = contentView.frame.width * 0.7
+        let containerWidth = UIScreen.main.bounds.width * 0.7
         
         if let nickName = LoginManager.shared.currentUserProfile?.nickname,
            nickName == message.senderNickname {
@@ -271,7 +271,13 @@ class ChatMessageCell: UICollectionViewCell {
         if let replyMessage = message.replyPreview {
             replyPreviewContainer.isHidden = false
             replyPreviewNameLabel.text = replyMessage.sender
-            replyPreviewMsgLabel.text = replyMessage.text
+            
+            if replyMessage.isDeleted {
+                replyPreviewMsgLabel.text = "삭제된 메시지입니다."
+                replyPreviewMsgLabel.backgroundColor = .secondarySystemBackground
+            } else {
+                replyPreviewMsgLabel.text = replyMessage.text
+            }
             
             NSLayoutConstraint.deactivate([messageLabelTopConsraint!])
             messageLabelTopConsraint = messageLabel.topAnchor.constraint(equalTo: replyPreviewContainer.bottomAnchor, constant: 3)

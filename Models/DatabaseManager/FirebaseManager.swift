@@ -504,13 +504,14 @@ class FirebaseManager {
         let adjustedTimestamp = lastTimestamp?.addingTimeInterval(0.001) // 1ms 보정
         print(#function, "마지막 메시지 시간: ", adjustedTimestamp ?? Date())
         
-        // 2. Firestore 컬렉션 경로 세팅
-        let monthID = DateManager.shared.getMonthFromTimestamp(date: room.createdAt)
+        // 2. Firestore 컬렉션 경로 세팅 (Rooms/{roomID}/Messages)
+        guard let roomID = room.ID else {
+            print("❌ fetchMessagesPaged: room.ID is nil")
+            return []
+        }
         let collection = db
             .collection("Rooms")
-            .document(monthID)
-            .collection("\(monthID) Rooms")
-            .document(room.ID ?? room.roomName)
+            .document(roomID)
             .collection("Messages")
         
         // 3. 쿼리 생성 (sentAt 기준 오름차순, limit 적용)
@@ -551,17 +552,13 @@ class FirebaseManager {
     func fetchAllMessages(for room: ChatRoom) async throws -> [ChatMessage] {
         print(#function, "✅ 호출 완료")
 
-        let monthID = DateManager.shared.getMonthFromTimestamp(date: room.createdAt)
-        
         guard let roomID = room.ID else {
-            print("❌ room.ID 가 nil입니다.")
+            print("❌ fetchAllMessages: room.ID is nil")
             return []
         }
 
         let messagesSnapshot = try await db
             .collection("Rooms")
-            .document(monthID)
-            .collection("\(monthID) Rooms")
             .document(roomID)
             .collection("Messages")
             .order(by: "sentAt", descending: false)
@@ -577,6 +574,67 @@ class FirebaseManager {
                 return nil
             }
         }
+    }
+
+    /// 기준 메시지 이전의 과거 메시지를 limit개 가져오기
+    func fetchOlderMessages(for room: ChatRoom, before messageID: String, limit: Int = 100) async throws -> [ChatMessage] {
+        guard let roomID = room.ID else { return [] }
+        
+        // 기준 메시지의 sentAt과 ID 조회
+        let anchorDoc = try await db.collection("Rooms").document(roomID)
+            .collection("Messages").document(messageID).getDocument()
+        
+        guard anchorDoc.exists, let anchorData = anchorDoc.data(),
+              let anchorSentAt = (anchorData["sentAt"] as? Timestamp)?.dateValue() else {
+            return []
+        }
+        
+        let snapshot = try await db.collection("Rooms").document(roomID)
+            .collection("Messages")
+            .whereField("sentAt", isLessThan: Timestamp(date: anchorSentAt))
+            .order(by: "sentAt", descending: true)
+            .limit(to: limit)
+            .getDocuments()
+        
+        let messages = snapshot.documents.compactMap { doc -> ChatMessage? in
+            do {
+                return try doc.data(as: ChatMessage.self)
+            } catch {
+                print("⚠️ 디코딩 실패: \(error), docID: \(doc.documentID)")
+                return nil
+            }
+        }
+        return messages.reversed()
+    }
+    
+    /// 특정 메시지 이후의 최신 메시지를 limit개 가져오기
+    func fetchMessagesAfter(room: ChatRoom, after messageID: String, limit: Int = 100) async throws -> [ChatMessage] {
+        guard let roomID = room.ID else { return [] }
+        
+        let anchorDoc = try await db.collection("Rooms").document(roomID)
+            .collection("Messages").document(messageID).getDocument()
+        
+        guard anchorDoc.exists, let anchorData = anchorDoc.data(),
+              let anchorSentAt = (anchorData["sentAt"] as? Timestamp)?.dateValue() else {
+            return []
+        }
+        
+        let snapshot = try await db.collection("Rooms").document(roomID)
+            .collection("Messages")
+            .whereField("sentAt", isGreaterThan: Timestamp(date: anchorSentAt))
+            .order(by: "sentAt", descending: false)
+            .limit(to: limit)
+            .getDocuments()
+        
+        let messages = snapshot.documents.compactMap { doc -> ChatMessage? in
+            do {
+                return try doc.data(as: ChatMessage.self)
+            } catch {
+                print("⚠️ 디코딩 실패: \(error), docID: \(doc.documentID)")
+                return nil
+            }
+        }
+        return messages
     }
 }
 

@@ -133,54 +133,207 @@ final class GRDBManager {
     }
     
     // MARK: 메시지
-    func saveChatMessage(_ message: ChatMessage) async throws {
-        let jsonData = try JSONEncoder().encode(message.attachments)
-        let attachmentsJSON = String(data: jsonData, encoding: .utf8) ?? "[]"
-        
-        let replyPreviewJSON: String? = {
-            guard let rp = message.replyPreview else { return nil }
-            do {
-                let data = try JSONEncoder().encode(rp)
-                return String(data: data, encoding: .utf8)
-            } catch {
-                print("replyPreview JSON 인코딩 실패: \(error)")
-                return nil
-            }
-        }()
-        
+    /// 여러 메시지를 한 번에 저장하고, 마지막에만 조건부 pruneMessages 실행
+    func saveChatMessages(_ messages: [ChatMessage]) async throws {
+        guard !messages.isEmpty else { return }
+
         try await dbPool.write { db in
-            try db.execute(
-                sql: """
-                INSERT OR REPLACE INTO chatMessage
-                (id, roomID, senderID, senderNickname, msg, sentAt, attachments, isFailed, replyPreview)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                arguments: [
-                    message.ID,  // 또는 메시지 고유 ID
-                    message.roomID,
-                    message.senderID,
-                    message.senderNickname,
-                    message.msg,
-                    message.sentAt,
-                    attachmentsJSON,
-                    message.isFailed,
-                    replyPreviewJSON
-                ]
-            )
-            
-            do {
+            for message in messages {
+                // attachments JSON 인코딩
+                let jsonData = try JSONEncoder().encode(message.attachments)
+                let attachmentsJSON = String(data: jsonData, encoding: .utf8) ?? "[]"
+
+                // replyPreview JSON 인코딩
+                let replyPreviewJSON: String? = {
+                    guard let rp = message.replyPreview else { return nil }
+                    do {
+                        let data = try JSONEncoder().encode(rp)
+                        return String(data: data, encoding: .utf8)
+                    } catch {
+                        print("replyPreview JSON 인코딩 실패: \(error)")
+                        return nil
+                    }
+                }()
+
+                // 메시지 저장
                 try db.execute(
-                    sql: "INSERT OR REPLACE INTO chatMessageFTS(id, msg, roomID) VALUES (?, ?, ?)",
-                    arguments: [message.ID, message.msg, message.roomID]
+                    sql: """
+                    INSERT OR REPLACE INTO chatMessage
+                    (id, roomID, senderID, senderNickname, msg, sentAt, attachments, isFailed, replyPreview)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    arguments: [
+                        message.ID,
+                        message.roomID,
+                        message.senderID,
+                        message.senderNickname,
+                        message.msg,
+                        message.sentAt,
+                        attachmentsJSON,
+                        message.isFailed,
+                        replyPreviewJSON
+                    ]
                 )
-                
-                print(#function, "✅✅✅✅✅✅✅✅✅✅ 메시지 저장 성공: ", message)
-            } catch {
-                print("FTS insert 실패: \(error)")
+
+                // FTS 인덱스 업데이트
+                do {
+                    try db.execute(
+                        sql: "INSERT OR REPLACE INTO chatMessageFTS(id, msg, roomID) VALUES (?, ?, ?)",
+                        arguments: [message.ID, message.msg, message.roomID]
+                    )
+                } catch {
+                    print("FTS insert 실패: \(error)")
+                }
+            }
+        }
+
+        // write 블록 밖에서 조건부 pruneMessages 실행 (중첩 write 방지)
+        if let lastMessage = messages.last {
+            let roomID = lastMessage.roomID
+            let count = try self.countMessages(inRoom: roomID)
+            if count > 3300 {
+                try self.pruneMessages(inRoom: roomID, keepLast: 3000)
             }
         }
     }
 
+    /// 방의 메시지 개수를 반환하는 헬퍼 함수
+    func countMessages(inRoom roomID: String) throws -> Int {
+        try dbPool.read { db in
+            return try Int.fetchOne(
+                db,
+                sql: "SELECT COUNT(*) FROM chatMessage WHERE roomID = ?",
+                arguments: [roomID]
+            ) ?? 0
+        }
+    }
+    
+    /// 최근 메시지 N개를 로컬 DB에서 조회 (시간 오름차순으로 반환)
+    func fetchRecentMessages(inRoom roomID: String, limit: Int) async throws -> [ChatMessage] {
+        try await dbPool.read { db in
+            let rows = try Row.fetchAll(
+                db,
+                sql: """
+                SELECT * FROM chatMessage
+                WHERE roomID = ?
+                ORDER BY sentAt DESC, id DESC
+                LIMIT ?
+                """,
+                arguments: [roomID, limit]
+            )
+            
+            // UI는 보통 오래된 → 최신 순(ASC)을 기대하므로 역순으로 변환
+            let ascRows = rows.reversed()
+            
+            return try ascRows.compactMap { row in
+                let attachmentsJSON = row["attachments"] as? String ?? "[]"
+                let attachments = try JSONDecoder().decode([Attachment].self, from: Data(attachmentsJSON.utf8))
+                
+                let rpJSON = row["replyPreview"] as? String
+                let replyPreview: ReplyPreview? = {
+                    guard let rpJSON, let data = rpJSON.data(using: .utf8) else { return nil }
+                    return try? JSONDecoder().decode(ReplyPreview.self, from: data)
+                }()
+                
+                return ChatMessage(
+                    ID: row["id"],
+                    roomID: row["roomID"],
+                    senderID: row["senderID"],
+                    senderNickname: row["senderNickname"],
+                    msg: row["msg"],
+                    sentAt: row["sentAt"],
+                    attachments: attachments,
+                    replyPreview: replyPreview,
+                    isFailed: (row["isFailed"] as? Int64 == 1)
+                )
+            }
+        }
+    }
+    
+    /// 기준 메시지(before)보다 과거의 메시지를 limit만큼 조회 (시간 오름차순으로 반환)
+    /// - Parameters:
+    ///   - roomID: 방 ID
+    ///   - before: 이 메시지 "이전"의 과거 데이터를 가져오고자 하는 기준 메시지 ID
+    ///   - limit: 가져올 개수 (페이징 크기)
+    func fetchOlderMessages(inRoom roomID: String, before anchorMessageID: String, limit: Int) async throws -> [ChatMessage] {
+        try await dbPool.read { db in
+            // 앵커 메시지의 sentAt을 조회
+            guard let anchorRow = try Row.fetchOne(
+                db,
+                sql: "SELECT id, sentAt FROM chatMessage WHERE roomID = ? AND id = ? LIMIT 1",
+                arguments: [roomID, anchorMessageID]
+            ) else {
+                return []
+            }
+            let anchorSentAt: Date = anchorRow["sentAt"]
+            let anchorId: String = anchorRow["id"]
+            
+            // 앵커보다 과거인 메시지를 최신순으로 먼저 가져온 뒤, 반환 시 ASC로 뒤집기
+            let rows = try Row.fetchAll(
+                db,
+                sql: """
+                SELECT * FROM chatMessage
+                WHERE roomID = ?
+                  AND (sentAt < ? OR (sentAt = ? AND id < ?))
+                ORDER BY sentAt DESC, id DESC
+                LIMIT ?
+                """,
+                arguments: [roomID, anchorSentAt, anchorSentAt, anchorId, limit]
+            )
+            
+            let ascRows = rows.reversed()
+            
+            return try ascRows.compactMap { row in
+                let attachmentsJSON = row["attachments"] as? String ?? "[]"
+                let attachments = try JSONDecoder().decode([Attachment].self, from: Data(attachmentsJSON.utf8))
+                
+                let rpJSON = row["replyPreview"] as? String
+                let replyPreview: ReplyPreview? = {
+                    guard let rpJSON, let data = rpJSON.data(using: .utf8) else { return nil }
+                    return try? JSONDecoder().decode(ReplyPreview.self, from: data)
+                }()
+                
+                return ChatMessage(
+                    ID: row["id"],
+                    roomID: row["roomID"],
+                    senderID: row["senderID"],
+                    senderNickname: row["senderNickname"],
+                    msg: row["msg"],
+                    sentAt: row["sentAt"],
+                    attachments: attachments,
+                    replyPreview: replyPreview,
+                    isFailed: (row["isFailed"] as? Int64 == 1)
+                )
+            }
+        }
+    }
+
+    /// 오래된 메시지를 삭제하여 최근 N개만 유지 (batchSize 지원)
+    func pruneMessages(inRoom roomID: String, keepLast count: Int, batchSize: Int = 500) throws {
+        try dbPool.write { db in
+            // 현재 메시지 개수 확인
+            let totalCount = try self.countMessages(inRoom: roomID)
+
+            if totalCount > count {
+                let toDelete = min(totalCount - count, batchSize)
+                try db.execute(
+                    sql: """
+                    DELETE FROM chatMessage
+                    WHERE id IN (
+                        SELECT id FROM chatMessage
+                        WHERE roomID = ?
+                        ORDER BY sentAt ASC
+                        LIMIT ?
+                    )
+                    """,
+                    arguments: [roomID, toDelete]
+                )
+                let afterCount = try self.countMessages(inRoom: roomID)
+                print("[GRDBManager] Pruned \(toDelete) old messages in room \(roomID). Total after prune: \(afterCount)")
+            }
+        }
+    }
+    
     func fetchMessages(in roomID: String, containing keyword: String? = nil) async throws -> [ChatMessage] {
         try await dbPool.read { db in
 
@@ -258,27 +411,6 @@ final class GRDBManager {
         }
     }
 
-    // 디버깅용 함수 추가
-//    func debugFTSContent() async throws {
-//        try await dbPool.read { db in
-//            print("�� === FTS 테이블 디버깅 ===")
-//
-//            // FTS 테이블 내용 확인
-//            let ftsRows = try Row.fetchAll(db, sql: "SELECT * FROM chatMessageFTS LIMIT 5")
-//            print("�� FTS 테이블 샘플 데이터:")
-//            for (index, row) in ftsRows.enumerated() {
-//                print("  \(index): id=\(row["id"] ?? "nil"), msg=\(row["msg"] ?? "nil"), roomID=\(row["roomID"] ?? "nil")")
-//            }
-//
-//            // chatMessage 테이블과 비교
-//            let chatRows = try Row.fetchAll(db, sql: "SELECT id, msg, roomID FROM chatMessage LIMIT 5")
-//            print("�� chatMessage 테이블 샘플 데이터:")
-//            for (index, row) in chatRows.enumerated() {
-//                print("  \(index): id=\(row["id"] ?? "nil"), msg=\(row["msg"] ?? "nil"), roomID=\(row["roomID"] ?? "nil")")
-//            }
-//        }
-//    }
-    
     func fetchLastMessageTimestamp(for roomID: String) throws -> Date? {
         try dbPool.read { db in
             let sql = """

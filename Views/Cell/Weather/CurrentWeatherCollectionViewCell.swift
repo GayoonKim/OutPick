@@ -109,7 +109,7 @@ class CurrentWeatherCollectionViewCell: UICollectionViewCell {
             
             minMaxLabel.topAnchor.constraint(equalTo: descriptionLabel.bottomAnchor),
             minMaxLabel.centerXAnchor.constraint(equalTo: cityLabel.centerXAnchor),
-            minMaxLabel.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+            minMaxLabel.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
         ])
 
         // 접근성

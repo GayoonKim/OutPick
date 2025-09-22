@@ -20,7 +20,7 @@ class DailyForecastCollectionViewCell: UICollectionViewCell {
     // MARK: - UI
     private let dayLabel: UILabel = {
         let lb = UILabel()
-        lb.font = .preferredFont(forTextStyle: .subheadline)
+        lb.font = .preferredFont(forTextStyle: .footnote)
         lb.textColor = .black
         lb.numberOfLines = 1
         lb.adjustsFontForContentSizeCategory = true
@@ -38,8 +38,8 @@ class DailyForecastCollectionViewCell: UICollectionViewCell {
 
     private let minMaxLabel: UILabel = {
         let lb = UILabel()
-        lb.font = .monospacedDigitSystemFont(ofSize: 15, weight: .medium)
-        lb.textColor = .secondaryLabel
+        lb.font = .preferredFont(forTextStyle: .footnote)
+        lb.textColor = .black
         lb.textAlignment = .right
         lb.numberOfLines = 1
         lb.adjustsFontForContentSizeCategory = true

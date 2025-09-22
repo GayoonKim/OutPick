@@ -107,19 +107,19 @@ class WeatherAPIManager: NSObject {
         locationManager.distanceFilter = 100.0
         
         // 네트워크 상태 모니터링 시작
-        pathMonitor.pathUpdateHandler = { [weak self] path in
-            guard let self = self else { return }
-            let online = (path.status == .satisfied)
-            
-            if online != self.isOnline {
-                self.isOnline = online
-                DispatchQueue.main.async {
-                    self.networkStatusSubject.send(online)
-                }
-            }
-        }
-        
-        pathMonitor.start(queue: pathQueue)
+//        pathMonitor.pathUpdateHandler = { [weak self] path in
+//            guard let self = self else { return }
+//            let online = (path.status == .satisfied)
+//            
+//            if online != self.isOnline {
+//                self.isOnline = online
+//                DispatchQueue.main.async {
+//                    self.networkStatusSubject.send(online)
+//                }
+//            }
+//        }
+//        
+//        pathMonitor.start(queue: pathQueue)
     }
     
     func startLocationUpdates() {

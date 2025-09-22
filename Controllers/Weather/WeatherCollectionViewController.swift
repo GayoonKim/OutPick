@@ -125,31 +125,31 @@ class HomeCollectionViewController: UICollectionViewController {
             }
             .store(in: &cancellables)
 
-        WeatherAPIManager.shared.networkStatus
-            .removeDuplicates()
-            .debounce(for: .milliseconds(400), scheduler: RunLoop.main)
-            .receive(on: RunLoop.main)
-            .sink { [weak self] isOnline in
-                guard let self = self,
-                      let container = self.navigationController?.view ?? self.view else { return }
-
-                if !isOnline {
-                    // 전환 시 1회만 순간 안내 배너
-                    if !self.offlineBannerShown {
-                        BannerView.presentWeatherError(on: container, isOffline: true)
-                        self.offlineBannerShown = true
-                    }
-                } else {
-                    // 온라인 복구 순간 안내 + 자동 새로고침(신선도 조건부)
-                    self.offlineBannerShown = false
-                    BannerView.show(on: container, message: "네트워크가 복구되었어요.", style: .success, autoHideAfter: 1.6)
-                    if self.isDataStale() && !self.isRefreshing {
-                        self.isRefreshing = true
-                        WeatherAPIManager.shared.startLocationUpdates()
-                    }
-                }
-            }
-            .store(in: &cancellables)
+//        WeatherAPIManager.shared.networkStatus
+//            .removeDuplicates()
+//            .debounce(for: .milliseconds(400), scheduler: RunLoop.main)
+//            .receive(on: RunLoop.main)
+//            .sink { [weak self] isOnline in
+//                guard let self = self,
+//                      let container = self.navigationController?.view ?? self.view else { return }
+//
+//                if !isOnline {
+//                    // 전환 시 1회만 순간 안내 배너
+//                    if !self.offlineBannerShown {
+//                        BannerView.presentWeatherError(on: container, isOffline: true)
+//                        self.offlineBannerShown = true
+//                    }
+//                } else {
+//                    // 온라인 복구 순간 안내 + 자동 새로고침(신선도 조건부)
+//                    self.offlineBannerShown = false
+//                    BannerView.show(on: container, message: "네트워크가 복구되었어요.", style: .success, autoHideAfter: 1.6)
+//                    if self.isDataStale() && !self.isRefreshing {
+//                        self.isRefreshing = true
+//                        WeatherAPIManager.shared.startLocationUpdates()
+//                    }
+//                }
+//            }
+//            .store(in: &cancellables)
     }
     
     

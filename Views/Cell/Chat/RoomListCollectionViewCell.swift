@@ -195,7 +195,7 @@ private class MessagePreviewView: UIView {
     
     private lazy var replyPreviewContainer: UIStackView = {
         let separator = UIView()
-        separator.backgroundColor = .black
+        separator.backgroundColor = .white
         separator.heightAnchor.constraint(equalToConstant: 1).isActive = true
         
         let stack = UIStackView(arrangedSubviews: [replyPreviewNameLabel, replyPreviewMsgLabel, separator])
