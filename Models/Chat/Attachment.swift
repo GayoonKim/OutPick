@@ -23,7 +23,7 @@ struct Attachment: Codable {
         return [
             "type": type.rawValue,
             "fileName": fileName ?? "",
-            "imageData": fileData ?? ""
+            "fileDataData": fileData ?? ""
         ]
     }
 }

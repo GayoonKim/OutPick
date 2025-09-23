@@ -18,7 +18,7 @@ protocol ChatMessageCellDelegate: AnyObject {
     func cellDidLongPress(_ cell: ChatMessageCell)
 }
 
-class ChatViewController: UIViewController, UINavigationControllerDelegate, ChatModalAnimatable, UICollectionViewDelegate {
+class ChatViewController: UIViewController, UINavigationControllerDelegate, ChatModalAnimatable {
 
     // Paging buffer size for scroll triggers
     private var pagingBuffer = 200
@@ -48,6 +48,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private var isLoadingOlder = false
     private var isLoadingNewer = false
     
+    private var hasMoreOlder = true
+    private var hasMoreNewer = true
+    
     enum Section: Hashable {
         case main
     }
@@ -72,6 +75,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private var hasBoundRoomChange = false
     
     static var currentRoomID: String? = nil
+    
+    // 중복 호출 방지를 위한 최근 트리거 인덱스
+    private var minTriggerDistance: Int { return 3 }
+    private static var lastTriggeredOlderIndex: Int?
+    private static var lastTriggeredNewerIndex: Int?
     
     deinit {
         print("💧 ChatViewController deinit")
@@ -195,17 +203,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private var scrollTargetIndex: IndexPath?
     
     private var lastContainerViewOriginY: Double = 0
-//
-//    init(room: ChatRoom, isRoomSaving: Bool = false) {
-//        self.room = room
-//        self.isRoomSaving = isRoomSaving
-//        super.init(nibName: nil, bundle: nil)
-//    }
-//
-//    required init?(coder: NSCoder) {
-//        fatalError("init(coder:) has not been implemented")
-//    }
-//
+
     override func viewDidLoad() {
         super.viewDidLoad()
         self.definesPresentationContext = true
@@ -239,11 +237,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        // ✅ 초기 네트워크/메모리 상태 기반으로 pagingBuffer 세팅
-        pagingBuffer = PagingBufferCalculator.calculate(
-            for: room,
-            scrollVelocity: 0 // 아직 스크롤 속도 없음
-        )
     }
     
     override func viewWillDisappear(_ animated: Bool) {
@@ -353,25 +346,52 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     @MainActor
     private func loadOlderMessages(before messageID: String?) async {
-        if isLoadingOlder { return }
+        // Note: willDisplay cell logic already handles trigger conditions (scroll position, etc.)
+        guard !isLoadingOlder, hasMoreOlder else { return }
+        guard let room = self.room else { return }
+        
         isLoadingOlder = true
         defer { isLoadingOlder = false }
-        guard let room = self.room else { return }
+        
         print(#function, "✅ loading older 진행")
         do {
             // 1. GRDB에서 먼저 최대 100개
-            let local = try await GRDBManager.shared.fetchOlderMessages(inRoom: room.ID ?? "", before: messageID ?? "", limit: 100)
+            let local = try await GRDBManager.shared.fetchOlderMessages(
+                inRoom: room.ID ?? "",
+                before: messageID ?? "",
+                limit: 100
+            )
             var loadedMessages = local
-
+            
             // 2. 부족분은 서버에서 채우기
             if local.count < 100 {
                 let needed = 100 - local.count
-                let server = try await FirebaseManager.shared.fetchOlderMessages(for: room, before: messageID ?? "", limit: needed)
-                try await GRDBManager.shared.saveChatMessages(server)
-                loadedMessages.append(contentsOf: server)
+                let server = try await FirebaseManager.shared.fetchOlderMessages(
+                    for: room,
+                    before: messageID ?? "",
+                    limit: needed
+                )
+                
+                if server.isEmpty {
+                    hasMoreOlder = false   // 더 이상 이전 메시지 없음
+                } else {
+                    try await GRDBManager.shared.saveChatMessages(server)
+                    loadedMessages.append(contentsOf: server)
+                }
             }
-
-            addMessages(loadedMessages, isOlder: true)
+            
+            if loadedMessages.isEmpty {
+                hasMoreOlder = false
+            } else {
+                // Chunk messages into groups of 20 for performance
+                let chunkSize = 20
+                let total = loadedMessages.count
+                for i in stride(from: 0, to: total, by: chunkSize) {
+                    let end = min(i + chunkSize, total)
+                    let chunk = Array(loadedMessages[i..<end])
+                    addMessages(chunk, isOlder: true)
+                }
+            }
         } catch {
             print("❌ loadOlderMessages 실패:", error)
         }
@@ -379,16 +399,38 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     @MainActor
     private func loadNewerMessagesIfNeeded(after messageID: String?) async {
-        if isLoadingNewer { return }
+        // In real-time subscription mode, hasMoreNewer is not needed except when explicitly doing a server fetch.
+        // Only guard against isLoadingNewer to allow real-time updates to always flow.
+        guard !isLoadingNewer else { return }
+        guard let room = self.room else { return }
+
         isLoadingNewer = true
         defer { isLoadingNewer = false }
-        guard let room = self.room else { return }
+
         print(#function, "✅ loading newer 진행")
         do {
             // 1. 서버에서 lastMessageID 이후 메시지 보충 (최대 100개)
-            let server = try await FirebaseManager.shared.fetchMessagesAfter(room: room, after: messageID ?? "", limit: 100)
-            try await GRDBManager.shared.saveChatMessages(server)
-            addMessages(server, isNewer: true)
+            let server = try await FirebaseManager.shared.fetchMessagesAfter(
+                room: room,
+                after: messageID ?? "",
+                limit: 100
+            )
+
+            // If server returns empty, simply exit; do not modify any flags.
+            if server.isEmpty {
+                // No new messages from server; do nothing.
+                return
+            } else {
+                try await GRDBManager.shared.saveChatMessages(server)
+                // Chunk messages into groups of 20 for performance
+                let chunkSize = 20
+                let total = server.count
+                for i in stride(from: 0, to: total, by: chunkSize) {
+                    let end = min(i + chunkSize, total)
+                    let chunk = Array(server[i..<end])
+                    addMessages(chunk, isNewer: true)
+                }
+            }
         } catch {
             print("❌ loadNewerMessagesIfNeeded 실패:", error)
         }
@@ -1280,6 +1322,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     @MainActor
     func addMessages(_ messages: [ChatMessage], isOlder: Bool = false, isNewer: Bool = false) {
+        let windowSize = 300
         var items: [Item] = []
         
         let snapshot = dataSource.snapshot()
@@ -1323,9 +1366,23 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         // Insert readMarker only for newer messages
         if isNewer, !hasReadMarker, let lastMessageID = self.lastReadMessageID, !isUserInCurrentRoom,
            let firstMessage = newMessages.first, firstMessage.ID != lastMessageID {
-            
             if let firstNewItem = items.first(where: { if case .message = $0 { return true }; return false }) {
                 updatedSnapshot.insertItems([.readMarker], beforeItem: firstNewItem)
+            }
+        }
+
+        // Virtualization: keep only windowSize items in snapshot
+        let allItems = updatedSnapshot.itemIdentifiers
+        if allItems.count > windowSize {
+            let toRemoveCount = allItems.count - windowSize
+            if isOlder {
+                // Remove from the end (recent messages)
+                let itemsToRemove = Array(allItems.suffix(toRemoveCount))
+                updatedSnapshot.deleteItems(itemsToRemove)
+            } else if isNewer {
+                // Remove from the start (old messages)
+                let itemsToRemove = Array(allItems.prefix(toRemoveCount))
+                updatedSnapshot.deleteItems(itemsToRemove)
             }
         }
         
@@ -1474,49 +1531,6 @@ extension ChatViewController: UIScrollViewDelegate {
         }
     }
 
-    func scrollViewDidScroll(_ scrollView: UIScrollView) {
-//        guard !isInitialLoading else { return }
-//
-//        let velocityY = scrollView.panGestureRecognizer.velocity(in: scrollView).y
-//        pagingBuffer = PagingBufferCalculator.calculate(
-//            for: room,
-//            scrollVelocity: abs(velocityY)
-//        )
-//
-//        // 현재 보이는 indexPaths
-//        let visibleIndexPaths = chatMessageCollectionView.indexPathsForVisibleItems
-//        guard !visibleIndexPaths.isEmpty else { return }
-//
-//        let rows = visibleIndexPaths.map { $0.row }
-//        guard let firstVisibleIndex = rows.min(), let lastVisibleIndex = rows.max() else { return }
-//
-//        let snapshot = dataSource.snapshot()
-//        let items = snapshot.itemIdentifiers
-//        let totalCount = items.count
-//
-//        // Prefetch older (맨 위 근처)
-//        if firstVisibleIndex <= pagingBuffer, !isLoadingOlder {
-//            if firstVisibleIndex < items.count {
-//                let firstMessageItem = items[firstVisibleIndex]
-//                if case let .message(message) = firstMessageItem {
-//                    Task { await loadOlderMessages(before: message.ID) }
-//                }
-//            }
-//        }
-//
-//        // Prefetch newer (맨 아래 근처)
-//        if (totalCount - 1) - lastVisibleIndex <= pagingBuffer, !isLoadingNewer {
-//            if lastVisibleIndex < items.count {
-//                let lastMessageItem = items[lastVisibleIndex]
-//                if case let .message(message) = lastMessageItem {
-//                    Task { await loadNewerMessagesIfNeeded(after: message.ID) }
-//                }
-//            }
-//        }
-        
-        
-    }
-
     @MainActor
     private func triggerShakeIfNeeded() {
         guard let indexPath = scrollTargetIndex,
@@ -1525,5 +1539,48 @@ extension ChatViewController: UIScrollViewDelegate {
         }
         cell.shakeHorizontally()
         scrollTargetIndex = nil  // 초기화
+    }
+}
+
+extension ChatViewController: UICollectionViewDelegate {
+    func collectionView(_ collectionView: UICollectionView,
+                        willDisplay cell: UICollectionViewCell,
+                        forItemAt indexPath: IndexPath) {
+        
+        let itemCount = collectionView.numberOfItems(inSection: 0)
+
+        // ✅ Older 메시지 로드
+        if indexPath.item < 5, hasMoreOlder, !isLoadingOlder {
+            if let lastIndex = Self.lastTriggeredOlderIndex,
+               abs(lastIndex - indexPath.item) < minTriggerDistance {
+                return // 너무 가까운 위치에서 또 호출 → 무시
+            }
+            Self.lastTriggeredOlderIndex = indexPath.item
+
+            Task {
+                let firstID = dataSource.snapshot().itemIdentifiers.compactMap { item -> String? in
+                    if case let .message(msg) = item { return msg.ID }
+                    return nil
+                }.first
+                await loadOlderMessages(before: firstID)
+            }
+        }
+
+        // ✅ Newer 메시지 로드
+        if indexPath.item > itemCount - 5, hasMoreNewer, !isLoadingNewer {
+            if let lastIndex = Self.lastTriggeredNewerIndex,
+               abs(lastIndex - indexPath.item) < minTriggerDistance {
+                return
+            }
+            Self.lastTriggeredNewerIndex = indexPath.item
+
+            Task {
+                let lastID = dataSource.snapshot().itemIdentifiers.compactMap { item -> String? in
+                    if case let .message(msg) = item { return msg.ID }
+                    return nil
+                }.last
+                await loadNewerMessagesIfNeeded(after: lastID)
+            }
+        }
     }
 }

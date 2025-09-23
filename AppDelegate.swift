@@ -16,12 +16,22 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     
     let defaults = UserDefaults.standard
     
+    private var isUITest: Bool {
+        return ProcessInfo.processInfo.environment["UITEST"] == "1"
+    }
+    
     func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
       return GIDSignIn.sharedInstance.handle(url)
     }
     
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         // Override point for customization after application launch.ㄷ
+        
+        if isUITest {
+            print("🚨 UITest 환경: Analytics, 푸시 설정, 강제 종료 로직 모두 스킵")
+            return true
+        }
+        
         KakaoSDK.initSDK(appKey: "a2b20f7bedfb9582147f572ef004d0f0")
         FirebaseApp.configure()
         UIWindow.appearance().overrideUserInterfaceStyle = .light

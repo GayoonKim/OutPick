@@ -21,6 +21,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     private var cancellables = Set<AnyCancellable>()
     private var appCoordinator: AppCoordinator?
     
+    private var isUITest: Bool {
+        return ProcessInfo.processInfo.environment["UITEST"] == "1"
+    }
+    
     func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
         if let url = URLContexts.first?.url {
             if (AuthApi.isKakaoTalkLoginUrl(url)) {
@@ -33,6 +37,16 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         print("1. scene 메서드 시작")
     
         guard let _ = (scene as? UIWindowScene) else { return }
+        
+        // ✅ UITest 환경이면 조기 리턴
+        if isUITest {
+            print("🚨 UITest 환경: 강제 종료/실제 로그인 로직 건너뜀")
+            let storyboard = UIStoryboard(name: "Main", bundle: nil)
+            let vc = storyboard.instantiateViewController(withIdentifier: "LoginVC")
+            self.window?.rootViewController = vc
+            self.window?.makeKeyAndVisible()
+            return
+        }
         
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }

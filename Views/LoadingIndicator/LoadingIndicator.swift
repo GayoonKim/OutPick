@@ -11,6 +11,8 @@ import UIKit
 class LoadingIndicator {
     
     static let shared = LoadingIndicator()
+    private var indicator: UIActivityIndicatorView?
+    
     private lazy var activityIndicator: UIActivityIndicatorView = {
         let indicator = UIActivityIndicatorView(style: .medium)
         indicator.hidesWhenStopped = true
@@ -21,6 +23,13 @@ class LoadingIndicator {
     private init() {}
     
     func start(on viewController: UIViewController) {
+        let indicator = UIActivityIndicatorView(style: .large)
+        indicator.accessibilityIdentifier = "LoadingIndicator" // ✅ 여기서 지정
+        indicator.center = viewController.view.center
+        indicator.startAnimating()
+        viewController.view.addSubview(indicator)
+        self.indicator = indicator
+        
         DispatchQueue.main.async {
             if self.activityIndicator.superview == nil {
                 self.activityIndicator.center = viewController.view.center
@@ -34,6 +43,9 @@ class LoadingIndicator {
     
     func stop() {
         DispatchQueue.main.async {
+            self.indicator?.stopAnimating()
+            self.indicator?.removeFromSuperview()
+            self.indicator = nil
             
             self.activityIndicator.stopAnimating()
             self.activityIndicator.removeFromSuperview()
