@@ -19,7 +19,7 @@ struct ReplyPreview: Codable, Hashable {
 
 // 채팅 메시지 정보
 struct ChatMessage: SocketData, Codable {
-    var ID: String = UUID().uuidString
+    let ID: String
     let roomID: String
     let senderID: String                // 메시지 전송 사용자 아이디
     let senderNickname: String          // 메시지 전송 사용자 닉네임
@@ -28,6 +28,7 @@ struct ChatMessage: SocketData, Codable {
     let attachments: [Attachment]
     var replyPreview: ReplyPreview?
     var isFailed: Bool = false
+    var isDeleted: Bool = false
 
     private static let iso8601Formatter: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
@@ -36,6 +37,7 @@ struct ChatMessage: SocketData, Codable {
     }()
 
     enum CodingKeys: String, CodingKey {
+        case ID
         case roomID
         case senderID
         case senderNickname = "senderNickName"
@@ -81,6 +83,7 @@ struct ChatMessage: SocketData, Codable {
             "senderNickName": senderNickname,
             "msg": msg ?? "",
             "sentAt": Timestamp(date: sentAt ?? Date()),
+            "isDeleted": isDeleted
         ]
 
         dict["attachments"] = attachments.map { $0.toDict() }
@@ -98,14 +101,17 @@ struct ChatMessage: SocketData, Codable {
     }
     
     func hash(into hasher: inout Hasher) { hasher.combine(ID) }
-    static func ==(lhs: ChatMessage, rhs: ChatMessage) -> Bool { lhs.ID == rhs.ID }
+    static func == (lhs: ChatMessage, rhs: ChatMessage) -> Bool {
+        return lhs.ID == rhs.ID
+    }
 }
 
 extension ChatMessage: Hashable {}
 
 extension ChatMessage {
     static func from(_ dict: [String: Any]) -> ChatMessage? {
-        guard let roomID = dict["roomID"] as? String,
+        guard let id = dict["ID"] as? String, !id.isEmpty,
+              let roomID = dict["roomID"] as? String,
               let senderID = dict["senderID"] as? String,
               let senderNickname = dict["senderNickName"] as? String,
               let sentAtString = dict["sentAt"] as? String,
@@ -119,13 +125,14 @@ extension ChatMessage {
            let mid = rpDict["messageID"] as? String, !mid.isEmpty {
             rp = ReplyPreview(
                 messageID: mid,
-                sender: rpDict["author"] as? String ?? "",
+                sender: rpDict["sender"] as? String ?? "",
                 text: rpDict["text"] as? String ?? "",
                 isDeleted: rpDict["isDeleted"] as? Bool ?? false
             )
         }
 
         return ChatMessage(
+            ID: id,
             roomID: roomID,
             senderID: senderID,
             senderNickname: senderNickname,

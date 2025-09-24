@@ -67,6 +67,16 @@ final class GRDBManager {
                 print("[Migration] addReplyPreviewToChatMessage skipped or failed: \(error)")
             }
         }
+
+        migrator.registerMigration("addIsDeletedToChatMessage") { db in
+            do {
+                try db.alter(table: "chatMessage") { t in
+                    t.add(column: "isDeleted", .boolean).notNull().defaults(to: false)
+                }
+            } catch {
+                print("[Migration] addIsDeletedToChatMessage skipped or failed: \(error)")
+            }
+        }
         
         migrator.registerMigration("createRoomParticipant") { db in
             try db.create(table: "roomParticipant") { t in
@@ -211,8 +221,8 @@ final class GRDBManager {
                 try db.execute(
                     sql: """
                     INSERT OR REPLACE INTO chatMessage
-                    (id, roomID, senderID, senderNickname, msg, sentAt, attachments, isFailed, replyPreview)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (id, roomID, senderID, senderNickname, msg, sentAt, attachments, isFailed, replyPreview, isDeleted)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     arguments: [
                         message.ID,
@@ -223,7 +233,8 @@ final class GRDBManager {
                         message.sentAt,
                         attachmentsJSON,
                         message.isFailed,
-                        replyPreviewJSON
+                        replyPreviewJSON,
+                        message.isDeleted
                     ]
                 )
 
@@ -247,6 +258,8 @@ final class GRDBManager {
                 try self.pruneMessages(inRoom: roomID, keepLast: 3000)
             }
         }
+        
+        print(#function, "completed", messages)
     }
 
     /// 방의 메시지 개수를 반환하는 헬퍼 함수
@@ -257,6 +270,37 @@ final class GRDBManager {
                 sql: "SELECT COUNT(*) FROM chatMessage WHERE roomID = ?",
                 arguments: [roomID]
             ) ?? 0
+        }
+    }
+    
+    // 특정 메시지들의 isDeleted 상태를 업데이트
+    func updateMessagesIsDeleted(_ ids: [String], isDeleted: Bool, inRoom roomID: String) async throws {
+        guard !ids.isEmpty else { return }
+        try await dbPool.write { db in
+            let placeholders = ids.map { _ in "?" }.joined(separator: ",")
+            let sql = "UPDATE chatMessage SET isDeleted = ? WHERE roomID = ? AND id IN (\(placeholders))"
+            var args: [DatabaseValueConvertible] = [isDeleted, roomID]
+            args.append(contentsOf: ids)
+            try db.execute(sql: sql, arguments: StatementArguments(args))
+        }
+    }
+
+    // replyPreview.messageID 가 특정 IDs에 해당하는 레코드들의 preview.isDeleted 를 일괄 업데이트 (JSON1 사용)
+    func updateReplyPreviewsIsDeleted(referencing ids: [String], isDeleted: Bool, inRoom roomID: String) async throws {
+        guard !ids.isEmpty else { return }
+        try await dbPool.write { db in
+            let placeholders = ids.map { _ in "?" }.joined(separator: ",")
+            // JSON1: replyPreview -> json_set(..., '$.isDeleted', ?) and filter by json_extract(..., '$.messageID') IN (...)
+            let sql = """
+            UPDATE chatMessage
+               SET replyPreview = json_set(replyPreview, '$.isDeleted', ?)
+             WHERE roomID = ?
+               AND replyPreview IS NOT NULL
+               AND json_extract(replyPreview, '$.messageID') IN (\(placeholders))
+            """
+            var args: [DatabaseValueConvertible] = [isDeleted ? 1 : 0, roomID]
+            args.append(contentsOf: ids)
+            try db.execute(sql: sql, arguments: StatementArguments(args))
         }
     }
     
@@ -287,7 +331,7 @@ final class GRDBManager {
                     return try? JSONDecoder().decode(ReplyPreview.self, from: data)
                 }()
                 
-                return ChatMessage(
+                var message = ChatMessage(
                     ID: row["id"],
                     roomID: row["roomID"],
                     senderID: row["senderID"],
@@ -298,15 +342,12 @@ final class GRDBManager {
                     replyPreview: replyPreview,
                     isFailed: (row["isFailed"] as? Int64 == 1)
                 )
+                message.isDeleted = (row["isDeleted"] as? Int64 == 1)
+                return message
             }
         }
     }
-    
-    /// 기준 메시지(before)보다 과거의 메시지를 limit만큼 조회 (시간 오름차순으로 반환)
-    /// - Parameters:
-    ///   - roomID: 방 ID
-    ///   - before: 이 메시지 "이전"의 과거 데이터를 가져오고자 하는 기준 메시지 ID
-    ///   - limit: 가져올 개수 (페이징 크기)
+
     func fetchOlderMessages(inRoom roomID: String, before anchorMessageID: String, limit: Int) async throws -> [ChatMessage] {
         try await dbPool.read { db in
             // 앵커 메시지의 sentAt을 조회
@@ -345,7 +386,7 @@ final class GRDBManager {
                     return try? JSONDecoder().decode(ReplyPreview.self, from: data)
                 }()
                 
-                return ChatMessage(
+                var message = ChatMessage(
                     ID: row["id"],
                     roomID: row["roomID"],
                     senderID: row["senderID"],
@@ -356,6 +397,8 @@ final class GRDBManager {
                     replyPreview: replyPreview,
                     isFailed: (row["isFailed"] as? Int64 == 1)
                 )
+                message.isDeleted = (row["isDeleted"] as? Int64 == 1)
+                return message
             }
         }
     }
@@ -415,7 +458,7 @@ final class GRDBManager {
                     return try? JSONDecoder().decode(ReplyPreview.self, from: data)
                 }()
                 
-                return ChatMessage(
+                var message = ChatMessage(
                     ID: row["id"],
                     roomID: row["roomID"],
                     senderID: row["senderID"],
@@ -426,6 +469,8 @@ final class GRDBManager {
                     replyPreview: replyPreview,
                     isFailed: (row["isFailed"] as? Int64 == 1)
                 )
+                message.isDeleted = (row["isDeleted"] as? Int64 == 1)
+                return message
             }
         }
     }
@@ -448,7 +493,7 @@ final class GRDBManager {
                     return try? JSONDecoder().decode(ReplyPreview.self, from: data)
                 }()
 
-                return ChatMessage(
+                var message = ChatMessage(
                     ID: row["id"],
                     roomID: row["roomID"],
                     senderID: row["senderID"],
@@ -459,6 +504,8 @@ final class GRDBManager {
                     replyPreview: replyPreview,
                     isFailed: (row["isFailed"] as? Int64 == 1)
                 )
+                message.isDeleted = (row["isDeleted"] as? Int64 == 1)
+                return message
             }
         }
     }

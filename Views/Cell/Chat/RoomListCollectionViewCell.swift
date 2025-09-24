@@ -139,7 +139,7 @@ private class MessagePreviewView: UIView {
     private let nicknameLabel: UILabel = {
         let label = UILabel()
         label.font = .systemFont(ofSize: 12, weight: .semibold)
-        label.textColor = .white
+        label.textColor = .black
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
@@ -155,7 +155,7 @@ private class MessagePreviewView: UIView {
     private let messageLabel: UILabel = {
         let label = UILabel()
         label.font = .systemFont(ofSize: 13)
-        label.textColor = .white
+        label.textColor = .black
         label.translatesAutoresizingMaskIntoConstraints = false
         label.numberOfLines = 0
         return label
@@ -181,14 +181,14 @@ private class MessagePreviewView: UIView {
     private let replyPreviewNameLabel: UILabel = {
         let label = UILabel()
         label.font = .systemFont(ofSize: 10, weight: .heavy)
-        label.textColor = .white
+        label.textColor = .black
         return label
     }()
 
     private let replyPreviewMsgLabel: UILabel = {
         let label = UILabel()
         label.font = .systemFont(ofSize: 9, weight: .medium)
-        label.textColor = .white
+        label.textColor = .black
         label.numberOfLines = 1
         return label
     }()
@@ -286,6 +286,7 @@ private class MessagePreviewView: UIView {
             messageLabel.bottomAnchor.constraint(equalTo: bubbleView.bottomAnchor, constant: -4),
             messageLabel.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 8),
             messageLabel.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor, constant: -8),
+            messageLabel.centerYAnchor.constraint(equalTo: bubbleView.centerYAnchor),
             
             bubbleView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
         ])
@@ -338,7 +339,7 @@ private class MessagePreviewView: UIView {
         } else {
             profileImageView.isHidden = false
             nicknameLabel.isHidden = false
-            bubbleView.backgroundColor = UIColor(white: 0.2, alpha: 1.0)
+            bubbleView.backgroundColor = /*UIColor(white: 0.2, alpha: 1.0)*/.lightGray
 
             bubbleTopToTop?.isActive = false
             bubbleTopToNickname?.isActive = true

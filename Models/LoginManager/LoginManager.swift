@@ -35,6 +35,103 @@ class LoginManager {
         self.currentUserProfile = profile
     }
     
+    // 중복 로그인 탐지
+    func setupDevIDListener() async throws {
+        print("🔄🔄🔄🔄🔄 setupDevIDListener 호출")
+
+        // 기존 리스너 제거 후 재등록
+        deviceIDListener?.remove()
+        deviceIDListener = nil
+
+        let email = self.getUserEmail
+        guard !email.isEmpty else {
+            print("⚠️ setupDevIDListener: userEmail 비어있음")
+            return
+        }
+
+        let currentDeviceID = await UIDevice.persistentDeviceID
+        let userRef = FirebaseManager.shared.db.collection("Users").document(email)
+
+        deviceIDListener = userRef.addSnapshotListener({ [weak self] documentSnapshot, error in
+            guard let self = self else { return }
+
+            if let error = error {
+                print("사용자 문서 불러오기 실패: \(error.localizedDescription)")
+                return
+            }
+
+            guard let document = documentSnapshot else { return }
+            let remoteDeviceID = document.get("deviceID") as? String
+
+            // 초기 상태: deviceID 가 없으면 내 값으로 초기화 (선택적)
+            if remoteDeviceID == nil || (remoteDeviceID?.isEmpty == true) {
+                Task {
+                    do {
+                        try await userRef.updateData(["deviceID": currentDeviceID])
+                        print("ℹ️ deviceID 초기화 완료")
+                    } catch {
+                        print("⚠️ deviceID 초기화 실패: \(error)")
+                    }
+                }
+                return
+            }
+
+            // 다른 기기에서 로그인 감지
+            if remoteDeviceID != currentDeviceID {
+                DispatchQueue.main.async {
+                    AlertManager.showDuplicateLoginAlert()
+                    self.deviceIDListener?.remove()
+                    self.deviceIDListener = nil
+                }
+            }
+        })
+
+        print("🔄🔄🔄🔄🔄 setupDevIDListener 호출 끝")
+    }
+    
+    // 중복 로그인 방지를 위한 로그인 기기 ID 변경
+    func updateLogDevID() async throws {
+        print("🔄🔄🔄🔄🔄 1. updateLogDevID 호출")
+
+        let device_id = await UIDevice.persistentDeviceID
+        let email = self.getUserEmail
+        guard !email.isEmpty else {
+            print("⚠️ updateLogDevID: userEmail 비어있음")
+            return
+        }
+
+        let userRef = FirebaseManager.shared.db.collection("Users").document(email)
+
+        do {
+            let resultAny = try await FirebaseManager.shared.db.runTransaction({ (txn, errorPointer) -> Any? in
+                do {
+                    let snap = try txn.getDocument(userRef)
+                    let savedDeviceID = snap.get("deviceID") as? String
+
+                    // 비어있거나 이미 내 값이면 set/update, 다른 기기 값이면 덮어쓰지 않음
+                    if savedDeviceID == nil || savedDeviceID == device_id {
+                        txn.updateData(["deviceID": device_id], forDocument: userRef)
+                        return NSNumber(value: true)
+                    } else {
+                        return NSNumber(value: false)
+                    }
+                } catch {
+                    // 트랜잭션 블록은 throw 할 수 없으므로 NSErrorPointer로 전달
+                    errorPointer?.pointee = error as NSError
+                    return nil
+                }
+            })
+            let updated: Bool = (resultAny as? NSNumber)?.boolValue ?? false
+            print("로그인 기기 ID 변경 트랜잭션 완료, updated=\(updated)")
+        } catch {
+            print("로그인 기기 ID 변경 실패(tx): \(error)")
+        }
+
+        // 리스너 보장
+        try await self.setupDevIDListener()
+        print("🔄🔄🔄🔄🔄 updateLogDevID 호출 끝")
+    }
+    
     func startUserProfileListener(email: String) {
         userProfileListener?.remove()
         userProfileListener = nil
@@ -52,67 +149,6 @@ class LoginManager {
                 print("❌ 프로필 리스너 에러: \(error)")
             }
         }
-    }
-    
-    // 중복 로그인 탐지
-    func setupDevIDListener() async throws {
-        print("🔄🔄🔄🔄🔄 setupDevIDListener 호출")
-        let userRef = FirebaseManager.shared.db.collection("Users").document(self.getUserEmail)
-        deviceIDListener = userRef.addSnapshotListener({ [weak self] documentSnapshot, error in
-            guard let self = self else { return }
-            
-            if let error = error {
-                print("사용자 문서 불러오기 실패: \(error.localizedDescription)")
-                return
-            }
-            
-            guard let document = documentSnapshot,
-                  let deviceID = document.data()?["deviceID"] as? String else {
-                return
-            }
-            
-            // 다른 기기에서 로그인 감지
-            if deviceID != UIDevice.persistentDeviceID {
-                DispatchQueue.main.async {
-                    AlertManager.showDuplicateLoginAlert()
-                    self.deviceIDListener?.remove()
-                    self.deviceIDListener = nil
-                }
-            }
-        })
-        
-        print("🔄🔄🔄🔄🔄 setupDevIDListener 호출 끝")
-    }
-    
-    // 중복 로그인 방지를 위한 로그인 기기 ID 변경
-    func updateLogDevID() async throws {
-        print("🔄🔄🔄🔄🔄 1. updateLogDevID 호출")
-        
-        do {
-            
-            let device_id = await UIDevice.persistentDeviceID
-            print("🔄🔄🔄🔄🔄 2. deviceID", device_id)
-            let userRef = FirebaseManager.shared.db.collection("Users").document(self.getUserEmail)
-            print("🔄🔄🔄🔄🔄 3. userRef", userRef)
-            
-            
-            let document = try await userRef.getDocument()
-            if let savedDeviceID = document.get("deviceID") as? String,
-               savedDeviceID == device_id {
-                print("이전과 동일한 기기")
-                return
-            }
-            
-            try await userRef.updateData(["deviceID": device_id])
-            
-            print("로그인 기기 ID 변경")
-//            try await self.setupDevIDListener()
-            print("🔄🔄🔄🔄🔄 updateLogDevID 호출 끝")
-        } catch {
-            print("로그인 기기 ID 변경 실패: \(error)")
-        }
-        
-        try await self.setupDevIDListener()
     }
     
     func loadUserProfile() async -> Result<UserProfile, Error> {

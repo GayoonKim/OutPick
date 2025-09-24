@@ -51,7 +51,7 @@ class SocketIOManager {
     
     private init() {
         //manager = SocketManager(socketURL: URL(string: "http://127.0.0.1:3000")!, config: [.log(true), .compress])
-        manager = SocketManager(socketURL: URL(string: "http://192.168.123.187:3000")!, config: [.log(true), .compress])
+        manager = SocketManager(socketURL: URL(string: "http://192.168.123.113:3000")!, config: [.log(true), .compress])
         socket = manager.defaultSocket
         
         socket.on(clientEvent: .connect) {data, ack in
@@ -208,35 +208,34 @@ class SocketIOManager {
     }
     
     func sendMessages(_ room: ChatRoom, _ message: ChatMessage) {
+        // 1. Optimistic UI: Publish the message immediately as not failed
+        // 2. If not connected, mark as failed and publish (again, so UI can update)
         guard socket.status == .connected else {
             print("소켓이 연결되지 않음")
             var failedMessage = message
             failedMessage.isFailed = true
-            
             DispatchQueue.main.async {
                 self.roomSubjects[room.ID ?? ""]?.send(failedMessage)
             }
-            
             return
         }
-        
+
         let payload = message.toSocketRepresentation()
         print("📤 전송할 소켓 데이터: \(payload)")  // 디버깅용
 
         socket.emitWithAck("chat message", payload).timingOut(after: 5) { [weak self] ackResponse in
             guard let self = self else { return }
-            
+
             let ackDict = ackResponse.first as? [String:Any]
-            
             let ok = (ackDict?["ok"] as? Bool) ?? (ackDict?["success"] as? Bool) ?? false
             let duplicate = (ackDict?["duplicate"] as? Bool) ?? false
-            
+
             if ok || duplicate {
-                Task { await FirebaseManager.shared.updateRoomLastMessageAt(roomID: room.ID ?? "", date: message.sentAt) }
-//                DispatchQueue.main.async {
-//                    self.roomSubjects[room.ID ?? ""]?.send(message)
-//                }
+                Task {
+                    await FirebaseManager.shared.updateRoomLastMessageAt(roomID: room.ID ?? "", date: message.sentAt)
+                }
             } else {
+                // Failure: mark the same message as failed and re-publish for UI update
                 var failedMessage = message
                 failedMessage.isFailed = true
                 DispatchQueue.main.async {
@@ -244,7 +243,6 @@ class SocketIOManager {
                 }
             }
         }
-        
     }
     
     func sendImages(_ room: ChatRoom, _ images: [UIImage]) {
@@ -291,7 +289,7 @@ class SocketIOManager {
             
             let finalAttachments = attachments.compactMap { $0 }
 //            let images = finalAttachments.compactMap{ $0.toUIImage() }
-            let message = ChatMessage(roomID: room.ID ?? "", senderID: LoginManager.shared.getUserEmail, senderNickname: LoginManager.shared.currentUserProfile?.nickname ?? "", msg: "", sentAt: Date(), attachments: finalAttachments, replyPreview: nil)
+            let message = ChatMessage(ID: UUID().uuidString, roomID: room.ID ?? "", senderID: LoginManager.shared.getUserEmail, senderNickname: LoginManager.shared.currentUserProfile?.nickname ?? "", msg: "", sentAt: Date(), attachments: finalAttachments, replyPreview: nil)
             
             socket.emitWithAck("send images", ["roomID": message.roomID, "senderID": message.senderID, "senderNickName": message.senderNickname, "sentAt": "\(message.sentAt ?? Date())", "images": imageDataArray]).timingOut(after: 7) { ackResponse in
                 
@@ -330,6 +328,7 @@ class SocketIOManager {
         }
 
         let failedMessage = ChatMessage(
+            ID: UUID().uuidString,
             roomID: room.ID ?? "",
             senderID: LoginManager.shared.getUserEmail,
             senderNickname: LoginManager.shared.currentUserProfile?.nickname ?? "",

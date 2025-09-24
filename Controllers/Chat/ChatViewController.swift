@@ -61,6 +61,13 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         case readMarker
     }
     
+    enum MessageUpdateType {
+        case older
+        case newer
+        case reload
+        case initial
+    }
+    
     var room: ChatRoom?
     var roomID: String?
     var isRoomSaving: Bool = false
@@ -81,10 +88,15 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private static var lastTriggeredOlderIndex: Int?
     private static var lastTriggeredNewerIndex: Int?
     
+    private var deletionListener: ListenerRegistration?
+    
     deinit {
         print("💧 ChatViewController deinit")
         convertImagesTask?.cancel()
         convertVideosTask?.cancel()
+        
+        deletionListener?.remove()
+        deletionListener = nil
     }
     
     private lazy var containerView: UIView = {
@@ -172,6 +184,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         return v
     }()
     
+    // Delete confirm overlay
+    private var deleteDimView: UIControl?
+    private var deleteConfirmView: DeleteConfirmView?
+    
     private let imagesSubject = CurrentValueSubject<[UIImage], Never>([])
     private var imagesPublishser: AnyPublisher<[UIImage], Never> {
         return imagesSubject.eraseToAnyPublisher()
@@ -257,6 +273,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         convertImagesTask?.cancel()
         convertVideosTask?.cancel()
         
+        deletionListener?.remove()
+        deletionListener = nil
+        
         removeReadMarkerIfNeeded()
         
         // 참여하지 않은 방이면 로컬 메시지 삭제 처리
@@ -287,7 +306,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         if let room = self.room {
             ChatViewController.currentRoomID = room.ID
         } // ✅ 현재 방 ID 저장
-        bindMessagePublishers()
+//        bindMessagePublishers()
     }
 
     override func viewDidLayoutSubviews() {
@@ -306,32 +325,68 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             guard room.participants.contains(LoginManager.shared.getUserEmail) else { return }
             
             do {
-                // GRDB + Firebase 동시 실행
-                async let local = GRDBManager.shared.fetchRecentMessages(inRoom: room.ID ?? "", limit: 200)
-                async let server = FirebaseManager.shared.fetchMessagesPaged(for: room, pageSize: 300, reset: true)
-                
-                let (localMessages, serverMessages) = try await (local, server)
-                
-                print(#function, "✅ GRDB 최근 메시지 200개 로드 완료.", localMessages)
-                print(#function, "✅ Firebase 최근 메시지 300개 로드 및 GRDB 저장 완료.", serverMessages)
-                
-                // GRDB 먼저 반영 → UI 빠른 응답
-                addMessages(localMessages)
+                // 1. GRDB 로드
+                let localMessages = try await GRDBManager.shared.fetchRecentMessages(inRoom: room.ID ?? "", limit: 200)
+                addMessages(localMessages, updateType: .initial)
                 self.lastReadMessageID = localMessages.last?.ID
                 
-                // 서버 메시지 저장 + 반영
+                // 2. 삭제 상태 동기화
+                await syncDeletedStates(localMessages: localMessages, room: room)
+                
+                // 3. Firebase 전체 메시지 로드
+                let serverMessages = try await FirebaseManager.shared.fetchMessagesPaged(for: room, pageSize: 300, reset: true)
                 try await GRDBManager.shared.saveChatMessages(serverMessages)
-                addMessages(serverMessages, isNewer: true)
+                addMessages(serverMessages, updateType: .newer)
                 
                 isUserInCurrentRoom = true
+                bindMessagePublishers()
             } catch {
                 print("❌ 메시지 초기화 실패:", error)
             }
             isInitialLoading = false
         }
     }
+    
+    @MainActor
+    private func syncDeletedStates(localMessages: [ChatMessage], room: ChatRoom) async {
+        do {
+            // 1) 로컬 200개 메시지의 ID / 삭제상태 맵
+            let localIDs = localMessages.map { $0.ID }
+            let localDeletionStates = Dictionary(uniqueKeysWithValues: localMessages.map { ($0.ID, $0.isDeleted) })
 
-    // MARK: - 메시지 페이징 로드
+            // 2) 서버에서 해당 ID들의 삭제 상태만 조회 (chunked IN query)
+            let serverMap = try await FirebaseManager.shared.fetchDeletionStates(roomID: room.ID ?? "", messageIDs: localIDs)
+
+            // 3) 서버가 true인데 로컬은 false인 ID만 업데이트 대상
+            let idsToUpdate: [String] = localIDs.filter { (serverMap[$0] ?? false) && ((localDeletionStates[$0] ?? false) == false) }
+            guard !idsToUpdate.isEmpty else { return }
+
+            let roomID = room.ID ?? ""
+
+            // 4) GRDB 영속화: 원본 isDeleted + 해당 원본을 참조하는 replyPreview.isDeleted
+            try await GRDBManager.shared.updateMessagesIsDeleted(idsToUpdate, isDeleted: true, inRoom: roomID)
+            try await GRDBManager.shared.updateReplyPreviewsIsDeleted(referencing: idsToUpdate, isDeleted: true, inRoom: roomID)
+
+            // 5) UI 배치 리로드 셋업
+            //    - 원본: isDeleted=true로 마킹된 복사본
+            let deletedMessages: [ChatMessage] = localMessages
+                .filter { idsToUpdate.contains($0.ID) }
+                .map { msg in var copy = msg; copy.isDeleted = true; return copy }
+
+            //    - 답장: replyPreview.messageID ∈ idsToUpdate → replyPreview.isDeleted=true 복사본
+            let affectedReplies: [ChatMessage] = localMessages
+                .filter { msg in (msg.replyPreview?.messageID).map(idsToUpdate.contains) ?? false }
+                .map { reply in var copy = reply; copy.replyPreview?.isDeleted = true; return copy }
+
+            let toReload = deletedMessages + affectedReplies
+            if !toReload.isEmpty {
+                addMessages(toReload, updateType: .reload)
+            }
+        } catch {
+            print("❌ 삭제 상태 동기화 실패:", error)
+        }
+    }
+
     @MainActor
     private func removeReadMarkerIfNeeded() {
         var snapshot = dataSource.snapshot()
@@ -389,7 +444,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 for i in stride(from: 0, to: total, by: chunkSize) {
                     let end = min(i + chunkSize, total)
                     let chunk = Array(loadedMessages[i..<end])
-                    addMessages(chunk, isOlder: true)
+                    addMessages(chunk, updateType: .older)
                 }
             }
         } catch {
@@ -428,7 +483,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 for i in stride(from: 0, to: total, by: chunkSize) {
                     let end = min(i + chunkSize, total)
                     let chunk = Array(server[i..<end])
-                    addMessages(chunk, isNewer: true)
+                    addMessages(chunk, updateType: .newer)
                 }
             }
         } catch {
@@ -437,18 +492,53 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
 
     private func bindMessagePublishers() {
-        print(#function, "✅✅✅✅✅ 1. SocketIOManager.shared.subscribeToMessages 호출 직전")
-        
         guard let room = self.room else { return }
         SocketIOManager.shared.subscribeToMessages(for: room.ID ?? "")
             .sink { [weak self] receivedMessage in
                 guard let self = self else { return }
                 Task {
-                    print(#function, "handleIncomingMessage 호출")
                     await self.handleIncomingMessage(receivedMessage)
                 }
             }
             .store(in: &cancellables)
+        
+        deletionListener = FirebaseManager.shared.listenToDeletedMessages(roomID: room.ID ?? "") { [weak self] deletedMessageID in
+            guard let self = self else { return }
+            Task { @MainActor in
+                let roomID = room.ID ?? ""
+
+                // 1) GRDB 영속화: 원본 + 답장 preview
+                do {
+                    try await GRDBManager.shared.updateMessagesIsDeleted([deletedMessageID], isDeleted: true, inRoom: roomID)
+                    try await GRDBManager.shared.updateReplyPreviewsIsDeleted(referencing: [deletedMessageID], isDeleted: true, inRoom: roomID)
+                } catch {
+                    print("❌ GRDB deletion persistence failed:", error)
+                }
+
+                // 2) messageMap 최신화 및 배치 리로드 목록 구성
+                var toReload: [ChatMessage] = []
+
+                if var deletedMsg = self.messageMap[deletedMessageID] {
+                    deletedMsg.isDeleted = true
+                    self.messageMap[deletedMessageID] = deletedMsg
+                    toReload.append(deletedMsg)
+                } else {
+                    print("⚠️ deleted message not in window: \(deletedMessageID)")
+                }
+
+                let repliesInWindow = self.messageMap.values.filter { $0.replyPreview?.messageID == deletedMessageID }
+                for var reply in repliesInWindow {
+                    reply.replyPreview?.isDeleted = true
+                    self.messageMap[reply.ID] = reply
+                    toReload.append(reply)
+                }
+
+                // 3) UI 반영 (한 번만)
+                if !toReload.isEmpty {
+                    self.addMessages(toReload, updateType: .reload)
+                }
+            }
+        }
     }
     
     /// 수신 메시지를 저장 및 UI 반영
@@ -468,7 +558,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 await cacheAttachmentsIfNeeded(for: message, in: room.ID ?? "")
             }
             
-            addMessages([message], isNewer: true)
+            addMessages([message], updateType: .newer)
         } catch {
             print("❌ 메시지 처리 실패: \(error)")
         }
@@ -541,8 +631,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             self.chatUIView.updateHeight()
             self.chatUIView.sendButton.isEnabled = false
         
-        let newMessage = ChatMessage(roomID: room.ID ?? "", senderID: LoginManager.shared.getUserEmail, senderNickname: LoginManager.shared.currentUserProfile?.nickname ?? "", msg: message, sentAt: Date(), attachments: [], replyPreview: replyMessage)
-        
+        let newMessage = ChatMessage(ID: UUID().uuidString, roomID: room.ID ?? "", senderID: LoginManager.shared.getUserEmail, senderNickname: LoginManager.shared.currentUserProfile?.nickname ?? "", msg: message, sentAt: Date(), attachments: [], replyPreview: replyMessage)
+
         Task.detached {
             SocketIOManager.shared.sendMessages(room, newMessage)
         }
@@ -1121,7 +1211,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private func showCustomMenu(at indexPath: IndexPath/*, aboveCell: Bool*/) {
         guard let cell = chatMessageCollectionView.cellForItem(at: indexPath) as? ChatMessageCell,
               let item = dataSource.itemIdentifier(for: indexPath),
-              case let .message(message) = item else { return }
+              case let .message(message) = item,
+              message.isDeleted == false else { return }
         
         // 1.셀 강조하기
         cell.setHightlightedOverlay(true)
@@ -1161,16 +1252,29 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             self.handleReply(message: message)
             self.dismissCustomMenu()
         }
+        
         chatCustomMenu.onCopy = { [weak self] in
             guard let self = self else { return }
             self.handleCopy(message: message)
             self.dismissCustomMenu()
         }
+        
         chatCustomMenu.onDelete = { [weak self] in
             guard let self = self else { return }
-            self.handleDelete(message: message)
+            DeleteConfirmView.present(in: self.view,
+                                      message: "삭제 시 모든 사용자의 채팅창에서 메시지가 삭제되며\n‘삭제된 메시지입니다.’로 표기됩니다.",
+                                      onConfirm: { [weak self] in
+                guard let self = self else { return }
+                self.handleDelete(message: message)
+                return
+            },
+                                      onCancel: {
+                return
+            }
+            )
             self.dismissCustomMenu()
         }
+        
         chatCustomMenu.onReport = { [weak self] in
             self?.handleReport(message: message)
             self?.dismissCustomMenu()
@@ -1194,14 +1298,30 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     private func handleCopy(message: ChatMessage) {
         UIPasteboard.general.string = message.msg
-        print(#function, "복사:", message.msg ?? "")
+        print(#function, "복사:", message)
         // 필요 시 UI 피드백
         showSuccess("메시지가 복사되었습니다.")
     }
     
     private func handleDelete(message: ChatMessage) {
-        // 삭제 로직 구현 (Diffable Data Source snapshot 업데이트 등)
-        print(#function, "삭제:", message)
+        Task {
+            guard let room = self.room else { return }
+            let messageID = message.ID
+            do {
+                // 1. GRDB 업데이트
+                try await GRDBManager.shared.updateMessagesIsDeleted([messageID], isDeleted: true, inRoom: room.ID ?? "")
+
+                // 2. Firestore 업데이트
+                do {
+                    try await FirebaseManager.shared.updateMessageIsDeleted(roomID: room.ID ?? "", messageID: messageID)
+                    print("✅ 메시지 삭제 성공: \(messageID)")
+                } catch {
+                    print("❌ 메시지 Firestore 삭제 처리 실패:", error)
+                }
+            } catch {
+                print("❌ 메시지 삭제 처리 실패:", error)
+            }
+        }
     }
     
     @objc private func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
@@ -1274,23 +1394,25 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     //MARK: Diffable Data Source
     private func configureDataSource() {
-        print(#function)
         dataSource = UICollectionViewDiffableDataSource<Section, Item>(collectionView: chatMessageCollectionView) { [weak self] collectionView, indexPath, item in
             guard let self = self else { return  nil }
             
             switch item {
             case .message(let message):
                 let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ChatMessageCell.reuseIdentifier, for: indexPath) as! ChatMessageCell
-                
-                if message.attachments.isEmpty {
-                    cell.configureWithMessage(with: message/*, originalPreviewProvider: originalPreviewClosure*/)
+
+                // ✅ Always prefer the latest state from messageMap
+                let latestMessage = self.messageMap[message.ID] ?? message
+
+                if latestMessage.attachments.isEmpty {
+                    cell.configureWithMessage(with: latestMessage)
                 } else {
-                    cell.configureWithImage(with: message)
+                    cell.configureWithImage(with: latestMessage)
                 }
-                
-                let keyword = self.highlightedMessageIDs.contains(message.ID) ? self.currentSearchKeyword : nil
+
+                let keyword = self.highlightedMessageIDs.contains(latestMessage.ID) ? self.currentSearchKeyword : nil
                 cell.highlightKeyword(keyword)
-                
+
                 return cell
             case .dateSeparator(let date):
                 let cell = collectionView.dequeueReusableCell(withReuseIdentifier: DateSeperatorCell.reuseIdentifier, for: indexPath) as! DateSeperatorCell
@@ -1319,74 +1441,123 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         dataSource.apply(snapshot, animatingDifferences: false)
         chatMessageCollectionView.scrollToBottom()
     }
-    
+
     @MainActor
-    func addMessages(_ messages: [ChatMessage], isOlder: Bool = false, isNewer: Bool = false) {
+    func addMessages(_ messages: [ChatMessage], updateType: MessageUpdateType = .initial) {
         let windowSize = 300
-        var items: [Item] = []
+        var snapshot = dataSource.snapshot()
         
-        let snapshot = dataSource.snapshot()
-        let existingIDs = snapshot.itemIdentifiers.compactMap { item -> String? in
-            if case .message(let m) = item { return m.ID }
-            return nil
+        if updateType == .reload {
+            reloadDeletedMessages(messages)
+            return
         }
         
+        let existingIDs = snapshot.itemIdentifiers.compactMap { if case .message(let m) = $0 { return m.ID } else { return nil } }
         let newMessages = messages.filter { !existingIDs.contains($0.ID) }
+        let items = buildNewItems(from: newMessages)
         
-        let hasReadMarker = snapshot.itemIdentifiers.contains { item in
-            if case .readMarker = item { return true }
+        insertItems(items, into: &snapshot, updateType: updateType)
+        insertReadMarkerIfNeeded(newMessages, items: items, into: &snapshot, updateType: updateType)
+        applyVirtualization(on: &snapshot, updateType: updateType, windowSize: windowSize)
+        
+        dataSource.apply(snapshot, animatingDifferences: false)
+    }
+
+    // MARK: - Private Helpers for addMessages
+    private func reloadDeletedMessages(_ messages: [ChatMessage]) {
+        // 1) 최신 상태를 먼저 캐시
+        for msg in messages { messageMap[msg.ID] = msg }
+
+        // 2) 스냅샷에서 실제로 존재하는 동일 ID 아이템만 추려서 reload
+        var snapshot = dataSource.snapshot()
+        let targetIDs = Set(messages.map { $0.ID })
+        let itemsToReload = snapshot.itemIdentifiers.filter { item in
+            if case let .message(m) = item { return targetIDs.contains(m.ID) }
             return false
         }
-        
+
+        guard !itemsToReload.isEmpty else { return }
+        snapshot.reloadItems(itemsToReload)
+        dataSource.apply(snapshot, animatingDifferences: false)
+    }
+
+    private func buildNewItems(from newMessages: [ChatMessage]) -> [Item] {
+        var items: [Item] = []
         for message in newMessages {
             messageMap[message.ID] = message
             let messageDate = Calendar.current.startOfDay(for: message.sentAt ?? Date())
-            
             if lastMessageDate == nil || lastMessageDate! != messageDate {
                 items.append(.dateSeparator(message.sentAt ?? Date()))
                 lastMessageDate = messageDate
             }
-            
             items.append(.message(message))
         }
-        
-        var updatedSnapshot = snapshot
-        if isOlder {
-            if let firstItem = snapshot.itemIdentifiers.first {
-                updatedSnapshot.insertItems(items, beforeItem: firstItem)
-            } else {
-                updatedSnapshot.appendItems(items, toSection: .main)
-            }
-        } else if isNewer {
-            updatedSnapshot.appendItems(items, toSection: .main)
-        } else {
-            updatedSnapshot.appendItems(items, toSection: .main)
-        }
-        
-        // Insert readMarker only for newer messages
-        if isNewer, !hasReadMarker, let lastMessageID = self.lastReadMessageID, !isUserInCurrentRoom,
-           let firstMessage = newMessages.first, firstMessage.ID != lastMessageID {
-            if let firstNewItem = items.first(where: { if case .message = $0 { return true }; return false }) {
-                updatedSnapshot.insertItems([.readMarker], beforeItem: firstNewItem)
-            }
-        }
+        return items
+    }
 
-        // Virtualization: keep only windowSize items in snapshot
-        let allItems = updatedSnapshot.itemIdentifiers
+    private func insertItems(_ items: [Item], into snapshot: inout NSDiffableDataSourceSnapshot<Section, Item>, updateType: MessageUpdateType) {
+        if updateType == .older {
+            if let firstItem = snapshot.itemIdentifiers.first {
+                snapshot.insertItems(items, beforeItem: firstItem)
+            } else {
+                snapshot.appendItems(items, toSection: .main)
+            }
+        } else {
+            snapshot.appendItems(items, toSection: .main)
+        }
+    }
+
+    private func insertReadMarkerIfNeeded(_ newMessages: [ChatMessage], items: [Item], into snapshot: inout NSDiffableDataSourceSnapshot<Section, Item>, updateType: MessageUpdateType) {
+        let hasReadMarker = snapshot.itemIdentifiers.contains { if case .readMarker = $0 { return true } else { return false } }
+        if updateType == .newer, !hasReadMarker, let lastMessageID = self.lastReadMessageID, !isUserInCurrentRoom,
+           let firstMessage = newMessages.first, firstMessage.ID != lastMessageID {
+            if let firstNewItem = items.first(where: { if case .message = $0 { return true } else { return false } }) {
+                snapshot.insertItems([.readMarker], beforeItem: firstNewItem)
+            }
+        }
+    }
+
+    private func applyVirtualization(on snapshot: inout NSDiffableDataSourceSnapshot<Section, Item>, updateType: MessageUpdateType, windowSize: Int) {
+        let allItems = snapshot.itemIdentifiers
         if allItems.count > windowSize {
             let toRemoveCount = allItems.count - windowSize
-            if isOlder {
-                // Remove from the end (recent messages)
+            if updateType == .older {
                 let itemsToRemove = Array(allItems.suffix(toRemoveCount))
-                updatedSnapshot.deleteItems(itemsToRemove)
-            } else if isNewer {
-                // Remove from the start (old messages)
+                snapshot.deleteItems(itemsToRemove)
+            } else if updateType == .newer {
                 let itemsToRemove = Array(allItems.prefix(toRemoveCount))
-                updatedSnapshot.deleteItems(itemsToRemove)
+                snapshot.deleteItems(itemsToRemove)
             }
         }
-        
-        dataSource.apply(updatedSnapshot, animatingDifferences: false)
+        // --- Virtualization cleanup: prune messageMap and date separators ---
+        let allItemsAfterVirtualization = snapshot.itemIdentifiers
+        let remainingMessageIDs: Set<String> = Set(
+            allItemsAfterVirtualization.compactMap { item in
+                if case .message(let m) = item { return m.ID } else { return nil }
+            }
+        )
+        messageMap = messageMap.filter { remainingMessageIDs.contains($0.key) }
+        var dateSeparatorsToDelete: [Item] = []
+        let presentMessageDates: Set<Date> = Set(
+            allItemsAfterVirtualization.compactMap { item in
+                if case .message(let m) = item {
+                    return Calendar.current.startOfDay(for: m.sentAt ?? Date())
+                }
+                return nil
+            }
+        )
+        for item in allItemsAfterVirtualization {
+            if case .dateSeparator(let date) = item {
+                let day = Calendar.current.startOfDay(for: date)
+                if !presentMessageDates.contains(day) {
+                    dateSeparatorsToDelete.append(item)
+                }
+            }
+        }
+        if !dateSeparatorsToDelete.isEmpty {
+            snapshot.deleteItems(dateSeparatorsToDelete)
+        }
+        // --- End of cleanup ---
     }
     
     private func updateCollectionView(with newItems: [Item]) {

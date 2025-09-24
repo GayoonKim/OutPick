@@ -495,7 +495,7 @@ class FirebaseManager {
     func saveMessage(_ message: ChatMessage, _ room: ChatRoom) async throws /*-> String*/ {
         do {
             let roomDoc = try await getRoomDoc(room: room)
-            let messageRef = roomDoc?.reference.collection("Messages").document() // 자동 ID 생성
+            let messageRef = roomDoc?.reference.collection("Messages").document(message.ID) // 자동 ID 생성
 
             try await messageRef?.setData(message.toDict())
             
@@ -503,6 +503,87 @@ class FirebaseManager {
         } catch {
             print("메시지 전송 및 저장 실패")
         }
+    }
+    
+    
+    
+    /// 특정 방에서 isDeleted = true 상태만 감지하는 리스너
+    func listenToDeletedMessages(roomID: String,
+                                 onDeleted: @escaping (String) -> Void) -> ListenerRegistration {
+        return db.collection("Rooms")
+            .document(roomID)
+            .collection("Messages")
+            .whereField("isDeleted", isEqualTo: true)
+            .addSnapshotListener { snapshot, error in
+                if let error = error {
+                    print("❌ listenToDeletedMessages 오류: \(error)")
+                    return
+                }
+                guard let snapshot = snapshot else { return }
+                
+                for change in snapshot.documentChanges {
+                    if change.type == .added || change.type == .modified {
+                        let doc = change.document
+                        let mid = (doc.get("ID") as? String) ?? doc.documentID
+                        onDeleted(mid)
+                        print("🗑 삭제 감지된 메시지: messageID=\(mid), docID=\(doc.documentID)")
+                    }
+                }
+            }
+    }
+
+    // 특정 메시지의 isDeleted 상태를 true로 업데이트
+    func updateMessageIsDeleted(roomID: String, messageID: String) async throws {
+        guard !roomID.isEmpty, !messageID.isEmpty else {
+            throw FirebaseError.FailedToFetchRoom
+        }
+        do {
+            let query = db.collection("Rooms")
+                .document(roomID)
+                .collection("Messages")
+                .whereField("ID", isEqualTo: messageID)
+                .limit(to: 10)
+            let snapshot = try await query.getDocuments()
+            guard snapshot.isEmpty == false else {
+                print("⚠️ 메시지 문서를 찾을 수 없음 (roomID=\(roomID), messageID=\(messageID))")
+                throw FirebaseError.FailedToFetchRoom
+            }
+            for doc in snapshot.documents {
+                try await doc.reference.updateData(["isDeleted": true])
+                print("✅ 메시지 삭제 업데이트 성공: docID=\(doc.documentID), messageID=\(messageID)")
+            }
+        } catch {
+            print("🔥 메시지 삭제 업데이트 실패: \(error)")
+            throw error
+        }
+    }
+
+    func fetchDeletionStates(roomID: String, messageIDs: [String]) async throws -> [String: Bool] {
+        guard !roomID.isEmpty else { throw FirebaseError.FailedToFetchRoom }
+        guard !messageIDs.isEmpty else { return [:] }
+
+        var result: [String: Bool] = [:]
+        // Firestore `in` 쿼리는 한 번에 전달할 수 있는 값 개수에 제한이 있으니 보수적으로 10개씩 청크 처리
+        let chunkSize = 10
+        var start = 0
+        while start < messageIDs.count {
+            let end = min(start + chunkSize, messageIDs.count)
+            let chunk = Array(messageIDs[start..<end])
+            start = end
+
+            let snap = try await db.collection("Rooms")
+                .document(roomID)
+                .collection("Messages")
+                .whereField("ID", in: chunk)
+                .getDocuments()
+
+            for doc in snap.documents {
+                let mid = (doc.get("ID") as? String) ?? doc.documentID
+                let isDel = (doc.get("isDeleted") as? Bool) ?? false
+                result[mid] = isDel
+            }
+        }
+        return result
     }
 
     // Firestore에서 메시지 페이징과 중복 방지까지 지원하는 fetch 함수 예시
