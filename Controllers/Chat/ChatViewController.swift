@@ -184,9 +184,30 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         return v
     }()
     
+    // 공지 배너 (고정/접기/만료 안내 지원)
+    private lazy var announcementBanner: AnnouncementBannerView = {
+        let v = AnnouncementBannerView()
+        v.translatesAutoresizingMaskIntoConstraints = false
+        v.isHidden = true
+        v.onHeightChange = { [weak self] in
+            guard let self = self else { return }
+            self.adjustForBannerHeight()
+        }
+        
+        // Long-press on the announcement banner (to show options or toggle expand)
+        let bannerLongPress = UILongPressGestureRecognizer(target: self, action: #selector(handleAnnouncementBannerLongPress(_:)))
+        bannerLongPress.minimumPressDuration = 0.35
+        bannerLongPress.cancelsTouchesInView = true
+        v.addGestureRecognizer(bannerLongPress)
+        // Ensure the global long press (used for message cells) doesn't steal this interaction
+        self.longPressGesture.require(toFail: bannerLongPress)
+        return v
+    }()
+    private var baseTopInsetForBanner: CGFloat?
+    
     // Delete confirm overlay
-    private var deleteDimView: UIControl?
-    private var deleteConfirmView: DeleteConfirmView?
+    private var confirmDimView: UIControl?
+    private var confirmView: ConfirmView?
     
     private let imagesSubject = CurrentValueSubject<[UIImage], Never>([])
     private var imagesPublishser: AnyPublisher<[UIImage], Never> {
@@ -253,6 +274,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        guard let room = self.room else { return }
+        FirebaseManager.shared.stopListenRoomDoc(roomID: room.ID ?? "")
     }
     
     override func viewWillDisappear(_ animated: Bool) {
@@ -750,20 +773,59 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private func bindRoomChangePublisher() {
         if hasBoundRoomChange { return }
         hasBoundRoomChange = true
+        
         // 실시간 방 업데이트 관련
         FirebaseManager.shared.roomChangePublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] updatedRoom in
-                guard let self = self
-                      /*let _ = self.room*/ else { return }
-                print(#function, "ChatViewController.swift 방 정보 변경: \(updatedRoom)")
+                guard let self = self else { return }
+                let previousRoom = self.room
                 self.room = updatedRoom
+                print(#function, "ChatViewController.swift 방 정보 변경: \(updatedRoom)")
                 Task { @MainActor in
-                    self.updateNavigationTitle(with: updatedRoom)
-                    try await self.syncProfilesWithLocalDB(emails: updatedRoom.participants)
+                    await self.applyRoomDiffs(old: previousRoom, new: updatedRoom)
                 }
             }
             .store(in: &cancellables)
+    }
+
+    /// 방 정보(old → new) 변경점을 비교하고 필요한 UI/동기화만 수행
+    @MainActor
+    private func applyRoomDiffs(old: ChatRoom?, new: ChatRoom) async {
+        // 최초 바인딩 또는 이전 정보가 없을 때: 전체 초기화 느낌으로 처리
+        guard let old = old else {
+            updateNavigationTitle(with: new)
+            do { try await syncProfilesWithLocalDB(emails: new.participants) } catch { print("❌ 프로필 동기화 실패: \(error)") }
+            setupAnnouncementBannerIfNeeded()
+            updateAnnouncementBanner(with: new.activeAnnouncement)
+            return
+        }
+
+        // 1) 타이틀/참여자 수 변경 시 상단 네비바만 갱신
+        if old.roomName != new.roomName || old.participants.count != new.participants.count {
+            updateNavigationTitle(with: new)
+        }
+
+        // 2) 참여자 변경 시, 새로 추가된 사용자만 동기화(최소화)
+        let oldSet = Set(old.participants)
+        let newSet = Set(new.participants)
+        let joined = Array(newSet.subtracting(oldSet))
+        if !joined.isEmpty {
+            do { try await syncProfilesWithLocalDB(emails: joined) } catch { print("❌ 프로필 부분 동기화 실패: \(error)") }
+        }
+
+        // 3) 공지 변경 감지: ID/업데이트 시각/본문/작성자 중 하나라도 달라지면 배너 갱신
+        let announcementChanged: Bool = {
+            if old.activeAnnouncementID != new.activeAnnouncementID { return true }
+            if old.announcementUpdatedAt != new.announcementUpdatedAt { return true }
+            if old.activeAnnouncement?.text != new.activeAnnouncement?.text { return true }
+            if old.activeAnnouncement?.authorID != new.activeAnnouncement?.authorID { return true }
+            return false
+        }()
+        if announcementChanged {
+            setupAnnouncementBannerIfNeeded()
+            updateAnnouncementBanner(with: new.activeAnnouncement)
+        }
     }
     
     @objc private func handleRoomSaveCompleted(notification: Notification) {
@@ -824,6 +886,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 joinRoomBtn.isHidden = true
                 try await self.syncProfilesWithLocalDB(emails: room.participants)
                 self.bindRoomChangePublisher()
+                FirebaseManager.shared.startListenRoomDoc(roomID: room.ID ?? "")
+                self.setupAnnouncementBannerIfNeeded()
+                self.updateAnnouncementBanner(with: room.activeAnnouncement)
             } else {
                 setJoinRoombtn()
                 joinRoomBtn.isHidden = false
@@ -894,11 +959,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 
                 // 5. UI 업데이트
                 await MainActor.run {
-//                    self.updateNavigationTitle(with: updatedRoom)
                     self.setupChatUI()
                     self.chatUIView.isHidden = false
                     self.chatMessageCollectionView.isHidden = false
                     self.bindRoomChangePublisher()
+                    FirebaseManager.shared.startListenRoomDoc(roomID: updatedRoom.ID ?? "")
                     self.view.layoutIfNeeded()
                 }
                 
@@ -959,12 +1024,16 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             self.detachInteractiveDismissGesture()
             
             let settingVC = ChatRoomSettingCollectionView(room: room, profiles: profiles, images: images)
-//            settingVC.modalPresentationStyle = .fullScreen
-//            present(settingVC, animated: true)
-//            settingVC.modalPresentationStyle = .custom
-//            settingVC.transitioningDelegate = self.sidePanelTransitioningDelegate
-//            self.present(settingVC, animated: true)
             self.presentSettingVC(settingVC)
+            
+            settingVC.onRoomUpdated = { [weak self] updatedRoom in
+                guard let self = self else { return }
+                Task { @MainActor in
+                    let old = self.room
+                    self.room = updatedRoom
+                    await self.applyRoomDiffs(old: old, new: updatedRoom)
+                }
+            }
         }
     }
     
@@ -1231,7 +1300,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
            let room = self.room {
             let isOwner = userProfile.nickname == message.senderNickname
             let isAdmin = room.creatorID == userProfile.email
-            chatCustomMenu.configurePrimaryActionMode(canDelete: isOwner || isAdmin)
+            
+            chatCustomMenu.configurePermissions(canDelete: isOwner || isAdmin, canAnnounce: isAdmin)
         }
         
         // 2.메뉴 위치를 셀 기준으로
@@ -1261,23 +1331,39 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         
         chatCustomMenu.onDelete = { [weak self] in
             guard let self = self else { return }
-            DeleteConfirmView.present(in: self.view,
+            ConfirmView.present(in: self.view,
                                       message: "삭제 시 모든 사용자의 채팅창에서 메시지가 삭제되며\n‘삭제된 메시지입니다.’로 표기됩니다.",
                                       onConfirm: { [weak self] in
                 guard let self = self else { return }
                 self.handleDelete(message: message)
-                return
-            },
-                                      onCancel: {
-                return
-            }
-            )
+            })
             self.dismissCustomMenu()
         }
         
         chatCustomMenu.onReport = { [weak self] in
             self?.handleReport(message: message)
             self?.dismissCustomMenu()
+        }
+        
+        chatCustomMenu.onAnnounce = { [weak self] in
+            guard let self = self else { return }
+            print(#function, "공지:", message.msg ?? "")
+            
+            ConfirmView.presentAnnouncement(in: self.view, onConfirm: { [weak self] in
+                guard let self = self else { return }
+                self.handleAnnouncement(message)
+            })
+            
+            self.dismissCustomMenu()
+        }
+    }
+    
+    private func handleAnnouncement(_ message: ChatMessage) {
+        let announcement = AnnouncementPayload(text: message.msg ?? "", authorID: LoginManager.shared.currentUserProfile?.nickname ?? "", createdAt: Date())
+        Task { @MainActor in
+            guard let room = self.room else { return }
+            try await FirebaseManager.shared.setActiveAnnouncement(roomID: room.ID ?? "", messageID: message.ID, payload: announcement)
+            showSuccess("공지를 등록했습니다.")
         }
     }
     
@@ -1326,10 +1412,36 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     @objc private func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
         guard gesture.state == .began else { return }
-        let location = gesture.location(in: chatMessageCollectionView/*.collectionView*/)
-        guard let indexPath = chatMessageCollectionView.indexPathForItem(at: location) else { return }
+        let location = gesture.location(in: chatMessageCollectionView)
+        if let indexPath = chatMessageCollectionView.indexPathForItem(at: location) {
+            showCustomMenu(at: indexPath)
+        }
+    }
+
+    @objc private func handleAnnouncementBannerLongPress(_ gesture: UILongPressGestureRecognizer) {
+        guard gesture.state == .began,
+              let room = self.room,
+              room.creatorID == LoginManager.shared.getUserEmail else { return }
         
-        showCustomMenu(at: indexPath)
+        // 확인 팝업 → 삭제 실행
+        ConfirmView.present(
+            in: self.view,
+            message: "현재 공지를 삭제할까요?\n삭제 시 모든 사용자의 배너에서 사라집니다.",
+            style: .prominent,
+            onConfirm: { [weak self] in
+                guard let self = self else { return }
+                Task { @MainActor in
+                    do {
+                        try await FirebaseManager.shared.clearActiveAnnouncement(roomID: room.ID ?? "")
+                        self.updateAnnouncementBanner(with: nil)   // 배너 숨김 + 인셋 복원
+                        self.showSuccess("공지를 삭제했습니다.")
+                    } catch {
+                        self.showSuccess("공지 삭제에 실패했습니다.")
+                        print("❌ 공지 삭제 실패:", error)
+                    }
+                }
+            }
+        )
     }
     
     private func dismissCustomMenu() {
@@ -1361,6 +1473,58 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 self.notiView.transform = CGAffineTransform(scaleX: 0.8, y: 0.8)
             })
         }
+    }
+
+    @MainActor
+    private func setupAnnouncementBannerIfNeeded() {
+        guard announcementBanner.superview == nil else { return }
+
+        view.addSubview(announcementBanner)
+        NSLayoutConstraint.activate([
+            announcementBanner.topAnchor.constraint(equalTo: customNavigationBar.bottomAnchor),
+            announcementBanner.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            announcementBanner.trailingAnchor.constraint(equalTo: view.trailingAnchor)
+        ])
+        // 기본 인셋 저장 (최초 한 번)
+        if baseTopInsetForBanner == nil {
+            baseTopInsetForBanner = chatMessageCollectionView.contentInset.top
+        }
+        view.bringSubviewToFront(announcementBanner)
+    }
+    
+    /// 현재 활성 공지 배너를 갱신 (고정 배너 사용)
+    @MainActor
+    private func updateAnnouncementBanner(with payload: AnnouncementPayload?) {
+        setupAnnouncementBannerIfNeeded()
+        
+        guard let payload = payload else {
+            // 공지 없음 → 배너 숨김 및 인셋 복원
+            if !announcementBanner.isHidden {
+                announcementBanner.isHidden = true
+                view.layoutIfNeeded()
+                adjustForBannerHeight()
+            }
+            return
+        }
+        // 배너 구성 및 표시
+        announcementBanner.configure(text: payload.text,
+                                     authorID: payload.authorID,
+                                     createdAt: payload.createdAt,
+                                     pinned: true)
+        if announcementBanner.isHidden { announcementBanner.isHidden = false }
+        view.layoutIfNeeded()
+        adjustForBannerHeight()
+    }
+    
+    @MainActor
+    private func adjustForBannerHeight() {
+        guard let base = baseTopInsetForBanner else { return }
+        let height = announcementBanner.isHidden ? 0 : announcementBanner.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize).height
+        let extra = height > 0 ? height + 8 : 0
+        var inset = chatMessageCollectionView.contentInset
+        inset.top = base + extra
+        chatMessageCollectionView.contentInset = inset
+        chatMessageCollectionView.verticalScrollIndicatorInsets.top = inset.top
     }
     
     private func setupCopyReplyDeleteView() {

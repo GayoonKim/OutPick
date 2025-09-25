@@ -13,6 +13,14 @@ class ChatCustomPopUpMenu: UIView {
     var onCopy: (() -> Void)?
     var onDelete: (() -> Void)?
     var onReport: (() -> Void)?
+    var onAnnounce: (() -> Void)?
+
+    // MARK: - Combine Action Publishers (backward compatible with closures)
+//    public let replySubject = PassthroughSubject<Void, Never>()
+//    public let copySubject = PassthroughSubject<Void, Never>()
+//    public let deleteSubject = PassthroughSubject<Void, Never>()
+//    public let reportSubject = PassthroughSubject<Void, Never>()
+//    public let announceSubject = PassthroughSubject<Void, Never>()
     
     enum PrimaryActionMode { case delete, report }
     private var primaryActionMode: PrimaryActionMode = .delete
@@ -31,21 +39,28 @@ class ChatCustomPopUpMenu: UIView {
     private lazy var replyButton = UIButton.menuButton(title: "답장", systemImageName: "arrowshape.turn.up.right.fill")
     private lazy var copyButton = UIButton.menuButton(title: "복사", systemImageName: "document.on.clipboard")
     private lazy var deleteButton = UIButton.menuButton(title: "삭제", systemImageName: "trash", tintColor: .red, isDestructive: true)
+    private lazy var announceButton = UIButton.menuButton(title: "공지", systemImageName: "megaphone.fill")
 
     private func setPrimaryAction(_ mode: PrimaryActionMode) {
         self.primaryActionMode = mode
         switch mode {
         case .delete:
             deleteButton.configuration = .menuButton(title: "삭제", systemImageName: "trash", isDestructive: true)
-            deleteButton.accessibilityIdentifier = "삭제"
+            deleteButton.accessibilityIdentifier = "채팅방 메시지 삭제"
         case .report:
             deleteButton.configuration = .menuButton(title: "신고", systemImageName: "exclamationmark.bubble", isDestructive: true)
-            deleteButton.accessibilityIdentifier = "신고"
+            deleteButton.accessibilityIdentifier = "채팅방 메시지 신고"
         }
     }
     
-    func configurePrimaryActionMode(canDelete: Bool) {
+//    func configurePrimaryActionMode(canDelete: Bool) {
+//        setPrimaryAction(canDelete ? .delete : .report)
+//    }
+
+    func configurePermissions(canDelete: Bool, canAnnounce: Bool) {
         setPrimaryAction(canDelete ? .delete : .report)
+        announceButton.isHidden = !canAnnounce
+        sep2.isHidden = !canAnnounce
     }
     
     private func makeSeparator() -> UIView {
@@ -54,6 +69,10 @@ class ChatCustomPopUpMenu: UIView {
         view.heightAnchor.constraint(equalToConstant: 1.0 / UIScreen.main.scale).isActive = true
         return view
     }
+    
+    private lazy var sep1: UIView = makeSeparator()
+    private lazy var sep2: UIView = makeSeparator()
+    private lazy var sep3: UIView = makeSeparator()
     
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -71,9 +90,11 @@ class ChatCustomPopUpMenu: UIView {
         
         addSubview(mainSV)
         mainSV.addArrangedSubview(replyButton)
-        mainSV.addArrangedSubview(makeSeparator())
+        mainSV.addArrangedSubview(sep1)
         mainSV.addArrangedSubview(copyButton)
-        mainSV.addArrangedSubview(makeSeparator())
+        mainSV.addArrangedSubview(sep2)
+        mainSV.addArrangedSubview(announceButton)
+        mainSV.addArrangedSubview(sep3)
         mainSV.addArrangedSubview(deleteButton)
         
         NSLayoutConstraint.activate([
@@ -84,9 +105,11 @@ class ChatCustomPopUpMenu: UIView {
             
             replyButton.widthAnchor.constraint(equalToConstant: UIScreen.main.bounds.width * 0.4),
             copyButton.widthAnchor.constraint(equalToConstant: UIScreen.main.bounds.width * 0.4),
+            announceButton.widthAnchor.constraint(equalToConstant: UIScreen.main.bounds.width * 0.4),
             deleteButton.widthAnchor.constraint(equalToConstant: UIScreen.main.bounds.width * 0.4),
             replyButton.heightAnchor.constraint(equalToConstant: UIScreen.main.bounds.width * 0.05),
             copyButton.heightAnchor.constraint(equalTo: replyButton.heightAnchor),
+            announceButton.heightAnchor.constraint(equalTo: replyButton.heightAnchor),
             deleteButton.heightAnchor.constraint(equalTo: replyButton.heightAnchor),
         ])
     }
@@ -95,23 +118,33 @@ class ChatCustomPopUpMenu: UIView {
         replyButton.addTarget(self, action: #selector(replyTapped), for: .touchUpInside)
         copyButton.addTarget(self, action: #selector(copyTapped), for: .touchUpInside)
         deleteButton.addTarget(self, action: #selector(deleteTapped), for: .touchUpInside)
+        announceButton.addTarget(self, action: #selector(announceTapped), for: .touchUpInside)
     }
     
     @objc private func replyTapped() {
         onReply?()
+//        replySubject.send(())
     }
     
     @objc private func copyTapped() {
         onCopy?()
+//        copySubject.send(())
     }
     
     @objc private func deleteTapped() {
         switch primaryActionMode {
         case .delete:
             onDelete?()
+//            deleteSubject.send(())
         case .report:
             onReport?()
+//            reportSubject.send(())
         }
+    }
+    
+    @objc private func announceTapped() {
+        onAnnounce?()
+//        announceSubject.send(())
     }
 }
 

@@ -113,15 +113,14 @@ class RoomCreateViewController: UIViewController, ChatModalAnimatable {
         Task {
             do {
                 if try await FirebaseManager.shared.checkDuplicate(strToCompare: self.roomNameTextView.text, fieldToCompare: "roomName", collectionName: "Rooms") {
-//                    await MainActor.run {
                         LoadingIndicator.shared.stop()
                         createBtn.isEnabled = true
                         AlertManager.showAlertNoHandler(title: "중복된 방 이름", message: "이미 존재하는 방 이름입니다. 다른 이름을 선택해 주세요.", viewController: self)
-//                    }
                     return
                 }
                 
-                let room = ChatRoom(ID: nil, roomName: self.roomNameTextView.text, roomDescription: self.roomDescriptionTextView.text, participants: [LoginManager.shared.getUserEmail], creatorID: LoginManager.shared.getUserEmail, createdAt: Date(), roomImagePath: nil)
+                let ref = Firestore.firestore().collection("Rooms").document()
+                let room = ChatRoom(ID: ref.documentID, roomName: self.roomNameTextView.text, roomDescription: self.roomDescriptionTextView.text, participants: [LoginManager.shared.getUserEmail], creatorID: LoginManager.shared.getUserEmail, createdAt: Date(), roomImagePath: nil)
 
                 let storyboard = UIStoryboard(name: "Main", bundle: nil)
                 guard let chatRoomVC = storyboard.instantiateViewController(withIdentifier: "chatRoomVC") as? ChatViewController else { return }

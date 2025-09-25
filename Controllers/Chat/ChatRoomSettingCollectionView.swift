@@ -43,6 +43,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
     
     private var cancellables = Set<AnyCancellable>()
     
+    var onRoomUpdated: ((ChatRoom) -> Void)?
     
     init(room: ChatRoom, profiles: [UserProfile], images: [UIImage]) {
         self.room = room
@@ -71,16 +72,18 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         super.viewDidLoad()
         
         self.view.backgroundColor = .secondarySystemBackground
-//        self.attachInteractiveDismissGesture()
-//        navigationController?.interactivePopGestureRecognizer?.isEnabled = false
-        
+
         configureCollectionView()
         applyInitialSnapshot()
-//        setupCustomNavigationBar()
     }
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+    }
+    
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        cancellables.removeAll()
     }
     
     private func observeRoomImages(for roomID: String) {
@@ -268,6 +271,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
                         try await FirebaseManager.shared.updateRoomInfo(room: self.room, newImagePath: self.room.roomImagePath ?? "", roomName: newName, roomDescription: newDesc)
 
                         self.updateRoomInfoSection()
+                        self.onRoomUpdated?(self.room)
                     }
                     
                     self.present(editVC, animated: true, completion: nil)
@@ -362,11 +366,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         dataSource = configureDataSource()
         collectionView.dataSource = dataSource
     }
-    
-//    private func backButtonTapped() {
-//        ChatModalTransitionManager.dismiss(from: self)
-//    }
-    
+
     private func notificationButtonTapped() {
         print(#function)
     }
@@ -379,33 +379,3 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         print(#function)
     }
 }
-
-//private extension ChatRoomSettingCollectionView {
-//    @MainActor
-//    func setupCustomNavigationBar() {
-//        self.view.addSubview(customNavigationBar)
-//        
-//        NSLayoutConstraint.activate([
-//            customNavigationBar.topAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.topAnchor),
-//            customNavigationBar.leadingAnchor.constraint(equalTo: self.view.leadingAnchor),
-//            customNavigationBar.trailingAnchor.constraint(equalTo: self.view.trailingAnchor),
-//            
-//            self.collectionView.topAnchor.constraint(equalTo: customNavigationBar.bottomAnchor),
-//            self.collectionView.leadingAnchor.constraint(equalTo: self.view.leadingAnchor),
-//            self.collectionView.trailingAnchor.constraint(equalTo: self.view.trailingAnchor),
-//            self.collectionView.bottomAnchor.constraint(equalTo: self.view.bottomAnchor)
-//        ])
-//        
-//        configureNavigationBarItems()
-//    }
-    
-//    private func configureNavigationBarItems() {
-//        customNavigationBar.configure(
-//            leftViews: [UIButton.navBackButton(action: backButtonTapped)],
-//            rightViews: [
-//                UIButton.navButtonIcon("bell.fill", action: notificationButtonTapped),
-//                UIButton.navButtonIcon("gearshape", action: settingButtonTapped)
-//            ]
-//        )
-//    }
-//}

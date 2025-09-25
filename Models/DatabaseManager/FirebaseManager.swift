@@ -50,11 +50,6 @@ class FirebaseManager {
     var currentChatRooms: [ChatRoom] {
         return chatRooms
     }
-
-    private let roomChangeSubject = PassthroughSubject<ChatRoom, Never>()
-    var roomChangePublisher: AnyPublisher<ChatRoom, Never> {
-        return roomChangeSubject.eraseToAnyPublisher()
-    }
     
     private var lastFetchedSnapshot: DocumentSnapshot?
     
@@ -296,7 +291,7 @@ class FirebaseManager {
     func saveRoomInfoToFirestore(room: ChatRoom, completion: @escaping (Result<Void, Error>) -> Void) {
         Task {
             var tempRoom = room
-            let roomRef = db.collection("Rooms").document()
+            let roomRef = db.collection("Rooms").document(room.ID ?? "")
             
             // Socket.IO 서버에 방 생성 이벤트 전송
             SocketIOManager.shared.createRoom(room.roomName)
@@ -305,8 +300,8 @@ class FirebaseManager {
             
             do {
                 let _ = try await db.runTransaction({ (transaction, errorPointer) -> Any? in
-                    tempRoom.ID = roomRef.documentID
-                    transaction.setData(tempRoom.toDictionary(), forDocument: roomRef)
+//                    tempRoom.ID = roomRef.documentID
+                    transaction.setData(room.toDictionary(), forDocument: roomRef)
                     
                     return nil
                     
@@ -321,6 +316,36 @@ class FirebaseManager {
         }
     }
     
+    // MARK: - Room doc 스냅샷 리스너
+    private var roomDocListeners: [String: ListenerRegistration] = [:]
+    private let roomChangeSubject = PassthroughSubject<ChatRoom, Never>()
+    var roomChangePublisher: AnyPublisher<ChatRoom, Never> {
+        return roomChangeSubject.eraseToAnyPublisher()
+    }
+    @MainActor
+    func startListenRoomDoc(roomID: String) {
+        if roomDocListeners[roomID] != nil { return } // already listening
+        let ref = db.collection("Rooms").document(roomID)
+        let l = ref.addSnapshotListener { [weak self] snap, err in
+            guard let self = self else { return }
+            if let err = err { print("❌ Room listener error:", err); return }
+            guard let snap = snap, snap.exists else { return }
+            do {
+                let room = try self.createRoom(from: snap)
+                self.roomChangeSubject.send(room)
+            } catch {
+                print("❌ Room decode error:", error)
+            }
+        }
+        roomDocListeners[roomID] = l
+    }
+    
+    @MainActor
+    func stopListenRoomDoc(roomID: String) {
+        roomDocListeners[roomID]?.remove()
+        roomDocListeners.removeValue(forKey: roomID)
+    }
+    
     @MainActor
     func updateRoomInfo(room: ChatRoom, newImagePath: String, roomName: String, roomDescription: String) async throws {
         guard let roomDoc = try await getRoomDoc(room: room) else {
@@ -333,8 +358,6 @@ class FirebaseManager {
         updateData["roomDescription"] = roomDescription
         
         try await roomDoc.reference.updateData(updateData)
-        
-        roomChangeSubject.send(room)
     }
     
     // 방 이름 중복 검사
@@ -490,7 +513,64 @@ class FirebaseManager {
             }
         }
     }
-    
+
+    //MARK: 공지(Announcement) 관련 기능
+    @MainActor
+    func setActiveAnnouncement(roomID: String,
+                               messageID: String?,
+                               payload: AnnouncementPayload?) async throws {
+        guard !roomID.isEmpty else { throw FirebaseError.FailedToFetchRoom }
+        var update: [String: Any] = [:]
+
+        if let messageID = messageID {
+            update["activeAnnouncementID"] = messageID
+        } else {
+            update["activeAnnouncementID"] = FieldValue.delete()
+        }
+
+        if let payload = payload {
+            update["activeAnnouncement"] = payload.toDictionary()
+            update["announcementUpdatedAt"] = Timestamp(date: payload.createdAt)
+        } else {
+            update["activeAnnouncement"] = FieldValue.delete()
+            update["announcementUpdatedAt"] = FieldValue.serverTimestamp()
+        }
+
+        let ref = db.collection("Rooms").document(roomID)
+        try await ref.updateData(update)
+    }
+
+    /// 방 객체 기반의 오버로드
+    @MainActor
+    func setActiveAnnouncement(room: ChatRoom,
+                               messageID: String?,
+                               payload: AnnouncementPayload?) async throws {
+        guard let roomID = room.ID else { throw FirebaseError.FailedToFetchRoom }
+        try await setActiveAnnouncement(roomID: roomID, messageID: messageID, payload: payload)
+    }
+
+    /// 텍스트/작성자만 받아 간편하게 현재 공지를 설정합니다. (히스토리 메시지 연결 없음)
+    @MainActor
+    func setActiveAnnouncement(room: ChatRoom,
+                               text: String,
+                               authorID: String) async throws {
+        let payload = AnnouncementPayload(text: text, authorID: authorID, createdAt: Date())
+        try await setActiveAnnouncement(room: room, messageID: nil, payload: payload)
+    }
+
+    /// 현재 공지를 제거합니다.
+    @MainActor
+    func clearActiveAnnouncement(roomID: String) async throws {
+        try await setActiveAnnouncement(roomID: roomID, messageID: nil, payload: nil)
+    }
+
+    /// 현재 공지를 제거합니다. (room 오버로드)
+    @MainActor
+    func clearActiveAnnouncement(room: ChatRoom) async throws {
+        guard let roomID = room.ID else { throw FirebaseError.FailedToFetchRoom }
+        try await clearActiveAnnouncement(roomID: roomID)
+    }
+
     //MARK: 메시지 관련 기능
     func saveMessage(_ message: ChatMessage, _ room: ChatRoom) async throws /*-> String*/ {
         do {
@@ -504,9 +584,7 @@ class FirebaseManager {
             print("메시지 전송 및 저장 실패")
         }
     }
-    
-    
-    
+
     /// 특정 방에서 isDeleted = true 상태만 감지하는 리스너
     func listenToDeletedMessages(roomID: String,
                                  onDeleted: @escaping (String) -> Void) -> ListenerRegistration {

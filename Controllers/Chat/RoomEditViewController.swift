@@ -66,6 +66,8 @@ class RoomEditViewController: UIViewController, PHPickerViewControllerDelegate, 
         configureDataSource()
         applyInitialSnapshot()
         updateCompleteBtnState()
+        
+        
     }
     
     private func applyInitialSnapshot() {
