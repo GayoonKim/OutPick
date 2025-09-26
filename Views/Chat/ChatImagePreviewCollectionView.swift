@@ -18,6 +18,10 @@ class ChatImagePreviewCollectionView: UIView {
     private var imagesCount = 0
     private var contentHeight: CGFloat = 0
     private var rows: [Int] = []
+    
+    // MARK: - Compact sizing
+    private let singleItemHeight: CGFloat = 200   // 단일 이미지 높이 줄임
+    private let itemSpacing: CGFloat = 4          // 아이템 간격 살짝 키움
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -30,11 +34,16 @@ class ChatImagePreviewCollectionView: UIView {
         fatalError("init(coder:) has not been implemented")
     }
     
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        collectionView.layer.cornerRadius = 20
+        collectionView.backgroundColor = .white
+    }
+    
     private func setupCollectionView() {
         let layout = configureLayout()
         collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
         collectionView.isScrollEnabled = false
-        collectionView.backgroundColor = .clear
         collectionView.showsHorizontalScrollIndicator = false
         collectionView.register(ChatImagePreviewCell.self, forCellWithReuseIdentifier: ChatImagePreviewCell.reuseIdentifier)
         collectionView.translatesAutoresizingMaskIntoConstraints = false
@@ -60,11 +69,14 @@ class ChatImagePreviewCollectionView: UIView {
                     heightDimension: .fractionalWidth(1.0)  // 정사각형 유지
                 )
                 let item = NSCollectionLayoutItem(layoutSize: itemSize)
-                item.contentInsets = NSDirectionalEdgeInsets(top: 2, leading: 2, bottom: 2, trailing: 2)
+                item.contentInsets = NSDirectionalEdgeInsets(top: self.itemSpacing,
+                                                             leading: self.itemSpacing,
+                                                             bottom: self.itemSpacing,
+                                                             trailing: self.itemSpacing)
                 
                 let groupSize = NSCollectionLayoutSize(
                     widthDimension: .fractionalWidth(1.0),
-                    heightDimension: .fractionalWidth(1.0)
+                    heightDimension: .absolute(self.singleItemHeight)
                 )
                 let group = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize, subitems: [item])
                 
@@ -103,14 +115,15 @@ class ChatImagePreviewCollectionView: UIView {
     
     private func configureDataSource() {
         dataSource = UICollectionViewDiffableDataSource(collectionView: collectionView) { [weak self] collectionView, indexPath, image in
-            guard let self = self else { return nil}
-            
+            guard let self = self else { return nil }
+
             let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ChatImagePreviewCell.reuseIdentifier, for: indexPath) as! ChatImagePreviewCell
+            // 1) Set low-res thumbnail immediately
             cell.configure(with: image)
-            
+
             return cell
         }
-        
+
         var snapshot = NSDiffableDataSourceSnapshot<Section, UIImage>()
         snapshot.appendSections([Section.main])
         dataSource.apply(snapshot, animatingDifferences: false)
@@ -129,4 +142,6 @@ class ChatImagePreviewCollectionView: UIView {
         
         self.layoutIfNeeded()
     }
+    
+    
 }

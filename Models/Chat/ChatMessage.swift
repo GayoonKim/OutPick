@@ -17,6 +17,57 @@ struct ReplyPreview: Codable, Hashable {
     var isDeleted: Bool = false
 }
 
+struct Attachment: Codable, Hashable {
+    enum AttachmentType: String, Codable {
+        case image
+        case video
+        // 필요한 경우 더 추가
+    }
+
+    // MARK: - Meta-only fields (no binary payloads)
+    let type: AttachmentType
+    let index: Int                       // 정렬 보장용
+    let pathThumb: String                // Storage 경로 또는 상대 경로
+    let pathOriginal: String             // Storage 경로 또는 상대 경로
+    let width: Int                       // 원본 w
+    let height: Int                      // 원본 h
+    let bytesOriginal: Int               // 원본 바이트 수
+    let hash: String                     // 콘텐츠 해시(파일명/캐시 키에 사용)
+    var blurhash: String?                // 선택
+
+    // MARK: - Convenience (직렬화 제외)
+    var thumbCacheKey: String { "att:\(hash):thumb" }
+    var originalCacheKey: String { "att:\(hash):original" }
+
+    // Socket/Firestore로 보낼 딕셔너리
+    func toDict() -> [String: Any] {
+        var dict: [String: Any] = [
+            "type": type.rawValue,
+            "index": index,
+            "pathThumb": pathThumb,
+            "pathOriginal": pathOriginal,
+            "w": width,
+            "h": height,
+            "bytesOriginal": bytesOriginal,
+            "hash": hash
+        ]
+        if let b = blurhash { dict["blurhash"] = b }
+        return dict
+    }
+
+    // Hashable/Equatable
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(type)
+        hasher.combine(hash)
+        hasher.combine(pathOriginal)
+    }
+    static func == (lhs: Attachment, rhs: Attachment) -> Bool {
+        return lhs.type == rhs.type &&
+               lhs.hash == rhs.hash &&
+               lhs.pathOriginal == rhs.pathOriginal
+    }
+}
+
 // 채팅 메시지 정보
 struct ChatMessage: SocketData, Codable {
     let ID: String
@@ -40,11 +91,56 @@ struct ChatMessage: SocketData, Codable {
         case ID
         case roomID
         case senderID
-        case senderNickname = "senderNickName"
+        case senderNickname = "senderNickname"
         case msg
         case sentAt
         case attachments
         case replyPreview
+    }
+
+    // Parse attachments/images from socket payload (supports Data or base64 for thumbData)
+    private static func parseAttachments(from dict: [String: Any]) -> [Attachment] {
+        // 기본은 "attachments" 키, 레거시는 "images" 키도 허용
+        let rawArray = (dict["attachments"] as? [Any]) ?? (dict["images"] as? [Any]) ?? []
+        var result: [Attachment] = []
+        result.reserveCapacity(rawArray.count)
+
+        for (i, any) in rawArray.enumerated() {
+            guard let item = any as? [String: Any] else { continue }
+
+            // 타입
+            let typeStr = (item["type"] as? String) ?? "image"
+            let type = Attachment.AttachmentType(rawValue: typeStr) ?? .image
+
+            // 필수 메타 (경로/정렬/크기)
+            let index = item["index"] as? Int ?? i
+            let pathThumb = (item["pathThumb"] as? String) ?? (item["thumbPath"] as? String) ?? ""
+            // pathOriginal은 Storage 상대경로가 표준이지만, 레거시 url/originalUrl 문자열도 임시 허용
+            let pathOriginal = (item["pathOriginal"] as? String)
+                ?? (item["originalPath"] as? String)
+                ?? (item["url"] as? String)
+                ?? (item["originalUrl"] as? String)
+                ?? ""
+
+            let width  = (item["w"] as? Int) ?? (item["width"] as? Int) ?? 0
+            let height = (item["h"] as? Int) ?? (item["height"] as? Int) ?? 0
+            let bytes  = (item["bytesOriginal"] as? Int) ?? (item["size"] as? Int) ?? 0
+            let hash   = (item["hash"] as? String) ?? UUID().uuidString.replacingOccurrences(of: "-", with: "")
+            let blur   = item["blurhash"] as? String
+
+            result.append(Attachment(
+                type: type,
+                index: index,
+                pathThumb: pathThumb,
+                pathOriginal: pathOriginal,
+                width: width,
+                height: height,
+                bytesOriginal: bytes,
+                hash: hash,
+                blurhash: blur
+            ))
+        }
+        return result
     }
     
     func toSocketRepresentation() -> SocketData {
@@ -52,7 +148,7 @@ struct ChatMessage: SocketData, Codable {
             "ID": ID,
             "roomID": roomID,
             "senderID": senderID,
-            "senderNickName": senderNickname,
+            "senderNickname": senderNickname,
             "msg": msg ?? "",
         ]
         
@@ -80,7 +176,7 @@ struct ChatMessage: SocketData, Codable {
             "ID": ID,
             "roomID": roomID,
             "senderID": senderID,
-            "senderNickName": senderNickname,
+            "senderNickname": senderNickname,
             "msg": msg ?? "",
             "sentAt": Timestamp(date: sentAt ?? Date()),
             "isDeleted": isDeleted
@@ -110,16 +206,25 @@ extension ChatMessage: Hashable {}
 
 extension ChatMessage {
     static func from(_ dict: [String: Any]) -> ChatMessage? {
-        guard let id = dict["ID"] as? String, !id.isEmpty,
+        // Required IDs
+        guard let id = (dict["ID"] as? String) ?? (dict["id"] as? String), !id.isEmpty,
               let roomID = dict["roomID"] as? String,
-              let senderID = dict["senderID"] as? String,
-              let senderNickname = dict["senderNickName"] as? String,
-              let sentAtString = dict["sentAt"] as? String,
-              let sentAt = ChatMessage.iso8601Formatter.date(from: sentAtString) else {
+              let senderID = dict["senderID"] as? String else {
             return nil
         }
 
+        // Nickname: support both keys. Default to empty if missing.
+        let senderNickname = (dict["senderNickName"] as? String)
+            ?? (dict["senderNickname"] as? String)
+            ?? ""
+
+        // Message text may be empty
         let msg = dict["msg"] as? String
+
+        // sentAt: accept ISO8601(with/without fractional), Timestamp, epoch(s/ms). Optional.
+        let sentAt = parseSentAt(dict["sentAt"]) ?? parseSentAt(dict["createdAt"]) // fallback key if any
+
+        // Reply preview (optional)
         var rp: ReplyPreview? = nil
         if let rpDict = dict["replyPreview"] as? [String: Any],
            let mid = rpDict["messageID"] as? String, !mid.isEmpty {
@@ -131,6 +236,13 @@ extension ChatMessage {
             )
         }
 
+        // Attachments (meta-only)
+        let attachments = ChatMessage.parseAttachments(from: dict)
+
+        // Flags (optional)
+        let isFailed = dict["isFailed"] as? Bool ?? false
+        let isDeleted = dict["isDeleted"] as? Bool ?? false
+
         return ChatMessage(
             ID: id,
             roomID: roomID,
@@ -138,8 +250,71 @@ extension ChatMessage {
             senderNickname: senderNickname,
             msg: msg,
             sentAt: sentAt,
-            attachments: [], // 필요 시 dict["attachments"] 파싱
-            replyPreview: rp
+            attachments: attachments,
+            replyPreview: rp,
+            isFailed: isFailed,
+            isDeleted: isDeleted
         )
+    }
+}
+
+extension ChatMessage {
+    // MARK: - Date Parsers
+    fileprivate static let iso8601WithFractional: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        f.timeZone = TimeZone(secondsFromGMT: 0)
+        return f
+    }()
+
+    fileprivate static let iso8601NoFraction: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        f.timeZone = TimeZone(secondsFromGMT: 0)
+        return f
+    }()
+
+    fileprivate static let fallbackDateFormatter1: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(secondsFromGMT: 0)
+        f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss'Z'"
+        return f
+    }()
+
+    fileprivate static let fallbackDateFormatter2: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(secondsFromGMT: 0)
+        f.dateFormat = "yyyy-MM-dd HH:mm:ss Z"
+        return f
+    }()
+    
+    /// Accepts multiple payload shapes from Socket/Firestore:
+    /// String(ISO8601 with/without fractional), Timestamp, seconds(Double/Int), or ms epoch.
+    private static func parseSentAt(_ value: Any?) -> Date? {
+        // Fast path by type
+        switch value {
+        case let ts as Timestamp:
+            return ts.dateValue()
+        case let d as Double:
+            return Date(timeIntervalSince1970: d > 3_000_000_000 ? d / 1000.0 : d)
+        case let i as Int:
+            let d = Double(i)
+            return Date(timeIntervalSince1970: d > 3_000_000_000 ? d / 1000.0 : d)
+        case let s as String:
+            // 1) ISO8601 with fractional seconds (e.g., 2025-09-26T17:57:57.403Z)
+            if let d = ChatMessage.iso8601WithFractional.date(from: s) { return d }
+            // 2) ISO8601 without fractional seconds
+            if let d = ChatMessage.iso8601NoFraction.date(from: s) { return d }
+            // 3) Custom fallback using existing formatter if present
+            if let d = ChatMessage.iso8601Formatter.date(from: s) { return d }
+            // 4) Common RFC3339-like patterns
+            if let d = ChatMessage.fallbackDateFormatter1.date(from: s) { return d }
+            if let d = ChatMessage.fallbackDateFormatter2.date(from: s) { return d }
+            return nil
+        default:
+            return nil
+        }
     }
 }

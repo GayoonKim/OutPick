@@ -7,6 +7,7 @@
 import UIKit
 import SocketIO
 import Combine
+import CryptoKit
 
 class SocketIOManager {
     static let shared = SocketIOManager()
@@ -51,7 +52,7 @@ class SocketIOManager {
     
     private init() {
         //manager = SocketManager(socketURL: URL(string: "http://127.0.0.1:3000")!, config: [.log(true), .compress])
-        manager = SocketManager(socketURL: URL(string: "http://192.168.123.156:3000")!, config: [.log(true), .compress])
+        manager = SocketManager(socketURL: URL(string: "http://192.168.123.182:3000")!, config: [.log(true), .compress])
         socket = manager.defaultSocket
         
         socket.on(clientEvent: .connect) {data, ack in
@@ -134,14 +135,23 @@ class SocketIOManager {
             let subject = PassthroughSubject<ChatMessage, Never>()
             roomSubjects[roomID] = subject
 
+            // Ensure joined before attaching listeners (idempotent)
+            if !joinedRooms.contains(roomID) { joinRoom(roomID) }
+
             // 소켓 리스너 등록
-            attachSocketListener(for: roomID) { [weak self] message in
+            attachChatListener(for: roomID) { [weak self] message in
                 guard let self = self else { return }
+                print(#function,"✅✅✅✅✅ attachChatListener:", message)
+                self.roomSubjects[roomID]?.send(message)
+            }
+            // 이미지 브로드캐스트 리스너 등록
+            attachImageListener(for: roomID) { [weak self] message in
+                guard let self = self else { return }
+                print(#function,"✅✅✅✅✅ attachImageListener:", message)
                 self.roomSubjects[roomID]?.send(message)
             }
         }
-        
-        print(#function, "✅✅✅✅✅ 3. roomSubjects", roomSubjects[roomID]!)
+
         return roomSubjects[roomID]!.eraseToAnyPublisher()
     }
 
@@ -150,25 +160,96 @@ class SocketIOManager {
         subscriberCounts[roomID] = count - 1
 
         if subscriberCounts[roomID] == 0 {
-            detachSocketListener(for: roomID)
+            detachChatListener(for: roomID)
+            detachImageListener(for: roomID)
             roomSubjects[roomID]?.send(completion: .finished)
             roomSubjects[roomID] = nil
         }
     }
     
-    private func attachSocketListener(for roomID: String, onMessage: @escaping (ChatMessage) -> Void) {
-        print(#function, "attachSocketListener 호출")
-        socket.on("chat message:\(roomID)") { data, _ in
-            guard let dict = data.first as? [String: Any],
-                  let message = ChatMessage.from(dict) else {
+    private func attachChatListener(for roomID: String, onMessage: @escaping (ChatMessage) -> Void) {
+        let event = "chat message:\(roomID)"
+        print(#function, "bind →", event)
+        // Prevent duplicate handlers for the same room event
+        socket.off(event)
+
+        socket.on(event) { [weak self] data, _ in
+            guard let self = self else { return }
+            guard let dict = data.first as? [String: Any] else {
+                #if DEBUG
+                print("[attachChatListener] invalid payload (not dict):", data)
+                #endif
                 return
             }
-            onMessage(message)
+            // Normalize server payload (senderNickname vs senderNickName, id vs ID)
+//            var normalized = dict
+//            if normalized["senderNickName"] == nil, let v = normalized["senderNickname"] { normalized["senderNickName"] = v }
+//            if normalized["ID"] == nil, let v = normalized["id"] as? String { normalized["ID"] = v }
+
+            guard let message = ChatMessage.from(dict) else {
+                #if DEBUG
+                print("[attachChatListener] parse failed =", dict)
+                #endif
+                return
+            }
+            guard message.roomID == roomID else {
+                #if DEBUG
+                print("[attachChatListener] room mismatch payload=\(message.roomID) subscribed=\(roomID)")
+                #endif
+                return
+            }
+            DispatchQueue.main.async {
+                onMessage(message)
+            }
         }
     }
 
-    private func detachSocketListener(for roomID: String) {
+    private func detachChatListener(for roomID: String) {
         socket.off("chat message:\(roomID)")
+    }
+
+    // 이미지 수신용 리스너
+    private func attachImageListener(for roomID: String, onMessage: @escaping (ChatMessage) -> Void) {
+        let event = "receiveImages:\(roomID)"
+        print(#function, "bind →", event)
+        // Prevent duplicate handlers for the same room event
+        socket.off(event)
+
+        socket.on(event) { [weak self] data, _ in
+            guard let self = self else { return }
+            guard let dict = data.first as? [String: Any] else {
+                #if DEBUG
+                print("[attachImageListener] invalid payload (not dict):", data)
+                #endif
+                return
+            }
+            // Normalize server payload (senderNickname vs senderNickName, id vs ID)
+            var normalized = dict
+            if normalized["senderNickName"] == nil, let v = normalized["senderNickname"] { normalized["senderNickName"] = v }
+            if normalized["ID"] == nil, let v = normalized["id"] as? String { normalized["ID"] = v }
+
+            guard let message = ChatMessage.from(normalized) else {
+                #if DEBUG
+                print("[attachImageListener] parse failed normalized=", normalized)
+                #endif
+                return
+            }
+            guard message.roomID == roomID else {
+                #if DEBUG
+                print("[attachImageListener] room mismatch payload=\(message.roomID) subscribed=\(roomID)")
+                #endif
+                return
+            }
+            // (선택) 이미지 메시지만 통과시키고 싶다면 아래 가드를 유지
+            // guard message.attachments.contains(where: { $0.type == .image }) else { return }
+            DispatchQueue.main.async {
+                onMessage(message)
+            }
+        }
+    }
+    
+    private func detachImageListener(for roomID: String) {
+        socket.off("receiveImages:\(roomID)")
     }
     
     func joinRoom(_ roomID: String) {
@@ -245,88 +326,268 @@ class SocketIOManager {
         }
     }
     
-    func sendImages(_ room: ChatRoom, _ images: [UIImage]) {
-        if self.socket.status != .connected {
-            print("소켓 연결 실패 -> 로컬 실패 처리")
-            
-            Task { [weak self] in
-                guard let self = self else { return }
-                await self.processFailedImages(room, images)
-            }
+    // MARK: - Emit (meta-only attachments)
+    /// 메타 전용 첨부(썸네일/원본 경로 등)를 소켓으로 전송
+    /// ChatViewController에서 attachments.map { $0.toDict() } 로 호출합니다.
+    func sendImages(_ room: ChatRoom, _ attachments: [[String: Any]]) {
+        // 0) 가드
+        guard !attachments.isEmpty else { return }
+        let roomID = room.ID ?? ""
+        let senderID = LoginManager.shared.getUserEmail
+        let senderNickname = LoginManager.shared.currentUserProfile?.nickname ?? ""
+        let clientMessageID = UUID().uuidString
+        let now = Date()
+        let isoSentAt = Self.isoFormatter.string(from: now)
+        print(#function," attachments", attachments)
+        // 헬퍼: dict -> Attachment 모델 변환 (로컬 퍼블리시용)
+        func makeAttachment(from dict: [String: Any], fallbackIndex: Int) -> Attachment {
+            let index = dict["index"] as? Int ?? fallbackIndex
+            let pathThumb = (dict["pathThumb"] as? String) ?? ""
+            let pathOriginal = (dict["pathOriginal"] as? String) ?? ""
+            let width = (dict["w"] as? Int) ?? (dict["width"] as? Int) ?? 0
+            let height = (dict["h"] as? Int) ?? (dict["height"] as? Int) ?? 0
+            let bytesOriginal = (dict["bytesOriginal"] as? Int) ?? (dict["size"] as? Int) ?? 0
+            let hash = (dict["hash"] as? String) ?? UUID().uuidString.replacingOccurrences(of: "-", with: "")
+            let blurhash = dict["blurhash"] as? String
+            return Attachment(
+                type: .image,
+                index: index,
+                pathThumb: pathThumb,
+                pathOriginal: pathOriginal,
+                width: width,
+                height: height,
+                bytesOriginal: bytesOriginal,
+                hash: hash,
+                blurhash: blurhash
+            )
+        }
 
+        // 연결 안 되어 있으면 실패 메시지 로컬 퍼블리시
+        guard socket.status == .connected else {
+            let atts = attachments.enumerated().map { makeAttachment(from: $0.element, fallbackIndex: $0.offset) }
+            let failed = ChatMessage(
+                ID: clientMessageID,
+                roomID: roomID,
+                senderID: senderID,
+                senderNickname: senderNickname,
+                msg: "",
+                sentAt: now,
+                attachments: atts,
+                replyPreview: nil,
+                isFailed: true
+            )
+            DispatchQueue.main.async {
+                self.roomSubjects[roomID]?.send(failed)
+            }
             return
         }
-        
-        Task { [weak self] in
+            
+        // 1) 서버 이벤트/페이로드 구성(메타만 포함)
+        let eventName = "send images" // 새 프로토콜 이벤트명 (서버 index.js와 일치)
+        let body: [String: Any] = [
+            "roomID": roomID,
+            "messageID": clientMessageID,
+            "type": "image",
+            "msg": "",
+            "attachments": attachments,
+            "senderID": senderID,
+            "senderNickname": senderNickname,
+            "sentAt": isoSentAt
+        ]
+
+        // 2) Ack 포함 전송 → 성공 시 로컬 퍼블리시
+        socket.emitWithAck(eventName, body).timingOut(after: 15) { [weak self] ackResponse in
             guard let self = self else { return }
-            
-            let imageNames = try await FirebaseStorageManager.shared.uploadImagesToStorage(images: images, location: ImageLocation.RoomImage, name: room.roomName)
-            var attachments = Array<Attachment?>(repeating: nil, count: imageNames.count)
-            
-            let imageDataArray = try await withThrowingTaskGroup(of: (Int, [String:Any]?).self) { group in
-                for (index, image) in images.enumerated() {
-                    group.addTask {
-                        guard let imageData = image.jpegData(compressionQuality: 0.5) else {
-                            return (index, nil)
-                        }
-                        
-                        return (index, ["fileName": imageNames[index], "fileData": imageData])
-                    }
+            let ack = ackResponse.first as? [String: Any]
+            let ok = (ack?["ok"] as? Bool) ?? (ack?["success"] as? Bool) ?? false
+            let duplicate = (ack?["duplicate"] as? Bool) ?? false
+
+            let atts = attachments.enumerated().map { makeAttachment(from: $0.element, fallbackIndex: $0.offset) }
+            let message = ChatMessage(
+                ID: clientMessageID,
+                roomID: roomID,
+                senderID: senderID,
+                senderNickname: senderNickname,
+                msg: "",
+                sentAt: now,
+                attachments: atts,
+                replyPreview: nil,
+                isFailed: !(ok || duplicate)
+            )
+
+            if ok || duplicate {
+                Task {
+                    await FirebaseManager.shared.updateRoomLastMessageAt(roomID: roomID, date: now)
                 }
-                
-                var inOrderResults = Array<[String: Any]?>(repeating: nil, count: images.count)
-                for try await (index, result) in group {
-                    inOrderResults[index] = result
-                    
-                    if let result = result {
-                        let attachment = Attachment(type: .image, fileName: result["fileName"] as? String, fileData: result["fileData"] as? Data)
-                        attachments[index] = attachment
-                    }
-                }
-                
-                return inOrderResults.compactMap { $0 }
             }
-            
-            let finalAttachments = attachments.compactMap { $0 }
-//            let images = finalAttachments.compactMap{ $0.toUIImage() }
-            let message = ChatMessage(ID: UUID().uuidString, roomID: room.ID ?? "", senderID: LoginManager.shared.getUserEmail, senderNickname: LoginManager.shared.currentUserProfile?.nickname ?? "", msg: "", sentAt: Date(), attachments: finalAttachments, replyPreview: nil)
-            
-            socket.emitWithAck("send images", ["roomID": message.roomID, "senderID": message.senderID, "senderNickName": message.senderNickname, "sentAt": "\(message.sentAt ?? Date())", "images": imageDataArray]).timingOut(after: 7) { ackResponse in
-                
-                if let ackDict = ackResponse.first as? [String: Any],
-                   let success = ackDict["success"] as? Bool, success {
-                    self.roomSubjects[room.ID ?? ""]?.send(message)
-                } else {
-                    var failedMessage = message
-                    failedMessage.isFailed = true
-                    self.roomSubjects[room.ID ?? ""]?.send(failedMessage)
-                }
+            DispatchQueue.main.async {
+                self.roomSubjects[roomID]?.send(message)
             }
         }
     }
     
-    
-    private func processFailedImages(_ room: ChatRoom, _ images: [UIImage]) async {
-        var localAttachments: [Attachment] = []
-        do {
-            localAttachments = try await withThrowingTaskGroup(of: (Int, Attachment?).self) { group in
-                for (index, image) in images.enumerated() {
-                    group.addTask {
-                        guard let imageData = image.jpegData(compressionQuality: 0.5) else { return (index, nil) }
-                        return (index, Attachment(type: .image, fileName: UUID().uuidString, fileData: imageData))
-                    }
-                }
+    /// 업로드/송신 실패 시: preparePairs에서 받은 ImagePair 배열을 이용해
+    /// 로컬 프리뷰 파일을 만들고 실패 메시지(ChatMessage)를 생성한다.
+    /// - Parameters:
+    ///   - room: 대상 방
+    ///   - pairs: ImagePair 배열 (index 순서로 정렬됨이 보장되지는 않음)
+    ///   - publish: true면 내부에서 roomSubject로 곧바로 퍼블리시, false면 퍼블리시하지 않음
+    ///   - onBuilt: 실패 메시지 객체를 콜백으로 전달(썸네일 캐시/추가 가공 후 VC에서 addMessages 호출용)
+    func sendFailedImages(_ room: ChatRoom,
+                          fromPairs pairs: [MediaManager.ImagePair],
+                          publish: Bool = true) {
+        guard !pairs.isEmpty else { return }
 
-                var orderedResults = Array<Attachment?>(repeating: nil, count: images.count)
-                for try await (index, attachment) in group {
-                    orderedResults[index] = attachment
-                }
-                return orderedResults.compactMap { $0 }
+        let roomID = room.ID ?? ""
+        let senderID = LoginManager.shared.getUserEmail
+        let senderNickname = LoginManager.shared.currentUserProfile?.nickname ?? ""
+
+        // 로컬 파일 저장 디렉터리 (앱 캐시)
+        let fm = FileManager.default
+        let baseDir: URL = {
+            let dir = fm.urls(for: .cachesDirectory, in: .userDomainMask).first!
+                .appendingPathComponent("failed-attachments", isDirectory: true)
+            try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            return dir
+        }()
+
+        @discardableResult
+        func writeTempFile(_ data: Data, ext: String = "jpg") -> URL? {
+            let name = UUID().uuidString + "." + ext
+            let url = baseDir.appendingPathComponent(name)
+            do {
+                try data.write(to: url, options: .atomic)
+                return url
+            } catch {
+                print("[sendFailedImages] failed to write temp file: \(error)")
+                return nil
             }
-        } catch {
-            print("로컬 실패 이미지 처리 중 오류 발생: \(error)")
         }
 
+        var atts: [Attachment] = []
+        atts.reserveCapacity(pairs.count)
+
+        for p in pairs.sorted(by: { $0.index < $1.index }) {
+            autoreleasepool {
+                guard let fileURL = writeTempFile(p.thumbData) else { return }
+                let att = Attachment(
+                    type: .image,
+                    index: p.index,
+                    pathThumb: fileURL.absoluteString,     // "file://" 로컬 경로
+                    pathOriginal: fileURL.absoluteString,  // 뷰어에서도 프리뷰 노출을 위해 동일 경로
+                    width: p.originalWidth,
+                    height: p.originalHeight,
+                    bytesOriginal: p.thumbData.count,
+                    hash: p.sha256,
+                    blurhash: nil
+                )
+                atts.append(att)
+            }
+        }
+
+        let failedMessage = ChatMessage(
+            ID: UUID().uuidString,
+            roomID: roomID,
+            senderID: senderID,
+            senderNickname: senderNickname,
+            msg: "",
+            sentAt: Date(),
+            attachments: atts,
+            replyPreview: nil,
+            isFailed: true
+        )
+
+        DispatchQueue.main.async {
+            self.roomSubjects[roomID]?.send(failedMessage)
+        }
+    }
+
+    
+    private func processFailedImages(_ room: ChatRoom, _ images: [UIImage]) async {
+        // 빈 입력이면 종료
+        guard !images.isEmpty else { return }
+
+        // 실패 시에도 메모리 사용을 줄이기 위해 다운스케일 + 압축(로컬 프리뷰용)
+        let maxDimension: CGFloat = 1600
+        let jpegQuality: CGFloat = 0.6
+
+        // 로컬 파일 저장 디렉터리 (앱 캐시)
+        let fm = FileManager.default
+        let baseDir: URL = {
+            let dir = fm.urls(for: .cachesDirectory, in: .userDomainMask).first!
+                .appendingPathComponent("failed-attachments", isDirectory: true)
+            try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            return dir
+        }()
+
+        // 헬퍼: 이미지 다운스케일 후 JPEG Data 생성
+        func downscaleJPEGData(_ image: UIImage, maxEdge: CGFloat, quality: CGFloat) -> Data? {
+            let size = image.size
+            guard size.width > 0 && size.height > 0 else { return image.jpegData(compressionQuality: quality) }
+            let scale = Swift.min(1.0, maxEdge / Swift.max(size.width, size.height))
+            let targetSize = CGSize(width: floor(size.width * scale), height: floor(size.height * scale))
+            if scale >= 1.0 {
+                return image.jpegData(compressionQuality: quality)
+            }
+            let format = UIGraphicsImageRendererFormat.default()
+            format.scale = 1.0
+            let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
+            let scaled = renderer.image { _ in
+                image.draw(in: CGRect(origin: .zero, size: targetSize))
+            }
+            return scaled.jpegData(compressionQuality: quality)
+        }
+
+        // 헬퍼: SHA-256(hex)
+        func sha256Hex(_ data: Data) -> String {
+            let digest = SHA256.hash(data: data)
+            return digest.map { String(format: "%02x", $0) }.joined()
+        }
+
+        // 헬퍼: 캐시 디렉터리에 파일 저장 후 file:// URL 반환
+        func writeTempFile(_ data: Data, ext: String = "jpg") -> URL? {
+            let name = UUID().uuidString + "." + ext
+            let url = baseDir.appendingPathComponent(name)
+            do {
+                try data.write(to: url, options: .atomic)
+                return url
+            } catch {
+                print("failed to write temp file: \(error)")
+                return nil
+            }
+        }
+
+        var localAttachments: [Attachment] = []
+        localAttachments.reserveCapacity(images.count)
+
+        // 순차 처리 + autoreleasepool로 메모리 피크 완화
+        for (idx, image) in images.enumerated() {
+            autoreleasepool {
+                guard let data = downscaleJPEGData(image, maxEdge: maxDimension, quality: jpegQuality),
+                      let fileURL = writeTempFile(data) else { return }
+
+                let hash = sha256Hex(data)
+                let pw = image.cgImage?.width ?? Int(image.size.width * image.scale)
+                let ph = image.cgImage?.height ?? Int(image.size.height * image.scale)
+
+                // 메타 전용 Attachment (로컬 미리보기이므로 Thumb/Original을 동일 파일로 설정)
+                let att = Attachment(
+                    type: .image,
+                    index: idx,
+                    pathThumb: fileURL.absoluteString,     // "file://" 경로
+                    pathOriginal: fileURL.absoluteString,  // "file://" 경로
+                    width: pw,
+                    height: ph,
+                    bytesOriginal: data.count,
+                    hash: hash,
+                    blurhash: nil
+                )
+                localAttachments.append(att)
+            }
+        }
+
+        // 일부라도 생성되었으면 실패 메시지 전송 (메타만 포함)
+        guard !localAttachments.isEmpty else { return }
         let failedMessage = ChatMessage(
             ID: UUID().uuidString,
             roomID: room.ID ?? "",
@@ -339,7 +600,9 @@ class SocketIOManager {
             isFailed: true
         )
 
-        self.roomSubjects[room.ID ?? ""]?.send(failedMessage)
+        await MainActor.run {
+            self.roomSubjects[room.ID ?? ""]?.send(failedMessage)
+        }
     }
     
     func setUserName(_ userName: String) {

@@ -8,6 +8,7 @@
 import Foundation
 import UIKit
 import PhotosUI
+import Kingfisher
 
 // 내비게이션 아이템 타이틀 설정
 extension UINavigationItem {
@@ -73,6 +74,8 @@ extension ChatViewController: UIGestureRecognizerDelegate {
 }
 
 extension ChatViewController: PHPickerViewControllerDelegate {
+    private enum PickerConst { static let maxImagesPerMessage = 30 }
+    
     func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
         picker.dismiss(animated: true)
         
@@ -89,12 +92,81 @@ extension ChatViewController: PHPickerViewControllerDelegate {
         }
         
         if !resultsForImages.isEmpty {
+            let imageResults = resultsForImages
+            
+            // 30장씩 배치 전송
+            let total = imageResults.count
+            let chunkSize = PickerConst.maxImagesPerMessage
+            let chunks: [[PHPickerResult]] = stride(from: 0, to: total, by: chunkSize).map { start in
+                let end = min(start + chunkSize, total)
+                return Array(imageResults[start..<end])
+            }
+            
+            if chunks.count > 1 {
+                Task { @MainActor in
+                    let lastCount = total % chunkSize == 0 ? chunkSize : total % chunkSize
+                    AlertManager.showAlertNoHandler(
+                        title: "이미지 다중 전송",
+                        message: "총 \(total)장을 \(chunkSize)장 + \(lastCount)장으로 나눠 \(chunks.count)개의 메시지로 전송합니다.",
+                        viewController: self
+                    )
+                }
+            }
+            
             convertImagesTask = Task {
                 do {
-                    let images = try await MediaManager.shared.dealWithImages(resultsForImages)
-                    
-                    if let room = self.room {
-                    SocketIOManager.shared.sendImages(room, images)
+                    for chunk in chunks {
+                        try Task.checkCancellation()
+                        
+                        // 1) PHPickerResult 배열 -> [ImagePair] (썸네일 Data + 원본 파일URL + 메타)
+                        let pairs = try await MediaManager.shared.preparePairs(chunk)
+                        
+                        // 2) 메시지/폴더 경로 식별자 준비
+                        guard let room = self.room else { continue }
+                        let roomID = room.ID ?? ""
+                        let messageID = UUID().uuidString  // 멱등 식별자(서버에서 대체 가능)
+
+                        // Show HUD
+                        let hud = CircularProgressHUD.show(in: self.view, title: nil)
+                        hud.setProgress(0.0)
+
+                        do {
+                            let attachments = try await FirebaseStorageManager.shared.uploadPairsToRoomMessage(
+                                pairs,
+                                roomID: roomID,
+                                messageID: messageID,
+                                cacheTTLThumbDays: 30,
+                                cacheTTLOriginalDays: 7,
+                                cleanupTemp: true,
+                                onProgress: { fraction in
+                                    Task { @MainActor in
+                                        hud.setProgress(fraction)
+                                    }
+                                }
+                            )
+                            
+                            // Hide HUD
+                            Task { @MainActor in hud.dismiss() }
+
+                            // 3) 소켓/DB 전송: 메타만 (바이너리 X)
+                            let payload = attachments.map { $0.toDict() }
+                            SocketIOManager.shared.sendImages(room, payload)
+
+                        } catch {
+                            Task { @MainActor in hud.dismiss() }
+                            
+                            for pair in pairs {
+                                guard let img = UIImage(data: pair.thumbData) else { return }
+                                
+                                let cache = KingfisherManager.shared.cache
+                                try await cache.store(img, original: nil, forKey: pair.sha256)
+                                
+                                print(#function, "KingFisher cache saved: \(pair.sha256)")
+                            }
+                            SocketIOManager.shared.sendFailedImages(room, fromPairs: pairs)
+                            
+                            print("업로드 실패:", error)
+                        }
                     }
                 } catch MediaError.FailedToConvertImage {
                     AlertManager.showAlertNoHandler(title: "이미지 변환 실패", message: "이미지를 다시 선택해 주세요/", viewController: self)
@@ -102,25 +174,27 @@ extension ChatViewController: PHPickerViewControllerDelegate {
                     print("이미지 업로드 실패")
                 } catch StorageError.FailedToFetchImage {
                     print("이미지 불러오기 실패")
+                } catch {
+                    print("알 수 없는 오류: \(error)")
                 }
             }
-        
+            
             convertImagesTask = nil
+            
+            if !resultsForVideos.isEmpty {
+            }
+            
         }
-        
-        if !resultsForVideos.isEmpty {
-        }
-        
     }
 }
 
 extension ChatViewController: UIImagePickerControllerDelegate {
     func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
 //        if let editedImage = info[.editedImage] as? UIImage {
-//            
+//
 //        } else if let originalImage = info[.originalImage] as? UIImage {
-//            
-//        }        
+//
+//        }
         dismiss(animated: true)
     }
     

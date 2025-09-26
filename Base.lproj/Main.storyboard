@@ -18,6 +18,7 @@
                     <tabBarItem key="tabBarItem" title="날씨" id="cpM-Qv-uHC"/>
                     <navigationItem key="navigationItem" id="nZd-v6-Xgu"/>
                     <navigationBar key="navigationBar" contentMode="scaleToFill" id="Ysb-ji-NFs">
+                        <rect key="frame" x="0.0" y="124" width="402" height="44"/>
                         <autoresizingMask key="autoresizingMask"/>
                     </navigationBar>
                     <connections>
@@ -28,12 +29,27 @@
             </objects>
             <point key="canvasLocation" x="-4416" y="-338"/>
         </scene>
+        <!--Est View Controller-->
+        <scene sceneID="jam-8J-Ilu">
+            <objects>
+                <viewController id="cDU-3b-lBL" customClass="TEstViewController" customModule="OutPick" customModuleProvider="target" sceneMemberID="viewController">
+                    <view key="view" contentMode="scaleToFill" id="gCN-9P-a83">
+                        <rect key="frame" x="0.0" y="0.0" width="402" height="874"/>
+                        <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
+                        <viewLayoutGuide key="safeArea" id="BFo-rf-Gky"/>
+                        <color key="backgroundColor" systemColor="systemBackgroundColor"/>
+                    </view>
+                </viewController>
+                <placeholder placeholderIdentifier="IBFirstResponder" id="7MK-yi-HBW" userLabel="First Responder" customClass="UIResponder" sceneMemberID="firstResponder"/>
+            </objects>
+            <point key="canvasLocation" x="-5593" y="832"/>
+        </scene>
         <!--Home Collection View Controller-->
         <scene sceneID="S3S-Ay-0XO">
             <objects>
                 <collectionViewController storyboardIdentifier="weatherVC" useStoryboardIdentifierAsRestorationIdentifier="YES" id="T43-zg-hFW" customClass="HomeCollectionViewController" customModule="OutPick" customModuleProvider="target" sceneMemberID="viewController">
                     <collectionView key="view" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="scaleToFill" dataMode="prototypes" id="PWS-2l-4ca">
-                        <rect key="frame" x="0.0" y="0.0" width="402" height="874"/>
+                        <rect key="frame" x="0.0" y="0.0" width="402" height="757"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <color key="backgroundColor" systemColor="systemBackgroundColor"/>
                         <collectionViewFlowLayout key="collectionViewLayout" minimumLineSpacing="10" minimumInteritemSpacing="10" id="fgr-Ng-m8Q">
@@ -196,6 +212,7 @@
                 <navigationController storyboardIdentifier="ChatList" useStoryboardIdentifierAsRestorationIdentifier="YES" id="xHU-6n-EM5" sceneMemberID="viewController">
                     <tabBarItem key="tabBarItem" title="오픈채팅" id="rk3-fv-GsL"/>
                     <navigationBar key="navigationBar" contentMode="scaleToFill" id="Wre-v0-s4H">
+                        <rect key="frame" x="0.0" y="124" width="402" height="44"/>
                         <autoresizingMask key="autoresizingMask"/>
                         <color key="backgroundColor" white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
                         <color key="tintColor" white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
@@ -222,7 +239,7 @@
             <objects>
                 <collectionViewController storyboardIdentifier="chatListVC" useStoryboardIdentifierAsRestorationIdentifier="YES" id="1bN-e9-yBk" customClass="RoomListsCollectionViewController" customModule="OutPick" customModuleProvider="target" sceneMemberID="viewController">
                     <collectionView key="view" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="scaleToFill" dataMode="prototypes" id="0Hr-Vz-MTQ">
-                        <rect key="frame" x="0.0" y="0.0" width="402" height="874"/>
+                        <rect key="frame" x="0.0" y="0.0" width="402" height="757"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <color key="backgroundColor" systemColor="systemBackgroundColor"/>
                         <collectionViewFlowLayout key="collectionViewLayout" automaticEstimatedItemSize="YES" minimumLineSpacing="10" minimumInteritemSpacing="10" id="U3B-7j-COU">
@@ -884,6 +901,7 @@
                 <navigationController id="OUv-H1-woa" sceneMemberID="viewController">
                     <tabBarItem key="tabBarItem" title="채팅" id="HUN-y0-lFh"/>
                     <navigationBar key="navigationBar" contentMode="scaleToFill" id="4Fk-Tv-eig">
+                        <rect key="frame" x="0.0" y="124" width="402" height="44"/>
                         <autoresizingMask key="autoresizingMask"/>
                     </navigationBar>
                     <connections>
@@ -899,7 +917,7 @@
             <objects>
                 <collectionViewController id="j8R-If-eUG" sceneMemberID="viewController">
                     <collectionView key="view" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="scaleToFill" dataMode="prototypes" id="yqR-6u-1qX">
-                        <rect key="frame" x="0.0" y="0.0" width="402" height="874"/>
+                        <rect key="frame" x="0.0" y="0.0" width="402" height="757"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <color key="backgroundColor" systemColor="systemBackgroundColor"/>
                         <collectionViewFlowLayout key="collectionViewLayout" automaticEstimatedItemSize="YES" minimumLineSpacing="10" minimumInteritemSpacing="10" id="yF5-Ly-Ri7">
@@ -936,6 +954,7 @@
                 <navigationController id="F3O-nC-Wn7" sceneMemberID="viewController">
                     <tabBarItem key="tabBarItem" title="" id="NAZ-xu-z2w"/>
                     <navigationBar key="navigationBar" contentMode="scaleToFill" id="zcY-ah-rtq">
+                        <rect key="frame" x="0.0" y="124" width="402" height="44"/>
                         <autoresizingMask key="autoresizingMask"/>
                     </navigationBar>
                     <connections>
@@ -951,7 +970,7 @@
             <objects>
                 <viewController storyboardIdentifier="settingsVC" useStoryboardIdentifierAsRestorationIdentifier="YES" id="9K7-kt-9Io" customClass="MyMenuViewController" customModule="OutPick" customModuleProvider="target" sceneMemberID="viewController">
                     <view key="view" contentMode="scaleToFill" id="v7R-H3-6A8">
-                        <rect key="frame" x="0.0" y="0.0" width="402" height="874"/>
+                        <rect key="frame" x="0.0" y="0.0" width="402" height="757"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
                             <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="vEN-mY-AJa">
@@ -982,7 +1001,7 @@
             <objects>
                 <collectionViewController id="GhM-E7-MUJ" sceneMemberID="viewController">
                     <collectionView key="view" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="scaleToFill" dataMode="prototypes" id="U9p-uI-fUO">
-                        <rect key="frame" x="0.0" y="0.0" width="402" height="874"/>
+                        <rect key="frame" x="0.0" y="0.0" width="402" height="757"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <color key="backgroundColor" systemColor="systemBackgroundColor"/>
                         <collectionViewFlowLayout key="collectionViewLayout" automaticEstimatedItemSize="YES" minimumLineSpacing="10" minimumInteritemSpacing="10" id="miL-E4-bjW">
@@ -1020,6 +1039,7 @@
                     <toolbarItems/>
                     <navigationItem key="navigationItem" id="Mkr-LB-yBz"/>
                     <navigationBar key="navigationBar" contentMode="scaleToFill" id="LP2-PE-mAY">
+                        <rect key="frame" x="0.0" y="124" width="402" height="44"/>
                         <autoresizingMask key="autoresizingMask"/>
                     </navigationBar>
                     <nil name="viewControllers"/>

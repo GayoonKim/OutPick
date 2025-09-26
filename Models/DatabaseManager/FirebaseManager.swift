@@ -702,13 +702,19 @@ class FirebaseManager {
         
         // 7. 마지막 불러온 문서 저장 (다음 페이지네이션용)
         lastFetchedSnapshot = snapshot.documents.last
-
-        // 8. 결과 디코딩
-        let messages = snapshot.documents.compactMap { doc -> ChatMessage? in
+        // 8. 결과 디코딩 (관대한 파서 우선)
+        let messages: [ChatMessage] = snapshot.documents.compactMap { doc in
+            var dict = doc.data()
+            // 일부 문서에 ID 필드가 없을 수도 있으니 보정
+            if dict["ID"] == nil { dict["ID"] = doc.documentID }
+            if let msg = ChatMessage.from(dict) {
+                return msg
+            }
+            // 최후의 수단으로 FirestoreSwift 디코더 시도 (디버깅 로그 유지)
             do {
                 return try doc.data(as: ChatMessage.self)
             } catch {
-                print("⚠️ 디코딩 실패: \(error), docID: \(doc.documentID)")
+                print("⚠️ 디코딩 실패(관대파서/코더 모두 실패): \(error), docID: \(doc.documentID), data=\(dict)")
                 return nil
             }
         }
@@ -734,10 +740,13 @@ class FirebaseManager {
         print("📦 불러온 메시지 개수: \(messagesSnapshot.count)")
 
         return messagesSnapshot.documents.compactMap { doc in
+            var dict = doc.data()
+            if dict["ID"] == nil { dict["ID"] = doc.documentID }
+            if let msg = ChatMessage.from(dict) { return msg }
             do {
                 return try doc.data(as: ChatMessage.self)
             } catch {
-                print("🔥 메시지 디코딩 실패: \(error.localizedDescription) → \(doc.data())")
+                print("🔥 메시지 디코딩 실패(관대파서/코더 모두 실패): \(error.localizedDescription) → \(dict)")
                 return nil
             }
         }
@@ -763,11 +772,14 @@ class FirebaseManager {
             .limit(to: limit)
             .getDocuments()
         
-        let messages = snapshot.documents.compactMap { doc -> ChatMessage? in
+        let messages: [ChatMessage] = snapshot.documents.compactMap { doc in
+            var dict = doc.data()
+            if dict["ID"] == nil { dict["ID"] = doc.documentID }
+            if let msg = ChatMessage.from(dict) { return msg }
             do {
                 return try doc.data(as: ChatMessage.self)
             } catch {
-                print("⚠️ 디코딩 실패: \(error), docID: \(doc.documentID)")
+                print("⚠️ 디코딩 실패(관대파서/코더 모두 실패): \(error), docID: \(doc.documentID), data=\(dict)")
                 return nil
             }
         }
@@ -793,11 +805,14 @@ class FirebaseManager {
             .limit(to: limit)
             .getDocuments()
         
-        let messages = snapshot.documents.compactMap { doc -> ChatMessage? in
+        let messages: [ChatMessage] = snapshot.documents.compactMap { doc in
+            var dict = doc.data()
+            if dict["ID"] == nil { dict["ID"] = doc.documentID }
+            if let msg = ChatMessage.from(dict) { return msg }
             do {
                 return try doc.data(as: ChatMessage.self)
             } catch {
-                print("⚠️ 디코딩 실패: \(error), docID: \(doc.documentID)")
+                print("⚠️ 디코딩 실패(관대파서/코더 모두 실패): \(error), docID: \(doc.documentID), data=\(dict)")
                 return nil
             }
         }

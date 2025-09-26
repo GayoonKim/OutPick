@@ -43,6 +43,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     private var replyMessage: ReplyPreview?
     private var messageMap: [String: ChatMessage] = [:]
+    // Preloaded thumbnails for image messages (messageID -> ordered thumbnails)
+    var messageImages: [String: [UIImage]] = [:]
 
     // Loading state flags for message paging
     private var isLoadingOlder = false
@@ -89,7 +91,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private static var lastTriggeredNewerIndex: Int?
     
     private var deletionListener: ListenerRegistration?
-    
+
     deinit {
         print("💧 ChatViewController deinit")
         convertImagesTask?.cancel()
@@ -329,7 +331,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         if let room = self.room {
             ChatViewController.currentRoomID = room.ID
         } // ✅ 현재 방 ID 저장
-//        bindMessagePublishers()
     }
 
     override func viewDidLayoutSubviews() {
@@ -350,8 +351,28 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             do {
                 // 1. GRDB 로드
                 let localMessages = try await GRDBManager.shared.fetchRecentMessages(inRoom: room.ID ?? "", limit: 200)
-                addMessages(localMessages, updateType: .initial)
                 self.lastReadMessageID = localMessages.last?.ID
+                
+                let metas = try await GRDBManager.shared.fetchImageIndex(inRoom: room.ID ?? "", forMessageIDs: localMessages.map { $0.ID })
+                let grouped = Dictionary(grouping: metas, by: { $0.messageID })
+
+                // grouped 메타를 기반으로 썸네일 캐싱
+                for (messageID, attachments) in grouped {
+                    for att in attachments {
+                        let img = try? await FirebaseStorageManager.shared.fetchImageFromStorage(
+                            image: att.hash ?? "",
+                            location: .RoomImage
+                        )
+                        if let img = img {
+                            await MainActor.run {
+                                print(#function, "📸 썸네일 로드 성공:", att.hash ?? "")
+                                self.messageImages[messageID, default: []].append(img)
+                            }
+                        }
+                    }
+                }
+                
+                addMessages(localMessages, updateType: .initial)
                 
                 // 2. 삭제 상태 동기화
                 await syncDeletedStates(localMessages: localMessages, room: room)
@@ -359,7 +380,14 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 // 3. Firebase 전체 메시지 로드
                 let serverMessages = try await FirebaseManager.shared.fetchMessagesPaged(for: room, pageSize: 300, reset: true)
                 try await GRDBManager.shared.saveChatMessages(serverMessages)
+
                 addMessages(serverMessages, updateType: .newer)
+                
+                // 백그라운드 프리페치 시작 (UI는 즉시 표시, 준비되는 메시지만 reconfigure)
+                Task.detached { [weak self] in
+                    guard let self = self else { return }
+                    await self.prefetchThumbnails(for: serverMessages, maxConcurrent: 4)
+                }
                 
                 isUserInCurrentRoom = true
                 bindMessagePublishers()
@@ -367,6 +395,42 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 print("❌ 메시지 초기화 실패:", error)
             }
             isInitialLoading = false
+        }
+    }
+    
+    @MainActor
+    private func reloadVisibleMessageIfNeeded(messageID: String) {
+        var snapshot = dataSource.snapshot()
+        guard let item = snapshot.itemIdentifiers.first(where: { item in
+            if case let .message(m) = item { return m.ID == messageID }
+            return false
+        }) else { return }
+        snapshot.reconfigureItems([item])
+        dataSource.apply(snapshot, animatingDifferences: false)
+    }
+    
+    private func prefetchThumbnails(for messages: [ChatMessage], maxConcurrent: Int = 4) async {
+        guard let roomID = self.room?.ID else { return }
+        let imageMessages = messages.filter { $0.attachments.contains { $0.type == .image } }
+
+        var index = 0
+        while index < imageMessages.count {
+            let end = min(index + maxConcurrent, imageMessages.count)
+            let slice = Array(imageMessages[index..<end])
+
+            await withTaskGroup(of: Void.self) { group in
+                for msg in slice {
+                    group.addTask { [weak self] in
+                        guard let self = self else { return }
+                        await self.cacheAttachmentsIfNeeded(for: msg, in: roomID)
+                        await MainActor.run {
+                            self.reloadVisibleMessageIfNeeded(messageID: msg.ID)
+                        }
+                    }
+                }
+                await group.waitForAll()
+            }
+            index = end
         }
     }
     
@@ -519,6 +583,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         SocketIOManager.shared.subscribeToMessages(for: room.ID ?? "")
             .sink { [weak self] receivedMessage in
                 guard let self = self else { return }
+                
                 Task {
                     await self.handleIncomingMessage(receivedMessage)
                 }
@@ -568,43 +633,61 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     @MainActor
     private func handleIncomingMessage(_ message: ChatMessage) async {
         guard let room = self.room else { return }
-        
+
+        // 다른 방에서 온 이벤트면 무시 (안전 가드)
+        if message.roomID != room.ID { return }
+
         print("\(message.isFailed ? "전송 실패" : "전송 성공") 메시지 수신: \(message)")
-        
+
+        let roomCopy = room
         do {
+            // 내가 보낸 정상 메시지만 Firebase에 기록 (중복 방지)
             if !message.isFailed, message.senderID == LoginManager.shared.getUserEmail {
-                try await FirebaseManager.shared.saveMessage(message, room)
+                try await FirebaseManager.shared.saveMessage(message, roomCopy)
             }
-            try await GRDBManager.shared.saveChatMessages([message])
-            
+            // 로컬 DB 저장
+                try await GRDBManager.shared.saveChatMessages([message])
+
+            // 첨부 캐싱 (썸네일/이미지 캐시 저장 등)
             if !message.attachments.isEmpty {
-                await cacheAttachmentsIfNeeded(for: message, in: room.ID ?? "")
+                await self.cacheAttachmentsIfNeeded(for: message, in: roomCopy.ID ?? "")
             }
             
-            addMessages([message], updateType: .newer)
+            addMessages([message])
         } catch {
-            print("❌ 메시지 처리 실패: \(error)")
+            print("❌ 메시지 영속화/캐싱 실패: \(error)")
         }
     }
     
-    /// 첨부파일 캐싱 전용
+    //     첨부파일 캐싱 전용
     private func cacheAttachmentsIfNeeded(for message: ChatMessage, in roomID: String) async {
         guard !message.attachments.isEmpty else { return }
-        
-        for attachment in message.attachments {
-            guard attachment.type == .image, let imageName = attachment.fileName else { continue }
-            
-            do {
-                if !message.isFailed {
-                    try GRDBManager.shared.addImage(imageName, toRoom: roomID, at: message.sentAt ?? Date())
-                }
-                if let image = attachment.toUIImage() {
-                    try await KingfisherManager.shared.cache.store(image, forKey: imageName)
-                }
-            } catch {
-                print("❌ 첨부파일 캐싱 실패: \(error)")
+
+        // 사전 로드할 썸네일 배열(첨부 index 순서 유지)
+        let imageAttachments = message.attachments
+            .filter { $0.type == .image }
+            .sorted { $0.index < $1.index }
+
+            for attachment in imageAttachments {
+                // 이미지 타입 + 파일명 필수
+                let key = attachment.hash
+                    do {
+                        let cache = KingfisherManager.shared.cache
+                        cache.memoryStorage.config.expiration = .date(Date().addingTimeInterval(60 * 60 * 24 * 30))
+                        cache.diskStorage.config.expiration = .days(30)
+                        
+                        if await KingFisherCacheManager.shared.isCached(key) {
+                            guard let img = await KingFisherCacheManager.shared.loadImage(named: key) else { return }
+                            self.messageImages[message.ID, default: []].append(img)
+                        } else {
+                            let img = try await FirebaseStorageManager.shared.fetchImageFromStorage(image: attachment.pathThumb, location: .RoomImage)
+                            KingFisherCacheManager.shared.storeImage(img, forKey: key)
+                            self.messageImages[message.ID, default: []].append(img)
+                        }
+                    } catch {
+                        print(#function, "이미지 캐시 실패: \(error)")
+                    }
             }
-        }
     }
     
     @MainActor
@@ -670,7 +753,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     @MainActor
     private func hideOrShowOptionMenu() {
         guard let image = self.chatUIView.attachmentButton.imageView?.image else { return }
-        
         if image != UIImage(systemName: "xmark") {
             self.chatUIView.attachmentButton.setImage(UIImage(systemName: "xmark"), for: .normal)
             
@@ -1201,7 +1283,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
         
         if !itemsToRealod.isEmpty {
-            snapshot.reloadItems(itemsToRealod)
+            snapshot.reconfigureItems(itemsToRealod)
             dataSource.apply(snapshot, animatingDifferences: false)
         }
         
@@ -1225,7 +1307,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         scrollTargetIndex = nil
         
         if !itemsToRealod.isEmpty {
-            snapshot.reloadItems(itemsToRealod)
+            snapshot.reconfigureItems(itemsToRealod)
             dataSource.apply(snapshot, animatingDifferences: false)
         }
         
@@ -1558,20 +1640,19 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     //MARK: Diffable Data Source
     private func configureDataSource() {
-        dataSource = UICollectionViewDiffableDataSource<Section, Item>(collectionView: chatMessageCollectionView) { [weak self] collectionView, indexPath, item in
-            guard let self = self else { return  nil }
-            
+        dataSource = UICollectionViewDiffableDataSource<Section, Item>(collectionView: chatMessageCollectionView) { [unowned self] collectionView, indexPath, item in
             switch item {
             case .message(let message):
                 let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ChatMessageCell.reuseIdentifier, for: indexPath) as! ChatMessageCell
 
                 // ✅ Always prefer the latest state from messageMap
                 let latestMessage = self.messageMap[message.ID] ?? message
-
-                if latestMessage.attachments.isEmpty {
-                    cell.configureWithMessage(with: latestMessage)
+                let latestImages = self.messageImages[message.ID] ?? []
+                
+                if !latestMessage.attachments.isEmpty {
+                    cell.configureWithImage(with: latestMessage, images: latestImages)
                 } else {
-                    cell.configureWithImage(with: latestMessage)
+                    cell.configureWithMessage(with: latestMessage)
                 }
 
                 let keyword = self.highlightedMessageIDs.contains(latestMessage.ID) ? self.currentSearchKeyword : nil
@@ -1580,15 +1661,15 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 return cell
             case .dateSeparator(let date):
                 let cell = collectionView.dequeueReusableCell(withReuseIdentifier: DateSeperatorCell.reuseIdentifier, for: indexPath) as! DateSeperatorCell
-                
+
                 let dateText = self.formatDateToDayString(date)
                 cell.configureWithDate(dateText)
-                
+
                 return cell
-                
+
             case .readMarker:
                 let cell = collectionView.dequeueReusableCell(withReuseIdentifier: readMarkCollectionViewCell.reuseIdentifier, for: indexPath) as! readMarkCollectionViewCell
-                
+
                 cell.configure()
                 return cell
             }
@@ -1596,6 +1677,23 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         
         chatMessageCollectionView.setCollectionViewDataSource(dataSource)
         applySnapshot([])
+    }
+
+    // MARK: - Diffable animation heuristics
+    private func shouldAnimateDifferences(for updateType: MessageUpdateType, newItemCount: Int) -> Bool {
+        switch updateType {
+        case .newer:
+            // 사용자가 거의 바닥(최근 메시지 근처)에 있고, 새 항목이 소량일 때만 애니메이션
+            return newItemCount > 0 && newItemCount <= 20 && isNearBottom()
+        case .older, .reload, .initial:
+            return false
+        }
+    }
+
+    private func isNearBottom(threshold: CGFloat = 120) -> Bool {
+        let contentHeight = chatMessageCollectionView.contentSize.height
+        let visibleMaxY = chatMessageCollectionView.contentOffset.y + chatMessageCollectionView.bounds.height
+        return (contentHeight - visibleMaxY) <= threshold
     }
     
     func applySnapshot(_ items: [Item]) {
@@ -1608,23 +1706,57 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     @MainActor
     func addMessages(_ messages: [ChatMessage], updateType: MessageUpdateType = .initial) {
+        // 빠른 가드: 빈 입력, reload 전용 처리
+        guard !messages.isEmpty else { return }
         let windowSize = 300
         var snapshot = dataSource.snapshot()
-        
+
         if updateType == .reload {
             reloadDeletedMessages(messages)
             return
         }
-        
-        let existingIDs = snapshot.itemIdentifiers.compactMap { if case .message(let m) = $0 { return m.ID } else { return nil } }
-        let newMessages = messages.filter { !existingIDs.contains($0.ID) }
-        let items = buildNewItems(from: newMessages)
-        
+
+        // 1) 현재 스냅샷에 존재하는 메시지 ID 집합 (O(1) 조회)
+        let existingIDs: Set<String> = Set(
+            snapshot.itemIdentifiers.compactMap { item -> String? in
+                if case .message(let m) = item { return m.ID }
+                return nil
+            }
+        )
+
+        // 2) 안정적 중복 제거(입력 배열 내 중복 ID 제거, 원래 순서 유지)
+        var seen = Set<String>()
+        var deduped: [ChatMessage] = []
+        deduped.reserveCapacity(messages.count)
+        for msg in messages {
+            if !seen.contains(msg.ID) {
+                seen.insert(msg.ID)
+                deduped.append(msg)
+            }
+        }
+
+        // 3) 이미 표시 중인 항목 제거
+        let incoming = deduped.filter { !existingIDs.contains($0.ID) }
+        guard !incoming.isEmpty else { return } // 변경 없음 → 스냅샷 apply 불필요
+
+        // 4) 시간 순 정렬(오름차순)로 날짜 구분선/삽입 안정화
+        let now = Date()
+        let sorted = incoming.sorted { (a, b) -> Bool in
+            (a.sentAt ?? now) < (b.sentAt ?? now)
+        }
+
+        // 5) 새 아이템 구성 (날짜 구분선 포함)
+        let items = buildNewItems(from: sorted)
+        guard !items.isEmpty else { return }
+
+        // 6) 스냅샷 삽입 & 읽음 마커 처리 & 가상화(윈도우 크기 제한)
         insertItems(items, into: &snapshot, updateType: updateType)
-        insertReadMarkerIfNeeded(newMessages, items: items, into: &snapshot, updateType: updateType)
+        insertReadMarkerIfNeeded(sorted, items: items, into: &snapshot, updateType: updateType)
         applyVirtualization(on: &snapshot, updateType: updateType, windowSize: windowSize)
-        
-        dataSource.apply(snapshot, animatingDifferences: false)
+
+        // 7) 최종 반영
+        let animate = shouldAnimateDifferences(for: updateType, newItemCount: items.count)
+        dataSource.apply(snapshot, animatingDifferences: animate)
     }
 
     // MARK: - Private Helpers for addMessages
@@ -1654,8 +1786,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 items.append(.dateSeparator(message.sentAt ?? Date()))
                 lastMessageDate = messageDate
             }
+
             items.append(.message(message))
         }
+        
         return items
     }
 
@@ -1669,6 +1803,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         } else {
             snapshot.appendItems(items, toSection: .main)
         }
+        
     }
 
     private func insertReadMarkerIfNeeded(_ newMessages: [ChatMessage], items: [Item], into snapshot: inout NSDiffableDataSourceSnapshot<Section, Item>, updateType: MessageUpdateType) {
@@ -1727,17 +1862,20 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private func updateCollectionView(with newItems: [Item]) {
         var snapshot = dataSource.snapshot()
         snapshot.appendItems(newItems, toSection: .main)
-        dataSource.apply(snapshot, animatingDifferences: false)
+        let animate = shouldAnimateDifferences(for: .newer, newItemCount: newItems.count)
+        dataSource.apply(snapshot, animatingDifferences: animate)
         chatMessageCollectionView.scrollToBottom()
     }
     
+    // 캐시된 포맷터
+    private lazy var dayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "ko_KR")
+        f.dateFormat = "yyyy년 M월 d일 EEEE"
+        return f
+    }()
     private func formatDateToDayString(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "ko_KR")
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .none
-        formatter.dateFormat = "yyyy년 M월 d일 EEEE"
-        return formatter.string(from: date)
+        return dayFormatter.string(from: date)
     }
     
     //MARK: Tap Gesture

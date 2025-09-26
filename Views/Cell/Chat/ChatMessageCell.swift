@@ -7,6 +7,7 @@
 
 import Foundation
 import UIKit
+import Kingfisher
 
 
 class ChatMessageCell: UICollectionViewCell {
@@ -46,7 +47,7 @@ class ChatMessageCell: UICollectionViewCell {
         label.textColor = .black
         label.textAlignment = .left
         label.translatesAutoresizingMaskIntoConstraints = false
-
+        
         return label
     }()
     
@@ -88,7 +89,7 @@ class ChatMessageCell: UICollectionViewCell {
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
-
+    
     private let replyPreviewMsgLabel: UILabel = {
         let label = UILabel()
         label.font = .systemFont(ofSize: 9/*, weight: .medium*/)
@@ -97,7 +98,7 @@ class ChatMessageCell: UICollectionViewCell {
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
-
+    
     private let replyPreviewSeparator: UIView = {
         let sep = UIView()
         sep.translatesAutoresizingMaskIntoConstraints = false
@@ -105,7 +106,7 @@ class ChatMessageCell: UICollectionViewCell {
         sep.heightAnchor.constraint(equalToConstant: 1).isActive = true
         return sep
     }()
-
+    
     private lazy var replyPreviewContainer: UIStackView = {
         let stack = UIStackView(arrangedSubviews: [replyPreviewNameLabel, replyPreviewMsgLabel, replyPreviewSeparator])
         stack.axis = .vertical
@@ -114,15 +115,14 @@ class ChatMessageCell: UICollectionViewCell {
         stack.setCustomSpacing(10, after: replyPreviewMsgLabel)
         return stack
     }()
-
     
     private var highlightView: UIView?
-
+    
     private var bubbleViewTrailingConstraint: NSLayoutConstraint?
     private var bubbleViewLeadingConstraint: NSLayoutConstraint?
     private var bubbleViewTopConstraint: NSLayoutConstraint?
     private var bubbleViewBottomConstraint: NSLayoutConstraint?
-
+    
     private var imagePreviewCollectionViewTopConstraint: NSLayoutConstraint?
     private var imagePreviewCollectionViewLeadingConstraint: NSLayoutConstraint?
     private var imagePreviewCollectionViewTrailingConstraint: NSLayoutConstraint?
@@ -165,7 +165,7 @@ class ChatMessageCell: UICollectionViewCell {
             messageLabel.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor, constant: -10),
             messageLabel.bottomAnchor.constraint(equalTo: bubbleView.bottomAnchor, constant: -10),
             messageLabel.widthAnchor.constraint(lessThanOrEqualToConstant: UIScreen.main.bounds.width * 0.7),
-                       
+            
             failedIconImageView.widthAnchor.constraint(equalToConstant: 20),
             failedIconImageView.heightAnchor.constraint(equalToConstant: 20),
         ])
@@ -185,7 +185,7 @@ class ChatMessageCell: UICollectionViewCell {
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
-
+    
     override func layoutSubviews() {
         super.layoutSubviews()
     }
@@ -257,27 +257,27 @@ class ChatMessageCell: UICollectionViewCell {
             bubbleView.backgroundColor = .systemBlue
             profileImageView.isHidden = true
             nickNameLabel.isHidden = true
-
+            
             // 기본 제약조건 업데이트
             bubbleViewLeadingConstraint = bubbleView.leadingAnchor.constraint(greaterThanOrEqualTo: contentView.leadingAnchor, constant: 20)
             bubbleViewTrailingConstraint = bubbleView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -8)
             bubbleViewTopConstraint = bubbleView.topAnchor.constraint(equalTo: contentView.topAnchor)
             bubbleViewBottomConstraint = bubbleView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
             bubbleView.widthAnchor.constraint(lessThanOrEqualToConstant: containerWidth).isActive = true
-
+            
             failedIconImageView.isHidden = true
             if message.isFailed {
                 failedIconImageView.isHidden = false
-
+                
                 failedIconImageViewCenterYConstraint = failedIconImageView.centerYAnchor.constraint(equalTo: bubbleView.centerYAnchor)
                 failedIconImageViewTrainlingConstraint = failedIconImageView.trailingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: -2)
             }
-
+            
         } else {
             // 상대방이 보낸 메시지
             nickNameLabel.text = message.senderNickname
             bubbleView.backgroundColor = /*UIColor(white: 0.1, alpha: 0.03)*/.secondarySystemBackground
-
+            
             // 기본 제약조건으로 복원
             bubbleViewLeadingConstraint = bubbleView.leadingAnchor.constraint(equalTo: profileImageView.trailingAnchor, constant: 5)
             bubbleViewTrailingConstraint = bubbleView.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor, constant: -10)
@@ -330,26 +330,19 @@ class ChatMessageCell: UICollectionViewCell {
         self.setNeedsLayout()
         self.layoutIfNeeded()
     }
-
-    func configureWithImage(with message: ChatMessage) {
+    
+    func configureWithImage(with message: ChatMessage, images: [UIImage]) {
         bubbleView.isHidden = true
         messageLabel.isHidden = true
         imagesPreviewCollectionView.isHidden = false
         
         if let nickName = LoginManager.shared.currentUserProfile?.nickname {
-            let images = message.attachments.compactMap {
-                if let imageData = $0.fileData {
-                    return UIImage(data: imageData)
-                }
-                return nil
-            }
-            
             let containerWidth = contentView.frame.width * 0.7
-            let rows = calculateRowCountWithImage(images.count)
+            let rows = calculateRowCountWithImage(message.attachments.count)
             
             var contentHeight: CGFloat {
-                if images.count == 1 {
-                    return containerWidth
+                if message.attachments.count == 1 {
+                    return contentView.frame.width * 0.7
                 } else {
                     return rows.reduce(0) { $0 + (containerWidth / CGFloat($1)) }
                 }
@@ -398,7 +391,7 @@ class ChatMessageCell: UICollectionViewCell {
                 failedIconImageViewCenterYConstraint,
                 failedIconImageViewTrainlingConstraint
             ].compactMap{$0})
-            
+
             imagesPreviewCollectionView.updateCollectionView(images, contentHeight, rows)
         }
     }
@@ -441,7 +434,7 @@ class ChatMessageCell: UICollectionViewCell {
             highlightView = nil
         }
     }
-
+    
     func shakeHorizontally(duration: CFTimeInterval = 0.5, repeatCount: Float = 1) {
         let animation = CAKeyframeAnimation(keyPath: "transform.translation.x")
         animation.timingFunction = CAMediaTimingFunction(name: .linear)
@@ -453,7 +446,7 @@ class ChatMessageCell: UICollectionViewCell {
     
     func highlightKeyword(_ keyword: String?) {
         guard let text = messageLabel.text else { return }
-
+        
         if let keyword = keyword, !keyword.isEmpty {
             let attributed = NSMutableAttributedString(string: text)
             let range = (text as NSString).range(of: keyword, options: .caseInsensitive)
@@ -477,4 +470,3 @@ class ChatMessageCell: UICollectionViewCell {
         return view
     }
 }
-
