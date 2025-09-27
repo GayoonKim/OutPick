@@ -13,6 +13,7 @@ import Combine
 import PhotosUI
 import Firebase
 import Kingfisher
+import FirebaseStorage
 
 protocol ChatMessageCellDelegate: AnyObject {
     func cellDidLongPress(_ cell: ChatMessageCell)
@@ -91,6 +92,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private static var lastTriggeredNewerIndex: Int?
     
     private var deletionListener: ListenerRegistration?
+    
+    private var cellSubscriptions: [ObjectIdentifier: Set<AnyCancellable>] = [:]
 
     deinit {
         print("💧 ChatViewController deinit")
@@ -292,6 +295,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             }
         }
         
+        stopAllPrefetchers()
         cancellables.removeAll()
         NotificationCenter.default.removeObserver(self)
         
@@ -1478,10 +1482,31 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             do {
                 // 1. GRDB 업데이트
                 try await GRDBManager.shared.updateMessagesIsDeleted([messageID], isDeleted: true, inRoom: room.ID ?? "")
+                try GRDBManager.shared.deleteImageIndex(forMessageID: messageID, inRoom: roomID)
 
                 // 2. Firestore 업데이트
                 do {
                     try await FirebaseManager.shared.updateMessageIsDeleted(roomID: room.ID ?? "", messageID: messageID)
+                    
+                    // Gather non-empty, unique paths from attachments
+                    let rawPaths: [String] = message.attachments.flatMap { att in
+                        return [att.pathThumb, att.pathOriginal]
+                    }.compactMap { $0 }.filter { !$0.isEmpty }
+                    
+                    guard !rawPaths.isEmpty else { return }
+                    
+                    var seen = Set<String>()
+                    let uniquePaths = rawPaths.filter { seen.insert($0).inserted }
+                    
+                    await withTaskGroup(of: Void.self) { group in
+                        for path in uniquePaths {
+                            group.addTask { [weak self] in
+                                guard let self else { return }
+                                FirebaseStorageManager.shared.deleteImageFromStorage(path: path)
+                            }
+                        }
+                    }
+                    
                     print("✅ 메시지 삭제 성공: \(messageID)")
                 } catch {
                     print("❌ 메시지 Firestore 삭제 처리 실패:", error)
@@ -1654,6 +1679,21 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 } else {
                     cell.configureWithMessage(with: latestMessage)
                 }
+                
+                // ✅ 구독 정리용 Bag 준비
+                let key = ObjectIdentifier(cell)
+                cellSubscriptions[key] = Set<AnyCancellable>()
+
+                // 이미지 탭
+                cell.imageTapPublisher
+                    .sink { [weak self] tappedIndex in
+                        guard let self else { return }
+                        // tappedIndex == nil 이면 빈 영역 탭
+                        if let i = tappedIndex {
+                            self.presentImageViewer(tappedIndex: i, indexPath: indexPath)
+                        }
+                    }
+                    .store(in: &cellSubscriptions[key]!)
 
                 let keyword = self.highlightedMessageIDs.contains(latestMessage.ID) ? self.currentSearchKeyword : nil
                 cell.highlightKeyword(keyword)
@@ -1964,6 +2004,165 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         alert.addAction(UIAlertAction(title: "확인", style: .default) { action in
             self.navigationController?.popViewController(animated: true)
         })
+    }
+    
+    // MARK: 이미지 뷰어 관련
+    // Cache for Firebase Storage download URLs (path -> URL)
+    actor StorageURLCache {
+        private var cache: [String: URL] = [:]
+        func url(for path: String) async throws -> URL {
+            if let u = cache[path] { return u }
+            let ref = Storage.storage().reference(withPath: path)
+            let url = try await withCheckedThrowingContinuation { cont in
+                ref.downloadURL { url, err in
+                    if let url { cont.resume(returning: url) }
+                    else { cont.resume(throwing: err ?? NSError(domain: "Storage", code: -1)) }
+                }
+            }
+            cache[path] = url
+            return url
+        }
+    }
+    // Kingfisher prefetchers & URL cache
+    private var imagePrefetchers: [ImagePrefetcher] = []
+    private let storageURLCache = StorageURLCache()
+    
+    private func presentImageViewer(tappedIndex: Int, indexPath: IndexPath) {
+        print(#function, "startingAt: \(tappedIndex), for: \(indexPath)")
+        
+        // 1) 메시지 & 첨부 수집
+        guard let item = dataSource.itemIdentifier(for: indexPath),
+              case .message(let chatMessage) = item else { return }
+                
+        let messageID = chatMessage.ID
+        guard let message = messageMap[messageID] else { return }
+        print(#function, "Chat Message:", messageMap[messageID] ?? [])
+        
+//        let imageAttachments = message.attachments
+//            .filter { $0.type == .image }
+//            .sorted { $0.index < $1.index }
+        
+        let imageAttachments = chatMessage.attachments
+            .filter { $0.type == .image }
+            .sorted { $0.index < $1.index }
+        
+        // 원본 우선, 없으면 썸네일
+        let storagePaths: [String] = imageAttachments.compactMap { att in
+            if !att.pathOriginal.isEmpty { return att.pathOriginal }
+            if !att.pathThumb.isEmpty { return att.pathThumb }
+            return nil
+        }
+        guard !storagePaths.isEmpty else { return }
+        
+        // 2) 이전 프리패치 중단
+        stopAllPrefetchers()
+        
+        // 3) 우선순위(링 오더)
+        let count = storagePaths.count
+        let start = max(0, min(tappedIndex, count - 1))
+        let order = ringOrderIndices(count: count, start: start)
+        let prioritizedPaths = order.map { storagePaths[$0] }
+        
+        // 근처 6~8장만 메모리 워밍
+        let nearCount = min(8, prioritizedPaths.count)
+        let nearPaths = Array(prioritizedPaths.prefix(nearCount))
+        let restPaths = Array(prioritizedPaths.dropFirst(nearCount))
+        
+        // 옵션
+        let diskOnlyOptions: KingfisherOptionsInfo = [
+            .cacheOriginalImage,
+            .memoryCacheExpiration(.expired),   // 메모리는 즉시 만료 → 사실상 비활성
+            .diskCacheExpiration(.days(60)),
+            .backgroundDecode,
+            .transition(.none)
+        ]
+        let warmOptions: KingfisherOptionsInfo = [
+            .cacheOriginalImage,
+            .memoryCacheExpiration(.seconds(180)), // 근처만 잠깐 메모리 워밍 (3분)
+            .diskCacheExpiration(.days(60)),
+            .backgroundDecode,
+            .transition(.none)
+        ]
+        
+        
+        // 4) 프리패치: 근처 → 나머지
+        Task {
+            let nearURLs = await resolveURLs(for: nearPaths, concurrent: 6)
+            startPrefetch(urls: nearURLs, label: "near", options: warmOptions)
+
+            if !restPaths.isEmpty {
+                let restURLs = await resolveURLs(for: restPaths, concurrent: 6)
+                startPrefetch(urls: restURLs, label: "rest", options: diskOnlyOptions)
+            }
+        }
+        
+        // 5) 뷰어 표시 (원래 순서)
+        Task { @MainActor in
+            let urlsAll = await resolveURLs(for: storagePaths, concurrent: 6)
+            guard !urlsAll.isEmpty else { return }
+
+            let viewer = SimpleImageViewerVC(urls: urlsAll, startIndex: start)
+            viewer.modalPresentationStyle = .fullScreen
+            viewer.modalTransitionStyle = .crossDissolve
+            self.present(viewer, animated: true)
+        }
+    }
+
+    // Stop and clear all active Kingfisher prefetchers
+    private func stopAllPrefetchers() {
+        imagePrefetchers.forEach { $0.stop() }
+        imagePrefetchers.removeAll()
+    }
+    
+    // Ring-order: start, +1, -1, +2, -2, ...
+    private func ringOrderIndices(count: Int, start: Int) -> [Int] {
+        guard count > 0 else { return [] }
+        let s = max(0, min(start, count - 1))
+        var result: [Int] = [s]; var step = 1
+        while result.count < count {
+            let r = s + step; if r < count { result.append(r) }
+            if result.count == count { break }
+            let l = s - step; if l >= 0 { result.append(l) }
+            step += 1
+        }
+        return result
+    }
+    
+    // Storage 경로 -> URL (동시성 제한)
+    private func resolveURLs(for paths: [String], concurrent: Int = 6) async -> [URL] {
+        guard !paths.isEmpty else { return [] }
+        var urls = Array<URL?>(repeating: nil, count: paths.count)
+        var idx = 0
+        while idx < paths.count {
+            let end = min(idx + concurrent, paths.count)
+            await withTaskGroup(of: (Int, URL?).self) { group in
+                for i in idx..<end {
+                    let p = paths[i]
+                    group.addTask { [storageURLCache] in
+                        do { return (i, try await storageURLCache.url(for: p)) }
+                        catch { return (i, nil) }
+                    }
+                }
+                for await (i, u) in group { urls[i] = u }
+            }
+            idx = end
+        }
+        return urls.compactMap { $0 }
+    }
+    
+    // Kingfisher 프리패치 시작 (옵션 주입)
+    private func startPrefetch(urls: [URL], label: String, options: KingfisherOptionsInfo) {
+        guard !urls.isEmpty else { return }
+        let pf = ImagePrefetcher(
+            urls: urls,
+            options: options,
+            progressBlock: nil,
+            completionHandler: { skipped, failed, completed in
+                print("🧯 Prefetch[\(label)] done - completed: \(completed.count), failed: \(failed.count), skipped: \(skipped.count)")
+            }
+        )
+        imagePrefetchers.append(pf)
+        pf.start()
     }
 }
 

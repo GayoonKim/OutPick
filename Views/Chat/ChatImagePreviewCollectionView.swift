@@ -143,5 +143,8 @@ class ChatImagePreviewCollectionView: UIView {
         self.layoutIfNeeded()
     }
     
-    
+    func index(at point: CGPoint) -> Int? {
+        let p = self.convert(point, to: collectionView)
+        return collectionView.indexPathForItem(at: p)?.item
+    }
 }

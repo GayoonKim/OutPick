@@ -391,8 +391,23 @@ class FirebaseManager {
             print("HotRoom 메시지 불러오기 실패: \(error?.localizedDescription ?? "알 수 없는 에러")")
             return
         }
-        
-        let messages = snapshot.documents.compactMap{ try? $0.data(as: ChatMessage.self) }
+
+        let messages: [ChatMessage] = snapshot.documents.compactMap { doc in
+            var dict = doc.data()
+            // 일부 문서에 ID 필드가 없을 수도 있으니 보정
+            if dict["ID"] == nil { dict["ID"] = doc.documentID }
+            if let msg = ChatMessage.from(dict) {
+                return msg
+            }
+            // 최후의 수단으로 FirestoreSwift 디코더 시도 (디버깅 로그 유지)
+            do {
+                return try doc.data(as: ChatMessage.self)
+            } catch {
+                print("⚠️ 디코딩 실패(관대파서/코더 모두 실패): \(error), docID: \(doc.documentID), data=\(dict)")
+                return nil
+            }
+        }
+
         DispatchQueue.main.async {
             self.updateHotRoomsPreviews(room: room, messages: messages, allRooms: allRooms)
         }

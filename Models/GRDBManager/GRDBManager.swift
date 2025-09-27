@@ -712,6 +712,64 @@ final class GRDBManager {
             return try ImageIndexMeta.fetchAll(db, sql: sql, arguments: StatementArguments(args))
         }
     }
+    
+    
+    //MARK: ImageIndex 삭제 관련 함수
+    func deleteImageIndex(forMessageID messageID: String, inRoom roomID: String? = nil) throws {
+        try dbPool.write { db in
+            if let roomID {
+                try db.execute(
+                    sql: "DELETE FROM imageIndex WHERE roomID = ? AND messageID = ?",
+                    arguments: [roomID, messageID]
+                )
+            } else {
+                try db.execute(
+                    sql: "DELETE FROM imageIndex WHERE messageID = ?",
+                    arguments: [messageID]
+                )
+            }
+        }
+    }
+
+    /// Batch deletion variant for multiple messageIDs.
+    /// If `roomID` is provided, the deletion is scoped to that room; otherwise it deletes across all rooms.
+    func deleteImageIndex(forMessageIDs messageIDs: [String], inRoom roomID: String? = nil) throws {
+        guard !messageIDs.isEmpty else { return }
+        let placeholders = Array(repeating: "?", count: messageIDs.count).joined(separator: ",")
+        try dbPool.write { db in
+            if let roomID {
+                var args: [DatabaseValueConvertible] = [roomID]
+                args.append(contentsOf: messageIDs)
+                try db.execute(
+                    sql: "DELETE FROM imageIndex WHERE roomID = ? AND messageID IN (\(placeholders))",
+                    arguments: StatementArguments(args)
+                )
+            } else {
+                try db.execute(
+                    sql: "DELETE FROM imageIndex WHERE messageID IN (\(placeholders))",
+                    arguments: StatementArguments(messageIDs)
+                )
+            }
+        }
+    }
+
+    /// Delete a single imageIndex row identified by (messageID, idx).
+    /// If `roomID` is provided, the deletion is scoped to that room.
+    func deleteImageIndexRow(forMessageID messageID: String, idx: Int, inRoom roomID: String? = nil) throws {
+        try dbPool.write { db in
+            if let roomID {
+                try db.execute(
+                    sql: "DELETE FROM imageIndex WHERE roomID = ? AND messageID = ? AND idx = ?",
+                    arguments: [roomID, messageID, idx]
+                )
+            } else {
+                try db.execute(
+                    sql: "DELETE FROM imageIndex WHERE messageID = ? AND idx = ?",
+                    arguments: [messageID, idx]
+                )
+            }
+        }
+    }
 }
 
 

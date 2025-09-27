@@ -53,9 +53,10 @@ final class BannerManager {
         print(#function, "message: \(message), roomID: \(roomID)")
         
         let banner = ChatBannerView()
+        let text = message.attachments.isEmpty ? message.msg ?? "" : "사진 \(message.attachments.count)장"
         banner.configure(
             title: message.senderNickname,
-            subtitle: message.msg ?? "새 메시지",
+            subtitle: text,
             onTap: { [weak self] in
                 guard let self = self else { return }
                 self.bannerTapped.send(roomID)

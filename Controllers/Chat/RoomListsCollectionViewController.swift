@@ -86,6 +86,7 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
     @MainActor
     private func updateCollectionView() {
         let chatRoomsList = chatRooms
+        
         let itemBySection = [Section.main: chatRoomsList]
         dataSource.applySnapshotUsing(sectionIDs: [Section.main], itemsBySection: itemBySection)
     }

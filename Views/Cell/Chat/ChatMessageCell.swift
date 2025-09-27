@@ -8,7 +8,7 @@
 import Foundation
 import UIKit
 import Kingfisher
-
+import Combine
 
 class ChatMessageCell: UICollectionViewCell {
     static let reuseIdentifier = "ChatMessageCell"
@@ -18,6 +18,10 @@ class ChatMessageCell: UICollectionViewCell {
         func cellDidLongPress(_ cell: ChatMessageCell)
     }
     
+    // ⬇️ Combine publishers
+    let imageTapSubject = PassthroughSubject<Int?, Never>()
+    var imageTapPublisher: AnyPublisher<Int?, Never> { imageTapSubject.eraseToAnyPublisher() }
+
     private let profileImageView: UIImageView = {
         var imageView = UIImageView()
         imageView.layer.cornerRadius = 10
@@ -68,6 +72,8 @@ class ChatMessageCell: UICollectionViewCell {
         view.translatesAutoresizingMaskIntoConstraints = false
         view.isHidden = true
         view.backgroundColor = .clear
+        view.isUserInteractionEnabled = true
+        
         return view
     }()
     
@@ -155,6 +161,7 @@ class ChatMessageCell: UICollectionViewCell {
             
             nickNameLabel.topAnchor.constraint(equalTo: profileImageView.topAnchor),
             nickNameLabel.leadingAnchor.constraint(equalTo: profileImageView.trailingAnchor, constant: 5),
+            nickNameLabel.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor, constant: -8),
             
             replyPreviewContainer.topAnchor.constraint(equalTo: bubbleView.topAnchor, constant: 10),
             replyPreviewContainer.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 10),
@@ -180,6 +187,12 @@ class ChatMessageCell: UICollectionViewCell {
         replyPreviewNameLabel.setContentCompressionResistancePriority(.required, for: .vertical)
         replyPreviewMsgLabel.setContentCompressionResistancePriority(.required, for: .vertical)
         replyPreviewContainer.setContentHuggingPriority(.required, for: .vertical)
+        
+        // 이미지 프리뷰 탭
+        let previewTapGR = UITapGestureRecognizer(target: self, action: #selector(handleImagesPreviewTap(_:)))
+        previewTapGR.cancelsTouchesInView = false
+        imagesPreviewCollectionView.addGestureRecognizer(previewTapGR)
+        imagesPreviewCollectionView.isUserInteractionEnabled = true
     }
     
     required init?(coder: NSCoder) {
@@ -205,6 +218,13 @@ class ChatMessageCell: UICollectionViewCell {
         nickNameLabel.isHidden = false
         bubbleView.backgroundColor = UIColor(white: 0.1, alpha: 0.03)
         imagesPreviewCollectionView.isHidden = true
+
+        bubbleView.isHidden = false
+        messageLabel.isHidden = false
+        replyPreviewSeparator.isHidden = true
+        // Clear any previously applied width constraint on bubbleView
+        widthConstraint?.isActive = false
+        widthConstraint = nil
         
         NSLayoutConstraint.deactivate([
             bubbleViewLeadingConstraint,
@@ -241,6 +261,15 @@ class ChatMessageCell: UICollectionViewCell {
     }
     
     func configureWithMessage(with message: ChatMessage/*, originalPreviewProvider: (() -> (String, String)?)?*/) {
+        // Explicitly reset/hide/unhide and clear any previous width constraint
+        bubbleView.isHidden = false
+        messageLabel.isHidden = true ? false : false // ensure visible (no-op but explicit)
+        messageLabel.isHidden = false
+        imagesPreviewCollectionView.isHidden = true
+        // Ensure no stale width constraint from previous configuration
+        widthConstraint?.isActive = false
+        widthConstraint = nil
+
         if message.isDeleted {
             messageLabel.text = "삭제된 메시지입니다."
             messageLabel.textColor = UIColor.black.withAlphaComponent(0.4)
@@ -263,7 +292,8 @@ class ChatMessageCell: UICollectionViewCell {
             bubbleViewTrailingConstraint = bubbleView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -8)
             bubbleViewTopConstraint = bubbleView.topAnchor.constraint(equalTo: contentView.topAnchor)
             bubbleViewBottomConstraint = bubbleView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
-            bubbleView.widthAnchor.constraint(lessThanOrEqualToConstant: containerWidth).isActive = true
+            widthConstraint = bubbleView.widthAnchor.constraint(lessThanOrEqualToConstant: containerWidth)
+            widthConstraint?.isActive = true
             
             failedIconImageView.isHidden = true
             if message.isFailed {
@@ -283,7 +313,8 @@ class ChatMessageCell: UICollectionViewCell {
             bubbleViewTrailingConstraint = bubbleView.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor, constant: -10)
             bubbleViewTopConstraint = bubbleView.topAnchor.constraint(equalTo: nickNameLabel.bottomAnchor, constant: 5)
             bubbleViewBottomConstraint = bubbleView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
-            bubbleView.widthAnchor.constraint(lessThanOrEqualToConstant: containerWidth).isActive = true
+            widthConstraint = bubbleView.widthAnchor.constraint(lessThanOrEqualToConstant: containerWidth)
+            widthConstraint?.isActive = true
         }
         
         // 제약조건 활성화
@@ -332,6 +363,88 @@ class ChatMessageCell: UICollectionViewCell {
     }
     
     func configureWithImage(with message: ChatMessage, images: [UIImage]) {
+        // Clear any previously applied bubble width constraint so image-mode cells don't carry text-mode constraints
+        widthConstraint?.isActive = false
+        widthConstraint = nil
+
+        // If deleted, render as a text bubble with "삭제된 메시지입니다." instead of images
+        if message.isDeleted {
+            bubbleView.isHidden = false
+            messageLabel.isHidden = false
+            imagesPreviewCollectionView.isHidden = true
+
+            messageLabel.text = "삭제된 메시지입니다."
+            messageLabel.textColor = UIColor.black.withAlphaComponent(0.4)
+
+            // Deactivate any previously applied image preview constraints (safety)
+            NSLayoutConstraint.deactivate([
+                imagePreviewCollectionViewTopConstraint,
+                imagePreviewCollectionViewLeadingConstraint,
+                imagePreviewCollectionViewTrailingConstraint,
+                imagePreviewCollectionViewBottomConstraint,
+                imagePreviewCollectionViewWidthConstraint,
+                imagePreviewCollectionViewHeightConstraint
+            ].compactMap { $0 })
+            imagePreviewCollectionViewTopConstraint = nil
+            imagePreviewCollectionViewLeadingConstraint = nil
+            imagePreviewCollectionViewTrailingConstraint = nil
+            imagePreviewCollectionViewBottomConstraint = nil
+            imagePreviewCollectionViewWidthConstraint = nil
+            imagePreviewCollectionViewHeightConstraint = nil
+
+            let containerWidth = UIScreen.main.bounds.width * 0.7
+
+            if let nickName = LoginManager.shared.currentUserProfile?.nickname,
+               nickName == message.senderNickname {
+                // 본인이 보낸(삭제된) 메시지로 표시
+                bubbleView.backgroundColor = .systemBlue
+                profileImageView.isHidden = true
+                nickNameLabel.isHidden = true
+
+                bubbleViewLeadingConstraint = bubbleView.leadingAnchor.constraint(greaterThanOrEqualTo: contentView.leadingAnchor, constant: 20)
+                bubbleViewTrailingConstraint = bubbleView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -8)
+                bubbleViewTopConstraint = bubbleView.topAnchor.constraint(equalTo: contentView.topAnchor)
+                bubbleViewBottomConstraint = bubbleView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
+            } else {
+                // 상대방이 보낸(삭제된) 메시지로 표시
+                nickNameLabel.text = message.senderNickname
+                bubbleView.backgroundColor = .secondarySystemBackground
+
+                bubbleViewLeadingConstraint = bubbleView.leadingAnchor.constraint(equalTo: profileImageView.trailingAnchor, constant: 5)
+                bubbleViewTrailingConstraint = bubbleView.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor, constant: -10)
+                bubbleViewTopConstraint = bubbleView.topAnchor.constraint(equalTo: nickNameLabel.bottomAnchor, constant: 5)
+                bubbleViewBottomConstraint = bubbleView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
+            }
+
+            widthConstraint = bubbleView.widthAnchor.constraint(lessThanOrEqualToConstant: containerWidth)
+            widthConstraint?.isActive = true
+
+            // 실패 아이콘은 숨김
+            failedIconImageView.isHidden = true
+            failedIconImageViewCenterYConstraint?.isActive = false
+            failedIconImageViewTrainlingConstraint?.isActive = false
+            failedIconImageViewCenterYConstraint = nil
+            failedIconImageViewTrainlingConstraint = nil
+
+            // 답장 프리뷰는 숨김, 메시지 라벨의 top을 버블 top으로
+            replyPreviewContainer.isHidden = true
+            replyPreviewSeparator.isHidden = true
+            if let top = messageLabelTopConsraint { NSLayoutConstraint.deactivate([top]) }
+            messageLabelTopConsraint = messageLabel.topAnchor.constraint(equalTo: bubbleView.topAnchor, constant: 10)
+            messageLabelTopConsraint?.isActive = true
+
+            NSLayoutConstraint.activate([
+                bubbleViewLeadingConstraint,
+                bubbleViewTrailingConstraint,
+                bubbleViewTopConstraint,
+                bubbleViewBottomConstraint
+            ].compactMap { $0 })
+
+            self.setNeedsLayout()
+            self.layoutIfNeeded()
+            return
+        }
+
         bubbleView.isHidden = true
         messageLabel.isHidden = true
         imagesPreviewCollectionView.isHidden = false
@@ -468,5 +581,11 @@ class ChatMessageCell: UICollectionViewCell {
         view.translatesAutoresizingMaskIntoConstraints = false
         view.heightAnchor.constraint(equalToConstant: 0.5 / UIScreen.main.scale).isActive = true
         return view
+    }
+
+    @objc private func handleImagesPreviewTap(_ gr: UITapGestureRecognizer) {
+        let point = gr.location(in: imagesPreviewCollectionView)
+        let tappedIndex = imagesPreviewCollectionView.index(at: point)
+        imageTapSubject.send(tappedIndex)                 // Combine 발행(선택)
     }
 }

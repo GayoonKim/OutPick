@@ -455,7 +455,7 @@ class FirebaseStorageManager {
     
     func deleteImageFromStorage(path: String) {
         let fileRef = storage.reference().child("\(path)")
-        
+        print(#function, "📄 \(fileRef)")
         fileRef.delete { error in
             if let error = error {
                 print("🚫 이미지 삭제 실패: \(error.localizedDescription)")
