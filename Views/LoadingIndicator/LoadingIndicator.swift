@@ -9,52 +9,100 @@ import Foundation
 import UIKit
 
 class LoadingIndicator {
-    
+
     static let shared = LoadingIndicator()
-    private var indicator: UIActivityIndicatorView?
-    
-    private lazy var activityIndicator: UIActivityIndicatorView = {
-        let indicator = UIActivityIndicatorView(style: .medium)
-        indicator.hidesWhenStopped = true
-        indicator.color = .black
-        return indicator
-    }()
-    
+
+    // Single overlay container to avoid duplicates
+    private var overlayView: UIView?
+    private var spinner: UIActivityIndicatorView?
+
     private init() {}
-    
-    func start(on viewController: UIViewController) {
-        let indicator = UIActivityIndicatorView(style: .large)
-        indicator.accessibilityIdentifier = "LoadingIndicator" // ✅ 여기서 지정
-        indicator.center = viewController.view.center
-        indicator.startAnimating()
-        viewController.view.addSubview(indicator)
-        self.indicator = indicator
-        
-        DispatchQueue.main.async {
-            if self.activityIndicator.superview == nil {
-                self.activityIndicator.center = viewController.view.center
-                viewController.view.addSubview(self.activityIndicator)
-            }
-            viewController.view.bringSubviewToFront(self.activityIndicator)
-            self.activityIndicator.startAnimating()
-            
-        }
+
+    // MARK: - Public API
+
+    /// Start on the current top-most view controller (safe default).
+    func start() {
+        guard let hostView = LoadingIndicator.findHostView() else { return }
+        start(in: hostView)
     }
-    
+
+    /// Start on a specific view controller.
+    func start(on viewController: UIViewController) {
+        start(in: viewController.view)
+    }
+
+    /// Stop and remove the overlay/spinner.
     func stop() {
         DispatchQueue.main.async {
-            self.indicator?.stopAnimating()
-            self.indicator?.removeFromSuperview()
-            self.indicator = nil
-            
-            self.activityIndicator.stopAnimating()
-            self.activityIndicator.removeFromSuperview()
-            
+            self.spinner?.stopAnimating()
+            self.overlayView?.removeFromSuperview()
+            self.spinner = nil
+            self.overlayView = nil
         }
     }
-    
+
+    /// Whether the indicator is currently visible.
     var isLoading: Bool {
-        return self.activityIndicator.isAnimating
+        return overlayView != nil
     }
-    
+
+    // MARK: - Internal
+
+    private func start(in hostView: UIView) {
+        DispatchQueue.main.async {
+            // If already showing, do nothing (idempotent)
+            guard self.overlayView == nil else { return }
+
+            // Container overlay
+            let overlay = UIView(frame: hostView.bounds)
+            overlay.translatesAutoresizingMaskIntoConstraints = false
+            overlay.backgroundColor = .clear
+            overlay.isUserInteractionEnabled = false
+            overlay.accessibilityIdentifier = "LoadingIndicatorOverlay"
+
+            // Single spinner
+            let spinner = UIActivityIndicatorView(style: .large)
+            spinner.translatesAutoresizingMaskIntoConstraints = false
+            spinner.hidesWhenStopped = true
+            spinner.color = .gray
+            spinner.accessibilityIdentifier = "LoadingIndicator"
+
+            overlay.addSubview(spinner)
+            hostView.addSubview(overlay)
+
+            NSLayoutConstraint.activate([
+                overlay.topAnchor.constraint(equalTo: hostView.topAnchor),
+                overlay.bottomAnchor.constraint(equalTo: hostView.bottomAnchor),
+                overlay.leadingAnchor.constraint(equalTo: hostView.leadingAnchor),
+                overlay.trailingAnchor.constraint(equalTo: hostView.trailingAnchor),
+
+                spinner.centerXAnchor.constraint(equalTo: overlay.centerXAnchor),
+                spinner.centerYAnchor.constraint(equalTo: overlay.centerYAnchor)
+            ])
+
+            spinner.startAnimating()
+
+            self.overlayView = overlay
+            self.spinner = spinner
+        }
+    }
+
+    // Find a reasonable host view to attach the indicator without a parameter.
+    private static func findHostView() -> UIView? {
+        // Prefer the key window of the foreground active scene.
+        let scenes = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .filter { $0.activationState == .foregroundActive }
+
+        if let window = scenes.first?.windows.first(where: { $0.isKeyWindow }) {
+            return window.rootViewController?.view ?? window
+        }
+
+        // Fallback to any keyWindow known
+        if let window = UIApplication.shared.windows.first(where: { $0.isKeyWindow }) {
+            return window.rootViewController?.view ?? window
+        }
+
+        return UIApplication.shared.windows.first?.rootViewController?.view
+    }
 }

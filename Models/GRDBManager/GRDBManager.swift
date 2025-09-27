@@ -116,6 +116,44 @@ final class GRDBManager {
             try db.create(index: "idx_imageIndex_room_sentAt", on: "imageIndex", columns: ["roomID", "sentAt"], ifNotExists: true)
             try db.create(index: "idx_imageIndex_messageID", on: "imageIndex", columns: ["messageID"], ifNotExists: true)
         }
+        
+        migrator.registerMigration("createVideoIndex") { db in
+            try db.create(table: "videoIndex") { t in
+                t.column("roomID", .text).notNull()
+                t.column("messageID", .text).notNull()
+                t.column("idx", .integer).notNull()
+
+                // 이미지 인덱스와 컬럼 구성 맞춤(키/URL 모두 보관)
+                t.column("thumbKey", .text)
+                t.column("originalKey", .text)
+                t.column("thumbURL", .text)
+                t.column("originalURL", .text)
+
+                t.column("width", .integer)
+                t.column("height", .integer)
+                t.column("bytesOriginal", .integer)
+
+                // 동영상 전용(옵션)
+                t.column("duration", .double)
+                t.column("approxBitrateMbps", .double)
+                t.column("preset", .text)
+
+                t.column("hash", .text)
+                t.column("isFailed", .boolean).notNull().defaults(to: false)
+                t.column("localThumb", .text)
+                t.column("sentAt", .datetime).notNull()
+
+                t.primaryKey(["roomID", "messageID", "idx"])
+            }
+            try db.create(index: "idx_videoIndex_room_sentAt",
+                          on: "videoIndex",
+                          columns: ["roomID", "sentAt"],
+                          ifNotExists: true)
+            try db.create(index: "idx_videoIndex_messageID",
+                          on: "videoIndex",
+                          columns: ["messageID"],
+                          ifNotExists: true)
+        }
 
         try! migrator.migrate(dbPool)
     }
@@ -295,6 +333,9 @@ final class GRDBManager {
 
                 // 6) Image index upsert for this message (meta only)
                 try self.upsertImageIndex(for: message, in: db)
+                
+                // 6b) Video index upsert for this message (meta only)
+                try self.upsertVideoIndex(for: message, in: db)
             }
         }
 
@@ -521,6 +562,10 @@ final class GRDBManager {
 
                 // 1) imageIndex 청소
                 try db.execute(sql: "DELETE FROM imageIndex WHERE roomID = ? AND messageID IN (\(placeholders))",
+                               arguments: StatementArguments([roomID] + ids))
+                try db.execute(sql: "DELETE FROM videoIndex WHERE roomID = ?", arguments: [roomID])
+                // 1b) videoIndex 청소
+                try db.execute(sql: "DELETE FROM videoIndex WHERE roomID = ? AND messageID IN (\(placeholders))",
                                arguments: StatementArguments([roomID] + ids))
                 // 2) FTS 청소
                 try db.execute(sql: "DELETE FROM chatMessageFTS WHERE id IN (\(placeholders))",
@@ -765,6 +810,151 @@ final class GRDBManager {
             } else {
                 try db.execute(
                     sql: "DELETE FROM imageIndex WHERE messageID = ? AND idx = ?",
+                    arguments: [messageID, idx]
+                )
+            }
+        }
+    }
+    
+    // MARK: - Video Index Queries
+    struct VideoIndexMeta: FetchableRecord, Decodable {
+        let roomID: String
+        let messageID: String
+        let idx: Int
+        let thumbKey: String?
+        let originalKey: String?
+        let thumbURL: String?
+        let originalURL: String?
+        let width: Int?
+        let height: Int?
+        let bytesOriginal: Int?
+        let duration: Double?
+        let approxBitrateMbps: Double?
+        let preset: String?
+        let hash: String?
+        let isFailed: Bool
+        let localThumb: String?
+        let sentAt: Date
+    }
+    
+    // MARK: - Video Index Upsert
+    private func upsertVideoIndex(for message: ChatMessage, in db: Database) throws {
+        // 메시지 단위로 먼저 정리(멱등)
+        try db.execute(
+            sql: "DELETE FROM videoIndex WHERE roomID = ? AND messageID = ?",
+            arguments: [message.roomID, message.ID]
+        )
+
+        let atts = message.attachments
+            .filter { $0.type == .video }
+            .sorted { $0.index < $1.index }
+
+        guard !atts.isEmpty else { return }
+
+        let when = message.sentAt ?? Date()
+
+        for att in atts {
+            try db.execute(sql: """
+            INSERT OR REPLACE INTO videoIndex
+            (roomID, messageID, idx,
+             thumbKey, originalKey, thumbURL, originalURL,
+             width, height, bytesOriginal,
+             duration, approxBitrateMbps, preset,
+             hash, isFailed, localThumb, sentAt)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            arguments: [
+                message.roomID,
+                message.ID,
+                att.index,
+
+                // 이미지와 동일하게 hash를 키로 사용(없으면 nil)
+                att.hash.isEmpty ? nil : att.hash,
+                att.hash.isEmpty ? nil : (att.hash + ":orig"),
+                att.pathThumb.isEmpty ? nil : att.pathThumb,
+                att.pathOriginal.isEmpty ? nil : att.pathOriginal,
+
+                att.width,
+                att.height,
+                att.bytesOriginal,
+
+                /* duration */            nil, // Attachment에 없으면 nil
+                /* approxBitrateMbps */   nil,
+                /* preset */              nil,
+
+                att.hash.isEmpty ? nil : att.hash,
+                message.isFailed,
+                message.isFailed ? (att.pathThumb.isEmpty ? nil : att.pathThumb) : nil,
+                when
+            ])
+        }
+    }
+    
+    func fetchVideoIndex(inRoom roomID: String, forMessageIDs ids: [String]) async throws -> [VideoIndexMeta] {
+        guard !ids.isEmpty else { return [] }
+        return try await dbPool.read { db in
+            let placeholders = Array(repeating: "?", count: ids.count).joined(separator: ",")
+            let sql = """
+            SELECT roomID, messageID, idx, thumbKey, originalKey, thumbURL, originalURL,
+                   width, height, bytesOriginal, duration, approxBitrateMbps, preset, hash, isFailed, localThumb, sentAt
+              FROM videoIndex
+             WHERE roomID = ?
+               AND messageID IN (\(placeholders))
+             ORDER BY sentAt ASC, messageID ASC, idx ASC
+            """
+            var args: [DatabaseValueConvertible] = [roomID]
+            args.append(contentsOf: ids)
+            return try VideoIndexMeta.fetchAll(db, sql: sql, arguments: StatementArguments(args))
+        }
+    }
+    
+    //MARK: VideoIndex 삭제 관련 함수
+    func deleteVideoIndex(forMessageID messageID: String, inRoom roomID: String? = nil) throws {
+        try dbPool.write { db in
+            if let roomID {
+                try db.execute(
+                    sql: "DELETE FROM videoIndex WHERE roomID = ? AND messageID = ?",
+                    arguments: [roomID, messageID]
+                )
+            } else {
+                try db.execute(
+                    sql: "DELETE FROM videoIndex WHERE messageID = ?",
+                    arguments: [messageID]
+                )
+            }
+        }
+    }
+
+    func deleteVideoIndex(forMessageIDs messageIDs: [String], inRoom roomID: String? = nil) throws {
+        guard !messageIDs.isEmpty else { return }
+        let placeholders = Array(repeating: "?", count: messageIDs.count).joined(separator: ",")
+        try dbPool.write { db in
+            if let roomID {
+                var args: [DatabaseValueConvertible] = [roomID]
+                args.append(contentsOf: messageIDs)
+                try db.execute(
+                    sql: "DELETE FROM videoIndex WHERE roomID = ? AND messageID IN (\(placeholders))",
+                    arguments: StatementArguments(args)
+                )
+            } else {
+                try db.execute(
+                    sql: "DELETE FROM videoIndex WHERE messageID IN (\(placeholders))",
+                    arguments: StatementArguments(messageIDs)
+                )
+            }
+        }
+    }
+
+    func deleteVideoIndexRow(forMessageID messageID: String, idx: Int, inRoom roomID: String? = nil) throws {
+        try dbPool.write { db in
+            if let roomID {
+                try db.execute(
+                    sql: "DELETE FROM videoIndex WHERE roomID = ? AND messageID = ? AND idx = ?",
+                    arguments: [roomID, messageID, idx]
+                )
+            } else {
+                try db.execute(
+                    sql: "DELETE FROM videoIndex WHERE messageID = ? AND idx = ?",
                     arguments: [messageID, idx]
                 )
             }

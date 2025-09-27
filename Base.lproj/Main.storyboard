@@ -322,9 +322,6 @@
                         <rect key="frame" x="0.0" y="0.0" width="402" height="874"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
-                            <activityIndicatorView hidden="YES" opaque="NO" contentMode="scaleToFill" horizontalHuggingPriority="750" verticalHuggingPriority="750" hidesWhenStopped="YES" style="medium" translatesAutoresizingMaskIntoConstraints="NO" id="g9k-2I-R88">
-                                <rect key="frame" x="191" y="427" width="20" height="20"/>
-                            </activityIndicatorView>
                             <button hidden="YES" opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="aSv-oJ-neZ">
                                 <rect key="frame" x="10" y="746" width="382" height="50"/>
                                 <constraints>
@@ -343,9 +340,7 @@
                         <viewLayoutGuide key="safeArea" id="fR5-rY-j7G"/>
                         <color key="backgroundColor" systemColor="systemBackgroundColor"/>
                         <constraints>
-                            <constraint firstItem="g9k-2I-R88" firstAttribute="centerX" secondItem="eWn-8t-hw8" secondAttribute="centerX" id="3W1-ru-gXz"/>
                             <constraint firstItem="fR5-rY-j7G" firstAttribute="bottom" secondItem="aSv-oJ-neZ" secondAttribute="bottom" constant="10" id="Gs9-IA-Nz0"/>
-                            <constraint firstItem="g9k-2I-R88" firstAttribute="centerY" secondItem="eWn-8t-hw8" secondAttribute="centerY" id="Pu4-Dq-Q42"/>
                             <constraint firstItem="fR5-rY-j7G" firstAttribute="trailing" secondItem="aSv-oJ-neZ" secondAttribute="trailing" constant="10" id="UdH-n4-N5p"/>
                             <constraint firstItem="aSv-oJ-neZ" firstAttribute="leading" secondItem="fR5-rY-j7G" secondAttribute="leading" constant="10" id="qTG-dL-VPe"/>
                         </constraints>
@@ -356,7 +351,6 @@
                         </barButtonItem>
                     </navigationItem>
                     <connections>
-                        <outlet property="activityIndicator" destination="g9k-2I-R88" id="dJb-Fl-iPc"/>
                         <outlet property="joinRoomBtn" destination="aSv-oJ-neZ" id="6KM-NW-5Iv"/>
                         <outlet property="sideMenuBtn" destination="gyW-2S-liv" id="OsV-EZ-ObG"/>
                     </connections>

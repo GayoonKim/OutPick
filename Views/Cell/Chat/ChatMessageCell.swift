@@ -55,6 +55,17 @@ class ChatMessageCell: UICollectionViewCell {
         return label
     }()
     
+    // MARK: - Sent Time Label
+    private let timeLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 10, weight: .regular)
+        label.textColor = .secondaryLabel
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.numberOfLines = 1
+        label.textAlignment = .left
+        return label
+    }()
+    
     private let bubbleView: UIView = {
         let view = UIView()
         view.layer.cornerRadius = 12
@@ -122,6 +133,32 @@ class ChatMessageCell: UICollectionViewCell {
         return stack
     }()
     
+    // MARK: - Video Badge (▶︎ + duration)
+    private let videoBadge: UIView = {
+        let v = UIView()
+        v.backgroundColor = UIColor(white: 0, alpha: 0.55)
+        v.layer.cornerRadius = 12
+        v.clipsToBounds = true
+        v.translatesAutoresizingMaskIntoConstraints = false
+        v.isHidden = true
+        return v
+    }()
+    private let videoIconView: UIImageView = {
+        let iv = UIImageView(image: UIImage(systemName: "play.fill"))
+        iv.tintColor = .white
+        iv.contentMode = .scaleAspectFit
+        iv.translatesAutoresizingMaskIntoConstraints = false
+        return iv
+    }()
+    private let videoDurationLabel: UILabel = {
+        let lb = UILabel()
+        lb.textColor = .white
+        lb.font = .systemFont(ofSize: 12, weight: .semibold)
+        lb.text = ""
+        lb.translatesAutoresizingMaskIntoConstraints = false
+        return lb
+    }()
+    
     private var highlightView: UIView?
     
     private var bubbleViewTrailingConstraint: NSLayoutConstraint?
@@ -140,6 +177,12 @@ class ChatMessageCell: UICollectionViewCell {
     private var failedIconImageViewTrainlingConstraint: NSLayoutConstraint?
     
     private var messageLabelTopConsraint: NSLayoutConstraint?
+    // Constraints for timeLabel relative to current host (bubbleView or imagesPreviewCollectionView)
+    private var timeBottomConstraint: NSLayoutConstraint?
+    private var timeRightOfHostLeading: NSLayoutConstraint?
+    private var timeLeftOfHostTrailing: NSLayoutConstraint?
+    // Constraints for videoBadge anchored to current host (bubbleView or imagesPreviewCollectionView)
+    private var videoBadgeConstraints: [NSLayoutConstraint] = []
     
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -148,6 +191,7 @@ class ChatMessageCell: UICollectionViewCell {
         contentView.addSubview(nickNameLabel)
         contentView.addSubview(bubbleView)
         contentView.addSubview(imagesPreviewCollectionView)
+        contentView.addSubview(timeLabel)
         contentView.addSubview(failedIconImageView)
         bubbleView.addSubview(replyPreviewContainer)
         bubbleView.addSubview(messageLabel)
@@ -177,6 +221,10 @@ class ChatMessageCell: UICollectionViewCell {
             failedIconImageView.heightAnchor.constraint(equalToConstant: 20),
         ])
         
+        // Time label priorities to avoid truncation
+        timeLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+        timeLabel.setContentHuggingPriority(.required, for: .horizontal)
+        
         // Tighten vertical layout to reduce extra spacing
         bubbleView.setContentCompressionResistancePriority(.required, for: .vertical)
         messageLabel.setContentHuggingPriority(.required, for: .vertical)
@@ -193,6 +241,20 @@ class ChatMessageCell: UICollectionViewCell {
         previewTapGR.cancelsTouchesInView = false
         imagesPreviewCollectionView.addGestureRecognizer(previewTapGR)
         imagesPreviewCollectionView.isUserInteractionEnabled = true
+        
+        // Set up internal subviews of the video badge (host anchoring is done at configure time)
+        videoBadge.addSubview(videoIconView)
+        videoBadge.addSubview(videoDurationLabel)
+        NSLayoutConstraint.activate([
+            videoIconView.leadingAnchor.constraint(equalTo: videoBadge.leadingAnchor, constant: 8),
+            videoIconView.centerYAnchor.constraint(equalTo: videoBadge.centerYAnchor),
+            videoIconView.widthAnchor.constraint(equalToConstant: 12),
+            videoIconView.heightAnchor.constraint(equalToConstant: 12),
+
+            videoDurationLabel.leadingAnchor.constraint(equalTo: videoIconView.trailingAnchor, constant: 6),
+            videoDurationLabel.trailingAnchor.constraint(equalTo: videoBadge.trailingAnchor, constant: -8),
+            videoDurationLabel.centerYAnchor.constraint(equalTo: videoBadge.centerYAnchor)
+        ])
     }
     
     required init?(coder: NSCoder) {
@@ -205,6 +267,7 @@ class ChatMessageCell: UICollectionViewCell {
     
     override func prepareForReuse() {
         super.prepareForReuse()
+        hideVideoBadge()
         
         messageLabel.attributedText = nil
         messageLabel.textColor = .black
@@ -258,6 +321,25 @@ class ChatMessageCell: UICollectionViewCell {
         }
         messageLabelTopConsraint = messageLabel.topAnchor.constraint(equalTo: bubbleView.topAnchor, constant: 10)
         messageLabelTopConsraint?.isActive = true
+        
+        // Reset sent time label and constraints
+        timeLabel.text = nil
+        NSLayoutConstraint.deactivate([timeBottomConstraint, timeRightOfHostLeading, timeLeftOfHostTrailing].compactMap { $0 })
+        timeBottomConstraint = nil
+        timeRightOfHostLeading = nil
+        timeLeftOfHostTrailing = nil
+    }
+    
+    func showVideoBadge(durationText: String?) {
+        // Decide host based on current layout
+        let host = imagesPreviewCollectionView.isHidden ? bubbleView : imagesPreviewCollectionView
+        mountVideoBadge(on: host)
+        videoDurationLabel.text = durationText ?? ""
+        videoBadge.isHidden = false
+    }
+    func hideVideoBadge() {
+        videoBadge.isHidden = true
+        videoDurationLabel.text = ""
     }
     
     func configureWithMessage(with message: ChatMessage/*, originalPreviewProvider: (() -> (String, String)?)?*/) {
@@ -270,6 +352,9 @@ class ChatMessageCell: UICollectionViewCell {
         widthConstraint?.isActive = false
         widthConstraint = nil
 
+        // Compute isMine once
+        let isMine = (LoginManager.shared.currentUserProfile?.nickname ?? "") == message.senderNickname
+
         if message.isDeleted {
             messageLabel.text = "삭제된 메시지입니다."
             messageLabel.textColor = UIColor.black.withAlphaComponent(0.4)
@@ -280,8 +365,7 @@ class ChatMessageCell: UICollectionViewCell {
         
         let containerWidth = UIScreen.main.bounds.width * 0.7
         
-        if let nickName = LoginManager.shared.currentUserProfile?.nickname,
-           nickName == message.senderNickname {
+        if isMine {
             // 본인이 보낸 메시지
             bubbleView.backgroundColor = .systemBlue
             profileImageView.isHidden = true
@@ -358,6 +442,12 @@ class ChatMessageCell: UICollectionViewCell {
             NSLayoutConstraint.activate([ messageLabelTopConsraint! ])
         }
         
+        // Sent time
+        timeLabel.text = formattedTime(message.sentAt)
+        mountTimeLabel(on: bubbleView, isMine: isMine)
+        
+        // Pre-mount the video badge onto the bubble (text-mode layout)
+        mountVideoBadge(on: bubbleView)
         self.setNeedsLayout()
         self.layoutIfNeeded()
     }
@@ -394,8 +484,8 @@ class ChatMessageCell: UICollectionViewCell {
 
             let containerWidth = UIScreen.main.bounds.width * 0.7
 
-            if let nickName = LoginManager.shared.currentUserProfile?.nickname,
-               nickName == message.senderNickname {
+            let isMine = (LoginManager.shared.currentUserProfile?.nickname ?? "") == message.senderNickname
+            if isMine {
                 // 본인이 보낸(삭제된) 메시지로 표시
                 bubbleView.backgroundColor = .systemBlue
                 profileImageView.isHidden = true
@@ -440,6 +530,10 @@ class ChatMessageCell: UICollectionViewCell {
                 bubbleViewBottomConstraint
             ].compactMap { $0 })
 
+            // Sent time for deleted-as-text case
+            timeLabel.text = formattedTime(message.sentAt)
+            mountTimeLabel(on: bubbleView, isMine: isMine)
+
             self.setNeedsLayout()
             self.layoutIfNeeded()
             return
@@ -464,7 +558,8 @@ class ChatMessageCell: UICollectionViewCell {
             print("내 닉네임: \(nickName)")
             print("보낸 사람: \(message.senderNickname)")
             
-            if nickName == message.senderNickname {
+            let isMine = nickName == message.senderNickname
+            if isMine {
                 // 본인이 보낸 사진
                 profileImageView.isHidden = true
                 
@@ -506,6 +601,11 @@ class ChatMessageCell: UICollectionViewCell {
             ].compactMap{$0})
 
             imagesPreviewCollectionView.updateCollectionView(images, contentHeight, rows)
+            // Sent time for image grid
+            timeLabel.text = formattedTime(message.sentAt)
+            mountTimeLabel(on: imagesPreviewCollectionView, isMine: isMine)
+            // Pre-mount the video badge onto the image grid (if needed)
+            mountVideoBadge(on: imagesPreviewCollectionView)
         }
     }
     
@@ -588,4 +688,56 @@ class ChatMessageCell: UICollectionViewCell {
         let tappedIndex = imagesPreviewCollectionView.index(at: point)
         imageTapSubject.send(tappedIndex)                 // Combine 발행(선택)
     }
+
+    // MARK: - Time Label Helpers
+    private static let timeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        f.locale = Locale.current
+        return f
+    }()
+
+    private func formattedTime(_ date: Date?) -> String {
+        guard let d = date else { return "" }
+        return ChatMessageCell.timeFormatter.string(from: d)
+    }
+
+    private func mountTimeLabel(on host: UIView, isMine: Bool) {
+        // Deactivate old constraints
+        NSLayoutConstraint.deactivate([timeBottomConstraint, timeRightOfHostLeading, timeLeftOfHostTrailing].compactMap { $0 })
+        timeBottomConstraint = timeLabel.bottomAnchor.constraint(equalTo: host.bottomAnchor)
+        if isMine {
+            // 내 메시지(오른쪽 버블): 시간은 버블 '왼쪽' 바깥에
+            timeLeftOfHostTrailing = timeLabel.trailingAnchor.constraint(equalTo: host.leadingAnchor, constant: -4)
+            timeRightOfHostLeading = nil
+            timeLabel.textAlignment = .right
+        } else {
+            // 상대 메시지(왼쪽 버블): 시간은 버블 '오른쪽' 바깥에
+            timeRightOfHostLeading = timeLabel.leadingAnchor.constraint(equalTo: host.trailingAnchor, constant: 4)
+            timeLeftOfHostTrailing = nil
+            timeLabel.textAlignment = .left
+        }
+        // Activate
+        NSLayoutConstraint.activate([timeBottomConstraint, timeRightOfHostLeading, timeLeftOfHostTrailing].compactMap { $0 })
+        // Ensure label is on top visually
+        contentView.bringSubviewToFront(timeLabel)
+    }
+
+    /// Mounts the video badge on the current visible host (image grid or bubble) and pins it to center.
+    private func mountVideoBadge(on host: UIView) {
+        if videoBadge.superview !== host {
+            videoBadge.removeFromSuperview()
+            host.addSubview(videoBadge)
+        }
+        NSLayoutConstraint.deactivate(videoBadgeConstraints)
+        videoBadge.translatesAutoresizingMaskIntoConstraints = false
+        videoBadgeConstraints = [
+            videoBadge.centerXAnchor.constraint(equalTo: host.centerXAnchor),
+            videoBadge.centerYAnchor.constraint(equalTo: host.centerYAnchor),
+            videoBadge.heightAnchor.constraint(equalToConstant: 24)
+        ]
+        NSLayoutConstraint.activate(videoBadgeConstraints)
+        host.bringSubviewToFront(videoBadge)
+    }
 }
+

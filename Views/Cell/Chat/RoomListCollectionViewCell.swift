@@ -139,7 +139,7 @@ private class MessagePreviewView: UIView {
     private let nicknameLabel: UILabel = {
         let label = UILabel()
         label.font = .systemFont(ofSize: 12, weight: .semibold)
-        label.textColor = .black
+        label.textColor = .white
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
@@ -155,9 +155,19 @@ private class MessagePreviewView: UIView {
     private let messageLabel: UILabel = {
         let label = UILabel()
         label.font = .systemFont(ofSize: 13)
-        label.textColor = .black
+        label.textColor = .white
         label.translatesAutoresizingMaskIntoConstraints = false
         label.numberOfLines = 0
+        return label
+    }()
+    
+    private let timeLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 10, weight: .regular)
+        label.textColor = .white
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.numberOfLines = 1
+        label.textAlignment = .left
         return label
     }()
     
@@ -236,6 +246,9 @@ private class MessagePreviewView: UIView {
     private var bubbleTopToTop: NSLayoutConstraint?
     private var messageTopToBubbleTop: NSLayoutConstraint?
     private var messageTopToReplyBottom: NSLayoutConstraint?
+    private var messageCenterYConstraint: NSLayoutConstraint?
+    private var timeLeftOfBubbleTrailing: NSLayoutConstraint?
+    private var timeRightOfBubbleLeading: NSLayoutConstraint?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -255,6 +268,7 @@ private class MessagePreviewView: UIView {
         addSubview(bubbleView)
         bubbleView.addSubview(messageLabel)
         bubbleView.addSubview(replyPreviewContainer)
+        bubbleView.addSubview(timeLabel)
         
         profileImageView.translatesAutoresizingMaskIntoConstraints = false
         nicknameLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -283,21 +297,38 @@ private class MessagePreviewView: UIView {
             replyPreviewContainer.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 10),
             replyPreviewContainer.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor, constant: -10),
             
-            messageLabel.bottomAnchor.constraint(equalTo: bubbleView.bottomAnchor, constant: -4),
+            // Time label aligned to bubble bottom
+            timeLabel.bottomAnchor.constraint(equalTo: bubbleView.bottomAnchor),
+
+            // Message label inside bubble, above its bottom
             messageLabel.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 8),
             messageLabel.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor, constant: -8),
-            messageLabel.centerYAnchor.constraint(equalTo: bubbleView.centerYAnchor),
+            messageLabel.bottomAnchor.constraint(lessThanOrEqualTo: bubbleView.bottomAnchor, constant: -8),
             
             bubbleView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
         ])
         
-        messageTopToBubbleTop = messageLabel.topAnchor.constraint(equalTo: bubbleView.topAnchor, constant: 4)
+        messageTopToBubbleTop = messageLabel.topAnchor.constraint(greaterThanOrEqualTo: bubbleView.topAnchor, constant: 8)
         messageTopToReplyBottom = messageLabel.topAnchor.constraint(equalTo: replyPreviewContainer.bottomAnchor, constant: 3)
         messageTopToBubbleTop?.isActive = true // 기본: 프리뷰 없음
+
+        // 메시지 레이블을 버블 중앙에 배치하는 제약조건 (기본 활성화)
+        messageCenterYConstraint = messageLabel.centerYAnchor.constraint(equalTo: bubbleView.centerYAnchor)
+        messageCenterYConstraint?.isActive = true
         
         // 미리 leading/trailing 제약 저장
         leadingConstraint = bubbleView.leadingAnchor.constraint(equalTo: profileImageView.trailingAnchor, constant: 5)
         trailingConstraint = bubbleView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10)
+
+        // time label outside the bubble, baseline-aligned
+        timeRightOfBubbleLeading = timeLabel.leadingAnchor.constraint(equalTo: bubbleView.trailingAnchor, constant: 4)   // 상대 메시지(좌측 버블) 기본
+        timeLeftOfBubbleTrailing = timeLabel.trailingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: -4)  // 내 메시지(우측 버블)
+        // 기본은 상대방 메시지 기준(버블 오른쪽에 시간)
+        timeRightOfBubbleLeading?.isActive = true
+
+        // Make time label resist compression and hug contents
+        timeLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+        timeLabel.setContentHuggingPriority(.required, for: .horizontal)
     }
     
     func configure(with message: ChatMessage, isMine: Bool) {
@@ -306,10 +337,24 @@ private class MessagePreviewView: UIView {
         if let text = message.msg, !text.isEmpty {
             messageLabel.text = text
         } else if !message.attachments.isEmpty {
-            messageLabel.text = "사진 \(message.attachments.count)장"
+            let imageCount = message.attachments.filter { $0.type == .image }.count
+            let videoCount = message.attachments.filter { $0.type == .video }.count
+
+            if videoCount > 0 && imageCount == 0 {
+                messageLabel.text = videoCount == 1 ? "동영상 1개" : "동영상 \(videoCount)개"
+            } else if imageCount > 0 && videoCount == 0 {
+                messageLabel.text = imageCount == 1 ? "사진 1장" : "사진 \(imageCount)장"
+            } else if imageCount > 0 && videoCount > 0 {
+                messageLabel.text = "사진 \(imageCount)장 · 동영상 \(videoCount)개"
+            } else {
+                messageLabel.text = "첨부 \(message.attachments.count)개"
+            }
         } else {
             messageLabel.text = ""
         }
+        
+        // Sent time label
+        timeLabel.text = formattedTime(message.sentAt)
 
         // 답장 미리보기 표시/토글
         if let rp = message.replyPreview {
@@ -318,12 +363,16 @@ private class MessagePreviewView: UIView {
             replyPreviewContainer.isHidden = false
             messageTopToBubbleTop?.isActive = false
             messageTopToReplyBottom?.isActive = true
+            // Reply preview가 있으면 중앙정렬을 끄고, 위에서부터 배치
+            messageCenterYConstraint?.isActive = false
         } else {
             replyPreviewNameLabel.text = nil
             replyPreviewMsgLabel.text = nil
             replyPreviewContainer.isHidden = true
             messageTopToReplyBottom?.isActive = false
             messageTopToBubbleTop?.isActive = true
+            // Reply preview가 없으면 Y축 중앙 정렬
+            messageCenterYConstraint?.isActive = true
         }
         
         if isMine {
@@ -336,6 +385,12 @@ private class MessagePreviewView: UIView {
 
             leadingConstraint?.isActive = false
             trailingConstraint?.isActive = true
+
+            // 내 메시지: 버블 왼쪽 바깥에 시간
+            timeRightOfBubbleLeading?.isActive = false
+            timeLeftOfBubbleTrailing?.isActive = true
+            timeLabel.textAlignment = .right
+            timeLabel.textColor = .white
         } else {
             profileImageView.isHidden = false
             nicknameLabel.isHidden = false
@@ -346,6 +401,23 @@ private class MessagePreviewView: UIView {
 
             trailingConstraint?.isActive = false
             leadingConstraint?.isActive = true
+
+            // 상대 메시지: 버블 오른쪽 바깥에 시간
+            timeLeftOfBubbleTrailing?.isActive = false
+            timeRightOfBubbleLeading?.isActive = true
+            timeLabel.textAlignment = .left
+            timeLabel.textColor = .white
         }
+    }
+    
+    private static let timeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        f.locale = Locale.current
+        return f
+    }()
+    private func formattedTime(_ date: Date?) -> String {
+        guard let d = date else { return "" }
+        return MessagePreviewView.timeFormatter.string(from: d)
     }
 }

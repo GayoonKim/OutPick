@@ -53,7 +53,24 @@ final class BannerManager {
         print(#function, "message: \(message), roomID: \(roomID)")
         
         let banner = ChatBannerView()
-        let text = message.attachments.isEmpty ? message.msg ?? "" : "사진 \(message.attachments.count)장"
+        let atts = message.attachments
+        let text: String = {
+            if atts.isEmpty {
+                return message.msg ?? ""
+            }
+            let imageCount = atts.filter { $0.type == .image }.count
+            let videoCount = atts.filter { $0.type == .video }.count
+
+            if videoCount > 0 && imageCount == 0 {
+                return videoCount == 1 ? "동영상 1개" : "동영상 \(videoCount)개"
+            } else if imageCount > 0 && videoCount == 0 {
+                return imageCount == 1 ? "사진 1장" : "사진 \(imageCount)장"
+            } else if imageCount > 0 || videoCount > 0 {
+                return "사진 \(imageCount)장 · 동영상 \(videoCount)개"
+            } else {
+                return "첨부 \(atts.count)개"
+            }
+        }()
         banner.configure(
             title: message.senderNickname,
             subtitle: text,

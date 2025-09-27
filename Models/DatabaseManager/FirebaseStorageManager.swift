@@ -467,6 +467,64 @@ class FirebaseStorageManager {
         }
     }
     
+    
+    // MARK: 비디오 관련
+    // Storage 업로드 유틸(putFile) — streaming upload with retry + safe putData fallback
+    func putVideoFileToStorage(localURL: URL, path: String, contentType: String,
+                          onProgress: @escaping (Double)->Void) async throws {
+        // 캐시 정책: 비디오는 7일 정도 캐시(필요 시 조정)
+        let cacheControl = "public, max-age=604800" // 7 days
+
+        do {
+            _ = try await self.uploadFileWithRetry(
+                from: localURL,
+                to: path,
+                contentType: contentType,
+                cacheControl: cacheControl,
+                progress: { completed, total in
+                    let frac = total > 0 ? Double(completed) / Double(total) : 0.0
+                    onProgress(frac)
+                }
+            )
+        } catch {
+            // 파일 업로드가 반복 실패하면, 용량 한도 이하에서는 Data 방식으로 폴백 시도
+            if let size = self.fileSize(at: localURL), size <= self.dataFallbackMaxBytes {
+                await self.dataFallbackLimiter.acquire()
+                defer { Task { await self.dataFallbackLimiter.release() } }
+
+                guard let data = try? Data(contentsOf: localURL, options: [.mappedIfSafe]) else {
+                    throw error
+                }
+                _ = try await self.uploadWithRetry(
+                    data: data,
+                    to: path,
+                    contentType: contentType,
+                    cacheControl: cacheControl,
+                    progress: { completed, total in
+                        let frac = total > 0 ? Double(completed) / Double(total) : 0.0
+                        onProgress(frac)
+                    }
+                )
+                print("✅ putVideoFileToStorage fallback via putData succeeded (\(size) bytes ≤ limit=\(self.dataFallbackMaxBytes)): \(path)")
+            } else {
+                throw error
+            }
+        }
+    }
+
+    // Storage 업로드 유틸(putData) — data upload with retry
+    func putVideoDataToStorage(data: Data, path: String, contentType: String) async throws {
+        // 썸네일/경량 리소스는 더 길게 캐시(30일)
+        let cacheControl = "public, max-age=2592000" // 30 days
+        _ = try await self.uploadWithRetry(
+            data: data,
+            to: path,
+            contentType: contentType,
+            cacheControl: cacheControl,
+            progress: nil
+        )
+    }
+    
 //    func uploadVideoToStorage(_ videoURL: URL) async throws -> String {
 //        let videoName = UUID().uuidString
 //        let path = "videos/\(videoName).mp4"

@@ -150,6 +150,12 @@ class SocketIOManager {
                 print(#function,"✅✅✅✅✅ attachImageListener:", message)
                 self.roomSubjects[roomID]?.send(message)
             }
+            // 비디오 브로드캐스트 리스너 등록
+            attachVideoListener(for: roomID) { [weak self] message in
+                guard let self = self else { return }
+                print(#function,"✅✅✅✅✅ attachVideoListener:", message)
+                self.roomSubjects[roomID]?.send(message)
+            }
         }
 
         return roomSubjects[roomID]!.eraseToAnyPublisher()
@@ -162,6 +168,7 @@ class SocketIOManager {
         if subscriberCounts[roomID] == 0 {
             detachChatListener(for: roomID)
             detachImageListener(for: roomID)
+            detachVideoListener(for: roomID)
             roomSubjects[roomID]?.send(completion: .finished)
             roomSubjects[roomID] = nil
         }
@@ -181,10 +188,6 @@ class SocketIOManager {
                 #endif
                 return
             }
-            // Normalize server payload (senderNickname vs senderNickName, id vs ID)
-//            var normalized = dict
-//            if normalized["senderNickName"] == nil, let v = normalized["senderNickname"] { normalized["senderNickName"] = v }
-//            if normalized["ID"] == nil, let v = normalized["id"] as? String { normalized["ID"] = v }
 
             guard let message = ChatMessage.from(dict) else {
                 #if DEBUG
@@ -247,7 +250,52 @@ class SocketIOManager {
             }
         }
     }
-    
+
+    // 비디오 수신용 리스너
+    private func attachVideoListener(for roomID: String, onMessage: @escaping (ChatMessage) -> Void) {
+        let event = "receiveVideo:\(roomID)"
+        print(#function, "bind →", event)
+        // Prevent duplicate handlers for the same room event
+        socket.off(event)
+
+        socket.on(event) { [weak self] data, _ in
+            guard let self = self else { return }
+            guard let dict = data.first as? [String: Any] else {
+                #if DEBUG
+                print("[attachVideoListener] invalid payload (not dict):", data)
+                #endif
+                return
+            }
+
+            // Normalize server payload (senderNickname vs senderNickName, id vs ID)
+            var normalized = dict
+            if normalized["senderNickName"] == nil, let v = normalized["senderNickname"] { normalized["senderNickName"] = v }
+            if normalized["ID"] == nil, let v = normalized["id"] as? String { normalized["ID"] = v }
+
+            guard let message = ChatMessage.from(normalized) else {
+                #if DEBUG
+                print("[attachVideoListener] parse failed normalized=", normalized)
+                #endif
+                return
+            }
+            guard message.roomID == roomID else {
+                #if DEBUG
+                print("[attachVideoListener] room mismatch payload=\(message.roomID) subscribed=\(roomID)")
+                #endif
+                return
+            }
+            // (선택) 비디오 메시지만 통과시키고 싶다면 아래 가드를 사용
+            // guard message.attachments.contains(where: { $0.type == .video }) else { return }
+            DispatchQueue.main.async {
+                onMessage(message)
+            }
+        }
+    }
+
+    private func detachVideoListener(for roomID: String) {
+        socket.off("receiveVideo:\(roomID)")
+    }
+
     private func detachImageListener(for roomID: String) {
         socket.off("receiveImages:\(roomID)")
     }
@@ -605,6 +653,188 @@ class SocketIOManager {
         }
     }
     
+    // MARK: - Send: Video
+    /// 비디오 메타만 서버로 전송 (바이너리 X). 서버는 이 메타로 메시지를 생성/중계한다.
+    /// - Parameters:
+    ///   - roomID: 방 ID
+    ///   - payload: 업로드 완료된 비디오의 메타 정보
+    ///   - ackTimeout: (선택) ACK 대기 시간
+    ///   - completion: (선택) 성공/실패 콜백
+    // MARK: - Send: Video
+    /// 비디오 메타만 서버로 전송 (바이너리 X). 서버는 이 메타로 메시지를 생성/중계한다.
+    /// 소켓 미연결/ACK 실패 시 로컬 실패 메시지를 주입한다.
+    func sendVideo(roomID: String,
+                   payload: VideoMetaPayload,
+                   ackTimeout: Double = 5.0,
+                   completion: ((Result<Void, Error>) -> Void)? = nil) {
+        let dict: [String: Any] = [
+            "roomID": payload.roomID,
+            "messageID": payload.messageID,
+            "storagePath": payload.storagePath,
+            "thumbnailPath": payload.thumbnailPath,
+            "duration": payload.duration,
+            "width": payload.width,
+            "height": payload.height,
+            "sizeBytes": payload.sizeBytes,
+            "approxBitrateMbps": payload.approxBitrateMbps,
+            "preset": payload.preset,
+            // (선택) 보낸이 정보 포함
+            "senderID": LoginManager.shared.getUserEmail,
+            "senderNickname": LoginManager.shared.currentUserProfile?.nickname ?? ""
+        ]
+
+        #if canImport(SocketIO)
+        if socket.status == .connected {
+            socket.emitWithAck("chat:video", dict).timingOut(after: ackTimeout) { [weak self] items in
+                guard let self = self else { return }
+                // 서버에서 { ok: true } 형태로 응답한다고 가정
+                if let first = items.first as? [String: Any],
+                   let ok = first["ok"] as? Bool, ok == true {
+                    completion?(.success(()))
+                } else if items.isEmpty {
+                    // 응답이 없어도 성공 처리(서버 ACK 미사용 환경)
+                    completion?(.success(()))
+                } else {
+                    // ACK 실패 → 로컬 실패 메시지 주입
+                    self.sendFailedVideos(roomID: payload.roomID, payload: payload)
+                    let err = NSError(domain: "SocketIO", code: -1,
+                                      userInfo: [NSLocalizedDescriptionKey: "서버 ACK 실패 또는 형식 불일치: \(items)"])
+                    completion?(.failure(err))
+                }
+            }
+        } else {
+            // 미연결: 실패 메시지 먼저 주입하고 재연결 시도
+            self.sendFailedVideos(roomID: payload.roomID, payload: payload)
+            socket.connect()
+            let err = NSError(domain: "SocketIO", code: -1009,
+                              userInfo: [NSLocalizedDescriptionKey: "소켓이 연결되어 있지 않습니다."])
+            completion?(.failure(err))
+        }
+        #else
+        // SocketIO 미링크 환경에서도 컴파일 가능하도록
+        completion?(.success(()))
+        #endif
+    }
+    
+    // MARK: - Local Fail: Video
+    /// 업로드 실패 또는 소켓 미연결 시, 로컬에서 '실패한 비디오 메시지'를 스트림에 주입합니다.
+    /// 서버로는 아무 것도 전송하지 않으며, 재시도 UX를 위해 타임라인에 즉시 반영합니다.
+    /// - Parameters:
+    ///   - roomID: 방 ID
+    ///   - senderID: 보낸 사람 UID
+    ///   - senderNickname: 보낸 사람 닉네임
+    ///   - localURL: 압축된 비디오의 로컬 파일 URL (mp4 등)
+    ///   - thumbData: 썸네일 JPEG 데이터(옵션). 있으면 임시 파일로 저장해 pathThumb에 넣습니다.
+    ///   - duration: 비디오 길이(초)
+    ///   - width: 비디오 가로 해상도
+    ///   - height: 비디오 세로 해상도
+    ///   - presetCode: "standard720" | "dataSaver720" | "high1080" 등 (로깅용)
+    func sendFailedVideos(roomID: String,
+                          senderID: String,
+                          senderNickname: String,
+                          localURL: URL,
+                          thumbData: Data?,
+                          duration: Double,
+                          width: Int,
+                          height: Int,
+                          presetCode: String) {
+        // 1) 파일 크기
+        let bytes: Int64 = (try? (FileManager.default
+            .attributesOfItem(atPath: localURL.path)[.size] as? NSNumber)?.int64Value) ?? 0
+        
+        // 2) 썸네일을 임시 경로로 저장 (UI에서 즉시 표시 가능)
+        var thumbPath: String = ""
+        if let data = thumbData, !data.isEmpty {
+            let thumbURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent("vidthumb_\(UUID().uuidString).jpg")
+            do {
+                try data.write(to: thumbURL, options: .atomic)
+                thumbPath = thumbURL.path
+            } catch {
+                #if DEBUG
+                print("[sendFailedVideos] thumbnail write failed:", error)
+                #endif
+            }
+        }
+        
+        // 3) 실패 메시지용 ID/해시
+        let clientMessageID = "failed-\(UUID().uuidString)"
+        
+        // 4) 첨부(.video) 구성 — 로컬 경로를 그대로 넣어 미리보기/재시도에 활용
+        let attachment = Attachment(
+            type: .video,
+            index: 0,
+            pathThumb: thumbPath,
+            pathOriginal: localURL.path,
+            width: width,
+            height: height,
+            bytesOriginal: Int(bytes),
+            hash: clientMessageID,
+            blurhash: nil
+        )
+        
+        // 5) 실패 ChatMessage 구성
+        let message = ChatMessage(
+            ID: clientMessageID,
+            roomID: roomID,
+            senderID: senderID,
+            senderNickname: senderNickname,
+            msg: "",
+            sentAt: Date(),
+            attachments: [attachment],
+            replyPreview: nil,
+            isFailed: true,
+            isDeleted: false
+        )
+        
+        #if DEBUG
+        print("[sendFailedVideos] roomID=\(roomID) preset=\(presetCode) duration=\(duration)s size=\(bytes)B")
+        #endif
+        
+        // 6) 로컬 스트림으로 즉시 발행 (UI 업데이트)
+        DispatchQueue.main.async {
+            self.roomSubjects[roomID]?.send(message)
+        }
+    }
+    
+    /// 업로드는 성공했으나 소켓 전송(브로드캐스트)이 실패한 경우: 원격(Storage) 경로 기반으로 실패 메시지 발행
+    func sendFailedVideos(roomID: String, payload: VideoMetaPayload) {
+        let senderID = LoginManager.shared.getUserEmail
+        let senderNickname = LoginManager.shared.currentUserProfile?.nickname ?? ""
+
+        // 서버 브로드캐스트 포맷과 동일한 첨부(.video), 단 isFailed만 true
+        let attachment = Attachment(
+            type: .video,
+            index: 0,
+            pathThumb: payload.thumbnailPath,
+            pathOriginal: payload.storagePath,
+            width: payload.width,
+            height: payload.height,
+            bytesOriginal: Int(payload.sizeBytes),
+            hash: payload.messageID,
+            blurhash: nil
+        )
+
+        // 실패 메시지 ID는 충돌 방지를 위해 prefix 부여
+        let failedID = "failed-\(payload.messageID)"
+        let message = ChatMessage(
+            ID: failedID,
+            roomID: roomID,
+            senderID: senderID,
+            senderNickname: senderNickname,
+            msg: "",
+            sentAt: Date(),
+            attachments: [attachment],
+            replyPreview: nil,
+            isFailed: true,
+            isDeleted: false
+        )
+
+        DispatchQueue.main.async {
+            self.roomSubjects[roomID]?.send(message)
+        }
+    }
+    
     func setUserName(_ userName: String) {
         print("setUserName 호출됨: \(userName)")
         socket.emit("set username", userName)
@@ -655,3 +885,5 @@ class SocketIOManager {
         }
     }
 }
+
+
