@@ -144,6 +144,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private var hasMoreOlder = true
     private var hasMoreNewer = true
     
+    private var avatarWarmupRoomID: String?
+    
     enum Section: Hashable {
         case main
     }
@@ -362,6 +364,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         setupAttachmentView()
         
         setupInitialMessages()
+        runInitialProfileFetchOnce()
         
         bindKeyboardPublisher()
         bindSearchEvents()
@@ -1303,7 +1306,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         // 최초 바인딩 또는 이전 정보가 없을 때: 전체 초기화 느낌으로 처리
         guard let old = old else {
             updateNavigationTitle(with: new)
-            do { try await syncProfilesWithLocalDB(emails: new.participants) } catch { print("❌ 프로필 동기화 실패: \(error)") }
+            runInitialProfileFetchOnce()
             setupAnnouncementBannerIfNeeded()
             updateAnnouncementBanner(with: new.activeAnnouncement)
             return
@@ -1319,7 +1322,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         let newSet = Set(new.participants)
         let joined = Array(newSet.subtracting(oldSet))
         if !joined.isEmpty {
-            do { try await syncProfilesWithLocalDB(emails: joined) } catch { print("❌ 프로필 부분 동기화 실패: \(error)") }
+            runInitialProfileFetchOnce()
         }
         
         // 3) 공지 변경 감지: ID/업데이트 시각/본문/작성자 중 하나라도 달라지면 배너 갱신
@@ -1362,22 +1365,230 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
     
     //MARK: 프로필 관련
-    @MainActor
-    private func syncProfilesWithLocalDB(emails: [String]) async throws {
-        print(#function, "호출 완료")
-        
-        do {
-            let profiles = try await FirebaseManager.shared.fetchUserProfiles(emails: emails)
-            
-            guard let room = self.room else { return }
-            for profile in profiles {
-                try GRDBManager.shared.insertUserProfile(profile)
-                try GRDBManager.shared.addUser(profile.email ?? "", toRoom: room.ID ?? "")
+    // 방 관련 프로퍼티 근처에 추가
+    private var avatarWindowAnchorIndex: Int? = nil  // 마지막 앵커
+    private let avatarWindowMinStep: Int = 30        // 이 값 미만 이동은 스킵
+    private let avatarLookbackMsgs: Int = 100        // 이전 100
+    private let avatarLookaheadMsgs: Int = 100       // 이후 100
+    private let avatarMaxUniqueSenders: Int = 60     // 고유 발신자 상한
+    
+    private func runInitialProfileFetchOnce() {
+        guard let rid = room?.ID, !rid.isEmpty else { return }
+        if avatarWarmupRoomID == rid { return }
+        avatarWarmupRoomID = rid
+        initialProfileFetching()
+    }
+    
+    private func initialProfileFetching() {
+        guard let room = room else { return }
+
+        // 참여자 이메일 목록
+        let emails: [String] = room.participants
+        let roomID = room.ID ?? ""
+
+        Task.detached { [weak self] in
+            guard let self = self else { return }
+            do {
+                // 1) 현재 로컬에 이 방의 사용자(경량 LocalUser)가 있는지 확인
+                var localUsers = try GRDBManager.shared.fetchLocalUsers(inRoom: roomID)
+                print(#function, "✅ 방에 참여한 사람들의 LocalUser 동기화 성공: ", localUsers)
+
+                if localUsers.isEmpty {
+                    // 1-a) 방 최초 진입: 서버에서 전체 프로필 로드 → LocalUser upsert + RoomMember 추가
+                    let serverProfiles = try await FirebaseManager.shared.fetchUserProfiles(emails: emails)
+                    print(#function, "✅ 방에 참여한 사람들의 프로필 동기화 성공: ", serverProfiles)
+
+                    for p in serverProfiles {
+                        let email = p.email ?? ""
+                        let nickname = p.nickname ?? ""
+                        let imagePath = p.profileImagePath
+                        // LocalUser upsert
+                        _ = try GRDBManager.shared.upsertLocalUser(email: email, nickname: nickname, profileImagePath: imagePath)
+                        // RoomMember 연결
+                        try GRDBManager.shared.addLocalUser(email, toRoom: roomID)
+                    }
+
+                    // 로컬 재조회
+                    localUsers = try GRDBManager.shared.fetchLocalUsers(inRoom: roomID)
+                } else {
+                    // 1-b) 일부만 있는 경우: 미싱 사용자만 채움 + 멤버십 보정
+                    let localSet = Set(localUsers.map { $0.email })
+                    let missing = emails.filter { !localSet.contains($0) }
+
+                    if !missing.isEmpty {
+                        let serverProfiles = try await FirebaseManager.shared.fetchUserProfiles(emails: missing)
+                        for p in serverProfiles {
+                            let email = p.email ?? ""
+                            let nickname = p.nickname ?? ""
+                            let imagePath = p.profileImagePath
+                            _ = try GRDBManager.shared.upsertLocalUser(email: email, nickname: nickname, profileImagePath: imagePath)
+                            try GRDBManager.shared.addLocalUser(email, toRoom: roomID)
+                        }
+                        localUsers = try GRDBManager.shared.fetchLocalUsers(inRoom: roomID)
+                    }
+
+                    // 방 멤버십 누락 보정 (RoomMember에 없으면 추가)
+                    let existingMembership = try GRDBManager.shared.userEmails(in: roomID)
+                    let existingSet = Set(existingMembership)
+                    let toAdd = emails.filter { !existingSet.contains($0) }
+                    for e in toAdd { try GRDBManager.shared.addLocalUser(e, toRoom: roomID) }
+                }
+
+                // 2) 가시영역 발신자 우선 프리패치 + Top-50
+                // 2-a) 가시영역(현재 보이는 셀)의 발신자 아바타 프리패치
+                let visibleEmails: [String] = await MainActor.run { self.visibleSenderEmails(limit: 30) }
+                if !visibleEmails.isEmpty {
+                    var map = Dictionary(uniqueKeysWithValues: localUsers.map { ($0.email, $0) })
+                    let visibleSet = Set(visibleEmails)
+                    let missing = Array(visibleSet.subtracting(map.keys))
+                    if !missing.isEmpty {
+                        // 서버에서 미싱 사용자 프로필 받아 로컬 upsert (RoomMember는 추가하지 않음)
+                        let serverProfiles = try await FirebaseManager.shared.fetchUserProfiles(emails: missing)
+                        for p in serverProfiles {
+                            let email = p.email ?? ""
+                            let nickname = p.nickname ?? ""
+                            let imagePath = p.profileImagePath
+                            let upserted = try GRDBManager.shared.upsertLocalUser(email: email, nickname: nickname, profileImagePath: imagePath)
+                            map[email] = upserted
+                        }
+                    }
+                    let visibleUsers = visibleEmails.compactMap { map[$0] }
+                    await self.prefetchProfileAvatars(for: visibleUsers, topCount: visibleUsers.count)
+                }
+
+                // 2-b) 닉네임 ASC 기준 Top-50 아바타 프리패치 (디스크 캐시에 데워두기)
+                await self.prefetchProfileAvatars(for: localUsers, topCount: 50)
+            } catch {
+                print("❌ 초기 프로필 설정 실패:", error)
             }
-            
-            print(#function, "✅ 사용자 프로필 동기화 성공: ", profiles)
-        } catch {
-            print("❌ 사용자 프로필 동기화 실패: \(error)")
+        }
+    }
+    /// 현재 화면에 보이는 메시지 셀의 발신자 이메일 목록(중복 제거, 최대 limit)
+    @MainActor
+    private func visibleSenderEmails(limit: Int = 30) -> [String] {
+        let paths = chatMessageCollectionView.indexPathsForVisibleItems
+        guard !paths.isEmpty else { return [] }
+        var seen = Set<String>()
+        var result: [String] = []
+        for ip in paths {
+            if let item = dataSource.itemIdentifier(for: ip), case let .message(m) = item {
+                let email = m.senderID
+                if !email.isEmpty && !seen.contains(email) {
+                    seen.insert(email)
+                    result.append(email)
+                    if result.count >= limit { break }
+                }
+            }
+        }
+        return result
+    }
+    
+    @MainActor
+    private func senderEmailsAround(index anchor: Int,
+                                    lookback: Int = 100,
+                                    lookahead: Int = 100,
+                                    cap: Int = 60) -> [String] {
+        let snapshot = dataSource.snapshot()
+        let items = snapshot.itemIdentifiers
+        guard !items.isEmpty else { return [] }
+
+        let total = items.count
+        let start = max(0, min(anchor, total - 1) - lookback)
+        let end   = min(total, anchor + 1 + lookahead)
+
+        var seen = Set<String>(), result: [String] = []
+        var i = start
+        while i < end {
+            if case let .message(m) = items[i] {
+                let email = m.senderID
+                if !email.isEmpty && seen.insert(email).inserted {
+                    result.append(email)
+                    if result.count >= cap { break }
+                }
+            }
+            i += 1
+        }
+        return result
+    }
+    
+    private func prefetchAvatarsAroundDisplayIndex(_ displayIndex: Int) {
+        // 너무 촘촘한 호출 방지
+        if let last = avatarWindowAnchorIndex, abs(last - displayIndex) < avatarWindowMinStep { return }
+        avatarWindowAnchorIndex = displayIndex
+        guard let roomID = room?.ID, !roomID.isEmpty else { return }
+
+        Task.detached { [weak self] in
+            guard let self = self else { return }
+            do {
+                // 1) UI 스레드에서 스냅샷 읽기 → 고유 발신자 집합
+                let emails: [String] = await MainActor.run {
+                    self.senderEmailsAround(index: displayIndex,
+                                            lookback: self.avatarLookbackMsgs,
+                                            lookahead: self.avatarLookaheadMsgs,
+                                            cap: self.avatarMaxUniqueSenders)
+                }
+                guard !emails.isEmpty else { return }
+
+                // 2) 로컬 LocalUser 맵
+                var localUsers = try GRDBManager.shared.fetchLocalUsers(inRoom: roomID)
+                var map = Dictionary(uniqueKeysWithValues: localUsers.map { ($0.email, $0) })
+
+                // 3) 로컬에 없는 사용자만 서버에서 보충(upsert) — RoomMember는 추가 X
+                let missing = emails.filter { map[$0] == nil }
+                if !missing.isEmpty {
+                    let serverProfiles = try await FirebaseManager.shared.fetchUserProfiles(emails: missing)
+                    for p in serverProfiles {
+                        let email = p.email ?? ""; if email.isEmpty { continue }
+                        let nickname = p.nickname ?? ""
+                        let imagePath = p.profileImagePath
+                        let upserted = try GRDBManager.shared.upsertLocalUser(email: email,
+                                                                              nickname: nickname,
+                                                                              profileImagePath: imagePath)
+                        map[email] = upserted
+                    }
+                }
+
+                // 4) 이메일 순서대로 LocalUser 배열 구성 → 프리패치
+                let targets = emails.compactMap { map[$0] }
+                guard !targets.isEmpty else { return }
+                await self.prefetchProfileAvatars(for: targets, topCount: targets.count)
+            } catch {
+                print("❌ 아바타 윈도우 프리패치 실패:", error)
+            }
+        }
+    }
+
+    /// 닉네임 정렬 기준 Top-N 사용자 아바타를 선행 캐시 (디스크)
+    private func prefetchProfileAvatars(for users: [LocalUser], topCount: Int = 50) async {
+        guard !users.isEmpty else { return }
+
+        // 1) 닉네임 오름차순 정렬 → Top-N
+        let sorted = users.sorted { $0.nickname.localizedCaseInsensitiveCompare($1.nickname) == .orderedAscending }
+        let top = Array(sorted.prefix(min(topCount, sorted.count)))
+
+        // 2) 이미지 키는 profileImagePath 그대로 사용 (Firebase Storage path)
+        await withTaskGroup(of: Void.self) { group in
+            for u in top {
+                guard let path = u.profileImagePath, !path.isEmpty else { continue }
+                let key = path
+                group.addTask { [weak self] in
+                    guard let self = self else { return }
+                    do {
+                        // 이미 캐시되어 있으면 스킵
+                        if await KingFisherCacheManager.shared.isCached(key) { return }
+
+                        // 서명된 downloadURL 확보 후 원본 데이터를 받아 캐시에 저장
+                        let url = try await self.storageURLCache.url(for: path)
+                        let (data, _) = try await URLSession.shared.data(from: url)
+                        if let img = UIImage(data: data) {
+                            KingFisherCacheManager.shared.storeImage(img, forKey: key)
+                        }
+                    } catch {
+                        print("👤 아바타 프리패치 실패 (\(u.email)):", error)
+                    }
+                }
+            }
+            await group.waitForAll()
         }
     }
     
@@ -1392,9 +1603,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 setupChatUI()
                 chatUIView.isHidden = false
                 joinRoomBtn.isHidden = true
-                try await self.syncProfilesWithLocalDB(emails: room.participants)
                 self.bindRoomChangePublisher()
                 FirebaseManager.shared.startListenRoomDoc(roomID: room.ID ?? "")
+                runInitialProfileFetchOnce()
                 self.setupAnnouncementBannerIfNeeded()
                 self.updateAnnouncementBanner(with: room.activeAnnouncement)
             } else {
@@ -1469,7 +1680,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 self.room = updatedRoom
 
                 // 4. 프로필 동기화
-                //                try await self.syncProfilesWithLocalDB(emails: updatedRoom.participants)
 
                 // 5. UI 업데이트
                 await MainActor.run {
@@ -1478,6 +1688,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                     self.chatMessageCollectionView.isHidden = false
                     self.bindRoomChangePublisher()
                     FirebaseManager.shared.startListenRoomDoc(roomID: updatedRoom.ID ?? "")
+                    runInitialProfileFetchOnce()
                     self.view.layoutIfNeeded()
                 }
                 LoadingIndicator.shared.stop()
@@ -2736,5 +2947,8 @@ extension ChatViewController: UICollectionViewDelegate {
                 await loadNewerMessagesIfNeeded(after: lastID)
             }
         }
+        
+        // ✅ 아바타 프리패치: 가시영역 중심 ±100 메시지의 고유 발신자
+        self.prefetchAvatarsAroundDisplayIndex(indexPath.item)
     }
 }

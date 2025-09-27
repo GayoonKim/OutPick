@@ -36,8 +36,6 @@ class ChatImagePreviewCollectionView: UIView {
     
     override func layoutSubviews() {
         super.layoutSubviews()
-        collectionView.layer.cornerRadius = 20
-        collectionView.backgroundColor = .white
     }
     
     private func setupCollectionView() {

@@ -6,7 +6,32 @@
 //
 
 import Foundation
+
 import GRDB
+
+// MARK: - Minimal GRDB models used by GRDBManager
+
+/// LocalUser(email PK, nickname, profileImagePath)
+struct LocalUser: Codable, FetchableRecord, PersistableRecord, Hashable {
+    static let databaseTableName = "LocalUser"
+    enum Columns: String, ColumnExpression { case email, nickname, profileImagePath }
+
+    let email: String        // PK
+    var nickname: String
+    var profileImagePath: String?
+
+    // Upsert-friendly
+    static let persistenceConflictPolicy = PersistenceConflictPolicy(insert: .replace, update: .replace)
+}
+
+/// RoomMember(roomID, userEmail)
+struct RoomMember: Codable, FetchableRecord, PersistableRecord, Hashable {
+    static let databaseTableName = "RoomMember"
+    enum Columns: String, ColumnExpression { case roomID, userEmail }
+
+    let roomID: String
+    let userEmail: String    // FK → LocalUser.email
+}
 
 final class GRDBManager {
     static let shared = GRDBManager()
@@ -20,6 +45,49 @@ final class GRDBManager {
         
         // 마이그레이션 수행
         var migrator = DatabaseMigrator()
+        migrator.registerMigration("foreignKeysOn") { db in
+            try db.execute(sql: "PRAGMA foreign_keys = ON;")
+        }
+        // Minimal LocalUser table (email, nickname, profileImagePath)
+        migrator.registerMigration("createLocalUser_min") { db in
+            try db.create(table: "LocalUser", options: [.ifNotExists]) { t in
+                t.column("email", .text).primaryKey()          // PK(email)
+                t.column("nickname", .text).notNull()
+                t.column("profileImagePath", .text)
+            }
+            try db.create(index: "idx_LocalUser_nickname", on: "LocalUser", columns: ["nickname"], ifNotExists: true)
+        }
+        
+        // RoomMember junction table (roomID, userEmail)
+        migrator.registerMigration("createRoomMember_min") { db in
+            try db.create(table: "RoomMember", options: [.ifNotExists]) { t in
+                t.column("roomID", .text).notNull()
+                t.column("userEmail", .text).notNull().indexed().references("LocalUser", column: "email", onDelete: .cascade)
+                t.primaryKey(["roomID", "userEmail"]) // composite PK
+            }
+            try db.create(index: "idx_RoomMember_room", on: "RoomMember", columns: ["roomID"], ifNotExists: true)
+        }
+        
+        // Backfill LocalUser from legacy userProfile (if exists)
+        migrator.registerMigration("backfill_LocalUser_from_userProfile") { db in
+            if try db.tableExists("userProfile") {
+                try db.execute(sql: """
+                    INSERT OR IGNORE INTO LocalUser (email, nickname, profileImagePath)
+                    SELECT email, COALESCE(nickname, ''), profileImagePath
+                      FROM userProfile
+                """)
+            }
+        }
+        
+        // Backfill RoomMember from legacy roomParticipant (if exists)
+        migrator.registerMigration("migrate_roomParticipant_to_RoomMember") { db in
+            if try db.tableExists("roomParticipant") {
+                try db.execute(sql: """
+                    INSERT OR IGNORE INTO RoomMember (roomID, userEmail)
+                    SELECT roomId, email FROM roomParticipant
+                """)
+            }
+        }
         migrator.registerMigration("createUserProfile") { db in
             try db.create(table: "userProfile") { t in
                 t.column("deviceID", .text)
@@ -67,7 +135,7 @@ final class GRDBManager {
                 print("[Migration] addReplyPreviewToChatMessage skipped or failed: \(error)")
             }
         }
-
+        
         migrator.registerMigration("addIsDeletedToChatMessage") { db in
             do {
                 try db.alter(table: "chatMessage") { t in
@@ -94,7 +162,7 @@ final class GRDBManager {
                 t.primaryKey(["roomId", "imageName"])
             }
         }
-
+        
         migrator.registerMigration("createImageIndex") { db in
             try db.create(table: "imageIndex") { t in
                 t.column("roomID", .text).notNull()
@@ -122,27 +190,27 @@ final class GRDBManager {
                 t.column("roomID", .text).notNull()
                 t.column("messageID", .text).notNull()
                 t.column("idx", .integer).notNull()
-
+                
                 // 이미지 인덱스와 컬럼 구성 맞춤(키/URL 모두 보관)
                 t.column("thumbKey", .text)
                 t.column("originalKey", .text)
                 t.column("thumbURL", .text)
                 t.column("originalURL", .text)
-
+                
                 t.column("width", .integer)
                 t.column("height", .integer)
                 t.column("bytesOriginal", .integer)
-
+                
                 // 동영상 전용(옵션)
                 t.column("duration", .double)
                 t.column("approxBitrateMbps", .double)
                 t.column("preset", .text)
-
+                
                 t.column("hash", .text)
                 t.column("isFailed", .boolean).notNull().defaults(to: false)
                 t.column("localThumb", .text)
                 t.column("sentAt", .datetime).notNull()
-
+                
                 t.primaryKey(["roomID", "messageID", "idx"])
             }
             try db.create(index: "idx_videoIndex_room_sentAt",
@@ -154,7 +222,7 @@ final class GRDBManager {
                           columns: ["messageID"],
                           ifNotExists: true)
         }
-
+        
         try! migrator.migrate(dbPool)
     }
     
@@ -193,11 +261,12 @@ final class GRDBManager {
     func fetchUserProfiles(inRoom roomID: String) throws -> [UserProfile] {
         try dbPool.read { db in
             let sql = """
-                            SELECT userProfile.*
-                            FROM userProfile
-                            JOIN roomParticipant ON userProfile.email = roomParticipant.email
-                            WHERE roomParticipant.roomId = ?
-                        """
+                SELECT userProfile.*
+                  FROM userProfile
+                  JOIN roomParticipant ON userProfile.email = roomParticipant.email
+                 WHERE roomParticipant.roomId = ?
+                 ORDER BY userProfile.nickname COLLATE NOCASE ASC
+            """
             return try UserProfile.fetchAll(db, sql: sql, arguments: [roomID])
         }
     }
@@ -234,12 +303,22 @@ final class GRDBManager {
                 return nil
             }
             
-            // 참여자 IDs 조회
-            let participants: [String] = try String.fetchAll(
-                db,
-                sql: "SELECT userID FROM roomParticipant WHERE roomID = ?",
-                arguments: [roomID]
-            )
+            // 참여자 IDs 조회 (신규 RoomMember 우선, 레거시 roomParticipant 폴백)
+            let participants: [String] = try {
+                if try db.tableExists("RoomMember") {
+                    return try String.fetchAll(
+                        db,
+                        sql: "SELECT userEmail FROM RoomMember WHERE roomID = ?",
+                        arguments: [roomID]
+                    )
+                } else {
+                    return try String.fetchAll(
+                        db,
+                        sql: "SELECT email FROM roomParticipant WHERE roomId = ?",
+                        arguments: [roomID]
+                    )
+                }
+            }()
             
             return ChatRoom(
                 ID: row.ID,
@@ -258,7 +337,7 @@ final class GRDBManager {
     /// 여러 메시지를 한 번에 저장하고, 마지막에만 조건부 pruneMessages 실행
     func saveChatMessages(_ messages: [ChatMessage]) async throws {
         guard !messages.isEmpty else { return }
-
+        
         // Write messages + image index (same transaction per write block)
         try await dbPool.write { db in
             for message in messages {
@@ -266,12 +345,12 @@ final class GRDBManager {
                 guard !message.roomID.isEmpty,
                       !message.senderID.isEmpty,
                       !message.senderNickname.isEmpty else {
-                    #if DEBUG
+#if DEBUG
                     print("[GRDB] skip invalid message: id=\(message.ID) roomID/sender fields missing")
-                    #endif
+#endif
                     continue
                 }
-
+                
                 // 2) Attachments sort + JSON encode
                 let attachmentsJSON: String = {
                     do {
@@ -283,7 +362,7 @@ final class GRDBManager {
                         return "[]"
                     }
                 }()
-
+                
                 // 3) JSON encode replyPreview
                 let replyPreviewJSON: String? = {
                     guard let rp = message.replyPreview else { return nil }
@@ -295,7 +374,7 @@ final class GRDBManager {
                         return nil
                     }
                 }()
-
+                
                 // 4) Upsert chatMessage row
                 try db.execute(
                     sql: """
@@ -316,10 +395,10 @@ final class GRDBManager {
                         message.isDeleted
                     ]
                 )
-                #if DEBUG
+#if DEBUG
                 print("[GRDB] saveChatMessages: upsert message id=\(message.ID) room=\(message.roomID)")
-                #endif
-
+#endif
+                
                 // 5) FTS index: ensure non-nil text (image-only messages may have nil msg)
                 let ftsMsg: String = message.msg ?? ""
                 do {
@@ -330,7 +409,7 @@ final class GRDBManager {
                 } catch {
                     print("FTS insert 실패: \(error)")
                 }
-
+                
                 // 6) Image index upsert for this message (meta only)
                 try self.upsertImageIndex(for: message, in: db)
                 
@@ -338,7 +417,7 @@ final class GRDBManager {
                 try self.upsertVideoIndex(for: message, in: db)
             }
         }
-
+        
         // 7) Conditional prune outside of write block to avoid nested writes
         if let lastMessage = messages.last {
             let roomID = lastMessage.roomID
@@ -347,13 +426,13 @@ final class GRDBManager {
                 try self.pruneMessages(inRoom: roomID, keepLast: 3000)
             }
         }
-
-        #if DEBUG
+        
+#if DEBUG
         let summary = messages.map { "\($0.ID)@\($0.roomID)" }.joined(separator: ", ")
         print("saveChatMessages completed [\(messages.count)]: \(summary)")
-        #endif
+#endif
     }
-
+    
     // MARK: - Image Index Upsert
     private func upsertImageIndex(for message: ChatMessage, in db: Database) throws {
         // Clean existing rows for this message (idempotent upsert)
@@ -361,13 +440,13 @@ final class GRDBManager {
             sql: "DELETE FROM imageIndex WHERE roomID = ? AND messageID = ?",
             arguments: [message.roomID, message.ID]
         )
-
+        
         let atts = message.attachments
             .filter { $0.type == .image }
             .sorted { $0.index < $1.index }
-
+        
         guard !atts.isEmpty else { return }
-
+        
         let when = message.sentAt ?? Date()
         for att in atts {
             try db.execute(sql: """
@@ -375,26 +454,26 @@ final class GRDBManager {
             (roomID, messageID, idx, thumbKey, originalKey, thumbURL, originalURL, width, height, bytesOriginal, hash, isFailed, localThumb, sentAt)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            arguments: [
-                message.roomID,
-                message.ID,
-                att.index,
-                // 캐시 키는 해시를 우선 사용(없으면 nil)
-                att.hash.isEmpty ? nil : att.hash,
-                att.hash.isEmpty ? nil : (att.hash + ":orig"),
-                att.pathThumb.isEmpty ? nil : att.pathThumb,
-                att.pathOriginal.isEmpty ? nil : att.pathOriginal,
-                att.width,
-                att.height,
-                att.bytesOriginal,
-                att.hash.isEmpty ? nil : att.hash,
-                message.isFailed,
-                message.isFailed ? (att.pathThumb.isEmpty ? nil : att.pathThumb) : nil,
-                when
-            ])
+                           arguments: [
+                            message.roomID,
+                            message.ID,
+                            att.index,
+                            // 캐시 키는 해시를 우선 사용(없으면 nil)
+                            att.hash.isEmpty ? nil : att.hash,
+                            att.hash.isEmpty ? nil : (att.hash + ":orig"),
+                            att.pathThumb.isEmpty ? nil : att.pathThumb,
+                            att.pathOriginal.isEmpty ? nil : att.pathOriginal,
+                            att.width,
+                            att.height,
+                            att.bytesOriginal,
+                            att.hash.isEmpty ? nil : att.hash,
+                            message.isFailed,
+                            message.isFailed ? (att.pathThumb.isEmpty ? nil : att.pathThumb) : nil,
+                            when
+                           ])
         }
     }
-
+    
     /// 방의 메시지 개수를 반환하는 헬퍼 함수
     func countMessages(inRoom roomID: String) throws -> Int {
         try dbPool.read { db in
@@ -417,7 +496,7 @@ final class GRDBManager {
             try db.execute(sql: sql, arguments: StatementArguments(args))
         }
     }
-
+    
     // replyPreview.messageID 가 특정 IDs에 해당하는 레코드들의 preview.isDeleted 를 일괄 업데이트 (JSON1 사용)
     func updateReplyPreviewsIsDeleted(referencing ids: [String], isDeleted: Bool, inRoom roomID: String) async throws {
         guard !ids.isEmpty else { return }
@@ -480,7 +559,7 @@ final class GRDBManager {
             }
         }
     }
-
+    
     func fetchOlderMessages(inRoom roomID: String, before anchorMessageID: String, limit: Int) async throws -> [ChatMessage] {
         try await dbPool.read { db in
             // 앵커 메시지의 sentAt을 조회
@@ -535,13 +614,13 @@ final class GRDBManager {
             }
         }
     }
-
+    
     /// 오래된 메시지를 삭제하여 최근 N개만 유지 (batchSize 지원)
     func pruneMessages(inRoom roomID: String, keepLast count: Int, batchSize: Int = 500) throws {
         try dbPool.write { db in
             // 현재 메시지 개수 확인
             let totalCount = try self.countMessages(inRoom: roomID)
-
+            
             if totalCount > count {
                 let toDelete = min(totalCount - count, batchSize)
                 // 먼저 삭제 대상 메시지 ID 목록을 수집
@@ -557,13 +636,12 @@ final class GRDBManager {
                 )
                 let ids: [String] = idRows.compactMap { $0["id"] }
                 guard !ids.isEmpty else { return }
-
+                
                 let placeholders = Array(repeating: "?", count: ids.count).joined(separator: ",")
-
+                
                 // 1) imageIndex 청소
                 try db.execute(sql: "DELETE FROM imageIndex WHERE roomID = ? AND messageID IN (\(placeholders))",
                                arguments: StatementArguments([roomID] + ids))
-                try db.execute(sql: "DELETE FROM videoIndex WHERE roomID = ?", arguments: [roomID])
                 // 1b) videoIndex 청소
                 try db.execute(sql: "DELETE FROM videoIndex WHERE roomID = ? AND messageID IN (\(placeholders))",
                                arguments: StatementArguments([roomID] + ids))
@@ -575,7 +653,7 @@ final class GRDBManager {
                     sql: "DELETE FROM chatMessage WHERE id IN (\(placeholders))",
                     arguments: StatementArguments(ids)
                 )
-
+                
                 let afterCount = try self.countMessages(inRoom: roomID)
                 print("[GRDBManager] Pruned \(ids.count) old messages in room \(roomID). Total after prune: \(afterCount)")
             }
@@ -584,10 +662,10 @@ final class GRDBManager {
     
     func fetchMessages(in roomID: String, containing keyword: String? = nil) async throws -> [ChatMessage] {
         try await dbPool.read { db in
-
+            
             let rows: [Row]
             if let keyword = keyword, !keyword.isEmpty {
-
+                
                 let sql = """
                 SELECT * FROM chatMessage
                 WHERE roomID = ? AND msg LIKE ?
@@ -600,7 +678,7 @@ final class GRDBManager {
                 let sql = "SELECT * FROM chatMessage WHERE roomID = ? ORDER BY sentAt ASC"
                 rows = try Row.fetchAll(db, sql: sql, arguments: [roomID])
             }
-
+            
             return try rows.compactMap { row in
                 let attachmentsJSON = row["attachments"] as? String ?? "[]"
                 let attachments = try JSONDecoder().decode([Attachment].self, from: Data(attachmentsJSON.utf8))
@@ -635,17 +713,17 @@ final class GRDBManager {
                 sql: "SELECT * FROM chatMessage WHERE roomID = ? ORDER BY sentAt ASC",
                 arguments: [roomID]
             )
-
+            
             return try rows.compactMap { row in
                 let attachmentsJSON = row["attachments"] as? String ?? "[]"
                 let attachments = try JSONDecoder().decode([Attachment].self, from: Data(attachmentsJSON.utf8))
-
+                
                 let rpJSON = row["replyPreview"] as? String
                 let replyPreview: ReplyPreview? = {
                     guard let rpJSON, let data = rpJSON.data(using: .utf8) else { return nil }
                     return try? JSONDecoder().decode(ReplyPreview.self, from: data)
                 }()
-
+                
                 var message = ChatMessage(
                     ID: row["id"],
                     roomID: row["roomID"],
@@ -662,7 +740,7 @@ final class GRDBManager {
             }
         }
     }
-
+    
     func fetchLastMessageTimestamp(for roomID: String) throws -> Date? {
         try dbPool.read { db in
             let sql = """
@@ -705,7 +783,7 @@ final class GRDBManager {
             )
         }
     }
-
+    
     func fetchImageNames(inRoom roomID: String) throws -> [String] {
         try dbPool.read { db in
             let sql = "SELECT imageName FROM roomImage WHERE roomId = ? ORDER BY uploadedAt"
@@ -739,7 +817,7 @@ final class GRDBManager {
         let localThumb: String?
         let sentAt: Date
     }
-
+    
     func fetchImageIndex(inRoom roomID: String, forMessageIDs ids: [String]) async throws -> [ImageIndexMeta] {
         guard !ids.isEmpty else { return [] }
         return try await dbPool.read { db in
@@ -775,7 +853,7 @@ final class GRDBManager {
             }
         }
     }
-
+    
     /// Batch deletion variant for multiple messageIDs.
     /// If `roomID` is provided, the deletion is scoped to that room; otherwise it deletes across all rooms.
     func deleteImageIndex(forMessageIDs messageIDs: [String], inRoom roomID: String? = nil) throws {
@@ -797,7 +875,7 @@ final class GRDBManager {
             }
         }
     }
-
+    
     /// Delete a single imageIndex row identified by (messageID, idx).
     /// If `roomID` is provided, the deletion is scoped to that room.
     func deleteImageIndexRow(forMessageID messageID: String, idx: Int, inRoom roomID: String? = nil) throws {
@@ -844,15 +922,15 @@ final class GRDBManager {
             sql: "DELETE FROM videoIndex WHERE roomID = ? AND messageID = ?",
             arguments: [message.roomID, message.ID]
         )
-
+        
         let atts = message.attachments
             .filter { $0.type == .video }
             .sorted { $0.index < $1.index }
-
+        
         guard !atts.isEmpty else { return }
-
+        
         let when = message.sentAt ?? Date()
-
+        
         for att in atts {
             try db.execute(sql: """
             INSERT OR REPLACE INTO videoIndex
@@ -863,30 +941,30 @@ final class GRDBManager {
              hash, isFailed, localThumb, sentAt)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            arguments: [
-                message.roomID,
-                message.ID,
-                att.index,
-
-                // 이미지와 동일하게 hash를 키로 사용(없으면 nil)
-                att.hash.isEmpty ? nil : att.hash,
-                att.hash.isEmpty ? nil : (att.hash + ":orig"),
-                att.pathThumb.isEmpty ? nil : att.pathThumb,
-                att.pathOriginal.isEmpty ? nil : att.pathOriginal,
-
-                att.width,
-                att.height,
-                att.bytesOriginal,
-
-                /* duration */            nil, // Attachment에 없으면 nil
-                /* approxBitrateMbps */   nil,
-                /* preset */              nil,
-
-                att.hash.isEmpty ? nil : att.hash,
-                message.isFailed,
-                message.isFailed ? (att.pathThumb.isEmpty ? nil : att.pathThumb) : nil,
-                when
-            ])
+                           arguments: [
+                            message.roomID,
+                            message.ID,
+                            att.index,
+                            
+                            // 이미지와 동일하게 hash를 키로 사용(없으면 nil)
+                            att.hash.isEmpty ? nil : att.hash,
+                            att.hash.isEmpty ? nil : (att.hash + ":orig"),
+                            att.pathThumb.isEmpty ? nil : att.pathThumb,
+                            att.pathOriginal.isEmpty ? nil : att.pathOriginal,
+                            
+                            att.width,
+                            att.height,
+                            att.bytesOriginal,
+                            
+                            /* duration */            nil, // Attachment에 없으면 nil
+                            /* approxBitrateMbps */   nil,
+                            /* preset */              nil,
+                            
+                            att.hash.isEmpty ? nil : att.hash,
+                            message.isFailed,
+                            message.isFailed ? (att.pathThumb.isEmpty ? nil : att.pathThumb) : nil,
+                            when
+                           ])
         }
     }
     
@@ -924,7 +1002,7 @@ final class GRDBManager {
             }
         }
     }
-
+    
     func deleteVideoIndex(forMessageIDs messageIDs: [String], inRoom roomID: String? = nil) throws {
         guard !messageIDs.isEmpty else { return }
         let placeholders = Array(repeating: "?", count: messageIDs.count).joined(separator: ",")
@@ -944,7 +1022,7 @@ final class GRDBManager {
             }
         }
     }
-
+    
     func deleteVideoIndexRow(forMessageID messageID: String, idx: Int, inRoom roomID: String? = nil) throws {
         try dbPool.write { db in
             if let roomID {
@@ -960,6 +1038,100 @@ final class GRDBManager {
             }
         }
     }
+    
+    // MARK: - LocalUser (minimal) & RoomMember API
+    /// email, nickname, profileImagePath만을 다루는 경량 CRUD
+    @discardableResult
+    func upsertLocalUser(email: String, nickname: String, profileImagePath: String?) throws -> LocalUser {
+        let user = LocalUser(email: email, nickname: nickname, profileImagePath: profileImagePath)
+        try dbPool.write { db in
+            try user.insert(db, onConflict: .replace)
+        }
+        return user
+    }
+    
+    func deleteLocalUser(email: String) throws {
+        try dbPool.write { db in
+            _ = try LocalUser.deleteOne(db, key: email)
+        }
+    }
+    
+    func fetchLocalUser(email: String) throws -> LocalUser? {
+        try dbPool.read { db in
+            try LocalUser.fetchOne(db, key: email)
+        }
+    }
+    
+    func fetchAllLocalUsers() throws -> [LocalUser] {
+        try dbPool.read { db in
+            try LocalUser.order(sql: "nickname COLLATE NOCASE ASC").fetchAll(db)
+        }
+    }
+    
+    // MARK: RoomMember(신규) 멤버십 관리
+    func addLocalUser(_ email: String, toRoom roomID: String) throws {
+        let member = RoomMember(roomID: roomID, userEmail: email)
+        try dbPool.write { db in
+            try member.insert(db, onConflict: .replace)
+        }
+    }
+    
+    func removeLocalUser(_ email: String, fromRoom roomID: String) throws {
+        try dbPool.write { db in
+            _ = try RoomMember
+                .filter(RoomMember.Columns.roomID == roomID && RoomMember.Columns.userEmail == email)
+                .deleteAll(db)
+        }
+    }
+    
+    /// 방의 모든 사용자를 LocalUser로 반환 (닉네임 오름차순)
+    func fetchLocalUsers(inRoom roomID: String) throws -> [LocalUser] {
+        try dbPool.read { db in
+            if try db.tableExists("RoomMember") {
+                let sql = """
+                SELECT u.*
+                  FROM LocalUser u
+                  JOIN RoomMember m ON m.userEmail = u.email
+                 WHERE m.roomID = ?
+                 ORDER BY u.nickname COLLATE NOCASE ASC
+                """
+                return try LocalUser.fetchAll(db, sql: sql, arguments: [roomID])
+            } else {
+                // 레거시 roomParticipant + userProfile 폴백 → LocalUser 형태로 매핑
+                let sql = """
+                SELECT up.email AS email, COALESCE(up.nickname,'') AS nickname, up.profileImagePath AS profileImagePath
+                  FROM userProfile up
+                  JOIN roomParticipant rp ON rp.email = up.email
+                 WHERE rp.roomId = ?
+                 ORDER BY up.nickname COLLATE NOCASE ASC
+                """
+                let rows = try Row.fetchAll(db, sql: sql, arguments: [roomID])
+                return rows.map { row in
+                    LocalUser(email: row["email"], nickname: row["nickname"], profileImagePath: row["profileImagePath"])
+                }
+            }
+        }
+    }
+    
+    /// 방의 모든 사용자 이메일을 반환
+    /// - 신규 스키마(RoomMember) 우선, 레거시(roomParticipant) 폴백 지원
+    func userEmails(in roomID: String) throws -> [String] {
+        try dbPool.read { db in
+            if try db.tableExists("RoomMember") {
+                return try String.fetchAll(
+                    db,
+                    sql: "SELECT userEmail FROM RoomMember WHERE roomID = ?",
+                    arguments: [roomID]
+                )
+            } else if try db.tableExists("roomParticipant") {
+                return try String.fetchAll(
+                    db,
+                    sql: "SELECT email FROM roomParticipant WHERE roomId = ?",
+                    arguments: [roomID]
+                )
+            } else {
+                return []
+            }
+        }
+    }
 }
-
-
