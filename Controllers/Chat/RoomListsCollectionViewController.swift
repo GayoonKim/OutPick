@@ -56,8 +56,6 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
         self.bindPublishers()
         self.updateCollectionView()
         self.setupNavigationBar()
-        
-
     }
     
     override func viewWillAppear(_ animated: Bool) {

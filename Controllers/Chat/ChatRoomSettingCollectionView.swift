@@ -87,7 +87,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
     
     init(room: ChatRoom, profiles: [UserProfile], images: [UIImage]) {
         self.room = room
-        self.localUsers = profiles.map { LocalUser(email: $0.email ?? "", nickname: $0.nickname ?? "", profileImagePath: $0.profileImagePath) }
+        self.localUsers = profiles.map { LocalUser(email: $0.email ?? "", nickname: $0.nickname ?? "", profileImagePath: $0.thumbPath) }
         self.images = images
         let layout = Self.configureLayout(self.room, localUsers: self.localUsers, images: self.images)
         super.init(collectionViewLayout: layout)
@@ -592,9 +592,9 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
                                 FirebaseStorageManager.shared.deleteImageFromStorage(path: pathToRemove)
                             }
                             
-                            let pathToAdd = try await FirebaseStorageManager.shared.uploadImageToStorage(image: image, location: .RoomImage, roomName: room.roomName)
-                            KingFisherCacheManager.shared.storeImage(image, forKey: pathToAdd)
-                            newImagePath = pathToAdd
+//                            let pathToAdd = try await FirebaseStorageManager.shared.uploadImageToStorage(image: image, location: .RoomImage, roomName: room.roomName)
+//                            KingFisherCacheManager.shared.storeImage(image, forKey: pathToAdd)
+//                            newImagePath = pathToAdd
                         }
                         
                         if let path = newImagePath {

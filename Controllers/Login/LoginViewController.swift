@@ -130,9 +130,8 @@ class LoginViewController: UIViewController {
                 // 기존 유저만 joinedRooms 배너 리스너 등록
                 if screen is CustomTabBarViewController {
                     let roomIDs = LoginManager.shared.currentUserProfile?.joinedRooms ?? []
-                    for roomID in roomIDs {
-                        BannerManager.shared.startListening(for: roomID)
-                    }
+                    BannerManager.shared.start(for: roomIDs)
+                    
                     print("📢 BannerManager: \(roomIDs.count)개 방에 대해 리스닝 시작")
                 }
 

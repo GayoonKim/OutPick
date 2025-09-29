@@ -14,7 +14,14 @@ struct ReplyPreview: Codable, Hashable {
     let messageID: String
     var sender: String
     var text: String
-    var isDeleted: Bool = false
+    var imagesCount: Int = 0
+    var videosCount: Int = 0
+
+    var attachmentsCount: Int { imagesCount + videosCount }
+    var firstThumbPath: String? = nil
+    var senderAvatarPath: String? = nil
+    var sentAt: Date? = nil
+    var isDeleted: Bool = false         
 }
 
 struct VideoMetaPayload: Codable {
@@ -87,6 +94,7 @@ struct ChatMessage: SocketData, Codable {
     let roomID: String
     let senderID: String                // 메시지 전송 사용자 아이디
     let senderNickname: String          // 메시지 전송 사용자 닉네임
+    var senderAvatarPath: String? = nil // Storage 상대경로(예: "avatars/<uid>/v3.jpg")
     let msg: String?                    // 메시지 내용
     let sentAt: Date?                   // 메시지 보낸 시간
     let attachments: [Attachment]
@@ -104,11 +112,178 @@ struct ChatMessage: SocketData, Codable {
         case ID
         case roomID
         case senderID
-        case senderNickname = "senderNickname"
+        case senderNickname
+        case senderAvatarPath
         case msg
         case sentAt
         case attachments
         case replyPreview
+    }
+    
+    func toSocketRepresentation() -> SocketData {
+        var dict: [String: Any] = [
+            "ID": ID,
+            "roomID": roomID,
+            "senderID": senderID,
+            "senderNickname": senderNickname,
+            "msg": msg ?? "",
+        ]
+        if let avatar = senderAvatarPath, !avatar.isEmpty {
+            dict["senderAvatarPath"] = avatar
+        }
+        
+        dict["attachments"] = attachments.map { $0.toDict() }
+        
+        if let rp = replyPreview {
+            var rpDict: [String: Any] = [
+                "messageID": rp.messageID,
+                "sender": rp.sender,
+                "text": rp.text,
+                "isDeleted": rp.isDeleted,
+                "imagesCount": rp.imagesCount,
+                "videosCount": rp.videosCount
+            ]
+            if let avatar = rp.senderAvatarPath, !avatar.isEmpty {
+                rpDict["senderAvatarPath"] = avatar
+            }
+            if let t = rp.sentAt {
+                rpDict["sentAt"] = ChatMessage.iso8601Formatter.string(from: t)
+            }
+            if let thumb = rp.firstThumbPath, !thumb.isEmpty {
+                rpDict["firstThumbPath"] = thumb
+            }
+            dict["replyPreview"] = rpDict
+        }
+        
+        if let sentAt = sentAt {
+            dict["sentAt"] = ChatMessage.iso8601Formatter.string(from: sentAt)
+        }
+        
+        return dict
+    }
+    
+    // Firestore에 저장하기 위힌 뱐환 메서드
+    func toDict() -> [String: Any] {
+        var dict: [String: Any] = [
+            "ID": ID,
+            "roomID": roomID,
+            "senderID": senderID,
+            "senderNickname": senderNickname,
+            "msg": msg ?? "",
+            "sentAt": Timestamp(date: sentAt ?? Date()),
+            "isDeleted": isDeleted
+        ]
+        if let avatar = senderAvatarPath, !avatar.isEmpty {
+            dict["senderAvatarPath"] = avatar
+        }
+
+        dict["attachments"] = attachments.map { $0.toDict() }
+        
+        if let rp = replyPreview {
+            var rpDict: [String: Any] = [
+                "messageID": rp.messageID,
+                "sender": rp.sender,
+                "text": rp.text,
+                "isDeleted": rp.isDeleted,
+                "imagesCount": rp.imagesCount,
+                "videosCount": rp.videosCount
+            ]
+            if let avatar = rp.senderAvatarPath, !avatar.isEmpty {
+                rpDict["senderAvatarPath"] = avatar
+            }
+            if let t = rp.sentAt {
+                rpDict["sentAt"] = Timestamp(date: t)
+            }
+            if let thumb = rp.firstThumbPath, !thumb.isEmpty {
+                rpDict["firstThumbPath"] = thumb
+            }
+            dict["replyPreview"] = rpDict
+        }
+        
+        return dict
+    }
+    
+    func hash(into hasher: inout Hasher) { hasher.combine(ID) }
+    static func == (lhs: ChatMessage, rhs: ChatMessage) -> Bool {
+        return lhs.ID == rhs.ID
+    }
+}
+
+extension ChatMessage: Hashable {}
+
+extension ChatMessage {
+    static func from(_ dict: [String: Any]) -> ChatMessage? {
+        // Required IDs
+        guard let id = (dict["ID"] as? String) ?? (dict["id"] as? String), !id.isEmpty,
+              let roomID = dict["roomID"] as? String,
+              let senderID = dict["senderID"] as? String else {
+            return nil
+        }
+
+        // Nickname: support both keys. Default to empty if missing.
+        let senderNickname = (dict["senderNickName"] as? String)
+            ?? (dict["senderNickname"] as? String)
+            ?? ""
+
+        // Avatar path (optional). Prefer storage-relative path if provided; support legacy keys.
+        let senderAvatarPath = (dict["senderAvatarPath"] as? String)
+            ?? (dict["senderAvatarURL"] as? String)    // legacy url key if any
+
+        // Message text may be empty
+        let msg = dict["msg"] as? String
+
+        // sentAt: accept ISO8601(with/without fractional), Timestamp, epoch(s/ms). Optional.
+        let sentAt = parseSentAt(dict["sentAt"]) ?? parseSentAt(dict["createdAt"]) // fallback key if any
+
+        // Reply preview (optional)
+        var rp: ReplyPreview? = nil
+        if let rpDict = dict["replyPreview"] as? [String: Any],
+           let mid = rpDict["messageID"] as? String, !mid.isEmpty {
+            let sentAtPreview = parseSentAt(rpDict["sentAt"]) // accepts ISO8601/Timestamp/epoch
+
+            // New fields first
+            var images = rpDict["imagesCount"] as? Int
+            var videos = rpDict["videosCount"] as? Int
+
+            // Backward compatibility: legacy `attachmentsCount`
+            if images == nil && videos == nil, let legacy = rpDict["attachmentsCount"] as? Int {
+                images = legacy
+                videos = 0
+            }
+
+            rp = ReplyPreview(
+                messageID: mid,
+                sender: rpDict["sender"] as? String ?? "",
+                text: rpDict["text"] as? String ?? "",
+                imagesCount: images ?? 0,
+                videosCount: videos ?? 0,
+                firstThumbPath: (rpDict["firstThumbPath"] as? String),
+                senderAvatarPath: (rpDict["senderAvatarPath"] as? String),
+                sentAt: sentAtPreview,
+                isDeleted: rpDict["isDeleted"] as? Bool ?? false
+            )
+        }
+
+        // Attachments (meta-only)
+        let attachments = ChatMessage.parseAttachments(from: dict)
+
+        // Flags (optional)
+        let isFailed = dict["isFailed"] as? Bool ?? false
+        let isDeleted = dict["isDeleted"] as? Bool ?? false
+
+        return ChatMessage(
+            ID: id,
+            roomID: roomID,
+            senderID: senderID,
+            senderNickname: senderNickname,
+            senderAvatarPath: senderAvatarPath,
+            msg: msg,
+            sentAt: sentAt,
+            attachments: attachments,
+            replyPreview: rp,
+            isFailed: isFailed,
+            isDeleted: isDeleted
+        )
     }
 
     // Parse attachments/images from socket payload (supports Data or base64 for thumbData)
@@ -154,120 +329,6 @@ struct ChatMessage: SocketData, Codable {
             ))
         }
         return result
-    }
-    
-    func toSocketRepresentation() -> SocketData {
-        var dict: [String: Any] = [
-            "ID": ID,
-            "roomID": roomID,
-            "senderID": senderID,
-            "senderNickname": senderNickname,
-            "msg": msg ?? "",
-        ]
-        
-        dict["attachments"] = attachments.map { $0.toDict() }
-        
-        if let rp = replyPreview {
-            dict["replyPreview"] = [
-                "messageID": rp.messageID,
-                "sender": rp.sender,
-                "text": rp.text,
-                "isDeleted": rp.isDeleted
-            ]
-        }
-        
-        if let sentAt = sentAt {
-            dict["sentAt"] = ChatMessage.iso8601Formatter.string(from: sentAt)
-        }
-        
-        return dict
-    }
-    
-    // Firestore에 저장하기 위힌 뱐환 메서드
-    func toDict() -> [String: Any] {
-        var dict: [String: Any] = [
-            "ID": ID,
-            "roomID": roomID,
-            "senderID": senderID,
-            "senderNickname": senderNickname,
-            "msg": msg ?? "",
-            "sentAt": Timestamp(date: sentAt ?? Date()),
-            "isDeleted": isDeleted
-        ]
-
-        dict["attachments"] = attachments.map { $0.toDict() }
-        
-        if let rp = replyPreview {
-            dict["replyPreview"] = [
-                "messageID": rp.messageID,
-                "sender": rp.sender,
-                "text": rp.text,
-                "isDeleted": rp.isDeleted
-            ]
-        }
-        
-        return dict
-    }
-    
-    func hash(into hasher: inout Hasher) { hasher.combine(ID) }
-    static func == (lhs: ChatMessage, rhs: ChatMessage) -> Bool {
-        return lhs.ID == rhs.ID
-    }
-}
-
-extension ChatMessage: Hashable {}
-
-extension ChatMessage {
-    static func from(_ dict: [String: Any]) -> ChatMessage? {
-        // Required IDs
-        guard let id = (dict["ID"] as? String) ?? (dict["id"] as? String), !id.isEmpty,
-              let roomID = dict["roomID"] as? String,
-              let senderID = dict["senderID"] as? String else {
-            return nil
-        }
-
-        // Nickname: support both keys. Default to empty if missing.
-        let senderNickname = (dict["senderNickName"] as? String)
-            ?? (dict["senderNickname"] as? String)
-            ?? ""
-
-        // Message text may be empty
-        let msg = dict["msg"] as? String
-
-        // sentAt: accept ISO8601(with/without fractional), Timestamp, epoch(s/ms). Optional.
-        let sentAt = parseSentAt(dict["sentAt"]) ?? parseSentAt(dict["createdAt"]) // fallback key if any
-
-        // Reply preview (optional)
-        var rp: ReplyPreview? = nil
-        if let rpDict = dict["replyPreview"] as? [String: Any],
-           let mid = rpDict["messageID"] as? String, !mid.isEmpty {
-            rp = ReplyPreview(
-                messageID: mid,
-                sender: rpDict["sender"] as? String ?? "",
-                text: rpDict["text"] as? String ?? "",
-                isDeleted: rpDict["isDeleted"] as? Bool ?? false
-            )
-        }
-
-        // Attachments (meta-only)
-        let attachments = ChatMessage.parseAttachments(from: dict)
-
-        // Flags (optional)
-        let isFailed = dict["isFailed"] as? Bool ?? false
-        let isDeleted = dict["isDeleted"] as? Bool ?? false
-
-        return ChatMessage(
-            ID: id,
-            roomID: roomID,
-            senderID: senderID,
-            senderNickname: senderNickname,
-            msg: msg,
-            sentAt: sentAt,
-            attachments: attachments,
-            replyPreview: rp,
-            isFailed: isFailed,
-            isDeleted: isDeleted
-        )
     }
 }
 

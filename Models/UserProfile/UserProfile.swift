@@ -15,7 +15,8 @@ struct UserProfile: Codable, Hashable, FetchableRecord, PersistableRecord {
     var gender: String?
     var birthdate: String?
     var nickname: String?
-    var profileImagePath: String?
+    var thumbPath: String?
+    var originalPath: String?
     var joinedRooms: [String]
     let createdAt: Date
 
@@ -24,14 +25,16 @@ struct UserProfile: Codable, Hashable, FetchableRecord, PersistableRecord {
         nickname: String?,
         gender: String?,
         birthdate: String?,
-        profileImagePath: String?,
+        thumbPath: String?,
+        originalPath: String?,
         joinedRooms: [String]?
     ) {
         self.email = email
         self.nickname = nickname
         self.gender = gender
         self.birthdate = birthdate
-        self.profileImagePath = profileImagePath
+        self.thumbPath = thumbPath
+        self.originalPath = originalPath
         self.joinedRooms = joinedRooms ?? []
         self.createdAt = Date()
     }
@@ -43,7 +46,8 @@ struct UserProfile: Codable, Hashable, FetchableRecord, PersistableRecord {
             "nickname": nickname ?? "",
             "gender": gender ?? "",
             "birthdate": birthdate ?? "",
-            "profileImagePath": profileImagePath ?? "",
+            "thumbPath": thumbPath ?? "",
+            "originalPath": originalPath ?? "",
             "joinedRooms": joinedRooms,
             "createdAt": Timestamp(date: createdAt)
         ]

@@ -16,6 +16,7 @@ import Kingfisher
 import FirebaseStorage
 import CryptoKit
 import Photos
+import FirebaseFirestore
 
 // MARK: - OPStorageURLCache (Firebase Storage downloadURL cache)
 actor OPStorageURLCache {
@@ -373,11 +374,13 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        guard let room = self.room else { return }
+        BannerManager.shared.setVisibleRoom(self.room?.ID ?? "")
     }
     
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
+        BannerManager.shared.setVisibleRoom(nil)
+        
         isUserInCurrentRoom = false
         
         if let room = self.room {
@@ -420,16 +423,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
     }
-    
-//    override func viewDidAppear(_ animated: Bool) {
-//        super.viewDidAppear(animated)
-//        self.attachInteractiveDismissGesture()
-//
-//        if let room = self.room {
-//            ChatViewController.currentRoomID = room.ID
-//        } // ✅ 현재 방 ID 저장
-//    }
-    
+
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         self.notiView.layer.cornerRadius = 15
@@ -1037,10 +1031,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         self.chatUIView.updateHeight()
         self.chatUIView.sendButton.isEnabled = false
         
-        let newMessage = ChatMessage(ID: UUID().uuidString, roomID: room.ID ?? "", senderID: LoginManager.shared.getUserEmail, senderNickname: LoginManager.shared.currentUserProfile?.nickname ?? "", msg: message, sentAt: Date(), attachments: [], replyPreview: replyMessage)
+        let newMessage = ChatMessage(ID: UUID().uuidString, roomID: room.ID ?? "", senderID: LoginManager.shared.getUserEmail, senderNickname: LoginManager.shared.currentUserProfile?.nickname ?? "", senderAvatarPath: LoginManager.shared.currentUserProfile?.thumbPath, msg: message, sentAt: Date(), attachments: [], replyPreview: replyMessage)
         
         Task.detached {
-            SocketIOManager.shared.sendMessages(room, newMessage)
+            SocketIOManager.shared.sendMessage(room, newMessage)
         }
         
         if self.replyMessage != nil {
@@ -1435,7 +1429,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                     for p in serverProfiles {
                         let email = p.email ?? ""
                         let nickname = p.nickname ?? ""
-                        let imagePath = p.profileImagePath
+                        let imagePath = p.thumbPath
                         // LocalUser upsert
                         _ = try GRDBManager.shared.upsertLocalUser(email: email, nickname: nickname, profileImagePath: imagePath)
                         // RoomMember 연결
@@ -1454,7 +1448,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                         for p in serverProfiles {
                             let email = p.email ?? ""
                             let nickname = p.nickname ?? ""
-                            let imagePath = p.profileImagePath
+                            let imagePath = p.thumbPath
                             _ = try GRDBManager.shared.upsertLocalUser(email: email, nickname: nickname, profileImagePath: imagePath)
                             try GRDBManager.shared.addLocalUser(email, toRoom: roomID)
                         }
@@ -1481,7 +1475,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                         for p in serverProfiles {
                             let email = p.email ?? ""
                             let nickname = p.nickname ?? ""
-                            let imagePath = p.profileImagePath
+                            let imagePath = p.thumbPath
                             let upserted = try GRDBManager.shared.upsertLocalUser(email: email, nickname: nickname, profileImagePath: imagePath)
                             map[email] = upserted
                         }
@@ -1574,7 +1568,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                     for p in serverProfiles {
                         let email = p.email ?? ""; if email.isEmpty { continue }
                         let nickname = p.nickname ?? ""
-                        let imagePath = p.profileImagePath
+                        let imagePath = p.thumbPath
                         let upserted = try GRDBManager.shared.upsertLocalUser(email: email,
                                                                               nickname: nickname,
                                                                               profileImagePath: imagePath)
@@ -1710,8 +1704,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 try await FirebaseManager.shared.add_room_participant(room: room)
 
                 // 3. 최신 room 정보 fetch
-                let updatedRoom = try await FirebaseManager.shared.fetchRoomInfo(room: room)
-                self.room = updatedRoom
+                guard let roomID = room.ID,
+                      let updatedroom = try await FirebaseManager.shared.fetchRoomsWithIDs(byIDs: [roomID]).first else {
+                    fatalError("❌ 방 참여 후 방 정보 fetch 실패")
+                }
+                self.room = updatedroom
 
                 // 4. 프로필 동기화
 
@@ -1721,7 +1718,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                     self.chatUIView.isHidden = false
                     self.chatMessageCollectionView.isHidden = false
                     self.bindRoomChangePublisher()
-                    FirebaseManager.shared.startListenRoomDoc(roomID: updatedRoom.ID ?? "")
+                    FirebaseManager.shared.startListenRoomDoc(roomID: updatedroom.ID ?? "")
                     runInitialProfileFetchOnce()
                     self.view.layoutIfNeeded()
                 }
@@ -3018,4 +3015,7 @@ extension ChatViewController: UICollectionViewDelegate {
         // ✅ 아바타 프리패치: 가시영역 중심 ±100 메시지의 고유 발신자
         self.prefetchAvatarsAroundDisplayIndex(indexPath.item)
     }
+    
+
+    
 }

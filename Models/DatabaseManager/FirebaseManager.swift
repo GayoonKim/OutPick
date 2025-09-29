@@ -26,33 +26,31 @@ class FirebaseManager {
     let storage = Storage.storage()
     
     // 채팅방 목록
-    @Published private(set) var chatRooms: [ChatRoom] = []
-    private var roomsListener: ListenerRegistration?
-    private var monthlyRoomListeners: [String: ListenerRegistration] = [:]
-    
-    private var listenToRoomsTask: Task<Void, Never>? = nil
-    private var fetchProfileTask: Task<Void, Never>? = nil
-    private var saveUserProfileTask: Task<Void, Never>? = nil
+    @Published private(set) var roomStore: [String: ChatRoom] = [:]
+    @Published private(set) var topRoomIDs: [String] = []
+    @Published private(set) var joinedRoomIDs: Set<String> = []
+    private var previewByRoomID: [String: [ChatMessage]] = [:]
+    private var lastRoomIDsListened: Set<String> = []
+
     private var add_room_participant_task: Task<Void, Never>? = nil
     private var remove_participant_task: Task<Void, Never>? = nil
-    private var saveChatMessageTask: Task<Void, Never>? = nil
     
     
     deinit {
-        listenToRoomsTask?.cancel()
-        fetchProfileTask?.cancel()
-        saveUserProfileTask?.cancel()
         add_room_participant_task?.cancel()
         remove_participant_task?.cancel()
-        saveChatMessageTask?.cancel()
     }
     
     // 채팅방 읽기 전용 접근자 제공
-    var currentChatRooms: [ChatRoom] {
-        return chatRooms
+    var allRooms: [ChatRoom] {
+        roomStore.map { $0.value }
+    }
+    var joinedRooms: [ChatRoom] {
+        joinedRoomIDs.compactMap { roomStore[$0] }
     }
     
-    private var lastFetchedSnapshot: DocumentSnapshot?
+    private var lastFetchedMessageSnapshot: DocumentSnapshot?
+    private var lastFetchedRoomSnapshot: DocumentSnapshot?
     
     // Hot rooms with previews
     @Published var hotRoomsWithPreviews: [(ChatRoom, [ChatMessage])] = []
@@ -118,7 +116,8 @@ class FirebaseManager {
             nickname: data["nickname"] as? String,
             gender: data["gender"] as? String,
             birthdate: data["birthdate"] as? String,
-            profileImagePath: data["profileImagePath"] as? String,
+            thumbPath: data["thumbPath"] as? String,
+            originalPath: data["originalPath"] as? String,
             joinedRooms: data["joinedRooms"] as? [String]
         )
     }
@@ -151,27 +150,7 @@ class FirebaseManager {
             return profiles
         }
     }
-    
-    func fetchAllDocIDs(collectionName: String) async throws -> [String] {
-        var results = [String]()
-        
-        do {
-            
-            let querySnapshot = try await db.collection(collectionName).getDocuments()
-            for document in querySnapshot.documents {
-                results.append(document.documentID)
-            }
-            
-            print(results, " 월별 문서 ID 불러오기 성공")
-            return results
-            
-        } catch {
-    
-            throw FirebaseError.FailedToFetchAllDocumentIDs
-        
-        }
-    }
-    
+
     // 프로필 닉네임 중복 검사
     func checkDuplicate(strToCompare: String, fieldToCompare: String, collectionName: String) async throws -> Bool{
         do {
@@ -185,6 +164,51 @@ class FirebaseManager {
     }
     
     //MARK: 채팅 방 관련 기능들
+    @MainActor
+    func fetchRecentRoomsPage(after lastSnapshot: DocumentSnapshot? = nil, limit:Int = 100) async throws {
+        var query: Query = db.collection("Rooms").order(by: "lastMessageAt", descending: true).limit(to: limit)
+        
+        if let lastSnapshot {
+            query = query.start(afterDocument: lastSnapshot)
+        }
+        
+        let snapshot = try await query.getDocuments()
+        
+        let rooms: [ChatRoom] = snapshot.documents.compactMap { doc in
+            do {
+                return try self.createRoom(from: doc)
+            } catch {
+                print("⚠️ Room decode failed: \(error), id=\(doc.documentID)")
+                return nil
+            }
+            
+        }
+        
+        upsertRooms(rooms)
+        self.lastFetchedRoomSnapshot = snapshot.documents.last
+    }
+    
+    // 불러온 방 저장
+    @MainActor
+    private func upsertRooms<S: Sequence>(_ rooms: S) where S.Element == ChatRoom {
+        var base = roomStore
+        var changed = false
+        for r in rooms {
+            guard let id = r.ID, !id.isEmpty else { continue }
+            if base[id] == nil {
+                base[id] = r
+                changed = true
+            } else {
+                // Conservatively mark as changed on overwrite to ensure subscribers see updates
+                base[id] = r
+                changed = true
+            }
+        }
+        if changed {
+            roomStore = base
+        }
+    }
+    
     @MainActor
     func updateRoomLastMessage(roomID: String, date: Date? = nil, msg: String) async {
         guard !roomID.isEmpty else {
@@ -223,8 +247,61 @@ class FirebaseManager {
         return room_snapshot
 
     }
+
+    // 방 정보 저장
+    func saveRoomInfoToFirestore(room: ChatRoom, completion: @escaping (Result<Void, Error>) -> Void) {
+        Task {
+            var tempRoom = room
+            let roomRef = db.collection("Rooms").document(room.ID ?? "")
+            
+            // Socket.IO 서버에 방 생성 이벤트 전송
+            SocketIOManager.shared.createRoom(room.roomName)
+            // Socket.IO 서버에 방 참여 이벤트 전송
+            SocketIOManager.shared.joinRoom(room.roomName)
+            
+            do {
+                let _ = try await db.runTransaction({ (transaction, errorPointer) -> Any? in
+                    transaction.setData(room.toDictionary(), forDocument: roomRef)
+                    
+                    return nil
+                    
+                })
+                
+                try await FirebaseManager.shared.add_room_participant(room: tempRoom)
+                completion(.success(()))
+                
+            } catch {
+                completion(.failure(error))
+            }
+        }
+    }
     
-    //    // MARK: - Firestore Room Search with Pagination
+    // 방 정보 불러오기
+    func fetchRoomsWithIDs(byIDs ids: [String]) async throws -> [ChatRoom] {
+        guard !ids.isEmpty else { return [] }
+        var result: [ChatRoom] = []
+        var start = 0
+        
+        while start < ids.count {
+            let end = min(start + 10, ids.count)  // Firestore 'in' 제한 10개
+            let chunk = Array(ids[start..<end])
+            start = end
+            
+            let snap = try await Firestore.firestore()
+                .collection("Rooms")
+                .whereField(FieldPath.documentID(), in: chunk)
+                .getDocuments()
+            
+            let rooms = snap.documents.compactMap { doc -> ChatRoom? in
+                try? doc.data(as: ChatRoom.self)
+            }
+            result.append(contentsOf: rooms)
+        }
+        
+        return result
+    }
+    
+    // MARK: - Firestore 방 검색 관련
         private var lastSearchSnapshot: DocumentSnapshot?
         private var currentSearchKeyword: String = ""
     /// Firestore 채팅방 이름 prefix 검색 (roomName) + 페이지네이션 지원
@@ -270,126 +347,10 @@ class FirebaseManager {
         return try await searchRooms(keyword: currentSearchKeyword, limit: limit, reset: false)
     }
     
-    func fetchRoomInfoWithID(roomID: String) async throws -> ChatRoom {
-        let roomRef = db.collection("Rooms").document(roomID)
-        let snapshot = try await roomRef.getDocument()
-
-        guard let data = snapshot.data() else {
-            throw FirebaseError.FailedToFetchRoom
-        }
-
-        guard
-            let roomName = data["roomName"] as? String,
-            let roomDescription = data["roomDescription"] as? String,
-            let participants = data["participantIDs"] as? [String],
-            let creatorID = data["creatorID"] as? String,
-            let timestamp = data["createdAt"] as? Timestamp
-        else {
-            throw FirebaseError.FailedToParseRoomData
-        }
-
-        let roomImagePath = data["roomImagePath"] as? String
-
-        return ChatRoom(
-            ID: snapshot.documentID,
-            roomName: roomName,
-            roomDescription: roomDescription,
-            participants: participants,
-            creatorID: creatorID,
-            createdAt: timestamp.dateValue(),
-            roomImagePath: roomImagePath,
-            lastMessageAt: (data["lastMessageAt"] as? Timestamp)?.dateValue()
-        )
-    }
-    
-    func fetchRoomInfo(room: ChatRoom) async throws -> ChatRoom {
-        guard let roomDoc = try await getRoomDoc(room: room) else {
-            throw NSError(domain: "RoomNotFound", code: 404)
-        }
-        
-        guard let data = roomDoc.data() else {
-            throw NSError(domain: "InvalidRoomData", code: 422)
-        }
-        
-        guard
-            let roomName = data["roomName"] as? String,
-            let roomDescription = data["roomDescription"] as? String,
-            let participants = data["participantIDs"] as? [String],
-            let creatorID = data["creatorID"] as? String,
-            let timestamp = data["createdAt"] as? Timestamp
-        else {
-            throw NSError(domain: "InvalidRoomData", code: 422)
-        }
-        
-        let roomImagePath = data["roomImagePath"] as? String
-        let id = data["ID"] as? String
-
-        return ChatRoom(
-            ID: id,
-            roomName: roomName,
-            roomDescription: roomDescription,
-            participants: participants,
-            creatorID: creatorID,
-            createdAt: timestamp.dateValue(),
-            roomImagePath: roomImagePath
-        )
-    }
-    
-    func fetchRoomsWithIDs(byIDs ids: [String]) async throws -> [ChatRoom] {
-        guard !ids.isEmpty else { return [] }
-        var result: [ChatRoom] = []
-        var start = 0
-        
-        while start < ids.count {
-            let end = min(start + 10, ids.count)  // Firestore 'in' 제한 10개
-            let chunk = Array(ids[start..<end])
-            start = end
-            
-            let snap = try await Firestore.firestore()
-                .collection("Rooms")
-                .whereField(FieldPath.documentID(), in: chunk)
-                .getDocuments()
-            
-            let rooms = snap.documents.compactMap { doc -> ChatRoom? in
-                try? doc.data(as: ChatRoom.self)
-            }
-            result.append(contentsOf: rooms)
-        }
-        
-        return result
-    }
-    
-    // 오픈 채팅 방 정보 저장
-    func saveRoomInfoToFirestore(room: ChatRoom, completion: @escaping (Result<Void, Error>) -> Void) {
-        Task {
-            var tempRoom = room
-            let roomRef = db.collection("Rooms").document(room.ID ?? "")
-            
-            // Socket.IO 서버에 방 생성 이벤트 전송
-            SocketIOManager.shared.createRoom(room.roomName)
-            // Socket.IO 서버에 방 참여 이벤트 전송
-            SocketIOManager.shared.joinRoom(room.roomName)
-            
-            do {
-                let _ = try await db.runTransaction({ (transaction, errorPointer) -> Any? in
-//                    tempRoom.ID = roomRef.documentID
-                    transaction.setData(room.toDictionary(), forDocument: roomRef)
-                    
-                    return nil
-                    
-                })
-                
-                try await FirebaseManager.shared.add_room_participant(room: tempRoom)
-                completion(.success(()))
-                
-            } catch {
-                completion(.failure(error))
-            }
-        }
-    }
-    
     // MARK: - Room doc 스냅샷 리스너
     private var roomDocListeners: [String: ListenerRegistration] = [:]
+    // Batched listeners for up to 10 room docs per listener (using 'in' query)
+    private var batchedRoomDocListeners: [String: ListenerRegistration] = [:]
     private let roomChangeSubject = PassthroughSubject<ChatRoom, Never>()
     var roomChangePublisher: AnyPublisher<ChatRoom, Never> {
         return roomChangeSubject.eraseToAnyPublisher()
@@ -413,33 +374,77 @@ class FirebaseManager {
         roomDocListeners[roomID] = l
     }
 
-    /// 여러 방 문서에 대해 한 번에 최대 10개씩 나눠 실시간 리스너를 설정합니다.
     @MainActor
     func startListenRoomDocs(roomIDs: [String]) {
-        guard !roomIDs.isEmpty else { return }
+        let ids = Array(Set(roomIDs)).filter { !$0.isEmpty }
+        let newSet = Set(ids)
+        guard !newSet.isEmpty else {
+            stopListenAllRoomDocs()
+            return
+        }
+        
+        // 같은 집합이면 재생성 안 함 → 끊김 방지
+        if newSet == lastRoomIDsListened { return }
+        lastRoomIDsListened = newSet
+        
+        // Remove previous batched listeners entirely and recreate (simpler & safe)
+        for (_, l) in batchedRoomDocListeners { l.remove() }
+        batchedRoomDocListeners.removeAll()
+        // Keep legacy per-doc listeners for backward compatibility
+        for (_, l) in roomDocListeners { l.remove() }
+        roomDocListeners.removeAll()
+
+        // Chunk size 10 due to Firestore 'in' query limit
+        let chunkSize = 10
         var index = 0
-        while index < roomIDs.count {
-            let end = min(index + 10, roomIDs.count)
-            let chunk = Array(roomIDs[index..<end])
-            for rid in chunk {
-                startListenRoomDoc(roomID: rid)
-            }
+        while index < ids.count {
+            let end = min(index + chunkSize, ids.count)
+            let chunk = Array(ids[index..<end])
             index = end
+
+            // Use a stable key for this chunk
+            let key = chunk.sorted().joined(separator: ",")
+
+            let q = db.collection("Rooms")
+                .whereField(FieldPath.documentID(), in: chunk)
+
+            let l = q.addSnapshotListener { [weak self] snap, err in
+                guard let self = self else { return }
+                if let err = err {
+                    print("❌ Batched room docs listener error:", err)
+                    return
+                }
+                guard let snap = snap else { return }
+
+                // Upsert all changed docs into roomStore and emit roomChangePublisher
+                for change in snap.documentChanges {
+                    do {
+                        let room = try self.createRoom(from: change.document)
+                        if let id = room.ID, !id.isEmpty {
+                            self.roomStore[id] = room
+                            self.roomChangeSubject.send(room)
+                        }
+                    } catch {
+                        print("⚠️ Batched decode failed:", error, "docID:", change.document.documentID)
+                    }
+                }
+            }
+
+            batchedRoomDocListeners[key] = l
         }
     }
-    
-//    @MainActor
-//    func stopListenRoomDoc(roomID: String) {
-//        roomDocListeners[roomID]?.remove()
-//        roomDocListeners.removeValue(forKey: roomID)
-//    }
-    
+
     @MainActor
     func stopListenAllRoomDocs() {
         for (_, listener) in roomDocListeners {
             listener.remove()
         }
         roomDocListeners.removeAll()
+
+        for (_, listener) in batchedRoomDocListeners {
+            listener.remove()
+        }
+        batchedRoomDocListeners.removeAll()
     }
     
     @MainActor
@@ -798,11 +803,11 @@ class FirebaseManager {
         
         // 4. reset 시 페이지네이션 초기화
         if reset {
-            lastFetchedSnapshot = nil
+            lastFetchedMessageSnapshot = nil
         }
         
         // 5. 페이지네이션 조건 적용
-        if let lastSnapshot = lastFetchedSnapshot {
+        if let lastSnapshot = lastFetchedMessageSnapshot {
             query = query.start(afterDocument: lastSnapshot)
         } else if let timestamp = adjustedTimestamp {
             query = query.whereField("sentAt", isGreaterThan: Timestamp(date: timestamp))
@@ -812,7 +817,7 @@ class FirebaseManager {
         let snapshot = try await query.getDocuments()
         
         // 7. 마지막 불러온 문서 저장 (다음 페이지네이션용)
-        lastFetchedSnapshot = snapshot.documents.last
+        lastFetchedMessageSnapshot = snapshot.documents.last
         // 8. 결과 디코딩 (관대한 파서 우선)
         let messages: [ChatMessage] = snapshot.documents.compactMap { doc in
             var dict = doc.data()
@@ -831,36 +836,6 @@ class FirebaseManager {
         }
 
         return messages
-    }
-    
-    func fetchAllMessages(for room: ChatRoom) async throws -> [ChatMessage] {
-        print(#function, "✅ 호출 완료")
-
-        guard let roomID = room.ID else {
-            print("❌ fetchAllMessages: room.ID is nil")
-            return []
-        }
-
-        let messagesSnapshot = try await db
-            .collection("Rooms")
-            .document(roomID)
-            .collection("Messages")
-            .order(by: "sentAt", descending: false)
-            .getDocuments()
-        
-        print("📦 불러온 메시지 개수: \(messagesSnapshot.count)")
-
-        return messagesSnapshot.documents.compactMap { doc in
-            var dict = doc.data()
-            if dict["ID"] == nil { dict["ID"] = doc.documentID }
-            if let msg = ChatMessage.from(dict) { return msg }
-            do {
-                return try doc.data(as: ChatMessage.self)
-            } catch {
-                print("🔥 메시지 디코딩 실패(관대파서/코더 모두 실패): \(error.localizedDescription) → \(dict)")
-                return nil
-            }
-        }
     }
 
     /// 기준 메시지 이전의 과거 메시지를 limit개 가져오기

@@ -39,7 +39,9 @@ class SecondProfileViewController: UIViewController {
         return button
     }()
     
-    var userProfile = UserProfile(email: nil, nickname: nil, gender: nil, birthdate: nil, profileImagePath: nil, joinedRooms: [])
+    var userProfile = UserProfile(email: nil, nickname: nil, gender: nil, birthdate: nil, thumbPath: nil, originalPath: nil, joinedRooms: [])
+    
+    var profileImage: MediaManager.ImagePair?
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -168,6 +170,10 @@ class SecondProfileViewController: UIViewController {
     
     @objc private func removeImageButtonTapped(_ sender: UIButton) {
         profileImageView.image = UIImage(named: "Default_Profile")
+        self.userProfile.thumbPath = ""
+        self.userProfile.originalPath = ""
+        self.profileImage = nil
+        self.isDefaultProfileImage = true
         sender.isHidden = true
     }
     
@@ -209,35 +215,33 @@ class SecondProfileViewController: UIViewController {
     
     private func saveUserProfile(email: String) {
         guard let nickname = self.userProfile.nickname else { return }
-        
+        LoadingIndicator.shared.start(on: self)
+
         Task {
             do {
+                // 1) 닉네임 중복 체크 (전환 전 확정)
                 if try await FirebaseManager.shared.checkDuplicate(strToCompare: nickname, fieldToCompare: "nickName", collectionName: "Users") {
-                    AlertManager.showAlertNoHandler(title: "닉네임 중복", message: "다른 닉네임을 선택해 주세요.", viewController: self)
+                    await MainActor.run {
+                        AlertManager.showAlertNoHandler(title: "닉네임 중복", message: "다른 닉네임을 선택해 주세요.", viewController: self)
+                    }
                     return
                 }
                 
-                LoadingIndicator.shared.start(on: self)
-                if let image = profileImageView.image {
-                    if isDefaultProfileImage {
-                        print("기본 프로필 이미지 감지됨 - 서버 업로드 건너뜀")
-                        self.userProfile.profileImagePath = nil
-                    } else {
-                        print("사용자 지정 프로필 이미지 감지됨 - 서버 업로드 진행")
-                        let imagePath = try await FirebaseStorageManager.shared.uploadImageToStorage(image: image, location: ImageLocation.ProfileImage, roomName: nil)
-                        print(#function, "업로드된 이미지 경로: \(imagePath)")
-                        self.userProfile.profileImagePath = imagePath
-                        LoginManager.shared.setCurrentUserProfile(self.userProfile)
-                    }
-                } else {
-                    print("프로필 이미지가 nil입니다")
-                    self.userProfile.profileImagePath = nil
+                // 2) 로컬 상태 업데이트 (아바타 경로는 기본적으로 nil)
+                self.userProfile.email = email
+                self.userProfile.joinedRooms = []
+                if isDefaultProfileImage || self.profileImage == nil {
+                    self.userProfile.thumbPath = nil
+                    self.userProfile.originalPath = nil
                 }
                 
-                if let data = try? JSONEncoder().encode(userProfile) {
+                if let data = try? JSONEncoder().encode(self.userProfile) {
                     KeychainManager.shared.save(data, service: "GayoonKim.OutPick", account: "UserProfile")
                 }
                 
+                LoginManager.shared.setCurrentUserProfile(self.userProfile)
+                
+                // 3) 낙관적 전환: 홈으로 이동 (UI는 메인 스레드)
                 await MainActor.run {
                     let rootVC = CustomTabBarViewController()
                     if let window = self.view.window {
@@ -250,21 +254,42 @@ class SecondProfileViewController: UIViewController {
                     }
                 }
                 
-                try await FirebaseManager.shared.saveUserProfileToFirestore(email: LoginManager.shared.getUserEmail)
                 
-                LoadingIndicator.shared.stop()
+                // 4) 백그라운드 저장들(동시에 진행)
+                async let saveProfileTask: () = FirebaseManager.shared.saveUserProfileToFirestore(email: email)
                 
+                if !isDefaultProfileImage, let pair = self.profileImage {
+                    do {
+                        let (thumbPath, oriPath) = try await FirebaseStorageManager.shared.uploadAndSaveProfile(sha: pair.fileBaseName, uid: LoginManager.shared.getUserEmail, type: "profiles", thumbData: pair.thumbData, originalFileURL: pair.originalFileURL)
+                        // 로컬 프로필/세션 갱신
+                        self.userProfile.thumbPath = thumbPath
+                        self.userProfile.originalPath = oriPath
+                    } catch {
+                        // 업로드 실패는 치명적이지 않으므로 로그만 남기고, 추후 재시도 큐에서 처리 가능
+                        print("아바타 업로드 실패: \(error)")
+                    }
+                }
+                
+                
+                // Users 문서 저장 완료 대기 (에러는 상단 catch로 전파)
+                _ = try await saveProfileTask
             } catch FirebaseError.FailedToSaveProfile {
-                print("프로필 저장 실패")
-                AlertManager.showAlertNoHandler(title: "프로필 저장 실패", message: "프로필 저장에 실패했습니다. 다시 시도해 주세요.", viewController: self)
+                await MainActor.run {
+                    LoadingIndicator.shared.stop()
+                    AlertManager.showAlertNoHandler(title: "프로필 저장 실패", message: "프로필 저장에 실패했습니다. 다시 시도해 주세요.", viewController: self)
+                }
             } catch {
                 print("알 수 없는 에러: \(error)")
-                AlertManager.showAlertNoHandler(title: "프로필 저장 실패", message: "프로필 저장에 실패했습니다. 다시 시도해 주세요.", viewController: self)
-                return
+                await MainActor.run {
+                    LoadingIndicator.shared.stop()
+                    AlertManager.showAlertNoHandler(title: "프로필 저장 실패", message: "프로필 저장에 실패했습니다. 다시 시도해 주세요.", viewController: self)
+                }
             }
+            
+            return
         }
     }
-    
+        
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         self.view.endEditing(true)
     }

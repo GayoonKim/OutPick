@@ -20,7 +20,7 @@ class FirstProfileViewController: UIViewController {
     
     var savedBirthDate: Date?
     
-    var userProfile = UserProfile(email: nil, nickname: nil, gender: nil, birthdate: nil, profileImagePath: nil, joinedRooms: [])
+    var userProfile = UserProfile(email: nil, nickname: nil, gender: nil, birthdate: nil, thumbPath: nil, originalPath: nil, joinedRooms: [])
 
     override func viewDidLoad() {
         

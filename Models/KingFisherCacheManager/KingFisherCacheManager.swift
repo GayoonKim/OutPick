@@ -50,11 +50,6 @@ final class KingFisherCacheManager {
         KingfisherManager.shared.cache.removeImage(forKey: key)
     }
 
-    /// 동일 의미의 새 이름 (기존 loadImage(named:)을 보존하면서 가독성 개선)
-    func image(forKey key: String) async -> UIImage? {
-        return await loadImage(named: key)
-    }
-
     /// 주어진 키가 메모리/디스크 캐시에 존재하는지 확인
     func isCached(_ key: String) async -> Bool {
         if KingfisherManager.shared.cache.retrieveImageInMemoryCache(forKey: key) != nil {

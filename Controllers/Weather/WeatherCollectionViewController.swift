@@ -104,7 +104,6 @@ class HomeCollectionViewController: UICollectionViewController {
             .sink { [weak self] in
                 // 최신 데이터로 UI 갱신
                 guard let self = self else { return }
-                print(#function, "6. 최신 데이터로 UI 갱신")
                 
                 self.model.currentWeatherModel = WeatherAPIManager.shared.currentWeather
                 self.model.hourlyForecastModel = WeatherAPIManager.shared.hourlyForecast
@@ -185,7 +184,6 @@ class HomeCollectionViewController: UICollectionViewController {
         var itemBySection = [Section:[Item]]()
         
         guard let currentWeatherInfo =  self.model.currentWeatherModel else {return}
-        print(#function, "currentWeatherInfo: \(currentWeatherInfo)")
         sectionIDs.append(.currentWeatherSection)
         itemBySection[.currentWeatherSection] = [Item.currentWeatherItem(currentWeatherInfo.dt, currentWeatherInfo.main, currentWeatherInfo.weather)]
         
@@ -210,8 +208,6 @@ class HomeCollectionViewController: UICollectionViewController {
             switch item {
             case .currentWeatherItem(_, let main, let weather):
                 let cell = collectionView.dequeueReusableCell(withReuseIdentifier: CurrentWeatherCollectionViewCell.reuseIdentifier, for: indexPath) as! CurrentWeatherCollectionViewCell
-
-                print(#function, "City Name:", WeatherAPIManager.shared.currentCity ?? "")
                 
                 let cityName = self.model.cityName ?? ""
                 let tempValue = "\(String(format: "%.0f", main.temp))°"

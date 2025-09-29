@@ -47,18 +47,13 @@ extension SecondProfileViewController: PHPickerViewControllerDelegate {
     func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
         picker.dismiss(animated: true, completion: nil)
         
-        Task {
-            let images = try await MediaManager.shared.dealWithImages(results)
-            
-            DispatchQueue.main.async {
-                if let image = images.first {
-                    self.profileImageView.image = image
-                    self.isDefaultProfileImage = false
-                    self.removeImageButton.isHidden = false
-                } else {
-                    self.profileImageView.image = UIImage(named: "Default_Profile.png")
-                }
-            }
+        Task { @MainActor in
+            let pair = try await MediaManager.shared.preparePairs(results)
+            guard let p = pair.first else { return }
+            self.profileImage = p
+            self.profileImageView.image = UIImage(data: p.thumbData)
+            self.isDefaultProfileImage = false
+            self.removeImageButton.isHidden = false
         }
     }
 }

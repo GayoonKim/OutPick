@@ -275,8 +275,8 @@ class RoomEditViewController: UIViewController, PHPickerViewControllerDelegate, 
             if itemProvider.canLoadObject(ofClass: UIImage.self) {
                 convertImageTask = Task {
                     do {
-                        let image = try await MediaManager.shared.convertImage(result)
-                        self.selectedImage = image
+//                        let image = try await MediaManager.shared.convertImage(result)
+//                        self.selectedImage = image
 //                        let prevImgName = self.room.roomImagePath
                         
                         var snapshot = dataSource.snapshot()

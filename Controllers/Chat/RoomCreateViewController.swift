@@ -248,18 +248,18 @@ class RoomCreateViewController: UIViewController, ChatModalAnimatable {
     }
     
     private func uploadImageAndSaveRoomInfo(image: UIImage, roomInfo: ChatRoom) {
-        Task {
-            do {
-                let imagePath = try await FirebaseStorageManager.shared.uploadImageToStorage(image: image, location: ImageLocation.RoomImage, roomName: roomInfo.roomName)
-                
-                var updatedRoomInfo = roomInfo
-                updatedRoomInfo.roomImagePath = imagePath
-                
-                self.saveRoomInfoToFirestore(room: updatedRoomInfo, image: image)
-            } catch {
-                NotificationCenter.default.post(name: .roomSaveFailed, object: nil, userInfo: ["error": RoomCreationError.imageUploadFailed])
-            }
-        }
+//        Task {
+//            do {
+//                let imagePath = try await FirebaseStorageManager.shared.uploadImageToStorage(image: image, location: ImageLocation.RoomImage, roomName: roomInfo.roomName)
+//                
+//                var updatedRoomInfo = roomInfo
+//                updatedRoomInfo.roomImagePath = imagePath
+//                
+//                self.saveRoomInfoToFirestore(room: updatedRoomInfo, image: image)
+//            } catch {
+//                NotificationCenter.default.post(name: .roomSaveFailed, object: nil, userInfo: ["error": RoomCreationError.imageUploadFailed])
+//            }
+//        }
     }
     
     private func saveRoomInfoToFirestore(room: ChatRoom, image: UIImage?) {
@@ -365,19 +365,19 @@ extension RoomCreateViewController: PHPickerViewControllerDelegate {
     func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
         picker.dismiss(animated: true, completion: nil)
         
-        Task {
-            let image = try await MediaManager.shared.convertImage(results.first!)
-            
-            DispatchQueue.main.async {
-                
-                self.roomImageView.image = image
-                self.roomImageView.accessibilityIdentifier = "Custom_Image"
-                self.isDefaultRoomImage = false
-                
-                self.removeImageButtonSetup()
-                
-            }
-        }
+//        Task {
+//            let image = try await MediaManager.shared.convertImage(results.first!)
+//            
+//            DispatchQueue.main.async {
+//                
+//                self.roomImageView.image = image
+//                self.roomImageView.accessibilityIdentifier = "Custom_Image"
+//                self.isDefaultRoomImage = false
+//                
+//                self.removeImageButtonSetup()
+//                
+//            }
+//        }
     }
 }
 

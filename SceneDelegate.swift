@@ -19,7 +19,6 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     
     private let locationManager = CLLocationManager()
     private var cancellables = Set<AnyCancellable>()
-    private var appCoordinator: AppCoordinator?
     
     private var isUITest: Bool {
         return ProcessInfo.processInfo.environment["UITEST"] == "1"
@@ -57,35 +56,6 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             let initialViewController = storyboard.instantiateViewController(withIdentifier: "LaunchScreen")
             self.window?.rootViewController = initialViewController
             self.window?.makeKeyAndVisible()
-
-            // AppCoordinator 초기화
-            self.appCoordinator = AppCoordinator(window: self.window)
-            self.appCoordinator?.start()
-            
-            // Banner 탭 시 해당 채팅방으로 이동
-            BannerManager.shared.bannerTapped
-                .sink { [weak self] roomID in
-                    guard let self = self else { return }
-                    
-                    Task { @MainActor in
-                        do {
-                            // 우선 로컬(DB)에서 조회
-                            var room = try GRDBManager.shared.fetchRoomInfo(roomID: roomID)
-                            
-                            // 만약 최신 데이터가 필요하면 서버에서도 업데이트
-                            let serverRoom = try await FirebaseManager.shared.fetchRoomInfoWithID(roomID: roomID)
-                            room = serverRoom
-                            
-                            guard let room = room else { return }
-                            
-                            // Coordinator를 통해 이동
-                            self.appCoordinator?.showChatRoom(room: room, isRoomSaving: false)
-                        } catch {
-                            print("❌ room 정보를 불러오지 못했습니다:", error)
-                        }
-                    }
-                }
-                .store(in: &cancellables)
         }
         
         // 날씨 업데이트 시작
@@ -137,9 +107,11 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                             
                             // ✅ 로그인 성공 후 프로필 리스너 시작
                             LoginManager.shared.startUserProfileListener(email: LoginManager.shared.getUserEmail)
+                            
+                            try await FirebaseManager.shared.fetchRecentRoomsPage(after: nil, limit: 100)
 
                             // 2️⃣ 소켓/핫룸은 항상 실행
-                            async let _ = FirebaseManager.shared.listenToHotRooms()
+//                            async let _ = FirebaseManager.shared.listenToHotRooms()
                             async let _ = SocketIOManager.shared.establishConnection()
 
                             // 3️⃣ 참여중인 방은 프로필 있는 경우에만 등록
@@ -147,11 +119,13 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                                 guard let profile = LoginManager.shared.currentUserProfile else { return }
                                 
                                 let joinedRooms = profile.joinedRooms
+                                BannerManager.shared.start(for: joinedRooms)
+                                
                                 Task .detached { await FirebaseManager.shared.startListenRoomDocs(roomIDs: joinedRooms) }
                                 for roomID in joinedRooms {
                                     SocketIOManager.shared.joinRoom(roomID)
-                                    BannerManager.shared.startListening(for: roomID)
                                 }
+                                
                                 print("📢 BannerManager: \(joinedRooms.count)개 방에 대해 리스닝 시작")
                             } else {
                                 print("🆕 신규 유저: BannerManager 등록 스킵")

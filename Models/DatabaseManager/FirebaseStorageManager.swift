@@ -135,6 +135,154 @@ class FirebaseStorageManager {
             }
         }
     }
+
+    // MARK: - Profile Avatar (Option A: versioned path + long immutable cache)
+
+    /// Build a version string. If a hint is provided, use it; otherwise current epoch seconds.
+    private func makeAvatarVersion(_ hint: String?) -> String {
+        if let h = hint, !h.isEmpty { return h }
+        return String(Int(Date().timeIntervalSince1970))
+    }
+
+    /// Upload profile avatar (thumbnail + original) to versioned Storage paths with long immutable cache.
+    /// Versioned path example:
+    ///   avatars/<uid>/v<version>_thumb.jpg
+    ///   avatars/<uid>/v<version>.jpg
+    /// Returns the Storage paths and the resolved version string.
+    @discardableResult
+    func uploadImage(
+        sha: String,
+        uid: String,
+        type: String,
+        thumbData: Data,
+        originalFileURL: URL,
+        contentType: String = "image/jpeg"
+    ) async throws -> (avatarThumbPath: String, avatarPath: String) {
+//        let base = "\(type)/\(uid)/v\(version)"
+        var base = ""
+        switch type {
+        case "profiles":
+            base = "profiles/"
+        case "roomImages":
+            base = "roomImages/"
+        default:
+            fatalError("Unsupported type: \(type)")
+        }
+        
+        let thumbPath = "\(base)/\(uid)/thumb/\(sha).jpg"
+        let originalPath = "\(base)/\(uid)/original/\(sha).jpg"
+
+        // Cache-Control: 1 year + immutable (A안)
+        let cc = "public, max-age=31536000, immutable"
+
+        // Aggregate progress over thumb + original
+//        let progressQueue = DispatchQueue(label: "firebase.avatar.upload.aggregate")
+//        var thumbCompleted: Int64 = 0
+//        var origCompleted: Int64 = 0
+//        var thumbTotal: Int64 = Int64(thumbData.count)
+//        var origTotal: Int64 = fileSize(at: originalFileURL) ?? 0
+//        if thumbTotal + origTotal > 0 { onProgress?(0.0) }
+//
+//        func report(_ isThumb: Bool, _ completed: Int64, _ total: Int64) {
+//            progressQueue.async {
+//                if isThumb {
+//                    thumbCompleted = completed
+//                    if total > 0 { thumbTotal = total }
+//                } else {
+//                    origCompleted = completed
+//                    if total > 0 { origTotal = total }
+//                }
+//                let totalAll = thumbTotal + origTotal
+//                if totalAll > 0 {
+//                    onProgress?(Double(thumbCompleted + origCompleted) / Double(totalAll))
+//                }
+//            }
+//        }
+
+        // Upload both in parallel with fallback for original
+        return try await withThrowingTaskGroup(of: (String, Bool).self, returning: (String, String).self) { group in
+            // 1) Thumbnail (putData)
+            group.addTask { [weak self] in
+                guard let self = self else { throw StorageError.FailedToUploadImage }
+                let path = try await self.uploadWithRetry(
+                    data: thumbData,
+                    to: thumbPath,
+                    contentType: contentType,
+                    cacheControl: cc
+                )
+                return (path, true)
+            }
+
+            // 2) Original (putFile with retry → fallback to putData if small)
+            group.addTask { [weak self] in
+                guard let self = self else { throw StorageError.FailedToUploadImage }
+                do {
+                    let path = try await self.uploadFileWithRetry(
+                        from: originalFileURL,
+                        to: originalPath,
+                        contentType: contentType,
+                        cacheControl: cc
+                    )
+                    return (path, false)
+                } catch {
+                    if let size = self.fileSize(at: originalFileURL), size <= self.dataFallbackMaxBytes {
+                        await self.dataFallbackLimiter.acquire()
+                        defer { Task { await self.dataFallbackLimiter.release() } }
+                        guard let data = try? Data(contentsOf: originalFileURL, options: [.mappedIfSafe]) else {
+                            throw error
+                        }
+                        let path = try await self.uploadWithRetry(
+                            data: data,
+                            to: originalPath,
+                            contentType: contentType,
+                            cacheControl: cc,
+                        )
+                        print("✅ avatar original fallback via putData succeeded (\(size) bytes ≤ limit=\(self.dataFallbackMaxBytes)): \(originalPath)")
+                        return (path, false)
+                    } else {
+                        throw error
+                    }
+                }
+            }
+
+            var t: String?
+            var o: String?
+            for try await (path, isThumb) in group {
+                if isThumb { t = path } else { o = path }
+            }
+            guard let thumb = t, let orig = o else { throw StorageError.FailedToUploadImage }
+            return (thumb, orig)
+        }
+    }
+
+    /// Convenience: Upload avatar with A안, then save the new paths to Users/{uid}.
+    /// Fields: avatarPath, avatarThumbPath, avatarUpdatedAt
+    @discardableResult
+    func uploadAndSaveProfile(
+        sha: String,
+        uid: String,
+        type: String,
+        thumbData: Data,
+        originalFileURL: URL,
+        versionHint: String? = nil,
+        contentType: String = "image/jpeg"
+    ) async throws -> (avatarThumbPath: String, avatarPath: String) {
+        let (thumbPath, originalPath) = try await uploadImage(
+            sha: sha,
+            uid: uid,
+            type: type,
+            thumbData: thumbData,
+            originalFileURL: originalFileURL,
+            contentType: contentType
+        )
+
+        try await db.collection("Users").document(uid).setData([
+            "thumbPath": originalPath,
+            "originalPath": thumbPath
+        ], merge: true)
+
+        return (thumbPath, originalPath)
+    }
     
     // MARK: - Helper: File Size
     private func fileSize(at url: URL) -> Int64? {
@@ -148,7 +296,6 @@ class FirebaseStorageManager {
     }
 
     // MARK: - Generalized upload helpers
-
     /// Upload arbitrary Data to a Storage path with metadata.
     /// - Returns: the Storage path (same as `to`)
     @discardableResult
@@ -384,75 +531,6 @@ class FirebaseStorageManager {
         return attachments
     }
 
-    @available(*, deprecated, message: "채팅용 이미지에는 사용하지 마세요. (UIImage 재인코딩) — 메시지 첨부는 MediaManager.preparePairs -> uploadPairsToRoomMessage를 사용하세요.")
-    func uploadImageToStorage(image: UIImage, location: ImageLocation, roomName: String?) async throws -> String {
-        let uuid = UUID().uuidString
-        let timestamp = Int(Date().timeIntervalSince1970)
-        let fileName = "\(uuid)-\(timestamp).jpg"
-        
-        let imagePath: String
-        switch location {
-        case .ProfileImage:
-            imagePath = "\(location.location)/\(fileName)"
-        case .RoomImage:
-            imagePath = "\(location.location)/\(roomName ?? "")/\(fileName)"
-        }
-        
-        return try await withCheckedThrowingContinuation { continuation in
-            let storageRef = storage.reference()
-            let imageRef = storageRef.child(imagePath)
-            
-            guard let imageData = image.jpegData(compressionQuality: 0.5) else {
-                print("이미지 데이터 생성 실패")
-                continuation.resume(throwing: StorageError.FailedToConvertImage)
-                return
-            }
-            let metadata = StorageMetadata()
-            metadata.contentType = "image/jpeg"
-            
-            let uploadTask = imageRef.putData(imageData, metadata: metadata) { metadata, error in
-                guard error == nil else {
-                    continuation.resume(throwing: StorageError.FailedToUploadImage)
-                    return
-                }
-                continuation.resume(returning: imagePath)
-            }
-            
-            let _ = uploadTask.observe(.progress) { snapshot in
-                let percentComplete = 100.0 * Double(snapshot.progress!.completedUnitCount) / Double(snapshot.progress!.totalUnitCount)
-                print("Upload is \(percentComplete) done")
-            }
-        }
-    }
-    
-    func uploadImagesToStorage(images: [UIImage], location: ImageLocation, name: String?) async throws -> [String] {
-        let start = Date()
-        
-        return try await withThrowingTaskGroup(of: (Int, String).self) { group in
-            for (index, image) in images.enumerated() {
-                group.addTask {
-                    
-                    let fileName = try await self.uploadImageToStorage(image: image, location: location, roomName: name ?? "")
-                    return (index, fileName)
-                    
-                }
-            }
-            
-            var results = Array<String?>(repeating: nil, count: images.count)
-            
-            for try await (index, fileName) in group {
-                results[index] = fileName
-            }
-                
-            let end = Date()
-            let duration = end.timeIntervalSince(start)
-            let formattedTime = String(format: "%.2f", duration)
-            print("⏱ 소요 시간: \(formattedTime)초")
-            
-            return results.compactMap{ $0 }
-        }
-    }
-    
     func deleteImageFromStorage(path: String) {
         let fileRef = storage.reference().child("\(path)")
         print(#function, "📄 \(fileRef)")
@@ -524,89 +602,7 @@ class FirebaseStorageManager {
             progress: nil
         )
     }
-    
-//    func uploadVideoToStorage(_ videoURL: URL) async throws -> String {
-//        let videoName = UUID().uuidString
-//        let path = "videos/\(videoName).mp4"
-//        let meta = StorageMetadata()
-//        meta.contentType = "video/mp4"
-//
-//        return try await withCheckedThrowingContinuation { continuation in
-//            let ref = storage.reference().child(path)
-//            let task = ref.putFile(from: videoURL, metadata: meta) { _, error in
-//                if let error = error {
-//                    print("비디오 업로드 실패: \(error.localizedDescription)")
-//                    continuation.resume(throwing: StorageError.FailedToUploadVideo)
-//                    return
-//                }
-//                continuation.resume(returning: path)
-//            }
-//            _ = task.observe(.progress) { snapshot in
-//                if let p = snapshot.progress {
-//                    let percentComplete = 100.0 * Double(p.completedUnitCount) / Double(p.totalUnitCount)
-//                    print("⬆️ video upload \(String(format: \"%.1f\", percentComplete))%")
-//                }
-//            }
-//        }
-//    }
-    
-//    func uploadVideosToStorage(_ videoURLs: [URL]) async throws -> [String] {
-//        var videoNames = Array<String?>(repeating: nil, count: videoURLs.count)
-//
-//        for videoURL in videoURLs {
-//            do {
-//
-//                let videoName = try await self.uploadVideoToStorage(videoURL)
-//                videoNames.append(videoName)
-//
-//            } catch {
-//
-//                throw error
-//
-//            }
-//        }
-//
-//        return videoNames.compactMap{$0}
-//
-//    }
-    
-    // Storage에서 이미지 불러오기
-//    func fetchImageFromStorage(image imagePath: String, location: ImageLocation/*, createdDate: Date*/) async throws -> UIImage {
-//        
-//        // 메모리 캐시 확인
-//        if let cachedImage = KingfisherManager.shared.cache.retrieveImageInMemoryCache(forKey: imagePath) {
-//            print("cachedImage in Memory: \(cachedImage)")
-//            
-//            return cachedImage
-//        }
-//        // 디스크 캐시 확인
-//        if let cachedImage = try await KingfisherManager.shared.cache.retrieveImageInDiskCache(forKey: imagePath) {
-//            print("cachedImage in Disk: \(cachedImage)")
-//            
-//            return cachedImage
-//        }
-//        
-////        let month = DateManager.shared.getMonthFromTimestamp(date: createdDate)
-//        
-//        return try await withCheckedThrowingContinuation { continuation in
-//            let imageRef = storage.reference().child(imagePath)
-//            imageRef.getData(maxSize: 1 * 1024 * 1024) { data, error in
-//                if let error = error {
-//                    
-//                    print("\(imagePath): 이미지 불러오기 실패: \(error.localizedDescription)")
-//                    continuation.resume(throwing: StorageError.FailedToFetchImage)
-//                    
-//                }
-//                
-//                if let data = data,
-//                   let image = UIImage(data: data) {
-//                    
-//                    Task { try await KingfisherManager.shared.cache.store(image, forKey: imagePath) }
-//                    continuation.resume(returning: image)
-//                }
-//            }
-//        }
-//    }
+
     enum StorageImageError: Error { case invalidData }
     func fetchImageFromStorage(image: String, location: ImageLocation) async throws -> UIImage {
         let ref = storage.reference(withPath: image)

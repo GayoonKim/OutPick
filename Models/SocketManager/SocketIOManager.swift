@@ -8,9 +8,33 @@ import UIKit
 import SocketIO
 import Combine
 import CryptoKit
+import Network
 
 class SocketIOManager {
     static let shared = SocketIOManager()
+
+    // ---- Reconnect Policy (client defaults; server can override via `server:connect:ready`) ----
+    private struct ReconnectPolicy {
+        var maxAttempts: Int
+        var baseDelay: TimeInterval
+        var maxDelay: TimeInterval
+        var jitter: Double
+    }
+    
+    private var clientPolicy = ReconnectPolicy(maxAttempts: 5, baseDelay: 0.5, maxDelay: 8.0, jitter: 0.3)
+    private var serverPolicy: ReconnectPolicy? = nil
+    private var manualAttempt: Int = 0
+    private var allowReconnect: Bool = true
+
+    // Network reachability (to wait when offline)
+    private let pathMonitor = NWPathMonitor()
+    private let pathQueue = DispatchQueue(label: "outpick.socket.pathmonitor")
+
+    // Stable client key to help server track attempt windows
+    private static let clientKey: String = {
+        if let id = UIDevice.current.identifierForVendor?.uuidString { return "ios-\(id)" }
+        return "ios-\(UUID().uuidString)"
+    }()
 
     // MARK: - Socket Error
     enum SocketError: Error {
@@ -51,16 +75,25 @@ class SocketIOManager {
     private var subscriberCounts = [String: Int]() // 구독자 ref count
     
     private init() {
-        //manager = SocketManager(socketURL: URL(string: "http://127.0.0.1:3000")!, config: [.log(true), .compress])
-        manager = SocketManager(socketURL: URL(string: "http://192.168.123.182:3000")!, config: [.log(true), .compress])
+        manager = SocketManager(socketURL: URL(string: "http://192.168.123.115:3000")!, config: [
+            .log(true),
+            .compress,
+            .connectParams(["clientKey": SocketIOManager.clientKey]),
+            .reconnects(false) // 수동 재연결을 사용(라이브러리 자동 재연결 비활성화)
+        ])
         socket = manager.defaultSocket
-        
+
         socket.on(clientEvent: .connect) {data, ack in
             print("Socket Connected")
-            
+            // reset manual attempts on successful connect
+            self.manualAttempt = 0
+            // lightweight hello → 서버가 정책/상태를 ack로 회신할 수 있음
+            self.socket.emitWithAck("client:hello", ["attempt": 0]).timingOut(after: 3) { _ in
+            }
+
             guard let nickName = LoginManager.shared.currentUserProfile?.nickname else { return }
             self.socket.emit("set username", nickName)
-            
+
             // Join any pending rooms after connecting and setting username
             for roomID in self.pendingRooms {
                 self.socket.emit("join room", roomID)
@@ -68,19 +101,62 @@ class SocketIOManager {
             }
             self.pendingRooms.removeAll()
         }
-        
-        socket.on(clientEvent: .error) { data, ack in
+
+        socket.on(clientEvent: .error) { [weak self] data, _ in
+            guard let self = self else { return }
             print("소켓 에러:", data)
+            self.scheduleManualRetryIfNeeded()
         }
+
+        socket.on(clientEvent: .disconnect) { [weak self] data, _ in
+            guard let self = self else { return }
+            print("소켓 디스커넥트:", data)
+            self.scheduleManualRetryIfNeeded()
+        }
+
+        // 서버가 권장 재연결 정책을 알려줌
+        socket.off("server:connect:ready")
+        socket.on("server:connect:ready") { [weak self] data, _ in
+            guard let self = self else { return }
+            guard let root = data.first as? [String: Any],
+                  let p = root["policy"] as? [String: Any] else { return }
+
+            func toDouble(_ any: Any?) -> Double? {
+                if let d = any as? Double { return d }
+                if let i = any as? Int { return Double(i) }
+                if let s = any as? String, let v = Double(s) { return v }
+                return nil
+            }
+
+            let maxAttempts = (p["maxAttempts"] as? Int) ?? self.clientPolicy.maxAttempts
+            let baseDelayMs = toDouble(p["baseDelayMs"]) ?? (self.clientPolicy.baseDelay * 1000)
+            let maxDelayMs  = toDouble(p["maxDelayMs"])  ?? (self.clientPolicy.maxDelay  * 1000)
+            let jitter      = toDouble(p["jitter"])      ?? self.clientPolicy.jitter
+
+            self.serverPolicy = ReconnectPolicy(
+                maxAttempts: maxAttempts,
+                baseDelay: baseDelayMs / 1000.0,
+                maxDelay: maxDelayMs / 1000.0,
+                jitter: jitter
+            )
+            #if DEBUG
+            print("[server:connect:ready] policy =", self.serverPolicy as Any)
+            #endif
+        }
+
+        // 네트워크 상태 감시 시작(offline → online 전환 시 재시도)
+        startPathMonitor()
     }
     
     func establishConnection() async throws {
+        // 의도적 종료가 아니면 재연결 허용
+        allowReconnect = true
         // 이미 연결된 경우
         if socket.status == .connected {
             print("이미 연결된 상태")
             return
         }
-        
+
         // 연결 중인 경우
         if socket.status == .connecting {
             print("이미 연결 중인 상태")
@@ -91,13 +167,13 @@ class SocketIOManager {
             }
             return
         }
-        
+
         // 연결 시도
         try await withCheckedThrowingContinuation { continuation in
             self.connectWaiters.append {
                 continuation.resume()
             }
-            
+
             if !self.hasOnConnectBound {
                 self.hasOnConnectBound = true
                 self.socket.on(clientEvent: .connect) { [weak self] _, _ in
@@ -106,7 +182,7 @@ class SocketIOManager {
                     self.connectWaiters.removeAll()
                     waiters.forEach { $0() }
                 }
-                
+
                 self.socket.on(clientEvent: .error) { [weak self] data, _ in
                     guard let self else { return }
                     let waiters = self.connectWaiters
@@ -116,13 +192,15 @@ class SocketIOManager {
                     }
                 }
             }
-            
+
             print("소켓 연결 시도")
             self.socket.connect()
         }
     }
     
     func closeConnection() {
+        allowReconnect = false
+        manualAttempt = 0
         socket.disconnect()
     }
     
@@ -175,7 +253,7 @@ class SocketIOManager {
     }
     
     private func attachChatListener(for roomID: String, onMessage: @escaping (ChatMessage) -> Void) {
-        let event = "chat message:\(roomID)"
+        let event = "chat message"
         print(#function, "bind →", event)
         // Prevent duplicate handlers for the same room event
         socket.off(event)
@@ -208,12 +286,12 @@ class SocketIOManager {
     }
 
     private func detachChatListener(for roomID: String) {
-        socket.off("chat message:\(roomID)")
+        socket.off("chat message")
     }
 
     // 이미지 수신용 리스너
     private func attachImageListener(for roomID: String, onMessage: @escaping (ChatMessage) -> Void) {
-        let event = "receiveImages:\(roomID)"
+        let event = "receiveImages"
         print(#function, "bind →", event)
         // Prevent duplicate handlers for the same room event
         socket.off(event)
@@ -253,7 +331,7 @@ class SocketIOManager {
 
     // 비디오 수신용 리스너
     private func attachVideoListener(for roomID: String, onMessage: @escaping (ChatMessage) -> Void) {
-        let event = "receiveVideo:\(roomID)"
+        let event = "receiveVideo"
         print(#function, "bind →", event)
         // Prevent duplicate handlers for the same room event
         socket.off(event)
@@ -293,11 +371,11 @@ class SocketIOManager {
     }
 
     private func detachVideoListener(for roomID: String) {
-        socket.off("receiveVideo:\(roomID)")
+        socket.off("receiveVideo")
     }
 
     private func detachImageListener(for roomID: String) {
-        socket.off("receiveImages:\(roomID)")
+        socket.off("receiveImages")
     }
     
     func joinRoom(_ roomID: String) {
@@ -336,7 +414,7 @@ class SocketIOManager {
         }
     }
     
-    func sendMessages(_ room: ChatRoom, _ message: ChatMessage) {
+    func sendMessage(_ room: ChatRoom, _ message: ChatMessage) {
         // 1. Optimistic UI: Publish the message immediately as not failed
         // 2. If not connected, mark as failed and publish (again, so UI can update)
         guard socket.status == .connected else {
@@ -892,4 +970,60 @@ class SocketIOManager {
     }
 }
 
+extension SocketIOManager {
+    // 현재 적용 정책(서버 우선)
+    private var effectivePolicy: ReconnectPolicy {
+        serverPolicy ?? clientPolicy
+    }
 
+    private func backoffDelay(for attempt: Int) -> TimeInterval {
+        let p = effectivePolicy
+        let base = min(p.maxDelay, p.baseDelay * pow(2, Double(max(0, attempt - 1))))
+        let jitter = base * p.jitter * Double.random(in: -1...1)
+        return max(0, base + jitter)
+    }
+
+    private func scheduleManualRetryIfNeeded() {
+        guard allowReconnect else { return }
+        // 이미 연결 중이면 중복 connect 방지
+        guard socket.status != .connected && socket.status != .connecting else { return }
+
+        // 네트워크 없으면 대기(online 전환 시 pathMonitor가 재시도)
+        if pathMonitor.currentPath.status != .satisfied {
+            #if DEBUG
+            print("[retry] waiting for network...")
+            #endif
+            return
+        }
+
+        let limit = effectivePolicy.maxAttempts
+        guard manualAttempt < limit else {
+            #if DEBUG
+            print("[retry] max attempts reached (\(limit)) — stop")
+            #endif
+            return
+        }
+        manualAttempt += 1
+        let d = backoffDelay(for: manualAttempt)
+        #if DEBUG
+        print("[retry] attempt \(manualAttempt)/\(limit) in \(String(format: "%.2f", d))s")
+        #endif
+        DispatchQueue.main.asyncAfter(deadline: .now() + d) { [weak self] in
+            guard let self = self, self.allowReconnect else { return }
+            if self.socket.status != .connected && self.socket.status != .connecting {
+                self.socket.connect()
+            }
+        }
+    }
+
+    private func startPathMonitor() {
+        pathMonitor.pathUpdateHandler = { [weak self] path in
+            guard let self = self else { return }
+            if path.status == .satisfied {
+                // 온라인 복구 시 남은 횟수 안에서 재시도
+                self.scheduleManualRetryIfNeeded()
+            }
+        }
+        pathMonitor.start(queue: pathQueue)
+    }
+}

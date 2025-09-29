@@ -202,45 +202,45 @@ class MediaManager {
         }
     }
     
-    func convertImage(_ result: PHPickerResult) async throws -> UIImage {
-        return try await withCheckedThrowingContinuation { continuation in
-            let itemProvider = result.itemProvider
-            if itemProvider.canLoadObject(ofClass: UIImage.self) {
-                itemProvider.loadObject(ofClass: UIImage.self, completionHandler: { image, error in
-                    guard let image = image as? UIImage, error == nil else {
-                        continuation.resume(throwing: MediaError.FailedToConvertImage)
-                        return
-                    }
-
-                    guard let compressed = MediaManager.compressImageWithImageIO(image) else {
-                        print("압축 이미지 데이터 생성 실패")
-                        continuation.resume(throwing: MediaError.FailedToCraeteImageData)
-                        return
-                    }
-                    
-                    continuation.resume(returning: UIImage(cgImage: compressed))
-//                    continuation.resume(returning: image)
-                })
-            }
-        }
-    }
-    
-    func dealWithImages(_ results: [PHPickerResult]) async throws -> [UIImage] {
-        return try await withThrowingTaskGroup(of: (Int, UIImage).self) { group in
-            for (index, result) in results.enumerated() {
-                group.addTask {
-                    let image = try await self.convertImage(result)
-                    return (index, image)
-                }
-            }
-            
-            var inOrderImages = Array<UIImage?>(repeating: nil, count: results.count)
-            for try await (index, image) in group {
-                inOrderImages[index] = image
-            }
-            return inOrderImages.compactMap{$0}
-        }
-    }
+//    func convertImage(_ result: PHPickerResult) async throws -> UIImage {
+//        return try await withCheckedThrowingContinuation { continuation in
+//            let itemProvider = result.itemProvider
+//            if itemProvider.canLoadObject(ofClass: UIImage.self) {
+//                itemProvider.loadObject(ofClass: UIImage.self, completionHandler: { image, error in
+//                    guard let image = image as? UIImage, error == nil else {
+//                        continuation.resume(throwing: MediaError.FailedToConvertImage)
+//                        return
+//                    }
+//
+//                    guard let compressed = MediaManager.compressImageWithImageIO(image) else {
+//                        print("압축 이미지 데이터 생성 실패")
+//                        continuation.resume(throwing: MediaError.FailedToCraeteImageData)
+//                        return
+//                    }
+//                    
+//                    continuation.resume(returning: UIImage(cgImage: compressed))
+////                    continuation.resume(returning: image)
+//                })
+//            }
+//        }
+//    }
+//    
+//    func dealWithImages(_ results: [PHPickerResult]) async throws -> [UIImage] {
+//        return try await withThrowingTaskGroup(of: (Int, UIImage).self) { group in
+//            for (index, result) in results.enumerated() {
+//                group.addTask {
+//                    let image = try await self.convertImage(result)
+//                    return (index, image)
+//                }
+//            }
+//            
+//            var inOrderImages = Array<UIImage?>(repeating: nil, count: results.count)
+//            for try await (index, image) in group {
+//                inOrderImages[index] = image
+//            }
+//            return inOrderImages.compactMap{$0}
+//        }
+//    }
     
     // MARK: - Video presets & helpers
 
