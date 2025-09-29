@@ -966,22 +966,8 @@
                     <view key="view" contentMode="scaleToFill" id="v7R-H3-6A8">
                         <rect key="frame" x="0.0" y="0.0" width="402" height="757"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
-                        <subviews>
-                            <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="vEN-mY-AJa">
-                                <rect key="frame" x="163.66666666666666" y="361" width="75" height="35"/>
-                                <state key="normal" title="Button"/>
-                                <buttonConfiguration key="configuration" style="plain" title="Button"/>
-                                <connections>
-                                    <action selector="logOutBtnTapped:" destination="9K7-kt-9Io" eventType="touchUpInside" id="MGD-ZH-fz8"/>
-                                </connections>
-                            </button>
-                        </subviews>
                         <viewLayoutGuide key="safeArea" id="TFb-5Q-Fom"/>
                         <color key="backgroundColor" systemColor="systemBackgroundColor"/>
-                        <constraints>
-                            <constraint firstItem="vEN-mY-AJa" firstAttribute="centerY" secondItem="v7R-H3-6A8" secondAttribute="centerY" id="IV0-6B-tfR"/>
-                            <constraint firstItem="vEN-mY-AJa" firstAttribute="centerX" secondItem="v7R-H3-6A8" secondAttribute="centerX" id="e5V-tD-x3d"/>
-                        </constraints>
                     </view>
                     <tabBarItem key="tabBarItem" title="" image="gearshape.fill" catalog="system" id="H6V-LC-yge"/>
                     <navigationItem key="navigationItem" id="P0J-6z-XVB"/>

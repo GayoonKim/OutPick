@@ -33,6 +33,43 @@ struct RoomMember: Codable, FetchableRecord, PersistableRecord, Hashable {
     let userEmail: String    // FK → LocalUser.email
 }
 
+struct ImageIndexMeta: FetchableRecord, Decodable {
+    let roomID: String
+    let messageID: String
+    let idx: Int
+    let thumbKey: String?
+    let originalKey: String?
+    let thumbURL: String?
+    let originalURL: String?
+    let width: Int?
+    let height: Int?
+    let bytesOriginal: Int?
+    let hash: String?
+    let isFailed: Bool
+    let localThumb: String?
+    let sentAt: Date
+}
+
+struct VideoIndexMeta: FetchableRecord, Decodable {
+    let roomID: String
+    let messageID: String
+    let idx: Int
+    let thumbKey: String?
+    let originalKey: String?
+    let thumbURL: String?
+    let originalURL: String?
+    let width: Int?
+    let height: Int?
+    let bytesOriginal: Int?
+    let duration: Double?
+    let approxBitrateMbps: Double?
+    let preset: String?
+    let hash: String?
+    let isFailed: Bool
+    let localThumb: String?
+    let sentAt: Date
+}
+
 final class GRDBManager {
     static let shared = GRDBManager()
     let dbPool: DatabasePool
@@ -433,47 +470,6 @@ final class GRDBManager {
 #endif
     }
     
-    // MARK: - Image Index Upsert
-    private func upsertImageIndex(for message: ChatMessage, in db: Database) throws {
-        // Clean existing rows for this message (idempotent upsert)
-        try db.execute(
-            sql: "DELETE FROM imageIndex WHERE roomID = ? AND messageID = ?",
-            arguments: [message.roomID, message.ID]
-        )
-        
-        let atts = message.attachments
-            .filter { $0.type == .image }
-            .sorted { $0.index < $1.index }
-        
-        guard !atts.isEmpty else { return }
-        
-        let when = message.sentAt ?? Date()
-        for att in atts {
-            try db.execute(sql: """
-            INSERT OR REPLACE INTO imageIndex
-            (roomID, messageID, idx, thumbKey, originalKey, thumbURL, originalURL, width, height, bytesOriginal, hash, isFailed, localThumb, sentAt)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-                           arguments: [
-                            message.roomID,
-                            message.ID,
-                            att.index,
-                            // 캐시 키는 해시를 우선 사용(없으면 nil)
-                            att.hash.isEmpty ? nil : att.hash,
-                            att.hash.isEmpty ? nil : (att.hash + ":orig"),
-                            att.pathThumb.isEmpty ? nil : att.pathThumb,
-                            att.pathOriginal.isEmpty ? nil : att.pathOriginal,
-                            att.width,
-                            att.height,
-                            att.bytesOriginal,
-                            att.hash.isEmpty ? nil : att.hash,
-                            message.isFailed,
-                            message.isFailed ? (att.pathThumb.isEmpty ? nil : att.pathThumb) : nil,
-                            when
-                           ])
-        }
-    }
-    
     /// 방의 메시지 개수를 반환하는 헬퍼 함수
     func countMessages(inRoom roomID: String) throws -> Int {
         try dbPool.read { db in
@@ -800,22 +796,45 @@ final class GRDBManager {
         }
     }
     
-    // MARK: - Image Index Queries
-    struct ImageIndexMeta: FetchableRecord, Decodable {
-        let roomID: String
-        let messageID: String
-        let idx: Int
-        let thumbKey: String?
-        let originalKey: String?
-        let thumbURL: String?
-        let originalURL: String?
-        let width: Int?
-        let height: Int?
-        let bytesOriginal: Int?
-        let hash: String?
-        let isFailed: Bool
-        let localThumb: String?
-        let sentAt: Date
+    // MARK: - Image Index Upsert
+    private func upsertImageIndex(for message: ChatMessage, in db: Database) throws {
+        // Clean existing rows for this message (idempotent upsert)
+        try db.execute(
+            sql: "DELETE FROM imageIndex WHERE roomID = ? AND messageID = ?",
+            arguments: [message.roomID, message.ID]
+        )
+        
+        let atts = message.attachments
+            .filter { $0.type == .image }
+            .sorted { $0.index < $1.index }
+        
+        guard !atts.isEmpty else { return }
+        
+        let when = message.sentAt ?? Date()
+        for att in atts {
+            try db.execute(sql: """
+            INSERT OR REPLACE INTO imageIndex
+            (roomID, messageID, idx, thumbKey, originalKey, thumbURL, originalURL, width, height, bytesOriginal, hash, isFailed, localThumb, sentAt)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+                           arguments: [
+                            message.roomID,
+                            message.ID,
+                            att.index,
+                            // 캐시 키는 해시를 우선 사용(없으면 nil)
+                            att.hash.isEmpty ? nil : att.hash,
+                            att.hash.isEmpty ? nil : (att.hash + ":orig"),
+                            att.pathThumb.isEmpty ? nil : att.pathThumb,
+                            att.pathOriginal.isEmpty ? nil : att.pathOriginal,
+                            att.width,
+                            att.height,
+                            att.bytesOriginal,
+                            att.hash.isEmpty ? nil : att.hash,
+                            message.isFailed,
+                            message.isFailed ? (att.pathThumb.isEmpty ? nil : att.pathThumb) : nil,
+                            when
+                           ])
+        }
     }
     
     func fetchImageIndex(inRoom roomID: String, forMessageIDs ids: [String]) async throws -> [ImageIndexMeta] {
@@ -833,6 +852,64 @@ final class GRDBManager {
             var args: [DatabaseValueConvertible] = [roomID]
             args.append(contentsOf: ids)
             return try ImageIndexMeta.fetchAll(db, sql: sql, arguments: StatementArguments(args))
+        }
+    }
+
+    /// 방의 이미지 인덱스 총 개수
+    func countImageIndex(inRoom roomID: String) throws -> Int {
+        try dbPool.read { db in
+            try Int.fetchOne(db,
+                             sql: "SELECT COUNT(*) FROM imageIndex WHERE roomID = ?",
+                             arguments: [roomID]) ?? 0
+        }
+    }
+
+    /// 최신순으로 방의 이미지 인덱스 페이지 조회 (DESC)
+    /// - Parameters:
+    ///   - roomID: 대상 방 ID
+    ///   - limit: 최대 개수
+    /// - Returns: 최신순(DESC)으로 정렬된 ImageIndexMeta 배열
+    func fetchLatestImageIndex(inRoom roomID: String, limit: Int) throws -> [ImageIndexMeta] {
+        try dbPool.read { db in
+            try ImageIndexMeta.fetchAll(
+                db,
+                sql: """
+                    SELECT roomID, messageID, idx, thumbKey, originalKey, thumbURL, originalURL,
+                           width, height, bytesOriginal, hash, isFailed, localThumb, sentAt
+                      FROM imageIndex
+                     WHERE roomID = ?
+                     ORDER BY sentAt DESC, messageID DESC, idx ASC
+                     LIMIT ?
+                """,
+                arguments: [roomID, limit]
+            )
+        }
+    }
+
+    /// 앵커 이전(과거) 이미지 인덱스 페이지 조회 (DESC 키셋 페이지네이션)
+    /// - Parameters:
+    ///   - roomID: 방 ID
+    ///   - beforeSentAt: 이 시각 이전의 레코드만
+    ///   - beforeMessageID: 동시각 동률일 때 messageID로 타이브레이커
+    ///   - limit: 최대 개수
+    func fetchOlderImageIndex(inRoom roomID: String,
+                              beforeSentAt: Date,
+                              beforeMessageID: String,
+                              limit: Int) throws -> [ImageIndexMeta] {
+        try dbPool.read { db in
+            try ImageIndexMeta.fetchAll(
+                db,
+                sql: """
+                    SELECT roomID, messageID, idx, thumbKey, originalKey, thumbURL, originalURL,
+                           width, height, bytesOriginal, hash, isFailed, localThumb, sentAt
+                      FROM imageIndex
+                     WHERE roomID = ?
+                       AND (sentAt < ? OR (sentAt = ? AND messageID < ?))
+                     ORDER BY sentAt DESC, messageID DESC, idx ASC
+                     LIMIT ?
+                """,
+                arguments: [roomID, beforeSentAt, beforeSentAt, beforeMessageID, limit]
+            )
         }
     }
     
@@ -892,27 +969,6 @@ final class GRDBManager {
                 )
             }
         }
-    }
-    
-    // MARK: - Video Index Queries
-    struct VideoIndexMeta: FetchableRecord, Decodable {
-        let roomID: String
-        let messageID: String
-        let idx: Int
-        let thumbKey: String?
-        let originalKey: String?
-        let thumbURL: String?
-        let originalURL: String?
-        let width: Int?
-        let height: Int?
-        let bytesOriginal: Int?
-        let duration: Double?
-        let approxBitrateMbps: Double?
-        let preset: String?
-        let hash: String?
-        let isFailed: Bool
-        let localThumb: String?
-        let sentAt: Date
     }
     
     // MARK: - Video Index Upsert
@@ -985,6 +1041,57 @@ final class GRDBManager {
             return try VideoIndexMeta.fetchAll(db, sql: sql, arguments: StatementArguments(args))
         }
     }
+
+    /// 방의 비디오 인덱스 총 개수
+    func countVideoIndex(inRoom roomID: String) throws -> Int {
+        try dbPool.read { db in
+            try Int.fetchOne(db,
+                             sql: "SELECT COUNT(*) FROM videoIndex WHERE roomID = ?",
+                             arguments: [roomID]) ?? 0
+        }
+    }
+
+    /// 최신순으로 방의 비디오 인덱스 페이지 조회 (DESC)
+    func fetchLatestVideoIndex(inRoom roomID: String, limit: Int) throws -> [VideoIndexMeta] {
+        try dbPool.read { db in
+            try VideoIndexMeta.fetchAll(
+                db,
+                sql: """
+                    SELECT roomID, messageID, idx, thumbKey, originalKey, thumbURL, originalURL,
+                           width, height, bytesOriginal, duration, approxBitrateMbps, preset,
+                           hash, isFailed, localThumb, sentAt
+                      FROM videoIndex
+                     WHERE roomID = ?
+                     ORDER BY sentAt DESC, messageID DESC, idx ASC
+                     LIMIT ?
+                """,
+                arguments: [roomID, limit]
+            )
+        }
+    }
+
+    /// 앵커 이전(과거) 비디오 인덱스 페이지 조회 (DESC 키셋 페이지네이션)
+    func fetchOlderVideoIndex(inRoom roomID: String,
+                              beforeSentAt: Date,
+                              beforeMessageID: String,
+                              limit: Int) throws -> [VideoIndexMeta] {
+        try dbPool.read { db in
+            try VideoIndexMeta.fetchAll(
+                db,
+                sql: """
+                    SELECT roomID, messageID, idx, thumbKey, originalKey, thumbURL, originalURL,
+                           width, height, bytesOriginal, duration, approxBitrateMbps, preset,
+                           hash, isFailed, localThumb, sentAt
+                      FROM videoIndex
+                     WHERE roomID = ?
+                       AND (sentAt < ? OR (sentAt = ? AND messageID < ?))
+                     ORDER BY sentAt DESC, messageID DESC, idx ASC
+                     LIMIT ?
+                """,
+                arguments: [roomID, beforeSentAt, beforeSentAt, beforeMessageID, limit]
+            )
+        }
+    }
     
     //MARK: VideoIndex 삭제 관련 함수
     func deleteVideoIndex(forMessageID messageID: String, inRoom roomID: String? = nil) throws {
@@ -1036,6 +1143,25 @@ final class GRDBManager {
                     arguments: [messageID, idx]
                 )
             }
+        }
+    }
+    
+    /// Update duration fields for a specific videoIndex row (idempotent upsert-style update)
+    func updateVideoDuration(inRoom roomID: String,
+                             messageID: String,
+                             idx: Int,
+                             duration: Double,
+                             durationMs: Int64,
+                             durationText: String) throws {
+        try dbPool.write { db in
+            try db.execute(sql: """
+                UPDATE videoIndex
+                   SET duration = COALESCE(duration, ?),
+                       durationMs = COALESCE(durationMs, ?),
+                       durationText = COALESCE(durationText, ?)
+                 WHERE roomID = ? AND messageID = ? AND idx = ?
+            """,
+            arguments: [duration, durationMs, durationText, roomID, messageID, idx])
         }
     }
     
@@ -1131,6 +1257,53 @@ final class GRDBManager {
                 )
             } else {
                 return []
+            }
+        }
+    }
+    
+    func fetchLocalUsersPage(roomID: String, offset: Int, limit: Int) throws -> ([LocalUser], Int) {
+        try dbPool.read { db in
+            let hasLocal = (try? db.tableExists("LocalUser")) == true && (try? db.tableExists("RoomMember")) == true
+            if hasLocal {
+                let list = try LocalUser.fetchAll(
+                    db,
+                    sql: """
+                        SELECT u.*
+                          FROM LocalUser u
+                          JOIN RoomMember m ON m.userEmail = u.email
+                         WHERE m.roomID = ?
+                         ORDER BY u.nickname COLLATE NOCASE ASC
+                         LIMIT ? OFFSET ?
+                    """,
+                    arguments: [roomID, limit, offset]
+                )
+                let total = try Int.fetchOne(db,
+                    sql: "SELECT COUNT(*) FROM RoomMember WHERE roomID = ?",
+                    arguments: [roomID]) ?? list.count
+                return (list, total)
+            } else if (try? db.tableExists("userProfile")) == true && (try? db.tableExists("roomParticipant")) == true {
+                // Fallback: 레거시 테이블에서 최소 필드만 매핑
+                let rows = try Row.fetchAll(
+                    db,
+                    sql: """
+                        SELECT DISTINCT up.email AS email, COALESCE(up.nickname,'') AS nickname, up.profileImagePath AS profileImagePath
+                          FROM userProfile up
+                          JOIN roomParticipant rp ON up.email = rp.email
+                         WHERE rp.roomId = ?
+                         ORDER BY up.nickname COLLATE NOCASE ASC
+                         LIMIT ? OFFSET ?
+                    """,
+                    arguments: [roomID, limit, offset]
+                )
+                let list = rows.map { row in
+                    LocalUser(email: row["email"], nickname: row["nickname"], profileImagePath: row["profileImagePath"])
+                }
+                let total = try Int.fetchOne(db,
+                    sql: "SELECT COUNT(DISTINCT email) FROM roomParticipant WHERE roomId = ?",
+                    arguments: [roomID]) ?? list.count
+                return (list, total)
+            } else {
+                return ([], 0)
             }
         }
     }

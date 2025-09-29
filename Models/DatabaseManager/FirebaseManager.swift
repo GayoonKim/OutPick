@@ -37,6 +37,7 @@ class FirebaseManager {
     private var remove_participant_task: Task<Void, Never>? = nil
     private var saveChatMessageTask: Task<Void, Never>? = nil
     
+    
     deinit {
         listenToRoomsTask?.cancel()
         fetchProfileTask?.cancel()
@@ -185,7 +186,7 @@ class FirebaseManager {
     
     //MARK: 채팅 방 관련 기능들
     @MainActor
-    func updateRoomLastMessageAt(roomID: String, date: Date? = nil) async {
+    func updateRoomLastMessage(roomID: String, date: Date? = nil, msg: String) async {
         guard !roomID.isEmpty else {
             print("❌ updateRoomLastMessageAt: roomID is empty")
             return
@@ -195,6 +196,7 @@ class FirebaseManager {
             let ref = db.collection("Rooms").document(roomID)
             var updateData: [String: Any] = [:]
             
+            updateData["lastMessage"] = msg
             if let date = date {
                 updateData["lastMessageAt"] = Timestamp(date: date)
             } else {
@@ -220,6 +222,52 @@ class FirebaseManager {
         
         return room_snapshot
 
+    }
+    
+    //    // MARK: - Firestore Room Search with Pagination
+        private var lastSearchSnapshot: DocumentSnapshot?
+        private var currentSearchKeyword: String = ""
+    /// Firestore 채팅방 이름 prefix 검색 (roomName) + 페이지네이션 지원
+    /// - Parameters:
+    ///   - keyword: 검색어(빈 문자열 불가)
+    ///   - limit: 페이지당 최대 개수 (기본 30)
+    ///   - reset: true면 페이지네이션 초기화(새 검색), false면 이어서(다음 페이지)
+    /// - Returns: 검색된 ChatRoom 배열
+    func searchRooms(keyword: String, limit: Int = 30, reset: Bool = true) async throws -> [ChatRoom] {
+        guard !keyword.isEmpty else { return [] }
+        
+        if reset {
+            lastSearchSnapshot = nil
+            currentSearchKeyword = keyword
+        }
+        
+        var query: Query = db.collection("Rooms")
+            .order(by: "lastMessageAt", descending: true)
+            .limit(to: limit)
+        
+        // Firestore은 부분 문자열 검색을 지원하지 않으므로 prefix 기반으로 처리
+        // 예: roomName >= keyword && roomName < keyword + "\u{f8ff}"
+        query = query
+            .whereField("roomName", isGreaterThanOrEqualTo: keyword)
+            .whereField("roomName", isLessThanOrEqualTo: keyword + "\u{f8ff}")
+        
+        if let last = lastSearchSnapshot {
+            query = query.start(afterDocument: last)
+        }
+        
+        let snap = try await query.getDocuments()
+        lastSearchSnapshot = snap.documents.last
+        
+        let rooms = snap.documents.compactMap { doc -> ChatRoom? in
+            try? doc.data(as: ChatRoom.self)
+        }
+        return rooms
+    }
+    
+    /// Firestore Room Search - 다음 페이지 불러오기 (이전 검색어 기준)
+    func loadMoreSearchRooms(limit: Int = 30) async throws -> [ChatRoom] {
+        guard !currentSearchKeyword.isEmpty else { return [] }
+        return try await searchRooms(keyword: currentSearchKeyword, limit: limit, reset: false)
     }
     
     func fetchRoomInfoWithID(roomID: String) async throws -> ChatRoom {
@@ -287,6 +335,30 @@ class FirebaseManager {
         )
     }
     
+    func fetchRoomsWithIDs(byIDs ids: [String]) async throws -> [ChatRoom] {
+        guard !ids.isEmpty else { return [] }
+        var result: [ChatRoom] = []
+        var start = 0
+        
+        while start < ids.count {
+            let end = min(start + 10, ids.count)  // Firestore 'in' 제한 10개
+            let chunk = Array(ids[start..<end])
+            start = end
+            
+            let snap = try await Firestore.firestore()
+                .collection("Rooms")
+                .whereField(FieldPath.documentID(), in: chunk)
+                .getDocuments()
+            
+            let rooms = snap.documents.compactMap { doc -> ChatRoom? in
+                try? doc.data(as: ChatRoom.self)
+            }
+            result.append(contentsOf: rooms)
+        }
+        
+        return result
+    }
+    
     // 오픈 채팅 방 정보 저장
     func saveRoomInfoToFirestore(room: ChatRoom, completion: @escaping (Result<Void, Error>) -> Void) {
         Task {
@@ -328,6 +400,7 @@ class FirebaseManager {
         let ref = db.collection("Rooms").document(roomID)
         let l = ref.addSnapshotListener { [weak self] snap, err in
             guard let self = self else { return }
+            print(#function, "snap 연결 성공")
             if let err = err { print("❌ Room listener error:", err); return }
             guard let snap = snap, snap.exists else { return }
             do {
@@ -339,11 +412,34 @@ class FirebaseManager {
         }
         roomDocListeners[roomID] = l
     }
+
+    /// 여러 방 문서에 대해 한 번에 최대 10개씩 나눠 실시간 리스너를 설정합니다.
+    @MainActor
+    func startListenRoomDocs(roomIDs: [String]) {
+        guard !roomIDs.isEmpty else { return }
+        var index = 0
+        while index < roomIDs.count {
+            let end = min(index + 10, roomIDs.count)
+            let chunk = Array(roomIDs[index..<end])
+            for rid in chunk {
+                startListenRoomDoc(roomID: rid)
+            }
+            index = end
+        }
+    }
+    
+//    @MainActor
+//    func stopListenRoomDoc(roomID: String) {
+//        roomDocListeners[roomID]?.remove()
+//        roomDocListeners.removeValue(forKey: roomID)
+//    }
     
     @MainActor
-    func stopListenRoomDoc(roomID: String) {
-        roomDocListeners[roomID]?.remove()
-        roomDocListeners.removeValue(forKey: roomID)
+    func stopListenAllRoomDocs() {
+        for (_, listener) in roomDocListeners {
+            listener.remove()
+        }
+        roomDocListeners.removeAll()
     }
     
     @MainActor

@@ -351,8 +351,6 @@ extension ChatViewController {
         }
     }
     
-    
-    
     // 썸네일 생성(첫 프레임)
     func makeVideoThumbnailData(url: URL, maxPixel: CGFloat) throws -> Data {
         let asset = AVAsset(url: url)
@@ -364,8 +362,7 @@ extension ChatViewController {
         return scaled.jpegData(compressionQuality: 0.8) ?? Data()
     }
     
-    
-    
+
     fileprivate func previewCompressedVideo(_ url: URL) {
         let player = AVPlayer(url: url)
         let playerVC = AVPlayerViewController()
@@ -377,6 +374,18 @@ extension ChatViewController {
         }
         self.present(playerVC, animated: true) {
             player.play()
+        }
+    }
+    
+    private func formatDuration(_ seconds: Double) -> String {
+        let total = Int(seconds.rounded())
+        let h = total / 3600
+        let m = (total % 3600) / 60
+        let s = total % 60
+        if h > 0 {
+            return String(format: "%d:%02d:%02d", h, m, s)
+        } else {
+            return String(format: "%d:%02d", m, s)
         }
     }
 }

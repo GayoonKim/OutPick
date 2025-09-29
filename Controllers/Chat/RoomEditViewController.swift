@@ -314,7 +314,7 @@ private extension RoomEditViewController {
         self.view.addSubview(customNavigationBar)
         
         NSLayoutConstraint.activate([
-            customNavigationBar.topAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.topAnchor),
+            customNavigationBar.topAnchor.constraint(equalTo: self.view.topAnchor),
             customNavigationBar.leadingAnchor.constraint(equalTo: self.view.leadingAnchor),
             customNavigationBar.trailingAnchor.constraint(equalTo: self.view.trailingAnchor),
         ])

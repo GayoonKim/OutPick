@@ -38,6 +38,7 @@ struct ChatRoom: Codable {
     let createdAt: Date                 // 방 생성 시간
     var roomImagePath: String?           // Firestore Storage에 이미지 저장
     var lastMessageAt: Date?
+    var lastMessage: String?
     
     // 현재 방의 활성 공지(배너) 상태
     var activeAnnouncementID: String?       // 메시지 히스토리(.announcement) 문서 ID
@@ -53,6 +54,7 @@ struct ChatRoom: Codable {
         case createdAt
         case roomImagePath
         case lastMessageAt
+        case lastMessage
         case activeAnnouncementID
         case activeAnnouncement
         case announcementUpdatedAt

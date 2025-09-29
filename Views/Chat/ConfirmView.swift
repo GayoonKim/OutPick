@@ -135,6 +135,28 @@ final class ConfirmView: UIView {
                        onConfirm: onConfirm)
     }
     
+    /// 방 나가기 전용 프리셋
+    @discardableResult
+    static func presentLeave(in parent: UIView,
+                             title: String = "채팅을 종료하시겠어요?",
+                             message: String = "방장으로 종료하면 모든 채팅 내역 복구 불가능합니다.",
+                             onConfirm: @escaping () -> Void) -> ConfirmView {
+        let v = present(in: parent,
+                        message: message,
+                        negativeTitle: "취소",
+                        positiveTitle: "나가기",
+                        allowTapOutsideToCancel: true,
+                        style: .destructive,
+                        identifier: "LeaveConfirmView",
+                        onConfirm: onConfirm)
+        // 제목 포함 구성으로 업데이트
+        v.configure(title: title,
+                    message: message,
+                    negativeTitle: "취소",
+                    positiveTitle: "나가기")
+        return v
+    }
+    
     /// 공지 등록 전용 프리셋 (신규: 제목/설명 분리)
     @discardableResult
     static func presentAnnouncement(in parent: UIView,

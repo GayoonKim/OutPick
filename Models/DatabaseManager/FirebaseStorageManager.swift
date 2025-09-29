@@ -571,41 +571,58 @@ class FirebaseStorageManager {
 //    }
     
     // Storage에서 이미지 불러오기
-    func fetchImageFromStorage(image imagePath: String, location: ImageLocation/*, createdDate: Date*/) async throws -> UIImage {
-        
-        // 메모리 캐시 확인
-        if let cachedImage = KingfisherManager.shared.cache.retrieveImageInMemoryCache(forKey: imagePath) {
-            print("cachedImage in Memory: \(cachedImage)")
-            
-            return cachedImage
-        }
-        // 디스크 캐시 확인
-        if let cachedImage = try await KingfisherManager.shared.cache.retrieveImageInDiskCache(forKey: imagePath) {
-            print("cachedImage in Disk: \(cachedImage)")
-            
-            return cachedImage
-        }
-        
-//        let month = DateManager.shared.getMonthFromTimestamp(date: createdDate)
-        
-        return try await withCheckedThrowingContinuation { continuation in
-            let imageRef = storage.reference().child(imagePath)
-            imageRef.getData(maxSize: 1 * 1024 * 1024) { data, error in
-                if let error = error {
-                    
-                    print("\(imagePath): 이미지 불러오기 실패: \(error.localizedDescription)")
-                    continuation.resume(throwing: StorageError.FailedToFetchImage)
-                    
-                }
-                
-                if let data = data,
-                   let image = UIImage(data: data) {
-                    
-                    Task { try await KingfisherManager.shared.cache.store(image, forKey: imagePath) }
-                    continuation.resume(returning: image)
-                }
+//    func fetchImageFromStorage(image imagePath: String, location: ImageLocation/*, createdDate: Date*/) async throws -> UIImage {
+//        
+//        // 메모리 캐시 확인
+//        if let cachedImage = KingfisherManager.shared.cache.retrieveImageInMemoryCache(forKey: imagePath) {
+//            print("cachedImage in Memory: \(cachedImage)")
+//            
+//            return cachedImage
+//        }
+//        // 디스크 캐시 확인
+//        if let cachedImage = try await KingfisherManager.shared.cache.retrieveImageInDiskCache(forKey: imagePath) {
+//            print("cachedImage in Disk: \(cachedImage)")
+//            
+//            return cachedImage
+//        }
+//        
+////        let month = DateManager.shared.getMonthFromTimestamp(date: createdDate)
+//        
+//        return try await withCheckedThrowingContinuation { continuation in
+//            let imageRef = storage.reference().child(imagePath)
+//            imageRef.getData(maxSize: 1 * 1024 * 1024) { data, error in
+//                if let error = error {
+//                    
+//                    print("\(imagePath): 이미지 불러오기 실패: \(error.localizedDescription)")
+//                    continuation.resume(throwing: StorageError.FailedToFetchImage)
+//                    
+//                }
+//                
+//                if let data = data,
+//                   let image = UIImage(data: data) {
+//                    
+//                    Task { try await KingfisherManager.shared.cache.store(image, forKey: imagePath) }
+//                    continuation.resume(returning: image)
+//                }
+//            }
+//        }
+//    }
+    enum StorageImageError: Error { case invalidData }
+    func fetchImageFromStorage(image: String, location: ImageLocation) async throws -> UIImage {
+        let ref = storage.reference(withPath: image)
+
+        // 1) downloadURL()도 콜백 기반이라면 위 패턴으로 한 번만 안전하게 브리지
+        let url = try await withCheckedThrowingContinuation { (c: CheckedContinuation<URL, Error>) in
+            ref.downloadURL { url, err in
+                if let err = err { c.resume(throwing: err); return }
+                c.resume(returning: url!)
             }
         }
+
+        // 2) URLSession은 async/await 제공 → continuation 없이 안전
+        let (data, _) = try await URLSession.shared.data(from: url)
+        guard let image = UIImage(data: data) else { throw StorageImageError.invalidData }
+        return image
     }
     
     

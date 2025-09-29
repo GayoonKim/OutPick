@@ -13,6 +13,9 @@ class ChatRoomMediaCollectionViewCell: UICollectionViewCell {
     private var images: [UIImage] = []
     private var didAddHorizontalCollectionView = false
     
+    /// 탭/더보기/섬네일 선택 시 갤러리 오픈을 요청하는 콜백 (startIndex: 진입 위치)
+    var onOpenGallery: (() -> Void)?
+    
     private lazy var imageVideoButtonImageView: UIImageView = {
         let imageView = UIImageView()
         imageView.image = UIImage(systemName: "photo.on.rectangle.angled")
@@ -42,6 +45,7 @@ class ChatRoomMediaCollectionViewCell: UICollectionViewCell {
         let collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
         collectionView.translatesAutoresizingMaskIntoConstraints = false
         collectionView.showsHorizontalScrollIndicator = false
+        collectionView.isUserInteractionEnabled = true
         collectionView.dataSource = self
         collectionView.delegate = self
         collectionView.register(MediaSectionImagePreviewCell.self, forCellWithReuseIdentifier: MediaSectionImagePreviewCell.reuseIdentifier)
@@ -75,6 +79,11 @@ class ChatRoomMediaCollectionViewCell: UICollectionViewCell {
         imageVideoLabel.text = "사진/동영상"
         self.images = images
         
+        // 내부 미리보기 갱신
+        if didAddHorizontalCollectionView {
+            horizontalCollectionView.reloadData()
+        }
+        
         if !images.isEmpty {
             if !didAddHorizontalCollectionView {
                 self.contentView.addSubview(horizontalCollectionView)
@@ -89,6 +98,11 @@ class ChatRoomMediaCollectionViewCell: UICollectionViewCell {
                 didAddHorizontalCollectionView = true
             }
         }
+    }
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        onOpenGallery = nil
     }
     
     required init?(coder: NSCoder) {
@@ -114,8 +128,6 @@ extension ChatRoomMediaCollectionViewCell: UICollectionViewDataSource, UICollect
     }
     
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
-        if indexPath.item == self.images.count {
-            print("더 보기 버튼 탭")
-        }
+        onOpenGallery?()
     }
 }

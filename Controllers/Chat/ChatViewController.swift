@@ -347,7 +347,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         configureDataSource()
         
         setUpNotifications()
-        
         if isRoomSaving {
             LoadingIndicator.shared.start(on: self)
             chatUIView.isHidden = false
@@ -375,7 +374,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         guard let room = self.room else { return }
-        FirebaseManager.shared.stopListenRoomDoc(roomID: room.ID ?? "")
     }
     
     override func viewWillDisappear(_ animated: Bool) {
@@ -423,14 +421,14 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         super.viewDidDisappear(animated)
     }
     
-    override func viewDidAppear(_ animated: Bool) {
-        super.viewDidAppear(animated)
-        self.attachInteractiveDismissGesture()
-        
-        if let room = self.room {
-            ChatViewController.currentRoomID = room.ID
-        } // ✅ 현재 방 ID 저장
-    }
+//    override func viewDidAppear(_ animated: Bool) {
+//        super.viewDidAppear(animated)
+//        self.attachInteractiveDismissGesture()
+//
+//        if let room = self.room {
+//            ChatViewController.currentRoomID = room.ID
+//        } // ✅ 현재 방 ID 저장
+//    }
     
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
@@ -445,21 +443,45 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             defer { LoadingIndicator.shared.stop() }
             
             guard let room = self.room else { return }
-            guard room.participants.contains(LoginManager.shared.getUserEmail) else { return }
+            let isParticipant = room.participants.contains(LoginManager.shared.getUserEmail)
+            // 🔎 Preview mode for non-participants: fetch & render messages read-only
+            if !isParticipant {
+                do {
+                    // 서버에서 최신 메시지 페이징으로 불러오기 (로컬 DB에 저장하지 않음)
+                    let previewMessages = try await FirebaseManager.shared.fetchMessagesPaged(for: room, pageSize: 100, reset: true)
+                    addMessages(previewMessages, updateType: .initial)
+
+                    // 이미지/비디오 썸네일 프리페치 (셀 타깃 리로드 포함)
+                    await self.prefetchThumbnails(for: previewMessages, maxConcurrent: 4)
+                    await self.prefetchVideoAssets(for: previewMessages, maxConcurrent: 4)
+
+                    // 실시간 구독/읽음 처리 없음 (미참여 사용자 미리보기)
+                    self.isInitialLoading = false
+                } catch {
+                    print("❌ 미참여자 미리보기 로드 실패:", error)
+                }
+                return
+            }
             
             do {
                 // 1. GRDB 로드
-                let localMessages = try await GRDBManager.shared.fetchRecentMessages(inRoom: room.ID ?? "", limit: 200)
+                let roomID = room.ID ?? ""
+                let (localMessages, metas, vmetas) = try await Task.detached(priority: .utility) {
+                    let msgs  = try await GRDBManager.shared.fetchRecentMessages(inRoom: roomID, limit: 200)
+                    let metas = try await GRDBManager.shared.fetchImageIndex(inRoom: roomID, forMessageIDs: msgs.map { $0.ID })
+                    let vmetas = try await GRDBManager.shared.fetchVideoIndex(inRoom: roomID, forMessageIDs: msgs.map { $0.ID })
+                    return (msgs, metas, vmetas)
+                }.value
                 self.lastReadMessageID = localMessages.last?.ID
                 
-                let metas = try await GRDBManager.shared.fetchImageIndex(inRoom: room.ID ?? "", forMessageIDs: localMessages.map { $0.ID })
+
                 let grouped = Dictionary(grouping: metas, by: { $0.messageID })
                 
                 // grouped 메타를 기반으로 썸네일 캐싱
                 for (messageID, attachments) in grouped {
                     for att in attachments {
                         let img = try? await FirebaseStorageManager.shared.fetchImageFromStorage(
-                            image: att.hash ?? "",
+                            image: att.thumbURL ?? "",
                             location: .RoomImage
                         )
                         if let img = img {
@@ -471,10 +493,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                     }
                 }
                 // --- Video index: preload thumbnails & warm-up URLs for local messages ---
-                let vmetas = try await GRDBManager.shared.fetchVideoIndex(inRoom: room.ID ?? "", forMessageIDs: localMessages.map { $0.ID })
                 let vgrouped = Dictionary(grouping: vmetas, by: { $0.messageID })
                 for (messageID, vAtts) in vgrouped {
                     for v in vAtts {
+                        
+                        print(#function, "🎬 비디오 로드:", v)
                         // 1) 썸네일 프리페치 (동영상도 리스트용으로 이미지 캐시/표시)
                         if let thumbPath = v.thumbURL, !thumbPath.isEmpty {
                             let key = v.hash ?? thumbPath
@@ -485,11 +508,13 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
                                 if await KingFisherCacheManager.shared.isCached(key) {
                                     if let img = await KingFisherCacheManager.shared.loadImage(named: key) {
+                                        print(#function, "🎬 비디오 썸네일 캐시命中:", key)
                                         await MainActor.run { self.messageImages[messageID, default: []].append(img) }
                                     }
                                 } else {
                                     let img = try await FirebaseStorageManager.shared.fetchImageFromStorage(image: thumbPath, location: .RoomImage)
                                     KingFisherCacheManager.shared.storeImage(img, forKey: key)
+                                    print(#function, "🎬 비디오 썸네일 캐시:", key)
                                     await MainActor.run { self.messageImages[messageID, default: []].append(img) }
                                 }
                             } catch {
@@ -502,7 +527,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                         }
                     }
                 }
-                
+
                 addMessages(localMessages, updateType: .initial)
                 
                 // 2. 삭제 상태 동기화
@@ -510,16 +535,18 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 
                 // 3. Firebase 전체 메시지 로드
                 let serverMessages = try await FirebaseManager.shared.fetchMessagesPaged(for: room, pageSize: 300, reset: true)
-                try await GRDBManager.shared.saveChatMessages(serverMessages)
+                try await Task.detached(priority: .utility) {
+                    try await GRDBManager.shared.saveChatMessages(serverMessages)
+                }.value
                 
                 addMessages(serverMessages, updateType: .newer)
                 
                 // 백그라운드 프리페치 시작 (이미지 썸네일 + 비디오 썸네일/URL warm-up)
-                Task.detached { [weak self] in
-                    guard let self = self else { return }
-                    await self.prefetchThumbnails(for: serverMessages, maxConcurrent: 4)
-                    await self.prefetchVideoAssets(for: serverMessages, maxConcurrent: 4)
-                }
+                
+                
+                await self.prefetchThumbnails(for: serverMessages, maxConcurrent: 4)
+                await self.prefetchVideoAssets(for: serverMessages, maxConcurrent: 4)
+                
                 
                 isUserInCurrentRoom = true
                 bindMessagePublishers()
@@ -656,12 +683,14 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         
         print(#function, "✅ loading older 진행")
         do {
+            let roomID = room.ID ?? ""
+            
             // 1. GRDB에서 먼저 최대 100개
-            let local = try await GRDBManager.shared.fetchOlderMessages(
-                inRoom: room.ID ?? "",
-                before: messageID ?? "",
-                limit: 100
-            )
+            let local = try await Task.detached(priority: .utility) {
+                try await GRDBManager.shared.fetchOlderMessages(
+                    inRoom: roomID, before: messageID ?? "", limit: 100
+                )
+            }.value
             var loadedMessages = local
             
             // 2. 부족분은 서버에서 채우기
@@ -676,7 +705,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 if server.isEmpty {
                     hasMoreOlder = false   // 더 이상 이전 메시지 없음
                 } else {
-                    try await GRDBManager.shared.saveChatMessages(server)
+                    try await Task.detached(priority: .utility) {
+                        try await GRDBManager.shared.saveChatMessages(server)
+                    }.value
                     loadedMessages.append(contentsOf: server)
                 }
             }
@@ -722,7 +753,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 // No new messages from server; do nothing.
                 return
             } else {
-                try await GRDBManager.shared.saveChatMessages(server)
+                try await Task.detached(priority: .utility) {
+                    try await GRDBManager.shared.saveChatMessages(server)
+                }.value
                 // Chunk messages into groups of 20 for performance
                 let chunkSize = 20
                 let total = server.count
@@ -1342,6 +1375,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     @objc private func handleRoomSaveCompleted(notification: Notification) {
         guard let savedRoom = notification.userInfo?["room"] as? ChatRoom else { return }
         self.room = savedRoom
+        Task { FirebaseManager.shared.startListenRoomDoc(roomID: savedRoom.ID ?? "") }
         
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
@@ -1351,8 +1385,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             
             // 이미 연결된 경우에는 room 생성과 join만 수행
             if SocketIOManager.shared.isConnected {
-                SocketIOManager.shared.createRoom(savedRoom.roomName)
-                SocketIOManager.shared.joinRoom(savedRoom.roomName)
+                SocketIOManager.shared.createRoom(savedRoom.ID ?? "")
+                SocketIOManager.shared.joinRoom(savedRoom.ID ?? "")
             }
         }
     }
@@ -1604,7 +1638,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 chatUIView.isHidden = false
                 joinRoomBtn.isHidden = true
                 self.bindRoomChangePublisher()
-                FirebaseManager.shared.startListenRoomDoc(roomID: room.ID ?? "")
+//                FirebaseManager.shared.startListenRoomDoc(roomID: room.ID ?? "")
                 runInitialProfileFetchOnce()
                 self.setupAnnouncementBannerIfNeeded()
                 self.updateAnnouncementBanner(with: room.activeAnnouncement)
@@ -1710,39 +1744,70 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     //MARK: 커스텀 내비게이션 바
     @MainActor
     @objc private func backButtonTapped() {
-        
-        let transition = CATransition()
-        transition.duration = 0.3
-        transition.type = .push
-        transition.subtype = .fromLeft // 왼쪽에서 오른쪽으로 이동 (pop 느낌)
-        transition.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-        
-        self.view.window?.layer.add(transition, forKey: kCATransition)
-        
-        if isRoomSaving {
-            if let previous = self.presentingViewController {
-                if previous is RoomCreateViewController {
-                    let storyboard = UIStoryboard(name: "Main", bundle: nil)
-                    let chatListVC = storyboard.instantiateViewController(withIdentifier: "chatListVC")
-                    chatListVC.modalPresentationStyle = .fullScreen
-                    self.present(chatListVC, animated: false)
+        // ✅ 표준 네비게이션으로만 되돌아가기 (root 교체 금지)
+        // 1) 내비게이션 스택 우선
+        if let nav = self.navigationController {
+            // 바로 아래가 RoomCreateViewController이면, 그 이전 화면(또는 루트)로 복귀
+            if let idx = nav.viewControllers.firstIndex(of: self), idx > 0, nav.viewControllers[idx-1] is RoomCreateViewController {
+                if idx >= 2 {
+                    let target = nav.viewControllers[idx-2]
+                    nav.popToViewController(target, animated: true)
+                } else {
+                    nav.popToRootViewController(animated: true)
                 }
+            } else {
+                nav.popViewController(animated: true)
             }
+            return
         }
-        else {
-            // 일반적인 경우 이전 화면으로 이동
-            //            ChatModalTransitionManager.dismiss(from: self)
+
+        // 2) 모달 표시된 경우에는 단순 dismiss
+        if self.presentingViewController != nil {
             self.dismiss(animated: true)
+            return
         }
+
+        // 3) 폴백: 탭바 아래의 내비게이션이 있으면 루트로 복귀
+        if let tab = self.view.window?.rootViewController as? UITabBarController,
+           let nav = tab.selectedViewController as? UINavigationController {
+            nav.popToRootViewController(animated: true)
+            return
+        }
+    }
+
+    @MainActor
+    private func pruneRoomCreateFromNavStackIfNeeded() {
+        guard let nav = self.navigationController,
+              let idx = nav.viewControllers.firstIndex(of: self),
+              idx > 0, nav.viewControllers[idx-1] is RoomCreateViewController else { return }
+        var vcs = nav.viewControllers
+        vcs.remove(at: idx-1)
+        nav.setViewControllers(vcs, animated: false)
+    }
+
+    @MainActor
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        self.attachInteractiveDismissGesture()
+        
+        if let room = self.room {
+            ChatViewController.currentRoomID = room.ID
+        } // ✅ 현재 방 ID 저장
+        pruneRoomCreateFromNavStackIfNeeded()
     }
     
     @objc private func settingButtonTapped() {
         Task { @MainActor in
             guard let room = self.room else { return }
-            let profiles = try GRDBManager.shared.fetchUserProfiles(inRoom: room.ID ?? "")
+            let roomID = room.ID ?? ""
+            
+            let (profiles, imageNames): ([UserProfile], [String]) = try await Task.detached(priority: .utility) {
+                let p = try GRDBManager.shared.fetchUserProfiles(inRoom: roomID)
+                let names = try GRDBManager.shared.fetchImageNames(inRoom: roomID)
+                return (p, names)
+            }.value
             
             var images = [UIImage]()
-            let imageNames = try GRDBManager.shared.fetchImageNames(inRoom: room.ID ?? "")
             for imageName in imageNames {
                 if let image = await KingFisherCacheManager.shared.loadImage(named: imageName) {
                     images.append(image)
@@ -1891,6 +1956,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         Task {
             do {
                 guard let room = self.room else { return }
+                let roomID = room.ID ?? ""
                 
                 filteredMessages = try await GRDBManager.shared.fetchMessages(in: room.ID ?? "", containing: keyword)
                 currentFilteredMessageIndex = filteredMessages.isEmpty == true ? nil : filteredMessages.count
@@ -2163,6 +2229,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         guard gesture.state == .began else { return }
         let location = gesture.location(in: chatMessageCollectionView)
         if let indexPath = chatMessageCollectionView.indexPathForItem(at: location) {
+            guard let room = self.room,
+                  room.participants.contains(LoginManager.shared.getUserEmail) else { return }
             showCustomMenu(at: indexPath)
         }
     }
@@ -2776,8 +2844,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             .backgroundDecode,
             .transition(.none)
         ]
-        
-        
+
         // 4) 프리패치: 근처 → 나머지
         Task {
             let nearURLs = await resolveURLs(for: nearPaths, concurrent: 6)

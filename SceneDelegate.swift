@@ -147,6 +147,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                                 guard let profile = LoginManager.shared.currentUserProfile else { return }
                                 
                                 let joinedRooms = profile.joinedRooms
+                                Task .detached { await FirebaseManager.shared.startListenRoomDocs(roomIDs: joinedRooms) }
                                 for roomID in joinedRooms {
                                     SocketIOManager.shared.joinRoom(roomID)
                                     BannerManager.shared.startListening(for: roomID)

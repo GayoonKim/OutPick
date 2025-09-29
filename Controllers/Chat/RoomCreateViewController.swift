@@ -65,6 +65,7 @@ class RoomCreateViewController: UIViewController, ChatModalAnimatable {
         super.viewDidLoad()
 //        self.attachInteractiveDismissGesture()
         
+        
         setupCustomNavigationBar()
         setupTextView(roomNameTextView)
         setupTextView(roomDescriptionTextView)
@@ -122,16 +123,23 @@ class RoomCreateViewController: UIViewController, ChatModalAnimatable {
                 let ref = Firestore.firestore().collection("Rooms").document()
                 let room = ChatRoom(ID: ref.documentID, roomName: self.roomNameTextView.text, roomDescription: self.roomDescriptionTextView.text, participants: [LoginManager.shared.getUserEmail], creatorID: LoginManager.shared.getUserEmail, createdAt: Date(), roomImagePath: nil)
 
+                self.saveRoomInfo(room: room)
+                
                 let storyboard = UIStoryboard(name: "Main", bundle: nil)
                 guard let chatRoomVC = storyboard.instantiateViewController(withIdentifier: "chatRoomVC") as? ChatViewController else { return }
                 chatRoomVC.room = room
                 chatRoomVC.isRoomSaving = true
                 chatRoomVC.modalPresentationStyle = .fullScreen
 
-                ChatModalTransitionManager.present(chatRoomVC, from: self)
-
-                self.saveRoomInfo(room: room)
+//                ChatModalTransitionManager.present(chatRoomVC, from: self)
                 
+                guard let presenter = presentingViewController else { return }
+                dismiss(animated: false) {
+                    
+                    chatRoomVC.modalPresentationStyle = .fullScreen
+                    presenter.present(chatRoomVC, animated: true)
+                }
+
             } catch {
                     LoadingIndicator.shared.stop()
                     AlertManager.showAlertNoHandler(title: "오류", message: "방 생성 중 오류가 발생했습니다.", viewController: self)
@@ -402,6 +410,7 @@ extension RoomCreateViewController: UIImagePickerControllerDelegate & UINavigati
         alert.addAction(UIAlertAction(title: "계속 작성하기", style: .default, handler: nil))
         alert.addAction(UIAlertAction(title: "개설 취소하기", style: .destructive, handler:  { _ in
             ChatModalTransitionManager.dismiss(from: self)
+//            self.navigationController?.popViewController(animated: false)
         }))
         
         self.present(alert, animated: true, completion: nil)

@@ -62,9 +62,6 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        if let profile = LoginManager.shared.currentUserProfile {
-            print(#function, "currentUserProfile: \(profile)")
-        }
     }
 
     private func bindPublishers() {
@@ -161,12 +158,12 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
         chatRoomCreateVC.modalPresentationStyle = .fullScreen
         
         ChatModalTransitionManager.present(chatRoomCreateVC, from: self)
-//        chatRoomCreateVC.hidesBottomBarWhenPushed = true
-//        self.navigationController?.pushViewController(chatRoomCreateVC, animated: true)
     }
     
     @objc private func searchBtnTapped() {
-        print("검색 버튼 탭!")
+        let searchVC = RoomSearchViewController()
+        searchVC.modalPresentationStyle = .fullScreen
+        ChatModalTransitionManager.present(searchVC, from: self)
     }
 }
 

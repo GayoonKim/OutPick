@@ -269,6 +269,17 @@ class CustomNavigationBarView: UIView {
         )
     }
     
+    func configureForMyPage(target: AnyObject, onSetting: Selector) {
+        titleLabel.text = "마이페이지"
+        
+        
+        settingBtn.removeTarget(nil, action: nil, for: .allEvents)
+        
+        settingBtn.addTarget((target), action: onSetting, for: .touchUpInside)
+        
+        configure(leftViews: [], centerViews: [titleLabel], rightViews: [settingBtn])
+    }
+    
     func configureForRoomList(target: AnyObject, onSearch: Selector, onCreate: Selector) {
         titleLabel.text = "OutPick"
         

@@ -361,7 +361,7 @@ class SocketIOManager {
 
             if ok || duplicate {
                 Task {
-                    await FirebaseManager.shared.updateRoomLastMessageAt(roomID: room.ID ?? "", date: message.sentAt)
+                    await FirebaseManager.shared.updateRoomLastMessage(roomID: room.ID ?? "", date: message.sentAt, msg: message.msg ?? "")
                 }
             } else {
                 // Failure: mark the same message as failed and re-publish for UI update
@@ -465,7 +465,7 @@ class SocketIOManager {
 
             if ok || duplicate {
                 Task {
-                    await FirebaseManager.shared.updateRoomLastMessageAt(roomID: roomID, date: now)
+                    await FirebaseManager.shared.updateRoomLastMessage(roomID: roomID, date: now, msg: "사진 \(attachments.count)장")
                 }
             }
             DispatchQueue.main.async {
@@ -690,9 +690,15 @@ class SocketIOManager {
                 // 서버에서 { ok: true } 형태로 응답한다고 가정
                 if let first = items.first as? [String: Any],
                    let ok = first["ok"] as? Bool, ok == true {
+                    Task {
+                        await FirebaseManager.shared.updateRoomLastMessage(roomID: roomID, date: Date(), msg: "동영상")
+                    }
                     completion?(.success(()))
                 } else if items.isEmpty {
                     // 응답이 없어도 성공 처리(서버 ACK 미사용 환경)
+                    Task {
+                        await FirebaseManager.shared.updateRoomLastMessage(roomID: roomID, date: Date(), msg: "동영상")
+                    }
                     completion?(.success(()))
                 } else {
                     // ACK 실패 → 로컬 실패 메시지 주입

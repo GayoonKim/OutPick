@@ -53,7 +53,7 @@ class ParticipantListCell: UICollectionViewCell {
         fatalError("init(coder:) has not been implemented")
     }
     
-    func configureCell(userProfile: UserProfile) {
+    func configureCell(userProfile: LocalUser) {
         nickNameLabel.text = userProfile.nickname
     }
 }

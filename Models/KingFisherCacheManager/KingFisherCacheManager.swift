@@ -28,10 +28,12 @@ final class KingFisherCacheManager {
     /// Kingfisher 캐시에서 이미지 비동기 로드
     func loadImage(named name: String) async -> UIImage? {
         if let image = KingfisherManager.shared.cache.retrieveImageInMemoryCache(forKey: name) {
+            print(#function, "hit memory cache", image)
             return image
         }
         
         if let image = try? await KingfisherManager.shared.cache.retrieveImageInDiskCache(forKey: name) {
+            print(#function, "hit disk cache", image)
             return image
         }
 

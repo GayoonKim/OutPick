@@ -10,7 +10,7 @@ import UIKit
 class ParticipantsSectionParticipantCell: UICollectionViewCell {
     static let reuseIdentifier = "ParticipantsSectionParticipantCell"
     
-    private var userProfiles: [UserProfile] = []
+    private var userProfiles: [LocalUser] = []
     
     private lazy var participantLabel: UILabel = {
         let label = UILabel()
@@ -73,7 +73,7 @@ class ParticipantsSectionParticipantCell: UICollectionViewCell {
         fatalError("init(coder:) has not been implemented")
     }
     
-    func configureCell(_ profiles: [UserProfile]) {
+    func configureCell(_ profiles: [LocalUser]) {
         print(#function, "호출 완료: ", profiles.map { $0.nickname })
         self.userProfiles = profiles
         participantLabel.text = "대화상대 \(profiles.count)"
@@ -101,7 +101,7 @@ extension ParticipantsSectionParticipantCell: UICollectionViewDataSource, UIColl
 //        if indexPath.item < self.userProfiles.count {
 //
 //        }
-        print("cellForItemAt:", indexPath, userProfiles[indexPath.item].nickname ?? "")
+        print("cellForItemAt:", indexPath, userProfiles[indexPath.item].nickname)
         let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ParticipantListCell.reuseIdentifier, for: indexPath) as! ParticipantListCell
         cell.configureCell(userProfile: self.userProfiles[indexPath.item])
         

@@ -81,31 +81,6 @@ struct Attachment: Codable, Hashable {
     }
 }
 
-// MARK: - Attachment helpers for Video
-extension Attachment {
-    /// VideoMetaPayload -> Attachment(.video) 변환
-    static func fromVideoMeta(_ v: VideoMetaPayload, index: Int = 0) -> Attachment {
-        // 해시: messageID + index 조합으로 안정적 키 구성(충돌 최소화)
-        let stableHash = "\(v.messageID)_v\(index)"
-        return Attachment(
-            type: .video,
-            index: index,
-            pathThumb: v.thumbnailPath,
-            pathOriginal: v.storagePath,
-            width: v.width,
-            height: v.height,
-            bytesOriginal: Int(v.sizeBytes),
-            hash: stableHash,
-            blurhash: nil
-        )
-    }
-
-    /// 복수 개 지원(필요 시)
-    static func fromVideoMetas(_ metas: [VideoMetaPayload]) -> [Attachment] {
-        return metas.enumerated().map { fromVideoMeta($0.element, index: $0.offset) }
-    }
-}
-
 // 채팅 메시지 정보
 struct ChatMessage: SocketData, Codable {
     let ID: String
@@ -241,53 +216,6 @@ struct ChatMessage: SocketData, Codable {
 }
 
 extension ChatMessage: Hashable {}
-
-// MARK: - ChatMessage video factory
-extension ChatMessage {
-    /// 단일 비디오 메타를 Attachment로 변환하여 곧바로 ChatMessage를 생성
-    static func makeVideoMessage(roomID: String,
-                                 senderID: String,
-                                 senderNickname: String,
-                                 clientMessageID: String,
-                                 meta: VideoMetaPayload,
-                                 sentAt: Date = Date()) -> ChatMessage {
-        let att = Attachment.fromVideoMeta(meta, index: 0)
-        return ChatMessage(
-            ID: clientMessageID,
-            roomID: roomID,
-            senderID: senderID,
-            senderNickname: senderNickname,
-            msg: "", // 텍스트 없음
-            sentAt: sentAt,
-            attachments: [att],
-            replyPreview: nil,
-            isFailed: false,
-            isDeleted: false
-        )
-    }
-
-    /// 복수 비디오 메타로 ChatMessage 생성(드문 케이스 대비)
-    static func makeVideoMessage(roomID: String,
-                                 senderID: String,
-                                 senderNickname: String,
-                                 clientMessageID: String,
-                                 metas: [VideoMetaPayload],
-                                 sentAt: Date = Date()) -> ChatMessage {
-        let atts = Attachment.fromVideoMetas(metas)
-        return ChatMessage(
-            ID: clientMessageID,
-            roomID: roomID,
-            senderID: senderID,
-            senderNickname: senderNickname,
-            msg: "",
-            sentAt: sentAt,
-            attachments: atts,
-            replyPreview: nil,
-            isFailed: false,
-            isDeleted: false
-        )
-    }
-}
 
 extension ChatMessage {
     static func from(_ dict: [String: Any]) -> ChatMessage? {

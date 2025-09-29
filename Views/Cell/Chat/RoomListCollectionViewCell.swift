@@ -88,7 +88,7 @@ class RoomListCollectionViewCell: UICollectionViewCell {
     }
     
     func configure(room: ChatRoom, messages: [ChatMessage]) {
-        roomImageView.layer.cornerRadius = 15
+        roomImageView.layer.cornerRadius = 8
         roomImageView.clipsToBounds = true
 
         roomImageView.image = UIImage(named: "Default_Profile")
@@ -121,6 +121,10 @@ class RoomListCollectionViewCell: UICollectionViewCell {
                 previewStackView.addArrangedSubview(preview)
             }
         }
+    }
+    
+    func configureJoined(room: ChatRoom, message: ChatMessage) {
+        
     }
 }
 

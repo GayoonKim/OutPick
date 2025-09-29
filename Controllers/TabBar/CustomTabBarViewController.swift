@@ -39,10 +39,15 @@ class CustomTabBarViewController: UIViewController {
             nav.isNavigationBarHidden = true
             return nav
             
+        case 2:
+            let joinedListVC = JoinedRoomsViewController()
+            let nav = UINavigationController(rootViewController: joinedListVC)
+            nav.isNavigationBarHidden = true
+            return nav
         case 3:
             // Settings tab
-            let vc = storyboard.instantiateViewController(withIdentifier: "settingsVC")
-            let nav = UINavigationController(rootViewController: vc)
+            let myPageVC = MyPageViewController()
+            let nav = UINavigationController(rootViewController: myPageVC)
             nav.isNavigationBarHidden = true
             return nav
             

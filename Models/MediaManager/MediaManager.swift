@@ -219,7 +219,7 @@ class MediaManager {
                     }
                     
                     continuation.resume(returning: UIImage(cgImage: compressed))
-                    continuation.resume(returning: image)
+//                    continuation.resume(returning: image)
                 })
             }
         }
