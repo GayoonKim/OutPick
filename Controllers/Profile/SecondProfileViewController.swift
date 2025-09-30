@@ -254,16 +254,17 @@ class SecondProfileViewController: UIViewController {
                     }
                 }
                 
-                
                 // 4) 백그라운드 저장들(동시에 진행)
                 async let saveProfileTask: () = FirebaseManager.shared.saveUserProfileToFirestore(email: email)
                 
                 if !isDefaultProfileImage, let pair = self.profileImage {
                     do {
-                        let (thumbPath, oriPath) = try await FirebaseStorageManager.shared.uploadAndSaveProfile(sha: pair.fileBaseName, uid: LoginManager.shared.getUserEmail, type: "profiles", thumbData: pair.thumbData, originalFileURL: pair.originalFileURL)
+                        let (thumbPath, oriPath) = try await FirebaseStorageManager.shared.uploadAndSave(sha: pair.fileBaseName, uid: LoginManager.shared.getUserEmail, type: .ProfileImage, thumbData: pair.thumbData, originalFileURL: pair.originalFileURL)
                         // 로컬 프로필/세션 갱신
                         self.userProfile.thumbPath = thumbPath
                         self.userProfile.originalPath = oriPath
+                        
+                        if let image = UIImage(data: pair.thumbData) { KingFisherCacheManager.shared.storeImage(image, forKey: thumbPath) }
                     } catch {
                         // 업로드 실패는 치명적이지 않으므로 로그만 남기고, 추후 재시도 큐에서 처리 가능
                         print("아바타 업로드 실패: \(error)")

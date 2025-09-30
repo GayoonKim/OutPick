@@ -522,7 +522,7 @@ class SearchResultRoomCell: UICollectionViewCell {
             lastMessageTimeLabel.text = ""
         }
 
-        if let path = room.roomImagePath {
+        if let path = room.thumbPath {
             let ref = Storage.storage().reference(withPath: path)
             ref.downloadURL { url, _ in
                 if let url = url {

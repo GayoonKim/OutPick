@@ -17,38 +17,12 @@ import Firebase
 import FirebaseStorage
 import FirebaseFirestore
 
-// Lightweight async semaphore to cap concurrent uploads (permit-based, bug-free)
-actor AsyncSemaphore {
-    private var permits: Int
-    private var waiters: [CheckedContinuation<Void, Never>] = []
-    init(_ max: Int) { self.permits = max }
-    func acquire() async {
-        if permits > 0 {
-            permits -= 1
-            return
-        }
-        await withCheckedContinuation { cont in
-            waiters.append(cont)
-        }
-        // resumed: a permit was assigned by release(); nothing to change here.
-    }
-    func release() {
-        if !waiters.isEmpty {
-            let cont = waiters.removeFirst()
-            cont.resume()
-        } else {
-            permits += 1
-        }
-    }
-}
-
 class FirebaseStorageManager {
     
     static let shared = FirebaseStorageManager()
     
     // Firestore 인스턴스
     let db = Firestore.firestore()
-    
     // Storage 인스턴스
     let storage = Storage.storage()
 
@@ -58,146 +32,21 @@ class FirebaseStorageManager {
     /// Serialize big putData fallbacks to reduce peak memory usage
     private let dataFallbackLimiter = AsyncSemaphore(1)
 
-    // MARK: - Retry helpers
-    private func shouldRetry(_ error: Error) -> Bool {
-        let ns = error as NSError
-        if ns.domain == "FIRStorageErrorDomain" {
-            // -13000 unknown, -13040 retry limit exceeded, -13030 cancelled
-            switch ns.code { case -13000, -13040, -13030: return true; default: break }
-        }
-        if ns.domain == NSURLErrorDomain {
-            return [-999, -1001, -1005, -1009].contains(ns.code)
-        }
-        if let underlying = (ns.userInfo[NSUnderlyingErrorKey] as? NSError), underlying.domain == NSURLErrorDomain {
-            return [-999, -1001, -1005, -1009].contains(underlying.code)
-        }
-        return false
-    }
-
-    /// Optionally allow tuning the putData fallback limit at runtime.
-    /// Clamp to a sane range 8MB...64MB. Call on a serial context if mutating often.
-    public func setDataFallbackLimitMB(_ mb: Int) {
-        // Clamp to a sane range 8MB...64MB
-        let clamped = max(8, min(mb, 64))
-        self.dataFallbackMaxBytes = Int64(clamped) * 1024 * 1024
-    }
-
-    @discardableResult
-    private func uploadWithRetry(data: Data,
-                                 to path: String,
-                                 contentType: String,
-                                 cacheControl: String? = nil,
-                                 retries: Int = 2,
-                                 backoff: Double = 0.6,
-                                 progress: ((Int64, Int64) -> Void)? = nil) async throws -> String {
-        var attempt = 0
-        var delay = backoff
-        while true {
-            do {
-                return try await upload(data: data, to: path, contentType: contentType, cacheControl: cacheControl, progress: progress)
-            } catch {
-                if attempt < retries, shouldRetry(error) {
-                    let ns = error as NSError
-                    print("↻ retry upload(data) (\(path)) attempt=\(attempt+1) code=\(ns.code)")
-                    try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-                    attempt += 1
-                    delay *= 2
-                    continue
-                }
-                throw error
-            }
-        }
-    }
-
-    @discardableResult
-    private func uploadFileWithRetry(from fileURL: URL,
-                                     to path: String,
-                                     contentType: String,
-                                     cacheControl: String? = nil,
-                                     retries: Int = 2,
-                                     backoff: Double = 0.6,
-                                     progress: ((Int64, Int64) -> Void)? = nil) async throws -> String {
-        var attempt = 0
-        var delay = backoff
-        while true {
-            do {
-                return try await uploadFile(from: fileURL, to: path, contentType: contentType, cacheControl: cacheControl, progress: progress)
-            } catch {
-                if attempt < retries, shouldRetry(error) {
-                    let ns = error as NSError
-                    print("↻ retry uploadFile (\(path)) attempt=\(attempt+1) code=\(ns.code)")
-                    try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-                    attempt += 1
-                    delay *= 2
-                    continue
-                }
-                throw error
-            }
-        }
-    }
-
-    // MARK: - Profile Avatar (Option A: versioned path + long immutable cache)
-
-    /// Build a version string. If a hint is provided, use it; otherwise current epoch seconds.
-    private func makeAvatarVersion(_ hint: String?) -> String {
-        if let h = hint, !h.isEmpty { return h }
-        return String(Int(Date().timeIntervalSince1970))
-    }
-
-    /// Upload profile avatar (thumbnail + original) to versioned Storage paths with long immutable cache.
-    /// Versioned path example:
-    ///   avatars/<uid>/v<version>_thumb.jpg
-    ///   avatars/<uid>/v<version>.jpg
-    /// Returns the Storage paths and the resolved version string.
-    @discardableResult
+    // 채팅방 및 프로필 이미지 업로드
     func uploadImage(
         sha: String,
         uid: String,
-        type: String,
+        type: ImageLocation,
         thumbData: Data,
         originalFileURL: URL,
         contentType: String = "image/jpeg"
     ) async throws -> (avatarThumbPath: String, avatarPath: String) {
-//        let base = "\(type)/\(uid)/v\(version)"
-        var base = ""
-        switch type {
-        case "profiles":
-            base = "profiles/"
-        case "roomImages":
-            base = "roomImages/"
-        default:
-            fatalError("Unsupported type: \(type)")
-        }
         
-        let thumbPath = "\(base)/\(uid)/thumb/\(sha).jpg"
-        let originalPath = "\(base)/\(uid)/original/\(sha).jpg"
+        let thumbPath = "\(type.location)/\(uid)/thumb/\(sha).jpg"
+        let originalPath = "\(type.location)/\(uid)/original/\(sha).jpg"
 
         // Cache-Control: 1 year + immutable (A안)
         let cc = "public, max-age=31536000, immutable"
-
-        // Aggregate progress over thumb + original
-//        let progressQueue = DispatchQueue(label: "firebase.avatar.upload.aggregate")
-//        var thumbCompleted: Int64 = 0
-//        var origCompleted: Int64 = 0
-//        var thumbTotal: Int64 = Int64(thumbData.count)
-//        var origTotal: Int64 = fileSize(at: originalFileURL) ?? 0
-//        if thumbTotal + origTotal > 0 { onProgress?(0.0) }
-//
-//        func report(_ isThumb: Bool, _ completed: Int64, _ total: Int64) {
-//            progressQueue.async {
-//                if isThumb {
-//                    thumbCompleted = completed
-//                    if total > 0 { thumbTotal = total }
-//                } else {
-//                    origCompleted = completed
-//                    if total > 0 { origTotal = total }
-//                }
-//                let totalAll = thumbTotal + origTotal
-//                if totalAll > 0 {
-//                    onProgress?(Double(thumbCompleted + origCompleted) / Double(totalAll))
-//                }
-//            }
-//        }
 
         // Upload both in parallel with fallback for original
         return try await withThrowingTaskGroup(of: (String, Bool).self, returning: (String, String).self) { group in
@@ -255,13 +104,11 @@ class FirebaseStorageManager {
         }
     }
 
-    /// Convenience: Upload avatar with A안, then save the new paths to Users/{uid}.
-    /// Fields: avatarPath, avatarThumbPath, avatarUpdatedAt
-    @discardableResult
-    func uploadAndSaveProfile(
+    /// Convenience: Upload avatar, then save the new paths to Users/{uid}.
+    func uploadAndSave(
         sha: String,
         uid: String,
-        type: String,
+        type: ImageLocation,
         thumbData: Data,
         originalFileURL: URL,
         versionHint: String? = nil,
@@ -276,92 +123,15 @@ class FirebaseStorageManager {
             contentType: contentType
         )
 
-        try await db.collection("Users").document(uid).setData([
+        try await db.collection(type.location).document(uid).setData([
             "thumbPath": originalPath,
             "originalPath": thumbPath
         ], merge: true)
 
         return (thumbPath, originalPath)
     }
-    
-    // MARK: - Helper: File Size
-    private func fileSize(at url: URL) -> Int64? {
-        var isDir: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), !isDir.boolValue else { return nil }
-        if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
-           let size = attrs[.size] as? NSNumber {
-            return size.int64Value
-        }
-        return nil
-    }
-
-    // MARK: - Generalized upload helpers
-    /// Upload arbitrary Data to a Storage path with metadata.
-    /// - Returns: the Storage path (same as `to`)
-    @discardableResult
-    func upload(data: Data,
-                to path: String,
-                contentType: String,
-                cacheControl: String? = nil,
-                progress: ((Int64, Int64) -> Void)? = nil) async throws -> String {
-        return try await withCheckedThrowingContinuation { continuation in
-            let ref = storage.reference().child(path)
-            let meta = StorageMetadata()
-            meta.contentType = contentType
-            if let cc = cacheControl {
-                meta.cacheControl = cc
-            }
-            let task = ref.putData(data, metadata: meta) { _, error in
-                if let error = error {
-                    let ns = error as NSError
-                    print("🚫 upload(data) 실패(\(path)): code=\(ns.code) domain=\(ns.domain) desc=\(ns.localizedDescription)")
-                    continuation.resume(throwing: StorageError.FailedToUploadImage)
-                    return
-                }
-                continuation.resume(returning: path)
-            }
-            _ = task.observe(.progress) { snap in
-                if let p = snap.progress {
-                    progress?(p.completedUnitCount, p.totalUnitCount)
-                }
-            }
-        }
-    }
-
-    /// Upload a local file URL to a Storage path with metadata (streaming; memory friendly).
-    /// - Returns: the Storage path (same as `to`)
-    @discardableResult
-    func uploadFile(from fileURL: URL,
-                    to path: String,
-                    contentType: String,
-                    cacheControl: String? = nil,
-                    progress: ((Int64, Int64) -> Void)? = nil) async throws -> String {
-        return try await withCheckedThrowingContinuation { continuation in
-            let ref = storage.reference().child(path)
-            let meta = StorageMetadata()
-            meta.contentType = contentType
-            if let cc = cacheControl {
-                meta.cacheControl = cc
-            }
-            let task = ref.putFile(from: fileURL, metadata: meta) { _, error in
-                if let error = error {
-                    let ns = error as NSError
-                    print("🚫 uploadFile 실패(\(path)): code=\(ns.code) domain=\(ns.domain) desc=\(ns.localizedDescription)")
-                    continuation.resume(throwing: StorageError.FailedToUploadImage)
-                    return
-                }
-                continuation.resume(returning: path)
-            }
-            _ = task.observe(.progress) { snap in
-                if let p = snap.progress {
-                    progress?(p.completedUnitCount, p.totalUnitCount)
-                }
-            }
-        }
-    }
 
     // MARK: - Chat image attachment meta
-
     /// Message용(썸네일 + 원본) 일괄 업로드
     /// - Parameters:
     ///   - pairs: MediaManager.preparePairs(_:) 결과
@@ -397,8 +167,8 @@ class FirebaseStorageManager {
                     await limiter.acquire()
                     defer { Task { await limiter.release() } }
                     let base = p.fileBaseName // sha256
-                    let pathThumb = "rooms/\(roomID)/messages/\(messageID)/Thumb/\(base).jpg"
-                    let pathOriginal = "rooms/\(roomID)/messages/\(messageID)/Original/\(base).jpg"
+                    let pathThumb = "Rooms/\(roomID)/messages/\(messageID)/Thumb/\(base).jpg"
+                    let pathOriginal = "/\(roomID)/messages/\(messageID)/Original/\(base).jpg"
 
                     // Preflight: ensure original file URL is valid and non-empty
                     let fileURL = p.originalFileURL
@@ -530,6 +300,175 @@ class FirebaseStorageManager {
         }
         return attachments
     }
+    
+    // MARK: - Generalized upload helpers
+    private func uploadWithRetry(data: Data,
+                                 to path: String,
+                                 contentType: String,
+                                 cacheControl: String? = nil,
+                                 retries: Int = 2,
+                                 backoff: Double = 0.6,
+                                 progress: ((Int64, Int64) -> Void)? = nil) async throws -> String {
+        var attempt = 0
+        var delay = backoff
+        while true {
+            do {
+                return try await upload(data: data, to: path, contentType: contentType, cacheControl: cacheControl, progress: progress)
+            } catch {
+                if attempt < retries, shouldRetry(error) {
+                    let ns = error as NSError
+                    print("↻ retry upload(data) (\(path)) attempt=\(attempt+1) code=\(ns.code)")
+                    try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                    attempt += 1
+                    delay *= 2
+                    continue
+                }
+                throw error
+            }
+        }
+    }
+
+    private func uploadFileWithRetry(from fileURL: URL,
+                                     to path: String,
+                                     contentType: String,
+                                     cacheControl: String? = nil,
+                                     retries: Int = 2,
+                                     backoff: Double = 0.6,
+                                     progress: ((Int64, Int64) -> Void)? = nil) async throws -> String {
+        var attempt = 0
+        var delay = backoff
+        while true {
+            do {
+                return try await uploadFile(from: fileURL, to: path, contentType: contentType, cacheControl: cacheControl, progress: progress)
+            } catch {
+                if attempt < retries, shouldRetry(error) {
+                    let ns = error as NSError
+                    print("↻ retry uploadFile (\(path)) attempt=\(attempt+1) code=\(ns.code)")
+                    try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                    attempt += 1
+                    delay *= 2
+                    continue
+                }
+                throw error
+            }
+        }
+    }
+
+    /// Upload arbitrary Data to a Storage path with metadata.
+    /// - Returns: the Storage path (same as `to`)
+    @discardableResult
+    func upload(data: Data,
+                to path: String,
+                contentType: String,
+                cacheControl: String? = nil,
+                progress: ((Int64, Int64) -> Void)? = nil) async throws -> String {
+        return try await withCheckedThrowingContinuation { continuation in
+            let ref = storage.reference().child(path)
+            let meta = StorageMetadata()
+            meta.contentType = contentType
+            if let cc = cacheControl {
+                meta.cacheControl = cc
+            }
+            let task = ref.putData(data, metadata: meta) { _, error in
+                if let error = error {
+                    let ns = error as NSError
+                    print("🚫 upload(data) 실패(\(path)): code=\(ns.code) domain=\(ns.domain) desc=\(ns.localizedDescription)")
+                    continuation.resume(throwing: StorageError.FailedToUploadImage)
+                    return
+                }
+                continuation.resume(returning: path)
+            }
+            _ = task.observe(.progress) { snap in
+                if let p = snap.progress {
+                    progress?(p.completedUnitCount, p.totalUnitCount)
+                }
+            }
+        }
+    }
+
+    /// Upload a local file URL to a Storage path with metadata (streaming; memory friendly).
+    /// - Returns: the Storage path (same as `to`)
+    @discardableResult
+    func uploadFile(from fileURL: URL,
+                    to path: String,
+                    contentType: String,
+                    cacheControl: String? = nil,
+                    progress: ((Int64, Int64) -> Void)? = nil) async throws -> String {
+        return try await withCheckedThrowingContinuation { continuation in
+            let ref = storage.reference().child(path)
+            let meta = StorageMetadata()
+            meta.contentType = contentType
+            if let cc = cacheControl {
+                meta.cacheControl = cc
+            }
+            let task = ref.putFile(from: fileURL, metadata: meta) { _, error in
+                if let error = error {
+                    let ns = error as NSError
+                    print("🚫 uploadFile 실패(\(path)): code=\(ns.code) domain=\(ns.domain) desc=\(ns.localizedDescription)")
+                    continuation.resume(throwing: StorageError.FailedToUploadImage)
+                    return
+                }
+                continuation.resume(returning: path)
+            }
+            _ = task.observe(.progress) { snap in
+                if let p = snap.progress {
+                    progress?(p.completedUnitCount, p.totalUnitCount)
+                }
+            }
+        }
+    }
+
+    enum StorageImageError: Error { case invalidData }
+    func fetchImageFromStorage(image: String, location: ImageLocation) async throws -> UIImage {
+        let ref = storage.reference(withPath: image)
+
+        // 1) downloadURL()도 콜백 기반이라면 위 패턴으로 한 번만 안전하게 브리지
+        let url = try await withCheckedThrowingContinuation { (c: CheckedContinuation<URL, Error>) in
+            ref.downloadURL { url, err in
+                if let err = err { c.resume(throwing: err); return }
+                c.resume(returning: url!)
+            }
+        }
+
+        // 2) URLSession은 async/await 제공 → continuation 없이 안전
+        let (data, _) = try await URLSession.shared.data(from: url)
+        guard let image = UIImage(data: data) else { throw StorageImageError.invalidData }
+        return image
+    }
+
+    // Storage에서 여러 이미지 불러오는 함수
+    func fetchImagesFromStorage(from imagePaths: [String], location: ImageLocation, createdDate: Date) async throws -> [UIImage] {
+        var images = Array<UIImage?>(repeating: nil, count: imagePaths.count)
+        
+        try await withThrowingTaskGroup(of: (Int, UIImage).self, returning: Void.self) { group in
+            for (index, imagePath) in imagePaths.enumerated() {
+                group.addTask {
+                    
+                    let image = try await self.fetchImageFromStorage(image: imagePath, location: location)
+                    return (index, image)
+                    
+                }
+            }
+            for try await (index, image) in group {
+                images[index] = image
+            }
+        }
+        
+        return images.compactMap { $0 }
+    }
+    
+    // Preload (warm) cache for multiple Storage image paths without holding images in memory
+    func prefetchImages(paths: [String], location: ImageLocation, createdDate: Date = Date()) {
+        Task.detached { [weak self] in
+            guard let self = self else { return }
+            do {
+                // We reuse the existing parallel downloader which also stores to Kingfisher cache.
+                _ = try await self.fetchImagesFromStorage(from: paths, location: location, createdDate: createdDate)
+            } catch {
+                print("⚠️ warmImageCache 실패: \(error)")
+            }
+        }
+    }
 
     func deleteImageFromStorage(path: String) {
         let fileRef = storage.reference().child("\(path)")
@@ -544,7 +483,6 @@ class FirebaseStorageManager {
             }
         }
     }
-    
     
     // MARK: 비디오 관련
     // Storage 업로드 유틸(putFile) — streaming upload with retry + safe putData fallback
@@ -602,58 +540,66 @@ class FirebaseStorageManager {
             progress: nil
         )
     }
+}
 
-    enum StorageImageError: Error { case invalidData }
-    func fetchImageFromStorage(image: String, location: ImageLocation) async throws -> UIImage {
-        let ref = storage.reference(withPath: image)
-
-        // 1) downloadURL()도 콜백 기반이라면 위 패턴으로 한 번만 안전하게 브리지
-        let url = try await withCheckedThrowingContinuation { (c: CheckedContinuation<URL, Error>) in
-            ref.downloadURL { url, err in
-                if let err = err { c.resume(throwing: err); return }
-                c.resume(returning: url!)
-            }
+extension FirebaseStorageManager {
+    // MARK: - Helper
+    private func fileSize(at url: URL) -> Int64? {
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), !isDir.boolValue else { return nil }
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+           let size = attrs[.size] as? NSNumber {
+            return size.int64Value
         }
-
-        // 2) URLSession은 async/await 제공 → continuation 없이 안전
-        let (data, _) = try await URLSession.shared.data(from: url)
-        guard let image = UIImage(data: data) else { throw StorageImageError.invalidData }
-        return image
+        return nil
     }
     
-    
-    // Storage에서 여러 이미지 불러오는 함수
-    func fetchImagesFromStorage(from imagePaths: [String], location: ImageLocation, createdDate: Date) async throws -> [UIImage] {
-        
-        var images = Array<UIImage?>(repeating: nil, count: imagePaths.count)
-        
-        try await withThrowingTaskGroup(of: (Int, UIImage).self, returning: Void.self) { group in
-            for (index, imagePath) in imagePaths.enumerated() {
-                group.addTask {
-                    
-                    let image = try await self.fetchImageFromStorage(image: imagePath, location: location/*, createdDate: createdDate*/)
-                    return (index, image)
-                    
-                }
-            }
-            for try await (index, image) in group {
-                images[index] = image
-            }
-        }
-        
-        return images.compactMap { $0 }
+    /// Optionally allow tuning the putData fallback limit at runtime.
+    /// Clamp to a sane range 8MB...64MB. Call on a serial context if mutating often.
+    public func setDataFallbackLimitMB(_ mb: Int) {
+        // Clamp to a sane range 8MB...64MB
+        let clamped = max(8, min(mb, 64))
+        self.dataFallbackMaxBytes = Int64(clamped) * 1024 * 1024
     }
     
-    // Preload (warm) cache for multiple Storage image paths without holding images in memory
-    func prefetchImages(paths: [String], location: ImageLocation, createdDate: Date = Date()) {
-        Task.detached { [weak self] in
-            guard let self = self else { return }
-            do {
-                // We reuse the existing parallel downloader which also stores to Kingfisher cache.
-                _ = try await self.fetchImagesFromStorage(from: paths, location: location, createdDate: createdDate)
-            } catch {
-                print("⚠️ warmImageCache 실패: \(error)")
+    // Lightweight async semaphore to cap concurrent uploads (permit-based, bug-free)
+    actor AsyncSemaphore {
+        private var permits: Int
+        private var waiters: [CheckedContinuation<Void, Never>] = []
+        init(_ max: Int) { self.permits = max }
+        func acquire() async {
+            if permits > 0 {
+                permits -= 1
+                return
+            }
+            await withCheckedContinuation { cont in
+                waiters.append(cont)
+            }
+            // resumed: a permit was assigned by release(); nothing to change here.
+        }
+        func release() {
+            if !waiters.isEmpty {
+                let cont = waiters.removeFirst()
+                cont.resume()
+            } else {
+                permits += 1
             }
         }
+    }
+    
+    // MARK: - Retry helpers
+    private func shouldRetry(_ error: Error) -> Bool {
+        let ns = error as NSError
+        if ns.domain == "FIRStorageErrorDomain" {
+            // -13000 unknown, -13040 retry limit exceeded, -13030 cancelled
+            switch ns.code { case -13000, -13040, -13030: return true; default: break }
+        }
+        if ns.domain == NSURLErrorDomain {
+            return [-999, -1001, -1005, -1009].contains(ns.code)
+        }
+        if let underlying = (ns.userInfo[NSUnderlyingErrorKey] as? NSError), underlying.domain == NSURLErrorDomain {
+            return [-999, -1001, -1005, -1009].contains(underlying.code)
+        }
+        return false
     }
 }

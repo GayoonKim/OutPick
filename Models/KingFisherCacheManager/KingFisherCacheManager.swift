@@ -43,6 +43,7 @@ final class KingFisherCacheManager {
     /// 이미지를 메모리 & 디스크 캐시에 저장
     func storeImage(_ image: UIImage, forKey key: String) {
         KingfisherManager.shared.cache.store(image, forKey: key)
+        print(#function, "stored in cache", image)
     }
 
     /// 캐시에서 이미지 제거

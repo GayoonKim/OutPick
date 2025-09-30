@@ -1371,17 +1371,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         self.room = savedRoom
         Task { FirebaseManager.shared.startListenRoomDoc(roomID: savedRoom.ID ?? "") }
         
-        DispatchQueue.main.async { [weak self] in
+        Task { @MainActor [weak self] in
             guard let self = self else { return }
             self.updateNavigationTitle(with: savedRoom)
             LoadingIndicator.shared.stop()
             self.view.isUserInteractionEnabled = true
-            
-            // 이미 연결된 경우에는 room 생성과 join만 수행
-            if SocketIOManager.shared.isConnected {
-                SocketIOManager.shared.createRoom(savedRoom.ID ?? "")
-                SocketIOManager.shared.joinRoom(savedRoom.ID ?? "")
-            }
         }
     }
     

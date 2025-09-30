@@ -97,15 +97,6 @@ class ChatRoomInfoCell: UICollectionViewCell {
     }
     
     func configureCell(room: ChatRoom) {
-        guard let roomImageName = room.roomImagePath else { return }
-        if roomImageName != "" {
-            Task {
-                guard let imageName = room.roomImagePath else { return }
-                let image = try await FirebaseStorageManager.shared.fetchImageFromStorage(image: imageName, location: .RoomImage)
-                self.roomImageView.image = image
-            }
-        }
-        
         roomNameLabel.text = room.roomName
         roomParticipantCountLabel.text = "\(room.participants.count)명 참여"
         backgroundColor = UIColor(white: 0.3, alpha: 0.03)

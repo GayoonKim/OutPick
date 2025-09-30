@@ -7,6 +7,7 @@
 
 import Foundation
 import FirebaseFirestore
+
 /// 방 상단 배너에 표시할 간단한 공지 페이로드
 struct AnnouncementPayload: Codable, Hashable {
     /// 공지 본문(필수)
@@ -15,9 +16,7 @@ struct AnnouncementPayload: Codable, Hashable {
     let authorID: String
     /// 생성 시각(배너 정렬/만료 로직 등에 활용)
     let createdAt: Date
-}
-
-extension AnnouncementPayload {
+    
     /// Firestore 저장용 딕셔너리 변환(수동 저장 시 사용)
     func toDictionary() -> [String: Any] {
         return [
@@ -36,7 +35,8 @@ struct ChatRoom: Codable {
     var participants: [String]          // 방 참여 사용자들
     let creatorID: String               // 방 생성자 ID
     let createdAt: Date                 // 방 생성 시간
-    var roomImagePath: String?           // Firestore Storage에 이미지 저장
+    var thumbPath: String?
+    var originalPath: String?
     var lastMessageAt: Date?
     var lastMessage: String?
     
@@ -52,7 +52,8 @@ struct ChatRoom: Codable {
         case participants = "participantIDs"  // 매핑
         case creatorID
         case createdAt
-        case roomImagePath
+        case thumbPath
+        case originalPath
         case lastMessageAt
         case lastMessage
         case activeAnnouncementID
@@ -68,14 +69,24 @@ struct ChatRoom: Codable {
             "roomDescription": roomDescription,
             "participantIDs": participants,
             "creatorID": creatorID,
-            "createdAt": Timestamp(date: createdAt),
-            "roomImagePath": roomImagePath ?? "",
-            "lastMessageAt": Timestamp(date: lastMessageAt ?? createdAt)
+            "createdAt": Timestamp(date: createdAt)
         ]
+
+        // 선택 필드들: 존재할 때만 저장
+        data["lastMessageAt"] = Timestamp(date: lastMessageAt ?? createdAt)
         
-        // 선택 필드는 있을 때만 저장하여 Firestore 문서 깔끔하게 유지
-        if let roomImagePath = roomImagePath { data["roomImagePath"] = roomImagePath }
-        if let activeAnnouncementID = activeAnnouncementID { data["activeAnnouncementID"] = activeAnnouncementID }
+        if let lastMessage = lastMessage, !lastMessage.isEmpty {
+            data["lastMessage"] = lastMessage
+        }
+        if let thumbPath = thumbPath, !thumbPath.isEmpty {
+            data["thumbPath"] = thumbPath     // 🔧 key 대소문자 교정
+        }
+        if let originalPath = originalPath, !originalPath.isEmpty {
+            data["originalPath"] = originalPath
+        }
+        if let activeAnnouncementID = activeAnnouncementID {
+            data["activeAnnouncementID"] = activeAnnouncementID
+        }
         if let activeAnnouncement = activeAnnouncement {
             data["activeAnnouncement"] = activeAnnouncement.toDictionary()
             data["announcementUpdatedAt"] = Timestamp(date: activeAnnouncement.createdAt)
@@ -83,14 +94,11 @@ struct ChatRoom: Codable {
             data["announcementUpdatedAt"] = Timestamp(date: announcementUpdatedAt)
         }
         
-        
         return data
     }
-    
 }
 
 extension ChatRoom: Hashable {
-    
     func hash(into hasher: inout Hasher) {
         hasher.combine(ID)
     }

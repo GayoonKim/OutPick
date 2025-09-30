@@ -183,7 +183,7 @@ class FirebaseManager {
             }
             
         }
-        
+
         upsertRooms(rooms)
         self.lastFetchedRoomSnapshot = snapshot.documents.last
     }
@@ -192,20 +192,43 @@ class FirebaseManager {
     @MainActor
     private func upsertRooms<S: Sequence>(_ rooms: S) where S.Element == ChatRoom {
         var base = roomStore
-        var changed = false
+        var changedStore = false
+        var incomingIDs: [String] = []
+
         for r in rooms {
             guard let id = r.ID, !id.isEmpty else { continue }
+            incomingIDs.append(id)
             if base[id] == nil {
                 base[id] = r
-                changed = true
+                changedStore = true
             } else {
-                // Conservatively mark as changed on overwrite to ensure subscribers see updates
+                // Overwrite to ensure subscribers see updates when fields change
                 base[id] = r
-                changed = true
+                changedStore = true
             }
         }
-        if changed {
+
+        if changedStore {
             roomStore = base
+        }
+
+        // Update topRoomIDs: append new IDs in the same order, keep uniqueness, preserve existing order
+        var top = topRoomIDs
+        var changedTop = false
+        if top.isEmpty {
+            if !incomingIDs.isEmpty {
+                top = incomingIDs
+                changedTop = true
+            }
+        } else {
+            for id in incomingIDs where !top.contains(id) {
+                top.append(id)
+                changedTop = true
+            }
+        }
+
+        if changedTop {
+            topRoomIDs = top
         }
     }
     
@@ -234,6 +257,80 @@ class FirebaseManager {
         }
     }
     
+    func editRoom(room: ChatRoom,
+                    pickedImage: UIImage?,
+                    imageData: MediaManager.ImagePair?,
+                    isRemoved: Bool,
+                    newName: String,
+                  newDesc: String) async throws -> ChatRoom {
+        
+        // 1) 현재 상태 읽기 / 이전 경로 확보
+        let roomRef = db.collection("Rooms").document(room.ID ?? "")
+        let oldThumb = room.thumbPath
+        let oldOriginal = room.originalPath
+        
+        var uploadedThumb: String? = nil
+        var uploadedOriginal: String? = nil
+        
+        // 1) 분기 처리: 삭제 / 업로드(pair 우선) / 업로드(UIImage 폴백) / 텍스트만
+        if isRemoved {
+            // Firestore: 이미지 경로 제거 + 텍스트 갱신
+            try await roomRef.updateData([
+                "thumbPath": FieldValue.delete(),
+                "originalPath": FieldValue.delete(),
+                "roomName": newName,
+                "roomDescription": newDesc
+            ])
+            // 성공 후 이전 파일 삭제 (best-effort)
+            Task.detached {
+                if let t = oldThumb { FirebaseStorageManager.shared.deleteImageFromStorage(path: t) }
+                if let o = oldOriginal { FirebaseStorageManager.shared.deleteImageFromStorage(path: o) }
+            }
+        } else if let pair = imageData {
+            // 선택 영역 로직 반영: 미리 준비된 썸네일/원본으로 업로드
+            let (newThumb, newOriginal) = try await FirebaseStorageManager.shared.uploadAndSave(
+                sha: pair.fileBaseName,
+                uid: room.ID ?? "",
+                type: .RoomImage,
+                thumbData: pair.thumbData,
+                originalFileURL: pair.originalFileURL
+            )
+            uploadedThumb = newThumb; uploadedOriginal = newOriginal
+//            
+//            try await roomRef.updateData([
+//                "thumbPath": newThumb,
+//                "originalPath": newOriginal,
+//                "roomName": newName,
+//                "roomDescription": newDesc
+//            ])
+//            
+//            Task.detached {
+//                if let t = oldThumb { FirebaseStorageManager.shared.deleteImageFromStorage(path: t) }
+//                if let o = oldOriginal { FirebaseStorageManager.shared.deleteImageFromStorage(path: o) }
+//            }
+        }  else {
+            // 텍스트만 변경
+            try await roomRef.updateData([
+                "roomName": newName,
+                "roomDescription": newDesc
+            ])
+        }
+        
+        // 3) 최신 방 데이터
+        var updated = room
+        updated.roomName = newName
+        updated.roomDescription = newDesc
+        if isRemoved {
+            updated.thumbPath = nil
+            updated.originalPath = nil
+        } else if let ut = uploadedThumb, let uo = uploadedOriginal {
+            updated.thumbPath = ut
+            updated.originalPath = uo
+        }
+        
+        return updated
+    }
+    
     // 특정 방 문서 불러오기
     func getRoomDoc(room: ChatRoom) async throws -> DocumentSnapshot? {
         let roomRef = db.collection("Rooms").document(room.ID ?? "")
@@ -249,30 +346,36 @@ class FirebaseManager {
     }
 
     // 방 정보 저장
-    func saveRoomInfoToFirestore(room: ChatRoom, completion: @escaping (Result<Void, Error>) -> Void) {
-        Task {
-            var tempRoom = room
-            let roomRef = db.collection("Rooms").document(room.ID ?? "")
+    func saveRoomInfoToFirestore(room: ChatRoom) async throws {
+        // 1) 방 ID 유효성 확인
+        guard let roomID = room.ID, !roomID.isEmpty else {
+            print("❌ saveRoomInfoToFirestore: room.ID is nil/empty")
+            throw FirebaseError.FailedToFetchRoom
+        }
+
+        let roomRef = db.collection("Rooms").document(roomID)
+
+        do {
+            // 2) Firestore 트랜잭션으로 방 문서 생성 (실패 시 조기 종료)
+            _ = try await db.runTransaction({ (transaction, errorPointer) -> Any? in
+                transaction.setData(room.toDictionary(), forDocument: roomRef)
+                return nil
+            })
+
+            // 3) 방 참여자 업데이트 (생성자 자신)
+            try await FirebaseManager.shared.add_room_participant(room: room)
+
+            // 4) Socket.IO: Firestore 성공 후 방 생성/참여 요청 (roomName 대신 roomID 사용 권장)
+            //    서버가 별도의 create가 필요 없다면 join만으로도 충분합니다.
+            SocketIOManager.shared.createRoom(roomID)
+            SocketIOManager.shared.joinRoom(roomID)
             
-            // Socket.IO 서버에 방 생성 이벤트 전송
-            SocketIOManager.shared.createRoom(room.roomName)
-            // Socket.IO 서버에 방 참여 이벤트 전송
-            SocketIOManager.shared.joinRoom(room.roomName)
-            
-            do {
-                let _ = try await db.runTransaction({ (transaction, errorPointer) -> Any? in
-                    transaction.setData(room.toDictionary(), forDocument: roomRef)
-                    
-                    return nil
-                    
-                })
-                
-                try await FirebaseManager.shared.add_room_participant(room: tempRoom)
-                completion(.success(()))
-                
-            } catch {
-                completion(.failure(error))
-            }
+            await upsertRooms([room])
+
+            print("✅ saveRoomInfoToFirestore: Firestore 저장 및 Socket.IO create/join 완료 (roomID=\(roomID))")
+        } catch {
+            print("🔥 saveRoomInfoToFirestore 실패: \(error)")
+            throw error
         }
     }
     
@@ -553,7 +656,7 @@ class FirebaseManager {
         let rooms = snapshot.documents.compactMap { try? createRoom(from: $0) }
         
         let storagePaths = Array(Set(
-            rooms.compactMap { $0.roomImagePath }
+            rooms.compactMap { $0.thumbPath }
                 .filter { !$0.isEmpty }
         ))
         
@@ -599,9 +702,14 @@ class FirebaseManager {
                     transaction.updateData(["joinedRooms": FieldValue.arrayRemove([room.roomName])], forDocument: userRef)
                     return nil
                 })
-                if let imageName = room.roomImagePath {
-                    try await KingfisherManager.shared.cache.removeImage(forKey: imageName)
+                
+                if let thumbPath = room.thumbPath {
+                    KingFisherCacheManager.shared.removeImage(forKey: thumbPath)
                 }
+                if let originalpath = room.originalPath {
+                    KingFisherCacheManager.shared.removeImage(forKey: originalpath)
+                }
+                
                 print("참여중인 방 강제 삭제 성공")
                 remove_participant_task = nil
             } catch {
@@ -617,11 +725,13 @@ class FirebaseManager {
             do {
                 guard let room_doc = try await getRoomDoc(room: room) else { return }
                 let userRef = db.collection("Users").document(LoginManager.shared.getUserEmail)
+                
                 let _ = try await db.runTransaction({ (transaction, errorPointer) -> Any? in
                     transaction.updateData(["joinedRooms": FieldValue.arrayUnion([room.ID ?? ""])], forDocument: userRef)
                     transaction.updateData(["participantIDs": FieldValue.arrayUnion([LoginManager.shared.getUserEmail])], forDocument: room_doc.reference)
                     return nil
                 })
+                
                 print(#function, "참여자 업데이트 성공")
                 add_room_participant_task = nil
             } catch {

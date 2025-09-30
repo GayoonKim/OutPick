@@ -74,7 +74,7 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
 
         if !exists {
             // 새로 참여(추가)
-            snapshot.appendItems([updated], toSection: .main)
+            snapshot.appendItems([updated], toSection: Section.main)
             dataSource.apply(snapshot, animatingDifferences: true)
             return
         }
@@ -113,7 +113,7 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
                     for room in rooms {
                         
                         
-                        guard let imagePath = room.roomImagePath else { continue }
+                        guard let imagePath = room.thumbPath else { continue }
                         let key = room.ID ?? room.roomName // capture simple Sendable values only
                         group.addTask {
                             let image = try? await KingFisherCacheManager.shared.loadOrFetchImage(
@@ -250,7 +250,7 @@ extension JoinedRoomsViewController: UICollectionViewDelegate {
             self?.onLeaveRoom?(id)
             completion(true)
         }
-        leave.backgroundColor = .systemRed
+//        leave.backgroundColor = .red
         let config = UISwipeActionsConfiguration(actions: [leave])
         config.performsFirstActionWithFullSwipe = true
         return config

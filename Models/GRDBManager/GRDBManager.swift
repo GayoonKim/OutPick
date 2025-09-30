@@ -110,7 +110,7 @@ final class GRDBManager {
             if try db.tableExists("userProfile") {
                 try db.execute(sql: """
                     INSERT OR IGNORE INTO LocalUser (email, nickname, profileImagePath)
-                    SELECT email, COALESCE(nickname, ''), profileImagePath
+                    SELECT email, COALESCE(nickname, ''), COALESCE(thumbPath, profileImagePath)
                       FROM userProfile
                 """)
             }
@@ -133,8 +133,33 @@ final class GRDBManager {
                 t.column("birthdate", .text)
                 t.column("nickname", .text)
                 t.column("profileImagePath", .text)
+                t.column("thumbPath", .text)
+                t.column("originalPath", .text)
                 t.column("joinedRooms", .text) // JSON 인코딩된 [String]
                 t.column("createdAt", .datetime).notNull()
+            }
+        }
+
+        migrator.registerMigration("addThumbAndOriginalToUserProfile") { db in
+            do {
+                try db.alter(table: "userProfile") { t in
+                    t.add(column: "thumbPath", .text)
+                    t.add(column: "originalPath", .text)
+                }
+            } catch {
+                // 컬럼이 이미 존재하면 에러가 날 수 있으므로 무시(신규/기존 DB 모두 호환)
+                print("[Migration] addThumbAndOriginalToUserProfile skipped or failed: \(error)")
+            }
+            // 기존 profileImagePath 값을 thumbPath로 백필(있을 때만)
+            do {
+                try db.execute(sql: """
+                    UPDATE userProfile
+                       SET thumbPath = COALESCE(thumbPath, profileImagePath)
+                     WHERE (thumbPath IS NULL OR thumbPath = '')
+                       AND (profileImagePath IS NOT NULL AND profileImagePath <> '')
+                """)
+            } catch {
+                print("[Migration] backfill thumbPath from profileImagePath failed: \(error)")
             }
         }
         
@@ -310,7 +335,7 @@ final class GRDBManager {
     
     // MARK: 방
     func fetchRoomInfo(roomID: String) throws -> ChatRoom? {
-        try dbPool.read { db in
+        try dbPool.read { db -> ChatRoom? in
             // rooms 테이블에서 방 기본 정보 조회
             struct RoomRow: FetchableRecord, Decodable {
                 var ID: String
@@ -318,8 +343,10 @@ final class GRDBManager {
                 var roomDescription: String
                 var creatorID: String
                 var createdAt: Date
-                var roomImagePath: String?
+                var thumbPath: String?
+                var originalPath: String?
                 var lastMessageAt: Date?
+                var lastMessage: String?
             }
             
             guard let row = try RoomRow.fetchOne(
@@ -330,8 +357,10 @@ final class GRDBManager {
                        roomDescription,
                        creatorID,
                        createdAt,
-                       roomImagePath,
-                       lastMessageAt
+                       thumbPath,
+                       originalPath,
+                       lastMessageAt,
+                       lastMessage
                 FROM rooms
                 WHERE id = ?
                 """,
@@ -364,8 +393,13 @@ final class GRDBManager {
                 participants: participants,
                 creatorID: row.creatorID,
                 createdAt: row.createdAt,
-                roomImagePath: row.roomImagePath,
-                lastMessageAt: row.lastMessageAt
+                thumbPath: row.thumbPath,
+                originalPath: row.originalPath,
+                lastMessageAt: row.lastMessageAt,
+                lastMessage: row.lastMessage,
+                activeAnnouncementID: nil,
+                activeAnnouncement: nil,
+                announcementUpdatedAt: nil
             )
         }
     }
@@ -1225,7 +1259,9 @@ final class GRDBManager {
             } else {
                 // 레거시 roomParticipant + userProfile 폴백 → LocalUser 형태로 매핑
                 let sql = """
-                SELECT up.email AS email, COALESCE(up.nickname,'') AS nickname, up.profileImagePath AS profileImagePath
+                SELECT up.email AS email,
+                       COALESCE(up.nickname,'') AS nickname,
+                       COALESCE(up.thumbPath, up.profileImagePath) AS profileImagePath
                   FROM userProfile up
                   JOIN roomParticipant rp ON rp.email = up.email
                  WHERE rp.roomId = ?

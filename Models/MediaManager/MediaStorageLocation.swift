@@ -10,34 +10,18 @@ import Foundation
 enum ImageLocation: String {
     case ProfileImage
     case RoomImage
+    case Video
     
     var location: String {
         switch self {
-            
         case .ProfileImage:
-            "Profile_Images"
+            "Users"
             
         case .RoomImage:
-            "Room_Images"
+            "Rooms"
             
+        case .Video:
+            "Videos"
         }
     }
-}
-
-enum VideoLocation: String {
-    case Room_Videos
-    case Test_Videos
-    
-    var location: String {
-        switch self {
-            
-        case .Room_Videos:
-            "Room_Videos"
-            
-        case .Test_Videos:
-            "Test_Videos"
-            
-        }
-    }
-    
 }

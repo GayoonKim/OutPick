@@ -132,7 +132,7 @@ class WeatherAPIManager: NSObject {
     
     //MARK: OpenWeather API로 데이터 불러오기
     func updateWeatherInfo(_ lat: Double, _ lon: Double) async throws {
-        print(#function, "3. updateWeatherInfo 호출 시작")
+        
 
         // 두 요청을 병렬 실행 (async let)
         do {
@@ -141,7 +141,6 @@ class WeatherAPIManager: NSObject {
             
             let (currentInfo, forecastInfo) = try await (current, forecast)
             try Task.checkCancellation()
-            print(#function, "success", currentInfo, forecastInfo)
             
             // 상태 반영은 메인 액터에서만 수행
             await MainActor.run {

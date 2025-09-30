@@ -59,22 +59,21 @@ extension SecondProfileViewController: PHPickerViewControllerDelegate {
 }
 
 extension SecondProfileViewController: UIImagePickerControllerDelegate & UINavigationControllerDelegate {
-    func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
-        if let selectedImage = info[.originalImage] as? UIImage,
-           let cgImage = MediaManager.compressImageWithImageIO(selectedImage) {
-            profileImageView.image = UIImage(cgImage: cgImage)
-            self.enableCompleteButton()
-        } else if let editedImage = info[.editedImage] as? UIImage,
-                  let cgImage = MediaManager.compressImageWithImageIO(editedImage) {
-            profileImageView.image = UIImage(cgImage: cgImage)
-            self.enableCompleteButton()
-        }
-        
-        picker.dismiss(animated: true, completion: nil)
-    }
-    
-    func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-        picker.dismiss(animated: true, completion: nil)
-    }
-    
+//    func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
+//        if let selectedImage = info[.originalImage] as? UIImage,
+//           let cgImage = MediaManager.compressImageWithImageIO(selectedImage) {
+//            profileImageView.image = UIImage(cgImage: cgImage)
+//            self.enableCompleteButton()
+//        } else if let editedImage = info[.editedImage] as? UIImage,
+//                  let cgImage = MediaManager.compressImageWithImageIO(editedImage) {
+//            profileImageView.image = UIImage(cgImage: cgImage)
+//            self.enableCompleteButton()
+//        }
+//        
+//        picker.dismiss(animated: true, completion: nil)
+//    }
+//    
+//    func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+//        picker.dismiss(animated: true, completion: nil)
+//    }
 }

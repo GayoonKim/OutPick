@@ -9,7 +9,7 @@ import UIKit
 import Combine
 import GRDB
 import Kingfisher
-
+import FirebaseFirestore
 import FirebaseStorage
 
 
@@ -40,8 +40,10 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
     
     var interactiveTransition: UIPercentDrivenInteractiveTransition?
     
-    private var room: ChatRoom
+    private var roomInfo: ChatRoom
     private var images: [UIImage]
+    private var lastRoomCoverKey: String? = nil
+    private var coverPrefetchTask: Task<Void, Never>? = nil
     private var localUsers: [LocalUser] = []
     /// 방 전체 참여자 수 (표시/로딩 판단)
     private var participantsTotalCount: Int = 0
@@ -86,10 +88,10 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
     var onRequestOpenGallery: ((UIViewController) -> Void)?
     
     init(room: ChatRoom, profiles: [UserProfile], images: [UIImage]) {
-        self.room = room
+        self.roomInfo = room
         self.localUsers = profiles.map { LocalUser(email: $0.email ?? "", nickname: $0.nickname ?? "", profileImagePath: $0.thumbPath) }
         self.images = images
-        let layout = Self.configureLayout(self.room, localUsers: self.localUsers, images: self.images)
+        let layout = Self.configureLayout(self.roomInfo, localUsers: self.localUsers, images: self.images)
         super.init(collectionViewLayout: layout)
         
         Task { @MainActor in
@@ -163,6 +165,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         cancellables.removeAll()
+        coverPrefetchTask?.cancel()
     }
     
     /// 참여자 Top-50을 우선 로드하고, 총 인원/오프셋 상태를 초기화
@@ -170,7 +173,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         Task { [weak self] in
             guard let self = self else { return }
             do {
-                let roomID = self.room.ID ?? ""
+                let roomID = self.roomInfo.ID ?? ""
                 let (page, total) = try GRDBManager.shared.fetchLocalUsersPage(roomID: roomID,
                                                                                offset: 0,
                                                                                limit: participantsPageSize)
@@ -194,7 +197,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
     private func loadMoreParticipantsIfNeeded() {
         guard participantsHasMore, !participantsIsLoading else { return }
         participantsIsLoading = true
-        let roomID = self.room.ID ?? ""
+        let roomID = self.roomInfo.ID ?? ""
         let currentOffset = participantsNextOffset
         Task { [weak self] in
             guard let self = self else { return }
@@ -255,7 +258,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         Task { [weak self] in
             guard let self = self else { return }
             do {
-                let roomID = self.room.ID ?? ""
+                let roomID = self.roomInfo.ID ?? ""
 
                 // Fetch first pages for images & videos
                 let imageTotal = try GRDBManager.shared.countImageIndex(inRoom: roomID)
@@ -307,7 +310,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
     private func loadMoreMediaIfNeeded() {
         guard mediaHasMore, !mediaIsLoading else { return }
         mediaIsLoading = true
-        let roomID = self.room.ID ?? ""
+        let roomID = self.roomInfo.ID ?? ""
 
         Task { [weak self] in
             guard let self = self else { return }
@@ -496,7 +499,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
             .filter{ [weak self] updatedRoom in
                 guard let self = self else { return false }
                 
-                return updatedRoom.ID == self.room.ID
+                return updatedRoom.ID == self.roomInfo.ID
             }
             .sink { [weak self] updatedRoom in
                 guard let self = self  else { return }
@@ -506,7 +509,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
                     return
                 }
                 
-                self.room = updatedRoom
+                self.roomInfo = updatedRoom
                 self.updateRoomInfoSection()
                 
             }
@@ -580,32 +583,25 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
                 cell.editButtonTapped = { [weak self] in
                     guard let self = self else { return }
                     
-                    let editVC = RoomEditViewController(room: self.room)
+                    let editVC = RoomEditViewController(room: self.roomInfo)
                     editVC.modalPresentationStyle = .fullScreen
                     
-                    editVC.onCompleteEdit = { [weak self] selectedImage, newName, newDesc in
+                    editVC.onCompleteEdit = { [weak self] pickedImage, pickedImageData, isRemoved, newName, newDesc in
                         guard let self = self else { return }
-                        
-                        var newImagePath: String? = nil
-                        if let image = selectedImage {
-                            if let pathToRemove = self.room.roomImagePath {
-                                FirebaseStorageManager.shared.deleteImageFromStorage(path: pathToRemove)
-                            }
-                            
-//                            let pathToAdd = try await FirebaseStorageManager.shared.uploadImageToStorage(image: image, location: .RoomImage, roomName: room.roomName)
-//                            KingFisherCacheManager.shared.storeImage(image, forKey: pathToAdd)
-//                            newImagePath = pathToAdd
+                        let updated = try await FirebaseManager.shared.editRoom(
+                            room: self.roomInfo,
+                            pickedImage: pickedImage,
+                            imageData: pickedImageData,
+                            isRemoved: isRemoved,
+                            newName: newName,
+                            newDesc: newDesc
+                        )
+
+                        await MainActor.run {
+                            // 즉시 로컬 상태 갱신 (퍼블리셔도 발행되지만, 낙관적 UI 업데이트)
+                            self.roomInfo = updated
+                            self.updateRoomInfoSection()
                         }
-                        
-                        if let path = newImagePath {
-                            self.room.roomImagePath = path
-                        }
-                        self.room.roomName = newName
-                        self.room.roomDescription = newDesc
-                        try await FirebaseManager.shared.updateRoomInfo(room: self.room, newImagePath: self.room.roomImagePath ?? "", roomName: newName, roomDescription: newDesc)
-                        
-                        self.updateRoomInfoSection()
-                        self.onRoomUpdated?(self.room)
                     }
                     
                     self.present(editVC, animated: true, completion: nil)
@@ -678,7 +674,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         var snapshot = NSDiffableDataSourceSnapshot<Section, Item>()
         
         snapshot.appendSections(Section.allCases)
-        snapshot.appendItems([.roomInfoItem(self.room)], toSection: .roomInfoSection)
+        snapshot.appendItems([.roomInfoItem(self.roomInfo)], toSection: .roomInfoSection)
         snapshot.appendItems([.mediaItem(self.images)], toSection: .mediaSection)
         snapshot.appendItems([.participantsItem(self.localUsers)], toSection: .participantsSection)
         
@@ -686,15 +682,63 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
     }
     
     private func updateRoomInfoSection() {
-        var snapshot = dataSource.snapshot()
-        snapshot.deleteItems(snapshot.itemIdentifiers(inSection: .roomInfoSection))
-        snapshot.appendItems([.roomInfoItem(self.room)], toSection: .roomInfoSection)
-        dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
+        // Compute current cover key (thumbPath 우선, 없으면 originalPath)
+        let key = self.roomInfo.thumbPath?.isEmpty == false ? self.roomInfo.thumbPath : self.roomInfo.originalPath
+
+        // Helper to perform a light reload of the single item
+        func reloadRoomInfoItem() {
+            guard let dataSource = self.dataSource else { return }
+            var snapshot = dataSource.snapshot()
+            let item: Item = .roomInfoItem(self.roomInfo)
+            if snapshot.indexOfItem(item) != nil {
+                snapshot.reloadItems([item])
+            } else {
+                snapshot.appendItems([item], toSection: .roomInfoSection)
+            }
+            dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
+                guard let self = self else { return }
+                if let indexPath = self.dataSource.indexPath(for: .roomInfoItem(self.roomInfo)),
+                   let cell = self.collectionView.cellForItem(at: indexPath) as? ChatRoomInfoCell {
+                    cell.configureCell(room: self.roomInfo)
+                }
+            }
+        }
+
+        // If no image key → just reload the item
+        guard let key, !key.isEmpty else {
+            self.lastRoomCoverKey = nil
+            reloadRoomInfoItem()
+            return
+        }
+
+        // If key unchanged and already cached → just reload
+        let cache = KingfisherManager.shared.cache
+        if key == lastRoomCoverKey, cache.isCached(forKey: key) {
+            reloadRoomInfoItem()
+            return
+        }
+
+        // Prefetch the cover into cache, then reload
+        coverPrefetchTask?.cancel()
+        coverPrefetchTask = Task { [weak self] in
             guard let self = self else { return }
-            // roomInfoItem 셀 찾아서 강제로 업데이트
-            if let indexPath = self.dataSource.indexPath(for: .roomInfoItem(self.room)),
-               let cell = self.collectionView.cellForItem(at: indexPath) as? ChatRoomInfoCell {
-                cell.configureCell(room: self.room)
+            // Early exit if already cached
+            if cache.isCached(forKey: key) == false {
+                let ref = Storage.storage().reference(withPath: key)
+                do {
+                    // 3MB limit is enough for a cover thumb
+                    let data = try await ref.data(maxSize: 3 * 1024 * 1024)
+                    if let img = UIImage(data: data) {
+                        KingFisherCacheManager.shared.storeImage(img, forKey: key)
+                    }
+                } catch {
+                    // Best-effort: ignore caching errors and continue to reload
+                    print("[RoomInfo] cover prefetch failed: \(error)")
+                }
+            }
+            self.lastRoomCoverKey = key
+            await MainActor.run {
+                reloadRoomInfoItem()
             }
         }
     }
@@ -711,7 +755,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
             guard let self = self else { return }
             
-            self.collectionView.setCollectionViewLayout(Self.configureLayout(self.room, localUsers: self.localUsers, images: self.images), animated: false)
+            self.collectionView.setCollectionViewLayout(Self.configureLayout(self.roomInfo, localUsers: self.localUsers, images: self.images), animated: false)
             if let indexPath = self.dataSource.indexPath(for: .mediaItem(self.images)),
                let cell = self.collectionView.cellForItem(at: indexPath) as? ChatRoomMediaCollectionViewCell {
                 cell.configureCell(for: images)
@@ -726,7 +770,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         snapshot.appendItems([.participantsItem(localUsers)], toSection: .participantsSection)
         dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
             guard let self = self else { return }
-            self.collectionView.setCollectionViewLayout(Self.configureLayout(self.room, localUsers: localUsers, images: self.images), animated: false)
+            self.collectionView.setCollectionViewLayout(Self.configureLayout(self.roomInfo, localUsers: localUsers, images: self.images), animated: false)
             if let indexPath = self.dataSource.indexPath(for: .participantsItem(localUsers)),
                let cell = self.collectionView.cellForItem(at: indexPath) as? ParticipantsSectionParticipantCell {
                 cell.configureCell(localUsers)
@@ -743,7 +787,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
             // TODO: 실제 '나가기' 처리 로직 연결
             print("✅ 나가기 확정")
             
-            if self.room.creatorID == LoginManager.shared.getUserEmail {
+            if self.roomInfo.creatorID == LoginManager.shared.getUserEmail {
                 // Storage: Room_Images/imagePath 삭제
                 // Storage: rooms/roomID 삭제
                 // Storage: videos/roomID 삭제
