@@ -1369,7 +1369,14 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     @objc private func handleRoomSaveCompleted(notification: Notification) {
         guard let savedRoom = notification.userInfo?["room"] as? ChatRoom else { return }
         self.room = savedRoom
-        Task { FirebaseManager.shared.startListenRoomDoc(roomID: savedRoom.ID ?? "") }
+        Task {
+            FirebaseManager.shared.startListenRoomDoc(roomID: savedRoom.ID ?? "")
+            
+            if SocketIOManager.shared.isConnected {
+                SocketIOManager.shared.createRoom(savedRoom.ID ?? "")
+                SocketIOManager.shared.joinRoom(savedRoom.ID ?? "")
+            }
+        }
         
         Task { @MainActor [weak self] in
             guard let self = self else { return }
@@ -1688,8 +1695,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         Task {
             do {
                 // 1. 소켓 연결 (async/await 버전)
-                if !SocketIOManager.shared.isConnected {
-                    try await SocketIOManager.shared.establishConnection()
+                if SocketIOManager.shared.isConnected {
                     SocketIOManager.shared.joinRoom(room.ID ?? "")
                     SocketIOManager.shared.listenToNewParticipant()
                 }
@@ -1813,9 +1819,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             settingVC.onRoomUpdated = { [weak self] updatedRoom in
                 guard let self = self else { return }
                 Task { @MainActor in
-                    let old = self.room
                     self.room = updatedRoom
-                    await self.applyRoomDiffs(old: old, new: updatedRoom)
+                    self.updateNavigationTitle(with: updatedRoom)
                 }
             }
         }

@@ -296,18 +296,6 @@ class FirebaseManager {
                 originalFileURL: pair.originalFileURL
             )
             uploadedThumb = newThumb; uploadedOriginal = newOriginal
-//            
-//            try await roomRef.updateData([
-//                "thumbPath": newThumb,
-//                "originalPath": newOriginal,
-//                "roomName": newName,
-//                "roomDescription": newDesc
-//            ])
-//            
-//            Task.detached {
-//                if let t = oldThumb { FirebaseStorageManager.shared.deleteImageFromStorage(path: t) }
-//                if let o = oldOriginal { FirebaseStorageManager.shared.deleteImageFromStorage(path: o) }
-//            }
         }  else {
             // 텍스트만 변경
             try await roomRef.updateData([

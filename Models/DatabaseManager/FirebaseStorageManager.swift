@@ -433,6 +433,7 @@ class FirebaseStorageManager {
         // 2) URLSession은 async/await 제공 → continuation 없이 안전
         let (data, _) = try await URLSession.shared.data(from: url)
         guard let image = UIImage(data: data) else { throw StorageImageError.invalidData }
+        
         return image
     }
 

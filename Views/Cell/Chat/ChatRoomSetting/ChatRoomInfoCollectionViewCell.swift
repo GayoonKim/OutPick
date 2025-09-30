@@ -97,6 +97,23 @@ class ChatRoomInfoCell: UICollectionViewCell {
     }
     
     func configureCell(room: ChatRoom) {
+        print(#function, "🔥🔥🔥🔥🔥 4. roomInfo", room)
+        
+        if let thumbPath = room.thumbPath {
+            Task { @MainActor in
+                print(#function, "Custom Image")
+                let image = try await KingFisherCacheManager.shared.loadOrFetchImage(forKey: thumbPath, fetch: {
+                    try await FirebaseStorageManager.shared.fetchImageFromStorage(image: thumbPath, location: .RoomImage)
+                })
+                roomImageView.image = image
+            }
+        } else {
+            Task { @MainActor in
+                print(#function, "Default Image")
+                roomImageView.image = UIImage(named: "Default_Profile")
+            }
+        }
+        
         roomNameLabel.text = room.roomName
         roomParticipantCountLabel.text = "\(room.participants.count)명 참여"
         backgroundColor = UIColor(white: 0.3, alpha: 0.03)
