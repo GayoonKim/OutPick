@@ -21,7 +21,7 @@ struct ReplyPreview: Codable, Hashable {
     var firstThumbPath: String? = nil
     var senderAvatarPath: String? = nil
     var sentAt: Date? = nil
-    var isDeleted: Bool = false         
+    var isDeleted: Bool = false
 }
 
 struct VideoMetaPayload: Codable {
@@ -55,6 +55,8 @@ struct Attachment: Codable, Hashable {
     let hash: String                     // 콘텐츠 해시(파일명/캐시 키에 사용)
     var blurhash: String?                // 선택
 
+    let duration: Double?
+
     // MARK: - Convenience (직렬화 제외)
     var thumbCacheKey: String { "att:\(hash):thumb" }
     var originalCacheKey: String { "att:\(hash):original" }
@@ -72,6 +74,9 @@ struct Attachment: Codable, Hashable {
             "hash": hash
         ]
         if let b = blurhash { dict["blurhash"] = b }
+        if type == .video, let d = duration {
+            dict["duration"] = d
+        }
         return dict
     }
 
@@ -316,6 +321,10 @@ extension ChatMessage {
             let hash   = (item["hash"] as? String) ?? UUID().uuidString.replacingOccurrences(of: "-", with: "")
             let blur   = item["blurhash"] as? String
 
+            var duration: Double? = nil
+            if let d = item["duration"] as? Double { duration = d }
+            else if let i = item["duration"] as? Int { duration = Double(i) }
+
             result.append(Attachment(
                 type: type,
                 index: index,
@@ -325,7 +334,8 @@ extension ChatMessage {
                 height: height,
                 bytesOriginal: bytes,
                 hash: hash,
-                blurhash: blur
+                blurhash: blur,
+                duration: duration
             ))
         }
         return result

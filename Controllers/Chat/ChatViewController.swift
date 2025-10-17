@@ -831,6 +831,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             if !message.isFailed, message.senderID == LoginManager.shared.getUserEmail {
                 try await FirebaseManager.shared.saveMessage(message, roomCopy)
             }
+            
             // 로컬 DB 저장
             try await GRDBManager.shared.saveChatMessages([message])
 
@@ -1118,6 +1119,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             button.widthAnchor.constraint(greaterThanOrEqualToConstant: 44)
         ])
     }
+    
     // 저장 버튼 탭 → 사진 앱에 저장
     @MainActor
     private func handleSaveVideoTapped(from playerVC: AVPlayerViewController, localURL: URL?, storagePath: String?) async {

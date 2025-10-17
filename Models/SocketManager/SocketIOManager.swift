@@ -75,7 +75,7 @@ class SocketIOManager {
     private var subscriberCounts = [String: Int]() // 구독자 ref count
     
     private init() {
-        manager = SocketManager(socketURL: URL(string: "http://192.168.123.103:3000")!, config: [
+        manager = SocketManager(socketURL: URL(string: "http://192.168.123.107:3000")!, config: [
             .log(true),
             .compress,
             .connectParams(["clientKey": SocketIOManager.clientKey]),
@@ -362,7 +362,7 @@ class SocketIOManager {
                 #endif
                 return
             }
-            // (선택) 비디오 메시지만 통과시키고 싶다면 아래 가드를 사용
+            
             // guard message.attachments.contains(where: { $0.type == .video }) else { return }
             DispatchQueue.main.async {
                 onMessage(message)
@@ -484,7 +484,8 @@ class SocketIOManager {
                 height: height,
                 bytesOriginal: bytesOriginal,
                 hash: hash,
-                blurhash: blurhash
+                blurhash: blurhash,
+                duration: nil
             )
         }
 
@@ -605,7 +606,8 @@ class SocketIOManager {
                     height: p.originalHeight,
                     bytesOriginal: p.thumbData.count,
                     hash: p.sha256,
-                    blurhash: nil
+                    blurhash: nil,
+                    duration: nil
                 )
                 atts.append(att)
             }
@@ -706,7 +708,8 @@ class SocketIOManager {
                     height: ph,
                     bytesOriginal: data.count,
                     hash: hash,
-                    blurhash: nil
+                    blurhash: nil,
+                    duration: nil
                 )
                 localAttachments.append(att)
             }
@@ -854,7 +857,8 @@ class SocketIOManager {
             height: height,
             bytesOriginal: Int(bytes),
             hash: clientMessageID,
-            blurhash: nil
+            blurhash: nil,
+            duration: duration
         )
         
         // 5) 실패 ChatMessage 구성
@@ -896,7 +900,8 @@ class SocketIOManager {
             height: payload.height,
             bytesOriginal: Int(payload.sizeBytes),
             hash: payload.messageID,
-            blurhash: nil
+            blurhash: nil,
+            duration: payload.duration
         )
 
         // 실패 메시지 ID는 충돌 방지를 위해 prefix 부여

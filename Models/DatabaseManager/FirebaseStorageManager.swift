@@ -162,13 +162,13 @@ class FirebaseStorageManager {
 
         let (attachments, hadFailure) = await withTaskGroup(of: (Int, Attachment)?.self, returning: ([Attachment], Bool).self) { group in
             for p in pairs {
-                group.addTask { [weak self] in
+                group.addTask { [weak self] () -> (Int, Attachment)? in
                     guard let self = self else { return nil }
                     await limiter.acquire()
                     defer { Task { await limiter.release() } }
                     let base = p.fileBaseName // sha256
                     let pathThumb = "Rooms/\(roomID)/messages/\(messageID)/Thumb/\(base).jpg"
-                    let pathOriginal = "/\(roomID)/messages/\(messageID)/Original/\(base).jpg"
+                    let pathOriginal = "Rooms/\(roomID)/messages/\(messageID)/Original/\(base).jpg"
 
                     // Preflight: ensure original file URL is valid and non-empty
                     let fileURL = p.originalFileURL
@@ -271,7 +271,8 @@ class FirebaseStorageManager {
                             height: p.originalHeight,
                             bytesOriginal: p.bytesOriginal,
                             hash: p.sha256,
-                            blurhash: nil
+                            blurhash: nil,
+                            duration: nil
                         )
                         return (p.index, attachment)
                     } catch {
