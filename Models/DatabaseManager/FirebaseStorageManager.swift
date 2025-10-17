@@ -155,10 +155,10 @@ class FirebaseStorageManager {
         }
         var uploadedBytes: Int64 = 0
         let progressQueue = DispatchQueue(label: "firebase.upload.progress.aggregate")
-        var lastReported: [String: Int64] = [:]  // per-path last completed
+        var lastReported: [String: Int64] = [:]
         if totalBytes > 0 { onProgress?(0.0) }
 
-        let limiter = AsyncSemaphore(4) // up to 4 uploads in parallel
+        let limiter = AsyncSemaphore(4)
 
         let (attachments, hadFailure) = await withTaskGroup(of: (Int, Attachment)?.self, returning: ([Attachment], Bool).self) { group in
             for p in pairs {
@@ -170,12 +170,13 @@ class FirebaseStorageManager {
                     let pathThumb = "Rooms/\(roomID)/messages/\(messageID)/Thumb/\(base).jpg"
                     let pathOriginal = "Rooms/\(roomID)/messages/\(messageID)/Original/\(base).jpg"
 
-                    // Preflight: ensure original file URL is valid and non-empty
+                    // 원본 URL이 유혀한지 확인
                     let fileURL = p.originalFileURL
                     guard fileURL.isFileURL else {
                         print("🚫 invalid originalFileURL (not file URL): \(fileURL)")
                         return nil
                     }
+                    
                     var isDir: ObjCBool = false
                     let exists = FileManager.default.fileExists(atPath: fileURL.path, isDirectory: &isDir)
                     if !exists || isDir.boolValue {
@@ -459,7 +460,7 @@ class FirebaseStorageManager {
         return images.compactMap { $0 }
     }
     
-    // Preload (warm) cache for multiple Storage image paths without holding images in memory
+    // Storage에 있는 이지지 미리 캐시
     func prefetchImages(paths: [String], location: ImageLocation, createdDate: Date = Date()) {
         Task.detached { [weak self] in
             guard let self = self else { return }

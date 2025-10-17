@@ -438,14 +438,15 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             
             guard let room = self.room else { return }
             let isParticipant = room.participants.contains(LoginManager.shared.getUserEmail)
-            // 🔎 Preview mode for non-participants: fetch & render messages read-only
+            
+            // 🔎 참여중이지 않은 사용자들을 위한 미리보기
             if !isParticipant {
                 do {
                     // 서버에서 최신 메시지 페이징으로 불러오기 (로컬 DB에 저장하지 않음)
                     let previewMessages = try await FirebaseManager.shared.fetchMessagesPaged(for: room, pageSize: 100, reset: true)
                     addMessages(previewMessages, updateType: .initial)
 
-                    // 이미지/비디오 썸네일 프리페치 (셀 타깃 리로드 포함)
+                    // 이미지/비디오 썸네일 프리페치(셀 타깃 리로드 포함)
                     await self.prefetchThumbnails(for: previewMessages, maxConcurrent: 4)
                     await self.prefetchVideoAssets(for: previewMessages, maxConcurrent: 4)
 
@@ -468,25 +469,31 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 }.value
                 self.lastReadMessageID = localMessages.last?.ID
                 
-
                 let grouped = Dictionary(grouping: metas, by: { $0.messageID })
                 
                 // grouped 메타를 기반으로 썸네일 캐싱
-                for (messageID, attachments) in grouped {
-                    for att in attachments {
-                        let img = try? await FirebaseStorageManager.shared.fetchImageFromStorage(
-                            image: att.thumbURL ?? "",
-                            location: .RoomImage
-                        )
-                        if let img = img {
-                            await MainActor.run {
-                                print(#function, "📸 썸네일 로드 성공:", att.hash ?? "")
-                                self.messageImages[messageID, default: []].append(img)
-                            }
-                        }
-                    }
+//                for (messageID, attachments) in grouped {
+//                    for att in attachments {
+//                        let img = try? await FirebaseStorageManager.shared.fetchImageFromStorage(
+//                            image: att.thumbURL ?? "",
+//                            location: .RoomImage
+//                        )
+//                        if let img = img {
+//                            await MainActor.run {
+//                                print(#function, "📸 썸네일 로드 성공:", att.hash ?? "")
+//                                self.messageImages[messageID, default: []].append(img)
+//                            }
+//                        }
+//                    }
+//                }
+                // grouped 메타를 기반으로 썸네일 캐싱 → 공통 로직 사용
+                let imageMessageIDs = Set(grouped.keys)
+                let imageMessages = localMessages.filter { imageMessageIDs.contains($0.ID) }
+                for msg in imageMessages {
+                    await self.cacheImagesIfNeeded(for: msg, in: roomID)
                 }
-                // --- Video index: preload thumbnails & warm-up URLs for local messages ---
+                
+                // 로컬 메시지의 비디오 썸네일 및 원본 URLs 미리 캐싱
                 let vgrouped = Dictionary(grouping: vmetas, by: { $0.messageID })
                 for (messageID, vAtts) in vgrouped {
                     for v in vAtts {
@@ -497,12 +504,12 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                             let key = v.hash ?? thumbPath
                             do {
                                 let cache = KingfisherManager.shared.cache
-                                cache.memoryStorage.config.expiration = .date(Date().addingTimeInterval(60 * 60 * 24 * 30))
-                                cache.diskStorage.config.expiration = .days(30)
+                                cache.memoryStorage.config.expiration = .seconds(3600)
+                                cache.diskStorage.config.expiration = .days(3)
 
                                 if await KingFisherCacheManager.shared.isCached(key) {
                                     if let img = await KingFisherCacheManager.shared.loadImage(named: key) {
-                                        print(#function, "🎬 비디오 썸네일 캐시命中:", key)
+                                        print(#function, "🎬 비디오 썸네일 캐시:", key)
                                         await MainActor.run { self.messageImages[messageID, default: []].append(img) }
                                     }
                                 } else {
@@ -537,10 +544,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 
                 // 백그라운드 프리페치 시작 (이미지 썸네일 + 비디오 썸네일/URL warm-up)
                 
-                
                 await self.prefetchThumbnails(for: serverMessages, maxConcurrent: 4)
                 await self.prefetchVideoAssets(for: serverMessages, maxConcurrent: 4)
-                
                 
                 isUserInCurrentRoom = true
                 bindMessagePublishers()
@@ -575,7 +580,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 for msg in slice {
                     group.addTask { [weak self] in
                         guard let self = self else { return }
-                        await self.cacheAttachmentsIfNeeded(for: msg, in: roomID)
+                        await self.cacheImagesIfNeeded(for: msg, in: roomID)
                         await MainActor.run {
                             self.reloadVisibleMessageIfNeeded(messageID: msg.ID)
                         }
@@ -825,25 +830,25 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         
         print("\(message.isFailed ? "전송 실패" : "전송 성공") 메시지 수신: \(message)")
         
-        let roomCopy = room
+//        let roomCopy = room
         do {
             // 내가 보낸 정상 메시지만 Firebase에 기록 (중복 방지)
             if !message.isFailed, message.senderID == LoginManager.shared.getUserEmail {
-                try await FirebaseManager.shared.saveMessage(message, roomCopy)
+                try await FirebaseManager.shared.saveMessage(message, room)
             }
             
             // 로컬 DB 저장
             try await GRDBManager.shared.saveChatMessages([message])
 
-            // 🎬 실시간 비디오 메시지: 썸네일 캐시 + 원본 URL warm-up + 가시 셀 리로드
+            // 🎬 실시간 비디오 메시지: 썸네일 캐시 + 원본 URL 미리 캐시 + 가시 셀 리로드
             if message.attachments.contains(where: { $0.type == .video }) {
-                await self.cacheVideoAssetsIfNeeded(for: message, in: roomCopy.ID ?? "")
+                await self.cacheVideoAssetsIfNeeded(for: message, in: room.ID ?? "")
                 await MainActor.run { self.reloadVisibleMessageIfNeeded(messageID: message.ID) }
             }
 
             // 첨부 캐싱 (썸네일/이미지 캐시 저장 등)
             if !message.attachments.isEmpty && message.attachments.first?.type == .image {
-                await self.cacheAttachmentsIfNeeded(for: message, in: roomCopy.ID ?? "")
+                await self.cacheImagesIfNeeded(for: message, in: room.ID ?? "")
             }
 
             addMessages([message])
@@ -853,7 +858,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
     
     //     첨부파일 캐싱 전용
-    private func cacheAttachmentsIfNeeded(for message: ChatMessage, in roomID: String) async {
+    private func cacheImagesIfNeeded(for message: ChatMessage, in roomID: String) async {
         guard !message.attachments.isEmpty else { return }
         
         // 사전 로드할 썸네일 배열(첨부 index 순서 유지)
@@ -861,13 +866,17 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             .filter { $0.type == .image }
             .sorted { $0.index < $1.index }
         
+        // 이미 이 메시지의 썸네일 배열이 준비되어 있다면 중복 작업 스킵
+        if self.messageImages[message.ID] != nil { return }
+        
         for attachment in imageAttachments {
             // 이미지 타입 + 파일명 필수
             let key = attachment.hash
+            
             do {
                 let cache = KingfisherManager.shared.cache
-                cache.memoryStorage.config.expiration = .date(Date().addingTimeInterval(60 * 60 * 24 * 30))
-                cache.diskStorage.config.expiration = .days(30)
+                cache.memoryStorage.config.expiration = .seconds(3600)
+                cache.diskStorage.config.expiration = .days(3)
                 
                 if await KingFisherCacheManager.shared.isCached(key) {
                     guard let img = await KingFisherCacheManager.shared.loadImage(named: key) else { return }
@@ -898,9 +907,12 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
             if !thumbPath.isEmpty {
                 do {
+//                    let cache = KingfisherManager.shared.cache
+//                    cache.memoryStorage.config.expiration = .date(Date().addingTimeInterval(60 * 60 * 24 * 30))
+//                    cache.diskStorage.config.expiration = .days(30)
                     let cache = KingfisherManager.shared.cache
-                    cache.memoryStorage.config.expiration = .date(Date().addingTimeInterval(60 * 60 * 24 * 30))
-                    cache.diskStorage.config.expiration = .days(30)
+                    cache.memoryStorage.config.expiration = .seconds(3600)
+                    cache.diskStorage.config.expiration = .days(3)
 
                     if await KingFisherCacheManager.shared.isCached(key) {
                         if let img = await KingFisherCacheManager.shared.loadImage(named: key) {
@@ -2378,7 +2390,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             case .message(let message):
                 let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ChatMessageCell.reuseIdentifier, for: indexPath) as! ChatMessageCell
                 
-                // ✅ Always prefer the latest state from messageMap
+                // 메시지 최신 상태 반영
                 let latestMessage = self.messageMap[message.ID] ?? message
                 let latestImages = self.messageImages[message.ID] ?? []
                 
