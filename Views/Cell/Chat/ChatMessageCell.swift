@@ -442,12 +442,12 @@ class ChatMessageCell: UICollectionViewCell {
             NSLayoutConstraint.activate([ messageLabelTopConsraint! ])
         }
         
-        // Sent time
+        // 보낸 시간
         timeLabel.text = formattedTime(message.sentAt)
         mountTimeLabel(on: bubbleView, isMine: isMine)
         
         // Pre-mount the video badge onto the bubble (text-mode layout)
-        mountVideoBadge(on: bubbleView)
+//        mountVideoBadge(on: bubbleView)
         self.setNeedsLayout()
         self.layoutIfNeeded()
     }
@@ -457,7 +457,7 @@ class ChatMessageCell: UICollectionViewCell {
         widthConstraint?.isActive = false
         widthConstraint = nil
 
-        // If deleted, render as a text bubble with "삭제된 메시지입니다." instead of images
+        // 삭제된 메시지를 이미지가 아니라, "삭제된 메시지입니다."로 표시
         if message.isDeleted {
             bubbleView.isHidden = false
             messageLabel.isHidden = false
@@ -466,7 +466,6 @@ class ChatMessageCell: UICollectionViewCell {
             messageLabel.text = "삭제된 메시지입니다."
             messageLabel.textColor = UIColor.black.withAlphaComponent(0.4)
 
-            // Deactivate any previously applied image preview constraints (safety)
             NSLayoutConstraint.deactivate([
                 imagePreviewCollectionViewTopConstraint,
                 imagePreviewCollectionViewLeadingConstraint,
@@ -601,11 +600,21 @@ class ChatMessageCell: UICollectionViewCell {
             ].compactMap{$0})
 
             imagesPreviewCollectionView.updateCollectionView(images, contentHeight, rows)
-            // Sent time for image grid
+
             timeLabel.text = formattedTime(message.sentAt)
             mountTimeLabel(on: imagesPreviewCollectionView, isMine: isMine)
-            // Pre-mount the video badge onto the image grid (if needed)
-            mountVideoBadge(on: imagesPreviewCollectionView)
+
+//            mountVideoBadge(on: imagesPreviewCollectionView)
+            
+            if let firstVideo = message.attachments.first, firstVideo.type == .video {
+                if let dur = firstVideo.duration {
+                    showVideoBadge(durationText: formatDuration(dur))
+                } else {
+                    hideVideoBadge()
+                }
+            } else {
+                hideVideoBadge()
+            }
         }
     }
     
@@ -686,7 +695,7 @@ class ChatMessageCell: UICollectionViewCell {
     @objc private func handleImagesPreviewTap(_ gr: UITapGestureRecognizer) {
         let point = gr.location(in: imagesPreviewCollectionView)
         let tappedIndex = imagesPreviewCollectionView.index(at: point)
-        imageTapSubject.send(tappedIndex)                 // Combine 발행(선택)
+        imageTapSubject.send(tappedIndex)
     }
 
     // MARK: - Time Label Helpers
@@ -703,7 +712,6 @@ class ChatMessageCell: UICollectionViewCell {
     }
 
     private func mountTimeLabel(on host: UIView, isMine: Bool) {
-        // Deactivate old constraints
         NSLayoutConstraint.deactivate([timeBottomConstraint, timeRightOfHostLeading, timeLeftOfHostTrailing].compactMap { $0 })
         timeBottomConstraint = timeLabel.bottomAnchor.constraint(equalTo: host.bottomAnchor)
         if isMine {
@@ -723,7 +731,7 @@ class ChatMessageCell: UICollectionViewCell {
         contentView.bringSubviewToFront(timeLabel)
     }
 
-    /// Mounts the video badge on the current visible host (image grid or bubble) and pins it to center.
+    /// 비디오 재생 버튼 + 재생 시간 표시
     private func mountVideoBadge(on host: UIView) {
         if videoBadge.superview !== host {
             videoBadge.removeFromSuperview()
@@ -738,6 +746,18 @@ class ChatMessageCell: UICollectionViewCell {
         ]
         NSLayoutConstraint.activate(videoBadgeConstraints)
         host.bringSubviewToFront(videoBadge)
+    }
+    
+    private func formatDuration(_ seconds: Double) -> String {
+        let total = Int(round(seconds))
+        let h = total / 3600
+        let m = (total % 3600) / 60
+        let s = total % 60
+        if h > 0 {
+            return String(format: "%d:%02d:%02d", h, m, s)
+        } else {
+            return String(format: "%d:%02d", m, s)
+        }
     }
 }
 
