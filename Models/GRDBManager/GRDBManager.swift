@@ -163,9 +163,25 @@ final class GRDBManager {
             }
         }
         
+//        migrator.registerMigration("createChatMessage") { db in
+//            try db.create(table: "chatMessage") { t in
+//                t.column("id", .text).primaryKey() // 메시지 UUID 등
+//                t.column("roomID", .text).notNull()
+//                t.column("senderID", .text).notNull()
+//                t.column("senderNickname", .text).notNull()
+//                t.column("msg", .text)
+//                t.column("sentAt", .datetime)
+//                t.column("attachments", .text) // JSON string
+//                t.column("isFailed", .boolean).notNull().defaults(to: false)
+//                t.column("replyTo", .text)
+//            }
+//            
+//            try db.create(index: "idx_chatMessage_roomID_sentAt", on: "chatMessage", columns: ["roomID", "sentAt"], ifNotExists: true)
+//        }
         migrator.registerMigration("createChatMessage") { db in
             try db.create(table: "chatMessage") { t in
                 t.column("id", .text).primaryKey() // 메시지 UUID 등
+                t.column("seq", .integer).notNull().defaults(to: 0)  // 방 내 단조 증가 시퀀스
                 t.column("roomID", .text).notNull()
                 t.column("senderID", .text).notNull()
                 t.column("senderNickname", .text).notNull()
@@ -177,6 +193,25 @@ final class GRDBManager {
             }
             
             try db.create(index: "idx_chatMessage_roomID_sentAt", on: "chatMessage", columns: ["roomID", "sentAt"], ifNotExists: true)
+            try db.create(index: "idx_chatMessage_roomID_seq", on: "chatMessage", columns: ["roomID", "seq"], ifNotExists: true)
+        }
+        
+        migrator.registerMigration("addSeqToChatMessage") { db in
+            do {
+                try db.alter(table: "chatMessage") { t in
+                    t.add(column: "seq", .integer).notNull().defaults(to: 0)
+                }
+            } catch {
+                print("[Migration] addSeqToChatMessage (add column) skipped or failed: \(error)")
+            }
+            do {
+                try db.create(index: "idx_chatMessage_roomID_seq",
+                              on: "chatMessage",
+                              columns: ["roomID", "seq"],
+                              ifNotExists: true)
+            } catch {
+                print("[Migration] addSeqToChatMessage (create index) skipped or failed: \(error)")
+            }
         }
         
         migrator.registerMigration(("createChatMessageFTS")) { db in
@@ -445,16 +480,32 @@ final class GRDBManager {
                         return nil
                     }
                 }()
+                /*
+                 INSERT OR REPLACE INTO chatMessage
+                 (id, roomID, senderID, senderNickname, msg, sentAt, attachments, isFailed, replyPreview, isDeleted)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 */
                 
                 // 4) Upsert chatMessage row
                 try db.execute(
                     sql: """
                     INSERT OR REPLACE INTO chatMessage
-                    (id, roomID, senderID, senderNickname, msg, sentAt, attachments, isFailed, replyPreview, isDeleted)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (id, seq, roomID, senderID, senderNickname, msg, sentAt, attachments, isFailed, replyPreview, isDeleted)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     arguments: [
+//                        message.ID,
+//                        message.roomID,
+//                        message.senderID,
+//                        message.senderNickname,
+//                        message.msg,
+//                        message.sentAt,
+//                        attachmentsJSON,
+//                        message.isFailed,
+//                        replyPreviewJSON,
+//                        message.isDeleted
                         message.ID,
+                        message.seq,                 // ← 추가
                         message.roomID,
                         message.senderID,
                         message.senderNickname,
@@ -547,6 +598,7 @@ final class GRDBManager {
     }
     
     /// 최근 메시지 N개를 로컬 DB에서 조회 (시간 오름차순으로 반환)
+    ///  ORDER BY sentAt DESC, id DESC
     func fetchRecentMessages(inRoom roomID: String, limit: Int) async throws -> [ChatMessage] {
         try await dbPool.read { db in
             let rows = try Row.fetchAll(
@@ -554,7 +606,7 @@ final class GRDBManager {
                 sql: """
                 SELECT * FROM chatMessage
                 WHERE roomID = ?
-                ORDER BY sentAt DESC, id DESC
+                ORDER BY seq DESC, id DESC
                 LIMIT ?
                 """,
                 arguments: [roomID, limit]
@@ -574,7 +626,17 @@ final class GRDBManager {
                 }()
                 
                 var message = ChatMessage(
+//                    ID: row["id"],
+//                    roomID: row["roomID"],
+//                    senderID: row["senderID"],
+//                    senderNickname: row["senderNickname"],
+//                    msg: row["msg"],
+//                    sentAt: row["sentAt"],
+//                    attachments: attachments,
+//                    replyPreview: replyPreview,
+//                    isFailed: (row["isFailed"] as? Int64 == 1)
                     ID: row["id"],
+                    seq: (row["seq"] as? Int64) ?? 0,
                     roomID: row["roomID"],
                     senderID: row["senderID"],
                     senderNickname: row["senderNickname"],
@@ -589,31 +651,35 @@ final class GRDBManager {
             }
         }
     }
-    
+    // SELECT id, sentAt FROM chatMessage WHERE roomID = ? AND id = ? LIMIT 1
     func fetchOlderMessages(inRoom roomID: String, before anchorMessageID: String, limit: Int) async throws -> [ChatMessage] {
         try await dbPool.read { db in
             // 앵커 메시지의 sentAt을 조회
             guard let anchorRow = try Row.fetchOne(
                 db,
-                sql: "SELECT id, sentAt FROM chatMessage WHERE roomID = ? AND id = ? LIMIT 1",
+                sql: "SELECT id, seq FROM chatMessage WHERE roomID = ? AND id = ? LIMIT 1",
                 arguments: [roomID, anchorMessageID]
             ) else {
                 return []
             }
-            let anchorSentAt: Date = anchorRow["sentAt"]
-            let anchorId: String = anchorRow["id"]
+//            let anchorSentAt: Date = anchorRow["sentAt"]
+//            let anchorId: String = anchorRow["id"]
+            let anchorSeq: Int64 = (anchorRow["seq"] as? Int64) ?? 0
             
             // 앵커보다 과거인 메시지를 최신순으로 먼저 가져온 뒤, 반환 시 ASC로 뒤집기
+            // AND (sentAt < ? OR (sentAt = ? AND id < ?))
+            // ORDER BY sentAt DESC, id DESC
             let rows = try Row.fetchAll(
                 db,
                 sql: """
                 SELECT * FROM chatMessage
                 WHERE roomID = ?
-                  AND (sentAt < ? OR (sentAt = ? AND id < ?))
-                ORDER BY sentAt DESC, id DESC
+                AND seq < ?
+                ORDER BY seq DESC, id DESC
                 LIMIT ?
                 """,
-                arguments: [roomID, anchorSentAt, anchorSentAt, anchorId, limit]
+                arguments: [roomID, anchorSeq, limit]
+                // arguments: [roomID, anchorSentAt, anchorSentAt, anchorId, limit]
             )
             
             let ascRows = rows.reversed()
@@ -629,7 +695,7 @@ final class GRDBManager {
                 }()
                 
                 var message = ChatMessage(
-                    ID: row["id"],
+                    ID: row["id"], seq: (row["seq"] as? Int64) ?? 0,
                     roomID: row["roomID"],
                     senderID: row["senderID"],
                     senderNickname: row["senderNickname"],
@@ -646,6 +712,7 @@ final class GRDBManager {
     }
     
     /// 오래된 메시지를 삭제하여 최근 N개만 유지 (batchSize 지원)
+    /// ORDER BY sentAt ASC
     func pruneMessages(inRoom roomID: String, keepLast count: Int, batchSize: Int = 500) throws {
         try dbPool.write { db in
             // 현재 메시지 개수 확인
@@ -659,7 +726,7 @@ final class GRDBManager {
                     sql: """
                     SELECT id FROM chatMessage
                     WHERE roomID = ?
-                    ORDER BY sentAt ASC
+                    ORDER BY seq ASC, id ASC
                     LIMIT ?
                     """,
                     arguments: [roomID, toDelete]
@@ -690,6 +757,7 @@ final class GRDBManager {
         }
     }
     
+    // ORDER BY sentAt ASC
     func fetchMessages(in roomID: String, containing keyword: String? = nil) async throws -> [ChatMessage] {
         try await dbPool.read { db in
             
@@ -699,13 +767,14 @@ final class GRDBManager {
                 let sql = """
                 SELECT * FROM chatMessage
                 WHERE roomID = ? AND msg LIKE ?
-                ORDER BY sentAt ASC
+                ORDER BY seq ASC, id ASC
                 """
                 
                 let likeQuery = "%\(keyword)%"
                 rows = try Row.fetchAll(db, sql: sql, arguments: [roomID, likeQuery])
             } else {
-                let sql = "SELECT * FROM chatMessage WHERE roomID = ? ORDER BY sentAt ASC"
+                let sql = "SELECT * FROM chatMessage WHERE roomID = ? ORDER BY seq ASC, id ASC"
+                // SELECT * FROM chatMessage WHERE roomID = ? ORDER BY sentAt ASC
                 rows = try Row.fetchAll(db, sql: sql, arguments: [roomID])
             }
             
@@ -721,6 +790,7 @@ final class GRDBManager {
                 
                 var message = ChatMessage(
                     ID: row["id"],
+                    seq: (row["seq"] as? Int64) ?? 0,
                     roomID: row["roomID"],
                     senderID: row["senderID"],
                     senderNickname: row["senderNickname"],
@@ -736,11 +806,12 @@ final class GRDBManager {
         }
     }
     
+    // ORDER BY sentAt ASC
     func fetchAllMessages(inRoom roomID: String) async throws -> [ChatMessage] {
         try await dbPool.read { db in
             let rows = try Row.fetchAll(
                 db,
-                sql: "SELECT * FROM chatMessage WHERE roomID = ? ORDER BY sentAt ASC",
+                sql: "SELECT * FROM chatMessage WHERE roomID = ? ORDER BY seq ASC, id ASC",
                 arguments: [roomID]
             )
             
@@ -756,6 +827,7 @@ final class GRDBManager {
                 
                 var message = ChatMessage(
                     ID: row["id"],
+                    seq: (row["seq"] as? Int64) ?? 0,
                     roomID: row["roomID"],
                     senderID: row["senderID"],
                     senderNickname: row["senderNickname"],

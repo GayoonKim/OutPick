@@ -60,8 +60,6 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        print(#function, "All Rooms:", FirebaseManager.shared.roomStore)
-        print(#function, "Top Room IDs:", FirebaseManager.shared.topRoomIDs)
     }
 
     private func bindPublishers() {
@@ -95,24 +93,6 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
             cell.backgroundColor = .white
             
             cell.configure(room: item.room, messages: item.messages)
-//            if let imagePath = item.room.roomImagePath, !imagePath.isEmpty {
-//                Task.detached(priority: .userInitiated) { [weak self, weak cell] in
-//                    guard let self = self, let cell = cell else { return }
-//                    do {
-//                        let image = try await KingFisherCacheManager.shared.loadOrFetchImage(forKey: imagePath) {
-//                            try await FirebaseStorageManager.shared.fetchImageFromStorage(image: imagePath, location: .RoomImage)
-//                        }
-//                        
-//                        if await self.collectionView.indexPath(for: cell) == indexPath {
-//                            await MainActor.run {
-//                                cell.roomImageView.image = image
-//                            }
-//                        }
-//                    } catch {
-//                        
-//                    }
-//                }
-//            }
 
             return cell
         }
@@ -148,8 +128,6 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
         chatRoomVC.isRoomSaving = false
         chatRoomVC.modalPresentationStyle = .fullScreen
         ChatModalTransitionManager.present(chatRoomVC, from: self)
-//        chatRoomVC.hidesBottomBarWhenPushed = true
-//        self.navigationController?.pushViewController(chatRoomVC, animated: true)
     }
 
     @objc private func createRoomBtnTapped() {
@@ -174,7 +152,7 @@ private extension RoomListsCollectionViewController {
         navBar.translatesAutoresizingMaskIntoConstraints = false
         self.view.addSubview(navBar)
         
-        var constraints: [NSLayoutConstraint] = [
+        let constraints: [NSLayoutConstraint] = [
             navBar.topAnchor.constraint(equalTo: self.view.topAnchor),
             navBar.leadingAnchor.constraint(equalTo: self.view.leadingAnchor),
             navBar.trailingAnchor.constraint(equalTo: self.view.trailingAnchor),
@@ -184,12 +162,7 @@ private extension RoomListsCollectionViewController {
             self.collectionView.trailingAnchor.constraint(equalTo: self.view.trailingAnchor),
             self.collectionView.bottomAnchor.constraint(equalTo: self.view.bottomAnchor)
         ]
-//
-//        if customTabBar.superview != nil {
-//            constraints.append(self.collectionView.bottomAnchor.constraint(equalTo: self.customTabBar.topAnchor))
-//        } else {
-//            constraints.append(self.collectionView.bottomAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.bottomAnchor))
-//        }
+
         NSLayoutConstraint.activate(constraints)
         
         navBar.configureForRoomList(target: self, onSearch: #selector(searchBtnTapped), onCreate: #selector(createRoomBtnTapped))

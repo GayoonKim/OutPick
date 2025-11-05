@@ -324,6 +324,7 @@ class ChatMessageCell: UICollectionViewCell {
         
         // Reset sent time label and constraints
         timeLabel.text = nil
+        timeLabel.isHidden = false
         NSLayoutConstraint.deactivate([timeBottomConstraint, timeRightOfHostLeading, timeLeftOfHostTrailing].compactMap { $0 })
         timeBottomConstraint = nil
         timeRightOfHostLeading = nil
@@ -442,9 +443,14 @@ class ChatMessageCell: UICollectionViewCell {
             NSLayoutConstraint.activate([ messageLabelTopConsraint! ])
         }
         
-        // 보낸 시간
-        timeLabel.text = formattedTime(message.sentAt)
-        mountTimeLabel(on: bubbleView, isMine: isMine)
+        // 보낸 시간 (실패 메시지는 숨김)
+        if message.isFailed {
+            timeLabel.isHidden = true
+        } else {
+            timeLabel.isHidden = false
+            timeLabel.text = formattedTime(message.sentAt)
+            mountTimeLabel(on: bubbleView, isMine: isMine)
+        }
         
         // Pre-mount the video badge onto the bubble (text-mode layout)
 //        mountVideoBadge(on: bubbleView)
@@ -456,6 +462,8 @@ class ChatMessageCell: UICollectionViewCell {
         // Clear any previously applied bubble width constraint so image-mode cells don't carry text-mode constraints
         widthConstraint?.isActive = false
         widthConstraint = nil
+        
+        print(#function, "여기 호출이요: ", images)
 
         // 삭제된 메시지를 이미지가 아니라, "삭제된 메시지입니다."로 표시
         if message.isDeleted {
@@ -529,9 +537,14 @@ class ChatMessageCell: UICollectionViewCell {
                 bubbleViewBottomConstraint
             ].compactMap { $0 })
 
-            // Sent time for deleted-as-text case
-            timeLabel.text = formattedTime(message.sentAt)
-            mountTimeLabel(on: bubbleView, isMine: isMine)
+            // Sent time for deleted-as-text case (실패 메시지는 숨김)
+            if message.isFailed {
+                timeLabel.isHidden = true
+            } else {
+                timeLabel.isHidden = false
+                timeLabel.text = formattedTime(message.sentAt)
+                mountTimeLabel(on: bubbleView, isMine: isMine)
+            }
 
             self.setNeedsLayout()
             self.layoutIfNeeded()
@@ -601,8 +614,14 @@ class ChatMessageCell: UICollectionViewCell {
 
             imagesPreviewCollectionView.updateCollectionView(images, contentHeight, rows)
 
-            timeLabel.text = formattedTime(message.sentAt)
-            mountTimeLabel(on: imagesPreviewCollectionView, isMine: isMine)
+            // 보낸 시간 (실패 메시지는 숨김)
+            if message.isFailed {
+                timeLabel.isHidden = true
+            } else {
+                timeLabel.isHidden = false
+                timeLabel.text = formattedTime(message.sentAt)
+                mountTimeLabel(on: imagesPreviewCollectionView, isMine: isMine)
+            }
 
 //            mountVideoBadge(on: imagesPreviewCollectionView)
             

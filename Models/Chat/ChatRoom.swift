@@ -39,6 +39,11 @@ struct ChatRoom: Codable {
     var originalPath: String?
     var lastMessageAt: Date?
     var lastMessage: String?
+
+    /// 방의 현재 "tail" 시퀀스 값 (마지막으로 할당된 메시지 시퀀스)
+    /// - 생성 시 0으로 시작하고, 새 메시지 저장 시 마지막 메시지의 seq로 갱신됩니다.
+    /// - 오래된 문서에 키가 없어도 디코딩되도록 기본값 0을 둡니다.
+    var seq: Int64 = 0
     
     // 현재 방의 활성 공지(배너) 상태
     var activeAnnouncementID: String?       // 메시지 히스토리(.announcement) 문서 ID
@@ -59,9 +64,10 @@ struct ChatRoom: Codable {
         case activeAnnouncementID
         case activeAnnouncement
         case announcementUpdatedAt
+        case seq
     }
     
-    // Firestore에 저장하기 위힌 뱐환 메서드
+    // Firestore에 저장하기 위한 변환 메서드
     func toDictionary() -> [String: Any] {
         var data: [String: Any] = [
             "ID": ID ?? "",
@@ -69,7 +75,8 @@ struct ChatRoom: Codable {
             "roomDescription": roomDescription,
             "participantIDs": participants,
             "creatorID": creatorID,
-            "createdAt": Timestamp(date: createdAt)
+            "createdAt": Timestamp(date: createdAt),
+            "seq": seq
         ]
 
         // 선택 필드들: 존재할 때만 저장

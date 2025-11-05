@@ -75,7 +75,7 @@ class SocketIOManager {
     private var subscriberCounts = [String: Int]() // 구독자 ref count
     
     private init() {
-        manager = SocketManager(socketURL: URL(string: "http://192.168.123.107:3000")!, config: [
+        manager = SocketManager(socketURL: URL(string: "http://192.168.123.120:3000")!, config: [
             .log(true),
             .compress,
             .connectParams(["clientKey": SocketIOManager.clientKey]),
@@ -493,7 +493,7 @@ class SocketIOManager {
         guard socket.status == .connected else {
             let atts = attachments.enumerated().map { makeAttachment(from: $0.element, fallbackIndex: $0.offset) }
             let failed = ChatMessage(
-                ID: clientMessageID,
+                ID: clientMessageID, seq: 0,
                 roomID: roomID,
                 senderID: senderID,
                 senderNickname: senderNickname,
@@ -522,16 +522,29 @@ class SocketIOManager {
             "sentAt": isoSentAt
         ]
 
-        // 2) Ack 포함 전송 → 성공 시 로컬 퍼블리시
+        // NOTE: 성공 시에는 로컬 퍼블리시를 하지 않는다.
+        // reason: 서버 브로드캐스트가 ACK보다 먼저 도착할 수 있어, 이후에 퍼블리시된 seq=0 스텁이
+        //         정규 메시지를 덮어써 UI 상에서 seq가 0으로 보이는 문제가 발생할 수 있음.
         socket.emitWithAck(eventName, body).timingOut(after: 15) { [weak self] ackResponse in
             guard let self = self else { return }
             let ack = ackResponse.first as? [String: Any]
             let ok = (ack?["ok"] as? Bool) ?? (ack?["success"] as? Bool) ?? false
             let duplicate = (ack?["duplicate"] as? Bool) ?? false
 
+            if ok || duplicate {
+                // 성공/중복(이미 서버가 브로드캐스트했을 가능성) 시에는
+                // 로컬에 seq=0 메시지를 퍼블리시하지 않습니다.
+                // → 서버의 'receiveImages' 브로드캐스트로 도착하는 정규 메시지(정확한 seq 포함)에 UI를 맡깁니다.
+                Task {
+                    await FirebaseManager.shared.updateRoomLastMessage(roomID: roomID, date: now, msg: "사진 \(attachments.count)장")
+                }
+                return
+            }
+
+            // 실패/타임아웃: 실패 메시지를 로컬에만 퍼블리시해 재시도 UX 제공
             let atts = attachments.enumerated().map { makeAttachment(from: $0.element, fallbackIndex: $0.offset) }
-            let message = ChatMessage(
-                ID: clientMessageID,
+            let failed = ChatMessage(
+                ID: clientMessageID, seq: 0,
                 roomID: roomID,
                 senderID: senderID,
                 senderNickname: senderNickname,
@@ -539,16 +552,10 @@ class SocketIOManager {
                 sentAt: now,
                 attachments: atts,
                 replyPreview: nil,
-                isFailed: !(ok || duplicate)
+                isFailed: true
             )
-
-            if ok || duplicate {
-                Task {
-                    await FirebaseManager.shared.updateRoomLastMessage(roomID: roomID, date: now, msg: "사진 \(attachments.count)장")
-                }
-            }
             DispatchQueue.main.async {
-                self.roomSubjects[roomID]?.send(message)
+                self.roomSubjects[roomID]?.send(failed)
             }
         }
     }
@@ -614,7 +621,7 @@ class SocketIOManager {
         }
 
         let failedMessage = ChatMessage(
-            ID: UUID().uuidString,
+            ID: UUID().uuidString, seq: 0,
             roomID: roomID,
             senderID: senderID,
             senderNickname: senderNickname,
@@ -718,7 +725,7 @@ class SocketIOManager {
         // 일부라도 생성되었으면 실패 메시지 전송 (메타만 포함)
         guard !localAttachments.isEmpty else { return }
         let failedMessage = ChatMessage(
-            ID: UUID().uuidString,
+            ID: UUID().uuidString, seq: 0,
             roomID: room.ID ?? "",
             senderID: LoginManager.shared.getUserEmail,
             senderNickname: LoginManager.shared.currentUserProfile?.nickname ?? "",
@@ -863,7 +870,7 @@ class SocketIOManager {
         
         // 5) 실패 ChatMessage 구성
         let message = ChatMessage(
-            ID: clientMessageID,
+            ID: clientMessageID, seq: 0,
             roomID: roomID,
             senderID: senderID,
             senderNickname: senderNickname,
@@ -907,7 +914,7 @@ class SocketIOManager {
         // 실패 메시지 ID는 충돌 방지를 위해 prefix 부여
         let failedID = "failed-\(payload.messageID)"
         let message = ChatMessage(
-            ID: failedID,
+            ID: failedID, seq: 0,
             roomID: roomID,
             senderID: senderID,
             senderNickname: senderNickname,

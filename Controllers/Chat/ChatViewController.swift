@@ -18,93 +18,6 @@ import CryptoKit
 import Photos
 import FirebaseFirestore
 
-// MARK: - OPStorageURLCache (Firebase Storage downloadURL cache)
-actor OPStorageURLCache {
-    private var cache: [String: URL] = [:]
-    func url(for path: String) async throws -> URL {
-        if let u = cache[path] { return u }
-        let ref = Storage.storage().reference(withPath: path)
-        let url = try await withCheckedThrowingContinuation { cont in
-            ref.downloadURL { url, err in
-                if let url { cont.resume(returning: url) }
-                else { cont.resume(throwing: err ?? NSError(domain: "Storage", code: -1, userInfo: [NSLocalizedDescriptionKey: "downloadURL failed"])) }
-            }
-        }
-        cache[path] = url
-        return url
-    }
-}
-
-// MARK: - OPVideoDiskCache (progressive MP4 local caching)
-actor OPVideoDiskCache {
-    static let shared = OPVideoDiskCache()
-    private let dir: URL
-    private let capacity: Int64 = 512 * 1024 * 1024 // 512MB
-    
-    init() {
-        let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        dir = base.appendingPathComponent("Videos", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-    }
-    
-    /// Deterministic local file URL for a given logical key.
-    func localURL(forKey key: String) -> URL {
-        dir.appendingPathComponent(key.sha256() + ".mp4")
-    }
-    
-    /// Returns local file URL if cached.
-    func exists(forKey key: String) -> URL? {
-        let u = localURL(forKey: key)
-        return FileManager.default.fileExists(atPath: u.path) ? u : nil
-    }
-    
-    /// Download and store a remote file to cache; returns the final local URL.
-    @discardableResult
-    func cache(from remote: URL, key: String) async throws -> URL {
-        let tmp = dir.appendingPathComponent(UUID().uuidString + ".part")
-        let (data, _) = try await URLSession.shared.data(from: remote)
-        try data.write(to: tmp, options: .atomic)
-        let dest = localURL(forKey: key)
-        try? FileManager.default.removeItem(at: dest)
-        try FileManager.default.moveItem(at: tmp, to: dest)
-        try trimIfNeeded()
-        return dest
-    }
-    
-    /// Evict old files when capacity exceeded (LRU-ish using modification date).
-    private func trimIfNeeded() throws {
-        let files = try FileManager.default.contentsOfDirectory(
-            at: dir,
-            includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey],
-            options: [.skipsHiddenFiles]
-        )
-        var entries: [(url: URL, date: Date, size: Int64)] = []
-        var total: Int64 = 0
-        for u in files {
-            let rv = try u.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
-            let d = rv.contentModificationDate ?? Date.distantPast
-            let s = Int64(rv.fileSize ?? 0)
-            total += s
-            entries.append((u, d, s))
-        }
-        guard total > capacity else { return }
-        for entry in entries.sorted(by: { $0.date < $1.date }) {
-            try? FileManager.default.removeItem(at: entry.url)
-            total -= entry.size
-            if total <= capacity { break }
-        }
-    }
-}
-
-// MARK: - Utilities
-fileprivate extension String {
-    func sha256() -> String {
-        let data = Data(self.utf8)
-        let hash = SHA256.hash(data: data)
-        return hash.map { String(format: "%02x", $0) }.joined()
-    }
-}
-
 protocol ChatMessageCellDelegate: AnyObject {
     func cellDidLongPress(_ cell: ChatMessageCell)
 }
@@ -187,6 +100,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private var deletionListener: ListenerRegistration?
     
     private var cellSubscriptions: [ObjectIdentifier: Set<AnyCancellable>] = [:]
+    
     
     deinit {
         print("💧 ChatViewController deinit")
@@ -339,6 +253,17 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     private var lastContainerViewOriginY: Double = 0
     
+    enum LiveMode { case catchingUp, live }
+    private var liveMode: LiveMode = .live
+    private var entryTailSeq: Int64 = 0 // 방 입장 시점의 tail 스냅샷(고정)
+    private var windowMaxSeq: Int64 = 0 // 현재 창(로컬+서버 로드)의 최대 seq
+    
+    // 실시간 버퍼(캐치업 중에는 UI 반영 보류)
+    private var liveBuffer: [ChatMessage] = []
+    private var liveBufferIDs: Set<String> = []
+    // 마지막으로 서버에 반영한 lastReadSeq (단조 증가, 중복 쓰기 방지)
+    private var lastSentLastReadSeq: Int64 = 0
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         self.definesPresentationContext = true
@@ -421,6 +346,20 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
+        
+        guard let room = self.room else { return }
+
+        // 세션 종료 시: 실제 확인한 최대 위치 기록(입장 스냅샷을 넘기지 않음)
+        let finalSeq = min(windowMaxSeq, entryTailSeq)
+        if finalSeq > lastSentLastReadSeq { lastSentLastReadSeq = finalSeq }
+
+        Task(priority: .utility) { [roomID = room.ID ?? "", uid = LoginManager.shared.getUserEmail, seq = finalSeq] in
+            do {
+                try await FirebaseManager.shared.updateLastReadSeq(roomID: roomID, userID: uid, lastReadSeq: seq)
+            } catch {
+                print("⚠️ viewWillDisappear lastReadSeq 기록 실패: \(error)")
+            }
+        }
     }
 
     override func viewDidLayoutSubviews() {
@@ -460,15 +399,18 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             do {
                 // 1. GRDB 로드
                 let roomID = room.ID ?? ""
-//                let localMessages = try await GRDBManager.shared.fetchRecentMessages(inRoom: roomID, limit: 200)
                 let localMessages = try await Task(priority: .userInitiated) {
                     try await GRDBManager.shared.fetchRecentMessages(inRoom: roomID, limit: 200)
                 }.value
                 self.lastReadMessageID = localMessages.last?.ID
+                
+                localMessages.forEach {
+                    print("📢 로컬 메시지 로드:", $0)
+                }
 
                 let imageMessages = localMessages.filter { $0.attachments.contains { $0.type == .image } }
                 for msg in imageMessages {
-                    await self.cacheImagesIfNeeded(for: msg, in: roomID)
+                    await self.cacheImagesIfNeeded(for: msg)
                 }
 
                 // 로컬 메시지의 비디오 에셋 캐싱은 표준 헬퍼로 통일
@@ -482,9 +424,17 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 // 2. 삭제 상태 동기화
                 await syncDeletedStates(localMessages: localMessages, room: room)
 
-                // 3. Firebase 전체 메시지 로드
+                // 3. Firebase에서 메시지 로드
                 let serverMessages = try await FirebaseManager.shared.fetchMessagesPaged(for: room, pageSize: 300, reset: true)
                 try await GRDBManager.shared.saveChatMessages(serverMessages)
+                
+                // ===== 초기 창 기준 계산: 입장 tail 스냅샷과 창 최대 seq =====
+                self.entryTailSeq = Int64(room.seq) // 입장 시점 고정 스냅샷
+                let localMaxSeq  = localMessages.map(\.seq).max() ?? 0
+                let serverMaxSeq = serverMessages.map(\.seq).max() ?? 0
+                self.windowMaxSeq = max(localMaxSeq, serverMaxSeq)
+                self.liveMode = (self.windowMaxSeq >= self.entryTailSeq) ? .live : .catchingUp
+                print("[Init] entryTailSeq=", self.entryTailSeq, "windowMaxSeq=", self.windowMaxSeq, "liveMode=", self.liveMode)
 
                 addMessages(serverMessages, updateType: .newer)
 
@@ -494,11 +444,40 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
                 isUserInCurrentRoom = true
                 bindMessagePublishers()
+                
+                
             } catch {
                 print("❌ 메시지 초기화 실패:", error)
             }
             isInitialLoading = false
         }
+    }
+    
+    @MainActor
+    private func updateWindowMaxSeq(with messages: [ChatMessage]) {
+        guard let mx = messages.map(\.seq).max() else { return }
+        if mx > windowMaxSeq { windowMaxSeq = mx }
+    }
+
+    @MainActor
+    private func drainLiveBufferIfAny() {
+        guard !liveBuffer.isEmpty else { return }
+        // 중복/순서 정리 후 배치 추가
+        let flushed = liveBuffer.sorted { $0.seq < $1.seq }
+        liveBuffer.removeAll()
+        liveBufferIDs.removeAll()
+
+        // UI 부하 완화: 소량 배치
+        let chunkSize = 20
+        var i = 0
+        while i < flushed.count {
+            let end = min(i + chunkSize, flushed.count)
+            let chunk = Array(flushed[i..<end])
+            addMessages(chunk, updateType: .newer)
+            i = end
+        }
+
+        updateWindowMaxSeq(with: flushed)
     }
     
     @MainActor
@@ -513,7 +492,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
     
     private func prefetchThumbnails(for messages: [ChatMessage], maxConcurrent: Int = 4) async {
-        guard let roomID = self.room?.ID else { return }
+        guard (self.room?.ID) != nil else { return }
         let imageMessages = messages.filter { $0.attachments.contains { $0.type == .image } }
         
         var index = 0
@@ -525,7 +504,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 for msg in slice {
                     group.addTask { [weak self] in
                         guard let self = self else { return }
-                        await self.cacheImagesIfNeeded(for: msg, in: roomID)
+                        await self.cacheImagesIfNeeded(for: msg)
                         await MainActor.run {
                             self.reloadVisibleMessageIfNeeded(messageID: msg.ID)
                         }
@@ -538,9 +517,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
     
     // MARK: - Video asset prefetching
-    // Video duration cache (keyed by attachment.hash or pathOriginal)
-    private var videoDurationCache: [String: Double] = [:]
-    
     private func prefetchVideoAssets(for messages: [ChatMessage], maxConcurrent: Int = 4) async {
         guard let roomID = self.room?.ID else { return }
         let videoMessages = messages.filter { $0.attachments.contains { $0.type == .video } }
@@ -562,7 +538,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             index = end
         }
     }
-
 
     @MainActor
     private func syncDeletedStates(localMessages: [ChatMessage], room: ChatRoom) async {
@@ -613,54 +588,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             print("❌ 삭제 상태 동기화 실패:", error)
         }
     }
-    
-//    @MainActor
-//    private func syncDeletedStates(localMessages: [ChatMessage], room: ChatRoom) async {
-//        do {
-//            // 1) 로컬 200개 메시지의 ID / 삭제상태 맵
-//            let localIDs = localMessages.map { $0.ID }
-//            let localDeletionStates = Dictionary(uniqueKeysWithValues: localMessages.map { ($0.ID, $0.isDeleted) })
-//            
-//            // 2) 서버에서 해당 ID들의 삭제 상태만 조회 (chunked IN query)
-//            let serverMap = try await FirebaseManager.shared.fetchDeletionStates(roomID: room.ID ?? "", messageIDs: localIDs)
-//            
-//            // 3) 서버가 true인데 로컬은 false인 ID만 업데이트 대상
-//            let idsToUpdate: [String] = localIDs.filter { (serverMap[$0] ?? false) && ((localDeletionStates[$0] ?? false) == false) }
-//            guard !idsToUpdate.isEmpty else { return }
-//            
-//            let roomID = room.ID ?? ""
-//            
-//            // 4) GRDB 영속화: 원본 isDeleted + 해당 원본을 참조하는 replyPreview.isDeleted
-////            try await GRDBManager.shared.updateMessagesIsDeleted(idsToUpdate, isDeleted: true, inRoom: roomID)
-////            try await GRDBManager.shared.updateReplyPreviewsIsDeleted(referencing: idsToUpdate, isDeleted: true, inRoom: roomID)
-//            // ✅ DB 업데이트는 메인 액터 밖에서 실행하여 UI 블로킹 방지
-//            try await Task(priority: .userInitiated) {
-//                try await GRDBManager.shared.updateMessagesIsDeleted(idsToUpdate, isDeleted: true, inRoom: roomID)
-//                try await GRDBManager.shared.updateReplyPreviewsIsDeleted(referencing: idsToUpdate, isDeleted: true, inRoom: roomID)
-//            }.value
-//            
-//            // 5) UI 배치 리로드 셋업
-//            //    - 원본: isDeleted=true로 마킹된 복사본
-//            let deletedMessages: [ChatMessage] = localMessages
-//                .filter { idsToUpdate.contains($0.ID) }
-//                .map { msg in var copy = msg; copy.isDeleted = true; return copy }
-//            
-//            //    - 답장: replyPreview.messageID ∈ idsToUpdate → replyPreview.isDeleted=true 복사본
-//            let affectedReplies: [ChatMessage] = localMessages
-//                .filter { msg in (msg.replyPreview?.messageID).map(idsToUpdate.contains) ?? false }
-//                .map { reply in var copy = reply; copy.replyPreview?.isDeleted = true; return copy }
-//            
-//            let toReload = deletedMessages + affectedReplies
-//            if !toReload.isEmpty {
-//                addMessages(toReload, updateType: .reload)
-//            }
-//        } catch {
-//            print("❌ 삭제 상태 동기화 실패:", error)
-//        }
-//        
-//        
-//    }
-    
+
     @MainActor
     private func removeReadMarkerIfNeeded() {
         var snapshot = dataSource.snapshot()
@@ -687,11 +615,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             let roomID = room.ID ?? ""
             
             // 1. GRDB에서 먼저 최대 100개
-//            let local = try await Task.detached(priority: .userInitiated) {
-//                try await GRDBManager.shared.fetchOlderMessages(
-//                    inRoom: roomID, before: messageID ?? "", limit: 100
-//                )
-//            }.value
             let local = try await GRDBManager.shared.fetchOlderMessages(inRoom: roomID, before: messageID ?? "", limit: 100)
             var loadedMessages = local
             
@@ -707,9 +630,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 if server.isEmpty {
                     hasMoreOlder = false   // 더 이상 이전 메시지 없음
                 } else {
-//                    try await Task.detached(priority: .utility) {
-//                        try await GRDBManager.shared.saveChatMessages(server)
-//                    }.value
                     try await GRDBManager.shared.saveChatMessages(server)
                     loadedMessages.append(contentsOf: server)
                 }
@@ -736,34 +656,41 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private func loadNewerMessagesIfNeeded(after messageID: String?) async {
         guard !isLoadingNewer else { return }
         guard let room = self.room else { return }
-        
+
         isLoadingNewer = true
         defer { isLoadingNewer = false }
-        
+
         print(#function, "✅ loading newer 진행")
         do {
-            // 1. 서버에서 lastMessageID 이후 메시지 보충 (최대 100개)
+            // 1) 서버에서 after 이후 메시지 보충 (최대 100개, seq ASC 가정)
             let server = try await FirebaseManager.shared.fetchMessagesAfter(
                 room: room,
                 after: messageID ?? "",
                 limit: 100
             )
-            
-            if server.isEmpty {
-                return
-            } else {
-//                try await Task.detached(priority: .utility) {
-//                    try await GRDBManager.shared.saveChatMessages(server)
-//                }.value
-                try await GRDBManager.shared.saveChatMessages(server)
-                // 메시지를 20개씩 처리
-                let chunkSize = 20
-                let total = server.count
-                for i in stride(from: 0, to: total, by: chunkSize) {
-                    let end = min(i + chunkSize, total)
-                    let chunk = Array(server[i..<end])
-                    addMessages(chunk, updateType: .newer)
-                }
+
+            // 2) 창 최대 seq 갱신 + catchingUp → live 전환 판정
+            if let pageMax = server.last?.seq {
+                if pageMax > windowMaxSeq { windowMaxSeq = pageMax }
+            }
+            if liveMode == .catchingUp && windowMaxSeq >= entryTailSeq {
+                liveMode = .live
+                drainLiveBufferIfAny()
+            }
+            // 3) newerPage 경로에서는 바닥 체크 생략(이미 바닥 근접 스크롤로 유도됨)
+            maybeUpdateLastReadSeq(trigger: "newerPage", skipNearBottomCheck: true)
+
+            // 4) 저장/스냅샷 반영
+            guard !server.isEmpty else { return }
+            try await GRDBManager.shared.saveChatMessages(server)
+
+            // 배치 반영(20개 단위)
+            let chunkSize = 20
+            let total = server.count
+            for i in stride(from: 0, to: total, by: chunkSize) {
+                let end = min(i + chunkSize, total)
+                let chunk = Array(server[i..<end])
+                addMessages(chunk, updateType: .newer)
             }
         } catch {
             print("❌ loadNewerMessagesIfNeeded 실패:", error)
@@ -828,28 +755,51 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     @MainActor
     private func handleIncomingMessage(_ message: ChatMessage) async {
         guard let room = self.room else { return }
-        
-        // 다른 방에서 온 이벤트면 무시 (안전 가드)
+        // 다른 방 이벤트는 무시
         if message.roomID != room.ID { return }
         print("\(message.isFailed ? "전송 실패" : "전송 성공") 메시지 수신: \(message)")
-        
-        // 1) UI 선반영 (즉시)
-        addMessages([message])
-        
-        // 2) 첨부 캐싱은 백그라운드에서 처리 (셀 리로드는 메인에서)
-        Task(priority: .utility) { [weak self] in
-            guard let self = self else { return }
-            if message.attachments.contains(where: { $0.type == .video }) {
-                await self.cacheVideoAssetsIfNeeded(for: message, in: room.ID ?? "")
-                await MainActor.run { self.reloadVisibleMessageIfNeeded(messageID: message.ID) }
-            }
-            if message.attachments.contains(where: { $0.type == .image }) {
-                await self.cacheImagesIfNeeded(for: message, in: room.ID ?? "")
+
+        // 1) 첨부 캐시 선행 (이미지/비디오가 있으면)
+        let hasImages = message.attachments.contains { $0.type == .image }
+        let hasVideos = message.attachments.contains { $0.type == .video }
+        if hasImages || hasVideos {
+            let rid = room.ID ?? ""
+            await withTaskGroup(of: Void.self) { group in
+                if hasImages {
+                    group.addTask { [weak self] in
+                        guard let self = self else { return }
+                        await self.cacheImagesIfNeeded(for: message)
+                    }
+                }
+                if hasVideos {
+                    group.addTask { [weak self] in
+                        guard let self = self else { return }
+                        await self.cacheVideoAssetsIfNeeded(for: message, in: rid)
+                    }
+                }
+                await group.waitForAll()
             }
         }
-        
-        // 3) 로컬 DB 저장: fire-and-forget + 재시도(백오프)
-        Task(priority: .utility) {
+
+        // 2) 모드별 처리
+        switch liveMode {
+        case .catchingUp:
+            if !liveBufferIDs.contains(message.ID) {
+                liveBufferIDs.insert(message.ID)
+                liveBuffer.append(message)
+            }
+            // catchingUp에서는 windowMaxSeq 갱신 안 함(페이지 로드 기준만)
+            return
+
+        case .live:
+            addMessages([message])
+            if message.seq > windowMaxSeq { windowMaxSeq = message.seq }
+            // 라이브 소비 중 바닥 근처일 때만 읽음 진행 반영 (isNearBottom 사용)
+            maybeUpdateLastReadSeq(trigger: "liveIncoming")
+        }
+
+        // 3) 로컬 DB 저장 (재시도 백오프)
+        Task(priority: .userInitiated) {
             let maxRetries = 3
             var lastError: Error?
             for attempt in 1...maxRetries {
@@ -861,7 +811,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                     lastError = error
                     print("⚠️ GRDB saveChatMessages 실패 (시도 \(attempt)/\(maxRetries)): \(error)")
                     if attempt < maxRetries {
-                        // 0.2s, 0.4s, 0.6s 백오프
                         try? await Task.sleep(nanoseconds: UInt64(200_000_000) * UInt64(attempt))
                     }
                 }
@@ -870,8 +819,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 print("❌ GRDB saveChatMessages 최종 실패: \(err)")
             }
         }
-        
-        // 4) 내가 보낸 정상 메시지면 Firebase에도 기록 (UI 비차단)
+
+        // 4) 내가 보낸 정상 메시지면 Firebase 기록 (비차단)
         if !message.isFailed, message.senderID == LoginManager.shared.getUserEmail {
             let currentRoom = room
             Task(priority: .utility) {
@@ -883,70 +832,74 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             }
         }
     }
-    
-//    @MainActor
-//    private func handleIncomingMessage(_ message: ChatMessage) async {
-//        guard let room = self.room else { return }
+
+//        // 2) 캐시가 준비된 후 메시지 추가(셀에서 즉시 썸네일 접근 가능)
+//        addMessages([message])
 //
-//        // 다른 방에서 온 이벤트면 무시 (안전 가드)
-//        if message.roomID != room.ID { return }
-//
-//        print("\(message.isFailed ? "전송 실패" : "전송 성공") 메시지 수신: \(message)")
-//
-//        do {
-//            // 내가 보낸 정상 메시지만 Firebase에 기록 (중복 방지)
-//            if !message.isFailed, message.senderID == LoginManager.shared.getUserEmail {
-//                try await FirebaseManager.shared.saveMessage(message, room)
+//        // 3) 로컬 DB 저장: fire-and-forget + 재시도(백오프)
+//        Task(priority: .userInitiated) {
+//            let maxRetries = 3
+//            var lastError: Error?
+//            for attempt in 1...maxRetries {
+//                do {
+//                    try await GRDBManager.shared.saveChatMessages([message])
+//                    lastError = nil
+//                    break
+//                } catch {
+//                    lastError = error
+//                    print("⚠️ GRDB saveChatMessages 실패 (시도 \(attempt)/\(maxRetries)): \(error)")
+//                    if attempt < maxRetries {
+//                        // 0.2s, 0.4s, 0.6s 백오프
+//                        try? await Task.sleep(nanoseconds: UInt64(200_000_000) * UInt64(attempt))
+//                    }
+//                }
 //            }
-//
-//            // 로컬 DB 저장
-//            try await GRDBManager.shared.saveChatMessages([message])
-//
-//            // 🎬 실시간 비디오 메시지: 썸네일 캐시 + 원본 URL 미리 캐시 + 가시 셀 리로드
-//            if message.attachments.contains(where: { $0.type == .video }) {
-//                await self.cacheVideoAssetsIfNeeded(for: message, in: room.ID ?? "")
-//                await MainActor.run { self.reloadVisibleMessageIfNeeded(messageID: message.ID) }
+//            if let err = lastError {
+//                print("❌ GRDB saveChatMessages 최종 실패: \(err)")
 //            }
+//        }
 //
-//            // 첨부 캐싱 (썸네일/이미지 캐시 저장 등)
-//            if !message.attachments.isEmpty && message.attachments.first?.type == .image {
-//                await self.cacheImagesIfNeeded(for: message, in: room.ID ?? "")
+//        // 4) 내가 보낸 정상 메시지면 Firebase에도 기록 (UI 비차단)
+//        if !message.isFailed, message.senderID == LoginManager.shared.getUserEmail {
+//            let currentRoom = room
+//            Task(priority: .utility) {
+//                do {
+//                    try await FirebaseManager.shared.saveMessage(message, currentRoom)
+//                } catch {
+//                    print("⚠️ Firebase saveMessage 실패(비차단): \(error)")
+//                }
 //            }
-//
-//            addMessages([message])
-//        } catch {
-//            print("❌ 메시지 영속화/캐싱 실패: \(error)")
 //        }
 //    }
-    
-    //     첨부파일 캐싱 전용
-    private func cacheImagesIfNeeded(for message: ChatMessage, in roomID: String) async {
+
+    // 이미지 캐싱 전용
+    private func cacheImagesIfNeeded(for message: ChatMessage) async {
         guard !message.attachments.isEmpty else { return }
 
         // 사전 로드할 썸네일 배열(첨부 index 순서 유지)
         let imageAttachments = message.attachments
             .filter { $0.type == .image }
             .sorted { $0.index < $1.index }
-        
-        // 이미 이 메시지의 썸네일 배열이 준비되어 있다면 중복 작업 스킵
-        if self.messageImages[message.ID] != nil { return }
-        
+
+        // 이미 이 메시지의 썸네일 배열이 준비되어 있다면 중복 작업 스킵 (메인에서 판정)
+        let alreadyPrepared: Bool = await MainActor.run { self.messageImages[message.ID] != nil }
+        if alreadyPrepared { return }
+
         for attachment in imageAttachments {
-            // 이미지 타입 + 파일명 필수
             let key = attachment.hash
-            
             do {
                 let cache = KingfisherManager.shared.cache
                 cache.memoryStorage.config.expiration = .seconds(3600)
                 cache.diskStorage.config.expiration = .days(3)
-                
+
                 if await KingFisherCacheManager.shared.isCached(key) {
-                    guard let img = await KingFisherCacheManager.shared.loadImage(named: key) else { return }
-                    self.messageImages[message.ID, default: []].append(img)
+                    if let img = await KingFisherCacheManager.shared.loadImage(named: key) {
+                        await MainActor.run { self.messageImages[message.ID, default: []].append(img) }
+                    }
                 } else {
                     let img = try await FirebaseStorageManager.shared.fetchImageFromStorage(image: attachment.pathThumb, location: .RoomImage)
                     KingFisherCacheManager.shared.storeImage(img, forKey: key)
-                    self.messageImages[message.ID, default: []].append(img)
+                    await MainActor.run { self.messageImages[message.ID, default: []].append(img) }
                 }
             } catch {
                 print(#function, "이미지 캐시 실패: \(error)")
@@ -1002,15 +955,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             let path = attachment.pathOriginal
             if !path.isEmpty, !path.hasPrefix("/") {
                 _ = try? await storageURLCache.url(for: path)
-                
-                // 2) 원본 비디오 downloadURL warm-up (성공 메시지에만 적용)
-                let path = attachment.pathOriginal
-                if !path.isEmpty, !path.hasPrefix("/") {
-                    _ = try? await storageURLCache.url(for: path)
-                }
             }
-            
-            
         }
     }
 
@@ -1061,7 +1006,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         self.chatUIView.updateHeight()
         self.chatUIView.sendButton.isEnabled = false
         
-        let newMessage = ChatMessage(ID: UUID().uuidString, roomID: room.ID ?? "", senderID: LoginManager.shared.getUserEmail, senderNickname: LoginManager.shared.currentUserProfile?.nickname ?? "", senderAvatarPath: LoginManager.shared.currentUserProfile?.thumbPath, msg: message, sentAt: Date(), attachments: [], replyPreview: replyMessage)
+        let newMessage = ChatMessage(ID: UUID().uuidString, seq: 0, roomID: room.ID ?? "", senderID: LoginManager.shared.getUserEmail, senderNickname: LoginManager.shared.currentUserProfile?.nickname ?? "", senderAvatarPath: LoginManager.shared.currentUserProfile?.thumbPath, msg: message, sentAt: Date(), attachments: [], replyPreview: replyMessage)
         
         Task.detached {
             SocketIOManager.shared.sendMessage(room, newMessage)
@@ -1096,8 +1041,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             self.chatUIViewBottomConstraint?.constant = -10
         }
     }
-    
-    
+
     // MARK: - Video playback helper (by Storage path with caching)
     /// storagePath (e.g., "videos/<room>/<message>/video.mp4")를 받아
     /// 1) 디스크 캐시에 있으면 즉시 로컬로 재생
@@ -1983,8 +1927,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         Task {
             do {
                 guard let room = self.room else { return }
-                let roomID = room.ID ?? ""
-                
                 filteredMessages = try await GRDBManager.shared.fetchMessages(in: room.ID ?? "", containing: keyword)
                 currentFilteredMessageIndex = filteredMessages.isEmpty == true ? nil : filteredMessages.count
                 currentSearchKeyword = keyword
@@ -2236,7 +2178,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                     await withTaskGroup(of: Void.self) { group in
                         for path in uniquePaths {
                             group.addTask { [weak self] in
-                                guard let self else { return }
+                                guard self != nil else { return }
                                 FirebaseStorageManager.shared.deleteImageFromStorage(path: path)
                             }
                         }
@@ -2766,28 +2708,27 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     // MARK: 이미지 뷰어 관련
     // Cache for Firebase Storage download URLs (path -> URL)
-    actor StorageURLCache {
-        private var cache: [String: URL] = [:]
-        func url(for path: String) async throws -> URL {
-            if let u = cache[path] { return u }
-            let ref = Storage.storage().reference(withPath: path)
-            let url = try await withCheckedThrowingContinuation { cont in
-                ref.downloadURL { url, err in
-                    if let url { cont.resume(returning: url) }
-                    else { cont.resume(throwing: err ?? NSError(domain: "Storage", code: -1)) }
-                }
-            }
-            cache[path] = url
-            return url
-        }
-    }
+//    actor StorageURLCache {
+//        private var cache: [String: URL] = [:]
+//        func url(for path: String) async throws -> URL {
+//            if let u = cache[path] { return u }
+//            let ref = Storage.storage().reference(withPath: path)
+//            let url = try await withCheckedThrowingContinuation { cont in
+//                ref.downloadURL { url, err in
+//                    if let url { cont.resume(returning: url) }
+//                    else { cont.resume(throwing: err ?? NSError(domain: "Storage", code: -1)) }
+//                }
+//            }
+//            cache[path] = url
+//            return url
+//        }
+//    }
+    
     // Kingfisher prefetchers & URL cache
     private var imagePrefetchers: [ImagePrefetcher] = []
-    private let imageStorageURLCache = StorageURLCache()
+//    private let imageStorageURLCache = StorageURLCache()
     
     private func presentImageViewer(tappedIndex: Int, indexPath: IndexPath) {
-        print(#function, "startingAt: \(tappedIndex), for: \(indexPath)")
-        
         // 1) 메시지 & 첨부 수집
         guard let item = dataSource.itemIdentifier(for: indexPath),
               case .message(let chatMessage) = item else { return }
@@ -3011,7 +2952,124 @@ extension ChatViewController: UICollectionViewDelegate {
         // ✅ 아바타 프리패치: 가시영역 중심 ±100 메시지의 고유 발신자
         self.prefetchAvatarsAroundDisplayIndex(indexPath.item)
     }
-    
 
-    
+}
+
+extension ChatViewController {
+    // MARK: - OPStorageURLCache (Firebase Storage downloadURL cache)
+    actor OPStorageURLCache {
+        private var cache: [String: URL] = [:]
+        
+        func url(for path: String) async throws -> URL {
+            if let u = cache[path] { return u }
+            let ref = Storage.storage().reference(withPath: path)
+            let url = try await withCheckedThrowingContinuation { cont in
+                ref.downloadURL { url, err in
+                    if let url { cont.resume(returning: url) }
+                    else { cont.resume(throwing: err ?? NSError(domain: "Storage", code: -1, userInfo: [NSLocalizedDescriptionKey: "downloadURL failed"])) }
+                }
+            }
+            cache[path] = url
+            return url
+        }
+    }
+
+    // MARK: - OPVideoDiskCache (progressive MP4 local caching)
+    actor OPVideoDiskCache {
+        static let shared = OPVideoDiskCache()
+        private let dir: URL
+        private let capacity: Int64 = 512 * 1024 * 1024 // 512MB
+        
+        init() {
+            let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            dir = base.appendingPathComponent("Videos", isDirectory: true)
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+        
+        /// Deterministic local file URL for a given logical key.
+        func localURL(forKey key: String) -> URL {
+            dir.appendingPathComponent(key.sha256() + ".mp4")
+        }
+        
+        /// Returns local file URL if cached.
+        func exists(forKey key: String) -> URL? {
+            let u = localURL(forKey: key)
+            return FileManager.default.fileExists(atPath: u.path) ? u : nil
+        }
+        
+        /// Download and store a remote file to cache; returns the final local URL.
+        @discardableResult
+        func cache(from remote: URL, key: String) async throws -> URL {
+            let tmp = dir.appendingPathComponent(UUID().uuidString + ".part")
+            let (data, _) = try await URLSession.shared.data(from: remote)
+            try data.write(to: tmp, options: .atomic)
+            let dest = localURL(forKey: key)
+            try? FileManager.default.removeItem(at: dest)
+            try FileManager.default.moveItem(at: tmp, to: dest)
+            try trimIfNeeded()
+            return dest
+        }
+        
+        /// Evict old files when capacity exceeded (LRU-ish using modification date).
+        private func trimIfNeeded() throws {
+            let files = try FileManager.default.contentsOfDirectory(
+                at: dir,
+                includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey],
+                options: [.skipsHiddenFiles]
+            )
+            var entries: [(url: URL, date: Date, size: Int64)] = []
+            var total: Int64 = 0
+            for u in files {
+                let rv = try u.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+                let d = rv.contentModificationDate ?? Date.distantPast
+                let s = Int64(rv.fileSize ?? 0)
+                total += s
+                entries.append((u, d, s))
+            }
+            guard total > capacity else { return }
+            for entry in entries.sorted(by: { $0.date < $1.date }) {
+                try? FileManager.default.removeItem(at: entry.url)
+                total -= entry.size
+                if total <= capacity { break }
+            }
+        }
+    }
+}
+
+// MARK: - Utilities
+fileprivate extension String {
+    func sha256() -> String {
+        let data = Data(self.utf8)
+        let hash = SHA256.hash(data: data)
+        return hash.map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+//MARK: seq 업데이트 헬퍼
+extension ChatViewController {
+    @MainActor
+    private func maybeUpdateLastReadSeq(trigger: String, skipNearBottomCheck: Bool = false) {
+        guard let room = self.room else { return }
+
+        // 사용자가 실제로 확인했다고 간주하는 최댓값: 창 최대와 입장 스냅샷 중 작은 값
+        let candidate = min(windowMaxSeq, entryTailSeq)
+
+        // 세션 중에는 바닥 근처일 때만 기록 → 쓰기 폭주 방지
+        // 단, newerPage 같은 트리거에서는 이미 바닥 근접이 보장되므로 체크 생략 가능
+        if !skipNearBottomCheck {
+            guard isNearBottom() else { return }
+        }
+
+        // 단조 증가 & 중복 쓰기 방지
+        guard candidate > lastSentLastReadSeq else { return }
+        lastSentLastReadSeq = candidate
+
+        Task(priority: .utility) { [roomID = room.ID ?? "", uid = LoginManager.shared.getUserEmail, seq = candidate] in
+            do {
+                try await FirebaseManager.shared.updateLastReadSeq(roomID: roomID, userID: uid, lastReadSeq: seq)
+            } catch {
+                print("⚠️ maybeUpdateLastReadSeq(\(trigger)) 실패: \(error)")
+            }
+        }
+    }
 }

@@ -96,6 +96,7 @@ struct Attachment: Codable, Hashable {
 // 채팅 메시지 정보
 struct ChatMessage: SocketData, Codable {
     let ID: String
+    let seq: Int64                    // 방 내 단조 증가 시퀀스(1,2,3,...) - 정렬/미읽음 계산용
     let roomID: String
     let senderID: String                // 메시지 전송 사용자 아이디
     let senderNickname: String          // 메시지 전송 사용자 닉네임
@@ -115,6 +116,7 @@ struct ChatMessage: SocketData, Codable {
 
     enum CodingKeys: String, CodingKey {
         case ID
+        case seq
         case roomID
         case senderID
         case senderNickname
@@ -129,6 +131,7 @@ struct ChatMessage: SocketData, Codable {
         var dict: [String: Any] = [
             "ID": ID,
             "roomID": roomID,
+            "seq": seq,
             "senderID": senderID,
             "senderNickname": senderNickname,
             "msg": msg ?? "",
@@ -172,6 +175,7 @@ struct ChatMessage: SocketData, Codable {
         var dict: [String: Any] = [
             "ID": ID,
             "roomID": roomID,
+            "seq": seq,
             "senderID": senderID,
             "senderNickname": senderNickname,
             "msg": msg ?? "",
@@ -224,6 +228,19 @@ extension ChatMessage {
               let senderID = dict["senderID"] as? String else {
             return nil
         }
+
+        // Sequence: accept Int/Int64/NSNumber/Double, fallback 0; also accept legacy "sequence"
+        let seq: Int64 = {
+            if let n = dict["seq"] as? NSNumber { return n.int64Value }
+            if let i = dict["seq"] as? Int { return Int64(i) }
+            if let i64 = dict["seq"] as? Int64 { return i64 }
+            if let d = dict["seq"] as? Double { return Int64(d) }
+            if let n = dict["sequence"] as? NSNumber { return n.int64Value }
+            if let i = dict["sequence"] as? Int { return Int64(i) }
+            if let i64 = dict["sequence"] as? Int64 { return i64 }
+            if let d = dict["sequence"] as? Double { return Int64(d) }
+            return 0
+        }()
 
         // Nickname: support both keys. Default to empty if missing.
         let senderNickname = (dict["senderNickName"] as? String)
@@ -278,6 +295,7 @@ extension ChatMessage {
 
         return ChatMessage(
             ID: id,
+            seq: seq,
             roomID: roomID,
             senderID: senderID,
             senderNickname: senderNickname,

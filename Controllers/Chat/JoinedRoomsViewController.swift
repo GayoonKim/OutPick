@@ -54,9 +54,6 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] updatedRoom in
                 guard let self = self else { return }
-//                let previousRoom =
-//                self.room = updatedRoom
-                print(#function, "ChatViewController.swift 방 정보 변경: \(updatedRoom)")
                 Task { @MainActor in
                     self.applyIncrementalRoomUpdate(updatedRoom)
                 }
@@ -111,8 +108,7 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
                 // 병렬 이미지 로딩
                 async let imagesDict: [String: UIImage] = withTaskGroup(of: (String, UIImage?).self) { group in
                     for room in rooms {
-                        
-                        
+
                         guard let imagePath = room.thumbPath else { continue }
                         let key = room.ID ?? room.roomName // capture simple Sendable values only
                         group.addTask {
@@ -240,8 +236,7 @@ extension JoinedRoomsViewController: UICollectionViewDelegate {
         chatRoomVC.isRoomSaving = false
         chatRoomVC.modalPresentationStyle = .fullScreen
         ChatModalTransitionManager.present(chatRoomVC, from: self)
-        
-//        onSelectRoom?(id)
+
     }
 
     func collectionView(_ collectionView: UICollectionView, trailingSwipeActionsConfigurationForItemAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {
@@ -250,7 +245,7 @@ extension JoinedRoomsViewController: UICollectionViewDelegate {
             self?.onLeaveRoom?(id)
             completion(true)
         }
-//        leave.backgroundColor = .red
+        
         let config = UISwipeActionsConfiguration(actions: [leave])
         config.performsFirstActionWithFullSwipe = true
         return config

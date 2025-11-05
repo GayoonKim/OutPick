@@ -163,6 +163,22 @@ class FirebaseManager {
         }
     }
     
+    // MARK: - User room state (lastReadSeq)
+    /// Users/{uid}/roomStates/{roomID}.lastReadSeq 를 업데이트합니다.
+    /// - Parameters:
+    ///   - roomID: 방 문서 ID
+    ///   - userID: 사용자 uid(이메일 키를 사용 중이면 해당 값)
+    ///   - lastReadSeq: 사용자가 마지막으로 읽은 시퀀스(단조 증가)
+    public func updateLastReadSeq(roomID: String, userID: String, lastReadSeq: Int64) async throws {
+        let db = Firestore.firestore()
+        let ref = db.collection("Users").document(userID)
+            .collection("roomStates").document(roomID)
+        try await ref.setData([
+            "lastReadSeq": lastReadSeq,
+            "updatedAt": FieldValue.serverTimestamp()
+        ], merge: true)
+    }
+    
     //MARK: 채팅 방 관련 기능들
     @MainActor
     func fetchRecentRoomsPage(after lastSnapshot: DocumentSnapshot? = nil, limit:Int = 100) async throws {
@@ -727,6 +743,7 @@ class FirebaseManager {
             }
         }
     }
+    
 
     //MARK: 공지(Announcement) 관련 기능
     @MainActor
@@ -878,127 +895,153 @@ class FirebaseManager {
         return result
     }
 
-    // Firestore에서 메시지 페이징과 중복 방지까지 지원하는 fetch 함수 예시
+    // NOTE: 메시지 페이징은 이제 `seq` 기반으로 동작합니다.
+    // - 정렬: seq ASC (필수)
+    // - 마이그레이션 호환: anchor에 seq가 없으면 sentAt로 폴백
+    // Firestore 인덱스: 단일 필드 `seq`는 기본 인덱스가 있으나, 콘솔에서 에러가 나면 안내에 따라 생성하세요.
+    // Firestore에서 메시지 페이징(신규 페이지) — seq 오름차순 기준, 스냅샷 커서로 연속성 보장
+    // NOTE: 첫 호출 전에(또는 reset 직후) 연속 앵커를 설정하려면, 호출측에서 lastFetchedMessageSnapshot을
+    //       적절한 문서 스냅샷으로 세팅해두는 것을 권장합니다(예: lastRead 앵커).
     func fetchMessagesPaged(for room: ChatRoom, pageSize: Int = 50, reset: Bool = false) async throws -> [ChatMessage] {
-        // 1. 로컬 DB에서 마지막 메시지 시간 조회
-        let lastTimestamp: Date? = try GRDBManager.shared.fetchLastMessageTimestamp(for: room.ID ?? "")
-        let adjustedTimestamp = lastTimestamp?.addingTimeInterval(0.001) // 1ms 보정
-        print(#function, "마지막 메시지 시간: ", adjustedTimestamp ?? Date())
-        
-        // 2. Firestore 컬렉션 경로 세팅 (Rooms/{roomID}/Messages)
+        // 1) 방 ID 확인
         guard let roomID = room.ID else {
             print("❌ fetchMessagesPaged: room.ID is nil")
             return []
         }
+
+        // 2) 컬렉션 및 정렬: seq ASC (결정적 순서)
         let collection = db
             .collection("Rooms")
             .document(roomID)
             .collection("Messages")
-        
-        // 3. 쿼리 생성 (sentAt 기준 오름차순, limit 적용)
-        var query: Query = collection.order(by: "sentAt", descending: false)
-                                     .limit(to: pageSize)
-        
-        // 4. reset 시 페이지네이션 초기화
-        if reset {
-            lastFetchedMessageSnapshot = nil
-        }
-        
-        // 5. 페이지네이션 조건 적용
+
+        if reset { lastFetchedMessageSnapshot = nil }
+
+        var query: Query = collection
+            .order(by: "seq", descending: false)
+            .limit(to: pageSize)
+
+        // 3) 스냅샷 커서 페이지네이션
         if let lastSnapshot = lastFetchedMessageSnapshot {
             query = query.start(afterDocument: lastSnapshot)
-        } else if let timestamp = adjustedTimestamp {
-            query = query.whereField("sentAt", isGreaterThan: Timestamp(date: timestamp))
         }
-        
-        // 6. 쿼리 실행
+
+        // 4) 실행
         let snapshot = try await query.getDocuments()
-        
-        // 7. 마지막 불러온 문서 저장 (다음 페이지네이션용)
         lastFetchedMessageSnapshot = snapshot.documents.last
-        // 8. 결과 디코딩 (관대한 파서 우선)
+
+        // 5) 디코딩
         let messages: [ChatMessage] = snapshot.documents.compactMap { doc in
             var dict = doc.data()
-            // 일부 문서에 ID 필드가 없을 수도 있으니 보정
             if dict["ID"] == nil { dict["ID"] = doc.documentID }
-            if let msg = ChatMessage.from(dict) {
-                return msg
-            }
-            // 최후의 수단으로 FirestoreSwift 디코더 시도 (디버깅 로그 유지)
-            do {
-                return try doc.data(as: ChatMessage.self)
-            } catch {
+            if let msg = ChatMessage.from(dict) { return msg }
+            do { return try doc.data(as: ChatMessage.self) } catch {
                 print("⚠️ 디코딩 실패(관대파서/코더 모두 실패): \(error), docID: \(doc.documentID), data=\(dict)")
                 return nil
             }
         }
-
         return messages
     }
 
-    /// 기준 메시지 이전의 과거 메시지를 limit개 가져오기
+    /// 기준 메시지 이전의 과거 메시지를 limit개 가져오기 (seq 기반, sentAt 폴백)
     func fetchOlderMessages(for room: ChatRoom, before messageID: String, limit: Int = 100) async throws -> [ChatMessage] {
         guard let roomID = room.ID else { return [] }
-        
-        // 기준 메시지의 sentAt과 ID 조회
-        let anchorDoc = try await db.collection("Rooms").document(roomID)
-            .collection("Messages").document(messageID).getDocument()
-        
-        guard anchorDoc.exists, let anchorData = anchorDoc.data(),
-              let anchorSentAt = (anchorData["sentAt"] as? Timestamp)?.dateValue() else {
-            return []
+
+        let anchorDoc = try await db
+            .collection("Rooms").document(roomID)
+            .collection("Messages").document(messageID)
+            .getDocument()
+        guard anchorDoc.exists, let anchorData = anchorDoc.data() else { return [] }
+
+        // 우선 seq 기반으로 시도 (없으면 sentAt로 폴백)
+        if let anySeq = anchorData["seq"] {
+            let anchorSeq: Int64
+            if let num = anySeq as? NSNumber { anchorSeq = num.int64Value }
+            else if let i = anySeq as? Int { anchorSeq = Int64(i) }
+            else if let l = anySeq as? Int64 { anchorSeq = l }
+            else { anchorSeq = 0 }
+
+            let snapshot = try await db
+                .collection("Rooms").document(roomID)
+                .collection("Messages")
+                .whereField("seq", isLessThan: anchorSeq)
+                .order(by: "seq", descending: true)
+                .limit(to: limit)
+                .getDocuments()
+
+            let messages: [ChatMessage] = snapshot.documents.compactMap { doc in
+                var dict = doc.data(); if dict["ID"] == nil { dict["ID"] = doc.documentID }
+                if let msg = ChatMessage.from(dict) { return msg }
+                do { return try doc.data(as: ChatMessage.self) } catch { print("⚠️ 디코딩 실패: \(error), docID: \(doc.documentID), data=\(dict)"); return nil }
+            }
+            return messages.reversed() // 과거→최신(오름차순)
         }
-        
-        let snapshot = try await db.collection("Rooms").document(roomID)
+
+        // ⚠️ fallback: anchor에 seq가 없을 때 기존 sentAt 경로
+        let anchorSentAt = (anchorData["sentAt"] as? Timestamp)?.dateValue() ?? Date.distantPast
+        let snapshot = try await db
+            .collection("Rooms").document(roomID)
             .collection("Messages")
             .whereField("sentAt", isLessThan: Timestamp(date: anchorSentAt))
             .order(by: "sentAt", descending: true)
             .limit(to: limit)
             .getDocuments()
-        
+
         let messages: [ChatMessage] = snapshot.documents.compactMap { doc in
-            var dict = doc.data()
-            if dict["ID"] == nil { dict["ID"] = doc.documentID }
+            var dict = doc.data(); if dict["ID"] == nil { dict["ID"] = doc.documentID }
             if let msg = ChatMessage.from(dict) { return msg }
-            do {
-                return try doc.data(as: ChatMessage.self)
-            } catch {
-                print("⚠️ 디코딩 실패(관대파서/코더 모두 실패): \(error), docID: \(doc.documentID), data=\(dict)")
-                return nil
-            }
+            do { return try doc.data(as: ChatMessage.self) } catch { print("⚠️ 디코딩 실패: \(error), docID: \(doc.documentID), data=\(dict)"); return nil }
         }
         return messages.reversed()
     }
     
-    /// 특정 메시지 이후의 최신 메시지를 limit개 가져오기
+    /// 특정 메시지 이후의 최신 메시지를 limit개 가져오기 (seq 기반, sentAt 폴백)
     func fetchMessagesAfter(room: ChatRoom, after messageID: String, limit: Int = 100) async throws -> [ChatMessage] {
         guard let roomID = room.ID else { return [] }
-        
-        let anchorDoc = try await db.collection("Rooms").document(roomID)
-            .collection("Messages").document(messageID).getDocument()
-        
-        guard anchorDoc.exists, let anchorData = anchorDoc.data(),
-              let anchorSentAt = (anchorData["sentAt"] as? Timestamp)?.dateValue() else {
-            return []
+
+        let anchorDoc = try await db
+            .collection("Rooms").document(roomID)
+            .collection("Messages").document(messageID)
+            .getDocument()
+        guard anchorDoc.exists, let anchorData = anchorDoc.data() else { return [] }
+
+        if let anySeq = anchorData["seq"] {
+            let anchorSeq: Int64
+            if let num = anySeq as? NSNumber { anchorSeq = num.int64Value }
+            else if let i = anySeq as? Int { anchorSeq = Int64(i) }
+            else if let l = anySeq as? Int64 { anchorSeq = l }
+            else { anchorSeq = 0 }
+
+            let snapshot = try await db
+                .collection("Rooms").document(roomID)
+                .collection("Messages")
+                .whereField("seq", isGreaterThan: anchorSeq)
+                .order(by: "seq", descending: false)
+                .limit(to: limit)
+                .getDocuments()
+
+            let messages: [ChatMessage] = snapshot.documents.compactMap { doc in
+                var dict = doc.data(); if dict["ID"] == nil { dict["ID"] = doc.documentID }
+                if let msg = ChatMessage.from(dict) { return msg }
+                do { return try doc.data(as: ChatMessage.self) } catch { print("⚠️ 디코딩 실패: \(error), docID: \(doc.documentID), data=\(dict)"); return nil }
+            }
+            return messages
         }
-        
-        let snapshot = try await db.collection("Rooms").document(roomID)
+
+        // ⚠️ fallback: anchor에 seq가 없을 때 기존 sentAt 경로
+        let anchorSentAt = (anchorData["sentAt"] as? Timestamp)?.dateValue() ?? Date.distantPast
+        let snapshot = try await db
+            .collection("Rooms").document(roomID)
             .collection("Messages")
             .whereField("sentAt", isGreaterThan: Timestamp(date: anchorSentAt))
             .order(by: "sentAt", descending: false)
             .limit(to: limit)
             .getDocuments()
-        
+
         let messages: [ChatMessage] = snapshot.documents.compactMap { doc in
-            var dict = doc.data()
-            if dict["ID"] == nil { dict["ID"] = doc.documentID }
+            var dict = doc.data(); if dict["ID"] == nil { dict["ID"] = doc.documentID }
             if let msg = ChatMessage.from(dict) { return msg }
-            do {
-                return try doc.data(as: ChatMessage.self)
-            } catch {
-                print("⚠️ 디코딩 실패(관대파서/코더 모두 실패): \(error), docID: \(doc.documentID), data=\(dict)")
-                return nil
-            }
+            do { return try doc.data(as: ChatMessage.self) } catch { print("⚠️ 디코딩 실패: \(error), docID: \(doc.documentID), data=\(dict)"); return nil }
         }
         return messages
     }

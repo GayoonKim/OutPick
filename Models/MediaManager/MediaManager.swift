@@ -17,14 +17,13 @@ class MediaManager {
     
     static let shared = MediaManager()
     
-    // MARK: - Thumbnail Tunables (raised quality)
+    // MARK: - 썸네일 설정
     /// 기본 썸네일 긴 변(px). 기존 64 → 160 으로 상향 (셀에서 더 선명)
     static let defaultThumbMaxPixel: Int = 500
     /// 기본 JPEG 품질. 기존 0.6 → 0.8 으로 상향
     static let defaultThumbQuality: CGFloat = 0.5
     
-    // MARK: - Thumbnail helpers
-
+    // MARK: - 썸네일 관련 헬퍼
     /// 내부 공통: CGImageSource -> 썸네일 JPEG 데이터
     private static func makeThumbnailData(from source: CGImageSource,
                                           maxPixel: Int,
@@ -201,49 +200,7 @@ class MediaManager {
             return list.compactMap { $0 }
         }
     }
-    
-//    func convertImage(_ result: PHPickerResult) async throws -> UIImage {
-//        return try await withCheckedThrowingContinuation { continuation in
-//            let itemProvider = result.itemProvider
-//            if itemProvider.canLoadObject(ofClass: UIImage.self) {
-//                itemProvider.loadObject(ofClass: UIImage.self, completionHandler: { image, error in
-//                    guard let image = image as? UIImage, error == nil else {
-//                        continuation.resume(throwing: MediaError.FailedToConvertImage)
-//                        return
-//                    }
-//
-//                    guard let compressed = MediaManager.compressImageWithImageIO(image) else {
-//                        print("압축 이미지 데이터 생성 실패")
-//                        continuation.resume(throwing: MediaError.FailedToCraeteImageData)
-//                        return
-//                    }
-//                    
-//                    continuation.resume(returning: UIImage(cgImage: compressed))
-////                    continuation.resume(returning: image)
-//                })
-//            }
-//        }
-//    }
-//    
-//    func dealWithImages(_ results: [PHPickerResult]) async throws -> [UIImage] {
-//        return try await withThrowingTaskGroup(of: (Int, UIImage).self) { group in
-//            for (index, result) in results.enumerated() {
-//                group.addTask {
-//                    let image = try await self.convertImage(result)
-//                    return (index, image)
-//                }
-//            }
-//            
-//            var inOrderImages = Array<UIImage?>(repeating: nil, count: results.count)
-//            for try await (index, image) in group {
-//                inOrderImages[index] = image
-//            }
-//            return inOrderImages.compactMap{$0}
-//        }
-//    }
-    
     // MARK: - Video presets & helpers
-
     enum VideoUploadPreset {
         case dataSaver720    // ~2.0–2.5 Mbps, 720p
         case standard720     // ~4.0–5.0 Mbps, 720p (권장 기본)
@@ -360,5 +317,4 @@ class MediaManager {
             return inOrder.compactMap { $0 }
         }
     }
-    
 }
