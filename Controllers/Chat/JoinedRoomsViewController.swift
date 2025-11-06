@@ -32,6 +32,10 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
         return collectionV
     }()
     
+    private var currentJoined: Set<String> = []
+    // roomID → unread count
+    private var unreadCounts: [String: Int64] = [:]
+    
     var roomImages: [String:UIImage] = [:]
     private var cancellables = Set<AnyCancellable>()
 
@@ -40,17 +44,33 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
         setupNavigationBar()
         setupViews()
         configureDataSource()
-        setjoinedRooms()
     }
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-
+        setjoinedRooms()
+        bindRoomChangePublisher()
     }
     
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        cancellables.removeAll()
+    }
+    
+    @MainActor
+    private func refreshRoomCell(id: String) {
+        var snapshot = dataSource.snapshot()
+        guard let item = snapshot.itemIdentifiers.first(where: { $0.ID == id }) else { return }
+        snapshot.reconfigureItems([item])
+        dataSource.apply(snapshot, animatingDifferences: true)
+    }
+
     private func bindRoomChangePublisher() {
         // 실시간 방 업데이트 관련
         FirebaseManager.shared.roomChangePublisher
+            .removeDuplicates(by: { lhs, rhs in
+              lhs.ID == rhs.ID && lhs.seq == rhs.seq  // (예시) 같은 방 & 같은 최신 seq면 중복으로 간주
+            })
             .receive(on: DispatchQueue.main)
             .sink { [weak self] updatedRoom in
                 guard let self = self else { return }
@@ -59,42 +79,92 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
                 }
             }
             .store(in: &cancellables)
+
+        Task { [weak self] in
+            guard let self = self else { return }
+            // actor hop로 publisher를 안전하게 가져옴
+            let pub = await FirebaseManager.shared.joinedRoomStore.publisher
+            // 구독/보관은 MainActor에서 안전하게 수행
+            await MainActor.run {
+                pub
+                    .removeDuplicates()
+                    .receive(on: DispatchQueue.main)
+                    .sink { [weak self] joined in
+                        guard let self = self else { return }
+                        self.currentJoined = joined
+                    }
+                    .store(in: &self.cancellables)
+            }
+        }
     }
     
     /// 방 정보(old → new) 변경점을 비교하고 필요한 UI/동기화만 수행
     @MainActor
     func applyIncrementalRoomUpdate(_ updated: ChatRoom) {
+        guard let id = updated.ID else { return }
         var snapshot = dataSource.snapshot()
 
-        guard let id = updated.ID else { return }
-        let exists = snapshot.itemIdentifiers.contains(where: { $0.ID == id })
-
-        if !exists {
+        if !snapshot.itemIdentifiers.contains(where: { $0.ID == id }) {
             // 새로 참여(추가)
             snapshot.appendItems([updated], toSection: Section.main)
             dataSource.apply(snapshot, animatingDifferences: true)
+            // 새 방도 미읽음 계산 시작
+            Task { await self.updateUnread(for: id, lastMessageSeqHint: updated.seq) }
             return
         }
 
-        // 기존 방 업데이트: 내용 갱신 + 정렬 반영
-        // 1) reconfigure로 셀 내용만 업데이트
-        snapshot.reconfigureItems([updated])
+        // 디버그: 동일 이벤트 중복 여부는 상위 publisher에서 removeDuplicates(by:)로 처리 권장
+        print("$$$$$방 정보 변경$$$$$: \(updated)")
 
-        // 2) 정렬 기준(lastMessageAt 등)이 바뀌면 moveItem
-        //    (아래는 예시: 최신순 재정렬)
-        let sorted = snapshot.itemIdentifiers.sorted {
+        // 1) 기존 아이템 제거
+        guard let old = snapshot.itemIdentifiers.first(where: { $0.ID == id }) else { return }
+        snapshot.deleteItems([old])
+
+        // 2) 업데이트된 아이템을 '정렬 기준'에 맞춰 올바른 위치에 삽입
+        //    현재 스냅샷(= old 제거된 상태)의 아이템 + updated 로 정렬 배열 만들기
+        var itemsForOrder = snapshot.itemIdentifiers
+        itemsForOrder.append(updated)
+        let ordered = itemsForOrder.sorted {
             ($0.lastMessageAt ?? $0.createdAt) > ($1.lastMessageAt ?? $1.createdAt)
         }
-        // 현재 순서와 다르면 move 적용
-        for (idx, item) in sorted.enumerated() {
-            if let currentIndex = snapshot.itemIdentifiers.firstIndex(of: item), currentIndex != idx,
-               idx < sorted.count - 1 {
-                let next = sorted[idx+1]
-                snapshot.moveItem(item, beforeItem: next)
+
+        // updated의 올바른 위치를 찾아 삽입
+        if let pos = ordered.firstIndex(where: { $0.ID == id }) {
+            if pos < ordered.count - 1 {
+                let next = ordered[pos + 1]
+                snapshot.insertItems([updated], beforeItem: next)
+            } else {
+                snapshot.appendItems([updated], toSection: .main)
             }
+        } else {
+            // 안전망: 못 찾으면 맨 앞에 추가
+            snapshot.insertItems([updated], beforeItem: snapshot.itemIdentifiers.first!)
         }
 
+        // 3) 적용
         dataSource.apply(snapshot, animatingDifferences: true)
+
+        // 4) UI 반영 후 미읽음 계산 kick-off (네트워크는 메인에서 기다리지 않음)
+        Task { await self.updateUnread(for: id, lastMessageSeqHint: updated.seq) }
+    }
+    
+    private func updateUnread(for roomID: String, lastMessageSeqHint: Int64?) async {
+        do {
+            let lastRead = try await FirebaseManager.shared.fetchLastReadSeq(for: roomID)
+            let latest: Int64
+            if let hint = lastMessageSeqHint {
+                latest = hint
+            } else {
+                latest = try await FirebaseManager.shared.fetchLatestSeq(for: roomID)
+            }
+            let unread = max(Int64(0), latest - lastRead)
+            await MainActor.run {
+                self.unreadCounts[roomID] = unread
+                self.refreshRoomCell(id: roomID)
+            }
+        } catch {
+            print("⚠️ updateUnread 실패(roomID: \(roomID)):", error)
+        }
     }
     
     private func setjoinedRooms() {
@@ -133,6 +203,17 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
                     self.roomImages = dict
                     self.applyRooms(rooms)
                 }
+                
+                // 초기 진입 시 각 방 미읽음 계산 kick-off (비동기)
+                for room in rooms {
+                    if let id = room.ID {
+                        let hint = room.seq
+                        Task { [weak self] in
+                            guard let self = self else { return }
+                            await self.updateUnread(for: id, lastMessageSeqHint: hint)
+                        }
+                    }
+                }
             } catch {
                 print("❌ setJoinedRooms 실패:", error)
                 await MainActor.run { self.applyRooms([]) }
@@ -166,7 +247,7 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
                 lastMessageText: room.lastMessage,
                 lastMessageDate: room.lastMessageAt,
                 img: roomImages[roomID],
-                unreadCount: room.lastMessage == "" ? 0 : Int.random(in: 1...10)
+                unreadCount: unreadCounts[roomID] ?? 0
             )
             
             return cell
@@ -305,7 +386,7 @@ final class JoinedRoomCell: UICollectionViewCell {
                    lastMessageText: String?,
                    lastMessageDate: Date?,
                    img: UIImage?,
-                   unreadCount: Int) {
+                   unreadCount: Int64) {
         titleLabel.text = title
         countBadge.text = "· \(participantCount)명"
         timeLabel.text = relativeTimeString(from: lastMessageDate)

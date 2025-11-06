@@ -144,6 +144,8 @@ class LoginManager {
                 if let data = try? JSONEncoder().encode(profile) {
                     KeychainManager.shared.save(data, service: "GayoonKim.OutPick", account: "UserProfile")
                 }
+                
+                Task { await FirebaseManager.shared.joinedRoomStore.replace(with: profile.joinedRooms) }
                 print("🔄 프로필 갱신: \(profile)")
             case .failure(let error):
                 print("❌ 프로필 리스너 에러: \(error)")

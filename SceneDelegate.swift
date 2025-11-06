@@ -108,6 +108,11 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                             // ✅ 로그인 성공 후 프로필 리스너 시작
                             LoginManager.shared.startUserProfileListener(email: LoginManager.shared.getUserEmail)
                             
+                            // ✅ 참여 방 선 주입 (첫 진입 지연 없앰)
+                            if let profile = LoginManager.shared.currentUserProfile {
+                                await FirebaseManager.shared.joinedRoomStore.replace(with: profile.joinedRooms)
+                            }
+
                             try await FirebaseManager.shared.fetchRecentRoomsPage(after: nil, limit: 100)
 
                             // 2️⃣ 소켓/핫룸은 항상 실행

@@ -75,7 +75,7 @@ class SocketIOManager {
     private var subscriberCounts = [String: Int]() // 구독자 ref count
     
     private init() {
-        manager = SocketManager(socketURL: URL(string: "http://192.168.123.120:3000")!, config: [
+        manager = SocketManager(socketURL: URL(string: "http://192.168.123.124:3000")!, config: [
             .log(true),
             .compress,
             .connectParams(["clientKey": SocketIOManager.clientKey]),
@@ -438,9 +438,9 @@ class SocketIOManager {
             let duplicate = (ackDict?["duplicate"] as? Bool) ?? false
 
             if ok || duplicate {
-                Task {
-                    await FirebaseManager.shared.updateRoomLastMessage(roomID: room.ID ?? "", date: message.sentAt, msg: message.msg ?? "")
-                }
+//                Task {
+//                    await FirebaseManager.shared.updateRoomLastMessage(roomID: room.ID ?? "", date: message.sentAt, msg: message.msg ?? "")
+//                }
             } else {
                 // Failure: mark the same message as failed and re-publish for UI update
                 var failedMessage = message
@@ -535,9 +535,9 @@ class SocketIOManager {
                 // 성공/중복(이미 서버가 브로드캐스트했을 가능성) 시에는
                 // 로컬에 seq=0 메시지를 퍼블리시하지 않습니다.
                 // → 서버의 'receiveImages' 브로드캐스트로 도착하는 정규 메시지(정확한 seq 포함)에 UI를 맡깁니다.
-                Task {
-                    await FirebaseManager.shared.updateRoomLastMessage(roomID: roomID, date: now, msg: "사진 \(attachments.count)장")
-                }
+//                Task {
+//                    await FirebaseManager.shared.updateRoomLastMessage(roomID: roomID, date: now, msg: "사진 \(attachments.count)장")
+//                }
                 return
             }
 
@@ -778,15 +778,15 @@ class SocketIOManager {
                 // 서버에서 { ok: true } 형태로 응답한다고 가정
                 if let first = items.first as? [String: Any],
                    let ok = first["ok"] as? Bool, ok == true {
-                    Task {
-                        await FirebaseManager.shared.updateRoomLastMessage(roomID: roomID, date: Date(), msg: "동영상")
-                    }
+//                    Task {
+//                        await FirebaseManager.shared.updateRoomLastMessage(roomID: roomID, date: Date(), msg: "동영상")
+//                    }
                     completion?(.success(()))
                 } else if items.isEmpty {
                     // 응답이 없어도 성공 처리(서버 ACK 미사용 환경)
-                    Task {
-                        await FirebaseManager.shared.updateRoomLastMessage(roomID: roomID, date: Date(), msg: "동영상")
-                    }
+//                    Task {
+//                        await FirebaseManager.shared.updateRoomLastMessage(roomID: roomID, date: Date(), msg: "동영상")
+//                    }
                     completion?(.success(()))
                 } else {
                     // ACK 실패 → 로컬 실패 메시지 주입

@@ -21,9 +21,10 @@ class FirebaseManager {
     
     // Firestore 인스턴스
     let db = Firestore.firestore()
-    
     // Storage 인스턴스
     let storage = Storage.storage()
+    
+    let joinedRoomStore = JoinedRoomsStore()
     
     // 채팅방 목록
     @Published private(set) var roomStore: [String: ChatRoom] = [:]
@@ -180,6 +181,36 @@ class FirebaseManager {
     }
     
     //MARK: 채팅 방 관련 기능들
+    // 사용자 roomStates/{roomID}에서 lastReadSeq를 읽음
+    func fetchLastReadSeq(for roomID: String) async throws -> Int64 {
+        // 컬렉션 경로/필드 이름은 실제 프로젝트 스키마에 맞게 조정하세요.
+        let email = LoginManager.shared.getUserEmail
+        let docRef = Firestore.firestore()
+            .collection("Users").document(email)
+            .collection("roomStates").document(roomID)
+
+        let snap = try await docRef.getDocument()
+        let lastRead = snap.data()?["lastReadSeq"] as? Int64 ?? 0
+        return lastRead
+    }
+
+    // Rooms/{roomID}의 집계 필드 또는 messages 서브컬렉션에서 최신 seq를 가져옴
+    func fetchLatestSeq(for roomID: String) async throws -> Int64 {
+        let roomRef = Firestore.firestore().collection("Rooms").document(roomID)
+        let roomSnap = try await roomRef.getDocument()
+        if let agg = roomSnap.data()?["lastMessageSeq"] as? Int64 {
+            return agg
+        }
+        // 집계 필드가 없다면 서브컬렉션에서 최신 메시지로 대체
+        let messagesRef = roomRef.collection("messages")
+        let querySnap = try await messagesRef
+            .order(by: "seq", descending: true)
+            .limit(to: 1)
+            .getDocuments()
+        let latest = querySnap.documents.first?.data()["seq"] as? Int64 ?? 0
+        return latest
+    }
+    
     @MainActor
     func fetchRecentRoomsPage(after lastSnapshot: DocumentSnapshot? = nil, limit:Int = 100) async throws {
         var query: Query = db.collection("Rooms").order(by: "lastMessageAt", descending: true).limit(to: limit)
@@ -462,18 +493,33 @@ class FirebaseManager {
     var roomChangePublisher: AnyPublisher<ChatRoom, Never> {
         return roomChangeSubject.eraseToAnyPublisher()
     }
+    
     @MainActor
     func startListenRoomDoc(roomID: String) {
+        // ⬇️ batched 리스너가 같은 집합을 관리 중이면 per-doc 리스너는 스킵
+        if lastRoomIDsListened.contains(roomID) {
+            print(#function, "skip per-doc listener (managed by batched):", roomID)
+            return
+        }
         if roomDocListeners[roomID] != nil { return } // already listening
+
         let ref = db.collection("Rooms").document(roomID)
         let l = ref.addSnapshotListener { [weak self] snap, err in
             guard let self = self else { return }
-            print(#function, "snap 연결 성공")
-            if let err = err { print("❌ Room listener error:", err); return }
+            if let err = err {
+                print("❌ Room listener error:", err)
+                return
+            }
             guard let snap = snap, snap.exists else { return }
             do {
                 let room = try self.createRoom(from: snap)
-                self.roomChangeSubject.send(room)
+                // ⬇️ 메인 액터에서 store 갱신 + 퍼블리시 (UI 일관성 보장)
+                Task { @MainActor in
+                    if let id = room.ID, !id.isEmpty {
+                        self.roomStore[id] = room      // 마지막 메시지/시간 등 값 자체를 교체
+                        self.roomChangeSubject.send(room)
+                    }
+                }
             } catch {
                 print("❌ Room decode error:", error)
             }
@@ -523,21 +569,23 @@ class FirebaseManager {
                 }
                 guard let snap = snap else { return }
 
-                // Upsert all changed docs into roomStore and emit roomChangePublisher
-                for change in snap.documentChanges {
-                    do {
-                        let room = try self.createRoom(from: change.document)
-                        if let id = room.ID, !id.isEmpty {
-                            self.roomStore[id] = room
-                            self.roomChangeSubject.send(room)
+                Task { @MainActor in
+                    for change in snap.documentChanges {
+                        do {
+                            let room = try self.createRoom(from: change.document)
+                            if let id = room.ID, !id.isEmpty {
+                                self.roomStore[id] = room
+                                self.roomChangeSubject.send(room)
+                            }
+                        } catch {
+                            print("⚠️ Batched decode failed:", error, "docID:", change.document.documentID)
                         }
-                    } catch {
-                        print("⚠️ Batched decode failed:", error, "docID:", change.document.documentID)
                     }
                 }
             }
 
             batchedRoomDocListeners[key] = l
+            print(#function, "Added listener for chunk:", l)
         }
     }
 
