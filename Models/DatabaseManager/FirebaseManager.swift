@@ -28,8 +28,7 @@ class FirebaseManager {
     
     // 채팅방 목록
     @Published private(set) var roomStore: [String: ChatRoom] = [:]
-    @Published private(set) var topRoomIDs: [String] = []
-    @Published private(set) var joinedRoomIDs: Set<String> = []
+    private(set) var topRooms: [ChatRoom] = []
     private var previewByRoomID: [String: [ChatMessage]] = [:]
     private var lastRoomIDsListened: Set<String> = []
 
@@ -46,10 +45,10 @@ class FirebaseManager {
     var allRooms: [ChatRoom] {
         roomStore.map { $0.value }
     }
-    var joinedRooms: [ChatRoom] {
-        joinedRoomIDs.compactMap { roomStore[$0] }
+    var getTopRooms: [ChatRoom] {
+        topRooms.map { $0 }
     }
-    
+
     private var lastFetchedMessageSnapshot: DocumentSnapshot?
     private var lastFetchedRoomSnapshot: DocumentSnapshot?
     
@@ -212,7 +211,7 @@ class FirebaseManager {
     }
     
     @MainActor
-    func fetchRecentRoomsPage(after lastSnapshot: DocumentSnapshot? = nil, limit:Int = 100) async throws {
+    func fetchTopRoomsPage(after lastSnapshot: DocumentSnapshot? = nil, limit:Int = 30) async throws {
         var query: Query = db.collection("Rooms").order(by: "lastMessageAt", descending: true).limit(to: limit)
         
         if let lastSnapshot {
@@ -231,53 +230,54 @@ class FirebaseManager {
             
         }
 
-        upsertRooms(rooms)
+//        upsertRooms(rooms)
+        topRooms = rooms
         self.lastFetchedRoomSnapshot = snapshot.documents.last
     }
     
     // 불러온 방 저장
-    @MainActor
-    private func upsertRooms<S: Sequence>(_ rooms: S) where S.Element == ChatRoom {
-        var base = roomStore
-        var changedStore = false
-        var incomingIDs: [String] = []
-
-        for r in rooms {
-            guard let id = r.ID, !id.isEmpty else { continue }
-            incomingIDs.append(id)
-            if base[id] == nil {
-                base[id] = r
-                changedStore = true
-            } else {
-                // Overwrite to ensure subscribers see updates when fields change
-                base[id] = r
-                changedStore = true
-            }
-        }
-
-        if changedStore {
-            roomStore = base
-        }
-
-        // Update topRoomIDs: append new IDs in the same order, keep uniqueness, preserve existing order
-        var top = topRoomIDs
-        var changedTop = false
-        if top.isEmpty {
-            if !incomingIDs.isEmpty {
-                top = incomingIDs
-                changedTop = true
-            }
-        } else {
-            for id in incomingIDs where !top.contains(id) {
-                top.append(id)
-                changedTop = true
-            }
-        }
-
-        if changedTop {
-            topRoomIDs = top
-        }
-    }
+//    @MainActor
+//    private func upsertRooms<S: Sequence>(_ rooms: S) where S.Element == ChatRoom {
+//        var base = roomStore
+//        var changedStore = false
+//        var incomingIDs: [String] = []
+//
+//        for r in rooms {
+//            guard let id = r.ID, !id.isEmpty else { continue }
+//            incomingIDs.append(id)
+//            if base[id] == nil {
+//                base[id] = r
+//                changedStore = true
+//            } else {
+//                // Overwrite to ensure subscribers see updates when fields change
+//                base[id] = r
+//                changedStore = true
+//            }
+//        }
+//
+//        if changedStore {
+//            roomStore = base
+//        }
+//
+//        // Update topRoomIDs: append new IDs in the same order, keep uniqueness, preserve existing order
+//        var top = topRoomIDs
+//        var changedTop = false
+//        if top.isEmpty {
+//            if !incomingIDs.isEmpty {
+//                top = incomingIDs
+//                changedTop = true
+//            }
+//        } else {
+//            for id in incomingIDs where !top.contains(id) {
+//                top.append(id)
+//                changedTop = true
+//            }
+//        }
+//
+//        if changedTop {
+//            topRoomIDs = top
+//        }
+//    }
     
     @MainActor
     func updateRoomLastMessage(roomID: String, date: Date? = nil, msg: String) async {
@@ -405,7 +405,7 @@ class FirebaseManager {
             SocketIOManager.shared.createRoom(roomID)
             SocketIOManager.shared.joinRoom(roomID)
             
-            await upsertRooms([room])
+//            await upsertRooms([room])
 
             print("✅ saveRoomInfoToFirestore: Firestore 저장 및 Socket.IO create/join 완료 (roomID=\(roomID))")
         } catch {
@@ -669,66 +669,66 @@ class FirebaseManager {
         }
     }
     
-    private func attachMessageListener(for room: ChatRoom, roomID: String, allRooms: [ChatRoom]) {
-        hotRoomMessageListeners[roomID]?.remove()
-        
-        let listener = db.collection("Rooms")
-            .document(roomID)
-            .collection("Messages")
-            .order(by: "sentAt", descending: true)
-            .limit(to: 3)
-            .addSnapshotListener { [weak self] snapshot, error in
-                self?.handleMessageSnapshot(snapshot, error: error, room: room, allRooms: allRooms)
-            }
-        
-        hotRoomMessageListeners[roomID] = listener
-    }
+//    private func attachMessageListener(for room: ChatRoom, roomID: String, allRooms: [ChatRoom]) {
+//        hotRoomMessageListeners[roomID]?.remove()
+//        
+//        let listener = db.collection("Rooms")
+//            .document(roomID)
+//            .collection("Messages")
+//            .order(by: "sentAt", descending: true)
+//            .limit(to: 3)
+//            .addSnapshotListener { [weak self] snapshot, error in
+//                self?.handleMessageSnapshot(snapshot, error: error, room: room, allRooms: allRooms)
+//            }
+//        
+//        hotRoomMessageListeners[roomID] = listener
+//    }
     
-    private func updateRoomListeners(for rooms: [ChatRoom]) {
-        let newIDs = Set(rooms.compactMap{ $0.ID })
-        let oldIDs = Set(hotRoomMessageListeners.keys)
-        let removedIDs = oldIDs.subtracting(newIDs)
-        
-        removedIDs.forEach { id in
-            hotRoomMessageListeners[id]?.remove()
-            hotRoomMessageListeners.removeValue(forKey: id)
-        }
-        
-        for room in rooms {
-            guard let roomID = room.ID else { return }
-            attachMessageListener(for: room, roomID: roomID, allRooms: rooms)
-        }
-    }
-
-    private func handleHotRoomsSnapshot(_ snapshot: QuerySnapshot?, error: Error?) {
-        guard let snapshot = snapshot else {
-            print("HotRooms 불러오기 실패: \(error?.localizedDescription ?? "알 수 없는 에러")")
-            return
-        }
-        let rooms = snapshot.documents.compactMap { try? createRoom(from: $0) }
-        
-        let storagePaths = Array(Set(
-            rooms.compactMap { $0.thumbPath }
-                .filter { !$0.isEmpty }
-        ))
-        
-        if !storagePaths.isEmpty {
-            FirebaseStorageManager.shared.prefetchImages(paths: storagePaths, location: .RoomImage)
-        }
-        
-        updateRoomListeners(for: rooms)
-    }
-
-    func listenToHotRooms() async throws {
-        detachHotRoomsListeners()
-
-        hotRoomsListener = db.collection("Rooms")
-            .order(by: "lastMessageAt", descending: true)
-            .limit(to: 20)
-            .addSnapshotListener { [weak self] snapshot, error in
-                self?.handleHotRoomsSnapshot(snapshot, error: error)
-            }
-    }
+//    private func updateRoomListeners(for rooms: [ChatRoom]) {
+//        let newIDs = Set(rooms.compactMap{ $0.ID })
+//        let oldIDs = Set(hotRoomMessageListeners.keys)
+//        let removedIDs = oldIDs.subtracting(newIDs)
+//        
+//        removedIDs.forEach { id in
+//            hotRoomMessageListeners[id]?.remove()
+//            hotRoomMessageListeners.removeValue(forKey: id)
+//        }
+//        
+//        for room in rooms {
+//            guard let roomID = room.ID else { return }
+//            attachMessageListener(for: room, roomID: roomID, allRooms: rooms)
+//        }
+//    }
+//
+//    private func handleHotRoomsSnapshot(_ snapshot: QuerySnapshot?, error: Error?) {
+//        guard let snapshot = snapshot else {
+//            print("HotRooms 불러오기 실패: \(error?.localizedDescription ?? "알 수 없는 에러")")
+//            return
+//        }
+//        let rooms = snapshot.documents.compactMap { try? createRoom(from: $0) }
+//        
+//        let storagePaths = Array(Set(
+//            rooms.compactMap { $0.thumbPath }
+//                .filter { !$0.isEmpty }
+//        ))
+//        
+//        if !storagePaths.isEmpty {
+//            FirebaseStorageManager.shared.prefetchImages(paths: storagePaths, location: .RoomImage)
+//        }
+//        
+//        updateRoomListeners(for: rooms)
+//    }
+//
+//    func listenToHotRooms() async throws {
+//        detachHotRoomsListeners()
+//
+//        hotRoomsListener = db.collection("Rooms")
+//            .order(by: "lastMessageAt", descending: true)
+//            .limit(to: 20)
+//            .addSnapshotListener { [weak self] snapshot, error in
+//                self?.handleHotRoomsSnapshot(snapshot, error: error)
+//            }
+//    }
 
     private func createRoom(from document: DocumentSnapshot) throws -> ChatRoom {
         do {
@@ -739,11 +739,11 @@ class FirebaseManager {
         }
     }
     
-    private func detachHotRoomsListeners() {
-        hotRoomsListener?.remove()
-        hotRoomMessageListeners.values.forEach{ $0.remove() }
-        hotRoomMessageListeners.removeAll()
-    }
+//    private func detachHotRoomsListeners() {
+//        hotRoomsListener?.remove()
+//        hotRoomMessageListeners.values.forEach{ $0.remove() }
+//        hotRoomMessageListeners.removeAll()
+//    }
     
     func remove_participant(room: ChatRoom) {
         remove_participant_task?.cancel()

@@ -113,8 +113,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                                 await FirebaseManager.shared.joinedRoomStore.replace(with: profile.joinedRooms)
                             }
 
-                            try await FirebaseManager.shared.fetchRecentRoomsPage(after: nil, limit: 100)
-
+                            try await FirebaseManager.shared.fetchTopRoomsPage(after: nil, limit: 30)
+                            
                             // 2️⃣ 소켓/핫룸은 항상 실행
 //                            async let _ = FirebaseManager.shared.listenToHotRooms()
                             async let _ = SocketIOManager.shared.establishConnection()

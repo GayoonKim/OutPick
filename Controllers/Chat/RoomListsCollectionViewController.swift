@@ -56,6 +56,8 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
         self.bindPublishers()
         self.updateCollectionView()
         self.setupNavigationBar()
+        
+        print("✅✅✅✅✅ 불러온 Top 30 방:", FirebaseManager.shared.getTopRooms)
     }
     
     override func viewWillAppear(_ animated: Bool) {

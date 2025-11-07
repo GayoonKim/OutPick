@@ -113,9 +113,6 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
             return
         }
 
-        // 디버그: 동일 이벤트 중복 여부는 상위 publisher에서 removeDuplicates(by:)로 처리 권장
-        print("$$$$$방 정보 변경$$$$$: \(updated)")
-
         // 1) 기존 아이템 제거
         guard let old = snapshot.itemIdentifiers.first(where: { $0.ID == id }) else { return }
         snapshot.deleteItems([old])

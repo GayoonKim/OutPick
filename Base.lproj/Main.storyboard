@@ -29,21 +29,6 @@
             </objects>
             <point key="canvasLocation" x="-4416" y="-338"/>
         </scene>
-        <!--Est View Controller-->
-        <scene sceneID="jam-8J-Ilu">
-            <objects>
-                <viewController id="cDU-3b-lBL" customClass="TEstViewController" customModule="OutPick" customModuleProvider="target" sceneMemberID="viewController">
-                    <view key="view" contentMode="scaleToFill" id="gCN-9P-a83">
-                        <rect key="frame" x="0.0" y="0.0" width="402" height="874"/>
-                        <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
-                        <viewLayoutGuide key="safeArea" id="BFo-rf-Gky"/>
-                        <color key="backgroundColor" systemColor="systemBackgroundColor"/>
-                    </view>
-                </viewController>
-                <placeholder placeholderIdentifier="IBFirstResponder" id="7MK-yi-HBW" userLabel="First Responder" customClass="UIResponder" sceneMemberID="firstResponder"/>
-            </objects>
-            <point key="canvasLocation" x="-5593" y="832"/>
-        </scene>
         <!--Home Collection View Controller-->
         <scene sceneID="S3S-Ay-0XO">
             <objects>
