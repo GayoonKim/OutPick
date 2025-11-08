@@ -107,7 +107,7 @@ class LoginViewController: UIViewController {
         Task {
             do {
                 try await LoginManager.shared.updateLogDevID()
-
+                try await FirebaseManager.shared.fetchTopRoomsPage(limit: 30)
                 async let _ = SocketIOManager.shared.establishConnection()
 
                 // ✅ 신규/기존 유저 분기 처리 통합

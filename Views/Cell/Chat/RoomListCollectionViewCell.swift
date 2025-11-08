@@ -88,6 +88,9 @@ class RoomListCollectionViewCell: UICollectionViewCell {
     }
     
     func configure(room: ChatRoom, messages: [ChatMessage]) {
+        
+        print("오픈채팅 방 리스트 셀 데이터", room, messages)
+        
         roomImageView.layer.cornerRadius = 8
         roomImageView.clipsToBounds = true
 

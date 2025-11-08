@@ -113,10 +113,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                                 await FirebaseManager.shared.joinedRoomStore.replace(with: profile.joinedRooms)
                             }
 
-                            try await FirebaseManager.shared.fetchTopRoomsPage(after: nil, limit: 30)
+                            try await FirebaseManager.shared.fetchTopRoomsPage(limit: 30)
                             
                             // 2️⃣ 소켓/핫룸은 항상 실행
-//                            async let _ = FirebaseManager.shared.listenToHotRooms()
                             async let _ = SocketIOManager.shared.establishConnection()
 
                             // 3️⃣ 참여중인 방은 프로필 있는 경우에만 등록

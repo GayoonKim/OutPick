@@ -52,41 +52,33 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
         collectionView.backgroundColor = .white
         collectionView.translatesAutoresizingMaskIntoConstraints = false
         collectionView.contentInsetAdjustmentBehavior = .never
-        
-        self.bindPublishers()
-        self.updateCollectionView()
+
         self.setupNavigationBar()
-        
-        print("✅✅✅✅✅ 불러온 Top 30 방:", FirebaseManager.shared.getTopRooms)
+        self.setupIntialTopRooms()
     }
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
     }
-
-    private func bindPublishers() {
-        // 방 목록 관련
-        FirebaseManager.shared.$hotRoomsWithPreviews
-            .subscribe(on: DispatchQueue.global(qos: .userInitiated)) // ⬅️ 백그라운드에서 변환
-            .map { (pairs: [(ChatRoom, [ChatMessage])]) -> [RoomPreview] in
-                pairs.map { RoomPreview(room: $0.0, messages: $0.1) }
-            }
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] updatedRooms in
-                guard let self = self else { return }
-                self.chatRooms = updatedRooms
-                self.updateCollectionView()
-            }
-            .store(in: &cancellables)
-    }
-
+    
     @MainActor
-    private func updateCollectionView() {
-        let chatRoomsList = chatRooms
-        
-        let itemBySection = [Section.main: chatRoomsList]
+    private func setupIntialTopRooms() {
+        FirebaseManager.shared.topRoomsWithPreviews.forEach {
+            let roomPreview = RoomPreview(room: $0.0, messages: $0.1)
+            chatRooms.append(roomPreview)
+        }
+
+        let itemBySection = [Section.main: chatRooms]
         dataSource.applySnapshotUsing(sectionIDs: [Section.main], itemsBySection: itemBySection)
     }
+
+//    @MainActor
+//    private func updateCollectionView() {
+//        let chatRoomsList = chatRooms
+//        
+//        let itemBySection = [Section.main: chatRoomsList]
+//        dataSource.applySnapshotUsing(sectionIDs: [Section.main], itemsBySection: itemBySection)
+//    }
     
     private func configureDataSource() -> DataSourceType {
         let dataSource = DataSourceType(collectionView: collectionView) { (collectionView, indexPath, item) in

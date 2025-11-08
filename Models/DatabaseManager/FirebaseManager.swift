@@ -27,36 +27,31 @@ class FirebaseManager {
     let joinedRoomStore = JoinedRoomsStore()
     
     // 채팅방 목록
-    @Published private(set) var roomStore: [String: ChatRoom] = [:]
-    private(set) var topRooms: [ChatRoom] = []
+//    @Published private(set) var roomStore: [String: ChatRoom] = [:]
+    private(set) var topRoomsWithPreviews: [(ChatRoom, [ChatMessage])] = []
+//    private(set) var topRooms: [ChatRoom] = []
     private var previewByRoomID: [String: [ChatMessage]] = [:]
     private var lastRoomIDsListened: Set<String> = []
 
     private var add_room_participant_task: Task<Void, Never>? = nil
     private var remove_participant_task: Task<Void, Never>? = nil
-    
-    
+
     deinit {
         add_room_participant_task?.cancel()
         remove_participant_task?.cancel()
     }
     
     // 채팅방 읽기 전용 접근자 제공
-    var allRooms: [ChatRoom] {
-        roomStore.map { $0.value }
-    }
-    var getTopRooms: [ChatRoom] {
-        topRooms.map { $0 }
-    }
+//    var allRooms: [ChatRoom] {
+//        roomStore.map { $0.value }
+//    }
+//    var getTopRooms: [ChatRoom] {
+//        topRooms.map { $0 }
+//    }
 
     private var lastFetchedMessageSnapshot: DocumentSnapshot?
     private var lastFetchedRoomSnapshot: DocumentSnapshot?
-    
-    // Hot rooms with previews
-    @Published var hotRoomsWithPreviews: [(ChatRoom, [ChatMessage])] = []
-    private var hotRoomsListener: ListenerRegistration?
-    private var hotRoomMessageListeners: [String: ListenerRegistration] = [:]
-    
+
     //MARK: 프로필 설정 관련 기능들
     func listenToUserProfile(email: String,
                              completion: @escaping (Result<UserProfile, Error>) -> Void) -> ListenerRegistration {
@@ -210,29 +205,105 @@ class FirebaseManager {
         return latest
     }
     
-    @MainActor
-    func fetchTopRoomsPage(after lastSnapshot: DocumentSnapshot? = nil, limit:Int = 30) async throws {
-        var query: Query = db.collection("Rooms").order(by: "lastMessageAt", descending: true).limit(to: limit)
-        
-        if let lastSnapshot {
-            query = query.start(afterDocument: lastSnapshot)
+@MainActor
+func fetchTopRoomsPage(after lastSnapshot: DocumentSnapshot? = nil, limit:Int = 30) async throws {
+    var query: Query = db.collection("Rooms").order(by: "lastMessageAt", descending: true).limit(to: limit)
+    
+    if let lastSnapshot {
+        query = query.start(afterDocument: lastSnapshot)
+    }
+    
+    // 1) Top rooms 페이지 스냅샷
+    let snapshot = try await query.getDocuments()
+    
+    // 2) 디코딩
+    let rooms: [ChatRoom] = snapshot.documents.compactMap { doc in
+        do {
+            return try self.createRoom(from: doc)
+        } catch {
+            print("⚠️ Room decode failed: \(error), id=\(doc.documentID)")
+            return nil
         }
-        
-        let snapshot = try await query.getDocuments()
-        
-        let rooms: [ChatRoom] = snapshot.documents.compactMap { doc in
-            do {
-                return try self.createRoom(from: doc)
-            } catch {
-                print("⚠️ Room decode failed: \(error), id=\(doc.documentID)")
-                return nil
+    }
+    
+    // 3) 각 방의 최근 메시지 3개(미리보기) 동시 로드
+    //    - 우선 seq 기반(desc)으로 시도 후 실패 시 sentAt(desc) 폴백
+    //    - 표시용으로는 오름차순(과거→최신) 정렬을 반환
+    let previewsByRoomID: [String: [ChatMessage]] = await withTaskGroup(of: (String, [ChatMessage]).self) { group in
+        for r in rooms {
+            guard let rid = r.ID, !rid.isEmpty else { continue }
+            group.addTask { [weak self] in
+                guard let self = self else { return ("", []) }
+                let msgs = await self.fetchPreviewMessages(roomID: rid, limit: 3)
+                return (rid, msgs)
             }
-            
         }
+        
+        var acc: [String: [ChatMessage]] = [:]
+        for await (rid, msgs) in group {
+            guard !rid.isEmpty else { continue }
+            acc[rid] = msgs
+        }
+        return acc
+    }
+    
+    // 4) 상태 업데이트 (topRooms + topRoomsWithPreviews 동시 유지)
+    self.previewByRoomID = previewsByRoomID
+//    self.topRooms = rooms
+    self.topRoomsWithPreviews = rooms.map { room in
+        let rid = room.ID ?? ""
+        let previews = previewsByRoomID[rid] ?? []
+        return (room, previews)
+    }
+    
+    self.lastFetchedRoomSnapshot = snapshot.documents.last
+}
 
-//        upsertRooms(rooms)
-        topRooms = rooms
-        self.lastFetchedRoomSnapshot = snapshot.documents.last
+    /// 방 미리보기용으로 최근 메시지 N개를 가져옵니다.
+    /// 우선 seq(desc) 기반, 실패 또는 비어있으면 sentAt(desc)로 폴백합니다.
+    /// 화면 표시를 위해 반환은 오름차순(과거→최신)으로 정렬합니다.
+    private func fetchPreviewMessages(roomID: String, limit: Int = 3) async -> [ChatMessage] {
+        let messagesRef = db.collection("Rooms").document(roomID).collection("Messages")
+        
+        // 내부 디코더(관대 파서 우선)
+        func decode(_ snap: QuerySnapshot) -> [ChatMessage] {
+            let arr: [ChatMessage] = snap.documents.compactMap { doc in
+                var dict = doc.data()
+                if dict["ID"] == nil { dict["ID"] = doc.documentID }
+                if let msg = ChatMessage.from(dict) { return msg }
+                do { return try doc.data(as: ChatMessage.self) }
+                catch {
+                    print("⚠️ preview decode failed: \(error), docID: \(doc.documentID)")
+                    return nil
+                }
+            }
+            return arr
+        }
+        
+        // 1) seq 기반 시도
+        do {
+            let snap = try await messagesRef
+                .order(by: "seq", descending: true)
+                .limit(to: limit)
+                .getDocuments()
+            let arr = decode(snap)
+            if !arr.isEmpty { return arr.reversed() } // 오름차순 변환
+        } catch {
+            // 계속 폴백 시도
+        }
+        
+        // 2) sentAt 기반 폴백
+        do {
+            let snap = try await messagesRef
+                .order(by: "sentAt", descending: true)
+                .limit(to: limit)
+                .getDocuments()
+            let arr = decode(snap)
+            return arr.reversed() // 오름차순 변환
+        } catch {
+            print("⚠️ _fetchPreviewMessages fallback failed (roomID=\(roomID)): \(error)")
+            return []
+        }
     }
     
     // 불러온 방 저장
@@ -516,7 +587,7 @@ class FirebaseManager {
                 // ⬇️ 메인 액터에서 store 갱신 + 퍼블리시 (UI 일관성 보장)
                 Task { @MainActor in
                     if let id = room.ID, !id.isEmpty {
-                        self.roomStore[id] = room      // 마지막 메시지/시간 등 값 자체를 교체
+                        /*self.roomStore[id] = room */     // 마지막 메시지/시간 등 값 자체를 교체
                         self.roomChangeSubject.send(room)
                     }
                 }
@@ -574,7 +645,7 @@ class FirebaseManager {
                         do {
                             let room = try self.createRoom(from: change.document)
                             if let id = room.ID, !id.isEmpty {
-                                self.roomStore[id] = room
+//                                self.roomStore[id] = room
                                 self.roomChangeSubject.send(room)
                             }
                         } catch {
@@ -632,11 +703,11 @@ class FirebaseManager {
         }
     }
 
-    private func updateHotRoomsPreviews(room: ChatRoom, messages: [ChatMessage], allRooms: [ChatRoom]) {
-        var current = hotRoomsWithPreviews
+    private func updateTopRoomsPreviews(room: ChatRoom, messages: [ChatMessage], allRooms: [ChatRoom]) {
+        var current = topRoomsWithPreviews
         current.removeAll { $0.0.ID == room.ID }
         current.append((room, messages.sorted { $0.sentAt ?? Date() < $1.sentAt ?? Date() }))
-        hotRoomsWithPreviews = allRooms.compactMap{ r in
+        topRoomsWithPreviews = allRooms.compactMap{ r in
             let msgs = current.first(where: { $0.0.ID == r.ID })?.1 ?? []
             return (r, msgs)
         }
@@ -665,13 +736,13 @@ class FirebaseManager {
         }
 
         DispatchQueue.main.async {
-            self.updateHotRoomsPreviews(room: room, messages: messages, allRooms: allRooms)
+            self.updateTopRoomsPreviews(room: room, messages: messages, allRooms: allRooms)
         }
     }
     
 //    private func attachMessageListener(for room: ChatRoom, roomID: String, allRooms: [ChatRoom]) {
 //        hotRoomMessageListeners[roomID]?.remove()
-//        
+//
 //        let listener = db.collection("Rooms")
 //            .document(roomID)
 //            .collection("Messages")
@@ -680,7 +751,7 @@ class FirebaseManager {
 //            .addSnapshotListener { [weak self] snapshot, error in
 //                self?.handleMessageSnapshot(snapshot, error: error, room: room, allRooms: allRooms)
 //            }
-//        
+//
 //        hotRoomMessageListeners[roomID] = listener
 //    }
     
@@ -688,12 +759,12 @@ class FirebaseManager {
 //        let newIDs = Set(rooms.compactMap{ $0.ID })
 //        let oldIDs = Set(hotRoomMessageListeners.keys)
 //        let removedIDs = oldIDs.subtracting(newIDs)
-//        
+//
 //        removedIDs.forEach { id in
 //            hotRoomMessageListeners[id]?.remove()
 //            hotRoomMessageListeners.removeValue(forKey: id)
 //        }
-//        
+//
 //        for room in rooms {
 //            guard let roomID = room.ID else { return }
 //            attachMessageListener(for: room, roomID: roomID, allRooms: rooms)
@@ -706,16 +777,16 @@ class FirebaseManager {
 //            return
 //        }
 //        let rooms = snapshot.documents.compactMap { try? createRoom(from: $0) }
-//        
+//
 //        let storagePaths = Array(Set(
 //            rooms.compactMap { $0.thumbPath }
 //                .filter { !$0.isEmpty }
 //        ))
-//        
+//
 //        if !storagePaths.isEmpty {
 //            FirebaseStorageManager.shared.prefetchImages(paths: storagePaths, location: .RoomImage)
 //        }
-//        
+//
 //        updateRoomListeners(for: rooms)
 //    }
 //
