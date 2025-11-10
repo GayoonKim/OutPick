@@ -38,6 +38,11 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
     private var tabViewControllers: [Int: UIViewController] = [:]
     private var currentChildViewController: UIViewController?
     private var currentTabIndex: Int?
+    
+    private let refreshControl: UIRefreshControl = {
+        let rc = UIRefreshControl()
+        return rc
+    }()
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -54,7 +59,8 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
         collectionView.contentInsetAdjustmentBehavior = .never
 
         self.setupNavigationBar()
-        self.setupIntialTopRooms()
+        self.renderTopRoomsSnapshot()
+        self.setupRefreshControl()
     }
     
     override func viewWillAppear(_ animated: Bool) {
@@ -62,24 +68,47 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
     }
     
     @MainActor
-    private func setupIntialTopRooms() {
+    private func setupRefreshControl() {
+        collectionView.alwaysBounceVertical = true
+        refreshControl.addTarget(self, action: #selector(didPullToRefresh), for: .valueChanged)
+        collectionView.refreshControl = refreshControl
+    }
+    
+    @objc private func didPullToRefresh() {
+        Task(priority: .userInitiated) {
+            do {
+                // 서버에서 Top 30 새로 로드 (첫 페이지)
+                try await FirebaseManager.shared.fetchTopRoomsPage(after: nil, limit: 30)
+                // UI 업데이트
+                await MainActor.run {
+                    self.renderTopRoomsSnapshot()
+                    
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+                        self.refreshControl.endRefreshing()
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+                        self.refreshControl.endRefreshing()
+                    }
+                }
+                print("❌ pull-to-refresh 실패: \(error)")
+            }
+        }
+    }
+    
+    @MainActor
+    private func renderTopRoomsSnapshot() {
+        chatRooms.removeAll(keepingCapacity: true)
         FirebaseManager.shared.topRoomsWithPreviews.forEach {
             let roomPreview = RoomPreview(room: $0.0, messages: $0.1)
             chatRooms.append(roomPreview)
         }
-
         let itemBySection = [Section.main: chatRooms]
         dataSource.applySnapshotUsing(sectionIDs: [Section.main], itemsBySection: itemBySection)
     }
 
-//    @MainActor
-//    private func updateCollectionView() {
-//        let chatRoomsList = chatRooms
-//        
-//        let itemBySection = [Section.main: chatRoomsList]
-//        dataSource.applySnapshotUsing(sectionIDs: [Section.main], itemsBySection: itemBySection)
-//    }
-    
     private func configureDataSource() -> DataSourceType {
         let dataSource = DataSourceType(collectionView: collectionView) { (collectionView, indexPath, item) in
             

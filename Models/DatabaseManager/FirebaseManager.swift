@@ -739,67 +739,6 @@ func fetchTopRoomsPage(after lastSnapshot: DocumentSnapshot? = nil, limit:Int = 
             self.updateTopRoomsPreviews(room: room, messages: messages, allRooms: allRooms)
         }
     }
-    
-//    private func attachMessageListener(for room: ChatRoom, roomID: String, allRooms: [ChatRoom]) {
-//        hotRoomMessageListeners[roomID]?.remove()
-//
-//        let listener = db.collection("Rooms")
-//            .document(roomID)
-//            .collection("Messages")
-//            .order(by: "sentAt", descending: true)
-//            .limit(to: 3)
-//            .addSnapshotListener { [weak self] snapshot, error in
-//                self?.handleMessageSnapshot(snapshot, error: error, room: room, allRooms: allRooms)
-//            }
-//
-//        hotRoomMessageListeners[roomID] = listener
-//    }
-    
-//    private func updateRoomListeners(for rooms: [ChatRoom]) {
-//        let newIDs = Set(rooms.compactMap{ $0.ID })
-//        let oldIDs = Set(hotRoomMessageListeners.keys)
-//        let removedIDs = oldIDs.subtracting(newIDs)
-//
-//        removedIDs.forEach { id in
-//            hotRoomMessageListeners[id]?.remove()
-//            hotRoomMessageListeners.removeValue(forKey: id)
-//        }
-//
-//        for room in rooms {
-//            guard let roomID = room.ID else { return }
-//            attachMessageListener(for: room, roomID: roomID, allRooms: rooms)
-//        }
-//    }
-//
-//    private func handleHotRoomsSnapshot(_ snapshot: QuerySnapshot?, error: Error?) {
-//        guard let snapshot = snapshot else {
-//            print("HotRooms 불러오기 실패: \(error?.localizedDescription ?? "알 수 없는 에러")")
-//            return
-//        }
-//        let rooms = snapshot.documents.compactMap { try? createRoom(from: $0) }
-//
-//        let storagePaths = Array(Set(
-//            rooms.compactMap { $0.thumbPath }
-//                .filter { !$0.isEmpty }
-//        ))
-//
-//        if !storagePaths.isEmpty {
-//            FirebaseStorageManager.shared.prefetchImages(paths: storagePaths, location: .RoomImage)
-//        }
-//
-//        updateRoomListeners(for: rooms)
-//    }
-//
-//    func listenToHotRooms() async throws {
-//        detachHotRoomsListeners()
-//
-//        hotRoomsListener = db.collection("Rooms")
-//            .order(by: "lastMessageAt", descending: true)
-//            .limit(to: 20)
-//            .addSnapshotListener { [weak self] snapshot, error in
-//                self?.handleHotRoomsSnapshot(snapshot, error: error)
-//            }
-//    }
 
     private func createRoom(from document: DocumentSnapshot) throws -> ChatRoom {
         do {
@@ -809,13 +748,7 @@ func fetchTopRoomsPage(after lastSnapshot: DocumentSnapshot? = nil, limit:Int = 
             throw FirebaseError.FailedToParseRoomData
         }
     }
-    
-//    private func detachHotRoomsListeners() {
-//        hotRoomsListener?.remove()
-//        hotRoomMessageListeners.values.forEach{ $0.remove() }
-//        hotRoomMessageListeners.removeAll()
-//    }
-    
+
     func remove_participant(room: ChatRoom) {
         remove_participant_task?.cancel()
         remove_participant_task = Task {
