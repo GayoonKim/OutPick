@@ -989,7 +989,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         
         view.bringSubviewToFront(chatUIView)
         view.bringSubviewToFront(customNavigationBar)
-        chatMessageCollectionView.contentInset.top = self.view.safeAreaInsets.top + chatUIView.frame.height + 5
+        chatMessageCollectionView.contentInset.top = self.view.safeAreaInsets.top + chatUIView.frame.height + 10
+//        chatMessageCollectionView.contentInset.top = self.view.safeAreaInsets.top
         chatMessageCollectionView.contentInset.bottom = 5
         
         NSLayoutConstraint.deactivate(joinConsraints)
@@ -2661,7 +2662,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     @objc private func keyboardWillShow(_ sender: Notification) {
         guard let animationDuration = sender.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double,
-              let _ = sender.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue else { return }
+              let keyboard = sender.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue else { return }
+        
+        chatMessageCollectionView.contentInset.top = self.view.safeAreaInsets.top + chatUIView.frame.height + keyboard.cgRectValue.height - 10
+        chatMessageCollectionView.verticalScrollIndicatorInsets.top = self.view.safeAreaInsets.top + chatUIView.frame.height + keyboard.cgRectValue.height - 10
         
         // Hide attachment view if visible
         if !self.attachmentView.isHidden {
@@ -2677,6 +2681,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     @objc private func keyboardWillHide(_ sender: Notification) {
         guard let animationDuration = sender.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double,
               let _ = sender.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
+        
+        chatMessageCollectionView.contentInset.top = self.view.safeAreaInsets.top + chatUIView.frame.height + 5
+        chatMessageCollectionView.verticalScrollIndicatorInsets.top = self.view.safeAreaInsets.top + chatUIView.frame.height + 5
         
         UIView.animate(withDuration: animationDuration) {
             self.view.layoutIfNeeded()
