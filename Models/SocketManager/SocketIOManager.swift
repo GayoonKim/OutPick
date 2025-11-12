@@ -75,7 +75,7 @@ class SocketIOManager {
     private var subscriberCounts = [String: Int]() // 구독자 ref count
     
     private init() {
-        manager = SocketManager(socketURL: URL(string: "http://192.168.123.124:3000")!, config: [
+        manager = SocketManager(socketURL: URL(string: "http://192.168.123.145:3000")!, config: [
             .log(true),
             .compress,
             .connectParams(["clientKey": SocketIOManager.clientKey]),

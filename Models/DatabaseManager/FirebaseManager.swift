@@ -175,6 +175,20 @@ class FirebaseManager {
     }
     
     //MARK: 채팅 방 관련 기능들
+    /// 방 참여/탈퇴 등으로 방 메타가 바뀌었을 때, 캐시를 최신 Room으로 교체
+    func applyLocalRoomUpdate(_ updatedRoom: ChatRoom) {
+        // 1) 튜플에서 같은 ID를 가진 방 찾기
+        guard let rid = updatedRoom.ID, !rid.isEmpty else { return }
+        if let idx = topRoomsWithPreviews.firstIndex(where: { $0.0.ID == rid }) {
+            // 2) 미리보기 메시지는 그대로 두고, 방만 최신 객체로 교체
+            let previews = topRoomsWithPreviews[idx].1
+            topRoomsWithPreviews[idx] = (updatedRoom, previews)
+        } else {
+            // Top 30 범위 밖이었을 수도 있음: 필요시 앞쪽에 삽입하거나 무시
+            // (정책에 맞게 선택 – 추측입니다)
+        }
+    }
+    
     // 사용자 roomStates/{roomID}에서 lastReadSeq를 읽음
     func fetchLastReadSeq(for roomID: String) async throws -> Int64 {
         // 컬렉션 경로/필드 이름은 실제 프로젝트 스키마에 맞게 조정하세요.
@@ -484,8 +498,7 @@ func fetchTopRoomsPage(after lastSnapshot: DocumentSnapshot? = nil, limit:Int = 
             throw error
         }
     }
-    
-    // 방 정보 불러오기
+
     func fetchRoomsWithIDs(byIDs ids: [String]) async throws -> [ChatRoom] {
         guard !ids.isEmpty else { return [] }
         var result: [ChatRoom] = []
@@ -793,6 +806,36 @@ func fetchTopRoomsPage(after lastSnapshot: DocumentSnapshot? = nil, limit:Int = 
             } catch {
                 print(#function, "방 참여자 업데이트 트랜젝션 실패: \(error)")
             }
+        }
+    }
+
+    /// 방 참여자를 트랜잭션으로 추가하고, 서버 강제 조회로 최신 Room 문서를 반환합니다.
+    func add_room_participant_returningRoom(roomID: String) async throws -> ChatRoom {
+        guard !roomID.isEmpty else {
+            throw FirebaseError.FailedToFetchRoom
+        }
+        let email = LoginManager.shared.getUserEmail
+        let userRef = db.collection("Users").document(email)
+        let roomRef = db.collection("Rooms").document(roomID)
+
+        // 1) 트랜잭션: Users.joinedRooms, Rooms.participantIDs 동시 갱신
+        _ = try await db.runTransaction { (transaction, errorPointer) -> Any? in
+            transaction.updateData(["joinedRooms": FieldValue.arrayUnion([roomID])], forDocument: userRef)
+            transaction.updateData(["participantIDs": FieldValue.arrayUnion([email])], forDocument: roomRef)
+            return nil
+        }
+
+        // 2) 서버 강제 조회로 최신 Room 문서를 받아 디코드
+        let snap = try await roomRef.getDocument(source: .server)
+        guard snap.exists else {
+            throw FirebaseError.FailedToFetchRoom
+        }
+        do {
+            let updated = try self.createRoom(from: snap)
+            return updated
+        } catch {
+            print("❌ add_room_participant_returningRoom decode error:", error)
+            throw FirebaseError.FailedToParseRoomData
         }
     }
     

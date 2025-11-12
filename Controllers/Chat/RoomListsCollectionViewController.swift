@@ -59,12 +59,14 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
         collectionView.contentInsetAdjustmentBehavior = .never
 
         self.setupNavigationBar()
-        self.renderTopRoomsSnapshot()
         self.setupRefreshControl()
     }
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        Task { @MainActor in
+            self.renderTopRoomsSnapshot()
+        }
     }
     
     @MainActor
@@ -103,6 +105,7 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
         chatRooms.removeAll(keepingCapacity: true)
         FirebaseManager.shared.topRoomsWithPreviews.forEach {
             let roomPreview = RoomPreview(room: $0.0, messages: $0.1)
+            print(#function, "방 정보: \(roomPreview.room)")
             chatRooms.append(roomPreview)
         }
         let itemBySection = [Section.main: chatRooms]

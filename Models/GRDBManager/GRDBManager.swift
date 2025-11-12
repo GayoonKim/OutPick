@@ -162,22 +162,7 @@ final class GRDBManager {
                 print("[Migration] backfill thumbPath from profileImagePath failed: \(error)")
             }
         }
-        
-//        migrator.registerMigration("createChatMessage") { db in
-//            try db.create(table: "chatMessage") { t in
-//                t.column("id", .text).primaryKey() // 메시지 UUID 등
-//                t.column("roomID", .text).notNull()
-//                t.column("senderID", .text).notNull()
-//                t.column("senderNickname", .text).notNull()
-//                t.column("msg", .text)
-//                t.column("sentAt", .datetime)
-//                t.column("attachments", .text) // JSON string
-//                t.column("isFailed", .boolean).notNull().defaults(to: false)
-//                t.column("replyTo", .text)
-//            }
-//            
-//            try db.create(index: "idx_chatMessage_roomID_sentAt", on: "chatMessage", columns: ["roomID", "sentAt"], ifNotExists: true)
-//        }
+
         migrator.registerMigration("createChatMessage") { db in
             try db.create(table: "chatMessage") { t in
                 t.column("id", .text).primaryKey() // 메시지 UUID 등
@@ -369,75 +354,75 @@ final class GRDBManager {
     }
     
     // MARK: 방
-    func fetchRoomInfo(roomID: String) throws -> ChatRoom? {
-        try dbPool.read { db -> ChatRoom? in
-            // rooms 테이블에서 방 기본 정보 조회
-            struct RoomRow: FetchableRecord, Decodable {
-                var ID: String
-                var roomName: String
-                var roomDescription: String
-                var creatorID: String
-                var createdAt: Date
-                var thumbPath: String?
-                var originalPath: String?
-                var lastMessageAt: Date?
-                var lastMessage: String?
-            }
-            
-            guard let row = try RoomRow.fetchOne(
-                db,
-                sql: """
-                SELECT id AS ID,
-                       roomName,
-                       roomDescription,
-                       creatorID,
-                       createdAt,
-                       thumbPath,
-                       originalPath,
-                       lastMessageAt,
-                       lastMessage
-                FROM rooms
-                WHERE id = ?
-                """,
-                arguments: [roomID]
-            ) else {
-                return nil
-            }
-            
-            // 참여자 IDs 조회 (신규 RoomMember 우선, 레거시 roomParticipant 폴백)
-            let participants: [String] = try {
-                if try db.tableExists("RoomMember") {
-                    return try String.fetchAll(
-                        db,
-                        sql: "SELECT userEmail FROM RoomMember WHERE roomID = ?",
-                        arguments: [roomID]
-                    )
-                } else {
-                    return try String.fetchAll(
-                        db,
-                        sql: "SELECT email FROM roomParticipant WHERE roomId = ?",
-                        arguments: [roomID]
-                    )
-                }
-            }()
-            
-            return ChatRoom(
-                ID: row.ID,
-                roomName: row.roomName,
-                roomDescription: row.roomDescription,
-                participants: participants,
-                creatorID: row.creatorID,
-                createdAt: row.createdAt,
-                thumbPath: row.thumbPath,
-                originalPath: row.originalPath,
-                lastMessageAt: row.lastMessageAt,
-                lastMessage: row.lastMessage,
-                activeAnnouncementID: nil,
-                activeAnnouncement: nil,
-                announcementUpdatedAt: nil
-            )
-        }
-    }
+//    func fetchRoomInfo(roomID: String) throws -> ChatRoom? {
+//        try dbPool.read { db -> ChatRoom? in
+//            // rooms 테이블에서 방 기본 정보 조회
+//            struct RoomRow: FetchableRecord, Decodable {
+//                var ID: String
+//                var roomName: String
+//                var roomDescription: String
+//                var creatorID: String
+//                var createdAt: Date
+//                var thumbPath: String?
+//                var originalPath: String?
+//                var lastMessageAt: Date?
+//                var lastMessage: String?
+//            }
+//            
+//            guard let row = try RoomRow.fetchOne(
+//                db,
+//                sql: """
+//                SELECT id AS ID,
+//                       roomName,
+//                       roomDescription,
+//                       creatorID,
+//                       createdAt,
+//                       thumbPath,
+//                       originalPath,
+//                       lastMessageAt,
+//                       lastMessage
+//                FROM rooms
+//                WHERE id = ?
+//                """,
+//                arguments: [roomID]
+//            ) else {
+//                return nil
+//            }
+//            
+//            // 참여자 IDs 조회 (신규 RoomMember 우선, 레거시 roomParticipant 폴백)
+//            let participants: [String] = try {
+//                if try db.tableExists("RoomMember") {
+//                    return try String.fetchAll(
+//                        db,
+//                        sql: "SELECT userEmail FROM RoomMember WHERE roomID = ?",
+//                        arguments: [roomID]
+//                    )
+//                } else {
+//                    return try String.fetchAll(
+//                        db,
+//                        sql: "SELECT email FROM roomParticipant WHERE roomId = ?",
+//                        arguments: [roomID]
+//                    )
+//                }
+//            }()
+//            
+//            return ChatRoom(
+//                ID: row.ID,
+//                roomName: row.roomName,
+//                roomDescription: row.roomDescription,
+//                participants: participants,
+//                creatorID: row.creatorID,
+//                createdAt: row.createdAt,
+//                thumbPath: row.thumbPath,
+//                originalPath: row.originalPath,
+//                lastMessageAt: row.lastMessageAt,
+//                lastMessage: row.lastMessage,
+//                activeAnnouncementID: nil,
+//                activeAnnouncement: nil,
+//                announcementUpdatedAt: nil
+//            )
+//        }
+//    }
     
     // MARK: 메시지
     /// 여러 메시지를 한 번에 저장하고, 마지막에만 조건부 pruneMessages 실행
@@ -480,12 +465,7 @@ final class GRDBManager {
                         return nil
                     }
                 }()
-                /*
-                 INSERT OR REPLACE INTO chatMessage
-                 (id, roomID, senderID, senderNickname, msg, sentAt, attachments, isFailed, replyPreview, isDeleted)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                 */
-                
+
                 // 4) Upsert chatMessage row
                 try db.execute(
                     sql: """
@@ -494,16 +474,7 @@ final class GRDBManager {
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     arguments: [
-//                        message.ID,
-//                        message.roomID,
-//                        message.senderID,
-//                        message.senderNickname,
-//                        message.msg,
-//                        message.sentAt,
-//                        attachmentsJSON,
-//                        message.isFailed,
-//                        replyPreviewJSON,
-//                        message.isDeleted
+
                         message.ID,
                         message.seq,                 // ← 추가
                         message.roomID,
@@ -626,15 +597,6 @@ final class GRDBManager {
                 }()
                 
                 var message = ChatMessage(
-//                    ID: row["id"],
-//                    roomID: row["roomID"],
-//                    senderID: row["senderID"],
-//                    senderNickname: row["senderNickname"],
-//                    msg: row["msg"],
-//                    sentAt: row["sentAt"],
-//                    attachments: attachments,
-//                    replyPreview: replyPreview,
-//                    isFailed: (row["isFailed"] as? Int64 == 1)
                     ID: row["id"],
                     seq: (row["seq"] as? Int64) ?? 0,
                     roomID: row["roomID"],
@@ -662,13 +624,9 @@ final class GRDBManager {
             ) else {
                 return []
             }
-//            let anchorSentAt: Date = anchorRow["sentAt"]
-//            let anchorId: String = anchorRow["id"]
             let anchorSeq: Int64 = (anchorRow["seq"] as? Int64) ?? 0
             
             // 앵커보다 과거인 메시지를 최신순으로 먼저 가져온 뒤, 반환 시 ASC로 뒤집기
-            // AND (sentAt < ? OR (sentAt = ? AND id < ?))
-            // ORDER BY sentAt DESC, id DESC
             let rows = try Row.fetchAll(
                 db,
                 sql: """
@@ -679,7 +637,6 @@ final class GRDBManager {
                 LIMIT ?
                 """,
                 arguments: [roomID, anchorSeq, limit]
-                // arguments: [roomID, anchorSentAt, anchorSentAt, anchorId, limit]
             )
             
             let ascRows = rows.reversed()

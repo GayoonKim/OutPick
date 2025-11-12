@@ -833,45 +833,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
     }
 
-//        // 2) 캐시가 준비된 후 메시지 추가(셀에서 즉시 썸네일 접근 가능)
-//        addMessages([message])
-//
-//        // 3) 로컬 DB 저장: fire-and-forget + 재시도(백오프)
-//        Task(priority: .userInitiated) {
-//            let maxRetries = 3
-//            var lastError: Error?
-//            for attempt in 1...maxRetries {
-//                do {
-//                    try await GRDBManager.shared.saveChatMessages([message])
-//                    lastError = nil
-//                    break
-//                } catch {
-//                    lastError = error
-//                    print("⚠️ GRDB saveChatMessages 실패 (시도 \(attempt)/\(maxRetries)): \(error)")
-//                    if attempt < maxRetries {
-//                        // 0.2s, 0.4s, 0.6s 백오프
-//                        try? await Task.sleep(nanoseconds: UInt64(200_000_000) * UInt64(attempt))
-//                    }
-//                }
-//            }
-//            if let err = lastError {
-//                print("❌ GRDB saveChatMessages 최종 실패: \(err)")
-//            }
-//        }
-//
-//        // 4) 내가 보낸 정상 메시지면 Firebase에도 기록 (UI 비차단)
-//        if !message.isFailed, message.senderID == LoginManager.shared.getUserEmail {
-//            let currentRoom = room
-//            Task(priority: .utility) {
-//                do {
-//                    try await FirebaseManager.shared.saveMessage(message, currentRoom)
-//                } catch {
-//                    print("⚠️ Firebase saveMessage 실패(비차단): \(error)")
-//                }
-//            }
-//        }
-//    }
-
     // 이미지 캐싱 전용
     private func cacheImagesIfNeeded(for message: ChatMessage) async {
         guard !message.attachments.isEmpty else { return }
@@ -1468,6 +1429,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             }
         }
     }
+    
     /// 현재 화면에 보이는 메시지 셀의 발신자 이메일 목록(중복 제거, 최대 limit)
     @MainActor
     private func visibleSenderEmails(limit: Int = 30) -> [String] {
@@ -1655,9 +1617,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         // Prevent double taps / duplicated HUDs
         guard !isJoiningRoom else { return }
         isJoiningRoom = true
-        // Ensure only one loading indicator is visible
-        LoadingIndicator.shared.stop()   // clear any residual
-        LoadingIndicator.shared.start(on: self)  // start a single HUD for this join flow
+
+        LoadingIndicator.shared.stop()
+        LoadingIndicator.shared.start(on: self)
 
         joinRoomBtn.isHidden = true
         customNavigationBar.rightStack.isUserInteractionEnabled = true
@@ -1676,25 +1638,19 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                     SocketIOManager.shared.listenToNewParticipant()
                 }
 
-                // 2. Firebase에 참여자 등록
-                try await FirebaseManager.shared.add_room_participant(room: room)
-
-                // 3. 최신 room 정보 fetch
-                guard let roomID = room.ID,
-                      let updatedroom = try await FirebaseManager.shared.fetchRoomsWithIDs(byIDs: [roomID]).first else {
-                    fatalError("❌ 방 참여 후 방 정보 fetch 실패")
-                }
-                self.room = updatedroom
-
-                // 4. 프로필 동기화
-
-                // 5. UI 업데이트
+                // 2. Firebase에 참여자 등록 및 최신 room 정보 fetch
+                guard let ID = room.ID else { return }
+                let updated = try await FirebaseManager.shared.add_room_participant_returningRoom(roomID: ID)
+                self.room = updated
+                FirebaseManager.shared.applyLocalRoomUpdate(updated)
+                
+                // 4. UI 업데이트
                 await MainActor.run {
                     self.setupChatUI()
                     self.chatUIView.isHidden = false
                     self.chatMessageCollectionView.isHidden = false
                     self.bindRoomChangePublisher()
-                    FirebaseManager.shared.startListenRoomDoc(roomID: updatedroom.ID ?? "")
+                    FirebaseManager.shared.startListenRoomDoc(roomID: ID)
                     runInitialProfileFetchOnce()
                     self.view.layoutIfNeeded()
                 }
@@ -1774,22 +1730,22 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             guard let room = self.room else { return }
             let roomID = room.ID ?? ""
             
-            let (profiles, imageNames): ([UserProfile], [String]) = try await Task.detached(priority: .utility) {
-                let p = try GRDBManager.shared.fetchUserProfiles(inRoom: roomID)
-                let names = try GRDBManager.shared.fetchImageNames(inRoom: roomID)
-                return (p, names)
-            }.value
-            
-            var images = [UIImage]()
-            for imageName in imageNames {
-                if let image = await KingFisherCacheManager.shared.loadImage(named: imageName) {
-                    images.append(image)
-                }
-            }
+//            let (profiles, imageNames): ([UserProfile], [String]) = try await Task.detached(priority: .utility) {
+//                let p = try GRDBManager.shared.fetchUserProfiles(inRoom: roomID)
+//                let names = try GRDBManager.shared.fetchImageNames(inRoom: roomID)
+//                return (p, names)
+//            }.value
+//            
+//            var images = [UIImage]()
+//            for imageName in imageNames {
+//                if let image = await KingFisherCacheManager.shared.loadImage(named: imageName) {
+//                    images.append(image)
+//                }
+//            }
             
             self.detachInteractiveDismissGesture()
             
-            let settingVC = ChatRoomSettingCollectionView(room: room, profiles: profiles, images: images)
+            let settingVC = ChatRoomSettingCollectionView(room: room, profiles: [], images: [])
             self.presentSettingVC(settingVC)
             
             settingVC.onRoomUpdated = { [weak self] updatedRoom in
@@ -1800,6 +1756,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 }
             }
         }
+        
     }
     
     @MainActor
@@ -2714,26 +2671,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
     
     // MARK: 이미지 뷰어 관련
-    // Cache for Firebase Storage download URLs (path -> URL)
-//    actor StorageURLCache {
-//        private var cache: [String: URL] = [:]
-//        func url(for path: String) async throws -> URL {
-//            if let u = cache[path] { return u }
-//            let ref = Storage.storage().reference(withPath: path)
-//            let url = try await withCheckedThrowingContinuation { cont in
-//                ref.downloadURL { url, err in
-//                    if let url { cont.resume(returning: url) }
-//                    else { cont.resume(throwing: err ?? NSError(domain: "Storage", code: -1)) }
-//                }
-//            }
-//            cache[path] = url
-//            return url
-//        }
-//    }
-    
     // Kingfisher prefetchers & URL cache
     private var imagePrefetchers: [ImagePrefetcher] = []
-//    private let imageStorageURLCache = StorageURLCache()
     
     private func presentImageViewer(tappedIndex: Int, indexPath: IndexPath) {
         // 1) 메시지 & 첨부 수집
