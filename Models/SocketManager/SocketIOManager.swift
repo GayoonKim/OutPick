@@ -75,7 +75,7 @@ class SocketIOManager {
     private var subscriberCounts = [String: Int]() // 구독자 ref count
     
     private init() {
-        manager = SocketManager(socketURL: URL(string: "http://192.168.123.145:3000")!, config: [
+        manager = SocketManager(socketURL: URL(string: "http://192.168.123.167:3000")!, config: [
             .log(true),
             .compress,
             .connectParams(["clientKey": SocketIOManager.clientKey]),
@@ -455,7 +455,7 @@ class SocketIOManager {
     // MARK: - Emit (meta-only attachments)
     /// 메타 전용 첨부(썸네일/원본 경로 등)를 소켓으로 전송
     /// ChatViewController에서 attachments.map { $0.toDict() } 로 호출합니다.
-    func sendImages(_ room: ChatRoom, _ attachments: [[String: Any]]) {
+    func sendImages(_ room: ChatRoom, _ attachments: [[String: Any]], senderAvatarPath: String? = nil) {
         // 0) 가드
         guard !attachments.isEmpty else { return }
         let roomID = room.ID ?? ""
@@ -492,7 +492,7 @@ class SocketIOManager {
         // 연결 안 되어 있으면 실패 메시지 로컬 퍼블리시
         guard socket.status == .connected else {
             let atts = attachments.enumerated().map { makeAttachment(from: $0.element, fallbackIndex: $0.offset) }
-            let failed = ChatMessage(
+            var failed = ChatMessage(
                 ID: clientMessageID, seq: 0,
                 roomID: roomID,
                 senderID: senderID,
@@ -503,6 +503,9 @@ class SocketIOManager {
                 replyPreview: nil,
                 isFailed: true
             )
+            if let avatar = senderAvatarPath, !avatar.isEmpty {
+                failed.senderAvatarPath = avatar
+            }
             DispatchQueue.main.async {
                 self.roomSubjects[roomID]?.send(failed)
             }
@@ -511,7 +514,7 @@ class SocketIOManager {
             
         // 1) 서버 이벤트/페이로드 구성(메타만 포함)
         let eventName = "send images" // 새 프로토콜 이벤트명 (서버 index.js와 일치)
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "roomID": roomID,
             "messageID": clientMessageID,
             "type": "image",
@@ -521,6 +524,9 @@ class SocketIOManager {
             "senderNickname": senderNickname,
             "sentAt": isoSentAt
         ]
+        if let avatar = senderAvatarPath, !avatar.isEmpty {
+            body["senderAvatarPath"] = avatar
+        }
 
         // NOTE: 성공 시에는 로컬 퍼블리시를 하지 않는다.
         // reason: 서버 브로드캐스트가 ACK보다 먼저 도착할 수 있어, 이후에 퍼블리시된 seq=0 스텁이
@@ -543,7 +549,7 @@ class SocketIOManager {
 
             // 실패/타임아웃: 실패 메시지를 로컬에만 퍼블리시해 재시도 UX 제공
             let atts = attachments.enumerated().map { makeAttachment(from: $0.element, fallbackIndex: $0.offset) }
-            let failed = ChatMessage(
+            var failed = ChatMessage(
                 ID: clientMessageID, seq: 0,
                 roomID: roomID,
                 senderID: senderID,
@@ -554,6 +560,9 @@ class SocketIOManager {
                 replyPreview: nil,
                 isFailed: true
             )
+            if let avatar = senderAvatarPath, !avatar.isEmpty {
+                failed.senderAvatarPath = avatar
+            }
             DispatchQueue.main.async {
                 self.roomSubjects[roomID]?.send(failed)
             }
@@ -753,9 +762,10 @@ class SocketIOManager {
     /// 소켓 미연결/ACK 실패 시 로컬 실패 메시지를 주입한다.
     func sendVideo(roomID: String,
                    payload: VideoMetaPayload,
+                   senderAvatarPath: String? = nil,
                    ackTimeout: Double = 5.0,
                    completion: ((Result<Void, Error>) -> Void)? = nil) {
-        let dict: [String: Any] = [
+        var dict: [String: Any] = [
             "roomID": payload.roomID,
             "messageID": payload.messageID,
             "storagePath": payload.storagePath,
@@ -770,6 +780,9 @@ class SocketIOManager {
             "senderID": LoginManager.shared.getUserEmail,
             "senderNickname": LoginManager.shared.currentUserProfile?.nickname ?? ""
         ]
+        if let avatar = senderAvatarPath, !avatar.isEmpty {
+            dict["senderAvatarPath"] = avatar
+        }
 
         #if canImport(SocketIO)
         if socket.status == .connected {

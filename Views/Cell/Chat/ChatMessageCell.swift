@@ -101,7 +101,7 @@ class ChatMessageCell: UICollectionViewCell {
     
     private let replyPreviewNameLabel: UILabel = {
         let label = UILabel()
-        label.font = .systemFont(ofSize: 10/*, weight: .heavy*/)
+        label.font = .systemFont(ofSize: 10)
         label.textColor = .black
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
@@ -109,7 +109,7 @@ class ChatMessageCell: UICollectionViewCell {
     
     private let replyPreviewMsgLabel: UILabel = {
         let label = UILabel()
-        label.font = .systemFont(ofSize: 9/*, weight: .medium*/)
+        label.font = .systemFont(ofSize: 9)
         label.textColor = .black
         label.numberOfLines = 1
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -177,11 +177,11 @@ class ChatMessageCell: UICollectionViewCell {
     private var failedIconImageViewTrainlingConstraint: NSLayoutConstraint?
     
     private var messageLabelTopConsraint: NSLayoutConstraint?
-    // Constraints for timeLabel relative to current host (bubbleView or imagesPreviewCollectionView)
+
     private var timeBottomConstraint: NSLayoutConstraint?
     private var timeRightOfHostLeading: NSLayoutConstraint?
     private var timeLeftOfHostTrailing: NSLayoutConstraint?
-    // Constraints for videoBadge anchored to current host (bubbleView or imagesPreviewCollectionView)
+
     private var videoBadgeConstraints: [NSLayoutConstraint] = []
     
     override init(frame: CGRect) {
@@ -332,7 +332,6 @@ class ChatMessageCell: UICollectionViewCell {
     }
     
     func showVideoBadge(durationText: String?) {
-        // Decide host based on current layout
         let host = imagesPreviewCollectionView.isHidden ? bubbleView : imagesPreviewCollectionView
         mountVideoBadge(on: host)
         videoDurationLabel.text = durationText ?? ""
@@ -452,8 +451,6 @@ class ChatMessageCell: UICollectionViewCell {
             mountTimeLabel(on: bubbleView, isMine: isMine)
         }
         
-        // Pre-mount the video badge onto the bubble (text-mode layout)
-//        mountVideoBadge(on: bubbleView)
         self.setNeedsLayout()
         self.layoutIfNeeded()
     }
@@ -463,8 +460,6 @@ class ChatMessageCell: UICollectionViewCell {
         widthConstraint?.isActive = false
         widthConstraint = nil
         
-        print(#function, "여기 호출이요: ", images)
-
         // 삭제된 메시지를 이미지가 아니라, "삭제된 메시지입니다."로 표시
         if message.isDeleted {
             bubbleView.isHidden = false
@@ -623,8 +618,6 @@ class ChatMessageCell: UICollectionViewCell {
                 mountTimeLabel(on: imagesPreviewCollectionView, isMine: isMine)
             }
 
-//            mountVideoBadge(on: imagesPreviewCollectionView)
-            
             if let firstVideo = message.attachments.first, firstVideo.type == .video {
                 if let dur = firstVideo.duration {
                     showVideoBadge(durationText: formatDuration(dur))

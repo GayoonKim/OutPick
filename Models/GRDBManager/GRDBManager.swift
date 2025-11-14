@@ -170,6 +170,7 @@ final class GRDBManager {
                 t.column("roomID", .text).notNull()
                 t.column("senderID", .text).notNull()
                 t.column("senderNickname", .text).notNull()
+                t.column("senderAvatarPath", .text)
                 t.column("msg", .text)
                 t.column("sentAt", .datetime)
                 t.column("attachments", .text) // JSON string
@@ -225,6 +226,17 @@ final class GRDBManager {
                 }
             } catch {
                 print("[Migration] addIsDeletedToChatMessage skipped or failed: \(error)")
+            }
+        }
+
+        migrator.registerMigration("addSenderAvatarPathToChatMessage") { db in
+            do {
+                try db.alter(table: "chatMessage") { t in
+                    t.add(column: "senderAvatarPath", .text)
+                }
+            } catch {
+                // 컬럼이 이미 존재하면 에러가 날 수 있으므로 무시(신규/기존 DB 모두 호환)
+                print("[Migration] addSenderAvatarPathToChatMessage skipped or failed: \(error)")
             }
         }
         
@@ -470,16 +482,16 @@ final class GRDBManager {
                 try db.execute(
                     sql: """
                     INSERT OR REPLACE INTO chatMessage
-                    (id, seq, roomID, senderID, senderNickname, msg, sentAt, attachments, isFailed, replyPreview, isDeleted)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (id, seq, roomID, senderID, senderNickname, senderAvatarPath, msg, sentAt, attachments, isFailed, replyPreview, isDeleted)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     arguments: [
-
                         message.ID,
-                        message.seq,                 // ← 추가
+                        message.seq,
                         message.roomID,
                         message.senderID,
                         message.senderNickname,
+                        message.senderAvatarPath,
                         message.msg,
                         message.sentAt,
                         attachmentsJSON,
@@ -609,6 +621,9 @@ final class GRDBManager {
                     isFailed: (row["isFailed"] as? Int64 == 1)
                 )
                 message.isDeleted = (row["isDeleted"] as? Int64 == 1)
+                if let avatar = row["senderAvatarPath"] as? String {
+                    message.senderAvatarPath = avatar
+                }
                 return message
             }
         }
@@ -663,6 +678,9 @@ final class GRDBManager {
                     isFailed: (row["isFailed"] as? Int64 == 1)
                 )
                 message.isDeleted = (row["isDeleted"] as? Int64 == 1)
+                if let avatar = row["senderAvatarPath"] as? String {
+                    message.senderAvatarPath = avatar
+                }
                 return message
             }
         }
@@ -758,6 +776,9 @@ final class GRDBManager {
                     isFailed: (row["isFailed"] as? Int64 == 1)
                 )
                 message.isDeleted = (row["isDeleted"] as? Int64 == 1)
+                if let avatar = row["senderAvatarPath"] as? String {
+                    message.senderAvatarPath = avatar
+                }
                 return message
             }
         }
@@ -795,6 +816,9 @@ final class GRDBManager {
                     isFailed: (row["isFailed"] as? Int64 == 1)
                 )
                 message.isDeleted = (row["isDeleted"] as? Int64 == 1)
+                if let avatar = row["senderAvatarPath"] as? String {
+                    message.senderAvatarPath = avatar
+                }
                 return message
             }
         }
@@ -1228,7 +1252,7 @@ final class GRDBManager {
         }
     }
     
-    // MARK: - LocalUser (minimal) & RoomMember API
+    // MARK: - LocalUser & RoomMember API
     /// email, nickname, profileImagePath만을 다루는 경량 CRUD
     @discardableResult
     func upsertLocalUser(email: String, nickname: String, profileImagePath: String?) throws -> LocalUser {
@@ -1237,24 +1261,6 @@ final class GRDBManager {
             try user.insert(db, onConflict: .replace)
         }
         return user
-    }
-    
-    func deleteLocalUser(email: String) throws {
-        try dbPool.write { db in
-            _ = try LocalUser.deleteOne(db, key: email)
-        }
-    }
-    
-    func fetchLocalUser(email: String) throws -> LocalUser? {
-        try dbPool.read { db in
-            try LocalUser.fetchOne(db, key: email)
-        }
-    }
-    
-    func fetchAllLocalUsers() throws -> [LocalUser] {
-        try dbPool.read { db in
-            try LocalUser.order(sql: "nickname COLLATE NOCASE ASC").fetchAll(db)
-        }
     }
     
     // MARK: RoomMember(신규) 멤버십 관리
@@ -1304,28 +1310,6 @@ final class GRDBManager {
         }
     }
     
-    /// 방의 모든 사용자 이메일을 반환
-    /// - 신규 스키마(RoomMember) 우선, 레거시(roomParticipant) 폴백 지원
-    func userEmails(in roomID: String) throws -> [String] {
-        try dbPool.read { db in
-            if try db.tableExists("RoomMember") {
-                return try String.fetchAll(
-                    db,
-                    sql: "SELECT userEmail FROM RoomMember WHERE roomID = ?",
-                    arguments: [roomID]
-                )
-            } else if try db.tableExists("roomParticipant") {
-                return try String.fetchAll(
-                    db,
-                    sql: "SELECT email FROM roomParticipant WHERE roomId = ?",
-                    arguments: [roomID]
-                )
-            } else {
-                return []
-            }
-        }
-    }
-    
     func fetchLocalUsersPage(roomID: String, offset: Int, limit: Int) throws -> ([LocalUser], Int) {
         try dbPool.read { db in
             let hasLocal = (try? db.tableExists("LocalUser")) == true && (try? db.tableExists("RoomMember")) == true
@@ -1369,6 +1353,28 @@ final class GRDBManager {
                 return (list, total)
             } else {
                 return ([], 0)
+            }
+        }
+    }
+    
+    /// 방의 모든 사용자 이메일을 반환
+    /// - 신규 스키마(RoomMember) 우선, 레거시(roomParticipant) 폴백 지원
+    func userEmails(in roomID: String) throws -> [String] {
+        try dbPool.read { db in
+            if try db.tableExists("RoomMember") {
+                return try String.fetchAll(
+                    db,
+                    sql: "SELECT userEmail FROM RoomMember WHERE roomID = ?",
+                    arguments: [roomID]
+                )
+            } else if try db.tableExists("roomParticipant") {
+                return try String.fetchAll(
+                    db,
+                    sql: "SELECT email FROM roomParticipant WHERE roomId = ?",
+                    arguments: [roomID]
+                )
+            } else {
+                return []
             }
         }
     }

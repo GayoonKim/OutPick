@@ -206,7 +206,7 @@ extension ChatViewController: PHPickerViewControllerDelegate {
 
                             // 3) 소켓/DB 전송: 메타만 (바이너리 X)
                             let payload = attachments.map { $0.toDict() }
-                            SocketIOManager.shared.sendImages(room, payload)
+                            SocketIOManager.shared.sendImages(room, payload, senderAvatarPath: LoginManager.shared.currentUserProfile?.thumbPath)
 
                         } catch {
                             Task { @MainActor in hud.dismiss() }
@@ -323,7 +323,7 @@ extension ChatViewController {
                 approxBitrateMbps: approxBitrateMbps,
                 preset: preset.code
             )
-            SocketIOManager.shared.sendVideo(roomID: roomID, payload: payload)
+            SocketIOManager.shared.sendVideo(roomID: roomID, payload: payload, senderAvatarPath: LoginManager.shared.currentUserProfile?.thumbPath)
             await MainActor.run { localHUD?.dismiss() }
         } catch {
             await MainActor.run { localHUD?.dismiss() }
