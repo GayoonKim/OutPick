@@ -26,10 +26,11 @@ class FirebaseManager {
     
     let joinedRoomStore = JoinedRoomsStore()
     
+    // Users/{email} 프로필 스냅샷 리스너 캐시
+    private var userProfileListeners: [String: ListenerRegistration] = [:]
+    
     // 채팅방 목록
-//    @Published private(set) var roomStore: [String: ChatRoom] = [:]
     private(set) var topRoomsWithPreviews: [(ChatRoom, [ChatMessage])] = []
-//    private(set) var topRooms: [ChatRoom] = []
     private var previewByRoomID: [String: [ChatMessage]] = [:]
     private var lastRoomIDsListened: Set<String> = []
 
@@ -40,14 +41,6 @@ class FirebaseManager {
         add_room_participant_task?.cancel()
         remove_participant_task?.cancel()
     }
-    
-    // 채팅방 읽기 전용 접근자 제공
-//    var allRooms: [ChatRoom] {
-//        roomStore.map { $0.value }
-//    }
-//    var getTopRooms: [ChatRoom] {
-//        topRooms.map { $0 }
-//    }
 
     private var lastFetchedMessageSnapshot: DocumentSnapshot?
     private var lastFetchedRoomSnapshot: DocumentSnapshot?
@@ -78,9 +71,18 @@ class FirebaseManager {
             }
         }
         
+        // 이메일별 최신 리스너를 캐시에 저장 (기존 리스너가 있으면 덮어쓰기)
+        userProfileListeners[email] = listener
+        
         return listener
     }
-    
+
+    /// Users/{email} 프로필 스냅샷 리스너 해제
+    func stopListenUserProfile(email: String) {
+        guard let listener = userProfileListeners[email] else { return }
+        listener.remove()
+        userProfileListeners.removeValue(forKey: email)
+    }
     
     // Firebase Firestore에 UserProfile 객체 저장
     func saveUserProfileToFirestore(email: String) async throws {

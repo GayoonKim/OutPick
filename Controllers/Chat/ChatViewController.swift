@@ -264,6 +264,15 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     // 마지막으로 서버에 반영한 lastReadSeq (단조 증가, 중복 쓰기 방지)
     private var lastSentLastReadSeq: Int64 = 0
     
+    // MARK: - Hot user pool (실시간 프로필/닉네임 반영용)
+    private struct HotUser {
+        let email: String
+        var lastSeenAt: Date
+    }
+
+    private var hotUsers: [HotUser] = []
+    private let maxHotUsers: Int = 20
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         self.definesPresentationContext = true
@@ -323,7 +332,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         
         deletionListener?.remove()
         deletionListener = nil
-        
+        resetHotUserPool()
         removeReadMarkerIfNeeded()
         
         // 참여하지 않은 방이면 로컬 메시지 삭제 처리 (메인 바깥에서 비동기 실행)
@@ -437,6 +446,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 print("[Init] entryTailSeq=", self.entryTailSeq, "windowMaxSeq=", self.windowMaxSeq, "liveMode=", self.liveMode)
 
                 addMessages(serverMessages, updateType: .newer)
+                
+                // Hot user 풀 시드: 최근 로컬+서버 메시지 발신자 기준으로 최대 20명 프로필 리스너 등록
+                self.seedHotUserPool(with: localMessages + serverMessages)
 
                 // 백그라운드 프리페치 시작 (이미지 썸네일 + 비디오 썸네일/URL warm-up)
                 await self.prefetchThumbnails(for: serverMessages, maxConcurrent: 4)
@@ -751,7 +763,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
     }
     
-    /// 수신 메시지를 저장 및 UI 반영
+    // 수신 메시지를 저장 및 UI 반영
     @MainActor
     private func handleIncomingMessage(_ message: ChatMessage) async {
         guard let room = self.room else { return }
@@ -793,8 +805,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
         case .live:
             addMessages([message])
+            // 🔥 실시간 수신 시 핫 유저 풀 갱신
+            updateHotUserPool(for: message.senderID, lastSeenAt: message.sentAt ?? Date())
             if message.seq > windowMaxSeq { windowMaxSeq = message.seq }
-            // 라이브 소비 중 바닥 근처일 때만 읽음 진행 반영 (isNearBottom 사용)
+            // 라이브 소비 중 바닥 근처일 때만 읽음 진행 반영
             maybeUpdateLastReadSeq(trigger: "liveIncoming")
         }
 
@@ -804,7 +818,21 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             var lastError: Error?
             for attempt in 1...maxRetries {
                 do {
+                    // (1) 메시지 본문/첨부 저장
                     try await GRDBManager.shared.saveChatMessages([message])
+
+                    // (2) LocalUser + RoomMember 업데이트
+                    do {
+                        try GRDBManager.shared.upsertLocalUser(
+                            email: message.senderID,
+                            nickname: message.senderNickname,
+                            profileImagePath: message.senderAvatarPath
+                        )
+                        try GRDBManager.shared.addLocalUser(message.senderID, toRoom: message.roomID)
+                    } catch {
+                        print("⚠️ LocalUser/RoomMember 업데이트 실패: \(error)")
+                    }
+
                     lastError = nil
                     break
                 } catch {
@@ -830,6 +858,60 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                     print("⚠️ Firebase saveMessage 실패(비차단): \(error)")
                 }
             }
+        }
+    }
+    
+    // Mark: LocalUser + HotUser 관련 함수
+    func updateHotUserPool(for email: String, lastSeenAt: Date) {
+        // 1) 이미 핫 유저면 lastSeenAt만 갱신하고 끝
+        if let idx = hotUsers.firstIndex(where: { $0.email == email }) {
+            hotUsers[idx].lastSeenAt = lastSeenAt
+            return
+        }
+        
+        // 2) 새 유저인데 아직 자리가 남아 있으면 추가 + 리스너 구독
+        if hotUsers.count < maxHotUsers {
+            hotUsers.append(HotUser(email: email, lastSeenAt: lastSeenAt))
+            _ = FirebaseManager.shared.listenToUserProfile(email: email) { _ in }
+            return
+        }
+        
+        // 3) 새 유저이고, 이미 20명이 꽉 차 있으면
+        //    가장 오래 등장 안 한 유저(least recent)를 하나 골라 교체
+        if let oldestIndex = hotUsers.indices.min(by: { hotUsers[$0].lastSeenAt < hotUsers[$1].lastSeenAt }) {
+            let oldEmail = hotUsers[oldestIndex].email
+            
+            // 3-1) 오래된 유저 리스너 제거
+            FirebaseManager.shared.stopListenUserProfile(email: oldEmail)
+            
+            // 3-2) 새 유저로 교체 + 새 리스너 시작
+            hotUsers[oldestIndex] = HotUser(email: email, lastSeenAt: lastSeenAt)
+            _ = FirebaseManager.shared.listenToUserProfile(email: email) { _ in }
+        }
+    }
+    
+    private func resetHotUserPool() {
+        // 이 뷰컨이 사라질 때, 관련 프로필 리스너 정리
+        for user in hotUsers {
+            FirebaseManager.shared.stopListenUserProfile(email: user.email)
+        }
+        hotUsers.removeAll()
+    }
+
+    @MainActor
+    private func seedHotUserPool(with messages: [ChatMessage]) {
+        guard !messages.isEmpty else { return }
+
+        // 최근 메시지 순으로 정렬 후, 서로 다른 이메일 기준으로 maxHotUsers까지 채우기
+        let sorted = messages.sorted { $0.sentAt ?? Date() > $1.sentAt ?? Date() }
+        var seen = Set<String>()
+
+        for msg in sorted {
+            let email = msg.senderID
+            guard !email.isEmpty else { continue }
+            if !seen.insert(email).inserted { continue }
+            updateHotUserPool(for: email, lastSeenAt: msg.sentAt ?? Date())
+            if hotUsers.count >= maxHotUsers { break }
         }
     }
 
