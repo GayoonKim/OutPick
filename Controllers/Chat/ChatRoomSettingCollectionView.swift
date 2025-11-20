@@ -174,10 +174,20 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
             guard let self = self else { return }
             do {
                 let roomID = self.roomInfo.ID ?? ""
-                let (page, total) = try GRDBManager.shared.fetchLocalUsersPage(roomID: roomID,
+                var (page, total) = try GRDBManager.shared.fetchLocalUsersPage(roomID: roomID,
                                                                                offset: 0,
                                                                                limit: participantsPageSize)
                 print(#function, "🔹 로드된 참여자 수: \(page.count), 총 인원: \(total)")
+
+                // 로컬이 Top-50을 못 채우면 서버에서 부족분만 보충 → 다시 로컬 Top-50 재조회
+                self.loadedParticipantEmails = Set(page.map { $0.email })
+                await self.fillParticipantsFromServerIfNeeded(roomID: roomID,
+                                                             currentCount: page.count,
+                                                             targetCount: participantsPageSize)
+                (page, total) = try GRDBManager.shared.fetchLocalUsersPage(roomID: roomID,
+                                                                          offset: 0,
+                                                                          limit: participantsPageSize)
+
                 await MainActor.run {
                     self.participantsTotalCount = total
                     self.participantsNextOffset = page.count
@@ -192,6 +202,43 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
             }
         }
     }
+
+    /// 로컬 Top-N이 부족할 때 서버에서 참여자 프로필을 보충하여 GRDB를 채운 뒤, 닉네임 정렬 Top-N을 다시 반환
+    private func fillParticipantsFromServerIfNeeded(roomID: String, currentCount: Int, targetCount: Int) async {
+        
+        print(#function, "loadedParticipantEmails: \(self.loadedParticipantEmails)", currentCount, targetCount)
+        
+        // roomInfo의 전체 참여자 이메일 목록(서버 기준)
+        let allParticipants = Set(self.roomInfo.participants)
+        let desiredCount = min(targetCount, allParticipants.count)
+        guard currentCount < desiredCount else { return }
+
+        // 로컬에 이미 로드한 이메일 제외
+        let missing = Array(allParticipants.subtracting(self.loadedParticipantEmails))
+        let need = min(desiredCount - currentCount, missing.count)
+        
+        print(#function, "missing: \(missing), need: \(need)")
+        
+        guard need > 0 else { return }
+
+        do {
+            let toFetch = Array(missing.prefix(need))
+            let profiles = try await FirebaseManager.shared.fetchUserProfiles(emails: toFetch)
+
+            for p in profiles {
+                let email = p.email ?? ""
+                if email.isEmpty { continue }
+                try GRDBManager.shared.upsertLocalUser(
+                    email: email,
+                    nickname: p.nickname ?? "",
+                    profileImagePath: p.thumbPath
+                )
+                try GRDBManager.shared.addLocalUser(email, toRoom: roomID)
+            }
+        } catch {
+            print("❌ 서버 참여자 보충 실패:", error)
+        }
+    }
     
     /// 아래로 스크롤 시 추가 페이지 로드
     private func loadMoreParticipantsIfNeeded() {
@@ -203,11 +250,23 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
             guard let self = self else { return }
             defer { self.participantsIsLoading = false }
             do {
-                let (page, total) = try GRDBManager.shared.fetchLocalUsersPage(roomID: roomID,
+                var (page, total) = try GRDBManager.shared.fetchLocalUsersPage(roomID: roomID,
                                                                                offset: currentOffset,
                                                                                limit: participantsPageSize)
                 // dedupe by email
-                let deduped = page.filter { !self.loadedParticipantEmails.contains($0.email) }
+                var deduped = page.filter { !self.loadedParticipantEmails.contains($0.email) }
+
+                // 로컬 페이지가 부족하면 서버에서 부족분만 보충 → 같은 offset 페이지 재조회
+                if deduped.count < participantsPageSize {
+                    await self.fillParticipantsFromServerIfNeeded(roomID: roomID,
+                                                                 currentCount: self.loadedParticipantEmails.count,
+                                                                 targetCount: self.loadedParticipantEmails.count + (participantsPageSize - deduped.count))
+                    (page, total) = try GRDBManager.shared.fetchLocalUsersPage(roomID: roomID,
+                                                                              offset: currentOffset,
+                                                                              limit: participantsPageSize)
+                    deduped = page.filter { !self.loadedParticipantEmails.contains($0.email) }
+                }
+
                 if !deduped.isEmpty {
                     await MainActor.run {
                         self.participantsTotalCount = total
