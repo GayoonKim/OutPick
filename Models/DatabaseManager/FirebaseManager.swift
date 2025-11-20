@@ -73,6 +73,7 @@ class FirebaseManager {
         
         // 이메일별 최신 리스너를 캐시에 저장 (기존 리스너가 있으면 덮어쓰기)
         userProfileListeners[email] = listener
+        print(#function, "⚠️⚠️⚠️⚠️⚠️ userProfileListeners: \(userProfileListeners)")
         
         return listener
     }

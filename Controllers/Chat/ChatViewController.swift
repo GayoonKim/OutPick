@@ -48,6 +48,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private var messageMap: [String: ChatMessage] = [:]
     // Preloaded thumbnails for image messages (messageID -> ordered thumbnails)
     var messageImages: [String: [UIImage]] = [:]
+    // Separate prepared flags to avoid image/video race on shared messageImages
+    private var preparedImageThumbMessageIDs: Set<String> = []
+    private var preparedVideoThumbMessageIDs: Set<String> = []
     
     // Loading state flags for message paging
     private var isLoadingOlder = false
@@ -307,6 +310,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         BannerManager.shared.setVisibleRoom(self.room?.ID ?? "")
+        
     }
     
     override func viewWillDisappear(_ animated: Bool) {
@@ -518,7 +522,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                         guard let self = self else { return }
                         await self.cacheImagesIfNeeded(for: msg)
 //                        await MainActor.run {
-//                            self.reloadVisibleMessageIfNeeded(messageID: msg.ID)
+                        await self.reloadVisibleMessageIfNeeded(messageID: msg.ID)
 //                        }
                     }
                 }
@@ -542,7 +546,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                     group.addTask { [weak self] in
                         guard let self = self else { return }
                         await self.cacheVideoAssetsIfNeeded(for: msg, in: roomID)
-//                        await MainActor.run { self.reloadVisibleMessageIfNeeded(messageID: msg.ID) }
                     }
                 }
                 await group.waitForAll()
@@ -888,6 +891,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             hotUsers[oldestIndex] = HotUser(email: email, lastSeenAt: lastSeenAt)
             _ = FirebaseManager.shared.listenToUserProfile(email: email) { _ in }
         }
+        
+        Task { @MainActor in
+            print(#function, "⚠️⚠️⚠️⚠️⚠️ hotUsers: \(hotUsers)")
+            print(#function, "⚠️⚠️⚠️⚠️⚠️ LocalUsers: \(try await GRDBManager.shared.fetchLocalUsers(inRoom: self.room?.ID ?? ""))")
+        }
     }
     
     private func resetHotUserPool() {
@@ -924,8 +932,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             .filter { $0.type == .image }
             .sorted { $0.index < $1.index }
 
-        // 이미 이 메시지의 썸네일 배열이 준비되어 있다면 중복 작업 스킵 (메인에서 판정)
-        let alreadyPrepared: Bool = await MainActor.run { self.messageImages[message.ID] != nil }
+        // 이미 이미지 썸네일 캐싱을 끝낸 메시지는 스킵 (비디오 썸네일과 레이스 방지)
+        let alreadyPrepared: Bool = await MainActor.run { self.preparedImageThumbMessageIDs.contains(message.ID) }
         if alreadyPrepared { return }
 
         for attachment in imageAttachments {
@@ -948,6 +956,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 print(#function, "이미지 캐시 실패: \(error)")
             }
         }
+        await MainActor.run {
+            self.preparedImageThumbMessageIDs.insert(message.ID)
+            self.reloadVisibleMessageIfNeeded(messageID: message.ID)
+        }
     }
 
     // 동영상 썸네일 캐시 + 원본 URL warm-up (로컬 실패 메시지 썸네일도 지원)
@@ -957,6 +969,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             .sorted { $0.index < $1.index }
 
         guard !videoAttachments.isEmpty else { return }
+
+        let alreadyPrepared: Bool = await MainActor.run { self.preparedVideoThumbMessageIDs.contains(message.ID) }
+        if alreadyPrepared { return }
         
         for attachment in videoAttachments {
             // 1) 썸네일 캐시
@@ -999,6 +1014,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             if !path.isEmpty, !path.hasPrefix("/") {
                 _ = try? await storageURLCache.url(for: path)
             }
+        }
+        await MainActor.run {
+            self.preparedVideoThumbMessageIDs.insert(message.ID)
+            self.reloadVisibleMessageIfNeeded(messageID: message.ID)
         }
     }
 
@@ -1816,7 +1835,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 //                let names = try GRDBManager.shared.fetchImageNames(inRoom: roomID)
 //                return (p, names)
 //            }.value
-//            
+//
 //            var images = [UIImage]()
 //            for imageName in imageNames {
 //                if let image = await KingFisherCacheManager.shared.loadImage(named: imageName) {
