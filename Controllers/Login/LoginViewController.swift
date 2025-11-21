@@ -112,7 +112,8 @@ class LoginViewController: UIViewController {
 
                 // ✅ 신규/기존 유저 분기 처리 통합
                 let screen = try await LoginManager.shared.makeInitialViewController()
-                LoginManager.shared.startUserProfileListener(email: LoginManager.shared.getUserEmail)
+//                LoginManager.shared.startUserProfileListener(email: LoginManager.shared.getUserEmail)
+                FirebaseManager.shared.listenToUserProfile(email: LoginManager.shared.getUserEmail)
                 
                 
                 guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,

@@ -99,7 +99,7 @@ struct ChatMessage: SocketData, Codable {
     let seq: Int64                    // 방 내 단조 증가 시퀀스(1,2,3,...) - 정렬/미읽음 계산용
     let roomID: String
     let senderID: String                // 메시지 전송 사용자 아이디
-    let senderNickname: String          // 메시지 전송 사용자 닉네임
+    var senderNickname: String          // 메시지 전송 사용자 닉네임
     var senderAvatarPath: String? = nil // Storage 상대경로(예: "avatars/<uid>/v3.jpg")
     let msg: String?                    // 메시지 내용
     let sentAt: Date?                   // 메시지 보낸 시간

@@ -275,6 +275,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     private var hotUsers: [HotUser] = []
     private let maxHotUsers: Int = 20
+    private var hotUserCancellables: [String: AnyCancellable] = [:]
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -302,6 +303,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         
         bindKeyboardPublisher()
         bindSearchEvents()
+        
         
         chatMessageCollectionView.delegate = self
     }
@@ -885,39 +887,124 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
     }
     
-    // Mark: LocalUser + HotUser 관련 함수
+    // MARK: LocalUser + HotUser 관련 함수
+    @MainActor
+    private func handleOtherUserProfileChanged(_ profile: UserProfile) {
+        // ✅ target email 추출 (필드명은 추측입니다)
+        let targetEmail = profile.email   // ← 실제 필드명으로 교체
+        
+        var snapshot = dataSource.snapshot()
+        let items = snapshot.itemIdentifiers(inSection: .main)
+        guard !items.isEmpty else { return }
+
+        // 1) 현재 보이는 인덱스(아이템) 범위
+        let visibleItemIndices = chatMessageCollectionView.indexPathsForVisibleItems
+            .filter { $0.section == 0 }
+            .map { $0.item }
+            .sorted()
+
+        let total = items.count
+        let pad = 100
+
+        let startIdx: Int
+        let endIdx: Int
+        if let minVis = visibleItemIndices.first,
+           let maxVis = visibleItemIndices.last {
+            startIdx = max(0, minVis - pad)
+            endIdx   = min(total - 1, maxVis + pad)
+        } else {
+            // visible이 없을 때(전환 직후 등) tail 근처만 처리
+            let tail = max(0, total - 1)
+            startIdx = max(0, tail - pad)
+            endIdx   = tail
+        }
+
+        guard startIdx <= endIdx else { return }
+
+        // 2) window 범위에서 해당 유저 메시지만 갱신
+        var itemsToReload: [Item] = []
+        itemsToReload.reserveCapacity((endIdx - startIdx + 1) / 4)
+
+        for i in startIdx...endIdx {
+            guard case let .message(msg) = items[i] else { continue }
+            guard msg.senderID == targetEmail else { continue }
+
+            var updated = msg
+            updated.senderNickname = profile.nickname ?? ""
+            updated.senderAvatarPath = profile.thumbPath ?? ""
+
+            messageMap[updated.ID] = updated
+            itemsToReload.append(.message(updated))
+            
+            print(#function, "메시지 및 프로필 갱신", msg, profile)
+        }
+
+        guard !itemsToReload.isEmpty else { return }
+        
+        // 3) 부분 reconfigure
+        snapshot.reconfigureItems(itemsToReload)
+        dataSource.apply(snapshot, animatingDifferences: false)
+    }
+    
+    private func bindHotUser(email: String) {
+        if hotUserCancellables[email] != nil { return } // 이미 구독 중
+
+        hotUserCancellables[email] =
+            FirebaseManager.shared
+                .userProfilePublisher(email: email)
+                .receive(on: DispatchQueue.main)
+                .sink(
+                    receiveCompletion: { completion in
+                        if case .failure(let err) = completion {
+                            print("⚠️ profile publisher error:", err)
+                        }
+                    },
+                    receiveValue: { [weak self] profile in
+                        // 타인 프로필 변경만 여기로 옴(내 프로필은 FirebaseManager에서 막음)
+                        guard let self = self else { return }
+                        self.handleOtherUserProfileChanged(profile)
+                    }
+                )
+    }
+
+    private func unbindHotUser(email: String) {
+        hotUserCancellables[email]?.cancel()
+        hotUserCancellables[email] = nil
+        FirebaseManager.shared.stopListenUserProfile(email: email)
+    }
+    
     func updateHotUserPool(for email: String, lastSeenAt: Date) {
         // 1) 이미 핫 유저면 lastSeenAt만 갱신하고 끝
         if let idx = hotUsers.firstIndex(where: { $0.email == email }) {
             hotUsers[idx].lastSeenAt = lastSeenAt
             return
         }
-        
-        // 2) 새 유저인데 아직 자리가 남아 있으면 추가 + 리스너 구독
+
+        // 2) 새 유저인데 아직 자리가 남아 있으면 추가 + publisher 구독(리스너는 publisher가 자동 보장)
         if hotUsers.count < maxHotUsers {
             hotUsers.append(HotUser(email: email, lastSeenAt: lastSeenAt))
-            _ = FirebaseManager.shared.listenToUserProfile(email: email) { _ in }
+            bindHotUser(email: email)
             return
         }
-        
-        // 3) 새 유저이고, 이미 20명이 꽉 차 있으면
-        //    가장 오래 등장 안 한 유저(least recent)를 하나 골라 교체
+
+        // 3) 새 유저이고 이미 20명이 꽉 차 있으면 가장 오래 등장 안 한 유저를 교체
         if let oldestIndex = hotUsers.indices.min(by: { hotUsers[$0].lastSeenAt < hotUsers[$1].lastSeenAt }) {
             let oldEmail = hotUsers[oldestIndex].email
-            
-            // 3-1) 오래된 유저 리스너 제거
-            FirebaseManager.shared.stopListenUserProfile(email: oldEmail)
-            
-            // 3-2) 새 유저로 교체 + 새 리스너 시작
+
+            // 3-1) 오래된 유저 구독/리스너 제거
+            unbindHotUser(email: oldEmail)
+
+            // 3-2) 새 유저로 교체 + 새 유저 구독 시작
             hotUsers[oldestIndex] = HotUser(email: email, lastSeenAt: lastSeenAt)
-            _ = FirebaseManager.shared.listenToUserProfile(email: email) { _ in }
+            bindHotUser(email: email)
         }
     }
     
     private func resetHotUserPool() {
         // 이 뷰컨이 사라질 때, 관련 프로필 리스너 정리
         for user in hotUsers {
-            FirebaseManager.shared.stopListenUserProfile(email: user.email)
+//            FirebaseManager.shared.stopListenUserProfile(email: user.email)
+            unbindHotUser(email: user.email)
         }
         hotUsers.removeAll()
     }

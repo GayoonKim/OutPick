@@ -132,26 +132,26 @@ class LoginManager {
         print("🔄🔄🔄🔄🔄 updateLogDevID 호출 끝")
     }
     
-    func startUserProfileListener(email: String) {
-        userProfileListener?.remove()
-        userProfileListener = nil
-
-        userProfileListener = FirebaseManager.shared.listenToUserProfile(email: email) { [weak self] result in
-            guard let self = self else { return }
-            switch result {
-            case .success(let profile):
-                self.currentUserProfile = profile
-                if let data = try? JSONEncoder().encode(profile) {
-                    KeychainManager.shared.save(data, service: "GayoonKim.OutPick", account: "UserProfile")
-                }
-                
-                Task { await FirebaseManager.shared.joinedRoomStore.replace(with: profile.joinedRooms) }
-                print("🔄 프로필 갱신: \(profile)")
-            case .failure(let error):
-                print("❌ 프로필 리스너 에러: \(error)")
-            }
-        }
-    }
+//    func startUserProfileListener(email: String) {
+//        userProfileListener?.remove()
+//        userProfileListener = nil
+//
+//        userProfileListener = FirebaseManager.shared.listenToUserProfile(email: email) { [weak self] result in
+//            guard let self = self else { return }
+//            switch result {
+//            case .success(let profile):
+//                self.currentUserProfile = profile
+//                if let data = try? JSONEncoder().encode(profile) {
+//                    KeychainManager.shared.save(data, service: "GayoonKim.OutPick", account: "UserProfile")
+//                }
+//                
+//                Task { await FirebaseManager.shared.joinedRoomStore.replace(with: profile.joinedRooms) }
+//                print("🔄 프로필 갱신: \(profile)")
+//            case .failure(let error):
+//                print("❌ 프로필 리스너 에러: \(error)")
+//            }
+//        }
+//    }
     
     func loadUserProfile() async -> Result<UserProfile, Error> {
         // Try to load from Keychain

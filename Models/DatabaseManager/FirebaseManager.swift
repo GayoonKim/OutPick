@@ -28,6 +28,8 @@ class FirebaseManager {
     
     // Users/{email} 프로필 스냅샷 리스너 캐시
     private var userProfileListeners: [String: ListenerRegistration] = [:]
+    // Users/{email} 프로필 변경 스트림(Combine)
+    private var userProfileSubjects: [String: PassthroughSubject<UserProfile, Error>] = [:]
     
     // 채팅방 목록
     private(set) var topRoomsWithPreviews: [(ChatRoom, [ChatMessage])] = []
@@ -46,43 +48,94 @@ class FirebaseManager {
     private var lastFetchedRoomSnapshot: DocumentSnapshot?
 
     //MARK: 프로필 설정 관련 기능들
-    func listenToUserProfile(email: String,
-                             completion: @escaping (Result<UserProfile, Error>) -> Void) -> ListenerRegistration {
+    /// Users/{email} 문서에 스냅샷 리스너를 걸고, subject로 이벤트를 발행합니다.
+    func listenToUserProfile(email: String) {
+        if let existing = userProfileListeners[email] { return }
+
+        // subject 없으면 생성
+        let subject: PassthroughSubject<UserProfile, Error>
+        if let s = userProfileSubjects[email] {
+            subject = s
+        } else {
+            let s = PassthroughSubject<UserProfile, Error>()
+            userProfileSubjects[email] = s
+            subject = s
+        }
+
         let docRef = db.collection("Users").document(email)
-        
         let listener = docRef.addSnapshotListener { snapshot, error in
             if let error = error {
-                completion(.failure(error))
+                subject.send(completion: .failure(error))
                 return
             }
-            
+
             guard let snapshot = snapshot, snapshot.exists else {
-                completion(.failure(NSError(domain: "FirebaseManager",
-                                            code: 404,
-                                            userInfo: [NSLocalizedDescriptionKey: "UserProfile 문서가 존재하지 않습니다."])))
+                let err = NSError(domain: "FirebaseManager",
+                                  code: 404,
+                                  userInfo: [NSLocalizedDescriptionKey: "UserProfile 문서가 존재하지 않습니다."])
+                subject.send(completion: .failure(err))
                 return
             }
-            
+
             do {
                 let profile = try snapshot.data(as: UserProfile.self)
-                completion(.success(profile))
+
+                // ✅ 1) 내 프로필이면 LoginManager만 갱신하고 subject로는 전파하지 않음
+                let myEmail = LoginManager.shared.getUserEmail  // 네 프로젝트에서 쓰는 “내 이메일” getter
+                if profile.email == myEmail || email == myEmail {
+                    // LoginManager currentUserProfile 갱신
+                    // (MainActor 보장하려면 아래처럼)
+                    Task { @MainActor in
+                        LoginManager.shared.setCurrentUserProfile(profile)
+                    }
+                    return
+                }
+
+                // ✅ 2) 타인 프로필이면 subject로 전파
+                subject.send(profile)
+
             } catch {
-                completion(.failure(error))
+                subject.send(completion: .failure(error))
             }
         }
-        
-        // 이메일별 최신 리스너를 캐시에 저장 (기존 리스너가 있으면 덮어쓰기)
+
         userProfileListeners[email] = listener
-        print(#function, "⚠️⚠️⚠️⚠️⚠️ userProfileListeners: \(userProfileListeners)")
         
-        return listener
+        print(#function, "프로필 실시간 리스너 설정 갱신", userProfileListeners)
+    }
+    
+    func userProfilePublisher(email: String) -> AnyPublisher<UserProfile, Error> {
+
+        // 1) subject 없으면 생성/캐시
+        let subject: PassthroughSubject<UserProfile, Error>
+        if let s = userProfileSubjects[email] {
+            subject = s
+        } else {
+            let s = PassthroughSubject<UserProfile, Error>()
+            userProfileSubjects[email] = s
+            subject = s
+        }
+
+        // 2) 리스너 없으면 시작
+        if userProfileListeners[email] == nil {
+            listenToUserProfile(email: email)
+        }
+
+        // 3) 외부에는 Publisher로만 노출
+        return subject.eraseToAnyPublisher()
     }
 
     /// Users/{email} 프로필 스냅샷 리스너 해제
     func stopListenUserProfile(email: String) {
-        guard let listener = userProfileListeners[email] else { return }
-        listener.remove()
-        userProfileListeners.removeValue(forKey: email)
+        if let listener = userProfileListeners[email] {
+            listener.remove()
+            userProfileListeners.removeValue(forKey: email)
+        }
+
+        if let subject = userProfileSubjects[email] {
+            subject.send(completion: .finished)
+            userProfileSubjects.removeValue(forKey: email)
+        }
     }
     
     // Firebase Firestore에 UserProfile 객체 저장
