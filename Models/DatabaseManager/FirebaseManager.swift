@@ -50,7 +50,7 @@ class FirebaseManager {
     //MARK: 프로필 설정 관련 기능들
     /// Users/{email} 문서에 스냅샷 리스너를 걸고, subject로 이벤트를 발행합니다.
     func listenToUserProfile(email: String) {
-        if let existing = userProfileListeners[email] { return }
+        if let _ = userProfileListeners[email] { return }
 
         // subject 없으면 생성
         let subject: PassthroughSubject<UserProfile, Error>
@@ -375,51 +375,7 @@ func fetchTopRoomsPage(after lastSnapshot: DocumentSnapshot? = nil, limit:Int = 
             return []
         }
     }
-    
-    // 불러온 방 저장
-//    @MainActor
-//    private func upsertRooms<S: Sequence>(_ rooms: S) where S.Element == ChatRoom {
-//        var base = roomStore
-//        var changedStore = false
-//        var incomingIDs: [String] = []
-//
-//        for r in rooms {
-//            guard let id = r.ID, !id.isEmpty else { continue }
-//            incomingIDs.append(id)
-//            if base[id] == nil {
-//                base[id] = r
-//                changedStore = true
-//            } else {
-//                // Overwrite to ensure subscribers see updates when fields change
-//                base[id] = r
-//                changedStore = true
-//            }
-//        }
-//
-//        if changedStore {
-//            roomStore = base
-//        }
-//
-//        // Update topRoomIDs: append new IDs in the same order, keep uniqueness, preserve existing order
-//        var top = topRoomIDs
-//        var changedTop = false
-//        if top.isEmpty {
-//            if !incomingIDs.isEmpty {
-//                top = incomingIDs
-//                changedTop = true
-//            }
-//        } else {
-//            for id in incomingIDs where !top.contains(id) {
-//                top.append(id)
-//                changedTop = true
-//            }
-//        }
-//
-//        if changedTop {
-//            topRoomIDs = top
-//        }
-//    }
-    
+
     @MainActor
     func updateRoomLastMessage(roomID: String, date: Date? = nil, msg: String) async {
         guard !roomID.isEmpty else {
