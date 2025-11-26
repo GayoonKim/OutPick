@@ -304,7 +304,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         bindKeyboardPublisher()
         bindSearchEvents()
         
-        
         chatMessageCollectionView.delegate = self
     }
     

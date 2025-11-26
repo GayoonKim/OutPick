@@ -366,75 +366,7 @@ final class GRDBManager {
     }
     
     // MARK: 방
-//    func fetchRoomInfo(roomID: String) throws -> ChatRoom? {
-//        try dbPool.read { db -> ChatRoom? in
-//            // rooms 테이블에서 방 기본 정보 조회
-//            struct RoomRow: FetchableRecord, Decodable {
-//                var ID: String
-//                var roomName: String
-//                var roomDescription: String
-//                var creatorID: String
-//                var createdAt: Date
-//                var thumbPath: String?
-//                var originalPath: String?
-//                var lastMessageAt: Date?
-//                var lastMessage: String?
-//            }
-//            
-//            guard let row = try RoomRow.fetchOne(
-//                db,
-//                sql: """
-//                SELECT id AS ID,
-//                       roomName,
-//                       roomDescription,
-//                       creatorID,
-//                       createdAt,
-//                       thumbPath,
-//                       originalPath,
-//                       lastMessageAt,
-//                       lastMessage
-//                FROM rooms
-//                WHERE id = ?
-//                """,
-//                arguments: [roomID]
-//            ) else {
-//                return nil
-//            }
-//            
-//            // 참여자 IDs 조회 (신규 RoomMember 우선, 레거시 roomParticipant 폴백)
-//            let participants: [String] = try {
-//                if try db.tableExists("RoomMember") {
-//                    return try String.fetchAll(
-//                        db,
-//                        sql: "SELECT userEmail FROM RoomMember WHERE roomID = ?",
-//                        arguments: [roomID]
-//                    )
-//                } else {
-//                    return try String.fetchAll(
-//                        db,
-//                        sql: "SELECT email FROM roomParticipant WHERE roomId = ?",
-//                        arguments: [roomID]
-//                    )
-//                }
-//            }()
-//            
-//            return ChatRoom(
-//                ID: row.ID,
-//                roomName: row.roomName,
-//                roomDescription: row.roomDescription,
-//                participants: participants,
-//                creatorID: row.creatorID,
-//                createdAt: row.createdAt,
-//                thumbPath: row.thumbPath,
-//                originalPath: row.originalPath,
-//                lastMessageAt: row.lastMessageAt,
-//                lastMessage: row.lastMessage,
-//                activeAnnouncementID: nil,
-//                activeAnnouncement: nil,
-//                announcementUpdatedAt: nil
-//            )
-//        }
-//    }
+    
     
     // MARK: 메시지
     /// 여러 메시지를 한 번에 저장하고, 마지막에만 조건부 pruneMessages 실행
@@ -1254,7 +1186,81 @@ final class GRDBManager {
     
     // MARK: - LocalUser & RoomMember API
     /// email, nickname, profileImagePath만을 다루는 경량 CRUD
-    @discardableResult
+    func deleteLocalRoomDataAndPruneUsers(roomID: String) throws {
+        try dbPool.write { db in
+            // 1) 이 방의 로컬 데이터 삭제
+            try deleteLocalRoomData(in: db, roomID: roomID)
+
+            // 2) 참조 없는 LocalUser 정리
+            try pruneOrphanLocalUsers(in: db)
+        }
+    }
+    
+    func deleteLocalRoomData(in db: Database, roomID: String) throws {
+        // 1) 메시지 / 첨부 / FTS
+        try db.execute(
+            sql: "DELETE FROM chatMessage WHERE roomID = ?",
+            arguments: [roomID]
+        )
+        try db.execute(
+            sql: "DELETE FROM imageIndex WHERE roomID = ?",
+            arguments: [roomID]
+        )
+        try db.execute(
+            sql: "DELETE FROM videoIndex WHERE roomID = ?",
+            arguments: [roomID]
+        )
+        // chatMessageFTS는 roomID 컬럼을 가지고 있으므로 roomID 기준으로 정리
+        try db.execute(
+            sql: "DELETE FROM chatMessageFTS WHERE roomID = ?",
+            arguments: [roomID]
+        )
+
+        // 2) 방과 연관된 기타 로컬 테이블 정리 (있을 때만)
+        if try db.tableExists("roomImage") {
+            try db.execute(
+                sql: "DELETE FROM roomImage WHERE roomId = ?",
+                arguments: [roomID]
+            )
+        }
+
+        // 3) 이 방 기준 참여자 관계 삭제
+        if try db.tableExists("RoomMember") {
+            try db.execute(
+                sql: "DELETE FROM RoomMember WHERE roomID = ?",
+                arguments: [roomID]
+            )
+        }
+        // 레거시 roomParticipant도 함께 정리
+        if try db.tableExists("roomParticipant") {
+            try db.execute(
+                sql: "DELETE FROM roomParticipant WHERE roomId = ?",
+                arguments: [roomID]
+            )
+        }
+    }
+    
+    func pruneOrphanLocalUsers(in db: Database) throws {
+        let myEmail = LoginManager.shared.getUserEmail
+
+        // RoomMember 테이블이 없으면 굳이 정리할 수 있는 정보가 없으므로 스킵
+        guard (try? db.tableExists("RoomMember")) == true else { return }
+
+        // 나 자신은 항상 유지하고,
+        // 어떤 RoomMember에도 등장하지 않는 email만 삭제
+        try db.execute(
+            sql: """
+            DELETE FROM LocalUser
+            WHERE email != ?
+              AND email NOT IN (
+                    SELECT DISTINCT userEmail
+                    FROM RoomMember
+              )
+            """,
+            arguments: [myEmail]
+        )
+    }
+    
     func upsertLocalUser(email: String, nickname: String, profileImagePath: String?) throws -> LocalUser {
         let user = LocalUser(email: email, nickname: nickname, profileImagePath: profileImagePath)
         try dbPool.write { db in

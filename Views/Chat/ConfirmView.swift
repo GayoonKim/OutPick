@@ -138,20 +138,28 @@ final class ConfirmView: UIView {
     /// 방 나가기 전용 프리셋
     @discardableResult
     static func presentLeave(in parent: UIView,
+                             isOwner: Bool,
                              title: String = "채팅을 종료하시겠어요?",
-                             message: String = "방장으로 종료하면 모든 채팅 내역 복구 불가능합니다.",
+                             ownerMessage: String = "방장으로 종료하면 모든 채팅 내역 복구 불가능합니다.",
+                             memberMessage: String = "채팅방을 나가면 대화 목록에서 사리지며, 모든 채팅 내역 복구 불가능합니다.",
                              onConfirm: @escaping () -> Void) -> ConfirmView {
+        
+        let finalMessage: String = isOwner ? ownerMessage : memberMessage
+        
+        print(isOwner, finalMessage)
+        
         let v = present(in: parent,
-                        message: message,
+                        message: finalMessage,
                         negativeTitle: "취소",
                         positiveTitle: "나가기",
                         allowTapOutsideToCancel: true,
                         style: .destructive,
                         identifier: "LeaveConfirmView",
                         onConfirm: onConfirm)
+        
         // 제목 포함 구성으로 업데이트
         v.configure(title: title,
-                    message: message,
+                    message: finalMessage,
                     negativeTitle: "취소",
                     positiveTitle: "나가기")
         return v

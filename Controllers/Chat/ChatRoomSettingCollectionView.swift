@@ -832,25 +832,27 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
     private func leaveRoomTapped() {
         print("🚪 나가기 버튼 탭됨")
         // TODO: 실제 방 나가기 로직 연결 (확인 다이얼로그 → 서버/로컬 상태 정리)
+
+        ConfirmView.presentLeave(in: self.view,
+                                 isOwner: roomInfo.creatorID == LoginManager.shared.getUserEmail,
         
-        ConfirmView.presentLeave(in: self.view) { [weak self] in
+        ) { [weak self] in
             guard let self = self else { return }
             // TODO: 실제 '나가기' 처리 로직 연결
-            print("✅ 나가기 확정")
-            
-            if self.roomInfo.creatorID == LoginManager.shared.getUserEmail {
-                // Storage: Room_Images/imagePath 삭제
-                // Storage: rooms/roomID 삭제
-                // Storage: videos/roomID 삭제
-                // Users/email/joinedRooms에서 roomID 삭제
-                // Rooms/roomID 삭제
-            } else {
-                // Users/email/joinedRooms에서 roomID 삭제
+            Task {
+                if self.roomInfo.creatorID == LoginManager.shared.getUserEmail {
+                    
+                } else {
+                    try await FirebaseManager.shared.leaveRoom(roomID: self.roomInfo.ID ?? "")
+                }
+                
+                // 로컬 정리 (공통)
+                try GRDBManager.shared.deleteLocalRoomDataAndPruneUsers(roomID: self.roomInfo.ID ?? "")
+                
+                self.dismiss(animated: false, completion: {
+                    self.navigationController?.popViewController(animated: false)
+                })
             }
-            
-            self.dismiss(animated: false, completion: {
-                self.navigationController?.popViewController(animated: false)
-            })
         }
     }
 

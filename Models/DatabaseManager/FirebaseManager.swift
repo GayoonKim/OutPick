@@ -231,6 +231,30 @@ class FirebaseManager {
     }
     
     //MARK: 채팅 방 관련 기능들
+    func leaveRoom(roomID: String) async throws {
+        let userEmail = LoginManager.shared.getUserEmail
+
+        // 1) Users/{me}.joinedRooms 에서 제거
+        try await db.collection("Users").document(userEmail).updateData([
+            "joinedRooms": FieldValue.arrayRemove([roomID])
+        ])
+
+        // 2) Users/{me}/roomStates/{roomID} 정리
+        try? await db.collection("Users")
+            .document(userEmail)
+            .collection("roomStates")
+            .document(roomID)
+            .delete()
+
+        // 3) Rooms/{roomID}.participants 에서 내 이메일 제거
+        //    서버/클라우드 함수로 위임해도 됨 (추측입니다)
+        try? await db.collection("Rooms")
+            .document(roomID)
+            .updateData([
+                "participantIDs": FieldValue.arrayRemove([userEmail])
+            ])
+    }
+    
     /// 방 참여/탈퇴 등으로 방 메타가 바뀌었을 때, 캐시를 최신 Room으로 교체
     func applyLocalRoomUpdate(_ updatedRoom: ChatRoom) {
         // 1) 튜플에서 같은 ID를 가진 방 찾기
