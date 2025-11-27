@@ -231,30 +231,6 @@ class FirebaseManager {
     }
     
     //MARK: 채팅 방 관련 기능들
-    func leaveRoom(roomID: String) async throws {
-        let userEmail = LoginManager.shared.getUserEmail
-
-        // 1) Users/{me}.joinedRooms 에서 제거
-        try await db.collection("Users").document(userEmail).updateData([
-            "joinedRooms": FieldValue.arrayRemove([roomID])
-        ])
-
-        // 2) Users/{me}/roomStates/{roomID} 정리
-        try? await db.collection("Users")
-            .document(userEmail)
-            .collection("roomStates")
-            .document(roomID)
-            .delete()
-
-        // 3) Rooms/{roomID}.participants 에서 내 이메일 제거
-        //    서버/클라우드 함수로 위임해도 됨 (추측입니다)
-        try? await db.collection("Rooms")
-            .document(roomID)
-            .updateData([
-                "participantIDs": FieldValue.arrayRemove([userEmail])
-            ])
-    }
-    
     /// 방 참여/탈퇴 등으로 방 메타가 바뀌었을 때, 캐시를 최신 Room으로 교체
     func applyLocalRoomUpdate(_ updatedRoom: ChatRoom) {
         // 1) 튜플에서 같은 ID를 가진 방 찾기
@@ -299,59 +275,59 @@ class FirebaseManager {
         return latest
     }
     
-@MainActor
-func fetchTopRoomsPage(after lastSnapshot: DocumentSnapshot? = nil, limit:Int = 30) async throws {
-    var query: Query = db.collection("Rooms").order(by: "lastMessageAt", descending: true).limit(to: limit)
-    
-    if let lastSnapshot {
-        query = query.start(afterDocument: lastSnapshot)
-    }
-    
-    // 1) Top rooms 페이지 스냅샷
-    let snapshot = try await query.getDocuments()
-    
-    // 2) 디코딩
-    let rooms: [ChatRoom] = snapshot.documents.compactMap { doc in
-        do {
-            return try self.createRoom(from: doc)
-        } catch {
-            print("⚠️ Room decode failed: \(error), id=\(doc.documentID)")
-            return nil
+    @MainActor
+    func fetchTopRoomsPage(after lastSnapshot: DocumentSnapshot? = nil, limit:Int = 30) async throws {
+        var query: Query = db.collection("Rooms").order(by: "lastMessageAt", descending: true).limit(to: limit)
+        
+        if let lastSnapshot {
+            query = query.start(afterDocument: lastSnapshot)
         }
-    }
-    
-    // 3) 각 방의 최근 메시지 3개(미리보기) 동시 로드
-    //    - 우선 seq 기반(desc)으로 시도 후 실패 시 sentAt(desc) 폴백
-    //    - 표시용으로는 오름차순(과거→최신) 정렬을 반환
-    let previewsByRoomID: [String: [ChatMessage]] = await withTaskGroup(of: (String, [ChatMessage]).self) { group in
-        for r in rooms {
-            guard let rid = r.ID, !rid.isEmpty else { continue }
-            group.addTask { [weak self] in
-                guard let self = self else { return ("", []) }
-                let msgs = await self.fetchPreviewMessages(roomID: rid, limit: 3)
-                return (rid, msgs)
+        
+        // 1) Top rooms 페이지 스냅샷
+        let snapshot = try await query.getDocuments()
+        
+        // 2) 디코딩
+        let rooms: [ChatRoom] = snapshot.documents.compactMap { doc in
+            do {
+                return try self.createRoom(from: doc)
+            } catch {
+                print("⚠️ Room decode failed: \(error), id=\(doc.documentID)")
+                return nil
             }
         }
         
-        var acc: [String: [ChatMessage]] = [:]
-        for await (rid, msgs) in group {
-            guard !rid.isEmpty else { continue }
-            acc[rid] = msgs
+        // 3) 각 방의 최근 메시지 3개(미리보기) 동시 로드
+        //    - 우선 seq 기반(desc)으로 시도 후 실패 시 sentAt(desc) 폴백
+        //    - 표시용으로는 오름차순(과거→최신) 정렬을 반환
+        let previewsByRoomID: [String: [ChatMessage]] = await withTaskGroup(of: (String, [ChatMessage]).self) { group in
+            for r in rooms {
+                guard let rid = r.ID, !rid.isEmpty else { continue }
+                group.addTask { [weak self] in
+                    guard let self = self else { return ("", []) }
+                    let msgs = await self.fetchPreviewMessages(roomID: rid, limit: 3)
+                    return (rid, msgs)
+                }
+            }
+            
+            var acc: [String: [ChatMessage]] = [:]
+            for await (rid, msgs) in group {
+                guard !rid.isEmpty else { continue }
+                acc[rid] = msgs
+            }
+            return acc
         }
-        return acc
+        
+        // 4) 상태 업데이트 (topRooms + topRoomsWithPreviews 동시 유지)
+        self.previewByRoomID = previewsByRoomID
+    //    self.topRooms = rooms
+        self.topRoomsWithPreviews = rooms.map { room in
+            let rid = room.ID ?? ""
+            let previews = previewsByRoomID[rid] ?? []
+            return (room, previews)
+        }
+        
+        self.lastFetchedRoomSnapshot = snapshot.documents.last
     }
-    
-    // 4) 상태 업데이트 (topRooms + topRoomsWithPreviews 동시 유지)
-    self.previewByRoomID = previewsByRoomID
-//    self.topRooms = rooms
-    self.topRoomsWithPreviews = rooms.map { room in
-        let rid = room.ID ?? ""
-        let previews = previewsByRoomID[rid] ?? []
-        return (room, previews)
-    }
-    
-    self.lastFetchedRoomSnapshot = snapshot.documents.last
-}
 
     /// 방 미리보기용으로 최근 메시지 N개를 가져옵니다.
     /// 우선 seq(desc) 기반, 실패 또는 비어있으면 sentAt(desc)로 폴백합니다.
@@ -525,8 +501,6 @@ func fetchTopRoomsPage(after lastSnapshot: DocumentSnapshot? = nil, limit:Int = 
             //    서버가 별도의 create가 필요 없다면 join만으로도 충분합니다.
             SocketIOManager.shared.createRoom(roomID)
             SocketIOManager.shared.joinRoom(roomID)
-            
-//            await upsertRooms([room])
 
             print("✅ saveRoomInfoToFirestore: Firestore 저장 및 Socket.IO create/join 완료 (roomID=\(roomID))")
         } catch {

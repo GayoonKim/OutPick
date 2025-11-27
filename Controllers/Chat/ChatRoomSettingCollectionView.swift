@@ -832,26 +832,44 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
     private func leaveRoomTapped() {
         print("🚪 나가기 버튼 탭됨")
         // TODO: 실제 방 나가기 로직 연결 (확인 다이얼로그 → 서버/로컬 상태 정리)
-
         ConfirmView.presentLeave(in: self.view,
-                                 isOwner: roomInfo.creatorID == LoginManager.shared.getUserEmail,
-        
-        ) { [weak self] in
+                                 isOwner: roomInfo.creatorID == LoginManager.shared.getUserEmail) { [weak self] in
             guard let self = self else { return }
-            // TODO: 실제 '나가기' 처리 로직 연결
             Task {
-                if self.roomInfo.creatorID == LoginManager.shared.getUserEmail {
-                    
-                } else {
-                    try await FirebaseManager.shared.leaveRoom(roomID: self.roomInfo.ID ?? "")
+                guard let roomID = self.roomInfo.ID, !roomID.isEmpty else { return }
+
+                SocketIOManager.shared.requestLeaveOrCloseRoom(roomID: roomID) { result in
+                    switch result {
+                    case .success:
+                        Task {
+                            do {
+                                try GRDBManager.shared.deleteLocalRoomDataAndPruneUsers(roomID: roomID)
+                                await MainActor.run {
+                                    // 2) 현재 유저 프로필의 joinedRooms에서도 방 ID 제거
+                                    if var profile = LoginManager.shared.currentUserProfile {
+                                        profile.joinedRooms.removeAll { $0 == roomID }
+                                        LoginManager.shared.setCurrentUserProfile(profile)
+                                    }
+
+                                    // 3) 화면 닫기
+                                    self.dismiss(animated: false) {
+                                        self.navigationController?.popViewController(animated: false)
+                                    }
+                                }
+                            } catch {
+                                // 로컬 정리 실패시 로그 or 토스트
+                                print("❌ local cleanup failed:", error)
+                            }
+                        }
+
+                    case .failure(let error):
+                        // 서버 측 나가기/종료 실패 → 사용자에게 안내하고, 로컬은 그대로 두는게 안전
+                        print("❌ leave-or-close failed:", error)
+                        DispatchQueue.main.async {
+                            // 토스트/얼럿 등
+                        }
+                    }
                 }
-                
-                // 로컬 정리 (공통)
-                try GRDBManager.shared.deleteLocalRoomDataAndPruneUsers(roomID: self.roomInfo.ID ?? "")
-                
-                self.dismiss(animated: false, completion: {
-                    self.navigationController?.popViewController(animated: false)
-                })
             }
         }
     }

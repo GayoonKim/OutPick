@@ -75,10 +75,10 @@ class SocketIOManager {
     private var subscriberCounts = [String: Int]() // 구독자 ref count
     
     private init() {
-        manager = SocketManager(socketURL: URL(string: "http://192.168.123.167:3000")!, config: [
+        manager = SocketManager(socketURL: URL(string: "http://192.168.123.145:3000")!, config: [
             .log(true),
             .compress,
-            .connectParams(["clientKey": SocketIOManager.clientKey]),
+            .connectParams(["clientKey": SocketIOManager.clientKey, "email": LoginManager.shared.getUserEmail]),
             .reconnects(false) // 수동 재연결을 사용(라이브러리 자동 재연결 비활성화)
         ])
         socket = manager.defaultSocket
@@ -944,6 +944,82 @@ class SocketIOManager {
         }
     }
     
+    /// 방 나가기 / 방 종료 요청
+    /// - Note:
+    ///   클라이언트는 roomID와 "leave-or-close" 의도만 서버로 전달하고,
+    ///   실제 방장 여부 판단 및 Firestore 상태 변경(방 종료 / 단순 나가기)은 서버에서 처리합니다.
+    /// - Parameters:
+    ///   - roomID: 나가거나 종료하려는 방 ID
+    ///   - ackTimeout: 서버 ACK 대기 시간(초)
+    ///   - completion: 성공 / 실패 결과 콜백 (옵션)
+    func requestLeaveOrCloseRoom(roomID: String,
+                                 ackTimeout: Double = 5.0,
+                                 completion: ((Result<Void, Error>) -> Void)? = nil) {
+        // 소켓 미연결 시 즉시 실패 콜백
+        guard socket.status == .connected else {
+            #if DEBUG
+            print("[requestLeaveOrCloseRoom] socket not connected")
+            #endif
+            let err = NSError(
+                domain: "SocketIO",
+                code: -1009,
+                userInfo: [NSLocalizedDescriptionKey: "소켓이 연결되어 있지 않습니다."]
+            )
+            completion?(.failure(err))
+            return
+        }
+
+        // 클라는 roomID + "나가기/종료 의도"만 전달
+        // 서버는 Socket.IO 연결 정보(이메일 등) + Firestore 상태를 보고
+        // 방장이라면 방 종료, 참가자라면 단순 나가기 처리
+        let payload: [String: Any] = [
+            "roomID": roomID,
+            "intent": "leave-or-close"
+        ]
+
+        let eventName = "room:leave-or-close"
+        #if DEBUG
+        print("[requestLeaveOrCloseRoom] emit \(eventName) payload=", payload)
+        #endif
+
+        socket.emitWithAck(eventName, payload).timingOut(after: ackTimeout) { items in
+            // 서버에서 { ok: Bool, message?: String } 형태로 응답한다고 가정
+            if let first = items.first as? [String: Any] {
+                let ok = (first["ok"] as? Bool) ?? (first["success"] as? Bool) ?? false
+                if ok {
+                    completion?(.success(()))
+                    return
+                } else {
+                    let message = first["message"] as? String ?? "방 나가기/종료 처리 실패"
+                    let err = NSError(
+                        domain: "SocketIO",
+                        code: -1,
+                        userInfo: [NSLocalizedDescriptionKey: message]
+                    )
+                    completion?(.failure(err))
+                    return
+                }
+            }
+
+            // 응답이 비어 있는 경우: 서버가 ACK를 사용하지 않는 환경일 수 있으므로 성공으로 간주
+            if items.isEmpty {
+                #if DEBUG
+                print("[requestLeaveOrCloseRoom] empty ACK items, treat as success")
+                #endif
+                completion?(.success(()))
+                return
+            }
+
+            // 알 수 없는 형식의 응답
+            let err = NSError(
+                domain: "SocketIO",
+                code: -2,
+                userInfo: [NSLocalizedDescriptionKey: "알 수 없는 ACK 응답 형식: \(items)"]
+            )
+            completion?(.failure(err))
+        }
+    }
+
     func setUserName(_ userName: String) {
         print("setUserName 호출됨: \(userName)")
         socket.emit("set username", userName)
