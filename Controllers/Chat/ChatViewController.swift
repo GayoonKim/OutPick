@@ -104,6 +104,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     private var cellSubscriptions: [ObjectIdentifier: Set<AnyCancellable>] = [:]
     
+    private var roomClosedListenerID: UUID?
     
     deinit {
         print("💧 ChatViewController deinit")
@@ -112,6 +113,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         
         deletionListener?.remove()
         deletionListener = nil
+        
+        removeRoomClosedListener()
     }
     
     private lazy var containerView: UIView = {
@@ -303,8 +306,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         
         bindKeyboardPublisher()
         bindSearchEvents()
+        bindRoomClosedEvent()
         
         chatMessageCollectionView.delegate = self
+        
     }
     
     override func viewWillAppear(_ animated: Bool) {
@@ -355,6 +360,12 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
         
         self.navigationController?.setNavigationBarHidden(false, animated: false)
+        
+        // push로 다른 화면을 덮은 게 아니라,
+        // 네비게이션에서 빠져나가거나 dismiss 된 경우에만 true
+        if self.isMovingFromParent || self.isBeingDismissed {
+            removeRoomClosedListener()
+        }
     }
     
     override func viewDidDisappear(_ animated: Bool) {
@@ -1444,6 +1455,34 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         // 방 저장 관련
         NotificationCenter.default.addObserver(self, selector: #selector(handleRoomSaveCompleted), name: .roomSavedComplete, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleRoomSaveFailed), name: .roomSaveFailed, object: nil)
+    }
+    
+    private func bindRoomClosedEvent() {
+        guard let socket = SocketIOManager.shared.socket else { return }
+        
+        if let id = roomClosedListenerID {
+            socket.off(id: id)
+        }
+        
+        roomClosedListenerID = socket.on("room:closed") { [weak self] data, ack in
+            guard
+                let self = self,
+                let dict = data.first as? [String: Any],
+                let roomID = dict["roomID"] as? String,
+                let room = self.room,
+                roomID == room.ID ?? ""
+            else { return }
+            // 방이 종료되었으니 채팅방 화면에서 빠져나가기
+            self.backButtonTapped()
+        }
+    }
+    
+    private func removeRoomClosedListener() {
+        guard let id = roomClosedListenerID,
+              let socket = SocketIOManager.shared.socket else { return }
+        
+        socket.off(id: id)
+        roomClosedListenerID = nil
     }
     
     @MainActor
