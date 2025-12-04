@@ -59,7 +59,6 @@ class SocketIOManager {
     }()
     
     // Combine의 PassthroughSubject를 사용하여 이벤트 스트림 생성
-    
     // 새로운 참여자 알림을 위한 Publisher 추가
     private let participantSubject = PassthroughSubject<(String, String), Never>() // (roomName, email)
     var participantUpdatePublisher: AnyPublisher<(String, String), Never> {
@@ -75,7 +74,7 @@ class SocketIOManager {
     private var subscriberCounts = [String: Int]() // 구독자 ref count
     
     private init() {
-        manager = SocketManager(socketURL: URL(string: "http://192.168.123.145:3000")!, config: [
+        manager = SocketManager(socketURL: URL(string: "http://192.168.123.175:3000")!, config: [
             .log(true),
             .compress,
             .connectParams(["clientKey": SocketIOManager.clientKey, "email": LoginManager.shared.getUserEmail]),
