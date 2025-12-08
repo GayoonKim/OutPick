@@ -7,6 +7,7 @@
 
 import UIKit
 import Combine
+import SwiftUI
 
 class CustomTabBarViewController: UIViewController {
 
@@ -27,7 +28,6 @@ class CustomTabBarViewController: UIViewController {
         switch index {
         case 0:
             // Weather tab
-//            let vc = storyboard.instantiateViewController(withIdentifier: "weatherVC")
             let weatherVC = HomeCollectionViewController(collectionViewLayout: UICollectionViewFlowLayout())
             let nav = UINavigationController(rootViewController: weatherVC)
             nav.isNavigationBarHidden = true
@@ -38,13 +38,19 @@ class CustomTabBarViewController: UIViewController {
             let nav = UINavigationController(rootViewController: listVC)
             nav.isNavigationBarHidden = true
             return nav
-            
         case 2:
             let joinedListVC = JoinedRoomsViewController()
             let nav = UINavigationController(rootViewController: joinedListVC)
             nav.isNavigationBarHidden = true
             return nav
         case 3:
+            // Lookbook tab (SwiftUI)
+            let lookbookRootView = LookbookRootView()
+            let hostingController = UIHostingController(rootView: lookbookRootView)
+            let nav = UINavigationController(rootViewController: hostingController)
+            nav.isNavigationBarHidden = true
+            return nav
+        case 4:
             // Settings tab
             let myPageVC = MyPageViewController()
             let nav = UINavigationController(rootViewController: myPageVC)

@@ -14,7 +14,7 @@ class CustomTabBarView: UIView {
     let tabSelected = PassthroughSubject<Int, Never>()
     private var currentTabIndex: Int?
     
-    private var buttons: [UIButton] = [("cloud.sun.fill", "날씨"), ("bubble.left.and.bubble.right.fill", "오픈채팅"), ("bubble.middle.bottom.fill", "채팅"), ("gearshape.fill", "내 정보")].map{
+    private var buttons: [UIButton] = [("cloud.sun.fill", "날씨"), ("bubble.left.and.bubble.right.fill", "오픈채팅"), ("bubble.middle.bottom.fill", "채팅"), ("book.fill", "룩북"), ("gearshape.fill", "내 정보")].map{
         let button = TabBarButton(type: .system)
         
         var config = UIButton.Configuration.plain()
