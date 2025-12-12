@@ -26,3 +26,4 @@ protocol PaginationManagerProtocol {
     func resetPagination()
 }
 
+

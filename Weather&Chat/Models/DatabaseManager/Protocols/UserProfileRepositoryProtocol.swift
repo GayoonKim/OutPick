@@ -39,3 +39,4 @@ protocol UserProfileRepositoryProtocol {
     func fetchLastReadSeq(for roomID: String) async throws -> Int64
 }
 
+

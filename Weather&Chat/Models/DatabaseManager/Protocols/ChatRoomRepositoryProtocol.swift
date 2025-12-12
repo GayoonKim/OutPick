@@ -77,3 +77,4 @@ protocol ChatRoomRepositoryProtocol {
     func fetchLatestSeq(for roomID: String) async throws -> Int64
 }
 
+

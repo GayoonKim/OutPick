@@ -400,33 +400,3 @@ private extension MediaManager.VideoUploadPreset {
         }
     }
 }
-
-// MARK: - UIImage resizing helper
-extension UIImage {
-    /// Longer side will be resized to `maxPixel` while preserving aspect ratio.
-    /// If the image is already within bounds or `maxPixel` <= 0, returns self.
-    func resizeMaxPixel(_ maxPixel: CGFloat) -> UIImage {
-        guard maxPixel > 0 else { return self }
-        let w = size.width
-        let h = size.height
-        guard w > 0, h > 0 else { return self }
-        let longSide = max(w, h)
-        guard longSide > maxPixel else { return self }
-
-        let scaleRatio = maxPixel / longSide
-        var newW = floor(w * scaleRatio)
-        var newH = floor(h * scaleRatio)
-        // enforce even pixels (some encoders prefer multiples of 2)
-        newW = max(2, floor(newW / 2) * 2)
-        newH = max(2, floor(newH / 2) * 2)
-
-        let format = UIGraphicsImageRendererFormat.default()
-        format.scale = 1   // 1 point == 1 pixel in the output
-        format.opaque = false
-
-        let renderer = UIGraphicsImageRenderer(size: CGSize(width: newW, height: newH), format: format)
-        return renderer.image { _ in
-            self.draw(in: CGRect(x: 0, y: 0, width: newW, height: newH))
-        }
-    }
-}
