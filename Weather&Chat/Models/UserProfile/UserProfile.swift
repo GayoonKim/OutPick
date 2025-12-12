@@ -53,11 +53,11 @@ struct UserProfile: Codable, Hashable, FetchableRecord, PersistableRecord {
         ]
     }
 
-    static func == (lhs: UserProfile, rhs: UserProfile) -> Bool {
+    public static func == (lhs: UserProfile, rhs: UserProfile) -> Bool {
         return lhs.email == rhs.email
     }
 
-    func hash(into hasher: inout Hasher) {
+    public func hash(into hasher: inout Hasher) {
         hasher.combine(email)
     }
 }
