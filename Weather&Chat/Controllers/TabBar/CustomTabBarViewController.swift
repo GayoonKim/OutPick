@@ -24,7 +24,6 @@ class CustomTabBarViewController: UIViewController {
     }
 
     func viewController(_ index: Int) -> UIViewController {
-        let storyboard = UIStoryboard(name: "Main", bundle: nil)
         switch index {
         case 0:
             // Weather tab
@@ -45,9 +44,8 @@ class CustomTabBarViewController: UIViewController {
             return nav
         case 3:
             // Lookbook tab (SwiftUI)
-            let lookbookRootView = LookbookRootView()
-            let hostingController = UIHostingController(rootView: lookbookRootView)
-            let nav = UINavigationController(rootViewController: hostingController)
+            let lookbookHomeVC = LookbookHomeViewController()
+            let nav = UINavigationController(rootViewController: lookbookHomeVC)
             nav.isNavigationBarHidden = true
             return nav
         case 4:
