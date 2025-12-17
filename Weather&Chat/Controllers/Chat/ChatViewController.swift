@@ -87,26 +87,24 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private let mediaManager: ChatMediaManagerProtocol
     private let searchManager: ChatSearchManagerProtocol
     private let hotUserManager: HotUserManagerProtocol
-    
-    // 의존성 주입을 위한 초기화 (테스트 용이성)
-    init(
-        messageManager: ChatMessageManagerProtocol = ChatMessageManager(),
-        mediaManager: ChatMediaManagerProtocol = ChatMediaManager(),
-        searchManager: ChatSearchManagerProtocol = ChatSearchManager(),
-        hotUserManager: HotUserManagerProtocol = HotUserManager()
-    ) {
-        self.messageManager = messageManager
-        self.mediaManager = mediaManager
-        self.searchManager = searchManager
-        self.hotUserManager = hotUserManager
+
+    /// 의존성 주입을 위한 초기화 (테스트 용이성)
+    /// - NOTE: Programmatic init 경로에서 사용
+    init(provider: ChatRepositoryProviding = ChatDependencyContainer.provider) {
+        self.messageManager = provider.messageManager
+        self.mediaManager = provider.mediaManager
+        self.searchManager = provider.searchManager
+        self.hotUserManager = provider.hotUserManager
         super.init(nibName: nil, bundle: nil)
     }
-    
+
+    /// - NOTE: Storyboard/XIB init 경로에서 사용
     required init?(coder: NSCoder) {
-        self.messageManager = ChatMessageManager()
-        self.mediaManager = ChatMediaManager()
-        self.searchManager = ChatSearchManager()
-        self.hotUserManager = HotUserManager()
+        let provider = ChatDependencyContainer.provider
+        self.messageManager = provider.messageManager
+        self.mediaManager = provider.mediaManager
+        self.searchManager = provider.searchManager
+        self.hotUserManager = provider.hotUserManager
         super.init(coder: coder)
     }
     
@@ -2549,9 +2547,6 @@ extension ChatViewController: UICollectionViewDelegate {
                 await loadNewerMessagesIfNeeded(after: lastID)
             }
         }
-        
-        // ✅ 아바타 프리패치: 가시영역 중심 ±100 메시지의 고유 발신자
-//        self.prefetchAvatarsAroundDisplayIndex(indexPath.item)
     }
 
 }
