@@ -24,6 +24,44 @@ protocol ChatMessageCellDelegate: AnyObject {
 
 class ChatViewController: UIViewController, UINavigationControllerDelegate, ChatModalAnimatable {
     
+#if DEBUG
+    // --- Test hooks (DEBUG only) ---
+    // 1) Prefetch/cleanup에서 visible indexPaths를 강제(레이아웃/윈도우 없어도 결정적 테스트 가능)
+    var test_visibleIndexPathsOverride: [IndexPath]?
+    
+    // 2) roomID 주입 (ChatRoom 생성 없이 테스트 가능)
+    var test_roomIDOverride: String?
+    
+    // 3) 실제 네트워크/캐시를 스킵하고 “호출 여부”만 확인
+    var test_skipActualMediaCaching: Bool = true
+    var test_skipActualPagingLoads: Bool = true
+    
+    // 4) 호출 관찰용 콜백
+    var test_onCacheImages: ((String) -> Void)?
+    var test_onCacheVideoAssets: ((String) -> Void)?
+    var test_onTriggerOlder: ((String?) -> Void)?
+    var test_onTriggerNewer: ((String?) -> Void)?
+    
+    // Expose private collectionView to unit tests (read-only)
+    @MainActor
+    var test_chatMessageCollectionView: UICollectionView { chatMessageCollectionView }
+
+    // Mutate private paging flags from unit tests
+    @MainActor
+    func test_setPagingState(
+        hasMoreOlder: Bool? = nil,
+        isLoadingOlder: Bool? = nil,
+        hasMoreNewer: Bool? = nil,
+        isLoadingNewer: Bool? = nil
+    ) {
+        if let hasMoreOlder { self.hasMoreOlder = hasMoreOlder }
+        if let isLoadingOlder { self.isLoadingOlder = isLoadingOlder }
+        if let hasMoreNewer { self.hasMoreNewer = hasMoreNewer }
+        if let isLoadingNewer { self.isLoadingNewer = isLoadingNewer }
+    }
+#endif
+    
+    
     // Paging buffer size for scroll triggers
     private var pagingBuffer = 200
     
@@ -813,6 +851,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     // 이미지 캐싱 전용 (Manager 위임)
     private func cacheImagesIfNeeded(for message: ChatMessage) async {
+        #if DEBUG
+        test_onCacheImages?(message.ID)
+        if test_skipActualMediaCaching { return }
+        #endif
+        
         let images = await mediaManager.cacheImagesIfNeeded(for: message)
         await MainActor.run {
             self.messageImages[message.ID] = images
@@ -822,6 +865,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     // 동영상 썸네일 캐시 (Manager 위임)
     private func cacheVideoAssetsIfNeeded(for message: ChatMessage, in roomID: String) async {
+        #if DEBUG
+        test_onCacheVideoAssets?(message.ID)
+        if test_skipActualMediaCaching { return }
+        #endif
+        
         await mediaManager.cacheVideoAssetsIfNeeded(for: message, in: roomID)
         await MainActor.run {
             self.reloadVisibleMessageIfNeeded(messageID: message.ID)
@@ -2044,6 +2092,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
         
         chatMessageCollectionView.setCollectionViewDataSource(dataSource)
+        chatMessageCollectionView.prefetchDataSource = self
         applySnapshot([])
     }
     
@@ -2344,6 +2393,12 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     // Kingfisher prefetchers & URL cache
     private var imagePrefetchers: [ImagePrefetcher] = []
     
+    // Media prefetch tasks for chat scrolling (images/videos)
+    private var mediaPrefetchTasks: [String: Task<Void, Never>] = [:]
+    
+    // Debounced cleanup task for cancelling prefetches that moved far outside visible range
+    private var mediaPrefetchCleanupTask: Task<Void, Never>? = nil
+    
     private func presentImageViewer(tappedIndex: Int, indexPath: IndexPath) {
         // 1) 메시지 & 첨부 수집
         guard let item = dataSource.itemIdentifier(for: indexPath),
@@ -2423,7 +2478,126 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         imagePrefetchers.forEach { $0.stop() }
         imagePrefetchers.removeAll()
     }
-    
+
+    @MainActor
+    private func startMediaPrefetchIfNeeded(for message: ChatMessage, roomID: String) {
+        let messageID = message.ID
+        guard mediaPrefetchTasks[messageID] == nil else { return }
+
+        let hasImages = message.attachments.contains { $0.type == .image }
+        let hasVideos = message.attachments.contains { $0.type == .video }
+        guard hasImages || hasVideos else { return }
+
+        // Images: skip if we already have cached UI images for this message
+        let shouldPrefetchImages = hasImages && (messageImages[messageID] == nil)
+        // Videos: allow prefetch (manager should be idempotent / cached internally)
+        let shouldPrefetchVideos = hasVideos
+
+        guard shouldPrefetchImages || shouldPrefetchVideos else { return }
+
+        let task = Task.detached(priority: .utility) { [weak self] in
+            guard let self else { return }
+            if Task.isCancelled { return }
+
+            if shouldPrefetchImages {
+                await cacheImagesIfNeeded(for: message)
+            }
+
+            if Task.isCancelled { return }
+
+            if shouldPrefetchVideos {
+                await self.cacheVideoAssetsIfNeeded(for: message, in: roomID)
+            }
+
+            await MainActor.run {
+                self.mediaPrefetchTasks[messageID] = nil
+            }
+        }
+
+        mediaPrefetchTasks[messageID] = task
+    }
+
+    @MainActor
+    private func cancelMediaPrefetchIfNeeded(for messageID: String) {
+        mediaPrefetchTasks[messageID]?.cancel()
+        mediaPrefetchTasks[messageID] = nil
+    }
+
+    /// Debounce cleanup to avoid doing snapshot scans too frequently during fast scrolling
+    @MainActor
+    private func scheduleMediaPrefetchCleanup(delayMs: UInt64 = 250, pad: Int = 25) {
+        mediaPrefetchCleanupTask?.cancel()
+        mediaPrefetchCleanupTask = Task { [weak self] in
+            guard let self else { return }
+            try? await Task.sleep(nanoseconds: delayMs * 1_000_000)
+            if Task.isCancelled { return }
+            await self.cleanupMediaPrefetchTasksOutsideVisibleRange(pad: pad)
+        }
+    }
+
+    /// Cancel/remove media prefetch tasks for messages outside the visible window ± pad.
+    /// Also cancels tasks whose messageID no longer exists in the current snapshot (virtualization/updates).
+    @MainActor
+    private func cleanupMediaPrefetchTasksOutsideVisibleRange(pad: Int = 25) {
+        guard !mediaPrefetchTasks.isEmpty else { return }
+
+        let snapshot = dataSource.snapshot()
+        let items = snapshot.itemIdentifiers(inSection: .main)
+        guard !items.isEmpty else {
+            // Nothing to show -> cancel everything
+            let ids = Array(mediaPrefetchTasks.keys)
+            for id in ids { cancelMediaPrefetchIfNeeded(for: id) }
+            return
+        }
+
+        // Build visible bounds (fallback to tail if nothing visible yet)
+        let visibleItems = chatMessageCollectionView.indexPathsForVisibleItems
+            .filter { $0.section == 0 }
+            .map { $0.item }
+
+        let total = items.count
+        let lowerBound: Int
+        let upperBound: Int
+
+        if let minVis = visibleItems.min(), let maxVis = visibleItems.max() {
+            lowerBound = max(0, minVis - pad)
+            upperBound = min(total - 1, maxVis + pad)
+        } else {
+            let tail = max(0, total - 1)
+            lowerBound = max(0, tail - pad)
+            upperBound = tail
+        }
+
+        // Allowed message IDs within [lowerBound, upperBound]
+        var allowedIDs = Set<String>()
+        allowedIDs.reserveCapacity((upperBound - lowerBound + 1) / 2)
+        if lowerBound <= upperBound {
+            for i in lowerBound...upperBound {
+                if case let .message(m) = items[i] {
+                    allowedIDs.insert(m.ID)
+                }
+            }
+        }
+
+        // Also collect all message IDs currently present in snapshot (for virtualization/delete safety)
+        let presentMessageIDs: Set<String> = Set(
+            items.compactMap { item in
+                if case let .message(m) = item { return m.ID }
+                return nil
+            }
+        )
+
+        // Cancel tasks that are either outside allowed window or not present in snapshot anymore
+        let idsToCancel = mediaPrefetchTasks.keys.filter { id in
+            !allowedIDs.contains(id) || !presentMessageIDs.contains(id)
+        }
+        guard !idsToCancel.isEmpty else { return }
+
+        for id in idsToCancel {
+            cancelMediaPrefetchIfNeeded(for: id)
+        }
+    }
+
     // Ring-order: start, +1, -1, +2, -2, ...
     private func ringOrderIndices(count: Int, start: Int) -> [Int] {
         guard count > 0 else { return [] }
@@ -2482,17 +2656,33 @@ private extension ChatViewController {
 }
 
 extension ChatViewController: UIScrollViewDelegate {
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        guard scrollView === chatMessageCollectionView else { return }
+        Task { @MainActor in
+            self.scheduleMediaPrefetchCleanup(delayMs: 250, pad: 25)
+        }
+    }
+
     func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
         triggerShakeIfNeeded()
+        Task { @MainActor in
+            self.scheduleMediaPrefetchCleanup(delayMs: 150, pad: 25)
+        }
     }
     
     func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
         triggerShakeIfNeeded()
+        Task { @MainActor in
+            self.scheduleMediaPrefetchCleanup(delayMs: 150, pad: 25)
+        }
     }
     
     func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
         if !decelerate {
             triggerShakeIfNeeded()
+            Task { @MainActor in
+                self.scheduleMediaPrefetchCleanup(delayMs: 150, pad: 25)
+            }
         }
     }
     
@@ -2527,6 +2717,12 @@ extension ChatViewController: UICollectionViewDelegate {
                     if case let .message(msg) = item { return msg.ID }
                     return nil
                 }.first
+                
+                #if DEBUG
+                test_onTriggerOlder?(firstID)
+                if test_skipActualPagingLoads { return }
+                #endif
+                
                 await loadOlderMessages(before: firstID)
             }
         }
@@ -2544,11 +2740,84 @@ extension ChatViewController: UICollectionViewDelegate {
                     if case let .message(msg) = item { return msg.ID }
                     return nil
                 }.last
+                
+                #if DEBUG
+                test_onTriggerNewer?(lastID)
+                if test_skipActualPagingLoads { return }
+                #endif
+                
                 await loadNewerMessagesIfNeeded(after: lastID)
             }
         }
     }
 
+}
+
+// MARK: - UICollectionViewDataSourcePrefetching for media prefetch
+extension ChatViewController: UICollectionViewDataSourcePrefetching {
+    func collectionView(_ collectionView: UICollectionView, prefetchItemsAt indexPaths: [IndexPath]) {
+        guard collectionView === chatMessageCollectionView else { return }
+//        guard let roomID = room?.ID, !roomID.isEmpty else { return }
+        #if DEBUG
+        let roomID = test_roomIDOverride ?? (room?.ID ?? "")
+        #else
+        let roomID = room?.ID ?? ""
+        #endif
+        guard !roomID.isEmpty else { return }
+
+        // visible 범위 ± 25로 제한
+        let pad = 25
+        
+        let visibleIndexPaths: [IndexPath]
+        #if DEBUG
+        visibleIndexPaths = test_visibleIndexPathsOverride ?? collectionView.indexPathsForVisibleItems
+        #else
+        visibleIndexPaths = collectionView.indexPathsForVisibleItems
+        #endif
+
+        let visibleItems = visibleIndexPaths
+            .filter { $0.section == 0 }
+            .map { $0.item }
+//        let visibleItems = collectionView.indexPathsForVisibleItems
+//            .filter { $0.section == 0 }
+//            .map { $0.item }
+
+        let (lowerBound, upperBound): (Int, Int)
+        if let minVis = visibleItems.min(), let maxVis = visibleItems.max() {
+            lowerBound = max(0, minVis - pad)
+            upperBound = maxVis + pad
+        } else {
+            // If nothing is visible yet, fall back to the incoming prefetch range
+            let candidates = indexPaths.filter { $0.section == 0 }.map { $0.item }
+            guard let minIdx = candidates.min(), let maxIdx = candidates.max() else { return }
+            lowerBound = max(0, minIdx - pad)
+            upperBound = maxIdx + pad
+        }
+
+        for indexPath in indexPaths where indexPath.section == 0 {
+            guard indexPath.item >= lowerBound, indexPath.item <= upperBound else { continue }
+            guard let item = dataSource.itemIdentifier(for: indexPath) else { continue }
+            guard case let .message(message) = item else { continue }
+
+            // Use latest state if available
+            let latest = messageMap[message.ID] ?? message
+            Task { @MainActor in
+                self.startMediaPrefetchIfNeeded(for: latest, roomID: roomID)
+            }
+        }
+    }
+
+    func collectionView(_ collectionView: UICollectionView, cancelPrefetchingForItemsAt indexPaths: [IndexPath]) {
+        guard collectionView === chatMessageCollectionView else { return }
+
+        for indexPath in indexPaths where indexPath.section == 0 {
+            guard let item = dataSource.itemIdentifier(for: indexPath) else { continue }
+            guard case let .message(message) = item else { continue }
+            Task { @MainActor in
+                self.cancelMediaPrefetchIfNeeded(for: message.ID)
+            }
+        }
+    }
 }
 
 
