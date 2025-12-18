@@ -15,3 +15,9 @@ struct PostMetrics: Equatable, Codable {
     let saveCount: Int
     let viewCount: Int?
 }
+
+struct BrandMetrics: Equatable, Codable {
+    var likeCount: Int
+    var viewCount: Int
+    var popularScore: Double
+}

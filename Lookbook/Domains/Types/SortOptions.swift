@@ -15,3 +15,16 @@ enum PostSortOption: String, Codable {
     case mostSaved
     case trending
 }
+
+enum BrandSort {
+    case latest, likes, views, popular
+
+    var primaryField: String {
+        switch self {
+        case .latest:  return "updatedAt"
+        case .likes:   return "likeCount"
+        case .views:   return "viewCount"
+        case .popular: return "popularScore"
+        }
+    }
+}

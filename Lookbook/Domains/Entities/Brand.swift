@@ -13,5 +13,6 @@ struct Brand: Equatable, Codable, Identifiable {
     var name: String
     var logoURL: URL?
     var isFeatured: Bool
+    var metrics: BrandMetrics
     var updatedAt: Date
 }
