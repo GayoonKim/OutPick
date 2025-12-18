@@ -44,8 +44,9 @@ class CustomTabBarViewController: UIViewController {
             return nav
         case 3:
             // Lookbook tab (SwiftUI)
-            let lookbookHomeVC = LookbookHomeViewController()
-            let nav = UINavigationController(rootViewController: lookbookHomeVC)
+            let lookbookView = LookbookHomeView() // SwiftUI 화면
+            let hostingVC = UIHostingController(rootView: lookbookView)
+            let nav = UINavigationController(rootViewController: hostingVC)
             nav.isNavigationBarHidden = true
             return nav
         case 4:

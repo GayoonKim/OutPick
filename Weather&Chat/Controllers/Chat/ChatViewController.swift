@@ -2531,7 +2531,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             guard let self else { return }
             try? await Task.sleep(nanoseconds: delayMs * 1_000_000)
             if Task.isCancelled { return }
-            await self.cleanupMediaPrefetchTasksOutsideVisibleRange(pad: pad)
+            self.cleanupMediaPrefetchTasksOutsideVisibleRange(pad: pad)
         }
     }
 
