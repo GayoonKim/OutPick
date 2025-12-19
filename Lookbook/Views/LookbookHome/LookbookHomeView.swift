@@ -6,13 +6,10 @@
 //
 
 import SwiftUI
+import FirebaseFirestore
 
 struct LookbookHomeView: View {
-    /// 정렬 테스트용(기본 최신순)
-    @State private var selectedSort: BrandSort = .latest
-    
     var body: some View {
-        
     }
 }
 

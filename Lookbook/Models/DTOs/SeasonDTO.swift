@@ -19,6 +19,10 @@ struct SeasonDTO: Codable {
     /// 시즌 무드 태그 (도메인에서는 [TagID]로 변환)
     let tagIDs: [String]?
 
+    /// 시즌 무드 태그(의미/개념 단위). 동의어/다국어 검색을 위해 사용
+    /// - Firestore 기존 문서에는 없을 수 있어 Optional로 유지
+    let tagConceptIDs: [String]?
+
     /// 생성/수정 시각 (createdAt은 누락될 수 있어 방어적으로 처리)
     let createdAt: Timestamp?
     let updatedAt: Timestamp?
@@ -38,6 +42,7 @@ struct SeasonDTO: Codable {
 //            startDate: startDate?.dateValue(),
 //            endDate: endDate?.dateValue(),
             tagIDs: domainTagIDs,
+            tagConceptIDs: tagConceptIDs,
             createdAt: createdAt?.dateValue() ?? Date(timeIntervalSince1970: 0),
             updatedAt: updatedAt?.dateValue() ?? Date(timeIntervalSince1970: 0)
         )
