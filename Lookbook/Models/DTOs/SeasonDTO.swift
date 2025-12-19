@@ -13,8 +13,14 @@ struct SeasonDTO: Codable {
 
     let title: String
     let coverURL: String?
-    let startDate: Timestamp?
-    let endDate: Timestamp?
+//    let startDate: Timestamp?
+//    let endDate: Timestamp?
+
+    /// 시즌 무드 태그 (도메인에서는 [TagID]로 변환)
+    let tagIDs: [String]?
+
+    /// 생성/수정 시각 (createdAt은 누락될 수 있어 방어적으로 처리)
+    let createdAt: Timestamp?
     let updatedAt: Timestamp?
 
     /// Firestore DTO -> Domain 변환
@@ -22,13 +28,17 @@ struct SeasonDTO: Codable {
     func toDomain(brandID: BrandID) throws -> Season {
         guard let id else { throw MappingError.missingDocumentID }
 
+        let domainTagIDs: [TagID] = (tagIDs ?? []).map { TagID(value: $0) }
+
         return Season(
             id: SeasonID(value: id),
             brandID: brandID,
             title: title,
             coverURL: coverURL.flatMap(URL.init(string:)),
-            startDate: startDate?.dateValue(),
-            endDate: endDate?.dateValue(),
+//            startDate: startDate?.dateValue(),
+//            endDate: endDate?.dateValue(),
+            tagIDs: domainTagIDs,
+            createdAt: createdAt?.dateValue() ?? Date(timeIntervalSince1970: 0),
             updatedAt: updatedAt?.dateValue() ?? Date(timeIntervalSince1970: 0)
         )
     }

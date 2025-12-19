@@ -8,7 +8,6 @@
 import Foundation
 
 struct LookbookPost: Equatable, Codable, Identifiable {
-    
     var id: PostID
     var brandID: BrandID
     var seasonID: SeasonID

@@ -17,12 +17,12 @@ struct ReplacementItemDTO: Codable {
 
     let title: String
     let brandName: String?
-    let price: Int?
-    let currency: String?
-    let buyURL: String?
+//    let price: Int?
+//    let currency: String?
+//    let buyURL: String?
     let imageURL: String?
     let tagIDs: [String]?
-    let createdBy: String?
+//    let createdBy: String?
     let createdAt: Timestamp?
 
     func toDomain(postID: PostID) throws -> ReplacementItem {
@@ -33,12 +33,12 @@ struct ReplacementItemDTO: Codable {
             postID: postID,
             title: title,
             brandName: brandName,
-            price: price,
-            currency: currency,
-            buyURL: buyURL.flatMap(URL.init(string:)),
+//            price: price,
+//            currency: currency,
+//            buyURL: buyURL.flatMap(URL.init(string:)),
             imageURL: imageURL.flatMap(URL.init(string:)),
             tagIDs: (tagIDs ?? []).map { TagID(value: $0) },
-            createdBy: createdBy.map { UserID(value: $0) },
+//            createdBy: createdBy.map { UserID(value: $0) },
             createdAt: createdAt?.dateValue() ?? Date(timeIntervalSince1970: 0)
         )
     }
