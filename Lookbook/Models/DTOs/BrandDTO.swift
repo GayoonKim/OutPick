@@ -5,7 +5,8 @@ struct BrandDTO: Codable {
     @DocumentID var id: String?
 
     let name: String
-    let logoURL: String?
+    /// Firebase Storage 경로 (예: "brands/{brandID}/logo.jpg")
+    let logoPath: String?
 
     /// 운영자/편집자 픽 여부(홈 상단 고정 노출 등)
     let isFeatured: Bool?
@@ -37,7 +38,7 @@ struct BrandDTO: Codable {
         return Brand(
             id: BrandID(value: id),
             name: name,
-            logoURL: logoURL.flatMap(URL.init(string:)),
+            logoPath: logoPath,
             isFeatured: isFeatured ?? false,
             metrics: metrics,
             updatedAt: updatedAt?.dateValue() ?? Date(timeIntervalSince1970: 0)

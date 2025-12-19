@@ -11,7 +11,7 @@ import Foundation
 struct Brand: Equatable, Codable, Identifiable {
     var id: BrandID
     var name: String
-    var logoURL: URL?
+    var logoPath: String?
     var isFeatured: Bool
     var metrics: BrandMetrics
     var updatedAt: Date
