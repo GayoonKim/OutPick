@@ -7,6 +7,10 @@
 
 import Foundation
 import FirebaseStorage
+#if canImport(UIKit)
+import UIKit
+#endif
+
 
 /// Firebase Storage를 이용하여 `StorageServiceProtocol`을 구현한 클래스입니다.
 ///
@@ -123,6 +127,24 @@ final class FirebaseStorageService: StorageServiceProtocol {
     func downloadImage(from path: String, maxSize: Int) async throws -> Data {
         return try await downloadData(from: path, maxSize: maxSize)
     }
+    
+#if canImport(UIKit)
+    /// 지정된 경로의 이미지 파일을 다운로드한 뒤 `UIImage`로 디코딩하여 반환합니다.
+    ///
+    /// - Note: Storage 경로(path) 기반으로 바로 다운로드하고, UI 계층에서 바로 쓸 수 있도록 `UIImage`로 변환합니다.
+    /// - Parameters:
+    ///   - path: 다운로드할 이미지의 스토리지 경로.
+    ///   - maxSize: 다운로드할 최대 바이트 수.
+    /// - Returns: 디코딩된 `UIImage`.
+    func downloadUIImage(from path: String, maxSize: Int) async throws -> UIImage {
+        let data = try await downloadData(from: path, maxSize: maxSize)
+        guard let image = UIImage(data: data) else {
+            throw LookbookStorageError.imageDecodingFailed
+        }
+        return image
+    }
+    
+#endif
 
     /// 여러 이미지 파일을 병렬로 다운로드합니다.
     ///
@@ -211,4 +233,5 @@ final class FirebaseStorageService: StorageServiceProtocol {
 /// Firebase API가 데이터도 오류도 반환하지 않을 때 사용되는 단순 오류 타입입니다.
 private enum LookbookStorageError: Error {
     case unknown
+    case imageDecodingFailed
 }
