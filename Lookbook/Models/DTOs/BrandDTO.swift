@@ -5,27 +5,20 @@ struct BrandDTO: Codable {
     @DocumentID var id: String?
 
     let name: String
-    /// Firebase Storage 경로 (예: "brands/{brandID}/logo.jpg")
+
+    /// (호환) 예전 단일 경로 필드. 앞으로는 썸네일을 넣는 용도로 유지 권장
     let logoPath: String?
 
-    /// 운영자/편집자 픽 여부(홈 상단 고정 노출 등)
+    /// (신규) 썸네일/원본 분리
+    let logoThumbPath: String?
+    let logoOriginalPath: String?
+
     let isFeatured: Bool?
-
-    /// 좋아요 수(좋아요순 정렬/표시용)
     let likeCount: Int?
-
-    /// 조회 수(조회순 정렬/표시용)
     let viewCount: Int?
-
-    /// 인기 점수(인기순 정렬/표시용)
-    /// - Note: 인기 점수는 정책에 따라 Int/Double 중 하나로 운영될 수 있습니다.
-    ///         현재 Domain의 BrandMetrics가 Int를 사용한다는 전제입니다.
     let popularScore: Double?
-
     let updatedAt: Timestamp?
 
-    /// Firestore DTO -> Domain 변환
-    /// - Note: 스키마 변경에 대비해 optional을 허용하고, 여기서 기본값을 채웁니다.
     func toDomain() throws -> Brand {
         guard let id else { throw MappingError.missingDocumentID }
 
@@ -35,10 +28,17 @@ struct BrandDTO: Codable {
             popularScore: popularScore ?? 0
         )
 
+        // 1) 썸네일: 신규 필드 우선, 없으면 기존 logoPath로 폴백
+        let resolvedThumbPath = logoThumbPath ?? logoPath
+
+        // 2) 원본: 신규 필드만 사용(없으면 nil)
+        let resolvedOriginalPath = logoOriginalPath
+
         return Brand(
             id: BrandID(value: id),
             name: name,
-            logoPath: logoPath,
+            logoThumbPath: resolvedThumbPath,
+            logoOriginalPath: resolvedOriginalPath,
             isFeatured: isFeatured ?? false,
             metrics: metrics,
             updatedAt: updatedAt?.dateValue() ?? Date(timeIntervalSince1970: 0)

@@ -24,11 +24,17 @@ struct CreateBrandView: View {
 
     private let db: Firestore
     private let storage: Storage
+    private let thumbnailer: ImageThumbnailing
 
     /// 기본은 싱글톤 사용, 테스트/교체를 위해 주입 가능
-    init(db: Firestore = Firestore.firestore(), storage: Storage = Storage.storage()) {
+    init(
+        db: Firestore = Firestore.firestore(),
+        storage: Storage = Storage.storage(),
+        thumbnailer: ImageThumbnailing = ImageIOThumbnailer()
+    ) {
         self.db = db
         self.storage = storage
+        self.thumbnailer = thumbnailer
     }
 
     var body: some View {
@@ -88,7 +94,7 @@ struct CreateBrandView: View {
                     }
                 }
 
-                Section(footer: Text("주의: 현재는 임시로 Firestore는 brands/{brand name}에 저장하고, 로고 이미지는 Storage의 brands/{brand name}/logo.jpg 로 업로드한 뒤 logoPath로 저장합니다. 브랜드명에 '/' 문자가 포함되면 '_'로 치환되어 저장됩니다.")) {
+                Section(footer: Text("주의: 현재는 임시로 Firestore는 brands/{brand name}에 저장하고, 로고 이미지는 Storage의 brands/{brand name}/logo/thumb.jpg(썸네일) + logo/original.jpg(원본) 2개를 업로드한 뒤 Firestore에 logoThumbPath, logoOriginalPath로 저장합니다. (호환을 위해 logoPath에는 썸네일 경로를 넣습니다.) 브랜드명에 '/' 문자가 포함되면 '_'로 치환되어 저장됩니다.")) {
                     EmptyView()
                 }
             }
@@ -131,18 +137,43 @@ struct CreateBrandView: View {
         }
 
         do {
-            // 1) 이미지가 있으면 Storage에 업로드하고 logoPath 확보
-            var logoPath: String? = nil
+            // 1) 이미지가 있으면 Storage에 (썸네일 + 원본) 업로드하고 경로 확보
+            var logoThumbPath: String? = nil
+            var logoOriginalPath: String? = nil
+
             if let image = await MainActor.run(body: { selectedLogoImage }) {
-                let path = "brands/\(docID)/logo.jpg"
-                try await uploadLogoImage(image, toPath: path)
-                logoPath = path
+                let thumbPath = "brands/\(docID)/logo/thumb.jpg"
+                let originalPath = "brands/\(docID)/logo/original.jpg"
+
+                // 원본 업로드 (화질 우선)
+                guard let originalJPEGData = image.jpegData(compressionQuality: 0.9) else {
+                    throw NSError(domain: "CreateBrandView", code: -10, userInfo: [
+                        NSLocalizedDescriptionKey: "원본 이미지를 JPEG 데이터로 변환하지 못했습니다."
+                    ])
+                }
+
+                try await uploadData(originalJPEGData, toPath: originalPath, contentType: "image/jpeg")
+                logoOriginalPath = originalPath
+
+                // 썸네일 생성(ImageIOThumbnailer 사용) 후 업로드 (목록/카드용)
+                let policy = ThumbnailPolicies.brandLogoList
+                let thumbJPEGData = try thumbnailer.makeThumbnailJPEGData(from: originalJPEGData, policy: policy)
+
+                try await uploadData(thumbJPEGData, toPath: thumbPath, contentType: "image/jpeg")
+                logoThumbPath = thumbPath
             }
 
-            // 2) BrandDTO 스키마(logoPath)로 Firestore에 저장
+            // 2) Firestore에 저장
             let data: [String: Any] = [
                 "name": rawName,
-                "logoPath": logoPath ?? NSNull(),
+
+                // 호환: 기존 UI가 logoPath만 읽는 경우를 대비해 썸네일 경로를 넣어둡니다.
+                "logoPath": logoThumbPath ?? NSNull(),
+
+                // 신규: 썸네일/원본을 분리 저장
+                "logoThumbPath": logoThumbPath ?? NSNull(),
+                "logoOriginalPath": logoOriginalPath ?? NSNull(),
+
                 "isFeatured": isFeatured,
                 "likeCount": 0,
                 "viewCount": 0,
@@ -165,18 +196,12 @@ struct CreateBrandView: View {
         }
     }
 
-    /// 선택한 로고 이미지를 Firebase Storage에 업로드합니다.
+    /// Firebase Storage에 데이터를 업로드합니다.
     /// - Note: 동일 경로로 업로드하면 덮어쓰기(업데이트) 됩니다.
-    private func uploadLogoImage(_ image: UIImage, toPath path: String) async throws {
-        guard let data = image.jpegData(compressionQuality: 0.85) else {
-            throw NSError(domain: "CreateBrandView", code: -1, userInfo: [
-                NSLocalizedDescriptionKey: "이미지를 JPEG 데이터로 변환하지 못했습니다."
-            ])
-        }
-
+    private func uploadData(_ data: Data, toPath path: String, contentType: String) async throws {
         let ref = storage.reference(withPath: path)
         let metadata = StorageMetadata()
-        metadata.contentType = "image/jpeg"
+        metadata.contentType = contentType
 
         _ = try await ref.putDataAsync(data, metadata: metadata)
     }

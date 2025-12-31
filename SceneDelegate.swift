@@ -17,6 +17,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     
     var window: UIWindow?
     
+    /// 로그인 성공 후 룩북(브랜드/로고) 프리로드를 위한 앱 전역 컨테이너
+    private var appContainer: AppContainer?
+    
     private let locationManager = CLLocationManager()
     private var cancellables = Set<AnyCancellable>()
     
@@ -103,6 +106,15 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                             await MainActor.run {
                                 self.window?.rootViewController = screen
                                 self.window?.makeKeyAndVisible()
+                            }
+
+                            // ✅ 룩북: 브랜드 20개 + 첫 화면용 로고 N개(썸네일) 프리로드
+                            // - Note: Lookbook 탭에서 동일 ViewModel 인스턴스를 사용해야 효과가 있습니다.
+                            await MainActor.run {
+                                if self.appContainer == nil {
+                                    self.appContainer = AppContainer()
+                                }
+                                self.appContainer?.preloadLookbook()
                             }
                             
                             // ✅ 로그인 성공 후 프로필 리스너 시작

@@ -16,6 +16,7 @@ class CustomTabBarViewController: UIViewController {
     private var currentTabIndex: Int?
     private var tabViewControllers: [Int: UIViewController] = [:]
     private var cancellables = Set<AnyCancellable>()
+    private var container = AppContainer()
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -44,7 +45,7 @@ class CustomTabBarViewController: UIViewController {
             return nav
         case 3:
             // Lookbook tab (SwiftUI)
-            let lookbookView = LookbookHomeView() // SwiftUI 화면
+            let lookbookView = LookbookHomeView(viewModel: container.lookbookHomeViewModel) // SwiftUI 화면
             let hostingVC = UIHostingController(rootView: lookbookView)
             let nav = UINavigationController(rootViewController: hostingVC)
             nav.isNavigationBarHidden = true
