@@ -30,6 +30,7 @@ final class LookbookHomeViewModel: ObservableObject {
 
     /// 중복 로드 방지
     private var didPreload = false
+    private var isPreloading = false
     private var isLoadingNext = false
 
     /// 최초 로딩 시 가져올 브랜드 수
@@ -59,9 +60,10 @@ final class LookbookHomeViewModel: ObservableObject {
 
     /// 앱 시작 시 또는 룩북 탭 진입 전에 한 번 호출
     func preloadIfNeeded() async {
-        guard !didPreload else { return }
-        didPreload = true
-
+        guard !didPreload, !isPreloading else { return }
+        isPreloading = true
+        defer { isPreloading = false }
+        
         phase = .loading
 
         do {
@@ -76,6 +78,8 @@ final class LookbookHomeViewModel: ObservableObject {
             self.brands = page.items
             self.lastBrandDocument = page.last
             self.phase = .ready
+            
+            didPreload = true
         } catch {
             self.phase = .failed(error.localizedDescription)
         }
@@ -122,7 +126,7 @@ final class LookbookHomeViewModel: ObservableObject {
 
         return slice.compactMap { brand in
             // 목록에서는 썸네일 우선, 없으면 기존 logoPath로 폴백
-            let resolved = brand.logoThumbPath ?? brand.logoPath
+            let resolved = brand.logoThumbPath ?? brand.logoOriginalPath
             guard let path = resolved, !path.isEmpty else { return nil }
 
             // 캐시 키는 용도를 포함

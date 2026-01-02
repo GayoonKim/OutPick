@@ -16,12 +16,16 @@ class CustomTabBarViewController: UIViewController {
     private var currentTabIndex: Int?
     private var tabViewControllers: [Int: UIViewController] = [:]
     private var cancellables = Set<AnyCancellable>()
-    private var container = AppContainer()
+    var container: AppContainer!
     
     override func viewDidLoad() {
         super.viewDidLoad()
         setupCustomTabBar()
         self.view.backgroundColor = .white
+        
+        if container == nil {
+            container = AppContainer()
+        }
     }
 
     func viewController(_ index: Int) -> UIViewController {

@@ -106,7 +106,7 @@ struct BrandRowView: View {
     @MainActor
     private func loadLogoIfNeeded() async {
         // 목록에서는 썸네일 경로를 우선 사용하고, 없으면 기존 logoPath로 폴백합니다.
-        let resolvedPath = brand.logoThumbPath ?? brand.logoPath
+        let resolvedPath = brand.logoThumbPath ?? brand.logoOriginalPath
         guard let path = resolvedPath, !path.isEmpty else { return }
 
         // 이미 로드했거나 실패했다면 중복 호출 방지
