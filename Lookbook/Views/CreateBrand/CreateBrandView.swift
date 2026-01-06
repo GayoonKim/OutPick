@@ -8,7 +8,6 @@
 import SwiftUI
 import UIKit
 import FirebaseFirestore
-import FirebaseStorage
 
 struct CreateBrandView: View {
 
@@ -22,18 +21,18 @@ struct CreateBrandView: View {
     @State private var isSaving: Bool = false
     @State private var message: String? = nil
 
-    private let db: Firestore
-    private let storage: Storage
+    private let brandStore: BrandStoring
+    private let storageService: StorageServiceProtocol
     private let thumbnailer: ImageThumbnailing
 
-    /// 기본은 싱글톤 사용, 테스트/교체를 위해 주입 가능
+    /// 기본 구현을 사용하지만, 테스트/교체를 위해 의존성을 주입할 수 있습니다.
     init(
-        db: Firestore = Firestore.firestore(),
-        storage: Storage = Storage.storage(),
+        brandStore: BrandStoring = FirestoreBrandStore(),
+        storageService: StorageServiceProtocol = FirebaseStorageService(),
         thumbnailer: ImageThumbnailing = ImageIOThumbnailer()
     ) {
-        self.db = db
-        self.storage = storage
+        self.brandStore = brandStore
+        self.storageService = storageService
         self.thumbnailer = thumbnailer
     }
 
@@ -94,7 +93,7 @@ struct CreateBrandView: View {
                     }
                 }
 
-                Section(footer: Text("주의: 현재는 임시로 Firestore는 brands/{brand name}에 저장하고, 로고 이미지는 Storage의 brands/{brand name}/logo/thumb.jpg(썸네일) + logo/original.jpg(원본) 2개를 업로드한 뒤 Firestore에 logoThumbPath, logoOriginalPath로 저장합니다. (호환을 위해 logoPath에는 썸네일 경로를 넣습니다.) 브랜드명에 '/' 문자가 포함되면 '_'로 치환되어 저장됩니다.")) {
+                Section(footer: Text("주의: 현재는 임시로 Firestore는 brands/{brand name}에 저장하고, 로고 이미지는 StorageService(FirebaseStorageService)를 통해 brands/{brand name}/logo/thumb.jpg(썸네일) + logo/original.jpg(원본) 2개를 업로드한 뒤 Firestore에 logoThumbPath, logoOriginalPath로 저장합니다. (호환을 위해 logoPath에는 썸네일 경로를 넣습니다.) 브랜드명에 '/' 문자가 포함되면 '_'로 치환되어 저장됩니다.")) {
                     EmptyView()
                 }
             }
@@ -152,15 +151,14 @@ struct CreateBrandView: View {
                     ])
                 }
 
-                try await uploadData(originalJPEGData, toPath: originalPath, contentType: "image/jpeg")
-                logoOriginalPath = originalPath
+                // 한국어 주석: 업로드는 path 기반으로 처리하고, Firestore에는 path를 저장합니다.
+                logoOriginalPath = try await storageService.uploadImage(data: originalJPEGData, to: originalPath)
 
                 // 썸네일 생성(ImageIOThumbnailer 사용) 후 업로드 (목록/카드용)
                 let policy = ThumbnailPolicies.brandLogoList
                 let thumbJPEGData = try thumbnailer.makeThumbnailJPEGData(from: originalJPEGData, policy: policy)
 
-                try await uploadData(thumbJPEGData, toPath: thumbPath, contentType: "image/jpeg")
-                logoThumbPath = thumbPath
+                logoThumbPath = try await storageService.uploadImage(data: thumbJPEGData, to: thumbPath)
             }
 
             // 2) Firestore에 저장
@@ -181,10 +179,7 @@ struct CreateBrandView: View {
                 "updatedAt": FieldValue.serverTimestamp()
             ]
 
-            try await db
-                .collection("brands")
-                .document(docID)
-                .setDataAsync(data, merge: true)
+            try await brandStore.upsertBrand(docID: docID, data: data)
 
             await MainActor.run {
                 message = "저장 완료: brands/\(docID)"
@@ -196,22 +191,36 @@ struct CreateBrandView: View {
         }
     }
 
-    /// Firebase Storage에 데이터를 업로드합니다.
-    /// - Note: 동일 경로로 업로드하면 덮어쓰기(업데이트) 됩니다.
-    private func uploadData(_ data: Data, toPath path: String, contentType: String) async throws {
-        let ref = storage.reference(withPath: path)
-        let metadata = StorageMetadata()
-        metadata.contentType = contentType
-
-        _ = try await ref.putDataAsync(data, metadata: metadata)
-    }
-
     /// Firestore 문서 ID로 쓰기 위해 최소한의 정리만 수행
     private func makeDocumentID(from name: String) -> String {
         // '/'는 컬렉션 경로 구분자라서 사용 불가
         let replaced = name.replacingOccurrences(of: "/", with: "_")
         // 너무 공격적으로 바꾸지는 않고, 앞뒤 공백만 제거
         return replaced.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+// MARK: - 의존성 추상화 (테스트/유지보수)
+
+/// 브랜드 문서를 저장하는 저장소 추상화입니다.
+/// - Note: View는 Firestore를 직접 모르도록 분리하여 테스트/교체를 쉽게 합니다.
+protocol BrandStoring {
+    func upsertBrand(docID: String, data: [String: Any]) async throws
+}
+
+/// Firestore 기반 기본 구현입니다.
+struct FirestoreBrandStore: BrandStoring {
+    let db: Firestore
+
+    init(db: Firestore = Firestore.firestore()) {
+        self.db = db
+    }
+
+    func upsertBrand(docID: String, data: [String: Any]) async throws {
+        try await db
+            .collection("brands")
+            .document(docID)
+            .setDataAsync(data, merge: true)
     }
 }
 
@@ -227,29 +236,6 @@ private extension DocumentReference {
                 } else {
                     continuation.resume(returning: ())
                 }
-            }
-        }
-    }
-}
-
-// MARK: - Firebase Storage async 호환 (putData completion -> async/await)
-
-private extension StorageReference {
-    /// Firebase 버전에 따라 putData의 async 지원이 없을 수 있어, 안전하게 브릿지합니다.
-    func putDataAsync(_ uploadData: Data, metadata: StorageMetadata?) async throws -> StorageMetadata {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<StorageMetadata, Error>) in
-            self.putData(uploadData, metadata: metadata) { metadata, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                    return
-                }
-                guard let metadata else {
-                    continuation.resume(throwing: NSError(domain: "CreateBrandView", code: -2, userInfo: [
-                        NSLocalizedDescriptionKey: "업로드 메타데이터를 받지 못했습니다."
-                    ]))
-                    return
-                }
-                continuation.resume(returning: metadata)
             }
         }
     }

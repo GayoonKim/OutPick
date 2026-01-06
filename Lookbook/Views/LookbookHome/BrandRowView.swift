@@ -53,7 +53,7 @@ struct BrandRowView: View {
     private var collageView: some View {
         GeometryReader { geo in
             imageSlot
-                .frame(width: geo.size.width, height: collageHeight)
+                .frame(width: geo.size.width, height: collageHeight, alignment: .top)
                 .clipped()
                 .clipShape(RoundedRectangle(cornerRadius: collageCornerRadius))
         }
@@ -67,8 +67,8 @@ struct BrandRowView: View {
             Image(uiImage: uiImage)
                 .resizable()
                 .scaledToFill()
-                // 슬롯을 꽉 채워 cover가 안정적으로 적용되도록
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // 얼굴이 위쪽에서 잘리는 경우가 많아서 상단 기준으로 크롭되도록 정렬을 고정합니다.
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         } else {
             placeholderSlot
         }

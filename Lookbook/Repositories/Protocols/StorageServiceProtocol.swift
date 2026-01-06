@@ -14,12 +14,20 @@ import FirebaseStorage
 /// 필요 시 병렬 다운로드를 통해 여러 이미지를 효율적으로 가져올 수 있습니다.
 protocol StorageServiceProtocol {
     // MARK: - 업로드
-    /// 이미지 데이터를 지정된 경로에 업로드하고 다운로드 URL을 반환합니다.
-    func uploadImage(data: Data, to path: String) async throws -> URL
-    /// 로컬 비디오 파일을 지정된 경로에 업로드하고 다운로드 URL을 반환합니다.
-    func uploadVideo(fileURL: URL, to path: String) async throws -> URL
-    /// 여러 이미지 데이터를 지정된 폴더 경로에 업로드하고 다운로드 URL 배열을 반환합니다.
-    func uploadImages(_ datas: [Data], to folderPath: String) async throws -> [URL]
+    /// 이미지 데이터를 지정된 경로에 업로드하고 업로드된 스토리지 경로(path)를 반환합니다.
+    ///
+    /// - Note: Firestore에는 보통 다운로드 URL보다 스토리지 경로(path)를 저장하는 편이 안정적입니다.
+    func uploadImage(data: Data, to path: String) async throws -> String
+
+    /// 로컬 비디오 파일을 지정된 경로에 업로드하고 업로드된 스토리지 경로(path)를 반환합니다.
+    ///
+    /// - Note: Firestore에는 보통 다운로드 URL보다 스토리지 경로(path)를 저장하는 편이 안정적입니다.
+    func uploadVideo(fileURL: URL, to path: String) async throws -> String
+
+    /// 여러 이미지 데이터를 지정된 폴더 경로에 업로드하고 업로드된 스토리지 경로(path) 배열을 반환합니다.
+    ///
+    /// - Note: 반환되는 배열은 입력 데이터의 순서와 동일합니다.
+    func uploadImages(_ datas: [Data], to folderPath: String) async throws -> [String]
 
     // MARK: - 다운로드 (범용)
     /// 지정된 경로의 파일을 메모리에 다운로드합니다.
@@ -38,8 +46,10 @@ protocol StorageServiceProtocol {
     // MARK: - 삭제 및 업데이트
     /// 지정된 경로의 파일을 삭제합니다. 삭제된 파일은 일시적으로 복구 가능할 수 있습니다.
     func deleteFile(at path: String) async throws
-    /// 지정된 경로의 파일을 새 데이터로 교체하고 갱신된 다운로드 URL을 반환합니다.
-    func updateFile(data: Data, at path: String) async throws -> URL
+    /// 지정된 경로의 파일을 새 데이터로 교체하고 교체된 스토리지 경로(path)를 반환합니다.
+    ///
+    /// - Note: 내부적으로 동일 경로로 재업로드하여 파일을 덮어씁니다.
+    func updateFile(data: Data, at path: String) async throws -> String
     /// 지정된 경로의 파일에 대한 메타데이터를 업데이트합니다. 지정하지 않은 속성은 유지됩니다.
     func updateMetadata(for path: String,
                         metadata: StorageMetadata) async throws -> StorageMetadata

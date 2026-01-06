@@ -16,6 +16,7 @@ import UIKit
 struct LookbookHomeView: View {
     @StateObject private var viewModel: LookbookHomeViewModel
     @State private var selectedBrandID: Brand.ID?
+    @State private var isPresentingCreateBrand = false
 
     /// SceneDelegate/AppContainer에서 동일 인스턴스를 주입하면
     /// 룩북 탭 진입 시 “이미 로딩된 것처럼” 보이는 UX를 만들 수 있습니다.
@@ -80,6 +81,24 @@ struct LookbookHomeView: View {
                 }
             }
             .navigationTitle("룩북")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        isPresentingCreateBrand = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .accessibilityLabel("브랜드 추가")
+                }
+            }
+            .sheet(isPresented: $isPresentingCreateBrand) {
+                NavigationView {
+                    CreateBrandView()
+                        .navigationTitle("브랜드 등록")
+                        .navigationBarTitleDisplayMode(.inline)
+                }
+                .navigationViewStyle(StackNavigationViewStyle())
+            }
         }
         // iOS 15(iPad 포함)에서 기본 분할 내비게이션 형태가 뜨는 것을 방지하기 위해 stack 스타일을 강제합니다.
         .navigationViewStyle(StackNavigationViewStyle())

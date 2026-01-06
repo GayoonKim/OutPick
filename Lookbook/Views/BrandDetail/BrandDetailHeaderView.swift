@@ -31,7 +31,8 @@ struct BrandDetailHeaderView: View {
                         .resizable()
                         // 좌/우 빈 공간이 생기지 않도록 채우기(필요한 만큼 일부가 잘릴 수 있음)
                         .scaledToFill()
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        // 얼굴이 위쪽에서 잘리는 경우가 많아서 상단 기준으로 크롭되도록 정렬을 고정합니다.
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                         .clipped()
                 } else if loadFailed {
                     Image(systemName: "photo")
@@ -45,7 +46,7 @@ struct BrandDetailHeaderView: View {
             // 좌/우 끝까지 붙는 느낌 (클립/라운드 없음)
             .background(Color.clear)
             .frame(maxWidth: .infinity)
-            .frame(height: 220)
+            .frame(height: 220, alignment: .top)
             .clipped()
             .task(id: brand.logoPath ?? "") {
                 await loadLogoIfNeeded()

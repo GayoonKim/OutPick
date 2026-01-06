@@ -31,60 +31,56 @@ final class FirebaseStorageService: StorageServiceProtocol {
     
     // MARK: - 업로드 관련 메서드
     
-    /// 주어진 경로에 이미지 데이터를 업로드하고 다운로드 URL을 반환합니다.
+    /// 주어진 경로에 이미지 데이터를 업로드하고 업로드된 스토리지 경로(path)를 반환합니다.
     ///
-    /// Firebase v12.3.0부터는 `StorageReference`에 대한 `putDataAsync`와 `downloadURL()` 메서드가 제공되어
-    /// 콜백 없이 업로드를 수행하고 결과를 비동기로 받을 수 있습니다. 이 메서드는 해당
-    /// 비동기 API를 사용하여 이미지를 업로드하고, 업로드가 끝나면 공개 다운로드 URL을 반환합니다.
+    /// - Note: Firestore에는 보통 다운로드 URL보다 스토리지 경로(path)를 저장하는 편이 안정적입니다.
     /// - Parameters:
     ///   - data: 업로드할 이미지 데이터.
     ///   - path: 스토리지 버킷 내 저장할 경로.
-    /// - Returns: 업로드된 자산의 공개 다운로드 URL.
-    func uploadImage(data: Data, to path: String) async throws -> URL {
+    /// - Returns: 업로드된 자산의 스토리지 경로(path).
+    func uploadImage(data: Data, to path: String) async throws -> String {
         let ref = storage.reference(withPath: path)
         // 비동기 업로드 수행 (메타데이터는 nil로 전달)
         _ = try await ref.putDataAsync(data, metadata: nil)
-        // 업로드 후 다운로드 URL 비동기 획득
-        return try await ref.downloadURL()
+        return path
     }
     
-    /// 로컬 비디오 파일을 업로드하고 다운로드 URL을 반환합니다.
-    ///
-    /// Firebase v12.3.0에서는 파일 업로드를 위해 `putFileAsync(from:metadata:)`를 사용할 수 있습니다. 이 메서드는
-    /// 비디오 파일을 비동기로 업로드하고, 업로드가 끝나면 다운로드 URL을 반환합니다.
+    /// 로컬 비디오 파일을 업로드하고 업로드된 스토리지 경로(path)를 반환합니다.
     /// - Parameters:
     ///   - fileURL: 업로드할 로컬 비디오 파일의 URL.
     ///   - path: 스토리지 버킷 내 대상 경로.
-    /// - Returns: 업로드된 자산의 공개 다운로드 URL.
-    func uploadVideo(fileURL: URL, to path: String) async throws -> URL {
+    /// - Returns: 업로드된 자산의 스토리지 경로(path).
+    func uploadVideo(fileURL: URL, to path: String) async throws -> String {
         let ref = storage.reference(withPath: path)
         _ = try await ref.putFileAsync(from: fileURL, metadata: nil)
-        return try await ref.downloadURL()
+        return path
     }
     
-    /// 여러 이미지를 지정된 폴더 경로에 업로드하고 다운로드 URL 배열을 반환합니다.
+    /// 여러 이미지를 지정된 폴더 경로에 업로드하고 업로드된 스토리지 경로(path) 배열을 반환합니다.
     ///
-    /// 각 업로드 작업은 `TaskGroup`을 사용하여 병렬로 수행됩니다. 충돌을 피하기
-    /// 위해 각 파일은 `UUID`를 이용해 고유 이름을 생성합니다. 반환되는 URL
-    /// 배열의 순서는 업로드 완료 순서를 따르며, 입력 순서와 다를 수 있습니다.
+    /// 각 업로드 작업은 `TaskGroup`을 사용하여 병렬로 수행됩니다. 충돌을 피하기 위해 각 파일은 `UUID`를 이용해 고유 이름을 생성합니다.
+    /// 반환되는 경로 배열은 입력 데이터의 순서와 동일하게 정렬됩니다.
     /// - Parameters:
     ///   - datas: 업로드할 이미지 데이터 배열.
     ///   - folderPath: 이미지가 저장될 스토리지 버킷 내 폴더 경로.
-    /// - Returns: 업로드된 이미지에 대한 다운로드 URL 배열.
-    func uploadImages(_ datas: [Data], to folderPath: String) async throws -> [URL] {
-        return try await withThrowingTaskGroup(of: URL.self) { group in
-            for data in datas {
+    /// - Returns: 업로드된 이미지에 대한 스토리지 경로(path) 배열.
+    func uploadImages(_ datas: [Data], to folderPath: String) async throws -> [String] {
+        return try await withThrowingTaskGroup(of: (Int, String).self) { group in
+            for (index, data) in datas.enumerated() {
                 group.addTask {
                     let uniqueID = UUID().uuidString
                     let path = "\(folderPath)/\(uniqueID)"
-                    return try await self.uploadImage(data: data, to: path)
+                    let uploadedPath = try await self.uploadImage(data: data, to: path)
+                    return (index, uploadedPath)
                 }
             }
-            var urls: [URL] = []
-            for try await url in group {
-                urls.append(url)
+
+            // 한국어 주석: 입력 순서 보장을 위해 인덱스 기반으로 결과를 채웁니다.
+            var results = Array(repeating: "", count: datas.count)
+            for try await (index, path) in group {
+                results[index] = path
             }
-            return urls
+            return results
         }
     }
     
@@ -195,15 +191,15 @@ final class FirebaseStorageService: StorageServiceProtocol {
     
     // MARK: - 업데이트 관련 메서드
     
-    /// 지정된 경로의 파일을 새 데이터로 교체합니다.
+    /// 지정된 경로의 파일을 새 데이터로 교체하고, 교체된 스토리지 경로(path)를 반환합니다.
     ///
-    /// 내부적으로 `uploadImage`를 호출하여 파일을 덮어씁니다.
+    /// 내부적으로 동일 경로로 재업로드하여 파일을 덮어씁니다.
     /// - Parameters:
     ///   - data: 새로 기록할 데이터.
     ///   - path: 교체할 파일의 스토리지 경로.
-    /// - Returns: 갱신된 다운로드 URL.
-    func updateFile(data: Data, at path: String) async throws -> URL {
-        // Re-uploading to the same path will overwrite the file.
+    /// - Returns: 교체된 자산의 스토리지 경로(path).
+    func updateFile(data: Data, at path: String) async throws -> String {
+        // 한국어 주석: 동일 경로로 재업로드하면 덮어쓰기 됩니다.
         return try await uploadImage(data: data, to: path)
     }
     
