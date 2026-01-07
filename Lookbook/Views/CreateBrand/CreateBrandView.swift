@@ -40,7 +40,7 @@ struct CreateBrandView: View {
         NavigationView {
             Form {
                 Section(header: Text("브랜드 정보")) {
-                    TextField("브랜드명 (문서 ID로 사용)", text: $brandName)
+                    TextField("브랜드명", text: $brandName)
                         .textInputAutocapitalization(.words)
                         .disableAutocorrection(true)
 
@@ -93,7 +93,7 @@ struct CreateBrandView: View {
                     }
                 }
 
-                Section(footer: Text("주의: 현재는 임시로 Firestore는 brands/{brand name}에 저장하고, 로고 이미지는 StorageService(FirebaseStorageService)를 통해 brands/{brand name}/logo/thumb.jpg(썸네일) + logo/original.jpg(원본) 2개를 업로드한 뒤 Firestore에 logoThumbPath, logoOriginalPath로 저장합니다. (호환을 위해 logoPath에는 썸네일 경로를 넣습니다.) 브랜드명에 '/' 문자가 포함되면 '_'로 치환되어 저장됩니다.")) {
+                Section(footer: Text("주의: 현재는 임시로 Firestore는 brands/{autoId}에 저장하고, 로고 이미지는 StorageService(FirebaseStorageService)를 통해 brands/{autoId}/logo/thumb.jpg(썸네일) + logo/original.jpg(원본) 2개를 업로드한 뒤 Firestore에 logoThumbPath, logoOriginalPath로 저장합니다. (호환을 위해 logoPath에는 썸네일 경로를 넣습니다.)")) {
                     EmptyView()
                 }
             }
@@ -123,8 +123,8 @@ struct CreateBrandView: View {
             return
         }
 
-        // Firestore 문서 ID에 '/'는 들어갈 수 없어서 안전하게 치환
-        let docID = makeDocumentID(from: rawName)
+        // Firestore 문서 ID는 자동 생성(랜덤)으로 사용합니다.
+        let docID = brandStore.makeNewBrandDocumentID()
 
         await MainActor.run {
             isSaving = true
@@ -190,14 +190,6 @@ struct CreateBrandView: View {
             }
         }
     }
-
-    /// Firestore 문서 ID로 쓰기 위해 최소한의 정리만 수행
-    private func makeDocumentID(from name: String) -> String {
-        // '/'는 컬렉션 경로 구분자라서 사용 불가
-        let replaced = name.replacingOccurrences(of: "/", with: "_")
-        // 너무 공격적으로 바꾸지는 않고, 앞뒤 공백만 제거
-        return replaced.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
 }
 
 // MARK: - 의존성 추상화 (테스트/유지보수)
@@ -205,6 +197,10 @@ struct CreateBrandView: View {
 /// 브랜드 문서를 저장하는 저장소 추상화입니다.
 /// - Note: View는 Firestore를 직접 모르도록 분리하여 테스트/교체를 쉽게 합니다.
 protocol BrandStoring {
+    /// Firestore 자동 생성 문서 ID를 미리 발급합니다.
+    /// - Note: 네트워크를 타지 않고 로컬에서 ID만 생성할 수 있습니다.
+    func makeNewBrandDocumentID() -> String
+
     func upsertBrand(docID: String, data: [String: Any]) async throws
 }
 
@@ -214,6 +210,10 @@ struct FirestoreBrandStore: BrandStoring {
 
     init(db: Firestore = Firestore.firestore()) {
         self.db = db
+    }
+
+    func makeNewBrandDocumentID() -> String {
+        db.collection("brands").document().documentID
     }
 
     func upsertBrand(docID: String, data: [String: Any]) async throws {

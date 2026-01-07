@@ -20,7 +20,7 @@ final class FirestoreSeasonRepository: SeasonRepositoryProtocol {
             .collection("brands")
             .document(brandID.value)
             .collection("seasons")
-            .order(by: "updatedAt", descending: true)
+            .order(by: "createdAt", descending: true)
             .getDocuments()
 
         let dtos: [SeasonDTO] = try snap.documents.map { try FirestoreMapper.mapDocument($0) }
