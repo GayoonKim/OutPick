@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import FirebaseFirestore
 
 // 커서 기반 페이지네이션을 Domain에서 추상화 (Firestore DocumentSnapshot 직접 노출 X)
 struct PageCursor: Equatable, Codable {

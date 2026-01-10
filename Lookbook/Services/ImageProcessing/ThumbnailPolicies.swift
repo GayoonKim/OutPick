@@ -11,10 +11,9 @@ import UIKit
 enum ThumbnailPolicies {
 
     /// 브랜드 목록/카드용 로고 썸네일 (원하면 값 조절)
-    static let brandLogoList = ThumbnailPolicy(
-        maxPixelSize: 768,
-        quality: 0.88
-    )
+    static let brandLogoList = ThumbnailPolicy(maxPixelSize: 768, quality: 0.88)
+    
+    static let seasonCover = ThumbnailPolicy(maxPixelSize: 512, quality: 0.75)
 
     /// 프로젝트 공통 기본(= MediaManager 기본과 동일)
     static let `default` = ThumbnailPolicy.default

@@ -16,16 +16,24 @@ class CustomTabBarViewController: UIViewController {
     private var currentTabIndex: Int?
     private var tabViewControllers: [Int: UIViewController] = [:]
     private var cancellables = Set<AnyCancellable>()
-    var container: AppContainer!
-    
+
+    /// 앱 전역 의존성 컨테이너 (SceneDelegate 등에서 주입해야 합니다)
+    var container: AppContainer? {
+        didSet {
+            // 컨테이너가 바뀌면 탭 캐시를 전부 무효화하여(로그아웃/재로그인 등) 의존성 갱신을 확실히 반영
+            guard oldValue !== container else { return }
+            invalidateAllTabCaches(reloadVisibleTab: true)
+        }
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
-        setupCustomTabBar()
+
+        // ✅ container 주입 강제(디버그에서 즉시 확인)
+        assert(container != nil, "CustomTabBarViewController.container가 주입되지 않았습니다. SceneDelegate에서 주입 후 표시해주세요.")
+
         self.view.backgroundColor = .white
-        
-        if container == nil {
-            container = AppContainer()
-        }
+        setupCustomTabBar()
     }
 
     func viewController(_ index: Int) -> UIViewController {
@@ -49,7 +57,15 @@ class CustomTabBarViewController: UIViewController {
             return nav
         case 3:
             // Lookbook tab (SwiftUI)
-            let lookbookView = LookbookHomeView(viewModel: container.lookbookHomeViewModel) // SwiftUI 화면
+            guard let container else {
+                assertionFailure("Lookbook 탭 생성 시점에 container가 nil 입니다. 주입 흐름을 확인해주세요.")
+                return UINavigationController(rootViewController: UIViewController())
+            }
+
+            let lookbookView =
+                LookbookHomeView(viewModel: container.lookbookHomeViewModel)
+                    .environment(\.repositoryProvider, container.provider) // ✅ Environment로도 공급
+
             let hostingVC = UIHostingController(rootView: lookbookView)
             let nav = UINavigationController(rootViewController: hostingVC)
             nav.isNavigationBarHidden = true
@@ -60,46 +76,45 @@ class CustomTabBarViewController: UIViewController {
             let nav = UINavigationController(rootViewController: myPageVC)
             nav.isNavigationBarHidden = true
             return nav
-            
+
         default:
             return UINavigationController(rootViewController: UIViewController())
         }
     }
-    
+
     @MainActor
     private func setupCustomTabBar() {
         view.addSubview(customTabBar)
         customTabBar.translatesAutoresizingMaskIntoConstraints = false
-        
+
         NSLayoutConstraint.activate([
             customTabBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             customTabBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             customTabBar.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
             customTabBar.heightAnchor.constraint(equalToConstant: 60),
         ])
-        
+
         customTabBar.updateButtonStates(0)
         switchScreen(0)
-        
+
         customTabBar.tabSelected
             .receive(on: DispatchQueue.main)
-            .sink{ [weak self] index in
+            .sink { [weak self] index in
                 guard let self = self else { return }
                 self.switchScreen(index)
-//                self.customTabBar.updateButtonStates(index)
             }
             .store(in: &cancellables)
     }
-                  
+
     func switchScreen(_ index: Int) {
         if currentTabIndex == index { return }
-        
+
         if let current = currentChildViewController {
             current.willMove(toParent: nil)
             current.view.removeFromSuperview()
             current.removeFromParent()
         }
-        
+
         let vc: UIViewController
         if let cached = tabViewControllers[index] {
             vc = cached
@@ -107,7 +122,7 @@ class CustomTabBarViewController: UIViewController {
             vc = viewController(index)
             tabViewControllers[index] = vc
         }
-        
+
         addChild(vc)
         view.insertSubview(vc.view, belowSubview: customTabBar)
         vc.view.translatesAutoresizingMaskIntoConstraints = false
@@ -117,13 +132,51 @@ class CustomTabBarViewController: UIViewController {
             vc.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             vc.view.bottomAnchor.constraint(equalTo: customTabBar.topAnchor)
         ])
-//        vc.view.frame = view.bounds
         vc.didMove(toParent: self)
-        
+
         customTabBar.updateButtonStates(index)
-        
+
         currentChildViewController = vc
         currentTabIndex = index
-        
+    }
+
+    /// 모든 탭의 캐시를 무효화합니다.
+    /// - Parameters:
+    ///   - reloadVisibleTab: 현재 보고 있는 탭을 즉시 재생성하여 교체할지 여부
+    private func invalidateAllTabCaches(reloadVisibleTab: Bool) {
+        tabViewControllers.removeAll()
+
+        // 현재 화면을 보고 있다면, 같은 탭 인덱스로 즉시 다시 생성해서 교체
+        if reloadVisibleTab {
+            let targetIndex = currentTabIndex ?? 0
+            // switchScreen은 같은 인덱스면 early-return 하므로, 강제로 다시 전환되게 만듭니다.
+            currentTabIndex = nil
+            switchScreen(targetIndex)
+        }
+    }
+
+    /// 특정 탭의 캐시를 무효화합니다.
+    /// - Parameters:
+    ///   - index: 탭 인덱스
+    ///   - reloadIfVisible: 현재 화면이 해당 탭이면 즉시 다시 생성하여 교체할지 여부
+    private func invalidateTabCache(index: Int, reloadIfVisible: Bool) {
+        tabViewControllers[index] = nil
+
+        // 현재 보고 있는 탭이면 즉시 재생성하여 교체
+        if reloadIfVisible, currentTabIndex == index {
+            // switchScreen은 같은 인덱스면 early-return 하므로, 강제로 다시 전환되게 만듭니다.
+            currentTabIndex = nil
+            switchScreen(index)
+        }
+    }
+
+    /// 외부(로그아웃/재로그인 등)에서 탭 캐시를 전부 새로 만들고 싶을 때 호출
+    func invalidateAllTabsCache(reloadVisibleTab: Bool = true) {
+        invalidateAllTabCaches(reloadVisibleTab: reloadVisibleTab)
+    }
+
+    /// 외부에서 Lookbook 탭(3)만 강제로 새로 만들고 싶을 때 호출
+    func invalidateLookbookTabCache(reloadIfVisible: Bool = true) {
+        invalidateTabCache(index: 3, reloadIfVisible: reloadIfVisible)
     }
 }

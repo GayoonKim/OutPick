@@ -44,23 +44,27 @@ final class FirestoreTagRepository: TagRepositoryProtocol {
             results.append(contentsOf: try dtos.map { try $0.toDomain() })
         }
 
-        /// 요청 순서를 보존하고 싶다면 재정렬
+        // 한국어 주석: 요청 순서 보존
         let dict = Dictionary(uniqueKeysWithValues: results.map { ($0.id.value, $0) })
         return tagIDs.compactMap { dict[$0.value] }
     }
-}
 
-private extension Array {
-    /// 배열을 max 개수 단위로 자르는 유틸 (whereIn 10개 제한 대응)
-    func chunked(max: Int) -> [[Element]] {
-        guard max > 0 else { return [self] }
-        var result: [[Element]] = []
-        var i = 0
-        while i < count {
-            let end = Swift.min(i + max, count)
-            result.append(Array(self[i..<end]))
-            i = end
-        }
-        return result
+    /// /tags prefix 검색 (normalized 기반)
+    func searchTags(prefix: String, limit: Int) async throws -> [Tag] {
+        let q = prefix.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return [] }
+
+        let end = q + "\u{f8ff}"
+
+        let snap = try await db
+            .collection("tags")
+            .order(by: "normalized")
+            .start(at: [q])
+            .end(at: [end])
+            .limit(to: limit)
+            .getDocuments()
+
+        let dtos: [TagDTO] = try snap.documents.map { try FirestoreMapper.mapDocument($0) }
+        return try dtos.map { try $0.toDomain() }
     }
 }

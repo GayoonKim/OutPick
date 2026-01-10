@@ -17,6 +17,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     var window: UIWindow?
 
+    /// 앱 전역 RepositoryProvider (Firestore/Storage 등 의존성 묶음)
+    private let repositoryProvider: RepositoryProvider = .shared
+
     /// 로그인 성공 후 룩북(브랜드/로고) 프리로드를 위한 앱 전역 컨테이너
     private var appContainer: AppContainer?
 
@@ -106,22 +109,13 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                             // ✅ 로그인 성공 후 룩북 프리로드를 위해 AppContainer를 단일 인스턴스로 유지
                             let container: AppContainer = await MainActor.run {
                                 if self.appContainer == nil {
-                                    self.appContainer = AppContainer()
+                                    self.appContainer = AppContainer(provider: self.repositoryProvider)
                                 }
                                 return self.appContainer!
                             }
 
-                            // ✅ CustomTabBarViewController로 이동하는 경우 동일 컨테이너를 주입
-                            if let tab = screen as? CustomTabBarViewController {
-                                await MainActor.run {
-                                    tab.container = container
-                                }
-                            } else if let nav = screen as? UINavigationController,
-                                      let tab = await nav.viewControllers.first as? CustomTabBarViewController {
-                                await MainActor.run {
-                                    tab.container = container
-                                }
-                            }
+                            // ✅ CustomTabBarViewController로 이동하는 경우 동일 컨테이너를 주입(주입 후 view를 미리 로드)
+                            await self.injectAppContainer(container, into: screen)
 
                             // ✅ 화면 전환
                             await MainActor.run {
@@ -232,4 +226,27 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         self.window?.rootViewController = loginViewController
         self.window?.makeKeyAndVisible()
     }
+    
+    /// CustomTabBarViewController(또는 이를 root로 가진 NavigationController)에 AppContainer를 주입하고,
+    /// 주입 후에는 view를 미리 로드해 container nil 타이밍 이슈를 방지합니다.
+    @MainActor
+    private func injectAppContainer(_ container: AppContainer, into screen: UIViewController) {
+        if let tab = screen as? CustomTabBarViewController {
+            tab.container = container
+            // 주입 후 view를 미리 로드하여 viewDidLoad 시점에 container가 nil이 되지 않도록 보장
+            tab.loadViewIfNeeded()
+            // (선택) Lookbook 탭 캐시를 확실히 초기화
+            tab.invalidateLookbookTabCache(reloadIfVisible: false)
+            return
+        }
+
+        if let nav = screen as? UINavigationController,
+           let tab = nav.viewControllers.first as? CustomTabBarViewController {
+            tab.container = container
+            tab.loadViewIfNeeded()
+            tab.invalidateLookbookTabCache(reloadIfVisible: false)
+        }
+    }
 }
+
+

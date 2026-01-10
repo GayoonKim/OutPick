@@ -16,6 +16,9 @@ struct BrandDetailView: View {
     /// - 지금은 기본값을 두되, 필요하면 호출부에서 주입하세요.
     let maxBytes: Int
 
+    @Environment(\.repositoryProvider) private var provider
+    @State private var isPresentCreateSeason: Bool = false
+
     init(
         brand: Brand,
         imageLoader: any ImageLoading,
@@ -39,5 +42,27 @@ struct BrandDetailView: View {
         .listStyle(.plain)
         .navigationTitle(brand.name)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    isPresentCreateSeason = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .accessibilityLabel("시즌 추가")
+            }
+        }
+        .sheet(isPresented: $isPresentCreateSeason) {
+            CreateSeasonView(
+                viewModel: CreateSeasonViewModel(
+                    brandID: brand.id,
+                    seasonRepository: provider.seasonRepository,
+                    tagRepository: provider.tagRepository,
+                    tagAliasRepository: provider.tagAliasRepository,
+                    tagConceptRepository: provider.tagConceptRepository
+                )
+            )
+        }
+
     }
 }

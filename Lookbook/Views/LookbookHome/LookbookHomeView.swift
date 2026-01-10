@@ -109,5 +109,12 @@ struct LookbookHomeView: View {
 }
 
 #Preview {
-    LookbookHomeView(viewModel: LookbookHomeViewModel())
+    let provider = RepositoryProvider.shared
+    let vm = LookbookHomeViewModel(
+        repo: provider.brandRepository,
+        imageLoader: BrandLogoImageStore(),
+        initialBrandLimit: 20,
+        prefetchLogoCount: 12
+    )
+    return LookbookHomeView(viewModel: vm)
 }

@@ -43,8 +43,8 @@ final class LookbookHomeViewModel: ObservableObject {
     private let thumbMaxBytes: Int
 
     init(
-        repo: BrandRepositoryProtocol = FirestoreBrandRepository(),
-        imageLoader: any ImageLoading = BrandLogoImageStore(),
+        repo: BrandRepositoryProtocol,
+        imageLoader: any ImageLoading,
         initialBrandLimit: Int = 20,
         prefetchLogoCount: Int = 12,
         prefetchConcurrency: Int = 6,
@@ -135,4 +135,3 @@ final class LookbookHomeViewModel: ObservableObject {
         }
     }
 }
-

@@ -53,12 +53,9 @@ struct Season: Equatable, Codable, Identifiable {
     var description: String
 
     /// 시즌 무드 태그(표현 단위). 예: "미니멀", "minimal" 등
-    /// - 포스트 생성 시 그대로 복사해서 저장
     var tagIDs: [TagID]
 
-    /// 시즌 무드 태그(의미/개념 단위).
-    /// - 동의어/다국어(예: 미니멀/minimal/minimalism 등)를 하나의 concept로 묶어 검색/필터링에 사용
-    /// - Firestore 기존 문서에 없을 수 있어 Optional로 유지
+    /// 시즌 무드 태그(의미/개념 단위). 예: concept_minimal 등
     var tagConceptIDs: [String]?
 
     /// 노출/운영 상태
@@ -75,6 +72,24 @@ struct Season: Equatable, Codable, Identifiable {
         Season.formatTitle(year: year, term: term)
     }
 
+    /// 커버 썸네일 Storage 경로(path)
+    /// - Note: 스키마 변경 없이 coverPath 규칙으로 파생합니다.
+    var coverThumbPath: String? {
+        guard let coverPath else { return nil }
+
+        // 한국어 주석: cover.jpg → cover_thumb.jpg 규칙
+        if coverPath.hasSuffix("/cover.jpg") {
+            return coverPath.replacingOccurrences(of: "/cover.jpg", with: "/cover_thumb.jpg")
+        }
+
+        // 한국어 주석: 다른 확장자 방어
+        if coverPath.contains("/cover.") {
+            return coverPath.replacingOccurrences(of: "/cover.", with: "/cover_thumb.")
+        }
+
+        return coverPath + "_thumb"
+    }
+
     /// 기본 정렬(최신년도 → FW → SS → 최신 업데이트)
     static func defaultSort(_ lhs: Season, _ rhs: Season) -> Bool {
         if lhs.year != rhs.year { return lhs.year > rhs.year }
@@ -86,7 +101,7 @@ struct Season: Equatable, Codable, Identifiable {
 
 // MARK: - Helpers
 extension Season {
-    /// UI 표기용 타이틀을 생성합니다. (예: 2025 + FW → "25 F/W")
+    /// UI 표기용 타이틀 생성. (예: 2025 + FW → "25 F/W")
     fileprivate static func formatTitle(year: Int, term: SeasonTerm) -> String {
         let yy = normalizedYear(year)
         return String(format: "%02d %@", yy, term.displayText)
