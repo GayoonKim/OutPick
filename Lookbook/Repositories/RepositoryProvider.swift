@@ -30,6 +30,7 @@ final class RepositoryProvider {
     let postUserStateRepository: PostUserStateRepositoryProtocol
 
     // MARK: - Services
+    let brandStore: BrandStoringRepository
     let storageService: StorageServiceProtocol
     let thumbnailer: ImageThumbnailing
 
@@ -37,6 +38,7 @@ final class RepositoryProvider {
     /// - Important: 테스트에서는 Mock 구현체를 주입해 `RepositoryProvider` 인스턴스를 별도로 만들어 사용하세요.
     init(
         brandRepository: BrandRepositoryProtocol = FirestoreBrandRepository(),
+        brandStore: BrandStoringRepository = FirestoreBrandStore(),
         
         seasonRepository: SeasonRepositoryProtocol? = nil,
         seasonCoverThumbnailPolicy: ThumbnailPolicy = ThumbnailPolicies.seasonCover,
@@ -54,7 +56,7 @@ final class RepositoryProvider {
         postUserStateRepository: PostUserStateRepositoryProtocol = FirestorePostUserStateRepository(),
         
         storageService: StorageServiceProtocol = FirebaseStorageService(),
-        thumbnailer: ImageThumbnailing = ImageIOThumbnailer(),
+        thumbnailer: ImageThumbnailing = ImageIOThumbnailer()
     ) {
         self.storageService = storageService
         self.thumbnailer = thumbnailer
@@ -76,5 +78,6 @@ final class RepositoryProvider {
         // ✅ Provider가 season repo를 조립할 때 thumbnailer/policy를 공유 주입
         self.seasonRepository = seasonRepository ?? FirestoreSeasonRepository( storage: storageService, thumbnailer: thumbnailer, coverThumbnailPolicy: seasonCoverThumbnailPolicy)
         self.seasonCoverThumbnailPolicy = seasonCoverThumbnailPolicy
+        self.brandStore = brandStore
     }
 }

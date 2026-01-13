@@ -63,7 +63,10 @@ class CustomTabBarViewController: UIViewController {
             }
 
             let lookbookView =
-                LookbookHomeView(viewModel: container.lookbookHomeViewModel)
+                LookbookHomeView(
+                    viewModel: container.lookbookHomeViewModel,
+                    provider: container.provider
+                )
                     .environment(\.repositoryProvider, container.provider) // ✅ Environment로도 공급
 
             let hostingVC = UIHostingController(rootView: lookbookView)
