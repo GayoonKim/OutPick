@@ -48,39 +48,52 @@ final class FirestoreSeasonRepository: SeasonRepositoryProtocol {
 
         let seasonID = SeasonID(value: seasonRef.documentID)
 
-        // 2) (선택) 커버 업로드: 원본 + 썸네일
+        // 2) (선택) 커버 업로드: 원본(Data 그대로) + 썸네일(JPEG)
         var coverPath: String? = nil
+        var uploadedOriginalPath: String? = nil
+        var uploadedThumbPath: String? = nil
 
         if let coverImageData {
-            let originalPath = "brands/\(brandID.value)/seasons/\(seasonID.value)/cover.jpg"
-            let thumbPath = "brands/\(brandID.value)/seasons/\(seasonID.value)/cover_thumb.jpg"
+            // 한국어 주석: 원본은 확장자에 의존하지 않도록 고정 이름으로 저장합니다.
+            // (coverImageData가 JPEG/PNG/HEIC 등 어떤 포맷이든 그대로 업로드)
+            let originalPath = "brands/\(brandID.value)/seasons/\(seasonID.value)/cover"
+            let thumbPath = originalPath + "_thumb.jpg"
 
-            // 한국어 주석: 원본이 PNG/HEIC일 수 있으므로 JPEG로 통일
-            guard let uiImage = UIImage(data: coverImageData) else {
-                throw NSError(domain: "FirestoreSeasonRepository", code: -10, userInfo: [
-                    NSLocalizedDescriptionKey: "커버 이미지를 디코딩하지 못했습니다."
-                ])
+            // 한국어 주석: 썸네일은 가능하면 입력 Data에서 바로 생성하고,
+            // thumbnailer가 특정 포맷(JPEG 등)만 기대해 실패하는 경우에만 JPEG로 정규화 후 재시도합니다.
+            let thumbJPEG: Data
+            do {
+                thumbJPEG = try thumbnailer.makeThumbnailJPEGData(
+                    from: coverImageData,
+                    policy: coverThumbnailPolicy
+                )
+            } catch {
+                guard let uiImage = UIImage(data: coverImageData) else {
+                    throw NSError(domain: "FirestoreSeasonRepository", code: -10, userInfo: [
+                        NSLocalizedDescriptionKey: "커버 이미지를 디코딩하지 못했습니다."
+                    ])
+                }
+                guard let normalizedJPEG = uiImage.jpegData(compressionQuality: 0.95) else {
+                    throw NSError(domain: "FirestoreSeasonRepository", code: -11, userInfo: [
+                        NSLocalizedDescriptionKey: "커버 이미지를 JPEG로 변환하지 못했습니다."
+                    ])
+                }
+                thumbJPEG = try thumbnailer.makeThumbnailJPEGData(
+                    from: normalizedJPEG,
+                    policy: coverThumbnailPolicy
+                )
             }
 
-            // 한국어 주석: 원본 JPEG 생성(고품질)
-            guard let originalJPEG = uiImage.jpegData(compressionQuality: 0.95) else {
-                throw NSError(domain: "FirestoreSeasonRepository", code: -11, userInfo: [
-                    NSLocalizedDescriptionKey: "커버 이미지를 JPEG로 변환하지 못했습니다."
-                ])
-            }
+            // 한국어 주석: 업로드는 병렬로 수행합니다(네트워크 상황에 따라 체감 속도 개선).
+            async let originalUpload: String = storage.uploadImage(data: coverImageData, to: originalPath)
+            async let thumbUpload: String = storage.uploadImage(data: thumbJPEG, to: thumbPath)
 
-            // 한국어 주석: 주입된 thumbnailer + policy로 썸네일 생성
-            let thumbJPEG = try thumbnailer.makeThumbnailJPEGData(
-                from: originalJPEG,
-                policy: coverThumbnailPolicy
-            )
+            let (oPath, tPath) = try await (originalUpload, thumbUpload)
+            uploadedOriginalPath = oPath
+            uploadedThumbPath = tPath
 
-            // 한국어 주석: 업로드(원본 → 썸네일)
-            _ = try await storage.uploadImage(data: originalJPEG, to: originalPath)
-            _ = try await storage.uploadImage(data: thumbJPEG, to: thumbPath)
-
-            // 한국어 주석: Firestore에는 원본 경로만 저장(썸네일은 규칙으로 파생)
-            coverPath = originalPath
+            // 한국어 주석: Firestore에는 원본 경로만 저장(썸네일은 규칙으로 파생).
+            coverPath = tPath
         }
 
         // 3) 도메인 모델 생성
@@ -107,19 +120,11 @@ final class FirestoreSeasonRepository: SeasonRepositoryProtocol {
             return season
         } catch {
             // 5) Firestore 저장 실패 시 고아 파일 정리(원본 + 썸네일)
-            if let coverPath {
-                try? await storage.deleteFile(at: coverPath)
-
-                let thumbPath: String
-                if coverPath.hasSuffix("/cover.jpg") {
-                    thumbPath = coverPath.replacingOccurrences(of: "/cover.jpg", with: "/cover_thumb.jpg")
-                } else if coverPath.contains("/cover.") {
-                    thumbPath = coverPath.replacingOccurrences(of: "/cover.", with: "/cover_thumb.")
-                } else {
-                    thumbPath = coverPath + "_thumb"
-                }
-
-                try? await storage.deleteFile(at: thumbPath)
+            if let uploadedOriginalPath {
+                try? await storage.deleteFile(at: uploadedOriginalPath)
+            }
+            if let uploadedThumbPath {
+                try? await storage.deleteFile(at: uploadedThumbPath)
             }
             throw error
         }

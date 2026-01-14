@@ -83,6 +83,38 @@ final class FirebaseStorageService: StorageServiceProtocol {
             return results
         }
     }
+  
+    /// 여러 이미지를 지정된 경로 목록에 업로드하고 업로드된 스토리지 경로(path) 배열을 반환합니다.
+    ///
+    /// `datas`와 `paths`는 같은 개수여야 하며, 각 인덱스가 서로 대응됩니다.
+    /// 내부적으로 `TaskGroup`을 사용해 병렬 업로드를 수행하고, 반환 배열은 입력 순서를 유지합니다.
+    /// - Parameters:
+    ///   - datas: 업로드할 이미지 데이터 배열.
+    ///   - paths: 각 데이터가 업로드될 스토리지 경로 배열.
+    /// - Returns: 업로드된 자산의 스토리지 경로(path) 배열.
+    func uploadImages(_ datas: [Data], to paths: [String]) async throws -> [String] {
+        guard datas.count == paths.count else {
+            throw LookbookStorageError.invalidInput
+        }
+
+        return try await withThrowingTaskGroup(of: (Int, String).self) { group in
+            for index in 0..<datas.count {
+                let data = datas[index]
+                let path = paths[index]
+                group.addTask {
+                    let uploadedPath = try await self.uploadImage(data: data, to: path)
+                    return (index, uploadedPath)
+                }
+            }
+
+            // 한국어 주석: 입력 순서 보장을 위해 인덱스 기반으로 결과를 채웁니다.
+            var results = Array(repeating: "", count: datas.count)
+            for try await (index, path) in group {
+                results[index] = path
+            }
+            return results
+        }
+    }
     
     // MARK: - 다운로드 관련 메서드
     
@@ -228,6 +260,7 @@ final class FirebaseStorageService: StorageServiceProtocol {
 
 /// Firebase API가 데이터도 오류도 반환하지 않을 때 사용되는 단순 오류 타입입니다.
 private enum LookbookStorageError: Error {
+    case invalidInput
     case unknown
     case imageDecodingFailed
 }

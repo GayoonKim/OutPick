@@ -42,7 +42,7 @@ struct PhotoPicker: UIViewControllerRepresentable {
                 return
             }
 
-            // 한국어 주석: 이미지 데이터를 바로 받아옵니다.
+            // 이미지 데이터를 바로 받아옵니다.
             if itemProvider.canLoadObject(ofClass: UIImage.self) {
                 itemProvider.loadObject(ofClass: UIImage.self) { object, _ in
                     let image = object as? UIImage
