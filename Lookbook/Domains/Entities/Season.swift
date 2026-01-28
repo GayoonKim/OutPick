@@ -75,18 +75,16 @@ struct Season: Equatable, Codable, Identifiable {
     /// 커버 썸네일 Storage 경로(path)
     /// - Note: 스키마 변경 없이 coverPath 규칙으로 파생합니다.
     var coverThumbPath: String? {
-        guard let coverPath else { return nil }
+        guard let coverPath, !coverPath.isEmpty else { return nil }
 
-        // 한국어 주석: cover.jpg → cover_thumb.jpg 규칙
-        if coverPath.hasSuffix("/cover.jpg") {
-            return coverPath.replacingOccurrences(of: "/cover.jpg", with: "/cover_thumb.jpg")
+        // 이미 썸네일이면 그대로 반환
+        if coverPath.contains("_thumb") { return coverPath }
+
+        // 아니면 썸네일 규칙으로 변환
+        // 예: ".../cover.jpg" -> ".../cover_thumb.jpg"
+        if coverPath.hasSuffix(".jpg") {
+            return coverPath.replacingOccurrences(of: ".jpg", with: "_thumb.jpg")
         }
-
-        // 한국어 주석: 다른 확장자 방어
-        if coverPath.contains("/cover.") {
-            return coverPath.replacingOccurrences(of: "/cover.", with: "/cover_thumb.")
-        }
-
         return coverPath + "_thumb"
     }
 

@@ -11,10 +11,14 @@ import UIKit
 final class BrandLogoImageStore: ImageLoading {
 
     private let cache: ImageCaching
-    private let storage: FirebaseStorageService
+    private let storage: StorageServiceProtocol
 
     /// Swift Concurrency 환경에서 안전하게 in-flight 작업을 관리하기 위한 레지스트리
     private let inFlightRegistry = InFlightRegistry()
+
+    private enum BrandLogoImageStoreError: Error {
+        case invalidImageData
+    }
 
     /// 동일 키에 대한 동시 요청을 하나의 Task로 합치기 위한 Actor
     private actor InFlightRegistry {
@@ -32,7 +36,10 @@ final class BrandLogoImageStore: ImageLoading {
         }
     }
 
-    init(cache: ImageCaching = MemoryImageCache(), storage: FirebaseStorageService = FirebaseStorageService() ) {
+    init(
+        cache: ImageCaching = MemoryImageCache(),
+        storage: StorageServiceProtocol = FirebaseStorageService()
+    ) {
         self.cache = cache
         self.storage = storage
     }
@@ -51,7 +58,11 @@ final class BrandLogoImageStore: ImageLoading {
                     Task { await registry.remove(cacheKey) }
                 }
 
-                let image = try await storage.downloadUIImage(from: path, maxSize: maxBytes)
+                let data = try await storage.downloadImage(from: path, maxSize: maxBytes)
+                guard let image = UIImage(data: data) else {
+                    throw BrandLogoImageStoreError.invalidImageData
+                }
+
                 cache.setImage(image, forKey: cacheKey)
                 return image
             }

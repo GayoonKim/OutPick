@@ -7,16 +7,13 @@
 
 import SwiftUI
 
-/// 브랜드 상세: 현재는 헤더(로고/이름/좋아요/분리선)만 보여줍니다.
 struct BrandDetailView: View {
     let brand: Brand
     let imageLoader: any ImageLoading
-
-    /// ViewModel의 thumbMaxBytes와 동일 값으로 맞추는 게 가장 좋습니다.
-    /// - 지금은 기본값을 두되, 필요하면 호출부에서 주입하세요.
     let maxBytes: Int
 
     @Environment(\.repositoryProvider) private var provider
+    @StateObject private var viewModel = BrandDetailViewModel()
     @State private var isPresentCreateSeason: Bool = false
 
     init(
@@ -36,7 +33,17 @@ struct BrandDetailView: View {
                 imageLoader: imageLoader,
                 maxBytes: maxBytes
             )
-            .listRowInsets(EdgeInsets())   // 이미지가 좌우 끝까지 붙게
+            .listRowInsets(EdgeInsets())
+            .listRowSeparator(.hidden)
+
+            BrandDetailSeasonsGridView(
+                seasons: viewModel.seasons,
+                isLoading: viewModel.isLoading,
+                errorMessage: viewModel.errorMessage,
+                imageLoader: imageLoader,
+                maxBytes: maxBytes
+            )
+            .listRowInsets(EdgeInsets())
             .listRowSeparator(.hidden)
         }
         .listStyle(.plain)
@@ -52,7 +59,14 @@ struct BrandDetailView: View {
                 .accessibilityLabel("시즌 추가")
             }
         }
-        .sheet(isPresented: $isPresentCreateSeason) {
+        .sheet(isPresented: $isPresentCreateSeason, onDismiss: {
+            Task {
+                await viewModel.refreshSeasons(
+                    brandID: brand.id,
+                    seasonRepository: provider.seasonRepository
+                )
+            }
+        }) {
             CreateSeasonView(
                 viewModel: CreateSeasonViewModel(
                     brandID: brand.id,
@@ -63,6 +77,11 @@ struct BrandDetailView: View {
                 )
             )
         }
-
+        .task {
+            await viewModel.loadSeasonsIfNeeded(
+                brandID: brand.id,
+                seasonRepository: provider.seasonRepository
+            )
+        }
     }
 }
