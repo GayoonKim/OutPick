@@ -73,10 +73,14 @@ class SocketIOManager {
     private var roomSubjects = [String: PassthroughSubject<ChatMessage, Never>]()
     private var subscriberCounts = [String: Int]() // 구독자 ref count
     
+    // https://outpick-socket-715386497547.asia-northeast3.run.app - Cloud Run
     private init() {
-        manager = SocketManager(socketURL: URL(string: "http://192.168.123.175:3000")!, config: [
+        manager = SocketManager(socketURL: URL(string: "https://outpick-socket-715386497547.asia-northeast3.run.app")!, config: [
             .log(true),
             .compress,
+            // 한국어 주석: 서버가 WebSocket only(transports:['websocket'])로 동작하므로 클라이언트도 폴링을 비활성화
+            .forceWebsockets(true),
+            .forcePolling(false),
             .connectParams(["clientKey": SocketIOManager.clientKey, "email": LoginManager.shared.getUserEmail]),
             .reconnects(false) // 수동 재연결을 사용(라이브러리 자동 재연결 비활성화)
         ])
