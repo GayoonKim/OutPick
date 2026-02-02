@@ -9,7 +9,6 @@ import UIKit
 import KakaoSDKCommon
 import KakaoSDKAuth
 import KakaoSDKUser
-import CoreLocation
 import FirebaseAuth
 import Combine
 
@@ -23,12 +22,6 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     /// 로그인 성공 후 룩북(브랜드/로고) 프리로드를 위한 앱 전역 컨테이너
     private var appContainer: AppContainer?
 
-    private let locationManager = CLLocationManager()
-    private var cancellables = Set<AnyCancellable>()
-
-    private var isUITest: Bool {
-        return ProcessInfo.processInfo.environment["UITEST"] == "1"
-    }
 
     func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
         if let url = URLContexts.first?.url {
@@ -39,74 +32,60 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
-        print("1. scene 메서드 시작")
+        guard let windowScene = (scene as? UIWindowScene) else { return }
 
-        guard let _ = (scene as? UIWindowScene) else { return }
-
-        // ✅ UITest 환경이면 조기 리턴
-        if isUITest {
-            print("🚨 UITest 환경: 강제 종료/실제 로그인 로직 건너뜀")
-            let storyboard = UIStoryboard(name: "Main", bundle: nil)
-            let vc = storyboard.instantiateViewController(withIdentifier: "LoginVC")
-            self.window?.rootViewController = vc
-            self.window?.makeKeyAndVisible()
-            return
+        // window를 직접 생성/보관해야 시스템이 기본 storyboard root를 자동으로 띄우지 않음
+        // (그렇지 않으면 CustomTabBarViewController가 SceneDelegate 주입 없이 먼저 로드되어 container nil 크래시 발생 가능)
+        if self.window == nil {
+            self.window = UIWindow(windowScene: windowScene)
         }
 
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.window?.overrideUserInterfaceStyle = .light
-
-            // 초기 화면을 로딩 화면으로 설정
-            let storyboard = UIStoryboard(name: "LaunchScreen", bundle: nil)
-            let initialViewController = storyboard.instantiateViewController(withIdentifier: "LaunchScreen")
-            self.window?.rootViewController = initialViewController
-            self.window?.makeKeyAndVisible()
-        }
-
-        // 날씨 업데이트 시작
-        WeatherAPIManager.shared.startLocationUpdates()
-        print("1. WeatherAPIManager 시작")
+        // 초기 화면(로딩 화면)을 즉시 세팅 (window가 준비된 뒤에 root를 설정)
+        self.window?.overrideUserInterfaceStyle = .light
+        let storyboard = UIStoryboard(name: "LaunchScreen", bundle: nil)
+        let initialViewController = storyboard.instantiateViewController(withIdentifier: "LaunchScreen")
+        self.window?.rootViewController = initialViewController
+        self.window?.makeKeyAndVisible()
 
         print("2. DispatchQueue 시작 전")
 
         DispatchQueue.global(qos: .userInitiated).async {
-            print("3. DispatchQueue 내부 시작")
+            print("DispatchQueue 내부 시작")
 
             let group = DispatchGroup()
             var isLoggedIn = false
 
             // 구글 로그인 확인
-            print("4. 구글 로그인 체크 시작")
+            print("구글 로그인 체크 시작")
             group.enter()
             self.checkGoogleLogin { success in
-                print("5. 구글 로그인 체크 완료: \(success)")
+                print("구글 로그인 체크 완료: \(success)")
                 isLoggedIn = success
                 group.leave()
             }
 
             // 카카오 로그인 확인
-            print("6. 카카오 로그인 체크 시작")
+            print("카카오 로그인 체크 시작")
             group.enter()
             self.checkKakaoLogin { success in
-                print("7. 카카오 로그인 체크 완료: \(success)")
+                print("카카오 로그인 체크 완료: \(success)")
                 if success {
                     isLoggedIn = true
                 }
                 group.leave()
             }
 
-            print("8. notify 설정 전")
+            print("notify 설정 전")
             group.notify(queue: .main) {
-                print("9. notify 내부 실행")
+                print("notify 내부 실행")
                 if isLoggedIn {
-                    print("10. 로그인 됨")
+                    print("로그인 됨")
                     Task {
                         do {
                             // 1️⃣ 프로필 기반 초기 화면 결정
                             let screen = try await LoginManager.shared.makeInitialViewController()
 
-                            // ✅ 로그인 성공 후 룩북 프리로드를 위해 AppContainer를 단일 인스턴스로 유지
+                            // 로그인 성공 후 룩북 프리로드를 위해 AppContainer를 단일 인스턴스로 유지
                             let container: AppContainer = await MainActor.run {
                                 if self.appContainer == nil {
                                     self.appContainer = AppContainer(provider: self.repositoryProvider)
@@ -163,8 +142,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                         }
                     }
                 } else {
-                    print("11. 로그인 안 됨")
-                    self.showLoginViewController()
+                    print("로그인 안 됨")
+                    self.showLoginViewController(windowScene: windowScene)
                 }
             }
         }
@@ -219,19 +198,26 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
     }
 
-    private func showLoginViewController() {
+    private func showLoginViewController(windowScene: UIWindowScene) {
+        // window가 없을 수 있는 경로 대비
+        if self.window == nil {
+            self.window = UIWindow(windowScene: windowScene)
+        }
+
         let mainStoryboard = UIStoryboard(name: "Main", bundle: nil)
         let loginViewController = mainStoryboard.instantiateViewController(withIdentifier: "LoginVC")
 
         self.window?.rootViewController = loginViewController
         self.window?.makeKeyAndVisible()
     }
-    
+
     /// CustomTabBarViewController(또는 이를 root로 가진 NavigationController)에 AppContainer를 주입하고,
     /// 주입 후에는 view를 미리 로드해 container nil 타이밍 이슈를 방지합니다.
     @MainActor
     private func injectAppContainer(_ container: AppContainer, into screen: UIViewController) {
+        
         if let tab = screen as? CustomTabBarViewController {
+            print("Injecting into:", ObjectIdentifier(tab))
             tab.container = container
             // 주입 후 view를 미리 로드하여 viewDidLoad 시점에 container가 nil이 되지 않도록 보장
             tab.loadViewIfNeeded()
@@ -248,5 +234,3 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
     }
 }
-
-

@@ -28,7 +28,7 @@ class CustomTabBarViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-
+        print("CustomTabBar instance:", ObjectIdentifier(self))
         // ✅ container 주입 강제(디버그에서 즉시 확인)
         assert(container != nil, "CustomTabBarViewController.container가 주입되지 않았습니다. SceneDelegate에서 주입 후 표시해주세요.")
 
@@ -39,24 +39,21 @@ class CustomTabBarViewController: UIViewController {
     func viewController(_ index: Int) -> UIViewController {
         switch index {
         case 0:
-            // Weather tab
-            let weatherVC = HomeCollectionViewController(collectionViewLayout: UICollectionViewFlowLayout())
-            let nav = UINavigationController(rootViewController: weatherVC)
-            nav.isNavigationBarHidden = true
-            return nav
-        case 1:
-            // Chat list tab
+            // 메인 탭: 오픈채팅 목록
             let listVC = RoomListsCollectionViewController(collectionViewLayout: UICollectionViewFlowLayout())
             let nav = UINavigationController(rootViewController: listVC)
             nav.isNavigationBarHidden = true
             return nav
-        case 2:
+
+        case 1:
+            // 참여중인 오픈채팅 목록
             let joinedListVC = JoinedRoomsViewController()
             let nav = UINavigationController(rootViewController: joinedListVC)
             nav.isNavigationBarHidden = true
             return nav
-        case 3:
-            // Lookbook tab (SwiftUI)
+
+        case 2:
+            // 룩북 탭 (SwiftUI)
             guard let container else {
                 assertionFailure("Lookbook 탭 생성 시점에 container가 nil 입니다. 주입 흐름을 확인해주세요.")
                 return UINavigationController(rootViewController: UIViewController())
@@ -73,8 +70,9 @@ class CustomTabBarViewController: UIViewController {
             let nav = UINavigationController(rootViewController: hostingVC)
             nav.isNavigationBarHidden = true
             return nav
-        case 4:
-            // Settings tab
+
+        case 3:
+            // 내 설정 탭
             let myPageVC = MyPageViewController()
             let nav = UINavigationController(rootViewController: myPageVC)
             nav.isNavigationBarHidden = true
@@ -178,8 +176,8 @@ class CustomTabBarViewController: UIViewController {
         invalidateAllTabCaches(reloadVisibleTab: reloadVisibleTab)
     }
 
-    /// 외부에서 Lookbook 탭(3)만 강제로 새로 만들고 싶을 때 호출
+    /// 외부에서 Lookbook 탭(2)만 강제로 새로 만들고 싶을 때 호출
     func invalidateLookbookTabCache(reloadIfVisible: Bool = true) {
-        invalidateTabCache(index: 3, reloadIfVisible: reloadIfVisible)
+        invalidateTabCache(index: 2, reloadIfVisible: reloadIfVisible)
     }
 }

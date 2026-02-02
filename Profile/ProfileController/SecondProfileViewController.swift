@@ -242,8 +242,17 @@ class SecondProfileViewController: UIViewController {
                 LoginManager.shared.setCurrentUserProfile(self.userProfile)
                 
                 // 3) 낙관적 전환: 홈으로 이동 (UI는 메인 스레드)
+                // ⚠️ 주의: CustomTabBarViewController는 AppContainer 주입이 필수(주입 없이 진입하면 assertion 발생)
+                let container = AppContainer(provider: .shared)
+
                 await MainActor.run {
                     let rootVC = CustomTabBarViewController()
+                    rootVC.container = container
+                    // 한국어 주석: container 주입 후 viewDidLoad 타이밍 이슈를 피하려고 미리 로드
+                    rootVC.loadViewIfNeeded()
+                    // 한국어 주석: 룩북 탭이 있을 경우 초기 캐시 상태를 안전하게 리셋
+                    rootVC.invalidateLookbookTabCache(reloadIfVisible: false)
+
                     if let window = self.view.window {
                         window.rootViewController = rootVC
                         window.makeKeyAndVisible()
@@ -253,6 +262,15 @@ class SecondProfileViewController: UIViewController {
                         window.makeKeyAndVisible()
                     }
                 }
+
+                // 3-1) 홈 진입 직후 필요한 초기화(백그라운드에서 병렬 진행)
+                // 한국어 주석: 신규 유저는 joinedRooms가 비어있을 수 있어도 소켓/핫룸/룩북 프리로드는 수행
+                await MainActor.run {
+                    container.preloadLookbook()
+                }
+                FirebaseManager.shared.listenToUserProfile(email: LoginManager.shared.getUserEmail)
+                async let _ = SocketIOManager.shared.establishConnection()
+                async let _ = FirebaseManager.shared.fetchTopRoomsPage(limit: 30)
                 
                 // 4) 백그라운드 저장들(동시에 진행)
                 async let saveProfileTask: () = FirebaseManager.shared.saveUserProfileToFirestore(email: email)
