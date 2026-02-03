@@ -25,18 +25,19 @@ final class AppCoordinator {
             object: nil
         )
     }
-
+    
+    @MainActor
     func start(windowScene: UIWindowScene) {
         self.currentWindowScene = windowScene
-
-        // 필요하면 Launch 표시
-        // showLaunchScreen()
+        
+        setRoot(BootLoadingViewController(), animated: true)
 
         Task { [weak self] in
             guard let self else { return }
 
             let ok = await LoginManager.shared.checkExistingLogin()
             if ok {
+
                 await self.routeAfterAuthenticated(windowScene: windowScene)
             } else {
                 await MainActor.run { self.showLogin(windowScene: windowScene) }
@@ -56,7 +57,9 @@ final class AppCoordinator {
             catch {
                 print("updateLogDevID 실패: \(error)")
             }
-
+            
+            print(#function, "로그인 성공")
+            
             await MainActor.run { self.showMainTab() }
 
         case .failure:
@@ -87,11 +90,13 @@ final class AppCoordinator {
 
         let nav = UINavigationController(rootViewController: loginVC)
         nav.isNavigationBarHidden = true
-        setRoot(nav)
+        setRoot(nav, animated: true)
     }
 
     @MainActor
     private func showMainTab() {
+        print(#function, "메인 탭 바 보여주기 시작")
+        
         if lookbookContainer == nil {
             lookbookContainer = LookbookContainer(provider: provider)
         }
@@ -101,7 +106,7 @@ final class AppCoordinator {
         tab.container = container
         tab.loadViewIfNeeded()
 
-        setRoot(tab)
+        setRoot(tab, animated: true)
     }
 
     @MainActor
@@ -109,18 +114,19 @@ final class AppCoordinator {
         // 아직 Profile이 storyboard 기반이면 임시 유지
         let sb = UIStoryboard(name: "Main", bundle: nil)
         let profileNav = sb.instantiateViewController(withIdentifier: "ProfileNav")
-        setRoot(profileNav)
+        setRoot(profileNav, animated: true)
     }
 
     @MainActor
-    private func setRoot(_ root: UIViewController) {
-        UIView.transition(
-            with: window,
-            duration: 0.25,
-            options: .transitionCrossDissolve,
-            animations: { self.window.rootViewController = root },
-            completion: nil
-        )
-        window.makeKeyAndVisible()
+    func setRoot(_ vc: UIViewController, animated: Bool) {
+        if animated {
+            UIView.transition(with: window, duration: 0.2, options: .transitionCrossDissolve) {
+                self.window.rootViewController = vc
+            }
+        } else {
+            self.window.rootViewController = vc
+        }
+
+        self.window.makeKeyAndVisible()
     }
 }
