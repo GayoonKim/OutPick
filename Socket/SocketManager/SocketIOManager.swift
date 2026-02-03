@@ -75,7 +75,7 @@ class SocketIOManager {
     
     // https://outpick-socket-715386497547.asia-northeast3.run.app - Cloud Run
     private init() {
-        manager = SocketManager(socketURL: URL(string: "https://outpick-socket-715386497547.asia-northeast3.run.app")!, config: [
+        manager = SocketManager(socketURL: URL(string: "http://192.168.123.192:3000")!, config: [
             .log(true),
             .compress,
             // 한국어 주석: 서버가 WebSocket only(transports:['websocket'])로 동작하므로 클라이언트도 폴링을 비활성화

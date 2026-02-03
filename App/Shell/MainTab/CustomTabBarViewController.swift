@@ -7,9 +7,8 @@
 
 import UIKit
 import Combine
-import SwiftUI
 
-class CustomTabBarViewController: UIViewController {
+final class CustomTabBarViewController: UIViewController {
 
     private let customTabBar = CustomTabBarView()
     private var currentChildViewController: UIViewController?
@@ -17,67 +16,32 @@ class CustomTabBarViewController: UIViewController {
     private var tabViewControllers: [Int: UIViewController] = [:]
     private var cancellables = Set<AnyCancellable>()
 
-    /// 앱 전역 의존성 컨테이너 (SceneDelegate 등에서 주입해야 합니다)
-    var container: LookbookContainer? {
+    /// 탭 화면 생성 책임을 외부(CompositionRoot/Coordinator)로 위임하기 위한 빌더
+    /// - Note: 빌더가 바뀌면(로그아웃/재로그인, 의존성 교체 등) 캐시를 무효화합니다.
+    var tabBuilder: (any MainTabBuilding)? {
         didSet {
-            // 컨테이너가 바뀌면 탭 캐시를 전부 무효화하여(로그아웃/재로그인 등) 의존성 갱신을 확실히 반영
-            guard oldValue !== container else { return }
+            // 빌더가 바뀌면 각 탭의 조립 방식이 바뀔 수 있으므로 캐시 무효화
             invalidateAllTabCaches(reloadVisibleTab: true)
         }
     }
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        self.view.backgroundColor = .systemBackground
-        
+        view.backgroundColor = .systemBackground
+
+        if tabBuilder == nil {
+            assertionFailure("CustomTabBarViewController.tabBuilder가 nil 입니다. AppCoordinator/CompositionRoot에서 주입해주세요.")
+        }
+
         setupCustomTabBar()
     }
 
     func viewController(_ index: Int) -> UIViewController {
-        switch index {
-        case 0:
-            // 메인 탭: 오픈채팅 목록
-            let listVC = RoomListsCollectionViewController(collectionViewLayout: UICollectionViewFlowLayout())
-            let nav = UINavigationController(rootViewController: listVC)
-            nav.isNavigationBarHidden = true
-            return nav
-
-        case 1:
-            // 참여중인 오픈채팅 목록
-            let joinedListVC = JoinedRoomsViewController()
-            let nav = UINavigationController(rootViewController: joinedListVC)
-            nav.isNavigationBarHidden = true
-            return nav
-
-        case 2:
-            // 룩북 탭 (SwiftUI)
-            guard let container else {
-                assertionFailure("Lookbook 탭 생성 시점에 container가 nil 입니다. 주입 흐름을 확인해주세요.")
-                return UINavigationController(rootViewController: UIViewController())
-            }
-
-            let lookbookView =
-                LookbookHomeView(
-                    viewModel: container.lookbookHomeViewModel,
-                    provider: container.provider
-                )
-                    .environment(\.repositoryProvider, container.provider) // ✅ Environment로도 공급
-
-            let hostingVC = UIHostingController(rootView: lookbookView)
-            let nav = UINavigationController(rootViewController: hostingVC)
-            nav.isNavigationBarHidden = true
-            return nav
-
-        case 3:
-            // 내 설정 탭
-            let myPageVC = MyPageViewController()
-            let nav = UINavigationController(rootViewController: myPageVC)
-            nav.isNavigationBarHidden = true
-            return nav
-
-        default:
+        guard let tabBuilder else {
+            assertionFailure("CustomTabBarViewController.tabBuilder가 nil 입니다. AppCoordinator/CompositionRoot에서 주입해주세요.")
             return UINavigationController(rootViewController: UIViewController())
         }
+        return tabBuilder.makeViewController(for: index)
     }
 
     @MainActor
@@ -92,27 +56,32 @@ class CustomTabBarViewController: UIViewController {
             customTabBar.heightAnchor.constraint(equalToConstant: 60),
         ])
 
+        // 기본 탭 선택(0)
         customTabBar.updateButtonStates(0)
         switchScreen(0)
 
+        // 탭 선택 이벤트 구독
         customTabBar.tabSelected
             .receive(on: DispatchQueue.main)
             .sink { [weak self] index in
-                guard let self = self else { return }
+                guard let self else { return }
                 self.switchScreen(index)
             }
             .store(in: &cancellables)
     }
 
     func switchScreen(_ index: Int) {
+        // 같은 탭 재선택이면 아무 것도 하지 않음
         if currentTabIndex == index { return }
 
+        // 기존 child 제거
         if let current = currentChildViewController {
             current.willMove(toParent: nil)
             current.view.removeFromSuperview()
             current.removeFromParent()
         }
 
+        // 캐시가 있으면 재사용, 없으면 생성 후 캐시
         let vc: UIViewController
         if let cached = tabViewControllers[index] {
             vc = cached
@@ -121,6 +90,7 @@ class CustomTabBarViewController: UIViewController {
             tabViewControllers[index] = vc
         }
 
+        // 새 child 추가
         addChild(vc)
         view.insertSubview(vc.view, belowSubview: customTabBar)
         vc.view.translatesAutoresizingMaskIntoConstraints = false
@@ -144,10 +114,9 @@ class CustomTabBarViewController: UIViewController {
     private func invalidateAllTabCaches(reloadVisibleTab: Bool) {
         tabViewControllers.removeAll()
 
-        // 현재 화면을 보고 있다면, 같은 탭 인덱스로 즉시 다시 생성해서 교체
         if reloadVisibleTab {
             let targetIndex = currentTabIndex ?? 0
-            // switchScreen은 같은 인덱스면 early-return 하므로, 강제로 다시 전환되게 만듭니다.
+            // 한국어 주석: switchScreen이 같은 인덱스면 early-return 하므로 강제로 다시 전환되게 함
             currentTabIndex = nil
             switchScreen(targetIndex)
         }
@@ -160,21 +129,16 @@ class CustomTabBarViewController: UIViewController {
     private func invalidateTabCache(index: Int, reloadIfVisible: Bool) {
         tabViewControllers[index] = nil
 
-        // 현재 보고 있는 탭이면 즉시 재생성하여 교체
         if reloadIfVisible, currentTabIndex == index {
-            // switchScreen은 같은 인덱스면 early-return 하므로, 강제로 다시 전환되게 만듭니다.
+            // switchScreen이 같은 인덱스면 early-return 하므로 강제로 다시 전환되게 함
             currentTabIndex = nil
             switchScreen(index)
         }
     }
 
-    /// 외부(로그아웃/재로그인 등)에서 탭 캐시를 전부 새로 만들고 싶을 때 호출
+    // MARK: - Public API (외부에서 캐시 제어)
+
     func invalidateAllTabsCache(reloadVisibleTab: Bool = true) {
         invalidateAllTabCaches(reloadVisibleTab: reloadVisibleTab)
-    }
-
-    /// 외부에서 Lookbook 탭(2)만 강제로 새로 만들고 싶을 때 호출
-    func invalidateLookbookTabCache(reloadIfVisible: Bool = true) {
-        invalidateTabCache(index: 2, reloadIfVisible: reloadIfVisible)
     }
 }

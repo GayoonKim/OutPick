@@ -69,7 +69,7 @@ final class LookbookRepositoryProvider {
         self.thumbnailer = thumbnailer
         self.imageCache = imageCache
 
-        // ✅ provider가 가진 cache/storage를 그대로 사용
+        // provider가 가진 cache/storage를 그대로 사용
         self.brandLogoImageLoader = brandLogoImageLoader
             ?? BrandLogoImageStore(cache: imageCache, storage: storageService)
 
@@ -84,7 +84,7 @@ final class LookbookRepositoryProvider {
         self.replacementRepository = replacementRepository
         self.postUserStateRepository = postUserStateRepository
 
-        // ✅ Provider가 season repo를 조립할 때 thumbnailer/policy를 공유 주입
+        // Provider가 season repo를 조립할 때 thumbnailer/policy를 공유 주입
         self.seasonRepository = seasonRepository
             ?? FirestoreSeasonRepository(
                 storage: storageService,

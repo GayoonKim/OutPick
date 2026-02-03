@@ -9,8 +9,8 @@ import UIKit
 
 extension LoginManager: LoginBootstrappingProtocol {
 
-    /// ✅ 초기화만 담당 (화면 생성/라우팅 X)
-    /// - 호출 위치: AppCoordinator에서 Main(Tab) 라우팅 직후
+    /// 초기화만 담당
+    /// 호출 위치: AppCoordinator에서 Main(Tab) 라우팅 직후
     func bootstrapAfterLogin(userEmail: String) async throws {
         // 0) 세션 이메일 확정
         setUserEmail(userEmail)

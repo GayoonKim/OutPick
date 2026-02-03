@@ -5,12 +5,20 @@
 //  Created by 김가윤 on 8/6/24.
 //
 
+
 import UIKit
 import PhotosUI
 import FirebaseFirestore
 import FirebaseStorage
 import FirebaseAuth
 import KakaoSDKUser
+
+// MARK: - Notifications
+
+extension Notification.Name {
+    /// 프로필 생성/저장 완료 후, AppCoordinator가 메인 탭으로 라우팅하도록 알리는 노티
+    static let outpickProfileCompleted = Notification.Name("OutPick.profileCompleted")
+}
 
 class SecondProfileViewController: UIViewController {
     
@@ -42,6 +50,10 @@ class SecondProfileViewController: UIViewController {
     var userProfile = UserProfile(email: nil, nickname: nil, gender: nil, birthdate: nil, thumbPath: nil, originalPath: nil, joinedRooms: [])
     
     var profileImage: MediaManager.ImagePair?
+
+    /// 프로필 저장 완료 후 라우팅(예: 메인 탭 표시)을 외부에서 주입받기 위한 콜백
+    /// - Note: 주입이 없으면 Notification으로 fallback 합니다.
+    var onProfileCompleted: (() -> Void)?
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -268,32 +280,20 @@ class SecondProfileViewController: UIViewController {
                 
                 LoginManager.shared.setCurrentUserProfile(self.userProfile)
                 
-                var container: LookbookContainer!
-
                 await MainActor.run {
-                    container = LookbookContainer(provider: .shared)
-                    let rootVC = CustomTabBarViewController()
-                    rootVC.container = container
-                    // 한국어 주석: container 주입 후 viewDidLoad 타이밍 이슈를 피하려고 미리 로드
-                    rootVC.loadViewIfNeeded()
-                    // 한국어 주석: 룩북 탭이 있을 경우 초기 캐시 상태를 안전하게 리셋
-                    rootVC.invalidateLookbookTabCache(reloadIfVisible: false)
+                    // 한국어 주석: 로딩 인디케이터 종료 후, AppCoordinator/Coordinator에게 라우팅을 위임
+                    LoadingIndicator.shared.stop()
 
-                    if let window = self.view.window {
-                        window.rootViewController = rootVC
-                        window.makeKeyAndVisible()
-                    } else if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                              let window = windowScene.windows.first {
-                        window.rootViewController = rootVC
-                        window.makeKeyAndVisible()
+                    if let onProfileCompleted {
+                        onProfileCompleted()
+                    } else {
+                        // 한국어 주석: 주입이 없는 경우 Notification으로 fallback
+                        NotificationCenter.default.post(name: .outpickProfileCompleted, object: nil)
                     }
                 }
 
                 // 3-1) 홈 진입 직후 필요한 초기화(백그라운드에서 병렬 진행)
                 // 한국어 주석: 신규 유저는 joinedRooms가 비어있을 수 있어도 소켓/핫룸/룩북 프리로드는 수행
-                await MainActor.run {
-                    container.preloadLookbook()
-                }
                 FirebaseManager.shared.listenToUserProfile(email: LoginManager.shared.getUserEmail)
                 async let _ = SocketIOManager.shared.establishConnection()
                 async let _ = FirebaseManager.shared.fetchTopRoomsPage(limit: 30)
