@@ -17,11 +17,11 @@ struct LookbookHomeView: View {
     @StateObject private var viewModel: LookbookHomeViewModel
     @State private var selectedBrandID: Brand.ID?
     @State private var isPresentingCreateBrand = false
-    private let provider: RepositoryProvider
+    private let provider: LookbookRepositoryProvider
 
     /// SceneDelegate/AppContainer에서 동일 인스턴스를 주입하면
     /// 룩북 탭 진입 시 “이미 로딩된 것처럼” 보이는 UX를 만들 수 있습니다.
-    init(viewModel: LookbookHomeViewModel, provider: RepositoryProvider) {
+    init(viewModel: LookbookHomeViewModel, provider: LookbookRepositoryProvider) {
         self.provider = provider
         _viewModel = StateObject(wrappedValue: viewModel)
     }
@@ -111,12 +111,12 @@ struct LookbookHomeView: View {
 }
 
 #Preview {
-    let provider = RepositoryProvider.shared
+    let provider = LookbookRepositoryProvider.shared
     let vm = LookbookHomeViewModel(
         repo: provider.brandRepository,
         imageLoader: BrandLogoImageStore(),
         initialBrandLimit: 20,
         prefetchLogoCount: 12
     )
-    return LookbookHomeView(viewModel: vm, provider: provider)
+    LookbookHomeView(viewModel: vm, provider: provider)
 }

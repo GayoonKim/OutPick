@@ -13,6 +13,9 @@ import GoogleSignIn
 
 class MyPageViewController: UIViewController {
     
+    // 한국어 주석: 로그아웃 과정에서 여러 콜백이 동시에 돌아도 로그인 화면 전환은 1번만 수행
+    private var didRouteToLogin = false
+
     private lazy var customNavigationBar: CustomNavigationBarView = {
         let customNavigationBar = CustomNavigationBarView()
         customNavigationBar.translatesAutoresizingMaskIntoConstraints = false
@@ -175,46 +178,75 @@ class MyPageViewController: UIViewController {
         }
     }
     
-    func goToLoginScreen() {
-        let mainStoryboard = UIStoryboard(name: "Main", bundle: nil)
-        let loginViewController = mainStoryboard.instantiateViewController(withIdentifier: "LoginVC")
-        self.view.window?.rootViewController = loginViewController
-        self.view.window?.makeKeyAndVisible()
+    @MainActor
+    private func goToLoginScreen() {
+        // 한국어 주석: CompositionRoot로 로그인 화면을 생성 (LoginViewController는 viewModel 주입 필요)
+        let loginViewController = LoginCompositionRoot.makeLoginViewController(
+            onLoginSuccess: { email in
+                // 로그인 성공 후에는 AppCoordinator가 다시 라우팅하도록 설계하는 것이 이상적이지만,
+                // 이 VC는 현재 root를 직접 바꾸는 레거시 경로이므로 최소한 이메일만 세션에 저장합니다.
+                LoginManager.shared.setUserEmail(email)
+            }
+        )
+
+        let nav = UINavigationController(rootViewController: loginViewController)
+        nav.isNavigationBarHidden = true
+
+        // 한국어 주석: 기존 화면들이 남아있지 않도록 root 교체
+        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let window = scene.windows.first
+        else { return }
+
+        window.rootViewController = nav
+        window.makeKeyAndVisible()
+    }
+
+    private func routeToLoginOnce() {
+        // 한국어 주석: 구글/카카오 콜백이 각각 호출돼도 1회만 이동
+        guard !didRouteToLogin else { return }
+        didRouteToLogin = true
+        Task { @MainActor in
+            self.goToLoginScreen()
+        }
     }
     
     private func logOutBtnTapped(_ sender: UIButton) {
         KeychainManager.shared.delete(service: "GayoonKim.OutPick", account: "UserProfile")
-        
-        LoginManager.shared.getGoogleEmail { result in
-            if result {
-                do {
-                    try Auth.auth().signOut()
-                    GIDSignIn.sharedInstance.signOut()
-                    self.goToLoginScreen()
-                } catch {
-                    print("Sign out error: \(error)")
-                    self.goToLoginScreen()
-                }
-            }
+        didRouteToLogin = false
+
+        // 1) Firebase/Google 로그아웃(되어있지 않아도 안전하게 시도)
+        do {
+            try Auth.auth().signOut()
+        } catch {
+            print("Firebase signOut error: \(error)")
         }
-        
-        LoginManager.shared.getKakaoEmail { result in
-            if result {
-                if UserApi.isKakaoTalkLoginAvailable() {
-                    UserApi.shared.logout { error in
-                        if let error = error {
-                            if let sdkError = error as? SdkError,
-                               case .ClientFailed(let reason, _) = sdkError,
-                               case .TokenNotFound = reason {
-                                print("이미 로그아웃 상태 (토큰 없음), 무시")
-                            }
-                        }
+        GIDSignIn.sharedInstance.signOut()
+
+        // 2) Kakao 로그아웃(토큰이 없어도 에러는 무시)
+        if UserApi.isKakaoTalkLoginAvailable() {
+            UserApi.shared.logout { error in
+                if let error = error {
+                    if let sdkError = error as? SdkError,
+                       case .ClientFailed(let reason, _) = sdkError,
+                       case .TokenNotFound = reason {
+                        print("이미 로그아웃 상태 (토큰 없음), 무시")
+                    } else {
+                        print("Kakao logout error: \(error)")
                     }
                 }
-                
-                self.goToLoginScreen()
+                self.routeToLoginOnce()
+            }
+        } else {
+            // 카카오톡 로그인 불가 환경에서도 동일하게 logout 시도
+            UserApi.shared.logout { error in
+                if let error = error {
+                    print("Kakao logout error: \(error)")
+                }
+                self.routeToLoginOnce()
             }
         }
+
+        // (주의) 카카오 로그아웃은 비동기라 콜백에서 이동 처리. 구글/파이어베이스는 즉시 완료.
     }
     
     // 커스텀 네비게이션 바 내부에서 이 VC의 settingButtonTapped를 타겟으로 가진 버튼을 찾아 반환

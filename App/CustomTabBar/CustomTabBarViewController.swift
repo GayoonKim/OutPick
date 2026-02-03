@@ -18,7 +18,7 @@ class CustomTabBarViewController: UIViewController {
     private var cancellables = Set<AnyCancellable>()
 
     /// 앱 전역 의존성 컨테이너 (SceneDelegate 등에서 주입해야 합니다)
-    var container: AppContainer? {
+    var container: LookbookContainer? {
         didSet {
             // 컨테이너가 바뀌면 탭 캐시를 전부 무효화하여(로그아웃/재로그인 등) 의존성 갱신을 확실히 반영
             guard oldValue !== container else { return }
@@ -28,11 +28,11 @@ class CustomTabBarViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        print("CustomTabBar instance:", ObjectIdentifier(self))
         // ✅ container 주입 강제(디버그에서 즉시 확인)
         assert(container != nil, "CustomTabBarViewController.container가 주입되지 않았습니다. SceneDelegate에서 주입 후 표시해주세요.")
 
-        self.view.backgroundColor = .white
+        self.view.backgroundColor = .systemBackground
+        
         setupCustomTabBar()
     }
 

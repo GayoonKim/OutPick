@@ -194,21 +194,48 @@ class SecondProfileViewController: UIViewController {
         }
         userProfile.joinedRooms = []
         
-        if Auth.auth().currentUser?.providerData.first?.providerID == "google.com" {
-            LoginManager.shared.getGoogleEmail { success in
-                if success {
-                    self.userProfile.email = LoginManager.shared.getUserEmail
-                    LoginManager.shared.setCurrentUserProfile(self.userProfile)
-                    self.saveUserProfile(email: LoginManager.shared.getUserEmail)
-                }
+        Task {
+            // 1) 가장 먼저 LoginManager에 이미 세팅된 이메일 사용
+            let cached = LoginManager.shared.getUserEmail
+            if cached.isEmpty == false {
+                self.userProfile.email = cached
+                LoginManager.shared.setCurrentUserProfile(self.userProfile)
+                self.saveUserProfile(email: cached)
+                return
             }
-        } else {
-            LoginManager.shared.getKakaoEmail { success in
-                if success {
-                    self.userProfile.email = LoginManager.shared.getUserEmail
-                    LoginManager.shared.setCurrentUserProfile(self.userProfile)
-                    self.saveUserProfile(email: LoginManager.shared.getUserEmail)
-                }
+
+            // 2) FirebaseAuth currentUser 이메일(구글 로그인 등) 시도
+            if let email = Auth.auth().currentUser?.email, email.isEmpty == false {
+                LoginManager.shared.setUserEmail(email)
+                self.userProfile.email = email
+                LoginManager.shared.setCurrentUserProfile(self.userProfile)
+                self.saveUserProfile(email: email)
+                return
+            }
+
+            // 3) (Fallback) SDK 세션 복원으로 이메일 얻기
+            let repo = DefaultSocialAuthRepository()
+            if let email = await repo.restoreGoogleEmailIfLoggedIn() {
+                LoginManager.shared.setUserEmail(email)
+                self.userProfile.email = email
+                LoginManager.shared.setCurrentUserProfile(self.userProfile)
+                self.saveUserProfile(email: email)
+                return
+            }
+            if let email = await repo.restoreKakaoEmailIfLoggedIn() {
+                LoginManager.shared.setUserEmail(email)
+                self.userProfile.email = email
+                LoginManager.shared.setCurrentUserProfile(self.userProfile)
+                self.saveUserProfile(email: email)
+                return
+            }
+
+            await MainActor.run {
+                AlertManager.showAlertNoHandler(
+                    title: "로그인 정보 없음",
+                    message: "로그인 정보를 확인할 수 없습니다. 다시 로그인해 주세요.",
+                    viewController: self
+                )
             }
         }
     }
@@ -241,11 +268,10 @@ class SecondProfileViewController: UIViewController {
                 
                 LoginManager.shared.setCurrentUserProfile(self.userProfile)
                 
-                // 3) 낙관적 전환: 홈으로 이동 (UI는 메인 스레드)
-                // ⚠️ 주의: CustomTabBarViewController는 AppContainer 주입이 필수(주입 없이 진입하면 assertion 발생)
-                let container = AppContainer(provider: .shared)
+                var container: LookbookContainer!
 
                 await MainActor.run {
+                    container = LookbookContainer(provider: .shared)
                     let rootVC = CustomTabBarViewController()
                     rootVC.container = container
                     // 한국어 주석: container 주입 후 viewDidLoad 타이밍 이슈를 피하려고 미리 로드

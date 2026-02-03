@@ -8,8 +8,8 @@
 import Foundation
 import FirebaseFirestore
 
-final class RepositoryProvider {
-    static let shared = RepositoryProvider()
+final class LookbookRepositoryProvider {
+    static let shared = LookbookRepositoryProvider()
 
     // MARK: - Lookbook Repositories (Protocol 타입으로 노출)
     let brandRepository: BrandRepositoryProtocol

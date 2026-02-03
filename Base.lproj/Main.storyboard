@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="23727" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" useTraitCollections="YES" useSafeAreas="YES" colorMatched="YES" initialViewController="rst-5j-P7T">
+<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="24506" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" useTraitCollections="YES" useSafeAreas="YES" colorMatched="YES">
     <device id="retina6_3" orientation="portrait" appearance="light"/>
     <dependencies>
         <deployment identifier="iOS"/>
-        <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="23721"/>
+        <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="24504"/>
         <capability name="Safe area layout guides" minToolsVersion="9.0"/>
         <capability name="Stack View standard spacing" minToolsVersion="9.0"/>
         <capability name="System colors in document resources" minToolsVersion="11.0"/>
@@ -18,7 +18,7 @@
                     <tabBarItem key="tabBarItem" title="날씨" id="cpM-Qv-uHC"/>
                     <navigationItem key="navigationItem" id="nZd-v6-Xgu"/>
                     <navigationBar key="navigationBar" contentMode="scaleToFill" id="Ysb-ji-NFs">
-                        <rect key="frame" x="0.0" y="124" width="402" height="44"/>
+                        <rect key="frame" x="0.0" y="124" width="402" height="54"/>
                         <autoresizingMask key="autoresizingMask"/>
                     </navigationBar>
                     <connections>
@@ -197,7 +197,7 @@
                 <navigationController storyboardIdentifier="ChatList" useStoryboardIdentifierAsRestorationIdentifier="YES" id="xHU-6n-EM5" sceneMemberID="viewController">
                     <tabBarItem key="tabBarItem" title="오픈채팅" id="rk3-fv-GsL"/>
                     <navigationBar key="navigationBar" contentMode="scaleToFill" id="Wre-v0-s4H">
-                        <rect key="frame" x="0.0" y="124" width="402" height="44"/>
+                        <rect key="frame" x="0.0" y="124" width="402" height="54"/>
                         <autoresizingMask key="autoresizingMask"/>
                         <color key="backgroundColor" white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
                         <color key="tintColor" white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
@@ -504,9 +504,6 @@
                                 <rect key="frame" x="20" y="775" width="362" height="59"/>
                                 <state key="normal" title="Button"/>
                                 <buttonConfiguration key="configuration" style="plain" image="kakao_login_medium_narrow" title=""/>
-                                <connections>
-                                    <action selector="kakaoLoginBtnPressed:" destination="rst-5j-P7T" eventType="touchUpInside" id="ZC3-Ve-AVo"/>
-                                </connections>
                             </button>
                             <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="OutPick" textAlignment="natural" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="1Tf-zZ-qR9">
                                 <rect key="frame" x="86.666666666666686" y="401" width="229" height="72"/>
@@ -518,9 +515,6 @@
                                 <rect key="frame" x="20" y="709" width="362" height="58"/>
                                 <state key="normal" title="Button"/>
                                 <buttonConfiguration key="configuration" style="plain" image="ios_light_sq_SI"/>
-                                <connections>
-                                    <action selector="googleSignInBtnPressed:" destination="rst-5j-P7T" eventType="touchUpInside" id="jy8-XB-qyD"/>
-                                </connections>
                             </button>
                         </subviews>
                         <viewLayoutGuide key="safeArea" id="BmO-wz-s93"/>
@@ -536,14 +530,10 @@
                             <constraint firstItem="edS-Ir-Yyy" firstAttribute="leading" secondItem="BmO-wz-s93" secondAttribute="leading" constant="20" id="pfk-bq-coP"/>
                         </constraints>
                     </view>
-                    <connections>
-                        <outlet property="googleSignInBtn" destination="edS-Ir-Yyy" id="Ahu-Hs-exW"/>
-                        <outlet property="kakaoSignInBtn" destination="2WL-oa-pKQ" id="TB6-Xz-u4w"/>
-                    </connections>
                 </viewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="pYY-0Q-Yxb" userLabel="First Responder" customClass="UIResponder" sceneMemberID="firstResponder"/>
             </objects>
-            <point key="canvasLocation" x="-4379" y="-1449"/>
+            <point key="canvasLocation" x="-4384" y="-1444"/>
         </scene>
         <!--First Profile View Controller-->
         <scene sceneID="FHW-Qx-1ox">
@@ -554,7 +544,7 @@
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
                             <scrollView clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="scaleToFill" alwaysBounceVertical="YES" translatesAutoresizingMaskIntoConstraints="NO" id="5py-jc-7kb">
-                                <rect key="frame" x="0.0" y="168" width="402" height="638"/>
+                                <rect key="frame" x="0.0" y="178" width="402" height="628"/>
                                 <subviews>
                                     <stackView opaque="NO" contentMode="scaleToFill" axis="vertical" translatesAutoresizingMaskIntoConstraints="NO" id="vy5-Az-SA9">
                                         <rect key="frame" x="0.0" y="0.0" width="402" height="419"/>
@@ -650,7 +640,7 @@
                                         </constraints>
                                     </stackView>
                                     <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="yCa-1e-AkI">
-                                        <rect key="frame" x="20" y="568" width="362" height="50"/>
+                                        <rect key="frame" x="20" y="558" width="362" height="50"/>
                                         <constraints>
                                             <constraint firstAttribute="height" constant="50" id="3CE-Bd-2Va"/>
                                         </constraints>
@@ -711,13 +701,13 @@
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
                             <scrollView clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="O5Y-Sr-wOX">
-                                <rect key="frame" x="0.0" y="168" width="402" height="527"/>
+                                <rect key="frame" x="0.0" y="178" width="402" height="517"/>
                                 <subviews>
                                     <stackView opaque="NO" contentMode="scaleToFill" axis="vertical" translatesAutoresizingMaskIntoConstraints="NO" id="g8t-MH-FsZ">
-                                        <rect key="frame" x="0.0" y="0.0" width="402" height="339"/>
+                                        <rect key="frame" x="0.0" y="0.0" width="402" height="332.66666666666669"/>
                                         <subviews>
                                             <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="5cS-fR-IFy">
-                                                <rect key="frame" x="0.0" y="0.0" width="402" height="339"/>
+                                                <rect key="frame" x="0.0" y="0.0" width="402" height="332.66666666666669"/>
                                                 <subviews>
                                                     <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="프로필을 설정해 주세요" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="jqN-GO-lDr">
                                                         <rect key="frame" x="20" y="20" width="362" height="24"/>
@@ -880,7 +870,7 @@
                 <navigationController id="OUv-H1-woa" sceneMemberID="viewController">
                     <tabBarItem key="tabBarItem" title="채팅" id="HUN-y0-lFh"/>
                     <navigationBar key="navigationBar" contentMode="scaleToFill" id="4Fk-Tv-eig">
-                        <rect key="frame" x="0.0" y="124" width="402" height="44"/>
+                        <rect key="frame" x="0.0" y="124" width="402" height="54"/>
                         <autoresizingMask key="autoresizingMask"/>
                     </navigationBar>
                     <connections>
@@ -933,7 +923,7 @@
                 <navigationController id="F3O-nC-Wn7" sceneMemberID="viewController">
                     <tabBarItem key="tabBarItem" title="" id="NAZ-xu-z2w"/>
                     <navigationBar key="navigationBar" contentMode="scaleToFill" id="zcY-ah-rtq">
-                        <rect key="frame" x="0.0" y="124" width="402" height="44"/>
+                        <rect key="frame" x="0.0" y="124" width="402" height="54"/>
                         <autoresizingMask key="autoresizingMask"/>
                     </navigationBar>
                     <connections>
@@ -949,7 +939,7 @@
             <objects>
                 <viewController storyboardIdentifier="settingsVC" useStoryboardIdentifierAsRestorationIdentifier="YES" id="9K7-kt-9Io" customClass="MyMenuViewController" customModule="OutPick" customModuleProvider="target" sceneMemberID="viewController">
                     <view key="view" contentMode="scaleToFill" id="v7R-H3-6A8">
-                        <rect key="frame" x="0.0" y="0.0" width="402" height="757"/>
+                        <rect key="frame" x="0.0" y="0.0" width="402" height="791"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <viewLayoutGuide key="safeArea" id="TFb-5Q-Fom"/>
                         <color key="backgroundColor" systemColor="systemBackgroundColor"/>
@@ -1004,7 +994,7 @@
                     <toolbarItems/>
                     <navigationItem key="navigationItem" id="Mkr-LB-yBz"/>
                     <navigationBar key="navigationBar" contentMode="scaleToFill" id="LP2-PE-mAY">
-                        <rect key="frame" x="0.0" y="124" width="402" height="44"/>
+                        <rect key="frame" x="0.0" y="124" width="402" height="54"/>
                         <autoresizingMask key="autoresizingMask"/>
                     </navigationBar>
                     <nil name="viewControllers"/>
@@ -14971,7 +14961,7 @@ wY4ADMGTAAzBmwAAAAAAAAQBAAAAAAAAAFgAAAAAAAAAAAAAAAAADMGeA
         <image name="kakao_login_medium_narrow" width="183" height="45"/>
         <image name="magnifyingglass" catalog="system" width="128" height="117"/>
         <image name="photo.artframe" catalog="system" width="128" height="93"/>
-        <image name="plus.message.fill" catalog="system" width="128" height="114"/>
+        <image name="plus.message.fill" catalog="system" width="128" height="104"/>
         <systemColor name="labelColor">
             <color white="0.0" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
         </systemColor>

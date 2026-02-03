@@ -8,11 +8,11 @@
 import Foundation
 
 @MainActor
-final class AppContainer {
-    let provider: RepositoryProvider
+final class LookbookContainer {
+    let provider: LookbookRepositoryProvider
     let lookbookHomeViewModel: LookbookHomeViewModel
 
-    init(provider: RepositoryProvider = .shared) {
+    init(provider: LookbookRepositoryProvider = .shared) {
         self.provider = provider
 
         self.lookbookHomeViewModel = LookbookHomeViewModel(

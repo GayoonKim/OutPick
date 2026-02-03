@@ -23,45 +23,6 @@ protocol ChatMessageCellDelegate: AnyObject {
 }
 
 class ChatViewController: UIViewController, UINavigationControllerDelegate, ChatModalAnimatable {
-    
-#if DEBUG
-    // --- Test hooks (DEBUG only) ---
-    // 1) Prefetch/cleanup에서 visible indexPaths를 강제(레이아웃/윈도우 없어도 결정적 테스트 가능)
-    var test_visibleIndexPathsOverride: [IndexPath]?
-    
-    // 2) roomID 주입 (ChatRoom 생성 없이 테스트 가능)
-    var test_roomIDOverride: String?
-    
-    // 3) 실제 네트워크/캐시를 스킵하고 “호출 여부”만 확인
-    var test_skipActualMediaCaching: Bool = true
-    var test_skipActualPagingLoads: Bool = true
-    
-    // 4) 호출 관찰용 콜백
-    var test_onCacheImages: ((String) -> Void)?
-    var test_onCacheVideoAssets: ((String) -> Void)?
-    var test_onTriggerOlder: ((String?) -> Void)?
-    var test_onTriggerNewer: ((String?) -> Void)?
-    
-    // Expose private collectionView to unit tests (read-only)
-    @MainActor
-    var test_chatMessageCollectionView: UICollectionView { chatMessageCollectionView }
-
-    // Mutate private paging flags from unit tests
-    @MainActor
-    func test_setPagingState(
-        hasMoreOlder: Bool? = nil,
-        isLoadingOlder: Bool? = nil,
-        hasMoreNewer: Bool? = nil,
-        isLoadingNewer: Bool? = nil
-    ) {
-        if let hasMoreOlder { self.hasMoreOlder = hasMoreOlder }
-        if let isLoadingOlder { self.isLoadingOlder = isLoadingOlder }
-        if let hasMoreNewer { self.hasMoreNewer = hasMoreNewer }
-        if let isLoadingNewer { self.isLoadingNewer = isLoadingNewer }
-    }
-#endif
-    
-    
     // Paging buffer size for scroll triggers
     private var pagingBuffer = 200
     
@@ -851,11 +812,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     // 이미지 캐싱 전용 (Manager 위임)
     private func cacheImagesIfNeeded(for message: ChatMessage) async {
-        #if DEBUG
-        test_onCacheImages?(message.ID)
-        if test_skipActualMediaCaching { return }
-        #endif
-        
         let images = await mediaManager.cacheImagesIfNeeded(for: message)
         await MainActor.run {
             self.messageImages[message.ID] = images
@@ -865,11 +821,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     // 동영상 썸네일 캐시 (Manager 위임)
     private func cacheVideoAssetsIfNeeded(for message: ChatMessage, in roomID: String) async {
-        #if DEBUG
-        test_onCacheVideoAssets?(message.ID)
-        if test_skipActualMediaCaching { return }
-        #endif
-        
         await mediaManager.cacheVideoAssetsIfNeeded(for: message, in: roomID)
         await MainActor.run {
             self.reloadVisibleMessageIfNeeded(messageID: message.ID)
@@ -1776,7 +1727,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         NSLayoutConstraint.activate([
             showAbove ? chatCustomMenu.bottomAnchor.constraint(equalTo: cell.referenceView.topAnchor, constant: -8) : chatCustomMenu.topAnchor.constraint(equalTo: cell.referenceView.bottomAnchor, constant: 8),
             
-            LoginManager.shared.userProfile?.nickname == message.senderNickname ? chatCustomMenu.trailingAnchor.constraint(equalTo: cell.referenceView.trailingAnchor, constant: 0) : chatCustomMenu.leadingAnchor.constraint(equalTo: cell.referenceView.leadingAnchor, constant: 0)
+            LoginManager.shared.currentUserProfile?.nickname == message.senderNickname ? chatCustomMenu.trailingAnchor.constraint(equalTo: cell.referenceView.trailingAnchor, constant: 0) : chatCustomMenu.leadingAnchor.constraint(equalTo: cell.referenceView.leadingAnchor, constant: 0)
         ])
         
         // 3. 버튼 액션 설정
@@ -2717,12 +2668,6 @@ extension ChatViewController: UICollectionViewDelegate {
                     if case let .message(msg) = item { return msg.ID }
                     return nil
                 }.first
-                
-                #if DEBUG
-                test_onTriggerOlder?(firstID)
-                if test_skipActualPagingLoads { return }
-                #endif
-                
                 await loadOlderMessages(before: firstID)
             }
         }
@@ -2740,12 +2685,6 @@ extension ChatViewController: UICollectionViewDelegate {
                     if case let .message(msg) = item { return msg.ID }
                     return nil
                 }.last
-                
-                #if DEBUG
-                test_onTriggerNewer?(lastID)
-                if test_skipActualPagingLoads { return }
-                #endif
-                
                 await loadNewerMessagesIfNeeded(after: lastID)
             }
         }
@@ -2758,29 +2697,17 @@ extension ChatViewController: UICollectionViewDataSourcePrefetching {
     func collectionView(_ collectionView: UICollectionView, prefetchItemsAt indexPaths: [IndexPath]) {
         guard collectionView === chatMessageCollectionView else { return }
 //        guard let roomID = room?.ID, !roomID.isEmpty else { return }
-        #if DEBUG
-        let roomID = test_roomIDOverride ?? (room?.ID ?? "")
-        #else
+
         let roomID = room?.ID ?? ""
-        #endif
+
         guard !roomID.isEmpty else { return }
 
         // visible 범위 ± 25로 제한
         let pad = 25
         
-        let visibleIndexPaths: [IndexPath]
-        #if DEBUG
-        visibleIndexPaths = test_visibleIndexPathsOverride ?? collectionView.indexPathsForVisibleItems
-        #else
-        visibleIndexPaths = collectionView.indexPathsForVisibleItems
-        #endif
-
-        let visibleItems = visibleIndexPaths
+        let visibleItems = collectionView.indexPathsForVisibleItems
             .filter { $0.section == 0 }
             .map { $0.item }
-//        let visibleItems = collectionView.indexPathsForVisibleItems
-//            .filter { $0.section == 0 }
-//            .map { $0.item }
 
         let (lowerBound, upperBound): (Int, Int)
         if let minVis = visibleItems.min(), let maxVis = visibleItems.max() {

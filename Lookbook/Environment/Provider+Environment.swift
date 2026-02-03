@@ -7,13 +7,13 @@
 
 import SwiftUI
 
-private struct RepositoryProviderKey: EnvironmentKey {
-    static let defaultValue: RepositoryProvider = .shared
+private struct LookbookRepositoryProviderKey: EnvironmentKey {
+    static let defaultValue: LookbookRepositoryProvider = .shared
 }
 
 extension EnvironmentValues {
-    var repositoryProvider: RepositoryProvider {
-        get { self[RepositoryProviderKey.self] }
-        set { self[RepositoryProviderKey.self] = newValue }
+    var repositoryProvider: LookbookRepositoryProvider {
+        get { self[LookbookRepositoryProviderKey.self] }
+        set { self[LookbookRepositoryProviderKey.self] = newValue }
     }
 }

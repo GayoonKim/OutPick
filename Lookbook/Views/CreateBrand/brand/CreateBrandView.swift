@@ -15,7 +15,7 @@ struct CreateBrandView: View {
 
     /// RepositoryProvider 기반으로만 의존성을 주입합니다.
     /// - Note: 화면/상위 조립 계층(AppContainer 등)에서 provider를 내려주는 구조를 유지합니다.
-    init(provider: RepositoryProvider = .shared) {
+    init(provider: LookbookRepositoryProvider = .shared) {
         _viewModel = StateObject(
             wrappedValue: CreateBrandViewModel(
                 brandStore: provider.brandStore,
