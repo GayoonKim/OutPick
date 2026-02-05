@@ -12,22 +12,33 @@ final class AppCoordinator {
     private let window: UIWindow
     private weak var currentWindowScene: UIWindowScene?
 
-    private let provider: LookbookRepositoryProvider
+    private let lookbookProvider: LookbookRepositoryProvider
     private var lookbookContainer: LookbookContainer?
+    
+    private var profileCoordinator: ProfileCoordinator?
+
+    // Profile flow DI
+    private let userProfileRepository: UserProfileRepositoryProtocol
 
     // 로그인 화면이 이미 떠있는데 또 showLogin()을 타는 걸 막기 위한 플래그
     private var isShowingLogin: Bool = false
 
-    init(window: UIWindow, provider: LookbookRepositoryProvider = .shared) {
+    init(
+        window: UIWindow,
+        lookbookProvider: LookbookRepositoryProvider = .shared,
+        userProfileRepository: UserProfileRepositoryProtocol
+    ) {
         self.window = window
-        self.provider = provider
+        self.lookbookProvider = lookbookProvider
+        self.userProfileRepository = userProfileRepository
+        self.window.backgroundColor = .systemBackground
     }
 
     @MainActor
     func start(windowScene: UIWindowScene) {
         self.currentWindowScene = windowScene
 
-        // 한국어 주석: 앱 시작 시 강제 로그아웃 콜백 설치(메인 탭/프로필 플로우에서 사용)
+        // 앱 시작 시 강제 로그아웃 콜백 설치(메인 탭/프로필 플로우에서 사용)
         installForceLogoutHandler()
 
         setRoot(BootLoadingViewController(), animated: true)
@@ -62,8 +73,10 @@ final class AppCoordinator {
     }
 
     private func routeAfterAuthenticated(windowScene: UIWindowScene) async {
+        await MainActor.run { self.setRoot(BootLoadingViewController(), animated: false) }
+        
         let profileResult = await LoginManager.shared.loadUserProfile()
-
+        
         switch profileResult {
         case .success:
             // 새 기기 로그인 = 기존 기기 로그아웃 정책 시작점
@@ -85,6 +98,7 @@ final class AppCoordinator {
 
     @MainActor
     private func showLogin(windowScene: UIWindowScene) {
+        self.profileCoordinator = nil
         // 로그인 화면으로 들어갈 땐 강제로그아웃 콜백을 해제해도 됨(이미 로그아웃 상태/또는 루트가 로그인)
         // 중복 라우팅(콜백 재호출) 방지 목적
         LoginManager.shared.onForceLogout = nil
@@ -116,11 +130,12 @@ final class AppCoordinator {
     private func showMainTab() {
         // 메인 탭으로 들어가면 다시 콜백을 설치(강제 로그아웃 처리 활성화)
         isShowingLogin = false
+        self.profileCoordinator = nil
         installForceLogoutHandler()
 
         // 메인 탭 수명 동안 LookbookContainer(공유 VM/캐시)를 유지
         if lookbookContainer == nil {
-            lookbookContainer = LookbookContainer(provider: provider)
+            lookbookContainer = LookbookContainer(provider: lookbookProvider)
         }
         guard let lbcontainer = lookbookContainer else { return }
 
@@ -132,14 +147,24 @@ final class AppCoordinator {
 
     @MainActor
     private func showProfileFlow() {
-        // 프로필 플로우도 인증 이후 상태이므로 강제 로그아웃 콜백은 활성화 유지
         isShowingLogin = false
         installForceLogoutHandler()
 
-        // 아직 Profile이 storyboard 기반이면 임시 유지
-        let sb = UIStoryboard(name: "Main", bundle: nil)
-        let profileNav = sb.instantiateViewController(withIdentifier: "ProfileNav")
-        setRoot(profileNav, animated: true)
+        let nav = UINavigationController()
+        nav.isNavigationBarHidden = true
+        nav.view.backgroundColor = .systemBackground
+
+        self.profileCoordinator = ProfileCoordinator(
+            navigationController: nav,
+            repository: userProfileRepository,
+            onCompleted: { [weak self] _ in
+                guard let self else { return }
+                self.showMainTab()          // 완료 후 메인 탭으로
+            }
+        )
+        self.profileCoordinator?.start()
+
+        setRoot(nav, animated: true)
     }
 
     @MainActor

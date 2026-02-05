@@ -55,24 +55,22 @@ final class UserProfileRepository: UserProfileRepositoryProtocol {
                 return
             }
             
-            do {
-                let profile = try snapshot.data(as: UserProfile.self)
-                
-                // ✅ 1) 내 프로필이면 LoginManager만 갱신하고 subject로는 전파하지 않음
-                let myEmail = LoginManager.shared.getUserEmail
-                if profile.email == myEmail || email == myEmail {
-                    Task { @MainActor in
-                        LoginManager.shared.setCurrentUserProfile(profile)
-                    }
-                    return
+            // Firestore 문서 -> DTO -> Domain
+            let data = snapshot.data() ?? [:]
+            let dto = UserProfileFirestoreCodec.fromDocument(data, emailFallback: email)
+            let profile = UserProfileMapper.toDomain(dto)
+
+            // 내 프로필이면 LoginManager만 갱신하고 subject로는 전파하지 않음
+            let myEmail = LoginManager.shared.getUserEmail
+            if (profile.email ?? email) == myEmail || email == myEmail {
+                Task { @MainActor in
+                    LoginManager.shared.setCurrentUserProfile(profile)
                 }
-                
-                // ✅ 2) 타인 프로필이면 subject로 전파
-                subject.send(profile)
-                
-            } catch {
-                subject.send(completion: .failure(error))
+                return
             }
+
+            // 타인 프로필이면 subject로 전파
+            subject.send(profile)
         }
         
         userProfileListeners[email] = listener
@@ -113,9 +111,18 @@ final class UserProfileRepository: UserProfileRepositoryProtocol {
     
     func saveUserProfileToFirestore(email: String) async throws {
         do {
-            var profileData = LoginManager.shared.currentUserProfile?.toDict() ?? [:]
+            guard let profile = LoginManager.shared.currentUserProfile else {
+                throw FirebaseError.FailedToSaveProfile
+            }
+
+            // Domain -> DTO -> Firestore 문서
+            let dto = UserProfileMapper.toDTO(profile)
+            var profileData = UserProfileFirestoreCodec.toDocument(dto)
+
+            // createdAt은 서버 기준으로 저장(정렬/쿼리에 유리)
             profileData["createdAt"] = FieldValue.serverTimestamp()
-            try await db.collection("Users").document(email).setData(profileData)
+
+            try await db.collection("Users").document(email).setData(profileData, merge: true)
         } catch {
             throw FirebaseError.FailedToSaveProfile
         }
@@ -123,22 +130,17 @@ final class UserProfileRepository: UserProfileRepositoryProtocol {
     
     func fetchUserProfileFromFirestore(email: String) async throws -> UserProfile {
         print("fetchUserProfileFromFirestore 호출")
-        
+
         let docRef = db.collection("Users").document(email)
         let snapshot = try await docRef.getDocument()
         guard let data = snapshot.data() else {
             throw FirebaseError.FailedToFetchProfile
         }
-        
-        return UserProfile(
-            email: data["email"] as? String ?? email,
-            nickname: data["nickname"] as? String,
-            gender: data["gender"] as? String,
-            birthdate: data["birthdate"] as? String,
-            thumbPath: data["thumbPath"] as? String,
-            originalPath: data["originalPath"] as? String,
-            joinedRooms: data["joinedRooms"] as? [String]
-        )
+
+        // Firestore 문서 -> DTO -> Domain
+        let dto = UserProfileFirestoreCodec.fromDocument(data, emailFallback: email)
+        let profile = UserProfileMapper.toDomain(dto)
+        return profile
     }
     
     func fetchUserProfiles(emails: [String]) async throws -> [UserProfile] {
@@ -195,5 +197,3 @@ final class UserProfileRepository: UserProfileRepositoryProtocol {
         return lastRead
     }
 }
-
-

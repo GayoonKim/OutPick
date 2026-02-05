@@ -10,6 +10,7 @@ import KakaoSDKCommon
 import KakaoSDKAuth
 import KakaoSDKUser
 import FirebaseCore
+import FirebaseFirestore
 import GoogleSignIn
 
 final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
@@ -42,7 +43,14 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         guard let window else { return }
         
         if coordinator == nil {
-            coordinator = AppCoordinator(window: window)
+            // DI: AppCoordinator가 프로필 플로우에 사용할 Repository를 외부에서 주입받도록 구성
+            let db = Firestore.firestore()
+            let userProfileRepository: UserProfileRepositoryProtocol = UserProfileRepository(db: db)
+
+            coordinator = AppCoordinator(
+                window: window,
+                userProfileRepository: userProfileRepository
+            )
         }
         guard let coordinator else { return }
         
