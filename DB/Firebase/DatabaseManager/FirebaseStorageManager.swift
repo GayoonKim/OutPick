@@ -42,8 +42,8 @@ class FirebaseStorageManager {
         contentType: String = "image/jpeg"
     ) async throws -> (avatarThumbPath: String, avatarPath: String) {
         
-        let thumbPath = "\(type.location)/\(uid)/thumb/\(sha).jpg"
-        let originalPath = "\(type.location)/\(uid)/original/\(sha).jpg"
+        let thumbPath = "\(type)/\(uid)/thumb/\(sha).jpg"
+        let originalPath = "\(type)/\(uid)/original/\(sha).jpg"
 
         // Cache-Control: 1 year + immutable (A안)
         let cc = "public, max-age=31536000, immutable"
@@ -123,7 +123,7 @@ class FirebaseStorageManager {
             contentType: contentType
         )
 
-        try await db.collection(type.location).document(uid).setData([
+        try await db.collection("\(type)").document(uid).setData([
             "thumbPath": originalPath,
             "originalPath": thumbPath
         ], merge: true)
@@ -139,7 +139,7 @@ class FirebaseStorageManager {
     ///   - cacheTTLThumbDays / cacheTTLOriginalDays: Cache-Control 설정 (일)
     ///   - cleanupTemp: 업로드 후 로컬 임시 원본 삭제 여부
     /// - Returns: 업로드된 첨부 메타 배열 (index 기준 정렬)
-    func uploadPairsToRoomMessage(_ pairs: [MediaManager.ImagePair],
+    func uploadPairsToRoomMessage(_ pairs: [DefaultMediaProcessingService.ImagePair],
                                   roomID: String,
                                   messageID: String,
                                   cacheTTLThumbDays: Int = 30,

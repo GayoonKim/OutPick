@@ -3,9 +3,8 @@ import GRDB
 
 // Domain Model + GRDB Record
 struct UserProfile: Codable, Hashable, Equatable, FetchableRecord, PersistableRecord {
-    // ✅ DB PK 제약 때문에 non-optional 권장
     var deviceID: String?
-    var email: String              // <- 변경 (PK)
+    var email: String
     var gender: String?
     var birthdate: String?
     var nickname: String?

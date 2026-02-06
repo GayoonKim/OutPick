@@ -580,7 +580,7 @@ class SocketIOManager {
     ///   - publish: true면 내부에서 roomSubject로 곧바로 퍼블리시, false면 퍼블리시하지 않음
     ///   - onBuilt: 실패 메시지 객체를 콜백으로 전달(썸네일 캐시/추가 가공 후 VC에서 addMessages 호출용)
     func sendFailedImages(_ room: ChatRoom,
-                          fromPairs pairs: [MediaManager.ImagePair],
+                          fromPairs pairs: [DefaultMediaProcessingService.ImagePair],
                           publish: Bool = true) {
         guard !pairs.isEmpty else { return }
 

@@ -181,7 +181,7 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
                         group.addTask {
                             let image = try? await KingFisherCacheManager.shared.loadOrFetchImage(
                                 forKey: imagePath,
-                                fetch: { try await FirebaseStorageManager.shared.fetchImageFromStorage(image: imagePath, location: .RoomImage) }
+                                fetch: { try await FirebaseStorageManager.shared.fetchImageFromStorage(image: imagePath, location: .roomImage) }
                             )
                             return (key, image)
                         }

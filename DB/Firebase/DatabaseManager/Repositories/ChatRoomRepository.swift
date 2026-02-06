@@ -172,7 +172,7 @@ final class ChatRoomRepository: ChatRoomRepositoryProtocol {
     
     func editRoom(room: ChatRoom,
                   pickedImage: UIImage?,
-                  imageData: MediaManager.ImagePair?,
+                  imageData: DefaultMediaProcessingService.ImagePair?,
                   isRemoved: Bool,
                   newName: String,
                   newDesc: String) async throws -> ChatRoom {
@@ -199,7 +199,7 @@ final class ChatRoomRepository: ChatRoomRepositoryProtocol {
             let (newThumb, newOriginal) = try await FirebaseStorageManager.shared.uploadAndSave(
                 sha: pair.fileBaseName,
                 uid: room.ID ?? "",
-                type: .RoomImage,
+                type: .roomImage,
                 thumbData: pair.thumbData,
                 originalFileURL: pair.originalFileURL
             )

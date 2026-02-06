@@ -471,7 +471,7 @@ extension SecondProfileViewController: PHPickerViewControllerDelegate {
             guard let self else { return }
             do {
                 // pair 생성(thumbData + originalURL + sha256)
-                let pair = try await MediaManager.shared.makePair(from: first, index: 0)
+                let pair = try await DefaultMediaProcessingService.shared.makePair(from: first, index: 0)
 
                 // thumbData -> UIImage
                 guard let thumb = UIImage(data: pair.thumbData) else { return }

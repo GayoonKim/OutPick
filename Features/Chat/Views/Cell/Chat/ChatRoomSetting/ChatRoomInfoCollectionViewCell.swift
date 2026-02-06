@@ -103,7 +103,7 @@ class ChatRoomInfoCell: UICollectionViewCell {
             Task { @MainActor in
                 print(#function, "Custom Image")
                 let image = try await KingFisherCacheManager.shared.loadOrFetchImage(forKey: thumbPath, fetch: {
-                    try await FirebaseStorageManager.shared.fetchImageFromStorage(image: thumbPath, location: .RoomImage)
+                    try await FirebaseStorageManager.shared.fetchImageFromStorage(image: thumbPath, location: .roomImage)
                 })
                 roomImageView.image = image
             }

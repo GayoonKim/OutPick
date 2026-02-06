@@ -129,7 +129,7 @@ class RoomEditViewController: UIViewController, PHPickerViewControllerDelegate, 
     private var currentKeyboardHeight: CGFloat?
     
     private var selectedImage: UIImage?
-    private var selectedImageData: MediaManager.ImagePair?
+    private var selectedImageData: DefaultMediaProcessingService.ImagePair?
     private var isImageRemoved: Bool = false
     private var afterRoomname: String = ""
     private var afterDescription: String = ""
@@ -139,7 +139,7 @@ class RoomEditViewController: UIViewController, PHPickerViewControllerDelegate, 
     private var descHeightConstraint: NSLayoutConstraint?
     private var isSubmitting: Bool = false
     
-    var onCompleteEdit: ((UIImage?, MediaManager.ImagePair?, Bool, String, String) async throws -> Void)?
+    var onCompleteEdit: ((UIImage?, DefaultMediaProcessingService.ImagePair?, Bool, String, String) async throws -> Void)?
     
     init(room: ChatRoom) {
         self.room = room
@@ -222,7 +222,7 @@ class RoomEditViewController: UIViewController, PHPickerViewControllerDelegate, 
             guard let self else { return }
             do {
                 let image = try await KingFisherCacheManager.shared.loadOrFetchImage(forKey: path, fetch: {
-                    try await FirebaseStorageManager.shared.fetchImageFromStorage(image: path, location: .RoomImage)
+                    try await FirebaseStorageManager.shared.fetchImageFromStorage(image: path, location: .roomImage)
                 })
                 await MainActor.run {
                     self.headerImageView.image = image
@@ -332,7 +332,7 @@ extension RoomEditViewController {
             if itemProvider.canLoadObject(ofClass: UIImage.self) {
                 convertImageTask = Task {
                     do {
-                        let pairs = try await MediaManager.shared.preparePairs(results)
+                        let pairs = try await DefaultMediaProcessingService.shared.preparePairs(results)
                         if Task.isCancelled { return }
                         guard let pair = pairs.first else { return }
                         await MainActor.run {

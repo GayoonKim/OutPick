@@ -137,7 +137,7 @@ final class SecondProfileViewModel {
                 let uploaded = try await FirebaseStorageManager.shared.uploadImage(
                     sha: sha,
                     uid: email,
-                    type: .ProfileImage,               // 프로젝트 enum에 맞게 변경 필요
+                    type: .profileImage,               // 프로젝트 enum에 맞게 변경 필요
                     thumbData: thumbData,
                     originalFileURL: fileURL,
                     contentType: "image/jpeg"

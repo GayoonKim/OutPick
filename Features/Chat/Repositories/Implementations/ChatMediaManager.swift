@@ -57,7 +57,7 @@ final class ChatMediaManager: ChatMediaManagerProtocol {
                         images.append(img)
                     }
                 } else {
-                    let img = try await storageManager.fetchImageFromStorage(image: attachment.pathThumb, location: .RoomImage)
+                    let img = try await storageManager.fetchImageFromStorage(image: attachment.pathThumb, location: .roomImage)
                     cacheManager.storeImage(img, forKey: key)
                     images.append(img)
                 }
@@ -104,7 +104,7 @@ final class ChatMediaManager: ChatMediaManagerProtocol {
                                 cacheManager.storeImage(img, forKey: key)
                             }
                         } else {
-                            let img = try await storageManager.fetchImageFromStorage(image: thumbPath, location: .RoomImage)
+                            let img = try await storageManager.fetchImageFromStorage(image: thumbPath, location: .roomImage)
                             cacheManager.storeImage(img, forKey: key)
                         }
                     }
@@ -196,7 +196,7 @@ final class ChatMediaManager: ChatMediaManagerProtocol {
     
     // MARK: - 비디오 관련 메서드 (기본 구현 - ChatViewController에서 오버라이드 가능)
     
-    func uploadCompressedVideoAndBroadcast(roomID: String, compressedURL: URL, preset: MediaManager.VideoUploadPreset, hud: CircularProgressHUD?) async {
+    func uploadCompressedVideoAndBroadcast(roomID: String, compressedURL: URL, preset: DefaultMediaProcessingService.VideoUploadPreset, hud: CircularProgressHUD?) async {
         // 이 메서드는 ChatViewController의 특정 기능과 밀접하게 연관되어 있어
         // ChatViewController에서 직접 구현하는 것이 더 적합합니다.
         // 프로토콜 요구사항을 만족하기 위한 기본 구현입니다.

@@ -29,7 +29,7 @@ protocol ChatRoomRepositoryProtocol {
     /// 방 정보 수정
     func editRoom(room: ChatRoom,
                   pickedImage: UIImage?,
-                  imageData: MediaManager.ImagePair?,
+                  imageData: DefaultMediaProcessingService.ImagePair?,
                   isRemoved: Bool,
                   newName: String,
                   newDesc: String) async throws -> ChatRoom

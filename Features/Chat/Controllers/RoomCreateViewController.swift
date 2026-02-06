@@ -66,7 +66,7 @@ class RoomCreateViewController: UIViewController, ChatModalAnimatable {
     let maxHeight: CGFloat = 300
     
     private var isDefaultRoomImage = true
-    private var imageData: MediaManager.ImagePair?
+    private var imageData: DefaultMediaProcessingService.ImagePair?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -212,7 +212,7 @@ class RoomCreateViewController: UIViewController, ChatModalAnimatable {
                             let (thumbPath, _) = try await FirebaseStorageManager.shared.uploadAndSave(
                                 sha: pair.fileBaseName,
                                 uid: room.ID ?? "",
-                                type: .RoomImage,
+                                type: .roomImage,
                                 thumbData: pair.thumbData,
                                 originalFileURL: pair.originalFileURL
                             )
@@ -398,7 +398,7 @@ extension RoomCreateViewController: PHPickerViewControllerDelegate {
         picker.dismiss(animated: true, completion: nil)
         
         Task { @MainActor in
-            let p = try await MediaManager.shared.preparePairs(results)
+            let p = try await DefaultMediaProcessingService.shared.preparePairs(results)
             let pair = p.first!
             self.imageData = pair
             

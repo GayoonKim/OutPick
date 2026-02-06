@@ -12,6 +12,7 @@ import Kingfisher
 import AVKit
 import FirebaseStorage
 import AVFoundation
+import UniformTypeIdentifiers
 
 // 내비게이션 아이템 타이틀 설정
 extension UINavigationItem {
@@ -78,6 +79,21 @@ extension ChatViewController: UIGestureRecognizerDelegate {
 
 extension ChatViewController: PHPickerViewControllerDelegate {
     private enum PickerConst { static let maxImagesPerMessage = 30 }
+
+    /// PreparedImage -> 업로드 API 호환용 ImagePair로 변환
+    private func toImagePairs(_ prepared: [PreparedImage]) -> [DefaultMediaProcessingService.ImagePair] {
+        prepared.map {
+            DefaultMediaProcessingService.ImagePair(
+                index: $0.index,
+                originalFileURL: $0.originalFileURL,
+                thumbData: $0.thumbData,
+                originalWidth: $0.originalWidth,
+                originalHeight: $0.originalHeight,
+                bytesOriginal: $0.bytesOriginal,
+                sha256: $0.sha256
+            )
+        }
+    }
     
     func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
         picker.dismiss(animated: true)
@@ -109,15 +125,14 @@ extension ChatViewController: PHPickerViewControllerDelegate {
                     }
                     do {
                         // 1) 비디오 개별 변환 (한 메시지 = 한 동영상)
-                        let url = try await MediaManager.shared.convertVideo(result, preset: .standard720)
+                        let prepared = try await DefaultMediaProcessingService.shared.prepareVideo(result, preset: .standard720)
                         
                         // 2) 방 식별 후 업로드+브로드캐스트 (메타만 소켓으로 전송)
                         if let room = self.room {
                             let roomID = room.ID ?? ""
-                            await self.uploadCompressedVideoAndBroadcast(
+                            await self.uploadPreparedVideoAndBroadcast(
                                 roomID: roomID,
-                                compressedURL: url,
-                                preset: .standard720,
+                                prepared: prepared,
                                 hud: hud
                             )
                         } else {
@@ -174,8 +189,9 @@ extension ChatViewController: PHPickerViewControllerDelegate {
                     for chunk in chunks {
                         try Task.checkCancellation()
                         
-                        // 1) PHPickerResult 배열 -> [ImagePair] (썸네일 Data + 원본 파일URL + 메타)
-                        let pairs = try await MediaManager.shared.preparePairs(chunk)
+                        // 1) PHPickerResult 배열 -> [PreparedImage] -> [ImagePair] (썸네일 Data + 원본 파일URL + 메타)
+                        let prepared = try await DefaultMediaProcessingService.shared.prepareImages(chunk)
+                        let pairs = self.toImagePairs(prepared)
                         
                         // 2) 메시지/폴더 경로 식별자 준비
                         guard let room = self.room else { continue }
@@ -224,7 +240,7 @@ extension ChatViewController: PHPickerViewControllerDelegate {
                             print("업로드 실패:", error)
                         }
                     }
-                } catch MediaError.FailedToConvertImage {
+                } catch MediaError.failedToConvertImage {
                     AlertManager.showAlertNoHandler(title: "이미지 변환 실패", message: "이미지를 다시 선택해 주세요/", viewController: self)
                 } catch StorageError.FailedToUploadImage {
                     print("이미지 업로드 실패")
@@ -234,9 +250,6 @@ extension ChatViewController: PHPickerViewControllerDelegate {
                     print("알 수 없는 오류: \(error)")
                 }
             }
-            
-            convertImagesTask = nil
-            
         }
     }
 }
@@ -258,10 +271,11 @@ extension ChatViewController: UIImagePickerControllerDelegate {
 
 // MARK: -  video 관련
 extension ChatViewController {
-    func uploadCompressedVideoAndBroadcast(roomID: String,
-                                           compressedURL: URL,
-                                           preset: MediaManager.VideoUploadPreset,
-                                           hud: CircularProgressHUD? = nil) async {
+    func uploadPreparedVideoAndBroadcast(
+        roomID: String,
+        prepared: PreparedVideo,
+        hud: CircularProgressHUD? = nil
+    ) async {
         let messageID = UUID().uuidString
         let basePath = "videos/\(roomID)/\(messageID)"
         let videoPath = "\(basePath)/video.mp4"
@@ -281,34 +295,17 @@ extension ChatViewController {
             }
         }
         
-        // 메타 추출
-        let asset = AVAsset(url: compressedURL)
-        let duration = CMTimeGetSeconds(asset.duration)
-        var width = 0, height = 0
-        if let track = asset.tracks(withMediaType: .video).first {
-            let n = track.naturalSize, t = track.preferredTransform
-            let portrait = (t.a == 0 && abs(t.b) == 1 && abs(t.c) == 1 && t.d == 0)
-            let res = portrait ? CGSize(width: n.height, height: n.width) : n
-            width = Int((res.width / 2).rounded(.down) * 2)
-            height = Int((res.height / 2).rounded(.down) * 2)
-        }
-        let sizeBytes = (try? FileManager.default.attributesOfItem(atPath: compressedURL.path)[.size] as? NSNumber)?.int64Value ?? 0
-        let approxBitrateMbps = duration > 0 ? (Double(sizeBytes) * 8.0 / duration) / 1_000_000.0 : 0
-        
-        // 썸네일 생성
-        let thumbData: Data = (try? makeVideoThumbnailData(url: compressedURL, maxPixel: 720)) ?? Data()
-        
         do {
             // 1) 비디오 업로드
-            try await FirebaseStorageManager.shared.putVideoFileToStorage(localURL: compressedURL, path: videoPath, contentType: "video/mp4") { fraction in
+            try await FirebaseStorageManager.shared.putVideoFileToStorage(localURL: prepared.compressedFileURL, path: videoPath, contentType: "video/mp4") { fraction in
                 Task { @MainActor in
                     localHUD?.setProgress(fraction)
                 }
             }
             
             // 2) 썸네일 업로드
-            if !thumbData.isEmpty {
-                try await FirebaseStorageManager.shared.putVideoDataToStorage(data: thumbData, path: thumbPath, contentType: "image/jpeg")
+            if !prepared.thumbnailData.isEmpty {
+                try await FirebaseStorageManager.shared.putVideoDataToStorage(data: prepared.thumbnailData, path: thumbPath, contentType: "image/jpeg")
             }
             
             // 3) 메타 브로드캐스트 (바이너리 X)
@@ -317,16 +314,16 @@ extension ChatViewController {
                 messageID: messageID,
                 storagePath: videoPath,
                 thumbnailPath: thumbPath,
-                duration: duration,
-                width: width, height: height,
-                sizeBytes: sizeBytes,
-                approxBitrateMbps: approxBitrateMbps,
-                preset: preset.code
+                duration: prepared.duration,
+                width: prepared.width, height: prepared.height,
+                sizeBytes: prepared.sizeBytes,
+                approxBitrateMbps: prepared.approxBitrateMbps,
+                preset: prepared.preset.code
             )
+            
             SocketIOManager.shared.sendVideo(roomID: roomID, payload: payload, senderAvatarPath: LoginManager.shared.currentUserProfile?.thumbPath)
-            await MainActor.run { localHUD?.dismiss() }
         } catch {
-            await MainActor.run { localHUD?.dismiss() }
+            // 업로드 실패 안내(미리보기 표시 후 노출)
             await MainActor.run {
                 AlertManager.showAlertNoHandler(
                     title: "업로드 실패",
@@ -336,32 +333,19 @@ extension ChatViewController {
             }
             
             // 실패 메시지를 로컬 UI에 표시
-            let thumbData: Data = (try? makeVideoThumbnailData(url: compressedURL, maxPixel: 720)) ?? Data()
             SocketIOManager.shared.sendFailedVideos(
                 roomID: roomID,
                 senderID: LoginManager.shared.getUserEmail,
                 senderNickname: LoginManager.shared.currentUserProfile?.nickname ?? "",
-                localURL: compressedURL,
-                thumbData: thumbData,
-                duration: duration,
-                width: width,
-                height: height,
-                presetCode: preset.code
+                localURL: prepared.compressedFileURL,
+                thumbData: prepared.thumbnailData,
+                duration: prepared.duration,
+                width: prepared.width,
+                height: prepared.height,
+                presetCode: prepared.preset.code
             )
         }
     }
-    
-    // 썸네일 생성(첫 프레임)
-    func makeVideoThumbnailData(url: URL, maxPixel: CGFloat) throws -> Data {
-        let asset = AVAsset(url: url)
-        let gen = AVAssetImageGenerator(asset: asset)
-        gen.appliesPreferredTrackTransform = true
-        let cg = try gen.copyCGImage(at: .zero, actualTime: nil)
-        let ui = UIImage(cgImage: cg)
-        let scaled = ui.resizeMaxPixel(maxPixel) // 간단한 UIImage 확장 메서드로 축소
-        return scaled.jpegData(compressionQuality: 0.8) ?? Data()
-    }
-    
 
     fileprivate func previewCompressedVideo(_ url: URL) {
         let player = AVPlayer(url: url)
@@ -391,7 +375,7 @@ extension ChatViewController {
 }
 
 // Stable string codes for payload logging/analytics
-private extension MediaManager.VideoUploadPreset {
+private extension DefaultMediaProcessingService.VideoUploadPreset {
     var code: String {
         switch self {
         case .standard720: return "standard720"
