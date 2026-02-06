@@ -8,7 +8,6 @@
 import Foundation
 import UIKit
 import PhotosUI
-import Kingfisher
 import AVKit
 import FirebaseStorage
 import AVFoundation
@@ -228,12 +227,9 @@ extension ChatViewController: PHPickerViewControllerDelegate {
                             Task { @MainActor in hud.dismiss() }
                             
                             for pair in pairs {
-                                guard let img = UIImage(data: pair.thumbData) else { return }
-                                
-                                let cache = KingfisherManager.shared.cache
-                                try await cache.store(img, original: nil, forKey: pair.sha256)
-                                
-                                print(#function, "KingFisher cache saved: \(pair.sha256)")
+                                // 썸네일 Data를 그대로 캐시에 저장(재인코딩/재압축 방지)
+                                await mediaThumbCache.storeToDisk(data: pair.thumbData, forKey: pair.sha256)
+                                print(#function, "ThumbCache saved: \(pair.sha256)")
                             }
                             SocketIOManager.shared.sendFailedImages(room, fromPairs: pairs)
                             
@@ -271,6 +267,12 @@ extension ChatViewController: UIImagePickerControllerDelegate {
 
 // MARK: -  video 관련
 extension ChatViewController {
+    /// ✅ 채팅 전송 직후(성공/실패 무관) 로컬 즉시 표시용 썸네일 캐시
+    /// - DI 적용 전 단계라 우선 공유 인스턴스를 사용
+    private var mediaThumbCache: MediaThumbCaching {
+        MediaThumbCache.shared
+    }
+    
     func uploadPreparedVideoAndBroadcast(
         roomID: String,
         prepared: PreparedVideo,
@@ -294,7 +296,13 @@ extension ChatViewController {
                 localHUD?.setProgress(0.0)
             }
         }
-        
+
+        // ✅ 비디오 썸네일도 성공/실패 무관하게 먼저 저장(로컬 즉시 표시/재시도 UX)
+        if !prepared.thumbnailData.isEmpty {
+            await mediaThumbCache.storeToDisk(data: prepared.thumbnailData, forKey: prepared.sha256)
+            print(#function, "ThumbCache video thumb saved: \(prepared.sha256)")
+        }
+
         do {
             // 1) 비디오 업로드
             try await FirebaseStorageManager.shared.putVideoFileToStorage(localURL: prepared.compressedFileURL, path: videoPath, contentType: "video/mp4") { fraction in

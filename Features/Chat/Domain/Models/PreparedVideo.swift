@@ -7,9 +7,10 @@
 
 import Foundation
 
-struct PreparedVideo: Sendable {
+struct PreparedVideo {
     let compressedFileURL: URL
     let thumbnailData: Data
+    let sha256: String
     let duration: Double
     let width: Int
     let height: Int

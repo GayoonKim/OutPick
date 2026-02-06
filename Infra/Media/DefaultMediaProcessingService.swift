@@ -317,7 +317,6 @@ final class DefaultMediaProcessingService: @unchecked Sendable, MediaProcessingS
                 }
 
                 // iOS 순정 AVAssetExportSession 프리셋 기반(720p) 압축기 사용
-                // - 현재는 FYVideoCompressor 경로를 잠시 비활성화하고, exportSession 기반으로 결과/호환성 확인
                 // - high1080 프리셋도 테스트 단계에서는 720p로 강제(필요 시 1080p 프리셋 구현 추가)
                 Task {
                     do {
@@ -327,34 +326,6 @@ final class DefaultMediaProcessingService: @unchecked Sendable, MediaProcessingS
                         continuation.resume(throwing: error)
                     }
                 }
-
-                /*
-                // 🔻 기존 경로(잠시 비활성화): FYVideoCompressor 기반 압축
-                let asset = AVAsset(url: ownedURL)
-                let size = self.targetSize(for: asset, preset: preset)
-                let bitrate = self.bitrate(for: preset)
-
-                let gopIntervalAssumingFrames = 60
-
-                let config = FYVideoCompressor.CompressionConfig(
-                    videoBitrate: bitrate,
-                    videomaxKeyFrameInterval: gopIntervalAssumingFrames,
-                    fps: 30,
-                    audioSampleRate: 48_000,
-                    audioBitrate: 128_000,
-                    fileType: .mp4,   // 확실하지 않음: 라이브러리 내부 코덱 정책은 문서 확인 필요
-                    scale: size
-                )
-
-                FYVideoCompressor().compressVideo(ownedURL, config: config) { result in
-                    switch result {
-                    case .success(let compressedVideoURL):
-                        continuation.resume(returning: compressedVideoURL)
-                    case .failure(let error):
-                        continuation.resume(throwing: error)
-                    }
-                }
-                */
             }
         }
     }
@@ -396,6 +367,7 @@ final class DefaultMediaProcessingService: @unchecked Sendable, MediaProcessingS
     func prepareVideo(_ result: PHPickerResult,
                       preset: VideoUploadPreset) async throws -> PreparedVideo {
         let compressedURL = try await convertVideo(result, preset: preset)
+        let sha = DefaultMediaProcessingService.sha256(of: compressedURL)
 
         let asset = AVAsset(url: compressedURL)
         let durationSeconds = CMTimeGetSeconds(asset.duration)
@@ -418,6 +390,7 @@ final class DefaultMediaProcessingService: @unchecked Sendable, MediaProcessingS
         return PreparedVideo(
             compressedFileURL: compressedURL,
             thumbnailData: thumbData,
+            sha256: sha,
             duration: safeDuration,
             width: w,
             height: h,
