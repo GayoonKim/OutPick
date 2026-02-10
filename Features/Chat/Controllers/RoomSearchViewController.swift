@@ -8,8 +8,10 @@
 import UIKit
 import Combine
 import FirebaseStorage
+import FirebaseFirestore
 
 class RoomSearchViewController: UIViewController {
+    private let viewModel: RoomSearchViewModel
     
     private var cancellables = Set<AnyCancellable>()
 
@@ -52,6 +54,8 @@ class RoomSearchViewController: UIViewController {
 
     /// 외부에서 검색어 변경을 구독하고 싶을 때 사용
     var onSearchTextChange: ((String) -> Void)?
+    /// Coordinator 기반 라우팅을 위한 검색 결과 선택 콜백
+    var onSelectRoom: ((ChatRoom) -> Void)?
 
     // MARK: - Recent Searches
     private let recentHeaderContainer: UIView = {
@@ -88,11 +92,29 @@ class RoomSearchViewController: UIViewController {
         return cv
     }()
 
-    
-    private var recentSearches: [String] = []
     private var searchResultsCollection: UICollectionView!
-    private var searchResults: [ChatRoom] = []
     private var isLoadingMore = false
+
+    init(viewModel: RoomSearchViewModel) {
+        self.viewModel = viewModel
+        super.init(nibName: nil, bundle: nil)
+    }
+    
+    convenience init() {
+        let db = Firestore.firestore()
+        let roomRepository = ChatRoomRepository(db: db)
+        let useCase = RoomSearchUseCase(roomRepository: roomRepository)
+        let viewModel = RoomSearchViewModel(useCase: useCase)
+        self.init(viewModel: viewModel)
+    }
+
+    required init?(coder: NSCoder) {
+        let db = Firestore.firestore()
+        let roomRepository = ChatRoomRepository(db: db)
+        let useCase = RoomSearchUseCase(roomRepository: roomRepository)
+        self.viewModel = RoomSearchViewModel(useCase: useCase)
+        super.init(coder: coder)
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -102,11 +124,9 @@ class RoomSearchViewController: UIViewController {
         setupSearchBar()
         setupRecentSearchUI()
         setupSearchResultsCollection()
-        if let saved = UserDefaults.standard.stringArray(forKey: "recentSearches") {
-            recentSearches = saved
-        }
-        self.updateRecentPlaceholder()
-        toggleSaveSwitch.addTarget(self, action: #selector(toggleSaveSwitchChanged(_:)), for: .valueChanged)
+        bindViewModel()
+        viewModel.loadInitialState()
+        viewModel.notifyCurrentState()
         bindPublishers()
     }
     
@@ -141,15 +161,21 @@ class RoomSearchViewController: UIViewController {
     }
     
     @objc private func toggleSaveSwitchChanged(_ sender: UISwitch) {
-        if !sender.isOn {
-            // Clear recent searches when turning off
-            recentSearches.removeAll()
-            UserDefaults.standard.removeObject(forKey: "recentSearches")
-            recentSearchesCollection.reloadData()
-            self.updateRecentPlaceholder()
-        }
+        viewModel.setRecentSearchEnabled(sender.isOn)
     }
     
+    private func bindViewModel() {
+        viewModel.onStateChanged = { [weak self] state in
+            guard let self else { return }
+            self.toggleSaveSwitch.isOn = state.isRecentSearchEnabled
+            self.recentSearchesCollection.reloadData()
+            self.searchResultsCollection.reloadData()
+            self.updateRecentPlaceholder()
+            self.searchResultsCollection.backgroundView?.isHidden = !state.searchResults.isEmpty
+        }
+        toggleSaveSwitch.addTarget(self, action: #selector(toggleSaveSwitchChanged(_:)), for: .valueChanged)
+    }
+
     private func bindPublishers() {
         NotificationCenter.default.publisher(for: UITextField.textDidChangeNotification, object: searchTextField)
             .compactMap { ($0.object as? UITextField)?.text }
@@ -158,19 +184,7 @@ class RoomSearchViewController: UIViewController {
             .sink { [weak self] text in
                 guard let self = self else { return }
                 Task {
-                    do {
-                        let rooms = try await FirebaseManager.shared.searchRooms(keyword: text, reset: true)
-                        await MainActor.run {
-                            self.searchResults = rooms
-                            self.searchResultsCollection.reloadData()
-                            
-                            // ✅ 검색 결과 없으면 placeholder 보이기
-                            self.searchResultsCollection.backgroundView?.isHidden = !rooms.isEmpty
-                            print(#function, "✅✅✅✅✅rooms: \(rooms)")
-                        }
-                    } catch {
-                        print("검색 실패: \(error)")
-                    }
+                    await self.viewModel.search(keyword: text, reset: true)
                 }
             }
             .store(in: &cancellables)
@@ -262,7 +276,7 @@ class RoomSearchViewController: UIViewController {
     }
     
     private func updateRecentPlaceholder() {
-        if recentSearches.isEmpty {
+        if viewModel.state.recentSearches.isEmpty {
             recentSearchesCollection.backgroundView?.isHidden = false
         } else {
             recentSearchesCollection.backgroundView?.isHidden = true
@@ -279,15 +293,7 @@ extension RoomSearchViewController: UITextFieldDelegate {
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
         textField.resignFirstResponder()
         let text = textField.text ?? ""
-        if toggleSaveSwitch.isOn, !text.isEmpty {
-            if let idx = recentSearches.firstIndex(of: text) {
-                recentSearches.remove(at: idx)
-            }
-            recentSearches.insert(text, at: 0)
-            UserDefaults.standard.set(recentSearches, forKey: "recentSearches")
-            recentSearchesCollection.reloadData()
-            self.updateRecentPlaceholder()
-        }
+        viewModel.recordRecentSearch(text)
         onSearchTextChange?(text)
  
         
@@ -298,9 +304,9 @@ extension RoomSearchViewController: UITextFieldDelegate {
 extension RoomSearchViewController: UICollectionViewDataSource, UICollectionViewDelegateFlowLayout {
     func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
         if collectionView == recentSearchesCollection {
-            return recentSearches.count
+            return viewModel.state.recentSearches.count
         } else if collectionView == searchResultsCollection {
-            return searchResults.count
+            return viewModel.state.searchResults.count
         }
         return 0
     }
@@ -308,17 +314,14 @@ extension RoomSearchViewController: UICollectionViewDataSource, UICollectionView
     func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
         if collectionView == recentSearchesCollection {
             let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "RecentSearchChipCell", for: indexPath) as! RecentSearchChipCell
-            cell.configure(with: recentSearches[indexPath.item]) { [weak self] in
+            cell.configure(with: viewModel.state.recentSearches[indexPath.item]) { [weak self] in
                 guard let self = self else { return }
-                self.recentSearches.remove(at: indexPath.item)
-                UserDefaults.standard.set(self.recentSearches, forKey: "recentSearches")
-                self.recentSearchesCollection.reloadData()
-                self.updateRecentPlaceholder()
+                self.viewModel.removeRecentSearch(at: indexPath.item)
             }
             return cell
         } else {
             let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "SearchResultCell", for: indexPath) as! SearchResultRoomCell
-            let room = searchResults[indexPath.item]
+            let room = viewModel.state.searchResults[indexPath.item]
             cell.configure(with: room)
             return cell
         }
@@ -326,25 +329,24 @@ extension RoomSearchViewController: UICollectionViewDataSource, UICollectionView
 
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         if collectionView == recentSearchesCollection {
-            let selected = recentSearches[indexPath.item]
+            guard let selected = viewModel.selectRecentSearch(at: indexPath.item) else { return }
             searchTextField.text = selected
-            if toggleSaveSwitch.isOn {
-                if let idx = recentSearches.firstIndex(of: selected) {
-                    recentSearches.remove(at: idx)
-                }
-                recentSearches.insert(selected, at: 0)
-                UserDefaults.standard.set(recentSearches, forKey: "recentSearches")
-                recentSearchesCollection.reloadData()
-                self.updateRecentPlaceholder()
-            }
             onSearchTextChange?(selected)
+            Task { [weak self] in
+                await self?.viewModel.search(keyword: selected, reset: true)
+            }
         } else if collectionView == searchResultsCollection {
-            let room = searchResults[indexPath.item]
+            let room = viewModel.state.searchResults[indexPath.item]
+            if let onSelectRoom {
+                onSelectRoom(room)
+                return
+            }
             // ✅ 방 셀 클릭 시 원하는 동작 (예: 채팅방으로 이동)
             print("선택된 방: \(room.roomName)")
             let storyboard = UIStoryboard(name: "Main", bundle: nil)
             guard let chatRoomVC = storyboard.instantiateViewController(withIdentifier: "chatRoomVC") as? ChatViewController else { return }
             chatRoomVC.room = room
+            chatRoomVC.configureDefaultViewModelIfNeeded()
             chatRoomVC.isRoomSaving = false
             chatRoomVC.modalPresentationStyle = .fullScreen
             
@@ -362,7 +364,7 @@ extension RoomSearchViewController: UICollectionViewDataSource, UICollectionView
     // Size for chip cells
     func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, sizeForItemAt indexPath: IndexPath) -> CGSize {
         if collectionView == recentSearchesCollection {
-            let text = recentSearches[indexPath.item]
+            let text = viewModel.state.recentSearches[indexPath.item]
             let size = (text as NSString).size(withAttributes: [.font: UIFont.systemFont(ofSize: 14)])
             return CGSize(width: size.width + 40, height: 32)
         } else {
@@ -379,19 +381,8 @@ extension RoomSearchViewController: UICollectionViewDataSource, UICollectionView
         if offsetY > contentHeight - height * 2, !isLoadingMore {
             isLoadingMore = true
             Task {
-                do {
-                    let more = try await FirebaseManager.shared.loadMoreSearchRooms()
-                    await MainActor.run {
-                        self.searchResults.append(contentsOf: more)
-                        self.searchResultsCollection.reloadData()
-                        self.isLoadingMore = false
-                        // ✅ 검색 결과 없음 여부 갱신
-                        self.searchResultsCollection.backgroundView?.isHidden = !self.searchResults.isEmpty
-                    }
-                } catch {
-                    print("추가 로드 실패: \(error)")
-                    await MainActor.run { self.isLoadingMore = false }
-                }
+                await viewModel.loadMore()
+                await MainActor.run { self.isLoadingMore = false }
             }
         }
     }

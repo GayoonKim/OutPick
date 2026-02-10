@@ -14,26 +14,20 @@ import UIKit
 final class DefaultMainTabBuilder: MainTabBuilding {
 
     private let lookbookContainer: LookbookContainer
+    private let chatCoordinator: ChatCoordinator
 
-    init(lookbookContainer: LookbookContainer) {
+    init(lookbookContainer: LookbookContainer, chatContainer: ChatContainer) {
         self.lookbookContainer = lookbookContainer
+        self.chatCoordinator = ChatCoordinator(container: chatContainer)
     }
 
     func makeViewController(for index: Int) -> UIViewController {
         switch index {
         case 0:
-            // 메인 탭: 오픈채팅 목록
-            let listVC = RoomListsCollectionViewController(collectionViewLayout: UICollectionViewFlowLayout())
-            let nav = UINavigationController(rootViewController: listVC)
-            nav.isNavigationBarHidden = true
-            return nav
+            return ChatCompositionRoot.makeRoomListRoot(coordinator: chatCoordinator)
 
         case 1:
-            // 참여중인 오픈채팅 목록
-            let joinedListVC = JoinedRoomsViewController()
-            let nav = UINavigationController(rootViewController: joinedListVC)
-            nav.isNavigationBarHidden = true
-            return nav
+            return ChatCompositionRoot.makeJoinedRoomsRoot(coordinator: chatCoordinator)
 
         case 2:
             // 룩북 탭: LookbookCompositionRoot가 완전히 조립/생성 책임을 가짐

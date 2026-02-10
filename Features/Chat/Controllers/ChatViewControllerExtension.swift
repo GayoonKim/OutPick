@@ -202,7 +202,7 @@ extension ChatViewController: PHPickerViewControllerDelegate {
                         hud.setProgress(0.0)
 
                         do {
-                            let attachments = try await FirebaseStorageManager.shared.uploadPairsToRoomMessage(
+                            let attachments = try await FirebaseImageStorageManager.shared.uploadPairsToRoomMessage(
                                 pairs,
                                 roomID: roomID,
                                 messageID: messageID,
@@ -267,7 +267,7 @@ extension ChatViewController: UIImagePickerControllerDelegate {
 
 // MARK: -  video 관련
 extension ChatViewController {
-    /// ✅ 채팅 전송 직후(성공/실패 무관) 로컬 즉시 표시용 썸네일 캐시
+    /// 채팅 전송 직후(성공/실패 무관) 로컬 즉시 표시용 썸네일 캐시
     /// - DI 적용 전 단계라 우선 공유 인스턴스를 사용
     private var mediaThumbCache: MediaThumbCaching {
         MediaThumbCache.shared
@@ -297,7 +297,7 @@ extension ChatViewController {
             }
         }
 
-        // ✅ 비디오 썸네일도 성공/실패 무관하게 먼저 저장(로컬 즉시 표시/재시도 UX)
+        // 비디오 썸네일도 성공/실패 무관하게 먼저 저장(로컬 즉시 표시/재시도 UX)
         if !prepared.thumbnailData.isEmpty {
             await mediaThumbCache.storeToDisk(data: prepared.thumbnailData, forKey: prepared.sha256)
             print(#function, "ThumbCache video thumb saved: \(prepared.sha256)")
@@ -305,7 +305,7 @@ extension ChatViewController {
 
         do {
             // 1) 비디오 업로드
-            try await FirebaseStorageManager.shared.putVideoFileToStorage(localURL: prepared.compressedFileURL, path: videoPath, contentType: "video/mp4") { fraction in
+            try await FirebaseVideoStorageManager.shared.putVideoFileToStorage(localURL: prepared.compressedFileURL, path: videoPath, contentType: "video/mp4") { fraction in
                 Task { @MainActor in
                     localHUD?.setProgress(fraction)
                 }
@@ -313,7 +313,7 @@ extension ChatViewController {
             
             // 2) 썸네일 업로드
             if !prepared.thumbnailData.isEmpty {
-                try await FirebaseStorageManager.shared.putVideoDataToStorage(data: prepared.thumbnailData, path: thumbPath, contentType: "image/jpeg")
+                try await FirebaseVideoStorageManager.shared.putVideoDataToStorage(data: prepared.thumbnailData, path: thumbPath, contentType: "image/jpeg")
             }
             
             // 3) 메타 브로드캐스트 (바이너리 X)

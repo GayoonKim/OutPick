@@ -222,7 +222,7 @@ class RoomEditViewController: UIViewController, PHPickerViewControllerDelegate, 
             guard let self else { return }
             do {
                 let image = try await KingFisherCacheManager.shared.loadOrFetchImage(forKey: path, fetch: {
-                    try await FirebaseStorageManager.shared.fetchImageFromStorage(image: path, location: .roomImage)
+                    try await FirebaseImageStorageManager.shared.fetchImageFromStorage(image: path, location: .roomImage)
                 })
                 await MainActor.run {
                     self.headerImageView.image = image

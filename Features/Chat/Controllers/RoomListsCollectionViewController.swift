@@ -7,42 +7,45 @@
 
 import UIKit
 import Kingfisher
-import Combine
+import FirebaseFirestore
 
 class RoomListsCollectionViewController: UICollectionViewController, UIGestureRecognizerDelegate, ChatModalAnimatable {
     enum Section: Hashable {
         case main
     }
-    
-    struct RoomPreview: Hashable {
-        let room: ChatRoom
-        let messages: [ChatMessage]
-        
-        func hash(into hasher: inout Hasher) {
-            hasher.combine(room.ID)
-        }
-        
-        static func == (lhs: RoomPreview, rhs: RoomPreview) -> Bool {
-            return lhs.room.ID == rhs.room.ID
-        }
-    }
 
-    typealias Item = RoomPreview
+    typealias Item = ChatRoomPreviewItem
     typealias DataSourceType = UICollectionViewDiffableDataSource<Section, Item>
 
-    var chatRooms: [RoomPreview] = []
+    var chatRooms: [ChatRoomPreviewItem] = []
     var dataSource: DataSourceType!
-    
-    private lazy var cancellables = Set<AnyCancellable>()
+    private let viewModel: RoomListsViewModel
 
-    private var tabViewControllers: [Int: UIViewController] = [:]
-    private var currentChildViewController: UIViewController?
-    private var currentTabIndex: Int?
+    // MARK: - Navigation callbacks (Coordinator)
+    var onSelectRoom: ((ChatRoom) -> Void)?
+    var onCreateRoom: (() -> Void)?
+    var onSearchRoom: (() -> Void)?
     
     private let refreshControl: UIRefreshControl = {
         let rc = UIRefreshControl()
         return rc
     }()
+
+    init(
+        collectionViewLayout layout: UICollectionViewLayout,
+        viewModel: RoomListsViewModel
+    ) {
+        self.viewModel = viewModel
+        super.init(collectionViewLayout: layout)
+    }
+
+    required init?(coder: NSCoder) {
+        let db = Firestore.firestore()
+        let roomRepository = ChatRoomRepository(db: db)
+        let useCase = RoomListUseCase(roomRepository: roomRepository)
+        self.viewModel = RoomListsViewModel(useCase: useCase)
+        super.init(coder: coder)
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -60,6 +63,9 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
 
         self.setupNavigationBar()
         self.setupRefreshControl()
+        bindViewModel()
+        viewModel.notifyCurrentState()
+        Task { await viewModel.refreshTopRooms() }
         
         CloudFunctionsManager.shared.callHelloUser(name: "가윤") { result in
             switch result {
@@ -73,9 +79,7 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        Task { @MainActor in
-            self.renderTopRoomsSnapshot()
-        }
+        viewModel.onAppear()
     }
     
     @MainActor
@@ -86,39 +90,21 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
     }
     
     @objc private func didPullToRefresh() {
-        Task(priority: .userInitiated) {
-            do {
-                // 서버에서 Top 30 새로 로드 (첫 페이지)
-                try await FirebaseManager.shared.fetchTopRoomsPage(after: nil, limit: 30)
-                // UI 업데이트
-                await MainActor.run {
-                    self.renderTopRoomsSnapshot()
-                    
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
-                        self.refreshControl.endRefreshing()
-                    }
-                }
-            } catch {
-                await MainActor.run {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
-                        self.refreshControl.endRefreshing()
-                    }
-                }
-                print("❌ pull-to-refresh 실패: \(error)")
-            }
+        Task {
+            await viewModel.refreshTopRooms()
         }
     }
-    
-    @MainActor
-    private func renderTopRoomsSnapshot() {
-        chatRooms.removeAll(keepingCapacity: true)
-        FirebaseManager.shared.topRoomsWithPreviews.forEach {
-            let roomPreview = RoomPreview(room: $0.0, messages: $0.1)
-            print(#function, "방 정보: \(roomPreview.room)")
-            chatRooms.append(roomPreview)
+
+    private func bindViewModel() {
+        viewModel.onStateChanged = { [weak self] state in
+            guard let self else { return }
+            self.chatRooms = state.rooms
+            let itemBySection = [Section.main: state.rooms]
+            self.dataSource.applySnapshotUsing(sectionIDs: [Section.main], itemsBySection: itemBySection)
+            if !state.isRefreshing {
+                self.refreshControl.endRefreshing()
+            }
         }
-        let itemBySection = [Section.main: chatRooms]
-        dataSource.applySnapshotUsing(sectionIDs: [Section.main], itemsBySection: itemBySection)
     }
 
     private func configureDataSource() -> DataSourceType {
@@ -157,15 +143,26 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
     override func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         guard let selectedItem = dataSource.itemIdentifier(for: indexPath) else { return }
 
+        if let onSelectRoom {
+            onSelectRoom(selectedItem.room)
+            return
+        }
+
         let storyboard = UIStoryboard(name: "Main", bundle: nil)
         guard let chatRoomVC = storyboard.instantiateViewController(withIdentifier: "chatRoomVC") as? ChatViewController else { return }
         chatRoomVC.room = selectedItem.room
+        chatRoomVC.configureDefaultViewModelIfNeeded()
         chatRoomVC.isRoomSaving = false
         chatRoomVC.modalPresentationStyle = .fullScreen
         ChatModalTransitionManager.present(chatRoomVC, from: self)
     }
 
     @objc private func createRoomBtnTapped() {
+        if let onCreateRoom {
+            onCreateRoom()
+            return
+        }
+
         let storyboard = UIStoryboard(name: "Main", bundle: nil)
         guard let chatRoomCreateVC = storyboard.instantiateViewController(identifier: "chatRoomCreateVC") as? RoomCreateViewController else { return }
         chatRoomCreateVC.modalPresentationStyle = .fullScreen
@@ -174,6 +171,11 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
     }
     
     @objc private func searchBtnTapped() {
+        if let onSearchRoom {
+            onSearchRoom()
+            return
+        }
+
         let searchVC = RoomSearchViewController()
         searchVC.modalPresentationStyle = .fullScreen
         ChatModalTransitionManager.present(searchVC, from: self)

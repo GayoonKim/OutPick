@@ -192,11 +192,11 @@ final class ChatRoomRepository: ChatRoomRepositoryProtocol {
                 "roomDescription": newDesc
             ])
             Task.detached {
-                if let t = oldThumb { FirebaseStorageManager.shared.deleteImageFromStorage(path: t) }
-                if let o = oldOriginal { FirebaseStorageManager.shared.deleteImageFromStorage(path: o) }
+                if let t = oldThumb { FirebaseImageStorageManager.shared.deleteImageFromStorage(path: t) }
+                if let o = oldOriginal { FirebaseImageStorageManager.shared.deleteImageFromStorage(path: o) }
             }
         } else if let pair = imageData {
-            let (newThumb, newOriginal) = try await FirebaseStorageManager.shared.uploadAndSave(
+            let (newThumb, newOriginal) = try await FirebaseImageStorageManager.shared.uploadAndSave(
                 sha: pair.fileBaseName,
                 uid: room.ID ?? "",
                 type: .roomImage,
@@ -553,4 +553,3 @@ final class ChatRoomRepository: ChatRoomRepositoryProtocol {
         }
     }
 }
-

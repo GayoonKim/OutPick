@@ -12,11 +12,11 @@ import UIKit
 @MainActor
 enum MainTabCompositionRoot {
 
-    static func makeMainTab(lookbookContainer: LookbookContainer) -> CustomTabBarViewController {
+    static func makeMainTab(lookbookContainer: LookbookContainer, chatContainer: ChatContainer) -> CustomTabBarViewController {
         let vc = CustomTabBarViewController()
 
         // 탭 생성 책임은 빌더로 위임
-        vc.tabBuilder = DefaultMainTabBuilder(lookbookContainer: lookbookContainer)
+        vc.tabBuilder = DefaultMainTabBuilder(lookbookContainer: lookbookContainer, chatContainer: chatContainer)
 
         return vc
     }

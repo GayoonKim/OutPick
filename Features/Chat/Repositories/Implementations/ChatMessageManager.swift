@@ -143,7 +143,7 @@ final class ChatMessageManager: ChatMessageManagerProtocol {
         await withTaskGroup(of: Void.self) { group in
             for path in uniquePaths {
                 group.addTask {
-                    FirebaseStorageManager.shared.deleteImageFromStorage(path: path)
+                    FirebaseImageStorageManager.shared.deleteImageFromStorage(path: path)
                 }
             }
         }
@@ -222,4 +222,3 @@ final class ChatMessageManager: ChatMessageManagerProtocol {
         try await firebaseManager.saveMessage(message, room)
     }
 }
-

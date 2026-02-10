@@ -183,6 +183,7 @@ class RoomCreateViewController: UIViewController, ChatModalAnimatable {
                     return
                 }
                 chatRoomVC.room = room
+                chatRoomVC.configureDefaultViewModelIfNeeded()
                 chatRoomVC.isRoomSaving = true
                 chatRoomVC.modalPresentationStyle = .fullScreen
                 
@@ -209,7 +210,7 @@ class RoomCreateViewController: UIViewController, ChatModalAnimatable {
                 if self.isDefaultRoomImage == false, let pair = self.imageData {
                     Task.detached(priority: .background) {
                         do {
-                            let (thumbPath, _) = try await FirebaseStorageManager.shared.uploadAndSave(
+                            let (thumbPath, _) = try await FirebaseImageStorageManager.shared.uploadAndSave(
                                 sha: pair.fileBaseName,
                                 uid: room.ID ?? "",
                                 type: .roomImage,

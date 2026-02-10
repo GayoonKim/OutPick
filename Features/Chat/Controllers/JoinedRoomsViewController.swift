@@ -7,7 +7,6 @@
 
 import UIKit
 import FirebaseFirestore
-import Combine
 
 class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
     
@@ -32,189 +31,98 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
         return collectionV
     }()
     
-    private var currentJoined: Set<String> = []
-    // roomID → unread count
+    let viewModel: JoinedRoomsViewModel
+    // roomID -> unread count
     private var unreadCounts: [String: Int64] = [:]
     
     var roomImages: [String:UIImage] = [:]
-    private var cancellables = Set<AnyCancellable>()
+
+    // MARK: - Navigation callbacks (Coordinator)
+    var onOpenRoom: ((ChatRoom) -> Void)?
+    var onCreateRoom: (() -> Void)?
+    var onSearchRoom: (() -> Void)?
+    
+    init(viewModel: JoinedRoomsViewModel) {
+        self.viewModel = viewModel
+        super.init(nibName: nil, bundle: nil)
+    }
+    
+    required init?(coder: NSCoder) {
+        let db = Firestore.firestore()
+        let roomRepository = ChatRoomRepository(db: db)
+        let userProfileRepository = UserProfileRepository(db: db)
+        let useCase = JoinedRoomsUseCase(
+            roomRepository: roomRepository,
+            userProfileRepository: userProfileRepository
+        )
+        self.viewModel = JoinedRoomsViewModel(useCase: useCase)
+        super.init(coder: coder)
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
         setupNavigationBar()
         setupViews()
         configureDataSource()
+        bindViewModel()
+        viewModel.notifyCurrentState()
     }
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        setjoinedRooms()
-        bindRoomChangePublisher()
+        viewModel.start()
     }
     
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        cancellables.removeAll()
+        viewModel.stop()
     }
-    
+
+    private func bindViewModel() {
+        viewModel.onStateChanged = { [weak self] state in
+            guard let self else { return }
+            self.unreadCounts = state.unreadCounts
+            self.applyRooms(state.rooms, animated: true)
+            Task { await self.syncRoomImages(for: state.rooms) }
+        }
+    }
+
     @MainActor
-    private func refreshRoomCell(id: String) {
-        var snapshot = dataSource.snapshot()
-        guard let item = snapshot.itemIdentifiers.first(where: { $0.ID == id }) else { return }
-        snapshot.reconfigureItems([item])
-        dataSource.apply(snapshot, animatingDifferences: true)
-    }
-
-    private func bindRoomChangePublisher() {
-        // 실시간 방 업데이트 관련
-        FirebaseManager.shared.roomChangePublisher
-            .removeDuplicates(by: { lhs, rhs in
-              lhs.ID == rhs.ID && lhs.seq == rhs.seq  // (예시) 같은 방 & 같은 최신 seq면 중복으로 간주
-            })
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] updatedRoom in
-                guard let self = self else { return }
-                Task { @MainActor in
-                    self.applyIncrementalRoomUpdate(updatedRoom)
-                }
-            }
-            .store(in: &cancellables)
-
-        Task { [weak self] in
-            guard let self = self else { return }
-            // actor hop로 publisher를 안전하게 가져옴
-            let pub = await FirebaseManager.shared.joinedRoomStore.publisher
-            // 구독/보관은 MainActor에서 안전하게 수행
-            await MainActor.run {
-                pub
-                    .removeDuplicates()
-                    .receive(on: DispatchQueue.main)
-                    .sink { [weak self] joined in
-                        guard let self = self else { return }
-                        self.currentJoined = joined
-                    }
-                    .store(in: &self.cancellables)
-            }
-        }
-    }
-    
-    /// 방 정보(old → new) 변경점을 비교하고 필요한 UI/동기화만 수행
-    @MainActor
-    func applyIncrementalRoomUpdate(_ updated: ChatRoom) {
-        guard let id = updated.ID else { return }
-        var snapshot = dataSource.snapshot()
-
-        if !snapshot.itemIdentifiers.contains(where: { $0.ID == id }) {
-            // 새로 참여(추가)
-            snapshot.appendItems([updated], toSection: Section.main)
-            dataSource.apply(snapshot, animatingDifferences: true)
-            // 새 방도 미읽음 계산 시작
-            Task { await self.updateUnread(for: id, lastMessageSeqHint: updated.seq) }
-            return
+    private func syncRoomImages(for rooms: [ChatRoom]) async {
+        let pairs: [(String, String)] = rooms.compactMap { room in
+            guard let roomID = room.ID,
+                  let thumbPath = room.thumbPath,
+                  !thumbPath.isEmpty else { return nil }
+            return (roomID, thumbPath)
         }
 
-        // 1) 기존 아이템 제거
-        guard let old = snapshot.itemIdentifiers.first(where: { $0.ID == id }) else { return }
-        snapshot.deleteItems([old])
-
-        // 2) 업데이트된 아이템을 '정렬 기준'에 맞춰 올바른 위치에 삽입
-        //    현재 스냅샷(= old 제거된 상태)의 아이템 + updated 로 정렬 배열 만들기
-        var itemsForOrder = snapshot.itemIdentifiers
-        itemsForOrder.append(updated)
-        let ordered = itemsForOrder.sorted {
-            ($0.lastMessageAt ?? $0.createdAt) > ($1.lastMessageAt ?? $1.createdAt)
-        }
-
-        // updated의 올바른 위치를 찾아 삽입
-        if let pos = ordered.firstIndex(where: { $0.ID == id }) {
-            if pos < ordered.count - 1 {
-                let next = ordered[pos + 1]
-                snapshot.insertItems([updated], beforeItem: next)
-            } else {
-                snapshot.appendItems([updated], toSection: .main)
-            }
-        } else {
-            // 안전망: 못 찾으면 맨 앞에 추가
-            snapshot.insertItems([updated], beforeItem: snapshot.itemIdentifiers.first!)
-        }
-
-        // 3) 적용
-        dataSource.apply(snapshot, animatingDifferences: true)
-
-        // 4) UI 반영 후 미읽음 계산 kick-off (네트워크는 메인에서 기다리지 않음)
-        Task { await self.updateUnread(for: id, lastMessageSeqHint: updated.seq) }
-    }
-    
-    private func updateUnread(for roomID: String, lastMessageSeqHint: Int64?) async {
-        do {
-            let lastRead = try await FirebaseManager.shared.fetchLastReadSeq(for: roomID)
-            let latest: Int64
-            if let hint = lastMessageSeqHint {
-                latest = hint
-            } else {
-                latest = try await FirebaseManager.shared.fetchLatestSeq(for: roomID)
-            }
-            let unread = max(Int64(0), latest - lastRead)
-            await MainActor.run {
-                self.unreadCounts[roomID] = unread
-                self.refreshRoomCell(id: roomID)
-            }
-        } catch {
-            print("⚠️ updateUnread 실패(roomID: \(roomID)):", error)
-        }
-    }
-    
-    private func setjoinedRooms() {
-        guard let profile = LoginManager.shared.currentUserProfile else { return }
-        let joinedRoomIDs = profile.joinedRooms
-        
-        Task {
-            do {
-                let rooms = try await FirebaseManager.shared.fetchRoomsWithIDs(byIDs: joinedRoomIDs)
-                
-                // 병렬 이미지 로딩
-                async let imagesDict: [String: UIImage] = withTaskGroup(of: (String, UIImage?).self) { group in
-                    for room in rooms {
-
-                        guard let imagePath = room.thumbPath else { continue }
-                        let key = room.ID ?? room.roomName // capture simple Sendable values only
-                        group.addTask {
-                            let image = try? await KingFisherCacheManager.shared.loadOrFetchImage(
-                                forKey: imagePath,
-                                fetch: { try await FirebaseStorageManager.shared.fetchImageFromStorage(image: imagePath, location: .roomImage) }
-                            )
-                            return (key, image)
+        let fetched: [String: UIImage] = await withTaskGroup(of: (String, UIImage?).self, returning: [String: UIImage].self) { group in
+            for (roomID, imagePath) in pairs {
+                if roomImages[roomID] != nil { continue }
+                group.addTask {
+                    let image = try? await KingFisherCacheManager.shared.loadOrFetchImage(
+                        forKey: imagePath,
+                        fetch: {
+                            try await FirebaseImageStorageManager.shared.fetchImageFromStorage(image: imagePath, location: .roomImage)
                         }
-                    }
-                    var dict: [String: UIImage] = [:]
-                    for await (key, img) in group {
-                        if let img = img { dict[key] = img }
-                    }
-                    return dict
+                    )
+                    return (roomID, image)
                 }
-                
-                // 최종 반영
-                let dict = await imagesDict
-                print(#function, "✅ 성공", dict)
-                await MainActor.run {
-                    self.roomImages = dict
-                    self.applyRooms(rooms)
-                }
-                
-                // 초기 진입 시 각 방 미읽음 계산 kick-off (비동기)
-                for room in rooms {
-                    if let id = room.ID {
-                        let hint = room.seq
-                        Task { [weak self] in
-                            guard let self = self else { return }
-                            await self.updateUnread(for: id, lastMessageSeqHint: hint)
-                        }
-                    }
-                }
-            } catch {
-                print("❌ setJoinedRooms 실패:", error)
-                await MainActor.run { self.applyRooms([]) }
             }
+
+            var dict: [String: UIImage] = [:]
+            for await (roomID, image) in group {
+                if let image {
+                    dict[roomID] = image
+                }
+            }
+            return dict
+        }
+
+        if fetched.isEmpty { return }
+        await MainActor.run {
+            self.roomImages.merge(fetched) { current, _ in current }
+            self.applyRooms(self.dataSource.snapshot().itemIdentifiers, animated: false)
         }
     }
  
@@ -280,6 +188,11 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
     }
     
     @objc private func createRoomBtnTapped() {
+        if let onCreateRoom {
+            onCreateRoom()
+            return
+        }
+
         let storyboard = UIStoryboard(name: "Main", bundle: nil)
         guard let chatRoomCreateVC = storyboard.instantiateViewController(identifier: "chatRoomCreateVC") as? RoomCreateViewController else { return }
         chatRoomCreateVC.modalPresentationStyle = .fullScreen
@@ -288,6 +201,11 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
     }
     
     @objc private func searchBtnTapped() {
+        if let onSearchRoom {
+            onSearchRoom()
+            return
+        }
+
         let searchVC = RoomSearchViewController()
         searchVC.modalPresentationStyle = .fullScreen
         ChatModalTransitionManager.present(searchVC, from: self)
@@ -307,10 +225,16 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
 extension JoinedRoomsViewController: UICollectionViewDelegate {
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         guard let room = dataSource.itemIdentifier(for: indexPath) else { return }
+
+        if let onOpenRoom {
+            onOpenRoom(room)
+            return
+        }
         
         let storyboard = UIStoryboard(name: "Main", bundle: nil)
         guard let chatRoomVC = storyboard.instantiateViewController(withIdentifier: "chatRoomVC") as? ChatViewController else { return }
         chatRoomVC.room = room
+        chatRoomVC.configureDefaultViewModelIfNeeded()
         chatRoomVC.isRoomSaving = false
         chatRoomVC.modalPresentationStyle = .fullScreen
         ChatModalTransitionManager.present(chatRoomVC, from: self)
@@ -320,7 +244,11 @@ extension JoinedRoomsViewController: UICollectionViewDelegate {
     func collectionView(_ collectionView: UICollectionView, trailingSwipeActionsConfigurationForItemAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {
         guard let room = dataSource.itemIdentifier(for: indexPath), let id = room.ID else { return nil }
         let leave = UIContextualAction(style: .destructive, title: "나가기") { [weak self] _, _, completion in
-            self?.onLeaveRoom?(id)
+            if let onLeaveRoom = self?.onLeaveRoom {
+                onLeaveRoom(id)
+            } else {
+                self?.viewModel.leave(room: room)
+            }
             completion(true)
         }
         

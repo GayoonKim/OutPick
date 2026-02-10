@@ -14,6 +14,7 @@ final class AppCoordinator {
 
     private let lookbookProvider: LookbookRepositoryProvider
     private var lookbookContainer: LookbookContainer?
+    private var chatContainer: ChatContainer?
     
     private var profileCoordinator: ProfileCoordinator?
 
@@ -65,6 +66,7 @@ final class AppCoordinator {
 
                 // 메인 탭 상태 정리(선택)
                 self.lookbookContainer = nil
+                self.chatContainer = nil
 
                 guard let scene = self.window.windowScene ?? self.currentWindowScene else { return }
                 self.showLogin(windowScene: scene)
@@ -99,6 +101,7 @@ final class AppCoordinator {
     @MainActor
     private func showLogin(windowScene: UIWindowScene) {
         self.profileCoordinator = nil
+        self.chatContainer = nil
         // 로그인 화면으로 들어갈 땐 강제로그아웃 콜백을 해제해도 됨(이미 로그아웃 상태/또는 루트가 로그인)
         // 중복 라우팅(콜백 재호출) 방지 목적
         LoginManager.shared.onForceLogout = nil
@@ -137,10 +140,13 @@ final class AppCoordinator {
         if lookbookContainer == nil {
             lookbookContainer = LookbookContainer(provider: lookbookProvider)
         }
-        guard let lbcontainer = lookbookContainer else { return }
+        if chatContainer == nil {
+            chatContainer = ChatContainer()
+        }
+        guard let lbcontainer = lookbookContainer, let chatContainer else { return }
 
         // 탭 조립은 MainTabCompositionRoot가 담당 (CustomTabBarVC는 룩북을 모름)
-        let tab = MainTabCompositionRoot.makeMainTab(lookbookContainer: lbcontainer)
+        let tab = MainTabCompositionRoot.makeMainTab(lookbookContainer: lbcontainer, chatContainer: chatContainer)
 
         setRoot(tab, animated: true)
     }

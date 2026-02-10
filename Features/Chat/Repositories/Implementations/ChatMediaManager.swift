@@ -12,7 +12,7 @@ import AVFoundation
 import AVKit
 
 final class ChatMediaManager: ChatMediaManagerProtocol {
-    private let storageManager: FirebaseStorageManager
+    private let imageStorageManager: FirebaseImageStorageManager
     private let cacheManager: KingFisherCacheManager
     private let storageURLCache: OPStorageURLCache
     
@@ -24,11 +24,11 @@ final class ChatMediaManager: ChatMediaManagerProtocol {
     var messageImages: [String: [UIImage]] = [:]
     
     init(
-        storageManager: FirebaseStorageManager = .shared,
+        imageStorageManager: FirebaseImageStorageManager = .shared,
         cacheManager: KingFisherCacheManager = .shared,
         storageURLCache: OPStorageURLCache? = nil
     ) {
-        self.storageManager = storageManager
+        self.imageStorageManager = imageStorageManager
         self.cacheManager = cacheManager
         self.storageURLCache = storageURLCache ?? OPStorageURLCache()
     }
@@ -57,7 +57,7 @@ final class ChatMediaManager: ChatMediaManagerProtocol {
                         images.append(img)
                     }
                 } else {
-                    let img = try await storageManager.fetchImageFromStorage(image: attachment.pathThumb, location: .roomImage)
+                    let img = try await imageStorageManager.fetchImageFromStorage(image: attachment.pathThumb, location: .roomImage)
                     cacheManager.storeImage(img, forKey: key)
                     images.append(img)
                 }
@@ -104,7 +104,7 @@ final class ChatMediaManager: ChatMediaManagerProtocol {
                                 cacheManager.storeImage(img, forKey: key)
                             }
                         } else {
-                            let img = try await storageManager.fetchImageFromStorage(image: thumbPath, location: .roomImage)
+                            let img = try await imageStorageManager.fetchImageFromStorage(image: thumbPath, location: .roomImage)
                             cacheManager.storeImage(img, forKey: key)
                         }
                     }
@@ -304,4 +304,3 @@ extension UIImage {
         }
     }
 }
-
