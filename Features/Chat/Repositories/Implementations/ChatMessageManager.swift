@@ -7,21 +7,17 @@
 
 import Foundation
 import Combine
-import FirebaseFirestore
 
 final class ChatMessageManager: ChatMessageManagerProtocol {
-    private let firebaseManager: FirebaseManager
+    private let messageRepository: MessageRepositoryProtocol
     private let grdbManager: GRDBManager
-    private let socketManager: SocketIOManager
     
     init(
-        firebaseManager: FirebaseManager = .shared,
-        grdbManager: GRDBManager = .shared,
-        socketManager: SocketIOManager = .shared
+        messageRepository: MessageRepositoryProtocol = FirebaseRepositoryProvider.shared.messageRepository,
+        grdbManager: GRDBManager = .shared
     ) {
-        self.firebaseManager = firebaseManager
+        self.messageRepository = messageRepository
         self.grdbManager = grdbManager
-        self.socketManager = socketManager
     }
     
     func loadInitialMessages(room: ChatRoom, isParticipant: Bool) async throws -> (local: [ChatMessage], server: [ChatMessage]) {
@@ -29,7 +25,7 @@ final class ChatMessageManager: ChatMessageManagerProtocol {
         
         if !isParticipant {
             // 미참여자: 서버에서만 미리보기
-            let previewMessages = try await firebaseManager.fetchMessagesPaged(for: room, pageSize: 100, reset: true)
+            let previewMessages = try await messageRepository.fetchMessagesPaged(for: room, pageSize: 100, reset: true)
             return ([], previewMessages)
         }
         
@@ -38,7 +34,7 @@ final class ChatMessageManager: ChatMessageManagerProtocol {
             try await grdbManager.fetchRecentMessages(inRoom: roomID, limit: 200)
         }.value
         
-        let serverMessages = try await firebaseManager.fetchMessagesPaged(for: room, pageSize: 300, reset: true)
+        let serverMessages = try await messageRepository.fetchMessagesPaged(for: room, pageSize: 300, reset: true)
         try await grdbManager.saveChatMessages(serverMessages)
         
         // 발신자 정보 동기화
@@ -74,7 +70,7 @@ final class ChatMessageManager: ChatMessageManagerProtocol {
         // 2. 부족분은 서버에서 채우기
         if local.count < 100 {
             let needed = 100 - local.count
-            let server = try await firebaseManager.fetchOlderMessages(
+            let server = try await messageRepository.fetchOlderMessages(
                 for: room,
                 before: messageID ?? "",
                 limit: needed
@@ -90,7 +86,7 @@ final class ChatMessageManager: ChatMessageManagerProtocol {
     }
     
     func loadNewerMessages(room: ChatRoom, after messageID: String?) async throws -> [ChatMessage] {
-        let server = try await firebaseManager.fetchMessagesAfter(
+        let server = try await messageRepository.fetchMessagesAfter(
             room: room,
             after: messageID ?? "",
             limit: 100
@@ -106,7 +102,7 @@ final class ChatMessageManager: ChatMessageManagerProtocol {
         let localIDs = localMessages.map { $0.ID }
         let localDeletionStates = Dictionary(uniqueKeysWithValues: localMessages.map { ($0.ID, $0.isDeleted) })
         
-        let serverMap = try await firebaseManager.fetchDeletionStates(roomID: room.ID ?? "", messageIDs: localIDs)
+        let serverMap = try await messageRepository.fetchDeletionStates(roomID: room.ID ?? "", messageIDs: localIDs)
         
         // 서버가 true인데 로컬은 false인 ID만 업데이트 대상
         let idsToUpdate = localIDs.filter { (serverMap[$0] ?? false) && ((localDeletionStates[$0] ?? false) == false) }
@@ -128,7 +124,7 @@ final class ChatMessageManager: ChatMessageManagerProtocol {
         try grdbManager.deleteImageIndex(forMessageID: messageID, inRoom: roomID)
         
         // 2. Firestore 업데이트
-        try await firebaseManager.updateMessageIsDeleted(roomID: roomID, messageID: messageID)
+        try await messageRepository.updateMessageIsDeleted(roomID: roomID, messageID: messageID)
         
         // 3. Storage 파일 삭제
         let rawPaths = message.attachments.flatMap { [$0.pathThumb, $0.pathOriginal] }
@@ -189,7 +185,7 @@ final class ChatMessageManager: ChatMessageManagerProtocol {
         if !message.isFailed, message.senderID == LoginManager.shared.getUserEmail {
             Task(priority: .utility) {
                 do {
-                    try await firebaseManager.saveMessage(message, room)
+                    try await messageRepository.saveMessage(message, room)
                 } catch {
                     print("⚠️ Firebase saveMessage 실패(비차단): \(error)")
                 }
@@ -198,7 +194,7 @@ final class ChatMessageManager: ChatMessageManagerProtocol {
     }
     
     func setupDeletionListener(roomID: String, onDeleted: @escaping (String) -> Void) -> AnyCancellable {
-        let listener = firebaseManager.listenToDeletedMessages(roomID: roomID) { deletedMessageID in
+        let listener = messageRepository.listenToDeletedMessages(roomID: roomID) { deletedMessageID in
             Task.detached(priority: .medium) {
                 do {
                     try await self.grdbManager.updateMessagesIsDeleted([deletedMessageID], isDeleted: true, inRoom: roomID)
@@ -219,6 +215,6 @@ final class ChatMessageManager: ChatMessageManagerProtocol {
     }
     
     func saveMessage(_ message: ChatMessage, room: ChatRoom) async throws {
-        try await firebaseManager.saveMessage(message, room)
+        try await messageRepository.saveMessage(message, room)
     }
 }

@@ -62,22 +62,25 @@ final class ChatCoordinator {
     }
 
     private func presentChatRoom(room: ChatRoom, from source: UIViewController) {
-        ChatDependencyContainer.provider = container.provider
-        let storyboard = UIStoryboard(name: "Main", bundle: nil)
-        guard let chatRoomVC = storyboard.instantiateViewController(withIdentifier: "chatRoomVC") as? ChatViewController else {
+        guard let chatRoomVC = makeChatRoomViewController(room: room, isRoomSaving: false) else {
             return
         }
-        chatRoomVC.configure(viewModel: container.makeChatRoomViewModel(room: room))
-        chatRoomVC.isRoomSaving = false
-        chatRoomVC.modalPresentationStyle = .fullScreen
         ChatModalTransitionManager.present(chatRoomVC, from: source)
     }
 
     private func presentCreateRoom(from source: UIViewController) {
         ChatDependencyContainer.provider = container.provider
+        ChatDependencyContainer.firebaseRepositories = container.firebaseRepositories
         let storyboard = UIStoryboard(name: "Main", bundle: nil)
         guard let createVC = storyboard.instantiateViewController(identifier: "chatRoomCreateVC") as? RoomCreateViewController else {
             return
+        }
+        createVC.injectedFirebaseRepositories = container.firebaseRepositories
+        createVC.makeChatRoomViewModel = { [container] room in
+            container.makeChatRoomViewModel(room: room)
+        }
+        createVC.makeSavingChatViewController = { [weak self] room in
+            self?.makeChatRoomViewController(room: room, isRoomSaving: true)
         }
         createVC.modalPresentationStyle = .fullScreen
         ChatModalTransitionManager.present(createVC, from: source)
@@ -94,18 +97,29 @@ final class ChatCoordinator {
     }
 
     private func presentChatRoomFromSearch(room: ChatRoom, searchVC: RoomSearchViewController) {
-        ChatDependencyContainer.provider = container.provider
-        let storyboard = UIStoryboard(name: "Main", bundle: nil)
-        guard let chatRoomVC = storyboard.instantiateViewController(withIdentifier: "chatRoomVC") as? ChatViewController else {
+        guard let chatRoomVC = makeChatRoomViewController(room: room, isRoomSaving: false) else {
             return
         }
-        chatRoomVC.configure(viewModel: container.makeChatRoomViewModel(room: room))
-        chatRoomVC.isRoomSaving = false
-        chatRoomVC.modalPresentationStyle = .fullScreen
 
         guard let presenter = searchVC.presentingViewController else { return }
         searchVC.dismiss(animated: false) {
             presenter.present(chatRoomVC, animated: true)
         }
+    }
+
+    private func makeChatRoomViewController(room: ChatRoom, isRoomSaving: Bool) -> ChatViewController? {
+        ChatDependencyContainer.provider = container.provider
+        ChatDependencyContainer.firebaseRepositories = container.firebaseRepositories
+
+        let storyboard = UIStoryboard(name: "Main", bundle: nil)
+        guard let chatRoomVC = storyboard.instantiateViewController(withIdentifier: "chatRoomVC") as? ChatViewController else {
+            return nil
+        }
+
+        chatRoomVC.injectedFirebaseRepositories = container.firebaseRepositories
+        chatRoomVC.configure(viewModel: container.makeChatRoomViewModel(room: room))
+        chatRoomVC.isRoomSaving = isRoomSaving
+        chatRoomVC.modalPresentationStyle = .fullScreen
+        return chatRoomVC
     }
 }

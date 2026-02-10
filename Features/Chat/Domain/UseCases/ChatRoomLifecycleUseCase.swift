@@ -33,36 +33,42 @@ protocol ChatRoomLifecycleUseCaseProtocol {
 }
 
 final class ChatRoomLifecycleUseCase: ChatRoomLifecycleUseCaseProtocol {
-    private let firebaseManager: FirebaseManager
+    private let chatRoomRepository: ChatRoomRepositoryProtocol
+    private let userProfileRepository: UserProfileRepositoryProtocol
+    private let announcementRepository: AnnouncementRepositoryProtocol
     private let socketManager: SocketIOManager
 
     init(
-        firebaseManager: FirebaseManager = .shared,
+        chatRoomRepository: ChatRoomRepositoryProtocol = FirebaseRepositoryProvider.shared.chatRoomRepository,
+        userProfileRepository: UserProfileRepositoryProtocol = FirebaseRepositoryProvider.shared.userProfileRepository,
+        announcementRepository: AnnouncementRepositoryProtocol = FirebaseRepositoryProvider.shared.announcementRepository,
         socketManager: SocketIOManager = .shared
     ) {
-        self.firebaseManager = firebaseManager
+        self.chatRoomRepository = chatRoomRepository
+        self.userProfileRepository = userProfileRepository
+        self.announcementRepository = announcementRepository
         self.socketManager = socketManager
     }
 
     var roomChangePublisher: AnyPublisher<ChatRoom, Never> {
-        firebaseManager.roomChangePublisher
+        chatRoomRepository.roomChangePublisher
     }
 
     @MainActor
     func startRoomUpdates(roomID: String) {
         guard !roomID.isEmpty else { return }
-        firebaseManager.startListenRoomDoc(roomID: roomID)
+        chatRoomRepository.startListenRoomDoc(roomID: roomID)
     }
 
     @MainActor
     func stopRoomUpdates() {
-        firebaseManager.stopListenAllRoomDocs()
+        chatRoomRepository.stopListenAllRoomDocs()
     }
 
     @MainActor
     func handleRoomSaved(roomID: String) {
         guard !roomID.isEmpty else { return }
-        firebaseManager.startListenRoomDoc(roomID: roomID)
+        chatRoomRepository.startListenRoomDoc(roomID: roomID)
 
         guard socketManager.isConnected else { return }
         socketManager.createRoom(roomID)
@@ -78,24 +84,24 @@ final class ChatRoomLifecycleUseCase: ChatRoomLifecycleUseCaseProtocol {
             socketManager.listenToNewParticipant()
         }
 
-        let updatedRoom = try await firebaseManager.add_room_participant_returningRoom(roomID: roomID)
-        firebaseManager.applyLocalRoomUpdate(updatedRoom)
-        firebaseManager.startListenRoomDoc(roomID: roomID)
+        let updatedRoom = try await chatRoomRepository.add_room_participant_returningRoom(roomID: roomID)
+        chatRoomRepository.applyLocalRoomUpdate(updatedRoom)
+        chatRoomRepository.startListenRoomDoc(roomID: roomID)
 
         return updatedRoom
     }
 
     func updateLastReadSeq(roomID: String, userID: String, lastReadSeq: Int64) async throws {
-        try await firebaseManager.updateLastReadSeq(roomID: roomID, userID: userID, lastReadSeq: lastReadSeq)
+        try await userProfileRepository.updateLastReadSeq(roomID: roomID, userID: userID, lastReadSeq: lastReadSeq)
     }
 
     @MainActor
     func setActiveAnnouncement(roomID: String, messageID: String?, payload: AnnouncementPayload?) async throws {
-        try await firebaseManager.setActiveAnnouncement(roomID: roomID, messageID: messageID, payload: payload)
+        try await announcementRepository.setActiveAnnouncement(roomID: roomID, messageID: messageID, payload: payload)
     }
 
     @MainActor
     func clearActiveAnnouncement(roomID: String) async throws {
-        try await firebaseManager.clearActiveAnnouncement(roomID: roomID)
+        try await announcementRepository.clearActiveAnnouncement(roomID: roomID)
     }
 }

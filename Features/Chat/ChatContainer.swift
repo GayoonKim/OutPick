@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import FirebaseFirestore
 
 /// Chat feature DI container.
 /// - Note: Storyboard로 생성되는 ChatViewController가 coder init에서 전역 provider를 읽기 때문에
@@ -14,6 +13,7 @@ import FirebaseFirestore
 @MainActor
 final class ChatContainer {
     let provider: ChatRepositoryProviding
+    let firebaseRepositories: FirebaseRepositoryProviding
     let roomRepository: ChatRoomRepositoryProtocol
     let userProfileRepository: UserProfileRepositoryProtocol
 
@@ -27,12 +27,15 @@ final class ChatContainer {
     init(
         provider: ChatRepositoryProviding = ChatRepositoryProvider(),
         roomRepository: ChatRoomRepositoryProtocol? = nil,
-        userProfileRepository: UserProfileRepositoryProtocol? = nil
+        userProfileRepository: UserProfileRepositoryProtocol? = nil,
+        announcementRepository: AnnouncementRepositoryProtocol? = nil,
+        repositories: FirebaseRepositoryProviding = FirebaseRepositoryProvider.shared
     ) {
         self.provider = provider
-        let db = Firestore.firestore()
-        self.roomRepository = roomRepository ?? ChatRoomRepository(db: db)
-        self.userProfileRepository = userProfileRepository ?? UserProfileRepository(db: db)
+        self.firebaseRepositories = repositories
+        self.roomRepository = roomRepository ?? repositories.chatRoomRepository
+        self.userProfileRepository = userProfileRepository ?? repositories.userProfileRepository
+        let announcementRepository = announcementRepository ?? repositories.announcementRepository
         self.roomListUseCase = RoomListUseCase(roomRepository: self.roomRepository)
         self.joinedRoomsUseCase = JoinedRoomsUseCase(
             roomRepository: self.roomRepository,
@@ -41,8 +44,13 @@ final class ChatContainer {
         self.roomSearchUseCase = RoomSearchUseCase(roomRepository: self.roomRepository)
         self.chatRoomMessageUseCase = ChatRoomMessageUseCase(messageManager: provider.messageManager)
         self.chatRoomSearchUseCase = ChatRoomSearchUseCase(searchManager: provider.searchManager)
-        self.chatRoomLifecycleUseCase = ChatRoomLifecycleUseCase()
+        self.chatRoomLifecycleUseCase = ChatRoomLifecycleUseCase(
+            chatRoomRepository: self.roomRepository,
+            userProfileRepository: self.userProfileRepository,
+            announcementRepository: announcementRepository
+        )
         ChatDependencyContainer.provider = provider
+        ChatDependencyContainer.firebaseRepositories = repositories
     }
 
     func makeRoomListsViewModel() -> RoomListsViewModel {

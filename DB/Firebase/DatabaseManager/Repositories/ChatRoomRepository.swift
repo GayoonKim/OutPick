@@ -454,6 +454,18 @@ final class ChatRoomRepository: ChatRoomRepositoryProtocol {
             }
         }
     }
+
+    func checkRoomNameDuplicate(roomName: String) async throws -> Bool {
+        try await withCheckedThrowingContinuation { continuation in
+            checkRoomName(roomName: roomName) { isDuplicate, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                continuation.resume(returning: isDuplicate)
+            }
+        }
+    }
     
     func add_room_participant(room: ChatRoom) async throws {
         add_room_participant_task?.cancel()

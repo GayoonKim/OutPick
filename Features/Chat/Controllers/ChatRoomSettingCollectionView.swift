@@ -42,6 +42,8 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
     
     private var roomInfo: ChatRoom
     private var images: [UIImage]
+    private let userProfileRepository: UserProfileRepositoryProtocol
+    private let editRoomHandler: RoomEditHandler
     private var lastRoomCoverKey: String? = nil
     private var coverPrefetchTask: Task<Void, Never>? = nil
     private var localUsers: [LocalUser] = []
@@ -77,6 +79,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
     }
     
     typealias DataSourceType = UICollectionViewDiffableDataSource<Section, Item>
+    typealias RoomEditHandler = (ChatRoom, UIImage?, DefaultMediaProcessingService.ImagePair?, Bool, String, String) async throws -> ChatRoom
     var dataSource: DataSourceType!
     
     private var cancellables = Set<AnyCancellable>()
@@ -88,10 +91,18 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
     /// 파라미터로 넘겨지는 VC를 push/present 하는 책임은 호스트가 맡는다.
     var onRequestOpenGallery: ((UIViewController) -> Void)?
     
-    init(room: ChatRoom, profiles: [UserProfile], images: [UIImage]) {
+    init(
+        room: ChatRoom,
+        profiles: [UserProfile],
+        images: [UIImage],
+        userProfileRepository: UserProfileRepositoryProtocol,
+        editRoomHandler: @escaping RoomEditHandler
+    ) {
         self.roomInfo = room
-        self.localUsers = profiles.map { LocalUser(email: $0.email ?? "", nickname: $0.nickname ?? "", profileImagePath: $0.thumbPath) }
+        self.localUsers = profiles.map { LocalUser(email: $0.email, nickname: $0.nickname ?? "", profileImagePath: $0.thumbPath) }
         self.images = images
+        self.userProfileRepository = userProfileRepository
+        self.editRoomHandler = editRoomHandler
         let layout = Self.configureLayout(self.roomInfo, localUsers: self.localUsers, images: self.images)
         super.init(collectionViewLayout: layout)
         
@@ -223,10 +234,10 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
 
         do {
             let toFetch = Array(missing.prefix(need))
-            let profiles = try await FirebaseManager.shared.fetchUserProfiles(emails: toFetch)
+            let profiles = try await userProfileRepository.fetchUserProfiles(emails: toFetch)
 
             for p in profiles {
-                let email = p.email ?? ""
+                let email = p.email
                 if email.isEmpty { continue }
                 try GRDBManager.shared.upsertLocalUser(
                     email: email,
@@ -623,13 +634,13 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
                     
                     editVC.onCompleteEdit = { [weak self] pickedImage, pickedImageData, isRemoved, newName, newDesc in
                         guard let self = self else { return }
-                        let updated = try await FirebaseManager.shared.editRoom(
-                            room: self.roomInfo,
-                            pickedImage: pickedImage,
-                            imageData: pickedImageData,
-                            isRemoved: isRemoved,
-                            newName: newName,
-                            newDesc: newDesc
+                        let updated = try await self.editRoomHandler(
+                            self.roomInfo,
+                            pickedImage,
+                            pickedImageData,
+                            isRemoved,
+                            newName,
+                            newDesc
                         )
                         await MainActor.run {
                             // 1) 로컬 모델 업데이트

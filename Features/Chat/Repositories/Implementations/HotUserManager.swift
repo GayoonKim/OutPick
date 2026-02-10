@@ -14,14 +14,14 @@ private struct HotUser {
 }
 
 final class HotUserManager: HotUserManagerProtocol {
-    private let firebaseManager: FirebaseManager
+    private let userProfileRepository: UserProfileRepositoryProtocol
     private let maxHotUsers: Int = 20
     
     private var hotUsers: [HotUser] = []
     private var hotUserCancellables: [String: AnyCancellable] = [:]
     
-    init(firebaseManager: FirebaseManager = .shared) {
-        self.firebaseManager = firebaseManager
+    init(userProfileRepository: UserProfileRepositoryProtocol = FirebaseRepositoryProvider.shared.userProfileRepository) {
+        self.userProfileRepository = userProfileRepository
     }
     
     func updateHotUserPool(for email: String, lastSeenAt: Date) {
@@ -68,7 +68,7 @@ final class HotUserManager: HotUserManagerProtocol {
     func bindHotUser(email: String, onProfileChanged: @escaping (UserProfile) -> Void) -> AnyCancellable? {
         if hotUserCancellables[email] != nil { return nil } // 이미 구독 중
         
-        let cancellable = firebaseManager
+        let cancellable = userProfileRepository
             .userProfilePublisher(email: email)
             .receive(on: DispatchQueue.main)
             .sink(
@@ -100,7 +100,6 @@ final class HotUserManager: HotUserManagerProtocol {
     private func unbindHotUser(email: String) {
         hotUserCancellables[email]?.cancel()
         hotUserCancellables[email] = nil
-        firebaseManager.stopListenUserProfile(email: email)
+        userProfileRepository.stopListenUserProfile(email: email)
     }
 }
-

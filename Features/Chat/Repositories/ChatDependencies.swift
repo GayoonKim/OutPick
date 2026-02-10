@@ -7,8 +7,6 @@
 
 import Foundation
 
-import Foundation
-
 protocol ChatRepositoryProviding {
     var messageManager: ChatMessageManagerProtocol { get }
     var mediaManager: ChatMediaManagerProtocol { get }
@@ -38,4 +36,12 @@ struct ChatRepositoryProvider: ChatRepositoryProviding {
 /// 전역 DI 컨테이너 (앱 시작 시점/테스트에서 교체 가능)
 enum ChatDependencyContainer {
     static var provider: ChatRepositoryProviding = ChatRepositoryProvider()
+    static var firebaseRepositories: FirebaseRepositoryProviding?
+
+    static func requireFirebaseRepositories() -> FirebaseRepositoryProviding {
+        guard let firebaseRepositories else {
+            preconditionFailure("ChatDependencyContainer.firebaseRepositories is not configured")
+        }
+        return firebaseRepositories
+    }
 }

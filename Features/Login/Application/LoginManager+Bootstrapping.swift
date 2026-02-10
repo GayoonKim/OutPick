@@ -16,16 +16,16 @@ extension LoginManager: LoginBootstrappingProtocol {
         setUserEmail(userEmail)
 
         // 1) 프로필 리스너 시작
-        FirebaseManager.shared.listenToUserProfile(email: self.getUserEmail)
+        userProfileRepository.listenToUserProfile(email: self.getUserEmail)
 
         // 2) 참여 방 선 주입
         //    (AppCoordinator가 loadUserProfile 성공 후 호출하므로 currentUserProfile이 존재하는 것이 정상)
         if let profile = self.currentUserProfile {
-            await FirebaseManager.shared.joinedRoomStore.replace(with: profile.joinedRooms)
+            await joinedRoomStore.replace(with: profile.joinedRooms)
         }
 
         // 3) 홈 데이터 프리페치/초기화
-        try await FirebaseManager.shared.fetchTopRoomsPage(limit: 30)
+        try await chatRoomRepository.fetchTopRoomsPage(after: nil, limit: 30)
 
         // 4) 소켓 연결(대기하지 않아도 됨)
         async let _ = SocketIOManager.shared.establishConnection()
@@ -35,8 +35,8 @@ extension LoginManager: LoginBootstrappingProtocol {
         if joinedRooms.isEmpty == false {
             BannerManager.shared.start(for: joinedRooms)
 
-            Task.detached {
-                await FirebaseManager.shared.startListenRoomDocs(roomIDs: joinedRooms)
+            Task { @MainActor in
+                self.chatRoomRepository.startListenRoomDocs(roomIDs: joinedRooms)
             }
 
             for roomID in joinedRooms {

@@ -12,6 +12,7 @@ import Network
 
 class SocketIOManager {
     static let shared = SocketIOManager()
+    private let userProfileRepository: UserProfileRepositoryProtocol
 
     // ---- Reconnect Policy (client defaults; server can override via `server:connect:ready`) ----
     private struct ReconnectPolicy {
@@ -74,7 +75,8 @@ class SocketIOManager {
     private var subscriberCounts = [String: Int]() // 구독자 ref count
     
     // https://outpick-socket-715386497547.asia-northeast3.run.app - Cloud Run
-    private init() {
+    private init(repositories: FirebaseRepositoryProviding = FirebaseRepositoryProvider.shared) {
+        self.userProfileRepository = repositories.userProfileRepository
         manager = SocketManager(socketURL: URL(string: "http://192.168.123.192:3000")!, config: [
             .log(true),
             .compress,
@@ -442,7 +444,7 @@ class SocketIOManager {
 
             if ok || duplicate {
 //                Task {
-//                    await FirebaseManager.shared.updateRoomLastMessage(roomID: room.ID ?? "", date: message.sentAt, msg: message.msg ?? "")
+//                    await updateRoomLastMessage(roomID: room.ID ?? "", date: message.sentAt, msg: message.msg ?? "")
 //                }
             } else {
                 // Failure: mark the same message as failed and re-publish for UI update
@@ -545,7 +547,7 @@ class SocketIOManager {
                 // 로컬에 seq=0 메시지를 퍼블리시하지 않습니다.
                 // → 서버의 'receiveImages' 브로드캐스트로 도착하는 정규 메시지(정확한 seq 포함)에 UI를 맡깁니다.
 //                Task {
-//                    await FirebaseManager.shared.updateRoomLastMessage(roomID: roomID, date: now, msg: "사진 \(attachments.count)장")
+//                    await updateRoomLastMessage(roomID: roomID, date: now, msg: "사진 \(attachments.count)장")
 //                }
                 return
             }
@@ -795,13 +797,13 @@ class SocketIOManager {
                 if let first = items.first as? [String: Any],
                    let ok = first["ok"] as? Bool, ok == true {
 //                    Task {
-//                        await FirebaseManager.shared.updateRoomLastMessage(roomID: roomID, date: Date(), msg: "동영상")
+//                        await updateRoomLastMessage(roomID: roomID, date: Date(), msg: "동영상")
 //                    }
                     completion?(.success(()))
                 } else if items.isEmpty {
                     // 응답이 없어도 성공 처리(서버 ACK 미사용 환경)
 //                    Task {
-//                        await FirebaseManager.shared.updateRoomLastMessage(roomID: roomID, date: Date(), msg: "동영상")
+//                        await updateRoomLastMessage(roomID: roomID, date: Date(), msg: "동영상")
 //                    }
                     completion?(.success(()))
                 } else {
@@ -1052,7 +1054,7 @@ class SocketIOManager {
 
             Task { @MainActor in
                 do {
-                    let profile = try await FirebaseManager.shared.fetchUserProfileFromFirestore(email: email)
+                    let profile = try await self.userProfileRepository.fetchUserProfileFromFirestore(email: email)
                     
                     // GRDB를 통해 로컬 DB에 저장
                     try await GRDBManager.shared.dbPool.write { db in

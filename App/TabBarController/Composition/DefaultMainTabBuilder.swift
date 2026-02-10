@@ -30,7 +30,6 @@ final class DefaultMainTabBuilder: MainTabBuilding {
             return ChatCompositionRoot.makeJoinedRoomsRoot(coordinator: chatCoordinator)
 
         case 2:
-            // 룩북 탭: LookbookCompositionRoot가 완전히 조립/생성 책임을 가짐
             return LookbookCompositionRoot.makeRoot(container: lookbookContainer)
 
         case 3:

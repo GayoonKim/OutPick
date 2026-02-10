@@ -67,6 +67,17 @@ class RoomCreateViewController: UIViewController, ChatModalAnimatable {
     
     private var isDefaultRoomImage = true
     private var imageData: DefaultMediaProcessingService.ImagePair?
+    var injectedFirebaseRepositories: FirebaseRepositoryProviding?
+    var makeChatRoomViewModel: ((ChatRoom) -> ChatRoomViewModel)?
+    var makeSavingChatViewController: ((ChatRoom) -> ChatViewController?)?
+
+    private var firebaseRepositories: FirebaseRepositoryProviding {
+        injectedFirebaseRepositories ?? ChatDependencyContainer.requireFirebaseRepositories()
+    }
+
+    private var chatRoomRepository: ChatRoomRepositoryProtocol {
+        firebaseRepositories.chatRoomRepository
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -155,11 +166,7 @@ class RoomCreateViewController: UIViewController, ChatModalAnimatable {
             
             do {
                 // 2) 중복 이름 검사
-                let isDup = try await FirebaseManager.shared.checkDuplicate(
-                    strToCompare: name,
-                    fieldToCompare: "roomName",
-                    collectionName: "Rooms"
-                )
+                let isDup = try await self.chatRoomRepository.checkRoomNameDuplicate(roomName: name)
                 if isDup {
                     AlertManager.showAlertNoHandler(title: "중복된 방 이름", message: "이미 존재하는 방 이름입니다. 다른 이름을 선택해 주세요.", viewController: self)
                     return
@@ -177,31 +184,47 @@ class RoomCreateViewController: UIViewController, ChatModalAnimatable {
                 )
                 
                 // 4) 화면 전환 (즉시)
-                let storyboard = UIStoryboard(name: "Main", bundle: nil)
-                guard let chatRoomVC = storyboard.instantiateViewController(withIdentifier: "chatRoomVC") as? ChatViewController,
-                      let presenter = self.presentingViewController else {
+                guard let presenter = self.presentingViewController else {
                     return
                 }
-                chatRoomVC.room = room
-                chatRoomVC.configureDefaultViewModelIfNeeded()
+
+                let chatRoomVC: ChatViewController
+                if let makeSavingChatViewController {
+                    guard let configured = makeSavingChatViewController(room) else { return }
+                    chatRoomVC = configured
+                } else {
+                    let storyboard = UIStoryboard(name: "Main", bundle: nil)
+                    guard let fallback = storyboard.instantiateViewController(withIdentifier: "chatRoomVC") as? ChatViewController else {
+                        return
+                    }
+                    fallback.injectedFirebaseRepositories = self.firebaseRepositories
+                    if let makeChatRoomViewModel {
+                        fallback.configure(viewModel: makeChatRoomViewModel(room))
+                    } else {
+                        fallback.room = room
+                        fallback.configureDefaultViewModelIfNeeded()
+                    }
+                    chatRoomVC = fallback
+                }
                 chatRoomVC.isRoomSaving = true
                 chatRoomVC.modalPresentationStyle = .fullScreen
                 
                 self.dismiss(animated: false) {
                     presenter.present(chatRoomVC, animated: true)
-                }
-
-                // 4.5) Firestore에 방 저장 + Socket.IO join (백그라운드, 실패 허용)
-                Task.detached { [weak self] in
-                    guard let self = self else { return }
-                    do {
-                        try await FirebaseManager.shared.saveRoomInfoToFirestore(room: room)
-                        await MainActor.run {
-                            NotificationCenter.default.post(name: .roomSavedComplete, object: nil, userInfo: ["room": room])
-                        }
-                    } catch {
-                        await MainActor.run {
-                            NotificationCenter.default.post(name: .roomSaveFailed, object: nil, userInfo: ["error": error])
+                    
+                    // 4.5) Firestore에 방 저장 + Socket.IO join (백그라운드, 실패 허용)
+                    Task.detached { [weak self, weak chatRoomVC] in
+                        guard let self = self else { return }
+                        do {
+                            try await self.chatRoomRepository.saveRoomInfoToFirestore(room: room)
+                            await MainActor.run {
+                                chatRoomVC?.handleRoomCreationSaveCompleted(savedRoom: room)
+                            }
+                        } catch {
+                            let roomCreationError = (error as? RoomCreationError) ?? .saveFailed
+                            await MainActor.run {
+                                chatRoomVC?.handleRoomCreationSaveFailed(roomCreationError)
+                            }
                         }
                     }
                 }
@@ -387,11 +410,6 @@ extension RoomCreateViewController: UITextViewDelegate {
             enableCreateBtn()
         }
     }
-}
-
-extension Notification.Name {
-    static let roomSavedComplete = Notification.Name("roomSaveCompleted")
-    static let roomSaveFailed = Notification.Name("roomSaveFailed")
 }
 
 extension RoomCreateViewController: PHPickerViewControllerDelegate {

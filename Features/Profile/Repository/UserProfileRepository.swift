@@ -196,4 +196,43 @@ final class UserProfileRepository: UserProfileRepositoryProtocol {
         let lastRead = snap.data()?["lastReadSeq"] as? Int64 ?? 0
         return lastRead
     }
+
+    func upsertDeviceID(email: String, deviceID: String) async throws {
+        let userRef = db.collection("Users").document(email)
+
+        _ = try await db.runTransaction { transaction, errorPointer -> Any? in
+            do {
+                let snap = try transaction.getDocument(userRef)
+                if snap.exists {
+                    transaction.updateData([
+                        "deviceID": deviceID,
+                        "lastLoginAt": FieldValue.serverTimestamp()
+                    ], forDocument: userRef)
+                } else {
+                    transaction.setData([
+                        "deviceID": deviceID,
+                        "lastLoginAt": FieldValue.serverTimestamp()
+                    ], forDocument: userRef, merge: true)
+                }
+                return nil
+            } catch {
+                errorPointer?.pointee = error as NSError
+                return nil
+            }
+        }
+    }
+
+    func listenToDeviceID(
+        email: String,
+        onUpdate: @escaping (String?) -> Void,
+        onError: @escaping (Error) -> Void
+    ) -> ListenerRegistration {
+        db.collection("Users").document(email).addSnapshotListener { snapshot, error in
+            if let error {
+                onError(error)
+                return
+            }
+            onUpdate(snapshot?.get("deviceID") as? String)
+        }
+    }
 }

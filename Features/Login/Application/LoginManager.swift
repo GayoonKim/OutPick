@@ -15,10 +15,23 @@ final class LoginManager {
 
     static let shared = LoginManager()
 
+    private let authRepository: SocialAuthRepositoryProtocol
+    let userProfileRepository: UserProfileRepositoryProtocol
+    let chatRoomRepository: ChatRoomRepositoryProtocol
+
+    let joinedRoomStore: JoinedRoomsStore
+
     // DI를 위한 이니셜라이저(테스트/스테이징에서 Mock 주입 가능)
     // - 참고: 운영 코드에서는 `LoginManager.shared`만 사용하면 됩니다.
-    init(authRepository: SocialAuthRepositoryProtocol = DefaultSocialAuthRepository()) {
+    init(
+        authRepository: SocialAuthRepositoryProtocol = DefaultSocialAuthRepository(),
+        repositories: FirebaseRepositoryProviding = FirebaseRepositoryProvider.shared,
+        joinedRoomStore: JoinedRoomsStore = JoinedRoomsStore()
+    ) {
         self.authRepository = authRepository
+        self.userProfileRepository = repositories.userProfileRepository
+        self.chatRoomRepository = repositories.chatRoomRepository
+        self.joinedRoomStore = joinedRoomStore
     }
 
     private var userEmail: String = ""
@@ -54,8 +67,6 @@ final class LoginManager {
 
     // MARK: - 자동 로그인 체크
 
-    private let authRepository: SocialAuthRepositoryProtocol
-
     func checkExistingLogin() async -> Bool {
         if let email = await authRepository.restoreGoogleEmailIfLoggedIn() {
             setUserEmail(email)
@@ -79,7 +90,7 @@ final class LoginManager {
 
         do {
             let email = self.getUserEmail
-            let profile = try await FirebaseManager.shared.fetchUserProfileFromFirestore(email: email)
+            let profile = try await userProfileRepository.fetchUserProfileFromFirestore(email: email)
             self.currentUserProfile = profile
 
             if let data = try? JSONEncoder().encode(profile) {
@@ -100,29 +111,7 @@ final class LoginManager {
         let email = self.getUserEmail
         guard !email.isEmpty else { return }
 
-        let userRef = FirebaseManager.shared.db.collection("Users").document(email)
-
-        _ = try await FirebaseManager.shared.db.runTransaction { txn, errorPointer -> Any? in
-            do {
-                let snap = try txn.getDocument(userRef)
-
-                if snap.exists {
-                    txn.updateData([
-                        "deviceID": deviceID,
-                        "lastLoginAt": FieldValue.serverTimestamp()
-                    ], forDocument: userRef)
-                } else {
-                    txn.setData([
-                        "deviceID": deviceID,
-                        "lastLoginAt": FieldValue.serverTimestamp()
-                    ], forDocument: userRef, merge: true)
-                }
-                return nil
-            } catch {
-                errorPointer?.pointee = error as NSError
-                return nil
-            }
-        }
+        try await userProfileRepository.upsertDeviceID(email: email, deviceID: deviceID)
 
         // 덮어쓰기 성공 후에만 리스너를 붙인다
         try await setupDevIDListener()
@@ -141,39 +130,37 @@ final class LoginManager {
         self.isPresentingDuplicateAlert = false
         self.didInvokeForceLogoutCallback = false
 
-        let userRef = FirebaseManager.shared.db.collection("Users").document(email)
-
-        deviceIDListener = userRef.addSnapshotListener { [weak self] snap, error in
-            guard let self else { return }
-            if let error {
+        deviceIDListener = userProfileRepository.listenToDeviceID(
+            email: email,
+            onUpdate: { [weak self] remoteDeviceID in
+                guard let self else { return }
+                
+                guard let remote = remoteDeviceID, remote.isEmpty == false else { return }
+                
+                // 1) remote가 내 deviceID와 일치하면 "활성화 상태"(이후부터 불일치면 킥 처리)
+                if remote == currentDeviceID {
+                    self.hasSeenOwnDeviceID = true
+                    return
+                }
+                
+                // 2) attach 직후(캐시 → 서버) 초기 스냅샷에서 불일치가 먼저 올 수 있어요.
+                // remote == local을 1번이라도 확인하기 전까지는 불일치를 무시해서 "새 기기"에서의 자기 킥을 방지합니다.
+                if self.hasSeenOwnDeviceID == false {
+                    return
+                }
+                
+                // 3) 활성화 상태 이후 불일치가 오면 다른 기기 로그인으로 킥된 것으로 판단
+                if self.didHandleKick { return }
+                self.didHandleKick = true
+                
+                Task { @MainActor in
+                    self.handleKickedByAnotherDevice()
+                }
+            },
+            onError: { error in
                 print("deviceID 리스너 오류: \(error.localizedDescription)")
-                return
             }
-            guard let snap else { return }
-
-            let remoteDeviceID = snap.get("deviceID") as? String
-            guard let remote = remoteDeviceID, remote.isEmpty == false else { return }
-
-            // 1) remote가 내 deviceID와 일치하면 "활성화 상태"(이후부터 불일치면 킥 처리)
-            if remote == currentDeviceID {
-                self.hasSeenOwnDeviceID = true
-                return
-            }
-
-            // 2) attach 직후(캐시 → 서버) 초기 스냅샷에서 불일치가 먼저 올 수 있어요.
-            // remote == local을 1번이라도 확인하기 전까지는 불일치를 무시해서 "새 기기"에서의 자기 킥을 방지합니다.
-            if self.hasSeenOwnDeviceID == false {
-                return
-            }
-
-            // 3) 활성화 상태 이후 불일치가 오면 다른 기기 로그인으로 킥된 것으로 판단
-            if self.didHandleKick { return }
-            self.didHandleKick = true
-
-            Task { @MainActor in
-                self.handleKickedByAnotherDevice()
-            }
-        }
+        )
     }
 
     // MARK: - 중복 로그인 로그아웃 처리

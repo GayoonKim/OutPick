@@ -37,6 +37,15 @@ protocol UserProfileRepositoryProtocol {
     
     /// 사용자의 방 읽기 상태 조회
     func fetchLastReadSeq(for roomID: String) async throws -> Int64
-}
 
+    /// 로그인 기기 식별자 갱신
+    func upsertDeviceID(email: String, deviceID: String) async throws
+
+    /// 로그인 기기 식별자 변경 리스너 시작
+    func listenToDeviceID(
+        email: String,
+        onUpdate: @escaping (String?) -> Void,
+        onError: @escaping (Error) -> Void
+    ) -> ListenerRegistration
+}
 

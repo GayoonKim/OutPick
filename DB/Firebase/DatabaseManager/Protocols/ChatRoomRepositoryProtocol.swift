@@ -63,6 +63,9 @@ protocol ChatRoomRepositoryProtocol {
     
     /// 방 이름 중복 검사
     func checkRoomName(roomName: String, completion: @escaping (Bool, Error?) -> Void)
+
+    /// 방 이름 중복 검사 (async/await)
+    func checkRoomNameDuplicate(roomName: String) async throws -> Bool
     
     /// 방 참여자 추가
     func add_room_participant(room: ChatRoom) async throws
@@ -76,5 +79,4 @@ protocol ChatRoomRepositoryProtocol {
     /// 방의 최신 시퀀스 조회
     func fetchLatestSeq(for roomID: String) async throws -> Int64
 }
-
 

@@ -78,6 +78,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private let mediaManager: ChatMediaManagerProtocol
     private let searchManager: ChatSearchManagerProtocol
     private let hotUserManager: HotUserManagerProtocol
+    var injectedFirebaseRepositories: FirebaseRepositoryProviding?
 
     /// 의존성 주입을 위한 초기화 (테스트 용이성)
     /// - NOTE: Programmatic init 경로에서 사용
@@ -108,17 +109,26 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         _ = ensureChatRoomViewModel()
     }
 
+    private var firebaseRepositories: FirebaseRepositoryProviding {
+        injectedFirebaseRepositories ?? ChatDependencyContainer.requireFirebaseRepositories()
+    }
+
     private func ensureChatRoomViewModel() -> ChatRoomViewModel? {
         if let chatRoomViewModel {
             return chatRoomViewModel
         }
         guard let room else { return nil }
+        let repositories = firebaseRepositories
 
         let viewModel = ChatRoomViewModel(
             room: room,
             messageUseCase: ChatRoomMessageUseCase(messageManager: messageManager),
             searchUseCase: ChatRoomSearchUseCase(searchManager: searchManager),
-            lifecycleUseCase: ChatRoomLifecycleUseCase()
+            lifecycleUseCase: ChatRoomLifecycleUseCase(
+                chatRoomRepository: repositories.chatRoomRepository,
+                userProfileRepository: repositories.userProfileRepository,
+                announcementRepository: repositories.announcementRepository
+            )
         )
         self.chatRoomViewModel = viewModel
         return viewModel
@@ -298,7 +308,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         
         configureDataSource()
         
-        setUpNotifications()
         if isRoomSaving {
             LoadingIndicator.shared.start(on: self)
             chatUIView.isHidden = false
@@ -346,7 +355,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         
         stopAllPrefetchers()
         cancellables.removeAll()
-        NotificationCenter.default.removeObserver(self)
         
         convertImagesTask?.cancel()
         convertVideosTask?.cancel()
@@ -631,7 +639,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     // MARK: LocalUser + HotUser 관련 함수
     @MainActor
     private func handleOtherUserProfileChanged(_ profile: UserProfile) {
-        let targetEmail = profile.email ?? ""
+        let targetEmail = profile.email
         
         var snapshot = dataSource.snapshot()
         let items = snapshot.itemIdentifiers(inSection: .main)
@@ -1040,11 +1048,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     // MARK: 방 관련
     // Prevent duplicated join flow / duplicated loading HUDs
     private var isJoiningRoom: Bool = false
-    private func setUpNotifications() {
-        // 방 저장 관련
-        NotificationCenter.default.addObserver(self, selector: #selector(handleRoomSaveCompleted), name: .roomSavedComplete, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(handleRoomSaveFailed), name: .roomSaveFailed, object: nil)
-    }
     
     private func bindRoomClosedEvent() {
         guard let socket = SocketIOManager.shared.socket else { return }
@@ -1128,25 +1131,23 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
     }
     
-    @objc private func handleRoomSaveCompleted(notification: Notification) {
-        guard let savedRoom = notification.userInfo?["room"] as? ChatRoom else { return }
+    @MainActor
+    func handleRoomCreationSaveCompleted(savedRoom: ChatRoom) {
         guard let viewModel = chatRoomViewModel ?? ensureChatRoomViewModel() else { return }
         viewModel.handleRoomSaveCompleted(savedRoom)
-        self.room = viewModel.room
-        
-        Task { @MainActor [weak self] in
-            guard let self = self else { return }
-            self.updateNavigationTitle(with: savedRoom)
-            self.bindRoomChangePublisher()
-            LoadingIndicator.shared.stop()
-            self.view.isUserInteractionEnabled = true
-        }
+        room = viewModel.room
+        isRoomSaving = false
+        updateNavigationTitle(with: savedRoom)
+        bindRoomChangePublisher()
+        LoadingIndicator.shared.stop()
+        view.isUserInteractionEnabled = true
     }
     
-    @objc private func handleRoomSaveFailed(notification: Notification) {
+    @MainActor
+    func handleRoomCreationSaveFailed(_ error: RoomCreationError) {
+        isRoomSaving = false
         LoadingIndicator.shared.stop()
-        
-        guard let error = notification.userInfo?["error"] as? RoomCreationError else { return }
+        view.isUserInteractionEnabled = true
         showAlert(error: error)
     }
 
@@ -1303,24 +1304,27 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     @objc private func settingButtonTapped() {
         Task { @MainActor in
             guard let room = self.room else { return }
-            let roomID = room.ID ?? ""
-            
-//            let (profiles, imageNames): ([UserProfile], [String]) = try await Task.detached(priority: .utility) {
-//                let p = try GRDBManager.shared.fetchUserProfiles(inRoom: roomID)
-//                let names = try GRDBManager.shared.fetchImageNames(inRoom: roomID)
-//                return (p, names)
-//            }.value
-//
-//            var images = [UIImage]()
-//            for imageName in imageNames {
-//                if let image = await KingFisherCacheManager.shared.loadImage(named: imageName) {
-//                    images.append(image)
-//                }
-//            }
-            
+            _ = room.ID ?? ""
+
             self.detachInteractiveDismissGesture()
             
-            let settingVC = ChatRoomSettingCollectionView(room: room, profiles: [], images: [])
+            let repositories = self.firebaseRepositories
+            let settingVC = ChatRoomSettingCollectionView(
+                room: room,
+                profiles: [],
+                images: [],
+                userProfileRepository: repositories.userProfileRepository,
+                editRoomHandler: { room, pickedImage, pickedImageData, isRemoved, newName, newDesc in
+                    try await repositories.chatRoomRepository.editRoom(
+                        room: room,
+                        pickedImage: pickedImage,
+                        imageData: pickedImageData,
+                        isRemoved: isRemoved,
+                        newName: newName,
+                        newDesc: newDesc
+                    )
+                }
+            )
             self.presentSettingVC(settingVC)
             
             settingVC.onRoomUpdated = { [weak self] updatedRoom in
@@ -2229,9 +2233,17 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
         
         let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "확인", style: .default) { action in
-            self.navigationController?.popViewController(animated: true)
+        alert.addAction(UIAlertAction(title: "확인", style: .default) { [weak self] _ in
+            guard let self = self else { return }
+            if let nav = self.navigationController, nav.viewControllers.count > 1 {
+                nav.popViewController(animated: true)
+                return
+            }
+            if self.presentingViewController != nil {
+                self.dismiss(animated: true)
+            }
         })
+        present(alert, animated: true)
     }
     
     // MARK: 이미지 뷰어 관련
