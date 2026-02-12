@@ -343,8 +343,10 @@ extension RoomSearchViewController: UICollectionViewDataSource, UICollectionView
             }
             // ✅ 방 셀 클릭 시 원하는 동작 (예: 채팅방으로 이동)
             print("선택된 방: \(room.roomName)")
-            let storyboard = UIStoryboard(name: "Main", bundle: nil)
-            guard let chatRoomVC = storyboard.instantiateViewController(withIdentifier: "chatRoomVC") as? ChatViewController else { return }
+            let chatRoomVC = ChatViewController(provider: ChatDependencyContainer.provider)
+            if let repositories = ChatDependencyContainer.firebaseRepositories {
+                chatRoomVC.injectedFirebaseRepositories = repositories
+            }
             chatRoomVC.room = room
             chatRoomVC.configureDefaultViewModelIfNeeded()
             chatRoomVC.isRoomSaving = false

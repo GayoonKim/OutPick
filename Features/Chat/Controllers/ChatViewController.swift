@@ -26,8 +26,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     // Paging buffer size for scroll triggers
     private var pagingBuffer = 200
     
-    @IBOutlet weak var sideMenuBtn: UIBarButtonItem!
-    @IBOutlet weak var joinRoomBtn: UIButton!
+    var sideMenuBtn: UIBarButtonItem?
+    private var joinRoomBtn: UIButton = UIButton(type: .system)
     
     var swipeRecognizer: UISwipeGestureRecognizer!
     
@@ -277,6 +277,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private var chatUIViewBottomConstraint: NSLayoutConstraint?
     private var chatMessageCollectionViewBottomConstraint: NSLayoutConstraint?
     private var joinConsraints: [NSLayoutConstraint] = []
+    private var joinButtonConstraints: [NSLayoutConstraint] = []
     
     private var interactionController: UIPercentDrivenInteractiveTransition?
     
@@ -320,6 +321,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         view.addGestureRecognizer(longPressGesture)
         
         setupCustomNavigationBar()
+        setupJoinRoomButtonIfNeeded()
         decideJoinUI()
         setupAttachmentView()
         
@@ -1174,11 +1176,38 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         updateNavigationTitle(with: currentRoom)
     }
     
+    @MainActor
+    private func setupJoinRoomButtonIfNeeded() {
+        if joinRoomBtn.superview == nil {
+            joinRoomBtn.translatesAutoresizingMaskIntoConstraints = false
+            joinRoomBtn.setTitle("채팅 참여하기", for: .normal)
+            joinRoomBtn.setTitleColor(.black, for: .normal)
+            joinRoomBtn.backgroundColor = UIColor(white: 0.1, alpha: 0.05)
+            joinRoomBtn.clipsToBounds = true
+            joinRoomBtn.layer.cornerRadius = 20
+            joinRoomBtn.isHidden = true
+            joinRoomBtn.addTarget(self, action: #selector(joinRoomBtnTapped(_:)), for: .touchUpInside)
+            view.addSubview(joinRoomBtn)
+        }
+        
+        if joinButtonConstraints.isEmpty {
+            joinButtonConstraints = [
+                joinRoomBtn.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 10),
+                joinRoomBtn.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -10),
+                joinRoomBtn.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -20),
+                joinRoomBtn.heightAnchor.constraint(equalToConstant: 50)
+            ]
+            NSLayoutConstraint.activate(joinButtonConstraints)
+        }
+        
+        view.bringSubviewToFront(joinRoomBtn)
+        view.bringSubviewToFront(customNavigationBar)
+    }
+    
     private func setJoinRoombtn() {
         self.joinRoomBtn.clipsToBounds = true
         self.joinRoomBtn.layer.cornerRadius = 20
         self.joinRoomBtn.backgroundColor = UIColor(white: 0.1, alpha: 0.05)
-        joinRoomBtn.translatesAutoresizingMaskIntoConstraints = false
         
         if chatMessageCollectionView.superview == nil {
             view.addSubview(chatMessageCollectionView)
@@ -1200,7 +1229,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
     
     @MainActor
-    @IBAction func joinRoomBtnTapped(_ sender: UIButton) {
+    @objc private func joinRoomBtnTapped(_ sender: UIButton) {
         guard let viewModel = chatRoomViewModel ?? ensureChatRoomViewModel() else { return }
         // Prevent double taps / duplicated HUDs
         guard !isJoiningRoom else { return }

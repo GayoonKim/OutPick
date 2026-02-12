@@ -111,10 +111,7 @@ final class ChatCoordinator {
         ChatDependencyContainer.provider = container.provider
         ChatDependencyContainer.firebaseRepositories = container.firebaseRepositories
 
-        let storyboard = UIStoryboard(name: "Main", bundle: nil)
-        guard let chatRoomVC = storyboard.instantiateViewController(withIdentifier: "chatRoomVC") as? ChatViewController else {
-            return nil
-        }
+        let chatRoomVC = ChatViewController(provider: container.provider)
 
         chatRoomVC.injectedFirebaseRepositories = container.firebaseRepositories
         chatRoomVC.configure(viewModel: container.makeChatRoomViewModel(room: room))

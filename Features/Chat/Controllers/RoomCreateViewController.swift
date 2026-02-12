@@ -193,10 +193,7 @@ class RoomCreateViewController: UIViewController, ChatModalAnimatable {
                     guard let configured = makeSavingChatViewController(room) else { return }
                     chatRoomVC = configured
                 } else {
-                    let storyboard = UIStoryboard(name: "Main", bundle: nil)
-                    guard let fallback = storyboard.instantiateViewController(withIdentifier: "chatRoomVC") as? ChatViewController else {
-                        return
-                    }
+                    let fallback = ChatViewController(provider: ChatDependencyContainer.provider)
                     fallback.injectedFirebaseRepositories = self.firebaseRepositories
                     if let makeChatRoomViewModel {
                         fallback.configure(viewModel: makeChatRoomViewModel(room))
