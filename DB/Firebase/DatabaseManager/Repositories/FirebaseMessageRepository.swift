@@ -1,5 +1,5 @@
 //
-//  MessageRepository.swift
+//  FirebaseMessageRepository.swift
 //  OutPick
 //
 //  Created by 김가윤 on 1/15/25.
@@ -8,11 +8,11 @@
 import Foundation
 import FirebaseFirestore
 
-final class MessageRepository: MessageRepositoryProtocol {
+final class FirebaseMessageRepository: FirebaseMessageRepositoryProtocol {
     private let db: Firestore
     private var lastFetchedMessageSnapshot: DocumentSnapshot?
     
-    init(db: Firestore, paginationManager: PaginationManagerProtocol? = nil) {
+    init(db: Firestore, paginationStateRepository: PaginationStateRepositoryProtocol? = nil) {
         self.db = db
     }
     
@@ -303,4 +303,3 @@ final class MessageRepository: MessageRepositoryProtocol {
     }
     
 }
-

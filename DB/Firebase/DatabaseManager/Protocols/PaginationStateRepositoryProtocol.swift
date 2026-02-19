@@ -1,5 +1,5 @@
 //
-//  PaginationManagerProtocol.swift
+//  PaginationStateRepositoryProtocol.swift
 //  OutPick
 //
 //  Created by 김가윤 on 1/15/25.
@@ -9,7 +9,7 @@ import Foundation
 import FirebaseFirestore
 
 /// 페이지네이션 상태 관리를 위한 프로토콜
-protocol PaginationManagerProtocol {
+protocol PaginationStateRepositoryProtocol {
     /// 메시지 페이지네이션 마지막 스냅샷
     var lastFetchedMessageSnapshot: DocumentSnapshot? { get set }
     
@@ -25,5 +25,4 @@ protocol PaginationManagerProtocol {
     /// 페이지네이션 상태 초기화
     func resetPagination()
 }
-
 

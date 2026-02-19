@@ -1,5 +1,5 @@
 //
-//  PaginationManager.swift
+//  PaginationStateRepository.swift
 //  OutPick
 //
 //  Created by 김가윤 on 1/15/25.
@@ -8,7 +8,7 @@
 import Foundation
 import FirebaseFirestore
 
-final class PaginationManager: PaginationManagerProtocol {
+final class PaginationStateRepository: PaginationStateRepositoryProtocol {
     var lastFetchedMessageSnapshot: DocumentSnapshot?
     var lastFetchedRoomSnapshot: DocumentSnapshot?
     var lastSearchSnapshot: DocumentSnapshot?

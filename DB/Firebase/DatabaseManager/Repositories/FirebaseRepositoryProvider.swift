@@ -10,22 +10,22 @@ import FirebaseFirestore
 
 protocol FirebaseRepositoryProviding {
     var userProfileRepository: UserProfileRepositoryProtocol { get }
-    var chatRoomRepository: ChatRoomRepositoryProtocol { get }
-    var messageRepository: MessageRepositoryProtocol { get }
-    var announcementRepository: AnnouncementRepositoryProtocol { get }
+    var chatRoomRepository: FirebaseChatRoomRepositoryProtocol { get }
+    var messageRepository: FirebaseMessageRepositoryProtocol { get }
+    var announcementRepository: FirebaseAnnouncementRepositoryProtocol { get }
 }
 
 struct FirebaseRepositoryProvider: FirebaseRepositoryProviding {
     let userProfileRepository: UserProfileRepositoryProtocol
-    let chatRoomRepository: ChatRoomRepositoryProtocol
-    let messageRepository: MessageRepositoryProtocol
-    let announcementRepository: AnnouncementRepositoryProtocol
+    let chatRoomRepository: FirebaseChatRoomRepositoryProtocol
+    let messageRepository: FirebaseMessageRepositoryProtocol
+    let announcementRepository: FirebaseAnnouncementRepositoryProtocol
 
     init(
         userProfileRepository: UserProfileRepositoryProtocol,
-        chatRoomRepository: ChatRoomRepositoryProtocol,
-        messageRepository: MessageRepositoryProtocol,
-        announcementRepository: AnnouncementRepositoryProtocol
+        chatRoomRepository: FirebaseChatRoomRepositoryProtocol,
+        messageRepository: FirebaseMessageRepositoryProtocol,
+        announcementRepository: FirebaseAnnouncementRepositoryProtocol
     ) {
         self.userProfileRepository = userProfileRepository
         self.chatRoomRepository = chatRoomRepository
@@ -37,9 +37,9 @@ struct FirebaseRepositoryProvider: FirebaseRepositoryProviding {
         let db = Firestore.firestore()
         return FirebaseRepositoryProvider(
             userProfileRepository: UserProfileRepository(db: db),
-            chatRoomRepository: ChatRoomRepository(db: db),
-            messageRepository: MessageRepository(db: db),
-            announcementRepository: AnnouncementRepository(db: db)
+            chatRoomRepository: FirebaseChatRoomRepository(db: db),
+            messageRepository: FirebaseMessageRepository(db: db),
+            announcementRepository: FirebaseAnnouncementRepository(db: db)
         )
     }()
 }

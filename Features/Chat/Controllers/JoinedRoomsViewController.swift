@@ -49,7 +49,7 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
     
     required init?(coder: NSCoder) {
         let db = Firestore.firestore()
-        let roomRepository = ChatRoomRepository(db: db)
+        let roomRepository = FirebaseChatRoomRepository(db: db)
         let userProfileRepository = UserProfileRepository(db: db)
         let useCase = JoinedRoomsUseCase(
             roomRepository: roomRepository,
@@ -103,7 +103,7 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
                     let image = try? await KingFisherCacheManager.shared.loadOrFetchImage(
                         forKey: imagePath,
                         fetch: {
-                            try await FirebaseImageStorageManager.shared.fetchImageFromStorage(image: imagePath, location: .roomImage)
+                            try await FirebaseImageStorageRepository.shared.fetchImageFromStorage(image: imagePath, location: .roomImage)
                         }
                     )
                     return (roomID, image)

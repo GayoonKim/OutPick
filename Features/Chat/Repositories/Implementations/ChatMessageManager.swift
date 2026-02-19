@@ -9,11 +9,11 @@ import Foundation
 import Combine
 
 final class ChatMessageManager: ChatMessageManagerProtocol {
-    private let messageRepository: MessageRepositoryProtocol
+    private let messageRepository: FirebaseMessageRepositoryProtocol
     private let grdbManager: GRDBManager
     
     init(
-        messageRepository: MessageRepositoryProtocol = FirebaseRepositoryProvider.shared.messageRepository,
+        messageRepository: FirebaseMessageRepositoryProtocol = FirebaseRepositoryProvider.shared.messageRepository,
         grdbManager: GRDBManager = .shared
     ) {
         self.messageRepository = messageRepository
@@ -139,7 +139,7 @@ final class ChatMessageManager: ChatMessageManagerProtocol {
         await withTaskGroup(of: Void.self) { group in
             for path in uniquePaths {
                 group.addTask {
-                    FirebaseImageStorageManager.shared.deleteImageFromStorage(path: path)
+                    FirebaseImageStorageRepository.shared.deleteImageFromStorage(path: path)
                 }
             }
         }

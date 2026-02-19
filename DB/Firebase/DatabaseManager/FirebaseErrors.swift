@@ -1,5 +1,5 @@
 //
-//  FirebaseError.swift
+//  FirebaseErrors.swift
 //  OutPick
 //
 //  Created by 김가윤 on 1/15/25.
@@ -17,7 +17,7 @@ enum FirebaseError: Error {
     case unknownError
 }
 
-enum StorageError: Error {
+enum FirebaseStorageError: Error {
     case FailedToUploadImage
     case FailedToFetchImage
     case FailedToConvertImage

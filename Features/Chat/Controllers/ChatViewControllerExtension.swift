@@ -202,7 +202,7 @@ extension ChatViewController: PHPickerViewControllerDelegate {
                         hud.setProgress(0.0)
 
                         do {
-                            let attachments = try await FirebaseImageStorageManager.shared.uploadPairsToRoomMessage(
+                            let attachments = try await FirebaseImageStorageRepository.shared.uploadPairsToRoomMessage(
                                 pairs,
                                 roomID: roomID,
                                 messageID: messageID,
@@ -238,9 +238,9 @@ extension ChatViewController: PHPickerViewControllerDelegate {
                     }
                 } catch MediaError.failedToConvertImage {
                     AlertManager.showAlertNoHandler(title: "이미지 변환 실패", message: "이미지를 다시 선택해 주세요/", viewController: self)
-                } catch StorageError.FailedToUploadImage {
+                } catch FirebaseStorageError.FailedToUploadImage {
                     print("이미지 업로드 실패")
-                } catch StorageError.FailedToFetchImage {
+                } catch FirebaseStorageError.FailedToFetchImage {
                     print("이미지 불러오기 실패")
                 } catch {
                     print("알 수 없는 오류: \(error)")
@@ -305,7 +305,7 @@ extension ChatViewController {
 
         do {
             // 1) 비디오 업로드
-            try await FirebaseVideoStorageManager.shared.putVideoFileToStorage(localURL: prepared.compressedFileURL, path: videoPath, contentType: "video/mp4") { fraction in
+            try await FirebaseVideoStorageRepository.shared.putVideoFileToStorage(localURL: prepared.compressedFileURL, path: videoPath, contentType: "video/mp4") { fraction in
                 Task { @MainActor in
                     localHUD?.setProgress(fraction)
                 }
@@ -313,7 +313,7 @@ extension ChatViewController {
             
             // 2) 썸네일 업로드
             if !prepared.thumbnailData.isEmpty {
-                try await FirebaseVideoStorageManager.shared.putVideoDataToStorage(data: prepared.thumbnailData, path: thumbPath, contentType: "image/jpeg")
+                try await FirebaseVideoStorageRepository.shared.putVideoDataToStorage(data: prepared.thumbnailData, path: thumbPath, contentType: "image/jpeg")
             }
             
             // 3) 메타 브로드캐스트 (바이너리 X)

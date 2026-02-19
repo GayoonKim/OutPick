@@ -13,9 +13,9 @@ protocol RoomSearchUseCaseProtocol {
 }
 
 final class RoomSearchUseCase: RoomSearchUseCaseProtocol {
-    private let roomRepository: ChatRoomRepositoryProtocol
+    private let roomRepository: FirebaseChatRoomRepositoryProtocol
 
-    init(roomRepository: ChatRoomRepositoryProtocol) {
+    init(roomRepository: FirebaseChatRoomRepositoryProtocol) {
         self.roomRepository = roomRepository
     }
 

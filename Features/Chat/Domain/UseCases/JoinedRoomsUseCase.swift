@@ -7,13 +7,16 @@
 
 import Foundation
 import Combine
+import FirebaseFirestore
 
 protocol JoinedRoomsUseCaseProtocol {
-    var roomChangePublisher: AnyPublisher<ChatRoom, Never> { get }
+    var joinedRoomsPublisher: AnyPublisher<[ChatRoom], Never> { get }
 
-    func fetchJoinedRooms() async throws -> [ChatRoom]
+    func fetchJoinedRoomsHead(limit: Int) async throws -> (rooms: [ChatRoom], cursor: DocumentSnapshot?)
+    func loadMoreJoinedRooms(after cursor: DocumentSnapshot?, limit: Int) async throws -> (rooms: [ChatRoom], cursor: DocumentSnapshot?)
+    func syncJoinedRoomsTail(since: Date, limit: Int) async throws -> [ChatRoom]
     @MainActor
-    func startRoomUpdates(roomIDs: [String])
+    func startRoomUpdates(limit: Int)
     @MainActor
     func stopRoomUpdates()
     func fetchUnreadCount(roomID: String, lastMessageSeqHint: Int64?) async -> Int64
@@ -21,33 +24,57 @@ protocol JoinedRoomsUseCaseProtocol {
 }
 
 final class JoinedRoomsUseCase: JoinedRoomsUseCaseProtocol {
-    let roomChangePublisher: AnyPublisher<ChatRoom, Never>
+    let joinedRoomsPublisher: AnyPublisher<[ChatRoom], Never>
 
-    private let roomRepository: ChatRoomRepositoryProtocol
+    private let roomRepository: FirebaseChatRoomRepositoryProtocol
     private let userProfileRepository: UserProfileRepositoryProtocol
 
     init(
-        roomRepository: ChatRoomRepositoryProtocol,
+        roomRepository: FirebaseChatRoomRepositoryProtocol,
         userProfileRepository: UserProfileRepositoryProtocol
     ) {
         self.roomRepository = roomRepository
         self.userProfileRepository = userProfileRepository
-        self.roomChangePublisher = roomRepository.roomChangePublisher
+        self.joinedRoomsPublisher = roomRepository.joinedRoomsSummaryPublisher
     }
 
-    func fetchJoinedRooms() async throws -> [ChatRoom] {
-        guard let profile = LoginManager.shared.currentUserProfile else { return [] }
-        return try await roomRepository.fetchRoomsWithIDs(byIDs: profile.joinedRooms)
+    func fetchJoinedRoomsHead(limit: Int = 50) async throws -> (rooms: [ChatRoom], cursor: DocumentSnapshot?) {
+        let page = try await roomRepository.fetchJoinedRoomsPage(
+            userEmail: LoginManager.shared.getUserEmail,
+            after: nil,
+            limit: limit
+        )
+        return (rooms: page.rooms, cursor: page.lastSnapshot)
+    }
+
+    func loadMoreJoinedRooms(after cursor: DocumentSnapshot?, limit: Int = 50) async throws -> (rooms: [ChatRoom], cursor: DocumentSnapshot?) {
+        let page = try await roomRepository.fetchJoinedRoomsPage(
+            userEmail: LoginManager.shared.getUserEmail,
+            after: cursor,
+            limit: limit
+        )
+        return (rooms: page.rooms, cursor: page.lastSnapshot)
+    }
+
+    func syncJoinedRoomsTail(since: Date, limit: Int = 200) async throws -> [ChatRoom] {
+        try await roomRepository.fetchJoinedRoomsUpdatedSince(
+            userEmail: LoginManager.shared.getUserEmail,
+            since: since,
+            limit: limit
+        )
     }
 
     @MainActor
-    func startRoomUpdates(roomIDs: [String]) {
-        roomRepository.startListenRoomDocs(roomIDs: roomIDs)
+    func startRoomUpdates(limit: Int = 50) {
+        roomRepository.startListenJoinedRoomsSummary(
+            userEmail: LoginManager.shared.getUserEmail,
+            limit: limit
+        )
     }
 
     @MainActor
     func stopRoomUpdates() {
-        roomRepository.stopListenAllRoomDocs()
+        roomRepository.stopListenJoinedRoomsSummary()
     }
 
     func fetchUnreadCount(roomID: String, lastMessageSeqHint: Int64?) async -> Int64 {
@@ -67,6 +94,6 @@ final class JoinedRoomsUseCase: JoinedRoomsUseCaseProtocol {
     }
 
     func leave(room: ChatRoom) {
-        roomRepository.remove_participant(room: room)
+        roomRepository.removeParticipant(room: room)
     }
 }

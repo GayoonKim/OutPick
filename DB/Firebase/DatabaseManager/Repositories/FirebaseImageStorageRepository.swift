@@ -1,5 +1,5 @@
 //
-//  FirebaseImageStorageManager.swift
+//  FirebaseImageStorageRepository.swift
 //  OutPick
 //
 //  Created by Codex on 2/10/26.
@@ -11,15 +11,15 @@ import Kingfisher
 import FirebaseStorage
 import FirebaseFirestore
 
-final class FirebaseImageStorageManager {
+final class FirebaseImageStorageRepository: FirebaseImageStorageRepositoryProtocol {
 
-    static let shared = FirebaseImageStorageManager()
+    static let shared = FirebaseImageStorageRepository()
 
     private let db = Firestore.firestore()
     private let storage = Storage.storage()
-    private let transferService: FirebaseStorageTransferService
+    private let transferService: FirebaseStorageTransferRepositoryProtocol
 
-    init(transferService: FirebaseStorageTransferService = .shared) {
+    init(transferService: FirebaseStorageTransferRepositoryProtocol = FirebaseStorageTransferRepository.shared) {
         self.transferService = transferService
     }
 
@@ -42,12 +42,12 @@ final class FirebaseImageStorageManager {
         return try await withThrowingTaskGroup(of: (String, Bool).self, returning: (String, String).self) { group in
             // 1) Thumbnail (putData)
             group.addTask { [weak self] in
-                guard let self else { throw StorageError.FailedToUploadImage }
+                guard let self else { throw FirebaseStorageError.FailedToUploadImage }
                 let path = try await self.transferService.uploadWithRetry(
                     data: thumbData,
                     to: thumbPath,
                     contentType: contentType,
-                    uploadFailure: StorageError.FailedToUploadImage,
+                    uploadFailure: FirebaseStorageError.FailedToUploadImage,
                     cacheControl: cacheControl
                 )
                 return (path, true)
@@ -55,13 +55,13 @@ final class FirebaseImageStorageManager {
 
             // 2) Original (putFile with retry -> fallback to putData if small)
             group.addTask { [weak self] in
-                guard let self else { throw StorageError.FailedToUploadImage }
+                guard let self else { throw FirebaseStorageError.FailedToUploadImage }
                 do {
                     let path = try await self.transferService.uploadFileWithRetry(
                         from: originalFileURL,
                         to: originalPath,
                         contentType: contentType,
-                        uploadFailure: StorageError.FailedToUploadImage,
+                        uploadFailure: FirebaseStorageError.FailedToUploadImage,
                         cacheControl: cacheControl
                     )
                     return (path, false)
@@ -76,7 +76,7 @@ final class FirebaseImageStorageManager {
                                 data: data,
                                 to: originalPath,
                                 contentType: contentType,
-                                uploadFailure: StorageError.FailedToUploadImage,
+                                uploadFailure: FirebaseStorageError.FailedToUploadImage,
                                 cacheControl: cacheControl
                             )
                         }
@@ -98,7 +98,7 @@ final class FirebaseImageStorageManager {
             }
 
             guard let thumb = thumbResult, let original = originalResult else {
-                throw StorageError.FailedToUploadImage
+                throw FirebaseStorageError.FailedToUploadImage
             }
             return (thumb, original)
         }
@@ -153,7 +153,7 @@ final class FirebaseImageStorageManager {
         var lastReported: [String: Int64] = [:]
         if totalBytes > 0 { onProgress?(0.0) }
 
-        let limiter = FirebaseStorageTransferService.AsyncSemaphore(4)
+        let limiter = FirebaseStorageTransferRepository.AsyncSemaphore(4)
 
         let (attachments, hadFailure) = await withTaskGroup(of: (Int, Attachment)?.self, returning: ([Attachment], Bool).self) { group in
             for pair in pairs {
@@ -191,7 +191,7 @@ final class FirebaseImageStorageManager {
                             data: pair.thumbData,
                             to: thumbPath,
                             contentType: "image/jpeg",
-                            uploadFailure: StorageError.FailedToUploadImage,
+                            uploadFailure: FirebaseStorageError.FailedToUploadImage,
                             cacheControl: thumbCacheControl,
                             progress: { completed, _ in
                                 progressQueue.async {
@@ -212,7 +212,7 @@ final class FirebaseImageStorageManager {
                                 from: pair.originalFileURL,
                                 to: originalPath,
                                 contentType: "image/jpeg",
-                                uploadFailure: StorageError.FailedToUploadImage,
+                                uploadFailure: FirebaseStorageError.FailedToUploadImage,
                                 cacheControl: originalCacheControl,
                                 progress: { completed, _ in
                                     progressQueue.async {
@@ -243,7 +243,7 @@ final class FirebaseImageStorageManager {
                                         data: data,
                                         to: originalPath,
                                         contentType: "image/jpeg",
-                                        uploadFailure: StorageError.FailedToUploadImage,
+                                        uploadFailure: FirebaseStorageError.FailedToUploadImage,
                                         cacheControl: originalCacheControl,
                                         progress: { completed, _ in
                                             progressQueue.async {
@@ -304,7 +304,7 @@ final class FirebaseImageStorageManager {
         }
 
         if hadFailure {
-            throw StorageError.FailedToUploadImage
+            throw FirebaseStorageError.FailedToUploadImage
         }
 
         return attachments

@@ -102,7 +102,7 @@ class RoomSearchViewController: UIViewController {
     
     convenience init() {
         let db = Firestore.firestore()
-        let roomRepository = ChatRoomRepository(db: db)
+        let roomRepository = FirebaseChatRoomRepository(db: db)
         let useCase = RoomSearchUseCase(roomRepository: roomRepository)
         let viewModel = RoomSearchViewModel(useCase: useCase)
         self.init(viewModel: viewModel)
@@ -110,7 +110,7 @@ class RoomSearchViewController: UIViewController {
 
     required init?(coder: NSCoder) {
         let db = Firestore.firestore()
-        let roomRepository = ChatRoomRepository(db: db)
+        let roomRepository = FirebaseChatRoomRepository(db: db)
         let useCase = RoomSearchUseCase(roomRepository: roomRepository)
         self.viewModel = RoomSearchViewModel(useCase: useCase)
         super.init(coder: coder)

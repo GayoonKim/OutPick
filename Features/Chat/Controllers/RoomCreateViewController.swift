@@ -75,7 +75,7 @@ class RoomCreateViewController: UIViewController, ChatModalAnimatable {
         injectedFirebaseRepositories ?? ChatDependencyContainer.requireFirebaseRepositories()
     }
 
-    private var chatRoomRepository: ChatRoomRepositoryProtocol {
+    private var chatRoomRepository: FirebaseChatRoomRepositoryProtocol {
         firebaseRepositories.chatRoomRepository
     }
 
@@ -230,7 +230,7 @@ class RoomCreateViewController: UIViewController, ChatModalAnimatable {
                 if self.isDefaultRoomImage == false, let pair = self.imageData {
                     Task.detached(priority: .background) {
                         do {
-                            let (thumbPath, _) = try await FirebaseImageStorageManager.shared.uploadAndSave(
+                            let (thumbPath, _) = try await FirebaseImageStorageRepository.shared.uploadAndSave(
                                 sha: pair.fileBaseName,
                                 uid: room.ID ?? "",
                                 type: .roomImage,

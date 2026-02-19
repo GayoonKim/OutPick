@@ -1,5 +1,5 @@
 //
-//  AnnouncementRepositoryProtocol.swift
+//  FirebaseAnnouncementRepositoryProtocol.swift
 //  OutPick
 //
 //  Created by 김가윤 on 1/15/25.
@@ -8,7 +8,7 @@
 import Foundation
 
 /// 공지 관련 데이터베이스 작업을 위한 프로토콜
-protocol AnnouncementRepositoryProtocol {
+protocol FirebaseAnnouncementRepositoryProtocol {
     /// 활성 공지 설정 (roomID 기반)
     func setActiveAnnouncement(roomID: String, messageID: String?, payload: AnnouncementPayload?) async throws
     

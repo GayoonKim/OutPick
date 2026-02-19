@@ -30,9 +30,9 @@ protocol RoomListUseCaseProtocol {
 
 @MainActor
 final class RoomListUseCase: RoomListUseCaseProtocol {
-    private let roomRepository: ChatRoomRepositoryProtocol
+    private let roomRepository: FirebaseChatRoomRepositoryProtocol
 
-    init(roomRepository: ChatRoomRepositoryProtocol) {
+    init(roomRepository: FirebaseChatRoomRepositoryProtocol) {
         self.roomRepository = roomRepository
     }
 

@@ -1,5 +1,5 @@
 //
-//  ChatRoomRepositoryProtocol.swift
+//  FirebaseChatRoomRepositoryProtocol.swift
 //  OutPick
 //
 //  Created by 김가윤 on 1/15/25.
@@ -10,12 +10,16 @@ import Combine
 import FirebaseFirestore
 
 /// 채팅방 관련 데이터베이스 작업을 위한 프로토콜
-protocol ChatRoomRepositoryProtocol {
+protocol FirebaseChatRoomRepositoryProtocol {
     /// 방 목록 캐시 상태
     var topRoomsWithPreviews: [(ChatRoom, [ChatMessage])] { get }
     
     /// 방 변경 이벤트 Publisher
     var roomChangePublisher: AnyPublisher<ChatRoom, Never> { get }
+
+    /// 참여중 방(요약) 변경 이벤트 Publisher
+    /// - Note: JoinedRooms 목록의 head 실시간 반영 전용
+    var joinedRoomsSummaryPublisher: AnyPublisher<[ChatRoom], Never> { get }
     
     /// 로컬 방 정보 업데이트 (캐시 갱신)
     func applyLocalRoomUpdate(_ updatedRoom: ChatRoom)
@@ -48,15 +52,36 @@ protocol ChatRoomRepositoryProtocol {
     
     /// 검색 결과 다음 페이지 로드
     func loadMoreSearchRooms(limit: Int) async throws -> [ChatRoom]
+
+    /// 참여중 방 head(요약) 실시간 리스너 시작
+    @MainActor
+    func startListenJoinedRoomsSummary(userEmail: String, limit: Int)
+
+    /// 참여중 방 head(요약) 실시간 리스너 중지
+    @MainActor
+    func stopListenJoinedRoomsSummary()
+
+    /// 참여중 방 페이지 조회 (비실시간)
+    func fetchJoinedRoomsPage(
+        userEmail: String,
+        after lastSnapshot: DocumentSnapshot?,
+        limit: Int
+    ) async throws -> (rooms: [ChatRoom], lastSnapshot: DocumentSnapshot?)
+
+    /// 참여중 방 tail 변경분 조회 (delta sync)
+    func fetchJoinedRoomsUpdatedSince(
+        userEmail: String,
+        since: Date,
+        limit: Int
+    ) async throws -> [ChatRoom]
     
     /// 단일 방 문서 리스너 시작
+    @MainActor
     func startListenRoomDoc(roomID: String)
     
-    /// 여러 방 문서 리스너 시작 (배치)
-    func startListenRoomDocs(roomIDs: [String])
-    
-    /// 모든 방 문서 리스너 중지
-    func stopListenAllRoomDocs()
+    /// 현재 방 문서 리스너 중지
+    @MainActor
+    func stopListenRoomDoc()
     
     /// 방 정보 업데이트
     func updateRoomInfo(room: ChatRoom, newImagePath: String, roomName: String, roomDescription: String) async throws
@@ -68,15 +93,14 @@ protocol ChatRoomRepositoryProtocol {
     func checkRoomNameDuplicate(roomName: String) async throws -> Bool
     
     /// 방 참여자 추가
-    func add_room_participant(room: ChatRoom) async throws
+    func addRoomParticipant(room: ChatRoom) async throws
     
     /// 방 참여자 추가 및 최신 방 정보 반환
-    func add_room_participant_returningRoom(roomID: String) async throws -> ChatRoom
+    func addRoomParticipantReturningRoom(roomID: String) async throws -> ChatRoom
     
     /// 방 참여자 제거
-    func remove_participant(room: ChatRoom)
+    func removeParticipant(room: ChatRoom)
     
     /// 방의 최신 시퀀스 조회
     func fetchLatestSeq(for roomID: String) async throws -> Int64
 }
-

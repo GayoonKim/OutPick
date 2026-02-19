@@ -1,5 +1,5 @@
 //
-//  ChatRoomRepository.swift
+//  FirebaseChatRoomRepository.swift
 //  OutPick
 //
 //  Created by 김가윤 on 1/15/25.
@@ -10,20 +10,26 @@ import Combine
 import FirebaseFirestore
 import UIKit
 
-final class ChatRoomRepository: ChatRoomRepositoryProtocol {
+final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol {
     private let db: Firestore
     
     // 채팅방 목록 캐시
     private(set) var topRoomsWithPreviews: [(ChatRoom, [ChatMessage])] = []
     private var previewByRoomID: [String: [ChatMessage]] = [:]
-    private var lastRoomIDsListened: Set<String> = []
     
     // 방 문서 리스너
     private var roomDocListeners: [String: ListenerRegistration] = [:]
-    private var batchedRoomDocListeners: [String: ListenerRegistration] = [:]
     private let roomChangeSubject = PassthroughSubject<ChatRoom, Never>()
     var roomChangePublisher: AnyPublisher<ChatRoom, Never> {
         return roomChangeSubject.eraseToAnyPublisher()
+    }
+
+    // 참여중 방 head(요약) 실시간 리스너
+    private var joinedRoomsSummaryListener: ListenerRegistration?
+    private let joinedRoomsSummarySubject = CurrentValueSubject<[ChatRoom], Never>([])
+    private var joinedRoomsSummaryConfig: (email: String, limit: Int)?
+    var joinedRoomsSummaryPublisher: AnyPublisher<[ChatRoom], Never> {
+        joinedRoomsSummarySubject.eraseToAnyPublisher()
     }
     
     // 페이지네이션 상태
@@ -32,16 +38,17 @@ final class ChatRoomRepository: ChatRoomRepositoryProtocol {
     private var currentSearchKeyword: String = ""
     
     // 작업 관리
-    private var add_room_participant_task: Task<Void, Never>?
-    private var remove_participant_task: Task<Void, Never>?
+    private var addRoomParticipantTask: Task<Void, Never>?
+    private var removeParticipantTask: Task<Void, Never>?
     
     init(db: Firestore) {
         self.db = db
     }
     
     deinit {
-        add_room_participant_task?.cancel()
-        remove_participant_task?.cancel()
+        addRoomParticipantTask?.cancel()
+        removeParticipantTask?.cancel()
+        joinedRoomsSummaryListener?.remove()
         // deinit에서는 MainActor 메서드를 직접 호출할 수 없으므로 직접 정리
         cleanupListeners()
     }
@@ -162,6 +169,7 @@ final class ChatRoomRepository: ChatRoomRepositoryProtocol {
             } else {
                 updateData["lastMessageAt"] = FieldValue.serverTimestamp()
             }
+            updateData["updatedAt"] = FieldValue.serverTimestamp()
             
             try await ref.updateData(updateData)
             print("✅ lastMessageAt 업데이트 성공 → \(roomID)")
@@ -189,14 +197,15 @@ final class ChatRoomRepository: ChatRoomRepositoryProtocol {
                 "thumbPath": FieldValue.delete(),
                 "originalPath": FieldValue.delete(),
                 "roomName": newName,
-                "roomDescription": newDesc
+                "roomDescription": newDesc,
+                "updatedAt": FieldValue.serverTimestamp()
             ])
             Task.detached {
-                if let t = oldThumb { FirebaseImageStorageManager.shared.deleteImageFromStorage(path: t) }
-                if let o = oldOriginal { FirebaseImageStorageManager.shared.deleteImageFromStorage(path: o) }
+                if let t = oldThumb { FirebaseImageStorageRepository.shared.deleteImageFromStorage(path: t) }
+                if let o = oldOriginal { FirebaseImageStorageRepository.shared.deleteImageFromStorage(path: o) }
             }
         } else if let pair = imageData {
-            let (newThumb, newOriginal) = try await FirebaseImageStorageManager.shared.uploadAndSave(
+            let (newThumb, newOriginal) = try await FirebaseImageStorageRepository.shared.uploadAndSave(
                 sha: pair.fileBaseName,
                 uid: room.ID ?? "",
                 type: .roomImage,
@@ -208,7 +217,8 @@ final class ChatRoomRepository: ChatRoomRepositoryProtocol {
         } else {
             try await roomRef.updateData([
                 "roomName": newName,
-                "roomDescription": newDesc
+                "roomDescription": newDesc,
+                "updatedAt": FieldValue.serverTimestamp()
             ])
         }
         
@@ -248,11 +258,13 @@ final class ChatRoomRepository: ChatRoomRepositoryProtocol {
         
         do {
             _ = try await db.runTransaction({ (transaction, errorPointer) -> Any? in
-                transaction.setData(room.toDictionary(), forDocument: roomRef)
+                var roomData = room.toDictionary()
+                roomData["updatedAt"] = FieldValue.serverTimestamp()
+                transaction.setData(roomData, forDocument: roomRef)
                 return nil
             })
             
-            try await add_room_participant(room: room)
+            try await addRoomParticipant(room: room)
             
             SocketIOManager.shared.createRoom(roomID)
             SocketIOManager.shared.joinRoom(roomID)
@@ -321,13 +333,113 @@ final class ChatRoomRepository: ChatRoomRepositoryProtocol {
         guard !currentSearchKeyword.isEmpty else { return [] }
         return try await searchRooms(keyword: currentSearchKeyword, limit: limit, reset: false)
     }
+
+    @MainActor
+    func startListenJoinedRoomsSummary(userEmail: String, limit: Int = 50) {
+        let normalizedEmail = userEmail.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedEmail.isEmpty else { return }
+        let boundedLimit = max(1, limit)
+
+        if let config = joinedRoomsSummaryConfig,
+           config.email == normalizedEmail,
+           config.limit == boundedLimit,
+           joinedRoomsSummaryListener != nil {
+            return
+        }
+
+        joinedRoomsSummaryListener?.remove()
+        joinedRoomsSummaryListener = nil
+        joinedRoomsSummaryConfig = (normalizedEmail, boundedLimit)
+
+        let query = db.collection("Rooms")
+            .whereField("participantIDs", arrayContains: normalizedEmail)
+            .order(by: "lastMessageAt", descending: true)
+            .limit(to: boundedLimit)
+
+        joinedRoomsSummaryListener = query.addSnapshotListener { [weak self] snapshot, error in
+            guard let self else { return }
+            if let error {
+                print("❌ JoinedRooms summary listener error:", error)
+                return
+            }
+            guard let snapshot else { return }
+
+            let rooms: [ChatRoom] = snapshot.documents.compactMap { doc in
+                do {
+                    return try self.createRoom(from: doc)
+                } catch {
+                    print("⚠️ JoinedRooms summary decode failed:", error, "docID:", doc.documentID)
+                    return nil
+                }
+            }
+            self.joinedRoomsSummarySubject.send(rooms)
+        }
+    }
+
+    @MainActor
+    func stopListenJoinedRoomsSummary() {
+        joinedRoomsSummaryListener?.remove()
+        joinedRoomsSummaryListener = nil
+        joinedRoomsSummaryConfig = nil
+    }
+
+    func fetchJoinedRoomsPage(
+        userEmail: String,
+        after lastSnapshot: DocumentSnapshot? = nil,
+        limit: Int = 50
+    ) async throws -> (rooms: [ChatRoom], lastSnapshot: DocumentSnapshot?) {
+        let normalizedEmail = userEmail.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedEmail.isEmpty else { return ([], nil) }
+
+        var query: Query = db.collection("Rooms")
+            .whereField("participantIDs", arrayContains: normalizedEmail)
+            .order(by: "lastMessageAt", descending: true)
+            .limit(to: max(1, limit))
+
+        if let lastSnapshot {
+            query = query.start(afterDocument: lastSnapshot)
+        }
+
+        let snapshot = try await query.getDocuments()
+        let rooms: [ChatRoom] = snapshot.documents.compactMap { doc in
+            do {
+                return try self.createRoom(from: doc)
+            } catch {
+                print("⚠️ JoinedRooms page decode failed:", error, "docID:", doc.documentID)
+                return nil
+            }
+        }
+        return (rooms, snapshot.documents.last)
+    }
+
+    func fetchJoinedRoomsUpdatedSince(
+        userEmail: String,
+        since: Date,
+        limit: Int = 200
+    ) async throws -> [ChatRoom] {
+        let normalizedEmail = userEmail.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedEmail.isEmpty else { return [] }
+
+        let snapshot = try await db.collection("Rooms")
+            .whereField("participantIDs", arrayContains: normalizedEmail)
+            .whereField("updatedAt", isGreaterThan: Timestamp(date: since))
+            .order(by: "updatedAt", descending: true)
+            .limit(to: max(1, limit))
+            .getDocuments()
+
+        let rooms: [ChatRoom] = snapshot.documents.compactMap { doc in
+            do {
+                return try self.createRoom(from: doc)
+            } catch {
+                print("⚠️ JoinedRooms delta decode failed:", error, "docID:", doc.documentID)
+                return nil
+            }
+        }
+        return rooms
+    }
     
     @MainActor
     func startListenRoomDoc(roomID: String) {
-        if lastRoomIDsListened.contains(roomID) {
-            print(#function, "skip per-doc listener (managed by batched):", roomID)
-            return
-        }
         if roomDocListeners[roomID] != nil { return }
         
         let ref = db.collection("Rooms").document(roomID)
@@ -353,63 +465,7 @@ final class ChatRoomRepository: ChatRoomRepositoryProtocol {
     }
     
     @MainActor
-    func startListenRoomDocs(roomIDs: [String]) {
-        let ids = Array(Set(roomIDs)).filter { !$0.isEmpty }
-        let newSet = Set(ids)
-        guard !newSet.isEmpty else {
-            stopListenAllRoomDocs()
-            return
-        }
-        
-        if newSet == lastRoomIDsListened { return }
-        lastRoomIDsListened = newSet
-        
-        for (_, l) in batchedRoomDocListeners { l.remove() }
-        batchedRoomDocListeners.removeAll()
-        for (_, l) in roomDocListeners { l.remove() }
-        roomDocListeners.removeAll()
-        
-        let chunkSize = 10
-        var index = 0
-        while index < ids.count {
-            let end = min(index + chunkSize, ids.count)
-            let chunk = Array(ids[index..<end])
-            index = end
-            
-            let key = chunk.sorted().joined(separator: ",")
-            
-            let q = db.collection("Rooms")
-                .whereField(FieldPath.documentID(), in: chunk)
-            
-            let l = q.addSnapshotListener { [weak self] snap, err in
-                guard let self = self else { return }
-                if let err = err {
-                    print("❌ Batched room docs listener error:", err)
-                    return
-                }
-                guard let snap = snap else { return }
-                
-                Task { @MainActor in
-                    for change in snap.documentChanges {
-                        do {
-                            let room = try self.createRoom(from: change.document)
-                            if let id = room.ID, !id.isEmpty {
-                                self.roomChangeSubject.send(room)
-                            }
-                        } catch {
-                            print("⚠️ Batched decode failed:", error, "docID:", change.document.documentID)
-                        }
-                    }
-                }
-            }
-            
-            batchedRoomDocListeners[key] = l
-            print(#function, "Added listener for chunk:", l)
-        }
-    }
-    
-    @MainActor
-    func stopListenAllRoomDocs() {
+    func stopListenRoomDoc() {
         cleanupListeners()
     }
     
@@ -419,11 +475,6 @@ final class ChatRoomRepository: ChatRoomRepositoryProtocol {
             listener.remove()
         }
         roomDocListeners.removeAll()
-        
-        for (_, listener) in batchedRoomDocListeners {
-            listener.remove()
-        }
-        batchedRoomDocListeners.removeAll()
     }
     
     @MainActor
@@ -436,6 +487,7 @@ final class ChatRoomRepository: ChatRoomRepositoryProtocol {
         updateData["roomImagePath"] = newImagePath
         updateData["roomName"] = roomName
         updateData["roomDescription"] = roomDescription
+        updateData["updatedAt"] = FieldValue.serverTimestamp()
         
         try await roomDoc.reference.updateData(updateData)
     }
@@ -467,28 +519,31 @@ final class ChatRoomRepository: ChatRoomRepositoryProtocol {
         }
     }
     
-    func add_room_participant(room: ChatRoom) async throws {
-        add_room_participant_task?.cancel()
-        add_room_participant_task = Task {
+    func addRoomParticipant(room: ChatRoom) async throws {
+        addRoomParticipantTask?.cancel()
+        addRoomParticipantTask = Task {
             do {
-                guard let room_doc = try await getRoomDoc(room: room) else { return }
+                guard let roomDoc = try await getRoomDoc(room: room) else { return }
                 let userRef = db.collection("Users").document(LoginManager.shared.getUserEmail)
                 
                 let _ = try await db.runTransaction({ (transaction, errorPointer) -> Any? in
                     transaction.updateData(["joinedRooms": FieldValue.arrayUnion([room.ID ?? ""])], forDocument: userRef)
-                    transaction.updateData(["participantIDs": FieldValue.arrayUnion([LoginManager.shared.getUserEmail])], forDocument: room_doc.reference)
+                    transaction.updateData([
+                        "participantIDs": FieldValue.arrayUnion([LoginManager.shared.getUserEmail]),
+                        "updatedAt": FieldValue.serverTimestamp()
+                    ], forDocument: roomDoc.reference)
                     return nil
                 })
                 
                 print(#function, "참여자 업데이트 성공")
-                add_room_participant_task = nil
+                addRoomParticipantTask = nil
             } catch {
                 print(#function, "방 참여자 업데이트 트랜젝션 실패: \(error)")
             }
         }
     }
     
-    func add_room_participant_returningRoom(roomID: String) async throws -> ChatRoom {
+    func addRoomParticipantReturningRoom(roomID: String) async throws -> ChatRoom {
         guard !roomID.isEmpty else {
             throw FirebaseError.FailedToFetchRoom
         }
@@ -498,7 +553,10 @@ final class ChatRoomRepository: ChatRoomRepositoryProtocol {
         
         _ = try await db.runTransaction { (transaction, errorPointer) -> Any? in
             transaction.updateData(["joinedRooms": FieldValue.arrayUnion([roomID])], forDocument: userRef)
-            transaction.updateData(["participantIDs": FieldValue.arrayUnion([email])], forDocument: roomRef)
+            transaction.updateData([
+                "participantIDs": FieldValue.arrayUnion([email]),
+                "updatedAt": FieldValue.serverTimestamp()
+            ], forDocument: roomRef)
             return nil
         }
         
@@ -510,18 +568,28 @@ final class ChatRoomRepository: ChatRoomRepositoryProtocol {
             let updated = try self.createRoom(from: snap)
             return updated
         } catch {
-            print("❌ add_room_participant_returningRoom decode error:", error)
+            print("❌ addRoomParticipantReturningRoom decode error:", error)
             throw FirebaseError.FailedToParseRoomData
         }
     }
     
-    func remove_participant(room: ChatRoom) {
-        remove_participant_task?.cancel()
-        remove_participant_task = Task {
+    func removeParticipant(room: ChatRoom) {
+        removeParticipantTask?.cancel()
+        removeParticipantTask = Task {
             do {
-                let userRef = db.collection("Users").document(LoginManager.shared.getUserEmail)
+                guard let roomID = room.ID, !roomID.isEmpty else {
+                    print("⚠️ removeParticipant: roomID 없음")
+                    return
+                }
+                let email = LoginManager.shared.getUserEmail
+                let userRef = db.collection("Users").document(email)
+                let roomRef = db.collection("Rooms").document(roomID)
                 let _ = try await db.runTransaction({ (transaction, errorPointer) -> Any? in
-                    transaction.updateData(["joinedRooms": FieldValue.arrayRemove([room.roomName])], forDocument: userRef)
+                    transaction.updateData(["joinedRooms": FieldValue.arrayRemove([roomID])], forDocument: userRef)
+                    transaction.updateData([
+                        "participantIDs": FieldValue.arrayRemove([email]),
+                        "updatedAt": FieldValue.serverTimestamp()
+                    ], forDocument: roomRef)
                     return nil
                 })
                 
@@ -533,7 +601,7 @@ final class ChatRoomRepository: ChatRoomRepositoryProtocol {
                 }
                 
                 print("참여중인 방 강제 삭제 성공")
-                remove_participant_task = nil
+                removeParticipantTask = nil
             } catch {
                 print("방 참여자 강제 삭제 트랜젝션 실패: \(error)")
             }

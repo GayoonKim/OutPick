@@ -17,7 +17,7 @@ final class LoginManager {
 
     private let authRepository: SocialAuthRepositoryProtocol
     let userProfileRepository: UserProfileRepositoryProtocol
-    let chatRoomRepository: ChatRoomRepositoryProtocol
+    let chatRoomRepository: FirebaseChatRoomRepositoryProtocol
 
     let joinedRoomStore: JoinedRoomsStore
 

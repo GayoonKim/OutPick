@@ -1,5 +1,5 @@
 //
-//  AnnouncementRepository.swift
+//  FirebaseAnnouncementRepository.swift
 //  OutPick
 //
 //  Created by 김가윤 on 1/15/25.
@@ -8,7 +8,7 @@
 import Foundation
 import FirebaseFirestore
 
-final class AnnouncementRepository: AnnouncementRepositoryProtocol {
+final class FirebaseAnnouncementRepository: FirebaseAnnouncementRepositoryProtocol {
     private let db: Firestore
     
     init(db: Firestore) {

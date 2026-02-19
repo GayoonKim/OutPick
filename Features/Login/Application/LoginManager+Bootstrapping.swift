@@ -35,10 +35,6 @@ extension LoginManager: LoginBootstrappingProtocol {
         if joinedRooms.isEmpty == false {
             BannerManager.shared.start(for: joinedRooms)
 
-            Task { @MainActor in
-                self.chatRoomRepository.startListenRoomDocs(roomIDs: joinedRooms)
-            }
-
             for roomID in joinedRooms {
                 SocketIOManager.shared.joinRoom(roomID)
             }

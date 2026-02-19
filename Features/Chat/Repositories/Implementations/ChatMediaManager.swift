@@ -12,7 +12,7 @@ import AVFoundation
 import AVKit
 
 final class ChatMediaManager: ChatMediaManagerProtocol {
-    private let imageStorageManager: FirebaseImageStorageManager
+    private let imageStorageManager: FirebaseImageStorageRepositoryProtocol
     private let cacheManager: KingFisherCacheManager
     private let storageURLCache: OPStorageURLCache
     
@@ -24,7 +24,7 @@ final class ChatMediaManager: ChatMediaManagerProtocol {
     var messageImages: [String: [UIImage]] = [:]
     
     init(
-        imageStorageManager: FirebaseImageStorageManager = .shared,
+        imageStorageManager: FirebaseImageStorageRepositoryProtocol = FirebaseImageStorageRepository.shared,
         cacheManager: KingFisherCacheManager = .shared,
         storageURLCache: OPStorageURLCache? = nil
     ) {

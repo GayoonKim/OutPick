@@ -33,15 +33,15 @@ protocol ChatRoomLifecycleUseCaseProtocol {
 }
 
 final class ChatRoomLifecycleUseCase: ChatRoomLifecycleUseCaseProtocol {
-    private let chatRoomRepository: ChatRoomRepositoryProtocol
+    private let chatRoomRepository: FirebaseChatRoomRepositoryProtocol
     private let userProfileRepository: UserProfileRepositoryProtocol
-    private let announcementRepository: AnnouncementRepositoryProtocol
+    private let announcementRepository: FirebaseAnnouncementRepositoryProtocol
     private let socketManager: SocketIOManager
 
     init(
-        chatRoomRepository: ChatRoomRepositoryProtocol = FirebaseRepositoryProvider.shared.chatRoomRepository,
+        chatRoomRepository: FirebaseChatRoomRepositoryProtocol = FirebaseRepositoryProvider.shared.chatRoomRepository,
         userProfileRepository: UserProfileRepositoryProtocol = FirebaseRepositoryProvider.shared.userProfileRepository,
-        announcementRepository: AnnouncementRepositoryProtocol = FirebaseRepositoryProvider.shared.announcementRepository,
+        announcementRepository: FirebaseAnnouncementRepositoryProtocol = FirebaseRepositoryProvider.shared.announcementRepository,
         socketManager: SocketIOManager = .shared
     ) {
         self.chatRoomRepository = chatRoomRepository
@@ -62,7 +62,7 @@ final class ChatRoomLifecycleUseCase: ChatRoomLifecycleUseCaseProtocol {
 
     @MainActor
     func stopRoomUpdates() {
-        chatRoomRepository.stopListenAllRoomDocs()
+        chatRoomRepository.stopListenRoomDoc()
     }
 
     @MainActor
@@ -84,7 +84,7 @@ final class ChatRoomLifecycleUseCase: ChatRoomLifecycleUseCaseProtocol {
             socketManager.listenToNewParticipant()
         }
 
-        let updatedRoom = try await chatRoomRepository.add_room_participant_returningRoom(roomID: roomID)
+        let updatedRoom = try await chatRoomRepository.addRoomParticipantReturningRoom(roomID: roomID)
         chatRoomRepository.applyLocalRoomUpdate(updatedRoom)
         chatRoomRepository.startListenRoomDoc(roomID: roomID)
 

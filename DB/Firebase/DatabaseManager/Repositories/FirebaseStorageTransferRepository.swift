@@ -1,5 +1,5 @@
 //
-//  FirebaseStorageTransferService.swift
+//  FirebaseStorageTransferRepository.swift
 //  OutPick
 //
 //  Created by Codex on 2/10/26.
@@ -8,10 +8,10 @@
 import Foundation
 import FirebaseStorage
 
-/// Firebase Storage 업로드(putData/putFile) 공통 로직을 제공하는 서비스
-final class FirebaseStorageTransferService {
+/// Firebase Storage 업로드(putData/putFile) 공통 로직을 제공하는 리포지토리
+final class FirebaseStorageTransferRepository: FirebaseStorageTransferRepositoryProtocol {
 
-    static let shared = FirebaseStorageTransferService()
+    static let shared = FirebaseStorageTransferRepository()
 
     private let storage = Storage.storage()
 
@@ -198,7 +198,7 @@ final class FirebaseStorageTransferService {
     }
 }
 
-extension FirebaseStorageTransferService {
+extension FirebaseStorageTransferRepository {
     // Lightweight async semaphore to cap concurrent uploads (permit-based, bug-free)
     actor AsyncSemaphore {
         private var permits: Int

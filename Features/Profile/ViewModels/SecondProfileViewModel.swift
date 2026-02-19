@@ -134,7 +134,7 @@ final class SecondProfileViewModel {
                let thumbImage = state.selectedThumb,
                let thumbData = thumbImage.jpegData(compressionQuality: 0.8) {
 
-                let uploaded = try await FirebaseImageStorageManager.shared.uploadImage(
+                let uploaded = try await FirebaseImageStorageRepository.shared.uploadImage(
                     sha: sha,
                     uid: email,
                     type: .profileImage,               // 프로젝트 enum에 맞게 변경 필요

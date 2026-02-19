@@ -41,7 +41,7 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
 
     required init?(coder: NSCoder) {
         let db = Firestore.firestore()
-        let roomRepository = ChatRoomRepository(db: db)
+        let roomRepository = FirebaseChatRoomRepository(db: db)
         let useCase = RoomListUseCase(roomRepository: roomRepository)
         self.viewModel = RoomListsViewModel(useCase: useCase)
         super.init(coder: coder)

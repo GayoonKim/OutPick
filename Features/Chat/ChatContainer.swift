@@ -14,7 +14,7 @@ import Foundation
 final class ChatContainer {
     let provider: ChatRepositoryProviding
     let firebaseRepositories: FirebaseRepositoryProviding
-    let roomRepository: ChatRoomRepositoryProtocol
+    let roomRepository: FirebaseChatRoomRepositoryProtocol
     let userProfileRepository: UserProfileRepositoryProtocol
 
     private let roomListUseCase: RoomListUseCaseProtocol
@@ -26,9 +26,9 @@ final class ChatContainer {
 
     init(
         provider: ChatRepositoryProviding = ChatRepositoryProvider(),
-        roomRepository: ChatRoomRepositoryProtocol? = nil,
+        roomRepository: FirebaseChatRoomRepositoryProtocol? = nil,
         userProfileRepository: UserProfileRepositoryProtocol? = nil,
-        announcementRepository: AnnouncementRepositoryProtocol? = nil,
+        announcementRepository: FirebaseAnnouncementRepositoryProtocol? = nil,
         repositories: FirebaseRepositoryProviding = FirebaseRepositoryProvider.shared
     ) {
         self.provider = provider

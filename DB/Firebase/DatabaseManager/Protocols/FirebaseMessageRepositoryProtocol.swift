@@ -1,5 +1,5 @@
 //
-//  MessageRepositoryProtocol.swift
+//  FirebaseMessageRepositoryProtocol.swift
 //  OutPick
 //
 //  Created by 김가윤 on 1/15/25.
@@ -9,7 +9,7 @@ import Foundation
 import FirebaseFirestore
 
 /// 메시지 관련 데이터베이스 작업을 위한 프로토콜
-protocol MessageRepositoryProtocol {
+protocol FirebaseMessageRepositoryProtocol {
     /// 메시지 저장
     func saveMessage(_ message: ChatMessage, _ room: ChatRoom) async throws
     

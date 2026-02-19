@@ -1,5 +1,5 @@
 //
-//  FirebaseVideoStorageManager.swift
+//  FirebaseVideoStorageRepository.swift
 //  OutPick
 //
 //  Created by Codex on 2/10/26.
@@ -7,13 +7,13 @@
 
 import Foundation
 
-final class FirebaseVideoStorageManager {
+final class FirebaseVideoStorageRepository: FirebaseVideoStorageRepositoryProtocol {
 
-    static let shared = FirebaseVideoStorageManager()
+    static let shared = FirebaseVideoStorageRepository()
 
-    private let transferService: FirebaseStorageTransferService
+    private let transferService: FirebaseStorageTransferRepositoryProtocol
 
-    init(transferService: FirebaseStorageTransferService = .shared) {
+    init(transferService: FirebaseStorageTransferRepositoryProtocol = FirebaseStorageTransferRepository.shared) {
         self.transferService = transferService
     }
 
@@ -30,7 +30,7 @@ final class FirebaseVideoStorageManager {
                 from: localURL,
                 to: path,
                 contentType: contentType,
-                uploadFailure: StorageError.FailedToUploadVideo,
+                uploadFailure: FirebaseStorageError.FailedToUploadVideo,
                 cacheControl: cacheControl,
                 progress: { completed, total in
                     let fraction = total > 0 ? Double(completed) / Double(total) : 0.0
@@ -49,7 +49,7 @@ final class FirebaseVideoStorageManager {
                         data: data,
                         to: path,
                         contentType: contentType,
-                        uploadFailure: StorageError.FailedToUploadVideo,
+                        uploadFailure: FirebaseStorageError.FailedToUploadVideo,
                         cacheControl: cacheControl,
                         progress: { completed, total in
                             let fraction = total > 0 ? Double(completed) / Double(total) : 0.0
@@ -72,7 +72,7 @@ final class FirebaseVideoStorageManager {
             data: data,
             to: path,
             contentType: contentType,
-            uploadFailure: StorageError.FailedToUploadVideo,
+            uploadFailure: FirebaseStorageError.FailedToUploadVideo,
             cacheControl: cacheControl
         )
     }
