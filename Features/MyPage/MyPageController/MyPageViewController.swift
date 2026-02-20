@@ -212,6 +212,9 @@ class MyPageViewController: UIViewController {
     
     private func logOutBtnTapped(_ sender: UIButton) {
         KeychainManager.shared.delete(service: "GayoonKim.OutPick", account: "UserProfile")
+        LoginManager.shared.setUserEmail("")
+        LoginManager.shared.setCurrentUserProfile(nil)
+        LoginManager.shared.clearAuthUserKey()
         didRouteToLogin = false
 
         // 1) Firebase/Google 로그아웃(되어있지 않아도 안전하게 시도)

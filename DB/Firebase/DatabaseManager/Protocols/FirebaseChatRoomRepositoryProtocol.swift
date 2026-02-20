@@ -20,6 +20,16 @@ protocol FirebaseChatRoomRepositoryProtocol {
     /// 참여중 방(요약) 변경 이벤트 Publisher
     /// - Note: JoinedRooms 목록의 head 실시간 반영 전용
     var joinedRoomsSummaryPublisher: AnyPublisher<[ChatRoom], Never> { get }
+
+    /// 소켓 실시간 메시지를 참여중 방 요약 스트림에 즉시 반영(로컬 패치)
+    /// - Parameters:
+    ///   - roomID: 대상 방 ID
+    ///   - message: 마지막 메시지 프리뷰
+    ///   - sentAt: 마지막 메시지 시각
+    ///   - seq: 서버가 전달한 메시지 시퀀스(없으면 nil)
+    ///   - senderID: 마지막 메시지 발신자 ID(없으면 nil)
+    @MainActor
+    func applyRealtimeSummaryPatch(roomID: String, message: String, sentAt: Date, seq: Int64?, senderID: String?)
     
     /// 로컬 방 정보 업데이트 (캐시 갱신)
     func applyLocalRoomUpdate(_ updatedRoom: ChatRoom)
@@ -28,7 +38,7 @@ protocol FirebaseChatRoomRepositoryProtocol {
     func fetchTopRoomsPage(after lastSnapshot: DocumentSnapshot?, limit: Int) async throws
     
     /// 방의 마지막 메시지 정보 업데이트
-    func updateRoomLastMessage(roomID: String, date: Date?, msg: String) async
+    func updateRoomLastMessage(roomID: String, date: Date?, msg: String, senderID: String?) async
     
     /// 방 정보 수정
     func editRoom(room: ChatRoom,

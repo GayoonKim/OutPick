@@ -72,6 +72,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     var convertImagesTask: Task<Void, Error>? = nil
     var convertVideosTask: Task<Void, Error>? = nil
+    private var searchMessagesTask: Task<Void, Never>?
+    private var searchGeneration: Int = 0
     
     // MARK: - Managers (의존성 주입)
     private let messageManager: ChatMessageManagerProtocol
@@ -127,6 +129,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             lifecycleUseCase: ChatRoomLifecycleUseCase(
                 chatRoomRepository: repositories.chatRoomRepository,
                 userProfileRepository: repositories.userProfileRepository,
+                joinedRoomsStore: ChatDependencyContainer.requireJoinedRoomsStore(),
                 announcementRepository: repositories.announcementRepository
             )
         )
@@ -148,11 +151,15 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private var cellSubscriptions: [ObjectIdentifier: Set<AnyCancellable>] = [:]
     
     private var roomClosedListenerID: UUID?
+    private var appLifecycleObservers: [NSObjectProtocol] = []
     
     deinit {
         print("💧 ChatViewController deinit")
         convertImagesTask?.cancel()
         convertVideosTask?.cancel()
+        searchMessagesTask?.cancel()
+        appLifecycleObservers.forEach { NotificationCenter.default.removeObserver($0) }
+        appLifecycleObservers.removeAll()
 
         removeRoomClosedListener()
     }
@@ -330,6 +337,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         bindKeyboardPublisher()
         bindSearchEvents()
         bindRoomClosedEvent()
+        bindAppLifecycleForLastRead()
         
         chatMessageCollectionView.delegate = self
         
@@ -344,6 +352,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         BannerManager.shared.setVisibleRoom(nil)
+        flushLastReadSeq(trigger: "viewWillDisappear")
         
         isUserInCurrentRoom = false
         
@@ -389,16 +398,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
-        
-        guard let viewModel = chatRoomViewModel ?? ensureChatRoomViewModel() else { return }
-
-        Task {
-            do {
-                try await viewModel.persistFinalLastReadSeq(userID: LoginManager.shared.getUserEmail)
-            } catch {
-                print("⚠️ viewWillDisappear lastReadSeq 기록 실패: \(error)")
-            }
-        }
     }
 
     override func viewDidLayoutSubviews() {
@@ -749,22 +748,26 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         chatMessageCollectionView.translatesAutoresizingMaskIntoConstraints = false
         
         chatUIViewBottomConstraint = chatUIView.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor)
-        NSLayoutConstraint.activate([
+        NSLayoutConstraint.deactivate(chatConstraints)
+        chatConstraints = [
             chatUIView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             chatUIView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             chatUIViewBottomConstraint!,
             chatUIView.heightAnchor.constraint(greaterThanOrEqualToConstant: chatUIView.minHeight),
             
-            chatMessageCollectionView.heightAnchor.constraint(equalTo: view.heightAnchor),
+            chatMessageCollectionView.topAnchor.constraint(equalTo: customNavigationBar.bottomAnchor),
             chatMessageCollectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             chatMessageCollectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             chatMessageCollectionView.bottomAnchor.constraint(equalTo: chatUIView.topAnchor),
-        ])
+        ]
+        NSLayoutConstraint.activate(chatConstraints)
         
         view.bringSubviewToFront(chatUIView)
         view.bringSubviewToFront(customNavigationBar)
-        chatMessageCollectionView.contentInset.top = self.view.safeAreaInsets.top + chatUIView.frame.height + 10
+        chatMessageCollectionView.contentInset.top = 5
+        chatMessageCollectionView.verticalScrollIndicatorInsets.top = 5
         chatMessageCollectionView.contentInset.bottom = 5
+        chatMessageCollectionView.verticalScrollIndicatorInsets.bottom = 5
         
         NSLayoutConstraint.deactivate(joinConsraints)
         setupCopyReplyDeleteView()
@@ -1450,12 +1453,14 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 guard let self = self else { return }
                 
                 self.clearPreviousHighlightIfNeeded()
+                self.searchGeneration &+= 1
+                let generation = self.searchGeneration
                 
                 guard let keyword = keyword, !keyword.isEmpty else {
                     print(#function, "✅✅✅✅✅ keyword is empty ✅✅✅✅✅")
                     return
                 }
-                filterMessages(containing: keyword)
+                filterMessages(containing: keyword, generation: generation)
             }
             .store(in: &cancellables)
         
@@ -1491,13 +1496,22 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
     
     @MainActor
-    private func filterMessages(containing keyword: String) {
-        Task {
+    private func filterMessages(containing keyword: String, generation: Int) {
+        searchMessagesTask?.cancel()
+        searchMessagesTask = Task { [weak self] in
+            guard let self = self else { return }
             do {
                 guard let viewModel = self.chatRoomViewModel ?? self.ensureChatRoomViewModel() else { return }
-                try await viewModel.searchMessages(containing: keyword)
-                applyHighlight()
-                
+                try Task.checkCancellation()
+                let messages = try await viewModel.fetchSearchMessages(containing: keyword)
+                try Task.checkCancellation()
+                await MainActor.run {
+                    guard self.searchGeneration == generation else { return }
+                    viewModel.applySearchResult(keyword: keyword, messages: messages)
+                    self.applyHighlight()
+                }
+            } catch is CancellationError {
+                return
             } catch {
                 print("메시지 없음")
             }
@@ -1541,24 +1555,31 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     @MainActor
     private func clearPreviousHighlightIfNeeded() {
+        searchMessagesTask?.cancel()
+        searchMessagesTask = nil
+
         guard let viewModel = chatRoomViewModel else { return }
-        let previousHighlightedIDs = viewModel.highlightedMessageIDs
         var snapshot = dataSource.snapshot()
+        let previousHighlightedIDs = viewModel.highlightedMessageIDs
         
-        let itemsToRealod = snapshot.itemIdentifiers.compactMap { item -> Item? in
-            if case let .message(message) = item, previousHighlightedIDs.contains(message.ID){
+        let itemsToReload = snapshot.itemIdentifiers.compactMap { item -> Item? in
+            if case let .message(message) = item, previousHighlightedIDs.contains(message.ID) {
                 return .message(message)
             }
             return nil
         }
-        
+
         _ = viewModel.clearSearch()
         scrollTargetIndex = nil
         
-        if !itemsToRealod.isEmpty {
-            snapshot.reconfigureItems(itemsToRealod)
+        if !itemsToReload.isEmpty {
+            snapshot.reconfigureItems(itemsToReload)
             dataSource.apply(snapshot, animatingDifferences: false)
         }
+
+        chatMessageCollectionView.visibleCells
+            .compactMap { $0 as? ChatMessageCell }
+            .forEach { $0.highlightKeyword(nil) }
         
         searchUI.updateSearchResult(viewModel.highlightedMessageIDs.count, viewModel.currentFilteredMessageIndex ?? 0)
     }
@@ -2215,11 +2236,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
     
     @objc private func keyboardWillShow(_ sender: Notification) {
-        guard let animationDuration = sender.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double,
-              let keyboard = sender.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue else { return }
-        
-        chatMessageCollectionView.contentInset.top = self.view.safeAreaInsets.top + chatUIView.frame.height + keyboard.cgRectValue.height - 10
-        chatMessageCollectionView.verticalScrollIndicatorInsets.top = self.view.safeAreaInsets.top + chatUIView.frame.height + keyboard.cgRectValue.height - 10
+        guard let animationDuration = sender.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double else { return }
         
         // Hide attachment view if visible
         if !self.attachmentView.isHidden {
@@ -2233,11 +2250,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
     
     @objc private func keyboardWillHide(_ sender: Notification) {
-        guard let animationDuration = sender.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double,
-              let _ = sender.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
-        
-        chatMessageCollectionView.contentInset.top = self.view.safeAreaInsets.top + chatUIView.frame.height + 5
-        chatMessageCollectionView.verticalScrollIndicatorInsets.top = self.view.safeAreaInsets.top + chatUIView.frame.height + 5
+        guard let animationDuration = sender.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double else { return }
         
         UIView.animate(withDuration: animationDuration) {
             self.view.layoutIfNeeded()
@@ -2688,18 +2701,58 @@ extension ChatViewController: UICollectionViewDataSourcePrefetching {
 extension ChatViewController {
     @MainActor
     private func maybeUpdateLastReadSeq(trigger: String, skipNearBottomCheck: Bool = false) {
+        guard isUserInCurrentRoom else { return }
         guard let viewModel = chatRoomViewModel ?? ensureChatRoomViewModel() else { return }
 
         Task {
             do {
                 try await viewModel.persistIncrementalLastReadSeq(
-                    userID: LoginManager.shared.getUserEmail,
+                    userUID: LoginManager.shared.getRoomStateUserKey,
                     isNearBottom: isNearBottom(),
                     skipNearBottomCheck: skipNearBottomCheck
                 )
             } catch {
                 print("⚠️ maybeUpdateLastReadSeq(\(trigger)) 실패: \(error)")
             }
+        }
+    }
+
+    private func flushLastReadSeq(trigger: String) {
+        guard isUserInCurrentRoom else { return }
+        guard let viewModel = chatRoomViewModel ?? ensureChatRoomViewModel() else { return }
+
+        Task {
+            do {
+                try await viewModel.persistFinalLastReadSeq(userUID: LoginManager.shared.getRoomStateUserKey)
+                let rid = viewModel.roomID
+                if !rid.isEmpty {
+                    NotificationCenter.default.post(
+                        name: .chatRoomLastReadSeqDidFlush,
+                        object: nil,
+                        userInfo: ["roomID": rid]
+                    )
+                }
+            } catch {
+                print("⚠️ \(trigger) lastReadSeq flush 실패: \(error)")
+            }
+        }
+    }
+
+    private func bindAppLifecycleForLastRead() {
+        guard appLifecycleObservers.isEmpty else { return }
+
+        let center = NotificationCenter.default
+        let names: [Notification.Name] = [
+            UIApplication.willResignActiveNotification,
+            UIApplication.didEnterBackgroundNotification,
+            UIApplication.willTerminateNotification
+        ]
+
+        for name in names {
+            let observer = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                self?.flushLastReadSeq(trigger: name.rawValue)
+            }
+            appLifecycleObservers.append(observer)
         }
     }
 }

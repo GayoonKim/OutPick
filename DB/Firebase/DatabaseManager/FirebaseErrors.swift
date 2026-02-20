@@ -11,6 +11,7 @@ enum FirebaseError: Error {
     case Duplicate
     case FailedToSaveProfile
     case FailedToFetchProfile
+    case IncompleteProfile
     case FailedToFetchAllDocumentIDs
     case FailedToFetchRoom
     case FailedToParseRoomData

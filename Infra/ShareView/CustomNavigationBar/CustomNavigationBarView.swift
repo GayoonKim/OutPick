@@ -305,6 +305,7 @@ class CustomNavigationBarView: UIView {
         searchImgView.setContentCompressionResistancePriority(.required, for: .horizontal)
         
         searchTextField.delegate = self
+        searchTextField.addTarget(self, action: #selector(searchTextDidChange(_:)), for: .editingChanged)
         
         let leftPaddingView = UIView(frame: CGRect(x: 0, y: 0, width: 8, height: searchTextField.frame.height))
         searchTextField.leftView = leftPaddingView
@@ -336,8 +337,13 @@ class CustomNavigationBarView: UIView {
         searchTextField.text = nil
         searchTextField.resignFirstResponder()
         container.isHidden = false
-        
+        searchKeywordPublisher.send(nil)
         cancelSearchPublisher.send()
+    }
+
+    @objc private func searchTextDidChange(_ textField: UITextField) {
+        guard (textField.text ?? "").isEmpty else { return }
+        searchKeywordPublisher.send(nil)
     }
 }
 

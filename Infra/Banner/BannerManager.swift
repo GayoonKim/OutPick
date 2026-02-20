@@ -5,7 +5,10 @@ import UIKit
 
 final class BannerManager {
     static let shared = BannerManager()
-    private init() {}
+    private let chatRoomRepository: FirebaseChatRoomRepositoryProtocol
+    private init(repositories: FirebaseRepositoryProviding = FirebaseRepositoryProvider.shared) {
+        self.chatRoomRepository = repositories.chatRoomRepository
+    }
 
     // 현재 화면에서 보고 있는 roomID (nil이면 채팅 화면이 아님)
     let currentVisibleRoomID = CurrentValueSubject<String?, Never>(nil)
@@ -52,6 +55,19 @@ final class BannerManager {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] msg in
                 guard let self else { return }
+                let text: String = bannerText(from: msg)
+                let messageDate = msg.sentAt ?? Date()
+
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.chatRoomRepository.applyRealtimeSummaryPatch(
+                        roomID: roomID,
+                        message: text,
+                        sentAt: messageDate,
+                        seq: msg.seq > 0 ? msg.seq : nil,
+                        senderID: msg.senderID
+                    )
+                }
                 
                 // 현재 방 보고 있으면 배너 X (화면이 실시간 UI 반영)
                 if self.currentVisibleRoomID.value == roomID { return }
@@ -65,7 +81,6 @@ final class BannerManager {
                 if self.muteOwnMessages, msg.senderID == LoginManager.shared.getUserEmail { return }
 
                 // 배너 내용 구성
-                let text: String = bannerText(from: msg)
                 let payload = BannerPayload(
                     roomID: roomID,
                     title: msg.senderNickname,

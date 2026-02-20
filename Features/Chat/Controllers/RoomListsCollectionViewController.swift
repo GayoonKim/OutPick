@@ -65,7 +65,7 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
         self.setupRefreshControl()
         bindViewModel()
         viewModel.notifyCurrentState()
-        Task { await viewModel.refreshTopRooms() }
+        Task { await viewModel.loadInitiallyIfNeeded() }
         
         CloudFunctionsManager.shared.callHelloUser(name: "가윤") { result in
             switch result {

@@ -60,6 +60,31 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol {
             topRoomsWithPreviews[idx] = (updatedRoom, previews)
         }
     }
+
+    @MainActor
+    func applyRealtimeSummaryPatch(roomID: String, message: String, sentAt: Date, seq: Int64?, senderID: String?) {
+        guard !roomID.isEmpty else { return }
+        let preview = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !preview.isEmpty else { return }
+
+        var rooms = joinedRoomsSummarySubject.value
+        guard let idx = rooms.firstIndex(where: { $0.ID == roomID }) else { return }
+
+        var room = rooms[idx]
+        room.lastMessage = preview
+        room.lastMessageAt = sentAt
+        if let senderID, !senderID.isEmpty {
+            room.lastMessageSenderID = senderID
+        }
+        if let seq, seq > room.seq {
+            room.seq = seq
+        }
+        rooms[idx] = room
+        rooms.sort { (lhs, rhs) in
+            (lhs.lastMessageAt ?? lhs.createdAt) > (rhs.lastMessageAt ?? rhs.createdAt)
+        }
+        joinedRoomsSummarySubject.send(rooms)
+    }
     
     @MainActor
     func fetchTopRoomsPage(after lastSnapshot: DocumentSnapshot? = nil, limit: Int = 30) async throws {
@@ -153,7 +178,7 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol {
     }
     
     @MainActor
-    func updateRoomLastMessage(roomID: String, date: Date? = nil, msg: String) async {
+    func updateRoomLastMessage(roomID: String, date: Date? = nil, msg: String, senderID: String? = nil) async {
         guard !roomID.isEmpty else {
             print("❌ updateRoomLastMessageAt: roomID is empty")
             return
@@ -164,6 +189,9 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol {
             var updateData: [String: Any] = [:]
             
             updateData["lastMessage"] = msg
+            if let senderID, !senderID.isEmpty {
+                updateData["lastMessageSenderID"] = senderID
+            }
             if let date = date {
                 updateData["lastMessageAt"] = Timestamp(date: date)
             } else {
@@ -524,7 +552,12 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol {
         addRoomParticipantTask = Task {
             do {
                 guard let roomDoc = try await getRoomDoc(room: room) else { return }
-                let userRef = db.collection("Users").document(LoginManager.shared.getUserEmail)
+                let userKey = LoginManager.shared.getRoomStateUserKey
+                guard !userKey.isEmpty else {
+                    print("⚠️ addRoomParticipant: userKey 없음")
+                    return
+                }
+                let userRef = db.collection("users").document(userKey)
                 
                 let _ = try await db.runTransaction({ (transaction, errorPointer) -> Any? in
                     transaction.updateData(["joinedRooms": FieldValue.arrayUnion([room.ID ?? ""])], forDocument: userRef)
@@ -548,7 +581,11 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol {
             throw FirebaseError.FailedToFetchRoom
         }
         let email = LoginManager.shared.getUserEmail
-        let userRef = db.collection("Users").document(email)
+        let userKey = LoginManager.shared.getRoomStateUserKey
+        guard !userKey.isEmpty else {
+            throw FirebaseError.FailedToFetchRoom
+        }
+        let userRef = db.collection("users").document(userKey)
         let roomRef = db.collection("Rooms").document(roomID)
         
         _ = try await db.runTransaction { (transaction, errorPointer) -> Any? in
@@ -582,7 +619,12 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol {
                     return
                 }
                 let email = LoginManager.shared.getUserEmail
-                let userRef = db.collection("Users").document(email)
+                let userKey = LoginManager.shared.getRoomStateUserKey
+                guard !userKey.isEmpty else {
+                    print("⚠️ removeParticipant: userKey 없음")
+                    return
+                }
+                let userRef = db.collection("users").document(userKey)
                 let roomRef = db.collection("Rooms").document(roomID)
                 let _ = try await db.runTransaction({ (transaction, errorPointer) -> Any? in
                     transaction.updateData(["joinedRooms": FieldValue.arrayRemove([roomID])], forDocument: userRef)
@@ -611,16 +653,27 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol {
     func fetchLatestSeq(for roomID: String) async throws -> Int64 {
         let roomRef = db.collection("Rooms").document(roomID)
         let roomSnap = try await roomRef.getDocument()
-        if let agg = roomSnap.data()?["lastMessageSeq"] as? Int64 {
+        let roomData = roomSnap.data()
+        if let agg = Self.toInt64(roomData?["seq"]), agg > 0 {
             return agg
         }
-        let messagesRef = roomRef.collection("messages")
-        let querySnap = try await messagesRef
+        if let agg = Self.toInt64(roomData?["lastMessageSeq"]), agg > 0 {
+            return agg
+        }
+
+        let upperMessages = try await roomRef.collection("Messages")
             .order(by: "seq", descending: true)
             .limit(to: 1)
             .getDocuments()
-        let latest = querySnap.documents.first?.data()["seq"] as? Int64 ?? 0
-        return latest
+        if let latest = Self.toInt64(upperMessages.documents.first?.data()["seq"]), latest > 0 {
+            return latest
+        }
+
+        let lowerMessages = try await roomRef.collection("messages")
+            .order(by: "seq", descending: true)
+            .limit(to: 1)
+            .getDocuments()
+        return Self.toInt64(lowerMessages.documents.first?.data()["seq"]) ?? 0
     }
     
     // MARK: - Private Helpers
@@ -631,5 +684,17 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol {
             print("채팅방 디코딩 실패: \(error), docID: \(document.documentID)")
             throw FirebaseError.FailedToParseRoomData
         }
+    }
+
+    private static func toInt64(_ raw: Any?) -> Int64? {
+        if let number = raw as? NSNumber { return number.int64Value }
+        if let value = raw as? Int64 { return value }
+        if let value = raw as? Int { return Int64(value) }
+        if let value = raw as? UInt64 {
+            return value > UInt64(Int64.max) ? Int64.max : Int64(value)
+        }
+        if let value = raw as? String, let parsed = Int64(value) { return parsed }
+        if let value = raw as? Double { return Int64(value) }
+        return nil
     }
 }

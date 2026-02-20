@@ -345,6 +345,7 @@ class ChatMessageCell: UICollectionViewCell {
     func configureWithMessage(with message: ChatMessage/*, originalPreviewProvider: (() -> (String, String)?)?*/) {
         // Explicitly reset/hide/unhide and clear any previous width constraint
         bubbleView.isHidden = false
+        messageLabel.attributedText = nil
         messageLabel.isHidden = true ? false : false // ensure visible (no-op but explicit)
         messageLabel.isHidden = false
         imagesPreviewCollectionView.isHidden = true
@@ -459,6 +460,7 @@ class ChatMessageCell: UICollectionViewCell {
         // Clear any previously applied bubble width constraint so image-mode cells don't carry text-mode constraints
         widthConstraint?.isActive = false
         widthConstraint = nil
+        messageLabel.attributedText = nil
         
         // 삭제된 메시지를 이미지가 아니라, "삭제된 메시지입니다."로 표시
         if message.isDeleted {
@@ -679,21 +681,39 @@ class ChatMessageCell: UICollectionViewCell {
     }
     
     func highlightKeyword(_ keyword: String?) {
-        guard let text = messageLabel.text else { return }
-        
-        if let keyword = keyword, !keyword.isEmpty {
-            let attributed = NSMutableAttributedString(string: text)
-            let range = (text as NSString).range(of: keyword, options: .caseInsensitive)
-            if range.location != NSNotFound {
-                attributed.addAttribute(.backgroundColor, value: UIColor.yellow, range: range)
-                attributed.addAttribute(.foregroundColor, value: UIColor.black, range: range)
-            }
-            messageLabel.attributedText = attributed
-            setHightlightedOverlay(true) // overlay도 제거
-        } else {
-            messageLabel.attributedText = NSAttributedString(string: text)
-            setHightlightedOverlay(false) // overlay도 제거
+        let baseText = messageLabel.text ?? messageLabel.attributedText?.string ?? ""
+        guard !baseText.isEmpty else {
+            messageLabel.attributedText = nil
+            messageLabel.text = nil
+            setHightlightedOverlay(false)
+            return
         }
+
+        guard let keyword = keyword, !keyword.isEmpty else {
+            messageLabel.attributedText = nil
+            messageLabel.text = baseText
+            setHightlightedOverlay(false)
+            return
+        }
+
+        var baseAttributes: [NSAttributedString.Key: Any] = [:]
+        baseAttributes[.font] = messageLabel.font as Any
+        baseAttributes[.foregroundColor] = messageLabel.textColor as Any
+
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.alignment = messageLabel.textAlignment
+        paragraphStyle.lineBreakMode = messageLabel.lineBreakMode
+        baseAttributes[.paragraphStyle] = paragraphStyle
+
+        let attributed = NSMutableAttributedString(string: baseText, attributes: baseAttributes)
+        let range = (baseText as NSString).range(of: keyword, options: .caseInsensitive)
+        if range.location != NSNotFound {
+            attributed.addAttribute(.backgroundColor, value: UIColor.yellow, range: range)
+            attributed.addAttribute(.foregroundColor, value: UIColor.black, range: range)
+        }
+        messageLabel.text = nil
+        messageLabel.attributedText = attributed
+        setHightlightedOverlay(range.location != NSNotFound)
     }
     
     private func makeSeparator() -> UIView {
@@ -772,4 +792,3 @@ class ChatMessageCell: UICollectionViewCell {
         }
     }
 }
-

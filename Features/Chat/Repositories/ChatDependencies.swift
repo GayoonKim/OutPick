@@ -37,11 +37,19 @@ struct ChatRepositoryProvider: ChatRepositoryProviding {
 enum ChatDependencyContainer {
     static var provider: ChatRepositoryProviding = ChatRepositoryProvider()
     static var firebaseRepositories: FirebaseRepositoryProviding?
+    static var joinedRoomsStore: JoinedRoomsStore?
 
     static func requireFirebaseRepositories() -> FirebaseRepositoryProviding {
         guard let firebaseRepositories else {
             preconditionFailure("ChatDependencyContainer.firebaseRepositories is not configured")
         }
         return firebaseRepositories
+    }
+
+    static func requireJoinedRoomsStore() -> JoinedRoomsStore {
+        guard let joinedRoomsStore else {
+            preconditionFailure("ChatDependencyContainer.joinedRoomsStore is not configured")
+        }
+        return joinedRoomsStore
     }
 }

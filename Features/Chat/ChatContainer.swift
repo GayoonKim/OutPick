@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import Combine
 
 /// Chat feature DI container.
 /// - Note: Storyboard로 생성되는 ChatViewController가 coder init에서 전역 provider를 읽기 때문에
@@ -16,6 +17,7 @@ final class ChatContainer {
     let firebaseRepositories: FirebaseRepositoryProviding
     let roomRepository: FirebaseChatRoomRepositoryProtocol
     let userProfileRepository: UserProfileRepositoryProtocol
+    let joinedRoomsStore: JoinedRoomsStore
 
     private let roomListUseCase: RoomListUseCaseProtocol
     private let joinedRoomsUseCase: JoinedRoomsUseCaseProtocol
@@ -23,11 +25,15 @@ final class ChatContainer {
     private let chatRoomMessageUseCase: ChatRoomMessageUseCaseProtocol
     private let chatRoomSearchUseCase: ChatRoomSearchUseCaseProtocol
     private let chatRoomLifecycleUseCase: ChatRoomLifecycleUseCaseProtocol
+    private var joinedRoomsRuntimeCancellable: AnyCancellable?
+    private var isJoinedRoomsRuntimeBound = false
+    private var runtimeJoinedRooms: Set<String> = []
 
     init(
         provider: ChatRepositoryProviding = ChatRepositoryProvider(),
         roomRepository: FirebaseChatRoomRepositoryProtocol? = nil,
         userProfileRepository: UserProfileRepositoryProtocol? = nil,
+        joinedRoomsStore: JoinedRoomsStore,
         announcementRepository: FirebaseAnnouncementRepositoryProtocol? = nil,
         repositories: FirebaseRepositoryProviding = FirebaseRepositoryProvider.shared
     ) {
@@ -35,11 +41,13 @@ final class ChatContainer {
         self.firebaseRepositories = repositories
         self.roomRepository = roomRepository ?? repositories.chatRoomRepository
         self.userProfileRepository = userProfileRepository ?? repositories.userProfileRepository
+        self.joinedRoomsStore = joinedRoomsStore
         let announcementRepository = announcementRepository ?? repositories.announcementRepository
         self.roomListUseCase = RoomListUseCase(roomRepository: self.roomRepository)
         self.joinedRoomsUseCase = JoinedRoomsUseCase(
             roomRepository: self.roomRepository,
-            userProfileRepository: self.userProfileRepository
+            userProfileRepository: self.userProfileRepository,
+            joinedRoomsStore: joinedRoomsStore
         )
         self.roomSearchUseCase = RoomSearchUseCase(roomRepository: self.roomRepository)
         self.chatRoomMessageUseCase = ChatRoomMessageUseCase(messageManager: provider.messageManager)
@@ -47,10 +55,12 @@ final class ChatContainer {
         self.chatRoomLifecycleUseCase = ChatRoomLifecycleUseCase(
             chatRoomRepository: self.roomRepository,
             userProfileRepository: self.userProfileRepository,
+            joinedRoomsStore: joinedRoomsStore,
             announcementRepository: announcementRepository
         )
         ChatDependencyContainer.provider = provider
         ChatDependencyContainer.firebaseRepositories = repositories
+        ChatDependencyContainer.joinedRoomsStore = joinedRoomsStore
     }
 
     func makeRoomListsViewModel() -> RoomListsViewModel {
@@ -72,5 +82,29 @@ final class ChatContainer {
             searchUseCase: chatRoomSearchUseCase,
             lifecycleUseCase: chatRoomLifecycleUseCase
         )
+    }
+
+    func bindJoinedRoomsRuntimeIfNeeded() {
+        guard !isJoinedRoomsRuntimeBound else { return }
+        isJoinedRoomsRuntimeBound = true
+
+        joinedRoomsRuntimeCancellable = joinedRoomsStore.publisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] joinedSet in
+                guard let self else { return }
+                let joinedRooms = Array(joinedSet)
+                BannerManager.shared.start(for: joinedRooms)
+
+                let toJoin = joinedSet.subtracting(self.runtimeJoinedRooms)
+                let toLeave = self.runtimeJoinedRooms.subtracting(joinedSet)
+                self.runtimeJoinedRooms = joinedSet
+
+                for roomID in toJoin {
+                    SocketIOManager.shared.joinRoom(roomID)
+                }
+                for roomID in toLeave {
+                    SocketIOManager.shared.leaveRoom(roomID)
+                }
+            }
     }
 }

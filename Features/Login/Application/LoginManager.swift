@@ -19,22 +19,19 @@ final class LoginManager {
     let userProfileRepository: UserProfileRepositoryProtocol
     let chatRoomRepository: FirebaseChatRoomRepositoryProtocol
 
-    let joinedRoomStore: JoinedRoomsStore
-
     // DI를 위한 이니셜라이저(테스트/스테이징에서 Mock 주입 가능)
     // - 참고: 운영 코드에서는 `LoginManager.shared`만 사용하면 됩니다.
     init(
         authRepository: SocialAuthRepositoryProtocol = DefaultSocialAuthRepository(),
-        repositories: FirebaseRepositoryProviding = FirebaseRepositoryProvider.shared,
-        joinedRoomStore: JoinedRoomsStore = JoinedRoomsStore()
+        repositories: FirebaseRepositoryProviding = FirebaseRepositoryProvider.shared
     ) {
         self.authRepository = authRepository
         self.userProfileRepository = repositories.userProfileRepository
         self.chatRoomRepository = repositories.chatRoomRepository
-        self.joinedRoomStore = joinedRoomStore
     }
 
     private var userEmail: String = ""
+    private var authUserKey: String = ""
     private(set) var currentUserProfile: UserProfile?
 
     var deviceIDListener: ListenerRegistration?
@@ -56,9 +53,29 @@ final class LoginManager {
     private var didInvokeForceLogoutCallback: Bool = false
 
     var getUserEmail: String { userEmail }
+    var getUserUID: String {
+        if let uid = Auth.auth().currentUser?.uid, !uid.isEmpty {
+            return uid
+        }
+        return authUserKey
+    }
+    var getRoomStateUserKey: String {
+        if !getUserUID.isEmpty {
+            return getUserUID
+        }
+        return userEmail.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
 
     func setUserEmail(_ email: String) {
         self.userEmail = email
+    }
+
+    func setAuthUserKey(_ key: String) {
+        self.authUserKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    func clearAuthUserKey() {
+        self.authUserKey = ""
     }
 
     func setCurrentUserProfile(_ profile: UserProfile?) {
@@ -68,8 +85,13 @@ final class LoginManager {
     // MARK: - 자동 로그인 체크
 
     func checkExistingLogin() async -> Bool {
+        clearAuthUserKey()
+
         if let email = await authRepository.restoreGoogleEmailIfLoggedIn() {
             setUserEmail(email)
+            if let uid = Auth.auth().currentUser?.uid, !uid.isEmpty {
+                setAuthUserKey(uid)
+            }
             return true
         }
         if let email = await authRepository.restoreKakaoEmailIfLoggedIn() {
@@ -81,16 +103,30 @@ final class LoginManager {
 
     // MARK: - 프로필
 
+    private func isProfileValidForMainFlow(_ profile: UserProfile) -> Bool {
+        guard let nickname = profile.nickname?.trimmingCharacters(in: .whitespacesAndNewlines) else {
+            return false
+        }
+        return !nickname.isEmpty
+    }
+
     func loadUserProfile() async -> Result<UserProfile, Error> {
         if let data = KeychainManager.shared.read(service: "GayoonKim.OutPick", account: "UserProfile"),
            let profile = try? JSONDecoder().decode(UserProfile.self, from: data) {
-            self.currentUserProfile = profile
-            return .success(profile)
+            if isProfileValidForMainFlow(profile) {
+                self.currentUserProfile = profile
+                return .success(profile)
+            }
+            KeychainManager.shared.delete(service: "GayoonKim.OutPick", account: "UserProfile")
         }
 
         do {
             let email = self.getUserEmail
             let profile = try await userProfileRepository.fetchUserProfileFromFirestore(email: email)
+            guard isProfileValidForMainFlow(profile) else {
+                self.currentUserProfile = nil
+                return .failure(FirebaseError.IncompleteProfile)
+            }
             self.currentUserProfile = profile
 
             if let data = try? JSONEncoder().encode(profile) {
@@ -104,7 +140,7 @@ final class LoginManager {
 
     // MARK: - 중복 로그인
 
-    /// 새 기기 로그인 시, Users/{email}.deviceID를 무조건 내 deviceID로 덮어쓴다.
+    /// 새 기기 로그인 시, users/{userKey}/meta/session.deviceID를 내 deviceID로 갱신한다.
     /// 기존 기기는 리스너가 감지해서 로그아웃된다.
     func updateLogDevID() async throws {
         let deviceID = await UIDevice.persistentDeviceID
@@ -184,6 +220,7 @@ final class LoginManager {
     private func clearSessionAndNotifyForceLogout() {
         // 세션 정리
         self.userEmail = ""
+        self.authUserKey = ""
         self.currentUserProfile = nil
 
         // 콜백 재사용을 위해 플래그 초기화

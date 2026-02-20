@@ -19,7 +19,7 @@ protocol JoinedRoomsUseCaseProtocol {
     func startRoomUpdates(limit: Int)
     @MainActor
     func stopRoomUpdates()
-    func fetchUnreadCount(roomID: String, lastMessageSeqHint: Int64?) async -> Int64
+    func fetchUnreadCount(roomID: String, lastMessageSeqHint: Int64?, lastMessageSenderID: String?) async -> Int64
     func leave(room: ChatRoom)
 }
 
@@ -28,13 +28,16 @@ final class JoinedRoomsUseCase: JoinedRoomsUseCaseProtocol {
 
     private let roomRepository: FirebaseChatRoomRepositoryProtocol
     private let userProfileRepository: UserProfileRepositoryProtocol
+    private let joinedRoomsStore: JoinedRoomsStore
 
     init(
         roomRepository: FirebaseChatRoomRepositoryProtocol,
-        userProfileRepository: UserProfileRepositoryProtocol
+        userProfileRepository: UserProfileRepositoryProtocol,
+        joinedRoomsStore: JoinedRoomsStore
     ) {
         self.roomRepository = roomRepository
         self.userProfileRepository = userProfileRepository
+        self.joinedRoomsStore = joinedRoomsStore
         self.joinedRoomsPublisher = roomRepository.joinedRoomsSummaryPublisher
     }
 
@@ -77,16 +80,30 @@ final class JoinedRoomsUseCase: JoinedRoomsUseCaseProtocol {
         roomRepository.stopListenJoinedRoomsSummary()
     }
 
-    func fetchUnreadCount(roomID: String, lastMessageSeqHint: Int64?) async -> Int64 {
+    func fetchUnreadCount(roomID: String, lastMessageSeqHint: Int64?, lastMessageSenderID: String?) async -> Int64 {
         do {
             let lastRead = try await userProfileRepository.fetchLastReadSeq(for: roomID)
-            let latest: Int64
-            if let lastMessageSeqHint {
-                latest = lastMessageSeqHint
+            let latest: Int64 = {
+                if let hint = lastMessageSeqHint, hint > 0, hint > lastRead {
+                    return hint
+                }
+                return 0
+            }()
+            let resolvedLatest: Int64
+            if latest > 0 {
+                resolvedLatest = latest
             } else {
-                latest = try await roomRepository.fetchLatestSeq(for: roomID)
+                resolvedLatest = try await roomRepository.fetchLatestSeq(for: roomID)
             }
-            return max(Int64(0), latest - lastRead)
+            var unread = max(Int64(0), resolvedLatest - lastRead)
+            let currentUserID = LoginManager.shared.getUserEmail
+            if unread > 0,
+               let lastMessageSenderID,
+               !lastMessageSenderID.isEmpty,
+               lastMessageSenderID == currentUserID {
+                unread = max(Int64(0), unread - 1)
+            }
+            return unread
         } catch {
             print("⚠️ unread 계산 실패(roomID=\(roomID)): \(error)")
             return 0
@@ -94,6 +111,11 @@ final class JoinedRoomsUseCase: JoinedRoomsUseCaseProtocol {
     }
 
     func leave(room: ChatRoom) {
+        if let roomID = room.ID, !roomID.isEmpty {
+            Task { @MainActor [joinedRoomsStore] in
+                joinedRoomsStore.remove(roomID)
+            }
+        }
         roomRepository.removeParticipant(room: room)
     }
 }

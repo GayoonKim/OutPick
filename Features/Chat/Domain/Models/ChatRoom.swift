@@ -39,6 +39,7 @@ struct ChatRoom: Codable {
     var originalPath: String?
     var lastMessageAt: Date?
     var lastMessage: String?
+    var lastMessageSenderID: String?
 
     /// 방의 현재 "tail" 시퀀스 값 (마지막으로 할당된 메시지 시퀀스)
     /// - 생성 시 0으로 시작하고, 새 메시지 저장 시 마지막 메시지의 seq로 갱신됩니다.
@@ -65,6 +66,7 @@ struct ChatRoom: Codable {
         case originalPath
         case lastMessageAt
         case lastMessage
+        case lastMessageSenderID
         case isClosed
         case activeAnnouncementID
         case activeAnnouncement
@@ -90,6 +92,9 @@ struct ChatRoom: Codable {
         
         if let lastMessage = lastMessage, !lastMessage.isEmpty {
             data["lastMessage"] = lastMessage
+        }
+        if let lastMessageSenderID = lastMessageSenderID, !lastMessageSenderID.isEmpty {
+            data["lastMessageSenderID"] = lastMessageSenderID
         }
         if let thumbPath = thumbPath, !thumbPath.isEmpty {
             data["thumbPath"] = thumbPath     // 🔧 key 대소문자 교정

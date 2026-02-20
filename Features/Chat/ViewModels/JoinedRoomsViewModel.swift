@@ -32,6 +32,8 @@ final class JoinedRoomsViewModel {
     private var tailCursor: DocumentSnapshot?
     private var hasMoreTailPages: Bool = true
     private var lastTailSyncAt: Date?
+    private var isTailSyncEnabled: Bool = true
+    private var hasLoggedTailSyncIndexIssue: Bool = false
 
     private(set) var state: State {
         didSet { onStateChanged?(state) }
@@ -64,6 +66,14 @@ final class JoinedRoomsViewModel {
 
     func leave(room: ChatRoom) {
         useCase.leave(room: room)
+    }
+
+    func refreshUnreadCount(roomID: String) {
+        guard let target = state.rooms.first(where: { $0.ID == roomID }) else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            await self.refreshUnreadCounts(for: [target])
+        }
     }
 
     func loadMoreJoinedRooms() async {
@@ -104,8 +114,20 @@ final class JoinedRoomsViewModel {
             hasMoreTailPages = headResult.rooms.count >= Constants.headRealtimeLimit
             applyHeadRooms(headResult.rooms, updateUnread: false)
 
-            if let previousTailSyncAt {
-                try await syncTailChanges(since: previousTailSyncAt)
+            if let previousTailSyncAt, isTailSyncEnabled {
+                do {
+                    try await syncTailChanges(since: previousTailSyncAt)
+                } catch {
+                    if isMissingFirestoreIndexError(error) {
+                        isTailSyncEnabled = false
+                        if !hasLoggedTailSyncIndexIssue {
+                            hasLoggedTailSyncIndexIssue = true
+                            print("⚠️ JoinedRooms tail sync skipped: missing Firestore composite index(updatedAt).")
+                        }
+                    } else {
+                        throw error
+                    }
+                }
             }
 
             state.unreadCounts = await computeUnreadCounts(for: state.rooms)
@@ -130,9 +152,9 @@ final class JoinedRoomsViewModel {
     }
 
     private func applyHeadRooms(_ rooms: [ChatRoom], updateUnread: Bool = true) {
-        let previousSeqByID = Dictionary(uniqueKeysWithValues: headRooms.compactMap { room -> (String, Int64)? in
+        let previousSummaryByID = Dictionary(uniqueKeysWithValues: headRooms.compactMap { room -> (String, (seq: Int64, lastMessageAt: Date?, lastMessage: String?, lastMessageSenderID: String?))? in
             guard let roomID = room.ID else { return nil }
-            return (roomID, room.seq)
+            return (roomID, (room.seq, room.lastMessageAt, room.lastMessage, room.lastMessageSenderID))
         })
 
         headRooms = sortRooms(rooms)
@@ -141,8 +163,11 @@ final class JoinedRoomsViewModel {
         guard updateUnread else { return }
         let changedRooms = headRooms.filter { room in
             guard let roomID = room.ID else { return false }
-            guard let oldSeq = previousSeqByID[roomID] else { return true }
-            return oldSeq != room.seq
+            guard let old = previousSummaryByID[roomID] else { return true }
+            return old.seq != room.seq ||
+                old.lastMessageAt != room.lastMessageAt ||
+                old.lastMessage != room.lastMessage ||
+                old.lastMessageSenderID != room.lastMessageSenderID
         }
         guard !changedRooms.isEmpty else { return }
         Task { [weak self] in
@@ -180,7 +205,8 @@ final class JoinedRoomsViewModel {
                     guard let self else { return nil }
                     let unread = await self.useCase.fetchUnreadCount(
                         roomID: roomID,
-                        lastMessageSeqHint: room.seq
+                        lastMessageSeqHint: room.seq,
+                        lastMessageSenderID: room.lastMessageSenderID
                     )
                     return (roomID, unread)
                 }
@@ -203,7 +229,11 @@ final class JoinedRoomsViewModel {
                 guard let roomID = room.ID else { continue }
                 group.addTask { [weak self] in
                     guard let self else { return nil }
-                    let unread = await self.useCase.fetchUnreadCount(roomID: roomID, lastMessageSeqHint: room.seq)
+                    let unread = await self.useCase.fetchUnreadCount(
+                        roomID: roomID,
+                        lastMessageSeqHint: room.seq,
+                        lastMessageSenderID: room.lastMessageSenderID
+                    )
                     return (roomID, unread)
                 }
             }
@@ -222,5 +252,11 @@ final class JoinedRoomsViewModel {
         rooms.sorted { lhs, rhs in
             (lhs.lastMessageAt ?? lhs.createdAt) > (rhs.lastMessageAt ?? rhs.createdAt)
         }
+    }
+
+    private func isMissingFirestoreIndexError(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        guard nsError.domain == "FIRFirestoreErrorDomain", nsError.code == 9 else { return false }
+        return nsError.localizedDescription.localizedCaseInsensitiveContains("requires an index")
     }
 }

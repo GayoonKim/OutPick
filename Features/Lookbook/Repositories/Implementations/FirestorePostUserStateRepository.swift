@@ -17,7 +17,7 @@ final class FirestorePostUserStateRepository: PostUserStateRepositoryProtocol {
 
     func fetchPostUserState(userID: UserID, postID: PostID) async throws -> PostUserState? {
         let doc = try await db
-            .collection("Users")
+            .collection("users")
             .document(userID.value)
             .collection("postStates")
             .document(postID.value)

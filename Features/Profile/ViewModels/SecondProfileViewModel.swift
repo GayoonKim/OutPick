@@ -105,7 +105,7 @@ final class SecondProfileViewModel {
             let duplicated = try await repository.checkDuplicate(
                 strToCompare: state.nickname,
                 fieldToCompare: "nickname",
-                collectionName: "Users"
+                collectionName: "users"
             )
             if duplicated {
                 state.errorMessage = "이미 사용 중인 닉네임이에요."
@@ -136,7 +136,7 @@ final class SecondProfileViewModel {
 
                 let uploaded = try await FirebaseImageStorageRepository.shared.uploadImage(
                     sha: sha,
-                    uid: email,
+                    uid: LoginManager.shared.getRoomStateUserKey,
                     type: .profileImage,               // 프로젝트 enum에 맞게 변경 필요
                     thumbData: thumbData,
                     originalFileURL: fileURL,

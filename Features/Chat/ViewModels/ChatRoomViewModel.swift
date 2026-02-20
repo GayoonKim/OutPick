@@ -55,7 +55,11 @@ final class ChatRoomViewModel {
 
     private var liveBuffer: [ChatMessage] = []
     private var liveBufferIDs: Set<String> = []
-    private var lastSentLastReadSeq: Int64 = 0
+    private var pendingLastReadSeq: Int64 = 0
+    private var queuedLastReadSeq: Int64 = 0
+    private var persistedLastReadSeq: Int64 = 0
+    private var lastReadFlushTask: Task<Void, Never>?
+    private let lastReadFlushDebounceNanoseconds: UInt64 = 3_000_000_000
 
     let minTriggerDistance: Int = 3
 
@@ -69,6 +73,10 @@ final class ChatRoomViewModel {
         self.messageUseCase = messageUseCase
         self.searchUseCase = searchUseCase
         self.lifecycleUseCase = lifecycleUseCase
+    }
+
+    deinit {
+        lastReadFlushTask?.cancel()
     }
 
     var roomID: String { room.ID ?? "" }
@@ -132,6 +140,11 @@ final class ChatRoomViewModel {
         let serverMaxSeq = serverMessages.map(\.seq).max() ?? 0
         windowMaxSeq = max(localMaxSeq, serverMaxSeq)
         liveMode = (windowMaxSeq >= entryTailSeq) ? .live : .catchingUp
+        pendingLastReadSeq = 0
+        queuedLastReadSeq = 0
+        persistedLastReadSeq = 0
+        lastReadFlushTask?.cancel()
+        lastReadFlushTask = nil
 
         return InitialLoadResult(
             localMessages: localMessages,
@@ -207,10 +220,19 @@ final class ChatRoomViewModel {
     }
 
     func searchMessages(containing keyword: String) async throws {
-        filteredMessages = try await searchUseCase.searchMessages(roomID: roomID, keyword: keyword)
-        currentFilteredMessageIndex = filteredMessages.isEmpty ? nil : filteredMessages.count
+        let messages = try await fetchSearchMessages(containing: keyword)
+        applySearchResult(keyword: keyword, messages: messages)
+    }
+
+    func fetchSearchMessages(containing keyword: String) async throws -> [ChatMessage] {
+        try await searchUseCase.searchMessages(roomID: roomID, keyword: keyword)
+    }
+
+    func applySearchResult(keyword: String, messages: [ChatMessage]) {
+        filteredMessages = messages
+        currentFilteredMessageIndex = messages.isEmpty ? nil : messages.count
         currentSearchKeyword = keyword
-        highlightedMessageIDs = searchUseCase.applyHighlight(messageIDs: Set(filteredMessages.map { $0.ID }))
+        highlightedMessageIDs = searchUseCase.applyHighlight(messageIDs: Set(messages.map { $0.ID }))
     }
 
     func moveToPreviousSearchResult() -> Int? {
@@ -267,20 +289,15 @@ final class ChatRoomViewModel {
     }
 
     func finalLastReadSeqForSessionEnd() -> Int64 {
-        let finalSeq = min(windowMaxSeq, entryTailSeq)
-        if finalSeq > lastSentLastReadSeq {
-            lastSentLastReadSeq = finalSeq
-        }
-        return finalSeq
+        max(windowMaxSeq, pendingLastReadSeq, queuedLastReadSeq, persistedLastReadSeq)
     }
 
-    func persistFinalLastReadSeq(userID: String) async throws {
+    func persistFinalLastReadSeq(userUID: String) async throws {
         let finalSeq = finalLastReadSeqForSessionEnd()
-        try await lifecycleUseCase.updateLastReadSeq(
-            roomID: roomID,
-            userID: userID,
-            lastReadSeq: finalSeq
-        )
+        queueLastReadSeq(finalSeq)
+        lastReadFlushTask?.cancel()
+        lastReadFlushTask = nil
+        try await flushPendingLastReadSeq(userUID: userUID)
     }
 
     func nextLastReadSeqCandidate(isNearBottom: Bool, skipNearBottomCheck: Bool) -> Int64? {
@@ -288,15 +305,14 @@ final class ChatRoomViewModel {
             return nil
         }
 
-        let candidate = min(windowMaxSeq, entryTailSeq)
-        guard candidate > lastSentLastReadSeq else { return nil }
-
-        lastSentLastReadSeq = candidate
+        let candidate = windowMaxSeq
+        let knownMax = max(queuedLastReadSeq, persistedLastReadSeq)
+        guard candidate > knownMax else { return nil }
         return candidate
     }
 
     func persistIncrementalLastReadSeq(
-        userID: String,
+        userUID: String,
         isNearBottom: Bool,
         skipNearBottomCheck: Bool
     ) async throws {
@@ -304,11 +320,56 @@ final class ChatRoomViewModel {
             isNearBottom: isNearBottom,
             skipNearBottomCheck: skipNearBottomCheck
         ) else { return }
+
+        queueLastReadSeq(seq)
+        scheduleDebouncedLastReadFlush(userUID: userUID)
+    }
+
+    private func queueLastReadSeq(_ seq: Int64) {
+        guard seq > 0 else { return }
+        if seq > queuedLastReadSeq {
+            queuedLastReadSeq = seq
+        }
+        if seq > pendingLastReadSeq {
+            pendingLastReadSeq = seq
+        }
+    }
+
+    private func scheduleDebouncedLastReadFlush(userUID: String) {
+        guard !userUID.isEmpty else { return }
+
+        lastReadFlushTask?.cancel()
+        lastReadFlushTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                try await Task.sleep(nanoseconds: self.lastReadFlushDebounceNanoseconds)
+            } catch {
+                return
+            }
+            if Task.isCancelled { return }
+            do {
+                try await self.flushPendingLastReadSeq(userUID: userUID)
+            } catch {
+                print("⚠️ debounced lastReadSeq flush 실패(roomID=\(self.roomID)): \(error)")
+            }
+        }
+    }
+
+    private func flushPendingLastReadSeq(userUID: String) async throws {
+        guard !userUID.isEmpty else { return }
+
+        let seqToPersist = pendingLastReadSeq
+        guard seqToPersist > persistedLastReadSeq else { return }
+
         try await lifecycleUseCase.updateLastReadSeq(
             roomID: roomID,
-            userID: userID,
-            lastReadSeq: seq
+            userUID: userUID,
+            lastReadSeq: seqToPersist
         )
+        persistedLastReadSeq = max(persistedLastReadSeq, seqToPersist)
+        if pendingLastReadSeq <= persistedLastReadSeq {
+            pendingLastReadSeq = 0
+        }
     }
 
     private func flushBufferedLiveMessages() -> [ChatMessage] {

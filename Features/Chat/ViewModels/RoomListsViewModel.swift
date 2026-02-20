@@ -16,6 +16,7 @@ final class RoomListsViewModel {
     }
 
     private let useCase: RoomListUseCaseProtocol
+    private var hasLoadedInitialRooms = false
 
     private(set) var state: State {
         didSet { onStateChanged?(state) }
@@ -32,7 +33,14 @@ final class RoomListsViewModel {
         state.rooms = useCase.cachedTopRooms()
     }
 
+    func loadInitiallyIfNeeded() async {
+        guard !hasLoadedInitialRooms else { return }
+        hasLoadedInitialRooms = true
+        await refreshTopRooms()
+    }
+
     func refreshTopRooms() async {
+        guard !state.isRefreshing else { return }
         state.isRefreshing = true
         state.errorMessage = nil
 

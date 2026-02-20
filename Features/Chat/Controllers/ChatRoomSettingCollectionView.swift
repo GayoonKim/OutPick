@@ -861,6 +861,9 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
                                         profile.joinedRooms.removeAll { $0 == roomID }
                                         LoginManager.shared.setCurrentUserProfile(profile)
                                     }
+                                    if let joinedRoomsStore = ChatDependencyContainer.joinedRoomsStore {
+                                        joinedRoomsStore.remove(roomID)
+                                    }
 
                                     // 3) 화면 닫기
                                     self.dismiss(animated: false) {

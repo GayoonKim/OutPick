@@ -23,7 +23,7 @@ protocol ChatRoomLifecycleUseCaseProtocol {
     @MainActor
     func joinRoom(roomID: String) async throws -> ChatRoom
 
-    func updateLastReadSeq(roomID: String, userID: String, lastReadSeq: Int64) async throws
+    func updateLastReadSeq(roomID: String, userUID: String, lastReadSeq: Int64) async throws
 
     @MainActor
     func setActiveAnnouncement(roomID: String, messageID: String?, payload: AnnouncementPayload?) async throws
@@ -35,17 +35,20 @@ protocol ChatRoomLifecycleUseCaseProtocol {
 final class ChatRoomLifecycleUseCase: ChatRoomLifecycleUseCaseProtocol {
     private let chatRoomRepository: FirebaseChatRoomRepositoryProtocol
     private let userProfileRepository: UserProfileRepositoryProtocol
+    private let joinedRoomsStore: JoinedRoomsStore
     private let announcementRepository: FirebaseAnnouncementRepositoryProtocol
     private let socketManager: SocketIOManager
 
     init(
         chatRoomRepository: FirebaseChatRoomRepositoryProtocol = FirebaseRepositoryProvider.shared.chatRoomRepository,
         userProfileRepository: UserProfileRepositoryProtocol = FirebaseRepositoryProvider.shared.userProfileRepository,
+        joinedRoomsStore: JoinedRoomsStore,
         announcementRepository: FirebaseAnnouncementRepositoryProtocol = FirebaseRepositoryProvider.shared.announcementRepository,
         socketManager: SocketIOManager = .shared
     ) {
         self.chatRoomRepository = chatRoomRepository
         self.userProfileRepository = userProfileRepository
+        self.joinedRoomsStore = joinedRoomsStore
         self.announcementRepository = announcementRepository
         self.socketManager = socketManager
     }
@@ -69,6 +72,7 @@ final class ChatRoomLifecycleUseCase: ChatRoomLifecycleUseCaseProtocol {
     func handleRoomSaved(roomID: String) {
         guard !roomID.isEmpty else { return }
         chatRoomRepository.startListenRoomDoc(roomID: roomID)
+        joinedRoomsStore.add(roomID)
 
         guard socketManager.isConnected else { return }
         socketManager.createRoom(roomID)
@@ -87,12 +91,13 @@ final class ChatRoomLifecycleUseCase: ChatRoomLifecycleUseCaseProtocol {
         let updatedRoom = try await chatRoomRepository.addRoomParticipantReturningRoom(roomID: roomID)
         chatRoomRepository.applyLocalRoomUpdate(updatedRoom)
         chatRoomRepository.startListenRoomDoc(roomID: roomID)
+        joinedRoomsStore.add(roomID)
 
         return updatedRoom
     }
 
-    func updateLastReadSeq(roomID: String, userID: String, lastReadSeq: Int64) async throws {
-        try await userProfileRepository.updateLastReadSeq(roomID: roomID, userID: userID, lastReadSeq: lastReadSeq)
+    func updateLastReadSeq(roomID: String, userUID: String, lastReadSeq: Int64) async throws {
+        try await userProfileRepository.updateLastReadSeq(roomID: roomID, userUID: userUID, lastReadSeq: lastReadSeq)
     }
 
     @MainActor

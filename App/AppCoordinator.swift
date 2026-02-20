@@ -7,6 +7,7 @@
 
 import UIKit
 
+@MainActor
 final class AppCoordinator {
 
     private let window: UIWindow
@@ -15,6 +16,7 @@ final class AppCoordinator {
     private let lookbookProvider: LookbookRepositoryProvider
     private var lookbookContainer: LookbookContainer?
     private var chatContainer: ChatContainer?
+    private let joinedRoomsStore = JoinedRoomsStore()
     
     private var profileCoordinator: ProfileCoordinator?
 
@@ -64,10 +66,6 @@ final class AppCoordinator {
                 // 이미 로그인 화면이면 중복 라우팅 방지
                 if self.isShowingLogin { return }
 
-                // 메인 탭 상태 정리(선택)
-                self.lookbookContainer = nil
-                self.chatContainer = nil
-
                 guard let scene = self.window.windowScene ?? self.currentWindowScene else { return }
                 self.showLogin(windowScene: scene)
             }
@@ -81,12 +79,26 @@ final class AppCoordinator {
         
         switch profileResult {
         case .success:
+            await MainActor.run {
+                let chatContainer = self.ensureChatContainer()
+                chatContainer.bindJoinedRoomsRuntimeIfNeeded()
+            }
+
             // 새 기기 로그인 = 기존 기기 로그아웃 정책 시작점
             do {
                 try await LoginManager.shared.updateLogDevID()
             }
             catch {
                 print("updateLogDevID 실패: \(error)")
+            }
+
+            do {
+                try await LoginManager.shared.bootstrapAfterLogin(
+                    userEmail: LoginManager.shared.getUserEmail,
+                    joinedRoomsStore: joinedRoomsStore
+                )
+            } catch {
+                print("bootstrapAfterLogin 실패: \(error)")
             }
 
             await MainActor.run { self.showMainTab() }
@@ -100,7 +112,12 @@ final class AppCoordinator {
 
     @MainActor
     private func showLogin(windowScene: UIWindowScene) {
+        self.joinedRoomsStore.clear()
+        SocketIOManager.shared.closeConnection()
+        SocketIOManager.shared.resetRoomMembership()
+
         self.profileCoordinator = nil
+        self.lookbookContainer = nil
         self.chatContainer = nil
         // 로그인 화면으로 들어갈 땐 강제로그아웃 콜백을 해제해도 됨(이미 로그아웃 상태/또는 루트가 로그인)
         // 중복 라우팅(콜백 재호출) 방지 목적
@@ -140,10 +157,9 @@ final class AppCoordinator {
         if lookbookContainer == nil {
             lookbookContainer = LookbookContainer(provider: lookbookProvider)
         }
-        if chatContainer == nil {
-            chatContainer = ChatContainer()
-        }
-        guard let lbcontainer = lookbookContainer, let chatContainer else { return }
+        let chatContainer = ensureChatContainer()
+        chatContainer.bindJoinedRoomsRuntimeIfNeeded()
+        guard let lbcontainer = lookbookContainer else { return }
 
         // 탭 조립은 MainTabCompositionRoot가 담당 (CustomTabBarVC는 룩북을 모름)
         let tab = MainTabCompositionRoot.makeMainTab(lookbookContainer: lbcontainer, chatContainer: chatContainer)
@@ -165,7 +181,24 @@ final class AppCoordinator {
             repository: userProfileRepository,
             onCompleted: { [weak self] _ in
                 guard let self else { return }
-                self.showMainTab()          // 완료 후 메인 탭으로
+                Task { @MainActor in
+                    let chatContainer = self.ensureChatContainer()
+                    chatContainer.bindJoinedRoomsRuntimeIfNeeded()
+                }
+                Task { [weak self] in
+                    guard let self else { return }
+                    do {
+                        try await LoginManager.shared.bootstrapAfterLogin(
+                            userEmail: LoginManager.shared.getUserEmail,
+                            joinedRoomsStore: self.joinedRoomsStore
+                        )
+                    } catch {
+                        print("bootstrapAfterLogin 실패(프로필 완료): \(error)")
+                    }
+                    await MainActor.run {
+                        self.showMainTab()  // 완료 후 메인 탭으로
+                    }
+                }
             }
         )
         self.profileCoordinator?.start()
@@ -184,5 +217,16 @@ final class AppCoordinator {
         }
 
         self.window.makeKeyAndVisible()
+    }
+
+    @MainActor
+    private func ensureChatContainer() -> ChatContainer {
+        if let chatContainer {
+            return chatContainer
+        }
+
+        let created = ChatContainer(joinedRoomsStore: joinedRoomsStore)
+        self.chatContainer = created
+        return created
     }
 }

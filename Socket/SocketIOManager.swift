@@ -13,6 +13,7 @@ import Network
 class SocketIOManager {
     static let shared = SocketIOManager()
     private let userProfileRepository: UserProfileRepositoryProtocol
+    private let chatRoomRepository: FirebaseChatRoomRepositoryProtocol
 
     // ---- Reconnect Policy (client defaults; server can override via `server:connect:ready`) ----
     private struct ReconnectPolicy {
@@ -73,11 +74,15 @@ class SocketIOManager {
     
     private var roomSubjects = [String: PassthroughSubject<ChatMessage, Never>]()
     private var subscriberCounts = [String: Int]() // 구독자 ref count
+    private var isChatMessageListenerBound = false
+    private var isImageMessageListenerBound = false
+    private var isVideoMessageListenerBound = false
     
     // https://outpick-socket-715386497547.asia-northeast3.run.app - Cloud Run
     private init(repositories: FirebaseRepositoryProviding = FirebaseRepositoryProvider.shared) {
         self.userProfileRepository = repositories.userProfileRepository
-        manager = SocketManager(socketURL: URL(string: "http://192.168.123.192:3000")!, config: [
+        self.chatRoomRepository = repositories.chatRoomRepository
+        manager = SocketManager(socketURL: URL(string: "http://192.168.123.104:3000")!, config: [
             .log(true),
             .compress,
             // 한국어 주석: 서버가 WebSocket only(transports:['websocket'])로 동작하므로 클라이언트도 폴링을 비활성화
@@ -99,8 +104,9 @@ class SocketIOManager {
             guard let nickName = LoginManager.shared.currentUserProfile?.nickname else { return }
             self.socket.emit("set username", nickName)
 
-            // Join any pending rooms after connecting and setting username
-            for roomID in self.pendingRooms {
+            // Re-join desired rooms on every connection (includes reconnects).
+            let desiredRooms = self.joinedRooms.union(self.pendingRooms)
+            for roomID in desiredRooms {
                 self.socket.emit("join room", roomID)
                 self.joinedRooms.insert(roomID)
             }
@@ -208,6 +214,11 @@ class SocketIOManager {
         manualAttempt = 0
         socket.disconnect()
     }
+
+    func resetRoomMembership() {
+        joinedRooms.removeAll()
+        pendingRooms.removeAll()
+    }
     
     func subscribeToMessages(for roomID: String) -> AnyPublisher<ChatMessage, Never> {
         print(#function, "✅✅✅✅✅ 2. subscribeToMessages 호출")
@@ -220,25 +231,7 @@ class SocketIOManager {
 
             // Ensure joined before attaching listeners (idempotent)
             if !joinedRooms.contains(roomID) { joinRoom(roomID) }
-
-            // 소켓 리스너 등록
-            attachChatListener(for: roomID) { [weak self] message in
-                guard let self = self else { return }
-                print(#function,"✅✅✅✅✅ attachChatListener:", message)
-                self.roomSubjects[roomID]?.send(message)
-            }
-            // 이미지 브로드캐스트 리스너 등록
-            attachImageListener(for: roomID) { [weak self] message in
-                guard let self = self else { return }
-                print(#function,"✅✅✅✅✅ attachImageListener:", message)
-                self.roomSubjects[roomID]?.send(message)
-            }
-            // 비디오 브로드캐스트 리스너 등록
-            attachVideoListener(for: roomID) { [weak self] message in
-                guard let self = self else { return }
-                print(#function,"✅✅✅✅✅ attachVideoListener:", message)
-                self.roomSubjects[roomID]?.send(message)
-            }
+            bindMessageListenersIfNeeded()
         }
 
         return roomSubjects[roomID]!.eraseToAnyPublisher()
@@ -249,22 +242,42 @@ class SocketIOManager {
         subscriberCounts[roomID] = count - 1
 
         if subscriberCounts[roomID] == 0 {
-            detachChatListener(for: roomID)
-            detachImageListener(for: roomID)
-            detachVideoListener(for: roomID)
+            subscriberCounts[roomID] = nil
             roomSubjects[roomID]?.send(completion: .finished)
             roomSubjects[roomID] = nil
         }
+
+        if roomSubjects.isEmpty {
+            detachChatListener()
+            detachImageListener()
+            detachVideoListener()
+        }
     }
-    
-    private func attachChatListener(for roomID: String, onMessage: @escaping (ChatMessage) -> Void) {
+
+    private func bindMessageListenersIfNeeded() {
+        attachChatListener()
+        attachImageListener()
+        attachVideoListener()
+    }
+
+    private func publishIncoming(_ message: ChatMessage) {
+        let roomID = message.roomID
+        guard !roomID.isEmpty else { return }
+        DispatchQueue.main.async { [weak self] in
+            self?.roomSubjects[roomID]?.send(message)
+        }
+    }
+
+    private func attachChatListener() {
+        guard !isChatMessageListenerBound else { return }
+        isChatMessageListenerBound = true
+
         let event = "chat message"
         print(#function, "bind →", event)
-        // Prevent duplicate handlers for the same room event
         socket.off(event)
 
         socket.on(event) { [weak self] data, _ in
-            guard let self = self else { return }
+            guard let self else { return }
             guard let dict = data.first as? [String: Any] else {
                 #if DEBUG
                 print("[attachChatListener] invalid payload (not dict):", data)
@@ -278,31 +291,26 @@ class SocketIOManager {
                 #endif
                 return
             }
-            guard message.roomID == roomID else {
-                #if DEBUG
-                print("[attachChatListener] room mismatch payload=\(message.roomID) subscribed=\(roomID)")
-                #endif
-                return
-            }
-            DispatchQueue.main.async {
-                onMessage(message)
-            }
+            self.publishIncoming(message)
         }
     }
 
-    private func detachChatListener(for roomID: String) {
+    private func detachChatListener() {
+        isChatMessageListenerBound = false
         socket.off("chat message")
     }
 
     // 이미지 수신용 리스너
-    private func attachImageListener(for roomID: String, onMessage: @escaping (ChatMessage) -> Void) {
+    private func attachImageListener() {
+        guard !isImageMessageListenerBound else { return }
+        isImageMessageListenerBound = true
+
         let event = "receiveImages"
         print(#function, "bind →", event)
-        // Prevent duplicate handlers for the same room event
         socket.off(event)
 
         socket.on(event) { [weak self] data, _ in
-            guard let self = self else { return }
+            guard let self else { return }
             guard let dict = data.first as? [String: Any] else {
                 #if DEBUG
                 print("[attachImageListener] invalid payload (not dict):", data)
@@ -320,29 +328,21 @@ class SocketIOManager {
                 #endif
                 return
             }
-            guard message.roomID == roomID else {
-                #if DEBUG
-                print("[attachImageListener] room mismatch payload=\(message.roomID) subscribed=\(roomID)")
-                #endif
-                return
-            }
-            // (선택) 이미지 메시지만 통과시키고 싶다면 아래 가드를 유지
-            // guard message.attachments.contains(where: { $0.type == .image }) else { return }
-            DispatchQueue.main.async {
-                onMessage(message)
-            }
+            self.publishIncoming(message)
         }
     }
 
     // 비디오 수신용 리스너
-    private func attachVideoListener(for roomID: String, onMessage: @escaping (ChatMessage) -> Void) {
+    private func attachVideoListener() {
+        guard !isVideoMessageListenerBound else { return }
+        isVideoMessageListenerBound = true
+
         let event = "receiveVideo"
         print(#function, "bind →", event)
-        // Prevent duplicate handlers for the same room event
         socket.off(event)
 
         socket.on(event) { [weak self] data, _ in
-            guard let self = self else { return }
+            guard let self else { return }
             guard let dict = data.first as? [String: Any] else {
                 #if DEBUG
                 print("[attachVideoListener] invalid payload (not dict):", data)
@@ -361,29 +361,22 @@ class SocketIOManager {
                 #endif
                 return
             }
-            guard message.roomID == roomID else {
-                #if DEBUG
-                print("[attachVideoListener] room mismatch payload=\(message.roomID) subscribed=\(roomID)")
-                #endif
-                return
-            }
-            
-            // guard message.attachments.contains(where: { $0.type == .video }) else { return }
-            DispatchQueue.main.async {
-                onMessage(message)
-            }
+            self.publishIncoming(message)
         }
     }
 
-    private func detachVideoListener(for roomID: String) {
+    private func detachVideoListener() {
+        isVideoMessageListenerBound = false
         socket.off("receiveVideo")
     }
 
-    private func detachImageListener(for roomID: String) {
+    private func detachImageListener() {
+        isImageMessageListenerBound = false
         socket.off("receiveImages")
     }
     
     func joinRoom(_ roomID: String) {
+        guard !roomID.isEmpty else { return }
         if socket.status == .connected {
             guard joinedRooms.insert(roomID).inserted else {
                 print("이미 참여한 방:", roomID); return
@@ -394,6 +387,18 @@ class SocketIOManager {
             pendingRooms.insert(roomID)
         }
         // listener off/on은 유지해도 됨. emit 자체가 중복되지 않는 게 핵심
+    }
+
+    func leaveRoom(_ roomID: String) {
+        guard !roomID.isEmpty else { return }
+
+        pendingRooms.remove(roomID)
+        let wasJoined = joinedRooms.remove(roomID) != nil
+        guard wasJoined else { return }
+
+        if socket.status == .connected {
+            socket.emit("leave room", roomID)
+        }
     }
     
     func createRoom(_ roomID: String) {
@@ -418,6 +423,53 @@ class SocketIOManager {
             print("방 생성 실패: ", data)
         }
     }
+
+    private func updateRoomSummaryAfterSend(roomID: String, sentAt: Date, preview: String) {
+        guard !roomID.isEmpty else { return }
+        let trimmedPreview = preview.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedPreview.isEmpty else { return }
+        let senderID = LoginManager.shared.getUserEmail
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.chatRoomRepository.updateRoomLastMessage(
+                roomID: roomID,
+                date: sentAt,
+                msg: trimmedPreview,
+                senderID: senderID
+            )
+        }
+    }
+
+    /// 서버 ACK 형식이 환경별로 달라도(딕셔너리/문자열/빈 응답) 보수적으로 성공 여부를 판별
+    private func isEmitAckSuccess(_ ackItems: [Any]) -> Bool {
+        guard let first = ackItems.first else {
+            // 일부 서버는 ACK payload를 비워두므로 성공으로 간주
+            return true
+        }
+
+        if let dict = first as? [String: Any] {
+            if let ok = dict["ok"] as? Bool { return ok || ((dict["duplicate"] as? Bool) ?? false) }
+            if let success = dict["success"] as? Bool { return success || ((dict["duplicate"] as? Bool) ?? false) }
+            if let duplicate = dict["duplicate"] as? Bool, duplicate { return true }
+
+            if let status = (dict["status"] as? String)?.lowercased() {
+                if ["ok", "success", "accepted", "duplicate"].contains(status) { return true }
+                if ["error", "failed", "fail"].contains(status) { return false }
+            }
+            if dict["error"] != nil { return false }
+            return true
+        }
+
+        if let text = first as? String {
+            let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if normalized.isEmpty || normalized == "no ack" { return true }
+            if normalized.contains("error") || normalized.contains("fail") { return false }
+            return true
+        }
+
+        return true
+    }
     
     func sendMessage(_ room: ChatRoom, _ message: ChatMessage) {
         // 1. Optimistic UI: Publish the message immediately as not failed
@@ -438,14 +490,12 @@ class SocketIOManager {
         socket.emitWithAck("chat message", payload).timingOut(after: 5) { [weak self] ackResponse in
             guard let self = self else { return }
 
-            let ackDict = ackResponse.first as? [String:Any]
-            let ok = (ackDict?["ok"] as? Bool) ?? (ackDict?["success"] as? Bool) ?? false
-            let duplicate = (ackDict?["duplicate"] as? Bool) ?? false
-
-            if ok || duplicate {
-//                Task {
-//                    await updateRoomLastMessage(roomID: room.ID ?? "", date: message.sentAt, msg: message.msg ?? "")
-//                }
+            if self.isEmitAckSuccess(ackResponse) {
+                self.updateRoomSummaryAfterSend(
+                    roomID: room.ID ?? "",
+                    sentAt: message.sentAt ?? Date(),
+                    preview: message.msg ?? ""
+                )
             } else {
                 // Failure: mark the same message as failed and re-publish for UI update
                 var failedMessage = message
@@ -538,17 +588,16 @@ class SocketIOManager {
         //         정규 메시지를 덮어써 UI 상에서 seq가 0으로 보이는 문제가 발생할 수 있음.
         socket.emitWithAck(eventName, body).timingOut(after: 15) { [weak self] ackResponse in
             guard let self = self else { return }
-            let ack = ackResponse.first as? [String: Any]
-            let ok = (ack?["ok"] as? Bool) ?? (ack?["success"] as? Bool) ?? false
-            let duplicate = (ack?["duplicate"] as? Bool) ?? false
 
-            if ok || duplicate {
+            if self.isEmitAckSuccess(ackResponse) {
                 // 성공/중복(이미 서버가 브로드캐스트했을 가능성) 시에는
                 // 로컬에 seq=0 메시지를 퍼블리시하지 않습니다.
                 // → 서버의 'receiveImages' 브로드캐스트로 도착하는 정규 메시지(정확한 seq 포함)에 UI를 맡깁니다.
-//                Task {
-//                    await updateRoomLastMessage(roomID: roomID, date: now, msg: "사진 \(attachments.count)장")
-//                }
+                self.updateRoomSummaryAfterSend(
+                    roomID: roomID,
+                    sentAt: now,
+                    preview: "사진 \(attachments.count)장"
+                )
                 return
             }
 
@@ -793,18 +842,12 @@ class SocketIOManager {
         if socket.status == .connected {
             socket.emitWithAck("chat:video", dict).timingOut(after: ackTimeout) { [weak self] items in
                 guard let self = self else { return }
-                // 서버에서 { ok: true } 형태로 응답한다고 가정
-                if let first = items.first as? [String: Any],
-                   let ok = first["ok"] as? Bool, ok == true {
-//                    Task {
-//                        await updateRoomLastMessage(roomID: roomID, date: Date(), msg: "동영상")
-//                    }
-                    completion?(.success(()))
-                } else if items.isEmpty {
-                    // 응답이 없어도 성공 처리(서버 ACK 미사용 환경)
-//                    Task {
-//                        await updateRoomLastMessage(roomID: roomID, date: Date(), msg: "동영상")
-//                    }
+                if self.isEmitAckSuccess(items) {
+                    self.updateRoomSummaryAfterSend(
+                        roomID: roomID,
+                        sentAt: Date(),
+                        preview: "동영상"
+                    )
                     completion?(.success(()))
                 } else {
                     // ACK 실패 → 로컬 실패 메시지 주입

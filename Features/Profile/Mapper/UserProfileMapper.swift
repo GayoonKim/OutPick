@@ -14,7 +14,7 @@ enum UserProfileMapper {
     static func toDTO(_ domain: UserProfile) -> UserProfileDTO {
         return UserProfileDTO(
             deviceID: domain.deviceID,
-            email: domain.email ?? "", // 도메인 email이 Optional이라 안전 처리
+            email: domain.email, // 도메인 email이 Optional이라 안전 처리
             gender: domain.gender,
             birthdate: domain.birthdate,
             nickname: domain.nickname,

@@ -32,6 +32,11 @@ final class DefaultSocialAuthRepository: SocialAuthRepositoryProtocol {
         }
         guard ok else { return nil }
 
+        let uid = currentUser.uid
+        if !uid.isEmpty {
+            LoginManager.shared.setAuthUserKey(uid)
+        }
+
         let email = Auth.auth().currentUser?.email
         return (email?.isEmpty == false) ? email : nil
     }
@@ -65,6 +70,11 @@ final class DefaultSocialAuthRepository: SocialAuthRepositoryProtocol {
                     cont.resume(returning: nil)
                     return
                 }
+                if let kakaoID = user?.id {
+                    LoginManager.shared.setAuthUserKey("kakao:\(kakaoID)")
+                } else {
+                    LoginManager.shared.clearAuthUserKey()
+                }
                 let email = user?.kakaoAccount?.email
                 cont.resume(returning: (email?.isEmpty == false) ? email : nil)
             }
@@ -76,6 +86,8 @@ final class DefaultSocialAuthRepository: SocialAuthRepositoryProtocol {
 
     @MainActor
     func signInWithGoogle(presenter: UIViewController) async throws -> String {
+        LoginManager.shared.clearAuthUserKey()
+
         let user: GIDGoogleUser = try await withCheckedThrowingContinuation { cont in
             GIDSignIn.sharedInstance.signIn(withPresenting: presenter) { result, error in
                 if let error { cont.resume(throwing: error); return }
@@ -98,6 +110,10 @@ final class DefaultSocialAuthRepository: SocialAuthRepositoryProtocol {
             }
         }
 
+        if let uid = Auth.auth().currentUser?.uid, !uid.isEmpty {
+            LoginManager.shared.setAuthUserKey(uid)
+        }
+
         guard let email = Auth.auth().currentUser?.email, !email.isEmpty else {
             throw LoginAuthError.missingEmail
         }
@@ -106,6 +122,8 @@ final class DefaultSocialAuthRepository: SocialAuthRepositoryProtocol {
 
     @MainActor
     func signInWithKakao(presenter: UIViewController) async throws -> String {
+        LoginManager.shared.clearAuthUserKey()
+
         // Talk 가능하면 Talk, 아니면 Account
         if UserApi.isKakaoTalkLoginAvailable() {
             _ = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
@@ -126,6 +144,11 @@ final class DefaultSocialAuthRepository: SocialAuthRepositoryProtocol {
         let email: String = try await withCheckedThrowingContinuation { cont in
             UserApi.shared.me { user, error in
                 if let error { cont.resume(throwing: error); return }
+                if let kakaoID = user?.id {
+                    LoginManager.shared.setAuthUserKey("kakao:\(kakaoID)")
+                } else {
+                    LoginManager.shared.clearAuthUserKey()
+                }
                 guard let email = user?.kakaoAccount?.email, !email.isEmpty else {
                     cont.resume(throwing: LoginAuthError.missingEmail)
                     return

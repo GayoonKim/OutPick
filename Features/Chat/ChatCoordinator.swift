@@ -42,7 +42,7 @@ final class ChatCoordinator {
 
     func makeJoinedRoomsRoot() -> UIViewController {
         let joinedVC = JoinedRoomsViewController(viewModel: container.makeJoinedRoomsViewModel())
-
+        print(#function, joinedVC)
         joinedVC.onOpenRoom = { [weak self, weak joinedVC] room in
             guard let self, let source = joinedVC else { return }
             self.presentChatRoom(room: room, from: source)

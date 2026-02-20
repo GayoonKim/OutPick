@@ -12,7 +12,7 @@ import FirebaseFirestore
 /// 사용자 프로필 관련 데이터베이스 작업을 위한 프로토콜
 protocol UserProfileRepositoryProtocol {
     /// 특정 사용자 프로필에 대한 실시간 리스너 시작
-    func listenToUserProfile(email: String)
+    func listenToUserProfile(email: String, onCurrentUserProfileUpdated: ((UserProfile) -> Void)?)
     
     /// 사용자 프로필 변경을 구독할 수 있는 Publisher 반환
     func userProfilePublisher(email: String) -> AnyPublisher<UserProfile, Error>
@@ -33,15 +33,15 @@ protocol UserProfileRepositoryProtocol {
     func checkDuplicate(strToCompare: String, fieldToCompare: String, collectionName: String) async throws -> Bool
     
     /// 사용자의 방 읽기 상태 업데이트
-    func updateLastReadSeq(roomID: String, userID: String, lastReadSeq: Int64) async throws
+    func updateLastReadSeq(roomID: String, userUID: String, lastReadSeq: Int64) async throws
     
     /// 사용자의 방 읽기 상태 조회
     func fetchLastReadSeq(for roomID: String) async throws -> Int64
 
-    /// 로그인 기기 식별자 갱신
+    /// 로그인 기기 식별자 갱신 (users/{id}/meta/session)
     func upsertDeviceID(email: String, deviceID: String) async throws
 
-    /// 로그인 기기 식별자 변경 리스너 시작
+    /// 로그인 기기 식별자 변경 리스너 시작 (users/{id}/meta/session)
     func listenToDeviceID(
         email: String,
         onUpdate: @escaping (String?) -> Void,
@@ -49,3 +49,9 @@ protocol UserProfileRepositoryProtocol {
     ) -> ListenerRegistration
 }
 
+extension UserProfileRepositoryProtocol {
+    /// 기존 호출부 호환용 기본 오버로드
+    func listenToUserProfile(email: String) {
+        listenToUserProfile(email: email, onCurrentUserProfileUpdated: nil)
+    }
+}

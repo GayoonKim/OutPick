@@ -36,6 +36,7 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
     private var unreadCounts: [String: Int64] = [:]
     
     var roomImages: [String:UIImage] = [:]
+    private var lastReadSeqObserver: NSObjectProtocol?
 
     // MARK: - Navigation callbacks (Coordinator)
     var onOpenRoom: ((ChatRoom) -> Void)?
@@ -51,9 +52,11 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
         let db = Firestore.firestore()
         let roomRepository = FirebaseChatRoomRepository(db: db)
         let userProfileRepository = UserProfileRepository(db: db)
+        let joinedRoomsStore = ChatDependencyContainer.requireJoinedRoomsStore()
         let useCase = JoinedRoomsUseCase(
             roomRepository: roomRepository,
-            userProfileRepository: userProfileRepository
+            userProfileRepository: userProfileRepository,
+            joinedRoomsStore: joinedRoomsStore
         )
         self.viewModel = JoinedRoomsViewModel(useCase: useCase)
         super.init(coder: coder)
@@ -65,6 +68,7 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
         setupViews()
         configureDataSource()
         bindViewModel()
+        bindNotifications()
         viewModel.notifyCurrentState()
     }
     
@@ -78,12 +82,32 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
         viewModel.stop()
     }
 
+    deinit {
+        if let lastReadSeqObserver {
+            NotificationCenter.default.removeObserver(lastReadSeqObserver)
+        }
+    }
+
     private func bindViewModel() {
         viewModel.onStateChanged = { [weak self] state in
             guard let self else { return }
             self.unreadCounts = state.unreadCounts
             self.applyRooms(state.rooms, animated: true)
             Task { await self.syncRoomImages(for: state.rooms) }
+        }
+    }
+
+    private func bindNotifications() {
+        lastReadSeqObserver = NotificationCenter.default.addObserver(
+            forName: .chatRoomLastReadSeqDidFlush,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self else { return }
+            guard let roomID = notification.userInfo?["roomID"] as? String, !roomID.isEmpty else { return }
+            Task { @MainActor [weak self] in
+                self?.viewModel.refreshUnreadCount(roomID: roomID)
+            }
         }
     }
 
@@ -169,6 +193,7 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
         var snapshot = NSDiffableDataSourceSnapshot<Section, Item>()
         snapshot.appendSections([.main])
         snapshot.appendItems(rooms, toSection: .main)
+        snapshot.reloadItems(rooms)
         dataSource.apply(snapshot, animatingDifferences: animated)
     }
     
@@ -306,6 +331,8 @@ final class JoinedRoomCell: UICollectionViewCell {
         lastMessageLabel.text = nil
         unreadLabel.text = nil
         unreadContainer.isHidden = true
+        unreadContainer.alpha = 0
+        unreadContainer.accessibilityLabel = nil
     }
 
     func configure(title: String,
@@ -322,11 +349,14 @@ final class JoinedRoomCell: UICollectionViewCell {
         // Unread 배지
         if unreadCount > 0 {
             unreadContainer.isHidden = false
+            unreadContainer.alpha = 1
             unreadLabel.text = unreadCount > 99 ? "99+" : "\(unreadCount)"
             unreadContainer.accessibilityLabel = "읽지 않은 메시지 \(unreadLabel.text!)개"
         } else {
             unreadContainer.isHidden = true
+            unreadContainer.alpha = 0
             unreadLabel.text = nil
+            unreadContainer.accessibilityLabel = nil
         }
         updateRightColumnPosition(hasUnread: unreadCount > 0)
 
