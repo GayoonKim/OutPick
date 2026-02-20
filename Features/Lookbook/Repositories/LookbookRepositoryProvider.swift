@@ -62,7 +62,7 @@ final class LookbookRepositoryProvider {
 
         brandLogoImageLoader: (any ImageLoading)? = nil,
         imageCache: ImageCaching = MemoryImageCache(),
-        storageService: StorageServiceProtocol = FirebaseStorageService(),
+        storageService: StorageServiceProtocol = LookbookStorageService(),
         thumbnailer: ImageThumbnailing = ImageIOThumbnailer()
     ) {
         self.storageService = storageService

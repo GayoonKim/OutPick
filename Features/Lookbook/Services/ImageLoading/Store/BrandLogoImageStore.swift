@@ -7,7 +7,7 @@
 
 import UIKit
 
-/// 브랜드 로고(썸네일/원본) 로딩을 담당하는 스토어
+/// 브랜드 로고(썸네일/디테일/원본 폴백) 로딩을 담당하는 스토어
 final class BrandLogoImageStore: ImageLoading {
 
     private let cache: ImageCaching
@@ -18,6 +18,11 @@ final class BrandLogoImageStore: ImageLoading {
 
     private enum BrandLogoImageStoreError: Error {
         case invalidImageData
+    }
+
+    /// 경로(path) 기반 단일 키를 사용해 화면별 키 접두어 차이로 인한 캐시 미스를 방지합니다.
+    private static func canonicalCacheKey(for path: String) -> String {
+        "brandLogo|\(path)"
     }
 
     /// 동일 키에 대한 동시 요청을 하나의 Task로 합치기 위한 Actor
@@ -38,24 +43,26 @@ final class BrandLogoImageStore: ImageLoading {
 
     init(
         cache: ImageCaching = MemoryImageCache(),
-        storage: StorageServiceProtocol = FirebaseStorageService()
+        storage: StorageServiceProtocol = LookbookStorageService()
     ) {
         self.cache = cache
         self.storage = storage
     }
 
-    func loadImage(path: String, cacheKey: String, maxBytes: Int) async throws -> UIImage {
-        if let cached = cache.image(forKey: cacheKey) {
+    func loadImage(path: String, cacheKey _: String, maxBytes: Int) async throws -> UIImage {
+        let canonicalKey = Self.canonicalCacheKey(for: path)
+
+        if let cached = cache.image(forKey: canonicalKey) {
             return cached
         }
 
         // 동일 키 요청은 하나의 Task로 합쳐 중복 다운로드를 방지합니다.
         let registry = inFlightRegistry
-        let task = await registry.task(for: cacheKey) { [storage, cache] in
+        let task = await registry.task(for: canonicalKey) { [storage, cache] in
             Task {
                 defer {
                     // Task 종료 후 레지스트리에서 제거
-                    Task { await registry.remove(cacheKey) }
+                    Task { await registry.remove(canonicalKey) }
                 }
 
                 let data = try await storage.downloadImage(from: path, maxSize: maxBytes)
@@ -63,7 +70,7 @@ final class BrandLogoImageStore: ImageLoading {
                     throw BrandLogoImageStoreError.invalidImageData
                 }
 
-                cache.setImage(image, forKey: cacheKey)
+                cache.setImage(image, forKey: canonicalKey)
                 return image
             }
         }
@@ -82,8 +89,9 @@ final class BrandLogoImageStore: ImageLoading {
                 guard let next = iterator.next() else { return }
                 running += 1
                 group.addTask { [weak self] in
+                    guard let self else { return }
                     do {
-                        _ = try await self?.loadImage(
+                        _ = try await self.loadImage(
                             path: next.path,
                             cacheKey: next.cacheKey,
                             maxBytes: next.maxBytes

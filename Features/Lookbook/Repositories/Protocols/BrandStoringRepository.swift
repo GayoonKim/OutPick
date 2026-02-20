@@ -19,7 +19,13 @@ protocol BrandStoringRepository {
         docID: String,
         name: String,
         logoThumbPath: String?,
-        logoOriginalPath: String?,
+        logoDetailPath: String?,
         isFeatured: Bool
+    ) async throws
+
+    /// 생성 후 비동기 업로드된 디테일 경로만 패치합니다.
+    func updateLogoDetailPath(
+        docID: String,
+        logoDetailPath: String
     ) async throws
 }

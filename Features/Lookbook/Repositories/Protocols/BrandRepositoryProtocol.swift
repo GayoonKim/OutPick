@@ -13,13 +13,13 @@ import FirebaseFirestore
 ///         나중에 데이터 소스를 교체하거나 Domain 추상화를 강화하고 싶다면(PageCursor token 방식 등)로 변경할 수 있습니다.
 protocol BrandRepositoryProtocol {
     func fetchBrands(
-        sort: BrandSort,
+        sort: BrandSort?,
         limit: Int,
         after last: DocumentSnapshot?
     ) async throws -> BrandPage
 
     func fetchFeaturedBrands(
-        sort: BrandSort,
+        sort: BrandSort?,
         limit: Int,
         after last: DocumentSnapshot?
     ) async throws -> BrandPage

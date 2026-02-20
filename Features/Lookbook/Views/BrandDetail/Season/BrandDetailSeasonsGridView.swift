@@ -13,6 +13,7 @@ struct BrandDetailSeasonsGridView: View {
     let errorMessage: String?
     let imageLoader: any ImageLoading
     let maxBytes: Int
+    let onSelectSeason: ((Season) -> Void)?
 
     private let columns: [GridItem] = [
         GridItem(.flexible(), spacing: 12),
@@ -54,7 +55,8 @@ struct BrandDetailSeasonsGridView: View {
                         BrandDetailSeasonGridItemView(
                             season: season,
                             imageLoader: imageLoader,
-                            maxBytes: maxBytes
+                            maxBytes: maxBytes,
+                            onTap: onSelectSeason
                         )
                     }
                 }

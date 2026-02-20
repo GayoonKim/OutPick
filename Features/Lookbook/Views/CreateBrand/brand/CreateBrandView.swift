@@ -7,6 +7,7 @@
 
 import SwiftUI
 import UIKit
+import PhotosUI
 
 struct CreateBrandView: View {
 
@@ -51,8 +52,7 @@ struct CreateBrandView: View {
                             .cornerRadius(12)
 
                         Button(role: .destructive) {
-                            // 한국어 주석: 선택된 이미지만 제거하고, 피커는 열지 않습니다.
-                            viewModel.selectedLogoImage = nil
+                            viewModel.clearPickedLogo()
                         } label: {
                             Text("로고 이미지 제거")
                         }
@@ -91,7 +91,7 @@ struct CreateBrandView: View {
 
                 Section(
                     footer: Text(
-                        "주의: 현재는 임시로 Firestore는 brands/{autoId}에 저장하고, 로고 이미지는 StorageService(FirebaseStorageService)를 통해 brands/{autoId}/logo/thumb.jpg(썸네일) + logo/original.jpg(원본) 2개를 업로드한 뒤 Firestore에 logoThumbPath, logoOriginalPath로 저장합니다. (호환을 위해 logoPath에는 썸네일 경로를 넣습니다.)"
+                        "주의: 현재는 임시로 Firestore는 brands/{autoId}에 저장하고, 로고 이미지는 StorageService(LookbookStorageService)를 통해 brands/{autoId}/logo/thumb.jpg(썸네일) + logo/detail.jpg(확대용) 2개를 업로드한 뒤 Firestore에 logoThumbPath, logoDetailPath로 저장합니다. (호환을 위해 logoPath에는 썸네일 경로를 넣습니다.)"
                     )
                 ) {
                     EmptyView()
@@ -99,56 +99,109 @@ struct CreateBrandView: View {
             }
             .navigationTitle("브랜드 생성")
             .sheet(isPresented: $isImagePickerPresented) {
-                ImagePicker(sourceType: .photoLibrary) { image in
-                    // 한국어 주석: 선택한 이미지를 ViewModel 상태에 저장합니다.
-                    viewModel.selectedLogoImage = image
+                BrandLogoPicker { picked in
+                    viewModel.setPickedLogo(
+                        thumbImage: picked.thumbImage,
+                        thumbData: picked.thumbData,
+                        detailData: picked.detailData
+                    )
+                } onFailed: { error in
+                    viewModel.message = "로고 이미지 처리 실패: \(error.localizedDescription)"
                 }
             }
         }
     }
 }
 
-// MARK: - iOS 15 호환 이미지 피커 (UIImagePickerController)
+// MARK: - iOS 15 호환 이미지 피커 (PHPickerViewController)
 
-private struct ImagePicker: UIViewControllerRepresentable {
+private struct BrandLogoPickResult {
+    let thumbImage: UIImage
+    let thumbData: Data
+    let detailData: Data
+}
 
-    let sourceType: UIImagePickerController.SourceType
-    let onPicked: (UIImage) -> Void
+private struct BrandLogoPicker: UIViewControllerRepresentable {
 
-    func makeUIViewController(context: Context) -> UIImagePickerController {
-        let picker = UIImagePickerController()
-        picker.sourceType = sourceType
+    let onPicked: (BrandLogoPickResult) -> Void
+    let onFailed: (Error) -> Void
+
+    func makeUIViewController(context: Context) -> PHPickerViewController {
+        var config = PHPickerConfiguration(photoLibrary: .shared())
+        config.filter = .images
+        config.selectionLimit = 1
+
+        let picker = PHPickerViewController(configuration: config)
         picker.delegate = context.coordinator
-        picker.allowsEditing = false
         return picker
     }
 
-    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+    func updateUIViewController(_ uiViewController: PHPickerViewController, context: Context) {}
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onPicked: onPicked)
+        Coordinator(onPicked: onPicked, onFailed: onFailed)
     }
 
-    final class Coordinator: NSObject, UINavigationControllerDelegate, UIImagePickerControllerDelegate {
+    final class Coordinator: NSObject, PHPickerViewControllerDelegate {
 
-        let onPicked: (UIImage) -> Void
+        let onPicked: (BrandLogoPickResult) -> Void
+        let onFailed: (Error) -> Void
 
-        init(onPicked: @escaping (UIImage) -> Void) {
-            self.onPicked = onPicked
-        }
-
-        func imagePickerController(
-            _ picker: UIImagePickerController,
-            didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]
+        init(
+            onPicked: @escaping (BrandLogoPickResult) -> Void,
+            onFailed: @escaping (Error) -> Void
         ) {
-            if let image = info[.originalImage] as? UIImage {
-                onPicked(image)
-            }
-            picker.dismiss(animated: true)
+            self.onPicked = onPicked
+            self.onFailed = onFailed
         }
 
-        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+        func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
             picker.dismiss(animated: true)
+
+            guard let first = results.first else { return }
+
+            Task {
+                do {
+                    let pair = try await DefaultMediaProcessingService.shared.makePair(from: first, index: 0)
+                    defer { try? FileManager.default.removeItem(at: pair.originalFileURL) }
+
+                    guard let thumbImage = UIImage(data: pair.thumbData) else {
+                        throw NSError(
+                            domain: "BrandLogoPicker",
+                            code: -1,
+                            userInfo: [NSLocalizedDescriptionKey: "썸네일 이미지 생성에 실패했습니다."]
+                        )
+                    }
+                    let detailPolicy = ThumbnailPolicies.brandLogoDetail
+                    guard
+                        let detailData = DefaultMediaProcessingService.makeThumbnailData(
+                            from: pair.originalFileURL,
+                            maxPixel: detailPolicy.maxPixelSize,
+                            quality: detailPolicy.quality
+                        )
+                    else {
+                        throw NSError(
+                            domain: "BrandLogoPicker",
+                            code: -2,
+                            userInfo: [NSLocalizedDescriptionKey: "확대용 이미지 생성에 실패했습니다."]
+                        )
+                    }
+
+                    await MainActor.run {
+                        onPicked(
+                            BrandLogoPickResult(
+                                thumbImage: thumbImage,
+                                thumbData: pair.thumbData,
+                                detailData: detailData
+                            )
+                        )
+                    }
+                } catch {
+                    await MainActor.run {
+                        onFailed(error)
+                    }
+                }
+            }
         }
     }
 }

@@ -24,23 +24,38 @@ struct FirestoreBrandStore: BrandStoringRepository {
         docID: String,
         name: String,
         logoThumbPath: String?,
-        logoOriginalPath: String?,
+        logoDetailPath: String?,
         isFeatured: Bool
     ) async throws {
         let data: [String: Any] = [
             "name": name,
 
-            // 한국어 주석: 호환을 위해 기존 UI가 logoPath만 읽는 경우를 대비해 썸네일 경로를 넣습니다.
+            // 호환을 위해 기존 UI가 logoPath만 읽는 경우를 대비해 썸네일 경로를 넣습니다.
             "logoPath": logoThumbPath ?? NSNull(),
 
-            // 한국어 주석: 신규 필드 - 썸네일/원본 분리 저장
+            // 신규 필드 - 썸네일/디테일 분리 저장
             "logoThumbPath": logoThumbPath ?? NSNull(),
-            "logoOriginalPath": logoOriginalPath ?? NSNull(),
+            "logoDetailPath": logoDetailPath ?? NSNull(),
 
             "isFeatured": isFeatured,
             "likeCount": 0,
             "viewCount": 0,
             "popularScore": 0.0,
+            "updatedAt": FieldValue.serverTimestamp()
+        ]
+
+        try await db
+            .collection("brands")
+            .document(docID)
+            .setDataAsync(data, merge: true)
+    }
+
+    func updateLogoDetailPath(
+        docID: String,
+        logoDetailPath: String
+    ) async throws {
+        let data: [String: Any] = [
+            "logoDetailPath": logoDetailPath,
             "updatedAt": FieldValue.serverTimestamp()
         ]
 

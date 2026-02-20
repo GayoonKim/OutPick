@@ -12,6 +12,10 @@ enum ThumbnailPolicies {
 
     /// 브랜드 목록/카드용 로고 썸네일 (원하면 값 조절)
     static let brandLogoList = ThumbnailPolicy(maxPixelSize: 768, quality: 0.88)
+
+    /// 브랜드 상세/확대 프리뷰용 중간 해상도
+    /// - Note: 원본보다 작지만 2~3배 확대에서도 디테일이 유지되도록 설정
+    static let brandLogoDetail = ThumbnailPolicy(maxPixelSize: 2048, quality: 0.92)
     
     static let seasonCover = ThumbnailPolicy(maxPixelSize: 512, quality: 0.75)
 

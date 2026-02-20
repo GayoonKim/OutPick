@@ -19,6 +19,16 @@ protocol StorageServiceProtocol {
     /// - Note: Firestore에는 보통 다운로드 URL보다 스토리지 경로(path)를 저장하는 편이 안정적입니다.
     func uploadImage(data: Data, to path: String) async throws -> String
 
+    /// 로컬 이미지 파일을 지정된 경로에 업로드합니다.
+    /// 내부 구현은 `putFile` 우선 사용 후 필요 시 `putData` 폴백을 사용할 수 있습니다.
+    ///
+    /// - Note: 원본 대용량 이미지는 Data 업로드보다 파일 업로드 경로가 메모리/속도 측면에서 유리합니다.
+    func uploadImageFileWithRetryAndDataFallback(
+        from fileURL: URL,
+        to path: String,
+        contentType: String
+    ) async throws -> String
+
     /// 로컬 비디오 파일을 지정된 경로에 업로드하고 업로드된 스토리지 경로(path)를 반환합니다.
     ///
     /// - Note: Firestore에는 보통 다운로드 URL보다 스토리지 경로(path)를 저장하는 편이 안정적입니다.

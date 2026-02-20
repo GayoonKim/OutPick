@@ -22,9 +22,9 @@ final class FirebaseStorageTransferRepository: FirebaseStorageTransferRepository
 
     private init() {}
 
-    var fallbackMaxBytes: Int64 { dataFallbackMaxBytes }
+    private var fallbackMaxBytes: Int64 { dataFallbackMaxBytes }
 
-    func fileSize(at url: URL) -> Int64? {
+    private func fileSize(at url: URL) -> Int64? {
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), !isDir.boolValue else { return nil }
         if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
@@ -34,7 +34,7 @@ final class FirebaseStorageTransferRepository: FirebaseStorageTransferRepository
         return nil
     }
 
-    func withFallbackLimiter<T>(_ operation: () async throws -> T) async rethrows -> T {
+    private func withFallbackLimiter<T>(_ operation: () async throws -> T) async rethrows -> T {
         await dataFallbackLimiter.acquire()
         defer { Task { await self.dataFallbackLimiter.release() } }
         return try await operation()
@@ -146,6 +146,58 @@ final class FirebaseStorageTransferRepository: FirebaseStorageTransferRepository
                     progress?(p.completedUnitCount, p.totalUnitCount)
                 }
             }
+        }
+    }
+
+    func uploadFileWithRetryAndDataFallback(
+        from fileURL: URL,
+        to path: String,
+        contentType: String,
+        uploadFailure: Error,
+        cacheControl: String? = nil,
+        retries: Int = 2,
+        backoff: Double = 0.6,
+        progress: ((Int64, Int64) -> Void)? = nil
+    ) async throws -> String {
+        do {
+            return try await uploadFileWithRetry(
+                from: fileURL,
+                to: path,
+                contentType: contentType,
+                uploadFailure: uploadFailure,
+                cacheControl: cacheControl,
+                retries: retries,
+                backoff: backoff,
+                progress: progress
+            )
+        } catch {
+            let ns = error as NSError
+            let underlying = (ns.userInfo[NSUnderlyingErrorKey] as? NSError)
+            let uCode = underlying?.code ?? 0
+            let uDomain = underlying?.domain ?? ""
+            print("⚠️ uploadFile 실패, data 업로드로 폴백 시도 (path=\(path)) code=\(ns.code)/\(ns.domain) underlying=\(uCode)/\(uDomain)")
+
+            guard let size = fileSize(at: fileURL), size <= fallbackMaxBytes else {
+                throw error
+            }
+
+            let uploadedPath = try await withFallbackLimiter {
+                guard let data = try? Data(contentsOf: fileURL, options: [.mappedIfSafe]) else {
+                    throw error
+                }
+                return try await uploadWithRetry(
+                    data: data,
+                    to: path,
+                    contentType: contentType,
+                    uploadFailure: uploadFailure,
+                    cacheControl: cacheControl,
+                    retries: retries,
+                    backoff: backoff,
+                    progress: progress
+                )
+            }
+            print("✅ 폴백 putData 업로드 성공(\(size) bytes <= limit=\(fallbackMaxBytes)): \(path)")
+            return uploadedPath
         }
     }
 

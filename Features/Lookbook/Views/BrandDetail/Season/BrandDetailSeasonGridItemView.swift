@@ -11,6 +11,7 @@ struct BrandDetailSeasonGridItemView: View {
     let season: Season
     let imageLoader: any ImageLoading
     let maxBytes: Int
+    let onTap: ((Season) -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -27,6 +28,10 @@ struct BrandDetailSeasonGridItemView: View {
                 .font(.subheadline)
                 .fontWeight(.semibold)
                 .foregroundStyle(.primary)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onTap?(season)
         }
     }
 

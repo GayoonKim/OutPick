@@ -4,28 +4,6 @@
 //
 //  Created by 김가윤 on 1/9/26.
 //
-
-//
-//  CreateSeasonView.swift
-//  OutPick
-//
-//  Created by 김가윤 on 1/9/26.
-//
-
-//
-//  CreateSeasonView.swift
-//  OutPick
-//
-//  Created by 김가윤 on 1/9/26.
-//
-
-//
-//  CreateSeasonView.swift
-//  OutPick
-//
-//  Created by 김가윤 on 1/9/26.
-//
-
 import SwiftUI
 import UIKit
 

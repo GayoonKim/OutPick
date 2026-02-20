@@ -25,6 +25,10 @@ final class CreateBrandViewModel: ObservableObject {
     private let storageService: StorageServiceProtocol
     private let thumbnailer: ImageThumbnailing
 
+    // 선택 직후 전처리된 업로드 입력
+    private var selectedLogoThumbData: Data?
+    private var selectedLogoDetailData: Data?
+
     init(
         brandStore: BrandStoringRepository,
         storageService: StorageServiceProtocol,
@@ -33,6 +37,22 @@ final class CreateBrandViewModel: ObservableObject {
         self.brandStore = brandStore
         self.storageService = storageService
         self.thumbnailer = thumbnailer
+    }
+
+    func setPickedLogo(
+        thumbImage: UIImage,
+        thumbData: Data,
+        detailData: Data
+    ) {
+        selectedLogoImage = thumbImage
+        selectedLogoThumbData = thumbData
+        selectedLogoDetailData = detailData
+    }
+
+    func clearPickedLogo() {
+        selectedLogoImage = nil
+        selectedLogoThumbData = nil
+        selectedLogoDetailData = nil
     }
 
     func saveBrand() async {
@@ -44,35 +64,54 @@ final class CreateBrandViewModel: ObservableObject {
             return
         }
 
-        // 한국어 주석: Firestore 문서 ID는 자동 생성(랜덤)으로 사용합니다.
+        // Firestore 문서 ID는 자동 생성(랜덤)으로 사용합니다.
         let docID = brandStore.makeNewBrandDocumentID()
 
         isSaving = true
         defer { isSaving = false }
 
+        var uploadedThumbPathForRollback: String?
+        var pendingDetailUpload: (path: String, data: Data)?
+
         do {
-            // 1) 이미지가 있으면 Storage에 (썸네일 + 원본) 업로드하고 경로 확보
+            // 1) 이미지가 있으면 Storage에 썸네일만 먼저 업로드(즉시 완료 기준)
             var logoThumbPath: String? = nil
-            var logoOriginalPath: String? = nil
 
             if let image = selectedLogoImage {
                 let thumbPath = "brands/\(docID)/logo/thumb.jpg"
-                let originalPath = "brands/\(docID)/logo/original.jpg"
+                let detailPath = "brands/\(docID)/logo/detail.jpg"
 
-                // 한국어 주석: 원본 업로드(화질 우선)
-                guard let originalJPEGData = image.jpegData(compressionQuality: 0.9) else {
-                    throw NSError(domain: "CreateBrandViewModel", code: -10, userInfo: [
-                        NSLocalizedDescriptionKey: "원본 이미지를 JPEG 데이터로 변환하지 못했습니다."
-                    ])
+                if let preparedThumbData = selectedLogoThumbData,
+                   let preparedDetailData = selectedLogoDetailData {
+                    // 선택 시점 전처리 결과 사용:
+                    // - thumb: 즉시 업로드 후 완료 처리
+                    // - detail: 백그라운드 업로드
+                    let uploadedThumbPath = try await storageService.uploadImage(data: preparedThumbData, to: thumbPath)
+                    logoThumbPath = uploadedThumbPath
+                    uploadedThumbPathForRollback = uploadedThumbPath
+                    pendingDetailUpload = (path: detailPath, data: preparedDetailData)
+                } else {
+                    // 방어적 fallback(외부에서 UIImage만 직접 주입된 경우)
+                    guard let originalJPEGData = image.jpegData(compressionQuality: 0.9) else {
+                        throw NSError(domain: "CreateBrandViewModel", code: -10, userInfo: [
+                            NSLocalizedDescriptionKey: "원본 이미지를 JPEG 데이터로 변환하지 못했습니다."
+                        ])
+                    }
+
+                    let thumbJPEGData = try thumbnailer.makeThumbnailJPEGData(
+                        from: originalJPEGData,
+                        policy: ThumbnailPolicies.brandLogoList
+                    )
+                    let detailJPEGData = try thumbnailer.makeThumbnailJPEGData(
+                        from: originalJPEGData,
+                        policy: ThumbnailPolicies.brandLogoDetail
+                    )
+
+                    let uploadedThumbPath = try await storageService.uploadImage(data: thumbJPEGData, to: thumbPath)
+                    logoThumbPath = uploadedThumbPath
+                    uploadedThumbPathForRollback = uploadedThumbPath
+                    pendingDetailUpload = (path: detailPath, data: detailJPEGData)
                 }
-
-                // 한국어 주석: 업로드는 path 기반으로 처리하고, DB에는 path를 저장합니다.
-                logoOriginalPath = try await storageService.uploadImage(data: originalJPEGData, to: originalPath)
-
-                // 한국어 주석: 썸네일 생성 후 업로드(목록/카드용)
-                let policy = ThumbnailPolicies.brandLogoList
-                let thumbJPEGData = try thumbnailer.makeThumbnailJPEGData(from: originalJPEGData, policy: policy)
-                logoThumbPath = try await storageService.uploadImage(data: thumbJPEGData, to: thumbPath)
             }
 
             // 2) Firestore에 저장(세부 필드 구성은 store가 책임)
@@ -80,13 +119,45 @@ final class CreateBrandViewModel: ObservableObject {
                 docID: docID,
                 name: rawName,
                 logoThumbPath: logoThumbPath,
-                logoOriginalPath: logoOriginalPath,
+                logoDetailPath: nil,
                 isFeatured: isFeatured
             )
 
-            message = "저장 완료: brands/\(docID)"
+            uploadedThumbPathForRollback = nil
+            if let pendingDetailUpload {
+                enqueueDetailUpload(
+                    docID: docID,
+                    detailPath: pendingDetailUpload.path,
+                    detailData: pendingDetailUpload.data
+                )
+            }
+            if logoThumbPath != nil {
+                message = "저장 완료: brands/\(docID) (디테일 업로드 중)"
+            } else {
+                message = "저장 완료: brands/\(docID)"
+            }
         } catch {
+            if let rollbackPath = uploadedThumbPathForRollback {
+                try? await storageService.deleteFile(at: rollbackPath)
+            }
             message = "저장 실패: \(error.localizedDescription)"
+        }
+    }
+}
+
+private extension CreateBrandViewModel {
+    func enqueueDetailUpload(docID: String, detailPath: String, detailData: Data) {
+        Task(priority: .utility) { [weak self] in
+            guard let self else { return }
+            do {
+                let uploadedDetailPath = try await self.storageService.uploadImage(data: detailData, to: detailPath)
+                try await self.brandStore.updateLogoDetailPath(
+                    docID: docID,
+                    logoDetailPath: uploadedDetailPath
+                )
+            } catch {
+                print("⚠️ 브랜드 detail 업로드/패치 실패(docID=\(docID)): \(error.localizedDescription)")
+            }
         }
     }
 }

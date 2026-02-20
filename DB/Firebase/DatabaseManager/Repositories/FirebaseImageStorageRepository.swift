@@ -56,35 +56,14 @@ final class FirebaseImageStorageRepository: FirebaseImageStorageRepositoryProtoc
             // 2) Original (putFile with retry -> fallback to putData if small)
             group.addTask { [weak self] in
                 guard let self else { throw FirebaseStorageError.FailedToUploadImage }
-                do {
-                    let path = try await self.transferService.uploadFileWithRetry(
-                        from: originalFileURL,
-                        to: originalPath,
-                        contentType: contentType,
-                        uploadFailure: FirebaseStorageError.FailedToUploadImage,
-                        cacheControl: cacheControl
-                    )
-                    return (path, false)
-                } catch {
-                    if let size = self.transferService.fileSize(at: originalFileURL),
-                       size <= self.transferService.fallbackMaxBytes {
-                        let path = try await self.transferService.withFallbackLimiter {
-                            guard let data = try? Data(contentsOf: originalFileURL, options: [.mappedIfSafe]) else {
-                                throw error
-                            }
-                            return try await self.transferService.uploadWithRetry(
-                                data: data,
-                                to: originalPath,
-                                contentType: contentType,
-                                uploadFailure: FirebaseStorageError.FailedToUploadImage,
-                                cacheControl: cacheControl
-                            )
-                        }
-                        print("✅ avatar original fallback via putData succeeded (\(size) bytes <= limit=\(self.transferService.fallbackMaxBytes)): \(originalPath)")
-                        return (path, false)
-                    }
-                    throw error
-                }
+                let path = try await self.transferService.uploadFileWithRetryAndDataFallback(
+                    from: originalFileURL,
+                    to: originalPath,
+                    contentType: contentType,
+                    uploadFailure: FirebaseStorageError.FailedToUploadImage,
+                    cacheControl: cacheControl
+                )
+                return (path, false)
             }
 
             var thumbResult: String?
@@ -207,62 +186,24 @@ final class FirebaseImageStorageRepository: FirebaseImageStorageRepositoryProtoc
                         )
 
                         // 2) 원본 업로드(File URL; 스트리밍) + 실패 시 putData 폴백
-                        do {
-                            _ = try await self.transferService.uploadFileWithRetry(
-                                from: pair.originalFileURL,
-                                to: originalPath,
-                                contentType: "image/jpeg",
-                                uploadFailure: FirebaseStorageError.FailedToUploadImage,
-                                cacheControl: originalCacheControl,
-                                progress: { completed, _ in
-                                    progressQueue.async {
-                                        let prev = lastReported[originalPath] ?? 0
-                                        let delta = max(0, completed - prev)
-                                        uploadedBytes += delta
-                                        lastReported[originalPath] = completed
-                                        if totalBytes > 0 {
-                                            onProgress?(Double(uploadedBytes) / Double(totalBytes))
-                                        }
+                        _ = try await self.transferService.uploadFileWithRetryAndDataFallback(
+                            from: pair.originalFileURL,
+                            to: originalPath,
+                            contentType: "image/jpeg",
+                            uploadFailure: FirebaseStorageError.FailedToUploadImage,
+                            cacheControl: originalCacheControl,
+                            progress: { completed, _ in
+                                progressQueue.async {
+                                    let prev = lastReported[originalPath] ?? 0
+                                    let delta = max(0, completed - prev)
+                                    uploadedBytes += delta
+                                    lastReported[originalPath] = completed
+                                    if totalBytes > 0 {
+                                        onProgress?(Double(uploadedBytes) / Double(totalBytes))
                                     }
                                 }
-                            )
-                        } catch {
-                            let ns = error as NSError
-                            let underlying = (ns.userInfo[NSUnderlyingErrorKey] as? NSError)
-                            let uCode = underlying?.code ?? 0
-                            let uDomain = underlying?.domain ?? ""
-                            print("⚠️ uploadFile 실패, data 업로드로 폴백 시도 (path=\(originalPath)) code=\(ns.code)/\(ns.domain) underlying=\(uCode)/\(uDomain)")
-
-                            if let size = self.transferService.fileSize(at: pair.originalFileURL),
-                               size <= self.transferService.fallbackMaxBytes {
-                                _ = try await self.transferService.withFallbackLimiter {
-                                    guard let data = try? Data(contentsOf: pair.originalFileURL, options: [.mappedIfSafe]) else {
-                                        throw error
-                                    }
-                                    return try await self.transferService.uploadWithRetry(
-                                        data: data,
-                                        to: originalPath,
-                                        contentType: "image/jpeg",
-                                        uploadFailure: FirebaseStorageError.FailedToUploadImage,
-                                        cacheControl: originalCacheControl,
-                                        progress: { completed, _ in
-                                            progressQueue.async {
-                                                let prev = lastReported[originalPath] ?? 0
-                                                let delta = max(0, completed - prev)
-                                                uploadedBytes += delta
-                                                lastReported[originalPath] = completed
-                                                if totalBytes > 0 {
-                                                    onProgress?(Double(uploadedBytes) / Double(totalBytes))
-                                                }
-                                            }
-                                        }
-                                    )
-                                }
-                                print("✅ 폴백 putData 업로드 성공(\(size) bytes <= limit=\(self.transferService.fallbackMaxBytes)): \(originalPath)")
-                            } else {
-                                throw error
                             }
-                        }
+                        )
 
                         // 3) 로컬 임시 파일 정리 (성공 시에만)
                         if cleanupTemp {

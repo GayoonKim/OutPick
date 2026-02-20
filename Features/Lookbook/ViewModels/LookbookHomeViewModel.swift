@@ -29,8 +29,8 @@ final class LookbookHomeViewModel: ObservableObject {
     private var lastBrandDocument: DocumentSnapshot? = nil
 
     /// 중복 로드 방지
-    private var didPreload = false
-    private var isPreloading = false
+    private var didLoadInitialPage = false
+    private var isLoadingInitialPage = false
     private var isLoadingNext = false
 
     /// 최초 로딩 시 가져올 브랜드 수
@@ -45,9 +45,9 @@ final class LookbookHomeViewModel: ObservableObject {
     init(
         repo: BrandRepositoryProtocol,
         imageLoader: any ImageLoading,
-        initialBrandLimit: Int = 20,
-        prefetchLogoCount: Int = 12,
-        prefetchConcurrency: Int = 6,
+        initialBrandLimit: Int = 12,
+        prefetchLogoCount: Int = 4,
+        prefetchConcurrency: Int = 4,
         thumbMaxBytes: Int = 1 * 1024 * 1024
     ) {
         self.repo = repo
@@ -59,38 +59,38 @@ final class LookbookHomeViewModel: ObservableObject {
     }
 
     /// 앱 시작 시 또는 룩북 탭 진입 전에 한 번 호출
-    func preloadIfNeeded() async {
-        guard !didPreload, !isPreloading else { return }
-        isPreloading = true
-        defer { isPreloading = false }
+    func loadInitialPageIfNeeded() async {
+        guard !didLoadInitialPage, !isLoadingInitialPage else { return }
+        isLoadingInitialPage = true
+        defer { isLoadingInitialPage = false }
         
         phase = .loading
 
         do {
-            // 1) 브랜드 fetch (아직 publish 하지 않음)
-            let page = try await repo.fetchBrands(sort: .latest, limit: initialBrandLimit, after: nil)
+            // 1) 브랜드 fetch (정렬 미지정: 기본 순서)
+            let page = try await repo.fetchBrands(sort: nil, limit: initialBrandLimit, after: nil)
 
-            // 2) 첫 화면용 N개 thumbPath만 모아서 prefetch
-            let prefetchTargets = makePrefetchTargets(from: page.items, count: prefetchLogoCount)
+            // 2) 첫 페이지 이미지는 prefetch 완료까지 대기합니다.
+            //    룩북 탭 진입 시 로고가 모두 준비된 상태로 한 번에 노출됩니다.
+            let prefetchTargets = makePrefetchTargets(from: page.items, count: page.items.count)
             await imageLoader.prefetch(items: prefetchTargets, concurrency: prefetchConcurrency)
 
-            // 3) prefetch 완료 후에야 publish → 화면 표시
+            // 3) 프리패치 완료 후에 리스트를 publish합니다.
             self.brands = page.items
             self.lastBrandDocument = page.last
             self.phase = .ready
-            
-            didPreload = true
+            didLoadInitialPage = true
         } catch {
             self.phase = .failed(error.localizedDescription)
         }
     }
 
     func retry() async {
-        didPreload = false
+        didLoadInitialPage = false
         lastBrandDocument = nil
         brands = []
         phase = .idle
-        await preloadIfNeeded()
+        await loadInitialPageIfNeeded()
     }
 
     /// 스크롤 바닥에서 다음 페이지 로드
@@ -104,14 +104,15 @@ final class LookbookHomeViewModel: ObservableObject {
         defer { isLoadingNext = false }
 
         do {
-            let page = try await repo.fetchBrands(sort: .latest, limit: initialBrandLimit, after: after)
+            let page = try await repo.fetchBrands(sort: nil, limit: initialBrandLimit, after: after)
 
-            // 다음 페이지도 첫 몇 개만 가볍게 프리패치
-            let prefetchTargets = makePrefetchTargets(from: page.items, count: min(prefetchLogoCount, 8))
-            await imageLoader.prefetch(items: prefetchTargets, concurrency: prefetchConcurrency)
-
+            // 목록 append를 먼저 수행해서 스크롤 체감을 개선합니다.
             self.brands.append(contentsOf: page.items)
             self.lastBrandDocument = page.last
+
+            // 다음 페이지도 첫 몇 개만 가볍게 prefetch (백그라운드)
+            let prefetchTargets = makePrefetchTargets(from: page.items, count: min(prefetchLogoCount, 8))
+            schedulePrefetch(items: prefetchTargets)
         } catch {
             // 페이지네이션 실패는 치명적이지 않으니 조용히 무시
         }
@@ -132,6 +133,15 @@ final class LookbookHomeViewModel: ObservableObject {
             // 캐시 키는 용도를 포함
             let key = "brandLogoThumb|\(path)"
             return (path: path, cacheKey: key, maxBytes: thumbMaxBytes)
+        }
+    }
+
+    private func schedulePrefetch(items: [(path: String, cacheKey: String, maxBytes: Int)]) {
+        guard !items.isEmpty else { return }
+        let imageLoader = self.imageLoader
+        let concurrency = self.prefetchConcurrency
+        Task(priority: .utility) {
+            await imageLoader.prefetch(items: items, concurrency: concurrency)
         }
     }
 }

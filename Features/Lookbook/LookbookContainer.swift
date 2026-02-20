@@ -18,12 +18,12 @@ final class LookbookContainer {
         self.lookbookHomeViewModel = LookbookHomeViewModel(
             repo: provider.brandRepository,
             imageLoader: provider.brandLogoImageLoader,
-            initialBrandLimit: 20,
-            prefetchLogoCount: 12
+            initialBrandLimit: 12,
+            prefetchLogoCount: 4
         )
     }
 
     func preloadLookbook() {
-        Task { await lookbookHomeViewModel.preloadIfNeeded() }
+        Task { await lookbookHomeViewModel.loadInitialPageIfNeeded() }
     }
 }

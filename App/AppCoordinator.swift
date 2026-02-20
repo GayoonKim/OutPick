@@ -51,7 +51,7 @@ final class AppCoordinator {
 
             let ok = await LoginManager.shared.checkExistingLogin()
             if ok {
-                await self.routeAfterAuthenticated(windowScene: windowScene)
+                await self.routeAfterAuthenticated()
             } else {
                 await MainActor.run { self.showLogin(windowScene: windowScene) }
             }
@@ -72,7 +72,7 @@ final class AppCoordinator {
         }
     }
 
-    private func routeAfterAuthenticated(windowScene: UIWindowScene) async {
+    private func routeAfterAuthenticated() async {
         await MainActor.run { self.setRoot(BootLoadingViewController(), animated: false) }
         
         let profileResult = await LoginManager.shared.loadUserProfile()
@@ -82,6 +82,7 @@ final class AppCoordinator {
             await MainActor.run {
                 let chatContainer = self.ensureChatContainer()
                 chatContainer.bindJoinedRoomsRuntimeIfNeeded()
+                self.prewarmLookbookHome()
             }
 
             // 새 기기 로그인 = 기존 기기 로그아웃 정책 시작점
@@ -136,7 +137,7 @@ final class AppCoordinator {
 
                 Task { [weak self] in
                     guard let self else { return }
-                    await self.routeAfterAuthenticated(windowScene: windowScene)
+                    await self.routeAfterAuthenticated()
                 }
             }
         )
@@ -154,12 +155,9 @@ final class AppCoordinator {
         installForceLogoutHandler()
 
         // 메인 탭 수명 동안 LookbookContainer(공유 VM/캐시)를 유지
-        if lookbookContainer == nil {
-            lookbookContainer = LookbookContainer(provider: lookbookProvider)
-        }
+        let lbcontainer = ensureLookbookContainer()
         let chatContainer = ensureChatContainer()
         chatContainer.bindJoinedRoomsRuntimeIfNeeded()
-        guard let lbcontainer = lookbookContainer else { return }
 
         // 탭 조립은 MainTabCompositionRoot가 담당 (CustomTabBarVC는 룩북을 모름)
         let tab = MainTabCompositionRoot.makeMainTab(lookbookContainer: lbcontainer, chatContainer: chatContainer)
@@ -196,6 +194,7 @@ final class AppCoordinator {
                         print("bootstrapAfterLogin 실패(프로필 완료): \(error)")
                     }
                     await MainActor.run {
+                        self.prewarmLookbookHome()
                         self.showMainTab()  // 완료 후 메인 탭으로
                     }
                 }
@@ -217,6 +216,22 @@ final class AppCoordinator {
         }
 
         self.window.makeKeyAndVisible()
+    }
+
+    @MainActor
+    private func prewarmLookbookHome() {
+        ensureLookbookContainer().preloadLookbook()
+    }
+
+    @MainActor
+    private func ensureLookbookContainer() -> LookbookContainer {
+        if let lookbookContainer {
+            return lookbookContainer
+        }
+
+        let created = LookbookContainer(provider: lookbookProvider)
+        self.lookbookContainer = created
+        return created
     }
 
     @MainActor

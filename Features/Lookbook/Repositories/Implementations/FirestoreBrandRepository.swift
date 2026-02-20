@@ -26,23 +26,13 @@ final class FirestoreBrandRepository: BrandRepositoryProtocol {
 
     /// 전체 브랜드 목록 페이지 조회
     func fetchBrands(
-        sort: BrandSort = .latest,
+        sort: BrandSort? = nil,
         limit: Int,
         after last: DocumentSnapshot? = nil
     ) async throws -> BrandPage {
 
         var q: Query = db.collection("brands")
-
-        // 1차 정렬
-        q = q.order(by: sort.primaryField, descending: true)
-
-        // 2차 정렬(동점 처리용) - 최신순일 때는 중복 orderBy를 피함
-        if sort.primaryField != "updatedAt" {
-            q = q.order(by: "updatedAt", descending: true)
-        }
-
-        // 3차 정렬(documentID로 완전 결정) - 페이지 경계 중복/누락 방지
-        q = q.order(by: FieldPath.documentID(), descending: true)
+        q = applyOrdering(to: q, sort: sort)
 
         q = q.limit(to: limit)
 
@@ -59,24 +49,14 @@ final class FirestoreBrandRepository: BrandRepositoryProtocol {
 
     /// 피처드 브랜드 목록 페이지 조회
     func fetchFeaturedBrands(
-        sort: BrandSort = .latest,
+        sort: BrandSort? = nil,
         limit: Int,
         after last: DocumentSnapshot? = nil
     ) async throws -> BrandPage {
 
         var q: Query = db.collection("brands")
             .whereField("isFeatured", isEqualTo: true)
-
-        // 1차 정렬
-        q = q.order(by: sort.primaryField, descending: true)
-
-        // 2차 정렬(동점 처리용) - 최신순일 때는 중복 orderBy를 피함
-        if sort.primaryField != "updatedAt" {
-            q = q.order(by: "updatedAt", descending: true)
-        }
-
-        // 3차 정렬(documentID로 완전 결정) - 페이지 경계 중복/누락 방지
-        q = q.order(by: FieldPath.documentID(), descending: true)
+        q = applyOrdering(to: q, sort: sort)
 
         q = q.limit(to: limit)
 
@@ -89,5 +69,23 @@ final class FirestoreBrandRepository: BrandRepositoryProtocol {
         let items = try dtos.map { try $0.toDomain() }
 
         return BrandPage(items: items, last: snap.documents.last)
+    }
+
+    private func applyOrdering(to query: Query, sort: BrandSort?) -> Query {
+        var q = query
+
+        // 기본: 정렬 미지정 시 Firestore 기본 순서(__name__ 오름차순)를 사용합니다.
+        // __name__ 내림차순 명시는 별도 인덱스를 요구할 수 있어 피합니다.
+        guard let sort else {
+            return q
+        }
+
+        // 정렬이 필요한 경우에만 추가 정렬 규칙을 적용합니다.
+        q = q.order(by: sort.primaryField, descending: true)
+        if sort.primaryField != "updatedAt" {
+            q = q.order(by: "updatedAt", descending: true)
+        }
+        q = q.order(by: FieldPath.documentID())
+        return q
     }
 }

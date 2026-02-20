@@ -15,6 +15,9 @@ struct Brand: Equatable, Codable, Identifiable {
     /// 목록/카드에서 사용하는 썸네일 Storage 경로
     var logoThumbPath: String?
 
+    /// 상세/확대 프리뷰에서 사용하는 중간 해상도 Storage 경로
+    var logoDetailPath: String?
+
     /// 상세/확대에서 사용하는 원본 Storage 경로
     var logoOriginalPath: String?
 

@@ -11,6 +11,7 @@ struct BrandDTO: Codable {
 
     /// (신규) 썸네일/원본 분리
     let logoThumbPath: String?
+    let logoDetailPath: String?
     let logoOriginalPath: String?
 
     let isFeatured: Bool?
@@ -31,13 +32,17 @@ struct BrandDTO: Codable {
         // 1) 썸네일: 신규 필드 우선, 없으면 기존 logoPath로 폴백
         let resolvedThumbPath = logoThumbPath ?? logoPath
 
-        // 2) 원본: 신규 필드만 사용(없으면 nil)
+        // 2) 상세/확대용 중간 해상도: 신규 필드 우선, 없으면 원본 -> 썸네일 순 폴백
+        let resolvedDetailPath = logoDetailPath ?? logoOriginalPath ?? resolvedThumbPath
+
+        // 3) 원본: 신규 필드만 사용(없으면 nil)
         let resolvedOriginalPath = logoOriginalPath
 
         return Brand(
             id: BrandID(value: id),
             name: name,
             logoThumbPath: resolvedThumbPath,
+            logoDetailPath: resolvedDetailPath,
             logoOriginalPath: resolvedOriginalPath,
             isFeatured: isFeatured ?? false,
             metrics: metrics,
