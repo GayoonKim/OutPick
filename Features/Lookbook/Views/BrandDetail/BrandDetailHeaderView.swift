@@ -9,7 +9,7 @@ import SwiftUI
 
 struct BrandDetailHeaderView: View {
     let brand: Brand
-    let imageLoader: any ImageLoading
+    let brandImageCache: any BrandImageCacheProtocol
     let maxBytes: Int
 
     @State private var uiImage: UIImage?
@@ -52,11 +52,6 @@ struct BrandDetailHeaderView: View {
             return String(thumbPath[..<lastSlash]) + "/detail.jpg"
         }
         return "brands/\(brand.id.value)/logo/detail.jpg"
-    }
-
-    private var cacheKey: String? {
-        guard let path = headerImagePath else { return nil }
-        return "brandLogo|\(path)"
     }
 
     var body: some View {
@@ -126,8 +121,7 @@ struct BrandDetailHeaderView: View {
         if uiImage != nil || loadFailed { return }
 
         guard
-            let path = headerImagePath,
-            let cacheKey
+            let path = headerImagePath
         else {
             loadFailed = true
             return
@@ -135,10 +129,9 @@ struct BrandDetailHeaderView: View {
 
         do {
             let headerMaxBytes = max(maxBytes, 8_000_000)
-            // BrandLogoImageStore 내부에서 캐시/중복 다운로드 방지가 처리됩니다.
-            let image = try await imageLoader.loadImage(
+            // BrandImageCache 내부에서 캐시/중복 다운로드 방지가 처리됩니다.
+            let image = try await brandImageCache.loadImage(
                 path: path,
-                cacheKey: cacheKey,
                 maxBytes: headerMaxBytes
             )
             uiImage = image
@@ -152,16 +145,14 @@ struct BrandDetailHeaderView: View {
         guard let detailPath = preferredDetailPath ?? deferredDetailPath else { return }
 
         let maxLoadBytes = max(maxBytes, 8_000_000)
-        let detailCacheKey = "brandLogo|\(detailPath)"
 
         detailUpgradeTask = Task(priority: .utility) {
             // 짧은 시간 재시도로 detail 업로드 완료를 감지
             for attempt in 0..<8 {
                 if Task.isCancelled { break }
                 do {
-                    let upgraded = try await imageLoader.loadImage(
+                    let upgraded = try await brandImageCache.loadImage(
                         path: detailPath,
-                        cacheKey: detailCacheKey,
                         maxBytes: maxLoadBytes
                     )
                     if Task.isCancelled { break }

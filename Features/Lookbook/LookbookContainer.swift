@@ -17,7 +17,7 @@ final class LookbookContainer {
 
         self.lookbookHomeViewModel = LookbookHomeViewModel(
             repo: provider.brandRepository,
-            imageLoader: provider.brandLogoImageLoader,
+            brandImageCache: provider.brandImageCache,
             initialBrandLimit: 12,
             prefetchLogoCount: 4
         )

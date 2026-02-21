@@ -11,7 +11,7 @@ struct BrandDetailSeasonsGridView: View {
     let seasons: [Season]
     let isLoading: Bool
     let errorMessage: String?
-    let imageLoader: any ImageLoading
+    let brandImageCache: any BrandImageCacheProtocol
     let maxBytes: Int
     let onSelectSeason: ((Season) -> Void)?
 
@@ -54,7 +54,7 @@ struct BrandDetailSeasonsGridView: View {
                     ForEach(seasons, id: \.id) { season in
                         BrandDetailSeasonGridItemView(
                             season: season,
-                            imageLoader: imageLoader,
+                            brandImageCache: brandImageCache,
                             maxBytes: maxBytes,
                             onTap: onSelectSeason
                         )

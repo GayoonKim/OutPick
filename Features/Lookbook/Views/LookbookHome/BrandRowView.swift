@@ -13,7 +13,7 @@ import UIKit
 
 struct BrandRowView: View {
     let brand: Brand
-    let imageLoader: any ImageLoading
+    let brandImageCache: any BrandImageCacheProtocol
 
     #if canImport(UIKit)
     @State private var uiImage: UIImage? = nil
@@ -118,11 +118,8 @@ struct BrandRowView: View {
 
         do {
             #if canImport(UIKit)
-            // 캐시 키는 용도까지 포함해두면 안전합니다.
-            let cacheKey = "brandLogoThumb|\(path)"
-            let image = try await imageLoader.loadImage(
+            let image = try await brandImageCache.loadImage(
                 path: path,
-                cacheKey: cacheKey,
                 maxBytes: maxLogoBytes
             )
             uiImage = image

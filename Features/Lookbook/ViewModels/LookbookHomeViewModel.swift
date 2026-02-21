@@ -23,7 +23,7 @@ final class LookbookHomeViewModel: ObservableObject {
 
     /// DI
     private let repo: BrandRepositoryProtocol
-    let imageLoader: any ImageLoading
+    let brandImageCache: any BrandImageCacheProtocol
 
     /// 페이지네이션 기준(마지막 문서)
     private var lastBrandDocument: DocumentSnapshot? = nil
@@ -44,14 +44,14 @@ final class LookbookHomeViewModel: ObservableObject {
 
     init(
         repo: BrandRepositoryProtocol,
-        imageLoader: any ImageLoading,
+        brandImageCache: any BrandImageCacheProtocol,
         initialBrandLimit: Int = 12,
         prefetchLogoCount: Int = 4,
         prefetchConcurrency: Int = 4,
         thumbMaxBytes: Int = 1 * 1024 * 1024
     ) {
         self.repo = repo
-        self.imageLoader = imageLoader
+        self.brandImageCache = brandImageCache
         self.initialBrandLimit = initialBrandLimit
         self.prefetchLogoCount = prefetchLogoCount
         self.prefetchConcurrency = prefetchConcurrency
@@ -73,7 +73,7 @@ final class LookbookHomeViewModel: ObservableObject {
             // 2) 첫 페이지 이미지는 prefetch 완료까지 대기합니다.
             //    룩북 탭 진입 시 로고가 모두 준비된 상태로 한 번에 노출됩니다.
             let prefetchTargets = makePrefetchTargets(from: page.items, count: page.items.count)
-            await imageLoader.prefetch(items: prefetchTargets, concurrency: prefetchConcurrency)
+            await brandImageCache.prefetch(items: prefetchTargets, concurrency: prefetchConcurrency)
 
             // 3) 프리패치 완료 후에 리스트를 publish합니다.
             self.brands = page.items
@@ -121,7 +121,7 @@ final class LookbookHomeViewModel: ObservableObject {
     private func makePrefetchTargets(
         from brands: [Brand],
         count: Int
-    ) -> [(path: String, cacheKey: String, maxBytes: Int)] {
+    ) -> [(path: String, maxBytes: Int)] {
 
         let slice = brands.prefix(max(count, 0))
 
@@ -130,18 +130,16 @@ final class LookbookHomeViewModel: ObservableObject {
             let resolved = brand.logoThumbPath ?? brand.logoOriginalPath
             guard let path = resolved, !path.isEmpty else { return nil }
 
-            // 캐시 키는 용도를 포함
-            let key = "brandLogoThumb|\(path)"
-            return (path: path, cacheKey: key, maxBytes: thumbMaxBytes)
+            return (path: path, maxBytes: thumbMaxBytes)
         }
     }
 
-    private func schedulePrefetch(items: [(path: String, cacheKey: String, maxBytes: Int)]) {
+    private func schedulePrefetch(items: [(path: String, maxBytes: Int)]) {
         guard !items.isEmpty else { return }
-        let imageLoader = self.imageLoader
+        let brandImageCache = self.brandImageCache
         let concurrency = self.prefetchConcurrency
         Task(priority: .utility) {
-            await imageLoader.prefetch(items: items, concurrency: concurrency)
+            await brandImageCache.prefetch(items: items, concurrency: concurrency)
         }
     }
 }

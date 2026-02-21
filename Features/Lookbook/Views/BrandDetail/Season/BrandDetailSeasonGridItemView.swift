@@ -9,7 +9,7 @@ import SwiftUI
 
 struct BrandDetailSeasonGridItemView: View {
     let season: Season
-    let imageLoader: any ImageLoading
+    let brandImageCache: any BrandImageCacheProtocol
     let maxBytes: Int
     let onTap: ((Season) -> Void)?
 
@@ -18,7 +18,7 @@ struct BrandDetailSeasonGridItemView: View {
             SeasonCoverThumbView(
                 thumbPath: season.coverThumbPath,
                 fallbackPath: season.coverPath,
-                imageLoader: imageLoader,
+                brandImageCache: brandImageCache,
                 maxBytes: maxBytes
             )
             .frame(height: 140)

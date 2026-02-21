@@ -9,7 +9,7 @@ import SwiftUI
 
 struct BrandDetailView: View {
     let brand: Brand
-    let imageLoader: any ImageLoading
+    let brandImageCache: any BrandImageCacheProtocol
     let maxBytes: Int
     let onSelectSeason: ((Season) -> Void)?
 
@@ -19,12 +19,12 @@ struct BrandDetailView: View {
 
     init(
         brand: Brand,
-        imageLoader: any ImageLoading,
+        brandImageCache: any BrandImageCacheProtocol,
         maxBytes: Int = 1_000_000,
         onSelectSeason: ((Season) -> Void)? = nil
     ) {
         self.brand = brand
-        self.imageLoader = imageLoader
+        self.brandImageCache = brandImageCache
         self.maxBytes = maxBytes
         self.onSelectSeason = onSelectSeason
     }
@@ -33,7 +33,7 @@ struct BrandDetailView: View {
         List {
             BrandDetailHeaderView(
                 brand: brand,
-                imageLoader: imageLoader,
+                brandImageCache: brandImageCache,
                 maxBytes: maxBytes
             )
             .listRowInsets(EdgeInsets())
@@ -43,7 +43,7 @@ struct BrandDetailView: View {
                 seasons: viewModel.seasons,
                 isLoading: viewModel.isLoading,
                 errorMessage: viewModel.errorMessage,
-                imageLoader: imageLoader,
+                brandImageCache: brandImageCache,
                 maxBytes: maxBytes,
                 onSelectSeason: onSelectSeason
             )

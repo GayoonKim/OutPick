@@ -7,8 +7,6 @@
 
 import SwiftUI
 
-import SwiftUI
-
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -16,7 +14,7 @@ import UIKit
 struct SeasonCoverThumbView: View {
     let thumbPath: String?
     let fallbackPath: String?
-    let imageLoader: any ImageLoading
+    let brandImageCache: any BrandImageCacheProtocol
     let maxBytes: Int
 
     @State private var uiImage: UIImage?
@@ -63,9 +61,8 @@ struct SeasonCoverThumbView: View {
         defer { isLoading = false }
 
         do {
-            uiImage = try await imageLoader.loadImage(
+            uiImage = try await brandImageCache.loadImage(
                 path: targetPath,
-                cacheKey: targetPath,
                 maxBytes: maxBytes
             )
         } catch {

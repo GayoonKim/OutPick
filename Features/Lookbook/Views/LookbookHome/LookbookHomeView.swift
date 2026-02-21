@@ -112,7 +112,7 @@ struct LookbookHomeView: View {
                     ForEach(viewModel.brands) { brand in
                         if usesLegacyNavigationLink {
                             ZStack {
-                                BrandRowView(brand: brand, imageLoader: viewModel.imageLoader)
+                                BrandRowView(brand: brand, brandImageCache: viewModel.brandImageCache)
                                     .contentShape(Rectangle())
                                     .onTapGesture {
                                         onSelectBrand(brand)
@@ -121,7 +121,7 @@ struct LookbookHomeView: View {
                                 NavigationLink(
                                     destination: BrandDetailView(
                                         brand: brand,
-                                        imageLoader: viewModel.imageLoader
+                                        brandImageCache: viewModel.brandImageCache
                                     ),
                                     tag: brand.id,
                                     selection: $selectedBrandID
@@ -134,7 +134,7 @@ struct LookbookHomeView: View {
                                 Task { await viewModel.loadNextPageIfNeeded(current: brand) }
                             }
                         } else {
-                            BrandRowView(brand: brand, imageLoader: viewModel.imageLoader)
+                            BrandRowView(brand: brand, brandImageCache: viewModel.brandImageCache)
                                 .contentShape(Rectangle())
                                 .onTapGesture {
                                     onSelectBrand(brand)
@@ -156,6 +156,9 @@ struct LookbookHomeView: View {
                     .font(.headline)
                     .fontWeight(.semibold)
                     .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .layoutPriority(1)
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
@@ -165,6 +168,7 @@ struct LookbookHomeView: View {
                         Image(systemName: "plus")
                         Text("브랜드")
                     }
+                    .lineLimit(1)
                 }
                 .accessibilityLabel("브랜드 추가")
                 .foregroundStyle(.primary)
@@ -180,7 +184,7 @@ struct LookbookHomeView: View {
             if let brand = viewModel.brands.first(where: { $0.id == brandID }) {
                 BrandDetailView(
                     brand: brand,
-                    imageLoader: viewModel.imageLoader,
+                    brandImageCache: viewModel.brandImageCache,
                     onSelectSeason: { season in
                         router.pushSeason(brandID: brandID, seasonID: season.id)
                     }
@@ -241,7 +245,7 @@ private struct MissingRouteView: View {
     let provider = LookbookRepositoryProvider.shared
     let vm = LookbookHomeViewModel(
         repo: provider.brandRepository,
-        imageLoader: provider.brandLogoImageLoader,
+        brandImageCache: provider.brandImageCache,
         initialBrandLimit: 12,
         prefetchLogoCount: 4
     )

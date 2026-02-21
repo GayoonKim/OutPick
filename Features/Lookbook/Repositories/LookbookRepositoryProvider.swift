@@ -31,15 +31,13 @@ final class LookbookRepositoryProvider {
 
     // MARK: - Services
     /// 브랜드 로고 이미지 로더(단일 인스턴스 공유)
-    /// - Note: View/VM에서 `BrandLogoImageStore()`를 새로 만들지 말고, provider의 이 인스턴스를 주입해 사용합니다.
-    let brandLogoImageLoader: any ImageLoading
-
-    /// 이미지 캐시(단일 인스턴스 공유)
-    let imageCache: ImageCaching
+    /// - Note: View/VM에서 `BrandImageCache()`를 새로 만들지 말고, provider의 이 인스턴스를 주입해 사용합니다.
+    let brandImageCache: any BrandImageCacheProtocol
 
     let brandStore: BrandStoringRepository
     let storageService: StorageServiceProtocol
     let thumbnailer: ImageThumbnailing
+    let imageCachePipeline: ImageCachePipeline
 
     init(
         brandRepository: BrandRepositoryProtocol = FirestoreBrandRepository(),
@@ -60,18 +58,21 @@ final class LookbookRepositoryProvider {
 
         postUserStateRepository: PostUserStateRepositoryProtocol = FirestorePostUserStateRepository(),
 
-        brandLogoImageLoader: (any ImageLoading)? = nil,
-        imageCache: ImageCaching = MemoryImageCache(),
+        brandImageCache: (any BrandImageCacheProtocol)? = nil,
+        imageCachePipeline: ImageCachePipeline? = nil,
         storageService: StorageServiceProtocol = LookbookStorageService(),
         thumbnailer: ImageThumbnailing = ImageIOThumbnailer()
     ) {
         self.storageService = storageService
         self.thumbnailer = thumbnailer
-        self.imageCache = imageCache
+        let resolvedImageCachePipeline = imageCachePipeline ?? ImageCachePipeline { [storageService] path, maxBytes in
+            try await storageService.downloadImage(from: path, maxSize: maxBytes)
+        }
+        self.imageCachePipeline = resolvedImageCachePipeline
 
-        // provider가 가진 cache/storage를 그대로 사용
-        self.brandLogoImageLoader = brandLogoImageLoader
-            ?? BrandLogoImageStore(cache: imageCache, storage: storageService)
+        // provider가 가진 pipeline/storage를 그대로 사용
+        self.brandImageCache = brandImageCache
+            ?? BrandImageCache(storage: storageService, pipeline: resolvedImageCachePipeline)
 
         self.brandRepository = brandRepository
         self.postRepository = postRepository

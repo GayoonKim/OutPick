@@ -228,7 +228,7 @@ extension ChatViewController: PHPickerViewControllerDelegate {
                             
                             for pair in pairs {
                                 // 썸네일 Data를 그대로 캐시에 저장(재인코딩/재압축 방지)
-                                await mediaThumbCache.storeToDisk(data: pair.thumbData, forKey: pair.sha256)
+                                await chatImageCache.storeToDisk(data: pair.thumbData, forKey: pair.sha256)
                                 print(#function, "ThumbCache saved: \(pair.sha256)")
                             }
                             SocketIOManager.shared.sendFailedImages(room, fromPairs: pairs)
@@ -269,8 +269,8 @@ extension ChatViewController: UIImagePickerControllerDelegate {
 extension ChatViewController {
     /// 채팅 전송 직후(성공/실패 무관) 로컬 즉시 표시용 썸네일 캐시
     /// - DI 적용 전 단계라 우선 공유 인스턴스를 사용
-    private var mediaThumbCache: MediaThumbCaching {
-        MediaThumbCache.shared
+    private var chatImageCache: ChatImageCacheProtocol {
+        ChatImageCache.shared
     }
     
     func uploadPreparedVideoAndBroadcast(
@@ -299,7 +299,7 @@ extension ChatViewController {
 
         // 비디오 썸네일도 성공/실패 무관하게 먼저 저장(로컬 즉시 표시/재시도 UX)
         if !prepared.thumbnailData.isEmpty {
-            await mediaThumbCache.storeToDisk(data: prepared.thumbnailData, forKey: prepared.sha256)
+            await chatImageCache.storeToDisk(data: prepared.thumbnailData, forKey: prepared.sha256)
             print(#function, "ThumbCache video thumb saved: \(prepared.sha256)")
         }
 
