@@ -1,5 +1,5 @@
 //
-//  ChatMediaManagerProtocol.swift
+//  ChatMediaManaging.swift
 //  OutPick
 //
 //  Created by 김가윤 on 1/15/25.
@@ -9,7 +9,7 @@ import Foundation
 import UIKit
 
 /// 미디어(이미지/비디오) 캐싱 및 프리페치 관련 프로토콜
-protocol ChatMediaManagerProtocol {
+protocol ChatMediaManaging {
     var messageImages: [String: [UIImage]] { get set }
     
     /// 이미지 캐싱

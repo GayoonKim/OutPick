@@ -13,7 +13,7 @@ private struct HotUser {
     var lastSeenAt: Date
 }
 
-final class HotUserManager: HotUserManagerProtocol {
+final class HotUserManager: HotUserManaging {
     private let userProfileRepository: UserProfileRepositoryProtocol
     private let maxHotUsers: Int = 20
     

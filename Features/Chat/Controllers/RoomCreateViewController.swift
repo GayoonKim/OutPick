@@ -7,22 +7,11 @@
 
 import UIKit
 import PhotosUI
-import FirebaseFirestore
-import Kingfisher
 import Combine
 
-class RoomCreateViewController: UIViewController, ChatModalAnimatable {
+class RoomCreateViewController: UIViewController, ChatModalAnimatable, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
     
-    @IBOutlet weak var roomNameTextView: UITextView!
-    @IBOutlet weak var roomNameCountLabel: UILabel!
-    @IBOutlet weak var roomDescriptionTextView: UITextView!
-    @IBOutlet weak var roomDescriptionCountLabel: UILabel!
-    @IBOutlet weak var scrollView: UIScrollView!
-    @IBOutlet weak var scrollViewTopConstraint: NSLayoutConstraint!
-    
-    @IBOutlet weak var roomImageView: UIImageView!
-    
-    @IBOutlet weak var activityIndicator: UIActivityIndicatorView!
+    private let rootContentView = RoomCreateContentView()
     
     private lazy var createBtn: UIButton = {
         let button = UIButton(type: .system)
@@ -62,6 +51,7 @@ class RoomCreateViewController: UIViewController, ChatModalAnimatable {
     }()
     
     private lazy var cancellables: Set<AnyCancellable> = []
+    private var viewModelCancellables: Set<AnyCancellable> = []
     
     let maxHeight: CGFloat = 300
     
@@ -69,18 +59,54 @@ class RoomCreateViewController: UIViewController, ChatModalAnimatable {
     private var imageData: DefaultMediaProcessingService.ImagePair?
     var injectedFirebaseRepositories: FirebaseRepositoryProviding?
     var makeChatRoomViewModel: ((ChatRoom) -> ChatRoomViewModel)?
-    var makeSavingChatViewController: ((ChatRoom) -> ChatViewController?)?
+    var makeCreatedRoomViewController: ((ChatRoom) -> ChatViewController?)?
+    var injectedRoomCreateManager: RoomCreateManaging?
+    var injectedCreateRoomUseCase: CreateRoomUseCaseProtocol?
+
+    private weak var createdChatRoomViewController: ChatViewController?
+    private var roomCreateViewModel: RoomCreateViewModel?
+
+    private var roomNameTextView: UITextView { rootContentView.roomNameTextView }
+    private var roomNameCountLabel: UILabel { rootContentView.roomNameCountLabel }
+    private var roomDescriptionTextView: UITextView { rootContentView.roomDescriptionTextView }
+    private var roomDescriptionCountLabel: UILabel { rootContentView.roomDescriptionCountLabel }
+    private var scrollView: UIScrollView { rootContentView.scrollView }
+    private var scrollViewTopConstraint: NSLayoutConstraint { rootContentView.scrollViewTopConstraint }
+    private var roomImageView: UIImageView { rootContentView.roomImageView }
+    private var activityIndicator: UIActivityIndicatorView { rootContentView.activityIndicator }
+
+    init(
+        injectedFirebaseRepositories: FirebaseRepositoryProviding? = nil,
+        makeChatRoomViewModel: ((ChatRoom) -> ChatRoomViewModel)? = nil,
+        makeCreatedRoomViewController: ((ChatRoom) -> ChatViewController?)? = nil,
+        injectedRoomCreateManager: RoomCreateManaging? = nil,
+        injectedCreateRoomUseCase: CreateRoomUseCaseProtocol? = nil
+    ) {
+        self.injectedFirebaseRepositories = injectedFirebaseRepositories
+        self.makeChatRoomViewModel = makeChatRoomViewModel
+        self.makeCreatedRoomViewController = makeCreatedRoomViewController
+        self.injectedRoomCreateManager = injectedRoomCreateManager
+        self.injectedCreateRoomUseCase = injectedCreateRoomUseCase
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable, message: "Use init(...) for programmatic construction")
+    required init?(coder: NSCoder) {
+        fatalError("Storyboard initialization is no longer supported for RoomCreateViewController.")
+    }
+
+    override func loadView() {
+        view = rootContentView
+    }
 
     private var firebaseRepositories: FirebaseRepositoryProviding {
         injectedFirebaseRepositories ?? ChatDependencyContainer.requireFirebaseRepositories()
     }
 
-    private var chatRoomRepository: FirebaseChatRoomRepositoryProtocol {
-        firebaseRepositories.chatRoomRepository
-    }
-
     override func viewDidLoad() {
         super.viewDidLoad()
+
+        configureViewModelIfNeeded()
 
         setupCustomNavigationBar()
         setupTextView(roomNameTextView)
@@ -92,6 +118,7 @@ class RoomCreateViewController: UIViewController, ChatModalAnimatable {
         self.roomImageView.layer.cornerRadius = 15
         
         self.bindPublishers()
+        bindViewModel()
     }
 
     private func bindPublishers() {
@@ -123,6 +150,7 @@ class RoomCreateViewController: UIViewController, ChatModalAnimatable {
     }
     
     private func setupCreateButton() {
+        guard createBtn.superview == nil else { return }
         view.addSubview(createBtn)
         createBtn.translatesAutoresizingMaskIntoConstraints = false
         
@@ -134,127 +162,14 @@ class RoomCreateViewController: UIViewController, ChatModalAnimatable {
         ])
     }
     
-    private func enableCreateBtn() {
-        if !roomNameTextView.text.isEmpty && !roomDescriptionTextView.text.isEmpty {
-            createBtn.isEnabled = true
-        } else {
-            createBtn.isEnabled = false
-        }
-    }
-    
     @MainActor
     @objc func handleCreateButtonTap() {
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            
-            // UI lock & spinner 시작
-            self.createBtn.isEnabled = false
-            LoadingIndicator.shared.start(on: self)
-            defer {
-                // 어떤 경로로 빠져도 UI 복구
-                LoadingIndicator.shared.stop()
-                self.createBtn.isEnabled = true
-            }
-            
-            // 1) 입력값 정리 및 검증
-            let name = self.roomNameTextView.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            let desc = self.roomDescriptionTextView.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !name.isEmpty, !desc.isEmpty else {
-                AlertManager.showAlertNoHandler(title: "정보 부족", message: "방 이름과 설명을 입력해주세요.", viewController: self)
-                return
-            }
-            
-            do {
-                // 2) 중복 이름 검사
-                let isDup = try await self.chatRoomRepository.checkRoomNameDuplicate(roomName: name)
-                if isDup {
-                    AlertManager.showAlertNoHandler(title: "중복된 방 이름", message: "이미 존재하는 방 이름입니다. 다른 이름을 선택해 주세요.", viewController: self)
-                    return
-                }
-                
-                // 3) Room 모델 구성
-                let ref = Firestore.firestore().collection("Rooms").document()
-                let room = ChatRoom(
-                    ID: ref.documentID,
-                    roomName: name,
-                    roomDescription: desc,
-                    participants: [LoginManager.shared.getUserEmail],
-                    creatorID: LoginManager.shared.getUserEmail,
-                    createdAt: Date()
-                )
-                
-                // 4) 화면 전환 (즉시)
-                guard let presenter = self.presentingViewController else {
-                    return
-                }
-
-                let chatRoomVC: ChatViewController
-                if let makeSavingChatViewController {
-                    guard let configured = makeSavingChatViewController(room) else { return }
-                    chatRoomVC = configured
-                } else {
-                    let fallback = ChatViewController(provider: ChatDependencyContainer.provider)
-                    fallback.injectedFirebaseRepositories = self.firebaseRepositories
-                    if let makeChatRoomViewModel {
-                        fallback.configure(viewModel: makeChatRoomViewModel(room))
-                    } else {
-                        fallback.room = room
-                        fallback.configureDefaultViewModelIfNeeded()
-                    }
-                    chatRoomVC = fallback
-                }
-                chatRoomVC.isRoomSaving = true
-                chatRoomVC.modalPresentationStyle = .fullScreen
-                
-                self.dismiss(animated: false) {
-                    presenter.present(chatRoomVC, animated: true)
-                    
-                    // 4.5) Firestore에 방 저장 + Socket.IO join (백그라운드, 실패 허용)
-                    Task.detached { [weak self, weak chatRoomVC] in
-                        guard let self = self else { return }
-                        do {
-                            try await self.chatRoomRepository.saveRoomInfoToFirestore(room: room)
-                            await MainActor.run {
-                                chatRoomVC?.handleRoomCreationSaveCompleted(savedRoom: room)
-                            }
-                        } catch {
-                            let roomCreationError = (error as? RoomCreationError) ?? .saveFailed
-                            await MainActor.run {
-                                chatRoomVC?.handleRoomCreationSaveFailed(roomCreationError)
-                            }
-                        }
-                    }
-                }
-
-                // 5) 대표 이미지 업로드 (선택적 / 실패 허용)
-                if self.isDefaultRoomImage == false, let pair = self.imageData {
-                    Task.detached(priority: .background) {
-                        do {
-                            let (thumbPath, _) = try await FirebaseImageStorageRepository.shared.uploadAndSave(
-                                sha: pair.fileBaseName,
-                                uid: room.ID ?? "",
-                                type: .roomImage,
-                                thumbData: pair.thumbData,
-                                originalFileURL: pair.originalFileURL
-                            )
-                            
-                            if let image = UIImage(data: pair.thumbData) {
-                                KingFisherCacheManager.shared.storeImage(image, forKey: thumbPath)
-                            }
-                        } catch {
-                            // 업로드 실패는 치명적이지 않음. 추후 재시도 큐에서 처리 가능
-                            print("방 대표 사진 업로드 실패: \(error)")
-                        }
-                    }
-                }
-            } catch {
-                AlertManager.showAlertNoHandler(title: "오류", message: "방 생성 중 오류가 발생했습니다.", viewController: self)
-            }
-        }
+        roomCreateViewModel?.submit()
     }
     
     
     private func addImageButtonSetup() {
+        guard addImageButton.superview == nil else { return }
         view.addSubview(addImageButton)
         addImageButton.addTarget(self, action: #selector(addImageButtonTapped), for: .touchUpInside)
         
@@ -284,23 +199,27 @@ class RoomCreateViewController: UIViewController, ChatModalAnimatable {
     }
     
     private func removeImageButtonSetup() {
-        view.addSubview(removeImageButton)
-        removeImageButton.addTarget(self, action: #selector(removeImageButtonTapped(_:)), for: .touchUpInside)
+        if removeImageButton.superview == nil {
+            view.addSubview(removeImageButton)
+            removeImageButton.addTarget(self, action: #selector(removeImageButtonTapped(_:)), for: .touchUpInside)
+            
+            removeImageButton.translatesAutoresizingMaskIntoConstraints = false
+            NSLayoutConstraint.activate([
+                removeImageButton.centerXAnchor.constraint(equalTo: roomImageView.leadingAnchor),
+                removeImageButton.centerYAnchor.constraint(equalTo: roomImageView.bottomAnchor),
+                removeImageButton.widthAnchor.constraint(equalToConstant: 30),
+                removeImageButton.heightAnchor.constraint(equalToConstant: 30)
+            ])
+        }
         
-        removeImageButton.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            removeImageButton.centerXAnchor.constraint(equalTo: roomImageView.leadingAnchor),
-            removeImageButton.centerYAnchor.constraint(equalTo: roomImageView.bottomAnchor),
-            removeImageButton.widthAnchor.constraint(equalToConstant: 30),
-            removeImageButton.heightAnchor.constraint(equalToConstant: 30)
-        ])
-
+        removeImageButton.isHidden = isDefaultRoomImage
     }
     
     @objc private func removeImageButtonTapped(_ sender: UIButton) {
         roomImageView.image = UIImage(named: "Default_Profile")
         self.imageData = nil
         isDefaultRoomImage = true
+        roomCreateViewModel?.updateSelectedImagePair(nil)
         sender.isHidden = true
     }
     
@@ -386,8 +305,7 @@ extension RoomCreateViewController: UITextViewDelegate {
         default:
             break
         }
-        
-//        return updatedText.count <= 20
+
         return false
     }
     
@@ -396,15 +314,11 @@ extension RoomCreateViewController: UITextViewDelegate {
         
         switch textView {
         case roomNameTextView:
-            roomNameCountLabel.text = "\(text.count) / 20"
+            roomCreateViewModel?.updateRoomName(text)
         case roomDescriptionTextView:
-            roomDescriptionCountLabel.text = "\(text.count) / 200"
+            roomCreateViewModel?.updateRoomDescription(text)
         default:
             break
-        }
-        
-        if !roomNameTextView.text.isEmpty && !roomDescriptionTextView.text.isEmpty {
-            enableCreateBtn()
         }
     }
 }
@@ -414,9 +328,11 @@ extension RoomCreateViewController: PHPickerViewControllerDelegate {
         picker.dismiss(animated: true, completion: nil)
         
         Task { @MainActor in
+            guard !results.isEmpty else { return }
             let p = try await DefaultMediaProcessingService.shared.preparePairs(results)
-            let pair = p.first!
+            guard let pair = p.first else { return }
             self.imageData = pair
+            self.roomCreateViewModel?.updateSelectedImagePair(pair)
             
             self.roomImageView.image = UIImage(data: pair.thumbData)
             self.isDefaultRoomImage = false
@@ -426,32 +342,107 @@ extension RoomCreateViewController: PHPickerViewControllerDelegate {
     }
 }
 
-extension RoomCreateViewController: UIImagePickerControllerDelegate & UINavigationControllerDelegate {
-//    func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
-//        if let selectedImage = info[.originalImage] as? UIImage,
-//           let cgImage = MediaManager.compressImageWithImageIO(selectedImage) {
-//            self.roomImageView.image = UIImage(cgImage: cgImage)
-//            self.roomImageView.accessibilityIdentifier = "Custom_Image"
-//            self.removeImageButtonSetup()
-//            self.enableCreateBtn()
-//        } else if let editedImage = info[.editedImage] as? UIImage,
-//                  let cgImage = MediaManager.compressImageWithImageIO(editedImage) {
-//            self.roomImageView.image = UIImage(cgImage: cgImage)
-//            self.roomImageView.accessibilityIdentifier = "Custom_Image"
-//            self.removeImageButtonSetup()
-//            self.enableCreateBtn()
-//        }
-//
-//        picker.dismiss(animated: true, completion: nil)
-//    }
-//
-//    func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-//        picker.dismiss(animated: true, completion: nil)
-//    }
-
-}
-
 private extension RoomCreateViewController {
+    func configureViewModelIfNeeded() {
+        guard roomCreateViewModel == nil else { return }
+
+        let roomCreateManager = injectedRoomCreateManager ?? RoomCreateManager(
+            chatRoomRepository: firebaseRepositories.chatRoomRepository,
+            imageStorageRepository: FirebaseImageStorageRepository.shared
+        )
+        injectedRoomCreateManager = roomCreateManager
+
+        let createRoomUseCase = injectedCreateRoomUseCase ?? CreateRoomUseCase(manager: roomCreateManager)
+        injectedCreateRoomUseCase = createRoomUseCase
+
+        roomCreateViewModel = RoomCreateViewModel(createRoomUseCase: createRoomUseCase)
+    }
+
+    func bindViewModel() {
+        guard let roomCreateViewModel else { return }
+
+        viewModelCancellables.removeAll()
+
+        roomCreateViewModel.$state
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] state in
+                self?.renderViewModelState(state)
+            }
+            .store(in: &viewModelCancellables)
+
+        roomCreateViewModel.eventPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] event in
+                self?.handleViewModelEvent(event)
+            }
+            .store(in: &viewModelCancellables)
+
+        roomCreateViewModel.updateRoomName(roomNameTextView.text ?? "")
+        roomCreateViewModel.updateRoomDescription(roomDescriptionTextView.text ?? "")
+        roomCreateViewModel.updateSelectedImagePair(imageData)
+    }
+
+    func renderViewModelState(_ state: RoomCreateViewModel.State) {
+        createBtn.isEnabled = state.isCreateEnabled
+        roomNameCountLabel.text = "\(state.roomNameCount) / 20"
+        roomDescriptionCountLabel.text = "\(state.roomDescriptionCount) / 200"
+
+        if state.isSubmitting {
+            LoadingIndicator.shared.start(on: self)
+        } else {
+            LoadingIndicator.shared.stop()
+        }
+    }
+
+    func handleViewModelEvent(_ event: RoomCreateViewModel.Event) {
+        switch event {
+        case .showAlert(let title, let message):
+            AlertManager.showAlertNoHandler(title: title, message: message, viewController: self)
+
+        case .presentCreatedRoom(let room):
+            presentCreatedRoom(room)
+
+        case .roomSaveCompleted(let room):
+            createdChatRoomViewController?.handleRoomCreationSaveCompleted(savedRoom: room)
+
+        case .roomSaveFailed(let error):
+            createdChatRoomViewController?.handleRoomCreationSaveFailed(error)
+        }
+    }
+
+    func presentCreatedRoom(_ room: ChatRoom) {
+        guard let presenter = self.presentingViewController else { return }
+        guard let chatRoomVC = makeCreatedRoomViewController(room: room) else { return }
+
+        createdChatRoomViewController = chatRoomVC
+
+        self.dismiss(animated: false) { [weak presenter] in
+            presenter?.present(chatRoomVC, animated: true)
+        }
+    }
+
+    func makeCreatedRoomViewController(room: ChatRoom) -> ChatViewController? {
+        let chatRoomVC: ChatViewController
+        if let makeCreatedRoomViewController {
+            guard let configured = makeCreatedRoomViewController(room) else { return nil }
+            chatRoomVC = configured
+        } else {
+            let fallback = ChatViewController(provider: ChatDependencyContainer.provider)
+            fallback.injectedFirebaseRepositories = self.firebaseRepositories
+            if let makeChatRoomViewModel {
+                fallback.configure(viewModel: makeChatRoomViewModel(room))
+            } else {
+                fallback.room = room
+                fallback.configureDefaultViewModelIfNeeded()
+            }
+            chatRoomVC = fallback
+        }
+
+        chatRoomVC.isRoomSaving = true
+        chatRoomVC.modalPresentationStyle = .fullScreen
+        return chatRoomVC
+    }
+
     @MainActor
     func setupCustomNavigationBar() {
         self.view.addSubview(customNavigationBar)

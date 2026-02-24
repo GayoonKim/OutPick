@@ -30,6 +30,9 @@ final class BannerManager {
 
     /// 배너용 구독 시작(참여 중인 모든 방)
     func start(for joinedRoomIDs: [String]) {
+        #if DEBUG
+        print("[BannerManager] start joinedRooms=\(joinedRoomIDs.count) subscribed=\(roomSubscriptions.count)")
+        #endif
         // 불필요 구독 제거
         let toRemove = Set(roomSubscriptions.keys).subtracting(joinedRoomIDs)
         toRemove.forEach { removeRoom($0) }
@@ -42,6 +45,10 @@ final class BannerManager {
     /// 개별 방 추가
     func addRoom(_ roomID: String) {
         guard roomSubscriptions[roomID] == nil else { return }
+
+        #if DEBUG
+        print("[BannerManager] addRoom subscription room=\(roomID)")
+        #endif
 
         // LRU 준비
         if recentPerRoom[roomID] == nil {
@@ -58,6 +65,10 @@ final class BannerManager {
                 let text: String = bannerText(from: msg)
                 let messageDate = msg.sentAt ?? Date()
 
+                #if DEBUG
+                print("[BannerManager] incoming room=\(roomID) msgID=\(msg.ID) sender=\(msg.senderID) visible=\(self.currentVisibleRoomID.value ?? "nil")")
+                #endif
+
                 Task { @MainActor [weak self] in
                     guard let self else { return }
                     self.chatRoomRepository.applyRealtimeSummaryPatch(
@@ -70,15 +81,30 @@ final class BannerManager {
                 }
                 
                 // 현재 방 보고 있으면 배너 X (화면이 실시간 UI 반영)
-                if self.currentVisibleRoomID.value == roomID { return }
+                if self.currentVisibleRoomID.value == roomID {
+                    #if DEBUG
+                    print("[BannerManager] skip banner (visible room) room=\(roomID)")
+                    #endif
+                    return
+                }
 
                 // 중복 배너 방지
                 let id = msg.ID
-                if self.recentPerRoom[roomID]?.contains(id) == true { return }
+                if self.recentPerRoom[roomID]?.contains(id) == true {
+                    #if DEBUG
+                    print("[BannerManager] skip banner (duplicate) room=\(roomID) msgID=\(id)")
+                    #endif
+                    return
+                }
                 self.recentPerRoom[roomID]?.insert(id)
 
                 // 내가 보낸 메시지 mute 옵션
-                if self.muteOwnMessages, msg.senderID == LoginManager.shared.getUserEmail { return }
+                if self.muteOwnMessages, msg.senderID == LoginManager.shared.getUserEmail {
+                    #if DEBUG
+                    print("[BannerManager] skip banner (own message) room=\(roomID) sender=\(msg.senderID)")
+                    #endif
+                    return
+                }
 
                 // 배너 내용 구성
                 let payload = BannerPayload(
@@ -94,6 +120,9 @@ final class BannerManager {
 
     /// 개별 방 제거
     func removeRoom(_ roomID: String) {
+        #if DEBUG
+        print("[BannerManager] removeRoom subscription room=\(roomID)")
+        #endif
         roomSubscriptions[roomID]?.cancel()
         roomSubscriptions[roomID] = nil
         recentPerRoom[roomID] = nil
@@ -104,16 +133,19 @@ final class BannerManager {
 
     // 화면 전환 시 호출(채팅방 진입/이탈)
     func setVisibleRoom(_ roomID: String?) {
+        #if DEBUG
+        print("[BannerManager] setVisibleRoom -> \(roomID ?? "nil")")
+        #endif
         currentVisibleRoomID.send(roomID)
     }
     
     private func showBanner(message: BannerPayload) {
         let title = message.title
         let msg = message.body
-        
+        print(#function, title, msg)
         let bannerView = ChatBannerView()
         bannerView.configure(title: title, subtitle: msg, onTap: { [weak self] in
-            guard let self = self else { return }
+            guard self != nil else { return }
             
             print(#function, "메시지 배너 탭", message)
         }

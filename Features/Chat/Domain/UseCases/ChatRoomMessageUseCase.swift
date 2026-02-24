@@ -19,9 +19,9 @@ protocol ChatRoomMessageUseCaseProtocol {
 }
 
 final class ChatRoomMessageUseCase: ChatRoomMessageUseCaseProtocol {
-    private let messageManager: ChatMessageManagerProtocol
+    private let messageManager: ChatMessageManaging
 
-    init(messageManager: ChatMessageManagerProtocol) {
+    init(messageManager: ChatMessageManaging) {
         self.messageManager = messageManager
     }
 

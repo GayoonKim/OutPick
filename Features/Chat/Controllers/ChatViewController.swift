@@ -76,15 +76,15 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private var searchGeneration: Int = 0
     
     // MARK: - Managers (의존성 주입)
-    private let messageManager: ChatMessageManagerProtocol
-    private let mediaManager: ChatMediaManagerProtocol
-    private let searchManager: ChatSearchManagerProtocol
-    private let hotUserManager: HotUserManagerProtocol
+    private let messageManager: ChatMessageManaging
+    private let mediaManager: ChatMediaManaging
+    private let searchManager: ChatSearchManaging
+    private let hotUserManager: HotUserManaging
     var injectedFirebaseRepositories: FirebaseRepositoryProviding?
 
     /// 의존성 주입을 위한 초기화 (테스트 용이성)
     /// - NOTE: Programmatic init 경로에서 사용
-    init(provider: ChatRepositoryProviding = ChatDependencyContainer.provider) {
+    init(provider: ChatManagerProviding = ChatDependencyContainer.provider) {
         self.messageManager = provider.messageManager
         self.mediaManager = provider.mediaManager
         self.searchManager = provider.searchManager
@@ -306,6 +306,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private var scrollTargetIndex: IndexPath?
     
     private var lastContainerViewOriginY: Double = 0
+    private var subscribedMessageRoomID: String?
     
     // MARK: - Hot user pool (HotUserManager에서 관리)
     
@@ -357,7 +358,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         isUserInCurrentRoom = false
         
         if let room = self.room {
-            SocketIOManager.shared.unsubscribeFromMessages(for: room.ID ?? "")
+            if let subscribedMessageRoomID {
+                SocketIOManager.shared.unsubscribeFromMessages(for: subscribedMessageRoomID)
+                self.subscribedMessageRoomID = nil
+            }
             
             if ChatViewController.currentRoomID == room.ID {
                 ChatViewController.currentRoomID = nil    // ✅ 나갈 때 초기화
@@ -551,7 +555,19 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private func bindMessagePublishers() {
         guard let room = self.room,
               let viewModel = chatRoomViewModel ?? ensureChatRoomViewModel() else { return }
-        SocketIOManager.shared.subscribeToMessages(for: room.ID ?? "")
+        let roomID = room.ID ?? ""
+        guard !roomID.isEmpty else { return }
+
+        // Prevent duplicate subscriptions for the same room on repeated UI setup/binding paths.
+        guard subscribedMessageRoomID != roomID else { return }
+
+        if let previousRoomID = subscribedMessageRoomID {
+            SocketIOManager.shared.unsubscribeFromMessages(for: previousRoomID)
+        }
+
+        subscribedMessageRoomID = roomID
+
+        SocketIOManager.shared.subscribeToMessages(for: roomID)
             .sink { [weak self] receivedMessage in
                 guard let self = self else { return }
                 Task {
@@ -1260,6 +1276,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                     self.chatUIView.isHidden = false
                     self.chatMessageCollectionView.isHidden = false
                     self.bindRoomChangePublisher()
+                    self.bindMessagePublishers()
                     self.view.layoutIfNeeded()
                 }
                 LoadingIndicator.shared.stop()
@@ -2707,7 +2724,7 @@ extension ChatViewController {
         Task {
             do {
                 try await viewModel.persistIncrementalLastReadSeq(
-                    userUID: LoginManager.shared.getRoomStateUserKey,
+                    userUID: LoginManager.shared.getUserDocumentID,
                     isNearBottom: isNearBottom(),
                     skipNearBottomCheck: skipNearBottomCheck
                 )
@@ -2723,7 +2740,7 @@ extension ChatViewController {
 
         Task {
             do {
-                try await viewModel.persistFinalLastReadSeq(userUID: LoginManager.shared.getRoomStateUserKey)
+                try await viewModel.persistFinalLastReadSeq(userUID: LoginManager.shared.getUserDocumentID)
                 let rid = viewModel.roomID
                 if !rid.isEmpty {
                     NotificationCenter.default.post(

@@ -8,7 +8,7 @@
 import Foundation
 import Combine
 
-final class ChatMessageManager: ChatMessageManagerProtocol {
+final class ChatMessageManager: ChatMessageManaging {
     private let messageRepository: FirebaseMessageRepositoryProtocol
     private let grdbManager: GRDBManager
     

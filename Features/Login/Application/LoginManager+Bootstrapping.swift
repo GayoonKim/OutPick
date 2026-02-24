@@ -14,6 +14,7 @@ extension LoginManager: LoginBootstrappingProtocol {
     func bootstrapAfterLogin(userEmail: String, joinedRoomsStore: JoinedRoomsStore) async throws {
         // 0) 세션 이메일 확정
         setUserEmail(userEmail)
+        _ = try await ensureUserDocumentID()
 
         // 1) 프로필 리스너 시작
         userProfileRepository.listenToUserProfile(

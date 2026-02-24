@@ -100,6 +100,10 @@ final class SecondProfileViewModel {
                 // 여기 정책은 프로젝트 상황에 맞춰 조정
                 throw FirebaseError.FailedToSaveProfile
             }
+            let userDocumentID = try await LoginManager.shared.ensureUserDocumentID()
+            if userDocumentID.isEmpty {
+                throw FirebaseError.FailedToSaveProfile
+            }
 
             // 2) 닉네임 중복 체크(Repository API 사용)
             let duplicated = try await repository.checkDuplicate(
@@ -136,7 +140,7 @@ final class SecondProfileViewModel {
 
                 let uploaded = try await FirebaseImageStorageRepository.shared.uploadImage(
                     sha: sha,
-                    uid: LoginManager.shared.getRoomStateUserKey,
+                    uid: userDocumentID,
                     type: .profileImage,               // 프로젝트 enum에 맞게 변경 필요
                     thumbData: thumbData,
                     originalFileURL: fileURL,

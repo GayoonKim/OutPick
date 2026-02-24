@@ -1,5 +1,5 @@
 //
-//  ChatMessageManagerProtocol.swift
+//  ChatMessageManaging.swift
 //  OutPick
 //
 //  Created by 김가윤 on 1/15/25.
@@ -9,7 +9,7 @@ import Foundation
 import Combine
 
 /// 메시지 관리 관련 비즈니스 로직을 위한 프로토콜
-protocol ChatMessageManagerProtocol {
+protocol ChatMessageManaging {
     /// 초기 메시지 로드
     func loadInitialMessages(room: ChatRoom, isParticipant: Bool) async throws -> (local: [ChatMessage], server: [ChatMessage])
     

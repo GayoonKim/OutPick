@@ -38,7 +38,7 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol {
     private var currentSearchKeyword: String = ""
     
     // 작업 관리
-    private var addRoomParticipantTask: Task<Void, Never>?
+    private var addRoomParticipantTask: Task<Void, Error>?
     private var removeParticipantTask: Task<Void, Never>?
     
     init(db: Firestore) {
@@ -549,31 +549,38 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol {
     
     func addRoomParticipant(room: ChatRoom) async throws {
         addRoomParticipantTask?.cancel()
-        addRoomParticipantTask = Task {
-            do {
-                guard let roomDoc = try await getRoomDoc(room: room) else { return }
-                let userKey = LoginManager.shared.getRoomStateUserKey
-                guard !userKey.isEmpty else {
-                    print("⚠️ addRoomParticipant: userKey 없음")
-                    return
-                }
-                let userRef = db.collection("users").document(userKey)
-                
-                let _ = try await db.runTransaction({ (transaction, errorPointer) -> Any? in
-                    transaction.updateData(["joinedRooms": FieldValue.arrayUnion([room.ID ?? ""])], forDocument: userRef)
-                    transaction.updateData([
-                        "participantIDs": FieldValue.arrayUnion([LoginManager.shared.getUserEmail]),
-                        "updatedAt": FieldValue.serverTimestamp()
-                    ], forDocument: roomDoc.reference)
-                    return nil
-                })
-                
-                print(#function, "참여자 업데이트 성공")
-                addRoomParticipantTask = nil
-            } catch {
-                print(#function, "방 참여자 업데이트 트랜젝션 실패: \(error)")
+        let task = Task { [weak self] in
+            guard let self else { return }
+            guard let roomDoc = try await self.getRoomDoc(room: room) else { return }
+            guard let roomID = room.ID, !roomID.isEmpty else {
+                throw FirebaseError.FailedToFetchRoom
             }
+
+            let userProfileRef = try self.currentUserProfileRef()
+
+            _ = try await self.db.runTransaction({ (transaction, errorPointer) -> Any? in
+                transaction.setData([
+                    "joinedRooms": FieldValue.arrayUnion([roomID]),
+                    "updatedAt": FieldValue.serverTimestamp()
+                ], forDocument: userProfileRef, merge: true)
+                transaction.updateData([
+                    "participantIDs": FieldValue.arrayUnion([LoginManager.shared.getUserEmail]),
+                    "updatedAt": FieldValue.serverTimestamp()
+                ], forDocument: roomDoc.reference)
+                return nil
+            })
         }
+        addRoomParticipantTask = task
+        defer { addRoomParticipantTask = nil }
+
+        do {
+            try await task.value
+            print(#function, "참여자 업데이트 성공")
+        } catch {
+            print(#function, "방 참여자 업데이트 트랜젝션 실패: \(error)")
+            throw error
+        }
+
     }
     
     func addRoomParticipantReturningRoom(roomID: String) async throws -> ChatRoom {
@@ -581,15 +588,14 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol {
             throw FirebaseError.FailedToFetchRoom
         }
         let email = LoginManager.shared.getUserEmail
-        let userKey = LoginManager.shared.getRoomStateUserKey
-        guard !userKey.isEmpty else {
-            throw FirebaseError.FailedToFetchRoom
-        }
-        let userRef = db.collection("users").document(userKey)
         let roomRef = db.collection("Rooms").document(roomID)
+        let userProfileRef = try currentUserProfileRef()
         
         _ = try await db.runTransaction { (transaction, errorPointer) -> Any? in
-            transaction.updateData(["joinedRooms": FieldValue.arrayUnion([roomID])], forDocument: userRef)
+            transaction.setData([
+                "joinedRooms": FieldValue.arrayUnion([roomID]),
+                "updatedAt": FieldValue.serverTimestamp()
+            ], forDocument: userProfileRef, merge: true)
             transaction.updateData([
                 "participantIDs": FieldValue.arrayUnion([email]),
                 "updatedAt": FieldValue.serverTimestamp()
@@ -619,15 +625,13 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol {
                     return
                 }
                 let email = LoginManager.shared.getUserEmail
-                let userKey = LoginManager.shared.getRoomStateUserKey
-                guard !userKey.isEmpty else {
-                    print("⚠️ removeParticipant: userKey 없음")
-                    return
-                }
-                let userRef = db.collection("users").document(userKey)
+                let userProfileRef = try currentUserProfileRef()
                 let roomRef = db.collection("Rooms").document(roomID)
                 let _ = try await db.runTransaction({ (transaction, errorPointer) -> Any? in
-                    transaction.updateData(["joinedRooms": FieldValue.arrayRemove([roomID])], forDocument: userRef)
+                    transaction.setData([
+                        "joinedRooms": FieldValue.arrayRemove([roomID]),
+                        "updatedAt": FieldValue.serverTimestamp()
+                    ], forDocument: userProfileRef, merge: true)
                     transaction.updateData([
                         "participantIDs": FieldValue.arrayRemove([email]),
                         "updatedAt": FieldValue.serverTimestamp()
@@ -696,5 +700,14 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol {
         if let value = raw as? String, let parsed = Int64(value) { return parsed }
         if let value = raw as? Double { return Int64(value) }
         return nil
+    }
+
+    private func currentUserProfileRef() throws -> DocumentReference {
+        let userDocumentID = LoginManager.shared.getUserDocumentID
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !userDocumentID.isEmpty else {
+            throw FirebaseError.FailedToFetchProfile
+        }
+        return db.collection("users").document(userDocumentID)
     }
 }

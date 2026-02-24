@@ -71,17 +71,15 @@ final class ChatCoordinator {
     private func presentCreateRoom(from source: UIViewController) {
         ChatDependencyContainer.provider = container.provider
         ChatDependencyContainer.firebaseRepositories = container.firebaseRepositories
-        let storyboard = UIStoryboard(name: "Main", bundle: nil)
-        guard let createVC = storyboard.instantiateViewController(identifier: "chatRoomCreateVC") as? RoomCreateViewController else {
-            return
-        }
-        createVC.injectedFirebaseRepositories = container.firebaseRepositories
-        createVC.makeChatRoomViewModel = { [container] room in
-            container.makeChatRoomViewModel(room: room)
-        }
-        createVC.makeSavingChatViewController = { [weak self] room in
-            self?.makeChatRoomViewController(room: room, isRoomSaving: true)
-        }
+        let createVC = RoomCreateViewController(
+            injectedFirebaseRepositories: container.firebaseRepositories,
+            makeChatRoomViewModel: { [container] room in
+                container.makeChatRoomViewModel(room: room)
+            },
+            makeCreatedRoomViewController: { [weak self] room in
+                self?.makeChatRoomViewController(room: room, isRoomSaving: true)
+            }
+        )
         createVC.modalPresentationStyle = .fullScreen
         ChatModalTransitionManager.present(createVC, from: source)
     }

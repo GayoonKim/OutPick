@@ -13,7 +13,7 @@ import Combine
 ///         container 생성 시점에 provider를 동기화합니다.
 @MainActor
 final class ChatContainer {
-    let provider: ChatRepositoryProviding
+    let provider: ChatManagerProviding
     let firebaseRepositories: FirebaseRepositoryProviding
     let roomRepository: FirebaseChatRoomRepositoryProtocol
     let userProfileRepository: UserProfileRepositoryProtocol
@@ -30,7 +30,7 @@ final class ChatContainer {
     private var runtimeJoinedRooms: Set<String> = []
 
     init(
-        provider: ChatRepositoryProviding = ChatRepositoryProvider(),
+        provider: ChatManagerProviding = ChatManagerProvider(),
         roomRepository: FirebaseChatRoomRepositoryProtocol? = nil,
         userProfileRepository: UserProfileRepositoryProtocol? = nil,
         joinedRoomsStore: JoinedRoomsStore,

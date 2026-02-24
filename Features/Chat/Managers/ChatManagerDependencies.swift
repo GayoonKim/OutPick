@@ -1,5 +1,5 @@
 //
-//  ChatRepositoryProvider.swift
+//  ChatManagerProvider.swift
 //  OutPick
 //
 //  Created by 김가윤 on 12/17/25.
@@ -7,24 +7,24 @@
 
 import Foundation
 
-protocol ChatRepositoryProviding {
-    var messageManager: ChatMessageManagerProtocol { get }
-    var mediaManager: ChatMediaManagerProtocol { get }
-    var searchManager: ChatSearchManagerProtocol { get }
-    var hotUserManager: HotUserManagerProtocol { get }
+protocol ChatManagerProviding {
+    var messageManager: ChatMessageManaging { get }
+    var mediaManager: ChatMediaManaging { get }
+    var searchManager: ChatSearchManaging { get }
+    var hotUserManager: HotUserManaging { get }
 }
 
-struct ChatRepositoryProvider: ChatRepositoryProviding {
-    let messageManager: ChatMessageManagerProtocol
-    let mediaManager: ChatMediaManagerProtocol
-    let searchManager: ChatSearchManagerProtocol
-    let hotUserManager: HotUserManagerProtocol
+struct ChatManagerProvider: ChatManagerProviding {
+    let messageManager: ChatMessageManaging
+    let mediaManager: ChatMediaManaging
+    let searchManager: ChatSearchManaging
+    let hotUserManager: HotUserManaging
 
     init(
-        messageManager: ChatMessageManagerProtocol = ChatMessageManager(),
-        mediaManager: ChatMediaManagerProtocol = ChatMediaManager(),
-        searchManager: ChatSearchManagerProtocol = ChatSearchManager(),
-        hotUserManager: HotUserManagerProtocol = HotUserManager()
+        messageManager: ChatMessageManaging = ChatMessageManager(),
+        mediaManager: ChatMediaManaging = ChatMediaManager(),
+        searchManager: ChatSearchManaging = ChatSearchManager(),
+        hotUserManager: HotUserManaging = HotUserManager()
     ) {
         self.messageManager = messageManager
         self.mediaManager = mediaManager
@@ -35,7 +35,7 @@ struct ChatRepositoryProvider: ChatRepositoryProviding {
 
 /// 전역 DI 컨테이너 (앱 시작 시점/테스트에서 교체 가능)
 enum ChatDependencyContainer {
-    static var provider: ChatRepositoryProviding = ChatRepositoryProvider()
+    static var provider: ChatManagerProviding = ChatManagerProvider()
     static var firebaseRepositories: FirebaseRepositoryProviding?
     static var joinedRoomsStore: JoinedRoomsStore?
 

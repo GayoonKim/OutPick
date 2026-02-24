@@ -14,9 +14,9 @@ protocol ChatRoomSearchUseCaseProtocol {
 }
 
 final class ChatRoomSearchUseCase: ChatRoomSearchUseCaseProtocol {
-    private let searchManager: ChatSearchManagerProtocol
+    private let searchManager: ChatSearchManaging
 
-    init(searchManager: ChatSearchManagerProtocol) {
+    init(searchManager: ChatSearchManaging) {
         self.searchManager = searchManager
     }
 

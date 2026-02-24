@@ -32,6 +32,7 @@ final class LoginManager {
 
     private var userEmail: String = ""
     private var authUserKey: String = ""
+    private var userDocumentID: String = ""
     private(set) var currentUserProfile: UserProfile?
 
     var deviceIDListener: ListenerRegistration?
@@ -53,13 +54,23 @@ final class LoginManager {
     private var didInvokeForceLogoutCallback: Bool = false
 
     var getUserEmail: String { userEmail }
+    var getUserDocumentID: String { userDocumentID }
     var getUserUID: String {
+        // Legacy getter name.
+        // authUserKey stores the provider identity key (not users/{documentID}).
+        // (Google path currently uses Firebase UID, Kakao uses "kakao:<id>")
+        if !authUserKey.isEmpty {
+            return authUserKey
+        }
         if let uid = Auth.auth().currentUser?.uid, !uid.isEmpty {
             return uid
         }
-        return authUserKey
+        return ""
     }
     var getRoomStateUserKey: String {
+        if !getUserDocumentID.isEmpty {
+            return getUserDocumentID
+        }
         if !getUserUID.isEmpty {
             return getUserUID
         }
@@ -78,6 +89,14 @@ final class LoginManager {
         self.authUserKey = ""
     }
 
+    func setUserDocumentID(_ id: String) {
+        self.userDocumentID = id.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    func clearUserDocumentID() {
+        self.userDocumentID = ""
+    }
+
     func setCurrentUserProfile(_ profile: UserProfile?) {
         self.currentUserProfile = profile
     }
@@ -86,6 +105,7 @@ final class LoginManager {
 
     func checkExistingLogin() async -> Bool {
         clearAuthUserKey()
+        clearUserDocumentID()
 
         if let email = await authRepository.restoreGoogleEmailIfLoggedIn() {
             setUserEmail(email)
@@ -111,6 +131,12 @@ final class LoginManager {
     }
 
     func loadUserProfile() async -> Result<UserProfile, Error> {
+        do {
+            _ = try await ensureUserDocumentID()
+        } catch {
+            return .failure(error)
+        }
+
         if let data = KeychainManager.shared.read(service: "GayoonKim.OutPick", account: "UserProfile"),
            let profile = try? JSONDecoder().decode(UserProfile.self, from: data) {
             if isProfileValidForMainFlow(profile) {
@@ -138,14 +164,30 @@ final class LoginManager {
         }
     }
 
+    func ensureUserDocumentID() async throws -> String {
+        if !userDocumentID.isEmpty { return userDocumentID }
+
+        let normalizedEmail = userEmail.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalizedEmail.isEmpty else { throw FirebaseError.FailedToFetchProfile }
+
+        let identityKey = authUserKey.isEmpty ? "email:\(normalizedEmail)" : authUserKey
+        let resolved = try await userProfileRepository.resolveOrCreateUserDocumentID(
+            identityKey: identityKey,
+            email: normalizedEmail
+        )
+        setUserDocumentID(resolved)
+        return resolved
+    }
+
     // MARK: - 중복 로그인
 
-    /// 새 기기 로그인 시, users/{userKey}/meta/session.deviceID를 내 deviceID로 갱신한다.
+    /// 새 기기 로그인 시, users/{userDocumentID}/meta/session.deviceID를 내 deviceID로 갱신한다.
     /// 기존 기기는 리스너가 감지해서 로그아웃된다.
     func updateLogDevID() async throws {
         let deviceID = await UIDevice.persistentDeviceID
         let email = self.getUserEmail
         guard !email.isEmpty else { return }
+        _ = try await ensureUserDocumentID()
 
         try await userProfileRepository.upsertDeviceID(email: email, deviceID: deviceID)
 
@@ -221,6 +263,7 @@ final class LoginManager {
         // 세션 정리
         self.userEmail = ""
         self.authUserKey = ""
+        self.userDocumentID = ""
         self.currentUserProfile = nil
 
         // 콜백 재사용을 위해 플래그 초기화

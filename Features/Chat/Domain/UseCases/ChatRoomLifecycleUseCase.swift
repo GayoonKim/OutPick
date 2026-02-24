@@ -71,8 +71,7 @@ final class ChatRoomLifecycleUseCase: ChatRoomLifecycleUseCaseProtocol {
     @MainActor
     func handleRoomSaved(roomID: String) {
         guard !roomID.isEmpty else { return }
-        chatRoomRepository.startListenRoomDoc(roomID: roomID)
-        joinedRoomsStore.add(roomID)
+        activateJoinedRoomRealtime(roomID: roomID)
 
         guard socketManager.isConnected else { return }
         socketManager.createRoom(roomID)
@@ -90,8 +89,7 @@ final class ChatRoomLifecycleUseCase: ChatRoomLifecycleUseCaseProtocol {
 
         let updatedRoom = try await chatRoomRepository.addRoomParticipantReturningRoom(roomID: roomID)
         chatRoomRepository.applyLocalRoomUpdate(updatedRoom)
-        chatRoomRepository.startListenRoomDoc(roomID: roomID)
-        joinedRoomsStore.add(roomID)
+        activateJoinedRoomRealtime(roomID: roomID)
 
         return updatedRoom
     }
@@ -108,5 +106,15 @@ final class ChatRoomLifecycleUseCase: ChatRoomLifecycleUseCaseProtocol {
     @MainActor
     func clearActiveAnnouncement(roomID: String) async throws {
         try await announcementRepository.clearActiveAnnouncement(roomID: roomID)
+    }
+
+    @MainActor
+    private func activateJoinedRoomRealtime(roomID: String) {
+        guard !roomID.isEmpty else { return }
+        chatRoomRepository.startListenRoomDoc(roomID: roomID)
+        joinedRoomsStore.add(roomID)
+        // Directly register the banner subscription on join success to avoid
+        // timing gaps while the JoinedRoomsStore -> ChatContainer pipeline catches up.
+        BannerManager.shared.addRoom(roomID)
     }
 }

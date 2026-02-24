@@ -7,7 +7,7 @@
 
 import Foundation
 
-final class ChatSearchManager: ChatSearchManagerProtocol {
+final class ChatSearchManager: ChatSearchManaging {
     private let grdbManager: GRDBManager
     
     init(grdbManager: GRDBManager = .shared) {

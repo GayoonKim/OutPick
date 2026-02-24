@@ -1,5 +1,5 @@
 //
-//  HotUserManagerProtocol.swift
+//  HotUserManaging.swift
 //  OutPick
 //
 //  Created by 김가윤 on 1/15/25.
@@ -9,7 +9,7 @@ import Foundation
 import Combine
 
 /// 실시간 프로필 업데이트를 위한 HotUser 관리 프로토콜
-protocol HotUserManagerProtocol {
+protocol HotUserManaging {
     /// HotUser 풀 업데이트
     func updateHotUserPool(for email: String, lastSeenAt: Date)
     

@@ -218,8 +218,9 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
             return
         }
 
-        let storyboard = UIStoryboard(name: "Main", bundle: nil)
-        guard let chatRoomCreateVC = storyboard.instantiateViewController(identifier: "chatRoomCreateVC") as? RoomCreateViewController else { return }
+        let chatRoomCreateVC = RoomCreateViewController(
+            injectedFirebaseRepositories: ChatDependencyContainer.firebaseRepositories
+        )
         chatRoomCreateVC.modalPresentationStyle = .fullScreen
         
         ChatModalTransitionManager.present(chatRoomCreateVC, from: self)

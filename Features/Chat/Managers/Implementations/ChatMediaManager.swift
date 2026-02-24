@@ -11,7 +11,7 @@ import Kingfisher
 import AVFoundation
 import AVKit
 
-final class ChatMediaManager: ChatMediaManagerProtocol {
+final class ChatMediaManager: ChatMediaManaging {
     private let imageStorageManager: FirebaseImageStorageRepositoryProtocol
     private let cacheManager: KingFisherCacheManager
     private let storageURLCache: OPStorageURLCache
