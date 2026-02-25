@@ -30,5 +30,7 @@ protocol FirebaseMessageRepositoryProtocol {
     
     /// 특정 메시지 이후의 최신 메시지 조회
     func fetchMessagesAfter(room: ChatRoom, after messageID: String, limit: Int) async throws -> [ChatMessage]
-}
 
+    /// 서버 인덱스 기반 방 전체 메시지 검색 (추후 백엔드 검색 API 연동)
+    func searchMessagesInRoom(roomID: String, keyword: String) async throws -> ChatMessageServerSearchResponse
+}

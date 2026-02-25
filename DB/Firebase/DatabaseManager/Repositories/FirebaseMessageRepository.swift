@@ -301,5 +301,42 @@ final class FirebaseMessageRepository: FirebaseMessageRepositoryProtocol {
             return []
         }
     }
+
+    func searchMessagesInRoom(roomID: String, keyword: String) async throws -> ChatMessageServerSearchResponse {
+        guard !roomID.isEmpty else {
+            return ChatMessageServerSearchResponse(totalCount: 0, hits: [])
+        }
+        guard let tokenQuery = ChatMessageSearchIndex.queryToken(for: keyword) else {
+            return ChatMessageServerSearchResponse(totalCount: 0, hits: [])
+        }
+
+        let snapshot = try await db.collection("Rooms")
+            .document(roomID)
+            .collection("Messages")
+            .whereField(tokenQuery.field, arrayContains: tokenQuery.token)
+            .getDocuments()
+
+        let candidates: [ChatMessage] = snapshot.documents.compactMap { doc in
+            var dict = doc.data()
+            if dict["ID"] == nil { dict["ID"] = doc.documentID }
+            if let msg = ChatMessage.from(dict) { return msg }
+            do { return try doc.data(as: ChatMessage.self) } catch {
+                print("⚠️ 검색 디코딩 실패: \(error), docID: \(doc.documentID)")
+                return nil
+            }
+        }
+
+        let filtered = candidates
+            .filter { ChatMessageSearchIndex.contains($0.msg, keyword: keyword) }
+            .sorted { lhs, rhs in
+                if lhs.seq != rhs.seq { return lhs.seq < rhs.seq }
+                return lhs.ID < rhs.ID
+            }
+
+        let hits = filtered.map { message in
+            ChatMessageSearchHit(message: message, snippet: message.msg)
+        }
+        return ChatMessageServerSearchResponse(totalCount: hits.count, hits: hits)
+    }
     
 }

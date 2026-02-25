@@ -8,7 +8,7 @@
 import Foundation
 
 protocol ChatRoomSearchUseCaseProtocol {
-    func searchMessages(roomID: String, keyword: String) async throws -> [ChatMessage]
+    func searchMessages(roomID: String, keyword: String) async throws -> ChatMessageSearchResult
     func applyHighlight(messageIDs: Set<String>) -> Set<String>
     func clearHighlight() -> Set<String>
 }
@@ -20,7 +20,7 @@ final class ChatRoomSearchUseCase: ChatRoomSearchUseCaseProtocol {
         self.searchManager = searchManager
     }
 
-    func searchMessages(roomID: String, keyword: String) async throws -> [ChatMessage] {
+    func searchMessages(roomID: String, keyword: String) async throws -> ChatMessageSearchResult {
         try await searchManager.searchMessages(roomID: roomID, keyword: keyword)
     }
 

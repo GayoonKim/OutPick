@@ -59,6 +59,30 @@ class ChatImagePreviewCollectionView: UIView {
     private func configureLayout() -> UICollectionViewCompositionalLayout {
         return UICollectionViewCompositionalLayout { [weak self] (sectionIndex, environment) -> NSCollectionLayoutSection? in
             guard let self = self else { return nil }
+
+            // Async thumbnail loading 중에는 잠시 0개 상태가 올 수 있다.
+            // Compositional group은 최소 1개의 subitem이 필요하므로 fallback 레이아웃을 반환한다.
+            if self.imagesCount == 0 {
+                let itemSize = NSCollectionLayoutSize(
+                    widthDimension: .fractionalWidth(1.0),
+                    heightDimension: .fractionalHeight(1.0)
+                )
+                let item = NSCollectionLayoutItem(layoutSize: itemSize)
+                item.contentInsets = NSDirectionalEdgeInsets(
+                    top: self.itemSpacing,
+                    leading: self.itemSpacing,
+                    bottom: self.itemSpacing,
+                    trailing: self.itemSpacing
+                )
+
+                let fallbackHeight = max(1, self.contentHeight > 0 ? self.contentHeight : self.singleItemHeight)
+                let groupSize = NSCollectionLayoutSize(
+                    widthDimension: .fractionalWidth(1.0),
+                    heightDimension: .absolute(fallbackHeight)
+                )
+                let group = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize, subitems: [item])
+                return NSCollectionLayoutSection(group: group)
+            }
             
             if self.imagesCount == 1 {
                 // 단일 이미지일 때는 큰 크기로
@@ -96,6 +120,20 @@ class ChatImagePreviewCollectionView: UIView {
                     let group = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize, subitems: Array(repeating: item, count: itemsInRow))
                     groups.append(group)
                 }
+
+                if groups.isEmpty {
+                    let itemSize = NSCollectionLayoutSize(
+                        widthDimension: .fractionalWidth(1.0),
+                        heightDimension: .fractionalHeight(1.0)
+                    )
+                    let item = NSCollectionLayoutItem(layoutSize: itemSize)
+                    let groupSize = NSCollectionLayoutSize(
+                        widthDimension: .fractionalWidth(1.0),
+                        heightDimension: .absolute(max(1, self.contentHeight))
+                    )
+                    let fallbackGroup = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize, subitems: [item])
+                    return NSCollectionLayoutSection(group: fallbackGroup)
+                }
                 
                 let containerGroup = NSCollectionLayoutGroup.vertical(
                     layoutSize: NSCollectionLayoutSize(
@@ -113,7 +151,7 @@ class ChatImagePreviewCollectionView: UIView {
     
     private func configureDataSource() {
         dataSource = UICollectionViewDiffableDataSource(collectionView: collectionView) { [weak self] collectionView, indexPath, image in
-            guard let self = self else { return nil }
+            guard self != nil else { return nil }
 
             let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ChatImagePreviewCell.reuseIdentifier, for: indexPath) as! ChatImagePreviewCell
             // 1) Set low-res thumbnail immediately

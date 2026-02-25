@@ -617,6 +617,60 @@ final class GRDBManager {
             }
         }
     }
+
+    func fetchNewerMessages(inRoom roomID: String, after anchorMessageID: String, limit: Int) async throws -> [ChatMessage] {
+        try await dbPool.read { db in
+            guard let anchorRow = try Row.fetchOne(
+                db,
+                sql: "SELECT id, seq FROM chatMessage WHERE roomID = ? AND id = ? LIMIT 1",
+                arguments: [roomID, anchorMessageID]
+            ) else {
+                return []
+            }
+            let anchorSeq: Int64 = (anchorRow["seq"] as? Int64) ?? 0
+
+            let rows = try Row.fetchAll(
+                db,
+                sql: """
+                SELECT * FROM chatMessage
+                WHERE roomID = ?
+                  AND seq > ?
+                ORDER BY seq ASC, id ASC
+                LIMIT ?
+                """,
+                arguments: [roomID, anchorSeq, limit]
+            )
+
+            return try rows.compactMap { row in
+                let attachmentsJSON = row["attachments"] as? String ?? "[]"
+                let attachments = try JSONDecoder().decode([Attachment].self, from: Data(attachmentsJSON.utf8))
+
+                let rpJSON = row["replyPreview"] as? String
+                let replyPreview: ReplyPreview? = {
+                    guard let rpJSON, let data = rpJSON.data(using: .utf8) else { return nil }
+                    return try? JSONDecoder().decode(ReplyPreview.self, from: data)
+                }()
+
+                var message = ChatMessage(
+                    ID: row["id"],
+                    seq: (row["seq"] as? Int64) ?? 0,
+                    roomID: row["roomID"],
+                    senderID: row["senderID"],
+                    senderNickname: row["senderNickname"],
+                    msg: row["msg"],
+                    sentAt: row["sentAt"],
+                    attachments: attachments,
+                    replyPreview: replyPreview,
+                    isFailed: (row["isFailed"] as? Int64 == 1)
+                )
+                message.isDeleted = (row["isDeleted"] as? Int64 == 1)
+                if let avatar = row["senderAvatarPath"] as? String {
+                    message.senderAvatarPath = avatar
+                }
+                return message
+            }
+        }
+    }
     
     /// 오래된 메시지를 삭제하여 최근 N개만 유지 (batchSize 지원)
     /// ORDER BY sentAt ASC

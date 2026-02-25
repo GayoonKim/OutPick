@@ -172,6 +172,7 @@ struct ChatMessage: SocketData, Codable {
     
     // Firestore에 저장하기 위힌 뱐환 메서드
     func toDict() -> [String: Any] {
+        let searchIndex = ChatMessageSearchIndex.buildIndexedFields(from: msg)
         var dict: [String: Any] = [
             "ID": ID,
             "roomID": roomID,
@@ -180,7 +181,11 @@ struct ChatMessage: SocketData, Codable {
             "senderNickname": senderNickname,
             "msg": msg ?? "",
             "sentAt": Timestamp(date: sentAt ?? Date()),
-            "isDeleted": isDeleted
+            "isDeleted": isDeleted,
+            "searchNormalized": searchIndex.normalizedText,
+            "searchChars": searchIndex.searchChars,
+            "searchNgrams2": searchIndex.searchNgrams2,
+            "searchIndexVersion": searchIndex.version
         ]
         if let avatar = senderAvatarPath, !avatar.isEmpty {
             dict["senderAvatarPath"] = avatar

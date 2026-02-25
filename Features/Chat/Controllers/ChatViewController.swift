@@ -34,6 +34,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private var chatMessageCollectionView = ChatMessageCollectionView()
     private var dataSource: UICollectionViewDiffableDataSource<Section, Item>!
     private var cancellables = Set<AnyCancellable>()
+    private var initialLoadEventCancellable: AnyCancellable?
     private var chatCustomMemucancellables = Set<AnyCancellable>()
     
     private var lastMessageDate: Date?
@@ -43,8 +44,16 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     private var replyMessage: ReplyPreview?
     private var messageMap: [String: ChatMessage] = [:]
-    // Preloaded thumbnails for image messages (messageID -> ordered thumbnails)
-    var messageImages: [String: [UIImage]] = [:]
+    private lazy var centeredStatusLabel: UILabel = {
+        let label = UILabel()
+        label.numberOfLines = 0
+        label.textAlignment = .center
+        label.textColor = .secondaryLabel
+        label.font = .systemFont(ofSize: 15, weight: .medium)
+        label.isHidden = true
+        label.translatesAutoresizingMaskIntoConstraints = false
+        return label
+    }()
     private var chatRoomViewModel: ChatRoomViewModel?
     
     private var avatarWarmupRoomID: String?
@@ -73,6 +82,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     var convertImagesTask: Task<Void, Error>? = nil
     var convertVideosTask: Task<Void, Error>? = nil
     private var searchMessagesTask: Task<Void, Never>?
+    private var searchJumpTask: Task<Void, Never>?
     private var searchGeneration: Int = 0
     
     // MARK: - Managers (의존성 주입)
@@ -80,6 +90,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private let mediaManager: ChatMediaManaging
     private let searchManager: ChatSearchManaging
     private let hotUserManager: HotUserManaging
+    private let networkStatusProvider: NetworkStatusProviding
     var injectedFirebaseRepositories: FirebaseRepositoryProviding?
 
     /// 의존성 주입을 위한 초기화 (테스트 용이성)
@@ -89,6 +100,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         self.mediaManager = provider.mediaManager
         self.searchManager = provider.searchManager
         self.hotUserManager = provider.hotUserManager
+        self.networkStatusProvider = provider.networkStatusProvider
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -99,6 +111,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         self.mediaManager = provider.mediaManager
         self.searchManager = provider.searchManager
         self.hotUserManager = provider.hotUserManager
+        self.networkStatusProvider = provider.networkStatusProvider
         super.init(coder: coder)
     }
 
@@ -124,6 +137,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
         let viewModel = ChatRoomViewModel(
             room: room,
+            initialLoadUseCase: DefaultChatInitialLoadUseCase(
+                messageManager: messageManager,
+                networkStatusProvider: networkStatusProvider
+            ),
             messageUseCase: ChatRoomMessageUseCase(messageManager: messageManager),
             searchUseCase: ChatRoomSearchUseCase(searchManager: searchManager),
             lifecycleUseCase: ChatRoomLifecycleUseCase(
@@ -369,6 +386,12 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
         
         stopAllPrefetchers()
+        initialLoadEventCancellable?.cancel()
+        initialLoadEventCancellable = nil
+        searchMessagesTask?.cancel()
+        searchMessagesTask = nil
+        searchJumpTask?.cancel()
+        searchJumpTask = nil
         cancellables.removeAll()
         
         convertImagesTask?.cancel()
@@ -413,62 +436,149 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     @MainActor
     private func setupInitialMessages() {
         Task {
-            LoadingIndicator.shared.start(on: self)
-            defer { LoadingIndicator.shared.stop() }
-
             guard let room = self.room,
                   let viewModel = ensureChatRoomViewModel() else { return }
             let isParticipant = room.participants.contains(LoginManager.shared.getUserEmail)
+            LoadingIndicator.shared.start(on: self)
 
-            do {
-                let result = try await viewModel.loadInitialMessages(isParticipant: isParticipant)
-                
-                // 미참여자 처리
-                if !result.isParticipant {
-                    addMessages(result.serverMessages, updateType: .initial)
-                    await mediaManager.prefetchThumbnails(for: result.serverMessages, maxConcurrent: 4)
-                    if let roomID = room.ID {
-                        await mediaManager.prefetchVideoAssets(for: result.serverMessages, maxConcurrent: 4, roomID: roomID)
+            var didStopLoading = false
+            func stopLoadingIfNeeded() {
+                guard !didStopLoading else { return }
+                didStopLoading = true
+                LoadingIndicator.shared.stop()
+            }
+
+            initialLoadEventCancellable?.cancel()
+            initialLoadEventCancellable = viewModel.initialLoadEventPublisher
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] event in
+                    guard let self else { return }
+
+                    switch event {
+                    case .phaseChanged(let phase):
+                        switch phase {
+                        case .localVisible, .offlineNoLocal, .ready:
+                            stopLoadingIfNeeded()
+                        case .failed(let message):
+                            stopLoadingIfNeeded()
+                            print("❌ 메시지 초기화 실패:", message)
+                        case .idle, .checkingNetwork, .loadingLocal, .serverSyncing:
+                            break
+                        }
+
+                    case .render(let command):
+                        switch command {
+                        case .replaceLocal(let messages):
+                            self.setCenteredStatusMessage(nil)
+                            self.lastReadMessageID = messages.last?.ID
+                            self.addMessages(messages, updateType: .initial)
+                            stopLoadingIfNeeded()
+
+                        case .appendServer(let messages):
+                            self.setCenteredStatusMessage(nil)
+                            let hasExistingMessages = self.dataSource.snapshot().itemIdentifiers.contains {
+                                if case .message = $0 { return true }
+                                return false
+                            }
+                            self.addMessages(messages, updateType: hasExistingMessages ? .newer : .initial)
+                            if !messages.isEmpty {
+                                stopLoadingIfNeeded()
+                            }
+
+                        case .reloadDeleted(let messages):
+                            self.addMessages(messages, updateType: .reload)
+
+                        case .showCenteredMessage(let message):
+                            self.setCenteredStatusMessage(message)
+                            stopLoadingIfNeeded()
+
+                        case .hideCenteredMessage:
+                            self.setCenteredStatusMessage(nil)
+                        }
+
+                    case .warmMedia(let messages, let maxConcurrent):
+                        self.scheduleInitialMediaWarmup(for: messages, maxConcurrent: maxConcurrent)
+
+                    case .seedHotUsers(let messages):
+                        self.seedHotUserPool(with: messages)
+
+                    case .participantSessionReady(let bindRealtime):
+                        self.isUserInCurrentRoom = true
+                        if bindRealtime {
+                            self.bindMessagePublishers()
+                        }
+
+                    case .completed:
+                        stopLoadingIfNeeded()
+                        self.initialLoadEventCancellable?.cancel()
+                        self.initialLoadEventCancellable = nil
                     }
-                    return
-                }
-                
-                // 참여자 처리
-                let localMessages = result.localMessages
-                let serverMessages = result.serverMessages
-                self.lastReadMessageID = localMessages.last?.ID
-                
-                // 미디어 캐싱
-                let roomID = room.ID ?? ""
-                for msg in localMessages.filter({ $0.attachments.contains { $0.type == .image } }) {
-                    let images = await mediaManager.cacheImagesIfNeeded(for: msg)
-                    await MainActor.run { self.messageImages[msg.ID] = images }
-                }
-                
-                for msg in localMessages.filter({ $0.attachments.contains { $0.type == .video } }) {
-                    await mediaManager.cacheVideoAssetsIfNeeded(for: msg, in: roomID)
                 }
 
-                addMessages(localMessages, updateType: .initial)
+            await viewModel.startInitialLoad(isParticipant: isParticipant)
+        }
+    }
 
-                if !result.deletedMessages.isEmpty {
-                    addMessages(result.deletedMessages, updateType: .reload)
+    @MainActor
+    private func setCenteredStatusMessage(_ message: String?) {
+        let isVisible = !(message?.isEmpty ?? true)
+        centeredStatusLabel.text = message
+        centeredStatusLabel.isHidden = !isVisible
+        chatMessageCollectionView.backgroundView?.isHidden = !isVisible
+    }
+
+    private func scheduleInitialMediaWarmup(for messages: [ChatMessage], maxConcurrent: Int) {
+        guard !messages.isEmpty else { return }
+        let concurrency = max(1, maxConcurrent)
+        let roomID = room?.ID ?? ""
+        let thumbnailMessages = messages.filter {
+            $0.attachments.contains { $0.type == .image || $0.type == .video }
+        }
+        let videoMessages = messages.filter { $0.attachments.contains { $0.type == .video } }
+
+        Task(priority: .utility) { [weak self] in
+            guard let self else { return }
+
+            if !thumbnailMessages.isEmpty {
+                var index = 0
+                while index < thumbnailMessages.count {
+                    let end = min(index + concurrency, thumbnailMessages.count)
+                    let slice = Array(thumbnailMessages[index..<end])
+                    await withTaskGroup(of: Void.self) { group in
+                        for msg in slice {
+                            group.addTask { [weak self] in
+                                guard let self else { return }
+                                _ = await self.mediaManager.cacheImagesIfNeeded(for: msg)
+                                await MainActor.run {
+                                    self.reloadVisibleMessageIfNeeded(messageID: msg.ID)
+                                }
+                            }
+                        }
+                        await group.waitForAll()
+                    }
+                    index = end
                 }
+            }
 
-                addMessages(serverMessages, updateType: .newer)
-                
-                // Hot user 풀 시드
-                hotUserManager.seedHotUserPool(with: localMessages + serverMessages)
-
-                // 백그라운드 프리페치
-                await mediaManager.prefetchThumbnails(for: serverMessages, maxConcurrent: 4)
-                await mediaManager.prefetchVideoAssets(for: serverMessages, maxConcurrent: 4, roomID: roomID)
-
-                isUserInCurrentRoom = true
-                bindMessagePublishers()
-                
-            } catch {
-                print("❌ 메시지 초기화 실패:", error)
+            if !roomID.isEmpty, !videoMessages.isEmpty {
+                var index = 0
+                while index < videoMessages.count {
+                    let end = min(index + concurrency, videoMessages.count)
+                    let slice = Array(videoMessages[index..<end])
+                    await withTaskGroup(of: Void.self) { group in
+                        for msg in slice {
+                            group.addTask { [weak self] in
+                                guard let self else { return }
+                                await self.mediaManager.cacheVideoAssetsIfNeeded(for: msg, in: roomID)
+                                await MainActor.run {
+                                    self.reloadVisibleMessageIfNeeded(messageID: msg.ID)
+                                }
+                            }
+                        }
+                        await group.waitForAll()
+                    }
+                    index = end
+                }
             }
         }
     }
@@ -484,22 +594,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         dataSource.apply(snapshot, animatingDifferences: false)
     }
     
-    private func prefetchThumbnails(for messages: [ChatMessage], maxConcurrent: Int = 4) async {
-        await mediaManager.prefetchThumbnails(for: messages, maxConcurrent: maxConcurrent)
-        // 셀 리로드는 별도 처리
-        await MainActor.run {
-            for msg in messages {
-                reloadVisibleMessageIfNeeded(messageID: msg.ID)
-            }
-        }
-    }
-    
-    // MARK: - Video asset prefetching
-    private func prefetchVideoAssets(for messages: [ChatMessage], maxConcurrent: Int = 4) async {
-        guard let roomID = self.room?.ID else { return }
-        await mediaManager.prefetchVideoAssets(for: messages, maxConcurrent: maxConcurrent, roomID: roomID)
-    }
-
     @MainActor
     private func removeReadMarkerIfNeeded() {
         var snapshot = dataSource.snapshot()
@@ -618,11 +712,13 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         if hasImages || hasVideos {
             let rid = room.ID ?? ""
             await withTaskGroup(of: Void.self) { group in
-                if hasImages {
+                if hasImages || hasVideos {
                     group.addTask { [weak self] in
                         guard let self = self else { return }
-                        let images = await self.mediaManager.cacheImagesIfNeeded(for: message)
-                        await MainActor.run { self.messageImages[message.ID] = images }
+                        _ = await self.mediaManager.cacheImagesIfNeeded(for: message)
+                        await MainActor.run {
+                            self.reloadVisibleMessageIfNeeded(messageID: message.ID)
+                        }
                     }
                 }
                 if hasVideos {
@@ -728,23 +824,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         let hotUserEmails = hotUserManager.getHotUserEmails()
         for email in hotUserEmails {
             bindHotUser(email: email)
-        }
-    }
-
-    // 이미지 캐싱 전용 (Manager 위임)
-    private func cacheImagesIfNeeded(for message: ChatMessage) async {
-        let images = await mediaManager.cacheImagesIfNeeded(for: message)
-        await MainActor.run {
-            self.messageImages[message.ID] = images
-            self.reloadVisibleMessageIfNeeded(messageID: message.ID)
-        }
-    }
-
-    // 동영상 썸네일 캐시 (Manager 위임)
-    private func cacheVideoAssetsIfNeeded(for message: ChatMessage, in roomID: String) async {
-        await mediaManager.cacheVideoAssetsIfNeeded(for: message, in: roomID)
-        await MainActor.run {
-            self.reloadVisibleMessageIfNeeded(messageID: message.ID)
         }
     }
 
@@ -1495,7 +1574,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 guard let self = self,
                       let viewModel = self.chatRoomViewModel ?? self.ensureChatRoomViewModel(),
                       let index = viewModel.moveToPreviousSearchResult() else { return }
-                self.searchUI.updateSearchResult(viewModel.highlightedMessageIDs.count, index)
+                self.searchUI.updateSearchResult(viewModel.currentSearchResultCount, index)
                 self.moveToMessageAndShake(index)
             }
             .store(in: &cancellables)
@@ -1506,7 +1585,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 guard let self = self,
                       let viewModel = self.chatRoomViewModel ?? self.ensureChatRoomViewModel(),
                       let index = viewModel.moveToNextSearchResult() else { return }
-                self.searchUI.updateSearchResult(viewModel.highlightedMessageIDs.count, index)
+                self.searchUI.updateSearchResult(viewModel.currentSearchResultCount, index)
                 self.moveToMessageAndShake(index)
             }
             .store(in: &cancellables)
@@ -1520,11 +1599,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             do {
                 guard let viewModel = self.chatRoomViewModel ?? self.ensureChatRoomViewModel() else { return }
                 try Task.checkCancellation()
-                let messages = try await viewModel.fetchSearchMessages(containing: keyword)
+                let result = try await viewModel.fetchSearchMessages(containing: keyword)
                 try Task.checkCancellation()
                 await MainActor.run {
                     guard self.searchGeneration == generation else { return }
-                    viewModel.applySearchResult(keyword: keyword, messages: messages)
+                    viewModel.applySearchResult(result)
                     self.applyHighlight()
                 }
             } catch is CancellationError {
@@ -1537,15 +1616,62 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     @MainActor
     private func moveToMessageAndShake(_ idx: Int) {
-        guard let message = chatRoomViewModel?.searchMessage(at: idx) else { return }
-        guard let indexPath = indexPath(of: message) else { return }
-        
-        if let cell = chatMessageCollectionView.cellForItem(at: indexPath) as? ChatMessageCell {
-            cell.shakeHorizontally()
-        } else {
-            chatMessageCollectionView.scrollToMessage(at: indexPath)
-            scrollTargetIndex = indexPath
+        guard let viewModel = chatRoomViewModel ?? ensureChatRoomViewModel(),
+              let message = viewModel.searchMessage(at: idx) else { return }
+
+        if let indexPath = indexPath(ofMessageID: message.ID) {
+            if let cell = chatMessageCollectionView.cellForItem(at: indexPath) as? ChatMessageCell {
+                cell.shakeHorizontally()
+            } else {
+                chatMessageCollectionView.scrollToMessage(at: indexPath)
+                scrollTargetIndex = indexPath
+            }
+            return
         }
+
+        searchJumpTask?.cancel()
+        searchJumpTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let contextMessages = try await viewModel.loadMessagesAroundSearchAnchor(
+                    message,
+                    beforeLimit: 60,
+                    afterLimit: 60
+                )
+                if Task.isCancelled { return }
+
+                await MainActor.run {
+                    self.replaceVisibleMessageWindowForSearchJump(with: contextMessages)
+                    viewModel.applyVisibleWindowAfterSearchJump(contextMessages)
+
+                    guard let targetIndexPath = self.indexPath(ofMessageID: message.ID) else { return }
+                    if let cell = self.chatMessageCollectionView.cellForItem(at: targetIndexPath) as? ChatMessageCell {
+                        cell.shakeHorizontally()
+                    } else {
+                        self.chatMessageCollectionView.scrollToMessage(at: targetIndexPath)
+                        self.scrollTargetIndex = targetIndexPath
+                    }
+                }
+            } catch {
+                print("❌ 검색 점프 컨텍스트 로드 실패: \(error)")
+            }
+        }
+    }
+
+    @MainActor
+    private func replaceVisibleMessageWindowForSearchJump(with messages: [ChatMessage]) {
+        guard !messages.isEmpty else { return }
+
+        // Reset snapshot/window state and rebuild around the anchor context.
+        var emptySnapshot = NSDiffableDataSourceSnapshot<Section, Item>()
+        emptySnapshot.appendSections([.main])
+        dataSource.apply(emptySnapshot, animatingDifferences: false)
+
+        messageMap.removeAll()
+        lastMessageDate = nil
+        scrollTargetIndex = nil
+
+        addMessages(messages, updateType: .initial)
     }
     
     @MainActor
@@ -1566,7 +1692,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             dataSource.apply(snapshot, animatingDifferences: false)
         }
         
-        searchUI.updateSearchResult(highlightedIDs.count, viewModel.currentFilteredMessageIndex ?? 0)
+        searchUI.updateSearchResult(viewModel.currentSearchResultCount, viewModel.currentFilteredMessageIndex ?? 0)
         if let idx = viewModel.currentFilteredMessageIndex { moveToMessageAndShake(idx) }
     }
     
@@ -1574,6 +1700,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private func clearPreviousHighlightIfNeeded() {
         searchMessagesTask?.cancel()
         searchMessagesTask = nil
+        searchJumpTask?.cancel()
+        searchJumpTask = nil
 
         guard let viewModel = chatRoomViewModel else { return }
         var snapshot = dataSource.snapshot()
@@ -1598,7 +1726,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             .compactMap { $0 as? ChatMessageCell }
             .forEach { $0.highlightKeyword(nil) }
         
-        searchUI.updateSearchResult(viewModel.highlightedMessageIDs.count, viewModel.currentFilteredMessageIndex ?? 0)
+        searchUI.updateSearchResult(viewModel.currentSearchResultCount, viewModel.currentFilteredMessageIndex ?? 0)
     }
     
     @MainActor
@@ -1634,10 +1762,13 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         chatUIView.isHidden = true
     }
     
-    private func indexPath(of message: ChatMessage) -> IndexPath? {
+    private func indexPath(ofMessageID messageID: String) -> IndexPath? {
         let snapshot = dataSource.snapshot()
         let items = snapshot.itemIdentifiers(inSection: .main)
-        if let row = items.firstIndex(where: { $0 == .message(message) }) {
+        if let row = items.firstIndex(where: { item in
+            if case let .message(message) = item { return message.ID == messageID }
+            return false
+        }) {
             return IndexPath(item: row, section: 0)
         } else {
             return nil
@@ -1941,10 +2072,12 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 
                 // 메시지 최신 상태 반영
                 let latestMessage = self.messageMap[message.ID] ?? message
-                let latestImages = self.messageImages[message.ID] ?? []
                 
                 if !latestMessage.attachments.isEmpty {
-                    cell.configureWithImage(with: latestMessage, images: latestImages)
+                    cell.configureWithImage(with: latestMessage, images: [], thumbnailLoader: { [weak self] renderMessage in
+                        guard let self else { return [] }
+                        return await self.mediaManager.cacheImagesIfNeeded(for: renderMessage)
+                    })
                 } else {
                     cell.configureWithMessage(with: latestMessage)
                 }
@@ -2009,6 +2142,18 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         
         chatMessageCollectionView.setCollectionViewDataSource(dataSource)
         chatMessageCollectionView.prefetchDataSource = self
+        if chatMessageCollectionView.backgroundView == nil {
+            let container = UIView()
+            container.addSubview(centeredStatusLabel)
+            NSLayoutConstraint.activate([
+                centeredStatusLabel.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+                centeredStatusLabel.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+                centeredStatusLabel.leadingAnchor.constraint(greaterThanOrEqualTo: container.leadingAnchor, constant: 24),
+                centeredStatusLabel.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -24)
+            ])
+            chatMessageCollectionView.backgroundView = container
+            chatMessageCollectionView.backgroundView?.isHidden = true
+        }
         applySnapshot([])
     }
     
@@ -2368,18 +2513,18 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
         // 4) 프리패치: 근처 → 나머지
         Task {
-            let nearURLs = await resolveURLs(for: nearPaths, concurrent: 6)
+            let nearURLs = await mediaManager.resolveURLs(for: nearPaths, concurrent: 6)
             startPrefetch(urls: nearURLs, label: "near", options: warmOptions)
             
             if !restPaths.isEmpty {
-                let restURLs = await resolveURLs(for: restPaths, concurrent: 6)
+                let restURLs = await mediaManager.resolveURLs(for: restPaths, concurrent: 6)
                 startPrefetch(urls: restURLs, label: "rest", options: diskOnlyOptions)
             }
         }
         
         // 5) 뷰어 표시 (원래 순서)
         Task { @MainActor in
-            let urlsAll = await resolveURLs(for: storagePaths, concurrent: 6)
+            let urlsAll = await mediaManager.resolveURLs(for: storagePaths, concurrent: 6)
             guard !urlsAll.isEmpty else { return }
             
             let viewer = SimpleImageViewerVC(urls: urlsAll, startIndex: start)
@@ -2404,25 +2549,31 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         let hasVideos = message.attachments.contains { $0.type == .video }
         guard hasImages || hasVideos else { return }
 
-        // Images: skip if we already have cached UI images for this message
-        let shouldPrefetchImages = hasImages && (messageImages[messageID] == nil)
+        // Thumbnails: pipeline/in-flight dedupe handles duplicate requests
+        let shouldPrefetchThumbnails = (hasImages || hasVideos)
         // Videos: allow prefetch (manager should be idempotent / cached internally)
         let shouldPrefetchVideos = hasVideos
 
-        guard shouldPrefetchImages || shouldPrefetchVideos else { return }
+        guard shouldPrefetchThumbnails || shouldPrefetchVideos else { return }
 
         let task = Task.detached(priority: .utility) { [weak self] in
             guard let self else { return }
             if Task.isCancelled { return }
 
-            if shouldPrefetchImages {
-                await cacheImagesIfNeeded(for: message)
+            if shouldPrefetchThumbnails {
+                _ = await self.mediaManager.cacheImagesIfNeeded(for: message)
+                await MainActor.run {
+                    self.reloadVisibleMessageIfNeeded(messageID: message.ID)
+                }
             }
 
             if Task.isCancelled { return }
 
             if shouldPrefetchVideos {
-                await self.cacheVideoAssetsIfNeeded(for: message, in: roomID)
+                await self.mediaManager.cacheVideoAssetsIfNeeded(for: message, in: roomID)
+                await MainActor.run {
+                    self.reloadVisibleMessageIfNeeded(messageID: message.ID)
+                }
             }
 
             await MainActor.run {
@@ -2526,11 +2677,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             step += 1
         }
         return result
-    }
-    
-    // Storage 경로 -> URL (Manager 위임)
-    private func resolveURLs(for paths: [String], concurrent: Int = 6) async -> [URL] {
-        return await mediaManager.resolveURLs(for: paths, concurrent: concurrent)
     }
     
     // Kingfisher 프리패치 시작 (옵션 주입)

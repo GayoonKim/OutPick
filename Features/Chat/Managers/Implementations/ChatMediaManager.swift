@@ -15,61 +15,61 @@ final class ChatMediaManager: ChatMediaManaging {
     private let imageStorageManager: FirebaseImageStorageRepositoryProtocol
     private let cacheManager: KingFisherCacheManager
     private let storageURLCache: OPStorageURLCache
+    private let imageThumbPipeline: ImageCachePipeline
+    private let imageThumbMaxBytes = 12 * 1024 * 1024
     
-    // 이미지/비디오 썸네일 준비 상태 추적
-    private var preparedImageThumbMessageIDs: Set<String> = []
+    // 비디오 썸네일/URL warm-up 상태 추적
     private var preparedVideoThumbMessageIDs: Set<String> = []
-    
-    // 프로토콜 요구사항
-    var messageImages: [String: [UIImage]] = [:]
     
     init(
         imageStorageManager: FirebaseImageStorageRepositoryProtocol = FirebaseImageStorageRepository.shared,
         cacheManager: KingFisherCacheManager = .shared,
-        storageURLCache: OPStorageURLCache? = nil
+        storageURLCache: OPStorageURLCache? = nil,
+        imageThumbPipeline: ImageCachePipeline? = nil
     ) {
         self.imageStorageManager = imageStorageManager
         self.cacheManager = cacheManager
         self.storageURLCache = storageURLCache ?? OPStorageURLCache()
+        self.imageThumbPipeline = imageThumbPipeline ?? ImageCachePipeline { [imageStorageManager] path, maxBytes in
+            try await imageStorageManager.fetchImageDataFromStorage(
+                image: path,
+                location: .roomImage,
+                maxBytes: maxBytes
+            )
+        }
     }
     
     func cacheImagesIfNeeded(for message: ChatMessage) async -> [UIImage] {
         guard !message.attachments.isEmpty else { return [] }
-        
-        let alreadyPrepared = await MainActor.run { preparedImageThumbMessageIDs.contains(message.ID) }
-        if alreadyPrepared { return [] }
-        
-        let imageAttachments = message.attachments
-            .filter { $0.type == .image }
+
+        // UI 썸네일은 이미지/비디오 모두 필요합니다.
+        let thumbAttachments = message.attachments
+            .filter { $0.type == .image || $0.type == .video }
             .sorted { $0.index < $1.index }
         
         var images: [UIImage] = []
         
-        for attachment in imageAttachments {
-            let key = attachment.hash
+        for attachment in thumbAttachments {
+            let thumbPath = attachment.pathThumb
+            guard !thumbPath.isEmpty else { continue }
             do {
-                let cache = KingfisherManager.shared.cache
-                cache.memoryStorage.config.expiration = .seconds(3600)
-                cache.diskStorage.config.expiration = .days(3)
-                
-                if await cacheManager.isCached(key) {
-                    if let img = await cacheManager.loadImage(named: key) {
-                        images.append(img)
+                let img: UIImage
+                let isLocalFile = thumbPath.hasPrefix("/") || thumbPath.hasPrefix("file://")
+                if isLocalFile {
+                    let fileURL = thumbPath.hasPrefix("file://") ? URL(string: thumbPath)! : URL(fileURLWithPath: thumbPath)
+                    guard let data = try? Data(contentsOf: fileURL), let localImage = UIImage(data: data) else {
+                        continue
                     }
+                    img = localImage
                 } else {
-                    let img = try await imageStorageManager.fetchImageFromStorage(image: attachment.pathThumb, location: .roomImage)
-                    cacheManager.storeImage(img, forKey: key)
-                    images.append(img)
+                    img = try await imageThumbPipeline.loadImage(path: thumbPath, maxBytes: imageThumbMaxBytes)
                 }
+                images.append(img)
             } catch {
                 print("⚠️ 이미지 캐시 실패: \(error)")
             }
         }
-        
-        await MainActor.run {
-            preparedImageThumbMessageIDs.insert(message.ID)
-        }
-        
+
         return images
     }
     
@@ -121,7 +121,7 @@ final class ChatMediaManager: ChatMediaManaging {
         }
         
         await MainActor.run {
-            preparedVideoThumbMessageIDs.insert(message.ID)
+            _ = preparedVideoThumbMessageIDs.insert(message.ID)
         }
     }
     

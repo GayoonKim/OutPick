@@ -10,8 +10,6 @@ import UIKit
 
 /// 미디어(이미지/비디오) 캐싱 및 프리페치 관련 프로토콜
 protocol ChatMediaManaging {
-    var messageImages: [String: [UIImage]] { get set }
-    
     /// 이미지 캐싱
     func cacheImagesIfNeeded(for message: ChatMessage) async -> [UIImage]
     
@@ -42,4 +40,3 @@ protocol ChatMediaManaging {
     /// 저장용 로컬 파일 URL 해석
     func resolveLocalFileURLForSaving(localURL: URL?, storagePath: String?, onProgress: @escaping (Double)->Void) async throws -> URL
 }
-

@@ -39,6 +39,9 @@ class RoomListCollectionViewCell: UICollectionViewCell {
     private lazy var previewStackView: UIStackView = {
         let stackView = UIStackView()
         stackView.axis = .vertical
+        stackView.spacing = 6
+        stackView.alignment = .fill
+        stackView.distribution = .fill
         stackView.clipsToBounds = true
         stackView.backgroundColor = .black
         stackView.layer.cornerRadius = 15
@@ -58,6 +61,32 @@ class RoomListCollectionViewCell: UICollectionViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         roomImageView.image = UIImage(named: "Default_Profile")
+        roomNameLabel.text = nil
+        roomDescriptionLabel.text = nil
+        previewStackView.arrangedSubviews.forEach { view in
+            previewStackView.removeArrangedSubview(view)
+            view.removeFromSuperview()
+        }
+    }
+
+    override func preferredLayoutAttributesFitting(_ layoutAttributes: UICollectionViewLayoutAttributes) -> UICollectionViewLayoutAttributes {
+        let attributes = layoutAttributes.copy() as! UICollectionViewLayoutAttributes
+        setNeedsLayout()
+        layoutIfNeeded()
+
+        let targetSize = CGSize(
+            width: attributes.size.width,
+            height: UIView.layoutFittingCompressedSize.height
+        )
+
+        let fittedSize = contentView.systemLayoutSizeFitting(
+            targetSize,
+            withHorizontalFittingPriority: .required,
+            verticalFittingPriority: .fittingSizeLevel
+        )
+
+        attributes.size.height = ceil(fittedSize.height)
+        return attributes
     }
     
     private func setupLayout() {
@@ -147,6 +176,8 @@ private class MessagePreviewView: UIView {
         let label = UILabel()
         label.font = .systemFont(ofSize: 12, weight: .semibold)
         label.textColor = .white
+        label.numberOfLines = 1
+        label.lineBreakMode = .byTruncatingTail
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
@@ -164,7 +195,8 @@ private class MessagePreviewView: UIView {
         label.font = .systemFont(ofSize: 13)
         label.textColor = .white
         label.translatesAutoresizingMaskIntoConstraints = false
-        label.numberOfLines = 0
+        label.numberOfLines = 1
+        label.lineBreakMode = .byTruncatingTail
         return label
     }()
     
@@ -283,7 +315,7 @@ private class MessagePreviewView: UIView {
         messageLabel.translatesAutoresizingMaskIntoConstraints = false
         
         
-        bubbleTopToNickname = bubbleView.topAnchor.constraint(equalTo: nicknameLabel.bottomAnchor, constant: 10)
+        bubbleTopToNickname = bubbleView.topAnchor.constraint(equalTo: nicknameLabel.bottomAnchor, constant: 5)
         bubbleTopToTop = bubbleView.topAnchor.constraint(equalTo: topAnchor, constant: 10)
 
         bubbleTopToNickname?.isActive = true // 기본은 상대방 메시지 기준
@@ -295,7 +327,6 @@ private class MessagePreviewView: UIView {
 
             nicknameLabel.topAnchor.constraint(equalTo: topAnchor, constant: 10),
             nicknameLabel.leadingAnchor.constraint(equalTo: profileImageView.trailingAnchor, constant: 5),
-            nicknameLabel.bottomAnchor.constraint(equalTo: bubbleView.topAnchor, constant: -5),
             
             bubbleView.widthAnchor.constraint(lessThanOrEqualTo: self.widthAnchor, multiplier: 0.7),
             bubbleView.heightAnchor.constraint(greaterThanOrEqualToConstant: 30),
@@ -336,6 +367,8 @@ private class MessagePreviewView: UIView {
         // Make time label resist compression and hug contents
         timeLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
         timeLabel.setContentHuggingPriority(.required, for: .horizontal)
+        setContentHuggingPriority(.required, for: .vertical)
+        setContentCompressionResistancePriority(.required, for: .vertical)
     }
     
     func configure(with message: ChatMessage, isMine: Bool) {

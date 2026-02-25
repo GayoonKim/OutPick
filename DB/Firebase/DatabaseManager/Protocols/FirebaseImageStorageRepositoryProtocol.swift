@@ -38,6 +38,7 @@ protocol FirebaseImageStorageRepositoryProtocol {
         onProgress: ((Double) -> Void)?
     ) async throws -> [Attachment]
 
+    func fetchImageDataFromStorage(image: String, location: ImageLocation, maxBytes: Int) async throws -> Data
     func fetchImageFromStorage(image: String, location: ImageLocation) async throws -> UIImage
     func fetchImagesFromStorage(from imagePaths: [String], location: ImageLocation, createdDate: Date) async throws -> [UIImage]
     func prefetchImages(paths: [String], location: ImageLocation, createdDate: Date)

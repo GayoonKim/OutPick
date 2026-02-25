@@ -19,45 +19,95 @@ final class ChatMessageManager: ChatMessageManaging {
         self.messageRepository = messageRepository
         self.grdbManager = grdbManager
     }
-    
-    func loadInitialMessages(room: ChatRoom, isParticipant: Bool) async throws -> (local: [ChatMessage], server: [ChatMessage]) {
-        let roomID = room.ID ?? ""
-        
-        if !isParticipant {
-            // 미참여자: 서버에서만 미리보기
-            let previewMessages = try await messageRepository.fetchMessagesPaged(for: room, pageSize: 100, reset: true)
-            return ([], previewMessages)
-        }
-        
-        // 참여자: 로컬 + 서버
-        let localMessages = try await Task(priority: .userInitiated) {
-            try await grdbManager.fetchRecentMessages(inRoom: roomID, limit: 200)
+
+    func loadLocalRecentMessages(roomID: String, limit: Int) async throws -> [ChatMessage] {
+        try await Task(priority: .userInitiated) {
+            try await grdbManager.fetchRecentMessages(inRoom: roomID, limit: limit)
         }.value
-        
-        let serverMessages = try await messageRepository.fetchMessagesPaged(for: room, pageSize: 300, reset: true)
-        try await grdbManager.saveChatMessages(serverMessages)
-        
-        // 발신자 정보 동기화
-        let combined = localMessages + serverMessages
-        Task.detached(priority: .utility) { [roomID, combined] in
-            var seenSenders = Set<String>()
-            for msg in combined {
-                let email = msg.senderID
-                guard !email.isEmpty, seenSenders.insert(email).inserted else { continue }
-                do {
-                    _ = try self.grdbManager.upsertLocalUser(
-                        email: email,
-                        nickname: msg.senderNickname,
-                        profileImagePath: msg.senderAvatarPath
-                    )
-                    try self.grdbManager.addLocalUser(email, toRoom: roomID)
-                } catch {
-                    print("⚠️ Initial LocalUser upsert/add 실패 (\(email)):", error)
-                }
+    }
+
+    func fetchInitialServerMessages(room: ChatRoom, pageSize: Int) async throws -> [ChatMessage] {
+        try await messageRepository.fetchMessagesPaged(for: room, pageSize: pageSize, reset: true)
+    }
+
+    func persistFetchedServerMessages(_ messages: [ChatMessage]) async throws {
+        guard !messages.isEmpty else { return }
+        try await grdbManager.saveChatMessages(messages)
+    }
+
+    func loadMessagesAroundAnchor(
+        room: ChatRoom,
+        anchor: ChatMessage,
+        beforeLimit: Int,
+        afterLimit: Int
+    ) async throws -> [ChatMessage] {
+        let roomID = room.ID ?? ""
+        guard !roomID.isEmpty else { return [anchor] }
+
+        let normalizedBefore = max(0, beforeLimit)
+        let normalizedAfter = max(0, afterLimit)
+
+        var localOlder = try await grdbManager.fetchOlderMessages(
+            inRoom: roomID,
+            before: anchor.ID,
+            limit: normalizedBefore
+        )
+        var localNewer = try await grdbManager.fetchNewerMessages(
+            inRoom: roomID,
+            after: anchor.ID,
+            limit: normalizedAfter
+        )
+
+        var fetchedFromServer: [ChatMessage] = []
+
+        let olderDeficit = max(0, normalizedBefore - localOlder.count)
+        if olderDeficit > 0 {
+            let serverOlder = try await messageRepository.fetchOlderMessages(
+                for: room,
+                before: anchor.ID,
+                limit: olderDeficit
+            )
+            if !serverOlder.isEmpty {
+                fetchedFromServer.append(contentsOf: serverOlder)
+                // older는 ASC 반환. 로컬 older 앞쪽으로 합쳐준다.
+                let localIDs = Set(localOlder.map(\.ID))
+                let missingOlder = serverOlder.filter { !localIDs.contains($0.ID) }
+                localOlder = (missingOlder + localOlder)
             }
         }
-        
-        return (localMessages, serverMessages)
+
+        let newerDeficit = max(0, normalizedAfter - localNewer.count)
+        if newerDeficit > 0 {
+            let serverNewer = try await messageRepository.fetchMessagesAfter(
+                room: room,
+                after: anchor.ID,
+                limit: newerDeficit
+            )
+            if !serverNewer.isEmpty {
+                fetchedFromServer.append(contentsOf: serverNewer)
+                let localIDs = Set(localNewer.map(\.ID))
+                let missingNewer = serverNewer.filter { !localIDs.contains($0.ID) }
+                localNewer.append(contentsOf: missingNewer)
+            }
+        }
+
+        if !fetchedFromServer.isEmpty {
+            try? await grdbManager.saveChatMessages(fetchedFromServer)
+        }
+
+        var combined: [ChatMessage] = []
+        combined.reserveCapacity(localOlder.count + 1 + localNewer.count)
+        combined.append(contentsOf: localOlder)
+        combined.append(anchor)
+        combined.append(contentsOf: localNewer)
+
+        // ID 기준 중복 제거 + seq 오름차순 정렬
+        var seen = Set<String>()
+        let deduped = combined.filter { seen.insert($0.ID).inserted }
+        return deduped.sorted { lhs, rhs in
+            if lhs.seq != rhs.seq { return lhs.seq < rhs.seq }
+            return lhs.ID < rhs.ID
+        }
     }
     
     func loadOlderMessages(room: ChatRoom, before messageID: String?) async throws -> [ChatMessage] {
@@ -156,7 +206,7 @@ final class ChatMessageManager: ChatMessageManaging {
                 
                 // LocalUser + RoomMember 업데이트
                 do {
-                    try grdbManager.upsertLocalUser(
+                    _ = try grdbManager.upsertLocalUser(
                         email: message.senderID,
                         nickname: message.senderNickname,
                         profileImagePath: message.senderAvatarPath

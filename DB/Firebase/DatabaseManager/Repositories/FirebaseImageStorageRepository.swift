@@ -253,21 +253,18 @@ final class FirebaseImageStorageRepository: FirebaseImageStorageRepositoryProtoc
 
     enum StorageImageError: Error { case invalidData }
 
-    func fetchImageFromStorage(image: String, location: ImageLocation) async throws -> UIImage {
+    func fetchImageDataFromStorage(image: String, location: ImageLocation, maxBytes: Int) async throws -> Data {
         let _ = location
         let ref = storage.reference(withPath: image)
+        return try await ref.data(maxSize: Int64(max(1, maxBytes)))
+    }
 
-        let url = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, Error>) in
-            ref.downloadURL { url, err in
-                if let err {
-                    continuation.resume(throwing: err)
-                    return
-                }
-                continuation.resume(returning: url!)
-            }
-        }
-
-        let (data, _) = try await URLSession.shared.data(from: url)
+    func fetchImageFromStorage(image: String, location: ImageLocation) async throws -> UIImage {
+        let data = try await fetchImageDataFromStorage(
+            image: image,
+            location: location,
+            maxBytes: 20 * 1024 * 1024
+        )
         guard let image = UIImage(data: data) else {
             throw StorageImageError.invalidData
         }

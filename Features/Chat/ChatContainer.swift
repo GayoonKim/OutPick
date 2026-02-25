@@ -23,6 +23,7 @@ final class ChatContainer {
     private let joinedRoomsUseCase: JoinedRoomsUseCaseProtocol
     private let roomSearchUseCase: RoomSearchUseCaseProtocol
     private let chatRoomMessageUseCase: ChatRoomMessageUseCaseProtocol
+    private let chatInitialLoadUseCase: ChatInitialLoadUseCaseProtocol
     private let chatRoomSearchUseCase: ChatRoomSearchUseCaseProtocol
     private let chatRoomLifecycleUseCase: ChatRoomLifecycleUseCaseProtocol
     private var joinedRoomsRuntimeCancellable: AnyCancellable?
@@ -51,6 +52,10 @@ final class ChatContainer {
         )
         self.roomSearchUseCase = RoomSearchUseCase(roomRepository: self.roomRepository)
         self.chatRoomMessageUseCase = ChatRoomMessageUseCase(messageManager: provider.messageManager)
+        self.chatInitialLoadUseCase = DefaultChatInitialLoadUseCase(
+            messageManager: provider.messageManager,
+            networkStatusProvider: provider.networkStatusProvider
+        )
         self.chatRoomSearchUseCase = ChatRoomSearchUseCase(searchManager: provider.searchManager)
         self.chatRoomLifecycleUseCase = ChatRoomLifecycleUseCase(
             chatRoomRepository: self.roomRepository,
@@ -78,6 +83,7 @@ final class ChatContainer {
     func makeChatRoomViewModel(room: ChatRoom) -> ChatRoomViewModel {
         ChatRoomViewModel(
             room: room,
+            initialLoadUseCase: chatInitialLoadUseCase,
             messageUseCase: chatRoomMessageUseCase,
             searchUseCase: chatRoomSearchUseCase,
             lifecycleUseCase: chatRoomLifecycleUseCase

@@ -13,6 +13,9 @@ import Combine
 class ChatMessageCell: UICollectionViewCell {
     static let reuseIdentifier = "ChatMessageCell"
     private var widthConstraint: NSLayoutConstraint?
+    private(set) var representedMessageID: String?
+    private var thumbnailLoadTask: Task<Void, Never>?
+    private var currentHighlightKeyword: String?
     
     protocol ChatMessageCellDelegate: AnyObject {
         func cellDidLongPress(_ cell: ChatMessageCell)
@@ -267,6 +270,10 @@ class ChatMessageCell: UICollectionViewCell {
     
     override func prepareForReuse() {
         super.prepareForReuse()
+        thumbnailLoadTask?.cancel()
+        thumbnailLoadTask = nil
+        representedMessageID = nil
+        currentHighlightKeyword = nil
         hideVideoBadge()
         
         messageLabel.attributedText = nil
@@ -341,17 +348,57 @@ class ChatMessageCell: UICollectionViewCell {
         videoBadge.isHidden = true
         videoDurationLabel.text = ""
     }
+
+    /// configure 재호출(reconfigure/async thumbnail apply) 시 이전 동적 제약 누적을 막는다.
+    private func resetDynamicLayoutConstraintsForReconfigure() {
+        widthConstraint?.isActive = false
+        widthConstraint = nil
+
+        NSLayoutConstraint.deactivate([
+            bubbleViewLeadingConstraint,
+            bubbleViewTrailingConstraint,
+            bubbleViewTopConstraint,
+            bubbleViewBottomConstraint,
+
+            imagePreviewCollectionViewTopConstraint,
+            imagePreviewCollectionViewLeadingConstraint,
+            imagePreviewCollectionViewTrailingConstraint,
+            imagePreviewCollectionViewBottomConstraint,
+            imagePreviewCollectionViewWidthConstraint,
+            imagePreviewCollectionViewHeightConstraint,
+
+            failedIconImageViewCenterYConstraint,
+            failedIconImageViewTrainlingConstraint
+        ].compactMap { $0 })
+
+        bubbleViewLeadingConstraint = nil
+        bubbleViewTrailingConstraint = nil
+        bubbleViewTopConstraint = nil
+        bubbleViewBottomConstraint = nil
+
+        imagePreviewCollectionViewTopConstraint = nil
+        imagePreviewCollectionViewLeadingConstraint = nil
+        imagePreviewCollectionViewTrailingConstraint = nil
+        imagePreviewCollectionViewBottomConstraint = nil
+        imagePreviewCollectionViewWidthConstraint = nil
+        imagePreviewCollectionViewHeightConstraint = nil
+
+        failedIconImageViewCenterYConstraint = nil
+        failedIconImageViewTrainlingConstraint = nil
+        failedIconImageView.isHidden = true
+    }
     
     func configureWithMessage(with message: ChatMessage/*, originalPreviewProvider: (() -> (String, String)?)?*/) {
+        thumbnailLoadTask?.cancel()
+        thumbnailLoadTask = nil
+        representedMessageID = message.ID
+        resetDynamicLayoutConstraintsForReconfigure()
         // Explicitly reset/hide/unhide and clear any previous width constraint
         bubbleView.isHidden = false
         messageLabel.attributedText = nil
         messageLabel.isHidden = true ? false : false // ensure visible (no-op but explicit)
         messageLabel.isHidden = false
         imagesPreviewCollectionView.isHidden = true
-        // Ensure no stale width constraint from previous configuration
-        widthConstraint?.isActive = false
-        widthConstraint = nil
 
         // Compute isMine once
         let isMine = (LoginManager.shared.currentUserProfile?.nickname ?? "") == message.senderNickname
@@ -456,10 +503,15 @@ class ChatMessageCell: UICollectionViewCell {
         self.layoutIfNeeded()
     }
     
-    func configureWithImage(with message: ChatMessage, images: [UIImage]) {
-        // Clear any previously applied bubble width constraint so image-mode cells don't carry text-mode constraints
-        widthConstraint?.isActive = false
-        widthConstraint = nil
+    func configureWithImage(
+        with message: ChatMessage,
+        images: [UIImage],
+        thumbnailLoader: ((ChatMessage) async -> [UIImage])? = nil
+    ) {
+        thumbnailLoadTask?.cancel()
+        thumbnailLoadTask = nil
+        representedMessageID = message.ID
+        resetDynamicLayoutConstraintsForReconfigure()
         messageLabel.attributedText = nil
         
         // 삭제된 메시지를 이미지가 아니라, "삭제된 메시지입니다."로 표시
@@ -630,6 +682,24 @@ class ChatMessageCell: UICollectionViewCell {
                 hideVideoBadge()
             }
         }
+
+        guard images.isEmpty,
+              let thumbnailLoader,
+              !message.attachments.isEmpty else { return }
+
+        let messageID = message.ID
+        thumbnailLoadTask = Task { [weak self] in
+            guard let self else { return }
+            let loadedImages = await thumbnailLoader(message)
+            if Task.isCancelled { return }
+
+            await MainActor.run {
+                guard self.representedMessageID == messageID else { return }
+                self.thumbnailLoadTask = nil
+                self.configureWithImage(with: message, images: loadedImages)
+                self.highlightKeyword(self.currentHighlightKeyword)
+            }
+        }
     }
     
     private func calculateRowCountWithImage(_ n: Int) -> [Int] {
@@ -681,6 +751,7 @@ class ChatMessageCell: UICollectionViewCell {
     }
     
     func highlightKeyword(_ keyword: String?) {
+        currentHighlightKeyword = keyword
         let baseText = messageLabel.text ?? messageLabel.attributedText?.string ?? ""
         guard !baseText.isEmpty else {
             messageLabel.attributedText = nil

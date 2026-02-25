@@ -12,6 +12,7 @@ protocol ChatManagerProviding {
     var mediaManager: ChatMediaManaging { get }
     var searchManager: ChatSearchManaging { get }
     var hotUserManager: HotUserManaging { get }
+    var networkStatusProvider: NetworkStatusProviding { get }
 }
 
 struct ChatManagerProvider: ChatManagerProviding {
@@ -19,17 +20,27 @@ struct ChatManagerProvider: ChatManagerProviding {
     let mediaManager: ChatMediaManaging
     let searchManager: ChatSearchManaging
     let hotUserManager: HotUserManaging
+    let networkStatusProvider: NetworkStatusProviding
 
     init(
         messageManager: ChatMessageManaging = ChatMessageManager(),
         mediaManager: ChatMediaManaging = ChatMediaManager(),
-        searchManager: ChatSearchManaging = ChatSearchManager(),
-        hotUserManager: HotUserManaging = HotUserManager()
+        searchManager: ChatSearchManaging? = nil,
+        hotUserManager: HotUserManaging = HotUserManager(),
+        networkStatusProvider: NetworkStatusProviding = NWPathNetworkStatusProvider()
     ) {
+        let resolvedNetworkStatusProvider = networkStatusProvider
+        let resolvedSearchManager = searchManager ?? ChatSearchManager(
+            messageRepository: FirebaseRepositoryProvider.shared.messageRepository,
+            networkStatusProvider: resolvedNetworkStatusProvider
+        )
+
         self.messageManager = messageManager
         self.mediaManager = mediaManager
-        self.searchManager = searchManager
+        self.searchManager = resolvedSearchManager
         self.hotUserManager = hotUserManager
+        self.networkStatusProvider = resolvedNetworkStatusProvider
+        self.networkStatusProvider.startMonitoring()
     }
 }
 

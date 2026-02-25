@@ -10,9 +10,23 @@ import Combine
 
 /// 메시지 관리 관련 비즈니스 로직을 위한 프로토콜
 protocol ChatMessageManaging {
-    /// 초기 메시지 로드
-    func loadInitialMessages(room: ChatRoom, isParticipant: Bool) async throws -> (local: [ChatMessage], server: [ChatMessage])
-    
+    /// 참여자 초기 진입용 로컬 최근 메시지 로드
+    func loadLocalRecentMessages(roomID: String, limit: Int) async throws -> [ChatMessage]
+
+    /// 초기 진입용 서버 페이지 로드(reset=true)
+    func fetchInitialServerMessages(room: ChatRoom, pageSize: Int) async throws -> [ChatMessage]
+
+    /// 서버에서 불러온 초기 메시지를 로컬 저장 (prune 포함)
+    func persistFetchedServerMessages(_ messages: [ChatMessage]) async throws
+
+    /// 특정 anchor 메시지 주변 컨텍스트 로드 (검색 점프용)
+    func loadMessagesAroundAnchor(
+        room: ChatRoom,
+        anchor: ChatMessage,
+        beforeLimit: Int,
+        afterLimit: Int
+    ) async throws -> [ChatMessage]
+
     /// 이전 메시지 로드
     func loadOlderMessages(room: ChatRoom, before messageID: String?) async throws -> [ChatMessage]
     
@@ -34,4 +48,3 @@ protocol ChatMessageManaging {
     /// 메시지 저장
     func saveMessage(_ message: ChatMessage, room: ChatRoom) async throws
 }
-

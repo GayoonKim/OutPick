@@ -15,13 +15,6 @@ final class ChatRoomViewModel {
         case live
     }
 
-    struct InitialLoadResult {
-        let localMessages: [ChatMessage]
-        let serverMessages: [ChatMessage]
-        let deletedMessages: [ChatMessage]
-        let isParticipant: Bool
-    }
-
     struct NewerMessagesResult {
         let messages: [ChatMessage]
         let bufferedMessagesToFlush: [ChatMessage]
@@ -32,11 +25,22 @@ final class ChatRoomViewModel {
         case append
     }
 
+    struct SearchSessionState {
+        let keyword: String
+        let totalCount: Int
+        let source: ChatMessageSearchSource
+        let isAuthoritative: Bool
+        var hits: [ChatMessageSearchHit]   // seq ASC
+        var currentIndex: Int?             // 1-based index in hits
+    }
+
     private(set) var room: ChatRoom
 
+    private let initialLoadUseCase: ChatInitialLoadUseCaseProtocol
     private let messageUseCase: ChatRoomMessageUseCaseProtocol
     private let searchUseCase: ChatRoomSearchUseCaseProtocol
     private let lifecycleUseCase: ChatRoomLifecycleUseCaseProtocol
+    private let initialLoadEventSubject = PassthroughSubject<ChatInitialLoadEvent, Never>()
 
     private(set) var isInitialLoading: Bool = true
     private(set) var isLoadingOlder: Bool = false
@@ -44,8 +48,12 @@ final class ChatRoomViewModel {
     private(set) var hasMoreOlder: Bool = true
     private(set) var hasMoreNewer: Bool = true
 
-    private(set) var filteredMessages: [ChatMessage] = []
-    private(set) var currentFilteredMessageIndex: Int?
+    private(set) var searchSession: SearchSessionState?
+    var filteredMessages: [ChatMessage] { searchSession?.hits.map(\.message) ?? [] }
+    var currentFilteredMessageIndex: Int? { searchSession?.currentIndex }
+    var currentSearchResultCount: Int { searchSession?.totalCount ?? 0 }
+    var currentSearchSource: ChatMessageSearchSource? { searchSession?.source }
+    var isCurrentSearchAuthoritative: Bool { searchSession?.isAuthoritative ?? false }
     private(set) var highlightedMessageIDs: Set<String> = []
     private(set) var currentSearchKeyword: String?
 
@@ -65,11 +73,13 @@ final class ChatRoomViewModel {
 
     init(
         room: ChatRoom,
+        initialLoadUseCase: ChatInitialLoadUseCaseProtocol,
         messageUseCase: ChatRoomMessageUseCaseProtocol,
         searchUseCase: ChatRoomSearchUseCaseProtocol,
         lifecycleUseCase: ChatRoomLifecycleUseCaseProtocol
     ) {
         self.room = room
+        self.initialLoadUseCase = initialLoadUseCase
         self.messageUseCase = messageUseCase
         self.searchUseCase = searchUseCase
         self.lifecycleUseCase = lifecycleUseCase
@@ -80,6 +90,9 @@ final class ChatRoomViewModel {
     }
 
     var roomID: String { room.ID ?? "" }
+    var initialLoadEventPublisher: AnyPublisher<ChatInitialLoadEvent, Never> {
+        initialLoadEventSubject.eraseToAnyPublisher()
+    }
     var roomChangePublisher: AnyPublisher<ChatRoom, Never> {
         lifecycleUseCase.roomChangePublisher
     }
@@ -111,47 +124,36 @@ final class ChatRoomViewModel {
         return updatedRoom
     }
 
-    func loadInitialMessages(isParticipant: Bool) async throws -> InitialLoadResult {
+    func startInitialLoad(
+        isParticipant: Bool
+    ) async {
         isInitialLoading = true
         defer { isInitialLoading = false }
 
-        let (localMessages, serverMessages) = try await messageUseCase.loadInitialMessages(room: room, isParticipant: isParticipant)
+        var localMessages: [ChatMessage] = []
+        var serverMessages: [ChatMessage] = []
 
-        guard isParticipant else {
-            return InitialLoadResult(
-                localMessages: [],
-                serverMessages: serverMessages,
-                deletedMessages: [],
-                isParticipant: false
-            )
-        }
+        await initialLoadUseCase.execute(room: room, isParticipant: isParticipant) { [weak self] event in
+            guard let self else { return }
 
-        let deletedIDs = try await messageUseCase.syncDeletedStates(localMessages: localMessages, room: room)
-        let deletedMessages = localMessages
-            .filter { deletedIDs.contains($0.ID) }
-            .map { msg in
-                var copy = msg
-                copy.isDeleted = true
-                return copy
+            if isParticipant {
+                switch event {
+                case .render(.replaceLocal(let messages)):
+                    localMessages = messages
+
+                case .render(.appendServer(let messages)):
+                    serverMessages = messages
+
+                case .participantSessionReady:
+                    self.applyInitialMessageSyncState(localMessages: localMessages, serverMessages: serverMessages)
+
+                default:
+                    break
+                }
             }
 
-        entryTailSeq = Int64(room.seq)
-        let localMaxSeq = localMessages.map(\.seq).max() ?? 0
-        let serverMaxSeq = serverMessages.map(\.seq).max() ?? 0
-        windowMaxSeq = max(localMaxSeq, serverMaxSeq)
-        liveMode = (windowMaxSeq >= entryTailSeq) ? .live : .catchingUp
-        pendingLastReadSeq = 0
-        queuedLastReadSeq = 0
-        persistedLastReadSeq = 0
-        lastReadFlushTask?.cancel()
-        lastReadFlushTask = nil
-
-        return InitialLoadResult(
-            localMessages: localMessages,
-            serverMessages: serverMessages,
-            deletedMessages: deletedMessages,
-            isParticipant: true
-        )
+            self.initialLoadEventSubject.send(event)
+        }
     }
 
     func loadOlderMessages(before messageID: String?) async throws -> [ChatMessage] {
@@ -207,6 +209,19 @@ final class ChatRoomViewModel {
         }
     }
 
+    private func applyInitialMessageSyncState(localMessages: [ChatMessage], serverMessages: [ChatMessage]) {
+        entryTailSeq = Int64(room.seq)
+        let localMaxSeq = localMessages.map(\.seq).max() ?? 0
+        let serverMaxSeq = serverMessages.map(\.seq).max() ?? 0
+        windowMaxSeq = max(localMaxSeq, serverMaxSeq)
+        liveMode = (windowMaxSeq >= entryTailSeq) ? .live : .catchingUp
+        pendingLastReadSeq = 0
+        queuedLastReadSeq = 0
+        persistedLastReadSeq = 0
+        lastReadFlushTask?.cancel()
+        lastReadFlushTask = nil
+    }
+
     func persistIncomingMessage(_ message: ChatMessage) async throws {
         try await messageUseCase.handleIncomingMessage(message, room: room)
     }
@@ -220,50 +235,84 @@ final class ChatRoomViewModel {
     }
 
     func searchMessages(containing keyword: String) async throws {
-        let messages = try await fetchSearchMessages(containing: keyword)
-        applySearchResult(keyword: keyword, messages: messages)
+        let result = try await fetchSearchMessages(containing: keyword)
+        applySearchResult(result)
     }
 
-    func fetchSearchMessages(containing keyword: String) async throws -> [ChatMessage] {
+    func fetchSearchMessages(containing keyword: String) async throws -> ChatMessageSearchResult {
         try await searchUseCase.searchMessages(roomID: roomID, keyword: keyword)
     }
 
-    func applySearchResult(keyword: String, messages: [ChatMessage]) {
-        filteredMessages = messages
-        currentFilteredMessageIndex = messages.isEmpty ? nil : messages.count
-        currentSearchKeyword = keyword
-        highlightedMessageIDs = searchUseCase.applyHighlight(messageIDs: Set(messages.map { $0.ID }))
+    func applySearchResult(_ result: ChatMessageSearchResult) {
+        let hits = result.hits
+        searchSession = SearchSessionState(
+            keyword: result.keyword,
+            totalCount: result.totalCount,
+            source: result.source,
+            isAuthoritative: result.isAuthoritative,
+            hits: hits,
+            currentIndex: hits.isEmpty ? nil : hits.count
+        )
+        currentSearchKeyword = result.keyword
+        highlightedMessageIDs = searchUseCase.applyHighlight(
+            messageIDs: Set(hits.map { $0.message.ID })
+        )
     }
 
     func moveToPreviousSearchResult() -> Int? {
-        guard let current = currentFilteredMessageIndex, current > 1 else {
-            return currentFilteredMessageIndex
+        guard var session = searchSession else { return nil }
+        guard let current = session.currentIndex, current > 1 else {
+            return session.currentIndex
         }
-        currentFilteredMessageIndex = current - 1
-        return currentFilteredMessageIndex
+        session.currentIndex = current - 1
+        searchSession = session
+        return session.currentIndex
     }
 
     func moveToNextSearchResult() -> Int? {
-        guard let current = currentFilteredMessageIndex, current < filteredMessages.count else {
-            return currentFilteredMessageIndex
+        guard var session = searchSession else { return nil }
+        guard let current = session.currentIndex, current < session.hits.count else {
+            return session.currentIndex
         }
-        currentFilteredMessageIndex = current + 1
-        return currentFilteredMessageIndex
+        session.currentIndex = current + 1
+        searchSession = session
+        return session.currentIndex
     }
 
     func searchMessage(at index: Int) -> ChatMessage? {
         guard index > 0 else { return nil }
         let target = index - 1
-        guard filteredMessages.indices.contains(target) else { return nil }
-        return filteredMessages[target]
+        guard let session = searchSession, session.hits.indices.contains(target) else { return nil }
+        return session.hits[target].message
+    }
+
+    func loadMessagesAroundSearchAnchor(
+        _ anchor: ChatMessage,
+        beforeLimit: Int = 60,
+        afterLimit: Int = 60
+    ) async throws -> [ChatMessage] {
+        try await messageUseCase.loadMessagesAroundAnchor(
+            room: room,
+            anchor: anchor,
+            beforeLimit: beforeLimit,
+            afterLimit: afterLimit
+        )
+    }
+
+    func applyVisibleWindowAfterSearchJump(_ messages: [ChatMessage]) {
+        hasMoreOlder = true
+        hasMoreNewer = true
+
+        let newWindowMax = messages.map(\.seq).max() ?? 0
+        windowMaxSeq = newWindowMax
+        liveMode = (windowMaxSeq >= entryTailSeq) ? .live : .catchingUp
     }
 
     func clearSearch() -> Set<String> {
         let previous = highlightedMessageIDs
         highlightedMessageIDs = searchUseCase.clearHighlight()
         currentSearchKeyword = nil
-        currentFilteredMessageIndex = nil
-        filteredMessages = []
+        searchSession = nil
         return previous
     }
 
