@@ -131,19 +131,34 @@ final class FirebaseStorageTransferRepository: FirebaseStorageTransferRepository
                 metadata.cacheControl = cacheControl
             }
 
+            // ✅ 로컬 디버깅용: 네트워크 업로드 소요 시간 측정
+            let start = DispatchTime.now()
+            let bytes = Int64(data.count)
+            print("⏱️ upload(data) 시작: path=\(path) bytes=\(bytes) contentType=\(contentType)")
+
             let task = ref.putData(data, metadata: metadata) { _, error in
+                let end = DispatchTime.now()
+                let elapsedMs = Double(end.uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000
+
                 if let error {
                     let ns = error as NSError
-                    print("🚫 upload(data) 실패(\(path)): code=\(ns.code) domain=\(ns.domain) desc=\(ns.localizedDescription)")
+                    print("🚫 upload(data) 실패(\(path)) \(String(format: "(%.0fms)", elapsedMs)): code=\(ns.code) domain=\(ns.domain) desc=\(ns.localizedDescription)")
                     continuation.resume(throwing: uploadFailure)
                     return
                 }
+
+                print("✅ upload(data) 성공: path=\(path) \(String(format: "(%.0fms)", elapsedMs))")
                 continuation.resume(returning: path)
             }
 
             _ = task.observe(.progress) { snapshot in
                 if let p = snapshot.progress {
                     progress?(p.completedUnitCount, p.totalUnitCount)
+
+                    // 100% 도달 시점 로그(너무 많은 로그를 피하기 위해 완료 시점만)
+                    if p.totalUnitCount > 0, p.completedUnitCount >= p.totalUnitCount {
+                        print("📶 upload(data) progress 100%: path=\(path) bytes=\(p.totalUnitCount)")
+                    }
                 }
             }
         }
