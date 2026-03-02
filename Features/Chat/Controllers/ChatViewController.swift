@@ -84,6 +84,14 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private var searchMessagesTask: Task<Void, Never>?
     private var searchJumpTask: Task<Void, Never>?
     private var searchGeneration: Int = 0
+
+    enum PendingImageUploadState: Equatable {
+        case uploading(Double)
+        case failed
+    }
+    private var pendingImageUploadStates: [String: PendingImageUploadState] = [:]
+    private var pendingImageUploadPairs: [String: [DefaultMediaProcessingService.ImagePair]] = [:]
+    private var pendingImageUploadTasks: [String: Task<Void, Never>] = [:]
     
     // MARK: - Managers (의존성 주입)
     private let messageManager: ChatMessageManaging
@@ -175,6 +183,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         convertImagesTask?.cancel()
         convertVideosTask?.cancel()
         searchMessagesTask?.cancel()
+        pendingImageUploadTasks.values.forEach { $0.cancel() }
+        pendingImageUploadTasks.removeAll()
         appLifecycleObservers.forEach { NotificationCenter.default.removeObserver($0) }
         appLifecycleObservers.removeAll()
 
@@ -871,14 +881,30 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     @MainActor
     private func handleSendButtonTap() {
         guard let message = self.chatUIView.messageTextView.text,
-              !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               let room = self.room else { return }
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
         
         self.chatUIView.messageTextView.text = nil
         self.chatUIView.updateHeight()
         self.chatUIView.sendButton.isEnabled = false
         
-        let newMessage = ChatMessage(ID: UUID().uuidString, seq: 0, roomID: room.ID ?? "", senderID: LoginManager.shared.getUserEmail, senderNickname: LoginManager.shared.currentUserProfile?.nickname ?? "", senderAvatarPath: LoginManager.shared.currentUserProfile?.thumbPath, msg: message, sentAt: Date(), attachments: [], replyPreview: replyMessage)
+        let newMessage = ChatMessage(
+            ID: UUID().uuidString,
+            seq: 0,
+            roomID: room.ID ?? "",
+            senderID: LoginManager.shared.getUserEmail,
+            senderNickname: LoginManager.shared.currentUserProfile?.nickname ?? "",
+            senderAvatarPath: LoginManager.shared.currentUserProfile?.thumbPath,
+            msg: trimmed,
+            sentAt: Date(),
+            attachments: [],
+            replyPreview: replyMessage
+        )
+
+        // Optimistic render: sender sees the message immediately.
+        addMessages([newMessage], updateType: .newer)
+        chatMessageCollectionView.scrollToBottom()
         
         Task.detached {
             SocketIOManager.shared.sendMessage(room, newMessage)
@@ -2062,6 +2088,192 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private func isCurrentUserAdmin(of room: ChatRoom) -> Bool {
         return room.creatorID == LoginManager.shared.getUserEmail
     }
+
+    @MainActor
+    func stagePendingImageMessage(roomID: String, messageID: String, pairs: [DefaultMediaProcessingService.ImagePair]) -> Bool {
+        guard !roomID.isEmpty else { return false }
+        let attachments = makePendingImagePreviewAttachments(messageID: messageID, pairs: pairs)
+        guard !attachments.isEmpty else { return false }
+
+        pendingImageUploadPairs[messageID] = pairs
+        pendingImageUploadStates[messageID] = .uploading(0)
+
+        let pendingMessage = ChatMessage(
+            ID: messageID,
+            seq: 0,
+            roomID: roomID,
+            senderID: LoginManager.shared.getUserEmail,
+            senderNickname: LoginManager.shared.currentUserProfile?.nickname ?? "",
+            senderAvatarPath: LoginManager.shared.currentUserProfile?.thumbPath,
+            msg: "",
+            sentAt: Date(),
+            attachments: attachments,
+            replyPreview: nil,
+            isFailed: false
+        )
+        addMessages([pendingMessage], updateType: .newer)
+        reconfigureMessageItem(messageID: messageID)
+        chatMessageCollectionView.scrollToBottom()
+        return true
+    }
+
+    @MainActor
+    func setPendingImageUploadState(_ state: PendingImageUploadState, for messageID: String) {
+        pendingImageUploadStates[messageID] = state
+        if var msg = messageMap[messageID] {
+            msg.isFailed = (state == .failed)
+            messageMap[messageID] = msg
+        }
+        let updatedVisibleCell = updateVisibleOverlayIfPossible(messageID: messageID)
+        switch state {
+        case .uploading:
+            // Avoid frequent cell reconfigure while progress ticks to prevent flicker.
+            if !updatedVisibleCell {
+                reconfigureMessageItem(messageID: messageID)
+            }
+        case .failed:
+            reconfigureMessageItem(messageID: messageID)
+        }
+    }
+
+    @MainActor
+    func schedulePendingImageUpload(room: ChatRoom, roomID: String, messageID: String, pairs: [DefaultMediaProcessingService.ImagePair]) {
+        guard pendingImageUploadTasks[messageID] == nil else { return }
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await self.uploadPendingImageMessage(room: room, roomID: roomID, messageID: messageID, pairs: pairs)
+            await MainActor.run {
+                self.pendingImageUploadTasks[messageID] = nil
+            }
+        }
+        pendingImageUploadTasks[messageID] = task
+    }
+
+    @MainActor
+    func markPendingImageUploadFailed(messageID: String) {
+        setPendingImageUploadState(.failed, for: messageID)
+    }
+
+    @MainActor
+    func finishPendingImageUpload(messageID: String) {
+        pendingImageUploadStates.removeValue(forKey: messageID)
+        pendingImageUploadPairs.removeValue(forKey: messageID)
+        pendingImageUploadTasks.removeValue(forKey: messageID)
+        if !updateVisibleOverlayIfPossible(messageID: messageID) {
+            reconfigureMessageItem(messageID: messageID)
+        }
+    }
+
+    func cleanupPendingImageOriginalFiles(_ pairs: [DefaultMediaProcessingService.ImagePair]) {
+        for pair in pairs {
+            try? FileManager.default.removeItem(at: pair.originalFileURL)
+        }
+    }
+
+    @MainActor
+    private func retryPendingImageUpload(for messageID: String) {
+        guard pendingImageUploadTasks[messageID] == nil,
+              let room = self.room,
+              let roomID = room.ID,
+              !roomID.isEmpty,
+              let pairs = pendingImageUploadPairs[messageID],
+              !pairs.isEmpty else { return }
+        setPendingImageUploadState(.uploading(0), for: messageID)
+        schedulePendingImageUpload(room: room, roomID: roomID, messageID: messageID, pairs: pairs)
+    }
+
+    private func makePendingImagePreviewAttachments(messageID: String, pairs: [DefaultMediaProcessingService.ImagePair]) -> [Attachment] {
+        let fm = FileManager.default
+        guard let cachesDir = fm.urls(for: .cachesDirectory, in: .userDomainMask).first else { return [] }
+        let baseDir = cachesDir
+            .appendingPathComponent("pending-image-preview", isDirectory: true)
+            .appendingPathComponent(messageID, isDirectory: true)
+        try? fm.createDirectory(at: baseDir, withIntermediateDirectories: true)
+
+        var attachments: [Attachment] = []
+        attachments.reserveCapacity(pairs.count)
+
+        for pair in pairs.sorted(by: { $0.index < $1.index }) {
+            let fileName = "\(pair.index)_\(pair.sha256).jpg"
+            let fileURL = baseDir.appendingPathComponent(fileName)
+            do {
+                try pair.thumbData.write(to: fileURL, options: .atomic)
+                let localPath = fileURL.absoluteString
+                attachments.append(Attachment(
+                    type: .image,
+                    index: pair.index,
+                    pathThumb: localPath,
+                    pathOriginal: localPath,
+                    width: pair.originalWidth,
+                    height: pair.originalHeight,
+                    bytesOriginal: pair.bytesOriginal,
+                    hash: pair.sha256,
+                    blurhash: nil,
+                    duration: nil
+                ))
+            } catch {
+                print("⚠️ pending preview write 실패: \(error)")
+            }
+        }
+        return attachments
+    }
+
+    private func cleanupReplacedLocalPreviewFiles(previous: ChatMessage, next: ChatMessage) {
+        let newThumbPaths = Set(next.attachments.map(\.pathThumb))
+        let fm = FileManager.default
+
+        for oldPath in previous.attachments.map(\.pathThumb) {
+            let isLocal = oldPath.hasPrefix("file://") || oldPath.hasPrefix("/")
+            guard isLocal, !newThumbPaths.contains(oldPath) else { continue }
+
+            let fileURL = oldPath.hasPrefix("file://") ? URL(string: oldPath) : URL(fileURLWithPath: oldPath)
+            if let fileURL {
+                try? fm.removeItem(at: fileURL)
+            }
+        }
+    }
+
+    private func pendingOverlayState(for messageID: String) -> ChatMessageCell.ImageUploadOverlayState? {
+        guard let state = pendingImageUploadStates[messageID] else { return nil }
+        switch state {
+        case .uploading(let progress):
+            return .uploading(progress)
+        case .failed:
+            return .failed
+        }
+    }
+
+    @MainActor
+    private func updateVisibleOverlayIfPossible(messageID: String) -> Bool {
+        let snapshot = dataSource.snapshot()
+        guard let itemIndex = snapshot.itemIdentifiers.firstIndex(where: { item in
+            if case let .message(message) = item { return message.ID == messageID }
+            return false
+        }) else { return false }
+
+        let indexPath = IndexPath(item: itemIndex, section: 0)
+        guard let cell = chatMessageCollectionView.cellForItem(at: indexPath) as? ChatMessageCell else {
+            return false
+        }
+
+        if let overlay = pendingOverlayState(for: messageID) {
+            cell.applyImageUploadOverlay(overlay)
+        } else {
+            cell.applyImageUploadOverlay(.none)
+        }
+        return true
+    }
+
+    @MainActor
+    private func reconfigureMessageItem(messageID: String) {
+        var snapshot = dataSource.snapshot()
+        guard let target = snapshot.itemIdentifiers.first(where: { item in
+            if case let .message(message) = item { return message.ID == messageID }
+            return false
+        }) else { return }
+        snapshot.reconfigureItems([target])
+        dataSource.apply(snapshot, animatingDifferences: false)
+    }
     
     //MARK: Diffable Data Source
     private func configureDataSource() {
@@ -2080,6 +2292,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                     })
                 } else {
                     cell.configureWithMessage(with: latestMessage)
+                }
+                if let state = self.pendingOverlayState(for: latestMessage.ID) {
+                    cell.applyImageUploadOverlay(state)
+                } else {
+                    cell.applyImageUploadOverlay(.none)
                 }
                 
                 // ✅ 구독 정리용 Bag 준비
@@ -2114,6 +2331,15 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                         } else {
                             // 이미지 첨부 탭 → 기존 뷰어 유지
                             self.presentImageViewer(tappedIndex: i, indexPath: indexPath)
+                        }
+                    }
+                    .store(in: &cellSubscriptions[key]!)
+
+                cell.retryTapPublisher
+                    .sink { [weak self] in
+                        guard let self else { return }
+                        Task { @MainActor in
+                            self.retryPendingImageUpload(for: latestMessage.ID)
                         }
                     }
                     .store(in: &cellSubscriptions[key]!)
@@ -2212,27 +2438,53 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 deduped.append(msg)
             }
         }
-        
-        // 3) 이미 표시 중인 항목 제거
+
+        // 3) 이미 존재하는 메시지는 최신 상태로 교체(reconfigure)
+        let existingMessages = deduped.filter { existingIDs.contains($0.ID) }
+        var hasExistingRefresh = false
+        if !existingMessages.isEmpty {
+            let existingMessageIDs = Set(existingMessages.map(\.ID))
+            for msg in existingMessages {
+                if let previous = messageMap[msg.ID] {
+                    cleanupReplacedLocalPreviewFiles(previous: previous, next: msg)
+                }
+                messageMap[msg.ID] = msg
+            }
+            let itemsToRefresh = snapshot.itemIdentifiers.filter { item in
+                if case let .message(msg) = item { return existingMessageIDs.contains(msg.ID) }
+                return false
+            }
+            if !itemsToRefresh.isEmpty {
+                snapshot.reconfigureItems(itemsToRefresh)
+                hasExistingRefresh = true
+            }
+        }
+
+        // 4) 새로 삽입할 메시지
         let incoming = deduped.filter { !existingIDs.contains($0.ID) }
-        guard !incoming.isEmpty else { return } // 변경 없음 → 스냅샷 apply 불필요
+        guard !incoming.isEmpty else {
+            if hasExistingRefresh {
+                dataSource.apply(snapshot, animatingDifferences: false)
+            }
+            return
+        }
         
-        // 4) 시간 순 정렬(오름차순)로 날짜 구분선/삽입 안정화
+        // 5) 시간 순 정렬(오름차순)로 날짜 구분선/삽입 안정화
         let now = Date()
         let sorted = incoming.sorted { (a, b) -> Bool in
             (a.sentAt ?? now) < (b.sentAt ?? now)
         }
         
-        // 5) 새 아이템 구성 (날짜 구분선 포함)
+        // 6) 새 아이템 구성 (날짜 구분선 포함)
         let items = buildNewItems(from: sorted)
         guard !items.isEmpty else { return }
         
-        // 6) 스냅샷 삽입 & 읽음 마커 처리 & 가상화(윈도우 크기 제한)
+        // 7) 스냅샷 삽입 & 읽음 마커 처리 & 가상화(윈도우 크기 제한)
         insertItems(items, into: &snapshot, updateType: updateType)
         insertReadMarkerIfNeeded(sorted, items: items, into: &snapshot, updateType: updateType)
         applyVirtualization(on: &snapshot, updateType: updateType, windowSize: windowSize)
         
-        // 7) 최종 반영
+        // 8) 최종 반영
         let animate = shouldAnimateDifferences(for: updateType, newItemCount: items.count)
         dataSource.apply(snapshot, animatingDifferences: animate)
     }

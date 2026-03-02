@@ -193,47 +193,22 @@ extension ChatViewController: PHPickerViewControllerDelegate {
                         let pairs = self.toImagePairs(prepared)
                         
                         // 2) 메시지/폴더 경로 식별자 준비
-                        guard let room = self.room else { continue }
+                        guard let room = self.room else {
+                            self.cleanupPendingImageOriginalFiles(pairs)
+                            continue
+                        }
                         let roomID = room.ID ?? ""
-                        let messageID = UUID().uuidString  // 멱등 식별자(서버에서 대체 가능)
+                        let messageID = "pending-\(UUID().uuidString)"
+                        let staged = await MainActor.run {
+                            self.stagePendingImageMessage(roomID: roomID, messageID: messageID, pairs: pairs)
+                        }
+                        if !staged {
+                            self.cleanupPendingImageOriginalFiles(pairs)
+                            continue
+                        }
 
-                        // Show HUD
-                        let hud = CircularProgressHUD.show(in: self.view, title: nil)
-                        hud.setProgress(0.0)
-
-                        do {
-                            let attachments = try await FirebaseImageStorageRepository.shared.uploadPairsToRoomMessage(
-                                pairs,
-                                roomID: roomID,
-                                messageID: messageID,
-                                cacheTTLThumbDays: 30,
-                                cacheTTLOriginalDays: 7,
-                                cleanupTemp: true,
-                                onProgress: { fraction in
-                                    Task { @MainActor in
-                                        hud.setProgress(fraction)
-                                    }
-                                }
-                            )
-                            
-                            // Hide HUD
-                            Task { @MainActor in hud.dismiss() }
-
-                            // 3) 소켓/DB 전송: 메타만 (바이너리 X)
-                            let payload = attachments.map { $0.toDict() }
-                            SocketIOManager.shared.sendImages(room, payload, senderAvatarPath: LoginManager.shared.currentUserProfile?.thumbPath)
-
-                        } catch {
-                            Task { @MainActor in hud.dismiss() }
-                            
-                            for pair in pairs {
-                                // 썸네일 Data를 그대로 캐시에 저장(재인코딩/재압축 방지)
-                                await chatImageCache.storeToDisk(data: pair.thumbData, forKey: pair.sha256)
-                                print(#function, "ThumbCache saved: \(pair.sha256)")
-                            }
-                            SocketIOManager.shared.sendFailedImages(room, fromPairs: pairs)
-                            
-                            print("업로드 실패:", error)
+                        await MainActor.run {
+                            self.schedulePendingImageUpload(room: room, roomID: roomID, messageID: messageID, pairs: pairs)
                         }
                     }
                 } catch MediaError.failedToConvertImage {
@@ -271,6 +246,52 @@ extension ChatViewController {
     /// - DI 적용 전 단계라 우선 공유 인스턴스를 사용
     private var chatImageCache: ChatImageCacheProtocol {
         ChatImageCache.shared
+    }
+
+    func uploadPendingImageMessage(
+        room: ChatRoom,
+        roomID: String,
+        messageID: String,
+        pairs: [DefaultMediaProcessingService.ImagePair]
+    ) async {
+        do {
+            let attachments = try await FirebaseImageStorageRepository.shared.uploadPairsToRoomMessage(
+                pairs,
+                roomID: roomID,
+                messageID: messageID,
+                cacheTTLThumbDays: 30,
+                cacheTTLOriginalDays: 7,
+                cleanupTemp: false,
+                onProgress: { [weak self] fraction in
+                    guard let self else { return }
+                    Task { @MainActor in
+                        self.setPendingImageUploadState(.uploading(fraction), for: messageID)
+                    }
+                }
+            )
+
+            self.cleanupPendingImageOriginalFiles(pairs)
+
+            // 업로드 완료: 셀 오버레이를 걷고 같은 messageID로 소켓 전송해 서버 메시지와 매칭
+            await MainActor.run {
+                self.finishPendingImageUpload(messageID: messageID)
+            }
+            let payload = attachments.map { $0.toDict() }
+            SocketIOManager.shared.sendImages(
+                room,
+                payload,
+                senderAvatarPath: LoginManager.shared.currentUserProfile?.thumbPath,
+                clientMessageID: messageID
+            )
+        } catch {
+            for pair in pairs {
+                await chatImageCache.storeToDisk(data: pair.thumbData, forKey: pair.sha256)
+            }
+            await MainActor.run {
+                self.markPendingImageUploadFailed(messageID: messageID)
+            }
+            print("업로드 실패:", error)
+        }
     }
     
     func uploadPreparedVideoAndBroadcast(

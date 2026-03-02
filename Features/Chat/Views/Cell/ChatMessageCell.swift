@@ -12,6 +12,12 @@ import Combine
 
 class ChatMessageCell: UICollectionViewCell {
     static let reuseIdentifier = "ChatMessageCell"
+    enum ImageUploadOverlayState: Equatable {
+        case none
+        case uploading(Double)
+        case failed
+    }
+
     private var widthConstraint: NSLayoutConstraint?
     private(set) var representedMessageID: String?
     private var thumbnailLoadTask: Task<Void, Never>?
@@ -24,6 +30,8 @@ class ChatMessageCell: UICollectionViewCell {
     // ⬇️ Combine publishers
     let imageTapSubject = PassthroughSubject<Int?, Never>()
     var imageTapPublisher: AnyPublisher<Int?, Never> { imageTapSubject.eraseToAnyPublisher() }
+    let retryTapSubject = PassthroughSubject<Void, Never>()
+    var retryTapPublisher: AnyPublisher<Void, Never> { retryTapSubject.eraseToAnyPublisher() }
 
     private let profileImageView: UIImageView = {
         var imageView = UIImageView()
@@ -89,6 +97,35 @@ class ChatMessageCell: UICollectionViewCell {
         view.isUserInteractionEnabled = true
         
         return view
+    }()
+
+    private let imageUploadOverlayView: UIView = {
+        let view = UIView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.backgroundColor = UIColor.black.withAlphaComponent(0.3)
+        view.isHidden = true
+        return view
+    }()
+
+    private let imageUploadProgressRing: CircularProgressRingView = {
+        let view = CircularProgressRingView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.isHidden = true
+        return view
+    }()
+
+    private let imageUploadRetryButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        var config = UIButton.Configuration.filled()
+        config.title = "다시 시도"
+        config.baseBackgroundColor = UIColor.black.withAlphaComponent(0.55)
+        config.baseForegroundColor = .white
+        config.cornerStyle = .capsule
+        config.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12)
+        button.configuration = config
+        button.isHidden = true
+        return button
     }()
     
     private let failedIconImageView: UIImageView = {
@@ -198,6 +235,9 @@ class ChatMessageCell: UICollectionViewCell {
         contentView.addSubview(failedIconImageView)
         bubbleView.addSubview(replyPreviewContainer)
         bubbleView.addSubview(messageLabel)
+        imagesPreviewCollectionView.addSubview(imageUploadOverlayView)
+        imageUploadOverlayView.addSubview(imageUploadProgressRing)
+        imageUploadOverlayView.addSubview(imageUploadRetryButton)
         
         messageLabelTopConsraint = messageLabel.topAnchor.constraint(equalTo: bubbleView.topAnchor, constant: 10)
         NSLayoutConstraint.activate([
@@ -222,6 +262,19 @@ class ChatMessageCell: UICollectionViewCell {
             
             failedIconImageView.widthAnchor.constraint(equalToConstant: 20),
             failedIconImageView.heightAnchor.constraint(equalToConstant: 20),
+
+            imageUploadOverlayView.leadingAnchor.constraint(equalTo: imagesPreviewCollectionView.leadingAnchor),
+            imageUploadOverlayView.trailingAnchor.constraint(equalTo: imagesPreviewCollectionView.trailingAnchor),
+            imageUploadOverlayView.topAnchor.constraint(equalTo: imagesPreviewCollectionView.topAnchor),
+            imageUploadOverlayView.bottomAnchor.constraint(equalTo: imagesPreviewCollectionView.bottomAnchor),
+
+            imageUploadProgressRing.centerXAnchor.constraint(equalTo: imageUploadOverlayView.centerXAnchor),
+            imageUploadProgressRing.centerYAnchor.constraint(equalTo: imageUploadOverlayView.centerYAnchor),
+            imageUploadProgressRing.widthAnchor.constraint(equalToConstant: 46),
+            imageUploadProgressRing.heightAnchor.constraint(equalToConstant: 46),
+
+            imageUploadRetryButton.centerXAnchor.constraint(equalTo: imageUploadOverlayView.centerXAnchor),
+            imageUploadRetryButton.centerYAnchor.constraint(equalTo: imageUploadOverlayView.centerYAnchor)
         ])
         
         // Time label priorities to avoid truncation
@@ -244,6 +297,7 @@ class ChatMessageCell: UICollectionViewCell {
         previewTapGR.cancelsTouchesInView = false
         imagesPreviewCollectionView.addGestureRecognizer(previewTapGR)
         imagesPreviewCollectionView.isUserInteractionEnabled = true
+        imageUploadRetryButton.addTarget(self, action: #selector(handleRetryTap), for: .touchUpInside)
         
         // Set up internal subviews of the video badge (host anchoring is done at configure time)
         videoBadge.addSubview(videoIconView)
@@ -280,6 +334,7 @@ class ChatMessageCell: UICollectionViewCell {
         messageLabel.textColor = .black
         highlightView?.removeFromSuperview()
         highlightView = nil
+        applyImageUploadOverlay(.none)
         
         messageLabel.text = nil
         nickNameLabel.text = nil
@@ -801,6 +856,31 @@ class ChatMessageCell: UICollectionViewCell {
         imageTapSubject.send(tappedIndex)
     }
 
+    @objc private func handleRetryTap() {
+        retryTapSubject.send(())
+    }
+
+    func applyImageUploadOverlay(_ state: ImageUploadOverlayState) {
+        switch state {
+        case .none:
+            imageUploadOverlayView.isHidden = true
+            imageUploadProgressRing.isHidden = true
+            imageUploadRetryButton.isHidden = true
+            imageUploadProgressRing.setProgress(0)
+        case .uploading(let progress):
+            imageUploadOverlayView.isHidden = false
+            imageUploadOverlayView.backgroundColor = UIColor.black.withAlphaComponent(0.36)
+            imageUploadProgressRing.isHidden = false
+            imageUploadRetryButton.isHidden = true
+            imageUploadProgressRing.setProgress(CGFloat(max(0, min(1, progress))))
+        case .failed:
+            imageUploadOverlayView.isHidden = false
+            imageUploadOverlayView.backgroundColor = UIColor.black.withAlphaComponent(0.42)
+            imageUploadProgressRing.isHidden = true
+            imageUploadRetryButton.isHidden = false
+        }
+    }
+
     // MARK: - Time Label Helpers
     private static let timeFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -861,5 +941,54 @@ class ChatMessageCell: UICollectionViewCell {
         } else {
             return String(format: "%d:%02d", m, s)
         }
+    }
+}
+
+private final class CircularProgressRingView: UIView {
+    private let trackLayer = CAShapeLayer()
+    private let progressLayer = CAShapeLayer()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isOpaque = false
+        backgroundColor = UIColor.black.withAlphaComponent(0.24)
+        layer.cornerRadius = 23
+
+        trackLayer.fillColor = UIColor.clear.cgColor
+        trackLayer.strokeColor = UIColor.white.withAlphaComponent(0.25).cgColor
+        trackLayer.lineWidth = 4
+        layer.addSublayer(trackLayer)
+
+        progressLayer.fillColor = UIColor.clear.cgColor
+        progressLayer.strokeColor = UIColor.white.cgColor
+        progressLayer.lineWidth = 4
+        progressLayer.lineCap = .round
+        progressLayer.strokeEnd = 0
+        layer.addSublayer(progressLayer)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let inset: CGFloat = 6
+        let rect = bounds.insetBy(dx: inset, dy: inset)
+        let start = -CGFloat.pi / 2
+        let end = start + (CGFloat.pi * 2)
+        let path = UIBezierPath(arcCenter: CGPoint(x: rect.midX, y: rect.midY),
+                                radius: rect.width / 2,
+                                startAngle: start,
+                                endAngle: end,
+                                clockwise: true)
+        trackLayer.frame = bounds
+        progressLayer.frame = bounds
+        trackLayer.path = path.cgPath
+        progressLayer.path = path.cgPath
+    }
+
+    func setProgress(_ progress: CGFloat) {
+        progressLayer.strokeEnd = max(0, min(1, progress))
     }
 }

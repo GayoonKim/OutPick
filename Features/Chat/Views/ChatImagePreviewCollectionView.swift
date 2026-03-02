@@ -174,7 +174,7 @@ class ChatImagePreviewCollectionView: UIView {
         collectionView.setCollectionViewLayout(configureLayout(), animated: false)
         
         let itemBySection = [Section.main: images]
-        dataSource.applySnapshotUsing(sectionIDs: [Section.main], itemsBySection: itemBySection)
+        dataSource.applySnapshotUsing(sectionIDs: [Section.main], itemsBySection: itemBySection, animatingDifferences: false)
         
         self.layoutIfNeeded()
     }

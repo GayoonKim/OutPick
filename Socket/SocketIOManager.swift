@@ -82,7 +82,7 @@ class SocketIOManager {
     private init(repositories: FirebaseRepositoryProviding = FirebaseRepositoryProvider.shared) {
         self.userProfileRepository = repositories.userProfileRepository
         self.chatRoomRepository = repositories.chatRoomRepository
-        manager = SocketManager(socketURL: URL(string: "http://172.30.1.88:3000")!, config: [
+        manager = SocketManager(socketURL: URL(string: "http://192.168.123.169:3000")!, config: [
             .log(true),
             .compress,
             // 한국어 주석: 서버가 WebSocket only(transports:['websocket'])로 동작하므로 클라이언트도 폴링을 비활성화
@@ -510,13 +510,21 @@ class SocketIOManager {
     // MARK: - Emit (meta-only attachments)
     /// 메타 전용 첨부(썸네일/원본 경로 등)를 소켓으로 전송
     /// ChatViewController에서 attachments.map { $0.toDict() } 로 호출합니다.
-    func sendImages(_ room: ChatRoom, _ attachments: [[String: Any]], senderAvatarPath: String? = nil) {
+    func sendImages(_ room: ChatRoom,
+                    _ attachments: [[String: Any]],
+                    senderAvatarPath: String? = nil,
+                    clientMessageID: String? = nil) {
         // 0) 가드
         guard !attachments.isEmpty else { return }
         let roomID = room.ID ?? ""
         let senderID = LoginManager.shared.getUserEmail
         let senderNickname = LoginManager.shared.currentUserProfile?.nickname ?? ""
-        let clientMessageID = UUID().uuidString
+        let resolvedClientMessageID: String = {
+            if let clientMessageID, !clientMessageID.isEmpty {
+                return clientMessageID
+            }
+            return UUID().uuidString
+        }()
         let now = Date()
         let isoSentAt = Self.isoFormatter.string(from: now)
         print(#function," attachments", attachments)
@@ -548,7 +556,7 @@ class SocketIOManager {
         guard socket.status == .connected else {
             let atts = attachments.enumerated().map { makeAttachment(from: $0.element, fallbackIndex: $0.offset) }
             var failed = ChatMessage(
-                ID: clientMessageID, seq: 0,
+                ID: resolvedClientMessageID, seq: 0,
                 roomID: roomID,
                 senderID: senderID,
                 senderNickname: senderNickname,
@@ -571,7 +579,7 @@ class SocketIOManager {
         let eventName = "send images" // 새 프로토콜 이벤트명 (서버 index.js와 일치)
         var body: [String: Any] = [
             "roomID": roomID,
-            "messageID": clientMessageID,
+            "messageID": resolvedClientMessageID,
             "type": "image",
             "msg": "",
             "attachments": attachments,
@@ -604,7 +612,7 @@ class SocketIOManager {
             // 실패/타임아웃: 실패 메시지를 로컬에만 퍼블리시해 재시도 UX 제공
             let atts = attachments.enumerated().map { makeAttachment(from: $0.element, fallbackIndex: $0.offset) }
             var failed = ChatMessage(
-                ID: clientMessageID, seq: 0,
+                ID: resolvedClientMessageID, seq: 0,
                 roomID: roomID,
                 senderID: senderID,
                 senderNickname: senderNickname,
