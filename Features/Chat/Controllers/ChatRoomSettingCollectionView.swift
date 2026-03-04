@@ -467,7 +467,7 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         }
     }
 
-    /// MediaThumbMeta → UIImage 배열로 소재화 (캐시 우선, 로컬 파일 폴백, URL 최후)
+    /// MediaThumbMeta → UIImage 배열로 소재화 (캐시 우선, 로컬 파일 폴백, Storage path 최후)
     private func materializeMediaThumbs(for metas: [MediaThumbMeta]) async -> [UIImage] {
         guard !metas.isEmpty else { return [] }
         var result = [UIImage]()
@@ -501,17 +501,31 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
                         }
                     }
 
-                    // 3) URL 최후 폴백 (thumbURL → originalURL)
-                    if let urlStr = thumbURL ?? originalURL, let url = URL(string: urlStr) {
-                        do {
-                            let (data, _) = try await URLSession.shared.data(from: url)
-                            if let img = UIImage(data: data) {
-                                // 캐시 저장 (키가 있으면 그 키로 저장)
+                    // 3) Storage path 최후 폴백 (thumbURL → originalURL)
+                    if let path = thumbURL ?? originalURL, !path.isEmpty {
+                        if path.hasPrefix("/") || path.hasPrefix("file://") {
+                            let localPath: String
+                            if path.hasPrefix("file://"), let p = URL(string: path)?.path {
+                                localPath = p
+                            } else {
+                                localPath = path
+                            }
+                            if FileManager.default.fileExists(atPath: localPath),
+                               let img = UIImage(contentsOfFile: localPath) {
                                 if let k = thumbKey ?? originalKey { KingFisherCacheManager.shared.storeImage(img, forKey: k) }
-                                print(#function, "4. thumbKey: \(thumbKey ?? "nil"), originalKey: \(originalKey ?? "nil")")
+                                print(#function, "4-local. thumbKey: \(thumbKey ?? "nil"), originalKey: \(originalKey ?? "nil")")
                                 return await isVideo ? self.drawPlayBadge(on: img) : img
                             }
-                        } catch { return nil }
+                        } else {
+                            do {
+                                let img = try await FirebaseImageStorageRepository.shared.fetchImageFromStorage(image: path, location: .roomImage)
+                                if let k = thumbKey ?? originalKey { KingFisherCacheManager.shared.storeImage(img, forKey: k) }
+                                print(#function, "4-storage. thumbKey: \(thumbKey ?? "nil"), originalKey: \(originalKey ?? "nil")")
+                                return await isVideo ? self.drawPlayBadge(on: img) : img
+                            } catch {
+                                return nil
+                            }
+                        }
                     }
 
                     return nil
@@ -704,6 +718,16 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
         guard !items.isEmpty else { return }
         print(#function, "items: \(items)")
         let vc = MediaGalleryViewController(items: items)
+        let mediaManager = ChatDependencyContainer.provider.mediaManager
+        vc.cachedImageProvider = { path in
+            await mediaManager.cachedImage(for: path)
+        }
+        vc.loadImageProvider = { path, maxBytes in
+            try? await mediaManager.loadImage(for: path, maxBytes: maxBytes)
+        }
+        vc.downloadURLResolver = { path in
+            try await mediaManager.resolveURL(for: path)
+        }
         vc.modalPresentationStyle = .fullScreen
         pushOrPresent(vc)
     }
@@ -718,13 +742,13 @@ class ChatRoomSettingCollectionView: UICollectionViewController, UIGestureRecogn
             let meta = self.mediaUnifiedOrder[i]
             let img = self.images[i]
             let id = "\(meta.messageID)#\(meta.idx)"
-            let urlString = meta.originalURL?.isEmpty == false ? meta.originalURL : meta.thumbURL
+            let storagePath = meta.originalURL?.isEmpty == false ? meta.originalURL : meta.thumbURL
             items.append(.init(
                 id: id,
                 image: img,
                 isVideo: meta.isVideo,
                 sentAt: meta.sentAt,
-                urlString: urlString
+                storagePath: storagePath
             ))
         }
         return items

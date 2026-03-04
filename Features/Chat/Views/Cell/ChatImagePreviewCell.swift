@@ -6,7 +6,6 @@
 //
 
 import UIKit
-import Kingfisher
 
 class ChatImagePreviewCell: UICollectionViewCell {
     static let reuseIdentifier = "ChatImagePreviewCell"

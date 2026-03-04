@@ -37,23 +37,50 @@ final class ImageCacheMemoryStore {
 /// Caches 디렉터리에 이미지 Data를 저장/조회하는 디스크 스토어
 /// - Note: 쓰기는 tmp 파일 후 move로 원자적으로 반영합니다.
 actor ImageCacheDiskStore {
+    private struct DiskEntry {
+        let url: URL
+        let size: Int64
+        let modifiedAt: Date
+    }
+
     private let fileManager = FileManager.default
     private let baseDir: URL
+    private let maxSizeBytes: Int64
+    private let trimTargetBytes: Int64
+    private var hasScannedSize = false
+    private var currentSizeBytes: Int64 = 0
 
-    init(folderName: String = "ImageCache") {
+    init(
+        folderName: String = "ImageCache",
+        maxSizeBytes: Int64 = 300 * 1024 * 1024,
+        trimTargetBytes: Int64? = nil
+    ) {
         let caches = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first!
         self.baseDir = caches.appendingPathComponent(folderName, isDirectory: true)
+        self.maxSizeBytes = max(1, maxSizeBytes)
+        let defaultTrimTarget = Int64(Double(self.maxSizeBytes) * 0.85)
+        let requestedTrimTarget = trimTargetBytes ?? defaultTrimTarget
+        self.trimTargetBytes = max(1, min(requestedTrimTarget, self.maxSizeBytes))
         try? fileManager.createDirectory(at: baseDir, withIntermediateDirectories: true)
+        Task { [weak self] in
+            guard let self else { return }
+            await self.bootstrapTrimIfNeeded()
+        }
     }
 
     func read(forKey key: String) -> Data? {
         let url = fileURL(forKey: key)
-        return try? Data(contentsOf: url)
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        touch(url)
+        return data
     }
 
     func write(data: Data, forKey key: String) {
+        ensureCurrentSizeLoaded()
+
         let url = fileURL(forKey: key)
         let tmp = url.appendingPathExtension("tmp")
+        let oldSize = fileSize(at: url) ?? 0
 
         do {
             try data.write(to: tmp, options: [.atomic])
@@ -61,19 +88,106 @@ actor ImageCacheDiskStore {
                 try? fileManager.removeItem(at: url)
             }
             try fileManager.moveItem(at: tmp, to: url)
+            touch(url)
+
+            let newSize = fileSize(at: url) ?? Int64(data.count)
+            currentSizeBytes = max(0, currentSizeBytes - oldSize + newSize)
+            trimIfNeeded()
         } catch {
+            try? fileManager.removeItem(at: tmp)
             // 필요 시 로깅 확장
         }
     }
 
     func remove(forKey key: String) {
+        ensureCurrentSizeLoaded()
+
         let url = fileURL(forKey: key)
+        if let existing = fileSize(at: url) {
+            currentSizeBytes = max(0, currentSizeBytes - existing)
+        }
         try? fileManager.removeItem(at: url)
     }
 
     private func fileURL(forKey key: String) -> URL {
         let hashed = key.sha256Hex
         return baseDir.appendingPathComponent("\(hashed).bin")
+    }
+
+    private func bootstrapTrimIfNeeded() {
+        ensureCurrentSizeLoaded()
+        trimIfNeeded()
+    }
+
+    private func ensureCurrentSizeLoaded() {
+        guard !hasScannedSize else { return }
+        hasScannedSize = true
+
+        let entries = listDiskEntries()
+        currentSizeBytes = entries.reduce(Int64(0)) { $0 + $1.size }
+    }
+
+    private func trimIfNeeded() {
+        guard currentSizeBytes > maxSizeBytes else { return }
+
+        var entries = listDiskEntries()
+        guard !entries.isEmpty else {
+            currentSizeBytes = 0
+            return
+        }
+
+        entries.sort { lhs, rhs in lhs.modifiedAt < rhs.modifiedAt }
+
+        for entry in entries {
+            try? fileManager.removeItem(at: entry.url)
+            currentSizeBytes = max(0, currentSizeBytes - entry.size)
+            if currentSizeBytes <= trimTargetBytes {
+                break
+            }
+        }
+    }
+
+    private func listDiskEntries() -> [DiskEntry] {
+        guard let files = try? fileManager.contentsOfDirectory(
+            at: baseDir,
+            includingPropertiesForKeys: [.isRegularFileKey, .contentModificationDateKey, .fileSizeKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return []
+        }
+
+        var entries: [DiskEntry] = []
+        entries.reserveCapacity(files.count)
+
+        for url in files {
+            if url.pathExtension == "tmp" {
+                try? fileManager.removeItem(at: url)
+                continue
+            }
+            guard url.pathExtension == "bin" else { continue }
+
+            guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .contentModificationDateKey, .fileSizeKey]),
+                  values.isRegularFile == true else {
+                continue
+            }
+
+            let fileSize = Int64(values.fileSize ?? 0)
+            let modifiedAt = values.contentModificationDate ?? .distantPast
+            entries.append(DiskEntry(url: url, size: fileSize, modifiedAt: modifiedAt))
+        }
+        return entries
+    }
+
+    private func fileSize(at url: URL) -> Int64? {
+        guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]),
+              values.isRegularFile == true else {
+            return nil
+        }
+        return Int64(values.fileSize ?? 0)
+    }
+
+    private func touch(_ url: URL) {
+        try? fileManager.setAttributes([.modificationDate: Date()], ofItemAtPath: url.path)
     }
 }
 
@@ -140,11 +254,24 @@ final class ImageCachePipeline {
         self.prefetchRegistry = prefetchRegistry
     }
 
+    func cachedImage(path: String) async -> UIImage? {
+        let key = canonicalKey(for: path)
+        if let cached = memory.image(forKey: key) {
+            return cached
+        }
+        if let data = await disk.read(forKey: key),
+           let diskImage = UIImage(data: data) {
+            memory.set(diskImage, forKey: key)
+            return diskImage
+        }
+        return nil
+    }
+
     func loadImage(path: String, maxBytes: Int) async throws -> UIImage {
         let key = canonicalKey(for: path)
         let fetcher = self.fetcher
 
-        if let cached = memory.image(forKey: key) {
+        if let cached = await cachedImage(path: path) {
             return cached
         }
 
@@ -153,12 +280,6 @@ final class ImageCachePipeline {
         }
 
         let task = Task<UIImage, Error> { [memory, disk] in
-            if let data = await disk.read(forKey: key),
-               let diskImage = UIImage(data: data) {
-                memory.set(diskImage, forKey: key)
-                return diskImage
-            }
-
             let downloaded = try await fetcher(path, maxBytes)
             guard let image = UIImage(data: downloaded) else {
                 throw ImageCachePipelineError.invalidImageData
@@ -211,6 +332,7 @@ final class ImageCachePipeline {
     }
 
     private func prefetchOne(path: String, maxBytes: Int) async {
+        if Task.isCancelled { return }
         let key = canonicalKey(for: path)
 
         if memory.image(forKey: key) != nil {
@@ -224,6 +346,7 @@ final class ImageCachePipeline {
 
         let task = Task<Void, Never> { [weak self] in
             guard let self else { return }
+            if Task.isCancelled { return }
             _ = try? await self.loadImage(path: path, maxBytes: maxBytes)
         }
 

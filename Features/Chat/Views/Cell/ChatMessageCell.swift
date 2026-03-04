@@ -7,7 +7,6 @@
 
 import Foundation
 import UIKit
-import Kingfisher
 import Combine
 
 class ChatMessageCell: UICollectionViewCell {
@@ -858,6 +857,10 @@ class ChatMessageCell: UICollectionViewCell {
 
     @objc private func handleRetryTap() {
         retryTapSubject.send(())
+    }
+
+    func currentPreviewImages() -> [UIImage] {
+        imagesPreviewCollectionView.currentImages()
     }
 
     func applyImageUploadOverlay(_ state: ImageUploadOverlayState) {

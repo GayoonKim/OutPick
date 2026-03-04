@@ -18,6 +18,7 @@ class ChatImagePreviewCollectionView: UIView {
     private var imagesCount = 0
     private var contentHeight: CGFloat = 0
     private var rows: [Int] = []
+    private var renderedImages: [UIImage] = []
     
     // MARK: - Compact sizing
     private let singleItemHeight: CGFloat = 200   // 단일 이미지 높이 줄임
@@ -169,6 +170,7 @@ class ChatImagePreviewCollectionView: UIView {
         self.imagesCount = images.count
         self.contentHeight = height
         self.rows = rows
+        self.renderedImages = images
         
         // 컬렉션 뷰 레이아웃 업데이트
         collectionView.setCollectionViewLayout(configureLayout(), animated: false)
@@ -177,6 +179,10 @@ class ChatImagePreviewCollectionView: UIView {
         dataSource.applySnapshotUsing(sectionIDs: [Section.main], itemsBySection: itemBySection, animatingDifferences: false)
         
         self.layoutIfNeeded()
+    }
+
+    func currentImages() -> [UIImage] {
+        renderedImages
     }
     
     func index(at point: CGPoint) -> Int? {

@@ -17,7 +17,7 @@ class MediaGalleryViewController: UICollectionViewController {
         let image: UIImage
         let isVideo: Bool
         let sentAt: Date
-        let urlString: String?   // 원본(우선) 또는 썸네일 URL 문자열
+        let storagePath: String?   // 원본(우선) 또는 썸네일 Storage path
     }
     
     private enum Section: Hashable { case day(Date) }
@@ -30,9 +30,12 @@ class MediaGalleryViewController: UICollectionViewController {
     private let titleLabel = UILabel()
     private let closeButton = UIButton(type: .system)
 
-    /// (옵션) Firebase Storage 경로("rooms/.../file") → 다운로드 URL로 해석하는 비동기 해결기 주입 지점
+    /// (옵션) 비디오 재생용 Firebase Storage path("rooms/.../file") → 다운로드 URL 해석기
     /// 주입이 없으면 내부에서 FirebaseStorage.downloadURL()을 사용
     var downloadURLResolver: ((String) async throws -> URL)?
+    /// (옵션) 이미지 캐시 조회/로더 주입. path-only 뷰어에서 사용.
+    var cachedImageProvider: SimpleImageViewerVC.CachedImageProvider?
+    var loadImageProvider: SimpleImageViewerVC.LoadImageProvider?
 
     init(items: [GalleryItem]) {
         self.items = items
@@ -243,7 +246,7 @@ extension MediaGalleryViewController {
         Task { [weak self] in
             guard let self = self else { return }
             if g.isVideo {
-                if let s = g.urlString, let url = await self.resolveURL(from: s) {
+                if let path = g.storagePath, let url = await self.resolveVideoURL(forStoragePath: path) {
                     await MainActor.run {
                         let pvc = VideoPlayerOverlayVC(url: url)
                         pvc.modalPresentationStyle = .fullScreen
@@ -262,9 +265,19 @@ extension MediaGalleryViewController {
             }
 
             // 이미지
-            if let s = g.urlString, let url = await self.resolveURL(from: s) {
+            if let path = g.storagePath, !path.isEmpty {
                 await MainActor.run {
-                    let viewer = SimpleImageViewerVC(urls: [url], startIndex: 0)
+                    let page = SimpleImageViewerVC.ProgressivePage(
+                        thumbnailImage: g.image,
+                        thumbnailPath: path,
+                        originalPath: path
+                    )
+                    let viewer = SimpleImageViewerVC(
+                        pages: [page],
+                        startIndex: 0,
+                        cachedImageProvider: self.cachedImageProvider,
+                        loadImageProvider: self.loadImageProvider
+                    )
                     viewer.modalPresentationCapturesStatusBarAppearance = true
                     viewer.modalPresentationStyle = .fullScreen
                     self.present(viewer, animated: true)
@@ -280,17 +293,17 @@ extension MediaGalleryViewController {
         }
     }
 
-    private func resolveURL(from s: String) async -> URL? {
-        // 이미 http/https/file 이면 그대로 사용
-        if let u = URL(string: s), let scheme = u.scheme?.lowercased(), ["http", "https", "file"].contains(scheme) {
+    private func resolveVideoURL(forStoragePath path: String) async -> URL? {
+        // 이미 http/https/file 이면 그대로 사용 (레거시/디버그 호환)
+        if let u = URL(string: path), let scheme = u.scheme?.lowercased(), ["http", "https", "file"].contains(scheme) {
             return u
         }
         // 외부 주입 해결기 우선 사용
         if let resolver = downloadURLResolver {
-            return try? await resolver(s)
+            return try? await resolver(path)
         }
         // 폴백: Firebase Storage 경로라 가정하고 downloadURL 호출
-        do { return try await storageDownloadURL(forPath: s) } catch { return nil }
+        do { return try await storageDownloadURL(forPath: path) } catch { return nil }
     }
 
     private func storageDownloadURL(forPath path: String) async throws -> URL {

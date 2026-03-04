@@ -21,9 +21,15 @@ protocol ChatMediaManaging {
     
     /// 비디오 에셋 프리페치
     func prefetchVideoAssets(for messages: [ChatMessage], maxConcurrent: Int, roomID: String) async
-    
-    /// 이미지 뷰어용 URL 해석
-    func resolveURLs(for paths: [String], concurrent: Int) async -> [URL]
+
+    /// path 기준 메모리/디스크 캐시 히트 조회 (네트워크 요청 없음)
+    func cachedImage(for path: String) async -> UIImage?
+
+    /// path 기준 이미지 로드 (캐시 미스 시 네트워크 포함)
+    func loadImage(for path: String, maxBytes: Int) async throws -> UIImage
+
+    /// path 기준 이미지 프리페치
+    func prefetchImages(paths: [String], maxBytes: Int, maxConcurrent: Int) async
     
     /// 단일 Storage 경로의 URL 해석
     func resolveURL(for path: String) async throws -> URL

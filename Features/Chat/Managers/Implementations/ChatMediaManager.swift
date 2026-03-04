@@ -7,15 +7,13 @@
 
 import Foundation
 import UIKit
-import Kingfisher
 import AVFoundation
 import AVKit
 
 final class ChatMediaManager: ChatMediaManaging {
     private let imageStorageManager: FirebaseImageStorageRepositoryProtocol
-    private let cacheManager: KingFisherCacheManager
     private let storageURLCache: OPStorageURLCache
-    private let imageThumbPipeline: ImageCachePipeline
+    private let imagePipeline: ImageCachePipeline
     private let imageThumbMaxBytes = 12 * 1024 * 1024
     
     // 비디오 썸네일/URL warm-up 상태 추적
@@ -23,20 +21,25 @@ final class ChatMediaManager: ChatMediaManaging {
     
     init(
         imageStorageManager: FirebaseImageStorageRepositoryProtocol = FirebaseImageStorageRepository.shared,
-        cacheManager: KingFisherCacheManager = .shared,
         storageURLCache: OPStorageURLCache? = nil,
-        imageThumbPipeline: ImageCachePipeline? = nil
+        imagePipeline: ImageCachePipeline? = nil
     ) {
         self.imageStorageManager = imageStorageManager
-        self.cacheManager = cacheManager
         self.storageURLCache = storageURLCache ?? OPStorageURLCache()
-        self.imageThumbPipeline = imageThumbPipeline ?? ImageCachePipeline { [imageStorageManager] path, maxBytes in
-            try await imageStorageManager.fetchImageDataFromStorage(
-                image: path,
-                location: .roomImage,
-                maxBytes: maxBytes
+        self.imagePipeline = imagePipeline ?? ImageCachePipeline(
+            fetcher: { [imageStorageManager] path, maxBytes in
+                try await imageStorageManager.fetchImageDataFromStorage(
+                    image: path,
+                    location: .roomImage,
+                    maxBytes: maxBytes
+                )
+            },
+            disk: ImageCacheDiskStore(
+                folderName: "ChatImageCache",
+                maxSizeBytes: 350 * 1024 * 1024,
+                trimTargetBytes: 280 * 1024 * 1024
             )
-        }
+        )
     }
     
     func cacheImagesIfNeeded(for message: ChatMessage) async -> [UIImage] {
@@ -53,17 +56,7 @@ final class ChatMediaManager: ChatMediaManaging {
             let thumbPath = attachment.pathThumb
             guard !thumbPath.isEmpty else { continue }
             do {
-                let img: UIImage
-                let isLocalFile = thumbPath.hasPrefix("/") || thumbPath.hasPrefix("file://")
-                if isLocalFile {
-                    let fileURL = thumbPath.hasPrefix("file://") ? URL(string: thumbPath)! : URL(fileURLWithPath: thumbPath)
-                    guard let data = try? Data(contentsOf: fileURL), let localImage = UIImage(data: data) else {
-                        continue
-                    }
-                    img = localImage
-                } else {
-                    img = try await imageThumbPipeline.loadImage(path: thumbPath, maxBytes: imageThumbMaxBytes)
-                }
+                let img = try await loadImage(for: thumbPath, maxBytes: imageThumbMaxBytes)
                 images.append(img)
             } catch {
                 print("⚠️ 이미지 캐시 실패: \(error)")
@@ -73,7 +66,7 @@ final class ChatMediaManager: ChatMediaManaging {
         return images
     }
     
-    func cacheVideoAssetsIfNeeded(for message: ChatMessage, in roomID: String) async {
+    func cacheVideoAssetsIfNeeded(for message: ChatMessage, in _: String) async {
         let videoAttachments = message.attachments
             .filter { $0.type == .video }
             .sorted { $0.index < $1.index }
@@ -85,37 +78,14 @@ final class ChatMediaManager: ChatMediaManaging {
         
         for attachment in videoAttachments {
             let thumbPath = attachment.pathThumb
-            let key = attachment.hash.isEmpty ? thumbPath : attachment.hash
             
             if !thumbPath.isEmpty {
-                do {
-                    let cache = KingfisherManager.shared.cache
-                    cache.memoryStorage.config.expiration = .seconds(3600)
-                    cache.diskStorage.config.expiration = .days(3)
-                    
-                    if await cacheManager.isCached(key) {
-                        // 이미 캐시됨
-                    } else {
-                        let isLocalFile = thumbPath.hasPrefix("/") || thumbPath.hasPrefix("file://")
-                        if isLocalFile {
-                            let fileURL = thumbPath.hasPrefix("file://") ? URL(string: thumbPath)! : URL(fileURLWithPath: thumbPath)
-                            if let data = try? Data(contentsOf: fileURL),
-                               let img = UIImage(data: data) {
-                                cacheManager.storeImage(img, forKey: key)
-                            }
-                        } else {
-                            let img = try await imageStorageManager.fetchImageFromStorage(image: thumbPath, location: .roomImage)
-                            cacheManager.storeImage(img, forKey: key)
-                        }
-                    }
-                } catch {
-                    print("⚠️ 비디오 썸네일 캐시 실패:", error)
-                }
+                _ = try? await loadImage(for: thumbPath, maxBytes: imageThumbMaxBytes)
             }
             
             // 원본 비디오 downloadURL warm-up
             let path = attachment.pathOriginal
-            if !path.isEmpty, !path.hasPrefix("/") {
+            if !path.isEmpty, isStoragePath(path) {
                 _ = try? await storageURLCache.url(for: path)
             }
         }
@@ -166,31 +136,46 @@ final class ChatMediaManager: ChatMediaManaging {
             index = end
         }
     }
-    
-    func resolveURLs(for paths: [String], concurrent: Int) async -> [URL] {
-        guard !paths.isEmpty else { return [] }
-        var urls = Array<URL?>(repeating: nil, count: paths.count)
-        var idx = 0
-        
-        while idx < paths.count {
-            let end = min(idx + concurrent, paths.count)
-            await withTaskGroup(of: (Int, URL?).self) { group in
-                for i in idx..<end {
-                    let p = paths[i]
-                    group.addTask { [storageURLCache] in
-                        do { return (i, try await storageURLCache.url(for: p)) }
-                        catch { return (i, nil) }
-                    }
-                }
-                for await (i, u) in group { urls[i] = u }
-            }
-            idx = end
+
+    func cachedImage(for path: String) async -> UIImage? {
+        guard !path.isEmpty else { return nil }
+
+        if let local = loadLocalImage(from: path) {
+            return local
         }
-        
-        return urls.compactMap { $0 }
+
+        if isStoragePath(path) {
+            return await imagePipeline.cachedImage(path: path)
+        }
+
+        return nil
+    }
+
+    func loadImage(for path: String, maxBytes: Int) async throws -> UIImage {
+        if let local = loadLocalImage(from: path) {
+            return local
+        }
+
+        if isStoragePath(path) {
+            return try await imagePipeline.loadImage(path: path, maxBytes: maxBytes)
+        }
+
+        throw URLError(.badURL)
+    }
+
+    func prefetchImages(paths: [String], maxBytes: Int, maxConcurrent: Int) async {
+        let normalized = Array(Set(paths.filter { isStoragePath($0) }))
+        guard !normalized.isEmpty else { return }
+        let items = normalized.map { (path: $0, maxBytes: maxBytes) }
+        await imagePipeline.prefetch(items: items, concurrency: maxConcurrent)
     }
     
     func resolveURL(for path: String) async throws -> URL {
+        if let direct = URL(string: path),
+           let scheme = direct.scheme?.lowercased(),
+           ["http", "https", "file"].contains(scheme) {
+            return direct
+        }
         return try await storageURLCache.url(for: path)
     }
     
@@ -272,6 +257,35 @@ final class ChatMediaManager: ChatMediaManaging {
         let (data, _) = try await URLSession.shared.data(from: remote)
         try data.write(to: tmp, options: .atomic)
         return tmp
+    }
+
+    private func isStoragePath(_ path: String) -> Bool {
+        !path.isEmpty && !path.isLocalFilePath
+    }
+
+    private func loadLocalImage(from path: String) -> UIImage? {
+        guard let fileURL = path.localFileURL else { return nil }
+        guard let data = try? Data(contentsOf: fileURL),
+              let image = UIImage(data: data) else {
+            return nil
+        }
+        return image
+    }
+}
+
+private extension String {
+    var isLocalFilePath: Bool {
+        hasPrefix("/") || hasPrefix("file://")
+    }
+
+    var localFileURL: URL? {
+        if hasPrefix("file://") {
+            return URL(string: self)
+        }
+        if hasPrefix("/") {
+            return URL(fileURLWithPath: self)
+        }
+        return nil
     }
 }
 
