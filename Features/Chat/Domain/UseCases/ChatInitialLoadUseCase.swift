@@ -82,9 +82,8 @@ struct DefaultChatInitialLoadPolicyResolver: ChatInitialLoadPolicyResolving {
 protocol ChatInitialLoadUseCaseProtocol {
     func execute(
         room: ChatRoom,
-        isParticipant: Bool,
-        onEvent: @escaping @MainActor (ChatInitialLoadEvent) -> Void
-    ) async
+        isParticipant: Bool
+    ) -> AsyncStream<ChatInitialLoadEvent>
 }
 
 final class DefaultChatInitialLoadUseCase: ChatInitialLoadUseCaseProtocol {
@@ -104,102 +103,114 @@ final class DefaultChatInitialLoadUseCase: ChatInitialLoadUseCaseProtocol {
 
     func execute(
         room: ChatRoom,
-        isParticipant: Bool,
-        onEvent: @escaping @MainActor (ChatInitialLoadEvent) -> Void
-    ) async {
-        await onEvent(.phaseChanged(.checkingNetwork))
+        isParticipant: Bool
+    ) -> AsyncStream<ChatInitialLoadEvent> {
+        AsyncStream { continuation in
+            let task = Task {
+                defer { continuation.finish() }
 
-        let network = networkStatusProvider.currentStatus
-        let policy = policyResolver.policy(for: network)
+                continuation.yield(.phaseChanged(.checkingNetwork))
 
-        do {
-            guard isParticipant else {
-                guard network.isOnline else {
-                    await onEvent(.render(.showCenteredMessage("미리보기를 불러오려면 네트워크 연결을 확인해 주세요.")))
-                    await onEvent(.phaseChanged(.offlineNoLocal))
-                    await onEvent(.completed)
-                    return
-                }
+                let network = networkStatusProvider.currentStatus
+                let policy = policyResolver.policy(for: network)
 
-                await onEvent(.render(.hideCenteredMessage))
-                await onEvent(.phaseChanged(.serverSyncing))
-                let preview = try await messageManager.fetchInitialServerMessages(room: room, pageSize: 100)
-                await onEvent(.render(.appendServer(preview)))
-                if !preview.isEmpty {
-                    await onEvent(.warmMedia(messages: preview, maxConcurrent: policy.mediaPrefetchConcurrency))
-                }
-                await onEvent(.phaseChanged(.ready))
-                await onEvent(.completed)
-                return
-            }
+                do {
+                    guard isParticipant else {
+                        guard network.isOnline else {
+                            continuation.yield(.render(.showCenteredMessage("미리보기를 불러오려면 네트워크 연결을 확인해 주세요.")))
+                            continuation.yield(.phaseChanged(.offlineNoLocal))
+                            continuation.yield(.completed)
+                            return
+                        }
 
-            await onEvent(.phaseChanged(.loadingLocal))
-            let roomID = room.ID ?? ""
-            let localMessages = try await messageManager.loadLocalRecentMessages(
-                roomID: roomID,
-                limit: policy.localRenderLimit
-            )
+                        continuation.yield(.render(.hideCenteredMessage))
+                        continuation.yield(.phaseChanged(.serverSyncing))
+                        let preview = try await messageManager.fetchInitialServerMessages(room: room, pageSize: 100)
+                        if Task.isCancelled { return }
 
-            if !localMessages.isEmpty {
-                await onEvent(.render(.hideCenteredMessage))
-                await onEvent(.render(.replaceLocal(localMessages)))
-                await onEvent(.phaseChanged(.localVisible(isStale: true)))
-                await onEvent(.warmMedia(messages: localMessages, maxConcurrent: policy.mediaPrefetchConcurrency))
-            }
-
-            guard network.isOnline else {
-                if localMessages.isEmpty {
-                    await onEvent(.render(.showCenteredMessage("주고받은 메시지가 아직 없어요.\n네트워크 연결을 확인해 주세요.")))
-                    await onEvent(.phaseChanged(.offlineNoLocal))
-                } else {
-                    await onEvent(.phaseChanged(.ready))
-                }
-                await onEvent(.seedHotUsers(localMessages))
-                // Even in the offline branch, bind realtime listeners.
-                // `NWPathMonitor` may still be warming up on first screen entry and report `.offline` transiently.
-                // Socket subscriptions are safe to attach and will join later when the socket reconnects.
-                await onEvent(.participantSessionReady(bindRealtime: true))
-                await onEvent(.completed)
-                return
-            }
-
-            await onEvent(.render(.hideCenteredMessage))
-            await onEvent(.phaseChanged(.serverSyncing))
-
-            let serverMessages = try await messageManager.fetchInitialServerMessages(
-                room: room,
-                pageSize: policy.serverInitialPageSize
-            )
-
-            if !serverMessages.isEmpty {
-                await onEvent(.render(.appendServer(serverMessages)))
-                await onEvent(.warmMedia(messages: serverMessages, maxConcurrent: policy.mediaPrefetchConcurrency))
-            }
-
-            async let persist: Void = messageManager.persistFetchedServerMessages(serverMessages)
-            let deletedIDs = try await messageManager.syncDeletedStates(localMessages: localMessages, room: room)
-            try await persist
-
-            if !deletedIDs.isEmpty {
-                let deletedMessages = localMessages
-                    .filter { deletedIDs.contains($0.ID) }
-                    .map { msg in
-                        var copy = msg
-                        copy.isDeleted = true
-                        return copy
+                        continuation.yield(.render(.appendServer(preview)))
+                        if !preview.isEmpty {
+                            continuation.yield(.warmMedia(messages: preview, maxConcurrent: policy.mediaPrefetchConcurrency))
+                        }
+                        continuation.yield(.phaseChanged(.ready))
+                        continuation.yield(.completed)
+                        return
                     }
-                if !deletedMessages.isEmpty {
-                    await onEvent(.render(.reloadDeleted(deletedMessages)))
+
+                    continuation.yield(.phaseChanged(.loadingLocal))
+                    let roomID = room.ID ?? ""
+                    let localMessages = try await messageManager.loadLocalRecentMessages(
+                        roomID: roomID,
+                        limit: policy.localRenderLimit
+                    )
+                    if Task.isCancelled { return }
+
+                    if !localMessages.isEmpty {
+                        continuation.yield(.render(.hideCenteredMessage))
+                        continuation.yield(.render(.replaceLocal(localMessages)))
+                        continuation.yield(.phaseChanged(.localVisible(isStale: true)))
+                        continuation.yield(.warmMedia(messages: localMessages, maxConcurrent: policy.mediaPrefetchConcurrency))
+                    }
+
+                    guard network.isOnline else {
+                        if localMessages.isEmpty {
+                            continuation.yield(.render(.showCenteredMessage("주고받은 메시지가 아직 없어요.\n네트워크 연결을 확인해 주세요.")))
+                            continuation.yield(.phaseChanged(.offlineNoLocal))
+                        } else {
+                            continuation.yield(.phaseChanged(.ready))
+                        }
+                        continuation.yield(.seedHotUsers(localMessages))
+                        continuation.yield(.participantSessionReady(bindRealtime: true))
+                        continuation.yield(.completed)
+                        return
+                    }
+
+                    continuation.yield(.render(.hideCenteredMessage))
+                    continuation.yield(.phaseChanged(.serverSyncing))
+
+                    let serverMessages = try await messageManager.fetchInitialServerMessages(
+                        room: room,
+                        pageSize: policy.serverInitialPageSize
+                    )
+                    if Task.isCancelled { return }
+
+                    if !serverMessages.isEmpty {
+                        continuation.yield(.render(.appendServer(serverMessages)))
+                        continuation.yield(.warmMedia(messages: serverMessages, maxConcurrent: policy.mediaPrefetchConcurrency))
+                    }
+
+                    async let persist: Void = messageManager.persistFetchedServerMessages(serverMessages)
+                    let deletedIDs = try await messageManager.syncDeletedStates(localMessages: localMessages, room: room)
+                    try await persist
+                    if Task.isCancelled { return }
+
+                    if !deletedIDs.isEmpty {
+                        let deletedMessages = localMessages
+                            .filter { deletedIDs.contains($0.ID) }
+                            .map { msg in
+                                var copy = msg
+                                copy.isDeleted = true
+                                return copy
+                            }
+                        if !deletedMessages.isEmpty {
+                            continuation.yield(.render(.reloadDeleted(deletedMessages)))
+                        }
+                    }
+
+                    continuation.yield(.seedHotUsers(localMessages + serverMessages))
+                    continuation.yield(.phaseChanged(.ready))
+                    continuation.yield(.participantSessionReady(bindRealtime: true))
+                    continuation.yield(.completed)
+                } catch {
+                    if Task.isCancelled { return }
+                    continuation.yield(.phaseChanged(.failed(message: error.localizedDescription)))
+                    continuation.yield(.completed)
                 }
             }
 
-            await onEvent(.seedHotUsers(localMessages + serverMessages))
-            await onEvent(.phaseChanged(.ready))
-            await onEvent(.participantSessionReady(bindRealtime: true))
-            await onEvent(.completed)
-        } catch {
-            await onEvent(.phaseChanged(.failed(message: error.localizedDescription)))
-            await onEvent(.completed)
+            continuation.onTermination = { @Sendable _ in
+                task.cancel()
+            }
         }
     }
 }

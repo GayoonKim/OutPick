@@ -19,7 +19,6 @@ class ChatMessageCell: UICollectionViewCell {
 
     private var widthConstraint: NSLayoutConstraint?
     private(set) var representedMessageID: String?
-    private var thumbnailLoadTask: Task<Void, Never>?
     private var currentHighlightKeyword: String?
     
     protocol ChatMessageCellDelegate: AnyObject {
@@ -323,8 +322,6 @@ class ChatMessageCell: UICollectionViewCell {
     
     override func prepareForReuse() {
         super.prepareForReuse()
-        thumbnailLoadTask?.cancel()
-        thumbnailLoadTask = nil
         representedMessageID = nil
         currentHighlightKeyword = nil
         hideVideoBadge()
@@ -342,6 +339,7 @@ class ChatMessageCell: UICollectionViewCell {
         nickNameLabel.isHidden = false
         bubbleView.backgroundColor = UIColor(white: 0.1, alpha: 0.03)
         imagesPreviewCollectionView.isHidden = true
+        imagesPreviewCollectionView.updateCollectionView([], 0, [], thumbnailLoader: nil)
 
         bubbleView.isHidden = false
         messageLabel.isHidden = false
@@ -443,8 +441,6 @@ class ChatMessageCell: UICollectionViewCell {
     }
     
     func configureWithMessage(with message: ChatMessage/*, originalPreviewProvider: (() -> (String, String)?)?*/) {
-        thumbnailLoadTask?.cancel()
-        thumbnailLoadTask = nil
         representedMessageID = message.ID
         resetDynamicLayoutConstraintsForReconfigure()
         // Explicitly reset/hide/unhide and clear any previous width constraint
@@ -453,6 +449,8 @@ class ChatMessageCell: UICollectionViewCell {
         messageLabel.isHidden = true ? false : false // ensure visible (no-op but explicit)
         messageLabel.isHidden = false
         imagesPreviewCollectionView.isHidden = true
+        imagesPreviewCollectionView.updateCollectionView([], 0, [], thumbnailLoader: nil)
+        hideVideoBadge()
 
         // Compute isMine once
         let isMine = (LoginManager.shared.currentUserProfile?.nickname ?? "") == message.senderNickname
@@ -559,11 +557,8 @@ class ChatMessageCell: UICollectionViewCell {
     
     func configureWithImage(
         with message: ChatMessage,
-        images: [UIImage],
-        thumbnailLoader: ((ChatMessage) async -> [UIImage])? = nil
+        thumbnailLoader: ((Attachment) async -> UIImage?)? = nil
     ) {
-        thumbnailLoadTask?.cancel()
-        thumbnailLoadTask = nil
         representedMessageID = message.ID
         resetDynamicLayoutConstraintsForReconfigure()
         messageLabel.attributedText = nil
@@ -573,6 +568,7 @@ class ChatMessageCell: UICollectionViewCell {
             bubbleView.isHidden = false
             messageLabel.isHidden = false
             imagesPreviewCollectionView.isHidden = true
+            imagesPreviewCollectionView.updateCollectionView([], 0, [], thumbnailLoader: nil)
 
             messageLabel.text = "삭제된 메시지입니다."
             messageLabel.textColor = UIColor.black.withAlphaComponent(0.4)
@@ -715,7 +711,16 @@ class ChatMessageCell: UICollectionViewCell {
                 failedIconImageViewTrainlingConstraint
             ].compactMap{$0})
 
-            imagesPreviewCollectionView.updateCollectionView(images, contentHeight, rows)
+            let previewItems = makePreviewItems(from: message)
+            imagesPreviewCollectionView.updateCollectionView(
+                previewItems,
+                contentHeight,
+                rows,
+                thumbnailLoader: { item in
+                    guard let thumbnailLoader else { return nil }
+                    return await thumbnailLoader(item.attachment)
+                }
+            )
 
             // 보낸 시간 (실패 메시지는 숨김)
             if message.isFailed {
@@ -726,33 +731,7 @@ class ChatMessageCell: UICollectionViewCell {
                 mountTimeLabel(on: imagesPreviewCollectionView, isMine: isMine)
             }
 
-            if let firstVideo = message.attachments.first, firstVideo.type == .video {
-                if let dur = firstVideo.duration {
-                    showVideoBadge(durationText: formatDuration(dur))
-                } else {
-                    hideVideoBadge()
-                }
-            } else {
-                hideVideoBadge()
-            }
-        }
-
-        guard images.isEmpty,
-              let thumbnailLoader,
-              !message.attachments.isEmpty else { return }
-
-        let messageID = message.ID
-        thumbnailLoadTask = Task { [weak self] in
-            guard let self else { return }
-            let loadedImages = await thumbnailLoader(message)
-            if Task.isCancelled { return }
-
-            await MainActor.run {
-                guard self.representedMessageID == messageID else { return }
-                self.thumbnailLoadTask = nil
-                self.configureWithImage(with: message, images: loadedImages)
-                self.highlightKeyword(self.currentHighlightKeyword)
-            }
+            hideVideoBadge()
         }
     }
     
@@ -859,7 +838,7 @@ class ChatMessageCell: UICollectionViewCell {
         retryTapSubject.send(())
     }
 
-    func currentPreviewImages() -> [UIImage] {
+    func currentPreviewImages() -> [UIImage?] {
         imagesPreviewCollectionView.currentImages()
     }
 
@@ -932,6 +911,27 @@ class ChatMessageCell: UICollectionViewCell {
         ]
         NSLayoutConstraint.activate(videoBadgeConstraints)
         host.bringSubviewToFront(videoBadge)
+    }
+
+    private func makePreviewItems(from message: ChatMessage) -> [ChatImagePreviewItem] {
+        message.attachments
+            .sorted { $0.index < $1.index }
+            .enumerated()
+            .map { offset, attachment in
+                let durationText: String?
+                if attachment.type == .video, let duration = attachment.duration {
+                    durationText = formatDuration(duration)
+                } else {
+                    durationText = nil
+                }
+
+                return ChatImagePreviewItem(
+                    id: "\(message.ID)#\(offset)#\(attachment.index)",
+                    displayIndex: offset,
+                    attachment: attachment,
+                    durationText: durationText
+                )
+            }
     }
     
     private func formatDuration(_ seconds: Double) -> String {

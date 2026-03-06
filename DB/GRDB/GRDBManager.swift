@@ -447,11 +447,22 @@ final class GRDBManager {
                     print("FTS insert 실패: \(error)")
                 }
                 
-                // 6) Image index upsert for this message (meta only)
-                try self.upsertImageIndex(for: message, in: db)
-                
-                // 6b) Video index upsert for this message (meta only)
-                try self.upsertVideoIndex(for: message, in: db)
+                if message.isDeleted {
+                    try db.execute(
+                        sql: "DELETE FROM imageIndex WHERE roomID = ? AND messageID = ?",
+                        arguments: [message.roomID, message.ID]
+                    )
+                    try db.execute(
+                        sql: "DELETE FROM videoIndex WHERE roomID = ? AND messageID = ?",
+                        arguments: [message.roomID, message.ID]
+                    )
+                } else {
+                    // 6) Image index upsert for this message (meta only)
+                    try self.upsertImageIndex(for: message, in: db)
+                    
+                    // 6b) Video index upsert for this message (meta only)
+                    try self.upsertVideoIndex(for: message, in: db)
+                }
             }
         }
         
@@ -839,6 +850,7 @@ final class GRDBManager {
         try dbPool.write { db in
             try db.execute(sql: "DELETE FROM chatMessage WHERE roomID = ?", arguments: [roomID])
             try db.execute(sql: "DELETE FROM imageIndex WHERE roomID = ?", arguments: [roomID])
+            try db.execute(sql: "DELETE FROM videoIndex WHERE roomID = ?", arguments: [roomID])
             try db.execute(sql: "DELETE FROM chatMessageFTS WHERE roomID = ?", arguments: [roomID])
         }
     }
@@ -983,6 +995,69 @@ final class GRDBManager {
                 """,
                 arguments: [roomID, beforeSentAt, beforeSentAt, beforeMessageID, limit]
             )
+        }
+    }
+
+    func upsertMediaIndexEntries(_ entries: [ChatRoomMediaIndexEntry]) throws {
+        guard !entries.isEmpty else { return }
+
+        try dbPool.write { db in
+            for entry in entries {
+                switch entry.type {
+                case .image:
+                    try db.execute(sql: """
+                        INSERT OR REPLACE INTO imageIndex
+                        (roomID, messageID, idx, thumbKey, originalKey, thumbURL, originalURL, width, height, bytesOriginal, hash, isFailed, localThumb, sentAt)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                                   arguments: [
+                                    entry.roomID,
+                                    entry.messageID,
+                                    entry.idx,
+                                    entry.thumbKey,
+                                    entry.originalKey,
+                                    entry.thumbURL,
+                                    entry.originalURL,
+                                    entry.width,
+                                    entry.height,
+                                    entry.bytesOriginal,
+                                    entry.hash,
+                                    false,
+                                    nil,
+                                    entry.sentAt
+                                   ])
+
+                case .video:
+                    try db.execute(sql: """
+                        INSERT OR REPLACE INTO videoIndex
+                        (roomID, messageID, idx,
+                         thumbKey, originalKey, thumbURL, originalURL,
+                         width, height, bytesOriginal,
+                         duration, approxBitrateMbps, preset,
+                         hash, isFailed, localThumb, sentAt)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                                   arguments: [
+                                    entry.roomID,
+                                    entry.messageID,
+                                    entry.idx,
+                                    entry.thumbKey,
+                                    entry.originalKey,
+                                    entry.thumbURL,
+                                    entry.originalURL,
+                                    entry.width,
+                                    entry.height,
+                                    entry.bytesOriginal,
+                                    entry.duration,
+                                    nil,
+                                    nil,
+                                    entry.hash,
+                                    false,
+                                    nil,
+                                    entry.sentAt
+                                   ])
+                }
+            }
         }
     }
     

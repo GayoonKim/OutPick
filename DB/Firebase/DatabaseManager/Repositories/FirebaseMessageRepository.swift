@@ -10,10 +10,16 @@ import FirebaseFirestore
 
 final class FirebaseMessageRepository: FirebaseMessageRepositoryProtocol {
     private let db: Firestore
+    private let mediaIndexRepository: FirebaseChatRoomMediaIndexRepositoryProtocol
     private var lastFetchedMessageSnapshot: DocumentSnapshot?
     
-    init(db: Firestore, paginationStateRepository: PaginationStateRepositoryProtocol? = nil) {
+    init(
+        db: Firestore,
+        paginationStateRepository: PaginationStateRepositoryProtocol? = nil,
+        mediaIndexRepository: FirebaseChatRoomMediaIndexRepositoryProtocol? = nil
+    ) {
         self.db = db
+        self.mediaIndexRepository = mediaIndexRepository ?? FirebaseChatRoomMediaIndexRepository(db: db)
     }
     
     func saveMessage(_ message: ChatMessage, _ room: ChatRoom) async throws {
@@ -25,8 +31,11 @@ final class FirebaseMessageRepository: FirebaseMessageRepositoryProtocol {
                 .document(roomID)
                 .collection("Messages")
                 .document(message.ID)
-            
-            try await messageRef.setData(message.toDict())
+
+            let batch = db.batch()
+            batch.setData(message.toDict(), forDocument: messageRef)
+            mediaIndexRepository.addMediaIndexWrites(for: message, in: batch)
+            try await batch.commit()
             
             print("메시지 저장 성공 => \(message)")
         } catch {
@@ -74,10 +83,13 @@ final class FirebaseMessageRepository: FirebaseMessageRepositoryProtocol {
                 print("⚠️ 메시지 문서를 찾을 수 없음 (roomID=\(roomID), messageID=\(messageID))")
                 throw FirebaseError.FailedToFetchRoom
             }
+            let batch = db.batch()
             for doc in snapshot.documents {
-                try await doc.reference.updateData(["isDeleted": true])
+                batch.updateData(["isDeleted": true], forDocument: doc.reference)
                 print("✅ 메시지 삭제 업데이트 성공: docID=\(doc.documentID), messageID=\(messageID)")
             }
+            try await batch.commit()
+            try await mediaIndexRepository.markMediaIndexDeleted(roomID: roomID, messageID: messageID)
         } catch {
             print("🔥 메시지 삭제 업데이트 실패: \(error)")
             throw error

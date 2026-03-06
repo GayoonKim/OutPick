@@ -159,8 +159,7 @@ final class ChatMessageManager: ChatMessageManaging {
         guard !idsToUpdate.isEmpty else { return [] }
         
         let roomID = room.ID ?? ""
-        try await grdbManager.updateMessagesIsDeleted(idsToUpdate, isDeleted: true, inRoom: roomID)
-        try await grdbManager.updateReplyPreviewsIsDeleted(referencing: idsToUpdate, isDeleted: true, inRoom: roomID)
+        try await applyLocalDeletion(idsToUpdate, inRoom: roomID)
         
         return idsToUpdate
     }
@@ -170,8 +169,7 @@ final class ChatMessageManager: ChatMessageManaging {
         let roomID = room.ID ?? ""
         
         // 1. GRDB 업데이트
-        try await grdbManager.updateMessagesIsDeleted([messageID], isDeleted: true, inRoom: roomID)
-        try grdbManager.deleteImageIndex(forMessageID: messageID, inRoom: roomID)
+        try await applyLocalDeletion([messageID], inRoom: roomID)
         
         // 2. Firestore 업데이트
         try await messageRepository.updateMessageIsDeleted(roomID: roomID, messageID: messageID)
@@ -247,8 +245,7 @@ final class ChatMessageManager: ChatMessageManaging {
         let listener = messageRepository.listenToDeletedMessages(roomID: roomID) { deletedMessageID in
             Task.detached(priority: .medium) {
                 do {
-                    try await self.grdbManager.updateMessagesIsDeleted([deletedMessageID], isDeleted: true, inRoom: roomID)
-                    try await self.grdbManager.updateReplyPreviewsIsDeleted(referencing: [deletedMessageID], isDeleted: true, inRoom: roomID)
+                    try await self.applyLocalDeletion([deletedMessageID], inRoom: roomID)
                 } catch {
                     print("❌ GRDB deletion persistence failed:", error)
                 }
@@ -266,5 +263,14 @@ final class ChatMessageManager: ChatMessageManaging {
     
     func saveMessage(_ message: ChatMessage, room: ChatRoom) async throws {
         try await messageRepository.saveMessage(message, room)
+    }
+
+    private func applyLocalDeletion(_ messageIDs: [String], inRoom roomID: String) async throws {
+        guard !messageIDs.isEmpty, !roomID.isEmpty else { return }
+
+        try await grdbManager.updateMessagesIsDeleted(messageIDs, isDeleted: true, inRoom: roomID)
+        try await grdbManager.updateReplyPreviewsIsDeleted(referencing: messageIDs, isDeleted: true, inRoom: roomID)
+        try grdbManager.deleteImageIndex(forMessageIDs: messageIDs, inRoom: roomID)
+        try grdbManager.deleteVideoIndex(forMessageIDs: messageIDs, inRoom: roomID)
     }
 }

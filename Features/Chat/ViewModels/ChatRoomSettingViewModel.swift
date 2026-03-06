@@ -1,0 +1,276 @@
+//
+//  ChatRoomSettingViewModel.swift
+//  OutPick
+//
+//  Created by Codex on 3/7/26.
+//
+
+import Foundation
+import UIKit
+import Combine
+import Kingfisher
+import FirebaseStorage
+
+@MainActor
+final class ChatRoomSettingViewModel {
+    struct GalleryItemModel {
+        let id: String
+        let image: UIImage
+        let isVideo: Bool
+        let sentAt: Date
+        let storagePath: String?
+    }
+
+    private struct MaterializedMedia {
+        let item: ChatRoomSettingMediaItem
+        let image: UIImage
+    }
+
+    @Published private(set) var roomInfo: ChatRoom
+    @Published private(set) var mediaItems: [ChatRoomSettingMediaItem]
+    @Published private(set) var localUsers: [LocalUser]
+
+    var participantsHasMore: Bool { participantsHasMoreStorage }
+    var participantsIsLoading: Bool { participantsIsLoadingStorage }
+    var mediaHasMore: Bool { mediaHasMoreStorage }
+    var mediaIsLoading: Bool { mediaIsLoadingStorage }
+
+    private let loadParticipantsUseCase: LoadChatRoomParticipantsUseCaseProtocol
+    private let loadMediaUseCase: LoadChatRoomMediaUseCaseProtocol
+    private let mediaManager: ChatMediaManaging
+    private let mediaThumbMaxBytes = 12 * 1024 * 1024
+
+    private var participantsIsLoadingStorage: Bool = false
+    private var participantsHasMoreStorage: Bool = true
+
+    private var mediaIsLoadingStorage: Bool = false
+    private var mediaHasMoreStorage: Bool = true
+    private var galleryItemsByID: [String: GalleryItemModel] = [:]
+
+    init(
+        room: ChatRoom,
+        profiles: [UserProfile],
+        mediaManager: ChatMediaManaging,
+        loadParticipantsUseCase: LoadChatRoomParticipantsUseCaseProtocol,
+        loadMediaUseCase: LoadChatRoomMediaUseCaseProtocol
+    ) {
+        self.roomInfo = room
+        self.mediaItems = []
+        self.localUsers = profiles.map {
+            LocalUser(email: $0.email, nickname: $0.nickname ?? "", profileImagePath: $0.thumbPath)
+        }
+        self.mediaManager = mediaManager
+        self.loadParticipantsUseCase = loadParticipantsUseCase
+        self.loadMediaUseCase = loadMediaUseCase
+    }
+
+    func updateRoomInfo(_ room: ChatRoom) {
+        roomInfo = room
+    }
+
+    func loadInitialParticipants() async {
+        do {
+            let result = try await loadParticipantsUseCase.loadInitial(room: roomInfo)
+            participantsHasMoreStorage = result.hasMore
+            localUsers = result.users
+
+            await prefetchProfileAvatars(for: result.users, topCount: result.users.count)
+        } catch {
+            print("❌ 초기 참여자 로드 실패:", error)
+        }
+    }
+
+    func loadMoreParticipantsIfNeeded() async {
+        guard participantsHasMoreStorage, !participantsIsLoadingStorage else { return }
+        participantsIsLoadingStorage = true
+        defer { participantsIsLoadingStorage = false }
+
+        do {
+            let result = try await loadParticipantsUseCase.loadMore(room: roomInfo)
+            participantsHasMoreStorage = result.hasMore
+
+            if !result.users.isEmpty {
+                localUsers.append(contentsOf: result.users)
+                await prefetchProfileAvatars(for: result.users, topCount: result.users.count)
+            }
+        } catch {
+            print("❌ 참여자 추가 로드 실패:", error)
+        }
+    }
+
+    func loadInitialMedia() async {
+        do {
+            let result = try await loadMediaUseCase.loadInitial(room: roomInfo)
+            mediaItems = result.items
+            syncGalleryCache(with: result.items)
+            mediaHasMoreStorage = result.hasMore
+        } catch {
+            print("❌ 초기 미디어 로드 실패:", error)
+        }
+    }
+
+    func loadMoreMediaIfNeeded() async {
+        guard mediaHasMoreStorage, !mediaIsLoadingStorage else { return }
+        mediaIsLoadingStorage = true
+        defer { mediaIsLoadingStorage = false }
+
+        do {
+            let result = try await loadMediaUseCase.loadMore(room: roomInfo)
+            mediaHasMoreStorage = result.hasMore
+
+            guard !result.items.isEmpty else { return }
+
+            mediaItems.append(contentsOf: result.items)
+            syncGalleryCache(with: mediaItems)
+        } catch {
+            print("❌ 미디어 추가 로드 실패:", error)
+        }
+    }
+
+    func thumbnailImage(for item: ChatRoomSettingMediaItem) async -> UIImage? {
+        if let cached = galleryItemsByID[item.id] {
+            return cached.image
+        }
+
+        guard let materialized = await materializeMediaThumb(for: item) else {
+            return nil
+        }
+
+        let galleryItem = Self.makeGalleryItem(from: materialized)
+        galleryItemsByID[item.id] = galleryItem
+        return galleryItem.image
+    }
+
+    func buildGalleryItems() async -> [GalleryItemModel] {
+        let items = mediaItems
+        let missingItems = items.filter { galleryItemsByID[$0.id] == nil }
+
+        if !missingItems.isEmpty {
+            let materialized = await materializeMediaThumbs(for: missingItems)
+            for media in materialized {
+                galleryItemsByID[media.item.id] = Self.makeGalleryItem(from: media)
+            }
+        }
+
+        return items.compactMap { galleryItemsByID[$0.id] }
+    }
+
+    private func materializeMediaThumbs(for items: [ChatRoomSettingMediaItem]) async -> [MaterializedMedia] {
+        guard !items.isEmpty else { return [] }
+
+        return await withTaskGroup(of: (Int, MaterializedMedia?).self, returning: [MaterializedMedia].self) { group in
+            for (index, item) in items.enumerated() {
+                group.addTask { [weak self] in
+                    guard let self else { return (index, nil) }
+                    let materialized = await self.materializeMediaThumb(for: item)
+                    return (index, materialized)
+                }
+            }
+
+            var ordered = Array<MaterializedMedia?>(repeating: nil, count: items.count)
+            for await (index, materialized) in group {
+                ordered[index] = materialized
+            }
+            return ordered.compactMap { $0 }
+        }
+    }
+
+    private func materializeMediaThumb(for item: ChatRoomSettingMediaItem) async -> MaterializedMedia? {
+        for path in item.previewPaths {
+            if let image = await mediaManager.cachedImage(for: path) {
+                let composed = item.isVideo ? Self.drawPlayBadge(on: image) : image
+                return MaterializedMedia(item: item, image: composed)
+            }
+        }
+
+        for path in item.previewPaths {
+            do {
+                let image = try await mediaManager.loadImage(for: path, maxBytes: mediaThumbMaxBytes)
+                let composed = item.isVideo ? Self.drawPlayBadge(on: image) : image
+                return MaterializedMedia(item: item, image: composed)
+            } catch {
+                continue
+            }
+        }
+
+        return nil
+    }
+
+    private func syncGalleryCache(with items: [ChatRoomSettingMediaItem]) {
+        let validIDs = Set(items.map(\.id))
+        galleryItemsByID = galleryItemsByID.filter { validIDs.contains($0.key) }
+    }
+
+    private func prefetchProfileAvatars(for users: [LocalUser], topCount: Int = 50) async {
+        guard !users.isEmpty else { return }
+
+        let sorted = users.sorted {
+            $0.nickname.localizedCaseInsensitiveCompare($1.nickname) == .orderedAscending
+        }
+        let slice = sorted.prefix(min(topCount, sorted.count))
+
+        for user in slice {
+            guard let path = user.profileImagePath, !path.isEmpty else { continue }
+            let key = path
+            let cache = KingfisherManager.shared.cache
+            if cache.isCached(forKey: key) {
+                continue
+            }
+
+            let ref = Storage.storage().reference(withPath: path)
+            do {
+                let data = try await ref.data(maxSize: 3 * 1024 * 1024)
+                if let image = UIImage(data: data) {
+                    KingFisherCacheManager.shared.storeImage(image, forKey: key)
+                }
+            } catch {
+                print("👤 아바타 프리패치 실패(\(user.email)):", error)
+            }
+        }
+    }
+
+    private static func makeGalleryItem(from media: MaterializedMedia) -> GalleryItemModel {
+        return GalleryItemModel(
+            id: media.item.id,
+            image: media.image,
+            isVideo: media.item.isVideo,
+            sentAt: media.item.sentAt,
+            storagePath: media.item.storagePath
+        )
+    }
+
+    private static func drawPlayBadge(on image: UIImage) -> UIImage {
+        let scale = image.scale
+        let size = image.size
+        UIGraphicsBeginImageContextWithOptions(size, false, scale)
+        image.draw(in: CGRect(origin: .zero, size: size))
+
+        let minSide = min(size.width, size.height)
+        let circleDiameter = minSide * 0.28
+        let circleRect = CGRect(
+            x: (size.width - circleDiameter) / 2,
+            y: (size.height - circleDiameter) / 2,
+            width: circleDiameter,
+            height: circleDiameter
+        )
+
+        let circlePath = UIBezierPath(ovalIn: circleRect)
+        UIColor.black.withAlphaComponent(0.35).setFill()
+        circlePath.fill()
+
+        let triSide = circleDiameter * 0.5
+        let triHeight = triSide * sqrt(3) / 2
+        let center = CGPoint(x: circleRect.midX, y: circleRect.midY)
+        let triPath = UIBezierPath()
+        triPath.move(to: CGPoint(x: center.x - triSide * 0.25, y: center.y - triHeight / 2))
+        triPath.addLine(to: CGPoint(x: center.x - triSide * 0.25, y: center.y + triHeight / 2))
+        triPath.addLine(to: CGPoint(x: center.x + triSide * 0.5, y: center.y))
+        triPath.close()
+        UIColor.white.withAlphaComponent(0.9).setFill()
+        triPath.fill()
+
+        let composed = UIGraphicsGetImageFromCurrentImageContext()
+        UIGraphicsEndImageContext()
+        return composed ?? image
+    }
+}

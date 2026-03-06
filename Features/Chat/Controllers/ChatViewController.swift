@@ -33,7 +33,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private var chatMessageCollectionView = ChatMessageCollectionView()
     private var dataSource: UICollectionViewDiffableDataSource<Section, Item>!
     private var cancellables = Set<AnyCancellable>()
-    private var initialLoadEventCancellable: AnyCancellable?
+    private var initialLoadTask: Task<Void, Never>?
     private var chatCustomMemucancellables = Set<AnyCancellable>()
     
     private var lastMessageDate: Date?
@@ -264,7 +264,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         return view
     }()
     
-    private var settingPanelVC: ChatRoomSettingCollectionView?
+    private var settingPanelVC: ChatRoomSettingViewController?
     private lazy var dimView: UIView = {
         //        let v = UIControl(frame: .zero)
         let v = UIView()
@@ -395,8 +395,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
         
         stopAllPrefetchers()
-        initialLoadEventCancellable?.cancel()
-        initialLoadEventCancellable = nil
+        initialLoadTask?.cancel()
+        initialLoadTask = nil
         searchMessagesTask?.cancel()
         searchMessagesTask = nil
         searchJumpTask?.cancel()
@@ -444,7 +444,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     //MARK: 메시지 관련
     @MainActor
     private func setupInitialMessages() {
-        Task {
+        initialLoadTask?.cancel()
+        initialLoadTask = Task { @MainActor [weak self] in
+            guard let self else { return }
             guard let room = self.room,
                   let viewModel = ensureChatRoomViewModel() else { return }
             let isParticipant = room.participants.contains(LoginManager.shared.getUserEmail)
@@ -457,74 +459,69 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 LoadingIndicator.shared.stop()
             }
 
-            initialLoadEventCancellable?.cancel()
-            initialLoadEventCancellable = viewModel.initialLoadEventPublisher
-                .receive(on: DispatchQueue.main)
-                .sink { [weak self] event in
-                    guard let self else { return }
+            for await event in viewModel.startInitialLoadEvents(isParticipant: isParticipant) {
+                if Task.isCancelled { break }
 
-                    switch event {
-                    case .phaseChanged(let phase):
-                        switch phase {
-                        case .localVisible, .offlineNoLocal, .ready:
-                            stopLoadingIfNeeded()
-                        case .failed(let message):
-                            stopLoadingIfNeeded()
-                            print("❌ 메시지 초기화 실패:", message)
-                        case .idle, .checkingNetwork, .loadingLocal, .serverSyncing:
-                            break
-                        }
-
-                    case .render(let command):
-                        switch command {
-                        case .replaceLocal(let messages):
-                            self.setCenteredStatusMessage(nil)
-                            self.lastReadMessageID = messages.last?.ID
-                            self.addMessages(messages, updateType: .initial)
-                            stopLoadingIfNeeded()
-
-                        case .appendServer(let messages):
-                            self.setCenteredStatusMessage(nil)
-                            let hasExistingMessages = self.dataSource.snapshot().itemIdentifiers.contains {
-                                if case .message = $0 { return true }
-                                return false
-                            }
-                            self.addMessages(messages, updateType: hasExistingMessages ? .newer : .initial)
-                            if !messages.isEmpty {
-                                stopLoadingIfNeeded()
-                            }
-
-                        case .reloadDeleted(let messages):
-                            self.addMessages(messages, updateType: .reload)
-
-                        case .showCenteredMessage(let message):
-                            self.setCenteredStatusMessage(message)
-                            stopLoadingIfNeeded()
-
-                        case .hideCenteredMessage:
-                            self.setCenteredStatusMessage(nil)
-                        }
-
-                    case .warmMedia(let messages, let maxConcurrent):
-                        self.scheduleInitialMediaWarmup(for: messages, maxConcurrent: maxConcurrent)
-
-                    case .seedHotUsers(let messages):
-                        self.seedHotUserPool(with: messages)
-
-                    case .participantSessionReady(let bindRealtime):
-                        self.isUserInCurrentRoom = true
-                        if bindRealtime {
-                            self.bindMessagePublishers()
-                        }
-
-                    case .completed:
+                switch event {
+                case .phaseChanged(let phase):
+                    switch phase {
+                    case .localVisible, .offlineNoLocal, .ready:
                         stopLoadingIfNeeded()
-                        self.initialLoadEventCancellable?.cancel()
-                        self.initialLoadEventCancellable = nil
+                    case .failed(let message):
+                        stopLoadingIfNeeded()
+                        print("❌ 메시지 초기화 실패:", message)
+                    case .idle, .checkingNetwork, .loadingLocal, .serverSyncing:
+                        break
                     }
-                }
 
-            await viewModel.startInitialLoad(isParticipant: isParticipant)
+                case .render(let command):
+                    switch command {
+                    case .replaceLocal(let messages):
+                        self.setCenteredStatusMessage(nil)
+                        self.lastReadMessageID = messages.last?.ID
+                        self.addMessages(messages, updateType: .initial)
+                        stopLoadingIfNeeded()
+
+                    case .appendServer(let messages):
+                        self.setCenteredStatusMessage(nil)
+                        let hasExistingMessages = self.dataSource.snapshot().itemIdentifiers.contains {
+                            if case .message = $0 { return true }
+                            return false
+                        }
+                        self.addMessages(messages, updateType: hasExistingMessages ? .newer : .initial)
+                        if !messages.isEmpty {
+                            stopLoadingIfNeeded()
+                        }
+
+                    case .reloadDeleted(let messages):
+                        self.addMessages(messages, updateType: .reload)
+
+                    case .showCenteredMessage(let message):
+                        self.setCenteredStatusMessage(message)
+                        stopLoadingIfNeeded()
+
+                    case .hideCenteredMessage:
+                        self.setCenteredStatusMessage(nil)
+                    }
+
+                case .warmMedia(let messages, let maxConcurrent):
+                    self.scheduleInitialMediaWarmup(for: messages, maxConcurrent: maxConcurrent)
+
+                case .seedHotUsers(let messages):
+                    self.seedHotUserPool(with: messages)
+
+                case .participantSessionReady(let bindRealtime):
+                    self.isUserInCurrentRoom = true
+                    if bindRealtime {
+                        self.bindMessagePublishers()
+                    }
+
+                case .completed:
+                    stopLoadingIfNeeded()
+                }
+            }
+
+            stopLoadingIfNeeded()
         }
     }
 
@@ -1462,11 +1459,29 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             self.detachInteractiveDismissGesture()
             
             let repositories = self.firebaseRepositories
-            let settingVC = ChatRoomSettingCollectionView(
+            let participantsRepository = GRDBChatRoomParticipantsRepository()
+            let localMediaRepository = GRDBChatRoomMediaIndexRepository()
+            let remoteMediaRepository = FirebaseChatRoomMediaIndexAdapter(
+                repository: repositories.mediaIndexRepository
+            )
+            let participantsUseCase = LoadChatRoomParticipantsUseCase(
+                participantsRepository: participantsRepository,
+                userProfileRepository: repositories.userProfileRepository
+            )
+            let mediaUseCase = LoadChatRoomMediaUseCase(
+                localMediaRepository: localMediaRepository,
+                remoteMediaRepository: remoteMediaRepository
+            )
+            let settingViewModel = ChatRoomSettingViewModel(
                 room: room,
                 profiles: [],
-                images: [],
-                userProfileRepository: repositories.userProfileRepository,
+                mediaManager: self.mediaManager,
+                loadParticipantsUseCase: participantsUseCase,
+                loadMediaUseCase: mediaUseCase
+            )
+            let settingVC = ChatRoomSettingViewController(
+                viewModel: settingViewModel,
+                mediaManager: self.mediaManager,
                 editRoomHandler: { room, pickedImage, pickedImageData, isRemoved, newName, newDesc in
                     try await repositories.chatRoomRepository.editRoom(
                         room: room,
@@ -1492,7 +1507,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
     
     @MainActor
-    private func presentSettingVC(_ VC: ChatRoomSettingCollectionView) {
+    private func presentSettingVC(_ VC: ChatRoomSettingViewController) {
         guard settingPanelVC == nil else { return }
         settingPanelVC = VC
         
@@ -1930,8 +1945,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 } else {
                     try await messageManager.deleteMessage(message: message, room: room)
                 }
-                // GRDB 이미지 인덱스 삭제는 별도 처리
-                try GRDBManager.shared.deleteImageIndex(forMessageID: message.ID, inRoom: room.ID ?? "")
                 print("✅ 메시지 삭제 성공: \(message.ID)")
             } catch {
                 print("❌ 메시지 삭제 처리 실패:", error)
@@ -2285,9 +2298,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 let latestMessage = self.messageMap[message.ID] ?? message
                 
                 if !latestMessage.attachments.isEmpty {
-                    cell.configureWithImage(with: latestMessage, images: [], thumbnailLoader: { [weak self] renderMessage in
-                        guard let self else { return [] }
-                        return await self.mediaManager.cacheImagesIfNeeded(for: renderMessage)
+                    cell.configureWithImage(with: latestMessage, thumbnailLoader: { [weak self] attachment in
+                        guard let self else { return nil }
+                        return await self.thumbnailImage(for: attachment)
                     })
                 } else {
                     cell.configureWithMessage(with: latestMessage)
@@ -2710,6 +2723,31 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     // Debounced cleanup task for cancelling prefetches that moved far outside visible range
     private var mediaPrefetchCleanupTask: Task<Void, Never>? = nil
+
+    private func thumbnailImage(for attachment: Attachment) async -> UIImage? {
+        var seen = Set<String>()
+        let previewPaths = [attachment.pathThumb, attachment.pathOriginal].compactMap { path -> String? in
+            guard !path.isEmpty else { return nil }
+            guard seen.insert(path).inserted else { return nil }
+            return path
+        }
+
+        guard !previewPaths.isEmpty else { return nil }
+
+        for path in previewPaths {
+            if let image = await mediaManager.cachedImage(for: path) {
+                return image
+            }
+        }
+
+        for path in previewPaths {
+            if let image = try? await mediaManager.loadImage(for: path, maxBytes: 12 * 1024 * 1024) {
+                return image
+            }
+        }
+
+        return nil
+    }
     
     private func presentImageViewer(tappedIndex: Int, indexPath: IndexPath) {
         guard let item = dataSource.itemIdentifier(for: indexPath),

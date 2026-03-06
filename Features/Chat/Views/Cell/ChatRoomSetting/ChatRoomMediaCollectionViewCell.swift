@@ -10,8 +10,9 @@ import UIKit
 class ChatRoomMediaCollectionViewCell: UICollectionViewCell {
     
     static let reuseIdentifier = "ChatRoomMediaCell"
-    private var images: [UIImage] = []
+    private var mediaItems: [ChatRoomSettingMediaItem] = []
     private var didAddHorizontalCollectionView = false
+    private var thumbnailLoader: MediaSectionImagePreviewCell.ThumbnailLoader?
     
     /// 탭/더보기/섬네일 선택 시 갤러리 오픈을 요청하는 콜백 (startIndex: 진입 위치)
     var onOpenGallery: (() -> Void)?
@@ -75,16 +76,21 @@ class ChatRoomMediaCollectionViewCell: UICollectionViewCell {
         ])
     }
     
-    func configureCell(for images: [UIImage]) {
+    func configureCell(
+        for mediaItems: [ChatRoomSettingMediaItem],
+        thumbnailLoader: @escaping MediaSectionImagePreviewCell.ThumbnailLoader
+    ) {
         imageVideoLabel.text = "사진/동영상"
-        self.images = images
+        self.mediaItems = mediaItems
+        self.thumbnailLoader = thumbnailLoader
+        horizontalCollectionView.isHidden = mediaItems.isEmpty
         
         // 내부 미리보기 갱신
         if didAddHorizontalCollectionView {
             horizontalCollectionView.reloadData()
         }
         
-        if !images.isEmpty {
+        if !mediaItems.isEmpty {
             if !didAddHorizontalCollectionView {
                 self.contentView.addSubview(horizontalCollectionView)
                 
@@ -103,6 +109,7 @@ class ChatRoomMediaCollectionViewCell: UICollectionViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         onOpenGallery = nil
+        thumbnailLoader = nil
     }
     
     required init?(coder: NSCoder) {
@@ -112,13 +119,16 @@ class ChatRoomMediaCollectionViewCell: UICollectionViewCell {
 
 extension ChatRoomMediaCollectionViewCell: UICollectionViewDataSource, UICollectionViewDelegate {
     func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
-        self.images.count + 1
+        guard !self.mediaItems.isEmpty else { return 0 }
+        return self.mediaItems.count + 1
     }
     
     func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
-        if indexPath.item < images.count {
+        if indexPath.item < mediaItems.count {
             let cell = collectionView.dequeueReusableCell(withReuseIdentifier: MediaSectionImagePreviewCell.reuseIdentifier, for: indexPath) as! MediaSectionImagePreviewCell
-            cell.configure(with: self.images[indexPath.item])
+            if let thumbnailLoader {
+                cell.configure(with: self.mediaItems[indexPath.item], thumbnailLoader: thumbnailLoader)
+            }
             
             return cell
         } else {

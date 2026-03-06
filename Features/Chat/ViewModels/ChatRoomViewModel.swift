@@ -40,7 +40,6 @@ final class ChatRoomViewModel {
     private let messageUseCase: ChatRoomMessageUseCaseProtocol
     private let searchUseCase: ChatRoomSearchUseCaseProtocol
     private let lifecycleUseCase: ChatRoomLifecycleUseCaseProtocol
-    private let initialLoadEventSubject = PassthroughSubject<ChatInitialLoadEvent, Never>()
 
     private(set) var isInitialLoading: Bool = true
     private(set) var isLoadingOlder: Bool = false
@@ -90,9 +89,6 @@ final class ChatRoomViewModel {
     }
 
     var roomID: String { room.ID ?? "" }
-    var initialLoadEventPublisher: AnyPublisher<ChatInitialLoadEvent, Never> {
-        initialLoadEventSubject.eraseToAnyPublisher()
-    }
     var roomChangePublisher: AnyPublisher<ChatRoom, Never> {
         lifecycleUseCase.roomChangePublisher
     }
@@ -124,35 +120,51 @@ final class ChatRoomViewModel {
         return updatedRoom
     }
 
-    func startInitialLoad(
+    func startInitialLoadEvents(
         isParticipant: Bool
-    ) async {
-        isInitialLoading = true
-        defer { isInitialLoading = false }
+    ) -> AsyncStream<ChatInitialLoadEvent> {
+        AsyncStream { continuation in
+            let task = Task { @MainActor [weak self] in
+                guard let self else {
+                    continuation.finish()
+                    return
+                }
 
-        var localMessages: [ChatMessage] = []
-        var serverMessages: [ChatMessage] = []
+                self.isInitialLoading = true
+                defer {
+                    self.isInitialLoading = false
+                    continuation.finish()
+                }
 
-        await initialLoadUseCase.execute(room: room, isParticipant: isParticipant) { [weak self] event in
-            guard let self else { return }
+                var localMessages: [ChatMessage] = []
+                var serverMessages: [ChatMessage] = []
 
-            if isParticipant {
-                switch event {
-                case .render(.replaceLocal(let messages)):
-                    localMessages = messages
+                for await event in self.initialLoadUseCase.execute(room: self.room, isParticipant: isParticipant) {
+                    if Task.isCancelled { return }
 
-                case .render(.appendServer(let messages)):
-                    serverMessages = messages
+                    if isParticipant {
+                        switch event {
+                        case .render(.replaceLocal(let messages)):
+                            localMessages = messages
 
-                case .participantSessionReady:
-                    self.applyInitialMessageSyncState(localMessages: localMessages, serverMessages: serverMessages)
+                        case .render(.appendServer(let messages)):
+                            serverMessages = messages
 
-                default:
-                    break
+                        case .participantSessionReady:
+                            self.applyInitialMessageSyncState(localMessages: localMessages, serverMessages: serverMessages)
+
+                        default:
+                            break
+                        }
+                    }
+
+                    continuation.yield(event)
                 }
             }
 
-            self.initialLoadEventSubject.send(event)
+            continuation.onTermination = { @Sendable _ in
+                task.cancel()
+            }
         }
     }
 

@@ -8,17 +8,41 @@
 import Foundation
 import UIKit
 
+struct ChatImagePreviewItem: Hashable {
+    let id: String
+    let displayIndex: Int
+    let attachment: Attachment
+    let durationText: String?
+
+    var previewPaths: [String] {
+        var seen = Set<String>()
+        return [attachment.pathThumb, attachment.pathOriginal].compactMap { path in
+            guard !path.isEmpty else { return nil }
+            guard seen.insert(path).inserted else { return nil }
+            return path
+        }
+    }
+
+    var isVideo: Bool {
+        attachment.type == .video
+    }
+}
+
 class ChatImagePreviewCollectionView: UIView {
     enum Section: Hashable {
         case main
     }
+
+    typealias ThumbnailLoader = (ChatImagePreviewItem) async -> UIImage?
     
     private var collectionView: UICollectionView!
-    private var dataSource: UICollectionViewDiffableDataSource<Section, UIImage>!
+    private var dataSource: UICollectionViewDiffableDataSource<Section, ChatImagePreviewItem>!
     private var imagesCount = 0
     private var contentHeight: CGFloat = 0
     private var rows: [Int] = []
-    private var renderedImages: [UIImage] = []
+    private var previewItems: [ChatImagePreviewItem] = []
+    private var renderedImagesByDisplayIndex: [Int: UIImage] = [:]
+    private var thumbnailLoader: ThumbnailLoader?
     
     // MARK: - Compact sizing
     private let singleItemHeight: CGFloat = 200   // 단일 이미지 높이 줄임
@@ -151,38 +175,54 @@ class ChatImagePreviewCollectionView: UIView {
     }
     
     private func configureDataSource() {
-        dataSource = UICollectionViewDiffableDataSource(collectionView: collectionView) { [weak self] collectionView, indexPath, image in
-            guard self != nil else { return nil }
+        dataSource = UICollectionViewDiffableDataSource(collectionView: collectionView) { [weak self] collectionView, indexPath, item in
+            guard let self else { return nil }
 
             let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ChatImagePreviewCell.reuseIdentifier, for: indexPath) as! ChatImagePreviewCell
-            // 1) Set low-res thumbnail immediately
-            cell.configure(with: image)
+            let renderedImage = self.renderedImagesByDisplayIndex[item.displayIndex]
+            cell.configure(
+                with: item,
+                image: renderedImage,
+                thumbnailLoader: self.thumbnailLoader
+            ) { [weak self] image in
+                guard let self, let image else { return }
+                self.renderedImagesByDisplayIndex[item.displayIndex] = image
+            }
 
             return cell
         }
 
-        var snapshot = NSDiffableDataSourceSnapshot<Section, UIImage>()
+        var snapshot = NSDiffableDataSourceSnapshot<Section, ChatImagePreviewItem>()
         snapshot.appendSections([Section.main])
         dataSource.apply(snapshot, animatingDifferences: false)
     }
     
-    func updateCollectionView(_ images: [UIImage], _ height: CGFloat, _ rows: [Int]) {
-        self.imagesCount = images.count
+    func updateCollectionView(
+        _ items: [ChatImagePreviewItem],
+        _ height: CGFloat,
+        _ rows: [Int],
+        thumbnailLoader: ThumbnailLoader?
+    ) {
+        self.imagesCount = items.count
         self.contentHeight = height
         self.rows = rows
-        self.renderedImages = images
+        self.previewItems = items
+        self.thumbnailLoader = thumbnailLoader
+
+        let validDisplayIndices = Set(items.map(\.displayIndex))
+        renderedImagesByDisplayIndex = renderedImagesByDisplayIndex.filter { validDisplayIndices.contains($0.key) }
         
         // 컬렉션 뷰 레이아웃 업데이트
         collectionView.setCollectionViewLayout(configureLayout(), animated: false)
         
-        let itemBySection = [Section.main: images]
+        let itemBySection = [Section.main: items]
         dataSource.applySnapshotUsing(sectionIDs: [Section.main], itemsBySection: itemBySection, animatingDifferences: false)
         
         self.layoutIfNeeded()
     }
 
-    func currentImages() -> [UIImage] {
-        renderedImages
+    func currentImages() -> [UIImage?] {
+        previewItems.map { renderedImagesByDisplayIndex[$0.displayIndex] }
     }
     
     func index(at point: CGPoint) -> Int? {
