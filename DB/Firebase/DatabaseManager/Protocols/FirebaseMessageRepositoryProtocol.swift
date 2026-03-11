@@ -24,6 +24,15 @@ protocol FirebaseMessageRepositoryProtocol {
     
     /// 메시지 페이지네이션 조회
     func fetchMessagesPaged(for room: ChatRoom, pageSize: Int, reset: Bool) async throws -> [ChatMessage]
+
+    /// 최신 메시지 tail 조회
+    func fetchLatestMessages(for room: ChatRoom, limit: Int) async throws -> [ChatMessage]
+
+    /// 특정 seq 이후의 메시지 조회
+    func fetchMessagesAfterSeq(room: ChatRoom, afterSeq: Int64, limit: Int) async throws -> [ChatMessage]
+
+    /// 특정 seq 이전의 메시지 조회
+    func fetchMessagesBeforeSeq(room: ChatRoom, beforeSeq: Int64, limit: Int) async throws -> [ChatMessage]
     
     /// 특정 메시지 이전의 과거 메시지 조회
     func fetchOlderMessages(for room: ChatRoom, before messageID: String, limit: Int) async throws -> [ChatMessage]

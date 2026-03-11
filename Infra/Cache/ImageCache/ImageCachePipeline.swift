@@ -225,6 +225,41 @@ actor ImageCachePrefetchRegistry {
     }
 }
 
+actor ImageCacheAsyncLimiter {
+    private var permits: Int
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    init(_ maxPermits: Int) {
+        self.permits = max(1, maxPermits)
+    }
+
+    func withPermit<T>(_ operation: @Sendable () async throws -> T) async rethrows -> T {
+        await acquire()
+        defer { release() }
+        return try await operation()
+    }
+
+    private func acquire() async {
+        if permits > 0 {
+            permits -= 1
+            return
+        }
+
+        await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+        }
+    }
+
+    private func release() {
+        if !waiters.isEmpty {
+            let continuation = waiters.removeFirst()
+            continuation.resume()
+        } else {
+            permits += 1
+        }
+    }
+}
+
 enum ImageCachePipelineError: Error {
     case invalidImageData
 }
@@ -234,24 +269,29 @@ enum ImageCachePipelineError: Error {
 final class ImageCachePipeline {
     typealias Fetcher = @Sendable (_ path: String, _ maxBytes: Int) async throws -> Data
 
+    private static let sharedLoadLimiter = ImageCacheAsyncLimiter(6)
+
     private let fetcher: Fetcher
     private let memory: ImageCacheMemoryStore
     private let disk: ImageCacheDiskStore
     private let inflight: ImageCacheInFlightRegistry
     private let prefetchRegistry: ImageCachePrefetchRegistry
+    private let loadLimiter: ImageCacheAsyncLimiter
 
     init(
         fetcher: @escaping Fetcher,
         memory: ImageCacheMemoryStore = ImageCacheMemoryStore(),
         disk: ImageCacheDiskStore = ImageCacheDiskStore(),
         inflight: ImageCacheInFlightRegistry = ImageCacheInFlightRegistry(),
-        prefetchRegistry: ImageCachePrefetchRegistry = ImageCachePrefetchRegistry()
+        prefetchRegistry: ImageCachePrefetchRegistry = ImageCachePrefetchRegistry(),
+        loadLimiter: ImageCacheAsyncLimiter = ImageCachePipeline.sharedLoadLimiter
     ) {
         self.fetcher = fetcher
         self.memory = memory
         self.disk = disk
         self.inflight = inflight
         self.prefetchRegistry = prefetchRegistry
+        self.loadLimiter = loadLimiter
     }
 
     func cachedImage(path: String) async -> UIImage? {
@@ -279,15 +319,17 @@ final class ImageCachePipeline {
             return try await existing.value
         }
 
-        let task = Task<UIImage, Error> { [memory, disk] in
-            let downloaded = try await fetcher(path, maxBytes)
-            guard let image = UIImage(data: downloaded) else {
-                throw ImageCachePipelineError.invalidImageData
-            }
+        let task = Task<UIImage, Error> { [memory, disk, loadLimiter] in
+            try await loadLimiter.withPermit {
+                let downloaded = try await fetcher(path, maxBytes)
+                guard let image = UIImage(data: downloaded) else {
+                    throw ImageCachePipelineError.invalidImageData
+                }
 
-            memory.set(image, forKey: key)
-            await disk.write(data: downloaded, forKey: key)
-            return image
+                memory.set(image, forKey: key)
+                await disk.write(data: downloaded, forKey: key)
+                return image
+            }
         }
 
         await inflight.set(task, for: key)

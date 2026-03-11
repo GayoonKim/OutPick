@@ -20,14 +20,85 @@ final class ChatMessageManager: ChatMessageManaging {
         self.grdbManager = grdbManager
     }
 
-    func loadLocalRecentMessages(roomID: String, limit: Int) async throws -> [ChatMessage] {
-        try await Task(priority: .userInitiated) {
-            try await grdbManager.fetchRecentMessages(inRoom: roomID, limit: limit)
-        }.value
+    func loadLocalInitialWindow(
+        roomID: String,
+        mode: ChatInitialOpenMode,
+        policy: ChatInitialLoadPolicy
+    ) async throws -> ChatInitialWindow {
+        switch mode {
+        case .latestTail(let latestSeq):
+            let messages = try await Task(priority: .userInitiated) {
+                try await grdbManager.fetchRecentMessages(inRoom: roomID, limit: policy.latestTailSize)
+            }.value
+            return makeInitialWindow(
+                messages: messages,
+                readBoundarySeq: nil,
+                latestSeq: latestSeq
+            )
+
+        case .unreadAnchor(let lastReadSeq, let latestSeq):
+            async let beforeMessages = grdbManager.fetchMessagesBeforeSeq(
+                inRoom: roomID,
+                beforeSeq: lastReadSeq + 1,
+                limit: policy.unreadBeforeContextSize
+            )
+            async let afterMessages = grdbManager.fetchMessagesAfterSeq(
+                inRoom: roomID,
+                afterSeq: lastReadSeq,
+                limit: policy.unreadAfterSize
+            )
+
+            let messages = combineAndSortInitialWindow(
+                before: try await beforeMessages,
+                after: try await afterMessages
+            )
+            return makeInitialWindow(
+                messages: messages,
+                readBoundarySeq: lastReadSeq,
+                latestSeq: latestSeq
+            )
+        }
     }
 
-    func fetchInitialServerMessages(room: ChatRoom, pageSize: Int) async throws -> [ChatMessage] {
-        try await messageRepository.fetchMessagesPaged(for: room, pageSize: pageSize, reset: true)
+    func fetchServerInitialWindow(
+        room: ChatRoom,
+        mode: ChatInitialOpenMode,
+        policy: ChatInitialLoadPolicy
+    ) async throws -> ChatInitialWindow {
+        switch mode {
+        case .latestTail(let latestSeq):
+            let messages = try await messageRepository.fetchLatestMessages(
+                for: room,
+                limit: policy.latestTailSize
+            )
+            return makeInitialWindow(
+                messages: messages,
+                readBoundarySeq: nil,
+                latestSeq: latestSeq
+            )
+
+        case .unreadAnchor(let lastReadSeq, let latestSeq):
+            async let beforeMessages = messageRepository.fetchMessagesBeforeSeq(
+                room: room,
+                beforeSeq: lastReadSeq + 1,
+                limit: policy.unreadBeforeContextSize
+            )
+            async let afterMessages = messageRepository.fetchMessagesAfterSeq(
+                room: room,
+                afterSeq: lastReadSeq,
+                limit: policy.unreadAfterSize
+            )
+
+            let messages = combineAndSortInitialWindow(
+                before: try await beforeMessages,
+                after: try await afterMessages
+            )
+            return makeInitialWindow(
+                messages: messages,
+                readBoundarySeq: lastReadSeq,
+                latestSeq: latestSeq
+            )
+        }
     }
 
     func persistFetchedServerMessages(_ messages: [ChatMessage]) async throws {
@@ -272,5 +343,34 @@ final class ChatMessageManager: ChatMessageManaging {
         try await grdbManager.updateReplyPreviewsIsDeleted(referencing: messageIDs, isDeleted: true, inRoom: roomID)
         try grdbManager.deleteImageIndex(forMessageIDs: messageIDs, inRoom: roomID)
         try grdbManager.deleteVideoIndex(forMessageIDs: messageIDs, inRoom: roomID)
+    }
+
+    private func combineAndSortInitialWindow(
+        before: [ChatMessage],
+        after: [ChatMessage]
+    ) -> [ChatMessage] {
+        var seen = Set<String>()
+        let combined = (before + after).filter { seen.insert($0.ID).inserted }
+        return combined.sorted { lhs, rhs in
+            if lhs.seq != rhs.seq { return lhs.seq < rhs.seq }
+            return lhs.ID < rhs.ID
+        }
+    }
+
+    private func makeInitialWindow(
+        messages: [ChatMessage],
+        readBoundarySeq: Int64?,
+        latestSeq: Int64
+    ) -> ChatInitialWindow {
+        let firstSeq = messages.first?.seq ?? 0
+        let windowMaxSeq = messages.last?.seq ?? 0
+
+        return ChatInitialWindow(
+            messages: messages,
+            readBoundarySeq: readBoundarySeq,
+            latestSeq: latestSeq,
+            hasMoreOlder: firstSeq > 1,
+            hasMoreNewer: windowMaxSeq < latestSeq
+        )
     }
 }

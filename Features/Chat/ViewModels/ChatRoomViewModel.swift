@@ -59,6 +59,7 @@ final class ChatRoomViewModel {
     private(set) var liveMode: LiveMode = .live
     private(set) var entryTailSeq: Int64 = 0
     private(set) var windowMaxSeq: Int64 = 0
+    private(set) var initialReadBoundarySeq: Int64? = nil
 
     private var liveBuffer: [ChatMessage] = []
     private var liveBufferIDs: Set<String> = []
@@ -136,22 +137,13 @@ final class ChatRoomViewModel {
                     continuation.finish()
                 }
 
-                var localMessages: [ChatMessage] = []
-                var serverMessages: [ChatMessage] = []
-
                 for await event in self.initialLoadUseCase.execute(room: self.room, isParticipant: isParticipant) {
                     if Task.isCancelled { return }
 
                     if isParticipant {
                         switch event {
-                        case .render(.replaceLocal(let messages)):
-                            localMessages = messages
-
-                        case .render(.appendServer(let messages)):
-                            serverMessages = messages
-
-                        case .participantSessionReady:
-                            self.applyInitialMessageSyncState(localMessages: localMessages, serverMessages: serverMessages)
+                        case .participantSessionReady(let state, _):
+                            self.applyInitialMessageSyncState(state)
 
                         default:
                             break
@@ -191,6 +183,9 @@ final class ChatRoomViewModel {
 
         let loaded = try await messageUseCase.loadNewerMessages(room: room, after: messageID)
 
+        if loaded.isEmpty {
+            hasMoreNewer = false
+        }
         if let pageMax = loaded.last?.seq, pageMax > windowMaxSeq {
             windowMaxSeq = pageMax
         }
@@ -198,6 +193,7 @@ final class ChatRoomViewModel {
         var bufferedMessagesToFlush: [ChatMessage] = []
         if liveMode == .catchingUp && windowMaxSeq >= entryTailSeq {
             liveMode = .live
+            hasMoreNewer = false
             bufferedMessagesToFlush = flushBufferedLiveMessages()
         }
 
@@ -221,11 +217,12 @@ final class ChatRoomViewModel {
         }
     }
 
-    private func applyInitialMessageSyncState(localMessages: [ChatMessage], serverMessages: [ChatMessage]) {
-        entryTailSeq = Int64(room.seq)
-        let localMaxSeq = localMessages.map(\.seq).max() ?? 0
-        let serverMaxSeq = serverMessages.map(\.seq).max() ?? 0
-        windowMaxSeq = max(localMaxSeq, serverMaxSeq)
+    private func applyInitialMessageSyncState(_ state: ChatInitialSessionState) {
+        entryTailSeq = state.latestSeq
+        windowMaxSeq = state.windowMaxSeq
+        initialReadBoundarySeq = state.readBoundarySeq
+        hasMoreOlder = state.hasMoreOlder
+        hasMoreNewer = state.hasMoreNewer
         liveMode = (windowMaxSeq >= entryTailSeq) ? .live : .catchingUp
         pendingLastReadSeq = 0
         queuedLastReadSeq = 0

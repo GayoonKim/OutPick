@@ -43,18 +43,12 @@ final class ChatMediaManager: ChatMediaManaging {
     }
     
     func cacheImagesIfNeeded(for message: ChatMessage) async -> [UIImage] {
-        guard !message.attachments.isEmpty else { return [] }
-
-        // UI 썸네일은 이미지/비디오 모두 필요합니다.
-        let thumbAttachments = message.attachments
-            .filter { $0.type == .image || $0.type == .video }
-            .sorted { $0.index < $1.index }
+        let thumbPaths = thumbnailPaths(for: message)
+        guard !thumbPaths.isEmpty else { return [] }
         
         var images: [UIImage] = []
         
-        for attachment in thumbAttachments {
-            let thumbPath = attachment.pathThumb
-            guard !thumbPath.isEmpty else { continue }
+        for thumbPath in thumbPaths {
             do {
                 let img = try await loadImage(for: thumbPath, maxBytes: imageThumbMaxBytes)
                 images.append(img)
@@ -96,24 +90,8 @@ final class ChatMediaManager: ChatMediaManaging {
     }
     
     func prefetchThumbnails(for messages: [ChatMessage], maxConcurrent: Int) async {
-        let imageMessages = messages.filter { $0.attachments.contains { $0.type == .image } }
-        
-        var index = 0
-        while index < imageMessages.count {
-            let end = min(index + maxConcurrent, imageMessages.count)
-            let slice = Array(imageMessages[index..<end])
-            
-            await withTaskGroup(of: Void.self) { group in
-                for msg in slice {
-                    group.addTask { [weak self] in
-                        guard let self = self else { return }
-                        _ = await self.cacheImagesIfNeeded(for: msg)
-                    }
-                }
-                await group.waitForAll()
-            }
-            index = end
-        }
+        let paths = messages.flatMap { thumbnailPaths(for: $0) }
+        await prefetchImages(paths: paths, maxBytes: imageThumbMaxBytes, maxConcurrent: maxConcurrent)
     }
     
     func prefetchVideoAssets(for messages: [ChatMessage], maxConcurrent: Int, roomID: String) async {
@@ -261,6 +239,18 @@ final class ChatMediaManager: ChatMediaManaging {
 
     private func isStoragePath(_ path: String) -> Bool {
         !path.isEmpty && !path.isLocalFilePath
+    }
+
+    private func thumbnailPaths(for message: ChatMessage) -> [String] {
+        var seen = Set<String>()
+        return message.attachments
+            .filter { $0.type == .image || $0.type == .video }
+            .sorted { $0.index < $1.index }
+            .compactMap { attachment in
+                let path = attachment.pathThumb
+                guard !path.isEmpty, seen.insert(path).inserted else { return nil }
+                return path
+            }
     }
 
     private func loadLocalImage(from path: String) -> UIImage? {

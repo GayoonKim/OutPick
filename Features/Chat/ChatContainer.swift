@@ -54,6 +54,8 @@ final class ChatContainer {
         self.chatRoomMessageUseCase = ChatRoomMessageUseCase(messageManager: provider.messageManager)
         self.chatInitialLoadUseCase = DefaultChatInitialLoadUseCase(
             messageManager: provider.messageManager,
+            userProfileRepository: self.userProfileRepository,
+            chatRoomRepository: self.roomRepository,
             networkStatusProvider: provider.networkStatusProvider
         )
         self.chatRoomSearchUseCase = ChatRoomSearchUseCase(searchManager: provider.searchManager)

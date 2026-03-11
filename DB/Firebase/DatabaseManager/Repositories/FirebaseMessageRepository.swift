@@ -146,17 +146,50 @@ final class FirebaseMessageRepository: FirebaseMessageRepositoryProtocol {
         
         let snapshot = try await query.getDocuments()
         lastFetchedMessageSnapshot = snapshot.documents.last
-        
-        let messages: [ChatMessage] = snapshot.documents.compactMap { doc in
-            var dict = doc.data()
-            if dict["ID"] == nil { dict["ID"] = doc.documentID }
-            if let msg = ChatMessage.from(dict) { return msg }
-            do { return try doc.data(as: ChatMessage.self) } catch {
-                print("⚠️ 디코딩 실패(관대파서/코더 모두 실패): \(error), docID: \(doc.documentID), data=\(dict)")
-                return nil
-            }
-        }
-        return messages
+        return decodeMessages(from: snapshot)
+    }
+
+    func fetchLatestMessages(for room: ChatRoom, limit: Int) async throws -> [ChatMessage] {
+        guard let roomID = room.ID else { return [] }
+
+        let snapshot = try await db
+            .collection("Rooms").document(roomID)
+            .collection("Messages")
+            .order(by: "seq", descending: true)
+            .limit(to: limit)
+            .getDocuments()
+
+        return decodeMessages(from: snapshot).reversed()
+    }
+
+    func fetchMessagesAfterSeq(room: ChatRoom, afterSeq: Int64, limit: Int) async throws -> [ChatMessage] {
+        guard let roomID = room.ID else { return [] }
+        guard limit > 0 else { return [] }
+
+        let snapshot = try await db
+            .collection("Rooms").document(roomID)
+            .collection("Messages")
+            .whereField("seq", isGreaterThan: afterSeq)
+            .order(by: "seq", descending: false)
+            .limit(to: limit)
+            .getDocuments()
+
+        return decodeMessages(from: snapshot)
+    }
+
+    func fetchMessagesBeforeSeq(room: ChatRoom, beforeSeq: Int64, limit: Int) async throws -> [ChatMessage] {
+        guard let roomID = room.ID else { return [] }
+        guard limit > 0 else { return [] }
+
+        let snapshot = try await db
+            .collection("Rooms").document(roomID)
+            .collection("Messages")
+            .whereField("seq", isLessThan: beforeSeq)
+            .order(by: "seq", descending: true)
+            .limit(to: limit)
+            .getDocuments()
+
+        return decodeMessages(from: snapshot).reversed()
     }
     
     func fetchOlderMessages(for room: ChatRoom, before messageID: String, limit: Int = 100) async throws -> [ChatMessage] {
@@ -183,16 +216,7 @@ final class FirebaseMessageRepository: FirebaseMessageRepositoryProtocol {
                 .limit(to: limit)
                 .getDocuments()
             
-            let messages: [ChatMessage] = snapshot.documents.compactMap { doc in
-                var dict = doc.data()
-                if dict["ID"] == nil { dict["ID"] = doc.documentID }
-                if let msg = ChatMessage.from(dict) { return msg }
-                do { return try doc.data(as: ChatMessage.self) } catch {
-                    print("⚠️ 디코딩 실패: \(error), docID: \(doc.documentID), data=\(dict)")
-                    return nil
-                }
-            }
-            return messages.reversed()
+            return decodeMessages(from: snapshot).reversed()
         }
         
         let anchorSentAt = (anchorData["sentAt"] as? Timestamp)?.dateValue() ?? Date.distantPast
@@ -204,16 +228,7 @@ final class FirebaseMessageRepository: FirebaseMessageRepositoryProtocol {
             .limit(to: limit)
             .getDocuments()
         
-        let messages: [ChatMessage] = snapshot.documents.compactMap { doc in
-            var dict = doc.data()
-            if dict["ID"] == nil { dict["ID"] = doc.documentID }
-            if let msg = ChatMessage.from(dict) { return msg }
-            do { return try doc.data(as: ChatMessage.self) } catch {
-                print("⚠️ 디코딩 실패: \(error), docID: \(doc.documentID), data=\(dict)")
-                return nil
-            }
-        }
-        return messages.reversed()
+        return decodeMessages(from: snapshot).reversed()
     }
     
     func fetchMessagesAfter(room: ChatRoom, after messageID: String, limit: Int = 100) async throws -> [ChatMessage] {
@@ -240,16 +255,7 @@ final class FirebaseMessageRepository: FirebaseMessageRepositoryProtocol {
                 .limit(to: limit)
                 .getDocuments()
             
-            let messages: [ChatMessage] = snapshot.documents.compactMap { doc in
-                var dict = doc.data()
-                if dict["ID"] == nil { dict["ID"] = doc.documentID }
-                if let msg = ChatMessage.from(dict) { return msg }
-                do { return try doc.data(as: ChatMessage.self) } catch {
-                    print("⚠️ 디코딩 실패: \(error), docID: \(doc.documentID), data=\(dict)")
-                    return nil
-                }
-            }
-            return messages
+            return decodeMessages(from: snapshot)
         }
         
         let anchorSentAt = (anchorData["sentAt"] as? Timestamp)?.dateValue() ?? Date.distantPast
@@ -261,16 +267,7 @@ final class FirebaseMessageRepository: FirebaseMessageRepositoryProtocol {
             .limit(to: limit)
             .getDocuments()
         
-        let messages: [ChatMessage] = snapshot.documents.compactMap { doc in
-            var dict = doc.data()
-            if dict["ID"] == nil { dict["ID"] = doc.documentID }
-            if let msg = ChatMessage.from(dict) { return msg }
-            do { return try doc.data(as: ChatMessage.self) } catch {
-                print("⚠️ 디코딩 실패: \(error), docID: \(doc.documentID), data=\(dict)")
-                return nil
-            }
-        }
-        return messages
+        return decodeMessages(from: snapshot)
     }
     
     func fetchPreviewMessages(roomID: String, limit: Int) async -> [ChatMessage] {
@@ -311,6 +308,20 @@ final class FirebaseMessageRepository: FirebaseMessageRepositoryProtocol {
         } catch {
             print("⚠️ fetchPreviewMessages fallback failed (roomID=\(roomID)): \(error)")
             return []
+        }
+    }
+
+    private func decodeMessages(from snapshot: QuerySnapshot) -> [ChatMessage] {
+        snapshot.documents.compactMap { doc in
+            var dict = doc.data()
+            if dict["ID"] == nil { dict["ID"] = doc.documentID }
+            if let msg = ChatMessage.from(dict) { return msg }
+            do {
+                return try doc.data(as: ChatMessage.self)
+            } catch {
+                print("⚠️ 디코딩 실패: \(error), docID: \(doc.documentID), data=\(dict)")
+                return nil
+            }
         }
     }
 
