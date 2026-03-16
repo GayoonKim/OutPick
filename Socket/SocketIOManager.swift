@@ -10,6 +10,54 @@ import Combine
 import CryptoKit
 import Network
 
+struct ChatRoomSocketSession: Sendable {
+    let roomID: String
+    let messages: AsyncStream<ChatMessage>
+    let close: @Sendable () async -> Void
+}
+
+actor ChatRoomSessionActor {
+    struct Consumer: Sendable {
+        let id: UUID
+        let stream: AsyncStream<ChatMessage>
+    }
+
+    private var continuations: [UUID: AsyncStream<ChatMessage>.Continuation] = [:]
+
+    func addConsumer() -> Consumer {
+        let consumerID = UUID()
+        let (stream, continuation) = Self.makeStream()
+        continuations[consumerID] = continuation
+        return Consumer(id: consumerID, stream: stream)
+    }
+
+    @discardableResult
+    func removeConsumer(_ consumerID: UUID) -> Bool {
+        continuations[consumerID]?.finish()
+        continuations.removeValue(forKey: consumerID)
+        return continuations.isEmpty
+    }
+
+    func publish(_ message: ChatMessage) {
+        for continuation in continuations.values {
+            continuation.yield(message)
+        }
+    }
+
+    func finishAll() {
+        for continuation in continuations.values {
+            continuation.finish()
+        }
+        continuations.removeAll()
+    }
+
+    nonisolated private static func makeStream() -> (AsyncStream<ChatMessage>, AsyncStream<ChatMessage>.Continuation) {
+        var continuation: AsyncStream<ChatMessage>.Continuation!
+        let stream = AsyncStream<ChatMessage> { continuation = $0 }
+        return (stream, continuation)
+    }
+}
+
 class SocketIOManager {
     static let shared = SocketIOManager()
     private let userProfileRepository: UserProfileRepositoryProtocol
@@ -41,13 +89,13 @@ class SocketIOManager {
     // MARK: - Socket Error
     enum SocketError: Error {
         case connectionFailed([Any])
+        case invalidRoomID
     }
     
     var manager: SocketManager!
     var socket: SocketIOClient!
     
-    private var connectWaiters: [() -> Void] = []
-    private var hasOnConnectBound = false
+    private var connectWaiters: [CheckedContinuation<Void, Error>] = []
     
     // 연결 상태 확인 프로퍼티 추가
     var isConnected: Bool {
@@ -72,6 +120,9 @@ class SocketIOManager {
     private var joinedRooms = Set<String>()
     private var pendingRooms: Set<String> = []
     
+    private var roomSessionActors = [String: ChatRoomSessionActor]()
+    private var roomStreamTasks = [String: Task<Void, Never>]()
+    private var roomBridgeReady = Set<String>()
     private var roomSubjects = [String: PassthroughSubject<ChatMessage, Never>]()
     private var subscriberCounts = [String: Int]() // 구독자 ref count
     private var isChatMessageListenerBound = false
@@ -82,7 +133,7 @@ class SocketIOManager {
     private init(repositories: FirebaseRepositoryProviding = FirebaseRepositoryProvider.shared) {
         self.userProfileRepository = repositories.userProfileRepository
         self.chatRoomRepository = repositories.chatRoomRepository
-        manager = SocketManager(socketURL: URL(string: "http://192.168.123.132:3000")!, config: [
+        manager = SocketManager(socketURL: URL(string: "http://192.168.123.182:3000")!, config: [
             .log(true),
             .compress,
             // 서버가 WebSocket only(transports:['websocket'])로 동작하므로 클라이언트도 폴링을 비활성화
@@ -111,17 +162,22 @@ class SocketIOManager {
                 self.joinedRooms.insert(roomID)
             }
             self.pendingRooms.removeAll()
+            self.resumeConnectWaiters()
         }
 
         socket.on(clientEvent: .error) { [weak self] data, _ in
             guard let self = self else { return }
             print("소켓 에러:", data)
+            self.failConnectWaiters(with: SocketError.connectionFailed(data))
             self.scheduleManualRetryIfNeeded()
         }
 
         socket.on(clientEvent: .disconnect) { [weak self] data, _ in
             guard let self = self else { return }
             print("소켓 디스커넥트:", data)
+            if !self.connectWaiters.isEmpty {
+                self.failConnectWaiters(with: SocketError.connectionFailed(data))
+            }
             self.scheduleManualRetryIfNeeded()
         }
 
@@ -172,37 +228,14 @@ class SocketIOManager {
         if socket.status == .connecting {
             print("이미 연결 중인 상태")
             try await withCheckedThrowingContinuation { continuation in
-                self.connectWaiters.append {
-                    continuation.resume()
-                }
+                self.connectWaiters.append(continuation)
             }
             return
         }
 
         // 연결 시도
         try await withCheckedThrowingContinuation { continuation in
-            self.connectWaiters.append {
-                continuation.resume()
-            }
-
-            if !self.hasOnConnectBound {
-                self.hasOnConnectBound = true
-                self.socket.on(clientEvent: .connect) { [weak self] _, _ in
-                    guard let self else { return }
-                    let waiters = self.connectWaiters
-                    self.connectWaiters.removeAll()
-                    waiters.forEach { $0() }
-                }
-
-                self.socket.on(clientEvent: .error) { [weak self] data, _ in
-                    guard let self else { return }
-                    let waiters = self.connectWaiters
-                    self.connectWaiters.removeAll()
-                    waiters.forEach { _ in
-                        continuation.resume(throwing: SocketError.connectionFailed(data))
-                    }
-                }
-            }
+            self.connectWaiters.append(continuation)
 
             print("소켓 연결 시도")
             self.socket.connect()
@@ -212,12 +245,55 @@ class SocketIOManager {
     func closeConnection() {
         allowReconnect = false
         manualAttempt = 0
+        tearDownRoomStreams()
+        failConnectWaiters(with: SocketError.connectionFailed(["manual disconnect"]))
         socket.disconnect()
     }
 
     func resetRoomMembership() {
         joinedRooms.removeAll()
         pendingRooms.removeAll()
+    }
+
+    func openRoomSession(for roomID: String) async throws -> ChatRoomSocketSession {
+        guard !roomID.isEmpty else { throw SocketError.invalidRoomID }
+
+        bindMessageListenersIfNeeded()
+
+        let sessionActor = roomSessionActor(for: roomID)
+        let consumer = await sessionActor.addConsumer()
+
+        do {
+            try await establishConnection()
+        } catch {
+            let isEmpty = await sessionActor.removeConsumer(consumer.id)
+            if isEmpty {
+                roomSessionActors.removeValue(forKey: roomID)
+            }
+            throw error
+        }
+
+        joinRoom(roomID)
+
+        return ChatRoomSocketSession(
+            roomID: roomID,
+            messages: consumer.stream,
+            close: {
+                await SocketIOManager.shared.closeRoomSession(roomID: roomID, consumerID: consumer.id)
+            }
+        )
+    }
+
+    func closeRoomSession(roomID: String, consumerID: UUID) async {
+        guard let sessionActor = roomSessionActors[roomID] else { return }
+
+        let isEmpty = await sessionActor.removeConsumer(consumerID)
+        if isEmpty {
+            roomSessionActors.removeValue(forKey: roomID)
+            if roomSubjects[roomID] == nil && roomStreamTasks[roomID] == nil {
+                leaveRoom(roomID)
+            }
+        }
     }
     
     func subscribeToMessages(for roomID: String) -> AnyPublisher<ChatMessage, Never> {
@@ -228,10 +304,7 @@ class SocketIOManager {
         if roomSubjects[roomID] == nil {
             let subject = PassthroughSubject<ChatMessage, Never>()
             roomSubjects[roomID] = subject
-
-            // Ensure joined before attaching listeners (idempotent)
-            if !joinedRooms.contains(roomID) { joinRoom(roomID) }
-            bindMessageListenersIfNeeded()
+            startRoomStreamBridge(for: roomID)
         }
 
         return roomSubjects[roomID]!.eraseToAnyPublisher()
@@ -243,11 +316,14 @@ class SocketIOManager {
 
         if subscriberCounts[roomID] == 0 {
             subscriberCounts[roomID] = nil
+            roomStreamTasks[roomID]?.cancel()
+            roomStreamTasks[roomID] = nil
+            roomBridgeReady.remove(roomID)
             roomSubjects[roomID]?.send(completion: .finished)
             roomSubjects[roomID] = nil
         }
 
-        if roomSubjects.isEmpty {
+        if roomSubjects.isEmpty && roomStreamTasks.isEmpty {
             detachChatListener()
             detachImageListener()
             detachVideoListener()
@@ -261,11 +337,89 @@ class SocketIOManager {
     }
 
     private func publishIncoming(_ message: ChatMessage) {
+        emitToRoomPipeline(message)
+    }
+
+    private func roomSessionActor(for roomID: String) -> ChatRoomSessionActor {
+        if let actor = roomSessionActors[roomID] {
+            return actor
+        }
+
+        let actor = ChatRoomSessionActor()
+        roomSessionActors[roomID] = actor
+        return actor
+    }
+
+    private func startRoomStreamBridge(for roomID: String) {
+        _ = roomSessionActor(for: roomID)
+        bindMessageListenersIfNeeded()
+
+        roomStreamTasks[roomID]?.cancel()
+        roomStreamTasks[roomID] = Task { [weak self] in
+            guard let self else { return }
+
+            do {
+                let session = try await self.openRoomSession(for: roomID)
+                self.roomBridgeReady.insert(roomID)
+                defer {
+                    self.roomBridgeReady.remove(roomID)
+                    Task { [weak self] in
+                        await session.close()
+                    }
+                }
+
+                for await message in session.messages {
+                    if Task.isCancelled { break }
+
+                    await MainActor.run { [weak self] in
+                        self?.roomSubjects[roomID]?.send(message)
+                    }
+                }
+            } catch {
+                #if DEBUG
+                print("[SocketIOManager] failed to open room stream roomID=\(roomID): \(error)")
+                #endif
+            }
+        }
+    }
+
+    private func emitToRoomPipeline(_ message: ChatMessage) {
         let roomID = message.roomID
         guard !roomID.isEmpty else { return }
+
+        if roomBridgeReady.contains(roomID), let sessionActor = roomSessionActors[roomID] {
+            Task {
+                await sessionActor.publish(message)
+            }
+            return
+        }
+
         DispatchQueue.main.async { [weak self] in
             self?.roomSubjects[roomID]?.send(message)
         }
+    }
+
+    private func tearDownRoomStreams() {
+        let tasks = Array(roomStreamTasks.values)
+        roomStreamTasks.removeAll()
+        roomBridgeReady.removeAll()
+        tasks.forEach { $0.cancel() }
+
+        let actors = Array(roomSessionActors.values)
+        roomSessionActors.removeAll()
+        Task {
+            for actor in actors {
+                await actor.finishAll()
+            }
+        }
+
+        roomSubjects.values.forEach { $0.send(completion: .finished) }
+        roomSubjects.removeAll()
+        subscriberCounts.removeAll()
+
+        detachChatListener()
+        detachImageListener()
+        detachVideoListener()
     }
 
     private func attachChatListener() {
@@ -478,9 +632,7 @@ class SocketIOManager {
             print("소켓이 연결되지 않음")
             var failedMessage = message
             failedMessage.isFailed = true
-            DispatchQueue.main.async {
-                self.roomSubjects[room.ID ?? ""]?.send(failedMessage)
-            }
+            emitToRoomPipeline(failedMessage)
             return
         }
 
@@ -500,9 +652,7 @@ class SocketIOManager {
                 // Failure: mark the same message as failed and re-publish for UI update
                 var failedMessage = message
                 failedMessage.isFailed = true
-                DispatchQueue.main.async {
-                    self.roomSubjects[room.ID ?? ""]?.send(failedMessage)
-                }
+                self.emitToRoomPipeline(failedMessage)
             }
         }
     }
@@ -569,9 +719,7 @@ class SocketIOManager {
             if let avatar = senderAvatarPath, !avatar.isEmpty {
                 failed.senderAvatarPath = avatar
             }
-            DispatchQueue.main.async {
-                self.roomSubjects[roomID]?.send(failed)
-            }
+            emitToRoomPipeline(failed)
             return
         }
             
@@ -625,9 +773,7 @@ class SocketIOManager {
             if let avatar = senderAvatarPath, !avatar.isEmpty {
                 failed.senderAvatarPath = avatar
             }
-            DispatchQueue.main.async {
-                self.roomSubjects[roomID]?.send(failed)
-            }
+            self.emitToRoomPipeline(failed)
         }
     }
     
@@ -703,9 +849,7 @@ class SocketIOManager {
             isFailed: true
         )
 
-        DispatchQueue.main.async {
-            self.roomSubjects[roomID]?.send(failedMessage)
-        }
+        emitToRoomPipeline(failedMessage)
     }
 
     
@@ -807,9 +951,7 @@ class SocketIOManager {
             isFailed: true
         )
 
-        await MainActor.run {
-            self.roomSubjects[room.ID ?? ""]?.send(failedMessage)
-        }
+        emitToRoomPipeline(failedMessage)
     }
     
     // MARK: - Send: Video
@@ -956,9 +1098,7 @@ class SocketIOManager {
         #endif
         
         // 6) 로컬 스트림으로 즉시 발행 (UI 업데이트)
-        DispatchQueue.main.async {
-            self.roomSubjects[roomID]?.send(message)
-        }
+        emitToRoomPipeline(message)
     }
     
     /// 업로드는 성공했으나 소켓 전송(브로드캐스트)이 실패한 경우: 원격(Storage) 경로 기반으로 실패 메시지 발행
@@ -995,9 +1135,7 @@ class SocketIOManager {
             isDeleted: false
         )
 
-        DispatchQueue.main.async {
-            self.roomSubjects[roomID]?.send(message)
-        }
+        emitToRoomPipeline(message)
     }
     
     /// 방 나가기 / 방 종료 요청
@@ -1124,6 +1262,22 @@ class SocketIOManager {
                 }
             }
         }
+    }
+
+    private func resumeConnectWaiters() {
+        guard !connectWaiters.isEmpty else { return }
+
+        let waiters = connectWaiters
+        connectWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+    }
+
+    private func failConnectWaiters(with error: Error) {
+        guard !connectWaiters.isEmpty else { return }
+
+        let waiters = connectWaiters
+        connectWaiters.removeAll()
+        waiters.forEach { $0.resume(throwing: error) }
     }
 }
 

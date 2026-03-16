@@ -1490,6 +1490,12 @@ final class GRDBManager {
         }
         return user
     }
+
+    func fetchLocalUser(email: String) throws -> LocalUser? {
+        try dbPool.read { db in
+            try LocalUser.fetchOne(db, key: email)
+        }
+    }
     
     // MARK: RoomMember(신규) 멤버십 관리
     func addLocalUser(_ email: String, toRoom roomID: String) throws {

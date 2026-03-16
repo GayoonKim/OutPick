@@ -34,6 +34,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private var dataSource: UICollectionViewDiffableDataSource<Section, Item>!
     private var cancellables = Set<AnyCancellable>()
     private var initialLoadTask: Task<Void, Never>?
+    private var roomMessageTask: Task<Void, Never>?
+    private var roomSession: ChatRoomSocketSession?
+    private var activeRealtimeRoomID: String?
+    private var activeRealtimeStreamToken: UUID?
     private var chatCustomMemucancellables = Set<AnyCancellable>()
     
     private var lastMessageDate: Date?
@@ -96,9 +100,12 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private let messageManager: ChatMessageManaging
     private let mediaManager: ChatMediaManaging
     private let searchManager: ChatSearchManaging
-    private let hotUserManager: HotUserManaging
+    private let profileSyncManager: ChatProfileSyncManaging
     private let networkStatusProvider: NetworkStatusProviding
     var injectedFirebaseRepositories: FirebaseRepositoryProviding?
+    private let profileScopeID = UUID()
+    private var isProfileSyncBound = false
+    private var profileSyncCancellable: AnyCancellable?
 
     /// 의존성 주입을 위한 초기화 (테스트 용이성)
     /// - NOTE: Programmatic init 경로에서 사용
@@ -106,7 +113,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         self.messageManager = provider.messageManager
         self.mediaManager = provider.mediaManager
         self.searchManager = provider.searchManager
-        self.hotUserManager = provider.hotUserManager
+        self.profileSyncManager = provider.profileSyncManager
         self.networkStatusProvider = provider.networkStatusProvider
         super.init(nibName: nil, bundle: nil)
     }
@@ -117,7 +124,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         self.messageManager = provider.messageManager
         self.mediaManager = provider.mediaManager
         self.searchManager = provider.searchManager
-        self.hotUserManager = provider.hotUserManager
+        self.profileSyncManager = provider.profileSyncManager
         self.networkStatusProvider = provider.networkStatusProvider
         super.init(coder: coder)
     }
@@ -181,6 +188,13 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     deinit {
         print("💧 ChatViewController deinit")
+        profileSyncCancellable?.cancel()
+        roomMessageTask?.cancel()
+        if let roomSession {
+            Task {
+                await roomSession.close()
+            }
+        }
         convertImagesTask?.cancel()
         convertVideosTask?.cancel()
         searchMessagesTask?.cancel()
@@ -342,9 +356,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private var scrollTargetIndex: IndexPath?
     
     private var lastContainerViewOriginY: Double = 0
-    private var subscribedMessageRoomID: String?
     
-    // MARK: - Hot user pool (HotUserManager에서 관리)
+    // MARK: - Profile sync
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -392,13 +405,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         flushLastReadSeq(trigger: "viewWillDisappear")
         
         isUserInCurrentRoom = false
+        stopRoomMessageStream()
         
         if let room = self.room {
-            if let subscribedMessageRoomID {
-                SocketIOManager.shared.unsubscribeFromMessages(for: subscribedMessageRoomID)
-                self.subscribedMessageRoomID = nil
-            }
-            
             if ChatViewController.currentRoomID == room.ID {
                 ChatViewController.currentRoomID = nil    // ✅ 나갈 때 초기화
             }
@@ -415,7 +424,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         
         convertImagesTask?.cancel()
         convertVideosTask?.cancel()
-        resetHotUserPool()
+        deactivateProfileSyncScope()
         removeReadMarkerIfNeeded()
         
         // 참여하지 않은 방이면 로컬 메시지 삭제 처리 (메인 바깥에서 비동기 실행)
@@ -505,9 +514,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 case .warmMedia(let messages, let maxConcurrent):
                     self.scheduleInitialMediaWarmup(for: messages, maxConcurrent: maxConcurrent)
 
-                case .seedHotUsers(let messages):
-                    self.seedHotUserPool(with: messages)
-
                 case .participantSessionReady(_, let bindRealtime):
                     self.isUserInCurrentRoom = true
                     if bindRealtime {
@@ -544,6 +550,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         snapshot.appendSections([.main])
         snapshot.appendItems(items, toSection: .main)
         dataSource.apply(snapshot, animatingDifferences: false)
+        activateProfileSync(with: window.messages)
 
         if window.readBoundarySeq != nil {
             scrollToReadMarkerIfNeeded()
@@ -682,6 +689,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
     }
     
+    @MainActor
     private func bindMessagePublishers() {
         guard let room = self.room,
               let viewModel = chatRoomViewModel ?? ensureChatRoomViewModel() else { return }
@@ -689,22 +697,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         guard !roomID.isEmpty else { return }
 
         // Prevent duplicate subscriptions for the same room on repeated UI setup/binding paths.
-        guard subscribedMessageRoomID != roomID else { return }
+        guard activeRealtimeRoomID != roomID else { return }
 
-        if let previousRoomID = subscribedMessageRoomID {
-            SocketIOManager.shared.unsubscribeFromMessages(for: previousRoomID)
-        }
-
-        subscribedMessageRoomID = roomID
-
-        SocketIOManager.shared.subscribeToMessages(for: roomID)
-            .sink { [weak self] receivedMessage in
-                guard let self = self else { return }
-                Task {
-                    await self.handleIncomingMessage(receivedMessage)
-                }
-            }
-            .store(in: &cancellables)
+        stopRoomMessageStream()
+        startRoomMessageStream(for: roomID)
 
         let cancellable = viewModel.setupDeletionListener { [weak self] deletedMessageID in
             guard let self = self else { return }
@@ -732,6 +728,77 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             }
         }
         cancellable.store(in: &cancellables)
+    }
+
+    @MainActor
+    private func startRoomMessageStream(for roomID: String) {
+        let streamToken = UUID()
+        activeRealtimeRoomID = roomID
+        activeRealtimeStreamToken = streamToken
+        roomMessageTask?.cancel()
+
+        roomMessageTask = Task { [weak self] in
+            do {
+                let session = try await SocketIOManager.shared.openRoomSession(for: roomID)
+
+                if Task.isCancelled {
+                    await session.close()
+                    return
+                }
+
+                let shouldConsume = await MainActor.run { [weak self] in
+                    guard let self else { return false }
+                    guard self.activeRealtimeStreamToken == streamToken,
+                          self.activeRealtimeRoomID == roomID else { return false }
+
+                    self.roomSession = session
+                    return true
+                }
+
+                guard shouldConsume else {
+                    await session.close()
+                    return
+                }
+
+                for await receivedMessage in session.messages {
+                    if Task.isCancelled { break }
+                    guard let self else { break }
+                    await self.handleIncomingMessage(receivedMessage)
+                }
+
+                await session.close()
+            } catch {
+                #if DEBUG
+                print("[ChatViewController] realtime stream failed roomID=\(roomID): \(error)")
+                #endif
+            }
+
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                guard self.activeRealtimeStreamToken == streamToken else { return }
+
+                self.roomMessageTask = nil
+                self.roomSession = nil
+                self.activeRealtimeRoomID = nil
+                self.activeRealtimeStreamToken = nil
+            }
+        }
+    }
+
+    @MainActor
+    private func stopRoomMessageStream() {
+        let session = roomSession
+
+        roomMessageTask?.cancel()
+        roomMessageTask = nil
+        roomSession = nil
+        activeRealtimeRoomID = nil
+        activeRealtimeStreamToken = nil
+
+        guard let session else { return }
+        Task {
+            await session.close()
+        }
     }
     
     // 수신 메시지를 저장 및 UI 반영
@@ -771,8 +838,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         case .buffered:
             return
         case .append:
+            profileSyncManager.ingestMessages([message], into: profileScopeID)
             addMessages([message])
-            hotUserManager.updateHotUserPool(for: message.senderID, lastSeenAt: message.sentAt ?? Date())
             maybeUpdateLastReadSeq(trigger: "liveIncoming")
         }
 
@@ -785,82 +852,77 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
     }
     
-    // MARK: LocalUser + HotUser 관련 함수
+    // MARK: LocalUser + Profile sync 관련 함수
     @MainActor
-    private func handleOtherUserProfileChanged(_ profile: UserProfile) {
-        let targetEmail = profile.email
-        
-        var snapshot = dataSource.snapshot()
-        let items = snapshot.itemIdentifiers(inSection: .main)
-        guard !items.isEmpty else { return }
+    private func handleProfileChanges(for senderIDs: Set<String>) {
+        let normalizedSenderIDs = Set(senderIDs.map(normalizedSenderID))
+        guard !normalizedSenderIDs.isEmpty else { return }
 
-        let visibleItemIndices = chatMessageCollectionView.indexPathsForVisibleItems
-            .filter { $0.section == 0 }
-            .map { $0.item }
-            .sorted()
+        let currentProfiles: [String: LocalUser] = Dictionary(
+            uniqueKeysWithValues: normalizedSenderIDs.compactMap { senderID in
+                guard let profile = profileSyncManager.profile(for: senderID) else { return nil }
+                return (senderID, profile)
+            }
+        )
+        guard !currentProfiles.isEmpty else { return }
 
-        let total = items.count
-        let pad = 100
+        for (messageID, message) in messageMap {
+            let senderID = normalizedSenderID(message.senderID)
+            guard let profile = currentProfiles[senderID] else { continue }
 
-        let startIdx: Int
-        let endIdx: Int
-        if let minVis = visibleItemIndices.first,
-           let maxVis = visibleItemIndices.last {
-            startIdx = max(0, minVis - pad)
-            endIdx   = min(total - 1, maxVis + pad)
-        } else {
-            let tail = max(0, total - 1)
-            startIdx = max(0, tail - pad)
-            endIdx   = tail
+            var updated = message
+            updated.senderNickname = profile.nickname
+            updated.senderAvatarPath = profile.profileImagePath
+            messageMap[messageID] = updated
         }
 
-        guard startIdx <= endIdx else { return }
-
-        var itemsToReload: [Item] = []
-        itemsToReload.reserveCapacity((endIdx - startIdx + 1) / 4)
-
-        for i in startIdx...endIdx {
-            guard case let .message(msg) = items[i] else { continue }
-            guard msg.senderID == targetEmail else { continue }
-
-            var updated = msg
-            updated.senderNickname = profile.nickname ?? ""
-            updated.senderAvatarPath = profile.thumbPath ?? ""
-
-            messageMap[updated.ID] = updated
-            itemsToReload.append(.message(updated))
+        var snapshot = dataSource.snapshot()
+        let items = snapshot.itemIdentifiers(inSection: .main)
+        let itemsToReload = items.filter { item in
+            guard case let .message(message) = item else { return false }
+            return normalizedSenderIDs.contains(normalizedSenderID(message.senderID))
         }
 
         guard !itemsToReload.isEmpty else { return }
-        
         snapshot.reconfigureItems(itemsToReload)
         dataSource.apply(snapshot, animatingDifferences: false)
     }
-    
-    private func bindHotUser(email: String) {
-        let cancellable = hotUserManager.bindHotUser(email: email) { [weak self] profile in
-            guard let self = self else { return }
-            Task { @MainActor in
-                self.handleOtherUserProfileChanged(profile)
-            }
-        }
-        if let cancellable = cancellable {
-            cancellable.store(in: &cancellables)
-        }
-    }
-    
-    private func resetHotUserPool() {
-        hotUserManager.resetHotUserPool()
+
+    @MainActor
+    private func activateProfileSync(with messages: [ChatMessage]) {
+        ensureProfileSyncBinding()
+        guard let roomID = room?.ID, !roomID.isEmpty else { return }
+
+        profileSyncManager.activateScope(profileScopeID, roomID: roomID, initialMessages: messages)
+        handleProfileChanges(for: Set(messages.map { normalizedSenderID($0.senderID) }))
     }
 
     @MainActor
-    private func seedHotUserPool(with messages: [ChatMessage]) {
-        hotUserManager.seedHotUserPool(with: messages)
-        // HotUser 풀의 각 유저에 대해 리스너 바인딩
-        let hotUserEmails = hotUserManager.getHotUserEmails()
-        for email in hotUserEmails {
-            bindHotUser(email: email)
-        }
+    private func ensureProfileSyncBinding() {
+        guard !isProfileSyncBound else { return }
+        isProfileSyncBound = true
+
+        profileSyncCancellable?.cancel()
+        profileSyncCancellable = profileSyncManager
+            .changedSenderIDsPublisher(scopeID: profileScopeID)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] senderIDs in
+                guard let self else { return }
+                self.handleProfileChanges(for: senderIDs)
+            }
+        profileSyncCancellable?.store(in: &cancellables)
+    }
+
+    @MainActor
+    private func deactivateProfileSyncScope() {
+        profileSyncCancellable?.cancel()
+        profileSyncCancellable = nil
+        isProfileSyncBound = false
+        profileSyncManager.deactivateScope(profileScopeID)
+    }
+
+    private func normalizedSenderID(_ senderID: String) -> String {
+        senderID.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
     @MainActor
@@ -1867,7 +1929,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         // 신고 or 삭제 결정
         if let userProfile = LoginManager.shared.currentUserProfile,
            let room = self.room {
-            let isOwner = userProfile.nickname == message.senderNickname
+            let isOwner = userProfile.email == message.senderID
             let isAdmin = room.creatorID == userProfile.email
             
             chatCustomMenu.configurePermissions(canDelete: isOwner || isAdmin, canAnnounce: isAdmin)
@@ -1878,7 +1940,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         NSLayoutConstraint.activate([
             showAbove ? chatCustomMenu.bottomAnchor.constraint(equalTo: cell.referenceView.topAnchor, constant: -8) : chatCustomMenu.topAnchor.constraint(equalTo: cell.referenceView.bottomAnchor, constant: 8),
             
-            LoginManager.shared.currentUserProfile?.nickname == message.senderNickname ? chatCustomMenu.trailingAnchor.constraint(equalTo: cell.referenceView.trailingAnchor, constant: 0) : chatCustomMenu.leadingAnchor.constraint(equalTo: cell.referenceView.leadingAnchor, constant: 0)
+            LoginManager.shared.getUserEmail == message.senderID ? chatCustomMenu.trailingAnchor.constraint(equalTo: cell.referenceView.trailingAnchor, constant: 0) : chatCustomMenu.leadingAnchor.constraint(equalTo: cell.referenceView.leadingAnchor, constant: 0)
         ])
         
         // 3. 버튼 액션 설정
@@ -2460,6 +2522,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             reloadDeletedMessages(messages)
             return
         }
+
+        profileSyncManager.ingestMessages(messages, into: profileScopeID)
         
         // 1) 현재 스냅샷에 존재하는 메시지 ID 집합 (O(1) 조회)
         let existingIDs: Set<String> = Set(

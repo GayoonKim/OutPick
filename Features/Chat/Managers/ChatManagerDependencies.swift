@@ -11,7 +11,7 @@ protocol ChatManagerProviding {
     var messageManager: ChatMessageManaging { get }
     var mediaManager: ChatMediaManaging { get }
     var searchManager: ChatSearchManaging { get }
-    var hotUserManager: HotUserManaging { get }
+    var profileSyncManager: ChatProfileSyncManaging { get }
     var networkStatusProvider: NetworkStatusProviding { get }
 }
 
@@ -19,14 +19,14 @@ struct ChatManagerProvider: ChatManagerProviding {
     let messageManager: ChatMessageManaging
     let mediaManager: ChatMediaManaging
     let searchManager: ChatSearchManaging
-    let hotUserManager: HotUserManaging
+    let profileSyncManager: ChatProfileSyncManaging
     let networkStatusProvider: NetworkStatusProviding
 
     init(
         messageManager: ChatMessageManaging = ChatMessageManager(),
         mediaManager: ChatMediaManaging = ChatMediaManager(),
         searchManager: ChatSearchManaging? = nil,
-        hotUserManager: HotUserManaging = HotUserManager(),
+        profileSyncManager: ChatProfileSyncManaging = ChatProfileSyncManager(),
         networkStatusProvider: NetworkStatusProviding = NWPathNetworkStatusProvider()
     ) {
         let resolvedNetworkStatusProvider = networkStatusProvider
@@ -38,7 +38,7 @@ struct ChatManagerProvider: ChatManagerProviding {
         self.messageManager = messageManager
         self.mediaManager = mediaManager
         self.searchManager = resolvedSearchManager
-        self.hotUserManager = hotUserManager
+        self.profileSyncManager = profileSyncManager
         self.networkStatusProvider = resolvedNetworkStatusProvider
         self.networkStatusProvider.startMonitoring()
     }

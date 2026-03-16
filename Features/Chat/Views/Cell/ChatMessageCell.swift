@@ -453,7 +453,7 @@ class ChatMessageCell: UICollectionViewCell {
         hideVideoBadge()
 
         // Compute isMine once
-        let isMine = (LoginManager.shared.currentUserProfile?.nickname ?? "") == message.senderNickname
+        let isMine = LoginManager.shared.getUserEmail == message.senderID
 
         if message.isDeleted {
             messageLabel.text = "삭제된 메시지입니다."
@@ -590,7 +590,7 @@ class ChatMessageCell: UICollectionViewCell {
 
             let containerWidth = UIScreen.main.bounds.width * 0.7
 
-            let isMine = (LoginManager.shared.currentUserProfile?.nickname ?? "") == message.senderNickname
+            let isMine = LoginManager.shared.getUserEmail == message.senderID
             if isMine {
                 // 본인이 보낸(삭제된) 메시지로 표시
                 bubbleView.backgroundColor = .systemBlue
@@ -654,85 +654,80 @@ class ChatMessageCell: UICollectionViewCell {
         messageLabel.isHidden = true
         imagesPreviewCollectionView.isHidden = false
         
-        if let nickName = LoginManager.shared.currentUserProfile?.nickname {
-            let containerWidth = contentView.frame.width * 0.7
-            let rows = calculateRowCountWithImage(message.attachments.count)
-            
-            var contentHeight: CGFloat {
-                if message.attachments.count == 1 {
-                    return contentView.frame.width * 0.7
-                } else {
-                    return rows.reduce(0) { $0 + (containerWidth / CGFloat($1)) }
-                }
-            }
-            
-            print("내 닉네임: \(nickName)")
-            print("보낸 사람: \(message.senderNickname)")
-            
-            let isMine = nickName == message.senderNickname
-            if isMine {
-                // 본인이 보낸 사진
-                profileImageView.isHidden = true
-                
-                imagePreviewCollectionViewTopConstraint = imagesPreviewCollectionView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 8)
-                imagePreviewCollectionViewTrailingConstraint = imagesPreviewCollectionView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -8)
-                imagePreviewCollectionViewBottomConstraint = imagesPreviewCollectionView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8)
-                imagePreviewCollectionViewWidthConstraint = imagesPreviewCollectionView.widthAnchor.constraint(equalToConstant: containerWidth)
-                imagePreviewCollectionViewHeightConstraint = imagesPreviewCollectionView.heightAnchor.constraint(equalToConstant: contentHeight)
-                
-                if message.isFailed {
-                    failedIconImageView.isHidden = false
-                    
-                    failedIconImageViewCenterYConstraint = failedIconImageView.centerYAnchor.constraint(equalTo: imagesPreviewCollectionView.centerYAnchor)
-                    failedIconImageViewTrainlingConstraint = failedIconImageView.trailingAnchor.constraint(equalTo: imagesPreviewCollectionView.leadingAnchor, constant: -2)
-                }
+        let containerWidth = contentView.frame.width * 0.7
+        let rows = calculateRowCountWithImage(message.attachments.count)
+
+        var contentHeight: CGFloat {
+            if message.attachments.count == 1 {
+                return contentView.frame.width * 0.7
             } else {
-                nickNameLabel.isHidden = false
-                profileImageView.isHidden = false
-                nickNameLabel.text = message.senderNickname
-                
-                // 상대가 보낸 사진
-                imagePreviewCollectionViewTopConstraint = imagesPreviewCollectionView.topAnchor.constraint(equalTo: nickNameLabel.bottomAnchor, constant: 5)
-                imagePreviewCollectionViewLeadingConstraint = imagesPreviewCollectionView.leadingAnchor.constraint(equalTo: profileImageView.trailingAnchor, constant: 5)
-                imagePreviewCollectionViewBottomConstraint = imagesPreviewCollectionView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8)
-                imagePreviewCollectionViewWidthConstraint = imagesPreviewCollectionView.widthAnchor.constraint(equalToConstant: containerWidth)
-                imagePreviewCollectionViewHeightConstraint = imagesPreviewCollectionView.heightAnchor.constraint(equalToConstant: contentHeight)
+                return rows.reduce(0) { $0 + (containerWidth / CGFloat($1)) }
             }
-            
-            NSLayoutConstraint.activate([
-                imagePreviewCollectionViewTopConstraint,
-                imagePreviewCollectionViewLeadingConstraint,
-                imagePreviewCollectionViewTrailingConstraint,
-                imagePreviewCollectionViewBottomConstraint,
-                imagePreviewCollectionViewWidthConstraint,
-                imagePreviewCollectionViewHeightConstraint,
-                
-                failedIconImageViewCenterYConstraint,
-                failedIconImageViewTrainlingConstraint
-            ].compactMap{$0})
-
-            let previewItems = makePreviewItems(from: message)
-            imagesPreviewCollectionView.updateCollectionView(
-                previewItems,
-                contentHeight,
-                rows,
-                thumbnailLoader: { item in
-                    guard let thumbnailLoader else { return nil }
-                    return await thumbnailLoader(item.attachment)
-                }
-            )
-
-            // 보낸 시간 (실패 메시지는 숨김)
-            if message.isFailed {
-                timeLabel.isHidden = true
-            } else {
-                timeLabel.isHidden = false
-                timeLabel.text = formattedTime(message.sentAt)
-                mountTimeLabel(on: imagesPreviewCollectionView, isMine: isMine)
-            }
-
-            hideVideoBadge()
         }
+
+        let isMine = LoginManager.shared.getUserEmail == message.senderID
+        if isMine {
+            // 본인이 보낸 사진
+            profileImageView.isHidden = true
+
+            imagePreviewCollectionViewTopConstraint = imagesPreviewCollectionView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 8)
+            imagePreviewCollectionViewTrailingConstraint = imagesPreviewCollectionView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -8)
+            imagePreviewCollectionViewBottomConstraint = imagesPreviewCollectionView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8)
+            imagePreviewCollectionViewWidthConstraint = imagesPreviewCollectionView.widthAnchor.constraint(equalToConstant: containerWidth)
+            imagePreviewCollectionViewHeightConstraint = imagesPreviewCollectionView.heightAnchor.constraint(equalToConstant: contentHeight)
+
+            if message.isFailed {
+                failedIconImageView.isHidden = false
+
+                failedIconImageViewCenterYConstraint = failedIconImageView.centerYAnchor.constraint(equalTo: imagesPreviewCollectionView.centerYAnchor)
+                failedIconImageViewTrainlingConstraint = failedIconImageView.trailingAnchor.constraint(equalTo: imagesPreviewCollectionView.leadingAnchor, constant: -2)
+            }
+        } else {
+            nickNameLabel.isHidden = false
+            profileImageView.isHidden = false
+            nickNameLabel.text = message.senderNickname
+
+            // 상대가 보낸 사진
+            imagePreviewCollectionViewTopConstraint = imagesPreviewCollectionView.topAnchor.constraint(equalTo: nickNameLabel.bottomAnchor, constant: 5)
+            imagePreviewCollectionViewLeadingConstraint = imagesPreviewCollectionView.leadingAnchor.constraint(equalTo: profileImageView.trailingAnchor, constant: 5)
+            imagePreviewCollectionViewBottomConstraint = imagesPreviewCollectionView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8)
+            imagePreviewCollectionViewWidthConstraint = imagesPreviewCollectionView.widthAnchor.constraint(equalToConstant: containerWidth)
+            imagePreviewCollectionViewHeightConstraint = imagesPreviewCollectionView.heightAnchor.constraint(equalToConstant: contentHeight)
+        }
+
+        NSLayoutConstraint.activate([
+            imagePreviewCollectionViewTopConstraint,
+            imagePreviewCollectionViewLeadingConstraint,
+            imagePreviewCollectionViewTrailingConstraint,
+            imagePreviewCollectionViewBottomConstraint,
+            imagePreviewCollectionViewWidthConstraint,
+            imagePreviewCollectionViewHeightConstraint,
+
+            failedIconImageViewCenterYConstraint,
+            failedIconImageViewTrainlingConstraint
+        ].compactMap{$0})
+
+        let previewItems = makePreviewItems(from: message)
+        imagesPreviewCollectionView.updateCollectionView(
+            previewItems,
+            contentHeight,
+            rows,
+            thumbnailLoader: { item in
+                guard let thumbnailLoader else { return nil }
+                return await thumbnailLoader(item.attachment)
+            }
+        )
+
+        // 보낸 시간 (실패 메시지는 숨김)
+        if message.isFailed {
+            timeLabel.isHidden = true
+        } else {
+            timeLabel.isHidden = false
+            timeLabel.text = formattedTime(message.sentAt)
+            mountTimeLabel(on: imagesPreviewCollectionView, isMine: isMine)
+        }
+
+        hideVideoBadge()
     }
     
     private func calculateRowCountWithImage(_ n: Int) -> [Int] {

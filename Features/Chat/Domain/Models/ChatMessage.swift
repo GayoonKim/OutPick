@@ -10,7 +10,7 @@ import FirebaseCore
 import SocketIO
 import FirebaseFirestore
 
-struct ReplyPreview: Codable, Hashable {
+struct ReplyPreview: Codable, Hashable, Sendable {
     let messageID: String
     var sender: String
     var text: String
@@ -24,7 +24,7 @@ struct ReplyPreview: Codable, Hashable {
     var isDeleted: Bool = false
 }
 
-struct VideoMetaPayload: Codable {
+struct VideoMetaPayload: Codable, Sendable {
     let roomID: String
     let messageID: String
     let storagePath: String      // "videos/<room>/<msg>/video.mp4"
@@ -37,8 +37,8 @@ struct VideoMetaPayload: Codable {
     let preset: String           // "standard720" | "dataSaver720" | "high1080"
 }
 
-struct Attachment: Codable, Hashable {
-    enum AttachmentType: String, Codable {
+struct Attachment: Codable, Hashable, Sendable {
+    enum AttachmentType: String, Codable, Sendable {
         case image
         case video
         // 필요한 경우 더 추가
@@ -94,7 +94,7 @@ struct Attachment: Codable, Hashable {
 }
 
 // 채팅 메시지 정보
-struct ChatMessage: SocketData, Codable {
+struct ChatMessage: SocketData, Codable, Sendable {
     let ID: String
     let seq: Int64                    // 방 내 단조 증가 시퀀스(1,2,3,...) - 정렬/미읽음 계산용
     let roomID: String

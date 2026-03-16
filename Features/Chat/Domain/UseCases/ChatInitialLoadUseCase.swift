@@ -29,7 +29,6 @@ enum ChatInitialLoadEvent {
     case phaseChanged(ChatInitialLoadPhase)
     case render(ChatInitialLoadRenderCommand)
     case warmMedia(messages: [ChatMessage], maxConcurrent: Int)
-    case seedHotUsers([ChatMessage])
     case participantSessionReady(ChatInitialSessionState, bindRealtime: Bool)
     case completed
 }
@@ -172,7 +171,6 @@ final class DefaultChatInitialLoadUseCase: ChatInitialLoadUseCaseProtocol {
                         } else {
                             continuation.yield(.phaseChanged(.ready))
                         }
-                        continuation.yield(.seedHotUsers(localWindow.messages))
                         continuation.yield(.participantSessionReady(ChatInitialSessionState(window: localWindow), bindRealtime: false))
                         continuation.yield(.completed)
                         return
@@ -210,7 +208,6 @@ final class DefaultChatInitialLoadUseCase: ChatInitialLoadUseCaseProtocol {
                         }
                     }
 
-                    continuation.yield(.seedHotUsers(serverWindow.messages))
                     continuation.yield(.phaseChanged(.ready))
                     continuation.yield(.participantSessionReady(ChatInitialSessionState(window: serverWindow), bindRealtime: true))
                     continuation.yield(.completed)
