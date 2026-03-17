@@ -8,6 +8,11 @@
 import UIKit
 
 @MainActor
+protocol ChatRoomRouting: AnyObject {
+    func showSettings(from source: ChatViewController)
+}
+
+@MainActor
 final class ChatCoordinator {
 
     private let container: ChatContainer
@@ -114,7 +119,26 @@ final class ChatCoordinator {
         chatRoomVC.injectedFirebaseRepositories = container.firebaseRepositories
         chatRoomVC.configure(viewModel: container.makeChatRoomViewModel(room: room))
         chatRoomVC.isRoomSaving = isRoomSaving
+        chatRoomVC.router = self
         chatRoomVC.modalPresentationStyle = .fullScreen
         return chatRoomVC
+    }
+}
+
+extension ChatCoordinator: ChatRoomRouting {
+    func showSettings(from source: ChatViewController) {
+        guard let room = source.room else { return }
+
+        let settingVC = ChatCompositionRoot.makeChatRoomSettingPanel(
+            room: room,
+            provider: container.provider,
+            repositories: container.firebaseRepositories,
+            onRoomUpdated: { [weak source] updatedRoom in
+                Task { @MainActor in
+                    source?.applyUpdatedRoom(updatedRoom)
+                }
+            }
+        )
+        source.presentSettingPanel(settingVC)
     }
 }

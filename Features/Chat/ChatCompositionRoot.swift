@@ -17,4 +17,48 @@ enum ChatCompositionRoot {
     static func makeJoinedRoomsRoot(coordinator: ChatCoordinator) -> UIViewController {
         coordinator.makeJoinedRoomsRoot()
     }
+
+    static func makeChatRoomSettingPanel(
+        room: ChatRoom,
+        provider: ChatManagerProviding,
+        repositories: FirebaseRepositoryProviding,
+        onRoomUpdated: ((ChatRoom) -> Void)? = nil
+    ) -> ChatRoomSettingViewController {
+        let participantsRepository = GRDBChatRoomParticipantsRepository()
+        let localMediaRepository = GRDBChatRoomMediaIndexRepository()
+        let remoteMediaRepository = FirebaseChatRoomMediaIndexAdapter(
+            repository: repositories.mediaIndexRepository
+        )
+        let participantsUseCase = LoadChatRoomParticipantsUseCase(
+            participantsRepository: participantsRepository,
+            userProfileRepository: repositories.userProfileRepository
+        )
+        let mediaUseCase = LoadChatRoomMediaUseCase(
+            localMediaRepository: localMediaRepository,
+            remoteMediaRepository: remoteMediaRepository
+        )
+        let settingViewModel = ChatRoomSettingViewModel(
+            room: room,
+            profiles: [],
+            mediaManager: provider.mediaManager,
+            loadParticipantsUseCase: participantsUseCase,
+            loadMediaUseCase: mediaUseCase
+        )
+        let settingVC = ChatRoomSettingViewController(
+            viewModel: settingViewModel,
+            mediaManager: provider.mediaManager,
+            editRoomHandler: { room, pickedImage, pickedImageData, isRemoved, newName, newDesc in
+                try await repositories.chatRoomRepository.editRoom(
+                    room: room,
+                    pickedImage: pickedImage,
+                    imageData: pickedImageData,
+                    isRemoved: isRemoved,
+                    newName: newName,
+                    newDesc: newDesc
+                )
+            }
+        )
+        settingVC.onRoomUpdated = onRoomUpdated
+        return settingVC
+    }
 }

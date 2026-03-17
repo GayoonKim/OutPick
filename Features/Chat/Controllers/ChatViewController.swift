@@ -102,7 +102,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private let searchManager: ChatSearchManaging
     private let profileSyncManager: ChatProfileSyncManaging
     private let networkStatusProvider: NetworkStatusProviding
+    private let provider: ChatManagerProviding
     var injectedFirebaseRepositories: FirebaseRepositoryProviding?
+    weak var router: ChatRoomRouting?
     private let profileScopeID = UUID()
     private var isProfileSyncBound = false
     private var profileSyncCancellable: AnyCancellable?
@@ -110,6 +112,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     /// 의존성 주입을 위한 초기화 (테스트 용이성)
     /// - NOTE: Programmatic init 경로에서 사용
     init(provider: ChatManagerProviding = ChatDependencyContainer.provider) {
+        self.provider = provider
         self.messageManager = provider.messageManager
         self.mediaManager = provider.mediaManager
         self.searchManager = provider.searchManager
@@ -121,6 +124,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     /// - NOTE: Storyboard/XIB init 경로에서 사용
     required init?(coder: NSCoder) {
         let provider = ChatDependencyContainer.provider
+        self.provider = provider
         self.messageManager = provider.messageManager
         self.mediaManager = provider.mediaManager
         self.searchManager = provider.searchManager
@@ -1543,63 +1547,39 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
     
     @objc private func settingButtonTapped() {
+        guard room != nil else { return }
+
+        if let router {
+            router.showSettings(from: self)
+            return
+        }
+
         Task { @MainActor in
             guard let room = self.room else { return }
-            _ = room.ID ?? ""
-
-            self.detachInteractiveDismissGesture()
-            
-            let repositories = self.firebaseRepositories
-            let participantsRepository = GRDBChatRoomParticipantsRepository()
-            let localMediaRepository = GRDBChatRoomMediaIndexRepository()
-            let remoteMediaRepository = FirebaseChatRoomMediaIndexAdapter(
-                repository: repositories.mediaIndexRepository
-            )
-            let participantsUseCase = LoadChatRoomParticipantsUseCase(
-                participantsRepository: participantsRepository,
-                userProfileRepository: repositories.userProfileRepository
-            )
-            let mediaUseCase = LoadChatRoomMediaUseCase(
-                localMediaRepository: localMediaRepository,
-                remoteMediaRepository: remoteMediaRepository
-            )
-            let settingViewModel = ChatRoomSettingViewModel(
+            let settingVC = ChatCompositionRoot.makeChatRoomSettingPanel(
                 room: room,
-                profiles: [],
-                mediaManager: self.mediaManager,
-                loadParticipantsUseCase: participantsUseCase,
-                loadMediaUseCase: mediaUseCase
-            )
-            let settingVC = ChatRoomSettingViewController(
-                viewModel: settingViewModel,
-                mediaManager: self.mediaManager,
-                editRoomHandler: { room, pickedImage, pickedImageData, isRemoved, newName, newDesc in
-                    try await repositories.chatRoomRepository.editRoom(
-                        room: room,
-                        pickedImage: pickedImage,
-                        imageData: pickedImageData,
-                        isRemoved: isRemoved,
-                        newName: newName,
-                        newDesc: newDesc
-                    )
+                provider: self.provider,
+                repositories: self.firebaseRepositories,
+                onRoomUpdated: { [weak self] updatedRoom in
+                    Task { @MainActor in
+                        self?.applyUpdatedRoom(updatedRoom)
+                    }
                 }
             )
-            self.presentSettingVC(settingVC)
-            
-            settingVC.onRoomUpdated = { [weak self] updatedRoom in
-                guard let self = self else { return }
-                Task { @MainActor in
-                    self.room = updatedRoom
-                    self.updateNavigationTitle(with: updatedRoom)
-                }
-            }
+            self.presentSettingPanel(settingVC)
         }
-        
     }
-    
+
     @MainActor
-    private func presentSettingVC(_ VC: ChatRoomSettingViewController) {
+    func applyUpdatedRoom(_ updatedRoom: ChatRoom) {
+        self.room = updatedRoom
+        self.updateNavigationTitle(with: updatedRoom)
+    }
+
+    @MainActor
+    func presentSettingPanel(_ VC: ChatRoomSettingViewController) {
         guard settingPanelVC == nil else { return }
+        self.detachInteractiveDismissGesture()
         settingPanelVC = VC
         
         if dimView.superview == nil {
