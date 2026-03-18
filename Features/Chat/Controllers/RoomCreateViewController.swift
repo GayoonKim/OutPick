@@ -58,10 +58,9 @@ class RoomCreateViewController: UIViewController, ChatModalAnimatable, UIImagePi
     private var isDefaultRoomImage = true
     private var imageData: DefaultMediaProcessingService.ImagePair?
     var injectedFirebaseRepositories: FirebaseRepositoryProviding?
-    var makeChatRoomViewModel: ((ChatRoom) -> ChatRoomViewModel)?
-    var makeCreatedRoomViewController: ((ChatRoom) -> ChatViewController?)?
     var injectedRoomCreateManager: RoomCreateManaging?
     var injectedCreateRoomUseCase: CreateRoomUseCaseProtocol?
+    private let makeCreatedRoomViewController: (ChatRoom) -> ChatViewController?
 
     private weak var createdChatRoomViewController: ChatViewController?
     private var roomCreateViewModel: RoomCreateViewModel?
@@ -77,13 +76,11 @@ class RoomCreateViewController: UIViewController, ChatModalAnimatable, UIImagePi
 
     init(
         injectedFirebaseRepositories: FirebaseRepositoryProviding? = nil,
-        makeChatRoomViewModel: ((ChatRoom) -> ChatRoomViewModel)? = nil,
-        makeCreatedRoomViewController: ((ChatRoom) -> ChatViewController?)? = nil,
+        makeCreatedRoomViewController: @escaping (ChatRoom) -> ChatViewController?,
         injectedRoomCreateManager: RoomCreateManaging? = nil,
         injectedCreateRoomUseCase: CreateRoomUseCaseProtocol? = nil
     ) {
         self.injectedFirebaseRepositories = injectedFirebaseRepositories
-        self.makeChatRoomViewModel = makeChatRoomViewModel
         self.makeCreatedRoomViewController = makeCreatedRoomViewController
         self.injectedRoomCreateManager = injectedRoomCreateManager
         self.injectedCreateRoomUseCase = injectedCreateRoomUseCase
@@ -422,22 +419,10 @@ private extension RoomCreateViewController {
     }
 
     func makeCreatedRoomViewController(room: ChatRoom) -> ChatViewController? {
-        let chatRoomVC: ChatViewController
-        if let makeCreatedRoomViewController {
-            guard let configured = makeCreatedRoomViewController(room) else { return nil }
-            chatRoomVC = configured
-        } else {
-            let fallback = ChatViewController(provider: ChatDependencyContainer.provider)
-            fallback.injectedFirebaseRepositories = self.firebaseRepositories
-            if let makeChatRoomViewModel {
-                fallback.configure(viewModel: makeChatRoomViewModel(room))
-            } else {
-                fallback.room = room
-                fallback.configureDefaultViewModelIfNeeded()
-            }
-            chatRoomVC = fallback
+        guard let chatRoomVC = makeCreatedRoomViewController(room) else {
+            assertionFailure("RoomCreateViewController requires coordinator-owned room routing.")
+            return nil
         }
-
         chatRoomVC.isRoomSaving = true
         chatRoomVC.modalPresentationStyle = .fullScreen
         return chatRoomVC

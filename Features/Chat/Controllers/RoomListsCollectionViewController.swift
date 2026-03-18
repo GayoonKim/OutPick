@@ -142,45 +142,27 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
 
     override func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         guard let selectedItem = dataSource.itemIdentifier(for: indexPath) else { return }
-
-        if let onSelectRoom {
-            onSelectRoom(selectedItem.room)
+        guard let onSelectRoom else {
+            assertionFailure("RoomListsCollectionViewController requires coordinator-owned room routing.")
             return
         }
-        let chatRoomVC = ChatViewController(provider: ChatDependencyContainer.provider)
-        if let repositories = ChatDependencyContainer.firebaseRepositories {
-            chatRoomVC.injectedFirebaseRepositories = repositories
-        }
-        chatRoomVC.room = selectedItem.room
-        chatRoomVC.configureDefaultViewModelIfNeeded()
-        chatRoomVC.isRoomSaving = false
-        chatRoomVC.modalPresentationStyle = .fullScreen
-        ChatModalTransitionManager.present(chatRoomVC, from: self)
+        onSelectRoom(selectedItem.room)
     }
 
     @objc private func createRoomBtnTapped() {
-        if let onCreateRoom {
-            onCreateRoom()
+        guard let onCreateRoom else {
+            assertionFailure("RoomListsCollectionViewController requires coordinator-owned room creation routing.")
             return
         }
-
-        let chatRoomCreateVC = RoomCreateViewController(
-            injectedFirebaseRepositories: ChatDependencyContainer.firebaseRepositories
-        )
-        chatRoomCreateVC.modalPresentationStyle = .fullScreen
-        
-        ChatModalTransitionManager.present(chatRoomCreateVC, from: self)
+        onCreateRoom()
     }
     
     @objc private func searchBtnTapped() {
-        if let onSearchRoom {
-            onSearchRoom()
+        guard let onSearchRoom else {
+            assertionFailure("RoomListsCollectionViewController requires coordinator-owned room search routing.")
             return
         }
-
-        let searchVC = RoomSearchViewController()
-        searchVC.modalPresentationStyle = .fullScreen
-        ChatModalTransitionManager.present(searchVC, from: self)
+        onSearchRoom()
     }
 }
 

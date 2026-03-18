@@ -213,28 +213,19 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
     }
     
     @objc private func createRoomBtnTapped() {
-        if let onCreateRoom {
-            onCreateRoom()
+        guard let onCreateRoom else {
+            assertionFailure("JoinedRoomsViewController requires coordinator-owned room creation routing.")
             return
         }
-
-        let chatRoomCreateVC = RoomCreateViewController(
-            injectedFirebaseRepositories: ChatDependencyContainer.firebaseRepositories
-        )
-        chatRoomCreateVC.modalPresentationStyle = .fullScreen
-        
-        ChatModalTransitionManager.present(chatRoomCreateVC, from: self)
+        onCreateRoom()
     }
     
     @objc private func searchBtnTapped() {
-        if let onSearchRoom {
-            onSearchRoom()
+        guard let onSearchRoom else {
+            assertionFailure("JoinedRoomsViewController requires coordinator-owned room search routing.")
             return
         }
-
-        let searchVC = RoomSearchViewController()
-        searchVC.modalPresentationStyle = .fullScreen
-        ChatModalTransitionManager.present(searchVC, from: self)
+        onSearchRoom()
     }
     
     // MARK: Diffable DataSource
@@ -244,29 +235,17 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
     var dataSource: DataSourceType!
     
     // MARK: - Callbacks / Providers
-    var onSelectRoom: ((String) -> Void)?
     var onLeaveRoom: ((String) -> Void)?
 }
 
 extension JoinedRoomsViewController: UICollectionViewDelegate {
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         guard let room = dataSource.itemIdentifier(for: indexPath) else { return }
-
-        if let onOpenRoom {
-            onOpenRoom(room)
+        guard let onOpenRoom else {
+            assertionFailure("JoinedRoomsViewController requires coordinator-owned room routing.")
             return
         }
-        
-        let chatRoomVC = ChatViewController(provider: ChatDependencyContainer.provider)
-        if let repositories = ChatDependencyContainer.firebaseRepositories {
-            chatRoomVC.injectedFirebaseRepositories = repositories
-        }
-        chatRoomVC.room = room
-        chatRoomVC.configureDefaultViewModelIfNeeded()
-        chatRoomVC.isRoomSaving = false
-        chatRoomVC.modalPresentationStyle = .fullScreen
-        ChatModalTransitionManager.present(chatRoomVC, from: self)
-
+        onOpenRoom(room)
     }
 
     func collectionView(_ collectionView: UICollectionView, trailingSwipeActionsConfigurationForItemAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {

@@ -67,9 +67,7 @@ final class ChatCoordinator {
     }
 
     private func presentChatRoom(room: ChatRoom, from source: UIViewController) {
-        guard let chatRoomVC = makeChatRoomViewController(room: room, isRoomSaving: false) else {
-            return
-        }
+        let chatRoomVC = makeChatRoomViewController(room: room, isRoomSaving: false)
         ChatModalTransitionManager.present(chatRoomVC, from: source)
     }
 
@@ -78,9 +76,6 @@ final class ChatCoordinator {
         ChatDependencyContainer.firebaseRepositories = container.firebaseRepositories
         let createVC = RoomCreateViewController(
             injectedFirebaseRepositories: container.firebaseRepositories,
-            makeChatRoomViewModel: { [container] room in
-                container.makeChatRoomViewModel(room: room)
-            },
             makeCreatedRoomViewController: { [weak self] room in
                 self?.makeChatRoomViewController(room: room, isRoomSaving: true)
             }
@@ -100,9 +95,7 @@ final class ChatCoordinator {
     }
 
     private func presentChatRoomFromSearch(room: ChatRoom, searchVC: RoomSearchViewController) {
-        guard let chatRoomVC = makeChatRoomViewController(room: room, isRoomSaving: false) else {
-            return
-        }
+        let chatRoomVC = makeChatRoomViewController(room: room, isRoomSaving: false)
 
         guard let presenter = searchVC.presentingViewController else { return }
         searchVC.dismiss(animated: false) {
@@ -110,7 +103,7 @@ final class ChatCoordinator {
         }
     }
 
-    private func makeChatRoomViewController(room: ChatRoom, isRoomSaving: Bool) -> ChatViewController? {
+    private func makeChatRoomViewController(room: ChatRoom, isRoomSaving: Bool) -> ChatViewController {
         ChatDependencyContainer.provider = container.provider
         ChatDependencyContainer.firebaseRepositories = container.firebaseRepositories
 
