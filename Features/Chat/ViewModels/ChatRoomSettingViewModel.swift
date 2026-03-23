@@ -38,10 +38,11 @@ final class ChatRoomSettingViewModel {
     private let loadParticipantsUseCase: LoadChatRoomParticipantsUseCaseProtocol
     private let loadMediaUseCase: LoadChatRoomMediaUseCaseProtocol
     private let mediaManager: ChatMediaManaging
+    private let networkStatusProvider: NetworkStatusProviding
     private let mediaThumbMaxBytes = 12 * 1024 * 1024
 
-    private var participantsIsLoadingStorage: Bool = false
-    private var participantsHasMoreStorage: Bool = true
+    private var participantsIsLoadingStorage: Bool
+    private var participantsHasMoreStorage: Bool
 
     private var mediaIsLoadingStorage: Bool = false
     private var mediaHasMoreStorage: Bool = true
@@ -49,19 +50,21 @@ final class ChatRoomSettingViewModel {
 
     init(
         room: ChatRoom,
-        profiles: [UserProfile],
+        initialParticipants: ChatRoomParticipantsLoadResult,
         mediaManager: ChatMediaManaging,
         loadParticipantsUseCase: LoadChatRoomParticipantsUseCaseProtocol,
-        loadMediaUseCase: LoadChatRoomMediaUseCaseProtocol
+        loadMediaUseCase: LoadChatRoomMediaUseCaseProtocol,
+        networkStatusProvider: NetworkStatusProviding
     ) {
         self.roomInfo = room
         self.mediaItems = []
-        self.localUsers = profiles.map {
-            LocalUser(email: $0.email, nickname: $0.nickname ?? "", profileImagePath: $0.thumbPath)
-        }
+        self.localUsers = initialParticipants.users
+        self.participantsIsLoadingStorage = true
+        self.participantsHasMoreStorage = initialParticipants.hasMore
         self.mediaManager = mediaManager
         self.loadParticipantsUseCase = loadParticipantsUseCase
         self.loadMediaUseCase = loadMediaUseCase
+        self.networkStatusProvider = networkStatusProvider
     }
 
     func updateRoomInfo(_ room: ChatRoom) {
@@ -69,12 +72,22 @@ final class ChatRoomSettingViewModel {
     }
 
     func loadInitialParticipants() async {
-        do {
-            let result = try await loadParticipantsUseCase.loadInitial(room: roomInfo)
-            participantsHasMoreStorage = result.hasMore
-            localUsers = result.users
+        participantsIsLoadingStorage = true
+        defer { participantsIsLoadingStorage = false }
 
-            await prefetchProfileAvatars(for: result.users, topCount: result.users.count)
+        do {
+            let room = roomInfo
+            let localResult = try loadParticipantsUseCase.loadLocalInitial(room: room)
+            participantsHasMoreStorage = localResult.hasMore
+            localUsers = localResult.users
+            scheduleAvatarPrefetch(for: localResult.users)
+
+            guard networkStatusProvider.currentStatus.isOnline else { return }
+
+            let reconciledResult = try await loadParticipantsUseCase.reconcileInitial(room: room)
+            participantsHasMoreStorage = reconciledResult.hasMore
+            localUsers = reconciledResult.users
+            scheduleAvatarPrefetch(for: reconciledResult.users)
         } catch {
             print("❌ 초기 참여자 로드 실패:", error)
         }
@@ -91,7 +104,7 @@ final class ChatRoomSettingViewModel {
 
             if !result.users.isEmpty {
                 localUsers.append(contentsOf: result.users)
-                await prefetchProfileAvatars(for: result.users, topCount: result.users.count)
+                scheduleAvatarPrefetch(for: result.users)
             }
         } catch {
             print("❌ 참여자 추가 로드 실패:", error)
@@ -199,6 +212,14 @@ final class ChatRoomSettingViewModel {
     private func syncGalleryCache(with items: [ChatRoomSettingMediaItem]) {
         let validIDs = Set(items.map(\.id))
         galleryItemsByID = galleryItemsByID.filter { validIDs.contains($0.key) }
+    }
+
+    private func scheduleAvatarPrefetch(for users: [LocalUser]) {
+        guard !users.isEmpty else { return }
+
+        Task(priority: .utility) { [weak self] in
+            await self?.prefetchProfileAvatars(for: users, topCount: users.count)
+        }
     }
 
     private func prefetchProfileAvatars(for users: [LocalUser], topCount: Int = 50) async {

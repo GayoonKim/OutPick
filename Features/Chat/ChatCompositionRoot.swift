@@ -37,12 +37,16 @@ enum ChatCompositionRoot {
             localMediaRepository: localMediaRepository,
             remoteMediaRepository: remoteMediaRepository
         )
+        let initialParticipants = (
+            try? participantsUseCase.loadLocalInitial(room: room)
+        ) ?? ChatRoomParticipantsLoadResult(users: [], hasMore: false)
         let settingViewModel = ChatRoomSettingViewModel(
             room: room,
-            profiles: [],
+            initialParticipants: initialParticipants,
             mediaManager: provider.mediaManager,
             loadParticipantsUseCase: participantsUseCase,
-            loadMediaUseCase: mediaUseCase
+            loadMediaUseCase: mediaUseCase,
+            networkStatusProvider: provider.networkStatusProvider
         )
         let settingVC = ChatRoomSettingViewController(
             viewModel: settingViewModel,
