@@ -9,6 +9,7 @@ import UIKit
 
 class ChatRoomInfoCell: UICollectionViewCell {
     static let reuseIdentifier = "ChatRoomInfoCell"
+    private var imageLoadTask: Task<Void, Never>?
     
     private let roomImageView: UIImageView = {
         let imageView = UIImageView()
@@ -96,21 +97,37 @@ class ChatRoomInfoCell: UICollectionViewCell {
         editButtonTapped?()
     }
     
-    func configureCell(room: ChatRoom) {
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        imageLoadTask?.cancel()
+        imageLoadTask = nil
+        roomImageView.image = UIImage(named: "Default_Profile")
+        editButtonView.isHidden = false
+    }
+
+    func configureCell(room: ChatRoom, roomImageManager: RoomImageManaging) {
         print(#function, "🔥🔥🔥🔥🔥 4. roomInfo", room)
-        
+
+        imageLoadTask?.cancel()
+        imageLoadTask = nil
+
         if let thumbPath = room.thumbPath {
-            Task { @MainActor in
+            imageLoadTask = Task { @MainActor [weak self] in
+                guard let self else { return }
                 print(#function, "Custom Image")
-                let image = try await KingFisherCacheManager.shared.loadOrFetchImage(forKey: thumbPath, fetch: {
-                    try await FirebaseImageStorageRepository.shared.fetchImageFromStorage(image: thumbPath, location: .roomImage)
-                })
-                roomImageView.image = image
+                do {
+                    let image = try await roomImageManager.loadImage(for: thumbPath, maxBytes: 3 * 1024 * 1024)
+                    guard !Task.isCancelled else { return }
+                    self.roomImageView.image = image
+                } catch {
+                    self.roomImageView.image = UIImage(named: "Default_Profile")
+                }
             }
         } else {
-            Task { @MainActor in
+            imageLoadTask = Task { @MainActor [weak self] in
+                guard let self else { return }
                 print(#function, "Default Image")
-                roomImageView.image = UIImage(named: "Default_Profile")
+                self.roomImageView.image = UIImage(named: "Default_Profile")
             }
         }
         

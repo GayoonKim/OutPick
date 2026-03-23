@@ -32,10 +32,12 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
     }()
     
     let viewModel: JoinedRoomsViewModel
+    private let roomImageManager: RoomImageManaging
     // roomID -> unread count
     private var unreadCounts: [String: Int64] = [:]
     
     var roomImages: [String:UIImage] = [:]
+    private var roomImageKeys: [String: String] = [:]
     private var lastReadSeqObserver: NSObjectProtocol?
 
     // MARK: - Navigation callbacks (Coordinator)
@@ -43,8 +45,12 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
     var onCreateRoom: (() -> Void)?
     var onSearchRoom: (() -> Void)?
     
-    init(viewModel: JoinedRoomsViewModel) {
+    init(
+        viewModel: JoinedRoomsViewModel,
+        roomImageManager: RoomImageManaging
+    ) {
         self.viewModel = viewModel
+        self.roomImageManager = roomImageManager
         super.init(nibName: nil, bundle: nil)
     }
     
@@ -59,6 +65,7 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
             joinedRoomsStore: joinedRoomsStore
         )
         self.viewModel = JoinedRoomsViewModel(useCase: useCase)
+        self.roomImageManager = ChatDependencyContainer.provider.roomImageManager
         super.init(coder: coder)
     }
 
@@ -113,23 +120,31 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
 
     @MainActor
     private func syncRoomImages(for rooms: [ChatRoom]) async {
+        let roomIDsWithoutImage = Set(
+            rooms.compactMap { room -> String? in
+                guard let roomID = room.ID else { return nil }
+                let hasThumbPath = room.thumbPath?.isEmpty == false
+                return hasThumbPath ? nil : roomID
+            }
+        )
+        for roomID in roomIDsWithoutImage {
+            roomImages.removeValue(forKey: roomID)
+            roomImageKeys.removeValue(forKey: roomID)
+        }
+
         let pairs: [(String, String)] = rooms.compactMap { room in
             guard let roomID = room.ID,
                   let thumbPath = room.thumbPath,
                   !thumbPath.isEmpty else { return nil }
             return (roomID, thumbPath)
         }
+        let roomImageManager = self.roomImageManager
 
         let fetched: [String: UIImage] = await withTaskGroup(of: (String, UIImage?).self, returning: [String: UIImage].self) { group in
             for (roomID, imagePath) in pairs {
-                if roomImages[roomID] != nil { continue }
+                if roomImages[roomID] != nil, roomImageKeys[roomID] == imagePath { continue }
                 group.addTask {
-                    let image = try? await KingFisherCacheManager.shared.loadOrFetchImage(
-                        forKey: imagePath,
-                        fetch: {
-                            try await FirebaseImageStorageRepository.shared.fetchImageFromStorage(image: imagePath, location: .roomImage)
-                        }
-                    )
+                    let image = try? await roomImageManager.loadImage(for: imagePath, maxBytes: 3 * 1024 * 1024)
                     return (roomID, image)
                 }
             }
@@ -145,7 +160,10 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
 
         if fetched.isEmpty { return }
         await MainActor.run {
-            self.roomImages.merge(fetched) { current, _ in current }
+            self.roomImages.merge(fetched) { _, new in new }
+            for (roomID, imagePath) in pairs where fetched[roomID] != nil {
+                self.roomImageKeys[roomID] = imagePath
+            }
             self.applyRooms(self.dataSource.snapshot().itemIdentifiers, animated: false)
         }
     }

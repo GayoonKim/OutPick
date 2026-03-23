@@ -10,6 +10,8 @@ import Foundation
 protocol ChatManagerProviding {
     var messageManager: ChatMessageManaging { get }
     var mediaManager: ChatMediaManaging { get }
+    var roomImageManager: RoomImageManaging { get }
+    var avatarImageManager: ChatAvatarImageManaging { get }
     var searchManager: ChatSearchManaging { get }
     var profileSyncManager: ChatProfileSyncManaging { get }
     var networkStatusProvider: NetworkStatusProviding { get }
@@ -18,13 +20,17 @@ protocol ChatManagerProviding {
 struct ChatManagerProvider: ChatManagerProviding {
     let messageManager: ChatMessageManaging
     let mediaManager: ChatMediaManaging
+    let roomImageManager: RoomImageManaging
+    let avatarImageManager: ChatAvatarImageManaging
     let searchManager: ChatSearchManaging
     let profileSyncManager: ChatProfileSyncManaging
     let networkStatusProvider: NetworkStatusProviding
 
     init(
         messageManager: ChatMessageManaging = ChatMessageManager(),
-        mediaManager: ChatMediaManaging = ChatMediaManager(),
+        mediaManager: ChatMediaManaging = ChatMediaManager.shared,
+        roomImageManager: RoomImageManaging = RoomImageService.shared,
+        avatarImageManager: ChatAvatarImageManaging = AvatarImageService.shared,
         searchManager: ChatSearchManaging? = nil,
         profileSyncManager: ChatProfileSyncManaging = ChatProfileSyncManager(),
         networkStatusProvider: NetworkStatusProviding = NWPathNetworkStatusProvider()
@@ -37,6 +43,8 @@ struct ChatManagerProvider: ChatManagerProviding {
 
         self.messageManager = messageManager
         self.mediaManager = mediaManager
+        self.roomImageManager = roomImageManager
+        self.avatarImageManager = avatarImageManager
         self.searchManager = resolvedSearchManager
         self.profileSyncManager = profileSyncManager
         self.networkStatusProvider = resolvedNetworkStatusProvider

@@ -345,7 +345,8 @@ private extension RoomCreateViewController {
 
         let roomCreateManager = injectedRoomCreateManager ?? RoomCreateManager(
             chatRoomRepository: firebaseRepositories.chatRoomRepository,
-            imageStorageRepository: FirebaseImageStorageRepository.shared
+            imageStorageRepository: FirebaseImageStorageRepository.shared,
+            roomImageManager: ChatDependencyContainer.provider.roomImageManager
         )
         injectedRoomCreateManager = roomCreateManager
 

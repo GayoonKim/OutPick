@@ -343,6 +343,22 @@ final class ImageCachePipeline {
         }
     }
 
+    func storeImageData(_ data: Data, path: String) async throws {
+        let key = canonicalKey(for: path)
+        guard let image = UIImage(data: data) else {
+            throw ImageCachePipelineError.invalidImageData
+        }
+
+        memory.set(image, forKey: key)
+        await disk.write(data: data, forKey: key)
+    }
+
+    func removeImage(path: String) async {
+        let key = canonicalKey(for: path)
+        memory.remove(forKey: key)
+        await disk.remove(forKey: key)
+    }
+
     func prefetch(
         items: [(path: String, maxBytes: Int)],
         concurrency: Int

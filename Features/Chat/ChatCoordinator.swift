@@ -46,7 +46,10 @@ final class ChatCoordinator {
     }
 
     func makeJoinedRoomsRoot() -> UIViewController {
-        let joinedVC = JoinedRoomsViewController(viewModel: container.makeJoinedRoomsViewModel())
+        let joinedVC = JoinedRoomsViewController(
+            viewModel: container.makeJoinedRoomsViewModel(),
+            roomImageManager: container.provider.roomImageManager
+        )
         print(#function, joinedVC)
         joinedVC.onOpenRoom = { [weak self, weak joinedVC] room in
             guard let self, let source = joinedVC else { return }
@@ -103,6 +106,24 @@ final class ChatCoordinator {
         }
     }
 
+    private func presentRoomEdit(from source: ChatRoomSettingViewController, room: ChatRoom) {
+        let editVC = ChatCompositionRoot.makeRoomEditViewController(
+            room: room,
+            provider: container.provider,
+            repositories: container.firebaseRepositories,
+            onRoomEdited: { [weak source] updatedRoom, previewImageData, isImageRemoved in
+                guard let source else { return }
+                await source.applyEditedRoom(
+                    updatedRoom,
+                    previewImageData: previewImageData,
+                    isImageRemoved: isImageRemoved
+                )
+            }
+        )
+        editVC.modalPresentationStyle = .fullScreen
+        source.present(editVC, animated: true)
+    }
+
     private func makeChatRoomViewController(room: ChatRoom, isRoomSaving: Bool) -> ChatViewController {
         ChatDependencyContainer.provider = container.provider
         ChatDependencyContainer.firebaseRepositories = container.firebaseRepositories
@@ -132,6 +153,10 @@ extension ChatCoordinator: ChatRoomRouting {
                 }
             }
         )
+        settingVC.onRequestEditRoom = { [weak self, weak settingVC] room in
+            guard let self, let settingVC else { return }
+            self.presentRoomEdit(from: settingVC, room: room)
+        }
         source.presentSettingPanel(settingVC)
     }
 }

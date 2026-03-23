@@ -44,6 +44,7 @@ enum ChatCompositionRoot {
             room: room,
             initialParticipants: initialParticipants,
             mediaManager: provider.mediaManager,
+            avatarImageManager: provider.avatarImageManager,
             loadParticipantsUseCase: participantsUseCase,
             loadMediaUseCase: mediaUseCase,
             networkStatusProvider: provider.networkStatusProvider
@@ -51,18 +52,34 @@ enum ChatCompositionRoot {
         let settingVC = ChatRoomSettingViewController(
             viewModel: settingViewModel,
             mediaManager: provider.mediaManager,
-            editRoomHandler: { room, pickedImage, pickedImageData, isRemoved, newName, newDesc in
-                try await repositories.chatRoomRepository.editRoom(
-                    room: room,
-                    pickedImage: pickedImage,
-                    imageData: pickedImageData,
-                    isRemoved: isRemoved,
-                    newName: newName,
-                    newDesc: newDesc
-                )
-            }
+            roomImageManager: provider.roomImageManager,
+            avatarImageManager: provider.avatarImageManager
         )
         settingVC.onRoomUpdated = onRoomUpdated
         return settingVC
+    }
+
+    static func makeRoomEditViewController(
+        room: ChatRoom,
+        provider: ChatManagerProviding,
+        repositories: FirebaseRepositoryProviding,
+        onRoomEdited: @escaping @MainActor (ChatRoom, Data?, Bool) async -> Void
+    ) -> RoomEditViewController {
+        let editVC = RoomEditViewController(
+            room: room,
+            roomImageManager: provider.roomImageManager
+        )
+        editVC.onCompleteEdit = { pickedImage, pickedImageData, isRemoved, newName, newDesc in
+            let updated = try await repositories.chatRoomRepository.editRoom(
+                room: room,
+                pickedImage: pickedImage,
+                imageData: pickedImageData,
+                isRemoved: isRemoved,
+                newName: newName,
+                newDesc: newDesc
+            )
+            await onRoomEdited(updated, pickedImageData?.thumbData, isRemoved)
+        }
+        return editVC
     }
 }

@@ -12,6 +12,17 @@ import FirebaseFirestore
 struct RoomCreateManager: RoomCreateManaging {
     let chatRoomRepository: FirebaseChatRoomRepositoryProtocol
     let imageStorageRepository: FirebaseImageStorageRepositoryProtocol
+    let roomImageManager: RoomImageManaging
+
+    init(
+        chatRoomRepository: FirebaseChatRoomRepositoryProtocol,
+        imageStorageRepository: FirebaseImageStorageRepositoryProtocol,
+        roomImageManager: RoomImageManaging = RoomImageService.shared
+    ) {
+        self.chatRoomRepository = chatRoomRepository
+        self.imageStorageRepository = imageStorageRepository
+        self.roomImageManager = roomImageManager
+    }
 
     var currentUserEmail: String {
         LoginManager.shared.getUserEmail
@@ -40,8 +51,6 @@ struct RoomCreateManager: RoomCreateManaging {
             contentType: "image/jpeg"
         )
 
-        if let image = UIImage(data: pair.thumbData) {
-            KingFisherCacheManager.shared.storeImage(image, forKey: thumbPath)
-        }
+        try await roomImageManager.storeImageDataToCache(pair.thumbData, for: thumbPath)
     }
 }

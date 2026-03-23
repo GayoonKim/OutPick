@@ -11,6 +11,7 @@ class ParticipantsSectionParticipantCell: UICollectionViewCell {
     static let reuseIdentifier = "ParticipantsSectionParticipantCell"
     
     private var userProfiles: [LocalUser] = []
+    private var avatarImageManager: ChatAvatarImageManaging?
     
     private lazy var participantLabel: UILabel = {
         let label = UILabel()
@@ -73,9 +74,10 @@ class ParticipantsSectionParticipantCell: UICollectionViewCell {
         fatalError("init(coder:) has not been implemented")
     }
     
-    func configureCell(_ profiles: [LocalUser]) {
+    func configureCell(_ profiles: [LocalUser], avatarImageManager: ChatAvatarImageManaging) {
         print(#function, "호출 완료: ", profiles.map { $0.nickname })
         self.userProfiles = profiles
+        self.avatarImageManager = avatarImageManager
         participantLabel.text = "대화상대 \(profiles.count)"
         
         // 메인 스레드에서 UI 업데이트
@@ -103,7 +105,14 @@ extension ParticipantsSectionParticipantCell: UICollectionViewDataSource, UIColl
 //        }
         print("cellForItemAt:", indexPath, userProfiles[indexPath.item].nickname)
         let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ParticipantListCell.reuseIdentifier, for: indexPath) as! ParticipantListCell
-        cell.configureCell(userProfile: self.userProfiles[indexPath.item])
+        if let avatarImageManager {
+            cell.configureCell(
+                userProfile: self.userProfiles[indexPath.item],
+                avatarImageManager: avatarImageManager
+            )
+        } else {
+            cell.configureCell(userProfile: self.userProfiles[indexPath.item])
+        }
         
         return cell
     }

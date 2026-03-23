@@ -8,7 +8,6 @@
 import UIKit
 import Combine
 import PhotosUI
-import FirebaseStorage
 
 class RoomEditViewController: UIViewController, PHPickerViewControllerDelegate, UIImagePickerControllerDelegate, UINavigationControllerDelegate, UITextFieldDelegate, UITextViewDelegate {
     let customNavigationBar: CustomNavigationBarView = {
@@ -138,11 +137,13 @@ class RoomEditViewController: UIViewController, PHPickerViewControllerDelegate, 
     private let descMaxHeight: CGFloat = 220
     private var descHeightConstraint: NSLayoutConstraint?
     private var isSubmitting: Bool = false
+    private let roomImageManager: RoomImageManaging
     
     var onCompleteEdit: ((UIImage?, DefaultMediaProcessingService.ImagePair?, Bool, String, String) async throws -> Void)?
     
-    init(room: ChatRoom) {
+    init(room: ChatRoom, roomImageManager: RoomImageManaging) {
         self.room = room
+        self.roomImageManager = roomImageManager
         self.afterRoomname = self.room.roomName
         self.afterDescription = self.room.roomDescription
         super.init(nibName: nil, bundle: nil)
@@ -218,12 +219,10 @@ class RoomEditViewController: UIViewController, PHPickerViewControllerDelegate, 
     private func loadHeaderImageIfAvailable() {
         let key = room.thumbPath ?? room.originalPath
         guard let path = key, !path.isEmpty else { return }
-        headerImageTask = Task.detached(priority: .background) { [weak self] in
+        headerImageTask = Task(priority: .background) { [weak self] in
             guard let self else { return }
             do {
-                let image = try await KingFisherCacheManager.shared.loadOrFetchImage(forKey: path, fetch: {
-                    try await FirebaseImageStorageRepository.shared.fetchImageFromStorage(image: path, location: .roomImage)
-                })
+                let image = try await self.roomImageManager.loadImage(for: path, maxBytes: 3 * 1024 * 1024)
                 await MainActor.run {
                     self.headerImageView.image = image
                 }

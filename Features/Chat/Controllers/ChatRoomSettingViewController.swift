@@ -8,9 +8,7 @@
 import UIKit
 import Combine
 import GRDB
-import Kingfisher
 import FirebaseFirestore
-import FirebaseStorage
 
 
 class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecognizerDelegate, UINavigationControllerDelegate/*, ChatModalAnimatable*/ {
@@ -42,7 +40,8 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
     
     private let viewModel: ChatRoomSettingViewModel
     private let mediaManager: ChatMediaManaging
-    private let editRoomHandler: RoomEditHandler
+    private let roomImageManager: RoomImageManaging
+    private let avatarImageManager: ChatAvatarImageManaging
     private var lastRoomCoverKey: String? = nil
     private var coverPrefetchTask: Task<Void, Never>? = nil
     /// 끝 근처에서 선로딩을 트리거할 임계값(px)
@@ -69,7 +68,6 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
     }
     
     typealias DataSourceType = UICollectionViewDiffableDataSource<Section, Item>
-    typealias RoomEditHandler = (ChatRoom, UIImage?, DefaultMediaProcessingService.ImagePair?, Bool, String, String) async throws -> ChatRoom
     var dataSource: DataSourceType!
     
     private var cancellables = Set<AnyCancellable>()
@@ -80,6 +78,7 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
     
     
     var onRoomUpdated: ((ChatRoom) -> Void)?
+    var onRequestEditRoom: ((ChatRoom) -> Void)?
     
     /// (옵션) 갤러리 오픈을 상위 컨테이너(ChatViewController)로 위임하고 싶을 때 설정
     /// 파라미터로 넘겨지는 VC를 push/present 하는 책임은 호스트가 맡는다.
@@ -88,11 +87,13 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
     init(
         viewModel: ChatRoomSettingViewModel,
         mediaManager: ChatMediaManaging,
-        editRoomHandler: @escaping RoomEditHandler
+        roomImageManager: RoomImageManaging,
+        avatarImageManager: ChatAvatarImageManaging
     ) {
         self.viewModel = viewModel
         self.mediaManager = mediaManager
-        self.editRoomHandler = editRoomHandler
+        self.roomImageManager = roomImageManager
+        self.avatarImageManager = avatarImageManager
         let layout = Self.configureLayout(
             viewModel.roomInfo,
             localUsers: viewModel.localUsers,
@@ -262,44 +263,11 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
             switch item {
             case .roomInfoItem(_):
                 let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ChatRoomInfoCell.reuseIdentifier, for: indexPath) as! ChatRoomInfoCell
-                cell.configureCell(room: self.roomInfo)
+                cell.configureCell(room: self.roomInfo, roomImageManager: self.roomImageManager)
                 
                 cell.editButtonTapped = { [weak self] in
                     guard let self = self else { return }
-                    
-                    let editVC = RoomEditViewController(room: self.roomInfo)
-                    editVC.modalPresentationStyle = .fullScreen
-                    
-                    editVC.onCompleteEdit = { [weak self] pickedImage, pickedImageData, isRemoved, newName, newDesc in
-                        guard let self = self else { return }
-                        let updated = try await self.editRoomHandler(
-                            self.roomInfo,
-                            pickedImage,
-                            pickedImageData,
-                            isRemoved,
-                            newName,
-                            newDesc
-                        )
-                        await MainActor.run {
-                            // 1) 이미지 변경에 따른 캐시/키 처리
-                            if isRemoved {
-                                self.lastRoomCoverKey = nil
-                            } else if let img = pickedImage,
-                                      let key = updated.thumbPath ?? updated.originalPath,
-                                      !key.isEmpty {
-                                // 편집 직후 캐시 확정 → 이후 reload는 네트워크 없이 즉시 반영
-                                KingFisherCacheManager.shared.storeImage(img, forKey: key)
-                                self.lastRoomCoverKey = key
-                            }
-
-                            // 2) 로컬 모델 업데이트
-                            self.viewModel.updateRoomInfo(updated)
-                            
-                            self.onRoomUpdated?(updated)
-                        }
-                    }
-                    
-                    self.present(editVC, animated: true, completion: nil)
+                    self.onRequestEditRoom?(self.roomInfo)
                 }
                 
                 return cell
@@ -318,7 +286,7 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
                 
             case let .participantsItem(localUsers):
                 let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ParticipantsSectionParticipantCell.reuseIdentifier, for: indexPath) as! ParticipantsSectionParticipantCell
-                cell.configureCell(localUsers)
+                cell.configureCell(localUsers, avatarImageManager: self.avatarImageManager)
 
                 return cell
             }
@@ -383,6 +351,34 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
         
         dataSource.apply(snapshot, animatingDifferences: false)
     }
+
+    @MainActor
+    func applyEditedRoom(
+        _ updatedRoom: ChatRoom,
+        previewImageData: Data?,
+        isImageRemoved: Bool
+    ) async {
+        let previousKeys = [roomInfo.thumbPath, roomInfo.originalPath]
+            .compactMap { $0 }
+            .filter { !$0.isEmpty }
+        let nextKey = (updatedRoom.thumbPath?.isEmpty == false ? updatedRoom.thumbPath : updatedRoom.originalPath)
+
+        for key in previousKeys where key != nextKey {
+            await roomImageManager.removeCachedImage(for: key)
+        }
+
+        if isImageRemoved {
+            lastRoomCoverKey = nil
+        } else if let nextKey, !nextKey.isEmpty {
+            if let previewImageData {
+                try? await roomImageManager.storeImageDataToCache(previewImageData, for: nextKey)
+            }
+            lastRoomCoverKey = nextKey
+        }
+
+        viewModel.updateRoomInfo(updatedRoom)
+        onRoomUpdated?(updatedRoom)
+    }
     
     private func updateRoomInfoSection() {
         // 1) 현재 커버 키 계산: thumbPath 우선, 없으면 originalPath
@@ -402,7 +398,7 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
                 guard let self = self else { return }
                 if let indexPath = self.dataSource.indexPath(for: .roomInfoItem(self.roomInfo)),
                    let cell = self.collectionView.cellForItem(at: indexPath) as? ChatRoomInfoCell {
-                    cell.configureCell(room: self.roomInfo)
+                    cell.configureCell(room: self.roomInfo, roomImageManager: self.roomImageManager)
                 }
             }
         }
@@ -414,33 +410,19 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
             return
         }
 
-        // 3) 캐시 히트 또는 동일 키 재사용이면: 바로 reload
-        let cache = KingfisherManager.shared.cache
-        if key == lastRoomCoverKey, cache.isCached(forKey: key) {
-            reloadRoomInfoItem()
-            return
-        }
-        if cache.isCached(forKey: key) {
-            self.lastRoomCoverKey = key
-            reloadRoomInfoItem()
-            return
-        }
-
-        // 4) 캐시 미스면 선(先)프리패치 후 reload (best-effort)
+        // 3) 캐시 확인 후 필요 시 파이프라인으로 워밍
         coverPrefetchTask?.cancel()
         coverPrefetchTask = Task { [weak self] in
             guard let self = self else { return }
-            do {
-                let ref = Storage.storage().reference(withPath: key)
-                // 썸네일 기준 3MB 제한(충분)
-                let data = try await ref.data(maxSize: 3 * 1024 * 1024)
-                if let img = UIImage(data: data) {
-                    KingFisherCacheManager.shared.storeImage(img, forKey: key)
+            let isCached = await self.roomImageManager.cachedImage(for: key) != nil
+            if !isCached {
+                do {
+                    _ = try await self.roomImageManager.loadImage(for: key, maxBytes: 3 * 1024 * 1024)
+                } catch {
+                    print("[RoomInfo] cover prefetch failed: \(error)")
                 }
-            } catch {
-                // 실패해도 UI 갱신은 진행 (네트워크 문제 등)
-                print("[RoomInfo] cover prefetch failed: \(error)")
             }
+            guard !Task.isCancelled else { return }
             self.lastRoomCoverKey = key
             await MainActor.run {
                 reloadRoomInfoItem()
@@ -481,7 +463,7 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
             self.collectionView.setCollectionViewLayout(Self.configureLayout(self.roomInfo, localUsers: localUsers, mediaCount: self.mediaItems.count), animated: false)
             if let indexPath = self.dataSource.indexPath(for: .participantsItem(localUsers)),
                let cell = self.collectionView.cellForItem(at: indexPath) as? ParticipantsSectionParticipantCell {
-                cell.configureCell(localUsers)
+                cell.configureCell(localUsers, avatarImageManager: self.avatarImageManager)
             }
         }
     }

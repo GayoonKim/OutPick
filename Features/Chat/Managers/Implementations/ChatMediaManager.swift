@@ -11,7 +11,12 @@ import AVFoundation
 import AVKit
 
 final class ChatMediaManager: ChatMediaManaging {
-    private let imageStorageManager: FirebaseImageStorageRepositoryProtocol
+    static let shared = ChatMediaManager()
+
+    private static let sharedAttachmentImagePipeline = makeAttachmentImagePipeline(
+        imageStorageManager: FirebaseImageStorageRepository.shared
+    )
+
     private let storageURLCache: OPStorageURLCache
     private let imagePipeline: ImageCachePipeline
     private let imageThumbMaxBytes = 12 * 1024 * 1024
@@ -24,22 +29,14 @@ final class ChatMediaManager: ChatMediaManaging {
         storageURLCache: OPStorageURLCache? = nil,
         imagePipeline: ImageCachePipeline? = nil
     ) {
-        self.imageStorageManager = imageStorageManager
         self.storageURLCache = storageURLCache ?? OPStorageURLCache()
-        self.imagePipeline = imagePipeline ?? ImageCachePipeline(
-            fetcher: { [imageStorageManager] path, maxBytes in
-                try await imageStorageManager.fetchImageDataFromStorage(
-                    image: path,
-                    location: .roomImage,
-                    maxBytes: maxBytes
-                )
-            },
-            disk: ImageCacheDiskStore(
-                folderName: "ChatImageCache",
-                maxSizeBytes: 350 * 1024 * 1024,
-                trimTargetBytes: 280 * 1024 * 1024
-            )
-        )
+        if let imagePipeline {
+            self.imagePipeline = imagePipeline
+        } else if imageStorageManager is FirebaseImageStorageRepository {
+            self.imagePipeline = Self.sharedAttachmentImagePipeline
+        } else {
+            self.imagePipeline = Self.makeAttachmentImagePipeline(imageStorageManager: imageStorageManager)
+        }
     }
     
     func cacheImagesIfNeeded(for message: ChatMessage) async -> [UIImage] {
@@ -260,6 +257,25 @@ final class ChatMediaManager: ChatMediaManaging {
             return nil
         }
         return image
+    }
+
+    private static func makeAttachmentImagePipeline(
+        imageStorageManager: FirebaseImageStorageRepositoryProtocol
+    ) -> ImageCachePipeline {
+        ImageCachePipeline(
+            fetcher: { path, maxBytes in
+                try await imageStorageManager.fetchImageDataFromStorage(
+                    image: path,
+                    location: .roomImage,
+                    maxBytes: maxBytes
+                )
+            },
+            disk: ImageCacheDiskStore(
+                folderName: "ChatImageCache",
+                maxSizeBytes: 350 * 1024 * 1024,
+                trimTargetBytes: 280 * 1024 * 1024
+            )
+        )
     }
 }
 

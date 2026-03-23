@@ -9,6 +9,7 @@ import UIKit
 
 class ParticipantListCell: UICollectionViewCell {
     static let reuseIdentifier = "ParticipantListCell"
+    private var avatarLoadTask: Task<Void, Never>?
     
     private lazy var userProfileImageView: UIImageView = {
         let imageView = UIImageView()
@@ -55,5 +56,39 @@ class ParticipantListCell: UICollectionViewCell {
     
     func configureCell(userProfile: LocalUser) {
         nickNameLabel.text = userProfile.nickname
+        avatarLoadTask?.cancel()
+        avatarLoadTask = nil
+        userProfileImageView.image = UIImage(named: "Default_Profile")
+    }
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        avatarLoadTask?.cancel()
+        avatarLoadTask = nil
+        userProfileImageView.image = UIImage(named: "Default_Profile")
+    }
+
+    func configureCell(userProfile: LocalUser, avatarImageManager: ChatAvatarImageManaging) {
+        configureCell(userProfile: userProfile)
+
+        guard let path = userProfile.profileImagePath, !path.isEmpty else { return }
+
+        avatarLoadTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+
+            if let cached = await avatarImageManager.cachedAvatar(for: path) {
+                guard !Task.isCancelled else { return }
+                self.userProfileImageView.image = cached
+                return
+            }
+
+            do {
+                let image = try await avatarImageManager.loadAvatar(for: path, maxBytes: 3 * 1024 * 1024)
+                guard !Task.isCancelled else { return }
+                self.userProfileImageView.image = image
+            } catch {
+                self.userProfileImageView.image = UIImage(named: "Default_Profile")
+            }
+        }
     }
 }

@@ -8,8 +8,6 @@
 import Foundation
 import UIKit
 import Combine
-import Kingfisher
-import FirebaseStorage
 
 @MainActor
 final class ChatRoomSettingViewModel {
@@ -38,8 +36,10 @@ final class ChatRoomSettingViewModel {
     private let loadParticipantsUseCase: LoadChatRoomParticipantsUseCaseProtocol
     private let loadMediaUseCase: LoadChatRoomMediaUseCaseProtocol
     private let mediaManager: ChatMediaManaging
+    private let avatarImageManager: ChatAvatarImageManaging
     private let networkStatusProvider: NetworkStatusProviding
     private let mediaThumbMaxBytes = 12 * 1024 * 1024
+    private let avatarPrefetchMaxBytes = 3 * 1024 * 1024
 
     private var participantsIsLoadingStorage: Bool
     private var participantsHasMoreStorage: Bool
@@ -52,6 +52,7 @@ final class ChatRoomSettingViewModel {
         room: ChatRoom,
         initialParticipants: ChatRoomParticipantsLoadResult,
         mediaManager: ChatMediaManaging,
+        avatarImageManager: ChatAvatarImageManaging,
         loadParticipantsUseCase: LoadChatRoomParticipantsUseCaseProtocol,
         loadMediaUseCase: LoadChatRoomMediaUseCaseProtocol,
         networkStatusProvider: NetworkStatusProviding
@@ -62,6 +63,7 @@ final class ChatRoomSettingViewModel {
         self.participantsIsLoadingStorage = true
         self.participantsHasMoreStorage = initialParticipants.hasMore
         self.mediaManager = mediaManager
+        self.avatarImageManager = avatarImageManager
         self.loadParticipantsUseCase = loadParticipantsUseCase
         self.loadMediaUseCase = loadMediaUseCase
         self.networkStatusProvider = networkStatusProvider
@@ -229,25 +231,14 @@ final class ChatRoomSettingViewModel {
             $0.nickname.localizedCaseInsensitiveCompare($1.nickname) == .orderedAscending
         }
         let slice = sorted.prefix(min(topCount, sorted.count))
+        let paths = Array(Set(slice.compactMap(\.profileImagePath).filter { !$0.isEmpty }))
+        guard !paths.isEmpty else { return }
 
-        for user in slice {
-            guard let path = user.profileImagePath, !path.isEmpty else { continue }
-            let key = path
-            let cache = KingfisherManager.shared.cache
-            if cache.isCached(forKey: key) {
-                continue
-            }
-
-            let ref = Storage.storage().reference(withPath: path)
-            do {
-                let data = try await ref.data(maxSize: 3 * 1024 * 1024)
-                if let image = UIImage(data: data) {
-                    KingFisherCacheManager.shared.storeImage(image, forKey: key)
-                }
-            } catch {
-                print("👤 아바타 프리패치 실패(\(user.email)):", error)
-            }
-        }
+        await avatarImageManager.prefetchAvatars(
+            paths: paths,
+            maxBytes: avatarPrefetchMaxBytes,
+            maxConcurrent: 4
+        )
     }
 
     private static func makeGalleryItem(from media: MaterializedMedia) -> GalleryItemModel {
