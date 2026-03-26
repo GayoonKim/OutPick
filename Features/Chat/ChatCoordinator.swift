@@ -77,8 +77,9 @@ final class ChatCoordinator {
     private func presentCreateRoom(from source: UIViewController) {
         ChatDependencyContainer.provider = container.provider
         ChatDependencyContainer.firebaseRepositories = container.firebaseRepositories
-        let createVC = RoomCreateViewController(
-            injectedFirebaseRepositories: container.firebaseRepositories,
+        let createVC = ChatCompositionRoot.makeRoomCreateViewController(
+            provider: container.provider,
+            repositories: container.firebaseRepositories,
             makeCreatedRoomViewController: { [weak self] room in
                 self?.makeChatRoomViewController(room: room, isRoomSaving: true)
             }
@@ -111,13 +112,9 @@ final class ChatCoordinator {
             room: room,
             provider: container.provider,
             repositories: container.firebaseRepositories,
-            onRoomEdited: { [weak source] updatedRoom, previewImageData, isImageRemoved in
+            onRoomEdited: { [weak source] updatedRoom in
                 guard let source else { return }
-                await source.applyEditedRoom(
-                    updatedRoom,
-                    previewImageData: previewImageData,
-                    isImageRemoved: isImageRemoved
-                )
+                await source.applyEditedRoom(updatedRoom)
             }
         )
         editVC.modalPresentationStyle = .fullScreen

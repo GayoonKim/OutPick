@@ -353,29 +353,9 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
     }
 
     @MainActor
-    func applyEditedRoom(
-        _ updatedRoom: ChatRoom,
-        previewImageData: Data?,
-        isImageRemoved: Bool
-    ) async {
-        let previousKeys = [roomInfo.thumbPath, roomInfo.originalPath]
-            .compactMap { $0 }
-            .filter { !$0.isEmpty }
-        let nextKey = (updatedRoom.thumbPath?.isEmpty == false ? updatedRoom.thumbPath : updatedRoom.originalPath)
-
-        for key in previousKeys where key != nextKey {
-            await roomImageManager.removeCachedImage(for: key)
-        }
-
-        if isImageRemoved {
-            lastRoomCoverKey = nil
-        } else if let nextKey, !nextKey.isEmpty {
-            if let previewImageData {
-                try? await roomImageManager.storeImageDataToCache(previewImageData, for: nextKey)
-            }
-            lastRoomCoverKey = nextKey
-        }
-
+    func applyEditedRoom(_ updatedRoom: ChatRoom) async {
+        let nextKey = updatedRoom.thumbPath?.isEmpty == false ? updatedRoom.thumbPath : updatedRoom.originalPath
+        lastRoomCoverKey = nextKey
         viewModel.updateRoomInfo(updatedRoom)
         onRoomUpdated?(updatedRoom)
     }

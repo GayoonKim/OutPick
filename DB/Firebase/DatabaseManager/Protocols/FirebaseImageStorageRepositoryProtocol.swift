@@ -18,16 +18,6 @@ protocol FirebaseImageStorageRepositoryProtocol {
         contentType: String
     ) async throws -> (avatarThumbPath: String, avatarPath: String)
 
-    func uploadAndSave(
-        sha: String,
-        uid: String,
-        type: ImageLocation,
-        thumbData: Data,
-        originalFileURL: URL,
-        versionHint: String?,
-        contentType: String
-    ) async throws -> (avatarThumbPath: String, avatarPath: String)
-
     func uploadPairsToRoomMessage(
         _ pairs: [DefaultMediaProcessingService.ImagePair],
         roomID: String,

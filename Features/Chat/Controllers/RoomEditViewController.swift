@@ -1,5 +1,5 @@
 //
-//  ChatEditViewController.swift
+//  RoomEditViewController.swift
 //  OutPick
 //
 //  Created by 김가윤 on 6/14/25.
@@ -9,15 +9,23 @@ import UIKit
 import Combine
 import PhotosUI
 
-class RoomEditViewController: UIViewController, PHPickerViewControllerDelegate, UIImagePickerControllerDelegate, UINavigationControllerDelegate, UITextFieldDelegate, UITextViewDelegate {
-    let customNavigationBar: CustomNavigationBarView = {
+@MainActor
+final class RoomEditViewController: UIViewController, PHPickerViewControllerDelegate, UIImagePickerControllerDelegate, UINavigationControllerDelegate, UITextFieldDelegate, UITextViewDelegate {
+    private let customNavigationBar: CustomNavigationBarView = {
         let navBar = CustomNavigationBarView()
         navBar.translatesAutoresizingMaskIntoConstraints = false
-        
         return navBar
     }()
 
-    // MARK: - Scroll & Content
+    private lazy var completeButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.setTitle("완료", for: .normal)
+        button.setTitleColor(.black, for: .normal)
+        button.setTitleColor(.placeholderText, for: .disabled)
+        button.addTarget(self, action: #selector(completeButtonTapped), for: .touchUpInside)
+        return button
+    }()
+
     private let scrollView: UIScrollView = {
         let sv = UIScrollView()
         sv.translatesAutoresizingMaskIntoConstraints = false
@@ -25,433 +33,419 @@ class RoomEditViewController: UIViewController, PHPickerViewControllerDelegate, 
         sv.keyboardDismissMode = .interactive
         return sv
     }()
+
     private let contentView: UIView = {
-        let v = UIView()
-        v.translatesAutoresizingMaskIntoConstraints = false
-        return v
+        let view = UIView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        return view
     }()
 
-    // MARK: - Header Image
     private let headerImageView: UIImageView = {
-        let iv = UIImageView()
-        iv.image = UIImage(named: "Default_Profile")
-        iv.translatesAutoresizingMaskIntoConstraints = false
-        iv.backgroundColor = .secondarySystemBackground
-        iv.contentMode = .scaleAspectFill
-        iv.clipsToBounds = true
-        iv.layer.cornerRadius = 12
-        return iv
+        let imageView = UIImageView()
+        imageView.image = UIImage(named: "Default_Profile")
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        imageView.backgroundColor = .secondarySystemBackground
+        imageView.contentMode = .scaleAspectFill
+        imageView.clipsToBounds = true
+        imageView.layer.cornerRadius = 12
+        return imageView
     }()
+
     private let imageEditIconView: UIImageView = {
-        let iv = UIImageView()
-        iv.contentMode = .center
-        iv.tintColor = .black
-        iv.backgroundColor = .white
-        iv.clipsToBounds = true
-        iv.layer.cornerRadius = 13
-        iv.image = UIImage(systemName: "camera.fill")
-        iv.translatesAutoresizingMaskIntoConstraints = false
-        return iv
+        let imageView = UIImageView()
+        imageView.contentMode = .center
+        imageView.tintColor = .black
+        imageView.backgroundColor = .white
+        imageView.clipsToBounds = true
+        imageView.layer.cornerRadius = 13
+        imageView.image = UIImage(systemName: "camera.fill")
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        return imageView
     }()
 
-    // MARK: - Name Field
     private let nameField: UITextField = {
-        let tf = UITextField()
-        tf.translatesAutoresizingMaskIntoConstraints = false
-        tf.placeholder = "채팅방 이름 (필수)"
-        tf.clearButtonMode = .never // 별도 버튼 제공
-        tf.borderStyle = .roundedRect
-        tf.returnKeyType = .done
-        tf.autocorrectionType = .no
-        tf.autocapitalizationType = .none
-        return tf
+        let textField = UITextField()
+        textField.translatesAutoresizingMaskIntoConstraints = false
+        textField.placeholder = "채팅방 이름 (필수)"
+        textField.clearButtonMode = .never
+        textField.borderStyle = .roundedRect
+        textField.returnKeyType = .done
+        textField.autocorrectionType = .no
+        textField.autocapitalizationType = .none
+        return textField
     }()
+
     private lazy var nameClearButton: UIButton = {
-        let b = UIButton(type: .system)
-        b.setImage(UIImage(systemName: "xmark.circle.fill"), for: .normal)
-        b.tintColor = .tertiaryLabel
-        b.addTarget(self, action: #selector(clearNameTapped), for: .touchUpInside)
-        b.frame = CGRect(x: 0, y: 0, width: 28, height: 28)
-        return b
+        let button = UIButton(type: .system)
+        button.setImage(UIImage(systemName: "xmark.circle.fill"), for: .normal)
+        button.tintColor = .tertiaryLabel
+        button.addTarget(self, action: #selector(clearNameTapped), for: .touchUpInside)
+        button.frame = CGRect(x: 0, y: 0, width: 28, height: 28)
+        return button
     }()
+
     private let nameCountLabel: UILabel = {
-        let l = UILabel()
-        l.translatesAutoresizingMaskIntoConstraints = false
-        l.font = .systemFont(ofSize: 12)
-        l.textColor = .secondaryLabel
-        l.text = "0/20"
-        return l
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.font = .systemFont(ofSize: 12)
+        label.textColor = .secondaryLabel
+        label.text = "0/20"
+        return label
     }()
 
-    // MARK: - Field Titles
     private let nameTitleLabel: UILabel = {
-        let l = UILabel()
-        l.translatesAutoresizingMaskIntoConstraints = false
-        l.font = .systemFont(ofSize: 13, weight: .semibold)
-        l.textColor = .secondaryLabel
-        l.text = "방 이름"
-        return l
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.font = .systemFont(ofSize: 13, weight: .semibold)
+        label.textColor = .secondaryLabel
+        label.text = "방 이름"
+        return label
     }()
+
     private let descTitleLabel: UILabel = {
-        let l = UILabel()
-        l.translatesAutoresizingMaskIntoConstraints = false
-        l.font = .systemFont(ofSize: 13, weight: .semibold)
-        l.textColor = .secondaryLabel
-        l.text = "방 설명"
-        return l
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.font = .systemFont(ofSize: 13, weight: .semibold)
+        label.textColor = .secondaryLabel
+        label.text = "방 설명"
+        return label
     }()
 
-    // MARK: - Description Field
     private let descTextView: UITextView = {
-        let tv = UITextView()
-        tv.translatesAutoresizingMaskIntoConstraints = false
-        tv.font = .systemFont(ofSize: 15)
-        tv.layer.cornerRadius = 8
-        tv.layer.borderWidth = 1
-        tv.layer.borderColor = UIColor.separator.cgColor
-        tv.isScrollEnabled = false
-        return tv
-    }()
-    private let descCountLabel: UILabel = {
-        let l = UILabel()
-        l.translatesAutoresizingMaskIntoConstraints = false
-        l.font = .systemFont(ofSize: 12)
-        l.textColor = .secondaryLabel
-        l.text = "0/200"
-        return l
+        let textView = UITextView()
+        textView.translatesAutoresizingMaskIntoConstraints = false
+        textView.font = .systemFont(ofSize: 15)
+        textView.layer.cornerRadius = 8
+        textView.layer.borderWidth = 1
+        textView.layer.borderColor = UIColor.separator.cgColor
+        textView.isScrollEnabled = false
+        return textView
     }()
 
-    var room: ChatRoom
-    
+    private let descCountLabel: UILabel = {
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.font = .systemFont(ofSize: 12)
+        label.textColor = .secondaryLabel
+        label.text = "0/200"
+        return label
+    }()
+
+    var onRoomEdited: (@MainActor (ChatRoom) async -> Void)?
+
+    private let viewModel: RoomEditViewModel
     private var cancellables = Set<AnyCancellable>()
-    
-    private var currentKeyboardHeight: CGFloat?
-    
-    private var selectedImage: UIImage?
-    private var selectedImageData: DefaultMediaProcessingService.ImagePair?
-    private var isImageRemoved: Bool = false
-    private var afterRoomname: String = ""
-    private var afterDescription: String = ""
-    private var convertImageTask: Task<Void, Error>? = nil
-    private var headerImageTask: Task<Void, Never>? = nil
-    private let descMaxHeight: CGFloat = 220
+    private var convertImageTask: Task<Void, Never>?
     private var descHeightConstraint: NSLayoutConstraint?
-    private var isSubmitting: Bool = false
-    private let roomImageManager: RoomImageManaging
-    
-    var onCompleteEdit: ((UIImage?, DefaultMediaProcessingService.ImagePair?, Bool, String, String) async throws -> Void)?
-    
-    init(room: ChatRoom, roomImageManager: RoomImageManaging) {
-        self.room = room
-        self.roomImageManager = roomImageManager
-        self.afterRoomname = self.room.roomName
-        self.afterDescription = self.room.roomDescription
+    private var imageActionSheet: BottomActionSheetView?
+    private let descMaxHeight: CGFloat = 220
+
+    init(viewModel: RoomEditViewModel) {
+        self.viewModel = viewModel
         super.init(nibName: nil, bundle: nil)
     }
-    
+
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
-    
+
+    deinit {
+        convertImageTask?.cancel()
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
-        self.view.backgroundColor = .white
-        
+        view.backgroundColor = .systemBackground
+
         setupCustomNavigationBar()
-        updateCompleteBtnState()
         bindKeyboardPublisher()
         setupScrollUI()
-        // Seed initial values
-        nameField.text = afterRoomname
-        descTextView.text = afterDescription
-        updateNameCount()
-        updateDescCount()
+        configureInputs()
+        bindViewModel()
+        viewModel.loadHeaderImageIfNeeded()
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        adjustDescTextViewHeight()
+        imageEditIconView.layer.cornerRadius = imageEditIconView.bounds.height / 2
+    }
+
+    private func configureInputs() {
         nameField.delegate = self
         descTextView.delegate = self
-        // Right view clear button
         nameField.rightView = nameClearButton
         nameField.rightViewMode = .whileEditing
-        loadHeaderImageIfAvailable()
+        nameField.addTarget(self, action: #selector(nameFieldEditingChanged), for: .editingChanged)
     }
-    
-    override func viewWillDisappear(_ animated: Bool) {
-        super.viewWillDisappear(animated)
-        cancellables.removeAll()
-        convertImageTask?.cancel()
-        headerImageTask?.cancel()
+
+    private func bindViewModel() {
+        viewModel.$state
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] state in
+                self?.render(state)
+            }
+            .store(in: &cancellables)
+
+        viewModel.eventPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] event in
+                self?.handle(event)
+            }
+            .store(in: &cancellables)
+    }
+
+    private func render(_ state: RoomEditViewModel.State) {
+        if nameField.text != state.roomName {
+            nameField.text = state.roomName
+        }
+
+        if descTextView.text != state.roomDescription {
+            descTextView.text = state.roomDescription
+            adjustDescTextViewHeight()
+        }
+
+        nameCountLabel.text = "\(state.roomNameCount)/20"
+        descCountLabel.text = "\(state.roomDescriptionCount)/200"
+        completeButton.isEnabled = state.isSubmitEnabled
+        headerImageView.isUserInteractionEnabled = !state.isSubmitting
+        nameField.isEnabled = !state.isSubmitting
+        descTextView.isEditable = !state.isSubmitting
+        nameClearButton.isEnabled = !state.isSubmitting
+
+        if state.isSubmitting {
+            LoadingIndicator.shared.start(on: self)
+        } else {
+            LoadingIndicator.shared.stop()
+        }
+    }
+
+    private func handle(_ event: RoomEditViewModel.Event) {
+        switch event {
+        case .headerImageUpdated(let image):
+            headerImageView.image = image
+
+        case .showAlert(let title, let message):
+            AlertManager.showAlertNoHandler(title: title, message: message, viewController: self)
+
+        case .didComplete(let updatedRoom):
+            Task { [weak self] in
+                guard let self else { return }
+                if let onRoomEdited = self.onRoomEdited {
+                    await onRoomEdited(updatedRoom)
+                }
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                self.dismiss(animated: true)
+            }
+        }
     }
 
     private func bindKeyboardPublisher() {
         NotificationCenter.default.publisher(for: UIApplication.keyboardWillShowNotification)
             .receive(on: RunLoop.main)
             .sink { [weak self] notification in
-                guard let self = self else { return }
-                self.keyboardWillShow(notification)
+                self?.keyboardWillShow(notification)
             }
             .store(in: &cancellables)
-        
+
         NotificationCenter.default.publisher(for: UIApplication.keyboardWillHideNotification)
             .receive(on: RunLoop.main)
             .sink { [weak self] notification in
-                guard let self = self else { return }
-                self.keyboardWillHide(notification)
+                self?.keyboardWillHide(notification)
             }
             .store(in: &cancellables)
     }
-    
+
     private func keyboardWillShow(_ notification: Notification) {
         guard let userInfo = notification.userInfo,
-              let keyboardFrame = userInfo[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
-        let keyboardHeight = keyboardFrame.height
-        self.currentKeyboardHeight = keyboardHeight
-        updateKeyboardInsets(showing: true, height: keyboardHeight)
+              let keyboardFrame = userInfo[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else {
+            return
+        }
+
+        updateKeyboardInsets(showing: true, height: keyboardFrame.height)
+
         if descTextView.isFirstResponder {
             scrollDescIntoView(animated: true)
         }
     }
-    
+
     private func keyboardWillHide(_ notification: Notification) {
-        self.currentKeyboardHeight = nil
         updateKeyboardInsets(showing: false, height: 0)
-    }
-    
-    // MARK: - Header Image Loading
-    private func loadHeaderImageIfAvailable() {
-        let key = room.thumbPath ?? room.originalPath
-        guard let path = key, !path.isEmpty else { return }
-        headerImageTask = Task(priority: .background) { [weak self] in
-            guard let self else { return }
-            do {
-                let image = try await self.roomImageManager.loadImage(for: path, maxBytes: 3 * 1024 * 1024)
-                await MainActor.run {
-                    self.headerImageView.image = image
-                }
-            } catch {
-                // Optional: log or ignore
-                print("[RoomEdit] header image load failed: \(error)")
-            }
-        }
     }
 
     private func presentImgEditActionSheet() {
-        let alert = UIAlertController(title: nil, message: nil, preferredStyle: .actionSheet)
+        imageActionSheet?.dismiss(animated: false)
+        view.endEditing(true)
 
-        alert.addAction(UIAlertAction(title: "사진 선택", style: .default, handler: { _ in
-            self.openPHPicker()
-        }))
+        var actions: [BottomActionSheetView.Action] = [
+            .init(title: "사진 선택", handler: { [weak self] in
+                self?.openPHPicker()
+            }),
+            .init(title: "사진 촬영", handler: { [weak self] in
+                self?.openCamera()
+            })
+        ]
 
-        alert.addAction(UIAlertAction(title: "사진 촬영", style: .default, handler: { _ in
-            self.openCamera()
-        }))
-
-        // Show delete only when there is a custom image (picked or remote) and not already marked removed
-        let hasRemote = (((self.room.thumbPath?.isEmpty == false) || (self.room.originalPath?.isEmpty == false)) && !self.isImageRemoved)
-        let hasPicked = (self.selectedImage != nil) || (self.selectedImageData != nil)
-        let hasCustom = hasRemote || hasPicked
-        if hasCustom {
-            alert.addAction(UIAlertAction(title: "삭제", style: .destructive, handler: { _ in
-                self.removeImage()
+        if viewModel.shouldShowDeleteAction {
+            actions.append(.init(title: "삭제", style: .destructive, handler: { [weak self] in
+                self?.removeImage()
             }))
         }
 
-        alert.addAction(UIAlertAction(title: "취소", style: .cancel, handler: nil))
+        actions.append(.init(title: "취소", style: .cancel))
 
-        if let popover = alert.popoverPresentationController {
-            popover.sourceView = self.view
-            popover.sourceRect = CGRect(x: self.view.bounds.midX, y: self.view.bounds.midY, width: 0, height: 0)
-            popover.permittedArrowDirections = []
+        let sheet = BottomActionSheetView.present(in: view, actions: actions)
+        sheet.onDismiss = { [weak self] in
+            self?.imageActionSheet = nil
         }
-
-        self.present(alert, animated: true)
+        imageActionSheet = sheet
     }
-    
+
     private func openPHPicker() {
         var configuration = PHPickerConfiguration()
         configuration.filter = .any(of: [.images])
         configuration.selectionLimit = 1
         configuration.selection = .ordered
         configuration.preferredAssetRepresentationMode = .current
-        
+
         let picker = PHPickerViewController(configuration: configuration)
         picker.delegate = self
         present(picker, animated: true)
     }
-    
+
     private func openCamera() {
-        if UIImagePickerController.isSourceTypeAvailable(.camera) {
-            let imagePicker = UIImagePickerController()
-            imagePicker.delegate = self
-            imagePicker.allowsEditing = true
-            imagePicker.sourceType = .camera
-        
-            present(imagePicker, animated: true, completion: nil)
-        }
-    }
-    
-    @MainActor
-    private func removeImage() {
-        // Cancel any ongoing header image load
-        headerImageTask?.cancel()
-        convertImageTask?.cancel()
-
-        // Determine if there is an existing custom image (from room or a newly picked one)
-        let hadRemoteImage = (room.thumbPath != nil) || (room.originalPath != nil)
-        let hadPickedImage = (selectedImage != nil) || (selectedImageData != nil)
-        let hasCustomImage = hadRemoteImage || hadPickedImage
-
-        // If it's already the default and nothing to remove, just return
-        if !hasCustomImage {
-            self.headerImageView.image = UIImage(named: "Default_Profile")
-            self.isImageRemoved = false
-            updateCompleteBtnState()
+        guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
+            AlertManager.showAlertNoHandler(
+                title: "카메라 사용 불가",
+                message: "현재 기기에서 카메라를 사용할 수 없습니다.",
+                viewController: self
+            )
             return
         }
 
-        // UI: set default image immediately
-        self.headerImageView.image = UIImage(named: "Default_Profile")
+        let imagePicker = UIImagePickerController()
+        imagePicker.delegate = self
+        imagePicker.allowsEditing = true
+        imagePicker.sourceType = .camera
 
-        // State: clear picked image and mark removal
-        self.selectedImage = nil
-        self.selectedImageData = nil
-        self.isImageRemoved = true
+        present(imagePicker, animated: true)
+    }
 
-        // Update complete button state
-        updateCompleteBtnState()
+    private func removeImage() {
+        headerImageView.image = UIImage(named: "Default_Profile")
+        viewModel.removeImage()
+    }
+
+    private func convertPickerResults(_ results: [PHPickerResult]) {
+        convertImageTask?.cancel()
+        convertImageTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let pairs = try await DefaultMediaProcessingService.shared.preparePairs(results)
+                guard !Task.isCancelled, let pair = pairs.first else { return }
+                self.viewModel.selectImage(pair)
+            } catch {
+                AlertManager.showAlertNoHandler(
+                    title: "이미지 변환 실패",
+                    message: "이미지를 다시 선택해 주세요.",
+                    viewController: self
+                )
+            }
+        }
+    }
+
+    private func convertCameraImage(_ image: UIImage) {
+        convertImageTask?.cancel()
+        do {
+            let pair = try makeImagePair(from: image)
+            viewModel.selectImage(pair)
+        } catch {
+            AlertManager.showAlertNoHandler(
+                title: "이미지 변환 실패",
+                message: "촬영한 이미지를 다시 확인해 주세요.",
+                viewController: self
+            )
+        }
+    }
+
+    private func makeImagePair(from image: UIImage) throws -> DefaultMediaProcessingService.ImagePair {
+        guard let originalData = image.jpegData(compressionQuality: 0.95) else {
+            throw MediaError.failedToConvertImage
+        }
+
+        guard let thumbData = DefaultMediaProcessingService.makeThumbnailData(from: image) else {
+            throw MediaError.failedToCreateImageData
+        }
+
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("picked-images", isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let fileURL = directory.appendingPathComponent(UUID().uuidString).appendingPathExtension("jpg")
+        try originalData.write(to: fileURL, options: .atomic)
+
+        let width = image.cgImage?.width ?? Int(image.size.width * image.scale)
+        let height = image.cgImage?.height ?? Int(image.size.height * image.scale)
+        let fileBaseName = UUID().uuidString.replacingOccurrences(of: "-", with: "")
+
+        return DefaultMediaProcessingService.ImagePair(
+            index: 0,
+            originalFileURL: fileURL,
+            thumbData: thumbData,
+            originalWidth: width,
+            originalHeight: height,
+            bytesOriginal: originalData.count,
+            sha256: fileBaseName
+        )
     }
 }
 
 extension RoomEditViewController {
-    @MainActor
     func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
         picker.dismiss(animated: true)
-
-        for result in results {
-            let itemProvider = result.itemProvider
-
-            if itemProvider.canLoadObject(ofClass: UIImage.self) {
-                convertImageTask = Task {
-                    do {
-                        let pairs = try await DefaultMediaProcessingService.shared.preparePairs(results)
-                        if Task.isCancelled { return }
-                        guard let pair = pairs.first else { return }
-                        await MainActor.run {
-                            self.selectedImageData = pair
-                            if let img = UIImage(data: pair.thumbData) {
-                                self.headerImageView.image = img
-                                self.selectedImage = img
-                                self.isImageRemoved = false
-                                self.updateCompleteBtnState()
-                            }
-                        }
-                    } catch {
-                        await MainActor.run {
-                            AlertManager.showAlertNoHandler(title: "이미지 변환 실패", message: "이미지를 다시 선택해 주세요/", viewController: self)
-                        }
-                    }
-                }
-            }
-        }
-
+        guard !results.isEmpty else { return }
+        convertPickerResults(results)
     }
-    
-//    func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
-//        if let editedImage = info[.editedImage] as? UIImage {
-//
-//        } else if let originalImage = info[.originalImage] as? UIImage {
-//
-//        }
-//
-//        dismiss(animated: true)
-//    }
-//
-//    func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-//        picker.dismiss(animated: true)
-//    }
+
+    func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
+        let pickedImage = (info[.editedImage] as? UIImage) ?? (info[.originalImage] as? UIImage)
+        picker.dismiss(animated: true)
+
+        guard let pickedImage else { return }
+        convertCameraImage(pickedImage)
+    }
+
+    func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+        picker.dismiss(animated: true)
+    }
 }
 
 extension RoomEditViewController {
-    @MainActor
-    func setupCustomNavigationBar() {
-        self.view.addSubview(customNavigationBar)
-        
+    private func setupCustomNavigationBar() {
+        view.addSubview(customNavigationBar)
+
         NSLayoutConstraint.activate([
-            customNavigationBar.topAnchor.constraint(equalTo: self.view.topAnchor),
-            customNavigationBar.leadingAnchor.constraint(equalTo: self.view.leadingAnchor),
-            customNavigationBar.trailingAnchor.constraint(equalTo: self.view.trailingAnchor),
+            customNavigationBar.topAnchor.constraint(equalTo: view.topAnchor),
+            customNavigationBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            customNavigationBar.trailingAnchor.constraint(equalTo: view.trailingAnchor)
         ])
-        
-        let completeBtn = UIButton(type: .system)
-        completeBtn.setTitle("완료", for: .normal)
-        completeBtn.setTitleColor(.black, for: .normal)
-        completeBtn.setTitleColor(.placeholderText, for: .disabled)
-        completeBtn.addTarget(self, action: #selector(completeBtnTapped), for: .touchUpInside)
-        
-        customNavigationBar.configure(leftViews: [UIButton.navBackButton(action: backBtnTapped)],
-                                      centerViews: [UILabel.navTitle("오픈채팅 관리")],
-                                      rightViews: [completeBtn])
+
+        customNavigationBar.configure(
+            leftViews: [UIButton.navBackButton(action: backButtonTapped)],
+            centerViews: [UILabel.navTitle("오픈채팅 관리")],
+            rightViews: [completeButton]
+        )
     }
-    
-    private func backBtnTapped() {
-        self.dismiss(animated: true)
+
+    private func backButtonTapped() {
+        dismiss(animated: true)
     }
-    
-    @objc private func completeBtnTapped() {
-        // Prevent double-taps
-        if isSubmitting { return }
+
+    @objc
+    private func completeButtonTapped() {
         view.endEditing(true)
-
-        // Sanitize inputs
-        let name = afterRoomname.trimmingCharacters(in: .whitespacesAndNewlines)
-        let desc = afterDescription.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        // Ensure handler exists
-        guard let onCompleteEdit = self.onCompleteEdit else {
-            AlertManager.showAlertNoHandler(title: "오류", message: "편집 완료 핸들러가 설정되지 않았습니다.", viewController: self)
-            return
-        }
-
-        // Lock UI
-        isSubmitting = true
-        if let button = customNavigationBar.rightStack.arrangedSubviews
-            .compactMap({ $0 as? UIButton })
-            .first(where: { $0.currentTitle == "완료" }) {
-            button.isEnabled = false
-        }
-        LoadingIndicator.shared.start(on: self)
-
-        Task { [weak self] in
-            guard let self = self else { return }
-            do {
-                try await onCompleteEdit(self.selectedImage, self.selectedImageData, self.isImageRemoved, name, desc)
-                await MainActor.run {
-                    LoadingIndicator.shared.stop()
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    self.dismiss(animated: true)
-                }
-            } catch {
-                await MainActor.run {
-                    LoadingIndicator.shared.stop()
-                    self.isSubmitting = false
-                    self.updateCompleteBtnState() // re-enable if needed
-                    AlertManager.showAlertNoHandler(title: "방 수정 실패", message: error.localizedDescription, viewController: self)
-                }
-            }
-        }
-    }
-    
-    private func updateCompleteBtnState() {
-        if let button = customNavigationBar.rightStack.arrangedSubviews
-            .compactMap({ $0 as? UIButton })
-            .first(where: { $0.currentTitle == "완료" }) {
-            let isNameValid = self.afterRoomname != "채팅방 이름 (필수)" && self.afterRoomname != self.room.roomName
-            let isDescriptionValid = self.afterDescription != self.room.roomDescription
-            let imageChanged = (self.selectedImage != nil) || (self.isImageRemoved && ((self.room.thumbPath != nil) || (self.room.originalPath != nil)))
-            button.isEnabled = isNameValid || isDescriptionValid || imageChanged
-        }
+        viewModel.submit()
     }
 
-    // MARK: - UI Layout
-    @MainActor
     private func setupScrollUI() {
         view.addSubview(scrollView)
         scrollView.addSubview(contentView)
@@ -469,11 +463,9 @@ extension RoomEditViewController {
             contentView.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor)
         ])
 
-        // Prepare dynamic height constraint for description
         let initialDescHeightConstraint = descTextView.heightAnchor.constraint(equalToConstant: 120)
-        self.descHeightConstraint = initialDescHeightConstraint
+        descHeightConstraint = initialDescHeightConstraint
 
-        // Tap gesture on the whole header image view
         headerImageView.isUserInteractionEnabled = true
         let headerTap = UITapGestureRecognizer(target: self, action: #selector(imageEditTapped))
         headerImageView.addGestureRecognizer(headerTap)
@@ -524,45 +516,29 @@ extension RoomEditViewController {
             descCountLabel.trailingAnchor.constraint(equalTo: descTextView.trailingAnchor),
             descCountLabel.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -24)
         ])
-        
     }
 
-    // MARK: - Actions
-    @objc private func imageEditTapped() {
+    @objc
+    private func imageEditTapped() {
         presentImgEditActionSheet()
     }
 
-    @objc private func clearNameTapped() {
+    @objc
+    private func clearNameTapped() {
         nameField.text = ""
-        afterRoomname = ""
-        updateNameCount()
-        updateCompleteBtnState()
+        viewModel.clearRoomName()
     }
 
-    // MARK: - Counters & Limits
-    private func updateNameCount() {
-        let count = nameField.text?.count ?? 0
-        nameCountLabel.text = "\(count)/20"
+    @objc
+    private func nameFieldEditingChanged() {
+        viewModel.updateRoomName(nameField.text ?? "")
     }
 
-    private func updateDescCount() {
-        let count = descTextView.text?.count ?? 0
-        descCountLabel.text = "\(count)/200"
-    }
-    
-
-    // MARK: - UITextFieldDelegate / UITextViewDelegate
     func textField(_ textField: UITextField, shouldChangeCharactersIn range: NSRange, replacementString string: String) -> Bool {
-        // Enforce 20 chars
         let current = textField.text ?? ""
-        guard let r = Range(range, in: current) else { return true }
-        let next = current.replacingCharacters(in: r, with: string)
-        if next.count > 20 { return false }
-        afterRoomname = next
-        updateNameCount()
-        // 버튼 상태 갱신
-        DispatchQueue.main.async { [weak self] in self?.updateCompleteBtnState() }
-        return true
+        guard let textRange = Range(range, in: current) else { return true }
+        let next = current.replacingCharacters(in: textRange, with: string)
+        return next.count <= 20
     }
 
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
@@ -571,18 +547,14 @@ extension RoomEditViewController {
     }
 
     func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
-        // Enforce 200 chars
         let current = textView.text ?? ""
-        guard let r = Range(range, in: current) else { return true }
-        let next = current.replacingCharacters(in: r, with: text)
-        if next.count > 200 { return false }
-        return true
+        guard let textRange = Range(range, in: current) else { return true }
+        let next = current.replacingCharacters(in: textRange, with: text)
+        return next.count <= 200
     }
 
     func textViewDidChange(_ textView: UITextView) {
-        afterDescription = textView.text ?? ""
-        updateDescCount()
-        updateCompleteBtnState()
+        viewModel.updateRoomDescription(textView.text ?? "")
         adjustDescTextViewHeight()
         if descTextView.isFirstResponder {
             scrollDescIntoView(animated: false)
@@ -590,38 +562,33 @@ extension RoomEditViewController {
     }
 
     func textViewDidBeginEditing(_ textView: UITextView) {
-        if textView === descTextView {
-            adjustDescTextViewHeight()
-            scrollDescIntoView(animated: true)
-        }
+        guard textView === descTextView else { return }
+        adjustDescTextViewHeight()
+        scrollDescIntoView(animated: true)
     }
 
-    // MARK: - Dynamic TextView Sizing
     private func adjustDescTextViewHeight() {
         let width = descTextView.bounds.width
-        if width <= 0 { return }
-        let fitting = descTextView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
-        let minH: CGFloat = 120
-        let target = min(max(fitting.height, minH), descMaxHeight)
-        descHeightConstraint?.constant = target
-        let shouldScroll = fitting.height > descMaxHeight
+        guard width > 0 else { return }
+
+        let fittingSize = descTextView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
+        let minHeight: CGFloat = 120
+        let targetHeight = min(max(fittingSize.height, minHeight), descMaxHeight)
+        descHeightConstraint?.constant = targetHeight
+
+        let shouldScroll = fittingSize.height > descMaxHeight
         if descTextView.isScrollEnabled != shouldScroll {
             descTextView.isScrollEnabled = shouldScroll
-            if !shouldScroll { descTextView.setContentOffset(.zero, animated: false) }
+            if !shouldScroll {
+                descTextView.setContentOffset(.zero, animated: false)
+            }
         }
     }
 
-    override func viewDidLayoutSubviews() {
-        super.viewDidLayoutSubviews()
-        adjustDescTextViewHeight()
-        imageEditIconView.layer.cornerRadius = imageEditIconView.bounds.height / 2
-    }
-
-    // MARK: - Keyboard Insets & Scrolling
     private func updateKeyboardInsets(showing: Bool, height: CGFloat) {
-        let bottom = showing ? (height + 16) : 0
-        scrollView.contentInset.bottom = bottom
-        scrollView.verticalScrollIndicatorInsets.bottom = bottom
+        let bottomInset = showing ? (height + 16) : 0
+        scrollView.contentInset.bottom = bottomInset
+        scrollView.verticalScrollIndicatorInsets.bottom = bottomInset
     }
 
     private func scrollDescIntoView(animated: Bool) {

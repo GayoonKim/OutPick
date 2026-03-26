@@ -18,6 +18,23 @@ enum ChatCompositionRoot {
         coordinator.makeJoinedRoomsRoot()
     }
 
+    static func makeRoomCreateViewController(
+        provider: ChatManagerProviding,
+        repositories: FirebaseRepositoryProviding,
+        makeCreatedRoomViewController: @escaping (ChatRoom) -> ChatViewController?
+    ) -> RoomCreateViewController {
+        let createRoomUseCase = CreateRoomUseCase(
+            chatRoomRepository: repositories.chatRoomRepository,
+            imageStorageRepository: repositories.imageStorageRepository,
+            roomImageManager: provider.roomImageManager
+        )
+        let viewModel = RoomCreateViewModel(createRoomUseCase: createRoomUseCase)
+        return RoomCreateViewController(
+            viewModel: viewModel,
+            makeCreatedRoomViewController: makeCreatedRoomViewController
+        )
+    }
+
     static func makeChatRoomSettingPanel(
         room: ChatRoom,
         provider: ChatManagerProviding,
@@ -63,23 +80,16 @@ enum ChatCompositionRoot {
         room: ChatRoom,
         provider: ChatManagerProviding,
         repositories: FirebaseRepositoryProviding,
-        onRoomEdited: @escaping @MainActor (ChatRoom, Data?, Bool) async -> Void
+        onRoomEdited: @escaping @MainActor (ChatRoom) async -> Void
     ) -> RoomEditViewController {
-        let editVC = RoomEditViewController(
-            room: room,
+        let editUseCase = RoomEditUseCase(
+            chatRoomRepository: repositories.chatRoomRepository,
+            imageStorageRepository: repositories.imageStorageRepository,
             roomImageManager: provider.roomImageManager
         )
-        editVC.onCompleteEdit = { pickedImage, pickedImageData, isRemoved, newName, newDesc in
-            let updated = try await repositories.chatRoomRepository.editRoom(
-                room: room,
-                pickedImage: pickedImage,
-                imageData: pickedImageData,
-                isRemoved: isRemoved,
-                newName: newName,
-                newDesc: newDesc
-            )
-            await onRoomEdited(updated, pickedImageData?.thumbData, isRemoved)
-        }
+        let editViewModel = RoomEditViewModel(room: room, useCase: editUseCase)
+        let editVC = RoomEditViewController(viewModel: editViewModel)
+        editVC.onRoomEdited = onRoomEdited
         return editVC
     }
 }

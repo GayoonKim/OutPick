@@ -9,7 +9,8 @@ import UIKit
 import PhotosUI
 import Combine
 
-class RoomCreateViewController: UIViewController, ChatModalAnimatable, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+@MainActor
+final class RoomCreateViewController: UIViewController, ChatModalAnimatable, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
     
     private let rootContentView = RoomCreateContentView()
     
@@ -57,13 +58,10 @@ class RoomCreateViewController: UIViewController, ChatModalAnimatable, UIImagePi
     
     private var isDefaultRoomImage = true
     private var imageData: DefaultMediaProcessingService.ImagePair?
-    var injectedFirebaseRepositories: FirebaseRepositoryProviding?
-    var injectedRoomCreateManager: RoomCreateManaging?
-    var injectedCreateRoomUseCase: CreateRoomUseCaseProtocol?
+    private let roomCreateViewModel: RoomCreateViewModel
     private let makeCreatedRoomViewController: (ChatRoom) -> ChatViewController?
 
     private weak var createdChatRoomViewController: ChatViewController?
-    private var roomCreateViewModel: RoomCreateViewModel?
 
     private var roomNameTextView: UITextView { rootContentView.roomNameTextView }
     private var roomNameCountLabel: UILabel { rootContentView.roomNameCountLabel }
@@ -75,15 +73,11 @@ class RoomCreateViewController: UIViewController, ChatModalAnimatable, UIImagePi
     private var activityIndicator: UIActivityIndicatorView { rootContentView.activityIndicator }
 
     init(
-        injectedFirebaseRepositories: FirebaseRepositoryProviding? = nil,
-        makeCreatedRoomViewController: @escaping (ChatRoom) -> ChatViewController?,
-        injectedRoomCreateManager: RoomCreateManaging? = nil,
-        injectedCreateRoomUseCase: CreateRoomUseCaseProtocol? = nil
+        viewModel: RoomCreateViewModel,
+        makeCreatedRoomViewController: @escaping (ChatRoom) -> ChatViewController?
     ) {
-        self.injectedFirebaseRepositories = injectedFirebaseRepositories
+        self.roomCreateViewModel = viewModel
         self.makeCreatedRoomViewController = makeCreatedRoomViewController
-        self.injectedRoomCreateManager = injectedRoomCreateManager
-        self.injectedCreateRoomUseCase = injectedCreateRoomUseCase
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -96,14 +90,8 @@ class RoomCreateViewController: UIViewController, ChatModalAnimatable, UIImagePi
         view = rootContentView
     }
 
-    private var firebaseRepositories: FirebaseRepositoryProviding {
-        injectedFirebaseRepositories ?? ChatDependencyContainer.requireFirebaseRepositories()
-    }
-
     override func viewDidLoad() {
         super.viewDidLoad()
-
-        configureViewModelIfNeeded()
 
         setupCustomNavigationBar()
         setupTextView(roomNameTextView)
@@ -161,7 +149,7 @@ class RoomCreateViewController: UIViewController, ChatModalAnimatable, UIImagePi
     
     @MainActor
     @objc func handleCreateButtonTap() {
-        roomCreateViewModel?.submit()
+        roomCreateViewModel.submit()
     }
     
     
@@ -213,10 +201,11 @@ class RoomCreateViewController: UIViewController, ChatModalAnimatable, UIImagePi
     }
     
     @objc private func removeImageButtonTapped(_ sender: UIButton) {
+        cleanupTempImageIfNeeded(imageData)
         roomImageView.image = UIImage(named: "Default_Profile")
         self.imageData = nil
         isDefaultRoomImage = true
-        roomCreateViewModel?.updateSelectedImagePair(nil)
+        roomCreateViewModel.updateSelectedImagePair(nil)
         sender.isHidden = true
     }
     
@@ -311,9 +300,9 @@ extension RoomCreateViewController: UITextViewDelegate {
         
         switch textView {
         case roomNameTextView:
-            roomCreateViewModel?.updateRoomName(text)
+            roomCreateViewModel.updateRoomName(text)
         case roomDescriptionTextView:
-            roomCreateViewModel?.updateRoomDescription(text)
+            roomCreateViewModel.updateRoomDescription(text)
         default:
             break
         }
@@ -328,8 +317,9 @@ extension RoomCreateViewController: PHPickerViewControllerDelegate {
             guard !results.isEmpty else { return }
             let p = try await DefaultMediaProcessingService.shared.preparePairs(results)
             guard let pair = p.first else { return }
+            self.cleanupTempImageIfNeeded(self.imageData)
             self.imageData = pair
-            self.roomCreateViewModel?.updateSelectedImagePair(pair)
+            self.roomCreateViewModel.updateSelectedImagePair(pair)
             
             self.roomImageView.image = UIImage(data: pair.thumbData)
             self.isDefaultRoomImage = false
@@ -340,25 +330,12 @@ extension RoomCreateViewController: PHPickerViewControllerDelegate {
 }
 
 private extension RoomCreateViewController {
-    func configureViewModelIfNeeded() {
-        guard roomCreateViewModel == nil else { return }
-
-        let roomCreateManager = injectedRoomCreateManager ?? RoomCreateManager(
-            chatRoomRepository: firebaseRepositories.chatRoomRepository,
-            imageStorageRepository: FirebaseImageStorageRepository.shared,
-            roomImageManager: ChatDependencyContainer.provider.roomImageManager
-        )
-        injectedRoomCreateManager = roomCreateManager
-
-        let createRoomUseCase = injectedCreateRoomUseCase ?? CreateRoomUseCase(manager: roomCreateManager)
-        injectedCreateRoomUseCase = createRoomUseCase
-
-        roomCreateViewModel = RoomCreateViewModel(createRoomUseCase: createRoomUseCase)
+    func cleanupTempImageIfNeeded(_ pair: DefaultMediaProcessingService.ImagePair?) {
+        guard let pair else { return }
+        try? FileManager.default.removeItem(at: pair.originalFileURL)
     }
 
     func bindViewModel() {
-        guard let roomCreateViewModel else { return }
-
         viewModelCancellables.removeAll()
 
         roomCreateViewModel.$state
@@ -384,6 +361,10 @@ private extension RoomCreateViewController {
         createBtn.isEnabled = state.isCreateEnabled
         roomNameCountLabel.text = "\(state.roomNameCount) / 20"
         roomDescriptionCountLabel.text = "\(state.roomDescriptionCount) / 200"
+        roomNameTextView.isEditable = !state.isSubmitting
+        roomDescriptionTextView.isEditable = !state.isSubmitting
+        addImageButton.isEnabled = !state.isSubmitting
+        removeImageButton.isEnabled = !state.isSubmitting
 
         if state.isSubmitting {
             LoadingIndicator.shared.start(on: self)
@@ -402,9 +383,6 @@ private extension RoomCreateViewController {
 
         case .roomSaveCompleted(let room):
             createdChatRoomViewController?.handleRoomCreationSaveCompleted(savedRoom: room)
-
-        case .roomSaveFailed(let error):
-            createdChatRoomViewController?.handleRoomCreationSaveFailed(error)
         }
     }
 

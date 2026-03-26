@@ -11,6 +11,7 @@ import FirebaseFirestore
 protocol FirebaseRepositoryProviding {
     var userProfileRepository: UserProfileRepositoryProtocol { get }
     var chatRoomRepository: FirebaseChatRoomRepositoryProtocol { get }
+    var imageStorageRepository: FirebaseImageStorageRepositoryProtocol { get }
     var messageRepository: FirebaseMessageRepositoryProtocol { get }
     var mediaIndexRepository: FirebaseChatRoomMediaIndexRepositoryProtocol { get }
     var announcementRepository: FirebaseAnnouncementRepositoryProtocol { get }
@@ -19,6 +20,7 @@ protocol FirebaseRepositoryProviding {
 struct FirebaseRepositoryProvider: FirebaseRepositoryProviding {
     let userProfileRepository: UserProfileRepositoryProtocol
     let chatRoomRepository: FirebaseChatRoomRepositoryProtocol
+    let imageStorageRepository: FirebaseImageStorageRepositoryProtocol
     let messageRepository: FirebaseMessageRepositoryProtocol
     let mediaIndexRepository: FirebaseChatRoomMediaIndexRepositoryProtocol
     let announcementRepository: FirebaseAnnouncementRepositoryProtocol
@@ -26,12 +28,14 @@ struct FirebaseRepositoryProvider: FirebaseRepositoryProviding {
     init(
         userProfileRepository: UserProfileRepositoryProtocol,
         chatRoomRepository: FirebaseChatRoomRepositoryProtocol,
+        imageStorageRepository: FirebaseImageStorageRepositoryProtocol,
         messageRepository: FirebaseMessageRepositoryProtocol,
         mediaIndexRepository: FirebaseChatRoomMediaIndexRepositoryProtocol,
         announcementRepository: FirebaseAnnouncementRepositoryProtocol
     ) {
         self.userProfileRepository = userProfileRepository
         self.chatRoomRepository = chatRoomRepository
+        self.imageStorageRepository = imageStorageRepository
         self.messageRepository = messageRepository
         self.mediaIndexRepository = mediaIndexRepository
         self.announcementRepository = announcementRepository
@@ -43,6 +47,7 @@ struct FirebaseRepositoryProvider: FirebaseRepositoryProviding {
         return FirebaseRepositoryProvider(
             userProfileRepository: UserProfileRepository(db: db),
             chatRoomRepository: FirebaseChatRoomRepository(db: db),
+            imageStorageRepository: FirebaseImageStorageRepository.shared,
             messageRepository: FirebaseMessageRepository(
                 db: db,
                 mediaIndexRepository: mediaIndexRepository

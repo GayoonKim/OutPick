@@ -23,7 +23,6 @@ final class RoomCreateViewModel {
         case showAlert(title: String, message: String)
         case presentCreatedRoom(room: ChatRoom)
         case roomSaveCompleted(ChatRoom)
-        case roomSaveFailed(RoomCreationError)
     }
 
     private let createRoomUseCase: CreateRoomUseCaseProtocol
@@ -125,11 +124,6 @@ final class RoomCreateViewModel {
 
         case .roomSaveCompleted(let room):
             eventSubject.send(.roomSaveCompleted(room))
-
-        case .roomSaveFailed(let error):
-            state.isSubmitting = false
-            recomputeCreateEnabled()
-            eventSubject.send(.roomSaveFailed(error))
         }
     }
 

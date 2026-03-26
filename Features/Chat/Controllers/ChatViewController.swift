@@ -1360,14 +1360,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         LoadingIndicator.shared.stop()
         view.isUserInteractionEnabled = true
     }
-    
-    @MainActor
-    func handleRoomCreationSaveFailed(_ error: RoomCreationError) {
-        isRoomSaving = false
-        LoadingIndicator.shared.stop()
-        view.isUserInteractionEnabled = true
-        showAlert(error: error)
-    }
 
     // MARK: 초기 UI 설정 관련
     @MainActor

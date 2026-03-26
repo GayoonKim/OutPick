@@ -40,13 +40,28 @@ protocol FirebaseChatRoomRepositoryProtocol {
     /// 방의 마지막 메시지 정보 업데이트
     func updateRoomLastMessage(roomID: String, date: Date?, msg: String, senderID: String?) async
     
-    /// 방 정보 수정
-    func editRoom(room: ChatRoom,
-                  pickedImage: UIImage?,
-                  imageData: DefaultMediaProcessingService.ImagePair?,
-                  isRemoved: Bool,
-                  newName: String,
-                  newDesc: String) async throws -> ChatRoom
+    /// 방 이름/설명만 갱신
+    func updateRoomMetadata(
+        roomID: String,
+        roomName: String,
+        roomDescription: String
+    ) async throws
+
+    /// 방 이름/설명과 대표 이미지 경로를 함께 갱신
+    func updateRoomMetadataWithImagePaths(
+        roomID: String,
+        roomName: String,
+        roomDescription: String,
+        thumbPath: String,
+        originalPath: String
+    ) async throws
+
+    /// 방 이름/설명은 유지하면서 대표 이미지 경로를 제거
+    func removeRoomImagePathsAndUpdateMetadata(
+        roomID: String,
+        roomName: String,
+        roomDescription: String
+    ) async throws
     
     /// 특정 방 문서 조회
     func getRoomDoc(room: ChatRoom) async throws -> DocumentSnapshot?

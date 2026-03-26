@@ -8,7 +8,6 @@
 import Foundation
 import Combine
 import FirebaseFirestore
-import UIKit
 
 final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol {
     private let db: Firestore
@@ -206,62 +205,55 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol {
         }
     }
     
-    func editRoom(room: ChatRoom,
-                  pickedImage: UIImage?,
-                  imageData: DefaultMediaProcessingService.ImagePair?,
-                  isRemoved: Bool,
-                  newName: String,
-                  newDesc: String) async throws -> ChatRoom {
-        
-        let roomRef = db.collection("Rooms").document(room.ID ?? "")
-        let oldThumb = room.thumbPath
-        let oldOriginal = room.originalPath
-        
-        var uploadedThumb: String? = nil
-        var uploadedOriginal: String? = nil
-        
-        if isRemoved {
-            try await roomRef.updateData([
+    func updateRoomMetadata(
+        roomID: String,
+        roomName: String,
+        roomDescription: String
+    ) async throws {
+        try await updateRoomDocument(
+            roomID: roomID,
+            data: [
+                "roomName": roomName,
+                "roomDescription": roomDescription,
+                "updatedAt": FieldValue.serverTimestamp()
+            ]
+        )
+    }
+
+    func updateRoomMetadataWithImagePaths(
+        roomID: String,
+        roomName: String,
+        roomDescription: String,
+        thumbPath: String,
+        originalPath: String
+    ) async throws {
+        try await updateRoomDocument(
+            roomID: roomID,
+            data: [
+                "thumbPath": thumbPath,
+                "originalPath": originalPath,
+                "roomName": roomName,
+                "roomDescription": roomDescription,
+                "updatedAt": FieldValue.serverTimestamp()
+            ]
+        )
+    }
+
+    func removeRoomImagePathsAndUpdateMetadata(
+        roomID: String,
+        roomName: String,
+        roomDescription: String
+    ) async throws {
+        try await updateRoomDocument(
+            roomID: roomID,
+            data: [
                 "thumbPath": FieldValue.delete(),
                 "originalPath": FieldValue.delete(),
-                "roomName": newName,
-                "roomDescription": newDesc,
+                "roomName": roomName,
+                "roomDescription": roomDescription,
                 "updatedAt": FieldValue.serverTimestamp()
-            ])
-            Task.detached {
-                if let t = oldThumb { FirebaseImageStorageRepository.shared.deleteImageFromStorage(path: t) }
-                if let o = oldOriginal { FirebaseImageStorageRepository.shared.deleteImageFromStorage(path: o) }
-            }
-        } else if let pair = imageData {
-            let (newThumb, newOriginal) = try await FirebaseImageStorageRepository.shared.uploadAndSave(
-                sha: pair.fileBaseName,
-                uid: room.ID ?? "",
-                type: .roomImage,
-                thumbData: pair.thumbData,
-                originalFileURL: pair.originalFileURL
-            )
-            uploadedThumb = newThumb
-            uploadedOriginal = newOriginal
-        } else {
-            try await roomRef.updateData([
-                "roomName": newName,
-                "roomDescription": newDesc,
-                "updatedAt": FieldValue.serverTimestamp()
-            ])
-        }
-        
-        var updated = room
-        updated.roomName = newName
-        updated.roomDescription = newDesc
-        if isRemoved {
-            updated.thumbPath = nil
-            updated.originalPath = nil
-        } else if let ut = uploadedThumb, let uo = uploadedOriginal {
-            updated.thumbPath = ut
-            updated.originalPath = uo
-        }
-        
-        return updated
+            ]
+        )
     }
     
     func getRoomDoc(room: ChatRoom) async throws -> DocumentSnapshot? {
@@ -518,6 +510,14 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol {
         updateData["updatedAt"] = FieldValue.serverTimestamp()
         
         try await roomDoc.reference.updateData(updateData)
+    }
+
+    private func updateRoomDocument(roomID: String, data: [String: Any]) async throws {
+        guard !roomID.isEmpty else {
+            throw FirebaseError.FailedToFetchRoom
+        }
+
+        try await db.collection("Rooms").document(roomID).updateData(data)
     }
     
     func checkRoomName(roomName: String, completion: @escaping (Bool, Error?) -> Void) {

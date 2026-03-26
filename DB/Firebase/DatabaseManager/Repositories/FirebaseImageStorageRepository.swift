@@ -83,35 +83,6 @@ final class FirebaseImageStorageRepository: FirebaseImageStorageRepositoryProtoc
         }
     }
 
-    /// Convenience: Upload avatar, then save the new paths to document.
-    func uploadAndSave(
-        sha: String,
-        uid: String,
-        type: ImageLocation,
-        thumbData: Data,
-        originalFileURL: URL,
-        versionHint: String? = nil,
-        contentType: String = "image/jpeg"
-    ) async throws -> (avatarThumbPath: String, avatarPath: String) {
-        let _ = versionHint
-
-        let (thumbPath, originalPath) = try await uploadImage(
-            sha: sha,
-            uid: uid,
-            type: type,
-            thumbData: thumbData,
-            originalFileURL: originalFileURL,
-            contentType: contentType
-        )
-
-        try await db.collection("\(type)").document(uid).setData([
-            "thumbPath": originalPath,
-            "originalPath": thumbPath
-        ], merge: true)
-
-        return (thumbPath, originalPath)
-    }
-
     // MARK: - Chat image attachment meta
     /// Message용(썸네일 + 원본) 일괄 업로드
     func uploadPairsToRoomMessage(_ pairs: [DefaultMediaProcessingService.ImagePair],
