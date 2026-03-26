@@ -1033,7 +1033,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
 
     // MARK: - Video playback helper (by Storage path with caching)
-    /// storagePath (e.g., "videos/<room>/<message>/video.mp4")를 받아
+    /// storagePath (e.g., "rooms/<room>/messages/<message>/video/video.mp4")를 받아
     /// 1) 디스크 캐시에 있으면 즉시 로컬로 재생
     /// 2) 없으면 원격 URL로 먼저 재생 후 백그라운드로 캐싱
     @MainActor

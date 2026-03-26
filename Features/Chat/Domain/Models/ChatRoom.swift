@@ -114,6 +114,16 @@ struct ChatRoom: Codable {
         
         return data
     }
+
+    var coverImagePath: String? {
+        if let thumbPath, !thumbPath.isEmpty {
+            return thumbPath
+        }
+        if let originalPath, !originalPath.isEmpty {
+            return originalPath
+        }
+        return nil
+    }
 }
 
 extension ChatRoom: Hashable {

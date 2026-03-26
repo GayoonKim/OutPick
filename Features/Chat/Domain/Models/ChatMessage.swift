@@ -27,8 +27,8 @@ struct ReplyPreview: Codable, Hashable, Sendable {
 struct VideoMetaPayload: Codable, Sendable {
     let roomID: String
     let messageID: String
-    let storagePath: String      // "videos/<room>/<msg>/video.mp4"
-    let thumbnailPath: String    // "videos/<room>/<msg>/thumb.jpg"
+    let storagePath: String      // "rooms/<room>/messages/<msg>/video/video.mp4"
+    let thumbnailPath: String    // "rooms/<room>/messages/<msg>/video/thumb.jpg"
     let duration: Double
     let width: Int
     let height: Int

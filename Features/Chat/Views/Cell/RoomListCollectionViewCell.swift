@@ -9,6 +9,9 @@ import UIKit
 
 class RoomListCollectionViewCell: UICollectionViewCell {
     static let identifier = "RoomListCollectionViewCell"
+    private let roomImageManager: RoomImageManaging = RoomImageService.shared
+    private var imageLoadTask: Task<Void, Never>?
+    private var representedImagePath: String?
 
     let roomImageView: UIImageView = {
         let iv = UIImageView()
@@ -60,7 +63,10 @@ class RoomListCollectionViewCell: UICollectionViewCell {
     
     override func prepareForReuse() {
         super.prepareForReuse()
-        roomImageView.image = UIImage(named: "Default_Profile")
+        imageLoadTask?.cancel()
+        imageLoadTask = nil
+        representedImagePath = nil
+        applyDefaultRoomImage()
         roomNameLabel.text = nil
         roomDescriptionLabel.text = nil
         previewStackView.arrangedSubviews.forEach { view in
@@ -117,13 +123,12 @@ class RoomListCollectionViewCell: UICollectionViewCell {
     }
     
     func configure(room: ChatRoom, messages: [ChatMessage]) {
-        
-        print("오픈채팅 방 리스트 셀 데이터", room, messages)
-        
+        imageLoadTask?.cancel()
+        imageLoadTask = nil
+        representedImagePath = room.coverImagePath
+        applyDefaultRoomImage()
         roomImageView.layer.cornerRadius = 8
         roomImageView.clipsToBounds = true
-
-        roomImageView.image = UIImage(named: "Default_Profile")
 
         roomNameLabel.text = room.roomName
         
@@ -153,10 +158,52 @@ class RoomListCollectionViewCell: UICollectionViewCell {
                 previewStackView.addArrangedSubview(preview)
             }
         }
+
+        loadRoomImageIfNeeded(for: room)
     }
     
     func configureJoined(room: ChatRoom, message: ChatMessage) {
         
+    }
+
+    private func loadRoomImageIfNeeded(for room: ChatRoom) {
+        guard let imagePath = room.coverImagePath, !imagePath.isEmpty else { return }
+
+        let roomImageManager = self.roomImageManager
+        imageLoadTask = Task { [weak self] in
+            guard let self else { return }
+
+            do {
+                if let cached = await roomImageManager.cachedImage(for: imagePath) {
+                    guard !Task.isCancelled else { return }
+                    await MainActor.run {
+                        guard self.representedImagePath == imagePath else { return }
+                        self.roomImageView.image = cached
+                    }
+                    return
+                }
+
+                let image = try await roomImageManager.loadImage(
+                    for: imagePath,
+                    maxBytes: 3 * 1024 * 1024
+                )
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    guard self.representedImagePath == imagePath else { return }
+                    self.roomImageView.image = image
+                }
+            } catch {
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    guard self.representedImagePath == imagePath else { return }
+                    self.applyDefaultRoomImage()
+                }
+            }
+        }
+    }
+
+    private func applyDefaultRoomImage() {
+        roomImageView.image = UIImage(named: "Default_Profile")
     }
 }
 

@@ -7,7 +7,6 @@
 
 import UIKit
 import Combine
-import FirebaseStorage
 import FirebaseFirestore
 
 class RoomSearchViewController: UIViewController {
@@ -422,10 +421,12 @@ class RecentSearchChipCell: UICollectionViewCell {
 
 // MARK: - SearchResultRoomCell
 class SearchResultRoomCell: UICollectionViewCell {
+    private let roomImageManager: RoomImageManaging = RoomImageService.shared
     private let roomImageView = UIImageView()
     private let roomNameLabel = UILabel()
     private let participantsLabel = UILabel()
     private let lastMessageTimeLabel = UILabel()
+    private var imageLoadTask: Task<Void, Never>?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -484,6 +485,13 @@ class SearchResultRoomCell: UICollectionViewCell {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        imageLoadTask?.cancel()
+        imageLoadTask = nil
+        applyDefaultImage()
+    }
+
     func configure(with room: ChatRoom) {
         roomNameLabel.text = room.roomName
         participantsLabel.text = "참여자 수: \(room.participants.count)"
@@ -497,27 +505,26 @@ class SearchResultRoomCell: UICollectionViewCell {
             lastMessageTimeLabel.text = ""
         }
 
-        if let path = room.thumbPath {
-            let ref = Storage.storage().reference(withPath: path)
-            ref.downloadURL { url, _ in
-                if let url = url {
-                    URLSession.shared.dataTask(with: url) { data, _, _ in
-                        if let data = data {
-                            DispatchQueue.main.async {
-                                self.roomImageView.image = UIImage(data: data)
-                            }
-                        }
-                    }.resume()
-                } else {
-                    DispatchQueue.main.async {
-                        self.roomImageView.image = UIImage(systemName: "person.3.fill")
-                        self.roomImageView.tintColor = .secondaryLabel
-                    }
-                }
+        imageLoadTask?.cancel()
+        imageLoadTask = nil
+        applyDefaultImage()
+
+        guard let path = room.coverImagePath else { return }
+        imageLoadTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                let image = try await self.roomImageManager.loadImage(for: path, maxBytes: 3 * 1024 * 1024)
+                guard !Task.isCancelled else { return }
+                self.roomImageView.image = image
+                self.roomImageView.tintColor = nil
+            } catch {
+                self.applyDefaultImage()
             }
-        } else {
-            roomImageView.image = UIImage(systemName: "person.3.fill")
-            roomImageView.tintColor = .secondaryLabel
         }
+    }
+
+    private func applyDefaultImage() {
+        roomImageView.image = UIImage(systemName: "person.3.fill")
+        roomImageView.tintColor = .secondaryLabel
     }
 }

@@ -111,12 +111,12 @@ class ChatRoomInfoCell: UICollectionViewCell {
         imageLoadTask?.cancel()
         imageLoadTask = nil
 
-        if let thumbPath = room.thumbPath {
+        if let imagePath = room.coverImagePath {
             imageLoadTask = Task { @MainActor [weak self] in
                 guard let self else { return }
                 print(#function, "Custom Image")
                 do {
-                    let image = try await roomImageManager.loadImage(for: thumbPath, maxBytes: 3 * 1024 * 1024)
+                    let image = try await roomImageManager.loadImage(for: imagePath, maxBytes: 3 * 1024 * 1024)
                     guard !Task.isCancelled else { return }
                     self.roomImageView.image = image
                 } catch {

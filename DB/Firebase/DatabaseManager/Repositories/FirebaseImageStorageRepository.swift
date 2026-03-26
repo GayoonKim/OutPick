@@ -32,9 +32,18 @@ final class FirebaseImageStorageRepository: FirebaseImageStorageRepositoryProtoc
         originalFileURL: URL,
         contentType: String = "image/jpeg"
     ) async throws -> (avatarThumbPath: String, avatarPath: String) {
+        let thumbPath: String
+        let originalPath: String
 
-        let thumbPath = "\(type)/\(uid)/thumb/\(sha).jpg"
-        let originalPath = "\(type)/\(uid)/original/\(sha).jpg"
+        if type == .roomImage {
+            let paths = ChatStoragePath.roomCover(roomID: uid, fileBaseName: sha)
+            thumbPath = paths.thumb
+            originalPath = paths.original
+        } else {
+            let baseFolder = legacyStorageFolderName(for: type)
+            thumbPath = "\(baseFolder)/\(uid)/thumb/\(sha).jpg"
+            originalPath = "\(baseFolder)/\(uid)/original/\(sha).jpg"
+        }
 
         // Cache-Control: 1 year + immutable
         let cacheControl = "public, max-age=31536000, immutable"
@@ -113,8 +122,13 @@ final class FirebaseImageStorageRepository: FirebaseImageStorageRepositoryProtoc
                     defer { Task { await limiter.release() } }
 
                     let base = pair.fileBaseName
-                    let thumbPath = "Rooms/\(roomID)/messages/\(messageID)/Thumb/\(base).jpg"
-                    let originalPath = "Rooms/\(roomID)/messages/\(messageID)/Original/\(base).jpg"
+                    let paths = ChatStoragePath.roomMessageImage(
+                        roomID: roomID,
+                        messageID: messageID,
+                        fileBaseName: base
+                    )
+                    let thumbPath = paths.thumb
+                    let originalPath = paths.original
 
                     let fileURL = pair.originalFileURL
                     guard fileURL.isFileURL else {
@@ -291,5 +305,16 @@ final class FirebaseImageStorageRepository: FirebaseImageStorageRepositoryProtoc
 
     func setDataFallbackLimitMB(_ mb: Int) {
         transferService.setDataFallbackLimitMB(mb)
+    }
+
+    private func legacyStorageFolderName(for type: ImageLocation) -> String {
+        switch type {
+        case .profileImage:
+            return "profileImage"
+        case .roomImage:
+            return "roomImage"
+        case .video:
+            return "video"
+        }
     }
 }

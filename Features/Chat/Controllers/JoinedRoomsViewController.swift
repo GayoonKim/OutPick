@@ -123,8 +123,7 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
         let roomIDsWithoutImage = Set(
             rooms.compactMap { room -> String? in
                 guard let roomID = room.ID else { return nil }
-                let hasThumbPath = room.thumbPath?.isEmpty == false
-                return hasThumbPath ? nil : roomID
+                return room.coverImagePath == nil ? roomID : nil
             }
         )
         for roomID in roomIDsWithoutImage {
@@ -134,9 +133,8 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
 
         let pairs: [(String, String)] = rooms.compactMap { room in
             guard let roomID = room.ID,
-                  let thumbPath = room.thumbPath,
-                  !thumbPath.isEmpty else { return nil }
-            return (roomID, thumbPath)
+                  let imagePath = room.coverImagePath else { return nil }
+            return (roomID, imagePath)
         }
         let roomImageManager = self.roomImageManager
 

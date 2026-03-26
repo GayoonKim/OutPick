@@ -55,7 +55,7 @@ final class RoomEditViewModel {
     }
 
     deinit {
-        cleanupTemporaryFileIfNeeded(for: selectedImagePair)
+        Self.cleanupTemporaryFileIfNeeded(for: selectedImagePair)
         headerImageTask?.cancel()
         submitTask?.cancel()
     }
@@ -94,7 +94,7 @@ final class RoomEditViewModel {
 
     func selectImage(_ pair: DefaultMediaProcessingService.ImagePair) {
         headerImageTask?.cancel()
-        cleanupTemporaryFileIfNeeded(for: selectedImagePair)
+        Self.cleanupTemporaryFileIfNeeded(for: selectedImagePair)
         selectedImagePair = pair
         isImageRemoved = false
 
@@ -107,7 +107,7 @@ final class RoomEditViewModel {
 
     func removeImage() {
         headerImageTask?.cancel()
-        cleanupTemporaryFileIfNeeded(for: selectedImagePair)
+        Self.cleanupTemporaryFileIfNeeded(for: selectedImagePair)
         selectedImagePair = nil
 
         guard hasCustomImage else {
@@ -195,10 +195,10 @@ final class RoomEditViewModel {
     }
 
     private static func hasRemoteImage(in room: ChatRoom) -> Bool {
-        room.thumbPath?.isEmpty == false || room.originalPath?.isEmpty == false
+        room.coverImagePath != nil
     }
 
-    private func cleanupTemporaryFileIfNeeded(for pair: DefaultMediaProcessingService.ImagePair?) {
+    nonisolated private static func cleanupTemporaryFileIfNeeded(for pair: DefaultMediaProcessingService.ImagePair?) {
         guard let pair else { return }
         try? FileManager.default.removeItem(at: pair.originalFileURL)
     }

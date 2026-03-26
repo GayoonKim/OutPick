@@ -300,9 +300,9 @@ extension ChatViewController {
         hud: CircularProgressHUD? = nil
     ) async {
         let messageID = UUID().uuidString
-        let basePath = "videos/\(roomID)/\(messageID)"
-        let videoPath = "\(basePath)/video.mp4"
-        let thumbPath = "\(basePath)/thumb.jpg"
+        let videoPaths = ChatStoragePath.roomMessageVideo(roomID: roomID, messageID: messageID)
+        let videoPath = videoPaths.video
+        let thumbPath = videoPaths.thumb
         
         // HUD 확보(주입받았으면 재사용, 없으면 생성)
         var localHUD: CircularProgressHUD? = hud

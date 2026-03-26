@@ -354,15 +354,14 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
 
     @MainActor
     func applyEditedRoom(_ updatedRoom: ChatRoom) async {
-        let nextKey = updatedRoom.thumbPath?.isEmpty == false ? updatedRoom.thumbPath : updatedRoom.originalPath
+        let nextKey = updatedRoom.coverImagePath
         lastRoomCoverKey = nextKey
         viewModel.updateRoomInfo(updatedRoom)
         onRoomUpdated?(updatedRoom)
     }
     
     private func updateRoomInfoSection() {
-        // 1) 현재 커버 키 계산: thumbPath 우선, 없으면 originalPath
-        let key = self.roomInfo.thumbPath?.isEmpty == false ? self.roomInfo.thumbPath : self.roomInfo.originalPath
+        let key = self.roomInfo.coverImagePath
 
         // 내부 헬퍼: 단일 아이템만 경량 갱신
         func reloadRoomInfoItem() {
