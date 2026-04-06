@@ -273,6 +273,78 @@ admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });
 const db = admin.firestore();
+const USERS_COLLECTION = "users";
+
+function normalizeEmail(email) {
+  return typeof email === "string" ? email.trim().toLowerCase() : "";
+}
+
+function chunkArray(items, size) {
+  const chunks = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
+}
+
+async function findUserDocRefByEmail(email) {
+  const normalizedEmail = normalizeEmail(email);
+  if (!normalizedEmail) return null;
+
+  const snapshot = await db.collection(USERS_COLLECTION)
+    .where("email", "==", normalizedEmail)
+    .limit(1)
+    .get();
+
+  return snapshot.empty ? null : snapshot.docs[0].ref;
+}
+
+async function findUserDocRefsByEmails(emails) {
+  const normalizedEmails = [...new Set(emails.map(normalizeEmail).filter(Boolean))];
+  const refsByEmail = new Map();
+
+  if (!normalizedEmails.length) {
+    return refsByEmail;
+  }
+
+  const chunks = chunkArray(normalizedEmails, 10);
+  const snapshots = await Promise.all(
+    chunks.map((chunk) =>
+      db.collection(USERS_COLLECTION)
+        .where("email", "in", chunk)
+        .get()
+    )
+  );
+
+  for (const snapshot of snapshots) {
+    snapshot.forEach((doc) => {
+      const email = normalizeEmail(doc.get("email"));
+      if (email) {
+        refsByEmail.set(email, doc.ref);
+      }
+    });
+  }
+
+  return refsByEmail;
+}
+
+async function stageRoomMembershipCleanup(batch, roomID, email, userRef = null) {
+  const normalizedEmail = normalizeEmail(email);
+  if (!normalizedEmail) return false;
+
+  const resolvedUserRef = userRef ?? await findUserDocRefByEmail(normalizedEmail);
+  if (!resolvedUserRef) {
+    console.warn("[room-membership] user doc not found", { roomID, email: normalizedEmail });
+    return false;
+  }
+
+  batch.set(resolvedUserRef, {
+    joinedRooms: admin.firestore.FieldValue.arrayRemove(roomID),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+  }, { merge: true });
+  batch.delete(resolvedUserRef.collection("roomStates").doc(roomID));
+  return true;
+}
 
 // --- Sequence allocator & persistence (Firestore transaction) ---
 async function allocateSeqAndPersist(roomID, messageID, messageData) {
@@ -364,7 +436,7 @@ io.use((socket, next) => {
 });
 
 io.on('connection', (socket) => {
-    const email = socket.handshake.query.email;
+    const email = normalizeEmail(socket.handshake.query.email);
     socket.userEmail = email;
     
     console.log('User connected:', socket.userEmail);
@@ -436,6 +508,19 @@ io.on('connection', (socket) => {
         }
     });
 
+    socket.on('leave room', (roomID) => {
+      if (!roomID || !isValidRoomID(roomID)) return;
+
+      socket.leave(roomID);
+
+      if (rooms[roomID]) {
+        rooms[roomID] = rooms[roomID].filter((name) => name !== socket.username);
+        io.to(roomID).emit('user list', rooms[roomID]);
+      }
+
+      console.log(`Leave room request: ${socket.username || "Anonymous"} → ${roomID}`);
+    });
+
     // 방 나가기 / 방 종료 (서버가 Firestore 상태로 판단)
     // 클라는 roomID + intent만 보냄: { roomID, intent: "leave-or-close" }
     socket.on('room:leave-or-close', async (payload = {}, callback) => {
@@ -468,9 +553,17 @@ io.on('connection', (socket) => {
         }
 
         const roomData = snap.data() || {};
+        const participantIDs = Array.isArray(roomData.participantIDs)
+          ? [...new Set(roomData.participantIDs.map(normalizeEmail).filter(Boolean))]
+          : [];
+        if (userEmail && !participantIDs.includes(userEmail)) {
+          participantIDs.push(userEmail);
+        }
 
         // 🔑 방장 판단: creatorID 필드만 사용
-        const creatorID = typeof roomData.creatorID === 'string' ? roomData.creatorID : null;
+        const creatorID = typeof roomData.creatorID === 'string'
+          ? normalizeEmail(roomData.creatorID)
+          : null;
         const isOwner = !!creatorID && creatorID === userEmail;
 
         // =========================
@@ -479,15 +572,25 @@ io.on('connection', (socket) => {
         if (isOwner) {
           console.log('[room:leave-or-close] owner closing room', { roomID, creatorID });
 
-          // Rooms/{roomID}에 종료 플래그 설정
-          await roomRef.set(
-            {
-              isClosed: true,
-              closedAt: admin.firestore.FieldValue.serverTimestamp(),
-              closedBy: userEmail
-            },
-            { merge: true }
-          );
+          const cleanupBatch = db.batch();
+          const userRefsByEmail = await findUserDocRefsByEmails(participantIDs);
+          cleanupBatch.set(roomRef, {
+            isClosed: true,
+            closedAt: admin.firestore.FieldValue.serverTimestamp(),
+            closedBy: userEmail,
+            participantIDs: []
+          }, { merge: true });
+
+          for (const participantEmail of participantIDs) {
+            await stageRoomMembershipCleanup(
+              cleanupBatch,
+              roomID,
+              participantEmail,
+              userRefsByEmail.get(participantEmail) ?? null
+            );
+          }
+
+          await cleanupBatch.commit();
 
           // 클라이언트들에게 "room closed" 알림
           io.to(roomID).emit('room:closed', {
@@ -509,27 +612,6 @@ io.on('connection', (socket) => {
             }
           }
 
-          // 방장 본인의 roomStates / joinedRooms / participantIDs 정리
-          try {
-            const userRef = db.collection('Users').doc(userEmail);
-            const roomStateRef = userRef.collection('roomStates').doc(roomID);
-
-            // 1) roomStates 문서 삭제
-            await roomStateRef.delete();
-
-            // 2) Users/{email}.joinedRooms 배열에서 방 ID 제거
-            await userRef.update({
-              joinedRooms: admin.firestore.FieldValue.arrayRemove(roomID)
-            });
-
-            // 3) Rooms/{roomID}.participantIDs 배열에서 방장 이메일 제거
-            await roomRef.update({
-              participantIDs: admin.firestore.FieldValue.arrayRemove(userEmail)
-            });
-          } catch (err) {
-            console.warn('[room:leave-or-close] failed to cleanup owner membership', err);
-          }
-
           callback && callback({ ok: true, mode: 'closed' });
           return;
         }
@@ -539,6 +621,13 @@ io.on('connection', (socket) => {
         // =========================
         console.log('[room:leave-or-close] participant leaving room', { roomID, userEmail });
 
+        const cleanupBatch = db.batch();
+        cleanupBatch.set(roomRef, {
+          participantIDs: admin.firestore.FieldValue.arrayRemove(userEmail)
+        }, { merge: true });
+        await stageRoomMembershipCleanup(cleanupBatch, roomID, userEmail);
+        await cleanupBatch.commit();
+
         // Socket.IO 방 탈퇴
         socket.leave(roomID);
 
@@ -546,27 +635,6 @@ io.on('connection', (socket) => {
         if (rooms[roomID]) {
           rooms[roomID] = rooms[roomID].filter((name) => name !== socket.username);
           io.to(roomID).emit('user list', rooms[roomID]);
-        }
-
-        // 참여자의 roomStates / joinedRooms / participantIDs 정리
-        try {
-          const userRef = db.collection('Users').doc(userEmail);
-          const roomStateRef = userRef.collection('roomStates').doc(roomID);
-
-          // 1) roomStates 문서 삭제
-          await roomStateRef.delete();
-
-          // 2) Users/{email}.joinedRooms 배열에서 방 ID 제거
-          await userRef.update({
-            joinedRooms: admin.firestore.FieldValue.arrayRemove(roomID)
-          });
-
-          // 3) Rooms/{roomID}.participantIDs 배열에서 이 사용자 이메일 제거
-          await roomRef.update({
-            participantIDs: admin.firestore.FieldValue.arrayRemove(userEmail)
-          });
-        } catch (err) {
-          console.warn('[room:leave-or-close] failed to cleanup participant membership', err);
         }
 
         callback && callback({ ok: true, mode: 'left' });

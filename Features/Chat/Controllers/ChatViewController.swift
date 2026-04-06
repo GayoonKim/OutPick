@@ -186,6 +186,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private static var lastTriggeredNewerIndex: Int?
     
     private var cellSubscriptions: [ObjectIdentifier: Set<AnyCancellable>] = [:]
+    private var needsTransientBindingsRestore = false
     
     private var roomClosedListenerID: UUID?
     private var appLifecycleObservers: [NSObjectProtocol] = []
@@ -293,6 +294,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }()
     
     private var settingPanelVC: ChatRoomSettingViewController?
+    private var isHandlingRoomExit = false
     private lazy var dimView: UIView = {
         //        let v = UIControl(frame: .zero)
         let v = UIView()
@@ -407,6 +409,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         super.viewWillDisappear(animated)
         BannerManager.shared.setVisibleRoom(nil)
         flushLastReadSeq(trigger: "viewWillDisappear")
+        needsTransientBindingsRestore = !(self.isMovingFromParent || self.isBeingDismissed)
         
         isUserInCurrentRoom = false
         stopRoomMessageStream()
@@ -1283,7 +1286,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 roomID == room.ID ?? ""
             else { return }
             // 방이 종료되었으니 채팅방 화면에서 빠져나가기
-            self.backButtonTapped()
+            self.handleRoomExit(roomID: roomID)
         }
     }
     
@@ -1317,6 +1320,22 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 }
             }
             .store(in: &cancellables)
+    }
+
+    @MainActor
+    private func restoreTransientBindingsIfNeeded() {
+        bindSearchEvents()
+
+        hasBoundRoomChange = false
+        bindRoomChangePublisher()
+
+        guard let room = room,
+              room.participants.contains(LoginManager.shared.getUserEmail) else {
+            return
+        }
+
+        activateProfileSync(with: Array(messageMap.values))
+        bindMessagePublishers()
     }
     
     /// 방 정보(old → new) 변경점을 비교하고 필요한 UI/동기화만 수행
@@ -1531,6 +1550,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         self.attachInteractiveDismissGesture()
+        if needsTransientBindingsRestore {
+            restoreTransientBindingsIfNeeded()
+            needsTransientBindingsRestore = false
+        }
         
         if let room = self.room {
             ChatViewController.currentRoomID = room.ID
@@ -1555,6 +1578,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 onRoomUpdated: { [weak self] updatedRoom in
                     Task { @MainActor in
                         self?.applyUpdatedRoom(updatedRoom)
+                    }
+                },
+                onRoomExited: { [weak self] roomID in
+                    Task { @MainActor in
+                        self?.handleRoomExit(roomID: roomID)
                     }
                 }
             )
@@ -1613,8 +1641,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
     
     @MainActor
-    private func dismissSettingVC() {
-        guard let VC = settingPanelVC else { return }
+    private func dismissSettingVC(completion: (() -> Void)? = nil) {
+        guard let VC = settingPanelVC else {
+            completion?()
+            return
+        }
         
         print(#function, "호출")
         
@@ -1626,9 +1657,24 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             VC.view.removeFromSuperview()
             VC.removeFromParent()
             self.settingPanelVC = nil
+            completion?()
         }
         
         self.attachInteractiveDismissGesture()
+    }
+
+    @MainActor
+    func handleRoomExit(roomID: String) {
+        guard !isHandlingRoomExit else { return }
+        guard let currentRoomID = room?.ID, currentRoomID == roomID else {
+            dismissSettingVC()
+            return
+        }
+        isHandlingRoomExit = true
+
+        dismissSettingVC { [weak self] in
+            self?.backButtonTapped()
+        }
     }
     
     @MainActor
@@ -2364,9 +2410,15 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                     cell.configureWithImage(with: latestMessage, thumbnailLoader: { [weak self] attachment in
                         guard let self else { return nil }
                         return await self.thumbnailImage(for: attachment)
+                    }, avatarLoader: { [weak self] path in
+                        guard let self else { return nil }
+                        return await self.avatarImage(for: path)
                     })
                 } else {
-                    cell.configureWithMessage(with: latestMessage)
+                    cell.configureWithMessage(with: latestMessage, avatarLoader: { [weak self] path in
+                        guard let self else { return nil }
+                        return await self.avatarImage(for: path)
+                    })
                 }
                 if let state = self.pendingOverlayState(for: latestMessage.ID) {
                     cell.applyImageUploadOverlay(state)
@@ -2407,6 +2459,24 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                             // 이미지 첨부 탭 → 기존 뷰어 유지
                             self.presentImageViewer(tappedIndex: i, indexPath: indexPath)
                         }
+                    }
+                    .store(in: &cellSubscriptions[key]!)
+
+                cell.profileTapPublisher
+                    .sink { [weak self] in
+                        guard let self else { return }
+
+                        let currentMessage = self.messageMap[message.ID] ?? message
+                        let senderEmail = currentMessage.senderID
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !senderEmail.isEmpty else { return }
+
+                        self.router?.showUserProfile(
+                            from: self,
+                            email: senderEmail,
+                            nickname: currentMessage.senderNickname,
+                            avatarPath: currentMessage.senderAvatarPath
+                        )
                     }
                     .store(in: &cellSubscriptions[key]!)
 
@@ -2823,6 +2893,19 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
 
         return try? await mediaManager.loadImage(for: thumbPath, maxBytes: chatThumbnailMaxBytes)
+    }
+
+    private func avatarImage(for path: String) async -> UIImage? {
+        guard !path.isEmpty else { return nil }
+
+        if let cached = await provider.avatarImageManager.cachedAvatar(for: path) {
+            return cached
+        }
+
+        return try? await provider.avatarImageManager.loadAvatar(
+            for: path,
+            maxBytes: 3 * 1024 * 1024
+        )
     }
     
     private func presentImageViewer(tappedIndex: Int, indexPath: IndexPath) {

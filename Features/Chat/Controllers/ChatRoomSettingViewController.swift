@@ -79,6 +79,7 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
     
     var onRoomUpdated: ((ChatRoom) -> Void)?
     var onRequestEditRoom: ((ChatRoom) -> Void)?
+    var onLeaveCompleted: ((String) -> Void)?
     
     /// (옵션) 갤러리 오픈을 상위 컨테이너(ChatViewController)로 위임하고 싶을 때 설정
     /// 파라미터로 넘겨지는 VC를 push/present 하는 책임은 호스트가 맡는다.
@@ -462,32 +463,35 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
                         Task {
                             do {
                                 try GRDBManager.shared.deleteLocalRoomDataAndPruneUsers(roomID: roomID)
-                                await MainActor.run {
-                                    // 2) 현재 유저 프로필의 joinedRooms에서도 방 ID 제거
-                                    if var profile = LoginManager.shared.currentUserProfile {
-                                        profile.joinedRooms.removeAll { $0 == roomID }
-                                        LoginManager.shared.setCurrentUserProfile(profile)
-                                    }
-                                    if let joinedRoomsStore = ChatDependencyContainer.joinedRoomsStore {
-                                        joinedRoomsStore.remove(roomID)
-                                    }
-
-                                    // 3) 화면 닫기
-                                    self.dismiss(animated: false) {
-                                        self.navigationController?.popViewController(animated: false)
-                                    }
-                                }
                             } catch {
-                                // 로컬 정리 실패시 로그 or 토스트
                                 print("❌ local cleanup failed:", error)
+                            }
+
+                            await MainActor.run {
+                                if var profile = LoginManager.shared.currentUserProfile {
+                                    profile.joinedRooms.removeAll { $0 == roomID }
+                                    LoginManager.shared.setCurrentUserProfile(profile)
+                                }
+                                if let joinedRoomsStore = ChatDependencyContainer.joinedRoomsStore {
+                                    joinedRoomsStore.remove(roomID)
+                                }
+                                SocketIOManager.shared.leaveRoom(roomID)
+                                self.onLeaveCompleted?(roomID)
                             }
                         }
 
                     case .failure(let error):
                         // 서버 측 나가기/종료 실패 → 사용자에게 안내하고, 로컬은 그대로 두는게 안전
                         print("❌ leave-or-close failed:", error)
-                        DispatchQueue.main.async {
-                            // 토스트/얼럿 등
+                        DispatchQueue.main.async { [weak self] in
+                            guard let self else { return }
+                            let alert = UIAlertController(
+                                title: "나가기에 실패했어요",
+                                message: error.localizedDescription,
+                                preferredStyle: .alert
+                            )
+                            alert.addAction(UIAlertAction(title: "확인", style: .default))
+                            self.present(alert, animated: true)
                         }
                     }
                 }

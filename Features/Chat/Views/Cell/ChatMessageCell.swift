@@ -19,7 +19,9 @@ class ChatMessageCell: UICollectionViewCell {
 
     private var widthConstraint: NSLayoutConstraint?
     private(set) var representedMessageID: String?
+    private var representedAvatarPath: String?
     private var currentHighlightKeyword: String?
+    private var avatarLoadTask: Task<Void, Never>?
     
     protocol ChatMessageCellDelegate: AnyObject {
         func cellDidLongPress(_ cell: ChatMessageCell)
@@ -28,6 +30,8 @@ class ChatMessageCell: UICollectionViewCell {
     // ⬇️ Combine publishers
     let imageTapSubject = PassthroughSubject<Int?, Never>()
     var imageTapPublisher: AnyPublisher<Int?, Never> { imageTapSubject.eraseToAnyPublisher() }
+    let profileTapSubject = PassthroughSubject<Void, Never>()
+    var profileTapPublisher: AnyPublisher<Void, Never> { profileTapSubject.eraseToAnyPublisher() }
     let retryTapSubject = PassthroughSubject<Void, Never>()
     var retryTapPublisher: AnyPublisher<Void, Never> { retryTapSubject.eraseToAnyPublisher() }
 
@@ -38,6 +42,7 @@ class ChatMessageCell: UICollectionViewCell {
         imageView.contentMode = .scaleAspectFill
         imageView.image = UIImage(named: "Default_Profile")
         imageView.translatesAutoresizingMaskIntoConstraints = false
+        imageView.isUserInteractionEnabled = true
         
         return imageView
     }()
@@ -295,6 +300,9 @@ class ChatMessageCell: UICollectionViewCell {
         previewTapGR.cancelsTouchesInView = false
         imagesPreviewCollectionView.addGestureRecognizer(previewTapGR)
         imagesPreviewCollectionView.isUserInteractionEnabled = true
+        let profileTapGR = UITapGestureRecognizer(target: self, action: #selector(handleProfileTap))
+        profileTapGR.cancelsTouchesInView = false
+        profileImageView.addGestureRecognizer(profileTapGR)
         imageUploadRetryButton.addTarget(self, action: #selector(handleRetryTap), for: .touchUpInside)
         
         // Set up internal subviews of the video badge (host anchoring is done at configure time)
@@ -323,7 +331,10 @@ class ChatMessageCell: UICollectionViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         representedMessageID = nil
+        representedAvatarPath = nil
         currentHighlightKeyword = nil
+        avatarLoadTask?.cancel()
+        avatarLoadTask = nil
         hideVideoBadge()
         
         messageLabel.attributedText = nil
@@ -335,6 +346,7 @@ class ChatMessageCell: UICollectionViewCell {
         messageLabel.text = nil
         nickNameLabel.text = nil
         messageLabel.textAlignment = .left
+        profileImageView.image = UIImage(named: "Default_Profile")
         profileImageView.isHidden = false
         nickNameLabel.isHidden = false
         bubbleView.backgroundColor = UIColor(white: 0.1, alpha: 0.03)
@@ -440,7 +452,10 @@ class ChatMessageCell: UICollectionViewCell {
         failedIconImageView.isHidden = true
     }
     
-    func configureWithMessage(with message: ChatMessage/*, originalPreviewProvider: (() -> (String, String)?)?*/) {
+    func configureWithMessage(
+        with message: ChatMessage,
+        avatarLoader: ((String) async -> UIImage?)? = nil
+    ) {
         representedMessageID = message.ID
         resetDynamicLayoutConstraintsForReconfigure()
         // Explicitly reset/hide/unhide and clear any previous width constraint
@@ -454,6 +469,7 @@ class ChatMessageCell: UICollectionViewCell {
 
         // Compute isMine once
         let isMine = LoginManager.shared.getUserEmail == message.senderID
+        configureProfileArea(with: message, isMine: isMine, avatarLoader: avatarLoader)
 
         if message.isDeleted {
             messageLabel.text = "삭제된 메시지입니다."
@@ -468,8 +484,6 @@ class ChatMessageCell: UICollectionViewCell {
         if isMine {
             // 본인이 보낸 메시지
             bubbleView.backgroundColor = .systemBlue
-            profileImageView.isHidden = true
-            nickNameLabel.isHidden = true
             
             // 기본 제약조건 업데이트
             bubbleViewLeadingConstraint = bubbleView.leadingAnchor.constraint(greaterThanOrEqualTo: contentView.leadingAnchor, constant: 20)
@@ -489,7 +503,6 @@ class ChatMessageCell: UICollectionViewCell {
             
         } else {
             // 상대방이 보낸 메시지
-            nickNameLabel.text = message.senderNickname
             bubbleView.backgroundColor = /*UIColor(white: 0.1, alpha: 0.03)*/.secondarySystemBackground
             
             // 기본 제약조건으로 복원
@@ -557,7 +570,8 @@ class ChatMessageCell: UICollectionViewCell {
     
     func configureWithImage(
         with message: ChatMessage,
-        thumbnailLoader: ((Attachment) async -> UIImage?)? = nil
+        thumbnailLoader: ((Attachment) async -> UIImage?)? = nil,
+        avatarLoader: ((String) async -> UIImage?)? = nil
     ) {
         representedMessageID = message.ID
         resetDynamicLayoutConstraintsForReconfigure()
@@ -591,11 +605,10 @@ class ChatMessageCell: UICollectionViewCell {
             let containerWidth = UIScreen.main.bounds.width * 0.7
 
             let isMine = LoginManager.shared.getUserEmail == message.senderID
+            configureProfileArea(with: message, isMine: isMine, avatarLoader: avatarLoader)
             if isMine {
                 // 본인이 보낸(삭제된) 메시지로 표시
                 bubbleView.backgroundColor = .systemBlue
-                profileImageView.isHidden = true
-                nickNameLabel.isHidden = true
 
                 bubbleViewLeadingConstraint = bubbleView.leadingAnchor.constraint(greaterThanOrEqualTo: contentView.leadingAnchor, constant: 20)
                 bubbleViewTrailingConstraint = bubbleView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -8)
@@ -603,7 +616,6 @@ class ChatMessageCell: UICollectionViewCell {
                 bubbleViewBottomConstraint = bubbleView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
             } else {
                 // 상대방이 보낸(삭제된) 메시지로 표시
-                nickNameLabel.text = message.senderNickname
                 bubbleView.backgroundColor = .secondarySystemBackground
 
                 bubbleViewLeadingConstraint = bubbleView.leadingAnchor.constraint(equalTo: profileImageView.trailingAnchor, constant: 5)
@@ -666,10 +678,9 @@ class ChatMessageCell: UICollectionViewCell {
         }
 
         let isMine = LoginManager.shared.getUserEmail == message.senderID
+        configureProfileArea(with: message, isMine: isMine, avatarLoader: avatarLoader)
         if isMine {
             // 본인이 보낸 사진
-            profileImageView.isHidden = true
-
             imagePreviewCollectionViewTopConstraint = imagesPreviewCollectionView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 8)
             imagePreviewCollectionViewTrailingConstraint = imagesPreviewCollectionView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -8)
             imagePreviewCollectionViewBottomConstraint = imagesPreviewCollectionView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8)
@@ -683,10 +694,6 @@ class ChatMessageCell: UICollectionViewCell {
                 failedIconImageViewTrainlingConstraint = failedIconImageView.trailingAnchor.constraint(equalTo: imagesPreviewCollectionView.leadingAnchor, constant: -2)
             }
         } else {
-            nickNameLabel.isHidden = false
-            profileImageView.isHidden = false
-            nickNameLabel.text = message.senderNickname
-
             // 상대가 보낸 사진
             imagePreviewCollectionViewTopConstraint = imagesPreviewCollectionView.topAnchor.constraint(equalTo: nickNameLabel.bottomAnchor, constant: 5)
             imagePreviewCollectionViewLeadingConstraint = imagesPreviewCollectionView.leadingAnchor.constraint(equalTo: profileImageView.trailingAnchor, constant: 5)
@@ -728,6 +735,44 @@ class ChatMessageCell: UICollectionViewCell {
         }
 
         hideVideoBadge()
+    }
+
+    private func configureProfileArea(
+        with message: ChatMessage,
+        isMine: Bool,
+        avatarLoader: ((String) async -> UIImage?)?
+    ) {
+        avatarLoadTask?.cancel()
+        avatarLoadTask = nil
+        representedAvatarPath = nil
+        profileImageView.image = UIImage(named: "Default_Profile")
+
+        if isMine {
+            profileImageView.isHidden = true
+            nickNameLabel.isHidden = true
+            return
+        }
+
+        profileImageView.isHidden = false
+        nickNameLabel.isHidden = false
+        nickNameLabel.text = message.senderNickname
+
+        guard let avatarPath = message.senderAvatarPath,
+              !avatarPath.isEmpty,
+              let avatarLoader else { return }
+
+        representedAvatarPath = avatarPath
+        let messageID = message.ID
+        avatarLoadTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let image = await avatarLoader(avatarPath)
+            guard !Task.isCancelled,
+                  self.representedMessageID == messageID,
+                  self.representedAvatarPath == avatarPath else { return }
+            if let image {
+                self.profileImageView.image = image
+            }
+        }
     }
     
     private func calculateRowCountWithImage(_ n: Int) -> [Int] {
@@ -827,6 +872,11 @@ class ChatMessageCell: UICollectionViewCell {
         let point = gr.location(in: imagesPreviewCollectionView)
         let tappedIndex = imagesPreviewCollectionView.index(at: point)
         imageTapSubject.send(tappedIndex)
+    }
+
+    @objc private func handleProfileTap() {
+        guard !profileImageView.isHidden else { return }
+        profileTapSubject.send(())
     }
 
     @objc private func handleRetryTap() {

@@ -10,12 +10,14 @@ import UIKit
 @MainActor
 protocol ChatRoomRouting: AnyObject {
     func showSettings(from source: ChatViewController)
+    func showUserProfile(from source: ChatViewController, email: String, nickname: String, avatarPath: String?)
 }
 
 @MainActor
 final class ChatCoordinator {
 
     private let container: ChatContainer
+    private var userProfileDetailCoordinator: UserProfileDetailCoordinator?
 
     init(container: ChatContainer) {
         self.container = container
@@ -148,6 +150,11 @@ extension ChatCoordinator: ChatRoomRouting {
                 Task { @MainActor in
                     source?.applyUpdatedRoom(updatedRoom)
                 }
+            },
+            onRoomExited: { [weak source] roomID in
+                Task { @MainActor in
+                    source?.handleRoomExit(roomID: roomID)
+                }
             }
         )
         settingVC.onRequestEditRoom = { [weak self, weak settingVC] room in
@@ -155,5 +162,18 @@ extension ChatCoordinator: ChatRoomRouting {
             self.presentRoomEdit(from: settingVC, room: room)
         }
         source.presentSettingPanel(settingVC)
+    }
+
+    func showUserProfile(from source: ChatViewController, email: String, nickname: String, avatarPath: String?) {
+        let coordinator = UserProfileDetailCoordinator(
+            presentingViewController: source,
+            provider: container.provider,
+            repositories: container.firebaseRepositories,
+            onFinish: { [weak self] in
+                self?.userProfileDetailCoordinator = nil
+            }
+        )
+        userProfileDetailCoordinator = coordinator
+        coordinator.start(email: email, nickname: nickname, avatarPath: avatarPath)
     }
 }

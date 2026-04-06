@@ -39,7 +39,8 @@ enum ChatCompositionRoot {
         room: ChatRoom,
         provider: ChatManagerProviding,
         repositories: FirebaseRepositoryProviding,
-        onRoomUpdated: ((ChatRoom) -> Void)? = nil
+        onRoomUpdated: ((ChatRoom) -> Void)? = nil,
+        onRoomExited: ((String) -> Void)? = nil
     ) -> ChatRoomSettingViewController {
         let participantsRepository = GRDBChatRoomParticipantsRepository()
         let localMediaRepository = GRDBChatRoomMediaIndexRepository()
@@ -73,6 +74,7 @@ enum ChatCompositionRoot {
             avatarImageManager: provider.avatarImageManager
         )
         settingVC.onRoomUpdated = onRoomUpdated
+        settingVC.onLeaveCompleted = onRoomExited
         return settingVC
     }
 

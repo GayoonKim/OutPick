@@ -107,6 +107,19 @@ class SocketIOManager {
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return f
     }()
+
+    private static func normalizedSocketEmail() -> String {
+        LoginManager.shared.getUserEmail
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+    }
+
+    private static func makeConnectParams() -> [String: Any] {
+        [
+            "clientKey": SocketIOManager.clientKey,
+            "email": normalizedSocketEmail()
+        ]
+    }
     
     // Combine의 PassthroughSubject를 사용하여 이벤트 스트림 생성
     // 새로운 참여자 알림을 위한 Publisher 추가
@@ -133,13 +146,13 @@ class SocketIOManager {
     private init(repositories: FirebaseRepositoryProviding = FirebaseRepositoryProvider.shared) {
         self.userProfileRepository = repositories.userProfileRepository
         self.chatRoomRepository = repositories.chatRoomRepository
-        manager = SocketManager(socketURL: URL(string: "http://192.168.123.172:3000")!, config: [
+        manager = SocketManager(socketURL: URL(string: "http://192.168.123.189:3000")!, config: [
             .log(true),
             .compress,
             // 서버가 WebSocket only(transports:['websocket'])로 동작하므로 클라이언트도 폴링을 비활성화
             .forceWebsockets(true),
             .forcePolling(false),
-            .connectParams(["clientKey": SocketIOManager.clientKey, "email": LoginManager.shared.getUserEmail]),
+            .connectParams(SocketIOManager.makeConnectParams()),
             .reconnects(false) // 수동 재연결을 사용(라이브러리 자동 재연결 비활성화)
         ])
         socket = manager.defaultSocket
@@ -216,6 +229,8 @@ class SocketIOManager {
     }
     
     func establishConnection() async throws {
+        refreshConnectParams()
+
         // 의도적 종료가 아니면 재연결 허용
         allowReconnect = true
         // 이미 연결된 경우
@@ -253,6 +268,12 @@ class SocketIOManager {
     func resetRoomMembership() {
         joinedRooms.removeAll()
         pendingRooms.removeAll()
+    }
+
+    private func refreshConnectParams() {
+        var updatedConfig = manager.config
+        updatedConfig.insert(.connectParams(SocketIOManager.makeConnectParams()))
+        manager.config = updatedConfig
     }
 
     func openRoomSession(for roomID: String) async throws -> ChatRoomSocketSession {
@@ -1147,7 +1168,7 @@ class SocketIOManager {
     ///   - ackTimeout: 서버 ACK 대기 시간(초)
     ///   - completion: 성공 / 실패 결과 콜백 (옵션)
     func requestLeaveOrCloseRoom(roomID: String,
-                                 ackTimeout: Double = 5.0,
+                                 ackTimeout: Double = 10.0,
                                  completion: ((Result<Void, Error>) -> Void)? = nil) {
         // 소켓 미연결 시 즉시 실패 콜백
         guard socket.status == .connected else {
@@ -1177,6 +1198,17 @@ class SocketIOManager {
         #endif
 
         socket.emitWithAck(eventName, payload).timingOut(after: ackTimeout) { items in
+            if let first = items.first as? String,
+               first == SocketAckStatus.noAck.rawValue {
+                let err = NSError(
+                    domain: "SocketIO",
+                    code: -1001,
+                    userInfo: [NSLocalizedDescriptionKey: "서버 응답이 지연되고 있습니다. 잠시 후 다시 시도해 주세요."]
+                )
+                completion?(.failure(err))
+                return
+            }
+
             // 서버에서 { ok: Bool, message?: String } 형태로 응답한다고 가정
             if let first = items.first as? [String: Any] {
                 let ok = (first["ok"] as? Bool) ?? (first["success"] as? Bool) ?? false
@@ -1184,7 +1216,9 @@ class SocketIOManager {
                     completion?(.success(()))
                     return
                 } else {
-                    let message = first["message"] as? String ?? "방 나가기/종료 처리 실패"
+                    let message = first["message"] as? String
+                        ?? first["error"] as? String
+                        ?? "방 나가기/종료 처리 실패"
                     let err = NSError(
                         domain: "SocketIO",
                         code: -1,
