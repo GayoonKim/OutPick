@@ -132,6 +132,9 @@ class SocketIOManager {
     
     private var joinedRooms = Set<String>()
     private var pendingRooms: Set<String> = []
+    private var pendingCreatedRooms = Set<String>()
+    private var joiningRooms = Set<String>()
+    private var creatingRooms = Set<String>()
     
     private var roomSessionActors = [String: ChatRoomSessionActor]()
     private var roomStreamTasks = [String: Task<Void, Never>]()
@@ -146,7 +149,7 @@ class SocketIOManager {
     private init(repositories: FirebaseRepositoryProviding = FirebaseRepositoryProvider.shared) {
         self.userProfileRepository = repositories.userProfileRepository
         self.chatRoomRepository = repositories.chatRoomRepository
-        manager = SocketManager(socketURL: URL(string: "http://192.168.123.189:3000")!, config: [
+        manager = SocketManager(socketURL: URL(string: "http://192.168.123.106:3000")!, config: [
             .log(true),
             .compress,
             // 서버가 WebSocket only(transports:['websocket'])로 동작하므로 클라이언트도 폴링을 비활성화
@@ -169,12 +172,15 @@ class SocketIOManager {
             self.socket.emit("set username", nickName)
 
             // Re-join desired rooms on every connection (includes reconnects).
-            let desiredRooms = self.joinedRooms.union(self.pendingRooms)
-            for roomID in desiredRooms {
-                self.socket.emit("join room", roomID)
-                self.joinedRooms.insert(roomID)
+            let roomsToCreate = Array(self.pendingCreatedRooms)
+            for roomID in roomsToCreate {
+                self.emitCreateRoomIfNeeded(roomID)
             }
-            self.pendingRooms.removeAll()
+
+            let desiredRooms = Array(self.joinedRooms.union(self.pendingRooms))
+            for roomID in desiredRooms {
+                self.emitJoinRoomIfNeeded(roomID)
+            }
             self.resumeConnectWaiters()
         }
 
@@ -268,6 +274,9 @@ class SocketIOManager {
     func resetRoomMembership() {
         joinedRooms.removeAll()
         pendingRooms.removeAll()
+        pendingCreatedRooms.removeAll()
+        joiningRooms.removeAll()
+        creatingRooms.removeAll()
     }
 
     private func refreshConnectParams() {
@@ -443,6 +452,65 @@ class SocketIOManager {
         detachVideoListener()
     }
 
+    private func normalizeIncomingPayload(_ payload: [String: Any], event: String) -> [String: Any] {
+        var normalized = payload
+
+        if normalized["roomID"] == nil, let roomName = normalized["roomName"] as? String {
+            normalized["roomID"] = roomName
+        }
+        if normalized["senderNickName"] == nil, let nickname = normalized["senderNickname"] {
+            normalized["senderNickName"] = nickname
+        }
+        if normalized["ID"] == nil {
+            if let id = normalized["id"] as? String {
+                normalized["ID"] = id
+            } else if let messageID = normalized["messageID"] as? String {
+                normalized["ID"] = messageID
+            }
+        }
+        if normalized["msg"] == nil, let message = normalized["message"] {
+            normalized["msg"] = message
+        }
+        if normalized["attachments"] == nil, let images = normalized["images"] {
+            normalized["attachments"] = images
+        }
+
+        if normalized["attachments"] == nil, event == "receiveVideo" || event == "receiveImages" {
+            let inferredType = (normalized["type"] as? String)
+                ?? (event == "receiveVideo" ? "video" : "image")
+            let pathThumb = (normalized["pathThumb"] as? String)
+                ?? (normalized["thumbPath"] as? String)
+                ?? (normalized["thumbnailPath"] as? String)
+            let pathOriginal = (normalized["pathOriginal"] as? String)
+                ?? (normalized["originalPath"] as? String)
+                ?? (normalized["storagePath"] as? String)
+
+            if pathThumb != nil || pathOriginal != nil {
+                var attachment: [String: Any] = [
+                    "type": inferredType,
+                    "index": 0
+                ]
+
+                if let pathThumb, !pathThumb.isEmpty {
+                    attachment["pathThumb"] = pathThumb
+                }
+                if let pathOriginal, !pathOriginal.isEmpty {
+                    attachment["pathOriginal"] = pathOriginal
+                }
+
+                for key in ["w", "h", "width", "height", "bytesOriginal", "size", "sizeBytes", "duration", "hash", "blurhash"] {
+                    if let value = normalized[key] {
+                        attachment[key] = value
+                    }
+                }
+
+                normalized["attachments"] = [attachment]
+            }
+        }
+
+        return normalized
+    }
+
     private func attachChatListener() {
         guard !isChatMessageListenerBound else { return }
         isChatMessageListenerBound = true
@@ -460,9 +528,11 @@ class SocketIOManager {
                 return
             }
 
-            guard let message = ChatMessage.from(dict) else {
+            let normalized = self.normalizeIncomingPayload(dict, event: event)
+
+            guard let message = ChatMessage.from(normalized) else {
                 #if DEBUG
-                print("[attachChatListener] parse failed =", dict)
+                print("[attachChatListener] parse failed =", normalized)
                 #endif
                 return
             }
@@ -492,10 +562,7 @@ class SocketIOManager {
                 #endif
                 return
             }
-            // Normalize server payload (senderNickname vs senderNickName, id vs ID)
-            var normalized = dict
-            if normalized["senderNickName"] == nil, let v = normalized["senderNickname"] { normalized["senderNickName"] = v }
-            if normalized["ID"] == nil, let v = normalized["id"] as? String { normalized["ID"] = v }
+            let normalized = self.normalizeIncomingPayload(dict, event: event)
 
             guard let message = ChatMessage.from(normalized) else {
                 #if DEBUG
@@ -525,10 +592,7 @@ class SocketIOManager {
                 return
             }
 
-            // Normalize server payload (senderNickname vs senderNickName, id vs ID)
-            var normalized = dict
-            if normalized["senderNickName"] == nil, let v = normalized["senderNickname"] { normalized["senderNickName"] = v }
-            if normalized["ID"] == nil, let v = normalized["id"] as? String { normalized["ID"] = v }
+            let normalized = self.normalizeIncomingPayload(dict, event: event)
 
             guard let message = ChatMessage.from(normalized) else {
                 #if DEBUG
@@ -552,22 +616,27 @@ class SocketIOManager {
     
     func joinRoom(_ roomID: String) {
         guard !roomID.isEmpty else { return }
+        let inserted = joinedRooms.insert(roomID).inserted
+
         if socket.status == .connected {
-            guard joinedRooms.insert(roomID).inserted else {
-                print("이미 참여한 방:", roomID); return
+            if !inserted && !pendingRooms.contains(roomID) {
+                print("이미 참여한 방:", roomID)
+                return
             }
-            socket.emit("join room", roomID)
+            pendingRooms.insert(roomID)
+            emitJoinRoomIfNeeded(roomID)
         } else {
-            // Not connected: queue for joining after connect
             pendingRooms.insert(roomID)
         }
-        // listener off/on은 유지해도 됨. emit 자체가 중복되지 않는 게 핵심
     }
 
     func leaveRoom(_ roomID: String) {
         guard !roomID.isEmpty else { return }
 
         pendingRooms.remove(roomID)
+        pendingCreatedRooms.remove(roomID)
+        joiningRooms.remove(roomID)
+        creatingRooms.remove(roomID)
         let wasJoined = joinedRooms.remove(roomID) != nil
         guard wasJoined else { return }
 
@@ -578,24 +647,63 @@ class SocketIOManager {
     
     func createRoom(_ roomID: String) {
         print("createRoom 호출 - roomID: ", roomID)
-        
+
+        guard !roomID.isEmpty else { return }
+        pendingCreatedRooms.insert(roomID)
+
         guard socket.status == .connected else {
-            print("소켓이 연결되지 않음")
+            print("소켓이 연결되지 않음 - room create 대기열에 추가:", roomID)
             return
         }
-        
-        // 기존 방 생성 관련 리스너 제거 (중복 방지)
-        socket.off("room created")
-        socket.off("room error")
-        
-        socket.emit("create room", roomID)
-        
-        // 방 생성 성공/실패 모니터링
-        socket.on("room created") { data, _ in
-            print("방 생성 성공: ", data)
+
+        emitCreateRoomIfNeeded(roomID)
+    }
+
+    private func emitJoinRoomIfNeeded(_ roomID: String) {
+        guard !roomID.isEmpty else { return }
+        guard socket.status == .connected else {
+            pendingRooms.insert(roomID)
+            return
         }
-        socket.on("room error") { data, _ in
-            print("방 생성 실패: ", data)
+        guard !joiningRooms.contains(roomID) else { return }
+
+        joiningRooms.insert(roomID)
+        socket.emitWithAck("join room", roomID).timingOut(after: 5) { [weak self] ackResponse in
+            guard let self else { return }
+
+            self.joiningRooms.remove(roomID)
+
+            if self.isEmitAckSuccess(ackResponse) {
+                self.pendingRooms.remove(roomID)
+                return
+            }
+
+            self.pendingRooms.insert(roomID)
+            print("join room 실패:", roomID, ackResponse)
+        }
+    }
+
+    private func emitCreateRoomIfNeeded(_ roomID: String) {
+        guard !roomID.isEmpty else { return }
+        guard socket.status == .connected else {
+            pendingCreatedRooms.insert(roomID)
+            return
+        }
+        guard pendingCreatedRooms.contains(roomID) else { return }
+        guard !creatingRooms.contains(roomID) else { return }
+
+        creatingRooms.insert(roomID)
+        socket.emitWithAck("create room", roomID).timingOut(after: 5) { [weak self] ackResponse in
+            guard let self else { return }
+
+            self.creatingRooms.remove(roomID)
+
+            if self.isEmitAckSuccess(ackResponse) {
+                self.pendingCreatedRooms.remove(roomID)
+                return
+            }
+
+            print("create room 실패:", roomID, ackResponse)
         }
     }
 

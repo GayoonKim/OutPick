@@ -182,11 +182,14 @@ function buildServerImageMessage(body) {
   return {
     ID: messageID,                 // mirror client messageID
     roomID,
+    roomName: roomID,
     senderID,
     senderNickname,
     ...(senderAvatarPath ? { senderAvatarPath } : {}),
     msg,
+    message: msg,
     sentAt: sentAt || new Date().toISOString(),
+    messageType: 'Image',
     attachments: normalized,
     replyPreview: null,
     isFailed: false
@@ -228,11 +231,14 @@ function buildServerVideoMessage(body) {
   return {
     ID: messageID,
     roomID,
+    roomName: roomID,
     senderID,
     senderNickname,
     ...(senderAvatarPath ? { senderAvatarPath } : {}),
     msg,
+    message: msg,
     sentAt: sentAt || new Date().toISOString(),
+    messageType: 'Video',
     attachments: normalized,
     replyPreview: null,
     isFailed: false
@@ -412,6 +418,30 @@ async function fetchRoomsFromFirebase() {
   console.log("Rooms initialized from Firebase:", Object.keys(rooms));
 }
 
+async function ensureRoomLoaded(roomID) {
+  if (!roomID || !isValidRoomID(roomID)) {
+    return false;
+  }
+
+  if (rooms[roomID]) {
+    return true;
+  }
+
+  try {
+    const roomSnapshot = await db.collection("Rooms").doc(roomID).get();
+    if (!roomSnapshot.exists) {
+      return false;
+    }
+
+    rooms[roomID] = rooms[roomID] || [];
+    console.log(`[room-bootstrap] loaded room from Firestore: ${roomID}`);
+    return true;
+  } catch (error) {
+    console.error(`[room-bootstrap] failed to load ${roomID}:`, error);
+    return false;
+  }
+}
+
 // Allow up to maxAttempts handshake tries within a moving window; otherwise reject with a descriptive error
 io.use((socket, next) => {
   const key = getClientKey(socket.handshake);
@@ -477,7 +507,12 @@ io.on('connection', (socket) => {
     });
 
     // 새 방 만들기
-    socket.on('create room', (roomID) => {
+    socket.on('create room', (roomID, callback) => {
+        if (!roomID || !isValidRoomID(roomID)) {
+            callback && callback({ ok: false, message: 'invalid_room_id' });
+            return;
+        }
+
         if (!rooms[roomID]) {
             rooms[roomID] = [];
             console.log(`Room created: ${roomID}`);
@@ -487,14 +522,23 @@ io.on('connection', (socket) => {
         if (!rooms[roomID].includes(socket.username || "Anonymous")) {
           rooms[roomID].push(socket.username || "Anonymous");
         }
+
+        callback && callback({ ok: true, roomID });
     });
 
     // 방 참여
-    socket.on('join room', (roomID) => {
+    socket.on('join room', async (roomID, callback) => {
         const username = socket.username || "Anonymous";
         console.log(`Join request: ${username} → ${roomID}`);
 
-        if (rooms[roomID]) {
+        if (!roomID || !isValidRoomID(roomID)) {
+            callback && callback({ ok: false, message: 'invalid_room_id' });
+            return;
+        }
+
+        const roomExists = await ensureRoomLoaded(roomID);
+
+        if (roomExists) {
             socket.join(roomID);
             if (!rooms[roomID].includes(username)) {
               rooms[roomID].push(username);
@@ -502,14 +546,19 @@ io.on('connection', (socket) => {
             console.log(`${username} joined room: ${roomID}`);
 //            io.to(roomID).emit("user list", rooms[roomID]); // 해당 방 사용자 목록 전송
             socket.emit("joined room", roomID); // 클라이언트에 성공 알림
+            callback && callback({ ok: true, roomID });
         } else {
             console.warn(`Join failed: ${username} → ${roomID} (room does not exist)`);
             socket.emit("error", `Room ${roomID} does not exist`);
+            callback && callback({ ok: false, message: 'room_not_found' });
         }
     });
 
-    socket.on('leave room', (roomID) => {
-      if (!roomID || !isValidRoomID(roomID)) return;
+    socket.on('leave room', (roomID, callback) => {
+      if (!roomID || !isValidRoomID(roomID)) {
+        callback && callback({ ok: false, message: 'invalid_room_id' });
+        return;
+      }
 
       socket.leave(roomID);
 
@@ -519,6 +568,7 @@ io.on('connection', (socket) => {
       }
 
       console.log(`Leave room request: ${socket.username || "Anonymous"} → ${roomID}`);
+      callback && callback({ ok: true, roomID });
     });
 
     // 방 나가기 / 방 종료 (서버가 Firestore 상태로 판단)
@@ -649,46 +699,53 @@ io.on('connection', (socket) => {
       try {
         const {
           ID,
-          roomID,
-          msg,
+          roomID: rawRoomID,
+          roomName,
+          msg: rawMsg,
+          message,
           senderID,
           senderNickname,
+          senderNickName,
           senderAvatarPath,   // 새 필드 지원
           replyPreview,
           sentAt
         } = data || {};
 
+        const roomID = rawRoomID || roomName;
+        const msg = typeof rawMsg === 'string' ? rawMsg : (typeof message === 'string' ? message : '');
+        const nickname = senderNickname || senderNickName || '';
+
         // ===== 기본 검증 =====
         if (!roomID || typeof msg !== 'string' || msg.trim().length === 0) {
           console.error("[Chat] Invalid data received:", data);
-          callback && callback({ success: false, error: "Invalid data" });
+          callback && callback({ ok: false, message: "Invalid data", error: "invalid_data" });
           return;
         }
         if (!isValidRoomID(roomID)) {
           console.warn(`[Chat] invalid roomID: ${roomID}`);
-          callback && callback({ success: false, error: "invalid_room_id" });
+          callback && callback({ ok: false, message: "invalid_room_id", error: "invalid_room_id" });
           return;
         }
         if (!rooms[roomID]) {
           console.warn(`[Chat] room not found: ${roomID}`);
-          callback && callback({ success: false, error: "room_not_found" });
+          callback && callback({ ok: false, message: "room_not_found", error: "room_not_found" });
           return;
         }
         if (!socket.rooms.has(roomID)) {
           console.warn(`[Chat] socket not joined to room: ${roomID}`);
-          callback && callback({ success: false, error: "not_joined" });
+          callback && callback({ ok: false, message: "not_joined", error: "not_joined" });
           return;
         }
         const msgBytes = Buffer.byteLength(msg, "utf8");
         if (msgBytes > MAX_CHAT_MESSAGE_BYTES) {
           console.warn(`[Chat] message too long: ${msgBytes} bytes`);
-          callback && callback({ success: false, error: "message_too_long" });
+          callback && callback({ ok: false, message: "message_too_long", error: "message_too_long" });
           return;
         }
         const chatRateKey = `${socket.id}:${roomID}:chat`;
         if (!allowRate(chatRateKey, RATE_MAX_CHAT, RATE_WINDOW_MS)) {
           console.warn(`[Chat] rate limited: ${socket.id} @ ${roomID}`);
-          callback && callback({ success: false, error: "rate_limited" });
+          callback && callback({ ok: false, message: "rate_limited", error: "rate_limited" });
           return;
         }
 
@@ -734,10 +791,13 @@ io.on('connection', (socket) => {
         const payload = {
           ID,
           roomID,
+          roomName: roomID,
           senderID,
-          senderNickname,
+          senderNickname: nickname,
           ...(senderAvatarPath ? { senderAvatarPath } : {}),
           msg,
+          message: msg,
+          messageType: 'Text',
           ...(normalizedReplyPreview ? { replyPreview: normalizedReplyPreview } : {}),
           ...(sentAtISO ? { sentAt: sentAtISO } : {})
         };
@@ -759,7 +819,7 @@ io.on('connection', (socket) => {
           seq = await allocateSeqAndPersist(roomID, messageID, messageDoc);
         } catch (e) {
           console.error('[Chat] seq allocation/persist error:', e);
-          callback && callback({ success: false, error: 'seq_persist_error' });
+          callback && callback({ ok: false, message: 'seq_persist_error', error: 'seq_persist_error' });
           return;
         }
 
@@ -769,11 +829,11 @@ io.on('connection', (socket) => {
         io.to(roomID).emit("chat message", serverMsg);
 //        io.to(roomID).emit(`chat message:${roomID}`, serverMsg);
 
-        console.log(`[Chat][${roomID}] ${senderNickname || "Anonymous"}: ${msg}`, serverMsg);
-        callback && callback({ success: true, seq, messageID });
+        console.log(`[Chat][${roomID}] ${nickname || "Anonymous"}: ${msg}`, serverMsg);
+        callback && callback({ ok: true, success: true, seq, messageID });
       } catch (error) {
         console.error("[Chat] Error processing message:", error);
-        callback && callback({ success: false, error: error.message });
+        callback && callback({ ok: false, message: error.message, error: error.message });
       }
     });
 

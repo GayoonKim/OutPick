@@ -72,8 +72,6 @@ final class ChatRoomLifecycleUseCase: ChatRoomLifecycleUseCaseProtocol {
     func handleRoomSaved(roomID: String) {
         guard !roomID.isEmpty else { return }
         activateJoinedRoomRealtime(roomID: roomID)
-
-        guard socketManager.isConnected else { return }
         socketManager.createRoom(roomID)
         socketManager.joinRoom(roomID)
     }

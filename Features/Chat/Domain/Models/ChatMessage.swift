@@ -228,8 +228,8 @@ extension ChatMessage: Hashable {}
 extension ChatMessage {
     static func from(_ dict: [String: Any]) -> ChatMessage? {
         // Required IDs
-        guard let id = (dict["ID"] as? String) ?? (dict["id"] as? String), !id.isEmpty,
-              let roomID = dict["roomID"] as? String,
+        guard let id = (dict["ID"] as? String) ?? (dict["id"] as? String) ?? (dict["messageID"] as? String), !id.isEmpty,
+              let roomID = (dict["roomID"] as? String) ?? (dict["roomName"] as? String),
               let senderID = dict["senderID"] as? String else {
             return nil
         }
@@ -257,7 +257,7 @@ extension ChatMessage {
             ?? (dict["senderAvatarURL"] as? String)    // legacy url key if any
 
         // Message text may be empty
-        let msg = dict["msg"] as? String
+        let msg = (dict["msg"] as? String) ?? (dict["message"] as? String)
 
         // sentAt: accept ISO8601(with/without fractional), Timestamp, epoch(s/ms). Optional.
         let sentAt = parseSentAt(dict["sentAt"]) ?? parseSentAt(dict["createdAt"]) // fallback key if any
@@ -329,24 +329,26 @@ extension ChatMessage {
             let type = Attachment.AttachmentType(rawValue: typeStr) ?? .image
 
             // 필수 메타 (경로/정렬/크기)
-            let index = item["index"] as? Int ?? i
-            let pathThumb = (item["pathThumb"] as? String) ?? (item["thumbPath"] as? String) ?? ""
+            let index = parseInt(item["index"]) ?? i
+            let pathThumb = (item["pathThumb"] as? String)
+                ?? (item["thumbPath"] as? String)
+                ?? (item["thumbnailPath"] as? String)
+                ?? ""
             // pathOriginal은 Storage 상대경로가 표준이지만, 레거시 url/originalUrl 문자열도 임시 허용
             let pathOriginal = (item["pathOriginal"] as? String)
                 ?? (item["originalPath"] as? String)
+                ?? (item["storagePath"] as? String)
                 ?? (item["url"] as? String)
                 ?? (item["originalUrl"] as? String)
                 ?? ""
 
-            let width  = (item["w"] as? Int) ?? (item["width"] as? Int) ?? 0
-            let height = (item["h"] as? Int) ?? (item["height"] as? Int) ?? 0
-            let bytes  = (item["bytesOriginal"] as? Int) ?? (item["size"] as? Int) ?? 0
+            let width  = parseInt(item["w"]) ?? parseInt(item["width"]) ?? 0
+            let height = parseInt(item["h"]) ?? parseInt(item["height"]) ?? 0
+            let bytes  = parseInt(item["bytesOriginal"]) ?? parseInt(item["size"]) ?? parseInt(item["sizeBytes"]) ?? 0
             let hash   = (item["hash"] as? String) ?? UUID().uuidString.replacingOccurrences(of: "-", with: "")
             let blur   = item["blurhash"] as? String
 
-            var duration: Double? = nil
-            if let d = item["duration"] as? Double { duration = d }
-            else if let i = item["duration"] as? Int { duration = Double(i) }
+            let duration = parseDouble(item["duration"])
 
             result.append(Attachment(
                 type: type,
@@ -361,7 +363,39 @@ extension ChatMessage {
                 duration: duration
             ))
         }
-        return result
+
+        if !result.isEmpty {
+            return result
+        }
+
+        let rootType = Attachment.AttachmentType(rawValue: dict["type"] as? String ?? "image")
+        let rootThumbPath = (dict["pathThumb"] as? String)
+            ?? (dict["thumbPath"] as? String)
+            ?? (dict["thumbnailPath"] as? String)
+            ?? ""
+        let rootOriginalPath = (dict["pathOriginal"] as? String)
+            ?? (dict["originalPath"] as? String)
+            ?? (dict["storagePath"] as? String)
+            ?? ""
+
+        guard rootType != nil || !rootThumbPath.isEmpty || !rootOriginalPath.isEmpty else {
+            return []
+        }
+
+        let attachment = Attachment(
+            type: rootType ?? .image,
+            index: parseInt(dict["index"]) ?? 0,
+            pathThumb: rootThumbPath,
+            pathOriginal: rootOriginalPath,
+            width: parseInt(dict["w"]) ?? parseInt(dict["width"]) ?? 0,
+            height: parseInt(dict["h"]) ?? parseInt(dict["height"]) ?? 0,
+            bytesOriginal: parseInt(dict["bytesOriginal"]) ?? parseInt(dict["size"]) ?? parseInt(dict["sizeBytes"]) ?? 0,
+            hash: (dict["hash"] as? String) ?? ((dict["messageID"] as? String) ?? UUID().uuidString.replacingOccurrences(of: "-", with: "")),
+            blurhash: dict["blurhash"] as? String,
+            duration: parseDouble(dict["duration"])
+        )
+
+        return [attachment]
     }
 }
 
@@ -420,6 +454,40 @@ extension ChatMessage {
             if let d = ChatMessage.fallbackDateFormatter1.date(from: s) { return d }
             if let d = ChatMessage.fallbackDateFormatter2.date(from: s) { return d }
             return nil
+        default:
+            return nil
+        }
+    }
+
+    private static func parseInt(_ value: Any?) -> Int? {
+        switch value {
+        case let n as NSNumber:
+            return n.intValue
+        case let i as Int:
+            return i
+        case let i64 as Int64:
+            return Int(i64)
+        case let d as Double:
+            return Int(d)
+        case let s as String:
+            return Int(s)
+        default:
+            return nil
+        }
+    }
+
+    private static func parseDouble(_ value: Any?) -> Double? {
+        switch value {
+        case let n as NSNumber:
+            return n.doubleValue
+        case let d as Double:
+            return d
+        case let i as Int:
+            return Double(i)
+        case let i64 as Int64:
+            return Double(i64)
+        case let s as String:
+            return Double(s)
         default:
             return nil
         }
