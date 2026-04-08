@@ -667,10 +667,11 @@ class ChatMessageCell: UICollectionViewCell {
         imagesPreviewCollectionView.isHidden = false
         
         let containerWidth = contentView.frame.width * 0.7
-        let rows = calculateRowCountWithImage(message.attachments.count)
+        let displayableAttachments = message.displayableAttachments
+        let rows = calculateRowCountWithImage(displayableAttachments.count)
 
         var contentHeight: CGFloat {
-            if message.attachments.count == 1 {
+            if displayableAttachments.count == 1 {
                 return contentView.frame.width * 0.7
             } else {
                 return rows.reduce(0) { $0 + (containerWidth / CGFloat($1)) }
@@ -959,8 +960,7 @@ class ChatMessageCell: UICollectionViewCell {
     }
 
     private func makePreviewItems(from message: ChatMessage) -> [ChatImagePreviewItem] {
-        message.attachments
-            .sorted { $0.index < $1.index }
+        message.displayableAttachments
             .enumerated()
             .map { offset, attachment in
                 let durationText: String?

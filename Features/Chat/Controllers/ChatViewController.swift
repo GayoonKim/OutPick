@@ -582,9 +582,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         let concurrency = max(1, maxConcurrent)
         let roomID = room?.ID ?? ""
         let thumbnailMessages = messages.filter {
-            $0.attachments.contains { $0.type == .image || $0.type == .video }
+            $0.hasDisplayableAttachments
         }
-        let videoMessages = messages.filter { $0.attachments.contains { $0.type == .video } }
+        let videoMessages = messages.filter { $0.hasDisplayableVideos }
 
         Task(priority: .utility) { [weak self] in
             guard let self else { return }
@@ -817,8 +817,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         print("\(message.isFailed ? "전송 실패" : "전송 성공") 메시지 수신: \(message)")
 
         // 1) 첨부 캐시 선행
-        let hasImages = message.attachments.contains { $0.type == .image }
-        let hasVideos = message.attachments.contains { $0.type == .video }
+        let hasImages = message.hasDisplayableImages
+        let hasVideos = message.hasDisplayableVideos
         if hasImages || hasVideos {
             let rid = room.ID ?? ""
             await withTaskGroup(of: Void.self) { group in
@@ -2406,7 +2406,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 // 메시지 최신 상태 반영
                 let latestMessage = self.messageMap[message.ID] ?? message
                 
-                if !latestMessage.attachments.isEmpty {
+                if latestMessage.hasDisplayableAttachments {
                     cell.configureWithImage(with: latestMessage, thumbnailLoader: { [weak self] attachment in
                         guard let self else { return nil }
                         return await self.thumbnailImage(for: attachment)
@@ -3022,7 +3022,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             startThumbnailPrefetchIfNeeded(for: path)
         }
 
-        let hasVideos = message.attachments.contains { $0.type == .video }
+        let hasVideos = message.hasDisplayableVideos
         guard hasVideos else { return }
         startVideoPrefetchIfNeeded(for: message, roomID: roomID)
     }
@@ -3168,11 +3168,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     private func thumbnailPaths(for message: ChatMessage) -> [String] {
         var seen = Set<String>()
-        return message.attachments
-            .filter { $0.type == .image || $0.type == .video }
-            .sorted { $0.index < $1.index }
+        return message.displayableAttachments
             .compactMap { attachment in
-                let path = attachment.pathThumb
+                let path = attachment.normalizedThumbPath
                 guard !path.isEmpty, seen.insert(path).inserted else { return nil }
                 return path
             }

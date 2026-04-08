@@ -60,6 +60,10 @@ struct Attachment: Codable, Hashable, Sendable {
     // MARK: - Convenience (직렬화 제외)
     var thumbCacheKey: String { "att:\(hash):thumb" }
     var originalCacheKey: String { "att:\(hash):original" }
+    var normalizedThumbPath: String { Self.normalizedPath(pathThumb) }
+    var normalizedOriginalPath: String { Self.normalizedPath(pathOriginal) }
+    var preferredDisplayPath: String { normalizedThumbPath.isEmpty ? normalizedOriginalPath : normalizedThumbPath }
+    var hasDisplayablePayload: Bool { !preferredDisplayPath.isEmpty }
 
     // Socket/Firestore로 보낼 딕셔너리
     func toDict() -> [String: Any] {
@@ -90,6 +94,10 @@ struct Attachment: Codable, Hashable, Sendable {
         return lhs.type == rhs.type &&
                lhs.hash == rhs.hash &&
                lhs.pathOriginal == rhs.pathOriginal
+    }
+
+    private static func normalizedPath(_ path: String) -> String {
+        path.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
@@ -226,6 +234,34 @@ struct ChatMessage: SocketData, Codable, Sendable {
 extension ChatMessage: Hashable {}
 
 extension ChatMessage {
+    var sortedAttachments: [Attachment] {
+        attachments.sorted { $0.index < $1.index }
+    }
+
+    var displayableAttachments: [Attachment] {
+        sortedAttachments.filter(\.hasDisplayablePayload)
+    }
+
+    var displayableImageAttachments: [Attachment] {
+        displayableAttachments.filter { $0.type == .image }
+    }
+
+    var displayableVideoAttachments: [Attachment] {
+        displayableAttachments.filter { $0.type == .video }
+    }
+
+    var hasDisplayableAttachments: Bool {
+        !displayableAttachments.isEmpty
+    }
+
+    var hasDisplayableImages: Bool {
+        !displayableImageAttachments.isEmpty
+    }
+
+    var hasDisplayableVideos: Bool {
+        !displayableVideoAttachments.isEmpty
+    }
+
     static func from(_ dict: [String: Any]) -> ChatMessage? {
         // Required IDs
         guard let id = (dict["ID"] as? String) ?? (dict["id"] as? String) ?? (dict["messageID"] as? String), !id.isEmpty,
@@ -323,70 +359,47 @@ extension ChatMessage {
 
         for (i, any) in rawArray.enumerated() {
             guard let item = any as? [String: Any] else { continue }
-
-            // 타입
-            let typeStr = (item["type"] as? String) ?? "image"
-            let type = Attachment.AttachmentType(rawValue: typeStr) ?? .image
-
-            // 필수 메타 (경로/정렬/크기)
-            let index = parseInt(item["index"]) ?? i
-            let pathThumb = (item["pathThumb"] as? String)
-                ?? (item["thumbPath"] as? String)
-                ?? (item["thumbnailPath"] as? String)
-                ?? ""
-            // pathOriginal은 Storage 상대경로가 표준이지만, 레거시 url/originalUrl 문자열도 임시 허용
-            let pathOriginal = (item["pathOriginal"] as? String)
-                ?? (item["originalPath"] as? String)
-                ?? (item["storagePath"] as? String)
-                ?? (item["url"] as? String)
-                ?? (item["originalUrl"] as? String)
-                ?? ""
-
-            let width  = parseInt(item["w"]) ?? parseInt(item["width"]) ?? 0
-            let height = parseInt(item["h"]) ?? parseInt(item["height"]) ?? 0
-            let bytes  = parseInt(item["bytesOriginal"]) ?? parseInt(item["size"]) ?? parseInt(item["sizeBytes"]) ?? 0
-            let hash   = (item["hash"] as? String) ?? UUID().uuidString.replacingOccurrences(of: "-", with: "")
-            let blur   = item["blurhash"] as? String
-
-            let duration = parseDouble(item["duration"])
-
-            result.append(Attachment(
-                type: type,
-                index: index,
-                pathThumb: pathThumb,
-                pathOriginal: pathOriginal,
-                width: width,
-                height: height,
-                bytesOriginal: bytes,
-                hash: hash,
-                blurhash: blur,
-                duration: duration
-            ))
+            guard let attachment = makeAttachment(from: item, fallbackIndex: i) else { continue }
+            result.append(attachment)
         }
 
         if !result.isEmpty {
             return result
         }
 
-        let rootType = Attachment.AttachmentType(rawValue: dict["type"] as? String ?? "image")
-        let rootThumbPath = (dict["pathThumb"] as? String)
-            ?? (dict["thumbPath"] as? String)
-            ?? (dict["thumbnailPath"] as? String)
-            ?? ""
-        let rootOriginalPath = (dict["pathOriginal"] as? String)
-            ?? (dict["originalPath"] as? String)
-            ?? (dict["storagePath"] as? String)
-            ?? ""
+        guard let rootAttachment = makeAttachment(from: dict, fallbackIndex: 0) else { return [] }
+        return [rootAttachment]
+    }
 
-        guard rootType != nil || !rootThumbPath.isEmpty || !rootOriginalPath.isEmpty else {
-            return []
+    private static func makeAttachment(from dict: [String: Any], fallbackIndex: Int) -> Attachment? {
+        let pathThumb = normalizedPath(
+            (dict["pathThumb"] as? String)
+                ?? (dict["thumbPath"] as? String)
+                ?? (dict["thumbnailPath"] as? String)
+                ?? ""
+        )
+        let pathOriginal = normalizedPath(
+            (dict["pathOriginal"] as? String)
+                ?? (dict["originalPath"] as? String)
+                ?? (dict["storagePath"] as? String)
+                ?? (dict["url"] as? String)
+                ?? (dict["originalUrl"] as? String)
+                ?? ""
+        )
+
+        guard !pathThumb.isEmpty || !pathOriginal.isEmpty else {
+            return nil
         }
 
-        let attachment = Attachment(
-            type: rootType ?? .image,
-            index: parseInt(dict["index"]) ?? 0,
-            pathThumb: rootThumbPath,
-            pathOriginal: rootOriginalPath,
+        guard let type = attachmentType(from: dict, pathThumb: pathThumb, pathOriginal: pathOriginal) else {
+            return nil
+        }
+
+        return Attachment(
+            type: type,
+            index: parseInt(dict["index"]) ?? fallbackIndex,
+            pathThumb: pathThumb,
+            pathOriginal: pathOriginal,
             width: parseInt(dict["w"]) ?? parseInt(dict["width"]) ?? 0,
             height: parseInt(dict["h"]) ?? parseInt(dict["height"]) ?? 0,
             bytesOriginal: parseInt(dict["bytesOriginal"]) ?? parseInt(dict["size"]) ?? parseInt(dict["sizeBytes"]) ?? 0,
@@ -394,8 +407,31 @@ extension ChatMessage {
             blurhash: dict["blurhash"] as? String,
             duration: parseDouble(dict["duration"])
         )
+    }
 
-        return [attachment]
+    private static func attachmentType(
+        from dict: [String: Any],
+        pathThumb: String,
+        pathOriginal: String
+    ) -> Attachment.AttachmentType? {
+        if let rawType = dict["type"] as? String,
+           let type = Attachment.AttachmentType(rawValue: rawType) {
+            return type
+        }
+
+        if dict["duration"] != nil {
+            return .video
+        }
+
+        if !pathOriginal.isEmpty || !pathThumb.isEmpty {
+            return .image
+        }
+
+        return nil
+    }
+
+    private static func normalizedPath(_ path: String) -> String {
+        path.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 

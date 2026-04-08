@@ -423,9 +423,9 @@ private class MessagePreviewView: UIView {
         nicknameLabel.text = message.senderNickname
         if let text = message.msg, !text.isEmpty {
             messageLabel.text = text
-        } else if !message.attachments.isEmpty {
-            let imageCount = message.attachments.filter { $0.type == .image }.count
-            let videoCount = message.attachments.filter { $0.type == .video }.count
+        } else if message.hasDisplayableAttachments {
+            let imageCount = message.displayableImageAttachments.count
+            let videoCount = message.displayableVideoAttachments.count
 
             if videoCount > 0 && imageCount == 0 {
                 messageLabel.text = videoCount == 1 ? "동영상 1개" : "동영상 \(videoCount)개"
@@ -434,7 +434,7 @@ private class MessagePreviewView: UIView {
             } else if imageCount > 0 && videoCount > 0 {
                 messageLabel.text = "사진 \(imageCount)장 · 동영상 \(videoCount)개"
             } else {
-                messageLabel.text = "첨부 \(message.attachments.count)개"
+                messageLabel.text = "첨부 \(message.displayableAttachments.count)개"
             }
         } else {
             messageLabel.text = ""

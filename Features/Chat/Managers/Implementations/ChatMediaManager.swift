@@ -58,9 +58,7 @@ final class ChatMediaManager: ChatMediaManaging {
     }
     
     func cacheVideoAssetsIfNeeded(for message: ChatMessage, in _: String) async {
-        let videoAttachments = message.attachments
-            .filter { $0.type == .video }
-            .sorted { $0.index < $1.index }
+        let videoAttachments = message.displayableVideoAttachments
         
         guard !videoAttachments.isEmpty else { return }
         
@@ -92,7 +90,7 @@ final class ChatMediaManager: ChatMediaManaging {
     }
     
     func prefetchVideoAssets(for messages: [ChatMessage], maxConcurrent: Int, roomID: String) async {
-        let videoMessages = messages.filter { $0.attachments.contains { $0.type == .video } }
+        let videoMessages = messages.filter { $0.hasDisplayableVideos }
         var index = 0
         
         while index < videoMessages.count {
@@ -240,11 +238,9 @@ final class ChatMediaManager: ChatMediaManaging {
 
     private func thumbnailPaths(for message: ChatMessage) -> [String] {
         var seen = Set<String>()
-        return message.attachments
-            .filter { $0.type == .image || $0.type == .video }
-            .sorted { $0.index < $1.index }
+        return message.displayableAttachments
             .compactMap { attachment in
-                let path = attachment.pathThumb
+                let path = attachment.normalizedThumbPath
                 guard !path.isEmpty, seen.insert(path).inserted else { return nil }
                 return path
             }
