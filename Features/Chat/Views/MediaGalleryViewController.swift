@@ -17,7 +17,9 @@ class MediaGalleryViewController: UICollectionViewController {
         let image: UIImage
         let isVideo: Bool
         let sentAt: Date
-        let storagePath: String?   // 원본(우선) 또는 썸네일 Storage path
+        let thumbnailPath: String?
+        let originalPath: String?
+        let videoPath: String?
     }
     
     private enum Section: Hashable { case day(Date) }
@@ -38,7 +40,7 @@ class MediaGalleryViewController: UICollectionViewController {
     var loadImageProvider: SimpleImageViewerVC.LoadImageProvider?
 
     init(items: [GalleryItem]) {
-        self.items = items
+        self.items = Self.uniqueItems(items)
         let layout = MediaGalleryViewController.makeLayout()
         super.init(collectionViewLayout: layout)
         self.title = "미디어"
@@ -170,6 +172,42 @@ class MediaGalleryViewController: UICollectionViewController {
 
     }
     private let items: [GalleryItem]
+
+    private static func uniqueItems(_ items: [GalleryItem]) -> [GalleryItem] {
+        var knownIDs = Set<String>()
+        var knownContentKeys = Set<String>()
+
+        return items.filter { item in
+            guard knownIDs.insert(item.id).inserted else { return false }
+
+            let mediaKind = item.isVideo ? "video" : "image"
+            let paths = [item.videoPath, item.originalPath, item.thumbnailPath]
+            let contentKeys = Set(paths.compactMap { canonicalPath($0) }.map { "\(mediaKind)#path:\($0)" })
+            if !contentKeys.isEmpty {
+                guard knownContentKeys.isDisjoint(with: contentKeys) else { return false }
+                knownContentKeys.formUnion(contentKeys)
+            }
+
+            return true
+        }
+    }
+
+    private static func canonicalPath(_ path: String?) -> String? {
+        guard let rawPath = path?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !rawPath.isEmpty else { return nil }
+
+        if rawPath.hasPrefix("file://"),
+           let url = URL(string: rawPath),
+           url.isFileURL {
+            return url.standardizedFileURL.path
+        }
+
+        if rawPath.hasPrefix("/") {
+            return URL(fileURLWithPath: rawPath).standardizedFileURL.path
+        }
+
+        return rawPath
+    }
 }
 
 final class GalleryThumbCell: UICollectionViewCell {
@@ -246,7 +284,8 @@ extension MediaGalleryViewController {
         Task { [weak self] in
             guard let self = self else { return }
             if g.isVideo {
-                if let path = g.storagePath, let url = await self.resolveVideoURL(forStoragePath: path) {
+                let playbackPath = g.videoPath ?? g.originalPath ?? g.thumbnailPath
+                if let path = playbackPath, let url = await self.resolveVideoURL(forStoragePath: path) {
                     await MainActor.run {
                         let pvc = VideoPlayerOverlayVC(url: url)
                         pvc.modalPresentationStyle = .fullScreen
@@ -265,12 +304,14 @@ extension MediaGalleryViewController {
             }
 
             // 이미지
-            if let path = g.storagePath, !path.isEmpty {
+            let thumbnailPath = g.thumbnailPath
+            let originalPath = g.originalPath ?? g.thumbnailPath
+            if thumbnailPath != nil || originalPath != nil {
                 await MainActor.run {
                     let page = SimpleImageViewerVC.ProgressivePage(
                         thumbnailImage: g.image,
-                        thumbnailPath: path,
-                        originalPath: path
+                        thumbnailPath: thumbnailPath,
+                        originalPath: originalPath
                     )
                     let viewer = SimpleImageViewerVC(
                         pages: [page],
@@ -294,6 +335,16 @@ extension MediaGalleryViewController {
     }
 
     private func resolveVideoURL(forStoragePath path: String) async -> URL? {
+        if path.hasPrefix("/") {
+            return URL(fileURLWithPath: path)
+        }
+
+        if path.hasPrefix("file://"),
+           let localURL = URL(string: path),
+           localURL.isFileURL {
+            return localURL
+        }
+
         // 이미 http/https/file 이면 그대로 사용 (레거시/디버그 호환)
         if let u = URL(string: path), let scheme = u.scheme?.lowercased(), ["http", "https", "file"].contains(scheme) {
             return u

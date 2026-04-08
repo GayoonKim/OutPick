@@ -81,16 +81,16 @@ class ChatRoomMediaCollectionViewCell: UICollectionViewCell {
         thumbnailLoader: @escaping MediaSectionImagePreviewCell.ThumbnailLoader
     ) {
         imageVideoLabel.text = "사진/동영상"
-        self.mediaItems = mediaItems
+        self.mediaItems = Self.uniqueMediaItems(from: mediaItems)
         self.thumbnailLoader = thumbnailLoader
-        horizontalCollectionView.isHidden = mediaItems.isEmpty
+        horizontalCollectionView.isHidden = self.mediaItems.isEmpty
         
         // 내부 미리보기 갱신
         if didAddHorizontalCollectionView {
             horizontalCollectionView.reloadData()
         }
         
-        if !mediaItems.isEmpty {
+        if !self.mediaItems.isEmpty {
             if !didAddHorizontalCollectionView {
                 self.contentView.addSubview(horizontalCollectionView)
                 
@@ -114,6 +114,23 @@ class ChatRoomMediaCollectionViewCell: UICollectionViewCell {
     
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    private static func uniqueMediaItems(from items: [ChatRoomSettingMediaItem]) -> [ChatRoomSettingMediaItem] {
+        var knownIDs = Set<String>()
+        var knownContentKeys = Set<String>()
+
+        return items.filter { item in
+            guard knownIDs.insert(item.id).inserted else { return false }
+
+            let dedupeKeys = item.dedupeKeys
+            if !dedupeKeys.isEmpty {
+                guard knownContentKeys.isDisjoint(with: dedupeKeys) else { return false }
+                knownContentKeys.formUnion(dedupeKeys)
+            }
+
+            return true
+        }
     }
 }
 

@@ -80,9 +80,7 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
     var onRoomUpdated: ((ChatRoom) -> Void)?
     var onRequestEditRoom: ((ChatRoom) -> Void)?
     var onLeaveCompleted: ((String) -> Void)?
-    
-    /// (옵션) 갤러리 오픈을 상위 컨테이너(ChatViewController)로 위임하고 싶을 때 설정
-    /// 파라미터로 넘겨지는 VC를 push/present 하는 책임은 호스트가 맡는다.
+
     var onRequestOpenGallery: ((UIViewController) -> Void)?
     
     init(
@@ -337,7 +335,9 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
                 image: item.image,
                 isVideo: item.isVideo,
                 sentAt: item.sentAt,
-                storagePath: item.storagePath
+                thumbnailPath: item.thumbnailPath,
+                originalPath: item.originalPath,
+                videoPath: item.videoPath
             )
         }
     }

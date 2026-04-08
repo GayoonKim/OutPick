@@ -16,7 +16,9 @@ final class ChatRoomSettingViewModel {
         let image: UIImage
         let isVideo: Bool
         let sentAt: Date
-        let storagePath: String?
+        let thumbnailPath: String?
+        let originalPath: String?
+        let videoPath: String?
     }
 
     private struct MaterializedMedia {
@@ -45,7 +47,7 @@ final class ChatRoomSettingViewModel {
     private var participantsHasMoreStorage: Bool
 
     private var mediaIsLoadingStorage: Bool = false
-    private var mediaHasMoreStorage: Bool = true
+    private var mediaHasMoreStorage: Bool = false
     private var galleryItemsByID: [String: GalleryItemModel] = [:]
 
     init(
@@ -114,12 +116,18 @@ final class ChatRoomSettingViewModel {
     }
 
     func loadInitialMedia() async {
+        guard !mediaIsLoadingStorage else { return }
+        mediaIsLoadingStorage = true
+        defer { mediaIsLoadingStorage = false }
+
         do {
             let result = try await loadMediaUseCase.loadInitial(room: roomInfo)
-            mediaItems = result.items
-            syncGalleryCache(with: result.items)
+            let uniqueItems = Self.uniqueMediaItems(from: result.items)
+            mediaItems = uniqueItems
+            syncGalleryCache(with: uniqueItems)
             mediaHasMoreStorage = result.hasMore
         } catch {
+            mediaHasMoreStorage = false
             print("❌ 초기 미디어 로드 실패:", error)
         }
     }
@@ -135,7 +143,7 @@ final class ChatRoomSettingViewModel {
 
             guard !result.items.isEmpty else { return }
 
-            mediaItems.append(contentsOf: result.items)
+            mediaItems = Self.mergeMediaItems(existing: mediaItems, appending: result.items)
             syncGalleryCache(with: mediaItems)
         } catch {
             print("❌ 미디어 추가 로드 실패:", error)
@@ -247,8 +255,34 @@ final class ChatRoomSettingViewModel {
             image: media.image,
             isVideo: media.item.isVideo,
             sentAt: media.item.sentAt,
-            storagePath: media.item.storagePath
+            thumbnailPath: media.item.thumbnailPath,
+            originalPath: media.item.originalPath,
+            videoPath: media.item.videoPath
         )
+    }
+
+    private static func mergeMediaItems(
+        existing: [ChatRoomSettingMediaItem],
+        appending incoming: [ChatRoomSettingMediaItem]
+    ) -> [ChatRoomSettingMediaItem] {
+        uniqueMediaItems(from: existing + incoming)
+    }
+
+    private static func uniqueMediaItems(from items: [ChatRoomSettingMediaItem]) -> [ChatRoomSettingMediaItem] {
+        var knownIDs = Set<String>()
+        var knownContentKeys = Set<String>()
+
+        return items.filter { item in
+            guard knownIDs.insert(item.id).inserted else { return false }
+
+            let dedupeKeys = item.dedupeKeys
+            if !dedupeKeys.isEmpty {
+                guard knownContentKeys.isDisjoint(with: dedupeKeys) else { return false }
+                knownContentKeys.formUnion(dedupeKeys)
+            }
+
+            return true
+        }
     }
 
     private static func drawPlayBadge(on image: UIImage) -> UIImage {

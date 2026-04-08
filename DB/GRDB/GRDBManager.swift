@@ -1517,14 +1517,28 @@ final class GRDBManager {
     func fetchLocalUsers(inRoom roomID: String) throws -> [LocalUser] {
         try dbPool.read { db in
             if try db.tableExists("RoomMember") {
-                let sql = """
-                SELECT u.*
-                  FROM LocalUser u
-                  JOIN RoomMember m ON m.userEmail = u.email
-                 WHERE m.roomID = ?
-                 ORDER BY u.nickname COLLATE NOCASE ASC
-                """
-                return try LocalUser.fetchAll(db, sql: sql, arguments: [roomID])
+                let rows = try Row.fetchAll(
+                    db,
+                    sql: """
+                        SELECT LOWER(m.userEmail) AS email,
+                               COALESCE(MAX(NULLIF(u.nickname, '')), LOWER(m.userEmail)) AS nickname,
+                               MAX(u.profileImagePath) AS profileImagePath
+                          FROM RoomMember m
+                          LEFT JOIN LocalUser u ON LOWER(u.email) = LOWER(m.userEmail)
+                         WHERE m.roomID = ?
+                         GROUP BY LOWER(m.userEmail)
+                         ORDER BY nickname COLLATE NOCASE ASC,
+                                  email COLLATE NOCASE ASC
+                    """,
+                    arguments: [roomID]
+                )
+                return rows.map { row in
+                    LocalUser(
+                        email: row["email"],
+                        nickname: row["nickname"],
+                        profileImagePath: row["profileImagePath"]
+                    )
+                }
             } else {
                 // 레거시 roomParticipant + userProfile 폴백 → LocalUser 형태로 매핑
                 let sql = """
@@ -1548,20 +1562,31 @@ final class GRDBManager {
         try dbPool.read { db in
             let hasLocal = (try? db.tableExists("LocalUser")) == true && (try? db.tableExists("RoomMember")) == true
             if hasLocal {
-                let list = try LocalUser.fetchAll(
+                let rows = try Row.fetchAll(
                     db,
                     sql: """
-                        SELECT u.*
-                          FROM LocalUser u
-                          JOIN RoomMember m ON m.userEmail = u.email
+                        SELECT LOWER(m.userEmail) AS email,
+                               COALESCE(MAX(NULLIF(u.nickname, '')), LOWER(m.userEmail)) AS nickname,
+                               MAX(u.profileImagePath) AS profileImagePath
+                          FROM RoomMember m
+                          LEFT JOIN LocalUser u ON LOWER(u.email) = LOWER(m.userEmail)
                          WHERE m.roomID = ?
-                         ORDER BY u.nickname COLLATE NOCASE ASC
+                         GROUP BY LOWER(m.userEmail)
+                         ORDER BY nickname COLLATE NOCASE ASC,
+                                  email COLLATE NOCASE ASC
                          LIMIT ? OFFSET ?
                     """,
                     arguments: [roomID, limit, offset]
                 )
+                let list = rows.map { row in
+                    LocalUser(
+                        email: row["email"],
+                        nickname: row["nickname"],
+                        profileImagePath: row["profileImagePath"]
+                    )
+                }
                 let total = try Int.fetchOne(db,
-                    sql: "SELECT COUNT(*) FROM RoomMember WHERE roomID = ?",
+                    sql: "SELECT COUNT(DISTINCT LOWER(userEmail)) FROM RoomMember WHERE roomID = ?",
                     arguments: [roomID]) ?? list.count
                 return (list, total)
             } else if (try? db.tableExists("userProfile")) == true && (try? db.tableExists("roomParticipant")) == true {

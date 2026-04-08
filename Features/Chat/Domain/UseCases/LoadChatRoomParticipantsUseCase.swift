@@ -141,17 +141,29 @@ final class LoadChatRoomParticipantsUseCase: LoadChatRoomParticipantsUseCaseProt
 
     private func reconcileMembership(room: ChatRoom, roomID: String) throws {
         let authoritativeParticipants = authoritativeParticipantEmails(for: room)
-        let localParticipants = Set(
-            try participantsRepository.userEmails(in: roomID).map { normalizedEmail($0) }
-        )
+        let localParticipantEmails = try participantsRepository.userEmails(in: roomID)
+        let localParticipantsByNormalized = Dictionary(grouping: localParticipantEmails, by: normalizedEmail)
+        let localParticipants = Set(localParticipantsByNormalized.keys)
 
         let removedParticipants = localParticipants.subtracting(authoritativeParticipants).sorted()
-        for email in removedParticipants {
-            try participantsRepository.removeLocalUser(email, fromRoom: roomID)
+        for normalized in removedParticipants {
+            for rawEmail in localParticipantsByNormalized[normalized] ?? [] {
+                try participantsRepository.removeLocalUser(rawEmail, fromRoom: roomID)
+            }
         }
 
-        let missingParticipants = Array(authoritativeParticipants.subtracting(localParticipants)).sorted()
-        try attachPlaceholderParticipants(missingParticipants, toRoom: roomID)
+        for normalized in authoritativeParticipants {
+            let rawEmails = localParticipantsByNormalized[normalized] ?? []
+            let nonCanonicalEmails = rawEmails.filter { $0 != normalized }
+            for rawEmail in nonCanonicalEmails {
+                try participantsRepository.removeLocalUser(rawEmail, fromRoom: roomID)
+            }
+        }
+
+        // RoomMember만 있고 LocalUser가 없는 상태도 화면에서 누락되지 않도록,
+        // authoritative participant 전원에 대해 멤버십 + 최소 LocalUser row를 보장한다.
+        let requiredParticipants = Array(authoritativeParticipants).sorted()
+        try attachPlaceholderParticipants(requiredParticipants, toRoom: roomID)
     }
 
     private func fillParticipantsFromServerIfNeeded(

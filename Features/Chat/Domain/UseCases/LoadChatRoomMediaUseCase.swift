@@ -53,7 +53,7 @@ final class LoadChatRoomMediaUseCase: LoadChatRoomMediaUseCaseProtocol {
 
         try loadInitialLocalBatch(roomID: roomID)
 
-        var items = dequeueLocalItems(limit: pageSize)
+        var items = try collectLocalItems(roomID: roomID, limit: pageSize)
         if items.count < pageSize {
             let remoteItems = await fetchRemoteItemsIfAvailable(
                 roomID: roomID,
@@ -74,15 +74,9 @@ final class LoadChatRoomMediaUseCase: LoadChatRoomMediaUseCaseProtocol {
             return makeResult(items: [])
         }
 
-        if !pendingLocalItems.isEmpty && !isUsingRemoteHistory {
-            let items = dequeueLocalItems(limit: pageSize)
-            return makeResult(items: items)
-        }
-
-        if localHasMore && !isUsingRemoteHistory {
-            try loadNextLocalBatch(roomID: roomID)
-            if !pendingLocalItems.isEmpty {
-                let items = dequeueLocalItems(limit: pageSize)
+        if !isUsingRemoteHistory {
+            let items = try collectLocalItems(roomID: roomID, limit: pageSize)
+            if !items.isEmpty {
                 return makeResult(items: items)
             }
         }
@@ -96,32 +90,38 @@ final class LoadChatRoomMediaUseCase: LoadChatRoomMediaUseCaseProtocol {
         videos: [VideoIndexMeta],
         limit: Int? = nil
     ) -> [ChatRoomSettingMediaItem] {
-        var unified: [ChatRoomSettingMediaItem] = images.map {
-            ChatRoomSettingMediaItem(
-                messageID: $0.messageID,
-                idx: $0.idx,
-                thumbKey: $0.thumbKey,
-                originalKey: $0.originalKey,
-                thumbURL: $0.thumbURL,
-                originalURL: $0.originalURL,
-                localThumb: $0.localThumb,
-                sentAt: $0.sentAt,
-                isVideo: false
-            )
-        }
-        unified.append(contentsOf: videos.map {
-            ChatRoomSettingMediaItem(
-                messageID: $0.messageID,
-                idx: $0.idx,
-                thumbKey: $0.thumbKey,
-                originalKey: $0.originalKey,
-                thumbURL: $0.thumbURL,
-                originalURL: $0.originalURL,
-                localThumb: $0.localThumb,
-                sentAt: $0.sentAt,
-                isVideo: true
-            )
-        })
+        var unified: [ChatRoomSettingMediaItem] = images
+            .filter { !$0.isFailed }
+            .map {
+                ChatRoomSettingMediaItem(
+                    messageID: $0.messageID,
+                    idx: $0.idx,
+                    hash: $0.hash,
+                    thumbKey: $0.thumbKey,
+                    originalKey: $0.originalKey,
+                    thumbURL: $0.thumbURL,
+                    originalURL: $0.originalURL,
+                    localThumb: $0.localThumb,
+                    sentAt: $0.sentAt,
+                    isVideo: false
+                )
+            }
+        unified.append(contentsOf: videos
+            .filter { !$0.isFailed }
+            .map {
+                ChatRoomSettingMediaItem(
+                    messageID: $0.messageID,
+                    idx: $0.idx,
+                    hash: $0.hash,
+                    thumbKey: $0.thumbKey,
+                    originalKey: $0.originalKey,
+                    thumbURL: $0.thumbURL,
+                    originalURL: $0.originalURL,
+                    localThumb: $0.localThumb,
+                    sentAt: $0.sentAt,
+                    isVideo: true
+                )
+            })
 
         unified.sort { lhs, rhs in
             if lhs.sentAt != rhs.sentAt { return lhs.sentAt > rhs.sentAt }
@@ -205,9 +205,38 @@ final class LoadChatRoomMediaUseCase: LoadChatRoomMediaUseCaseProtocol {
 
         var knownIDs = Set(pendingLocalItems.map(\.id))
         knownIDs.formUnion(deliveredItemIDs)
+        var knownContentKeys = Set(pendingLocalItems.flatMap(\.dedupeKeys))
+        knownContentKeys.formUnion(deliveredItems.flatMap(\.dedupeKeys))
 
-        let unique = items.filter { knownIDs.insert($0.id).inserted }
+        let unique = items.filter { shouldInclude($0, knownIDs: &knownIDs, knownContentKeys: &knownContentKeys) }
         pendingLocalItems.append(contentsOf: unique)
+    }
+
+    private func collectLocalItems(roomID: String, limit: Int) throws -> [ChatRoomSettingMediaItem] {
+        guard limit > 0 else { return [] }
+
+        var collected = dequeueLocalItems(limit: limit)
+
+        while collected.count < limit && localHasMore && !isUsingRemoteHistory {
+            let previousImageCount = imageIndexItems.count
+            let previousVideoCount = videoIndexItems.count
+            try loadNextLocalBatch(roomID: roomID)
+
+            let needed = limit - collected.count
+            let nextItems = dequeueLocalItems(limit: needed)
+            if !nextItems.isEmpty {
+                collected.append(contentsOf: nextItems)
+                continue
+            }
+
+            if previousImageCount == imageIndexItems.count,
+               previousVideoCount == videoIndexItems.count {
+                localHasMore = false
+                break
+            }
+        }
+
+        return collected
     }
 
     private func dequeueLocalItems(limit: Int) -> [ChatRoomSettingMediaItem] {
@@ -251,9 +280,12 @@ final class LoadChatRoomMediaUseCase: LoadChatRoomMediaUseCaseProtocol {
         try localMediaRepository.upsertMediaIndexEntries(entries)
 
         var knownIDs = deliveredItemIDs
+        knownIDs.formUnion(pendingLocalItems.map(\.id))
+        var knownContentKeys = Set(deliveredItems.flatMap(\.dedupeKeys))
+        knownContentKeys.formUnion(pendingLocalItems.flatMap(\.dedupeKeys))
         let items = entries
             .map(makeMediaItem(from:))
-            .filter { knownIDs.insert($0.id).inserted }
+            .filter { shouldInclude($0, knownIDs: &knownIDs, knownContentKeys: &knownContentKeys) }
 
         registerDelivered(items)
         return items
@@ -306,6 +338,7 @@ final class LoadChatRoomMediaUseCase: LoadChatRoomMediaUseCaseProtocol {
         ChatRoomSettingMediaItem(
             messageID: entry.messageID,
             idx: entry.idx,
+            hash: entry.hash,
             thumbKey: entry.thumbKey,
             originalKey: entry.originalKey,
             thumbURL: entry.thumbURL,
@@ -314,5 +347,21 @@ final class LoadChatRoomMediaUseCase: LoadChatRoomMediaUseCaseProtocol {
             sentAt: entry.sentAt,
             isVideo: entry.type == .video
         )
+    }
+
+    private func shouldInclude(
+        _ item: ChatRoomSettingMediaItem,
+        knownIDs: inout Set<String>,
+        knownContentKeys: inout Set<String>
+    ) -> Bool {
+        guard knownIDs.insert(item.id).inserted else { return false }
+
+        let dedupeKeys = item.dedupeKeys
+        if !dedupeKeys.isEmpty {
+            guard knownContentKeys.isDisjoint(with: dedupeKeys) else { return false }
+            knownContentKeys.formUnion(dedupeKeys)
+        }
+
+        return true
     }
 }
