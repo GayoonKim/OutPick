@@ -43,4 +43,8 @@ final class DefaultMainTabBuilder: MainTabBuilding {
             return UINavigationController(rootViewController: UIViewController())
         }
     }
+
+    func openChatRoom(roomID: String, from source: UIViewController) async throws {
+        try await chatCoordinator.openRoom(roomID: roomID, from: source)
+    }
 }

@@ -50,6 +50,9 @@ protocol UserProfileRepositoryProtocol {
         onUpdate: @escaping (String?) -> Void,
         onError: @escaping (Error) -> Void
     ) -> ListenerRegistration
+
+    /// 현재 로그인 디바이스의 push/presence 상태 갱신 (users/{id}/devices/{deviceID})
+    func upsertPushDevice(userDocumentID: String, state: PushDeviceState) async throws
 }
 
 extension UserProfileRepositoryProtocol {

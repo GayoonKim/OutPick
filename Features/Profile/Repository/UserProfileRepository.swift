@@ -428,6 +428,60 @@ final class UserProfileRepository: UserProfileRepositoryProtocol {
         }
     }
 
+    func upsertPushDevice(userDocumentID: String, state: PushDeviceState) async throws {
+        let normalizedEmail = normalizeEmail(state.email)
+        guard !userDocumentID.isEmpty, !normalizedEmail.isEmpty, !state.deviceID.isEmpty else { return }
+
+        let userRef = db.collection(usersCollection).document(userDocumentID)
+        let deviceRef = userRef.collection("devices").document(state.deviceID)
+
+        var payload: [String: Any] = [
+            "deviceID": state.deviceID,
+            "email": normalizedEmail,
+            "platform": "ios",
+            "pushEnabled": state.pushEnabled,
+            "appState": state.appState.rawValue,
+            "updatedAt": FieldValue.serverTimestamp()
+        ]
+
+        if let token = state.fcmToken, !token.isEmpty {
+            payload["fcmToken"] = token
+            payload["fcmTokenUpdatedAt"] = FieldValue.serverTimestamp()
+        } else {
+            payload["fcmToken"] = FieldValue.delete()
+        }
+
+        if let visibleRoomID = state.visibleRoomID, !visibleRoomID.isEmpty {
+            payload["visibleRoomID"] = visibleRoomID
+        } else {
+            payload["visibleRoomID"] = FieldValue.delete()
+        }
+
+        if let socketID = state.socketID, !socketID.isEmpty {
+            payload["socketId"] = socketID
+        } else {
+            payload["socketId"] = FieldValue.delete()
+        }
+
+        switch state.appState {
+        case .foreground:
+            payload["lastForegroundAt"] = FieldValue.serverTimestamp()
+            payload["lastDisconnectAt"] = FieldValue.delete()
+        case .background:
+            payload["lastBackgroundAt"] = FieldValue.serverTimestamp()
+        case .offline:
+            payload["lastDisconnectAt"] = FieldValue.serverTimestamp()
+        }
+
+        let batch = db.batch()
+        batch.setData([
+            "email": normalizedEmail,
+            "updatedAt": FieldValue.serverTimestamp()
+        ], forDocument: userRef, merge: true)
+        batch.setData(payload, forDocument: deviceRef, merge: true)
+        try await batch.commit()
+    }
+
     private static func toInt64(_ value: Any?) -> Int64? {
         switch value {
         case let intValue as Int:

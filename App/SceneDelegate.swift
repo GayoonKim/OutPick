@@ -53,8 +53,30 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             )
         }
         guard let coordinator else { return }
+
+        if let notificationResponse = connectionOptions.notificationResponse {
+            NotificationRouter.shared.storePendingRoute(from: notificationResponse.notification.request.content.userInfo)
+        }
         
         coordinator.start(windowScene: windowScene)
     }
-    
+
+    func sceneDidBecomeActive(_ scene: UIScene) {
+        Task { @MainActor in
+            await PresenceManager.shared.handleAppDidBecomeActive()
+            AppCoordinator.activeCoordinator?.consumePendingNotificationRouteIfPossible()
+        }
+    }
+
+    func sceneWillResignActive(_ scene: UIScene) {
+        Task { @MainActor in
+            await PresenceManager.shared.handleAppWillResignActive()
+        }
+    }
+
+    func sceneDidEnterBackground(_ scene: UIScene) {
+        Task { @MainActor in
+            await PresenceManager.shared.handleAppDidEnterBackground()
+        }
+    }
 }

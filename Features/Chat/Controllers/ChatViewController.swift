@@ -402,12 +402,20 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         BannerManager.shared.setVisibleRoom(self.room?.ID ?? "")
-        
+
+        if let roomID = self.room?.ID, !roomID.isEmpty {
+            Task { @MainActor in
+                await PresenceManager.shared.enterRoom(roomID)
+            }
+        }
     }
     
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         BannerManager.shared.setVisibleRoom(nil)
+        Task { @MainActor in
+            await PresenceManager.shared.leaveCurrentRoom()
+        }
         flushLastReadSeq(trigger: "viewWillDisappear")
         needsTransientBindingsRestore = !(self.isMovingFromParent || self.isBeingDismissed)
         

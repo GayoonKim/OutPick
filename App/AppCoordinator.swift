@@ -9,9 +9,11 @@ import UIKit
 
 @MainActor
 final class AppCoordinator {
+    static weak var activeCoordinator: AppCoordinator?
 
     private let window: UIWindow
     private weak var currentWindowScene: UIWindowScene?
+    private weak var mainTabController: CustomTabBarViewController?
 
     private let lookbookProvider: LookbookRepositoryProvider
     private var lookbookContainer: LookbookContainer?
@@ -35,6 +37,7 @@ final class AppCoordinator {
         self.lookbookProvider = lookbookProvider
         self.userProfileRepository = userProfileRepository
         self.window.backgroundColor = .systemBackground
+        Self.activeCoordinator = self
     }
 
     @MainActor
@@ -114,12 +117,16 @@ final class AppCoordinator {
     @MainActor
     private func showLogin(windowScene: UIWindowScene) {
         self.joinedRoomsStore.clear()
+        Task { @MainActor in
+            await PresenceManager.shared.handleLogout()
+        }
         SocketIOManager.shared.closeConnection()
         SocketIOManager.shared.resetRoomMembership()
 
         self.profileCoordinator = nil
         self.lookbookContainer = nil
         self.chatContainer = nil
+        self.mainTabController = nil
         // 로그인 화면으로 들어갈 땐 강제로그아웃 콜백을 해제해도 됨(이미 로그아웃 상태/또는 루트가 로그인)
         // 중복 라우팅(콜백 재호출) 방지 목적
         LoginManager.shared.onForceLogout = nil
@@ -161,8 +168,16 @@ final class AppCoordinator {
 
         // 탭 조립은 MainTabCompositionRoot가 담당 (CustomTabBarVC는 룩북을 모름)
         let tab = MainTabCompositionRoot.makeMainTab(lookbookContainer: lbcontainer, chatContainer: chatContainer)
+        self.mainTabController = tab
 
         setRoot(tab, animated: true)
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await PresenceManager.shared.startAuthenticatedSession()
+            await PushNotificationManager.shared.startForAuthenticatedUser()
+            self.consumePendingNotificationRouteIfPossible()
+        }
     }
 
     @MainActor
@@ -243,5 +258,31 @@ final class AppCoordinator {
         let created = ChatContainer(joinedRoomsStore: joinedRoomsStore)
         self.chatContainer = created
         return created
+    }
+
+    @MainActor
+    func consumePendingNotificationRouteIfPossible() {
+        guard !LoginManager.shared.getUserEmail.isEmpty else { return }
+        guard let route = NotificationRouter.shared.consumePendingRoute() else { return }
+        guard let mainTabController else {
+            NotificationRouter.shared.setPendingRoute(route)
+            return
+        }
+
+        mainTabController.switchScreen(1)
+
+        guard let builder = mainTabController.tabBuilder as? DefaultMainTabBuilder,
+              let presenter = mainTabController.activeContentViewController else {
+            NotificationRouter.shared.setPendingRoute(route)
+            return
+        }
+
+        Task { @MainActor in
+            do {
+                try await builder.openChatRoom(roomID: route.roomID, from: presenter)
+            } catch {
+                print("[AppCoordinator] failed to open push route room(\(route.roomID)): \(error)")
+            }
+        }
     }
 }

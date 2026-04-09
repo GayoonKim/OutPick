@@ -76,6 +76,16 @@ final class ChatCoordinator {
         ChatModalTransitionManager.present(chatRoomVC, from: source)
     }
 
+    func openRoom(roomID: String, from source: UIViewController) async throws {
+        guard !roomID.isEmpty else { throw FirebaseError.FailedToFetchRoom }
+
+        let rooms = try await container.roomRepository.fetchRoomsWithIDs(byIDs: [roomID])
+        guard let room = rooms.first else { throw FirebaseError.FailedToFetchRoom }
+
+        let presenter = topMostPresenter(startingFrom: source)
+        presentChatRoom(room: room, from: presenter)
+    }
+
     private func presentCreateRoom(from source: UIViewController) {
         ChatDependencyContainer.provider = container.provider
         ChatDependencyContainer.firebaseRepositories = container.firebaseRepositories
@@ -135,6 +145,14 @@ final class ChatCoordinator {
         chatRoomVC.router = self
         chatRoomVC.modalPresentationStyle = .fullScreen
         return chatRoomVC
+    }
+
+    private func topMostPresenter(startingFrom source: UIViewController) -> UIViewController {
+        var current: UIViewController = source
+        while let presented = current.presentedViewController {
+            current = presented
+        }
+        return current
     }
 }
 

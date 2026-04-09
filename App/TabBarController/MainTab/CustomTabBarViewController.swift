@@ -141,4 +141,28 @@ final class CustomTabBarViewController: UIViewController {
     func invalidateAllTabsCache(reloadVisibleTab: Bool = true) {
         invalidateAllTabCaches(reloadVisibleTab: reloadVisibleTab)
     }
+
+    var activeContentViewController: UIViewController? {
+        resolvedPresenter(from: currentChildViewController)
+    }
+
+    private func resolvedPresenter(from root: UIViewController?) -> UIViewController? {
+        guard var current = root else { return nil }
+
+        if let nav = current as? UINavigationController {
+            current = nav.visibleViewController ?? nav
+        } else if let tab = current as? UITabBarController {
+            current = tab.selectedViewController ?? tab
+        }
+
+        while let presented = current.presentedViewController {
+            current = presented
+        }
+
+        if let nav = current as? UINavigationController {
+            return nav.visibleViewController ?? nav
+        }
+
+        return current
+    }
 }
