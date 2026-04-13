@@ -25,7 +25,6 @@ final class LoadChatRoomParticipantsUseCase: LoadChatRoomParticipantsUseCaseProt
     private let pageSize: Int
 
     private var activeRoomID: String?
-    private var nextOffset: Int = 0
     private var hasMore: Bool = true
     private var loadedParticipantEmails: Set<String> = []
 
@@ -50,8 +49,7 @@ final class LoadChatRoomParticipantsUseCase: LoadChatRoomParticipantsUseCaseProt
         )
 
         loadedParticipantEmails = Set(page.map { normalizedEmail($0.email) })
-        nextOffset = page.count
-        hasMore = total > page.count
+        hasMore = total > loadedParticipantEmails.count
 
         return ChatRoomParticipantsLoadResult(users: page, hasMore: hasMore)
     }
@@ -75,8 +73,7 @@ final class LoadChatRoomParticipantsUseCase: LoadChatRoomParticipantsUseCaseProt
         )
 
         loadedParticipantEmails = Set(page.map { normalizedEmail($0.email) })
-        nextOffset = page.count
-        hasMore = total > page.count
+        hasMore = total > loadedParticipantEmails.count
 
         return ChatRoomParticipantsLoadResult(users: page, hasMore: hasMore)
     }
@@ -91,52 +88,48 @@ final class LoadChatRoomParticipantsUseCase: LoadChatRoomParticipantsUseCaseProt
             return ChatRoomParticipantsLoadResult(users: [], hasMore: false)
         }
 
-        let currentOffset = nextOffset
-        var (page, total) = try participantsRepository.fetchLocalUsersPage(
-            roomID: roomID,
-            offset: currentOffset,
-            limit: pageSize
-        )
-        var deduped = page.filter { !loadedParticipantEmails.contains(normalizedEmail($0.email)) }
+        try reconcileMembership(room: room, roomID: roomID)
 
-        if deduped.count < pageSize {
-            try fillParticipantsFromServerIfNeeded(
-                room: room,
-                roomID: roomID,
-                targetCount: currentOffset + pageSize
-            )
-            (page, total) = try participantsRepository.fetchLocalUsersPage(
-                roomID: roomID,
-                offset: currentOffset,
-                limit: pageSize
-            )
-            deduped = page.filter { !loadedParticipantEmails.contains(normalizedEmail($0.email)) }
+        var allUsers = try participantsRepository.fetchLocalUsers(in: roomID)
+        var nextUsers = nextUsersForDisplay(from: allUsers)
+
+        if nextUsers.isEmpty {
+            let authoritativeCount = authoritativeParticipantEmails(for: room).count
+            if allUsers.count < authoritativeCount {
+                try fillParticipantsFromServerIfNeeded(
+                    room: room,
+                    roomID: roomID,
+                    targetCount: authoritativeCount
+                )
+                allUsers = try participantsRepository.fetchLocalUsers(in: roomID)
+                nextUsers = nextUsersForDisplay(from: allUsers)
+            }
         }
 
-        if !deduped.isEmpty {
-            try await refreshProfiles(emails: deduped.map(\.email))
-            (page, total) = try participantsRepository.fetchLocalUsersPage(
-                roomID: roomID,
-                offset: currentOffset,
-                limit: pageSize
-            )
-            deduped = page.filter { !loadedParticipantEmails.contains(normalizedEmail($0.email)) }
+        if !nextUsers.isEmpty {
+            try await refreshProfiles(emails: nextUsers.map(\.email))
+            allUsers = try participantsRepository.fetchLocalUsers(in: roomID)
+            nextUsers = nextUsersForDisplay(from: allUsers)
         }
 
-        if !deduped.isEmpty {
-            nextOffset += deduped.count
-            loadedParticipantEmails.formUnion(deduped.map { normalizedEmail($0.email) })
-        }
-        hasMore = nextOffset < total
+        loadedParticipantEmails.formUnion(nextUsers.map { normalizedEmail($0.email) })
+        hasMore = loadedParticipantEmails.count < allUsers.count
 
-        return ChatRoomParticipantsLoadResult(users: deduped, hasMore: hasMore)
+        return ChatRoomParticipantsLoadResult(users: nextUsers, hasMore: hasMore)
     }
 
     private func resetState(for roomID: String) {
         activeRoomID = roomID
-        nextOffset = 0
         hasMore = true
         loadedParticipantEmails = []
+    }
+
+    private func nextUsersForDisplay(from users: [LocalUser]) -> [LocalUser] {
+        Array(
+            users.lazy
+                .filter { !self.loadedParticipantEmails.contains(self.normalizedEmail($0.email)) }
+                .prefix(pageSize)
+        )
     }
 
     private func reconcileMembership(room: ChatRoom, roomID: String) throws {

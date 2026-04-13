@@ -22,7 +22,7 @@ enum UserProfileDetailCompositionRoot {
         let viewModel = UserProfileDetailViewModel(
             email: email,
             seedNickname: seedNickname,
-            seedAvatarPath: seedAvatarPath,
+            seedAvatarSource: AvatarImageSource(seedPath: seedAvatarPath),
             loadUserProfileDetailUseCase: useCase,
             onBack: onBack
         )

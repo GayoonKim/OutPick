@@ -10,7 +10,7 @@ final class UserProfileDetailViewModel {
 
     struct State: Equatable {
         var nickname: String
-        var avatarPath: String?
+        var avatarSource: AvatarImageSource
         var isLoading: Bool = false
     }
 
@@ -28,7 +28,7 @@ final class UserProfileDetailViewModel {
     init(
         email: String,
         seedNickname: String,
-        seedAvatarPath: String?,
+        seedAvatarSource: AvatarImageSource,
         loadUserProfileDetailUseCase: LoadUserProfileDetailUseCaseProtocol,
         onBack: @escaping () -> Void
     ) {
@@ -39,7 +39,7 @@ final class UserProfileDetailViewModel {
         let fallbackNickname = seedNickname.trimmingCharacters(in: .whitespacesAndNewlines)
         self.state = State(
             nickname: fallbackNickname.isEmpty ? "알 수 없는 사용자" : fallbackNickname,
-            avatarPath: seedAvatarPath
+            avatarSource: seedAvatarSource
         )
     }
 
@@ -67,25 +67,9 @@ final class UserProfileDetailViewModel {
                 state.nickname = nickname
             }
 
-            if let avatarPath = preferredAvatarPath(from: profile) {
-                state.avatarPath = avatarPath
-            }
+            state.avatarSource = state.avatarSource.merged(with: profile)
         } catch {
             // seed data를 그대로 유지해 즉시 표시한다.
         }
-    }
-
-    private func preferredAvatarPath(from profile: UserProfile) -> String? {
-        let thumbPath = profile.thumbPath?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let thumbPath, !thumbPath.isEmpty {
-            return thumbPath
-        }
-
-        let originalPath = profile.originalPath?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let originalPath, !originalPath.isEmpty {
-            return originalPath
-        }
-
-        return nil
     }
 }

@@ -12,9 +12,25 @@ import Photos
 // Image viewer with paging, initial offset, and progressive loading support.
 class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizerDelegate {
     struct ProgressivePage {
+        let initialImage: UIImage?
         let thumbnailImage: UIImage?
         let thumbnailPath: String?
         let originalPath: String?
+        let shouldAlwaysResolveThumbnail: Bool
+
+        init(
+            initialImage: UIImage? = nil,
+            thumbnailImage: UIImage? = nil,
+            thumbnailPath: String?,
+            originalPath: String?,
+            shouldAlwaysResolveThumbnail: Bool = false
+        ) {
+            self.initialImage = initialImage
+            self.thumbnailImage = thumbnailImage
+            self.thumbnailPath = thumbnailPath
+            self.originalPath = originalPath
+            self.shouldAlwaysResolveThumbnail = shouldAlwaysResolveThumbnail
+        }
     }
 
     typealias CachedImageProvider = (String) async -> UIImage?
@@ -132,8 +148,8 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
                 iv.heightAnchor.constraint(equalTo: zsv.frameLayoutGuide.heightAnchor)
             ])
 
-            if let thumbnail = pages[index].thumbnailImage {
-                iv.image = thumbnail
+            if let initialImage = pages[index].initialImage ?? pages[index].thumbnailImage {
+                iv.image = initialImage
             }
 
             pageZoomScrolls.append(zsv)
@@ -472,7 +488,7 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
             }
 
             if Task.isCancelled { return }
-            if self.currentImage(at: index) == nil,
+            if await self.shouldResolveThumbnail(for: index, page: page),
                let thumbnail = await self.loadThumbnail(for: page) {
                 self.setImage(thumbnail, at: index)
             }
@@ -513,6 +529,14 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
             return cached
         }
         return await loadImageFromPath(page.thumbnailPath, maxBytes: thumbnailMaxBytes)
+    }
+
+    @MainActor
+    private func shouldResolveThumbnail(for index: Int, page: ProgressivePage) -> Bool {
+        if page.shouldAlwaysResolveThumbnail {
+            return true
+        }
+        return currentImage(at: index) == nil
     }
 
     private func cachedImageFromPath(_ path: String?) async -> UIImage? {

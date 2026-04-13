@@ -105,6 +105,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private let provider: ChatManagerProviding
     var injectedFirebaseRepositories: FirebaseRepositoryProviding?
     weak var router: ChatRoomRouting?
+    private var userProfileDetailCoordinator: UserProfileDetailCoordinator?
     private let profileScopeID = UUID()
     private var isProfileSyncBound = false
     private var profileSyncCancellable: AnyCancellable?
@@ -1594,8 +1595,36 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                     }
                 }
             )
+            settingVC.onRequestShowUserProfile = { [weak self, weak settingVC] user in
+                guard let self, let settingVC else { return }
+                self.presentUserProfileDetail(
+                    from: settingVC,
+                    email: user.email,
+                    nickname: user.nickname,
+                    avatarPath: user.profileImagePath
+                )
+            }
             self.presentSettingPanel(settingVC)
         }
+    }
+
+    @MainActor
+    private func presentUserProfileDetail(
+        from source: UIViewController,
+        email: String,
+        nickname: String,
+        avatarPath: String?
+    ) {
+        let coordinator = UserProfileDetailCoordinator(
+            presentingViewController: source,
+            provider: provider,
+            repositories: firebaseRepositories,
+            onFinish: { [weak self] in
+                self?.userProfileDetailCoordinator = nil
+            }
+        )
+        userProfileDetailCoordinator = coordinator
+        coordinator.start(email: email, nickname: nickname, avatarPath: avatarPath)
     }
 
     @MainActor

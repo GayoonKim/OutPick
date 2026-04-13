@@ -154,6 +154,24 @@ final class ChatCoordinator {
         }
         return current
     }
+
+    private func presentUserProfile(
+        from source: UIViewController,
+        email: String,
+        nickname: String,
+        avatarPath: String?
+    ) {
+        let coordinator = UserProfileDetailCoordinator(
+            presentingViewController: source,
+            provider: container.provider,
+            repositories: container.firebaseRepositories,
+            onFinish: { [weak self] in
+                self?.userProfileDetailCoordinator = nil
+            }
+        )
+        userProfileDetailCoordinator = coordinator
+        coordinator.start(email: email, nickname: nickname, avatarPath: avatarPath)
+    }
 }
 
 extension ChatCoordinator: ChatRoomRouting {
@@ -179,19 +197,19 @@ extension ChatCoordinator: ChatRoomRouting {
             guard let self, let settingVC else { return }
             self.presentRoomEdit(from: settingVC, room: room)
         }
+        settingVC.onRequestShowUserProfile = { [weak self, weak settingVC] user in
+            guard let self, let settingVC else { return }
+            self.presentUserProfile(
+                from: settingVC,
+                email: user.email,
+                nickname: user.nickname,
+                avatarPath: user.profileImagePath
+            )
+        }
         source.presentSettingPanel(settingVC)
     }
 
     func showUserProfile(from source: ChatViewController, email: String, nickname: String, avatarPath: String?) {
-        let coordinator = UserProfileDetailCoordinator(
-            presentingViewController: source,
-            provider: container.provider,
-            repositories: container.firebaseRepositories,
-            onFinish: { [weak self] in
-                self?.userProfileDetailCoordinator = nil
-            }
-        )
-        userProfileDetailCoordinator = coordinator
-        coordinator.start(email: email, nickname: nickname, avatarPath: avatarPath)
+        presentUserProfile(from: source, email: email, nickname: nickname, avatarPath: avatarPath)
     }
 }

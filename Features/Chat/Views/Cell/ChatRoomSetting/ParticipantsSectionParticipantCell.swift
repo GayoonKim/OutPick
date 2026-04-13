@@ -12,6 +12,7 @@ class ParticipantsSectionParticipantCell: UICollectionViewCell {
     
     private var userProfiles: [LocalUser] = []
     private var avatarImageManager: ChatAvatarImageManaging?
+    var onSelectParticipant: ((LocalUser) -> Void)?
     
     private lazy var participantLabel: UILabel = {
         let label = UILabel()
@@ -73,6 +74,13 @@ class ParticipantsSectionParticipantCell: UICollectionViewCell {
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        onSelectParticipant = nil
+        userProfiles = []
+        avatarImageManager = nil
+    }
     
     func configureCell(_ profiles: [LocalUser], avatarImageManager: ChatAvatarImageManaging) {
         print(#function, "호출 완료: ", profiles.map { $0.nickname })
@@ -118,6 +126,8 @@ extension ParticipantsSectionParticipantCell: UICollectionViewDataSource, UIColl
     }
     
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
-        collectionView.cellForItem(at: indexPath)?.backgroundView?.backgroundColor = .blue
+        guard indexPath.item < userProfiles.count else { return }
+        onSelectParticipant?(userProfiles[indexPath.item])
+        collectionView.deselectItem(at: indexPath, animated: true)
     }
 }

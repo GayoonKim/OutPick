@@ -80,6 +80,7 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
     var onRoomUpdated: ((ChatRoom) -> Void)?
     var onRequestEditRoom: ((ChatRoom) -> Void)?
     var onLeaveCompleted: ((String) -> Void)?
+    var onRequestShowUserProfile: ((LocalUser) -> Void)?
 
     var onRequestOpenGallery: ((UIViewController) -> Void)?
     
@@ -286,6 +287,9 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
             case let .participantsItem(localUsers):
                 let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ParticipantsSectionParticipantCell.reuseIdentifier, for: indexPath) as! ParticipantsSectionParticipantCell
                 cell.configureCell(localUsers, avatarImageManager: self.avatarImageManager)
+                cell.onSelectParticipant = { [weak self] user in
+                    self?.onRequestShowUserProfile?(user)
+                }
 
                 return cell
             }
@@ -444,6 +448,9 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
             if let indexPath = self.dataSource.indexPath(for: .participantsItem(localUsers)),
                let cell = self.collectionView.cellForItem(at: indexPath) as? ParticipantsSectionParticipantCell {
                 cell.configureCell(localUsers, avatarImageManager: self.avatarImageManager)
+                cell.onSelectParticipant = { [weak self] user in
+                    self?.onRequestShowUserProfile?(user)
+                }
             }
         }
     }

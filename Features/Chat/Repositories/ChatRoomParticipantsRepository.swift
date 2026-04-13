@@ -8,6 +8,7 @@
 import Foundation
 
 protocol ChatRoomParticipantsRepositoryProtocol {
+    func fetchLocalUsers(in roomID: String) throws -> [LocalUser]
     func fetchLocalUsersPage(roomID: String, offset: Int, limit: Int) throws -> ([LocalUser], Int)
     func fetchLocalUser(email: String) throws -> LocalUser?
     func userEmails(in roomID: String) throws -> [String]
@@ -21,6 +22,10 @@ final class GRDBChatRoomParticipantsRepository: ChatRoomParticipantsRepositoryPr
 
     init(grdbManager: GRDBManager = .shared) {
         self.grdbManager = grdbManager
+    }
+
+    func fetchLocalUsers(in roomID: String) throws -> [LocalUser] {
+        try grdbManager.fetchLocalUsers(inRoom: roomID)
     }
 
     func fetchLocalUsersPage(roomID: String, offset: Int, limit: Int) throws -> ([LocalUser], Int) {
