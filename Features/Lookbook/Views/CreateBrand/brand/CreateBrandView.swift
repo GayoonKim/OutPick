@@ -30,10 +30,6 @@ struct CreateBrandView: View {
         NavigationView {
             Form {
                 Section(header: Text("브랜드 정보")) {
-                    TextField("브랜드 ID", text: $viewModel.brandID)
-                        .textInputAutocapitalization(.never)
-                        .disableAutocorrection(true)
-
                     TextField("브랜드명", text: $viewModel.brandName)
                         .textInputAutocapitalization(.words)
                         .disableAutocorrection(true)
@@ -83,7 +79,6 @@ struct CreateBrandView: View {
                     }
                     .disabled(
                         viewModel.isSaving ||
-                        viewModel.brandID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
                         viewModel.brandName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     )
                 }
@@ -97,7 +92,7 @@ struct CreateBrandView: View {
 
                 Section(
                     footer: Text(
-                        "브랜드 ID는 사전에 허용된 값만 생성할 수 있습니다."
+                        "브랜드 내부 ID는 자동 생성되며, 동일한 브랜드명은 중복 등록할 수 없습니다."
                     )
                 ) {
                     EmptyView()

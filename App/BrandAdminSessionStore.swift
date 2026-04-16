@@ -11,7 +11,6 @@ import Combine
 @MainActor
 final class BrandAdminSessionStore: ObservableObject {
     @Published private(set) var canCreateBrand: Bool = false
-    @Published private(set) var allowedBrandIDs: [String] = []
     @Published private(set) var roles: [String] = []
     @Published private(set) var isLoading: Bool = false
     @Published private(set) var isLoaded: Bool = false
@@ -57,7 +56,6 @@ final class BrandAdminSessionStore: ObservableObject {
         do {
             let capabilities = try await loadCapabilitiesWithRetry()
             canCreateBrand = capabilities.canCreateBrands
-            allowedBrandIDs = capabilities.allowedBrandIDs
             roles = capabilities.roles
             loadedIdentityKey = identityKey
             isLoaded = true
@@ -65,7 +63,7 @@ final class BrandAdminSessionStore: ObservableObject {
                 """
                 [BrandAdminSessionStore] refreshed identity=\(identityKey) \
                 canCreateBrand=\(capabilities.canCreateBrands) \
-                allowedBrandIDs=\(capabilities.allowedBrandIDs)
+                roles=\(capabilities.roles)
                 """
             )
         } catch {
@@ -93,7 +91,6 @@ final class BrandAdminSessionStore: ObservableObject {
 
     private func clearCapabilities() {
         canCreateBrand = false
-        allowedBrandIDs = []
         roles = []
     }
 

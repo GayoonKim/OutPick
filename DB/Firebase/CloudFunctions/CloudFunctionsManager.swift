@@ -17,7 +17,6 @@ struct KakaoFirebaseAuthBridgeResponse {
 
 struct BrandAdminCapabilitiesResponse {
     let canCreateBrands: Bool
-    let allowedBrandIDs: [String]
     let roles: [String]
 }
 
@@ -88,23 +87,13 @@ final class CloudFunctionsManager {
     }
 
     func createBrand(
-        brandID: String,
         name: String,
-        logoThumbPath: String?,
-        logoDetailPath: String?,
         isFeatured: Bool
     ) async throws -> String {
         var data: [String: Any] = [
-            "brandID": brandID,
             "name": name,
             "isFeatured": isFeatured
         ]
-        if let logoThumbPath {
-            data["logoThumbPath"] = logoThumbPath
-        }
-        if let logoDetailPath {
-            data["logoDetailPath"] = logoDetailPath
-        }
 
         let response = try await callFunction("createBrand", data: data)
         return try stringValue(response, key: "brandID")
@@ -132,21 +121,28 @@ final class CloudFunctionsManager {
 
         return BrandAdminCapabilitiesResponse(
             canCreateBrands: response["canCreateBrands"] as? Bool ?? false,
-            allowedBrandIDs: stringArrayValue(response, key: "allowedBrandIDs"),
             roles: stringArrayValue(response, key: "roles")
         )
     }
 
-    func updateBrandLogoDetailPath(
+    func updateBrandLogoPaths(
         brandID: String,
-        logoDetailPath: String
+        logoThumbPath: String? = nil,
+        logoDetailPath: String? = nil
     ) async throws -> String {
+        var data: [String: Any] = [
+            "brandID": brandID
+        ]
+        if let logoThumbPath {
+            data["logoThumbPath"] = logoThumbPath
+        }
+        if let logoDetailPath {
+            data["logoDetailPath"] = logoDetailPath
+        }
+
         let response = try await callFunction(
-            "updateBrandLogoDetailPath",
-            data: [
-                "brandID": brandID,
-                "logoDetailPath": logoDetailPath
-            ]
+            "updateBrandLogoPaths",
+            data: data
         )
         return try stringValue(response, key: "brandID")
     }

@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import FirebaseAuth
 import FirebaseFirestore
 
 /// Firestore 기반 BrandStoring 구현입니다.
@@ -16,53 +17,74 @@ struct FirestoreBrandStore: BrandStoringRepository {
         self.db = db
     }
 
-    func makeNewBrandDocumentID() -> String {
-        db.collection("brands").document().documentID
-    }
-
-    func upsertBrand(
-        docID: String,
+    func createBrand(
         name: String,
-        logoThumbPath: String?,
-        logoDetailPath: String?,
         isFeatured: Bool
-    ) async throws {
+    ) async throws -> String {
+        let docRef = db.collection("brands").document()
+        let docID = docRef.documentID
+        let normalizedName = normalizeBrandName(name)
+        let currentUID = Auth.auth().currentUser?.uid
+
         let data: [String: Any] = [
-            "name": name,
+            "name": normalizedDisplayName(name),
+            "normalizedName": normalizedName,
 
-            // 호환을 위해 기존 UI가 logoPath만 읽는 경우를 대비해 썸네일 경로를 넣습니다.
-            "logoPath": logoThumbPath ?? NSNull(),
-
-            // 신규 필드 - 썸네일/디테일 분리 저장
-            "logoThumbPath": logoThumbPath ?? NSNull(),
-            "logoDetailPath": logoDetailPath ?? NSNull(),
+            "logoPath": NSNull(),
+            "logoThumbPath": NSNull(),
+            "logoDetailPath": NSNull(),
+            "logoOriginalPath": NSNull(),
 
             "isFeatured": isFeatured,
             "likeCount": 0,
             "viewCount": 0,
             "popularScore": 0.0,
+            "createdBy": currentUID ?? NSNull(),
+            "updatedBy": currentUID ?? NSNull(),
+            "ownerUIDs": currentUID.map { [$0] } ?? [],
+            "adminUIDs": [String](),
+            "createdAt": FieldValue.serverTimestamp(),
             "updatedAt": FieldValue.serverTimestamp()
         ]
+
+        try await docRef.setDataAsync(data, merge: false)
+        return docID
+    }
+
+    func updateLogoPaths(
+        docID: String,
+        logoThumbPath: String?,
+        logoDetailPath: String?
+    ) async throws {
+        var data: [String: Any] = [
+            "updatedAt": FieldValue.serverTimestamp()
+        ]
+        if let logoThumbPath {
+            data["logoPath"] = logoThumbPath
+            data["logoThumbPath"] = logoThumbPath
+        }
+        if let logoDetailPath {
+            data["logoDetailPath"] = logoDetailPath
+        }
 
         try await db
             .collection("brands")
             .document(docID)
             .setDataAsync(data, merge: true)
     }
+}
 
-    func updateLogoDetailPath(
-        docID: String,
-        logoDetailPath: String
-    ) async throws {
-        let data: [String: Any] = [
-            "logoDetailPath": logoDetailPath,
-            "updatedAt": FieldValue.serverTimestamp()
-        ]
+private extension FirestoreBrandStore {
+    func normalizedDisplayName(_ rawValue: String) -> String {
+        rawValue
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+    }
 
-        try await db
-            .collection("brands")
-            .document(docID)
-            .setDataAsync(data, merge: true)
+    func normalizeBrandName(_ rawValue: String) -> String {
+        normalizedDisplayName(rawValue)
+            .precomposedStringWithCompatibilityMapping
+            .lowercased()
     }
 }
 
