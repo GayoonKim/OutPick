@@ -94,12 +94,8 @@ final class SecondProfileViewModel {
         recompute()
 
         do {
-            // 1) 이메일 확보
+            // 1) 인증 사용자 문서 확보
             let email = LoginManager.shared.getUserEmail
-            if email.isEmpty {
-                // 여기 정책은 프로젝트 상황에 맞춰 조정
-                throw FirebaseError.FailedToSaveProfile
-            }
             let userDocumentID = try await LoginManager.shared.ensureUserDocumentID()
             if userDocumentID.isEmpty {
                 throw FirebaseError.FailedToSaveProfile
@@ -152,7 +148,7 @@ final class SecondProfileViewModel {
 
             // 5) LoginManager에 현재 프로필 세팅 + Firestore 저장
             LoginManager.shared.setCurrentUserProfile(profile)
-            try await repository.saveUserProfileToFirestore(email: email)
+            try await repository.saveCurrentUserProfile()
 
             state.isSaving = false
             recompute()

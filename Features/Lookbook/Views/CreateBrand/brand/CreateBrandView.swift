@@ -30,6 +30,10 @@ struct CreateBrandView: View {
         NavigationView {
             Form {
                 Section(header: Text("브랜드 정보")) {
+                    TextField("브랜드 ID", text: $viewModel.brandID)
+                        .textInputAutocapitalization(.never)
+                        .disableAutocorrection(true)
+
                     TextField("브랜드명", text: $viewModel.brandName)
                         .textInputAutocapitalization(.words)
                         .disableAutocorrection(true)
@@ -73,13 +77,15 @@ struct CreateBrandView: View {
                             Spacer()
                             if viewModel.isSaving {
                                 ProgressView()
-                            } else {
-                                Text("Firestore에 저장")
-                            }
+                            } else { Text("브랜드 생성") }
                             Spacer()
                         }
                     }
-                    .disabled(viewModel.isSaving || viewModel.brandName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(
+                        viewModel.isSaving ||
+                        viewModel.brandID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                        viewModel.brandName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    )
                 }
 
                 if let message = viewModel.message {
@@ -91,7 +97,7 @@ struct CreateBrandView: View {
 
                 Section(
                     footer: Text(
-                        "주의: 현재는 임시로 Firestore는 brands/{autoId}에 저장하고, 로고 이미지는 StorageService(LookbookStorageService)를 통해 brands/{autoId}/logo/thumb.jpg(썸네일) + logo/detail.jpg(확대용) 2개를 업로드한 뒤 Firestore에 logoThumbPath, logoDetailPath로 저장합니다. (호환을 위해 logoPath에는 썸네일 경로를 넣습니다.)"
+                        "브랜드 ID는 사전에 허용된 값만 생성할 수 있습니다."
                     )
                 ) {
                     EmptyView()

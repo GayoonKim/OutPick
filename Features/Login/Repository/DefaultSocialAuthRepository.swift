@@ -15,10 +15,13 @@ import KakaoSDKUser
 
 final class DefaultSocialAuthRepository: SocialAuthRepositoryProtocol {
 
-    // MARK: - Launch restore (이메일 채우기)
+    // MARK: - Launch restore
 
-    func restoreGoogleEmailIfLoggedIn() async -> String? {
+    func restoreGoogleUserIfLoggedIn() async -> AuthenticatedUser? {
         guard let currentUser = Auth.auth().currentUser else { return nil }
+        guard currentUser.providerData.contains(where: { $0.providerID == "google.com" }) else {
+            return nil
+        }
 
         let ok: Bool = await withCheckedContinuation { cont in
             currentUser.getIDTokenForcingRefresh(true) { _, error in
@@ -33,15 +36,12 @@ final class DefaultSocialAuthRepository: SocialAuthRepositoryProtocol {
         guard ok else { return nil }
 
         let uid = currentUser.uid
-        if !uid.isEmpty {
-            LoginManager.shared.setAuthUserKey(uid)
-        }
+        guard !uid.isEmpty else { return nil }
 
-        let email = Auth.auth().currentUser?.email
-        return (email?.isEmpty == false) ? email : nil
+        return makeGoogleAuthenticatedUser(from: currentUser)
     }
 
-    func restoreKakaoEmailIfLoggedIn() async -> String? {
+    func restoreKakaoUserIfLoggedIn() async -> AuthenticatedUser? {
         guard AuthApi.hasToken() else { return nil }
 
         // 토큰 유효성 확인
@@ -62,32 +62,40 @@ final class DefaultSocialAuthRepository: SocialAuthRepositoryProtocol {
         }
         guard valid else { return nil }
 
-        // 이메일 가져오기
-        let email: String? = await withCheckedContinuation { cont in
+        let kakaoUser: KakaoSDKUser.User? = await withCheckedContinuation { (cont: CheckedContinuation<KakaoSDKUser.User?, Never>) in
             UserApi.shared.me { user, error in
                 if let error {
                     print("Kakao me 실패: \(error)")
                     cont.resume(returning: nil)
                     return
                 }
-                if let kakaoID = user?.id {
-                    LoginManager.shared.setAuthUserKey("kakao:\(kakaoID)")
-                } else {
-                    LoginManager.shared.clearAuthUserKey()
-                }
-                let email = user?.kakaoAccount?.email
-                cont.resume(returning: (email?.isEmpty == false) ? email : nil)
+                cont.resume(returning: user)
             }
         }
-        return email
+        guard let authenticatedUser = makeKakaoAuthenticatedUser(from: kakaoUser) else { return nil }
+        guard let firebaseUser = Auth.auth().currentUser,
+              firebaseUser.uid == authenticatedUser.identityKey else {
+            return nil
+        }
+
+        let firebaseTokenValid: Bool = await withCheckedContinuation { cont in
+            firebaseUser.getIDTokenForcingRefresh(true) { _, error in
+                if let error {
+                    print("Kakao Firebase 토큰 갱신 실패: \(error)")
+                    cont.resume(returning: false)
+                } else {
+                    cont.resume(returning: true)
+                }
+            }
+        }
+
+        return firebaseTokenValid ? authenticatedUser : nil
     }
 
     // MARK: - Sign-in (UI)
 
     @MainActor
-    func signInWithGoogle(presenter: UIViewController) async throws -> String {
-        LoginManager.shared.clearAuthUserKey()
-
+    func signInWithGoogle(presenter: UIViewController) async throws -> AuthenticatedUser {
         let user: GIDGoogleUser = try await withCheckedThrowingContinuation { cont in
             GIDSignIn.sharedInstance.signIn(withPresenting: presenter) { result, error in
                 if let error { cont.resume(throwing: error); return }
@@ -103,59 +111,117 @@ final class DefaultSocialAuthRepository: SocialAuthRepositoryProtocol {
         let accessToken = user.accessToken.tokenString
         let credential = GoogleAuthProvider.credential(withIDToken: idToken, accessToken: accessToken)
 
-        _ = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
-            Auth.auth().signIn(with: credential) { _, error in
+        let authUser = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<FirebaseAuth.User, Error>) in
+            Auth.auth().signIn(with: credential) { result, error in
                 if let error { cont.resume(throwing: error) }
-                else { cont.resume(returning: ()) }
+                else if let user = result?.user { cont.resume(returning: user) }
+                else { cont.resume(throwing: LoginAuthError.missingIDToken) }
             }
         }
 
-        if let uid = Auth.auth().currentUser?.uid, !uid.isEmpty {
-            LoginManager.shared.setAuthUserKey(uid)
-        }
-
-        guard let email = Auth.auth().currentUser?.email, !email.isEmpty else {
-            throw LoginAuthError.missingEmail
-        }
-        return email
+        return makeGoogleAuthenticatedUser(from: authUser)
     }
 
     @MainActor
-    func signInWithKakao(presenter: UIViewController) async throws -> String {
-        LoginManager.shared.clearAuthUserKey()
-
+    func signInWithKakao(presenter: UIViewController) async throws -> AuthenticatedUser {
         // Talk 가능하면 Talk, 아니면 Account
+        let accessToken: String
         if UserApi.isKakaoTalkLoginAvailable() {
-            _ = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
-                UserApi.shared.loginWithKakaoTalk { _, error in
+            accessToken = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<String, Error>) in
+                UserApi.shared.loginWithKakaoTalk { token, error in
                     if let error { cont.resume(throwing: error) }
-                    else { cont.resume(returning: ()) }
+                    else if let accessToken = token?.accessToken, !accessToken.isEmpty {
+                        cont.resume(returning: accessToken)
+                    } else {
+                        cont.resume(throwing: LoginAuthError.missingIDToken)
+                    }
                 }
             }
         } else {
-            _ = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
-                UserApi.shared.loginWithKakaoAccount { _, error in
+            accessToken = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<String, Error>) in
+                UserApi.shared.loginWithKakaoAccount { token, error in
                     if let error { cont.resume(throwing: error) }
-                    else { cont.resume(returning: ()) }
+                    else if let accessToken = token?.accessToken, !accessToken.isEmpty {
+                        cont.resume(returning: accessToken)
+                    } else {
+                        cont.resume(throwing: LoginAuthError.missingIDToken)
+                    }
                 }
             }
         }
 
-        let email: String = try await withCheckedThrowingContinuation { cont in
+        let kakaoUser: KakaoSDKUser.User = try await withCheckedThrowingContinuation { cont in
             UserApi.shared.me { user, error in
                 if let error { cont.resume(throwing: error); return }
-                if let kakaoID = user?.id {
-                    LoginManager.shared.setAuthUserKey("kakao:\(kakaoID)")
-                } else {
-                    LoginManager.shared.clearAuthUserKey()
-                }
-                guard let email = user?.kakaoAccount?.email, !email.isEmpty else {
-                    cont.resume(throwing: LoginAuthError.missingEmail)
+                guard let user else {
+                    cont.resume(throwing: LoginAuthError.missingIDToken)
                     return
                 }
-                cont.resume(returning: email)
+                cont.resume(returning: user)
             }
         }
-        return email
+
+        return try await signInToFirebaseWithKakao(
+            accessToken: accessToken,
+            kakaoUser: kakaoUser
+        )
+    }
+
+    private func makeGoogleAuthenticatedUser(from user: FirebaseAuth.User) -> AuthenticatedUser {
+        let googleProviderID = user.providerData
+            .first(where: { $0.providerID == "google.com" })?
+            .uid
+
+        return AuthenticatedUser(
+            identityKey: user.uid,
+            provider: .google,
+            providerUserID: googleProviderID ?? user.uid,
+            email: user.email
+        )
+    }
+
+    private func makeKakaoAuthenticatedUser(from user: KakaoSDKUser.User?) -> AuthenticatedUser? {
+        guard let kakaoID = user?.id else { return nil }
+        let providerUserID = String(kakaoID)
+
+        return AuthenticatedUser(
+            identityKey: "kakao:\(providerUserID)",
+            provider: .kakao,
+            providerUserID: providerUserID,
+            email: user?.kakaoAccount?.email
+        )
+    }
+
+    @MainActor
+    private func signInToFirebaseWithKakao(
+        accessToken: String,
+        kakaoUser: KakaoSDKUser.User
+    ) async throws -> AuthenticatedUser {
+        let bridge = try await CloudFunctionsManager.shared.exchangeKakaoToken(
+            accessToken: accessToken
+        )
+
+        let firebaseUser = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<FirebaseAuth.User, Error>) in
+            Auth.auth().signIn(withCustomToken: bridge.firebaseCustomToken) { result, error in
+                if let error {
+                    cont.resume(throwing: error)
+                } else if let user = result?.user {
+                    cont.resume(returning: user)
+                } else {
+                    cont.resume(throwing: LoginAuthError.missingIDToken)
+                }
+            }
+        }
+
+        guard firebaseUser.uid == bridge.identityKey else {
+            throw LoginAuthError.missingIDToken
+        }
+
+        return AuthenticatedUser(
+            identityKey: bridge.identityKey,
+            provider: .kakao,
+            providerUserID: bridge.providerUserID,
+            email: bridge.email ?? kakaoUser.kakaoAccount?.email
+        )
     }
 }

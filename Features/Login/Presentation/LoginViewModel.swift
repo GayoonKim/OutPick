@@ -17,7 +17,7 @@ final class LoginViewModel {
 
     private let authRepository: SocialAuthRepositoryProtocol
 
-    var onLoginSuccess: ((String) -> Void)?
+    var onLoginSuccess: ((AuthenticatedUser) -> Void)?
     var onStateChange: ((State) -> Void)?
 
     private var state: State = .idle {
@@ -32,14 +32,15 @@ final class LoginViewModel {
         state = .loading
         Task {
             do {
-                let email = try await authRepository.signInWithGoogle(presenter: presenter)
+                let authenticatedUser = try await authRepository.signInWithGoogle(presenter: presenter)
                 await MainActor.run {
                     self.state = .idle
-                    self.onLoginSuccess?(email)
+                    self.onLoginSuccess?(authenticatedUser)
                 }
             } catch {
+                self.logLoginFailure(provider: "Google", error: error)
                 await MainActor.run {
-                    self.state = .error("로그인에 실패했습니다. 다시 시도해주세요.")
+                    self.state = .error("로그인에 실패했습니다. \(error.localizedDescription)")
                 }
             }
         }
@@ -49,16 +50,27 @@ final class LoginViewModel {
         state = .loading
         Task {
             do {
-                let email = try await authRepository.signInWithKakao(presenter: presenter)
+                let authenticatedUser = try await authRepository.signInWithKakao(presenter: presenter)
                 await MainActor.run {
                     self.state = .idle
-                    self.onLoginSuccess?(email)
+                    self.onLoginSuccess?(authenticatedUser)
                 }
             } catch {
+                self.logLoginFailure(provider: "Kakao", error: error)
                 await MainActor.run {
-                    self.state = .error("로그인에 실패했습니다. 다시 시도해주세요.")
+                    self.state = .error("로그인에 실패했습니다. \(error.localizedDescription)")
                 }
             }
         }
+    }
+
+    private func logLoginFailure(provider: String, error: Error) {
+        let nsError = error as NSError
+        print(
+            "[LoginViewModel] \(provider) login failed: " +
+            "domain=\(nsError.domain), code=\(nsError.code), " +
+            "description=\(nsError.localizedDescription), " +
+            "userInfo=\(nsError.userInfo)"
+        )
     }
 }

@@ -11,14 +11,15 @@ extension LoginManager: LoginBootstrappingProtocol {
 
     /// 초기화만 담당
     /// 호출 위치: AppCoordinator에서 Main(Tab) 라우팅 직후
-    func bootstrapAfterLogin(userEmail: String, joinedRoomsStore: JoinedRoomsStore) async throws {
-        // 0) 세션 이메일 확정
-        setUserEmail(userEmail)
+    func bootstrapAfterLogin(
+        joinedRoomsStore: JoinedRoomsStore,
+        brandAdminSessionStore: BrandAdminSessionStore
+    ) async throws {
+        // 0) 세션 사용자 문서 확정
         _ = try await ensureUserDocumentID()
 
         // 1) 프로필 리스너 시작
-        userProfileRepository.listenToUserProfile(
-            email: self.getUserEmail,
+        userProfileRepository.listenToCurrentUserProfile(
             onCurrentUserProfileUpdated: { profile in
                 Task { @MainActor in
                     joinedRoomsStore.replace(with: profile.joinedRooms)
@@ -34,7 +35,16 @@ extension LoginManager: LoginBootstrappingProtocol {
             }
         }
 
-        // 3) 소켓 연결(대기하지 않아도 됨)
-        async let _ = SocketIOManager.shared.establishConnection()
+        // 3) 브랜드 권한 선로딩
+        await brandAdminSessionStore.refreshCurrentSession(force: true)
+
+        // 4) 소켓 연결(대기하지 않아도 됨)
+        Task {
+            do {
+                try await SocketIOManager.shared.establishConnection()
+            } catch {
+                print("Socket establishConnection 실패: \(error.localizedDescription)")
+            }
+        }
     }
 }

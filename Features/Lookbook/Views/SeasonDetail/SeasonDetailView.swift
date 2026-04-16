@@ -10,19 +10,16 @@ import SwiftUI
 struct SeasonDetailView: View {
     let brandID: BrandID
     let seasonID: SeasonID
-    let onSelectPost: ((PostID) -> Void)?
 
     @Environment(\.repositoryProvider) private var provider
     @StateObject private var viewModel = SeasonDetailViewModel()
 
     init(
         brandID: BrandID,
-        seasonID: SeasonID,
-        onSelectPost: ((PostID) -> Void)? = nil
+        seasonID: SeasonID
     ) {
         self.brandID = brandID
         self.seasonID = seasonID
-        self.onSelectPost = onSelectPost
     }
 
     var body: some View {
@@ -51,9 +48,13 @@ struct SeasonDetailView: View {
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(viewModel.posts, id: \.id) { post in
-                        Button {
-                            onSelectPost?(post.id)
-                        } label: {
+                        NavigationLink(
+                            destination: PostDetailView(
+                                brandID: post.brandID,
+                                seasonID: post.seasonID,
+                                postID: post.id
+                            )
+                        ) {
                             HStack {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(post.caption ?? "(캡션 없음)")
@@ -64,12 +65,8 @@ struct SeasonDetailView: View {
                                         .foregroundStyle(.secondary)
                                 }
                                 Spacer()
-                                Image(systemName: "chevron.right")
-                                    .font(.caption)
-                                    .foregroundStyle(.tertiary)
                             }
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }

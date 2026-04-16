@@ -19,7 +19,7 @@ enum LoginCompositionRoot {
     /// AppCoordinator가 호출할 엔트리
     @MainActor
     static func makeLoginViewController(
-        onLoginSuccess: @escaping (String) -> Void
+        onLoginSuccess: @escaping (AuthenticatedUser) -> Void
     ) -> LoginViewController {
         let vm = makeViewModel()
         vm.onLoginSuccess = onLoginSuccess

@@ -8,13 +8,13 @@
 import Foundation
 
 /// 브랜드 문서를 저장하는 저장소 추상화입니다.
-/// - Note: ViewModel이 Firestore를 모르도록 분리합니다.
+/// - Note: ViewModel이 Firestore/Cloud Functions 세부 구현을 모르도록 분리합니다.
 protocol BrandStoringRepository {
-    /// Firestore 자동 생성 문서 ID를 미리 발급합니다.
-    /// - Note: 네트워크를 타지 않고 로컬에서 ID만 생성할 수 있습니다.
+    /// 임시 ID가 필요한 테스트/레거시 경로를 위한 ID 발급 함수입니다.
+    /// - Note: 운영 브랜드 생성은 사전에 허용된 brandID를 사용합니다.
     func makeNewBrandDocumentID() -> String
 
-    /// 브랜드를 생성/업데이트합니다. (Firestore 세부 필드 구성은 구현체가 책임집니다.)
+    /// 브랜드를 생성합니다. (권한 검증/저장 세부 구현은 구현체가 책임집니다.)
     func upsertBrand(
         docID: String,
         name: String,

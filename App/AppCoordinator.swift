@@ -19,6 +19,7 @@ final class AppCoordinator {
     private var lookbookContainer: LookbookContainer?
     private var chatContainer: ChatContainer?
     private let joinedRoomsStore = JoinedRoomsStore()
+    private let brandAdminSessionStore = BrandAdminSessionStore()
     
     private var profileCoordinator: ProfileCoordinator?
 
@@ -76,12 +77,14 @@ final class AppCoordinator {
     }
 
     private func routeAfterAuthenticated() async {
+        print("[AppCoordinator] routeAfterAuthenticated identity=\(LoginManager.shared.getAuthIdentityKey)")
         await MainActor.run { self.setRoot(BootLoadingViewController(), animated: false) }
         
         let profileResult = await LoginManager.shared.loadUserProfile()
         
         switch profileResult {
         case .success:
+            print("[AppCoordinator] complete profile found. Showing main tab.")
             await MainActor.run {
                 let chatContainer = self.ensureChatContainer()
                 chatContainer.bindJoinedRoomsRuntimeIfNeeded()
@@ -98,8 +101,8 @@ final class AppCoordinator {
 
             do {
                 try await LoginManager.shared.bootstrapAfterLogin(
-                    userEmail: LoginManager.shared.getUserEmail,
-                    joinedRoomsStore: joinedRoomsStore
+                    joinedRoomsStore: joinedRoomsStore,
+                    brandAdminSessionStore: brandAdminSessionStore
                 )
             } catch {
                 print("bootstrapAfterLogin 실패: \(error)")
@@ -107,7 +110,8 @@ final class AppCoordinator {
 
             await MainActor.run { self.showMainTab() }
 
-        case .failure:
+        case .failure(let error):
+            print("[AppCoordinator] profile is missing/incomplete. Showing profile flow. error=\(error)")
             await MainActor.run { self.showProfileFlow() }
         }
     }
@@ -127,6 +131,7 @@ final class AppCoordinator {
         self.lookbookContainer = nil
         self.chatContainer = nil
         self.mainTabController = nil
+        self.brandAdminSessionStore.reset()
         // 로그인 화면으로 들어갈 땐 강제로그아웃 콜백을 해제해도 됨(이미 로그아웃 상태/또는 루트가 로그인)
         // 중복 라우팅(콜백 재호출) 방지 목적
         LoginManager.shared.onForceLogout = nil
@@ -138,9 +143,9 @@ final class AppCoordinator {
         if window.windowScene == nil { window.windowScene = windowScene }
 
         let loginVC = LoginCompositionRoot.makeLoginViewController(
-            onLoginSuccess: { [weak self] email in
+            onLoginSuccess: { [weak self] authenticatedUser in
                 guard let self else { return }
-                LoginManager.shared.setUserEmail(email)
+                LoginManager.shared.setAuthenticatedUser(authenticatedUser)
 
                 Task { [weak self] in
                     guard let self else { return }
@@ -182,6 +187,7 @@ final class AppCoordinator {
 
     @MainActor
     private func showProfileFlow() {
+        print("[AppCoordinator] showProfileFlow")
         isShowingLogin = false
         installForceLogoutHandler()
 
@@ -202,8 +208,8 @@ final class AppCoordinator {
                     guard let self else { return }
                     do {
                         try await LoginManager.shared.bootstrapAfterLogin(
-                            userEmail: LoginManager.shared.getUserEmail,
-                            joinedRoomsStore: self.joinedRoomsStore
+                            joinedRoomsStore: self.joinedRoomsStore,
+                            brandAdminSessionStore: self.brandAdminSessionStore
                         )
                     } catch {
                         print("bootstrapAfterLogin 실패(프로필 완료): \(error)")
@@ -244,7 +250,10 @@ final class AppCoordinator {
             return lookbookContainer
         }
 
-        let created = LookbookContainer(provider: lookbookProvider)
+        let created = LookbookContainer(
+            provider: lookbookProvider,
+            brandAdminSessionStore: brandAdminSessionStore
+        )
         self.lookbookContainer = created
         return created
     }
@@ -262,7 +271,7 @@ final class AppCoordinator {
 
     @MainActor
     func consumePendingNotificationRouteIfPossible() {
-        guard !LoginManager.shared.getUserEmail.isEmpty else { return }
+        guard LoginManager.shared.hasAuthenticatedIdentity else { return }
         guard let route = NotificationRouter.shared.consumePendingRoute() else { return }
         guard let mainTabController else {
             NotificationRouter.shared.setPendingRoute(route)

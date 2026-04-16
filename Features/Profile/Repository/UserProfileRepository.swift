@@ -36,20 +36,6 @@ final class UserProfileRepository: UserProfileRepositoryProtocol {
         email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
-    private func normalizeIdentityKey(_ identityKey: String, email: String) -> String {
-        let trimmed = identityKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.isEmpty { return trimmed }
-        return "email:\(email)"
-    }
-
-    private func identityMetadata(from identityKey: String) -> (provider: String, providerUserID: String) {
-        let parts = identityKey.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
-        if parts.count == 2 {
-            return (String(parts[0]), String(parts[1]))
-        }
-        return ("firebase", identityKey)
-    }
-
     private func currentUserDocumentID() -> String {
         LoginManager.shared.getUserDocumentID.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -58,11 +44,6 @@ final class UserProfileRepository: UserProfileRepositoryProtocol {
         let userDocumentID = currentUserDocumentID()
         guard !userDocumentID.isEmpty else { return nil }
         return db.collection(usersCollection).document(userDocumentID)
-    }
-
-    private func isCurrentUserEmail(_ normalizedEmail: String) -> Bool {
-        let myEmail = normalizeEmail(LoginManager.shared.getUserEmail)
-        return !myEmail.isEmpty && myEmail == normalizedEmail
     }
 
     private func decodeProfile(_ data: [String: Any], emailFallback: String) -> UserProfile {
@@ -89,11 +70,13 @@ final class UserProfileRepository: UserProfileRepositoryProtocol {
         return decodeProfile(doc.data(), emailFallback: normalizedEmail)
     }
 
-    func resolveOrCreateUserDocumentID(identityKey: String, email: String) async throws -> String {
-        let normalizedEmail = normalizeEmail(email)
-        guard !normalizedEmail.isEmpty else { throw FirebaseError.FailedToFetchProfile }
+    func resolveOrCreateUserDocumentID(authenticatedUser: AuthenticatedUser) async throws -> String {
+        let normalizedIdentityKey = authenticatedUser.identityKey
+        guard !normalizedIdentityKey.isEmpty, !authenticatedUser.providerUserID.isEmpty else {
+            throw FirebaseError.FailedToFetchProfile
+        }
 
-        let normalizedIdentityKey = normalizeIdentityKey(identityKey, email: normalizedEmail)
+        let normalizedEmail = normalizeEmail(authenticatedUser.email ?? "")
         let identityRef = db.collection(userIdentitiesCollection).document(normalizedIdentityKey)
 
         let identitySnap = try await identityRef.getDocument()
@@ -101,16 +84,18 @@ final class UserProfileRepository: UserProfileRepositoryProtocol {
            !mappedID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             let userDocumentID = mappedID.trimmingCharacters(in: .whitespacesAndNewlines)
             let userRef = db.collection(usersCollection).document(userDocumentID)
-            let identity = identityMetadata(from: normalizedIdentityKey)
             let batch = db.batch()
             batch.setData([
+                "identityKey": normalizedIdentityKey,
+                "provider": authenticatedUser.provider.rawValue,
+                "providerUserID": authenticatedUser.providerUserID,
                 "email": normalizedEmail,
                 "updatedAt": FieldValue.serverTimestamp()
             ], forDocument: userRef, merge: true)
             batch.setData([
                 "userDocumentID": userDocumentID,
-                "provider": identity.provider,
-                "providerUserID": identity.providerUserID,
+                "provider": authenticatedUser.provider.rawValue,
+                "providerUserID": authenticatedUser.providerUserID,
                 "email": normalizedEmail,
                 "updatedAt": FieldValue.serverTimestamp()
             ], forDocument: identityRef, merge: true)
@@ -118,28 +103,71 @@ final class UserProfileRepository: UserProfileRepositoryProtocol {
             return userDocumentID
         }
 
-        let existingProfileDoc = try await findProfileDocByEmail(normalizedEmail: normalizedEmail)
-        let userDocumentID = existingProfileDoc?.documentID
-            ?? db.collection(usersCollection).document().documentID
+        let userDocumentID = db.collection(usersCollection).document().documentID
         let userRef = db.collection(usersCollection).document(userDocumentID)
-        let identity = identityMetadata(from: normalizedIdentityKey)
 
         let batch = db.batch()
         batch.setData([
             "userDocumentID": userDocumentID,
-            "provider": identity.provider,
-            "providerUserID": identity.providerUserID,
+            "provider": authenticatedUser.provider.rawValue,
+            "providerUserID": authenticatedUser.providerUserID,
             "email": normalizedEmail,
             "createdAt": FieldValue.serverTimestamp(),
             "updatedAt": FieldValue.serverTimestamp()
         ], forDocument: identityRef, merge: true)
         batch.setData([
+            "identityKey": normalizedIdentityKey,
+            "provider": authenticatedUser.provider.rawValue,
+            "providerUserID": authenticatedUser.providerUserID,
             "email": normalizedEmail,
+            "createdAt": FieldValue.serverTimestamp(),
             "updatedAt": FieldValue.serverTimestamp()
         ], forDocument: userRef, merge: true)
         try await batch.commit()
 
         return userDocumentID
+    }
+
+    func listenToCurrentUserProfile(onCurrentUserProfileUpdated: ((UserProfile) -> Void)? = nil) {
+        guard let docRef = currentUserDocumentRef() else { return }
+        let userDocumentID = docRef.documentID
+        let key = "current:\(userDocumentID)"
+
+        if let onCurrentUserProfileUpdated {
+            currentUserProfileHandlers[key] = onCurrentUserProfileUpdated
+        }
+        if userProfileListeners[key] != nil { return }
+
+        let subject: PassthroughSubject<UserProfile, Error>
+        if let s = userProfileSubjects[key] {
+            subject = s
+        } else {
+            let s = PassthroughSubject<UserProfile, Error>()
+            userProfileSubjects[key] = s
+            subject = s
+        }
+
+        let listener = docRef.addSnapshotListener { snapshot, error in
+            if let error {
+                subject.send(completion: .failure(error))
+                return
+            }
+            guard let snapshot, snapshot.exists, let data = snapshot.data(), self.hasRequiredProfileData(data) else {
+                return
+            }
+
+            let profile = self.decodeProfile(
+                data,
+                emailFallback: LoginManager.shared.getUserEmail
+            )
+            Task { @MainActor in
+                LoginManager.shared.setCurrentUserProfile(profile)
+            }
+            self.currentUserProfileHandlers[key]?(profile)
+            subject.send(profile)
+        }
+
+        userProfileListeners[key] = listener
     }
     
     func listenToUserProfile(email: String, onCurrentUserProfileUpdated: ((UserProfile) -> Void)? = nil) {
@@ -160,59 +188,19 @@ final class UserProfileRepository: UserProfileRepositoryProtocol {
             subject = s
         }
 
-        let listener: ListenerRegistration
-        if isCurrentUserEmail(key), let docRef = currentUserDocumentRef() {
-            listener = docRef.addSnapshotListener { snapshot, error in
-                if let error = error {
-                    subject.send(completion: .failure(error))
-                    return
-                }
-                if let snapshot, snapshot.exists, let data = snapshot.data(), self.hasRequiredProfileData(data) {
-                    let profile = self.decodeProfile(data, emailFallback: key)
-                    Task { @MainActor in
-                        LoginManager.shared.setCurrentUserProfile(profile)
-                    }
-                    self.currentUserProfileHandlers[key]?(profile)
-                    return
-                }
-
-                // 프로필 문서가 아직 메타만 있는 상태면 email 인덱스 경로로 한 번 더 조회
-                Task { [weak self] in
-                    guard let self else { return }
-                    do {
-                        guard let fallbackProfile = try await self.fetchProfileByEmail(normalizedEmail: key) else { return }
-                        await MainActor.run {
-                            LoginManager.shared.setCurrentUserProfile(fallbackProfile)
-                        }
-                        self.currentUserProfileHandlers[key]?(fallbackProfile)
-                    } catch {
-                        subject.send(completion: .failure(error))
-                    }
-                }
+        let query = db.collection(usersCollection)
+            .whereField("email", isEqualTo: key)
+            .limit(to: 10)
+        let listener = query.addSnapshotListener { snapshot, error in
+            if let error = error {
+                subject.send(completion: .failure(error))
+                return
             }
-        } else {
-            let query = db.collection(usersCollection)
-                .whereField("email", isEqualTo: key)
-                .limit(to: 10)
-            listener = query.addSnapshotListener { snapshot, error in
-                if let error = error {
-                    subject.send(completion: .failure(error))
-                    return
-                }
-                let doc = snapshot?.documents.first(where: { self.hasRequiredProfileData($0.data()) })
-                    ?? snapshot?.documents.first
-                guard let doc else { return }
-                let profile = self.decodeProfile(doc.data(), emailFallback: key)
-
-                if self.isCurrentUserEmail(key) {
-                    Task { @MainActor in
-                        LoginManager.shared.setCurrentUserProfile(profile)
-                    }
-                    self.currentUserProfileHandlers[key]?(profile)
-                    return
-                }
-                subject.send(profile)
-            }
+            let doc = snapshot?.documents.first(where: { self.hasRequiredProfileData($0.data()) })
+                ?? snapshot?.documents.first
+            guard let doc else { return }
+            let profile = self.decodeProfile(doc.data(), emailFallback: key)
+            subject.send(profile)
         }
 
         userProfileListeners[key] = listener
@@ -260,7 +248,7 @@ final class UserProfileRepository: UserProfileRepositoryProtocol {
         currentUserProfileHandlers.removeValue(forKey: key)
     }
     
-    func saveUserProfileToFirestore(email: String) async throws {
+    func saveCurrentUserProfile() async throws {
         do {
             guard let profile = LoginManager.shared.currentUserProfile else {
                 throw FirebaseError.FailedToSaveProfile
@@ -273,7 +261,12 @@ final class UserProfileRepository: UserProfileRepositoryProtocol {
             // Domain -> DTO -> Firestore 문서
             let dto = UserProfileMapper.toDTO(profile)
             var profileData = UserProfileFirestoreCodec.toDocument(dto)
-            profileData["email"] = normalizeEmail(email)
+            profileData["email"] = normalizeEmail(LoginManager.shared.getUserEmail)
+            if let authenticatedUser = LoginManager.shared.authenticatedUser {
+                profileData["identityKey"] = authenticatedUser.identityKey
+                profileData["provider"] = authenticatedUser.provider.rawValue
+                profileData["providerUserID"] = authenticatedUser.providerUserID
+            }
 
             // createdAt은 서버 기준으로 저장(정렬/쿼리에 유리)
             profileData["createdAt"] = FieldValue.serverTimestamp()
@@ -284,19 +277,25 @@ final class UserProfileRepository: UserProfileRepositoryProtocol {
             throw FirebaseError.FailedToSaveProfile
         }
     }
+
+    func fetchCurrentUserProfile() async throws -> UserProfile {
+        guard let docRef = currentUserDocumentRef() else {
+            throw FirebaseError.FailedToFetchProfile
+        }
+
+        let snapshot = try await docRef.getDocument()
+        guard let data = snapshot.data(), hasRequiredProfileData(data) else {
+            throw FirebaseError.FailedToFetchProfile
+        }
+
+        return decodeProfile(data, emailFallback: LoginManager.shared.getUserEmail)
+    }
     
     func fetchUserProfileFromFirestore(email: String) async throws -> UserProfile {
         print("fetchUserProfileFromFirestore 호출")
         let normalizedEmail = normalizeEmail(email)
         guard !normalizedEmail.isEmpty else {
             throw FirebaseError.FailedToFetchProfile
-        }
-
-        if isCurrentUserEmail(normalizedEmail), let docRef = currentUserDocumentRef() {
-            let snapshot = try await docRef.getDocument()
-            if let data = snapshot.data(), hasRequiredProfileData(data) {
-                return decodeProfile(data, emailFallback: normalizedEmail)
-            }
         }
 
         guard let fallbackProfile = try await fetchProfileByEmail(normalizedEmail: normalizedEmail) else {
@@ -379,8 +378,8 @@ final class UserProfileRepository: UserProfileRepositoryProtocol {
         return Self.toInt64(snap.data()?["lastReadSeq"]) ?? 0
     }
 
-    func upsertDeviceID(email: String, deviceID: String) async throws {
-        let normalizedEmail = normalizeEmail(email)
+    func upsertDeviceID(deviceID: String) async throws {
+        let normalizedEmail = normalizeEmail(LoginManager.shared.getUserEmail)
         let userDocumentID: String
         if currentUserDocumentID().isEmpty {
             userDocumentID = try await LoginManager.shared.ensureUserDocumentID()
@@ -404,7 +403,6 @@ final class UserProfileRepository: UserProfileRepositoryProtocol {
     }
 
     func listenToDeviceID(
-        email _: String,
         onUpdate: @escaping (String?) -> Void,
         onError: @escaping (Error) -> Void
     ) -> ListenerRegistration {
@@ -430,7 +428,7 @@ final class UserProfileRepository: UserProfileRepositoryProtocol {
 
     func upsertPushDevice(userDocumentID: String, state: PushDeviceState) async throws {
         let normalizedEmail = normalizeEmail(state.email)
-        guard !userDocumentID.isEmpty, !normalizedEmail.isEmpty, !state.deviceID.isEmpty else { return }
+        guard !userDocumentID.isEmpty, !state.deviceID.isEmpty else { return }
 
         let userRef = db.collection(usersCollection).document(userDocumentID)
         let deviceRef = userRef.collection("devices").document(state.deviceID)

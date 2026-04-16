@@ -19,6 +19,9 @@ final class LoginManager {
     let userProfileRepository: UserProfileRepositoryProtocol
     let chatRoomRepository: FirebaseChatRoomRepositoryProtocol
 
+    private let keychainService = "GayoonKim.OutPick"
+    private let authenticatedUserAccount = "AuthenticatedUser"
+
     // DI를 위한 이니셜라이저(테스트/스테이징에서 Mock 주입 가능)
     // - 참고: 운영 코드에서는 `LoginManager.shared`만 사용하면 됩니다.
     init(
@@ -33,6 +36,7 @@ final class LoginManager {
     private var userEmail: String = ""
     private var authUserKey: String = ""
     private var userDocumentID: String = ""
+    private(set) var authenticatedUser: AuthenticatedUser?
     private(set) var currentUserProfile: UserProfile?
 
     var deviceIDListener: ListenerRegistration?
@@ -55,6 +59,8 @@ final class LoginManager {
 
     var getUserEmail: String { userEmail }
     var getUserDocumentID: String { userDocumentID }
+    var getAuthIdentityKey: String { authUserKey }
+    var hasAuthenticatedIdentity: Bool { !authUserKey.isEmpty }
     var getUserUID: String {
         // Legacy getter name.
         // authUserKey stores the provider identity key (not users/{documentID}).
@@ -78,7 +84,16 @@ final class LoginManager {
     }
 
     func setUserEmail(_ email: String) {
-        self.userEmail = email
+        self.userEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    func setAuthenticatedUser(_ user: AuthenticatedUser) {
+        self.authenticatedUser = user
+        self.authUserKey = user.identityKey
+        self.userEmail = user.email ?? ""
+        if let data = try? JSONEncoder().encode(user) {
+            KeychainManager.shared.save(data, service: keychainService, account: authenticatedUserAccount)
+        }
     }
 
     func setAuthUserKey(_ key: String) {
@@ -87,6 +102,7 @@ final class LoginManager {
 
     func clearAuthUserKey() {
         self.authUserKey = ""
+        self.authenticatedUser = nil
     }
 
     func setUserDocumentID(_ id: String) {
@@ -101,22 +117,50 @@ final class LoginManager {
         self.currentUserProfile = profile
     }
 
+    private func profileCacheAccount(userDocumentID: String) -> String {
+        let trimmed = userDocumentID.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "UserProfile" : "UserProfile:\(trimmed)"
+    }
+
+    private func cachedAuthProvider() -> AuthProvider? {
+        guard let data = KeychainManager.shared.read(
+            service: keychainService,
+            account: authenticatedUserAccount
+        ) else {
+            return nil
+        }
+        return try? JSONDecoder().decode(AuthenticatedUser.self, from: data).provider
+    }
+
     // MARK: - 자동 로그인 체크
 
     func checkExistingLogin() async -> Bool {
         clearAuthUserKey()
         clearUserDocumentID()
 
-        if let email = await authRepository.restoreGoogleEmailIfLoggedIn() {
-            setUserEmail(email)
-            if let uid = Auth.auth().currentUser?.uid, !uid.isEmpty {
-                setAuthUserKey(uid)
-            }
-            return true
+        let providers: [AuthProvider]
+        switch cachedAuthProvider() {
+        case .kakao:
+            providers = [.kakao]
+        case .google:
+            providers = [.google]
+        case nil:
+            providers = [.google, .kakao]
         }
-        if let email = await authRepository.restoreKakaoEmailIfLoggedIn() {
-            setUserEmail(email)
-            return true
+
+        for provider in providers {
+            let restoredUser: AuthenticatedUser?
+            switch provider {
+            case .google:
+                restoredUser = await authRepository.restoreGoogleUserIfLoggedIn()
+            case .kakao:
+                restoredUser = await authRepository.restoreKakaoUserIfLoggedIn()
+            }
+
+            if let restoredUser {
+                setAuthenticatedUser(restoredUser)
+                return true
+            }
         }
         return false
     }
@@ -131,35 +175,30 @@ final class LoginManager {
     }
 
     func loadUserProfile() async -> Result<UserProfile, Error> {
+        let resolvedUserDocumentID: String
         do {
-            _ = try await ensureUserDocumentID()
+            resolvedUserDocumentID = try await ensureUserDocumentID()
         } catch {
             return .failure(error)
         }
 
-        if let data = KeychainManager.shared.read(service: "GayoonKim.OutPick", account: "UserProfile"),
-           let profile = try? JSONDecoder().decode(UserProfile.self, from: data) {
-            if isProfileValidForMainFlow(profile) {
-                self.currentUserProfile = profile
-                return .success(profile)
-            }
-            KeychainManager.shared.delete(service: "GayoonKim.OutPick", account: "UserProfile")
-        }
-
+        let cacheAccount = profileCacheAccount(userDocumentID: resolvedUserDocumentID)
         do {
-            let email = self.getUserEmail
-            let profile = try await userProfileRepository.fetchUserProfileFromFirestore(email: email)
+            let profile = try await userProfileRepository.fetchCurrentUserProfile()
             guard isProfileValidForMainFlow(profile) else {
                 self.currentUserProfile = nil
+                KeychainManager.shared.delete(service: keychainService, account: cacheAccount)
                 return .failure(FirebaseError.IncompleteProfile)
             }
             self.currentUserProfile = profile
 
             if let data = try? JSONEncoder().encode(profile) {
-                KeychainManager.shared.save(data, service: "GayoonKim.OutPick", account: "UserProfile")
+                KeychainManager.shared.save(data, service: keychainService, account: cacheAccount)
             }
             return .success(profile)
         } catch {
+            self.currentUserProfile = nil
+            KeychainManager.shared.delete(service: keychainService, account: cacheAccount)
             return .failure(error)
         }
     }
@@ -167,16 +206,47 @@ final class LoginManager {
     func ensureUserDocumentID() async throws -> String {
         if !userDocumentID.isEmpty { return userDocumentID }
 
-        let normalizedEmail = userEmail.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !normalizedEmail.isEmpty else { throw FirebaseError.FailedToFetchProfile }
+        if authenticatedUser == nil,
+           let recoveredUser = authenticatedUserFromFirebaseCurrentUser() {
+            setAuthenticatedUser(recoveredUser)
+        }
 
-        let identityKey = authUserKey.isEmpty ? "email:\(normalizedEmail)" : authUserKey
+        guard let authenticatedUser, !authenticatedUser.identityKey.isEmpty else {
+            throw FirebaseError.FailedToFetchProfile
+        }
         let resolved = try await userProfileRepository.resolveOrCreateUserDocumentID(
-            identityKey: identityKey,
-            email: normalizedEmail
+            authenticatedUser: authenticatedUser
         )
         setUserDocumentID(resolved)
         return resolved
+    }
+
+    private func authenticatedUserFromFirebaseCurrentUser() -> AuthenticatedUser? {
+        guard let currentUser = Auth.auth().currentUser else { return nil }
+        let uid = currentUser.uid.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !uid.isEmpty else { return nil }
+
+        if uid.hasPrefix("kakao:") {
+            let providerUserID = String(uid.dropFirst("kakao:".count))
+            guard !providerUserID.isEmpty else { return nil }
+            return AuthenticatedUser(
+                identityKey: uid,
+                provider: .kakao,
+                providerUserID: providerUserID,
+                email: currentUser.email
+            )
+        }
+
+        if let googleProvider = currentUser.providerData.first(where: { $0.providerID == "google.com" }) {
+            return AuthenticatedUser(
+                identityKey: uid,
+                provider: .google,
+                providerUserID: googleProvider.uid,
+                email: currentUser.email
+            )
+        }
+
+        return nil
     }
 
     // MARK: - 중복 로그인
@@ -185,11 +255,9 @@ final class LoginManager {
     /// 기존 기기는 리스너가 감지해서 로그아웃된다.
     func updateLogDevID() async throws {
         let deviceID = await UIDevice.persistentDeviceID
-        let email = self.getUserEmail
-        guard !email.isEmpty else { return }
         _ = try await ensureUserDocumentID()
 
-        try await userProfileRepository.upsertDeviceID(email: email, deviceID: deviceID)
+        try await userProfileRepository.upsertDeviceID(deviceID: deviceID)
 
         // 덮어쓰기 성공 후에만 리스너를 붙인다
         try await setupDevIDListener()
@@ -199,8 +267,7 @@ final class LoginManager {
         deviceIDListener?.remove()
         deviceIDListener = nil
 
-        let email = self.getUserEmail
-        guard !email.isEmpty else { return }
+        _ = try await ensureUserDocumentID()
 
         let currentDeviceID = await UIDevice.persistentDeviceID
         self.hasSeenOwnDeviceID = false
@@ -209,7 +276,6 @@ final class LoginManager {
         self.didInvokeForceLogoutCallback = false
 
         deviceIDListener = userProfileRepository.listenToDeviceID(
-            email: email,
             onUpdate: { [weak self] remoteDeviceID in
                 guard let self else { return }
                 
@@ -260,10 +326,13 @@ final class LoginManager {
     }
 
     private func clearSessionAndNotifyForceLogout() {
+        let cacheAccount = profileCacheAccount(userDocumentID: self.userDocumentID)
+
         // 세션 정리
         self.userEmail = ""
         self.authUserKey = ""
         self.userDocumentID = ""
+        self.authenticatedUser = nil
         self.currentUserProfile = nil
 
         // 콜백 재사용을 위해 플래그 초기화
@@ -283,8 +352,9 @@ final class LoginManager {
         }
 
         // 캐시 삭제
-        // KeychainManager 삭제 메서드 이름이 프로젝트마다 다를 수 있음
-        KeychainManager.shared.delete(service: "GayoonKim.OutPick", account: "UserProfile")
+        KeychainManager.shared.delete(service: keychainService, account: cacheAccount)
+        KeychainManager.shared.delete(service: keychainService, account: "UserProfile")
+        KeychainManager.shared.delete(service: keychainService, account: authenticatedUserAccount)
 
         // Firebase/Google 로그아웃
         do { try Auth.auth().signOut() } catch { print("Firebase signOut error: \(error)") }

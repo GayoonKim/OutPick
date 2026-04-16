@@ -13,6 +13,7 @@ import UIKit
 final class CreateBrandViewModel: ObservableObject {
 
     // MARK: - 입력 상태
+    @Published var brandID: String = ""
     @Published var brandName: String = ""
     @Published var selectedLogoImage: UIImage? = nil
     @Published var isFeatured: Bool = false
@@ -58,14 +59,17 @@ final class CreateBrandViewModel: ObservableObject {
     func saveBrand() async {
         message = nil
 
+        let docID = normalizedBrandID(brandID)
+        guard isValidBrandID(docID) else {
+            message = "브랜드 ID는 영문 소문자, 숫자, -, _ 조합의 2~64자로 입력해주세요."
+            return
+        }
+
         let rawName = brandName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !rawName.isEmpty else {
             message = "브랜드명을 입력해주세요."
             return
         }
-
-        // Firestore 문서 ID는 자동 생성(랜덤)으로 사용합니다.
-        let docID = brandStore.makeNewBrandDocumentID()
 
         isSaving = true
         defer { isSaving = false }
@@ -146,6 +150,21 @@ final class CreateBrandViewModel: ObservableObject {
 }
 
 private extension CreateBrandViewModel {
+    func normalizedBrandID(_ rawValue: String) -> String {
+        rawValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    func isValidBrandID(_ value: String) -> Bool {
+        guard (2...64).contains(value.count),
+              let first = value.unicodeScalars.first,
+              CharacterSet.alphanumerics.contains(first) else {
+            return false
+        }
+
+        let allowedCharacters = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789-_")
+        return value.rangeOfCharacter(from: allowedCharacters.inverted) == nil
+    }
+
     func enqueueDetailUpload(docID: String, detailPath: String, detailData: Data) {
         Task(priority: .utility) { [weak self] in
             guard let self else { return }

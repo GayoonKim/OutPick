@@ -13,7 +13,6 @@ struct BrandDetailSeasonsGridView: View {
     let errorMessage: String?
     let brandImageCache: any BrandImageCacheProtocol
     let maxBytes: Int
-    let onSelectSeason: ((Season) -> Void)?
 
     private let columns: [GridItem] = [
         GridItem(.flexible(), spacing: 12),
@@ -52,12 +51,19 @@ struct BrandDetailSeasonsGridView: View {
             } else {
                 LazyVGrid(columns: columns, spacing: 12) {
                     ForEach(seasons, id: \.id) { season in
-                        BrandDetailSeasonGridItemView(
-                            season: season,
-                            brandImageCache: brandImageCache,
-                            maxBytes: maxBytes,
-                            onTap: onSelectSeason
-                        )
+                        NavigationLink(
+                            destination: SeasonDetailView(
+                                brandID: season.brandID,
+                                seasonID: season.id
+                            )
+                        ) {
+                            BrandDetailSeasonGridItemView(
+                                season: season,
+                                brandImageCache: brandImageCache,
+                                maxBytes: maxBytes
+                            )
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.horizontal, 16)

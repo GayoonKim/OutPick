@@ -9,10 +9,10 @@ import UIKit
 
 protocol SocialAuthRepositoryProtocol {
     // 로그인 UI 플로우(버튼 탭)용
-    func signInWithGoogle(presenter: UIViewController) async throws -> String
-    func signInWithKakao(presenter: UIViewController) async throws -> String
+    func signInWithGoogle(presenter: UIViewController) async throws -> AuthenticatedUser
+    func signInWithKakao(presenter: UIViewController) async throws -> AuthenticatedUser
 
-    // ✅ Launch 자동로그인 체크용(이메일 채우기)
-    func restoreGoogleEmailIfLoggedIn() async -> String?
-    func restoreKakaoEmailIfLoggedIn() async -> String?
+    // Launch 자동로그인 체크용
+    func restoreGoogleUserIfLoggedIn() async -> AuthenticatedUser?
+    func restoreKakaoUserIfLoggedIn() async -> AuthenticatedUser?
 }

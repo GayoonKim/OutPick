@@ -41,7 +41,7 @@ final class LookbookRepositoryProvider {
 
     init(
         brandRepository: BrandRepositoryProtocol = FirestoreBrandRepository(),
-        brandStore: BrandStoringRepository = FirestoreBrandStore(),
+        brandStore: BrandStoringRepository = CloudFunctionsBrandStore(),
 
         seasonRepository: SeasonRepositoryProtocol? = nil,
         seasonCoverThumbnailPolicy: ThumbnailPolicy = ThumbnailPolicies.seasonCover,

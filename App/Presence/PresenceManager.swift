@@ -165,12 +165,14 @@ final class PresenceManager {
         let email = LoginManager.shared.getUserEmail
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
-        guard !email.isEmpty else { return nil }
 
         let userDocumentID: String
         if !LoginManager.shared.getUserDocumentID.isEmpty {
             userDocumentID = LoginManager.shared.getUserDocumentID
         } else {
+            guard LoginManager.shared.hasAuthenticatedIdentity else {
+                return nil
+            }
             do {
                 userDocumentID = try await LoginManager.shared.ensureUserDocumentID()
             } catch {

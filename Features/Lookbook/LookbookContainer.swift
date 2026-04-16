@@ -10,13 +10,19 @@ import Foundation
 @MainActor
 final class LookbookContainer {
     let provider: LookbookRepositoryProvider
+    let brandAdminSessionStore: BrandAdminSessionStore
     let lookbookHomeViewModel: LookbookHomeViewModel
 
-    init(provider: LookbookRepositoryProvider = .shared) {
+    init(
+        provider: LookbookRepositoryProvider = .shared,
+        brandAdminSessionStore: BrandAdminSessionStore
+    ) {
         self.provider = provider
+        self.brandAdminSessionStore = brandAdminSessionStore
 
         self.lookbookHomeViewModel = LookbookHomeViewModel(
             repo: provider.brandRepository,
+            brandAdminSessionStore: brandAdminSessionStore,
             brandImageCache: provider.brandImageCache,
             initialBrandLimit: 12,
             prefetchLogoCount: 4

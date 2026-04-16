@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import Combine
 import FirebaseFirestore
 
 @MainActor
@@ -20,10 +21,13 @@ final class LookbookHomeViewModel: ObservableObject {
 
     @Published private(set) var phase: Phase = .idle
     @Published private(set) var brands: [Brand] = []
+    @Published private(set) var canCreateBrand: Bool = false
 
     /// DI
     private let repo: BrandRepositoryProtocol
+    private let brandAdminSessionStore: BrandAdminSessionStore
     let brandImageCache: any BrandImageCacheProtocol
+    private var cancellables = Set<AnyCancellable>()
 
     /// 페이지네이션 기준(마지막 문서)
     private var lastBrandDocument: DocumentSnapshot? = nil
@@ -44,6 +48,7 @@ final class LookbookHomeViewModel: ObservableObject {
 
     init(
         repo: BrandRepositoryProtocol,
+        brandAdminSessionStore: BrandAdminSessionStore,
         brandImageCache: any BrandImageCacheProtocol,
         initialBrandLimit: Int = 12,
         prefetchLogoCount: Int = 4,
@@ -51,11 +56,14 @@ final class LookbookHomeViewModel: ObservableObject {
         thumbMaxBytes: Int = 1 * 1024 * 1024
     ) {
         self.repo = repo
+        self.brandAdminSessionStore = brandAdminSessionStore
         self.brandImageCache = brandImageCache
         self.initialBrandLimit = initialBrandLimit
         self.prefetchLogoCount = prefetchLogoCount
         self.prefetchConcurrency = prefetchConcurrency
         self.thumbMaxBytes = thumbMaxBytes
+        self.canCreateBrand = brandAdminSessionStore.canCreateBrand
+        bindBrandAdminSessionStore()
     }
 
     /// 앱 시작 시 또는 룩북 탭 진입 전에 한 번 호출
@@ -141,5 +149,14 @@ final class LookbookHomeViewModel: ObservableObject {
         Task(priority: .utility) {
             await brandImageCache.prefetch(items: items, concurrency: concurrency)
         }
+    }
+
+    private func bindBrandAdminSessionStore() {
+        brandAdminSessionStore.$canCreateBrand
+            .removeDuplicates()
+            .sink { [weak self] canCreateBrand in
+                self?.canCreateBrand = canCreateBrand
+            }
+            .store(in: &cancellables)
     }
 }

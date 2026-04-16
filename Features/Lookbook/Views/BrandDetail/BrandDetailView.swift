@@ -11,7 +11,6 @@ struct BrandDetailView: View {
     let brand: Brand
     let brandImageCache: any BrandImageCacheProtocol
     let maxBytes: Int
-    let onSelectSeason: ((Season) -> Void)?
 
     @Environment(\.repositoryProvider) private var provider
     @StateObject private var viewModel = BrandDetailViewModel()
@@ -20,13 +19,11 @@ struct BrandDetailView: View {
     init(
         brand: Brand,
         brandImageCache: any BrandImageCacheProtocol,
-        maxBytes: Int = 1_000_000,
-        onSelectSeason: ((Season) -> Void)? = nil
+        maxBytes: Int = 1_000_000
     ) {
         self.brand = brand
         self.brandImageCache = brandImageCache
         self.maxBytes = maxBytes
-        self.onSelectSeason = onSelectSeason
     }
 
     var body: some View {
@@ -44,8 +41,7 @@ struct BrandDetailView: View {
                 isLoading: viewModel.isLoading,
                 errorMessage: viewModel.errorMessage,
                 brandImageCache: brandImageCache,
-                maxBytes: maxBytes,
-                onSelectSeason: onSelectSeason
+                maxBytes: maxBytes
             )
             .listRowInsets(EdgeInsets())
             .listRowSeparator(.hidden)

@@ -14,6 +14,7 @@ final class LoginViewController: UIViewController {
 
     private let googleButton = UIButton(type: .system)
     private let kakaoButton  = UIButton(type: .system)
+    private var pendingErrorMessage: String?
 
     init(viewModel: LoginViewModel) {
         self.viewModel = viewModel
@@ -29,6 +30,11 @@ final class LoginViewController: UIViewController {
         view.backgroundColor = .systemBackground
         configureUI()
         bind()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        showPendingErrorIfNeeded()
     }
 
     private func configureUI() {
@@ -75,7 +81,7 @@ final class LoginViewController: UIViewController {
                 self.setEnabled(false)
             case .error(let msg):
                 self.setEnabled(true)
-                AlertManager.showAlertNoHandler(title: "로그인 실패", message: msg, viewController: self)
+                self.presentErrorWhenPossible(msg)
             }
         }
     }
@@ -85,6 +91,20 @@ final class LoginViewController: UIViewController {
         kakaoButton.isEnabled  = enabled
         googleButton.alpha = enabled ? 1 : 0.6
         kakaoButton.alpha  = enabled ? 1 : 0.6
+    }
+
+    private func presentErrorWhenPossible(_ message: String) {
+        guard isViewLoaded, view.window != nil else {
+            pendingErrorMessage = message
+            return
+        }
+        AlertManager.showAlertNoHandler(title: "로그인 실패", message: message, viewController: self)
+    }
+
+    private func showPendingErrorIfNeeded() {
+        guard let pendingErrorMessage else { return }
+        self.pendingErrorMessage = nil
+        presentErrorWhenPossible(pendingErrorMessage)
     }
 
     @objc private func googleTapped() { viewModel.tapGoogle(presenter: self) }

@@ -11,7 +11,6 @@ struct BrandDetailSeasonGridItemView: View {
     let season: Season
     let brandImageCache: any BrandImageCacheProtocol
     let maxBytes: Int
-    let onTap: ((Season) -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -30,9 +29,6 @@ struct BrandDetailSeasonGridItemView: View {
                 .foregroundStyle(.primary)
         }
         .contentShape(Rectangle())
-        .onTapGesture {
-            onTap?(season)
-        }
     }
 
     private var seasonTitle: String {

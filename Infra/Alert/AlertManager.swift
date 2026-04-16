@@ -13,11 +13,17 @@ class AlertManager {
     
     @MainActor
     static func showAlertNoHandler(title: String, message: String, viewController: UIViewController) {
+        guard viewController.isViewLoaded,
+              viewController.view.window != nil else {
+            return
+        }
+        guard viewController.presentedViewController == nil else {
+            return
+        }
         
         let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "확인", style: .default, handler: nil))
         viewController.present(alert, animated: true, completion: nil)
-        
     }
     
     @MainActor

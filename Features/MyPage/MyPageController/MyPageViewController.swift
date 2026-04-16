@@ -182,10 +182,10 @@ class MyPageViewController: UIViewController {
     private func goToLoginScreen() {
         // 한국어 주석: CompositionRoot로 로그인 화면을 생성 (LoginViewController는 viewModel 주입 필요)
         let loginViewController = LoginCompositionRoot.makeLoginViewController(
-            onLoginSuccess: { email in
+            onLoginSuccess: { authenticatedUser in
                 // 로그인 성공 후에는 AppCoordinator가 다시 라우팅하도록 설계하는 것이 이상적이지만,
-                // 이 VC는 현재 root를 직접 바꾸는 레거시 경로이므로 최소한 이메일만 세션에 저장합니다.
-                LoginManager.shared.setUserEmail(email)
+                // 이 VC는 현재 root를 직접 바꾸는 레거시 경로이므로 최소한 인증 identity를 세션에 저장합니다.
+                LoginManager.shared.setAuthenticatedUser(authenticatedUser)
             }
         )
 
@@ -211,10 +211,16 @@ class MyPageViewController: UIViewController {
     }
     
     private func logOutBtnTapped(_ sender: UIButton) {
+        let currentProfileCacheAccount = LoginManager.shared.getUserDocumentID.isEmpty
+            ? "UserProfile"
+            : "UserProfile:\(LoginManager.shared.getUserDocumentID)"
+        KeychainManager.shared.delete(service: "GayoonKim.OutPick", account: currentProfileCacheAccount)
         KeychainManager.shared.delete(service: "GayoonKim.OutPick", account: "UserProfile")
+        KeychainManager.shared.delete(service: "GayoonKim.OutPick", account: "AuthenticatedUser")
         LoginManager.shared.setUserEmail("")
         LoginManager.shared.setCurrentUserProfile(nil)
         LoginManager.shared.clearAuthUserKey()
+        LoginManager.shared.clearUserDocumentID()
         didRouteToLogin = false
 
         // 1) Firebase/Google 로그아웃(되어있지 않아도 안전하게 시도)

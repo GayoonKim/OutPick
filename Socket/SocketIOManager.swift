@@ -149,7 +149,7 @@ class SocketIOManager {
     private init(repositories: FirebaseRepositoryProviding = FirebaseRepositoryProvider.shared) {
         self.userProfileRepository = repositories.userProfileRepository
         self.chatRoomRepository = repositories.chatRoomRepository
-        manager = SocketManager(socketURL: URL(string: "http://192.168.123.183:3000")!, config: [
+        manager = SocketManager(socketURL: URL(string: "http://192.168.123.148:3000")!, config: [
             .log(true),
             .compress,
             // 서버가 WebSocket only(transports:['websocket'])로 동작하므로 클라이언트도 폴링을 비활성화

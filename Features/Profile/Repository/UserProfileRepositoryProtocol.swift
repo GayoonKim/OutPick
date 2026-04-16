@@ -12,7 +12,10 @@ import FirebaseFirestore
 /// 사용자 프로필 관련 데이터베이스 작업을 위한 프로토콜
 protocol UserProfileRepositoryProtocol {
     /// 로그인 identity(provider key) 기준으로 사용자 문서 ID를 조회/생성
-    func resolveOrCreateUserDocumentID(identityKey: String, email: String) async throws -> String
+    func resolveOrCreateUserDocumentID(authenticatedUser: AuthenticatedUser) async throws -> String
+
+    /// 현재 로그인 사용자 프로필에 대한 실시간 리스너 시작
+    func listenToCurrentUserProfile(onCurrentUserProfileUpdated: ((UserProfile) -> Void)?)
 
     /// 특정 사용자 프로필에 대한 실시간 리스너 시작
     func listenToUserProfile(email: String, onCurrentUserProfileUpdated: ((UserProfile) -> Void)?)
@@ -24,9 +27,12 @@ protocol UserProfileRepositoryProtocol {
     func stopListenUserProfile(email: String)
     
     /// Firestore에 사용자 프로필 저장
-    func saveUserProfileToFirestore(email: String) async throws
+    func saveCurrentUserProfile() async throws
     
-    /// Firestore에서 사용자 프로필 조회
+    /// Firestore에서 현재 로그인 사용자 프로필 조회
+    func fetchCurrentUserProfile() async throws -> UserProfile
+
+    /// Firestore에서 이메일 기반 프로필 조회(채팅 참여자 표시 등 공개 조회용)
     func fetchUserProfileFromFirestore(email: String) async throws -> UserProfile
     
     /// 여러 사용자 프로필 일괄 조회
@@ -42,11 +48,10 @@ protocol UserProfileRepositoryProtocol {
     func fetchLastReadSeq(for roomID: String) async throws -> Int64
 
     /// 로그인 기기 식별자 갱신 (users/{id}/meta/session)
-    func upsertDeviceID(email: String, deviceID: String) async throws
+    func upsertDeviceID(deviceID: String) async throws
 
     /// 로그인 기기 식별자 변경 리스너 시작 (users/{id}/meta/session)
     func listenToDeviceID(
-        email: String,
         onUpdate: @escaping (String?) -> Void,
         onError: @escaping (Error) -> Void
     ) -> ListenerRegistration
