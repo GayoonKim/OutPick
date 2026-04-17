@@ -27,6 +27,7 @@
 //
 
 import Foundation
+import FirebaseFirestore
 
 @MainActor
 final class CreateSeasonViewModel: ObservableObject {
@@ -229,9 +230,23 @@ final class CreateSeasonViewModel: ObservableObject {
             )
             return season
         } catch {
-            errorMessage = "시즌 저장 실패: \(error.localizedDescription)"
+            errorMessage = friendlyErrorMessage(for: error)
             return nil
         }
     }
 }
 
+private extension CreateSeasonViewModel {
+    func friendlyErrorMessage(for error: Error) -> String {
+        if isPermissionDenied(error) {
+            return "이 브랜드에 시즌을 추가할 권한이 없습니다. 브랜드 관리자 또는 소유자 권한을 확인해주세요."
+        }
+        return "시즌 저장 실패: \(error.localizedDescription)"
+    }
+
+    func isPermissionDenied(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        guard nsError.domain == "FIRFirestoreErrorDomain" else { return false }
+        return nsError.code == FirestoreErrorCode.permissionDenied.rawValue
+    }
+}

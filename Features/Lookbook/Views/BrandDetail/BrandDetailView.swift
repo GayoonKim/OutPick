@@ -12,7 +12,9 @@ struct BrandDetailView: View {
     let brandImageCache: any BrandImageCacheProtocol
     let maxBytes: Int
 
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.repositoryProvider) private var provider
+    @EnvironmentObject private var brandAdminSessionStore: BrandAdminSessionStore
     @StateObject private var viewModel = BrandDetailViewModel()
     @State private var isPresentCreateSeason: Bool = false
 
@@ -49,14 +51,28 @@ struct BrandDetailView: View {
         .listStyle(.plain)
         .navigationTitle(brand.name)
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(true)
+        .tint(.black)
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItem(placement: .navigationBarLeading) {
                 Button {
-                    isPresentCreateSeason = true
+                    dismiss()
                 } label: {
-                    Image(systemName: "plus")
+                    Image(systemName: "chevron.left")
+                        .foregroundStyle(.black)
                 }
-                .accessibilityLabel("시즌 추가")
+                .accessibilityLabel("뒤로 가기")
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                if brandAdminSessionStore.canWrite(brandID: brand.id) {
+                    Button {
+                        isPresentCreateSeason = true
+                    } label: {
+                        Image(systemName: "plus")
+                            .foregroundStyle(.black)
+                    }
+                    .accessibilityLabel("시즌 추가")
+                }
             }
         }
         .sheet(isPresented: $isPresentCreateSeason, onDismiss: {

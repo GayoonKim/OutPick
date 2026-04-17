@@ -143,4 +143,5 @@ struct LookbookHomeView: View {
         prefetchLogoCount: 4
     )
     LookbookHomeView(viewModel: vm, provider: provider)
+        .environmentObject(brandAdminSessionStore)
 }

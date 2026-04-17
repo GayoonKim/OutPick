@@ -24,6 +24,7 @@ enum LookbookCompositionRoot {
                 provider: container.provider
             )
             .environment(\.repositoryProvider, container.provider)
+            .environmentObject(container.brandAdminSessionStore)
 
         // 한국어 주석: SwiftUI -> UIKit 브릿지
         let hostingVC = UIHostingController(rootView: lookbookView)

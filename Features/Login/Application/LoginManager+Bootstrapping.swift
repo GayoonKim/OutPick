@@ -37,6 +37,7 @@ extension LoginManager: LoginBootstrappingProtocol {
 
         // 3) 브랜드 권한 선로딩
         await brandAdminSessionStore.refreshCurrentSession(force: true)
+        await brandAdminSessionStore.refreshWritableBrands(force: true)
 
         // 4) 소켓 연결(대기하지 않아도 됨)
         Task {
