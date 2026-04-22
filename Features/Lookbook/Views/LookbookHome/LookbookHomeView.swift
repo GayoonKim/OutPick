@@ -12,6 +12,7 @@ struct LookbookHomeView: View {
 
     @State private var selectedBrandID: Brand.ID?
     @State private var isPresentingCreateBrand = false
+    @State private var createdBrandIDForSelection: Brand.ID?
 
     private let provider: LookbookRepositoryProvider
 
@@ -27,7 +28,15 @@ struct LookbookHomeView: View {
             mainContent
         }
         .navigationViewStyle(StackNavigationViewStyle())
-        .sheet(isPresented: $isPresentingCreateBrand) {
+        .fullScreenCover(isPresented: $isPresentingCreateBrand, onDismiss: {
+            guard let createdBrandIDForSelection else { return }
+
+            Task {
+                await viewModel.retry()
+                selectedBrandID = createdBrandIDForSelection
+                self.createdBrandIDForSelection = nil
+            }
+        }) {
             createBrandSheet
         }
         .task {
@@ -124,9 +133,9 @@ struct LookbookHomeView: View {
 
     private var createBrandSheet: some View {
         NavigationView {
-            CreateBrandView(provider: provider)
-                .navigationTitle("브랜드 등록")
-                .navigationBarTitleDisplayMode(.inline)
+            CreateBrandFlowView(provider: provider) { createdBrandID in
+                createdBrandIDForSelection = createdBrandID
+            }
         }
         .navigationViewStyle(StackNavigationViewStyle())
     }

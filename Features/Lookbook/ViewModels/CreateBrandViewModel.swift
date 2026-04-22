@@ -12,6 +12,12 @@ import UIKit
 @MainActor
 final class CreateBrandViewModel: ObservableObject {
 
+    struct CreatedBrand: Equatable {
+        let id: BrandID
+        let name: String
+        let websiteURL: String?
+    }
+
     // MARK: - 입력 상태
     @Published var brandName: String = ""
     @Published var websiteURLText: String = ""
@@ -56,13 +62,13 @@ final class CreateBrandViewModel: ObservableObject {
         selectedLogoDetailData = nil
     }
 
-    func saveBrand() async {
+    func saveBrand() async -> CreatedBrand? {
         message = nil
 
         let rawName = normalizedDisplayName(brandName)
         guard !rawName.isEmpty else {
             message = "브랜드명을 입력해주세요."
-            return
+            return nil
         }
 
         let websiteURL: String
@@ -70,23 +76,29 @@ final class CreateBrandViewModel: ObservableObject {
             websiteURL = try normalizedWebsiteURL(websiteURLText) ?? ""
         } catch {
             message = error.localizedDescription
-            return
+            return nil
         }
 
         isSaving = true
         defer { isSaving = false }
 
         do {
+            let normalizedWebsiteURL = websiteURL.isEmpty ? nil : websiteURL
             let docID = try await brandStore.createBrand(
                 name: rawName,
                 isFeatured: isFeatured,
-                websiteURL: websiteURL.isEmpty ? nil : websiteURL
+                websiteURL: normalizedWebsiteURL
             )
 
             enqueueLogoUploadIfNeeded(docID: docID)
-            message = "저장 완료: brands/\(docID) (리소스 준비 중)"
+            return CreatedBrand(
+                id: BrandID(value: docID),
+                name: rawName,
+                websiteURL: normalizedWebsiteURL
+            )
         } catch {
             message = "저장 실패: \(error.localizedDescription)"
+            return nil
         }
     }
 }
