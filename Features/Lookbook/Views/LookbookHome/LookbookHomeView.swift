@@ -108,8 +108,8 @@ struct LookbookHomeView: View {
                         isPresentingCreateBrand = true
                     } label: {
                         HStack(spacing: 2) {
-                            Image(systemName: "plus")
-                            Text("브랜드")
+//                            Image(systemName: "plus")
+                            Text("브랜드 추가")
                         }
                         .lineLimit(1)
                     }

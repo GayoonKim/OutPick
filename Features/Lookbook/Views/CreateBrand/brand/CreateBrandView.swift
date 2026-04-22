@@ -34,6 +34,11 @@ struct CreateBrandView: View {
                         .textInputAutocapitalization(.words)
                         .disableAutocorrection(true)
 
+                    TextField("브랜드 URL (선택)", text: $viewModel.websiteURLText)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .disableAutocorrection(true)
+
                     Button {
                         isImagePickerPresented = true
                     } label: {
@@ -92,7 +97,7 @@ struct CreateBrandView: View {
 
                 Section(
                     footer: Text(
-                        "브랜드 내부 ID는 자동 생성되며, 동일한 브랜드명은 중복 등록할 수 없습니다."
+                        "브랜드 내부 ID는 자동 생성되며, 동일한 브랜드명은 중복 등록할 수 없습니다. 브랜드 URL은 이후 시즌 후보 자동 탐지의 기준값으로 사용됩니다."
                     )
                 ) {
                     EmptyView()

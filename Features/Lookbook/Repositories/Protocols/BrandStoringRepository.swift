@@ -13,7 +13,8 @@ protocol BrandStoringRepository {
     /// 브랜드를 생성하고 생성된 문서 ID를 반환합니다.
     func createBrand(
         name: String,
-        isFeatured: Bool
+        isFeatured: Bool,
+        websiteURL: String?
     ) async throws -> String
 
     /// 생성 후 업로드된 로고 경로를 패치합니다.

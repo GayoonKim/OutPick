@@ -88,12 +88,16 @@ final class CloudFunctionsManager {
 
     func createBrand(
         name: String,
-        isFeatured: Bool
+        isFeatured: Bool,
+        websiteURL: String?
     ) async throws -> String {
         var data: [String: Any] = [
             "name": name,
             "isFeatured": isFeatured
         ]
+        if let websiteURL {
+            data["websiteURL"] = websiteURL
+        }
 
         let response = try await callFunction("createBrand", data: data)
         return try stringValue(response, key: "brandID")

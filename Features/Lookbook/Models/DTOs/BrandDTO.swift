@@ -5,6 +5,7 @@ struct BrandDTO: Codable {
     @DocumentID var id: String?
 
     let name: String
+    let websiteURL: String?
 
     /// (호환) 예전 단일 경로 필드. 앞으로는 썸네일을 넣는 용도로 유지 권장
     let logoPath: String?
@@ -15,6 +16,10 @@ struct BrandDTO: Codable {
     let logoOriginalPath: String?
 
     let isFeatured: Bool?
+    let discoveryStatus: BrandDiscoveryStatus?
+    let lastDiscoveryErrorMessage: String?
+    let lastDiscoveryRequestedAt: Timestamp?
+    let lastDiscoveryCompletedAt: Timestamp?
     let likeCount: Int?
     let viewCount: Int?
     let popularScore: Double?
@@ -41,10 +46,15 @@ struct BrandDTO: Codable {
         return Brand(
             id: BrandID(value: id),
             name: name,
+            websiteURL: websiteURL,
             logoThumbPath: resolvedThumbPath,
             logoDetailPath: resolvedDetailPath,
             logoOriginalPath: resolvedOriginalPath,
             isFeatured: isFeatured ?? false,
+            discoveryStatus: discoveryStatus ?? .idle,
+            lastDiscoveryErrorMessage: lastDiscoveryErrorMessage,
+            lastDiscoveryRequestedAt: lastDiscoveryRequestedAt?.dateValue(),
+            lastDiscoveryCompletedAt: lastDiscoveryCompletedAt?.dateValue(),
             metrics: metrics,
             updatedAt: updatedAt?.dateValue() ?? Date(timeIntervalSince1970: 0)
         )

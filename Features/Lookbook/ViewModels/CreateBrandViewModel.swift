@@ -14,6 +14,7 @@ final class CreateBrandViewModel: ObservableObject {
 
     // MARK: - 입력 상태
     @Published var brandName: String = ""
+    @Published var websiteURLText: String = ""
     @Published var selectedLogoImage: UIImage? = nil
     @Published var isFeatured: Bool = false
 
@@ -64,25 +65,26 @@ final class CreateBrandViewModel: ObservableObject {
             return
         }
 
+        let websiteURL: String
+        do {
+            websiteURL = try normalizedWebsiteURL(websiteURLText) ?? ""
+        } catch {
+            message = error.localizedDescription
+            return
+        }
+
         isSaving = true
         defer { isSaving = false }
 
         do {
             let docID = try await brandStore.createBrand(
                 name: rawName,
-                isFeatured: isFeatured
+                isFeatured: isFeatured,
+                websiteURL: websiteURL.isEmpty ? nil : websiteURL
             )
 
-            do {
-                let startedDetailUpload = try await uploadLogoIfNeeded(docID: docID)
-                if startedDetailUpload {
-                    message = "저장 완료: brands/\(docID) (디테일 업로드 중)"
-                } else {
-                    message = "저장 완료: brands/\(docID)"
-                }
-            } catch {
-                message = "브랜드는 생성되었지만 로고 업로드에 실패했습니다: \(error.localizedDescription)"
-            }
+            enqueueLogoUploadIfNeeded(docID: docID)
+            message = "저장 완료: brands/\(docID) (리소스 준비 중)"
         } catch {
             message = "저장 실패: \(error.localizedDescription)"
         }
@@ -101,41 +103,50 @@ private extension CreateBrandViewModel {
             .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
     }
 
-    func uploadLogoIfNeeded(docID: String) async throws -> Bool {
-        guard let preparedLogo = try prepareLogoUpload() else {
-            return false
+    func normalizedWebsiteURL(_ rawValue: String) throws -> String? {
+        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        // 한국어 주석: 사용자가 도메인만 입력한 경우를 위해 https 스킴을 보정합니다.
+        let candidate = trimmed.contains("://") ? trimmed : "https://\(trimmed)"
+
+        guard var components = URLComponents(string: candidate) else {
+            throw NSError(
+                domain: "CreateBrandViewModel",
+                code: -20,
+                userInfo: [NSLocalizedDescriptionKey: "브랜드 URL 형식이 올바르지 않습니다."]
+            )
         }
 
-        let thumbPath = "brands/\(docID)/logo/thumb.jpg"
-        let detailPath = "brands/\(docID)/logo/detail.jpg"
-        var uploadedThumbPathForRollback: String?
-
-        do {
-            let uploadedThumbPath = try await storageService.uploadImage(
-                data: preparedLogo.thumbData,
-                to: thumbPath
+        guard let scheme = components.scheme?.lowercased(),
+              ["http", "https"].contains(scheme) else {
+            throw NSError(
+                domain: "CreateBrandViewModel",
+                code: -21,
+                userInfo: [NSLocalizedDescriptionKey: "브랜드 URL은 http 또는 https로 시작해야 합니다."]
             )
-            uploadedThumbPathForRollback = uploadedThumbPath
-
-            try await brandStore.updateLogoPaths(
-                docID: docID,
-                logoThumbPath: uploadedThumbPath,
-                logoDetailPath: nil
-            )
-
-            uploadedThumbPathForRollback = nil
-            enqueueDetailUpload(
-                docID: docID,
-                detailPath: detailPath,
-                detailData: preparedLogo.detailData
-            )
-            return true
-        } catch {
-            if let rollbackPath = uploadedThumbPathForRollback {
-                try? await storageService.deleteFile(at: rollbackPath)
-            }
-            throw error
         }
+
+        guard let host = components.host, !host.isEmpty else {
+            throw NSError(
+                domain: "CreateBrandViewModel",
+                code: -22,
+                userInfo: [NSLocalizedDescriptionKey: "브랜드 URL에 도메인이 필요합니다."]
+            )
+        }
+
+        components.scheme = scheme
+        components.host = host.lowercased()
+
+        guard let normalized = components.string else {
+            throw NSError(
+                domain: "CreateBrandViewModel",
+                code: -23,
+                userInfo: [NSLocalizedDescriptionKey: "브랜드 URL을 정규화하지 못했습니다."]
+            )
+        }
+
+        return normalized
     }
 
     func prepareLogoUpload() throws -> PreparedLogoUpload? {
@@ -172,18 +183,54 @@ private extension CreateBrandViewModel {
         )
     }
 
-    func enqueueDetailUpload(docID: String, detailPath: String, detailData: Data) {
+    func enqueueLogoUploadIfNeeded(docID: String) {
+        let preparedLogo: PreparedLogoUpload?
+
+        do {
+            preparedLogo = try prepareLogoUpload()
+        } catch {
+            print("⚠️ 브랜드 로고 준비 실패(docID=\(docID)): \(error.localizedDescription)")
+            return
+        }
+
+        guard let preparedLogo else { return }
+
         Task(priority: .utility) { [weak self] in
             guard let self else { return }
+
+            let thumbPath = "brands/\(docID)/logo/thumb.jpg"
+            let detailPath = "brands/\(docID)/logo/detail.jpg"
+            var uploadedThumbPathForRollback: String?
+
             do {
-                let uploadedDetailPath = try await self.storageService.uploadImage(data: detailData, to: detailPath)
+                let uploadedThumbPath = try await self.storageService.uploadImage(
+                    data: preparedLogo.thumbData,
+                    to: thumbPath
+                )
+                uploadedThumbPathForRollback = uploadedThumbPath
+
+                try await self.brandStore.updateLogoPaths(
+                    docID: docID,
+                    logoThumbPath: uploadedThumbPath,
+                    logoDetailPath: nil
+                )
+
+                uploadedThumbPathForRollback = nil
+
+                let uploadedDetailPath = try await self.storageService.uploadImage(
+                    data: preparedLogo.detailData,
+                    to: detailPath
+                )
                 try await self.brandStore.updateLogoPaths(
                     docID: docID,
                     logoThumbPath: nil,
                     logoDetailPath: uploadedDetailPath
                 )
             } catch {
-                print("⚠️ 브랜드 detail 업로드/패치 실패(docID=\(docID)): \(error.localizedDescription)")
+                if let rollbackPath = uploadedThumbPathForRollback {
+                    try? await self.storageService.deleteFile(at: rollbackPath)
+                }
+                print("⚠️ 브랜드 로고 업로드/패치 실패(docID=\(docID)): \(error.localizedDescription)")
             }
         }
     }

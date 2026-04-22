@@ -19,7 +19,8 @@ struct FirestoreBrandStore: BrandStoringRepository {
 
     func createBrand(
         name: String,
-        isFeatured: Bool
+        isFeatured: Bool,
+        websiteURL: String?
     ) async throws -> String {
         let docRef = db.collection("brands").document()
         let docID = docRef.documentID
@@ -29,6 +30,7 @@ struct FirestoreBrandStore: BrandStoringRepository {
         let data: [String: Any] = [
             "name": normalizedDisplayName(name),
             "normalizedName": normalizedName,
+            "websiteURL": websiteURL ?? NSNull(),
 
             "logoPath": NSNull(),
             "logoThumbPath": NSNull(),
@@ -36,6 +38,10 @@ struct FirestoreBrandStore: BrandStoringRepository {
             "logoOriginalPath": NSNull(),
 
             "isFeatured": isFeatured,
+            "discoveryStatus": BrandDiscoveryStatus.idle.rawValue,
+            "lastDiscoveryErrorMessage": NSNull(),
+            "lastDiscoveryRequestedAt": NSNull(),
+            "lastDiscoveryCompletedAt": NSNull(),
             "likeCount": 0,
             "viewCount": 0,
             "popularScore": 0.0,

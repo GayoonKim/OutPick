@@ -12,11 +12,13 @@ import Foundation
 struct CloudFunctionsBrandStore: BrandStoringRepository {
     func createBrand(
         name: String,
-        isFeatured: Bool
+        isFeatured: Bool,
+        websiteURL: String?
     ) async throws -> String {
         try await CloudFunctionsManager.shared.createBrand(
             name: name,
-            isFeatured: isFeatured
+            isFeatured: isFeatured,
+            websiteURL: websiteURL
         )
     }
 

@@ -7,10 +7,19 @@
 
 import Foundation
 
+enum BrandDiscoveryStatus: String, Codable, CaseIterable, Equatable {
+    case idle
+    case queued
+    case running
+    case success
+    case failed
+}
+
 // MARK:- 핵심 엔티티들
 struct Brand: Equatable, Codable, Identifiable {
     var id: BrandID
     var name: String
+    var websiteURL: String?
 
     /// 목록/카드에서 사용하는 썸네일 Storage 경로
     var logoThumbPath: String?
@@ -25,6 +34,10 @@ struct Brand: Equatable, Codable, Identifiable {
     var logoPath: String? { logoThumbPath }
 
     var isFeatured: Bool
+    var discoveryStatus: BrandDiscoveryStatus
+    var lastDiscoveryErrorMessage: String?
+    var lastDiscoveryRequestedAt: Date?
+    var lastDiscoveryCompletedAt: Date?
     var metrics: BrandMetrics
     var updatedAt: Date
 }

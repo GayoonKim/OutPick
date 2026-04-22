@@ -68,7 +68,7 @@ struct BrandDetailView: View {
                     Button {
                         isPresentCreateSeason = true
                     } label: {
-                        Image(systemName: "plus")
+                        Text("시즌 추가")
                             .foregroundStyle(.black)
                     }
                     .accessibilityLabel("시즌 추가")
