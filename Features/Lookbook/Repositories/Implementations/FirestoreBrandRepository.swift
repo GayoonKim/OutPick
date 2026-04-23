@@ -24,6 +24,24 @@ final class FirestoreBrandRepository: BrandRepositoryProtocol {
         self.db = db
     }
 
+    func fetchBrand(brandID: BrandID) async throws -> Brand {
+        let snapshot = try await db
+            .collection("brands")
+            .document(brandID.value)
+            .getDocument()
+
+        guard snapshot.exists else {
+            throw NSError(
+                domain: "FirestoreBrandRepository",
+                code: -40,
+                userInfo: [NSLocalizedDescriptionKey: "브랜드 문서를 찾지 못했습니다."]
+            )
+        }
+
+        let dto: BrandDTO = try FirestoreMapper.mapDocument(snapshot)
+        return try dto.toDomain()
+    }
+
     /// 전체 브랜드 목록 페이지 조회
     func fetchBrands(
         sort: BrandSort? = nil,

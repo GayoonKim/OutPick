@@ -20,6 +20,7 @@ struct BrandRowView: View {
     #endif
 
     @State private var loadFailed: Bool = false
+    @State private var lastRequestedPath: String?
 
     // 목록 썸네일이므로 다운로드 최대 용량을 낮게 유지합니다. (대략 1MB)
     private let maxLogoBytes: Int = 1 * 1024 * 1024
@@ -45,7 +46,7 @@ struct BrandRowView: View {
             RoundedRectangle(cornerRadius: 14)
                 .fill(Color(.secondarySystemBackground))
         )
-        .task {
+        .task(id: brand.listLogoPath ?? "__empty_logo_path__") {
             await loadLogoIfNeeded()
         }
     }
@@ -105,9 +106,18 @@ struct BrandRowView: View {
 
     @MainActor
     private func loadLogoIfNeeded() async {
-        // 목록에서는 썸네일 경로를 우선 사용하고, 없으면 기존 logoPath로 폴백합니다.
-        let resolvedPath = brand.logoThumbPath ?? brand.logoOriginalPath
+        // 목록에서는 썸네일 -> detail -> original 순으로 폴백합니다.
+        let resolvedPath = brand.listLogoPath
         guard let path = resolvedPath, !path.isEmpty else { return }
+
+        // 한국어 주석: 같은 셀 인스턴스가 유지된 채 로고 경로만 바뀌는 경우를 위해 상태를 초기화합니다.
+        if lastRequestedPath != path {
+            lastRequestedPath = path
+            loadFailed = false
+            #if canImport(UIKit)
+            uiImage = nil
+            #endif
+        }
 
         // 이미 로드했거나 실패했다면 중복 호출 방지
         #if canImport(UIKit)

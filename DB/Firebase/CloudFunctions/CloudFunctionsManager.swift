@@ -151,6 +151,25 @@ final class CloudFunctionsManager {
         return try stringValue(response, key: "brandID")
     }
 
+    func requestSeasonImport(
+        brandID: String,
+        seasonURL: String
+    ) async throws -> SeasonImportRequestReceipt {
+        let response = try await callFunction(
+            "requestSeasonImport",
+            data: [
+                "brandID": brandID,
+                "seasonURL": seasonURL
+            ]
+        )
+
+        return SeasonImportRequestReceipt(
+            jobID: try stringValue(response, key: "jobID"),
+            status: try stringValue(response, key: "status"),
+            normalizedSeasonURL: try stringValue(response, key: "seasonURL")
+        )
+    }
+
     private func callFunction(
         _ name: String,
         data: [String: Any],

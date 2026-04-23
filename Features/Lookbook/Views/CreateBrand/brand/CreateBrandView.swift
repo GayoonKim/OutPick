@@ -159,11 +159,12 @@ private extension CreateBrandView {
                                 .frame(maxWidth: .infinity, maxHeight: 180)
                                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
 
-                            Button(role: .destructive) {
+                            Button {
                                 viewModel.clearPickedLogo()
                             } label: {
                                 Text("로고 이미지 제거")
                                     .font(.footnote.weight(.semibold))
+                                    .foregroundStyle(.black)
                             }
                         } else {
                             Text("선택된 로고 이미지가 없습니다.")

@@ -119,7 +119,7 @@ struct CreateSeasonView: View {
 
                                 Spacer()
 
-                                Button(role: .destructive) {
+                                Button {
                                     // 한국어 주석: Form에서 버튼 충돌 방지용 안전장치
                                     isPhotoPickerPresented = false
                                     viewModel.coverImageData = nil
@@ -173,6 +173,7 @@ struct CreateSeasonView: View {
                     .disabled(viewModel.isSaving)
                 }
             }
+            .tint(.black)
             // ✅ 스크롤 시작 시 자동으로 닫기 (탭 충돌 없음)
             .simultaneousGesture(
                 DragGesture(minimumDistance: 10)

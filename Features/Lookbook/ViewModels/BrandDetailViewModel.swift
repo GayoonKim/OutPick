@@ -10,32 +10,47 @@ import Foundation
 @MainActor
 final class BrandDetailViewModel: ObservableObject {
     @Published private(set) var seasons: [Season] = []
+    @Published private(set) var latestSeasonImportJob: SeasonImportJob?
     @Published private(set) var isLoading: Bool = false
     @Published private(set) var errorMessage: String?
+    @Published private(set) var importJobErrorMessage: String?
 
     private var loadedBrandID: BrandID?
     private var isRequesting: Bool = false
 
     /// 최초 진입 시 중복 로드 방지
-    func loadSeasonsIfNeeded(
+    func loadContentsIfNeeded(
         brandID: BrandID,
-        seasonRepository: any SeasonRepositoryProtocol
+        seasonRepository: any SeasonRepositoryProtocol,
+        seasonImportJobRepository: any SeasonImportJobRepositoryProtocol
     ) async {
         if loadedBrandID == brandID, !seasons.isEmpty { return }
-        await fetchAll(brandID: brandID, seasonRepository: seasonRepository, force: false)
+        await fetchAll(
+            brandID: brandID,
+            seasonRepository: seasonRepository,
+            seasonImportJobRepository: seasonImportJobRepository,
+            force: false
+        )
     }
 
     /// 시즌 추가 후(시트 닫힘 등) 강제 새로고침
-    func refreshSeasons(
+    func refreshContents(
         brandID: BrandID,
-        seasonRepository: any SeasonRepositoryProtocol
+        seasonRepository: any SeasonRepositoryProtocol,
+        seasonImportJobRepository: any SeasonImportJobRepositoryProtocol
     ) async {
-        await fetchAll(brandID: brandID, seasonRepository: seasonRepository, force: true)
+        await fetchAll(
+            brandID: brandID,
+            seasonRepository: seasonRepository,
+            seasonImportJobRepository: seasonImportJobRepository,
+            force: true
+        )
     }
 
     private func fetchAll(
         brandID: BrandID,
         seasonRepository: any SeasonRepositoryProtocol,
+        seasonImportJobRepository: any SeasonImportJobRepositoryProtocol,
         force: Bool
     ) async {
         if isRequesting { return }
@@ -49,6 +64,7 @@ final class BrandDetailViewModel: ObservableObject {
         loadedBrandID = brandID
         isLoading = true
         errorMessage = nil
+        importJobErrorMessage = nil
         defer { isLoading = false }
 
         do {
@@ -57,6 +73,17 @@ final class BrandDetailViewModel: ObservableObject {
         } catch {
             seasons = []
             errorMessage = "시즌을 불러오지 못했습니다."
+        }
+
+        do {
+            let jobs = try await seasonImportJobRepository.fetchLatestJobs(
+                brandID: brandID,
+                limit: 10
+            )
+            latestSeasonImportJob = jobs.first
+        } catch {
+            latestSeasonImportJob = nil
+            importJobErrorMessage = "시즌 import 요청 상태를 불러오지 못했습니다."
         }
     }
 }

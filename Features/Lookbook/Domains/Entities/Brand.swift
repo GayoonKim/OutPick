@@ -33,6 +33,21 @@ struct Brand: Equatable, Codable, Identifiable {
     /// (호환/편의) 예전 코드가 logoPath만 기대하는 경우를 위해 썸네일을 반환
     var logoPath: String? { logoThumbPath }
 
+    /// 홈/목록에서 사용할 대표 로고 경로입니다.
+    /// - Note: 썸네일이 없으면 detail, 그마저 없으면 original 순으로 폴백합니다.
+    var listLogoPath: String? {
+        if let logoThumbPath, !logoThumbPath.isEmpty {
+            return logoThumbPath
+        }
+        if let logoDetailPath, !logoDetailPath.isEmpty {
+            return logoDetailPath
+        }
+        if let logoOriginalPath, !logoOriginalPath.isEmpty {
+            return logoOriginalPath
+        }
+        return nil
+    }
+
     var isFeatured: Bool
     var discoveryStatus: BrandDiscoveryStatus
     var lastDiscoveryErrorMessage: String?

@@ -101,6 +101,28 @@ final class LookbookHomeViewModel: ObservableObject {
         await loadInitialPageIfNeeded()
     }
 
+    /// 브랜드 생성 직후 로고 경로가 백그라운드 patch로 늦게 들어오는 경우를 보정합니다.
+    /// - Note: 새 브랜드가 첫 페이지에 없더라도 홈에서 바로 보이게 하기 위해, 없으면 임시로 목록 앞에 삽입합니다.
+    func syncCreatedBrand(brandID: BrandID) async {
+        for attempt in 0..<6 {
+            do {
+                let brand = try await repo.fetchBrand(brandID: brandID)
+                upsertBrand(brand)
+                if await isBrandReadyForDisplay(brand) {
+                    break
+                }
+            } catch {
+                if attempt == 5 {
+                    break
+                }
+            }
+
+            if attempt < 5 {
+                try? await Task.sleep(nanoseconds: 800_000_000)
+            }
+        }
+    }
+
     /// 스크롤 바닥에서 다음 페이지 로드
     func loadNextPageIfNeeded(current brand: Brand) async {
         guard phase == .ready else { return }
@@ -134,8 +156,8 @@ final class LookbookHomeViewModel: ObservableObject {
         let slice = brands.prefix(max(count, 0))
 
         return slice.compactMap { brand in
-            // 목록에서는 썸네일 우선, 없으면 기존 logoPath로 폴백
-            let resolved = brand.logoThumbPath ?? brand.logoOriginalPath
+            // 목록에서는 썸네일 -> detail -> original 순으로 폴백
+            let resolved = brand.listLogoPath
             guard let path = resolved, !path.isEmpty else { return nil }
 
             return (path: path, maxBytes: thumbMaxBytes)
@@ -148,6 +170,40 @@ final class LookbookHomeViewModel: ObservableObject {
         let concurrency = self.prefetchConcurrency
         Task(priority: .utility) {
             await brandImageCache.prefetch(items: items, concurrency: concurrency)
+        }
+    }
+
+    private func upsertBrand(_ brand: Brand) {
+        if let index = brands.firstIndex(where: { $0.id == brand.id }) {
+            brands[index] = brand
+            return
+        }
+
+        brands.insert(brand, at: 0)
+    }
+
+    private func prefetchIfNeeded(for brand: Brand) {
+        guard let path = brand.listLogoPath else { return }
+        schedulePrefetch(items: [(path: path, maxBytes: thumbMaxBytes)])
+    }
+
+    private func hasRenderableLogo(_ brand: Brand) -> Bool {
+        guard let path = brand.listLogoPath else { return false }
+        return path.isEmpty == false
+    }
+
+    private func isBrandReadyForDisplay(_ brand: Brand) async -> Bool {
+        guard hasRenderableLogo(brand) else { return false }
+        guard let path = brand.listLogoPath else { return false }
+
+        do {
+            _ = try await brandImageCache.loadImage(
+                path: path,
+                maxBytes: thumbMaxBytes
+            )
+            return true
+        } catch {
+            return false
         }
     }
 

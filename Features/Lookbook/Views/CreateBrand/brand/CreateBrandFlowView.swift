@@ -8,8 +8,18 @@
 import SwiftUI
 
 struct CreateBrandFlowView: View {
+    enum PreviewStep {
+        case form
+        case finishing
+        case completed
+        case discovering
+        case candidateSelection
+    }
+
     private enum Step: Equatable {
         case form
+        case finishing(CreateBrandViewModel.CreatedBrand)
+        case completed(CreateBrandViewModel.CreatedBrand)
         case discovering(CreateBrandViewModel.CreatedBrand)
         case candidateSelection(CreateBrandViewModel.CreatedBrand)
     }
@@ -19,6 +29,7 @@ struct CreateBrandFlowView: View {
     @State private var step: Step = .form
     @State private var latestCreatedBrand: CreateBrandViewModel.CreatedBrand?
     @State private var discoveryTask: Task<Void, Never>?
+    @State private var logoPreparationTask: Task<Void, Never>?
     @State private var isShowingCloseConfirmation: Bool = false
 
     private let provider: LookbookRepositoryProvider
@@ -32,8 +43,49 @@ struct CreateBrandFlowView: View {
         self.onFinished = onFinished
     }
 
+    init(
+        previewStep: PreviewStep,
+        provider: LookbookRepositoryProvider = .shared,
+        onFinished: @escaping (BrandID?) -> Void = { _ in }
+    ) {
+        self.provider = provider
+        self.onFinished = onFinished
+
+        let previewBrand = CreateBrandViewModel.CreatedBrand(
+            id: BrandID(value: "preview-brand"),
+            name: "Preview Atelier",
+            websiteURL: "https://preview.example.com",
+            hasLogoAsset: true
+        )
+
+        switch previewStep {
+        case .form:
+            _step = State(initialValue: .form)
+        case .finishing:
+            _step = State(initialValue: .finishing(previewBrand))
+            _latestCreatedBrand = State(initialValue: previewBrand)
+        case .completed:
+            _step = State(initialValue: .completed(
+                CreateBrandViewModel.CreatedBrand(
+                    id: previewBrand.id,
+                    name: previewBrand.name,
+                    websiteURL: nil,
+                    hasLogoAsset: false
+                )
+            ))
+            _latestCreatedBrand = State(initialValue: previewBrand)
+        case .discovering:
+            _step = State(initialValue: .discovering(previewBrand))
+            _latestCreatedBrand = State(initialValue: previewBrand)
+        case .candidateSelection:
+            _step = State(initialValue: .candidateSelection(previewBrand))
+            _latestCreatedBrand = State(initialValue: previewBrand)
+        }
+    }
+
     var body: some View {
         content
+            .tint(.black)
             .navigationBarTitleDisplayMode(.inline)
             .interactiveDismissDisabled(true)
             .toolbar {
@@ -52,7 +104,7 @@ struct CreateBrandFlowView: View {
                 isPresented: $isShowingCloseConfirmation,
                 titleVisibility: .visible
             ) {
-                Button(closeConfirmationActionTitle, role: .destructive) {
+                Button(closeConfirmationActionTitle) {
                     closeFlow()
                 }
                 Button("계속 진행", role: .cancel) {}
@@ -61,6 +113,7 @@ struct CreateBrandFlowView: View {
             }
             .onDisappear {
                 discoveryTask?.cancel()
+                logoPreparationTask?.cancel()
             }
     }
 }
@@ -72,9 +125,19 @@ private extension CreateBrandFlowView {
         case .form:
             CreateBrandView(provider: provider) { createdBrand in
                 latestCreatedBrand = createdBrand
-                step = .discovering(createdBrand)
-                scheduleCandidateSelectionTransition(for: createdBrand)
+                advanceAfterBrandCreation(createdBrand)
             }
+
+        case .finishing(let createdBrand):
+            CreateBrandFinishingView(createdBrand: createdBrand)
+
+        case .completed(let createdBrand):
+            CreateBrandCompletedView(
+                createdBrand: createdBrand,
+                onComplete: {
+                    closeFlow()
+                }
+            )
 
         case .discovering(let createdBrand):
             CreateBrandDiscoveringView(
@@ -95,6 +158,23 @@ private extension CreateBrandFlowView {
         }
     }
 
+    func advanceAfterBrandCreation(_ createdBrand: CreateBrandViewModel.CreatedBrand) {
+        if createdBrand.canDiscoverSeasons {
+            step = .discovering(createdBrand)
+            scheduleCandidateSelectionTransition(for: createdBrand)
+            return
+        }
+
+        discoveryTask?.cancel()
+
+        if createdBrand.hasLogoAsset {
+            step = .finishing(createdBrand)
+            scheduleLogoPreparationTransition(for: createdBrand)
+        } else {
+            step = .completed(createdBrand)
+        }
+    }
+
     func scheduleCandidateSelectionTransition(for createdBrand: CreateBrandViewModel.CreatedBrand) {
         discoveryTask?.cancel()
         discoveryTask = Task {
@@ -105,6 +185,52 @@ private extension CreateBrandFlowView {
                 guard latestCreatedBrand == createdBrand else { return }
                 step = .candidateSelection(createdBrand)
             }
+        }
+    }
+
+    func scheduleLogoPreparationTransition(for createdBrand: CreateBrandViewModel.CreatedBrand) {
+        logoPreparationTask?.cancel()
+        logoPreparationTask = Task {
+            defer {
+                Task { @MainActor in
+                    self.logoPreparationTask = nil
+                }
+            }
+
+            while !Task.isCancelled {
+                guard !Task.isCancelled else { return }
+
+                do {
+                    let brand = try await provider.brandRepository.fetchBrand(brandID: createdBrand.id)
+                    if await isLogoReadyToDisplay(for: brand) {
+                        await MainActor.run {
+                            guard latestCreatedBrand == createdBrand else { return }
+                            step = .completed(createdBrand)
+                        }
+                        return
+                    }
+                } catch {
+                    // 한국어 주석: 일시적인 조회 실패는 바로 종료하지 않고 다음 시도에서 다시 확인합니다.
+                }
+
+                try? await Task.sleep(nanoseconds: 800_000_000)
+            }
+        }
+    }
+
+    func isLogoReadyToDisplay(for brand: Brand) async -> Bool {
+        guard let logoThumbPath = brand.logoThumbPath, logoThumbPath.isEmpty == false else {
+            return false
+        }
+
+        do {
+            _ = try await provider.brandImageCache.loadImage(
+                path: logoThumbPath,
+                maxBytes: 1 * 1024 * 1024
+            )
+            return true
+        } catch {
+            return false
         }
     }
 
@@ -134,6 +260,102 @@ private extension CreateBrandFlowView {
     }
 }
 
+private struct CreateBrandFinishingView: View {
+    let createdBrand: CreateBrandViewModel.CreatedBrand
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            Spacer(minLength: 0)
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text("브랜드 생성을 마무리하고 있습니다")
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
+
+                Text("\(createdBrand.name) 브랜드 문서는 이미 생성되었습니다. 로고 이미지를 홈 목록에서 자연스럽게 보여주기 위해 최소 썸네일 리소스를 준비하고 있습니다.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            VStack(spacing: 14) {
+                ProgressView()
+                    .scaleEffect(1.2)
+                    .tint(.black)
+
+                Text("브랜드 로고 썸네일을 준비 중입니다.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.top, 8)
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .background(Color(red: 0.98, green: 0.97, blue: 0.94).ignoresSafeArea())
+    }
+}
+
+private struct CreateBrandCompletedView: View {
+    let createdBrand: CreateBrandViewModel.CreatedBrand
+    let onComplete: () -> Void
+
+    private var descriptionText: String {
+        if createdBrand.canDiscoverSeasons {
+            return "브랜드 생성이 완료되었습니다. 시즌 후보 탐색과 선택은 다음 단계에서 이어서 진행할 수 있습니다."
+        }
+        if createdBrand.hasLogoAsset {
+            return "브랜드 생성이 완료되었습니다. 브랜드 URL이 없어서 시즌 탐색은 생략했고, 로고 준비도 마무리되었습니다."
+        }
+        return "브랜드 생성이 완료되었습니다. 브랜드 URL이 없어 시즌 탐색 단계는 건너뛰었습니다."
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            Spacer(minLength: 0)
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text("브랜드 생성이 완료되었습니다")
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
+
+                Text(descriptionText)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let websiteURL = createdBrand.websiteURL, websiteURL.isEmpty == false {
+                Label(websiteURL, systemImage: "link")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            Button {
+                onComplete()
+            } label: {
+                HStack {
+                    Spacer()
+                    Text("브랜드 생성 마침")
+                        .font(.headline)
+                    Spacer()
+                }
+                .padding(.vertical, 16)
+                .foregroundStyle(.white)
+                .background(Color.black)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .background(Color(red: 0.98, green: 0.97, blue: 0.94).ignoresSafeArea())
+    }
+}
+
 private struct CreateBrandDiscoveringView: View {
     let createdBrand: CreateBrandViewModel.CreatedBrand
     let onSkip: () -> Void
@@ -141,10 +363,6 @@ private struct CreateBrandDiscoveringView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
             Spacer(minLength: 0)
-
-            ProgressView()
-                .scaleEffect(1.2)
-                .tint(.black)
 
             VStack(alignment: .leading, spacing: 12) {
                 Text("시즌 목록 탐색을 진행합니다")
@@ -166,6 +384,18 @@ private struct CreateBrandDiscoveringView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+
+            VStack(spacing: 14) {
+                ProgressView()
+                    .scaleEffect(1.2)
+                    .tint(.black)
+
+                Text("브랜드 홈페이지에서 등록 가능한 시즌을 찾고 있습니다.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.top, 8)
 
             Button {
                 onSkip()
@@ -307,4 +537,34 @@ private struct SeasonCandidatePreview: Identifiable, Equatable {
     let id: String
     let title: String
     let subtitle: String
+}
+
+#Preview("Brand Flow Form") {
+    NavigationView {
+        CreateBrandFlowView(previewStep: .form)
+    }
+}
+
+#Preview("Brand Flow Finishing") {
+    NavigationView {
+        CreateBrandFlowView(previewStep: .finishing)
+    }
+}
+
+#Preview("Brand Flow Completed") {
+    NavigationView {
+        CreateBrandFlowView(previewStep: .completed)
+    }
+}
+
+#Preview("Brand Flow Discovering") {
+    NavigationView {
+        CreateBrandFlowView(previewStep: .discovering)
+    }
+}
+
+#Preview("Brand Flow Candidate Selection") {
+    NavigationView {
+        CreateBrandFlowView(previewStep: .candidateSelection)
+    }
 }

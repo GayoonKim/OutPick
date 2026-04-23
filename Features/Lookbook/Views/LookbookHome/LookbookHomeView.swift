@@ -27,12 +27,14 @@ struct LookbookHomeView: View {
         NavigationView {
             mainContent
         }
+        .tint(.black)
         .navigationViewStyle(StackNavigationViewStyle())
         .fullScreenCover(isPresented: $isPresentingCreateBrand, onDismiss: {
             guard let createdBrandIDForSelection else { return }
 
             Task {
                 await viewModel.retry()
+                await viewModel.syncCreatedBrand(brandID: createdBrandIDForSelection)
                 selectedBrandID = createdBrandIDForSelection
                 self.createdBrandIDForSelection = nil
             }
@@ -97,6 +99,9 @@ struct LookbookHomeView: View {
                     }
                 }
                 .listStyle(.plain)
+                .refreshable {
+                    await viewModel.retry()
+                }
             }
         }
         .navigationTitle("")

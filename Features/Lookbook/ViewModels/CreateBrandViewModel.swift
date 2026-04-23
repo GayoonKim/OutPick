@@ -16,6 +16,12 @@ final class CreateBrandViewModel: ObservableObject {
         let id: BrandID
         let name: String
         let websiteURL: String?
+        let hasLogoAsset: Bool
+
+        var canDiscoverSeasons: Bool {
+            guard let websiteURL else { return false }
+            return websiteURL.isEmpty == false
+        }
     }
 
     // MARK: - 입력 상태
@@ -94,7 +100,8 @@ final class CreateBrandViewModel: ObservableObject {
             return CreatedBrand(
                 id: BrandID(value: docID),
                 name: rawName,
-                websiteURL: normalizedWebsiteURL
+                websiteURL: normalizedWebsiteURL,
+                hasLogoAsset: selectedLogoImage != nil
             )
         } catch {
             message = "저장 실패: \(error.localizedDescription)"
@@ -207,21 +214,22 @@ private extension CreateBrandViewModel {
 
         guard let preparedLogo else { return }
 
-        Task(priority: .utility) { [weak self] in
-            guard let self else { return }
+        let storageService = self.storageService
+        let brandStore = self.brandStore
 
+        Task(priority: .utility) {
             let thumbPath = "brands/\(docID)/logo/thumb.jpg"
             let detailPath = "brands/\(docID)/logo/detail.jpg"
             var uploadedThumbPathForRollback: String?
 
             do {
-                let uploadedThumbPath = try await self.storageService.uploadImage(
+                let uploadedThumbPath = try await storageService.uploadImage(
                     data: preparedLogo.thumbData,
                     to: thumbPath
                 )
                 uploadedThumbPathForRollback = uploadedThumbPath
 
-                try await self.brandStore.updateLogoPaths(
+                try await brandStore.updateLogoPaths(
                     docID: docID,
                     logoThumbPath: uploadedThumbPath,
                     logoDetailPath: nil
@@ -229,18 +237,18 @@ private extension CreateBrandViewModel {
 
                 uploadedThumbPathForRollback = nil
 
-                let uploadedDetailPath = try await self.storageService.uploadImage(
+                let uploadedDetailPath = try await storageService.uploadImage(
                     data: preparedLogo.detailData,
                     to: detailPath
                 )
-                try await self.brandStore.updateLogoPaths(
+                try await brandStore.updateLogoPaths(
                     docID: docID,
                     logoThumbPath: nil,
                     logoDetailPath: uploadedDetailPath
                 )
             } catch {
                 if let rollbackPath = uploadedThumbPathForRollback {
-                    try? await self.storageService.deleteFile(at: rollbackPath)
+                    try? await storageService.deleteFile(at: rollbackPath)
                 }
                 print("⚠️ 브랜드 로고 업로드/패치 실패(docID=\(docID)): \(error.localizedDescription)")
             }

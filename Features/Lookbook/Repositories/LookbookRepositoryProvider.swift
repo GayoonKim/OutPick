@@ -16,6 +16,8 @@ final class LookbookRepositoryProvider {
 
     let seasonRepository: SeasonRepositoryProtocol
     let seasonCoverThumbnailPolicy: ThumbnailPolicy
+    let seasonImportRepository: SeasonImportRequestingRepository
+    let seasonImportJobRepository: SeasonImportJobRepositoryProtocol
 
     let postRepository: PostRepositoryProtocol
 
@@ -45,6 +47,8 @@ final class LookbookRepositoryProvider {
 
         seasonRepository: SeasonRepositoryProtocol? = nil,
         seasonCoverThumbnailPolicy: ThumbnailPolicy = ThumbnailPolicies.seasonCover,
+        seasonImportRepository: SeasonImportRequestingRepository = CloudFunctionsSeasonImportRepository(),
+        seasonImportJobRepository: SeasonImportJobRepositoryProtocol = FirestoreSeasonImportJobRepository(),
 
         postRepository: PostRepositoryProtocol = FirestorePostRepository(),
 
@@ -93,6 +97,8 @@ final class LookbookRepositoryProvider {
                 coverThumbnailPolicy: seasonCoverThumbnailPolicy
             )
         self.seasonCoverThumbnailPolicy = seasonCoverThumbnailPolicy
+        self.seasonImportRepository = seasonImportRepository
+        self.seasonImportJobRepository = seasonImportJobRepository
         self.brandStore = brandStore
     }
 }
