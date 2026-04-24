@@ -11,8 +11,10 @@ import FirebaseFirestore
 // MARK: - 중첩 DTO: 미디어
 struct MediaAssetDTO: Codable {
     let type: String
-    let url: String
-    let thumbnailURL: String?
+    let remoteURL: String
+    let thumbPath: String?
+    let detailPath: String?
+    let sourcePageURL: String?
     let width: Int?
     let height: Int?
 
@@ -20,16 +22,17 @@ struct MediaAssetDTO: Codable {
         guard let mediaType = MediaType(rawValue: type) else {
             throw MappingError.invalidEnumValue("MediaType: \(type)")
         }
-        guard let url = URL(string: url) else {
-            throw MappingError.invalidURL(url)
+        let rawRemoteURL = remoteURL
+        guard let remoteURL = URL(string: rawRemoteURL) else {
+            throw MappingError.invalidURL(rawRemoteURL)
         }
 
         return MediaAsset(
             type: mediaType,
-            url: url,
-            thumbnailURL: thumbnailURL.flatMap(URL.init(string:)),
-//            width: width,
-//            height: height
+            remoteURL: remoteURL,
+            thumbPath: thumbPath,
+            detailPath: detailPath,
+            sourcePageURL: sourcePageURL.flatMap(URL.init(string:))
         )
     }
 }

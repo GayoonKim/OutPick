@@ -13,12 +13,14 @@ struct CloudFunctionsBrandStore: BrandStoringRepository {
     func createBrand(
         name: String,
         isFeatured: Bool,
-        websiteURL: String?
+        websiteURL: String?,
+        lookbookArchiveURL: String?
     ) async throws -> String {
         try await CloudFunctionsManager.shared.createBrand(
             name: name,
             isFeatured: isFeatured,
-            websiteURL: websiteURL
+            websiteURL: websiteURL,
+            lookbookArchiveURL: lookbookArchiveURL
         )
     }
 

@@ -14,7 +14,8 @@ protocol BrandStoringRepository {
     func createBrand(
         name: String,
         isFeatured: Bool,
-        websiteURL: String?
+        websiteURL: String?,
+        lookbookArchiveURL: String?
     ) async throws -> String
 
     /// 생성 후 업로드된 로고 경로를 패치합니다.

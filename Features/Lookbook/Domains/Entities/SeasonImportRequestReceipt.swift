@@ -11,4 +11,6 @@ struct SeasonImportRequestReceipt: Equatable {
     let jobID: String
     let status: String
     let normalizedSeasonURL: String
+    let sourceCandidateID: String?
+    let isDuplicate: Bool
 }

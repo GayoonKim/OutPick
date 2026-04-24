@@ -14,18 +14,21 @@ final class FirestoreSeasonRepository: SeasonRepositoryProtocol {
     private let storage: StorageServiceProtocol
     private let thumbnailer: ImageThumbnailing
     private let coverThumbnailPolicy: ThumbnailPolicy
+    private let coverDetailPolicy: ThumbnailPolicy
 
     /// - Note: RepositoryProvider에서 storage/thumbnailer/policy를 공유 주입하는 것을 권장합니다.
     init(
         db: Firestore = Firestore.firestore(),
         storage: StorageServiceProtocol,
         thumbnailer: ImageThumbnailing,
-        coverThumbnailPolicy: ThumbnailPolicy = ThumbnailPolicies.seasonCover
+        coverThumbnailPolicy: ThumbnailPolicy = ThumbnailPolicies.seasonCover,
+        coverDetailPolicy: ThumbnailPolicy = ThumbnailPolicies.seasonCoverDetail
     ) {
         self.db = db
         self.storage = storage
         self.thumbnailer = thumbnailer
         self.coverThumbnailPolicy = coverThumbnailPolicy
+        self.coverDetailPolicy = coverDetailPolicy
     }
 
     func createSeason(
@@ -47,52 +50,34 @@ final class FirestoreSeasonRepository: SeasonRepositoryProtocol {
 
         let seasonID = SeasonID(value: seasonRef.documentID)
 
-        // 2) (선택) 커버 업로드: 원본(Data 그대로) + 썸네일(JPEG)
+        // 2) (선택) 커버 업로드: detail(JPEG) + 썸네일(JPEG)
         var coverPath: String? = nil
-        var uploadedOriginalPath: String? = nil
+        var uploadedDetailPath: String? = nil
         var uploadedThumbPath: String? = nil
 
         if let coverImageData {
-            // 원본은 확장자에 의존하지 않도록 고정 이름으로 저장합니다.
-            // (coverImageData가 JPEG/PNG/HEIC 등 어떤 포맷이든 그대로 업로드)
-            let originalPath = "brands/\(brandID.value)/seasons/\(seasonID.value)/cover"
-            let thumbPath = originalPath + "_thumb.jpg"
+            let detailPath = "brands/\(brandID.value)/seasons/\(seasonID.value)/cover.jpg"
+            let thumbPath = "brands/\(brandID.value)/seasons/\(seasonID.value)/cover_thumb.jpg"
 
-            // 썸네일은 가능하면 입력 Data에서 바로 생성하고,
-            // thumbnailer가 특정 포맷(JPEG 등)만 기대해 실패하는 경우에만 JPEG로 정규화 후 재시도합니다.
-            let thumbJPEG: Data
-            do {
-                thumbJPEG = try thumbnailer.makeThumbnailJPEGData(
-                    from: coverImageData,
-                    policy: coverThumbnailPolicy
-                )
-            } catch {
-                guard let uiImage = UIImage(data: coverImageData) else {
-                    throw NSError(domain: "FirestoreSeasonRepository", code: -10, userInfo: [
-                        NSLocalizedDescriptionKey: "커버 이미지를 디코딩하지 못했습니다."
-                    ])
-                }
-                guard let normalizedJPEG = uiImage.jpegData(compressionQuality: 0.95) else {
-                    throw NSError(domain: "FirestoreSeasonRepository", code: -11, userInfo: [
-                        NSLocalizedDescriptionKey: "커버 이미지를 JPEG로 변환하지 못했습니다."
-                    ])
-                }
-                thumbJPEG = try thumbnailer.makeThumbnailJPEGData(
-                    from: normalizedJPEG,
-                    policy: coverThumbnailPolicy
-                )
-            }
+            let detailJPEG = try makeJPEGData(
+                from: coverImageData,
+                policy: coverDetailPolicy
+            )
+            let thumbJPEG = try makeJPEGData(
+                from: coverImageData,
+                policy: coverThumbnailPolicy
+            )
 
             // 업로드는 병렬로 수행합니다(네트워크 상황에 따라 체감 속도 개선).
-            async let originalUpload: String = storage.uploadImage(data: coverImageData, to: originalPath)
+            async let detailUpload: String = storage.uploadImage(data: detailJPEG, to: detailPath)
             async let thumbUpload: String = storage.uploadImage(data: thumbJPEG, to: thumbPath)
 
-            let (oPath, tPath) = try await (originalUpload, thumbUpload)
-            uploadedOriginalPath = oPath
+            let (dPath, tPath) = try await (detailUpload, thumbUpload)
+            uploadedDetailPath = dPath
             uploadedThumbPath = tPath
 
-            // Firestore에는 원본 경로만 저장(썸네일은 규칙으로 파생).
-            coverPath = tPath
+            // Firestore에는 detail 경로를 저장하고, 썸네일은 규칙으로 파생합니다.
+            coverPath = dPath
         }
 
         // 3) 도메인 모델 생성
@@ -100,13 +85,22 @@ final class FirestoreSeasonRepository: SeasonRepositoryProtocol {
         let season = Season(
             id: seasonID,
             brandID: brandID,
+            displayTitle: Season.formatTitle(year: year, term: term),
+            sourceTitle: nil,
             year: year,
             term: term,
             coverPath: coverPath,
+            coverRemoteURL: nil,
             description: description,
             tagIDs: tagIDs,
             tagConceptIDs: tagConceptIDs,
             status: .published,
+            assetSyncStatus: .ready,
+            metadataStatus: .confirmed,
+            metadataConfidence: 1,
+            sourceURL: nil,
+            sourceImportJobID: nil,
+            sourceSortIndex: nil,
             postCount: 0,
             createdAt: now,
             updatedAt: now
@@ -118,14 +112,38 @@ final class FirestoreSeasonRepository: SeasonRepositoryProtocol {
             try seasonRef.setData(from: dto, merge: false)
             return season
         } catch {
-            // 5) Firestore 저장 실패 시 고아 파일 정리(원본 + 썸네일)
-            if let uploadedOriginalPath {
-                try? await storage.deleteFile(at: uploadedOriginalPath)
+            // 5) Firestore 저장 실패 시 고아 파일 정리(detail + 썸네일)
+            if let uploadedDetailPath {
+                try? await storage.deleteFile(at: uploadedDetailPath)
             }
             if let uploadedThumbPath {
                 try? await storage.deleteFile(at: uploadedThumbPath)
             }
             throw error
+        }
+    }
+
+    private func makeJPEGData(from inputData: Data, policy: ThumbnailPolicy) throws -> Data {
+        do {
+            return try thumbnailer.makeThumbnailJPEGData(
+                from: inputData,
+                policy: policy
+            )
+        } catch {
+            guard let uiImage = UIImage(data: inputData) else {
+                throw NSError(domain: "FirestoreSeasonRepository", code: -10, userInfo: [
+                    NSLocalizedDescriptionKey: "커버 이미지를 디코딩하지 못했습니다."
+                ])
+            }
+            guard let normalizedJPEG = uiImage.jpegData(compressionQuality: 0.95) else {
+                throw NSError(domain: "FirestoreSeasonRepository", code: -11, userInfo: [
+                    NSLocalizedDescriptionKey: "커버 이미지를 JPEG로 변환하지 못했습니다."
+                ])
+            }
+            return try thumbnailer.makeThumbnailJPEGData(
+                from: normalizedJPEG,
+                policy: policy
+            )
         }
     }
     

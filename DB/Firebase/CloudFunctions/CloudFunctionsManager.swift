@@ -89,7 +89,8 @@ final class CloudFunctionsManager {
     func createBrand(
         name: String,
         isFeatured: Bool,
-        websiteURL: String?
+        websiteURL: String?,
+        lookbookArchiveURL: String?
     ) async throws -> String {
         var data: [String: Any] = [
             "name": name,
@@ -97,6 +98,9 @@ final class CloudFunctionsManager {
         ]
         if let websiteURL {
             data["websiteURL"] = websiteURL
+        }
+        if let lookbookArchiveURL {
+            data["lookbookArchiveURL"] = lookbookArchiveURL
         }
 
         let response = try await callFunction("createBrand", data: data)
@@ -153,20 +157,117 @@ final class CloudFunctionsManager {
 
     func requestSeasonImport(
         brandID: String,
-        seasonURL: String
+        seasonURL: String,
+        sourceCandidateID: String? = nil
     ) async throws -> SeasonImportRequestReceipt {
+        var data: [String: Any] = [
+            "brandID": brandID,
+            "seasonURL": seasonURL
+        ]
+        if let sourceCandidateID {
+            data["sourceCandidateID"] = sourceCandidateID
+        }
+
         let response = try await callFunction(
             "requestSeasonImport",
-            data: [
-                "brandID": brandID,
-                "seasonURL": seasonURL
-            ]
+            data: data
         )
 
         return SeasonImportRequestReceipt(
             jobID: try stringValue(response, key: "jobID"),
             status: try stringValue(response, key: "status"),
-            normalizedSeasonURL: try stringValue(response, key: "seasonURL")
+            normalizedSeasonURL: try stringValue(response, key: "seasonURL"),
+            sourceCandidateID: optionalStringValue(response, key: "sourceCandidateID"),
+            isDuplicate: optionalBoolValue(response, key: "duplicate") ?? false
+        )
+    }
+
+    func discoverSeasonCandidates(
+        brandID: String
+    ) async throws -> SeasonCandidateDiscoveryResult {
+        let response = try await callFunction(
+            "discoverSeasonCandidates",
+            data: [
+                "brandID": brandID
+            ]
+        )
+
+        return SeasonCandidateDiscoveryResult(
+            brandID: BrandID(value: try stringValue(response, key: "brandID")),
+            sourceURL: try stringValue(response, key: "sourceURL"),
+            candidateCount: try intValue(response, key: "candidateCount")
+        )
+    }
+
+    func processNextSeasonImportJob(
+        brandID: String
+    ) async throws -> SeasonImportProcessResult {
+        let response = try await callFunction(
+            "processNextSeasonImportJob",
+            data: [
+                "brandID": brandID
+            ]
+        )
+
+        return SeasonImportProcessResult(
+            processed: try boolValue(response, key: "processed"),
+            reason: optionalStringValue(response, key: "reason"),
+            brandID: optionalStringValue(response, key: "brandID")
+                .map { BrandID(value: $0) },
+            jobID: optionalStringValue(response, key: "jobID"),
+            sourceURL: optionalStringValue(response, key: "sourceURL"),
+            imageCandidateCount: optionalIntValue(
+                response,
+                key: "imageCandidateCount"
+            )
+        )
+    }
+
+    func processSeasonImportJobs(
+        brandID: String,
+        jobIDs: [String]
+    ) async throws -> SeasonImportBatchProcessResult {
+        let response = try await callFunction(
+            "processSeasonImportJobs",
+            data: [
+                "brandID": brandID,
+                "jobIDs": jobIDs
+            ]
+        )
+
+        return SeasonImportBatchProcessResult(
+            brandID: BrandID(value: try stringValue(response, key: "brandID")),
+            candidateIDs: stringArrayValue(response, key: "candidateIDs"),
+            jobIDs: stringArrayValue(response, key: "jobIDs"),
+            requestedJobCount: try intValue(response, key: "requestedJobCount"),
+            duplicateJobCount: optionalIntValue(response, key: "duplicateJobCount") ?? 0,
+            processedJobCount: try intValue(response, key: "processedJobCount"),
+            failedJobCount: try intValue(response, key: "failedJobCount"),
+            skippedJobCount: try intValue(response, key: "skippedJobCount")
+        )
+    }
+
+    func requestSeasonCandidateImportsAndProcess(
+        brandID: String,
+        candidateIDs: [String]
+    ) async throws -> SeasonImportBatchProcessResult {
+        let response = try await callFunction(
+            "requestSeasonCandidateImportsAndProcess",
+            data: [
+                "brandID": brandID,
+                "candidateIDs": candidateIDs
+            ]
+        )
+
+        return SeasonImportBatchProcessResult(
+            brandID: BrandID(value: try stringValue(response, key: "brandID")),
+            candidateIDs: stringArrayValue(response, key: "candidateIDs"),
+            jobIDs: stringArrayValue(response, key: "jobIDs"),
+            requestedJobCount: try intValue(response, key: "requestedJobCount"),
+            duplicateJobCount: optionalIntValue(response, key: "duplicateJobCount") ?? 0,
+            processedJobCount: try intValue(response, key: "processedJobCount"),
+            failedJobCount: try intValue(response, key: "failedJobCount"),
+            skippedJobCount: try intValue(response, key: "skippedJobCount")
         )
     }
 
@@ -201,6 +302,26 @@ final class CloudFunctionsManager {
         return value
     }
 
+    private func boolValue(_ dictionary: [String: Any], key: String) throws -> Bool {
+        if let value = dictionary[key] as? Bool {
+            return value
+        }
+        if let value = dictionary[key] as? NSNumber {
+            return value.boolValue
+        }
+        throw CloudFunctionsManagerError.missingField(key)
+    }
+
+    private func intValue(_ dictionary: [String: Any], key: String) throws -> Int {
+        if let value = dictionary[key] as? Int {
+            return value
+        }
+        if let value = dictionary[key] as? NSNumber {
+            return value.intValue
+        }
+        throw CloudFunctionsManagerError.missingField(key)
+    }
+
     private func optionalStringValue(_ dictionary: [String: Any], key: String) -> String? {
         guard let value = dictionary[key], !(value is NSNull) else {
             return nil
@@ -210,6 +331,32 @@ final class CloudFunctionsManager {
         }
         let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func optionalIntValue(_ dictionary: [String: Any], key: String) -> Int? {
+        guard let value = dictionary[key], !(value is NSNull) else {
+            return nil
+        }
+        if let int = value as? Int {
+            return int
+        }
+        if let number = value as? NSNumber {
+            return number.intValue
+        }
+        return nil
+    }
+
+    private func optionalBoolValue(_ dictionary: [String: Any], key: String) -> Bool? {
+        guard let value = dictionary[key], !(value is NSNull) else {
+            return nil
+        }
+        if let bool = value as? Bool {
+            return bool
+        }
+        if let number = value as? NSNumber {
+            return number.boolValue
+        }
+        return nil
     }
 
     private func stringArrayValue(_ dictionary: [String: Any], key: String) -> [String] {

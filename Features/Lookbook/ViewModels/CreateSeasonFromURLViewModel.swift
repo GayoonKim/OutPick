@@ -42,7 +42,8 @@ final class CreateSeasonFromURLViewModel: ObservableObject {
         do {
             return try await seasonImportRepository.requestSeasonImport(
                 brandID: brandID,
-                seasonURL: normalizedSeasonURL
+                seasonURL: normalizedSeasonURL,
+                sourceCandidateID: nil
             )
         } catch {
             print(

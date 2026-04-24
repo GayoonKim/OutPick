@@ -12,6 +12,8 @@ struct BrandDetailHeaderView: View {
     let brandImageCache: any BrandImageCacheProtocol
     let maxBytes: Int
 
+    @Environment(\.openURL) private var openURL
+
     @State private var uiImage: UIImage?
     @State private var loadFailed: Bool = false
     @State private var isPresentingZoomPreview: Bool = false
@@ -36,6 +38,13 @@ struct BrandDetailHeaderView: View {
             return original
         }
         return nil
+    }
+
+    private var officialWebsiteURL: URL? {
+        guard let rawValue = brand.websiteURL, rawValue.isEmpty == false else {
+            return nil
+        }
+        return URL(string: rawValue)
     }
 
     /// 생성 직후(thumb만 저장된 상태)에도 detail 업로드 완료 시 자동 교체하기 위한 경로
@@ -107,6 +116,22 @@ struct BrandDetailHeaderView: View {
                 Text("좋아요 \(brand.metrics.likeCount)")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+
+                if let officialWebsiteURL {
+                    Button {
+                        openURL(officialWebsiteURL)
+                    } label: {
+                        Label("공식 사이트 방문", systemImage: "safari")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(Color.black)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 4)
+                }
             }
             .padding(.horizontal, 16)
 

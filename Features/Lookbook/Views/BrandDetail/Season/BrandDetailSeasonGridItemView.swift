@@ -17,29 +17,19 @@ struct BrandDetailSeasonGridItemView: View {
             SeasonCoverThumbView(
                 thumbPath: season.coverThumbPath,
                 fallbackPath: season.coverPath,
+                remoteURL: season.coverRemoteURL,
+                sourcePageURL: season.sourceURL,
                 brandImageCache: brandImageCache,
                 maxBytes: maxBytes
             )
             .frame(height: 140)
             .clipShape(RoundedRectangle(cornerRadius: 12))
 
-            Text(seasonTitle)
+            Text(season.title)
                 .font(.subheadline)
                 .fontWeight(.semibold)
                 .foregroundStyle(.primary)
         }
         .contentShape(Rectangle())
-    }
-
-    private var seasonTitle: String {
-        let yy = season.year % 100
-        return String(format: "%02d%@", yy, termText)
-    }
-
-    private var termText: String {
-        switch season.term {
-        case .fw: return "FW"
-        case .ss: return "SS"
-        }
     }
 }

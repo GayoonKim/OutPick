@@ -36,18 +36,43 @@ enum SeasonStatus: String, Codable, CaseIterable, Equatable {
     case archived
 }
 
+/// 에셋 동기화 상태
+enum AssetSyncStatus: String, Codable, CaseIterable, Equatable {
+    case pending
+    case syncing
+    case ready
+    case partial
+    case failed
+}
+
+/// 시즌 메타데이터 확정 상태
+enum SeasonMetadataStatus: String, Codable, CaseIterable, Equatable {
+    case unresolved
+    case inferred
+    case confirmed
+}
+
 struct Season: Equatable, Codable, Identifiable {
     var id: SeasonID
     var brandID: BrandID
 
-    /// 시즌 연도. 예: 2025 (2자리도 허용하되 4자리 권장)
-    var year: Int
+    /// UI에 바로 보여줄 시즌 제목
+    var displayTitle: String
 
-    /// 시즌 구분. 예: SS / FW
-    var term: SeasonTerm
+    /// 원본 사이트에서 가져온 제목
+    var sourceTitle: String?
 
-    /// 대표 이미지 Storage 경로(path)
+    /// 정규화된 시즌 연도. 예: 2025 (2자리도 허용하되 4자리 권장)
+    var year: Int?
+
+    /// 정규화된 시즌 구분. 예: SS / FW
+    var term: SeasonTerm?
+
+    /// 대표 이미지 detail Storage 경로(path)
     var coverPath: String?
+
+    /// 원본 사이트 대표 이미지 URL
+    var coverRemoteURL: String?
 
     /// 시즌 간단 설명(목록 셀에 표시)
     var description: String
@@ -61,19 +86,37 @@ struct Season: Equatable, Codable, Identifiable {
     /// 노출/운영 상태
     var status: SeasonStatus
 
+    /// 에셋 준비 상태
+    var assetSyncStatus: AssetSyncStatus
+
+    /// 시즌 메타데이터 확정 상태
+    var metadataStatus: SeasonMetadataStatus
+
+    /// 메타데이터 추론 신뢰도
+    var metadataConfidence: Double?
+
+    /// 원본 시즌 상세 URL
+    var sourceURL: String?
+
+    /// 시즌을 만든 import job ID
+    var sourceImportJobID: String?
+
+    /// 원본 목록 페이지 기준 정렬 순서
+    var sourceSortIndex: Int?
+
     /// 시즌에 속한 포스트(룩) 개수 스냅샷
     var postCount: Int
 
     var createdAt: Date
     var updatedAt: Date
 
-    /// UI 표기용 타이틀. 예: "25 F/W"
+    /// UI 표기용 타이틀
     var title: String {
-        Season.formatTitle(year: year, term: term)
+        displayTitle
     }
 
     /// 커버 썸네일 Storage 경로(path)
-    /// - Note: 스키마 변경 없이 coverPath 규칙으로 파생합니다.
+    /// - Note: detail 경로인 coverPath 규칙으로 파생합니다.
     var coverThumbPath: String? {
         guard let coverPath, !coverPath.isEmpty else { return nil }
 
@@ -88,10 +131,29 @@ struct Season: Equatable, Codable, Identifiable {
         return coverPath + "_thumb"
     }
 
-    /// 기본 정렬(최신년도 → FW → SS → 최신 업데이트)
+    /// 기본 정렬(원본 순서 → 정규화 메타데이터 → 최신 업데이트)
     static func defaultSort(_ lhs: Season, _ rhs: Season) -> Bool {
-        if lhs.year != rhs.year { return lhs.year > rhs.year }
-        if lhs.term.sortOrder != rhs.term.sortOrder { return lhs.term.sortOrder < rhs.term.sortOrder }
+        if
+            let leftSortIndex = lhs.sourceSortIndex,
+            let rightSortIndex = rhs.sourceSortIndex,
+            leftSortIndex != rightSortIndex
+        {
+            return leftSortIndex < rightSortIndex
+        }
+        if
+            let leftYear = lhs.year,
+            let rightYear = rhs.year,
+            leftYear != rightYear
+        {
+            return leftYear > rightYear
+        }
+        if
+            let leftTerm = lhs.term,
+            let rightTerm = rhs.term,
+            leftTerm.sortOrder != rightTerm.sortOrder
+        {
+            return leftTerm.sortOrder < rightTerm.sortOrder
+        }
         if lhs.updatedAt != rhs.updatedAt { return lhs.updatedAt > rhs.updatedAt }
         return lhs.createdAt > rhs.createdAt
     }
@@ -100,7 +162,7 @@ struct Season: Equatable, Codable, Identifiable {
 // MARK: - Helpers
 extension Season {
     /// UI 표기용 타이틀 생성. (예: 2025 + FW → "25 F/W")
-    fileprivate static func formatTitle(year: Int, term: SeasonTerm) -> String {
+    static func formatTitle(year: Int, term: SeasonTerm) -> String {
         let yy = normalizedYear(year)
         return String(format: "%02d %@", yy, term.displayText)
     }

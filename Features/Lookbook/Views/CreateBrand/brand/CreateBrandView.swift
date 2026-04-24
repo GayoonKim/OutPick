@@ -42,7 +42,6 @@ struct CreateBrandView: View {
                 VStack(alignment: .leading, spacing: 24) {
                     introSection(containerHeight: proxy.size.height, containerWidth: proxy.size.width)
                     formSection
-                    guideSection
                 }
                 .frame(minHeight: proxy.size.height, alignment: .top)
                 .padding(.horizontal, 20)
@@ -81,7 +80,7 @@ struct CreateBrandView: View {
 }
 
 private extension CreateBrandView {
-    var totalAnimatedFormItemCount: Int { 5 }
+    var totalAnimatedFormItemCount: Int { 6 }
 
     func introSection(containerHeight: CGFloat, containerWidth: CGFloat) -> some View {
         let contentWidth = max(containerWidth - 40, 0)
@@ -94,11 +93,6 @@ private extension CreateBrandView {
             Text("브랜드 등록을 시작합니다")
                 .font(.system(size: 30, weight: .bold, design: .rounded))
                 .foregroundStyle(.primary)
-
-            Text("브랜드 기본 정보와 URL을 먼저 저장하고, 다음 단계에서 시즌 후보를 탐색할 준비를 합니다.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: introWidth, alignment: .leading)
         .padding(.top, initialTopPadding - (initialTopPadding - finalTopPadding) * heroProgress)
@@ -117,14 +111,14 @@ private extension CreateBrandView {
         VStack(alignment: .leading, spacing: 18) {
             animatedFormItem(index: 0) {
                 formField(title: "브랜드명") {
-                    TextField("예: LOEWE", text: $viewModel.brandName)
+                    TextField("예: CHANEL", text: $viewModel.brandName)
                         .textInputAutocapitalization(.words)
                         .disableAutocorrection(true)
                 }
             }
 
             animatedFormItem(index: 1) {
-                formField(title: "브랜드 URL") {
+                formField(title: "공식 홈페이지 URL") {
                     TextField("https://www.example.com", text: $viewModel.websiteURLText)
                         .keyboardType(.URL)
                         .textInputAutocapitalization(.never)
@@ -133,6 +127,15 @@ private extension CreateBrandView {
             }
 
             animatedFormItem(index: 2) {
+                formField(title: "룩북 목록 URL") {
+                    TextField("https://www.example.com/collections", text: $viewModel.lookbookArchiveURLText)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .disableAutocorrection(true)
+                }
+            }
+
+            animatedFormItem(index: 3) {
                 formField(title: "로고") {
                     VStack(alignment: .leading, spacing: 12) {
                         Button {
@@ -175,7 +178,7 @@ private extension CreateBrandView {
                 }
             }
 
-            animatedFormItem(index: 3) {
+            animatedFormItem(index: 4) {
                 Toggle(isOn: $viewModel.isFeatured) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("피처드")
@@ -199,7 +202,7 @@ private extension CreateBrandView {
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
 
-            animatedFormItem(index: 4) {
+            animatedFormItem(index: 5) {
                 Button {
                     Task {
                         if let createdBrand = await viewModel.saveBrand() {
@@ -244,22 +247,6 @@ private extension CreateBrandView {
         .shadow(color: Color.black.opacity(0.04), radius: 18, x: 0, y: 10)
         .opacity(revealedFormItemCount > 0 ? 1 : 0)
         .offset(y: revealedFormItemCount > 0 ? 0 : 18)
-    }
-
-    var guideSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("안내")
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(.secondary)
-
-            Text("브랜드 내부 ID는 자동 생성되며, 동일한 브랜드명은 중복 등록할 수 없습니다. 브랜드 URL은 이후 시즌 후보 자동 탐지의 기준값으로 사용됩니다.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(.horizontal, 4)
-        .opacity(isGuideVisible ? 1 : 0)
-        .offset(x: isGuideVisible ? 0 : -20)
     }
 
     func formField<Content: View>(
@@ -327,7 +314,6 @@ private extension CreateBrandView {
 }
 
 // MARK: - iOS 15 호환 이미지 피커 (PHPickerViewController)
-
 private struct BrandLogoPickResult {
     let thumbImage: UIImage
     let thumbData: Data

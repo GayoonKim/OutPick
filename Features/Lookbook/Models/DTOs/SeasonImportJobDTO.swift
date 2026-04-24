@@ -15,6 +15,7 @@ struct SeasonImportJobDTO: Codable {
     let jobType: SeasonImportJobType
     let status: SeasonImportJobStatus
     let sourceURL: String
+    let sourceCandidateID: String?
     let requestedBy: String
     let errorMessage: String?
     let createdAt: Timestamp?
@@ -32,6 +33,7 @@ struct SeasonImportJobDTO: Codable {
             jobType: jobType,
             status: status,
             sourceURL: sourceURL,
+            sourceCandidateID: sourceCandidateID,
             requestedBy: requestedBy,
             errorMessage: errorMessage,
             createdAt: createdAt?.dateValue() ?? Date(timeIntervalSince1970: 0),

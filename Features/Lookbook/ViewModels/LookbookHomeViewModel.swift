@@ -101,6 +101,41 @@ final class LookbookHomeViewModel: ObservableObject {
         await loadInitialPageIfNeeded()
     }
 
+    func refreshKeepingVisibleContent() async {
+        guard phase == .ready else {
+            await retry()
+            return
+        }
+
+        guard !isLoadingInitialPage else { return }
+        isLoadingInitialPage = true
+        defer { isLoadingInitialPage = false }
+
+        do {
+            let page = try await repo.fetchBrands(
+                sort: nil,
+                limit: initialBrandLimit,
+                after: nil
+            )
+
+            let prefetchTargets = makePrefetchTargets(
+                from: page.items,
+                count: page.items.count
+            )
+            await brandImageCache.prefetch(
+                items: prefetchTargets,
+                concurrency: prefetchConcurrency
+            )
+
+            brands = page.items
+            lastBrandDocument = page.last
+            didLoadInitialPage = true
+            phase = .ready
+        } catch {
+            // 한국어 주석: 당겨서 새로고침 실패 시에는 기존 목록을 유지해 화면이 갑자기 비지 않도록 합니다.
+        }
+    }
+
     /// 브랜드 생성 직후 로고 경로가 백그라운드 patch로 늦게 들어오는 경우를 보정합니다.
     /// - Note: 새 브랜드가 첫 페이지에 없더라도 홈에서 바로 보이게 하기 위해, 없으면 임시로 목록 앞에 삽입합니다.
     func syncCreatedBrand(brandID: BrandID) async {

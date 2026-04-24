@@ -13,174 +13,172 @@ struct SeasonDetailView: View {
 
     @Environment(\.repositoryProvider) private var provider
     @StateObject private var viewModel = SeasonDetailViewModel()
+    @State private var selectedPost: LookbookPost?
 
-    init(
-        brandID: BrandID,
-        seasonID: SeasonID
-    ) {
-        self.brandID = brandID
-        self.seasonID = seasonID
-    }
+    private let columns: [GridItem] = [
+        GridItem(.flexible(), spacing: 10),
+        GridItem(.flexible(), spacing: 10)
+    ]
+    private let postGridMaxBytes: Int = 1_500_000
 
     var body: some View {
-        List {
-            Section("Season") {
-                if let season = viewModel.season {
-                    InfoRow(label: "ID", value: season.id.value)
-                    InfoRow(label: "Title", value: season.title)
-                    InfoRow(label: "Posts", value: String(season.postCount))
-                } else if viewModel.isLoading {
-                    ProgressView("시즌 로딩 중...")
-                } else if let errorMessage = viewModel.errorMessage {
-                    Text(errorMessage)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("시즌 정보를 불러오지 못했습니다.")
-                        .foregroundStyle(.secondary)
-                }
-            }
+        Group {
+            if shouldBlockInitialLoading {
+                loadingSection
+            } else {
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 24) {
+                        if let season = viewModel.season {
+                            SeasonDetailHeaderCardView(season: season)
+                        }
 
-            Section("Posts") {
-                if viewModel.posts.isEmpty, viewModel.isLoading {
-                    ProgressView("포스트 로딩 중...")
-                } else if viewModel.posts.isEmpty {
-                    Text("등록된 포스트가 없습니다.")
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(viewModel.posts, id: \.id) { post in
-                        NavigationLink(
-                            destination: PostDetailView(
-                                brandID: post.brandID,
-                                seasonID: post.seasonID,
-                                postID: post.id
-                            )
-                        ) {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(post.caption ?? "(캡션 없음)")
-                                        .font(.body)
-                                        .lineLimit(1)
-                                    Text("postID: \(post.id.value)")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
+                        if let errorMessage = viewModel.errorMessage, viewModel.posts.isEmpty {
+                            errorSection(message: errorMessage)
+                        } else if viewModel.posts.isEmpty {
+                            emptySection
+                        } else {
+                            LazyVGrid(columns: columns, spacing: 10) {
+                                ForEach(viewModel.posts, id: \.id) { post in
+                                    Button {
+                                        selectedPost = post
+                                    } label: {
+                                        SeasonLookGridItemView(
+                                            post: post,
+                                            brandImageCache: provider.brandImageCache
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                    .onAppear {
+                                        viewModel.postDidAppear(
+                                            postID: post.id,
+                                            brandImageCache: provider.brandImageCache,
+                                            maxBytes: postGridMaxBytes
+                                        )
+                                    }
                                 }
-                                Spacer()
                             }
                         }
                     }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 20)
                 }
             }
         }
-        .listStyle(.insetGrouped)
-        .navigationTitle("Season")
+        .background(
+            LinearGradient(
+                colors: [
+                    Color(red: 0.98, green: 0.97, blue: 0.94),
+                    Color.white
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+        )
         .navigationBarTitleDisplayMode(.inline)
+        .background(hiddenNavigationLink)
         .task {
             await viewModel.loadIfNeeded(
                 brandID: brandID,
                 seasonID: seasonID,
-                seasonRepository: provider.seasonRepository,
-                postRepository: provider.postRepository
+                useCase: loadSeasonDetailUseCase,
+                brandImageCache: provider.brandImageCache,
+                maxBytes: postGridMaxBytes
             )
         }
         .refreshable {
             await viewModel.refresh(
                 brandID: brandID,
                 seasonID: seasonID,
-                seasonRepository: provider.seasonRepository,
-                postRepository: provider.postRepository
+                useCase: loadSeasonDetailUseCase,
+                brandImageCache: provider.brandImageCache,
+                maxBytes: postGridMaxBytes
             )
         }
     }
-}
 
-private struct InfoRow: View {
-    let label: String
-    let value: String
+    private var loadSeasonDetailUseCase: some LoadSeasonDetailUseCaseProtocol {
+        LoadSeasonDetailUseCase(
+            seasonRepository: provider.seasonRepository,
+            postRepository: provider.postRepository
+        )
+    }
 
-    var body: some View {
-        HStack {
-            Text(label)
-            Spacer()
-            Text(value)
+    private var loadingSection: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+                .tint(.black)
+            Text("포스트 목록을 불러오는 중입니다.")
+                .font(.footnote)
                 .foregroundStyle(.secondary)
         }
-    }
-}
-
-@MainActor
-final class SeasonDetailViewModel: ObservableObject {
-    @Published private(set) var season: Season?
-    @Published private(set) var posts: [LookbookPost] = []
-    @Published private(set) var isLoading: Bool = false
-    @Published private(set) var errorMessage: String?
-
-    private var loadedKey: String?
-    private var isRequesting: Bool = false
-
-    func loadIfNeeded(
-        brandID: BrandID,
-        seasonID: SeasonID,
-        seasonRepository: any SeasonRepositoryProtocol,
-        postRepository: any PostRepositoryProtocol
-    ) async {
-        let key = "\(brandID.value)|\(seasonID.value)"
-        guard loadedKey != key else { return }
-        await load(
-            brandID: brandID,
-            seasonID: seasonID,
-            seasonRepository: seasonRepository,
-            postRepository: postRepository
-        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    func refresh(
-        brandID: BrandID,
-        seasonID: SeasonID,
-        seasonRepository: any SeasonRepositoryProtocol,
-        postRepository: any PostRepositoryProtocol
-    ) async {
-        loadedKey = nil
-        await load(
-            brandID: brandID,
-            seasonID: seasonID,
-            seasonRepository: seasonRepository,
-            postRepository: postRepository
-        )
-    }
-
-    private func load(
-        brandID: BrandID,
-        seasonID: SeasonID,
-        seasonRepository: any SeasonRepositoryProtocol,
-        postRepository: any PostRepositoryProtocol
-    ) async {
-        if isRequesting { return }
-        isRequesting = true
-        isLoading = true
-        errorMessage = nil
-        defer {
-            isRequesting = false
-            isLoading = false
+    private func errorSection(message: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("룩북을 불러오지 못했습니다.")
+                .font(.headline)
+            Text(message)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
         }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white.opacity(0.94))
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
 
-        do {
-            async let seasonTask = seasonRepository.fetchSeason(brandID: brandID, seasonID: seasonID)
-            async let postsTask = postRepository.fetchPosts(
-                brandID: brandID,
-                seasonID: seasonID,
-                sort: .newest,
-                filterTagIDs: [],
-                page: PageRequest(size: 30, cursor: nil)
+    private var emptySection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("등록된 룩이 없습니다.")
+                .font(.headline)
+            Text("아직 이 시즌에 준비된 사진이 없습니다.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white.opacity(0.94))
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+
+    @ViewBuilder
+    private var hiddenNavigationLink: some View {
+        NavigationLink(
+            destination: selectedPostDestination,
+            isActive: selectedPostBinding
+        ) {
+            EmptyView()
+        }
+        .hidden()
+    }
+
+    @ViewBuilder
+    private var selectedPostDestination: some View {
+        if let selectedPost {
+            PostDetailView(
+                brandID: selectedPost.brandID,
+                seasonID: selectedPost.seasonID,
+                postID: selectedPost.id
             )
-
-            let (loadedSeason, loadedPosts) = try await (seasonTask, postsTask)
-            season = loadedSeason
-            posts = loadedPosts.items
-            loadedKey = "\(brandID.value)|\(seasonID.value)"
-        } catch {
-            season = nil
-            posts = []
-            errorMessage = "시즌/포스트를 불러오지 못했습니다."
+        } else {
+            EmptyView()
         }
+    }
+
+    private var selectedPostBinding: Binding<Bool> {
+        Binding(
+            get: { selectedPost != nil },
+            set: { isActive in
+                if !isActive {
+                    selectedPost = nil
+                }
+            }
+        )
+    }
+
+    private var shouldBlockInitialLoading: Bool {
+        viewModel.isLoading && viewModel.posts.isEmpty && viewModel.errorMessage == nil
     }
 }

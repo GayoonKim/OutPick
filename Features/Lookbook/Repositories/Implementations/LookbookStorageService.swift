@@ -117,7 +117,20 @@ final class LookbookStorageService: StorageServiceProtocol {
 
     func downloadData(from path: String, maxSize: Int) async throws -> Data {
         let ref = storage.reference(withPath: path)
-        return try await ref.data(maxSize: Int64(maxSize))
+        let startedAt = CFAbsoluteTimeGetCurrent()
+
+        do {
+            let data = try await ref.data(maxSize: Int64(maxSize))
+            LookbookImageLoadDebugLog.log(
+                "storage success \(LookbookImageLoadDebugLog.pathDetails(path)) bytes=\(data.count) limit=\(maxSize) total=\(LookbookImageLoadDebugLog.milliseconds(since: startedAt))"
+            )
+            return data
+        } catch {
+            LookbookImageLoadDebugLog.log(
+                "storage failed \(LookbookImageLoadDebugLog.pathDetails(path)) limit=\(maxSize) total=\(LookbookImageLoadDebugLog.milliseconds(since: startedAt)) error=\(error.localizedDescription)"
+            )
+            throw error
+        }
     }
 
     func downloadFile(from path: String, to localURL: URL) async throws {

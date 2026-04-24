@@ -9,6 +9,44 @@ import UIKit
 import Foundation
 import CryptoKit
 
+enum LookbookImageLoadDebugLog {
+    static var isEnabled: Bool {
+        #if DEBUG
+        let processInfo = ProcessInfo.processInfo
+        return processInfo.arguments.contains("-LookbookImageLoadMetrics")
+            || processInfo.environment["LOOKBOOK_IMAGE_LOAD_METRICS"] == "1"
+        #else
+        return false
+        #endif
+    }
+
+    static func log(_ message: @autoclosure () -> String) {
+        guard isEnabled else { return }
+        print("[LookbookImageLoad] \(message())")
+    }
+
+    static func milliseconds(since startedAt: CFAbsoluteTime) -> String {
+        String(format: "%.0fms", (CFAbsoluteTimeGetCurrent() - startedAt) * 1000)
+    }
+
+    static func compactPath(_ path: String, maxLength: Int = 72) -> String {
+        guard path.count > maxLength else { return path }
+        let prefixLength = max(8, maxLength / 3)
+        let suffixLength = max(16, maxLength / 2)
+        let prefix = path.prefix(prefixLength)
+        let suffix = path.suffix(suffixLength)
+        return "\(prefix)...\(suffix)"
+    }
+
+    static func pathDetails(_ path: String) -> String {
+        let compact = compactPath(path)
+        if compact == path {
+            return "path=\(path)"
+        }
+        return "path=\(compact) rawPath=\(path)"
+    }
+}
+
 /// NSCache 기반 공용 메모리 이미지 캐시
 final class ImageCacheMemoryStore {
     private let cache = NSCache<NSString, UIImage>()
@@ -264,6 +302,23 @@ enum ImageCachePipelineError: Error {
     case invalidImageData
 }
 
+/// 프리패치 시점에 어떤 캐시 계층까지 저장할지 결정합니다.
+enum ImageCacheStorePolicy: Equatable {
+    case memoryOnly
+    case memoryAndDisk
+}
+
+private extension ImageCacheStorePolicy {
+    var debugLabel: String {
+        switch self {
+        case .memoryOnly:
+            return "memoryOnly"
+        case .memoryAndDisk:
+            return "memoryAndDisk"
+        }
+    }
+}
+
 /// 메모리 -> 디스크 -> 네트워크 순으로 이미지를 로딩하는 공용 파이프라인
 /// - Note: 동일 키 로딩은 in-flight 레지스트리로 병합합니다.
 final class ImageCachePipeline {
@@ -308,26 +363,70 @@ final class ImageCachePipeline {
     }
 
     func loadImage(path: String, maxBytes: Int) async throws -> UIImage {
+        try await loadImage(
+            path: path,
+            maxBytes: maxBytes,
+            storePolicy: .memoryAndDisk
+        )
+    }
+
+    private func loadImage(
+        path: String,
+        maxBytes: Int,
+        storePolicy: ImageCacheStorePolicy
+    ) async throws -> UIImage {
         let key = canonicalKey(for: path)
         let fetcher = self.fetcher
+        let pathDetails = LookbookImageLoadDebugLog.pathDetails(path)
 
-        if let cached = await cachedImage(path: path) {
-            return cached
+        if let memoryImage = memory.image(forKey: key) {
+            LookbookImageLoadDebugLog.log(
+                "cache hit(memory) \(pathDetails)"
+            )
+            return memoryImage
+        }
+
+        if let data = await disk.read(forKey: key),
+           let diskImage = UIImage(data: data) {
+            memory.set(diskImage, forKey: key)
+            LookbookImageLoadDebugLog.log(
+                "cache hit(disk) \(pathDetails) bytes=\(data.count)"
+            )
+            return diskImage
         }
 
         if let existing = await inflight.task(for: key) {
+            LookbookImageLoadDebugLog.log(
+                "join inflight \(pathDetails)"
+            )
             return try await existing.value
         }
 
+        let totalStartedAt = CFAbsoluteTimeGetCurrent()
         let task = Task<UIImage, Error> { [memory, disk, loadLimiter] in
             try await loadLimiter.withPermit {
+                let fetchStartedAt = CFAbsoluteTimeGetCurrent()
                 let downloaded = try await fetcher(path, maxBytes)
+                let fetchElapsed = LookbookImageLoadDebugLog.milliseconds(
+                    since: fetchStartedAt
+                )
+
+                let decodeStartedAt = CFAbsoluteTimeGetCurrent()
                 guard let image = UIImage(data: downloaded) else {
                     throw ImageCachePipelineError.invalidImageData
                 }
+                let decodeElapsed = LookbookImageLoadDebugLog.milliseconds(
+                    since: decodeStartedAt
+                )
 
                 memory.set(image, forKey: key)
-                await disk.write(data: downloaded, forKey: key)
+                if storePolicy == .memoryAndDisk {
+                    await disk.write(data: downloaded, forKey: key)
+                }
+
+                LookbookImageLoadDebugLog.log(
+                    "load success \(pathDetails) bytes=\(downloaded.count) fetch=\(fetchElapsed) decode=\(decodeElapsed) total=\(LookbookImageLoadDebugLog.milliseconds(since: totalStartedAt)) policy=\(storePolicy.debugLabel)"
+                )
                 return image
             }
         }
@@ -339,6 +438,9 @@ final class ImageCachePipeline {
             return image
         } catch {
             await inflight.remove(key)
+            LookbookImageLoadDebugLog.log(
+                "load failed \(pathDetails) total=\(LookbookImageLoadDebugLog.milliseconds(since: totalStartedAt)) error=\(error.localizedDescription)"
+            )
             throw error
         }
     }
@@ -361,7 +463,8 @@ final class ImageCachePipeline {
 
     func prefetch(
         items: [(path: String, maxBytes: Int)],
-        concurrency: Int
+        concurrency: Int,
+        storePolicy: ImageCacheStorePolicy = .memoryAndDisk
     ) async {
         guard !items.isEmpty else { return }
 
@@ -374,7 +477,11 @@ final class ImageCachePipeline {
                 running += 1
                 group.addTask { [weak self] in
                     guard let self else { return }
-                    await self.prefetchOne(path: next.path, maxBytes: next.maxBytes)
+                    await self.prefetchOne(
+                        path: next.path,
+                        maxBytes: next.maxBytes,
+                        storePolicy: storePolicy
+                    )
                 }
             }
 
@@ -389,7 +496,11 @@ final class ImageCachePipeline {
         }
     }
 
-    private func prefetchOne(path: String, maxBytes: Int) async {
+    private func prefetchOne(
+        path: String,
+        maxBytes: Int,
+        storePolicy: ImageCacheStorePolicy
+    ) async {
         if Task.isCancelled { return }
         let key = canonicalKey(for: path)
 
@@ -405,7 +516,11 @@ final class ImageCachePipeline {
         let task = Task<Void, Never> { [weak self] in
             guard let self else { return }
             if Task.isCancelled { return }
-            _ = try? await self.loadImage(path: path, maxBytes: maxBytes)
+            _ = try? await self.loadImage(
+                path: path,
+                maxBytes: maxBytes,
+                storePolicy: storePolicy
+            )
         }
 
         await prefetchRegistry.set(task, for: key)

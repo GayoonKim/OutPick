@@ -180,7 +180,6 @@ final class AppCoordinator {
         Task { @MainActor [weak self] in
             guard let self else { return }
             await PresenceManager.shared.startAuthenticatedSession()
-            await PushNotificationManager.shared.startForAuthenticatedUser()
             self.consumePendingNotificationRouteIfPossible()
         }
     }

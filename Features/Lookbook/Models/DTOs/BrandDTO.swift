@@ -6,6 +6,7 @@ struct BrandDTO: Codable {
 
     let name: String
     let websiteURL: String?
+    let lookbookArchiveURL: String?
 
     /// (호환) 예전 단일 경로 필드. 앞으로는 썸네일을 넣는 용도로 유지 권장
     let logoPath: String?
@@ -47,6 +48,7 @@ struct BrandDTO: Codable {
             id: BrandID(value: id),
             name: name,
             websiteURL: websiteURL,
+            lookbookArchiveURL: lookbookArchiveURL,
             logoThumbPath: resolvedThumbPath,
             logoDetailPath: resolvedDetailPath,
             logoOriginalPath: resolvedOriginalPath,

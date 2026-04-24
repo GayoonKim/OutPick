@@ -20,6 +20,7 @@ struct Brand: Equatable, Codable, Identifiable {
     var id: BrandID
     var name: String
     var websiteURL: String?
+    var lookbookArchiveURL: String?
 
     /// 목록/카드에서 사용하는 썸네일 Storage 경로
     var logoThumbPath: String?

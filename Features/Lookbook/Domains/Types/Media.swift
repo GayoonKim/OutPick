@@ -12,8 +12,18 @@ enum MediaType: String, Codable { case image, video }
 
 struct MediaAsset: Equatable, Codable {
     let type: MediaType
-    let url: URL            // 다운로드 URL (또는 CDN URL)
-    let thumbnailURL: URL?  // 성능용 썸네일
-//    let width: Int?
-//    let height: Int?
+    let remoteURL: URL
+    let thumbPath: String?
+    let detailPath: String?
+    let sourcePageURL: URL?
+
+    /// 목록/그리드에서 먼저 시도할 Storage 경로
+    var preferredListPath: String? {
+        thumbPath ?? detailPath
+    }
+
+    /// 상세 화면에서 먼저 시도할 Storage 경로
+    var preferredDetailPath: String? {
+        detailPath ?? thumbPath
+    }
 }

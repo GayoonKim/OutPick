@@ -19,6 +19,15 @@ enum ThumbnailPolicies {
     
     static let seasonCover = ThumbnailPolicy(maxPixelSize: 512, quality: 0.75)
 
+    /// 시즌 커버 상세/확대 프리뷰용 중간 해상도
+    static let seasonCoverDetail = ThumbnailPolicy(maxPixelSize: 1600, quality: 0.88)
+
+    /// 포스트 목록/그리드용 썸네일
+    static let lookbookPostThumb = ThumbnailPolicy(maxPixelSize: 768, quality: 0.82)
+
+    /// 포스트 상세용 중간 해상도
+    static let lookbookPostDetail = ThumbnailPolicy(maxPixelSize: 1920, quality: 0.9)
+
     /// 프로젝트 공통 기본(= MediaManager 기본과 동일)
     static let `default` = ThumbnailPolicy.default
 }

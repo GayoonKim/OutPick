@@ -8,8 +8,11 @@
 import SwiftUI
 
 struct LookbookHomeView: View {
+    private let pullToRefreshMinimumVisibleDuration: TimeInterval = 0.6
+
     @StateObject private var viewModel: LookbookHomeViewModel
 
+    @EnvironmentObject private var brandAdminSessionStore: BrandAdminSessionStore
     @State private var selectedBrandID: Brand.ID?
     @State private var isPresentingCreateBrand = false
     @State private var createdBrandIDForSelection: Brand.ID?
@@ -33,6 +36,7 @@ struct LookbookHomeView: View {
             guard let createdBrandIDForSelection else { return }
 
             Task {
+                await brandAdminSessionStore.refreshWritableBrands(force: true)
                 await viewModel.retry()
                 await viewModel.syncCreatedBrand(brandID: createdBrandIDForSelection)
                 selectedBrandID = createdBrandIDForSelection
@@ -100,7 +104,7 @@ struct LookbookHomeView: View {
                 }
                 .listStyle(.plain)
                 .refreshable {
-                    await viewModel.retry()
+                    await refreshWithMinimumIndicatorDuration()
                 }
             }
         }
@@ -122,7 +126,6 @@ struct LookbookHomeView: View {
                         isPresentingCreateBrand = true
                     } label: {
                         HStack(spacing: 2) {
-//                            Image(systemName: "plus")
                             Text("브랜드 추가")
                         }
                         .lineLimit(1)
@@ -143,6 +146,21 @@ struct LookbookHomeView: View {
             }
         }
         .navigationViewStyle(StackNavigationViewStyle())
+    }
+
+    private func refreshWithMinimumIndicatorDuration() async {
+        let startedAt = Date()
+
+        await viewModel.refreshKeepingVisibleContent()
+
+        let elapsed = Date().timeIntervalSince(startedAt)
+        guard elapsed < pullToRefreshMinimumVisibleDuration else { return }
+
+        // 새로고침이 너무 빨리 끝나도 인디케이터가 잠깐 유지되도록 최소 표시 시간을 맞춥니다.
+        let remainingNanoseconds = UInt64(
+            (pullToRefreshMinimumVisibleDuration - elapsed) * 1_000_000_000
+        )
+        try? await Task.sleep(nanoseconds: remainingNanoseconds)
     }
 }
 

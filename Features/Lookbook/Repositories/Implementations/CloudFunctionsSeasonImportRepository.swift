@@ -11,11 +11,13 @@ import Foundation
 struct CloudFunctionsSeasonImportRepository: SeasonImportRequestingRepository {
     func requestSeasonImport(
         brandID: BrandID,
-        seasonURL: String
+        seasonURL: String,
+        sourceCandidateID: String?
     ) async throws -> SeasonImportRequestReceipt {
         try await CloudFunctionsManager.shared.requestSeasonImport(
             brandID: brandID.value,
-            seasonURL: seasonURL
+            seasonURL: seasonURL,
+            sourceCandidateID: sourceCandidateID
         )
     }
 }

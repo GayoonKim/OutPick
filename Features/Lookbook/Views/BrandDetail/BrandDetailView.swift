@@ -9,8 +9,7 @@ import SwiftUI
 
 struct BrandDetailView: View {
     private enum SeasonCreationSheet: String, Identifiable {
-        case manual
-        case importFromURL
+        case candidateSelection
 
         var id: String { rawValue }
     }
@@ -23,9 +22,8 @@ struct BrandDetailView: View {
     @Environment(\.repositoryProvider) private var provider
     @EnvironmentObject private var brandAdminSessionStore: BrandAdminSessionStore
     @StateObject private var viewModel = BrandDetailViewModel()
-    @State private var isPresentSeasonCreationDialog: Bool = false
     @State private var activeSeasonSheet: SeasonCreationSheet?
-    @State private var seasonImportFeedbackMessage: String?
+    @State private var didPrepareInitialContent: Bool = false
 
     init(
         brand: Brand,
@@ -38,32 +36,40 @@ struct BrandDetailView: View {
     }
 
     var body: some View {
-        List {
-            BrandDetailHeaderView(
-                brand: brand,
-                brandImageCache: brandImageCache,
-                maxBytes: maxBytes
-            )
-            .listRowInsets(EdgeInsets())
-            .listRowSeparator(.hidden)
+        Group {
+            if shouldBlockInitialLoading {
+                initialLoadingView
+            } else {
+                List {
+                    BrandDetailHeaderView(
+                        brand: brand,
+                        brandImageCache: brandImageCache,
+                        maxBytes: maxBytes
+                    )
+                    .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
 
-            BrandDetailSeasonsGridView(
-                seasons: viewModel.seasons,
-                latestSeasonImportJob: viewModel.latestSeasonImportJob,
-                isLoading: viewModel.isLoading,
-                errorMessage: viewModel.errorMessage,
-                importJobErrorMessage: viewModel.importJobErrorMessage,
-                canRequestSeasonImport: brandAdminSessionStore.canWrite(brandID: brand.id),
-                onTapSeasonImportCTA: {
-                    activeSeasonSheet = .importFromURL
-                },
-                brandImageCache: brandImageCache,
-                maxBytes: maxBytes
-            )
-            .listRowInsets(EdgeInsets())
-            .listRowSeparator(.hidden)
+                    BrandDetailSeasonsGridView(
+                        seasons: viewModel.seasons,
+                        isLoading: viewModel.isLoading,
+                        errorMessage: viewModel.errorMessage,
+                        canManageBrand: brandAdminSessionStore.canWrite(brandID: brand.id),
+                        brandImageCache: brandImageCache,
+                        maxBytes: maxBytes,
+                        onSeasonAppear: { season in
+                            viewModel.seasonDidAppear(
+                                seasonID: season.id,
+                                brandImageCache: brandImageCache,
+                                maxBytes: maxBytes
+                            )
+                        }
+                    )
+                    .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
+                }
+                .listStyle(.plain)
+            }
         }
-        .listStyle(.plain)
         .navigationTitle(brand.name)
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
@@ -79,9 +85,10 @@ struct BrandDetailView: View {
                 .accessibilityLabel("뒤로 가기")
             }
             ToolbarItem(placement: .navigationBarTrailing) {
-                if brandAdminSessionStore.canWrite(brandID: brand.id) {
+                if brandAdminSessionStore.canWrite(brandID: brand.id),
+                   hasLookbookArchiveURL {
                     Button {
-                        isPresentSeasonCreationDialog = true
+                        activeSeasonSheet = .candidateSelection
                     } label: {
                         Text("시즌 추가")
                             .foregroundStyle(.black)
@@ -90,80 +97,120 @@ struct BrandDetailView: View {
                 }
             }
         }
-        .confirmationDialog(
-            "시즌 추가 방식을 선택해주세요",
-            isPresented: $isPresentSeasonCreationDialog,
-            titleVisibility: .visible
-        ) {
-            Button("직접 입력으로 추가") {
-                activeSeasonSheet = .manual
-            }
-            Button("시즌 URL로 등록") {
-                activeSeasonSheet = .importFromURL
-            }
-            Button("취소", role: .cancel) {}
-        } message: {
-            Text("수동 입력 또는 시즌 URL import 요청 중 하나를 선택할 수 있습니다.")
-        }
         .sheet(item: $activeSeasonSheet, onDismiss: {
             Task {
                 await viewModel.refreshContents(
                     brandID: brand.id,
                     seasonRepository: provider.seasonRepository,
-                    seasonImportJobRepository: provider.seasonImportJobRepository
+                    brandImageCache: brandImageCache,
+                    maxBytes: maxBytes
                 )
             }
         }) { sheet in
             switch sheet {
-            case .manual:
-                CreateSeasonView(
-                    viewModel: CreateSeasonViewModel(
-                        brandID: brand.id,
-                        seasonRepository: provider.seasonRepository,
-                        tagRepository: provider.tagRepository,
-                        tagAliasRepository: provider.tagAliasRepository,
-                        tagConceptRepository: provider.tagConceptRepository
-                    )
-                )
-            case .importFromURL:
-                CreateSeasonFromURLView(
-                    viewModel: CreateSeasonFromURLViewModel(
-                        brandID: brand.id,
-                        seasonImportRepository: provider.seasonImportRepository
-                    )
-                ) { receipt in
-                    seasonImportFeedbackMessage =
-                        """
-                        시즌 URL import 요청이 생성되었습니다.
-                        요청 상태: \(receipt.status)
-
-                        현재 단계에서는 import job 생성까지만 연결되어 있습니다.
-                        다음 단계에서 수집 워커를 붙이면 이 요청을 기반으로 실제 시즌/포스트 import가 이어집니다.
-                        """
+            case .candidateSelection:
+                NavigationView {
+                    CreateBrandCandidateSelectionView(
+                        createdBrand: CreateBrandViewModel.CreatedBrand(
+                            id: brand.id,
+                            name: brand.name,
+                            websiteURL: brand.websiteURL,
+                            lookbookArchiveURL: brand.lookbookArchiveURL,
+                            hasLogoAsset: brand.logoThumbPath != nil
+                        ),
+                        loadSelectableSeasonCandidatesUseCase: LoadSelectableSeasonCandidatesUseCase(
+                            candidateRepository: provider.seasonCandidateRepository,
+                            seasonImportJobRepository: provider.seasonImportJobRepository
+                        ),
+                        startSeasonImportExtractionUseCase: StartSeasonImportExtractionUseCase(
+                            processingRepository: provider.seasonImportJobProcessingRepository,
+                            seasonImportJobRepository: provider.seasonImportJobRepository
+                        ),
+                        discoveryErrorMessage: nil,
+                        emptySelectionButtonTitle: "닫기"
+                    ) {
+                        activeSeasonSheet = nil
+                    }
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("닫기") {
+                                activeSeasonSheet = nil
+                            }
+                        }
+                    }
                 }
             }
         }
-        .alert(
-            "시즌 등록 요청 완료",
-            isPresented: Binding(
-                get: { seasonImportFeedbackMessage != nil },
-                set: { isPresented in
-                    if !isPresented {
-                        seasonImportFeedbackMessage = nil
-                    }
-                }
-            )
-        ) {
-            Button("확인", role: .cancel) {}
-        } message: {
-            Text(seasonImportFeedbackMessage ?? "")
-        }
         .task {
-            await viewModel.loadContentsIfNeeded(
-                brandID: brand.id,
-                seasonRepository: provider.seasonRepository,
-                seasonImportJobRepository: provider.seasonImportJobRepository
-            )
+            if !brandAdminSessionStore.canWrite(brandID: brand.id) {
+                await brandAdminSessionStore.refreshWritableBrands(force: true)
+            }
+
+            if didPrepareInitialContent == false {
+                await prewarmHeaderLogoIfNeeded()
+                await viewModel.loadContentsIfNeeded(
+                    brandID: brand.id,
+                    seasonRepository: provider.seasonRepository,
+                    brandImageCache: brandImageCache,
+                    maxBytes: maxBytes
+                )
+                didPrepareInitialContent = true
+            }
         }
     }
+
+    private var hasLookbookArchiveURL: Bool {
+        guard let lookbookArchiveURL = brand.lookbookArchiveURL else {
+            return false
+        }
+        return !lookbookArchiveURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var shouldBlockInitialLoading: Bool {
+        didPrepareInitialContent == false && viewModel.seasons.isEmpty && viewModel.errorMessage == nil
+    }
+
+    private var initialLoadingView: some View {
+        VStack(spacing: 14) {
+            ProgressView()
+                .tint(.black)
+                .scaleEffect(1.05)
+
+            Text("브랜드를 준비하는 중입니다.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(
+            Color(.systemBackground)
+                .ignoresSafeArea()
+        )
+    }
+
+    private var headerPrewarmPath: String? {
+        if let thumb = brand.logoThumbPath, thumb.isEmpty == false {
+            return thumb
+        }
+
+        if let detail = brand.logoDetailPath, detail.isEmpty == false {
+            return detail
+        }
+
+        if let original = brand.logoOriginalPath, original.isEmpty == false {
+            return original
+        }
+
+        return nil
+    }
+
+    private func prewarmHeaderLogoIfNeeded() async {
+        guard let headerPrewarmPath else { return }
+
+        await brandImageCache.prefetch(
+            items: [(path: headerPrewarmPath, maxBytes: max(maxBytes, 8_000_000))],
+            concurrency: 1,
+            storePolicy: .memoryOnly
+        )
+    }
+
 }

@@ -12,5 +12,20 @@ protocol BrandImageCacheProtocol {
     func loadImage(path: String, maxBytes: Int) async throws -> UIImage
 
     /// 여러 이미지를 병렬로 프리패치합니다. (실패는 무시 가능)
-    func prefetch(items: [(path: String, maxBytes: Int)], concurrency: Int) async
+    func prefetch(
+        items: [(path: String, maxBytes: Int)],
+        concurrency: Int,
+        storePolicy: ImageCacheStorePolicy
+    ) async
+}
+
+extension BrandImageCacheProtocol {
+    /// 기본 프리패치는 메모리와 디스크를 함께 사용합니다.
+    func prefetch(items: [(path: String, maxBytes: Int)], concurrency: Int) async {
+        await prefetch(
+            items: items,
+            concurrency: concurrency,
+            storePolicy: .memoryAndDisk
+        )
+    }
 }

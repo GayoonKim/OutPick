@@ -16,17 +16,19 @@ final class CreateBrandViewModel: ObservableObject {
         let id: BrandID
         let name: String
         let websiteURL: String?
+        let lookbookArchiveURL: String?
         let hasLogoAsset: Bool
 
         var canDiscoverSeasons: Bool {
-            guard let websiteURL else { return false }
-            return websiteURL.isEmpty == false
+            guard let lookbookArchiveURL else { return false }
+            return lookbookArchiveURL.isEmpty == false
         }
     }
 
     // MARK: - 입력 상태
     @Published var brandName: String = ""
     @Published var websiteURLText: String = ""
+    @Published var lookbookArchiveURLText: String = ""
     @Published var selectedLogoImage: UIImage? = nil
     @Published var isFeatured: Bool = false
 
@@ -78,8 +80,16 @@ final class CreateBrandViewModel: ObservableObject {
         }
 
         let websiteURL: String
+        let lookbookArchiveURL: String
         do {
-            websiteURL = try normalizedWebsiteURL(websiteURLText) ?? ""
+            websiteURL = try normalizedHTTPURL(
+                websiteURLText,
+                fieldLabel: "공식 홈페이지 URL"
+            ) ?? ""
+            lookbookArchiveURL = try normalizedHTTPURL(
+                lookbookArchiveURLText,
+                fieldLabel: "룩북 목록 URL"
+            ) ?? ""
         } catch {
             message = error.localizedDescription
             return nil
@@ -90,10 +100,14 @@ final class CreateBrandViewModel: ObservableObject {
 
         do {
             let normalizedWebsiteURL = websiteURL.isEmpty ? nil : websiteURL
+            let normalizedLookbookArchiveURL = lookbookArchiveURL.isEmpty
+                ? nil
+                : lookbookArchiveURL
             let docID = try await brandStore.createBrand(
                 name: rawName,
                 isFeatured: isFeatured,
-                websiteURL: normalizedWebsiteURL
+                websiteURL: normalizedWebsiteURL,
+                lookbookArchiveURL: normalizedLookbookArchiveURL
             )
 
             enqueueLogoUploadIfNeeded(docID: docID)
@@ -101,6 +115,7 @@ final class CreateBrandViewModel: ObservableObject {
                 id: BrandID(value: docID),
                 name: rawName,
                 websiteURL: normalizedWebsiteURL,
+                lookbookArchiveURL: normalizedLookbookArchiveURL,
                 hasLogoAsset: selectedLogoImage != nil
             )
         } catch {
@@ -122,7 +137,7 @@ private extension CreateBrandViewModel {
             .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
     }
 
-    func normalizedWebsiteURL(_ rawValue: String) throws -> String? {
+    func normalizedHTTPURL(_ rawValue: String, fieldLabel: String) throws -> String? {
         let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
@@ -133,7 +148,7 @@ private extension CreateBrandViewModel {
             throw NSError(
                 domain: "CreateBrandViewModel",
                 code: -20,
-                userInfo: [NSLocalizedDescriptionKey: "브랜드 URL 형식이 올바르지 않습니다."]
+                userInfo: [NSLocalizedDescriptionKey: "\(fieldLabel) 형식이 올바르지 않습니다."]
             )
         }
 
@@ -142,7 +157,7 @@ private extension CreateBrandViewModel {
             throw NSError(
                 domain: "CreateBrandViewModel",
                 code: -21,
-                userInfo: [NSLocalizedDescriptionKey: "브랜드 URL은 http 또는 https로 시작해야 합니다."]
+                userInfo: [NSLocalizedDescriptionKey: "\(fieldLabel)은 http 또는 https로 시작해야 합니다."]
             )
         }
 
@@ -150,7 +165,7 @@ private extension CreateBrandViewModel {
             throw NSError(
                 domain: "CreateBrandViewModel",
                 code: -22,
-                userInfo: [NSLocalizedDescriptionKey: "브랜드 URL에 도메인이 필요합니다."]
+                userInfo: [NSLocalizedDescriptionKey: "\(fieldLabel)에 도메인이 필요합니다."]
             )
         }
 
@@ -161,7 +176,7 @@ private extension CreateBrandViewModel {
             throw NSError(
                 domain: "CreateBrandViewModel",
                 code: -23,
-                userInfo: [NSLocalizedDescriptionKey: "브랜드 URL을 정규화하지 못했습니다."]
+                userInfo: [NSLocalizedDescriptionKey: "\(fieldLabel)을 정규화하지 못했습니다."]
             )
         }
 

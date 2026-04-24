@@ -20,7 +20,8 @@ struct FirestoreBrandStore: BrandStoringRepository {
     func createBrand(
         name: String,
         isFeatured: Bool,
-        websiteURL: String?
+        websiteURL: String?,
+        lookbookArchiveURL: String?
     ) async throws -> String {
         let docRef = db.collection("brands").document()
         let docID = docRef.documentID
@@ -31,6 +32,7 @@ struct FirestoreBrandStore: BrandStoringRepository {
             "name": normalizedDisplayName(name),
             "normalizedName": normalizedName,
             "websiteURL": websiteURL ?? NSNull(),
+            "lookbookArchiveURL": lookbookArchiveURL ?? NSNull(),
 
             "logoPath": NSNull(),
             "logoThumbPath": NSNull(),
