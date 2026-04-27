@@ -23,6 +23,7 @@ final class LookbookRepositoryProvider {
     let seasonCandidateDiscoveryRepository: SeasonCandidateDiscoveryRepositoryProtocol
 
     let postRepository: PostRepositoryProtocol
+    let postEngagementRepository: PostEngagementRepositoryProtocol
 
     let tagRepository: TagRepositoryProtocol
     let tagAliasRepository: TagAliasRepositoryProtocol
@@ -57,6 +58,7 @@ final class LookbookRepositoryProvider {
         seasonCandidateDiscoveryRepository: SeasonCandidateDiscoveryRepositoryProtocol = CloudFunctionsSeasonCandidateDiscoveryRepository(),
 
         postRepository: PostRepositoryProtocol = FirestorePostRepository(),
+        postEngagementRepository: PostEngagementRepositoryProtocol = CloudFunctionsPostEngagementRepository(),
 
         tagRepository: TagRepositoryProtocol = FirestoreTagRepository(),
         tagAliasRepository: TagAliasRepositoryProtocol = FirestoreTagAliasRepository(),
@@ -86,6 +88,7 @@ final class LookbookRepositoryProvider {
 
         self.brandRepository = brandRepository
         self.postRepository = postRepository
+        self.postEngagementRepository = postEngagementRepository
 
         self.tagRepository = tagRepository
         self.tagAliasRepository = tagAliasRepository

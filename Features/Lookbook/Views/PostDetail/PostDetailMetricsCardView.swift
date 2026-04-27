@@ -29,12 +29,6 @@ struct PostDetailMetricsCardView: View {
                     title: "저장"
                 )
             }
-
-            if let viewCount = post.metrics.viewCount {
-                Text("조회 \(viewCount)")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)

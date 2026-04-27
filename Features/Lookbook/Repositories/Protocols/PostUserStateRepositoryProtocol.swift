@@ -8,5 +8,10 @@
 import Foundation
 
 protocol PostUserStateRepositoryProtocol {
-    func fetchPostUserState(userID: UserID, postID: PostID) async throws -> PostUserState?
+    func fetchPostUserState(
+        userID: UserID,
+        brandID: BrandID,
+        seasonID: SeasonID,
+        postID: PostID
+    ) async throws -> PostUserState?
 }

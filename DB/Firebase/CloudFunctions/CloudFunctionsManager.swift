@@ -155,6 +155,37 @@ final class CloudFunctionsManager {
         return try stringValue(response, key: "brandID")
     }
 
+    func setPostEngagement(
+        brandID: String,
+        seasonID: String,
+        postID: String,
+        kind: String,
+        isEnabled: Bool
+    ) async throws -> PostEngagementResult {
+        let response = try await callFunction(
+            "setPostEngagement",
+            data: [
+                "brandID": brandID,
+                "seasonID": seasonID,
+                "postID": postID,
+                "kind": kind,
+                "isEnabled": isEnabled
+            ]
+        )
+
+        guard let metricsDictionary = response["metrics"] as? [String: Any] else {
+            throw CloudFunctionsManagerError.missingField("metrics")
+        }
+
+        return PostEngagementResult(
+            postID: PostID(value: try stringValue(response, key: "postID")),
+            userID: UserID(value: try stringValue(response, key: "userID")),
+            isLiked: try boolValue(response, key: "isLiked"),
+            isSaved: try boolValue(response, key: "isSaved"),
+            metrics: try postMetricsValue(metricsDictionary)
+        )
+    }
+
     func requestSeasonImport(
         brandID: String,
         seasonURL: String,
@@ -357,6 +388,16 @@ final class CloudFunctionsManager {
             return number.boolValue
         }
         return nil
+    }
+
+    private func postMetricsValue(_ dictionary: [String: Any]) throws -> PostMetrics {
+        PostMetrics(
+            likeCount: try intValue(dictionary, key: "likeCount"),
+            commentCount: try intValue(dictionary, key: "commentCount"),
+            replacementCount: try intValue(dictionary, key: "replacementCount"),
+            saveCount: try intValue(dictionary, key: "saveCount"),
+            viewCount: optionalIntValue(dictionary, key: "viewCount")
+        )
     }
 
     private func stringArrayValue(_ dictionary: [String: Any], key: String) -> [String] {
