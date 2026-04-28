@@ -66,7 +66,8 @@ struct PostDetailView: View {
                 brandID: brandID,
                 seasonID: seasonID,
                 postID: postID,
-                useCase: loadPostDetailUseCase
+                useCase: loadPostDetailUseCase,
+                postUserStateRepository: provider.postUserStateRepository
             )
         }
         .refreshable {
@@ -74,7 +75,8 @@ struct PostDetailView: View {
                 brandID: brandID,
                 seasonID: seasonID,
                 postID: postID,
-                useCase: loadPostDetailUseCase
+                useCase: loadPostDetailUseCase,
+                postUserStateRepository: provider.postUserStateRepository
             )
         }
     }
