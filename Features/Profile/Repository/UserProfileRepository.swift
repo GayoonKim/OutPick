@@ -12,9 +12,8 @@ import FirebaseFirestore
 final class UserProfileRepository: UserProfileRepositoryProtocol {
     private let db: Firestore
     private let usersCollection = "users"
-    private let userIdentitiesCollection = "userIdentities"
     
-    // users/{userDocumentID} 또는 users(email query) 프로필 스냅샷 리스너 캐시
+    // users/{identityKey} 또는 users(email query) 프로필 스냅샷 리스너 캐시
     private var userProfileListeners: [String: ListenerRegistration] = [:]
     // 프로필 변경 스트림(Combine)
     private var userProfileSubjects: [String: PassthroughSubject<UserProfile, Error>] = [:]
@@ -37,7 +36,14 @@ final class UserProfileRepository: UserProfileRepositoryProtocol {
     }
 
     private func currentUserDocumentID() -> String {
-        LoginManager.shared.getUserDocumentID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let userDocumentID = LoginManager.shared.getUserDocumentID
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if userDocumentID.isEmpty == false {
+            return userDocumentID
+        }
+
+        return LoginManager.shared.getAuthIdentityKey
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func currentUserDocumentRef() -> DocumentReference? {
@@ -75,55 +81,28 @@ final class UserProfileRepository: UserProfileRepositoryProtocol {
         guard !normalizedIdentityKey.isEmpty, !authenticatedUser.providerUserID.isEmpty else {
             throw FirebaseError.FailedToFetchProfile
         }
-
-        let normalizedEmail = normalizeEmail(authenticatedUser.email ?? "")
-        let identityRef = db.collection(userIdentitiesCollection).document(normalizedIdentityKey)
-
-        let identitySnap = try await identityRef.getDocument()
-        if let mappedID = identitySnap.get("userDocumentID") as? String,
-           !mappedID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            let userDocumentID = mappedID.trimmingCharacters(in: .whitespacesAndNewlines)
-            let userRef = db.collection(usersCollection).document(userDocumentID)
-            let batch = db.batch()
-            batch.setData([
-                "identityKey": normalizedIdentityKey,
-                "provider": authenticatedUser.provider.rawValue,
-                "providerUserID": authenticatedUser.providerUserID,
-                "email": normalizedEmail,
-                "updatedAt": FieldValue.serverTimestamp()
-            ], forDocument: userRef, merge: true)
-            batch.setData([
-                "userDocumentID": userDocumentID,
-                "provider": authenticatedUser.provider.rawValue,
-                "providerUserID": authenticatedUser.providerUserID,
-                "email": normalizedEmail,
-                "updatedAt": FieldValue.serverTimestamp()
-            ], forDocument: identityRef, merge: true)
-            try await batch.commit()
-            return userDocumentID
+        guard normalizedIdentityKey.contains("/") == false else {
+            throw FirebaseError.FailedToFetchProfile
         }
 
-        let userDocumentID = db.collection(usersCollection).document().documentID
+        let normalizedEmail = normalizeEmail(authenticatedUser.email ?? "")
+        let userDocumentID = normalizedIdentityKey
         let userRef = db.collection(usersCollection).document(userDocumentID)
+        let userSnapshot = try await userRef.getDocument()
 
-        let batch = db.batch()
-        batch.setData([
+        var profileSeed: [String: Any] = [
             "userDocumentID": userDocumentID,
-            "provider": authenticatedUser.provider.rawValue,
-            "providerUserID": authenticatedUser.providerUserID,
-            "email": normalizedEmail,
-            "createdAt": FieldValue.serverTimestamp(),
-            "updatedAt": FieldValue.serverTimestamp()
-        ], forDocument: identityRef, merge: true)
-        batch.setData([
             "identityKey": normalizedIdentityKey,
             "provider": authenticatedUser.provider.rawValue,
             "providerUserID": authenticatedUser.providerUserID,
             "email": normalizedEmail,
-            "createdAt": FieldValue.serverTimestamp(),
             "updatedAt": FieldValue.serverTimestamp()
-        ], forDocument: userRef, merge: true)
-        try await batch.commit()
+        ]
+        if userSnapshot.exists == false {
+            profileSeed["createdAt"] = FieldValue.serverTimestamp()
+        }
+
+        try await userRef.setData(profileSeed, merge: true)
 
         return userDocumentID
     }
@@ -261,6 +240,7 @@ final class UserProfileRepository: UserProfileRepositoryProtocol {
             // Domain -> DTO -> Firestore 문서
             let dto = UserProfileMapper.toDTO(profile)
             var profileData = UserProfileFirestoreCodec.toDocument(dto)
+            profileData["userDocumentID"] = userDocumentID
             profileData["email"] = normalizeEmail(LoginManager.shared.getUserEmail)
             if let authenticatedUser = LoginManager.shared.authenticatedUser {
                 profileData["identityKey"] = authenticatedUser.identityKey

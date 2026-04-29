@@ -17,6 +17,7 @@ struct PostDetailView: View {
     @StateObject private var viewModel = PostDetailScreenViewModel()
     @State private var heroImageDidResolve: Bool = false
     @State private var isPresentingImagePreview: Bool = false
+    private let commentSectionID = "post-detail-comments"
 
     var body: some View {
         ZStack {
@@ -25,18 +26,51 @@ struct PostDetailView: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 20)
             } else {
-                ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 22) {
-                        if let post = viewModel.post {
-                            heroImageSection(post: post)
-                            PostDetailMetricsCardView(post: post)
-                            commentSection
+                ScrollViewReader { proxy in
+                    ScrollView(showsIndicators: false) {
+                        VStack(alignment: .leading, spacing: 22) {
+                            if let post = viewModel.post {
+                                heroImageSection(post: post)
+                                PostDetailMetricsCardView(
+                                    post: post,
+                                    isLiked: viewModel.postUserState?.isLiked ?? false,
+                                    isSaved: viewModel.postUserState?.isSaved ?? false,
+                                    errorMessage: viewModel.engagementErrorMessage,
+                                    onLikeTap: {
+                                        Task {
+                                            await viewModel.toggleLike(
+                                                brandID: brandID,
+                                                seasonID: seasonID,
+                                                postID: postID,
+                                                repository: provider.postEngagementRepository
+                                            )
+                                        }
+                                    },
+                                    onCommentTap: {
+                                        withAnimation(.easeInOut(duration: 0.25)) {
+                                            proxy.scrollTo(commentSectionID, anchor: .top)
+                                        }
+                                    },
+                                    onSaveTap: {
+                                        Task {
+                                            await viewModel.toggleSave(
+                                                brandID: brandID,
+                                                seasonID: seasonID,
+                                                postID: postID,
+                                                repository: provider.postEngagementRepository
+                                            )
+                                        }
+                                    }
+                                )
+                                commentSection
+                                    .id(commentSectionID)
+                            }
                         }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 20)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 20)
+                    .opacity(shouldBlockContentWithLoading ? 0 : 1)
                 }
-                .opacity(shouldBlockContentWithLoading ? 0 : 1)
 
                 if shouldBlockContentWithLoading {
                     loadingSection

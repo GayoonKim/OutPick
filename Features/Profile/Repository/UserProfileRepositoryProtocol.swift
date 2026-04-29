@@ -11,7 +11,7 @@ import FirebaseFirestore
 
 /// 사용자 프로필 관련 데이터베이스 작업을 위한 프로토콜
 protocol UserProfileRepositoryProtocol {
-    /// 로그인 identity(provider key) 기준으로 사용자 문서 ID를 조회/생성
+    /// 로그인 identity(provider key)를 사용자 문서 ID로 사용해 users/{identityKey} 문서를 조회/생성
     func resolveOrCreateUserDocumentID(authenticatedUser: AuthenticatedUser) async throws -> String
 
     /// 현재 로그인 사용자 프로필에 대한 실시간 리스너 시작

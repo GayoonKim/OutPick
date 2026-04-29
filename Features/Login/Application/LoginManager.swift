@@ -36,6 +36,7 @@ final class LoginManager {
     private var userEmail: String = ""
     private var authUserKey: String = ""
     private var userDocumentID: String = ""
+    private var hasResolvedUserDocumentID: Bool = false
     private(set) var authenticatedUser: AuthenticatedUser?
     private(set) var currentUserProfile: UserProfile?
 
@@ -63,8 +64,8 @@ final class LoginManager {
     var hasAuthenticatedIdentity: Bool { !authUserKey.isEmpty }
     var getUserUID: String {
         // Legacy getter name.
-        // authUserKey stores the provider identity key (not users/{documentID}).
-        // (Google path currently uses Firebase UID, Kakao uses "kakao:<id>")
+        // authUserKey is the canonical users/{documentID}.
+        // (Google uses Firebase UID, Kakao uses "kakao:<id>")
         if !authUserKey.isEmpty {
             return authUserKey
         }
@@ -88,8 +89,11 @@ final class LoginManager {
     }
 
     func setAuthenticatedUser(_ user: AuthenticatedUser) {
+        let normalizedIdentityKey = user.identityKey.trimmingCharacters(in: .whitespacesAndNewlines)
         self.authenticatedUser = user
-        self.authUserKey = user.identityKey
+        self.authUserKey = normalizedIdentityKey
+        self.userDocumentID = normalizedIdentityKey
+        self.hasResolvedUserDocumentID = false
         self.userEmail = user.email ?? ""
         if let data = try? JSONEncoder().encode(user) {
             KeychainManager.shared.save(data, service: keychainService, account: authenticatedUserAccount)
@@ -97,20 +101,30 @@ final class LoginManager {
     }
 
     func setAuthUserKey(_ key: String) {
-        self.authUserKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.authUserKey = normalizedKey
+        self.userDocumentID = normalizedKey
+        self.hasResolvedUserDocumentID = false
     }
 
     func clearAuthUserKey() {
         self.authUserKey = ""
+        self.userDocumentID = ""
+        self.hasResolvedUserDocumentID = false
         self.authenticatedUser = nil
     }
 
     func setUserDocumentID(_ id: String) {
-        self.userDocumentID = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedID = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        if self.userDocumentID != normalizedID {
+            self.hasResolvedUserDocumentID = false
+        }
+        self.userDocumentID = normalizedID
     }
 
     func clearUserDocumentID() {
         self.userDocumentID = ""
+        self.hasResolvedUserDocumentID = false
     }
 
     func setCurrentUserProfile(_ profile: UserProfile?) {
@@ -204,21 +218,38 @@ final class LoginManager {
     }
 
     func ensureUserDocumentID() async throws -> String {
-        if !userDocumentID.isEmpty { return userDocumentID }
-
         if authenticatedUser == nil,
            let recoveredUser = authenticatedUserFromFirebaseCurrentUser() {
             setAuthenticatedUser(recoveredUser)
         }
 
-        guard let authenticatedUser, !authenticatedUser.identityKey.isEmpty else {
+        if let authenticatedUser, authenticatedUser.identityKey.isEmpty == false {
+            let canonicalUserDocumentID = authenticatedUser.identityKey
+            if userDocumentID != canonicalUserDocumentID {
+                setUserDocumentID(canonicalUserDocumentID)
+            }
+
+            guard hasResolvedUserDocumentID == false else {
+                return canonicalUserDocumentID
+            }
+
+            let resolved = try await userProfileRepository.resolveOrCreateUserDocumentID(
+                authenticatedUser: authenticatedUser
+            )
+            setUserDocumentID(resolved)
+            hasResolvedUserDocumentID = true
+            return resolved
+        }
+
+        if !userDocumentID.isEmpty {
+            return userDocumentID
+        }
+
+        guard !authUserKey.isEmpty else {
             throw FirebaseError.FailedToFetchProfile
         }
-        let resolved = try await userProfileRepository.resolveOrCreateUserDocumentID(
-            authenticatedUser: authenticatedUser
-        )
-        setUserDocumentID(resolved)
-        return resolved
+
+        return authUserKey
     }
 
     private func authenticatedUserFromFirebaseCurrentUser() -> AuthenticatedUser? {
@@ -332,6 +363,7 @@ final class LoginManager {
         self.userEmail = ""
         self.authUserKey = ""
         self.userDocumentID = ""
+        self.hasResolvedUserDocumentID = false
         self.authenticatedUser = nil
         self.currentUserProfile = nil
 
