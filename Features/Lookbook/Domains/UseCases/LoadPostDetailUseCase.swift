@@ -45,18 +45,15 @@ final class LoadPostDetailUseCase: LoadPostDetailUseCaseProtocol {
         )
 
         do {
-            let comments = try await commentRepository.fetchComments(
+            let representativeComment = try await commentRepository.fetchRepresentativeComment(
                 brandID: brandID,
                 seasonID: seasonID,
-                postID: postID,
-                page: PageRequest(size: 30, cursor: nil)
+                postID: postID
             )
 
             return PostDetailContent(
                 post: post,
-                comments: comments.items.sorted(by: { lhs, rhs in
-                    lhs.createdAt > rhs.createdAt
-                }),
+                comments: representativeComment.map { [$0] } ?? [],
                 commentErrorMessage: nil
             )
         } catch {

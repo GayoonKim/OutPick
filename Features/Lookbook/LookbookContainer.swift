@@ -13,12 +13,21 @@ final class LookbookContainer {
     let brandAdminSessionStore: BrandAdminSessionStore
     let lookbookHomeViewModel: LookbookHomeViewModel
 
+    private let loadPostCommentsUseCase: any LoadPostCommentsUseCaseProtocol
+    private let loadCommentRepliesUseCase: any LoadCommentRepliesUseCaseProtocol
+
     init(
         provider: LookbookRepositoryProvider = .shared,
         brandAdminSessionStore: BrandAdminSessionStore
     ) {
         self.provider = provider
         self.brandAdminSessionStore = brandAdminSessionStore
+        self.loadPostCommentsUseCase = LoadPostCommentsUseCase(
+            commentRepository: provider.commentRepository
+        )
+        self.loadCommentRepliesUseCase = LoadCommentRepliesUseCase(
+            commentRepository: provider.commentRepository
+        )
 
         self.lookbookHomeViewModel = LookbookHomeViewModel(
             repo: provider.brandRepository,
@@ -31,5 +40,37 @@ final class LookbookContainer {
 
     func preloadLookbook() {
         Task { await lookbookHomeViewModel.loadInitialPageIfNeeded() }
+    }
+
+    func makePostCommentCoordinator() -> PostCommentCoordinator {
+        PostCommentCoordinator()
+    }
+
+    func makePostCommentsViewModel(
+        brandID: BrandID,
+        seasonID: SeasonID,
+        postID: PostID
+    ) -> PostCommentsViewModel {
+        PostCommentsViewModel(
+            brandID: brandID,
+            seasonID: seasonID,
+            postID: postID,
+            useCase: loadPostCommentsUseCase
+        )
+    }
+
+    func makePostCommentRepliesViewModel(
+        brandID: BrandID,
+        seasonID: SeasonID,
+        postID: PostID,
+        parentComment: Comment
+    ) -> PostCommentRepliesViewModel {
+        PostCommentRepliesViewModel(
+            brandID: brandID,
+            seasonID: seasonID,
+            postID: postID,
+            parentComment: parentComment,
+            useCase: loadCommentRepliesUseCase
+        )
     }
 }

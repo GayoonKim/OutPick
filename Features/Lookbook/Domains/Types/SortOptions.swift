@@ -16,6 +16,11 @@ enum PostSortOption: String, Codable {
     case trending
 }
 
+enum CommentSortOption: String, CaseIterable, Codable, Equatable {
+    case latest
+    case popular
+}
+
 enum BrandSort {
     case latest, likes, views, popular
 

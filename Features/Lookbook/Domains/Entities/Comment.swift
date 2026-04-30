@@ -14,4 +14,15 @@ struct Comment: Equatable, Codable, Identifiable {
     var message: String
     var createdAt: Date
     var isDeleted: Bool
+    var likeCount: Int
+    var replyCount: Int
+    var isPinned: Bool
+    var pinnedAt: Date?
+    var pinnedBy: UserID?
+    var parentCommentID: CommentID?
+    var attachments: [CommentAttachment]
+
+    var isRootComment: Bool {
+        parentCommentID == nil
+    }
 }

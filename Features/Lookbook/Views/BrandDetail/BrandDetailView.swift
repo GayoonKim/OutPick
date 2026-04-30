@@ -70,7 +70,7 @@ struct BrandDetailView: View {
                 .listStyle(.plain)
             }
         }
-        .navigationTitle(brand.name)
+//        .navigationTitle(brand.name)
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
         .tint(.black)

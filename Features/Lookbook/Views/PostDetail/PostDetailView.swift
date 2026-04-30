@@ -15,9 +15,9 @@ struct PostDetailView: View {
 
     @Environment(\.repositoryProvider) private var provider
     @StateObject private var viewModel = PostDetailScreenViewModel()
+    @StateObject private var commentCoordinator = PostCommentCoordinator()
     @State private var heroImageDidResolve: Bool = false
     @State private var isPresentingImagePreview: Bool = false
-    private let commentSectionID = "post-detail-comments"
 
     var body: some View {
         ZStack {
@@ -26,51 +26,46 @@ struct PostDetailView: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 20)
             } else {
-                ScrollViewReader { proxy in
-                    ScrollView(showsIndicators: false) {
-                        VStack(alignment: .leading, spacing: 22) {
-                            if let post = viewModel.post {
-                                heroImageSection(post: post)
-                                PostDetailMetricsCardView(
-                                    post: post,
-                                    isLiked: viewModel.postUserState?.isLiked ?? false,
-                                    isSaved: viewModel.postUserState?.isSaved ?? false,
-                                    errorMessage: viewModel.engagementErrorMessage,
-                                    onLikeTap: {
-                                        Task {
-                                            await viewModel.toggleLike(
-                                                brandID: brandID,
-                                                seasonID: seasonID,
-                                                postID: postID,
-                                                repository: provider.postEngagementRepository
-                                            )
-                                        }
-                                    },
-                                    onCommentTap: {
-                                        withAnimation(.easeInOut(duration: 0.25)) {
-                                            proxy.scrollTo(commentSectionID, anchor: .top)
-                                        }
-                                    },
-                                    onSaveTap: {
-                                        Task {
-                                            await viewModel.toggleSave(
-                                                brandID: brandID,
-                                                seasonID: seasonID,
-                                                postID: postID,
-                                                repository: provider.postEngagementRepository
-                                            )
-                                        }
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 22) {
+                        if let post = viewModel.post {
+                            heroImageSection(post: post)
+                            PostDetailMetricsCardView(
+                                post: post,
+                                isLiked: viewModel.postUserState?.isLiked ?? false,
+                                isSaved: viewModel.postUserState?.isSaved ?? false,
+                                errorMessage: viewModel.engagementErrorMessage,
+                                onLikeTap: {
+                                    Task {
+                                        await viewModel.toggleLike(
+                                            brandID: brandID,
+                                            seasonID: seasonID,
+                                            postID: postID,
+                                            repository: provider.postEngagementRepository
+                                        )
                                     }
-                                )
-                                commentSection
-                                    .id(commentSectionID)
-                            }
+                                },
+                                onCommentTap: {
+                                    commentCoordinator.presentComments()
+                                },
+                                onSaveTap: {
+                                    Task {
+                                        await viewModel.toggleSave(
+                                            brandID: brandID,
+                                            seasonID: seasonID,
+                                            postID: postID,
+                                            repository: provider.postEngagementRepository
+                                        )
+                                    }
+                                }
+                            )
+                            commentSection
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 20)
                     }
-                    .opacity(shouldBlockContentWithLoading ? 0 : 1)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 20)
                 }
+                .opacity(shouldBlockContentWithLoading ? 0 : 1)
 
                 if shouldBlockContentWithLoading {
                     loadingSection
@@ -89,6 +84,9 @@ struct PostDetailView: View {
             .ignoresSafeArea()
         )
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: commentSheetBinding) {
+            commentsSheet
+        }
         .onAppear {
             heroImageDidResolve = heroAssetKey == nil
         }
@@ -115,11 +113,65 @@ struct PostDetailView: View {
         }
     }
 
+    private var commentSheetBinding: Binding<Bool> {
+        Binding(
+            get: { commentCoordinator.isCommentSheetPresented },
+            set: { isPresented in
+                if isPresented {
+                    commentCoordinator.presentComments()
+                } else {
+                    commentCoordinator.dismissComments()
+                }
+            }
+        )
+    }
+
     private var loadPostDetailUseCase: some LoadPostDetailUseCaseProtocol {
         LoadPostDetailUseCase(
             postRepository: provider.postRepository,
             commentRepository: provider.commentRepository
         )
+    }
+
+    private func makePostCommentsViewModel() -> PostCommentsViewModel {
+        PostCommentsViewModel(
+            brandID: brandID,
+            seasonID: seasonID,
+            postID: postID,
+            useCase: LoadPostCommentsUseCase(
+                commentRepository: provider.commentRepository
+            )
+        )
+    }
+
+    private func makePostCommentRepliesViewModel(
+        parentComment: Comment
+    ) -> PostCommentRepliesViewModel {
+        PostCommentRepliesViewModel(
+            brandID: brandID,
+            seasonID: seasonID,
+            postID: postID,
+            parentComment: parentComment,
+            useCase: LoadCommentRepliesUseCase(
+                commentRepository: provider.commentRepository
+            )
+        )
+    }
+
+    @ViewBuilder
+    private var commentsSheet: some View {
+        let sheet = PostCommentsSheetView(
+            viewModel: makePostCommentsViewModel(),
+            coordinator: commentCoordinator,
+            repliesViewModelFactory: makePostCommentRepliesViewModel(parentComment:)
+        )
+        if #available(iOS 16.0, *) {
+            sheet
+                .presentationDetents([.fraction(0.70)])
+                .presentationDragIndicator(.visible)
+        } else {
+            sheet
+        }
     }
 
     private var loadingSection: some View {
@@ -185,17 +237,18 @@ struct PostDetailView: View {
                 Text("댓글")
                     .font(.title3.weight(.bold))
                 Spacer()
-                if viewModel.isLoading {
-                    ProgressView()
-                        .scaleEffect(0.85)
-                        .tint(.black)
+                Button {
+                    commentCoordinator.presentComments()
+                } label: {
+                    Text("더 보기")
+                        .font(.footnote.weight(.bold))
+                        .foregroundStyle(.primary)
                 }
+                .buttonStyle(.plain)
             }
 
             if viewModel.comments.isEmpty {
-                Text("아직 댓글이 없습니다.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                emptyCommentSection
             } else if let commentErrorMessage = viewModel.commentErrorMessage {
                 Text(commentErrorMessage)
                     .font(.footnote)
@@ -203,11 +256,19 @@ struct PostDetailView: View {
             } else {
                 VStack(spacing: 10) {
                     ForEach(viewModel.comments) { comment in
-                        PostCommentCardView(comment: comment)
+                        PostCommentCardView(comment: comment, badgeTitle: "대표")
                     }
                 }
             }
         }
+    }
+
+    private var emptyCommentSection: some View {
+        Text("해당 포스트에 아직 댓글이 없습니다.")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, minHeight: 96, alignment: .center)
+            .multilineTextAlignment(.center)
     }
 
     private var heroAssetKey: String? {
