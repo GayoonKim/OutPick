@@ -139,6 +139,19 @@ final class PostDetailScreenViewModel: ObservableObject {
         )
     }
 
+    func applyCommentMutation(_ result: CommentMutationResult) {
+        guard var post, post.id == result.postID else { return }
+
+        post.metrics = PostMetrics(
+            likeCount: post.metrics.likeCount,
+            commentCount: max(0, result.commentCount),
+            replacementCount: post.metrics.replacementCount,
+            saveCount: post.metrics.saveCount,
+            viewCount: post.metrics.viewCount
+        )
+        self.post = post
+    }
+
     private func load(
         brandID: BrandID,
         seasonID: SeasonID,

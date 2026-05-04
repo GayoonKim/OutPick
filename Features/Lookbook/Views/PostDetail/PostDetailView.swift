@@ -140,6 +140,9 @@ struct PostDetailView: View {
             postID: postID,
             useCase: LoadPostCommentsUseCase(
                 commentRepository: provider.commentRepository
+            ),
+            createUseCase: CreatePostCommentUseCase(
+                repository: provider.commentWritingRepository
             )
         )
     }
@@ -154,6 +157,9 @@ struct PostDetailView: View {
             parentComment: parentComment,
             useCase: LoadCommentRepliesUseCase(
                 commentRepository: provider.commentRepository
+            ),
+            createUseCase: CreateCommentReplyUseCase(
+                repository: provider.commentWritingRepository
             )
         )
     }
@@ -163,7 +169,10 @@ struct PostDetailView: View {
         let sheet = PostCommentsSheetView(
             viewModel: makePostCommentsViewModel(),
             coordinator: commentCoordinator,
-            repliesViewModelFactory: makePostCommentRepliesViewModel(parentComment:)
+            repliesViewModelFactory: makePostCommentRepliesViewModel(parentComment:),
+            onCommentSubmitted: { result in
+                viewModel.applyCommentMutation(result)
+            }
         )
         if #available(iOS 16.0, *) {
             sheet

@@ -50,28 +50,26 @@ final class LoadPostCommentsUseCase: LoadPostCommentsUseCaseProtocol {
         sort: CommentSortOption,
         page: PageRequest
     ) async throws -> PostCommentsContent {
-        async let pinnedComments = commentRepository.fetchPinnedRootComments(
-            brandID: brandID,
-            seasonID: seasonID,
-            postID: postID,
-            limit: pinnedCommentLimit
-        )
-        async let representativeComment = commentRepository.fetchRepresentativeComment(
+        async let pinnedComments = loadPinnedCommentsSafely(
             brandID: brandID,
             seasonID: seasonID,
             postID: postID
         )
-        async let rootComments = commentRepository.fetchRootComments(
+        async let representativeComment = loadRepresentativeCommentSafely(
+            brandID: brandID,
+            seasonID: seasonID,
+            postID: postID
+        )
+
+        let resolvedRootComments = try await commentRepository.fetchRootComments(
             brandID: brandID,
             seasonID: seasonID,
             postID: postID,
             sort: sort,
             page: page
         )
-
-        let resolvedPinnedComments = try await pinnedComments
-        let resolvedRepresentativeComment = try await representativeComment
-        let resolvedRootComments = try await rootComments
+        let resolvedPinnedComments = await pinnedComments
+        let resolvedRepresentativeComment = await representativeComment
 
         let excludedIDs = duplicateExcludedIDs(
             pinnedComments: resolvedPinnedComments,
@@ -89,6 +87,41 @@ final class LoadPostCommentsUseCase: LoadPostCommentsUseCaseProtocol {
                 nextCursor: resolvedRootComments.nextCursor
             )
         )
+    }
+
+    private func loadPinnedCommentsSafely(
+        brandID: BrandID,
+        seasonID: SeasonID,
+        postID: PostID
+    ) async -> [Comment] {
+        do {
+            return try await commentRepository.fetchPinnedRootComments(
+                brandID: brandID,
+                seasonID: seasonID,
+                postID: postID,
+                limit: pinnedCommentLimit
+            )
+        } catch {
+            print("고정 댓글을 불러오지 못했습니다: \(error.localizedDescription)")
+            return []
+        }
+    }
+
+    private func loadRepresentativeCommentSafely(
+        brandID: BrandID,
+        seasonID: SeasonID,
+        postID: PostID
+    ) async -> Comment? {
+        do {
+            return try await commentRepository.fetchRepresentativeComment(
+                brandID: brandID,
+                seasonID: seasonID,
+                postID: postID
+            )
+        } catch {
+            print("대표 댓글을 불러오지 못했습니다: \(error.localizedDescription)")
+            return nil
+        }
     }
 
     func loadRootComments(

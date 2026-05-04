@@ -15,12 +15,16 @@ final class PostCommentsViewModel: ObservableObject {
     @Published private(set) var selectedSort: CommentSortOption
     @Published private(set) var isLoading: Bool = false
     @Published private(set) var isLoadingMore: Bool = false
+    @Published private(set) var isSubmittingComment: Bool = false
     @Published private(set) var errorMessage: String?
+    @Published private(set) var submissionErrorMessage: String?
+    @Published var draftMessage: String = ""
 
     private let brandID: BrandID
     private let seasonID: SeasonID
     private let postID: PostID
     private let useCase: any LoadPostCommentsUseCaseProtocol
+    private let createUseCase: any CreatePostCommentUseCaseProtocol
     private let pageSize: Int
 
     private var nextCursor: PageCursor?
@@ -31,11 +35,17 @@ final class PostCommentsViewModel: ObservableObject {
         nextCursor != nil
     }
 
+    var canSubmitComment: Bool {
+        draftMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false &&
+            isSubmittingComment == false
+    }
+
     init(
         brandID: BrandID,
         seasonID: SeasonID,
         postID: PostID,
         useCase: any LoadPostCommentsUseCaseProtocol,
+        createUseCase: any CreatePostCommentUseCaseProtocol,
         initialSort: CommentSortOption = .latest,
         pageSize: Int = 30
     ) {
@@ -43,6 +53,7 @@ final class PostCommentsViewModel: ObservableObject {
         self.seasonID = seasonID
         self.postID = postID
         self.useCase = useCase
+        self.createUseCase = createUseCase
         self.selectedSort = initialSort
         self.pageSize = pageSize
     }
@@ -68,6 +79,39 @@ final class PostCommentsViewModel: ObservableObject {
     func loadNextPage() async {
         guard hasMoreRootComments else { return }
         await loadPage(reset: false)
+    }
+
+    @discardableResult
+    func submitComment() async -> CommentMutationResult? {
+        guard isSubmittingComment == false else { return nil }
+
+        let message = draftMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard message.isEmpty == false else {
+            submissionErrorMessage = CommentSubmissionError.emptyMessage.localizedDescription
+            return nil
+        }
+
+        isSubmittingComment = true
+        submissionErrorMessage = nil
+        defer {
+            isSubmittingComment = false
+        }
+
+        do {
+            let result = try await createUseCase.execute(
+                brandID: brandID,
+                seasonID: seasonID,
+                postID: postID,
+                message: message
+            )
+            draftMessage = ""
+            loadedKey = nil
+            await loadPage(reset: true)
+            return result
+        } catch {
+            submissionErrorMessage = "댓글을 등록하지 못했습니다."
+            return nil
+        }
     }
 
     private func loadPage(reset: Bool) async {

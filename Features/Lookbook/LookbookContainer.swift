@@ -15,6 +15,8 @@ final class LookbookContainer {
 
     private let loadPostCommentsUseCase: any LoadPostCommentsUseCaseProtocol
     private let loadCommentRepliesUseCase: any LoadCommentRepliesUseCaseProtocol
+    private let createPostCommentUseCase: any CreatePostCommentUseCaseProtocol
+    private let createCommentReplyUseCase: any CreateCommentReplyUseCaseProtocol
 
     init(
         provider: LookbookRepositoryProvider = .shared,
@@ -27,6 +29,12 @@ final class LookbookContainer {
         )
         self.loadCommentRepliesUseCase = LoadCommentRepliesUseCase(
             commentRepository: provider.commentRepository
+        )
+        self.createPostCommentUseCase = CreatePostCommentUseCase(
+            repository: provider.commentWritingRepository
+        )
+        self.createCommentReplyUseCase = CreateCommentReplyUseCase(
+            repository: provider.commentWritingRepository
         )
 
         self.lookbookHomeViewModel = LookbookHomeViewModel(
@@ -55,7 +63,8 @@ final class LookbookContainer {
             brandID: brandID,
             seasonID: seasonID,
             postID: postID,
-            useCase: loadPostCommentsUseCase
+            useCase: loadPostCommentsUseCase,
+            createUseCase: createPostCommentUseCase
         )
     }
 
@@ -70,7 +79,8 @@ final class LookbookContainer {
             seasonID: seasonID,
             postID: postID,
             parentComment: parentComment,
-            useCase: loadCommentRepliesUseCase
+            useCase: loadCommentRepliesUseCase,
+            createUseCase: createCommentReplyUseCase
         )
     }
 }

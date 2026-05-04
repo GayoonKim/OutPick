@@ -10,9 +10,14 @@ import SwiftUI
 struct PostCommentRepliesSheetView: View {
     @StateObject private var viewModel: PostCommentRepliesViewModel
     @Environment(\.dismiss) private var dismiss
+    private let onReplySubmitted: (CommentMutationResult) -> Void
 
-    init(viewModel: PostCommentRepliesViewModel) {
+    init(
+        viewModel: PostCommentRepliesViewModel,
+        onReplySubmitted: @escaping (CommentMutationResult) -> Void = { _ in }
+    ) {
         _viewModel = StateObject(wrappedValue: viewModel)
+        self.onReplySubmitted = onReplySubmitted
     }
 
     var body: some View {
@@ -24,6 +29,9 @@ struct PostCommentRepliesSheetView: View {
             repliesContent
         }
         .background(Color(red: 0.98, green: 0.97, blue: 0.95).ignoresSafeArea())
+        .safeAreaInset(edge: .bottom) {
+            inputBar
+        }
         .task {
             await viewModel.loadIfNeeded()
         }
@@ -98,6 +106,24 @@ struct PostCommentRepliesSheetView: View {
         .refreshable {
             await viewModel.refresh()
         }
+    }
+
+    private var inputBar: some View {
+        PostCommentInputBarView(
+            text: $viewModel.draftMessage,
+            placeholder: "답글을 입력하세요.",
+            isSubmitting: viewModel.isSubmittingReply,
+            canSubmit: viewModel.canSubmitReply,
+            errorMessage: viewModel.submissionErrorMessage,
+            submitAccessibilityLabel: "답글 등록",
+            onSubmit: {
+                Task {
+                    if let result = await viewModel.submitReply() {
+                        onReplySubmitted(result)
+                    }
+                }
+            }
+        )
     }
 
     private func sectionTitle(_ title: String) -> some View {

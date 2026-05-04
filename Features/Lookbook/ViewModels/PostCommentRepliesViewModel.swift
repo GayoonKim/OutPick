@@ -12,14 +12,18 @@ final class PostCommentRepliesViewModel: ObservableObject {
     @Published private(set) var replies: [Comment] = []
     @Published private(set) var isLoading: Bool = false
     @Published private(set) var isLoadingMore: Bool = false
+    @Published private(set) var isSubmittingReply: Bool = false
     @Published private(set) var errorMessage: String?
+    @Published private(set) var submissionErrorMessage: String?
+    @Published var draftMessage: String = ""
 
-    let parentComment: Comment
+    @Published private(set) var parentComment: Comment
 
     private let brandID: BrandID
     private let seasonID: SeasonID
     private let postID: PostID
     private let useCase: any LoadCommentRepliesUseCaseProtocol
+    private let createUseCase: any CreateCommentReplyUseCaseProtocol
     private let pageSize: Int
 
     private var nextCursor: PageCursor?
@@ -30,12 +34,18 @@ final class PostCommentRepliesViewModel: ObservableObject {
         nextCursor != nil
     }
 
+    var canSubmitReply: Bool {
+        draftMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false &&
+            isSubmittingReply == false
+    }
+
     init(
         brandID: BrandID,
         seasonID: SeasonID,
         postID: PostID,
         parentComment: Comment,
         useCase: any LoadCommentRepliesUseCaseProtocol,
+        createUseCase: any CreateCommentReplyUseCaseProtocol,
         pageSize: Int = 30
     ) {
         self.brandID = brandID
@@ -43,6 +53,7 @@ final class PostCommentRepliesViewModel: ObservableObject {
         self.postID = postID
         self.parentComment = parentComment
         self.useCase = useCase
+        self.createUseCase = createUseCase
         self.pageSize = pageSize
     }
 
@@ -60,6 +71,41 @@ final class PostCommentRepliesViewModel: ObservableObject {
     func loadNextPage() async {
         guard hasMoreReplies else { return }
         await loadPage(reset: false)
+    }
+
+    @discardableResult
+    func submitReply() async -> CommentMutationResult? {
+        guard isSubmittingReply == false else { return nil }
+
+        let message = draftMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard message.isEmpty == false else {
+            submissionErrorMessage = CommentSubmissionError.emptyMessage.localizedDescription
+            return nil
+        }
+
+        isSubmittingReply = true
+        submissionErrorMessage = nil
+        defer {
+            isSubmittingReply = false
+        }
+
+        do {
+            let result = try await createUseCase.execute(
+                brandID: brandID,
+                seasonID: seasonID,
+                postID: postID,
+                parentCommentID: parentComment.id,
+                message: message
+            )
+            parentComment.replyCount = result.replyCount
+            draftMessage = ""
+            loadedKey = nil
+            await loadPage(reset: true)
+            return result
+        } catch {
+            submissionErrorMessage = "답글을 등록하지 못했습니다."
+            return nil
+        }
     }
 
     private func loadPage(reset: Bool) async {

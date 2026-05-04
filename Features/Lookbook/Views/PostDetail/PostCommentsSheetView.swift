@@ -12,15 +12,18 @@ struct PostCommentsSheetView: View {
     @ObservedObject private var coordinator: PostCommentCoordinator
     @Environment(\.dismiss) private var dismiss
     private let repliesViewModelFactory: (Comment) -> PostCommentRepliesViewModel
+    private let onCommentSubmitted: (CommentMutationResult) -> Void
 
     init(
         viewModel: PostCommentsViewModel,
         coordinator: PostCommentCoordinator,
-        repliesViewModelFactory: @escaping (Comment) -> PostCommentRepliesViewModel
+        repliesViewModelFactory: @escaping (Comment) -> PostCommentRepliesViewModel,
+        onCommentSubmitted: @escaping (CommentMutationResult) -> Void = { _ in }
     ) {
         _viewModel = StateObject(wrappedValue: viewModel)
         self.coordinator = coordinator
         self.repliesViewModelFactory = repliesViewModelFactory
+        self.onCommentSubmitted = onCommentSubmitted
     }
 
     var body: some View {
@@ -45,6 +48,9 @@ struct PostCommentsSheetView: View {
             }
         }
         .background(Color(red: 0.98, green: 0.97, blue: 0.95).ignoresSafeArea())
+        .safeAreaInset(edge: .bottom) {
+            inputBar
+        }
         .sheet(isPresented: replySheetBinding) {
             repliesSheet
         }
@@ -166,7 +172,8 @@ struct PostCommentsSheetView: View {
     private var repliesSheet: some View {
         if let route = coordinator.replyRoute {
             let sheet = PostCommentRepliesSheetView(
-                viewModel: repliesViewModelFactory(route.parentComment)
+                viewModel: repliesViewModelFactory(route.parentComment),
+                onReplySubmitted: onCommentSubmitted
             )
             if #available(iOS 16.0, *) {
                 sheet
@@ -178,6 +185,23 @@ struct PostCommentsSheetView: View {
         } else {
             EmptyView()
         }
+    }
+
+    private var inputBar: some View {
+        PostCommentInputBarView(
+            text: $viewModel.draftMessage,
+            placeholder: "댓글을 입력하세요.",
+            isSubmitting: viewModel.isSubmittingComment,
+            canSubmit: viewModel.canSubmitComment,
+            errorMessage: viewModel.submissionErrorMessage,
+            onSubmit: {
+                Task {
+                    if let result = await viewModel.submitComment() {
+                        onCommentSubmitted(result)
+                    }
+                }
+            }
+        )
     }
 
     private var sortControl: some View {

@@ -30,6 +30,7 @@ final class LookbookRepositoryProvider {
     let tagConceptRepository: TagConceptRepositoryProtocol
 
     let commentRepository: CommentRepositoryProtocol
+    let commentWritingRepository: CommentWritingRepositoryProtocol
 
     let replacementRepository: ReplacementRepositoryProtocol
 
@@ -65,6 +66,7 @@ final class LookbookRepositoryProvider {
         tagConceptRepository: TagConceptRepositoryProtocol = FirestoreTagConceptRepository(),
 
         commentRepository: CommentRepositoryProtocol = FirestoreCommentRepository(),
+        commentWritingRepository: CommentWritingRepositoryProtocol = CloudFunctionsCommentWritingRepository(),
 
         replacementRepository: ReplacementRepositoryProtocol = FirestoreReplacementRepository(),
 
@@ -95,6 +97,7 @@ final class LookbookRepositoryProvider {
         self.tagConceptRepository = tagConceptRepository
 
         self.commentRepository = commentRepository
+        self.commentWritingRepository = commentWritingRepository
         self.replacementRepository = replacementRepository
         self.postUserStateRepository = postUserStateRepository
 

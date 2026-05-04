@@ -186,6 +186,46 @@ final class CloudFunctionsManager {
         )
     }
 
+    func createComment(
+        brandID: String,
+        seasonID: String,
+        postID: String,
+        message: String
+    ) async throws -> CommentMutationResult {
+        let response = try await callFunction(
+            "createComment",
+            data: [
+                "brandID": brandID,
+                "seasonID": seasonID,
+                "postID": postID,
+                "message": message
+            ]
+        )
+
+        return try commentMutationResult(response)
+    }
+
+    func createReply(
+        brandID: String,
+        seasonID: String,
+        postID: String,
+        parentCommentID: String,
+        message: String
+    ) async throws -> CommentMutationResult {
+        let response = try await callFunction(
+            "createReply",
+            data: [
+                "brandID": brandID,
+                "seasonID": seasonID,
+                "postID": postID,
+                "parentCommentID": parentCommentID,
+                "message": message
+            ]
+        )
+
+        return try commentMutationResult(response)
+    }
+
     func requestSeasonImport(
         brandID: String,
         seasonURL: String,
@@ -397,6 +437,22 @@ final class CloudFunctionsManager {
             replacementCount: try intValue(dictionary, key: "replacementCount"),
             saveCount: try intValue(dictionary, key: "saveCount"),
             viewCount: optionalIntValue(dictionary, key: "viewCount")
+        )
+    }
+
+    private func commentMutationResult(
+        _ dictionary: [String: Any]
+    ) throws -> CommentMutationResult {
+        CommentMutationResult(
+            brandID: BrandID(value: try stringValue(dictionary, key: "brandID")),
+            seasonID: SeasonID(value: try stringValue(dictionary, key: "seasonID")),
+            postID: PostID(value: try stringValue(dictionary, key: "postID")),
+            commentID: CommentID(value: try stringValue(dictionary, key: "commentID")),
+            userID: UserID(value: try stringValue(dictionary, key: "userID")),
+            parentCommentID: optionalStringValue(dictionary, key: "parentCommentID")
+                .map { CommentID(value: $0) },
+            commentCount: try intValue(dictionary, key: "commentCount"),
+            replyCount: try intValue(dictionary, key: "replyCount")
         )
     }
 
