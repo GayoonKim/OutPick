@@ -10,6 +10,7 @@ import SwiftUI
 struct PostCommentRepliesSheetView: View {
     @StateObject private var viewModel: PostCommentRepliesViewModel
     @Environment(\.dismiss) private var dismiss
+    @State private var profileAuthor: CommentAuthorDisplay?
     private let onReplySubmitted: (CommentMutationResult) -> Void
 
     init(
@@ -34,6 +35,9 @@ struct PostCommentRepliesSheetView: View {
         }
         .task {
             await viewModel.loadIfNeeded()
+        }
+        .sheet(isPresented: profileSheetBinding) {
+            profileSheet
         }
     }
 
@@ -65,7 +69,18 @@ struct PostCommentRepliesSheetView: View {
     private var parentCommentSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             sectionTitle("원댓글")
-            PostCommentCardView(comment: viewModel.parentComment, badgeTitle: "원댓글")
+            let item = viewModel.displayItem(for: viewModel.parentComment)
+            PostCommentCardView(
+                comment: item.comment,
+                author: item.author,
+                badgeTitle: "원댓글",
+                onProfileTap: {
+                    profileAuthor = item.author
+                }
+            )
+            .onAppear {
+                viewModel.prefetchAuthorAvatars(around: item.id)
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
@@ -83,8 +98,16 @@ struct PostCommentRepliesSheetView: View {
                     sectionTitle("답글")
 
                     ForEach(viewModel.replies) { reply in
-                        PostCommentCardView(comment: reply)
+                        let item = viewModel.displayItem(for: reply)
+                        PostCommentCardView(
+                            comment: item.comment,
+                            author: item.author,
+                            onProfileTap: {
+                                profileAuthor = item.author
+                            }
+                        )
                             .onAppear {
+                                viewModel.prefetchAuthorAvatars(around: item.id)
                                 guard reply.id == viewModel.replies.last?.id else { return }
                                 Task {
                                     await viewModel.loadNextPage()
@@ -155,5 +178,30 @@ struct PostCommentRepliesSheetView: View {
 
     private var shouldShowInitialLoading: Bool {
         viewModel.isLoading && viewModel.replies.isEmpty
+    }
+
+    private var profileSheetBinding: Binding<Bool> {
+        Binding(
+            get: { profileAuthor != nil },
+            set: { isPresented in
+                if isPresented == false {
+                    profileAuthor = nil
+                }
+            }
+        )
+    }
+
+    @ViewBuilder
+    private var profileSheet: some View {
+        if let profileAuthor {
+            CommentUserProfileDetailView(
+                author: profileAuthor,
+                onBack: {
+                    self.profileAuthor = nil
+                }
+            )
+        } else {
+            EmptyView()
+        }
     }
 }

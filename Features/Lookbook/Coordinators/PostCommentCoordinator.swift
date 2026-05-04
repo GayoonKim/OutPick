@@ -15,10 +15,19 @@ struct PostCommentReplyRoute: Identifiable, Equatable {
     }
 }
 
+struct PostCommentProfileRoute: Identifiable, Equatable {
+    let author: CommentAuthorDisplay
+
+    var id: UserID {
+        author.userID
+    }
+}
+
 @MainActor
 final class PostCommentCoordinator: ObservableObject {
     @Published private(set) var isCommentSheetPresented: Bool = false
     @Published private(set) var replyRoute: PostCommentReplyRoute?
+    @Published private(set) var profileRoute: PostCommentProfileRoute?
 
     func presentComments() {
         isCommentSheetPresented = true
@@ -27,6 +36,7 @@ final class PostCommentCoordinator: ObservableObject {
     func dismissComments() {
         isCommentSheetPresented = false
         replyRoute = nil
+        profileRoute = nil
     }
 
     func presentReplies(for parentComment: Comment) {
@@ -35,5 +45,13 @@ final class PostCommentCoordinator: ObservableObject {
 
     func dismissReplies() {
         replyRoute = nil
+    }
+
+    func presentProfile(for author: CommentAuthorDisplay) {
+        profileRoute = PostCommentProfileRoute(author: author)
+    }
+
+    func dismissProfile() {
+        profileRoute = nil
     }
 }

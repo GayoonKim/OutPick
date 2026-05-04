@@ -7,6 +7,10 @@ import Foundation
 
 @MainActor
 final class UserProfileDetailViewModel {
+    enum LookupKey: Equatable {
+        case email(String)
+        case userID(String)
+    }
 
     struct State: Equatable {
         var nickname: String
@@ -20,19 +24,19 @@ final class UserProfileDetailViewModel {
 
     var onStateChanged: ((State) -> Void)?
 
-    private let email: String
+    private let lookupKey: LookupKey
     private let loadUserProfileDetailUseCase: LoadUserProfileDetailUseCaseProtocol
     private let onBack: () -> Void
     private var hasLoaded = false
 
     init(
-        email: String,
+        lookupKey: LookupKey,
         seedNickname: String,
         seedAvatarSource: AvatarImageSource,
         loadUserProfileDetailUseCase: LoadUserProfileDetailUseCaseProtocol,
         onBack: @escaping () -> Void
     ) {
-        self.email = email
+        self.lookupKey = lookupKey
         self.loadUserProfileDetailUseCase = loadUserProfileDetailUseCase
         self.onBack = onBack
 
@@ -61,7 +65,13 @@ final class UserProfileDetailViewModel {
         }
 
         do {
-            let profile = try await loadUserProfileDetailUseCase.execute(email: email)
+            let profile: UserProfile
+            switch lookupKey {
+            case .email(let email):
+                profile = try await loadUserProfileDetailUseCase.execute(email: email)
+            case .userID(let userID):
+                profile = try await loadUserProfileDetailUseCase.execute(userID: userID)
+            }
             if let nickname = profile.nickname?.trimmingCharacters(in: .whitespacesAndNewlines),
                !nickname.isEmpty {
                 state.nickname = nickname

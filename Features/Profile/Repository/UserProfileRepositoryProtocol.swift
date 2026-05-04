@@ -34,9 +34,15 @@ protocol UserProfileRepositoryProtocol {
 
     /// Firestore에서 이메일 기반 프로필 조회(채팅 참여자 표시 등 공개 조회용)
     func fetchUserProfileFromFirestore(email: String) async throws -> UserProfile
+
+    /// Firestore에서 사용자 문서 ID(identityKey) 기반 프로필 조회
+    func fetchUserProfile(userID: String) async throws -> UserProfile
     
     /// 여러 사용자 프로필 일괄 조회
     func fetchUserProfiles(emails: [String]) async throws -> [UserProfile]
+
+    /// 여러 사용자 문서 ID(identityKey) 기반 프로필 일괄 조회
+    func fetchUserProfiles(userIDs: [String]) async throws -> [String: UserProfile]
     
     /// 프로필 필드 중복 검사
     func checkDuplicate(strToCompare: String, fieldToCompare: String, collectionName: String) async throws -> Bool

@@ -283,6 +283,24 @@ final class UserProfileRepository: UserProfileRepositoryProtocol {
         }
         return fallbackProfile
     }
+
+    func fetchUserProfile(userID: String) async throws -> UserProfile {
+        let normalizedUserID = userID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedUserID.isEmpty,
+              normalizedUserID.contains("/") == false else {
+            throw FirebaseError.FailedToFetchProfile
+        }
+
+        let snapshot = try await db.collection(usersCollection)
+            .document(normalizedUserID)
+            .getDocument()
+        guard let data = snapshot.data(), hasRequiredProfileData(data) else {
+            throw FirebaseError.FailedToFetchProfile
+        }
+
+        let emailFallback = (data["email"] as? String) ?? normalizedUserID
+        return decodeProfile(data, emailFallback: emailFallback)
+    }
     
     func fetchUserProfiles(emails: [String]) async throws -> [UserProfile] {
         return try await withThrowingTaskGroup(of: UserProfile?.self) { group in
@@ -305,6 +323,39 @@ final class UserProfileRepository: UserProfileRepositoryProtocol {
                 }
             }
             
+            return profiles
+        }
+    }
+
+    func fetchUserProfiles(userIDs: [String]) async throws -> [String: UserProfile] {
+        let normalizedUserIDs = Array(
+            Set(
+                userIDs
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty && !$0.contains("/") }
+            )
+        )
+
+        return try await withThrowingTaskGroup(of: (String, UserProfile)?.self) { group in
+            for userID in normalizedUserIDs {
+                group.addTask {
+                    do {
+                        let profile = try await self.fetchUserProfile(userID: userID)
+                        return (userID, profile)
+                    } catch {
+                        print("\(userID) 사용자 프로필 불러오기 실패: \(error)")
+                        return nil
+                    }
+                }
+            }
+
+            var profiles: [String: UserProfile] = [:]
+            for try await result in group {
+                if let (userID, profile) = result {
+                    profiles[userID] = profile
+                }
+            }
+
             return profiles
         }
     }

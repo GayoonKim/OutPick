@@ -45,6 +45,25 @@ final class UserProfileDetailCoordinator {
         ChatModalTransitionManager.present(viewController, from: presentingViewController)
     }
 
+    func start(userID: String, nickname: String, avatarPath: String?) {
+        guard presentedViewController == nil,
+              let presentingViewController else { return }
+
+        let viewController = UserProfileDetailCompositionRoot.makeDetail(
+            userID: userID,
+            seedNickname: nickname,
+            seedAvatarPath: avatarPath,
+            provider: provider,
+            repositories: repositories,
+            onBack: { [weak self] in
+                self?.dismiss()
+            }
+        )
+        viewController.modalPresentationStyle = .overFullScreen
+        presentedViewController = viewController
+        ChatModalTransitionManager.present(viewController, from: presentingViewController)
+    }
+
     private func dismiss() {
         guard let presentedViewController else {
             onFinish()

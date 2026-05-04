@@ -54,6 +54,9 @@ struct PostCommentsSheetView: View {
         .sheet(isPresented: replySheetBinding) {
             repliesSheet
         }
+        .sheet(isPresented: profileSheetBinding) {
+            profileSheet
+        }
         .task {
             await viewModel.loadIfNeeded()
         }
@@ -65,6 +68,8 @@ struct PostCommentsSheetView: View {
                 .font(.headline.weight(.bold))
 
             Spacer()
+
+            sortControl
 
             Button {
                 dismiss()
@@ -89,70 +94,39 @@ struct PostCommentsSheetView: View {
         if shouldShowEmptyState {
             emptyStateSection
         } else {
-            pinnedSection
-            representativeSection
-            rootCommentsSection
-        }
-    }
-
-    @ViewBuilder
-    private var pinnedSection: some View {
-        if viewModel.pinnedComments.isEmpty == false {
-            sectionTitle("고정 댓글")
-
-            ForEach(viewModel.pinnedComments) { comment in
-                commentCard(comment, badgeTitle: "고정")
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var representativeSection: some View {
-        if let representativeComment = viewModel.representativeComment {
-            sectionTitle("대표 댓글")
-            commentCard(representativeComment, badgeTitle: "대표")
-        }
-    }
-
-    @ViewBuilder
-    private var rootCommentsSection: some View {
-        if viewModel.rootComments.isEmpty == false {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    sectionTitle("전체 댓글")
-                    Spacer()
-                    sortControl
-                }
-
-                ForEach(viewModel.rootComments) { comment in
-                    commentCard(comment)
-                        .onAppear {
-                            guard comment.id == viewModel.rootComments.last?.id else { return }
-                            Task {
-                                await viewModel.loadNextPage()
-                            }
+            ForEach(commentFeedItems) { item in
+                commentCard(item.displayItem, badges: item.badges)
+                    .onAppear {
+                        viewModel.prefetchAuthorAvatars(around: item.id)
+                        guard item.displayItem.comment.id == viewModel.rootComments.last?.id else { return }
+                        Task {
+                            await viewModel.loadNextPage()
                         }
-                }
+                    }
+            }
 
-                if viewModel.isLoadingMore {
-                    ProgressView()
-                        .tint(.black)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                }
+            if viewModel.isLoadingMore {
+                ProgressView()
+                    .tint(.black)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
             }
         }
     }
 
     private func commentCard(
-        _ comment: Comment,
-        badgeTitle: String? = nil
+        _ item: CommentDisplayItem,
+        badges: [PostCommentBadge] = []
     ) -> some View {
         PostCommentCardView(
-            comment: comment,
-            badgeTitle: badgeTitle,
+            comment: item.comment,
+            author: item.author,
+            badges: badges,
+            onProfileTap: {
+                coordinator.presentProfile(for: item.author)
+            },
             onRepliesTap: {
-                coordinator.presentReplies(for: comment)
+                coordinator.presentReplies(for: item.comment)
             }
         )
     }
@@ -163,6 +137,17 @@ struct PostCommentsSheetView: View {
             set: { isPresented in
                 if isPresented == false {
                     coordinator.dismissReplies()
+                }
+            }
+        )
+    }
+
+    private var profileSheetBinding: Binding<Bool> {
+        Binding(
+            get: { coordinator.profileRoute != nil },
+            set: { isPresented in
+                if isPresented == false {
+                    coordinator.dismissProfile()
                 }
             }
         )
@@ -182,6 +167,20 @@ struct PostCommentsSheetView: View {
             } else {
                 sheet
             }
+        } else {
+            EmptyView()
+        }
+    }
+
+    @ViewBuilder
+    private var profileSheet: some View {
+        if let route = coordinator.profileRoute {
+            CommentUserProfileDetailView(
+                author: route.author,
+                onBack: {
+                    coordinator.dismissProfile()
+                }
+            )
         } else {
             EmptyView()
         }
@@ -232,12 +231,6 @@ struct PostCommentsSheetView: View {
         .accessibilityLabel("댓글 \(sort.title) 정렬")
     }
 
-    private func sectionTitle(_ title: String) -> some View {
-        Text(title)
-            .font(.subheadline.weight(.bold))
-            .foregroundStyle(.primary)
-    }
-
     private var loadingSection: some View {
         VStack(spacing: 10) {
             ProgressView()
@@ -271,6 +264,31 @@ struct PostCommentsSheetView: View {
             viewModel.representativeComment == nil &&
             viewModel.rootComments.isEmpty
     }
+
+    private var commentFeedItems: [CommentFeedItem] {
+        var items = viewModel.pinnedComments.map {
+            CommentFeedItem(displayItem: viewModel.displayItem(for: $0), badges: [.pinned])
+        }
+
+        if let representativeComment = viewModel.representativeComment {
+            if let pinnedIndex = items.firstIndex(where: { $0.id == representativeComment.id }) {
+                items[pinnedIndex].badges.append(.representative)
+            } else {
+                items.append(
+                    CommentFeedItem(
+                        displayItem: viewModel.displayItem(for: representativeComment),
+                        badges: [.representative]
+                    )
+                )
+            }
+        }
+
+        items.append(contentsOf: viewModel.rootComments.map {
+            CommentFeedItem(displayItem: viewModel.displayItem(for: $0), badges: [])
+        })
+
+        return items
+    }
 }
 
 private extension CommentSortOption {
@@ -281,5 +299,14 @@ private extension CommentSortOption {
         case .popular:
             return "인기순"
         }
+    }
+}
+
+private struct CommentFeedItem: Identifiable {
+    let displayItem: CommentDisplayItem
+    var badges: [PostCommentBadge]
+
+    var id: CommentID {
+        displayItem.id
     }
 }

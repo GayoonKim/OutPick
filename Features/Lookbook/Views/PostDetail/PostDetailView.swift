@@ -18,6 +18,7 @@ struct PostDetailView: View {
     @StateObject private var commentCoordinator = PostCommentCoordinator()
     @State private var heroImageDidResolve: Bool = false
     @State private var isPresentingImagePreview: Bool = false
+    @State private var profileAuthor: CommentAuthorDisplay?
 
     var body: some View {
         ZStack {
@@ -99,7 +100,8 @@ struct PostDetailView: View {
                 seasonID: seasonID,
                 postID: postID,
                 useCase: loadPostDetailUseCase,
-                postUserStateRepository: provider.postUserStateRepository
+                postUserStateRepository: provider.postUserStateRepository,
+                userProfileRepository: FirebaseRepositoryProvider.shared.userProfileRepository
             )
         }
         .refreshable {
@@ -108,8 +110,12 @@ struct PostDetailView: View {
                 seasonID: seasonID,
                 postID: postID,
                 useCase: loadPostDetailUseCase,
-                postUserStateRepository: provider.postUserStateRepository
+                postUserStateRepository: provider.postUserStateRepository,
+                userProfileRepository: FirebaseRepositoryProvider.shared.userProfileRepository
             )
+        }
+        .sheet(isPresented: profileSheetBinding) {
+            profileSheet
         }
     }
 
@@ -265,7 +271,18 @@ struct PostDetailView: View {
             } else {
                 VStack(spacing: 10) {
                     ForEach(viewModel.comments) { comment in
-                        PostCommentCardView(comment: comment, badgeTitle: "대표")
+                        let item = viewModel.displayItem(for: comment)
+                        PostCommentCardView(
+                            comment: item.comment,
+                            author: item.author,
+                            badge: .representative,
+                            onProfileTap: {
+                                profileAuthor = item.author
+                            }
+                        )
+                        .onAppear {
+                            viewModel.prefetchAuthorAvatars(for: viewModel.comments)
+                        }
                     }
                 }
             }
@@ -292,6 +309,31 @@ struct PostDetailView: View {
         ]
             .compactMap { $0 }
             .joined(separator: "|")
+    }
+
+    private var profileSheetBinding: Binding<Bool> {
+        Binding(
+            get: { profileAuthor != nil },
+            set: { isPresented in
+                if isPresented == false {
+                    profileAuthor = nil
+                }
+            }
+        )
+    }
+
+    @ViewBuilder
+    private var profileSheet: some View {
+        if let profileAuthor {
+            CommentUserProfileDetailView(
+                author: profileAuthor,
+                onBack: {
+                    self.profileAuthor = nil
+                }
+            )
+        } else {
+            EmptyView()
+        }
     }
 
     private var shouldBlockContentWithLoading: Bool {
