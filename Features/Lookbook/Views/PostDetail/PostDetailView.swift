@@ -14,8 +14,6 @@ struct PostDetailView: View {
 
     private let brandImageCache: any BrandImageCacheProtocol
     private let coordinator: LookbookCoordinator
-    private let commentsViewModelFactory: () -> PostCommentsViewModel
-    private let repliesViewModelFactory: (Comment) -> PostCommentRepliesViewModel
 
     @StateObject private var viewModel: PostDetailScreenViewModel
     @StateObject private var commentCoordinator: PostCommentCoordinator
@@ -29,17 +27,13 @@ struct PostDetailView: View {
         viewModel: PostDetailScreenViewModel,
         coordinator: LookbookCoordinator,
         commentCoordinator: PostCommentCoordinator,
-        brandImageCache: any BrandImageCacheProtocol,
-        commentsViewModelFactory: @escaping () -> PostCommentsViewModel,
-        repliesViewModelFactory: @escaping (Comment) -> PostCommentRepliesViewModel
+        brandImageCache: any BrandImageCacheProtocol
     ) {
         self.brandID = brandID
         self.seasonID = seasonID
         self.postID = postID
         self.coordinator = coordinator
         self.brandImageCache = brandImageCache
-        self.commentsViewModelFactory = commentsViewModelFactory
-        self.repliesViewModelFactory = repliesViewModelFactory
         _viewModel = StateObject(wrappedValue: viewModel)
         _commentCoordinator = StateObject(wrappedValue: commentCoordinator)
     }
@@ -61,17 +55,13 @@ struct PostDetailView: View {
                                 isSaved: viewModel.postUserState?.isSaved ?? false,
                                 errorMessage: viewModel.engagementErrorMessage,
                                 onLikeTap: {
-                                    Task {
-                                        await viewModel.toggleLike()
-                                    }
+                                    await viewModel.toggleLike()
                                 },
                                 onCommentTap: {
                                     coordinator.presentComments(using: commentCoordinator)
                                 },
                                 onSaveTap: {
-                                    Task {
-                                        await viewModel.toggleSave()
-                                    }
+                                    await viewModel.toggleSave()
                                 }
                             )
                             commentSection
@@ -132,9 +122,10 @@ struct PostDetailView: View {
     @ViewBuilder
     private var commentsSheet: some View {
         let sheet = coordinator.makeCommentsSheet(
-            viewModel: commentsViewModelFactory(),
+            brandID: brandID,
+            seasonID: seasonID,
+            postID: postID,
             commentCoordinator: commentCoordinator,
-            repliesViewModelFactory: repliesViewModelFactory,
             onCommentSubmitted: { result in
                 viewModel.applyCommentMutation(result)
             }

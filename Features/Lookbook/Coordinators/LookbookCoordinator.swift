@@ -58,16 +58,35 @@ final class LookbookCoordinator {
     }
 
     func makeCommentsSheet(
-        viewModel: PostCommentsViewModel,
+        brandID: BrandID,
+        seasonID: SeasonID,
+        postID: PostID,
         commentCoordinator: PostCommentCoordinator,
-        repliesViewModelFactory: @escaping (Comment) -> PostCommentRepliesViewModel,
         onCommentSubmitted: @escaping (CommentMutationResult) -> Void
     ) -> some View {
-        PostCommentsSheetView(
-            viewModel: viewModel,
-            coordinator: commentCoordinator,
-            repliesViewModelFactory: repliesViewModelFactory,
+        container.makeCommentsSheet(
+            brandID: brandID,
+            seasonID: seasonID,
+            postID: postID,
+            navigationCoordinator: self,
+            commentCoordinator: commentCoordinator,
             onCommentSubmitted: onCommentSubmitted
+        )
+    }
+
+    func makeRepliesSheet(
+        brandID: BrandID,
+        seasonID: SeasonID,
+        postID: PostID,
+        parentComment: Comment,
+        onReplySubmitted: @escaping (CommentMutationResult) -> Void
+    ) -> some View {
+        container.makeRepliesSheet(
+            brandID: brandID,
+            seasonID: seasonID,
+            postID: postID,
+            parentComment: parentComment,
+            onReplySubmitted: onReplySubmitted
         )
     }
 }

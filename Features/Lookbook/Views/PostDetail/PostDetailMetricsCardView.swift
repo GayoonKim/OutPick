@@ -12,9 +12,9 @@ struct PostDetailMetricsCardView: View {
     let isLiked: Bool
     let isSaved: Bool
     let errorMessage: String?
-    let onLikeTap: () -> Void
+    let onLikeTap: () async -> Void
     let onCommentTap: () -> Void
-    let onSaveTap: () -> Void
+    let onSaveTap: () async -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -35,7 +35,9 @@ struct PostDetailMetricsCardView: View {
                     title: "댓글",
                     isSelected: false,
                     selectedColor: .black,
-                    action: onCommentTap
+                    action: {
+                        onCommentTap()
+                    }
                 )
                 actionButton(
                     systemName: "bookmark",
@@ -68,9 +70,13 @@ struct PostDetailMetricsCardView: View {
         title: String,
         isSelected: Bool,
         selectedColor: Color,
-        action: @escaping () -> Void
+        action: @escaping () async -> Void
     ) -> some View {
-        Button(action: action) {
+        Button {
+            Task {
+                await action()
+            }
+        } label: {
             VStack(spacing: 6) {
                 Image(systemName: isSelected ? selectedSystemName : systemName)
                     .font(.headline.weight(.semibold))

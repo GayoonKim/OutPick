@@ -16,7 +16,7 @@ struct PostCommentInputBarView: View {
     let canSubmit: Bool
     let errorMessage: String?
     let submitAccessibilityLabel: String
-    let onSubmit: () -> Void
+    let onSubmit: () async -> Void
 
     @State private var inputHeight: CGFloat = Constants.minInputHeight
 
@@ -27,7 +27,7 @@ struct PostCommentInputBarView: View {
         canSubmit: Bool,
         errorMessage: String?,
         submitAccessibilityLabel: String = "댓글 등록",
-        onSubmit: @escaping () -> Void
+        onSubmit: @escaping () async -> Void
     ) {
         _text = text
         self.placeholder = placeholder
@@ -72,7 +72,9 @@ struct PostCommentInputBarView: View {
                 .animation(.easeInOut(duration: 0.12), value: inputHeight)
 
                 Button {
-                    onSubmit()
+                    Task {
+                        await onSubmit()
+                    }
                 } label: {
                     Group {
                         if isSubmitting {

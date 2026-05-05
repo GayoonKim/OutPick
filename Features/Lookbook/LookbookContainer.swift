@@ -115,22 +115,7 @@ final class LookbookContainer {
             ),
             coordinator: coordinator,
             commentCoordinator: coordinator.makePostCommentCoordinator(),
-            brandImageCache: provider.brandImageCache,
-            commentsViewModelFactory: { [self] in
-                return self.makePostCommentsViewModel(
-                    brandID: brandID,
-                    seasonID: seasonID,
-                    postID: postID
-                )
-            },
-            repliesViewModelFactory: { [self] parentComment in
-                return self.makePostCommentRepliesViewModel(
-                    brandID: brandID,
-                    seasonID: seasonID,
-                    postID: postID,
-                    parentComment: parentComment
-                )
-            }
+            brandImageCache: provider.brandImageCache
         )
     }
 
@@ -239,6 +224,47 @@ final class LookbookContainer {
             postID: postID,
             useCase: loadPostCommentsUseCase,
             createUseCase: createPostCommentUseCase
+        )
+    }
+
+    func makeCommentsSheet(
+        brandID: BrandID,
+        seasonID: SeasonID,
+        postID: PostID,
+        navigationCoordinator: LookbookCoordinator,
+        commentCoordinator: PostCommentCoordinator,
+        onCommentSubmitted: @escaping (CommentMutationResult) -> Void
+    ) -> PostCommentsSheetView {
+        PostCommentsSheetView(
+            viewModel: makePostCommentsViewModel(
+                brandID: brandID,
+                seasonID: seasonID,
+                postID: postID
+            ),
+            navigationCoordinator: navigationCoordinator,
+            brandID: brandID,
+            seasonID: seasonID,
+            postID: postID,
+            coordinator: commentCoordinator,
+            onCommentSubmitted: onCommentSubmitted
+        )
+    }
+
+    func makeRepliesSheet(
+        brandID: BrandID,
+        seasonID: SeasonID,
+        postID: PostID,
+        parentComment: Comment,
+        onReplySubmitted: @escaping (CommentMutationResult) -> Void
+    ) -> PostCommentRepliesSheetView {
+        PostCommentRepliesSheetView(
+            viewModel: makePostCommentRepliesViewModel(
+                brandID: brandID,
+                seasonID: seasonID,
+                postID: postID,
+                parentComment: parentComment
+            ),
+            onReplySubmitted: onReplySubmitted
         )
     }
 

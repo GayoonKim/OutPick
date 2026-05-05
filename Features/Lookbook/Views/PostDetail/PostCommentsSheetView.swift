@@ -9,20 +9,29 @@ import SwiftUI
 
 struct PostCommentsSheetView: View {
     @StateObject private var viewModel: PostCommentsViewModel
+    private let navigationCoordinator: LookbookCoordinator
+    private let brandID: BrandID
+    private let seasonID: SeasonID
+    private let postID: PostID
     @ObservedObject private var coordinator: PostCommentCoordinator
     @Environment(\.dismiss) private var dismiss
-    private let repliesViewModelFactory: (Comment) -> PostCommentRepliesViewModel
     private let onCommentSubmitted: (CommentMutationResult) -> Void
 
     init(
         viewModel: PostCommentsViewModel,
+        navigationCoordinator: LookbookCoordinator,
+        brandID: BrandID,
+        seasonID: SeasonID,
+        postID: PostID,
         coordinator: PostCommentCoordinator,
-        repliesViewModelFactory: @escaping (Comment) -> PostCommentRepliesViewModel,
         onCommentSubmitted: @escaping (CommentMutationResult) -> Void = { _ in }
     ) {
         _viewModel = StateObject(wrappedValue: viewModel)
+        self.navigationCoordinator = navigationCoordinator
+        self.brandID = brandID
+        self.seasonID = seasonID
+        self.postID = postID
         self.coordinator = coordinator
-        self.repliesViewModelFactory = repliesViewModelFactory
         self.onCommentSubmitted = onCommentSubmitted
     }
 
@@ -156,8 +165,11 @@ struct PostCommentsSheetView: View {
     @ViewBuilder
     private var repliesSheet: some View {
         if let route = coordinator.replyRoute {
-            let sheet = PostCommentRepliesSheetView(
-                viewModel: repliesViewModelFactory(route.parentComment),
+            let sheet = navigationCoordinator.makeRepliesSheet(
+                brandID: brandID,
+                seasonID: seasonID,
+                postID: postID,
+                parentComment: route.parentComment,
                 onReplySubmitted: onCommentSubmitted
             )
             if #available(iOS 16.0, *) {
@@ -194,10 +206,8 @@ struct PostCommentsSheetView: View {
             canSubmit: viewModel.canSubmitComment,
             errorMessage: viewModel.submissionErrorMessage,
             onSubmit: {
-                Task {
-                    if let result = await viewModel.submitComment() {
-                        onCommentSubmitted(result)
-                    }
+                if let result = await viewModel.submitComment() {
+                    onCommentSubmitted(result)
                 }
             }
         )

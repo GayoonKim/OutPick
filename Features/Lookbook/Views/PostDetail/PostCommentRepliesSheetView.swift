@@ -140,10 +140,8 @@ struct PostCommentRepliesSheetView: View {
             errorMessage: viewModel.submissionErrorMessage,
             submitAccessibilityLabel: "답글 등록",
             onSubmit: {
-                Task {
-                    if let result = await viewModel.submitReply() {
-                        onReplySubmitted(result)
-                    }
+                if let result = await viewModel.submitReply() {
+                    onReplySubmitted(result)
                 }
             }
         )
