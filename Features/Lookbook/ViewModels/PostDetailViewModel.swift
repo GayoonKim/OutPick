@@ -30,6 +30,11 @@ final class PostDetailScreenViewModel: ObservableObject {
     private var confirmedSaveCount: Int?
     private var prefetchedAvatarPaths: Set<String> = []
     private let avatarThumbnailMaxBytes: Int = 3 * 1024 * 1024
+    private let authorProfileStore: CommentAuthorProfileStore
+
+    init(authorProfileStore: CommentAuthorProfileStore? = nil) {
+        self.authorProfileStore = authorProfileStore ?? CommentAuthorProfileStore()
+    }
 
     var isMutatingEngagement: Bool {
         isMutatingLike || isMutatingSave
@@ -40,8 +45,7 @@ final class PostDetailScreenViewModel: ObservableObject {
         seasonID: SeasonID,
         postID: PostID,
         useCase: any LoadPostDetailUseCaseProtocol,
-        postUserStateRepository: any PostUserStateRepositoryProtocol,
-        userProfileRepository: UserProfileRepositoryProtocol = FirebaseRepositoryProvider.shared.userProfileRepository
+        postUserStateRepository: any PostUserStateRepositoryProtocol
     ) async {
         let key = "\(brandID.value)|\(seasonID.value)|\(postID.value)"
         guard loadedKey != key else { return }
@@ -50,8 +54,7 @@ final class PostDetailScreenViewModel: ObservableObject {
             seasonID: seasonID,
             postID: postID,
             useCase: useCase,
-            postUserStateRepository: postUserStateRepository,
-            userProfileRepository: userProfileRepository
+            postUserStateRepository: postUserStateRepository
         )
     }
 
@@ -60,8 +63,7 @@ final class PostDetailScreenViewModel: ObservableObject {
         seasonID: SeasonID,
         postID: PostID,
         useCase: any LoadPostDetailUseCaseProtocol,
-        postUserStateRepository: any PostUserStateRepositoryProtocol,
-        userProfileRepository: UserProfileRepositoryProtocol = FirebaseRepositoryProvider.shared.userProfileRepository
+        postUserStateRepository: any PostUserStateRepositoryProtocol
     ) async {
         loadedKey = nil
         await load(
@@ -69,16 +71,12 @@ final class PostDetailScreenViewModel: ObservableObject {
             seasonID: seasonID,
             postID: postID,
             useCase: useCase,
-            postUserStateRepository: postUserStateRepository,
-            userProfileRepository: userProfileRepository
+            postUserStateRepository: postUserStateRepository
         )
     }
 
     func displayItem(for comment: Comment) -> CommentDisplayItem {
-        CommentDisplayItem(
-            comment: comment,
-            author: authorDisplays[comment.userID] ?? .unknown(userID: comment.userID)
-        )
+        authorProfileStore.displayItem(for: comment)
     }
 
     func prefetchAuthorAvatars(for comments: [Comment], avatarImageManager: ChatAvatarImageManaging = AvatarImageService.shared) {
@@ -190,8 +188,7 @@ final class PostDetailScreenViewModel: ObservableObject {
         seasonID: SeasonID,
         postID: PostID,
         useCase: any LoadPostDetailUseCaseProtocol,
-        postUserStateRepository: any PostUserStateRepositoryProtocol,
-        userProfileRepository: UserProfileRepositoryProtocol
+        postUserStateRepository: any PostUserStateRepositoryProtocol
     ) async {
         if isRequesting { return }
         isRequesting = true
@@ -213,10 +210,8 @@ final class PostDetailScreenViewModel: ObservableObject {
             post = content.post
             comments = content.comments
             commentErrorMessage = content.commentErrorMessage
-            await loadMissingAuthors(
-                for: content.comments,
-                userProfileRepository: userProfileRepository
-            )
+            await authorProfileStore.loadMissingAuthors(for: content.comments)
+            syncAuthorDisplays()
             postUserState = await fetchPostUserState(
                 brandID: brandID,
                 seasonID: seasonID,
@@ -228,7 +223,8 @@ final class PostDetailScreenViewModel: ObservableObject {
             post = nil
             postUserState = nil
             comments = []
-            authorDisplays = [:]
+            authorProfileStore.reset()
+            syncAuthorDisplays()
             errorMessage = "포스트를 불러오지 못했습니다."
             commentErrorMessage = nil
             engagementErrorMessage = nil
@@ -259,51 +255,8 @@ final class PostDetailScreenViewModel: ObservableObject {
         }
     }
 
-    private func loadMissingAuthors(
-        for comments: [Comment],
-        userProfileRepository: UserProfileRepositoryProtocol
-    ) async {
-        let missingUserIDs = Array(
-            Set(comments.map(\.userID))
-                .filter { authorDisplays[$0] == nil }
-        )
-        guard missingUserIDs.isEmpty == false else { return }
-
-        let rawUserIDs = missingUserIDs.map(\.value)
-        guard let profiles = try? await userProfileRepository.fetchUserProfiles(userIDs: rawUserIDs) else {
-            applyUnknownAuthors(for: missingUserIDs)
-            return
-        }
-
-        var nextAuthorDisplays = authorDisplays
-        for userID in missingUserIDs {
-            if let profile = profiles[userID.value] {
-                nextAuthorDisplays[userID] = CommentAuthorDisplay(
-                    userID: userID,
-                    nickname: resolvedNickname(from: profile),
-                    avatarPath: profile.thumbPath ?? profile.originalPath
-                )
-            } else {
-                nextAuthorDisplays[userID] = .unknown(userID: userID)
-            }
-        }
-        authorDisplays = nextAuthorDisplays
-    }
-
-    private func applyUnknownAuthors(for userIDs: [UserID]) {
-        var nextAuthorDisplays = authorDisplays
-        for userID in userIDs where nextAuthorDisplays[userID] == nil {
-            nextAuthorDisplays[userID] = .unknown(userID: userID)
-        }
-        authorDisplays = nextAuthorDisplays
-    }
-
-    private func resolvedNickname(from profile: UserProfile) -> String {
-        let nickname = profile.nickname?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let nickname, nickname.isEmpty == false {
-            return nickname
-        }
-        return "알 수 없는 사용자"
+    private func syncAuthorDisplays() {
+        authorDisplays = authorProfileStore.authorDisplays
     }
 
     private func drainLikeQueue(

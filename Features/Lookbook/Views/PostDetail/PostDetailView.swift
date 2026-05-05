@@ -100,8 +100,7 @@ struct PostDetailView: View {
                 seasonID: seasonID,
                 postID: postID,
                 useCase: loadPostDetailUseCase,
-                postUserStateRepository: provider.postUserStateRepository,
-                userProfileRepository: FirebaseRepositoryProvider.shared.userProfileRepository
+                postUserStateRepository: provider.postUserStateRepository
             )
         }
         .refreshable {
@@ -110,8 +109,7 @@ struct PostDetailView: View {
                 seasonID: seasonID,
                 postID: postID,
                 useCase: loadPostDetailUseCase,
-                postUserStateRepository: provider.postUserStateRepository,
-                userProfileRepository: FirebaseRepositoryProvider.shared.userProfileRepository
+                postUserStateRepository: provider.postUserStateRepository
             )
         }
         .sheet(isPresented: profileSheetBinding) {

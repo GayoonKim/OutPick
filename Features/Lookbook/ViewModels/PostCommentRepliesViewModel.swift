@@ -25,7 +25,7 @@ final class PostCommentRepliesViewModel: ObservableObject {
     private let postID: PostID
     private let useCase: any LoadCommentRepliesUseCaseProtocol
     private let createUseCase: any CreateCommentReplyUseCaseProtocol
-    private let userProfileRepository: UserProfileRepositoryProtocol
+    private let authorProfileStore: CommentAuthorProfileStore
     private let avatarImageManager: ChatAvatarImageManaging
     private let pageSize: Int
     private let avatarPrefetchLimit: Int
@@ -52,7 +52,7 @@ final class PostCommentRepliesViewModel: ObservableObject {
         parentComment: Comment,
         useCase: any LoadCommentRepliesUseCaseProtocol,
         createUseCase: any CreateCommentReplyUseCaseProtocol,
-        userProfileRepository: UserProfileRepositoryProtocol = FirebaseRepositoryProvider.shared.userProfileRepository,
+        authorProfileStore: CommentAuthorProfileStore? = nil,
         avatarImageManager: ChatAvatarImageManaging = AvatarImageService.shared,
         pageSize: Int = 30,
         avatarPrefetchLimit: Int = 16,
@@ -64,7 +64,7 @@ final class PostCommentRepliesViewModel: ObservableObject {
         self.parentComment = parentComment
         self.useCase = useCase
         self.createUseCase = createUseCase
-        self.userProfileRepository = userProfileRepository
+        self.authorProfileStore = authorProfileStore ?? CommentAuthorProfileStore()
         self.avatarImageManager = avatarImageManager
         self.pageSize = pageSize
         self.avatarPrefetchLimit = avatarPrefetchLimit
@@ -88,10 +88,7 @@ final class PostCommentRepliesViewModel: ObservableObject {
     }
 
     func displayItem(for comment: Comment) -> CommentDisplayItem {
-        CommentDisplayItem(
-            comment: comment,
-            author: authorDisplays[comment.userID] ?? .unknown(userID: comment.userID)
-        )
+        authorProfileStore.displayItem(for: comment)
     }
 
     func prefetchAuthorAvatars(around commentID: CommentID) {
@@ -143,6 +140,8 @@ final class PostCommentRepliesViewModel: ObservableObject {
             )
             parentComment.replyCount = result.replyCount
             draftMessage = ""
+            authorProfileStore.seedCurrentUserProfileIfPossible()
+            syncAuthorDisplays()
             loadedKey = nil
             await loadPage(reset: true)
             return result
@@ -168,7 +167,8 @@ final class PostCommentRepliesViewModel: ObservableObject {
         }
 
         do {
-            await loadMissingAuthors(for: [parentComment])
+            await authorProfileStore.loadMissingAuthors(for: [parentComment])
+            syncAuthorDisplays()
             let page = try await useCase.execute(
                 brandID: brandID,
                 seasonID: seasonID,
@@ -187,54 +187,15 @@ final class PostCommentRepliesViewModel: ObservableObject {
             } else {
                 replies.append(contentsOf: page.items)
             }
-            await loadMissingAuthors(for: page.items)
+            await authorProfileStore.loadMissingAuthors(for: page.items)
+            syncAuthorDisplays()
         } catch {
             errorMessage = "답글을 불러오지 못했습니다."
         }
     }
 
-    private func loadMissingAuthors(for comments: [Comment]) async {
-        let missingUserIDs = Array(
-            Set(comments.map(\.userID))
-                .filter { authorDisplays[$0] == nil }
-        )
-        guard missingUserIDs.isEmpty == false else { return }
-
-        let rawUserIDs = missingUserIDs.map(\.value)
-        guard let profiles = try? await userProfileRepository.fetchUserProfiles(userIDs: rawUserIDs) else {
-            applyUnknownAuthors(for: missingUserIDs)
-            return
-        }
-
-        var nextAuthorDisplays = authorDisplays
-        for userID in missingUserIDs {
-            if let profile = profiles[userID.value] {
-                nextAuthorDisplays[userID] = CommentAuthorDisplay(
-                    userID: userID,
-                    nickname: resolvedNickname(from: profile),
-                    avatarPath: profile.thumbPath ?? profile.originalPath
-                )
-            } else {
-                nextAuthorDisplays[userID] = .unknown(userID: userID)
-            }
-        }
-        authorDisplays = nextAuthorDisplays
-    }
-
-    private func applyUnknownAuthors(for userIDs: [UserID]) {
-        var nextAuthorDisplays = authorDisplays
-        for userID in userIDs where nextAuthorDisplays[userID] == nil {
-            nextAuthorDisplays[userID] = .unknown(userID: userID)
-        }
-        authorDisplays = nextAuthorDisplays
-    }
-
-    private func resolvedNickname(from profile: UserProfile) -> String {
-        let nickname = profile.nickname?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let nickname, nickname.isEmpty == false {
-            return nickname
-        }
-        return "알 수 없는 사용자"
+    private func syncAuthorDisplays() {
+        authorDisplays = authorProfileStore.authorDisplays
     }
 
     private func stateKey() -> String {

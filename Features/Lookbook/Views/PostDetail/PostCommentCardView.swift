@@ -106,9 +106,6 @@ struct PostCommentCardView: View {
                             Label("\(comment.replyCount)", systemImage: "bubble.right")
                         }
 
-                        if comment.attachments.isEmpty == false {
-                            Label("\(comment.attachments.count)", systemImage: "paperclip")
-                        }
                     }
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)

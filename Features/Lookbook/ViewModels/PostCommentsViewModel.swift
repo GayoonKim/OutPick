@@ -26,7 +26,7 @@ final class PostCommentsViewModel: ObservableObject {
     private let postID: PostID
     private let useCase: any LoadPostCommentsUseCaseProtocol
     private let createUseCase: any CreatePostCommentUseCaseProtocol
-    private let userProfileRepository: UserProfileRepositoryProtocol
+    private let authorProfileStore: CommentAuthorProfileStore
     private let avatarImageManager: ChatAvatarImageManaging
     private let pageSize: Int
     private let avatarPrefetchLimit: Int
@@ -52,7 +52,7 @@ final class PostCommentsViewModel: ObservableObject {
         postID: PostID,
         useCase: any LoadPostCommentsUseCaseProtocol,
         createUseCase: any CreatePostCommentUseCaseProtocol,
-        userProfileRepository: UserProfileRepositoryProtocol = FirebaseRepositoryProvider.shared.userProfileRepository,
+        authorProfileStore: CommentAuthorProfileStore? = nil,
         avatarImageManager: ChatAvatarImageManaging = AvatarImageService.shared,
         initialSort: CommentSortOption = .latest,
         pageSize: Int = 30,
@@ -64,7 +64,7 @@ final class PostCommentsViewModel: ObservableObject {
         self.postID = postID
         self.useCase = useCase
         self.createUseCase = createUseCase
-        self.userProfileRepository = userProfileRepository
+        self.authorProfileStore = authorProfileStore ?? CommentAuthorProfileStore()
         self.avatarImageManager = avatarImageManager
         self.selectedSort = initialSort
         self.pageSize = pageSize
@@ -96,10 +96,7 @@ final class PostCommentsViewModel: ObservableObject {
     }
 
     func displayItem(for comment: Comment) -> CommentDisplayItem {
-        CommentDisplayItem(
-            comment: comment,
-            author: authorDisplays[comment.userID] ?? .unknown(userID: comment.userID)
-        )
+        authorProfileStore.displayItem(for: comment)
     }
 
     func prefetchAuthorAvatars(around commentID: CommentID) {
@@ -149,6 +146,8 @@ final class PostCommentsViewModel: ObservableObject {
                 message: message
             )
             draftMessage = ""
+            authorProfileStore.seedCurrentUserProfileIfPossible()
+            syncAuthorDisplays()
             loadedKey = nil
             await loadPage(reset: true)
             return result
@@ -187,7 +186,8 @@ final class PostCommentsViewModel: ObservableObject {
                 nextCursor = content.rootComments.nextCursor
                 rootComments = content.rootComments.items
                 loadedKey = stateKey(sort: selectedSort)
-                await loadMissingAuthors(for: commentFeedComments)
+                await authorProfileStore.loadMissingAuthors(for: commentFeedComments)
+                syncAuthorDisplays()
             } else {
                 let page = try await useCase.loadRootComments(
                     brandID: brandID,
@@ -202,55 +202,16 @@ final class PostCommentsViewModel: ObservableObject {
                 }
                 nextCursor = page.nextCursor
                 rootComments.append(contentsOf: visibleItems)
-                await loadMissingAuthors(for: visibleItems)
+                await authorProfileStore.loadMissingAuthors(for: visibleItems)
+                syncAuthorDisplays()
             }
         } catch {
             errorMessage = "댓글을 불러오지 못했습니다."
         }
     }
 
-    private func loadMissingAuthors(for comments: [Comment]) async {
-        let missingUserIDs = Array(
-            Set(comments.map(\.userID))
-                .filter { authorDisplays[$0] == nil }
-        )
-        guard missingUserIDs.isEmpty == false else { return }
-
-        let rawUserIDs = missingUserIDs.map(\.value)
-        guard let profiles = try? await userProfileRepository.fetchUserProfiles(userIDs: rawUserIDs) else {
-            applyUnknownAuthors(for: missingUserIDs)
-            return
-        }
-
-        var nextAuthorDisplays = authorDisplays
-        for userID in missingUserIDs {
-            if let profile = profiles[userID.value] {
-                nextAuthorDisplays[userID] = CommentAuthorDisplay(
-                    userID: userID,
-                    nickname: resolvedNickname(from: profile),
-                    avatarPath: profile.thumbPath ?? profile.originalPath
-                )
-            } else {
-                nextAuthorDisplays[userID] = .unknown(userID: userID)
-            }
-        }
-        authorDisplays = nextAuthorDisplays
-    }
-
-    private func applyUnknownAuthors(for userIDs: [UserID]) {
-        var nextAuthorDisplays = authorDisplays
-        for userID in userIDs where nextAuthorDisplays[userID] == nil {
-            nextAuthorDisplays[userID] = .unknown(userID: userID)
-        }
-        authorDisplays = nextAuthorDisplays
-    }
-
-    private func resolvedNickname(from profile: UserProfile) -> String {
-        let nickname = profile.nickname?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let nickname, nickname.isEmpty == false {
-            return nickname
-        }
-        return "알 수 없는 사용자"
+    private func syncAuthorDisplays() {
+        authorDisplays = authorProfileStore.authorDisplays
     }
 
     private func duplicateExcludedIDs() -> Set<CommentID> {
