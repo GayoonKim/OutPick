@@ -11,15 +11,29 @@ struct SeasonDetailView: View {
     let brandID: BrandID
     let seasonID: SeasonID
 
-    @Environment(\.repositoryProvider) private var provider
-    @StateObject private var viewModel = SeasonDetailViewModel()
+    private let brandImageCache: any BrandImageCacheProtocol
+    private let postDestination: (LookbookPost) -> AnyView
+
+    @StateObject private var viewModel: SeasonDetailViewModel
     @State private var selectedPost: LookbookPost?
 
     private let columns: [GridItem] = [
         GridItem(.flexible(), spacing: 10),
         GridItem(.flexible(), spacing: 10)
     ]
-    private let postGridMaxBytes: Int = 1_500_000
+    init(
+        brandID: BrandID,
+        seasonID: SeasonID,
+        viewModel: SeasonDetailViewModel,
+        brandImageCache: any BrandImageCacheProtocol,
+        postDestination: @escaping (LookbookPost) -> AnyView
+    ) {
+        self.brandID = brandID
+        self.seasonID = seasonID
+        self.brandImageCache = brandImageCache
+        self.postDestination = postDestination
+        _viewModel = StateObject(wrappedValue: viewModel)
+    }
 
     var body: some View {
         Group {
@@ -44,16 +58,12 @@ struct SeasonDetailView: View {
                                     } label: {
                                         SeasonLookGridItemView(
                                             post: post,
-                                            brandImageCache: provider.brandImageCache
+                                            brandImageCache: brandImageCache
                                         )
                                     }
                                     .buttonStyle(.plain)
                                     .onAppear {
-                                        viewModel.postDidAppear(
-                                            postID: post.id,
-                                            brandImageCache: provider.brandImageCache,
-                                            maxBytes: postGridMaxBytes
-                                        )
+                                        viewModel.postDidAppear(postID: post.id)
                                     }
                                 }
                             }
@@ -78,30 +88,11 @@ struct SeasonDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .background(hiddenNavigationLink)
         .task {
-            await viewModel.loadIfNeeded(
-                brandID: brandID,
-                seasonID: seasonID,
-                useCase: loadSeasonDetailUseCase,
-                brandImageCache: provider.brandImageCache,
-                maxBytes: postGridMaxBytes
-            )
+            await viewModel.loadIfNeeded()
         }
         .refreshable {
-            await viewModel.refresh(
-                brandID: brandID,
-                seasonID: seasonID,
-                useCase: loadSeasonDetailUseCase,
-                brandImageCache: provider.brandImageCache,
-                maxBytes: postGridMaxBytes
-            )
+            await viewModel.refresh()
         }
-    }
-
-    private var loadSeasonDetailUseCase: some LoadSeasonDetailUseCaseProtocol {
-        LoadSeasonDetailUseCase(
-            seasonRepository: provider.seasonRepository,
-            postRepository: provider.postRepository
-        )
     }
 
     private var loadingSection: some View {
@@ -157,11 +148,7 @@ struct SeasonDetailView: View {
     @ViewBuilder
     private var selectedPostDestination: some View {
         if let selectedPost {
-            PostDetailView(
-                brandID: selectedPost.brandID,
-                seasonID: selectedPost.seasonID,
-                postID: selectedPost.id
-            )
+            postDestination(selectedPost)
         } else {
             EmptyView()
         }

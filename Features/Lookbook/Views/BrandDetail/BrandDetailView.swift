@@ -17,22 +17,29 @@ struct BrandDetailView: View {
     let brand: Brand
     let brandImageCache: any BrandImageCacheProtocol
     let maxBytes: Int
+    let seasonDestination: (Season) -> AnyView
+    let seasonCandidateSelectionFactory: (CreateBrandViewModel.CreatedBrand, @escaping () -> Void) -> AnyView
 
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.repositoryProvider) private var provider
     @EnvironmentObject private var brandAdminSessionStore: BrandAdminSessionStore
-    @StateObject private var viewModel = BrandDetailViewModel()
+    @StateObject private var viewModel: BrandDetailViewModel
     @State private var activeSeasonSheet: SeasonCreationSheet?
     @State private var didPrepareInitialContent: Bool = false
 
     init(
         brand: Brand,
+        viewModel: BrandDetailViewModel,
         brandImageCache: any BrandImageCacheProtocol,
+        seasonDestination: @escaping (Season) -> AnyView,
+        seasonCandidateSelectionFactory: @escaping (CreateBrandViewModel.CreatedBrand, @escaping () -> Void) -> AnyView,
         maxBytes: Int = 1_000_000
     ) {
         self.brand = brand
         self.brandImageCache = brandImageCache
+        self.seasonDestination = seasonDestination
+        self.seasonCandidateSelectionFactory = seasonCandidateSelectionFactory
         self.maxBytes = maxBytes
+        _viewModel = StateObject(wrappedValue: viewModel)
     }
 
     var body: some View {
@@ -56,12 +63,9 @@ struct BrandDetailView: View {
                         canManageBrand: brandAdminSessionStore.canWrite(brandID: brand.id),
                         brandImageCache: brandImageCache,
                         maxBytes: maxBytes,
+                        seasonDestination: seasonDestination,
                         onSeasonAppear: { season in
-                            viewModel.seasonDidAppear(
-                                seasonID: season.id,
-                                brandImageCache: brandImageCache,
-                                maxBytes: maxBytes
-                            )
+                            viewModel.seasonDidAppear(seasonID: season.id)
                         }
                     )
                     .listRowInsets(EdgeInsets())
@@ -70,7 +74,6 @@ struct BrandDetailView: View {
                 .listStyle(.plain)
             }
         }
-//        .navigationTitle(brand.name)
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
         .tint(.black)
@@ -99,38 +102,22 @@ struct BrandDetailView: View {
         }
         .sheet(item: $activeSeasonSheet, onDismiss: {
             Task {
-                await viewModel.refreshContents(
-                    brandID: brand.id,
-                    seasonRepository: provider.seasonRepository,
-                    brandImageCache: brandImageCache,
-                    maxBytes: maxBytes
-                )
+                await viewModel.refreshContents(brandID: brand.id)
             }
         }) { sheet in
             switch sheet {
             case .candidateSelection:
                 NavigationView {
-                    CreateBrandCandidateSelectionView(
-                        createdBrand: CreateBrandViewModel.CreatedBrand(
+                    seasonCandidateSelectionFactory(
+                        CreateBrandViewModel.CreatedBrand(
                             id: brand.id,
                             name: brand.name,
                             websiteURL: brand.websiteURL,
                             lookbookArchiveURL: brand.lookbookArchiveURL,
                             hasLogoAsset: brand.logoThumbPath != nil
                         ),
-                        loadSelectableSeasonCandidatesUseCase: LoadSelectableSeasonCandidatesUseCase(
-                            candidateRepository: provider.seasonCandidateRepository,
-                            seasonImportJobRepository: provider.seasonImportJobRepository
-                        ),
-                        startSeasonImportExtractionUseCase: StartSeasonImportExtractionUseCase(
-                            processingRepository: provider.seasonImportJobProcessingRepository,
-                            seasonImportJobRepository: provider.seasonImportJobRepository
-                        ),
-                        discoveryErrorMessage: nil,
-                        emptySelectionButtonTitle: "닫기"
-                    ) {
-                        activeSeasonSheet = nil
-                    }
+                        { activeSeasonSheet = nil }
+                    )
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {
                             Button("닫기") {
@@ -148,12 +135,7 @@ struct BrandDetailView: View {
 
             if didPrepareInitialContent == false {
                 await prewarmHeaderLogoIfNeeded()
-                await viewModel.loadContentsIfNeeded(
-                    brandID: brand.id,
-                    seasonRepository: provider.seasonRepository,
-                    brandImageCache: brandImageCache,
-                    maxBytes: maxBytes
-                )
+                await viewModel.loadContentsIfNeeded(brandID: brand.id)
                 didPrepareInitialContent = true
             }
         }

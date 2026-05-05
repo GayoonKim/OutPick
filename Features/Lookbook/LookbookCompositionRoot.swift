@@ -21,7 +21,7 @@ enum LookbookCompositionRoot {
         let lookbookView =
             LookbookHomeView(
                 viewModel: container.lookbookHomeViewModel,
-                provider: container.provider
+                container: container
             )
             .environment(\.repositoryProvider, container.provider)
             .environmentObject(container.brandAdminSessionStore)

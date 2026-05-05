@@ -23,6 +23,7 @@ struct PostCommentCardView: View {
     let avatarImageManager: ChatAvatarImageManaging
     let onProfileTap: (() -> Void)?
     let onRepliesTap: (() -> Void)?
+    let onCardTap: (() -> Void)?
 
     init(
         comment: Comment,
@@ -32,7 +33,8 @@ struct PostCommentCardView: View {
         badgeTitle: String? = nil,
         avatarImageManager: ChatAvatarImageManaging = AvatarImageService.shared,
         onProfileTap: (() -> Void)? = nil,
-        onRepliesTap: (() -> Void)? = nil
+        onRepliesTap: (() -> Void)? = nil,
+        onCardTap: (() -> Void)? = nil
     ) {
         self.comment = comment
         self.author = author ?? .unknown(userID: comment.userID)
@@ -48,6 +50,7 @@ struct PostCommentCardView: View {
         self.avatarImageManager = avatarImageManager
         self.onProfileTap = onProfileTap
         self.onRepliesTap = onRepliesTap
+        self.onCardTap = onCardTap
     }
 
     var body: some View {
@@ -85,38 +88,40 @@ struct PostCommentCardView: View {
                         .lineLimit(1)
                 }
 
-                Text(comment.isDeleted ? "삭제된 댓글입니다." : comment.message)
+                Text(comment.message)
                     .font(.subheadline)
-                    .foregroundStyle(comment.isDeleted ? .secondary : .primary)
+                    .foregroundStyle(.primary)
                     .fixedSize(horizontal: false, vertical: true)
 
-                if comment.isDeleted == false {
-                    HStack(spacing: 12) {
-                        Label("\(comment.likeCount)", systemImage: "heart")
+                HStack(spacing: 12) {
+                    Label("\(comment.likeCount)", systemImage: "heart")
 
-                        if canOpenReplies {
-                            Button {
-                                onRepliesTap?()
-                            } label: {
-                                Label("\(comment.replyCount)", systemImage: "bubble.right")
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("답글 \(comment.replyCount)개 보기")
-                        } else {
+                    if canOpenReplies {
+                        Button {
+                            onRepliesTap?()
+                        } label: {
                             Label("\(comment.replyCount)", systemImage: "bubble.right")
                         }
-
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("답글 \(comment.replyCount)개 보기")
+                    } else {
+                        Label("\(comment.replyCount)", systemImage: "bubble.right")
                     }
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
+
                 }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
             }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.white.opacity(0.94))
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .onTapGesture {
+            onCardTap?()
+        }
     }
 
     @ViewBuilder

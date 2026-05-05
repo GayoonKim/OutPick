@@ -16,60 +16,50 @@ final class BrandDetailViewModel: ObservableObject {
     private let initialPrefetchCount: Int
     private let lookAheadPrefetchCount: Int
     private let prefetchConcurrency: Int
+    private let seasonRepository: any SeasonRepositoryProtocol
+    private let brandImageCache: any BrandImageCacheProtocol
+    private let maxBytes: Int
 
     private var loadedBrandID: BrandID?
     private var isRequesting: Bool = false
     private var prefetchedSeasonImagePaths = Set<String>()
 
     init(
+        seasonRepository: any SeasonRepositoryProtocol,
+        brandImageCache: any BrandImageCacheProtocol,
+        maxBytes: Int,
         initialPrefetchCount: Int = 12,
         lookAheadPrefetchCount: Int = 8,
         prefetchConcurrency: Int = 6
     ) {
+        self.seasonRepository = seasonRepository
+        self.brandImageCache = brandImageCache
+        self.maxBytes = maxBytes
         self.initialPrefetchCount = initialPrefetchCount
         self.lookAheadPrefetchCount = lookAheadPrefetchCount
         self.prefetchConcurrency = prefetchConcurrency
     }
 
     /// 최초 진입 시 중복 로드 방지
-    func loadContentsIfNeeded(
-        brandID: BrandID,
-        seasonRepository: any SeasonRepositoryProtocol,
-        brandImageCache: any BrandImageCacheProtocol,
-        maxBytes: Int
-    ) async {
+    func loadContentsIfNeeded(brandID: BrandID) async {
         if loadedBrandID == brandID, !seasons.isEmpty { return }
         await fetchAll(
             brandID: brandID,
-            seasonRepository: seasonRepository,
-            force: false,
-            brandImageCache: brandImageCache,
-            maxBytes: maxBytes
+            force: false
         )
     }
 
     /// 시즌 추가 후(시트 닫힘 등) 강제 새로고침
-    func refreshContents(
-        brandID: BrandID,
-        seasonRepository: any SeasonRepositoryProtocol,
-        brandImageCache: any BrandImageCacheProtocol,
-        maxBytes: Int
-    ) async {
+    func refreshContents(brandID: BrandID) async {
         await fetchAll(
             brandID: brandID,
-            seasonRepository: seasonRepository,
-            force: true,
-            brandImageCache: brandImageCache,
-            maxBytes: maxBytes
+            force: true
         )
     }
 
     private func fetchAll(
         brandID: BrandID,
-        seasonRepository: any SeasonRepositoryProtocol,
-        force: Bool,
-        brandImageCache: any BrandImageCacheProtocol,
-        maxBytes: Int
+        force: Bool
     ) async {
         if isRequesting { return }
         isRequesting = true
@@ -106,19 +96,12 @@ final class BrandDetailViewModel: ObservableObject {
         }
     }
 
-    func prefetchInitialSeasonCoversIfNeeded(
-        brandImageCache: any BrandImageCacheProtocol,
-        maxBytes: Int
-    ) {
+    func prefetchInitialSeasonCoversIfNeeded() {
         let targets = makePrefetchTargets(startingAt: 0, count: initialPrefetchCount, maxBytes: maxBytes)
         schedulePrefetch(items: targets, brandImageCache: brandImageCache)
     }
 
-    func seasonDidAppear(
-        seasonID: SeasonID,
-        brandImageCache: any BrandImageCacheProtocol,
-        maxBytes: Int
-    ) {
+    func seasonDidAppear(seasonID: SeasonID) {
         guard let currentIndex = seasons.firstIndex(where: { $0.id == seasonID }) else {
             return
         }

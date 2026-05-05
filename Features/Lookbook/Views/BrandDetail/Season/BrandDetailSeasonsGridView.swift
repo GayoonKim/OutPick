@@ -14,6 +14,7 @@ struct BrandDetailSeasonsGridView: View {
     let canManageBrand: Bool
     let brandImageCache: any BrandImageCacheProtocol
     let maxBytes: Int
+    let seasonDestination: (Season) -> AnyView
     let onSeasonAppear: (Season) -> Void
 
     @State private var selectedSeason: Season?
@@ -108,10 +109,7 @@ struct BrandDetailSeasonsGridView: View {
     @ViewBuilder
     private var selectedSeasonDestination: some View {
         if let selectedSeason {
-            SeasonDetailView(
-                brandID: selectedSeason.brandID,
-                seasonID: selectedSeason.id
-            )
+            seasonDestination(selectedSeason)
         } else {
             EmptyView()
         }

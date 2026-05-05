@@ -17,12 +17,12 @@ struct LookbookHomeView: View {
     @State private var isPresentingCreateBrand = false
     @State private var createdBrandIDForSelection: Brand.ID?
 
-    private let provider: LookbookRepositoryProvider
+    private let container: LookbookContainer
 
     /// SceneDelegate/AppContainer에서 동일 인스턴스를 주입하면
     /// 룩북 탭 진입 시 “이미 로딩된 것처럼” 보이는 UX를 만들 수 있습니다.
-    init(viewModel: LookbookHomeViewModel, provider: LookbookRepositoryProvider) {
-        self.provider = provider
+    init(viewModel: LookbookHomeViewModel, container: LookbookContainer) {
+        self.container = container
         _viewModel = StateObject(wrappedValue: viewModel)
     }
 
@@ -86,10 +86,7 @@ struct LookbookHomeView: View {
                                 }
 
                             NavigationLink(
-                                destination: BrandDetailView(
-                                    brand: brand,
-                                    brandImageCache: viewModel.brandImageCache
-                                ),
+                                destination: container.makeBrandDetailView(brand: brand),
                                 tag: brand.id,
                                 selection: $selectedBrandID
                             ) {
@@ -141,7 +138,7 @@ struct LookbookHomeView: View {
 
     private var createBrandSheet: some View {
         NavigationView {
-            CreateBrandFlowView(provider: provider) { createdBrandID in
+            CreateBrandFlowView(provider: container.provider) { createdBrandID in
                 createdBrandIDForSelection = createdBrandID
             }
         }
@@ -167,6 +164,10 @@ struct LookbookHomeView: View {
 #Preview {
     let provider = LookbookRepositoryProvider.shared
     let brandAdminSessionStore = BrandAdminSessionStore()
+    let container = LookbookContainer(
+        provider: provider,
+        brandAdminSessionStore: brandAdminSessionStore
+    )
     let vm = LookbookHomeViewModel(
         repo: provider.brandRepository,
         brandAdminSessionStore: brandAdminSessionStore,
@@ -174,6 +175,6 @@ struct LookbookHomeView: View {
         initialBrandLimit: 12,
         prefetchLogoCount: 4
     )
-    LookbookHomeView(viewModel: vm, provider: provider)
+    LookbookHomeView(viewModel: vm, container: container)
         .environmentObject(brandAdminSessionStore)
 }

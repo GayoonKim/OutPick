@@ -17,6 +17,11 @@ final class SeasonDetailViewModel: ObservableObject {
     private let initialPrefetchCount: Int
     private let lookAheadPrefetchCount: Int
     private let prefetchConcurrency: Int
+    private let brandID: BrandID
+    private let seasonID: SeasonID
+    private let useCase: any LoadSeasonDetailUseCaseProtocol
+    private let brandImageCache: any BrandImageCacheProtocol
+    private let maxBytes: Int
 
     private var loadedKey: String?
     private var isRequesting: Bool = false
@@ -24,57 +29,37 @@ final class SeasonDetailViewModel: ObservableObject {
     private var prefetchedThroughIndex: Int = -1
 
     init(
+        brandID: BrandID,
+        seasonID: SeasonID,
+        useCase: any LoadSeasonDetailUseCaseProtocol,
+        brandImageCache: any BrandImageCacheProtocol,
+        maxBytes: Int,
         initialPrefetchCount: Int = 8,
         lookAheadPrefetchCount: Int = 20,
         prefetchConcurrency: Int = 8
     ) {
+        self.brandID = brandID
+        self.seasonID = seasonID
+        self.useCase = useCase
+        self.brandImageCache = brandImageCache
+        self.maxBytes = maxBytes
         self.initialPrefetchCount = initialPrefetchCount
         self.lookAheadPrefetchCount = lookAheadPrefetchCount
         self.prefetchConcurrency = prefetchConcurrency
     }
 
-    func loadIfNeeded(
-        brandID: BrandID,
-        seasonID: SeasonID,
-        useCase: any LoadSeasonDetailUseCaseProtocol,
-        brandImageCache: any BrandImageCacheProtocol,
-        maxBytes: Int
-    ) async {
+    func loadIfNeeded() async {
         let key = "\(brandID.value)|\(seasonID.value)"
         guard loadedKey != key else { return }
-        await load(
-            brandID: brandID,
-            seasonID: seasonID,
-            useCase: useCase,
-            brandImageCache: brandImageCache,
-            maxBytes: maxBytes
-        )
+        await load()
     }
 
-    func refresh(
-        brandID: BrandID,
-        seasonID: SeasonID,
-        useCase: any LoadSeasonDetailUseCaseProtocol,
-        brandImageCache: any BrandImageCacheProtocol,
-        maxBytes: Int
-    ) async {
+    func refresh() async {
         loadedKey = nil
-        await load(
-            brandID: brandID,
-            seasonID: seasonID,
-            useCase: useCase,
-            brandImageCache: brandImageCache,
-            maxBytes: maxBytes
-        )
+        await load()
     }
 
-    private func load(
-        brandID: BrandID,
-        seasonID: SeasonID,
-        useCase: any LoadSeasonDetailUseCaseProtocol,
-        brandImageCache: any BrandImageCacheProtocol,
-        maxBytes: Int
-    ) async {
+    private func load() async {
         if isRequesting { return }
         isRequesting = true
         isLoading = true
@@ -117,19 +102,12 @@ final class SeasonDetailViewModel: ObservableObject {
         }
     }
 
-    func prefetchInitialPostImagesIfNeeded(
-        brandImageCache: any BrandImageCacheProtocol,
-        maxBytes: Int
-    ) {
+    func prefetchInitialPostImagesIfNeeded() {
         let targets = makePrefetchTargets(startingAt: 0, count: initialPrefetchCount, maxBytes: maxBytes)
         schedulePrefetch(items: targets, brandImageCache: brandImageCache)
     }
 
-    func postDidAppear(
-        postID: PostID,
-        brandImageCache: any BrandImageCacheProtocol,
-        maxBytes: Int
-    ) {
+    func postDidAppear(postID: PostID) {
         guard let currentIndex = posts.firstIndex(where: { $0.id == postID }) else {
             return
         }

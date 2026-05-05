@@ -30,9 +30,29 @@ final class PostDetailScreenViewModel: ObservableObject {
     private var confirmedSaveCount: Int?
     private var prefetchedAvatarPaths: Set<String> = []
     private let avatarThumbnailMaxBytes: Int = 3 * 1024 * 1024
+    private let brandID: BrandID
+    private let seasonID: SeasonID
+    private let postID: PostID
+    private let useCase: any LoadPostDetailUseCaseProtocol
+    private let postUserStateRepository: any PostUserStateRepositoryProtocol
+    private let engagementRepository: any PostEngagementRepositoryProtocol
     private let authorProfileStore: CommentAuthorProfileStore
 
-    init(authorProfileStore: CommentAuthorProfileStore? = nil) {
+    init(
+        brandID: BrandID,
+        seasonID: SeasonID,
+        postID: PostID,
+        useCase: any LoadPostDetailUseCaseProtocol,
+        postUserStateRepository: any PostUserStateRepositoryProtocol,
+        engagementRepository: any PostEngagementRepositoryProtocol,
+        authorProfileStore: CommentAuthorProfileStore? = nil
+    ) {
+        self.brandID = brandID
+        self.seasonID = seasonID
+        self.postID = postID
+        self.useCase = useCase
+        self.postUserStateRepository = postUserStateRepository
+        self.engagementRepository = engagementRepository
         self.authorProfileStore = authorProfileStore ?? CommentAuthorProfileStore()
     }
 
@@ -40,39 +60,15 @@ final class PostDetailScreenViewModel: ObservableObject {
         isMutatingLike || isMutatingSave
     }
 
-    func loadIfNeeded(
-        brandID: BrandID,
-        seasonID: SeasonID,
-        postID: PostID,
-        useCase: any LoadPostDetailUseCaseProtocol,
-        postUserStateRepository: any PostUserStateRepositoryProtocol
-    ) async {
+    func loadIfNeeded() async {
         let key = "\(brandID.value)|\(seasonID.value)|\(postID.value)"
         guard loadedKey != key else { return }
-        await load(
-            brandID: brandID,
-            seasonID: seasonID,
-            postID: postID,
-            useCase: useCase,
-            postUserStateRepository: postUserStateRepository
-        )
+        await load()
     }
 
-    func refresh(
-        brandID: BrandID,
-        seasonID: SeasonID,
-        postID: PostID,
-        useCase: any LoadPostDetailUseCaseProtocol,
-        postUserStateRepository: any PostUserStateRepositoryProtocol
-    ) async {
+    func refresh() async {
         loadedKey = nil
-        await load(
-            brandID: brandID,
-            seasonID: seasonID,
-            postID: postID,
-            useCase: useCase,
-            postUserStateRepository: postUserStateRepository
-        )
+        await load()
     }
 
     func displayItem(for comment: Comment) -> CommentDisplayItem {
@@ -98,12 +94,7 @@ final class PostDetailScreenViewModel: ObservableObject {
         }
     }
 
-    func toggleLike(
-        brandID: BrandID,
-        seasonID: SeasonID,
-        postID: PostID,
-        repository: any PostEngagementRepositoryProtocol
-    ) async {
+    func toggleLike() async {
         guard let userID = currentUserID else {
             engagementErrorMessage = "로그인이 필요합니다."
             return
@@ -130,16 +121,11 @@ final class PostDetailScreenViewModel: ObservableObject {
             seasonID: seasonID,
             postID: postID,
             userID: userID,
-            repository: repository
+            repository: engagementRepository
         )
     }
 
-    func toggleSave(
-        brandID: BrandID,
-        seasonID: SeasonID,
-        postID: PostID,
-        repository: any PostEngagementRepositoryProtocol
-    ) async {
+    func toggleSave() async {
         guard let userID = currentUserID else {
             engagementErrorMessage = "로그인이 필요합니다."
             return
@@ -166,7 +152,7 @@ final class PostDetailScreenViewModel: ObservableObject {
             seasonID: seasonID,
             postID: postID,
             userID: userID,
-            repository: repository
+            repository: engagementRepository
         )
     }
 
@@ -183,13 +169,7 @@ final class PostDetailScreenViewModel: ObservableObject {
         self.post = post
     }
 
-    private func load(
-        brandID: BrandID,
-        seasonID: SeasonID,
-        postID: PostID,
-        useCase: any LoadPostDetailUseCaseProtocol,
-        postUserStateRepository: any PostUserStateRepositoryProtocol
-    ) async {
+    private func load() async {
         if isRequesting { return }
         isRequesting = true
         isLoading = true
