@@ -13,6 +13,7 @@ struct PostDetailView: View {
     let postID: PostID
 
     private let brandImageCache: any BrandImageCacheProtocol
+    private let coordinator: LookbookCoordinator
     private let commentsViewModelFactory: () -> PostCommentsViewModel
     private let repliesViewModelFactory: (Comment) -> PostCommentRepliesViewModel
 
@@ -26,6 +27,7 @@ struct PostDetailView: View {
         seasonID: SeasonID,
         postID: PostID,
         viewModel: PostDetailScreenViewModel,
+        coordinator: LookbookCoordinator,
         commentCoordinator: PostCommentCoordinator,
         brandImageCache: any BrandImageCacheProtocol,
         commentsViewModelFactory: @escaping () -> PostCommentsViewModel,
@@ -34,6 +36,7 @@ struct PostDetailView: View {
         self.brandID = brandID
         self.seasonID = seasonID
         self.postID = postID
+        self.coordinator = coordinator
         self.brandImageCache = brandImageCache
         self.commentsViewModelFactory = commentsViewModelFactory
         self.repliesViewModelFactory = repliesViewModelFactory
@@ -63,7 +66,7 @@ struct PostDetailView: View {
                                     }
                                 },
                                 onCommentTap: {
-                                    commentCoordinator.presentComments()
+                                    coordinator.presentComments(using: commentCoordinator)
                                 },
                                 onSaveTap: {
                                     Task {
@@ -118,9 +121,9 @@ struct PostDetailView: View {
             get: { commentCoordinator.isCommentSheetPresented },
             set: { isPresented in
                 if isPresented {
-                    commentCoordinator.presentComments()
+                    coordinator.presentComments(using: commentCoordinator)
                 } else {
-                    commentCoordinator.dismissComments()
+                    coordinator.dismissComments(using: commentCoordinator)
                 }
             }
         )
@@ -128,9 +131,9 @@ struct PostDetailView: View {
 
     @ViewBuilder
     private var commentsSheet: some View {
-        let sheet = PostCommentsSheetView(
+        let sheet = coordinator.makeCommentsSheet(
             viewModel: commentsViewModelFactory(),
-            coordinator: commentCoordinator,
+            commentCoordinator: commentCoordinator,
             repliesViewModelFactory: repliesViewModelFactory,
             onCommentSubmitted: { result in
                 viewModel.applyCommentMutation(result)
@@ -209,7 +212,7 @@ struct PostDetailView: View {
                     .font(.title3.weight(.bold))
                 Spacer()
                 Button {
-                    commentCoordinator.presentComments()
+                    coordinator.presentComments(using: commentCoordinator)
                 } label: {
                     Text("더 보기")
                         .font(.footnote.weight(.bold))
@@ -233,7 +236,7 @@ struct PostDetailView: View {
                             author: item.author,
                             badge: .representative,
                             onCardTap: {
-                                commentCoordinator.presentComments()
+                                coordinator.presentComments(using: commentCoordinator)
                             }
                         )
                         .onAppear {

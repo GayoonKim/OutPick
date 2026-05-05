@@ -17,11 +17,13 @@ enum LookbookCompositionRoot {
     /// 룩북 탭의 Root VC를 생성합니다.
     /// - Returns: UINavigationController(루트: UIHostingController)
     static func makeRoot(container: LookbookContainer) -> UIViewController {
+        let coordinator = LookbookCoordinator(container: container)
+
         // 한국어 주석: SwiftUI View 조립
         let lookbookView =
             LookbookHomeView(
                 viewModel: container.lookbookHomeViewModel,
-                container: container
+                coordinator: coordinator
             )
             .environment(\.repositoryProvider, container.provider)
             .environmentObject(container.brandAdminSessionStore)

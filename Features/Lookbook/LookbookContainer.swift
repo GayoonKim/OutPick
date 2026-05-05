@@ -61,23 +61,15 @@ final class LookbookContainer {
         Task { await lookbookHomeViewModel.loadInitialPageIfNeeded() }
     }
 
-    func makePostCommentCoordinator() -> PostCommentCoordinator {
-        PostCommentCoordinator()
-    }
-
-    func makeBrandDetailView(brand: Brand) -> BrandDetailView {
+    func makeBrandDetailView(
+        brand: Brand,
+        coordinator: LookbookCoordinator
+    ) -> BrandDetailView {
         BrandDetailView(
             brand: brand,
             viewModel: makeBrandDetailViewModel(),
             brandImageCache: provider.brandImageCache,
-            seasonDestination: { [self] season in
-                return AnyView(
-                    self.makeSeasonDetailView(
-                        brandID: season.brandID,
-                        seasonID: season.id
-                    )
-                )
-            },
+            coordinator: coordinator,
             seasonAdditionSheetFactory: { [self] onDismiss in
                 return AnyView(
                     self.makeSeasonAdditionSheet(
@@ -91,7 +83,8 @@ final class LookbookContainer {
 
     func makeSeasonDetailView(
         brandID: BrandID,
-        seasonID: SeasonID
+        seasonID: SeasonID,
+        coordinator: LookbookCoordinator
     ) -> SeasonDetailView {
         SeasonDetailView(
             brandID: brandID,
@@ -101,22 +94,15 @@ final class LookbookContainer {
                 seasonID: seasonID
             ),
             brandImageCache: provider.brandImageCache,
-            postDestination: { [self] post in
-                return AnyView(
-                    self.makePostDetailView(
-                        brandID: post.brandID,
-                        seasonID: post.seasonID,
-                        postID: post.id
-                    )
-                )
-            }
+            coordinator: coordinator
         )
     }
 
     func makePostDetailView(
         brandID: BrandID,
         seasonID: SeasonID,
-        postID: PostID
+        postID: PostID,
+        coordinator: LookbookCoordinator
     ) -> PostDetailView {
         PostDetailView(
             brandID: brandID,
@@ -127,7 +113,8 @@ final class LookbookContainer {
                 seasonID: seasonID,
                 postID: postID
             ),
-            commentCoordinator: makePostCommentCoordinator(),
+            coordinator: coordinator,
+            commentCoordinator: coordinator.makePostCommentCoordinator(),
             brandImageCache: provider.brandImageCache,
             commentsViewModelFactory: { [self] in
                 return self.makePostCommentsViewModel(
@@ -143,6 +130,18 @@ final class LookbookContainer {
                     postID: postID,
                     parentComment: parentComment
                 )
+            }
+        )
+    }
+
+    func makeCreateBrandFlow(
+        onCreatedBrand: @escaping (BrandID) -> Void
+    ) -> some View {
+        CreateBrandFlowView(
+            provider: provider,
+            onFinished: { createdBrandID in
+                guard let createdBrandID else { return }
+                onCreatedBrand(createdBrandID)
             }
         )
     }

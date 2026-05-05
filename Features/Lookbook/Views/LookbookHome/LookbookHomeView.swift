@@ -17,12 +17,12 @@ struct LookbookHomeView: View {
     @State private var isPresentingCreateBrand = false
     @State private var createdBrandIDForSelection: Brand.ID?
 
-    private let container: LookbookContainer
+    private let coordinator: LookbookCoordinator
 
     /// SceneDelegate/AppContainer에서 동일 인스턴스를 주입하면
     /// 룩북 탭 진입 시 “이미 로딩된 것처럼” 보이는 UX를 만들 수 있습니다.
-    init(viewModel: LookbookHomeViewModel, container: LookbookContainer) {
-        self.container = container
+    init(viewModel: LookbookHomeViewModel, coordinator: LookbookCoordinator) {
+        self.coordinator = coordinator
         _viewModel = StateObject(wrappedValue: viewModel)
     }
 
@@ -86,7 +86,7 @@ struct LookbookHomeView: View {
                                 }
 
                             NavigationLink(
-                                destination: container.makeBrandDetailView(brand: brand),
+                                destination: coordinator.makeBrandDetailView(brand: brand),
                                 tag: brand.id,
                                 selection: $selectedBrandID
                             ) {
@@ -138,7 +138,7 @@ struct LookbookHomeView: View {
 
     private var createBrandSheet: some View {
         NavigationView {
-            CreateBrandFlowView(provider: container.provider) { createdBrandID in
+            coordinator.makeCreateBrandFlow { createdBrandID in
                 createdBrandIDForSelection = createdBrandID
             }
         }
@@ -168,6 +168,7 @@ struct LookbookHomeView: View {
         provider: provider,
         brandAdminSessionStore: brandAdminSessionStore
     )
+    let coordinator = LookbookCoordinator(container: container)
     let vm = LookbookHomeViewModel(
         repo: provider.brandRepository,
         brandAdminSessionStore: brandAdminSessionStore,
@@ -175,6 +176,6 @@ struct LookbookHomeView: View {
         initialBrandLimit: 12,
         prefetchLogoCount: 4
     )
-    LookbookHomeView(viewModel: vm, container: container)
+    LookbookHomeView(viewModel: vm, coordinator: coordinator)
         .environmentObject(brandAdminSessionStore)
 }

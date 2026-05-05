@@ -11,7 +11,7 @@ struct BrandDetailView: View {
     let brand: Brand
     let brandImageCache: any BrandImageCacheProtocol
     let maxBytes: Int
-    let seasonDestination: (Season) -> AnyView
+    let coordinator: LookbookCoordinator
     let seasonAdditionSheetFactory: (@escaping () -> Void) -> AnyView
 
     @Environment(\.dismiss) private var dismiss
@@ -24,13 +24,13 @@ struct BrandDetailView: View {
         brand: Brand,
         viewModel: BrandDetailViewModel,
         brandImageCache: any BrandImageCacheProtocol,
-        seasonDestination: @escaping (Season) -> AnyView,
+        coordinator: LookbookCoordinator,
         seasonAdditionSheetFactory: @escaping (@escaping () -> Void) -> AnyView,
         maxBytes: Int = 1_000_000
     ) {
         self.brand = brand
         self.brandImageCache = brandImageCache
-        self.seasonDestination = seasonDestination
+        self.coordinator = coordinator
         self.seasonAdditionSheetFactory = seasonAdditionSheetFactory
         self.maxBytes = maxBytes
         _viewModel = StateObject(wrappedValue: viewModel)
@@ -57,7 +57,7 @@ struct BrandDetailView: View {
                         canManageBrand: brandAdminSessionStore.canWrite(brandID: brand.id),
                         brandImageCache: brandImageCache,
                         maxBytes: maxBytes,
-                        seasonDestination: seasonDestination,
+                        coordinator: coordinator,
                         onSeasonAppear: { season in
                             viewModel.seasonDidAppear(seasonID: season.id)
                         }

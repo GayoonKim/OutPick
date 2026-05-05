@@ -12,7 +12,7 @@ struct SeasonDetailView: View {
     let seasonID: SeasonID
 
     private let brandImageCache: any BrandImageCacheProtocol
-    private let postDestination: (LookbookPost) -> AnyView
+    private let coordinator: LookbookCoordinator
 
     @StateObject private var viewModel: SeasonDetailViewModel
     @State private var selectedPost: LookbookPost?
@@ -26,12 +26,12 @@ struct SeasonDetailView: View {
         seasonID: SeasonID,
         viewModel: SeasonDetailViewModel,
         brandImageCache: any BrandImageCacheProtocol,
-        postDestination: @escaping (LookbookPost) -> AnyView
+        coordinator: LookbookCoordinator
     ) {
         self.brandID = brandID
         self.seasonID = seasonID
         self.brandImageCache = brandImageCache
-        self.postDestination = postDestination
+        self.coordinator = coordinator
         _viewModel = StateObject(wrappedValue: viewModel)
     }
 
@@ -148,7 +148,7 @@ struct SeasonDetailView: View {
     @ViewBuilder
     private var selectedPostDestination: some View {
         if let selectedPost {
-            postDestination(selectedPost)
+            coordinator.makePostDetailView(post: selectedPost)
         } else {
             EmptyView()
         }
