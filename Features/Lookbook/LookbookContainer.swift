@@ -78,10 +78,10 @@ final class LookbookContainer {
                     )
                 )
             },
-            seasonCandidateSelectionFactory: { [self] createdBrand, onDismiss in
+            seasonAdditionSheetFactory: { [self] onDismiss in
                 return AnyView(
-                    self.makeSeasonCandidateSelectionView(
-                        createdBrand: createdBrand,
+                    self.makeSeasonAdditionSheet(
+                        brand: brand,
                         onDismiss: onDismiss
                     )
                 )
@@ -201,6 +201,32 @@ final class LookbookContainer {
             emptySelectionButtonTitle: "닫기",
             onComplete: onDismiss
         )
+    }
+
+    func makeSeasonAdditionSheet(
+        brand: Brand,
+        onDismiss: @escaping () -> Void
+    ) -> some View {
+        NavigationView {
+            makeSeasonCandidateSelectionView(
+                createdBrand: CreateBrandViewModel.CreatedBrand(
+                    id: brand.id,
+                    name: brand.name,
+                    websiteURL: brand.websiteURL,
+                    lookbookArchiveURL: brand.lookbookArchiveURL,
+                    hasLogoAsset: brand.logoThumbPath != nil
+                ),
+                onDismiss: onDismiss
+            )
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("닫기") {
+                        onDismiss()
+                    }
+                }
+            }
+        }
+        .navigationViewStyle(StackNavigationViewStyle())
     }
 
     func makePostCommentsViewModel(

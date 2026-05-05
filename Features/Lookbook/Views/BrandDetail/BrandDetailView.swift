@@ -8,22 +8,16 @@
 import SwiftUI
 
 struct BrandDetailView: View {
-    private enum SeasonCreationSheet: String, Identifiable {
-        case candidateSelection
-
-        var id: String { rawValue }
-    }
-
     let brand: Brand
     let brandImageCache: any BrandImageCacheProtocol
     let maxBytes: Int
     let seasonDestination: (Season) -> AnyView
-    let seasonCandidateSelectionFactory: (CreateBrandViewModel.CreatedBrand, @escaping () -> Void) -> AnyView
+    let seasonAdditionSheetFactory: (@escaping () -> Void) -> AnyView
 
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var brandAdminSessionStore: BrandAdminSessionStore
     @StateObject private var viewModel: BrandDetailViewModel
-    @State private var activeSeasonSheet: SeasonCreationSheet?
+    @State private var isPresentingSeasonAddition: Bool = false
     @State private var didPrepareInitialContent: Bool = false
 
     init(
@@ -31,13 +25,13 @@ struct BrandDetailView: View {
         viewModel: BrandDetailViewModel,
         brandImageCache: any BrandImageCacheProtocol,
         seasonDestination: @escaping (Season) -> AnyView,
-        seasonCandidateSelectionFactory: @escaping (CreateBrandViewModel.CreatedBrand, @escaping () -> Void) -> AnyView,
+        seasonAdditionSheetFactory: @escaping (@escaping () -> Void) -> AnyView,
         maxBytes: Int = 1_000_000
     ) {
         self.brand = brand
         self.brandImageCache = brandImageCache
         self.seasonDestination = seasonDestination
-        self.seasonCandidateSelectionFactory = seasonCandidateSelectionFactory
+        self.seasonAdditionSheetFactory = seasonAdditionSheetFactory
         self.maxBytes = maxBytes
         _viewModel = StateObject(wrappedValue: viewModel)
     }
@@ -91,7 +85,7 @@ struct BrandDetailView: View {
                 if brandAdminSessionStore.canWrite(brandID: brand.id),
                    hasLookbookArchiveURL {
                     Button {
-                        activeSeasonSheet = .candidateSelection
+                        isPresentingSeasonAddition = true
                     } label: {
                         Text("시즌 추가")
                             .foregroundStyle(.black)
@@ -100,32 +94,13 @@ struct BrandDetailView: View {
                 }
             }
         }
-        .sheet(item: $activeSeasonSheet, onDismiss: {
+        .sheet(isPresented: $isPresentingSeasonAddition, onDismiss: {
             Task {
                 await viewModel.refreshContents(brandID: brand.id)
             }
-        }) { sheet in
-            switch sheet {
-            case .candidateSelection:
-                NavigationView {
-                    seasonCandidateSelectionFactory(
-                        CreateBrandViewModel.CreatedBrand(
-                            id: brand.id,
-                            name: brand.name,
-                            websiteURL: brand.websiteURL,
-                            lookbookArchiveURL: brand.lookbookArchiveURL,
-                            hasLogoAsset: brand.logoThumbPath != nil
-                        ),
-                        { activeSeasonSheet = nil }
-                    )
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("닫기") {
-                                activeSeasonSheet = nil
-                            }
-                        }
-                    }
-                }
+        }) {
+            seasonAdditionSheetFactory {
+                isPresentingSeasonAddition = false
             }
         }
         .task {
