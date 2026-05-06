@@ -31,6 +31,8 @@ final class LookbookRepositoryProvider {
 
     let commentRepository: CommentRepositoryProtocol
     let commentWritingRepository: CommentWritingRepositoryProtocol
+    let commentSafetyRepository: CommentSafetyRepositoryProtocol
+    let userBlockRepository: UserBlockRepositoryProtocol
 
     let replacementRepository: ReplacementRepositoryProtocol
 
@@ -67,6 +69,8 @@ final class LookbookRepositoryProvider {
 
         commentRepository: CommentRepositoryProtocol = FirestoreCommentRepository(),
         commentWritingRepository: CommentWritingRepositoryProtocol = CloudFunctionsCommentWritingRepository(),
+        commentSafetyRepository: CommentSafetyRepositoryProtocol = CloudFunctionsCommentSafetyRepository(),
+        userBlockRepository: UserBlockRepositoryProtocol = CloudFunctionsUserBlockRepository(),
 
         replacementRepository: ReplacementRepositoryProtocol = FirestoreReplacementRepository(),
 
@@ -98,6 +102,8 @@ final class LookbookRepositoryProvider {
 
         self.commentRepository = commentRepository
         self.commentWritingRepository = commentWritingRepository
+        self.commentSafetyRepository = commentSafetyRepository
+        self.userBlockRepository = userBlockRepository
         self.replacementRepository = replacementRepository
         self.postUserStateRepository = postUserStateRepository
 

@@ -18,6 +18,10 @@ final class LookbookContainer {
     private let loadCommentRepliesUseCase: any LoadCommentRepliesUseCaseProtocol
     private let createPostCommentUseCase: any CreatePostCommentUseCaseProtocol
     private let createCommentReplyUseCase: any CreateCommentReplyUseCaseProtocol
+    private let reportCommentUseCase: any ReportCommentUseCaseProtocol
+    private let blockUserUseCase: any BlockUserUseCaseProtocol
+    private let loadBlockedUsersUseCase: any LoadBlockedUsersUseCaseProtocol
+    private let filterBlockedCommentAuthorsUseCase: FilterBlockedCommentAuthorsUseCase
     private let loadSeasonDetailUseCase: any LoadSeasonDetailUseCaseProtocol
     private let loadPostDetailUseCase: any LoadPostDetailUseCaseProtocol
 
@@ -39,6 +43,16 @@ final class LookbookContainer {
         self.createCommentReplyUseCase = CreateCommentReplyUseCase(
             repository: provider.commentWritingRepository
         )
+        self.reportCommentUseCase = ReportCommentUseCase(
+            repository: provider.commentSafetyRepository
+        )
+        self.blockUserUseCase = BlockUserUseCase(
+            repository: provider.userBlockRepository
+        )
+        self.loadBlockedUsersUseCase = LoadBlockedUsersUseCase(
+            repository: provider.userBlockRepository
+        )
+        self.filterBlockedCommentAuthorsUseCase = FilterBlockedCommentAuthorsUseCase()
         self.loadSeasonDetailUseCase = LoadSeasonDetailUseCase(
             seasonRepository: provider.seasonRepository,
             postRepository: provider.postRepository

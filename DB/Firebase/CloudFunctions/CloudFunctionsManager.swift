@@ -226,6 +226,54 @@ final class CloudFunctionsManager {
         return try commentMutationResult(response)
     }
 
+    func reportComment(
+        reporterUserID: String,
+        target: CommentReportTarget,
+        reason: CommentReportReason,
+        detail: String?
+    ) async throws -> CommentReport {
+        var data: [String: Any] = [
+            "reporterUserID": reporterUserID,
+            "targetType": target.targetType.rawValue,
+            "brandID": target.brandID.value,
+            "seasonID": target.seasonID.value,
+            "postID": target.postID.value,
+            "commentID": target.commentID.value,
+            "reason": reason.rawValue
+        ]
+        if let parentCommentID = target.parentCommentID?.value {
+            data["parentCommentID"] = parentCommentID
+        }
+        if let authorNicknameSnapshot = target.authorNicknameSnapshot {
+            data["targetAuthorNicknameSnapshot"] = authorNicknameSnapshot
+        }
+        if let detail {
+            data["detail"] = detail
+        }
+
+        let response = try await callFunction("reportComment", data: data)
+        return try commentReport(response)
+    }
+
+    func blockUser(
+        blockerUserID: String,
+        blockedUserID: String,
+        blockedUserNicknameSnapshot: String?,
+        source: UserBlockSource
+    ) async throws -> UserBlock {
+        var data: [String: Any] = [
+            "blockerUserID": blockerUserID,
+            "blockedUserID": blockedUserID,
+            "source": source.rawValue
+        ]
+        if let blockedUserNicknameSnapshot {
+            data["blockedUserNicknameSnapshot"] = blockedUserNicknameSnapshot
+        }
+
+        let response = try await callFunction("blockUser", data: data)
+        return try userBlock(response)
+    }
+
     func requestSeasonImport(
         brandID: String,
         seasonURL: String,
@@ -430,6 +478,16 @@ final class CloudFunctionsManager {
         return nil
     }
 
+    private func dateValue(_ dictionary: [String: Any], key: String) throws -> Date {
+        if let value = dictionary[key] as? TimeInterval {
+            return Date(timeIntervalSince1970: value / 1000)
+        }
+        if let value = dictionary[key] as? NSNumber {
+            return Date(timeIntervalSince1970: value.doubleValue / 1000)
+        }
+        throw CloudFunctionsManagerError.missingField(key)
+    }
+
     private func postMetricsValue(_ dictionary: [String: Any]) throws -> PostMetrics {
         PostMetrics(
             likeCount: try intValue(dictionary, key: "likeCount"),
@@ -453,6 +511,50 @@ final class CloudFunctionsManager {
                 .map { CommentID(value: $0) },
             commentCount: try intValue(dictionary, key: "commentCount"),
             replyCount: try intValue(dictionary, key: "replyCount")
+        )
+    }
+
+    private func commentReport(
+        _ dictionary: [String: Any]
+    ) throws -> CommentReport {
+        let target = CommentReportTarget(
+            targetType: CommentSafetyTargetType(
+                rawValue: try stringValue(dictionary, key: "targetType")
+            ) ?? .comment,
+            brandID: BrandID(value: try stringValue(dictionary, key: "brandID")),
+            seasonID: SeasonID(value: try stringValue(dictionary, key: "seasonID")),
+            postID: PostID(value: try stringValue(dictionary, key: "postID")),
+            commentID: CommentID(value: try stringValue(dictionary, key: "targetCommentID")),
+            parentCommentID: optionalStringValue(dictionary, key: "parentCommentID")
+                .map { CommentID(value: $0) },
+            authorID: UserID(value: try stringValue(dictionary, key: "targetAuthorID")),
+            contentSnapshot: try stringValue(dictionary, key: "targetContentSnapshot"),
+            authorNicknameSnapshot: optionalStringValue(dictionary, key: "targetAuthorNicknameSnapshot")
+        )
+
+        return CommentReport(
+            id: CommentReportID(value: try stringValue(dictionary, key: "reportID")),
+            reporterUserID: UserID(value: try stringValue(dictionary, key: "reporterUserID")),
+            target: target,
+            reason: CommentReportReason(rawValue: try stringValue(dictionary, key: "reason")) ?? .other,
+            detail: optionalStringValue(dictionary, key: "detail"),
+            status: CommentReportStatus(rawValue: try stringValue(dictionary, key: "status")) ?? .pending,
+            createdAt: try dateValue(dictionary, key: "createdAtMillis")
+        )
+    }
+
+    private func userBlock(
+        _ dictionary: [String: Any]
+    ) throws -> UserBlock {
+        UserBlock(
+            blockerUserID: UserID(value: try stringValue(dictionary, key: "blockerUserID")),
+            blockedUserID: UserID(value: try stringValue(dictionary, key: "blockedUserID")),
+            blockedUserNicknameSnapshot: optionalStringValue(
+                dictionary,
+                key: "blockedUserNicknameSnapshot"
+            ),
+            source: UserBlockSource(rawValue: try stringValue(dictionary, key: "source")) ?? .profile,
+            createdAt: try dateValue(dictionary, key: "createdAtMillis")
         )
     }
 
