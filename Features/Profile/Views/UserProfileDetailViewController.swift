@@ -199,6 +199,7 @@ final class UserProfileDetailViewController: UIViewController, ChatModalAnimatab
         }
 
         loadAvatarIfNeeded(source: state.avatarSource)
+        actionStack.isHidden = state.isCurrentUser
     }
 
     private func loadAvatarIfNeeded(source: AvatarImageSource) {

@@ -23,6 +23,8 @@ enum UserProfileDetailCompositionRoot {
             lookupKey: .email(email),
             seedNickname: seedNickname,
             seedAvatarSource: AvatarImageSource(seedPath: seedAvatarPath),
+            currentUserID: LoginManager.shared.getUserDocumentID,
+            currentUserEmail: LoginManager.shared.getUserEmail,
             loadUserProfileDetailUseCase: useCase,
             onBack: onBack
         )
@@ -50,6 +52,8 @@ enum UserProfileDetailCompositionRoot {
             lookupKey: .userID(userID),
             seedNickname: seedNickname,
             seedAvatarSource: AvatarImageSource(seedPath: seedAvatarPath),
+            currentUserID: LoginManager.shared.getUserDocumentID,
+            currentUserEmail: LoginManager.shared.getUserEmail,
             loadUserProfileDetailUseCase: useCase,
             onBack: onBack
         )

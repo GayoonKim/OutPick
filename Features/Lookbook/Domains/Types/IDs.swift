@@ -13,5 +13,6 @@ struct SeasonID: Hashable, Codable { let value: String }
 struct PostID: Hashable, Codable { let value: String }
 struct TagID: Hashable, Codable { let value: String }
 struct CommentID: Hashable, Codable { let value: String }
+struct CommentReportID: Hashable, Codable { let value: String }
 struct ReplacementID: Hashable, Codable { let value: String }
 struct UserID: Hashable, Codable { let value: String }
