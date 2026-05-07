@@ -10,9 +10,9 @@ import Foundation
 struct FilterBlockedCommentAuthorsUseCase {
     func execute(
         comments: [Comment],
-        blockedUserIDs: Set<UserID>
+        hiddenUserIDs: Set<UserID>
     ) -> [Comment] {
-        guard blockedUserIDs.isEmpty == false else { return comments }
-        return comments.filter { blockedUserIDs.contains($0.userID) == false }
+        guard hiddenUserIDs.isEmpty == false else { return comments }
+        return comments.filter { hiddenUserIDs.contains($0.userID) == false }
     }
 }

@@ -26,3 +26,23 @@ final class LoadBlockedUsersUseCase: LoadBlockedUsersUseCaseProtocol {
         try await repository.fetchBlockedUserIDs(blockerUserID: blockerUserID)
     }
 }
+
+protocol LoadHiddenCommentUserIDsUseCaseProtocol {
+    func execute(
+        currentUserID: UserID
+    ) async throws -> Set<UserID>
+}
+
+final class LoadHiddenCommentUserIDsUseCase: LoadHiddenCommentUserIDsUseCaseProtocol {
+    private let repository: any UserBlockRepositoryProtocol
+
+    init(repository: any UserBlockRepositoryProtocol) {
+        self.repository = repository
+    }
+
+    func execute(
+        currentUserID: UserID
+    ) async throws -> Set<UserID> {
+        try await repository.fetchBlockedUserIDs(blockerUserID: currentUserID)
+    }
+}

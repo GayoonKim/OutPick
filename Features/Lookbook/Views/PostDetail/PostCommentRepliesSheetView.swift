@@ -17,7 +17,7 @@ struct PostCommentRepliesSheetView: View {
     @State private var pendingBlockItem: CommentDisplayItem?
     @State private var isConfirmingDelete: Bool = false
     @State private var isSelectingReportReason: Bool = false
-    @State private var isConfirmingBlock: Bool = false
+    @State private var isPresentingBlockSheet: Bool = false
     private let onReplySubmitted: (CommentMutationResult) -> Void
     private let onCommentDeleted: (CommentDeletionResult) -> Void
 
@@ -93,27 +93,8 @@ struct PostCommentRepliesSheetView: View {
                 pendingReportItem = nil
             }
         }
-        .confirmationDialog(
-            "이 사용자를 차단할까요?",
-            isPresented: $isConfirmingBlock,
-            titleVisibility: .visible
-        ) {
-            Button("차단", role: .destructive) {
-                guard let pendingBlockItem else { return }
-                Task {
-                    await viewModel.blockAuthor(
-                        of: pendingBlockItem.comment,
-                        author: pendingBlockItem.author
-                    )
-                    if pendingBlockItem.comment.id == viewModel.parentComment.id {
-                        dismiss()
-                    }
-                    self.pendingBlockItem = nil
-                }
-            }
-            Button("취소", role: .cancel) {
-                pendingBlockItem = nil
-            }
+        .sheet(isPresented: blockSheetBinding) {
+            blockConfirmationSheet
         }
         .alert(
             "작업을 완료하지 못했습니다.",
@@ -267,7 +248,55 @@ struct PostCommentRepliesSheetView: View {
 
         return {
             pendingBlockItem = item
-            isConfirmingBlock = true
+            isPresentingBlockSheet = true
+        }
+    }
+
+    private var blockSheetBinding: Binding<Bool> {
+        Binding(
+            get: { isPresentingBlockSheet && pendingBlockItem != nil },
+            set: { isPresented in
+                isPresentingBlockSheet = isPresented
+                if isPresented == false {
+                    pendingBlockItem = nil
+                }
+            }
+        )
+    }
+
+    @ViewBuilder
+    private var blockConfirmationSheet: some View {
+        if let pendingBlockItem {
+            let sheet = CommentBlockConfirmationSheetView(
+                author: pendingBlockItem.author,
+                isBlocking: viewModel.isPerformingCommentAction,
+                onCancel: {
+                    isPresentingBlockSheet = false
+                    self.pendingBlockItem = nil
+                },
+                onConfirm: {
+                    Task {
+                        await viewModel.blockAuthor(
+                            of: pendingBlockItem.comment,
+                            author: pendingBlockItem.author
+                        )
+                        isPresentingBlockSheet = false
+                        if pendingBlockItem.comment.id == viewModel.parentComment.id {
+                            dismiss()
+                        }
+                        self.pendingBlockItem = nil
+                    }
+                }
+            )
+            if #available(iOS 16.0, *) {
+                sheet
+                    .presentationDetents([.height(360)])
+                    .presentationDragIndicator(.visible)
+            } else {
+                sheet
+            }
+        } else {
+            EmptyView()
         }
     }
 
