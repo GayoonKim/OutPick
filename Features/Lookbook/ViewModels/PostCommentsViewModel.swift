@@ -31,6 +31,8 @@ final class PostCommentsViewModel: ObservableObject {
     private let deleteUseCase: any DeleteCommentUseCaseProtocol
     private let reportUseCase: any ReportCommentUseCaseProtocol
     private let blockUseCase: any BlockUserUseCaseProtocol
+    private let loadHiddenUserIDsUseCase: any LoadHiddenCommentUserIDsUseCaseProtocol
+    private let filterHiddenAuthorsUseCase: FilterHiddenCommentAuthorsUseCase
     private let authorProfileStore: CommentAuthorProfileStore
     private let avatarImageManager: ChatAvatarImageManaging
     private let pageSize: Int
@@ -41,6 +43,8 @@ final class PostCommentsViewModel: ObservableObject {
     private var loadedKey: String?
     private var isRequestingPage: Bool = false
     private var prefetchedAvatarPaths: Set<String> = []
+    private var hiddenUserIDs: Set<UserID> = []
+    private var didLoadHiddenUserIDs: Bool = false
 
     var hasMoreRootComments: Bool {
         nextCursor != nil
@@ -60,6 +64,8 @@ final class PostCommentsViewModel: ObservableObject {
         deleteUseCase: any DeleteCommentUseCaseProtocol,
         reportUseCase: any ReportCommentUseCaseProtocol,
         blockUseCase: any BlockUserUseCaseProtocol,
+        loadHiddenUserIDsUseCase: any LoadHiddenCommentUserIDsUseCaseProtocol,
+        filterHiddenAuthorsUseCase: FilterHiddenCommentAuthorsUseCase,
         authorProfileStore: CommentAuthorProfileStore? = nil,
         avatarImageManager: ChatAvatarImageManaging = AvatarImageService.shared,
         initialSort: CommentSortOption = .latest,
@@ -75,6 +81,8 @@ final class PostCommentsViewModel: ObservableObject {
         self.deleteUseCase = deleteUseCase
         self.reportUseCase = reportUseCase
         self.blockUseCase = blockUseCase
+        self.loadHiddenUserIDsUseCase = loadHiddenUserIDsUseCase
+        self.filterHiddenAuthorsUseCase = filterHiddenAuthorsUseCase
         self.authorProfileStore = authorProfileStore ?? CommentAuthorProfileStore()
         self.avatarImageManager = avatarImageManager
         self.selectedSort = initialSort
@@ -91,6 +99,7 @@ final class PostCommentsViewModel: ObservableObject {
 
     func refresh() async {
         loadedKey = nil
+        didLoadHiddenUserIDs = false
         await loadPage(reset: true)
     }
 
@@ -204,6 +213,8 @@ final class PostCommentsViewModel: ObservableObject {
                 blockedUserNicknameSnapshot: author.nickname,
                 source: comment.parentCommentID == nil ? .comment : .reply
             )
+            hiddenUserIDs.insert(comment.userID)
+            didLoadHiddenUserIDs = true
             removeComments(by: comment.userID)
             return block
         } catch {
@@ -286,6 +297,7 @@ final class PostCommentsViewModel: ObservableObject {
         }
 
         do {
+            let currentHiddenUserIDs = await loadHiddenUserIDsIfNeeded(force: reset)
             if reset {
                 let content = try await useCase.execute(
                     brandID: brandID,
@@ -294,10 +306,13 @@ final class PostCommentsViewModel: ObservableObject {
                     sort: selectedSort,
                     page: PageRequest(size: pageSize, cursor: nil)
                 )
-                pinnedComments = content.pinnedComments
-                representativeComment = content.representativeComment
+                pinnedComments = filterHiddenAuthors(content.pinnedComments, hiddenUserIDs: currentHiddenUserIDs)
+                representativeComment = visibleComment(
+                    content.representativeComment,
+                    hiddenUserIDs: currentHiddenUserIDs
+                )
                 nextCursor = content.rootComments.nextCursor
-                rootComments = content.rootComments.items
+                rootComments = filterHiddenAuthors(content.rootComments.items, hiddenUserIDs: currentHiddenUserIDs)
                 loadedKey = stateKey(sort: selectedSort)
                 await authorProfileStore.loadMissingAuthors(for: commentFeedComments)
                 syncAuthorDisplays()
@@ -310,7 +325,10 @@ final class PostCommentsViewModel: ObservableObject {
                     page: PageRequest(size: pageSize, cursor: nextCursor)
                 )
                 let excludedIDs = duplicateExcludedIDs()
-                let visibleItems = page.items.filter {
+                let visibleItems = filterHiddenAuthors(
+                    page.items,
+                    hiddenUserIDs: currentHiddenUserIDs
+                ).filter {
                     excludedIDs.contains($0.id) == false
                 }
                 nextCursor = page.nextCursor
@@ -341,6 +359,47 @@ final class PostCommentsViewModel: ObservableObject {
             representativeComment = nil
         }
         rootComments.removeAll { $0.userID == userID }
+    }
+
+    private func loadHiddenUserIDsIfNeeded(force: Bool) async -> Set<UserID> {
+        if force {
+            didLoadHiddenUserIDs = false
+        }
+
+        guard didLoadHiddenUserIDs == false else {
+            return hiddenUserIDs
+        }
+        guard let currentUserID else {
+            hiddenUserIDs = []
+            didLoadHiddenUserIDs = true
+            return []
+        }
+
+        do {
+            hiddenUserIDs = try await loadHiddenUserIDsUseCase.execute(currentUserID: currentUserID)
+        } catch {
+            hiddenUserIDs = []
+        }
+        didLoadHiddenUserIDs = true
+        return hiddenUserIDs
+    }
+
+    private func filterHiddenAuthors(
+        _ comments: [Comment],
+        hiddenUserIDs: Set<UserID>
+    ) -> [Comment] {
+        filterHiddenAuthorsUseCase.execute(
+            comments: comments,
+            hiddenUserIDs: hiddenUserIDs
+        )
+    }
+
+    private func visibleComment(
+        _ comment: Comment?,
+        hiddenUserIDs: Set<UserID>
+    ) -> Comment? {
+        guard let comment else { return nil }
+        return hiddenUserIDs.contains(comment.userID) ? nil : comment
     }
 
     private func reportTarget(

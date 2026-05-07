@@ -1,5 +1,5 @@
 //
-//  FilterBlockedCommentAuthorsUseCase.swift
+//  FilterHiddenCommentAuthorsUseCase.swift
 //  OutPick
 //
 //  Created by Codex on 5/6/26.
@@ -7,7 +7,7 @@
 
 import Foundation
 
-struct FilterBlockedCommentAuthorsUseCase {
+struct FilterHiddenCommentAuthorsUseCase {
     func execute(
         comments: [Comment],
         hiddenUserIDs: Set<UserID>

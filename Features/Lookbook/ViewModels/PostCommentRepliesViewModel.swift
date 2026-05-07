@@ -21,6 +21,7 @@ final class PostCommentRepliesViewModel: ObservableObject {
     @Published var draftMessage: String = ""
 
     @Published private(set) var parentComment: Comment
+    @Published private(set) var isParentCommentHidden: Bool = false
 
     private let brandID: BrandID
     private let seasonID: SeasonID
@@ -30,6 +31,8 @@ final class PostCommentRepliesViewModel: ObservableObject {
     private let deleteUseCase: any DeleteCommentUseCaseProtocol
     private let reportUseCase: any ReportCommentUseCaseProtocol
     private let blockUseCase: any BlockUserUseCaseProtocol
+    private let loadHiddenUserIDsUseCase: any LoadHiddenCommentUserIDsUseCaseProtocol
+    private let filterHiddenAuthorsUseCase: FilterHiddenCommentAuthorsUseCase
     private let authorProfileStore: CommentAuthorProfileStore
     private let avatarImageManager: ChatAvatarImageManaging
     private let pageSize: Int
@@ -40,6 +43,8 @@ final class PostCommentRepliesViewModel: ObservableObject {
     private var loadedKey: String?
     private var isRequestingPage: Bool = false
     private var prefetchedAvatarPaths: Set<String> = []
+    private var hiddenUserIDs: Set<UserID> = []
+    private var didLoadHiddenUserIDs: Bool = false
 
     var hasMoreReplies: Bool {
         nextCursor != nil
@@ -47,7 +52,8 @@ final class PostCommentRepliesViewModel: ObservableObject {
 
     var canSubmitReply: Bool {
         draftMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false &&
-            isSubmittingReply == false
+            isSubmittingReply == false &&
+            isParentCommentHidden == false
     }
 
     var currentBrandID: BrandID {
@@ -64,6 +70,8 @@ final class PostCommentRepliesViewModel: ObservableObject {
         deleteUseCase: any DeleteCommentUseCaseProtocol,
         reportUseCase: any ReportCommentUseCaseProtocol,
         blockUseCase: any BlockUserUseCaseProtocol,
+        loadHiddenUserIDsUseCase: any LoadHiddenCommentUserIDsUseCaseProtocol,
+        filterHiddenAuthorsUseCase: FilterHiddenCommentAuthorsUseCase,
         authorProfileStore: CommentAuthorProfileStore? = nil,
         avatarImageManager: ChatAvatarImageManaging = AvatarImageService.shared,
         pageSize: Int = 30,
@@ -79,6 +87,8 @@ final class PostCommentRepliesViewModel: ObservableObject {
         self.deleteUseCase = deleteUseCase
         self.reportUseCase = reportUseCase
         self.blockUseCase = blockUseCase
+        self.loadHiddenUserIDsUseCase = loadHiddenUserIDsUseCase
+        self.filterHiddenAuthorsUseCase = filterHiddenAuthorsUseCase
         self.authorProfileStore = authorProfileStore ?? CommentAuthorProfileStore()
         self.avatarImageManager = avatarImageManager
         self.pageSize = pageSize
@@ -94,6 +104,7 @@ final class PostCommentRepliesViewModel: ObservableObject {
 
     func refresh() async {
         loadedKey = nil
+        didLoadHiddenUserIDs = false
         await loadPage(reset: true)
     }
 
@@ -200,6 +211,8 @@ final class PostCommentRepliesViewModel: ObservableObject {
                 blockedUserNicknameSnapshot: author.nickname,
                 source: comment.parentCommentID == nil ? .comment : .reply
             )
+            hiddenUserIDs.insert(comment.userID)
+            didLoadHiddenUserIDs = true
             removeComments(by: comment.userID)
             return block
         } catch {
@@ -284,7 +297,12 @@ final class PostCommentRepliesViewModel: ObservableObject {
         }
 
         do {
-            await authorProfileStore.loadMissingAuthors(for: [parentComment])
+            let currentHiddenUserIDs = await loadHiddenUserIDsIfNeeded(force: reset)
+            isParentCommentHidden = currentHiddenUserIDs.contains(parentComment.userID)
+
+            if isParentCommentHidden == false {
+                await authorProfileStore.loadMissingAuthors(for: [parentComment])
+            }
             syncAuthorDisplays()
             let page = try await useCase.execute(
                 brandID: brandID,
@@ -298,13 +316,17 @@ final class PostCommentRepliesViewModel: ObservableObject {
             )
 
             nextCursor = page.nextCursor
+            let visibleItems = isParentCommentHidden ? [] : filterHiddenAuthors(
+                page.items,
+                hiddenUserIDs: currentHiddenUserIDs
+            )
             if reset {
-                replies = page.items
+                replies = visibleItems
                 loadedKey = stateKey()
             } else {
-                replies.append(contentsOf: page.items)
+                replies.append(contentsOf: visibleItems)
             }
-            await authorProfileStore.loadMissingAuthors(for: page.items)
+            await authorProfileStore.loadMissingAuthors(for: visibleItems)
             syncAuthorDisplays()
         } catch {
             errorMessage = "답글을 불러오지 못했습니다."
@@ -325,7 +347,43 @@ final class PostCommentRepliesViewModel: ObservableObject {
     }
 
     private func removeComments(by userID: UserID) {
+        if parentComment.userID == userID {
+            isParentCommentHidden = true
+        }
         replies.removeAll { $0.userID == userID }
+    }
+
+    private func loadHiddenUserIDsIfNeeded(force: Bool) async -> Set<UserID> {
+        if force {
+            didLoadHiddenUserIDs = false
+        }
+
+        guard didLoadHiddenUserIDs == false else {
+            return hiddenUserIDs
+        }
+        guard let currentUserID else {
+            hiddenUserIDs = []
+            didLoadHiddenUserIDs = true
+            return []
+        }
+
+        do {
+            hiddenUserIDs = try await loadHiddenUserIDsUseCase.execute(currentUserID: currentUserID)
+        } catch {
+            hiddenUserIDs = []
+        }
+        didLoadHiddenUserIDs = true
+        return hiddenUserIDs
+    }
+
+    private func filterHiddenAuthors(
+        _ comments: [Comment],
+        hiddenUserIDs: Set<UserID>
+    ) -> [Comment] {
+        filterHiddenAuthorsUseCase.execute(
+            comments: comments,
+            hiddenUserIDs: hiddenUserIDs
+        )
     }
 
     private func reportTarget(

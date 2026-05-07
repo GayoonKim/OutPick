@@ -117,25 +117,40 @@ struct PostCommentRepliesSheetView: View {
     private var parentCommentSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             sectionTitle("원댓글")
-            let item = viewModel.displayItem(for: viewModel.parentComment)
-            PostCommentCardView(
-                comment: item.comment,
-                author: item.author,
-                badgeTitle: "원댓글",
-                onProfileTap: {
-                    profileAuthor = item.author
-                },
-                onDeleteTap: deleteAction(for: item),
-                onReportTap: reportAction(for: item),
-                onBlockTap: blockAction(for: item)
-            )
-            .onAppear {
-                viewModel.prefetchAuthorAvatars(around: item.id)
+            if viewModel.isParentCommentHidden {
+                hiddenParentCommentView
+            } else {
+                let item = viewModel.displayItem(for: viewModel.parentComment)
+                PostCommentCardView(
+                    comment: item.comment,
+                    author: item.author,
+                    badgeTitle: "원댓글",
+                    onProfileTap: {
+                        profileAuthor = item.author
+                    },
+                    onDeleteTap: deleteAction(for: item),
+                    onReportTap: reportAction(for: item),
+                    onBlockTap: blockAction(for: item)
+                )
+                .onAppear {
+                    viewModel.prefetchAuthorAvatars(around: item.id)
+                }
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
         .background(Color.white.opacity(0.72))
+    }
+
+    private var hiddenParentCommentView: some View {
+        Text("차단한 사용자의 댓글입니다.")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, minHeight: 72, alignment: .center)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 16)
+            .background(Color.white.opacity(0.94))
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
     private var repliesContent: some View {

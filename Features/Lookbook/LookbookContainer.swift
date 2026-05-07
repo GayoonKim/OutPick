@@ -21,8 +21,8 @@ final class LookbookContainer {
     private let deleteCommentUseCase: any DeleteCommentUseCaseProtocol
     private let reportCommentUseCase: any ReportCommentUseCaseProtocol
     private let blockUserUseCase: any BlockUserUseCaseProtocol
-    private let loadBlockedUsersUseCase: any LoadBlockedUsersUseCaseProtocol
-    private let filterBlockedCommentAuthorsUseCase: FilterBlockedCommentAuthorsUseCase
+    private let loadHiddenCommentUserIDsUseCase: any LoadHiddenCommentUserIDsUseCaseProtocol
+    private let filterHiddenCommentAuthorsUseCase: FilterHiddenCommentAuthorsUseCase
     private let loadSeasonDetailUseCase: any LoadSeasonDetailUseCaseProtocol
     private let loadPostDetailUseCase: any LoadPostDetailUseCaseProtocol
 
@@ -53,10 +53,10 @@ final class LookbookContainer {
         self.blockUserUseCase = BlockUserUseCase(
             repository: provider.userBlockRepository
         )
-        self.loadBlockedUsersUseCase = LoadBlockedUsersUseCase(
+        self.loadHiddenCommentUserIDsUseCase = LoadHiddenCommentUserIDsUseCase(
             repository: provider.userBlockRepository
         )
-        self.filterBlockedCommentAuthorsUseCase = FilterBlockedCommentAuthorsUseCase()
+        self.filterHiddenCommentAuthorsUseCase = FilterHiddenCommentAuthorsUseCase()
         self.loadSeasonDetailUseCase = LoadSeasonDetailUseCase(
             seasonRepository: provider.seasonRepository,
             postRepository: provider.postRepository
@@ -244,7 +244,9 @@ final class LookbookContainer {
             createUseCase: createPostCommentUseCase,
             deleteUseCase: deleteCommentUseCase,
             reportUseCase: reportCommentUseCase,
-            blockUseCase: blockUserUseCase
+            blockUseCase: blockUserUseCase,
+            loadHiddenUserIDsUseCase: loadHiddenCommentUserIDsUseCase,
+            filterHiddenAuthorsUseCase: filterHiddenCommentAuthorsUseCase
         )
     }
 
@@ -308,7 +310,9 @@ final class LookbookContainer {
             createUseCase: createCommentReplyUseCase,
             deleteUseCase: deleteCommentUseCase,
             reportUseCase: reportCommentUseCase,
-            blockUseCase: blockUserUseCase
+            blockUseCase: blockUserUseCase,
+            loadHiddenUserIDsUseCase: loadHiddenCommentUserIDsUseCase,
+            filterHiddenAuthorsUseCase: filterHiddenCommentAuthorsUseCase
         )
     }
 }
