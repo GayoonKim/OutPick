@@ -17,8 +17,10 @@ final class PostCommentsViewModel: ObservableObject {
     @Published private(set) var isLoading: Bool = false
     @Published private(set) var isLoadingMore: Bool = false
     @Published private(set) var isSubmittingComment: Bool = false
+    @Published private(set) var isPerformingCommentAction: Bool = false
     @Published private(set) var errorMessage: String?
     @Published private(set) var submissionErrorMessage: String?
+    @Published private(set) var actionErrorMessage: String?
     @Published var draftMessage: String = ""
 
     private let brandID: BrandID
@@ -26,6 +28,9 @@ final class PostCommentsViewModel: ObservableObject {
     private let postID: PostID
     private let useCase: any LoadPostCommentsUseCaseProtocol
     private let createUseCase: any CreatePostCommentUseCaseProtocol
+    private let deleteUseCase: any DeleteCommentUseCaseProtocol
+    private let reportUseCase: any ReportCommentUseCaseProtocol
+    private let blockUseCase: any BlockUserUseCaseProtocol
     private let authorProfileStore: CommentAuthorProfileStore
     private let avatarImageManager: ChatAvatarImageManaging
     private let pageSize: Int
@@ -52,6 +57,9 @@ final class PostCommentsViewModel: ObservableObject {
         postID: PostID,
         useCase: any LoadPostCommentsUseCaseProtocol,
         createUseCase: any CreatePostCommentUseCaseProtocol,
+        deleteUseCase: any DeleteCommentUseCaseProtocol,
+        reportUseCase: any ReportCommentUseCaseProtocol,
+        blockUseCase: any BlockUserUseCaseProtocol,
         authorProfileStore: CommentAuthorProfileStore? = nil,
         avatarImageManager: ChatAvatarImageManaging = AvatarImageService.shared,
         initialSort: CommentSortOption = .latest,
@@ -64,6 +72,9 @@ final class PostCommentsViewModel: ObservableObject {
         self.postID = postID
         self.useCase = useCase
         self.createUseCase = createUseCase
+        self.deleteUseCase = deleteUseCase
+        self.reportUseCase = reportUseCase
+        self.blockUseCase = blockUseCase
         self.authorProfileStore = authorProfileStore ?? CommentAuthorProfileStore()
         self.avatarImageManager = avatarImageManager
         self.selectedSort = initialSort
@@ -97,6 +108,107 @@ final class PostCommentsViewModel: ObservableObject {
 
     func displayItem(for comment: Comment) -> CommentDisplayItem {
         authorProfileStore.displayItem(for: comment)
+    }
+
+    func clearActionError() {
+        actionErrorMessage = nil
+    }
+
+    func canDelete(_ comment: Comment, isBrandWritable: Bool) -> Bool {
+        isCurrentUser(comment.userID) || isBrandWritable
+    }
+
+    func canReportOrBlock(_ comment: Comment) -> Bool {
+        isCurrentUser(comment.userID) == false
+    }
+
+    @discardableResult
+    func deleteComment(_ comment: Comment) async -> CommentDeletionResult? {
+        guard isPerformingCommentAction == false else { return nil }
+
+        isPerformingCommentAction = true
+        actionErrorMessage = nil
+        defer {
+            isPerformingCommentAction = false
+        }
+
+        do {
+            let result = try await deleteUseCase.execute(
+                brandID: brandID,
+                seasonID: seasonID,
+                postID: postID,
+                commentID: comment.id,
+                reason: nil
+            )
+            applyDeletion(result)
+            return result
+        } catch {
+            actionErrorMessage = "댓글을 삭제하지 못했습니다."
+            return nil
+        }
+    }
+
+    @discardableResult
+    func reportComment(
+        _ comment: Comment,
+        author: CommentAuthorDisplay,
+        reason: CommentReportReason
+    ) async -> CommentReport? {
+        guard isPerformingCommentAction == false,
+              let reporterUserID = currentUserID,
+              canReportOrBlock(comment) else {
+            return nil
+        }
+
+        isPerformingCommentAction = true
+        actionErrorMessage = nil
+        defer {
+            isPerformingCommentAction = false
+        }
+
+        do {
+            return try await reportUseCase.execute(
+                reporterUserID: reporterUserID,
+                target: reportTarget(for: comment, author: author),
+                reason: reason,
+                detail: nil
+            )
+        } catch {
+            actionErrorMessage = "댓글을 신고하지 못했습니다."
+            return nil
+        }
+    }
+
+    @discardableResult
+    func blockAuthor(
+        of comment: Comment,
+        author: CommentAuthorDisplay
+    ) async -> UserBlock? {
+        guard isPerformingCommentAction == false,
+              let blockerUserID = currentUserID,
+              canReportOrBlock(comment) else {
+            return nil
+        }
+
+        isPerformingCommentAction = true
+        actionErrorMessage = nil
+        defer {
+            isPerformingCommentAction = false
+        }
+
+        do {
+            let block = try await blockUseCase.execute(
+                blockerUserID: blockerUserID,
+                blockedUserID: comment.userID,
+                blockedUserNicknameSnapshot: author.nickname,
+                source: comment.parentCommentID == nil ? .comment : .reply
+            )
+            removeComments(by: comment.userID)
+            return block
+        } catch {
+            actionErrorMessage = "사용자를 차단하지 못했습니다."
+            return nil
+        }
     }
 
     func prefetchAuthorAvatars(around commentID: CommentID) {
@@ -212,6 +324,50 @@ final class PostCommentsViewModel: ObservableObject {
 
     private func syncAuthorDisplays() {
         authorDisplays = authorProfileStore.authorDisplays
+    }
+
+    private func applyDeletion(_ result: CommentDeletionResult) {
+        pinnedComments.removeAll { $0.id == result.commentID }
+        if representativeComment?.id == result.commentID {
+            representativeComment = nil
+        }
+        rootComments.removeAll { $0.id == result.commentID }
+    }
+
+    private func removeComments(by userID: UserID) {
+        pinnedComments.removeAll { $0.userID == userID }
+        if representativeComment?.userID == userID {
+            representativeComment = nil
+        }
+        rootComments.removeAll { $0.userID == userID }
+    }
+
+    private func reportTarget(
+        for comment: Comment,
+        author: CommentAuthorDisplay
+    ) -> CommentReportTarget {
+        CommentReportTarget(
+            targetType: comment.parentCommentID == nil ? .comment : .reply,
+            brandID: brandID,
+            seasonID: seasonID,
+            postID: postID,
+            commentID: comment.id,
+            parentCommentID: comment.parentCommentID,
+            authorID: comment.userID,
+            contentSnapshot: comment.message,
+            authorNicknameSnapshot: author.nickname
+        )
+    }
+
+    private func isCurrentUser(_ userID: UserID) -> Bool {
+        currentUserID == userID
+    }
+
+    private var currentUserID: UserID? {
+        let identityKey = LoginManager.shared.getAuthIdentityKey
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard identityKey.isEmpty == false else { return nil }
+        return UserID(value: identityKey)
     }
 
     private func duplicateExcludedIDs() -> Set<CommentID> {

@@ -128,6 +128,9 @@ struct PostDetailView: View {
             commentCoordinator: commentCoordinator,
             onCommentSubmitted: { result in
                 viewModel.applyCommentMutation(result)
+            },
+            onCommentDeleted: { result in
+                viewModel.applyCommentDeletion(result)
             }
         )
         if #available(iOS 16.0, *) {

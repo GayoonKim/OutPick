@@ -10,15 +10,25 @@ import SwiftUI
 struct PostCommentRepliesSheetView: View {
     @StateObject private var viewModel: PostCommentRepliesViewModel
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var brandAdminSessionStore: BrandAdminSessionStore
     @State private var profileAuthor: CommentAuthorDisplay?
+    @State private var pendingDeleteItem: CommentDisplayItem?
+    @State private var pendingReportItem: CommentDisplayItem?
+    @State private var pendingBlockItem: CommentDisplayItem?
+    @State private var isConfirmingDelete: Bool = false
+    @State private var isSelectingReportReason: Bool = false
+    @State private var isConfirmingBlock: Bool = false
     private let onReplySubmitted: (CommentMutationResult) -> Void
+    private let onCommentDeleted: (CommentDeletionResult) -> Void
 
     init(
         viewModel: PostCommentRepliesViewModel,
-        onReplySubmitted: @escaping (CommentMutationResult) -> Void = { _ in }
+        onReplySubmitted: @escaping (CommentMutationResult) -> Void = { _ in },
+        onCommentDeleted: @escaping (CommentDeletionResult) -> Void = { _ in }
     ) {
         _viewModel = StateObject(wrappedValue: viewModel)
         self.onReplySubmitted = onReplySubmitted
+        self.onCommentDeleted = onCommentDeleted
     }
 
     var body: some View {
@@ -35,9 +45,85 @@ struct PostCommentRepliesSheetView: View {
         }
         .task {
             await viewModel.loadIfNeeded()
+            await brandAdminSessionStore.refreshWritableBrands()
         }
         .sheet(isPresented: profileSheetBinding) {
             profileSheet
+        }
+        .confirmationDialog(
+            "댓글을 삭제할까요?",
+            isPresented: $isConfirmingDelete,
+            titleVisibility: .visible
+        ) {
+            Button("삭제", role: .destructive) {
+                guard let pendingDeleteItem else { return }
+                Task {
+                    if let result = await viewModel.deleteComment(pendingDeleteItem.comment) {
+                        onCommentDeleted(result)
+                        if pendingDeleteItem.comment.id == viewModel.parentComment.id {
+                            dismiss()
+                        }
+                    }
+                    self.pendingDeleteItem = nil
+                }
+            }
+            Button("취소", role: .cancel) {
+                pendingDeleteItem = nil
+            }
+        }
+        .confirmationDialog(
+            "신고 사유를 선택해주세요.",
+            isPresented: $isSelectingReportReason,
+            titleVisibility: .visible
+        ) {
+            ForEach(CommentReportReason.allCases, id: \.self) { reason in
+                Button(reason.title, role: .destructive) {
+                    guard let pendingReportItem else { return }
+                    Task {
+                        await viewModel.reportComment(
+                            pendingReportItem.comment,
+                            author: pendingReportItem.author,
+                            reason: reason
+                        )
+                        self.pendingReportItem = nil
+                    }
+                }
+            }
+            Button("취소", role: .cancel) {
+                pendingReportItem = nil
+            }
+        }
+        .confirmationDialog(
+            "이 사용자를 차단할까요?",
+            isPresented: $isConfirmingBlock,
+            titleVisibility: .visible
+        ) {
+            Button("차단", role: .destructive) {
+                guard let pendingBlockItem else { return }
+                Task {
+                    await viewModel.blockAuthor(
+                        of: pendingBlockItem.comment,
+                        author: pendingBlockItem.author
+                    )
+                    if pendingBlockItem.comment.id == viewModel.parentComment.id {
+                        dismiss()
+                    }
+                    self.pendingBlockItem = nil
+                }
+            }
+            Button("취소", role: .cancel) {
+                pendingBlockItem = nil
+            }
+        }
+        .alert(
+            "작업을 완료하지 못했습니다.",
+            isPresented: actionErrorBinding
+        ) {
+            Button("확인") {
+                viewModel.clearActionError()
+            }
+        } message: {
+            Text(viewModel.actionErrorMessage ?? "")
         }
     }
 
@@ -76,7 +162,10 @@ struct PostCommentRepliesSheetView: View {
                 badgeTitle: "원댓글",
                 onProfileTap: {
                     profileAuthor = item.author
-                }
+                },
+                onDeleteTap: deleteAction(for: item),
+                onReportTap: reportAction(for: item),
+                onBlockTap: blockAction(for: item)
             )
             .onAppear {
                 viewModel.prefetchAuthorAvatars(around: item.id)
@@ -104,7 +193,10 @@ struct PostCommentRepliesSheetView: View {
                             author: item.author,
                             onProfileTap: {
                                 profileAuthor = item.author
-                            }
+                            },
+                            onDeleteTap: deleteAction(for: item),
+                            onReportTap: reportAction(for: item),
+                            onBlockTap: blockAction(for: item)
                         )
                             .onAppear {
                                 viewModel.prefetchAuthorAvatars(around: item.id)
@@ -142,6 +234,49 @@ struct PostCommentRepliesSheetView: View {
             onSubmit: {
                 if let result = await viewModel.submitReply() {
                     onReplySubmitted(result)
+                }
+            }
+        )
+    }
+
+    private func deleteAction(for item: CommentDisplayItem) -> (() -> Void)? {
+        guard viewModel.canDelete(
+            item.comment,
+            isBrandWritable: brandAdminSessionStore.canWrite(brandID: viewModel.currentBrandID)
+        ) else {
+            return nil
+        }
+
+        return {
+            pendingDeleteItem = item
+            isConfirmingDelete = true
+        }
+    }
+
+    private func reportAction(for item: CommentDisplayItem) -> (() -> Void)? {
+        guard viewModel.canReportOrBlock(item.comment) else { return nil }
+
+        return {
+            pendingReportItem = item
+            isSelectingReportReason = true
+        }
+    }
+
+    private func blockAction(for item: CommentDisplayItem) -> (() -> Void)? {
+        guard viewModel.canReportOrBlock(item.comment) else { return nil }
+
+        return {
+            pendingBlockItem = item
+            isConfirmingBlock = true
+        }
+    }
+
+    private var actionErrorBinding: Binding<Bool> {
+        Binding(
+            get: { viewModel.actionErrorMessage != nil },
+            set: { isPresented in
+                if isPresented == false {
+                    viewModel.clearActionError()
                 }
             }
         )

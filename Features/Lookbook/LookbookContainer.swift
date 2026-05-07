@@ -241,7 +241,10 @@ final class LookbookContainer {
             seasonID: seasonID,
             postID: postID,
             useCase: loadPostCommentsUseCase,
-            createUseCase: createPostCommentUseCase
+            createUseCase: createPostCommentUseCase,
+            deleteUseCase: deleteCommentUseCase,
+            reportUseCase: reportCommentUseCase,
+            blockUseCase: blockUserUseCase
         )
     }
 
@@ -251,7 +254,8 @@ final class LookbookContainer {
         postID: PostID,
         navigationCoordinator: LookbookCoordinator,
         commentCoordinator: PostCommentCoordinator,
-        onCommentSubmitted: @escaping (CommentMutationResult) -> Void
+        onCommentSubmitted: @escaping (CommentMutationResult) -> Void,
+        onCommentDeleted: @escaping (CommentDeletionResult) -> Void
     ) -> PostCommentsSheetView {
         PostCommentsSheetView(
             viewModel: makePostCommentsViewModel(
@@ -264,7 +268,8 @@ final class LookbookContainer {
             seasonID: seasonID,
             postID: postID,
             coordinator: commentCoordinator,
-            onCommentSubmitted: onCommentSubmitted
+            onCommentSubmitted: onCommentSubmitted,
+            onCommentDeleted: onCommentDeleted
         )
     }
 
@@ -273,7 +278,8 @@ final class LookbookContainer {
         seasonID: SeasonID,
         postID: PostID,
         parentComment: Comment,
-        onReplySubmitted: @escaping (CommentMutationResult) -> Void
+        onReplySubmitted: @escaping (CommentMutationResult) -> Void,
+        onCommentDeleted: @escaping (CommentDeletionResult) -> Void
     ) -> PostCommentRepliesSheetView {
         PostCommentRepliesSheetView(
             viewModel: makePostCommentRepliesViewModel(
@@ -282,7 +288,8 @@ final class LookbookContainer {
                 postID: postID,
                 parentComment: parentComment
             ),
-            onReplySubmitted: onReplySubmitted
+            onReplySubmitted: onReplySubmitted,
+            onCommentDeleted: onCommentDeleted
         )
     }
 
@@ -298,7 +305,10 @@ final class LookbookContainer {
             postID: postID,
             parentComment: parentComment,
             useCase: loadCommentRepliesUseCase,
-            createUseCase: createCommentReplyUseCase
+            createUseCase: createCommentReplyUseCase,
+            deleteUseCase: deleteCommentUseCase,
+            reportUseCase: reportCommentUseCase,
+            blockUseCase: blockUserUseCase
         )
     }
 }

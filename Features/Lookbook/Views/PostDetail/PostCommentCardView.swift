@@ -24,6 +24,9 @@ struct PostCommentCardView: View {
     let onProfileTap: (() -> Void)?
     let onRepliesTap: (() -> Void)?
     let onCardTap: (() -> Void)?
+    let onDeleteTap: (() -> Void)?
+    let onReportTap: (() -> Void)?
+    let onBlockTap: (() -> Void)?
 
     init(
         comment: Comment,
@@ -34,7 +37,10 @@ struct PostCommentCardView: View {
         avatarImageManager: ChatAvatarImageManaging = AvatarImageService.shared,
         onProfileTap: (() -> Void)? = nil,
         onRepliesTap: (() -> Void)? = nil,
-        onCardTap: (() -> Void)? = nil
+        onCardTap: (() -> Void)? = nil,
+        onDeleteTap: (() -> Void)? = nil,
+        onReportTap: (() -> Void)? = nil,
+        onBlockTap: (() -> Void)? = nil
     ) {
         self.comment = comment
         self.author = author ?? .unknown(userID: comment.userID)
@@ -51,9 +57,41 @@ struct PostCommentCardView: View {
         self.onProfileTap = onProfileTap
         self.onRepliesTap = onRepliesTap
         self.onCardTap = onCardTap
+        self.onDeleteTap = onDeleteTap
+        self.onReportTap = onReportTap
+        self.onBlockTap = onBlockTap
     }
 
     var body: some View {
+        cardContent
+            .contextMenu {
+                if let onDeleteTap {
+                    Button(role: .destructive) {
+                        onDeleteTap()
+                    } label: {
+                        Label("삭제", systemImage: "trash")
+                    }
+                }
+
+                if let onReportTap {
+                    Button(role: .destructive) {
+                        onReportTap()
+                    } label: {
+                        Label("신고", systemImage: "exclamationmark.bubble")
+                    }
+                }
+
+                if let onBlockTap {
+                    Button(role: .destructive) {
+                        onBlockTap()
+                    } label: {
+                        Label("차단", systemImage: "person.crop.circle.badge.xmark")
+                    }
+                }
+            }
+    }
+
+    private var cardContent: some View {
         HStack(alignment: .top, spacing: 10) {
             Button {
                 onProfileTap?()

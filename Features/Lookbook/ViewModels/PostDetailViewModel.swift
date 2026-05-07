@@ -169,6 +169,20 @@ final class PostDetailScreenViewModel: ObservableObject {
         self.post = post
     }
 
+    func applyCommentDeletion(_ result: CommentDeletionResult) {
+        guard var post, post.id == result.postID else { return }
+
+        post.metrics = PostMetrics(
+            likeCount: post.metrics.likeCount,
+            commentCount: max(0, result.commentCount),
+            replacementCount: post.metrics.replacementCount,
+            saveCount: post.metrics.saveCount,
+            viewCount: post.metrics.viewCount
+        )
+        comments.removeAll { $0.id == result.commentID }
+        self.post = post
+    }
+
     private func load() async {
         if isRequesting { return }
         isRequesting = true
