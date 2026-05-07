@@ -18,4 +18,8 @@ protocol UserBlockRepositoryProtocol {
     func fetchBlockedUserIDs(
         blockerUserID: UserID
     ) async throws -> Set<UserID>
+
+    func fetchHiddenCommentUserIDs(
+        currentUserID: UserID
+    ) async throws -> Set<UserID>
 }

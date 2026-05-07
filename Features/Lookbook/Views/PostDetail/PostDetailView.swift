@@ -51,6 +51,7 @@ struct PostDetailView: View {
                             heroImageSection(post: post)
                             PostDetailMetricsCardView(
                                 post: post,
+                                commentCount: viewModel.visibleCommentCount ?? post.metrics.commentCount,
                                 isLiked: viewModel.postUserState?.isLiked ?? false,
                                 isSaved: viewModel.postUserState?.isSaved ?? false,
                                 errorMessage: viewModel.engagementErrorMessage,

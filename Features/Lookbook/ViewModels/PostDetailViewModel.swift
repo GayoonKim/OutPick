@@ -13,6 +13,7 @@ final class PostDetailScreenViewModel: ObservableObject {
     @Published private(set) var postUserState: PostUserState?
     @Published private(set) var comments: [Comment] = []
     @Published private(set) var authorDisplays: [UserID: CommentAuthorDisplay] = [:]
+    @Published private(set) var visibleCommentCount: Int?
     @Published private(set) var isLoading: Bool = false
     @Published private(set) var isMutatingLike: Bool = false
     @Published private(set) var isMutatingSave: Bool = false
@@ -34,6 +35,7 @@ final class PostDetailScreenViewModel: ObservableObject {
     private let seasonID: SeasonID
     private let postID: PostID
     private let useCase: any LoadPostDetailUseCaseProtocol
+    private let loadHiddenUserIDsUseCase: any LoadHiddenCommentUserIDsUseCaseProtocol
     private let postUserStateRepository: any PostUserStateRepositoryProtocol
     private let engagementRepository: any PostEngagementRepositoryProtocol
     private let authorProfileStore: CommentAuthorProfileStore
@@ -43,6 +45,7 @@ final class PostDetailScreenViewModel: ObservableObject {
         seasonID: SeasonID,
         postID: PostID,
         useCase: any LoadPostDetailUseCaseProtocol,
+        loadHiddenUserIDsUseCase: any LoadHiddenCommentUserIDsUseCaseProtocol,
         postUserStateRepository: any PostUserStateRepositoryProtocol,
         engagementRepository: any PostEngagementRepositoryProtocol,
         authorProfileStore: CommentAuthorProfileStore? = nil
@@ -51,6 +54,7 @@ final class PostDetailScreenViewModel: ObservableObject {
         self.seasonID = seasonID
         self.postID = postID
         self.useCase = useCase
+        self.loadHiddenUserIDsUseCase = loadHiddenUserIDsUseCase
         self.postUserStateRepository = postUserStateRepository
         self.engagementRepository = engagementRepository
         self.authorProfileStore = authorProfileStore ?? CommentAuthorProfileStore()
@@ -159,6 +163,7 @@ final class PostDetailScreenViewModel: ObservableObject {
     func applyCommentMutation(_ result: CommentMutationResult) {
         guard var post, post.id == result.postID else { return }
 
+        visibleCommentCount = visibleCommentCount.map { max(0, $0 + 1) }
         post.metrics = PostMetrics(
             likeCount: post.metrics.likeCount,
             commentCount: max(0, result.commentCount),
@@ -172,6 +177,9 @@ final class PostDetailScreenViewModel: ObservableObject {
     func applyCommentDeletion(_ result: CommentDeletionResult) {
         guard var post, post.id == result.postID else { return }
 
+        visibleCommentCount = visibleCommentCount.map {
+            max(0, $0 - max(1, result.deletedCommentCount))
+        }
         post.metrics = PostMetrics(
             likeCount: post.metrics.likeCount,
             commentCount: max(0, result.commentCount),
@@ -199,10 +207,12 @@ final class PostDetailScreenViewModel: ObservableObject {
             let content = try await useCase.execute(
                 brandID: brandID,
                 seasonID: seasonID,
-                postID: postID
+                postID: postID,
+                hiddenUserIDs: await loadHiddenUserIDs()
             )
             post = content.post
             comments = content.comments
+            visibleCommentCount = content.visibleCommentCount
             commentErrorMessage = content.commentErrorMessage
             await authorProfileStore.loadMissingAuthors(for: content.comments)
             syncAuthorDisplays()
@@ -217,6 +227,7 @@ final class PostDetailScreenViewModel: ObservableObject {
             post = nil
             postUserState = nil
             comments = []
+            visibleCommentCount = nil
             authorProfileStore.reset()
             syncAuthorDisplays()
             errorMessage = "포스트를 불러오지 못했습니다."
@@ -251,6 +262,15 @@ final class PostDetailScreenViewModel: ObservableObject {
 
     private func syncAuthorDisplays() {
         authorDisplays = authorProfileStore.authorDisplays
+    }
+
+    private func loadHiddenUserIDs() async -> Set<UserID> {
+        guard let currentUserID else { return [] }
+        do {
+            return try await loadHiddenUserIDsUseCase.execute(currentUserID: currentUserID)
+        } catch {
+            return []
+        }
     }
 
     private func drainLikeQueue(

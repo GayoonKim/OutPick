@@ -377,7 +377,9 @@ final class PostCommentsViewModel: ObservableObject {
 
         do {
             hiddenUserIDs = try await loadHiddenUserIDsUseCase.execute(currentUserID: currentUserID)
+            print(#function, "%%%%% 차단 + 차단된 사용자 %%%%%", hiddenUserIDs)
         } catch {
+            print(#function, "%%%%% 차단 사용자 없음. %%%%%")
             hiddenUserIDs = []
         }
         didLoadHiddenUserIDs = true

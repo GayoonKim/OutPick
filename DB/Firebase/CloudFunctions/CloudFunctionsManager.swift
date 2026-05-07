@@ -295,6 +295,18 @@ final class CloudFunctionsManager {
         return try userBlock(response)
     }
 
+    func loadHiddenCommentUserIDs(currentUserID: String) async throws -> Set<UserID> {
+        let response = try await callFunction(
+            "loadHiddenCommentUserIDs",
+            data: ["currentUserID": currentUserID]
+        )
+
+        return Set(
+            stringArrayValue(response, key: "hiddenUserIDs")
+                .map { UserID(value: $0) }
+        )
+    }
+
     func requestSeasonImport(
         brandID: String,
         seasonURL: String,

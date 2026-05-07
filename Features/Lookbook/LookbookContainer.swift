@@ -180,6 +180,7 @@ final class LookbookContainer {
             seasonID: seasonID,
             postID: postID,
             useCase: loadPostDetailUseCase,
+            loadHiddenUserIDsUseCase: loadHiddenCommentUserIDsUseCase,
             postUserStateRepository: provider.postUserStateRepository,
             engagementRepository: provider.postEngagementRepository
         )

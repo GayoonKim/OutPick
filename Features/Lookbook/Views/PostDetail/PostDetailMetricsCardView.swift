@@ -9,6 +9,7 @@ import SwiftUI
 
 struct PostDetailMetricsCardView: View {
     let post: LookbookPost
+    let commentCount: Int
     let isLiked: Bool
     let isSaved: Bool
     let errorMessage: String?
@@ -31,7 +32,7 @@ struct PostDetailMetricsCardView: View {
                 actionButton(
                     systemName: "message",
                     selectedSystemName: "message.fill",
-                    value: post.metrics.commentCount,
+                    value: commentCount,
                     title: "댓글",
                     isSelected: false,
                     selectedColor: .black,

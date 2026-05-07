@@ -115,6 +115,24 @@ final class FirestoreCommentRepository: CommentRepositoryProtocol {
         )
     }
 
+    func fetchVisibleCommentCount(
+        brandID: BrandID,
+        seasonID: SeasonID,
+        postID: PostID,
+        hiddenUserIDs: Set<UserID>
+    ) async throws -> Int {
+        let snapshot = try await commentsCollection(
+            brandID: brandID,
+            seasonID: seasonID,
+            postID: postID
+        )
+        .getDocuments()
+
+        return try mapVisibleComments(snapshot.documents, postID: postID)
+            .filter { hiddenUserIDs.contains($0.userID) == false }
+            .count
+    }
+
     private func commentsCollection(
         brandID: BrandID,
         seasonID: SeasonID,

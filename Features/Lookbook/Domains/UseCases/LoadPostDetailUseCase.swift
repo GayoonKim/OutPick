@@ -10,6 +10,7 @@ import Foundation
 struct PostDetailContent: Equatable {
     let post: LookbookPost
     let comments: [Comment]
+    let visibleCommentCount: Int?
     let commentErrorMessage: String?
 }
 
@@ -17,7 +18,8 @@ protocol LoadPostDetailUseCaseProtocol {
     func execute(
         brandID: BrandID,
         seasonID: SeasonID,
-        postID: PostID
+        postID: PostID,
+        hiddenUserIDs: Set<UserID>
     ) async throws -> PostDetailContent
 }
 
@@ -36,12 +38,20 @@ final class LoadPostDetailUseCase: LoadPostDetailUseCaseProtocol {
     func execute(
         brandID: BrandID,
         seasonID: SeasonID,
-        postID: PostID
+        postID: PostID,
+        hiddenUserIDs: Set<UserID>
     ) async throws -> PostDetailContent {
         let post = try await postRepository.fetchPost(
             brandID: brandID,
             seasonID: seasonID,
             postID: postID
+        )
+
+        let visibleCommentCount = try? await commentRepository.fetchVisibleCommentCount(
+            brandID: brandID,
+            seasonID: seasonID,
+            postID: postID,
+            hiddenUserIDs: hiddenUserIDs
         )
 
         do {
@@ -50,16 +60,21 @@ final class LoadPostDetailUseCase: LoadPostDetailUseCaseProtocol {
                 seasonID: seasonID,
                 postID: postID
             )
+            let visibleRepresentativeComment = representativeComment.flatMap {
+                hiddenUserIDs.contains($0.userID) ? nil : $0
+            }
 
             return PostDetailContent(
                 post: post,
-                comments: representativeComment.map { [$0] } ?? [],
+                comments: visibleRepresentativeComment.map { [$0] } ?? [],
+                visibleCommentCount: visibleCommentCount,
                 commentErrorMessage: nil
             )
         } catch {
             return PostDetailContent(
                 post: post,
                 comments: [],
+                visibleCommentCount: visibleCommentCount,
                 commentErrorMessage: "댓글을 불러오지 못했습니다."
             )
         }

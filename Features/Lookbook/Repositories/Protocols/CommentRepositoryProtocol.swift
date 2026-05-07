@@ -36,4 +36,11 @@ protocol CommentRepositoryProtocol {
         parentCommentID: CommentID,
         page: PageRequest
     ) async throws -> PageResponse<Comment>
+
+    func fetchVisibleCommentCount(
+        brandID: BrandID,
+        seasonID: SeasonID,
+        postID: PostID,
+        hiddenUserIDs: Set<UserID>
+    ) async throws -> Int
 }

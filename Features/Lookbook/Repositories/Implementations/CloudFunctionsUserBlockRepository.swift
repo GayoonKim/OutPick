@@ -45,4 +45,12 @@ final class CloudFunctionsUserBlockRepository: UserBlockRepositoryProtocol {
 
         return Set(snapshot.documents.map { UserID(value: $0.documentID) })
     }
+
+    func fetchHiddenCommentUserIDs(
+        currentUserID: UserID
+    ) async throws -> Set<UserID> {
+        try await cloudFunctionsManager.loadHiddenCommentUserIDs(
+            currentUserID: currentUserID.value
+        )
+    }
 }

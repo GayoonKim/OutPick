@@ -43,6 +43,6 @@ final class LoadHiddenCommentUserIDsUseCase: LoadHiddenCommentUserIDsUseCaseProt
     func execute(
         currentUserID: UserID
     ) async throws -> Set<UserID> {
-        try await repository.fetchBlockedUserIDs(blockerUserID: currentUserID)
+        try await repository.fetchHiddenCommentUserIDs(currentUserID: currentUserID)
     }
 }
