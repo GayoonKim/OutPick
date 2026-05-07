@@ -148,7 +148,8 @@ final class PostCommentRepliesViewModel: ObservableObject {
     func reportComment(
         _ comment: Comment,
         author: CommentAuthorDisplay,
-        reason: CommentReportReason
+        reason: CommentReportReason,
+        detail: String?
     ) async -> CommentReport? {
         guard isPerformingCommentAction == false,
               let reporterUserID = currentUserID,
@@ -167,7 +168,7 @@ final class PostCommentRepliesViewModel: ObservableObject {
                 reporterUserID: reporterUserID,
                 target: reportTarget(for: comment, author: author),
                 reason: reason,
-                detail: nil
+                detail: detail
             )
         } catch {
             actionErrorMessage = "댓글을 신고하지 못했습니다."

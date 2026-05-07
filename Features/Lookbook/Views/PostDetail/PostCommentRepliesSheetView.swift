@@ -16,7 +16,7 @@ struct PostCommentRepliesSheetView: View {
     @State private var pendingReportItem: CommentDisplayItem?
     @State private var pendingBlockItem: CommentDisplayItem?
     @State private var isConfirmingDelete: Bool = false
-    @State private var isSelectingReportReason: Bool = false
+    @State private var isPresentingReportSheet: Bool = false
     @State private var isPresentingBlockSheet: Bool = false
     private let onReplySubmitted: (CommentMutationResult) -> Void
     private let onCommentDeleted: (CommentDeletionResult) -> Void
@@ -71,27 +71,8 @@ struct PostCommentRepliesSheetView: View {
                 pendingDeleteItem = nil
             }
         }
-        .confirmationDialog(
-            "신고 사유를 선택해주세요.",
-            isPresented: $isSelectingReportReason,
-            titleVisibility: .visible
-        ) {
-            ForEach(CommentReportReason.allCases, id: \.self) { reason in
-                Button(reason.title, role: .destructive) {
-                    guard let pendingReportItem else { return }
-                    Task {
-                        await viewModel.reportComment(
-                            pendingReportItem.comment,
-                            author: pendingReportItem.author,
-                            reason: reason
-                        )
-                        self.pendingReportItem = nil
-                    }
-                }
-            }
-            Button("취소", role: .cancel) {
-                pendingReportItem = nil
-            }
+        .sheet(isPresented: reportSheetBinding) {
+            reportConfirmationSheet
         }
         .sheet(isPresented: blockSheetBinding) {
             blockConfirmationSheet
@@ -239,7 +220,54 @@ struct PostCommentRepliesSheetView: View {
 
         return {
             pendingReportItem = item
-            isSelectingReportReason = true
+            isPresentingReportSheet = true
+        }
+    }
+
+    private var reportSheetBinding: Binding<Bool> {
+        Binding(
+            get: { isPresentingReportSheet && pendingReportItem != nil },
+            set: { isPresented in
+                isPresentingReportSheet = isPresented
+                if isPresented == false {
+                    pendingReportItem = nil
+                }
+            }
+        )
+    }
+
+    @ViewBuilder
+    private var reportConfirmationSheet: some View {
+        if let pendingReportItem {
+            let sheet = CommentReportSheetView(
+                author: pendingReportItem.author,
+                isReporting: viewModel.isPerformingCommentAction,
+                onCancel: {
+                    isPresentingReportSheet = false
+                    self.pendingReportItem = nil
+                },
+                onSubmit: { reason, detail in
+                    Task {
+                        await viewModel.reportComment(
+                            pendingReportItem.comment,
+                            author: pendingReportItem.author,
+                            reason: reason,
+                            detail: detail
+                        )
+                        isPresentingReportSheet = false
+                        self.pendingReportItem = nil
+                    }
+                }
+            )
+            if #available(iOS 16.0, *) {
+                sheet
+                    .presentationDetents([.height(520)])
+                    .presentationDragIndicator(.visible)
+            } else {
+                sheet
+            }
+        } else {
+            EmptyView()
         }
     }
 
