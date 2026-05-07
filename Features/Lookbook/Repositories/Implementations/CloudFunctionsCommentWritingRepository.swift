@@ -43,4 +43,20 @@ final class CloudFunctionsCommentWritingRepository: CommentWritingRepositoryProt
             message: message
         )
     }
+
+    func deleteComment(
+        brandID: BrandID,
+        seasonID: SeasonID,
+        postID: PostID,
+        commentID: CommentID,
+        reason: String?
+    ) async throws -> CommentDeletionResult {
+        try await cloudFunctionsManager.deleteComment(
+            brandID: brandID.value,
+            seasonID: seasonID.value,
+            postID: postID.value,
+            commentID: commentID.value,
+            reason: reason
+        )
+    }
 }

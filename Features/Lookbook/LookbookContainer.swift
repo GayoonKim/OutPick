@@ -18,6 +18,7 @@ final class LookbookContainer {
     private let loadCommentRepliesUseCase: any LoadCommentRepliesUseCaseProtocol
     private let createPostCommentUseCase: any CreatePostCommentUseCaseProtocol
     private let createCommentReplyUseCase: any CreateCommentReplyUseCaseProtocol
+    private let deleteCommentUseCase: any DeleteCommentUseCaseProtocol
     private let reportCommentUseCase: any ReportCommentUseCaseProtocol
     private let blockUserUseCase: any BlockUserUseCaseProtocol
     private let loadBlockedUsersUseCase: any LoadBlockedUsersUseCaseProtocol
@@ -41,6 +42,9 @@ final class LookbookContainer {
             repository: provider.commentWritingRepository
         )
         self.createCommentReplyUseCase = CreateCommentReplyUseCase(
+            repository: provider.commentWritingRepository
+        )
+        self.deleteCommentUseCase = DeleteCommentUseCase(
             repository: provider.commentWritingRepository
         )
         self.reportCommentUseCase = ReportCommentUseCase(

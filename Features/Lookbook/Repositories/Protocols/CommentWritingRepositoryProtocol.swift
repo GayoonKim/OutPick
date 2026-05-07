@@ -22,4 +22,12 @@ protocol CommentWritingRepositoryProtocol {
         parentCommentID: CommentID,
         message: String
     ) async throws -> CommentMutationResult
+
+    func deleteComment(
+        brandID: BrandID,
+        seasonID: SeasonID,
+        postID: PostID,
+        commentID: CommentID,
+        reason: String?
+    ) async throws -> CommentDeletionResult
 }

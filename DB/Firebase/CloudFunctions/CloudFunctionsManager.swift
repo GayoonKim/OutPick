@@ -226,6 +226,27 @@ final class CloudFunctionsManager {
         return try commentMutationResult(response)
     }
 
+    func deleteComment(
+        brandID: String,
+        seasonID: String,
+        postID: String,
+        commentID: String,
+        reason: String?
+    ) async throws -> CommentDeletionResult {
+        var data: [String: Any] = [
+            "brandID": brandID,
+            "seasonID": seasonID,
+            "postID": postID,
+            "commentID": commentID
+        ]
+        if let reason {
+            data["reason"] = reason
+        }
+
+        let response = try await callFunction("deleteComment", data: data)
+        return try commentDeletionResult(response)
+    }
+
     func reportComment(
         reporterUserID: String,
         target: CommentReportTarget,
@@ -509,6 +530,27 @@ final class CloudFunctionsManager {
             userID: UserID(value: try stringValue(dictionary, key: "userID")),
             parentCommentID: optionalStringValue(dictionary, key: "parentCommentID")
                 .map { CommentID(value: $0) },
+            commentCount: try intValue(dictionary, key: "commentCount"),
+            replyCount: try intValue(dictionary, key: "replyCount")
+        )
+    }
+
+    private func commentDeletionResult(
+        _ dictionary: [String: Any]
+    ) throws -> CommentDeletionResult {
+        CommentDeletionResult(
+            brandID: BrandID(value: try stringValue(dictionary, key: "brandID")),
+            seasonID: SeasonID(value: try stringValue(dictionary, key: "seasonID")),
+            postID: PostID(value: try stringValue(dictionary, key: "postID")),
+            commentID: CommentID(value: try stringValue(dictionary, key: "commentID")),
+            userID: UserID(value: try stringValue(dictionary, key: "userID")),
+            parentCommentID: optionalStringValue(dictionary, key: "parentCommentID")
+                .map { CommentID(value: $0) },
+            targetType: CommentSafetyTargetType(
+                rawValue: try stringValue(dictionary, key: "targetType")
+            ) ?? .comment,
+            deletedReplyCount: try intValue(dictionary, key: "deletedReplyCount"),
+            deletedCommentCount: try intValue(dictionary, key: "deletedCommentCount"),
             commentCount: try intValue(dictionary, key: "commentCount"),
             replyCount: try intValue(dictionary, key: "replyCount")
         )
