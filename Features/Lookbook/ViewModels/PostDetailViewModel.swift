@@ -5,6 +5,7 @@
 //  Created by Codex on 4/24/26.
 //
 
+import Combine
 import Foundation
 
 @MainActor
@@ -30,6 +31,7 @@ final class PostDetailScreenViewModel: ObservableObject {
     private var confirmedSaveState: Bool?
     private var confirmedSaveCount: Int?
     private var prefetchedAvatarPaths: Set<String> = []
+    private var cancellables: Set<AnyCancellable> = []
     private let avatarThumbnailMaxBytes: Int = 3 * 1024 * 1024
     private let brandID: BrandID
     private let seasonID: SeasonID
@@ -39,6 +41,7 @@ final class PostDetailScreenViewModel: ObservableObject {
     private let postUserStateRepository: any PostUserStateRepositoryProtocol
     private let engagementRepository: any PostEngagementRepositoryProtocol
     private let authorProfileStore: CommentAuthorProfileStore
+    private let interactionStore: LookbookInteractionStore
 
     init(
         brandID: BrandID,
@@ -48,6 +51,7 @@ final class PostDetailScreenViewModel: ObservableObject {
         loadHiddenUserIDsUseCase: any LoadHiddenCommentUserIDsUseCaseProtocol,
         postUserStateRepository: any PostUserStateRepositoryProtocol,
         engagementRepository: any PostEngagementRepositoryProtocol,
+        interactionStore: LookbookInteractionStore,
         authorProfileStore: CommentAuthorProfileStore? = nil
     ) {
         self.brandID = brandID
@@ -57,7 +61,9 @@ final class PostDetailScreenViewModel: ObservableObject {
         self.loadHiddenUserIDsUseCase = loadHiddenUserIDsUseCase
         self.postUserStateRepository = postUserStateRepository
         self.engagementRepository = engagementRepository
+        self.interactionStore = interactionStore
         self.authorProfileStore = authorProfileStore ?? CommentAuthorProfileStore()
+        bindInteractionStore()
     }
 
     var isMutatingEngagement: Bool {
@@ -161,34 +167,12 @@ final class PostDetailScreenViewModel: ObservableObject {
     }
 
     func applyCommentMutation(_ result: CommentMutationResult) {
-        guard var post, post.id == result.postID else { return }
-
-        visibleCommentCount = visibleCommentCount.map { max(0, $0 + 1) }
-        post.metrics = PostMetrics(
-            likeCount: post.metrics.likeCount,
-            commentCount: max(0, result.commentCount),
-            replacementCount: post.metrics.replacementCount,
-            saveCount: post.metrics.saveCount,
-            viewCount: post.metrics.viewCount
-        )
-        self.post = post
+        guard post?.id == result.postID else { return }
+        interactionStore.applyCommentMutation(result)
     }
 
-    func applyCommentDeletion(_ result: CommentDeletionResult) {
-        guard var post, post.id == result.postID else { return }
-
-        visibleCommentCount = visibleCommentCount.map {
-            max(0, $0 - max(1, result.deletedCommentCount))
-        }
-        post.metrics = PostMetrics(
-            likeCount: post.metrics.likeCount,
-            commentCount: max(0, result.commentCount),
-            replacementCount: post.metrics.replacementCount,
-            saveCount: post.metrics.saveCount,
-            viewCount: post.metrics.viewCount
-        )
-        comments.removeAll { $0.id == result.commentID }
-        self.post = post
+    func removeCommentFromPreview(_ commentID: CommentID) {
+        comments.removeAll { $0.id == commentID }
     }
 
     private func load() async {
@@ -210,17 +194,23 @@ final class PostDetailScreenViewModel: ObservableObject {
                 postID: postID,
                 hiddenUserIDs: await loadHiddenUserIDs()
             )
-            post = content.post
             comments = content.comments
-            visibleCommentCount = content.visibleCommentCount
             commentErrorMessage = content.commentErrorMessage
             await authorProfileStore.loadMissingAuthors(for: content.comments)
             syncAuthorDisplays()
-            postUserState = await fetchPostUserState(
+            let fetchedPostUserState = await fetchPostUserState(
                 brandID: brandID,
                 seasonID: seasonID,
                 postID: postID,
                 repository: postUserStateRepository
+            )
+            post = content.post
+            postUserState = fetchedPostUserState
+            visibleCommentCount = content.visibleCommentCount
+            interactionStore.seed(
+                post: content.post,
+                visibleCommentCount: content.visibleCommentCount,
+                userState: fetchedPostUserState
             )
             loadedKey = "\(brandID.value)|\(seasonID.value)|\(postID.value)"
         } catch {
@@ -262,6 +252,25 @@ final class PostDetailScreenViewModel: ObservableObject {
 
     private func syncAuthorDisplays() {
         authorDisplays = authorProfileStore.authorDisplays
+    }
+
+    private func bindInteractionStore() {
+        interactionStore.$postStates
+            .compactMap { [postID] states in states[postID] }
+            .sink { [weak self] state in
+                guard let self else { return }
+                self.applyInteractionState(state)
+            }
+            .store(in: &cancellables)
+    }
+
+    private func applyInteractionState(_ state: LookbookPostInteractionState) {
+        if var post {
+            post.metrics = state.metrics
+            self.post = post
+        }
+        visibleCommentCount = state.visibleCommentCount
+        postUserState = state.userState
     }
 
     private func loadHiddenUserIDs() async -> Set<UserID> {
@@ -382,25 +391,13 @@ final class PostDetailScreenViewModel: ObservableObject {
     ) {
         let previousLiked = baseLiked ?? postUserState?.isLiked ?? false
         let likeCount = baseLikeCount ?? post?.metrics.likeCount ?? 0
-        let likeDelta = isLiked == previousLiked ? 0 : (isLiked ? 1 : -1)
 
-        if var post {
-            post.metrics = PostMetrics(
-                likeCount: max(0, likeCount + likeDelta),
-                commentCount: post.metrics.commentCount,
-                replacementCount: post.metrics.replacementCount,
-                saveCount: post.metrics.saveCount,
-                viewCount: post.metrics.viewCount
-            )
-            self.post = post
-        }
-
-        postUserState = PostUserState(
+        interactionStore.applyOptimisticLike(
             postID: postID,
             userID: userID,
             isLiked: isLiked,
-            isSaved: postUserState?.isSaved ?? false,
-            updatedAt: Date()
+            baseLiked: previousLiked,
+            baseLikeCount: likeCount
         )
     }
 
@@ -413,110 +410,46 @@ final class PostDetailScreenViewModel: ObservableObject {
     ) {
         let previousSaved = baseSaved ?? postUserState?.isSaved ?? false
         let saveCount = baseSaveCount ?? post?.metrics.saveCount ?? 0
-        let saveDelta = isSaved == previousSaved ? 0 : (isSaved ? 1 : -1)
 
-        if var post {
-            post.metrics = PostMetrics(
-                likeCount: post.metrics.likeCount,
-                commentCount: post.metrics.commentCount,
-                replacementCount: post.metrics.replacementCount,
-                saveCount: max(0, saveCount + saveDelta),
-                viewCount: post.metrics.viewCount
-            )
-            self.post = post
-        }
-
-        postUserState = PostUserState(
+        interactionStore.applyOptimisticSave(
             postID: postID,
             userID: userID,
-            isLiked: postUserState?.isLiked ?? false,
             isSaved: isSaved,
-            updatedAt: Date()
+            baseSaved: previousSaved,
+            baseSaveCount: saveCount
         )
     }
 
     private func applyLikeResult(_ result: PostEngagementResult) {
         let shouldApplySave = isMutatingSave == false && pendingSaveTarget == nil
-        updatePostMetrics(
-            result.metrics,
-            likeCount: result.metrics.likeCount,
-            saveCount: shouldApplySave ? result.metrics.saveCount : nil
-        )
-
-        postUserState = PostUserState(
-            postID: result.postID,
-            userID: result.userID,
-            isLiked: result.isLiked,
-            isSaved: shouldApplySave ? result.isSaved : (postUserState?.isSaved ?? false),
-            updatedAt: Date()
-        )
+        interactionStore.applyLikeResult(result, shouldApplySave: shouldApplySave)
     }
 
     private func applySaveResult(_ result: PostEngagementResult) {
         let shouldApplyLike = isMutatingLike == false && pendingLikeTarget == nil
-        updatePostMetrics(
-            result.metrics,
-            likeCount: shouldApplyLike ? result.metrics.likeCount : nil,
-            saveCount: result.metrics.saveCount
-        )
-
-        postUserState = PostUserState(
-            postID: result.postID,
-            userID: result.userID,
-            isLiked: shouldApplyLike ? result.isLiked : (postUserState?.isLiked ?? false),
-            isSaved: result.isSaved,
-            updatedAt: Date()
-        )
+        interactionStore.applySaveResult(result, shouldApplyLike: shouldApplyLike)
     }
 
     private func restoreConfirmedLike(postID: PostID, userID: UserID) {
         guard let confirmedLikeState else { return }
 
-        if let confirmedLikeCount {
-            updatePostMetrics(nil, likeCount: confirmedLikeCount, saveCount: nil)
-        }
-
-        postUserState = PostUserState(
+        interactionStore.restoreLike(
             postID: postID,
             userID: userID,
             isLiked: confirmedLikeState,
-            isSaved: postUserState?.isSaved ?? false,
-            updatedAt: Date()
+            likeCount: confirmedLikeCount
         )
     }
 
     private func restoreConfirmedSave(postID: PostID, userID: UserID) {
         guard let confirmedSaveState else { return }
 
-        if let confirmedSaveCount {
-            updatePostMetrics(nil, likeCount: nil, saveCount: confirmedSaveCount)
-        }
-
-        postUserState = PostUserState(
+        interactionStore.restoreSave(
             postID: postID,
             userID: userID,
-            isLiked: postUserState?.isLiked ?? false,
             isSaved: confirmedSaveState,
-            updatedAt: Date()
+            saveCount: confirmedSaveCount
         )
-    }
-
-    private func updatePostMetrics(
-        _ authoritativeMetrics: PostMetrics?,
-        likeCount: Int?,
-        saveCount: Int?
-    ) {
-        guard var post else { return }
-
-        let baseMetrics = authoritativeMetrics ?? post.metrics
-        post.metrics = PostMetrics(
-            likeCount: max(0, likeCount ?? post.metrics.likeCount),
-            commentCount: baseMetrics.commentCount,
-            replacementCount: baseMetrics.replacementCount,
-            saveCount: max(0, saveCount ?? post.metrics.saveCount),
-            viewCount: baseMetrics.viewCount
-        )
-        self.post = post
     }
 
     private var currentUserID: UserID? {

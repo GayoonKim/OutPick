@@ -5,6 +5,7 @@
 //  Created by Codex on 5/1/26.
 //
 
+import Combine
 import Foundation
 
 @MainActor
@@ -33,6 +34,7 @@ final class PostCommentsViewModel: ObservableObject {
     private let blockUseCase: any BlockUserUseCaseProtocol
     private let loadHiddenUserIDsUseCase: any LoadHiddenCommentUserIDsUseCaseProtocol
     private let filterHiddenAuthorsUseCase: FilterHiddenCommentAuthorsUseCase
+    private let interactionStore: LookbookInteractionStore
     private let authorProfileStore: CommentAuthorProfileStore
     private let avatarImageManager: ChatAvatarImageManaging
     private let pageSize: Int
@@ -45,6 +47,7 @@ final class PostCommentsViewModel: ObservableObject {
     private var prefetchedAvatarPaths: Set<String> = []
     private var hiddenUserIDs: Set<UserID> = []
     private var didLoadHiddenUserIDs: Bool = false
+    private var cancellables: Set<AnyCancellable> = []
 
     var hasMoreRootComments: Bool {
         nextCursor != nil
@@ -66,6 +69,7 @@ final class PostCommentsViewModel: ObservableObject {
         blockUseCase: any BlockUserUseCaseProtocol,
         loadHiddenUserIDsUseCase: any LoadHiddenCommentUserIDsUseCaseProtocol,
         filterHiddenAuthorsUseCase: FilterHiddenCommentAuthorsUseCase,
+        interactionStore: LookbookInteractionStore,
         authorProfileStore: CommentAuthorProfileStore? = nil,
         avatarImageManager: ChatAvatarImageManaging = AvatarImageService.shared,
         initialSort: CommentSortOption = .latest,
@@ -83,12 +87,14 @@ final class PostCommentsViewModel: ObservableObject {
         self.blockUseCase = blockUseCase
         self.loadHiddenUserIDsUseCase = loadHiddenUserIDsUseCase
         self.filterHiddenAuthorsUseCase = filterHiddenAuthorsUseCase
+        self.interactionStore = interactionStore
         self.authorProfileStore = authorProfileStore ?? CommentAuthorProfileStore()
         self.avatarImageManager = avatarImageManager
         self.selectedSort = initialSort
         self.pageSize = pageSize
         self.avatarPrefetchLimit = avatarPrefetchLimit
         self.avatarThumbnailMaxBytes = avatarThumbnailMaxBytes
+        bindInteractionStore()
     }
 
     func loadIfNeeded() async {
@@ -150,6 +156,7 @@ final class PostCommentsViewModel: ObservableObject {
                 reason: nil
             )
             applyDeletion(result)
+            interactionStore.applyCommentDeletion(result)
             return result
         } catch {
             actionErrorMessage = "댓글을 삭제하지 못했습니다."
@@ -270,6 +277,7 @@ final class PostCommentsViewModel: ObservableObject {
                 message: message
             )
             draftMessage = ""
+            interactionStore.applyCommentMutation(result)
             authorProfileStore.seedCurrentUserProfileIfPossible()
             syncAuthorDisplays()
             loadedKey = nil
@@ -345,6 +353,39 @@ final class PostCommentsViewModel: ObservableObject {
         authorDisplays = authorProfileStore.authorDisplays
     }
 
+    private func bindInteractionStore() {
+        interactionStore.$replyCounts
+            .sink { [weak self] replyCounts in
+                self?.applyReplyCounts(replyCounts)
+            }
+            .store(in: &cancellables)
+    }
+
+    private func applyReplyCounts(_ replyCounts: [CommentID: Int]) {
+        pinnedComments = pinnedComments.map { comment in
+            updatedReplyCountComment(comment, replyCounts: replyCounts)
+        }
+        if let representativeComment {
+            self.representativeComment = updatedReplyCountComment(
+                representativeComment,
+                replyCounts: replyCounts
+            )
+        }
+        rootComments = rootComments.map { comment in
+            updatedReplyCountComment(comment, replyCounts: replyCounts)
+        }
+    }
+
+    private func updatedReplyCountComment(
+        _ comment: Comment,
+        replyCounts: [CommentID: Int]
+    ) -> Comment {
+        guard let replyCount = replyCounts[comment.id] else { return comment }
+        var updatedComment = comment
+        updatedComment.replyCount = replyCount
+        return updatedComment
+    }
+
     private func applyDeletion(_ result: CommentDeletionResult) {
         pinnedComments.removeAll { $0.id == result.commentID }
         if representativeComment?.id == result.commentID {
@@ -377,9 +418,7 @@ final class PostCommentsViewModel: ObservableObject {
 
         do {
             hiddenUserIDs = try await loadHiddenUserIDsUseCase.execute(currentUserID: currentUserID)
-            print(#function, "%%%%% 차단 + 차단된 사용자 %%%%%", hiddenUserIDs)
         } catch {
-            print(#function, "%%%%% 차단 사용자 없음. %%%%%")
             hiddenUserIDs = []
         }
         didLoadHiddenUserIDs = true

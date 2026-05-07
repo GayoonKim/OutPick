@@ -5,6 +5,7 @@
 //  Created by Codex on 5/1/26.
 //
 
+import Combine
 import Foundation
 
 @MainActor
@@ -33,6 +34,7 @@ final class PostCommentRepliesViewModel: ObservableObject {
     private let blockUseCase: any BlockUserUseCaseProtocol
     private let loadHiddenUserIDsUseCase: any LoadHiddenCommentUserIDsUseCaseProtocol
     private let filterHiddenAuthorsUseCase: FilterHiddenCommentAuthorsUseCase
+    private let interactionStore: LookbookInteractionStore
     private let authorProfileStore: CommentAuthorProfileStore
     private let avatarImageManager: ChatAvatarImageManaging
     private let pageSize: Int
@@ -45,6 +47,7 @@ final class PostCommentRepliesViewModel: ObservableObject {
     private var prefetchedAvatarPaths: Set<String> = []
     private var hiddenUserIDs: Set<UserID> = []
     private var didLoadHiddenUserIDs: Bool = false
+    private var cancellables: Set<AnyCancellable> = []
 
     var hasMoreReplies: Bool {
         nextCursor != nil
@@ -72,6 +75,7 @@ final class PostCommentRepliesViewModel: ObservableObject {
         blockUseCase: any BlockUserUseCaseProtocol,
         loadHiddenUserIDsUseCase: any LoadHiddenCommentUserIDsUseCaseProtocol,
         filterHiddenAuthorsUseCase: FilterHiddenCommentAuthorsUseCase,
+        interactionStore: LookbookInteractionStore,
         authorProfileStore: CommentAuthorProfileStore? = nil,
         avatarImageManager: ChatAvatarImageManaging = AvatarImageService.shared,
         pageSize: Int = 30,
@@ -89,11 +93,13 @@ final class PostCommentRepliesViewModel: ObservableObject {
         self.blockUseCase = blockUseCase
         self.loadHiddenUserIDsUseCase = loadHiddenUserIDsUseCase
         self.filterHiddenAuthorsUseCase = filterHiddenAuthorsUseCase
+        self.interactionStore = interactionStore
         self.authorProfileStore = authorProfileStore ?? CommentAuthorProfileStore()
         self.avatarImageManager = avatarImageManager
         self.pageSize = pageSize
         self.avatarPrefetchLimit = avatarPrefetchLimit
         self.avatarThumbnailMaxBytes = avatarThumbnailMaxBytes
+        bindInteractionStore()
     }
 
     func loadIfNeeded() async {
@@ -148,6 +154,7 @@ final class PostCommentRepliesViewModel: ObservableObject {
                 reason: nil
             )
             applyDeletion(result)
+            interactionStore.applyCommentDeletion(result)
             return result
         } catch {
             actionErrorMessage = "댓글을 삭제하지 못했습니다."
@@ -269,6 +276,7 @@ final class PostCommentRepliesViewModel: ObservableObject {
                 message: message
             )
             parentComment.replyCount = result.replyCount
+            interactionStore.applyCommentMutation(result)
             draftMessage = ""
             authorProfileStore.seedCurrentUserProfileIfPossible()
             syncAuthorDisplays()
@@ -337,13 +345,22 @@ final class PostCommentRepliesViewModel: ObservableObject {
         authorDisplays = authorProfileStore.authorDisplays
     }
 
+    private func bindInteractionStore() {
+        interactionStore.$replyCounts
+            .compactMap { [parentComment] replyCounts in replyCounts[parentComment.id] }
+            .sink { [weak self] replyCount in
+                self?.parentComment.replyCount = replyCount
+            }
+            .store(in: &cancellables)
+    }
+
     private func applyDeletion(_ result: CommentDeletionResult) {
         if result.commentID == parentComment.id {
             return
         }
 
         replies.removeAll { $0.id == result.commentID }
-        parentComment.replyCount = max(0, parentComment.replyCount - max(1, result.deletedCommentCount))
+        parentComment.replyCount = max(0, result.replyCount)
     }
 
     private func removeComments(by userID: UserID) {

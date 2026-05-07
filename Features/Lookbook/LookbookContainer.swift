@@ -13,6 +13,7 @@ final class LookbookContainer {
     let provider: LookbookRepositoryProvider
     let brandAdminSessionStore: BrandAdminSessionStore
     let lookbookHomeViewModel: LookbookHomeViewModel
+    let interactionStore: LookbookInteractionStore
 
     private let loadPostCommentsUseCase: any LoadPostCommentsUseCaseProtocol
     private let loadCommentRepliesUseCase: any LoadCommentRepliesUseCaseProtocol
@@ -32,6 +33,7 @@ final class LookbookContainer {
     ) {
         self.provider = provider
         self.brandAdminSessionStore = brandAdminSessionStore
+        self.interactionStore = LookbookInteractionStore()
         self.loadPostCommentsUseCase = LoadPostCommentsUseCase(
             commentRepository: provider.commentRepository
         )
@@ -182,7 +184,8 @@ final class LookbookContainer {
             useCase: loadPostDetailUseCase,
             loadHiddenUserIDsUseCase: loadHiddenCommentUserIDsUseCase,
             postUserStateRepository: provider.postUserStateRepository,
-            engagementRepository: provider.postEngagementRepository
+            engagementRepository: provider.postEngagementRepository,
+            interactionStore: interactionStore
         )
     }
 
@@ -247,7 +250,8 @@ final class LookbookContainer {
             reportUseCase: reportCommentUseCase,
             blockUseCase: blockUserUseCase,
             loadHiddenUserIDsUseCase: loadHiddenCommentUserIDsUseCase,
-            filterHiddenAuthorsUseCase: filterHiddenCommentAuthorsUseCase
+            filterHiddenAuthorsUseCase: filterHiddenCommentAuthorsUseCase,
+            interactionStore: interactionStore
         )
     }
 
@@ -313,7 +317,8 @@ final class LookbookContainer {
             reportUseCase: reportCommentUseCase,
             blockUseCase: blockUserUseCase,
             loadHiddenUserIDsUseCase: loadHiddenCommentUserIDsUseCase,
-            filterHiddenAuthorsUseCase: filterHiddenCommentAuthorsUseCase
+            filterHiddenAuthorsUseCase: filterHiddenCommentAuthorsUseCase,
+            interactionStore: interactionStore
         )
     }
 }
