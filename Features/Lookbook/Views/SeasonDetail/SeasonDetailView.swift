@@ -58,6 +58,7 @@ struct SeasonDetailView: View {
                                     } label: {
                                         SeasonLookGridItemView(
                                             post: post,
+                                            commentCount: viewModel.displayCommentCount(for: post),
                                             brandImageCache: brandImageCache
                                         )
                                     }

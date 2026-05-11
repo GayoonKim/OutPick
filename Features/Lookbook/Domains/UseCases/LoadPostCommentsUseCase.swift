@@ -60,14 +60,14 @@ final class LoadPostCommentsUseCase: LoadPostCommentsUseCaseProtocol {
             seasonID: seasonID,
             postID: postID
         )
-
-        let resolvedRootComments = try await commentRepository.fetchRootComments(
+        async let rootComments = commentRepository.fetchRootComments(
             brandID: brandID,
             seasonID: seasonID,
             postID: postID,
             sort: sort,
             page: page
         )
+        let resolvedRootComments = try await rootComments
         let resolvedPinnedComments = await pinnedComments
         let resolvedRepresentativeComment = await representativeComment
 

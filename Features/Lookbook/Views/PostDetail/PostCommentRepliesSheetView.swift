@@ -123,6 +123,7 @@ struct PostCommentRepliesSheetView: View {
                 let item = viewModel.displayItem(for: viewModel.parentComment)
                 PostCommentCardView(
                     comment: item.comment,
+                    replyCount: viewModel.displayReplyCount(for: item.comment),
                     author: item.author,
                     badgeTitle: "원댓글",
                     onProfileTap: {
@@ -167,6 +168,7 @@ struct PostCommentRepliesSheetView: View {
                         let item = viewModel.displayItem(for: reply)
                         PostCommentCardView(
                             comment: item.comment,
+                            replyCount: viewModel.displayReplyCount(for: item.comment),
                             author: item.author,
                             onProfileTap: {
                                 profileAuthor = item.author

@@ -24,12 +24,6 @@ final class PostDetailScreenViewModel: ObservableObject {
 
     private var loadedKey: String?
     private var isRequesting = false
-    private var pendingLikeTarget: Bool?
-    private var pendingSaveTarget: Bool?
-    private var confirmedLikeState: Bool?
-    private var confirmedLikeCount: Int?
-    private var confirmedSaveState: Bool?
-    private var confirmedSaveCount: Int?
     private var prefetchedAvatarPaths: Set<String> = []
     private var cancellables: Set<AnyCancellable> = []
     private let avatarThumbnailMaxBytes: Int = 3 * 1024 * 1024
@@ -39,9 +33,10 @@ final class PostDetailScreenViewModel: ObservableObject {
     private let useCase: any LoadPostDetailUseCaseProtocol
     private let loadHiddenUserIDsUseCase: any LoadHiddenCommentUserIDsUseCaseProtocol
     private let postUserStateRepository: any PostUserStateRepositoryProtocol
-    private let engagementRepository: any PostEngagementRepositoryProtocol
+    private let engagementInteractionUseCase: PostEngagementInteractionUseCase
     private let authorProfileStore: CommentAuthorProfileStore
     private let interactionStore: LookbookInteractionStore
+    private let currentUserIDProvider: any CurrentUserIDProviding
 
     init(
         brandID: BrandID,
@@ -50,8 +45,9 @@ final class PostDetailScreenViewModel: ObservableObject {
         useCase: any LoadPostDetailUseCaseProtocol,
         loadHiddenUserIDsUseCase: any LoadHiddenCommentUserIDsUseCaseProtocol,
         postUserStateRepository: any PostUserStateRepositoryProtocol,
-        engagementRepository: any PostEngagementRepositoryProtocol,
+        engagementInteractionUseCase: PostEngagementInteractionUseCase,
         interactionStore: LookbookInteractionStore,
+        currentUserIDProvider: any CurrentUserIDProviding,
         authorProfileStore: CommentAuthorProfileStore? = nil
     ) {
         self.brandID = brandID
@@ -60,9 +56,12 @@ final class PostDetailScreenViewModel: ObservableObject {
         self.useCase = useCase
         self.loadHiddenUserIDsUseCase = loadHiddenUserIDsUseCase
         self.postUserStateRepository = postUserStateRepository
-        self.engagementRepository = engagementRepository
+        self.engagementInteractionUseCase = engagementInteractionUseCase
         self.interactionStore = interactionStore
-        self.authorProfileStore = authorProfileStore ?? CommentAuthorProfileStore()
+        self.currentUserIDProvider = currentUserIDProvider
+        self.authorProfileStore = authorProfileStore ?? CommentAuthorProfileStore(
+            currentUserIDProvider: currentUserIDProvider
+        )
         bindInteractionStore()
     }
 
@@ -83,6 +82,10 @@ final class PostDetailScreenViewModel: ObservableObject {
 
     func displayItem(for comment: Comment) -> CommentDisplayItem {
         authorProfileStore.displayItem(for: comment)
+    }
+
+    func displayReplyCount(for comment: Comment) -> Int {
+        interactionStore.replyCount(for: comment)
     }
 
     func prefetchAuthorAvatars(for comments: [Comment], avatarImageManager: ChatAvatarImageManaging = AvatarImageService.shared) {
@@ -110,29 +113,14 @@ final class PostDetailScreenViewModel: ObservableObject {
             return
         }
 
-        let targetState = !(postUserState?.isLiked ?? false)
-        if isMutatingLike == false {
-            confirmedLikeState = postUserState?.isLiked ?? false
-            confirmedLikeCount = post?.metrics.likeCount ?? 0
-        }
-
         engagementErrorMessage = nil
-        applyOptimisticLike(
-            targetState,
-            postID: postID,
-            userID: userID
+        let outcome = await engagementInteractionUseCase.toggleLike(
+            input: engagementInput(userID: userID),
+            onMutationStateChanged: { [weak self] isMutating in
+                self?.isMutatingLike = isMutating
+            }
         )
-        pendingLikeTarget = targetState
-
-        guard isMutatingLike == false else { return }
-
-        await drainLikeQueue(
-            brandID: brandID,
-            seasonID: seasonID,
-            postID: postID,
-            userID: userID,
-            repository: engagementRepository
-        )
+        engagementErrorMessage = outcome.errorMessage
     }
 
     func toggleSave() async {
@@ -141,29 +129,14 @@ final class PostDetailScreenViewModel: ObservableObject {
             return
         }
 
-        let targetState = !(postUserState?.isSaved ?? false)
-        if isMutatingSave == false {
-            confirmedSaveState = postUserState?.isSaved ?? false
-            confirmedSaveCount = post?.metrics.saveCount ?? 0
-        }
-
         engagementErrorMessage = nil
-        applyOptimisticSave(
-            targetState,
-            postID: postID,
-            userID: userID
+        let outcome = await engagementInteractionUseCase.toggleSave(
+            input: engagementInput(userID: userID),
+            onMutationStateChanged: { [weak self] isMutating in
+                self?.isMutatingSave = isMutating
+            }
         )
-        pendingSaveTarget = targetState
-
-        guard isMutatingSave == false else { return }
-
-        await drainSaveQueue(
-            brandID: brandID,
-            seasonID: seasonID,
-            postID: postID,
-            userID: userID,
-            repository: engagementRepository
-        )
+        engagementErrorMessage = outcome.errorMessage
     }
 
     func applyCommentMutation(_ result: CommentMutationResult) {
@@ -188,29 +161,31 @@ final class PostDetailScreenViewModel: ObservableObject {
         }
 
         do {
+            async let fetchedPostUserState = fetchPostUserState(
+                brandID: brandID,
+                seasonID: seasonID,
+                postID: postID,
+                repository: postUserStateRepository
+            )
             let content = try await useCase.execute(
                 brandID: brandID,
                 seasonID: seasonID,
                 postID: postID,
                 hiddenUserIDs: await loadHiddenUserIDs()
             )
+            
             comments = content.comments
             commentErrorMessage = content.commentErrorMessage
             await authorProfileStore.loadMissingAuthors(for: content.comments)
             syncAuthorDisplays()
-            let fetchedPostUserState = await fetchPostUserState(
-                brandID: brandID,
-                seasonID: seasonID,
-                postID: postID,
-                repository: postUserStateRepository
-            )
+            let resolvedPostUserState = await fetchedPostUserState
             post = content.post
-            postUserState = fetchedPostUserState
+            postUserState = resolvedPostUserState
             visibleCommentCount = content.visibleCommentCount
             interactionStore.seed(
                 post: content.post,
                 visibleCommentCount: content.visibleCommentCount,
-                userState: fetchedPostUserState
+                userState: resolvedPostUserState
             )
             loadedKey = "\(brandID.value)|\(seasonID.value)|\(postID.value)"
         } catch {
@@ -282,180 +257,18 @@ final class PostDetailScreenViewModel: ObservableObject {
         }
     }
 
-    private func drainLikeQueue(
-        brandID: BrandID,
-        seasonID: SeasonID,
-        postID: PostID,
-        userID: UserID,
-        repository: any PostEngagementRepositoryProtocol
-    ) async {
-        isMutatingLike = true
-        defer {
-            isMutatingLike = false
-            confirmedLikeState = nil
-            confirmedLikeCount = nil
-        }
-
-        while let target = pendingLikeTarget {
-            pendingLikeTarget = nil
-
-            do {
-                let result = try await repository.setLike(
-                    brandID: brandID,
-                    seasonID: seasonID,
-                    postID: postID,
-                    isLiked: target
-                )
-                confirmedLikeState = result.isLiked
-                confirmedLikeCount = result.metrics.likeCount
-
-                if let pendingLikeTarget,
-                   pendingLikeTarget != result.isLiked {
-                    applyOptimisticLike(
-                        pendingLikeTarget,
-                        postID: postID,
-                        userID: userID,
-                        baseLiked: result.isLiked,
-                        baseLikeCount: result.metrics.likeCount
-                    )
-                    continue
-                }
-
-                pendingLikeTarget = nil
-                applyLikeResult(result)
-            } catch {
-                pendingLikeTarget = nil
-                restoreConfirmedLike(postID: postID, userID: userID)
-                engagementErrorMessage = "좋아요 상태를 변경하지 못했습니다."
-                break
-            }
-        }
-    }
-
-    private func drainSaveQueue(
-        brandID: BrandID,
-        seasonID: SeasonID,
-        postID: PostID,
-        userID: UserID,
-        repository: any PostEngagementRepositoryProtocol
-    ) async {
-        isMutatingSave = true
-        defer {
-            isMutatingSave = false
-            confirmedSaveState = nil
-            confirmedSaveCount = nil
-        }
-
-        while let target = pendingSaveTarget {
-            pendingSaveTarget = nil
-
-            do {
-                let result = try await repository.setSave(
-                    brandID: brandID,
-                    seasonID: seasonID,
-                    postID: postID,
-                    isSaved: target
-                )
-                confirmedSaveState = result.isSaved
-                confirmedSaveCount = result.metrics.saveCount
-
-                if let pendingSaveTarget,
-                   pendingSaveTarget != result.isSaved {
-                    applyOptimisticSave(
-                        pendingSaveTarget,
-                        postID: postID,
-                        userID: userID,
-                        baseSaved: result.isSaved,
-                        baseSaveCount: result.metrics.saveCount
-                    )
-                    continue
-                }
-
-                pendingSaveTarget = nil
-                applySaveResult(result)
-            } catch {
-                pendingSaveTarget = nil
-                restoreConfirmedSave(postID: postID, userID: userID)
-                engagementErrorMessage = "저장 상태를 변경하지 못했습니다."
-                break
-            }
-        }
-    }
-
-    private func applyOptimisticLike(
-        _ isLiked: Bool,
-        postID: PostID,
-        userID: UserID,
-        baseLiked: Bool? = nil,
-        baseLikeCount: Int? = nil
-    ) {
-        let previousLiked = baseLiked ?? postUserState?.isLiked ?? false
-        let likeCount = baseLikeCount ?? post?.metrics.likeCount ?? 0
-
-        interactionStore.applyOptimisticLike(
+    private func engagementInput(userID: UserID) -> PostEngagementInteractionInput {
+        PostEngagementInteractionInput(
+            brandID: brandID,
+            seasonID: seasonID,
             postID: postID,
             userID: userID,
-            isLiked: isLiked,
-            baseLiked: previousLiked,
-            baseLikeCount: likeCount
-        )
-    }
-
-    private func applyOptimisticSave(
-        _ isSaved: Bool,
-        postID: PostID,
-        userID: UserID,
-        baseSaved: Bool? = nil,
-        baseSaveCount: Int? = nil
-    ) {
-        let previousSaved = baseSaved ?? postUserState?.isSaved ?? false
-        let saveCount = baseSaveCount ?? post?.metrics.saveCount ?? 0
-
-        interactionStore.applyOptimisticSave(
-            postID: postID,
-            userID: userID,
-            isSaved: isSaved,
-            baseSaved: previousSaved,
-            baseSaveCount: saveCount
-        )
-    }
-
-    private func applyLikeResult(_ result: PostEngagementResult) {
-        let shouldApplySave = isMutatingSave == false && pendingSaveTarget == nil
-        interactionStore.applyLikeResult(result, shouldApplySave: shouldApplySave)
-    }
-
-    private func applySaveResult(_ result: PostEngagementResult) {
-        let shouldApplyLike = isMutatingLike == false && pendingLikeTarget == nil
-        interactionStore.applySaveResult(result, shouldApplyLike: shouldApplyLike)
-    }
-
-    private func restoreConfirmedLike(postID: PostID, userID: UserID) {
-        guard let confirmedLikeState else { return }
-
-        interactionStore.restoreLike(
-            postID: postID,
-            userID: userID,
-            isLiked: confirmedLikeState,
-            likeCount: confirmedLikeCount
-        )
-    }
-
-    private func restoreConfirmedSave(postID: PostID, userID: UserID) {
-        guard let confirmedSaveState else { return }
-
-        interactionStore.restoreSave(
-            postID: postID,
-            userID: userID,
-            isSaved: confirmedSaveState,
-            saveCount: confirmedSaveCount
+            currentUserState: postUserState,
+            currentMetrics: post?.metrics
         )
     }
 
     private var currentUserID: UserID? {
-        let identityKey = LoginManager.shared.getAuthIdentityKey
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard identityKey.isEmpty == false else { return nil }
-        return UserID(value: identityKey)
+        currentUserIDProvider.currentUserID
     }
 }

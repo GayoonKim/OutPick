@@ -47,13 +47,6 @@ final class LoadPostDetailUseCase: LoadPostDetailUseCaseProtocol {
             postID: postID
         )
 
-        let visibleCommentCount = try? await commentRepository.fetchVisibleCommentCount(
-            brandID: brandID,
-            seasonID: seasonID,
-            postID: postID,
-            hiddenUserIDs: hiddenUserIDs
-        )
-
         do {
             let representativeComment = try await commentRepository.fetchRepresentativeComment(
                 brandID: brandID,
@@ -67,14 +60,14 @@ final class LoadPostDetailUseCase: LoadPostDetailUseCaseProtocol {
             return PostDetailContent(
                 post: post,
                 comments: visibleRepresentativeComment.map { [$0] } ?? [],
-                visibleCommentCount: visibleCommentCount,
+                visibleCommentCount: post.metrics.commentCount,
                 commentErrorMessage: nil
             )
         } catch {
             return PostDetailContent(
                 post: post,
                 comments: [],
-                visibleCommentCount: visibleCommentCount,
+                visibleCommentCount: post.metrics.commentCount,
                 commentErrorMessage: "댓글을 불러오지 못했습니다."
             )
         }

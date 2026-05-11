@@ -54,6 +54,8 @@ struct PostDetailView: View {
                                 commentCount: viewModel.visibleCommentCount ?? post.metrics.commentCount,
                                 isLiked: viewModel.postUserState?.isLiked ?? false,
                                 isSaved: viewModel.postUserState?.isSaved ?? false,
+                                isMutatingLike: viewModel.isMutatingLike,
+                                isMutatingSave: viewModel.isMutatingSave,
                                 errorMessage: viewModel.engagementErrorMessage,
                                 onLikeTap: {
                                     await viewModel.toggleLike()
@@ -228,6 +230,7 @@ struct PostDetailView: View {
                         let item = viewModel.displayItem(for: comment)
                         PostCommentCardView(
                             comment: item.comment,
+                            replyCount: viewModel.displayReplyCount(for: item.comment),
                             author: item.author,
                             badge: .representative,
                             onCardTap: {

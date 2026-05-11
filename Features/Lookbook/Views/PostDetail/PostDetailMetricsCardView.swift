@@ -12,6 +12,8 @@ struct PostDetailMetricsCardView: View {
     let commentCount: Int
     let isLiked: Bool
     let isSaved: Bool
+    let isMutatingLike: Bool
+    let isMutatingSave: Bool
     let errorMessage: String?
     let onLikeTap: () async -> Void
     let onCommentTap: () -> Void
@@ -26,6 +28,7 @@ struct PostDetailMetricsCardView: View {
                     value: post.metrics.likeCount,
                     title: "좋아요",
                     isSelected: isLiked,
+                    isMutating: isMutatingLike,
                     selectedColor: .red,
                     action: onLikeTap
                 )
@@ -35,6 +38,7 @@ struct PostDetailMetricsCardView: View {
                     value: commentCount,
                     title: "댓글",
                     isSelected: false,
+                    isMutating: false,
                     selectedColor: .black,
                     action: {
                         onCommentTap()
@@ -46,6 +50,7 @@ struct PostDetailMetricsCardView: View {
                     value: post.metrics.saveCount,
                     title: "저장",
                     isSelected: isSaved,
+                    isMutating: isMutatingSave,
                     selectedColor: .black,
                     action: onSaveTap
                 )
@@ -70,6 +75,7 @@ struct PostDetailMetricsCardView: View {
         value: Int,
         title: String,
         isSelected: Bool,
+        isMutating: Bool,
         selectedColor: Color,
         action: @escaping () async -> Void
     ) -> some View {
@@ -79,10 +85,19 @@ struct PostDetailMetricsCardView: View {
             }
         } label: {
             VStack(spacing: 6) {
-                Image(systemName: isSelected ? selectedSystemName : systemName)
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(isSelected ? selectedColor : .secondary)
-                    .frame(height: 22)
+                ZStack {
+                    Image(systemName: isSelected ? selectedSystemName : systemName)
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(isSelected ? selectedColor : .secondary)
+                        .opacity(isMutating ? 0 : 1)
+
+                    if isMutating {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(isSelected ? selectedColor : .secondary)
+                    }
+                }
+                .frame(height: 22)
 
                 Text(title)
                     .font(.caption.weight(.semibold))

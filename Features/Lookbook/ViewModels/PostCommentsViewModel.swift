@@ -35,6 +35,7 @@ final class PostCommentsViewModel: ObservableObject {
     private let loadHiddenUserIDsUseCase: any LoadHiddenCommentUserIDsUseCaseProtocol
     private let filterHiddenAuthorsUseCase: FilterHiddenCommentAuthorsUseCase
     private let interactionStore: LookbookInteractionStore
+    private let currentUserIDProvider: any CurrentUserIDProviding
     private let authorProfileStore: CommentAuthorProfileStore
     private let avatarImageManager: ChatAvatarImageManaging
     private let pageSize: Int
@@ -70,6 +71,7 @@ final class PostCommentsViewModel: ObservableObject {
         loadHiddenUserIDsUseCase: any LoadHiddenCommentUserIDsUseCaseProtocol,
         filterHiddenAuthorsUseCase: FilterHiddenCommentAuthorsUseCase,
         interactionStore: LookbookInteractionStore,
+        currentUserIDProvider: any CurrentUserIDProviding,
         authorProfileStore: CommentAuthorProfileStore? = nil,
         avatarImageManager: ChatAvatarImageManaging = AvatarImageService.shared,
         initialSort: CommentSortOption = .latest,
@@ -88,7 +90,10 @@ final class PostCommentsViewModel: ObservableObject {
         self.loadHiddenUserIDsUseCase = loadHiddenUserIDsUseCase
         self.filterHiddenAuthorsUseCase = filterHiddenAuthorsUseCase
         self.interactionStore = interactionStore
-        self.authorProfileStore = authorProfileStore ?? CommentAuthorProfileStore()
+        self.currentUserIDProvider = currentUserIDProvider
+        self.authorProfileStore = authorProfileStore ?? CommentAuthorProfileStore(
+            currentUserIDProvider: currentUserIDProvider
+        )
         self.avatarImageManager = avatarImageManager
         self.selectedSort = initialSort
         self.pageSize = pageSize
@@ -123,6 +128,10 @@ final class PostCommentsViewModel: ObservableObject {
 
     func displayItem(for comment: Comment) -> CommentDisplayItem {
         authorProfileStore.displayItem(for: comment)
+    }
+
+    func displayReplyCount(for comment: Comment) -> Int {
+        interactionStore.replyCount(for: comment)
     }
 
     func clearActionError() {
@@ -235,7 +244,15 @@ final class PostCommentsViewModel: ObservableObject {
         guard let index = items.firstIndex(where: { $0.id == commentID }) else { return }
 
         let upperBound = min(items.count, index + avatarPrefetchLimit)
-        let paths = items[index..<upperBound]
+        prefetchAuthorAvatars(for: Array(items[index..<upperBound]))
+    }
+
+    func prefetchInitialAuthorAvatars() {
+        prefetchAuthorAvatars(for: Array(commentFeedComments.prefix(avatarPrefetchLimit)))
+    }
+
+    private func prefetchAuthorAvatars(for comments: [Comment]) {
+        let paths = comments
             .compactMap { authorDisplays[$0.userID]?.avatarPath }
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
@@ -324,6 +341,7 @@ final class PostCommentsViewModel: ObservableObject {
                 loadedKey = stateKey(sort: selectedSort)
                 await authorProfileStore.loadMissingAuthors(for: commentFeedComments)
                 syncAuthorDisplays()
+                prefetchInitialAuthorAvatars()
             } else {
                 let page = try await useCase.loadRootComments(
                     brandID: brandID,
@@ -465,10 +483,7 @@ final class PostCommentsViewModel: ObservableObject {
     }
 
     private var currentUserID: UserID? {
-        let identityKey = LoginManager.shared.getAuthIdentityKey
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard identityKey.isEmpty == false else { return nil }
-        return UserID(value: identityKey)
+        currentUserIDProvider.currentUserID
     }
 
     private func duplicateExcludedIDs() -> Set<CommentID> {

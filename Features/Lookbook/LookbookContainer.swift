@@ -14,6 +14,7 @@ final class LookbookContainer {
     let brandAdminSessionStore: BrandAdminSessionStore
     let lookbookHomeViewModel: LookbookHomeViewModel
     let interactionStore: LookbookInteractionStore
+    let currentUserIDProvider: any CurrentUserIDProviding
 
     private let loadPostCommentsUseCase: any LoadPostCommentsUseCaseProtocol
     private let loadCommentRepliesUseCase: any LoadCommentRepliesUseCaseProtocol
@@ -34,6 +35,7 @@ final class LookbookContainer {
         self.provider = provider
         self.brandAdminSessionStore = brandAdminSessionStore
         self.interactionStore = LookbookInteractionStore()
+        self.currentUserIDProvider = LoginManagerCurrentUserIDProvider()
         self.loadPostCommentsUseCase = LoadPostCommentsUseCase(
             commentRepository: provider.commentRepository
         )
@@ -67,7 +69,6 @@ final class LookbookContainer {
             postRepository: provider.postRepository,
             commentRepository: provider.commentRepository
         )
-
         self.lookbookHomeViewModel = LookbookHomeViewModel(
             repo: provider.brandRepository,
             brandAdminSessionStore: brandAdminSessionStore,
@@ -168,6 +169,7 @@ final class LookbookContainer {
             seasonID: seasonID,
             useCase: loadSeasonDetailUseCase,
             brandImageCache: provider.brandImageCache,
+            interactionStore: interactionStore,
             maxBytes: 1_500_000
         )
     }
@@ -184,8 +186,12 @@ final class LookbookContainer {
             useCase: loadPostDetailUseCase,
             loadHiddenUserIDsUseCase: loadHiddenCommentUserIDsUseCase,
             postUserStateRepository: provider.postUserStateRepository,
-            engagementRepository: provider.postEngagementRepository,
-            interactionStore: interactionStore
+            engagementInteractionUseCase: PostEngagementInteractionUseCase(
+                repository: provider.postEngagementRepository,
+                interactionStore: interactionStore
+            ),
+            interactionStore: interactionStore,
+            currentUserIDProvider: currentUserIDProvider
         )
     }
 
@@ -251,7 +257,8 @@ final class LookbookContainer {
             blockUseCase: blockUserUseCase,
             loadHiddenUserIDsUseCase: loadHiddenCommentUserIDsUseCase,
             filterHiddenAuthorsUseCase: filterHiddenCommentAuthorsUseCase,
-            interactionStore: interactionStore
+            interactionStore: interactionStore,
+            currentUserIDProvider: currentUserIDProvider
         )
     }
 
@@ -318,7 +325,8 @@ final class LookbookContainer {
             blockUseCase: blockUserUseCase,
             loadHiddenUserIDsUseCase: loadHiddenCommentUserIDsUseCase,
             filterHiddenAuthorsUseCase: filterHiddenCommentAuthorsUseCase,
-            interactionStore: interactionStore
+            interactionStore: interactionStore,
+            currentUserIDProvider: currentUserIDProvider
         )
     }
 }

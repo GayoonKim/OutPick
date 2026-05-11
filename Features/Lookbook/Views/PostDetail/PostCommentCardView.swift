@@ -18,6 +18,7 @@ struct PostCommentBadge: Equatable {
 
 struct PostCommentCardView: View {
     let comment: Comment
+    let replyCount: Int
     let author: CommentAuthorDisplay
     let badges: [PostCommentBadge]
     let avatarImageManager: ChatAvatarImageManaging
@@ -30,6 +31,7 @@ struct PostCommentCardView: View {
 
     init(
         comment: Comment,
+        replyCount: Int? = nil,
         author: CommentAuthorDisplay? = nil,
         badge: PostCommentBadge? = nil,
         badges: [PostCommentBadge] = [],
@@ -43,6 +45,7 @@ struct PostCommentCardView: View {
         onBlockTap: (() -> Void)? = nil
     ) {
         self.comment = comment
+        self.replyCount = replyCount ?? comment.replyCount
         self.author = author ?? .unknown(userID: comment.userID)
         if badges.isEmpty == false {
             self.badges = badges
@@ -138,12 +141,12 @@ struct PostCommentCardView: View {
                         Button {
                             onRepliesTap?()
                         } label: {
-                            Label("\(comment.replyCount)", systemImage: "bubble.right")
+                            Label("\(replyCount)", systemImage: "bubble.right")
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("답글 \(comment.replyCount)개 보기")
+                        .accessibilityLabel("답글 \(replyCount)개 보기")
                     } else {
-                        Label("\(comment.replyCount)", systemImage: "bubble.right")
+                        Label("\(replyCount)", systemImage: "bubble.right")
                     }
 
                 }
@@ -215,7 +218,7 @@ struct PostCommentCardView: View {
     }
 
     private var canOpenReplies: Bool {
-        comment.replyCount > 0 && onRepliesTap != nil
+        replyCount > 0 && onRepliesTap != nil
     }
 }
 

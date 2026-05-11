@@ -9,6 +9,7 @@ import SwiftUI
 
 struct SeasonLookGridItemView: View {
     let post: LookbookPost
+    let commentCount: Int
     let brandImageCache: any BrandImageCacheProtocol
 
     private var firstMedia: MediaAsset? {
@@ -46,7 +47,7 @@ struct SeasonLookGridItemView: View {
                                 .lineLimit(2)
                         }
 
-                        Text("좋아요 \(post.metrics.likeCount) · 댓글 \(post.metrics.commentCount)")
+                        Text("좋아요 \(post.metrics.likeCount) · 댓글 \(commentCount)")
                             .font(.caption2)
                             .foregroundStyle(.white.opacity(0.88))
                     }

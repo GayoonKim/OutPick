@@ -21,8 +21,27 @@ final class LookbookInteractionStore: ObservableObject {
     @Published private(set) var postStates: [PostID: LookbookPostInteractionState] = [:]
     @Published private(set) var replyCounts: [CommentID: Int] = [:]
 
+    private let maxPostStateCount: Int
+    private let maxReplyCount: Int
+    private let stateRetentionInterval: TimeInterval
+    private var replyCountUpdatedAt: [CommentID: Date] = [:]
+
+    init(
+        maxPostStateCount: Int = 300,
+        maxReplyCount: Int = 600,
+        stateRetentionInterval: TimeInterval = 60 * 60
+    ) {
+        self.maxPostStateCount = max(1, maxPostStateCount)
+        self.maxReplyCount = max(1, maxReplyCount)
+        self.stateRetentionInterval = max(60, stateRetentionInterval)
+    }
+
     func state(for postID: PostID) -> LookbookPostInteractionState? {
         postStates[postID]
+    }
+
+    func replyCount(for comment: Comment) -> Int {
+        replyCounts[comment.id] ?? comment.replyCount
     }
 
     func seed(
@@ -37,6 +56,19 @@ final class LookbookInteractionStore: ObservableObject {
             userState: userState,
             updatedAt: Date()
         )
+        pruneExpiredStates()
+    }
+
+    func seedPostMetrics(_ post: LookbookPost) {
+        let existingState = postStates[post.id]
+        postStates[post.id] = LookbookPostInteractionState(
+            postID: post.id,
+            metrics: post.metrics,
+            visibleCommentCount: existingState?.visibleCommentCount,
+            userState: existingState?.userState,
+            updatedAt: Date()
+        )
+        pruneExpiredStates()
     }
 
     func applyOptimisticLike(
@@ -67,6 +99,7 @@ final class LookbookInteractionStore: ObservableObject {
         )
         state.updatedAt = Date()
         postStates[postID] = state
+        pruneExpiredStates()
     }
 
     func applyOptimisticSave(
@@ -97,6 +130,7 @@ final class LookbookInteractionStore: ObservableObject {
         )
         state.updatedAt = Date()
         postStates[postID] = state
+        pruneExpiredStates()
     }
 
     func applyLikeResult(
@@ -121,6 +155,7 @@ final class LookbookInteractionStore: ObservableObject {
         )
         state.updatedAt = Date()
         postStates[result.postID] = state
+        pruneExpiredStates()
     }
 
     func applySaveResult(
@@ -145,6 +180,7 @@ final class LookbookInteractionStore: ObservableObject {
         )
         state.updatedAt = Date()
         postStates[result.postID] = state
+        pruneExpiredStates()
     }
 
     func restoreLike(
@@ -173,6 +209,7 @@ final class LookbookInteractionStore: ObservableObject {
         )
         state.updatedAt = Date()
         postStates[postID] = state
+        pruneExpiredStates()
     }
 
     func restoreSave(
@@ -201,6 +238,7 @@ final class LookbookInteractionStore: ObservableObject {
         )
         state.updatedAt = Date()
         postStates[postID] = state
+        pruneExpiredStates()
     }
 
     func applyCommentMutation(_ result: CommentMutationResult) {
@@ -216,9 +254,11 @@ final class LookbookInteractionStore: ObservableObject {
         state.visibleCommentCount = state.visibleCommentCount.map { max(0, $0 + 1) }
         if let parentCommentID = result.parentCommentID {
             replyCounts[parentCommentID] = max(0, result.replyCount)
+            replyCountUpdatedAt[parentCommentID] = Date()
         }
         state.updatedAt = Date()
         postStates[result.postID] = state
+        pruneExpiredStates()
     }
 
     func applyCommentDeletion(_ result: CommentDeletionResult) {
@@ -236,8 +276,55 @@ final class LookbookInteractionStore: ObservableObject {
         }
         if let parentCommentID = result.parentCommentID {
             replyCounts[parentCommentID] = max(0, result.replyCount)
+            replyCountUpdatedAt[parentCommentID] = Date()
         }
         state.updatedAt = Date()
         postStates[result.postID] = state
+        pruneExpiredStates()
+    }
+
+    private func pruneExpiredStates(now: Date = Date()) {
+        prunePostStates(now: now)
+        pruneReplyCounts(now: now)
+    }
+
+    private func prunePostStates(now: Date) {
+        let cutoff = now.addingTimeInterval(-stateRetentionInterval)
+        postStates = postStates.filter { _, state in
+            state.updatedAt >= cutoff
+        }
+
+        guard postStates.count > maxPostStateCount else { return }
+        let idsToRemove = postStates
+            .sorted { $0.value.updatedAt < $1.value.updatedAt }
+            .prefix(postStates.count - maxPostStateCount)
+            .map(\.key)
+
+        for id in idsToRemove {
+            postStates.removeValue(forKey: id)
+        }
+    }
+
+    private func pruneReplyCounts(now: Date) {
+        let cutoff = now.addingTimeInterval(-stateRetentionInterval)
+        let expiredIDs = replyCountUpdatedAt
+            .filter { $0.value < cutoff }
+            .map(\.key)
+
+        for id in expiredIDs {
+            replyCounts.removeValue(forKey: id)
+            replyCountUpdatedAt.removeValue(forKey: id)
+        }
+
+        guard replyCounts.count > maxReplyCount else { return }
+        let idsToRemove = replyCountUpdatedAt
+            .sorted { $0.value < $1.value }
+            .prefix(replyCounts.count - maxReplyCount)
+            .map(\.key)
+
+        for id in idsToRemove {
+            replyCounts.removeValue(forKey: id)
+            replyCountUpdatedAt.removeValue(forKey: id)
+        }
     }
 }

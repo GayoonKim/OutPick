@@ -5,12 +5,14 @@
 //  Created by Codex on 4/24/26.
 //
 
+import Combine
 import Foundation
 
 @MainActor
 final class SeasonDetailViewModel: ObservableObject {
     @Published private(set) var season: Season?
     @Published private(set) var posts: [LookbookPost] = []
+    @Published private(set) var visibleCommentCounts: [PostID: Int] = [:]
     @Published private(set) var isLoading: Bool = false
     @Published private(set) var errorMessage: String?
 
@@ -21,18 +23,21 @@ final class SeasonDetailViewModel: ObservableObject {
     private let seasonID: SeasonID
     private let useCase: any LoadSeasonDetailUseCaseProtocol
     private let brandImageCache: any BrandImageCacheProtocol
+    private let interactionStore: LookbookInteractionStore
     private let maxBytes: Int
 
     private var loadedKey: String?
     private var isRequesting: Bool = false
     private var prefetchedPostImagePaths = Set<String>()
     private var prefetchedThroughIndex: Int = -1
+    private var cancellables: Set<AnyCancellable> = []
 
     init(
         brandID: BrandID,
         seasonID: SeasonID,
         useCase: any LoadSeasonDetailUseCaseProtocol,
         brandImageCache: any BrandImageCacheProtocol,
+        interactionStore: LookbookInteractionStore,
         maxBytes: Int,
         initialPrefetchCount: Int = 8,
         lookAheadPrefetchCount: Int = 20,
@@ -42,10 +47,12 @@ final class SeasonDetailViewModel: ObservableObject {
         self.seasonID = seasonID
         self.useCase = useCase
         self.brandImageCache = brandImageCache
+        self.interactionStore = interactionStore
         self.maxBytes = maxBytes
         self.initialPrefetchCount = initialPrefetchCount
         self.lookAheadPrefetchCount = lookAheadPrefetchCount
         self.prefetchConcurrency = prefetchConcurrency
+        bindInteractionStore()
     }
 
     func loadIfNeeded() async {
@@ -92,6 +99,7 @@ final class SeasonDetailViewModel: ObservableObject {
             )
             season = content.season
             posts = content.posts
+            content.posts.forEach { interactionStore.seedPostMetrics($0) }
             loadedKey = "\(brandID.value)|\(seasonID.value)"
         } catch {
             season = nil
@@ -132,6 +140,34 @@ final class SeasonDetailViewModel: ObservableObject {
         )
         prefetchedThroughIndex = requestedEndIndex
         schedulePrefetch(items: targets, brandImageCache: brandImageCache)
+    }
+
+    func displayCommentCount(for post: LookbookPost) -> Int {
+        visibleCommentCounts[post.id] ?? post.metrics.commentCount
+    }
+
+    private func bindInteractionStore() {
+        interactionStore.$postStates
+            .sink { [weak self] states in
+                self?.applyInteractionStates(states)
+            }
+            .store(in: &cancellables)
+    }
+
+    private func applyInteractionStates(_ states: [PostID: LookbookPostInteractionState]) {
+        guard posts.isEmpty == false else { return }
+
+        visibleCommentCounts = states.reduce(into: [:]) { result, item in
+            guard let visibleCommentCount = item.value.visibleCommentCount else { return }
+            result[item.key] = visibleCommentCount
+        }
+
+        posts = posts.map { post in
+            guard let state = states[post.id] else { return post }
+            var updatedPost = post
+            updatedPost.metrics = state.metrics
+            return updatedPost
+        }
     }
 
     private func makePrefetchTargets(

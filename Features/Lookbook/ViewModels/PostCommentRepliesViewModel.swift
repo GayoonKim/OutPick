@@ -35,6 +35,7 @@ final class PostCommentRepliesViewModel: ObservableObject {
     private let loadHiddenUserIDsUseCase: any LoadHiddenCommentUserIDsUseCaseProtocol
     private let filterHiddenAuthorsUseCase: FilterHiddenCommentAuthorsUseCase
     private let interactionStore: LookbookInteractionStore
+    private let currentUserIDProvider: any CurrentUserIDProviding
     private let authorProfileStore: CommentAuthorProfileStore
     private let avatarImageManager: ChatAvatarImageManaging
     private let pageSize: Int
@@ -76,6 +77,7 @@ final class PostCommentRepliesViewModel: ObservableObject {
         loadHiddenUserIDsUseCase: any LoadHiddenCommentUserIDsUseCaseProtocol,
         filterHiddenAuthorsUseCase: FilterHiddenCommentAuthorsUseCase,
         interactionStore: LookbookInteractionStore,
+        currentUserIDProvider: any CurrentUserIDProviding,
         authorProfileStore: CommentAuthorProfileStore? = nil,
         avatarImageManager: ChatAvatarImageManaging = AvatarImageService.shared,
         pageSize: Int = 30,
@@ -94,7 +96,10 @@ final class PostCommentRepliesViewModel: ObservableObject {
         self.loadHiddenUserIDsUseCase = loadHiddenUserIDsUseCase
         self.filterHiddenAuthorsUseCase = filterHiddenAuthorsUseCase
         self.interactionStore = interactionStore
-        self.authorProfileStore = authorProfileStore ?? CommentAuthorProfileStore()
+        self.currentUserIDProvider = currentUserIDProvider
+        self.authorProfileStore = authorProfileStore ?? CommentAuthorProfileStore(
+            currentUserIDProvider: currentUserIDProvider
+        )
         self.avatarImageManager = avatarImageManager
         self.pageSize = pageSize
         self.avatarPrefetchLimit = avatarPrefetchLimit
@@ -121,6 +126,10 @@ final class PostCommentRepliesViewModel: ObservableObject {
 
     func displayItem(for comment: Comment) -> CommentDisplayItem {
         authorProfileStore.displayItem(for: comment)
+    }
+
+    func displayReplyCount(for comment: Comment) -> Int {
+        interactionStore.replyCount(for: comment)
     }
 
     func clearActionError() {
@@ -425,10 +434,7 @@ final class PostCommentRepliesViewModel: ObservableObject {
     }
 
     private var currentUserID: UserID? {
-        let identityKey = LoginManager.shared.getAuthIdentityKey
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard identityKey.isEmpty == false else { return nil }
-        return UserID(value: identityKey)
+        currentUserIDProvider.currentUserID
     }
 
     private func stateKey() -> String {

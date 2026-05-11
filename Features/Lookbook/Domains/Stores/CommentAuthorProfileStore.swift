@@ -12,15 +12,18 @@ final class CommentAuthorProfileStore {
     private(set) var authorDisplays: [UserID: CommentAuthorDisplay] = [:]
 
     private let userProfileRepository: UserProfileRepositoryProtocol
+    private let currentUserIDProvider: any CurrentUserIDProviding
     private let maxRetryCount: Int
     private let retryDelayNanoseconds: UInt64
 
     init(
         userProfileRepository: UserProfileRepositoryProtocol = FirebaseRepositoryProvider.shared.userProfileRepository,
+        currentUserIDProvider: any CurrentUserIDProviding = LoginManagerCurrentUserIDProvider(),
         maxRetryCount: Int = 2,
         retryDelayNanoseconds: UInt64 = 300_000_000
     ) {
         self.userProfileRepository = userProfileRepository
+        self.currentUserIDProvider = currentUserIDProvider
         self.maxRetryCount = max(0, maxRetryCount)
         self.retryDelayNanoseconds = retryDelayNanoseconds
     }
@@ -118,9 +121,6 @@ final class CommentAuthorProfileStore {
     }
 
     private var currentUserID: UserID? {
-        let userID = LoginManager.shared.getAuthIdentityKey
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard userID.isEmpty == false else { return nil }
-        return UserID(value: userID)
+        currentUserIDProvider.currentUserID
     }
 }
