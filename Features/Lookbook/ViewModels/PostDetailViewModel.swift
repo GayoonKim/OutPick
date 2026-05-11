@@ -63,6 +63,15 @@ final class PostDetailScreenViewModel: ObservableObject {
             currentUserIDProvider: currentUserIDProvider
         )
         bindInteractionStore()
+        interactionStore.pinPostIDs([postID])
+    }
+
+    deinit {
+        let postID = postID
+        let interactionStore = interactionStore
+        Task { @MainActor in
+            interactionStore.unpinPostIDs([postID])
+        }
     }
 
     var isMutatingEngagement: Bool {

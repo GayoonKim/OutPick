@@ -48,6 +48,7 @@ final class PostCommentRepliesViewModel: ObservableObject {
     private var prefetchedAvatarPaths: Set<String> = []
     private var hiddenUserIDs: Set<UserID> = []
     private var didLoadHiddenUserIDs: Bool = false
+    private var pinnedCommentIDs: Set<CommentID> = []
     private var cancellables: Set<AnyCancellable> = []
 
     var hasMoreReplies: Bool {
@@ -105,6 +106,15 @@ final class PostCommentRepliesViewModel: ObservableObject {
         self.avatarPrefetchLimit = avatarPrefetchLimit
         self.avatarThumbnailMaxBytes = avatarThumbnailMaxBytes
         bindInteractionStore()
+        updatePinnedCommentIDs()
+    }
+
+    deinit {
+        let pinnedCommentIDs = pinnedCommentIDs
+        let interactionStore = interactionStore
+        Task { @MainActor in
+            interactionStore.unpinCommentIDs(pinnedCommentIDs)
+        }
     }
 
     func loadIfNeeded() async {
@@ -345,6 +355,7 @@ final class PostCommentRepliesViewModel: ObservableObject {
             }
             await authorProfileStore.loadMissingAuthors(for: visibleItems)
             syncAuthorDisplays()
+            updatePinnedCommentIDs()
         } catch {
             errorMessage = "답글을 불러오지 못했습니다."
         }
@@ -370,6 +381,7 @@ final class PostCommentRepliesViewModel: ObservableObject {
 
         replies.removeAll { $0.id == result.commentID }
         parentComment.replyCount = max(0, result.replyCount)
+        updatePinnedCommentIDs()
     }
 
     private func removeComments(by userID: UserID) {
@@ -377,6 +389,7 @@ final class PostCommentRepliesViewModel: ObservableObject {
             isParentCommentHidden = true
         }
         replies.removeAll { $0.userID == userID }
+        updatePinnedCommentIDs()
     }
 
     private func loadHiddenUserIDsIfNeeded(force: Bool) async -> Set<UserID> {
@@ -439,5 +452,19 @@ final class PostCommentRepliesViewModel: ObservableObject {
 
     private func stateKey() -> String {
         "\(brandID.value)|\(seasonID.value)|\(postID.value)|\(parentComment.id.value)"
+    }
+
+    private func updatePinnedCommentIDs() {
+        let nextCommentIDs = Set(([parentComment] + replies).map(\.id))
+        let removedCommentIDs = pinnedCommentIDs.subtracting(nextCommentIDs)
+        let addedCommentIDs = nextCommentIDs.subtracting(pinnedCommentIDs)
+
+        if removedCommentIDs.isEmpty == false {
+            interactionStore.unpinCommentIDs(removedCommentIDs)
+        }
+        if addedCommentIDs.isEmpty == false {
+            interactionStore.pinCommentIDs(addedCommentIDs)
+        }
+        pinnedCommentIDs = nextCommentIDs
     }
 }

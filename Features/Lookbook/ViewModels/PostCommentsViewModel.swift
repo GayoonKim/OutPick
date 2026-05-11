@@ -48,6 +48,7 @@ final class PostCommentsViewModel: ObservableObject {
     private var prefetchedAvatarPaths: Set<String> = []
     private var hiddenUserIDs: Set<UserID> = []
     private var didLoadHiddenUserIDs: Bool = false
+    private var pinnedCommentIDs: Set<CommentID> = []
     private var cancellables: Set<AnyCancellable> = []
 
     var hasMoreRootComments: Bool {
@@ -100,6 +101,14 @@ final class PostCommentsViewModel: ObservableObject {
         self.avatarPrefetchLimit = avatarPrefetchLimit
         self.avatarThumbnailMaxBytes = avatarThumbnailMaxBytes
         bindInteractionStore()
+    }
+
+    deinit {
+        let pinnedCommentIDs = pinnedCommentIDs
+        let interactionStore = interactionStore
+        Task { @MainActor in
+            interactionStore.unpinCommentIDs(pinnedCommentIDs)
+        }
     }
 
     func loadIfNeeded() async {
@@ -341,6 +350,7 @@ final class PostCommentsViewModel: ObservableObject {
                 loadedKey = stateKey(sort: selectedSort)
                 await authorProfileStore.loadMissingAuthors(for: commentFeedComments)
                 syncAuthorDisplays()
+                updatePinnedCommentIDs()
                 prefetchInitialAuthorAvatars()
             } else {
                 let page = try await useCase.loadRootComments(
@@ -361,6 +371,7 @@ final class PostCommentsViewModel: ObservableObject {
                 rootComments.append(contentsOf: visibleItems)
                 await authorProfileStore.loadMissingAuthors(for: visibleItems)
                 syncAuthorDisplays()
+                updatePinnedCommentIDs()
             }
         } catch {
             errorMessage = "댓글을 불러오지 못했습니다."
@@ -410,6 +421,7 @@ final class PostCommentsViewModel: ObservableObject {
             representativeComment = nil
         }
         rootComments.removeAll { $0.id == result.commentID }
+        updatePinnedCommentIDs()
     }
 
     private func removeComments(by userID: UserID) {
@@ -418,6 +430,7 @@ final class PostCommentsViewModel: ObservableObject {
             representativeComment = nil
         }
         rootComments.removeAll { $0.userID == userID }
+        updatePinnedCommentIDs()
     }
 
     private func loadHiddenUserIDsIfNeeded(force: Bool) async -> Set<UserID> {
@@ -496,6 +509,20 @@ final class PostCommentsViewModel: ObservableObject {
 
     private func stateKey(sort: CommentSortOption) -> String {
         "\(brandID.value)|\(seasonID.value)|\(postID.value)|\(sort.rawValue)"
+    }
+
+    private func updatePinnedCommentIDs() {
+        let nextCommentIDs = Set(commentFeedComments.map(\.id))
+        let removedCommentIDs = pinnedCommentIDs.subtracting(nextCommentIDs)
+        let addedCommentIDs = nextCommentIDs.subtracting(pinnedCommentIDs)
+
+        if removedCommentIDs.isEmpty == false {
+            interactionStore.unpinCommentIDs(removedCommentIDs)
+        }
+        if addedCommentIDs.isEmpty == false {
+            interactionStore.pinCommentIDs(addedCommentIDs)
+        }
+        pinnedCommentIDs = nextCommentIDs
     }
 
     private var commentFeedComments: [Comment] {

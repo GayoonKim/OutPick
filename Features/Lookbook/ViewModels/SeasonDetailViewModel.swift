@@ -30,6 +30,7 @@ final class SeasonDetailViewModel: ObservableObject {
     private var isRequesting: Bool = false
     private var prefetchedPostImagePaths = Set<String>()
     private var prefetchedThroughIndex: Int = -1
+    private var pinnedPostIDs: Set<PostID> = []
     private var cancellables: Set<AnyCancellable> = []
 
     init(
@@ -53,6 +54,14 @@ final class SeasonDetailViewModel: ObservableObject {
         self.lookAheadPrefetchCount = lookAheadPrefetchCount
         self.prefetchConcurrency = prefetchConcurrency
         bindInteractionStore()
+    }
+
+    deinit {
+        let pinnedPostIDs = pinnedPostIDs
+        let interactionStore = interactionStore
+        Task { @MainActor in
+            interactionStore.unpinPostIDs(pinnedPostIDs)
+        }
     }
 
     func loadIfNeeded() async {
@@ -99,11 +108,13 @@ final class SeasonDetailViewModel: ObservableObject {
             )
             season = content.season
             posts = content.posts
+            updatePinnedPostIDs(Set(content.posts.map(\.id)))
             content.posts.forEach { interactionStore.seedPostMetrics($0) }
             loadedKey = "\(brandID.value)|\(seasonID.value)"
         } catch {
             season = nil
             posts = []
+            updatePinnedPostIDs([])
             errorMessage = "시즌과 룩북 사진을 불러오지 못했습니다."
             prefetchedPostImagePaths.removeAll()
             prefetchedThroughIndex = -1
@@ -152,6 +163,19 @@ final class SeasonDetailViewModel: ObservableObject {
                 self?.applyInteractionStates(states)
             }
             .store(in: &cancellables)
+    }
+
+    private func updatePinnedPostIDs(_ nextPostIDs: Set<PostID>) {
+        let removedPostIDs = pinnedPostIDs.subtracting(nextPostIDs)
+        let addedPostIDs = nextPostIDs.subtracting(pinnedPostIDs)
+
+        if removedPostIDs.isEmpty == false {
+            interactionStore.unpinPostIDs(removedPostIDs)
+        }
+        if addedPostIDs.isEmpty == false {
+            interactionStore.pinPostIDs(addedPostIDs)
+        }
+        pinnedPostIDs = nextPostIDs
     }
 
     private func applyInteractionStates(_ states: [PostID: LookbookPostInteractionState]) {
