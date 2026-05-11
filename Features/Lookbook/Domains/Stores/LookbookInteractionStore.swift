@@ -16,6 +16,28 @@ struct LookbookPostInteractionState: Equatable {
     var updatedAt: Date
 }
 
+final class InteractionPinScope {
+    private var invalidateAction: (@MainActor () -> Void)?
+
+    init(invalidateAction: @escaping @MainActor () -> Void) {
+        self.invalidateAction = invalidateAction
+    }
+
+    @MainActor
+    func invalidate() {
+        guard let invalidateAction else { return }
+        self.invalidateAction = nil
+        invalidateAction()
+    }
+
+    deinit {
+        guard let invalidateAction else { return }
+        Task { @MainActor in
+            invalidateAction()
+        }
+    }
+}
+
 @MainActor
 final class LookbookInteractionStore: ObservableObject {
     @Published private(set) var postStates: [PostID: LookbookPostInteractionState] = [:]
@@ -23,6 +45,8 @@ final class LookbookInteractionStore: ObservableObject {
 
     private var postStore: PostInteractionStore
     private var commentStore: CommentInteractionStore
+    private var postStateSubjects: [PostID: CurrentValueSubject<LookbookPostInteractionState?, Never>] = [:]
+    private var replyCountSubjects: [CommentID: CurrentValueSubject<Int?, Never>] = [:]
 
     init(
         maxPostStateCount: Int = 300,
@@ -45,6 +69,42 @@ final class LookbookInteractionStore: ObservableObject {
 
     func replyCount(for comment: Comment) -> Int {
         commentStore.replyCount(for: comment)
+    }
+
+    func postStatePublisher(for postID: PostID) -> AnyPublisher<LookbookPostInteractionState?, Never> {
+        postStateSubject(for: postID)
+            .eraseToAnyPublisher()
+    }
+
+    func replyCountPublisher(for commentID: CommentID) -> AnyPublisher<Int?, Never> {
+        replyCountSubject(for: commentID)
+            .eraseToAnyPublisher()
+    }
+
+    func pinScope(
+        postIDs: Set<PostID> = [],
+        commentIDs: Set<CommentID> = []
+    ) -> InteractionPinScope {
+        if postIDs.isEmpty == false {
+            postStore.pin(postIDs)
+        }
+        if commentIDs.isEmpty == false {
+            commentStore.pin(commentIDs)
+        }
+        syncPostStates()
+        syncReplyCounts()
+
+        return InteractionPinScope { [weak self] in
+            guard let self else { return }
+            if postIDs.isEmpty == false {
+                self.postStore.unpin(postIDs)
+            }
+            if commentIDs.isEmpty == false {
+                self.commentStore.unpin(commentIDs)
+            }
+            self.syncPostStates()
+            self.syncReplyCounts()
+        }
     }
 
     func pinPostIDs(_ postIDs: Set<PostID>) {
@@ -191,10 +251,70 @@ final class LookbookInteractionStore: ObservableObject {
     }
 
     private func syncPostStates() {
-        postStates = postStore.states
+        let previousStates = postStates
+        let nextStates = postStore.states
+        postStates = nextStates
+        publishPostStateChanges(previousStates: previousStates, nextStates: nextStates)
     }
 
     private func syncReplyCounts() {
-        replyCounts = commentStore.replyCounts
+        let previousReplyCounts = replyCounts
+        let nextReplyCounts = commentStore.replyCounts
+        replyCounts = nextReplyCounts
+        publishReplyCountChanges(previousReplyCounts: previousReplyCounts, nextReplyCounts: nextReplyCounts)
+    }
+
+    private func postStateSubject(
+        for postID: PostID
+    ) -> CurrentValueSubject<LookbookPostInteractionState?, Never> {
+        if let subject = postStateSubjects[postID] {
+            return subject
+        }
+
+        let subject = CurrentValueSubject<LookbookPostInteractionState?, Never>(
+            postStore.state(for: postID)
+        )
+        postStateSubjects[postID] = subject
+        return subject
+    }
+
+    private func replyCountSubject(
+        for commentID: CommentID
+    ) -> CurrentValueSubject<Int?, Never> {
+        if let subject = replyCountSubjects[commentID] {
+            return subject
+        }
+
+        let subject = CurrentValueSubject<Int?, Never>(
+            replyCounts[commentID]
+        )
+        replyCountSubjects[commentID] = subject
+        return subject
+    }
+
+    private func publishPostStateChanges(
+        previousStates: [PostID: LookbookPostInteractionState],
+        nextStates: [PostID: LookbookPostInteractionState]
+    ) {
+        let changedPostIDs = Set(previousStates.keys)
+            .union(nextStates.keys)
+            .filter { previousStates[$0] != nextStates[$0] }
+
+        for postID in changedPostIDs {
+            postStateSubjects[postID]?.send(nextStates[postID])
+        }
+    }
+
+    private func publishReplyCountChanges(
+        previousReplyCounts: [CommentID: Int],
+        nextReplyCounts: [CommentID: Int]
+    ) {
+        let changedCommentIDs = Set(previousReplyCounts.keys)
+            .union(nextReplyCounts.keys)
+            .filter { previousReplyCounts[$0] != nextReplyCounts[$0] }
+
+        for commentID in changedCommentIDs {
+            replyCountSubjects[commentID]?.send(nextReplyCounts[commentID])
+        }
     }
 }

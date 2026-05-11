@@ -268,7 +268,7 @@ final class LookbookContainer {
         postID: PostID,
         navigationCoordinator: LookbookCoordinator,
         commentCoordinator: PostCommentCoordinator,
-        onCommentSubmitted: @escaping (CommentMutationResult) -> Void,
+        onCommentSubmitted: @escaping (CommentMutationResult) -> Void = { _ in },
         onCommentDeleted: @escaping (CommentDeletionResult) -> Void
     ) -> PostCommentsSheetView {
         PostCommentsSheetView(

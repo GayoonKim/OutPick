@@ -14,7 +14,7 @@ struct PinAwareInteractionCache<Key: Hashable, Value> {
     }
 
     private var entries: [Key: Entry] = [:]
-    private var pinnedKeys: Set<Key> = []
+    private var pinCounts: [Key: Int] = [:]
     private let maxCount: Int
     private let retentionInterval: TimeInterval
 
@@ -58,7 +58,9 @@ struct PinAwareInteractionCache<Key: Hashable, Value> {
     }
 
     mutating func pin(_ keys: Set<Key>, now: Date = Date()) {
-        pinnedKeys.formUnion(keys)
+        for key in keys {
+            pinCounts[key, default: 0] += 1
+        }
 
         for key in keys {
             guard var entry = entries[key] else { continue }
@@ -68,14 +70,21 @@ struct PinAwareInteractionCache<Key: Hashable, Value> {
     }
 
     mutating func unpin(_ keys: Set<Key>, now: Date = Date()) {
-        pinnedKeys.subtract(keys)
+        for key in keys {
+            guard let count = pinCounts[key] else { continue }
+            if count <= 1 {
+                pinCounts.removeValue(forKey: key)
+            } else {
+                pinCounts[key] = count - 1
+            }
+        }
         evictIfNeeded(now: now)
     }
 
     mutating func evictIfNeeded(now: Date = Date()) {
         let cutoff = now.addingTimeInterval(-retentionInterval)
         let expiredKeys = entries
-            .filter { pinnedKeys.contains($0.key) == false && $0.value.lastAccessedAt < cutoff }
+            .filter { isPinned($0.key) == false && $0.value.lastAccessedAt < cutoff }
             .map(\.key)
 
         for key in expiredKeys {
@@ -85,7 +94,7 @@ struct PinAwareInteractionCache<Key: Hashable, Value> {
         guard entries.count > maxCount else { return }
         let removalCount = entries.count - maxCount
         let removableKeys = entries
-            .filter { pinnedKeys.contains($0.key) == false }
+            .filter { isPinned($0.key) == false }
             .sorted { $0.value.lastAccessedAt < $1.value.lastAccessedAt }
             .prefix(removalCount)
             .map(\.key)
@@ -93,5 +102,9 @@ struct PinAwareInteractionCache<Key: Hashable, Value> {
         for key in removableKeys {
             entries.removeValue(forKey: key)
         }
+    }
+
+    private func isPinned(_ key: Key) -> Bool {
+        (pinCounts[key] ?? 0) > 0
     }
 }

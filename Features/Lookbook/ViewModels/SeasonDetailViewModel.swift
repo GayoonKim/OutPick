@@ -31,6 +31,7 @@ final class SeasonDetailViewModel: ObservableObject {
     private var prefetchedPostImagePaths = Set<String>()
     private var prefetchedThroughIndex: Int = -1
     private var pinnedPostIDs: Set<PostID> = []
+    private var postPinScopes: [PostID: InteractionPinScope] = [:]
     private var cancellables: Set<AnyCancellable> = []
 
     init(
@@ -54,14 +55,6 @@ final class SeasonDetailViewModel: ObservableObject {
         self.lookAheadPrefetchCount = lookAheadPrefetchCount
         self.prefetchConcurrency = prefetchConcurrency
         bindInteractionStore()
-    }
-
-    deinit {
-        let pinnedPostIDs = pinnedPostIDs
-        let interactionStore = interactionStore
-        Task { @MainActor in
-            interactionStore.unpinPostIDs(pinnedPostIDs)
-        }
     }
 
     func loadIfNeeded() async {
@@ -160,7 +153,8 @@ final class SeasonDetailViewModel: ObservableObject {
     private func bindInteractionStore() {
         interactionStore.$postStates
             .sink { [weak self] states in
-                self?.applyInteractionStates(states)
+                guard let self else { return }
+                self.applyInteractionStates(states)
             }
             .store(in: &cancellables)
     }
@@ -169,11 +163,13 @@ final class SeasonDetailViewModel: ObservableObject {
         let removedPostIDs = pinnedPostIDs.subtracting(nextPostIDs)
         let addedPostIDs = nextPostIDs.subtracting(pinnedPostIDs)
 
-        if removedPostIDs.isEmpty == false {
-            interactionStore.unpinPostIDs(removedPostIDs)
+        for postID in removedPostIDs {
+            postPinScopes[postID]?.invalidate()
+            postPinScopes.removeValue(forKey: postID)
         }
-        if addedPostIDs.isEmpty == false {
-            interactionStore.pinPostIDs(addedPostIDs)
+
+        for postID in addedPostIDs {
+            postPinScopes[postID] = interactionStore.pinScope(postIDs: [postID])
         }
         pinnedPostIDs = nextPostIDs
     }

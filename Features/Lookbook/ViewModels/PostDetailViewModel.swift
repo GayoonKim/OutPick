@@ -26,6 +26,7 @@ final class PostDetailScreenViewModel: ObservableObject {
     private var isRequesting = false
     private var prefetchedAvatarPaths: Set<String> = []
     private var cancellables: Set<AnyCancellable> = []
+    private var interactionPinScope: InteractionPinScope?
     private let avatarThumbnailMaxBytes: Int = 3 * 1024 * 1024
     private let brandID: BrandID
     private let seasonID: SeasonID
@@ -63,15 +64,7 @@ final class PostDetailScreenViewModel: ObservableObject {
             currentUserIDProvider: currentUserIDProvider
         )
         bindInteractionStore()
-        interactionStore.pinPostIDs([postID])
-    }
-
-    deinit {
-        let postID = postID
-        let interactionStore = interactionStore
-        Task { @MainActor in
-            interactionStore.unpinPostIDs([postID])
-        }
+        interactionPinScope = interactionStore.pinScope(postIDs: [postID])
     }
 
     var isMutatingEngagement: Bool {
@@ -239,8 +232,8 @@ final class PostDetailScreenViewModel: ObservableObject {
     }
 
     private func bindInteractionStore() {
-        interactionStore.$postStates
-            .compactMap { [postID] states in states[postID] }
+        interactionStore.postStatePublisher(for: postID)
+            .compactMap { $0 }
             .sink { [weak self] state in
                 guard let self else { return }
                 self.applyInteractionState(state)

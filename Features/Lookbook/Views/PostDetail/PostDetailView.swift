@@ -129,9 +129,6 @@ struct PostDetailView: View {
             seasonID: seasonID,
             postID: postID,
             commentCoordinator: commentCoordinator,
-            onCommentSubmitted: { result in
-                _ = result
-            },
             onCommentDeleted: { result in
                 viewModel.removeCommentFromPreview(result.commentID)
             }

@@ -49,6 +49,7 @@ final class PostCommentsViewModel: ObservableObject {
     private var hiddenUserIDs: Set<UserID> = []
     private var didLoadHiddenUserIDs: Bool = false
     private var pinnedCommentIDs: Set<CommentID> = []
+    private var commentPinScopes: [CommentID: InteractionPinScope] = [:]
     private var cancellables: Set<AnyCancellable> = []
 
     var hasMoreRootComments: Bool {
@@ -101,14 +102,6 @@ final class PostCommentsViewModel: ObservableObject {
         self.avatarPrefetchLimit = avatarPrefetchLimit
         self.avatarThumbnailMaxBytes = avatarThumbnailMaxBytes
         bindInteractionStore()
-    }
-
-    deinit {
-        let pinnedCommentIDs = pinnedCommentIDs
-        let interactionStore = interactionStore
-        Task { @MainActor in
-            interactionStore.unpinCommentIDs(pinnedCommentIDs)
-        }
     }
 
     func loadIfNeeded() async {
@@ -516,11 +509,13 @@ final class PostCommentsViewModel: ObservableObject {
         let removedCommentIDs = pinnedCommentIDs.subtracting(nextCommentIDs)
         let addedCommentIDs = nextCommentIDs.subtracting(pinnedCommentIDs)
 
-        if removedCommentIDs.isEmpty == false {
-            interactionStore.unpinCommentIDs(removedCommentIDs)
+        for commentID in removedCommentIDs {
+            commentPinScopes[commentID]?.invalidate()
+            commentPinScopes.removeValue(forKey: commentID)
         }
-        if addedCommentIDs.isEmpty == false {
-            interactionStore.pinCommentIDs(addedCommentIDs)
+
+        for commentID in addedCommentIDs {
+            commentPinScopes[commentID] = interactionStore.pinScope(commentIDs: [commentID])
         }
         pinnedCommentIDs = nextCommentIDs
     }
