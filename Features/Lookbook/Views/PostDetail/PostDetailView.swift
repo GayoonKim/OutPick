@@ -128,10 +128,7 @@ struct PostDetailView: View {
             brandID: brandID,
             seasonID: seasonID,
             postID: postID,
-            commentCoordinator: commentCoordinator,
-            onCommentDeleted: { result in
-                viewModel.removeCommentFromPreview(result.commentID)
-            }
+            commentCoordinator: commentCoordinator
         )
         if #available(iOS 16.0, *) {
             sheet

@@ -27,6 +27,9 @@ final class PostDetailScreenViewModel: ObservableObject {
     private var prefetchedAvatarPaths: Set<String> = []
     private var cancellables: Set<AnyCancellable> = []
     private var interactionPinScope: InteractionPinScope?
+    private var pinnedCommentIDs: Set<CommentID> = []
+    private var commentPinScopes: [CommentID: InteractionPinScope] = [:]
+    private var commentStateCancellables: [CommentID: AnyCancellable] = [:]
     private let avatarThumbnailMaxBytes: Int = 3 * 1024 * 1024
     private let brandID: BrandID
     private let seasonID: SeasonID
@@ -146,10 +149,6 @@ final class PostDetailScreenViewModel: ObservableObject {
         interactionStore.applyCommentMutation(result)
     }
 
-    func removeCommentFromPreview(_ commentID: CommentID) {
-        comments.removeAll { $0.id == commentID }
-    }
-
     private func load() async {
         if isRequesting { return }
         isRequesting = true
@@ -177,6 +176,7 @@ final class PostDetailScreenViewModel: ObservableObject {
             )
             
             comments = content.comments
+            updatePinnedCommentIDs()
             commentErrorMessage = content.commentErrorMessage
             await authorProfileStore.loadMissingAuthors(for: content.comments)
             syncAuthorDisplays()
@@ -194,6 +194,7 @@ final class PostDetailScreenViewModel: ObservableObject {
             post = nil
             postUserState = nil
             comments = []
+            updatePinnedCommentIDs()
             visibleCommentCount = nil
             authorProfileStore.reset()
             syncAuthorDisplays()
@@ -248,6 +249,48 @@ final class PostDetailScreenViewModel: ObservableObject {
         }
         visibleCommentCount = state.visibleCommentCount
         postUserState = state.userState
+    }
+
+    private func applyCommentState(_ state: CommentInteractionState) {
+        if state.isHidden {
+            comments.removeAll { $0.id == state.commentID }
+            updatePinnedCommentIDs()
+            return
+        }
+
+        comments = comments.map { comment in
+            guard comment.id == state.commentID else { return comment }
+            var updatedComment = comment
+            updatedComment.replyCount = state.replyCount
+            return updatedComment
+        }
+    }
+
+    private func updatePinnedCommentIDs() {
+        let nextCommentIDs = Set(comments.map(\.id))
+        let removedCommentIDs = pinnedCommentIDs.subtracting(nextCommentIDs)
+        let addedCommentIDs = nextCommentIDs.subtracting(pinnedCommentIDs)
+
+        for commentID in removedCommentIDs {
+            commentPinScopes[commentID]?.invalidate()
+            commentPinScopes.removeValue(forKey: commentID)
+            commentStateCancellables.removeValue(forKey: commentID)
+        }
+
+        for commentID in addedCommentIDs {
+            commentPinScopes[commentID] = interactionStore.pinScope(commentIDs: [commentID])
+            subscribeCommentState(for: commentID)
+        }
+        pinnedCommentIDs = nextCommentIDs
+    }
+
+    private func subscribeCommentState(for commentID: CommentID) {
+        guard commentStateCancellables[commentID] == nil else { return }
+        commentStateCancellables[commentID] = interactionStore.commentStatePublisher(for: commentID)
+            .compactMap { $0 }
+            .sink { [weak self] state in
+                self?.applyCommentState(state)
+            }
     }
 
     private func loadHiddenUserIDs() async -> Set<UserID> {

@@ -63,7 +63,7 @@ final class LookbookCoordinator {
         postID: PostID,
         commentCoordinator: PostCommentCoordinator,
         onCommentSubmitted: @escaping (CommentMutationResult) -> Void = { _ in },
-        onCommentDeleted: @escaping (CommentDeletionResult) -> Void
+        onCommentDeleted: @escaping (CommentDeletionResult) -> Void = { _ in }
     ) -> some View {
         container.makeCommentsSheet(
             brandID: brandID,

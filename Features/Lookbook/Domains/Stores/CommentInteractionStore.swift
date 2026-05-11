@@ -33,8 +33,20 @@ struct CommentInteractionStore {
         }
     }
 
+    var states: [CommentID: CommentInteractionState] {
+        cache.valuesByKey
+    }
+
+    mutating func state(for commentID: CommentID) -> CommentInteractionState? {
+        cache.value(for: commentID)
+    }
+
     mutating func replyCount(for comment: Comment) -> Int {
         cache.value(for: comment.id)?.replyCount ?? comment.replyCount
+    }
+
+    mutating func isHidden(_ commentID: CommentID) -> Bool {
+        cache.value(for: commentID)?.isHidden ?? false
     }
 
     mutating func pin(_ commentIDs: Set<CommentID>) {
@@ -69,10 +81,29 @@ struct CommentInteractionStore {
 
     mutating func hide(_ commentID: CommentID) {
         let now = Date()
-        guard cache.value(for: commentID, now: now) != nil else { return }
+        if cache.value(for: commentID, now: now) == nil {
+            cache.set(
+                CommentInteractionState(
+                    commentID: commentID,
+                    replyCount: 0,
+                    isHidden: true,
+                    updatedAt: now
+                ),
+                for: commentID,
+                now: now
+            )
+            return
+        }
+
         cache.update(for: commentID, now: now) { state in
             state.isHidden = true
             state.updatedAt = now
+        }
+    }
+
+    mutating func hide(_ commentIDs: Set<CommentID>) {
+        for commentID in commentIDs {
+            hide(commentID)
         }
     }
 }

@@ -50,6 +50,7 @@ final class PostCommentsViewModel: ObservableObject {
     private var didLoadHiddenUserIDs: Bool = false
     private var pinnedCommentIDs: Set<CommentID> = []
     private var commentPinScopes: [CommentID: InteractionPinScope] = [:]
+    private var commentStateCancellables: [CommentID: AnyCancellable] = [:]
     private var cancellables: Set<AnyCancellable> = []
 
     var hasMoreRootComments: Bool {
@@ -166,7 +167,6 @@ final class PostCommentsViewModel: ObservableObject {
                 commentID: comment.id,
                 reason: nil
             )
-            applyDeletion(result)
             interactionStore.applyCommentDeletion(result)
             return result
         } catch {
@@ -233,7 +233,8 @@ final class PostCommentsViewModel: ObservableObject {
             )
             hiddenUserIDs.insert(comment.userID)
             didLoadHiddenUserIDs = true
-            removeComments(by: comment.userID)
+            let hiddenCommentIDs = Set(commentFeedComments.filter { $0.userID == comment.userID }.map(\.id))
+            interactionStore.hideCommentIDs(hiddenCommentIDs)
             return block
         } catch {
             actionErrorMessage = "사용자를 차단하지 못했습니다."
@@ -376,53 +377,53 @@ final class PostCommentsViewModel: ObservableObject {
     }
 
     private func bindInteractionStore() {
-        interactionStore.$replyCounts
-            .sink { [weak self] replyCounts in
-                self?.applyReplyCounts(replyCounts)
-            }
-            .store(in: &cancellables)
     }
 
-    private func applyReplyCounts(_ replyCounts: [CommentID: Int]) {
+    private func applyCommentState(_ state: CommentInteractionState) {
+        if state.isHidden {
+            hideComment(state.commentID)
+            return
+        }
+
+        updateReplyCount(state.replyCount, for: state.commentID)
+    }
+
+    private func updateReplyCount(
+        _ replyCount: Int,
+        for commentID: CommentID
+    ) {
         pinnedComments = pinnedComments.map { comment in
-            updatedReplyCountComment(comment, replyCounts: replyCounts)
+            updatedReplyCountComment(comment, commentID: commentID, replyCount: replyCount)
         }
         if let representativeComment {
             self.representativeComment = updatedReplyCountComment(
                 representativeComment,
-                replyCounts: replyCounts
+                commentID: commentID,
+                replyCount: replyCount
             )
         }
         rootComments = rootComments.map { comment in
-            updatedReplyCountComment(comment, replyCounts: replyCounts)
+            updatedReplyCountComment(comment, commentID: commentID, replyCount: replyCount)
         }
     }
 
     private func updatedReplyCountComment(
         _ comment: Comment,
-        replyCounts: [CommentID: Int]
+        commentID: CommentID,
+        replyCount: Int
     ) -> Comment {
-        guard let replyCount = replyCounts[comment.id] else { return comment }
+        guard comment.id == commentID else { return comment }
         var updatedComment = comment
         updatedComment.replyCount = replyCount
         return updatedComment
     }
 
-    private func applyDeletion(_ result: CommentDeletionResult) {
-        pinnedComments.removeAll { $0.id == result.commentID }
-        if representativeComment?.id == result.commentID {
+    private func hideComment(_ commentID: CommentID) {
+        pinnedComments.removeAll { $0.id == commentID }
+        if representativeComment?.id == commentID {
             representativeComment = nil
         }
-        rootComments.removeAll { $0.id == result.commentID }
-        updatePinnedCommentIDs()
-    }
-
-    private func removeComments(by userID: UserID) {
-        pinnedComments.removeAll { $0.userID == userID }
-        if representativeComment?.userID == userID {
-            representativeComment = nil
-        }
-        rootComments.removeAll { $0.userID == userID }
+        rootComments.removeAll { $0.id == commentID }
         updatePinnedCommentIDs()
     }
 
@@ -512,12 +513,23 @@ final class PostCommentsViewModel: ObservableObject {
         for commentID in removedCommentIDs {
             commentPinScopes[commentID]?.invalidate()
             commentPinScopes.removeValue(forKey: commentID)
+            commentStateCancellables.removeValue(forKey: commentID)
         }
 
         for commentID in addedCommentIDs {
             commentPinScopes[commentID] = interactionStore.pinScope(commentIDs: [commentID])
+            subscribeCommentState(for: commentID)
         }
         pinnedCommentIDs = nextCommentIDs
+    }
+
+    private func subscribeCommentState(for commentID: CommentID) {
+        guard commentStateCancellables[commentID] == nil else { return }
+        commentStateCancellables[commentID] = interactionStore.commentStatePublisher(for: commentID)
+            .compactMap { $0 }
+            .sink { [weak self] state in
+                self?.applyCommentState(state)
+            }
     }
 
     private var commentFeedComments: [Comment] {
