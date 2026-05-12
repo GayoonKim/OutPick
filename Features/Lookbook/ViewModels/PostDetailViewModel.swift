@@ -67,7 +67,6 @@ final class PostDetailScreenViewModel: ObservableObject {
             currentUserIDProvider: currentUserIDProvider
         )
         bindInteractionStore()
-        interactionPinScope = interactionStore.pinScope(postIDs: [postID])
     }
 
     var isMutatingEngagement: Bool {
@@ -75,12 +74,14 @@ final class PostDetailScreenViewModel: ObservableObject {
     }
 
     func loadIfNeeded() async {
+        ensureInteractionPinScope()
         let key = "\(brandID.value)|\(seasonID.value)|\(postID.value)"
         guard loadedKey != key else { return }
         await load()
     }
 
     func refresh() async {
+        ensureInteractionPinScope()
         loadedKey = nil
         await load()
     }
@@ -230,6 +231,11 @@ final class PostDetailScreenViewModel: ObservableObject {
 
     private func syncAuthorDisplays() {
         authorDisplays = authorProfileStore.authorDisplays
+    }
+
+    private func ensureInteractionPinScope() {
+        guard interactionPinScope == nil else { return }
+        interactionPinScope = interactionStore.pinScope(postIDs: [postID])
     }
 
     private func bindInteractionStore() {
