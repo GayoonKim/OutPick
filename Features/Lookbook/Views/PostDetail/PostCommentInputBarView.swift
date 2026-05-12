@@ -14,7 +14,6 @@ struct PostCommentInputBarView: View {
     let placeholder: String
     let isSubmitting: Bool
     let canSubmit: Bool
-    let errorMessage: String?
     let submitAccessibilityLabel: String
     let onSubmit: () async -> Void
 
@@ -25,7 +24,6 @@ struct PostCommentInputBarView: View {
         placeholder: String,
         isSubmitting: Bool,
         canSubmit: Bool,
-        errorMessage: String?,
         submitAccessibilityLabel: String = "댓글 등록",
         onSubmit: @escaping () async -> Void
     ) {
@@ -33,67 +31,57 @@ struct PostCommentInputBarView: View {
         self.placeholder = placeholder
         self.isSubmitting = isSubmitting
         self.canSubmit = canSubmit
-        self.errorMessage = errorMessage
         self.submitAccessibilityLabel = submitAccessibilityLabel
         self.onSubmit = onSubmit
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if let errorMessage {
-                Text(errorMessage)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .padding(.horizontal, 4)
+        HStack(alignment: .bottom, spacing: 10) {
+            ZStack(alignment: .topLeading) {
+                GrowingCommentTextView(
+                    text: $text,
+                    measuredHeight: $inputHeight,
+                    minHeight: Constants.minInputHeight,
+                    maxHeight: Constants.maxInputHeight
+                )
+                .frame(height: inputHeight)
+                .padding(.horizontal, 12)
+
+                if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text(placeholder)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .allowsHitTesting(false)
+                }
             }
+            .background(Color(.secondarySystemBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .animation(.easeInOut(duration: 0.12), value: inputHeight)
 
-            HStack(alignment: .bottom, spacing: 10) {
-                ZStack(alignment: .topLeading) {
-                    GrowingCommentTextView(
-                        text: $text,
-                        measuredHeight: $inputHeight,
-                        minHeight: Constants.minInputHeight,
-                        maxHeight: Constants.maxInputHeight
-                    )
-                    .frame(height: inputHeight)
-                    .padding(.horizontal, 12)
-
-                    if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        Text(placeholder)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 10)
-                            .allowsHitTesting(false)
+            Button {
+                Task {
+                    await onSubmit()
+                }
+            } label: {
+                Group {
+                    if isSubmitting {
+                        ProgressView()
+                            .tint(.white)
+                    } else {
+                        Image(systemName: "paperplane.fill")
+                            .font(.subheadline.weight(.bold))
                     }
                 }
-                .background(Color(.secondarySystemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .animation(.easeInOut(duration: 0.12), value: inputHeight)
-
-                Button {
-                    Task {
-                        await onSubmit()
-                    }
-                } label: {
-                    Group {
-                        if isSubmitting {
-                            ProgressView()
-                                .tint(.white)
-                        } else {
-                            Image(systemName: "paperplane.fill")
-                                .font(.subheadline.weight(.bold))
-                        }
-                    }
-                    .foregroundStyle(.white)
-                    .frame(width: 42, height: 42)
-                    .background(canSubmit ? Color.black : Color.gray.opacity(0.45))
-                    .clipShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .disabled(canSubmit == false)
-                .accessibilityLabel(submitAccessibilityLabel)
+                .foregroundStyle(.white)
+                .frame(width: 42, height: 42)
+                .background(canSubmit ? Color.black : Color.gray.opacity(0.45))
+                .clipShape(Circle())
             }
+            .buttonStyle(.plain)
+            .disabled(canSubmit == false)
+            .accessibilityLabel(submitAccessibilityLabel)
         }
         .padding(.horizontal, 16)
         .padding(.top, 10)

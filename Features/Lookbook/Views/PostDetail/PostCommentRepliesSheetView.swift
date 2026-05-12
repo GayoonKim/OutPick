@@ -77,15 +77,10 @@ struct PostCommentRepliesSheetView: View {
         .sheet(isPresented: blockSheetBinding) {
             blockConfirmationSheet
         }
-        .alert(
-            "작업을 완료하지 못했습니다.",
-            isPresented: actionErrorBinding
-        ) {
-            Button("확인") {
+        .appToast(message: activeToastMessage, bottomPadding: 92) {
+            if viewModel.actionErrorMessage != nil {
                 viewModel.clearActionError()
             }
-        } message: {
-            Text(viewModel.actionErrorMessage ?? "")
         }
     }
 
@@ -208,7 +203,6 @@ struct PostCommentRepliesSheetView: View {
             placeholder: "답글을 입력하세요.",
             isSubmitting: viewModel.isSubmittingReply,
             canSubmit: viewModel.canSubmitReply,
-            errorMessage: viewModel.submissionErrorMessage,
             submitAccessibilityLabel: "답글 등록",
             onSubmit: {
                 if let result = await viewModel.submitReply() {
@@ -345,17 +339,6 @@ struct PostCommentRepliesSheetView: View {
         }
     }
 
-    private var actionErrorBinding: Binding<Bool> {
-        Binding(
-            get: { viewModel.actionErrorMessage != nil },
-            set: { isPresented in
-                if isPresented == false {
-                    viewModel.clearActionError()
-                }
-            }
-        )
-    }
-
     private func sectionTitle(_ title: String) -> some View {
         Text(title)
             .font(.subheadline.weight(.bold))
@@ -385,6 +368,10 @@ struct PostCommentRepliesSheetView: View {
 
     private var shouldShowInitialLoading: Bool {
         viewModel.isLoading && viewModel.replies.isEmpty
+    }
+
+    private var activeToastMessage: String? {
+        viewModel.actionErrorMessage ?? viewModel.submissionErrorMessage
     }
 
     private var profileSheetBinding: Binding<Bool> {

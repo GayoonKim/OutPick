@@ -14,54 +14,44 @@ struct PostDetailMetricsCardView: View {
     let isSaved: Bool
     let isMutatingLike: Bool
     let isMutatingSave: Bool
-    let errorMessage: String?
     let onLikeTap: () async -> Void
     let onCommentTap: () -> Void
     let onSaveTap: () async -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                actionButton(
-                    systemName: "heart",
-                    selectedSystemName: "heart.fill",
-                    value: post.metrics.likeCount,
-                    title: "좋아요",
-                    isSelected: isLiked,
-                    isMutating: isMutatingLike,
-                    selectedColor: .red,
-                    action: onLikeTap
-                )
-                actionButton(
-                    systemName: "message",
-                    selectedSystemName: "message.fill",
-                    value: commentCount,
-                    title: "댓글",
-                    isSelected: false,
-                    isMutating: false,
-                    selectedColor: .black,
-                    action: {
-                        onCommentTap()
-                    }
-                )
-                actionButton(
-                    systemName: "bookmark",
-                    selectedSystemName: "bookmark.fill",
-                    value: post.metrics.saveCount,
-                    title: "저장",
-                    isSelected: isSaved,
-                    isMutating: isMutatingSave,
-                    selectedColor: .black,
-                    action: onSaveTap
-                )
-            }
-
-            if let errorMessage {
-                Text(errorMessage)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+        HStack(spacing: 8) {
+            actionButton(
+                systemName: "heart",
+                selectedSystemName: "heart.fill",
+                value: post.metrics.likeCount,
+                title: "좋아요",
+                isSelected: isLiked,
+                isMutating: isMutatingLike,
+                selectedColor: .red,
+                action: onLikeTap
+            )
+            actionButton(
+                systemName: "message",
+                selectedSystemName: "message.fill",
+                value: commentCount,
+                title: "댓글",
+                isSelected: false,
+                isMutating: false,
+                selectedColor: .black,
+                action: {
+                    onCommentTap()
+                }
+            )
+            actionButton(
+                systemName: "bookmark",
+                selectedSystemName: "bookmark.fill",
+                value: post.metrics.saveCount,
+                title: "저장",
+                isSelected: isSaved,
+                isMutating: isMutatingSave,
+                selectedColor: .black,
+                action: onSaveTap
+            )
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)

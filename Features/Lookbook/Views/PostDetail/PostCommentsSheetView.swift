@@ -104,15 +104,10 @@ struct PostCommentsSheetView: View {
         .sheet(isPresented: blockSheetBinding) {
             blockConfirmationSheet
         }
-        .alert(
-            "작업을 완료하지 못했습니다.",
-            isPresented: actionErrorBinding
-        ) {
-            Button("확인") {
+        .appToast(message: activeToastMessage, bottomPadding: 92) {
+            if viewModel.actionErrorMessage != nil {
                 viewModel.clearActionError()
             }
-        } message: {
-            Text(viewModel.actionErrorMessage ?? "")
         }
     }
 
@@ -313,17 +308,6 @@ struct PostCommentsSheetView: View {
         }
     }
 
-    private var actionErrorBinding: Binding<Bool> {
-        Binding(
-            get: { viewModel.actionErrorMessage != nil },
-            set: { isPresented in
-                if isPresented == false {
-                    viewModel.clearActionError()
-                }
-            }
-        )
-    }
-
     private var replySheetBinding: Binding<Bool> {
         Binding(
             get: { coordinator.replyRoute != nil },
@@ -389,7 +373,6 @@ struct PostCommentsSheetView: View {
             placeholder: "댓글을 입력하세요.",
             isSubmitting: viewModel.isSubmittingComment,
             canSubmit: viewModel.canSubmitComment,
-            errorMessage: viewModel.submissionErrorMessage,
             onSubmit: {
                 if let result = await viewModel.submitComment() {
                     onCommentSubmitted(result)
@@ -458,6 +441,10 @@ struct PostCommentsSheetView: View {
         viewModel.pinnedComments.isEmpty &&
             viewModel.representativeComment == nil &&
             viewModel.rootComments.isEmpty
+    }
+
+    private var activeToastMessage: String? {
+        viewModel.actionErrorMessage ?? viewModel.submissionErrorMessage
     }
 
     private var commentFeedItems: [CommentFeedItem] {

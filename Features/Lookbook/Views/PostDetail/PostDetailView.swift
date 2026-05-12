@@ -56,7 +56,6 @@ struct PostDetailView: View {
                                 isSaved: viewModel.postUserState?.isSaved ?? false,
                                 isMutatingLike: viewModel.isMutatingLike,
                                 isMutatingSave: viewModel.isMutatingSave,
-                                errorMessage: viewModel.engagementErrorMessage,
                                 onLikeTap: {
                                     await viewModel.toggleLike()
                                 },
@@ -107,6 +106,7 @@ struct PostDetailView: View {
         .refreshable {
             await viewModel.refresh()
         }
+        .appToast(message: viewModel.engagementErrorMessage)
     }
 
     private var commentSheetBinding: Binding<Bool> {
