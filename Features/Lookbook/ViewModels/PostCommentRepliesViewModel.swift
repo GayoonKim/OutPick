@@ -319,7 +319,8 @@ final class PostCommentRepliesViewModel: ObservableObject {
 
         do {
             let currentHiddenUserIDs = await loadHiddenUserIDsIfNeeded(force: reset)
-            isParentCommentHidden = currentHiddenUserIDs.contains(parentComment.userID)
+            isParentCommentHidden = currentHiddenUserIDs.contains(parentComment.userID) ||
+                interactionStore.isCommentHidden(parentComment.id)
 
             if isParentCommentHidden == false {
                 await authorProfileStore.loadMissingAuthors(for: [parentComment])
@@ -337,7 +338,7 @@ final class PostCommentRepliesViewModel: ObservableObject {
             )
 
             nextCursor = page.nextCursor
-            let visibleItems = isParentCommentHidden ? [] : filterHiddenAuthors(
+            let visibleItems = isParentCommentHidden ? [] : filterVisibleReplies(
                 page.items,
                 hiddenUserIDs: currentHiddenUserIDs
             )
@@ -419,6 +420,14 @@ final class PostCommentRepliesViewModel: ObservableObject {
             comments: comments,
             hiddenUserIDs: hiddenUserIDs
         )
+    }
+
+    private func filterVisibleReplies(
+        _ comments: [Comment],
+        hiddenUserIDs: Set<UserID>
+    ) -> [Comment] {
+        filterHiddenAuthors(comments, hiddenUserIDs: hiddenUserIDs)
+            .filter { interactionStore.isCommentHidden($0.id) == false }
     }
 
     private func reportTarget(

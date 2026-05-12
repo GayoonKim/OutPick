@@ -334,13 +334,19 @@ final class PostCommentsViewModel: ObservableObject {
                     sort: selectedSort,
                     page: PageRequest(size: pageSize, cursor: nil)
                 )
-                pinnedComments = filterHiddenAuthors(content.pinnedComments, hiddenUserIDs: currentHiddenUserIDs)
+                pinnedComments = filterVisibleComments(
+                    content.pinnedComments,
+                    hiddenUserIDs: currentHiddenUserIDs
+                )
                 representativeComment = visibleComment(
                     content.representativeComment,
                     hiddenUserIDs: currentHiddenUserIDs
                 )
                 nextCursor = content.rootComments.nextCursor
-                rootComments = filterHiddenAuthors(content.rootComments.items, hiddenUserIDs: currentHiddenUserIDs)
+                rootComments = filterVisibleComments(
+                    content.rootComments.items,
+                    hiddenUserIDs: currentHiddenUserIDs
+                )
                 loadedKey = stateKey(sort: selectedSort)
                 await authorProfileStore.loadMissingAuthors(for: commentFeedComments)
                 syncAuthorDisplays()
@@ -355,7 +361,7 @@ final class PostCommentsViewModel: ObservableObject {
                     page: PageRequest(size: pageSize, cursor: nextCursor)
                 )
                 let excludedIDs = duplicateExcludedIDs()
-                let visibleItems = filterHiddenAuthors(
+                let visibleItems = filterVisibleComments(
                     page.items,
                     hiddenUserIDs: currentHiddenUserIDs
                 ).filter {
@@ -465,7 +471,19 @@ final class PostCommentsViewModel: ObservableObject {
         hiddenUserIDs: Set<UserID>
     ) -> Comment? {
         guard let comment else { return nil }
-        return hiddenUserIDs.contains(comment.userID) ? nil : comment
+        guard hiddenUserIDs.contains(comment.userID) == false,
+              interactionStore.isCommentHidden(comment.id) == false else {
+            return nil
+        }
+        return comment
+    }
+
+    private func filterVisibleComments(
+        _ comments: [Comment],
+        hiddenUserIDs: Set<UserID>
+    ) -> [Comment] {
+        filterHiddenAuthors(comments, hiddenUserIDs: hiddenUserIDs)
+            .filter { interactionStore.isCommentHidden($0.id) == false }
     }
 
     private func reportTarget(

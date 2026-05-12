@@ -176,10 +176,10 @@ final class PostDetailScreenViewModel: ObservableObject {
                 hiddenUserIDs: await loadHiddenUserIDs()
             )
             
-            comments = content.comments
+            comments = filterVisibleInteractionComments(content.comments)
             updatePinnedCommentIDs()
             commentErrorMessage = content.commentErrorMessage
-            await authorProfileStore.loadMissingAuthors(for: content.comments)
+            await authorProfileStore.loadMissingAuthors(for: comments)
             syncAuthorDisplays()
             let resolvedPostUserState = await fetchedPostUserState
             post = content.post
@@ -270,6 +270,10 @@ final class PostDetailScreenViewModel: ObservableObject {
             updatedComment.replyCount = state.replyCount
             return updatedComment
         }
+    }
+
+    private func filterVisibleInteractionComments(_ comments: [Comment]) -> [Comment] {
+        comments.filter { interactionStore.isCommentHidden($0.id) == false }
     }
 
     private func updatePinnedCommentIDs() {
