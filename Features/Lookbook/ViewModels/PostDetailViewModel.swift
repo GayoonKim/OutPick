@@ -150,6 +150,10 @@ final class PostDetailScreenViewModel: ObservableObject {
         interactionStore.applyCommentMutation(result)
     }
 
+    func clearEngagementError() {
+        engagementErrorMessage = nil
+    }
+
     private func load() async {
         if isRequesting { return }
         isRequesting = true

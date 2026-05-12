@@ -108,6 +108,9 @@ struct PostCommentsSheetView: View {
             if viewModel.actionErrorMessage != nil {
                 viewModel.clearActionError()
             }
+            if viewModel.submissionErrorMessage != nil {
+                viewModel.clearSubmissionError()
+            }
         }
     }
 

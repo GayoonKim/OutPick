@@ -106,7 +106,9 @@ struct PostDetailView: View {
         .refreshable {
             await viewModel.refresh()
         }
-        .appToast(message: viewModel.engagementErrorMessage)
+        .appToast(message: viewModel.engagementErrorMessage) {
+            viewModel.clearEngagementError()
+        }
     }
 
     private var commentSheetBinding: Binding<Bool> {

@@ -141,6 +141,10 @@ final class PostCommentsViewModel: ObservableObject {
         actionErrorMessage = nil
     }
 
+    func clearSubmissionError() {
+        submissionErrorMessage = nil
+    }
+
     func canDelete(_ comment: Comment, isBrandWritable: Bool) -> Bool {
         isCurrentUser(comment.userID) || isBrandWritable
     }
