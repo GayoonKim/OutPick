@@ -24,13 +24,16 @@ protocol ReportCommentUseCaseProtocol {
 
 final class ReportCommentUseCase: ReportCommentUseCaseProtocol {
     private let repository: any CommentSafetyRepositoryProtocol
+    private let debugFailureInjectionStore: LookbookDebugFailureInjectionStore?
     private let maxDetailLength: Int
 
     init(
         repository: any CommentSafetyRepositoryProtocol,
+        debugFailureInjectionStore: LookbookDebugFailureInjectionStore? = nil,
         maxDetailLength: Int = 500
     ) {
         self.repository = repository
+        self.debugFailureInjectionStore = debugFailureInjectionStore
         self.maxDetailLength = maxDetailLength
     }
 
@@ -58,6 +61,7 @@ final class ReportCommentUseCase: ReportCommentUseCaseProtocol {
         var normalizedTarget = target
         normalizedTarget.contentSnapshot = normalizedContent
 
+        try debugFailureInjectionStore?.throwIfNeeded(.reportComment)
         return try await repository.reportComment(
             reporterUserID: reporterUserID,
             target: normalizedTarget,

@@ -19,9 +19,14 @@ protocol CreateCommentReplyUseCaseProtocol {
 
 final class CreateCommentReplyUseCase: CreateCommentReplyUseCaseProtocol {
     private let repository: any CommentWritingRepositoryProtocol
+    private let debugFailureInjectionStore: LookbookDebugFailureInjectionStore?
 
-    init(repository: any CommentWritingRepositoryProtocol) {
+    init(
+        repository: any CommentWritingRepositoryProtocol,
+        debugFailureInjectionStore: LookbookDebugFailureInjectionStore? = nil
+    ) {
         self.repository = repository
+        self.debugFailureInjectionStore = debugFailureInjectionStore
     }
 
     func execute(
@@ -36,6 +41,7 @@ final class CreateCommentReplyUseCase: CreateCommentReplyUseCaseProtocol {
             throw CommentSubmissionError.emptyMessage
         }
 
+        try debugFailureInjectionStore?.throwIfNeeded(.createReply)
         return try await repository.createReply(
             brandID: brandID,
             seasonID: seasonID,

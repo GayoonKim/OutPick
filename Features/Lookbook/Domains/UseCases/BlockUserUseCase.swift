@@ -18,9 +18,14 @@ protocol BlockUserUseCaseProtocol {
 
 final class BlockUserUseCase: BlockUserUseCaseProtocol {
     private let repository: any UserBlockRepositoryProtocol
+    private let debugFailureInjectionStore: LookbookDebugFailureInjectionStore?
 
-    init(repository: any UserBlockRepositoryProtocol) {
+    init(
+        repository: any UserBlockRepositoryProtocol,
+        debugFailureInjectionStore: LookbookDebugFailureInjectionStore? = nil
+    ) {
         self.repository = repository
+        self.debugFailureInjectionStore = debugFailureInjectionStore
     }
 
     func execute(
@@ -37,6 +42,7 @@ final class BlockUserUseCase: BlockUserUseCaseProtocol {
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .nilIfEmpty
 
+        try debugFailureInjectionStore?.throwIfNeeded(.blockUser)
         return try await repository.blockUser(
             blockerUserID: blockerUserID,
             blockedUserID: blockedUserID,

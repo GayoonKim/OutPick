@@ -24,6 +24,7 @@ struct PostEngagementInteractionOutcome {
 final class PostEngagementInteractionUseCase {
     private let repository: any PostEngagementRepositoryProtocol
     private let postInteractionStore: any PostInteractionManaging
+    private let debugFailureInjectionStore: LookbookDebugFailureInjectionStore?
 
     private var pendingLikeTarget: Bool?
     private var pendingSaveTarget: Bool?
@@ -36,10 +37,12 @@ final class PostEngagementInteractionUseCase {
 
     init(
         repository: any PostEngagementRepositoryProtocol,
-        postInteractionStore: any PostInteractionManaging
+        postInteractionStore: any PostInteractionManaging,
+        debugFailureInjectionStore: LookbookDebugFailureInjectionStore? = nil
     ) {
         self.repository = repository
         self.postInteractionStore = postInteractionStore
+        self.debugFailureInjectionStore = debugFailureInjectionStore
     }
 
     func toggleLike(
@@ -111,6 +114,7 @@ final class PostEngagementInteractionUseCase {
             pendingLikeTarget = nil
 
             do {
+                try debugFailureInjectionStore?.throwIfNeeded(.toggleLike)
                 let result = try await repository.setLike(
                     brandID: input.brandID,
                     seasonID: input.seasonID,
@@ -162,6 +166,7 @@ final class PostEngagementInteractionUseCase {
             pendingSaveTarget = nil
 
             do {
+                try debugFailureInjectionStore?.throwIfNeeded(.toggleSave)
                 let result = try await repository.setSave(
                     brandID: input.brandID,
                     seasonID: input.seasonID,

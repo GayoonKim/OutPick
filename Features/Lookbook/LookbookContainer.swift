@@ -14,6 +14,7 @@ final class LookbookContainer {
     let brandAdminSessionStore: BrandAdminSessionStore
     let lookbookHomeViewModel: LookbookHomeViewModel
     let interactionStore: LookbookInteractionStore
+    let debugFailureInjectionStore: LookbookDebugFailureInjectionStore
     let currentUserIDProvider: any CurrentUserIDProviding
 
     private let loadPostCommentsUseCase: any LoadPostCommentsUseCaseProtocol
@@ -35,6 +36,7 @@ final class LookbookContainer {
         self.provider = provider
         self.brandAdminSessionStore = brandAdminSessionStore
         self.interactionStore = LookbookInteractionStore()
+        self.debugFailureInjectionStore = LookbookDebugFailureInjectionStore()
         self.currentUserIDProvider = LoginManagerCurrentUserIDProvider()
         self.loadPostCommentsUseCase = LoadPostCommentsUseCase(
             commentRepository: provider.commentRepository
@@ -43,19 +45,24 @@ final class LookbookContainer {
             commentRepository: provider.commentRepository
         )
         self.createPostCommentUseCase = CreatePostCommentUseCase(
-            repository: provider.commentWritingRepository
+            repository: provider.commentWritingRepository,
+            debugFailureInjectionStore: debugFailureInjectionStore
         )
         self.createCommentReplyUseCase = CreateCommentReplyUseCase(
-            repository: provider.commentWritingRepository
+            repository: provider.commentWritingRepository,
+            debugFailureInjectionStore: debugFailureInjectionStore
         )
         self.deleteCommentUseCase = DeleteCommentUseCase(
-            repository: provider.commentWritingRepository
+            repository: provider.commentWritingRepository,
+            debugFailureInjectionStore: debugFailureInjectionStore
         )
         self.reportCommentUseCase = ReportCommentUseCase(
-            repository: provider.commentSafetyRepository
+            repository: provider.commentSafetyRepository,
+            debugFailureInjectionStore: debugFailureInjectionStore
         )
         self.blockUserUseCase = BlockUserUseCase(
-            repository: provider.userBlockRepository
+            repository: provider.userBlockRepository,
+            debugFailureInjectionStore: debugFailureInjectionStore
         )
         self.loadHiddenCommentUserIDsUseCase = LoadHiddenCommentUserIDsUseCase(
             repository: provider.userBlockRepository
@@ -188,7 +195,8 @@ final class LookbookContainer {
             postUserStateRepository: provider.postUserStateRepository,
             engagementInteractionUseCase: PostEngagementInteractionUseCase(
                 repository: provider.postEngagementRepository,
-                postInteractionStore: interactionStore
+                postInteractionStore: interactionStore,
+                debugFailureInjectionStore: debugFailureInjectionStore
             ),
             postInteractionStore: interactionStore,
             commentInteractionStore: interactionStore,

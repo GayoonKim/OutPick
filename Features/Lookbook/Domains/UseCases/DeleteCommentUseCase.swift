@@ -19,9 +19,14 @@ protocol DeleteCommentUseCaseProtocol {
 
 final class DeleteCommentUseCase: DeleteCommentUseCaseProtocol {
     private let repository: any CommentWritingRepositoryProtocol
+    private let debugFailureInjectionStore: LookbookDebugFailureInjectionStore?
 
-    init(repository: any CommentWritingRepositoryProtocol) {
+    init(
+        repository: any CommentWritingRepositoryProtocol,
+        debugFailureInjectionStore: LookbookDebugFailureInjectionStore? = nil
+    ) {
         self.repository = repository
+        self.debugFailureInjectionStore = debugFailureInjectionStore
     }
 
     func execute(
@@ -34,6 +39,7 @@ final class DeleteCommentUseCase: DeleteCommentUseCaseProtocol {
         let normalizedReason = reason?
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
+        try debugFailureInjectionStore?.throwIfNeeded(.deleteComment)
         return try await repository.deleteComment(
             brandID: brandID,
             seasonID: seasonID,
