@@ -80,6 +80,7 @@ struct PostDetailView: View {
             }
         }
         .background(
+            
             LinearGradient(
                 colors: [
                     Color(red: 0.99, green: 0.98, blue: 0.96),

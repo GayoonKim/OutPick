@@ -32,7 +32,7 @@ final class SeasonDetailViewModel: ObservableObject {
     private var prefetchedThroughIndex: Int = -1
     private var pinnedPostIDs: Set<PostID> = []
     private var postPinScopes: [PostID: InteractionPinScope] = [:]
-    private var cancellables: Set<AnyCancellable> = []
+    private var postStatesCancellable: AnyCancellable?
 
     init(
         brandID: BrandID,
@@ -54,7 +54,6 @@ final class SeasonDetailViewModel: ObservableObject {
         self.initialPrefetchCount = initialPrefetchCount
         self.lookAheadPrefetchCount = lookAheadPrefetchCount
         self.prefetchConcurrency = prefetchConcurrency
-        bindInteractionStore()
     }
 
     func loadIfNeeded() async {
@@ -101,13 +100,16 @@ final class SeasonDetailViewModel: ObservableObject {
             )
             season = content.season
             posts = content.posts
-            updatePinnedPostIDs(Set(content.posts.map(\.id)))
             content.posts.forEach { interactionStore.seedPostMetrics($0) }
+            let loadedPostIDs = Set(content.posts.map(\.id))
+            updatePinnedPostIDs(loadedPostIDs)
+            bindInteractionStore(postIDs: loadedPostIDs)
             loadedKey = "\(brandID.value)|\(seasonID.value)"
         } catch {
             season = nil
             posts = []
             updatePinnedPostIDs([])
+            bindInteractionStore(postIDs: [])
             errorMessage = "시즌과 룩북 사진을 불러오지 못했습니다."
             prefetchedPostImagePaths.removeAll()
             prefetchedThroughIndex = -1
@@ -150,13 +152,18 @@ final class SeasonDetailViewModel: ObservableObject {
         visibleCommentCounts[post.id] ?? post.metrics.commentCount
     }
 
-    private func bindInteractionStore() {
-        interactionStore.$postStates
+    private func bindInteractionStore(postIDs: Set<PostID>) {
+        guard postIDs.isEmpty == false else {
+            postStatesCancellable = nil
+            visibleCommentCounts = [:]
+            return
+        }
+
+        postStatesCancellable = interactionStore.postStatesPublisher(for: postIDs)
             .sink { [weak self] states in
                 guard let self else { return }
                 self.applyInteractionStates(states)
             }
-            .store(in: &cancellables)
     }
 
     private func updatePinnedPostIDs(_ nextPostIDs: Set<PostID>) {

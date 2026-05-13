@@ -47,6 +47,7 @@ final class LookbookInteractionStore: ObservableObject {
     private var commentStore: CommentInteractionStore
     private var commentStates: [CommentID: CommentInteractionState] = [:]
     private var postStateSubjects: [PostID: CurrentValueSubject<LookbookPostInteractionState?, Never>] = [:]
+    private var scopedPostStateSubjects: [Set<PostID>: CurrentValueSubject<[PostID: LookbookPostInteractionState], Never>] = [:]
     private var commentStateSubjects: [CommentID: CurrentValueSubject<CommentInteractionState?, Never>] = [:]
     private var replyCountSubjects: [CommentID: CurrentValueSubject<Int?, Never>] = [:]
 
@@ -80,6 +81,24 @@ final class LookbookInteractionStore: ObservableObject {
     func postStatePublisher(for postID: PostID) -> AnyPublisher<LookbookPostInteractionState?, Never> {
         postStateSubject(for: postID)
             .eraseToAnyPublisher()
+    }
+
+    func postStatesPublisher(
+        for postIDs: Set<PostID>
+    ) -> AnyPublisher<[PostID: LookbookPostInteractionState], Never> {
+        guard postIDs.isEmpty == false else {
+            return Just([:]).eraseToAnyPublisher()
+        }
+
+        if let subject = scopedPostStateSubjects[postIDs] {
+            return subject.eraseToAnyPublisher()
+        }
+
+        let subject = CurrentValueSubject<[PostID: LookbookPostInteractionState], Never>(
+            filteredPostStates(for: postIDs, from: postStates)
+        )
+        scopedPostStateSubjects[postIDs] = subject
+        return subject.eraseToAnyPublisher()
     }
 
     func commentStatePublisher(for commentID: CommentID) -> AnyPublisher<CommentInteractionState?, Never> {
@@ -338,6 +357,29 @@ final class LookbookInteractionStore: ObservableObject {
         for postID in changedPostIDs {
             postStateSubjects[postID]?.send(nextStates[postID])
         }
+
+        publishScopedPostStateChanges(
+            changedPostIDs: Set(changedPostIDs),
+            nextStates: nextStates
+        )
+    }
+
+    private func publishScopedPostStateChanges(
+        changedPostIDs: Set<PostID>,
+        nextStates: [PostID: LookbookPostInteractionState]
+    ) {
+        guard changedPostIDs.isEmpty == false else { return }
+
+        for (postIDs, subject) in scopedPostStateSubjects where postIDs.isDisjoint(with: changedPostIDs) == false {
+            subject.send(filteredPostStates(for: postIDs, from: nextStates))
+        }
+    }
+
+    private func filteredPostStates(
+        for postIDs: Set<PostID>,
+        from states: [PostID: LookbookPostInteractionState]
+    ) -> [PostID: LookbookPostInteractionState] {
+        states.filter { postIDs.contains($0.key) }
     }
 
     private func publishCommentStateChanges(
