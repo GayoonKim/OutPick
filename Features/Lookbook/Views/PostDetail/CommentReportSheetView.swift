@@ -127,6 +127,7 @@ struct CommentReportSheetView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(isReporting || canSubmitReport == false)
+                .accessibilityIdentifier("lookbook.comment.reportSubmitButton")
 
                 Button {
                     onCancel()

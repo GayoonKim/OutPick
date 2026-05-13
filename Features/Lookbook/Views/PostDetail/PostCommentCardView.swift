@@ -74,6 +74,7 @@ struct PostCommentCardView: View {
                     } label: {
                         Label("삭제", systemImage: "trash")
                     }
+                    .accessibilityIdentifier("lookbook.comment.deleteAction")
                 }
 
                 if let onReportTap {
@@ -82,6 +83,7 @@ struct PostCommentCardView: View {
                     } label: {
                         Label("신고", systemImage: "exclamationmark.bubble")
                     }
+                    .accessibilityIdentifier("lookbook.comment.reportAction")
                 }
 
                 if let onBlockTap {
@@ -90,6 +92,7 @@ struct PostCommentCardView: View {
                     } label: {
                         Label("차단", systemImage: "person.crop.circle.badge.xmark")
                     }
+                    .accessibilityIdentifier("lookbook.comment.blockAction")
                 }
             }
     }
@@ -145,6 +148,7 @@ struct PostCommentCardView: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("답글 \(replyCount)개 보기")
+                        .accessibilityIdentifier("lookbook.comment.repliesButton")
                     } else {
                         Label("\(replyCount)", systemImage: "bubble.right")
                     }
@@ -163,6 +167,7 @@ struct PostCommentCardView: View {
         .onTapGesture {
             onCardTap?()
         }
+        .accessibilityIdentifier("lookbook.comment.card")
     }
 
     @ViewBuilder

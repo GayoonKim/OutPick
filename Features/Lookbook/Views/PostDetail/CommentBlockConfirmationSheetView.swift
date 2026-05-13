@@ -60,6 +60,7 @@ struct CommentBlockConfirmationSheetView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(isBlocking)
+                .accessibilityIdentifier("lookbook.comment.blockConfirmButton")
 
                 Button {
                     onCancel()

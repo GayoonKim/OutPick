@@ -29,6 +29,7 @@ struct AppToastView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .shadow(color: .black.opacity(0.16), radius: 14, x: 0, y: 8)
         .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("app.toast")
     }
 }
 

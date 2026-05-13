@@ -49,6 +49,7 @@ struct BrandRowView: View {
         .task(id: brand.listLogoPath ?? "__empty_logo_path__") {
             await loadLogoIfNeeded()
         }
+        .accessibilityIdentifier("lookbook.brand.card")
     }
 
     private var collageView: some View {

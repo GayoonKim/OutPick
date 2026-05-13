@@ -46,6 +46,7 @@ struct PostCommentInputBarView: View {
                 )
                 .frame(height: inputHeight)
                 .padding(.horizontal, 12)
+                .accessibilityIdentifier("lookbook.comment.input")
 
                 if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Text(placeholder)
@@ -82,6 +83,7 @@ struct PostCommentInputBarView: View {
             .buttonStyle(.plain)
             .disabled(canSubmit == false)
             .accessibilityLabel(submitAccessibilityLabel)
+            .accessibilityIdentifier("lookbook.comment.submitButton")
         }
         .padding(.horizontal, 16)
         .padding(.top, 10)

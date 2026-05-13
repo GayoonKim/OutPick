@@ -30,6 +30,7 @@ struct PostDetailMetricsCardView: View {
                 selectedColor: .red,
                 action: onLikeTap
             )
+            .accessibilityIdentifier("lookbook.post.likeButton")
             actionButton(
                 systemName: "message",
                 selectedSystemName: "message.fill",
@@ -42,6 +43,7 @@ struct PostDetailMetricsCardView: View {
                     onCommentTap()
                 }
             )
+            .accessibilityIdentifier("lookbook.post.commentsButton")
             actionButton(
                 systemName: "bookmark",
                 selectedSystemName: "bookmark.fill",
@@ -52,6 +54,7 @@ struct PostDetailMetricsCardView: View {
                 selectedColor: .black,
                 action: onSaveTap
             )
+            .accessibilityIdentifier("lookbook.post.saveButton")
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)

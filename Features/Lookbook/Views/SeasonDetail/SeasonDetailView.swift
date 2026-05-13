@@ -63,6 +63,7 @@ struct SeasonDetailView: View {
                                         )
                                     }
                                     .buttonStyle(.plain)
+                                    .accessibilityIdentifier("lookbook.post.card")
                                     .onAppear {
                                         viewModel.postDidAppear(postID: post.id)
                                     }

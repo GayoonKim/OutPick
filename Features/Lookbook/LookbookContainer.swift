@@ -37,6 +37,9 @@ final class LookbookContainer {
         self.brandAdminSessionStore = brandAdminSessionStore
         self.interactionStore = LookbookInteractionStore()
         self.debugFailureInjectionStore = LookbookDebugFailureInjectionStore()
+        #if DEBUG
+        LookbookDebugFailureLaunchArguments.apply(to: debugFailureInjectionStore)
+        #endif
         self.currentUserIDProvider = LoginManagerCurrentUserIDProvider()
         self.loadPostCommentsUseCase = LoadPostCommentsUseCase(
             commentRepository: provider.commentRepository
