@@ -23,7 +23,7 @@ final class SeasonDetailViewModel: ObservableObject {
     private let seasonID: SeasonID
     private let useCase: any LoadSeasonDetailUseCaseProtocol
     private let brandImageCache: any BrandImageCacheProtocol
-    private let interactionStore: LookbookInteractionStore
+    private let postInteractionStore: any PostInteractionManaging
     private let maxBytes: Int
 
     private var loadedKey: String?
@@ -39,7 +39,7 @@ final class SeasonDetailViewModel: ObservableObject {
         seasonID: SeasonID,
         useCase: any LoadSeasonDetailUseCaseProtocol,
         brandImageCache: any BrandImageCacheProtocol,
-        interactionStore: LookbookInteractionStore,
+        postInteractionStore: any PostInteractionManaging,
         maxBytes: Int,
         initialPrefetchCount: Int = 8,
         lookAheadPrefetchCount: Int = 20,
@@ -49,7 +49,7 @@ final class SeasonDetailViewModel: ObservableObject {
         self.seasonID = seasonID
         self.useCase = useCase
         self.brandImageCache = brandImageCache
-        self.interactionStore = interactionStore
+        self.postInteractionStore = postInteractionStore
         self.maxBytes = maxBytes
         self.initialPrefetchCount = initialPrefetchCount
         self.lookAheadPrefetchCount = lookAheadPrefetchCount
@@ -100,7 +100,7 @@ final class SeasonDetailViewModel: ObservableObject {
             )
             season = content.season
             posts = content.posts
-            content.posts.forEach { interactionStore.seedPostMetrics($0) }
+            content.posts.forEach { postInteractionStore.seedPostMetrics($0) }
             let loadedPostIDs = Set(content.posts.map(\.id))
             updatePinnedPostIDs(loadedPostIDs)
             bindInteractionStore(postIDs: loadedPostIDs)
@@ -159,7 +159,7 @@ final class SeasonDetailViewModel: ObservableObject {
             return
         }
 
-        postStatesCancellable = interactionStore.postStatesPublisher(for: postIDs)
+        postStatesCancellable = postInteractionStore.postStatesPublisher(for: postIDs)
             .sink { [weak self] states in
                 guard let self else { return }
                 self.applyInteractionStates(states)
@@ -176,7 +176,7 @@ final class SeasonDetailViewModel: ObservableObject {
         }
 
         for postID in addedPostIDs {
-            postPinScopes[postID] = interactionStore.pinScope(postIDs: [postID])
+            postPinScopes[postID] = postInteractionStore.pinScope(postIDs: [postID], commentIDs: [])
         }
         pinnedPostIDs = nextPostIDs
     }

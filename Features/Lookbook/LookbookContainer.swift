@@ -169,7 +169,7 @@ final class LookbookContainer {
             seasonID: seasonID,
             useCase: loadSeasonDetailUseCase,
             brandImageCache: provider.brandImageCache,
-            interactionStore: interactionStore,
+            postInteractionStore: interactionStore,
             maxBytes: 1_500_000
         )
     }
@@ -188,9 +188,10 @@ final class LookbookContainer {
             postUserStateRepository: provider.postUserStateRepository,
             engagementInteractionUseCase: PostEngagementInteractionUseCase(
                 repository: provider.postEngagementRepository,
-                interactionStore: interactionStore
+                postInteractionStore: interactionStore
             ),
-            interactionStore: interactionStore,
+            postInteractionStore: interactionStore,
+            commentInteractionStore: interactionStore,
             currentUserIDProvider: currentUserIDProvider
         )
     }
@@ -257,7 +258,7 @@ final class LookbookContainer {
             blockUseCase: blockUserUseCase,
             loadHiddenUserIDsUseCase: loadHiddenCommentUserIDsUseCase,
             filterHiddenAuthorsUseCase: filterHiddenCommentAuthorsUseCase,
-            interactionStore: interactionStore,
+            commentInteractionStore: interactionStore,
             currentUserIDProvider: currentUserIDProvider
         )
     }
@@ -325,7 +326,7 @@ final class LookbookContainer {
             blockUseCase: blockUserUseCase,
             loadHiddenUserIDsUseCase: loadHiddenCommentUserIDsUseCase,
             filterHiddenAuthorsUseCase: filterHiddenCommentAuthorsUseCase,
-            interactionStore: interactionStore,
+            commentInteractionStore: interactionStore,
             currentUserIDProvider: currentUserIDProvider
         )
     }

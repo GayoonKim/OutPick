@@ -34,7 +34,7 @@ final class PostCommentsViewModel: ObservableObject {
     private let blockUseCase: any BlockUserUseCaseProtocol
     private let loadHiddenUserIDsUseCase: any LoadHiddenCommentUserIDsUseCaseProtocol
     private let filterHiddenAuthorsUseCase: FilterHiddenCommentAuthorsUseCase
-    private let interactionStore: LookbookInteractionStore
+    private let commentInteractionStore: any CommentInteractionManaging
     private let currentUserIDProvider: any CurrentUserIDProviding
     private let authorProfileStore: CommentAuthorProfileStore
     private let avatarImageManager: ChatAvatarImageManaging
@@ -73,7 +73,7 @@ final class PostCommentsViewModel: ObservableObject {
         blockUseCase: any BlockUserUseCaseProtocol,
         loadHiddenUserIDsUseCase: any LoadHiddenCommentUserIDsUseCaseProtocol,
         filterHiddenAuthorsUseCase: FilterHiddenCommentAuthorsUseCase,
-        interactionStore: LookbookInteractionStore,
+        commentInteractionStore: any CommentInteractionManaging,
         currentUserIDProvider: any CurrentUserIDProviding,
         authorProfileStore: CommentAuthorProfileStore? = nil,
         avatarImageManager: ChatAvatarImageManaging = AvatarImageService.shared,
@@ -92,7 +92,7 @@ final class PostCommentsViewModel: ObservableObject {
         self.blockUseCase = blockUseCase
         self.loadHiddenUserIDsUseCase = loadHiddenUserIDsUseCase
         self.filterHiddenAuthorsUseCase = filterHiddenAuthorsUseCase
-        self.interactionStore = interactionStore
+        self.commentInteractionStore = commentInteractionStore
         self.currentUserIDProvider = currentUserIDProvider
         self.authorProfileStore = authorProfileStore ?? CommentAuthorProfileStore(
             currentUserIDProvider: currentUserIDProvider
@@ -134,7 +134,7 @@ final class PostCommentsViewModel: ObservableObject {
     }
 
     func displayReplyCount(for comment: Comment) -> Int {
-        interactionStore.replyCount(for: comment)
+        commentInteractionStore.replyCount(for: comment)
     }
 
     func clearActionError() {
@@ -171,7 +171,7 @@ final class PostCommentsViewModel: ObservableObject {
                 commentID: comment.id,
                 reason: nil
             )
-            interactionStore.applyCommentDeletion(result)
+            commentInteractionStore.applyCommentDeletion(result)
             return result
         } catch {
             actionErrorMessage = "댓글을 삭제하지 못했습니다."
@@ -238,7 +238,7 @@ final class PostCommentsViewModel: ObservableObject {
             hiddenUserIDs.insert(comment.userID)
             didLoadHiddenUserIDs = true
             let hiddenCommentIDs = Set(commentFeedComments.filter { $0.userID == comment.userID }.map(\.id))
-            interactionStore.hideCommentIDs(hiddenCommentIDs)
+            commentInteractionStore.hideCommentIDs(hiddenCommentIDs)
             return block
         } catch {
             actionErrorMessage = "사용자를 차단하지 못했습니다."
@@ -301,7 +301,7 @@ final class PostCommentsViewModel: ObservableObject {
                 message: message
             )
             draftMessage = ""
-            interactionStore.applyCommentMutation(result)
+            commentInteractionStore.applyCommentMutation(result)
             authorProfileStore.seedCurrentUserProfileIfPossible()
             syncAuthorDisplays()
             loadedKey = nil
@@ -476,7 +476,7 @@ final class PostCommentsViewModel: ObservableObject {
     ) -> Comment? {
         guard let comment else { return nil }
         guard hiddenUserIDs.contains(comment.userID) == false,
-              interactionStore.isCommentHidden(comment.id) == false else {
+              commentInteractionStore.isCommentHidden(comment.id) == false else {
             return nil
         }
         return comment
@@ -487,7 +487,7 @@ final class PostCommentsViewModel: ObservableObject {
         hiddenUserIDs: Set<UserID>
     ) -> [Comment] {
         filterHiddenAuthors(comments, hiddenUserIDs: hiddenUserIDs)
-            .filter { interactionStore.isCommentHidden($0.id) == false }
+            .filter { commentInteractionStore.isCommentHidden($0.id) == false }
     }
 
     private func reportTarget(
@@ -539,7 +539,7 @@ final class PostCommentsViewModel: ObservableObject {
         }
 
         for commentID in addedCommentIDs {
-            commentPinScopes[commentID] = interactionStore.pinScope(commentIDs: [commentID])
+            commentPinScopes[commentID] = commentInteractionStore.pinScope(postIDs: [], commentIDs: [commentID])
             subscribeCommentState(for: commentID)
         }
         pinnedCommentIDs = nextCommentIDs
@@ -547,7 +547,7 @@ final class PostCommentsViewModel: ObservableObject {
 
     private func subscribeCommentState(for commentID: CommentID) {
         guard commentStateCancellables[commentID] == nil else { return }
-        commentStateCancellables[commentID] = interactionStore.commentStatePublisher(for: commentID)
+        commentStateCancellables[commentID] = commentInteractionStore.commentStatePublisher(for: commentID)
             .compactMap { $0 }
             .sink { [weak self] state in
                 self?.applyCommentState(state)

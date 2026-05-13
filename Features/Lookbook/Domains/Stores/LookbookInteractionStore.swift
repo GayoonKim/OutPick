@@ -16,6 +16,33 @@ struct LookbookPostInteractionState: Equatable {
     var updatedAt: Date
 }
 
+@MainActor
+protocol PostInteractionManaging: AnyObject {
+    func state(for postID: PostID) -> LookbookPostInteractionState?
+    func postStatePublisher(for postID: PostID) -> AnyPublisher<LookbookPostInteractionState?, Never>
+    func postStatesPublisher(for postIDs: Set<PostID>) -> AnyPublisher<[PostID: LookbookPostInteractionState], Never>
+    func pinScope(postIDs: Set<PostID>, commentIDs: Set<CommentID>) -> InteractionPinScope
+    func seed(post: LookbookPost, visibleCommentCount: Int?, userState: PostUserState?)
+    func seedPostMetrics(_ post: LookbookPost)
+    func applyOptimisticLike(postID: PostID, userID: UserID, isLiked: Bool, baseLiked: Bool?, baseLikeCount: Int?)
+    func applyOptimisticSave(postID: PostID, userID: UserID, isSaved: Bool, baseSaved: Bool?, baseSaveCount: Int?)
+    func applyLikeResult(_ result: PostEngagementResult, shouldApplySave: Bool)
+    func applySaveResult(_ result: PostEngagementResult, shouldApplyLike: Bool)
+    func restoreLike(postID: PostID, userID: UserID, isLiked: Bool, likeCount: Int?)
+    func restoreSave(postID: PostID, userID: UserID, isSaved: Bool, saveCount: Int?)
+}
+
+@MainActor
+protocol CommentInteractionManaging: AnyObject {
+    func replyCount(for comment: Comment) -> Int
+    func isCommentHidden(_ commentID: CommentID) -> Bool
+    func commentStatePublisher(for commentID: CommentID) -> AnyPublisher<CommentInteractionState?, Never>
+    func pinScope(postIDs: Set<PostID>, commentIDs: Set<CommentID>) -> InteractionPinScope
+    func hideCommentIDs(_ commentIDs: Set<CommentID>)
+    func applyCommentMutation(_ result: CommentMutationResult)
+    func applyCommentDeletion(_ result: CommentDeletionResult)
+}
+
 final class InteractionPinScope {
     private var invalidateAction: (@MainActor () -> Void)?
 
@@ -39,7 +66,7 @@ final class InteractionPinScope {
 }
 
 @MainActor
-final class LookbookInteractionStore: ObservableObject {
+final class LookbookInteractionStore: ObservableObject, PostInteractionManaging, CommentInteractionManaging {
     @Published private(set) var postStates: [PostID: LookbookPostInteractionState] = [:]
     @Published private var replyCounts: [CommentID: Int] = [:]
 

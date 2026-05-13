@@ -39,7 +39,8 @@ final class PostDetailScreenViewModel: ObservableObject {
     private let postUserStateRepository: any PostUserStateRepositoryProtocol
     private let engagementInteractionUseCase: PostEngagementInteractionUseCase
     private let authorProfileStore: CommentAuthorProfileStore
-    private let interactionStore: LookbookInteractionStore
+    private let postInteractionStore: any PostInteractionManaging
+    private let commentInteractionStore: any CommentInteractionManaging
     private let currentUserIDProvider: any CurrentUserIDProviding
 
     init(
@@ -50,7 +51,8 @@ final class PostDetailScreenViewModel: ObservableObject {
         loadHiddenUserIDsUseCase: any LoadHiddenCommentUserIDsUseCaseProtocol,
         postUserStateRepository: any PostUserStateRepositoryProtocol,
         engagementInteractionUseCase: PostEngagementInteractionUseCase,
-        interactionStore: LookbookInteractionStore,
+        postInteractionStore: any PostInteractionManaging,
+        commentInteractionStore: any CommentInteractionManaging,
         currentUserIDProvider: any CurrentUserIDProviding,
         authorProfileStore: CommentAuthorProfileStore? = nil
     ) {
@@ -61,7 +63,8 @@ final class PostDetailScreenViewModel: ObservableObject {
         self.loadHiddenUserIDsUseCase = loadHiddenUserIDsUseCase
         self.postUserStateRepository = postUserStateRepository
         self.engagementInteractionUseCase = engagementInteractionUseCase
-        self.interactionStore = interactionStore
+        self.postInteractionStore = postInteractionStore
+        self.commentInteractionStore = commentInteractionStore
         self.currentUserIDProvider = currentUserIDProvider
         self.authorProfileStore = authorProfileStore ?? CommentAuthorProfileStore(
             currentUserIDProvider: currentUserIDProvider
@@ -91,7 +94,7 @@ final class PostDetailScreenViewModel: ObservableObject {
     }
 
     func displayReplyCount(for comment: Comment) -> Int {
-        interactionStore.replyCount(for: comment)
+        commentInteractionStore.replyCount(for: comment)
     }
 
     func prefetchAuthorAvatars(for comments: [Comment], avatarImageManager: ChatAvatarImageManaging = AvatarImageService.shared) {
@@ -147,7 +150,7 @@ final class PostDetailScreenViewModel: ObservableObject {
 
     func applyCommentMutation(_ result: CommentMutationResult) {
         guard post?.id == result.postID else { return }
-        interactionStore.applyCommentMutation(result)
+        commentInteractionStore.applyCommentMutation(result)
     }
 
     func clearEngagementError() {
@@ -189,7 +192,7 @@ final class PostDetailScreenViewModel: ObservableObject {
             post = content.post
             postUserState = resolvedPostUserState
             visibleCommentCount = content.visibleCommentCount
-            interactionStore.seed(
+            postInteractionStore.seed(
                 post: content.post,
                 visibleCommentCount: content.visibleCommentCount,
                 userState: resolvedPostUserState
@@ -239,11 +242,11 @@ final class PostDetailScreenViewModel: ObservableObject {
 
     private func ensureInteractionPinScope() {
         guard interactionPinScope == nil else { return }
-        interactionPinScope = interactionStore.pinScope(postIDs: [postID])
+        interactionPinScope = postInteractionStore.pinScope(postIDs: [postID], commentIDs: [])
     }
 
     private func bindInteractionStore() {
-        interactionStore.postStatePublisher(for: postID)
+        postInteractionStore.postStatePublisher(for: postID)
             .compactMap { $0 }
             .sink { [weak self] state in
                 guard let self else { return }
@@ -277,7 +280,7 @@ final class PostDetailScreenViewModel: ObservableObject {
     }
 
     private func filterVisibleInteractionComments(_ comments: [Comment]) -> [Comment] {
-        comments.filter { interactionStore.isCommentHidden($0.id) == false }
+        comments.filter { commentInteractionStore.isCommentHidden($0.id) == false }
     }
 
     private func updatePinnedCommentIDs() {
@@ -292,7 +295,7 @@ final class PostDetailScreenViewModel: ObservableObject {
         }
 
         for commentID in addedCommentIDs {
-            commentPinScopes[commentID] = interactionStore.pinScope(commentIDs: [commentID])
+            commentPinScopes[commentID] = commentInteractionStore.pinScope(postIDs: [], commentIDs: [commentID])
             subscribeCommentState(for: commentID)
         }
         pinnedCommentIDs = nextCommentIDs
@@ -300,7 +303,7 @@ final class PostDetailScreenViewModel: ObservableObject {
 
     private func subscribeCommentState(for commentID: CommentID) {
         guard commentStateCancellables[commentID] == nil else { return }
-        commentStateCancellables[commentID] = interactionStore.commentStatePublisher(for: commentID)
+        commentStateCancellables[commentID] = commentInteractionStore.commentStatePublisher(for: commentID)
             .compactMap { $0 }
             .sink { [weak self] state in
                 self?.applyCommentState(state)

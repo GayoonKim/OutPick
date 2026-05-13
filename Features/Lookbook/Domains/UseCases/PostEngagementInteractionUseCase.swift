@@ -23,7 +23,7 @@ struct PostEngagementInteractionOutcome {
 @MainActor
 final class PostEngagementInteractionUseCase {
     private let repository: any PostEngagementRepositoryProtocol
-    private let interactionStore: LookbookInteractionStore
+    private let postInteractionStore: any PostInteractionManaging
 
     private var pendingLikeTarget: Bool?
     private var pendingSaveTarget: Bool?
@@ -36,10 +36,10 @@ final class PostEngagementInteractionUseCase {
 
     init(
         repository: any PostEngagementRepositoryProtocol,
-        interactionStore: LookbookInteractionStore
+        postInteractionStore: any PostInteractionManaging
     ) {
         self.repository = repository
-        self.interactionStore = interactionStore
+        self.postInteractionStore = postInteractionStore
     }
 
     func toggleLike(
@@ -205,7 +205,7 @@ final class PostEngagementInteractionUseCase {
         let previousLiked = baseLiked ?? input.currentUserState?.isLiked ?? false
         let likeCount = baseLikeCount ?? input.currentMetrics?.likeCount ?? 0
 
-        interactionStore.applyOptimisticLike(
+        postInteractionStore.applyOptimisticLike(
             postID: input.postID,
             userID: input.userID,
             isLiked: isLiked,
@@ -223,7 +223,7 @@ final class PostEngagementInteractionUseCase {
         let previousSaved = baseSaved ?? input.currentUserState?.isSaved ?? false
         let saveCount = baseSaveCount ?? input.currentMetrics?.saveCount ?? 0
 
-        interactionStore.applyOptimisticSave(
+        postInteractionStore.applyOptimisticSave(
             postID: input.postID,
             userID: input.userID,
             isSaved: isSaved,
@@ -234,18 +234,18 @@ final class PostEngagementInteractionUseCase {
 
     private func applyLikeResult(_ result: PostEngagementResult) {
         let shouldApplySave = isMutatingSave == false && pendingSaveTarget == nil
-        interactionStore.applyLikeResult(result, shouldApplySave: shouldApplySave)
+        postInteractionStore.applyLikeResult(result, shouldApplySave: shouldApplySave)
     }
 
     private func applySaveResult(_ result: PostEngagementResult) {
         let shouldApplyLike = isMutatingLike == false && pendingLikeTarget == nil
-        interactionStore.applySaveResult(result, shouldApplyLike: shouldApplyLike)
+        postInteractionStore.applySaveResult(result, shouldApplyLike: shouldApplyLike)
     }
 
     private func restoreConfirmedLike(input: PostEngagementInteractionInput) {
         guard let confirmedLikeState else { return }
 
-        interactionStore.restoreLike(
+        postInteractionStore.restoreLike(
             postID: input.postID,
             userID: input.userID,
             isLiked: confirmedLikeState,
@@ -256,7 +256,7 @@ final class PostEngagementInteractionUseCase {
     private func restoreConfirmedSave(input: PostEngagementInteractionInput) {
         guard let confirmedSaveState else { return }
 
-        interactionStore.restoreSave(
+        postInteractionStore.restoreSave(
             postID: input.postID,
             userID: input.userID,
             isSaved: confirmedSaveState,
