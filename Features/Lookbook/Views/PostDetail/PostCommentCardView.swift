@@ -147,7 +147,7 @@ struct PostCommentCardView: View {
                             Label("\(replyCount)", systemImage: "bubble.right")
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("답글 \(replyCount)개 보기")
+                        .accessibilityLabel("답글 \(replyCount)개 보기 및 작성")
                         .accessibilityIdentifier("lookbook.comment.repliesButton")
                     } else {
                         Label("\(replyCount)", systemImage: "bubble.right")
@@ -223,7 +223,7 @@ struct PostCommentCardView: View {
     }
 
     private var canOpenReplies: Bool {
-        replyCount > 0 && onRepliesTap != nil
+        onRepliesTap != nil
     }
 }
 
