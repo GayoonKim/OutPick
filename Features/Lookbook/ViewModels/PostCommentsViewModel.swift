@@ -174,7 +174,7 @@ final class PostCommentsViewModel: ObservableObject {
             commentInteractionStore.applyCommentDeletion(result)
             return result
         } catch {
-            actionErrorMessage = "댓글을 삭제하지 못했습니다."
+            actionErrorMessage = "댓글을 삭제하지 못했어요."
             return nil
         }
     }
@@ -206,7 +206,7 @@ final class PostCommentsViewModel: ObservableObject {
                 detail: detail
             )
         } catch {
-            actionErrorMessage = "댓글을 신고하지 못했습니다."
+            actionErrorMessage = "댓글을 신고하지 못했어요."
             return nil
         }
     }
@@ -241,7 +241,7 @@ final class PostCommentsViewModel: ObservableObject {
             commentInteractionStore.hideCommentIDs(hiddenCommentIDs)
             return block
         } catch {
-            actionErrorMessage = "사용자를 차단하지 못했습니다."
+            actionErrorMessage = "사용자를 차단하지 못했어요."
             return nil
         }
     }
@@ -308,7 +308,7 @@ final class PostCommentsViewModel: ObservableObject {
             await loadPage(reset: true)
             return result
         } catch {
-            submissionErrorMessage = "댓글을 등록하지 못했습니다."
+            submissionErrorMessage = "댓글을 등록하지 못했어요."
             return nil
         }
     }

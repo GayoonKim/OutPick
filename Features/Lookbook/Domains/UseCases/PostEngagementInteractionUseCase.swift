@@ -141,7 +141,7 @@ final class PostEngagementInteractionUseCase {
                 pendingLikeTarget = nil
                 restoreConfirmedLike(input: input)
                 return PostEngagementInteractionOutcome(
-                    errorMessage: "좋아요 상태를 변경하지 못했습니다."
+                    errorMessage: "좋아요를 반영하지 못했어요."
                 )
             }
         }
@@ -193,7 +193,7 @@ final class PostEngagementInteractionUseCase {
                 pendingSaveTarget = nil
                 restoreConfirmedSave(input: input)
                 return PostEngagementInteractionOutcome(
-                    errorMessage: "저장 상태를 변경하지 못했습니다."
+                    errorMessage: "저장을 반영하지 못했어요."
                 )
             }
         }
