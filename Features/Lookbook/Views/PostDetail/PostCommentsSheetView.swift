@@ -24,6 +24,7 @@ struct PostCommentsSheetView: View {
     @State private var isPresentingBlockSheet: Bool = false
     private let onCommentSubmitted: (CommentMutationResult) -> Void
     private let onCommentDeleted: (CommentDeletionResult) -> Void
+    private let onRootCommentEngagementChanged: () async -> Void
 
     init(
         viewModel: PostCommentsViewModel,
@@ -33,7 +34,8 @@ struct PostCommentsSheetView: View {
         postID: PostID,
         coordinator: PostCommentCoordinator,
         onCommentSubmitted: @escaping (CommentMutationResult) -> Void = { _ in },
-        onCommentDeleted: @escaping (CommentDeletionResult) -> Void = { _ in }
+        onCommentDeleted: @escaping (CommentDeletionResult) -> Void = { _ in },
+        onRootCommentEngagementChanged: @escaping () async -> Void = {}
     ) {
         _viewModel = StateObject(wrappedValue: viewModel)
         self.navigationCoordinator = navigationCoordinator
@@ -43,6 +45,7 @@ struct PostCommentsSheetView: View {
         self.coordinator = coordinator
         self.onCommentSubmitted = onCommentSubmitted
         self.onCommentDeleted = onCommentDeleted
+        self.onRootCommentEngagementChanged = onRootCommentEngagementChanged
     }
 
     var body: some View {
@@ -182,7 +185,10 @@ struct PostCommentsSheetView: View {
                 coordinator.presentProfile(for: item.author)
             },
             onLikeTap: {
-                await viewModel.toggleLike(item.comment)
+                let didChange = await viewModel.toggleLike(item.comment)
+                if didChange && item.comment.isRootComment {
+                    await onRootCommentEngagementChanged()
+                }
             },
             onRepliesTap: {
                 coordinator.presentReplies(for: item.comment)
@@ -348,7 +354,8 @@ struct PostCommentsSheetView: View {
                 postID: postID,
                 parentComment: route.parentComment,
                 onReplySubmitted: onCommentSubmitted,
-                onCommentDeleted: onCommentDeleted
+                onCommentDeleted: onCommentDeleted,
+                onRootCommentEngagementChanged: onRootCommentEngagementChanged
             )
             if #available(iOS 16.0, *) {
                 sheet

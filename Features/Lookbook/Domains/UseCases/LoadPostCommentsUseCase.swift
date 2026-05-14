@@ -29,6 +29,12 @@ protocol LoadPostCommentsUseCaseProtocol {
         sort: CommentSortOption,
         page: PageRequest
     ) async throws -> PageResponse<Comment>
+
+    func loadRepresentativeComment(
+        brandID: BrandID,
+        seasonID: SeasonID,
+        postID: PostID
+    ) async throws -> Comment?
 }
 
 final class LoadPostCommentsUseCase: LoadPostCommentsUseCaseProtocol {
@@ -137,6 +143,18 @@ final class LoadPostCommentsUseCase: LoadPostCommentsUseCaseProtocol {
             postID: postID,
             sort: sort,
             page: page
+        )
+    }
+
+    func loadRepresentativeComment(
+        brandID: BrandID,
+        seasonID: SeasonID,
+        postID: PostID
+    ) async throws -> Comment? {
+        try await commentRepository.fetchRepresentativeComment(
+            brandID: brandID,
+            seasonID: seasonID,
+            postID: postID
         )
     }
 

@@ -157,6 +157,36 @@ final class PostDetailScreenViewModel: ObservableObject {
         commentInteractionStore.applyCommentMutation(result)
     }
 
+    func refreshRepresentativeComment() async {
+        guard let post else { return }
+
+        do {
+            let content = try await useCase.execute(
+                brandID: brandID,
+                seasonID: seasonID,
+                postID: postID,
+                hiddenUserIDs: await loadHiddenUserIDs()
+            )
+            comments = filterVisibleInteractionComments(content.comments)
+            updatePinnedCommentIDs()
+            commentErrorMessage = content.commentErrorMessage
+            await authorProfileStore.loadMissingAuthors(for: comments)
+            syncAuthorDisplays()
+            visibleCommentCount = content.visibleCommentCount
+
+            var updatedPost = post
+            updatedPost.metrics = content.post.metrics
+            self.post = updatedPost
+            postInteractionStore.seed(
+                post: updatedPost,
+                visibleCommentCount: content.visibleCommentCount,
+                userState: postUserState
+            )
+        } catch {
+            commentErrorMessage = "댓글을 불러오지 못했습니다."
+        }
+    }
+
     func clearEngagementError() {
         engagementErrorMessage = nil
     }

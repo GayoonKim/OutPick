@@ -20,15 +20,18 @@ struct PostCommentRepliesSheetView: View {
     @State private var isPresentingBlockSheet: Bool = false
     private let onReplySubmitted: (CommentMutationResult) -> Void
     private let onCommentDeleted: (CommentDeletionResult) -> Void
+    private let onRootCommentEngagementChanged: () async -> Void
 
     init(
         viewModel: PostCommentRepliesViewModel,
         onReplySubmitted: @escaping (CommentMutationResult) -> Void = { _ in },
-        onCommentDeleted: @escaping (CommentDeletionResult) -> Void = { _ in }
+        onCommentDeleted: @escaping (CommentDeletionResult) -> Void = { _ in },
+        onRootCommentEngagementChanged: @escaping () async -> Void = {}
     ) {
         _viewModel = StateObject(wrappedValue: viewModel)
         self.onReplySubmitted = onReplySubmitted
         self.onCommentDeleted = onCommentDeleted
+        self.onRootCommentEngagementChanged = onRootCommentEngagementChanged
     }
 
     var body: some View {
@@ -131,7 +134,10 @@ struct PostCommentRepliesSheetView: View {
                         profileAuthor = item.author
                     },
                     onLikeTap: {
-                        await viewModel.toggleLike(item.comment)
+                        let didChange = await viewModel.toggleLike(item.comment)
+                        if didChange && item.comment.isRootComment {
+                            await onRootCommentEngagementChanged()
+                        }
                     },
                     onDeleteTap: deleteAction(for: item),
                     onReportTap: reportAction(for: item),

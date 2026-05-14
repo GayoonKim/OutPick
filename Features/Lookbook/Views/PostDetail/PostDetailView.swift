@@ -131,7 +131,10 @@ struct PostDetailView: View {
             brandID: brandID,
             seasonID: seasonID,
             postID: postID,
-            commentCoordinator: commentCoordinator
+            commentCoordinator: commentCoordinator,
+            onRootCommentEngagementChanged: {
+                await viewModel.refreshRepresentativeComment()
+            }
         )
         if #available(iOS 16.0, *) {
             sheet

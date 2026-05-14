@@ -172,10 +172,11 @@ final class PostCommentsViewModel: ObservableObject {
         isCurrentUser(comment.userID) == false
     }
 
-    func toggleLike(_ comment: Comment) async {
+    @discardableResult
+    func toggleLike(_ comment: Comment) async -> Bool {
         guard let userID = currentUserID else {
             actionErrorMessage = "로그인이 필요합니다."
-            return
+            return false
         }
 
         actionErrorMessage = nil
@@ -201,6 +202,11 @@ final class PostCommentsViewModel: ObservableObject {
             }
         )
         actionErrorMessage = outcome.errorMessage
+        guard outcome.errorMessage == nil else { return false }
+        if comment.isRootComment {
+            await refreshRepresentativeComment()
+        }
+        return true
     }
 
     @discardableResult
@@ -436,6 +442,64 @@ final class PostCommentsViewModel: ObservableObject {
 
     private func syncAuthorDisplays() {
         authorDisplays = authorProfileStore.authorDisplays
+    }
+
+    private func refreshRepresentativeComment() async {
+        do {
+            let previousRepresentativeComment = representativeComment
+            let nextRepresentativeComment = try await useCase.loadRepresentativeComment(
+                brandID: brandID,
+                seasonID: seasonID,
+                postID: postID
+            )
+            reconcileRepresentativeComment(
+                previous: previousRepresentativeComment,
+                next: visibleComment(nextRepresentativeComment, hiddenUserIDs: hiddenUserIDs)
+            )
+        } catch {
+            actionErrorMessage = "대표 댓글을 갱신하지 못했어요."
+        }
+    }
+
+    private func reconcileRepresentativeComment(
+        previous: Comment?,
+        next: Comment?
+    ) {
+        let previousID = previous?.id
+        let nextID = next?.id
+
+        if let previous,
+           previousID != nextID,
+           previous.isPinned == false,
+           hiddenUserIDs.contains(previous.userID) == false,
+           commentInteractionStore.isCommentHidden(previous.id) == false,
+           rootComments.contains(where: { $0.id == previous.id }) == false {
+            rootComments.append(previous)
+        }
+
+        representativeComment = next
+
+        if let nextID {
+            rootComments.removeAll { $0.id == nextID }
+        }
+        rootComments = sortedRootComments(rootComments)
+        updatePinnedCommentIDs()
+    }
+
+    private func sortedRootComments(_ comments: [Comment]) -> [Comment] {
+        switch selectedSort {
+        case .latest:
+            return comments.sorted { lhs, rhs in
+                lhs.createdAt > rhs.createdAt
+            }
+        case .popular:
+            return comments.sorted { lhs, rhs in
+                if lhs.likeCount == rhs.likeCount {
+                    return lhs.createdAt > rhs.createdAt
+                }
+                return lhs.likeCount > rhs.likeCount
+            }
+        }
     }
 
     private func bindInteractionStore() {

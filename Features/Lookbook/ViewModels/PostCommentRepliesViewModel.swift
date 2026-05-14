@@ -171,10 +171,11 @@ final class PostCommentRepliesViewModel: ObservableObject {
         isCurrentUser(comment.userID) == false
     }
 
-    func toggleLike(_ comment: Comment) async {
+    @discardableResult
+    func toggleLike(_ comment: Comment) async -> Bool {
         guard let userID = currentUserID else {
             actionErrorMessage = "로그인이 필요합니다."
-            return
+            return false
         }
 
         actionErrorMessage = nil
@@ -200,6 +201,7 @@ final class PostCommentRepliesViewModel: ObservableObject {
             }
         )
         actionErrorMessage = outcome.errorMessage
+        return outcome.errorMessage == nil
     }
 
     @discardableResult

@@ -289,7 +289,8 @@ final class LookbookContainer {
         navigationCoordinator: LookbookCoordinator,
         commentCoordinator: PostCommentCoordinator,
         onCommentSubmitted: @escaping (CommentMutationResult) -> Void = { _ in },
-        onCommentDeleted: @escaping (CommentDeletionResult) -> Void = { _ in }
+        onCommentDeleted: @escaping (CommentDeletionResult) -> Void = { _ in },
+        onRootCommentEngagementChanged: @escaping () async -> Void = {}
     ) -> PostCommentsSheetView {
         PostCommentsSheetView(
             viewModel: makePostCommentsViewModel(
@@ -303,7 +304,8 @@ final class LookbookContainer {
             postID: postID,
             coordinator: commentCoordinator,
             onCommentSubmitted: onCommentSubmitted,
-            onCommentDeleted: onCommentDeleted
+            onCommentDeleted: onCommentDeleted,
+            onRootCommentEngagementChanged: onRootCommentEngagementChanged
         )
     }
 
@@ -313,7 +315,8 @@ final class LookbookContainer {
         postID: PostID,
         parentComment: Comment,
         onReplySubmitted: @escaping (CommentMutationResult) -> Void,
-        onCommentDeleted: @escaping (CommentDeletionResult) -> Void
+        onCommentDeleted: @escaping (CommentDeletionResult) -> Void,
+        onRootCommentEngagementChanged: @escaping () async -> Void = {}
     ) -> PostCommentRepliesSheetView {
         PostCommentRepliesSheetView(
             viewModel: makePostCommentRepliesViewModel(
@@ -323,7 +326,8 @@ final class LookbookContainer {
                 parentComment: parentComment
             ),
             onReplySubmitted: onReplySubmitted,
-            onCommentDeleted: onCommentDeleted
+            onCommentDeleted: onCommentDeleted,
+            onRootCommentEngagementChanged: onRootCommentEngagementChanged
         )
     }
 
