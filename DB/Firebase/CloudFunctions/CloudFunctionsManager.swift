@@ -186,6 +186,37 @@ final class CloudFunctionsManager {
         )
     }
 
+    func setCommentEngagement(
+        brandID: String,
+        seasonID: String,
+        postID: String,
+        commentID: String,
+        isLiked: Bool
+    ) async throws -> CommentEngagementResult {
+        let response = try await callFunction(
+            "setCommentEngagement",
+            data: [
+                "brandID": brandID,
+                "seasonID": seasonID,
+                "postID": postID,
+                "commentID": commentID,
+                "isLiked": isLiked
+            ]
+        )
+
+        return CommentEngagementResult(
+            brandID: BrandID(value: try stringValue(response, key: "brandID")),
+            seasonID: SeasonID(value: try stringValue(response, key: "seasonID")),
+            postID: PostID(value: try stringValue(response, key: "postID")),
+            commentID: CommentID(value: try stringValue(response, key: "commentID")),
+            userID: UserID(value: try stringValue(response, key: "userID")),
+            parentCommentID: optionalStringValue(response, key: "parentCommentID")
+                .map { CommentID(value: $0) },
+            isLiked: try boolValue(response, key: "isLiked"),
+            likeCount: try intValue(response, key: "likeCount")
+        )
+    }
+
     func createComment(
         brandID: String,
         seasonID: String,

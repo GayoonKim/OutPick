@@ -227,6 +227,7 @@ struct PostDetailView: View {
                         let item = viewModel.displayItem(for: comment)
                         PostCommentCardView(
                             comment: item.comment,
+                            likeCount: viewModel.displayLikeCount(for: item.comment),
                             replyCount: viewModel.displayReplyCount(for: item.comment),
                             author: item.author,
                             badge: .representative,

@@ -121,11 +121,17 @@ struct PostCommentRepliesSheetView: View {
                 let item = viewModel.displayItem(for: viewModel.parentComment)
                 PostCommentCardView(
                     comment: item.comment,
+                    likeCount: viewModel.displayLikeCount(for: item.comment),
                     replyCount: viewModel.displayReplyCount(for: item.comment),
+                    isLiked: viewModel.isCommentLiked(item.comment),
+                    isMutatingLike: viewModel.isMutatingLike(item.comment),
                     author: item.author,
                     badgeTitle: "원댓글",
                     onProfileTap: {
                         profileAuthor = item.author
+                    },
+                    onLikeTap: {
+                        await viewModel.toggleLike(item.comment)
                     },
                     onDeleteTap: deleteAction(for: item),
                     onReportTap: reportAction(for: item),
@@ -166,10 +172,16 @@ struct PostCommentRepliesSheetView: View {
                         let item = viewModel.displayItem(for: reply)
                         PostCommentCardView(
                             comment: item.comment,
+                            likeCount: viewModel.displayLikeCount(for: item.comment),
                             replyCount: viewModel.displayReplyCount(for: item.comment),
+                            isLiked: viewModel.isCommentLiked(item.comment),
+                            isMutatingLike: viewModel.isMutatingLike(item.comment),
                             author: item.author,
                             onProfileTap: {
                                 profileAuthor = item.author
+                            },
+                            onLikeTap: {
+                                await viewModel.toggleLike(item.comment)
                             },
                             onDeleteTap: deleteAction(for: item),
                             onReportTap: reportAction(for: item),

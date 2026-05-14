@@ -18,11 +18,15 @@ struct PostCommentBadge: Equatable {
 
 struct PostCommentCardView: View {
     let comment: Comment
+    let likeCount: Int
     let replyCount: Int
+    let isLiked: Bool
+    let isMutatingLike: Bool
     let author: CommentAuthorDisplay
     let badges: [PostCommentBadge]
     let avatarImageManager: ChatAvatarImageManaging
     let onProfileTap: (() -> Void)?
+    let onLikeTap: (() async -> Void)?
     let onRepliesTap: (() -> Void)?
     let onCardTap: (() -> Void)?
     let onDeleteTap: (() -> Void)?
@@ -31,13 +35,17 @@ struct PostCommentCardView: View {
 
     init(
         comment: Comment,
+        likeCount: Int? = nil,
         replyCount: Int? = nil,
+        isLiked: Bool = false,
+        isMutatingLike: Bool = false,
         author: CommentAuthorDisplay? = nil,
         badge: PostCommentBadge? = nil,
         badges: [PostCommentBadge] = [],
         badgeTitle: String? = nil,
         avatarImageManager: ChatAvatarImageManaging = AvatarImageService.shared,
         onProfileTap: (() -> Void)? = nil,
+        onLikeTap: (() async -> Void)? = nil,
         onRepliesTap: (() -> Void)? = nil,
         onCardTap: (() -> Void)? = nil,
         onDeleteTap: (() -> Void)? = nil,
@@ -45,7 +53,10 @@ struct PostCommentCardView: View {
         onBlockTap: (() -> Void)? = nil
     ) {
         self.comment = comment
+        self.likeCount = likeCount ?? comment.likeCount
         self.replyCount = replyCount ?? comment.replyCount
+        self.isLiked = isLiked
+        self.isMutatingLike = isMutatingLike
         self.author = author ?? .unknown(userID: comment.userID)
         if badges.isEmpty == false {
             self.badges = badges
@@ -58,6 +69,7 @@ struct PostCommentCardView: View {
         }
         self.avatarImageManager = avatarImageManager
         self.onProfileTap = onProfileTap
+        self.onLikeTap = onLikeTap
         self.onRepliesTap = onRepliesTap
         self.onCardTap = onCardTap
         self.onDeleteTap = onDeleteTap
@@ -138,7 +150,7 @@ struct PostCommentCardView: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 HStack(spacing: 12) {
-                    Label("\(comment.likeCount)", systemImage: "heart")
+                    likeControl
 
                     if canOpenReplies {
                         Button {
@@ -168,6 +180,26 @@ struct PostCommentCardView: View {
             onCardTap?()
         }
         .accessibilityIdentifier("lookbook.comment.card")
+    }
+
+    @ViewBuilder
+    private var likeControl: some View {
+        if let onLikeTap {
+            Button {
+                Task {
+                    await onLikeTap()
+                }
+            } label: {
+                Label("\(likeCount)", systemImage: isLiked ? "heart.fill" : "heart")
+            }
+            .buttonStyle(.plain)
+            .disabled(isMutatingLike)
+            .foregroundStyle(isLiked ? Color.red : Color.secondary)
+            .accessibilityLabel(isLiked ? "댓글 좋아요 취소" : "댓글 좋아요")
+            .accessibilityIdentifier("lookbook.comment.likeButton")
+        } else {
+            Label("\(likeCount)", systemImage: "heart")
+        }
     }
 
     @ViewBuilder

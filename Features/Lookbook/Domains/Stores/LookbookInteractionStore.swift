@@ -35,10 +35,26 @@ protocol PostInteractionManaging: AnyObject {
 @MainActor
 protocol CommentInteractionManaging: AnyObject {
     func replyCount(for comment: Comment) -> Int
+    func likeCount(for comment: Comment) -> Int
+    func isCommentLiked(_ comment: Comment, userID: UserID?) -> Bool
     func isCommentHidden(_ commentID: CommentID) -> Bool
     func commentStatePublisher(for commentID: CommentID) -> AnyPublisher<CommentInteractionState?, Never>
     func pinScope(postIDs: Set<PostID>, commentIDs: Set<CommentID>) -> InteractionPinScope
     func hideCommentIDs(_ commentIDs: Set<CommentID>)
+    func seedCommentLikeStates(
+        comments: [Comment],
+        userStates: [CommentID: CommentUserState],
+        userID: UserID
+    )
+    func applyOptimisticCommentLike(
+        comment: Comment,
+        userID: UserID,
+        isLiked: Bool,
+        baseLiked: Bool?,
+        baseLikeCount: Int?
+    )
+    func applyCommentLikeResult(_ result: CommentEngagementResult)
+    func restoreCommentLike(comment: Comment, userID: UserID, isLiked: Bool, likeCount: Int)
     func applyCommentMutation(_ result: CommentMutationResult)
     func applyCommentDeletion(_ result: CommentDeletionResult)
 }
@@ -99,6 +115,14 @@ final class LookbookInteractionStore: ObservableObject, PostInteractionManaging,
 
     func replyCount(for comment: Comment) -> Int {
         commentStore.replyCount(for: comment)
+    }
+
+    func likeCount(for comment: Comment) -> Int {
+        commentStore.likeCount(for: comment)
+    }
+
+    func isCommentLiked(_ comment: Comment, userID: UserID?) -> Bool {
+        commentStore.isLiked(comment, userID: userID)
     }
 
     func isCommentHidden(_ commentID: CommentID) -> Bool {
@@ -186,6 +210,56 @@ final class LookbookInteractionStore: ObservableObject, PostInteractionManaging,
 
     func hideCommentIDs(_ commentIDs: Set<CommentID>) {
         commentStore.hide(commentIDs)
+        syncCommentStates()
+    }
+
+    func seedCommentLikeStates(
+        comments: [Comment],
+        userStates: [CommentID: CommentUserState],
+        userID: UserID
+    ) {
+        commentStore.seedLikeStates(
+            comments: comments,
+            userStates: userStates,
+            userID: userID
+        )
+        syncCommentStates()
+    }
+
+    func applyOptimisticCommentLike(
+        comment: Comment,
+        userID: UserID,
+        isLiked: Bool,
+        baseLiked: Bool? = nil,
+        baseLikeCount: Int? = nil
+    ) {
+        commentStore.applyOptimisticLike(
+            comment: comment,
+            userID: userID,
+            isLiked: isLiked,
+            baseLiked: baseLiked,
+            baseLikeCount: baseLikeCount
+        )
+        syncCommentStates()
+    }
+
+    func applyCommentLikeResult(_ result: CommentEngagementResult) {
+        commentStore.applyLikeResult(result)
+        syncCommentStates()
+    }
+
+    func restoreCommentLike(
+        comment: Comment,
+        userID: UserID,
+        isLiked: Bool,
+        likeCount: Int
+    ) {
+        commentStore.restoreLike(
+            comment: comment,
+            userID: userID,
+            isLiked: isLiked,
+            likeCount: likeCount
+        )
         syncCommentStates()
     }
 

@@ -21,6 +21,7 @@ final class LookbookContainer {
     private let loadCommentRepliesUseCase: any LoadCommentRepliesUseCaseProtocol
     private let createPostCommentUseCase: any CreatePostCommentUseCaseProtocol
     private let createCommentReplyUseCase: any CreateCommentReplyUseCaseProtocol
+    private let commentEngagementInteractionUseCase: CommentEngagementInteractionUseCase
     private let deleteCommentUseCase: any DeleteCommentUseCaseProtocol
     private let reportCommentUseCase: any ReportCommentUseCaseProtocol
     private let blockUserUseCase: any BlockUserUseCaseProtocol
@@ -53,6 +54,11 @@ final class LookbookContainer {
         )
         self.createCommentReplyUseCase = CreateCommentReplyUseCase(
             repository: provider.commentWritingRepository,
+            debugFailureInjectionStore: debugFailureInjectionStore
+        )
+        self.commentEngagementInteractionUseCase = CommentEngagementInteractionUseCase(
+            repository: provider.commentEngagementRepository,
+            commentInteractionStore: interactionStore,
             debugFailureInjectionStore: debugFailureInjectionStore
         )
         self.deleteCommentUseCase = DeleteCommentUseCase(
@@ -264,9 +270,11 @@ final class LookbookContainer {
             postID: postID,
             useCase: loadPostCommentsUseCase,
             createUseCase: createPostCommentUseCase,
+            commentEngagementInteractionUseCase: commentEngagementInteractionUseCase,
             deleteUseCase: deleteCommentUseCase,
             reportUseCase: reportCommentUseCase,
             blockUseCase: blockUserUseCase,
+            commentUserStateRepository: provider.commentUserStateRepository,
             loadHiddenUserIDsUseCase: loadHiddenCommentUserIDsUseCase,
             filterHiddenAuthorsUseCase: filterHiddenCommentAuthorsUseCase,
             commentInteractionStore: interactionStore,
@@ -332,9 +340,11 @@ final class LookbookContainer {
             parentComment: parentComment,
             useCase: loadCommentRepliesUseCase,
             createUseCase: createCommentReplyUseCase,
+            commentEngagementInteractionUseCase: commentEngagementInteractionUseCase,
             deleteUseCase: deleteCommentUseCase,
             reportUseCase: reportCommentUseCase,
             blockUseCase: blockUserUseCase,
+            commentUserStateRepository: provider.commentUserStateRepository,
             loadHiddenUserIDsUseCase: loadHiddenCommentUserIDsUseCase,
             filterHiddenAuthorsUseCase: filterHiddenCommentAuthorsUseCase,
             commentInteractionStore: interactionStore,

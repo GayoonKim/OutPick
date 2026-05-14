@@ -31,12 +31,14 @@ final class LookbookRepositoryProvider {
 
     let commentRepository: CommentRepositoryProtocol
     let commentWritingRepository: CommentWritingRepositoryProtocol
+    let commentEngagementRepository: CommentEngagementRepositoryProtocol
     let commentSafetyRepository: CommentSafetyRepositoryProtocol
     let userBlockRepository: UserBlockRepositoryProtocol
 
     let replacementRepository: ReplacementRepositoryProtocol
 
     let postUserStateRepository: PostUserStateRepositoryProtocol
+    let commentUserStateRepository: CommentUserStateRepositoryProtocol
 
     // MARK: - Services
     /// 브랜드 로고 이미지 로더(단일 인스턴스 공유)
@@ -69,12 +71,14 @@ final class LookbookRepositoryProvider {
 
         commentRepository: CommentRepositoryProtocol = FirestoreCommentRepository(),
         commentWritingRepository: CommentWritingRepositoryProtocol = CloudFunctionsCommentWritingRepository(),
+        commentEngagementRepository: CommentEngagementRepositoryProtocol = CloudFunctionsCommentEngagementRepository(),
         commentSafetyRepository: CommentSafetyRepositoryProtocol = CloudFunctionsCommentSafetyRepository(),
         userBlockRepository: UserBlockRepositoryProtocol = CloudFunctionsUserBlockRepository(),
 
         replacementRepository: ReplacementRepositoryProtocol = FirestoreReplacementRepository(),
 
         postUserStateRepository: PostUserStateRepositoryProtocol = FirestorePostUserStateRepository(),
+        commentUserStateRepository: CommentUserStateRepositoryProtocol = FirestoreCommentUserStateRepository(),
 
         brandImageCache: (any BrandImageCacheProtocol)? = nil,
         imageCachePipeline: ImageCachePipeline? = nil,
@@ -102,10 +106,12 @@ final class LookbookRepositoryProvider {
 
         self.commentRepository = commentRepository
         self.commentWritingRepository = commentWritingRepository
+        self.commentEngagementRepository = commentEngagementRepository
         self.commentSafetyRepository = commentSafetyRepository
         self.userBlockRepository = userBlockRepository
         self.replacementRepository = replacementRepository
         self.postUserStateRepository = postUserStateRepository
+        self.commentUserStateRepository = commentUserStateRepository
 
         // Provider가 season repo를 조립할 때 thumbnailer/policy를 공유 주입
         self.seasonRepository = seasonRepository

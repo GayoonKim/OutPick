@@ -97,6 +97,10 @@ final class PostDetailScreenViewModel: ObservableObject {
         commentInteractionStore.replyCount(for: comment)
     }
 
+    func displayLikeCount(for comment: Comment) -> Int {
+        commentInteractionStore.likeCount(for: comment)
+    }
+
     func prefetchAuthorAvatars(for comments: [Comment], avatarImageManager: ChatAvatarImageManaging = AvatarImageService.shared) {
         let paths = comments
             .compactMap { authorDisplays[$0.userID]?.avatarPath }
@@ -271,11 +275,21 @@ final class PostDetailScreenViewModel: ObservableObject {
             return
         }
 
-        comments = comments.map { comment in
-            guard comment.id == state.commentID else { return comment }
-            var updatedComment = comment
-            updatedComment.replyCount = state.replyCount
-            return updatedComment
+        if let replyCount = state.replyCount {
+            comments = comments.map { comment in
+                guard comment.id == state.commentID else { return comment }
+                var updatedComment = comment
+                updatedComment.replyCount = replyCount
+                return updatedComment
+            }
+        }
+        if let likeCount = state.likeCount {
+            comments = comments.map { comment in
+                guard comment.id == state.commentID else { return comment }
+                var updatedComment = comment
+                updatedComment.likeCount = likeCount
+                return updatedComment
+            }
         }
     }
 

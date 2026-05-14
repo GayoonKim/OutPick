@@ -172,11 +172,17 @@ struct PostCommentsSheetView: View {
     ) -> some View {
         PostCommentCardView(
             comment: item.comment,
+            likeCount: viewModel.displayLikeCount(for: item.comment),
             replyCount: viewModel.displayReplyCount(for: item.comment),
+            isLiked: viewModel.isCommentLiked(item.comment),
+            isMutatingLike: viewModel.isMutatingLike(item.comment),
             author: item.author,
             badges: badges,
             onProfileTap: {
                 coordinator.presentProfile(for: item.author)
+            },
+            onLikeTap: {
+                await viewModel.toggleLike(item.comment)
             },
             onRepliesTap: {
                 coordinator.presentReplies(for: item.comment)

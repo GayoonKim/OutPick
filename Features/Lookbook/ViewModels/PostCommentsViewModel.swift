@@ -19,6 +19,7 @@ final class PostCommentsViewModel: ObservableObject {
     @Published private(set) var isLoadingMore: Bool = false
     @Published private(set) var isSubmittingComment: Bool = false
     @Published private(set) var isPerformingCommentAction: Bool = false
+    @Published private(set) var mutatingLikeCommentIDs: Set<CommentID> = []
     @Published private(set) var errorMessage: String?
     @Published private(set) var submissionErrorMessage: String?
     @Published private(set) var actionErrorMessage: String?
@@ -29,9 +30,11 @@ final class PostCommentsViewModel: ObservableObject {
     private let postID: PostID
     private let useCase: any LoadPostCommentsUseCaseProtocol
     private let createUseCase: any CreatePostCommentUseCaseProtocol
+    private let commentEngagementInteractionUseCase: CommentEngagementInteractionUseCase
     private let deleteUseCase: any DeleteCommentUseCaseProtocol
     private let reportUseCase: any ReportCommentUseCaseProtocol
     private let blockUseCase: any BlockUserUseCaseProtocol
+    private let commentUserStateRepository: any CommentUserStateRepositoryProtocol
     private let loadHiddenUserIDsUseCase: any LoadHiddenCommentUserIDsUseCaseProtocol
     private let filterHiddenAuthorsUseCase: FilterHiddenCommentAuthorsUseCase
     private let commentInteractionStore: any CommentInteractionManaging
@@ -68,9 +71,11 @@ final class PostCommentsViewModel: ObservableObject {
         postID: PostID,
         useCase: any LoadPostCommentsUseCaseProtocol,
         createUseCase: any CreatePostCommentUseCaseProtocol,
+        commentEngagementInteractionUseCase: CommentEngagementInteractionUseCase,
         deleteUseCase: any DeleteCommentUseCaseProtocol,
         reportUseCase: any ReportCommentUseCaseProtocol,
         blockUseCase: any BlockUserUseCaseProtocol,
+        commentUserStateRepository: any CommentUserStateRepositoryProtocol,
         loadHiddenUserIDsUseCase: any LoadHiddenCommentUserIDsUseCaseProtocol,
         filterHiddenAuthorsUseCase: FilterHiddenCommentAuthorsUseCase,
         commentInteractionStore: any CommentInteractionManaging,
@@ -87,9 +92,11 @@ final class PostCommentsViewModel: ObservableObject {
         self.postID = postID
         self.useCase = useCase
         self.createUseCase = createUseCase
+        self.commentEngagementInteractionUseCase = commentEngagementInteractionUseCase
         self.deleteUseCase = deleteUseCase
         self.reportUseCase = reportUseCase
         self.blockUseCase = blockUseCase
+        self.commentUserStateRepository = commentUserStateRepository
         self.loadHiddenUserIDsUseCase = loadHiddenUserIDsUseCase
         self.filterHiddenAuthorsUseCase = filterHiddenAuthorsUseCase
         self.commentInteractionStore = commentInteractionStore
@@ -137,6 +144,18 @@ final class PostCommentsViewModel: ObservableObject {
         commentInteractionStore.replyCount(for: comment)
     }
 
+    func displayLikeCount(for comment: Comment) -> Int {
+        commentInteractionStore.likeCount(for: comment)
+    }
+
+    func isCommentLiked(_ comment: Comment) -> Bool {
+        commentInteractionStore.isCommentLiked(comment, userID: currentUserID)
+    }
+
+    func isMutatingLike(_ comment: Comment) -> Bool {
+        mutatingLikeCommentIDs.contains(comment.id)
+    }
+
     func clearActionError() {
         actionErrorMessage = nil
     }
@@ -151,6 +170,37 @@ final class PostCommentsViewModel: ObservableObject {
 
     func canReportOrBlock(_ comment: Comment) -> Bool {
         isCurrentUser(comment.userID) == false
+    }
+
+    func toggleLike(_ comment: Comment) async {
+        guard let userID = currentUserID else {
+            actionErrorMessage = "로그인이 필요합니다."
+            return
+        }
+
+        actionErrorMessage = nil
+        let outcome = await commentEngagementInteractionUseCase.toggleLike(
+            input: CommentEngagementInteractionInput(
+                brandID: brandID,
+                seasonID: seasonID,
+                postID: postID,
+                comment: comment,
+                userID: userID,
+                currentLiked: isCommentLiked(comment),
+                currentLikeCount: displayLikeCount(for: comment)
+            ),
+            onMutationStateChanged: { [weak self] commentID, isMutating in
+                guard let self else { return }
+                var nextMutatingIDs = self.mutatingLikeCommentIDs
+                if isMutating {
+                    nextMutatingIDs.insert(commentID)
+                } else {
+                    nextMutatingIDs.remove(commentID)
+                }
+                self.mutatingLikeCommentIDs = nextMutatingIDs
+            }
+        )
+        actionErrorMessage = outcome.errorMessage
     }
 
     @discardableResult
@@ -354,6 +404,7 @@ final class PostCommentsViewModel: ObservableObject {
                 loadedKey = stateKey(sort: selectedSort)
                 await authorProfileStore.loadMissingAuthors(for: commentFeedComments)
                 syncAuthorDisplays()
+                await seedCommentLikeStates(for: commentFeedComments)
                 updatePinnedCommentIDs()
                 prefetchInitialAuthorAvatars()
             } else {
@@ -375,6 +426,7 @@ final class PostCommentsViewModel: ObservableObject {
                 rootComments.append(contentsOf: visibleItems)
                 await authorProfileStore.loadMissingAuthors(for: visibleItems)
                 syncAuthorDisplays()
+                await seedCommentLikeStates(for: visibleItems)
                 updatePinnedCommentIDs()
             }
         } catch {
@@ -395,7 +447,12 @@ final class PostCommentsViewModel: ObservableObject {
             return
         }
 
-        updateReplyCount(state.replyCount, for: state.commentID)
+        if let replyCount = state.replyCount {
+            updateReplyCount(replyCount, for: state.commentID)
+        }
+        if let likeCount = state.likeCount {
+            updateLikeCount(likeCount, for: state.commentID)
+        }
     }
 
     private func updateReplyCount(
@@ -425,6 +482,36 @@ final class PostCommentsViewModel: ObservableObject {
         guard comment.id == commentID else { return comment }
         var updatedComment = comment
         updatedComment.replyCount = replyCount
+        return updatedComment
+    }
+
+    private func updateLikeCount(
+        _ likeCount: Int,
+        for commentID: CommentID
+    ) {
+        pinnedComments = pinnedComments.map { comment in
+            updatedLikeCountComment(comment, commentID: commentID, likeCount: likeCount)
+        }
+        if let representativeComment {
+            self.representativeComment = updatedLikeCountComment(
+                representativeComment,
+                commentID: commentID,
+                likeCount: likeCount
+            )
+        }
+        rootComments = rootComments.map { comment in
+            updatedLikeCountComment(comment, commentID: commentID, likeCount: likeCount)
+        }
+    }
+
+    private func updatedLikeCountComment(
+        _ comment: Comment,
+        commentID: CommentID,
+        likeCount: Int
+    ) -> Comment {
+        guard comment.id == commentID else { return comment }
+        var updatedComment = comment
+        updatedComment.likeCount = likeCount
         return updatedComment
     }
 
@@ -488,6 +575,30 @@ final class PostCommentsViewModel: ObservableObject {
     ) -> [Comment] {
         filterHiddenAuthors(comments, hiddenUserIDs: hiddenUserIDs)
             .filter { commentInteractionStore.isCommentHidden($0.id) == false }
+    }
+
+    private func seedCommentLikeStates(for comments: [Comment]) async {
+        guard let currentUserID,
+              comments.isEmpty == false else {
+            return
+        }
+
+        do {
+            let states = try await commentUserStateRepository.fetchCommentUserStates(
+                userID: currentUserID,
+                brandID: brandID,
+                seasonID: seasonID,
+                postID: postID,
+                commentIDs: comments.map(\.id)
+            )
+            commentInteractionStore.seedCommentLikeStates(
+                comments: comments,
+                userStates: states,
+                userID: currentUserID
+            )
+        } catch {
+            actionErrorMessage = "댓글 좋아요 상태를 불러오지 못했어요."
+        }
     }
 
     private func reportTarget(

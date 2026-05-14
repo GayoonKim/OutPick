@@ -10,6 +10,7 @@ import Foundation
 enum LookbookDebugFailureOperation: Hashable {
     case toggleLike
     case toggleSave
+    case toggleCommentLike
     case createComment
     case createReply
     case deleteComment
@@ -20,6 +21,7 @@ enum LookbookDebugFailureOperation: Hashable {
 enum LookbookDebugFailureLaunchArguments {
     static let toggleLike = "--lookbook-fail-toggle-like"
     static let toggleSave = "--lookbook-fail-toggle-save"
+    static let toggleCommentLike = "--lookbook-fail-toggle-comment-like"
     static let createComment = "--lookbook-fail-create-comment"
     static let createReply = "--lookbook-fail-create-reply"
     static let deleteComment = "--lookbook-fail-delete-comment"
@@ -29,6 +31,7 @@ enum LookbookDebugFailureLaunchArguments {
     private static let mappings: [(argument: String, operation: LookbookDebugFailureOperation)] = [
         (toggleLike, .toggleLike),
         (toggleSave, .toggleSave),
+        (toggleCommentLike, .toggleCommentLike),
         (createComment, .createComment),
         (createReply, .createReply),
         (deleteComment, .deleteComment),
