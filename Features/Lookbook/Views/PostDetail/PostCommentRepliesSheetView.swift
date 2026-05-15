@@ -173,13 +173,11 @@ struct PostCommentRepliesSheetView: View {
                                 onBlockTap: blockAction(for: item)
                             )
                         )
-                            .onAppear {
-                                viewModel.prefetchAuthorAvatars(around: item.id)
-                                guard reply.id == viewModel.replies.last?.id else { return }
-                                Task {
-                                    await viewModel.loadNextPage()
-                                }
-                            }
+                        .task(id: item.id) {
+                            viewModel.prefetchAuthorAvatars(around: item.id)
+                            guard reply.id == viewModel.replies.last?.id else { return }
+                            await viewModel.loadNextPage()
+                        }
                     }
 
                     if viewModel.isLoadingMore {

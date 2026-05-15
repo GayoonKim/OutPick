@@ -130,12 +130,10 @@ struct PostCommentsSheetView: View {
         } else {
             ForEach(commentFeedItems) { item in
                 commentCard(item.displayItem, badges: item.badges)
-                    .onAppear {
+                    .task(id: item.id) {
                         viewModel.prefetchAuthorAvatars(around: item.id)
                         guard item.displayItem.comment.id == viewModel.rootComments.last?.id else { return }
-                        Task {
-                            await viewModel.loadNextPage()
-                        }
+                        await viewModel.loadNextPage()
                     }
             }
 
