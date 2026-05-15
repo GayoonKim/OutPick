@@ -19,9 +19,6 @@ struct PostCommentsSheetView: View {
     @State private var pendingDeleteItem: CommentDisplayItem?
     @State private var pendingReportItem: CommentDisplayItem?
     @State private var pendingBlockItem: CommentDisplayItem?
-    @State private var isConfirmingDelete: Bool = false
-    @State private var isPresentingReportSheet: Bool = false
-    @State private var isPresentingBlockSheet: Bool = false
     private let onCommentSubmitted: (CommentMutationResult) -> Void
     private let onCommentDeleted: (CommentDeletionResult) -> Void
     private let onRootCommentEngagementChanged: () async -> Void
@@ -85,13 +82,13 @@ struct PostCommentsSheetView: View {
         }
         .confirmationDialog(
             "댓글을 삭제할까요?",
-            isPresented: $isConfirmingDelete,
-            titleVisibility: .visible
-        ) {
+            isPresented: deleteConfirmationBinding,
+            titleVisibility: .visible,
+            presenting: pendingDeleteItem
+        ) { item in
             Button("삭제", role: .destructive) {
-                guard let pendingDeleteItem else { return }
                 Task {
-                    if let result = await viewModel.deleteComment(pendingDeleteItem.comment) {
+                    if let result = await viewModel.deleteComment(item.comment) {
                         onCommentDeleted(result)
                     }
                     self.pendingDeleteItem = nil
@@ -101,11 +98,11 @@ struct PostCommentsSheetView: View {
                 pendingDeleteItem = nil
             }
         }
-        .sheet(isPresented: reportSheetBinding) {
-            reportConfirmationSheet
+        .sheet(item: $pendingReportItem) { item in
+            reportConfirmationSheet(for: item)
         }
-        .sheet(isPresented: blockSheetBinding) {
-            blockConfirmationSheet
+        .sheet(item: $pendingBlockItem) { item in
+            blockConfirmationSheet(for: item)
         }
         .appToast(message: activeToastMessage, bottomPadding: 92) {
             if viewModel.actionErrorMessage != nil {
@@ -211,7 +208,6 @@ struct PostCommentsSheetView: View {
 
         return {
             pendingDeleteItem = item
-            isConfirmingDelete = true
         }
     }
 
@@ -220,54 +216,46 @@ struct PostCommentsSheetView: View {
 
         return {
             pendingReportItem = item
-            isPresentingReportSheet = true
         }
     }
 
-    private var reportSheetBinding: Binding<Bool> {
+    private var deleteConfirmationBinding: Binding<Bool> {
         Binding(
-            get: { isPresentingReportSheet && pendingReportItem != nil },
+            get: { pendingDeleteItem != nil },
             set: { isPresented in
-                isPresentingReportSheet = isPresented
                 if isPresented == false {
-                    pendingReportItem = nil
+                    pendingDeleteItem = nil
                 }
             }
         )
     }
 
     @ViewBuilder
-    private var reportConfirmationSheet: some View {
-        if let pendingReportItem {
-            let sheet = CommentReportSheetView(
-                author: pendingReportItem.author,
-                isReporting: viewModel.isPerformingCommentAction,
-                onCancel: {
-                    isPresentingReportSheet = false
-                    self.pendingReportItem = nil
-                },
-                onSubmit: { reason, detail in
-                    Task {
-                        await viewModel.reportComment(
-                            pendingReportItem.comment,
-                            author: pendingReportItem.author,
-                            reason: reason,
-                            detail: detail
-                        )
-                        isPresentingReportSheet = false
-                        self.pendingReportItem = nil
-                    }
+    private func reportConfirmationSheet(for item: CommentDisplayItem) -> some View {
+        let sheet = CommentReportSheetView(
+            author: item.author,
+            isReporting: viewModel.isPerformingCommentAction,
+            onCancel: {
+                pendingReportItem = nil
+            },
+            onSubmit: { reason, detail in
+                Task {
+                    await viewModel.reportComment(
+                        item.comment,
+                        author: item.author,
+                        reason: reason,
+                        detail: detail
+                    )
+                    pendingReportItem = nil
                 }
-            )
-            if #available(iOS 16.0, *) {
-                sheet
-                    .presentationDetents([.height(520)])
-                    .presentationDragIndicator(.visible)
-            } else {
-                sheet
             }
+        )
+        if #available(iOS 16.0, *) {
+            sheet
+                .presentationDetents([.height(520)])
+                .presentationDragIndicator(.visible)
         } else {
-            EmptyView()
+            sheet
         }
     }
 
@@ -276,52 +264,33 @@ struct PostCommentsSheetView: View {
 
         return {
             pendingBlockItem = item
-            isPresentingBlockSheet = true
         }
     }
 
-    private var blockSheetBinding: Binding<Bool> {
-        Binding(
-            get: { isPresentingBlockSheet && pendingBlockItem != nil },
-            set: { isPresented in
-                isPresentingBlockSheet = isPresented
-                if isPresented == false {
+    @ViewBuilder
+    private func blockConfirmationSheet(for item: CommentDisplayItem) -> some View {
+        let sheet = CommentBlockConfirmationSheetView(
+            author: item.author,
+            isBlocking: viewModel.isPerformingCommentAction,
+            onCancel: {
+                pendingBlockItem = nil
+            },
+            onConfirm: {
+                Task {
+                    await viewModel.blockAuthor(
+                        of: item.comment,
+                        author: item.author
+                    )
                     pendingBlockItem = nil
                 }
             }
         )
-    }
-
-    @ViewBuilder
-    private var blockConfirmationSheet: some View {
-        if let pendingBlockItem {
-            let sheet = CommentBlockConfirmationSheetView(
-                author: pendingBlockItem.author,
-                isBlocking: viewModel.isPerformingCommentAction,
-                onCancel: {
-                    isPresentingBlockSheet = false
-                    self.pendingBlockItem = nil
-                },
-                onConfirm: {
-                    Task {
-                        await viewModel.blockAuthor(
-                            of: pendingBlockItem.comment,
-                            author: pendingBlockItem.author
-                        )
-                        isPresentingBlockSheet = false
-                        self.pendingBlockItem = nil
-                    }
-                }
-            )
-            if #available(iOS 16.0, *) {
-                sheet
-                    .presentationDetents([.height(360)])
-                    .presentationDragIndicator(.visible)
-            } else {
-                sheet
-            }
+        if #available(iOS 16.0, *) {
+            sheet
+                .presentationDetents([.height(360)])
+                .presentationDragIndicator(.visible)
         } else {
-            EmptyView()
+            sheet
         }
     }
 
