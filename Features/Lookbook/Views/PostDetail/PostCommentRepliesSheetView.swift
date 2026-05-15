@@ -130,18 +130,20 @@ struct PostCommentRepliesSheetView: View {
                     isMutatingLike: viewModel.isMutatingLike(item.comment),
                     author: item.author,
                     badgeTitle: "원댓글",
-                    onProfileTap: {
-                        profileAuthor = item.author
-                    },
-                    onLikeTap: {
-                        let didChange = await viewModel.toggleLike(item.comment)
-                        if didChange && item.comment.isRootComment {
-                            await onRootCommentEngagementChanged()
-                        }
-                    },
-                    onDeleteTap: deleteAction(for: item),
-                    onReportTap: reportAction(for: item),
-                    onBlockTap: blockAction(for: item)
+                    actions: .init(
+                        onProfileTap: {
+                            profileAuthor = item.author
+                        },
+                        onLikeTap: {
+                            let didChange = await viewModel.toggleLike(item.comment)
+                            if didChange && item.comment.isRootComment {
+                                await onRootCommentEngagementChanged()
+                            }
+                        },
+                        onDeleteTap: deleteAction(for: item),
+                        onReportTap: reportAction(for: item),
+                        onBlockTap: blockAction(for: item)
+                    )
                 )
                 .onAppear {
                     viewModel.prefetchAuthorAvatars(around: item.id)
@@ -183,15 +185,17 @@ struct PostCommentRepliesSheetView: View {
                             isLiked: viewModel.isCommentLiked(item.comment),
                             isMutatingLike: viewModel.isMutatingLike(item.comment),
                             author: item.author,
-                            onProfileTap: {
-                                profileAuthor = item.author
-                            },
-                            onLikeTap: {
-                                await viewModel.toggleLike(item.comment)
-                            },
-                            onDeleteTap: deleteAction(for: item),
-                            onReportTap: reportAction(for: item),
-                            onBlockTap: blockAction(for: item)
+                            actions: .init(
+                                onProfileTap: {
+                                    profileAuthor = item.author
+                                },
+                                onLikeTap: {
+                                    await viewModel.toggleLike(item.comment)
+                                },
+                                onDeleteTap: deleteAction(for: item),
+                                onReportTap: reportAction(for: item),
+                                onBlockTap: blockAction(for: item)
+                            )
                         )
                             .onAppear {
                                 viewModel.prefetchAuthorAvatars(around: item.id)

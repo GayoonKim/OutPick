@@ -17,6 +17,34 @@ struct PostCommentBadge: Equatable {
 }
 
 struct PostCommentCardView: View {
+    struct Actions {
+        var onProfileTap: (() -> Void)?
+        var onLikeTap: (() async -> Void)?
+        var onRepliesTap: (() -> Void)?
+        var onCardTap: (() -> Void)?
+        var onDeleteTap: (() -> Void)?
+        var onReportTap: (() -> Void)?
+        var onBlockTap: (() -> Void)?
+
+        init(
+            onProfileTap: (() -> Void)? = nil,
+            onLikeTap: (() async -> Void)? = nil,
+            onRepliesTap: (() -> Void)? = nil,
+            onCardTap: (() -> Void)? = nil,
+            onDeleteTap: (() -> Void)? = nil,
+            onReportTap: (() -> Void)? = nil,
+            onBlockTap: (() -> Void)? = nil
+        ) {
+            self.onProfileTap = onProfileTap
+            self.onLikeTap = onLikeTap
+            self.onRepliesTap = onRepliesTap
+            self.onCardTap = onCardTap
+            self.onDeleteTap = onDeleteTap
+            self.onReportTap = onReportTap
+            self.onBlockTap = onBlockTap
+        }
+    }
+
     let comment: Comment
     let likeCount: Int
     let replyCount: Int
@@ -25,13 +53,7 @@ struct PostCommentCardView: View {
     let author: CommentAuthorDisplay
     let badges: [PostCommentBadge]
     let avatarImageManager: ChatAvatarImageManaging
-    let onProfileTap: (() -> Void)?
-    let onLikeTap: (() async -> Void)?
-    let onRepliesTap: (() -> Void)?
-    let onCardTap: (() -> Void)?
-    let onDeleteTap: (() -> Void)?
-    let onReportTap: (() -> Void)?
-    let onBlockTap: (() -> Void)?
+    let actions: Actions
 
     init(
         comment: Comment,
@@ -44,13 +66,7 @@ struct PostCommentCardView: View {
         badges: [PostCommentBadge] = [],
         badgeTitle: String? = nil,
         avatarImageManager: ChatAvatarImageManaging = AvatarImageService.shared,
-        onProfileTap: (() -> Void)? = nil,
-        onLikeTap: (() async -> Void)? = nil,
-        onRepliesTap: (() -> Void)? = nil,
-        onCardTap: (() -> Void)? = nil,
-        onDeleteTap: (() -> Void)? = nil,
-        onReportTap: (() -> Void)? = nil,
-        onBlockTap: (() -> Void)? = nil
+        actions: Actions = Actions()
     ) {
         self.comment = comment
         self.likeCount = likeCount ?? comment.likeCount
@@ -68,19 +84,13 @@ struct PostCommentCardView: View {
             self.badges = []
         }
         self.avatarImageManager = avatarImageManager
-        self.onProfileTap = onProfileTap
-        self.onLikeTap = onLikeTap
-        self.onRepliesTap = onRepliesTap
-        self.onCardTap = onCardTap
-        self.onDeleteTap = onDeleteTap
-        self.onReportTap = onReportTap
-        self.onBlockTap = onBlockTap
+        self.actions = actions
     }
 
     var body: some View {
         cardContent
             .contextMenu {
-                if let onDeleteTap {
+                if let onDeleteTap = actions.onDeleteTap {
                     Button(role: .destructive) {
                         onDeleteTap()
                     } label: {
@@ -89,7 +99,7 @@ struct PostCommentCardView: View {
                     .accessibilityIdentifier("lookbook.comment.deleteAction")
                 }
 
-                if let onReportTap {
+                if let onReportTap = actions.onReportTap {
                     Button(role: .destructive) {
                         onReportTap()
                     } label: {
@@ -98,7 +108,7 @@ struct PostCommentCardView: View {
                     .accessibilityIdentifier("lookbook.comment.reportAction")
                 }
 
-                if let onBlockTap {
+                if let onBlockTap = actions.onBlockTap {
                     Button(role: .destructive) {
                         onBlockTap()
                     } label: {
@@ -112,7 +122,7 @@ struct PostCommentCardView: View {
     private var cardContent: some View {
         HStack(alignment: .top, spacing: 10) {
             Button {
-                onProfileTap?()
+                actions.onProfileTap?()
             } label: {
                 PostCommentAvatarView(
                     avatarPath: author.avatarPath,
@@ -120,7 +130,7 @@ struct PostCommentCardView: View {
                 )
             }
             .buttonStyle(.plain)
-            .disabled(onProfileTap == nil)
+            .disabled(actions.onProfileTap == nil)
             .accessibilityLabel("\(author.nickname) 프로필 보기")
 
             VStack(alignment: .leading, spacing: 8) {
@@ -154,7 +164,7 @@ struct PostCommentCardView: View {
 
                     if canOpenReplies {
                         Button {
-                            onRepliesTap?()
+                            actions.onRepliesTap?()
                         } label: {
                             Label("\(replyCount)", systemImage: "bubble.right")
                         }
@@ -177,14 +187,14 @@ struct PostCommentCardView: View {
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .onTapGesture {
-            onCardTap?()
+            actions.onCardTap?()
         }
         .accessibilityIdentifier("lookbook.comment.card")
     }
 
     @ViewBuilder
     private var likeControl: some View {
-        if let onLikeTap {
+        if let onLikeTap = actions.onLikeTap {
             Button {
                 Task {
                     await onLikeTap()
@@ -255,7 +265,7 @@ struct PostCommentCardView: View {
     }
 
     private var canOpenReplies: Bool {
-        onRepliesTap != nil
+        actions.onRepliesTap != nil
     }
 }
 

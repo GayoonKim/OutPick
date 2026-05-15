@@ -234,9 +234,11 @@ struct PostDetailView: View {
                             replyCount: viewModel.displayReplyCount(for: item.comment),
                             author: item.author,
                             badge: .representative,
-                            onCardTap: {
-                                coordinator.presentComments(using: commentCoordinator)
-                            }
+                            actions: .init(
+                                onCardTap: {
+                                    coordinator.presentComments(using: commentCoordinator)
+                                }
+                            )
                         )
                         .onAppear {
                             viewModel.prefetchAuthorAvatars(for: viewModel.comments)

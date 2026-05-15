@@ -181,21 +181,23 @@ struct PostCommentsSheetView: View {
             isMutatingLike: viewModel.isMutatingLike(item.comment),
             author: item.author,
             badges: badges,
-            onProfileTap: {
-                coordinator.presentProfile(for: item.author)
-            },
-            onLikeTap: {
-                let didChange = await viewModel.toggleLike(item.comment)
-                if didChange && item.comment.isRootComment {
-                    await onRootCommentEngagementChanged()
-                }
-            },
-            onRepliesTap: {
-                coordinator.presentReplies(for: item.comment)
-            },
-            onDeleteTap: deleteAction(for: item),
-            onReportTap: reportAction(for: item),
-            onBlockTap: blockAction(for: item)
+            actions: .init(
+                onProfileTap: {
+                    coordinator.presentProfile(for: item.author)
+                },
+                onLikeTap: {
+                    let didChange = await viewModel.toggleLike(item.comment)
+                    if didChange && item.comment.isRootComment {
+                        await onRootCommentEngagementChanged()
+                    }
+                },
+                onRepliesTap: {
+                    coordinator.presentReplies(for: item.comment)
+                },
+                onDeleteTap: deleteAction(for: item),
+                onReportTap: reportAction(for: item),
+                onBlockTap: blockAction(for: item)
+            )
         )
     }
 
