@@ -63,7 +63,6 @@ final class LookbookCoordinator {
         postID: PostID,
         commentCoordinator: PostCommentCoordinator,
         onCommentSubmitted: @escaping (CommentMutationResult) -> Void = { _ in },
-        onCommentDeleted: @escaping (CommentDeletionResult) -> Void = { _ in },
         onRootCommentEngagementChanged: @escaping () async -> Void = {}
     ) -> some View {
         container.makeCommentsSheet(
@@ -73,7 +72,6 @@ final class LookbookCoordinator {
             navigationCoordinator: self,
             commentCoordinator: commentCoordinator,
             onCommentSubmitted: onCommentSubmitted,
-            onCommentDeleted: onCommentDeleted,
             onRootCommentEngagementChanged: onRootCommentEngagementChanged
         )
     }
@@ -84,7 +82,6 @@ final class LookbookCoordinator {
         postID: PostID,
         parentComment: Comment,
         onReplySubmitted: @escaping (CommentMutationResult) -> Void,
-        onCommentDeleted: @escaping (CommentDeletionResult) -> Void,
         onRootCommentEngagementChanged: @escaping () async -> Void = {}
     ) -> some View {
         container.makeRepliesSheet(
@@ -93,7 +90,6 @@ final class LookbookCoordinator {
             postID: postID,
             parentComment: parentComment,
             onReplySubmitted: onReplySubmitted,
-            onCommentDeleted: onCommentDeleted,
             onRootCommentEngagementChanged: onRootCommentEngagementChanged
         )
     }

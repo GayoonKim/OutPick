@@ -16,18 +16,15 @@ struct PostCommentRepliesSheetView: View {
     @State private var pendingReportItem: CommentDisplayItem?
     @State private var pendingBlockItem: CommentDisplayItem?
     private let onReplySubmitted: (CommentMutationResult) -> Void
-    private let onCommentDeleted: (CommentDeletionResult) -> Void
     private let onRootCommentEngagementChanged: () async -> Void
 
     init(
         viewModel: PostCommentRepliesViewModel,
         onReplySubmitted: @escaping (CommentMutationResult) -> Void = { _ in },
-        onCommentDeleted: @escaping (CommentDeletionResult) -> Void = { _ in },
         onRootCommentEngagementChanged: @escaping () async -> Void = {}
     ) {
         _viewModel = StateObject(wrappedValue: viewModel)
         self.onReplySubmitted = onReplySubmitted
-        self.onCommentDeleted = onCommentDeleted
         self.onRootCommentEngagementChanged = onRootCommentEngagementChanged
     }
 
@@ -50,26 +47,8 @@ struct PostCommentRepliesSheetView: View {
         .sheet(isPresented: profileSheetBinding) {
             profileSheet
         }
-        .confirmationDialog(
-            "댓글을 삭제할까요?",
-            isPresented: deleteConfirmationBinding,
-            titleVisibility: .visible,
-            presenting: pendingDeleteItem
-        ) { item in
-            Button("삭제", role: .destructive) {
-                Task {
-                    if let result = await viewModel.deleteComment(item.comment) {
-                        onCommentDeleted(result)
-                        if item.comment.id == viewModel.parentComment.id {
-                            dismiss()
-                        }
-                    }
-                    self.pendingDeleteItem = nil
-                }
-            }
-            Button("취소", role: .cancel) {
-                pendingDeleteItem = nil
-            }
+        .sheet(item: $pendingDeleteItem) { item in
+            deleteConfirmationSheet(for: item)
         }
         .sheet(item: $pendingReportItem) { item in
             reportConfirmationSheet(for: item)
@@ -255,15 +234,32 @@ struct PostCommentRepliesSheetView: View {
         }
     }
 
-    private var deleteConfirmationBinding: Binding<Bool> {
-        Binding(
-            get: { pendingDeleteItem != nil },
-            set: { isPresented in
-                if isPresented == false {
+    @ViewBuilder
+    private func deleteConfirmationSheet(for item: CommentDisplayItem) -> some View {
+        let sheet = CommentDeleteConfirmationSheetView(
+            author: item.author,
+            isDeleting: viewModel.isPerformingCommentAction,
+            onCancel: {
+                pendingDeleteItem = nil
+            },
+            onConfirm: {
+                Task {
+                    if let result = await viewModel.deleteComment(item.comment) {
+                        if item.comment.id == viewModel.parentComment.id {
+                            dismiss()
+                        }
+                    }
                     pendingDeleteItem = nil
                 }
             }
         )
+        if #available(iOS 16.0, *) {
+            sheet
+                .presentationDetents([.height(300)])
+                .presentationDragIndicator(.visible)
+        } else {
+            sheet
+        }
     }
 
     @ViewBuilder

@@ -30,6 +30,7 @@ final class PostDetailScreenViewModel: ObservableObject {
     private var pinnedCommentIDs: Set<CommentID> = []
     private var commentPinScopes: [CommentID: InteractionPinScope] = [:]
     private var commentStateCancellables: [CommentID: AnyCancellable] = [:]
+    private var isRefreshingRepresentativeComment: Bool = false
     private let avatarThumbnailMaxBytes: Int = 3 * 1024 * 1024
     private let brandID: BrandID
     private let seasonID: SeasonID
@@ -158,7 +159,12 @@ final class PostDetailScreenViewModel: ObservableObject {
     }
 
     func refreshRepresentativeComment() async {
-        guard let post else { return }
+        guard let post, isRefreshingRepresentativeComment == false else { return }
+
+        isRefreshingRepresentativeComment = true
+        defer {
+            isRefreshingRepresentativeComment = false
+        }
 
         do {
             let content = try await useCase.execute(
@@ -300,8 +306,14 @@ final class PostDetailScreenViewModel: ObservableObject {
 
     private func applyCommentState(_ state: CommentInteractionState) {
         if state.isHidden {
+            let shouldRefreshRepresentativeComment = comments.contains { $0.id == state.commentID }
             comments.removeAll { $0.id == state.commentID }
             updatePinnedCommentIDs()
+            if shouldRefreshRepresentativeComment {
+                Task { [weak self] in
+                    await self?.refreshRepresentativeComment()
+                }
+            }
             return
         }
 
