@@ -73,6 +73,9 @@ final class CommentEngagementInteractionUseCase {
                 isLiked: targetLiked
             )
             commentInteractionStore.applyCommentLikeResult(result)
+            if result.parentCommentID == nil {
+                commentInteractionStore.invalidateRepresentativeComment(for: result.postID)
+            }
             return CommentEngagementInteractionOutcome(errorMessage: nil)
         } catch {
             commentInteractionStore.restoreCommentLike(

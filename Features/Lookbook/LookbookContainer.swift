@@ -287,9 +287,7 @@ final class LookbookContainer {
         seasonID: SeasonID,
         postID: PostID,
         navigationCoordinator: LookbookCoordinator,
-        commentCoordinator: PostCommentCoordinator,
-        onCommentSubmitted: @escaping (CommentMutationResult) -> Void = { _ in },
-        onRootCommentEngagementChanged: @escaping () async -> Void = {}
+        commentCoordinator: PostCommentCoordinator
     ) -> PostCommentsSheetView {
         PostCommentsSheetView(
             viewModel: makePostCommentsViewModel(
@@ -301,9 +299,7 @@ final class LookbookContainer {
             brandID: brandID,
             seasonID: seasonID,
             postID: postID,
-            coordinator: commentCoordinator,
-            onCommentSubmitted: onCommentSubmitted,
-            onRootCommentEngagementChanged: onRootCommentEngagementChanged
+            coordinator: commentCoordinator
         )
     }
 
@@ -311,9 +307,7 @@ final class LookbookContainer {
         brandID: BrandID,
         seasonID: SeasonID,
         postID: PostID,
-        parentComment: Comment,
-        onReplySubmitted: @escaping (CommentMutationResult) -> Void,
-        onRootCommentEngagementChanged: @escaping () async -> Void = {}
+        parentComment: Comment
     ) -> PostCommentRepliesSheetView {
         PostCommentRepliesSheetView(
             viewModel: makePostCommentRepliesViewModel(
@@ -321,9 +315,7 @@ final class LookbookContainer {
                 seasonID: seasonID,
                 postID: postID,
                 parentComment: parentComment
-            ),
-            onReplySubmitted: onReplySubmitted,
-            onRootCommentEngagementChanged: onRootCommentEngagementChanged
+            )
         )
     }
 

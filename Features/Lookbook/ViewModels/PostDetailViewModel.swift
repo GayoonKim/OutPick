@@ -30,6 +30,7 @@ final class PostDetailScreenViewModel: ObservableObject {
     private var pinnedCommentIDs: Set<CommentID> = []
     private var commentPinScopes: [CommentID: InteractionPinScope] = [:]
     private var commentStateCancellables: [CommentID: AnyCancellable] = [:]
+    private var representativeCommentInvalidationTask: Task<Void, Never>?
     private var isRefreshingRepresentativeComment: Bool = false
     private let avatarThumbnailMaxBytes: Int = 3 * 1024 * 1024
     private let brandID: BrandID
@@ -71,6 +72,10 @@ final class PostDetailScreenViewModel: ObservableObject {
             currentUserIDProvider: currentUserIDProvider
         )
         bindInteractionStore()
+    }
+
+    deinit {
+        representativeCommentInvalidationTask?.cancel()
     }
 
     var isMutatingEngagement: Bool {
@@ -151,11 +156,6 @@ final class PostDetailScreenViewModel: ObservableObject {
             }
         )
         engagementErrorMessage = outcome.errorMessage
-    }
-
-    func applyCommentMutation(_ result: CommentMutationResult) {
-        guard post?.id == result.postID else { return }
-        commentInteractionStore.applyCommentMutation(result)
     }
 
     func refreshRepresentativeComment() async {
@@ -293,6 +293,17 @@ final class PostDetailScreenViewModel: ObservableObject {
                 self.applyInteractionState(state)
             }
             .store(in: &cancellables)
+
+        let postID = postID
+        let commentInteractionStore = commentInteractionStore
+        representativeCommentInvalidationTask = Task { [weak self, commentInteractionStore, postID] in
+            guard let self else { return }
+            
+            let stream = commentInteractionStore.representativeCommentInvalidationStream(for: postID)
+            for await _ in stream {
+                await self.refreshRepresentativeComment()
+            }
+        }
     }
 
     private func applyInteractionState(_ state: LookbookPostInteractionState) {

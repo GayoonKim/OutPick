@@ -19,8 +19,6 @@ struct PostCommentsSheetView: View {
     @State private var pendingDeleteItem: CommentDisplayItem?
     @State private var pendingReportItem: CommentDisplayItem?
     @State private var pendingBlockItem: CommentDisplayItem?
-    private let onCommentSubmitted: (CommentMutationResult) -> Void
-    private let onRootCommentEngagementChanged: () async -> Void
 
     init(
         viewModel: PostCommentsViewModel,
@@ -28,9 +26,7 @@ struct PostCommentsSheetView: View {
         brandID: BrandID,
         seasonID: SeasonID,
         postID: PostID,
-        coordinator: PostCommentCoordinator,
-        onCommentSubmitted: @escaping (CommentMutationResult) -> Void = { _ in },
-        onRootCommentEngagementChanged: @escaping () async -> Void = {}
+        coordinator: PostCommentCoordinator
     ) {
         _viewModel = StateObject(wrappedValue: viewModel)
         self.navigationCoordinator = navigationCoordinator
@@ -38,8 +34,6 @@ struct PostCommentsSheetView: View {
         self.seasonID = seasonID
         self.postID = postID
         self.coordinator = coordinator
-        self.onCommentSubmitted = onCommentSubmitted
-        self.onRootCommentEngagementChanged = onRootCommentEngagementChanged
     }
 
     var body: some View {
@@ -163,10 +157,7 @@ struct PostCommentsSheetView: View {
                     coordinator.presentProfile(for: item.author)
                 },
                 onLikeTap: {
-                    let didChange = await viewModel.toggleLike(item.comment)
-                    if didChange && item.comment.isRootComment {
-                        await onRootCommentEngagementChanged()
-                    }
+                    await viewModel.toggleLike(item.comment)
                 },
                 onRepliesTap: {
                     coordinator.presentReplies(for: item.comment)
@@ -316,9 +307,7 @@ struct PostCommentsSheetView: View {
                 brandID: brandID,
                 seasonID: seasonID,
                 postID: postID,
-                parentComment: route.parentComment,
-                onReplySubmitted: onCommentSubmitted,
-                onRootCommentEngagementChanged: onRootCommentEngagementChanged
+                parentComment: route.parentComment
             )
             if #available(iOS 16.0, *) {
                 sheet
@@ -353,9 +342,7 @@ struct PostCommentsSheetView: View {
             isSubmitting: viewModel.isSubmittingComment,
             canSubmit: viewModel.canSubmitComment,
             onSubmit: {
-                if let result = await viewModel.submitComment() {
-                    onCommentSubmitted(result)
-                }
+                await viewModel.submitComment()
             }
         )
     }

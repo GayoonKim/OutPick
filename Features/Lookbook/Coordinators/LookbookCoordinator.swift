@@ -61,18 +61,14 @@ final class LookbookCoordinator {
         brandID: BrandID,
         seasonID: SeasonID,
         postID: PostID,
-        commentCoordinator: PostCommentCoordinator,
-        onCommentSubmitted: @escaping (CommentMutationResult) -> Void = { _ in },
-        onRootCommentEngagementChanged: @escaping () async -> Void = {}
+        commentCoordinator: PostCommentCoordinator
     ) -> some View {
         container.makeCommentsSheet(
             brandID: brandID,
             seasonID: seasonID,
             postID: postID,
             navigationCoordinator: self,
-            commentCoordinator: commentCoordinator,
-            onCommentSubmitted: onCommentSubmitted,
-            onRootCommentEngagementChanged: onRootCommentEngagementChanged
+            commentCoordinator: commentCoordinator
         )
     }
 
@@ -80,17 +76,13 @@ final class LookbookCoordinator {
         brandID: BrandID,
         seasonID: SeasonID,
         postID: PostID,
-        parentComment: Comment,
-        onReplySubmitted: @escaping (CommentMutationResult) -> Void,
-        onRootCommentEngagementChanged: @escaping () async -> Void = {}
+        parentComment: Comment
     ) -> some View {
         container.makeRepliesSheet(
             brandID: brandID,
             seasonID: seasonID,
             postID: postID,
-            parentComment: parentComment,
-            onReplySubmitted: onReplySubmitted,
-            onRootCommentEngagementChanged: onRootCommentEngagementChanged
+            parentComment: parentComment
         )
     }
 }

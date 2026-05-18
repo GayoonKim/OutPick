@@ -15,17 +15,9 @@ struct PostCommentRepliesSheetView: View {
     @State private var pendingDeleteItem: CommentDisplayItem?
     @State private var pendingReportItem: CommentDisplayItem?
     @State private var pendingBlockItem: CommentDisplayItem?
-    private let onReplySubmitted: (CommentMutationResult) -> Void
-    private let onRootCommentEngagementChanged: () async -> Void
 
-    init(
-        viewModel: PostCommentRepliesViewModel,
-        onReplySubmitted: @escaping (CommentMutationResult) -> Void = { _ in },
-        onRootCommentEngagementChanged: @escaping () async -> Void = {}
-    ) {
+    init(viewModel: PostCommentRepliesViewModel) {
         _viewModel = StateObject(wrappedValue: viewModel)
-        self.onReplySubmitted = onReplySubmitted
-        self.onRootCommentEngagementChanged = onRootCommentEngagementChanged
     }
 
     var body: some View {
@@ -111,10 +103,7 @@ struct PostCommentRepliesSheetView: View {
                             profileAuthor = item.author
                         },
                         onLikeTap: {
-                            let didChange = await viewModel.toggleLike(item.comment)
-                            if didChange && item.comment.isRootComment {
-                                await onRootCommentEngagementChanged()
-                            }
+                            await viewModel.toggleLike(item.comment)
                         },
                         onDeleteTap: deleteAction(for: item),
                         onReportTap: reportAction(for: item),
@@ -204,9 +193,7 @@ struct PostCommentRepliesSheetView: View {
             canSubmit: viewModel.canSubmitReply,
             submitAccessibilityLabel: "답글 등록",
             onSubmit: {
-                if let result = await viewModel.submitReply() {
-                    onReplySubmitted(result)
-                }
+                await viewModel.submitReply()
             }
         )
     }

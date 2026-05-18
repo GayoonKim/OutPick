@@ -39,8 +39,10 @@ protocol CommentInteractionManaging: AnyObject {
     func isCommentLiked(_ comment: Comment, userID: UserID?) -> Bool
     func isCommentHidden(_ commentID: CommentID) -> Bool
     func commentStatePublisher(for commentID: CommentID) -> AnyPublisher<CommentInteractionState?, Never>
+    func representativeCommentInvalidationStream(for postID: PostID) -> AsyncStream<PostID>
     func pinScope(postIDs: Set<PostID>, commentIDs: Set<CommentID>) -> InteractionPinScope
     func hideCommentIDs(_ commentIDs: Set<CommentID>)
+    func invalidateRepresentativeComment(for postID: PostID)
     func seedCommentLikeStates(
         comments: [Comment],
         userStates: [CommentID: CommentUserState],
@@ -93,6 +95,7 @@ final class LookbookInteractionStore: ObservableObject, PostInteractionManaging,
     private var scopedPostStateSubjects: [Set<PostID>: CurrentValueSubject<[PostID: LookbookPostInteractionState], Never>] = [:]
     private var commentStateSubjects: [CommentID: CurrentValueSubject<CommentInteractionState?, Never>] = [:]
     private var replyCountSubjects: [CommentID: CurrentValueSubject<Int?, Never>] = [:]
+    private var representativeCommentInvalidationContinuations: [UUID: (postID: PostID, continuation: AsyncStream<PostID>.Continuation)] = [:]
 
     init(
         maxPostStateCount: Int = 300,
@@ -162,6 +165,20 @@ final class LookbookInteractionStore: ObservableObject, PostInteractionManaging,
             .eraseToAnyPublisher()
     }
 
+    func representativeCommentInvalidationStream(for postID: PostID) -> AsyncStream<PostID> {
+        AsyncStream { [weak self] continuation in
+            guard let self else { return }
+            let continuationID = UUID()
+            self.representativeCommentInvalidationContinuations[continuationID] = (postID, continuation)
+            continuation.onTermination = { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.representativeCommentInvalidationContinuations.removeValue(forKey: continuationID)
+                }
+            }
+        }
+    }
+
     func pinScope(
         postIDs: Set<PostID> = [],
         commentIDs: Set<CommentID> = []
@@ -211,6 +228,12 @@ final class LookbookInteractionStore: ObservableObject, PostInteractionManaging,
     func hideCommentIDs(_ commentIDs: Set<CommentID>) {
         commentStore.hide(commentIDs)
         syncCommentStates()
+    }
+
+    func invalidateRepresentativeComment(for postID: PostID) {
+        for (targetPostID, continuation) in representativeCommentInvalidationContinuations.values where targetPostID == postID {
+            continuation.yield(postID)
+        }
     }
 
     func seedCommentLikeStates(
