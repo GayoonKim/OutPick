@@ -19,8 +19,7 @@ struct LookbookPostInteractionState: Equatable {
 @MainActor
 protocol PostInteractionManaging: AnyObject {
     func state(for postID: PostID) -> LookbookPostInteractionState?
-    func postStatePublisher(for postID: PostID) -> AnyPublisher<LookbookPostInteractionState?, Never>
-    func postStatesPublisher(for postIDs: Set<PostID>) -> AnyPublisher<[PostID: LookbookPostInteractionState], Never>
+    func postStateInvalidationStream(for postIDs: Set<PostID>) -> AsyncStream<PostID>
     func pinScope(postIDs: Set<PostID>, commentIDs: Set<CommentID>) -> InteractionPinScope
     func seed(post: LookbookPost, visibleCommentCount: Int?, userState: PostUserState?)
     func seedPostMetrics(_ post: LookbookPost)
@@ -84,17 +83,16 @@ final class InteractionPinScope {
 }
 
 @MainActor
-final class LookbookInteractionStore: ObservableObject, PostInteractionManaging, CommentInteractionManaging {
-    @Published private(set) var postStates: [PostID: LookbookPostInteractionState] = [:]
-    @Published private var replyCounts: [CommentID: Int] = [:]
+final class LookbookInteractionStore: PostInteractionManaging, CommentInteractionManaging {
+    private var postStates: [PostID: LookbookPostInteractionState] = [:]
+    private var replyCounts: [CommentID: Int] = [:]
 
     private var postStore: PostInteractionStore
     private var commentStore: CommentInteractionStore
     private var commentStates: [CommentID: CommentInteractionState] = [:]
-    private var postStateSubjects: [PostID: CurrentValueSubject<LookbookPostInteractionState?, Never>] = [:]
-    private var scopedPostStateSubjects: [Set<PostID>: CurrentValueSubject<[PostID: LookbookPostInteractionState], Never>] = [:]
     private var commentStateSubjects: [CommentID: CurrentValueSubject<CommentInteractionState?, Never>] = [:]
     private var replyCountSubjects: [CommentID: CurrentValueSubject<Int?, Never>] = [:]
+    private var postStateInvalidationContinuations: [UUID: (postIDs: Set<PostID>, continuation: AsyncStream<PostID>.Continuation)] = [:]
     private var representativeCommentInvalidationContinuations: [UUID: (postID: PostID, continuation: AsyncStream<PostID>.Continuation)] = [:]
 
     init(
@@ -132,27 +130,26 @@ final class LookbookInteractionStore: ObservableObject, PostInteractionManaging,
         commentStore.isHidden(commentID)
     }
 
-    func postStatePublisher(for postID: PostID) -> AnyPublisher<LookbookPostInteractionState?, Never> {
-        postStateSubject(for: postID)
-            .eraseToAnyPublisher()
-    }
-
-    func postStatesPublisher(
+    func postStateInvalidationStream(
         for postIDs: Set<PostID>
-    ) -> AnyPublisher<[PostID: LookbookPostInteractionState], Never> {
+    ) -> AsyncStream<PostID> {
         guard postIDs.isEmpty == false else {
-            return Just([:]).eraseToAnyPublisher()
+            return AsyncStream { continuation in
+                continuation.finish()
+            }
         }
 
-        if let subject = scopedPostStateSubjects[postIDs] {
-            return subject.eraseToAnyPublisher()
+        return AsyncStream { [weak self] continuation in
+            guard let self else { return }
+            let continuationID = UUID()
+            self.postStateInvalidationContinuations[continuationID] = (postIDs, continuation)
+            continuation.onTermination = { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.postStateInvalidationContinuations.removeValue(forKey: continuationID)
+                }
+            }
         }
-
-        let subject = CurrentValueSubject<[PostID: LookbookPostInteractionState], Never>(
-            filteredPostStates(for: postIDs, from: postStates)
-        )
-        scopedPostStateSubjects[postIDs] = subject
-        return subject.eraseToAnyPublisher()
     }
 
     func commentStatePublisher(for commentID: CommentID) -> AnyPublisher<CommentInteractionState?, Never> {
@@ -428,20 +425,6 @@ final class LookbookInteractionStore: ObservableObject, PostInteractionManaging,
         publishReplyCountChanges(previousReplyCounts: previousReplyCounts, nextReplyCounts: nextReplyCounts)
     }
 
-    private func postStateSubject(
-        for postID: PostID
-    ) -> CurrentValueSubject<LookbookPostInteractionState?, Never> {
-        if let subject = postStateSubjects[postID] {
-            return subject
-        }
-
-        let subject = CurrentValueSubject<LookbookPostInteractionState?, Never>(
-            postStore.state(for: postID)
-        )
-        postStateSubjects[postID] = subject
-        return subject
-    }
-
     private func commentStateSubject(
         for commentID: CommentID
     ) -> CurrentValueSubject<CommentInteractionState?, Never> {
@@ -478,32 +461,13 @@ final class LookbookInteractionStore: ObservableObject, PostInteractionManaging,
             .union(nextStates.keys)
             .filter { previousStates[$0] != nextStates[$0] }
 
-        for postID in changedPostIDs {
-            postStateSubjects[postID]?.send(nextStates[postID])
-        }
-
-        publishScopedPostStateChanges(
-            changedPostIDs: Set(changedPostIDs),
-            nextStates: nextStates
-        )
-    }
-
-    private func publishScopedPostStateChanges(
-        changedPostIDs: Set<PostID>,
-        nextStates: [PostID: LookbookPostInteractionState]
-    ) {
         guard changedPostIDs.isEmpty == false else { return }
 
-        for (postIDs, subject) in scopedPostStateSubjects where postIDs.isDisjoint(with: changedPostIDs) == false {
-            subject.send(filteredPostStates(for: postIDs, from: nextStates))
+        for postID in changedPostIDs {
+            for (subscribedPostIDs, continuation) in postStateInvalidationContinuations.values where subscribedPostIDs.contains(postID) {
+                continuation.yield(postID)
+            }
         }
-    }
-
-    private func filteredPostStates(
-        for postIDs: Set<PostID>,
-        from states: [PostID: LookbookPostInteractionState]
-    ) -> [PostID: LookbookPostInteractionState] {
-        states.filter { postIDs.contains($0.key) }
     }
 
     private func publishCommentStateChanges(

@@ -25,11 +25,11 @@ final class PostDetailScreenViewModel: ObservableObject {
     private var loadedKey: String?
     private var isRequesting = false
     private var prefetchedAvatarPaths: Set<String> = []
-    private var cancellables: Set<AnyCancellable> = []
     private var interactionPinScope: InteractionPinScope?
     private var pinnedCommentIDs: Set<CommentID> = []
     private var commentPinScopes: [CommentID: InteractionPinScope] = [:]
     private var commentStateCancellables: [CommentID: AnyCancellable] = [:]
+    private var postStateInvalidationTask: Task<Void, Never>?
     private var representativeCommentInvalidationTask: Task<Void, Never>?
     private var isRefreshingRepresentativeComment: Bool = false
     private let avatarThumbnailMaxBytes: Int = 3 * 1024 * 1024
@@ -75,6 +75,7 @@ final class PostDetailScreenViewModel: ObservableObject {
     }
 
     deinit {
+        postStateInvalidationTask?.cancel()
         representativeCommentInvalidationTask?.cancel()
     }
 
@@ -286,22 +287,26 @@ final class PostDetailScreenViewModel: ObservableObject {
     }
 
     private func bindInteractionStore() {
-        postInteractionStore.postStatePublisher(for: postID)
-            .compactMap { $0 }
-            .sink { [weak self] state in
-                guard let self else { return }
-                self.applyInteractionState(state)
-            }
-            .store(in: &cancellables)
+        if let state = postInteractionStore.state(for: postID) {
+            applyInteractionState(state)
+        }
 
         let postID = postID
+        let postInteractionStore = postInteractionStore
+        postStateInvalidationTask = Task { [weak self, postInteractionStore, postID] in
+            let stream = postInteractionStore.postStateInvalidationStream(for: [postID])
+            for await invalidatedPostID in stream {
+                guard invalidatedPostID == postID,
+                      let state = postInteractionStore.state(for: postID) else { continue }
+                self?.applyInteractionState(state)
+            }
+        }
+
         let commentInteractionStore = commentInteractionStore
         representativeCommentInvalidationTask = Task { [weak self, commentInteractionStore, postID] in
-            guard let self else { return }
-            
             let stream = commentInteractionStore.representativeCommentInvalidationStream(for: postID)
             for await _ in stream {
-                await self.refreshRepresentativeComment()
+                await self?.refreshRepresentativeComment()
             }
         }
     }

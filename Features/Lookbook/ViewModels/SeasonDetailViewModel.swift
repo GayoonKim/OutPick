@@ -5,7 +5,6 @@
 //  Created by Codex on 4/24/26.
 //
 
-import Combine
 import Foundation
 
 @MainActor
@@ -32,7 +31,7 @@ final class SeasonDetailViewModel: ObservableObject {
     private var prefetchedThroughIndex: Int = -1
     private var pinnedPostIDs: Set<PostID> = []
     private var postPinScopes: [PostID: InteractionPinScope] = [:]
-    private var postStatesCancellable: AnyCancellable?
+    private var postStateInvalidationTask: Task<Void, Never>?
 
     init(
         brandID: BrandID,
@@ -54,6 +53,10 @@ final class SeasonDetailViewModel: ObservableObject {
         self.initialPrefetchCount = initialPrefetchCount
         self.lookAheadPrefetchCount = lookAheadPrefetchCount
         self.prefetchConcurrency = prefetchConcurrency
+    }
+
+    deinit {
+        postStateInvalidationTask?.cancel()
     }
 
     func loadIfNeeded() async {
@@ -153,17 +156,25 @@ final class SeasonDetailViewModel: ObservableObject {
     }
 
     private func bindInteractionStore(postIDs: Set<PostID>) {
+        postStateInvalidationTask?.cancel()
+        postStateInvalidationTask = nil
+
         guard postIDs.isEmpty == false else {
-            postStatesCancellable = nil
             visibleCommentCounts = [:]
             return
         }
 
-        postStatesCancellable = postInteractionStore.postStatesPublisher(for: postIDs)
-            .sink { [weak self] states in
-                guard let self else { return }
-                self.applyInteractionStates(states)
+        applyCurrentInteractionStates(for: postIDs)
+
+        let postInteractionStore = postInteractionStore
+        postStateInvalidationTask = Task { [weak self, postInteractionStore, postIDs] in
+            let stream = postInteractionStore.postStateInvalidationStream(for: postIDs)
+            for await postID in stream {
+                guard postIDs.contains(postID),
+                      let state = postInteractionStore.state(for: postID) else { continue }
+                self?.applyInteractionState(state)
             }
+        }
     }
 
     private func updatePinnedPostIDs(_ nextPostIDs: Set<PostID>) {
@@ -181,16 +192,26 @@ final class SeasonDetailViewModel: ObservableObject {
         pinnedPostIDs = nextPostIDs
     }
 
-    private func applyInteractionStates(_ states: [PostID: LookbookPostInteractionState]) {
+    private func applyCurrentInteractionStates(for postIDs: Set<PostID>) {
+        let states = postIDs.compactMap { postInteractionStore.state(for: $0) }
+        applyInteractionStates(states)
+    }
+
+    private func applyInteractionStates(_ states: [LookbookPostInteractionState]) {
+        states.forEach { applyInteractionState($0) }
+    }
+
+    private func applyInteractionState(_ state: LookbookPostInteractionState) {
         guard posts.isEmpty == false else { return }
 
-        visibleCommentCounts = states.reduce(into: [:]) { result, item in
-            guard let visibleCommentCount = item.value.visibleCommentCount else { return }
-            result[item.key] = visibleCommentCount
+        if let visibleCommentCount = state.visibleCommentCount {
+            visibleCommentCounts[state.postID] = visibleCommentCount
+        } else {
+            visibleCommentCounts.removeValue(forKey: state.postID)
         }
 
         posts = posts.map { post in
-            guard let state = states[post.id] else { return post }
+            guard post.id == state.postID else { return post }
             var updatedPost = post
             updatedPost.metrics = state.metrics
             return updatedPost
