@@ -144,6 +144,13 @@ final class BrandAdminSessionStore: ObservableObject {
         writableBrandIDs.contains(brandID)
     }
 
+    #if DEBUG
+    func applyUITestWritableBrands(_ brandIDs: Set<BrandID>) {
+        writableBrandIDs = brandIDs
+        loadedWritableBrandsIdentityKey = LoginManager.shared.getAuthIdentityKey
+    }
+    #endif
+
     func reset() {
         clearCapabilities()
         clearWritableBrandIDs()

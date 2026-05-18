@@ -50,6 +50,12 @@ final class AppCoordinator {
 
         setRoot(BootLoadingViewController(), animated: true)
 
+        #if DEBUG
+        if routeForUITestAuthenticatedSessionIfNeeded() {
+            return
+        }
+        #endif
+
         Task { [weak self] in
             guard let self else { return }
 
@@ -160,7 +166,7 @@ final class AppCoordinator {
     }
 
     @MainActor
-    private func showMainTab() {
+    private func showMainTab(initialTabIndex: Int? = nil) {
         // 메인 탭으로 들어가면 다시 콜백을 설치(강제 로그아웃 처리 활성화)
         isShowingLogin = false
         self.profileCoordinator = nil
@@ -176,6 +182,9 @@ final class AppCoordinator {
         self.mainTabController = tab
 
         setRoot(tab, animated: true)
+        if let initialTabIndex {
+            tab.switchScreen(initialTabIndex)
+        }
 
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -293,4 +302,46 @@ final class AppCoordinator {
             }
         }
     }
+
+    #if DEBUG
+    @MainActor
+    private func routeForUITestAuthenticatedSessionIfNeeded(
+        processInfo: ProcessInfo = .processInfo
+    ) -> Bool {
+        guard processInfo.environment["UITESTS"] == "1",
+              processInfo.arguments.contains("--uitest-authenticated") else {
+            return false
+        }
+
+        let shouldUseFixture = processInfo.arguments.contains("--uitest-lookbook-fixture")
+        let authenticatedUser = AuthenticatedUser(
+            identityKey: "uitest-user",
+            provider: .google,
+            providerUserID: "uitest-user",
+            email: "uitest@outpick.local"
+        )
+        LoginManager.shared.setAuthenticatedUser(authenticatedUser)
+        LoginManager.shared.setCurrentUserProfile(
+            UserProfile(
+                email: "uitest@outpick.local",
+                nickname: "UI 테스트"
+            )
+        )
+
+        if shouldUseFixture {
+            let fixtureProvider = LookbookUITestFixtureRepositoryProviderFactory.makeProvider()
+            lookbookContainer = LookbookContainer(
+                provider: fixtureProvider,
+                brandAdminSessionStore: brandAdminSessionStore
+            )
+            brandAdminSessionStore.applyUITestWritableBrands([
+                LookbookUITestFixtureRepositoryProviderFactory.brandID
+            ])
+        }
+
+        prewarmLookbookHome()
+        showMainTab(initialTabIndex: 2)
+        return true
+    }
+    #endif
 }
