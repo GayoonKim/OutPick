@@ -5,7 +5,6 @@
 //  Created by Codex on 4/24/26.
 //
 
-import Combine
 import Foundation
 
 @MainActor
@@ -28,7 +27,7 @@ final class PostDetailScreenViewModel: ObservableObject {
     private var interactionPinScope: InteractionPinScope?
     private var pinnedCommentIDs: Set<CommentID> = []
     private var commentPinScopes: [CommentID: InteractionPinScope] = [:]
-    private var commentStateCancellables: [CommentID: AnyCancellable] = [:]
+    private var commentStateInvalidationTask: Task<Void, Never>?
     private var postStateInvalidationTask: Task<Void, Never>?
     private var representativeCommentInvalidationTask: Task<Void, Never>?
     private var isRefreshingRepresentativeComment: Bool = false
@@ -75,6 +74,7 @@ final class PostDetailScreenViewModel: ObservableObject {
     }
 
     deinit {
+        commentStateInvalidationTask?.cancel()
         postStateInvalidationTask?.cancel()
         representativeCommentInvalidationTask?.cancel()
     }
@@ -357,29 +357,43 @@ final class PostDetailScreenViewModel: ObservableObject {
 
     private func updatePinnedCommentIDs() {
         let nextCommentIDs = Set(comments.map(\.id))
+        guard nextCommentIDs != pinnedCommentIDs else { return }
+
         let removedCommentIDs = pinnedCommentIDs.subtracting(nextCommentIDs)
         let addedCommentIDs = nextCommentIDs.subtracting(pinnedCommentIDs)
 
         for commentID in removedCommentIDs {
             commentPinScopes[commentID]?.invalidate()
             commentPinScopes.removeValue(forKey: commentID)
-            commentStateCancellables.removeValue(forKey: commentID)
         }
 
         for commentID in addedCommentIDs {
             commentPinScopes[commentID] = commentInteractionStore.pinScope(postIDs: [], commentIDs: [commentID])
-            subscribeCommentState(for: commentID)
         }
         pinnedCommentIDs = nextCommentIDs
+        bindCommentStateInvalidationStream(for: nextCommentIDs)
     }
 
-    private func subscribeCommentState(for commentID: CommentID) {
-        guard commentStateCancellables[commentID] == nil else { return }
-        commentStateCancellables[commentID] = commentInteractionStore.commentStatePublisher(for: commentID)
-            .compactMap { $0 }
-            .sink { [weak self] state in
+    private func bindCommentStateInvalidationStream(for commentIDs: Set<CommentID>) {
+        commentStateInvalidationTask?.cancel()
+        guard commentIDs.isEmpty == false else {
+            commentStateInvalidationTask = nil
+            return
+        }
+
+        let commentInteractionStore = commentInteractionStore
+        commentStateInvalidationTask = Task { @MainActor [weak self, commentInteractionStore, commentIDs] in
+            let stream = commentInteractionStore.commentStateInvalidationStream(for: commentIDs)
+            for commentID in commentIDs {
+                guard let state = commentInteractionStore.commentState(for: commentID) else { continue }
                 self?.applyCommentState(state)
             }
+
+            for await commentID in stream {
+                guard let state = commentInteractionStore.commentState(for: commentID) else { continue }
+                self?.applyCommentState(state)
+            }
+        }
     }
 
     private func loadHiddenUserIDs() async -> Set<UserID> {

@@ -5,7 +5,6 @@
 //  Created by Codex on 5/7/26.
 //
 
-import Combine
 import Foundation
 
 struct LookbookPostInteractionState: Equatable {
@@ -37,7 +36,8 @@ protocol CommentInteractionManaging: AnyObject {
     func likeCount(for comment: Comment) -> Int
     func isCommentLiked(_ comment: Comment, userID: UserID?) -> Bool
     func isCommentHidden(_ commentID: CommentID) -> Bool
-    func commentStatePublisher(for commentID: CommentID) -> AnyPublisher<CommentInteractionState?, Never>
+    func commentState(for commentID: CommentID) -> CommentInteractionState?
+    func commentStateInvalidationStream(for commentIDs: Set<CommentID>) -> AsyncStream<CommentID>
     func representativeCommentInvalidationStream(for postID: PostID) -> AsyncStream<PostID>
     func pinScope(postIDs: Set<PostID>, commentIDs: Set<CommentID>) -> InteractionPinScope
     func hideCommentIDs(_ commentIDs: Set<CommentID>)
@@ -85,14 +85,11 @@ final class InteractionPinScope {
 @MainActor
 final class LookbookInteractionStore: PostInteractionManaging, CommentInteractionManaging {
     private var postStates: [PostID: LookbookPostInteractionState] = [:]
-    private var replyCounts: [CommentID: Int] = [:]
-
     private var postStore: PostInteractionStore
     private var commentStore: CommentInteractionStore
     private var commentStates: [CommentID: CommentInteractionState] = [:]
-    private var commentStateSubjects: [CommentID: CurrentValueSubject<CommentInteractionState?, Never>] = [:]
-    private var replyCountSubjects: [CommentID: CurrentValueSubject<Int?, Never>] = [:]
     private var postStateInvalidationContinuations: [UUID: (postIDs: Set<PostID>, continuation: AsyncStream<PostID>.Continuation)] = [:]
+    private var commentStateInvalidationContinuations: [UUID: (commentIDs: Set<CommentID>, continuation: AsyncStream<CommentID>.Continuation)] = [:]
     private var representativeCommentInvalidationContinuations: [UUID: (postID: PostID, continuation: AsyncStream<PostID>.Continuation)] = [:]
 
     init(
@@ -152,14 +149,30 @@ final class LookbookInteractionStore: PostInteractionManaging, CommentInteractio
         }
     }
 
-    func commentStatePublisher(for commentID: CommentID) -> AnyPublisher<CommentInteractionState?, Never> {
-        commentStateSubject(for: commentID)
-            .eraseToAnyPublisher()
+    func commentState(for commentID: CommentID) -> CommentInteractionState? {
+        commentStore.state(for: commentID)
     }
 
-    func replyCountPublisher(for commentID: CommentID) -> AnyPublisher<Int?, Never> {
-        replyCountSubject(for: commentID)
-            .eraseToAnyPublisher()
+    func commentStateInvalidationStream(
+        for commentIDs: Set<CommentID>
+    ) -> AsyncStream<CommentID> {
+        guard commentIDs.isEmpty == false else {
+            return AsyncStream { continuation in
+                continuation.finish()
+            }
+        }
+
+        return AsyncStream { [weak self] continuation in
+            guard let self else { return }
+            let continuationID = UUID()
+            self.commentStateInvalidationContinuations[continuationID] = (commentIDs, continuation)
+            continuation.onTermination = { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.commentStateInvalidationContinuations.removeValue(forKey: continuationID)
+                }
+            }
+        }
     }
 
     func representativeCommentInvalidationStream(for postID: PostID) -> AsyncStream<PostID> {
@@ -410,50 +423,17 @@ final class LookbookInteractionStore: PostInteractionManaging, CommentInteractio
         let previousStates = postStates
         let nextStates = postStore.states
         postStates = nextStates
-        publishPostStateChanges(previousStates: previousStates, nextStates: nextStates)
+        notifyPostStateInvalidations(previousStates: previousStates, nextStates: nextStates)
     }
 
     private func syncCommentStates() {
         let previousCommentStates = commentStates
         let nextCommentStates = commentStore.states
         commentStates = nextCommentStates
-        publishCommentStateChanges(previousStates: previousCommentStates, nextStates: nextCommentStates)
-
-        let previousReplyCounts = replyCounts
-        let nextReplyCounts = commentStore.replyCounts
-        replyCounts = nextReplyCounts
-        publishReplyCountChanges(previousReplyCounts: previousReplyCounts, nextReplyCounts: nextReplyCounts)
+        notifyCommentStateInvalidations(previousStates: previousCommentStates, nextStates: nextCommentStates)
     }
 
-    private func commentStateSubject(
-        for commentID: CommentID
-    ) -> CurrentValueSubject<CommentInteractionState?, Never> {
-        if let subject = commentStateSubjects[commentID] {
-            return subject
-        }
-
-        let subject = CurrentValueSubject<CommentInteractionState?, Never>(
-            commentStore.state(for: commentID)
-        )
-        commentStateSubjects[commentID] = subject
-        return subject
-    }
-
-    private func replyCountSubject(
-        for commentID: CommentID
-    ) -> CurrentValueSubject<Int?, Never> {
-        if let subject = replyCountSubjects[commentID] {
-            return subject
-        }
-
-        let subject = CurrentValueSubject<Int?, Never>(
-            replyCounts[commentID]
-        )
-        replyCountSubjects[commentID] = subject
-        return subject
-    }
-
-    private func publishPostStateChanges(
+    private func notifyPostStateInvalidations(
         previousStates: [PostID: LookbookPostInteractionState],
         nextStates: [PostID: LookbookPostInteractionState]
     ) {
@@ -470,7 +450,7 @@ final class LookbookInteractionStore: PostInteractionManaging, CommentInteractio
         }
     }
 
-    private func publishCommentStateChanges(
+    private func notifyCommentStateInvalidations(
         previousStates: [CommentID: CommentInteractionState],
         nextStates: [CommentID: CommentInteractionState]
     ) {
@@ -479,20 +459,9 @@ final class LookbookInteractionStore: PostInteractionManaging, CommentInteractio
             .filter { previousStates[$0] != nextStates[$0] }
 
         for commentID in changedCommentIDs {
-            commentStateSubjects[commentID]?.send(nextStates[commentID])
-        }
-    }
-
-    private func publishReplyCountChanges(
-        previousReplyCounts: [CommentID: Int],
-        nextReplyCounts: [CommentID: Int]
-    ) {
-        let changedCommentIDs = Set(previousReplyCounts.keys)
-            .union(nextReplyCounts.keys)
-            .filter { previousReplyCounts[$0] != nextReplyCounts[$0] }
-
-        for commentID in changedCommentIDs {
-            replyCountSubjects[commentID]?.send(nextReplyCounts[commentID])
+            for (subscribedCommentIDs, continuation) in commentStateInvalidationContinuations.values where subscribedCommentIDs.contains(commentID) {
+                continuation.yield(commentID)
+            }
         }
     }
 }
