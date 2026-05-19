@@ -17,34 +17,6 @@ struct PostCommentBadge: Equatable {
 }
 
 struct PostCommentCardView: View {
-    struct Actions {
-        var onProfileTap: (() -> Void)?
-        var onLikeTap: (() async -> Void)?
-        var onRepliesTap: (() -> Void)?
-        var onCardTap: (() -> Void)?
-        var onDeleteTap: (() -> Void)?
-        var onReportTap: (() -> Void)?
-        var onBlockTap: (() -> Void)?
-
-        init(
-            onProfileTap: (() -> Void)? = nil,
-            onLikeTap: (() async -> Void)? = nil,
-            onRepliesTap: (() -> Void)? = nil,
-            onCardTap: (() -> Void)? = nil,
-            onDeleteTap: (() -> Void)? = nil,
-            onReportTap: (() -> Void)? = nil,
-            onBlockTap: (() -> Void)? = nil
-        ) {
-            self.onProfileTap = onProfileTap
-            self.onLikeTap = onLikeTap
-            self.onRepliesTap = onRepliesTap
-            self.onCardTap = onCardTap
-            self.onDeleteTap = onDeleteTap
-            self.onReportTap = onReportTap
-            self.onBlockTap = onBlockTap
-        }
-    }
-
     let comment: Comment
     let likeCount: Int
     let replyCount: Int
@@ -53,7 +25,7 @@ struct PostCommentCardView: View {
     let author: CommentAuthorDisplay
     let badges: [PostCommentBadge]
     let avatarImageManager: ChatAvatarImageManaging
-    let actions: Actions
+    let actions: PostCommentCardActions
 
     init(
         comment: Comment,
@@ -66,7 +38,7 @@ struct PostCommentCardView: View {
         badges: [PostCommentBadge] = [],
         badgeTitle: String? = nil,
         avatarImageManager: ChatAvatarImageManaging = AvatarImageService.shared,
-        actions: Actions = Actions()
+        actions: PostCommentCardActions = PostCommentCardActions()
     ) {
         self.comment = comment
         self.likeCount = likeCount ?? comment.likeCount
