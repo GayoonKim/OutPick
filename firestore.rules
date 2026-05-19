@@ -1,0 +1,142 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function brandPath(brandID) {
+      return /databases/$(database)/documents/brands/$(brandID);
+    }
+
+    function brandData(brandID) {
+      return get(brandPath(brandID)).data;
+    }
+
+    function hasBrandWriteAccess(brandID) {
+      return signedIn()
+        && exists(brandPath(brandID))
+        && (
+          (
+            brandData(brandID).ownerUIDs is list
+            && brandData(brandID).ownerUIDs.hasAny([request.auth.uid])
+          )
+          || (
+            brandData(brandID).adminUIDs is list
+            && brandData(brandID).adminUIDs.hasAny([request.auth.uid])
+          )
+        );
+    }
+
+    match /brandAdmins/{adminID} {
+      allow read, write: if false;
+    }
+
+    match /brands/{brandID} {
+      allow read: if true;
+      allow create, update, delete: if false;
+
+      match /seasons/{seasonID} {
+        allow read: if true;
+        allow create, update, delete: if hasBrandWriteAccess(brandID);
+
+        match /posts/{postID} {
+          allow read: if true;
+          allow create, update, delete: if hasBrandWriteAccess(brandID);
+
+          match /comments/{commentID} {
+            allow read: if true;
+            allow create, update, delete: if false;
+          }
+
+          match /replacements/{replacementID} {
+            allow read: if true;
+            allow create, update, delete: if hasBrandWriteAccess(brandID);
+          }
+        }
+      }
+
+      match /importJobs/{jobID} {
+        allow read: if hasBrandWriteAccess(brandID);
+        allow create, update, delete: if false;
+      }
+
+      match /seasonCandidates/{candidateID} {
+        allow read: if hasBrandWriteAccess(brandID);
+        allow create, update, delete: if false;
+      }
+    }
+
+    match /userIdentities/{identityKey} {
+      // 사용자 매핑 컬렉션은 더 이상 사용하지 않고 users/{request.auth.uid}를 canonical 문서로 사용한다.
+      allow read, write: if false;
+    }
+
+    match /users/{userID} {
+      allow read, write: if signedIn();
+
+      match /postStates/{stateID} {
+        allow read: if signedIn() && request.auth.uid == userID;
+        allow create, update, delete: if false;
+      }
+
+      match /commentStates/{stateID} {
+        allow read: if signedIn() && request.auth.uid == userID;
+        allow create, update, delete: if false;
+      }
+
+      match /blockedUsers/{blockedUserID} {
+        allow read: if signedIn() && request.auth.uid == userID;
+        allow create, update, delete: if false;
+      }
+
+      match /roomStates/{roomID} {
+        allow read, write: if signedIn() && request.auth.uid == userID;
+      }
+
+      match /meta/session {
+        allow read, write: if signedIn() && request.auth.uid == userID;
+      }
+
+      match /devices/{deviceID} {
+        allow read, write: if signedIn() && request.auth.uid == userID;
+      }
+
+      match /{document=**} {
+        allow read, write: if false;
+      }
+    }
+
+    match /commentReports/{reportID} {
+      allow read, write: if false;
+    }
+
+    match /Rooms/{roomID} {
+      allow read, write: if signedIn();
+
+      match /{document=**} {
+        allow read, write: if signedIn();
+      }
+    }
+
+    match /tags/{tagID} {
+      allow read: if true;
+      allow write: if signedIn();
+    }
+
+    match /tagAliases/{tagAliasID} {
+      allow read: if true;
+      allow write: if signedIn();
+    }
+
+    match /tagConcepts/{tagConceptID} {
+      allow read: if true;
+      allow write: if signedIn();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
