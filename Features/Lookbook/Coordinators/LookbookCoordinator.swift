@@ -49,14 +49,6 @@ final class LookbookCoordinator {
         PostCommentCoordinator()
     }
 
-    func presentComments(using coordinator: PostCommentCoordinator) {
-        coordinator.presentComments()
-    }
-
-    func dismissComments(using coordinator: PostCommentCoordinator) {
-        coordinator.dismissComments()
-    }
-
     func makeCommentsSheet(
         brandID: BrandID,
         seasonID: SeasonID,

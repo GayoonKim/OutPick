@@ -60,7 +60,7 @@ struct PostDetailView: View {
                                     await viewModel.toggleLike()
                                 },
                                 onCommentTap: {
-                                    coordinator.presentComments(using: commentCoordinator)
+                                    commentCoordinator.presentComments()
                                 },
                                 onSaveTap: {
                                     await viewModel.toggleSave()
@@ -117,9 +117,9 @@ struct PostDetailView: View {
             get: { commentCoordinator.isCommentSheetPresented },
             set: { isPresented in
                 if isPresented {
-                    coordinator.presentComments(using: commentCoordinator)
+                    commentCoordinator.presentComments()
                 } else {
-                    coordinator.dismissComments(using: commentCoordinator)
+                    commentCoordinator.dismissComments()
                 }
             }
         )
@@ -206,7 +206,7 @@ struct PostDetailView: View {
                     .font(.title3.weight(.bold))
                 Spacer()
                 Button {
-                    coordinator.presentComments(using: commentCoordinator)
+                    commentCoordinator.presentComments()
                 } label: {
                     Text("더 보기")
                         .font(.footnote.weight(.bold))
@@ -233,7 +233,7 @@ struct PostDetailView: View {
                             badge: .representative,
                             actions: .init(
                                 onCardTap: {
-                                    coordinator.presentComments(using: commentCoordinator)
+                                    commentCoordinator.presentComments()
                                 }
                             )
                         )
