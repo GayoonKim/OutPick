@@ -27,6 +27,33 @@ enum LookbookUITestSupport {
         return app
     }
 
+    static func launchAppUsingTestFirebase(authenticated: Bool = true) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchEnvironment["UITESTS"] = "1"
+        app.launchEnvironment["OUTPICK_TEST_FIREBASE_PLIST_PATH"] = testFirebasePlistPath()
+        app.launchArguments.append("--uitest-test-firebase")
+        if authenticated {
+            app.launchArguments.append("--uitest-authenticated")
+        }
+        app.launch()
+        return app
+    }
+
+    private static func testFirebasePlistPath() -> String {
+        if let path = ProcessInfo.processInfo.environment["OUTPICK_TEST_FIREBASE_PLIST_PATH"],
+           path.isEmpty == false {
+            return path
+        }
+
+        let supportFileURL = URL(fileURLWithPath: #filePath)
+        return supportFileURL
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("LocalSecrets")
+            .appendingPathComponent("GoogleService-Info-Test.plist")
+            .path
+    }
+
     static func openCommentsSheet(in app: XCUIApplication) throws {
         try openFirstPostDetail(in: app)
 
