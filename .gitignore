@@ -11,7 +11,8 @@ DerivedData/
 build/
 
 # Firebase / local secrets
-**/GoogleService-Info.plist
+**/GoogleService-Info*.plist
+LocalSecrets/
 Secrets.plist
 Secret.xcconfig
 .env
