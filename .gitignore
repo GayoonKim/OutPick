@@ -27,6 +27,7 @@ serviceAccount*.json
 node_modules/
 functions/node_modules/
 functions/lib/
+test-admin-server/lib/
 
 # Local migration / nested Git metadata backups
 OutPick.git/
