@@ -15,6 +15,13 @@ enum LookbookUITestSupport {
         }
     }
 
+    static func requireTestFirebaseUITestOptIn() throws {
+        let isEnabled = ProcessInfo.processInfo.environment["RUN_LOOKBOOK_TEST_FIREBASE_UITESTS"] == "1"
+        if isEnabled == false {
+            throw XCTSkip("룩북 실제 Firebase UI 테스트는 RUN_LOOKBOOK_TEST_FIREBASE_UITESTS=1일 때만 실행합니다.")
+        }
+    }
+
     static func launchApp(failureArgument: String? = nil) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment["UITESTS"] = "1"
