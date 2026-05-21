@@ -17,7 +17,9 @@ enum LookbookUITestSupport {
 
     static func requireTestFirebaseUITestOptIn() throws {
         let isEnabled = ProcessInfo.processInfo.environment["RUN_LOOKBOOK_TEST_FIREBASE_UITESTS"] == "1"
-        if isEnabled == false {
+        if isEnabled || canReachLocalTestFirebaseResources() {
+            return
+        } else {
             throw XCTSkip("룩북 실제 Firebase UI 테스트는 RUN_LOOKBOOK_TEST_FIREBASE_UITESTS=1일 때만 실행합니다.")
         }
     }
@@ -38,6 +40,8 @@ enum LookbookUITestSupport {
         let app = XCUIApplication()
         app.launchEnvironment["UITESTS"] = "1"
         app.launchEnvironment["OUTPICK_TEST_FIREBASE_PLIST_PATH"] = testFirebasePlistPath()
+        app.launchEnvironment["OUTPICK_TEST_FIREBASE_USER_EMAIL"] = testFirebaseUserEmail()
+        app.launchEnvironment["OUTPICK_TEST_FIREBASE_USER_PASSWORD"] = testFirebaseUserPassword()
         app.launchArguments.append("--uitest-test-firebase")
         if authenticated {
             app.launchArguments.append("--uitest-authenticated")
@@ -59,6 +63,39 @@ enum LookbookUITestSupport {
             .appendingPathComponent("LocalSecrets")
             .appendingPathComponent("GoogleService-Info-Test.plist")
             .path
+    }
+
+    private static func testFirebaseUserEmail() -> String {
+        ProcessInfo.processInfo.environment["OUTPICK_TEST_FIREBASE_USER_EMAIL"] ?? "uitest@outpick.local"
+    }
+
+    private static func testFirebaseUserPassword() -> String {
+        ProcessInfo.processInfo.environment["OUTPICK_TEST_FIREBASE_USER_PASSWORD"] ?? "OutPickUITest-2026"
+    }
+
+    private static func canReachLocalTestFirebaseResources() -> Bool {
+        guard FileManager.default.fileExists(atPath: testFirebasePlistPath()) else {
+            return false
+        }
+
+        let rawURL = ProcessInfo.processInfo.environment["OUTPICK_TEST_ADMIN_SERVER_URL"] ?? "http://127.0.0.1:45731"
+        guard let healthURL = URL(string: rawURL)?.appendingPathComponent("health") else {
+            return false
+        }
+
+        var request = URLRequest(url: healthURL)
+        request.timeoutInterval = 1
+
+        let semaphore = DispatchSemaphore(value: 0)
+        var statusCode: Int?
+
+        URLSession.shared.dataTask(with: request) { _, response, _ in
+            statusCode = (response as? HTTPURLResponse)?.statusCode
+            semaphore.signal()
+        }.resume()
+
+        _ = semaphore.wait(timeout: .now() + 1.5)
+        return statusCode == 200
     }
 
     static func openCommentsSheet(in app: XCUIApplication) throws {
