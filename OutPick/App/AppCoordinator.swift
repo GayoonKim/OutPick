@@ -6,6 +6,7 @@
 //
 
 import UIKit
+import FirebaseAuth
 
 @MainActor
 final class AppCoordinator {
@@ -314,6 +315,13 @@ final class AppCoordinator {
         }
 
         let shouldUseFixture = processInfo.arguments.contains("--uitest-lookbook-fixture")
+        if processInfo.arguments.contains("--uitest-test-firebase") {
+            Task { [weak self] in
+                await self?.routeForTestFirebaseUITestSession(processInfo: processInfo)
+            }
+            return true
+        }
+
         let authenticatedUser = AuthenticatedUser(
             identityKey: "uitest-user",
             provider: .google,
@@ -342,6 +350,55 @@ final class AppCoordinator {
         prewarmLookbookHome()
         showMainTab(initialTabIndex: 2)
         return true
+    }
+
+    private func routeForTestFirebaseUITestSession(processInfo: ProcessInfo) async {
+        let email = processInfo.environment["OUTPICK_TEST_FIREBASE_USER_EMAIL"] ?? "uitest@outpick.local"
+        let password = processInfo.environment["OUTPICK_TEST_FIREBASE_USER_PASSWORD"] ?? "OutPickUITest-2026"
+
+        do {
+            let firebaseUser = try await signInTestFirebaseUser(email: email, password: password)
+            let authenticatedUser = AuthenticatedUser(
+                identityKey: firebaseUser.uid,
+                provider: .google,
+                providerUserID: firebaseUser.uid,
+                email: firebaseUser.email ?? email
+            )
+            LoginManager.shared.setAuthenticatedUser(authenticatedUser)
+            LoginManager.shared.setCurrentUserProfile(
+                UserProfile(
+                    email: firebaseUser.email ?? email,
+                    nickname: firebaseUser.displayName ?? "UI 테스트"
+                )
+            )
+        } catch {
+            print("[AppCoordinator] Test Firebase Auth sign-in failed: \(error)")
+        }
+
+        prewarmLookbookHome()
+        showMainTab(initialTabIndex: 2)
+    }
+
+    private func signInTestFirebaseUser(email: String, password: String) async throws -> FirebaseAuth.User {
+        try await withCheckedThrowingContinuation { continuation in
+            Auth.auth().signIn(withEmail: email, password: password) { result, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+
+                guard let user = result?.user else {
+                    continuation.resume(throwing: TestFirebaseAuthError.missingUser)
+                    return
+                }
+
+                continuation.resume(returning: user)
+            }
+        }
+    }
+
+    private enum TestFirebaseAuthError: Error {
+        case missingUser
     }
     #endif
 }
