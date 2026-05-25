@@ -787,6 +787,66 @@ export const updateBrandLogoPaths = onCall(
   }
 );
 
+export const setBrandEngagement = onCall(
+  {region: FUNCTIONS_REGION},
+  async (request) => {
+    const uid = requiredAuthUID(request.auth?.uid);
+    const data = recordData(request.data);
+
+    const brandID = requiredDocumentID(
+      requiredString(data, "brandID", 128),
+      "brandID"
+    );
+    const isLiked = requiredBoolean(data, "isLiked");
+
+    const brandRef = db.collection("brands").doc(brandID);
+    const userStateRef = db
+      .collection("users")
+      .doc(uid)
+      .collection("brandStates")
+      .doc(brandID);
+
+    return await db.runTransaction(async (transaction) => {
+      const brandSnap = await transaction.get(brandRef);
+      if (!brandSnap.exists) {
+        throw new HttpsError("not-found", "브랜드를 찾을 수 없습니다.");
+      }
+
+      const stateSnap = await transaction.get(userStateRef);
+      const currentLiked = stateSnap.exists;
+      const currentLikeCount = numericRootValue(brandSnap.data(), "likeCount");
+      const likeDelta =
+        currentLiked === isLiked ? 0 :
+          isLiked ? 1 : -1;
+      const nextLikeCount = Math.max(0, currentLikeCount + likeDelta);
+      const now = FieldValue.serverTimestamp();
+
+      if (likeDelta !== 0) {
+        transaction.update(brandRef, {
+          likeCount: nextLikeCount,
+          updatedAt: now,
+        });
+      }
+
+      if (isLiked) {
+        transaction.set(userStateRef, {
+          brandID,
+          likedAt: now,
+        }, {merge: true});
+      } else if (stateSnap.exists) {
+        transaction.delete(userStateRef);
+      }
+
+      return {
+        brandID,
+        userID: uid,
+        isLiked,
+        likeCount: nextLikeCount,
+      };
+    });
+  }
+);
+
 export const setPostEngagement = onCall(
   {region: FUNCTIONS_REGION},
   async (request) => {
