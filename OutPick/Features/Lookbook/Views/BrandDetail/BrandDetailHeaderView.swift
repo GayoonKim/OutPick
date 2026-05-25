@@ -9,8 +9,12 @@ import SwiftUI
 
 struct BrandDetailHeaderView: View {
     let brand: Brand
+    let likeCount: Int
+    let isLiked: Bool
+    let isMutatingLike: Bool
     let brandImageCache: any BrandImageCacheProtocol
     let maxBytes: Int
+    let onLikeTap: () async -> Void
 
     @Environment(\.openURL) private var openURL
 
@@ -107,15 +111,46 @@ struct BrandDetailHeaderView: View {
                 detailUpgradeTask = nil
             }
 
-            // 브랜드 이름 + 좋아요 수
+            // 브랜드 이름 + 좋아요 버튼
             VStack(alignment: .leading, spacing: 6) {
                 Text(brand.name)
                     .font(.title3)
                     .fontWeight(.semibold)
 
-                Text("좋아요 \(brand.metrics.likeCount)")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                Button {
+                    Task {
+                        await onLikeTap()
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        ZStack {
+                            Image(systemName: isLiked ? "heart.fill" : "heart")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(isLiked ? .red : .secondary)
+                                .opacity(isMutatingLike ? 0 : 1)
+
+                            if isMutatingLike {
+                                ProgressView()
+                                    .controlSize(.small)
+                                    .tint(isLiked ? .red : .secondary)
+                            }
+                        }
+                        .frame(width: 18, height: 18)
+
+                        Text("좋아요 \(likeCount)")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(isLiked ? .red : .secondary)
+                            .monospacedDigit()
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(
+                        Capsule()
+                            .fill(isLiked ? Color.red.opacity(0.08) : Color(.tertiarySystemFill))
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("브랜드 좋아요 \(likeCount)")
 
                 if let officialWebsiteURL {
                     Button {

@@ -155,6 +155,26 @@ final class CloudFunctionsManager {
         return try stringValue(response, key: "brandID")
     }
 
+    func setBrandEngagement(
+        brandID: String,
+        isLiked: Bool
+    ) async throws -> BrandEngagementResult {
+        let response = try await callFunction(
+            "setBrandEngagement",
+            data: [
+                "brandID": brandID,
+                "isLiked": isLiked
+            ]
+        )
+
+        return BrandEngagementResult(
+            brandID: BrandID(value: try stringValue(response, key: "brandID")),
+            userID: UserID(value: try stringValue(response, key: "userID")),
+            isLiked: try boolValue(response, key: "isLiked"),
+            likeCount: try intValue(response, key: "likeCount")
+        )
+    }
+
     func setPostEngagement(
         brandID: String,
         seasonID: String,

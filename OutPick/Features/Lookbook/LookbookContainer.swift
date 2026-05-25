@@ -171,6 +171,14 @@ final class LookbookContainer {
     func makeBrandDetailViewModel() -> BrandDetailViewModel {
         BrandDetailViewModel(
             seasonRepository: provider.seasonRepository,
+            brandUserStateRepository: provider.brandUserStateRepository,
+            brandEngagementInteractionUseCase: BrandEngagementInteractionUseCase(
+                repository: provider.brandEngagementRepository,
+                brandInteractionStore: interactionStore,
+                debugFailureInjectionStore: debugFailureInjectionStore
+            ),
+            brandInteractionStore: interactionStore,
+            currentUserIDProvider: currentUserIDProvider,
             brandImageCache: provider.brandImageCache,
             maxBytes: 1_000_000
         )

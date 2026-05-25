@@ -10,22 +10,36 @@ import Foundation
 @MainActor
 final class BrandDetailViewModel: ObservableObject {
     @Published private(set) var seasons: [Season] = []
+    @Published private(set) var brandMetrics: BrandMetrics?
+    @Published private(set) var brandUserState: BrandUserState?
     @Published private(set) var isLoading: Bool = false
+    @Published private(set) var isMutatingLike: Bool = false
     @Published private(set) var errorMessage: String?
+    @Published private(set) var engagementErrorMessage: String?
 
     private let initialPrefetchCount: Int
     private let lookAheadPrefetchCount: Int
     private let prefetchConcurrency: Int
     private let seasonRepository: any SeasonRepositoryProtocol
+    private let brandUserStateRepository: any BrandUserStateRepositoryProtocol
+    private let brandEngagementInteractionUseCase: BrandEngagementInteractionUseCase
+    private let brandInteractionStore: any BrandInteractionManaging
+    private let currentUserIDProvider: any CurrentUserIDProviding
     private let brandImageCache: any BrandImageCacheProtocol
     private let maxBytes: Int
 
     private var loadedBrandID: BrandID?
+    private var loadedBrandInteractionID: BrandID?
     private var isRequesting: Bool = false
     private var prefetchedSeasonImagePaths = Set<String>()
+    private var brandStateInvalidationTask: Task<Void, Never>?
 
     init(
         seasonRepository: any SeasonRepositoryProtocol,
+        brandUserStateRepository: any BrandUserStateRepositoryProtocol,
+        brandEngagementInteractionUseCase: BrandEngagementInteractionUseCase,
+        brandInteractionStore: any BrandInteractionManaging,
+        currentUserIDProvider: any CurrentUserIDProviding,
         brandImageCache: any BrandImageCacheProtocol,
         maxBytes: Int,
         initialPrefetchCount: Int = 12,
@@ -33,11 +47,57 @@ final class BrandDetailViewModel: ObservableObject {
         prefetchConcurrency: Int = 6
     ) {
         self.seasonRepository = seasonRepository
+        self.brandUserStateRepository = brandUserStateRepository
+        self.brandEngagementInteractionUseCase = brandEngagementInteractionUseCase
+        self.brandInteractionStore = brandInteractionStore
+        self.currentUserIDProvider = currentUserIDProvider
         self.brandImageCache = brandImageCache
         self.maxBytes = maxBytes
         self.initialPrefetchCount = initialPrefetchCount
         self.lookAheadPrefetchCount = lookAheadPrefetchCount
         self.prefetchConcurrency = prefetchConcurrency
+    }
+
+    deinit {
+        brandStateInvalidationTask?.cancel()
+    }
+
+    var currentUserID: UserID? {
+        currentUserIDProvider.currentUserID
+    }
+
+    func prepareBrandInteractionIfNeeded(brand: Brand) async {
+        guard loadedBrandInteractionID != brand.id else { return }
+        loadedBrandInteractionID = brand.id
+
+        let userState = await fetchBrandUserStateIfPossible(
+            brandID: brand.id,
+            repository: brandUserStateRepository
+        )
+        brandInteractionStore.seedBrand(brand, userState: userState)
+        bindBrandInteractionStore(brandID: brand.id)
+    }
+
+    func toggleBrandLike(brandID: BrandID) async {
+        guard let userID = currentUserID else {
+            engagementErrorMessage = "로그인이 필요합니다."
+            return
+        }
+
+        engagementErrorMessage = nil
+        let outcome = await brandEngagementInteractionUseCase.toggleLike(
+            input: BrandEngagementInteractionInput(
+                brandID: brandID,
+                userID: userID,
+                currentUserState: brandUserState,
+                currentMetrics: brandMetrics
+            )
+        )
+        engagementErrorMessage = outcome.errorMessage
+    }
+
+    func clearEngagementError() {
+        engagementErrorMessage = nil
     }
 
     /// 최초 진입 시 중복 로드 방지
@@ -192,5 +252,48 @@ final class BrandDetailViewModel: ObservableObject {
         }
 
         return nil
+    }
+
+    private func bindBrandInteractionStore(brandID: BrandID) {
+        brandStateInvalidationTask?.cancel()
+        brandStateInvalidationTask = nil
+
+        applyCurrentBrandInteractionState(brandID: brandID)
+
+        let brandInteractionStore = brandInteractionStore
+        brandStateInvalidationTask = Task { [weak self, brandInteractionStore, brandID] in
+            let stream = brandInteractionStore.brandStateInvalidationStream(for: [brandID])
+            for await changedBrandID in stream {
+                guard changedBrandID == brandID,
+                      let state = brandInteractionStore.brandState(for: changedBrandID) else { continue }
+                self?.applyBrandInteractionState(state)
+            }
+        }
+    }
+
+    private func applyCurrentBrandInteractionState(brandID: BrandID) {
+        guard let state = brandInteractionStore.brandState(for: brandID) else { return }
+        applyBrandInteractionState(state)
+    }
+
+    private func applyBrandInteractionState(_ state: BrandInteractionState) {
+        brandMetrics = state.metrics
+        brandUserState = state.userState
+        isMutatingLike = state.isMutatingLike
+    }
+
+    private func fetchBrandUserStateIfPossible(
+        brandID: BrandID,
+        repository: any BrandUserStateRepositoryProtocol
+    ) async -> BrandUserState? {
+        guard let userID = currentUserID else { return nil }
+        do {
+            return try await repository.fetchBrandUserState(
+                userID: userID,
+                brandID: brandID
+            )
+        } catch {
+            return nil
+        }
     }
 }

@@ -24,6 +24,7 @@ enum LookbookUITestFixtureRepositoryProviderFactory {
         let fixture = LookbookUITestFixtureStore()
         return LookbookRepositoryProvider(
             brandRepository: fixture,
+            brandEngagementRepository: fixture,
             brandStore: CloudFunctionsBrandStore(),
             seasonRepository: fixture,
             postRepository: fixture,
@@ -34,6 +35,7 @@ enum LookbookUITestFixtureRepositoryProviderFactory {
             commentSafetyRepository: fixture,
             userBlockRepository: fixture,
             postUserStateRepository: fixture,
+            brandUserStateRepository: fixture,
             commentUserStateRepository: fixture,
             brandImageCache: LookbookUITestFixtureImageCache()
         )
@@ -57,6 +59,7 @@ private final class LookbookUITestFixtureImageCache: BrandImageCacheProtocol {
 
 private final class LookbookUITestFixtureStore:
     BrandRepositoryProtocol,
+    BrandEngagementRepositoryProtocol,
     SeasonRepositoryProtocol,
     PostRepositoryProtocol,
     PostEngagementRepositoryProtocol,
@@ -66,6 +69,7 @@ private final class LookbookUITestFixtureStore:
     CommentSafetyRepositoryProtocol,
     UserBlockRepositoryProtocol,
     PostUserStateRepositoryProtocol,
+    BrandUserStateRepositoryProtocol,
     CommentUserStateRepositoryProtocol {
 
     private let now = Date(timeIntervalSince1970: 1_779_100_000)
@@ -262,6 +266,18 @@ private final class LookbookUITestFixtureStore:
 
     func setLike(
         brandID: BrandID,
+        isLiked: Bool
+    ) async throws -> BrandEngagementResult {
+        BrandEngagementResult(
+            brandID: brandID,
+            userID: LookbookUITestFixtureRepositoryProviderFactory.currentUserID,
+            isLiked: isLiked,
+            likeCount: isLiked ? brand.metrics.likeCount + 1 : brand.metrics.likeCount
+        )
+    }
+
+    func setLike(
+        brandID: BrandID,
         seasonID: SeasonID,
         postID: PostID,
         isLiked: Bool
@@ -448,6 +464,13 @@ private final class LookbookUITestFixtureStore:
         postID: PostID
     ) async throws -> PostUserState? {
         PostUserState(postID: postID, userID: userID, isLiked: false, isSaved: false, updatedAt: now)
+    }
+
+    func fetchBrandUserState(
+        userID: UserID,
+        brandID: BrandID
+    ) async throws -> BrandUserState? {
+        BrandUserState(brandID: brandID, userID: userID, isLiked: false, updatedAt: now)
     }
 
     func fetchCommentUserStates(

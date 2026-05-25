@@ -44,8 +44,14 @@ struct BrandDetailView: View {
                 List {
                     BrandDetailHeaderView(
                         brand: brand,
+                        likeCount: viewModel.brandMetrics?.likeCount ?? brand.metrics.likeCount,
+                        isLiked: viewModel.brandUserState?.isLiked ?? false,
+                        isMutatingLike: viewModel.isMutatingLike,
                         brandImageCache: brandImageCache,
-                        maxBytes: maxBytes
+                        maxBytes: maxBytes,
+                        onLikeTap: {
+                            await viewModel.toggleBrandLike(brandID: brand.id)
+                        }
                     )
                     .listRowInsets(EdgeInsets())
                     .listRowSeparator(.hidden)
@@ -110,9 +116,13 @@ struct BrandDetailView: View {
 
             if didPrepareInitialContent == false {
                 await prewarmHeaderLogoIfNeeded()
+                await viewModel.prepareBrandInteractionIfNeeded(brand: brand)
                 await viewModel.loadContentsIfNeeded(brandID: brand.id)
                 didPrepareInitialContent = true
             }
+        }
+        .appToast(message: viewModel.engagementErrorMessage) {
+            viewModel.clearEngagementError()
         }
     }
 

@@ -13,6 +13,7 @@ final class LookbookRepositoryProvider {
 
     // MARK: - Lookbook Repositories (Protocol 타입으로 노출)
     let brandRepository: BrandRepositoryProtocol
+    let brandEngagementRepository: BrandEngagementRepositoryProtocol
 
     let seasonRepository: SeasonRepositoryProtocol
     let seasonCoverThumbnailPolicy: ThumbnailPolicy
@@ -38,6 +39,7 @@ final class LookbookRepositoryProvider {
     let replacementRepository: ReplacementRepositoryProtocol
 
     let postUserStateRepository: PostUserStateRepositoryProtocol
+    let brandUserStateRepository: BrandUserStateRepositoryProtocol
     let commentUserStateRepository: CommentUserStateRepositoryProtocol
 
     // MARK: - Services
@@ -52,6 +54,7 @@ final class LookbookRepositoryProvider {
 
     init(
         brandRepository: BrandRepositoryProtocol = FirestoreBrandRepository(),
+        brandEngagementRepository: BrandEngagementRepositoryProtocol = CloudFunctionsBrandEngagementRepository(),
         brandStore: BrandStoringRepository = CloudFunctionsBrandStore(),
 
         seasonRepository: SeasonRepositoryProtocol? = nil,
@@ -78,6 +81,7 @@ final class LookbookRepositoryProvider {
         replacementRepository: ReplacementRepositoryProtocol = FirestoreReplacementRepository(),
 
         postUserStateRepository: PostUserStateRepositoryProtocol = FirestorePostUserStateRepository(),
+        brandUserStateRepository: BrandUserStateRepositoryProtocol = FirestoreBrandUserStateRepository(),
         commentUserStateRepository: CommentUserStateRepositoryProtocol = FirestoreCommentUserStateRepository(),
 
         brandImageCache: (any BrandImageCacheProtocol)? = nil,
@@ -97,6 +101,7 @@ final class LookbookRepositoryProvider {
             ?? BrandImageCache(storage: storageService, pipeline: resolvedImageCachePipeline)
 
         self.brandRepository = brandRepository
+        self.brandEngagementRepository = brandEngagementRepository
         self.postRepository = postRepository
         self.postEngagementRepository = postEngagementRepository
 
@@ -111,6 +116,7 @@ final class LookbookRepositoryProvider {
         self.userBlockRepository = userBlockRepository
         self.replacementRepository = replacementRepository
         self.postUserStateRepository = postUserStateRepository
+        self.brandUserStateRepository = brandUserStateRepository
         self.commentUserStateRepository = commentUserStateRepository
 
         // Provider가 season repo를 조립할 때 thumbnailer/policy를 공유 주입

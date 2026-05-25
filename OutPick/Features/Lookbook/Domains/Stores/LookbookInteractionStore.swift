@@ -8,18 +8,22 @@
 import Foundation
 
 @MainActor
-final class LookbookInteractionStore: PostInteractionManaging, CommentInteractionManaging {
+final class LookbookInteractionStore: PostInteractionManaging, CommentInteractionManaging, BrandInteractionManaging {
     private var postStates: [PostID: LookbookPostInteractionState] = [:]
     private var postStore: PostInteractionStore
     private var commentStore: CommentInteractionStore
+    private var brandStore: BrandInteractionStore
     private var commentStates: [CommentID: CommentInteractionState] = [:]
+    private var brandStates: [BrandID: BrandInteractionState] = [:]
     private var postStateInvalidationContinuations: [UUID: (postIDs: Set<PostID>, continuation: AsyncStream<PostID>.Continuation)] = [:]
     private var commentStateInvalidationContinuations: [UUID: (commentIDs: Set<CommentID>, continuation: AsyncStream<CommentID>.Continuation)] = [:]
+    private var brandStateInvalidationContinuations: [UUID: (brandIDs: Set<BrandID>, continuation: AsyncStream<BrandID>.Continuation)] = [:]
     private var representativeCommentInvalidationContinuations: [UUID: (postID: PostID, continuation: AsyncStream<PostID>.Continuation)] = [:]
 
     init(
         maxPostStateCount: Int = 300,
         maxCommentStateCount: Int = 600,
+        maxBrandStateCount: Int = 300,
         stateRetentionInterval: TimeInterval = 60 * 60
     ) {
         self.postStore = PostInteractionStore(
@@ -28,6 +32,10 @@ final class LookbookInteractionStore: PostInteractionManaging, CommentInteractio
         )
         self.commentStore = CommentInteractionStore(
             maxCommentStateCount: maxCommentStateCount,
+            stateRetentionInterval: stateRetentionInterval
+        )
+        self.brandStore = BrandInteractionStore(
+            maxBrandStateCount: maxBrandStateCount,
             stateRetentionInterval: stateRetentionInterval
         )
     }
@@ -95,6 +103,32 @@ final class LookbookInteractionStore: PostInteractionManaging, CommentInteractio
                 Task { @MainActor [weak self] in
                     guard let self else { return }
                     self.commentStateInvalidationContinuations.removeValue(forKey: continuationID)
+                }
+            }
+        }
+    }
+
+    func brandState(for brandID: BrandID) -> BrandInteractionState? {
+        brandStore.state(for: brandID)
+    }
+
+    func brandStateInvalidationStream(
+        for brandIDs: Set<BrandID>
+    ) -> AsyncStream<BrandID> {
+        guard brandIDs.isEmpty == false else {
+            return AsyncStream { continuation in
+                continuation.finish()
+            }
+        }
+
+        return AsyncStream { [weak self] continuation in
+            guard let self else { return }
+            let continuationID = UUID()
+            self.brandStateInvalidationContinuations[continuationID] = (brandIDs, continuation)
+            continuation.onTermination = { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.brandStateInvalidationContinuations.removeValue(forKey: continuationID)
                 }
             }
         }
@@ -234,6 +268,14 @@ final class LookbookInteractionStore: PostInteractionManaging, CommentInteractio
         syncPostStates()
     }
 
+    func seedBrand(_ brand: Brand, userState: BrandUserState?) {
+        brandStore.seed(
+            brand: brand,
+            userState: userState
+        )
+        syncBrandStates()
+    }
+
     func seedPostMetrics(_ post: LookbookPost) {
         postStore.seedPostMetrics(post)
         syncPostStates()
@@ -325,6 +367,54 @@ final class LookbookInteractionStore: PostInteractionManaging, CommentInteractio
         syncPostStates()
     }
 
+    func applyOptimisticBrandLike(
+        brandID: BrandID,
+        userID: UserID,
+        isLiked: Bool,
+        baseLiked: Bool? = nil,
+        baseLikeCount: Int? = nil
+    ) {
+        brandStore.applyOptimisticLike(
+            brandID: brandID,
+            userID: userID,
+            isLiked: isLiked,
+            baseLiked: baseLiked,
+            baseLikeCount: baseLikeCount
+        )
+        syncBrandStates()
+    }
+
+    func applyBrandLikeResult(_ result: BrandEngagementResult) {
+        brandStore.applyLikeResult(result)
+        syncBrandStates()
+    }
+
+    func setBrandLikeMutationState(
+        brandID: BrandID,
+        isMutating: Bool
+    ) {
+        brandStore.setLikeMutationState(
+            brandID: brandID,
+            isMutating: isMutating
+        )
+        syncBrandStates()
+    }
+
+    func restoreBrandLike(
+        brandID: BrandID,
+        userID: UserID,
+        isLiked: Bool,
+        likeCount: Int?
+    ) {
+        brandStore.restoreLike(
+            brandID: brandID,
+            userID: userID,
+            isLiked: isLiked,
+            likeCount: likeCount
+        )
+        syncBrandStates()
+    }
+
     func applyCommentMutation(_ result: CommentMutationResult) {
         postStore.applyCommentMutation(result)
         if let parentCommentID = result.parentCommentID {
@@ -358,6 +448,13 @@ final class LookbookInteractionStore: PostInteractionManaging, CommentInteractio
         notifyCommentStateInvalidations(previousStates: previousCommentStates, nextStates: nextCommentStates)
     }
 
+    private func syncBrandStates() {
+        let previousStates = brandStates
+        let nextStates = brandStore.states
+        brandStates = nextStates
+        notifyBrandStateInvalidations(previousStates: previousStates, nextStates: nextStates)
+    }
+
     private func notifyPostStateInvalidations(
         previousStates: [PostID: LookbookPostInteractionState],
         nextStates: [PostID: LookbookPostInteractionState]
@@ -386,6 +483,23 @@ final class LookbookInteractionStore: PostInteractionManaging, CommentInteractio
         for commentID in changedCommentIDs {
             for (subscribedCommentIDs, continuation) in commentStateInvalidationContinuations.values where subscribedCommentIDs.contains(commentID) {
                 continuation.yield(commentID)
+            }
+        }
+    }
+
+    private func notifyBrandStateInvalidations(
+        previousStates: [BrandID: BrandInteractionState],
+        nextStates: [BrandID: BrandInteractionState]
+    ) {
+        let changedBrandIDs = Set(previousStates.keys)
+            .union(nextStates.keys)
+            .filter { previousStates[$0] != nextStates[$0] }
+
+        guard changedBrandIDs.isEmpty == false else { return }
+
+        for brandID in changedBrandIDs {
+            for (subscribedBrandIDs, continuation) in brandStateInvalidationContinuations.values where subscribedBrandIDs.contains(brandID) {
+                continuation.yield(brandID)
             }
         }
     }
