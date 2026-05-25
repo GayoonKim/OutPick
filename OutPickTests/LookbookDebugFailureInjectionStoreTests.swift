@@ -18,6 +18,7 @@ struct LookbookDebugFailureInjectionStoreTests {
             arguments: [
                 "OutPick",
                 LookbookDebugFailureLaunchArguments.toggleLike,
+                LookbookDebugFailureLaunchArguments.toggleBrandLike,
                 LookbookDebugFailureLaunchArguments.toggleCommentLike,
                 LookbookDebugFailureLaunchArguments.createComment,
                 LookbookDebugFailureLaunchArguments.createReply,
@@ -28,6 +29,7 @@ struct LookbookDebugFailureInjectionStoreTests {
 
         #expect(store.isFailureEnabled(for: .toggleLike) == true)
         #expect(store.isFailureEnabled(for: .toggleSave) == false)
+        #expect(store.isFailureEnabled(for: .toggleBrandLike) == true)
         #expect(store.isFailureEnabled(for: .toggleCommentLike) == true)
         #expect(store.isFailureEnabled(for: .createComment) == true)
         #expect(store.isFailureEnabled(for: .createReply) == true)

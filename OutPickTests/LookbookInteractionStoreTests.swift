@@ -71,6 +71,115 @@ struct LookbookInteractionStoreTests {
     }
 
     @MainActor
+    @Test func brandStateInvalidationStreamPublishesOnlyRequestedBrand() async throws {
+        let includedBrandID = BrandID(value: "included-brand")
+        let outsideBrandID = BrandID(value: "outside-brand")
+        let store = LookbookInteractionStore(
+            maxPostStateCount: 10,
+            maxCommentStateCount: 10,
+            maxBrandStateCount: 10,
+            stateRetentionInterval: 60
+        )
+        var receivedBrandIDs: [BrandID] = []
+
+        let task = Task { @MainActor in
+            for await brandID in store.brandStateInvalidationStream(for: [includedBrandID]) {
+                receivedBrandIDs.append(brandID)
+                break
+            }
+        }
+
+        await Task.yield()
+        store.seedBrand(makeBrand(id: outsideBrandID, likeCount: 10), userState: nil)
+
+        #expect(receivedBrandIDs.isEmpty)
+
+        store.seedBrand(makeBrand(id: includedBrandID, likeCount: 2), userState: nil)
+
+        try await waitUntil {
+            receivedBrandIDs == [includedBrandID]
+        }
+        #expect(store.brandState(for: includedBrandID)?.metrics.likeCount == 2)
+        task.cancel()
+    }
+
+    @MainActor
+    @Test func brandLikeStateSeedsOptimisticResultAndRestore() {
+        let userID = UserID(value: "user-1")
+        let brand = makeBrand(
+            id: BrandID(value: "brand-1"),
+            likeCount: 3
+        )
+        let store = LookbookInteractionStore(
+            maxPostStateCount: 10,
+            maxCommentStateCount: 10,
+            maxBrandStateCount: 10,
+            stateRetentionInterval: 60
+        )
+
+        store.seedBrand(
+            brand,
+            userState: BrandUserState(
+                brandID: brand.id,
+                userID: userID,
+                isLiked: false,
+                updatedAt: Date()
+            )
+        )
+
+        #expect(store.brandState(for: brand.id)?.metrics.likeCount == 3)
+        #expect(store.brandState(for: brand.id)?.userState?.isLiked == false)
+
+        store.applyOptimisticBrandLike(
+            brandID: brand.id,
+            userID: userID,
+            isLiked: true,
+            baseLiked: false,
+            baseLikeCount: 3
+        )
+
+        #expect(store.brandState(for: brand.id)?.metrics.likeCount == 4)
+        #expect(store.brandState(for: brand.id)?.userState?.isLiked == true)
+
+        store.setBrandLikeMutationState(
+            brandID: brand.id,
+            isMutating: true
+        )
+
+        #expect(store.brandState(for: brand.id)?.isMutatingLike == true)
+
+        store.applyBrandLikeResult(
+            BrandEngagementResult(
+                brandID: brand.id,
+                userID: userID,
+                isLiked: true,
+                likeCount: 5
+            )
+        )
+
+        #expect(store.brandState(for: brand.id)?.metrics.likeCount == 5)
+        #expect(store.brandState(for: brand.id)?.userState?.isLiked == true)
+        #expect(store.brandState(for: brand.id)?.isMutatingLike == true)
+
+        store.setBrandLikeMutationState(
+            brandID: brand.id,
+            isMutating: false
+        )
+
+        #expect(store.brandState(for: brand.id)?.isMutatingLike == false)
+
+        store.restoreBrandLike(
+            brandID: brand.id,
+            userID: userID,
+            isLiked: false,
+            likeCount: 3
+        )
+
+        #expect(store.brandState(for: brand.id)?.metrics.likeCount == 3)
+        #expect(store.brandState(for: brand.id)?.userState?.isLiked == false)
+    }
+
+    @MainActor
     @Test func commentStateInvalidationStreamPublishesOnlyRequestedComment() async throws {
         let hiddenCommentID = CommentID(value: "hidden-comment")
         let untouchedCommentID = CommentID(value: "untouched-comment")
@@ -275,6 +384,32 @@ struct LookbookInteractionStoreTests {
                 viewCount: nil
             ),
             createdAt: Date(),
+            updatedAt: Date()
+        )
+    }
+
+    private func makeBrand(
+        id: BrandID,
+        likeCount: Int
+    ) -> Brand {
+        Brand(
+            id: id,
+            name: "Brand \(id.value)",
+            websiteURL: nil,
+            lookbookArchiveURL: nil,
+            logoThumbPath: nil,
+            logoDetailPath: nil,
+            logoOriginalPath: nil,
+            isFeatured: false,
+            discoveryStatus: .idle,
+            lastDiscoveryErrorMessage: nil,
+            lastDiscoveryRequestedAt: nil,
+            lastDiscoveryCompletedAt: nil,
+            metrics: BrandMetrics(
+                likeCount: likeCount,
+                viewCount: 0,
+                popularScore: 0
+            ),
             updatedAt: Date()
         )
     }
