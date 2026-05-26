@@ -102,15 +102,14 @@ struct CreateBrandFlowView: View {
                     .accessibilityLabel("브랜드 등록 닫기")
                 }
             }
-            .confirmationDialog(
+            .alert(
                 closeConfirmationTitle,
-                isPresented: $isShowingCloseConfirmation,
-                titleVisibility: .visible
+                isPresented: $isShowingCloseConfirmation
             ) {
-                Button(closeConfirmationActionTitle) {
+                Button("계속 진행", role: .cancel) {}
+                Button(closeConfirmationActionTitle, role: .destructive) {
                     closeFlow()
                 }
-                Button("계속 진행", role: .cancel) {}
             } message: {
                 Text(closeConfirmationMessage)
             }
