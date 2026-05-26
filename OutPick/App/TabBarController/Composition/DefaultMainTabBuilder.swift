@@ -33,6 +33,9 @@ final class DefaultMainTabBuilder: MainTabBuilding {
             return LookbookCompositionRoot.makeRoot(container: lookbookContainer)
 
         case 3:
+            return LookbookCompositionRoot.makeLikedBrandsRoot(container: lookbookContainer)
+
+        case 4:
             // 내 설정 탭
             let myPageVC = MyPageViewController()
             let nav = UINavigationController(rootViewController: myPageVC)

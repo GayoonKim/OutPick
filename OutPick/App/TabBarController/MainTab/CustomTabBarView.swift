@@ -18,6 +18,7 @@ class CustomTabBarView: UIView {
         ("bubble.left.and.bubble.right.fill", "오픈채팅"),
         ("bubble.middle.bottom.fill", "채팅"),
         ("book.fill", "룩북"),
+        ("heart.fill", "좋아요"),
         ("gearshape.fill", "내 정보")
     ].map{
         let button = TabBarButton(type: .system)

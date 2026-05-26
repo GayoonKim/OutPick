@@ -36,4 +36,16 @@ enum LookbookCompositionRoot {
         nav.isNavigationBarHidden = true
         return nav
     }
+
+    static func makeLikedBrandsRoot(container: LookbookContainer) -> UIViewController {
+        let coordinator = LookbookCoordinator(container: container)
+        let likedBrandsView = coordinator.makeLikedBrandsView()
+            .environment(\.repositoryProvider, container.provider)
+            .environmentObject(container.brandAdminSessionStore)
+
+        let hostingVC = UIHostingController(rootView: likedBrandsView)
+        let nav = UINavigationController(rootViewController: hostingVC)
+        nav.isNavigationBarHidden = true
+        return nav
+    }
 }

@@ -473,6 +473,14 @@ private final class LookbookUITestFixtureStore:
         BrandUserState(brandID: brandID, userID: userID, isLiked: false, updatedAt: now)
     }
 
+    func fetchLikedBrandUserStates(
+        userID: UserID,
+        limit: Int,
+        after last: DocumentSnapshot?
+    ) async throws -> BrandUserStatePage {
+        BrandUserStatePage(items: [], last: nil)
+    }
+
     func fetchCommentUserStates(
         userID: UserID,
         brandID: BrandID,

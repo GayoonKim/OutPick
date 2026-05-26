@@ -135,6 +135,13 @@ final class LookbookContainer {
         )
     }
 
+    func makeLikedBrandsView(coordinator: LookbookCoordinator) -> LikedBrandsView {
+        LikedBrandsView(
+            viewModel: makeLikedBrandsViewModel(),
+            coordinator: coordinator
+        )
+    }
+
     func makePostDetailView(
         brandID: BrandID,
         seasonID: SeasonID,
@@ -181,6 +188,18 @@ final class LookbookContainer {
             currentUserIDProvider: currentUserIDProvider,
             brandImageCache: provider.brandImageCache,
             maxBytes: 1_000_000
+        )
+    }
+
+    func makeLikedBrandsViewModel() -> LikedBrandsViewModel {
+        LikedBrandsViewModel(
+            useCase: LoadLikedBrandsUseCase(
+                brandUserStateRepository: provider.brandUserStateRepository,
+                brandRepository: provider.brandRepository
+            ),
+            brandInteractionStore: interactionStore,
+            currentUserIDProvider: currentUserIDProvider,
+            brandImageCache: provider.brandImageCache
         )
     }
 
