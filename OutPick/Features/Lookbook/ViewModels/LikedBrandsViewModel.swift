@@ -103,7 +103,7 @@ final class LikedBrandsViewModel: ObservableObject {
             canLoadMore = page.last != nil
             didLoadInitial = true
             seedInteractionStore(items: page.items)
-            resetBrandInvalidationSubscriptions(with: page.items.map(\.id))
+            resetBrandInvalidationSubscriptions(with: page.items.map { $0.id })
             phase = items.isEmpty ? .empty : .ready
         } catch {
             if clearsItemsOnFailure || items.isEmpty {
@@ -133,7 +133,7 @@ final class LikedBrandsViewModel: ObservableObject {
             canLoadMore = page.last != nil
             let appendedItems = appendDeduplicated(page.items)
             seedInteractionStore(items: page.items)
-            subscribeToBrandInvalidationsIfNeeded(for: appendedItems.map(\.id))
+            subscribeToBrandInvalidationsIfNeeded(for: appendedItems.map { $0.id })
         } catch {
             canLoadMore = false
         }
