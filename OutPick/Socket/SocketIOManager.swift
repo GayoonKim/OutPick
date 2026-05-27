@@ -120,6 +120,25 @@ class SocketIOManager {
             "email": normalizedSocketEmail()
         ]
     }
+
+    private static func makeSocketURL() -> URL {
+        let configuredURLStrings = [
+            ProcessInfo.processInfo.environment["OUTPICK_SOCKET_URL"],
+            Bundle.main.object(forInfoDictionaryKey: "OUTPICK_SOCKET_URL") as? String
+        ]
+
+        for rawURLString in configuredURLStrings {
+            guard let urlString = rawURLString?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !urlString.isEmpty,
+                  !urlString.contains("$("),
+                  let url = URL(string: urlString) else {
+                continue
+            }
+            return url
+        }
+
+        return URL(string: "https://outpick-socket-715386497547.asia-northeast3.run.app")!
+    }
     
     // Combine의 PassthroughSubject를 사용하여 이벤트 스트림 생성
     // 새로운 참여자 알림을 위한 Publisher 추가
@@ -145,11 +164,10 @@ class SocketIOManager {
     private var isImageMessageListenerBound = false
     private var isVideoMessageListenerBound = false
     
-    // https://outpick-socket-715386497547.asia-northeast3.run.app - Cloud Run
     private init(repositories: FirebaseRepositoryProviding = FirebaseRepositoryProvider.shared) {
         self.userProfileRepository = repositories.userProfileRepository
         self.chatRoomRepository = repositories.chatRoomRepository
-        manager = SocketManager(socketURL: URL(string: "http://192.168.123.118:3000")!, config: [
+        manager = SocketManager(socketURL: Self.makeSocketURL(), config: [
             .log(true),
             .compress,
             // 서버가 WebSocket only(transports:['websocket'])로 동작하므로 클라이언트도 폴링을 비활성화
