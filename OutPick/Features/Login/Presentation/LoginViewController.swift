@@ -12,6 +12,8 @@ final class LoginViewController: UIViewController {
 
     private let viewModel: LoginViewModel
 
+    private let titleLabel = UILabel()
+    private let promptLabel = UILabel()
     private let googleButton = UIButton(type: .system)
     private let kakaoButton  = UIButton(type: .system)
     private var pendingErrorMessage: String?
@@ -38,6 +40,20 @@ final class LoginViewController: UIViewController {
     }
 
     private func configureUI() {
+        titleLabel.text = "OutPick"
+        titleLabel.font = .systemFont(ofSize: 40, weight: .bold)
+        titleLabel.textColor = .label
+        titleLabel.textAlignment = .center
+        titleLabel.adjustsFontForContentSizeCategory = true
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        promptLabel.text = "로그인 방식을 선택해 주세요"
+        promptLabel.font = .preferredFont(forTextStyle: .subheadline)
+        promptLabel.textColor = .secondaryLabel
+        promptLabel.textAlignment = .center
+        promptLabel.numberOfLines = 0
+        promptLabel.adjustsFontForContentSizeCategory = true
+
         if let img = UIImage(named: "ios_light_sq_SI") {
             googleButton.setImage(img.withRenderingMode(.alwaysOriginal), for: .normal)
             googleButton.imageView?.contentMode = .scaleAspectFit
@@ -55,14 +71,21 @@ final class LoginViewController: UIViewController {
         googleButton.heightAnchor.constraint(equalToConstant: 48).isActive = true
         kakaoButton.heightAnchor.constraint(equalToConstant: 48).isActive = true
 
-        let stack = UIStackView(arrangedSubviews: [googleButton, kakaoButton])
+        let stack = UIStackView(arrangedSubviews: [promptLabel, googleButton, kakaoButton])
         stack.axis = .vertical
         stack.spacing = 16
+        stack.setCustomSpacing(20, after: promptLabel)
         stack.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(titleLabel)
         view.addSubview(stack)
 
         NSLayoutConstraint.activate([
-            stack.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            titleLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            titleLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: -64),
+            titleLabel.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 32),
+            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -32),
+
+            stack.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 72),
             stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 32),
             stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -32)
         ])
