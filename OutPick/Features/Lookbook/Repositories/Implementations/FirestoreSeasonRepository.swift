@@ -102,6 +102,7 @@ final class FirestoreSeasonRepository: SeasonRepositoryProtocol {
             sourceImportJobID: nil,
             sourceSortIndex: nil,
             postCount: 0,
+            likeCount: 0,
             createdAt: now,
             updatedAt: now
         )

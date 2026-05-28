@@ -16,6 +16,8 @@ final class LookbookRepositoryProvider {
     let brandEngagementRepository: BrandEngagementRepositoryProtocol
 
     let seasonRepository: SeasonRepositoryProtocol
+    let seasonEngagementRepository: SeasonEngagementRepositoryProtocol
+    let seasonUserStateRepository: SeasonUserStateRepositoryProtocol
     let seasonCoverThumbnailPolicy: ThumbnailPolicy
     let seasonImportRepository: SeasonImportRequestingRepository
     let seasonImportJobRepository: SeasonImportJobRepositoryProtocol
@@ -58,6 +60,8 @@ final class LookbookRepositoryProvider {
         brandStore: BrandStoringRepository = CloudFunctionsBrandStore(),
 
         seasonRepository: SeasonRepositoryProtocol? = nil,
+        seasonEngagementRepository: SeasonEngagementRepositoryProtocol = CloudFunctionsSeasonEngagementRepository(),
+        seasonUserStateRepository: SeasonUserStateRepositoryProtocol = FirestoreSeasonUserStateRepository(),
         seasonCoverThumbnailPolicy: ThumbnailPolicy = ThumbnailPolicies.seasonCover,
         seasonImportRepository: SeasonImportRequestingRepository = CloudFunctionsSeasonImportRepository(),
         seasonImportJobRepository: SeasonImportJobRepositoryProtocol = FirestoreSeasonImportJobRepository(),
@@ -104,6 +108,8 @@ final class LookbookRepositoryProvider {
         self.brandEngagementRepository = brandEngagementRepository
         self.postRepository = postRepository
         self.postEngagementRepository = postEngagementRepository
+        self.seasonEngagementRepository = seasonEngagementRepository
+        self.seasonUserStateRepository = seasonUserStateRepository
 
         self.tagRepository = tagRepository
         self.tagAliasRepository = tagAliasRepository

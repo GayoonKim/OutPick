@@ -57,6 +57,9 @@ struct SeasonDTO: Codable {
     /// 시즌에 속한 포스트(룩) 개수 스냅샷
     let postCount: Int
 
+    /// 시즌 좋아요 수 스냅샷
+    let likeCount: Int?
+
     /// 생성/수정 시각
     let createdAt: Timestamp?
     let updatedAt: Timestamp?
@@ -90,6 +93,7 @@ struct SeasonDTO: Codable {
             sourceImportJobID: sourceImportJobID,
             sourceSortIndex: sourceSortIndex,
             postCount: postCount,
+            likeCount: max(0, likeCount ?? 0),
             createdAt: createdAt?.dateValue() ?? Date(timeIntervalSince1970: 0),
             updatedAt: updatedAt?.dateValue() ?? Date(timeIntervalSince1970: 0)
         )
@@ -118,6 +122,7 @@ extension SeasonDTO {
             sourceImportJobID: season.sourceImportJobID,
             sourceSortIndex: season.sourceSortIndex,
             postCount: season.postCount,
+            likeCount: season.likeCount,
             createdAt: Timestamp(date: season.createdAt),
             updatedAt: Timestamp(date: season.updatedAt)
         )

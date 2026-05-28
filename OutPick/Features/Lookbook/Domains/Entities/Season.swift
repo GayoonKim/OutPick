@@ -107,6 +107,9 @@ struct Season: Equatable, Codable, Identifiable {
     /// 시즌에 속한 포스트(룩) 개수 스냅샷
     var postCount: Int
 
+    /// 시즌 좋아요 수 스냅샷
+    var likeCount: Int
+
     var createdAt: Date
     var updatedAt: Date
 

@@ -27,6 +27,8 @@ enum LookbookUITestFixtureRepositoryProviderFactory {
             brandEngagementRepository: fixture,
             brandStore: CloudFunctionsBrandStore(),
             seasonRepository: fixture,
+            seasonEngagementRepository: fixture,
+            seasonUserStateRepository: fixture,
             postRepository: fixture,
             postEngagementRepository: fixture,
             commentRepository: fixture,
@@ -61,6 +63,8 @@ private final class LookbookUITestFixtureStore:
     BrandRepositoryProtocol,
     BrandEngagementRepositoryProtocol,
     SeasonRepositoryProtocol,
+    SeasonEngagementRepositoryProtocol,
+    SeasonUserStateRepositoryProtocol,
     PostRepositoryProtocol,
     PostEngagementRepositoryProtocol,
     CommentRepositoryProtocol,
@@ -114,6 +118,7 @@ private final class LookbookUITestFixtureStore:
             sourceImportJobID: nil,
             sourceSortIndex: 0,
             postCount: 1,
+            likeCount: 0,
             createdAt: now,
             updatedAt: now
         )
@@ -241,6 +246,53 @@ private final class LookbookUITestFixtureStore:
     }
 
     func fetchAllSeasons(brandID: BrandID) async throws -> [Season] { [season] }
+
+    func setLike(
+        brandID: BrandID,
+        seasonID: SeasonID,
+        isLiked: Bool
+    ) async throws -> SeasonEngagementResult {
+        SeasonEngagementResult(
+            brandID: brandID,
+            seasonID: seasonID,
+            userID: LookbookUITestFixtureRepositoryProviderFactory.currentUserID,
+            isLiked: isLiked,
+            likeCount: isLiked ? season.likeCount + 1 : season.likeCount
+        )
+    }
+
+    func fetchSeasonUserState(
+        userID: UserID,
+        brandID: BrandID,
+        seasonID: SeasonID
+    ) async throws -> SeasonUserState? {
+        SeasonUserState(
+            brandID: brandID,
+            seasonID: seasonID,
+            userID: userID,
+            isLiked: true,
+            updatedAt: now
+        )
+    }
+
+    func fetchLikedSeasonUserStates(
+        userID: UserID,
+        limit: Int,
+        after last: DocumentSnapshot?
+    ) async throws -> SeasonUserStatePage {
+        SeasonUserStatePage(
+            items: [
+                SeasonUserState(
+                    brandID: LookbookUITestFixtureRepositoryProviderFactory.brandID,
+                    seasonID: LookbookUITestFixtureRepositoryProviderFactory.seasonID,
+                    userID: userID,
+                    isLiked: true,
+                    updatedAt: now
+                )
+            ],
+            last: nil
+        )
+    }
 
     func fetchPosts(
         brandID: BrandID,
