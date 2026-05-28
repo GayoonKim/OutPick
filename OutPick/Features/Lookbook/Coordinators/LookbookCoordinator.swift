@@ -30,8 +30,8 @@ final class LookbookCoordinator {
         )
     }
 
-    func makeLikedBrandsView() -> LikedBrandsView {
-        container.makeLikedBrandsView(coordinator: self)
+    func makeLikedView() -> LikedView {
+        container.makeLikedView(coordinator: self)
     }
 
     func makePostDetailView(post: LookbookPost) -> PostDetailView {

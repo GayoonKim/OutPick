@@ -135,9 +135,9 @@ final class LookbookContainer {
         )
     }
 
-    func makeLikedBrandsView(coordinator: LookbookCoordinator) -> LikedBrandsView {
-        LikedBrandsView(
-            viewModel: makeLikedBrandsViewModel(),
+    func makeLikedView(coordinator: LookbookCoordinator) -> LikedView {
+        LikedView(
+            viewModel: makeLikedViewModel(),
             coordinator: coordinator
         )
     }
@@ -191,13 +191,18 @@ final class LookbookContainer {
         )
     }
 
-    func makeLikedBrandsViewModel() -> LikedBrandsViewModel {
-        LikedBrandsViewModel(
-            useCase: LoadLikedBrandsUseCase(
+    func makeLikedViewModel() -> LikedViewModel {
+        LikedViewModel(
+            likedBrandsUseCase: LoadLikedBrandsUseCase(
                 brandUserStateRepository: provider.brandUserStateRepository,
                 brandRepository: provider.brandRepository
             ),
+            likedSeasonsUseCase: LoadLikedSeasonsUseCase(
+                seasonUserStateRepository: provider.seasonUserStateRepository,
+                seasonRepository: provider.seasonRepository
+            ),
             brandInteractionStore: interactionStore,
+            seasonInteractionStore: interactionStore,
             currentUserIDProvider: currentUserIDProvider,
             brandImageCache: provider.brandImageCache
         )
@@ -211,8 +216,12 @@ final class LookbookContainer {
             brandID: brandID,
             seasonID: seasonID,
             useCase: loadSeasonDetailUseCase,
+            seasonUserStateRepository: provider.seasonUserStateRepository,
+            seasonEngagementRepository: provider.seasonEngagementRepository,
+            seasonInteractionStore: interactionStore,
             brandImageCache: provider.brandImageCache,
             postInteractionStore: interactionStore,
+            currentUserIDProvider: currentUserIDProvider,
             maxBytes: 1_500_000
         )
     }
