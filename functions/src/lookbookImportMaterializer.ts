@@ -273,6 +273,7 @@ async function materializeParsedSeasonImportJob(
       sourceImportJobID: jobID,
       sourceSortIndex: metadata.sourceSortIndex,
       postCount: imageCandidates.length,
+      likeCount: 0,
       createdAt: Timestamp.fromMillis(now),
       updatedAt: Timestamp.fromMillis(now),
     });

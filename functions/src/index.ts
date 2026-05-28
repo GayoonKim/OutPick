@@ -148,6 +148,13 @@ function postStateDocumentID(
   return `${brandID}_${seasonID}_${postID}`;
 }
 
+function seasonStateDocumentID(
+  brandID: string,
+  seasonID: string
+): string {
+  return `${brandID}_${seasonID}`;
+}
+
 function commentStateDocumentID(
   brandID: string,
   seasonID: string,
@@ -958,6 +965,80 @@ export const setPostEngagement = onCall(
         isLiked: nextLiked,
         isSaved: nextSaved,
         metrics: nextMetrics,
+      };
+    });
+  }
+);
+
+export const setSeasonEngagement = onCall(
+  {region: FUNCTIONS_REGION},
+  async (request) => {
+    const uid = requiredAuthUID(request.auth?.uid);
+    const data = recordData(request.data);
+
+    const brandID = requiredDocumentID(
+      requiredString(data, "brandID", 128),
+      "brandID"
+    );
+    const seasonID = requiredDocumentID(
+      requiredString(data, "seasonID", 128),
+      "seasonID"
+    );
+    const isLiked = requiredBoolean(data, "isLiked");
+
+    const seasonRef = db
+      .collection("brands")
+      .doc(brandID)
+      .collection("seasons")
+      .doc(seasonID);
+    const userStateRef = db
+      .collection("users")
+      .doc(uid)
+      .collection("seasonStates")
+      .doc(seasonStateDocumentID(brandID, seasonID));
+
+    return await db.runTransaction(async (transaction) => {
+      const seasonSnap = await transaction.get(seasonRef);
+      if (!seasonSnap.exists) {
+        throw new HttpsError("not-found", "시즌을 찾을 수 없습니다.");
+      }
+
+      const stateSnap = await transaction.get(userStateRef);
+      const currentLiked = stateSnap.exists;
+      const currentLikeCount = numericRootValue(seasonSnap.data(), "likeCount");
+      const likeDelta =
+        currentLiked === isLiked ? 0 :
+          isLiked ? 1 : -1;
+      const nextLikeCount = Math.max(0, currentLikeCount + likeDelta);
+      const now = FieldValue.serverTimestamp();
+
+      if (likeDelta !== 0) {
+        transaction.update(seasonRef, {
+          likeCount: nextLikeCount,
+          updatedAt: now,
+        });
+      }
+
+      if (isLiked) {
+        transaction.set(userStateRef, {
+          brandID,
+          seasonID,
+          seasonPath: seasonRef.path,
+          userID: uid,
+          isLiked,
+          likedAt: now,
+          updatedAt: now,
+        }, {merge: true});
+      } else if (stateSnap.exists) {
+        transaction.delete(userStateRef);
+      }
+
+      return {
+        brandID,
+        seasonID,
+        userID: uid,
+        isLiked,
+        likeCount: nextLikeCount,
       };
     });
   }

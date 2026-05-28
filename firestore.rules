@@ -86,6 +86,11 @@ service cloud.firestore {
         allow create, update, delete: if false;
       }
 
+      match /seasonStates/{stateID} {
+        allow read: if signedIn() && request.auth.uid == userID;
+        allow create, update, delete: if false;
+      }
+
       match /commentStates/{stateID} {
         allow read: if signedIn() && request.auth.uid == userID;
         allow create, update, delete: if false;
