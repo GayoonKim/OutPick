@@ -43,7 +43,14 @@ struct SeasonDetailView: View {
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 24) {
                         if let season = viewModel.season {
-                            SeasonDetailHeaderCardView(season: season)
+                            SeasonDetailHeaderCardView(
+                                season: season,
+                                isLiked: viewModel.seasonUserState?.isLiked ?? false,
+                                isMutatingLike: viewModel.isMutatingLike,
+                                onLikeTap: {
+                                    await viewModel.toggleSeasonLike()
+                                }
+                            )
                         }
 
                         if let errorMessage = viewModel.errorMessage, viewModel.posts.isEmpty {
@@ -94,6 +101,9 @@ struct SeasonDetailView: View {
         }
         .refreshable {
             await viewModel.refresh()
+        }
+        .appToast(message: viewModel.engagementErrorMessage) {
+            viewModel.clearEngagementError()
         }
     }
 

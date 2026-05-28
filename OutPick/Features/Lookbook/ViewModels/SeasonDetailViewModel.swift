@@ -10,10 +10,13 @@ import Foundation
 @MainActor
 final class SeasonDetailViewModel: ObservableObject {
     @Published private(set) var season: Season?
+    @Published private(set) var seasonUserState: SeasonUserState?
     @Published private(set) var posts: [LookbookPost] = []
     @Published private(set) var visibleCommentCounts: [PostID: Int] = [:]
     @Published private(set) var isLoading: Bool = false
+    @Published private(set) var isMutatingLike: Bool = false
     @Published private(set) var errorMessage: String?
+    @Published private(set) var engagementErrorMessage: String?
 
     private let initialPrefetchCount: Int
     private let lookAheadPrefetchCount: Int
@@ -21,8 +24,11 @@ final class SeasonDetailViewModel: ObservableObject {
     private let brandID: BrandID
     private let seasonID: SeasonID
     private let useCase: any LoadSeasonDetailUseCaseProtocol
+    private let seasonUserStateRepository: any SeasonUserStateRepositoryProtocol
+    private let seasonEngagementRepository: any SeasonEngagementRepositoryProtocol
     private let brandImageCache: any BrandImageCacheProtocol
     private let postInteractionStore: any PostInteractionManaging
+    private let currentUserIDProvider: any CurrentUserIDProviding
     private let maxBytes: Int
 
     private var loadedKey: String?
@@ -37,8 +43,11 @@ final class SeasonDetailViewModel: ObservableObject {
         brandID: BrandID,
         seasonID: SeasonID,
         useCase: any LoadSeasonDetailUseCaseProtocol,
+        seasonUserStateRepository: any SeasonUserStateRepositoryProtocol,
+        seasonEngagementRepository: any SeasonEngagementRepositoryProtocol,
         brandImageCache: any BrandImageCacheProtocol,
         postInteractionStore: any PostInteractionManaging,
+        currentUserIDProvider: any CurrentUserIDProviding,
         maxBytes: Int,
         initialPrefetchCount: Int = 8,
         lookAheadPrefetchCount: Int = 20,
@@ -47,8 +56,11 @@ final class SeasonDetailViewModel: ObservableObject {
         self.brandID = brandID
         self.seasonID = seasonID
         self.useCase = useCase
+        self.seasonUserStateRepository = seasonUserStateRepository
+        self.seasonEngagementRepository = seasonEngagementRepository
         self.brandImageCache = brandImageCache
         self.postInteractionStore = postInteractionStore
+        self.currentUserIDProvider = currentUserIDProvider
         self.maxBytes = maxBytes
         self.initialPrefetchCount = initialPrefetchCount
         self.lookAheadPrefetchCount = lookAheadPrefetchCount
@@ -70,6 +82,50 @@ final class SeasonDetailViewModel: ObservableObject {
         await load()
     }
 
+    func toggleSeasonLike() async {
+        guard let userID = currentUserIDProvider.currentUserID else {
+            engagementErrorMessage = "로그인이 필요합니다."
+            return
+        }
+        guard var currentSeason = season, isMutatingLike == false else { return }
+
+        let previousSeason = currentSeason
+        let previousUserState = seasonUserState
+        let targetLiked = !(previousUserState?.isLiked ?? false)
+        let delta = targetLiked ? 1 : -1
+
+        engagementErrorMessage = nil
+        isMutatingLike = true
+        currentSeason.likeCount = max(0, currentSeason.likeCount + delta)
+        season = currentSeason
+        seasonUserState = SeasonUserState(
+            brandID: brandID,
+            seasonID: seasonID,
+            userID: userID,
+            isLiked: targetLiked,
+            updatedAt: Date()
+        )
+
+        do {
+            let result = try await seasonEngagementRepository.setLike(
+                brandID: brandID,
+                seasonID: seasonID,
+                isLiked: targetLiked
+            )
+            applySeasonEngagementResult(result)
+        } catch {
+            season = previousSeason
+            seasonUserState = previousUserState
+            engagementErrorMessage = "좋아요를 반영하지 못했어요."
+        }
+
+        isMutatingLike = false
+    }
+
+    func clearEngagementError() {
+        engagementErrorMessage = nil
+    }
+
     private func load() async {
         if isRequesting { return }
         isRequesting = true
@@ -85,6 +141,7 @@ final class SeasonDetailViewModel: ObservableObject {
                 brandID: brandID,
                 seasonID: seasonID
             )
+            let userState = await fetchSeasonUserStateIfPossible()
             prefetchedPostImagePaths.removeAll()
             prefetchedThroughIndex = -1
             let initialTargets = makePrefetchTargets(
@@ -102,6 +159,7 @@ final class SeasonDetailViewModel: ObservableObject {
                 max(initialPrefetchCount - 1, -1)
             )
             season = content.season
+            seasonUserState = userState
             posts = content.posts
             content.posts.forEach { postInteractionStore.seedPostMetrics($0) }
             let loadedPostIDs = Set(content.posts.map(\.id))
@@ -110,6 +168,7 @@ final class SeasonDetailViewModel: ObservableObject {
             loadedKey = "\(brandID.value)|\(seasonID.value)"
         } catch {
             season = nil
+            seasonUserState = nil
             posts = []
             updatePinnedPostIDs([])
             bindInteractionStore(postIDs: [])
@@ -117,6 +176,34 @@ final class SeasonDetailViewModel: ObservableObject {
             prefetchedPostImagePaths.removeAll()
             prefetchedThroughIndex = -1
         }
+    }
+
+    private func fetchSeasonUserStateIfPossible() async -> SeasonUserState? {
+        guard let userID = currentUserIDProvider.currentUserID else { return nil }
+        do {
+            return try await seasonUserStateRepository.fetchSeasonUserState(
+                userID: userID,
+                brandID: brandID,
+                seasonID: seasonID
+            )
+        } catch {
+            return nil
+        }
+    }
+
+    private func applySeasonEngagementResult(_ result: SeasonEngagementResult) {
+        if var currentSeason = season {
+            currentSeason.likeCount = result.likeCount
+            season = currentSeason
+        }
+
+        seasonUserState = SeasonUserState(
+            brandID: result.brandID,
+            seasonID: result.seasonID,
+            userID: result.userID,
+            isLiked: result.isLiked,
+            updatedAt: Date()
+        )
     }
 
     func prefetchInitialPostImagesIfNeeded() {
