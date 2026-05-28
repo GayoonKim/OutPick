@@ -100,6 +100,34 @@ struct LookbookInteractionStoreTests {
             receivedBrandIDs == [includedBrandID]
         }
         #expect(store.brandState(for: includedBrandID)?.metrics.likeCount == 2)
+        #expect(store.brandState(for: includedBrandID)?.brand.metrics.likeCount == 2)
+        task.cancel()
+    }
+
+    @MainActor
+    @Test func allBrandStateInvalidationStreamPublishesAnyChangedBrand() async throws {
+        let brandID = BrandID(value: "brand-1")
+        let store = LookbookInteractionStore(
+            maxPostStateCount: 10,
+            maxCommentStateCount: 10,
+            maxBrandStateCount: 10,
+            stateRetentionInterval: 60
+        )
+        var receivedBrandIDs: [BrandID] = []
+
+        let task = Task { @MainActor in
+            for await changedBrandID in store.allBrandStateInvalidationStream() {
+                receivedBrandIDs.append(changedBrandID)
+                break
+            }
+        }
+
+        await Task.yield()
+        store.seedBrand(makeBrand(id: brandID, likeCount: 2), userState: nil)
+
+        try await waitUntil {
+            receivedBrandIDs == [brandID]
+        }
         task.cancel()
     }
 
@@ -139,6 +167,7 @@ struct LookbookInteractionStoreTests {
         )
 
         #expect(store.brandState(for: brand.id)?.metrics.likeCount == 4)
+        #expect(store.brandState(for: brand.id)?.brand.metrics.likeCount == 4)
         #expect(store.brandState(for: brand.id)?.userState?.isLiked == true)
 
         store.setBrandLikeMutationState(
@@ -158,6 +187,7 @@ struct LookbookInteractionStoreTests {
         )
 
         #expect(store.brandState(for: brand.id)?.metrics.likeCount == 5)
+        #expect(store.brandState(for: brand.id)?.brand.metrics.likeCount == 5)
         #expect(store.brandState(for: brand.id)?.userState?.isLiked == true)
         #expect(store.brandState(for: brand.id)?.isMutatingLike == true)
 
@@ -176,6 +206,7 @@ struct LookbookInteractionStoreTests {
         )
 
         #expect(store.brandState(for: brand.id)?.metrics.likeCount == 3)
+        #expect(store.brandState(for: brand.id)?.brand.metrics.likeCount == 3)
         #expect(store.brandState(for: brand.id)?.userState?.isLiked == false)
     }
 

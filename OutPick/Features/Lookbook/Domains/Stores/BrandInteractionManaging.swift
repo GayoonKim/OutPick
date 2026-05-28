@@ -9,6 +9,7 @@ import Foundation
 
 struct BrandInteractionState: Equatable {
     let brandID: BrandID
+    var brand: Brand
     var metrics: BrandMetrics
     var userState: BrandUserState?
     var isMutatingLike: Bool
@@ -19,6 +20,7 @@ struct BrandInteractionState: Equatable {
 protocol BrandInteractionManaging: AnyObject {
     func brandState(for brandID: BrandID) -> BrandInteractionState?
     func brandStateInvalidationStream(for brandIDs: Set<BrandID>) -> AsyncStream<BrandID>
+    func allBrandStateInvalidationStream() -> AsyncStream<BrandID>
     func seedBrand(_ brand: Brand, userState: BrandUserState?)
     func applyOptimisticBrandLike(
         brandID: BrandID,

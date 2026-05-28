@@ -35,6 +35,7 @@ struct BrandInteractionStore {
         cache.set(
             BrandInteractionState(
                 brandID: brand.id,
+                brand: brand,
                 metrics: brand.metrics,
                 userState: userState,
                 isMutatingLike: false,
@@ -60,6 +61,7 @@ struct BrandInteractionStore {
                 viewCount: state.metrics.viewCount,
                 popularScore: state.metrics.popularScore
             )
+            state.brand = state.brand.updatingMetrics(state.metrics)
             state.userState = BrandUserState(
                 brandID: brandID,
                 userID: userID,
@@ -87,6 +89,7 @@ struct BrandInteractionStore {
                 viewCount: state.metrics.viewCount,
                 popularScore: state.metrics.popularScore
             )
+            state.brand = state.brand.updatingMetrics(state.metrics)
             state.userState = BrandUserState(
                 brandID: result.brandID,
                 userID: result.userID,
@@ -110,6 +113,7 @@ struct BrandInteractionStore {
                     viewCount: state.metrics.viewCount,
                     popularScore: state.metrics.popularScore
                 )
+                state.brand = state.brand.updatingMetrics(state.metrics)
             }
             state.userState = BrandUserState(
                 brandID: brandID,
@@ -119,5 +123,26 @@ struct BrandInteractionStore {
             )
             state.updatedAt = Date()
         }
+    }
+}
+
+private extension Brand {
+    func updatingMetrics(_ metrics: BrandMetrics) -> Brand {
+        Brand(
+            id: id,
+            name: name,
+            websiteURL: websiteURL,
+            lookbookArchiveURL: lookbookArchiveURL,
+            logoThumbPath: logoThumbPath,
+            logoDetailPath: logoDetailPath,
+            logoOriginalPath: logoOriginalPath,
+            isFeatured: isFeatured,
+            discoveryStatus: discoveryStatus,
+            lastDiscoveryErrorMessage: lastDiscoveryErrorMessage,
+            lastDiscoveryRequestedAt: lastDiscoveryRequestedAt,
+            lastDiscoveryCompletedAt: lastDiscoveryCompletedAt,
+            metrics: metrics,
+            updatedAt: updatedAt
+        )
     }
 }
