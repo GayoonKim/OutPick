@@ -106,6 +106,11 @@ struct SeasonDetailViewModelTests {
         engagementRepository: SeasonEngagementRepositorySpy? = nil
     ) -> SeasonDetailViewModel {
         let engagementRepository = engagementRepository ?? SeasonEngagementRepositorySpy()
+        let interactionStore = LookbookInteractionStore(
+            maxPostStateCount: 10,
+            maxCommentStateCount: 10,
+            stateRetentionInterval: 60
+        )
         return SeasonDetailViewModel(
             brandID: brandID,
             seasonID: seasonID,
@@ -114,12 +119,9 @@ struct SeasonDetailViewModelTests {
             ),
             seasonUserStateRepository: SeasonUserStateRepositoryStub(state: userState),
             seasonEngagementRepository: engagementRepository,
+            seasonInteractionStore: interactionStore,
             brandImageCache: SeasonDetailBrandImageCacheStub(),
-            postInteractionStore: LookbookInteractionStore(
-                maxPostStateCount: 10,
-                maxCommentStateCount: 10,
-                stateRetentionInterval: 60
-            ),
+            postInteractionStore: interactionStore,
             currentUserIDProvider: SeasonDetailCurrentUserIDProviderStub(userID: userID),
             maxBytes: 1_500_000
         )

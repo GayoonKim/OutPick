@@ -26,6 +26,7 @@ final class SeasonDetailViewModel: ObservableObject {
     private let useCase: any LoadSeasonDetailUseCaseProtocol
     private let seasonUserStateRepository: any SeasonUserStateRepositoryProtocol
     private let seasonEngagementRepository: any SeasonEngagementRepositoryProtocol
+    private let seasonInteractionStore: any SeasonInteractionManaging
     private let brandImageCache: any BrandImageCacheProtocol
     private let postInteractionStore: any PostInteractionManaging
     private let currentUserIDProvider: any CurrentUserIDProviding
@@ -45,6 +46,7 @@ final class SeasonDetailViewModel: ObservableObject {
         useCase: any LoadSeasonDetailUseCaseProtocol,
         seasonUserStateRepository: any SeasonUserStateRepositoryProtocol,
         seasonEngagementRepository: any SeasonEngagementRepositoryProtocol,
+        seasonInteractionStore: any SeasonInteractionManaging,
         brandImageCache: any BrandImageCacheProtocol,
         postInteractionStore: any PostInteractionManaging,
         currentUserIDProvider: any CurrentUserIDProviding,
@@ -58,6 +60,7 @@ final class SeasonDetailViewModel: ObservableObject {
         self.useCase = useCase
         self.seasonUserStateRepository = seasonUserStateRepository
         self.seasonEngagementRepository = seasonEngagementRepository
+        self.seasonInteractionStore = seasonInteractionStore
         self.brandImageCache = brandImageCache
         self.postInteractionStore = postInteractionStore
         self.currentUserIDProvider = currentUserIDProvider
@@ -93,6 +96,7 @@ final class SeasonDetailViewModel: ObservableObject {
         let previousUserState = seasonUserState
         let targetLiked = !(previousUserState?.isLiked ?? false)
         let delta = targetLiked ? 1 : -1
+        let key = SeasonInteractionKey(brandID: brandID, seasonID: seasonID)
 
         engagementErrorMessage = nil
         isMutatingLike = true
@@ -105,6 +109,17 @@ final class SeasonDetailViewModel: ObservableObject {
             isLiked: targetLiked,
             updatedAt: Date()
         )
+        seasonInteractionStore.applyOptimisticSeasonLike(
+            season: previousSeason,
+            userID: userID,
+            isLiked: targetLiked,
+            baseLiked: previousUserState?.isLiked ?? false,
+            baseLikeCount: previousSeason.likeCount
+        )
+        seasonInteractionStore.setSeasonLikeMutationState(
+            key: key,
+            isMutating: true
+        )
 
         do {
             let result = try await seasonEngagementRepository.setLike(
@@ -112,13 +127,24 @@ final class SeasonDetailViewModel: ObservableObject {
                 seasonID: seasonID,
                 isLiked: targetLiked
             )
+            seasonInteractionStore.applySeasonLikeResult(result)
             applySeasonEngagementResult(result)
         } catch {
             season = previousSeason
             seasonUserState = previousUserState
+            seasonInteractionStore.restoreSeasonLike(
+                season: previousSeason,
+                userID: userID,
+                isLiked: previousUserState?.isLiked ?? false,
+                likeCount: previousSeason.likeCount
+            )
             engagementErrorMessage = "좋아요를 반영하지 못했어요."
         }
 
+        seasonInteractionStore.setSeasonLikeMutationState(
+            key: key,
+            isMutating: false
+        )
         isMutatingLike = false
     }
 
@@ -160,6 +186,7 @@ final class SeasonDetailViewModel: ObservableObject {
             )
             season = content.season
             seasonUserState = userState
+            seasonInteractionStore.seedSeason(content.season, userState: userState)
             posts = content.posts
             content.posts.forEach { postInteractionStore.seedPostMetrics($0) }
             let loadedPostIDs = Set(content.posts.map(\.id))
