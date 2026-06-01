@@ -11,7 +11,135 @@ OutPick의 화면 구성과 화면별 책임을 AI 에이전트가 빠르게 확
 - 화면 이동이 2단계 이상 이어지거나 modal/sheet/push 정책이 섞이면 Coordinator 책임을 먼저 검토한다.
 - 화면별 상세 구현은 관련 `View`, `ViewModel`, `Coordinator`, `Container` 진입점을 함께 기록한다.
 
-## 현재 상태
+## 앱/루트 화면
 
-- 확실하지 않음: 전체 화면 목록은 아직 완성 정리되지 않았다.
-- 기능별 화면 명세는 `docs/ai/features/` 또는 `docs/ai/tasks/`에서 먼저 작성한 뒤, 안정화된 내용만 이 문서에 반영한다.
+### Boot Loading
+
+- 파일: `OutPick/Features/Login/Presentation/BootLoadingViewController.swift`
+- 책임: 앱 시작 후 로그인/프로필/메인 탭 라우팅 전 임시 로딩 화면을 제공한다.
+- 진입: `AppCoordinator.start`, `AppCoordinator.routeAfterAuthenticated`
+
+### Login
+
+- 파일: `OutPick/Features/Login/Presentation/LoginViewController.swift`
+- ViewModel: `OutPick/Features/Login/Presentation/LoginViewModel.swift`
+- 조립: `OutPick/Features/Login/Presentation/LoginCompositionRoot.swift`
+- 책임: 소셜 로그인 진입과 로그인 성공 callback 전달.
+
+### Main Tab
+
+- 파일: `OutPick/App/TabBarController/MainTab/CustomTabBarViewController.swift`
+- 조립: `OutPick/App/TabBarController/Composition/MainTabCompositionRoot.swift`
+- 탭 builder: `OutPick/App/TabBarController/Composition/DefaultMainTabBuilder.swift`
+- 현재 탭: 채팅 목록, 참여 채팅방, 룩북, 좋아요, 마이페이지.
+
+## Profile 화면
+
+### First/Second Profile
+
+- 파일: `OutPick/Features/Profile/Views/FirstProfileViewController.swift`
+- 파일: `OutPick/Features/Profile/Views/SecondProfileViewController.swift`
+- ViewModel: `FirstProfileViewModel`, `SecondProfileViewModel`
+- Coordinator: `ProfileCoordinator`
+- 책임: 프로필 생성/완성 흐름.
+
+### User Profile Detail
+
+- 파일: `OutPick/Features/Profile/Views/UserProfileDetailViewController.swift`
+- ViewModel: `UserProfileDetailViewModel`
+- Coordinator: `UserProfileDetailCoordinator`
+- 책임: 사용자 프로필 상세 표시.
+
+## Chat 화면
+
+### Room Lists
+
+- 파일: `OutPick/Features/Chat/Controllers/RoomListsCollectionViewController.swift`
+- ViewModel: `RoomListsViewModel`
+- 조립: `ChatCompositionRoot.makeRoomListRoot`
+- 책임: 채팅방 목록 표시와 방 진입.
+
+### Joined Rooms
+
+- 파일: `OutPick/Features/Chat/Controllers/JoinedRoomsViewController.swift`
+- ViewModel: `JoinedRoomsViewModel`
+- 조립: `ChatCompositionRoot.makeJoinedRoomsRoot`
+- 책임: 참여 중인 채팅방 목록 표시.
+
+### Chat Room
+
+- 파일: `OutPick/Features/Chat/Controllers/ChatViewController.swift`
+- ViewModel: `ChatRoomViewModel`
+- Coordinator: `ChatCoordinator`
+- 책임: 채팅 메시지, 첨부, 답장, 미디어 흐름.
+
+### Chat Supporting Screens
+
+- 방 생성: `RoomCreateViewController`, `RoomCreateViewModel`
+- 방 편집: `RoomEditViewController`, `RoomEditViewModel`
+- 방 검색: `RoomSearchViewController`, `RoomSearchViewModel`
+- 방 설정: `ChatRoomSettingViewController`, `ChatRoomSettingViewModel`
+- 미디어 갤러리: `MediaGalleryViewController`
+
+## Lookbook 화면
+
+### Lookbook Home
+
+- 파일: `OutPick/Features/Lookbook/Views/LookbookHome/LookbookHomeView.swift`
+- ViewModel: `LookbookHomeViewModel`
+- 조립: `LookbookCompositionRoot.makeRoot`
+- Coordinator: `LookbookCoordinator`
+- 책임: 룩북 홈과 브랜드 목록 진입.
+
+### Brand Detail
+
+- 파일: `OutPick/Features/Lookbook/Views/BrandDetail/BrandDetailView.swift`
+- ViewModel: `BrandDetailViewModel`
+- factory: `LookbookContainer.makeBrandDetailView`
+- 책임: 브랜드 상세, 시즌 목록, 브랜드 좋아요 상태 표시/변경.
+
+### Season Detail
+
+- 파일: `OutPick/Features/Lookbook/Views/SeasonDetail/SeasonDetailView.swift`
+- ViewModel: `SeasonDetailViewModel`
+- factory: `LookbookContainer.makeSeasonDetailView`
+- 책임: 시즌 상세, 시즌 좋아요 상태 표시/변경, 시즌 내 포스트 탐색.
+
+### Post Detail and Comments
+
+- 파일: `OutPick/Features/Lookbook/Views/PostDetail/PostDetailView.swift`
+- ViewModel: `PostDetailViewModel`
+- 댓글 ViewModel: `PostCommentsViewModel`, `PostCommentRepliesViewModel`
+- Coordinator: `LookbookCoordinator`, `PostCommentCoordinator`
+- 책임: 포스트 상세, 댓글/대댓글, 신고, 삭제, 차단, 상호작용.
+
+### Create Brand/Season
+
+- 폴더: `OutPick/Features/Lookbook/Views/CreateBrand`
+- ViewModels: `CreateBrandViewModel`, `CreateSeasonViewModel`, `CreateSeasonFromURLViewModel`
+- 책임: 브랜드 생성, 시즌 생성, URL 기반 시즌 생성/가져오기.
+
+### Liked
+
+- 파일: `OutPick/Features/Lookbook/Views/Liked/LikedView.swift`
+- ViewModel: `LikedViewModel`
+- 조립: `LookbookCompositionRoot.makeLikedRoot`
+- factory: `LookbookContainer.makeLikedView`
+- 책임: 좋아요 브랜드/시즌/포스트 섹션 표시.
+- 현재 목표: 섹션별 독립 상태와 부분 실패 처리를 지원한다.
+
+## MyPage 화면
+
+- 파일: `OutPick/Features/MyPage/MyPageController/MyPageViewController.swift`
+- 진입: `DefaultMainTabBuilder` index 4
+- 확실하지 않음: 상세 화면 책임과 하위 흐름은 아직 이 문서에 정리되지 않았다.
+
+## 새 화면 추가 기준
+
+새 화면을 추가하기 전에 아래를 확인한다.
+
+- 기존 탭/Coordinator/Container factory에 붙일 수 있는가?
+- View가 직접 Repository, UseCase, Firebase, Cloud Functions, Firestore SDK를 생성하지 않는가?
+- 화면 이동 책임이 Coordinator에 있는가?
+- 요청 범위 밖 화면이 추가되지 않았는가?
+- 완료 기준과 수동 QA 기준이 명확한가?
