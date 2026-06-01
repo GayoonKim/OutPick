@@ -1,42 +1,42 @@
 //
-//  Untitled.swift
+//  LikedBrandRowView.swift
 //  OutPick
 //
-//  Created by 김가윤 on 5/27/26.
+//  Created by Codex on 5/26/26.
 //
 
 import SwiftUI
 
-struct LikedSeasonCardView: View {
-    let item: LikedSeasonListItem
+struct LikedBrandCardView: View {
+    let item: LikedBrandListItem
     let brandImageCache: any BrandImageCacheProtocol
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             LookbookAssetImageView(
-                primaryPath: item.season.coverThumbPath,
-                secondaryPath: item.season.coverPath,
-                remoteURL: item.season.coverRemoteURL.flatMap(URL.init(string:)),
+                primaryPath: item.brand.logoThumbPath,
+                secondaryPath: item.brand.logoDetailPath ?? item.brand.logoOriginalPath,
+                remoteURL: nil,
                 sourcePageURL: nil,
                 brandImageCache: brandImageCache,
                 maxBytes: 1 * 1024 * 1024
             )
-            .frame(width: 132, height: 176)
+            .frame(width: 132, height: 132)
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .background(
                 RoundedRectangle(cornerRadius: 10)
                     .fill(Color(.secondarySystemBackground))
             )
 
-            Text(item.season.title)
+            Text(item.brand.name)
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(.primary)
-                .lineLimit(2)
+                .lineLimit(1)
 
             HStack(spacing: 4) {
                 Image(systemName: "heart.fill")
                     .imageScale(.small)
-                Text("\(item.season.likeCount)")
+                Text("\(item.brand.metrics.likeCount)")
                     .monospacedDigit()
             }
             .font(.caption)
@@ -44,6 +44,6 @@ struct LikedSeasonCardView: View {
         }
         .frame(width: 132, alignment: .leading)
         .contentShape(Rectangle())
-        .accessibilityIdentifier("lookbook.likedSeason.card")
+        .accessibilityIdentifier("lookbook.likedBrand.card")
     }
 }
