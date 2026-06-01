@@ -49,12 +49,11 @@ final class LikedViewModel: ObservableObject {
 
     private var lastBrandDocument: DocumentSnapshot?
     private var lastSeasonDocument: DocumentSnapshot?
-    private var isLoadingInitial = false
+    private var initialLoadGate = AsyncLoadGate()
     private var isLoadingNextBrands = false
     private var isLoadingNextSeasons = false
     private var canLoadMoreBrands = true
     private var canLoadMoreSeasons = true
-    private var didLoadInitial = false
     private var brandInvalidationTask: Task<Void, Never>?
     private var seasonInvalidationTask: Task<Void, Never>?
 
@@ -82,7 +81,7 @@ final class LikedViewModel: ObservableObject {
     }
 
     func refreshForActivation() async {
-        if didLoadInitial {
+        if initialLoadGate.canUseCachedResult {
             applyStoredBrandStates()
             applyStoredSeasonStates()
             updateAggregatePhase()
@@ -92,19 +91,31 @@ final class LikedViewModel: ObservableObject {
     }
 
     func loadInitialIfNeeded() async {
-        guard didLoadInitial == false else { return }
-        await reload()
+        guard initialLoadGate.beginIfNeeded() else { return }
+        var didComplete = false
+        defer { initialLoadGate.finish(didComplete: didComplete) }
+
+        didComplete = await loadLikedContent(
+            showsLoading: true,
+            clearsItemsOnFailure: true
+        )
     }
 
     func reload() async {
-        await loadLikedContent(showsLoading: true, clearsItemsOnFailure: true)
+        guard initialLoadGate.begin() else { return }
+        var didComplete = false
+        defer { initialLoadGate.finish(didComplete: didComplete) }
+
+        didComplete = await loadLikedContent(
+            showsLoading: true,
+            clearsItemsOnFailure: true
+        )
     }
 
     private func loadLikedContent(
         showsLoading: Bool,
         clearsItemsOnFailure: Bool
-    ) async {
-        guard isLoadingInitial == false else { return }
+    ) async -> Bool {
         guard let userID = currentUserIDProvider.currentUserID else {
             phase = .failed("로그인이 필요합니다.")
             brandSection = SectionState(
@@ -115,11 +126,8 @@ final class LikedViewModel: ObservableObject {
                 phase: .failed("로그인이 필요합니다."),
                 items: []
             )
-            return
+            return false
         }
-
-        isLoadingInitial = true
-        defer { isLoadingInitial = false }
 
         if showsLoading {
             phase = .loading
@@ -143,8 +151,8 @@ final class LikedViewModel: ObservableObject {
             seasonResult,
             clearsItemsOnFailure: clearsItemsOnFailure
         )
-        didLoadInitial = true
         updateAggregatePhase()
+        return true
     }
 
     func loadNextBrandPageIfNeeded(current item: LikedBrandListItem) async {
