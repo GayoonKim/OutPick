@@ -116,6 +116,10 @@ CompositionRoot
 
 - 단위 테스트는 `OutPickTests`, UI 테스트는 `OutPickUITests`를 기준으로 한다.
 - 테스트 코드를 작성했더라도 매번 자동 실행하지 않는다. 변경 위험도와 사용자 요청에 따라 실행 여부를 정한다.
+- 앱 실행으로 쉽게 확인 가능한 단순 happy path UI는 자동 테스트를 과하게 작성하지 않고 수동 QA를 우선한다.
+- 서버 실패, 빈 응답, 권한 실패, 일부 API 실패, 비동기, 중복 호출, 캐시, pagination, 상태 전이처럼 사용자가 직접 제어하거나 재현하기 어려운 케이스는 자동 테스트를 우선한다.
+- 실제 Firebase 상태를 제어하기 어려운 테스트는 Firebase SDK에 직접 의존하지 않고 fake repository, fake use case, spy 기반으로 검증한다.
+- 화면의 시각적 완성도, 터치 흐름, 스크롤, navigation 감각, 실제 기기 실행은 수동 QA 체크리스트로 검증한다.
 - 인증, 결제, 데이터 삭제, 보안 규칙, 배포 전 검증처럼 실패 비용이 큰 변경은 실행 검증을 우선한다.
 - Firebase Functions 변경은 lint/build 후 배포 흐름을 확인한다.
 - Firestore rules/indexes 변경은 관련 workflow와 배포 대상을 확인한다.
