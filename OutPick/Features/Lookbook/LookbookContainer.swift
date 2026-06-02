@@ -201,8 +201,16 @@ final class LookbookContainer {
                 seasonUserStateRepository: provider.seasonUserStateRepository,
                 seasonRepository: provider.seasonRepository
             ),
+            likedPostsUseCase: LoadLikedPostsUseCase(
+                postUserStateRepository: provider.postUserStateRepository,
+                postRepository: provider.postRepository
+            ),
+            brandEngagementRepository: provider.brandEngagementRepository,
+            seasonEngagementRepository: provider.seasonEngagementRepository,
+            postEngagementRepository: provider.postEngagementRepository,
             brandInteractionStore: interactionStore,
             seasonInteractionStore: interactionStore,
+            postInteractionStore: interactionStore,
             currentUserIDProvider: currentUserIDProvider,
             brandImageCache: provider.brandImageCache
         )

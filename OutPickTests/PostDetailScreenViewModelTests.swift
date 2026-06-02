@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import FirebaseFirestore
 import Testing
 @testable import OutPick
 
@@ -184,6 +185,14 @@ private struct EmptyPostUserStateRepository: PostUserStateRepositoryProtocol {
         postID: PostID
     ) async throws -> PostUserState? {
         nil
+    }
+
+    func fetchLikedPostUserStates(
+        userID: UserID,
+        limit: Int,
+        after last: DocumentSnapshot?
+    ) async throws -> PostUserStatePage {
+        PostUserStatePage(items: [], last: nil)
     }
 }
 

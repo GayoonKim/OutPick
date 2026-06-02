@@ -6,6 +6,12 @@
 //
 
 import Foundation
+import FirebaseFirestore
+
+struct PostUserStatePage {
+    let items: [PostUserState]
+    let last: DocumentSnapshot?
+}
 
 protocol PostUserStateRepositoryProtocol {
     func fetchPostUserState(
@@ -14,4 +20,10 @@ protocol PostUserStateRepositoryProtocol {
         seasonID: SeasonID,
         postID: PostID
     ) async throws -> PostUserState?
+
+    func fetchLikedPostUserStates(
+        userID: UserID,
+        limit: Int,
+        after last: DocumentSnapshot?
+    ) async throws -> PostUserStatePage
 }

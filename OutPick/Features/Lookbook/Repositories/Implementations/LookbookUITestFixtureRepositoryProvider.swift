@@ -519,7 +519,23 @@ private final class LookbookUITestFixtureStore:
         seasonID: SeasonID,
         postID: PostID
     ) async throws -> PostUserState? {
-        PostUserState(postID: postID, userID: userID, isLiked: false, isSaved: false, updatedAt: now)
+        PostUserState(
+            brandID: brandID,
+            seasonID: seasonID,
+            postID: postID,
+            userID: userID,
+            isLiked: false,
+            isSaved: false,
+            updatedAt: now
+        )
+    }
+
+    func fetchLikedPostUserStates(
+        userID: UserID,
+        limit: Int,
+        after last: DocumentSnapshot?
+    ) async throws -> PostUserStatePage {
+        PostUserStatePage(items: [], last: nil)
     }
 
     func fetchBrandUserState(

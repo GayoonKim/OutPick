@@ -37,7 +37,37 @@ final class FirestorePostUserStateRepository: PostUserStateRepositoryProtocol {
 
         let dto: PostUserStateDTO = try FirestoreMapper.mapDocument(doc)
         /// 경로에서 주입(권장)
-        return dto.toDomain(postID: postID, userID: userID)
+        return dto.toDomain(
+            brandID: brandID,
+            seasonID: seasonID,
+            postID: postID,
+            userID: userID
+        )
+    }
+
+    func fetchLikedPostUserStates(
+        userID: UserID,
+        limit: Int,
+        after last: DocumentSnapshot?
+    ) async throws -> PostUserStatePage {
+        var query: Query = db
+            .collection("users")
+            .document(userID.value)
+            .collection("postStates")
+            .order(by: "likedAt", descending: true)
+            .limit(to: limit)
+
+        if let last {
+            query = query.start(afterDocument: last)
+        }
+
+        let snap = try await query.getDocuments()
+        let items = try snap.documents.map { document in
+            let dto: PostUserStateDTO = try FirestoreMapper.mapDocument(document)
+            return try dto.toLikedDomain(userID: userID)
+        }
+
+        return PostUserStatePage(items: items, last: snap.documents.last)
     }
 
     private static func postStateDocumentID(

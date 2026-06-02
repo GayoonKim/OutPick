@@ -12,8 +12,13 @@ struct LikedView: View {
     @EnvironmentObject private var brandAdminSessionStore: BrandAdminSessionStore
     @State private var selectedBrandID: BrandID?
     @State private var selectedSeasonID: String?
+    @State private var selectedPostID: String?
 
     private let coordinator: LookbookCoordinator
+    private let postColumns: [GridItem] = [
+        GridItem(.flexible(), spacing: 10),
+        GridItem(.flexible(), spacing: 10)
+    ]
 
     init(
         viewModel: LikedViewModel,
@@ -34,6 +39,9 @@ struct LikedView: View {
                 .refreshable {
                     await viewModel.reload()
                 }
+                .appToast(message: viewModel.engagementErrorMessage) {
+                    viewModel.clearEngagementError()
+                }
         }
         .navigationViewStyle(StackNavigationViewStyle())
         .tint(.black)
@@ -44,7 +52,7 @@ struct LikedView: View {
             LazyVStack(alignment: .leading, spacing: 28) {
                 likedBrandSection
                 likedSeasonSection
-                likedEmptySection(title: "좋아요 포스트", emptyText: "좋아요한 포스트가 없습니다.")
+                likedPostSection
             }
             .padding(.vertical, 18)
         }
@@ -105,29 +113,62 @@ struct LikedView: View {
         }
     }
 
+    @ViewBuilder
+    private var likedPostSection: some View {
+        LikedContentSectionHeader(title: "좋아요 포스트", count: viewModel.postItems.count)
+            .padding(.horizontal, 20)
+
+        switch viewModel.postSection.phase {
+        case .idle, .loading:
+            if viewModel.postItems.isEmpty {
+                LikedSectionStatusRow(text: "좋아요한 포스트를 불러오는 중...", showsProgress: true)
+                    .padding(.horizontal, 20)
+            } else {
+                likedPostGrid
+            }
+
+        case .empty:
+            LikedSectionStatusRow(text: "좋아요한 포스트가 없습니다.")
+                .padding(.horizontal, 20)
+
+        case .failed(let message):
+            LikedSectionStatusRow(text: message)
+                .padding(.horizontal, 20)
+
+        case .ready:
+            likedPostGrid
+        }
+    }
+
     private var likedBrandCards: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             LazyHStack(alignment: .top, spacing: 14) {
                 ForEach(viewModel.brandItems) { item in
-                    Button {
-                        selectedBrandID = item.id
-                    } label: {
-                        LikedBrandCardView(
-                            item: item,
-                            brandImageCache: viewModel.brandImageCache
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .background {
-                        NavigationLink(
-                            destination: coordinator.makeBrandDetailView(brand: item.brand)
-                                .environmentObject(brandAdminSessionStore),
-                            tag: item.id,
-                            selection: $selectedBrandID
-                        ) {
-                            EmptyView()
+                    ZStack(alignment: .topTrailing) {
+                        Button {
+                            selectedBrandID = item.id
+                        } label: {
+                            LikedBrandCardView(
+                                item: item,
+                                brandImageCache: viewModel.brandImageCache
+                            )
                         }
-                        .opacity(0)
+                        .buttonStyle(.plain)
+                        .background {
+                            NavigationLink(
+                                destination: coordinator.makeBrandDetailView(brand: item.brand)
+                                    .environmentObject(brandAdminSessionStore),
+                                tag: item.id,
+                                selection: $selectedBrandID
+                            ) {
+                                EmptyView()
+                            }
+                            .opacity(0)
+                        }
+
+                        unlikeMenu {
+                            await viewModel.unlikeBrand(item)
+                        }
                     }
                     .onAppear {
                         Task {
@@ -145,24 +186,30 @@ struct LikedView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             LazyHStack(alignment: .top, spacing: 14) {
                 ForEach(viewModel.seasonItems) { item in
-                    Button {
-                        selectedSeasonID = item.id
-                    } label: {
-                        LikedSeasonCardView(
-                            item: item,
-                            brandImageCache: viewModel.brandImageCache
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .background {
-                        NavigationLink(
-                            destination: coordinator.makeSeasonDetailView(season: item.season),
-                            tag: item.id,
-                            selection: $selectedSeasonID
-                        ) {
-                            EmptyView()
+                    ZStack(alignment: .topTrailing) {
+                        Button {
+                            selectedSeasonID = item.id
+                        } label: {
+                            LikedSeasonCardView(
+                                item: item,
+                                brandImageCache: viewModel.brandImageCache
+                            )
                         }
-                        .opacity(0)
+                        .buttonStyle(.plain)
+                        .background {
+                            NavigationLink(
+                                destination: coordinator.makeSeasonDetailView(season: item.season),
+                                tag: item.id,
+                                selection: $selectedSeasonID
+                            ) {
+                                EmptyView()
+                            }
+                            .opacity(0)
+                        }
+
+                        unlikeMenu {
+                            await viewModel.unlikeSeason(item)
+                        }
                     }
                     .onAppear {
                         Task {
@@ -176,12 +223,62 @@ struct LikedView: View {
         }
     }
 
-    private func likedEmptySection(title: String, emptyText: String) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            LikedContentSectionHeader(title: title, count: 0)
-            LikedEmptySectionRow(text: emptyText)
+    private var likedPostGrid: some View {
+        LazyVGrid(columns: postColumns, spacing: 10) {
+            ForEach(viewModel.postItems) { item in
+                ZStack(alignment: .topTrailing) {
+                    Button {
+                        selectedPostID = item.id
+                    } label: {
+                        LikedPostCardView(
+                            item: item,
+                            brandImageCache: viewModel.brandImageCache
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .background {
+                        NavigationLink(
+                            destination: coordinator.makePostDetailView(post: item.post),
+                            tag: item.id,
+                            selection: $selectedPostID
+                        ) {
+                            EmptyView()
+                        }
+                        .opacity(0)
+                    }
+
+                    unlikeMenu {
+                        await viewModel.unlikePost(item)
+                    }
+                }
+                .onAppear {
+                    Task {
+                        await viewModel.loadNextPostPageIfNeeded(current: item)
+                    }
+                }
+            }
         }
         .padding(.horizontal, 20)
+    }
+
+    private func unlikeMenu(action: @escaping () async -> Void) -> some View {
+        Menu {
+            Button(role: .destructive) {
+                Task { await action() }
+            } label: {
+                Label("좋아요 취소", systemImage: "heart.slash")
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.primary)
+                .frame(width: 30, height: 30)
+                .background(.ultraThinMaterial)
+                .clipShape(Circle())
+                .contentShape(Circle())
+        }
+        .padding(6)
+        .accessibilityLabel("좋아요 메뉴")
     }
 
     @ViewBuilder
@@ -231,18 +328,6 @@ private struct LikedContentSectionHeader: View {
         }
         .font(.subheadline.weight(.semibold))
         .textCase(nil)
-    }
-}
-
-private struct LikedEmptySectionRow: View {
-    let text: String
-
-    var body: some View {
-        Text(text)
-            .font(.footnote)
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 12)
     }
 }
 

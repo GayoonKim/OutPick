@@ -36,13 +36,11 @@ struct LikedViewModelTests {
                 )
             ]
         )
-        let viewModel = LikedViewModel(
+        let viewModel = makeViewModel(
             likedBrandsUseCase: useCase,
             likedSeasonsUseCase: LoadLikedSeasonsUseCaseSpy(pages: [LikedSeasonPage(items: [], last: nil)]),
-            brandInteractionStore: store,
-            seasonInteractionStore: store,
-            currentUserIDProvider: CurrentUserIDProviderStub(userID: userID),
-            brandImageCache: BrandImageCacheStub()
+            store: store,
+            userID: userID
         )
 
         await viewModel.loadInitialIfNeeded()
@@ -88,13 +86,11 @@ struct LikedViewModelTests {
             maxBrandStateCount: 10,
             stateRetentionInterval: 60
         )
-        let viewModel = LikedViewModel(
+        let viewModel = makeViewModel(
             likedBrandsUseCase: LoadLikedBrandsUseCaseSpy(pages: [LikedBrandPage(items: [], last: nil)]),
             likedSeasonsUseCase: seasonUseCase,
-            brandInteractionStore: store,
-            seasonInteractionStore: store,
-            currentUserIDProvider: CurrentUserIDProviderStub(userID: userID),
-            brandImageCache: BrandImageCacheStub()
+            store: store,
+            userID: userID
         )
 
         await viewModel.loadInitialIfNeeded()
@@ -108,6 +104,70 @@ struct LikedViewModelTests {
         #expect(store.seasonState(for: key)?.userState?.isLiked == true)
         #expect(store.seasonState(for: key)?.season.likeCount == 5)
         #expect(seasonUseCase.requests.map(\.userID) == [userID])
+    }
+
+    @MainActor
+    @Test func loadInitialPublishesLikedPosts() async {
+        let userID = UserID(value: "user-1")
+        let brandID = BrandID(value: "brand-1")
+        let seasonID = SeasonID(value: "season-1")
+        let post = makePost(
+            brandID: brandID,
+            seasonID: seasonID,
+            postID: PostID(value: "post-1"),
+            likeCount: 3,
+            commentCount: 2
+        )
+        let state = PostUserState(
+            brandID: brandID,
+            seasonID: seasonID,
+            postID: post.id,
+            userID: userID,
+            isLiked: true,
+            isSaved: false,
+            updatedAt: Date(),
+            likedAt: Date()
+        )
+        let postUseCase = LoadLikedPostsUseCaseSpy(
+            pages: [
+                LikedPostPage(
+                    items: [LikedPostListItem(post: post, userState: state)],
+                    last: nil
+                )
+            ]
+        )
+        let store = LookbookInteractionStore(
+            maxPostStateCount: 10,
+            maxCommentStateCount: 10,
+            maxBrandStateCount: 10,
+            stateRetentionInterval: 60
+        )
+        let viewModel = LikedViewModel(
+            likedBrandsUseCase: LoadLikedBrandsUseCaseSpy(pages: [LikedBrandPage(items: [], last: nil)]),
+            likedSeasonsUseCase: LoadLikedSeasonsUseCaseSpy(pages: [LikedSeasonPage(items: [], last: nil)]),
+            likedPostsUseCase: postUseCase,
+            brandEngagementRepository: LikedBrandEngagementRepositoryStub(),
+            seasonEngagementRepository: LikedSeasonEngagementRepositoryStub(),
+            postEngagementRepository: LikedPostEngagementRepositoryStub(),
+            brandInteractionStore: store,
+            seasonInteractionStore: store,
+            postInteractionStore: store,
+            currentUserIDProvider: CurrentUserIDProviderStub(userID: userID),
+            brandImageCache: BrandImageCacheStub()
+        )
+
+        await viewModel.loadInitialIfNeeded()
+
+        #expect(viewModel.phase == .ready)
+        #expect(viewModel.brandSection.phase == .empty)
+        #expect(viewModel.seasonSection.phase == .empty)
+        #expect(viewModel.postSection.phase == .ready)
+        #expect(viewModel.postItems.map(\.id) == ["\(brandID.value)_\(seasonID.value)_\(post.id.value)"])
+        let key = PostInteractionKey(brandID: brandID, seasonID: seasonID, postID: post.id)
+        #expect(store.state(for: key)?.userState?.isLiked == true)
+        #expect(store.state(for: key)?.metrics.likeCount == 3)
+        #expect(store.state(for: key)?.metrics.commentCount == 2)
+        #expect(postUseCase.requests.map(\.userID) == [userID])
     }
 
     @MainActor
@@ -126,7 +186,7 @@ struct LikedViewModelTests {
             maxBrandStateCount: 10,
             stateRetentionInterval: 60
         )
-        let viewModel = LikedViewModel(
+        let viewModel = makeViewModel(
             likedBrandsUseCase: LoadLikedBrandsUseCaseSpy(
                 pages: [
                     LikedBrandPage(
@@ -138,10 +198,8 @@ struct LikedViewModelTests {
             likedSeasonsUseCase: LoadLikedSeasonsUseCaseSpy(
                 results: [.failure(LikedViewModelTestError.expected)]
             ),
-            brandInteractionStore: store,
-            seasonInteractionStore: store,
-            currentUserIDProvider: CurrentUserIDProviderStub(userID: userID),
-            brandImageCache: BrandImageCacheStub()
+            store: store,
+            userID: userID
         )
 
         await viewModel.loadInitialIfNeeded()
@@ -175,7 +233,7 @@ struct LikedViewModelTests {
             maxBrandStateCount: 10,
             stateRetentionInterval: 60
         )
-        let viewModel = LikedViewModel(
+        let viewModel = makeViewModel(
             likedBrandsUseCase: LoadLikedBrandsUseCaseSpy(
                 results: [.failure(LikedViewModelTestError.expected)]
             ),
@@ -187,10 +245,8 @@ struct LikedViewModelTests {
                     )
                 ]
             ),
-            brandInteractionStore: store,
-            seasonInteractionStore: store,
-            currentUserIDProvider: CurrentUserIDProviderStub(userID: userID),
-            brandImageCache: BrandImageCacheStub()
+            store: store,
+            userID: userID
         )
 
         await viewModel.loadInitialIfNeeded()
@@ -218,7 +274,7 @@ struct LikedViewModelTests {
             maxBrandStateCount: 10,
             stateRetentionInterval: 60
         )
-        let viewModel = LikedViewModel(
+        let viewModel = makeViewModel(
             likedBrandsUseCase: LoadLikedBrandsUseCaseSpy(
                 pages: [
                     LikedBrandPage(
@@ -228,10 +284,8 @@ struct LikedViewModelTests {
                 ]
             ),
             likedSeasonsUseCase: LoadLikedSeasonsUseCaseSpy(pages: [LikedSeasonPage(items: [], last: nil)]),
-            brandInteractionStore: store,
-            seasonInteractionStore: store,
-            currentUserIDProvider: CurrentUserIDProviderStub(userID: userID),
-            brandImageCache: BrandImageCacheStub()
+            store: store,
+            userID: userID
         )
         await viewModel.loadInitialIfNeeded()
         await Task.yield()
@@ -266,13 +320,11 @@ struct LikedViewModelTests {
                 LikedBrandPage(items: [], last: nil)
             ]
         )
-        let viewModel = LikedViewModel(
+        let viewModel = makeViewModel(
             likedBrandsUseCase: useCase,
             likedSeasonsUseCase: LoadLikedSeasonsUseCaseSpy(pages: [LikedSeasonPage(items: [], last: nil)]),
-            brandInteractionStore: store,
-            seasonInteractionStore: store,
-            currentUserIDProvider: CurrentUserIDProviderStub(userID: userID),
-            brandImageCache: BrandImageCacheStub()
+            store: store,
+            userID: userID
         )
         await viewModel.loadInitialIfNeeded()
         await Task.yield()
@@ -317,7 +369,7 @@ struct LikedViewModelTests {
             maxBrandStateCount: 10,
             stateRetentionInterval: 60
         )
-        let viewModel = LikedViewModel(
+        let viewModel = makeViewModel(
             likedBrandsUseCase: LoadLikedBrandsUseCaseSpy(pages: [LikedBrandPage(items: [], last: nil)]),
             likedSeasonsUseCase: LoadLikedSeasonsUseCaseSpy(
                 pages: [
@@ -327,10 +379,8 @@ struct LikedViewModelTests {
                     )
                 ]
             ),
-            brandInteractionStore: store,
-            seasonInteractionStore: store,
-            currentUserIDProvider: CurrentUserIDProviderStub(userID: userID),
-            brandImageCache: BrandImageCacheStub()
+            store: store,
+            userID: userID
         )
         await viewModel.loadInitialIfNeeded()
         await Task.yield()
@@ -375,7 +425,7 @@ struct LikedViewModelTests {
             maxBrandStateCount: 10,
             stateRetentionInterval: 60
         )
-        let viewModel = LikedViewModel(
+        let viewModel = makeViewModel(
             likedBrandsUseCase: useCase,
             likedSeasonsUseCase: LoadLikedSeasonsUseCaseSpy(
                 pages: [
@@ -383,10 +433,8 @@ struct LikedViewModelTests {
                     LikedSeasonPage(items: [], last: nil)
                 ]
             ),
-            brandInteractionStore: store,
-            seasonInteractionStore: store,
-            currentUserIDProvider: CurrentUserIDProviderStub(userID: userID),
-            brandImageCache: BrandImageCacheStub()
+            store: store,
+            userID: userID
         )
 
         await viewModel.refreshForActivation()
@@ -456,6 +504,67 @@ struct LikedViewModelTests {
             likeCount: likeCount,
             createdAt: Date(),
             updatedAt: Date()
+        )
+    }
+
+    private func makePost(
+        brandID: BrandID,
+        seasonID: SeasonID,
+        postID: PostID,
+        likeCount: Int,
+        commentCount: Int
+    ) -> LookbookPost {
+        LookbookPost(
+            id: postID,
+            brandID: brandID,
+            seasonID: seasonID,
+            authorID: UserID(value: "author-1"),
+            media: [
+                MediaAsset(
+                    type: .image,
+                    remoteURL: URL(string: "https://example.com/post.jpg")!,
+                    thumbPath: nil,
+                    detailPath: nil,
+                    sourcePageURL: nil
+                )
+            ],
+            caption: nil,
+            tagIDs: [],
+            metrics: PostMetrics(
+                likeCount: likeCount,
+                commentCount: commentCount,
+                replacementCount: 0,
+                saveCount: 0,
+                viewCount: nil
+            ),
+            createdAt: Date(),
+            updatedAt: Date()
+        )
+    }
+
+    @MainActor
+    private func makeViewModel(
+        likedBrandsUseCase: any LoadLikedBrandsUseCaseProtocol,
+        likedSeasonsUseCase: any LoadLikedSeasonsUseCaseProtocol,
+        likedPostsUseCase: (any LoadLikedPostsUseCaseProtocol)? = nil,
+        store: LookbookInteractionStore,
+        userID: UserID
+    ) -> LikedViewModel {
+        let likedPostsUseCase = likedPostsUseCase ?? LoadLikedPostsUseCaseSpy(
+            pages: [LikedPostPage(items: [], last: nil)]
+        )
+        return LikedViewModel(
+            likedBrandsUseCase: likedBrandsUseCase,
+            likedSeasonsUseCase: likedSeasonsUseCase,
+            likedPostsUseCase: likedPostsUseCase,
+            brandEngagementRepository: LikedBrandEngagementRepositoryStub(),
+            seasonEngagementRepository: LikedSeasonEngagementRepositoryStub(),
+            postEngagementRepository: LikedPostEngagementRepositoryStub(),
+            brandInteractionStore: store,
+            seasonInteractionStore: store,
+            postInteractionStore: store,
+            currentUserIDProvider: CurrentUserIDProviderStub(userID: userID),
+            brandImageCache: BrandImageCacheStub()
         )
     }
 
@@ -556,4 +665,113 @@ private struct BrandImageCacheStub: BrandImageCacheProtocol {
         concurrency: Int,
         storePolicy: ImageCacheStorePolicy
     ) async { }
+}
+
+@MainActor
+private final class LoadLikedPostsUseCaseSpy: LoadLikedPostsUseCaseProtocol {
+    struct Request: Equatable {
+        let userID: UserID
+        let limit: Int
+    }
+
+    private var results: [Result<LikedPostPage, Error>]
+    private(set) var requests: [Request] = []
+
+    init(pages: [LikedPostPage]) {
+        self.results = pages.map { .success($0) }
+    }
+
+    init(results: [Result<LikedPostPage, Error>]) {
+        self.results = results
+    }
+
+    func execute(
+        userID: UserID,
+        limit: Int,
+        after last: DocumentSnapshot?
+    ) async throws -> LikedPostPage {
+        requests.append(Request(userID: userID, limit: limit))
+        guard results.isEmpty == false else {
+            return LikedPostPage(items: [], last: nil)
+        }
+        return try results.removeFirst().get()
+    }
+}
+
+private struct LikedBrandEngagementRepositoryStub: BrandEngagementRepositoryProtocol {
+    func setLike(
+        brandID: BrandID,
+        isLiked: Bool
+    ) async throws -> BrandEngagementResult {
+        BrandEngagementResult(
+            brandID: brandID,
+            userID: UserID(value: "user-1"),
+            isLiked: isLiked,
+            likeCount: isLiked ? 1 : 0
+        )
+    }
+}
+
+private struct LikedSeasonEngagementRepositoryStub: SeasonEngagementRepositoryProtocol {
+    func setLike(
+        brandID: BrandID,
+        seasonID: SeasonID,
+        isLiked: Bool
+    ) async throws -> SeasonEngagementResult {
+        SeasonEngagementResult(
+            brandID: brandID,
+            seasonID: seasonID,
+            userID: UserID(value: "user-1"),
+            isLiked: isLiked,
+            likeCount: isLiked ? 1 : 0
+        )
+    }
+}
+
+private struct LikedPostEngagementRepositoryStub: PostEngagementRepositoryProtocol {
+    func setLike(
+        brandID: BrandID,
+        seasonID: SeasonID,
+        postID: PostID,
+        isLiked: Bool
+    ) async throws -> PostEngagementResult {
+        PostEngagementResult(
+            brandID: brandID,
+            seasonID: seasonID,
+            postID: postID,
+            userID: UserID(value: "user-1"),
+            isLiked: isLiked,
+            isSaved: false,
+            metrics: PostMetrics(
+                likeCount: isLiked ? 1 : 0,
+                commentCount: 0,
+                replacementCount: 0,
+                saveCount: 0,
+                viewCount: nil
+            )
+        )
+    }
+
+    func setSave(
+        brandID: BrandID,
+        seasonID: SeasonID,
+        postID: PostID,
+        isSaved: Bool
+    ) async throws -> PostEngagementResult {
+        PostEngagementResult(
+            brandID: brandID,
+            seasonID: seasonID,
+            postID: postID,
+            userID: UserID(value: "user-1"),
+            isLiked: false,
+            isSaved: isSaved,
+            metrics: PostMetrics(
+                likeCount: 0,
+                commentCount: 0,
+                replacementCount: 0,
+                saveCount: isSaved ? 1 : 0,
+                viewCount: nil
+            )
+        )
+    }
 }
