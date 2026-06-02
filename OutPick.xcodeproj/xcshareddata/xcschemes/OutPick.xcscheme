@@ -124,11 +124,11 @@
          <EnvironmentVariable
             key = "RUN_LOOKBOOK_FAILURE_UITESTS"
             value = "1"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "OUTPICK_SOCKET_URL"
-            value = "http://192.168.123.145:3000"
+            value = "http://192.168.123.106:3000"
             isEnabled = "YES">
          </EnvironmentVariable>
       </EnvironmentVariables>

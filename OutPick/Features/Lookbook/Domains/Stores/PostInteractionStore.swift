@@ -8,7 +8,7 @@
 import Foundation
 
 struct PostInteractionStore {
-    private var cache: PinAwareInteractionCache<PostID, LookbookPostInteractionState>
+    private var cache: PinAwareInteractionCache<PostInteractionKey, LookbookPostInteractionState>
 
     init(
         maxPostStateCount: Int,
@@ -20,20 +20,20 @@ struct PostInteractionStore {
         )
     }
 
-    var states: [PostID: LookbookPostInteractionState] {
+    var states: [PostInteractionKey: LookbookPostInteractionState] {
         cache.valuesByKey
     }
 
-    mutating func state(for postID: PostID) -> LookbookPostInteractionState? {
-        cache.value(for: postID)
+    mutating func state(for key: PostInteractionKey) -> LookbookPostInteractionState? {
+        cache.value(for: key)
     }
 
-    mutating func pin(_ postIDs: Set<PostID>) {
-        cache.pin(postIDs)
+    mutating func pin(_ keys: Set<PostInteractionKey>) {
+        cache.pin(keys)
     }
 
-    mutating func unpin(_ postIDs: Set<PostID>) {
-        cache.unpin(postIDs)
+    mutating func unpin(_ keys: Set<PostInteractionKey>) {
+        cache.unpin(keys)
     }
 
     mutating func seed(
@@ -41,40 +41,44 @@ struct PostInteractionStore {
         visibleCommentCount: Int?,
         userState: PostUserState?
     ) {
+        let key = PostInteractionKey(post: post)
         cache.set(
             LookbookPostInteractionState(
+                key: key,
                 postID: post.id,
                 metrics: post.metrics,
                 visibleCommentCount: visibleCommentCount,
                 userState: userState,
                 updatedAt: Date()
             ),
-            for: post.id
+            for: key
         )
     }
 
     mutating func seedPostMetrics(_ post: LookbookPost) {
-        let existingState = state(for: post.id)
+        let key = PostInteractionKey(post: post)
+        let existingState = state(for: key)
         cache.set(
             LookbookPostInteractionState(
+                key: key,
                 postID: post.id,
                 metrics: post.metrics,
                 visibleCommentCount: existingState?.visibleCommentCount,
                 userState: existingState?.userState,
                 updatedAt: Date()
             ),
-            for: post.id
+            for: key
         )
     }
 
     mutating func applyOptimisticLike(
-        postID: PostID,
+        key: PostInteractionKey,
         userID: UserID,
         isLiked: Bool,
         baseLiked: Bool?,
         baseLikeCount: Int?
     ) {
-        cache.update(for: postID) { state in
+        cache.update(for: key) { state in
             let previousLiked = baseLiked ?? state.userState?.isLiked ?? false
             let currentLikeCount = baseLikeCount ?? state.metrics.likeCount
             let likeDelta = isLiked == previousLiked ? 0 : (isLiked ? 1 : -1)
@@ -86,7 +90,7 @@ struct PostInteractionStore {
                 viewCount: state.metrics.viewCount
             )
             state.userState = PostUserState(
-                postID: postID,
+                postID: key.postID,
                 userID: userID,
                 isLiked: isLiked,
                 isSaved: state.userState?.isSaved ?? false,
@@ -97,13 +101,13 @@ struct PostInteractionStore {
     }
 
     mutating func applyOptimisticSave(
-        postID: PostID,
+        key: PostInteractionKey,
         userID: UserID,
         isSaved: Bool,
         baseSaved: Bool?,
         baseSaveCount: Int?
     ) {
-        cache.update(for: postID) { state in
+        cache.update(for: key) { state in
             let previousSaved = baseSaved ?? state.userState?.isSaved ?? false
             let currentSaveCount = baseSaveCount ?? state.metrics.saveCount
             let saveDelta = isSaved == previousSaved ? 0 : (isSaved ? 1 : -1)
@@ -115,7 +119,7 @@ struct PostInteractionStore {
                 viewCount: state.metrics.viewCount
             )
             state.userState = PostUserState(
-                postID: postID,
+                postID: key.postID,
                 userID: userID,
                 isLiked: state.userState?.isLiked ?? false,
                 isSaved: isSaved,
@@ -129,7 +133,7 @@ struct PostInteractionStore {
         _ result: PostEngagementResult,
         shouldApplySave: Bool
     ) {
-        cache.update(for: result.postID) { state in
+        cache.update(for: result.key) { state in
             state.metrics = PostMetrics(
                 likeCount: max(0, result.metrics.likeCount),
                 commentCount: result.metrics.commentCount,
@@ -152,7 +156,7 @@ struct PostInteractionStore {
         _ result: PostEngagementResult,
         shouldApplyLike: Bool
     ) {
-        cache.update(for: result.postID) { state in
+        cache.update(for: result.key) { state in
             state.metrics = PostMetrics(
                 likeCount: shouldApplyLike ? max(0, result.metrics.likeCount) : state.metrics.likeCount,
                 commentCount: result.metrics.commentCount,
@@ -172,12 +176,12 @@ struct PostInteractionStore {
     }
 
     mutating func restoreLike(
-        postID: PostID,
+        key: PostInteractionKey,
         userID: UserID,
         isLiked: Bool,
         likeCount: Int?
     ) {
-        cache.update(for: postID) { state in
+        cache.update(for: key) { state in
             if let likeCount {
                 state.metrics = PostMetrics(
                     likeCount: max(0, likeCount),
@@ -188,7 +192,7 @@ struct PostInteractionStore {
                 )
             }
             state.userState = PostUserState(
-                postID: postID,
+                postID: key.postID,
                 userID: userID,
                 isLiked: isLiked,
                 isSaved: state.userState?.isSaved ?? false,
@@ -199,12 +203,12 @@ struct PostInteractionStore {
     }
 
     mutating func restoreSave(
-        postID: PostID,
+        key: PostInteractionKey,
         userID: UserID,
         isSaved: Bool,
         saveCount: Int?
     ) {
-        cache.update(for: postID) { state in
+        cache.update(for: key) { state in
             if let saveCount {
                 state.metrics = PostMetrics(
                     likeCount: state.metrics.likeCount,
@@ -215,7 +219,7 @@ struct PostInteractionStore {
                 )
             }
             state.userState = PostUserState(
-                postID: postID,
+                postID: key.postID,
                 userID: userID,
                 isLiked: state.userState?.isLiked ?? false,
                 isSaved: isSaved,
@@ -226,7 +230,11 @@ struct PostInteractionStore {
     }
 
     mutating func applyCommentMutation(_ result: CommentMutationResult) {
-        cache.update(for: result.postID) { state in
+        cache.update(for: PostInteractionKey(
+            brandID: result.brandID,
+            seasonID: result.seasonID,
+            postID: result.postID
+        )) { state in
             state.metrics = PostMetrics(
                 likeCount: state.metrics.likeCount,
                 commentCount: max(0, result.commentCount),
@@ -240,7 +248,11 @@ struct PostInteractionStore {
     }
 
     mutating func applyCommentDeletion(_ result: CommentDeletionResult) {
-        cache.update(for: result.postID) { state in
+        cache.update(for: PostInteractionKey(
+            brandID: result.brandID,
+            seasonID: result.seasonID,
+            postID: result.postID
+        )) { state in
             state.metrics = PostMetrics(
                 likeCount: state.metrics.likeCount,
                 commentCount: max(0, result.commentCount),

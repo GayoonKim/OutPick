@@ -36,8 +36,8 @@ final class SeasonDetailViewModel: ObservableObject {
     private var isRequesting: Bool = false
     private var prefetchedPostImagePaths = Set<String>()
     private var prefetchedThroughIndex: Int = -1
-    private var pinnedPostIDs: Set<PostID> = []
-    private var postPinScopes: [PostID: InteractionPinScope] = [:]
+    private var pinnedPostKeys: Set<PostInteractionKey> = []
+    private var postPinScopes: [PostInteractionKey: InteractionPinScope] = [:]
     private var postStateInvalidationTask: Task<Void, Never>?
 
     init(
@@ -189,16 +189,16 @@ final class SeasonDetailViewModel: ObservableObject {
             seasonInteractionStore.seedSeason(content.season, userState: userState)
             posts = content.posts
             content.posts.forEach { postInteractionStore.seedPostMetrics($0) }
-            let loadedPostIDs = Set(content.posts.map(\.id))
-            updatePinnedPostIDs(loadedPostIDs)
-            bindInteractionStore(postIDs: loadedPostIDs)
+            let loadedPostKeys = Set(content.posts.map(PostInteractionKey.init(post:)))
+            updatePinnedPostKeys(loadedPostKeys)
+            bindInteractionStore(postKeys: loadedPostKeys)
             loadedKey = "\(brandID.value)|\(seasonID.value)"
         } catch {
             season = nil
             seasonUserState = nil
             posts = []
-            updatePinnedPostIDs([])
-            bindInteractionStore(postIDs: [])
+            updatePinnedPostKeys([])
+            bindInteractionStore(postKeys: [])
             errorMessage = "시즌과 룩북 사진을 불러오지 못했습니다."
             prefetchedPostImagePaths.removeAll()
             prefetchedThroughIndex = -1
@@ -269,45 +269,45 @@ final class SeasonDetailViewModel: ObservableObject {
         visibleCommentCounts[post.id] ?? post.metrics.commentCount
     }
 
-    private func bindInteractionStore(postIDs: Set<PostID>) {
+    private func bindInteractionStore(postKeys: Set<PostInteractionKey>) {
         postStateInvalidationTask?.cancel()
         postStateInvalidationTask = nil
 
-        guard postIDs.isEmpty == false else {
+        guard postKeys.isEmpty == false else {
             visibleCommentCounts = [:]
             return
         }
 
-        applyCurrentInteractionStates(for: postIDs)
+        applyCurrentInteractionStates(for: postKeys)
 
         let postInteractionStore = postInteractionStore
-        postStateInvalidationTask = Task { [weak self, postInteractionStore, postIDs] in
-            let stream = postInteractionStore.postStateInvalidationStream(for: postIDs)
-            for await postID in stream {
-                guard postIDs.contains(postID),
-                      let state = postInteractionStore.state(for: postID) else { continue }
+        postStateInvalidationTask = Task { [weak self, postInteractionStore, postKeys] in
+            let stream = postInteractionStore.postStateInvalidationStream(for: postKeys)
+            for await key in stream {
+                guard postKeys.contains(key),
+                      let state = postInteractionStore.state(for: key) else { continue }
                 self?.applyInteractionState(state)
             }
         }
     }
 
-    private func updatePinnedPostIDs(_ nextPostIDs: Set<PostID>) {
-        let removedPostIDs = pinnedPostIDs.subtracting(nextPostIDs)
-        let addedPostIDs = nextPostIDs.subtracting(pinnedPostIDs)
+    private func updatePinnedPostKeys(_ nextPostKeys: Set<PostInteractionKey>) {
+        let removedPostKeys = pinnedPostKeys.subtracting(nextPostKeys)
+        let addedPostKeys = nextPostKeys.subtracting(pinnedPostKeys)
 
-        for postID in removedPostIDs {
-            postPinScopes[postID]?.invalidate()
-            postPinScopes.removeValue(forKey: postID)
+        for key in removedPostKeys {
+            postPinScopes[key]?.invalidate()
+            postPinScopes.removeValue(forKey: key)
         }
 
-        for postID in addedPostIDs {
-            postPinScopes[postID] = postInteractionStore.pinScope(postIDs: [postID], commentIDs: [])
+        for key in addedPostKeys {
+            postPinScopes[key] = postInteractionStore.pinScope(postKeys: [key], commentIDs: [])
         }
-        pinnedPostIDs = nextPostIDs
+        pinnedPostKeys = nextPostKeys
     }
 
-    private func applyCurrentInteractionStates(for postIDs: Set<PostID>) {
-        let states = postIDs.compactMap { postInteractionStore.state(for: $0) }
+    private func applyCurrentInteractionStates(for postKeys: Set<PostInteractionKey>) {
+        let states = postKeys.compactMap { postInteractionStore.state(for: $0) }
         applyInteractionStates(states)
     }
 

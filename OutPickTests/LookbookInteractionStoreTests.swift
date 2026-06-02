@@ -319,16 +319,21 @@ struct LookbookInteractionStoreTests {
     @Test func postStateInvalidationStreamPublishesOnlyRequestedPost() async throws {
         let includedPostID = PostID(value: "included-post")
         let outsidePostID = PostID(value: "outside-post")
+        let includedKey = PostInteractionKey(
+            brandID: BrandID(value: "brand-1"),
+            seasonID: SeasonID(value: "season-1"),
+            postID: includedPostID
+        )
         let store = LookbookInteractionStore(
             maxPostStateCount: 10,
             maxCommentStateCount: 10,
             stateRetentionInterval: 60
         )
-        var receivedPostIDs: [PostID] = []
+        var receivedKeys: [PostInteractionKey] = []
 
         let task = Task { @MainActor in
-            for await postID in store.postStateInvalidationStream(for: [includedPostID]) {
-                receivedPostIDs.append(postID)
+            for await key in store.postStateInvalidationStream(for: [includedKey]) {
+                receivedKeys.append(key)
                 break
             }
         }
@@ -336,15 +341,43 @@ struct LookbookInteractionStoreTests {
         await Task.yield()
         store.seedPostMetrics(makePost(id: outsidePostID, commentCount: 10))
 
-        #expect(receivedPostIDs.isEmpty)
+        #expect(receivedKeys.isEmpty)
 
         store.seedPostMetrics(makePost(id: includedPostID, commentCount: 2))
 
         try await waitUntil {
-            receivedPostIDs == [includedPostID]
+            receivedKeys == [includedKey]
         }
-        #expect(store.state(for: includedPostID)?.metrics.commentCount == 2)
+        #expect(store.state(for: includedKey)?.metrics.commentCount == 2)
         task.cancel()
+    }
+
+    @MainActor
+    @Test func postStateUsesSeasonScopedKeyForRepeatedPostIDs() {
+        let sharedPostID = PostID(value: "post_0000")
+        let firstSeasonID = SeasonID(value: "season-1")
+        let secondSeasonID = SeasonID(value: "season-2")
+        let firstKey = PostInteractionKey(
+            brandID: BrandID(value: "brand-1"),
+            seasonID: firstSeasonID,
+            postID: sharedPostID
+        )
+        let secondKey = PostInteractionKey(
+            brandID: BrandID(value: "brand-1"),
+            seasonID: secondSeasonID,
+            postID: sharedPostID
+        )
+        let store = LookbookInteractionStore(
+            maxPostStateCount: 10,
+            maxCommentStateCount: 10,
+            stateRetentionInterval: 60
+        )
+
+        store.seedPostMetrics(makePost(id: sharedPostID, seasonID: firstSeasonID, commentCount: 2))
+        store.seedPostMetrics(makePost(id: sharedPostID, seasonID: secondSeasonID, commentCount: 9))
+
+        #expect(store.state(for: firstKey)?.metrics.commentCount == 2)
+        #expect(store.state(for: secondKey)?.metrics.commentCount == 9)
     }
 
     @MainActor
@@ -389,12 +422,14 @@ struct LookbookInteractionStoreTests {
 
     private func makePost(
         id: PostID,
+        brandID: BrandID = BrandID(value: "brand-1"),
+        seasonID: SeasonID = SeasonID(value: "season-1"),
         commentCount: Int
     ) -> LookbookPost {
         LookbookPost(
             id: id,
-            brandID: BrandID(value: "brand-1"),
-            seasonID: SeasonID(value: "season-1"),
+            brandID: brandID,
+            seasonID: seasonID,
             authorID: UserID(value: "author-1"),
             media: [
                 MediaAsset(

@@ -493,6 +493,8 @@ private final class PostEngagementRepositorySpy: PostEngagementRepositoryProtoco
         isSaved: Bool
     ) -> PostEngagementResult {
         PostEngagementResult(
+            brandID: BrandID(value: "brand-1"),
+            seasonID: SeasonID(value: "season-1"),
             postID: postID,
             userID: UserID(value: "user-1"),
             isLiked: isLiked,
@@ -540,20 +542,20 @@ private final class PostInteractionManagingSpy: PostInteractionManaging {
     private(set) var restoreLikeCallCount = 0
     private(set) var restoreSaveCallCount = 0
 
-    func state(for postID: PostID) -> LookbookPostInteractionState? {
+    func state(for key: PostInteractionKey) -> LookbookPostInteractionState? {
         nil
     }
 
     func postStateInvalidationStream(
-        for postIDs: Set<PostID>
-    ) -> AsyncStream<PostID> {
+        for keys: Set<PostInteractionKey>
+    ) -> AsyncStream<PostInteractionKey> {
         AsyncStream { continuation in
             continuation.finish()
         }
     }
 
     func pinScope(
-        postIDs: Set<PostID>,
+        postKeys: Set<PostInteractionKey>,
         commentIDs: Set<CommentID>
     ) -> InteractionPinScope {
         InteractionPinScope {}
@@ -568,7 +570,7 @@ private final class PostInteractionManagingSpy: PostInteractionManaging {
     func seedPostMetrics(_ post: LookbookPost) {}
 
     func applyOptimisticLike(
-        postID: PostID,
+        key: PostInteractionKey,
         userID: UserID,
         isLiked: Bool,
         baseLiked: Bool?,
@@ -578,7 +580,7 @@ private final class PostInteractionManagingSpy: PostInteractionManaging {
     }
 
     func applyOptimisticSave(
-        postID: PostID,
+        key: PostInteractionKey,
         userID: UserID,
         isSaved: Bool,
         baseSaved: Bool?,
@@ -598,7 +600,7 @@ private final class PostInteractionManagingSpy: PostInteractionManaging {
     ) {}
 
     func restoreLike(
-        postID: PostID,
+        key: PostInteractionKey,
         userID: UserID,
         isLiked: Bool,
         likeCount: Int?
@@ -607,7 +609,7 @@ private final class PostInteractionManagingSpy: PostInteractionManaging {
     }
 
     func restoreSave(
-        postID: PostID,
+        key: PostInteractionKey,
         userID: UserID,
         isSaved: Bool,
         saveCount: Int?

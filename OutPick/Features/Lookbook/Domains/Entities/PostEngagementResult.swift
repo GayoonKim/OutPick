@@ -8,9 +8,15 @@
 import Foundation
 
 struct PostEngagementResult: Equatable {
+    let brandID: BrandID
+    let seasonID: SeasonID
     let postID: PostID
     let userID: UserID
     let isLiked: Bool
     let isSaved: Bool
     let metrics: PostMetrics
+
+    var key: PostInteractionKey {
+        PostInteractionKey(brandID: brandID, seasonID: seasonID, postID: postID)
+    }
 }

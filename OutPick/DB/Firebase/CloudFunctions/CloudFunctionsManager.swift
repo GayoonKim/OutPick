@@ -198,6 +198,8 @@ final class CloudFunctionsManager {
         }
 
         return PostEngagementResult(
+            brandID: BrandID(value: brandID),
+            seasonID: SeasonID(value: seasonID),
             postID: PostID(value: try stringValue(response, key: "postID")),
             userID: UserID(value: try stringValue(response, key: "userID")),
             isLiked: try boolValue(response, key: "isLiked"),

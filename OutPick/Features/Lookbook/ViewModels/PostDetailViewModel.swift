@@ -44,6 +44,10 @@ final class PostDetailScreenViewModel: ObservableObject {
     private let commentInteractionStore: any CommentInteractionManaging
     private let currentUserIDProvider: any CurrentUserIDProviding
 
+    private var interactionKey: PostInteractionKey {
+        PostInteractionKey(brandID: brandID, seasonID: seasonID, postID: postID)
+    }
+
     init(
         brandID: BrandID,
         seasonID: SeasonID,
@@ -283,21 +287,21 @@ final class PostDetailScreenViewModel: ObservableObject {
 
     private func ensureInteractionPinScope() {
         guard interactionPinScope == nil else { return }
-        interactionPinScope = postInteractionStore.pinScope(postIDs: [postID], commentIDs: [])
+        interactionPinScope = postInteractionStore.pinScope(postKeys: [interactionKey], commentIDs: [])
     }
 
     private func bindInteractionStore() {
-        if let state = postInteractionStore.state(for: postID) {
+        let key = interactionKey
+        if let state = postInteractionStore.state(for: key) {
             applyInteractionState(state)
         }
 
-        let postID = postID
         let postInteractionStore = postInteractionStore
-        postStateInvalidationTask = Task { [weak self, postInteractionStore, postID] in
-            let stream = postInteractionStore.postStateInvalidationStream(for: [postID])
-            for await invalidatedPostID in stream {
-                guard invalidatedPostID == postID,
-                      let state = postInteractionStore.state(for: postID) else { continue }
+        postStateInvalidationTask = Task { [weak self, postInteractionStore, key] in
+            let stream = postInteractionStore.postStateInvalidationStream(for: [key])
+            for await invalidatedKey in stream {
+                guard invalidatedKey == key,
+                      let state = postInteractionStore.state(for: key) else { continue }
                 self?.applyInteractionState(state)
             }
         }

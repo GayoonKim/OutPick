@@ -14,6 +14,10 @@ struct PostEngagementInteractionInput {
     let userID: UserID
     let currentUserState: PostUserState?
     let currentMetrics: PostMetrics?
+
+    var key: PostInteractionKey {
+        PostInteractionKey(brandID: brandID, seasonID: seasonID, postID: postID)
+    }
 }
 
 struct PostEngagementInteractionOutcome {
@@ -211,7 +215,7 @@ final class PostEngagementInteractionUseCase {
         let likeCount = baseLikeCount ?? input.currentMetrics?.likeCount ?? 0
 
         postInteractionStore.applyOptimisticLike(
-            postID: input.postID,
+            key: input.key,
             userID: input.userID,
             isLiked: isLiked,
             baseLiked: previousLiked,
@@ -229,7 +233,7 @@ final class PostEngagementInteractionUseCase {
         let saveCount = baseSaveCount ?? input.currentMetrics?.saveCount ?? 0
 
         postInteractionStore.applyOptimisticSave(
-            postID: input.postID,
+            key: input.key,
             userID: input.userID,
             isSaved: isSaved,
             baseSaved: previousSaved,
@@ -251,7 +255,7 @@ final class PostEngagementInteractionUseCase {
         guard let confirmedLikeState else { return }
 
         postInteractionStore.restoreLike(
-            postID: input.postID,
+            key: input.key,
             userID: input.userID,
             isLiked: confirmedLikeState,
             likeCount: confirmedLikeCount
@@ -262,7 +266,7 @@ final class PostEngagementInteractionUseCase {
         guard let confirmedSaveState else { return }
 
         postInteractionStore.restoreSave(
-            postID: input.postID,
+            key: input.key,
             userID: input.userID,
             isSaved: confirmedSaveState,
             saveCount: confirmedSaveCount

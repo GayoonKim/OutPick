@@ -335,6 +335,8 @@ private final class LookbookUITestFixtureStore:
         isLiked: Bool
     ) async throws -> PostEngagementResult {
         PostEngagementResult(
+            brandID: brandID,
+            seasonID: seasonID,
             postID: postID,
             userID: LookbookUITestFixtureRepositoryProviderFactory.currentUserID,
             isLiked: isLiked,
@@ -350,6 +352,8 @@ private final class LookbookUITestFixtureStore:
         isSaved: Bool
     ) async throws -> PostEngagementResult {
         PostEngagementResult(
+            brandID: brandID,
+            seasonID: seasonID,
             postID: postID,
             userID: LookbookUITestFixtureRepositoryProviderFactory.currentUserID,
             isLiked: false,

@@ -9,7 +9,7 @@ import Foundation
 
 @MainActor
 final class LookbookInteractionStore: PostInteractionManaging, CommentInteractionManaging, BrandInteractionManaging, SeasonInteractionManaging {
-    private var postStates: [PostID: LookbookPostInteractionState] = [:]
+    private var postStates: [PostInteractionKey: LookbookPostInteractionState] = [:]
     private var postStore: PostInteractionStore
     private var commentStore: CommentInteractionStore
     private var brandStore: BrandInteractionStore
@@ -17,7 +17,7 @@ final class LookbookInteractionStore: PostInteractionManaging, CommentInteractio
     private var commentStates: [CommentID: CommentInteractionState] = [:]
     private var brandStates: [BrandID: BrandInteractionState] = [:]
     private var seasonStates: [SeasonInteractionKey: SeasonInteractionState] = [:]
-    private var postStateInvalidationContinuations: [UUID: (postIDs: Set<PostID>, continuation: AsyncStream<PostID>.Continuation)] = [:]
+    private var postStateInvalidationContinuations: [UUID: (keys: Set<PostInteractionKey>, continuation: AsyncStream<PostInteractionKey>.Continuation)] = [:]
     private var commentStateInvalidationContinuations: [UUID: (commentIDs: Set<CommentID>, continuation: AsyncStream<CommentID>.Continuation)] = [:]
     private var brandStateInvalidationContinuations: [UUID: (brandIDs: Set<BrandID>, continuation: AsyncStream<BrandID>.Continuation)] = [:]
     private var allBrandStateInvalidationContinuations: [UUID: AsyncStream<BrandID>.Continuation] = [:]
@@ -50,8 +50,8 @@ final class LookbookInteractionStore: PostInteractionManaging, CommentInteractio
         )
     }
 
-    func state(for postID: PostID) -> LookbookPostInteractionState? {
-        postStore.state(for: postID)
+    func state(for key: PostInteractionKey) -> LookbookPostInteractionState? {
+        postStore.state(for: key)
     }
 
     func replyCount(for comment: Comment) -> Int {
@@ -71,9 +71,9 @@ final class LookbookInteractionStore: PostInteractionManaging, CommentInteractio
     }
 
     func postStateInvalidationStream(
-        for postIDs: Set<PostID>
-    ) -> AsyncStream<PostID> {
-        guard postIDs.isEmpty == false else {
+        for keys: Set<PostInteractionKey>
+    ) -> AsyncStream<PostInteractionKey> {
+        guard keys.isEmpty == false else {
             return AsyncStream { continuation in
                 continuation.finish()
             }
@@ -82,7 +82,7 @@ final class LookbookInteractionStore: PostInteractionManaging, CommentInteractio
         return AsyncStream { [weak self] continuation in
             guard let self else { return }
             let continuationID = UUID()
-            self.postStateInvalidationContinuations[continuationID] = (postIDs, continuation)
+            self.postStateInvalidationContinuations[continuationID] = (keys, continuation)
             continuation.onTermination = { [weak self] _ in
                 Task { @MainActor [weak self] in
                     guard let self else { return }
@@ -213,11 +213,11 @@ final class LookbookInteractionStore: PostInteractionManaging, CommentInteractio
     }
 
     func pinScope(
-        postIDs: Set<PostID> = [],
-        commentIDs: Set<CommentID> = []
+        postKeys: Set<PostInteractionKey>,
+        commentIDs: Set<CommentID>
     ) -> InteractionPinScope {
-        if postIDs.isEmpty == false {
-            postStore.pin(postIDs)
+        if postKeys.isEmpty == false {
+            postStore.pin(postKeys)
         }
         if commentIDs.isEmpty == false {
             commentStore.pin(commentIDs)
@@ -227,8 +227,8 @@ final class LookbookInteractionStore: PostInteractionManaging, CommentInteractio
 
         return InteractionPinScope { [weak self] in
             guard let self else { return }
-            if postIDs.isEmpty == false {
-                self.postStore.unpin(postIDs)
+            if postKeys.isEmpty == false {
+                self.postStore.unpin(postKeys)
             }
             if commentIDs.isEmpty == false {
                 self.commentStore.unpin(commentIDs)
@@ -238,13 +238,31 @@ final class LookbookInteractionStore: PostInteractionManaging, CommentInteractio
         }
     }
 
-    func pinPostIDs(_ postIDs: Set<PostID>) {
-        postStore.pin(postIDs)
+    func pinScope(
+        postIDs: Set<PostID> = [],
+        commentIDs: Set<CommentID> = []
+    ) -> InteractionPinScope {
+        if commentIDs.isEmpty == false {
+            commentStore.pin(commentIDs)
+        }
+        syncCommentStates()
+
+        return InteractionPinScope { [weak self] in
+            guard let self else { return }
+            if commentIDs.isEmpty == false {
+                self.commentStore.unpin(commentIDs)
+            }
+            self.syncCommentStates()
+        }
+    }
+
+    func pinPostKeys(_ postKeys: Set<PostInteractionKey>) {
+        postStore.pin(postKeys)
         syncPostStates()
     }
 
-    func unpinPostIDs(_ postIDs: Set<PostID>) {
-        postStore.unpin(postIDs)
+    func unpinPostKeys(_ postKeys: Set<PostInteractionKey>) {
+        postStore.unpin(postKeys)
         syncPostStates()
     }
 
@@ -354,14 +372,14 @@ final class LookbookInteractionStore: PostInteractionManaging, CommentInteractio
     }
 
     func applyOptimisticLike(
-        postID: PostID,
+        key: PostInteractionKey,
         userID: UserID,
         isLiked: Bool,
         baseLiked: Bool? = nil,
         baseLikeCount: Int? = nil
     ) {
         postStore.applyOptimisticLike(
-            postID: postID,
+            key: key,
             userID: userID,
             isLiked: isLiked,
             baseLiked: baseLiked,
@@ -371,14 +389,14 @@ final class LookbookInteractionStore: PostInteractionManaging, CommentInteractio
     }
 
     func applyOptimisticSave(
-        postID: PostID,
+        key: PostInteractionKey,
         userID: UserID,
         isSaved: Bool,
         baseSaved: Bool? = nil,
         baseSaveCount: Int? = nil
     ) {
         postStore.applyOptimisticSave(
-            postID: postID,
+            key: key,
             userID: userID,
             isSaved: isSaved,
             baseSaved: baseSaved,
@@ -410,13 +428,13 @@ final class LookbookInteractionStore: PostInteractionManaging, CommentInteractio
     }
 
     func restoreLike(
-        postID: PostID,
+        key: PostInteractionKey,
         userID: UserID,
         isLiked: Bool,
         likeCount: Int?
     ) {
         postStore.restoreLike(
-            postID: postID,
+            key: key,
             userID: userID,
             isLiked: isLiked,
             likeCount: likeCount
@@ -425,13 +443,13 @@ final class LookbookInteractionStore: PostInteractionManaging, CommentInteractio
     }
 
     func restoreSave(
-        postID: PostID,
+        key: PostInteractionKey,
         userID: UserID,
         isSaved: Bool,
         saveCount: Int?
     ) {
         postStore.restoreSave(
-            postID: postID,
+            key: key,
             userID: userID,
             isSaved: isSaved,
             saveCount: saveCount
@@ -583,18 +601,18 @@ final class LookbookInteractionStore: PostInteractionManaging, CommentInteractio
     }
 
     private func notifyPostStateInvalidations(
-        previousStates: [PostID: LookbookPostInteractionState],
-        nextStates: [PostID: LookbookPostInteractionState]
+        previousStates: [PostInteractionKey: LookbookPostInteractionState],
+        nextStates: [PostInteractionKey: LookbookPostInteractionState]
     ) {
-        let changedPostIDs = Set(previousStates.keys)
+        let changedKeys = Set(previousStates.keys)
             .union(nextStates.keys)
             .filter { previousStates[$0] != nextStates[$0] }
 
-        guard changedPostIDs.isEmpty == false else { return }
+        guard changedKeys.isEmpty == false else { return }
 
-        for postID in changedPostIDs {
-            for (subscribedPostIDs, continuation) in postStateInvalidationContinuations.values where subscribedPostIDs.contains(postID) {
-                continuation.yield(postID)
+        for key in changedKeys {
+            for (subscribedKeys, continuation) in postStateInvalidationContinuations.values where subscribedKeys.contains(key) {
+                continuation.yield(key)
             }
         }
     }
