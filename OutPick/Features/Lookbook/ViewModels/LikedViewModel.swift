@@ -547,15 +547,11 @@ final class LikedViewModel: ObservableObject {
     }
 
     private func bindPostInteractionStore() {
-        postInvalidationTask?.cancel()
-        postInvalidationTask = nil
-
-        let keys = Set(postSection.items.map { PostInteractionKey(post: $0.post) })
-        guard keys.isEmpty == false else { return }
+        guard postInvalidationTask == nil else { return }
 
         let postInteractionStore = postInteractionStore
-        postInvalidationTask = Task { [weak self, postInteractionStore, keys] in
-            let stream = postInteractionStore.postStateInvalidationStream(for: keys)
+        postInvalidationTask = Task { [weak self, postInteractionStore] in
+            let stream = postInteractionStore.allPostStateInvalidationStream()
             for await key in stream {
                 guard let state = postInteractionStore.state(for: key) else { continue }
                 self?.applyPostInteractionState(state)
@@ -628,11 +624,16 @@ final class LikedViewModel: ObservableObject {
             return
         }
 
-        guard let index = postSection.items.firstIndex(where: { $0.id == itemID }) else { return }
-        var post = postSection.items[index].post
-        post.metrics = state.metrics
-        let userState = state.userState ?? postSection.items[index].userState
-        postSection.items[index] = LikedPostListItem(post: post, userState: userState)
+        guard let userState = state.userState else { return }
+        if let index = postSection.items.firstIndex(where: { $0.id == itemID }) {
+            var post = postSection.items[index].post
+            post.metrics = state.metrics
+            postSection.items[index] = LikedPostListItem(post: post, userState: userState)
+        } else {
+            guard var post = state.post else { return }
+            post.metrics = state.metrics
+            postSection.items.insert(LikedPostListItem(post: post, userState: userState), at: 0)
+        }
         postSection.phase = .ready
         updateAggregatePhase()
     }

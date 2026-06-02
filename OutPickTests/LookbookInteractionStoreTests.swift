@@ -353,6 +353,35 @@ struct LookbookInteractionStoreTests {
     }
 
     @MainActor
+    @Test func allPostStateInvalidationStreamPublishesAnyChangedPost() async throws {
+        let post = makePost(id: PostID(value: "post-1"), commentCount: 2)
+        let key = PostInteractionKey(post: post)
+        let store = LookbookInteractionStore(
+            maxPostStateCount: 10,
+            maxCommentStateCount: 10,
+            stateRetentionInterval: 60
+        )
+        var receivedKeys: [PostInteractionKey] = []
+
+        let task = Task { @MainActor in
+            for await changedKey in store.allPostStateInvalidationStream() {
+                receivedKeys.append(changedKey)
+                break
+            }
+        }
+
+        await Task.yield()
+        store.seedPostMetrics(post)
+
+        try await waitUntil {
+            receivedKeys == [key]
+        }
+        #expect(store.state(for: key)?.post?.id == post.id)
+        #expect(store.state(for: key)?.post?.media == post.media)
+        task.cancel()
+    }
+
+    @MainActor
     @Test func postStateUsesSeasonScopedKeyForRepeatedPostIDs() {
         let sharedPostID = PostID(value: "post_0000")
         let firstSeasonID = SeasonID(value: "season-1")

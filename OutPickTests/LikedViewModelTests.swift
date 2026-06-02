@@ -171,6 +171,51 @@ struct LikedViewModelTests {
     }
 
     @MainActor
+    @Test func postLikeInvalidationInsertsNewPostWithoutReload() async throws {
+        let userID = UserID(value: "user-1")
+        let brandID = BrandID(value: "brand-1")
+        let seasonID = SeasonID(value: "season-1")
+        let post = makePost(
+            brandID: brandID,
+            seasonID: seasonID,
+            postID: PostID(value: "post-1"),
+            likeCount: 3,
+            commentCount: 2
+        )
+        let store = LookbookInteractionStore(
+            maxPostStateCount: 10,
+            maxCommentStateCount: 10,
+            maxBrandStateCount: 10,
+            stateRetentionInterval: 60
+        )
+        let viewModel = makeViewModel(
+            likedBrandsUseCase: LoadLikedBrandsUseCaseSpy(pages: [LikedBrandPage(items: [], last: nil)]),
+            likedSeasonsUseCase: LoadLikedSeasonsUseCaseSpy(pages: [LikedSeasonPage(items: [], last: nil)]),
+            store: store,
+            userID: userID
+        )
+        await viewModel.loadInitialIfNeeded()
+        await Task.yield()
+
+        store.seedPostMetrics(post)
+        store.applyOptimisticLike(
+            key: PostInteractionKey(post: post),
+            userID: userID,
+            isLiked: true,
+            baseLiked: false,
+            baseLikeCount: 3
+        )
+
+        try await waitUntil {
+            viewModel.postItems.map(\.id) == ["\(brandID.value)_\(seasonID.value)_\(post.id.value)"]
+        }
+        #expect(viewModel.phase == .ready)
+        #expect(viewModel.postSection.phase == .ready)
+        #expect(viewModel.postItems.first?.post.metrics.likeCount == 4)
+        #expect(viewModel.postItems.first?.userState.isLiked == true)
+    }
+
+    @MainActor
     @Test func loadInitialKeepsBrandSectionReadyWhenSeasonFails() async {
         let userID = UserID(value: "user-1")
         let brand = makeBrand(id: BrandID(value: "brand-1"), likeCount: 7)

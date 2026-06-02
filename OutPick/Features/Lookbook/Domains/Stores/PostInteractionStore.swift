@@ -46,6 +46,7 @@ struct PostInteractionStore {
             LookbookPostInteractionState(
                 key: key,
                 postID: post.id,
+                post: post,
                 metrics: post.metrics,
                 visibleCommentCount: visibleCommentCount,
                 userState: userState,
@@ -62,6 +63,7 @@ struct PostInteractionStore {
             LookbookPostInteractionState(
                 key: key,
                 postID: post.id,
+                post: post,
                 metrics: post.metrics,
                 visibleCommentCount: existingState?.visibleCommentCount,
                 userState: existingState?.userState,

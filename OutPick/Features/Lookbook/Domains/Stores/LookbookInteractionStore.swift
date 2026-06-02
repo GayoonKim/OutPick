@@ -18,6 +18,7 @@ final class LookbookInteractionStore: PostInteractionManaging, CommentInteractio
     private var brandStates: [BrandID: BrandInteractionState] = [:]
     private var seasonStates: [SeasonInteractionKey: SeasonInteractionState] = [:]
     private var postStateInvalidationContinuations: [UUID: (keys: Set<PostInteractionKey>, continuation: AsyncStream<PostInteractionKey>.Continuation)] = [:]
+    private var allPostStateInvalidationContinuations: [UUID: AsyncStream<PostInteractionKey>.Continuation] = [:]
     private var commentStateInvalidationContinuations: [UUID: (commentIDs: Set<CommentID>, continuation: AsyncStream<CommentID>.Continuation)] = [:]
     private var brandStateInvalidationContinuations: [UUID: (brandIDs: Set<BrandID>, continuation: AsyncStream<BrandID>.Continuation)] = [:]
     private var allBrandStateInvalidationContinuations: [UUID: AsyncStream<BrandID>.Continuation] = [:]
@@ -87,6 +88,20 @@ final class LookbookInteractionStore: PostInteractionManaging, CommentInteractio
                 Task { @MainActor [weak self] in
                     guard let self else { return }
                     self.postStateInvalidationContinuations.removeValue(forKey: continuationID)
+                }
+            }
+        }
+    }
+
+    func allPostStateInvalidationStream() -> AsyncStream<PostInteractionKey> {
+        AsyncStream { [weak self] continuation in
+            guard let self else { return }
+            let continuationID = UUID()
+            self.allPostStateInvalidationContinuations[continuationID] = continuation
+            continuation.onTermination = { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.allPostStateInvalidationContinuations.removeValue(forKey: continuationID)
                 }
             }
         }
@@ -612,6 +627,9 @@ final class LookbookInteractionStore: PostInteractionManaging, CommentInteractio
 
         for key in changedKeys {
             for (subscribedKeys, continuation) in postStateInvalidationContinuations.values where subscribedKeys.contains(key) {
+                continuation.yield(key)
+            }
+            for continuation in allPostStateInvalidationContinuations.values {
                 continuation.yield(key)
             }
         }

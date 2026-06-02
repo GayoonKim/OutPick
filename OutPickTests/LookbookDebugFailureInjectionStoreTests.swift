@@ -554,6 +554,12 @@ private final class PostInteractionManagingSpy: PostInteractionManaging {
         }
     }
 
+    func allPostStateInvalidationStream() -> AsyncStream<PostInteractionKey> {
+        AsyncStream { continuation in
+            continuation.finish()
+        }
+    }
+
     func pinScope(
         postKeys: Set<PostInteractionKey>,
         commentIDs: Set<CommentID>

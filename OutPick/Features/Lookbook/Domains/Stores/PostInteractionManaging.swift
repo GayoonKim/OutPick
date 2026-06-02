@@ -10,6 +10,7 @@ import Foundation
 struct LookbookPostInteractionState: Equatable {
     let key: PostInteractionKey
     let postID: PostID
+    var post: LookbookPost?
     var metrics: PostMetrics
     var visibleCommentCount: Int?
     var userState: PostUserState?
@@ -38,6 +39,7 @@ struct PostInteractionKey: Hashable, Codable {
 protocol PostInteractionManaging: AnyObject {
     func state(for key: PostInteractionKey) -> LookbookPostInteractionState?
     func postStateInvalidationStream(for keys: Set<PostInteractionKey>) -> AsyncStream<PostInteractionKey>
+    func allPostStateInvalidationStream() -> AsyncStream<PostInteractionKey>
     func pinScope(postKeys: Set<PostInteractionKey>, commentIDs: Set<CommentID>) -> InteractionPinScope
     func seed(post: LookbookPost, visibleCommentCount: Int?, userState: PostUserState?)
     func seedPostMetrics(_ post: LookbookPost)
