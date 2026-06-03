@@ -72,8 +72,14 @@ CompositionRoot
 - `functions/src`: Firebase Functions TypeScript 코드.
 - `firestore.rules`: Firestore 보안 규칙.
 - `firestore.indexes.json`: Firestore 인덱스.
+- `tools`: 앱 바깥의 운영성 도구, worker, CLI를 두는 후보 디렉터리.
+- `scripts/ai`: 반복 검증, 배포, 운영 보조 자동화 스크립트.
 
 ## 기능별 구조 메모
+
+기능별 세부 아키텍처는 필요한 문서만 추가로 읽는다.
+
+- Lookbook URL Import Worker: `docs/ai/architecture/LOOKBOOK_IMPORT_WORKER.md`
 
 ### Lookbook
 
@@ -98,7 +104,9 @@ CompositionRoot
 ### Firebase Functions
 
 - 외부 export는 `functions/src/index.ts`에 둔다.
-- Lookbook import처럼 길어진 작업은 worker/materializer/asset sync/candidate discovery 파일로 분리한다.
+- Lookbook import 후보 발견처럼 짧은 작업은 Functions에서 처리할 수 있다.
+- URL 파싱, 대량 포스트 생성, 이미지 thumb/detail asset sync처럼 길고 무거운 작업은 Cloud Run worker로 넘기는 방향을 우선한다.
+- Cloud Run 전환 후 Functions는 import job 생성 감지와 worker wake-up처럼 짧고 재시도 가능한 orchestration을 담당한다.
 - callable payload 검증은 index의 helper를 우선 재사용한다.
 - 운영 함수 삭제는 사용자 명시 승인 없이 진행하지 않는다.
 
