@@ -410,6 +410,32 @@ final class CloudFunctionsManager {
         )
     }
 
+    func requestSeasonAssetRetry(
+        brandID: String,
+        sourceJobID: String
+    ) async throws -> SeasonAssetRetryReceipt {
+        let response = try await callFunction(
+            "requestSeasonAssetRetry",
+            data: [
+                "brandID": brandID,
+                "sourceJobID": sourceJobID
+            ]
+        )
+
+        return SeasonAssetRetryReceipt(
+            jobID: try stringValue(response, key: "jobID"),
+            status: try stringValue(response, key: "status"),
+            sourceImportJobID: try stringValue(
+                response,
+                key: "sourceImportJobID"
+            ),
+            isDuplicate: optionalBoolValue(
+                response,
+                key: "duplicate"
+            ) ?? false
+        )
+    }
+
     func discoverSeasonCandidates(
         brandID: String
     ) async throws -> SeasonCandidateDiscoveryResult {

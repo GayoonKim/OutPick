@@ -60,7 +60,7 @@ final class StartSeasonImportExtractionUseCase: StartSeasonImportExtractionUseCa
                 .filter { $0.status.isSeasonReadyFlowFinished }
                 .count,
             failedCount: latestJobsByCandidateID.values
-                .filter { $0.status == .failed }
+                .filter { $0.status.isFailed }
                 .count
         )
     }

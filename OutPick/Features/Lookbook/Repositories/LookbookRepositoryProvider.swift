@@ -22,6 +22,7 @@ final class LookbookRepositoryProvider {
     let seasonImportRepository: SeasonImportRequestingRepository
     let seasonImportJobRepository: SeasonImportJobRepositoryProtocol
     let seasonImportJobProcessingRepository: SeasonImportJobProcessingRepositoryProtocol
+    let seasonAssetRetryRepository: SeasonAssetRetryRequestingRepository
     let seasonCandidateRepository: SeasonCandidateRepositoryProtocol
     let seasonCandidateDiscoveryRepository: SeasonCandidateDiscoveryRepositoryProtocol
 
@@ -66,6 +67,7 @@ final class LookbookRepositoryProvider {
         seasonImportRepository: SeasonImportRequestingRepository = CloudFunctionsSeasonImportRepository(),
         seasonImportJobRepository: SeasonImportJobRepositoryProtocol = FirestoreSeasonImportJobRepository(),
         seasonImportJobProcessingRepository: SeasonImportJobProcessingRepositoryProtocol = CloudFunctionsSeasonImportJobProcessingRepository(),
+        seasonAssetRetryRepository: SeasonAssetRetryRequestingRepository = CloudFunctionsSeasonAssetRetryRepository(),
         seasonCandidateRepository: SeasonCandidateRepositoryProtocol = FirestoreSeasonCandidateRepository(),
         seasonCandidateDiscoveryRepository: SeasonCandidateDiscoveryRepositoryProtocol = CloudFunctionsSeasonCandidateDiscoveryRepository(),
 
@@ -136,6 +138,7 @@ final class LookbookRepositoryProvider {
         self.seasonImportRepository = seasonImportRepository
         self.seasonImportJobRepository = seasonImportJobRepository
         self.seasonImportJobProcessingRepository = seasonImportJobProcessingRepository
+        self.seasonAssetRetryRepository = seasonAssetRetryRepository
         self.seasonCandidateRepository = seasonCandidateRepository
         self.seasonCandidateDiscoveryRepository = seasonCandidateDiscoveryRepository
         self.brandStore = brandStore

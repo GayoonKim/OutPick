@@ -13,11 +13,13 @@ struct BrandDetailView: View {
     let maxBytes: Int
     let coordinator: LookbookCoordinator
     let seasonAdditionSheetFactory: (@escaping () -> Void) -> AnyView
+    let importManagementSheetFactory: () -> AnyView
 
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var brandAdminSessionStore: BrandAdminSessionStore
     @StateObject private var viewModel: BrandDetailViewModel
     @State private var isPresentingSeasonAddition: Bool = false
+    @State private var isPresentingImportManagement: Bool = false
     @State private var didPrepareInitialContent: Bool = false
 
     init(
@@ -26,12 +28,14 @@ struct BrandDetailView: View {
         brandImageCache: any BrandImageCacheProtocol,
         coordinator: LookbookCoordinator,
         seasonAdditionSheetFactory: @escaping (@escaping () -> Void) -> AnyView,
+        importManagementSheetFactory: @escaping () -> AnyView,
         maxBytes: Int = 1_000_000
     ) {
         self.brand = brand
         self.brandImageCache = brandImageCache
         self.coordinator = coordinator
         self.seasonAdditionSheetFactory = seasonAdditionSheetFactory
+        self.importManagementSheetFactory = importManagementSheetFactory
         self.maxBytes = maxBytes
         _viewModel = StateObject(wrappedValue: viewModel)
     }
@@ -88,15 +92,21 @@ struct BrandDetailView: View {
                 .accessibilityLabel("뒤로 가기")
             }
             ToolbarItem(placement: .navigationBarTrailing) {
-                if brandAdminSessionStore.canWrite(brandID: brand.id),
-                   hasLookbookArchiveURL {
-                    Button {
-                        isPresentingSeasonAddition = true
+                if brandAdminSessionStore.canWrite(brandID: brand.id) {
+                    Menu {
+                        if hasLookbookArchiveURL {
+                            Button("시즌 추가") {
+                                isPresentingSeasonAddition = true
+                            }
+                        }
+                        Button("가져오기 현황") {
+                            isPresentingImportManagement = true
+                        }
                     } label: {
-                        Text("시즌 추가")
+                        Image(systemName: "ellipsis.circle")
                             .foregroundStyle(.black)
                     }
-                    .accessibilityLabel("시즌 추가")
+                    .accessibilityLabel("브랜드 관리")
                 }
             }
         }
@@ -108,6 +118,9 @@ struct BrandDetailView: View {
             seasonAdditionSheetFactory {
                 isPresentingSeasonAddition = false
             }
+        }
+        .sheet(isPresented: $isPresentingImportManagement) {
+            importManagementSheetFactory()
         }
         .task {
             if !brandAdminSessionStore.canWrite(brandID: brand.id) {

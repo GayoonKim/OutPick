@@ -114,6 +114,13 @@ final class LookbookContainer {
                         onDismiss: onDismiss
                     )
                 )
+            },
+            importManagementSheetFactory: { [self] in
+                AnyView(
+                    self.makeSeasonImportManagementView(
+                        brandID: brand.id
+                    )
+                )
             }
         )
     }
@@ -301,6 +308,20 @@ final class LookbookContainer {
             }
         }
         .navigationViewStyle(StackNavigationViewStyle())
+    }
+
+    func makeSeasonImportManagementView(
+        brandID: BrandID
+    ) -> SeasonImportManagementView {
+        SeasonImportManagementView(
+            viewModel: SeasonImportManagementViewModel(
+                brandID: brandID,
+                useCase: ManageSeasonImportJobsUseCase(
+                    jobRepository: provider.seasonImportJobRepository,
+                    retryRepository: provider.seasonAssetRetryRepository
+                )
+            )
+        )
     }
 
     func makePostCommentsViewModel(
