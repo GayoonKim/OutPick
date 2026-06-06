@@ -58,7 +58,7 @@ Phase 4.5 이후 운영 설계를 볼 때:
 
 커밋 포함 여부를 판단할 때:
 
-- 하네스 커밋 기준: `docs/ai/workflows/IMPLEMENTATION.md`
+- 하네스 커밋 기준: `docs/ai/workflows/implementation/commits.md`
 
 권장 흐름:
 

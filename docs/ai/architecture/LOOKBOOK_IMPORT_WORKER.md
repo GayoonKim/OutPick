@@ -12,7 +12,7 @@ URL 기반 브랜드/시즌 등록 파이프라인을 Firestore job queue와 Clo
 - phase별 목표와 완료 기준은 `docs/ai/tasks/lookbook-import-worker/plan.md`를 본다.
 - Phase 4.5의 Cloud Tasks, lifecycle, fallback, observability 상세 설계는 `docs/ai/tasks/lookbook-import-worker/phase-4-5-design.md`를 본다.
 - 기술 선택의 이유와 대안은 `docs/ai/tasks/lookbook-import-worker/decisions.md`를 본다.
-- 커밋에 포함할 하네스 문서 판단은 `docs/ai/workflows/IMPLEMENTATION.md`의 하네스 커밋 기준을 따른다.
+- 커밋에 포함할 하네스 문서 판단은 `docs/ai/workflows/implementation/commits.md`의 하네스 커밋 기준을 따른다.
 
 ## 가치 기준
 
