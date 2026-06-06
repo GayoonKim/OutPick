@@ -32,4 +32,7 @@
 - 앱 브랜드/시즌 생성 화면: `OutPick/Features/Lookbook/Views/CreateBrand`
 - 앱 생성 ViewModel: `OutPick/Features/Lookbook/ViewModels/CreateBrandViewModel.swift`, `OutPick/Features/Lookbook/ViewModels/CreateSeasonViewModel.swift`
 - 시즌 import 시작 UseCase: `OutPick/Features/Lookbook/Domains/UseCases/StartSeasonImportExtractionUseCase.swift`
+- import 관리자 화면: `OutPick/Features/Lookbook/Views/BrandDetail/SeasonImportManagementView.swift`
+- import 관리자 ViewModel/UseCase: `OutPick/Features/Lookbook/ViewModels/SeasonImportManagementViewModel.swift`, `OutPick/Features/Lookbook/Domains/UseCases/ManageSeasonImportJobsUseCase.swift`
+- 실패 asset 재시도 Repository: `OutPick/Features/Lookbook/Repositories/Implementations/CloudFunctionsSeasonAssetRetryRepository.swift`
 - Cloud Run worker 아키텍처: `docs/ai/architecture/LOOKBOOK_IMPORT_WORKER.md`

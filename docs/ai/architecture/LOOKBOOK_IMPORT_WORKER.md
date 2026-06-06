@@ -71,17 +71,35 @@ Cloud Run worker:
 - worker는 같은 job을 중복 처리하지 않도록 Firestore transaction 기반 claim과 `leaseOwner`/`leaseExpiresAt` lease를 둔다.
 - lease duration은 5분으로 시작하고, 처리 중 1~2분마다 lease를 연장한다.
 - Firestore claim/lease는 초기 구현이며, 대량 운영 큐 기준으로는 Cloud Tasks 기반 dispatch/retry/rate limit 도입을 우선 재검토한다.
-- 현재 구현은 `importJobs.status`를 기존 iOS enum이 읽을 수 있는 `queued`, `running`, `parsed`, `success`, `failed` 범위로 유지하지만, 배포 전이라면 더 명확한 lifecycle enum으로 재설계할 수 있다.
-- worker의 세부 처리 상태와 부분 실패는 `parseStatus`, `contentStatus`, `assetSyncStatus`에 기록한다.
+- `importJobs.status`는 `queued`, `processing`, `succeeded`, `partialFailed`, `failed`, `cancelled` lifecycle을 사용한다.
+- 처리 위치는 `phase`의 `dispatching`, `parsing`, `materializing`, `syncingAssets`, `completed`로 분리한다.
+- worker의 단계별 결과는 `parseStatus`, `contentStatus`, `assetSyncStatus`에 기록한다.
+- 앱 미배포 상태이므로 기존 `running`, `parsed`, `success` lifecycle 호환 분기를 유지하지 않는다.
 - 이미 `thumbPath`와 `detailPath`가 있는 post asset은 기본적으로 skip한다.
-- 장기 자동 retry/backoff는 초기 구현에서 보류한다.
-- 이미지 fetch/upload 같은 일시 실패만 worker 내부에서 짧게 1~2회 즉시 재시도한다.
+- HTML fetch의 `429`, `5xx`, timeout, 일시적 네트워크 오류는 Cloud Tasks 장기 재시도 대상으로 둔다.
+- task payload의 `maxAttempts`와 `X-CloudTasks-TaskRetryCount`를 비교해 마지막 허용 시도에서도 실패하면 job을 `failed`로 닫는다.
+- 이미지 fetch/upload 같은 일시 실패는 worker 내부에서 짧게 즉시 재시도하고, 이후 실패 asset은 `partialFailed`로 닫는다.
 - 실패 또는 일부 실패는 top-level `status`와 세부 상태/메시지를 함께 남겨 앱 재시도 UI 대상이 되도록 한다.
-- 기존 Functions 상태를 읽을 수 있게 호환하고 worker용 상태/필드를 추가한다.
+- 실패 asset 재시도는 `retrySeasonAssets` 별도 job으로 만들고 URL 파싱과 시즌/포스트 생성을 반복하지 않는다.
+- 동일 원본 job의 활성 retry는 하나만 허용하고, retry 결과는 원본 import job에도 반영한다.
+- 브랜드 상세 관리자 화면은 최근 job과 phase, asset 성공/실패 수, 오류를 표시하고 활성 job을 polling한다.
 - dry-run은 초기 구현에서 보류한다.
 - force resync는 초기 구현에서 보류하고, asset 손상이나 잘못된 path가 확인되면 추가한다.
 - 이미지 압축/변환은 처리량과 메모리 효율 때문에 `sharp`를 사용한다.
 - URL 파싱은 경량 HTML 파싱을 기본으로 두고, 동적 렌더링 페이지는 Playwright fallback을 후속 후보로 둔다.
+- 특정 브랜드 allowlist는 두지 않지만 localhost, private/link-local IP, metadata endpoint, 내부 DNS 결과와 해당 주소로의 redirect는 차단한다.
+- DNS 검증 결과와 실제 연결 주소가 달라지는 DNS rebinding을 막기 위해 HTTP client 연결 resolver에서도 공개 IP 여부를 검증한다.
+- HTML 응답은 5MiB, 이미지 응답은 25MiB 제한으로 시작한다.
+
+## Phase 7A 배포 순서
+
+1. Functions를 먼저 배포해 신규 task payload에 `maxAttempts`를 포함한다.
+2. Cloud Run worker를 배포해 신규 lifecycle, retry 소진, URL 보안 계약을 활성화한다.
+3. 신규 import job으로 lifecycle과 Cloud Tasks retry smoke QA를 수행한다.
+
+기존 worker는 추가 payload 필드를 무시할 수 있으므로 이 순서가 전환 중 task 실패를 줄인다.
+
+Phase 7B까지 함께 배포할 때는 `requestSeasonAssetRetry`와 retry job enqueue trigger가 먼저 배포되어도 기존 worker가 retry job을 처리하지 못한다. 따라서 Functions와 Cloud Run worker 배포 간격에는 asset retry 요청을 실행하지 않고, worker 배포 직후 일반 import와 asset retry를 각각 smoke QA한다.
 
 ## 기술 선택
 

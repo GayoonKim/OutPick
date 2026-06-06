@@ -16,7 +16,7 @@
 - Season: `setSeasonEngagement`
 - Comment: `setCommentEngagement`, `createComment`, `createReply`, `deleteComment`, `reportComment`
 - User safety: `blockUser`, `loadHiddenCommentUserIDs`
-- Season import: `requestSeasonImport`, `processNextSeasonImportJob`, `processSeasonImportJobs`, `requestSeasonCandidateImportsAndProcess`, `createSeasonContentFromImportJobs`
+- Season import: `requestSeasonImport`, `requestSeasonAssetRetry`, `processNextSeasonImportJob`, `processSeasonImportJobs`, `requestSeasonCandidateImportsAndProcess`, `createSeasonContentFromImportJobs`
 - Firestore triggers: `onSeasonImportParsed`, `onSeasonImportContentCreated`, `onRoomClosed`
 
 ## Lookbook URL Import Worker
@@ -28,6 +28,8 @@ Cloud Run worker 전환 기준의 URL 기반 시즌 등록 진입점이다.
 - Cloud Run worker package: `tools/lookbook-import-worker/`
 - Cloud Run worker server: `tools/lookbook-import-worker/src/server.ts`
 - Cloud Run worker processor: `tools/lookbook-import-worker/src/processor.ts`
+- Cloud Run worker lifecycle/retry 분류: `tools/lookbook-import-worker/src/job-lifecycle.ts`, `tools/lookbook-import-worker/src/import-error.ts`
+- 공개 URL/SSRF 방어 HTTP boundary: `tools/lookbook-import-worker/src/public-http.ts`
 - Cloud Run worker Firebase boundary: `tools/lookbook-import-worker/src/firebase.ts`
 - Cloud Run worker config/env boundary: `tools/lookbook-import-worker/src/config.ts`
 - 배포/운영 자동화 후보: `scripts/ai/`
