@@ -12,8 +12,12 @@ import {setGlobalOptions} from "firebase-functions";
 // import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 
+import {CloudTasksClient} from "@google-cloud/tasks";
 import {onCall, HttpsError} from "firebase-functions/v2/https";
-import {onDocumentUpdated} from "firebase-functions/v2/firestore";
+import {
+  onDocumentUpdated,
+  onDocumentWritten,
+} from "firebase-functions/v2/firestore";
 import {getFirestore, FieldValue} from "firebase-admin/firestore";
 import {
   processNextSeasonImportJob as runNextSeasonImportJob,
@@ -33,6 +37,11 @@ admin.initializeApp();
 const db = getFirestore();
 setGlobalOptions({maxInstances: 10});
 const FUNCTIONS_REGION = "asia-northeast3";
+const LOOKBOOK_IMPORT_TASKS_LOCATION = "asia-northeast3";
+const LOOKBOOK_IMPORT_TASKS_QUEUE = "lookbook-import-jobs";
+const LOOKBOOK_IMPORT_TASK_ENDPOINT = "/tasks/import-job";
+
+let cloudTasksClient: CloudTasksClient | null = null;
 
 interface KakaoAccessTokenInfoResponse {
   id?: number;
@@ -358,6 +367,140 @@ type SeasonCandidateImportSeed = {
   sourceSortIndex: number | null;
 };
 
+type LookbookImportTaskConfig = {
+  projectID: string;
+  locationID: string;
+  queueID: string;
+  workerURL: string;
+  serviceAccountEmail: string;
+  audience: string;
+};
+
+type LookbookImportTaskReceipt = {
+  taskName: string;
+  alreadyExists: boolean;
+};
+
+function requiredRuntimeEnv(key: string): string {
+  const value = process.env[key]?.trim();
+  if (!value) {
+    throw new Error(`${key} 환경 변수가 필요합니다.`);
+  }
+  return value;
+}
+
+function optionalRuntimeEnv(key: string): string | null {
+  const value = process.env[key]?.trim();
+  return value && value.length > 0 ? value : null;
+}
+
+function googleCloudProjectID(): string {
+  const projectID =
+    optionalRuntimeEnv("GCLOUD_PROJECT") ??
+    optionalRuntimeEnv("GOOGLE_CLOUD_PROJECT") ??
+    optionalRuntimeEnv("GCP_PROJECT");
+  if (!projectID) {
+    throw new Error("Google Cloud project ID 환경 변수가 필요합니다.");
+  }
+  return projectID;
+}
+
+function lookbookImportTaskConfig(): LookbookImportTaskConfig {
+  const workerURL = requiredRuntimeEnv("OUTPICK_LOOKBOOK_IMPORT_WORKER_URL")
+    .replace(/\/+$/, "");
+  return {
+    projectID: googleCloudProjectID(),
+    locationID:
+      optionalRuntimeEnv("OUTPICK_LOOKBOOK_IMPORT_TASKS_LOCATION") ??
+      LOOKBOOK_IMPORT_TASKS_LOCATION,
+    queueID:
+      optionalRuntimeEnv("OUTPICK_LOOKBOOK_IMPORT_TASKS_QUEUE") ??
+      LOOKBOOK_IMPORT_TASKS_QUEUE,
+    workerURL,
+    serviceAccountEmail: requiredRuntimeEnv(
+      "OUTPICK_LOOKBOOK_IMPORT_TASKS_SERVICE_ACCOUNT_EMAIL"
+    ),
+    audience:
+      optionalRuntimeEnv("OUTPICK_LOOKBOOK_IMPORT_TASKS_AUDIENCE") ??
+      workerURL,
+  };
+}
+
+function tasksClient(): CloudTasksClient {
+  cloudTasksClient ??= new CloudTasksClient();
+  return cloudTasksClient;
+}
+
+function deterministicImportTaskID(brandID: string, jobID: string): string {
+  const encoded = Buffer
+    .from(`${brandID}:${jobID}`)
+    .toString("base64url");
+  return `import-${encoded}`.slice(0, 500);
+}
+
+function isAlreadyExistsError(error: unknown): boolean {
+  const code = (error as {code?: unknown})?.code;
+  return code === 6 || code === "ALREADY_EXISTS";
+}
+
+async function enqueueLookbookImportTask(
+  brandID: string,
+  jobID: string
+): Promise<LookbookImportTaskReceipt> {
+  const config = lookbookImportTaskConfig();
+  const client = tasksClient();
+  const parent = client.queuePath(
+    config.projectID,
+    config.locationID,
+    config.queueID
+  );
+  const taskName = client.taskPath(
+    config.projectID,
+    config.locationID,
+    config.queueID,
+    deterministicImportTaskID(brandID, jobID)
+  );
+  const payload = {
+    brandID,
+    jobID,
+    requestedAt: new Date().toISOString(),
+  };
+
+  try {
+    const [task] = await client.createTask({
+      parent,
+      task: {
+        name: taskName,
+        httpRequest: {
+          httpMethod: "POST",
+          url: `${config.workerURL}${LOOKBOOK_IMPORT_TASK_ENDPOINT}`,
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: Buffer.from(JSON.stringify(payload)),
+          oidcToken: {
+            serviceAccountEmail: config.serviceAccountEmail,
+            audience: config.audience,
+          },
+        },
+      },
+    });
+
+    return {
+      taskName: task.name ?? taskName,
+      alreadyExists: false,
+    };
+  } catch (error) {
+    if (isAlreadyExistsError(error)) {
+      return {
+        taskName,
+        alreadyExists: true,
+      };
+    }
+    throw error;
+  }
+}
+
 async function seasonCandidateImportSeed(
   brandRef: FirebaseFirestore.DocumentReference,
   sourceCandidateID: string | null,
@@ -491,6 +634,7 @@ async function requestSeasonImportJob(
       brandID,
       jobType: "importSeasonFromURL",
       status: "queued",
+      dispatchMode: "cloudTasks",
       sourceURL: seasonURL,
       sourceCandidateID,
       sourceTitle: candidateSeed.sourceTitle,
@@ -1830,18 +1974,72 @@ export const requestSeasonCandidateImportsAndProcess = onCall(
     const jobIDs = Array.from(
       new Set(receipts.map((receipt) => receipt.jobID))
     );
-    const batchResult = await runSeasonImportJobs(db, brandID, jobIDs, 3);
-
     return {
       brandID,
       candidateIDs,
       jobIDs,
       requestedJobCount: receipts.length,
       duplicateJobCount: receipts.filter((receipt) => receipt.duplicate).length,
-      processedJobCount: batchResult.processedJobCount,
-      failedJobCount: batchResult.failedJobCount,
-      skippedJobCount: batchResult.skippedJobCount,
+      processedJobCount: 0,
+      failedJobCount: 0,
+      skippedJobCount: 0,
     };
+  }
+);
+
+export const onSeasonImportQueued = onDocumentWritten(
+  {
+    document: "brands/{brandID}/importJobs/{jobID}",
+    region: FUNCTIONS_REGION,
+    timeoutSeconds: 60,
+    memory: "256MiB",
+  },
+  async (event) => {
+    const afterSnap = event.data?.after;
+    if (!afterSnap?.exists) {
+      return;
+    }
+
+    const before = event.data?.before.data() as
+      Record<string, unknown> | undefined;
+    const after = afterSnap.data() as Record<string, unknown> | undefined;
+    if (!after) {
+      return;
+    }
+
+    const shouldEnqueue =
+      after.jobType === "importSeasonFromURL" &&
+      after.status === "queued" &&
+      (
+        !before ||
+        before.status !== "queued"
+      );
+
+    if (!shouldEnqueue) {
+      return;
+    }
+
+    const brandID = String(event.params.brandID ?? "");
+    const jobID = String(event.params.jobID ?? "");
+    if (!brandID || !jobID) {
+      return;
+    }
+
+    const receipt = await enqueueLookbookImportTask(brandID, jobID);
+    await afterSnap.ref.set({
+      dispatchMode: "cloudTasks",
+      dispatchStatus: receipt.alreadyExists ? "alreadyEnqueued" : "enqueued",
+      taskName: receipt.taskName,
+      taskEnqueuedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    }, {merge: true});
+
+    console.log("[onSeasonImportQueued] task enqueued", {
+      brandID,
+      jobID,
+      taskName: receipt.taskName,
+      alreadyExists: receipt.alreadyExists,
+    });
   }
 );
 
@@ -1885,6 +2083,8 @@ export const onSeasonImportParsed = onDocumentUpdated(
 
     const shouldStart =
       after.jobType === "importSeasonFromURL" &&
+      after.dispatchMode !== "cloudTasks" &&
+      after.processingEngine !== "cloudRunWorker" &&
       after.status === "parsed" &&
       before.status !== "parsed" &&
       before.status !== "success" &&
@@ -1934,6 +2134,8 @@ export const onSeasonImportContentCreated = onDocumentUpdated(
 
     const shouldStart =
       after.jobType === "importSeasonFromURL" &&
+      after.dispatchMode !== "cloudTasks" &&
+      after.processingEngine !== "cloudRunWorker" &&
       after.status === "success" &&
       after.contentStatus === "created" &&
       after.assetSyncStatus === "pending" &&

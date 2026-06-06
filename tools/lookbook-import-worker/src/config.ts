@@ -1,14 +1,19 @@
 export interface WorkerConfig {
   projectID: string;
+  storageBucket: string;
   port: number;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv): WorkerConfig {
   const projectID = requiredEnv(env, "OUTPICK_FIREBASE_PROJECT_ID");
+  const storageBucket =
+    optionalEnv(env, "OUTPICK_FIREBASE_STORAGE_BUCKET") ??
+    `${projectID}.appspot.com`;
   const port = parsePort(env.PORT);
 
   return {
     projectID,
+    storageBucket,
     port,
   };
 }
@@ -19,6 +24,11 @@ function requiredEnv(env: NodeJS.ProcessEnv, key: string): string {
     throw new Error(`${key} 환경 변수가 필요합니다.`);
   }
   return value;
+}
+
+function optionalEnv(env: NodeJS.ProcessEnv, key: string): string | null {
+  const value = env[key]?.trim();
+  return value && value.length > 0 ? value : null;
 }
 
 function parsePort(rawPort: string | undefined): number {

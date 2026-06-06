@@ -8,7 +8,10 @@ let httpServer: Server | null = null;
 
 async function main(): Promise<void> {
   const config = loadConfig(process.env);
-  const firebase = initializeFirebaseClients(config.projectID);
+  const firebase = initializeFirebaseClients(
+    config.projectID,
+    config.storageBucket,
+  );
   const app = createServer({
     projectID: config.projectID,
     firebase,

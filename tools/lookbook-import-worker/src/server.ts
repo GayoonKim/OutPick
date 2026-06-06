@@ -1,7 +1,12 @@
 import express, {type Express, type Request, type Response} from "express";
 
 import {type FirebaseClients} from "./firebase.js";
-import {processWakeRequest, type WakeRequest} from "./processor.js";
+import {
+  processImportJobTaskRequest,
+  processWakeRequest,
+  type ImportJobTaskRequest,
+  type WakeRequest,
+} from "./processor.js";
 
 interface ServerDependencies {
   projectID: string;
@@ -22,7 +27,6 @@ export function createServer(dependencies: ServerDependencies): Express {
   });
 
   app.post("/wake", async (request: Request, response: Response) => {
-    // TODO: Phase 5에서 Cloud Run 호출 인증 방식을 확정한 뒤 검증을 추가한다.
     try {
       const result = await processWakeRequest(
         {
@@ -39,6 +43,28 @@ export function createServer(dependencies: ServerDependencies): Express {
       });
     }
   });
+
+  app.post(
+    "/tasks/import-job",
+    async (request: Request, response: Response) => {
+      try {
+        const result = await processImportJobTaskRequest(
+          {
+            firestore: dependencies.firebase.firestore,
+            storage: dependencies.firebase.storage,
+          },
+          request.body as ImportJobTaskRequest,
+        );
+        response.status(200).json(result);
+      } catch (error) {
+        console.error("[lookbook-import-worker] task request failed", error);
+        response.status(500).json({
+          accepted: false,
+          errorMessage: errorMessage(error),
+        });
+      }
+    },
+  );
 
   return app;
 }

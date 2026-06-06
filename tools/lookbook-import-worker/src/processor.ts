@@ -84,6 +84,12 @@ export type WakeRequest = {
   batchSize?: unknown;
 };
 
+export type ImportJobTaskRequest = {
+  brandID?: unknown;
+  jobID?: unknown;
+  requestedAt?: unknown;
+};
+
 export type WakeResult = {
   accepted: true;
   workerID: string;
@@ -92,6 +98,12 @@ export type WakeResult = {
   skippedJobCount: number;
   failedJobCount: number;
   results: JobResult[];
+};
+
+export type ImportJobTaskResult = {
+  accepted: true;
+  workerID: string;
+  result: JobResult;
 };
 
 type ProcessorDependencies = {
@@ -204,6 +216,24 @@ export async function processWakeRequest(
     skippedJobCount: results.filter((result) => result.status === "skipped").length,
     failedJobCount: results.filter((result) => result.status === "failed").length,
     results,
+  };
+}
+
+export async function processImportJobTaskRequest(
+  dependencies: ProcessorDependencies,
+  request: ImportJobTaskRequest,
+): Promise<ImportJobTaskResult> {
+  const workerID = `worker_${randomUUID()}`;
+  const target = {
+    brandID: requiredDocumentID(request.brandID, "brandID"),
+    jobID: requiredDocumentID(request.jobID, "jobID"),
+  };
+
+  const result = await processJob(dependencies, target, workerID);
+  return {
+    accepted: true,
+    workerID,
+    result,
   };
 }
 
@@ -370,6 +400,7 @@ async function claimJob(
 
     transaction.update(jobRef, {
       status: "running",
+      processingEngine: "cloudRunWorker",
       parseStatus: data.parseStatus ?? "pending",
       contentStatus: data.contentStatus ?? "pending",
       assetSyncStatus: data.assetSyncStatus ?? "pending",
@@ -1433,6 +1464,10 @@ function optionalDocumentID(value: unknown, fieldName: string): string | null {
   if (value === undefined || value === null) {
     return null;
   }
+  return documentID(stringField(value, fieldName), fieldName);
+}
+
+function requiredDocumentID(value: unknown, fieldName: string): string {
   return documentID(stringField(value, fieldName), fieldName);
 }
 

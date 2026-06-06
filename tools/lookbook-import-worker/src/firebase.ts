@@ -8,8 +8,14 @@ export interface FirebaseClients {
   storage: Storage;
 }
 
-export function initializeFirebaseClients(projectID: string): FirebaseClients {
-  const app = getApps()[0] ?? initializeApp({projectId: projectID});
+export function initializeFirebaseClients(
+  projectID: string,
+  storageBucket: string,
+): FirebaseClients {
+  const app = getApps()[0] ?? initializeApp({
+    projectId: projectID,
+    storageBucket,
+  });
 
   return {
     app,
