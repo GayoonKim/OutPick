@@ -40,6 +40,7 @@ const FUNCTIONS_REGION = "asia-northeast3";
 const LOOKBOOK_IMPORT_TASKS_LOCATION = "asia-northeast3";
 const LOOKBOOK_IMPORT_TASKS_QUEUE = "lookbook-import-jobs";
 const LOOKBOOK_IMPORT_TASK_ENDPOINT = "/tasks/import-job";
+const LOOKBOOK_IMPORT_TASK_MAX_ATTEMPTS = 3;
 
 let cloudTasksClient: CloudTasksClient | null = null;
 
@@ -330,13 +331,19 @@ function requiredDocumentIDList(
   return uniqueIDs;
 }
 
-function isActiveSeasonImportStatus(status: unknown): boolean {
+function blocksDuplicateSeasonImport(status: unknown): boolean {
   return (
     status === "queued" ||
-    status === "running" ||
-    status === "parsed" ||
-    status === "success" ||
-    status === "imported"
+    status === "processing" ||
+    status === "succeeded" ||
+    status === "partialFailed"
+  );
+}
+
+function isInFlightSeasonImportStatus(status: unknown): boolean {
+  return (
+    status === "queued" ||
+    status === "processing"
   );
 }
 
@@ -463,6 +470,7 @@ async function enqueueLookbookImportTask(
   const payload = {
     brandID,
     jobID,
+    maxAttempts: LOOKBOOK_IMPORT_TASK_MAX_ATTEMPTS,
     requestedAt: new Date().toISOString(),
   };
 
@@ -588,7 +596,7 @@ async function requestSeasonImportJob(
       const job = snapshot.data();
       return (
         job.jobType === "importSeasonFromURL" &&
-        isActiveSeasonImportStatus(job.status)
+        blocksDuplicateSeasonImport(job.status)
       );
     });
 
@@ -634,6 +642,7 @@ async function requestSeasonImportJob(
       brandID,
       jobType: "importSeasonFromURL",
       status: "queued",
+      phase: "dispatching",
       dispatchMode: "cloudTasks",
       sourceURL: seasonURL,
       sourceCandidateID,
@@ -642,6 +651,8 @@ async function requestSeasonImportJob(
       sourceSortIndex: candidateSeed.sourceSortIndex,
       requestedBy: uid,
       errorMessage: null,
+      assetCompletedCount: 0,
+      assetFailedCount: 0,
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
@@ -652,6 +663,100 @@ async function requestSeasonImportJob(
       status: "queued",
       seasonURL,
       sourceCandidateID,
+      duplicate: false,
+    };
+  });
+}
+
+async function requestSeasonAssetRetryJob(
+  uid: string,
+  brandID: string,
+  sourceJobID: string
+): Promise<{
+  jobID: string;
+  brandID: string;
+  status: string;
+  sourceImportJobID: string;
+  duplicate: boolean;
+}> {
+  const brandRef = db.collection("brands").doc(brandID);
+  const importJobsRef = brandRef.collection("importJobs");
+  const sourceJobRef = importJobsRef.doc(sourceJobID);
+  const retryJobRef = importJobsRef.doc();
+
+  return db.runTransaction(async (transaction) => {
+    const sourceJobSnapshot = await transaction.get(sourceJobRef);
+    if (!sourceJobSnapshot.exists) {
+      throw new HttpsError("not-found", "원본 import job을 찾을 수 없습니다.");
+    }
+    const sourceJob = sourceJobSnapshot.data() ?? {};
+    if (
+      sourceJob.jobType !== "importSeasonFromURL" ||
+      !["partialFailed", "failed"].includes(String(sourceJob.status))
+    ) {
+      throw new HttpsError(
+        "failed-precondition",
+        "실패 asset이 있는 완료 job만 재시도할 수 있습니다."
+      );
+    }
+    const targetSeasonID = requiredDocumentID(
+      requiredString(sourceJob, "targetSeasonID", 128),
+      "targetSeasonID"
+    );
+    const sourceURL = normalizedHTTPURL(
+      requiredString(sourceJob, "sourceURL", 2048),
+      "sourceURL"
+    );
+    const createdPostIDs = requiredDocumentIDList(
+      sourceJob.createdPostIDs,
+      "createdPostIDs",
+      120
+    );
+
+    const existingSnapshot = await transaction.get(
+      importJobsRef.where("sourceImportJobID", "==", sourceJobID)
+    );
+    const activeDuplicate = existingSnapshot.docs.find((snapshot) => {
+      const job = snapshot.data();
+      return (
+        job.jobType === "retrySeasonAssets" &&
+        isInFlightSeasonImportStatus(job.status)
+      );
+    });
+    if (activeDuplicate) {
+      return {
+        jobID: activeDuplicate.id,
+        brandID,
+        status: String(activeDuplicate.data().status ?? "queued"),
+        sourceImportJobID: sourceJobID,
+        duplicate: true,
+      };
+    }
+
+    transaction.set(retryJobRef, {
+      brandID,
+      jobType: "retrySeasonAssets",
+      status: "queued",
+      phase: "dispatching",
+      dispatchMode: "cloudTasks",
+      sourceImportJobID: sourceJobID,
+      sourceURL,
+      targetSeasonID,
+      createdPostIDs,
+      requestedBy: uid,
+      errorMessage: null,
+      assetTotalCount: Number(sourceJob.assetTotalCount ?? 0),
+      assetCompletedCount: Number(sourceJob.assetCompletedCount ?? 0),
+      assetFailedCount: Number(sourceJob.assetFailedCount ?? 0),
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    return {
+      jobID: retryJobRef.id,
+      brandID,
+      status: "queued",
+      sourceImportJobID: sourceJobID,
       duplicate: false,
     };
   });
@@ -1886,6 +1991,25 @@ export const requestSeasonImport = onCall(
   }
 );
 
+export const requestSeasonAssetRetry = onCall(
+  {region: FUNCTIONS_REGION},
+  async (request) => {
+    const uid = requiredAuthUID(request.auth?.uid);
+    const data = recordData(request.data);
+    const brandID = requiredDocumentID(
+      requiredString(data, "brandID", 128),
+      "brandID"
+    );
+    const sourceJobID = requiredDocumentID(
+      requiredString(data, "sourceJobID", 128),
+      "sourceJobID"
+    );
+
+    await assertBrandWriteAccess(uid, brandID);
+    return requestSeasonAssetRetryJob(uid, brandID, sourceJobID);
+  }
+);
+
 export const processNextSeasonImportJob = onCall(
   {region: FUNCTIONS_REGION, timeoutSeconds: 60, memory: "512MiB"},
   async (request) => {
@@ -2008,7 +2132,10 @@ export const onSeasonImportQueued = onDocumentWritten(
     }
 
     const shouldEnqueue =
-      after.jobType === "importSeasonFromURL" &&
+      (
+        after.jobType === "importSeasonFromURL" ||
+        after.jobType === "retrySeasonAssets"
+      ) &&
       after.status === "queued" &&
       (
         !before ||
@@ -2027,6 +2154,7 @@ export const onSeasonImportQueued = onDocumentWritten(
 
     const receipt = await enqueueLookbookImportTask(brandID, jobID);
     await afterSnap.ref.set({
+      phase: "dispatching",
       dispatchMode: "cloudTasks",
       dispatchStatus: receipt.alreadyExists ? "alreadyEnqueued" : "enqueued",
       taskName: receipt.taskName,

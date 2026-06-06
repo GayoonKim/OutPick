@@ -6,7 +6,22 @@ import {FieldValue, Timestamp} from "firebase-admin/firestore";
 import type {Storage} from "firebase-admin/storage";
 import sharp from "sharp";
 
-type WorkerStatus = "queued" | "running" | "parsed" | "success" | "failed";
+import {
+  isRetryableImportError,
+  RetryableImportError,
+} from "./import-error.js";
+import {
+  fetchPublicHTTP,
+  responseBytes,
+  retryableStatusError,
+} from "./public-http.js";
+import {
+  completedLifecycle,
+  isFinalTaskAttempt,
+  type ImportJobLifecycle,
+} from "./job-lifecycle.js";
+
+type WorkerStatus = ImportJobLifecycle;
 
 type ImageCandidate = {
   sourceURL: string;
@@ -18,6 +33,7 @@ type ImportJobData = {
   jobType?: unknown;
   status?: unknown;
   sourceURL?: unknown;
+  sourceImportJobID?: unknown;
   sourceCandidateID?: unknown;
   sourceTitle?: unknown;
   coverRemoteURL?: unknown;
@@ -28,6 +44,7 @@ type ImportJobData = {
   parseStatus?: unknown;
   contentStatus?: unknown;
   assetSyncStatus?: unknown;
+  assetTotalCount?: unknown;
   leaseOwner?: unknown;
   leaseExpiresAt?: unknown;
   createdAt?: unknown;
@@ -60,8 +77,11 @@ type JobTarget = {
 };
 
 type ClaimedJob = JobTarget & {
+  jobType: "importSeasonFromURL" | "retrySeasonAssets";
   sourceURL: string;
   sourceCandidateID: string | null;
+  sourceImportJobID: string | null;
+  targetSeasonID: string | null;
 };
 
 type JobResult = JobTarget & {
@@ -87,6 +107,7 @@ export type WakeRequest = {
 export type ImportJobTaskRequest = {
   brandID?: unknown;
   jobID?: unknown;
+  maxAttempts?: unknown;
   requestedAt?: unknown;
 };
 
@@ -109,6 +130,11 @@ export type ImportJobTaskResult = {
 type ProcessorDependencies = {
   firestore: Firestore;
   storage: Storage;
+};
+
+type TaskRetryPolicy = {
+  retryCount: number;
+  maxAttempts: number;
 };
 
 type SyncTarget =
@@ -143,6 +169,7 @@ const MAX_IMAGE_CANDIDATES_TO_STORE = 120;
 const MIN_STRONG_SECTION_WEIGHT = 240;
 const FETCH_HTML_TIMEOUT_MS = 15_000;
 const FETCH_IMAGE_TIMEOUT_MS = 20_000;
+const HTML_MAX_BYTES = 5 * 1024 * 1024;
 const REMOTE_IMAGE_MAX_BYTES = 25 * 1024 * 1024;
 const ASSET_SYNC_CONCURRENCY = 3;
 
@@ -222,14 +249,24 @@ export async function processWakeRequest(
 export async function processImportJobTaskRequest(
   dependencies: ProcessorDependencies,
   request: ImportJobTaskRequest,
+  retryCount: number,
 ): Promise<ImportJobTaskResult> {
   const workerID = `worker_${randomUUID()}`;
   const target = {
     brandID: requiredDocumentID(request.brandID, "brandID"),
     jobID: requiredDocumentID(request.jobID, "jobID"),
   };
+  const retryPolicy = {
+    retryCount: nonNegativeInteger(retryCount, "retryCount"),
+    maxAttempts: positiveInteger(request.maxAttempts, "maxAttempts"),
+  };
 
-  const result = await processJob(dependencies, target, workerID);
+  const result = await processJob(
+    dependencies,
+    target,
+    workerID,
+    retryPolicy,
+  );
   return {
     accepted: true,
     workerID,
@@ -257,7 +294,7 @@ async function resolveJobTargets(
       .collection("brands")
       .doc(brandID)
       .collection("importJobs")
-      .where("status", "in", ["queued", "running"])
+      .where("status", "in", ["queued", "processing"])
       .limit(Math.max(batchSize * 4, batchSize))
       .get();
 
@@ -278,7 +315,13 @@ async function resolveJobTargets(
     .map((doc) => {
       const data = doc.data() as ImportJobData;
       const resolvedBrandID = optionalDocumentID(data.brandID, "brandID");
-      if (resolvedBrandID === null || data.jobType !== "importSeasonFromURL") {
+      if (
+        resolvedBrandID === null ||
+        (
+          data.jobType !== "importSeasonFromURL" &&
+          data.jobType !== "retrySeasonAssets"
+        )
+      ) {
         return null;
       }
       return {brandID: resolvedBrandID, jobID: doc.id};
@@ -290,6 +333,7 @@ async function processJob(
   dependencies: ProcessorDependencies,
   target: JobTarget,
   workerID: string,
+  retryPolicy?: TaskRetryPolicy,
 ): Promise<JobResult> {
   const db = dependencies.firestore;
   const jobRef = importJobRef(db, target);
@@ -304,8 +348,11 @@ async function processJob(
   }
   const claimedJob: ClaimedJob = {
     ...target,
+    jobType: claim.jobType,
     sourceURL: claim.sourceURL,
     sourceCandidateID: claim.sourceCandidateID,
+    sourceImportJobID: claim.sourceImportJobID,
+    targetSeasonID: claim.targetSeasonID,
   };
 
   const leaseTimer = setInterval(() => {
@@ -315,6 +362,14 @@ async function processJob(
   }, LEASE_REFRESH_MS);
 
   try {
+    if (claimedJob.jobType === "retrySeasonAssets") {
+      return await processAssetRetryJob(
+        dependencies,
+        jobRef,
+        claimedJob,
+      );
+    }
+
     const parseResult = await ensureParsed(db, jobRef, claimedJob);
     if (!parseResult.ok) {
       return await failJob(jobRef, target, parseResult.errorMessage, {
@@ -336,15 +391,17 @@ async function processJob(
       materializeResult.seasonID,
     );
 
-    const finalStatus = assetResult.status === "failed" ? "failed" : "success";
+    const finalStatus = completedLifecycle(assetResult.status);
     await jobRef.update({
       status: finalStatus,
+      phase: "completed",
       assetSyncStatus: assetResult.status,
       assetCompletedCount: assetResult.completedCount,
       assetFailedCount: assetResult.failedCount,
       assetSyncedAt: FieldValue.serverTimestamp(),
       errorMessage: assetResult.errorMessage ?? null,
       assetSyncErrorMessage: assetResult.errorMessage ?? null,
+      completedAt: FieldValue.serverTimestamp(),
       leaseOwner: null,
       leaseExpiresAt: null,
       updatedAt: FieldValue.serverTimestamp(),
@@ -354,8 +411,8 @@ async function processJob(
       ...target,
       processed: true,
       status: finalStatus,
-      parseStatus: "parsed",
-      contentStatus: "created",
+      parseStatus: "succeeded",
+      contentStatus: "succeeded",
       assetSyncStatus: assetResult.status,
       seasonID: materializeResult.seasonID,
       postCount: materializeResult.postCount,
@@ -364,6 +421,22 @@ async function processJob(
       errorMessage: assetResult.errorMessage,
     };
   } catch (error) {
+    if (isRetryableImportError(error)) {
+      if (
+        retryPolicy &&
+        isFinalTaskAttempt(
+          retryPolicy.retryCount,
+          retryPolicy.maxAttempts,
+        )
+      ) {
+        return failJob(jobRef, target, error.message, {
+          parseStatus: "failed",
+          errorCode: "retryExhausted",
+        });
+      }
+      await releaseJobForTaskRetry(jobRef, error.message);
+      throw error;
+    }
     return await failJob(jobRef, target, errorMessage(error), {});
   } finally {
     clearInterval(leaseTimer);
@@ -375,7 +448,14 @@ async function claimJob(
   target: JobTarget,
   workerID: string,
 ): Promise<
-  | {claimed: true; sourceURL: string; sourceCandidateID: string | null}
+  | {
+      claimed: true;
+      jobType: "importSeasonFromURL" | "retrySeasonAssets";
+      sourceURL: string;
+      sourceCandidateID: string | null;
+      sourceImportJobID: string | null;
+      targetSeasonID: string | null;
+    }
   | {claimed: false; reason: string}
 > {
   const jobRef = importJobRef(db, target);
@@ -385,7 +465,10 @@ async function claimJob(
     if (!snapshot.exists || !data) {
       return {claimed: false, reason: "notFound"};
     }
-    if (data.jobType !== "importSeasonFromURL") {
+    if (
+      data.jobType !== "importSeasonFromURL" &&
+      data.jobType !== "retrySeasonAssets"
+    ) {
       return {claimed: false, reason: "invalidJobType"};
     }
     if (stringField(data.brandID, "brandID") !== target.brandID) {
@@ -399,34 +482,98 @@ async function claimJob(
     }
 
     transaction.update(jobRef, {
-      status: "running",
+      status: "processing",
+      phase: "parsing",
       processingEngine: "cloudRunWorker",
       parseStatus: data.parseStatus ?? "pending",
       contentStatus: data.contentStatus ?? "pending",
       assetSyncStatus: data.assetSyncStatus ?? "pending",
       leaseOwner: workerID,
       leaseExpiresAt: Timestamp.fromMillis(Date.now() + LEASE_DURATION_MS),
-      startedAt: FieldValue.serverTimestamp(),
+      processingStartedAt: FieldValue.serverTimestamp(),
+      lastAttemptAt: FieldValue.serverTimestamp(),
+      attemptCount: FieldValue.increment(1),
       updatedAt: FieldValue.serverTimestamp(),
       errorMessage: null,
     });
 
     return {
       claimed: true,
+      jobType: data.jobType,
       sourceURL: stringField(data.sourceURL, "sourceURL"),
       sourceCandidateID: optionalStringField(data.sourceCandidateID),
+      sourceImportJobID: optionalStringField(data.sourceImportJobID),
+      targetSeasonID: optionalStringField(data.targetSeasonID),
     };
   });
+}
+
+async function processAssetRetryJob(
+  dependencies: ProcessorDependencies,
+  jobRef: FirebaseFirestore.DocumentReference,
+  claim: ClaimedJob,
+): Promise<JobResult> {
+  if (claim.targetSeasonID === null || claim.sourceImportJobID === null) {
+    return failJob(jobRef, claim, "asset retry 대상 정보가 없습니다.", {
+      contentStatus: "failed",
+    });
+  }
+
+  await jobRef.update({
+    parseStatus: "skipped",
+    contentStatus: "skipped",
+    phase: "syncingAssets",
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+  const assetResult = await syncAssets(
+    dependencies,
+    jobRef,
+    claim,
+    claim.targetSeasonID,
+  );
+  const finalStatus = completedLifecycle(assetResult.status);
+  const finalPatch = {
+    status: finalStatus,
+    phase: "completed",
+    assetSyncStatus: assetResult.status,
+    assetCompletedCount: assetResult.completedCount,
+    assetFailedCount: assetResult.failedCount,
+    assetSyncedAt: FieldValue.serverTimestamp(),
+    completedAt: FieldValue.serverTimestamp(),
+    errorMessage: assetResult.errorMessage ?? null,
+    assetSyncErrorMessage: assetResult.errorMessage ?? null,
+    leaseOwner: null,
+    leaseExpiresAt: null,
+    updatedAt: FieldValue.serverTimestamp(),
+  };
+  await Promise.all([
+    jobRef.update(finalPatch),
+    importJobRef(dependencies.firestore, {
+      brandID: claim.brandID,
+      jobID: claim.sourceImportJobID,
+    }).update(finalPatch),
+  ]);
+
+  return {
+    brandID: claim.brandID,
+    jobID: claim.jobID,
+    processed: true,
+    status: finalStatus,
+    parseStatus: "skipped",
+    contentStatus: "skipped",
+    assetSyncStatus: assetResult.status,
+    seasonID: claim.targetSeasonID,
+    completedCount: assetResult.completedCount,
+    failedCount: assetResult.failedCount,
+    errorMessage: assetResult.errorMessage,
+  };
 }
 
 function isClaimable(data: ImportJobData): boolean {
   if (data.status === "queued") {
     return true;
   }
-  if (data.status === "parsed" || data.status === "success") {
-    return data.assetSyncStatus !== "ready";
-  }
-  if (data.status === "running") {
+  if (data.status === "processing") {
     return timestampMillis(data.leaseExpiresAt) < Date.now();
   }
   return false;
@@ -441,7 +588,7 @@ async function ensureParsed(
   const data = snapshot.data() as ImportJobData | undefined;
   if (parsedImageCandidates(data?.imageCandidates).length > 0) {
     await jobRef.update({
-      parseStatus: "parsed",
+      parseStatus: "succeeded",
       parsedAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
@@ -449,7 +596,8 @@ async function ensureParsed(
   }
 
   await jobRef.update({
-    parseStatus: "parsing",
+    phase: "parsing",
+    parseStatus: "running",
     updatedAt: FieldValue.serverTimestamp(),
   });
 
@@ -461,8 +609,7 @@ async function ensureParsed(
     }
 
     await jobRef.update({
-      status: "parsed",
-      parseStatus: "parsed",
+      parseStatus: "succeeded",
       imageCandidateCount: extraction.candidates.length,
       imageCandidates: extraction.candidates.slice(0, MAX_IMAGE_CANDIDATES_TO_STORE),
       imageExtractionStrategy: extraction.strategy,
@@ -472,6 +619,9 @@ async function ensureParsed(
     });
     return {ok: true};
   } catch (error) {
+    if (isRetryableImportError(error)) {
+      throw error;
+    }
     return {ok: false, errorMessage: errorMessage(error)};
   }
 }
@@ -490,14 +640,15 @@ async function ensureMaterialized(
   const existingPostIDs = stringArray(data?.createdPostIDs);
   if (existingSeasonID !== null && existingPostIDs.length > 0) {
     await jobRef.update({
-      contentStatus: "created",
+      contentStatus: "succeeded",
       updatedAt: FieldValue.serverTimestamp(),
     });
     return {ok: true, seasonID: existingSeasonID, postCount: existingPostIDs.length};
   }
 
   await jobRef.update({
-    contentStatus: "creating",
+    phase: "materializing",
+    contentStatus: "running",
     contentErrorMessage: null,
     contentStartedAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
@@ -585,8 +736,7 @@ async function ensureMaterialized(
     });
 
     batch.update(jobRef, {
-      status: "success",
-      contentStatus: "created",
+      contentStatus: "succeeded",
       assetSyncStatus: "pending",
       seasonTitle: metadata.displayTitle,
       sourceTitle: metadata.sourceTitle,
@@ -625,11 +775,15 @@ async function syncAssets(
   errorMessage?: string;
 }> {
   await jobRef.update({
+    phase: "syncingAssets",
     assetSyncStatus: "syncing",
     assetSyncErrorMessage: null,
     assetSyncStartedAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   });
+  const jobSnapshot = await jobRef.get();
+  const jobData = jobSnapshot.data() as ImportJobData | undefined;
+  const declaredTotalCount = optionalInteger(jobData?.assetTotalCount);
 
   const targets = await assetSyncTargets(
     dependencies.firestore,
@@ -638,22 +792,32 @@ async function syncAssets(
     claim.sourceURL,
     jobRef,
   );
+  const seasonRef = seasonRefFor(
+    dependencies.firestore,
+    claim.brandID,
+    seasonID,
+  );
   if (targets.length === 0) {
+    await seasonRef.set({
+      assetSyncStatus: "ready",
+      assetSyncErrorMessage: null,
+      updatedAt: FieldValue.serverTimestamp(),
+    }, {merge: true});
     return {
-      status: "failed",
-      completedCount: 0,
-      failedCount: 1,
-      errorMessage: "동기화할 이미지가 없습니다.",
+      status: "ready",
+      completedCount: declaredTotalCount ?? 0,
+      failedCount: 0,
     };
   }
 
   const results = await runSyncTargets(dependencies, targets);
   const failedResults = results.filter((result) => !result.succeeded);
-  const completedCount = results.filter((result) => result.succeeded || result.skipped).length;
   const failedCount = failedResults.length;
+  const completedCount = declaredTotalCount === null ?
+    results.filter((result) => result.succeeded || result.skipped).length :
+    Math.max(0, declaredTotalCount - failedCount);
   const status = failedCount === 0 ? "ready" : (completedCount > 0 ? "partial" : "failed");
   const error = failedResults[0]?.errorMessage;
-  const seasonRef = seasonRefFor(dependencies.firestore, claim.brandID, seasonID);
 
   await seasonRef.set({
     assetSyncStatus: status,
@@ -847,8 +1011,11 @@ async function failJob(
 ): Promise<JobResult> {
   await jobRef.update({
     status: "failed",
+    phase: "completed",
     errorMessage: message,
+    errorStage: errorStage(patch),
     failedAt: FieldValue.serverTimestamp(),
+    completedAt: FieldValue.serverTimestamp(),
     leaseOwner: null,
     leaseExpiresAt: null,
     updatedAt: FieldValue.serverTimestamp(),
@@ -861,6 +1028,31 @@ async function failJob(
     errorMessage: message,
     ...patch,
   };
+}
+
+async function releaseJobForTaskRetry(
+  jobRef: FirebaseFirestore.DocumentReference,
+  message: string,
+): Promise<void> {
+  await jobRef.update({
+    status: "queued",
+    errorMessage: message,
+    errorCode: "retryableNetworkFailure",
+    errorStage: "parsing",
+    leaseOwner: null,
+    leaseExpiresAt: null,
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+}
+
+function errorStage(patch: Record<string, unknown>): string {
+  if (patch.parseStatus === "failed") {
+    return "parsing";
+  }
+  if (patch.contentStatus === "failed") {
+    return "materializing";
+  }
+  return "processing";
 }
 
 async function refreshLease(
@@ -881,8 +1073,7 @@ async function fetchHTML(url: string): Promise<string> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_HTML_TIMEOUT_MS);
   try {
-    const response = await fetch(url, {
-      redirect: "follow",
+    const response = await fetchPublicHTTP(url, {
       signal: controller.signal,
       headers: {
         "user-agent": "OutPickLookbookImporter/0.1 (+https://outpick.app)",
@@ -890,13 +1081,24 @@ async function fetchHTML(url: string): Promise<string> {
       },
     });
     if (!response.ok) {
-      throw new Error(`시즌 URL 응답 실패: HTTP ${response.status}`);
+      throw retryableStatusError(
+        response.status,
+        `시즌 URL 응답 실패: HTTP ${response.status}`,
+      );
     }
     const contentType = response.headers.get("content-type") ?? "";
     if (!contentType.toLowerCase().includes("text/html")) {
       throw new Error(`HTML 응답이 아닙니다: ${contentType || "unknown"}`);
     }
-    return await response.text();
+    const bytes = await responseBytes(response, HTML_MAX_BYTES, "HTML 응답");
+    return bytes.toString("utf8");
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new RetryableImportError("시즌 URL 요청 시간이 초과되었습니다.", {
+        cause: error,
+      });
+    }
+    throw error;
   } finally {
     clearTimeout(timeout);
   }
@@ -1269,8 +1471,7 @@ async function fetchRemoteImageBytes(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_IMAGE_TIMEOUT_MS);
   try {
-    const response = await fetch(remoteURL, {
-      redirect: "follow",
+    const response = await fetchPublicHTTP(remoteURL, {
       signal: controller.signal,
       headers: {
         "user-agent": "OutPickLookbookImporter/0.1 (+https://outpick.app)",
@@ -1279,18 +1480,22 @@ async function fetchRemoteImageBytes(
       },
     });
     if (!response.ok) {
-      throw new Error(`이미지 응답 실패: HTTP ${response.status}`);
+      throw retryableStatusError(
+        response.status,
+        `이미지 응답 실패: HTTP ${response.status}`,
+      );
     }
     const contentType = response.headers.get("content-type") ?? "";
     if (!contentType.toLowerCase().startsWith("image/")) {
       throw new Error(`이미지 응답이 아닙니다: ${contentType || "unknown"}`);
     }
-    const bytes = Buffer.from(await response.arrayBuffer());
+    const bytes = await responseBytes(
+      response,
+      REMOTE_IMAGE_MAX_BYTES,
+      "이미지",
+    );
     if (bytes.length === 0) {
       throw new Error("이미지 바이트가 비어 있습니다.");
-    }
-    if (bytes.length > REMOTE_IMAGE_MAX_BYTES) {
-      throw new Error("이미지 크기가 너무 큽니다.");
     }
     return bytes;
   } finally {
@@ -1516,6 +1721,20 @@ function optionalInteger(value: unknown): number | null {
   return Number(value);
 }
 
+function positiveInteger(value: unknown, fieldName: string): number {
+  if (!Number.isInteger(value) || Number(value) < 1) {
+    throw new Error(`${fieldName} 값이 올바르지 않습니다.`);
+  }
+  return Number(value);
+}
+
+function nonNegativeInteger(value: unknown, fieldName: string): number {
+  if (!Number.isInteger(value) || Number(value) < 0) {
+    throw new Error(`${fieldName} 값이 올바르지 않습니다.`);
+  }
+  return Number(value);
+}
+
 function firstNonEmptyString(values: Array<string | null>): string | null {
   return values.find((value) => {
     return typeof value === "string" && value.trim().length > 0;
@@ -1550,7 +1769,10 @@ function createdAtMillis(data: ImportJobData): number {
 }
 
 function canScanJob(data: ImportJobData): boolean {
-  return data.jobType === "importSeasonFromURL" && isClaimable(data);
+  return (
+    data.jobType === "importSeasonFromURL" ||
+    data.jobType === "retrySeasonAssets"
+  ) && isClaimable(data);
 }
 
 function errorMessage(error: unknown): string {

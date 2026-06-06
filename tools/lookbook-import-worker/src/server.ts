@@ -7,6 +7,7 @@ import {
   type ImportJobTaskRequest,
   type WakeRequest,
 } from "./processor.js";
+import {isRetryableImportError} from "./import-error.js";
 
 interface ServerDependencies {
   projectID: string;
@@ -54,11 +55,12 @@ export function createServer(dependencies: ServerDependencies): Express {
             storage: dependencies.firebase.storage,
           },
           request.body as ImportJobTaskRequest,
+          cloudTasksRetryCount(request),
         );
         response.status(200).json(result);
       } catch (error) {
         console.error("[lookbook-import-worker] task request failed", error);
-        response.status(500).json({
+        response.status(isRetryableImportError(error) ? 503 : 500).json({
           accepted: false,
           errorMessage: errorMessage(error),
         });
@@ -74,4 +76,10 @@ function errorMessage(error: unknown): string {
     return error.message;
   }
   return String(error);
+}
+
+function cloudTasksRetryCount(request: Request): number {
+  const rawValue = request.header("x-cloudtasks-taskretrycount") ?? "0";
+  const value = Number(rawValue);
+  return Number.isInteger(value) && value >= 0 ? value : 0;
 }
