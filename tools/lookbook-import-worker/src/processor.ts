@@ -1546,6 +1546,7 @@ async function updatePostMediaPaths(
   await postRef.set({
     media: mediaItems,
     assetSyncStatus: "ready",
+    assetSyncErrorMessage: null,
     updatedAt: FieldValue.serverTimestamp(),
   }, {merge: true});
 }
