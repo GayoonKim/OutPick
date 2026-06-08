@@ -11,6 +11,7 @@ import {
   RetryableImportError,
 } from "./import-error.js";
 import {
+  assertPublicHTTPURL,
   fetchPublicHTTP,
   responseBytes,
   retryableStatusError,
@@ -26,6 +27,12 @@ type WorkerStatus = ImportJobLifecycle;
 type ImageCandidate = {
   sourceURL: string;
   alt: string | null;
+};
+
+type ImageExtractionResult = {
+  candidates: ImageCandidate[];
+  strategy: string;
+  rawCandidateCount: number;
 };
 
 type ImportJobData = {
@@ -167,8 +174,12 @@ const LEASE_DURATION_MS = 5 * 60 * 1000;
 const LEASE_REFRESH_MS = 90 * 1000;
 const MAX_IMAGE_CANDIDATES_TO_STORE = 120;
 const MIN_STRONG_SECTION_WEIGHT = 240;
+const MIN_DYNAMIC_PARTIAL_CANDIDATES = 10;
+const MIN_RAW_CANDIDATES_FOR_DROP_CHECK = 8;
 const FETCH_HTML_TIMEOUT_MS = 15_000;
 const FETCH_IMAGE_TIMEOUT_MS = 20_000;
+const PLAYWRIGHT_NAVIGATION_TIMEOUT_MS = 20_000;
+const PLAYWRIGHT_RENDER_SETTLE_MS = 1_500;
 const HTML_MAX_BYTES = 5 * 1024 * 1024;
 const REMOTE_IMAGE_MAX_BYTES = 25 * 1024 * 1024;
 const ASSET_SYNC_CONCURRENCY = 3;
@@ -216,6 +227,20 @@ const NOISE_IMAGE_URL_PATTERNS = [
 
 const NOISE_CONTEXT_PATTERN =
   /product\/list\.html|category\/|view all|gnb|lnb|menu|header|footer/i;
+const DYNAMIC_RENDERING_SIGNAL_PATTERNS = [
+  /__NEXT_DATA__/i,
+  /window\.__/i,
+  /\bnuxt(?:App|State)?\b/i,
+  /data-reactroot/i,
+  /data-reactid/i,
+  /\bhydrateRoot\b/i,
+  /\bcreateRoot\b/i,
+  /<script\b[^>]+src=["'][^"']+\.(?:js|mjs)(?:\?|["'])/gi,
+];
+const LOW_CONFIDENCE_STRATEGIES = new Set([
+  "allPageImages",
+  "filteredPageImages",
+]);
 
 const SEASON_COVER_THUMB = {maxPixel: 512, quality: 75};
 const SEASON_COVER_DETAIL = {maxPixel: 1600, quality: 88};
@@ -603,7 +628,15 @@ async function ensureParsed(
 
   try {
     const html = await withImmediateRetry(() => fetchHTML(claim.sourceURL));
-    const extraction = extractImageCandidates(html, claim.sourceURL);
+    const staticExtraction = extractImageCandidates(html, claim.sourceURL);
+    const fallbackReason = fallbackReasonForExtraction(staticExtraction, html);
+    const extraction = fallbackReason === null ?
+      staticExtraction :
+      await extractionWithPlaywrightFallback(
+        claim.sourceURL,
+        staticExtraction,
+        fallbackReason,
+      );
     if (extraction.candidates.length === 0) {
       throw new Error("이미지 후보를 찾지 못했습니다.");
     }
@@ -613,6 +646,10 @@ async function ensureParsed(
       imageCandidateCount: extraction.candidates.length,
       imageCandidates: extraction.candidates.slice(0, MAX_IMAGE_CANDIDATES_TO_STORE),
       imageExtractionStrategy: extraction.strategy,
+      imageExtractionFallbackUsed: extraction.strategy.startsWith("playwright:"),
+      imageExtractionFallbackReason: extraction.strategy.startsWith("playwright:") ?
+        fallbackReason :
+        null,
       rawImageCandidateCount: extraction.rawCandidateCount,
       parsedAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
@@ -1107,7 +1144,7 @@ async function fetchHTML(url: string): Promise<string> {
 function extractImageCandidates(
   html: string,
   baseURL: string,
-): {candidates: ImageCandidate[]; strategy: string; rawCandidateCount: number} {
+): ImageExtractionResult {
   const rawCandidates = collectImageCandidates(html, baseURL, false, true);
   const sections = contentSections(html)
     .map((section) => {
@@ -1137,6 +1174,133 @@ function extractImageCandidates(
     strategy: filteredCandidates.length > 0 ? "filteredPageImages" : "allPageImages",
     rawCandidateCount: rawCandidates.length,
   };
+}
+
+export function fallbackReasonForExtraction(
+  extraction: ImageExtractionResult,
+  html: string,
+): string | null {
+  const candidateCount = extraction.candidates.length;
+  if (candidateCount === 0) {
+    return "noStaticCandidates";
+  }
+  if (candidateCount === 1 && LOW_CONFIDENCE_STRATEGIES.has(extraction.strategy)) {
+    return "singleLowConfidenceCandidate";
+  }
+  const dynamicSignalCount = dynamicRenderingSignalCount(html);
+  if (
+    dynamicSignalCount > 0 &&
+    candidateCount < MIN_DYNAMIC_PARTIAL_CANDIDATES &&
+    LOW_CONFIDENCE_STRATEGIES.has(extraction.strategy)
+  ) {
+    return "partialCandidatesWithDynamicSignals";
+  }
+  if (
+    extraction.rawCandidateCount >= MIN_RAW_CANDIDATES_FOR_DROP_CHECK &&
+    candidateCount <= Math.max(1, Math.floor(extraction.rawCandidateCount / 3)) &&
+    LOW_CONFIDENCE_STRATEGIES.has(extraction.strategy)
+  ) {
+    return "rawCandidateDropWithLowConfidenceStrategy";
+  }
+  return null;
+}
+
+async function extractionWithPlaywrightFallback(
+  sourceURL: string,
+  staticExtraction: ImageExtractionResult,
+  fallbackReason: string,
+): Promise<ImageExtractionResult> {
+  console.log("[lookbook-import-worker] playwright fallback start", {
+    sourceURL,
+    fallbackReason,
+    staticStrategy: staticExtraction.strategy,
+    staticCandidateCount: staticExtraction.candidates.length,
+    staticRawCandidateCount: staticExtraction.rawCandidateCount,
+  });
+  const startedAt = Date.now();
+  try {
+    const renderedHTML = await renderHTMLWithPlaywright(sourceURL);
+    const renderedExtraction = extractImageCandidates(renderedHTML, sourceURL);
+    console.log("[lookbook-import-worker] playwright fallback completed", {
+      sourceURL,
+      fallbackReason,
+      elapsedMs: Date.now() - startedAt,
+      renderedStrategy: renderedExtraction.strategy,
+      renderedCandidateCount: renderedExtraction.candidates.length,
+      renderedRawCandidateCount: renderedExtraction.rawCandidateCount,
+    });
+    if (renderedExtraction.candidates.length > staticExtraction.candidates.length) {
+      return {
+        ...renderedExtraction,
+        strategy: `playwright:${renderedExtraction.strategy}`,
+      };
+    }
+    return {
+      ...staticExtraction,
+      strategy: `static:${staticExtraction.strategy}`,
+    };
+  } catch (error) {
+    console.warn("[lookbook-import-worker] playwright fallback failed", {
+      sourceURL,
+      fallbackReason,
+      elapsedMs: Date.now() - startedAt,
+      errorMessage: errorMessage(error),
+    });
+    if (staticExtraction.candidates.length > 0) {
+      return {
+        ...staticExtraction,
+        strategy: `static:${staticExtraction.strategy}`,
+      };
+    }
+    throw error;
+  }
+}
+
+async function renderHTMLWithPlaywright(sourceURL: string): Promise<string> {
+  await assertPublicHTTPURL(sourceURL);
+  const {chromium} = await import("playwright");
+  const browser = await chromium.launch({headless: true});
+  try {
+    const context = await browser.newContext({
+      viewport: {width: 1440, height: 1800},
+      userAgent:
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
+        "AppleWebKit/537.36 (KHTML, like Gecko) " +
+        "Chrome/124.0.0.0 Safari/537.36",
+    });
+    try {
+      await context.route("**/*", async (route) => {
+        const requestURL = route.request().url();
+        try {
+          await assertPublicHTTPURL(requestURL);
+          await route.continue();
+        } catch {
+          await route.abort("blockedbyclient");
+        }
+      });
+      const page = await context.newPage();
+      await page.goto(sourceURL, {
+        waitUntil: "domcontentloaded",
+        timeout: PLAYWRIGHT_NAVIGATION_TIMEOUT_MS,
+      });
+      await page.waitForTimeout(PLAYWRIGHT_RENDER_SETTLE_MS);
+      await page.waitForLoadState("networkidle", {timeout: 3_000}).catch(() => {
+        // 계속 열린 연결이 있어도 DOM 추출은 진행한다.
+      });
+      return await page.content();
+    } finally {
+      await context.close();
+    }
+  } finally {
+    await browser.close();
+  }
+}
+
+function dynamicRenderingSignalCount(html: string): number {
+  return DYNAMIC_RENDERING_SIGNAL_PATTERNS.reduce((count, pattern) => {
+    const flags = pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`;
+    return count + Array.from(html.matchAll(new RegExp(pattern.source, flags))).length;
+  }, 0);
 }
 
 function collectImageCandidates(
