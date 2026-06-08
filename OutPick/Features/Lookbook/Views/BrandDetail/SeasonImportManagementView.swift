@@ -13,6 +13,8 @@ struct SeasonImportManagementView: View {
             Group {
                 if viewModel.isLoading && viewModel.jobs.isEmpty {
                     ProgressView("가져오기 현황을 불러오는 중입니다.")
+                        .tint(OutPickTheme.SwiftUIColor.accent)
+                        .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
                 } else if viewModel.jobs.isEmpty {
                     VStack(spacing: 12) {
                         Image(systemName: "tray")
@@ -20,16 +22,22 @@ struct SeasonImportManagementView: View {
                         Text("가져오기 기록이 없습니다")
                             .font(.headline)
                     }
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
                 } else {
                     List(viewModel.jobs) { job in
                         jobRow(job)
+                            .listRowBackground(OutPickTheme.SwiftUIColor.backgroundBase)
                     }
+                    .outpickHiddenScrollContentBackground()
+                    .background(OutPickTheme.SwiftUIColor.backgroundBase)
                     .refreshable {
                         await viewModel.load()
                     }
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(OutPickTheme.SwiftUIColor.backgroundBase)
+            .tint(OutPickTheme.SwiftUIColor.accent)
             .navigationTitle("가져오기 현황")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -54,6 +62,7 @@ struct SeasonImportManagementView: View {
             HStack {
                 Text(jobTitle(job))
                     .font(.headline)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
                 Spacer()
                 Text(statusText(job.status))
                     .font(.caption.weight(.semibold))
@@ -62,20 +71,20 @@ struct SeasonImportManagementView: View {
 
             Text(phaseText(job.phase))
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
 
             if job.assetCompletedCount > 0 || job.assetFailedCount > 0 {
                 Text(
                     "이미지 성공 \(job.assetCompletedCount) · 실패 \(job.assetFailedCount)"
                 )
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
             }
 
             if let errorMessage = job.errorMessage, !errorMessage.isEmpty {
                 Text(errorMessage)
                     .font(.footnote)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.warning)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -87,6 +96,7 @@ struct SeasonImportManagementView: View {
                 } label: {
                     if viewModel.retryingJobID == job.id {
                         ProgressView()
+                            .tint(OutPickTheme.SwiftUIColor.accent)
                     } else if viewModel.hasActiveRetry(for: job) {
                         Text("이미지 재시도 진행 중")
                     } else {
@@ -136,13 +146,24 @@ struct SeasonImportManagementView: View {
     private func statusColor(_ status: SeasonImportJobStatus) -> Color {
         switch status {
         case .succeeded:
-            return .green
+            return OutPickTheme.SwiftUIColor.success
         case .partialFailed, .failed:
-            return .orange
+            return OutPickTheme.SwiftUIColor.warning
         case .cancelled:
-            return .secondary
+            return OutPickTheme.SwiftUIColor.textSecondary
         case .queued, .processing:
-            return .blue
+            return OutPickTheme.SwiftUIColor.accent
+        }
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func outpickHiddenScrollContentBackground() -> some View {
+        if #available(iOS 16.0, *) {
+            scrollContentBackground(.hidden)
+        } else {
+            self
         }
     }
 }

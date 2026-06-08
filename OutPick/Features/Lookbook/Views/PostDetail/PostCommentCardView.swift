@@ -110,7 +110,7 @@ struct PostCommentCardView: View {
                     HStack(spacing: 6) {
                         Text(author.nickname)
                             .font(.footnote.weight(.semibold))
-                            .foregroundStyle(.primary)
+                            .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
                             .lineLimit(1)
 
                         ForEach(badges, id: \.title) { badge in
@@ -122,13 +122,13 @@ struct PostCommentCardView: View {
 
                     Text(dateText)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
                         .lineLimit(1)
                 }
 
                 Text(comment.message)
                     .font(.subheadline)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
 
                 HStack(spacing: 12) {
@@ -149,13 +149,17 @@ struct PostCommentCardView: View {
 
                 }
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
                 .monospacedDigit()
             }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.94))
+        .background(OutPickTheme.SwiftUIColor.surfaceBase)
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(OutPickTheme.SwiftUIColor.borderSubtle, lineWidth: 1)
+        }
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .onTapGesture {
@@ -176,7 +180,11 @@ struct PostCommentCardView: View {
             }
             .buttonStyle(.plain)
             .disabled(isMutatingLike)
-            .foregroundStyle(isLiked ? Color.red : Color.secondary)
+            .foregroundStyle(
+                isLiked
+                    ? OutPickTheme.SwiftUIColor.like
+                    : OutPickTheme.SwiftUIColor.iconSecondary
+            )
             .accessibilityLabel(isLiked ? "댓글 좋아요 취소" : "댓글 좋아요")
             .accessibilityIdentifier("lookbook.comment.likeButton")
         } else {
@@ -189,18 +197,18 @@ struct PostCommentCardView: View {
         if let systemImage = badge.systemImage {
             Image(systemName: systemImage)
                 .font(.caption2.weight(.bold))
-                .foregroundStyle(.white)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.backgroundBase)
                 .frame(width: 20, height: 20)
-                .background(Color.black)
+                .background(OutPickTheme.SwiftUIColor.accent)
                 .clipShape(Circle())
                 .accessibilityLabel(badge.title)
         } else {
             Text(badge.title)
                 .font(.caption2.weight(.bold))
-                .foregroundStyle(.white)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.backgroundBase)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
-                .background(Color.black)
+                .background(OutPickTheme.SwiftUIColor.accent)
                 .clipShape(Capsule())
         }
     }
@@ -264,7 +272,7 @@ private struct PostCommentAvatarView: View {
         .clipShape(Circle())
         .background(
             Circle()
-                .fill(Color(.tertiarySystemFill))
+                .fill(OutPickTheme.SwiftUIColor.surfaceElevated)
         )
         .task(id: avatarPath) {
             await loadAvatarIfNeeded()

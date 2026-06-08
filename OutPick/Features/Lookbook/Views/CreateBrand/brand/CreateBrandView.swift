@@ -48,15 +48,7 @@ struct CreateBrandView: View {
                 .padding(.vertical, 24)
             }
             .background(
-                LinearGradient(
-                    colors: [
-                        Color(red: 0.98, green: 0.97, blue: 0.94),
-                        Color.white
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
+                OutPickTheme.SwiftUIColor.backgroundBase.ignoresSafeArea()
             )
         }
         .sheet(isPresented: $isImagePickerPresented) {
@@ -92,7 +84,7 @@ private extension CreateBrandView {
         return VStack(alignment: .leading, spacing: 12) {
             Text("브랜드 등록을 시작합니다")
                 .font(.system(size: 30, weight: .bold, design: .rounded))
-                .foregroundStyle(.primary)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
         }
         .frame(maxWidth: introWidth, alignment: .leading)
         .padding(.top, initialTopPadding - (initialTopPadding - finalTopPadding) * heroProgress)
@@ -147,11 +139,11 @@ private extension CreateBrandView {
                                 Spacer()
                             }
                             .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.black)
+                            .foregroundStyle(OutPickTheme.SwiftUIColor.accent)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 14)
                             .frame(maxWidth: .infinity)
-                            .background(Color(red: 0.95, green: 0.92, blue: 0.86))
+                            .background(OutPickTheme.SwiftUIColor.surfaceElevated)
                             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                         }
 
@@ -167,12 +159,12 @@ private extension CreateBrandView {
                             } label: {
                                 Text("로고 이미지 제거")
                                     .font(.footnote.weight(.semibold))
-                                    .foregroundStyle(.black)
+                                    .foregroundStyle(OutPickTheme.SwiftUIColor.destructive)
                             }
                         } else {
                             Text("선택된 로고 이미지가 없습니다.")
                                 .font(.footnote)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
                         }
                     }
                 }
@@ -183,22 +175,23 @@ private extension CreateBrandView {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("피처드")
                             .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
                         Text("홈에서 더 우선적으로 보여줄 브랜드로 표시합니다.")
                             .font(.footnote)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
                     }
                 }
-                .tint(.black)
+                .tint(OutPickTheme.SwiftUIColor.accent)
             }
 
             if let message = viewModel.message {
                 Text(message)
                     .font(.footnote)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.warning)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 12)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.red.opacity(0.08))
+                    .background(OutPickTheme.SwiftUIColor.warning.opacity(0.12))
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
 
@@ -214,16 +207,16 @@ private extension CreateBrandView {
                         Spacer()
                         if viewModel.isSaving {
                             ProgressView()
-                                .tint(.white)
+                                .tint(OutPickTheme.SwiftUIColor.backgroundBase)
                         } else {
                             Text("브랜드 생성")
                                 .font(.headline)
                         }
                         Spacer()
                     }
-                    .foregroundStyle(.white)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.backgroundBase)
                     .padding(.vertical, 16)
-                    .background(Color.black)
+                    .background(OutPickTheme.SwiftUIColor.accent)
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
                 .disabled(
@@ -238,13 +231,13 @@ private extension CreateBrandView {
             }
         }
         .padding(20)
-        .background(.white.opacity(0.94))
+        .background(OutPickTheme.SwiftUIColor.surfaceBase)
         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .stroke(Color.black.opacity(0.06), lineWidth: 1)
+                .stroke(OutPickTheme.SwiftUIColor.borderSubtle, lineWidth: 1)
         )
-        .shadow(color: Color.black.opacity(0.04), radius: 18, x: 0, y: 10)
+        .shadow(color: OutPickTheme.SwiftUIColor.overlayScrim.opacity(0.24), radius: 18, x: 0, y: 10)
         .opacity(revealedFormItemCount > 0 ? 1 : 0)
         .offset(y: revealedFormItemCount > 0 ? 0 : 18)
     }
@@ -256,12 +249,12 @@ private extension CreateBrandView {
         VStack(alignment: .leading, spacing: 10) {
             Text(title)
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.primary)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
 
             content()
                 .padding(.horizontal, 14)
                 .padding(.vertical, 14)
-                .background(Color(red: 0.98, green: 0.98, blue: 0.97))
+                .background(OutPickTheme.SwiftUIColor.surfaceElevated)
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
     }

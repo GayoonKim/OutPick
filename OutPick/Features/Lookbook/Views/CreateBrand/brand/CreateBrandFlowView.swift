@@ -88,7 +88,7 @@ struct CreateBrandFlowView: View {
 
     var body: some View {
         content
-            .tint(.black)
+            .tint(OutPickTheme.SwiftUIColor.accent)
             .navigationBarTitleDisplayMode(.inline)
             .interactiveDismissDisabled(true)
             .toolbar {
@@ -97,7 +97,7 @@ struct CreateBrandFlowView: View {
                         isShowingCloseConfirmation = true
                     } label: {
                         Image(systemName: "xmark")
-                            .foregroundStyle(.black)
+                            .foregroundStyle(OutPickTheme.SwiftUIColor.accent)
                     }
                     .accessibilityLabel("브랜드 등록 닫기")
                 }

@@ -30,7 +30,7 @@ struct CommentSafetyAvatarView: View {
         }
         .frame(width: size, height: size)
         .clipShape(Circle())
-        .background(Circle().fill(Color(.tertiarySystemFill)))
+        .background(Circle().fill(OutPickTheme.SwiftUIColor.surfaceElevated))
         .task(id: avatarPath) {
             await loadAvatarIfNeeded()
         }

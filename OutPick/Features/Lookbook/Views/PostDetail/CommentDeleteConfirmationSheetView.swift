@@ -14,26 +14,28 @@ struct CommentDeleteConfirmationSheetView: View {
     let onConfirm: () -> Void
 
     var body: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: 16) {
             Capsule()
-                .fill(Color(.tertiarySystemFill))
+                .fill(OutPickTheme.SwiftUIColor.borderSubtle)
                 .frame(width: 38, height: 5)
-                .padding(.top, 10)
+                .padding(.top, 6)
 
-            VStack(spacing: 12) {
-                CommentSafetyAvatarView(avatarPath: author.avatarPath, size: 64)
+            VStack(spacing: 10) {
+                CommentSafetyAvatarView(avatarPath: author.avatarPath, size: 52)
 
                 VStack(spacing: 4) {
                     Text("댓글을 삭제할까요?")
                         .font(.headline.weight(.bold))
+                        .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
                         .multilineTextAlignment(.center)
 
                     Text("삭제한 댓글은 다시 복구할 수 없습니다.")
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                .layoutPriority(1)
             }
 
             Spacer(minLength: 0)
@@ -45,15 +47,15 @@ struct CommentDeleteConfirmationSheetView: View {
                     HStack {
                         if isDeleting {
                             ProgressView()
-                                .tint(.white)
+                                .tint(OutPickTheme.SwiftUIColor.backgroundBase)
                         }
                         Text("삭제하기")
                             .font(.subheadline.weight(.bold))
                     }
                     .frame(maxWidth: .infinity)
                     .frame(height: 48)
-                    .background(Color.red)
-                    .foregroundStyle(.white)
+                    .background(OutPickTheme.SwiftUIColor.destructive)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.backgroundBase)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
                 .buttonStyle(.plain)
@@ -67,14 +69,16 @@ struct CommentDeleteConfirmationSheetView: View {
                         .font(.subheadline.weight(.semibold))
                         .frame(maxWidth: .infinity)
                         .frame(height: 44)
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
+                        .background(OutPickTheme.SwiftUIColor.surfaceBase)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .disabled(isDeleting)
             }
         }
         .padding(.horizontal, 20)
-        .padding(.bottom, 14)
-        .background(Color.white.ignoresSafeArea())
+        .padding(.bottom, 16)
+        .background(OutPickTheme.SwiftUIColor.backgroundBase.ignoresSafeArea())
     }
 }

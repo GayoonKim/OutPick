@@ -28,24 +28,25 @@ struct CreateBrandCompletedView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("브랜드 생성이 완료되었습니다")
                     .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
 
                 Text(descriptionText)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
             if let websiteURL = createdBrand.websiteURL, websiteURL.isEmpty == false {
                 Label("공식 홈페이지: \(websiteURL)", systemImage: "link")
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
             }
 
             if let lookbookArchiveURL = createdBrand.lookbookArchiveURL,
                lookbookArchiveURL.isEmpty == false {
                 Label("룩북 목록: \(lookbookArchiveURL)", systemImage: "photo.on.rectangle")
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
             }
 
             Button {
@@ -58,8 +59,8 @@ struct CreateBrandCompletedView: View {
                     Spacer()
                 }
                 .padding(.vertical, 16)
-                .foregroundStyle(.white)
-                .background(Color.black)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.backgroundBase)
+                .background(OutPickTheme.SwiftUIColor.accent)
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
 
@@ -68,6 +69,6 @@ struct CreateBrandCompletedView: View {
         .padding(.horizontal, 24)
         .padding(.vertical, 32)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .background(Color(red: 0.98, green: 0.97, blue: 0.94).ignoresSafeArea())
+        .background(OutPickTheme.SwiftUIColor.backgroundBase.ignoresSafeArea())
     }
 }

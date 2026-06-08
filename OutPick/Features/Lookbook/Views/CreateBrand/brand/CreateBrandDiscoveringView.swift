@@ -18,21 +18,22 @@ struct CreateBrandDiscoveringView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("등록할 시즌을 찾고 있습니다")
                     .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
 
                 Text("\(createdBrand.name) 브랜드를 만들었습니다. 이제 가져올 수 있는 시즌을 찾고 있습니다.")
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
 
                 if let lookbookArchiveURL = createdBrand.lookbookArchiveURL,
                    !lookbookArchiveURL.isEmpty {
                     Label(lookbookArchiveURL, systemImage: "photo.on.rectangle")
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
                 } else {
                     Text("룩북 주소가 없어도 브랜드는 그대로 저장됩니다.")
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -40,11 +41,11 @@ struct CreateBrandDiscoveringView: View {
             VStack(spacing: 14) {
                 ProgressView()
                     .scaleEffect(1.2)
-                    .tint(.black)
+                    .tint(OutPickTheme.SwiftUIColor.accent)
 
                 Text("잠시만 기다려주세요.")
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
             }
             .frame(maxWidth: .infinity, alignment: .center)
             .padding(.top, 8)
@@ -59,8 +60,8 @@ struct CreateBrandDiscoveringView: View {
                     Spacer()
                 }
                 .padding(.vertical, 16)
-                .foregroundStyle(.white)
-                .background(Color.black)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.backgroundBase)
+                .background(OutPickTheme.SwiftUIColor.accent)
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
 
@@ -69,6 +70,6 @@ struct CreateBrandDiscoveringView: View {
         .padding(.horizontal, 24)
         .padding(.vertical, 32)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .background(Color(red: 0.98, green: 0.97, blue: 0.94).ignoresSafeArea())
+        .background(OutPickTheme.SwiftUIColor.backgroundBase.ignoresSafeArea())
     }
 }

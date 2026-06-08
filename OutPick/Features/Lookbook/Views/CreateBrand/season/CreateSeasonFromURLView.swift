@@ -28,7 +28,7 @@ struct CreateSeasonFromURLView: View {
                     Text("가져오고 싶은 시즌 상세 페이지 URL을 입력해주세요.")
                     Text("현재 단계에서는 시즌 URL import job 생성까지만 연결되어 있습니다. 실제 수집 워커는 다음 단계에서 이어서 붙일 예정입니다.")
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
                 } header: {
                     Text("안내")
                 }
@@ -46,7 +46,7 @@ struct CreateSeasonFromURLView: View {
                 if let errorMessage = viewModel.errorMessage {
                     Section {
                         Text(errorMessage)
-                            .foregroundStyle(.red)
+                            .foregroundStyle(OutPickTheme.SwiftUIColor.warning)
                     }
                 }
 
@@ -67,7 +67,9 @@ struct CreateSeasonFromURLView: View {
                     .disabled(viewModel.isSaving)
                 }
             }
-            .tint(.black)
+            .tint(OutPickTheme.SwiftUIColor.accent)
+            .outpickHiddenScrollContentBackground()
+            .background(OutPickTheme.SwiftUIColor.backgroundBase)
             .navigationTitle("시즌 URL로 등록")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -75,6 +77,17 @@ struct CreateSeasonFromURLView: View {
                     Button("취소") { dismiss() }
                 }
             }
+        }
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func outpickHiddenScrollContentBackground() -> some View {
+        if #available(iOS 16.0, *) {
+            scrollContentBackground(.hidden)
+        } else {
+            self
         }
     }
 }

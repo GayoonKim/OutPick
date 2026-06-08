@@ -24,11 +24,13 @@ struct PostCommentRepliesSheetView: View {
         VStack(spacing: 0) {
             header
             Divider()
+                .background(OutPickTheme.SwiftUIColor.borderSubtle)
             parentCommentSection
             Divider()
+                .background(OutPickTheme.SwiftUIColor.borderSubtle)
             repliesContent
         }
-        .background(Color(red: 0.98, green: 0.97, blue: 0.95).ignoresSafeArea())
+        .background(OutPickTheme.SwiftUIColor.backgroundBase.ignoresSafeArea())
         .safeAreaInset(edge: .bottom) {
             inputBar
         }
@@ -62,25 +64,21 @@ struct PostCommentRepliesSheetView: View {
         HStack(spacing: 12) {
             Text("답글")
                 .font(.headline.weight(.bold))
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
 
             Spacer()
 
             Button {
                 dismiss()
             } label: {
-                Image(systemName: "xmark")
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(.primary)
-                    .frame(width: 36, height: 36)
-                    .background(Color(.tertiarySystemFill))
-                    .clipShape(Circle())
+                LookbookNavigationIconLabel(systemImage: "xmark")
             }
             .buttonStyle(.plain)
             .accessibilityLabel("답글 닫기")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(Color.white)
+        .background(OutPickTheme.SwiftUIColor.backgroundBase)
     }
 
     private var parentCommentSection: some View {
@@ -117,17 +115,17 @@ struct PostCommentRepliesSheetView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-        .background(Color.white.opacity(0.72))
+        .background(OutPickTheme.SwiftUIColor.surfaceBase)
     }
 
     private var hiddenParentCommentView: some View {
         Text("차단한 사용자의 댓글입니다.")
             .font(.footnote)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
             .frame(maxWidth: .infinity, minHeight: 72, alignment: .center)
             .multilineTextAlignment(.center)
             .padding(.horizontal, 16)
-            .background(Color.white.opacity(0.94))
+            .background(OutPickTheme.SwiftUIColor.surfaceElevated)
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
@@ -171,7 +169,7 @@ struct PostCommentRepliesSheetView: View {
 
                     if viewModel.isLoadingMore {
                         ProgressView()
-                            .tint(.black)
+                            .tint(OutPickTheme.SwiftUIColor.accent)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 8)
                     }
@@ -240,7 +238,7 @@ struct PostCommentRepliesSheetView: View {
         )
         if #available(iOS 16.0, *) {
             sheet
-                .presentationDetents([.height(300)])
+                .presentationDetents([.height(320)])
                 .presentationDragIndicator(.visible)
         } else {
             sheet
@@ -307,7 +305,7 @@ struct PostCommentRepliesSheetView: View {
         )
         if #available(iOS 16.0, *) {
             sheet
-                .presentationDetents([.height(360)])
+                .presentationDetents([.height(390)])
                 .presentationDragIndicator(.visible)
         } else {
             sheet
@@ -317,17 +315,17 @@ struct PostCommentRepliesSheetView: View {
     private func sectionTitle(_ title: String) -> some View {
         Text(title)
             .font(.subheadline.weight(.bold))
-            .foregroundStyle(.primary)
+            .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
     }
 
     private var loadingSection: some View {
         VStack(spacing: 10) {
             ProgressView()
-                .tint(.black)
+                .tint(OutPickTheme.SwiftUIColor.accent)
 
             Text("답글을 불러오는 중입니다.")
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 44)
@@ -336,7 +334,7 @@ struct PostCommentRepliesSheetView: View {
     private var emptyStateSection: some View {
         Text("아직 답글이 없습니다.")
             .font(.footnote)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
             .frame(maxWidth: .infinity, minHeight: 180, alignment: .center)
             .multilineTextAlignment(.center)
     }

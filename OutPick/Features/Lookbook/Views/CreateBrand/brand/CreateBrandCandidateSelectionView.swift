@@ -38,44 +38,20 @@ struct CreateBrandCandidateSelectionView: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 24) {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("가져올 시즌을 선택해주세요")
-                        .font(.system(size: 28, weight: .bold, design: .rounded))
-
-                    Text("이미 처리 중이거나 가져온 시즌은 보이지 않습니다.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-
-                    if let discoveryErrorMessage {
-                        Text(discoveryErrorMessage)
-                            .font(.footnote)
-                            .foregroundStyle(.orange)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-
                 switch importProgressPhase {
                 case .selecting:
+                    headerSection
                     candidateListSection
                     submitButton
                 case .extracting, .completed:
                     extractionProgressSection
+                        .frame(maxWidth: .infinity, minHeight: 520, alignment: .center)
                 }
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 32)
         }
-        .background(
-            LinearGradient(
-                colors: [
-                    Color(red: 0.98, green: 0.97, blue: 0.94),
-                    Color.white
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
-        )
+        .background(OutPickTheme.SwiftUIColor.backgroundBase.ignoresSafeArea())
         .task {
             await loadCandidates()
         }
@@ -86,25 +62,46 @@ struct CreateBrandCandidateSelectionView: View {
         }
     }
 
+    private var headerSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(headerTitle)
+                .font(.system(size: 28, weight: .bold, design: .rounded))
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
+
+            Text(headerDescription)
+                .font(.footnote)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let discoveryErrorMessage {
+                Text(discoveryErrorMessage)
+                    .font(.footnote)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
     @ViewBuilder
     private var candidateListSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("선택할 시즌")
                     .font(.headline)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
 
                 Spacer()
 
                 if isLoading {
                     ProgressView()
-                        .tint(.black)
+                        .tint(OutPickTheme.SwiftUIColor.accent)
                 }
             }
 
             if let message {
                 Text(message)
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -112,7 +109,7 @@ struct CreateBrandCandidateSelectionView: View {
                 HStack(spacing: 10) {
                     Text("\(selectedCandidateIDs.count)/\(candidates.count)개 선택됨")
                         .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
 
                     Spacer(minLength: 8)
 
@@ -124,8 +121,12 @@ struct CreateBrandCandidateSelectionView: View {
                             .padding(.horizontal, 12)
                             .padding(.vertical, 8)
                     }
-                    .foregroundStyle(.white)
-                    .background(Color.black.opacity(areAllCandidatesSelected ? 0.35 : 1))
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.backgroundBase)
+                    .background(
+                        areAllCandidatesSelected
+                            ? OutPickTheme.SwiftUIColor.surfaceElevated
+                            : OutPickTheme.SwiftUIColor.accent
+                    )
                     .clipShape(Capsule())
                     .disabled(areAllCandidatesSelected || isSubmitting)
 
@@ -137,11 +138,17 @@ struct CreateBrandCandidateSelectionView: View {
                             .padding(.horizontal, 12)
                             .padding(.vertical, 8)
                     }
-                    .foregroundStyle(Color.black.opacity(selectedCandidateIDs.isEmpty ? 0.45 : 1))
+                    .foregroundStyle(
+                        selectedCandidateIDs.isEmpty
+                            ? OutPickTheme.SwiftUIColor.textTertiary
+                            : OutPickTheme.SwiftUIColor.accent
+                    )
                     .overlay {
                         Capsule()
                             .stroke(
-                                Color.black.opacity(selectedCandidateIDs.isEmpty ? 0.18 : 1),
+                                selectedCandidateIDs.isEmpty
+                                    ? OutPickTheme.SwiftUIColor.borderSubtle
+                                    : OutPickTheme.SwiftUIColor.accent,
                                 lineWidth: 1
                             )
                     }
@@ -153,14 +160,15 @@ struct CreateBrandCandidateSelectionView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text(isLoading ? "시즌을 불러오고 있습니다." : "더 가져올 시즌이 없습니다.")
                         .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
                     Text("지금 바로 가져올 수 있는 시즌이 없습니다.")
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(18)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color(red: 0.97, green: 0.97, blue: 0.96))
+                .background(OutPickTheme.SwiftUIColor.surfaceBase)
                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             } else {
                 VStack(spacing: 12) {
@@ -175,19 +183,36 @@ struct CreateBrandCandidateSelectionView: View {
                                 )
 
                                 Image(systemName: selectedCandidateIDs.contains(candidate.id) ? "checkmark.circle.fill" : "circle")
-                                    .foregroundStyle(selectedCandidateIDs.contains(candidate.id) ? .black : .secondary)
+                                    .foregroundStyle(
+                                        selectedCandidateIDs.contains(candidate.id)
+                                            ? OutPickTheme.SwiftUIColor.accent
+                                            : OutPickTheme.SwiftUIColor.iconSecondary
+                                    )
 
                                 VStack(alignment: .leading, spacing: 6) {
                                     Text(candidate.title)
                                         .font(.subheadline.weight(.semibold))
-                                        .foregroundStyle(.primary)
+                                        .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
                                 }
 
                                 Spacer()
                             }
                             .padding(16)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color.white)
+                            .background(
+                                selectedCandidateIDs.contains(candidate.id)
+                                    ? OutPickTheme.SwiftUIColor.accent.opacity(0.12)
+                                    : OutPickTheme.SwiftUIColor.surfaceBase
+                            )
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                    .stroke(
+                                        selectedCandidateIDs.contains(candidate.id)
+                                            ? OutPickTheme.SwiftUIColor.accent.opacity(0.45)
+                                            : OutPickTheme.SwiftUIColor.borderSubtle,
+                                        lineWidth: 1
+                                    )
+                            }
                             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                         }
                         .buttonStyle(.plain)
@@ -205,7 +230,7 @@ struct CreateBrandCandidateSelectionView: View {
                 Spacer()
                 if isSubmitting {
                     ProgressView()
-                        .tint(.white)
+                        .tint(OutPickTheme.SwiftUIColor.backgroundBase)
                 } else {
                     Text(primaryButtonTitle)
                         .font(.headline)
@@ -213,8 +238,8 @@ struct CreateBrandCandidateSelectionView: View {
                 Spacer()
             }
             .padding(.vertical, 16)
-            .foregroundStyle(.white)
-            .background(Color.black)
+            .foregroundStyle(OutPickTheme.SwiftUIColor.backgroundBase)
+            .background(OutPickTheme.SwiftUIColor.accent)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
         .disabled(isSubmitting)
@@ -222,52 +247,77 @@ struct CreateBrandCandidateSelectionView: View {
     }
 
     private var extractionProgressSection: some View {
-            VStack(alignment: .leading, spacing: 20) {
-            VStack(alignment: .leading, spacing: 10) {
-                Text(importProgressPhase == .completed ? "시즌 준비가 끝났습니다" : "선택한 시즌을 준비하고 있습니다")
-                    .font(.title2.weight(.bold))
+        VStack(spacing: 18) {
+            VStack(spacing: 8) {
+                Text(headerTitle)
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
 
-                Text(
-                    importProgressPhase == .completed
-                    ? "잠시 후 다음 화면으로 이동합니다."
-                    : "사진을 가져오고 시즌 목록에 반영하고 있습니다."
-                )
+                Text(headerDescription)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+                    .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(spacing: 12) {
                 ProgressView(
                     value: extractionTotalCount == 0
                     ? 0
                     : Double(extractionCompletedCount),
                     total: Double(max(extractionTotalCount, 1))
                 )
-                .tint(.black)
+                .tint(OutPickTheme.SwiftUIColor.accent)
 
                 Text("준비 완료 \(extractionCompletedCount)/\(extractionTotalCount)")
                     .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+                    .multilineTextAlignment(.center)
 
                 if extractionFailedCount > 0 {
                     Text("가져오지 못한 시즌이 있습니다. 나중에 다시 시도할 수 있습니다.")
                         .font(.footnote)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(OutPickTheme.SwiftUIColor.warning)
+                        .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
                 if let message {
                     Text(message)
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+                        .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .padding(18)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.white)
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity)
+        .background(OutPickTheme.SwiftUIColor.surfaceBase)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
+    private var headerTitle: String {
+        switch importProgressPhase {
+        case .selecting:
+            return "가져올 시즌을 선택해주세요"
+        case .extracting:
+            return "시즌을 불러오는 중입니다"
+        case .completed:
+            return "시즌 준비가 끝났습니다"
+        }
+    }
+
+    private var headerDescription: String {
+        switch importProgressPhase {
+        case .selecting:
+            return "이미 처리 중이거나 가져온 시즌은 보이지 않습니다."
+        case .extracting:
+            return "선택한 시즌의 사진을 가져오고 룩북 목록에 반영하고 있습니다."
+        case .completed:
+            return "잠시 후 다음 화면으로 이동합니다."
         }
     }
 

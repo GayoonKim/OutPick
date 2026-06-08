@@ -51,13 +51,17 @@ struct PostCommentInputBarView: View {
                 if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Text(placeholder)
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(OutPickTheme.SwiftUIColor.textTertiary)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 10)
                         .allowsHitTesting(false)
                 }
             }
-            .background(Color(.secondarySystemBackground))
+            .background(OutPickTheme.SwiftUIColor.surfaceBase)
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(OutPickTheme.SwiftUIColor.borderSubtle, lineWidth: 1)
+            }
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .animation(.easeInOut(duration: 0.12), value: inputHeight)
 
@@ -69,15 +73,19 @@ struct PostCommentInputBarView: View {
                 Group {
                     if isSubmitting {
                         ProgressView()
-                            .tint(.white)
+                            .tint(OutPickTheme.SwiftUIColor.backgroundBase)
                     } else {
                         Image(systemName: "paperplane.fill")
                             .font(.subheadline.weight(.bold))
                     }
                 }
-                .foregroundStyle(.white)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.backgroundBase)
                 .frame(width: 42, height: 42)
-                .background(canSubmit ? Color.black : Color.gray.opacity(0.45))
+                .background(
+                    canSubmit
+                        ? OutPickTheme.SwiftUIColor.accent
+                        : OutPickTheme.SwiftUIColor.surfaceElevated
+                )
                 .clipShape(Circle())
             }
             .buttonStyle(.plain)
@@ -88,7 +96,7 @@ struct PostCommentInputBarView: View {
         .padding(.horizontal, 16)
         .padding(.top, 10)
         .padding(.bottom, 12)
-        .background(.regularMaterial)
+        .background(OutPickTheme.SwiftUIColor.backgroundBase)
     }
 }
 
@@ -109,8 +117,8 @@ private struct GrowingCommentTextView: UIViewRepresentable {
         textView.delegate = context.coordinator
         textView.backgroundColor = .clear
         textView.font = .preferredFont(forTextStyle: .subheadline)
-        textView.textColor = .label
-        textView.tintColor = .label
+        textView.textColor = OutPickTheme.ColorToken.textPrimary
+        textView.tintColor = OutPickTheme.ColorToken.accent
         textView.textContainerInset = UIEdgeInsets(
             top: 8,
             left: 0,
@@ -135,6 +143,8 @@ private struct GrowingCommentTextView: UIViewRepresentable {
             uiView.text = text
         }
         uiView.font = .preferredFont(forTextStyle: .subheadline)
+        uiView.textColor = OutPickTheme.ColorToken.textPrimary
+        uiView.tintColor = OutPickTheme.ColorToken.accent
         context.coordinator.updateHeight(for: uiView)
     }
 

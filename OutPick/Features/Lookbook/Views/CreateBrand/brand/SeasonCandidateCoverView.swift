@@ -18,7 +18,7 @@ struct SeasonCandidateCoverView: View {
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color(red: 0.94, green: 0.93, blue: 0.90))
+                .fill(OutPickTheme.SwiftUIColor.surfaceElevated)
 
             if let uiImage {
                 Image(uiImage: uiImage)
@@ -26,11 +26,11 @@ struct SeasonCandidateCoverView: View {
                     .scaledToFill()
             } else if didFail || coverImageURL == nil {
                 Image(systemName: "photo")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.iconSecondary)
             } else {
                 ProgressView()
                     .scaleEffect(0.75)
-                    .tint(.black)
+                    .tint(OutPickTheme.SwiftUIColor.accent)
             }
         }
         .frame(width: 74, height: 92)

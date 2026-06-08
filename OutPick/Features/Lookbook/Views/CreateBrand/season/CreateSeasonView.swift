@@ -49,16 +49,17 @@ struct CreateSeasonView: View {
                     if viewModel.isSearching {
                         HStack(spacing: 8) {
                             ProgressView()
+                                .tint(OutPickTheme.SwiftUIColor.accent)
                             Text("검색 중...")
                                 .font(.footnote)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
                         }
                     }
 
                     if !viewModel.conceptSuggestions.isEmpty {
                         Text("추천 무드")
                             .font(.footnote)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
 
                         ForEach(viewModel.conceptSuggestions, id: \.id) { c in
                             Button {
@@ -77,7 +78,7 @@ struct CreateSeasonView: View {
                     if !viewModel.tagSuggestions.isEmpty {
                         Text("추천 태그")
                             .font(.footnote)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
 
                         ForEach(viewModel.tagSuggestions, id: \.id.value) { t in
                             Button {
@@ -150,7 +151,7 @@ struct CreateSeasonView: View {
                 if let error = viewModel.errorMessage {
                     Section {
                         Text(error)
-                            .foregroundStyle(.red)
+                            .foregroundStyle(OutPickTheme.SwiftUIColor.warning)
                     }
                 }
 
@@ -173,7 +174,9 @@ struct CreateSeasonView: View {
                     .disabled(viewModel.isSaving)
                 }
             }
-            .tint(.black)
+            .tint(OutPickTheme.SwiftUIColor.accent)
+            .outpickHiddenScrollContentBackground()
+            .background(OutPickTheme.SwiftUIColor.backgroundBase)
             // ✅ 스크롤 시작 시 자동으로 닫기 (탭 충돌 없음)
             .simultaneousGesture(
                 DragGesture(minimumDistance: 10)
@@ -202,6 +205,17 @@ struct CreateSeasonView: View {
                     viewModel.coverImageData = data
                 }
             }
+        }
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func outpickHiddenScrollContentBackground() -> some View {
+        if #available(iOS 16.0, *) {
+            scrollContentBackground(.hidden)
+        } else {
+            self
         }
     }
 }
