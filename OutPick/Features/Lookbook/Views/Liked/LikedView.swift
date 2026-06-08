@@ -31,8 +31,7 @@ struct LikedView: View {
     var body: some View {
         NavigationView {
             content
-                .navigationTitle("좋아요")
-                .navigationBarTitleDisplayMode(.inline)
+                .lookbookNavigationBar(title: "OutPick")
                 .task {
                     await viewModel.refreshForActivation()
                 }
@@ -44,7 +43,7 @@ struct LikedView: View {
                 }
         }
         .navigationViewStyle(StackNavigationViewStyle())
-        .tint(.black)
+        .tint(OutPickTheme.SwiftUIColor.accent)
     }
 
     private var likedSectionsList: some View {
@@ -56,7 +55,7 @@ struct LikedView: View {
             }
             .padding(.vertical, 18)
         }
-        .background(Color(.systemBackground))
+        .background(OutPickTheme.SwiftUIColor.backgroundBase)
     }
 
     @ViewBuilder
@@ -271,10 +270,13 @@ struct LikedView: View {
         } label: {
             Image(systemName: "ellipsis")
                 .font(.caption.weight(.bold))
-                .foregroundStyle(.primary)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
                 .frame(width: 30, height: 30)
-                .background(.ultraThinMaterial)
+                .background(OutPickTheme.SwiftUIColor.surfaceElevated)
                 .clipShape(Circle())
+                .overlay {
+                    Circle().stroke(OutPickTheme.SwiftUIColor.borderSubtle, lineWidth: 1)
+                }
                 .contentShape(Circle())
         }
         .padding(6)
@@ -287,11 +289,13 @@ struct LikedView: View {
         case .idle, .loading:
             VStack(spacing: 12) {
                 ProgressView()
+                    .tint(OutPickTheme.SwiftUIColor.accent)
                 Text("로딩 중...")
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(OutPickTheme.SwiftUIColor.backgroundBase)
 
         case .empty:
             likedSectionsList
@@ -300,15 +304,18 @@ struct LikedView: View {
             VStack(spacing: 12) {
                 Text("불러오기 실패")
                     .font(.headline)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
                 Text(message)
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
                 Button("다시 시도") {
                     Task { await viewModel.reload() }
                 }
+                .tint(OutPickTheme.SwiftUIColor.accent)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.horizontal, 24)
+            .background(OutPickTheme.SwiftUIColor.backgroundBase)
 
         case .ready:
             likedSectionsList
@@ -323,8 +330,9 @@ private struct LikedContentSectionHeader: View {
     var body: some View {
         HStack(spacing: 6) {
             Text(title)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
             Text("\(count)")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
         }
         .font(.subheadline.weight(.semibold))
         .textCase(nil)
@@ -340,10 +348,11 @@ private struct LikedSectionStatusRow: View {
             if showsProgress {
                 ProgressView()
                     .controlSize(.small)
+                    .tint(OutPickTheme.SwiftUIColor.accent)
             }
             Text(text)
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 12)

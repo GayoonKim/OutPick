@@ -25,22 +25,23 @@ struct LikedBrandCardView: View {
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .background(
                 RoundedRectangle(cornerRadius: 10)
-                    .fill(Color(.secondarySystemBackground))
+                    .fill(OutPickTheme.SwiftUIColor.surfaceBase)
             )
 
             Text(item.brand.name)
                 .font(.footnote.weight(.semibold))
-                .foregroundStyle(.primary)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
                 .lineLimit(1)
 
             HStack(spacing: 4) {
                 Image(systemName: "heart.fill")
                     .imageScale(.small)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.like)
                 Text("\(item.brand.metrics.likeCount)")
                     .monospacedDigit()
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
             }
             .font(.caption)
-            .foregroundStyle(.secondary)
         }
         .frame(width: 132, alignment: .leading)
         .contentShape(Rectangle())

@@ -25,7 +25,7 @@ struct LikedPostCardView: View {
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .background(
             RoundedRectangle(cornerRadius: 10)
-                .fill(Color(.secondarySystemBackground))
+                .fill(OutPickTheme.SwiftUIColor.surfaceBase)
         )
         .contentShape(Rectangle())
         .accessibilityIdentifier("lookbook.likedPost.card")

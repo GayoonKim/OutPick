@@ -29,8 +29,18 @@ struct LookbookHomeView: View {
     var body: some View {
         NavigationView {
             mainContent
+                .lookbookNavigationBar(title: "OutPick") {
+                    if viewModel.canCreateBrand {
+                        LookbookNavigationTextButton(
+                            title: "브랜드 추가",
+                            accessibilityLabel: "브랜드 추가"
+                        ) {
+                            isPresentingCreateBrand = true
+                        }
+                    }
+                }
         }
-        .tint(.black)
+        .tint(OutPickTheme.SwiftUIColor.accent)
         .navigationViewStyle(StackNavigationViewStyle())
         .fullScreenCover(isPresented: $isPresentingCreateBrand, onDismiss: {
             guard let createdBrandIDForSelection else { return }
@@ -57,22 +67,25 @@ struct LookbookHomeView: View {
             case .idle, .loading:
                 VStack(spacing: 12) {
                     ProgressView()
+                        .tint(OutPickTheme.SwiftUIColor.accent)
                     Text("로딩 중...")
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
                 }
 
             case .failed(let message):
                 VStack(spacing: 12) {
                     Text("불러오기 실패")
                         .font(.headline)
+                        .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
                     Text(message)
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
 
                     Button("다시 시도") {
                         Task { await viewModel.retry() }
                     }
+                    .tint(OutPickTheme.SwiftUIColor.accent)
                 }
 
             case .ready:
@@ -100,40 +113,15 @@ struct LookbookHomeView: View {
                     }
                 }
                 .listStyle(.plain)
+                .outpickHiddenScrollContentBackground()
+                .background(OutPickTheme.SwiftUIColor.backgroundBase)
                 .refreshable {
                     await refreshWithMinimumIndicatorDuration()
                 }
             }
         }
-        .navigationTitle("")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Text("OutPick")
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
-                    .layoutPriority(1)
-            }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                if viewModel.canCreateBrand {
-                    Button {
-                        isPresentingCreateBrand = true
-                    } label: {
-                        HStack(spacing: 2) {
-                            Text("브랜드 추가")
-                        }
-                        .lineLimit(1)
-                    }
-                    .accessibilityLabel("브랜드 추가")
-                    .foregroundStyle(.primary)
-                } else {
-                    EmptyView()
-                }
-            }
-        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(OutPickTheme.SwiftUIColor.backgroundBase)
     }
 
     private var createBrandSheet: some View {
@@ -158,6 +146,17 @@ struct LookbookHomeView: View {
             (pullToRefreshMinimumVisibleDuration - elapsed) * 1_000_000_000
         )
         try? await Task.sleep(nanoseconds: remainingNanoseconds)
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func outpickHiddenScrollContentBackground() -> some View {
+        if #available(iOS 16.0, *) {
+            scrollContentBackground(.hidden)
+        } else {
+            self
+        }
     }
 }
 

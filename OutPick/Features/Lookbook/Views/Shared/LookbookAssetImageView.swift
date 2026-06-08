@@ -42,7 +42,7 @@ struct LookbookAssetImageView: View {
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 12)
-                .fill(.gray.opacity(0.15))
+                .fill(OutPickTheme.SwiftUIColor.backgroundRaised)
 
             if let uiImage {
                 GeometryReader { geo in
@@ -54,14 +54,22 @@ struct LookbookAssetImageView: View {
                 }
             } else if isLoading {
                 ProgressView()
-                    .tint(.black)
+                    .tint(OutPickTheme.SwiftUIColor.accent)
             } else {
                 Image(systemName: didFail ? "exclamationmark.triangle" : "photo")
                     .imageScale(.large)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(
+                        didFail
+                            ? OutPickTheme.SwiftUIColor.warning
+                            : OutPickTheme.SwiftUIColor.iconSecondary
+                    )
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay {
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(OutPickTheme.SwiftUIColor.borderSubtle, lineWidth: 1)
+        }
         .task(id: loadKey) {
             await loadImage()
         }

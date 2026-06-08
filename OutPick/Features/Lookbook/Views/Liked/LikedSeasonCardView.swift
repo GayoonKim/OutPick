@@ -25,22 +25,23 @@ struct LikedSeasonCardView: View {
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .background(
                 RoundedRectangle(cornerRadius: 10)
-                    .fill(Color(.secondarySystemBackground))
+                    .fill(OutPickTheme.SwiftUIColor.surfaceBase)
             )
 
             Text(item.season.title)
                 .font(.footnote.weight(.semibold))
-                .foregroundStyle(.primary)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
                 .lineLimit(2)
 
             HStack(spacing: 4) {
                 Image(systemName: "heart.fill")
                     .imageScale(.small)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.like)
                 Text("\(item.season.likeCount)")
                     .monospacedDigit()
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
             }
             .font(.caption)
-            .foregroundStyle(.secondary)
         }
         .frame(width: 132, alignment: .leading)
         .contentShape(Rectangle())

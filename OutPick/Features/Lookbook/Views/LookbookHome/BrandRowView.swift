@@ -35,6 +35,7 @@ struct BrandRowView: View {
 
             Text(brand.name)
                 .font(.headline)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
 
             HStack(spacing: 10) {
                 likeChip(value: brand.metrics.likeCount) // 좋아요만 표시
@@ -44,7 +45,11 @@ struct BrandRowView: View {
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 14)
-                .fill(Color(.secondarySystemBackground))
+                .fill(OutPickTheme.SwiftUIColor.surfaceBase)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(OutPickTheme.SwiftUIColor.borderSubtle, lineWidth: 1)
         )
         .task(id: brand.listLogoPath ?? "__empty_logo_path__") {
             await loadLogoIfNeeded()
@@ -81,25 +86,31 @@ struct BrandRowView: View {
 
     private var placeholderSlot: some View {
         Rectangle()
-            .fill(Color(.tertiarySystemFill))
+            .fill(OutPickTheme.SwiftUIColor.backgroundRaised)
             .overlay {
                 Image(systemName: loadFailed ? "exclamationmark.triangle" : "photo")
                     .font(.title3)
+                    .foregroundStyle(
+                        loadFailed
+                            ? OutPickTheme.SwiftUIColor.warning
+                            : OutPickTheme.SwiftUIColor.iconSecondary
+                    )
             }
     }
 
     private func likeChip(value: Int) -> some View {
         HStack(spacing: 6) {
             Image(systemName: "heart.fill")
+                .foregroundStyle(OutPickTheme.SwiftUIColor.like)
             Text("\(value)")
                 .font(.subheadline)
                 .monospacedDigit()
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
         }
-        .foregroundStyle(.secondary)
         .padding(.vertical, 6)
         .padding(.horizontal, 10)
         .background(
-            Capsule().fill(Color(.tertiarySystemFill))
+            Capsule().fill(OutPickTheme.SwiftUIColor.surfaceElevated)
         )
     }
 
