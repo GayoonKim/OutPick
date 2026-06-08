@@ -8,15 +8,6 @@
 import Foundation
 
 protocol SeasonImportJobProcessingRepositoryProtocol {
-    func processNextSeasonImportJob(
-        brandID: BrandID
-    ) async throws -> SeasonImportProcessResult
-
-    func processSeasonImportJobs(
-        brandID: BrandID,
-        jobIDs: [String]
-    ) async throws -> SeasonImportBatchProcessResult
-
     func requestSeasonCandidateImportsAndProcess(
         brandID: BrandID,
         candidateIDs: [String]

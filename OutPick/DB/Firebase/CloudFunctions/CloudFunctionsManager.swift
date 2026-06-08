@@ -453,54 +453,6 @@ final class CloudFunctionsManager {
         )
     }
 
-    func processNextSeasonImportJob(
-        brandID: String
-    ) async throws -> SeasonImportProcessResult {
-        let response = try await callFunction(
-            "processNextSeasonImportJob",
-            data: [
-                "brandID": brandID
-            ]
-        )
-
-        return SeasonImportProcessResult(
-            processed: try boolValue(response, key: "processed"),
-            reason: optionalStringValue(response, key: "reason"),
-            brandID: optionalStringValue(response, key: "brandID")
-                .map { BrandID(value: $0) },
-            jobID: optionalStringValue(response, key: "jobID"),
-            sourceURL: optionalStringValue(response, key: "sourceURL"),
-            imageCandidateCount: optionalIntValue(
-                response,
-                key: "imageCandidateCount"
-            )
-        )
-    }
-
-    func processSeasonImportJobs(
-        brandID: String,
-        jobIDs: [String]
-    ) async throws -> SeasonImportBatchProcessResult {
-        let response = try await callFunction(
-            "processSeasonImportJobs",
-            data: [
-                "brandID": brandID,
-                "jobIDs": jobIDs
-            ]
-        )
-
-        return SeasonImportBatchProcessResult(
-            brandID: BrandID(value: try stringValue(response, key: "brandID")),
-            candidateIDs: stringArrayValue(response, key: "candidateIDs"),
-            jobIDs: stringArrayValue(response, key: "jobIDs"),
-            requestedJobCount: try intValue(response, key: "requestedJobCount"),
-            duplicateJobCount: optionalIntValue(response, key: "duplicateJobCount") ?? 0,
-            processedJobCount: try intValue(response, key: "processedJobCount"),
-            failedJobCount: try intValue(response, key: "failedJobCount"),
-            skippedJobCount: try intValue(response, key: "skippedJobCount")
-        )
-    }
-
     func requestSeasonCandidateImportsAndProcess(
         brandID: String,
         candidateIDs: [String]

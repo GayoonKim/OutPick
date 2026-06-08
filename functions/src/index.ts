@@ -20,16 +20,6 @@ import {
 } from "firebase-functions/v2/firestore";
 import {getFirestore, FieldValue} from "firebase-admin/firestore";
 import {
-  processNextSeasonImportJob as runNextSeasonImportJob,
-  processSeasonImportJobs as runSeasonImportJobs,
-} from "./lookbookImportWorker.js";
-import {
-  createSeasonContentFromImportJobs as runCreateSeasonContentFromImportJobs,
-} from "./lookbookImportMaterializer.js";
-import {
-  syncSeasonImportAssetsForJob as runSyncSeasonImportAssetsForJob,
-} from "./lookbookAssetSyncWorker.js";
-import {
   discoverSeasonCandidates as runDiscoverSeasonCandidates,
 } from "./lookbookSeasonCandidateDiscovery.js";
 
@@ -2010,39 +2000,6 @@ export const requestSeasonAssetRetry = onCall(
   }
 );
 
-export const processNextSeasonImportJob = onCall(
-  {region: FUNCTIONS_REGION, timeoutSeconds: 60, memory: "512MiB"},
-  async (request) => {
-    const uid = requiredAuthUID(request.auth?.uid);
-    const data = recordData(request.data);
-    const brandID = requiredDocumentID(
-      requiredString(data, "brandID", 128),
-      "brandID"
-    );
-
-    await assertBrandWriteAccess(uid, brandID);
-
-    return runNextSeasonImportJob(db, brandID);
-  }
-);
-
-export const processSeasonImportJobs = onCall(
-  {region: FUNCTIONS_REGION, timeoutSeconds: 120, memory: "512MiB"},
-  async (request) => {
-    const uid = requiredAuthUID(request.auth?.uid);
-    const data = recordData(request.data);
-    const brandID = requiredDocumentID(
-      requiredString(data, "brandID", 128),
-      "brandID"
-    );
-    const jobIDs = requiredDocumentIDList(data.jobIDs, "jobIDs", 80);
-
-    await assertBrandWriteAccess(uid, brandID);
-
-    return runSeasonImportJobs(db, brandID, jobIDs, 3);
-  }
-);
-
 export const requestSeasonCandidateImportsAndProcess = onCall(
   {region: FUNCTIONS_REGION, timeoutSeconds: 120, memory: "512MiB"},
   async (request) => {
@@ -2168,122 +2125,6 @@ export const onSeasonImportQueued = onDocumentWritten(
       taskName: receipt.taskName,
       alreadyExists: receipt.alreadyExists,
     });
-  }
-);
-
-export const createSeasonContentFromImportJobs = onCall(
-  {region: FUNCTIONS_REGION, timeoutSeconds: 120, memory: "512MiB"},
-  async (request) => {
-    const uid = requiredAuthUID(request.auth?.uid);
-    const data = recordData(request.data);
-    const brandID = requiredDocumentID(
-      requiredString(data, "brandID", 128),
-      "brandID"
-    );
-    const jobIDs = requiredDocumentIDList(data.jobIDs, "jobIDs", 80);
-
-    await assertBrandWriteAccess(uid, brandID);
-
-    return runCreateSeasonContentFromImportJobs(db, brandID, jobIDs, 3);
-  }
-);
-
-export const onSeasonImportParsed = onDocumentUpdated(
-  {
-    document: "brands/{brandID}/importJobs/{jobID}",
-    region: FUNCTIONS_REGION,
-    timeoutSeconds: 540,
-    memory: "1GiB",
-  },
-  async (event) => {
-    const beforeSnap = event.data?.before;
-    const afterSnap = event.data?.after;
-
-    if (!beforeSnap || !afterSnap) {
-      return;
-    }
-
-    const before = beforeSnap.data() as Record<string, unknown> | undefined;
-    const after = afterSnap.data() as Record<string, unknown> | undefined;
-    if (!before || !after) {
-      return;
-    }
-
-    const shouldStart =
-      after.jobType === "importSeasonFromURL" &&
-      after.dispatchMode !== "cloudTasks" &&
-      after.processingEngine !== "cloudRunWorker" &&
-      after.status === "parsed" &&
-      before.status !== "parsed" &&
-      before.status !== "success" &&
-      after.contentStatus !== "creating" &&
-      after.contentStatus !== "created";
-
-    if (!shouldStart) {
-      return;
-    }
-
-    const brandID = String(event.params.brandID ?? "");
-    const jobID = String(event.params.jobID ?? "");
-    if (!brandID || !jobID) {
-      return;
-    }
-
-    const result = await runCreateSeasonContentFromImportJobs(
-      db,
-      brandID,
-      [jobID],
-      1
-    );
-    console.log("[onSeasonImportParsed] materialize result", result);
-  }
-);
-
-export const onSeasonImportContentCreated = onDocumentUpdated(
-  {
-    document: "brands/{brandID}/importJobs/{jobID}",
-    region: FUNCTIONS_REGION,
-    timeoutSeconds: 540,
-    memory: "1GiB",
-  },
-  async (event) => {
-    const beforeSnap = event.data?.before;
-    const afterSnap = event.data?.after;
-
-    if (!beforeSnap || !afterSnap) {
-      return;
-    }
-
-    const before = beforeSnap.data() as Record<string, unknown> | undefined;
-    const after = afterSnap.data() as Record<string, unknown> | undefined;
-    if (!before || !after) {
-      return;
-    }
-
-    const shouldStart =
-      after.jobType === "importSeasonFromURL" &&
-      after.dispatchMode !== "cloudTasks" &&
-      after.processingEngine !== "cloudRunWorker" &&
-      after.status === "success" &&
-      after.contentStatus === "created" &&
-      after.assetSyncStatus === "pending" &&
-      (
-        before.contentStatus !== "created" ||
-        before.assetSyncStatus !== "pending"
-      );
-
-    if (!shouldStart) {
-      return;
-    }
-
-    const brandID = String(event.params.brandID ?? "");
-    const jobID = String(event.params.jobID ?? "");
-    if (!brandID || !jobID) {
-      return;
-    }
-
-    const result = await runSyncSeasonImportAssetsForJob(db, brandID, jobID);
-    console.log("[onSeasonImportContentCreated] asset sync result", result);
   }
 );
 

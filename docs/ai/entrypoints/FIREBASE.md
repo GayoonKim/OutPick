@@ -3,9 +3,6 @@
 ## Firebase Functions
 
 - Export entry: `functions/src/index.ts`
-- Lookbook import worker 참고 코드: `functions/src/lookbookImportWorker.ts`
-- Lookbook materializer 참고 코드: `functions/src/lookbookImportMaterializer.ts`
-- Lookbook asset sync 참고 코드: `functions/src/lookbookAssetSyncWorker.ts`
 - Season candidate discovery: `functions/src/lookbookSeasonCandidateDiscovery.ts`
 
 ## 주요 callable/trigger
@@ -16,15 +13,15 @@
 - Season: `setSeasonEngagement`
 - Comment: `setCommentEngagement`, `createComment`, `createReply`, `deleteComment`, `reportComment`
 - User safety: `blockUser`, `loadHiddenCommentUserIDs`
-- Season import: `requestSeasonImport`, `requestSeasonAssetRetry`, `processNextSeasonImportJob`, `processSeasonImportJobs`, `requestSeasonCandidateImportsAndProcess`, `createSeasonContentFromImportJobs`
-- Firestore triggers: `onSeasonImportParsed`, `onSeasonImportContentCreated`, `onRoomClosed`
+- Season import: `requestSeasonImport`, `requestSeasonAssetRetry`, `requestSeasonCandidateImportsAndProcess`
+- Firestore triggers: `onSeasonImportQueued`, `onRoomClosed`
 
 ## Lookbook URL Import Worker
 
 Cloud Run worker 전환 기준의 URL 기반 시즌 등록 진입점이다.
 
 - Cloud Functions wake-up trigger/export 후보: `functions/src/index.ts`
-- 기존 Functions import 파싱/asset sync 참고 코드: `functions/src/lookbookImportWorker.ts`, `functions/src/lookbookImportMaterializer.ts`, `functions/src/lookbookAssetSyncWorker.ts`
+- Season candidate discovery: `functions/src/lookbookSeasonCandidateDiscovery.ts`
 - Cloud Run worker package: `tools/lookbook-import-worker/`
 - Cloud Run worker server: `tools/lookbook-import-worker/src/server.ts`
 - Cloud Run worker processor: `tools/lookbook-import-worker/src/processor.ts`
