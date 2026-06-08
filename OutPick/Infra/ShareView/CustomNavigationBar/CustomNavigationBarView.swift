@@ -38,7 +38,7 @@ class CustomNavigationBarView: UIView {
         let searchImg = UIImage(systemName: "magnifyingglass")
         let imageView = UIImageView(image: searchImg)
         imageView.contentMode = .scaleAspectFit
-        imageView.tintColor = .black
+        imageView.tintColor = OutPickTheme.ColorToken.iconSecondary
         
         return imageView
     }()
@@ -47,7 +47,9 @@ class CustomNavigationBarView: UIView {
         let textField = UITextField()
         textField.translatesAutoresizingMaskIntoConstraints = false
         textField.placeholder = "대화내용 검색"
-        textField.backgroundColor = .secondarySystemBackground
+        textField.backgroundColor = OutPickTheme.ColorToken.surfaceBase
+        textField.textColor = OutPickTheme.ColorToken.textPrimary
+        textField.tintColor = OutPickTheme.ColorToken.accent
         textField.clearButtonMode = .whileEditing
         textField.heightAnchor.constraint(equalToConstant: 34).isActive = true
         textField.returnKeyType = .search
@@ -58,7 +60,7 @@ class CustomNavigationBarView: UIView {
     private let cancelBtn: UIButton = {
         let button = UIButton(type: .system)
         button.setTitle("취소", for: .normal)
-        button.setTitleColor(.black, for: .normal)
+        button.setTitleColor(OutPickTheme.ColorToken.accent, for: .normal)
         button.setContentHuggingPriority(.required, for: .horizontal)
         button.setContentCompressionResistancePriority(.required, for: .horizontal)
         
@@ -80,10 +82,10 @@ class CustomNavigationBarView: UIView {
         config.image = UIImage(systemName: "magnifyingglass")
         config.buttonSize = .small
         config.imagePlacement = .leading
-        config.baseForegroundColor = .black
+        config.baseForegroundColor = OutPickTheme.ColorToken.iconSecondary
         
         button.configuration = config
-        button.backgroundColor = .secondarySystemBackground
+        button.backgroundColor = OutPickTheme.ColorToken.surfaceBase
         button.heightAnchor.constraint(equalToConstant: 40).isActive = true
         button.clipsToBounds = true
         button.layer.cornerRadius = 10
@@ -99,10 +101,10 @@ class CustomNavigationBarView: UIView {
         config.image = UIImage(systemName: "text.justify")
         config.buttonSize = .small
         config.imagePlacement = .leading
-        config.baseForegroundColor = .black
+        config.baseForegroundColor = OutPickTheme.ColorToken.iconPrimary
         
         button.configuration = config
-        button.backgroundColor = .secondarySystemBackground
+        button.backgroundColor = OutPickTheme.ColorToken.surfaceBase
         button.heightAnchor.constraint(equalToConstant: 40).isActive = true
         button.clipsToBounds = true
         button.layer.cornerRadius = 10
@@ -118,10 +120,10 @@ class CustomNavigationBarView: UIView {
         config.image = UIImage(systemName: "chevron.left")
         config.buttonSize = .small
         config.imagePlacement = .leading
-        config.baseForegroundColor = .black
+        config.baseForegroundColor = OutPickTheme.ColorToken.iconPrimary
         
         button.configuration = config
-        button.backgroundColor = .secondarySystemBackground
+        button.backgroundColor = OutPickTheme.ColorToken.surfaceBase
         button.heightAnchor.constraint(equalToConstant: 40).isActive = true
         button.clipsToBounds = true
         button.layer.cornerRadius = 10
@@ -134,20 +136,17 @@ class CustomNavigationBarView: UIView {
         button.translatesAutoresizingMaskIntoConstraints = false
         
         var config = UIButton.Configuration.plain()
-        config.image = UIImage(systemName: "plus")
-        config.buttonSize = .small
-        config.imagePlacement = .leading
-        config.baseForegroundColor = .black
-        config.imagePadding = 5
+        config.baseForegroundColor = OutPickTheme.ColorToken.accent
+        config.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12)
         
-        var attrTitle = AttributedString("채팅방")
+        var attrTitle = AttributedString("채팅방 추가")
         attrTitle.font = .systemFont(ofSize: 12.0, weight: .heavy)
         config.attributedTitle = attrTitle
         config.titleAlignment = .trailing
-        config.baseForegroundColor = .black
+        config.baseForegroundColor = OutPickTheme.ColorToken.accent
         
         button.configuration = config
-        button.backgroundColor = .secondarySystemBackground
+        button.backgroundColor = OutPickTheme.ColorToken.surfaceBase
         button.heightAnchor.constraint(equalToConstant: 40).isActive = true
         button.clipsToBounds = true
         button.layer.cornerRadius = 10
@@ -163,10 +162,10 @@ class CustomNavigationBarView: UIView {
         config.image = UIImage(systemName: "bell.fill")
         config.buttonSize = .small
         config.imagePlacement = .leading
-        config.baseForegroundColor = .black
+        config.baseForegroundColor = OutPickTheme.ColorToken.iconPrimary
         
         button.configuration = config
-        button.backgroundColor = .secondarySystemBackground
+        button.backgroundColor = OutPickTheme.ColorToken.surfaceBase
         button.heightAnchor.constraint(equalToConstant: 40).isActive = true
         button.clipsToBounds = true
         button.layer.cornerRadius = 10
@@ -177,7 +176,7 @@ class CustomNavigationBarView: UIView {
     private lazy var titleLabel: UILabel = {
         let label = UILabel()
         label.font = .boldSystemFont(ofSize: 18)
-        label.textColor = .black
+        label.textColor = OutPickTheme.ColorToken.textPrimary
         return label
     }()
     
@@ -194,7 +193,7 @@ class CustomNavigationBarView: UIView {
     }
     
     private func setup() {
-        backgroundColor = .white
+        backgroundColor = OutPickTheme.ColorToken.backgroundBase
         
         [leftStack, centerStack, rightStack].forEach {
             $0.axis = .horizontal
@@ -356,10 +355,10 @@ extension UIButton {
         config.image = UIImage(systemName: name)
         config.buttonSize = .small
         config.imagePlacement = .leading
-        config.baseForegroundColor = .black
+        config.baseForegroundColor = OutPickTheme.ColorToken.iconPrimary
 
         button.configuration = config
-        button.backgroundColor = .secondarySystemBackground
+        button.backgroundColor = OutPickTheme.ColorToken.surfaceBase
         button.heightAnchor.constraint(equalToConstant: 40).isActive = true
         button.clipsToBounds = true
         button.layer.cornerRadius = 10
@@ -370,7 +369,7 @@ extension UIButton {
     static func navBackButton(action: @escaping () -> Void) -> UIButton {
         let btn = UIButton(type: .system)
         btn.setImage(UIImage(systemName: "chevron.left"), for: .normal)
-        btn.tintColor = .black
+        btn.tintColor = OutPickTheme.ColorToken.accent
         btn.addAction(UIAction { _ in action() }, for: .touchUpInside)
         
         return btn
@@ -382,7 +381,7 @@ extension UILabel {
         let label = UILabel()
         label.text = text
         label.font = .boldSystemFont(ofSize: 18)
-        label.textColor = .black
+        label.textColor = OutPickTheme.ColorToken.textPrimary
         
         return label
     }
@@ -391,7 +390,7 @@ extension UILabel {
         let label = UILabel()
         label.text = text
         label.font = .systemFont(ofSize: 12)
-        label.textColor = .gray
+        label.textColor = OutPickTheme.ColorToken.textSecondary
         
         return label
     }

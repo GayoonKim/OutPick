@@ -27,7 +27,7 @@ final class CustomTabBarViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = OutPickTheme.ColorToken.backgroundBase
 
         if tabBuilder == nil {
             assertionFailure("CustomTabBarViewController.tabBuilder가 nil 입니다. AppCoordinator/CompositionRoot에서 주입해주세요.")

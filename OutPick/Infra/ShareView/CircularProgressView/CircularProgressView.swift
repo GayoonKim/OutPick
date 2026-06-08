@@ -55,7 +55,7 @@ final class CircularProgressHUD: UIView {
         // Percent label
         percentLabel.translatesAutoresizingMaskIntoConstraints = false
         percentLabel.font = UIFont.monospacedDigitSystemFont(ofSize: 14, weight: .semibold)
-        percentLabel.textColor = UIColor.label
+        percentLabel.textColor = OutPickTheme.ColorToken.textPrimary
         percentLabel.textAlignment = .center
         percentLabel.text = "0%"
         container.addSubview(percentLabel)
@@ -77,13 +77,13 @@ final class CircularProgressHUD: UIView {
         )
 
         trackLayer.path = circlePath.cgPath
-        trackLayer.strokeColor = UIColor.systemGray5.cgColor
+        trackLayer.strokeColor = OutPickTheme.ColorToken.borderSubtle.cgColor
         trackLayer.fillColor = UIColor.clear.cgColor
         trackLayer.lineWidth = ringLineWidth
         ringView.layer.addSublayer(trackLayer)
 
         ringLayer.path = circlePath.cgPath
-        ringLayer.strokeColor = UIColor.label.cgColor
+        ringLayer.strokeColor = OutPickTheme.ColorToken.accent.cgColor
         ringLayer.fillColor = UIColor.clear.cgColor
         ringLayer.lineWidth = ringLineWidth
         ringLayer.lineCap = .round

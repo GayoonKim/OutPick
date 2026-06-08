@@ -12,7 +12,7 @@ class NavigationBarManager {
     static func configureBackButton(for viewController: UIViewController) {
         
         let backButton = UIBarButtonItem()
-        backButton.tintColor = .black
+        backButton.tintColor = OutPickTheme.ColorToken.accent
         viewController.navigationController?.navigationBar.topItem?.backBarButtonItem = backButton
         
     }

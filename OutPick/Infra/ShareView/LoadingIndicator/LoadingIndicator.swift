@@ -64,7 +64,7 @@ class LoadingIndicator {
             let spinner = UIActivityIndicatorView(style: .large)
             spinner.translatesAutoresizingMaskIntoConstraints = false
             spinner.hidesWhenStopped = true
-            spinner.color = .gray
+            spinner.color = OutPickTheme.ColorToken.accent
             spinner.accessibilityIdentifier = "LoadingIndicator"
 
             overlay.addSubview(spinner)

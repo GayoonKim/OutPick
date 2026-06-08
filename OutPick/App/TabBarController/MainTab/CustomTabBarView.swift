@@ -28,7 +28,7 @@ class CustomTabBarView: UIView {
         config.buttonSize = .mini
         config.imagePlacement = .top
         config.imagePadding = 5
-        config.baseForegroundColor = .gray
+        config.baseForegroundColor = OutPickTheme.ColorToken.iconSecondary
         
         var attrTitle = AttributedString($0.1)
         attrTitle.font = .systemFont(ofSize: 10.0, weight: .medium)
@@ -49,7 +49,7 @@ class CustomTabBarView: UIView {
     }
     
     private func setup() {
-        backgroundColor = .white
+        backgroundColor = OutPickTheme.ColorToken.surfaceBase
         
         for (index, button) in buttons.enumerated() {
             button.tag = index
@@ -80,7 +80,9 @@ class CustomTabBarView: UIView {
     
     func updateButtonStates(_ selectedIndex: Int) {
         for (index, button) in buttons.enumerated() {
-            button.configuration?.baseForegroundColor = (index == selectedIndex) ? .black : .gray
+            button.configuration?.baseForegroundColor = (index == selectedIndex)
+                ? OutPickTheme.ColorToken.accent
+                : OutPickTheme.ColorToken.iconSecondary
         }
     }
 }

@@ -14,20 +14,24 @@ struct AppToastView: View {
         HStack(spacing: 10) {
             Image(systemName: "exclamationmark.circle.fill")
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.accent)
 
             Text(message)
                 .font(.footnote.weight(.semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
                 .lineLimit(3)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.black.opacity(0.88))
+        .background(OutPickTheme.SwiftUIColor.surfaceElevated)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .shadow(color: .black.opacity(0.16), radius: 14, x: 0, y: 8)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(OutPickTheme.SwiftUIColor.borderSubtle, lineWidth: 1)
+        )
+        .shadow(color: OutPickTheme.SwiftUIColor.overlayScrim.opacity(0.5), radius: 14, x: 0, y: 8)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("app.toast")
     }
