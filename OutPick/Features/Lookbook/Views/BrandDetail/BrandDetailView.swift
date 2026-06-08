@@ -59,6 +59,7 @@ struct BrandDetailView: View {
                     )
                     .listRowInsets(EdgeInsets())
                     .listRowSeparator(.hidden)
+                    .listRowBackground(OutPickTheme.SwiftUIColor.backgroundBase)
 
                     BrandDetailSeasonsGridView(
                         seasons: viewModel.seasons,
@@ -74,40 +75,32 @@ struct BrandDetailView: View {
                     )
                     .listRowInsets(EdgeInsets())
                     .listRowSeparator(.hidden)
+                    .listRowBackground(OutPickTheme.SwiftUIColor.backgroundBase)
                 }
                 .listStyle(.plain)
+                .background(OutPickTheme.SwiftUIColor.backgroundBase)
             }
         }
-        .navigationBarTitleDisplayMode(.inline)
-        .navigationBarBackButtonHidden(true)
-        .tint(.black)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .foregroundStyle(.black)
-                }
-                .accessibilityLabel("뒤로 가기")
-            }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                if brandAdminSessionStore.canWrite(brandID: brand.id) {
-                    Menu {
-                        if hasLookbookArchiveURL {
-                            Button("시즌 추가") {
-                                isPresentingSeasonAddition = true
-                            }
+        .background(OutPickTheme.SwiftUIColor.backgroundBase)
+        .lookbookNavigationBar(
+            title: "",
+            showsBackButton: true,
+            onBack: { dismiss() }
+        ) {
+            if brandAdminSessionStore.canWrite(brandID: brand.id) {
+                Menu {
+                    if hasLookbookArchiveURL {
+                        Button("시즌 추가") {
+                            isPresentingSeasonAddition = true
                         }
-                        Button("가져오기 현황") {
-                            isPresentingImportManagement = true
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                            .foregroundStyle(.black)
                     }
-                    .accessibilityLabel("브랜드 관리")
+                    Button("가져오기 현황") {
+                        isPresentingImportManagement = true
+                    }
+                } label: {
+                    LookbookNavigationIconLabel(systemImage: "ellipsis")
                 }
+                .accessibilityLabel("브랜드 관리")
             }
         }
         .sheet(isPresented: $isPresentingSeasonAddition, onDismiss: {
@@ -153,16 +146,16 @@ struct BrandDetailView: View {
     private var initialLoadingView: some View {
         VStack(spacing: 14) {
             ProgressView()
-                .tint(.black)
+                .tint(OutPickTheme.SwiftUIColor.accent)
                 .scaleEffect(1.05)
 
             Text("브랜드를 준비하는 중입니다.")
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
-            Color(.systemBackground)
+            OutPickTheme.SwiftUIColor.backgroundBase
                 .ignoresSafeArea()
         )
     }

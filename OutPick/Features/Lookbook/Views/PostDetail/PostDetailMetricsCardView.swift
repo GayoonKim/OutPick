@@ -11,12 +11,9 @@ struct PostDetailMetricsCardView: View {
     let post: LookbookPost
     let commentCount: Int
     let isLiked: Bool
-    let isSaved: Bool
     let isMutatingLike: Bool
-    let isMutatingSave: Bool
     let onLikeTap: () async -> Void
     let onCommentTap: () -> Void
-    let onSaveTap: () async -> Void
 
     var body: some View {
         HStack(spacing: 8) {
@@ -27,7 +24,7 @@ struct PostDetailMetricsCardView: View {
                 title: "좋아요",
                 isSelected: isLiked,
                 isMutating: isMutatingLike,
-                selectedColor: .red,
+                selectedColor: OutPickTheme.SwiftUIColor.like,
                 action: onLikeTap
             )
             .accessibilityIdentifier("lookbook.post.likeButton")
@@ -38,27 +35,16 @@ struct PostDetailMetricsCardView: View {
                 title: "댓글",
                 isSelected: false,
                 isMutating: false,
-                selectedColor: .black,
+                selectedColor: OutPickTheme.SwiftUIColor.iconSecondary,
                 action: {
                     onCommentTap()
                 }
             )
             .accessibilityIdentifier("lookbook.post.commentsButton")
-            actionButton(
-                systemName: "bookmark",
-                selectedSystemName: "bookmark.fill",
-                value: post.metrics.saveCount,
-                title: "저장",
-                isSelected: isSaved,
-                isMutating: isMutatingSave,
-                selectedColor: .black,
-                action: onSaveTap
-            )
-            .accessibilityIdentifier("lookbook.post.saveButton")
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.94))
+        .background(OutPickTheme.SwiftUIColor.surfaceBase)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
@@ -81,31 +67,35 @@ struct PostDetailMetricsCardView: View {
                 ZStack {
                     Image(systemName: isSelected ? selectedSystemName : systemName)
                         .font(.headline.weight(.semibold))
-                        .foregroundStyle(isSelected ? selectedColor : .secondary)
+                        .foregroundStyle(isSelected ? selectedColor : OutPickTheme.SwiftUIColor.iconSecondary)
                         .opacity(isMutating ? 0 : 1)
 
                     if isMutating {
                         ProgressView()
                             .controlSize(.small)
-                            .tint(isSelected ? selectedColor : .secondary)
+                            .tint(isSelected ? selectedColor : OutPickTheme.SwiftUIColor.iconSecondary)
                     }
                 }
                 .frame(height: 22)
 
                 Text(title)
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
 
                 Text("\(value)")
                     .font(.subheadline.weight(.bold))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
                     .monospacedDigit()
             }
             .frame(maxWidth: .infinity)
             .frame(minHeight: 76)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(isSelected ? selectedColor.opacity(0.08) : Color(.tertiarySystemFill))
+                    .fill(
+                        isSelected
+                            ? selectedColor.opacity(0.12)
+                            : OutPickTheme.SwiftUIColor.surfaceElevated
+                    )
             )
         }
         .buttonStyle(.plain)

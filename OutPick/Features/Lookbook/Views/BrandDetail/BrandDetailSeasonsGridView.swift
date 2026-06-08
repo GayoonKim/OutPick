@@ -29,6 +29,7 @@ struct BrandDetailSeasonsGridView: View {
             HStack {
                 Text("시즌")
                     .font(.headline)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
 
                 Spacer()
             }
@@ -38,7 +39,7 @@ struct BrandDetailSeasonsGridView: View {
             if let errorMessage {
                 Text(errorMessage)
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
                     .padding(.horizontal, 16)
             }
 
@@ -47,7 +48,7 @@ struct BrandDetailSeasonsGridView: View {
             } else if seasons.isEmpty, !isLoading, errorMessage == nil {
                 Text(emptyStateMessage)
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
                     .padding(.horizontal, 16)
                     .padding(.bottom, 16)
             } else {
@@ -79,12 +80,12 @@ struct BrandDetailSeasonsGridView: View {
     private var loadingSection: some View {
         VStack(spacing: 12) {
             ProgressView()
-                .tint(.black)
+                .tint(OutPickTheme.SwiftUIColor.accent)
                 .scaleEffect(1.05)
 
             Text("시즌 목록을 불러오는 중입니다.")
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 52)

@@ -28,7 +28,7 @@ struct BrandDetailSeasonGridItemView: View {
             Text(season.title)
                 .font(.subheadline)
                 .fontWeight(.semibold)
-                .foregroundStyle(.primary)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
         }
         .contentShape(Rectangle())
     }

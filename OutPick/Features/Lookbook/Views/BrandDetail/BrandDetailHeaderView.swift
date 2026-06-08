@@ -86,9 +86,10 @@ struct BrandDetailHeaderView: View {
                 } else if loadFailed {
                     Image(systemName: "photo")
                         .imageScale(.large)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(OutPickTheme.SwiftUIColor.iconSecondary)
                 } else {
                     ProgressView()
+                        .tint(OutPickTheme.SwiftUIColor.accent)
                 }
             }
             // 배경색을 두지 않아 이미지 뒤에 회색 배경이 보이지 않습니다.
@@ -116,6 +117,7 @@ struct BrandDetailHeaderView: View {
                 Text(brand.name)
                     .font(.title3)
                     .fontWeight(.semibold)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
 
                 Button {
                     Task {
@@ -126,27 +128,43 @@ struct BrandDetailHeaderView: View {
                         ZStack {
                             Image(systemName: isLiked ? "heart.fill" : "heart")
                                 .font(.footnote.weight(.semibold))
-                                .foregroundStyle(isLiked ? .red : .secondary)
+                                .foregroundStyle(
+                                    isLiked
+                                        ? OutPickTheme.SwiftUIColor.like
+                                        : OutPickTheme.SwiftUIColor.iconSecondary
+                                )
                                 .opacity(isMutatingLike ? 0 : 1)
 
                             if isMutatingLike {
                                 ProgressView()
                                     .controlSize(.small)
-                                    .tint(isLiked ? .red : .secondary)
+                                    .tint(
+                                        isLiked
+                                            ? OutPickTheme.SwiftUIColor.like
+                                            : OutPickTheme.SwiftUIColor.iconSecondary
+                                    )
                             }
                         }
                         .frame(width: 18, height: 18)
 
                         Text("좋아요 \(likeCount)")
                             .font(.footnote.weight(.semibold))
-                            .foregroundStyle(isLiked ? .red : .secondary)
+                            .foregroundStyle(
+                                isLiked
+                                    ? OutPickTheme.SwiftUIColor.like
+                                    : OutPickTheme.SwiftUIColor.textSecondary
+                            )
                             .monospacedDigit()
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 7)
                     .background(
                         Capsule()
-                            .fill(isLiked ? Color.red.opacity(0.08) : Color(.tertiarySystemFill))
+                            .fill(
+                                isLiked
+                                    ? OutPickTheme.SwiftUIColor.like.opacity(0.12)
+                                    : OutPickTheme.SwiftUIColor.surfaceElevated
+                            )
                     )
                 }
                 .buttonStyle(.plain)
@@ -158,10 +176,10 @@ struct BrandDetailHeaderView: View {
                     } label: {
                         Label("공식 사이트 방문", systemImage: "safari")
                             .font(.footnote.weight(.semibold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(OutPickTheme.SwiftUIColor.backgroundBase)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 8)
-                            .background(Color.black)
+                            .background(OutPickTheme.SwiftUIColor.accent)
                             .clipShape(Capsule())
                     }
                     .buttonStyle(.plain)
@@ -172,6 +190,7 @@ struct BrandDetailHeaderView: View {
 
             // 분리선
             Divider()
+                .overlay(OutPickTheme.SwiftUIColor.borderSubtle)
                 .padding(.horizontal, 16)
         }
     }

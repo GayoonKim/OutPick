@@ -15,6 +15,7 @@ struct PostDetailView: View {
     private let brandImageCache: any BrandImageCacheProtocol
     private let coordinator: LookbookCoordinator
 
+    @Environment(\.dismiss) private var dismiss
     @StateObject private var viewModel: PostDetailScreenViewModel
     @StateObject private var commentCoordinator: PostCommentCoordinator
     @State private var heroImageDidResolve: Bool = false
@@ -53,17 +54,12 @@ struct PostDetailView: View {
                                 post: post,
                                 commentCount: viewModel.visibleCommentCount ?? post.metrics.commentCount,
                                 isLiked: viewModel.postUserState?.isLiked ?? false,
-                                isSaved: viewModel.postUserState?.isSaved ?? false,
                                 isMutatingLike: viewModel.isMutatingLike,
-                                isMutatingSave: viewModel.isMutatingSave,
                                 onLikeTap: {
                                     await viewModel.toggleLike()
                                 },
                                 onCommentTap: {
                                     commentCoordinator.presentComments()
-                                },
-                                onSaveTap: {
-                                    await viewModel.toggleSave()
                                 }
                             )
                             commentSection
@@ -79,19 +75,12 @@ struct PostDetailView: View {
                 }
             }
         }
-        .background(
-            
-            LinearGradient(
-                colors: [
-                    Color(red: 0.99, green: 0.98, blue: 0.96),
-                    Color.white
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
+        .background(OutPickTheme.SwiftUIColor.backgroundBase.ignoresSafeArea())
+        .lookbookNavigationBar(
+            title: "",
+            showsBackButton: true,
+            onBack: { dismiss() }
         )
-        .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: commentSheetBinding) {
             commentsSheet
         }
@@ -145,10 +134,10 @@ struct PostDetailView: View {
     private var loadingSection: some View {
         VStack(spacing: 12) {
             ProgressView()
-                .tint(.black)
+                .tint(OutPickTheme.SwiftUIColor.accent)
             Text("포스트를 준비하는 중입니다.")
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -157,13 +146,14 @@ struct PostDetailView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("포스트를 불러오지 못했습니다.")
                 .font(.headline)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
             Text(message)
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.94))
+        .background(OutPickTheme.SwiftUIColor.surfaceBase)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
@@ -204,13 +194,14 @@ struct PostDetailView: View {
             HStack {
                 Text("댓글")
                     .font(.title3.weight(.bold))
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
                 Spacer()
                 Button {
                     commentCoordinator.presentComments()
                 } label: {
                     Text("더 보기")
                         .font(.footnote.weight(.bold))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(OutPickTheme.SwiftUIColor.accent)
                 }
                 .buttonStyle(.plain)
             }
@@ -220,7 +211,7 @@ struct PostDetailView: View {
             } else if let commentErrorMessage = viewModel.commentErrorMessage {
                 Text(commentErrorMessage)
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
             } else {
                 VStack(spacing: 10) {
                     ForEach(viewModel.comments) { comment in
@@ -249,7 +240,7 @@ struct PostDetailView: View {
     private var emptyCommentSection: some View {
         Text("해당 포스트에 아직 댓글이 없습니다.")
             .font(.footnote)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
             .frame(maxWidth: .infinity, minHeight: 96, alignment: .center)
             .multilineTextAlignment(.center)
     }

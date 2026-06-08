@@ -14,6 +14,7 @@ struct SeasonDetailView: View {
     private let brandImageCache: any BrandImageCacheProtocol
     private let coordinator: LookbookCoordinator
 
+    @Environment(\.dismiss) private var dismiss
     @StateObject private var viewModel: SeasonDetailViewModel
     @State private var selectedPost: LookbookPost?
 
@@ -83,18 +84,12 @@ struct SeasonDetailView: View {
                 }
             }
         }
-        .background(
-            LinearGradient(
-                colors: [
-                    Color(red: 0.98, green: 0.97, blue: 0.94),
-                    Color.white
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+        .background(OutPickTheme.SwiftUIColor.backgroundBase.ignoresSafeArea())
+        .lookbookNavigationBar(
+            title: "",
+            showsBackButton: true,
+            onBack: { dismiss() }
         )
-        .navigationBarTitleDisplayMode(.inline)
         .background(hiddenNavigationLink)
         .task {
             await viewModel.loadIfNeeded()
@@ -110,10 +105,10 @@ struct SeasonDetailView: View {
     private var loadingSection: some View {
         VStack(spacing: 12) {
             ProgressView()
-                .tint(.black)
+                .tint(OutPickTheme.SwiftUIColor.accent)
             Text("포스트 목록을 불러오는 중입니다.")
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -122,13 +117,14 @@ struct SeasonDetailView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("룩북을 불러오지 못했습니다.")
                 .font(.headline)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
             Text(message)
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.94))
+        .background(OutPickTheme.SwiftUIColor.surfaceBase)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
@@ -136,13 +132,14 @@ struct SeasonDetailView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("등록된 룩이 없습니다.")
                 .font(.headline)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
             Text("아직 이 시즌에 준비된 사진이 없습니다.")
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.94))
+        .background(OutPickTheme.SwiftUIColor.surfaceBase)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
