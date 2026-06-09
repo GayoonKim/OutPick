@@ -19,7 +19,6 @@ final class SecondProfileViewController: UIViewController {
     private let backButton: UIButton = {
         let b = UIButton(type: .system)
         b.setImage(UIImage(systemName: "chevron.left"), for: .normal)
-        b.setTitle(" 이전", for: .normal)
         b.titleLabel?.font = .systemFont(ofSize: 16, weight: .semibold)
         b.contentHorizontalAlignment = .leading
         return b
@@ -32,7 +31,7 @@ final class SecondProfileViewController: UIViewController {
         let l = UILabel()
         l.text = "사용할 닉네임을 설정해 주세요"
         l.font = .systemFont(ofSize: 13, weight: .regular)
-        l.textColor = .secondaryLabel
+        l.textColor = OutPickTheme.ColorToken.textSecondary
         l.numberOfLines = 0
         return l
     }()
@@ -41,7 +40,7 @@ final class SecondProfileViewController: UIViewController {
         let l = UILabel()
         l.text = "사용할 대표 프로필 사진을 선택해 주세요"
         l.font = .systemFont(ofSize: 13, weight: .regular)
-        l.textColor = .secondaryLabel
+        l.textColor = OutPickTheme.ColorToken.textSecondary
         l.numberOfLines = 0
         return l
     }()
@@ -49,7 +48,23 @@ final class SecondProfileViewController: UIViewController {
     private let nicknameField: UITextField = {
         let tf = UITextField()
         tf.placeholder = "닉네임 (최대 20자)"
-        tf.borderStyle = .roundedRect
+        tf.borderStyle = .none
+        tf.backgroundColor = OutPickTheme.ColorToken.surfaceBase
+        tf.textColor = OutPickTheme.ColorToken.textPrimary
+        tf.tintColor = OutPickTheme.ColorToken.accent
+        tf.layer.cornerRadius = 10
+        tf.layer.borderWidth = 1
+        tf.layer.borderColor = OutPickTheme.ColorToken.borderSubtle.cgColor
+        let leftPadding = UIView(frame: CGRect(x: 0, y: 0, width: 12, height: 1))
+        let rightPadding = UIView(frame: CGRect(x: 0, y: 0, width: 12, height: 1))
+        tf.leftView = leftPadding
+        tf.leftViewMode = .always
+        tf.rightView = rightPadding
+        tf.rightViewMode = .always
+        tf.attributedPlaceholder = NSAttributedString(
+            string: "닉네임 (최대 20자)",
+            attributes: [.foregroundColor: OutPickTheme.ColorToken.textTertiary]
+        )
         tf.autocapitalizationType = .none
         tf.autocorrectionType = .no
         tf.returnKeyType = .done
@@ -60,7 +75,7 @@ final class SecondProfileViewController: UIViewController {
         let l = UILabel()
         l.text = "0 / 20"
         l.font = .systemFont(ofSize: 12, weight: .regular)
-        l.textColor = .secondaryLabel
+        l.textColor = OutPickTheme.ColorToken.textSecondary
         l.textAlignment = .right
         return l
     }()
@@ -69,32 +84,31 @@ final class SecondProfileViewController: UIViewController {
         let iv = UIImageView()
         iv.contentMode = .scaleAspectFill
         iv.clipsToBounds = true
-        iv.layer.cornerRadius = 48
-        iv.backgroundColor = .secondarySystemBackground
-        iv.image = UIImage(systemName: "person.circle")
-        iv.tintColor = .secondaryLabel
+        iv.layer.cornerRadius = 15
+        iv.backgroundColor = OutPickTheme.ColorToken.surfaceBase
+        iv.image = UIImage(named: "Default_Profile")
         iv.isUserInteractionEnabled = true
         return iv
     }()
 
     private let addImageButton: UIButton = {
         let b = UIButton(type: .system)
-        b.setTitle("사진 추가", for: .normal)
-        b.titleLabel?.font = .systemFont(ofSize: 14, weight: .semibold)
+        b.setImage(UIImage(systemName: "plus.circle.fill"), for: .normal)
+        b.tintColor = OutPickTheme.ColorToken.accent
         return b
     }()
 
     private let removeImageButton: UIButton = {
         let b = UIButton(type: .system)
-        b.setTitle("제거", for: .normal)
-        b.titleLabel?.font = .systemFont(ofSize: 14, weight: .semibold)
+        b.setImage(UIImage(systemName: "minus.circle.fill"), for: .normal)
+        b.tintColor = OutPickTheme.ColorToken.destructive
         b.isHidden = true
         return b
     }()
 
     private let errorLabel: UILabel = {
         let l = UILabel()
-        l.textColor = .systemRed
+        l.textColor = OutPickTheme.ColorToken.destructive
         l.numberOfLines = 0
         l.font = .systemFont(ofSize: 13, weight: .regular)
         l.isHidden = true
@@ -106,8 +120,8 @@ final class SecondProfileViewController: UIViewController {
         b.setTitle("완료 2/2", for: .normal)
         b.titleLabel?.font = .systemFont(ofSize: 16, weight: .bold)
         b.layer.cornerRadius = 12
-        b.backgroundColor = .label
-        b.setTitleColor(.systemBackground, for: .normal)
+        b.backgroundColor = OutPickTheme.ColorToken.surfaceElevated
+        b.setTitleColor(OutPickTheme.ColorToken.textDisabled, for: .normal)
         b.isEnabled = false
         b.alpha = 0.5
         return b
@@ -115,6 +129,7 @@ final class SecondProfileViewController: UIViewController {
 
     private let activity: UIActivityIndicatorView = {
         let a = UIActivityIndicatorView(style: .medium)
+        a.color = OutPickTheme.ColorToken.backgroundBase
         a.hidesWhenStopped = true
         return a
     }()
@@ -134,13 +149,10 @@ final class SecondProfileViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = OutPickTheme.ColorToken.backgroundBase
 
-        // 색상(검정)
-        backButton.tintColor = .label
-        backButton.setTitleColor(.label, for: .normal)
-        addImageButton.setTitleColor(.label, for: .normal)
-        removeImageButton.setTitleColor(.label, for: .normal)
+        backButton.tintColor = OutPickTheme.ColorToken.accent
+        backButton.setTitleColor(OutPickTheme.ColorToken.accent, for: .normal)
 
         setupUI()
         bind()
@@ -174,6 +186,13 @@ final class SecondProfileViewController: UIViewController {
         // 완료 버튼
         completeButton.isEnabled = state.isCompleteEnabled
         completeButton.alpha = state.isCompleteEnabled ? 1.0 : 0.5
+        completeButton.backgroundColor = state.isCompleteEnabled
+            ? OutPickTheme.ColorToken.accent
+            : OutPickTheme.ColorToken.surfaceElevated
+        completeButton.setTitleColor(
+            state.isCompleteEnabled ? OutPickTheme.ColorToken.backgroundBase : OutPickTheme.ColorToken.textDisabled,
+            for: .normal
+        )
 
         // 에러
         if let msg = state.errorMessage, !msg.isEmpty {
@@ -187,12 +206,10 @@ final class SecondProfileViewController: UIViewController {
         // 이미지
         if let thumb = state.selectedThumb {
             profileImageView.image = thumb
-            profileImageView.tintColor = nil
             // ✅ 이미지가 있으면 제거 버튼 노출
             removeImageButton.isHidden = false
         } else {
-            profileImageView.image = UIImage(systemName: "person.circle")
-            profileImageView.tintColor = .secondaryLabel
+            profileImageView.image = UIImage(named: "Default_Profile")
             removeImageButton.isHidden = true
         }
 
@@ -223,40 +240,36 @@ final class SecondProfileViewController: UIViewController {
         backButton.setContentHuggingPriority(.required, for: .horizontal)
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
-        // 프로필 이미지 + 버튼
+        // 프로필 이미지 + overlay 버튼
+        let imageContainer = UIView()
+        imageContainer.translatesAutoresizingMaskIntoConstraints = false
+        imageContainer.clipsToBounds = false
+        imageContainer.addSubview(profileImageView)
+
         profileImageView.translatesAutoresizingMaskIntoConstraints = false
+
         NSLayoutConstraint.activate([
-            profileImageView.widthAnchor.constraint(equalToConstant: 96),
-            profileImageView.heightAnchor.constraint(equalToConstant: 96)
+            imageContainer.widthAnchor.constraint(equalToConstant: 120),
+            imageContainer.heightAnchor.constraint(equalToConstant: 120),
+
+            profileImageView.leadingAnchor.constraint(equalTo: imageContainer.leadingAnchor),
+            profileImageView.trailingAnchor.constraint(equalTo: imageContainer.trailingAnchor),
+            profileImageView.topAnchor.constraint(equalTo: imageContainer.topAnchor),
+            profileImageView.bottomAnchor.constraint(equalTo: imageContainer.bottomAnchor),
+            profileImageView.widthAnchor.constraint(equalToConstant: 120),
+            profileImageView.heightAnchor.constraint(equalToConstant: 120)
         ])
 
-        let imageButtons = UIStackView(arrangedSubviews: [addImageButton, removeImageButton])
-        imageButtons.axis = .horizontal
-        imageButtons.spacing = 12
-        imageButtons.alignment = .leading
-        imageButtons.distribution = .fillProportionally
-
-        let imageSection = UIStackView(arrangedSubviews: [profileImageView, imageButtons])
-        imageSection.axis = .vertical
-        imageSection.spacing = 10
-        imageSection.alignment = .leading
-
-        let photoSection = UIStackView(arrangedSubviews: [photoGuideLabel, imageSection])
+        let photoSection = UIStackView(arrangedSubviews: [photoGuideLabel, imageContainer])
         photoSection.axis = .vertical
         photoSection.spacing = 10
         photoSection.alignment = .leading
 
-        // 닉네임 + 카운트
-        let nicknameRow = UIStackView(arrangedSubviews: [nicknameField, countLabel])
-        nicknameRow.axis = .horizontal
-        nicknameRow.alignment = .center
-        nicknameRow.spacing = 10
-        countLabel.widthAnchor.constraint(equalToConstant: 60).isActive = true
-
-        let nicknameSection = UIStackView(arrangedSubviews: [nicknameGuideLabel, nicknameRow])
+        let nicknameSection = UIStackView(arrangedSubviews: [nicknameGuideLabel, nicknameField, countLabel])
         nicknameSection.axis = .vertical
         nicknameSection.spacing = 8
         nicknameSection.alignment = .fill
+        nicknameField.heightAnchor.constraint(equalToConstant: 48).isActive = true
 
         // 메인 스택
         let stack = UIStackView(arrangedSubviews: [
@@ -293,10 +306,14 @@ final class SecondProfileViewController: UIViewController {
         view.addSubview(scrollView)
         scrollView.addSubview(contentView)
         contentView.addSubview(stack)
+        view.addSubview(addImageButton)
+        view.addSubview(removeImageButton)
 
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         contentView.translatesAutoresizingMaskIntoConstraints = false
         stack.translatesAutoresizingMaskIntoConstraints = false
+        addImageButton.translatesAutoresizingMaskIntoConstraints = false
+        removeImageButton.translatesAutoresizingMaskIntoConstraints = false
 
         NSLayoutConstraint.activate([
             // scrollView 영역: 위 ~ 하단 버튼 위
@@ -327,7 +344,17 @@ final class SecondProfileViewController: UIViewController {
             completeButton.heightAnchor.constraint(equalToConstant: 52),
 
             activity.centerYAnchor.constraint(equalTo: completeButton.centerYAnchor),
-            activity.trailingAnchor.constraint(equalTo: completeButton.trailingAnchor, constant: -16)
+            activity.trailingAnchor.constraint(equalTo: completeButton.trailingAnchor, constant: -16),
+
+            addImageButton.centerXAnchor.constraint(equalTo: profileImageView.trailingAnchor),
+            addImageButton.centerYAnchor.constraint(equalTo: profileImageView.bottomAnchor),
+            addImageButton.widthAnchor.constraint(equalToConstant: 30),
+            addImageButton.heightAnchor.constraint(equalToConstant: 30),
+
+            removeImageButton.centerXAnchor.constraint(equalTo: profileImageView.leadingAnchor),
+            removeImageButton.centerYAnchor.constraint(equalTo: profileImageView.bottomAnchor),
+            removeImageButton.widthAnchor.constraint(equalToConstant: 30),
+            removeImageButton.heightAnchor.constraint(equalToConstant: 30)
         ])
     }
 
@@ -384,7 +411,7 @@ final class SecondProfileViewController: UIViewController {
 
         var thumbBase64: String? = nil
         if let img = profileImageView.image,
-           img != UIImage(systemName: "person.circle"),
+           !removeImageButton.isHidden,
            let data = img.jpegData(compressionQuality: 0.8) {
             thumbBase64 = data.base64EncodedString()
         }
@@ -421,7 +448,6 @@ final class SecondProfileViewController: UIViewController {
            let d = Data(base64Encoded: b64),
            let img = UIImage(data: d) {
             profileImageView.image = img
-            profileImageView.tintColor = nil
             // ✅ 썸네일만 복원되어도 사용자가 제거할 수 있어야 함
             removeImageButton.isHidden = false
 

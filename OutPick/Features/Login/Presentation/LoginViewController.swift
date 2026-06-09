@@ -12,11 +12,15 @@ final class LoginViewController: UIViewController {
 
     private let viewModel: LoginViewModel
 
+    private let logoStack = UIStackView()
+    private let logoIconContainer = UIView()
+    private let logoIconView = UIImageView()
     private let titleLabel = UILabel()
     private let promptLabel = UILabel()
     private let googleButton = UIButton(type: .system)
     private let kakaoButton  = UIButton(type: .system)
     private var pendingErrorMessage: String?
+    private var didAnimateLogo = false
 
     init(viewModel: LoginViewModel) {
         self.viewModel = viewModel
@@ -29,27 +33,44 @@ final class LoginViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = OutPickTheme.ColorToken.backgroundBase
         configureUI()
         bind()
     }
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        animateLogoIfNeeded()
         showPendingErrorIfNeeded()
     }
 
     private func configureUI() {
+        logoStack.axis = .vertical
+        logoStack.alignment = .center
+        logoStack.spacing = 12
+        logoStack.alpha = 0
+        logoStack.translatesAutoresizingMaskIntoConstraints = false
+
+        logoIconContainer.translatesAutoresizingMaskIntoConstraints = false
+        logoIconContainer.backgroundColor = OutPickTheme.ColorToken.surfaceBase
+        logoIconContainer.layer.cornerRadius = 26
+        logoIconContainer.layer.borderWidth = 1
+        logoIconContainer.layer.borderColor = OutPickTheme.ColorToken.borderSubtle.cgColor
+
+        logoIconView.translatesAutoresizingMaskIntoConstraints = false
+        logoIconView.image = UIImage(systemName: "tshirt.fill")
+        logoIconView.tintColor = OutPickTheme.ColorToken.textPrimary
+        logoIconView.contentMode = .scaleAspectFit
+
         titleLabel.text = "OutPick"
         titleLabel.font = .systemFont(ofSize: 40, weight: .bold)
-        titleLabel.textColor = .label
+        titleLabel.textColor = OutPickTheme.ColorToken.textPrimary
         titleLabel.textAlignment = .center
         titleLabel.adjustsFontForContentSizeCategory = true
-        titleLabel.translatesAutoresizingMaskIntoConstraints = false
 
         promptLabel.text = "로그인 방식을 선택해 주세요"
         promptLabel.font = .preferredFont(forTextStyle: .subheadline)
-        promptLabel.textColor = .secondaryLabel
+        promptLabel.textColor = OutPickTheme.ColorToken.textSecondary
         promptLabel.textAlignment = .center
         promptLabel.numberOfLines = 0
         promptLabel.adjustsFontForContentSizeCategory = true
@@ -59,6 +80,7 @@ final class LoginViewController: UIViewController {
             googleButton.imageView?.contentMode = .scaleAspectFit
         } else {
             googleButton.setTitle("Google로 로그인", for: .normal)
+            googleButton.setTitleColor(OutPickTheme.ColorToken.accent, for: .normal)
         }
 
         if let img = UIImage(named: "kakao_login_medium_narrow") {
@@ -66,6 +88,7 @@ final class LoginViewController: UIViewController {
             kakaoButton.imageView?.contentMode = .scaleAspectFit
         } else {
             kakaoButton.setTitle("카카오로 로그인", for: .normal)
+            kakaoButton.setTitleColor(OutPickTheme.ColorToken.accent, for: .normal)
         }
 
         googleButton.heightAnchor.constraint(equalToConstant: 48).isActive = true
@@ -76,22 +99,52 @@ final class LoginViewController: UIViewController {
         stack.spacing = 16
         stack.setCustomSpacing(20, after: promptLabel)
         stack.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(titleLabel)
+
+        logoIconContainer.addSubview(logoIconView)
+        logoStack.addArrangedSubview(logoIconContainer)
+        logoStack.addArrangedSubview(titleLabel)
+        view.addSubview(logoStack)
         view.addSubview(stack)
 
         NSLayoutConstraint.activate([
-            titleLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            titleLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: -64),
-            titleLabel.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 32),
-            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -32),
+            logoStack.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            logoStack.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: -82),
+            logoStack.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 32),
+            logoStack.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -32),
 
-            stack.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 72),
+            logoIconContainer.widthAnchor.constraint(equalToConstant: 52),
+            logoIconContainer.heightAnchor.constraint(equalToConstant: 52),
+            logoIconView.centerXAnchor.constraint(equalTo: logoIconContainer.centerXAnchor),
+            logoIconView.centerYAnchor.constraint(equalTo: logoIconContainer.centerYAnchor),
+            logoIconView.widthAnchor.constraint(equalToConstant: 27),
+            logoIconView.heightAnchor.constraint(equalToConstant: 27),
+
+            stack.topAnchor.constraint(equalTo: logoStack.bottomAnchor, constant: 64),
             stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 32),
             stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -32)
         ])
 
         googleButton.addTarget(self, action: #selector(googleTapped), for: .touchUpInside)
         kakaoButton.addTarget(self, action: #selector(kakaoTapped), for: .touchUpInside)
+    }
+
+    private func animateLogoIfNeeded() {
+        guard !didAnimateLogo else { return }
+        didAnimateLogo = true
+
+        logoStack.alpha = 0
+        logoStack.transform = CGAffineTransform(translationX: 0, y: 12).scaledBy(x: 0.96, y: 0.96)
+
+        UIView.animate(
+            withDuration: 0.55,
+            delay: 0.08,
+            usingSpringWithDamping: 0.82,
+            initialSpringVelocity: 0.4,
+            options: [.curveEaseOut]
+        ) {
+            self.logoStack.alpha = 1
+            self.logoStack.transform = .identity
+        }
     }
 
     private func bind() {

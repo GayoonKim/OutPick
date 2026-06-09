@@ -14,7 +14,7 @@ enum ProfileCompositionRoot {
     ) -> UIViewController {
         let vm = FirstProfileViewModel(onNext: onNext)
         let vc = FirstProfileViewController(viewModel: vm)
-        vc.view.backgroundColor = .systemBackground
+        vc.view.backgroundColor = OutPickTheme.ColorToken.backgroundBase
         return vc
     }
 
@@ -33,7 +33,7 @@ enum ProfileCompositionRoot {
             onCompleted: onCompleted
         )
         let vc = SecondProfileViewController(viewModel: vm)
-        vc.view.backgroundColor = .systemBackground
+        vc.view.backgroundColor = OutPickTheme.ColorToken.backgroundBase
         return vc
     }
 }

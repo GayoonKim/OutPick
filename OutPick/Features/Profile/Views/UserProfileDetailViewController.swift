@@ -21,10 +21,14 @@ final class UserProfileDetailViewController: UIViewController, ChatModalAnimatab
         button.translatesAutoresizingMaskIntoConstraints = false
 
         var config = UIButton.Configuration.plain()
-        config.image = UIImage(systemName: "chevron.left")
-        config.baseForegroundColor = .black
-        config.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 4, bottom: 10, trailing: 10)
+        config.image = UIImage(systemName: "xmark")
+        config.baseForegroundColor = OutPickTheme.ColorToken.accent
+        config.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 10, bottom: 10, trailing: 10)
         button.configuration = config
+        button.backgroundColor = OutPickTheme.ColorToken.surfaceBase
+        button.layer.cornerRadius = 20
+        button.layer.borderWidth = 1
+        button.layer.borderColor = OutPickTheme.ColorToken.borderSubtle.cgColor
         button.addTarget(self, action: #selector(backTapped), for: .touchUpInside)
         return button
     }()
@@ -35,7 +39,9 @@ final class UserProfileDetailViewController: UIViewController, ChatModalAnimatab
         imageView.contentMode = .scaleAspectFill
         imageView.clipsToBounds = true
         imageView.layer.cornerRadius = 28
-        imageView.backgroundColor = .systemGray6
+        imageView.backgroundColor = OutPickTheme.ColorToken.surfaceBase
+        imageView.layer.borderWidth = 1
+        imageView.layer.borderColor = OutPickTheme.ColorToken.borderSubtle.cgColor
         imageView.image = UIImage(named: "Default_Profile")
         imageView.isUserInteractionEnabled = true
         return imageView
@@ -45,7 +51,7 @@ final class UserProfileDetailViewController: UIViewController, ChatModalAnimatab
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
         label.font = .systemFont(ofSize: 18, weight: .medium)
-        label.textColor = .black
+        label.textColor = OutPickTheme.ColorToken.textPrimary
         label.textAlignment = .center
         label.numberOfLines = 2
         return label
@@ -54,7 +60,7 @@ final class UserProfileDetailViewController: UIViewController, ChatModalAnimatab
     private let separatorView: UIView = {
         let view = UIView()
         view.translatesAutoresizingMaskIntoConstraints = false
-        view.backgroundColor = .systemGray4
+        view.backgroundColor = OutPickTheme.ColorToken.borderSubtle
         return view
     }()
 
@@ -62,7 +68,7 @@ final class UserProfileDetailViewController: UIViewController, ChatModalAnimatab
         let imageView = UIImageView()
         imageView.translatesAutoresizingMaskIntoConstraints = false
         imageView.contentMode = .scaleAspectFit
-        imageView.tintColor = .black
+        imageView.tintColor = OutPickTheme.ColorToken.destructive
         imageView.image = UIImage(
             systemName: "slash.circle",
             withConfiguration: UIImage.SymbolConfiguration(pointSize: 34, weight: .regular)
@@ -74,7 +80,7 @@ final class UserProfileDetailViewController: UIViewController, ChatModalAnimatab
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
         label.font = .systemFont(ofSize: 14, weight: .medium)
-        label.textColor = .black
+        label.textColor = OutPickTheme.ColorToken.destructive
         label.textAlignment = .center
         label.text = "차단"
         return label
@@ -92,6 +98,7 @@ final class UserProfileDetailViewController: UIViewController, ChatModalAnimatab
     private let activityIndicator: UIActivityIndicatorView = {
         let indicator = UIActivityIndicatorView(style: .medium)
         indicator.translatesAutoresizingMaskIntoConstraints = false
+        indicator.color = OutPickTheme.ColorToken.accent
         indicator.hidesWhenStopped = true
         return indicator
     }()
@@ -135,7 +142,7 @@ final class UserProfileDetailViewController: UIViewController, ChatModalAnimatab
     }
 
     override var preferredStatusBarStyle: UIStatusBarStyle {
-        .darkContent
+        .lightContent
     }
 
     override func viewDidLoad() {
@@ -147,7 +154,7 @@ final class UserProfileDetailViewController: UIViewController, ChatModalAnimatab
     }
 
     private func setupUI() {
-        view.backgroundColor = .white
+        view.backgroundColor = OutPickTheme.ColorToken.backgroundBase
 
         view.addSubview(backButton)
         view.addSubview(profileStack)
@@ -156,6 +163,8 @@ final class UserProfileDetailViewController: UIViewController, ChatModalAnimatab
         NSLayoutConstraint.activate([
             backButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
             backButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 4),
+            backButton.widthAnchor.constraint(equalToConstant: 40),
+            backButton.heightAnchor.constraint(equalToConstant: 40),
 
             profileImageView.widthAnchor.constraint(equalToConstant: 112),
             profileImageView.heightAnchor.constraint(equalToConstant: 112),

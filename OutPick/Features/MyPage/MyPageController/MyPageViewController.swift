@@ -40,7 +40,7 @@ class MyPageViewController: UIViewController {
     private let heroBackgroundView: UIView = {
         let v = UIView()
         v.translatesAutoresizingMaskIntoConstraints = false
-        v.backgroundColor = .tertiarySystemBackground
+        v.backgroundColor = OutPickTheme.ColorToken.surfaceBase
         return v
     }()
 
@@ -50,7 +50,7 @@ class MyPageViewController: UIViewController {
         l.text = "OutPick"
         l.font = .systemFont(ofSize: 36, weight: .black)
         l.textAlignment = .center
-        l.textColor = .white
+        l.textColor = OutPickTheme.ColorToken.accent
         return l
     }()
 
@@ -61,17 +61,18 @@ class MyPageViewController: UIViewController {
         iv.clipsToBounds = true
         iv.layer.cornerRadius = 60 // size 120의 반
         iv.layer.borderWidth = 1
-        iv.layer.borderColor = UIColor.separator.cgColor
+        iv.layer.borderColor = OutPickTheme.ColorToken.borderSubtle.cgColor
+        iv.backgroundColor = OutPickTheme.ColorToken.surfaceBase
         iv.image = UIImage(systemName: "person.crop.circle")
-        iv.tintColor = .secondaryLabel
+        iv.tintColor = OutPickTheme.ColorToken.textTertiary
         return iv
     }()
 
     private lazy var editProfileButton: UIButton = {
         var config = UIButton.Configuration.filled()
         config.title = "프로필 수정"
-        config.baseBackgroundColor = .systemBlue
-        config.baseForegroundColor = .white
+        config.baseBackgroundColor = OutPickTheme.ColorToken.accent
+        config.baseForegroundColor = OutPickTheme.ColorToken.backgroundBase
         let b = UIButton(configuration: config)
         b.translatesAutoresizingMaskIntoConstraints = false
         b.addTarget(self, action: #selector(didTapEditProfile), for: .touchUpInside)
@@ -82,7 +83,7 @@ class MyPageViewController: UIViewController {
         let l = UILabel()
         l.translatesAutoresizingMaskIntoConstraints = false
         l.font = .systemFont(ofSize: 20, weight: .semibold)
-        l.textColor = .label
+        l.textColor = OutPickTheme.ColorToken.textPrimary
         l.textAlignment = .center
         l.text = "닉네임"
         return l
@@ -92,7 +93,7 @@ class MyPageViewController: UIViewController {
         let l = UILabel()
         l.translatesAutoresizingMaskIntoConstraints = false
         l.font = .systemFont(ofSize: 14, weight: .regular)
-        l.textColor = .secondaryLabel
+        l.textColor = OutPickTheme.ColorToken.textSecondary
         l.textAlignment = .center
         l.text = "성별"
         return l
@@ -101,8 +102,10 @@ class MyPageViewController: UIViewController {
     private let bioContainerView: UIView = {
         let v = UIView()
         v.translatesAutoresizingMaskIntoConstraints = false
-        v.backgroundColor = .secondarySystemBackground
+        v.backgroundColor = OutPickTheme.ColorToken.surfaceBase
         v.layer.cornerRadius = 12
+        v.layer.borderWidth = 1
+        v.layer.borderColor = OutPickTheme.ColorToken.borderSubtle.cgColor
         v.layer.masksToBounds = true
         return v
     }()
@@ -112,7 +115,7 @@ class MyPageViewController: UIViewController {
         l.translatesAutoresizingMaskIntoConstraints = false
         l.numberOfLines = 0
         l.font = .systemFont(ofSize: 15)
-        l.textColor = .label
+        l.textColor = OutPickTheme.ColorToken.textPrimary
         l.text = "자기소개가 여기에 표시됩니다."
         return l
     }()
@@ -120,7 +123,7 @@ class MyPageViewController: UIViewController {
     private let infoSeparatorView: UIView = {
         let v = UIView()
         v.translatesAutoresizingMaskIntoConstraints = false
-        v.backgroundColor = .separator
+        v.backgroundColor = OutPickTheme.ColorToken.borderSubtle
         return v
     }()
 
@@ -281,7 +284,9 @@ class MyPageViewController: UIViewController {
     
     @MainActor
     private func setupMyPageBody() {
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = OutPickTheme.ColorToken.backgroundBase
+        scrollView.backgroundColor = OutPickTheme.ColorToken.backgroundBase
+        contentView.backgroundColor = OutPickTheme.ColorToken.backgroundBase
 
         // 0) Scroll view + content view
         view.addSubview(scrollView)
@@ -304,7 +309,7 @@ class MyPageViewController: UIViewController {
         // 1) Hero background with centered "OutPick"
         contentView.addSubview(heroBackgroundView)
         heroBackgroundView.addSubview(heroTitleLabel)
-        heroBackgroundView.backgroundColor = .systemBlue
+        heroBackgroundView.backgroundColor = OutPickTheme.ColorToken.surfaceBase
 
         NSLayoutConstraint.activate([
             heroBackgroundView.topAnchor.constraint(equalTo: contentView.topAnchor),

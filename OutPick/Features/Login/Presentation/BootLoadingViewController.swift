@@ -28,13 +28,14 @@ final class BootLoadingViewController: UIViewController {
         label.text = nil
         label.textAlignment = .center
         label.font = .systemFont(ofSize: 15, weight: .regular)
-        label.textColor = .secondaryLabel
+        label.textColor = OutPickTheme.ColorToken.textSecondary
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
 
     private let indicator: UIActivityIndicatorView = {
         let v = UIActivityIndicatorView(style: .medium)
+        v.color = OutPickTheme.ColorToken.accent
         v.hidesWhenStopped = true
         v.translatesAutoresizingMaskIntoConstraints = false
         return v
@@ -42,7 +43,7 @@ final class BootLoadingViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = OutPickTheme.ColorToken.backgroundBase
 
         view.addSubview(indicator)
         view.addSubview(loadingLabel)

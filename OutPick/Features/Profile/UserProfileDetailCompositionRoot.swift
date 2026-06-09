@@ -32,7 +32,7 @@ enum UserProfileDetailCompositionRoot {
             viewModel: viewModel,
             avatarImageManager: provider.avatarImageManager
         )
-        viewController.view.backgroundColor = .white
+        viewController.view.backgroundColor = OutPickTheme.ColorToken.backgroundBase
         return viewController
     }
 
@@ -61,7 +61,7 @@ enum UserProfileDetailCompositionRoot {
             viewModel: viewModel,
             avatarImageManager: provider.avatarImageManager
         )
-        viewController.view.backgroundColor = .white
+        viewController.view.backgroundColor = OutPickTheme.ColorToken.backgroundBase
         return viewController
     }
 }

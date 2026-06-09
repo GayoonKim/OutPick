@@ -38,7 +38,7 @@ final class AppCoordinator {
         self.window = window
         self.lookbookProvider = lookbookProvider
         self.userProfileRepository = userProfileRepository
-        self.window.backgroundColor = .systemBackground
+        self.window.backgroundColor = OutPickTheme.ColorToken.backgroundBase
         Self.activeCoordinator = self
     }
 
@@ -202,7 +202,7 @@ final class AppCoordinator {
 
         let nav = UINavigationController()
         nav.isNavigationBarHidden = true
-        nav.view.backgroundColor = .systemBackground
+        nav.view.backgroundColor = OutPickTheme.ColorToken.backgroundBase
 
         self.profileCoordinator = ProfileCoordinator(
             navigationController: nav,

@@ -39,7 +39,7 @@ final class FirstProfileViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = OutPickTheme.ColorToken.backgroundBase
 
         setupUI()
         bind()
@@ -56,16 +56,17 @@ final class FirstProfileViewController: UIViewController {
         // Title
         titleLabel.text = "프로필 설정"
         titleLabel.font = .boldSystemFont(ofSize: 22)
+        titleLabel.textColor = OutPickTheme.ColorToken.textPrimary
         titleLabel.numberOfLines = 1
 
         // Hints
         genderHintLabel.text = "성별을 선택해 주세요"
         genderHintLabel.font = .systemFont(ofSize: 13)
-        genderHintLabel.textColor = .secondaryLabel
+        genderHintLabel.textColor = OutPickTheme.ColorToken.textSecondary
 
         birthHintLabel.text = "생년월일을 선택해 주세요"
         birthHintLabel.font = .systemFont(ofSize: 13)
-        birthHintLabel.textColor = .secondaryLabel
+        birthHintLabel.textColor = OutPickTheme.ColorToken.textSecondary
 
         // Gender buttons
         configureGenderButton(maleButton, title: "남성", value: "male")
@@ -80,6 +81,7 @@ final class FirstProfileViewController: UIViewController {
         datePicker.preferredDatePickerStyle = .wheels
         datePicker.datePickerMode = .date
         datePicker.locale = Locale(identifier: "ko_KR")
+        datePicker.tintColor = OutPickTheme.ColorToken.accent
 
         // max date
         datePicker.maximumDate = viewModel.state.maxBirthdate
@@ -90,9 +92,9 @@ final class FirstProfileViewController: UIViewController {
         nextButton.setTitle("다음  1/2", for: .normal)
         nextButton.titleLabel?.font = .boldSystemFont(ofSize: 16)
         nextButton.layer.cornerRadius = 12
-        nextButton.backgroundColor = .label
-        nextButton.setTitleColor(.systemBackground, for: .normal)
-        nextButton.setTitleColor(.systemBackground.withAlphaComponent(0.7), for: .disabled)
+        nextButton.backgroundColor = OutPickTheme.ColorToken.accent
+        nextButton.setTitleColor(OutPickTheme.ColorToken.backgroundBase, for: .normal)
+        nextButton.setTitleColor(OutPickTheme.ColorToken.textDisabled, for: .disabled)
         nextButton.addTarget(self, action: #selector(nextTapped), for: .touchUpInside)
 
         // Root stack (content only)
@@ -135,9 +137,9 @@ final class FirstProfileViewController: UIViewController {
         button.titleLabel?.font = .systemFont(ofSize: 16, weight: .semibold)
         button.layer.cornerRadius = 12
         button.layer.borderWidth = 1
-        button.layer.borderColor = UIColor.separator.cgColor
-        button.backgroundColor = .secondarySystemBackground
-        button.setTitleColor(.label, for: .normal)
+        button.layer.borderColor = OutPickTheme.ColorToken.borderSubtle.cgColor
+        button.backgroundColor = OutPickTheme.ColorToken.surfaceBase
+        button.setTitleColor(OutPickTheme.ColorToken.textPrimary, for: .normal)
         button.accessibilityIdentifier = value
         button.addTarget(self, action: #selector(genderTapped(_:)), for: .touchUpInside)
         button.heightAnchor.constraint(equalToConstant: 48).isActive = true
@@ -150,6 +152,9 @@ final class FirstProfileViewController: UIViewController {
             guard let self else { return }
             self.nextButton.isEnabled = state.isNextEnabled
             self.nextButton.alpha = state.isNextEnabled ? 1.0 : 0.5
+            self.nextButton.backgroundColor = state.isNextEnabled
+                ? OutPickTheme.ColorToken.accent
+                : OutPickTheme.ColorToken.surfaceElevated
             self.applyGenderSelection(selected: state.selectedGender)
         }
 
@@ -184,13 +189,13 @@ final class FirstProfileViewController: UIViewController {
 
     private func styleGenderButton(_ button: UIButton, selected: Bool) {
         if selected {
-            button.backgroundColor = .label
-            button.setTitleColor(.systemBackground, for: .normal)
-            button.layer.borderColor = UIColor.label.cgColor
+            button.backgroundColor = OutPickTheme.ColorToken.accent
+            button.setTitleColor(OutPickTheme.ColorToken.backgroundBase, for: .normal)
+            button.layer.borderColor = OutPickTheme.ColorToken.accent.cgColor
         } else {
-            button.backgroundColor = .secondarySystemBackground
-            button.setTitleColor(.label, for: .normal)
-            button.layer.borderColor = UIColor.separator.cgColor
+            button.backgroundColor = OutPickTheme.ColorToken.surfaceBase
+            button.setTitleColor(OutPickTheme.ColorToken.textPrimary, for: .normal)
+            button.layer.borderColor = OutPickTheme.ColorToken.borderSubtle.cgColor
         }
     }
 }
