@@ -70,7 +70,7 @@ struct PostCommentsSheetView: View {
         }
         .task {
             await viewModel.loadIfNeeded()
-            await brandAdminSessionStore.refreshWritableBrands()
+            await brandAdminSessionStore.ensureWritableBrandsLoaded()
         }
         .sheet(item: $pendingDeleteItem) { item in
             deleteConfirmationSheet(for: item)

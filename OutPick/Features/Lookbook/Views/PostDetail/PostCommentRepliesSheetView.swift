@@ -36,7 +36,7 @@ struct PostCommentRepliesSheetView: View {
         }
         .task {
             await viewModel.loadIfNeeded()
-            await brandAdminSessionStore.refreshWritableBrands()
+            await brandAdminSessionStore.ensureWritableBrandsLoaded()
         }
         .sheet(isPresented: profileSheetBinding) {
             profileSheet

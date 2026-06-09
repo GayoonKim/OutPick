@@ -47,7 +47,7 @@ enum LookbookUITestFixtureRepositoryProviderFactory {
 private final class LookbookUITestFixtureImageCache: BrandImageCacheProtocol {
     func loadImage(path: String, maxBytes: Int) async throws -> UIImage {
         UIGraphicsImageRenderer(size: CGSize(width: 16, height: 16)).image { context in
-            UIColor.systemGray5.setFill()
+            OutPickTheme.ColorToken.surfaceBase.setFill()
             context.fill(CGRect(x: 0, y: 0, width: 16, height: 16))
         }
     }
