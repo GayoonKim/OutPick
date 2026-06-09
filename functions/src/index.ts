@@ -364,6 +364,27 @@ type SeasonCandidateImportSeed = {
   sourceSortIndex: number | null;
 };
 
+type SeasonImportJobReceipt = {
+  jobID: string;
+  brandID: string;
+  status: string;
+  seasonURL: string;
+  sourceCandidateID: string | null;
+  duplicate: boolean;
+};
+
+type SeasonCandidateImportTarget = {
+  candidateID: string;
+  seasonURL: string;
+  seed: SeasonCandidateImportSeed;
+};
+
+type SeasonCandidateImportFailure = {
+  candidateID: string;
+  title: string | null;
+  errorMessage: string;
+};
+
 type LookbookImportTaskConfig = {
   projectID: string;
   locationID: string;
@@ -438,6 +459,51 @@ function deterministicImportTaskID(brandID: string, jobID: string): string {
 function isAlreadyExistsError(error: unknown): boolean {
   const code = (error as {code?: unknown})?.code;
   return code === 6 || code === "ALREADY_EXISTS";
+}
+
+function messageFromError(error: unknown): string {
+  if (error instanceof Error && error.message.trim().length > 0) {
+    return error.message;
+  }
+  return "시즌 가져오기 작업을 준비하지 못했습니다.";
+}
+
+async function mapWithConcurrency<T, R>(
+  values: T[],
+  concurrency: number,
+  work: (value: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = [];
+  let cursor = 0;
+  const workerCount = Math.min(Math.max(1, concurrency), values.length);
+  const workers = Array.from({length: workerCount}, async () => {
+    for (;;) {
+      const index = cursor;
+      cursor += 1;
+      const value = values[index];
+      if (value === undefined) {
+        return;
+      }
+      results[index] = await work(value, index);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+function seasonCandidateImportSeedFromData(
+  data: FirebaseFirestore.DocumentData | undefined
+): SeasonCandidateImportSeed {
+  return {
+    sourceTitle: typeof data?.title === "string" ? data.title.trim() : null,
+    coverRemoteURL:
+      typeof data?.coverImageURL === "string" ?
+        data.coverImageURL.trim() :
+        null,
+    sourceSortIndex: Number.isInteger(data?.sortIndex) ?
+      Number(data?.sortIndex) :
+      null,
+  };
 }
 
 async function enqueueLookbookImportTask(
@@ -533,16 +599,7 @@ async function seasonCandidateImportSeed(
   }
 
   const data = candidateSnap.data();
-  return {
-    sourceTitle: typeof data?.title === "string" ? data.title.trim() : null,
-    coverRemoteURL:
-      typeof data?.coverImageURL === "string" ?
-        data.coverImageURL.trim() :
-        null,
-    sourceSortIndex: Number.isInteger(data?.sortIndex) ?
-      Number(data?.sortIndex) :
-      null,
-  };
+  return seasonCandidateImportSeedFromData(data);
 }
 
 async function requestSeasonImportJob(
@@ -550,112 +607,186 @@ async function requestSeasonImportJob(
   brandID: string,
   seasonURL: string,
   sourceCandidateID: string | null
-): Promise<{
-  jobID: string;
-  brandID: string;
-  status: string;
-  seasonURL: string;
-  sourceCandidateID: string | null;
-  duplicate: boolean;
-}> {
+): Promise<SeasonImportJobReceipt> {
   const brandRef = db.collection("brands").doc(brandID);
-  const importJobsRef = brandRef.collection("importJobs");
-  const jobRef = importJobsRef.doc();
-
   const candidateSeed = await seasonCandidateImportSeed(
     brandRef,
     sourceCandidateID,
     seasonURL
   );
+  return createSeasonImportJobFromSeed(
+    uid,
+    brandID,
+    seasonURL,
+    sourceCandidateID,
+    candidateSeed
+  );
+}
 
-  return db.runTransaction(async (transaction) => {
-    const sourceURLSnapshot = await transaction.get(
-      importJobsRef.where("sourceURL", "==", seasonURL)
-    );
+async function createSeasonImportJobFromSeed(
+  uid: string,
+  brandID: string,
+  seasonURL: string,
+  sourceCandidateID: string | null,
+  candidateSeed: SeasonCandidateImportSeed
+): Promise<SeasonImportJobReceipt> {
+  const retryReceipt = await requestAssetRetryForExistingImportIfNeeded(
+    uid,
+    brandID,
+    seasonURL,
+    sourceCandidateID
+  );
+  if (retryReceipt !== null) {
+    return retryReceipt;
+  }
 
-    const sourceCandidateSnapshot = sourceCandidateID === null ?
-      null :
-      await transaction.get(
-        importJobsRef.where("sourceCandidateID", "==", sourceCandidateID)
+  const brandRef = db.collection("brands").doc(brandID);
+  const importJobsRef = brandRef.collection("importJobs");
+  const jobRef = importJobsRef.doc();
+
+  return db.runTransaction(
+    async (transaction): Promise<SeasonImportJobReceipt> => {
+      const sourceURLSnapshot = await transaction.get(
+        importJobsRef.where("sourceURL", "==", seasonURL)
       );
 
-    const activeDuplicate = [
-      ...sourceURLSnapshot.docs,
-      ...(sourceCandidateSnapshot?.docs ?? []),
-    ].find((snapshot) => {
-      const job = snapshot.data();
-      return (
-        job.jobType === "importSeasonFromURL" &&
-        blocksDuplicateSeasonImport(job.status)
-      );
-    });
+      const sourceCandidateSnapshot = sourceCandidateID === null ?
+        null :
+        await transaction.get(
+          importJobsRef.where("sourceCandidateID", "==", sourceCandidateID)
+        );
 
-    if (activeDuplicate) {
-      const job = activeDuplicate.data();
-      const duplicatePatch: Record<string, unknown> = {};
-      if (
-        typeof job.sourceTitle !== "string" &&
-        candidateSeed.sourceTitle !== null
-      ) {
-        duplicatePatch.sourceTitle = candidateSeed.sourceTitle;
+      const activeDuplicate = [
+        ...sourceURLSnapshot.docs,
+        ...(sourceCandidateSnapshot?.docs ?? []),
+      ].find((snapshot) => {
+        const job = snapshot.data();
+        return (
+          job.jobType === "importSeasonFromURL" &&
+          blocksDuplicateSeasonImport(job.status)
+        );
+      });
+
+      if (activeDuplicate) {
+        const job = activeDuplicate.data();
+        const duplicatePatch: Record<string, unknown> = {};
+        if (
+          typeof job.sourceTitle !== "string" &&
+          candidateSeed.sourceTitle !== null
+        ) {
+          duplicatePatch.sourceTitle = candidateSeed.sourceTitle;
+        }
+        if (
+          typeof job.coverRemoteURL !== "string" &&
+          candidateSeed.coverRemoteURL !== null
+        ) {
+          duplicatePatch.coverRemoteURL = candidateSeed.coverRemoteURL;
+        }
+        if (
+          !Number.isInteger(job.sourceSortIndex) &&
+          candidateSeed.sourceSortIndex !== null
+        ) {
+          duplicatePatch.sourceSortIndex = candidateSeed.sourceSortIndex;
+        }
+        if (Object.keys(duplicatePatch).length > 0) {
+          duplicatePatch.updatedAt = FieldValue.serverTimestamp();
+          transaction.update(activeDuplicate.ref, duplicatePatch);
+        }
+
+        return {
+          jobID: activeDuplicate.id,
+          brandID,
+          status: String(job.status ?? "queued"),
+          seasonURL,
+          sourceCandidateID: typeof job.sourceCandidateID === "string" ?
+            job.sourceCandidateID :
+            sourceCandidateID,
+          duplicate: true,
+        };
       }
-      if (
-        typeof job.coverRemoteURL !== "string" &&
-        candidateSeed.coverRemoteURL !== null
-      ) {
-        duplicatePatch.coverRemoteURL = candidateSeed.coverRemoteURL;
-      }
-      if (
-        !Number.isInteger(job.sourceSortIndex) &&
-        candidateSeed.sourceSortIndex !== null
-      ) {
-        duplicatePatch.sourceSortIndex = candidateSeed.sourceSortIndex;
-      }
-      if (Object.keys(duplicatePatch).length > 0) {
-        duplicatePatch.updatedAt = FieldValue.serverTimestamp();
-        transaction.update(activeDuplicate.ref, duplicatePatch);
-      }
+
+      transaction.set(jobRef, {
+        brandID,
+        jobType: "importSeasonFromURL",
+        status: "queued",
+        phase: "dispatching",
+        dispatchMode: "cloudTasks",
+        sourceURL: seasonURL,
+        sourceCandidateID,
+        sourceTitle: candidateSeed.sourceTitle,
+        coverRemoteURL: candidateSeed.coverRemoteURL,
+        sourceSortIndex: candidateSeed.sourceSortIndex,
+        requestedBy: uid,
+        errorMessage: null,
+        assetCompletedCount: 0,
+        assetFailedCount: 0,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
 
       return {
-        jobID: activeDuplicate.id,
+        jobID: jobRef.id,
         brandID,
-        status: String(job.status ?? "queued"),
+        status: "queued",
         seasonURL,
-        sourceCandidateID: typeof job.sourceCandidateID === "string" ?
-          job.sourceCandidateID :
-          sourceCandidateID,
-        duplicate: true,
+        sourceCandidateID,
+        duplicate: false,
       };
     }
+  );
+}
 
-    transaction.set(jobRef, {
-      brandID,
-      jobType: "importSeasonFromURL",
-      status: "queued",
-      phase: "dispatching",
-      dispatchMode: "cloudTasks",
-      sourceURL: seasonURL,
-      sourceCandidateID,
-      sourceTitle: candidateSeed.sourceTitle,
-      coverRemoteURL: candidateSeed.coverRemoteURL,
-      sourceSortIndex: candidateSeed.sourceSortIndex,
-      requestedBy: uid,
-      errorMessage: null,
-      assetCompletedCount: 0,
-      assetFailedCount: 0,
-      createdAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
-    });
-
-    return {
-      jobID: jobRef.id,
-      brandID,
-      status: "queued",
-      seasonURL,
-      sourceCandidateID,
-      duplicate: false,
-    };
+async function requestAssetRetryForExistingImportIfNeeded(
+  uid: string,
+  brandID: string,
+  seasonURL: string,
+  sourceCandidateID: string | null
+): Promise<SeasonImportJobReceipt | null> {
+  const importJobsRef = db
+    .collection("brands")
+    .doc(brandID)
+    .collection("importJobs");
+  const sourceURLSnapshot = await importJobsRef
+    .where("sourceURL", "==", seasonURL)
+    .get();
+  const sourceCandidateSnapshot = sourceCandidateID === null ?
+    null :
+    await importJobsRef
+      .where("sourceCandidateID", "==", sourceCandidateID)
+      .get();
+  const retryableJob = [
+    ...sourceURLSnapshot.docs,
+    ...(sourceCandidateSnapshot?.docs ?? []),
+  ].find((snapshot) => {
+    const job = snapshot.data();
+    return (
+      job.jobType === "importSeasonFromURL" &&
+      (job.status === "partialFailed" || job.status === "failed") &&
+      typeof job.targetSeasonID === "string" &&
+      Number(job.assetFailedCount ?? 0) > 0
+    );
   });
+
+  if (!retryableJob) {
+    return null;
+  }
+
+  const retryReceipt = await requestSeasonAssetRetryJob(
+    uid,
+    brandID,
+    retryableJob.id
+  );
+  const sourceJob = retryableJob.data();
+  return {
+    jobID: retryReceipt.jobID,
+    brandID,
+    status: retryReceipt.status,
+    seasonURL,
+    sourceCandidateID: typeof sourceJob.sourceCandidateID === "string" ?
+      sourceJob.sourceCandidateID :
+      sourceCandidateID,
+    duplicate: retryReceipt.duplicate,
+  };
 }
 
 async function requestSeasonAssetRetryJob(
@@ -2022,35 +2153,99 @@ export const requestSeasonCandidateImportsAndProcess = onCall(
       return brandRef.collection("seasonCandidates").doc(candidateID);
     });
     const candidateSnapshots = await db.getAll(...candidateRefs);
+    const failures: SeasonCandidateImportFailure[] = [];
+    const targetBySeasonURL = new Map<string, SeasonCandidateImportTarget>();
+    let duplicateWithinBatchCount = 0;
 
-    const receipts: Array<{
-      jobID: string;
-      brandID: string;
-      status: string;
-      seasonURL: string;
-      sourceCandidateID: string | null;
-      duplicate: boolean;
-    }> = [];
+    candidateSnapshots.forEach((candidateSnapshot) => {
+      const candidateID = candidateSnapshot.id;
+      const candidateData = candidateSnapshot.data();
+      const title = typeof candidateData?.title === "string" ?
+        candidateData.title.trim() :
+        null;
 
-    for (const candidateSnapshot of candidateSnapshots) {
-      if (!candidateSnapshot.exists) {
-        throw new HttpsError("not-found", "시즌 후보를 찾을 수 없습니다.");
+      if (!candidateSnapshot.exists || !candidateData) {
+        failures.push({
+          candidateID,
+          title,
+          errorMessage: "시즌 후보를 찾을 수 없습니다.",
+        });
+        return;
       }
 
-      const candidateData = candidateSnapshot.data();
-      const seasonURL = normalizedHTTPURL(
-        requiredString(candidateData ?? {}, "seasonURL", 2048),
-        "seasonCandidate.seasonURL"
-      );
+      try {
+        const seasonURL = normalizedHTTPURL(
+          requiredString(candidateData, "seasonURL", 2048),
+          "seasonCandidate.seasonURL"
+        );
+        if (targetBySeasonURL.has(seasonURL)) {
+          duplicateWithinBatchCount += 1;
+          return;
+        }
+        targetBySeasonURL.set(seasonURL, {
+          candidateID,
+          seasonURL,
+          seed: seasonCandidateImportSeedFromData(candidateData),
+        });
+      } catch (error) {
+        failures.push({
+          candidateID,
+          title,
+          errorMessage: messageFromError(error),
+        });
+      }
+    });
 
-      const receipt = await requestSeasonImportJob(
-        uid,
-        brandID,
-        seasonURL,
-        candidateSnapshot.id
-      );
-      receipts.push(receipt);
-    }
+    const targets = Array.from(targetBySeasonURL.values());
+    const creationResults = await mapWithConcurrency(
+      targets,
+      10,
+      async (target): Promise<
+        | {ok: true; receipt: SeasonImportJobReceipt}
+        | {ok: false; failure: SeasonCandidateImportFailure}
+      > => {
+        try {
+          return {
+            ok: true,
+            receipt: await createSeasonImportJobFromSeed(
+              uid,
+              brandID,
+              target.seasonURL,
+              target.candidateID,
+              target.seed
+            ),
+          };
+        } catch (error) {
+          return {
+            ok: false,
+            failure: {
+              candidateID: target.candidateID,
+              title: target.seed.sourceTitle,
+              errorMessage: messageFromError(error),
+            },
+          };
+        }
+      }
+    );
+
+    const receipts = creationResults
+      .filter((result): result is {
+        ok: true;
+        receipt: SeasonImportJobReceipt;
+      } => {
+        return result.ok;
+      })
+      .map((result) => result.receipt);
+    failures.push(
+      ...creationResults
+        .filter((result): result is {
+          ok: false;
+          failure: SeasonCandidateImportFailure;
+        } => {
+          return !result.ok;
+        })
+        .map((result) => result.failure)
+    );
 
     const jobIDs = Array.from(
       new Set(receipts.map((receipt) => receipt.jobID))
@@ -2059,11 +2254,15 @@ export const requestSeasonCandidateImportsAndProcess = onCall(
       brandID,
       candidateIDs,
       jobIDs,
-      requestedJobCount: receipts.length,
-      duplicateJobCount: receipts.filter((receipt) => receipt.duplicate).length,
+      requestedJobCount: candidateIDs.length,
+      createdJobCount: receipts.filter((receipt) => !receipt.duplicate).length,
+      duplicateJobCount:
+        receipts.filter((receipt) => receipt.duplicate).length +
+        duplicateWithinBatchCount,
       processedJobCount: 0,
-      failedJobCount: 0,
-      skippedJobCount: 0,
+      failedJobCount: failures.length,
+      skippedJobCount: duplicateWithinBatchCount,
+      failedCandidates: failures,
     };
   }
 );

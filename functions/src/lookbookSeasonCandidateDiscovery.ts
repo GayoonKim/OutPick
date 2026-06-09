@@ -346,6 +346,9 @@ function normalizedURL(rawValue: string, baseURL: string): string | null {
 function isIgnoredHref(href: string): boolean {
   const url = new URL(href);
   const value = `${url.pathname}?${url.searchParams.toString()}`;
+  if (/\/product\/archive-detail\.html/i.test(url.pathname)) {
+    return false;
+  }
   return (
     /\/(?:product|category|board|member|order|cart|myshop)\//i.test(value) ||
     /(?:list\.html|login|basket|search|coupon|privacy)/i.test(value)
