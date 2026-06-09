@@ -55,6 +55,7 @@ type ImportJobData = {
   leaseOwner?: unknown;
   leaseExpiresAt?: unknown;
   createdAt?: unknown;
+  taskEnqueuedAt?: unknown;
 };
 
 type SeasonCandidateData = {
@@ -105,6 +106,12 @@ type JobResult = JobTarget & {
   errorMessage?: string;
 };
 
+type LogContext = JobTarget & {
+  workerID: string;
+  jobType: "importSeasonFromURL" | "retrySeasonAssets";
+  sourceURL: string;
+};
+
 export type WakeRequest = {
   brandID?: unknown;
   jobIDs?: unknown;
@@ -137,6 +144,7 @@ export type ImportJobTaskResult = {
 type ProcessorDependencies = {
   firestore: Firestore;
   storage: Storage;
+  assetSyncConcurrency: number;
 };
 
 type TaskRetryPolicy = {
@@ -182,13 +190,17 @@ const PLAYWRIGHT_NAVIGATION_TIMEOUT_MS = 20_000;
 const PLAYWRIGHT_RENDER_SETTLE_MS = 1_500;
 const HTML_MAX_BYTES = 5 * 1024 * 1024;
 const REMOTE_IMAGE_MAX_BYTES = 25 * 1024 * 1024;
-const ASSET_SYNC_CONCURRENCY = 3;
-
 const CONTENT_SECTION_RULES: Array<{
   label: string;
   pattern: RegExp;
   weight: number;
 }> = [
+  {
+    label: "archiveSourceDetail",
+    pattern:
+      /archive[_-]?source[_-]?detail|archive-source-detail/i,
+    weight: 430,
+  },
   {
     label: "cafe24ProductAdditional",
     pattern:
@@ -222,11 +234,13 @@ const CONTENT_SECTION_RULES: Array<{
 const NOISE_IMAGE_URL_PATTERNS = [
   /\/(?:M_banner|banner|banners|icon|icons|logo|favicon|layout)\//i,
   /\/web\/product\/(?:tiny|small|medium|list)\//i,
+  /\/(?:ec_admin|skin\/base_|design\/skin\/admin|design\/skin\/default)\//i,
+  /(?:btn_count_|btn_price_delete|ico_pay_point|icon_(?:facebook|twitter))\.(?:gif|png|jpg|jpeg|webp)(?:\?|$)/i,
   /(?:sprite|blank|placeholder|loading)\.(?:gif|png|svg)(?:\?|$)/i,
 ];
 
 const NOISE_CONTEXT_PATTERN =
-  /product\/list\.html|category\/|view all|gnb|lnb|menu|header|footer/i;
+  /product\/list\.html|category\/|view all|gnb|lnb|menu|header|footer|basket|cart|order|payment|purchase|quantity|option|결제|주문|장바구니|수량|옵션/i;
 const DYNAMIC_RENDERING_SIGNAL_PATTERNS = [
   /__NEXT_DATA__/i,
   /window\.__/i,
@@ -379,6 +393,15 @@ async function processJob(
     sourceImportJobID: claim.sourceImportJobID,
     targetSeasonID: claim.targetSeasonID,
   };
+  const logContext: LogContext = {
+    brandID: claimedJob.brandID,
+    jobID: claimedJob.jobID,
+    jobType: claimedJob.jobType,
+    sourceURL: claimedJob.sourceURL,
+    workerID,
+  };
+  const jobStartedAt = Date.now();
+  await logJobStarted(jobRef, logContext, retryPolicy);
 
   const leaseTimer = setInterval(() => {
     void refreshLease(jobRef, workerID).catch((error: unknown) => {
@@ -388,33 +411,66 @@ async function processJob(
 
   try {
     if (claimedJob.jobType === "retrySeasonAssets") {
-      return await processAssetRetryJob(
+      const result = await processAssetRetryJob(
         dependencies,
         jobRef,
         claimedJob,
+        logContext,
       );
+      logJobCompleted(logContext, result, {
+        totalDurationMs: elapsedMs(jobStartedAt),
+      });
+      return result;
     }
 
+    const parseStartedAt = Date.now();
     const parseResult = await ensureParsed(db, jobRef, claimedJob);
+    logPhaseCompleted(logContext, "parsing", elapsedMs(parseStartedAt), {
+      fallbackUsed: parseResult.ok ? parseResult.fallbackUsed : false,
+    });
+    if (parseResult.ok && parseResult.fallbackUsed) {
+      logFallbackUsed(logContext, {
+        reason: parseResult.fallbackReason,
+        strategy: parseResult.strategy,
+      });
+    }
     if (!parseResult.ok) {
       return await failJob(jobRef, target, parseResult.errorMessage, {
         parseStatus: "failed",
       });
     }
 
+    const materializeStartedAt = Date.now();
     const materializeResult = await ensureMaterialized(db, jobRef, claimedJob);
+    logPhaseCompleted(
+      logContext,
+      "materializing",
+      elapsedMs(materializeStartedAt),
+      {
+        seasonID: materializeResult.ok ? materializeResult.seasonID : null,
+        postCount: materializeResult.ok ? materializeResult.postCount : null,
+      },
+    );
     if (!materializeResult.ok) {
       return await failJob(jobRef, target, materializeResult.errorMessage, {
         contentStatus: "failed",
       });
     }
 
+    const assetSyncStartedAt = Date.now();
     const assetResult = await syncAssets(
       dependencies,
       jobRef,
       claimedJob,
       materializeResult.seasonID,
+      logContext,
     );
+    logPhaseCompleted(logContext, "syncingAssets", elapsedMs(assetSyncStartedAt), {
+      seasonID: materializeResult.seasonID,
+      assetCompletedCount: assetResult.completedCount,
+      assetFailedCount: assetResult.failedCount,
+      assetStatus: assetResult.status,
+    });
 
     const finalStatus = completedLifecycle(assetResult.status);
     await jobRef.update({
@@ -432,7 +488,7 @@ async function processJob(
       updatedAt: FieldValue.serverTimestamp(),
     });
 
-    return {
+    const result = {
       ...target,
       processed: true,
       status: finalStatus,
@@ -445,6 +501,12 @@ async function processJob(
       failedCount: assetResult.failedCount,
       errorMessage: assetResult.errorMessage,
     };
+    logJobCompleted(logContext, result, {
+      seasonID: materializeResult.seasonID,
+      postCount: materializeResult.postCount,
+      totalDurationMs: elapsedMs(jobStartedAt),
+    });
+    return result;
   } catch (error) {
     if (isRetryableImportError(error)) {
       if (
@@ -537,6 +599,7 @@ async function processAssetRetryJob(
   dependencies: ProcessorDependencies,
   jobRef: FirebaseFirestore.DocumentReference,
   claim: ClaimedJob,
+  logContext: LogContext,
 ): Promise<JobResult> {
   if (claim.targetSeasonID === null || claim.sourceImportJobID === null) {
     return failJob(jobRef, claim, "asset retry 대상 정보가 없습니다.", {
@@ -550,12 +613,20 @@ async function processAssetRetryJob(
     phase: "syncingAssets",
     updatedAt: FieldValue.serverTimestamp(),
   });
+  const assetSyncStartedAt = Date.now();
   const assetResult = await syncAssets(
     dependencies,
     jobRef,
     claim,
     claim.targetSeasonID,
+    logContext,
   );
+  logPhaseCompleted(logContext, "syncingAssets", elapsedMs(assetSyncStartedAt), {
+    seasonID: claim.targetSeasonID,
+    assetCompletedCount: assetResult.completedCount,
+    assetFailedCount: assetResult.failedCount,
+    assetStatus: assetResult.status,
+  });
   const finalStatus = completedLifecycle(assetResult.status);
   const finalPatch = {
     status: finalStatus,
@@ -608,7 +679,15 @@ async function ensureParsed(
   db: Firestore,
   jobRef: FirebaseFirestore.DocumentReference,
   claim: ClaimedJob,
-): Promise<{ok: true} | {ok: false; errorMessage: string}> {
+): Promise<
+  | {
+      ok: true;
+      fallbackUsed: boolean;
+      fallbackReason: string | null;
+      strategy: string;
+    }
+  | {ok: false; errorMessage: string}
+> {
   const snapshot = await jobRef.get();
   const data = snapshot.data() as ImportJobData | undefined;
   if (parsedImageCandidates(data?.imageCandidates).length > 0) {
@@ -617,7 +696,12 @@ async function ensureParsed(
       parsedAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
-    return {ok: true};
+    return {
+      ok: true,
+      fallbackUsed: false,
+      fallbackReason: null,
+      strategy: "cached",
+    };
   }
 
   await jobRef.update({
@@ -654,7 +738,14 @@ async function ensureParsed(
       parsedAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
-    return {ok: true};
+    return {
+      ok: true,
+      fallbackUsed: extraction.strategy.startsWith("playwright:"),
+      fallbackReason: extraction.strategy.startsWith("playwright:") ?
+        fallbackReason :
+        null,
+      strategy: extraction.strategy,
+    };
   } catch (error) {
     if (isRetryableImportError(error)) {
       throw error;
@@ -805,6 +896,7 @@ async function syncAssets(
   jobRef: FirebaseFirestore.DocumentReference,
   claim: ClaimedJob,
   seasonID: string,
+  logContext: LogContext,
 ): Promise<{
   status: "ready" | "partial" | "failed";
   completedCount: number;
@@ -849,6 +941,9 @@ async function syncAssets(
 
   const results = await runSyncTargets(dependencies, targets);
   const failedResults = results.filter((result) => !result.succeeded);
+  failedResults.forEach((result) => {
+    logAssetFailed(logContext, result);
+  });
   const failedCount = failedResults.length;
   const completedCount = declaredTotalCount === null ?
     results.filter((result) => result.succeeded || result.skipped).length :
@@ -954,7 +1049,7 @@ async function runSyncTargets(
   const results: SyncTargetResult[] = [];
   let cursor = 0;
   const workers = Array.from(
-    {length: Math.min(ASSET_SYNC_CONCURRENCY, targets.length)},
+    {length: Math.min(dependencies.assetSyncConcurrency, targets.length)},
     async () => {
       for (;;) {
         const index = cursor;
@@ -1141,14 +1236,14 @@ async function fetchHTML(url: string): Promise<string> {
   }
 }
 
-function extractImageCandidates(
+export function extractImageCandidates(
   html: string,
   baseURL: string,
 ): ImageExtractionResult {
   const rawCandidates = collectImageCandidates(html, baseURL, false, true);
   const sections = contentSections(html)
     .map((section) => {
-      const candidates = collectImageCandidates(section.html, baseURL, false, false);
+      const candidates = collectImageCandidates(section.html, baseURL, true, false);
       return {
         candidates,
         label: section.label,
@@ -1945,4 +2040,118 @@ function errorMessage(error: unknown): string {
     return error.message;
   }
   return String(error);
+}
+
+function elapsedMs(startedAt: number): number {
+  return Math.max(0, Date.now() - startedAt);
+}
+
+async function logJobStarted(
+  jobRef: FirebaseFirestore.DocumentReference,
+  context: LogContext,
+  retryPolicy: TaskRetryPolicy | undefined,
+): Promise<void> {
+  const snapshot = await jobRef.get();
+  const data = snapshot.data() as ImportJobData | undefined;
+  const taskEnqueuedAt = timestampMillis(data?.taskEnqueuedAt);
+  const payload: Record<string, unknown> = {
+    ...baseLogPayload(context),
+    event: "lookbookImport.jobStarted",
+    taskRetryCount: retryPolicy?.retryCount ?? null,
+    maxAttempts: retryPolicy?.maxAttempts ?? null,
+  };
+  if (taskEnqueuedAt > 0) {
+    payload.dispatchDelayMs = Math.max(0, Date.now() - taskEnqueuedAt);
+  }
+  console.info(JSON.stringify(payload));
+}
+
+function logPhaseCompleted(
+  context: LogContext,
+  phase: string,
+  durationMs: number,
+  extra: Record<string, unknown> = {},
+): void {
+  console.info(JSON.stringify({
+    ...baseLogPayload(context),
+    event: "lookbookImport.phaseCompleted",
+    phase,
+    durationMs,
+    ...compactLogPayload(extra),
+  }));
+}
+
+function logFallbackUsed(
+  context: LogContext,
+  extra: Record<string, unknown>,
+): void {
+  console.info(JSON.stringify({
+    ...baseLogPayload(context),
+    event: "lookbookImport.fallbackUsed",
+    ...compactLogPayload(extra),
+  }));
+}
+
+function logAssetFailed(
+  context: LogContext,
+  result: SyncTargetResult,
+): void {
+  console.warn(JSON.stringify({
+    ...baseLogPayload(context),
+    event: "lookbookImport.assetFailed",
+    targetKind: result.target.kind,
+    seasonID: result.target.seasonID,
+    postID: result.target.kind === "postImage" ?
+      result.target.postID :
+      null,
+    stage: "assetSync",
+    message: result.errorMessage ?? "asset sync failed",
+  }));
+}
+
+function logJobCompleted(
+  context: LogContext,
+  result: JobResult,
+  extra: Record<string, unknown>,
+): void {
+  console.info(JSON.stringify({
+    ...baseLogPayload(context),
+    event: "lookbookImport.jobCompleted",
+    status: result.status,
+    processed: result.processed,
+    assetCompletedCount: result.completedCount ?? null,
+    assetFailedCount: result.failedCount ?? null,
+    errorMessage: result.errorMessage ?? null,
+    ...compactLogPayload(extra),
+  }));
+}
+
+function baseLogPayload(context: LogContext): Record<string, unknown> {
+  return {
+    brandID: context.brandID,
+    jobID: context.jobID,
+    jobType: context.jobType,
+    workerID: context.workerID,
+    ...sourceURLLogParts(context.sourceURL),
+  };
+}
+
+function sourceURLLogParts(sourceURL: string): Record<string, unknown> {
+  try {
+    const parsed = new URL(sourceURL);
+    return {
+      sourceURLHost: parsed.hostname,
+      sourceURLPath: parsed.pathname,
+    };
+  } catch {
+    return {};
+  }
+}
+
+function compactLogPayload(
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(payload).filter(([, value]) => value !== null),
+  );
 }

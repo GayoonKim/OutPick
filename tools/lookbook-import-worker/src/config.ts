@@ -2,6 +2,7 @@ export interface WorkerConfig {
   projectID: string;
   storageBucket: string;
   port: number;
+  assetSyncConcurrency: number;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv): WorkerConfig {
@@ -10,11 +11,19 @@ export function loadConfig(env: NodeJS.ProcessEnv): WorkerConfig {
     optionalEnv(env, "OUTPICK_FIREBASE_STORAGE_BUCKET") ??
     `${projectID}.appspot.com`;
   const port = parsePort(env.PORT);
+  const assetSyncConcurrency = parseBoundedInteger(
+    env.OUTPICK_IMPORT_ASSET_SYNC_CONCURRENCY,
+    "OUTPICK_IMPORT_ASSET_SYNC_CONCURRENCY",
+    3,
+    1,
+    8,
+  );
 
   return {
     projectID,
     storageBucket,
     port,
+    assetSyncConcurrency,
   };
 }
 
@@ -41,4 +50,28 @@ function parsePort(rawPort: string | undefined): number {
     throw new Error("PORT 환경 변수가 올바르지 않습니다.");
   }
   return port;
+}
+
+function parseBoundedInteger(
+  rawValue: string | undefined,
+  key: string,
+  defaultValue: number,
+  minValue: number,
+  maxValue: number,
+): number {
+  if (rawValue === undefined || rawValue.trim().length === 0) {
+    return defaultValue;
+  }
+
+  const value = Number(rawValue.trim());
+  if (
+    !Number.isInteger(value) ||
+    value < minValue ||
+    value > maxValue
+  ) {
+    throw new Error(
+      `${key} 환경 변수는 ${minValue} 이상 ${maxValue} 이하의 정수여야 합니다.`,
+    );
+  }
+  return value;
 }

@@ -14,6 +14,7 @@ async function main(): Promise<void> {
   );
   const app = createServer({
     projectID: config.projectID,
+    assetSyncConcurrency: config.assetSyncConcurrency,
     firebase,
   });
 

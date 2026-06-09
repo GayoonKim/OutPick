@@ -11,6 +11,7 @@ import {isRetryableImportError} from "./import-error.js";
 
 interface ServerDependencies {
   projectID: string;
+  assetSyncConcurrency: number;
   firebase: FirebaseClients;
 }
 
@@ -33,6 +34,7 @@ export function createServer(dependencies: ServerDependencies): Express {
         {
           firestore: dependencies.firebase.firestore,
           storage: dependencies.firebase.storage,
+          assetSyncConcurrency: dependencies.assetSyncConcurrency,
         },
         request.body as WakeRequest,
       );
@@ -53,6 +55,7 @@ export function createServer(dependencies: ServerDependencies): Express {
           {
             firestore: dependencies.firebase.firestore,
             storage: dependencies.firebase.storage,
+            assetSyncConcurrency: dependencies.assetSyncConcurrency,
           },
           request.body as ImportJobTaskRequest,
           cloudTasksRetryCount(request),
