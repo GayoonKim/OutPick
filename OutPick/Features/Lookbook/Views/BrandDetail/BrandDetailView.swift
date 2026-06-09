@@ -116,9 +116,7 @@ struct BrandDetailView: View {
             importManagementSheetFactory()
         }
         .task {
-            if !brandAdminSessionStore.canWrite(brandID: brand.id) {
-                await brandAdminSessionStore.refreshWritableBrands(force: true)
-            }
+            await brandAdminSessionStore.ensureWritableBrandsLoaded()
 
             if didPrepareInitialContent == false {
                 await prewarmHeaderLogoIfNeeded()

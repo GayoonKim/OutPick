@@ -16,12 +16,13 @@ final class BrandAdminSessionStore: ObservableObject {
     @Published private(set) var writableBrandIDs: Set<BrandID> = []
     @Published private(set) var isLoading: Bool = false
     @Published private(set) var isLoaded: Bool = false
+    @Published private(set) var isWritableBrandsLoading: Bool = false
+    @Published private(set) var isWritableBrandsLoaded: Bool = false
 
     private let cloudFunctionsManager: CloudFunctionsManager
     private let db: Firestore
     private var loadedIdentityKey: String?
     private var loadedWritableBrandsIdentityKey: String?
-    private var isLoadingWritableBrands: Bool = false
 
     init(
         cloudFunctionsManager: CloudFunctionsManager = .shared,
@@ -103,22 +104,24 @@ final class BrandAdminSessionStore: ObservableObject {
             return
         }
 
-        guard !isLoadingWritableBrands else { return }
+        guard !isWritableBrandsLoading else { return }
 
         handleIdentityChangeIfNeeded(normalizedIdentityKey)
 
         if !force,
+           isWritableBrandsLoaded,
            loadedWritableBrandsIdentityKey == normalizedIdentityKey {
             return
         }
 
-        isLoadingWritableBrands = true
-        defer { isLoadingWritableBrands = false }
+        isWritableBrandsLoading = true
+        defer { isWritableBrandsLoading = false }
 
         do {
             let brandIDs = try await loadWritableBrandIDsWithRetry(identityKey: normalizedIdentityKey)
             writableBrandIDs = brandIDs
             loadedWritableBrandsIdentityKey = normalizedIdentityKey
+            isWritableBrandsLoaded = true
             print(
                 """
                 [BrandAdminSessionStore] writable brands refreshed identity=\(normalizedIdentityKey) \
@@ -128,6 +131,7 @@ final class BrandAdminSessionStore: ObservableObject {
         } catch {
             clearWritableBrandIDs()
             loadedWritableBrandsIdentityKey = nil
+            isWritableBrandsLoaded = false
 
             let nsError = error as NSError
             print(
@@ -140,6 +144,26 @@ final class BrandAdminSessionStore: ObservableObject {
         }
     }
 
+    func ensureWritableBrandsLoaded() async {
+        let identityKey = LoginManager.shared.getAuthIdentityKey
+        let normalizedIdentityKey = identityKey.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !normalizedIdentityKey.isEmpty else {
+            reset()
+            print("[BrandAdminSessionStore] skip writable brand ensure: empty auth identity")
+            return
+        }
+
+        handleIdentityChangeIfNeeded(normalizedIdentityKey)
+
+        if isWritableBrandsLoaded,
+           loadedWritableBrandsIdentityKey == normalizedIdentityKey {
+            return
+        }
+
+        await refreshWritableBrands()
+    }
+
     func canWrite(brandID: BrandID) -> Bool {
         writableBrandIDs.contains(brandID)
     }
@@ -148,6 +172,7 @@ final class BrandAdminSessionStore: ObservableObject {
     func applyUITestWritableBrands(_ brandIDs: Set<BrandID>) {
         writableBrandIDs = brandIDs
         loadedWritableBrandsIdentityKey = LoginManager.shared.getAuthIdentityKey
+        isWritableBrandsLoaded = true
     }
     #endif
 
@@ -156,7 +181,8 @@ final class BrandAdminSessionStore: ObservableObject {
         clearWritableBrandIDs()
         isLoaded = false
         isLoading = false
-        isLoadingWritableBrands = false
+        isWritableBrandsLoading = false
+        isWritableBrandsLoaded = false
         loadedIdentityKey = nil
         loadedWritableBrandsIdentityKey = nil
     }
@@ -181,6 +207,7 @@ final class BrandAdminSessionStore: ObservableObject {
         clearCapabilities()
         clearWritableBrandIDs()
         isLoaded = false
+        isWritableBrandsLoaded = false
         loadedIdentityKey = nil
         loadedWritableBrandsIdentityKey = nil
     }
