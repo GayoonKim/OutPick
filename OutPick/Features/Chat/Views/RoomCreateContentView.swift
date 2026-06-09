@@ -48,7 +48,7 @@ final class RoomCreateContentView: UIView {
     }
 
     private func configureStyles() {
-        backgroundColor = .systemBackground
+        backgroundColor = OutPickTheme.ColorToken.backgroundBase
 
         [
             scrollView,
@@ -67,20 +67,20 @@ final class RoomCreateContentView: UIView {
 
         roomImageView.image = UIImage(named: "Default_Profile")
         roomImageView.contentMode = .scaleAspectFill
-        roomImageView.backgroundColor = UIColor(white: 0.95, alpha: 1.0)
+        roomImageView.backgroundColor = OutPickTheme.ColorToken.surfaceBase
 
         roomNameTitleLabel.text = "방 이름"
         roomDescriptionTitleLabel.text = "방 설명"
         [roomNameTitleLabel, roomDescriptionTitleLabel].forEach {
             $0.font = .systemFont(ofSize: 13, weight: .semibold)
-            $0.textColor = .secondaryLabel
+            $0.textColor = OutPickTheme.ColorToken.textSecondary
         }
 
         roomNameCountLabel.text = "0 / 20"
         roomDescriptionCountLabel.text = "0 / 200"
         [roomNameCountLabel, roomDescriptionCountLabel].forEach {
             $0.font = .systemFont(ofSize: 12, weight: .regular)
-            $0.textColor = .secondaryLabel
+            $0.textColor = OutPickTheme.ColorToken.textTertiary
             $0.textAlignment = .right
         }
 
@@ -88,6 +88,14 @@ final class RoomCreateContentView: UIView {
         roomDescriptionTextView.textContainerInset = UIEdgeInsets(top: 12, left: 8, bottom: 12, right: 8)
         roomNameTextView.isScrollEnabled = false
         roomDescriptionTextView.isScrollEnabled = true
+        [roomNameTextView, roomDescriptionTextView].forEach {
+            $0.backgroundColor = OutPickTheme.ColorToken.surfaceBase
+            $0.textColor = OutPickTheme.ColorToken.textPrimary
+            $0.tintColor = OutPickTheme.ColorToken.accent
+            $0.layer.borderColor = OutPickTheme.ColorToken.borderSubtle.cgColor
+            $0.layer.borderWidth = 1
+        }
+        activityIndicator.color = OutPickTheme.ColorToken.accent
     }
 
     private func configureLayout() {
@@ -140,4 +148,3 @@ final class RoomCreateContentView: UIView {
         ])
     }
 }
-

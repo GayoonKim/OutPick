@@ -60,7 +60,7 @@ final class AnnouncementBannerView: UIView {
         ])
 
         // Header
-        iconView.tintColor = .label
+        iconView.tintColor = OutPickTheme.ColorToken.accent
         iconView.setContentHuggingPriority(.required, for: .horizontal)
         iconView.translatesAutoresizingMaskIntoConstraints = false
         iconView.widthAnchor.constraint(equalToConstant: 18).isActive = true
@@ -68,14 +68,15 @@ final class AnnouncementBannerView: UIView {
 
         titleLabel.font = .systemFont(ofSize: 14, weight: .semibold)
         titleLabel.text = "공지"
+        titleLabel.textColor = OutPickTheme.ColorToken.textPrimary
 
         pinButton.setImage(UIImage(systemName: "pin.fill"), for: .normal)
-        pinButton.tintColor = .secondaryLabel
+        pinButton.tintColor = OutPickTheme.ColorToken.iconSecondary
         pinButton.addTarget(self, action: #selector(didTapPin), for: .touchUpInside)
         pinButton.setContentHuggingPriority(.required, for: .horizontal)
 
         expandButton.setImage(UIImage(systemName: "chevron.down"), for: .normal)
-        expandButton.tintColor = .secondaryLabel
+        expandButton.tintColor = OutPickTheme.ColorToken.iconSecondary
         expandButton.addTarget(self, action: #selector(didTapExpand), for: .touchUpInside)
         expandButton.setContentHuggingPriority(.required, for: .horizontal)
 
@@ -91,14 +92,14 @@ final class AnnouncementBannerView: UIView {
         // Message
         messageLabel.numberOfLines = 1
         messageLabel.font = .systemFont(ofSize: 14)
-        messageLabel.textColor = .label
+        messageLabel.textColor = OutPickTheme.ColorToken.textPrimary
         messageLabel.lineBreakMode = .byWordWrapping
         messageLabel.setContentHuggingPriority(.defaultLow, for: .vertical)
         messageLabel.setContentCompressionResistancePriority(.required, for: .vertical)
 
         // Footer
         metaLabel.font = .systemFont(ofSize: 12)
-        metaLabel.textColor = .secondaryLabel
+        metaLabel.textColor = OutPickTheme.ColorToken.textTertiary
 
 
         footerHStack.axis = .horizontal

@@ -12,7 +12,7 @@ class MediaSectionMoreButtonCell: UICollectionViewCell {
     
     private lazy var moreImage: UIImageView = {
         let imageView = UIImageView(image: UIImage(systemName: "arrowshape.right.fill"))
-        imageView.tintColor = .black
+        imageView.tintColor = OutPickTheme.ColorToken.accent
         imageView.contentMode = .scaleAspectFill
         imageView.clipsToBounds = true
         imageView.layer.cornerRadius = 20
@@ -26,7 +26,7 @@ class MediaSectionMoreButtonCell: UICollectionViewCell {
         label.text = "더보기"
         label.font = .systemFont(ofSize: 12, weight: .light)
         label.textAlignment = .center
-        label.textColor = .black
+        label.textColor = OutPickTheme.ColorToken.textSecondary
         label.translatesAutoresizingMaskIntoConstraints = false
         
         return label

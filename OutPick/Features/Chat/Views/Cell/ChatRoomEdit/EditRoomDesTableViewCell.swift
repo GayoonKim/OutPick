@@ -16,14 +16,15 @@ class EditRoomDesTableViewCell: UITableViewCell {
     
     private let desTextView: UITextView = {
         let textView = UITextView()
-        textView.textColor = .placeholderText
+        textView.textColor = OutPickTheme.ColorToken.textTertiary
         textView.text = "• 어떤 사람이 참여하면 좋을까요?\n• 지켜야 할 규칙, 공지 사항 등을 안내해 주세요."
         textView.font = UIFont.systemFont(ofSize: 14)
         textView.isScrollEnabled = false
         textView.translatesAutoresizingMaskIntoConstraints = false
         textView.textContainer.lineBreakMode = .byWordWrapping
         textView.textContainer.lineFragmentPadding = 0
-        textView.backgroundColor = .secondarySystemBackground
+        textView.backgroundColor = OutPickTheme.ColorToken.surfaceBase
+        textView.tintColor = OutPickTheme.ColorToken.accent
         
         return textView
     }()
@@ -32,9 +33,9 @@ class EditRoomDesTableViewCell: UITableViewCell {
         let label = UILabel()
         label.text = "0/200"
         label.font = .systemFont(ofSize: 12)
-        label.textColor = .secondaryLabel
+        label.textColor = OutPickTheme.ColorToken.textTertiary
         label.translatesAutoresizingMaskIntoConstraints = false
-        label.backgroundColor = .secondarySystemBackground
+        label.backgroundColor = OutPickTheme.ColorToken.surfaceBase
 
         return label
     }()
@@ -68,7 +69,9 @@ class EditRoomDesTableViewCell: UITableViewCell {
     private func setupViews() {
         desTextView.delegate = self
         
-        contentView.backgroundColor = .secondarySystemBackground
+        contentView.backgroundColor = OutPickTheme.ColorToken.surfaceBase
+        contentView.layer.borderColor = OutPickTheme.ColorToken.borderSubtle.cgColor
+        contentView.layer.borderWidth = 1
         contentView.layer.cornerRadius = 10
         
         contentView.addSubview(desTextView)
@@ -88,7 +91,7 @@ class EditRoomDesTableViewCell: UITableViewCell {
     
     func configure(_ room: ChatRoom) {
         self.desTextView.text = room.roomDescription
-        self.desTextView.textColor = .black
+        self.desTextView.textColor = OutPickTheme.ColorToken.textPrimary
         self.desCountLabel.text = "\(room.roomDescription.count)/\(maxLength)"
     }
     
@@ -145,9 +148,9 @@ extension EditRoomDesTableViewCell: UITextViewDelegate {
     }
     
     func textViewDidBeginEditing(_ textView: UITextView) {
-        if textView.textColor == .placeholderText {
+        if textView.text == defaultText {
             textView.text = nil
-            textView.textColor = .black
+            textView.textColor = OutPickTheme.ColorToken.textPrimary
         }
         
         self.updateNameCountLabel()
@@ -156,7 +159,7 @@ extension EditRoomDesTableViewCell: UITextViewDelegate {
     func textViewDidEndEditing(_ textView: UITextView) {
         if textView.text.isEmpty {
             textView.text = defaultText
-            textView.textColor = .placeholderText
+            textView.textColor = OutPickTheme.ColorToken.textTertiary
         }
         
         self.updateNameCountLabel()

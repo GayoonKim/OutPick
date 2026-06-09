@@ -10,13 +10,14 @@ import UIKit
 
 class ChatUIView: UIView {
     var onButtonTapped: ((String) -> Void)?
+    private let placeholderText = "메시지 입력"
     
     private(set) var attachmentButton: UIButton = {
         let button = UIButton(type: .system)
         button.setImage(UIImage(systemName: "plus"), for: .normal)
-        button.tintColor = .black
+        button.tintColor = OutPickTheme.ColorToken.accent
         button.clipsToBounds = true
-        button.backgroundColor = .secondarySystemBackground
+        button.backgroundColor = OutPickTheme.ColorToken.accent.withAlphaComponent(0.14)
         button.accessibilityIdentifier = "attachmentButton"
         button.translatesAutoresizingMaskIntoConstraints = false
         
@@ -26,11 +27,13 @@ class ChatUIView: UIView {
     private(set) var messageTextView: UITextView = {
         let textView = UITextView()
         textView.text = "메시지 입력"
-        textView.textColor = .lightGray
+        textView.textColor = OutPickTheme.ColorToken.textTertiary
         textView.font = UIFont.systemFont(ofSize: 12)
         textView.isScrollEnabled = false
         textView.layer.cornerRadius = 18
-        textView.backgroundColor = .secondarySystemBackground
+        textView.backgroundColor = OutPickTheme.ColorToken.surfaceBase
+        textView.layer.borderColor = OutPickTheme.ColorToken.borderSubtle.cgColor
+        textView.layer.borderWidth = 1
         textView.translatesAutoresizingMaskIntoConstraints = false
         textView.textContainer.lineBreakMode = .byWordWrapping
         textView.textContainer.lineFragmentPadding = 0
@@ -42,10 +45,10 @@ class ChatUIView: UIView {
     private(set) var sendButton: UIButton = {
         let button = UIButton(type: .system)
         button.setImage(UIImage(systemName: "paperplane"), for: .normal)
-        button.tintColor = .black
+        button.tintColor = OutPickTheme.ColorToken.iconSecondary
         button.isEnabled = false
         button.clipsToBounds = true
-        button.backgroundColor = .secondarySystemBackground
+        button.backgroundColor = OutPickTheme.ColorToken.surfaceElevated
         button.accessibilityIdentifier = "sendButton"
         button.translatesAutoresizingMaskIntoConstraints = false
         
@@ -112,6 +115,7 @@ class ChatUIView: UIView {
         messageTextViewHeightConstraint = messageTextView.heightAnchor.constraint(greaterThanOrEqualToConstant: 40)
         messageTextViewHeightConstraint.priority = .defaultHigh
         messageTextViewHeightConstraint.isActive = true
+        applySendButtonState()
     }
     
     @objc private func buttonTapped(_ sender: UIButton) {
@@ -134,6 +138,15 @@ extension ChatUIView: UITextViewDelegate {
         
         layoutIfNeeded()
     }
+
+    func applySendButtonState() {
+        sendButton.tintColor = sendButton.isEnabled
+            ? OutPickTheme.ColorToken.accent
+            : OutPickTheme.ColorToken.iconSecondary
+        sendButton.backgroundColor = sendButton.isEnabled
+            ? OutPickTheme.ColorToken.accent.withAlphaComponent(0.16)
+            : OutPickTheme.ColorToken.surfaceElevated
+    }
     
     func textViewDidChange(_ textView: UITextView) {
         DispatchQueue.main.async {
@@ -142,6 +155,7 @@ extension ChatUIView: UITextViewDelegate {
             } else {
                 self.sendButton.isEnabled = true
             }
+            self.applySendButtonState()
             
             self.updateHeight()
         }
@@ -149,10 +163,11 @@ extension ChatUIView: UITextViewDelegate {
     
     func textViewDidBeginEditing(_ textView: UITextView) {
         DispatchQueue.main.async {
-            if textView.textColor == .lightGray {
+            if textView.text == self.placeholderText {
                 textView.text = ""
-                textView.textColor = .black
+                textView.textColor = OutPickTheme.ColorToken.textPrimary
             }
+            textView.layer.borderColor = OutPickTheme.ColorToken.accent.cgColor
             
             self.updateHeight()
         }
@@ -161,9 +176,12 @@ extension ChatUIView: UITextViewDelegate {
     func textViewDidEndEditing(_ textView: UITextView) {
         DispatchQueue.main.async {
             if textView.text.isEmpty {
-                textView.text = "메시지 입력"
-                textView.textColor = .lightGray
+                textView.text = self.placeholderText
+                textView.textColor = OutPickTheme.ColorToken.textTertiary
+                self.sendButton.isEnabled = false
             }
+            textView.layer.borderColor = OutPickTheme.ColorToken.borderSubtle.cgColor
+            self.applySendButtonState()
             
             self.updateHeight()
         }

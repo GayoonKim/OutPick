@@ -23,7 +23,7 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
         layout.minimumLineSpacing = 8
         layout.sectionInset = UIEdgeInsets(top: 8, left: 0, bottom: 8, right: 0)
         let collectionV = UICollectionView(frame: .zero, collectionViewLayout: layout)
-        collectionV.backgroundColor = .systemBackground
+        collectionV.backgroundColor = OutPickTheme.ColorToken.backgroundBase
         collectionV.alwaysBounceVertical = true
         collectionV.keyboardDismissMode = .onDrag
         collectionV.register(JoinedRoomCell.self, forCellWithReuseIdentifier: JoinedRoomCell.reuseID)
@@ -71,6 +71,7 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        view.backgroundColor = OutPickTheme.ColorToken.backgroundBase
         setupNavigationBar()
         setupViews()
         configureDataSource()
@@ -364,9 +365,11 @@ final class JoinedRoomCell: UICollectionViewCell {
         contentView.backgroundColor = .clear
 
         container.translatesAutoresizingMaskIntoConstraints = false
-        container.backgroundColor = .secondarySystemBackground
+        container.backgroundColor = OutPickTheme.ColorToken.surfaceBase
         container.layer.cornerRadius = 12
         container.layer.masksToBounds = true
+        container.layer.borderWidth = 1
+        container.layer.borderColor = OutPickTheme.ColorToken.borderSubtle.cgColor
         contentView.addSubview(container)
 
         roomImageView.translatesAutoresizingMaskIntoConstraints = false
@@ -380,36 +383,37 @@ final class JoinedRoomCell: UICollectionViewCell {
         titleLabel.font = .preferredFont(forTextStyle: .headline)
         titleLabel.adjustsFontForContentSizeCategory = true
         titleLabel.numberOfLines = 1
+        titleLabel.textColor = OutPickTheme.ColorToken.textPrimary
         titleLabel.lineBreakMode = .byTruncatingTail
         titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         titleLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
         countBadge.font = .preferredFont(forTextStyle: .subheadline)
-        countBadge.textColor = .secondaryLabel
+        countBadge.textColor = OutPickTheme.ColorToken.textSecondary
         countBadge.adjustsFontForContentSizeCategory = true
         countBadge.setContentCompressionResistancePriority(.required, for: .horizontal)
         countBadge.setContentHuggingPriority(.required, for: .horizontal)
 
         timeLabel.font = .preferredFont(forTextStyle: .footnote)
-        timeLabel.textColor = .tertiaryLabel
+        timeLabel.textColor = OutPickTheme.ColorToken.textTertiary
         timeLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
         timeLabel.adjustsFontForContentSizeCategory = true
 
         lastMessageLabel.font = .preferredFont(forTextStyle: .subheadline)
-        lastMessageLabel.textColor = .secondaryLabel
+        lastMessageLabel.textColor = OutPickTheme.ColorToken.textSecondary
         lastMessageLabel.numberOfLines = 2
         lastMessageLabel.adjustsFontForContentSizeCategory = true
 
         // Unread 배지
         unreadContainer.translatesAutoresizingMaskIntoConstraints = false
-        unreadContainer.backgroundColor = .orange
+        unreadContainer.backgroundColor = OutPickTheme.ColorToken.accent
         unreadContainer.layer.cornerRadius = 10
         unreadContainer.isHidden = true
         unreadContainer.setContentHuggingPriority(.required, for: .horizontal)
         unreadContainer.setContentCompressionResistancePriority(.required, for: .horizontal)
 
         unreadLabel.translatesAutoresizingMaskIntoConstraints = false
-        unreadLabel.textColor = .white
+        unreadLabel.textColor = OutPickTheme.ColorToken.backgroundBase
         unreadLabel.font = .preferredFont(forTextStyle: .caption2)
         unreadLabel.textAlignment = .center
         unreadLabel.adjustsFontForContentSizeCategory = true

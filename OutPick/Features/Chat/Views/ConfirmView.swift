@@ -222,7 +222,7 @@ final class ConfirmView: UIView {
         backgroundColor = UIColor.black.withAlphaComponent(0.35)
         
         // 카드
-        container.backgroundColor = .secondarySystemBackground
+        container.backgroundColor = OutPickTheme.ColorToken.surfaceElevated
         container.layer.cornerRadius = 16
         container.layer.masksToBounds = true
         container.translatesAutoresizingMaskIntoConstraints = false
@@ -231,7 +231,7 @@ final class ConfirmView: UIView {
         
         // 제목 라벨
         titleLabel.font = .systemFont(ofSize: 17, weight: .semibold)
-        titleLabel.textColor = .label
+        titleLabel.textColor = OutPickTheme.ColorToken.textPrimary
         titleLabel.textAlignment = .center
         titleLabel.numberOfLines = 0
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -239,7 +239,7 @@ final class ConfirmView: UIView {
         
         // 메세지 라벨
         messageLabel.font = .systemFont(ofSize: 14)
-        messageLabel.textColor = .secondaryLabel
+        messageLabel.textColor = OutPickTheme.ColorToken.textSecondary
         messageLabel.textAlignment = .center
         messageLabel.numberOfLines = 0
         messageLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -254,8 +254,8 @@ final class ConfirmView: UIView {
         // 확인 버튼 (빨강, 흰 글씨)
         var yesCfg = UIButton.Configuration.filled()
         yesCfg.title = "네"
-        yesCfg.baseBackgroundColor = .systemBlue
-        yesCfg.baseForegroundColor = .label
+        yesCfg.baseBackgroundColor = OutPickTheme.ColorToken.accent
+        yesCfg.baseForegroundColor = OutPickTheme.ColorToken.backgroundBase
         yesCfg.cornerStyle = .medium
         yesCfg.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12)
         yesCfg.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
@@ -268,8 +268,8 @@ final class ConfirmView: UIView {
         // 취소 버튼 (연한 배경, 레이블 색상)
         var noCfg = UIButton.Configuration.gray()
         noCfg.title = "아니요"
-        noCfg.baseBackgroundColor = .tertiarySystemBackground
-        noCfg.baseForegroundColor = .label
+        noCfg.baseBackgroundColor = OutPickTheme.ColorToken.surfacePressed
+        noCfg.baseForegroundColor = OutPickTheme.ColorToken.textPrimary
         noCfg.cornerStyle = .medium
         noCfg.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12)
         noButton.configuration = noCfg
@@ -332,11 +332,11 @@ final class ConfirmView: UIView {
     private func applyStyle() {
         switch style {
         case .destructive:
-            yesButton.configuration?.baseBackgroundColor = .systemRed
-            yesButton.configuration?.baseForegroundColor = .black
+            yesButton.configuration?.baseBackgroundColor = OutPickTheme.ColorToken.destructive
+            yesButton.configuration?.baseForegroundColor = OutPickTheme.ColorToken.backgroundBase
         case .prominent:
-            yesButton.configuration?.baseBackgroundColor = .systemBlue
-            yesButton.configuration?.baseForegroundColor = .black
+            yesButton.configuration?.baseBackgroundColor = OutPickTheme.ColorToken.accent
+            yesButton.configuration?.baseForegroundColor = OutPickTheme.ColorToken.backgroundBase
         }
     }
     

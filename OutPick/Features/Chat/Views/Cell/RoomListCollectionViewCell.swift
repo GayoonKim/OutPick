@@ -25,7 +25,7 @@ class RoomListCollectionViewCell: UICollectionViewCell {
     let roomNameLabel: UILabel = {
         let label = UILabel()
         label.font = .boldSystemFont(ofSize: 13)
-        label.textColor = .label
+        label.textColor = OutPickTheme.ColorToken.textPrimary
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
@@ -33,7 +33,7 @@ class RoomListCollectionViewCell: UICollectionViewCell {
     let roomDescriptionLabel: UILabel = {
         let label = UILabel()
         label.font = .systemFont(ofSize: 12)
-        label.textColor = .secondaryLabel
+        label.textColor = OutPickTheme.ColorToken.textSecondary
         label.numberOfLines = 2
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
@@ -46,8 +46,10 @@ class RoomListCollectionViewCell: UICollectionViewCell {
         stackView.alignment = .fill
         stackView.distribution = .fill
         stackView.clipsToBounds = true
-        stackView.backgroundColor = .black
+        stackView.backgroundColor = OutPickTheme.ColorToken.backgroundRaised
         stackView.layer.cornerRadius = 15
+        stackView.layer.borderWidth = 1
+        stackView.layer.borderColor = OutPickTheme.ColorToken.borderSubtle.cgColor
         stackView.translatesAutoresizingMaskIntoConstraints = false
         return stackView
     }()
@@ -96,6 +98,12 @@ class RoomListCollectionViewCell: UICollectionViewCell {
     }
     
     private func setupLayout() {
+        contentView.backgroundColor = OutPickTheme.ColorToken.surfaceBase
+        contentView.layer.cornerRadius = 12
+        contentView.layer.masksToBounds = true
+        contentView.layer.borderWidth = 1
+        contentView.layer.borderColor = OutPickTheme.ColorToken.borderSubtle.cgColor
+
         contentView.addSubview(roomImageView)
         contentView.addSubview(roomNameLabel)
         contentView.addSubview(roomDescriptionLabel)
@@ -143,9 +151,8 @@ class RoomListCollectionViewCell: UICollectionViewCell {
         if messages.isEmpty {
             let placeholder = UILabel()
             placeholder.text = "대화를 시작해 보세요 👋"
-            placeholder.textColor = .secondaryLabel
             placeholder.font = .systemFont(ofSize: 14, weight: .medium)
-            placeholder.textColor = .white
+            placeholder.textColor = OutPickTheme.ColorToken.textSecondary
             placeholder.textAlignment = .center
             placeholder.heightAnchor.constraint(equalToConstant: 50).isActive = true
             previewStackView.addArrangedSubview(placeholder)
@@ -222,7 +229,7 @@ private class MessagePreviewView: UIView {
     private let nicknameLabel: UILabel = {
         let label = UILabel()
         label.font = .systemFont(ofSize: 12, weight: .semibold)
-        label.textColor = .white
+        label.textColor = OutPickTheme.ColorToken.textSecondary
         label.numberOfLines = 1
         label.lineBreakMode = .byTruncatingTail
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -232,7 +239,7 @@ private class MessagePreviewView: UIView {
     private let bubbleView: UIView = {
         let view = UIView()
         view.translatesAutoresizingMaskIntoConstraints = false
-        view.backgroundColor = UIColor.systemGray5
+        view.backgroundColor = OutPickTheme.ColorToken.surfaceBase
         view.layer.cornerRadius = 12
         return view
     }()
@@ -240,7 +247,7 @@ private class MessagePreviewView: UIView {
     private let messageLabel: UILabel = {
         let label = UILabel()
         label.font = .systemFont(ofSize: 13)
-        label.textColor = .white
+        label.textColor = OutPickTheme.ColorToken.textPrimary
         label.translatesAutoresizingMaskIntoConstraints = false
         label.numberOfLines = 1
         label.lineBreakMode = .byTruncatingTail
@@ -250,7 +257,7 @@ private class MessagePreviewView: UIView {
     private let timeLabel: UILabel = {
         let label = UILabel()
         label.font = .systemFont(ofSize: 10, weight: .regular)
-        label.textColor = .white
+        label.textColor = OutPickTheme.ColorToken.textTertiary
         label.translatesAutoresizingMaskIntoConstraints = false
         label.numberOfLines = 1
         label.textAlignment = .left
@@ -277,21 +284,21 @@ private class MessagePreviewView: UIView {
     private let replyPreviewNameLabel: UILabel = {
         let label = UILabel()
         label.font = .systemFont(ofSize: 10, weight: .heavy)
-        label.textColor = .black
+        label.textColor = OutPickTheme.ColorToken.textSecondary
         return label
     }()
 
     private let replyPreviewMsgLabel: UILabel = {
         let label = UILabel()
         label.font = .systemFont(ofSize: 9, weight: .medium)
-        label.textColor = .black
+        label.textColor = OutPickTheme.ColorToken.textTertiary
         label.numberOfLines = 1
         return label
     }()
     
     private lazy var replyPreviewContainer: UIStackView = {
         let separator = UIView()
-        separator.backgroundColor = .white
+        separator.backgroundColor = OutPickTheme.ColorToken.borderSubtle
         separator.heightAnchor.constraint(equalToConstant: 1).isActive = true
         
         let contentStack = UIStackView(arrangedSubviews: [replyPreviewNameLabel, replyPreviewMsgLabel, separator])
@@ -300,7 +307,7 @@ private class MessagePreviewView: UIView {
         contentStack.translatesAutoresizingMaskIntoConstraints = false
         
         let container = UIView()
-        container.backgroundColor = .black
+        container.backgroundColor = OutPickTheme.ColorToken.backgroundRaised
         container.layer.cornerRadius = 8
         container.translatesAutoresizingMaskIntoConstraints = false
         container.layoutMargins = UIEdgeInsets(top: 6, left: 8, bottom: 6, right: 8)
@@ -347,7 +354,7 @@ private class MessagePreviewView: UIView {
     }
     
     private func setupLayout() {
-        self.backgroundColor = .black
+        self.backgroundColor = OutPickTheme.ColorToken.backgroundRaised
 
         addSubview(profileImageView)
         addSubview(nicknameLabel)
@@ -465,7 +472,7 @@ private class MessagePreviewView: UIView {
         if isMine {
             profileImageView.isHidden = true
             nicknameLabel.isHidden = true
-            bubbleView.backgroundColor = .systemBlue
+            bubbleView.backgroundColor = OutPickTheme.ColorToken.surfaceElevated
 
             bubbleTopToNickname?.isActive = false
             bubbleTopToTop?.isActive = true
@@ -477,11 +484,11 @@ private class MessagePreviewView: UIView {
             timeRightOfBubbleLeading?.isActive = false
             timeLeftOfBubbleTrailing?.isActive = true
             timeLabel.textAlignment = .right
-            timeLabel.textColor = .white
+            timeLabel.textColor = OutPickTheme.ColorToken.textTertiary
         } else {
             profileImageView.isHidden = false
             nicknameLabel.isHidden = false
-            bubbleView.backgroundColor = /*UIColor(white: 0.2, alpha: 1.0)*/.lightGray
+            bubbleView.backgroundColor = OutPickTheme.ColorToken.surfaceBase
 
             bubbleTopToTop?.isActive = false
             bubbleTopToNickname?.isActive = true
@@ -493,7 +500,7 @@ private class MessagePreviewView: UIView {
             timeLeftOfBubbleTrailing?.isActive = false
             timeRightOfBubbleLeading?.isActive = true
             timeLabel.textAlignment = .left
-            timeLabel.textColor = .white
+            timeLabel.textColor = OutPickTheme.ColorToken.textTertiary
         }
     }
     

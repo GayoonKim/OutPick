@@ -50,7 +50,7 @@ class ChatMessageCell: UICollectionViewCell {
     private let nickNameLabel : UILabel = {
         var label = UILabel()
         label.font = .systemFont(ofSize: 12)
-        label.textColor = .black
+        label.textColor = OutPickTheme.ColorToken.textSecondary
         label.translatesAutoresizingMaskIntoConstraints = false
         
         return label
@@ -62,7 +62,7 @@ class ChatMessageCell: UICollectionViewCell {
         label.numberOfLines = 0
         label.lineBreakMode = .byCharWrapping
         label.backgroundColor = .clear
-        label.textColor = .black
+        label.textColor = OutPickTheme.ColorToken.textPrimary
         label.textAlignment = .left
         label.translatesAutoresizingMaskIntoConstraints = false
         
@@ -73,7 +73,7 @@ class ChatMessageCell: UICollectionViewCell {
     private let timeLabel: UILabel = {
         let label = UILabel()
         label.font = .systemFont(ofSize: 10, weight: .regular)
-        label.textColor = .secondaryLabel
+        label.textColor = OutPickTheme.ColorToken.textTertiary
         label.translatesAutoresizingMaskIntoConstraints = false
         label.numberOfLines = 1
         label.textAlignment = .left
@@ -134,7 +134,7 @@ class ChatMessageCell: UICollectionViewCell {
     private let failedIconImageView: UIImageView = {
         let imageView = UIImageView()
         imageView.image = UIImage(systemName: "exclamationmark.circle.fill")
-        imageView.tintColor = .red
+        imageView.tintColor = OutPickTheme.ColorToken.destructive
         imageView.contentMode = .scaleAspectFit
         imageView.translatesAutoresizingMaskIntoConstraints = false
         imageView.isHidden = true
@@ -145,7 +145,7 @@ class ChatMessageCell: UICollectionViewCell {
     private let replyPreviewNameLabel: UILabel = {
         let label = UILabel()
         label.font = .systemFont(ofSize: 10)
-        label.textColor = .black
+        label.textColor = OutPickTheme.ColorToken.textSecondary
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
@@ -153,7 +153,7 @@ class ChatMessageCell: UICollectionViewCell {
     private let replyPreviewMsgLabel: UILabel = {
         let label = UILabel()
         label.font = .systemFont(ofSize: 9)
-        label.textColor = .black
+        label.textColor = OutPickTheme.ColorToken.textTertiary
         label.numberOfLines = 1
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
@@ -162,7 +162,7 @@ class ChatMessageCell: UICollectionViewCell {
     private let replyPreviewSeparator: UIView = {
         let sep = UIView()
         sep.translatesAutoresizingMaskIntoConstraints = false
-        sep.backgroundColor = .black
+        sep.backgroundColor = OutPickTheme.ColorToken.borderSubtle
         sep.heightAnchor.constraint(equalToConstant: 1).isActive = true
         return sep
     }()
@@ -338,7 +338,7 @@ class ChatMessageCell: UICollectionViewCell {
         hideVideoBadge()
         
         messageLabel.attributedText = nil
-        messageLabel.textColor = .black
+        messageLabel.textColor = OutPickTheme.ColorToken.textPrimary
         highlightView?.removeFromSuperview()
         highlightView = nil
         applyImageUploadOverlay(.none)
@@ -349,7 +349,7 @@ class ChatMessageCell: UICollectionViewCell {
         profileImageView.image = UIImage(named: "Default_Profile")
         profileImageView.isHidden = false
         nickNameLabel.isHidden = false
-        bubbleView.backgroundColor = UIColor(white: 0.1, alpha: 0.03)
+        bubbleView.backgroundColor = OutPickTheme.ColorToken.surfaceBase
         imagesPreviewCollectionView.isHidden = true
         imagesPreviewCollectionView.updateCollectionView([], 0, [], thumbnailLoader: nil)
 
@@ -473,9 +473,10 @@ class ChatMessageCell: UICollectionViewCell {
 
         if message.isDeleted {
             messageLabel.text = "삭제된 메시지입니다."
-            messageLabel.textColor = UIColor.black.withAlphaComponent(0.4)
+            messageLabel.textColor = OutPickTheme.ColorToken.textTertiary
         } else {
             messageLabel.text = message.msg
+            messageLabel.textColor = OutPickTheme.ColorToken.textPrimary
         }
         imagesPreviewCollectionView.isHidden = true
         
@@ -483,7 +484,7 @@ class ChatMessageCell: UICollectionViewCell {
         
         if isMine {
             // 본인이 보낸 메시지
-            bubbleView.backgroundColor = .systemBlue
+            bubbleView.backgroundColor = OutPickTheme.ColorToken.surfaceElevated
             
             // 기본 제약조건 업데이트
             bubbleViewLeadingConstraint = bubbleView.leadingAnchor.constraint(greaterThanOrEqualTo: contentView.leadingAnchor, constant: 20)
@@ -503,7 +504,7 @@ class ChatMessageCell: UICollectionViewCell {
             
         } else {
             // 상대방이 보낸 메시지
-            bubbleView.backgroundColor = /*UIColor(white: 0.1, alpha: 0.03)*/.secondarySystemBackground
+            bubbleView.backgroundColor = OutPickTheme.ColorToken.surfaceBase
             
             // 기본 제약조건으로 복원
             bubbleViewLeadingConstraint = bubbleView.leadingAnchor.constraint(equalTo: profileImageView.trailingAnchor, constant: 5)
@@ -585,7 +586,7 @@ class ChatMessageCell: UICollectionViewCell {
             imagesPreviewCollectionView.updateCollectionView([], 0, [], thumbnailLoader: nil)
 
             messageLabel.text = "삭제된 메시지입니다."
-            messageLabel.textColor = UIColor.black.withAlphaComponent(0.4)
+            messageLabel.textColor = OutPickTheme.ColorToken.textTertiary
 
             NSLayoutConstraint.deactivate([
                 imagePreviewCollectionViewTopConstraint,
@@ -608,7 +609,7 @@ class ChatMessageCell: UICollectionViewCell {
             configureProfileArea(with: message, isMine: isMine, avatarLoader: avatarLoader)
             if isMine {
                 // 본인이 보낸(삭제된) 메시지로 표시
-                bubbleView.backgroundColor = .systemBlue
+                bubbleView.backgroundColor = OutPickTheme.ColorToken.surfaceElevated
 
                 bubbleViewLeadingConstraint = bubbleView.leadingAnchor.constraint(greaterThanOrEqualTo: contentView.leadingAnchor, constant: 20)
                 bubbleViewTrailingConstraint = bubbleView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -8)
@@ -616,7 +617,7 @@ class ChatMessageCell: UICollectionViewCell {
                 bubbleViewBottomConstraint = bubbleView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
             } else {
                 // 상대방이 보낸(삭제된) 메시지로 표시
-                bubbleView.backgroundColor = .secondarySystemBackground
+                bubbleView.backgroundColor = OutPickTheme.ColorToken.surfaceBase
 
                 bubbleViewLeadingConstraint = bubbleView.leadingAnchor.constraint(equalTo: profileImageView.trailingAnchor, constant: 5)
                 bubbleViewTrailingConstraint = bubbleView.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor, constant: -10)
@@ -796,8 +797,10 @@ class ChatMessageCell: UICollectionViewCell {
             if highlightView == nil {
                 let overayView = UIView()
                 overayView.translatesAutoresizingMaskIntoConstraints = false
-                overayView.backgroundColor = UIColor.black.withAlphaComponent(0.1)
+                overayView.backgroundColor = OutPickTheme.ColorToken.accent.withAlphaComponent(0.12)
                 overayView.layer.cornerRadius = bubbleView.layer.cornerRadius
+                overayView.layer.borderColor = OutPickTheme.ColorToken.accent.withAlphaComponent(0.7).cgColor
+                overayView.layer.borderWidth = 1
                 overayView.isUserInteractionEnabled = false
                 bubbleView.addSubview(overayView)
                 highlightView = overayView
@@ -853,8 +856,8 @@ class ChatMessageCell: UICollectionViewCell {
         let attributed = NSMutableAttributedString(string: baseText, attributes: baseAttributes)
         let range = (baseText as NSString).range(of: keyword, options: .caseInsensitive)
         if range.location != NSNotFound {
-            attributed.addAttribute(.backgroundColor, value: UIColor.yellow, range: range)
-            attributed.addAttribute(.foregroundColor, value: UIColor.black, range: range)
+            attributed.addAttribute(.backgroundColor, value: OutPickTheme.ColorToken.accent.withAlphaComponent(0.28), range: range)
+            attributed.addAttribute(.foregroundColor, value: OutPickTheme.ColorToken.textPrimary, range: range)
         }
         messageLabel.text = nil
         messageLabel.attributedText = attributed
@@ -863,7 +866,7 @@ class ChatMessageCell: UICollectionViewCell {
     
     private func makeSeparator() -> UIView {
         let view = UIView()
-        view.backgroundColor = .black
+        view.backgroundColor = OutPickTheme.ColorToken.borderSubtle
         view.translatesAutoresizingMaskIntoConstraints = false
         view.heightAnchor.constraint(equalToConstant: 0.5 / UIScreen.main.scale).isActive = true
         return view
@@ -1008,7 +1011,7 @@ private final class CircularProgressRingView: UIView {
         layer.addSublayer(trackLayer)
 
         progressLayer.fillColor = UIColor.clear.cgColor
-        progressLayer.strokeColor = UIColor.white.cgColor
+        progressLayer.strokeColor = OutPickTheme.ColorToken.accent.cgColor
         progressLayer.lineWidth = 4
         progressLayer.lineCap = .round
         progressLayer.strokeEnd = 0

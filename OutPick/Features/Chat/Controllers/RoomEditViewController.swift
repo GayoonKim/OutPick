@@ -20,8 +20,9 @@ final class RoomEditViewController: UIViewController, PHPickerViewControllerDele
     private lazy var completeButton: UIButton = {
         let button = UIButton(type: .system)
         button.setTitle("완료", for: .normal)
-        button.setTitleColor(.black, for: .normal)
-        button.setTitleColor(.placeholderText, for: .disabled)
+        button.setTitleColor(OutPickTheme.ColorToken.accent, for: .normal)
+        button.setTitleColor(OutPickTheme.ColorToken.textDisabled, for: .disabled)
+        button.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
         button.addTarget(self, action: #selector(completeButtonTapped), for: .touchUpInside)
         return button
     }()
@@ -44,7 +45,7 @@ final class RoomEditViewController: UIViewController, PHPickerViewControllerDele
         let imageView = UIImageView()
         imageView.image = UIImage(named: "Default_Profile")
         imageView.translatesAutoresizingMaskIntoConstraints = false
-        imageView.backgroundColor = .secondarySystemBackground
+        imageView.backgroundColor = OutPickTheme.ColorToken.surfaceBase
         imageView.contentMode = .scaleAspectFill
         imageView.clipsToBounds = true
         imageView.layer.cornerRadius = 12
@@ -54,8 +55,8 @@ final class RoomEditViewController: UIViewController, PHPickerViewControllerDele
     private let imageEditIconView: UIImageView = {
         let imageView = UIImageView()
         imageView.contentMode = .center
-        imageView.tintColor = .black
-        imageView.backgroundColor = .white
+        imageView.tintColor = OutPickTheme.ColorToken.accent
+        imageView.backgroundColor = OutPickTheme.ColorToken.accent.withAlphaComponent(0.14)
         imageView.clipsToBounds = true
         imageView.layer.cornerRadius = 13
         imageView.image = UIImage(systemName: "camera.fill")
@@ -68,7 +69,17 @@ final class RoomEditViewController: UIViewController, PHPickerViewControllerDele
         textField.translatesAutoresizingMaskIntoConstraints = false
         textField.placeholder = "채팅방 이름 (필수)"
         textField.clearButtonMode = .never
-        textField.borderStyle = .roundedRect
+        textField.borderStyle = .none
+        textField.backgroundColor = OutPickTheme.ColorToken.surfaceBase
+        textField.textColor = OutPickTheme.ColorToken.textPrimary
+        textField.tintColor = OutPickTheme.ColorToken.accent
+        textField.layer.cornerRadius = 8
+        textField.layer.borderWidth = 1
+        textField.layer.borderColor = OutPickTheme.ColorToken.borderSubtle.cgColor
+        textField.attributedPlaceholder = NSAttributedString(
+            string: "채팅방 이름 (필수)",
+            attributes: [.foregroundColor: OutPickTheme.ColorToken.textTertiary]
+        )
         textField.returnKeyType = .done
         textField.autocorrectionType = .no
         textField.autocapitalizationType = .none
@@ -78,7 +89,7 @@ final class RoomEditViewController: UIViewController, PHPickerViewControllerDele
     private lazy var nameClearButton: UIButton = {
         let button = UIButton(type: .system)
         button.setImage(UIImage(systemName: "xmark.circle.fill"), for: .normal)
-        button.tintColor = .tertiaryLabel
+        button.tintColor = OutPickTheme.ColorToken.accent
         button.addTarget(self, action: #selector(clearNameTapped), for: .touchUpInside)
         button.frame = CGRect(x: 0, y: 0, width: 28, height: 28)
         return button
@@ -88,7 +99,7 @@ final class RoomEditViewController: UIViewController, PHPickerViewControllerDele
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
         label.font = .systemFont(ofSize: 12)
-        label.textColor = .secondaryLabel
+        label.textColor = OutPickTheme.ColorToken.textTertiary
         label.text = "0/20"
         return label
     }()
@@ -97,7 +108,7 @@ final class RoomEditViewController: UIViewController, PHPickerViewControllerDele
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
         label.font = .systemFont(ofSize: 13, weight: .semibold)
-        label.textColor = .secondaryLabel
+        label.textColor = OutPickTheme.ColorToken.textSecondary
         label.text = "방 이름"
         return label
     }()
@@ -106,7 +117,7 @@ final class RoomEditViewController: UIViewController, PHPickerViewControllerDele
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
         label.font = .systemFont(ofSize: 13, weight: .semibold)
-        label.textColor = .secondaryLabel
+        label.textColor = OutPickTheme.ColorToken.textSecondary
         label.text = "방 설명"
         return label
     }()
@@ -117,7 +128,10 @@ final class RoomEditViewController: UIViewController, PHPickerViewControllerDele
         textView.font = .systemFont(ofSize: 15)
         textView.layer.cornerRadius = 8
         textView.layer.borderWidth = 1
-        textView.layer.borderColor = UIColor.separator.cgColor
+        textView.backgroundColor = OutPickTheme.ColorToken.surfaceBase
+        textView.textColor = OutPickTheme.ColorToken.textPrimary
+        textView.tintColor = OutPickTheme.ColorToken.accent
+        textView.layer.borderColor = OutPickTheme.ColorToken.borderSubtle.cgColor
         textView.isScrollEnabled = false
         return textView
     }()
@@ -126,7 +140,7 @@ final class RoomEditViewController: UIViewController, PHPickerViewControllerDele
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
         label.font = .systemFont(ofSize: 12)
-        label.textColor = .secondaryLabel
+        label.textColor = OutPickTheme.ColorToken.textTertiary
         label.text = "0/200"
         return label
     }()
@@ -155,7 +169,7 @@ final class RoomEditViewController: UIViewController, PHPickerViewControllerDele
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = OutPickTheme.ColorToken.backgroundBase
 
         setupCustomNavigationBar()
         bindKeyboardPublisher()

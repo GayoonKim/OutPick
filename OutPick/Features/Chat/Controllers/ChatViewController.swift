@@ -51,7 +51,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         let label = UILabel()
         label.numberOfLines = 0
         label.textAlignment = .center
-        label.textColor = .secondaryLabel
+        label.textColor = OutPickTheme.ColorToken.textSecondary
         label.font = .systemFont(ofSize: 15, weight: .medium)
         label.isHidden = true
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -268,7 +268,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     private lazy var chatCustomMenu: ChatCustomPopUpMenu = {
         let view = ChatCustomPopUpMenu()
-        view.backgroundColor = .black
+        view.backgroundColor = OutPickTheme.ColorToken.backgroundRaised
+        view.layer.borderColor = OutPickTheme.ColorToken.borderSubtle.cgColor
+        view.layer.borderWidth = 1
         view.layer.cornerRadius = 20
         view.translatesAutoresizingMaskIntoConstraints = false
         
@@ -300,7 +302,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         //        let v = UIControl(frame: .zero)
         let v = UIView()
         v.translatesAutoresizingMaskIntoConstraints = false
-        v.backgroundColor = UIColor.black.withAlphaComponent(0.35)
+        v.backgroundColor = OutPickTheme.ColorToken.overlayScrim
         v.alpha = 0
         
         return v
@@ -369,6 +371,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     override func viewDidLoad() {
         super.viewDidLoad()
         self.definesPresentationContext = true
+        view.backgroundColor = OutPickTheme.ColorToken.backgroundBase
         _ = ensureChatRoomViewModel()
         
         configureDataSource()
@@ -955,6 +958,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         chatUIView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(chatMessageCollectionView)
         chatMessageCollectionView.translatesAutoresizingMaskIntoConstraints = false
+        chatUIView.backgroundColor = OutPickTheme.ColorToken.backgroundBase
+        chatMessageCollectionView.backgroundColor = OutPickTheme.ColorToken.backgroundBase
         
         chatUIViewBottomConstraint = chatUIView.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor)
         NSLayoutConstraint.deactivate(chatConstraints)
@@ -992,6 +997,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         self.chatUIView.messageTextView.text = nil
         self.chatUIView.updateHeight()
         self.chatUIView.sendButton.isEnabled = false
+        self.chatUIView.applySendButtonState()
         
         let newMessage = ChatMessage(
             ID: UUID().uuidString,
@@ -1417,8 +1423,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         if joinRoomBtn.superview == nil {
             joinRoomBtn.translatesAutoresizingMaskIntoConstraints = false
             joinRoomBtn.setTitle("채팅 참여하기", for: .normal)
-            joinRoomBtn.setTitleColor(.black, for: .normal)
-            joinRoomBtn.backgroundColor = UIColor(white: 0.1, alpha: 0.05)
+            joinRoomBtn.titleLabel?.font = .systemFont(ofSize: 16, weight: .semibold)
+            joinRoomBtn.setTitleColor(OutPickTheme.ColorToken.backgroundBase, for: .normal)
+            joinRoomBtn.backgroundColor = OutPickTheme.ColorToken.accent
             joinRoomBtn.clipsToBounds = true
             joinRoomBtn.layer.cornerRadius = 20
             joinRoomBtn.isHidden = true
@@ -1443,11 +1450,13 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private func setJoinRoombtn() {
         self.joinRoomBtn.clipsToBounds = true
         self.joinRoomBtn.layer.cornerRadius = 20
-        self.joinRoomBtn.backgroundColor = UIColor(white: 0.1, alpha: 0.05)
+        self.joinRoomBtn.backgroundColor = OutPickTheme.ColorToken.accent
+        self.joinRoomBtn.setTitleColor(OutPickTheme.ColorToken.backgroundBase, for: .normal)
         
         if chatMessageCollectionView.superview == nil {
             view.addSubview(chatMessageCollectionView)
             chatMessageCollectionView.translatesAutoresizingMaskIntoConstraints = false
+            chatMessageCollectionView.backgroundColor = OutPickTheme.ColorToken.backgroundBase
             
             NSLayoutConstraint.activate([
                 chatMessageCollectionView.topAnchor.constraint(equalTo: customNavigationBar.bottomAnchor),

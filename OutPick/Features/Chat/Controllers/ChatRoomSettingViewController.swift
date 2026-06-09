@@ -18,7 +18,9 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
         config.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 14, bottom: 8, trailing: 14)
         let b = UIButton(configuration: config)
         b.translatesAutoresizingMaskIntoConstraints = false
-        b.tintColor = .label // 아이콘만, 배경 없이
+        b.tintColor = OutPickTheme.ColorToken.destructive
+        b.backgroundColor = OutPickTheme.ColorToken.surfaceBase
+        b.layer.cornerRadius = 12
         b.accessibilityLabel = "나가기"
         b.addTarget(self, action: #selector(didTapFloatingLeave), for: .touchUpInside)
         return b
@@ -30,7 +32,9 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
         config.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 14, bottom: 8, trailing: 14)
         let b = UIButton(configuration: config)
         b.translatesAutoresizingMaskIntoConstraints = false
-        b.tintColor = .label // 아이콘만, 배경 없이
+        b.tintColor = OutPickTheme.ColorToken.accent
+        b.backgroundColor = OutPickTheme.ColorToken.surfaceBase
+        b.layer.cornerRadius = 12
         b.accessibilityLabel = "알림"
         b.addTarget(self, action: #selector(didTapFloatingNotice), for: .touchUpInside)
         return b
@@ -113,7 +117,7 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
     override func viewDidLoad() {
         super.viewDidLoad()
         
-        self.view.backgroundColor = .secondarySystemBackground
+        self.view.backgroundColor = OutPickTheme.ColorToken.backgroundBase
         
         configureCollectionView()
         bindViewModel()
@@ -512,7 +516,7 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
     }
 
     private func configureCollectionView() {
-        collectionView.backgroundColor = .secondarySystemBackground
+        collectionView.backgroundColor = OutPickTheme.ColorToken.backgroundBase
         collectionView.translatesAutoresizingMaskIntoConstraints = false
         collectionView.register(ChatRoomInfoCell.self, forCellWithReuseIdentifier: ChatRoomInfoCell.reuseIdentifier)
         collectionView.register(ChatRoomMediaCollectionViewCell.self, forCellWithReuseIdentifier: ChatRoomMediaCollectionViewCell.reuseIdentifier)

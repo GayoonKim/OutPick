@@ -17,21 +17,21 @@ public final class BannerView: UIView {
 
         var backgroundColor: UIColor {
             switch self {
-            case .info: return .secondarySystemBackground
-            case .error: return UIColor { trait in trait.userInterfaceStyle == .dark ? UIColor.systemRed.withAlphaComponent(0.35) : UIColor.systemRed.withAlphaComponent(0.12) }
-            case .success: return UIColor { trait in trait.userInterfaceStyle == .dark ? UIColor.systemGreen.withAlphaComponent(0.35) : UIColor.systemGreen.withAlphaComponent(0.12) }
-            case .offline: return .tertiarySystemBackground
+            case .info: return OutPickTheme.ColorToken.surfaceElevated
+            case .error: return OutPickTheme.ColorToken.destructive.withAlphaComponent(0.18)
+            case .success: return OutPickTheme.ColorToken.success.withAlphaComponent(0.18)
+            case .offline: return OutPickTheme.ColorToken.surfacePressed
             }
         }
         var accentColor: UIColor {
             switch self {
-            case .info: return .systemBlue
-            case .error: return .systemRed
-            case .success: return .systemGreen
-            case .offline: return .systemGray
+            case .info: return OutPickTheme.ColorToken.accent
+            case .error: return OutPickTheme.ColorToken.destructive
+            case .success: return OutPickTheme.ColorToken.success
+            case .offline: return OutPickTheme.ColorToken.iconSecondary
             }
         }
-        var textColor: UIColor { .label }
+        var textColor: UIColor { OutPickTheme.ColorToken.textPrimary }
     }
 
     public struct Config {
@@ -65,7 +65,7 @@ public final class BannerView: UIView {
 
     // MARK: - Setup
     private func setup() {
-        backgroundColor = .secondarySystemBackground
+        backgroundColor = OutPickTheme.ColorToken.surfaceElevated
         layer.cornerRadius = 12
         layer.masksToBounds = true
 
@@ -84,7 +84,7 @@ public final class BannerView: UIView {
         addSubview(button)
 
         label.font = UIFont.preferredFont(forTextStyle: .subheadline)
-        label.textColor = .label
+        label.textColor = OutPickTheme.ColorToken.textPrimary
         label.numberOfLines = 0
         label.adjustsFontForContentSizeCategory = true
 

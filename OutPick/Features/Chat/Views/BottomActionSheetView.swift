@@ -136,7 +136,7 @@ final class BottomActionSheetView: UIView {
 
         actionsCard.axis = .vertical
         actionsCard.spacing = 0
-        actionsCard.backgroundColor = .secondarySystemBackground
+        actionsCard.backgroundColor = OutPickTheme.ColorToken.surfaceElevated
         actionsCard.layer.cornerRadius = 18
         actionsCard.clipsToBounds = true
         contentStack.addArrangedSubview(actionsCard)
@@ -149,7 +149,7 @@ final class BottomActionSheetView: UIView {
         if let title, !title.isEmpty {
             titleLabel.text = title
             titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
-            titleLabel.textColor = .secondaryLabel
+            titleLabel.textColor = OutPickTheme.ColorToken.textSecondary
             titleLabel.textAlignment = .center
             titleLabel.numberOfLines = 0
             titleMessageStack.addArrangedSubview(titleLabel)
@@ -158,7 +158,7 @@ final class BottomActionSheetView: UIView {
         if let message, !message.isEmpty {
             messageLabel.text = message
             messageLabel.font = .systemFont(ofSize: 13)
-            messageLabel.textColor = .secondaryLabel
+            messageLabel.textColor = OutPickTheme.ColorToken.textSecondary
             messageLabel.textAlignment = .center
             messageLabel.numberOfLines = 0
             titleMessageStack.addArrangedSubview(messageLabel)
@@ -179,7 +179,7 @@ final class BottomActionSheetView: UIView {
 
         if let cancelAction {
             cancelCard.axis = .vertical
-            cancelCard.backgroundColor = .secondarySystemBackground
+            cancelCard.backgroundColor = OutPickTheme.ColorToken.surfaceElevated
             cancelCard.layer.cornerRadius = 18
             cancelCard.clipsToBounds = true
             let button = makeButton(for: cancelAction.element, index: cancelAction.offset)
@@ -205,15 +205,15 @@ final class BottomActionSheetView: UIView {
     private func foregroundColor(for style: Action.Style) -> UIColor {
         switch style {
         case .normal, .cancel:
-            return .label
+            return OutPickTheme.ColorToken.accent
         case .destructive:
-            return .systemRed
+            return OutPickTheme.ColorToken.destructive
         }
     }
 
     private func makeSeparator() -> UIView {
         let separator = UIView()
-        separator.backgroundColor = UIColor.separator.withAlphaComponent(0.5)
+        separator.backgroundColor = OutPickTheme.ColorToken.borderSubtle
         separator.translatesAutoresizingMaskIntoConstraints = false
         separator.heightAnchor.constraint(equalToConstant: 1 / UIScreen.main.scale).isActive = true
         return separator

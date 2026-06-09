@@ -38,7 +38,7 @@ class ChatCustomPopUpMenu: UIView {
     // exclamationmark.triangle
     private lazy var replyButton = UIButton.menuButton(title: "답장", systemImageName: "arrowshape.turn.up.right.fill")
     private lazy var copyButton = UIButton.menuButton(title: "복사", systemImageName: "document.on.clipboard")
-    private lazy var deleteButton = UIButton.menuButton(title: "삭제", systemImageName: "trash", tintColor: .red, isDestructive: true)
+    private lazy var deleteButton = UIButton.menuButton(title: "삭제", systemImageName: "trash", tintColor: OutPickTheme.ColorToken.destructive, isDestructive: true)
     private lazy var announceButton = UIButton.menuButton(title: "공지", systemImageName: "megaphone.fill")
 
     private func setPrimaryAction(_ mode: PrimaryActionMode) {
@@ -65,7 +65,7 @@ class ChatCustomPopUpMenu: UIView {
     
     private func makeSeparator() -> UIView {
         let view = UIView()
-        view.backgroundColor = .white
+        view.backgroundColor = OutPickTheme.ColorToken.borderSubtle
         view.heightAnchor.constraint(equalToConstant: 1.0 / UIScreen.main.scale).isActive = true
         return view
     }
@@ -163,14 +163,14 @@ extension UIButton.Configuration {
         attrTitle.font = .systemFont(ofSize: 12.0, weight: .medium)
         config.attributedTitle = attrTitle
         config.titleAlignment = .leading
-        config.baseForegroundColor = isDestructive ? .red : .white
+        config.baseForegroundColor = isDestructive ? OutPickTheme.ColorToken.destructive : OutPickTheme.ColorToken.textPrimary
         
         return config
     }
 }
 
 extension UIButton {
-    static func menuButton(title: String, systemImageName: String, tintColor: UIColor = .white, isDestructive: Bool = false) -> UIButton {
+    static func menuButton(title: String, systemImageName: String, tintColor: UIColor = OutPickTheme.ColorToken.textPrimary, isDestructive: Bool = false) -> UIButton {
         let btn = UIButton(type: .system)
         btn.configuration = .menuButton(title: title, systemImageName: systemImageName, isDestructive: isDestructive)
         

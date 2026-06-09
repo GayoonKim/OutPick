@@ -82,7 +82,7 @@ class CustomNavigationBarView: UIView {
         config.image = UIImage(systemName: "magnifyingglass")
         config.buttonSize = .small
         config.imagePlacement = .leading
-        config.baseForegroundColor = OutPickTheme.ColorToken.iconSecondary
+        config.baseForegroundColor = OutPickTheme.ColorToken.accent
         
         button.configuration = config
         button.backgroundColor = OutPickTheme.ColorToken.surfaceBase
@@ -101,7 +101,7 @@ class CustomNavigationBarView: UIView {
         config.image = UIImage(systemName: "text.justify")
         config.buttonSize = .small
         config.imagePlacement = .leading
-        config.baseForegroundColor = OutPickTheme.ColorToken.iconPrimary
+        config.baseForegroundColor = OutPickTheme.ColorToken.accent
         
         button.configuration = config
         button.backgroundColor = OutPickTheme.ColorToken.surfaceBase
@@ -120,7 +120,7 @@ class CustomNavigationBarView: UIView {
         config.image = UIImage(systemName: "chevron.left")
         config.buttonSize = .small
         config.imagePlacement = .leading
-        config.baseForegroundColor = OutPickTheme.ColorToken.iconPrimary
+        config.baseForegroundColor = OutPickTheme.ColorToken.accent
         
         button.configuration = config
         button.backgroundColor = OutPickTheme.ColorToken.surfaceBase
@@ -162,7 +162,7 @@ class CustomNavigationBarView: UIView {
         config.image = UIImage(systemName: "bell.fill")
         config.buttonSize = .small
         config.imagePlacement = .leading
-        config.baseForegroundColor = OutPickTheme.ColorToken.iconPrimary
+        config.baseForegroundColor = OutPickTheme.ColorToken.accent
         
         button.configuration = config
         button.backgroundColor = OutPickTheme.ColorToken.surfaceBase
@@ -252,6 +252,8 @@ class CustomNavigationBarView: UIView {
         searchContainer.isHidden = true
 
         titleLabel.text = roomTitle
+        setSearchButtonForegroundColor(OutPickTheme.ColorToken.accent)
+        setSettingButtonForegroundColor(OutPickTheme.ColorToken.accent)
 
         backBtn.removeTarget(nil, action: nil, for: .allEvents)
         searchBtn.removeTarget(nil, action: nil, for: .allEvents)
@@ -281,6 +283,7 @@ class CustomNavigationBarView: UIView {
     
     func configureForRoomList(target: AnyObject, onSearch: Selector, onCreate: Selector) {
         titleLabel.text = "OutPick"
+        setSearchButtonForegroundColor(OutPickTheme.ColorToken.accent)
         
         searchBtn.removeTarget(nil, action: nil, for: .allEvents)
         createBtn.removeTarget(nil, action: nil, for: .allEvents)
@@ -293,6 +296,18 @@ class CustomNavigationBarView: UIView {
             centerViews: [],
             rightViews: [searchBtn, createBtn]
         )
+    }
+
+    private func setSearchButtonForegroundColor(_ color: UIColor) {
+        var config = searchBtn.configuration ?? UIButton.Configuration.plain()
+        config.baseForegroundColor = color
+        searchBtn.configuration = config
+    }
+
+    private func setSettingButtonForegroundColor(_ color: UIColor) {
+        var config = settingBtn.configuration ?? UIButton.Configuration.plain()
+        config.baseForegroundColor = color
+        settingBtn.configuration = config
     }
     
     func switchToSearchMode() {
@@ -355,7 +370,7 @@ extension UIButton {
         config.image = UIImage(systemName: name)
         config.buttonSize = .small
         config.imagePlacement = .leading
-        config.baseForegroundColor = OutPickTheme.ColorToken.iconPrimary
+        config.baseForegroundColor = OutPickTheme.ColorToken.accent
 
         button.configuration = config
         button.backgroundColor = OutPickTheme.ColorToken.surfaceBase

@@ -17,11 +17,12 @@ final class RoomCreateViewController: UIViewController, ChatModalAnimatable, UII
     private lazy var createBtn: UIButton = {
         let button = UIButton(type: .system)
         button.setTitle("생성", for: .normal)
-        button.setTitleColor(.lightGray, for: .disabled)
-        button.setTitleColor(.black, for: .normal)
+        button.setTitleColor(OutPickTheme.ColorToken.textDisabled, for: .disabled)
+        button.setTitleColor(OutPickTheme.ColorToken.backgroundBase, for: .normal)
+        button.titleLabel?.font = .systemFont(ofSize: 16, weight: .semibold)
         button.isEnabled = false
         button.clipsToBounds = true
-        button.backgroundColor = UIColor(white: 0.1, alpha: 0.05)
+        button.backgroundColor = OutPickTheme.ColorToken.surfaceElevated
         button.accessibilityIdentifier = "sendButton"
         button.translatesAutoresizingMaskIntoConstraints = false
         button.addTarget(self, action: #selector(handleCreateButtonTap), for: .touchUpInside)
@@ -39,6 +40,7 @@ final class RoomCreateViewController: UIViewController, ChatModalAnimatable, UII
     let addImageButton: UIButton = {
         let button = UIButton(type: .system)
         button.setImage(UIImage(systemName: "plus.circle.fill"), for: .normal)
+        button.tintColor = OutPickTheme.ColorToken.accent
         
         return button
     }()
@@ -46,7 +48,7 @@ final class RoomCreateViewController: UIViewController, ChatModalAnimatable, UII
     let removeImageButton: UIButton = {
         let button = UIButton(type: .system)
         button.setImage(UIImage(systemName: "minus.circle.fill"), for: .normal)
-        button.tintColor = .red
+        button.tintColor = OutPickTheme.ColorToken.destructive
         
         return button
     }()
@@ -213,7 +215,11 @@ final class RoomCreateViewController: UIViewController, ChatModalAnimatable, UII
         textView.delegate = self
         textView.clipsToBounds = true
         textView.layer.cornerRadius = 10
-        textView.backgroundColor = UIColor(white: 0.1, alpha: 0.03)
+        textView.backgroundColor = OutPickTheme.ColorToken.surfaceBase
+        textView.textColor = OutPickTheme.ColorToken.textPrimary
+        textView.tintColor = OutPickTheme.ColorToken.accent
+        textView.layer.borderColor = OutPickTheme.ColorToken.borderSubtle.cgColor
+        textView.layer.borderWidth = 1
         textView.font = UIFont.preferredFont(forTextStyle: .headline)
         textView.font = UIFont.systemFont(ofSize: 15)
     }
@@ -359,6 +365,9 @@ private extension RoomCreateViewController {
 
     func renderViewModelState(_ state: RoomCreateViewModel.State) {
         createBtn.isEnabled = state.isCreateEnabled
+        createBtn.backgroundColor = state.isCreateEnabled
+            ? OutPickTheme.ColorToken.accent
+            : OutPickTheme.ColorToken.surfaceElevated
         roomNameCountLabel.text = "\(state.roomNameCount) / 20"
         roomDescriptionCountLabel.text = "\(state.roomDescriptionCount) / 200"
         roomNameTextView.isEditable = !state.isSubmitting

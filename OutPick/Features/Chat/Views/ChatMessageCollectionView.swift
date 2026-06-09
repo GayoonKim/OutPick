@@ -19,6 +19,7 @@ class ChatMessageCollectionView: UICollectionView {
     init() {
         let layout = Self.configureLayout()
         super.init(frame: .zero, collectionViewLayout: layout)
+        backgroundColor = OutPickTheme.ColorToken.backgroundBase
 
         // cell 등록
         registerCells()

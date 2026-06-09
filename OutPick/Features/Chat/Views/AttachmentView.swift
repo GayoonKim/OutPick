@@ -30,7 +30,9 @@ class AttachmentView: UIView {
     }
     
     private func setupAttachmentView() {
-        backgroundColor = UIColor(white: 0.1, alpha: 0.05)
+        backgroundColor = OutPickTheme.ColorToken.backgroundRaised
+        layer.borderColor = OutPickTheme.ColorToken.borderSubtle.cgColor
+        layer.borderWidth = 1
         layer.cornerRadius = 20
         isHidden = true
         
@@ -39,8 +41,8 @@ class AttachmentView: UIView {
         for btn in ["photo", "camera" ] {
             let button = UIButton(type: .system)
             button.setImage(UIImage(systemName: btn), for: .normal)
-            button.tintColor = .black
-            button.backgroundColor = .white
+            button.tintColor = OutPickTheme.ColorToken.accent
+            button.backgroundColor = OutPickTheme.ColorToken.accent.withAlphaComponent(0.14)
             button.accessibilityIdentifier = btn
             button.addTarget(self, action: #selector(btnTapped), for: .touchUpInside)
             

@@ -13,7 +13,9 @@ class DateSeperatorCell: UICollectionViewCell {
     
     private let dateLabelBackground: UIView = {
         let view = UIView()
-        view.backgroundColor = .secondarySystemBackground
+        view.backgroundColor = OutPickTheme.ColorToken.surfaceBase
+        view.layer.borderColor = OutPickTheme.ColorToken.borderSubtle.cgColor
+        view.layer.borderWidth = 1
         view.layer.cornerRadius = 15
         view.translatesAutoresizingMaskIntoConstraints = false
         
@@ -23,7 +25,7 @@ class DateSeperatorCell: UICollectionViewCell {
     private let dateLabel: UILabel = {
         let label = UILabel()
         label.font = .systemFont(ofSize: 12, weight: .medium)
-        label.textColor = .black
+        label.textColor = OutPickTheme.ColorToken.textSecondary
         label.textAlignment = .center
         label.backgroundColor = .clear
         label.layer.cornerRadius = 20

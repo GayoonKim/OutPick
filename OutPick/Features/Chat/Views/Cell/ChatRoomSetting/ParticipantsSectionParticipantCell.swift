@@ -17,7 +17,7 @@ class ParticipantsSectionParticipantCell: UICollectionViewCell {
     private lazy var participantLabel: UILabel = {
         let label = UILabel()
         label.font = .systemFont(ofSize: 14, weight: .semibold)
-        label.textColor = .darkGray
+        label.textColor = OutPickTheme.ColorToken.textPrimary
         label.translatesAutoresizingMaskIntoConstraints = false
         
         return label
@@ -40,7 +40,7 @@ class ParticipantsSectionParticipantCell: UICollectionViewCell {
         
         let collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
         collectionView.translatesAutoresizingMaskIntoConstraints = false
-        collectionView.backgroundColor = .white
+        collectionView.backgroundColor = OutPickTheme.ColorToken.surfaceBase
         collectionView.allowsSelection = true
         collectionView.showsHorizontalScrollIndicator = false
         collectionView.dataSource = self
@@ -55,7 +55,9 @@ class ParticipantsSectionParticipantCell: UICollectionViewCell {
         
         contentView.layer.cornerRadius = 10
         contentView.layer.masksToBounds = true
-        contentView.backgroundColor = .white
+        contentView.backgroundColor = OutPickTheme.ColorToken.surfaceBase
+        contentView.layer.borderColor = OutPickTheme.ColorToken.borderSubtle.cgColor
+        contentView.layer.borderWidth = 1
         
         contentView.addSubview(participantLabel)
         contentView.addSubview(verticalCollectionView)

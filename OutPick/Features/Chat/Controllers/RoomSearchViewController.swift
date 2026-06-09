@@ -24,9 +24,11 @@ class RoomSearchViewController: UIViewController {
     private let searchContainer: UIView = {
         let v = UIView()
         v.translatesAutoresizingMaskIntoConstraints = false
-        v.backgroundColor = .secondarySystemBackground
+        v.backgroundColor = OutPickTheme.ColorToken.surfaceBase
         v.layer.cornerRadius = 12
         v.layer.masksToBounds = true
+        v.layer.borderWidth = 1
+        v.layer.borderColor = OutPickTheme.ColorToken.borderSubtle.cgColor
         return v
     }()
 
@@ -34,7 +36,7 @@ class RoomSearchViewController: UIViewController {
         let iv = UIImageView(image: UIImage(systemName: "magnifyingglass"))
         iv.translatesAutoresizingMaskIntoConstraints = false
         iv.contentMode = .scaleAspectFit
-        iv.tintColor = .secondaryLabel
+        iv.tintColor = OutPickTheme.ColorToken.iconSecondary
         return iv
     }()
 
@@ -48,6 +50,12 @@ class RoomSearchViewController: UIViewController {
         tf.autocorrectionType = .no
         tf.spellCheckingType = .no
         tf.enablesReturnKeyAutomatically = true
+        tf.textColor = OutPickTheme.ColorToken.textPrimary
+        tf.tintColor = OutPickTheme.ColorToken.accent
+        tf.attributedPlaceholder = NSAttributedString(
+            string: "방 이름이나 키워드 검색",
+            attributes: [.foregroundColor: OutPickTheme.ColorToken.textTertiary]
+        )
         return tf
     }()
 
@@ -68,7 +76,7 @@ class RoomSearchViewController: UIViewController {
         label.translatesAutoresizingMaskIntoConstraints = false
         label.text = "최근 검색어"
         label.font = .systemFont(ofSize: 16, weight: .semibold)
-        label.textColor = .label
+        label.textColor = OutPickTheme.ColorToken.textPrimary
         return label
     }()
 
@@ -117,7 +125,7 @@ class RoomSearchViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        self.view.backgroundColor = .white
+        self.view.backgroundColor = OutPickTheme.ColorToken.backgroundBase
         
         setupNavigationBar()
         setupSearchBar()
@@ -142,7 +150,7 @@ class RoomSearchViewController: UIViewController {
         let placeholderLabel = UILabel()
         placeholderLabel.text = "일치하는 채팅방이 없어요."
         placeholderLabel.textAlignment = .center
-        placeholderLabel.textColor = .secondaryLabel
+        placeholderLabel.textColor = OutPickTheme.ColorToken.textSecondary
         placeholderLabel.font = .systemFont(ofSize: 14)
         searchResultsCollection.backgroundView = placeholderLabel
         searchResultsCollection.backgroundView?.isHidden = true
@@ -269,7 +277,7 @@ class RoomSearchViewController: UIViewController {
         let placeholderLabel = UILabel()
         placeholderLabel.text = "최근 검색어가 없어요."
         placeholderLabel.textAlignment = .center
-        placeholderLabel.textColor = .secondaryLabel
+        placeholderLabel.textColor = OutPickTheme.ColorToken.textSecondary
         placeholderLabel.font = .systemFont(ofSize: 14)
         recentSearchesCollection.backgroundView = placeholderLabel
     }
@@ -378,16 +386,18 @@ class RecentSearchChipCell: UICollectionViewCell {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        contentView.backgroundColor = .systemGray5
+        contentView.backgroundColor = OutPickTheme.ColorToken.surfaceBase
         contentView.layer.cornerRadius = 12
         contentView.layer.masksToBounds = true
+        contentView.layer.borderWidth = 1
+        contentView.layer.borderColor = OutPickTheme.ColorToken.borderSubtle.cgColor
 
         label.font = .systemFont(ofSize: 14)
-        label.textColor = .label
+        label.textColor = OutPickTheme.ColorToken.textPrimary
         label.translatesAutoresizingMaskIntoConstraints = false
 
         deleteButton.setTitle("x", for: .normal)
-        deleteButton.setTitleColor(.secondaryLabel, for: .normal)
+        deleteButton.setTitleColor(OutPickTheme.ColorToken.iconSecondary, for: .normal)
         deleteButton.titleLabel?.font = .systemFont(ofSize: 12, weight: .bold)
         deleteButton.translatesAutoresizingMaskIntoConstraints = false
         deleteButton.addTarget(self, action: #selector(deleteTapped), for: .touchUpInside)
@@ -430,11 +440,11 @@ class SearchResultRoomCell: UICollectionViewCell {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        contentView.backgroundColor = .systemBackground
+        contentView.backgroundColor = OutPickTheme.ColorToken.surfaceBase
         contentView.layer.cornerRadius = 12
         contentView.layer.masksToBounds = true
         contentView.layer.borderWidth = 1
-        contentView.layer.borderColor = UIColor.systemGray5.cgColor
+        contentView.layer.borderColor = OutPickTheme.ColorToken.borderSubtle.cgColor
         
 
         // 이미지뷰 (둥근 사각형)
@@ -445,17 +455,17 @@ class SearchResultRoomCell: UICollectionViewCell {
 
         // 방 이름
         roomNameLabel.font = .systemFont(ofSize: 16, weight: .semibold)
-        roomNameLabel.textColor = .label
+        roomNameLabel.textColor = OutPickTheme.ColorToken.textPrimary
         roomNameLabel.translatesAutoresizingMaskIntoConstraints = false
 
         // 참여자 수
         participantsLabel.font = .systemFont(ofSize: 13)
-        participantsLabel.textColor = .secondaryLabel
+        participantsLabel.textColor = OutPickTheme.ColorToken.textSecondary
         participantsLabel.translatesAutoresizingMaskIntoConstraints = false
 
         // 마지막 메시지 시간
         lastMessageTimeLabel.font = .systemFont(ofSize: 13)
-        lastMessageTimeLabel.textColor = .secondaryLabel
+        lastMessageTimeLabel.textColor = OutPickTheme.ColorToken.textTertiary
         lastMessageTimeLabel.translatesAutoresizingMaskIntoConstraints = false
         lastMessageTimeLabel.textAlignment = .right
 
@@ -525,6 +535,6 @@ class SearchResultRoomCell: UICollectionViewCell {
 
     private func applyDefaultImage() {
         roomImageView.image = UIImage(systemName: "person.3.fill")
-        roomImageView.tintColor = .secondaryLabel
+        roomImageView.tintColor = OutPickTheme.ColorToken.iconSecondary
     }
 }

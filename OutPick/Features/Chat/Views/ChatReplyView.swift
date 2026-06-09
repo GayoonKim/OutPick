@@ -33,7 +33,7 @@ class ChatReplyView: UIView {
         config.image = UIImage(systemName: "xmark")
         config.buttonSize = .small
         config.imagePlacement = .trailing
-        config.baseForegroundColor = .black
+        config.baseForegroundColor = OutPickTheme.ColorToken.iconSecondary
         button.configuration = config
         
         return button
@@ -54,7 +54,9 @@ class ChatReplyView: UIView {
     }
     
     private func setupViews() {
-        self.backgroundColor = .secondarySystemBackground
+        self.backgroundColor = OutPickTheme.ColorToken.backgroundRaised
+        self.layer.borderColor = OutPickTheme.ColorToken.borderSubtle.cgColor
+        self.layer.borderWidth = 1
         
         addSubview(senderLabel)
         addSubview(messageLabel)
@@ -82,6 +84,8 @@ class ChatReplyView: UIView {
     }
     
     func configure(with message: ChatMessage) {
+        senderLabel.textColor = OutPickTheme.ColorToken.textPrimary
+        messageLabel.textColor = OutPickTheme.ColorToken.textSecondary
         senderLabel.text = message.senderNickname
         messageLabel.text = message.msg
     }

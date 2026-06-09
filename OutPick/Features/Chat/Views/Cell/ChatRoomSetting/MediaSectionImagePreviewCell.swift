@@ -22,7 +22,7 @@ class MediaSectionImagePreviewCell: UICollectionViewCell {
     private lazy var placeholderImageView: UIImageView = {
         let imageView = UIImageView(image: UIImage(systemName: "photo"))
         imageView.translatesAutoresizingMaskIntoConstraints = false
-        imageView.tintColor = .tertiaryLabel
+        imageView.tintColor = OutPickTheme.ColorToken.iconSecondary
         imageView.contentMode = .scaleAspectFit
         return imageView
     }()
@@ -46,7 +46,7 @@ class MediaSectionImagePreviewCell: UICollectionViewCell {
         
         contentView.layer.masksToBounds = true
         contentView.layer.cornerRadius = 7
-        contentView.backgroundColor = .secondarySystemFill
+        contentView.backgroundColor = OutPickTheme.ColorToken.surfaceElevated
         
         contentView.addSubview(imageView)
         contentView.addSubview(placeholderImageView)

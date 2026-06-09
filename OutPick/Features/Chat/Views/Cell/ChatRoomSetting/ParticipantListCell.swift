@@ -14,12 +14,12 @@ class ParticipantListCell: UICollectionViewCell {
     private lazy var userProfileImageView: UIImageView = {
         let imageView = UIImageView()
         imageView.image = UIImage(named: "Default_Profile")
-        imageView.tintColor = .black
+        imageView.tintColor = OutPickTheme.ColorToken.iconSecondary
         imageView.contentMode = .scaleAspectFill
         imageView.clipsToBounds = true
         imageView.layer.cornerRadius = 12
         imageView.translatesAutoresizingMaskIntoConstraints = false
-        imageView.backgroundColor = .systemGray6
+        imageView.backgroundColor = OutPickTheme.ColorToken.surfaceElevated
         
         return imageView
     }()
@@ -27,7 +27,7 @@ class ParticipantListCell: UICollectionViewCell {
     private lazy var nickNameLabel: UILabel = {
         let label = UILabel()
         label.font = .systemFont(ofSize: 14, weight: .regular)
-        label.textColor = .darkGray
+        label.textColor = OutPickTheme.ColorToken.textSecondary
         label.translatesAutoresizingMaskIntoConstraints = false
         
         return label

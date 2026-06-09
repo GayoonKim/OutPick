@@ -14,7 +14,7 @@ class ChatSearchUIView: UIView {
         let lb = UILabel()
         lb.text = "검색 결과 없음"
         lb.font = .systemFont(ofSize: 15, weight: .medium)
-        lb.textColor = .black
+        lb.textColor = OutPickTheme.ColorToken.textPrimary
         lb.translatesAutoresizingMaskIntoConstraints = false
         
         return lb
@@ -33,9 +33,9 @@ class ChatSearchUIView: UIView {
     
     private var upBtn: UIButton = {
         let btn = UIButton(type: .system)
-        btn.setImage(UIImage(systemName: "chevron.up")?.withTintColor(.black, renderingMode: .alwaysOriginal), for: .normal)
-        btn.setImage(UIImage(systemName: "chevron.up")?.withTintColor(.lightGray, renderingMode: .alwaysOriginal), for: .disabled)
-        btn.backgroundColor = .white
+        btn.setImage(UIImage(systemName: "chevron.up")?.withTintColor(OutPickTheme.ColorToken.iconPrimary, renderingMode: .alwaysOriginal), for: .normal)
+        btn.setImage(UIImage(systemName: "chevron.up")?.withTintColor(OutPickTheme.ColorToken.iconSecondary, renderingMode: .alwaysOriginal), for: .disabled)
+        btn.backgroundColor = OutPickTheme.ColorToken.surfaceElevated
         btn.layer.masksToBounds = true
         btn.clipsToBounds = true
         btn.isEnabled = false
@@ -46,9 +46,9 @@ class ChatSearchUIView: UIView {
     
     private var downBtn: UIButton = {
         let btn = UIButton(type: .system)
-        btn.setImage(UIImage(systemName: "chevron.down")?.withTintColor(.black, renderingMode: .alwaysOriginal), for: .normal)
-        btn.setImage(UIImage(systemName: "chevron.down")?.withTintColor(.lightGray, renderingMode: .alwaysOriginal), for: .disabled)
-        btn.backgroundColor = .white
+        btn.setImage(UIImage(systemName: "chevron.down")?.withTintColor(OutPickTheme.ColorToken.iconPrimary, renderingMode: .alwaysOriginal), for: .normal)
+        btn.setImage(UIImage(systemName: "chevron.down")?.withTintColor(OutPickTheme.ColorToken.iconSecondary, renderingMode: .alwaysOriginal), for: .disabled)
+        btn.backgroundColor = OutPickTheme.ColorToken.surfaceElevated
         btn.layer.masksToBounds = true
         btn.clipsToBounds = true
         btn.isEnabled = false
@@ -82,7 +82,9 @@ class ChatSearchUIView: UIView {
         btnContainer.addArrangedSubview(downBtn)
         addSubview(messageCountLabel)
         addSubview(btnContainer)
-        self.backgroundColor = .secondarySystemBackground
+        self.backgroundColor = OutPickTheme.ColorToken.backgroundRaised
+        self.layer.borderColor = OutPickTheme.ColorToken.borderSubtle.cgColor
+        self.layer.borderWidth = 1
         
         NSLayoutConstraint.activate([
             upBtn.widthAnchor.constraint(equalToConstant: 30),

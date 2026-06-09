@@ -25,7 +25,7 @@ class ChatRoomInfoCell: UICollectionViewCell {
     private let roomNameLabel: UILabel = {
         let label = UILabel()
         label.font = .boldSystemFont(ofSize: 16)
-        label.textColor = .black
+        label.textColor = OutPickTheme.ColorToken.textPrimary
         label.translatesAutoresizingMaskIntoConstraints = false
         
         return label
@@ -34,7 +34,7 @@ class ChatRoomInfoCell: UICollectionViewCell {
     private let roomParticipantCountLabel: UILabel = {
         let label = UILabel()
         label.font = .systemFont(ofSize: 12)
-        label.textColor = .gray
+        label.textColor = OutPickTheme.ColorToken.textSecondary
         label.translatesAutoresizingMaskIntoConstraints = false
         
         return label
@@ -42,7 +42,9 @@ class ChatRoomInfoCell: UICollectionViewCell {
     
     private let editButtonView: UIView = {
         let view = UIView()
-        view.backgroundColor = .white
+        view.backgroundColor = OutPickTheme.ColorToken.accent.withAlphaComponent(0.14)
+        view.layer.borderColor = OutPickTheme.ColorToken.accent.withAlphaComponent(0.45).cgColor
+        view.layer.borderWidth = 1
         view.clipsToBounds = true
         view.layer.cornerRadius = 15
         view.translatesAutoresizingMaskIntoConstraints = false
@@ -53,7 +55,7 @@ class ChatRoomInfoCell: UICollectionViewCell {
     private let editButton: UIButton = {
         let btn = UIButton()
         btn.setTitle("오픈채팅 관리", for: .normal)
-        btn.setTitleColor(.black, for: .normal)
+        btn.setTitleColor(OutPickTheme.ColorToken.accent, for: .normal)
         btn.translatesAutoresizingMaskIntoConstraints = false
         
         return btn
@@ -133,7 +135,7 @@ class ChatRoomInfoCell: UICollectionViewCell {
         
         roomNameLabel.text = room.roomName
         roomParticipantCountLabel.text = "\(room.participants.count)명 참여"
-        backgroundColor = UIColor(white: 0.3, alpha: 0.03)
+        backgroundColor = OutPickTheme.ColorToken.backgroundBase
         
         if LoginManager.shared.currentUserProfile?.email != room.creatorID {
             editButtonView.isHidden = true

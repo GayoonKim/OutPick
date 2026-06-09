@@ -11,7 +11,7 @@ import UIKit
 class ChatNotiView: UIView {
     private lazy var container: UIView = {
         let view = UIView()
-        view.backgroundColor = .darkGray
+        view.backgroundColor = OutPickTheme.ColorToken.surfaceElevated
         view.translatesAutoresizingMaskIntoConstraints = false
         
         return view
@@ -20,7 +20,7 @@ class ChatNotiView: UIView {
     private lazy var notiLabel: UILabel = {
         let lb = UILabel()
         lb.font = .systemFont(ofSize: 15, weight: .light)
-        lb.textColor = .white
+        lb.textColor = OutPickTheme.ColorToken.textPrimary
         lb.translatesAutoresizingMaskIntoConstraints = false
         
         return lb
@@ -42,8 +42,8 @@ class ChatNotiView: UIView {
     private func setupViews() {
         addSubview(container)
         container.addSubview(notiLabel)
-        container.alpha = 0.5
-        container.layer.opacity = 0.5
+        container.alpha = 0.92
+        container.layer.opacity = 0.92
         
         NSLayoutConstraint.activate([
             container.topAnchor.constraint(equalTo: topAnchor),

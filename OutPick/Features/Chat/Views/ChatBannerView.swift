@@ -16,7 +16,7 @@ final class ChatBannerView: UIView {
     private let titleLabel: UILabel = {
         let label = UILabel()
         label.font = UIFont.boldSystemFont(ofSize: 14)
-        label.textColor = .white
+        label.textColor = OutPickTheme.ColorToken.textPrimary
         label.numberOfLines = 1
         label.lineBreakMode = .byTruncatingTail
         return label
@@ -25,7 +25,7 @@ final class ChatBannerView: UIView {
     private let subtitleLabel: UILabel = {
         let label = UILabel()
         label.font = UIFont.systemFont(ofSize: 12)
-        label.textColor = .white
+        label.textColor = OutPickTheme.ColorToken.textSecondary
         label.numberOfLines = 2
         label.lineBreakMode = .byTruncatingTail
         return label
@@ -86,9 +86,9 @@ final class ChatBannerView: UIView {
         hasPresented = true
 
         let minBannerHeight: CGFloat = 55
-        backgroundColor = .black
+        backgroundColor = OutPickTheme.ColorToken.surfaceElevated
         self.layer.cornerRadius = 16
-        self.layer.shadowColor = UIColor.black.cgColor
+        self.layer.shadowColor = OutPickTheme.ColorToken.backgroundBase.cgColor
         self.layer.shadowOpacity = 0.3
         self.layer.shadowOffset = CGSize(width: 0, height: 2)
         self.layer.shadowRadius = 4

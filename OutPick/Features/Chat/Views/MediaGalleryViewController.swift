@@ -45,7 +45,7 @@ class MediaGalleryViewController: UICollectionViewController {
         super.init(collectionViewLayout: layout)
         self.title = "미디어"
         configureDataSource()
-        collectionView.backgroundColor = .systemBackground
+        collectionView.backgroundColor = OutPickTheme.ColorToken.backgroundBase
         collectionView.register(GalleryThumbCell.self, forCellWithReuseIdentifier: GalleryThumbCell.reuseID)
         collectionView.register(GalleryHeaderView.self,
                                 forSupplementaryViewOfKind: UICollectionView.elementKindSectionHeader,
@@ -78,21 +78,21 @@ class MediaGalleryViewController: UICollectionViewController {
     private func setupTopBar() {
         // Bar appearance
         topBar.translatesAutoresizingMaskIntoConstraints = false
-        topBar.backgroundColor = .systemBackground
+        topBar.backgroundColor = OutPickTheme.ColorToken.backgroundBase
         view.addSubview(topBar)
 
         // Title
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         titleLabel.text = "미디어"
         titleLabel.font = .systemFont(ofSize: 17, weight: .semibold)
-        titleLabel.textColor = .label
+        titleLabel.textColor = OutPickTheme.ColorToken.textPrimary
         topBar.addSubview(titleLabel)
 
         // Close button
         closeButton.translatesAutoresizingMaskIntoConstraints = false
         let cfg = UIImage.SymbolConfiguration(pointSize: 16, weight: .semibold)
         closeButton.setImage(UIImage(systemName: "xmark", withConfiguration: cfg), for: .normal)
-        closeButton.tintColor = .label
+        closeButton.tintColor = OutPickTheme.ColorToken.accent
         closeButton.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
         // Larger hit area
         closeButton.contentEdgeInsets = UIEdgeInsets(top: 10, left: 10, bottom: 10, right: 10)
@@ -101,7 +101,7 @@ class MediaGalleryViewController: UICollectionViewController {
         // Bottom separator
         let sep = UIView()
         sep.translatesAutoresizingMaskIntoConstraints = false
-        sep.backgroundColor = .separator
+        sep.backgroundColor = OutPickTheme.ColorToken.borderSubtle
         topBar.addSubview(sep)
 
         // Layout
@@ -258,7 +258,7 @@ final class GalleryHeaderView: UICollectionReusableView {
         super.init(frame: frame)
         label.translatesAutoresizingMaskIntoConstraints = false
         label.font = .systemFont(ofSize: 15, weight: .semibold)
-        label.textColor = .secondaryLabel
+        label.textColor = OutPickTheme.ColorToken.textSecondary
         addSubview(label)
         NSLayoutConstraint.activate([
             label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),

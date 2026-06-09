@@ -49,7 +49,7 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        self.view.backgroundColor = .white
+        self.view.backgroundColor = OutPickTheme.ColorToken.backgroundBase
         
         self.attachInteractiveDismissGesture()
         
@@ -57,7 +57,7 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
         collectionView.register(RoomListCollectionViewCell.self, forCellWithReuseIdentifier: RoomListCollectionViewCell.identifier)
         collectionView.dataSource = dataSource
         collectionView.collectionViewLayout = configureLayout()
-        collectionView.backgroundColor = .white
+        collectionView.backgroundColor = OutPickTheme.ColorToken.backgroundBase
         collectionView.translatesAutoresizingMaskIntoConstraints = false
         collectionView.contentInsetAdjustmentBehavior = .never
 
@@ -111,7 +111,7 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
         let dataSource = DataSourceType(collectionView: collectionView) { (collectionView, indexPath, item) in
             
             let cell = collectionView.dequeueReusableCell(withReuseIdentifier: RoomListCollectionViewCell.identifier, for: indexPath) as! RoomListCollectionViewCell
-            cell.backgroundColor = .white
+            cell.backgroundColor = OutPickTheme.ColorToken.backgroundBase
             
             cell.configure(room: item.room, messages: item.messages)
 

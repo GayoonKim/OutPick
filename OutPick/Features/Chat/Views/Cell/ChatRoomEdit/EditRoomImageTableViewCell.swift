@@ -26,8 +26,8 @@ class EditRoomImageTableViewCell: UITableViewCell {
     private let cameraIconView: UIImageView = {
         let imageView = UIImageView()
         imageView.contentMode = .center
-        imageView.tintColor = .black
-        imageView.backgroundColor = .white
+        imageView.tintColor = OutPickTheme.ColorToken.accent
+        imageView.backgroundColor = OutPickTheme.ColorToken.accent.withAlphaComponent(0.14)
         imageView.clipsToBounds = true
         imageView.layer.cornerRadius = 13
         imageView.image = UIImage(systemName: "camera.fill")

@@ -20,7 +20,7 @@ class ChatRoomMediaCollectionViewCell: UICollectionViewCell {
     private lazy var imageVideoButtonImageView: UIImageView = {
         let imageView = UIImageView()
         imageView.image = UIImage(systemName: "photo.on.rectangle.angled")
-        imageView.tintColor = .systemGreen
+        imageView.tintColor = OutPickTheme.ColorToken.accent
         imageView.contentMode = .scaleAspectFill
         imageView.clipsToBounds = true
         imageView.translatesAutoresizingMaskIntoConstraints = false
@@ -31,7 +31,7 @@ class ChatRoomMediaCollectionViewCell: UICollectionViewCell {
     private lazy var imageVideoLabel: UILabel = {
         let label = UILabel()
         label.font = .systemFont(ofSize: 16)
-        label.textColor = .black
+        label.textColor = OutPickTheme.ColorToken.textPrimary
         label.translatesAutoresizingMaskIntoConstraints = false
         
         return label
@@ -45,6 +45,7 @@ class ChatRoomMediaCollectionViewCell: UICollectionViewCell {
         
         let collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
         collectionView.translatesAutoresizingMaskIntoConstraints = false
+        collectionView.backgroundColor = OutPickTheme.ColorToken.surfaceBase
         collectionView.showsHorizontalScrollIndicator = false
         collectionView.isUserInteractionEnabled = true
         collectionView.dataSource = self
@@ -60,7 +61,9 @@ class ChatRoomMediaCollectionViewCell: UICollectionViewCell {
         
         contentView.layer.cornerRadius = 10
         contentView.layer.masksToBounds = true
-        contentView.backgroundColor = .white
+        contentView.backgroundColor = OutPickTheme.ColorToken.surfaceBase
+        contentView.layer.borderColor = OutPickTheme.ColorToken.borderSubtle.cgColor
+        contentView.layer.borderWidth = 1
         
         self.contentView.addSubview(imageVideoButtonImageView)
         self.contentView.addSubview(imageVideoLabel)

@@ -15,7 +15,7 @@ class ChatImagePreviewCell: UICollectionViewCell {
     private let placeholderImageView: UIImageView = {
         let imageView = UIImageView(image: UIImage(systemName: "photo"))
         imageView.translatesAutoresizingMaskIntoConstraints = false
-        imageView.tintColor = .tertiaryLabel
+        imageView.tintColor = OutPickTheme.ColorToken.iconSecondary
         imageView.contentMode = .scaleAspectFit
         return imageView
     }()
@@ -24,7 +24,7 @@ class ChatImagePreviewCell: UICollectionViewCell {
         let indicator = UIActivityIndicatorView(style: .medium)
         indicator.translatesAutoresizingMaskIntoConstraints = false
         indicator.hidesWhenStopped = true
-        indicator.color = .secondaryLabel
+        indicator.color = OutPickTheme.ColorToken.accent
         return indicator
     }()
 
@@ -75,7 +75,7 @@ class ChatImagePreviewCell: UICollectionViewCell {
         super.init(frame: frame)
         contentView.layer.cornerRadius = 10
         contentView.layer.masksToBounds = true
-        contentView.backgroundColor = .secondarySystemFill
+        contentView.backgroundColor = OutPickTheme.ColorToken.surfaceBase
 
         contentView.addSubview(imageView)
         contentView.addSubview(placeholderImageView)
@@ -114,7 +114,7 @@ class ChatImagePreviewCell: UICollectionViewCell {
         imageView.contentMode = .scaleAspectFill
         imageView.clipsToBounds = true
         imageView.isOpaque = true
-        imageView.backgroundColor = .secondarySystemBackground
+        imageView.backgroundColor = OutPickTheme.ColorToken.surfaceBase
         imageView.accessibilityIgnoresInvertColors = true
     }
     

@@ -15,14 +15,15 @@ class EditRoomNameTableViewCell: UITableViewCell {
 
     private let nameTextView: UITextView = {
         let textView = UITextView()
-        textView.textColor = .placeholderText
+        textView.textColor = OutPickTheme.ColorToken.textTertiary
         textView.text = "채팅방 이름 (필수)"
         textView.font = UIFont.systemFont(ofSize: 14)
         textView.isScrollEnabled = false
         textView.translatesAutoresizingMaskIntoConstraints = false
         textView.textContainer.lineBreakMode = .byWordWrapping
         textView.textContainer.lineFragmentPadding = 0
-        textView.backgroundColor = .secondarySystemBackground
+        textView.backgroundColor = OutPickTheme.ColorToken.surfaceBase
+        textView.tintColor = OutPickTheme.ColorToken.accent
         
         return textView
     }()
@@ -31,9 +32,9 @@ class EditRoomNameTableViewCell: UITableViewCell {
         let label = UILabel()
         label.text = "0/20"
         label.font = .systemFont(ofSize: 12)
-        label.textColor = .secondaryLabel
+        label.textColor = OutPickTheme.ColorToken.textTertiary
         label.translatesAutoresizingMaskIntoConstraints = false
-        label.backgroundColor = .secondarySystemBackground
+        label.backgroundColor = OutPickTheme.ColorToken.surfaceBase
 
         return label
     }()
@@ -41,7 +42,7 @@ class EditRoomNameTableViewCell: UITableViewCell {
     private let clearButton: UIButton = {
         let button = UIButton(type: .system)
         button.setImage(UIImage(systemName: "xmark.circle.fill"), for: .normal)
-        button.tintColor = .secondaryLabel
+        button.tintColor = OutPickTheme.ColorToken.accent
         button.translatesAutoresizingMaskIntoConstraints = false
         
         return button
@@ -84,7 +85,9 @@ class EditRoomNameTableViewCell: UITableViewCell {
         nameTextView.delegate = self
         clearButton.addTarget(self, action: #selector(clearButtonTapped), for: .touchUpInside)
 
-        contentView.backgroundColor = .secondarySystemBackground
+        contentView.backgroundColor = OutPickTheme.ColorToken.surfaceBase
+        contentView.layer.borderColor = OutPickTheme.ColorToken.borderSubtle.cgColor
+        contentView.layer.borderWidth = 1
         contentView.layer.cornerRadius = 10
         
         contentView.addSubview(nameTextView)
@@ -116,14 +119,14 @@ class EditRoomNameTableViewCell: UITableViewCell {
     
     func configure(_ room: ChatRoom) {
         self.nameTextView.text = room.roomName
-        self.nameTextView.textColor = .black
+        self.nameTextView.textColor = OutPickTheme.ColorToken.textPrimary
         self.nameCountLabel.text = "\(room.roomName.count)/\(maxLength)"
     }
     
     @MainActor
     @objc private func clearButtonTapped() {
         nameTextView.text = "채팅방 이름 (필수)"
-        nameTextView.textColor = .placeholderText
+        nameTextView.textColor = OutPickTheme.ColorToken.textTertiary
         nameTextChanged.send(nameTextView.text ?? "")
         
         updateNameCountLabel()
@@ -178,9 +181,9 @@ extension EditRoomNameTableViewCell: UITextViewDelegate {
         DispatchQueue.main.async {
             print(textView.layer.bounds.maxY)
             
-            if textView.textColor == .placeholderText {
+            if textView.text == "채팅방 이름 (필수)" {
                 textView.text = nil
-                textView.textColor = .black
+                textView.textColor = OutPickTheme.ColorToken.textPrimary
             }
             
             self.updateNameCountLabel()
@@ -192,7 +195,7 @@ extension EditRoomNameTableViewCell: UITextViewDelegate {
         DispatchQueue.main.async {
             if textView.text.isEmpty {
                 textView.text = "채팅방 이름 (필수)"
-                textView.textColor = .placeholderText
+                textView.textColor = OutPickTheme.ColorToken.textTertiary
             }
             
             self.updateNameCountLabel()
