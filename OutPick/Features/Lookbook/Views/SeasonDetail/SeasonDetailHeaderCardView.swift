@@ -68,12 +68,6 @@ struct SeasonDetailHeaderCardView: View {
             .font(.footnote.weight(.semibold))
             .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
 
-            if let description = seasonDescription {
-                Text(description)
-                    .font(.subheadline)
-                    .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
@@ -83,8 +77,4 @@ struct SeasonDetailHeaderCardView: View {
         )
     }
 
-    private var seasonDescription: String? {
-        let trimmed = season.description.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
-    }
 }

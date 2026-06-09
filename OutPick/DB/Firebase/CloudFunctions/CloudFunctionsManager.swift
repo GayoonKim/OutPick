@@ -473,7 +473,8 @@ final class CloudFunctionsManager {
             duplicateJobCount: optionalIntValue(response, key: "duplicateJobCount") ?? 0,
             processedJobCount: try intValue(response, key: "processedJobCount"),
             failedJobCount: try intValue(response, key: "failedJobCount"),
-            skippedJobCount: try intValue(response, key: "skippedJobCount")
+            skippedJobCount: try intValue(response, key: "skippedJobCount"),
+            failedCandidates: seasonImportBatchFailures(response)
         )
     }
 
@@ -583,6 +584,29 @@ final class CloudFunctionsManager {
             saveCount: try intValue(dictionary, key: "saveCount"),
             viewCount: optionalIntValue(dictionary, key: "viewCount")
         )
+    }
+
+    private func seasonImportBatchFailures(
+        _ dictionary: [String: Any]
+    ) -> [SeasonImportBatchFailure] {
+        guard let rawItems = dictionary["failedCandidates"] as? [[String: Any]] else {
+            return []
+        }
+
+        return rawItems.compactMap { item in
+            guard let candidateID = item["candidateID"] as? String,
+                  !candidateID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else {
+                return nil
+            }
+
+            return SeasonImportBatchFailure(
+                candidateID: candidateID,
+                title: optionalStringValue(item, key: "title"),
+                errorMessage: optionalStringValue(item, key: "errorMessage")
+                    ?? "시즌 가져오기 작업을 준비하지 못했습니다."
+            )
+        }
     }
 
     private func commentMutationResult(

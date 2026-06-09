@@ -7,6 +7,12 @@
 
 import Foundation
 
+struct SeasonImportBatchFailure: Equatable {
+    let candidateID: String
+    let title: String?
+    let errorMessage: String
+}
+
 struct SeasonImportBatchProcessResult: Equatable {
     let brandID: BrandID
     let candidateIDs: [String]
@@ -16,4 +22,5 @@ struct SeasonImportBatchProcessResult: Equatable {
     let processedJobCount: Int
     let failedJobCount: Int
     let skippedJobCount: Int
+    let failedCandidates: [SeasonImportBatchFailure]
 }

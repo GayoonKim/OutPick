@@ -52,17 +52,52 @@ final class StartSeasonImportExtractionUseCase: StartSeasonImportExtractionUseCa
             sourceCandidateIDs: candidateIDs
         )
         let latestJobsByCandidateID = latestJobs(from: jobs)
+        let items = progressItems(
+            candidateIDs: candidateIDs,
+            latestJobsByCandidateID: latestJobsByCandidateID
+        )
 
         return SeasonImportExtractionProgress(
             totalCount: candidateIDs.count,
             matchedJobCount: latestJobsByCandidateID.count,
-            completedCount: latestJobsByCandidateID.values
-                .filter { $0.status.isSeasonReadyFlowFinished }
-                .count,
-            failedCount: latestJobsByCandidateID.values
-                .filter { $0.status.isFailed }
-                .count
+            completedCount: items.filter { $0.status != .processing }.count,
+            failedCount: items.filter { $0.status == .failed }.count,
+            items: items
         )
+    }
+
+    private func progressItems(
+        candidateIDs: [String],
+        latestJobsByCandidateID: [String: SeasonImportJob]
+    ) -> [SeasonImportExtractionProgress.Item] {
+        candidateIDs.map { candidateID in
+            guard let job = latestJobsByCandidateID[candidateID] else {
+                return SeasonImportExtractionProgress.Item(
+                    candidateID: candidateID,
+                    jobID: nil,
+                    status: .processing
+                )
+            }
+
+            return SeasonImportExtractionProgress.Item(
+                candidateID: candidateID,
+                jobID: job.id,
+                status: progressStatus(for: job)
+            )
+        }
+    }
+
+    private func progressStatus(
+        for job: SeasonImportJob
+    ) -> SeasonImportExtractionProgress.ItemStatus {
+        switch job.status {
+        case .succeeded:
+            return .succeeded
+        case .partialFailed, .failed, .cancelled:
+            return .failed
+        case .queued, .processing:
+            return .processing
+        }
     }
 
     private func latestJobs(

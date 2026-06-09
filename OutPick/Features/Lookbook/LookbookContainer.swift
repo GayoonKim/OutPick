@@ -266,6 +266,7 @@ final class LookbookContainer {
 
     func makeSeasonCandidateSelectionView(
         createdBrand: CreateBrandViewModel.CreatedBrand,
+        onToolbarCloseVisibilityChange: @escaping (Bool) -> Void = { _ in },
         onDismiss: @escaping () -> Void
     ) -> CreateBrandCandidateSelectionView {
         CreateBrandCandidateSelectionView(
@@ -280,6 +281,7 @@ final class LookbookContainer {
             ),
             discoveryErrorMessage: nil,
             emptySelectionButtonTitle: "닫기",
+            onToolbarCloseVisibilityChange: onToolbarCloseVisibilityChange,
             onComplete: onDismiss
         )
     }
@@ -288,26 +290,17 @@ final class LookbookContainer {
         brand: Brand,
         onDismiss: @escaping () -> Void
     ) -> some View {
-        NavigationView {
-            makeSeasonCandidateSelectionView(
-                createdBrand: CreateBrandViewModel.CreatedBrand(
-                    id: brand.id,
-                    name: brand.name,
-                    websiteURL: brand.websiteURL,
-                    lookbookArchiveURL: brand.lookbookArchiveURL,
-                    hasLogoAsset: brand.logoThumbPath != nil
-                ),
-                onDismiss: onDismiss
-            )
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("닫기") {
-                        onDismiss()
-                    }
-                }
-            }
-        }
-        .navigationViewStyle(StackNavigationViewStyle())
+        SeasonAdditionSheetView(
+            createdBrand: CreateBrandViewModel.CreatedBrand(
+                id: brand.id,
+                name: brand.name,
+                websiteURL: brand.websiteURL,
+                lookbookArchiveURL: brand.lookbookArchiveURL,
+                hasLogoAsset: brand.logoThumbPath != nil
+            ),
+            container: self,
+            onDismiss: onDismiss
+        )
     }
 
     func makeSeasonImportManagementView(
@@ -407,5 +400,37 @@ final class LookbookContainer {
             commentInteractionStore: interactionStore,
             currentUserIDProvider: currentUserIDProvider
         )
+    }
+}
+
+private struct SeasonAdditionSheetView: View {
+    let createdBrand: CreateBrandViewModel.CreatedBrand
+    let container: LookbookContainer
+    let onDismiss: () -> Void
+
+    @State private var isToolbarCloseVisible: Bool = true
+
+    var body: some View {
+        NavigationView {
+            container.makeSeasonCandidateSelectionView(
+                createdBrand: createdBrand,
+                onToolbarCloseVisibilityChange: { isVisible in
+                    isToolbarCloseVisible = isVisible
+                },
+                onDismiss: onDismiss
+            )
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("닫기") {
+                        onDismiss()
+                    }
+                    .opacity(isToolbarCloseVisible ? 1 : 0)
+                    .disabled(isToolbarCloseVisible == false)
+                    .accessibilityHidden(isToolbarCloseVisible == false)
+                }
+            }
+            .navigationBarHidden(isToolbarCloseVisible == false)
+        }
+        .navigationViewStyle(StackNavigationViewStyle())
     }
 }

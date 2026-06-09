@@ -31,6 +31,7 @@ struct CreateBrandFlowView: View {
     @State private var discoveryTask: Task<Void, Never>?
     @State private var logoPreparationTask: Task<Void, Never>?
     @State private var isShowingCloseConfirmation: Bool = false
+    @State private var isToolbarCloseVisible: Bool = true
     @State private var discoveryErrorMessage: String?
 
     private let provider: LookbookRepositoryProvider
@@ -99,9 +100,13 @@ struct CreateBrandFlowView: View {
                         Image(systemName: "xmark")
                             .foregroundStyle(OutPickTheme.SwiftUIColor.accent)
                     }
+                    .opacity(isToolbarCloseVisible ? 1 : 0)
+                    .disabled(isToolbarCloseVisible == false)
+                    .accessibilityHidden(isToolbarCloseVisible == false)
                     .accessibilityLabel("브랜드 등록 닫기")
                 }
             }
+            .navigationBarHidden(isToolbarCloseVisible == false)
             .alert(
                 closeConfirmationTitle,
                 isPresented: $isShowingCloseConfirmation
@@ -163,6 +168,9 @@ private extension CreateBrandFlowView {
                 ),
                 discoveryErrorMessage: discoveryErrorMessage,
                 emptySelectionButtonTitle: "브랜드 등록 마치기",
+                onToolbarCloseVisibilityChange: { isVisible in
+                    isToolbarCloseVisible = isVisible
+                },
                 onComplete: {
                     closeFlow()
                 }

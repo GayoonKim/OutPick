@@ -8,10 +8,16 @@
 import SwiftUI
 
 struct CreateBrandCandidateSelectionView: View {
-    private enum ImportProgressPhase {
+    private enum ImportProgressPhase: Equatable {
         case selecting
         case extracting
         case completed
+    }
+
+    private enum CandidateImportStatus {
+        case processing
+        case succeeded
+        case failed
     }
 
     let createdBrand: CreateBrandViewModel.CreatedBrand
@@ -19,6 +25,7 @@ struct CreateBrandCandidateSelectionView: View {
     let startSeasonImportExtractionUseCase: any StartSeasonImportExtractionUseCaseProtocol
     let discoveryErrorMessage: String?
     let emptySelectionButtonTitle: String
+    let onToolbarCloseVisibilityChange: (Bool) -> Void
     let onComplete: () -> Void
 
     @State private var selectedCandidateIDs: Set<String> = []
@@ -28,9 +35,11 @@ struct CreateBrandCandidateSelectionView: View {
     @State private var extractionTotalCount: Int = 0
     @State private var extractionCompletedCount: Int = 0
     @State private var extractionFailedCount: Int = 0
+    @State private var extractionProgressItems: [SeasonImportExtractionProgress.Item] = []
+    @State private var failedToStartCandidateIDs: Set<String> = []
+    @State private var retryingCandidateIDs: Set<String> = []
     @State private var progressPollingTask: Task<Void, Never>?
     @State private var submissionTask: Task<Void, Never>?
-    @State private var autoCompletionTask: Task<Void, Never>?
     @State private var isLoading: Bool = false
     @State private var isSubmitting: Bool = false
     @State private var message: String?
@@ -57,8 +66,12 @@ struct CreateBrandCandidateSelectionView: View {
         }
         .onDisappear {
             progressPollingTask?.cancel()
-            submissionTask?.cancel()
-            autoCompletionTask?.cancel()
+        }
+        .onAppear {
+            notifyToolbarCloseVisibility()
+        }
+        .onChange(of: importProgressPhase) { _ in
+            notifyToolbarCloseVisibility()
         }
     }
 
@@ -263,25 +276,20 @@ struct CreateBrandCandidateSelectionView: View {
             }
 
             VStack(spacing: 12) {
-                ProgressView(
-                    value: extractionTotalCount == 0
-                    ? 0
-                    : Double(extractionCompletedCount),
-                    total: Double(max(extractionTotalCount, 1))
-                )
-                .tint(OutPickTheme.SwiftUIColor.accent)
+                if importProgressPhase == .extracting {
+                    ProgressView()
+                        .tint(OutPickTheme.SwiftUIColor.accent)
 
-                Text("준비 완료 \(extractionCompletedCount)/\(extractionTotalCount)")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
-                    .multilineTextAlignment(.center)
-
-                if extractionFailedCount > 0 {
-                    Text("가져오지 못한 시즌이 있습니다. 나중에 다시 시도할 수 있습니다.")
-                        .font(.footnote)
-                        .foregroundStyle(OutPickTheme.SwiftUIColor.warning)
+                    Text("준비 완료 \(extractionCompletedCount)/\(extractionTotalCount)")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
                         .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
+
+                    progressCloseActionSection
+                } else {
+                    resultSummarySection
+                    resultListSection
+                    resultActionsSection
                 }
 
                 if let message {
@@ -299,6 +307,162 @@ struct CreateBrandCandidateSelectionView: View {
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
+    private var resultSummarySection: some View {
+        VStack(spacing: 8) {
+            Text("\(succeededCandidates.count)개 시즌을 불러왔습니다.")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
+                .multilineTextAlignment(.center)
+
+            if failedCandidates.isEmpty == false {
+                Text("\(failedCandidates.count)개 시즌을 불러오지 못했습니다.")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.warning)
+                    .multilineTextAlignment(.center)
+
+                Text("실패한 시즌은 다시 시도할 수 있습니다.")
+                    .font(.footnote)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+                    .multilineTextAlignment(.center)
+            }
+        }
+    }
+
+    private var resultListSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if succeededCandidates.isEmpty == false {
+                resultGroup(
+                    title: "성공",
+                    candidates: succeededCandidates,
+                    status: .succeeded
+                )
+            }
+
+            if failedCandidates.isEmpty == false {
+                resultGroup(
+                    title: "실패",
+                    candidates: failedCandidates,
+                    status: .failed
+                )
+            }
+
+            if processingCandidates.isEmpty == false {
+                resultGroup(
+                    title: "진행 중",
+                    candidates: processingCandidates,
+                    status: .processing
+                )
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var resultActionsSection: some View {
+        VStack(spacing: 10) {
+            if failedCandidates.isEmpty == false {
+                Button {
+                    retryCandidates(failedCandidates)
+                } label: {
+                    Text("실패한 시즌 모두 재시도")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                }
+                .foregroundStyle(OutPickTheme.SwiftUIColor.backgroundBase)
+                .background(OutPickTheme.SwiftUIColor.accent)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .disabled(isSubmitting || retryingCandidateIDs.isEmpty == false)
+            }
+
+            Button {
+                onComplete()
+            } label: {
+                Text("닫기")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+            }
+            .foregroundStyle(OutPickTheme.SwiftUIColor.accent)
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(OutPickTheme.SwiftUIColor.accent, lineWidth: 1)
+            }
+        }
+    }
+
+    private var progressCloseActionSection: some View {
+        VStack(spacing: 10) {
+            Text("닫기를 눌러도 작업은 계속 진행됩니다. 가져오기 현황에서 나중에 확인할 수 있습니다.")
+                .font(.footnote)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button {
+                onComplete()
+            } label: {
+                Text("닫기")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+            }
+            .foregroundStyle(OutPickTheme.SwiftUIColor.accent)
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(OutPickTheme.SwiftUIColor.accent, lineWidth: 1)
+            }
+        }
+        .padding(.top, 4)
+    }
+
+    private func resultGroup(
+        title: String,
+        candidates: [SeasonCandidate],
+        status: CandidateImportStatus
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+
+            ForEach(candidates) { candidate in
+                HStack(spacing: 10) {
+                    Image(systemName: resultIconName(for: status))
+                        .foregroundStyle(resultColor(for: status))
+
+                    Text(candidate.title)
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
+                        .lineLimit(2)
+
+                    Spacer(minLength: 8)
+
+                    if status == .failed {
+                        Button {
+                            retryCandidates([candidate])
+                        } label: {
+                            if retryingCandidateIDs.contains(candidate.id) {
+                                ProgressView()
+                                    .tint(OutPickTheme.SwiftUIColor.accent)
+                            } else {
+                                Text("재시도")
+                                    .font(.caption.weight(.semibold))
+                            }
+                        }
+                        .disabled(
+                            isSubmitting ||
+                            retryingCandidateIDs.isEmpty == false ||
+                            retryingCandidateIDs.contains(candidate.id)
+                        )
+                    }
+                }
+                .padding(12)
+                .background(OutPickTheme.SwiftUIColor.surfaceElevated)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+        }
+    }
+
     private var headerTitle: String {
         switch importProgressPhase {
         case .selecting:
@@ -306,7 +470,7 @@ struct CreateBrandCandidateSelectionView: View {
         case .extracting:
             return "시즌을 불러오는 중입니다"
         case .completed:
-            return "시즌 준비가 끝났습니다"
+            return "시즌 불러오기 결과"
         }
     }
 
@@ -317,8 +481,12 @@ struct CreateBrandCandidateSelectionView: View {
         case .extracting:
             return "선택한 시즌의 사진을 가져오고 룩북 목록에 반영하고 있습니다."
         case .completed:
-            return "잠시 후 다음 화면으로 이동합니다."
+            return "닫기를 눌러도 진행 중인 작업은 계속 처리됩니다. 가져오기 현황에서 나중에 확인할 수 있습니다."
         }
+    }
+
+    private func notifyToolbarCloseVisibility() {
+        onToolbarCloseVisibilityChange(importProgressPhase == .selecting)
     }
 
     private func toggleSelection(candidateID: String) {
@@ -387,7 +555,7 @@ struct CreateBrandCandidateSelectionView: View {
         submissionTask?.cancel()
         submissionTask = Task {
             do {
-                _ = try await startSeasonImportExtractionUseCase.execute(
+                let result = try await startSeasonImportExtractionUseCase.execute(
                     brandID: createdBrand.id,
                     candidates: selectedCandidates
                 )
@@ -398,6 +566,9 @@ struct CreateBrandCandidateSelectionView: View {
                 await MainActor.run {
                     guard extractionCandidateIDs == candidateIDs else { return }
                     isSubmitting = false
+                    failedToStartCandidateIDs = Set(
+                        result.failedCandidates.map(\.candidateID)
+                    )
                     applyImageExtractionProgress(progress)
                     finishImageExtractionIfPossible()
                 }
@@ -424,6 +595,9 @@ struct CreateBrandCandidateSelectionView: View {
                     extractionTotalCount = 0
                     extractionCompletedCount = 0
                     extractionFailedCount = 0
+                    extractionProgressItems = []
+                    failedToStartCandidateIDs = []
+                    retryingCandidateIDs = []
                     message = "선택한 시즌을 준비하지 못했습니다."
                 }
             }
@@ -436,6 +610,9 @@ struct CreateBrandCandidateSelectionView: View {
         extractionTotalCount = candidateIDs.count
         extractionCompletedCount = 0
         extractionFailedCount = 0
+        extractionProgressItems = []
+        failedToStartCandidateIDs = []
+        retryingCandidateIDs = []
         importProgressPhase = .extracting
         startImportProgressPolling(candidateIDs: candidateIDs)
     }
@@ -468,34 +645,136 @@ struct CreateBrandCandidateSelectionView: View {
         _ progress: SeasonImportExtractionProgress
     ) {
         extractionTotalCount = progress.totalCount
-        extractionCompletedCount = progress.completedCount
-        extractionFailedCount = progress.failedCount
+        extractionCompletedCount = progress.completedCount + failedToStartCandidateIDs.count
+        extractionFailedCount = progress.failedCount + failedToStartCandidateIDs.count
+        extractionProgressItems = progress.items
     }
 
     @MainActor
     private func finishImageExtractionIfPossible() {
         guard extractionTotalCount > 0 else { return }
         guard extractionCompletedCount >= extractionTotalCount else { return }
-        guard importProgressPhase != .completed else { return }
 
         progressPollingTask?.cancel()
         progressPollingTask = nil
         importProgressPhase = .completed
-        message = extractionFailedCount > 0
-        ? "일부 시즌은 가져오지 못했지만, 다음 화면으로 이동합니다."
-        : nil
-        scheduleAutoCompletion()
+        message = extractionFailedCount > 0 ? "실패한 시즌은 다시 시도할 수 있습니다." : nil
     }
 
-    private func scheduleAutoCompletion() {
-        autoCompletionTask?.cancel()
-        autoCompletionTask = Task {
-            try? await Task.sleep(nanoseconds: 900_000_000)
-            guard !Task.isCancelled else { return }
+    private func retryCandidates(_ candidatesToRetry: [SeasonCandidate]) {
+        let retryCandidates = candidatesToRetry.filter {
+            retryingCandidateIDs.contains($0.id) == false
+        }
+        guard retryCandidates.isEmpty == false else { return }
 
-            await MainActor.run {
-                onComplete()
+        let retryCandidateIDs = retryCandidates.map(\.id)
+        retryingCandidateIDs.formUnion(retryCandidateIDs)
+        failedToStartCandidateIDs.subtract(retryCandidateIDs)
+        message = nil
+
+        submissionTask?.cancel()
+        submissionTask = Task {
+            defer {
+                Task { @MainActor in
+                    retryingCandidateIDs.subtract(retryCandidateIDs)
+                }
             }
+
+            do {
+                let result = try await startSeasonImportExtractionUseCase.execute(
+                    brandID: createdBrand.id,
+                    candidates: retryCandidates
+                )
+                let progress = try await startSeasonImportExtractionUseCase.loadProgress(
+                    brandID: createdBrand.id,
+                    candidateIDs: extractionCandidateIDs
+                )
+                await MainActor.run {
+                    failedToStartCandidateIDs.formUnion(
+                        result.failedCandidates.map(\.candidateID)
+                    )
+                    applyImageExtractionProgress(progress)
+                    if importProgressPhase == .completed {
+                        startImportProgressPolling(candidateIDs: extractionCandidateIDs)
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    failedToStartCandidateIDs.formUnion(retryCandidateIDs)
+                    message = "선택한 시즌을 다시 요청하지 못했습니다."
+                }
+            }
+        }
+    }
+
+    private var selectedImportCandidates: [SeasonCandidate] {
+        candidates
+            .filter { extractionCandidateIDs.contains($0.id) }
+            .sorted { $0.sortIndex < $1.sortIndex }
+    }
+
+    private var succeededCandidates: [SeasonCandidate] {
+        selectedImportCandidates.filter {
+            candidateImportStatus(candidateID: $0.id) == .succeeded
+        }
+    }
+
+    private var failedCandidates: [SeasonCandidate] {
+        selectedImportCandidates.filter {
+            candidateImportStatus(candidateID: $0.id) == .failed
+        }
+    }
+
+    private var processingCandidates: [SeasonCandidate] {
+        selectedImportCandidates.filter {
+            candidateImportStatus(candidateID: $0.id) == .processing
+        }
+    }
+
+    private func candidateImportStatus(candidateID: String) -> CandidateImportStatus {
+        if failedToStartCandidateIDs.contains(candidateID) {
+            return .failed
+        }
+
+        if retryingCandidateIDs.contains(candidateID) {
+            return .processing
+        }
+
+        guard let item = extractionProgressItems.first(where: {
+            $0.candidateID == candidateID
+        }) else {
+            return .processing
+        }
+
+        switch item.status {
+        case .processing:
+            return .processing
+        case .succeeded:
+            return .succeeded
+        case .failed:
+            return .failed
+        }
+    }
+
+    private func resultIconName(for status: CandidateImportStatus) -> String {
+        switch status {
+        case .processing:
+            return "clock"
+        case .succeeded:
+            return "checkmark.circle.fill"
+        case .failed:
+            return "exclamationmark.triangle.fill"
+        }
+    }
+
+    private func resultColor(for status: CandidateImportStatus) -> Color {
+        switch status {
+        case .processing:
+            return OutPickTheme.SwiftUIColor.accent
+        case .succeeded:
+            return OutPickTheme.SwiftUIColor.success
+        case .failed:
+            return OutPickTheme.SwiftUIColor.warning
         }
     }
 }
