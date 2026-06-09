@@ -207,6 +207,7 @@
 목표:
 
 - 채팅 목록, 참여 채팅방, 채팅방, 방 생성/편집/검색/설정, 미디어 갤러리에 다크 시스템을 적용한다.
+- UIKit 레거시 화면의 라이트 배경/검정 텍스트/파란 말풍선 누수를 단계적으로 제거한다.
 
 변경 후보:
 
@@ -214,18 +215,46 @@
 - `OutPick/Features/Chat/Views`
 - `OutPick/Features/Chat/Views/Cell`
 
+구현 단위:
+
+- Phase 5A: 채팅 탭 root/list/search 화면
+  - `RoomListsCollectionViewController`
+  - `JoinedRoomsViewController`
+  - `RoomListCollectionViewCell`
+  - `RoomSearchViewController`
+- Phase 5B: 채팅방 핵심 화면
+  - `ChatViewController`
+  - `ChatUIView`
+  - `ChatMessageCell`
+  - `ChatReplyView`
+  - `ChatSearchUIView`
+  - `AttachmentView`
+- Phase 5C: 방 생성/편집/설정/미디어 화면
+  - `RoomCreateViewController`
+  - `RoomEditViewController`
+  - `RoomCreateContentView`
+  - `ChatRoomSettingViewController`
+  - `Views/Cell/ChatRoomEdit`
+  - `Views/Cell/ChatRoomSetting`
+  - `MediaGalleryViewController`
+  - `SimpleImageViewerVC`
+
 완료 기준:
 
 - 말풍선은 무채색 위계로 구분된다.
 - 전송/검색/focus/선택 상태만 포인트 색을 사용한다.
 - 이미지/비디오 preview overlay는 기존 의미를 유지하되 토큰화된다.
 - 방 생성/편집 입력창 텍스트와 placeholder가 다크 배경에서 읽힌다.
+- media viewer 성격의 전체 화면 이미지/비디오 preview는 순수 black 배경을 예외로 유지할 수 있다.
+- Phase 5A/5B/5C 대상 경로의 `.white`, `.black`, `.gray`, `systemBlue`, `systemBackground`, `secondarySystemBackground` 직접 사용은 토큰으로 대체하거나 의도된 media overlay 예외로 기록한다.
 
 검증 방법:
 
 - 채팅 목록/참여 채팅방 탭 수동 QA.
 - 채팅방 진입, 메시지 표시, 이미지/비디오 preview, 검색, 설정 화면 수동 QA.
 - 긴 메시지, 답장 preview, 업로드 실패/재시도 UI 수동 QA.
+- 단계별 색상 검색.
+- `xcodebuild -scheme OutPick -destination 'generic/platform=iOS Simulator' build`
 
 ## Phase 6. 프로필, 마이페이지, 로그인/부트 적용
 

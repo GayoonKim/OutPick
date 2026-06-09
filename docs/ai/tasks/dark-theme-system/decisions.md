@@ -218,3 +218,27 @@
 
 - 기존 생성 플로우의 부드러운 분위기는 줄어든다.
 - 대신 앱 전체 다크 브랜드 경험이 명확해진다.
+
+## 결정 12. 상호작용 가능한 일반 버튼은 포인트 색을 기본으로 사용한다
+
+상태:
+
+- accepted.
+
+선택:
+
+- tappable icon/button, 일반 navigation action, 이미지 추가/첨부/검색/설정처럼 상호작용 가능한 기본 액션은 Volt Green accent를 사용한다.
+- 삭제, 신고, 차단, 실패, 위험 액션은 destructive/error semantic token을 우선한다.
+- 좋아요처럼 별도 의미가 강한 액션은 like semantic token을 유지한다.
+- 넓은 면적의 버튼 fill은 필요한 primary CTA에 제한하고, 보조 버튼은 accent icon/text 또는 낮은 alpha accent background를 사용한다.
+
+이유:
+
+- 사용자 피드백상 상호작용 가능한 요소가 중립색이면 버튼성이 약하게 보일 수 있다.
+- 다크 화면에서 accent가 action affordance 역할을 안정적으로 한다.
+- 의미색 예외를 유지하면 위험/좋아요 같은 상태 의미가 브랜드 accent와 섞이지 않는다.
+
+트레이드오프:
+
+- accent 노출 빈도가 늘어난다.
+- 대신 넓은 면적 fill을 제한해 피로도를 낮추고, 의미색 예외로 상태 해석을 명확히 유지한다.
