@@ -33,6 +33,7 @@ final class FirestoreSeasonImportJobRepository: SeasonImportJobRepositoryProtoco
 
         return try dtos
             .map { try $0.toDomain() }
+            .filter { $0.jobType == .importSeasonFromURL }
             .sorted { $0.updatedAt > $1.updatedAt }
     }
 

@@ -423,12 +423,12 @@ final class CloudFunctionsManager {
         )
 
         return SeasonAssetRetryReceipt(
-            jobID: try stringValue(response, key: "jobID"),
-            status: try stringValue(response, key: "status"),
             sourceImportJobID: try stringValue(
                 response,
                 key: "sourceImportJobID"
             ),
+            seasonID: try stringValue(response, key: "seasonID"),
+            status: try stringValue(response, key: "status"),
             isDuplicate: optionalBoolValue(
                 response,
                 key: "duplicate"
@@ -453,25 +453,29 @@ final class CloudFunctionsManager {
         )
     }
 
-    func requestSeasonCandidateImportsAndProcess(
+    func requestSeasonCandidateImportJobs(
         brandID: String,
         candidateIDs: [String]
-    ) async throws -> SeasonImportBatchProcessResult {
+    ) async throws -> SeasonImportBatchRequestResult {
         let response = try await callFunction(
-            "requestSeasonCandidateImportsAndProcess",
+            "requestSeasonCandidateImportJobs",
             data: [
                 "brandID": brandID,
                 "candidateIDs": candidateIDs
             ]
         )
 
-        return SeasonImportBatchProcessResult(
+        return SeasonImportBatchRequestResult(
             brandID: BrandID(value: try stringValue(response, key: "brandID")),
             candidateIDs: stringArrayValue(response, key: "candidateIDs"),
             jobIDs: stringArrayValue(response, key: "jobIDs"),
             requestedJobCount: try intValue(response, key: "requestedJobCount"),
+            requestedImportJobCount: optionalIntValue(
+                response,
+                key: "requestedImportJobCount"
+            ) ?? stringArrayValue(response, key: "jobIDs").count,
+            createdJobCount: optionalIntValue(response, key: "createdJobCount") ?? 0,
             duplicateJobCount: optionalIntValue(response, key: "duplicateJobCount") ?? 0,
-            processedJobCount: try intValue(response, key: "processedJobCount"),
             failedJobCount: try intValue(response, key: "failedJobCount"),
             skippedJobCount: try intValue(response, key: "skippedJobCount"),
             failedCandidates: seasonImportBatchFailures(response)

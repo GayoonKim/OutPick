@@ -163,7 +163,7 @@ private extension CreateBrandFlowView {
                     seasonImportJobRepository: provider.seasonImportJobRepository
                 ),
                 startSeasonImportExtractionUseCase: StartSeasonImportExtractionUseCase(
-                    processingRepository: provider.seasonImportJobProcessingRepository,
+                    importJobRequestingRepository: provider.seasonImportJobRequestingRepository,
                     seasonImportJobRepository: provider.seasonImportJobRepository
                 ),
                 discoveryErrorMessage: discoveryErrorMessage,

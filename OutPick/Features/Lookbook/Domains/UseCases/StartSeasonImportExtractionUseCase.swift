@@ -11,7 +11,7 @@ protocol StartSeasonImportExtractionUseCaseProtocol {
     func execute(
         brandID: BrandID,
         candidates: [SeasonCandidate]
-    ) async throws -> SeasonImportBatchProcessResult
+    ) async throws -> SeasonImportBatchRequestResult
 
     func loadProgress(
         brandID: BrandID,
@@ -20,24 +20,24 @@ protocol StartSeasonImportExtractionUseCaseProtocol {
 }
 
 final class StartSeasonImportExtractionUseCase: StartSeasonImportExtractionUseCaseProtocol {
-    private let processingRepository: any SeasonImportJobProcessingRepositoryProtocol
+    private let importJobRequestingRepository: any SeasonImportJobRequestingRepositoryProtocol
     private let seasonImportJobRepository: any SeasonImportJobRepositoryProtocol
 
     init(
-        processingRepository: any SeasonImportJobProcessingRepositoryProtocol,
+        importJobRequestingRepository: any SeasonImportJobRequestingRepositoryProtocol,
         seasonImportJobRepository: any SeasonImportJobRepositoryProtocol
     ) {
-        self.processingRepository = processingRepository
+        self.importJobRequestingRepository = importJobRequestingRepository
         self.seasonImportJobRepository = seasonImportJobRepository
     }
 
     func execute(
         brandID: BrandID,
         candidates: [SeasonCandidate]
-    ) async throws -> SeasonImportBatchProcessResult {
+    ) async throws -> SeasonImportBatchRequestResult {
         let candidateIDs = candidates.map(\.id)
-        return try await processingRepository
-            .requestSeasonCandidateImportsAndProcess(
+        return try await importJobRequestingRepository
+            .requestSeasonCandidateImportJobs(
                 brandID: brandID,
                 candidateIDs: candidateIDs
             )

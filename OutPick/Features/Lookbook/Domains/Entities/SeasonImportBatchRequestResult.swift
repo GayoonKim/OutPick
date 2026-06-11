@@ -1,5 +1,5 @@
 //
-//  SeasonImportBatchProcessResult.swift
+//  SeasonImportBatchRequestResult.swift
 //  OutPick
 //
 //  Created by Codex on 4/23/26.
@@ -13,13 +13,14 @@ struct SeasonImportBatchFailure: Equatable {
     let errorMessage: String
 }
 
-struct SeasonImportBatchProcessResult: Equatable {
+struct SeasonImportBatchRequestResult: Equatable {
     let brandID: BrandID
     let candidateIDs: [String]
     let jobIDs: [String]
     let requestedJobCount: Int
+    let requestedImportJobCount: Int
+    let createdJobCount: Int
     let duplicateJobCount: Int
-    let processedJobCount: Int
     let failedJobCount: Int
     let skippedJobCount: Int
     let failedCandidates: [SeasonImportBatchFailure]

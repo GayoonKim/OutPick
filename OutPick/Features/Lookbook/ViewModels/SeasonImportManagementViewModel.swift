@@ -37,16 +37,12 @@ final class SeasonImportManagementViewModel: ObservableObject {
     }
 
     func hasActiveRetry(for job: SeasonImportJob) -> Bool {
-        jobs.contains {
-            $0.jobType == .retrySeasonAssets &&
-            $0.sourceImportJobID == job.id &&
-            ($0.status == .queued || $0.status == .processing)
-        }
+        job.isAssetRetryInFlight
     }
 
     private func pollActiveJobs() async {
         while !Task.isCancelled && jobs.contains(where: {
-            $0.status == .queued || $0.status == .processing
+            $0.status == .queued || $0.status == .processing || $0.isAssetRetryInFlight
         }) {
             try? await Task.sleep(nanoseconds: 1_000_000_000)
             guard !Task.isCancelled else { return }

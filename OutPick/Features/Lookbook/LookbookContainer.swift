@@ -276,7 +276,7 @@ final class LookbookContainer {
                 seasonImportJobRepository: provider.seasonImportJobRepository
             ),
             startSeasonImportExtractionUseCase: StartSeasonImportExtractionUseCase(
-                processingRepository: provider.seasonImportJobProcessingRepository,
+                importJobRequestingRepository: provider.seasonImportJobRequestingRepository,
                 seasonImportJobRepository: provider.seasonImportJobRepository
             ),
             discoveryErrorMessage: nil,

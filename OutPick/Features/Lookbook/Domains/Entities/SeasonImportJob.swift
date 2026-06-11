@@ -56,6 +56,22 @@ enum SeasonImportJobPhase: String, Codable, Equatable {
     case completed
 }
 
+enum SeasonAssetRetryStatus: String, Codable, Equatable {
+    case queued
+    case processing
+    case succeeded
+    case failed
+
+    var isInFlight: Bool {
+        switch self {
+        case .queued, .processing:
+            return true
+        case .succeeded, .failed:
+            return false
+        }
+    }
+}
+
 struct SeasonImportJob: Equatable, Identifiable, Codable {
     let id: String
     let brandID: BrandID
@@ -63,11 +79,14 @@ struct SeasonImportJob: Equatable, Identifiable, Codable {
     let status: SeasonImportJobStatus
     let phase: SeasonImportJobPhase
     let sourceURL: String
+    let seasonTitle: String?
+    let sourceTitle: String?
     let sourceCandidateID: String?
     let sourceImportJobID: String?
     let targetSeasonID: SeasonID?
     let requestedBy: String
     let errorMessage: String?
+    let assetRetryStatus: SeasonAssetRetryStatus?
     let assetCompletedCount: Int
     let assetFailedCount: Int
     let createdAt: Date
@@ -78,5 +97,19 @@ struct SeasonImportJob: Equatable, Identifiable, Codable {
         && targetSeasonID != nil
         && assetFailedCount > 0
         && (status == .partialFailed || status == .failed)
+        && assetRetryStatus?.isInFlight != true
+    }
+
+    var isAssetRetryInFlight: Bool {
+        assetRetryStatus?.isInFlight == true
+    }
+
+    var displayTitle: String {
+        for title in [seasonTitle, sourceTitle] {
+            if let title, title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+                return title
+            }
+        }
+        return "시즌 가져오기"
     }
 }

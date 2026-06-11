@@ -16,11 +16,14 @@ struct SeasonImportJobDTO: Codable {
     let status: SeasonImportJobStatus
     let phase: SeasonImportJobPhase
     let sourceURL: String
+    let seasonTitle: String?
+    let sourceTitle: String?
     let sourceCandidateID: String?
     let sourceImportJobID: String?
     let targetSeasonID: String?
     let requestedBy: String
     let errorMessage: String?
+    let assetRetryStatus: SeasonAssetRetryStatus?
     let assetCompletedCount: Int?
     let assetFailedCount: Int?
     let createdAt: Timestamp?
@@ -39,11 +42,14 @@ struct SeasonImportJobDTO: Codable {
             status: status,
             phase: phase,
             sourceURL: sourceURL,
+            seasonTitle: seasonTitle,
+            sourceTitle: sourceTitle,
             sourceCandidateID: sourceCandidateID,
             sourceImportJobID: sourceImportJobID,
             targetSeasonID: targetSeasonID.map { SeasonID(value: $0) },
             requestedBy: requestedBy,
             errorMessage: errorMessage,
+            assetRetryStatus: assetRetryStatus,
             assetCompletedCount: assetCompletedCount ?? 0,
             assetFailedCount: assetFailedCount ?? 0,
             createdAt: createdAt?.dateValue() ?? Date(timeIntervalSince1970: 0),

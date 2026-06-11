@@ -21,7 +21,7 @@ final class LookbookRepositoryProvider {
     let seasonCoverThumbnailPolicy: ThumbnailPolicy
     let seasonImportRepository: SeasonImportRequestingRepository
     let seasonImportJobRepository: SeasonImportJobRepositoryProtocol
-    let seasonImportJobProcessingRepository: SeasonImportJobProcessingRepositoryProtocol
+    let seasonImportJobRequestingRepository: SeasonImportJobRequestingRepositoryProtocol
     let seasonAssetRetryRepository: SeasonAssetRetryRequestingRepository
     let seasonCandidateRepository: SeasonCandidateRepositoryProtocol
     let seasonCandidateDiscoveryRepository: SeasonCandidateDiscoveryRepositoryProtocol
@@ -66,7 +66,7 @@ final class LookbookRepositoryProvider {
         seasonCoverThumbnailPolicy: ThumbnailPolicy = ThumbnailPolicies.seasonCover,
         seasonImportRepository: SeasonImportRequestingRepository = CloudFunctionsSeasonImportRepository(),
         seasonImportJobRepository: SeasonImportJobRepositoryProtocol = FirestoreSeasonImportJobRepository(),
-        seasonImportJobProcessingRepository: SeasonImportJobProcessingRepositoryProtocol = CloudFunctionsSeasonImportJobProcessingRepository(),
+        seasonImportJobRequestingRepository: SeasonImportJobRequestingRepositoryProtocol = CloudFunctionsSeasonImportJobRequestingRepository(),
         seasonAssetRetryRepository: SeasonAssetRetryRequestingRepository = CloudFunctionsSeasonAssetRetryRepository(),
         seasonCandidateRepository: SeasonCandidateRepositoryProtocol = FirestoreSeasonCandidateRepository(),
         seasonCandidateDiscoveryRepository: SeasonCandidateDiscoveryRepositoryProtocol = CloudFunctionsSeasonCandidateDiscoveryRepository(),
@@ -137,7 +137,7 @@ final class LookbookRepositoryProvider {
         self.seasonCoverThumbnailPolicy = seasonCoverThumbnailPolicy
         self.seasonImportRepository = seasonImportRepository
         self.seasonImportJobRepository = seasonImportJobRepository
-        self.seasonImportJobProcessingRepository = seasonImportJobProcessingRepository
+        self.seasonImportJobRequestingRepository = seasonImportJobRequestingRepository
         self.seasonAssetRetryRepository = seasonAssetRetryRepository
         self.seasonCandidateRepository = seasonCandidateRepository
         self.seasonCandidateDiscoveryRepository = seasonCandidateDiscoveryRepository

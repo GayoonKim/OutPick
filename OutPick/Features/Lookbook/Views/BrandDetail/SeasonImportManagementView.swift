@@ -88,7 +88,7 @@ struct SeasonImportManagementView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            if job.canRetryAssets {
+            if job.canRetryAssets || viewModel.hasActiveRetry(for: job) {
                 Button {
                     Task {
                         await viewModel.retryAssets(for: job)
@@ -116,7 +116,7 @@ struct SeasonImportManagementView: View {
     private func jobTitle(_ job: SeasonImportJob) -> String {
         switch job.jobType {
         case .importSeasonFromURL:
-            return job.targetSeasonID?.value ?? "시즌 가져오기"
+            return job.displayTitle
         case .retrySeasonAssets:
             return "이미지 재시도"
         }
