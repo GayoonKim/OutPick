@@ -52,12 +52,30 @@ const NOISE_LINK_TEXT_PATTERN =
 const SEASON_SIGNAL_PATTERN =
   new RegExp(
     "lookbook|collection|campaign|archive|season|spring|summer|" +
-    "fall|winter|fw|ss|f/w|s/s|20\\d{2}|\\d{2}\\s*(?:fw|ss)",
+    "fall|winter|f/w|s/s|20\\d{2}|\\d{2}\\s*(?:fw|ss)|\\b(?:fw|ss)\\b",
     "i",
   );
 const PLACEHOLDER_HREF_PATTERN =
   new RegExp(
     "\\{|\\}|\\$action_|클릭시\\s*이동|이동할\\s*주소|링크주소|link\\s*url",
+    "i",
+  );
+const NON_SEASON_PATH_SEGMENT_PATTERN =
+  new RegExp(
+    "^(?:account|basket|cart|checkout|coupon|login|member|myshop|" +
+    "order|privacy|search|wishlist)$",
+    "i",
+  );
+const NON_SEASON_PATH_PREFIX_PATTERN =
+  new RegExp(
+    "^(?:board|category|goods|item|items|member|myshop|order|" +
+    "product|products)$",
+    "i",
+  );
+const HARD_NOISE_IMAGE_PATTERN =
+  new RegExp(
+    "(?:cart\\.svg|hexcode\\.png|bg[_-]?search|youtube[_-]?icon|" +
+    "global/.{0,16}_32x24|ic[_-]?(?:arr|star)|btn|button)",
     "i",
   );
 
@@ -256,13 +274,52 @@ function isIgnoredHref(href: string): boolean {
   if (isPlaceholderHref(value)) {
     return true;
   }
+  if (isImageFileURL(url)) {
+    return true;
+  }
   if (/\/product\/archive-detail\.html/i.test(url.pathname)) {
     return false;
+  }
+  if (isNonSeasonPath(url)) {
+    return true;
   }
   return (
     /\/(?:product|category|board|member|order|cart|myshop)\//i.test(value) ||
     /(?:list\.html|login|basket|search|coupon|privacy)/i.test(value)
   );
+}
+
+/**
+ * 시즌 상세가 아니라 장바구니/검색/일반 상품 등으로 보이는 path인지 판단합니다.
+ *
+ * @param {URL} url 검사할 URL입니다.
+ * @return {boolean} 시즌 후보에서 제외해야 하면 true입니다.
+ */
+function isNonSeasonPath(url: URL): boolean {
+  const segments = url.pathname
+    .split("/")
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0);
+  const hasBlockedSegment = segments.some((segment) => {
+    return NON_SEASON_PATH_SEGMENT_PATTERN.test(segment);
+  });
+  if (hasBlockedSegment) {
+    return true;
+  }
+  const hasBlockedPrefix = segments.some((segment) => {
+    return NON_SEASON_PATH_PREFIX_PATTERN.test(segment);
+  });
+  return hasBlockedPrefix;
+}
+
+/**
+ * 이미지 파일 자체를 가리키는 URL인지 판단합니다.
+ *
+ * @param {URL} url 검사할 URL입니다.
+ * @return {boolean} 직접 이미지 URL이면 true입니다.
+ */
+function isImageFileURL(url: URL): boolean {
+  return /\.(?:avif|gif|jpe?g|png|webp)(?:$|[?#])/i.test(url.pathname);
 }
 
 /**
@@ -508,7 +565,9 @@ function normalizedImageURL(
  * @return {boolean} 노이즈 이미지면 true입니다.
  */
 function isNoiseImageURL(sourceURL: string, alt: string | null): boolean {
-  return NOISE_IMAGE_PATTERN.test(`${sourceURL} ${alt ?? ""}`);
+  const value = `${sourceURL} ${alt ?? ""}`;
+  return NOISE_IMAGE_PATTERN.test(value) ||
+    HARD_NOISE_IMAGE_PATTERN.test(value);
 }
 
 /**

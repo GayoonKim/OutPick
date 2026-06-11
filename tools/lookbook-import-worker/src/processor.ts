@@ -1,5 +1,5 @@
 /* eslint-disable max-len */
-import {randomUUID} from "node:crypto";
+import {createHash, randomUUID} from "node:crypto";
 
 import type {Firestore} from "firebase-admin/firestore";
 import {FieldValue, Timestamp} from "firebase-admin/firestore";
@@ -52,6 +52,7 @@ type ImportJobData = {
   contentStatus?: unknown;
   assetSyncStatus?: unknown;
   assetTotalCount?: unknown;
+  assetRetryRequestID?: unknown;
   leaseOwner?: unknown;
   leaseExpiresAt?: unknown;
   createdAt?: unknown;
@@ -70,6 +71,16 @@ type SeasonData = {
 
 type PostData = {
   media?: unknown;
+  assetSyncErrorMessage?: unknown;
+};
+
+type AssetFailureData = {
+  postID?: unknown;
+  mediaIndex?: unknown;
+  remoteURL?: unknown;
+  sourcePageURL?: unknown;
+  sourceImportJobID?: unknown;
+  attemptCount?: unknown;
 };
 
 type MediaData = {
@@ -119,8 +130,12 @@ export type WakeRequest = {
 };
 
 export type ImportJobTaskRequest = {
+  mode?: unknown;
   brandID?: unknown;
   jobID?: unknown;
+  seasonID?: unknown;
+  sourceJobID?: unknown;
+  requestID?: unknown;
   maxAttempts?: unknown;
   requestedAt?: unknown;
 };
@@ -165,6 +180,7 @@ type SyncTarget =
       brandID: string;
       seasonID: string;
       postID: string;
+      mediaIndex: number;
       remoteURL: string;
       sourcePageURL: string;
     };
@@ -238,18 +254,29 @@ const NOISE_IMAGE_URL_PATTERNS = [
   /(?:btn_count_|btn_price_delete|ico_pay_point|icon_(?:facebook|twitter))\.(?:gif|png|jpg|jpeg|webp)(?:\?|$)/i,
   /(?:sprite|blank|placeholder|loading)\.(?:gif|png|svg)(?:\?|$)/i,
 ];
+const HARD_NOISE_IMAGE_URL_PATTERNS = [
+  /(?:^|\/\/)(?:www\.)?facebook\.com\/tr\?/i,
+  /(?:^|\/\/)(?:www\.)?(?:googletagmanager|google-analytics|googleadservices)\.com\//i,
+  /(?:^|\/\/)(?:www\.)?(?:channel|charlla)\.io\//i,
+  /(?:chat|talk|kakao)[_-]?icon[^/]*\.(?:gif|png|svg|webp)(?:\?|$)/i,
+  /(?:logo|favicon)[^/]*\.(?:gif|png|svg|webp)(?:\?|$)/i,
+  /(?:social|sns|facebook|kakao|naver|instagram|twitter|fb_icon|insta_icon)/i,
+  /\/img\/common\/global\/[^/?#]*_32x24\.png(?:[?#]|$)/i,
+  /\/[^/?#]*(?:bg[_-]?search|youtube[_-]?icon|ic[_-]?(?:arr|star))[^/?#]*\.(?:gif|jpe?g|png|svg|webp)(?:[?#]|$)/i,
+  /\/[^/?#]*(?:btn|button|icon-plus|count_|page_(?:first|prev|next)|close|copy|share|menu)[^/?#]*\.(?:gif|jpe?g|png|svg|webp)(?:[?#]|$)/i,
+  /(?:echosting\.cafe24\.com\/skin|\/skin\/base|\/SkinImg\/|\/morenvyimg\/)/i,
+  /(?:cursor|txt_progress|img_loading|top_banner|topbanner)/i,
+];
 
 const NOISE_CONTEXT_PATTERN =
   /product\/list\.html|category\/|view all|gnb|lnb|menu|header|footer|basket|cart|order|payment|purchase|quantity|option|결제|주문|장바구니|수량|옵션/i;
 const DYNAMIC_RENDERING_SIGNAL_PATTERNS = [
   /__NEXT_DATA__/i,
-  /window\.__/i,
-  /\bnuxt(?:App|State)?\b/i,
+  /__NUXT__|__NUXT_DATA__|\bnuxt(?:App|State)?\b/i,
   /data-reactroot/i,
   /data-reactid/i,
   /\bhydrateRoot\b/i,
   /\bcreateRoot\b/i,
-  /<script\b[^>]+src=["'][^"']+\.(?:js|mjs)(?:\?|["'])/gi,
 ];
 const LOW_CONFIDENCE_STRATEGIES = new Set([
   "allPageImages",
@@ -291,6 +318,23 @@ export async function processImportJobTaskRequest(
   retryCount: number,
 ): Promise<ImportJobTaskResult> {
   const workerID = `worker_${randomUUID()}`;
+  if (optionalStringField(request.mode) === "assetFailureRetry") {
+    const result = await processAssetFailureRetryTask(
+      dependencies,
+      request,
+      workerID,
+      {
+        retryCount: nonNegativeInteger(retryCount, "retryCount"),
+        maxAttempts: positiveInteger(request.maxAttempts, "maxAttempts"),
+      },
+    );
+    return {
+      accepted: true,
+      workerID,
+      result,
+    };
+  }
+
   const target = {
     brandID: requiredDocumentID(request.brandID, "brandID"),
     jobID: requiredDocumentID(request.jobID, "jobID"),
@@ -665,6 +709,173 @@ async function processAssetRetryJob(
   };
 }
 
+async function processAssetFailureRetryTask(
+  dependencies: ProcessorDependencies,
+  request: ImportJobTaskRequest,
+  workerID: string,
+  retryPolicy: TaskRetryPolicy,
+): Promise<JobResult> {
+  const brandID = requiredDocumentID(request.brandID, "brandID");
+  const seasonID = requiredDocumentID(request.seasonID, "seasonID");
+  const sourceJobID = requiredDocumentID(request.sourceJobID, "sourceJobID");
+  const requestID = stringField(request.requestID, "requestID");
+  const jobRef = importJobRef(dependencies.firestore, {
+    brandID,
+    jobID: sourceJobID,
+  });
+  const logContext: LogContext = {
+    brandID,
+    jobID: sourceJobID,
+    workerID,
+    jobType: "importSeasonFromURL",
+    sourceURL: "",
+  };
+
+  try {
+    const sourceSnapshot = await jobRef.get();
+    const sourceJob = sourceSnapshot.data() as ImportJobData | undefined;
+    if (!sourceSnapshot.exists || !sourceJob) {
+      return {
+        brandID,
+        jobID: sourceJobID,
+        processed: false,
+        status: "skipped",
+        reason: "sourceJobNotFound",
+      };
+    }
+    if (optionalStringField(sourceJob.assetRetryRequestID) !== requestID) {
+      return {
+        brandID,
+        jobID: sourceJobID,
+        processed: false,
+        status: "skipped",
+        reason: "staleAssetRetryRequest",
+      };
+    }
+
+    const sourceURL = stringField(sourceJob.sourceURL, "sourceURL");
+    const totalCount = optionalInteger(sourceJob.assetTotalCount);
+    logContext.sourceURL = sourceURL;
+
+    await jobRef.update({
+      assetRetryStatus: "processing",
+      assetRetryStartedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    await ensureAssetFailuresForSourceJob(
+      dependencies.firestore,
+      brandID,
+      seasonID,
+      sourceJobID,
+      sourceURL,
+      sourceJob,
+    );
+
+    const failures = await assetFailureTargets(
+      dependencies.firestore,
+      brandID,
+      seasonID,
+      sourceJobID,
+      sourceURL,
+    );
+    if (failures.length === 0) {
+      await markAssetRetryCompleted(
+        dependencies.firestore,
+        brandID,
+        seasonID,
+        sourceJobID,
+        totalCount,
+        0,
+        "ready",
+        null,
+      );
+      return {
+        brandID,
+        jobID: sourceJobID,
+        processed: true,
+        status: "succeeded",
+        assetSyncStatus: "ready",
+        seasonID,
+        completedCount: totalCount ?? 0,
+        failedCount: 0,
+      };
+    }
+
+    const results = await runSyncTargets(dependencies, failures);
+    const failedResults = results.filter((result) => !result.succeeded);
+    failedResults.forEach((result) => {
+      logAssetFailed(logContext, result);
+    });
+    await Promise.all(results.map((result) => updateAssetFailureAfterRetry(
+      dependencies.firestore,
+      result,
+      sourceJobID,
+    )));
+
+    const remainingCount = await assetFailureCount(
+      dependencies.firestore,
+      brandID,
+      seasonID,
+    );
+    const assetStatus = remainingCount === 0 ? "ready" : "partial";
+    const finalStatus = remainingCount === 0 ? "succeeded" : "partialFailed";
+    const firstError = failedResults[0]?.errorMessage ?? null;
+    const completedCount = totalCount === null ?
+      Math.max(0, failures.length - remainingCount) :
+      Math.max(0, totalCount - remainingCount);
+
+    await markAssetRetryCompleted(
+      dependencies.firestore,
+      brandID,
+      seasonID,
+      sourceJobID,
+      totalCount,
+      remainingCount,
+      assetStatus,
+      firstError,
+    );
+
+    return {
+      brandID,
+      jobID: sourceJobID,
+      processed: true,
+      status: finalStatus,
+      assetSyncStatus: assetStatus,
+      seasonID,
+      completedCount,
+      failedCount: remainingCount,
+      errorMessage: firstError ?? undefined,
+    };
+  } catch (error) {
+    if (
+      isRetryableImportError(error) &&
+      !isFinalTaskAttempt(retryPolicy.retryCount, retryPolicy.maxAttempts)
+    ) {
+      await jobRef.update({
+        assetRetryStatus: "queued",
+        assetRetryErrorMessage: errorMessage(error),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      throw error;
+    }
+    await jobRef.update({
+      assetRetryStatus: "failed",
+      assetRetryErrorMessage: errorMessage(error),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    return {
+      brandID,
+      jobID: sourceJobID,
+      processed: true,
+      status: "partialFailed",
+      assetSyncStatus: "partial",
+      seasonID,
+      errorMessage: errorMessage(error),
+    };
+  }
+}
+
 function isClaimable(data: ImportJobData): boolean {
   if (data.status === "queued") {
     return true;
@@ -944,6 +1155,11 @@ async function syncAssets(
   failedResults.forEach((result) => {
     logAssetFailed(logContext, result);
   });
+  await Promise.all(results.map((result) => updateAssetFailureAfterRetry(
+    dependencies.firestore,
+    result,
+    claim.sourceImportJobID ?? claim.jobID,
+  )));
   const failedCount = failedResults.length;
   const completedCount = declaredTotalCount === null ?
     results.filter((result) => result.succeeded || result.skipped).length :
@@ -979,6 +1195,201 @@ async function syncAssets(
     failedCount,
     errorMessage: error,
   };
+}
+
+async function ensureAssetFailuresForSourceJob(
+  db: Firestore,
+  brandID: string,
+  seasonID: string,
+  sourceJobID: string,
+  sourceURL: string,
+  sourceJob: ImportJobData,
+): Promise<void> {
+  const existingSnapshot = await assetFailuresCollection(
+    db,
+    brandID,
+    seasonID,
+  ).get();
+  const existingFailureIDs = new Set(existingSnapshot.docs.map((doc) => doc.id));
+  const postIDs = stringArray(sourceJob.createdPostIDs);
+  const postRefs = postIDs.map((postID) => postRefFor(db, brandID, seasonID, postID));
+  const postSnapshots = postRefs.length > 0 ? await db.getAll(...postRefs) : [];
+  const batch = db.batch();
+  let writeCount = 0;
+
+  for (const snapshot of postSnapshots) {
+    if (!snapshot.exists) {
+      continue;
+    }
+    const postData = snapshot.data() as PostData | undefined;
+    const mediaItems = Array.isArray(postData?.media) ? postData.media : [];
+    mediaItems.forEach((rawMedia, mediaIndex) => {
+      if (!rawMedia || typeof rawMedia !== "object") {
+        return;
+      }
+      const media = rawMedia as MediaData;
+      const remoteURL = optionalStringField(media.remoteURL);
+      if (remoteURL === null) {
+        return;
+      }
+      if (
+        optionalStringField(media.thumbPath) !== null &&
+        optionalStringField(media.detailPath) !== null
+      ) {
+        return;
+      }
+      const failureID = assetFailureID(snapshot.id, mediaIndex, remoteURL);
+      const payload: Record<string, unknown> = {
+        brandID,
+        seasonID,
+        postID: snapshot.id,
+        mediaIndex,
+        remoteURL,
+        sourcePageURL: optionalStringField(media.sourcePageURL) ?? sourceURL,
+        sourceImportJobID: sourceJobID,
+        kind: "postImage",
+        status: "failed",
+        lastErrorMessage: optionalStringField(postData?.assetSyncErrorMessage),
+        updatedAt: FieldValue.serverTimestamp(),
+      };
+      if (!existingFailureIDs.has(failureID)) {
+        payload.attemptCount = 0;
+        payload.createdAt = FieldValue.serverTimestamp();
+      }
+      batch.set(assetFailureRef(db, brandID, seasonID, failureID), payload, {
+        merge: true,
+      });
+      writeCount += 1;
+    });
+  }
+
+  if (writeCount > 0) {
+    await batch.commit();
+  }
+}
+
+async function assetFailureTargets(
+  db: Firestore,
+  brandID: string,
+  seasonID: string,
+  sourceJobID: string,
+  fallbackSourceURL: string,
+): Promise<SyncTarget[]> {
+  const snapshot = await assetFailuresCollection(db, brandID, seasonID)
+    .where("sourceImportJobID", "==", sourceJobID)
+    .get();
+  return snapshot.docs.flatMap((doc) => {
+    const data = doc.data() as AssetFailureData;
+    const postID = optionalDocumentID(data.postID, "postID");
+    const mediaIndex = optionalInteger(data.mediaIndex);
+    const remoteURL = optionalStringField(data.remoteURL);
+    if (postID === null || mediaIndex === null || remoteURL === null) {
+      return [];
+    }
+    return [{
+      kind: "postImage" as const,
+      brandID,
+      seasonID,
+      postID,
+      mediaIndex,
+      remoteURL,
+      sourcePageURL: optionalStringField(data.sourcePageURL) ?? fallbackSourceURL,
+    }];
+  });
+}
+
+async function updateAssetFailureAfterRetry(
+  db: Firestore,
+  result: SyncTargetResult,
+  sourceImportJobID: string,
+): Promise<void> {
+  if (result.target.kind !== "postImage") {
+    return;
+  }
+  const target = result.target;
+  const failureID = assetFailureID(
+    target.postID,
+    target.mediaIndex,
+    target.remoteURL,
+  );
+  const failureRef = assetFailureRef(
+    db,
+    target.brandID,
+    target.seasonID,
+    failureID,
+  );
+  if (result.succeeded) {
+    await failureRef.delete();
+    return;
+  }
+  await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(failureRef);
+    const payload: Record<string, unknown> = {
+      brandID: target.brandID,
+      seasonID: target.seasonID,
+      postID: target.postID,
+      mediaIndex: target.mediaIndex,
+      remoteURL: target.remoteURL,
+      sourcePageURL: target.sourcePageURL,
+      sourceImportJobID,
+      kind: "postImage",
+      status: "failed",
+      attemptCount: FieldValue.increment(1),
+      lastErrorMessage: result.errorMessage ?? "이미지 동기화 실패",
+      lastAttemptAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    };
+    if (!snapshot.exists) {
+      payload.createdAt = FieldValue.serverTimestamp();
+    }
+    transaction.set(failureRef, payload, {merge: true});
+  });
+}
+
+async function assetFailureCount(
+  db: Firestore,
+  brandID: string,
+  seasonID: string,
+): Promise<number> {
+  const snapshot = await assetFailuresCollection(db, brandID, seasonID).get();
+  return snapshot.size;
+}
+
+async function markAssetRetryCompleted(
+  db: Firestore,
+  brandID: string,
+  seasonID: string,
+  sourceJobID: string,
+  totalCount: number | null,
+  remainingFailureCount: number,
+  assetStatus: "ready" | "partial",
+  errorMessage: string | null,
+): Promise<void> {
+  const status = remainingFailureCount === 0 ? "succeeded" : "partialFailed";
+  const retryStatus = remainingFailureCount === 0 ? "succeeded" : "failed";
+  const completedCount = totalCount === null ?
+    0 :
+    Math.max(0, totalCount - remainingFailureCount);
+  await Promise.all([
+    importJobRef(db, {brandID, jobID: sourceJobID}).update({
+      status,
+      phase: "completed",
+      assetSyncStatus: assetStatus,
+      assetCompletedCount: completedCount,
+      assetFailedCount: remainingFailureCount,
+      errorMessage,
+      assetSyncErrorMessage: errorMessage,
+      assetRetryStatus: retryStatus,
+      assetRetryCompletedAt: FieldValue.serverTimestamp(),
+      assetRetryErrorMessage: errorMessage,
+      updatedAt: FieldValue.serverTimestamp(),
+    }),
+    seasonRefFor(db, brandID, seasonID).set({
+      assetSyncStatus: assetStatus,
+      assetSyncErrorMessage: errorMessage,
+      updatedAt: FieldValue.serverTimestamp(),
+    }, {merge: true}),
+  ]);
 }
 
 async function assetSyncTargets(
@@ -1034,6 +1445,7 @@ async function assetSyncTargets(
       brandID,
       seasonID,
       postID: snapshot.id,
+      mediaIndex: 0,
       remoteURL,
       sourcePageURL: optionalStringField(media?.sourcePageURL) ?? sourceURL,
     });
@@ -1080,6 +1492,23 @@ async function syncSingleTarget(
       if (optionalStringField(seasonSnapshot.data()?.coverPath) !== null) {
         return {target, succeeded: true, skipped: true};
       }
+    } else {
+      const postSnapshot = await postRefFor(
+        dependencies.firestore,
+        target.brandID,
+        target.seasonID,
+        target.postID,
+      ).get();
+      const mediaItems = Array.isArray(postSnapshot.data()?.media) ?
+        postSnapshot.data()?.media as unknown[] :
+        [];
+      const media = mediaItems[target.mediaIndex] as MediaData | undefined;
+      if (
+        optionalStringField(media?.thumbPath) !== null &&
+        optionalStringField(media?.detailPath) !== null
+      ) {
+        return {target, succeeded: true, skipped: true};
+      }
     }
 
     const originalBytes = await withImmediateRetry(() => fetchRemoteImageBytes(
@@ -1119,6 +1548,7 @@ async function syncSingleTarget(
         target.brandID,
         target.seasonID,
         target.postID,
+        target.mediaIndex,
         thumbPath,
         detailPath,
       );
@@ -1534,6 +1964,7 @@ function appendURLs(
     if (
       !normalizedURL ||
       seen.has(normalizedURL) ||
+      isHardNoiseImage(normalizedURL) ||
       (applyNoiseFilter && isLikelyNoiseImage(normalizedURL, context))
     ) {
       continue;
@@ -1574,9 +2005,16 @@ function normalizedImageURL(rawValue: string | null, baseURL: string): string | 
   if (!trimmed || trimmed.startsWith("data:")) {
     return null;
   }
+  const decoded = htmlDecode(decodeURIComponentSafe(trimmed));
+  if (isTemplateImageValue(decoded)) {
+    return null;
+  }
   try {
     const url = new URL(trimmed, baseURL);
     if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return null;
+    }
+    if (isTemplateImageValue(htmlDecode(decodeURIComponentSafe(url.toString())))) {
       return null;
     }
     return url.toString();
@@ -1585,9 +2023,34 @@ function normalizedImageURL(rawValue: string | null, baseURL: string): string | 
   }
 }
 
+function isTemplateImageValue(value: string): boolean {
+  return /{{|}}|\$\{?image|image_url|image_medium|image_small|\+\s*src\s*\+/i.test(value);
+}
+
+function decodeURIComponentSafe(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function htmlDecode(value: string): string {
+  return value
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, "\"")
+    .replace(/&#039;|&apos;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
+}
+
 function isLikelyNoiseImage(imageURL: string, context: string): boolean {
   return NOISE_IMAGE_URL_PATTERNS.some((pattern) => pattern.test(imageURL)) ||
     NOISE_CONTEXT_PATTERN.test(context);
+}
+
+function isHardNoiseImage(imageURL: string): boolean {
+  return HARD_NOISE_IMAGE_URL_PATTERNS.some((pattern) => pattern.test(imageURL));
 }
 
 async function seasonMetadata(
@@ -1790,6 +2253,7 @@ async function updatePostMediaPaths(
   brandID: string,
   seasonID: string,
   postID: string,
+  mediaIndex: number,
   thumbPath: string,
   detailPath: string,
 ): Promise<void> {
@@ -1797,11 +2261,11 @@ async function updatePostMediaPaths(
   const snapshot = await postRef.get();
   const postData = snapshot.data() as PostData | undefined;
   const mediaItems = Array.isArray(postData?.media) ? [...postData.media] : [];
-  const firstMedia = firstMediaData(mediaItems);
-  if (firstMedia === null) {
+  const media = mediaItems[mediaIndex];
+  if (!media || typeof media !== "object") {
     throw new Error("포스트 미디어 정보가 없습니다.");
   }
-  mediaItems[0] = {...firstMedia, thumbPath, detailPath};
+  mediaItems[mediaIndex] = {...media, thumbPath, detailPath};
   await postRef.set({
     media: mediaItems,
     assetSyncStatus: "ready",
@@ -1852,6 +2316,35 @@ function postRefFor(
   postID: string,
 ): FirebaseFirestore.DocumentReference {
   return seasonRefFor(db, brandID, seasonID).collection("posts").doc(postID);
+}
+
+function assetFailuresCollection(
+  db: Firestore,
+  brandID: string,
+  seasonID: string,
+): FirebaseFirestore.CollectionReference {
+  return seasonRefFor(db, brandID, seasonID).collection("assetFailures");
+}
+
+function assetFailureRef(
+  db: Firestore,
+  brandID: string,
+  seasonID: string,
+  failureID: string,
+): FirebaseFirestore.DocumentReference {
+  return assetFailuresCollection(db, brandID, seasonID).doc(failureID);
+}
+
+function assetFailureID(
+  postID: string,
+  mediaIndex: number,
+  remoteURL: string,
+): string {
+  const hash = createHash("sha256")
+    .update(remoteURL)
+    .digest("hex")
+    .slice(0, 24);
+  return `${postID}_${mediaIndex}_${hash}`;
 }
 
 function seasonCoverThumbPath(brandID: string, seasonID: string): string {
