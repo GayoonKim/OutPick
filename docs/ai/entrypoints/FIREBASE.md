@@ -13,7 +13,7 @@
 - Season: `setSeasonEngagement`
 - Comment: `setCommentEngagement`, `createComment`, `createReply`, `deleteComment`, `reportComment`
 - User safety: `blockUser`, `loadHiddenCommentUserIDs`
-- Season import: `requestSeasonImport`, `requestSeasonAssetRetry`, `requestSeasonCandidateImportsAndProcess`
+- Season import: `requestSeasonImport`, `requestSeasonAssetRetry`, `requestSeasonCandidateImportJobs`
 - Firestore triggers: `onSeasonImportQueued`, `onRoomClosed`
 
 ## Lookbook URL Import Worker

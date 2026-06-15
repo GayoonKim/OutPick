@@ -16,11 +16,13 @@ URL 기반 브랜드/시즌 등록 파이프라인을 Firestore job queue와 Clo
 - Phase 8 legacy import Functions 정리: Cloud Run worker가 대체한 legacy callable/trigger와 앱 래퍼를 제거했다.
 - Phase 9 Playwright fallback: 동적 렌더링 URL 대응을 위한 조건부 Playwright fallback을 구현하고 운영 smoke QA를 완료했다.
 - Phase 10 import 병렬 fan-out/처리량/결과 재시도: Phase 10A~10E 구현과 로컬 검증을 완료했고, Phase 10F 운영 설정 체크리스트 확정, 운영 배포, smoke QA까지 완료했다.
+- Phase 11 import 이미지 추출 정확도: Cafe24 archive 상세 본문 이미지 우선 추출을 배포하고 Hatchingroom smoke QA를 완료했다.
+- Phase 12 Season Asset Failure Queue: 새 retry import job 생성 대신 failure queue 기반 재시도 구조를 구현하고 운영 배포/smoke QA까지 완료했다.
 
 ## 예정 Phase 요약
 
-- Phase 11 import 이미지 추출 정확도: Cafe24 archive 상세에서 본문 룩북 이미지만 추출하도록 worker 파서를 운영 배포하고 smoke QA한다.
-- Phase 12 Season Asset Failure Queue: 기존 retry import job 생성 방식 대신 `seasons/{seasonID}/assetFailures/{failureID}`를 현재 실패 asset 큐로 사용해 실패 asset만 idempotent하게 재처리한다.
+- `requestSeasonCandidateImportJobs` 이름 정리: 코드 구현, 로컬 검증, 운영 Functions 배포, 기존 `requestSeasonCandidateImportsAndProcess` 함수 삭제, 앱 기반 smoke QA까지 완료했다.
+- 시즌 import 개선 작업은 2026-06-15 사용자 수동 QA 기준으로 종료 가능 상태다.
 
 ## Phase 4: Firestore job 처리 구현
 
@@ -267,14 +269,24 @@ URL 기반 브랜드/시즌 등록 파이프라인을 Firestore job queue와 Clo
 - 원본 import job summary는 season/posts와 남은 failure 수 기준으로 갱신한다.
 - 기존 `retrySeasonAssets` job은 앱 미운영 상태이므로 삭제 필요가 없고, UI에서도 숨긴다.
 - 기존 `partialFailed` job의 failure queue는 재시도 버튼을 누르는 시점에 lazy 생성한다.
+- 재시도 중복 방지는 원본 import job의 `assetRetryStatus`/`assetRetryRequestID` marker로 처리한다.
+- `assetRetryStatus=queued/processing` 동안 앱 재시도 버튼은 비활성화하고, 성공 시 완료 상태, 재실패 시 다시 활성화 상태로 전환한다.
 
 완료 기준:
 
 - 동일 시즌을 반복 재시도해도 import job 문서가 늘지 않는다.
 - 실패 asset만 재처리되고 이미 성공한 asset은 skip된다.
 - 가져오기 현황은 원본 `importSeasonFromURL` job만 표시한다.
-- 가져오기 현황 제목은 job ID가 아니라 `seasonTitle/sourceTitle` 또는 실제 season `displayTitle`을 우선 표시한다.
+- 가져오기 현황 제목은 job ID가 아니라 `seasonTitle/sourceTitle`을 우선 표시한다.
+- 가져올 시즌 선택/탐색 UI와 가져오기 현황 UI에는 URL이나 import/season 문서 ID를 기본 표시하지 않는다.
+- 개발자 진단에 필요한 URL/ID는 Cloud Logging 또는 문서 데이터로 확인하고, 일반 관리자 UI의 1차 정보는 시즌명과 상태로 둔다.
 - 남은 `assetFailures` 개수 기준으로 “이미지 일부 실패 n개”와 재시도 상태를 표시한다.
+
+현재 상태:
+
+- Functions, worker, iOS 구현과 로컬 검증은 완료됐다.
+- Cloud Run worker `lookbook-import-worker-00009-qc9`와 Functions `requestSeasonAssetRetry` 배포 완료.
+- 통제된 부분 실패 job smoke QA에서 새 `retrySeasonAssets` job 미생성, 기존 post asset 복구, smoke 데이터 정리까지 완료했다.
 
 검증 방법:
 

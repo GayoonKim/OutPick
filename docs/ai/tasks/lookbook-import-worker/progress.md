@@ -6,7 +6,7 @@ Lookbook import worker 작업의 현재 상태와 상세 진행 기록의 읽는
 
 ## 현재 목표
 
-URL 기반 브랜드/시즌 등록 파이프라인을 Cloud Run worker 구조로 전환했고, 시즌 import 병렬 fan-out/처리량/결과 재시도까지 운영 배포와 smoke QA를 완료했다. 다음 개선 축은 import 이미지 추출 정확도 개선과 Season Asset Failure Queue 기반 재시도 구조다.
+URL 기반 브랜드/시즌 등록 파이프라인을 Cloud Run worker 구조로 전환했고, 시즌 import 병렬 fan-out/처리량/결과 재시도, import 이미지 추출 정확도 개선, Season Asset Failure Queue 기반 재시도 구조까지 운영 배포와 smoke QA를 완료했다.
 
 ## 현재 단계
 
@@ -29,9 +29,10 @@ URL 기반 브랜드/시즌 등록 파이프라인을 Cloud Run worker 구조로
 - Phase 10D Worker Asset Concurrency: 구현 및 worker lint/build/test 완료
 - Phase 10E Cloud Logging Observability: 구현 및 worker lint/build/test 완료
 - Phase 10F 운영 설정 체크리스트/운영 배포/smoke QA: 완료
-- Phase 11 import 이미지 추출 정확도: 계획 확정, 구현 전
-- Phase 12 Season Asset Failure Queue 기반 재시도 구조: 계획 확정, Phase 11 이후 진행
-- 다음 단계: Phase 11A worker 파서 수정본 Cloud Run 배포와 HATCHINGROOM smoke QA. 아직 진행하지 않음.
+- Phase 11 import 이미지 추출 정확도: 구현, 배포, HATCHINGROOM smoke QA 완료
+- Phase 12 Season Asset Failure Queue 기반 재시도 구조: 구현, 배포, 실제 앱 재시도 버튼 기반 E2E smoke QA 완료
+- `requestSeasonCandidateImportJobs` 이름 정리: 구현, 검증, 운영 배포, 기존 함수 삭제, 앱 정상 경로 smoke QA 완료
+- 다음 단계: 시즌 import 개선 작업 종료 커밋 정리
 
 ## 읽는 순서
 
@@ -61,11 +62,10 @@ URL 기반 브랜드/시즌 등록 파이프라인을 Cloud Run worker 구조로
 
 ## 남은 핵심 작업
 
-- Phase 11A: worker 파서 수정본을 Cloud Run에 배포하고 HATCHINGROOM `3759`, `3760`, `3761` URL smoke QA를 수행한다.
-- Phase 11B: Cafe24 archive 상세 파서 회귀 테스트를 보강한다.
-- 기존 HATCHINGROOM 관련 Firestore/Storage 데이터는 사용자가 삭제했으므로 별도 데이터 정리 작업은 진행하지 않는다.
-- Phase 12A-D: `seasons/{seasonID}/assetFailures/{failureID}` 기반 실패 asset 재시도 구조로 리팩토링한다.
-- `requestSeasonCandidateImportsAndProcess` 이름 정리는 현재 우선순위에서 제외한다.
+- Phase 11/12는 구현, 배포, smoke QA까지 완료했다. 상세는 `progress/phase-11-12.md`를 본다.
+- `requestSeasonCandidateImportJobs` 이름 정리 코드 구현, 로컬 검증, 운영 배포, 기존 `requestSeasonCandidateImportsAndProcess` 삭제를 완료했다. 운영 앱 배포 이력이 없으므로 legacy alias 없이 제거했다.
+- 2026-06-15 사용자 수동 QA 기준으로 실제 브랜드 등록, 시즌 후보 확인, 시즌 선택, import job 생성, worker 처리, 앱 표시, 시즌/이미지 생성 정상 경로까지 확인 완료했다.
+- 이전에 실패하던 HATCHINGROOM 브랜드 시즌 등록도 의도한 대로 성공했다.
 
 ## 현재 working tree 참고
 
@@ -98,10 +98,16 @@ URL 기반 브랜드/시즌 등록 파이프라인을 Cloud Run worker 구조로
 - Phase 9 smoke 테스트 Firestore 문서와 Storage prefix 정리 완료.
 - Phase 9 Cloud Tasks queue 잔여 작업 0개 확인.
 - Phase 10 상세 검증과 배포/smoke 기록은 `progress/phase-10.md`에 분리했다.
+- Phase 11/12 후 Functions `npm run lint`, `npm run build` 통과.
+- Phase 11/12 후 worker `npm run lint`, `npm run build`, `npm test` 통과.
+- Phase 11/12 후 `xcodebuild -scheme OutPick -destination 'generic/platform=iOS Simulator' build` 통과.
+- Phase 11/12 운영 배포와 failure queue E2E smoke QA 완료.
+- 2026-06-15 앱 정상 경로 smoke QA 완료.
 
 ## 남은 위험
 
-- 운영에는 `requestSeasonImport`, `requestSeasonCandidateImportsAndProcess`, `requestSeasonAssetRetry`, `onSeasonImportQueued`와 Cloud Run worker가 남아 있다.
+- 운영에는 `requestSeasonImport`, `requestSeasonCandidateImportJobs`, `requestSeasonAssetRetry`, `onSeasonImportQueued`와 Cloud Run worker가 남아 있다.
 - Playwright fallback은 Chromium runtime dependency로 image size, cold start, 메모리 사용량이 늘 수 있다. 운영 로그를 보며 추후 조정한다.
-- `requestSeasonCandidateImportsAndProcess`는 현재 동작상 job 생성만 하므로 이름과 책임 표현이 어긋나 있다. 앱 호출부 영향이 있어 별도 승인 후 리팩토링한다.
+- `requestSeasonCandidateImportsAndProcess`는 이름과 책임 표현이 어긋나 운영 앱 배포 전 legacy alias 없이 제거했다.
 - Phase 10 운영 반영 후 Cloud Tasks backlog, Cloud Run timeout/error/memory, `lookbookImport.*` 로그를 확인하며 처리량을 추가 상향할지 판단한다.
+- 강한 idempotency key 문서(`importJobKeys` 등)는 가까운 동시 요청 중복 문제가 실제 확인되면 후속 phase로 검토한다.
