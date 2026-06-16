@@ -106,18 +106,23 @@ Firestore 메시지 문서:
 - 경로: `Rooms/{roomID}/Messages/{messageID}`
 - 기존 메시지 필드 유지.
 - 공유 메시지는 `messageType = "lookbookShare"`, `sharedContent` map, `attachments = []`.
-- `msg`에는 모든 preview surface에서 공통으로 쓸 generic 공유 문구를 저장한다.
+- 클라이언트 전송 payload의 `msg`는 선택적 사용자 입력 텍스트다. 함께 보낼 텍스트가 없으면 nil 또는 빈 문자열을 허용한다.
+- 서버 저장 문서의 `msg`는 항상 문자열로 채운다.
+  - 사용자 입력 텍스트가 있으면 trim한 사용자 텍스트.
+  - 사용자 입력 텍스트가 없으면 `sharedContent.contentType` 기반 fallback preview.
   - 브랜드: `브랜드를 공유했어요`
   - 시즌: `시즌을 공유했어요`
   - 포스트: `포스트를 공유했어요`
 - 브랜드명, 시즌명, 썸네일은 `sharedContent` snapshot에만 저장하고 공유 카드 렌더링에서 사용한다.
+- 서버/클라이언트는 과거 generic preview가 `msg`에 저장된 메시지도 정상 표시해야 한다.
 
 GRDB 로컬 캐시:
 
 - `chatMessage.messageType` TEXT 컬럼 추가 후보.
 - `chatMessage.sharedContent` TEXT 컬럼 추가 후보. JSON string으로 저장한다.
-- 정렬/검색/last message fallback은 기존 `seq`, `sentAt`, `msg` 중심으로 유지한다.
-- 공유 메시지 검색은 generic `msg` 기준으로 동작한다. 브랜드명/시즌명 검색 확장은 MVP 이후 별도 결정한다.
+- 정렬은 기존 `seq`, `sentAt` 중심으로 유지한다.
+- 검색은 공유와 함께 보낸 사용자 텍스트가 있으면 `msg` 기준으로 동작한다. 브랜드명/시즌명 검색 확장은 MVP 이후 별도 결정한다.
+- `Rooms.lastMessage`, push preview, 답장 preview 등 compact preview surface는 서버가 저장한 `msg`를 우선 사용한다. legacy/로컬 실패 메시지처럼 `msg`가 비어 있으면 클라이언트가 fallback preview를 계산한다.
 
 호환성:
 
