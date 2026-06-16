@@ -54,14 +54,25 @@ enum LookbookChatShareError: Error, Equatable, LocalizedError, Sendable {
 protocol LookbookChatShareSendingRepositoryProtocol {
     func sendLookbookShare(
         sharedContent: LookbookSharedContent,
+        messageText: String?,
         to room: ChatRoom
     ) async throws -> LookbookChatShareSendResult
+}
+
+extension LookbookChatShareSendingRepositoryProtocol {
+    func sendLookbookShare(
+        sharedContent: LookbookSharedContent,
+        to room: ChatRoom
+    ) async throws -> LookbookChatShareSendResult {
+        try await sendLookbookShare(sharedContent: sharedContent, messageText: nil, to: room)
+    }
 }
 
 protocol LookbookChatShareSocketSending {
     func sendLookbookShare(
         roomID: String,
         sharedContent: LookbookSharedContent,
+        messageText: String?,
         ackTimeout: Double
     ) async throws -> LookbookChatShareSendResult
 }
@@ -80,6 +91,7 @@ final class SocketLookbookChatShareSendingRepository: LookbookChatShareSendingRe
 
     func sendLookbookShare(
         sharedContent: LookbookSharedContent,
+        messageText: String? = nil,
         to room: ChatRoom
     ) async throws -> LookbookChatShareSendResult {
         guard let roomID = LookbookChatShareRoomPolicy.roomID(from: room) else {
@@ -93,6 +105,7 @@ final class SocketLookbookChatShareSendingRepository: LookbookChatShareSendingRe
         return try await socketManager.sendLookbookShare(
             roomID: roomID,
             sharedContent: sharedContent,
+            messageText: messageText,
             ackTimeout: ackTimeout
         )
     }
@@ -241,7 +254,7 @@ enum LookbookChatShareAckMapper {
 }
 
 extension LookbookSharedContent {
-    var lookbookSharePreviewMessage: String {
+    var lookbookShareFallbackPreviewText: String {
         switch contentType {
         case .brand:
             return "브랜드를 공유했어요"

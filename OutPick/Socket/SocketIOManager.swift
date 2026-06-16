@@ -807,6 +807,7 @@ class SocketIOManager {
     func sendLookbookShare(
         roomID: String,
         sharedContent: LookbookSharedContent,
+        messageText: String? = nil,
         ackTimeout: Double = 5.0
     ) async throws -> LookbookChatShareSendResult {
         let trimmedRoomID = roomID.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -823,13 +824,16 @@ class SocketIOManager {
 
         let now = Date()
         let messageID = UUID().uuidString
-        let preview = sharedContent.lookbookSharePreviewMessage
+        let trimmedMessageText = (messageText ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let localFallbackPreview = trimmedMessageText.isEmpty
+            ? sharedContent.lookbookShareFallbackPreviewText
+            : trimmedMessageText
         var payload: [String: Any] = [
             "ID": messageID,
             "messageID": messageID,
             "roomID": trimmedRoomID,
             "messageType": ChatMessageType.lookbookShare.rawValue,
-            "msg": preview,
+            "msg": trimmedMessageText,
             "sentAt": Self.isoFormatter.string(from: now),
             "senderID": LoginManager.shared.getUserEmail,
             "senderNickname": LoginManager.shared.currentUserProfile?.nickname ?? "",
@@ -852,7 +856,7 @@ class SocketIOManager {
                     self.updateRoomSummaryAfterSend(
                         roomID: trimmedRoomID,
                         sentAt: now,
-                        preview: preview
+                        preview: localFallbackPreview
                     )
                     continuation.resume(returning: result)
                 } catch {

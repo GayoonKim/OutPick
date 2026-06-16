@@ -10,8 +10,18 @@ import Foundation
 protocol ShareLookbookContentToChatUseCaseProtocol {
     func execute(
         sharedContent: LookbookSharedContent,
+        messageText: String?,
         to room: ChatRoom
     ) async throws -> LookbookChatShareSendResult
+}
+
+extension ShareLookbookContentToChatUseCaseProtocol {
+    func execute(
+        sharedContent: LookbookSharedContent,
+        to room: ChatRoom
+    ) async throws -> LookbookChatShareSendResult {
+        try await execute(sharedContent: sharedContent, messageText: nil, to: room)
+    }
 }
 
 final class ShareLookbookContentToChatUseCase: ShareLookbookContentToChatUseCaseProtocol {
@@ -28,6 +38,7 @@ final class ShareLookbookContentToChatUseCase: ShareLookbookContentToChatUseCase
 
     func execute(
         sharedContent: LookbookSharedContent,
+        messageText: String? = nil,
         to room: ChatRoom
     ) async throws -> LookbookChatShareSendResult {
         guard sharedContent.isValid else {
@@ -48,6 +59,7 @@ final class ShareLookbookContentToChatUseCase: ShareLookbookContentToChatUseCase
 
         return try await repository.sendLookbookShare(
             sharedContent: sharedContent,
+            messageText: messageText,
             to: room
         )
     }
