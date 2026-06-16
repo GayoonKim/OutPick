@@ -3,22 +3,33 @@ import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { Server } from "socket.io";
-import admin from "firebase-admin";
+import {
+  MAX_CHAT_MESSAGE_BYTES,
+  MAX_IMAGES_PER_MESSAGE,
+  MAX_THUMB_PAYLOAD_BYTES,
+  PER_ITEM_THUMB_MAX_BYTES,
+  PORT,
+  RATE_MAX_CHAT,
+  RATE_MAX_IMAGES,
+  RATE_MAX_VIDEOS,
+  RATE_WINDOW_MS,
+  RECONNECT_POLICY
+} from "./src/config.js";
+import { admin, db } from "./src/firebaseAdmin.js";
+import { createLookbookShareHandler } from "./src/lookbookShare/lookbookShareHandler.js";
+import { createSequenceStore } from "./src/messages/sequenceStore.js";
+import { createChatPushService } from "./src/push/chatPushService.js";
+import { createRoomAccess } from "./src/rooms/roomAccess.js";
+import { createRoomRegistry } from "./src/rooms/roomRegistry.js";
+import { createUserLookup } from "./src/users/userLookup.js";
+import { allowRate } from "./src/utils/rateLimit.js";
+import { normalizeEmail } from "./src/utils/strings.js";
 
 const app = express();
 const server = createServer(app);
 const io = new Server(server, {
   maxHttpBufferSize: 2 * 1024 * 1024,           // 최대 2MB까지 허용 (썸네일 버퍼 여유)
   perMessageDeflate: { threshold: 1024 }        // 작은 메시지에는 비활성(이미지엔 효과 제한)
-});
-
-// ---- Reconnect policy (server hints) ----
-const RECONNECT_POLICY = Object.freeze({
-  maxAttempts: 5,
-  baseDelayMs: 500,
-  maxDelayMs: 8000,
-  jitter: 0.3,
-  windowMs: 60_000 // count attempts within 60s
 });
 
 // Track connection attempts per client key (auth.clientKey | query.clientKey | remote address)
@@ -36,60 +47,18 @@ function getClientKey(handshake) {
   }
 }
 
-let rooms = {}; // 방 목록 및 방 별 사용자 관리
-
 // 이미지 메시지 중복 방지 및 용량 가드
 const deliveredImageKeys = new Set(); // key: `${roomID}:${clientMessageID}`
-const MAX_IMAGES_PER_MESSAGE = 30;
-const MAX_THUMB_PAYLOAD_BYTES = 600 * 1024; // 썸네일 총량 예산(600KB)
-const PER_ITEM_THUMB_MAX_BYTES = 25 * 1024;     // 개별 썸네일 최대 25KB
 
 // Video meta de-dup & rate
 const deliveredVideoKeys = new Set(); // key: `${roomID}:${messageID}`
-const RATE_MAX_VIDEOS = 4;            // 2초에 비디오 메타 4회
 
 // If the client does not send per-image URL, server can derive it via env:
 //   export IMAGE_CDN_BASE="https://cdn.example.com/images"
 // Then withDerivedUrls() will emit both `url` and `originalUrl` based on storagePath/fileName.
 
-// ---- Safety guards ----
-const MAX_CHAT_MESSAGE_BYTES = 4000;           // UTF-8 기준 텍스트 최대 바이트
-const RATE_WINDOW_MS = 2000;                   // 2초 윈도우
-const RATE_MAX_CHAT = 12;                      // 2초에 채팅 12회
-const RATE_MAX_IMAGES = 4;                     // 2초에 이미지 4회
-const parsedPort = Number(process.env.PORT);
-const PORT = Number.isInteger(parsedPort) && parsedPort > 0 ? parsedPort : 3000;
-
-function initializeFirebaseAdmin() {
-  if (admin.apps.length > 0) return;
-
-  const serviceAccountJSON = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
-  if (serviceAccountJSON) {
-    admin.initializeApp({
-      credential: admin.credential.cert(JSON.parse(serviceAccountJSON))
-    });
-    return;
-  }
-
-  admin.initializeApp({
-    credential: admin.credential.applicationDefault()
-  });
-}
-
 function isValidRoomID(roomID) {
   return (typeof roomID === 'string') && /^[A-Za-z0-9_-]{1,64}$/.test(roomID);
-}
-
-// 간단한 토큰버킷/슬라이딩 윈도우 형태의 레이트 리밋
-const rateBuckets = new Map(); // key -> [timestamps]
-function allowRate(key, limit, windowMs) {
-  const now = Date.now();
-  const arr = rateBuckets.get(key) || [];
-  while (arr.length && (now - arr[0] > windowMs)) arr.shift();
-  if (arr.length >= limit) return false;
-  arr.push(now);
-  rateBuckets.set(key, arr);
-  return true;
 }
 
 function sanitizeImageItem(item) {
@@ -289,306 +258,35 @@ app.get('/', (req, res) => {
   res.sendFile(join(__dirname, 'index.html'));
 });
 
-initializeFirebaseAdmin();
-const db = admin.firestore();
-const USERS_COLLECTION = "users";
-const DEVICES_SUBCOLLECTION = "devices";
-const MAX_MULTICAST_TOKENS = 500;
+const {
+  findUserDocRefByEmail,
+  findUserDocRefsByEmails
+} = createUserLookup({ db });
 
-function normalizeEmail(email) {
-  return typeof email === "string" ? email.trim().toLowerCase() : "";
-}
+const {
+  rooms,
+  fetchRoomsFromFirebase,
+  ensureRoomLoaded
+} = createRoomRegistry({ db, isValidRoomID });
 
-function chunkArray(items, size) {
-  const chunks = [];
-  for (let index = 0; index < items.length; index += size) {
-    chunks.push(items.slice(index, index + size));
-  }
-  return chunks;
-}
+const { loadRoomAccess } = createRoomAccess({ db });
+const { allocateSeqAndPersist } = createSequenceStore({ db, admin });
+const { fanoutChatPush } = createChatPushService({
+  db,
+  admin,
+  findUserDocRefsByEmails
+});
 
-async function findUserDocRefByEmail(email) {
-  const normalizedEmail = normalizeEmail(email);
-  if (!normalizedEmail) return null;
-
-  const snapshot = await db.collection(USERS_COLLECTION)
-    .where("email", "==", normalizedEmail)
-    .limit(1)
-    .get();
-
-  return snapshot.empty ? null : snapshot.docs[0].ref;
-}
-
-async function findUserDocRefsByEmails(emails) {
-  const normalizedEmails = [...new Set(emails.map(normalizeEmail).filter(Boolean))];
-  const refsByEmail = new Map();
-
-  if (!normalizedEmails.length) {
-    return refsByEmail;
-  }
-
-  const chunks = chunkArray(normalizedEmails, 10);
-  const snapshots = await Promise.all(
-    chunks.map((chunk) =>
-      db.collection(USERS_COLLECTION)
-        .where("email", "in", chunk)
-        .get()
-    )
-  );
-
-  for (const snapshot of snapshots) {
-    snapshot.forEach((doc) => {
-      const email = normalizeEmail(doc.get("email"));
-      if (email) {
-        refsByEmail.set(email, doc.ref);
-      }
-    });
-  }
-
-  return refsByEmail;
-}
-
-function trimPushText(value, limit = 120) {
-  if (typeof value !== "string") return "";
-  const trimmed = value.trim();
-  if (trimmed.length <= limit) return trimmed;
-  return `${trimmed.slice(0, limit - 1)}…`;
-}
-
-function buildPushPreview(messageData) {
-  const raw = trimPushText(messageData?.msg || messageData?.message || "");
-  if (raw) return raw;
-
-  const attachments = Array.isArray(messageData?.attachments) ? messageData.attachments : [];
-  const images = attachments.filter((item) => item?.type === "image").length;
-  const videos = attachments.filter((item) => item?.type === "video").length;
-
-  switch (true) {
-    case images > 0 && videos === 0:
-      return images === 1 ? "사진을 보냈어요" : `사진 ${images}장을 보냈어요`;
-    case videos > 0 && images === 0:
-      return videos === 1 ? "동영상을 보냈어요" : `동영상 ${videos}개를 보냈어요`;
-    case images > 0 && videos > 0:
-      return `사진 ${images}장, 동영상 ${videos}개를 보냈어요`;
-    default:
-      return "새 메시지가 도착했어요";
-  }
-}
-
-function toMillis(value) {
-  if (!value) return 0;
-  if (typeof value?.toMillis === "function") return value.toMillis();
-  if (value instanceof Date) return value.getTime();
-  if (typeof value === "number") return value;
-  return 0;
-}
-
-function isInvalidPushTokenCode(code) {
-  return code === "messaging/registration-token-not-registered"
-    || code === "messaging/invalid-registration-token";
-}
-
-function buildChatPushMulticast({
-  roomID,
-  roomName,
-  messageID,
-  messageType,
-  senderID,
-  senderNickname,
-  preview,
-  tokens
-}) {
-  const safeRoomName = trimPushText(roomName || roomID || "채팅");
-  const safeSenderNickname = trimPushText(senderNickname || "새 메시지");
-  const safePreview = trimPushText(preview || "새 메시지가 도착했어요");
-
-  return {
-    tokens,
-    notification: {
-      title: safeRoomName,
-      body: `${safeSenderNickname}: ${safePreview}`
-    },
-    data: {
-      type: "chat",
-      roomID: String(roomID || ""),
-      roomName: String(roomName || ""),
-      messageID: String(messageID || ""),
-      senderID: String(senderID || ""),
-      senderNickname: String(senderNickname || ""),
-      messageType: String(messageType || "Text"),
-      preview: String(safePreview)
-    },
-    apns: {
-      payload: {
-        aps: {
-          sound: "default"
-        }
-      }
-    }
-  };
-}
-
-async function loadDeviceDocsByUserRef(userRef) {
-  const snapshot = await userRef.collection(DEVICES_SUBCOLLECTION).get();
-  return snapshot.docs.map((doc) => ({
-    ref: doc.ref,
-    ...doc.data()
-  }));
-}
-
-async function cleanupInvalidPushTokens(deviceRefs) {
-  if (!deviceRefs.length) return;
-
-  const batch = db.batch();
-  for (const deviceRef of deviceRefs) {
-    batch.set(deviceRef, {
-      fcmToken: admin.firestore.FieldValue.delete(),
-      pushEnabled: false,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      lastPushTokenInvalidAt: admin.firestore.FieldValue.serverTimestamp()
-    }, { merge: true });
-  }
-  await batch.commit();
-}
-
-async function sendChatPushToUser({
-  userRef,
-  roomID,
-  roomName,
-  messageID,
-  messageType,
-  senderID,
-  senderNickname,
-  preview
-}) {
-  const devices = await loadDeviceDocsByUserRef(userRef);
-  if (!devices.length) {
-    return { sent: 0, skippedReason: "no_devices" };
-  }
-
-  const hasForegroundDevice = devices.some((device) =>
-    device?.pushEnabled !== false && device?.appState === "foreground"
-  );
-  if (hasForegroundDevice) {
-    return { sent: 0, skippedReason: "foreground_present" };
-  }
-
-  const byToken = new Map();
-  for (const device of devices) {
-    const token = typeof device?.fcmToken === "string" ? device.fcmToken.trim() : "";
-    if (!token) continue;
-    if (device?.pushEnabled === false) continue;
-
-    const ageMs = Date.now() - toMillis(device?.updatedAt);
-    const normalizedState = typeof device?.appState === "string" ? device.appState : "offline";
-    const effectiveState = ageMs > 90_000 ? "offline" : normalizedState;
-    if (effectiveState === "foreground") continue;
-
-    byToken.set(token, {
-      ref: device.ref,
-      token
-    });
-  }
-
-  const targets = [...byToken.values()];
-  if (!targets.length) {
-    return { sent: 0, skippedReason: "no_push_targets" };
-  }
-
-  let sent = 0;
-  for (const chunk of chunkArray(targets, MAX_MULTICAST_TOKENS)) {
-    const multicast = buildChatPushMulticast({
-      roomID,
-      roomName,
-      messageID,
-      messageType,
-      senderID,
-      senderNickname,
-      preview,
-      tokens: chunk.map((item) => item.token)
-    });
-
-    const response = await admin.messaging().sendEachForMulticast(multicast);
-    sent += response.successCount;
-
-    const invalidRefs = response.responses
-      .map((result, index) => (
-        isInvalidPushTokenCode(result?.error?.code) ? chunk[index].ref : null
-      ))
-      .filter(Boolean);
-
-    if (invalidRefs.length) {
-      await cleanupInvalidPushTokens(invalidRefs);
-    }
-  }
-
-  return { sent, skippedReason: null };
-}
-
-async function fanoutChatPush({
-  roomID,
-  messageData
-}) {
-  try {
-    const roomSnapshot = await db.collection("Rooms").doc(roomID).get();
-    if (!roomSnapshot.exists) return;
-
-    const roomData = roomSnapshot.data() || {};
-    const participants = Array.isArray(roomData.participantIDs)
-      ? [...new Set(roomData.participantIDs.map(normalizeEmail).filter(Boolean))]
-      : [];
-
-    const senderID = normalizeEmail(messageData?.senderID || "");
-    const recipients = participants.filter((email) => email && email !== senderID);
-    if (!recipients.length) return;
-
-    const refsByEmail = await findUserDocRefsByEmails(recipients);
-    const roomName = typeof roomData.roomName === "string" && roomData.roomName.trim()
-      ? roomData.roomName.trim()
-      : roomID;
-    const preview = buildPushPreview(messageData);
-
-    const results = await Promise.all(recipients.map(async (recipientEmail) => {
-      const userRef = refsByEmail.get(recipientEmail);
-      if (!userRef) {
-        return { sent: 0, skippedReason: "user_not_found" };
-      }
-
-      return sendChatPushToUser({
-        userRef,
-        roomID,
-        roomName,
-        messageID: messageData?.ID,
-        messageType: messageData?.messageType,
-        senderID: messageData?.senderID,
-        senderNickname: messageData?.senderNickname,
-        preview
-      });
-    }));
-
-    const summary = results.reduce((acc, item) => {
-      acc.sent += item.sent || 0;
-      if (item.skippedReason) {
-        acc.skipped[item.skippedReason] = (acc.skipped[item.skippedReason] || 0) + 1;
-      }
-      return acc;
-    }, { sent: 0, skipped: {} });
-
-    console.log("[push] fanout complete", {
-      roomID,
-      messageID: messageData?.ID,
-      recipients: recipients.length,
-      sent: summary.sent,
-      skipped: summary.skipped
-    });
-  } catch (error) {
-    console.error("[push] fanout failed", {
-      roomID,
-      messageID: messageData?.ID,
-      error
-    });
-  }
-}
+const handleLookbookShare = createLookbookShareHandler({
+  io,
+  rooms,
+  isValidRoomID,
+  ensureRoomLoaded,
+  loadRoomAccess,
+  allocateSeqAndPersist,
+  fanoutChatPush,
+  allowRate
+});
 
 async function stageRoomMembershipCleanup(batch, roomID, email, userRef = null) {
   const normalizedEmail = normalizeEmail(email);
@@ -606,96 +304,6 @@ async function stageRoomMembershipCleanup(batch, roomID, email, userRef = null) 
   }, { merge: true });
   batch.delete(resolvedUserRef.collection("roomStates").doc(roomID));
   return true;
-}
-
-// --- Sequence allocator & persistence (Firestore transaction) ---
-async function allocateSeqAndPersist(roomID, messageID, messageData) {
-  const roomRef = db.collection("Rooms").doc(roomID);
-  const msgRef  = roomRef.collection("Messages").doc(messageID);
-
-  // 마지막 메시지 텍스트 유도: 우선 msg, 없으면 첨부 타입 요약
-  const deriveLastMessage = (md) => {
-    const raw = (typeof md?.msg === 'string' ? md.msg.trim() : '');
-    if (raw) return raw;
-    const atts = Array.isArray(md?.attachments) ? md.attachments : [];
-    const img = atts.filter(a => a && a.type === 'image').length;
-    const vid = atts.filter(a => a && a.type === 'video').length;
-    if (img && vid) return `[사진 ${img}장 · 동영상 ${vid}개]`;
-    if (img) return img === 1 ? `[사진]` : `[사진 ${img}장]`;
-    if (vid) return vid === 1 ? `[동영상]` : `[동영상 ${vid}개]`;
-    return `[첨부]`;
-  };
-
-  const lastMessageText = deriveLastMessage(messageData);
-
-  const seq = await db.runTransaction(async (tx) => {
-    // Idempotency: if message already exists with a seq, reuse it (do not override room aggregate here)
-    const existing = await tx.get(msgRef);
-    if (existing.exists) {
-      const ed = existing.data() || {};
-      if (typeof ed.seq === 'number') {
-        tx.set(msgRef, { ...messageData, seq: ed.seq }, { merge: true });
-        return ed.seq;
-      }
-    }
-
-    // Allocate next sequence atomically
-    const roomSnap = await tx.get(roomRef);
-    const cur = Number((roomSnap.exists && typeof roomSnap.data().seq === 'number') ? roomSnap.data().seq : 0);
-    const next = cur + 1;
-
-    // Persist message (with seq)
-    tx.set(msgRef, { ...messageData, seq: next }, { merge: true });
-
-    // Update room aggregate: seq / lastMessage / lastMessageAt
-    tx.set(roomRef, {
-      seq: next,
-      lastMessage: lastMessageText,
-      lastMessageAt: admin.firestore.FieldValue.serverTimestamp()
-    }, { merge: true });
-
-    return next;
-  });
-
-  return seq;
-}
-
-async function fetchRoomsFromFirebase() {
-  const roomsCollection = db.collection("Rooms");
-  const snapshot = await roomsCollection.get();
-
-  snapshot.forEach(doc => {
-    const roomID = doc.id;
-    if (!rooms[roomID]) {
-      rooms[roomID] = [];
-    }
-  });
-
-  console.log("Rooms initialized from Firebase:", Object.keys(rooms));
-}
-
-async function ensureRoomLoaded(roomID) {
-  if (!roomID || !isValidRoomID(roomID)) {
-    return false;
-  }
-
-  if (rooms[roomID]) {
-    return true;
-  }
-
-  try {
-    const roomSnapshot = await db.collection("Rooms").doc(roomID).get();
-    if (!roomSnapshot.exists) {
-      return false;
-    }
-
-    rooms[roomID] = rooms[roomID] || [];
-    console.log(`[room-bootstrap] loaded room from Firestore: ${roomID}`);
-    return true;
-  } catch (error) {
-    console.error(`[room-bootstrap] failed to load ${roomID}:`, error);
-    return false;
-  }
 }
 
 // Allow up to maxAttempts handshake tries within a moving window; otherwise reject with a descriptive error
@@ -1095,6 +703,11 @@ io.on('connection', (socket) => {
         console.error("[Chat] Error processing message:", error);
         callback && callback({ ok: false, message: error.message, error: error.message });
       }
+    });
+
+    // 룩북 브랜드/시즌/포스트 공유 메시지 전송
+    socket.on("chat:lookbookShare", async (data, callback) => {
+      return handleLookbookShare(socket, data, callback);
     });
 
     // 🔁 Legacy support: "send images" → accept new/old payload, normalize, unified emit
