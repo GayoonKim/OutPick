@@ -5,101 +5,8 @@
 //  Created by 김가윤 on 9/25/24.
 //
 
-import UIKit
-import FirebaseCore
 import SocketIO
 import FirebaseFirestore
-
-struct ReplyPreview: Codable, Hashable, Sendable {
-    let messageID: String
-    var sender: String
-    var text: String
-    var imagesCount: Int = 0
-    var videosCount: Int = 0
-
-    var attachmentsCount: Int { imagesCount + videosCount }
-    var firstThumbPath: String? = nil
-    var senderAvatarPath: String? = nil
-    var sentAt: Date? = nil
-    var isDeleted: Bool = false
-}
-
-struct VideoMetaPayload: Codable, Sendable {
-    let roomID: String
-    let messageID: String
-    let storagePath: String      // "rooms/<room>/messages/<msg>/video/video.mp4"
-    let thumbnailPath: String    // "rooms/<room>/messages/<msg>/video/thumb.jpg"
-    let duration: Double
-    let width: Int
-    let height: Int
-    let sizeBytes: Int64
-    let approxBitrateMbps: Double
-    let preset: String           // "standard720" | "dataSaver720" | "high1080"
-}
-
-struct Attachment: Codable, Hashable, Sendable {
-    enum AttachmentType: String, Codable, Sendable {
-        case image
-        case video
-        // 필요한 경우 더 추가
-    }
-
-    // MARK: - Meta-only fields (no binary payloads)
-    let type: AttachmentType
-    let index: Int                       // 정렬 보장용
-    let pathThumb: String                // Storage 경로 또는 상대 경로
-    let pathOriginal: String             // Storage 경로 또는 상대 경로
-    let width: Int                       // 원본 w
-    let height: Int                      // 원본 h
-    let bytesOriginal: Int               // 원본 바이트 수
-    let hash: String                     // 콘텐츠 해시(파일명/캐시 키에 사용)
-    var blurhash: String?                // 선택
-
-    let duration: Double?
-
-    // MARK: - Convenience (직렬화 제외)
-    var thumbCacheKey: String { "att:\(hash):thumb" }
-    var originalCacheKey: String { "att:\(hash):original" }
-    var normalizedThumbPath: String { Self.normalizedPath(pathThumb) }
-    var normalizedOriginalPath: String { Self.normalizedPath(pathOriginal) }
-    var preferredDisplayPath: String { normalizedThumbPath.isEmpty ? normalizedOriginalPath : normalizedThumbPath }
-    var hasDisplayablePayload: Bool { !preferredDisplayPath.isEmpty }
-
-    // Socket/Firestore로 보낼 딕셔너리
-    func toDict() -> [String: Any] {
-        var dict: [String: Any] = [
-            "type": type.rawValue,
-            "index": index,
-            "pathThumb": pathThumb,
-            "pathOriginal": pathOriginal,
-            "w": width,
-            "h": height,
-            "bytesOriginal": bytesOriginal,
-            "hash": hash
-        ]
-        if let b = blurhash { dict["blurhash"] = b }
-        if type == .video, let d = duration {
-            dict["duration"] = d
-        }
-        return dict
-    }
-
-    // Hashable/Equatable
-    func hash(into hasher: inout Hasher) {
-        hasher.combine(type)
-        hasher.combine(hash)
-        hasher.combine(pathOriginal)
-    }
-    static func == (lhs: Attachment, rhs: Attachment) -> Bool {
-        return lhs.type == rhs.type &&
-               lhs.hash == rhs.hash &&
-               lhs.pathOriginal == rhs.pathOriginal
-    }
-
-    private static func normalizedPath(_ path: String) -> String {
-        path.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-}
 
 // 채팅 메시지 정보
 struct ChatMessage: SocketData, Codable, Sendable {
@@ -109,9 +16,11 @@ struct ChatMessage: SocketData, Codable, Sendable {
     let senderID: String                // 메시지 전송 사용자 아이디
     var senderNickname: String          // 메시지 전송 사용자 닉네임
     var senderAvatarPath: String? = nil // Storage 상대경로(예: "avatars/<uid>/v3.jpg")
+    var messageType: ChatMessageType? = nil
     let msg: String?                    // 메시지 내용
     let sentAt: Date?                   // 메시지 보낸 시간
     let attachments: [Attachment]
+    var sharedContent: LookbookSharedContent? = nil
     var replyPreview: ReplyPreview?
     var isFailed: Bool = false
     var isDeleted: Bool = false
@@ -129,10 +38,14 @@ struct ChatMessage: SocketData, Codable, Sendable {
         case senderID
         case senderNickname
         case senderAvatarPath
+        case messageType
         case msg
         case sentAt
         case attachments
+        case sharedContent
         case replyPreview
+        case isFailed
+        case isDeleted
     }
     
     func toSocketRepresentation() -> SocketData {
@@ -144,11 +57,17 @@ struct ChatMessage: SocketData, Codable, Sendable {
             "senderNickname": senderNickname,
             "msg": msg ?? "",
         ]
+        if let messageType {
+            dict["messageType"] = messageType.rawValue
+        }
         if let avatar = senderAvatarPath, !avatar.isEmpty {
             dict["senderAvatarPath"] = avatar
         }
         
         dict["attachments"] = attachments.map { $0.toDict() }
+        if let sharedContent {
+            dict["sharedContent"] = sharedContent.toDict()
+        }
         
         if let rp = replyPreview {
             var rpDict: [String: Any] = [
@@ -195,11 +114,17 @@ struct ChatMessage: SocketData, Codable, Sendable {
             "searchNgrams2": searchIndex.searchNgrams2,
             "searchIndexVersion": searchIndex.version
         ]
+        if let messageType {
+            dict["messageType"] = messageType.rawValue
+        }
         if let avatar = senderAvatarPath, !avatar.isEmpty {
             dict["senderAvatarPath"] = avatar
         }
 
         dict["attachments"] = attachments.map { $0.toDict() }
+        if let sharedContent {
+            dict["sharedContent"] = sharedContent.toDict()
+        }
         
         if let rp = replyPreview {
             var rpDict: [String: Any] = [
@@ -232,6 +157,56 @@ struct ChatMessage: SocketData, Codable, Sendable {
 }
 
 extension ChatMessage: Hashable {}
+
+extension ChatMessage {
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let decodedMessageType: ChatMessageType? = {
+            guard let rawValue = try? container.decodeIfPresent(String.self, forKey: .messageType) else {
+                return nil
+            }
+            return ChatMessageType(legacyRawValue: rawValue)
+        }()
+
+        let decodedSharedContent: LookbookSharedContent? = {
+            guard decodedMessageType == .lookbookShare else { return nil }
+            return try? container.decodeIfPresent(LookbookSharedContent.self, forKey: .sharedContent)
+        }()
+
+        ID = try container.decode(String.self, forKey: .ID)
+        seq = try container.decodeIfPresent(Int64.self, forKey: .seq) ?? 0
+        roomID = try container.decode(String.self, forKey: .roomID)
+        senderID = try container.decode(String.self, forKey: .senderID)
+        senderNickname = try container.decodeIfPresent(String.self, forKey: .senderNickname) ?? ""
+        senderAvatarPath = try container.decodeIfPresent(String.self, forKey: .senderAvatarPath)
+        messageType = decodedMessageType
+        msg = try container.decodeIfPresent(String.self, forKey: .msg)
+        sentAt = try container.decodeIfPresent(Date.self, forKey: .sentAt)
+        attachments = try container.decodeIfPresent([Attachment].self, forKey: .attachments) ?? []
+        sharedContent = decodedSharedContent
+        replyPreview = try container.decodeIfPresent(ReplyPreview.self, forKey: .replyPreview)
+        isFailed = try container.decodeIfPresent(Bool.self, forKey: .isFailed) ?? false
+        isDeleted = try container.decodeIfPresent(Bool.self, forKey: .isDeleted) ?? false
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(ID, forKey: .ID)
+        try container.encode(seq, forKey: .seq)
+        try container.encode(roomID, forKey: .roomID)
+        try container.encode(senderID, forKey: .senderID)
+        try container.encode(senderNickname, forKey: .senderNickname)
+        try container.encodeIfPresent(senderAvatarPath, forKey: .senderAvatarPath)
+        try container.encodeIfPresent(messageType, forKey: .messageType)
+        try container.encodeIfPresent(msg, forKey: .msg)
+        try container.encodeIfPresent(sentAt, forKey: .sentAt)
+        try container.encode(attachments, forKey: .attachments)
+        try container.encodeIfPresent(sharedContent, forKey: .sharedContent)
+        try container.encodeIfPresent(replyPreview, forKey: .replyPreview)
+        try container.encode(isFailed, forKey: .isFailed)
+        try container.encode(isDeleted, forKey: .isDeleted)
+    }
+}
 
 extension ChatMessage {
     var sortedAttachments: [Attachment] {
@@ -294,6 +269,10 @@ extension ChatMessage {
 
         // Message text may be empty
         let msg = (dict["msg"] as? String) ?? (dict["message"] as? String)
+        let messageType = ChatMessageType(legacyRawValue: dict["messageType"] as? String)
+        let sharedContent = messageType == .lookbookShare
+            ? LookbookSharedContent.from(dict["sharedContent"])
+            : nil
 
         // sentAt: accept ISO8601(with/without fractional), Timestamp, epoch(s/ms). Optional.
         let sentAt = parseSentAt(dict["sentAt"]) ?? parseSentAt(dict["createdAt"]) // fallback key if any
@@ -341,9 +320,11 @@ extension ChatMessage {
             senderID: senderID,
             senderNickname: senderNickname,
             senderAvatarPath: senderAvatarPath,
+            messageType: messageType,
             msg: msg,
             sentAt: sentAt,
             attachments: attachments,
+            sharedContent: sharedContent,
             replyPreview: rp,
             isFailed: isFailed,
             isDeleted: isDeleted

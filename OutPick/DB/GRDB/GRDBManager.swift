@@ -239,6 +239,17 @@ final class GRDBManager {
                 print("[Migration] addSenderAvatarPathToChatMessage skipped or failed: \(error)")
             }
         }
+
+        migrator.registerMigration("addLookbookShareToChatMessage") { db in
+            do {
+                try db.alter(table: "chatMessage") { t in
+                    t.add(column: "messageType", .text)
+                    t.add(column: "sharedContent", .text)
+                }
+            } catch {
+                print("[Migration] addLookbookShareToChatMessage skipped or failed: \(error)")
+            }
+        }
         
         migrator.registerMigration("createRoomParticipant") { db in
             try db.create(table: "roomParticipant") { t in
@@ -410,12 +421,23 @@ final class GRDBManager {
                     }
                 }()
 
+                let sharedContentJSON: String? = {
+                    guard let sharedContent = message.sharedContent else { return nil }
+                    do {
+                        let data = try JSONEncoder().encode(sharedContent)
+                        return String(data: data, encoding: .utf8)
+                    } catch {
+                        print("sharedContent JSON 인코딩 실패: \(error)")
+                        return nil
+                    }
+                }()
+
                 // 4) Upsert chatMessage row
                 try db.execute(
                     sql: """
                     INSERT OR REPLACE INTO chatMessage
-                    (id, seq, roomID, senderID, senderNickname, senderAvatarPath, msg, sentAt, attachments, isFailed, replyPreview, isDeleted)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (id, seq, roomID, senderID, senderNickname, senderAvatarPath, messageType, msg, sentAt, attachments, sharedContent, isFailed, replyPreview, isDeleted)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     arguments: [
                         message.ID,
@@ -424,9 +446,11 @@ final class GRDBManager {
                         message.senderID,
                         message.senderNickname,
                         message.senderAvatarPath,
+                        message.messageType?.rawValue,
                         message.msg,
                         message.sentAt,
                         attachmentsJSON,
+                        sharedContentJSON,
                         message.isFailed,
                         replyPreviewJSON,
                         message.isDeleted
@@ -522,6 +546,54 @@ final class GRDBManager {
             try db.execute(sql: sql, arguments: StatementArguments(args))
         }
     }
+
+    private func makeChatMessage(from row: Row) throws -> ChatMessage {
+        let attachmentsJSON = row["attachments"] as? String ?? "[]"
+        let attachments = try JSONDecoder().decode([Attachment].self, from: Data(attachmentsJSON.utf8))
+        let replyPreview = decodeJSON(ReplyPreview.self, from: row["replyPreview"] as? String)
+        let messageType = ChatMessageType(legacyRawValue: row["messageType"] as? String)
+        let sharedContent: LookbookSharedContent? = {
+            guard messageType == .lookbookShare else { return nil }
+            return decodeJSON(LookbookSharedContent.self, from: row["sharedContent"] as? String)
+        }()
+
+        return ChatMessage(
+            ID: row["id"],
+            seq: (row["seq"] as? Int64) ?? 0,
+            roomID: row["roomID"],
+            senderID: row["senderID"],
+            senderNickname: row["senderNickname"],
+            senderAvatarPath: row["senderAvatarPath"] as? String,
+            messageType: messageType,
+            msg: row["msg"],
+            sentAt: row["sentAt"],
+            attachments: attachments,
+            sharedContent: sharedContent,
+            replyPreview: replyPreview,
+            isFailed: boolValue(row["isFailed"]),
+            isDeleted: boolValue(row["isDeleted"])
+        )
+    }
+
+    private func decodeJSON<T: Decodable>(_ type: T.Type, from json: String?) -> T? {
+        guard let json, let data = json.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(type, from: data)
+    }
+
+    private func boolValue(_ value: Any?) -> Bool {
+        switch value {
+        case let bool as Bool:
+            return bool
+        case let int as Int:
+            return int == 1
+        case let int64 as Int64:
+            return int64 == 1
+        case let number as NSNumber:
+            return number.boolValue
+        default:
+            return false
+        }
+    }
     
     /// 최근 메시지 N개를 로컬 DB에서 조회 (시간 오름차순으로 반환)
     ///  ORDER BY sentAt DESC, id DESC
@@ -541,34 +613,7 @@ final class GRDBManager {
             // UI는 보통 오래된 → 최신 순(ASC)을 기대하므로 역순으로 변환
             let ascRows = rows.reversed()
             
-            return try ascRows.compactMap { row in
-                let attachmentsJSON = row["attachments"] as? String ?? "[]"
-                let attachments = try JSONDecoder().decode([Attachment].self, from: Data(attachmentsJSON.utf8))
-                
-                let rpJSON = row["replyPreview"] as? String
-                let replyPreview: ReplyPreview? = {
-                    guard let rpJSON, let data = rpJSON.data(using: .utf8) else { return nil }
-                    return try? JSONDecoder().decode(ReplyPreview.self, from: data)
-                }()
-                
-                var message = ChatMessage(
-                    ID: row["id"],
-                    seq: (row["seq"] as? Int64) ?? 0,
-                    roomID: row["roomID"],
-                    senderID: row["senderID"],
-                    senderNickname: row["senderNickname"],
-                    msg: row["msg"],
-                    sentAt: row["sentAt"],
-                    attachments: attachments,
-                    replyPreview: replyPreview,
-                    isFailed: (row["isFailed"] as? Int64 == 1)
-                )
-                message.isDeleted = (row["isDeleted"] as? Int64 == 1)
-                if let avatar = row["senderAvatarPath"] as? String {
-                    message.senderAvatarPath = avatar
-                }
-                return message
-            }
+            return try ascRows.map { try self.makeChatMessage(from: $0) }
         }
     }
 
@@ -586,34 +631,7 @@ final class GRDBManager {
                 arguments: [roomID, afterSeq, limit]
             )
 
-            return try rows.compactMap { row in
-                let attachmentsJSON = row["attachments"] as? String ?? "[]"
-                let attachments = try JSONDecoder().decode([Attachment].self, from: Data(attachmentsJSON.utf8))
-
-                let rpJSON = row["replyPreview"] as? String
-                let replyPreview: ReplyPreview? = {
-                    guard let rpJSON, let data = rpJSON.data(using: .utf8) else { return nil }
-                    return try? JSONDecoder().decode(ReplyPreview.self, from: data)
-                }()
-
-                var message = ChatMessage(
-                    ID: row["id"],
-                    seq: (row["seq"] as? Int64) ?? 0,
-                    roomID: row["roomID"],
-                    senderID: row["senderID"],
-                    senderNickname: row["senderNickname"],
-                    msg: row["msg"],
-                    sentAt: row["sentAt"],
-                    attachments: attachments,
-                    replyPreview: replyPreview,
-                    isFailed: (row["isFailed"] as? Int64 == 1)
-                )
-                message.isDeleted = (row["isDeleted"] as? Int64 == 1)
-                if let avatar = row["senderAvatarPath"] as? String {
-                    message.senderAvatarPath = avatar
-                }
-                return message
-            }
+            return try rows.map { try self.makeChatMessage(from: $0) }
         }
     }
 
@@ -633,34 +651,7 @@ final class GRDBManager {
 
             let ascRows = rows.reversed()
 
-            return try ascRows.compactMap { row in
-                let attachmentsJSON = row["attachments"] as? String ?? "[]"
-                let attachments = try JSONDecoder().decode([Attachment].self, from: Data(attachmentsJSON.utf8))
-
-                let rpJSON = row["replyPreview"] as? String
-                let replyPreview: ReplyPreview? = {
-                    guard let rpJSON, let data = rpJSON.data(using: .utf8) else { return nil }
-                    return try? JSONDecoder().decode(ReplyPreview.self, from: data)
-                }()
-
-                var message = ChatMessage(
-                    ID: row["id"],
-                    seq: (row["seq"] as? Int64) ?? 0,
-                    roomID: row["roomID"],
-                    senderID: row["senderID"],
-                    senderNickname: row["senderNickname"],
-                    msg: row["msg"],
-                    sentAt: row["sentAt"],
-                    attachments: attachments,
-                    replyPreview: replyPreview,
-                    isFailed: (row["isFailed"] as? Int64 == 1)
-                )
-                message.isDeleted = (row["isDeleted"] as? Int64 == 1)
-                if let avatar = row["senderAvatarPath"] as? String {
-                    message.senderAvatarPath = avatar
-                }
-                return message
-            }
+            return try ascRows.map { try self.makeChatMessage(from: $0) }
         }
     }
 
@@ -692,33 +683,7 @@ final class GRDBManager {
             
             let ascRows = rows.reversed()
             
-            return try ascRows.compactMap { row in
-                let attachmentsJSON = row["attachments"] as? String ?? "[]"
-                let attachments = try JSONDecoder().decode([Attachment].self, from: Data(attachmentsJSON.utf8))
-                
-                let rpJSON = row["replyPreview"] as? String
-                let replyPreview: ReplyPreview? = {
-                    guard let rpJSON, let data = rpJSON.data(using: .utf8) else { return nil }
-                    return try? JSONDecoder().decode(ReplyPreview.self, from: data)
-                }()
-                
-                var message = ChatMessage(
-                    ID: row["id"], seq: (row["seq"] as? Int64) ?? 0,
-                    roomID: row["roomID"],
-                    senderID: row["senderID"],
-                    senderNickname: row["senderNickname"],
-                    msg: row["msg"],
-                    sentAt: row["sentAt"],
-                    attachments: attachments,
-                    replyPreview: replyPreview,
-                    isFailed: (row["isFailed"] as? Int64 == 1)
-                )
-                message.isDeleted = (row["isDeleted"] as? Int64 == 1)
-                if let avatar = row["senderAvatarPath"] as? String {
-                    message.senderAvatarPath = avatar
-                }
-                return message
-            }
+            return try ascRows.map { try self.makeChatMessage(from: $0) }
         }
     }
 
@@ -745,34 +710,7 @@ final class GRDBManager {
                 arguments: [roomID, anchorSeq, limit]
             )
 
-            return try rows.compactMap { row in
-                let attachmentsJSON = row["attachments"] as? String ?? "[]"
-                let attachments = try JSONDecoder().decode([Attachment].self, from: Data(attachmentsJSON.utf8))
-
-                let rpJSON = row["replyPreview"] as? String
-                let replyPreview: ReplyPreview? = {
-                    guard let rpJSON, let data = rpJSON.data(using: .utf8) else { return nil }
-                    return try? JSONDecoder().decode(ReplyPreview.self, from: data)
-                }()
-
-                var message = ChatMessage(
-                    ID: row["id"],
-                    seq: (row["seq"] as? Int64) ?? 0,
-                    roomID: row["roomID"],
-                    senderID: row["senderID"],
-                    senderNickname: row["senderNickname"],
-                    msg: row["msg"],
-                    sentAt: row["sentAt"],
-                    attachments: attachments,
-                    replyPreview: replyPreview,
-                    isFailed: (row["isFailed"] as? Int64 == 1)
-                )
-                message.isDeleted = (row["isDeleted"] as? Int64 == 1)
-                if let avatar = row["senderAvatarPath"] as? String {
-                    message.senderAvatarPath = avatar
-                }
-                return message
-            }
+            return try rows.map { try self.makeChatMessage(from: $0) }
         }
     }
     
@@ -843,34 +781,7 @@ final class GRDBManager {
                 rows = try Row.fetchAll(db, sql: sql, arguments: [roomID])
             }
             
-            return try rows.compactMap { row in
-                let attachmentsJSON = row["attachments"] as? String ?? "[]"
-                let attachments = try JSONDecoder().decode([Attachment].self, from: Data(attachmentsJSON.utf8))
-                
-                let rpJSON = row["replyPreview"] as? String
-                let replyPreview: ReplyPreview? = {
-                    guard let rpJSON, let data = rpJSON.data(using: .utf8) else { return nil }
-                    return try? JSONDecoder().decode(ReplyPreview.self, from: data)
-                }()
-                
-                var message = ChatMessage(
-                    ID: row["id"],
-                    seq: (row["seq"] as? Int64) ?? 0,
-                    roomID: row["roomID"],
-                    senderID: row["senderID"],
-                    senderNickname: row["senderNickname"],
-                    msg: row["msg"],
-                    sentAt: row["sentAt"],
-                    attachments: attachments,
-                    replyPreview: replyPreview,
-                    isFailed: (row["isFailed"] as? Int64 == 1)
-                )
-                message.isDeleted = (row["isDeleted"] as? Int64 == 1)
-                if let avatar = row["senderAvatarPath"] as? String {
-                    message.senderAvatarPath = avatar
-                }
-                return message
-            }
+            return try rows.map { try self.makeChatMessage(from: $0) }
         }
     }
     
@@ -883,34 +794,7 @@ final class GRDBManager {
                 arguments: [roomID]
             )
             
-            return try rows.compactMap { row in
-                let attachmentsJSON = row["attachments"] as? String ?? "[]"
-                let attachments = try JSONDecoder().decode([Attachment].self, from: Data(attachmentsJSON.utf8))
-                
-                let rpJSON = row["replyPreview"] as? String
-                let replyPreview: ReplyPreview? = {
-                    guard let rpJSON, let data = rpJSON.data(using: .utf8) else { return nil }
-                    return try? JSONDecoder().decode(ReplyPreview.self, from: data)
-                }()
-                
-                var message = ChatMessage(
-                    ID: row["id"],
-                    seq: (row["seq"] as? Int64) ?? 0,
-                    roomID: row["roomID"],
-                    senderID: row["senderID"],
-                    senderNickname: row["senderNickname"],
-                    msg: row["msg"],
-                    sentAt: row["sentAt"],
-                    attachments: attachments,
-                    replyPreview: replyPreview,
-                    isFailed: (row["isFailed"] as? Int64 == 1)
-                )
-                message.isDeleted = (row["isDeleted"] as? Int64 == 1)
-                if let avatar = row["senderAvatarPath"] as? String {
-                    message.senderAvatarPath = avatar
-                }
-                return message
-            }
+            return try rows.map { try self.makeChatMessage(from: $0) }
         }
     }
     
