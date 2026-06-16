@@ -72,6 +72,7 @@ OutPick의 화면 구성과 화면별 책임을 AI 에이전트가 빠르게 확
 - ViewModel: `ChatRoomViewModel`
 - Coordinator: `ChatCoordinator`
 - 책임: 채팅 메시지, 첨부, 답장, 미디어 흐름.
+- 룩북 공유 카드: `messageType = lookbookShare` 메시지는 compact 카드로 표시한다. 카드는 `sharedContent` snapshot만 사용하고 원본 룩북 데이터는 조회하지 않는다.
 
 ### Chat Supporting Screens
 
@@ -97,6 +98,7 @@ OutPick의 화면 구성과 화면별 책임을 AI 에이전트가 빠르게 확
 - ViewModel: `BrandDetailViewModel`
 - factory: `LookbookContainer.makeBrandDetailView`
 - 책임: 브랜드 상세, 시즌 목록, 브랜드 좋아요 상태 표시/변경.
+- 공유: `공식 사이트 방문` 옆에 공유 버튼을 둔다. 버튼 탭 시 내부 채팅방 공유 sheet를 연다.
 
 ### Season Detail
 
@@ -104,6 +106,7 @@ OutPick의 화면 구성과 화면별 책임을 AI 에이전트가 빠르게 확
 - ViewModel: `SeasonDetailViewModel`
 - factory: `LookbookContainer.makeSeasonDetailView`
 - 책임: 시즌 상세, 시즌 좋아요 상태 표시/변경, 시즌 내 포스트 탐색.
+- 공유: 좋아요 수/액션 영역 옆에 공유 버튼을 둔다. 버튼 탭 시 내부 채팅방 공유 sheet를 연다.
 
 ### Post Detail and Comments
 
@@ -112,6 +115,21 @@ OutPick의 화면 구성과 화면별 책임을 AI 에이전트가 빠르게 확
 - 댓글 ViewModel: `PostCommentsViewModel`, `PostCommentRepliesViewModel`
 - Coordinator: `LookbookCoordinator`, `PostCommentCoordinator`
 - 책임: 포스트 상세, 댓글/대댓글, 신고, 삭제, 차단, 상호작용.
+- 공유: 좋아요, 댓글 버튼 옆에 공유 버튼을 둔다. 포스트에는 독립 title이 없으므로 공유 snapshot title은 `포스트`, subtitle은 `브랜드명 · 시즌명`을 우선 사용한다.
+
+### Lookbook Share Sheet
+
+- 후보 파일: `OutPick/Features/Lookbook/Views/Share/LookbookShareSheetView.swift`
+- 후보 ViewModel: `LookbookChatShareViewModel`
+- 책임: 공유 대상 preview, 참여 중인 채팅방 단일 선택, 전송 상태, 빈/실패 상태, 전송 성공 완료 bar 연결.
+- 상단 preview:
+  - 브랜드: 썸네일, 브랜드명, `브랜드`
+  - 시즌: 썸네일, 시즌명, 브랜드명
+  - 포스트: 썸네일, `포스트`, `브랜드명 · 시즌명`
+- 방 row: 대표 사진 + 방 이름만 표시한다.
+- 전송 성공 UI: 현재 룩북 화면 위 하단 confirmation bar. 문구 `채팅방에 공유했어요`, 액션 `이동`, 보조 액션 `닫기`. 자동 사라짐은 사용하지 않는다.
+- 빈 상태: `아직 참여 중인 채팅방이 없어요. 관심 가는 방에 참여한 뒤 공유해보세요.`
+- 실패 상태: 방 목록 실패는 `채팅방을 불러오지 못했어요`, 전송 실패는 `공유하지 못했어요`.
 
 ### Create Brand/Season
 

@@ -325,3 +325,103 @@ ADR에 기록하지 않을 것:
 - 룩북 이미지와 포인트 색이 경쟁해 콘텐츠 판독성이 떨어진다.
 - App Store 출시 이후 사용자가 시스템 appearance 연동을 강하게 요구한다.
 - 채팅/룩북/마이페이지 등 주요 화면군에서 의미색과 포인트 색의 충돌이 반복적으로 확인된다.
+
+## ADR-011: 룩북 채팅 공유는 snapshot 렌더링과 상세 비동기 최신화를 분리한다
+
+상태: accepted
+
+결정:
+
+- 룩북 브랜드/시즌/포스트를 내부 참여 채팅방에 공유할 때 채팅 메시지는 snapshot + reference 구조로 저장한다.
+- 채팅방 카드 렌더링은 `sharedContent` snapshot만 사용하고, 브랜드/시즌/포스트 원본을 조회하지 않는다.
+- 공유 카드 탭 후 기존 룩북 상세 화면에서 원본을 비동기로 조회해 최신 데이터로 갱신한다.
+- 원본 삭제, 권한 없음, 접근 불가 상태는 상세 화면에서 `볼 수 없는 콘텐츠예요` 계열 상태로 처리한다.
+
+이유:
+
+- 채팅의 1차 가치는 실시간 메시징 속도와 안정성이다.
+- 룩북 원본 최신성 확인을 채팅방 렌더링 경로에 넣으면 채팅 스크롤/진입 성능과 실패 독립성이 나빠진다.
+- 사용자가 채팅방에서 원하는 것은 정확한 최신 브랜드명이 아니라, 대화 맥락 안에서 무엇이 공유됐는지 빠르게 이해하는 것이다.
+
+트레이드오프:
+
+- 채팅 카드의 제목/이미지는 전송 당시 snapshot이라 원본 수정이 즉시 반영되지 않는다.
+- 대신 상세 진입 후에는 최신 원본을 표시한다.
+
+핵심 문장:
+
+- 채팅은 채팅답게 빠르게, 룩북은 들어갔을 때 정확하게.
+
+## ADR-012: 룩북 공유 메시지는 새 소켓 이벤트로 전송하고 기존 메시지 스트림으로 수신한다
+
+상태: accepted
+
+결정:
+
+- 공유 전송은 새 소켓 이벤트 `chat:lookbookShare`를 사용한다.
+- 서버 broadcast는 기존 `chat message` 이벤트를 유지한다.
+- 저장 메시지는 `messageType = lookbookShare`, `sharedContent` map, `msg` preview를 가진다.
+- `msg` preview는 공유 대상 제목이 아니라 generic 공유 문구를 사용한다.
+  - `브랜드를 공유했어요`
+  - `시즌을 공유했어요`
+  - `포스트를 공유했어요`
+- 브랜드명, 시즌명, 썸네일은 `sharedContent` snapshot에만 저장하고 공유 카드 렌더링에서 사용한다.
+- 서버는 `Rooms/{roomID}`를 조회해 방 존재, `isClosed == false`, sender 참여 여부, socket room join 상태, payload shape/size, rate limit을 검증한다.
+- 서버는 브랜드/시즌/포스트 원본 존재 여부를 검증하지 않는다. 이는 상세 조회 책임이다.
+
+이유:
+
+- 기존 `chat message`는 텍스트 메시지 검증과 `msg` 필수 조건을 가진다.
+- 구조화 공유 payload를 텍스트 이벤트에 억지로 넣으면 검증과 유지보수 분기가 커진다.
+- 수신은 기존 메시지 스트림을 재사용하면 클라이언트의 실시간 수신/저장/정렬 흐름을 크게 바꾸지 않아도 된다.
+- 기존 배너, 푸시, 참여방 목록, 답장 preview, 공지 후보 텍스트가 `msg`를 사용하므로 generic 공유 문구를 저장하는 편이 노출 정책과 UX 일관성에 맞다.
+
+트레이드오프:
+
+- 소켓 서버에 새 이벤트와 검증 로직을 추가해야 한다.
+- 운영 소켓 서버 배포 경로와 secret 주입 방식은 구현 전 확인해야 한다.
+
+## ADR-013: 룩북 채팅 공유는 Chat 접합부를 먼저 만들고 거대 ViewController에 직접 붙이지 않는다
+
+상태: accepted
+
+결정:
+
+- 공유 기능은 `ChatViewController`에 직접 구현하지 않는다.
+- 공유 전송은 `ShareLookbookContentToChatUseCase` → `LookbookChatShareSendingRepositoryProtocol` → socket adapter 경계를 탄다.
+- 공유 sheet 상태는 `ObservableObject` + `@Published`와 `async/await`로 관리한다.
+- 메시지 타입별 렌더링은 `ChatMessageCell` 내부 거대 분기를 키우지 않고 하위 content view로 분리한다.
+- cross-feature 이동은 `MainTabCoordinator` 또는 `AppContentRouting` 같은 앱 레벨 라우터로 분리한다.
+- MVP에서는 얇은 `AppContentRouting` 계약으로 시작하고, 후속 작업에서 정식 `MainTabCoordinator`로 승격 가능한 형태로 설계한다.
+
+이유:
+
+- 현재 `ChatViewController`와 `ChatMessageCell`은 이미 책임이 크다.
+- 공유 기능은 Lookbook과 Chat을 잇는 cross-feature workflow라 ViewController에 붙이면 라우팅, 전송, 렌더링, 정책이 뒤섞인다.
+- 안전한 접합부를 만들면 MVP 속도를 유지하면서 장기 유지보수 비용을 줄일 수 있다.
+
+트레이드오프:
+
+- 작은 기능처럼 보여도 UseCase/Repository/Router 파일이 추가된다.
+- 대신 채팅 코드의 기존 부채를 더 키우지 않고 공유 기능을 확장할 수 있다.
+
+## ADR-014: 운영 소켓 서버의 Firebase Admin 키는 커밋하지 않는다
+
+상태: accepted
+
+결정:
+
+- `Socket/*firebase-adminsdk*.json` 같은 Firebase Admin 서비스 계정 키는 커밋하지 않는다.
+- `.gitignore`에 `**/*firebase-adminsdk*.json`, `Socket/node_modules/`를 보강한다.
+- 소켓 서버는 서비스 계정 JSON 파일명을 직접 require하지 않고 `FIREBASE_SERVICE_ACCOUNT_JSON` env secret 또는 Application Default Credentials로 초기화한다.
+- 로컬 실행은 `GOOGLE_APPLICATION_CREDENTIALS`가 가리키는 ignored local secret 파일을 사용한다.
+
+이유:
+
+- Firebase Admin 서비스 계정 JSON에는 private key가 포함된다.
+- 키가 저장소에 올라가면 운영 데이터 접근 권한이 노출될 수 있다.
+
+트레이드오프:
+
+- 로컬 실행과 배포 환경 설정이 별도로 필요하다.
+- 대신 저장소에서 비밀정보를 제거해 보안 리스크를 낮춘다.

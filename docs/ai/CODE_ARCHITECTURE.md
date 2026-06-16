@@ -94,6 +94,29 @@ CompositionRoot
 - `ChatCompositionRoot`, `ChatContainer`, `ChatCoordinator`가 채팅 root와 방 진입 흐름을 조립한다.
 - ViewController 기반 화면이 많으므로 UIKit 흐름을 존중한다.
 - Repositories, Managers, Domain UseCases가 혼재하므로 변경 전 관련 manager/protocol/usecase 흐름을 확인한다.
+- `ChatViewController`는 현재 메시지 생성, 소켓 세션, 미디어 캐시, 메뉴 액션 등 책임이 크다. 새 기능은 여기에 직접 붙이지 말고 UseCase/Repository/Coordinator/ActionPolicy 접합부를 먼저 만든다.
+- 룩북 공유 메시지는 `ChatViewController`에 전송 로직을 직접 추가하지 않는다. `ShareLookbookContentToChatUseCase`와 socket adapter 경계를 통해 전송한다.
+- 공유 카드 렌더링은 `ChatMessageCell`에 큰 레이아웃 분기를 직접 추가하지 않고 `LookbookShareMessageContentView` 같은 하위 view로 분리한다.
+- 메시지 타입별 답장/복사/삭제/공지 허용 여부는 `ChatMessageActionPolicy` 같은 순수 정책 객체로 분리하는 방향을 우선한다.
+
+### Cross-feature Routing
+
+- 기능 간 이동은 특정 Feature Coordinator나 `CustomTabBarViewController`에 직접 쌓지 않는다.
+- 장기 방향은 `MainTabCoordinator` 또는 `AppContentRouting` 같은 앱 레벨 라우터가 탭 전환과 cross-feature route를 담당하는 것이다.
+- 룩북 채팅 공유 MVP에서는 얇은 `AppContentRouting` 계약으로 시작하되, 후속 작업에서 정식 `MainTabCoordinator`로 승격 가능한 형태로 설계한다.
+- `CustomTabBarViewController`는 탭 UI와 child 교체만 담당한다.
+- `DefaultMainTabBuilder`는 탭 root 생성만 담당한다.
+- 예시 계약:
+
+```swift
+protocol AppContentRouting: AnyObject {
+    func openJoinedChatRoom(roomID: String) async throws
+    func openLookbookSharedContent(_ content: LookbookSharedContent) async throws
+}
+```
+
+- 룩북 공유 완료 후 `이동`은 앱 레벨 라우터가 참여방 탭 전환과 해당 방 열기를 담당한다.
+- 채팅방 공유 카드 탭도 앱 레벨 라우터를 통해 룩북 상세로 이동한다. Chat이 LookbookContainer를 직접 참조하지 않는다.
 
 ### Profile/Login
 

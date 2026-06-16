@@ -22,9 +22,11 @@ Secret.xcconfig
 *.key
 ServiceAccountKey.json
 serviceAccount*.json
+**/*firebase-adminsdk*.json
 
 # Node / Firebase Functions artifacts
 node_modules/
+Socket/node_modules/
 functions/node_modules/
 functions/lib/
 test-admin-server/lib/
