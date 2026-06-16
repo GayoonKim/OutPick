@@ -46,7 +46,25 @@ struct LookbookChatShareUseCaseTests {
         #expect(result == expected)
         #expect(repository.calls.count == 1)
         #expect(repository.calls.first?.sharedContent == content)
+        #expect(repository.calls.first?.messageText == nil)
         #expect(repository.calls.first?.room.ID == "room-1")
+    }
+
+    @Test func shareLookbookContentForwardsOptionalMessageText() async throws {
+        let repository = LookbookChatShareSendingRepositorySpy()
+        let useCase = ShareLookbookContentToChatUseCase(
+            repository: repository,
+            currentUserIDProvider: { "me@example.com" }
+        )
+        let room = makeRoom(id: "room-1", participants: ["me@example.com"])
+
+        _ = try await useCase.execute(
+            sharedContent: makeSharedContent(),
+            messageText: "이 시즌 봐봐",
+            to: room
+        )
+
+        #expect(repository.calls.first?.messageText == "이 시즌 봐봐")
     }
 
     @Test func shareLookbookContentRejectsClosedRoomBeforeSending() async {
@@ -245,6 +263,7 @@ private final class JoinedRoomsUseCaseFake: JoinedRoomsUseCaseProtocol {
 private final class LookbookChatShareSendingRepositorySpy: LookbookChatShareSendingRepositoryProtocol {
     struct Call {
         let sharedContent: LookbookSharedContent
+        let messageText: String?
         let room: ChatRoom
     }
 
@@ -264,9 +283,10 @@ private final class LookbookChatShareSendingRepositorySpy: LookbookChatShareSend
 
     func sendLookbookShare(
         sharedContent: LookbookSharedContent,
+        messageText: String?,
         to room: ChatRoom
     ) async throws -> LookbookChatShareSendResult {
-        calls.append(Call(sharedContent: sharedContent, room: room))
+        calls.append(Call(sharedContent: sharedContent, messageText: messageText, room: room))
         if let error {
             throw error
         }

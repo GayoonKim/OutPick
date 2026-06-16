@@ -49,7 +49,7 @@ struct ChatMessageLookbookShareTests {
     @Test func validLookbookShareDecodesAndSerializesSharedContent() throws {
         let payload = basePayload(
             messageType: "lookbookShare",
-            msg: "시즌을 공유했어요",
+            msg: "이 시즌 봐봐",
             sharedContent: [
                 "schemaVersion": 1,
                 "contentType": "season",
@@ -70,7 +70,7 @@ struct ChatMessageLookbookShareTests {
 
         let firestoreDict = message.toDict()
         #expect(firestoreDict["messageType"] as? String == "lookbookShare")
-        #expect(firestoreDict["msg"] as? String == "시즌을 공유했어요")
+        #expect(firestoreDict["msg"] as? String == "이 시즌 봐봐")
         let firestoreSharedContent = try #require(firestoreDict["sharedContent"] as? [String: Any])
         #expect(firestoreSharedContent["contentType"] as? String == "season")
         #expect(firestoreSharedContent["seasonID"] as? String == "season-1")
@@ -84,7 +84,7 @@ struct ChatMessageLookbookShareTests {
     @Test func invalidLookbookShareKeepsMessageAndDropsSharedContent() throws {
         let payload = basePayload(
             messageType: "lookbookShare",
-            msg: "포스트를 공유했어요",
+            msg: "이 포스트 어때",
             sharedContent: [
                 "schemaVersion": 1,
                 "contentType": "post",
@@ -96,7 +96,7 @@ struct ChatMessageLookbookShareTests {
 
         let message = try #require(ChatMessage.from(payload))
         #expect(message.messageType == .lookbookShare)
-        #expect(message.msg == "포스트를 공유했어요")
+        #expect(message.msg == "이 포스트 어때")
         #expect(message.sharedContent == nil)
     }
 
@@ -128,7 +128,7 @@ struct ChatMessageLookbookShareTests {
           "senderID": "sender@example.com",
           "senderNickname": "sender",
           "messageType": "lookbookShare",
-          "msg": "시즌을 공유했어요",
+          "msg": "이 시즌 봐봐",
           "attachments": [],
           "sharedContent": {
             "schemaVersion": 1,
@@ -143,7 +143,7 @@ struct ChatMessageLookbookShareTests {
         let message = try JSONDecoder().decode(ChatMessage.self, from: Data(json.utf8))
         #expect(message.messageType == .lookbookShare)
         #expect(message.sharedContent == nil)
-        #expect(message.msg == "시즌을 공유했어요")
+        #expect(message.msg == "이 시즌 봐봐")
     }
 
     private func basePayload(
