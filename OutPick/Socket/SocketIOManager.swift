@@ -803,6 +803,64 @@ class SocketIOManager {
             }
         }
     }
+
+    func sendLookbookShare(
+        roomID: String,
+        sharedContent: LookbookSharedContent,
+        ackTimeout: Double = 5.0
+    ) async throws -> LookbookChatShareSendResult {
+        let trimmedRoomID = roomID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedRoomID.isEmpty else {
+            throw LookbookChatShareError.invalidRoomID
+        }
+        guard sharedContent.isValid else {
+            throw LookbookChatShareError.invalidSharedContent
+        }
+        guard socket.status == .connected else {
+            socket.connect()
+            throw LookbookChatShareError.socketDisconnected
+        }
+
+        let now = Date()
+        let messageID = UUID().uuidString
+        let preview = sharedContent.lookbookSharePreviewMessage
+        var payload: [String: Any] = [
+            "ID": messageID,
+            "messageID": messageID,
+            "roomID": trimmedRoomID,
+            "messageType": ChatMessageType.lookbookShare.rawValue,
+            "msg": preview,
+            "sentAt": Self.isoFormatter.string(from: now),
+            "senderID": LoginManager.shared.getUserEmail,
+            "senderNickname": LoginManager.shared.currentUserProfile?.nickname ?? "",
+            "attachments": [],
+            "sharedContent": sharedContent.toDict()
+        ]
+        if let avatar = LoginManager.shared.currentUserProfile?.thumbPath,
+           !avatar.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            payload["senderAvatarPath"] = avatar
+        }
+
+        return try await withCheckedThrowingContinuation { continuation in
+            socket.emitWithAck("chat:lookbookShare", payload).timingOut(after: ackTimeout) { ackResponse in
+                do {
+                    let result = try LookbookChatShareAckMapper.parse(
+                        ackResponse,
+                        roomID: trimmedRoomID,
+                        fallbackMessageID: messageID
+                    )
+                    self.updateRoomSummaryAfterSend(
+                        roomID: trimmedRoomID,
+                        sentAt: now,
+                        preview: preview
+                    )
+                    continuation.resume(returning: result)
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
     
     // MARK: - Emit (meta-only attachments)
     /// 메타 전용 첨부(썸네일/원본 경로 등)를 소켓으로 전송

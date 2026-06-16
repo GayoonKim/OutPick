@@ -26,6 +26,8 @@ final class ChatContainer {
     private let chatInitialLoadUseCase: ChatInitialLoadUseCaseProtocol
     private let chatRoomSearchUseCase: ChatRoomSearchUseCaseProtocol
     private let chatRoomLifecycleUseCase: ChatRoomLifecycleUseCaseProtocol
+    private let loadShareableJoinedRoomsUseCase: LoadShareableJoinedRoomsUseCaseProtocol
+    private let shareLookbookContentToChatUseCase: ShareLookbookContentToChatUseCaseProtocol
     private var joinedRoomsRuntimeCancellable: AnyCancellable?
     private var isJoinedRoomsRuntimeBound = false
     private var runtimeJoinedRooms: Set<String> = []
@@ -65,6 +67,13 @@ final class ChatContainer {
             joinedRoomsStore: joinedRoomsStore,
             announcementRepository: announcementRepository
         )
+        let lookbookChatShareSendingRepository = SocketLookbookChatShareSendingRepository()
+        self.loadShareableJoinedRoomsUseCase = LoadShareableJoinedRoomsUseCase(
+            joinedRoomsUseCase: self.joinedRoomsUseCase
+        )
+        self.shareLookbookContentToChatUseCase = ShareLookbookContentToChatUseCase(
+            repository: lookbookChatShareSendingRepository
+        )
         ChatDependencyContainer.provider = provider
         ChatDependencyContainer.firebaseRepositories = repositories
         ChatDependencyContainer.joinedRoomsStore = joinedRoomsStore
@@ -90,6 +99,14 @@ final class ChatContainer {
             searchUseCase: chatRoomSearchUseCase,
             lifecycleUseCase: chatRoomLifecycleUseCase
         )
+    }
+
+    func makeLoadShareableJoinedRoomsUseCase() -> LoadShareableJoinedRoomsUseCaseProtocol {
+        loadShareableJoinedRoomsUseCase
+    }
+
+    func makeShareLookbookContentToChatUseCase() -> ShareLookbookContentToChatUseCaseProtocol {
+        shareLookbookContentToChatUseCase
     }
 
     func bindJoinedRoomsRuntimeIfNeeded() {
