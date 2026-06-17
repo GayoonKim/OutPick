@@ -87,6 +87,6 @@ class ChatReplyView: UIView {
         senderLabel.textColor = OutPickTheme.ColorToken.textPrimary
         messageLabel.textColor = OutPickTheme.ColorToken.textSecondary
         senderLabel.text = message.senderNickname
-        messageLabel.text = message.msg
+        messageLabel.text = message.isLookbookShareMessage ? message.lookbookSharePreviewText : message.msg
     }
 }

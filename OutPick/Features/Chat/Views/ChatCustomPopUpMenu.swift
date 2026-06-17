@@ -24,6 +24,14 @@ class ChatCustomPopUpMenu: UIView {
     
     enum PrimaryActionMode { case delete, report }
     private var primaryActionMode: PrimaryActionMode = .delete
+
+    struct Configuration: Equatable {
+        let canReply: Bool
+        let canCopy: Bool
+        let canDelete: Bool
+        let canReport: Bool
+        let canAnnounce: Bool
+    }
     
     private var mainSV: UIStackView = {
         let sv = UIStackView()
@@ -58,9 +66,36 @@ class ChatCustomPopUpMenu: UIView {
 //    }
 
     func configurePermissions(canDelete: Bool, canAnnounce: Bool) {
-        setPrimaryAction(canDelete ? .delete : .report)
-        announceButton.isHidden = !canAnnounce
-        sep2.isHidden = !canAnnounce
+        configure(
+            Configuration(
+                canReply: true,
+                canCopy: true,
+                canDelete: canDelete,
+                canReport: !canDelete,
+                canAnnounce: canAnnounce
+            )
+        )
+    }
+
+    func configure(_ configuration: Configuration) {
+        replyButton.isHidden = !configuration.canReply
+        sep1.isHidden = !configuration.canReply || !configuration.canCopy
+
+        copyButton.isHidden = !configuration.canCopy
+        sep2.isHidden = !configuration.canCopy || !configuration.canAnnounce
+
+        announceButton.isHidden = !configuration.canAnnounce
+        sep3.isHidden = !configuration.canAnnounce || !(configuration.canDelete || configuration.canReport)
+
+        if configuration.canDelete {
+            setPrimaryAction(.delete)
+            deleteButton.isHidden = false
+        } else if configuration.canReport {
+            setPrimaryAction(.report)
+            deleteButton.isHidden = false
+        } else {
+            deleteButton.isHidden = true
+        }
     }
     
     private func makeSeparator() -> UIView {

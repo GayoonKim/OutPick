@@ -34,6 +34,8 @@ class ChatMessageCell: UICollectionViewCell {
     var profileTapPublisher: AnyPublisher<Void, Never> { profileTapSubject.eraseToAnyPublisher() }
     let retryTapSubject = PassthroughSubject<Void, Never>()
     var retryTapPublisher: AnyPublisher<Void, Never> { retryTapSubject.eraseToAnyPublisher() }
+    let lookbookShareTapSubject = PassthroughSubject<LookbookSharedContent, Never>()
+    var lookbookShareTapPublisher: AnyPublisher<LookbookSharedContent, Never> { lookbookShareTapSubject.eraseToAnyPublisher() }
 
     private let profileImageView: UIImageView = {
         var imageView = UIImageView()
@@ -89,7 +91,10 @@ class ChatMessageCell: UICollectionViewCell {
         return view
     }()
     var referenceView: UIView {
-        bubbleView.isHidden ? imagesPreviewCollectionView : bubbleView
+        if !lookbookShareContentView.isHidden {
+            return lookbookShareContentView
+        }
+        return bubbleView.isHidden ? imagesPreviewCollectionView : bubbleView
     }
     
     private let imagesPreviewCollectionView: ChatImagePreviewCollectionView = {
@@ -99,6 +104,12 @@ class ChatMessageCell: UICollectionViewCell {
         view.backgroundColor = .clear
         view.isUserInteractionEnabled = true
         
+        return view
+    }()
+
+    private let lookbookShareContentView: LookbookShareMessageContentView = {
+        let view = LookbookShareMessageContentView()
+        view.isHidden = true
         return view
     }()
 
@@ -215,6 +226,12 @@ class ChatMessageCell: UICollectionViewCell {
     private var imagePreviewCollectionViewBottomConstraint: NSLayoutConstraint?
     private var imagePreviewCollectionViewWidthConstraint: NSLayoutConstraint?
     private var imagePreviewCollectionViewHeightConstraint: NSLayoutConstraint?
+
+    private var lookbookShareLeadingConstraint: NSLayoutConstraint?
+    private var lookbookShareTrailingConstraint: NSLayoutConstraint?
+    private var lookbookShareTopConstraint: NSLayoutConstraint?
+    private var lookbookShareBottomConstraint: NSLayoutConstraint?
+    private var lookbookShareWidthConstraint: NSLayoutConstraint?
     
     private var failedIconImageViewCenterYConstraint: NSLayoutConstraint?
     private var failedIconImageViewTrainlingConstraint: NSLayoutConstraint?
@@ -226,6 +243,7 @@ class ChatMessageCell: UICollectionViewCell {
     private var timeLeftOfHostTrailing: NSLayoutConstraint?
 
     private var videoBadgeConstraints: [NSLayoutConstraint] = []
+    private var representedLookbookSharedContent: LookbookSharedContent?
     
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -234,6 +252,7 @@ class ChatMessageCell: UICollectionViewCell {
         contentView.addSubview(nickNameLabel)
         contentView.addSubview(bubbleView)
         contentView.addSubview(imagesPreviewCollectionView)
+        contentView.addSubview(lookbookShareContentView)
         contentView.addSubview(timeLabel)
         contentView.addSubview(failedIconImageView)
         bubbleView.addSubview(replyPreviewContainer)
@@ -303,6 +322,9 @@ class ChatMessageCell: UICollectionViewCell {
         let profileTapGR = UITapGestureRecognizer(target: self, action: #selector(handleProfileTap))
         profileTapGR.cancelsTouchesInView = false
         profileImageView.addGestureRecognizer(profileTapGR)
+        let lookbookShareCellTapGR = UITapGestureRecognizer(target: self, action: #selector(handleLookbookShareCellTap(_:)))
+        lookbookShareCellTapGR.cancelsTouchesInView = false
+        contentView.addGestureRecognizer(lookbookShareCellTapGR)
         imageUploadRetryButton.addTarget(self, action: #selector(handleRetryTap), for: .touchUpInside)
         
         // Set up internal subviews of the video badge (host anchoring is done at configure time)
@@ -342,6 +364,9 @@ class ChatMessageCell: UICollectionViewCell {
         highlightView?.removeFromSuperview()
         highlightView = nil
         applyImageUploadOverlay(.none)
+        lookbookShareContentView.prepareForReuse()
+        lookbookShareContentView.isHidden = true
+        representedLookbookSharedContent = nil
         
         messageLabel.text = nil
         nickNameLabel.text = nil
@@ -350,6 +375,8 @@ class ChatMessageCell: UICollectionViewCell {
         profileImageView.isHidden = false
         nickNameLabel.isHidden = false
         bubbleView.backgroundColor = OutPickTheme.ColorToken.surfaceBase
+        bubbleView.layer.borderWidth = 0
+        bubbleView.layer.borderColor = nil
         imagesPreviewCollectionView.isHidden = true
         imagesPreviewCollectionView.updateCollectionView([], 0, [], thumbnailLoader: nil)
 
@@ -372,6 +399,12 @@ class ChatMessageCell: UICollectionViewCell {
             imagePreviewCollectionViewBottomConstraint,
             imagePreviewCollectionViewWidthConstraint,
             imagePreviewCollectionViewHeightConstraint,
+
+            lookbookShareLeadingConstraint,
+            lookbookShareTrailingConstraint,
+            lookbookShareTopConstraint,
+            lookbookShareBottomConstraint,
+            lookbookShareWidthConstraint,
             
             failedIconImageViewCenterYConstraint,
             failedIconImageViewTrainlingConstraint
@@ -431,6 +464,12 @@ class ChatMessageCell: UICollectionViewCell {
             imagePreviewCollectionViewWidthConstraint,
             imagePreviewCollectionViewHeightConstraint,
 
+            lookbookShareLeadingConstraint,
+            lookbookShareTrailingConstraint,
+            lookbookShareTopConstraint,
+            lookbookShareBottomConstraint,
+            lookbookShareWidthConstraint,
+
             failedIconImageViewCenterYConstraint,
             failedIconImageViewTrainlingConstraint
         ].compactMap { $0 })
@@ -446,6 +485,15 @@ class ChatMessageCell: UICollectionViewCell {
         imagePreviewCollectionViewBottomConstraint = nil
         imagePreviewCollectionViewWidthConstraint = nil
         imagePreviewCollectionViewHeightConstraint = nil
+
+        lookbookShareLeadingConstraint = nil
+        lookbookShareTrailingConstraint = nil
+        lookbookShareTopConstraint = nil
+        lookbookShareBottomConstraint = nil
+        lookbookShareWidthConstraint = nil
+        lookbookShareContentView.prepareForReuse()
+        lookbookShareContentView.isHidden = true
+        representedLookbookSharedContent = nil
 
         failedIconImageViewCenterYConstraint = nil
         failedIconImageViewTrainlingConstraint = nil
@@ -465,6 +513,9 @@ class ChatMessageCell: UICollectionViewCell {
         messageLabel.isHidden = false
         imagesPreviewCollectionView.isHidden = true
         imagesPreviewCollectionView.updateCollectionView([], 0, [], thumbnailLoader: nil)
+        lookbookShareContentView.prepareForReuse()
+        lookbookShareContentView.isHidden = true
+        representedLookbookSharedContent = nil
         hideVideoBadge()
 
         // Compute isMine once
@@ -484,7 +535,9 @@ class ChatMessageCell: UICollectionViewCell {
         
         if isMine {
             // 본인이 보낸 메시지
-            bubbleView.backgroundColor = OutPickTheme.ColorToken.surfaceElevated
+            bubbleView.backgroundColor = OutPickTheme.ColorToken.accent.withAlphaComponent(0.18)
+            bubbleView.layer.borderWidth = 1
+            bubbleView.layer.borderColor = OutPickTheme.ColorToken.accent.withAlphaComponent(0.28).cgColor
             
             // 기본 제약조건 업데이트
             bubbleViewLeadingConstraint = bubbleView.leadingAnchor.constraint(greaterThanOrEqualTo: contentView.leadingAnchor, constant: 20)
@@ -505,6 +558,8 @@ class ChatMessageCell: UICollectionViewCell {
         } else {
             // 상대방이 보낸 메시지
             bubbleView.backgroundColor = OutPickTheme.ColorToken.surfaceBase
+            bubbleView.layer.borderWidth = 0
+            bubbleView.layer.borderColor = nil
             
             // 기본 제약조건으로 복원
             bubbleViewLeadingConstraint = bubbleView.leadingAnchor.constraint(equalTo: profileImageView.trailingAnchor, constant: 5)
@@ -584,6 +639,9 @@ class ChatMessageCell: UICollectionViewCell {
             messageLabel.isHidden = false
             imagesPreviewCollectionView.isHidden = true
             imagesPreviewCollectionView.updateCollectionView([], 0, [], thumbnailLoader: nil)
+            lookbookShareContentView.prepareForReuse()
+            lookbookShareContentView.isHidden = true
+            representedLookbookSharedContent = nil
 
             messageLabel.text = "삭제된 메시지입니다."
             messageLabel.textColor = OutPickTheme.ColorToken.textTertiary
@@ -609,7 +667,9 @@ class ChatMessageCell: UICollectionViewCell {
             configureProfileArea(with: message, isMine: isMine, avatarLoader: avatarLoader)
             if isMine {
                 // 본인이 보낸(삭제된) 메시지로 표시
-                bubbleView.backgroundColor = OutPickTheme.ColorToken.surfaceElevated
+                bubbleView.backgroundColor = OutPickTheme.ColorToken.accent.withAlphaComponent(0.18)
+                bubbleView.layer.borderWidth = 1
+                bubbleView.layer.borderColor = OutPickTheme.ColorToken.accent.withAlphaComponent(0.28).cgColor
 
                 bubbleViewLeadingConstraint = bubbleView.leadingAnchor.constraint(greaterThanOrEqualTo: contentView.leadingAnchor, constant: 20)
                 bubbleViewTrailingConstraint = bubbleView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -8)
@@ -618,6 +678,8 @@ class ChatMessageCell: UICollectionViewCell {
             } else {
                 // 상대방이 보낸(삭제된) 메시지로 표시
                 bubbleView.backgroundColor = OutPickTheme.ColorToken.surfaceBase
+                bubbleView.layer.borderWidth = 0
+                bubbleView.layer.borderColor = nil
 
                 bubbleViewLeadingConstraint = bubbleView.leadingAnchor.constraint(equalTo: profileImageView.trailingAnchor, constant: 5)
                 bubbleViewTrailingConstraint = bubbleView.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor, constant: -10)
@@ -666,6 +728,9 @@ class ChatMessageCell: UICollectionViewCell {
         bubbleView.isHidden = true
         messageLabel.isHidden = true
         imagesPreviewCollectionView.isHidden = false
+        lookbookShareContentView.prepareForReuse()
+        lookbookShareContentView.isHidden = true
+        representedLookbookSharedContent = nil
         
         let containerWidth = contentView.frame.width * 0.7
         let displayableAttachments = message.displayableAttachments
@@ -739,6 +804,112 @@ class ChatMessageCell: UICollectionViewCell {
         hideVideoBadge()
     }
 
+    func configureLookbookShareMessage(
+        _ message: ChatMessage,
+        thumbnailLoader: ((String) async -> UIImage?)?,
+        avatarLoader: ((String) async -> UIImage?)?
+    ) {
+        representedMessageID = message.ID
+        resetDynamicLayoutConstraintsForReconfigure()
+        messageLabel.attributedText = nil
+        bubbleView.isHidden = true
+        messageLabel.isHidden = true
+        imagesPreviewCollectionView.isHidden = true
+        imagesPreviewCollectionView.updateCollectionView([], 0, [], thumbnailLoader: nil)
+        hideVideoBadge()
+        applyImageUploadOverlay(.none)
+
+        if message.isDeleted {
+            configureWithMessage(with: message, avatarLoader: avatarLoader)
+            return
+        }
+
+        let isMine = LoginManager.shared.getUserEmail == message.senderID
+        configureProfileArea(with: message, isMine: isMine, avatarLoader: avatarLoader)
+
+        representedLookbookSharedContent = message.sharedContent
+        lookbookShareContentView.isHidden = false
+        lookbookShareContentView.configure(
+            with: message.sharedContent,
+            thumbnailLoader: thumbnailLoader
+        )
+
+        let containerWidth = contentView.frame.width > 0
+            ? contentView.frame.width * 0.72
+            : UIScreen.main.bounds.width * 0.72
+
+        if isMine {
+            lookbookShareLeadingConstraint = lookbookShareContentView.leadingAnchor.constraint(
+                greaterThanOrEqualTo: contentView.leadingAnchor,
+                constant: 20
+            )
+            lookbookShareTrailingConstraint = lookbookShareContentView.trailingAnchor.constraint(
+                equalTo: contentView.trailingAnchor,
+                constant: -8
+            )
+            lookbookShareTopConstraint = lookbookShareContentView.topAnchor.constraint(
+                equalTo: contentView.topAnchor,
+                constant: 8
+            )
+            lookbookShareBottomConstraint = lookbookShareContentView.bottomAnchor.constraint(
+                equalTo: contentView.bottomAnchor,
+                constant: -8
+            )
+        } else {
+            lookbookShareLeadingConstraint = lookbookShareContentView.leadingAnchor.constraint(
+                equalTo: profileImageView.trailingAnchor,
+                constant: 5
+            )
+            lookbookShareTrailingConstraint = lookbookShareContentView.trailingAnchor.constraint(
+                lessThanOrEqualTo: contentView.trailingAnchor,
+                constant: -10
+            )
+            lookbookShareTopConstraint = lookbookShareContentView.topAnchor.constraint(
+                equalTo: nickNameLabel.bottomAnchor,
+                constant: 5
+            )
+            lookbookShareBottomConstraint = lookbookShareContentView.bottomAnchor.constraint(
+                equalTo: contentView.bottomAnchor,
+                constant: -8
+            )
+        }
+
+        lookbookShareWidthConstraint = lookbookShareContentView.widthAnchor.constraint(
+            lessThanOrEqualToConstant: containerWidth
+        )
+
+        NSLayoutConstraint.activate([
+            lookbookShareLeadingConstraint,
+            lookbookShareTrailingConstraint,
+            lookbookShareTopConstraint,
+            lookbookShareBottomConstraint,
+            lookbookShareWidthConstraint
+        ].compactMap { $0 })
+
+        if message.isFailed {
+            timeLabel.isHidden = true
+            failedIconImageView.isHidden = false
+            failedIconImageViewCenterYConstraint = failedIconImageView.centerYAnchor.constraint(
+                equalTo: lookbookShareContentView.centerYAnchor
+            )
+            failedIconImageViewTrainlingConstraint = failedIconImageView.trailingAnchor.constraint(
+                equalTo: lookbookShareContentView.leadingAnchor,
+                constant: -2
+            )
+            NSLayoutConstraint.activate([
+                failedIconImageViewCenterYConstraint,
+                failedIconImageViewTrainlingConstraint
+            ].compactMap { $0 })
+        } else {
+            timeLabel.isHidden = false
+            timeLabel.text = formattedTime(message.sentAt)
+            mountTimeLabel(on: lookbookShareContentView, isMine: isMine)
+        }
+
+        setNeedsLayout()
+        layoutIfNeeded()
+    }
+
     private func configureProfileArea(
         with message: ChatMessage,
         isMine: Bool,
@@ -795,21 +966,22 @@ class ChatMessageCell: UICollectionViewCell {
     func setHightlightedOverlay(_ highlighted: Bool) {
         if highlighted {
             if highlightView == nil {
+                let host = referenceView
                 let overayView = UIView()
                 overayView.translatesAutoresizingMaskIntoConstraints = false
                 overayView.backgroundColor = OutPickTheme.ColorToken.accent.withAlphaComponent(0.12)
-                overayView.layer.cornerRadius = bubbleView.layer.cornerRadius
+                overayView.layer.cornerRadius = host.layer.cornerRadius
                 overayView.layer.borderColor = OutPickTheme.ColorToken.accent.withAlphaComponent(0.7).cgColor
                 overayView.layer.borderWidth = 1
                 overayView.isUserInteractionEnabled = false
-                bubbleView.addSubview(overayView)
+                host.addSubview(overayView)
                 highlightView = overayView
                 
                 NSLayoutConstraint.activate([
-                    overayView.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor),
-                    overayView.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor),
-                    overayView.topAnchor.constraint(equalTo: bubbleView.topAnchor),
-                    overayView.bottomAnchor.constraint(equalTo: bubbleView.bottomAnchor)
+                    overayView.leadingAnchor.constraint(equalTo: host.leadingAnchor),
+                    overayView.trailingAnchor.constraint(equalTo: host.trailingAnchor),
+                    overayView.topAnchor.constraint(equalTo: host.topAnchor),
+                    overayView.bottomAnchor.constraint(equalTo: host.bottomAnchor)
                 ])
             }
         } else {
@@ -885,6 +1057,15 @@ class ChatMessageCell: UICollectionViewCell {
 
     @objc private func handleRetryTap() {
         retryTapSubject.send(())
+    }
+
+    @objc private func handleLookbookShareCellTap(_ gesture: UITapGestureRecognizer) {
+        guard gesture.state == .ended,
+              !lookbookShareContentView.isHidden,
+              let representedLookbookSharedContent else { return }
+        let tapPoint = gesture.location(in: contentView)
+        guard profileImageView.isHidden || !profileImageView.frame.contains(tapPoint) else { return }
+        lookbookShareTapSubject.send(representedLookbookSharedContent)
     }
 
     func currentPreviewImages() -> [UIImage?] {
