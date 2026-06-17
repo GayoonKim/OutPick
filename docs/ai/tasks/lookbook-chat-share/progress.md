@@ -2,7 +2,7 @@
 
 ## 현재 상태
 
-- 상태: Phase 3.5 Socket 서버 A안 모듈 분리 및 문법 검증 완료.
+- 상태: Lookbook Chat Share MVP 완료.
 - 공식 하네스 반영 완료:
   - `docs/ai/PRD.md`
   - `docs/ai/FLOW.md`
@@ -48,6 +48,40 @@
   - `push/`: chat push fanout.
   - `lookbookShare/`: `sharedContent` 검증과 `chat:lookbookShare` handler.
 - `Socket/index.js`는 아직 text/image/video/room lifecycle handler를 포함하지만, 공유 기능과 공통 인프라는 factory 주입 방식으로 조립한다.
+- Phase 4에서 브랜드/시즌/포스트 상세 공유 버튼, 공유 Sheet, 참여방 선택, 전송 상태, 성공 confirmation bar를 구현했다.
+- `MakeLookbookSharedContentUseCase`를 추가해 브랜드/시즌/포스트 entity를 `LookbookSharedContent` snapshot으로 변환한다.
+  - 시즌/포스트 subtitle 정확도를 위해 `BrandRepository`와 `SeasonRepository`로 필요한 메타데이터를 보강한다.
+- `LookbookChatShareViewModel`은 snapshot 생성, 참여방 로딩, 방 선택, 공유 전송, 성공/실패 상태를 관리한다.
+- 공유 Sheet는 첫 번째 방을 자동 선택하지 않는다. 사용자가 명시적으로 방 row를 탭해야 전송 버튼이 활성화된다.
+- 공유 가능 방 목록은 `lastMessageAt ?? createdAt` 내림차순으로 정렬해 최근 대화방 순서를 보장한다.
+- `LookbookContainer`는 `ChatContainer`가 제공하는 `LoadShareableJoinedRoomsUseCaseProtocol`, `ShareLookbookContentToChatUseCaseProtocol`, `RoomImageManaging`을 주입받아 공유 sheet를 조립한다.
+- Phase 4의 `이동` 액션은 UI 자리만 마련하고 실제 채팅방 이동은 Phase 6 `AppContentRouting`에서 구현한다.
+- Phase 5에서 채팅방 공유 카드 compact 렌더링을 구현했다.
+- 공유 카드 UI는 `LookbookShareMessageContentView`로 분리하고, `ChatMessageCell`에는 장착 지점만 둔다.
+- 공유 카드 메시지 분기는 이미지/텍스트 메시지 분기보다 먼저 처리한다.
+- 공유 카드 썸네일은 `thumbnailPathSnapshot` Storage path만 사용하고 원본 룩북 Repository 조회는 하지 않는다.
+- `ChatMessageActionPolicy`를 추가해 메시지 타입별 `reply/copy/delete/report/announce` 정책을 분리했다.
+- 룩북 공유 메시지는 답장을 허용하고, 복사/공지는 MVP에서 제외한다.
+- 삭제/신고는 기존 owner/admin 기준 삭제 권한을 유지한다.
+- 답장 preview는 서버 `msg`를 우선 사용하고, 비어 있으면 공유 타입 기반 fallback 문구를 사용한다.
+- 공유 카드 탭 이벤트는 `ChatMessageCell`에서 `ChatViewController`까지 전달한다. 실제 룩북 상세 이동은 Phase 6 `AppContentRouting`에서 연결한다.
+- Phase 6에서 얇은 `AppContentRouting` 계약과 `DefaultAppContentRouter`를 추가했다.
+- 공유 완료 confirmation bar의 `이동` 액션은 `AppContentRouting.openJoinedChatRoom(roomID:)`을 호출한다.
+- 채팅방 공유 카드 탭은 `AppContentRouting.openLookbookSharedContent(_:)`을 호출한다.
+- `CustomTabBarViewController`는 탭 전환/active presenter 조회만 제공하고, route 정책은 `DefaultAppContentRouter`에 둔다.
+- `DefaultMainTabBuilder`는 기존 `ChatCoordinator.openRoom(roomID:from:)`를 route 접합부로 노출한다.
+- 룩북 상세 이동은 snapshot ID를 사용해 브랜드/시즌/포스트 상세 화면을 push한다.
+- 채팅 카드 탭에서 룩북으로 이동할 때 현재 presented 채팅방 모달을 먼저 닫고 룩북 탭으로 전환한다.
+- `MainTabCoordinator` 승격은 이번 phase 범위 밖으로 유지하고, 공유 MVP 이후 별도 리팩토링 후보로 남긴다.
+- 공유 버튼은 아이콘만 두지 않고 작은 `공유` 레이블을 함께 표시해 CTA 의미를 명확히 한다.
+- 공유 Sheet는 별도 navigation title/닫기 버튼 없이 drag dismiss에 맡긴다.
+- 공유 Sheet preview는 `브랜드/시즌/포스트` 같은 타입 레이블을 제거하고 실제 공유 대상 이름만 보여준다.
+  - 브랜드 공유: 브랜드 이름.
+  - 시즌 공유: 시즌 이름.
+  - 포스트 공유: 브랜드 + 시즌 이름.
+- 공유 완료 UI는 작은 overlay bar 대신 bottom sheet로 표시하고, 상단 체크 아이콘 없이 텍스트와 액션 중심으로 구성한다.
+- 채팅방 공유 카드는 이동 가능성을 드러내기 위해 `>` chevron을 표시하되, 사진만이 아니라 공유 메시지 셀 탭으로 상세 이동한다.
+- 내가 보낸 일반 메시지 bubble은 accent tint와 border를 적용해 상대 메시지와 구분한다.
 
 ## 완료한 결정
 
@@ -56,30 +90,44 @@
 - 공유 메시지는 `chat:lookbookShare`로 전송하고 기존 `chat message` 스트림으로 수신한다.
 - 채팅방 카드는 snapshot만 렌더링하고 룩북 원본은 조회하지 않는다.
 - 룩북 원본 최신성은 카드 탭 후 상세 화면에서 비동기로 확인한다.
+- 공유 카드 답장은 허용한다.
+- 공유 카드 복사/공지는 MVP에서 제외한다.
+- `messageType == lookbookShare`인데 `sharedContent == nil`이면 일반 텍스트로 떨어뜨리지 않고 unavailable compact card를 표시한다.
 - `ChatViewController`와 `ChatMessageCell`에 직접 기능을 덧붙이지 않고 접합부를 만든다.
 - `AppContentRouting`은 얇게 시작하되 후속 `MainTabCoordinator` 승격이 가능하게 설계한다.
+- Phase 6에서는 `MainTabCoordinator`를 만들지 않고 `AppContentRouting` MVP만 구현한다.
+- 공유 완료 `이동` 성공 시 confirmation bar를 닫고 채팅방으로 이동한다.
+- 공유 완료 `이동` 실패 시 confirmation bar를 유지하고 toast로 실패를 알린다.
+- 공유 카드 탭 후 원본 삭제/권한/비공개 여부 판단은 router가 선제 판단하지 않고 기존 상세 화면 로딩/error flow에 위임한다.
+- 공유 preview와 채팅 공유 카드는 타입 설명보다 실제 대상 식별성을 우선한다.
+- 공유 완료 feedback은 사용자가 다음 행동을 안정적으로 선택할 수 있도록 bottom sheet로 제공한다.
+- SwiftUI 화면에서 재사용 가능하거나 독립 책임이 있는 하위 View는 별도 파일로 분리하는 방향을 우선한다.
+  - Phase 4 공유 Sheet 정리에서 `LookbookShareSheetView`는 root orchestration만 담당하도록 축소했다.
+  - `LookbookSharePreviewView`, `LookbookShareRoomRowView`, `LookbookShareConfirmationBar`, `LookbookShareUnavailableView`, `LookbookShareSheetPresentation`을 별도 파일로 분리했다.
+  - 기준: 화면 조립 root, 상태별 하위 View, 반복 row, 공용 confirmation bar, fallback/unavailable view는 서로 책임이 다르면 분리한다.
 
 ## 아직 구현하지 않은 것
 
-- 공유 sheet UI.
-- 채팅 공유 카드 UI.
-- App-level routing.
-- 통합 QA.
-- 로컬 socket server 실제 실행 ACK smoke.
-- 운영 socket server 배포.
 - 공유 기능 완료 후 `ChatViewController.swift` 레이어 분리.
 - `ChatViewController.swift` 레이어 분리 후 Socket 서버 전체 레이어 리팩토링.
+- 운영 socket server 배포.
+
+## 미확인 리스크
+
+- 실패/권한 실패/원본 삭제 상태는 현재 재현 경로가 없어 수동 QA에서 확인하지 못했다.
+- 로컬 socket server 실제 실행 ACK smoke는 별도 서버 실행 환경이 필요해 공유 MVP 완료 조건에서는 제외했다.
 
 ## 다음 작업
 
-1. 필요 시 로컬 socket server를 Firebase Admin credential과 함께 실행해 정상/권한 실패/payload 실패 ACK smoke를 확인한다.
-2. Phase 4 공유 sheet UI 구현 전, `ShareLookbookContentToChatUseCase.execute(..., messageText:)`를 호출할 ViewModel 입력 정책을 확정한다.
-3. 공유 기능 MVP 완료 후 `ChatViewController.swift`의 메시지 전송, 소켓 세션, 미디어 처리, 메뉴/action policy 책임을 단계적으로 분리한다.
-4. `ChatViewController.swift` 레이어 분리 후 Socket 서버 전체 레이어 리팩토링을 진행한다.
+1. 공유 기능 MVP 완료 후 `ChatViewController.swift`의 메시지 전송, 소켓 세션, 미디어 처리, 메뉴/action policy 책임을 단계적으로 분리한다.
+2. `MainTabCoordinator` 승격 리팩토링을 공유 MVP 이후 별도 phase로 검토한다.
+3. `ChatViewController.swift` 레이어 분리 후 Socket 서버 전체 레이어 리팩토링을 진행한다.
+4. 필요 시 로컬 socket server를 Firebase Admin credential과 함께 실행해 정상/권한 실패/payload 실패 ACK smoke를 확인한다.
+5. Phase 4 공유 Sheet 하위 View 파일 분리는 완료했다.
    - 현재 Phase 3.5 A안은 공유 기능과 공통 인프라 중심의 얇은 분리다.
    - 후속 전체 리팩토링에서는 text/image/video/room lifecycle handler까지 `Socket/src` 레이어로 이동한다.
    - 목표는 `Socket/index.js`를 bootstrap과 handler registration만 담당하는 파일로 축소하는 것이다.
-5. 운영 배포는 별도 승인 전까지 하지 않는다.
+6. 운영 배포는 별도 승인 전까지 하지 않는다.
 
 ## 검증 기록
 
@@ -101,6 +149,22 @@
 - Phase 3.5 후 `npm --prefix Socket run check` 확인 완료.
 - Phase 3.5 후 `for f in Socket/src/**/*.js; do node --check "$f" || exit 1; done` 확인 완료.
 - ADC 로그인 후 `npm --prefix Socket run check:adc` 확인 완료.
+- Phase 4 후 `git diff --check -- OutPick/App/TabBarController/Composition/MainTabCompositionRoot.swift OutPick/Features/Lookbook/LookbookContainer.swift OutPick/Features/Lookbook/Domains/UseCases/MakeLookbookSharedContentUseCase.swift OutPick/Features/Lookbook/ViewModels/LookbookChatShareViewModel.swift OutPick/Features/Lookbook/Views/Shared/LookbookShareSheetView.swift OutPick/Features/Lookbook/Views/BrandDetail/BrandDetailView.swift OutPick/Features/Lookbook/Views/BrandDetail/BrandDetailHeaderView.swift OutPick/Features/Lookbook/Views/SeasonDetail/SeasonDetailView.swift OutPick/Features/Lookbook/Views/SeasonDetail/SeasonDetailHeaderCardView.swift OutPick/Features/Lookbook/Views/PostDetail/PostDetailView.swift OutPick/Features/Lookbook/Views/PostDetail/PostDetailMetricsCardView.swift OutPickTests/LookbookChatShareUseCaseTests.swift` 확인 완료.
+- Phase 4 후 `xcodebuild -quiet -scheme OutPick -destination 'generic/platform=iOS Simulator' build-for-testing` 통과.
+- Phase 4 자동 테스트 코드는 추가했지만 `xcodebuild test` 실행은 사용자 명시 요청 전까지 보류했다.
+- Phase 5 후 `git diff --check -- OutPick/Features/Chat/Domain/Models/ChatMessage+LookbookShare.swift OutPick/Features/Chat/Domain/Policies/ChatMessageActionPolicy.swift OutPick/Features/Chat/Views/LookbookShareMessageContentView.swift OutPick/Features/Chat/Views/Cell/ChatMessageCell+LookbookShare.swift OutPick/Features/Chat/Views/Cell/ChatMessageCell.swift OutPick/Features/Chat/Views/ChatCustomPopUpMenu.swift OutPick/Features/Chat/Views/ChatReplyView.swift OutPick/Features/Chat/Controllers/ChatViewController.swift OutPickTests/ChatMessageActionPolicyTests.swift` 확인 완료.
+- Phase 5 후 `xcodebuild -quiet -scheme OutPick -destination 'generic/platform=iOS Simulator' build-for-testing` 통과.
+- Phase 5 자동 테스트 코드는 추가했지만 `xcodebuild test` 실행은 사용자 명시 요청 전까지 보류했다.
+- Phase 6 후 `git diff --check -- OutPick/App/Routing/AppContentRouting.swift OutPick/App/Routing/DefaultAppContentRouter.swift OutPick/App/TabBarController/Composition/MainTabBuilding.swift OutPick/App/TabBarController/Composition/DefaultMainTabBuilder.swift OutPick/App/TabBarController/Composition/MainTabCompositionRoot.swift OutPick/App/TabBarController/MainTab/CustomTabBarViewController.swift OutPick/Features/Chat/ChatCoordinator.swift OutPick/Features/Chat/Controllers/ChatViewController.swift OutPick/Features/Lookbook/LookbookContainer.swift OutPick/Features/Lookbook/Views/BrandDetail/BrandDetailView.swift OutPick/Features/Lookbook/Views/SeasonDetail/SeasonDetailView.swift OutPick/Features/Lookbook/Views/PostDetail/PostDetailView.swift` 확인 완료.
+- Phase 6 후 `xcodebuild -quiet -scheme OutPick -destination 'generic/platform=iOS Simulator' build-for-testing` 통과.
+- Phase 6는 UIKit/SwiftUI 탭 전환과 modal dismissal이 섞인 navigation 접합부라 자동 unit test보다 수동 QA가 적합하다. 별도 자동 테스트는 추가하지 않았다.
+- 공유 UI polish 후 `git diff --check -- OutPick/Features/Chat/Domain/Models/ChatMessage+LookbookShare.swift OutPick/Features/Lookbook/Views/Shared/LookbookSharePreviewView.swift OutPick/Features/Chat/Views/LookbookShareMessageContentView.swift OutPick/Features/Lookbook/Views/Shared/LookbookShareSheetView.swift OutPick/Features/Lookbook/Views/Shared/LookbookShareConfirmationBar.swift OutPick/Features/Lookbook/Views/Shared/LookbookShareSheetPresentation.swift OutPick/Features/Lookbook/Views/BrandDetail/BrandDetailView.swift OutPick/Features/Lookbook/Views/SeasonDetail/SeasonDetailView.swift OutPick/Features/Lookbook/Views/PostDetail/PostDetailView.swift OutPick/Features/Lookbook/Views/BrandDetail/BrandDetailHeaderView.swift OutPick/Features/Lookbook/Views/SeasonDetail/SeasonDetailHeaderCardView.swift OutPick/Features/Lookbook/Views/PostDetail/PostDetailMetricsCardView.swift OutPick/Features/Chat/Views/Cell/ChatMessageCell.swift OutPick/App/Routing/DefaultAppContentRouter.swift docs/ai/tasks/lookbook-chat-share/progress.md` 확인 완료.
+- 공유 UI polish 후 `xcodebuild -quiet -scheme OutPick -destination 'generic/platform=iOS Simulator' build-for-testing` 통과.
+- 공유 UI polish는 시각/상호작용 변경이라 새 자동 테스트는 추가하지 않았다.
+- 공유 UI polish follow-up 후 `git diff --check -- OutPick/Features/Chat/Views/Cell/ChatMessageCell.swift OutPick/Features/Chat/Views/LookbookShareMessageContentView.swift OutPick/Features/Lookbook/Views/Shared/LookbookShareConfirmationBar.swift OutPick/Features/Lookbook/Views/Shared/LookbookShareSheetPresentation.swift` 확인 완료.
+- 공유 UI polish follow-up 후 `xcodebuild -quiet -scheme OutPick -destination 'generic/platform=iOS Simulator' build-for-testing` 통과.
+- 공유 정상 흐름 수동 QA 확인 완료.
+  - 실패/권한 실패/원본 삭제 상태는 재현 경로가 없어 미확인으로 남긴다.
 
 ## Phase 2 진입점 확인
 
@@ -147,6 +211,6 @@
 
 ## 재확인 필요
 
-- 기존 룩북 상세 ViewModel이 snapshot 초기 상태를 받을 수 있는지.
-- 공유 카드 답장 허용 여부의 최종 UX.
 - 운영 소켓 서버 배포 명령과 호스팅 위치는 App Store 배포 또는 실제 운영 전환 시 다시 결정한다.
+- Phase 4 공유 완료 bar의 `이동` 액션은 아직 실제 라우팅을 수행하지 않는다. Phase 6에서 `AppContentRouting`으로 연결한다.
+- Phase 6 라우팅은 MVP 접합부다. 정식 `MainTabCoordinator` 승격은 공유 기능 완료 후 별도 리팩토링으로 검토한다.

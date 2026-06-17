@@ -62,6 +62,32 @@ CompositionRoot
 - Firebase/Firestore/Cloud Functions 접근은 Repository protocol과 implementation 뒤로 숨긴다.
 - 외부 구현 세부사항이 ViewModel에 들어오면 UseCase 또는 Repository 경계로 밀어낸다.
 
+## 코드 파일 분리 원칙
+
+새 기능을 구현할 때 한 파일에 화면 root, 하위 View, row, preview, confirmation bar, fallback view, presentation modifier, 상태 모델, factory를 한꺼번에 넣지 않는다. 초기 구현 속도 때문에 임시로 묶더라도 phase 종료 전 또는 다음 phase 진입 전에는 독립 책임 단위로 파일을 분리한다.
+
+우선 분리 대상:
+
+- SwiftUI root View: 화면 전체 orchestration, sheet/overlay 연결, ViewModel binding만 담당한다.
+- 반복 row/cell View: 목록 row, 카드, 메시지 bubble처럼 반복 렌더링되는 단위는 별도 파일로 둔다.
+- preview/summary View: 공유 preview, compact card, header summary처럼 독립 표시 단위는 별도 파일로 둔다.
+- confirmation/status/fallback View: 성공 bar, empty/failed/unavailable 상태처럼 다른 화면에서도 재사용될 수 있거나 root 흐름과 책임이 다른 View는 별도 파일로 둔다.
+- presentation/helper modifier: sheet detent, 공통 overlay, navigation modifier처럼 UI 정책 helper는 별도 파일로 둔다.
+- ViewModel/UseCase/factory: 화면 상태, 도메인 변환, DI 조립은 View 파일 안에 중첩하지 않고 각 계층 위치에 둔다.
+
+분리하지 않아도 되는 경우:
+
+- 20~30줄 이하의 매우 작은 private View이고, 해당 root View 밖에서 재사용 가능성이 낮으며, 독립 상태나 비동기 로딩이 없다.
+- 한 화면의 단순 레이아웃 조각이라 별도 파일명이 오히려 의미를 흐리는 경우.
+
+분리 판단 기준:
+
+- 파일이 200줄에 가까워지거나 넘으면 책임 분리 후보를 먼저 찾는다.
+- 하위 View가 `@State`, 비동기 로딩, 이미지 로딩, gesture, menu, action policy를 갖기 시작하면 별도 파일로 분리한다.
+- 같은 파일 안에서 root orchestration과 row rendering, 상태/fallback UI가 함께 보이면 분리한다.
+- 사용자가 리뷰에서 “이 파일이 너무 크다”, “이 요소는 따로 관리하자”라고 지적한 패턴은 이후 유사 구현에 선제 적용한다.
+- 파일 수를 줄이는 것보다 책임과 탐색 비용을 줄이는 것을 우선한다.
+
 ## 주요 디렉터리
 
 - `OutPick/App`: 앱 진입점, AppCoordinator, SceneDelegate, AppDelegate, 탭 조립 흐름.

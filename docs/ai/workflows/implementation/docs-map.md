@@ -79,6 +79,8 @@ docs/ai/tasks/{task-name}/
 완료 보고 전 체크:
 
 - 새로 추가한 코드 파일이 진입점 문서나 읽는 순서에서 발견 가능한가.
+- 새로 추가한 SwiftUI/ViewController 코드가 root, row/cell, preview, status/fallback, confirmation bar, presentation modifier, ViewModel, UseCase/factory 책임을 한 파일에 섞지 않았는가.
+- 임시로 한 파일에 묶은 하위 View나 helper가 있으면 다음 phase로 넘어가기 전에 분리 완료 또는 분리 후보를 명시했는가.
 - 새 기술 선택의 이유와 대안이 decisions/ADR/architecture 중 한 곳에 연결됐는가.
 - 다음 phase 작업자가 전체 파일을 훑지 않고도 시작 문서를 찾을 수 있는가.
 - 커밋 가치가 낮은 task/progress/HANDOFF 변경을 커밋 후보에서 분리했는가.
