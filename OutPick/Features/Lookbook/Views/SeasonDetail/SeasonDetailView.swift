@@ -13,10 +13,15 @@ struct SeasonDetailView: View {
 
     private let brandImageCache: any BrandImageCacheProtocol
     private let coordinator: LookbookCoordinator
+    private let shareSheetFactory: (LookbookShareTarget, @escaping (LookbookChatShareViewModel.Completion) -> Void) -> AnyView
+    private let onShareMove: (LookbookChatShareViewModel.Completion) async throws -> Void
 
     @Environment(\.dismiss) private var dismiss
     @StateObject private var viewModel: SeasonDetailViewModel
     @State private var selectedPost: LookbookPost?
+    @State private var activeShareTarget: LookbookShareTarget?
+    @State private var shareCompletion: LookbookChatShareViewModel.Completion?
+    @State private var shareMoveErrorMessage: String?
 
     private let columns: [GridItem] = [
         GridItem(.flexible(), spacing: 10),
@@ -27,12 +32,16 @@ struct SeasonDetailView: View {
         seasonID: SeasonID,
         viewModel: SeasonDetailViewModel,
         brandImageCache: any BrandImageCacheProtocol,
-        coordinator: LookbookCoordinator
+        coordinator: LookbookCoordinator,
+        shareSheetFactory: @escaping (LookbookShareTarget, @escaping (LookbookChatShareViewModel.Completion) -> Void) -> AnyView,
+        onShareMove: @escaping (LookbookChatShareViewModel.Completion) async throws -> Void
     ) {
         self.brandID = brandID
         self.seasonID = seasonID
         self.brandImageCache = brandImageCache
         self.coordinator = coordinator
+        self.shareSheetFactory = shareSheetFactory
+        self.onShareMove = onShareMove
         _viewModel = StateObject(wrappedValue: viewModel)
     }
 
@@ -50,6 +59,9 @@ struct SeasonDetailView: View {
                                 isMutatingLike: viewModel.isMutatingLike,
                                 onLikeTap: {
                                     await viewModel.toggleSeasonLike()
+                                },
+                                onShareTap: {
+                                    activeShareTarget = .season(season)
                                 }
                             )
                         }
@@ -90,6 +102,25 @@ struct SeasonDetailView: View {
             showsBackButton: true,
             onBack: { dismiss() }
         )
+        .sheet(item: $activeShareTarget) { target in
+            shareSheetFactory(target) { completion in
+                activeShareTarget = nil
+                shareCompletion = completion
+            }
+            .applyShareSheetPresentation()
+        }
+        .sheet(item: $shareCompletion) { completion in
+            LookbookShareConfirmationBar(
+                roomName: completion.roomName,
+                onMove: {
+                    moveToSharedChatRoom(completion)
+                },
+                onClose: {
+                    self.shareCompletion = nil
+                }
+            )
+            .applyShareConfirmationSheetPresentation()
+        }
         .background(hiddenNavigationLink)
         .task {
             await viewModel.loadIfNeeded()
@@ -99,6 +130,20 @@ struct SeasonDetailView: View {
         }
         .appToast(message: viewModel.engagementErrorMessage) {
             viewModel.clearEngagementError()
+        }
+        .appToast(message: shareMoveErrorMessage) {
+            shareMoveErrorMessage = nil
+        }
+    }
+
+    private func moveToSharedChatRoom(_ completion: LookbookChatShareViewModel.Completion) {
+        Task {
+            do {
+                try await onShareMove(completion)
+                shareCompletion = nil
+            } catch {
+                shareMoveErrorMessage = "채팅방으로 이동할 수 없습니다."
+            }
         }
     }
 

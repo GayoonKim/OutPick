@@ -146,6 +146,15 @@ final class CustomTabBarViewController: UIViewController {
         resolvedPresenter(from: currentChildViewController)
     }
 
+    func dismissPresentedControllerIfNeeded(animated: Bool) async {
+        guard presentedViewController != nil else { return }
+        await withCheckedContinuation { continuation in
+            dismiss(animated: animated) {
+                continuation.resume()
+            }
+        }
+    }
+
     private func resolvedPresenter(from root: UIViewController?) -> UIViewController? {
         guard var current = root else { return nil }
 

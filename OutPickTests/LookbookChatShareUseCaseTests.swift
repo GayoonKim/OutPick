@@ -14,11 +14,11 @@ import Testing
 struct LookbookChatShareUseCaseTests {
     @Test func loadShareableJoinedRoomsFiltersUnavailableRooms() async throws {
         let fake = JoinedRoomsUseCaseFake(rooms: [
-            makeRoom(id: "room-1", participants: ["me@example.com"]),
+            makeRoom(id: "room-1", participants: ["me@example.com"], lastMessageAt: Date(timeIntervalSince1970: 100)),
             makeRoom(id: "room-2", participants: ["me@example.com"], isClosed: true),
             makeRoom(id: "room-3", participants: ["other@example.com"]),
             makeRoom(id: nil, participants: ["me@example.com"]),
-            makeRoom(id: "room-4", participants: [" ME@EXAMPLE.COM "])
+            makeRoom(id: "room-4", participants: [" ME@EXAMPLE.COM "], lastMessageAt: Date(timeIntervalSince1970: 200))
         ])
         let useCase = LoadShareableJoinedRoomsUseCase(
             joinedRoomsUseCase: fake,
@@ -28,7 +28,7 @@ struct LookbookChatShareUseCaseTests {
         let rooms = try await useCase.execute(limit: 20)
 
         #expect(fake.requestedHeadLimits == [20])
-        #expect(rooms.map { $0.ID ?? "" } == ["room-1", "room-4"])
+        #expect(rooms.map { $0.ID ?? "" } == ["room-4", "room-1"])
     }
 
     @Test func shareLookbookContentSendsThroughRepository() async throws {
@@ -159,6 +159,77 @@ struct LookbookChatShareUseCaseTests {
         }
     }
 
+    @Test func makeSharedContentUseCaseBuildsPostSnapshotWithFetchedBrandAndSeason() async throws {
+        let brand = makeBrand(id: "brand-1", name: "Hatchingroom")
+        let season = makeSeason(id: "season-1", brandID: brand.id, title: "26 S/S")
+        let post = makePost(brandID: brand.id, seasonID: season.id, postID: PostID(value: "post-1"))
+        let useCase = MakeLookbookSharedContentUseCase(
+            brandRepository: BrandRepositoryFake(brands: [brand]),
+            seasonRepository: SeasonRepositoryFake(seasons: [season])
+        )
+
+        let content = try await useCase.execute(target: .post(post))
+
+        #expect(content.contentType == .post)
+        #expect(content.brandID == "brand-1")
+        #expect(content.seasonID == "season-1")
+        #expect(content.postID == "post-1")
+        #expect(content.titleSnapshot == "포스트")
+        #expect(content.subtitleSnapshot == "Hatchingroom · 26 S/S")
+        #expect(content.thumbnailPathSnapshot == "post-thumb.jpg")
+    }
+
+    @Test @MainActor func shareViewModelRequiresExplicitRoomSelectionBeforeSending() async throws {
+        let content = makeSharedContent()
+        let roomsUseCase = ShareableRoomsUseCaseFake(rooms: [
+            makeRoom(id: "room-1", participants: ["me@example.com"])
+        ])
+        let shareUseCase = ShareLookbookContentUseCaseSpy(
+            result: LookbookChatShareSendResult(roomID: "room-1", messageID: "message-1", seq: 7)
+        )
+        let viewModel = LookbookChatShareViewModel(
+            target: .season(makeSeason(id: "season-1", brandID: BrandID(value: "brand-1"), title: "26 S/S")),
+            makeSharedContentUseCase: SharedContentUseCaseFake(content: content),
+            loadRoomsUseCase: roomsUseCase,
+            shareUseCase: shareUseCase
+        )
+
+        await viewModel.loadIfNeeded()
+
+        #expect(viewModel.phase == .ready)
+        #expect(viewModel.selectedRoomID == nil)
+        #expect(viewModel.canSend == false)
+
+        viewModel.selectedRoomID = "room-1"
+        await viewModel.send()
+
+        #expect(viewModel.selectedRoomID == "room-1")
+        #expect(viewModel.canSend == true)
+        #expect(roomsUseCase.requestedLimits == [50])
+        #expect(shareUseCase.calls.count == 1)
+        #expect(shareUseCase.calls.first?.sharedContent == content)
+        #expect(viewModel.completion == LookbookChatShareViewModel.Completion(
+            roomID: "room-1",
+            roomName: "Test Room",
+            messageID: "message-1"
+        ))
+    }
+
+    @Test @MainActor func shareViewModelShowsEmptyWhenNoRooms() async {
+        let viewModel = LookbookChatShareViewModel(
+            target: .brand(makeBrand(id: "brand-1", name: "Brand")),
+            makeSharedContentUseCase: SharedContentUseCaseFake(content: makeSharedContent()),
+            loadRoomsUseCase: ShareableRoomsUseCaseFake(rooms: []),
+            shareUseCase: ShareLookbookContentUseCaseSpy()
+        )
+
+        await viewModel.loadIfNeeded()
+
+        #expect(viewModel.phase == .empty)
+        #expect(viewModel.rooms.isEmpty)
+        #expect(viewModel.canSend == false)
+    }
+
     private func expectShareError(
         _ expected: LookbookChatShareError,
         operation: () async throws -> Void
@@ -201,7 +272,8 @@ struct LookbookChatShareUseCaseTests {
     private func makeRoom(
         id: String?,
         participants: [String],
-        isClosed: Bool = false
+        isClosed: Bool = false,
+        lastMessageAt: Date? = nil
     ) -> ChatRoom {
         ChatRoom(
             ID: id,
@@ -212,7 +284,7 @@ struct LookbookChatShareUseCaseTests {
             createdAt: Date(timeIntervalSince1970: 0),
             thumbPath: nil,
             originalPath: nil,
-            lastMessageAt: nil,
+            lastMessageAt: lastMessageAt,
             lastMessage: nil,
             lastMessageSenderID: nil,
             seq: 0,
@@ -221,6 +293,202 @@ struct LookbookChatShareUseCaseTests {
             activeAnnouncement: nil,
             announcementUpdatedAt: nil
         )
+    }
+
+    private func makeBrand(id: String, name: String) -> Brand {
+        Brand(
+            id: BrandID(value: id),
+            name: name,
+            websiteURL: nil,
+            lookbookArchiveURL: nil,
+            logoThumbPath: "brand-thumb.jpg",
+            logoDetailPath: nil,
+            logoOriginalPath: nil,
+            isFeatured: false,
+            discoveryStatus: .idle,
+            lastDiscoveryErrorMessage: nil,
+            lastDiscoveryRequestedAt: nil,
+            lastDiscoveryCompletedAt: nil,
+            metrics: BrandMetrics(likeCount: 0, viewCount: 0, popularScore: 0),
+            updatedAt: Date(timeIntervalSince1970: 0)
+        )
+    }
+
+    private func makeSeason(id: String, brandID: BrandID, title: String) -> Season {
+        Season(
+            id: SeasonID(value: id),
+            brandID: brandID,
+            displayTitle: title,
+            sourceTitle: nil,
+            year: nil,
+            term: nil,
+            coverPath: "season-cover.jpg",
+            coverRemoteURL: nil,
+            description: "",
+            tagIDs: [],
+            tagConceptIDs: nil,
+            status: .published,
+            assetSyncStatus: .ready,
+            metadataStatus: .confirmed,
+            metadataConfidence: nil,
+            sourceURL: nil,
+            sourceImportJobID: nil,
+            sourceSortIndex: nil,
+            postCount: 1,
+            likeCount: 0,
+            createdAt: Date(timeIntervalSince1970: 0),
+            updatedAt: Date(timeIntervalSince1970: 0)
+        )
+    }
+
+    private func makePost(brandID: BrandID, seasonID: SeasonID, postID: PostID) -> LookbookPost {
+        LookbookPost(
+            id: postID,
+            brandID: brandID,
+            seasonID: seasonID,
+            authorID: nil,
+            media: [
+                MediaAsset(
+                    type: .image,
+                    remoteURL: URL(string: "https://example.com/post.jpg")!,
+                    thumbPath: "post-thumb.jpg",
+                    detailPath: "post-detail.jpg",
+                    sourcePageURL: nil
+                )
+            ],
+            caption: nil,
+            tagIDs: [],
+            metrics: PostMetrics(
+                likeCount: 0,
+                commentCount: 0,
+                replacementCount: 0,
+                saveCount: 0,
+                viewCount: nil
+            ),
+            createdAt: Date(timeIntervalSince1970: 0),
+            updatedAt: Date(timeIntervalSince1970: 0)
+        )
+    }
+}
+
+private final class SharedContentUseCaseFake: MakeLookbookSharedContentUseCaseProtocol {
+    private let content: LookbookSharedContent
+
+    init(content: LookbookSharedContent) {
+        self.content = content
+    }
+
+    func execute(target: LookbookShareTarget) async throws -> LookbookSharedContent {
+        content
+    }
+}
+
+private final class ShareableRoomsUseCaseFake: LoadShareableJoinedRoomsUseCaseProtocol {
+    private let rooms: [ChatRoom]
+    private(set) var requestedLimits: [Int] = []
+
+    init(rooms: [ChatRoom]) {
+        self.rooms = rooms
+    }
+
+    func execute(limit: Int) async throws -> [ChatRoom] {
+        requestedLimits.append(limit)
+        return rooms
+    }
+}
+
+private final class ShareLookbookContentUseCaseSpy: ShareLookbookContentToChatUseCaseProtocol {
+    struct Call {
+        let sharedContent: LookbookSharedContent
+        let messageText: String?
+        let room: ChatRoom
+    }
+
+    private let result: LookbookChatShareSendResult
+    var error: Error?
+    private(set) var calls: [Call] = []
+
+    init(
+        result: LookbookChatShareSendResult = LookbookChatShareSendResult(
+            roomID: "room-1",
+            messageID: "message-1",
+            seq: nil
+        )
+    ) {
+        self.result = result
+    }
+
+    func execute(
+        sharedContent: LookbookSharedContent,
+        messageText: String?,
+        to room: ChatRoom
+    ) async throws -> LookbookChatShareSendResult {
+        calls.append(Call(sharedContent: sharedContent, messageText: messageText, room: room))
+        if let error {
+            throw error
+        }
+        return result
+    }
+}
+
+private final class BrandRepositoryFake: BrandRepositoryProtocol {
+    private let brandsByID: [BrandID: Brand]
+
+    init(brands: [Brand]) {
+        self.brandsByID = Dictionary(uniqueKeysWithValues: brands.map { ($0.id, $0) })
+    }
+
+    func fetchBrand(brandID: BrandID) async throws -> Brand {
+        guard let brand = brandsByID[brandID] else {
+            throw NSError(domain: "BrandRepositoryFake", code: -1)
+        }
+        return brand
+    }
+
+    func fetchBrands(sort: BrandSort?, limit: Int, after last: DocumentSnapshot?) async throws -> BrandPage {
+        BrandPage(items: Array(brandsByID.values), last: nil)
+    }
+
+    func fetchFeaturedBrands(sort: BrandSort?, limit: Int, after last: DocumentSnapshot?) async throws -> BrandPage {
+        BrandPage(items: Array(brandsByID.values), last: nil)
+    }
+}
+
+private final class SeasonRepositoryFake: SeasonRepositoryProtocol {
+    private let seasonsByKey: [String: Season]
+
+    init(seasons: [Season]) {
+        self.seasonsByKey = Dictionary(
+            uniqueKeysWithValues: seasons.map { ("\($0.brandID.value)|\($0.id.value)", $0) }
+        )
+    }
+
+    func createSeason(
+        brandID: BrandID,
+        year: Int,
+        term: SeasonTerm,
+        description: String,
+        coverImageData: Data?,
+        tagIDs: [TagID],
+        tagConceptIDs: [String]?
+    ) async throws -> Season {
+        throw NSError(domain: "SeasonRepositoryFake", code: -2)
+    }
+
+    func fetchSeason(brandID: BrandID, seasonID: SeasonID) async throws -> Season {
+        let key = "\(brandID.value)|\(seasonID.value)"
+        guard let season = seasonsByKey[key] else {
+            throw NSError(domain: "SeasonRepositoryFake", code: -1)
+        }
+        return season
+    }
+
+    func fetchSeasons(brandID: BrandID, pageSize: Int, after last: DocumentSnapshot?) async throws -> SeasonPage {
+        SeasonPage(items: Array(seasonsByKey.values), last: nil)
+    }
+
+    func fetchAllSeasons(brandID: BrandID) async throws -> [Season] {
+        Array(seasonsByKey.values).filter { $0.brandID == brandID }
     }
 }
 

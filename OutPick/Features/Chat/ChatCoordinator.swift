@@ -18,6 +18,7 @@ final class ChatCoordinator {
 
     private let container: ChatContainer
     private var userProfileDetailCoordinator: UserProfileDetailCoordinator?
+    weak var appContentRouter: (any AppContentRouting)?
 
     init(container: ChatContainer) {
         self.container = container
@@ -143,6 +144,7 @@ final class ChatCoordinator {
         chatRoomVC.configure(viewModel: container.makeChatRoomViewModel(room: room))
         chatRoomVC.isRoomSaving = isRoomSaving
         chatRoomVC.router = self
+        chatRoomVC.appContentRouter = appContentRouter
         chatRoomVC.modalPresentationStyle = .fullScreen
         return chatRoomVC
     }

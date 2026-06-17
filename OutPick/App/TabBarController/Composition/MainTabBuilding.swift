@@ -15,4 +15,5 @@ import UIKit
 @MainActor
 protocol MainTabBuilding: AnyObject {
     func makeViewController(for index: Int) -> UIViewController
+    func openChatRoom(roomID: String, from source: UIViewController) async throws
 }

@@ -14,12 +14,17 @@ struct BrandDetailView: View {
     let coordinator: LookbookCoordinator
     let seasonAdditionSheetFactory: (@escaping () -> Void) -> AnyView
     let importManagementSheetFactory: () -> AnyView
+    let shareSheetFactory: (LookbookShareTarget, @escaping (LookbookChatShareViewModel.Completion) -> Void) -> AnyView
+    let onShareMove: (LookbookChatShareViewModel.Completion) async throws -> Void
 
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var brandAdminSessionStore: BrandAdminSessionStore
     @StateObject private var viewModel: BrandDetailViewModel
     @State private var isPresentingSeasonAddition: Bool = false
     @State private var isPresentingImportManagement: Bool = false
+    @State private var activeShareTarget: LookbookShareTarget?
+    @State private var shareCompletion: LookbookChatShareViewModel.Completion?
+    @State private var shareMoveErrorMessage: String?
     @State private var didPrepareInitialContent: Bool = false
 
     init(
@@ -29,6 +34,8 @@ struct BrandDetailView: View {
         coordinator: LookbookCoordinator,
         seasonAdditionSheetFactory: @escaping (@escaping () -> Void) -> AnyView,
         importManagementSheetFactory: @escaping () -> AnyView,
+        shareSheetFactory: @escaping (LookbookShareTarget, @escaping (LookbookChatShareViewModel.Completion) -> Void) -> AnyView,
+        onShareMove: @escaping (LookbookChatShareViewModel.Completion) async throws -> Void,
         maxBytes: Int = 1_000_000
     ) {
         self.brand = brand
@@ -36,6 +43,8 @@ struct BrandDetailView: View {
         self.coordinator = coordinator
         self.seasonAdditionSheetFactory = seasonAdditionSheetFactory
         self.importManagementSheetFactory = importManagementSheetFactory
+        self.shareSheetFactory = shareSheetFactory
+        self.onShareMove = onShareMove
         self.maxBytes = maxBytes
         _viewModel = StateObject(wrappedValue: viewModel)
     }
@@ -55,6 +64,9 @@ struct BrandDetailView: View {
                         maxBytes: maxBytes,
                         onLikeTap: {
                             await viewModel.toggleBrandLike(brandID: brand.id)
+                        },
+                        onShareTap: {
+                            activeShareTarget = .brand(brand)
                         }
                     )
                     .listRowInsets(EdgeInsets())
@@ -115,6 +127,25 @@ struct BrandDetailView: View {
         .sheet(isPresented: $isPresentingImportManagement) {
             importManagementSheetFactory()
         }
+        .sheet(item: $activeShareTarget) { target in
+            shareSheetFactory(target) { completion in
+                activeShareTarget = nil
+                shareCompletion = completion
+            }
+            .applyShareSheetPresentation()
+        }
+        .sheet(item: $shareCompletion) { completion in
+            LookbookShareConfirmationBar(
+                roomName: completion.roomName,
+                onMove: {
+                    moveToSharedChatRoom(completion)
+                },
+                onClose: {
+                    self.shareCompletion = nil
+                }
+            )
+            .applyShareConfirmationSheetPresentation()
+        }
         .task {
             await brandAdminSessionStore.ensureWritableBrandsLoaded()
 
@@ -127,6 +158,20 @@ struct BrandDetailView: View {
         }
         .appToast(message: viewModel.engagementErrorMessage) {
             viewModel.clearEngagementError()
+        }
+        .appToast(message: shareMoveErrorMessage) {
+            shareMoveErrorMessage = nil
+        }
+    }
+
+    private func moveToSharedChatRoom(_ completion: LookbookChatShareViewModel.Completion) {
+        Task {
+            do {
+                try await onShareMove(completion)
+                shareCompletion = nil
+            } catch {
+                shareMoveErrorMessage = "채팅방으로 이동할 수 없습니다."
+            }
         }
     }
 

@@ -14,6 +14,7 @@ struct PostDetailMetricsCardView: View {
     let isMutatingLike: Bool
     let onLikeTap: () async -> Void
     let onCommentTap: () -> Void
+    let onShareTap: () -> Void
 
     var body: some View {
         HStack(spacing: 8) {
@@ -41,6 +42,12 @@ struct PostDetailMetricsCardView: View {
                 }
             )
             .accessibilityIdentifier("lookbook.post.commentsButton")
+            simpleActionButton(
+                systemName: "square.and.arrow.up",
+                title: "공유",
+                action: onShareTap
+            )
+            .accessibilityIdentifier("lookbook.post.shareButton")
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -100,5 +107,32 @@ struct PostDetailMetricsCardView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(title) \(value)")
+    }
+
+    private func simpleActionButton(
+        systemName: String,
+        title: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                Image(systemName: systemName)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.accent)
+                    .frame(height: 22)
+
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(minHeight: 76)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(OutPickTheme.SwiftUIColor.surfaceElevated)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
     }
 }

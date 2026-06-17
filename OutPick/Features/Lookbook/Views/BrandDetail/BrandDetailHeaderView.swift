@@ -15,6 +15,7 @@ struct BrandDetailHeaderView: View {
     let brandImageCache: any BrandImageCacheProtocol
     let maxBytes: Int
     let onLikeTap: () async -> Void
+    let onShareTap: () -> Void
 
     @Environment(\.openURL) private var openURL
 
@@ -170,21 +171,42 @@ struct BrandDetailHeaderView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("브랜드 좋아요 \(likeCount)")
 
-                if let officialWebsiteURL {
-                    Button {
-                        openURL(officialWebsiteURL)
-                    } label: {
-                        Label("공식 사이트 방문", systemImage: "safari")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(OutPickTheme.SwiftUIColor.backgroundBase)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(OutPickTheme.SwiftUIColor.accent)
-                            .clipShape(Capsule())
+                HStack(spacing: 8) {
+                    if let officialWebsiteURL {
+                        Button {
+                            openURL(officialWebsiteURL)
+                        } label: {
+                            Label("공식 사이트 방문", systemImage: "safari")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(OutPickTheme.SwiftUIColor.backgroundBase)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(OutPickTheme.SwiftUIColor.accent)
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    Button(action: onShareTap) {
+                        VStack(spacing: 2) {
+                            Image(systemName: "square.and.arrow.up")
+                                .font(.footnote.weight(.bold))
+                                .foregroundStyle(OutPickTheme.SwiftUIColor.accent)
+                                .frame(width: 34, height: 28)
+
+                            Text("공유")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(OutPickTheme.SwiftUIColor.surfaceElevated)
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                     }
                     .buttonStyle(.plain)
-                    .padding(.top, 4)
+                    .accessibilityLabel("브랜드 공유")
                 }
+                .padding(.top, 4)
             }
             .padding(.horizontal, 16)
 

@@ -12,6 +12,7 @@ struct SeasonDetailHeaderCardView: View {
     let isLiked: Bool
     let isMutatingLike: Bool
     let onLikeTap: () async -> Void
+    let onShareTap: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -59,6 +60,27 @@ struct SeasonDetailHeaderCardView: View {
                 .buttonStyle(.plain)
                 .disabled(isMutatingLike)
                 .accessibilityLabel(isLiked ? "시즌 좋아요 취소 \(season.likeCount)" : "시즌 좋아요 \(season.likeCount)")
+
+                Button(action: onShareTap) {
+                    VStack(spacing: 2) {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(OutPickTheme.SwiftUIColor.accent)
+                            .frame(width: 36, height: 24)
+
+                        Text("공유")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(OutPickTheme.SwiftUIColor.surfaceElevated)
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("시즌 공유")
             }
 
             HStack(spacing: 10) {

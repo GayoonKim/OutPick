@@ -34,10 +34,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private var dataSource: UICollectionViewDiffableDataSource<Section, Item>!
     private var cancellables = Set<AnyCancellable>()
     private var initialLoadTask: Task<Void, Never>?
-    private var roomMessageTask: Task<Void, Never>?
-    private var roomSession: ChatRoomSocketSession?
-    private var activeRealtimeRoomID: String?
-    private var activeRealtimeStreamToken: UUID?
+    private var realtimeSubscription: ChatRoomRealtimeSubscription?
     private var chatCustomMemucancellables = Set<AnyCancellable>()
     
     private var lastMessageDate: Date?
@@ -105,6 +102,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private let provider: ChatManagerProviding
     var injectedFirebaseRepositories: FirebaseRepositoryProviding?
     weak var router: ChatRoomRouting?
+    weak var appContentRouter: (any AppContentRouting)?
     private var userProfileDetailCoordinator: UserProfileDetailCoordinator?
     private let profileScopeID = UUID()
     private var isProfileSyncBound = false
@@ -169,7 +167,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 userProfileRepository: repositories.userProfileRepository,
                 joinedRoomsStore: ChatDependencyContainer.requireJoinedRoomsStore(),
                 announcementRepository: repositories.announcementRepository
-            )
+            ),
+            realtimeUseCase: ChatRoomRealtimeUseCase()
         )
         self.chatRoomViewModel = viewModel
         return viewModel
@@ -195,11 +194,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     deinit {
         print("💧 ChatViewController deinit")
         profileSyncCancellable?.cancel()
-        roomMessageTask?.cancel()
-        if let roomSession {
-            Task {
-                await roomSession.close()
-            }
+        let realtimeSubscription = realtimeSubscription
+        Task { @MainActor in
+            realtimeSubscription?.stop()
         }
         convertImagesTask?.cancel()
         convertVideosTask?.cancel()
@@ -716,7 +713,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         guard !roomID.isEmpty else { return }
 
         // Prevent duplicate subscriptions for the same room on repeated UI setup/binding paths.
-        guard activeRealtimeRoomID != roomID else { return }
+        guard realtimeSubscription?.roomID != roomID else { return }
 
         stopRoomMessageStream()
         startRoomMessageStream(for: roomID)
@@ -751,73 +748,37 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     @MainActor
     private func startRoomMessageStream(for roomID: String) {
-        let streamToken = UUID()
-        activeRealtimeRoomID = roomID
-        activeRealtimeStreamToken = streamToken
-        roomMessageTask?.cancel()
+        guard let viewModel = chatRoomViewModel ?? ensureChatRoomViewModel() else { return }
 
-        roomMessageTask = Task { [weak self] in
-            do {
-                let session = try await SocketIOManager.shared.openRoomSession(for: roomID)
-
-                if Task.isCancelled {
-                    await session.close()
-                    return
-                }
-
-                let shouldConsume = await MainActor.run { [weak self] in
-                    guard let self else { return false }
-                    guard self.activeRealtimeStreamToken == streamToken,
-                          self.activeRealtimeRoomID == roomID else { return false }
-
-                    self.roomSession = session
-                    return true
-                }
-
-                guard shouldConsume else {
-                    await session.close()
-                    return
-                }
-
-                for await receivedMessage in session.messages {
-                    if Task.isCancelled { break }
-                    guard let self else { break }
-                    await self.handleIncomingMessage(receivedMessage)
-                }
-
-                await session.close()
-            } catch {
+        let subscription = ChatRoomRealtimeSubscription(
+            roomID: roomID,
+            openSession: {
+                try await viewModel.openMessageStream(roomID: roomID)
+            },
+            onMessage: { [weak self] receivedMessage in
+                guard let self else { return }
+                await self.handleIncomingMessage(receivedMessage)
+            },
+            onFailure: { error in
                 #if DEBUG
                 print("[ChatViewController] realtime stream failed roomID=\(roomID): \(error)")
                 #endif
+            },
+            onFinish: { [weak self] finishedSubscription in
+                guard let self,
+                      self.realtimeSubscription === finishedSubscription else { return }
+                self.realtimeSubscription = nil
             }
+        )
 
-            await MainActor.run { [weak self] in
-                guard let self else { return }
-                guard self.activeRealtimeStreamToken == streamToken else { return }
-
-                self.roomMessageTask = nil
-                self.roomSession = nil
-                self.activeRealtimeRoomID = nil
-                self.activeRealtimeStreamToken = nil
-            }
-        }
+        realtimeSubscription = subscription
+        subscription.start()
     }
 
     @MainActor
     private func stopRoomMessageStream() {
-        let session = roomSession
-
-        roomMessageTask?.cancel()
-        roomMessageTask = nil
-        roomSession = nil
-        activeRealtimeRoomID = nil
-        activeRealtimeStreamToken = nil
-
-        guard let session else { return }
-        Task {
-            await session.close()
-        }
+        realtimeSubscription?.stop()
+        realtimeSubscription = nil
     }
     
     // 수신 메시지를 저장 및 UI 반영
@@ -990,35 +951,22 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     @MainActor
     private func handleSendButtonTap() {
         guard let message = self.chatUIView.messageTextView.text,
-              let room = self.room else { return }
-        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+              let viewModel = chatRoomViewModel ?? ensureChatRoomViewModel(),
+              let outgoingMessage = viewModel.makeOutgoingTextMessage(
+                text: message,
+                replyPreview: replyMessage
+              ) else { return }
         
         self.chatUIView.messageTextView.text = nil
         self.chatUIView.updateHeight()
         self.chatUIView.sendButton.isEnabled = false
         self.chatUIView.applySendButtonState()
         
-        let newMessage = ChatMessage(
-            ID: UUID().uuidString,
-            seq: 0,
-            roomID: room.ID ?? "",
-            senderID: LoginManager.shared.getUserEmail,
-            senderNickname: LoginManager.shared.currentUserProfile?.nickname ?? "",
-            senderAvatarPath: LoginManager.shared.currentUserProfile?.thumbPath,
-            msg: trimmed,
-            sentAt: Date(),
-            attachments: [],
-            replyPreview: replyMessage
-        )
-
         // Optimistic render: sender sees the message immediately.
-        addMessages([newMessage], updateType: .newer)
+        addMessages([outgoingMessage], updateType: .newer)
         chatMessageCollectionView.scrollToBottom()
         
-        Task.detached {
-            SocketIOManager.shared.sendMessage(room, newMessage)
-        }
+        viewModel.sendPreparedMessage(outgoingMessage)
         
         if self.replyMessage != nil {
             self.replyMessage = nil
@@ -1990,14 +1938,20 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         let screenMiddleY = chatMessageCollectionView.bounds.midY
         let showAbove: Bool = cellCenterY > screenMiddleY
         
-        // 신고 or 삭제 결정
-        if let userProfile = LoginManager.shared.currentUserProfile,
-           let room = self.room {
-            let isOwner = userProfile.email == message.senderID
-            let isAdmin = room.creatorID == userProfile.email
-            
-            chatCustomMenu.configurePermissions(canDelete: isOwner || isAdmin, canAnnounce: isAdmin)
-        }
+        let policy = ChatMessageActionPolicy.make(
+            for: message,
+            currentUserID: LoginManager.shared.getUserEmail,
+            roomCreatorID: room?.creatorID
+        )
+        chatCustomMenu.configure(
+            ChatCustomPopUpMenu.Configuration(
+                canReply: policy.canReply,
+                canCopy: policy.canCopy,
+                canDelete: policy.canDelete,
+                canReport: policy.canReport,
+                canAnnounce: policy.canAnnounce
+            )
+        )
         
         // 2.메뉴 위치를 셀 기준으로
         view.addSubview(chatCustomMenu)
@@ -2079,7 +2033,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     @MainActor
     private func handleReply(message: ChatMessage) {
         print(#function, "답장:", message)
-        self.replyMessage = ReplyPreview(messageID: message.ID, sender: message.senderNickname, text: message.msg ?? "", isDeleted: false)
+        let replyText = message.isLookbookShareMessage ? message.lookbookSharePreviewText : (message.msg ?? "")
+        self.replyMessage = ReplyPreview(messageID: message.ID, sender: message.senderNickname, text: replyText, isDeleted: false)
         replyView.configure(with: message)
         replyView.isHidden = false
     }
@@ -2452,7 +2407,15 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 // 메시지 최신 상태 반영
                 let latestMessage = self.messageMap[message.ID] ?? message
                 
-                if latestMessage.hasDisplayableAttachments {
+                if latestMessage.isLookbookShareMessage {
+                    cell.configureWithLookbookShare(with: latestMessage, thumbnailLoader: { [weak self] path in
+                        guard let self else { return nil }
+                        return await self.lookbookShareThumbnailImage(for: path)
+                    }, avatarLoader: { [weak self] path in
+                        guard let self else { return nil }
+                        return await self.avatarImage(for: path)
+                    })
+                } else if latestMessage.hasDisplayableAttachments {
                     cell.configureWithImage(with: latestMessage, thumbnailLoader: { [weak self] attachment in
                         guard let self else { return nil }
                         return await self.thumbnailImage(for: attachment)
@@ -2523,6 +2486,12 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                             nickname: currentMessage.senderNickname,
                             avatarPath: currentMessage.senderAvatarPath
                         )
+                    }
+                    .store(in: &cellSubscriptions[key]!)
+
+                cell.lookbookShareTapPublisher
+                    .sink { [weak self] sharedContent in
+                        self?.handleLookbookShareCardTap(sharedContent)
                     }
                     .store(in: &cellSubscriptions[key]!)
 
@@ -2952,6 +2921,29 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             for: path,
             maxBytes: 3 * 1024 * 1024
         )
+    }
+
+    private func lookbookShareThumbnailImage(for path: String) async -> UIImage? {
+        guard !path.isEmpty else { return nil }
+
+        if let image = await mediaManager.cachedImage(for: path) {
+            return image
+        }
+
+        return try? await mediaManager.loadImage(for: path, maxBytes: chatThumbnailMaxBytes)
+    }
+
+    @MainActor
+    private func handleLookbookShareCardTap(_ sharedContent: LookbookSharedContent) {
+        Task { @MainActor [weak self] in
+            guard let self, let appContentRouter = self.appContentRouter else { return }
+            do {
+                try await appContentRouter.openLookbookSharedContent(sharedContent)
+            } catch {
+                self.showSuccess("룩북으로 이동할 수 없습니다.")
+                print("❌ 룩북 공유 카드 이동 실패:", error)
+            }
+        }
     }
     
     private func presentImageViewer(tappedIndex: Int, indexPath: IndexPath) {

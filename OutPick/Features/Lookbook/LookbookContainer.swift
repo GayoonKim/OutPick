@@ -10,6 +10,10 @@ import SwiftUI
 
 @MainActor
 final class LookbookContainer {
+    private enum ShareMoveRoutingError: Error {
+        case missingRouter
+    }
+
     let provider: LookbookRepositoryProvider
     let brandAdminSessionStore: BrandAdminSessionStore
     let lookbookHomeViewModel: LookbookHomeViewModel
@@ -29,6 +33,11 @@ final class LookbookContainer {
     private let filterHiddenCommentAuthorsUseCase: FilterHiddenCommentAuthorsUseCase
     private let loadSeasonDetailUseCase: any LoadSeasonDetailUseCaseProtocol
     private let loadPostDetailUseCase: any LoadPostDetailUseCaseProtocol
+    private let makeLookbookSharedContentUseCase: any MakeLookbookSharedContentUseCaseProtocol
+    private var loadShareableJoinedRoomsUseCase: (any LoadShareableJoinedRoomsUseCaseProtocol)?
+    private var shareLookbookContentToChatUseCase: (any ShareLookbookContentToChatUseCaseProtocol)?
+    private var roomImageManager: (any RoomImageManaging)?
+    private weak var appContentRouter: (any AppContentRouting)?
 
     init(
         provider: LookbookRepositoryProvider = .shared,
@@ -85,6 +94,10 @@ final class LookbookContainer {
             postRepository: provider.postRepository,
             commentRepository: provider.commentRepository
         )
+        self.makeLookbookSharedContentUseCase = MakeLookbookSharedContentUseCase(
+            brandRepository: provider.brandRepository,
+            seasonRepository: provider.seasonRepository
+        )
         self.lookbookHomeViewModel = LookbookHomeViewModel(
             repo: provider.brandRepository,
             brandAdminSessionStore: brandAdminSessionStore,
@@ -92,6 +105,20 @@ final class LookbookContainer {
             initialBrandLimit: 12,
             prefetchLogoCount: 4
         )
+    }
+
+    func configureLookbookChatShare(
+        loadShareableJoinedRoomsUseCase: any LoadShareableJoinedRoomsUseCaseProtocol,
+        shareLookbookContentToChatUseCase: any ShareLookbookContentToChatUseCaseProtocol,
+        roomImageManager: any RoomImageManaging
+    ) {
+        self.loadShareableJoinedRoomsUseCase = loadShareableJoinedRoomsUseCase
+        self.shareLookbookContentToChatUseCase = shareLookbookContentToChatUseCase
+        self.roomImageManager = roomImageManager
+    }
+
+    func configureAppContentRouter(_ appContentRouter: any AppContentRouting) {
+        self.appContentRouter = appContentRouter
     }
 
     func preloadLookbook() {
@@ -121,6 +148,18 @@ final class LookbookContainer {
                         brandID: brand.id
                     )
                 )
+            },
+            shareSheetFactory: { [self] target, onCompleted in
+                self.makeLookbookShareSheet(
+                    target: target,
+                    onCompleted: onCompleted
+                )
+            },
+            onShareMove: { [weak self] completion in
+                guard let appContentRouter = self?.appContentRouter else {
+                    throw ShareMoveRoutingError.missingRouter
+                }
+                try await appContentRouter.openJoinedChatRoom(roomID: completion.roomID)
             }
         )
     }
@@ -138,7 +177,19 @@ final class LookbookContainer {
                 seasonID: seasonID
             ),
             brandImageCache: provider.brandImageCache,
-            coordinator: coordinator
+            coordinator: coordinator,
+            shareSheetFactory: { [self] target, onCompleted in
+                self.makeLookbookShareSheet(
+                    target: target,
+                    onCompleted: onCompleted
+                )
+            },
+            onShareMove: { [weak self] completion in
+                guard let appContentRouter = self?.appContentRouter else {
+                    throw ShareMoveRoutingError.missingRouter
+                }
+                try await appContentRouter.openJoinedChatRoom(roomID: completion.roomID)
+            }
         )
     }
 
@@ -166,7 +217,19 @@ final class LookbookContainer {
             ),
             coordinator: coordinator,
             commentCoordinator: coordinator.makePostCommentCoordinator(),
-            brandImageCache: provider.brandImageCache
+            brandImageCache: provider.brandImageCache,
+            shareSheetFactory: { [self] target, onCompleted in
+                self.makeLookbookShareSheet(
+                    target: target,
+                    onCompleted: onCompleted
+                )
+            },
+            onShareMove: { [weak self] completion in
+                guard let appContentRouter = self?.appContentRouter else {
+                    throw ShareMoveRoutingError.missingRouter
+                }
+                try await appContentRouter.openJoinedChatRoom(roomID: completion.roomID)
+            }
         )
     }
 
@@ -313,6 +376,36 @@ final class LookbookContainer {
                     jobRepository: provider.seasonImportJobRepository,
                     retryRepository: provider.seasonAssetRetryRepository
                 )
+            )
+        )
+    }
+
+    func makeLookbookShareSheet(
+        target: LookbookShareTarget,
+        onCompleted: @escaping (LookbookChatShareViewModel.Completion) -> Void
+    ) -> AnyView {
+        guard
+            let loadShareableJoinedRoomsUseCase,
+            let shareLookbookContentToChatUseCase,
+            let roomImageManager
+        else {
+            return AnyView(
+                LookbookShareUnavailableView()
+            )
+        }
+
+        let viewModel = LookbookChatShareViewModel(
+            target: target,
+            makeSharedContentUseCase: makeLookbookSharedContentUseCase,
+            loadRoomsUseCase: loadShareableJoinedRoomsUseCase,
+            shareUseCase: shareLookbookContentToChatUseCase
+        )
+        return AnyView(
+            LookbookShareSheetView(
+                viewModel: viewModel,
+                brandImageCache: provider.brandImageCache,
+                roomImageManager: roomImageManager,
+                onCompleted: onCompleted
             )
         )
     }

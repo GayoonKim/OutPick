@@ -15,6 +15,11 @@ final class DefaultMainTabBuilder: MainTabBuilding {
 
     private let lookbookContainer: LookbookContainer
     private let chatCoordinator: ChatCoordinator
+    var appContentRouter: (any AppContentRouting)? {
+        didSet {
+            chatCoordinator.appContentRouter = appContentRouter
+        }
+    }
 
     init(lookbookContainer: LookbookContainer, chatContainer: ChatContainer) {
         self.lookbookContainer = lookbookContainer

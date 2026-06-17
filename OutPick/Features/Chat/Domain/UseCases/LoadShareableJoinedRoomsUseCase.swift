@@ -28,9 +28,13 @@ final class LoadShareableJoinedRoomsUseCase: LoadShareableJoinedRoomsUseCaseProt
         let currentUserID = currentUserIDProvider()
         let result = try await joinedRoomsUseCase.fetchJoinedRoomsHead(limit: boundedLimit)
 
-        return result.rooms.filter {
-            LookbookChatShareRoomPolicy.isShareable($0, currentUserID: currentUserID)
-        }
+        return result.rooms
+            .filter {
+                LookbookChatShareRoomPolicy.isShareable($0, currentUserID: currentUserID)
+            }
+            .sorted {
+                ($0.lastMessageAt ?? $0.createdAt) > ($1.lastMessageAt ?? $1.createdAt)
+            }
     }
 }
 
