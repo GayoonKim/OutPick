@@ -31,6 +31,14 @@
 
 자동 테스트는 모든 동작을 코드로 고정하기 위한 장치가 아니라, 사람이 안정적으로 재현하기 어렵거나 회귀 비용이 큰 부분을 보호하기 위한 장치다.
 
+## iOS 검증 도구
+
+- iOS 앱 빌드, 테스트, 실행, 시뮬레이터 확인은 가능한 경우 Build iOS Apps 플러그인의 `xcodebuildmcp` 도구를 우선 사용한다.
+- 첫 빌드, 실행, 테스트 전에는 `session_show_defaults`로 project/workspace, scheme, simulator 기본값을 확인한다.
+- 기본값이 맞으면 shell `xcodebuild`를 직접 반복하기보다 `build_run_sim`, `test_sim`, `launch_app_sim`, `screenshot` 같은 목적별 도구를 사용한다.
+- 단순 compile check나 플러그인에서 지원하지 않는 특수 인자 검증은 shell `xcodebuild`를 사용할 수 있으며, 그 경우 사용 이유를 진행 기록에 남긴다.
+- 시뮬레이터 수동 QA가 필요한 UI 작업은 `build_run_sim`으로 빌드/설치/실행을 한 번에 처리하고, 필요하면 `screenshot`이나 runtime log 경로를 검증 기록에 남긴다.
+
 자동 테스트 우선 후보:
 
 - 서버 실패, 빈 응답, 권한 실패, 일부 API만 실패처럼 실제 앱 실행으로 제어하기 어려운 케이스.
