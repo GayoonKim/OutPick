@@ -525,6 +525,15 @@ private final class JoinedRoomsUseCaseFake: JoinedRoomsUseCaseProtocol {
         0
     }
 
+    func fetchReadSnapshot(roomID: String, lastMessageSeqHint: Int64?, lastMessageSenderID: String?) async -> ChatRoomReadSnapshot? {
+        ChatRoomReadSnapshot(
+            roomID: roomID,
+            latestSeq: lastMessageSeqHint,
+            lastReadSeq: lastMessageSeqHint,
+            lastMessageSenderID: lastMessageSenderID
+        )
+    }
+
     func leave(room: ChatRoom) {}
 }
 

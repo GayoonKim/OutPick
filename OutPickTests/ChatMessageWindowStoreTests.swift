@@ -1,0 +1,165 @@
+//
+//  ChatMessageWindowStoreTests.swift
+//  OutPickTests
+//
+//  Created by Codex on 6/18/26.
+//
+
+import Foundation
+import Testing
+@testable import OutPick
+
+struct ChatMessageWindowStoreTests {
+    @Test func resetBuildsDateSeparatorsAndReadMarker() throws {
+        var store = makeStore()
+        let firstDay = Date(timeIntervalSince1970: 100)
+        let secondDay = Date(timeIntervalSince1970: 86_500)
+        let messages = [
+            makeMessage(id: "m1", seq: 1, sentAt: firstDay),
+            makeMessage(id: "m2", seq: 2, sentAt: secondDay),
+            makeMessage(id: "m3", seq: 3, sentAt: secondDay.addingTimeInterval(60))
+        ]
+
+        let items = store.reset(messages: messages, readBoundarySeq: 1)
+
+        #expect(messageIDs(in: items) == ["m1", "m2", "m3"])
+        #expect(items.filter(isDateSeparator).count == 2)
+        let readMarkerIndex = try #require(items.firstIndex(where: isReadMarker))
+        let secondMessageIndex = try #require(items.firstIndex(where: { $0.messageID == "m2" }))
+        #expect(readMarkerIndex < secondMessageIndex)
+    }
+
+    @Test func applyDedupesIncomingMessagesAndReconfiguresExistingMessage() throws {
+        var store = makeStore()
+        let sentAt = Date(timeIntervalSince1970: 100)
+        _ = store.reset(
+            messages: [makeMessage(id: "m1", seq: 1, text: "old", sentAt: sentAt)],
+            readBoundarySeq: nil
+        )
+
+        let mutation = store.apply(
+            messages: [
+                makeMessage(id: "m1", seq: 1, text: "new", sentAt: sentAt),
+                makeMessage(id: "m2", seq: 2, text: "two", sentAt: sentAt.addingTimeInterval(60)),
+                makeMessage(id: "m2", seq: 2, text: "duplicate", sentAt: sentAt.addingTimeInterval(120))
+            ],
+            updateType: .newer,
+            isUserInCurrentRoom: true,
+            windowSize: 300
+        )
+
+        #expect(messageIDs(in: mutation.items) == ["m1", "m2"])
+        #expect(mutation.reconfiguredItems.map(\.messageID) == ["m1"])
+        #expect(mutation.insertedItems.compactMap(\.messageID) == ["m2"])
+        #expect(mutation.replacements.map { $0.previous.ID } == ["m1"])
+        #expect(store.message(for: "m1")?.msg == "new")
+    }
+
+    @Test func applyNewerInsertsReadMarkerWhenUnreadBoundaryIsCrossed() throws {
+        var store = makeStore()
+        let sentAt = Date(timeIntervalSince1970: 100)
+        _ = store.reset(
+            messages: [makeMessage(id: "m1", seq: 1, sentAt: sentAt)],
+            readBoundarySeq: 1
+        )
+
+        let mutation = store.apply(
+            messages: [makeMessage(id: "m2", seq: 2, sentAt: sentAt.addingTimeInterval(60))],
+            updateType: .newer,
+            isUserInCurrentRoom: false,
+            windowSize: 300
+        )
+
+        let readMarkerIndex = try #require(mutation.items.firstIndex(where: isReadMarker))
+        let secondMessageIndex = try #require(mutation.items.firstIndex(where: { $0.messageID == "m2" }))
+        #expect(readMarkerIndex < secondMessageIndex)
+    }
+
+    @Test func applyNewerVirtualizesOldestItemsAndPrunesMessageMap() {
+        var store = makeStore()
+        let sentAt = Date(timeIntervalSince1970: 100)
+        _ = store.reset(
+            messages: [
+                makeMessage(id: "m1", seq: 1, sentAt: sentAt),
+                makeMessage(id: "m2", seq: 2, sentAt: sentAt.addingTimeInterval(1)),
+                makeMessage(id: "m3", seq: 3, sentAt: sentAt.addingTimeInterval(2))
+            ],
+            readBoundarySeq: nil
+        )
+
+        let mutation = store.apply(
+            messages: [
+                makeMessage(id: "m4", seq: 4, sentAt: sentAt.addingTimeInterval(3)),
+                makeMessage(id: "m5", seq: 5, sentAt: sentAt.addingTimeInterval(4)),
+                makeMessage(id: "m6", seq: 6, sentAt: sentAt.addingTimeInterval(5))
+            ],
+            updateType: .newer,
+            isUserInCurrentRoom: true,
+            windowSize: 5
+        )
+
+        #expect(messageIDs(in: mutation.items) == ["m2", "m3", "m4", "m5", "m6"])
+        #expect(store.message(for: "m1") == nil)
+        #expect(store.firstMessageID() == "m2")
+        #expect(store.lastMessageID() == "m6")
+    }
+
+    @Test func reloadUpdatesVisibleMessageAndReturnsReconfiguredItem() {
+        var store = makeStore()
+        let sentAt = Date(timeIntervalSince1970: 100)
+        _ = store.reset(
+            messages: [makeMessage(id: "m1", seq: 1, sentAt: sentAt)],
+            readBoundarySeq: nil
+        )
+        var deleted = makeMessage(id: "m1", seq: 1, sentAt: sentAt)
+        deleted.isDeleted = true
+
+        let mutation = store.reload(messages: [deleted])
+
+        #expect(mutation.reconfiguredItems.map(\.messageID) == ["m1"])
+        #expect(store.message(for: "m1")?.isDeleted == true)
+    }
+
+    private func makeStore() -> ChatMessageWindowStore {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        return ChatMessageWindowStore(
+            calendar: calendar,
+            fallbackDate: { Date(timeIntervalSince1970: 0) }
+        )
+    }
+
+    private func makeMessage(
+        id: String,
+        seq: Int64,
+        text: String = "message",
+        sentAt: Date
+    ) -> ChatMessage {
+        ChatMessage(
+            ID: id,
+            seq: seq,
+            roomID: "room-1",
+            senderID: "sender@example.com",
+            senderNickname: "보낸 사람",
+            senderAvatarPath: nil,
+            msg: text,
+            sentAt: sentAt,
+            attachments: [],
+            replyPreview: nil
+        )
+    }
+
+    private func messageIDs(in items: [ChatMessageListItem]) -> [String] {
+        items.compactMap(\.messageID)
+    }
+
+    private func isDateSeparator(_ item: ChatMessageListItem) -> Bool {
+        if case .dateSeparator = item { return true }
+        return false
+    }
+
+    private func isReadMarker(_ item: ChatMessageListItem) -> Bool {
+        if case .readMarker = item { return true }
+        return false
+    }
+}
