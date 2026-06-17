@@ -152,15 +152,6 @@ final class ChatMediaManager: ChatMediaManaging {
         return try await storageURLCache.url(for: path)
     }
     
-    // MARK: - 비디오 관련 메서드 (기본 구현 - ChatViewController에서 오버라이드 가능)
-    
-    func uploadCompressedVideoAndBroadcast(roomID: String, compressedURL: URL, preset: DefaultMediaProcessingService.VideoUploadPreset, hud: CircularProgressHUD?) async {
-        // 이 메서드는 ChatViewController의 특정 기능과 밀접하게 연관되어 있어
-        // ChatViewController에서 직접 구현하는 것이 더 적합합니다.
-        // 프로토콜 요구사항을 만족하기 위한 기본 구현입니다.
-        fatalError("uploadCompressedVideoAndBroadcast는 ChatViewController에서 구현되어야 합니다.")
-    }
-    
     func makeVideoThumbnailData(url: URL, maxPixel: CGFloat) throws -> Data {
         let asset = AVAsset(url: url)
         let gen = AVAssetImageGenerator(asset: asset)

@@ -25,8 +25,11 @@ final class JoinedRoomsViewModel {
     }
 
     private let useCase: JoinedRoomsUseCaseProtocol
+    private let roomReadStateStore: ChatRoomReadStateStore?
     private var cancellables = Set<AnyCancellable>()
+    private var readStateTask: Task<Void, Never>?
     private var isBoundJoinedRooms = false
+    private var isBoundReadState = false
     private var headRooms: [ChatRoom] = []
     private var tailRoomsByID: [String: ChatRoom] = [:]
     private var tailCursor: DocumentSnapshot?
@@ -41,8 +44,12 @@ final class JoinedRoomsViewModel {
 
     var onStateChanged: ((State) -> Void)?
 
-    init(useCase: JoinedRoomsUseCaseProtocol) {
+    init(
+        useCase: JoinedRoomsUseCaseProtocol,
+        roomReadStateStore: ChatRoomReadStateStore? = nil
+    ) {
         self.useCase = useCase
+        self.roomReadStateStore = roomReadStateStore
         self.state = State()
     }
 
@@ -50,6 +57,7 @@ final class JoinedRoomsViewModel {
         if !isBoundJoinedRooms {
             bindJoinedRoomsSummary()
         }
+        bindReadStateIfNeeded()
         useCase.startRoomUpdates(limit: Constants.headRealtimeLimit)
         Task { await bootstrapJoinedRooms() }
     }
@@ -57,7 +65,10 @@ final class JoinedRoomsViewModel {
     func stop() {
         useCase.stopRoomUpdates()
         cancellables.removeAll()
+        readStateTask?.cancel()
+        readStateTask = nil
         isBoundJoinedRooms = false
+        isBoundReadState = false
     }
 
     func notifyCurrentState() {
@@ -101,6 +112,20 @@ final class JoinedRoomsViewModel {
             }
             .store(in: &cancellables)
         isBoundJoinedRooms = true
+    }
+
+    private func bindReadStateIfNeeded() {
+        guard !isBoundReadState else { return }
+        guard let roomReadStateStore else { return }
+
+        isBoundReadState = true
+        readStateTask = Task { @MainActor [weak self, weak roomReadStateStore] in
+            guard let self, let roomReadStateStore else { return }
+            for await change in roomReadStateStore.readStateChangeStream() {
+                if Task.isCancelled { return }
+                self.applyReadStateChange(change)
+            }
+        }
     }
 
     private func bootstrapJoinedRooms() async {
@@ -158,6 +183,7 @@ final class JoinedRoomsViewModel {
         })
 
         headRooms = sortRooms(rooms)
+        seedLatestReadState(for: headRooms)
         rebuildMergedState()
 
         guard updateUnread else { return }
@@ -181,6 +207,7 @@ final class JoinedRoomsViewModel {
             guard let roomID = room.ID else { continue }
             tailRoomsByID[roomID] = room
         }
+        seedLatestReadState(for: rooms)
         rebuildMergedState()
     }
 
@@ -198,54 +225,80 @@ final class JoinedRoomsViewModel {
     }
 
     private func refreshUnreadCounts(for rooms: [ChatRoom]) async {
-        let updates = await withTaskGroup(of: (String, Int64)?.self, returning: [String: Int64].self) { group in
-            for room in rooms {
-                guard let roomID = room.ID else { continue }
-                group.addTask { [weak self] in
-                    guard let self else { return nil }
-                    let unread = await self.useCase.fetchUnreadCount(
-                        roomID: roomID,
-                        lastMessageSeqHint: room.seq,
-                        lastMessageSenderID: room.lastMessageSenderID
-                    )
-                    return (roomID, unread)
-                }
+        let snapshots = await fetchReadSnapshots(for: rooms)
+        var updates: [String: Int64] = [:]
+        let currentUserID = LoginManager.shared.getUserEmail
+        for snapshot in snapshots {
+            roomReadStateStore?.seed(snapshot)
+            if let unread = snapshot.unreadCount(currentUserID: currentUserID) {
+                updates[snapshot.roomID] = unread
             }
-
-            var result: [String: Int64] = [:]
-            for await item in group {
-                if let (roomID, unread) = item {
-                    result[roomID] = unread
-                }
-            }
-            return result
         }
         state.unreadCounts.merge(updates) { _, new in new }
     }
 
     private func computeUnreadCounts(for rooms: [ChatRoom]) async -> [String: Int64] {
-        await withTaskGroup(of: (String, Int64)?.self, returning: [String: Int64].self) { group in
+        let snapshots = await fetchReadSnapshots(for: rooms)
+        let currentUserID = LoginManager.shared.getUserEmail
+        var result: [String: Int64] = [:]
+        for snapshot in snapshots {
+            roomReadStateStore?.seed(snapshot)
+            if let unread = snapshot.unreadCount(currentUserID: currentUserID) {
+                result[snapshot.roomID] = unread
+            }
+        }
+        return result
+    }
+
+    private func fetchReadSnapshots(for rooms: [ChatRoom]) async -> [ChatRoomReadSnapshot] {
+        let currentUserID = LoginManager.shared.getUserEmail
+        return await withTaskGroup(of: ChatRoomReadSnapshot?.self, returning: [ChatRoomReadSnapshot].self) { group in
             for room in rooms {
                 guard let roomID = room.ID else { continue }
+                if let snapshot = roomReadStateStore?.snapshot(for: roomID),
+                   snapshot.unreadCount(currentUserID: currentUserID) != nil {
+                    group.addTask {
+                        snapshot
+                    }
+                    continue
+                }
+
                 group.addTask { [weak self] in
                     guard let self else { return nil }
-                    let unread = await self.useCase.fetchUnreadCount(
+                    return await self.useCase.fetchReadSnapshot(
                         roomID: roomID,
                         lastMessageSeqHint: room.seq,
                         lastMessageSenderID: room.lastMessageSenderID
                     )
-                    return (roomID, unread)
                 }
             }
 
-            var result: [String: Int64] = [:]
+            var result: [ChatRoomReadSnapshot] = []
             for await item in group {
-                if let (roomID, unread) = item {
-                    result[roomID] = unread
+                if let item {
+                    result.append(item)
                 }
             }
             return result
         }
+    }
+
+    private func seedLatestReadState(for rooms: [ChatRoom]) {
+        guard let roomReadStateStore else { return }
+        for room in rooms {
+            guard let roomID = room.ID else { continue }
+            roomReadStateStore.seedLatest(
+                roomID: roomID,
+                latestSeq: room.seq,
+                lastMessageSenderID: room.lastMessageSenderID
+            )
+        }
+    }
+
+    private func applyReadStateChange(_ change: ChatRoomReadStateChange) {
+        guard state.rooms.contains(where: { $0.ID == change.roomID }) else { return }
+        guard let unread = change.snapshot.unreadCount(currentUserID: LoginManager.shared.getUserEmail) else { return }
+        state.unreadCounts[change.roomID] = unread
     }
 
     private func sortRooms(_ rooms: [ChatRoom]) -> [ChatRoom] {

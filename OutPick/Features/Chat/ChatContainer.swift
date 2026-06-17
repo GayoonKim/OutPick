@@ -18,6 +18,7 @@ final class ChatContainer {
     let roomRepository: FirebaseChatRoomRepositoryProtocol
     let userProfileRepository: UserProfileRepositoryProtocol
     let joinedRoomsStore: JoinedRoomsStore
+    let roomReadStateStore: ChatRoomReadStateStore
 
     private let roomListUseCase: RoomListUseCaseProtocol
     private let joinedRoomsUseCase: JoinedRoomsUseCaseProtocol
@@ -39,6 +40,7 @@ final class ChatContainer {
         roomRepository: FirebaseChatRoomRepositoryProtocol? = nil,
         userProfileRepository: UserProfileRepositoryProtocol? = nil,
         joinedRoomsStore: JoinedRoomsStore,
+        roomReadStateStore: ChatRoomReadStateStore? = nil,
         announcementRepository: FirebaseAnnouncementRepositoryProtocol? = nil,
         repositories: FirebaseRepositoryProviding = FirebaseRepositoryProvider.shared
     ) {
@@ -47,6 +49,8 @@ final class ChatContainer {
         self.roomRepository = roomRepository ?? repositories.chatRoomRepository
         self.userProfileRepository = userProfileRepository ?? repositories.userProfileRepository
         self.joinedRoomsStore = joinedRoomsStore
+        let resolvedRoomReadStateStore = roomReadStateStore ?? ChatRoomReadStateStore()
+        self.roomReadStateStore = resolvedRoomReadStateStore
         let announcementRepository = announcementRepository ?? repositories.announcementRepository
         self.roomListUseCase = RoomListUseCase(roomRepository: self.roomRepository)
         self.joinedRoomsUseCase = JoinedRoomsUseCase(
@@ -58,7 +62,8 @@ final class ChatContainer {
         self.chatMessageSendingRepository = SocketChatMessageSendingRepository()
         self.chatRoomMessageUseCase = ChatRoomMessageUseCase(
             messageManager: provider.messageManager,
-            sendingRepository: chatMessageSendingRepository
+            sendingRepository: chatMessageSendingRepository,
+            deletedLastMessageSummaryUpdater: self.roomRepository as? ChatDeletedLastMessageSummaryUpdating
         )
         self.chatRoomRealtimeUseCase = ChatRoomRealtimeUseCase(
             repository: SocketChatRoomRealtimeRepository()
@@ -86,6 +91,7 @@ final class ChatContainer {
         ChatDependencyContainer.provider = provider
         ChatDependencyContainer.firebaseRepositories = repositories
         ChatDependencyContainer.joinedRoomsStore = joinedRoomsStore
+        ChatDependencyContainer.roomReadStateStore = resolvedRoomReadStateStore
     }
 
     func makeRoomListsViewModel() -> RoomListsViewModel {
@@ -93,7 +99,10 @@ final class ChatContainer {
     }
 
     func makeJoinedRoomsViewModel() -> JoinedRoomsViewModel {
-        JoinedRoomsViewModel(useCase: joinedRoomsUseCase)
+        JoinedRoomsViewModel(
+            useCase: joinedRoomsUseCase,
+            roomReadStateStore: roomReadStateStore
+        )
     }
 
     func makeRoomSearchViewModel() -> RoomSearchViewModel {
@@ -107,7 +116,8 @@ final class ChatContainer {
             messageUseCase: chatRoomMessageUseCase,
             searchUseCase: chatRoomSearchUseCase,
             lifecycleUseCase: chatRoomLifecycleUseCase,
-            realtimeUseCase: chatRoomRealtimeUseCase
+            realtimeUseCase: chatRoomRealtimeUseCase,
+            roomReadStateStore: roomReadStateStore
         )
     }
 

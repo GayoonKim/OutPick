@@ -38,7 +38,6 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
     
     var roomImages: [String:UIImage] = [:]
     private var roomImageKeys: [String: String] = [:]
-    private var lastReadSeqObserver: NSObjectProtocol?
 
     // MARK: - Navigation callbacks (Coordinator)
     var onOpenRoom: ((ChatRoom) -> Void)?
@@ -59,12 +58,16 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
         let roomRepository = FirebaseChatRoomRepository(db: db)
         let userProfileRepository = UserProfileRepository(db: db)
         let joinedRoomsStore = ChatDependencyContainer.requireJoinedRoomsStore()
+        let roomReadStateStore = ChatDependencyContainer.requireRoomReadStateStore()
         let useCase = JoinedRoomsUseCase(
             roomRepository: roomRepository,
             userProfileRepository: userProfileRepository,
             joinedRoomsStore: joinedRoomsStore
         )
-        self.viewModel = JoinedRoomsViewModel(useCase: useCase)
+        self.viewModel = JoinedRoomsViewModel(
+            useCase: useCase,
+            roomReadStateStore: roomReadStateStore
+        )
         self.roomImageManager = ChatDependencyContainer.provider.roomImageManager
         super.init(coder: coder)
     }
@@ -76,7 +79,6 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
         setupViews()
         configureDataSource()
         bindViewModel()
-        bindNotifications()
         viewModel.notifyCurrentState()
     }
     
@@ -90,32 +92,12 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
         viewModel.stop()
     }
 
-    deinit {
-        if let lastReadSeqObserver {
-            NotificationCenter.default.removeObserver(lastReadSeqObserver)
-        }
-    }
-
     private func bindViewModel() {
         viewModel.onStateChanged = { [weak self] state in
             guard let self else { return }
             self.unreadCounts = state.unreadCounts
             self.applyRooms(state.rooms, animated: true)
             Task { await self.syncRoomImages(for: state.rooms) }
-        }
-    }
-
-    private func bindNotifications() {
-        lastReadSeqObserver = NotificationCenter.default.addObserver(
-            forName: .chatRoomLastReadSeqDidFlush,
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            guard let self else { return }
-            guard let roomID = notification.userInfo?["roomID"] as? String, !roomID.isEmpty else { return }
-            Task { @MainActor [weak self] in
-                self?.viewModel.refreshUnreadCount(roomID: roomID)
-            }
         }
     }
 

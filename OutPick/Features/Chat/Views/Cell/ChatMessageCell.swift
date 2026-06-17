@@ -173,7 +173,7 @@ class ChatMessageCell: UICollectionViewCell {
     private let replyPreviewSeparator: UIView = {
         let sep = UIView()
         sep.translatesAutoresizingMaskIntoConstraints = false
-        sep.backgroundColor = OutPickTheme.ColorToken.borderSubtle
+        sep.backgroundColor = OutPickTheme.ColorToken.iconSecondary.withAlphaComponent(0.65)
         sep.heightAnchor.constraint(equalToConstant: 1).isActive = true
         return sep
     }()

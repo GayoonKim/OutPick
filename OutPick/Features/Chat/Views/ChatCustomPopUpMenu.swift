@@ -6,21 +6,9 @@
 //
 
 import UIKit
-import Combine
 
 class ChatCustomPopUpMenu: UIView {
-    var onReply: (() -> Void)?
-    var onCopy: (() -> Void)?
-    var onDelete: (() -> Void)?
-    var onReport: (() -> Void)?
-    var onAnnounce: (() -> Void)?
-
-    // MARK: - Combine Action Publishers (backward compatible with closures)
-//    public let replySubject = PassthroughSubject<Void, Never>()
-//    public let copySubject = PassthroughSubject<Void, Never>()
-//    public let deleteSubject = PassthroughSubject<Void, Never>()
-//    public let reportSubject = PassthroughSubject<Void, Never>()
-//    public let announceSubject = PassthroughSubject<Void, Never>()
+    var onActionSelected: ((ChatMessageAction) -> Void)?
     
     enum PrimaryActionMode { case delete, report }
     private var primaryActionMode: PrimaryActionMode = .delete
@@ -157,29 +145,24 @@ class ChatCustomPopUpMenu: UIView {
     }
     
     @objc private func replyTapped() {
-        onReply?()
-//        replySubject.send(())
+        onActionSelected?(.reply)
     }
     
     @objc private func copyTapped() {
-        onCopy?()
-//        copySubject.send(())
+        onActionSelected?(.copy)
     }
     
     @objc private func deleteTapped() {
         switch primaryActionMode {
         case .delete:
-            onDelete?()
-//            deleteSubject.send(())
+            onActionSelected?(.delete)
         case .report:
-            onReport?()
-//            reportSubject.send(())
+            onActionSelected?(.report)
         }
     }
     
     @objc private func announceTapped() {
-        onAnnounce?()
-//        announceSubject.send(())
+        onActionSelected?(.announce)
     }
 }
 

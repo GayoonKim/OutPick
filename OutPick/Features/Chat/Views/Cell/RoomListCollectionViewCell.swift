@@ -428,7 +428,9 @@ private class MessagePreviewView: UIView {
     func configure(with message: ChatMessage, isMine: Bool) {
         // 기본 본문/닉네임 세팅
         nicknameLabel.text = message.senderNickname
-        if let text = message.msg, !text.isEmpty {
+        if message.isDeleted {
+            messageLabel.text = "삭제된 메시지입니다."
+        } else if let text = message.msg, !text.isEmpty {
             messageLabel.text = text
         } else if message.hasDisplayableAttachments {
             let imageCount = message.displayableImageAttachments.count

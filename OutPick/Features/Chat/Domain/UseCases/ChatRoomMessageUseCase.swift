@@ -24,6 +24,14 @@ protocol ChatRoomMessageUseCaseProtocol {
     func deleteMessage(message: ChatMessage, room: ChatRoom) async throws
 }
 
+protocol ChatDeletedLastMessageSummaryUpdating {
+    func updateDeletedLastMessageSummaryIfCurrent(
+        roomID: String,
+        deletedMessageSeq: Int64,
+        deletedPreview: String
+    ) async throws
+}
+
 struct ChatMessageSenderSnapshot: Equatable {
     let senderID: String
     let senderNickname: String
@@ -31,8 +39,11 @@ struct ChatMessageSenderSnapshot: Equatable {
 }
 
 final class ChatRoomMessageUseCase: ChatRoomMessageUseCaseProtocol {
+    private static let deletedMessagePreview = "삭제된 메시지입니다."
+
     private let messageManager: ChatMessageManaging
     private let sendingRepository: ChatMessageSendingRepositoryProtocol
+    private let deletedLastMessageSummaryUpdater: ChatDeletedLastMessageSummaryUpdating?
     private let currentUserProvider: () -> ChatMessageSenderSnapshot
     private let messageIDProvider: () -> String
     private let dateProvider: () -> Date
@@ -40,6 +51,7 @@ final class ChatRoomMessageUseCase: ChatRoomMessageUseCaseProtocol {
     init(
         messageManager: ChatMessageManaging,
         sendingRepository: ChatMessageSendingRepositoryProtocol = SocketChatMessageSendingRepository(),
+        deletedLastMessageSummaryUpdater: ChatDeletedLastMessageSummaryUpdating? = FirebaseRepositoryProvider.shared.chatRoomRepository as? ChatDeletedLastMessageSummaryUpdating,
         currentUserProvider: @escaping () -> ChatMessageSenderSnapshot = {
             ChatMessageSenderSnapshot(
                 senderID: LoginManager.shared.getUserEmail,
@@ -52,6 +64,7 @@ final class ChatRoomMessageUseCase: ChatRoomMessageUseCaseProtocol {
     ) {
         self.messageManager = messageManager
         self.sendingRepository = sendingRepository
+        self.deletedLastMessageSummaryUpdater = deletedLastMessageSummaryUpdater
         self.currentUserProvider = currentUserProvider
         self.messageIDProvider = messageIDProvider
         self.dateProvider = dateProvider
@@ -116,5 +129,21 @@ final class ChatRoomMessageUseCase: ChatRoomMessageUseCaseProtocol {
 
     func deleteMessage(message: ChatMessage, room: ChatRoom) async throws {
         try await messageManager.deleteMessage(message: message, room: room)
+        try await updateDeletedLastMessageSummaryIfNeeded(message: message, room: room)
+    }
+
+    private func updateDeletedLastMessageSummaryIfNeeded(message: ChatMessage, room: ChatRoom) async throws {
+        guard let deletedLastMessageSummaryUpdater else { return }
+        guard let roomID = room.ID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !roomID.isEmpty,
+              message.seq > 0 else {
+            return
+        }
+
+        try await deletedLastMessageSummaryUpdater.updateDeletedLastMessageSummaryIfCurrent(
+            roomID: roomID,
+            deletedMessageSeq: message.seq,
+            deletedPreview: Self.deletedMessagePreview
+        )
     }
 }

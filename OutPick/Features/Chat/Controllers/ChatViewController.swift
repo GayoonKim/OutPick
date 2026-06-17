@@ -22,6 +22,9 @@ protocol ChatMessageCellDelegate: AnyObject {
 }
 
 class ChatViewController: UIViewController, UINavigationControllerDelegate, ChatModalAnimatable {
+    typealias Item = ChatMessageListItem
+    typealias MessageUpdateType = ChatMessageWindowUpdateType
+
     // Paging buffer size for scroll triggers
     private var pagingBuffer = 200
     
@@ -37,13 +40,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private var realtimeSubscription: ChatRoomRealtimeSubscription?
     private var chatCustomMemucancellables = Set<AnyCancellable>()
     
-    private var lastMessageDate: Date?
-    private var readBoundarySeq: Int64?
+    private var messageWindowStore = ChatMessageWindowStore()
     
     private var isUserInCurrentRoom = false
     
     private var replyMessage: ReplyPreview?
-    private var messageMap: [String: ChatMessage] = [:]
     private lazy var centeredStatusLabel: UILabel = {
         let label = UILabel()
         label.numberOfLines = 0
@@ -62,19 +63,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         case main
     }
     
-    enum Item: Hashable {
-        case message(ChatMessage)
-        case dateSeparator(Date)
-        case readMarker
-    }
-    
-    enum MessageUpdateType {
-        case older
-        case newer
-        case reload
-        case initial
-    }
-    
     var room: ChatRoom?
     var roomID: String?
     var isRoomSaving: Bool = false
@@ -85,13 +73,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private var searchJumpTask: Task<Void, Never>?
     private var searchGeneration: Int = 0
 
-    enum PendingImageUploadState: Equatable {
-        case uploading(Double)
-        case failed
-    }
-    private var pendingImageUploadStates: [String: PendingImageUploadState] = [:]
-    private var pendingImageUploadPairs: [String: [DefaultMediaProcessingService.ImagePair]] = [:]
-    private var pendingImageUploadTasks: [String: Task<Void, Never>] = [:]
+    typealias PendingImageUploadState = ChatPendingMediaUploadState
+    private let pendingMediaUploadStore = ChatPendingMediaUploadStore()
+    private(set) lazy var mediaUploadUseCase: ChatMediaUploadUseCaseProtocol = makeMediaUploadUseCase()
     
     // MARK: - Managers (의존성 주입)
     private let messageManager: ChatMessageManaging
@@ -145,6 +129,13 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         injectedFirebaseRepositories ?? ChatDependencyContainer.requireFirebaseRepositories()
     }
 
+    private func makeMediaUploadUseCase() -> ChatMediaUploadUseCaseProtocol {
+        ChatMediaUploadUseCase(
+            imageStorageRepository: firebaseRepositories.imageStorageRepository,
+            videoStorageRepository: FirebaseVideoStorageRepository.shared
+        )
+    }
+
     private func ensureChatRoomViewModel() -> ChatRoomViewModel? {
         if let chatRoomViewModel {
             return chatRoomViewModel
@@ -168,7 +159,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 joinedRoomsStore: ChatDependencyContainer.requireJoinedRoomsStore(),
                 announcementRepository: repositories.announcementRepository
             ),
-            realtimeUseCase: ChatRoomRealtimeUseCase()
+            realtimeUseCase: ChatRoomRealtimeUseCase(),
+            roomReadStateStore: ChatDependencyContainer.requireRoomReadStateStore()
         )
         self.chatRoomViewModel = viewModel
         return viewModel
@@ -209,8 +201,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         videoPrefetchTasks.removeAll()
         mediaPrefetchCleanupTask?.cancel()
         mediaPrefetchCleanupTask = nil
-        pendingImageUploadTasks.values.forEach { $0.cancel() }
-        pendingImageUploadTasks.removeAll()
+        let pendingMediaUploadStore = pendingMediaUploadStore
+        Task { @MainActor in
+            pendingMediaUploadStore.cancelAllTasks()
+            pendingMediaUploadStore.removeAll()
+        }
         appLifecycleObservers.forEach { NotificationCenter.default.removeObserver($0) }
         appLifecycleObservers.removeAll()
 
@@ -555,18 +550,13 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     @MainActor
     private func setMessageWindow(_ window: ChatInitialWindow) {
-        readBoundarySeq = window.readBoundarySeq
-        lastMessageDate = nil
-        messageMap.removeAll()
+        let items = messageWindowStore.reset(
+            messages: window.messages,
+            readBoundarySeq: window.readBoundarySeq
+        )
 
-        var items = buildNewItems(from: window.messages)
-        items = insertingReadMarkerIfNeeded(into: items, readBoundarySeq: window.readBoundarySeq)
-
-        var snapshot = NSDiffableDataSourceSnapshot<Section, Item>()
-        snapshot.appendSections([.main])
-        snapshot.appendItems(items, toSection: .main)
-        dataSource.apply(snapshot, animatingDifferences: false)
-        activateProfileSync(with: window.messages)
+        applyWindowSnapshot(items, animatingDifferences: false)
+        activateProfileSync(with: messageWindowStore.visibleMessages)
 
         if window.readBoundarySeq != nil {
             scrollToReadMarkerIfNeeded()
@@ -660,6 +650,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             if case .readMarker = $0 { return true }
             return false
         }) {
+            _ = messageWindowStore.removeReadMarker()
             snapshot.deleteItems([marker])
             dataSource.apply(snapshot, animatingDifferences: false)
         }
@@ -721,25 +712,25 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         let cancellable = viewModel.setupDeletionListener { [weak self] deletedMessageID in
             guard let self = self else { return }
             Task { @MainActor in
-                var toReload: [ChatMessage] = []
+                var toReloadIDs = Set<String>()
 
-                if var deletedMsg = self.messageMap[deletedMessageID] {
-                    deletedMsg.isDeleted = true
-                    self.messageMap[deletedMessageID] = deletedMsg
-                    toReload.append(deletedMsg)
+                if self.messageWindowStore.updateMessage(id: deletedMessageID, mutate: { message in
+                    message.isDeleted = true
+                }) != nil {
+                    toReloadIDs.insert(deletedMessageID)
                 } else {
                     print("⚠️ deleted message not in window: \(deletedMessageID)")
                 }
 
-                let repliesInWindow = self.messageMap.values.filter { $0.replyPreview?.messageID == deletedMessageID }
-                for var reply in repliesInWindow {
+                let updatedReplies = self.messageWindowStore.updateMessages(where: {
+                    $0.replyPreview?.messageID == deletedMessageID
+                }) { reply in
                     reply.replyPreview?.isDeleted = true
-                    self.messageMap[reply.ID] = reply
-                    toReload.append(reply)
                 }
+                toReloadIDs.formUnion(updatedReplies.map(\.ID))
 
-                if !toReload.isEmpty {
-                    self.addMessages(toReload, updateType: .reload)
+                if !toReloadIDs.isEmpty {
+                    self.reconfigureMessageItems(messageIDs: toReloadIDs)
                 }
             }
         }
@@ -846,21 +837,21 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         )
         guard !currentProfiles.isEmpty else { return }
 
-        for (messageID, message) in messageMap {
+        let updatedMessages = messageWindowStore.updateMessages(where: { message in
+            currentProfiles[normalizedSenderID(message.senderID)] != nil
+        }) { message in
             let senderID = normalizedSenderID(message.senderID)
-            guard let profile = currentProfiles[senderID] else { continue }
-
-            var updated = message
-            updated.senderNickname = profile.nickname
-            updated.senderAvatarPath = profile.profileImagePath
-            messageMap[messageID] = updated
+            guard let profile = currentProfiles[senderID] else { return }
+            message.senderNickname = profile.nickname
+            message.senderAvatarPath = profile.profileImagePath
         }
+        let updatedMessageIDs = Set(updatedMessages.map(\.ID))
 
         var snapshot = dataSource.snapshot()
         let items = snapshot.itemIdentifiers(inSection: .main)
         let itemsToReload = items.filter { item in
             guard case let .message(message) = item else { return false }
-            return normalizedSenderIDs.contains(normalizedSenderID(message.senderID))
+            return updatedMessageIDs.contains(message.ID)
         }
 
         guard !itemsToReload.isEmpty else { return }
@@ -1297,7 +1288,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             return
         }
 
-        activateProfileSync(with: Array(messageMap.values))
+        activateProfileSync(with: messageWindowStore.visibleMessages)
         bindMessagePublishers()
     }
     
@@ -1810,8 +1801,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         emptySnapshot.appendSections([.main])
         dataSource.apply(emptySnapshot, animatingDifferences: false)
 
-        messageMap.removeAll()
-        lastMessageDate = nil
+        _ = messageWindowStore.reset(messages: [], readBoundarySeq: nil)
         scrollTargetIndex = nil
 
         addMessages(messages, updateType: .initial)
@@ -1923,8 +1913,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private func showCustomMenu(at indexPath: IndexPath/*, aboveCell: Bool*/) {
         guard let cell = chatMessageCollectionView.cellForItem(at: indexPath) as? ChatMessageCell,
               let item = dataSource.itemIdentifier(for: indexPath),
-              case let .message(message) = item,
-              message.isDeleted == false else { return }
+              case let .message(message) = item else { return }
+
+        let latestMessage = messageWindowStore.message(for: message.ID) ?? message
+        guard latestMessage.isDeleted == false else { return }
         
         // 1.셀 강조하기
         cell.setHightlightedOverlay(true)
@@ -1937,92 +1929,80 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         // 컬렉션 뷰 기준 중앙 사용 (화면 절반)
         let screenMiddleY = chatMessageCollectionView.bounds.midY
         let showAbove: Bool = cellCenterY > screenMiddleY
-        
-        let policy = ChatMessageActionPolicy.make(
-            for: message,
-            currentUserID: LoginManager.shared.getUserEmail,
-            roomCreatorID: room?.creatorID
-        )
-        chatCustomMenu.configure(
-            ChatCustomPopUpMenu.Configuration(
-                canReply: policy.canReply,
-                canCopy: policy.canCopy,
-                canDelete: policy.canDelete,
-                canReport: policy.canReport,
-                canAnnounce: policy.canAnnounce
-            )
-        )
+        let currentUserID = LoginManager.shared.getUserEmail
+        guard let viewModel = chatRoomViewModel ?? ensureChatRoomViewModel() else { return }
+        let policy = viewModel.messageActionPolicy(for: latestMessage, currentUserID: currentUserID)
+        chatCustomMenu.configure(menuConfiguration(for: policy))
         
         // 2.메뉴 위치를 셀 기준으로
         view.addSubview(chatCustomMenu)
         NSLayoutConstraint.activate([
             showAbove ? chatCustomMenu.bottomAnchor.constraint(equalTo: cell.referenceView.topAnchor, constant: -8) : chatCustomMenu.topAnchor.constraint(equalTo: cell.referenceView.bottomAnchor, constant: 8),
             
-            LoginManager.shared.getUserEmail == message.senderID ? chatCustomMenu.trailingAnchor.constraint(equalTo: cell.referenceView.trailingAnchor, constant: 0) : chatCustomMenu.leadingAnchor.constraint(equalTo: cell.referenceView.leadingAnchor, constant: 0)
+            currentUserID == latestMessage.senderID ? chatCustomMenu.trailingAnchor.constraint(equalTo: cell.referenceView.trailingAnchor, constant: 0) : chatCustomMenu.leadingAnchor.constraint(equalTo: cell.referenceView.leadingAnchor, constant: 0)
         ])
         
         // 3. 버튼 액션 설정
-        setChatMenuActions(for: message)
+        setChatMenuActions(for: latestMessage, policy: policy)
     }
     
-    private func setChatMenuActions(for message: ChatMessage) {
-        chatCustomMenu.onReply = { [weak self] in
-            guard let self = self else { return }
-            self.handleReply(message: message)
-            self.dismissCustomMenu()
-        }
-        
-        chatCustomMenu.onCopy = { [weak self] in
-            guard let self = self else { return }
-            self.handleCopy(message: message)
-            self.dismissCustomMenu()
-        }
-        
-        chatCustomMenu.onDelete = { [weak self] in
-            guard let self = self else { return }
-            ConfirmView.present(in: self.view,
-                                message: "삭제 시 모든 사용자의 채팅창에서 메시지가 삭제되며\n‘삭제된 메시지입니다.’로 표기됩니다.",
-                                onConfirm: { [weak self] in
-                guard let self = self else { return }
-                self.handleDelete(message: message)
-            })
-            self.dismissCustomMenu()
-        }
-        
-        chatCustomMenu.onReport = { [weak self] in
-            self?.handleReport(message: message)
-            self?.dismissCustomMenu()
-        }
-        
-        chatCustomMenu.onAnnounce = { [weak self] in
-            guard let self = self else { return }
-            print(#function, "공지:", message.msg ?? "")
-            
-            ConfirmView.presentAnnouncement(in: self.view, onConfirm: { [weak self] in
-                guard let self = self else { return }
-                self.handleAnnouncement(message)
-            })
-            
-            self.dismissCustomMenu()
-        }
+    private func menuConfiguration(for policy: ChatMessageActionPolicy) -> ChatCustomPopUpMenu.Configuration {
+        ChatCustomPopUpMenu.Configuration(
+            canReply: policy.canReply,
+            canCopy: policy.canCopy,
+            canDelete: policy.canDelete,
+            canReport: policy.canReport,
+            canAnnounce: policy.canAnnounce
+        )
     }
-    
-    private func handleAnnouncement(_ message: ChatMessage) {
-        Task { @MainActor in
-            guard let viewModel = self.chatRoomViewModel ?? self.ensureChatRoomViewModel() else { return }
-            do {
-                try await viewModel.saveAnnouncement(
-                    message: message,
-                    authorID: LoginManager.shared.currentUserProfile?.nickname ?? ""
-                )
-                showSuccess("공지를 등록했습니다.")
-            } catch {
-                showSuccess("공지 등록에 실패했습니다.")
-                print("❌ 공지 등록 실패:", error)
+
+    private func setChatMenuActions(for message: ChatMessage, policy: ChatMessageActionPolicy) {
+        chatCustomMenu.onActionSelected = { [weak self] action in
+            guard let self = self else { return }
+            guard policy.allows(action) else {
+                self.dismissCustomMenu()
+                return
             }
+            self.handleMessageMenuAction(action, message: message)
         }
     }
     
+    @MainActor
+    private func handleMessageMenuAction(_ action: ChatMessageAction, message: ChatMessage) {
+        switch action {
+        case .reply:
+            handleReply(message: message)
+            dismissCustomMenu()
+        case .copy:
+            handleCopy(message: message)
+            dismissCustomMenu()
+        case .delete:
+            ConfirmView.present(
+                in: view,
+                message: "삭제 시 모든 사용자의 채팅창에서 메시지가 삭제되며\n‘삭제된 메시지입니다.’로 표기됩니다.",
+                onConfirm: { [weak self] in
+                    self?.performMessageServerAction(.delete, message: message)
+                }
+            )
+            dismissCustomMenu()
+        case .report:
+            handleReport(message: message)
+            dismissCustomMenu()
+        case .announce:
+            print(#function, "공지:", message.msg ?? "")
+            ConfirmView.presentAnnouncement(in: view, onConfirm: { [weak self] in
+                let authorID = LoginManager.shared.currentUserProfile?.nickname ?? ""
+                self?.performMessageServerAction(
+                    .announce(authorID: authorID),
+                    message: message,
+                    successMessage: "공지를 등록했습니다.",
+                    failureMessage: "공지 등록에 실패했습니다."
+                )
+            })
+            dismissCustomMenu()
+        }
+    }
+
     @MainActor
     private func handleReport(message: ChatMessage) {
         print(#function, "신고:", message.msg ?? "")
@@ -2046,18 +2026,24 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         showSuccess("메시지가 복사되었습니다.")
     }
     
-    private func handleDelete(message: ChatMessage) {
-        Task {
-            guard let room = self.room else { return }
+    private func performMessageServerAction(
+        _ action: ChatMessageServerAction,
+        message: ChatMessage,
+        successMessage: String? = nil,
+        failureMessage: String? = nil
+    ) {
+        Task { @MainActor in
+            guard let viewModel = self.chatRoomViewModel ?? self.ensureChatRoomViewModel() else { return }
             do {
-                if let viewModel = self.chatRoomViewModel {
-                    try await viewModel.deleteMessage(message)
-                } else {
-                    try await messageManager.deleteMessage(message: message, room: room)
+                try await viewModel.performMessageServerAction(action, for: message)
+                if let successMessage {
+                    showSuccess(successMessage)
                 }
-                print("✅ 메시지 삭제 성공: \(message.ID)")
             } catch {
-                print("❌ 메시지 삭제 처리 실패:", error)
+                if let failureMessage {
+                    showSuccess(failureMessage)
+                }
+                print("❌ 메시지 서버 액션 실패:", error)
             }
         }
     }
@@ -2102,6 +2088,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private func dismissCustomMenu() {
         if let cell = highlightedCell { cell.setHightlightedOverlay(false) }
         highlightedCell = nil
+        chatCustomMenu.onActionSelected = nil
         chatCustomMenu.removeFromSuperview()
     }
     
@@ -2212,27 +2199,28 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
 
     @MainActor
-    func stagePendingImageMessage(roomID: String, messageID: String, pairs: [DefaultMediaProcessingService.ImagePair]) -> Bool {
-        guard !roomID.isEmpty else { return false }
-        let attachments = makePendingImagePreviewAttachments(messageID: messageID, pairs: pairs)
-        guard !attachments.isEmpty else { return false }
-
-        pendingImageUploadPairs[messageID] = pairs
-        pendingImageUploadStates[messageID] = .uploading(0)
-
-        let pendingMessage = ChatMessage(
-            ID: messageID,
-            seq: 0,
+    func stagePendingImageMessage(
+        room: ChatRoom,
+        roomID: String,
+        messageID: String,
+        pairs: [DefaultMediaProcessingService.ImagePair]
+    ) -> Bool {
+        guard let pendingMessage = mediaUploadUseCase.makePendingImageMessage(
             roomID: roomID,
-            senderID: LoginManager.shared.getUserEmail,
-            senderNickname: LoginManager.shared.currentUserProfile?.nickname ?? "",
-            senderAvatarPath: LoginManager.shared.currentUserProfile?.thumbPath,
-            msg: "",
-            sentAt: Date(),
-            attachments: attachments,
-            replyPreview: nil,
-            isFailed: false
-        )
+            messageID: messageID,
+            pairs: pairs
+        ) else {
+            return false
+        }
+        guard pendingMediaUploadStore.stageImageUpload(
+            room: room,
+            roomID: roomID,
+            messageID: messageID,
+            pairs: pairs
+        ) else {
+            return false
+        }
+
         addMessages([pendingMessage], updateType: .newer)
         reconfigureMessageItem(messageID: messageID)
         chatMessageCollectionView.scrollToBottom()
@@ -2241,10 +2229,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     @MainActor
     func setPendingImageUploadState(_ state: PendingImageUploadState, for messageID: String) {
-        pendingImageUploadStates[messageID] = state
-        if var msg = messageMap[messageID] {
-            msg.isFailed = (state == .failed)
-            messageMap[messageID] = msg
+        pendingMediaUploadStore.setImageUploadState(state, for: messageID)
+        _ = messageWindowStore.updateMessage(id: messageID) { message in
+            message.isFailed = (state == .failed)
         }
         let updatedVisibleCell = updateVisibleOverlayIfPossible(messageID: messageID)
         switch state {
@@ -2259,16 +2246,66 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
 
     @MainActor
+    func stagePendingVideoMessage(
+        roomID: String,
+        messageID: String,
+        prepared: PreparedVideo
+    ) -> Bool {
+        guard let pendingMessage = mediaUploadUseCase.makePendingVideoMessage(
+            roomID: roomID,
+            messageID: messageID,
+            prepared: prepared
+        ) else {
+            return false
+        }
+        guard pendingMediaUploadStore.stageVideoUpload(
+            roomID: roomID,
+            messageID: messageID
+        ) else {
+            return false
+        }
+
+        addMessages([pendingMessage], updateType: .newer)
+        reconfigureMessageItem(messageID: messageID)
+        chatMessageCollectionView.scrollToBottom()
+        return true
+    }
+
+    @MainActor
+    func setPendingVideoUploadState(_ state: PendingImageUploadState, for messageID: String) {
+        pendingMediaUploadStore.setVideoUploadState(state, for: messageID)
+        let updatedVisibleCell = updateVisibleOverlayIfPossible(messageID: messageID)
+        if !updatedVisibleCell {
+            reconfigureMessageItem(messageID: messageID)
+        }
+    }
+
+    @MainActor
     func schedulePendingImageUpload(room: ChatRoom, roomID: String, messageID: String, pairs: [DefaultMediaProcessingService.ImagePair]) {
-        guard pendingImageUploadTasks[messageID] == nil else { return }
         let task = Task { [weak self] in
             guard let self else { return }
             await self.uploadPendingImageMessage(room: room, roomID: roomID, messageID: messageID, pairs: pairs)
             await MainActor.run {
-                self.pendingImageUploadTasks[messageID] = nil
+                self.pendingMediaUploadStore.finishImageUploadTask(for: messageID)
             }
         }
-        pendingImageUploadTasks[messageID] = task
+        if !pendingMediaUploadStore.startImageUploadTask(task, for: messageID) {
+            task.cancel()
+        }
+    }
+
+    @MainActor
+    func schedulePendingVideoUpload(roomID: String, messageID: String, prepared: PreparedVideo) {
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await self.uploadPendingVideoMessage(roomID: roomID, messageID: messageID, prepared: prepared)
+            await MainActor.run {
+                self.pendingMediaUploadStore.finishVideoUploadTask(for: messageID)
+            }
+        }
+        if !pendingMediaUploadStore.startVideoUploadTask(task, for: messageID) {
+            task.cancel()
+        }
     }
 
     @MainActor
@@ -2278,85 +2315,48 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     @MainActor
     func finishPendingImageUpload(messageID: String) {
-        pendingImageUploadStates.removeValue(forKey: messageID)
-        pendingImageUploadPairs.removeValue(forKey: messageID)
-        pendingImageUploadTasks.removeValue(forKey: messageID)
+        pendingMediaUploadStore.completeImageUpload(for: messageID)
         if !updateVisibleOverlayIfPossible(messageID: messageID) {
             reconfigureMessageItem(messageID: messageID)
         }
     }
 
-    func cleanupPendingImageOriginalFiles(_ pairs: [DefaultMediaProcessingService.ImagePair]) {
-        for pair in pairs {
-            try? FileManager.default.removeItem(at: pair.originalFileURL)
+    @MainActor
+    func finishPendingVideoUpload(messageID: String) {
+        pendingMediaUploadStore.completeVideoUpload(for: messageID)
+        if !updateVisibleOverlayIfPossible(messageID: messageID) {
+            reconfigureMessageItem(messageID: messageID)
         }
     }
 
     @MainActor
+    func markPendingVideoUploadFailed(messageID: String) {
+        pendingMediaUploadStore.completeVideoUpload(for: messageID)
+        _ = messageWindowStore.updateMessage(id: messageID) { message in
+            message.isFailed = true
+        }
+        _ = updateVisibleOverlayIfPossible(messageID: messageID)
+        reconfigureMessageItem(messageID: messageID)
+    }
+
+    func cleanupPendingImageOriginalFiles(_ pairs: [DefaultMediaProcessingService.ImagePair]) {
+        mediaUploadUseCase.cleanupImageOriginalFiles(pairs)
+    }
+
+    @MainActor
     private func retryPendingImageUpload(for messageID: String) {
-        guard pendingImageUploadTasks[messageID] == nil,
-              let room = self.room,
-              let roomID = room.ID,
-              !roomID.isEmpty,
-              let pairs = pendingImageUploadPairs[messageID],
-              !pairs.isEmpty else { return }
+        guard let payload = pendingMediaUploadStore.retryPayload(for: messageID) else { return }
         setPendingImageUploadState(.uploading(0), for: messageID)
-        schedulePendingImageUpload(room: room, roomID: roomID, messageID: messageID, pairs: pairs)
-    }
-
-    private func makePendingImagePreviewAttachments(messageID: String, pairs: [DefaultMediaProcessingService.ImagePair]) -> [Attachment] {
-        let fm = FileManager.default
-        guard let cachesDir = fm.urls(for: .cachesDirectory, in: .userDomainMask).first else { return [] }
-        let baseDir = cachesDir
-            .appendingPathComponent("pending-image-preview", isDirectory: true)
-            .appendingPathComponent(messageID, isDirectory: true)
-        try? fm.createDirectory(at: baseDir, withIntermediateDirectories: true)
-
-        var attachments: [Attachment] = []
-        attachments.reserveCapacity(pairs.count)
-
-        for pair in pairs.sorted(by: { $0.index < $1.index }) {
-            let fileName = "\(pair.index)_\(pair.sha256).jpg"
-            let fileURL = baseDir.appendingPathComponent(fileName)
-            do {
-                try pair.thumbData.write(to: fileURL, options: .atomic)
-                let localPath = fileURL.absoluteString
-                attachments.append(Attachment(
-                    type: .image,
-                    index: pair.index,
-                    pathThumb: localPath,
-                    pathOriginal: localPath,
-                    width: pair.originalWidth,
-                    height: pair.originalHeight,
-                    bytesOriginal: pair.bytesOriginal,
-                    hash: pair.sha256,
-                    blurhash: nil,
-                    duration: nil
-                ))
-            } catch {
-                print("⚠️ pending preview write 실패: \(error)")
-            }
-        }
-        return attachments
-    }
-
-    private func cleanupReplacedLocalPreviewFiles(previous: ChatMessage, next: ChatMessage) {
-        let newThumbPaths = Set(next.attachments.map(\.pathThumb))
-        let fm = FileManager.default
-
-        for oldPath in previous.attachments.map(\.pathThumb) {
-            let isLocal = oldPath.hasPrefix("file://") || oldPath.hasPrefix("/")
-            guard isLocal, !newThumbPaths.contains(oldPath) else { continue }
-
-            let fileURL = oldPath.hasPrefix("file://") ? URL(string: oldPath) : URL(fileURLWithPath: oldPath)
-            if let fileURL {
-                try? fm.removeItem(at: fileURL)
-            }
-        }
+        schedulePendingImageUpload(
+            room: payload.room,
+            roomID: payload.roomID,
+            messageID: payload.messageID,
+            pairs: payload.pairs
+        )
     }
 
     private func pendingOverlayState(for messageID: String) -> ChatMessageCell.ImageUploadOverlayState? {
-        guard let state = pendingImageUploadStates[messageID] else { return nil }
+        guard let state = pendingMediaUploadStore.uploadState(for: messageID) else { return nil }
         switch state {
         case .uploading(let progress):
             return .uploading(progress)
@@ -2388,12 +2388,18 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     @MainActor
     private func reconfigureMessageItem(messageID: String) {
+        reconfigureMessageItems(messageIDs: [messageID])
+    }
+
+    @MainActor
+    private func reconfigureMessageItems(messageIDs: Set<String>) {
         var snapshot = dataSource.snapshot()
-        guard let target = snapshot.itemIdentifiers.first(where: { item in
-            if case let .message(message) = item { return message.ID == messageID }
-            return false
-        }) else { return }
-        snapshot.reconfigureItems([target])
+        let targets = snapshot.itemIdentifiers.filter { item in
+            guard case let .message(message) = item else { return false }
+            return messageIDs.contains(message.ID)
+        }
+        guard !targets.isEmpty else { return }
+        snapshot.reconfigureItems(targets)
         dataSource.apply(snapshot, animatingDifferences: false)
     }
     
@@ -2405,7 +2411,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ChatMessageCell.reuseIdentifier, for: indexPath) as! ChatMessageCell
                 
                 // 메시지 최신 상태 반영
-                let latestMessage = self.messageMap[message.ID] ?? message
+                let latestMessage = self.messageWindowStore.message(for: message.ID) ?? message
                 
                 if latestMessage.isLookbookShareMessage {
                     cell.configureWithLookbookShare(with: latestMessage, thumbnailLoader: { [weak self] path in
@@ -2446,7 +2452,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                         guard let i = tappedIndex else { return }
 
                         // 최신 메시지 상태 확인
-                        let currentMessage = self.messageMap[message.ID] ?? message
+                        let currentMessage = self.messageWindowStore.message(for: message.ID) ?? message
                         let attachments = currentMessage.attachments.sorted { $0.index < $1.index }
                         guard i >= 0, i < attachments.count else { return }
                         let att = attachments[i]
@@ -2475,7 +2481,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                     .sink { [weak self] in
                         guard let self else { return }
 
-                        let currentMessage = self.messageMap[message.ID] ?? message
+                        let currentMessage = self.messageWindowStore.message(for: message.ID) ?? message
                         let senderEmail = currentMessage.senderID
                             .trimmingCharacters(in: .whitespacesAndNewlines)
                         guard !senderEmail.isEmpty else { return }
@@ -2540,7 +2546,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             chatMessageCollectionView.backgroundView = container
             chatMessageCollectionView.backgroundView?.isHidden = true
         }
-        applySnapshot([])
+        applyWindowSnapshot([], animatingDifferences: false)
     }
     
     // MARK: - Diffable animation heuristics
@@ -2560,222 +2566,57 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         return (contentHeight - visibleMaxY) <= threshold
     }
     
-    func applySnapshot(_ items: [Item]) {
-        var snapshot = dataSource.snapshot()
-        if snapshot.sectionIdentifiers.isEmpty { snapshot.appendSections([Section.main]) }
-        snapshot.appendItems(items, toSection: .main)
-        dataSource.apply(snapshot, animatingDifferences: false)
-        chatMessageCollectionView.scrollToBottom()
-    }
-    
     @MainActor
     func addMessages(_ messages: [ChatMessage], updateType: MessageUpdateType = .initial) {
-        // 빠른 가드: 빈 입력, reload 전용 처리
         guard !messages.isEmpty else { return }
         let windowSize = 300
-        var snapshot = dataSource.snapshot()
-        
-        if updateType == .reload {
-            reloadDeletedMessages(messages)
-            return
-        }
 
-        profileSyncManager.ingestMessages(messages, into: profileScopeID)
-        
-        // 1) 현재 스냅샷에 존재하는 메시지 ID 집합 (O(1) 조회)
-        let existingIDs: Set<String> = Set(
-            snapshot.itemIdentifiers.compactMap { item -> String? in
-                if case .message(let m) = item { return m.ID }
-                return nil
-            }
+        let mutation = messageWindowStore.apply(
+            messages: messages,
+            updateType: updateType,
+            isUserInCurrentRoom: isUserInCurrentRoom,
+            windowSize: windowSize
         )
-        
-        // 2) 안정적 중복 제거(입력 배열 내 중복 ID 제거, 원래 순서 유지)
-        var seen = Set<String>()
-        var deduped: [ChatMessage] = []
-        deduped.reserveCapacity(messages.count)
-        for msg in messages {
-            if !seen.contains(msg.ID) {
-                seen.insert(msg.ID)
-                deduped.append(msg)
-            }
+
+        for replacement in mutation.replacements {
+            mediaUploadUseCase.cleanupReplacedLocalPreviewFiles(
+                previous: replacement.previous,
+                next: replacement.next
+            )
         }
 
-        // 3) 이미 존재하는 메시지는 최신 상태로 교체(reconfigure)
-        let existingMessages = deduped.filter { existingIDs.contains($0.ID) }
-        var hasExistingRefresh = false
-        if !existingMessages.isEmpty {
-            let existingMessageIDs = Set(existingMessages.map(\.ID))
-            for msg in existingMessages {
-                if let previous = messageMap[msg.ID] {
-                    cleanupReplacedLocalPreviewFiles(previous: previous, next: msg)
-                }
-                messageMap[msg.ID] = msg
-            }
-            let itemsToRefresh = snapshot.itemIdentifiers.filter { item in
-                if case let .message(msg) = item { return existingMessageIDs.contains(msg.ID) }
-                return false
-            }
-            if !itemsToRefresh.isEmpty {
-                snapshot.reconfigureItems(itemsToRefresh)
-                hasExistingRefresh = true
-            }
+        if updateType != .reload {
+            profileSyncManager.ingestMessages(messages, into: profileScopeID)
         }
 
-        // 4) 새로 삽입할 메시지
-        let incoming = deduped.filter { !existingIDs.contains($0.ID) }
-        guard !incoming.isEmpty else {
-            if hasExistingRefresh {
-                dataSource.apply(snapshot, animatingDifferences: false)
-            }
-            return
-        }
-        
-        // 5) 시간 순 정렬(오름차순)로 날짜 구분선/삽입 안정화
-        let now = Date()
-        let sorted = incoming.sorted { (a, b) -> Bool in
-            (a.sentAt ?? now) < (b.sentAt ?? now)
-        }
-        
-        // 6) 새 아이템 구성 (날짜 구분선 포함)
-        let items = buildNewItems(from: sorted)
-        guard !items.isEmpty else { return }
-        
-        // 7) 스냅샷 삽입 & 읽음 마커 처리 & 가상화(윈도우 크기 제한)
-        insertItems(items, into: &snapshot, updateType: updateType)
-        insertReadMarkerIfNeeded(sorted, items: items, into: &snapshot, updateType: updateType)
-        applyVirtualization(on: &snapshot, updateType: updateType, windowSize: windowSize)
-        
-        // 8) 최종 반영
-        let animate = shouldAnimateDifferences(for: updateType, newItemCount: items.count)
-        dataSource.apply(snapshot, animatingDifferences: animate)
-    }
-    
-    // MARK: - Private Helpers for addMessages
-    private func reloadDeletedMessages(_ messages: [ChatMessage]) {
-        // 1) 최신 상태를 먼저 캐시
-        for msg in messages { messageMap[msg.ID] = msg }
-        
-        // 2) 스냅샷에서 실제로 존재하는 동일 ID 아이템만 추려서 reload
-        var snapshot = dataSource.snapshot()
-        let targetIDs = Set(messages.map { $0.ID })
-        let itemsToReload = snapshot.itemIdentifiers.filter { item in
-            if case let .message(m) = item { return targetIDs.contains(m.ID) }
-            return false
-        }
-        
-        guard !itemsToReload.isEmpty else { return }
-        snapshot.reloadItems(itemsToReload)
-        dataSource.apply(snapshot, animatingDifferences: false)
-    }
-    
-    private func buildNewItems(from newMessages: [ChatMessage]) -> [Item] {
-        var items: [Item] = []
-        for message in newMessages {
-            messageMap[message.ID] = message
-            let messageDate = Calendar.current.startOfDay(for: message.sentAt ?? Date())
-            if lastMessageDate == nil || lastMessageDate! != messageDate {
-                items.append(.dateSeparator(message.sentAt ?? Date()))
-                lastMessageDate = messageDate
-            }
-            
-            items.append(.message(message))
-        }
-        
-        return items
-    }
-    
-    private func insertItems(_ items: [Item], into snapshot: inout NSDiffableDataSourceSnapshot<Section, Item>, updateType: MessageUpdateType) {
-        if updateType == .older {
-            if let firstItem = snapshot.itemIdentifiers.first {
-                snapshot.insertItems(items, beforeItem: firstItem)
-            } else {
-                snapshot.appendItems(items, toSection: .main)
-            }
-        } else {
-            snapshot.appendItems(items, toSection: .main)
-        }
-        
-    }
-    
-    private func insertReadMarkerIfNeeded(_ newMessages: [ChatMessage], items: [Item], into snapshot: inout NSDiffableDataSourceSnapshot<Section, Item>, updateType: MessageUpdateType) {
-        let hasReadMarker = snapshot.itemIdentifiers.contains { if case .readMarker = $0 { return true } else { return false } }
-        if updateType == .newer, !hasReadMarker, let readBoundarySeq, !isUserInCurrentRoom,
-           let firstMessage = newMessages.first, firstMessage.seq > readBoundarySeq {
-            if let firstNewItem = items.first(where: { if case .message = $0 { return true } else { return false } }) {
-                snapshot.insertItems([.readMarker], beforeItem: firstNewItem)
-            }
-        }
-    }
+        guard mutation.hasSnapshotChanges else { return }
 
-    private func insertingReadMarkerIfNeeded(into items: [Item], readBoundarySeq: Int64?) -> [Item] {
-        guard let readBoundarySeq else { return items }
-        guard !items.contains(where: {
-            if case .readMarker = $0 { return true }
-            return false
-        }) else { return items }
-
-        guard let insertIndex = items.firstIndex(where: { item in
-            if case let .message(message) = item {
-                return message.seq > readBoundarySeq
-            }
-            return false
-        }) else { return items }
-
-        var updated = items
-        updated.insert(.readMarker, at: insertIndex)
-        return updated
-    }
-    
-    private func applyVirtualization(on snapshot: inout NSDiffableDataSourceSnapshot<Section, Item>, updateType: MessageUpdateType, windowSize: Int) {
-        let allItems = snapshot.itemIdentifiers
-        if allItems.count > windowSize {
-            let toRemoveCount = allItems.count - windowSize
-            if updateType == .older {
-                let itemsToRemove = Array(allItems.suffix(toRemoveCount))
-                snapshot.deleteItems(itemsToRemove)
-            } else if updateType == .newer {
-                let itemsToRemove = Array(allItems.prefix(toRemoveCount))
-                snapshot.deleteItems(itemsToRemove)
-            }
-        }
-        // --- Virtualization cleanup: prune messageMap and date separators ---
-        let allItemsAfterVirtualization = snapshot.itemIdentifiers
-        let remainingMessageIDs: Set<String> = Set(
-            allItemsAfterVirtualization.compactMap { item in
-                if case .message(let m) = item { return m.ID } else { return nil }
-            }
+        let animate = shouldAnimateDifferences(
+            for: updateType,
+            newItemCount: mutation.insertedItems.count
         )
-        messageMap = messageMap.filter { remainingMessageIDs.contains($0.key) }
-        var dateSeparatorsToDelete: [Item] = []
-        let presentMessageDates: Set<Date> = Set(
-            allItemsAfterVirtualization.compactMap { item in
-                if case .message(let m) = item {
-                    return Calendar.current.startOfDay(for: m.sentAt ?? Date())
-                }
-                return nil
-            }
+        applyWindowSnapshot(
+            mutation.items,
+            reconfiguring: mutation.reconfiguredItems,
+            animatingDifferences: animate
         )
-        for item in allItemsAfterVirtualization {
-            if case .dateSeparator(let date) = item {
-                let day = Calendar.current.startOfDay(for: date)
-                if !presentMessageDates.contains(day) {
-                    dateSeparatorsToDelete.append(item)
-                }
-            }
-        }
-        if !dateSeparatorsToDelete.isEmpty {
-            snapshot.deleteItems(dateSeparatorsToDelete)
-        }
-        // --- End of cleanup ---
     }
-    
-    private func updateCollectionView(with newItems: [Item]) {
-        var snapshot = dataSource.snapshot()
-        snapshot.appendItems(newItems, toSection: .main)
-        let animate = shouldAnimateDifferences(for: .newer, newItemCount: newItems.count)
-        dataSource.apply(snapshot, animatingDifferences: animate)
-        chatMessageCollectionView.scrollToBottom()
+
+    private func applyWindowSnapshot(
+        _ items: [Item],
+        reconfiguring reconfiguredItems: [Item] = [],
+        animatingDifferences: Bool
+    ) {
+        var snapshot = NSDiffableDataSourceSnapshot<Section, Item>()
+        snapshot.appendSections([.main])
+        snapshot.appendItems(items, toSection: .main)
+
+        let visibleReconfiguredItems = reconfiguredItems.filter { items.contains($0) }
+        if !visibleReconfiguredItems.isEmpty {
+            snapshot.reconfigureItems(visibleReconfiguredItems)
+        }
+
+        dataSource.apply(snapshot, animatingDifferences: animatingDifferences)
     }
     
     // 캐시된 포맷터
@@ -2950,7 +2791,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         guard let item = dataSource.itemIdentifier(for: indexPath),
               case .message(let chatMessage) = item else { return }
 
-        let latestMessage = messageMap[chatMessage.ID] ?? chatMessage
+        let latestMessage = messageWindowStore.message(for: chatMessage.ID) ?? chatMessage
         let sortedAttachments = latestMessage.attachments.sorted { $0.index < $1.index }
         guard tappedIndex >= 0, tappedIndex < sortedAttachments.count else { return }
         let tappedAttachment = sortedAttachments[tappedIndex]
@@ -3169,7 +3010,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         if lowerBound <= upperBound {
             for i in lowerBound...upperBound {
                 if case let .message(m) = items[i] {
-                    let latest = messageMap[m.ID] ?? m
+                    let latest = messageWindowStore.message(for: m.ID) ?? m
                     allowedIDs.insert(latest.ID)
                     for path in thumbnailPaths(for: latest) {
                         allowedThumbnailPaths.insert(path)
@@ -3322,11 +3163,8 @@ extension ChatViewController: UICollectionViewDelegate {
             }
             Self.lastTriggeredOlderIndex = indexPath.item
             
+            let firstID = messageWindowStore.firstMessageID()
             Task {
-                let firstID = dataSource.snapshot().itemIdentifiers.compactMap { item -> String? in
-                    if case let .message(msg) = item { return msg.ID }
-                    return nil
-                }.first
                 await loadOlderMessages(before: firstID)
             }
         }
@@ -3339,11 +3177,8 @@ extension ChatViewController: UICollectionViewDelegate {
             }
             Self.lastTriggeredNewerIndex = indexPath.item
             
+            let lastID = messageWindowStore.lastMessageID()
             Task {
-                let lastID = dataSource.snapshot().itemIdentifiers.compactMap { item -> String? in
-                    if case let .message(msg) = item { return msg.ID }
-                    return nil
-                }.last
                 await loadNewerMessagesIfNeeded(after: lastID)
             }
         }
@@ -3386,7 +3221,7 @@ extension ChatViewController: UICollectionViewDataSourcePrefetching {
             guard case let .message(message) = item else { continue }
 
             // Use latest state if available
-            let latest = messageMap[message.ID] ?? message
+            let latest = messageWindowStore.message(for: message.ID) ?? message
             Task { @MainActor in
                 self.startMediaPrefetchIfNeeded(for: latest, roomID: roomID)
             }
@@ -3433,14 +3268,6 @@ extension ChatViewController {
         Task {
             do {
                 try await viewModel.persistFinalLastReadSeq(userUID: LoginManager.shared.getUserDocumentID)
-                let rid = viewModel.roomID
-                if !rid.isEmpty {
-                    NotificationCenter.default.post(
-                        name: .chatRoomLastReadSeqDidFlush,
-                        object: nil,
-                        userInfo: ["roomID": rid]
-                    )
-                }
             } catch {
                 print("⚠️ \(trigger) lastReadSeq flush 실패: \(error)")
             }

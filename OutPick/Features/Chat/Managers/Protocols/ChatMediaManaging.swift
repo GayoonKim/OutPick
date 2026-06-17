@@ -34,9 +34,6 @@ protocol ChatMediaManaging {
     /// 단일 Storage 경로의 URL 해석
     func resolveURL(for path: String) async throws -> URL
     
-    /// 비디오 업로드 및 브로드캐스트
-    func uploadCompressedVideoAndBroadcast(roomID: String, compressedURL: URL, preset: DefaultMediaProcessingService.VideoUploadPreset, hud: CircularProgressHUD?) async
-    
     /// 비디오 썸네일 데이터 생성
     func makeVideoThumbnailData(url: URL, maxPixel: CGFloat) throws -> Data
     

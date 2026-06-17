@@ -9,7 +9,7 @@ import Foundation
 import Combine
 import FirebaseFirestore
 
-final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol {
+final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, ChatDeletedLastMessageSummaryUpdating {
     private let db: Firestore
     
     // 채팅방 목록 캐시
@@ -202,6 +202,42 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol {
             print("✅ lastMessageAt 업데이트 성공 → \(roomID)")
         } catch {
             print("🔥 lastMessageAt 업데이트 실패: \(error)")
+        }
+    }
+
+    func updateDeletedLastMessageSummaryIfCurrent(
+        roomID: String,
+        deletedMessageSeq: Int64,
+        deletedPreview: String
+    ) async throws {
+        let trimmedRoomID = roomID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedPreview = deletedPreview.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedRoomID.isEmpty,
+              deletedMessageSeq > 0,
+              !trimmedPreview.isEmpty else {
+            return
+        }
+
+        let roomRef = db.collection("Rooms").document(trimmedRoomID)
+        _ = try await db.runTransaction { transaction, errorPointer -> Any? in
+            do {
+                let roomSnap = try transaction.getDocument(roomRef)
+                let data = roomSnap.data()
+                let currentSeq = Self.toInt64(data?["seq"])
+                    ?? Self.toInt64(data?["lastMessageSeq"])
+                    ?? 0
+
+                guard currentSeq == deletedMessageSeq else { return nil }
+
+                transaction.updateData([
+                    "lastMessage": trimmedPreview,
+                    "updatedAt": FieldValue.serverTimestamp()
+                ], forDocument: roomRef)
+                return nil
+            } catch {
+                errorPointer?.pointee = error as NSError
+                return nil
+            }
         }
     }
     

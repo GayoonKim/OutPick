@@ -20,6 +20,7 @@ protocol JoinedRoomsUseCaseProtocol {
     @MainActor
     func stopRoomUpdates()
     func fetchUnreadCount(roomID: String, lastMessageSeqHint: Int64?, lastMessageSenderID: String?) async -> Int64
+    func fetchReadSnapshot(roomID: String, lastMessageSeqHint: Int64?, lastMessageSenderID: String?) async -> ChatRoomReadSnapshot?
     func leave(room: ChatRoom)
 }
 
@@ -81,6 +82,17 @@ final class JoinedRoomsUseCase: JoinedRoomsUseCaseProtocol {
     }
 
     func fetchUnreadCount(roomID: String, lastMessageSeqHint: Int64?, lastMessageSenderID: String?) async -> Int64 {
+        guard let snapshot = await fetchReadSnapshot(
+            roomID: roomID,
+            lastMessageSeqHint: lastMessageSeqHint,
+            lastMessageSenderID: lastMessageSenderID
+        ) else {
+            return 0
+        }
+        return snapshot.unreadCount(currentUserID: LoginManager.shared.getUserEmail) ?? 0
+    }
+
+    func fetchReadSnapshot(roomID: String, lastMessageSeqHint: Int64?, lastMessageSenderID: String?) async -> ChatRoomReadSnapshot? {
         do {
             let lastRead = try await userProfileRepository.fetchLastReadSeq(for: roomID)
             let latest: Int64 = {
@@ -95,18 +107,15 @@ final class JoinedRoomsUseCase: JoinedRoomsUseCaseProtocol {
             } else {
                 resolvedLatest = try await roomRepository.fetchLatestSeq(for: roomID)
             }
-            var unread = max(Int64(0), resolvedLatest - lastRead)
-            let currentUserID = LoginManager.shared.getUserEmail
-            if unread > 0,
-               let lastMessageSenderID,
-               !lastMessageSenderID.isEmpty,
-               lastMessageSenderID == currentUserID {
-                unread = max(Int64(0), unread - 1)
-            }
-            return unread
+            return ChatRoomReadSnapshot(
+                roomID: roomID,
+                latestSeq: resolvedLatest,
+                lastReadSeq: lastRead,
+                lastMessageSenderID: lastMessageSenderID
+            )
         } catch {
             print("⚠️ unread 계산 실패(roomID=\(roomID)): \(error)")
-            return 0
+            return nil
         }
     }
 

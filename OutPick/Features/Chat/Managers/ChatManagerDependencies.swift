@@ -57,6 +57,7 @@ enum ChatDependencyContainer {
     static var provider: ChatManagerProviding = ChatManagerProvider()
     static var firebaseRepositories: FirebaseRepositoryProviding?
     static var joinedRoomsStore: JoinedRoomsStore?
+    static var roomReadStateStore: ChatRoomReadStateStore?
 
     static func requireFirebaseRepositories() -> FirebaseRepositoryProviding {
         guard let firebaseRepositories else {
@@ -70,5 +71,12 @@ enum ChatDependencyContainer {
             preconditionFailure("ChatDependencyContainer.joinedRoomsStore is not configured")
         }
         return joinedRoomsStore
+    }
+
+    static func requireRoomReadStateStore() -> ChatRoomReadStateStore {
+        guard let roomReadStateStore else {
+            preconditionFailure("ChatDependencyContainer.roomReadStateStore is not configured")
+        }
+        return roomReadStateStore
     }
 }

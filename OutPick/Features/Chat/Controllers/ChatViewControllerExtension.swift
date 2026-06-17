@@ -9,7 +9,6 @@ import Foundation
 import UIKit
 import PhotosUI
 import AVKit
-import FirebaseStorage
 import AVFoundation
 import UniformTypeIdentifiers
 
@@ -115,39 +114,52 @@ extension ChatViewController: PHPickerViewControllerDelegate {
         if !resultsForVideos.isEmpty {
             convertVideosTask = Task {
                 for result in resultsForVideos {
-                    // 비디오별 진행 HUD 생성
-                    var hud: CircularProgressHUD?
-                    await MainActor.run {
-                        let h = CircularProgressHUD.show(in: self.view, title: nil)
-                        h.setProgress(0.0) // 시작점
-                        hud = h
-                    }
                     do {
                         // 1) 비디오 개별 변환 (한 메시지 = 한 동영상)
                         let prepared = try await DefaultMediaProcessingService.shared.prepareVideo(result, preset: .standard720)
                         
-                        // 2) 방 식별 후 업로드+브로드캐스트 (메타만 소켓으로 전송)
-                        if let room = self.room {
-                            let roomID = room.ID ?? ""
-                            await self.uploadPreparedVideoAndBroadcast(
-                                roomID: roomID,
-                                prepared: prepared,
-                                hud: hud
-                            )
-                        } else {
+                        // 2) 방 식별 후 pending thumbnail을 먼저 표시하고 업로드+브로드캐스트
+                        guard let roomID = self.room?.ID,
+                              !roomID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                             await MainActor.run {
-                                hud?.dismiss()
                                 AlertManager.showAlertNoHandler(
                                     title: "방 정보를 찾을 수 없습니다",
                                     message: "동영상을 전송할 방이 없습니다.",
                                     viewController: self
                                 )
                             }
+                            continue
+                        }
+
+                        let messageID = "pending-video-\(UUID().uuidString)"
+                        let staged = await MainActor.run {
+                            self.stagePendingVideoMessage(
+                                roomID: roomID,
+                                messageID: messageID,
+                                prepared: prepared
+                            )
+                        }
+                        if !staged {
+                            await MainActor.run {
+                                AlertManager.showAlertNoHandler(
+                                    title: "비디오 미리보기 실패",
+                                    message: "동영상 미리보기를 만들지 못했습니다. 다시 선택해 주세요.",
+                                    viewController: self
+                                )
+                            }
+                            continue
+                        }
+
+                        await MainActor.run {
+                            self.schedulePendingVideoUpload(
+                                roomID: roomID,
+                                messageID: messageID,
+                                prepared: prepared
+                            )
                         }
                         
                     } catch {
                         await MainActor.run {
-                            hud?.dismiss()
                             AlertManager.showAlertNoHandler(
                                 title: "비디오 변환 실패",
                                 message: "압축 중 오류가 발생했습니다.\n\(error.localizedDescription)",
@@ -200,7 +212,7 @@ extension ChatViewController: PHPickerViewControllerDelegate {
                         let roomID = room.ID ?? ""
                         let messageID = "pending-\(UUID().uuidString)"
                         let staged = await MainActor.run {
-                            self.stagePendingImageMessage(roomID: roomID, messageID: messageID, pairs: pairs)
+                            self.stagePendingImageMessage(room: room, roomID: roomID, messageID: messageID, pairs: pairs)
                         }
                         if !staged {
                             self.cleanupPendingImageOriginalFiles(pairs)
@@ -242,12 +254,6 @@ extension ChatViewController: UIImagePickerControllerDelegate {
 
 // MARK: -  video 관련
 extension ChatViewController {
-    /// 채팅 전송 직후(성공/실패 무관) 로컬 즉시 표시용 썸네일 캐시
-    /// - DI 적용 전 단계라 우선 공유 인스턴스를 사용
-    private var chatImageCache: ChatImageCacheProtocol {
-        ChatImageCache.shared
-    }
-
     func uploadPendingImageMessage(
         room: ChatRoom,
         roomID: String,
@@ -255,13 +261,10 @@ extension ChatViewController {
         pairs: [DefaultMediaProcessingService.ImagePair]
     ) async {
         do {
-            let attachments = try await FirebaseImageStorageRepository.shared.uploadPairsToRoomMessage(
-                pairs,
+            let attachments = try await mediaUploadUseCase.uploadPendingImages(
+                pairs: pairs,
                 roomID: roomID,
                 messageID: messageID,
-                cacheTTLThumbDays: 30,
-                cacheTTLOriginalDays: 7,
-                cleanupTemp: false,
                 onProgress: { [weak self] fraction in
                     guard let self else { return }
                     Task { @MainActor in
@@ -270,23 +273,13 @@ extension ChatViewController {
                 }
             )
 
-            self.cleanupPendingImageOriginalFiles(pairs)
-
             // 업로드 완료: 셀 오버레이를 걷고 같은 messageID로 소켓 전송해 서버 메시지와 매칭
             await MainActor.run {
                 self.finishPendingImageUpload(messageID: messageID)
             }
-            let payload = attachments.map { $0.toDict() }
-            SocketIOManager.shared.sendImages(
-                room,
-                payload,
-                senderAvatarPath: LoginManager.shared.currentUserProfile?.thumbPath,
-                clientMessageID: messageID
-            )
+            mediaUploadUseCase.sendUploadedImages(room: room, attachments: attachments, clientMessageID: messageID)
         } catch {
-            for pair in pairs {
-                await chatImageCache.storeToDisk(data: pair.thumbData, forKey: pair.sha256)
-            }
+            await mediaUploadUseCase.cacheFailedImageThumbnails(pairs)
             await MainActor.run {
                 self.markPendingImageUploadFailed(messageID: messageID)
             }
@@ -294,63 +287,28 @@ extension ChatViewController {
         }
     }
     
-    func uploadPreparedVideoAndBroadcast(
+    func uploadPendingVideoMessage(
         roomID: String,
-        prepared: PreparedVideo,
-        hud: CircularProgressHUD? = nil
+        messageID: String,
+        prepared: PreparedVideo
     ) async {
-        let messageID = UUID().uuidString
-        let videoPaths = ChatStoragePath.roomMessageVideo(roomID: roomID, messageID: messageID)
-        let videoPath = videoPaths.video
-        let thumbPath = videoPaths.thumb
-        
-        // HUD 확보(주입받았으면 재사용, 없으면 생성)
-        var localHUD: CircularProgressHUD? = hud
-        if localHUD == nil {
-            await MainActor.run {
-                let h = CircularProgressHUD.show(in: self.view, title: nil)
-                h.setProgress(0.0)
-                localHUD = h
-            }
-        } else {
-            await MainActor.run {
-                localHUD?.setProgress(0.0)
-            }
-        }
-
-        // 비디오 썸네일도 성공/실패 무관하게 먼저 저장(로컬 즉시 표시/재시도 UX)
-        if !prepared.thumbnailData.isEmpty {
-            await chatImageCache.storeToDisk(data: prepared.thumbnailData, forKey: prepared.sha256)
-            print(#function, "ThumbCache video thumb saved: \(prepared.sha256)")
-        }
-
         do {
-            // 1) 비디오 업로드
-            try await FirebaseVideoStorageRepository.shared.putVideoFileToStorage(localURL: prepared.compressedFileURL, path: videoPath, contentType: "video/mp4") { fraction in
-                Task { @MainActor in
-                    localHUD?.setProgress(fraction)
-                }
-            }
-            
-            // 2) 썸네일 업로드
-            if !prepared.thumbnailData.isEmpty {
-                try await FirebaseVideoStorageRepository.shared.putVideoDataToStorage(data: prepared.thumbnailData, path: thumbPath, contentType: "image/jpeg")
-            }
-            
-            // 3) 메타 브로드캐스트 (바이너리 X)
-            let payload = VideoMetaPayload(
+            let payload = try await mediaUploadUseCase.uploadVideo(
                 roomID: roomID,
                 messageID: messageID,
-                storagePath: videoPath,
-                thumbnailPath: thumbPath,
-                duration: prepared.duration,
-                width: prepared.width, height: prepared.height,
-                sizeBytes: prepared.sizeBytes,
-                approxBitrateMbps: prepared.approxBitrateMbps,
-                preset: prepared.preset.code
+                prepared: prepared,
+                onProgress: { [weak self] fraction in
+                    guard let self else { return }
+                    Task { @MainActor in
+                        self.setPendingVideoUploadState(.uploading(fraction), for: messageID)
+                    }
+                }
             )
-            
-            SocketIOManager.shared.sendVideo(roomID: roomID, payload: payload, senderAvatarPath: LoginManager.shared.currentUserProfile?.thumbPath)
+
+            await MainActor.run {
+                self.finishPendingVideoUpload(messageID: messageID)
+            }
+            mediaUploadUseCase.sendUploadedVideo(roomID: roomID, payload: payload)
         } catch {
             // 업로드 실패 안내(미리보기 표시 후 노출)
             await MainActor.run {
@@ -361,18 +319,9 @@ extension ChatViewController {
                 )
             }
             
-            // 실패 메시지를 로컬 UI에 표시
-            SocketIOManager.shared.sendFailedVideos(
-                roomID: roomID,
-                senderID: LoginManager.shared.getUserEmail,
-                senderNickname: LoginManager.shared.currentUserProfile?.nickname ?? "",
-                localURL: prepared.compressedFileURL,
-                thumbData: prepared.thumbnailData,
-                duration: prepared.duration,
-                width: prepared.width,
-                height: prepared.height,
-                presetCode: prepared.preset.code
-            )
+            await MainActor.run {
+                self.markPendingVideoUploadFailed(messageID: messageID)
+            }
         }
     }
 
@@ -399,17 +348,6 @@ extension ChatViewController {
             return String(format: "%d:%02d:%02d", h, m, s)
         } else {
             return String(format: "%d:%02d", m, s)
-        }
-    }
-}
-
-// Stable string codes for payload logging/analytics
-private extension DefaultMediaProcessingService.VideoUploadPreset {
-    var code: String {
-        switch self {
-        case .standard720: return "standard720"
-        case .dataSaver720: return "dataSaver720"
-        case .high1080:    return "high1080"
         }
     }
 }
