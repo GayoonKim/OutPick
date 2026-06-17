@@ -38,6 +38,7 @@ final class ChatRoomViewModel {
 
     private let initialLoadUseCase: ChatInitialLoadUseCaseProtocol
     private let messageUseCase: ChatRoomMessageUseCaseProtocol
+    private let realtimeUseCase: ChatRoomRealtimeUseCaseProtocol
     private let searchUseCase: ChatRoomSearchUseCaseProtocol
     private let lifecycleUseCase: ChatRoomLifecycleUseCaseProtocol
 
@@ -76,11 +77,13 @@ final class ChatRoomViewModel {
         initialLoadUseCase: ChatInitialLoadUseCaseProtocol,
         messageUseCase: ChatRoomMessageUseCaseProtocol,
         searchUseCase: ChatRoomSearchUseCaseProtocol,
-        lifecycleUseCase: ChatRoomLifecycleUseCaseProtocol
+        lifecycleUseCase: ChatRoomLifecycleUseCaseProtocol,
+        realtimeUseCase: ChatRoomRealtimeUseCaseProtocol = ChatRoomRealtimeUseCase()
     ) {
         self.room = room
         self.initialLoadUseCase = initialLoadUseCase
         self.messageUseCase = messageUseCase
+        self.realtimeUseCase = realtimeUseCase
         self.searchUseCase = searchUseCase
         self.lifecycleUseCase = lifecycleUseCase
     }
@@ -119,6 +122,18 @@ final class ChatRoomViewModel {
         let updatedRoom = try await lifecycleUseCase.joinRoom(roomID: roomID)
         room = updatedRoom
         return updatedRoom
+    }
+
+    func makeOutgoingTextMessage(text: String, replyPreview: ReplyPreview?) -> ChatMessage? {
+        messageUseCase.makeTextMessage(text: text, replyPreview: replyPreview, room: room)
+    }
+
+    func sendPreparedMessage(_ message: ChatMessage) {
+        messageUseCase.sendPreparedMessage(message, room: room)
+    }
+
+    func openMessageStream(roomID: String) async throws -> ChatRoomRealtimeSession {
+        try await realtimeUseCase.openMessageStream(roomID: roomID)
     }
 
     func startInitialLoadEvents(

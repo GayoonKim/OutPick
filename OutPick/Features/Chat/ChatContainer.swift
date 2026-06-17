@@ -23,6 +23,8 @@ final class ChatContainer {
     private let joinedRoomsUseCase: JoinedRoomsUseCaseProtocol
     private let roomSearchUseCase: RoomSearchUseCaseProtocol
     private let chatRoomMessageUseCase: ChatRoomMessageUseCaseProtocol
+    private let chatMessageSendingRepository: ChatMessageSendingRepositoryProtocol
+    private let chatRoomRealtimeUseCase: ChatRoomRealtimeUseCaseProtocol
     private let chatInitialLoadUseCase: ChatInitialLoadUseCaseProtocol
     private let chatRoomSearchUseCase: ChatRoomSearchUseCaseProtocol
     private let chatRoomLifecycleUseCase: ChatRoomLifecycleUseCaseProtocol
@@ -53,7 +55,14 @@ final class ChatContainer {
             joinedRoomsStore: joinedRoomsStore
         )
         self.roomSearchUseCase = RoomSearchUseCase(roomRepository: self.roomRepository)
-        self.chatRoomMessageUseCase = ChatRoomMessageUseCase(messageManager: provider.messageManager)
+        self.chatMessageSendingRepository = SocketChatMessageSendingRepository()
+        self.chatRoomMessageUseCase = ChatRoomMessageUseCase(
+            messageManager: provider.messageManager,
+            sendingRepository: chatMessageSendingRepository
+        )
+        self.chatRoomRealtimeUseCase = ChatRoomRealtimeUseCase(
+            repository: SocketChatRoomRealtimeRepository()
+        )
         self.chatInitialLoadUseCase = DefaultChatInitialLoadUseCase(
             messageManager: provider.messageManager,
             userProfileRepository: self.userProfileRepository,
@@ -97,7 +106,8 @@ final class ChatContainer {
             initialLoadUseCase: chatInitialLoadUseCase,
             messageUseCase: chatRoomMessageUseCase,
             searchUseCase: chatRoomSearchUseCase,
-            lifecycleUseCase: chatRoomLifecycleUseCase
+            lifecycleUseCase: chatRoomLifecycleUseCase,
+            realtimeUseCase: chatRoomRealtimeUseCase
         )
     }
 
