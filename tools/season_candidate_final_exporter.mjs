@@ -8,6 +8,7 @@ const DEFAULT_BENCHMARK_JSONL = "tools/season_candidate_benchmark.jsonl";
 const DEFAULT_DETAIL_CSV = "tools/single_candidate_detail_experiment.csv";
 const DEFAULT_CSV_OUTPUT = "tools/season_candidate_final.csv";
 const DEFAULT_JSONL_OUTPUT = "tools/season_candidate_final.jsonl";
+const IMAGE_FILE_URL_PATTERN = /\.(?:avif|gif|jpe?g|png|webp)(?:$|[?#])/i;
 
 const args = parseArgs(process.argv.slice(2));
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -101,11 +102,13 @@ console.log(
 
 function acceptedCandidatesForBrand(benchmark, detailRow, threshold) {
   if (benchmark.status === "success") {
-    return (benchmark.candidates ?? []).map((candidate) => ({
-      ...candidate,
-      sourceStatus: "parser_success",
-      detailImageCount: null,
-    }));
+    return (benchmark.candidates ?? [])
+      .filter((candidate) => !isImageFileURL(candidate.seasonURL))
+      .map((candidate) => ({
+        ...candidate,
+        sourceStatus: "parser_success",
+        detailImageCount: null,
+      }));
   }
 
   if (!detailRow || numberValue(detailRow.detailImageCount) < threshold) {
@@ -113,7 +116,7 @@ function acceptedCandidatesForBrand(benchmark, detailRow, threshold) {
   }
 
   const topCandidate = benchmark.topCandidate;
-  if (!topCandidate) {
+  if (!topCandidate || isImageFileURL(topCandidate.seasonURL)) {
     return [];
   }
 
@@ -122,6 +125,17 @@ function acceptedCandidatesForBrand(benchmark, detailRow, threshold) {
     sourceStatus: "single_candidate_detail_promote",
     detailImageCount: numberValue(detailRow.detailImageCount),
   }];
+}
+
+function isImageFileURL(value) {
+  if (!value) {
+    return false;
+  }
+  try {
+    return IMAGE_FILE_URL_PATTERN.test(new URL(value).pathname);
+  } catch {
+    return IMAGE_FILE_URL_PATTERN.test(String(value));
+  }
 }
 
 async function readJSONL(path) {
