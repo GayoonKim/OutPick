@@ -6,7 +6,6 @@
 //
 
 import UIKit
-import FirebaseFirestore
 
 class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
     
@@ -54,22 +53,7 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
     }
     
     required init?(coder: NSCoder) {
-        let db = Firestore.firestore()
-        let roomRepository = FirebaseChatRoomRepository(db: db)
-        let userProfileRepository = UserProfileRepository(db: db)
-        let joinedRoomsStore = ChatDependencyContainer.requireJoinedRoomsStore()
-        let roomReadStateStore = ChatDependencyContainer.requireRoomReadStateStore()
-        let useCase = JoinedRoomsUseCase(
-            roomRepository: roomRepository,
-            userProfileRepository: userProfileRepository,
-            joinedRoomsStore: joinedRoomsStore
-        )
-        self.viewModel = JoinedRoomsViewModel(
-            useCase: useCase,
-            roomReadStateStore: roomReadStateStore
-        )
-        self.roomImageManager = ChatDependencyContainer.provider.roomImageManager
-        super.init(coder: coder)
+        fatalError("Storyboard initialization is no longer supported for JoinedRoomsViewController.")
     }
 
     override func viewDidLoad() {
@@ -232,9 +216,6 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
     typealias Item = ChatRoom
     typealias DataSourceType = UICollectionViewDiffableDataSource<Section, Item>
     var dataSource: DataSourceType!
-    
-    // MARK: - Callbacks / Providers
-    var onLeaveRoom: ((String) -> Void)?
 }
 
 extension JoinedRoomsViewController: UICollectionViewDelegate {
@@ -248,19 +229,61 @@ extension JoinedRoomsViewController: UICollectionViewDelegate {
     }
 
     func collectionView(_ collectionView: UICollectionView, trailingSwipeActionsConfigurationForItemAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {
-        guard let room = dataSource.itemIdentifier(for: indexPath), let id = room.ID else { return nil }
+        guard let room = dataSource.itemIdentifier(for: indexPath), room.ID != nil else { return nil }
         let leave = UIContextualAction(style: .destructive, title: "나가기") { [weak self] _, _, completion in
-            if let onLeaveRoom = self?.onLeaveRoom {
-                onLeaveRoom(id)
-            } else {
-                self?.viewModel.leave(room: room)
+            guard let self else {
+                completion(false)
+                return
             }
-            completion(true)
+
+            guard self.viewModel.canLeaveFromList(room: room) else {
+                self.presentOwnerLeaveFromListAlert()
+                completion(false)
+                return
+            }
+
+            Task { [weak self] in
+                guard let self else {
+                    completion(false)
+                    return
+                }
+                do {
+                    _ = try await self.viewModel.leave(room: room)
+                    completion(true)
+                } catch {
+                    await MainActor.run {
+                        self.presentLeaveFailureAlert(error)
+                    }
+                    completion(false)
+                }
+            }
         }
         
         let config = UISwipeActionsConfiguration(actions: [leave])
         config.performsFirstActionWithFullSwipe = true
         return config
+    }
+}
+
+private extension JoinedRoomsViewController {
+    func presentOwnerLeaveFromListAlert() {
+        let alert = UIAlertController(
+            title: "설정에서 방을 닫아 주세요",
+            message: "방장은 채팅방 설정에서 확인 후 방을 닫을 수 있어요.",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "확인", style: .default))
+        present(alert, animated: true)
+    }
+
+    func presentLeaveFailureAlert(_ error: Error) {
+        let alert = UIAlertController(
+            title: "나가기에 실패했어요",
+            message: error.localizedDescription,
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "확인", style: .default))
+        present(alert, animated: true)
     }
 }
 

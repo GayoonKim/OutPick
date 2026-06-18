@@ -75,8 +75,12 @@ final class JoinedRoomsViewModel {
         onStateChanged?(state)
     }
 
-    func leave(room: ChatRoom) {
-        useCase.leave(room: room)
+    func canLeaveFromList(room: ChatRoom) -> Bool {
+        useCase.canLeaveFromList(room: room)
+    }
+
+    func leave(room: ChatRoom) async throws -> ChatRoomExitResult {
+        try await useCase.leave(room: room)
     }
 
     func refreshUnreadCount(roomID: String) {

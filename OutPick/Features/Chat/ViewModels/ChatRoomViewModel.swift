@@ -39,8 +39,10 @@ final class ChatRoomViewModel {
     private let initialLoadUseCase: ChatInitialLoadUseCaseProtocol
     private let messageUseCase: ChatRoomMessageUseCaseProtocol
     private let realtimeUseCase: ChatRoomRealtimeUseCaseProtocol
+    private let runtimeUseCase: ChatRoomRuntimeUseCaseProtocol
     private let searchUseCase: ChatRoomSearchUseCaseProtocol
     private let lifecycleUseCase: ChatRoomLifecycleUseCaseProtocol
+    private let currentUserProvider: CurrentUserProviding
     private let roomReadStateStore: ChatRoomReadStateStore?
 
     private(set) var isInitialLoading: Bool = true
@@ -78,14 +80,18 @@ final class ChatRoomViewModel {
         searchUseCase: ChatRoomSearchUseCaseProtocol,
         lifecycleUseCase: ChatRoomLifecycleUseCaseProtocol,
         realtimeUseCase: ChatRoomRealtimeUseCaseProtocol = ChatRoomRealtimeUseCase(),
+        runtimeUseCase: ChatRoomRuntimeUseCaseProtocol,
+        currentUserProvider: CurrentUserProviding,
         roomReadStateStore: ChatRoomReadStateStore? = nil
     ) {
         self.room = room
         self.initialLoadUseCase = initialLoadUseCase
         self.messageUseCase = messageUseCase
         self.realtimeUseCase = realtimeUseCase
+        self.runtimeUseCase = runtimeUseCase
         self.searchUseCase = searchUseCase
         self.lifecycleUseCase = lifecycleUseCase
+        self.currentUserProvider = currentUserProvider
         self.roomReadStateStore = roomReadStateStore
         seedRoomReadLatest(from: room)
     }
@@ -99,8 +105,32 @@ final class ChatRoomViewModel {
         lifecycleUseCase.roomChangePublisher
     }
 
-    func isCurrentUserParticipant(_ email: String) -> Bool {
-        room.participants.contains(email)
+    var currentUserEmail: String {
+        currentUserProvider.email
+    }
+
+    var currentUserDocumentID: String {
+        currentUserProvider.documentID
+    }
+
+    var currentUserNickname: String? {
+        currentUserProvider.nickname
+    }
+
+    var isCurrentUserParticipant: Bool {
+        room.participants.contains(currentUserEmail)
+    }
+
+    func isCurrentUserParticipant(in room: ChatRoom) -> Bool {
+        room.participants.contains(currentUserEmail)
+    }
+
+    func isCurrentUser(_ email: String?) -> Bool {
+        (email ?? "") == currentUserEmail
+    }
+
+    func isCurrentUserAdmin(of room: ChatRoom) -> Bool {
+        room.creatorID == currentUserEmail
     }
 
     func applyRoomUpdate(_ updatedRoom: ChatRoom) {
@@ -139,6 +169,23 @@ final class ChatRoomViewModel {
 
     func openMessageStream(roomID: String) async throws -> ChatRoomRealtimeSession {
         try await realtimeUseCase.openMessageStream(roomID: roomID)
+    }
+
+    func observeRoomClosed(onClosed: @escaping (String) -> Void) -> ChatRoomRuntimeSubscription? {
+        guard !roomID.isEmpty else { return nil }
+        return runtimeUseCase.observeRoomClosed(roomID: roomID, onClosed: onClosed)
+    }
+
+    func handleRoomWillAppear() async {
+        await runtimeUseCase.enterVisibleRoom(roomID: roomID)
+    }
+
+    func handleRoomWillDisappear() async {
+        await runtimeUseCase.leaveVisibleRoom()
+    }
+
+    func cleanTransientLocalRoomData(roomID: String) async {
+        await runtimeUseCase.cleanTransientLocalRoomData(roomID: roomID)
     }
 
     func startInitialLoadEvents(
@@ -267,10 +314,10 @@ final class ChatRoomViewModel {
         messageUseCase.setupDeletionListener(roomID: roomID, onDeleted: onDeleted)
     }
 
-    func messageActionPolicy(for message: ChatMessage, currentUserID: String) -> ChatMessageActionPolicy {
+    func messageActionPolicy(for message: ChatMessage) -> ChatMessageActionPolicy {
         ChatMessageActionPolicy.make(
             for: message,
-            currentUserID: currentUserID,
+            currentUserID: currentUserEmail,
             roomCreatorID: room.creatorID
         )
     }
@@ -403,6 +450,10 @@ final class ChatRoomViewModel {
         try await flushPendingLastReadSeq(userUID: userUID)
     }
 
+    func persistFinalLastReadSeqForCurrentUser() async throws {
+        try await persistFinalLastReadSeq(userUID: currentUserDocumentID)
+    }
+
     func nextLastReadSeqCandidate(isNearBottom: Bool, skipNearBottomCheck: Bool) -> Int64? {
         readStateStore.nextCandidate(
             windowMaxSeq: windowMaxSeq,
@@ -423,6 +474,17 @@ final class ChatRoomViewModel {
 
         readStateStore.queue(seq)
         scheduleDebouncedLastReadFlush(userUID: userUID)
+    }
+
+    func persistIncrementalLastReadSeqForCurrentUser(
+        isNearBottom: Bool,
+        skipNearBottomCheck: Bool
+    ) async throws {
+        try await persistIncrementalLastReadSeq(
+            userUID: currentUserDocumentID,
+            isNearBottom: isNearBottom,
+            skipNearBottomCheck: skipNearBottomCheck
+        )
     }
 
     private func scheduleDebouncedLastReadFlush(userUID: String) {

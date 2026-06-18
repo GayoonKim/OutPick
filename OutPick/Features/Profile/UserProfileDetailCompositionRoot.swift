@@ -11,7 +11,7 @@ enum UserProfileDetailCompositionRoot {
         email: String,
         seedNickname: String,
         seedAvatarPath: String?,
-        provider: ChatManagerProviding,
+        avatarImageManager: ChatAvatarImageManaging,
         repositories: FirebaseRepositoryProviding,
         onBack: @escaping () -> Void
     ) -> UserProfileDetailViewController {
@@ -30,7 +30,7 @@ enum UserProfileDetailCompositionRoot {
         )
         let viewController = UserProfileDetailViewController(
             viewModel: viewModel,
-            avatarImageManager: provider.avatarImageManager
+            avatarImageManager: avatarImageManager
         )
         viewController.view.backgroundColor = OutPickTheme.ColorToken.backgroundBase
         return viewController
@@ -40,7 +40,7 @@ enum UserProfileDetailCompositionRoot {
         userID: String,
         seedNickname: String,
         seedAvatarPath: String?,
-        provider: ChatManagerProviding,
+        avatarImageManager: ChatAvatarImageManaging,
         repositories: FirebaseRepositoryProviding,
         onBack: @escaping () -> Void
     ) -> UserProfileDetailViewController {
@@ -59,7 +59,7 @@ enum UserProfileDetailCompositionRoot {
         )
         let viewController = UserProfileDetailViewController(
             viewModel: viewModel,
-            avatarImageManager: provider.avatarImageManager
+            avatarImageManager: avatarImageManager
         )
         viewController.view.backgroundColor = OutPickTheme.ColorToken.backgroundBase
         return viewController

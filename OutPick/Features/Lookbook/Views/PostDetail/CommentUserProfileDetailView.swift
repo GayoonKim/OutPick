@@ -17,7 +17,7 @@ struct CommentUserProfileDetailView: UIViewControllerRepresentable {
             userID: author.userID.value,
             seedNickname: author.nickname,
             seedAvatarPath: author.avatarPath,
-            provider: ChatDependencyContainer.provider,
+            avatarImageManager: AvatarImageService.shared,
             repositories: FirebaseRepositoryProvider.shared,
             onBack: onBack
         )

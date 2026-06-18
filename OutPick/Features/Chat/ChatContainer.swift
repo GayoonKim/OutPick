@@ -9,8 +9,6 @@ import Foundation
 import Combine
 
 /// Chat feature DI container.
-/// - Note: Storyboard로 생성되는 ChatViewController가 coder init에서 전역 provider를 읽기 때문에
-///         container 생성 시점에 provider를 동기화합니다.
 @MainActor
 final class ChatContainer {
     let provider: ChatManagerProviding
@@ -19,6 +17,7 @@ final class ChatContainer {
     let userProfileRepository: UserProfileRepositoryProtocol
     let joinedRoomsStore: JoinedRoomsStore
     let roomReadStateStore: ChatRoomReadStateStore
+    let currentUserProvider: CurrentUserProviding
 
     private let roomListUseCase: RoomListUseCaseProtocol
     private let joinedRoomsUseCase: JoinedRoomsUseCaseProtocol
@@ -26,9 +25,12 @@ final class ChatContainer {
     private let chatRoomMessageUseCase: ChatRoomMessageUseCaseProtocol
     private let chatMessageSendingRepository: ChatMessageSendingRepositoryProtocol
     private let chatRoomRealtimeUseCase: ChatRoomRealtimeUseCaseProtocol
+    private let chatRoomRuntimeUseCase: ChatRoomRuntimeUseCaseProtocol
     private let chatInitialLoadUseCase: ChatInitialLoadUseCaseProtocol
     private let chatRoomSearchUseCase: ChatRoomSearchUseCaseProtocol
     private let chatRoomLifecycleUseCase: ChatRoomLifecycleUseCaseProtocol
+    private let chatRoomExitUseCase: ChatRoomExitUseCaseProtocol
+    private let chatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol
     private let loadShareableJoinedRoomsUseCase: LoadShareableJoinedRoomsUseCaseProtocol
     private let shareLookbookContentToChatUseCase: ShareLookbookContentToChatUseCaseProtocol
     private var joinedRoomsRuntimeCancellable: AnyCancellable?
@@ -49,14 +51,19 @@ final class ChatContainer {
         self.roomRepository = roomRepository ?? repositories.chatRoomRepository
         self.userProfileRepository = userProfileRepository ?? repositories.userProfileRepository
         self.joinedRoomsStore = joinedRoomsStore
+        self.currentUserProvider = LoginManagerCurrentUserProvider()
         let resolvedRoomReadStateStore = roomReadStateStore ?? ChatRoomReadStateStore()
         self.roomReadStateStore = resolvedRoomReadStateStore
         let announcementRepository = announcementRepository ?? repositories.announcementRepository
         self.roomListUseCase = RoomListUseCase(roomRepository: self.roomRepository)
+        self.chatRoomExitUseCase = ChatRoomExitUseCase(
+            repository: SocketChatRoomExitRepository(),
+            localCleaner: DefaultChatRoomLocalExitCleaner(joinedRoomsStore: joinedRoomsStore)
+        )
         self.joinedRoomsUseCase = JoinedRoomsUseCase(
             roomRepository: self.roomRepository,
             userProfileRepository: self.userProfileRepository,
-            joinedRoomsStore: joinedRoomsStore
+            exitUseCase: self.chatRoomExitUseCase
         )
         self.roomSearchUseCase = RoomSearchUseCase(roomRepository: self.roomRepository)
         self.chatMessageSendingRepository = SocketChatMessageSendingRepository()
@@ -67,6 +74,11 @@ final class ChatContainer {
         )
         self.chatRoomRealtimeUseCase = ChatRoomRealtimeUseCase(
             repository: SocketChatRoomRealtimeRepository()
+        )
+        self.chatRoomRuntimeUseCase = ChatRoomRuntimeUseCase(
+            repository: SocketChatRoomRuntimeRepository(),
+            visibilityRuntimeManager: DefaultChatRoomVisibilityRuntimeManager(),
+            transientLocalDataCleaner: DefaultChatRoomTransientLocalDataCleaner()
         )
         self.chatInitialLoadUseCase = DefaultChatInitialLoadUseCase(
             messageManager: provider.messageManager,
@@ -81,6 +93,10 @@ final class ChatContainer {
             joinedRoomsStore: joinedRoomsStore,
             announcementRepository: announcementRepository
         )
+        self.chatMediaUploadUseCase = ChatMediaUploadUseCase(
+            imageStorageRepository: repositories.imageStorageRepository,
+            videoStorageRepository: FirebaseVideoStorageRepository.shared
+        )
         let lookbookChatShareSendingRepository = SocketLookbookChatShareSendingRepository()
         self.loadShareableJoinedRoomsUseCase = LoadShareableJoinedRoomsUseCase(
             joinedRoomsUseCase: self.joinedRoomsUseCase
@@ -88,10 +104,6 @@ final class ChatContainer {
         self.shareLookbookContentToChatUseCase = ShareLookbookContentToChatUseCase(
             repository: lookbookChatShareSendingRepository
         )
-        ChatDependencyContainer.provider = provider
-        ChatDependencyContainer.firebaseRepositories = repositories
-        ChatDependencyContainer.joinedRoomsStore = joinedRoomsStore
-        ChatDependencyContainer.roomReadStateStore = resolvedRoomReadStateStore
     }
 
     func makeRoomListsViewModel() -> RoomListsViewModel {
@@ -117,6 +129,8 @@ final class ChatContainer {
             searchUseCase: chatRoomSearchUseCase,
             lifecycleUseCase: chatRoomLifecycleUseCase,
             realtimeUseCase: chatRoomRealtimeUseCase,
+            runtimeUseCase: chatRoomRuntimeUseCase,
+            currentUserProvider: currentUserProvider,
             roomReadStateStore: roomReadStateStore
         )
     }
@@ -127,6 +141,14 @@ final class ChatContainer {
 
     func makeShareLookbookContentToChatUseCase() -> ShareLookbookContentToChatUseCaseProtocol {
         shareLookbookContentToChatUseCase
+    }
+
+    func makeChatRoomExitUseCase() -> ChatRoomExitUseCaseProtocol {
+        chatRoomExitUseCase
+    }
+
+    func makeChatMediaUploadUseCase() -> ChatMediaUploadUseCaseProtocol {
+        chatMediaUploadUseCase
     }
 
     func bindJoinedRoomsRuntimeIfNeeded() {

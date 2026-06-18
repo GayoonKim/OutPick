@@ -1358,6 +1358,19 @@ class SocketIOManager {
     func requestLeaveOrCloseRoom(roomID: String,
                                  ackTimeout: Double = 10.0,
                                  completion: ((Result<Void, Error>) -> Void)? = nil) {
+        requestLeaveOrCloseRoomResult(roomID: roomID, ackTimeout: ackTimeout) { result in
+            switch result {
+            case .success:
+                completion?(.success(()))
+            case .failure(let error):
+                completion?(.failure(error))
+            }
+        }
+    }
+
+    func requestLeaveOrCloseRoomResult(roomID: String,
+                                       ackTimeout: Double = 10.0,
+                                       completion: ((Result<ChatRoomExitMode, Error>) -> Void)? = nil) {
         // 소켓 미연결 시 즉시 실패 콜백
         guard socket.status == .connected else {
             #if DEBUG
@@ -1401,7 +1414,7 @@ class SocketIOManager {
             if let first = items.first as? [String: Any] {
                 let ok = (first["ok"] as? Bool) ?? (first["success"] as? Bool) ?? false
                 if ok {
-                    completion?(.success(()))
+                    completion?(.success(ChatRoomExitMode(serverValue: first["mode"] as? String)))
                     return
                 } else {
                     let message = first["message"] as? String
@@ -1422,7 +1435,7 @@ class SocketIOManager {
                 #if DEBUG
                 print("[requestLeaveOrCloseRoom] empty ACK items, treat as success")
                 #endif
-                completion?(.success(()))
+                completion?(.success(.unknown(nil)))
                 return
             }
 

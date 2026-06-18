@@ -21,7 +21,8 @@ protocol JoinedRoomsUseCaseProtocol {
     func stopRoomUpdates()
     func fetchUnreadCount(roomID: String, lastMessageSeqHint: Int64?, lastMessageSenderID: String?) async -> Int64
     func fetchReadSnapshot(roomID: String, lastMessageSeqHint: Int64?, lastMessageSenderID: String?) async -> ChatRoomReadSnapshot?
-    func leave(room: ChatRoom)
+    func canLeaveFromList(room: ChatRoom) -> Bool
+    func leave(room: ChatRoom) async throws -> ChatRoomExitResult
 }
 
 final class JoinedRoomsUseCase: JoinedRoomsUseCaseProtocol {
@@ -29,16 +30,16 @@ final class JoinedRoomsUseCase: JoinedRoomsUseCaseProtocol {
 
     private let roomRepository: FirebaseChatRoomRepositoryProtocol
     private let userProfileRepository: UserProfileRepositoryProtocol
-    private let joinedRoomsStore: JoinedRoomsStore
+    private let exitUseCase: ChatRoomExitUseCaseProtocol
 
     init(
         roomRepository: FirebaseChatRoomRepositoryProtocol,
         userProfileRepository: UserProfileRepositoryProtocol,
-        joinedRoomsStore: JoinedRoomsStore
+        exitUseCase: ChatRoomExitUseCaseProtocol
     ) {
         self.roomRepository = roomRepository
         self.userProfileRepository = userProfileRepository
-        self.joinedRoomsStore = joinedRoomsStore
+        self.exitUseCase = exitUseCase
         self.joinedRoomsPublisher = roomRepository.joinedRoomsSummaryPublisher
     }
 
@@ -119,12 +120,11 @@ final class JoinedRoomsUseCase: JoinedRoomsUseCaseProtocol {
         }
     }
 
-    func leave(room: ChatRoom) {
-        if let roomID = room.ID, !roomID.isEmpty {
-            Task { @MainActor [joinedRoomsStore] in
-                joinedRoomsStore.remove(roomID)
-            }
-        }
-        roomRepository.removeParticipant(room: room)
+    func canLeaveFromList(room: ChatRoom) -> Bool {
+        room.creatorID != LoginManager.shared.getUserEmail
+    }
+
+    func leave(room: ChatRoom) async throws -> ChatRoomExitResult {
+        try await exitUseCase.leaveOrClose(room: room)
     }
 }

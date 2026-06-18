@@ -34,7 +34,7 @@ final class UserProfileDetailCoordinator {
             email: email,
             seedNickname: nickname,
             seedAvatarPath: avatarPath,
-            provider: provider,
+            avatarImageManager: provider.avatarImageManager,
             repositories: repositories,
             onBack: { [weak self] in
                 self?.dismiss()
@@ -53,7 +53,7 @@ final class UserProfileDetailCoordinator {
             userID: userID,
             seedNickname: nickname,
             seedAvatarPath: avatarPath,
-            provider: provider,
+            avatarImageManager: provider.avatarImageManager,
             repositories: repositories,
             onBack: { [weak self] in
                 self?.dismiss()

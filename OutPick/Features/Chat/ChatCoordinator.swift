@@ -11,6 +11,8 @@ import UIKit
 protocol ChatRoomRouting: AnyObject {
     func showSettings(from source: ChatViewController)
     func showUserProfile(from source: ChatViewController, email: String, nickname: String, avatarPath: String?)
+    func openLookbookSharedContent(from source: ChatViewController, sharedContent: LookbookSharedContent)
+    func handleRoomExit(from source: ChatViewController, roomID: String)
 }
 
 @MainActor
@@ -88,8 +90,6 @@ final class ChatCoordinator {
     }
 
     private func presentCreateRoom(from source: UIViewController) {
-        ChatDependencyContainer.provider = container.provider
-        ChatDependencyContainer.firebaseRepositories = container.firebaseRepositories
         let createVC = ChatCompositionRoot.makeRoomCreateViewController(
             provider: container.provider,
             repositories: container.firebaseRepositories,
@@ -135,16 +135,14 @@ final class ChatCoordinator {
     }
 
     private func makeChatRoomViewController(room: ChatRoom, isRoomSaving: Bool) -> ChatViewController {
-        ChatDependencyContainer.provider = container.provider
-        ChatDependencyContainer.firebaseRepositories = container.firebaseRepositories
+        let chatRoomVC = ChatViewController(
+            provider: container.provider,
+            mediaUploadUseCase: container.makeChatMediaUploadUseCase(),
+            viewModel: container.makeChatRoomViewModel(room: room)
+        )
 
-        let chatRoomVC = ChatViewController(provider: container.provider)
-
-        chatRoomVC.injectedFirebaseRepositories = container.firebaseRepositories
-        chatRoomVC.configure(viewModel: container.makeChatRoomViewModel(room: room))
         chatRoomVC.isRoomSaving = isRoomSaving
         chatRoomVC.router = self
-        chatRoomVC.appContentRouter = appContentRouter
         chatRoomVC.modalPresentationStyle = .fullScreen
         return chatRoomVC
     }
@@ -180,38 +178,61 @@ extension ChatCoordinator: ChatRoomRouting {
     func showSettings(from source: ChatViewController) {
         guard let room = source.room else { return }
 
-        let settingVC = ChatCompositionRoot.makeChatRoomSettingPanel(
+        weak var settingVC: ChatRoomSettingViewController?
+        let panelVC = ChatCompositionRoot.makeChatRoomSettingPanel(
             room: room,
             provider: container.provider,
             repositories: container.firebaseRepositories,
-            onRoomUpdated: { [weak source] updatedRoom in
-                Task { @MainActor in
+            exitUseCase: container.makeChatRoomExitUseCase(),
+            onEvent: { [weak self, weak source] event in
+                switch event {
+                case .roomUpdated(let updatedRoom):
                     source?.applyUpdatedRoom(updatedRoom)
-                }
-            },
-            onRoomExited: { [weak source] roomID in
-                Task { @MainActor in
-                    source?.handleRoomExit(roomID: roomID)
+
+                case .roomExited(let roomID):
+                    guard let self, let source else { return }
+                    self.handleRoomExit(from: source, roomID: roomID)
+
+                case .requestEditRoom(let room):
+                    guard let self, let settingVC else { return }
+                    self.presentRoomEdit(from: settingVC, room: room)
+
+                case .requestShowUserProfile(let user):
+                    guard let self, let settingVC else { return }
+                    self.presentUserProfile(
+                        from: settingVC,
+                        email: user.email,
+                        nickname: user.nickname,
+                        avatarPath: user.profileImagePath
+                    )
                 }
             }
         )
-        settingVC.onRequestEditRoom = { [weak self, weak settingVC] room in
-            guard let self, let settingVC else { return }
-            self.presentRoomEdit(from: settingVC, room: room)
-        }
-        settingVC.onRequestShowUserProfile = { [weak self, weak settingVC] user in
-            guard let self, let settingVC else { return }
-            self.presentUserProfile(
-                from: settingVC,
-                email: user.email,
-                nickname: user.nickname,
-                avatarPath: user.profileImagePath
-            )
-        }
-        source.presentSettingPanel(settingVC)
+        settingVC = panelVC
+        source.presentSettingPanel(panelVC)
     }
 
     func showUserProfile(from source: ChatViewController, email: String, nickname: String, avatarPath: String?) {
         presentUserProfile(from: source, email: email, nickname: nickname, avatarPath: avatarPath)
+    }
+
+    func openLookbookSharedContent(from source: ChatViewController, sharedContent: LookbookSharedContent) {
+        Task { @MainActor [weak self, weak source] in
+            guard let self, let source, let appContentRouter else { return }
+            do {
+                try await appContentRouter.openLookbookSharedContent(sharedContent)
+            } catch {
+                source.showRoutingFailure("룩북으로 이동할 수 없습니다.")
+                print("❌ 룩북 공유 카드 이동 실패:", error)
+            }
+        }
+    }
+
+    func handleRoomExit(from source: ChatViewController, roomID: String) {
+        guard source.isCurrentRoom(roomID: roomID) else {
+            source.dismissSettingPanel()
+            return
+        }
+        source.dismissSettingPanelAndCloseRoom()
     }
 }

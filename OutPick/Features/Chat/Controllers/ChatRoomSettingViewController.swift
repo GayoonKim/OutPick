@@ -7,9 +7,14 @@
 
 import UIKit
 import Combine
-import GRDB
 import FirebaseFirestore
 
+enum ChatRoomSettingEvent {
+    case roomUpdated(ChatRoom)
+    case roomExited(roomID: String)
+    case requestEditRoom(ChatRoom)
+    case requestShowUserProfile(LocalUser)
+}
 
 class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecognizerDelegate, UINavigationControllerDelegate/*, ChatModalAnimatable*/ {
     private lazy var floatingLeaveButton: UIButton = {
@@ -80,11 +85,7 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
     private var mediaItems: [ChatRoomSettingMediaItem] { viewModel.mediaItems }
     private var localUsers: [LocalUser] { viewModel.localUsers }
     
-    
-    var onRoomUpdated: ((ChatRoom) -> Void)?
-    var onRequestEditRoom: ((ChatRoom) -> Void)?
-    var onLeaveCompleted: ((String) -> Void)?
-    var onRequestShowUserProfile: ((LocalUser) -> Void)?
+    var onEvent: (ChatRoomSettingEvent) -> Void = { _ in }
 
     var onRequestOpenGallery: ((UIViewController) -> Void)?
     
@@ -271,7 +272,7 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
                 
                 cell.editButtonTapped = { [weak self] in
                     guard let self = self else { return }
-                    self.onRequestEditRoom?(self.roomInfo)
+                    self.onEvent(.requestEditRoom(self.roomInfo))
                 }
                 
                 return cell
@@ -292,7 +293,7 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
                 let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ParticipantsSectionParticipantCell.reuseIdentifier, for: indexPath) as! ParticipantsSectionParticipantCell
                 cell.configureCell(localUsers, avatarImageManager: self.avatarImageManager)
                 cell.onSelectParticipant = { [weak self] user in
-                    self?.onRequestShowUserProfile?(user)
+                    self?.onEvent(.requestShowUserProfile(user))
                 }
 
                 return cell
@@ -366,7 +367,7 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
         let nextKey = updatedRoom.coverImagePath
         lastRoomCoverKey = nextKey
         viewModel.updateRoomInfo(updatedRoom)
-        onRoomUpdated?(updatedRoom)
+        onEvent(.roomUpdated(updatedRoom))
     }
     
     private func updateRoomInfoSection() {
@@ -453,61 +454,40 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
                let cell = self.collectionView.cellForItem(at: indexPath) as? ParticipantsSectionParticipantCell {
                 cell.configureCell(localUsers, avatarImageManager: self.avatarImageManager)
                 cell.onSelectParticipant = { [weak self] user in
-                    self?.onRequestShowUserProfile?(user)
+                    self?.onEvent(.requestShowUserProfile(user))
                 }
             }
         }
     }
     
     private func leaveRoomTapped() {
-        print("🚪 나가기 버튼 탭됨")
-        // TODO: 실제 방 나가기 로직 연결 (확인 다이얼로그 → 서버/로컬 상태 정리)
         ConfirmView.presentLeave(in: self.view,
                                  isOwner: roomInfo.creatorID == LoginManager.shared.getUserEmail) { [weak self] in
             guard let self = self else { return }
             Task {
-                guard let roomID = self.roomInfo.ID, !roomID.isEmpty else { return }
-
-                SocketIOManager.shared.requestLeaveOrCloseRoom(roomID: roomID) { result in
-                    switch result {
-                    case .success:
-                        Task {
-                            do {
-                                try GRDBManager.shared.deleteLocalRoomDataAndPruneUsers(roomID: roomID)
-                            } catch {
-                                print("❌ local cleanup failed:", error)
-                            }
-
-                            await MainActor.run {
-                                if var profile = LoginManager.shared.currentUserProfile {
-                                    profile.joinedRooms.removeAll { $0 == roomID }
-                                    LoginManager.shared.setCurrentUserProfile(profile)
-                                }
-                                if let joinedRoomsStore = ChatDependencyContainer.joinedRoomsStore {
-                                    joinedRoomsStore.remove(roomID)
-                                }
-                                SocketIOManager.shared.leaveRoom(roomID)
-                                self.onLeaveCompleted?(roomID)
-                            }
-                        }
-
-                    case .failure(let error):
-                        // 서버 측 나가기/종료 실패 → 사용자에게 안내하고, 로컬은 그대로 두는게 안전
-                        print("❌ leave-or-close failed:", error)
-                        DispatchQueue.main.async { [weak self] in
-                            guard let self else { return }
-                            let alert = UIAlertController(
-                                title: "나가기에 실패했어요",
-                                message: error.localizedDescription,
-                                preferredStyle: .alert
-                            )
-                            alert.addAction(UIAlertAction(title: "확인", style: .default))
-                            self.present(alert, animated: true)
-                        }
+                do {
+                    let result = try await self.viewModel.leaveOrCloseRoom()
+                    await MainActor.run {
+                        self.onEvent(.roomExited(roomID: result.roomID))
+                    }
+                } catch {
+                    await MainActor.run {
+                        self.presentLeaveFailureAlert(error)
                     }
                 }
             }
         }
+    }
+
+    private func presentLeaveFailureAlert(_ error: Error) {
+        print("❌ leave-or-close failed:", error)
+        let alert = UIAlertController(
+            title: "나가기에 실패했어요",
+            message: error.localizedDescription,
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "확인", style: .default))
+        present(alert, animated: true)
     }
 
     private func noticeTapped() {

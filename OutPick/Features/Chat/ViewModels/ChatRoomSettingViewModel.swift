@@ -37,6 +37,7 @@ final class ChatRoomSettingViewModel {
 
     private let loadParticipantsUseCase: LoadChatRoomParticipantsUseCaseProtocol
     private let loadMediaUseCase: LoadChatRoomMediaUseCaseProtocol
+    private let exitUseCase: ChatRoomExitUseCaseProtocol
     private let mediaManager: ChatMediaManaging
     private let avatarImageManager: ChatAvatarImageManaging
     private let networkStatusProvider: NetworkStatusProviding
@@ -57,6 +58,7 @@ final class ChatRoomSettingViewModel {
         avatarImageManager: ChatAvatarImageManaging,
         loadParticipantsUseCase: LoadChatRoomParticipantsUseCaseProtocol,
         loadMediaUseCase: LoadChatRoomMediaUseCaseProtocol,
+        exitUseCase: ChatRoomExitUseCaseProtocol,
         networkStatusProvider: NetworkStatusProviding
     ) {
         self.roomInfo = room
@@ -68,11 +70,16 @@ final class ChatRoomSettingViewModel {
         self.avatarImageManager = avatarImageManager
         self.loadParticipantsUseCase = loadParticipantsUseCase
         self.loadMediaUseCase = loadMediaUseCase
+        self.exitUseCase = exitUseCase
         self.networkStatusProvider = networkStatusProvider
     }
 
     func updateRoomInfo(_ room: ChatRoom) {
         roomInfo = room
+    }
+
+    func leaveOrCloseRoom() async throws -> ChatRoomExitResult {
+        try await exitUseCase.leaveOrClose(room: roomInfo)
     }
 
     func loadInitialParticipants() async {

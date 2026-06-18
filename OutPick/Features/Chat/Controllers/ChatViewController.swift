@@ -55,7 +55,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
-    private var chatRoomViewModel: ChatRoomViewModel?
+    private let chatRoomViewModel: ChatRoomViewModel
     
     private var avatarWarmupRoomID: String?
     
@@ -75,7 +75,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     typealias PendingImageUploadState = ChatPendingMediaUploadState
     private let pendingMediaUploadStore = ChatPendingMediaUploadStore()
-    private(set) lazy var mediaUploadUseCase: ChatMediaUploadUseCaseProtocol = makeMediaUploadUseCase()
+    let mediaUploadUseCase: ChatMediaUploadUseCaseProtocol
     
     // MARK: - Managers (의존성 주입)
     private let messageManager: ChatMessageManaging
@@ -84,95 +84,39 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private let profileSyncManager: ChatProfileSyncManaging
     private let networkStatusProvider: NetworkStatusProviding
     private let provider: ChatManagerProviding
-    var injectedFirebaseRepositories: FirebaseRepositoryProviding?
     weak var router: ChatRoomRouting?
-    weak var appContentRouter: (any AppContentRouting)?
-    private var userProfileDetailCoordinator: UserProfileDetailCoordinator?
     private let profileScopeID = UUID()
     private var isProfileSyncBound = false
     private var profileSyncCancellable: AnyCancellable?
 
-    /// 의존성 주입을 위한 초기화 (테스트 용이성)
-    /// - NOTE: Programmatic init 경로에서 사용
-    init(provider: ChatManagerProviding = ChatDependencyContainer.provider) {
+    init(
+        provider: ChatManagerProviding,
+        mediaUploadUseCase: ChatMediaUploadUseCaseProtocol,
+        viewModel: ChatRoomViewModel
+    ) {
         self.provider = provider
+        self.mediaUploadUseCase = mediaUploadUseCase
+        self.chatRoomViewModel = viewModel
         self.messageManager = provider.messageManager
         self.mediaManager = provider.mediaManager
         self.searchManager = provider.searchManager
         self.profileSyncManager = provider.profileSyncManager
         self.networkStatusProvider = provider.networkStatusProvider
+        self.room = viewModel.room
         super.init(nibName: nil, bundle: nil)
     }
 
-    /// - NOTE: Storyboard/XIB init 경로에서 사용
     required init?(coder: NSCoder) {
-        let provider = ChatDependencyContainer.provider
-        self.provider = provider
-        self.messageManager = provider.messageManager
-        self.mediaManager = provider.mediaManager
-        self.searchManager = provider.searchManager
-        self.profileSyncManager = provider.profileSyncManager
-        self.networkStatusProvider = provider.networkStatusProvider
-        super.init(coder: coder)
+        fatalError("Storyboard initialization is no longer supported for ChatViewController.")
     }
 
-    func configure(viewModel: ChatRoomViewModel) {
-        self.chatRoomViewModel = viewModel
-        self.room = viewModel.room
-    }
-
-    func configureDefaultViewModelIfNeeded() {
-        _ = ensureChatRoomViewModel()
-    }
-
-    private var firebaseRepositories: FirebaseRepositoryProviding {
-        injectedFirebaseRepositories ?? ChatDependencyContainer.requireFirebaseRepositories()
-    }
-
-    private func makeMediaUploadUseCase() -> ChatMediaUploadUseCaseProtocol {
-        ChatMediaUploadUseCase(
-            imageStorageRepository: firebaseRepositories.imageStorageRepository,
-            videoStorageRepository: FirebaseVideoStorageRepository.shared
-        )
-    }
-
-    private func ensureChatRoomViewModel() -> ChatRoomViewModel? {
-        if let chatRoomViewModel {
-            return chatRoomViewModel
-        }
-        guard let room else { return nil }
-        let repositories = firebaseRepositories
-
-        let viewModel = ChatRoomViewModel(
-            room: room,
-            initialLoadUseCase: DefaultChatInitialLoadUseCase(
-                messageManager: messageManager,
-                userProfileRepository: repositories.userProfileRepository,
-                chatRoomRepository: repositories.chatRoomRepository,
-                networkStatusProvider: networkStatusProvider
-            ),
-            messageUseCase: ChatRoomMessageUseCase(messageManager: messageManager),
-            searchUseCase: ChatRoomSearchUseCase(searchManager: searchManager),
-            lifecycleUseCase: ChatRoomLifecycleUseCase(
-                chatRoomRepository: repositories.chatRoomRepository,
-                userProfileRepository: repositories.userProfileRepository,
-                joinedRoomsStore: ChatDependencyContainer.requireJoinedRoomsStore(),
-                announcementRepository: repositories.announcementRepository
-            ),
-            realtimeUseCase: ChatRoomRealtimeUseCase(),
-            roomReadStateStore: ChatDependencyContainer.requireRoomReadStateStore()
-        )
-        self.chatRoomViewModel = viewModel
-        return viewModel
-    }
-    
     private var hasBoundRoomChange = false
     
     static var currentRoomID: String? = nil
     
     // 중복 호출 방지를 위한 최근 트리거 인덱스
     private var minTriggerDistance: Int {
-        chatRoomViewModel?.minTriggerDistance ?? 3
+        chatRoomViewModel.minTriggerDistance
     }
     private static var lastTriggeredOlderIndex: Int?
     private static var lastTriggeredNewerIndex: Int?
@@ -180,11 +124,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private var cellSubscriptions: [ObjectIdentifier: Set<AnyCancellable>] = [:]
     private var needsTransientBindingsRestore = false
     
-    private var roomClosedListenerID: UUID?
+    private var roomClosedSubscription: ChatRoomRuntimeSubscription?
     private var appLifecycleObservers: [NSObjectProtocol] = []
     
     deinit {
-        print("💧 ChatViewController deinit")
         profileSyncCancellable?.cancel()
         let realtimeSubscription = realtimeSubscription
         Task { @MainActor in
@@ -209,7 +152,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         appLifecycleObservers.forEach { NotificationCenter.default.removeObserver($0) }
         appLifecycleObservers.removeAll()
 
-        removeRoomClosedListener()
+        stopRoomClosedObservation()
     }
     
     private lazy var containerView: UIView = {
@@ -364,7 +307,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         super.viewDidLoad()
         self.definesPresentationContext = true
         view.backgroundColor = OutPickTheme.ColorToken.backgroundBase
-        _ = ensureChatRoomViewModel()
         
         configureDataSource()
         
@@ -397,20 +339,15 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        BannerManager.shared.setVisibleRoom(self.room?.ID ?? "")
-
-        if let roomID = self.room?.ID, !roomID.isEmpty {
-            Task { @MainActor in
-                await PresenceManager.shared.enterRoom(roomID)
-            }
+        Task { @MainActor [chatRoomViewModel] in
+            await chatRoomViewModel.handleRoomWillAppear()
         }
     }
     
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        BannerManager.shared.setVisibleRoom(nil)
-        Task { @MainActor in
-            await PresenceManager.shared.leaveCurrentRoom()
+        Task { @MainActor [chatRoomViewModel] in
+            await chatRoomViewModel.handleRoomWillDisappear()
         }
         flushLastReadSeq(trigger: "viewWillDisappear")
         needsTransientBindingsRestore = !(self.isMovingFromParent || self.isBeingDismissed)
@@ -440,16 +377,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         
         // 참여하지 않은 방이면 로컬 메시지 삭제 처리 (메인 바깥에서 비동기 실행)
         if let room = self.room,
-           !room.participants.contains(LoginManager.shared.getUserEmail) {
+           !chatRoomViewModel.isCurrentUserParticipant(in: room) {
             let roomID = room.ID ?? ""
-            Task(priority: .utility) {
-                do {
-                    try GRDBManager.shared.deleteMessages(inRoom: roomID)
-                    try GRDBManager.shared.deleteImages(inRoom: roomID)
-                    print("참여하지 않은 사용자의 임시 메시지/이미지 삭제 완료")
-                } catch {
-                    print("GRDB 메시지/이미지 삭제 실패: \(error)")
-                }
+            Task(priority: .utility) { [chatRoomViewModel] in
+                await chatRoomViewModel.cleanTransientLocalRoomData(roomID: roomID)
             }
         }
         
@@ -458,7 +389,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         // push로 다른 화면을 덮은 게 아니라,
         // 네비게이션에서 빠져나가거나 dismiss 된 경우에만 true
         if self.isMovingFromParent || self.isBeingDismissed {
-            removeRoomClosedListener()
+            stopRoomClosedObservation()
         }
     }
     
@@ -477,9 +408,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         initialLoadTask?.cancel()
         initialLoadTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            guard let room = self.room,
-                  let viewModel = ensureChatRoomViewModel() else { return }
-            let isParticipant = room.participants.contains(LoginManager.shared.getUserEmail)
+            guard let room = self.room else { return }
+            let isParticipant = self.chatRoomViewModel.isCurrentUserParticipant(in: room)
             LoadingIndicator.shared.start(on: self)
 
             var didStopLoading = false
@@ -489,7 +419,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 LoadingIndicator.shared.stop()
             }
 
-            for await event in viewModel.startInitialLoadEvents(isParticipant: isParticipant) {
+            for await event in self.chatRoomViewModel.startInitialLoadEvents(isParticipant: isParticipant) {
                 if Task.isCancelled { break }
 
                 switch event {
@@ -658,11 +588,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     @MainActor
     private func loadOlderMessages(before messageID: String?) async {
-        guard let viewModel = chatRoomViewModel ?? ensureChatRoomViewModel() else { return }
-
-        print(#function, "✅ loading older 진행")
         do {
-            let loadedMessages = try await viewModel.loadOlderMessages(before: messageID)
+            let loadedMessages = try await chatRoomViewModel.loadOlderMessages(before: messageID)
             appendMessagesInChunks(loadedMessages, updateType: .older)
         } catch {
             print("❌ loadOlderMessages 실패:", error)
@@ -671,11 +598,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     @MainActor
     private func loadNewerMessagesIfNeeded(after messageID: String?) async {
-        guard let viewModel = chatRoomViewModel ?? ensureChatRoomViewModel() else { return }
-
-        print(#function, "✅ loading newer 진행")
         do {
-            let result = try await viewModel.loadNewerMessages(after: messageID)
+            let result = try await chatRoomViewModel.loadNewerMessages(after: messageID)
             appendMessagesInChunks(result.bufferedMessagesToFlush, updateType: .newer)
             maybeUpdateLastReadSeq(trigger: "newerPage", skipNearBottomCheck: true)
             appendMessagesInChunks(result.messages, updateType: .newer)
@@ -698,8 +622,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     @MainActor
     private func bindMessagePublishers() {
-        guard let room = self.room,
-              let viewModel = chatRoomViewModel ?? ensureChatRoomViewModel() else { return }
+        guard let room = self.room else { return }
         let roomID = room.ID ?? ""
         guard !roomID.isEmpty else { return }
 
@@ -709,7 +632,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         stopRoomMessageStream()
         startRoomMessageStream(for: roomID)
 
-        let cancellable = viewModel.setupDeletionListener { [weak self] deletedMessageID in
+        let cancellable = chatRoomViewModel.setupDeletionListener { [weak self] deletedMessageID in
             guard let self = self else { return }
             Task { @MainActor in
                 var toReloadIDs = Set<String>()
@@ -739,12 +662,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     @MainActor
     private func startRoomMessageStream(for roomID: String) {
-        guard let viewModel = chatRoomViewModel ?? ensureChatRoomViewModel() else { return }
-
         let subscription = ChatRoomRealtimeSubscription(
             roomID: roomID,
-            openSession: {
-                try await viewModel.openMessageStream(roomID: roomID)
+            openSession: { [chatRoomViewModel] in
+                try await chatRoomViewModel.openMessageStream(roomID: roomID)
             },
             onMessage: { [weak self] receivedMessage in
                 guard let self else { return }
@@ -775,9 +696,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     // 수신 메시지를 저장 및 UI 반영
     @MainActor
     private func handleIncomingMessage(_ message: ChatMessage) async {
-        guard let room = self.room,
-              let viewModel = chatRoomViewModel ?? ensureChatRoomViewModel() else { return }
-        if message.roomID != viewModel.roomID { return }
+        guard let room = self.room else { return }
+        if message.roomID != chatRoomViewModel.roomID { return }
         print("\(message.isFailed ? "전송 실패" : "전송 성공") 메시지 수신: \(message)")
 
         // 1) 첨부 캐시 선행
@@ -805,7 +725,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             }
         }
 
-        switch viewModel.handleIncomingMessage(message) {
+        switch chatRoomViewModel.handleIncomingMessage(message) {
         case .buffered:
             return
         case .append:
@@ -816,7 +736,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
         Task(priority: .userInitiated) {
             do {
-                try await viewModel.persistIncomingMessage(message)
+                try await self.chatRoomViewModel.persistIncomingMessage(message)
             } catch {
                 print("❌ 메시지 저장 실패: \(error)")
             }
@@ -942,8 +862,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     @MainActor
     private func handleSendButtonTap() {
         guard let message = self.chatUIView.messageTextView.text,
-              let viewModel = chatRoomViewModel ?? ensureChatRoomViewModel(),
-              let outgoingMessage = viewModel.makeOutgoingTextMessage(
+              let outgoingMessage = chatRoomViewModel.makeOutgoingTextMessage(
                 text: message,
                 replyPreview: replyMessage
               ) else { return }
@@ -957,7 +876,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         addMessages([outgoingMessage], updateType: .newer)
         chatMessageCollectionView.scrollToBottom()
         
-        viewModel.sendPreparedMessage(outgoingMessage)
+        chatRoomViewModel.sendPreparedMessage(outgoingMessage)
         
         if self.replyMessage != nil {
             self.replyMessage = nil
@@ -1225,41 +1144,25 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private var isJoiningRoom: Bool = false
     
     private func bindRoomClosedEvent() {
-        guard let socket = SocketIOManager.shared.socket else { return }
-        
-        if let id = roomClosedListenerID {
-            socket.off(id: id)
-        }
-        
-        roomClosedListenerID = socket.on("room:closed") { [weak self] data, ack in
-            guard
-                let self = self,
-                let dict = data.first as? [String: Any],
-                let roomID = dict["roomID"] as? String,
-                let room = self.room,
-                roomID == room.ID ?? ""
-            else { return }
-            // 방이 종료되었으니 채팅방 화면에서 빠져나가기
-            self.handleRoomExit(roomID: roomID)
+        stopRoomClosedObservation()
+        roomClosedSubscription = chatRoomViewModel.observeRoomClosed { [weak self] roomID in
+            guard let self else { return }
+            self.router?.handleRoomExit(from: self, roomID: roomID)
         }
     }
     
-    private func removeRoomClosedListener() {
-        guard let id = roomClosedListenerID,
-              let socket = SocketIOManager.shared.socket else { return }
-        
-        socket.off(id: id)
-        roomClosedListenerID = nil
+    private func stopRoomClosedObservation() {
+        roomClosedSubscription?.stop()
+        roomClosedSubscription = nil
     }
     
     @MainActor
     private func bindRoomChangePublisher() {
         if hasBoundRoomChange { return }
-        guard let viewModel = chatRoomViewModel ?? ensureChatRoomViewModel() else { return }
         hasBoundRoomChange = true
         
-        viewModel.startRoomUpdates()
-        viewModel.roomChangePublisher
+        chatRoomViewModel.startRoomUpdates()
+        chatRoomViewModel.roomChangePublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] updatedRoom in
                 guard let self = self else { return }
@@ -1267,7 +1170,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                       updatedRoom.ID == currentRoomID else { return }
                 let previousRoom = self.room
                 self.room = updatedRoom
-                viewModel.applyRoomUpdate(updatedRoom)
+                self.chatRoomViewModel.applyRoomUpdate(updatedRoom)
                 print(#function, "ChatViewController.swift 방 정보 변경: \(updatedRoom)")
                 Task { @MainActor in
                     await self.applyRoomDiffs(old: previousRoom, new: updatedRoom)
@@ -1284,7 +1187,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         bindRoomChangePublisher()
 
         guard let room = room,
-              room.participants.contains(LoginManager.shared.getUserEmail) else {
+              chatRoomViewModel.isCurrentUserParticipant(in: room) else {
             return
         }
 
@@ -1324,9 +1227,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     @MainActor
     func handleRoomCreationSaveCompleted(savedRoom: ChatRoom) {
-        guard let viewModel = chatRoomViewModel ?? ensureChatRoomViewModel() else { return }
-        viewModel.handleRoomSaveCompleted(savedRoom)
-        room = viewModel.room
+        chatRoomViewModel.handleRoomSaveCompleted(savedRoom)
+        room = chatRoomViewModel.room
         isRoomSaving = false
         updateNavigationTitle(with: savedRoom)
         bindRoomChangePublisher()
@@ -1337,10 +1239,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     // MARK: 초기 UI 설정 관련
     @MainActor
     private func decideJoinUI() {
-        guard let viewModel = chatRoomViewModel ?? ensureChatRoomViewModel() else { return }
-        let currentRoom = viewModel.room
+        let currentRoom = chatRoomViewModel.room
         
-        if viewModel.isCurrentUserParticipant(LoginManager.shared.getUserEmail) {
+        if chatRoomViewModel.isCurrentUserParticipant {
             setupChatUI()
             chatUIView.isHidden = false
             joinRoomBtn.isHidden = true
@@ -1414,7 +1315,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     @MainActor
     @objc private func joinRoomBtnTapped(_ sender: UIButton) {
-        guard let viewModel = chatRoomViewModel ?? ensureChatRoomViewModel() else { return }
         // Prevent double taps / duplicated HUDs
         guard !isJoiningRoom else { return }
         isJoiningRoom = true
@@ -1433,7 +1333,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
         Task {
             do {
-                let updated = try await viewModel.joinCurrentRoom()
+                let updated = try await self.chatRoomViewModel.joinCurrentRoom()
                 self.room = updated
                 
                 await MainActor.run {
@@ -1519,60 +1419,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
     
     @objc private func settingButtonTapped() {
-        guard room != nil else { return }
-
-        if let router {
-            router.showSettings(from: self)
+        guard room != nil, let router else {
+            assertionFailure("ChatViewController requires ChatRoomRouting for settings navigation.")
             return
         }
-
-        Task { @MainActor in
-            guard let room = self.room else { return }
-            let settingVC = ChatCompositionRoot.makeChatRoomSettingPanel(
-                room: room,
-                provider: self.provider,
-                repositories: self.firebaseRepositories,
-                onRoomUpdated: { [weak self] updatedRoom in
-                    Task { @MainActor in
-                        self?.applyUpdatedRoom(updatedRoom)
-                    }
-                },
-                onRoomExited: { [weak self] roomID in
-                    Task { @MainActor in
-                        self?.handleRoomExit(roomID: roomID)
-                    }
-                }
-            )
-            settingVC.onRequestShowUserProfile = { [weak self, weak settingVC] user in
-                guard let self, let settingVC else { return }
-                self.presentUserProfileDetail(
-                    from: settingVC,
-                    email: user.email,
-                    nickname: user.nickname,
-                    avatarPath: user.profileImagePath
-                )
-            }
-            self.presentSettingPanel(settingVC)
-        }
-    }
-
-    @MainActor
-    private func presentUserProfileDetail(
-        from source: UIViewController,
-        email: String,
-        nickname: String,
-        avatarPath: String?
-    ) {
-        let coordinator = UserProfileDetailCoordinator(
-            presentingViewController: source,
-            provider: provider,
-            repositories: firebaseRepositories,
-            onFinish: { [weak self] in
-                self?.userProfileDetailCoordinator = nil
-            }
-        )
-        userProfileDetailCoordinator = coordinator
-        coordinator.start(email: email, nickname: nickname, avatarPath: avatarPath)
+        router.showSettings(from: self)
     }
 
     @MainActor
@@ -1622,11 +1473,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
     
     @objc private func didTapDimView() {
-        dismissSettingVC()
+        dismissSettingPanel()
     }
     
     @MainActor
-    private func dismissSettingVC(completion: (() -> Void)? = nil) {
+    func dismissSettingPanel(completion: (() -> Void)? = nil) {
         guard let VC = settingPanelVC else {
             completion?()
             return
@@ -1649,15 +1500,16 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
 
     @MainActor
-    func handleRoomExit(roomID: String) {
+    func isCurrentRoom(roomID: String) -> Bool {
+        room?.ID == roomID
+    }
+
+    @MainActor
+    func dismissSettingPanelAndCloseRoom() {
         guard !isHandlingRoomExit else { return }
-        guard let currentRoomID = room?.ID, currentRoomID == roomID else {
-            dismissSettingVC()
-            return
-        }
         isHandlingRoomExit = true
 
-        dismissSettingVC { [weak self] in
+        dismissSettingPanel { [weak self] in
             self?.backButtonTapped()
         }
     }
@@ -1705,10 +1557,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         searchUI.upPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in
-                guard let self = self,
-                      let viewModel = self.chatRoomViewModel ?? self.ensureChatRoomViewModel(),
-                      let index = viewModel.moveToPreviousSearchResult() else { return }
-                self.searchUI.updateSearchResult(viewModel.currentSearchResultCount, index)
+                guard let self = self else { return }
+                guard let index = self.chatRoomViewModel.moveToPreviousSearchResult() else { return }
+                self.searchUI.updateSearchResult(self.chatRoomViewModel.currentSearchResultCount, index)
                 self.moveToMessageAndShake(index)
             }
             .store(in: &cancellables)
@@ -1716,10 +1567,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         searchUI.downPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in
-                guard let self = self,
-                      let viewModel = self.chatRoomViewModel ?? self.ensureChatRoomViewModel(),
-                      let index = viewModel.moveToNextSearchResult() else { return }
-                self.searchUI.updateSearchResult(viewModel.currentSearchResultCount, index)
+                guard let self = self else { return }
+                guard let index = self.chatRoomViewModel.moveToNextSearchResult() else { return }
+                self.searchUI.updateSearchResult(self.chatRoomViewModel.currentSearchResultCount, index)
                 self.moveToMessageAndShake(index)
             }
             .store(in: &cancellables)
@@ -1731,13 +1581,12 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         searchMessagesTask = Task { [weak self] in
             guard let self = self else { return }
             do {
-                guard let viewModel = self.chatRoomViewModel ?? self.ensureChatRoomViewModel() else { return }
                 try Task.checkCancellation()
-                let result = try await viewModel.fetchSearchMessages(containing: keyword)
+                let result = try await self.chatRoomViewModel.fetchSearchMessages(containing: keyword)
                 try Task.checkCancellation()
                 await MainActor.run {
                     guard self.searchGeneration == generation else { return }
-                    viewModel.applySearchResult(result)
+                    self.chatRoomViewModel.applySearchResult(result)
                     self.applyHighlight()
                 }
             } catch is CancellationError {
@@ -1750,8 +1599,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     @MainActor
     private func moveToMessageAndShake(_ idx: Int) {
-        guard let viewModel = chatRoomViewModel ?? ensureChatRoomViewModel(),
-              let message = viewModel.searchMessage(at: idx) else { return }
+        guard let message = chatRoomViewModel.searchMessage(at: idx) else { return }
 
         if let indexPath = indexPath(ofMessageID: message.ID) {
             if let cell = chatMessageCollectionView.cellForItem(at: indexPath) as? ChatMessageCell {
@@ -1767,7 +1615,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         searchJumpTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let contextMessages = try await viewModel.loadMessagesAroundSearchAnchor(
+                let contextMessages = try await self.chatRoomViewModel.loadMessagesAroundSearchAnchor(
                     message,
                     beforeLimit: 60,
                     afterLimit: 60
@@ -1776,7 +1624,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
                 await MainActor.run {
                     self.replaceVisibleMessageWindowForSearchJump(with: contextMessages)
-                    viewModel.applyVisibleWindowAfterSearchJump(contextMessages)
+                    self.chatRoomViewModel.applyVisibleWindowAfterSearchJump(contextMessages)
 
                     guard let targetIndexPath = self.indexPath(ofMessageID: message.ID) else { return }
                     if let cell = self.chatMessageCollectionView.cellForItem(at: targetIndexPath) as? ChatMessageCell {
@@ -1809,8 +1657,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     @MainActor
     private func applyHighlight() {
-        guard let viewModel = chatRoomViewModel else { return }
-        let highlightedIDs = viewModel.highlightedMessageIDs
+        let highlightedIDs = chatRoomViewModel.highlightedMessageIDs
         var snapshot = dataSource.snapshot()
         
         let itemsToRealod = snapshot.itemIdentifiers.compactMap { item -> Item? in
@@ -1825,8 +1672,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             dataSource.apply(snapshot, animatingDifferences: false)
         }
         
-        searchUI.updateSearchResult(viewModel.currentSearchResultCount, viewModel.currentFilteredMessageIndex ?? 0)
-        if let idx = viewModel.currentFilteredMessageIndex { moveToMessageAndShake(idx) }
+        searchUI.updateSearchResult(chatRoomViewModel.currentSearchResultCount, chatRoomViewModel.currentFilteredMessageIndex ?? 0)
+        if let idx = chatRoomViewModel.currentFilteredMessageIndex { moveToMessageAndShake(idx) }
     }
     
     @MainActor
@@ -1836,9 +1683,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         searchJumpTask?.cancel()
         searchJumpTask = nil
 
-        guard let viewModel = chatRoomViewModel else { return }
         var snapshot = dataSource.snapshot()
-        let previousHighlightedIDs = viewModel.highlightedMessageIDs
+        let previousHighlightedIDs = chatRoomViewModel.highlightedMessageIDs
         
         let itemsToReload = snapshot.itemIdentifiers.compactMap { item -> Item? in
             if case let .message(message) = item, previousHighlightedIDs.contains(message.ID) {
@@ -1847,7 +1693,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             return nil
         }
 
-        _ = viewModel.clearSearch()
+        _ = chatRoomViewModel.clearSearch()
         scrollTargetIndex = nil
         
         if !itemsToReload.isEmpty {
@@ -1859,7 +1705,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             .compactMap { $0 as? ChatMessageCell }
             .forEach { $0.highlightKeyword(nil) }
         
-        searchUI.updateSearchResult(viewModel.currentSearchResultCount, viewModel.currentFilteredMessageIndex ?? 0)
+        searchUI.updateSearchResult(chatRoomViewModel.currentSearchResultCount, chatRoomViewModel.currentFilteredMessageIndex ?? 0)
     }
     
     @MainActor
@@ -1929,9 +1775,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         // 컬렉션 뷰 기준 중앙 사용 (화면 절반)
         let screenMiddleY = chatMessageCollectionView.bounds.midY
         let showAbove: Bool = cellCenterY > screenMiddleY
-        let currentUserID = LoginManager.shared.getUserEmail
-        guard let viewModel = chatRoomViewModel ?? ensureChatRoomViewModel() else { return }
-        let policy = viewModel.messageActionPolicy(for: latestMessage, currentUserID: currentUserID)
+        let policy = chatRoomViewModel.messageActionPolicy(for: latestMessage)
         chatCustomMenu.configure(menuConfiguration(for: policy))
         
         // 2.메뉴 위치를 셀 기준으로
@@ -1939,7 +1783,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         NSLayoutConstraint.activate([
             showAbove ? chatCustomMenu.bottomAnchor.constraint(equalTo: cell.referenceView.topAnchor, constant: -8) : chatCustomMenu.topAnchor.constraint(equalTo: cell.referenceView.bottomAnchor, constant: 8),
             
-            currentUserID == latestMessage.senderID ? chatCustomMenu.trailingAnchor.constraint(equalTo: cell.referenceView.trailingAnchor, constant: 0) : chatCustomMenu.leadingAnchor.constraint(equalTo: cell.referenceView.leadingAnchor, constant: 0)
+            chatRoomViewModel.isCurrentUser(latestMessage.senderID) ? chatCustomMenu.trailingAnchor.constraint(equalTo: cell.referenceView.trailingAnchor, constant: 0) : chatCustomMenu.leadingAnchor.constraint(equalTo: cell.referenceView.leadingAnchor, constant: 0)
         ])
         
         // 3. 버튼 액션 설정
@@ -1991,7 +1835,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         case .announce:
             print(#function, "공지:", message.msg ?? "")
             ConfirmView.presentAnnouncement(in: view, onConfirm: { [weak self] in
-                let authorID = LoginManager.shared.currentUserProfile?.nickname ?? ""
+                let authorID = self?.chatRoomViewModel.currentUserNickname ?? ""
                 self?.performMessageServerAction(
                     .announce(authorID: authorID),
                     message: message,
@@ -2033,9 +1877,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         failureMessage: String? = nil
     ) {
         Task { @MainActor in
-            guard let viewModel = self.chatRoomViewModel ?? self.ensureChatRoomViewModel() else { return }
             do {
-                try await viewModel.performMessageServerAction(action, for: message)
+                try await self.chatRoomViewModel.performMessageServerAction(action, for: message)
                 if let successMessage {
                     showSuccess(successMessage)
                 }
@@ -2053,7 +1896,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         let location = gesture.location(in: chatMessageCollectionView)
         if let indexPath = chatMessageCollectionView.indexPathForItem(at: location) {
             guard let room = self.room,
-                  room.participants.contains(LoginManager.shared.getUserEmail) else { return }
+                  chatRoomViewModel.isCurrentUserParticipant(in: room) else { return }
             showCustomMenu(at: indexPath)
         }
     }
@@ -2061,7 +1904,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     @objc private func handleAnnouncementBannerLongPress(_ gesture: UILongPressGestureRecognizer) {
         guard gesture.state == .began,
               let room = self.room,
-              room.creatorID == LoginManager.shared.getUserEmail else { return }
+              chatRoomViewModel.isCurrentUserAdmin(of: room) else { return }
         
         // 확인 팝업 → 삭제 실행
         ConfirmView.present(
@@ -2072,8 +1915,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 guard let self = self else { return }
                 Task { @MainActor in
                     do {
-                        guard let viewModel = self.chatRoomViewModel ?? self.ensureChatRoomViewModel() else { return }
-                        try await viewModel.clearAnnouncement()
+                        try await self.chatRoomViewModel.clearAnnouncement()
                         self.updateAnnouncementBanner(with: nil)   // 배너 숨김 + 인셋 복원
                         self.showSuccess("공지를 삭제했습니다.")
                     } catch {
@@ -2092,6 +1934,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         chatCustomMenu.removeFromSuperview()
     }
     
+    @MainActor
+    func showRoutingFailure(_ text: String) {
+        showSuccess(text)
+    }
+
     @MainActor
     private func showSuccess(_ text: String) {
         notiView.configure(text)
@@ -2192,10 +2039,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
     
     private func isCurrentUser(_ email: String?) -> Bool {
-        return (email ?? "") == LoginManager.shared.getUserEmail
+        chatRoomViewModel.isCurrentUser(email)
     }
     private func isCurrentUserAdmin(of room: ChatRoom) -> Bool {
-        return room.creatorID == LoginManager.shared.getUserEmail
+        chatRoomViewModel.isCurrentUserAdmin(of: room)
     }
 
     @MainActor
@@ -2441,7 +2288,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                     cell.applyImageUploadOverlay(.none)
                 }
                 
-                // ✅ 구독 정리용 Bag 준비
                 let key = ObjectIdentifier(cell)
                 cellSubscriptions[key] = Set<AnyCancellable>()
                 
@@ -2510,8 +2356,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                     }
                     .store(in: &cellSubscriptions[key]!)
                 
-                let keyword = (self.chatRoomViewModel?.isHighlightedMessage(id: latestMessage.ID) == true)
-                    ? self.chatRoomViewModel?.currentSearchKeyword
+                let keyword = (self.chatRoomViewModel.isHighlightedMessage(id: latestMessage.ID) == true)
+                    ? self.chatRoomViewModel.currentSearchKeyword
                     : nil
                 cell.highlightKeyword(keyword)
                 
@@ -2776,15 +2622,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     @MainActor
     private func handleLookbookShareCardTap(_ sharedContent: LookbookSharedContent) {
-        Task { @MainActor [weak self] in
-            guard let self, let appContentRouter = self.appContentRouter else { return }
-            do {
-                try await appContentRouter.openLookbookSharedContent(sharedContent)
-            } catch {
-                self.showSuccess("룩북으로 이동할 수 없습니다.")
-                print("❌ 룩북 공유 카드 이동 실패:", error)
-            }
-        }
+        guard let router else { return }
+        router.openLookbookSharedContent(from: self, sharedContent: sharedContent)
     }
     
     private func presentImageViewer(tappedIndex: Int, indexPath: IndexPath) {
@@ -3151,12 +2990,10 @@ extension ChatViewController: UICollectionViewDelegate {
     func collectionView(_ collectionView: UICollectionView,
                         willDisplay cell: UICollectionViewCell,
                         forItemAt indexPath: IndexPath) {
-        guard let viewModel = chatRoomViewModel else { return }
-        
         let itemCount = collectionView.numberOfItems(inSection: 0)
         
         // ✅ Older 메시지 로드
-        if indexPath.item < 5, viewModel.hasMoreOlder, !viewModel.isLoadingOlder {
+        if indexPath.item < 5, chatRoomViewModel.hasMoreOlder, !chatRoomViewModel.isLoadingOlder {
             if let lastIndex = Self.lastTriggeredOlderIndex,
                abs(lastIndex - indexPath.item) < minTriggerDistance {
                 return // 너무 가까운 위치에서 또 호출 → 무시
@@ -3170,7 +3007,7 @@ extension ChatViewController: UICollectionViewDelegate {
         }
         
         // ✅ Newer 메시지 로드
-        if indexPath.item > itemCount - 5, viewModel.hasMoreNewer, !viewModel.isLoadingNewer {
+        if indexPath.item > itemCount - 5, chatRoomViewModel.hasMoreNewer, !chatRoomViewModel.isLoadingNewer {
             if let lastIndex = Self.lastTriggeredNewerIndex,
                abs(lastIndex - indexPath.item) < minTriggerDistance {
                 return
@@ -3246,12 +3083,9 @@ extension ChatViewController {
     @MainActor
     private func maybeUpdateLastReadSeq(trigger: String, skipNearBottomCheck: Bool = false) {
         guard isUserInCurrentRoom else { return }
-        guard let viewModel = chatRoomViewModel ?? ensureChatRoomViewModel() else { return }
-
         Task {
             do {
-                try await viewModel.persistIncrementalLastReadSeq(
-                    userUID: LoginManager.shared.getUserDocumentID,
+                try await self.chatRoomViewModel.persistIncrementalLastReadSeqForCurrentUser(
                     isNearBottom: isNearBottom(),
                     skipNearBottomCheck: skipNearBottomCheck
                 )
@@ -3263,11 +3097,9 @@ extension ChatViewController {
 
     private func flushLastReadSeq(trigger: String) {
         guard isUserInCurrentRoom else { return }
-        guard let viewModel = chatRoomViewModel ?? ensureChatRoomViewModel() else { return }
-
         Task {
             do {
-                try await viewModel.persistFinalLastReadSeq(userUID: LoginManager.shared.getUserDocumentID)
+                try await self.chatRoomViewModel.persistFinalLastReadSeqForCurrentUser()
             } catch {
                 print("⚠️ \(trigger) lastReadSeq flush 실패: \(error)")
             }

@@ -7,7 +7,6 @@
 
 import UIKit
 import Kingfisher
-import FirebaseFirestore
 
 class RoomListsCollectionViewController: UICollectionViewController, UIGestureRecognizerDelegate, ChatModalAnimatable {
     enum Section: Hashable {
@@ -40,11 +39,7 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
     }
 
     required init?(coder: NSCoder) {
-        let db = Firestore.firestore()
-        let roomRepository = FirebaseChatRoomRepository(db: db)
-        let useCase = RoomListUseCase(roomRepository: roomRepository)
-        self.viewModel = RoomListsViewModel(useCase: useCase)
-        super.init(coder: coder)
+        fatalError("Storyboard initialization is no longer supported for RoomListsCollectionViewController.")
     }
 
     override func viewDidLoad() {
