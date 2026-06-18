@@ -128,7 +128,7 @@
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "OUTPICK_SOCKET_URL"
-            value = "http://192.168.123.113:3000"
+            value = "http://192.168.123.139:3000"
             isEnabled = "YES">
          </EnvironmentVariable>
       </EnvironmentVariables>
