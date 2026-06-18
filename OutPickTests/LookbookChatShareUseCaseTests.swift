@@ -534,7 +534,13 @@ private final class JoinedRoomsUseCaseFake: JoinedRoomsUseCaseProtocol {
         )
     }
 
-    func leave(room: ChatRoom) {}
+    func canLeaveFromList(room: ChatRoom) -> Bool {
+        true
+    }
+
+    func leave(room: ChatRoom) async throws -> ChatRoomExitResult {
+        ChatRoomExitResult(roomID: room.ID ?? "", mode: .left)
+    }
 }
 
 private final class LookbookChatShareSendingRepositorySpy: LookbookChatShareSendingRepositoryProtocol {

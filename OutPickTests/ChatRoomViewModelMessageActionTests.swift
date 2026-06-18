@@ -14,14 +14,12 @@ import Testing
 struct ChatRoomViewModelMessageActionTests {
     @Test func messageActionPolicyUsesCurrentRoomCreator() {
         let viewModel = makeViewModel(
-            room: makeRoom(id: "room-1", creatorID: "admin@example.com")
+            room: makeRoom(id: "room-1", creatorID: "admin@example.com"),
+            currentUserProvider: CurrentUserProviderStub(email: "admin@example.com")
         )
         let message = makeMessage(senderID: "sender@example.com", msg: "공지 후보")
 
-        let policy = viewModel.messageActionPolicy(
-            for: message,
-            currentUserID: "admin@example.com"
-        )
+        let policy = viewModel.messageActionPolicy(for: message)
 
         #expect(policy.canAnnounce)
         #expect(policy.canDelete)
@@ -74,10 +72,38 @@ struct ChatRoomViewModelMessageActionTests {
         #expect(readStateStore.snapshot(for: "room-1")?.lastReadSeq == 12)
     }
 
+    @Test func currentUserProviderDrivesParticipantAndAdminChecks() {
+        let viewModel = makeViewModel(
+            room: makeRoom(id: "room-1", creatorID: "me@example.com"),
+            currentUserProvider: CurrentUserProviderStub(email: "me@example.com")
+        )
+
+        #expect(viewModel.isCurrentUserParticipant)
+        #expect(viewModel.isCurrentUser("me@example.com"))
+        #expect(viewModel.isCurrentUserAdmin(of: viewModel.room))
+    }
+
+    @Test func currentUserProviderSuppliesLastReadSeqUserID() async throws {
+        let lifecycleUseCase = ChatRoomLifecycleUseCaseSpy()
+        let viewModel = makeViewModel(
+            lifecycleUseCase: lifecycleUseCase,
+            currentUserProvider: CurrentUserProviderStub(documentID: "document-123")
+        )
+        let message = makeMessage(senderID: "other@example.com", msg: "새 메시지", seq: 9)
+
+        viewModel.applyVisibleWindowAfterSearchJump([message])
+        try await viewModel.persistFinalLastReadSeqForCurrentUser()
+
+        let call = try #require(lifecycleUseCase.lastReadSeqCalls.first)
+        #expect(call.userUID == "document-123")
+        #expect(call.lastReadSeq == 9)
+    }
+
     private func makeViewModel(
         room: ChatRoom? = nil,
         messageUseCase: ChatRoomMessageUseCaseProtocol = ChatRoomMessageUseCaseSpy(),
         lifecycleUseCase: ChatRoomLifecycleUseCaseProtocol = ChatRoomLifecycleUseCaseSpy(),
+        currentUserProvider: CurrentUserProviding = CurrentUserProviderStub(),
         roomReadStateStore: ChatRoomReadStateStore? = nil
     ) -> ChatRoomViewModel {
         ChatRoomViewModel(
@@ -87,6 +113,8 @@ struct ChatRoomViewModelMessageActionTests {
             searchUseCase: ChatRoomSearchUseCaseStub(),
             lifecycleUseCase: lifecycleUseCase,
             realtimeUseCase: ChatRoomRealtimeUseCaseStub(),
+            runtimeUseCase: ChatRoomRuntimeUseCaseStub(),
+            currentUserProvider: currentUserProvider,
             roomReadStateStore: roomReadStateStore
         )
     }
@@ -259,6 +287,19 @@ private struct ChatRoomSearchUseCaseStub: ChatRoomSearchUseCaseProtocol {
     }
 }
 
+@MainActor
+private struct ChatRoomRuntimeUseCaseStub: ChatRoomRuntimeUseCaseProtocol {
+    func observeRoomClosed(roomID: String, onClosed: @escaping (String) -> Void) -> ChatRoomRuntimeSubscription {
+        ChatRoomRuntimeSubscription()
+    }
+
+    func enterVisibleRoom(roomID: String) async {}
+
+    func leaveVisibleRoom() async {}
+
+    func cleanTransientLocalRoomData(roomID: String) async {}
+}
+
 private struct ChatRoomRealtimeUseCaseStub: ChatRoomRealtimeUseCaseProtocol {
     func openMessageStream(roomID: String) async throws -> ChatRoomRealtimeSession {
         ChatRoomRealtimeSession(
@@ -273,4 +314,13 @@ private struct ChatRoomRealtimeUseCaseStub: ChatRoomRealtimeUseCaseProtocol {
 
 private enum MessageActionTestError: Error {
     case unimplemented
+}
+
+private struct CurrentUserProviderStub: CurrentUserProviding {
+    var email: String = "me@example.com"
+    var documentID: String = "user-1"
+    var authIdentityKey: String = "auth-user-1"
+    var nickname: String? = "me"
+    var avatarPath: String? = nil
+    var profile: UserProfile? = nil
 }
