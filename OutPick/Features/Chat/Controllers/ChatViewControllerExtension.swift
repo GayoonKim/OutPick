@@ -8,8 +8,6 @@
 import Foundation
 import UIKit
 import PhotosUI
-import AVKit
-import AVFoundation
 import UniformTypeIdentifiers
 
 // 내비게이션 아이템 타이틀 설정
@@ -131,7 +129,7 @@ extension ChatViewController: PHPickerViewControllerDelegate {
                             continue
                         }
 
-                        let messageID = "pending-video-\(UUID().uuidString)"
+                        let messageID = UUID().uuidString
                         let staged = await MainActor.run {
                             self.stagePendingVideoMessage(
                                 roomID: roomID,
@@ -148,6 +146,12 @@ extension ChatViewController: PHPickerViewControllerDelegate {
                                 )
                             }
                             continue
+                        }
+
+                        if let pendingMessage = await MainActor.run(body: {
+                            self.stagedMessageForOutbox(messageID: messageID)
+                        }) {
+                            await self.stageOutgoingVideoOutbox(message: pendingMessage, prepared: prepared)
                         }
 
                         await MainActor.run {
@@ -210,13 +214,19 @@ extension ChatViewController: PHPickerViewControllerDelegate {
                             continue
                         }
                         let roomID = room.ID ?? ""
-                        let messageID = "pending-\(UUID().uuidString)"
+                        let messageID = UUID().uuidString
                         let staged = await MainActor.run {
                             self.stagePendingImageMessage(room: room, roomID: roomID, messageID: messageID, pairs: pairs)
                         }
                         if !staged {
                             self.cleanupPendingImageOriginalFiles(pairs)
                             continue
+                        }
+
+                        if let pendingMessage = await MainActor.run(body: {
+                            self.stagedMessageForOutbox(messageID: messageID)
+                        }) {
+                            await self.stageOutgoingImageOutbox(message: pendingMessage, pairs: pairs)
                         }
 
                         await MainActor.run {
@@ -261,6 +271,19 @@ extension ChatViewController {
         pairs: [DefaultMediaProcessingService.ImagePair]
     ) async {
         do {
+            guard mediaUploadUseCase.isSocketConnected else {
+                await mediaUploadUseCase.cacheFailedImageThumbnails(pairs)
+                if let message = await MainActor.run(body: {
+                    self.stagedMessageForOutbox(messageID: messageID)
+                }) {
+                    await markOutgoingMessageFailed(message, error: ChatMediaUploadUseCaseError.socketDisconnectedBeforeUpload)
+                }
+                await MainActor.run {
+                    self.markPendingImageUploadFailed(messageID: messageID)
+                }
+                return
+            }
+
             let attachments = try await mediaUploadUseCase.uploadPendingImages(
                 pairs: pairs,
                 roomID: roomID,
@@ -273,13 +296,22 @@ extension ChatViewController {
                 }
             )
 
-            // 업로드 완료: 셀 오버레이를 걷고 같은 messageID로 소켓 전송해 서버 메시지와 매칭
+            await MainActor.run {
+                self.setUploadedImageAttachments(attachments, for: messageID)
+            }
+            await markOutgoingImageUploadCompleted(messageID: messageID, attachments: attachments)
+            try await mediaUploadUseCase.sendUploadedImages(room: room, attachments: attachments, clientMessageID: messageID)
+
             await MainActor.run {
                 self.finishPendingImageUpload(messageID: messageID)
             }
-            mediaUploadUseCase.sendUploadedImages(room: room, attachments: attachments, clientMessageID: messageID)
         } catch {
             await mediaUploadUseCase.cacheFailedImageThumbnails(pairs)
+            if let message = await MainActor.run(body: {
+                self.stagedMessageForOutbox(messageID: messageID)
+            }) {
+                await markOutgoingMessageFailed(message, error: error)
+            }
             await MainActor.run {
                 self.markPendingImageUploadFailed(messageID: messageID)
             }
@@ -293,6 +325,18 @@ extension ChatViewController {
         prepared: PreparedVideo
     ) async {
         do {
+            guard mediaUploadUseCase.isSocketConnected else {
+                if let message = await MainActor.run(body: {
+                    self.stagedMessageForOutbox(messageID: messageID)
+                }) {
+                    await markOutgoingMessageFailed(message, error: ChatMediaUploadUseCaseError.socketDisconnectedBeforeUpload)
+                }
+                await MainActor.run {
+                    self.markPendingVideoUploadFailed(messageID: messageID)
+                }
+                return
+            }
+
             let payload = try await mediaUploadUseCase.uploadVideo(
                 roomID: roomID,
                 messageID: messageID,
@@ -306,9 +350,14 @@ extension ChatViewController {
             )
 
             await MainActor.run {
+                self.setUploadedVideoPayload(payload, for: messageID)
+            }
+            await markOutgoingVideoUploadCompleted(messageID: messageID, payload: payload)
+            try await mediaUploadUseCase.sendUploadedVideo(roomID: roomID, payload: payload)
+
+            await MainActor.run {
                 self.finishPendingVideoUpload(messageID: messageID)
             }
-            mediaUploadUseCase.sendUploadedVideo(roomID: roomID, payload: payload)
         } catch {
             // 업로드 실패 안내(미리보기 표시 후 노출)
             await MainActor.run {
@@ -319,26 +368,65 @@ extension ChatViewController {
                 )
             }
             
+            if let message = await MainActor.run(body: {
+                self.stagedMessageForOutbox(messageID: messageID)
+            }) {
+                await markOutgoingMessageFailed(message, error: error)
+            }
             await MainActor.run {
                 self.markPendingVideoUploadFailed(messageID: messageID)
             }
         }
     }
 
-    fileprivate func previewCompressedVideo(_ url: URL) {
-        let player = AVPlayer(url: url)
-        let playerVC = AVPlayerViewController()
-        playerVC.player = player
-        playerVC.modalPresentationStyle = .formSheet
-        if let sheet = playerVC.sheetPresentationController {
-            sheet.detents = [.medium(), .large()]
-            sheet.prefersGrabberVisible = true
-        }
-        self.present(playerVC, animated: true) {
-            player.play()
+    func finalizeUploadedImageMessage(
+        room: ChatRoom,
+        messageID: String,
+        attachments: [Attachment]
+    ) async {
+        do {
+            try await mediaUploadUseCase.sendUploadedImages(
+                room: room,
+                attachments: attachments,
+                clientMessageID: messageID
+            )
+            await MainActor.run {
+                self.finishPendingImageUpload(messageID: messageID)
+            }
+        } catch {
+            await MainActor.run {
+                self.markPendingImageUploadFailed(messageID: messageID)
+            }
+            if let message = await MainActor.run(body: {
+                self.stagedMessageForOutbox(messageID: messageID)
+            }) {
+                await markOutgoingMessageFailed(message, error: error)
+            }
         }
     }
-    
+
+    func finalizeUploadedVideoMessage(
+        roomID: String,
+        messageID: String,
+        payload: VideoMetaPayload
+    ) async {
+        do {
+            try await mediaUploadUseCase.sendUploadedVideo(roomID: roomID, payload: payload)
+            await MainActor.run {
+                self.finishPendingVideoUpload(messageID: messageID)
+            }
+        } catch {
+            await MainActor.run {
+                self.markPendingVideoUploadFailed(messageID: messageID)
+            }
+            if let message = await MainActor.run(body: {
+                self.stagedMessageForOutbox(messageID: messageID)
+            }) {
+                await markOutgoingMessageFailed(message, error: error)
+            }
+        }
+    }
+
     private func formatDuration(_ seconds: Double) -> String {
         let total = Int(seconds.rounded())
         let h = total / 3600

@@ -8,7 +8,6 @@
 import Foundation
 import UIKit
 import AVFoundation
-import AVKit
 
 final class ChatMediaManager: ChatMediaManaging {
     static let shared = ChatMediaManager()
@@ -17,7 +16,7 @@ final class ChatMediaManager: ChatMediaManaging {
         imageStorageManager: FirebaseImageStorageRepository.shared
     )
 
-    private let storageURLCache: OPStorageURLCache
+    private let storageURLCache: StorageDownloadURLResolving
     private let imagePipeline: ImageCachePipeline
     private let imageThumbMaxBytes = 12 * 1024 * 1024
     
@@ -26,10 +25,10 @@ final class ChatMediaManager: ChatMediaManaging {
     
     init(
         imageStorageManager: FirebaseImageStorageRepositoryProtocol = FirebaseImageStorageRepository.shared,
-        storageURLCache: OPStorageURLCache? = nil,
+        storageURLCache: StorageDownloadURLResolving = StorageDownloadURLCache.shared,
         imagePipeline: ImageCachePipeline? = nil
     ) {
-        self.storageURLCache = storageURLCache ?? OPStorageURLCache()
+        self.storageURLCache = storageURLCache
         if let imagePipeline {
             self.imagePipeline = imagePipeline
         } else if imageStorageManager is FirebaseImageStorageRepository {
@@ -46,6 +45,10 @@ final class ChatMediaManager: ChatMediaManaging {
         var images: [UIImage] = []
         
         for thumbPath in thumbPaths {
+            if let localURL = thumbPath.localFileURL,
+               !FileManager.default.fileExists(atPath: localURL.path) {
+                continue
+            }
             do {
                 let img = try await loadImage(for: thumbPath, maxBytes: imageThumbMaxBytes)
                 images.append(img)
@@ -162,67 +165,6 @@ final class ChatMediaManager: ChatMediaManaging {
         return scaled.jpegData(compressionQuality: 0.8) ?? Data()
     }
     
-    func playVideoForStoragePath(_ storagePath: String, in viewController: UIViewController) async {
-        guard !storagePath.isEmpty else { return }
-        do {
-            if let local = await OPVideoDiskCache.shared.exists(forKey: storagePath) {
-                await MainActor.run {
-                    let player = AVPlayer(url: local)
-                    let playerVC = AVPlayerViewController()
-                    playerVC.player = player
-                    playerVC.modalPresentationStyle = .fullScreen
-                    viewController.present(playerVC, animated: true)
-                }
-                return
-            }
-            let remote = try await storageURLCache.url(for: storagePath)
-            await MainActor.run {
-                let player = AVPlayer(url: remote)
-                let playerVC = AVPlayerViewController()
-                playerVC.player = player
-                playerVC.modalPresentationStyle = .fullScreen
-                viewController.present(playerVC, animated: true)
-            }
-            Task.detached { _ = try? await OPVideoDiskCache.shared.cache(from: remote, key: storagePath) }
-        } catch {
-            await MainActor.run {
-                AlertManager.showAlertNoHandler(
-                    title: "재생 실패",
-                    message: "동영상을 불러오지 못했습니다.\n\(error.localizedDescription)",
-                    viewController: viewController
-                )
-            }
-        }
-    }
-    
-    func resolveLocalFileURLForSaving(localURL: URL?, storagePath: String?, onProgress: @escaping (Double) -> Void) async throws -> URL {
-        if let localURL, localURL.isFileURL { return localURL }
-        
-        if let storagePath,
-           let cached = await OPVideoDiskCache.shared.exists(forKey: storagePath) {
-            return cached
-        }
-        
-        if let storagePath {
-            let remote = try await storageURLCache.url(for: storagePath)
-            return try await downloadToTemporaryFile(from: remote, onProgress: onProgress)
-        }
-        
-        if let remote = localURL, (remote.scheme?.hasPrefix("http") == true) {
-            return try await downloadToTemporaryFile(from: remote, onProgress: onProgress)
-        }
-        
-        throw NSError(domain: "SaveVideo", code: -2,
-                      userInfo: [NSLocalizedDescriptionKey: "저장할 파일 경로를 확인할 수 없습니다."])
-    }
-    
-    private func downloadToTemporaryFile(from remote: URL, onProgress: @escaping (Double) -> Void) async throws -> URL {
-        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("save_\(UUID().uuidString).mp4")
-        let (data, _) = try await URLSession.shared.data(from: remote)
-        try data.write(to: tmp, options: .atomic)
-        return tmp
-    }
-
     private func isStoragePath(_ path: String) -> Bool {
         !path.isEmpty && !path.isLocalFilePath
     }

@@ -6,15 +6,12 @@
 //
 
 import Foundation
-import AVFoundation
 import UIKit
-import AVKit
 import Combine
 import PhotosUI
 import Firebase
 import FirebaseStorage
 import CryptoKit
-import Photos
 import FirebaseFirestore
 
 protocol ChatMessageCellDelegate: AnyObject {
@@ -76,6 +73,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     typealias PendingImageUploadState = ChatPendingMediaUploadState
     private let pendingMediaUploadStore = ChatPendingMediaUploadStore()
     let mediaUploadUseCase: ChatMediaUploadUseCaseProtocol
+    private let outgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol
     
     // MARK: - Managers (의존성 주입)
     private let messageManager: ChatMessageManaging
@@ -92,10 +90,12 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     init(
         provider: ChatManagerProviding,
         mediaUploadUseCase: ChatMediaUploadUseCaseProtocol,
+        outgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol,
         viewModel: ChatRoomViewModel
     ) {
         self.provider = provider
         self.mediaUploadUseCase = mediaUploadUseCase
+        self.outgoingOutboxUseCase = outgoingOutboxUseCase
         self.chatRoomViewModel = viewModel
         self.messageManager = provider.messageManager
         self.mediaManager = provider.mediaManager
@@ -121,7 +121,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private static var lastTriggeredOlderIndex: Int?
     private static var lastTriggeredNewerIndex: Int?
     
-    private var cellSubscriptions: [ObjectIdentifier: Set<AnyCancellable>] = [:]
     private var needsTransientBindingsRestore = false
     
     private var roomClosedSubscription: ChatRoomRuntimeSubscription?
@@ -737,6 +736,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         Task(priority: .userInitiated) {
             do {
                 try await self.chatRoomViewModel.persistIncomingMessage(message)
+                await self.outgoingOutboxUseCase.completeServerConfirmedMessage(message)
             } catch {
                 print("❌ 메시지 저장 실패: \(error)")
             }
@@ -876,7 +876,17 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         addMessages([outgoingMessage], updateType: .newer)
         chatMessageCollectionView.scrollToBottom()
         
-        chatRoomViewModel.sendPreparedMessage(outgoingMessage)
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await self.chatRoomViewModel.sendPreparedMessage(outgoingMessage)
+            } catch {
+                await self.outgoingOutboxUseCase.stageTextMessage(outgoingMessage)
+                await MainActor.run {
+                    self.markMessageSendFailed(messageID: outgoingMessage.ID)
+                }
+            }
+        }
         
         if self.replyMessage != nil {
             self.replyMessage = nil
@@ -908,178 +918,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
     }
 
-    // MARK: - Video playback helper (by Storage path with caching)
-    /// storagePath (e.g., "rooms/<room>/messages/<message>/video/video.mp4")를 받아
-    /// 1) 디스크 캐시에 있으면 즉시 로컬로 재생
-    /// 2) 없으면 원격 URL로 먼저 재생 후 백그라운드로 캐싱
-    @MainActor
-    func playVideoForStoragePath(_ storagePath: String) async {
-        guard !storagePath.isEmpty else { return }
-        do {
-            if let local = await OPVideoDiskCache.shared.exists(forKey: storagePath) {
-                self.playVideo(from: local, storagePath: storagePath)
-                return
-            }
-            let remote = try await mediaManager.resolveURL(for: storagePath)
-            self.playVideo(from: remote, storagePath: storagePath)
-            Task.detached { _ = try? await OPVideoDiskCache.shared.cache(from: remote, key: storagePath) }
-        } catch {
-            AlertManager.showAlertNoHandler(
-                title: "재생 실패",
-                message: "동영상을 불러오지 못했습니다.\n\(error.localizedDescription)",
-                viewController: self
-            )
-        }
-    }
-    
-    // 플레이어 오버레이에 저장 버튼 추가
-    @MainActor
-    private func addSaveButton(to playerVC: AVPlayerViewController, localURL: URL?, storagePath: String?) {
-        guard let overlay = playerVC.contentOverlayView else { return }
-
-        let button = UIButton(type: .system)
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.setImage(UIImage(systemName: "square.and.arrow.down"), for: .normal)
-        button.tintColor = .white
-        button.backgroundColor = UIColor(white: 0, alpha: 0.5)
-        button.layer.cornerRadius = 22
-        button.contentEdgeInsets = UIEdgeInsets(top: 10, left: 12, bottom: 10, right: 12)
-
-        button.addAction(UIAction { [weak self] _ in
-            guard let self else { return }
-            Task { await self.handleSaveVideoTapped(from: playerVC, localURL: localURL, storagePath: storagePath) }
-        }, for: .touchUpInside)
-
-        overlay.addSubview(button)
-        NSLayoutConstraint.activate([
-            button.trailingAnchor.constraint(equalTo: overlay.trailingAnchor, constant: -16),
-            button.bottomAnchor.constraint(equalTo: overlay.bottomAnchor, constant: -24),
-            button.heightAnchor.constraint(equalToConstant: 44),
-            button.widthAnchor.constraint(greaterThanOrEqualToConstant: 44)
-        ])
-    }
-    
-    // 저장 버튼 탭 → 사진 앱에 저장
-    @MainActor
-    private func handleSaveVideoTapped(from playerVC: AVPlayerViewController, localURL: URL?, storagePath: String?) async {
-        let hud = CircularProgressHUD.show(in: playerVC.view, title: nil)
-        hud.setProgress(0.15)
-
-        do {
-            let fileURL = try await resolveLocalFileURLForSaving(localURL: localURL, storagePath: storagePath) { frac in
-                Task { @MainActor in hud.setProgress(0.15 + 0.75 * frac) }
-            }
-
-            let granted = await requestPhotoAddPermission()
-            guard granted else {
-                hud.dismiss()
-                AlertManager.showAlertNoHandler(
-                    title: "저장 불가",
-                    message: "사진 앱 저장 권한이 필요합니다. 설정 > 개인정보보호에서 권한을 허용해 주세요.",
-                    viewController: self
-                )
-                return
-            }
-
-            try await saveVideoToPhotos(fileURL: fileURL)
-            hud.setProgress(1.0); hud.dismiss()
-            AlertManager.showAlertNoHandler(
-                title: "저장 완료",
-                message: "사진 앱에 동영상을 저장했습니다.",
-                viewController: self
-            )
-        } catch {
-            hud.dismiss()
-            AlertManager.showAlertNoHandler(
-                title: "저장 실패",
-                message: error.localizedDescription,
-                viewController: self
-            )
-        }
-    }
-    
-    private func requestPhotoAddPermission() async -> Bool {
-        if #available(iOS 14, *) {
-            let s = PHPhotoLibrary.authorizationStatus(for: .addOnly)
-            if s == .authorized || s == .limited { return true }
-            let ns = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
-            return ns == .authorized || ns == .limited
-        } else {
-            let s = PHPhotoLibrary.authorizationStatus()
-            if s == .authorized { return true }
-            let ns = await withCheckedContinuation { (cont: CheckedContinuation<PHAuthorizationStatus, Never>) in
-                PHPhotoLibrary.requestAuthorization { cont.resume(returning: $0) }
-            }
-            return ns == .authorized
-        }
-    }
-
-    private func saveVideoToPhotos(fileURL: URL) async throws {
-        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
-            PHPhotoLibrary.shared().performChanges({
-                PHAssetCreationRequest.creationRequestForAssetFromVideo(atFileURL: fileURL)
-            }) { ok, err in
-                if let err = err {
-                    cont.resume(throwing: err)
-                    return
-                }
-                if ok {
-                    cont.resume(returning: ())
-                } else {
-                    cont.resume(throwing: NSError(domain: "SaveVideo", code: -1,
-                                                  userInfo: [NSLocalizedDescriptionKey: "Unknown error while saving video"]))
-                }
-            }
-        }
-    }
-
-    /// 저장용 로컬 파일 확보:
-    /// - localURL이 file://이면 그대로 사용
-    /// - storagePath 캐시가 있으면 캐시 파일 사용
-    /// - 아니면 downloadURL로 내려받아 임시파일로 저장
-    private func resolveLocalFileURLForSaving(localURL: URL?, storagePath: String?, onProgress: @escaping (Double)->Void) async throws -> URL {
-        if let localURL, localURL.isFileURL { return localURL }
-
-        if let storagePath,
-           let cached = await OPVideoDiskCache.shared.exists(forKey: storagePath) {
-            return cached
-        }
-
-        if let storagePath {
-            let remote = try await mediaManager.resolveURL(for: storagePath)
-            return try await downloadToTemporaryFile(from: remote, onProgress: onProgress)
-        }
-
-        if let remote = localURL, (remote.scheme?.hasPrefix("http") == true) {
-            return try await downloadToTemporaryFile(from: remote, onProgress: onProgress)
-        }
-
-        throw NSError(domain: "SaveVideo", code: -2,
-                      userInfo: [NSLocalizedDescriptionKey: "저장할 파일 경로를 확인할 수 없습니다."])
-    }
-
-    private func downloadToTemporaryFile(from remote: URL, onProgress: @escaping (Double)->Void) async throws -> URL {
-        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("save_\(UUID().uuidString).mp4")
-        let (data, _) = try await URLSession.shared.data(from: remote)
-        try data.write(to: tmp, options: .atomic)
-        onProgress(1.0)
-        return tmp
-    }
-    
-    @MainActor
-    private func playVideo(from url: URL, storagePath: String? = nil) {
-        let asset = AVURLAsset(url: url)
-        let item  = AVPlayerItem(asset: asset)
-        let player = AVPlayer(playerItem: item)
-        let vc = AVPlayerViewController()
-        vc.player = player
-
-        present(vc, animated: true) { [weak self] in
-            player.play()
-            self?.addSaveButton(to: vc, localURL: url, storagePath: storagePath)
-        }
-    }
-    
     private func openCamera() {
         if UIImagePickerController.isSourceTypeAvailable(.camera) {
             let imagePicker = UIImagePickerController()
@@ -1821,13 +1659,23 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             handleCopy(message: message)
             dismissCustomMenu()
         case .delete:
-            ConfirmView.present(
-                in: view,
-                message: "삭제 시 모든 사용자의 채팅창에서 메시지가 삭제되며\n‘삭제된 메시지입니다.’로 표기됩니다.",
-                onConfirm: { [weak self] in
-                    self?.performMessageServerAction(.delete, message: message)
-                }
-            )
+            if message.isFailed {
+                ConfirmView.present(
+                    in: view,
+                    message: "전송 실패 메시지를 이 기기에서 삭제합니다.",
+                    onConfirm: { [weak self] in
+                        self?.performLocalFailedMessageDelete(message)
+                    }
+                )
+            } else {
+                ConfirmView.present(
+                    in: view,
+                    message: "삭제 시 모든 사용자의 채팅창에서 메시지가 삭제되며\n‘삭제된 메시지입니다.’로 표기됩니다.",
+                    onConfirm: { [weak self] in
+                        self?.performMessageServerAction(.delete, message: message)
+                    }
+                )
+            }
             dismissCustomMenu()
         case .report:
             handleReport(message: message)
@@ -1888,6 +1736,16 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 }
                 print("❌ 메시지 서버 액션 실패:", error)
             }
+        }
+    }
+
+    @MainActor
+    private func performLocalFailedMessageDelete(_ message: ChatMessage) {
+        guard message.isFailed else { return }
+        removeMessageFromWindow(messageID: message.ID)
+        Task { [weak self] in
+            guard let self else { return }
+            await self.outgoingOutboxUseCase.deleteLocalFailedMessage(message)
         }
     }
     
@@ -2093,6 +1951,36 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
 
     @MainActor
+    func setUploadedImageAttachments(_ attachments: [Attachment], for messageID: String) {
+        pendingMediaUploadStore.setUploadedImageAttachments(attachments, for: messageID)
+    }
+
+    @MainActor
+    func stagedMessageForOutbox(messageID: String) -> ChatMessage? {
+        messageWindowStore.message(for: messageID)
+    }
+
+    func stageOutgoingImageOutbox(message: ChatMessage, pairs: [DefaultMediaProcessingService.ImagePair]) async {
+        await outgoingOutboxUseCase.stageImageMessage(message, pairs: pairs)
+    }
+
+    func stageOutgoingVideoOutbox(message: ChatMessage, prepared: PreparedVideo) async {
+        await outgoingOutboxUseCase.stageVideoMessage(message, prepared: prepared)
+    }
+
+    func markOutgoingImageUploadCompleted(messageID: String, attachments: [Attachment]) async {
+        await outgoingOutboxUseCase.markImageUploadCompleted(messageID: messageID, attachments: attachments)
+    }
+
+    func markOutgoingVideoUploadCompleted(messageID: String, payload: VideoMetaPayload) async {
+        await outgoingOutboxUseCase.markVideoUploadCompleted(messageID: messageID, payload: payload)
+    }
+
+    func markOutgoingMessageFailed(_ message: ChatMessage, error: Error?) async {
+        await outgoingOutboxUseCase.markFailed(message: message, error: error)
+    }
+
+    @MainActor
     func stagePendingVideoMessage(
         roomID: String,
         messageID: String,
@@ -2107,7 +1995,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
         guard pendingMediaUploadStore.stageVideoUpload(
             roomID: roomID,
-            messageID: messageID
+            messageID: messageID,
+            prepared: prepared
         ) else {
             return false
         }
@@ -2121,10 +2010,18 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     @MainActor
     func setPendingVideoUploadState(_ state: PendingImageUploadState, for messageID: String) {
         pendingMediaUploadStore.setVideoUploadState(state, for: messageID)
+        _ = messageWindowStore.updateMessage(id: messageID) { message in
+            message.isFailed = (state == .failed)
+        }
         let updatedVisibleCell = updateVisibleOverlayIfPossible(messageID: messageID)
         if !updatedVisibleCell {
             reconfigureMessageItem(messageID: messageID)
         }
+    }
+
+    @MainActor
+    func setUploadedVideoPayload(_ payload: VideoMetaPayload, for messageID: String) {
+        pendingMediaUploadStore.setUploadedVideoPayload(payload, for: messageID)
     }
 
     @MainActor
@@ -2156,8 +2053,44 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
 
     @MainActor
+    func scheduleUploadedImageFinalize(room: ChatRoom, messageID: String, attachments: [Attachment]) {
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await self.finalizeUploadedImageMessage(room: room, messageID: messageID, attachments: attachments)
+            await MainActor.run {
+                self.pendingMediaUploadStore.finishImageUploadTask(for: messageID)
+            }
+        }
+        if !pendingMediaUploadStore.startImageUploadTask(task, for: messageID) {
+            task.cancel()
+        }
+    }
+
+    @MainActor
+    func scheduleUploadedVideoFinalize(roomID: String, messageID: String, payload: VideoMetaPayload) {
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await self.finalizeUploadedVideoMessage(roomID: roomID, messageID: messageID, payload: payload)
+            await MainActor.run {
+                self.pendingMediaUploadStore.finishVideoUploadTask(for: messageID)
+            }
+        }
+        if !pendingMediaUploadStore.startVideoUploadTask(task, for: messageID) {
+            task.cancel()
+        }
+    }
+
+    @MainActor
     func markPendingImageUploadFailed(messageID: String) {
         setPendingImageUploadState(.failed, for: messageID)
+    }
+
+    @MainActor
+    func markMessageSendFailed(messageID: String) {
+        _ = messageWindowStore.updateMessage(id: messageID) { message in
+            message.isFailed = true
+        }
+        reconfigureMessageItem(messageID: messageID)
     }
 
     @MainActor
@@ -2178,12 +2111,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     @MainActor
     func markPendingVideoUploadFailed(messageID: String) {
-        pendingMediaUploadStore.completeVideoUpload(for: messageID)
-        _ = messageWindowStore.updateMessage(id: messageID) { message in
-            message.isFailed = true
-        }
-        _ = updateVisibleOverlayIfPossible(messageID: messageID)
-        reconfigureMessageItem(messageID: messageID)
+        setPendingVideoUploadState(.failed, for: messageID)
     }
 
     func cleanupPendingImageOriginalFiles(_ pairs: [DefaultMediaProcessingService.ImagePair]) {
@@ -2191,15 +2119,114 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
 
     @MainActor
-    private func retryPendingImageUpload(for messageID: String) {
-        guard let payload = pendingMediaUploadStore.retryPayload(for: messageID) else { return }
-        setPendingImageUploadState(.uploading(0), for: messageID)
-        schedulePendingImageUpload(
-            room: payload.room,
-            roomID: payload.roomID,
-            messageID: payload.messageID,
-            pairs: payload.pairs
+    private func confirmRetryUpload(for messageID: String) {
+        guard let message = messageWindowStore.message(for: messageID),
+              message.isFailed else { return }
+        ConfirmView.present(
+            in: view,
+            message: "전송 실패 메시지를 다시 보낼까요?",
+            negativeTitle: "취소",
+            positiveTitle: "재시도",
+            style: .prominent,
+            identifier: "RetryMessageConfirmView",
+            onConfirm: { [weak self] in
+                Task { @MainActor in
+                    self?.retryPendingMediaUpload(for: messageID)
+                }
+            }
         )
+    }
+
+    @MainActor
+    private func retryPendingMediaUpload(for messageID: String) {
+        guard let payload = pendingMediaUploadStore.mediaRetryPayload(for: messageID) else {
+            retryOutgoingOutboxMessage(for: messageID)
+            return
+        }
+        scheduleRetryPayload(payload)
+    }
+
+    @MainActor
+    private func scheduleRetryPayload(_ payload: ChatPendingMediaRetryPayload) {
+        switch payload {
+        case .uploadImages(let payload):
+            setPendingImageUploadState(.uploading(0), for: payload.messageID)
+            schedulePendingImageUpload(
+                room: payload.room,
+                roomID: payload.roomID,
+                messageID: payload.messageID,
+                pairs: payload.pairs
+            )
+        case .finalizeImages(let room, _, let messageID, let attachments):
+            setPendingImageUploadState(.uploading(1), for: messageID)
+            scheduleUploadedImageFinalize(room: room, messageID: messageID, attachments: attachments)
+        case .uploadVideo(let roomID, let messageID, let prepared):
+            setPendingVideoUploadState(.uploading(0), for: messageID)
+            schedulePendingVideoUpload(roomID: roomID, messageID: messageID, prepared: prepared)
+        case .finalizeVideo(let roomID, let messageID, let payload):
+            setPendingVideoUploadState(.uploading(1), for: messageID)
+            scheduleUploadedVideoFinalize(roomID: roomID, messageID: messageID, payload: payload)
+        }
+    }
+
+    @MainActor
+    private func retryOutgoingOutboxMessage(for messageID: String) {
+        guard let room, let message = messageWindowStore.message(for: messageID) else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            guard let payload = await self.outgoingOutboxUseCase.retryPayload(for: message, room: room) else { return }
+            await MainActor.run {
+                self.scheduleOutgoingOutboxRetryPayload(payload)
+            }
+        }
+    }
+
+    @MainActor
+    private func scheduleOutgoingOutboxRetryPayload(_ payload: ChatOutgoingOutboxRetryPayload) {
+        switch payload {
+        case .text(let message):
+            Task { [weak self] in
+                guard let self else { return }
+                do {
+                    try await self.chatRoomViewModel.sendPreparedMessage(message)
+                } catch {
+                    await self.outgoingOutboxUseCase.markFailed(message: message, error: error)
+                    await MainActor.run {
+                        self.markMessageSendFailed(messageID: message.ID)
+                    }
+                }
+            }
+
+        case .uploadImages(let room, let messageID, let pairs):
+            _ = pendingMediaUploadStore.stageImageUpload(
+                room: room,
+                roomID: room.ID ?? "",
+                messageID: messageID,
+                pairs: pairs
+            )
+            setPendingImageUploadState(.uploading(0), for: messageID)
+            schedulePendingImageUpload(room: room, roomID: room.ID ?? "", messageID: messageID, pairs: pairs)
+
+        case .finalizeImages(let room, let messageID, let attachments):
+            _ = pendingMediaUploadStore.stageUploadedImageFinalize(
+                room: room,
+                roomID: room.ID ?? "",
+                messageID: messageID,
+                attachments: attachments
+            )
+            setPendingImageUploadState(.uploading(1), for: messageID)
+            scheduleUploadedImageFinalize(room: room, messageID: messageID, attachments: attachments)
+
+        case .uploadVideo(let roomID, let messageID, let prepared):
+            _ = pendingMediaUploadStore.stageVideoUpload(roomID: roomID, messageID: messageID, prepared: prepared)
+            setPendingVideoUploadState(.uploading(0), for: messageID)
+            schedulePendingVideoUpload(roomID: roomID, messageID: messageID, prepared: prepared)
+
+        case .finalizeVideo(let roomID, let messageID, let payload):
+            _ = pendingMediaUploadStore.stageUploadedVideoFinalize(roomID: roomID, messageID: messageID, payload: payload)
+            setPendingVideoUploadState(.uploading(1), for: messageID)
+            scheduleUploadedVideoFinalize(roomID: roomID, messageID: messageID, payload: payload)
+        }
     }
 
     private func pendingOverlayState(for messageID: String) -> ChatMessageCell.ImageUploadOverlayState? {
@@ -2249,6 +2276,12 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         snapshot.reconfigureItems(targets)
         dataSource.apply(snapshot, animatingDifferences: false)
     }
+
+    @MainActor
+    private func removeMessageFromWindow(messageID: String) {
+        let mutation = messageWindowStore.removeMessage(id: messageID)
+        applyWindowSnapshot(mutation.items, animatingDifferences: true)
+    }
     
     //MARK: Diffable Data Source
     private func configureDataSource() {
@@ -2288,73 +2321,23 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                     cell.applyImageUploadOverlay(.none)
                 }
                 
-                let key = ObjectIdentifier(cell)
-                cellSubscriptions[key] = Set<AnyCancellable>()
-                
-                // 이미지/비디오 탭
-                cell.imageTapPublisher
-                    .sink { [weak self] tappedIndex in
-                        guard let self else { return }
-                        guard let i = tappedIndex else { return }
-
-                        // 최신 메시지 상태 확인
-                        let currentMessage = self.messageWindowStore.message(for: message.ID) ?? message
-                        let attachments = currentMessage.attachments.sorted { $0.index < $1.index }
-                        guard i >= 0, i < attachments.count else { return }
-                        let att = attachments[i]
-
-                        if att.type == .video {
-                            let path = att.pathOriginal
-                            guard !path.isEmpty else { return }
-
-                            // 로컬(실패 메시지) 경로면 바로 파일 재생, 아니면 Storage 경로로 캐시+재생
-                            if path.hasPrefix("/") || path.hasPrefix("file://") {
-                                let url = path.hasPrefix("file://") ? URL(string: path)! : URL(fileURLWithPath: path)
-                                self.playVideo(from: url)
-                            } else {
-                                Task { @MainActor in
-                                    await self.playVideoForStoragePath(path)
-                                }
-                            }
-                        } else {
-                            // 이미지 첨부 탭 → 기존 뷰어 유지
-                            self.presentImageViewer(tappedIndex: i, indexPath: indexPath)
-                        }
-                    }
-                    .store(in: &cellSubscriptions[key]!)
-
-                cell.profileTapPublisher
-                    .sink { [weak self] in
-                        guard let self else { return }
-
-                        let currentMessage = self.messageWindowStore.message(for: message.ID) ?? message
-                        let senderEmail = currentMessage.senderID
-                            .trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard !senderEmail.isEmpty else { return }
-
-                        self.router?.showUserProfile(
-                            from: self,
-                            email: senderEmail,
-                            nickname: currentMessage.senderNickname,
-                            avatarPath: currentMessage.senderAvatarPath
-                        )
-                    }
-                    .store(in: &cellSubscriptions[key]!)
-
-                cell.lookbookShareTapPublisher
-                    .sink { [weak self] sharedContent in
-                        self?.handleLookbookShareCardTap(sharedContent)
-                    }
-                    .store(in: &cellSubscriptions[key]!)
-
-                cell.retryTapPublisher
-                    .sink { [weak self] in
+                cell.commands = ChatMessageCellCommands(
+                    openMedia: { [weak self] messageID, attachmentIndex in
+                        self?.openMedia(messageID: messageID, attachmentIndex: attachmentIndex)
+                    },
+                    openSenderProfile: { [weak self] messageID in
+                        self?.openSenderProfile(messageID: messageID)
+                    },
+                    retryUpload: { [weak self] messageID in
                         guard let self else { return }
                         Task { @MainActor in
-                            self.retryPendingImageUpload(for: latestMessage.ID)
+                            self.confirmRetryUpload(for: messageID)
                         }
+                    },
+                    openLookbookShare: { [weak self] sharedContent in
+                        self?.handleLookbookShareCardTap(sharedContent)
                     }
-                    .store(in: &cellSubscriptions[key]!)
+                )
                 
                 let keyword = (self.chatRoomViewModel.isHighlightedMessage(id: latestMessage.ID) == true)
                     ? self.chatRoomViewModel.currentSearchKeyword
@@ -2587,14 +2570,23 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private var mediaPrefetchCleanupTask: Task<Void, Never>? = nil
 
     private func thumbnailImage(for attachment: Attachment) async -> UIImage? {
-        let thumbPath = attachment.pathThumb
-        guard !thumbPath.isEmpty else { return nil }
-
-        if let image = await mediaManager.cachedImage(for: thumbPath) {
-            return image
+        for path in [attachment.pathThumb, attachment.pathOriginal] where !path.isEmpty {
+            if let image = await mediaManager.cachedImage(for: path) {
+                return image
+            }
+            if let image = try? await mediaManager.loadImage(for: path, maxBytes: chatThumbnailMaxBytes) {
+                return image
+            }
         }
 
-        return try? await mediaManager.loadImage(for: thumbPath, maxBytes: chatThumbnailMaxBytes)
+        guard attachment.type == .video,
+              !attachment.pathOriginal.isEmpty,
+              let url = try? await mediaManager.resolveURL(for: attachment.pathOriginal),
+              let data = try? mediaManager.makeVideoThumbnailData(url: url, maxPixel: 360),
+              let image = UIImage(data: data) else {
+            return nil
+        }
+        return image
     }
 
     private func avatarImage(for path: String) async -> UIImage? {
@@ -2625,12 +2617,66 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         guard let router else { return }
         router.openLookbookSharedContent(from: self, sharedContent: sharedContent)
     }
-    
-    private func presentImageViewer(tappedIndex: Int, indexPath: IndexPath) {
-        guard let item = dataSource.itemIdentifier(for: indexPath),
-              case .message(let chatMessage) = item else { return }
 
-        let latestMessage = messageWindowStore.message(for: chatMessage.ID) ?? chatMessage
+    @MainActor
+    private func openMedia(messageID: String, attachmentIndex: Int) {
+        guard let currentMessage = messageForCommand(messageID: messageID) else { return }
+        let attachments = currentMessage.attachments.sorted { $0.index < $1.index }
+        guard attachmentIndex >= 0, attachmentIndex < attachments.count else { return }
+        let attachment = attachments[attachmentIndex]
+
+        if attachment.type == .video {
+            let path = attachment.pathOriginal
+            guard !path.isEmpty, let router else { return }
+            router.showVideoPlayer(from: self, path: path)
+        } else {
+            presentImageViewer(messageID: messageID, tappedIndex: attachmentIndex)
+        }
+    }
+
+    @MainActor
+    private func openSenderProfile(messageID: String) {
+        guard let currentMessage = messageForCommand(messageID: messageID) else { return }
+        let senderEmail = currentMessage.senderID
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !senderEmail.isEmpty else { return }
+
+        router?.showUserProfile(
+            from: self,
+            email: senderEmail,
+            nickname: currentMessage.senderNickname,
+            avatarPath: currentMessage.senderAvatarPath
+        )
+    }
+
+    @MainActor
+    private func messageForCommand(messageID: String) -> ChatMessage? {
+        if let message = messageWindowStore.message(for: messageID) {
+            return message
+        }
+
+        return dataSource.snapshot().itemIdentifiers.compactMap { item in
+            guard case .message(let message) = item, message.ID == messageID else {
+                return nil
+            }
+            return message
+        }.first
+    }
+
+    @MainActor
+    private func visibleChatMessageCell(messageID: String) -> ChatMessageCell? {
+        chatMessageCollectionView.visibleCells.compactMap { cell in
+            guard let cell = cell as? ChatMessageCell,
+                  cell.representedMessageID == messageID else {
+                return nil
+            }
+            return cell
+        }.first
+    }
+
+    @MainActor
+    private func presentImageViewer(messageID: String, tappedIndex: Int) {
+        guard let latestMessage = messageForCommand(messageID: messageID) else { return }
         let sortedAttachments = latestMessage.attachments.sorted { $0.index < $1.index }
         guard tappedIndex >= 0, tappedIndex < sortedAttachments.count else { return }
         let tappedAttachment = sortedAttachments[tappedIndex]
@@ -2644,7 +2690,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
         let start = imageEntries.firstIndex { $0.mediaIndex == tappedIndex } ?? 0
 
-        let previewImages = (chatMessageCollectionView.cellForItem(at: indexPath) as? ChatMessageCell)?.currentPreviewImages() ?? []
+        let previewImages = visibleChatMessageCell(messageID: messageID)?.currentPreviewImages() ?? []
         let pages: [SimpleImageViewerVC.ProgressivePage] = imageEntries.map { entry in
             let att = entry.attachment
             let thumbImage: UIImage?
@@ -2674,7 +2720,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
         stopAllPrefetchers()
 
-        let viewer = SimpleImageViewerVC(
+        router?.showImageViewer(
+            from: self,
             pages: pages,
             startIndex: start,
             cachedImageProvider: { [weak self] path in
@@ -2686,9 +2733,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 return try? await self.mediaManager.loadImage(for: path, maxBytes: maxBytes)
             }
         )
-        viewer.modalPresentationStyle = .fullScreen
-        viewer.modalTransitionStyle = .crossDissolve
-        present(viewer, animated: true)
 
         let remoteOriginalIndexed: [(index: Int, path: String)] = pages.enumerated().compactMap { idx, page in
             guard let path = page.originalPath, !path.isEmpty else { return nil }

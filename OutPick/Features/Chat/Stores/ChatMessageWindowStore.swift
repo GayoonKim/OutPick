@@ -40,9 +40,10 @@ struct ChatMessageWindowMutation {
     let insertedItems: [ChatMessageListItem]
     let reconfiguredItems: [ChatMessageListItem]
     let replacements: [ChatMessageReplacement]
+    let shouldReloadSnapshot: Bool
 
     var hasSnapshotChanges: Bool {
-        !insertedItems.isEmpty || !reconfiguredItems.isEmpty
+        shouldReloadSnapshot || !insertedItems.isEmpty || !reconfiguredItems.isEmpty
     }
 }
 
@@ -133,20 +134,27 @@ struct ChatMessageWindowStore {
         let incomingMessages = dedupedMessages.filter { !existingIDs.contains($0.ID) }
 
         var replacements: [ChatMessageReplacement] = []
+        var shouldReloadSnapshot = false
         var reconfiguredIDs = Set<String>()
 
         for message in existingMessages {
             if let previous = messagesByID[message.ID] {
                 replacements.append(ChatMessageReplacement(previous: previous, next: message))
+                shouldReloadSnapshot = shouldReloadSnapshot || shouldReposition(previous: previous, next: message)
             }
             replaceStoredMessage(message)
             reconfiguredIDs.insert(message.ID)
         }
 
+        if shouldReloadSnapshot {
+            rebuildItemsPreservingVisibleOrder()
+        }
+
         guard !incomingMessages.isEmpty else {
             return makeMutation(
                 reconfiguredItems: items(forMessageIDs: reconfiguredIDs),
-                replacements: replacements
+                replacements: replacements,
+                shouldReloadSnapshot: shouldReloadSnapshot
             )
         }
 
@@ -166,7 +174,8 @@ struct ChatMessageWindowStore {
         return makeMutation(
             insertedItems: newItems,
             reconfiguredItems: items(forMessageIDs: reconfiguredIDs),
-            replacements: replacements
+            replacements: replacements,
+            shouldReloadSnapshot: shouldReloadSnapshot
         )
     }
 
@@ -211,6 +220,21 @@ struct ChatMessageWindowStore {
         return updated
     }
 
+    mutating func removeMessage(id messageID: String) -> ChatMessageWindowMutation {
+        guard messagesByID.removeValue(forKey: messageID) != nil else {
+            return makeMutation()
+        }
+        items.removeAll { $0.messageID == messageID }
+        removeOrphanDateSeparators()
+        return ChatMessageWindowMutation(
+            items: items,
+            insertedItems: [],
+            reconfiguredItems: [],
+            replacements: [],
+            shouldReloadSnapshot: true
+        )
+    }
+
     mutating func removeReadMarker() -> Bool {
         let originalCount = items.count
         items.removeAll {
@@ -223,13 +247,15 @@ struct ChatMessageWindowStore {
     private func makeMutation(
         insertedItems: [ChatMessageListItem] = [],
         reconfiguredItems: [ChatMessageListItem] = [],
-        replacements: [ChatMessageReplacement] = []
+        replacements: [ChatMessageReplacement] = [],
+        shouldReloadSnapshot: Bool = false
     ) -> ChatMessageWindowMutation {
         ChatMessageWindowMutation(
             items: items,
             insertedItems: insertedItems,
             reconfiguredItems: reconfiguredItems,
-            replacements: replacements
+            replacements: replacements,
+            shouldReloadSnapshot: shouldReloadSnapshot
         )
     }
 
@@ -251,6 +277,37 @@ struct ChatMessageWindowStore {
         messagesByID[message.ID] = message
         guard let index = items.firstIndex(where: { $0.messageID == message.ID }) else { return }
         items[index] = .message(message)
+    }
+
+    private mutating func rebuildItemsPreservingVisibleOrder() {
+        let messages = orderedForDisplay(visibleMessages)
+        items = []
+        messagesByID = [:]
+        lastMessageDate = nil
+        let builtItems = buildItems(from: messages)
+        items = insertingReadMarkerIfNeeded(into: builtItems, readBoundarySeq: readBoundarySeq)
+        pruneMessageMapToVisibleItems()
+    }
+
+    private func orderedForDisplay(_ messages: [ChatMessage]) -> [ChatMessage] {
+        messages.sorted { lhs, rhs in
+            if lhs.isFailed != rhs.isFailed {
+                return !lhs.isFailed && rhs.isFailed
+            }
+            if lhs.seq > 0 || rhs.seq > 0, lhs.seq != rhs.seq {
+                if lhs.seq == 0 { return false }
+                if rhs.seq == 0 { return true }
+                return lhs.seq < rhs.seq
+            }
+            let lhsDate = lhs.sentAt ?? fallbackDate()
+            let rhsDate = rhs.sentAt ?? fallbackDate()
+            if lhsDate != rhsDate { return lhsDate < rhsDate }
+            return lhs.ID < rhs.ID
+        }
+    }
+
+    private func shouldReposition(previous: ChatMessage, next: ChatMessage) -> Bool {
+        previous.isFailed != next.isFailed || previous.seq != next.seq
     }
 
     private func deduped(_ messages: [ChatMessage]) -> [ChatMessage] {

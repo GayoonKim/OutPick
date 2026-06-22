@@ -12,6 +12,14 @@ protocol ChatRoomRouting: AnyObject {
     func showSettings(from source: ChatViewController)
     func showUserProfile(from source: ChatViewController, email: String, nickname: String, avatarPath: String?)
     func openLookbookSharedContent(from source: ChatViewController, sharedContent: LookbookSharedContent)
+    func showImageViewer(
+        from source: ChatViewController,
+        pages: [SimpleImageViewerVC.ProgressivePage],
+        startIndex: Int,
+        cachedImageProvider: SimpleImageViewerVC.CachedImageProvider?,
+        loadImageProvider: SimpleImageViewerVC.LoadImageProvider?
+    )
+    func showVideoPlayer(from source: ChatViewController, path: String)
     func handleRoomExit(from source: ChatViewController, roomID: String)
 }
 
@@ -138,6 +146,7 @@ final class ChatCoordinator {
         let chatRoomVC = ChatViewController(
             provider: container.provider,
             mediaUploadUseCase: container.makeChatMediaUploadUseCase(),
+            outgoingOutboxUseCase: container.makeChatOutgoingOutboxUseCase(),
             viewModel: container.makeChatRoomViewModel(room: room)
         )
 
@@ -224,6 +233,49 @@ extension ChatCoordinator: ChatRoomRouting {
             } catch {
                 source.showRoutingFailure("룩북으로 이동할 수 없습니다.")
                 print("❌ 룩북 공유 카드 이동 실패:", error)
+            }
+        }
+    }
+
+    func showImageViewer(
+        from source: ChatViewController,
+        pages: [SimpleImageViewerVC.ProgressivePage],
+        startIndex: Int,
+        cachedImageProvider: SimpleImageViewerVC.CachedImageProvider?,
+        loadImageProvider: SimpleImageViewerVC.LoadImageProvider?
+    ) {
+        guard !pages.isEmpty else { return }
+        let viewer = SimpleImageViewerVC(
+            pages: pages,
+            startIndex: startIndex,
+            cachedImageProvider: cachedImageProvider,
+            loadImageProvider: loadImageProvider
+        )
+        viewer.modalPresentationStyle = .fullScreen
+        viewer.modalTransitionStyle = .crossDissolve
+        source.present(viewer, animated: true)
+    }
+
+    func showVideoPlayer(from source: ChatViewController, path: String) {
+        Task { @MainActor [weak self, weak source] in
+            guard let self, let source else { return }
+
+            do {
+                let videoResolver = container.makeChatVideoPlaybackResolver()
+                let playbackAsset = try await videoResolver.playbackAsset(forPath: path)
+                let playerViewController = ChatVideoPlayerViewController(
+                    playbackAsset: playbackAsset,
+                    videoResolver: videoResolver,
+                    photoLibrarySaver: container.makeChatPhotoLibrarySaver()
+                )
+                playerViewController.modalPresentationStyle = .fullScreen
+                source.present(playerViewController, animated: true)
+            } catch {
+                AlertManager.showAlertNoHandler(
+                    title: "재생 실패",
+                    message: "동영상을 불러오지 못했습니다.\n\(error.localizedDescription)",
+                    viewController: source
+                )
             }
         }
     }

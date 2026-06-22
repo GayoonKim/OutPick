@@ -325,6 +325,24 @@ final class GRDBManager {
             try db.create(index: "idx_videoIndex_messageID",
                           on: "videoIndex",
                           columns: ["messageID"],
+	                          ifNotExists: true)
+        }
+
+        migrator.registerMigration("createChatOutgoingOutbox") { db in
+            try db.create(table: "chatOutgoingOutbox", options: [.ifNotExists]) { t in
+                t.column("messageID", .text).primaryKey()
+                t.column("roomID", .text).notNull()
+                t.column("kind", .text).notNull()
+                t.column("stage", .text).notNull()
+                t.column("createdAt", .datetime).notNull()
+                t.column("updatedAt", .datetime).notNull()
+                t.column("localPayloadJSON", .text)
+                t.column("uploadedPayloadJSON", .text)
+                t.column("lastError", .text)
+            }
+            try db.create(index: "idx_chatOutgoingOutbox_room_updated",
+                          on: "chatOutgoingOutbox",
+                          columns: ["roomID", "updatedAt"],
                           ifNotExists: true)
         }
         
@@ -515,6 +533,108 @@ final class GRDBManager {
             ) ?? 0
         }
     }
+
+    func fetchMessage(id messageID: String, inRoom roomID: String) async throws -> ChatMessage? {
+        try await dbPool.read { db in
+            guard let row = try Row.fetchOne(
+                db,
+                sql: "SELECT * FROM chatMessage WHERE roomID = ? AND id = ? LIMIT 1",
+                arguments: [roomID, messageID]
+            ) else {
+                return nil
+            }
+            return try self.makeChatMessage(from: row)
+        }
+    }
+
+    func fetchFailedOutgoingMessages(inRoom roomID: String, senderID: String) async throws -> [ChatMessage] {
+        try await dbPool.read { db in
+            let rows = try Row.fetchAll(
+                db,
+                sql: """
+                SELECT chatMessage.*,
+                       chatOutgoingOutbox.kind AS outboxKind,
+                       chatOutgoingOutbox.localPayloadJSON AS outboxLocalPayloadJSON,
+                       chatOutgoingOutbox.uploadedPayloadJSON AS outboxUploadedPayloadJSON
+                FROM chatMessage
+                LEFT JOIN chatOutgoingOutbox
+                  ON chatOutgoingOutbox.messageID = chatMessage.id
+                WHERE chatMessage.roomID = ?
+                  AND chatMessage.senderID = ?
+                  AND chatMessage.isFailed = 1
+                  AND chatMessage.isDeleted = 0
+                ORDER BY chatMessage.sentAt ASC, chatMessage.id ASC
+                """,
+                arguments: [roomID, senderID]
+            )
+            return try rows.map { row in
+                var message = try self.makeChatMessage(from: row)
+                message.attachments = self.stableFailedOutgoingAttachments(from: row, fallback: message.attachments)
+                return message
+            }
+        }
+    }
+
+    func hardDeleteMessage(id messageID: String, inRoom roomID: String) async throws {
+        try await dbPool.write { db in
+            try db.execute(sql: "DELETE FROM chatMessage WHERE roomID = ? AND id = ?", arguments: [roomID, messageID])
+            try db.execute(sql: "DELETE FROM imageIndex WHERE roomID = ? AND messageID = ?", arguments: [roomID, messageID])
+            try db.execute(sql: "DELETE FROM videoIndex WHERE roomID = ? AND messageID = ?", arguments: [roomID, messageID])
+            try db.execute(sql: "DELETE FROM chatMessageFTS WHERE roomID = ? AND id = ?", arguments: [roomID, messageID])
+        }
+    }
+
+    func saveOutgoingOutboxRecord(_ record: ChatOutgoingOutboxRecord) async throws {
+        try await dbPool.write { db in
+            try db.execute(
+                sql: """
+                INSERT OR REPLACE INTO chatOutgoingOutbox
+                (messageID, roomID, kind, stage, createdAt, updatedAt, localPayloadJSON, uploadedPayloadJSON, lastError)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                arguments: [
+                    record.messageID,
+                    record.roomID,
+                    record.kind.rawValue,
+                    record.stage.rawValue,
+                    record.createdAt,
+                    record.updatedAt,
+                    record.localPayloadJSON,
+                    record.uploadedPayloadJSON,
+                    record.lastError
+                ]
+            )
+        }
+    }
+
+    func fetchOutgoingOutboxRecord(messageID: String) async throws -> ChatOutgoingOutboxRecord? {
+        try await dbPool.read { db in
+            guard let row = try Row.fetchOne(
+                db,
+                sql: "SELECT * FROM chatOutgoingOutbox WHERE messageID = ? LIMIT 1",
+                arguments: [messageID]
+            ) else {
+                return nil
+            }
+            return ChatOutgoingOutboxRecord(
+                messageID: row["messageID"],
+                roomID: row["roomID"],
+                kind: ChatOutgoingOutboxKind(rawValue: row["kind"] as String) ?? .text,
+                stage: ChatOutgoingOutboxStage(rawValue: row["stage"] as String) ?? .failed,
+                createdAt: row["createdAt"],
+                updatedAt: row["updatedAt"],
+                localPayloadJSON: row["localPayloadJSON"],
+                uploadedPayloadJSON: row["uploadedPayloadJSON"],
+                lastError: row["lastError"]
+            )
+        }
+    }
+
+    func deleteOutgoingOutboxRecord(messageID: String) async throws {
+        try await dbPool.write { db in
+            try db.execute(sql: "DELETE FROM chatOutgoingOutbox WHERE messageID = ?", arguments: [messageID])
+        }
+    }
     
     // 특정 메시지들의 isDeleted 상태를 업데이트
     func updateMessagesIsDeleted(_ ids: [String], isDeleted: Bool, inRoom roomID: String) async throws {
@@ -578,6 +698,124 @@ final class GRDBManager {
     private func decodeJSON<T: Decodable>(_ type: T.Type, from json: String?) -> T? {
         guard let json, let data = json.data(using: .utf8) else { return nil }
         return try? JSONDecoder().decode(type, from: data)
+    }
+
+    private func stableFailedOutgoingAttachments(from row: Row, fallback: [Attachment]) -> [Attachment] {
+        guard let rawKind = row["outboxKind"] as? String,
+              let kind = ChatOutgoingOutboxKind(rawValue: rawKind) else {
+            return fallback
+        }
+        switch kind {
+        case .text:
+            return fallback
+        case .images:
+            if let uploaded = decodeJSON(
+                ChatOutgoingOutboxUploadedImagesPayload.self,
+                from: row["outboxUploadedPayloadJSON"] as? String
+            ), !uploaded.attachments.isEmpty {
+                return uploaded.attachments
+            }
+            if let local = decodeJSON(
+                ChatOutgoingOutboxImagePayload.self,
+                from: row["outboxLocalPayloadJSON"] as? String
+            ) {
+                return local.items.sorted(by: { $0.index < $1.index }).map { item in
+                    Attachment(
+                        type: .image,
+                        index: item.index,
+                        pathThumb: currentOutboxDisplayPath(from: item.thumbFilePath),
+                        pathOriginal: currentOutboxDisplayPath(from: item.originalFilePath),
+                        width: item.originalWidth,
+                        height: item.originalHeight,
+                        bytesOriginal: item.bytesOriginal,
+                        hash: item.sha256,
+                        blurhash: nil,
+                        duration: nil
+                    )
+                }
+            }
+            return fallback
+        case .video:
+            if let uploaded = decodeJSON(
+                VideoMetaPayload.self,
+                from: row["outboxUploadedPayloadJSON"] as? String
+            ) {
+                return [
+                    Attachment(
+                        type: .video,
+                        index: 0,
+                        pathThumb: uploaded.thumbnailPath,
+                        pathOriginal: uploaded.storagePath,
+                        width: uploaded.width,
+                        height: uploaded.height,
+                        bytesOriginal: Int(uploaded.sizeBytes),
+                        hash: uploaded.messageID,
+                        blurhash: nil,
+                        duration: uploaded.duration,
+                        approxBitrateMbps: uploaded.approxBitrateMbps,
+                        preset: uploaded.preset
+                    )
+                ]
+            }
+            if let local = decodeJSON(
+                ChatOutgoingOutboxVideoPayload.self,
+                from: row["outboxLocalPayloadJSON"] as? String
+            ) {
+                return [
+                    Attachment(
+                        type: .video,
+                        index: 0,
+                        pathThumb: currentOutboxDisplayPath(from: local.thumbnailFilePath),
+                        pathOriginal: currentOutboxDisplayPath(from: local.compressedFilePath),
+                        width: local.width,
+                        height: local.height,
+                        bytesOriginal: Int(local.sizeBytes),
+                        hash: local.sha256,
+                        blurhash: nil,
+                        duration: local.duration,
+                        approxBitrateMbps: local.approxBitrateMbps,
+                        preset: local.preset
+                    )
+                ]
+            }
+            return fallback
+        }
+    }
+
+    private func currentOutboxDisplayPath(from storedPath: String) -> String {
+        let trimmed = storedPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return storedPath }
+        let fileManager = FileManager.default
+        guard let root = try? fileManager
+            .url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+            .appendingPathComponent("ChatOutgoingOutbox", isDirectory: true) else {
+            return storedPath
+        }
+
+        if trimmed.hasPrefix("file://"),
+           let url = URL(string: trimmed),
+           url.isFileURL {
+            if fileManager.fileExists(atPath: url.path) {
+                return url.path
+            }
+            return migratedOutboxPath(fromAbsolutePath: url.path, root: root) ?? storedPath
+        }
+
+        if trimmed.hasPrefix("/") {
+            if fileManager.fileExists(atPath: trimmed) {
+                return trimmed
+            }
+            return migratedOutboxPath(fromAbsolutePath: trimmed, root: root) ?? storedPath
+        }
+
+        return root.appendingPathComponent(trimmed).path
+    }
+
+    private func migratedOutboxPath(fromAbsolutePath path: String, root: URL) -> String? {
+        guard let range = path.range(of: "ChatOutgoingOutbox/") else { return nil }
+        let relative = String(path[range.upperBound...])
+        let url = root.appendingPathComponent(relative)
+        return FileManager.default.fileExists(atPath: url.path) ? url.path : nil
     }
 
     private func boolValue(_ value: Any?) -> Bool {
@@ -1137,9 +1375,9 @@ final class GRDBManager {
                             att.height,
                             att.bytesOriginal,
                             
-                            /* duration */            nil, // Attachment에 없으면 nil
-                            /* approxBitrateMbps */   nil,
-                            /* preset */              nil,
+                            att.duration,
+                            att.approxBitrateMbps,
+                            att.preset,
                             
                             att.hash.isEmpty ? nil : att.hash,
                             message.isFailed,

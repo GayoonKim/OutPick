@@ -19,6 +19,13 @@ struct ChatPendingImageUploadPayload {
     let pairs: [DefaultMediaProcessingService.ImagePair]
 }
 
+enum ChatPendingMediaRetryPayload {
+    case uploadImages(ChatPendingImageUploadPayload)
+    case finalizeImages(room: ChatRoom, roomID: String, messageID: String, attachments: [Attachment])
+    case uploadVideo(roomID: String, messageID: String, prepared: PreparedVideo)
+    case finalizeVideo(roomID: String, messageID: String, payload: VideoMetaPayload)
+}
+
 @MainActor
 final class ChatPendingMediaUploadStore {
     private struct PendingImageUploadRecord {
@@ -28,13 +35,16 @@ final class ChatPendingMediaUploadStore {
         let pairs: [DefaultMediaProcessingService.ImagePair]
         var state: ChatPendingMediaUploadState
         var task: Task<Void, Never>?
+        var uploadedAttachments: [Attachment]?
     }
 
     private struct PendingVideoUploadRecord {
         let roomID: String
         let messageID: String
+        let prepared: PreparedVideo?
         var state: ChatPendingMediaUploadState
         var task: Task<Void, Never>?
+        var uploadedPayload: VideoMetaPayload?
     }
 
     private var imageUploads: [String: PendingImageUploadRecord] = [:]
@@ -58,7 +68,8 @@ final class ChatPendingMediaUploadStore {
             messageID: messageID,
             pairs: pairs,
             state: .uploading(0),
-            task: nil
+            task: nil,
+            uploadedAttachments: nil
         )
         return true
     }
@@ -105,6 +116,36 @@ final class ChatPendingMediaUploadStore {
         imageUploads.removeValue(forKey: messageID)
     }
 
+    func setUploadedImageAttachments(_ attachments: [Attachment], for messageID: String) {
+        guard var record = imageUploads[messageID] else { return }
+        record.uploadedAttachments = attachments
+        imageUploads[messageID] = record
+    }
+
+    func stageUploadedImageFinalize(
+        room: ChatRoom,
+        roomID: String,
+        messageID: String,
+        attachments: [Attachment]
+    ) -> Bool {
+        guard !roomID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !messageID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !attachments.isEmpty else {
+            return false
+        }
+
+        imageUploads[messageID] = PendingImageUploadRecord(
+            room: room,
+            roomID: roomID,
+            messageID: messageID,
+            pairs: [],
+            state: .failed,
+            task: nil,
+            uploadedAttachments: attachments
+        )
+        return true
+    }
+
     func retryPayload(for messageID: String) -> ChatPendingImageUploadPayload? {
         guard let record = imageUploads[messageID],
               record.task == nil,
@@ -118,6 +159,50 @@ final class ChatPendingMediaUploadStore {
             messageID: record.messageID,
             pairs: record.pairs
         )
+    }
+
+    func mediaRetryPayload(for messageID: String) -> ChatPendingMediaRetryPayload? {
+        if let record = imageUploads[messageID],
+           record.task == nil,
+           record.state == .failed {
+            if let attachments = record.uploadedAttachments, !attachments.isEmpty {
+                return .finalizeImages(
+                    room: record.room,
+                    roomID: record.roomID,
+                    messageID: record.messageID,
+                    attachments: attachments
+                )
+            }
+            if !record.pairs.isEmpty {
+                return .uploadImages(ChatPendingImageUploadPayload(
+                    room: record.room,
+                    roomID: record.roomID,
+                    messageID: record.messageID,
+                    pairs: record.pairs
+                ))
+            }
+        }
+
+        if let record = videoUploads[messageID],
+           record.task == nil,
+           record.state == .failed {
+            if let payload = record.uploadedPayload {
+                return .finalizeVideo(
+                    roomID: record.roomID,
+                    messageID: record.messageID,
+                    payload: payload
+                )
+            }
+            if let prepared = record.prepared {
+                return .uploadVideo(
+                    roomID: record.roomID,
+                    messageID: record.messageID,
+                    prepared: prepared
+                )
+            }
+        }
+
+        return nil
     }
 
     func cancelAllTasks() {
@@ -136,7 +221,8 @@ final class ChatPendingMediaUploadStore {
 
     func stageVideoUpload(
         roomID: String,
-        messageID: String
+        messageID: String,
+        prepared: PreparedVideo
     ) -> Bool {
         guard !roomID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               !messageID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -146,8 +232,31 @@ final class ChatPendingMediaUploadStore {
         videoUploads[messageID] = PendingVideoUploadRecord(
             roomID: roomID,
             messageID: messageID,
+            prepared: prepared,
             state: .uploading(0),
-            task: nil
+            task: nil,
+            uploadedPayload: nil
+        )
+        return true
+    }
+
+    func stageUploadedVideoFinalize(
+        roomID: String,
+        messageID: String,
+        payload: VideoMetaPayload
+    ) -> Bool {
+        guard !roomID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !messageID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return false
+        }
+
+        videoUploads[messageID] = PendingVideoUploadRecord(
+            roomID: roomID,
+            messageID: messageID,
+            prepared: nil,
+            state: .failed,
+            task: nil,
+            uploadedPayload: payload
         )
         return true
     }
@@ -176,5 +285,11 @@ final class ChatPendingMediaUploadStore {
 
     func completeVideoUpload(for messageID: String) {
         videoUploads.removeValue(forKey: messageID)
+    }
+
+    func setUploadedVideoPayload(_ payload: VideoMetaPayload, for messageID: String) {
+        guard var record = videoUploads[messageID] else { return }
+        record.uploadedPayload = payload
+        videoUploads[messageID] = record
     }
 }

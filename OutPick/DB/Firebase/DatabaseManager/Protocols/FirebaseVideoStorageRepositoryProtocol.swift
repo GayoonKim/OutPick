@@ -16,5 +16,6 @@ protocol FirebaseVideoStorageRepositoryProtocol {
     ) async throws
 
     func putVideoDataToStorage(data: Data, path: String, contentType: String) async throws
+    func deleteVideoFromStorage(path: String)
     func setDataFallbackLimitMB(_ mb: Int)
 }

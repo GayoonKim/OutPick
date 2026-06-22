@@ -7,7 +7,13 @@
 
 import Foundation
 import UIKit
-import Combine
+
+struct ChatMessageCellCommands {
+    var openMedia: (_ messageID: String, _ attachmentIndex: Int) -> Void = { _, _ in }
+    var openSenderProfile: (_ messageID: String) -> Void = { _ in }
+    var retryUpload: (_ messageID: String) -> Void = { _ in }
+    var openLookbookShare: (_ content: LookbookSharedContent) -> Void = { _ in }
+}
 
 class ChatMessageCell: UICollectionViewCell {
     static let reuseIdentifier = "ChatMessageCell"
@@ -22,21 +28,12 @@ class ChatMessageCell: UICollectionViewCell {
     private var representedAvatarPath: String?
     private var currentHighlightKeyword: String?
     private var avatarLoadTask: Task<Void, Never>?
+    var commands = ChatMessageCellCommands()
     
     protocol ChatMessageCellDelegate: AnyObject {
         func cellDidLongPress(_ cell: ChatMessageCell)
     }
     
-    // ⬇️ Combine publishers
-    let imageTapSubject = PassthroughSubject<Int?, Never>()
-    var imageTapPublisher: AnyPublisher<Int?, Never> { imageTapSubject.eraseToAnyPublisher() }
-    let profileTapSubject = PassthroughSubject<Void, Never>()
-    var profileTapPublisher: AnyPublisher<Void, Never> { profileTapSubject.eraseToAnyPublisher() }
-    let retryTapSubject = PassthroughSubject<Void, Never>()
-    var retryTapPublisher: AnyPublisher<Void, Never> { retryTapSubject.eraseToAnyPublisher() }
-    let lookbookShareTapSubject = PassthroughSubject<LookbookSharedContent, Never>()
-    var lookbookShareTapPublisher: AnyPublisher<LookbookSharedContent, Never> { lookbookShareTapSubject.eraseToAnyPublisher() }
-
     private let profileImageView: UIImageView = {
         var imageView = UIImageView()
         imageView.layer.cornerRadius = 10
@@ -149,6 +146,7 @@ class ChatMessageCell: UICollectionViewCell {
         imageView.contentMode = .scaleAspectFit
         imageView.translatesAutoresizingMaskIntoConstraints = false
         imageView.isHidden = true
+        imageView.isUserInteractionEnabled = true
         
         return imageView
     }()
@@ -326,6 +324,8 @@ class ChatMessageCell: UICollectionViewCell {
         lookbookShareCellTapGR.cancelsTouchesInView = false
         contentView.addGestureRecognizer(lookbookShareCellTapGR)
         imageUploadRetryButton.addTarget(self, action: #selector(handleRetryTap), for: .touchUpInside)
+        let failedIconTapGR = UITapGestureRecognizer(target: self, action: #selector(handleRetryTap))
+        failedIconImageView.addGestureRecognizer(failedIconTapGR)
         
         // Set up internal subviews of the video badge (host anchoring is done at configure time)
         videoBadge.addSubview(videoIconView)
@@ -355,6 +355,7 @@ class ChatMessageCell: UICollectionViewCell {
         representedMessageID = nil
         representedAvatarPath = nil
         currentHighlightKeyword = nil
+        commands = ChatMessageCellCommands()
         avatarLoadTask?.cancel()
         avatarLoadTask = nil
         hideVideoBadge()
@@ -1045,18 +1046,21 @@ class ChatMessageCell: UICollectionViewCell {
     }
 
     @objc private func handleImagesPreviewTap(_ gr: UITapGestureRecognizer) {
+        guard let representedMessageID else { return }
         let point = gr.location(in: imagesPreviewCollectionView)
-        let tappedIndex = imagesPreviewCollectionView.index(at: point)
-        imageTapSubject.send(tappedIndex)
+        guard let tappedIndex = imagesPreviewCollectionView.index(at: point) else { return }
+        commands.openMedia(representedMessageID, tappedIndex)
     }
 
     @objc private func handleProfileTap() {
         guard !profileImageView.isHidden else { return }
-        profileTapSubject.send(())
+        guard let representedMessageID else { return }
+        commands.openSenderProfile(representedMessageID)
     }
 
     @objc private func handleRetryTap() {
-        retryTapSubject.send(())
+        guard let representedMessageID else { return }
+        commands.retryUpload(representedMessageID)
     }
 
     @objc private func handleLookbookShareCellTap(_ gesture: UITapGestureRecognizer) {
@@ -1065,7 +1069,7 @@ class ChatMessageCell: UICollectionViewCell {
               let representedLookbookSharedContent else { return }
         let tapPoint = gesture.location(in: contentView)
         guard profileImageView.isHidden || !profileImageView.frame.contains(tapPoint) else { return }
-        lookbookShareTapSubject.send(representedLookbookSharedContent)
+        commands.openLookbookShare(representedLookbookSharedContent)
     }
 
     func currentPreviewImages() -> [UIImage?] {
@@ -1089,7 +1093,7 @@ class ChatMessageCell: UICollectionViewCell {
             imageUploadOverlayView.isHidden = false
             imageUploadOverlayView.backgroundColor = UIColor.black.withAlphaComponent(0.42)
             imageUploadProgressRing.isHidden = true
-            imageUploadRetryButton.isHidden = false
+            imageUploadRetryButton.isHidden = true
         }
     }
 

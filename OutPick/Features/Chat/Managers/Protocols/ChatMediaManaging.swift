@@ -36,10 +36,4 @@ protocol ChatMediaManaging {
     
     /// 비디오 썸네일 데이터 생성
     func makeVideoThumbnailData(url: URL, maxPixel: CGFloat) throws -> Data
-    
-    /// Storage 경로로 비디오 재생
-    func playVideoForStoragePath(_ storagePath: String, in viewController: UIViewController) async
-    
-    /// 저장용 로컬 파일 URL 해석
-    func resolveLocalFileURLForSaving(localURL: URL?, storagePath: String?, onProgress: @escaping (Double)->Void) async throws -> URL
 }

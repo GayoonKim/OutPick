@@ -63,6 +63,10 @@ class SocketIOManager {
     private let userProfileRepository: UserProfileRepositoryProtocol
     private let chatRoomRepository: FirebaseChatRoomRepositoryProtocol
 
+    var isSocketConnected: Bool {
+        socket.status == .connected
+    }
+
     // ---- Reconnect Policy (client defaults; server can override via `server:connect:ready`) ----
     private struct ReconnectPolicy {
         var maxAttempts: Int
@@ -273,7 +277,7 @@ class SocketIOManager {
         }
 
         // 연결 시도
-        try await withCheckedThrowingContinuation { continuation in
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             self.connectWaiters.append(continuation)
 
             print("소켓 연결 시도")
@@ -411,7 +415,7 @@ class SocketIOManager {
                 self.roomBridgeReady.insert(roomID)
                 defer {
                     self.roomBridgeReady.remove(roomID)
-                    Task { [weak self] in
+                    Task {
                         await session.close()
                     }
                 }
@@ -744,62 +748,184 @@ class SocketIOManager {
 
     /// 서버 ACK 형식이 환경별로 달라도(딕셔너리/문자열/빈 응답) 보수적으로 성공 여부를 판별
     private func isEmitAckSuccess(_ ackItems: [Any]) -> Bool {
-        guard let first = ackItems.first else {
-            // 일부 서버는 ACK payload를 비워두므로 성공으로 간주
-            return true
-        }
-
-        if let dict = first as? [String: Any] {
-            if let ok = dict["ok"] as? Bool { return ok || ((dict["duplicate"] as? Bool) ?? false) }
-            if let success = dict["success"] as? Bool { return success || ((dict["duplicate"] as? Bool) ?? false) }
-            if let duplicate = dict["duplicate"] as? Bool, duplicate { return true }
-
-            if let status = (dict["status"] as? String)?.lowercased() {
-                if ["ok", "success", "accepted", "duplicate"].contains(status) { return true }
-                if ["error", "failed", "fail"].contains(status) { return false }
-            }
-            if dict["error"] != nil { return false }
-            return true
-        }
-
-        if let text = first as? String {
-            let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            if normalized.isEmpty || normalized == "no ack" { return true }
-            if normalized.contains("error") || normalized.contains("fail") { return false }
-            return true
-        }
-
-        return true
+        ChatMessageEmitAckMapper.isSuccess(ackItems)
     }
-    
-    func sendMessage(_ room: ChatRoom, _ message: ChatMessage) {
-        // 1. Optimistic UI: Publish the message immediately as not failed
-        // 2. If not connected, mark as failed and publish (again, so UI can update)
+
+    func sendMessage(_ room: ChatRoom, _ message: ChatMessage, ackTimeout: Double = 5.0) async throws {
         guard socket.status == .connected else {
             print("소켓이 연결되지 않음")
-            var failedMessage = message
-            failedMessage.isFailed = true
-            emitToRoomPipeline(failedMessage)
-            return
+            throw makeSocketError(code: -1009, message: "소켓이 연결되어 있지 않습니다.")
         }
 
         let payload = message.toSocketRepresentation()
         print("📤 전송할 소켓 데이터: \(payload)")  // 디버깅용
 
-        socket.emitWithAck("chat message", payload).timingOut(after: 5) { [weak self] ackResponse in
-            guard let self = self else { return }
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            socket.emitWithAck("chat message", payload).timingOut(after: ackTimeout) { [weak self] ackResponse in
+                guard let self else {
+                    continuation.resume(throwing: Self.makeSocketError(code: -1, message: "SocketIOManager가 해제되었습니다."))
+                    return
+                }
 
-            if self.isEmitAckSuccess(ackResponse) {
-                self.updateRoomSummaryAfterSend(
-                    roomID: room.ID ?? "",
-                    sentAt: message.sentAt ?? Date(),
-                    preview: message.msg ?? ""
-                )
-            } else {
-                // Failure: mark the same message as failed and re-publish for UI update
+                if self.isEmitAckSuccess(ackResponse) {
+                    self.updateRoomSummaryAfterSend(
+                        roomID: room.ID ?? "",
+                        sentAt: message.sentAt ?? Date(),
+                        preview: message.msg ?? ""
+                    )
+                    continuation.resume()
+                } else {
+                    continuation.resume(
+                        throwing: Self.makeSocketError(
+                            code: -1,
+                            message: "서버 ACK 실패 또는 timeout: \(ackResponse)"
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    func sendMessage(_ room: ChatRoom, _ message: ChatMessage) {
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await self.sendMessage(room, message, ackTimeout: 5.0)
+            } catch {
                 var failedMessage = message
                 failedMessage.isFailed = true
                 self.emitToRoomPipeline(failedMessage)
+            }
+        }
+    }
+
+    private static func makeSocketError(code: Int, message: String) -> NSError {
+        NSError(
+            domain: "SocketIO",
+            code: code,
+            userInfo: [NSLocalizedDescriptionKey: message]
+        )
+    }
+
+    private func makeSocketError(code: Int, message: String) -> NSError {
+        Self.makeSocketError(code: code, message: message)
+    }
+
+    func sendImagesAwaitingAck(
+        _ room: ChatRoom,
+        _ attachments: [[String: Any]],
+        senderAvatarPath: String? = nil,
+        clientMessageID: String? = nil,
+        ackTimeout: Double = 15.0
+    ) async throws {
+        guard !attachments.isEmpty else { return }
+        let roomID = room.ID ?? ""
+        let senderID = LoginManager.shared.getUserEmail
+        let senderNickname = LoginManager.shared.currentUserProfile?.nickname ?? ""
+        let resolvedClientMessageID = {
+            if let clientMessageID, !clientMessageID.isEmpty {
+                return clientMessageID
+            }
+            return UUID().uuidString
+        }()
+        let now = Date()
+        let isoSentAt = Self.isoFormatter.string(from: now)
+
+        guard socket.status == .connected else {
+            throw makeSocketError(code: -1009, message: "소켓이 연결되어 있지 않습니다.")
+        }
+
+        let eventName = "send images"
+        var body: [String: Any] = [
+            "roomID": roomID,
+            "messageID": resolvedClientMessageID,
+            "type": "image",
+            "msg": "",
+            "attachments": attachments,
+            "senderID": senderID,
+            "senderNickname": senderNickname,
+            "sentAt": isoSentAt
+        ]
+        if let avatar = senderAvatarPath, !avatar.isEmpty {
+            body["senderAvatarPath"] = avatar
+        }
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            socket.emitWithAck(eventName, body).timingOut(after: ackTimeout) { [weak self] ackResponse in
+                guard let self else {
+                    continuation.resume(throwing: Self.makeSocketError(code: -1, message: "SocketIOManager가 해제되었습니다."))
+                    return
+                }
+
+                if self.isEmitAckSuccess(ackResponse) {
+                    self.updateRoomSummaryAfterSend(
+                        roomID: roomID,
+                        sentAt: now,
+                        preview: "사진 \(attachments.count)장"
+                    )
+                    continuation.resume()
+                } else {
+                    continuation.resume(
+                        throwing: Self.makeSocketError(
+                            code: -1,
+                            message: "서버 ACK 실패 또는 timeout: \(ackResponse)"
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    func sendVideoAwaitingAck(
+        roomID: String,
+        payload: VideoMetaPayload,
+        senderAvatarPath: String? = nil,
+        ackTimeout: Double = 5.0
+    ) async throws {
+        guard socket.status == .connected else {
+            throw makeSocketError(code: -1009, message: "소켓이 연결되어 있지 않습니다.")
+        }
+
+        var dict: [String: Any] = [
+            "roomID": payload.roomID,
+            "messageID": payload.messageID,
+            "storagePath": payload.storagePath,
+            "thumbnailPath": payload.thumbnailPath,
+            "duration": payload.duration,
+            "width": payload.width,
+            "height": payload.height,
+            "sizeBytes": payload.sizeBytes,
+            "approxBitrateMbps": payload.approxBitrateMbps,
+            "preset": payload.preset,
+            "senderID": LoginManager.shared.getUserEmail,
+            "senderNickname": LoginManager.shared.currentUserProfile?.nickname ?? ""
+        ]
+        if let avatar = senderAvatarPath, !avatar.isEmpty {
+            dict["senderAvatarPath"] = avatar
+        }
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            socket.emitWithAck("chat:video", dict).timingOut(after: ackTimeout) { [weak self] items in
+                guard let self else {
+                    continuation.resume(throwing: Self.makeSocketError(code: -1, message: "SocketIOManager가 해제되었습니다."))
+                    return
+                }
+
+                if self.isEmitAckSuccess(items) {
+                    self.updateRoomSummaryAfterSend(
+                        roomID: roomID,
+                        sentAt: Date(),
+                        preview: "동영상"
+                    )
+                    continuation.resume()
+                } else {
+                    continuation.resume(
+                        throwing: Self.makeSocketError(
+                            code: -1,
+                            message: "서버 ACK 실패 또는 timeout: \(items)"
+                        )
+                    )
+                }
             }
         }
     }

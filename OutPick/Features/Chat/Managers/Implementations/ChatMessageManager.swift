@@ -30,10 +30,13 @@ final class ChatMessageManager: ChatMessageManaging {
             let messages = try await Task(priority: .userInitiated) {
                 try await grdbManager.fetchRecentMessages(inRoom: roomID, limit: policy.latestTailSize)
             }.value
-            return makeInitialWindow(
+            return try await appendingFailedOutgoingMessages(
+                to: makeInitialWindow(
                 messages: messages,
                 readBoundarySeq: nil,
                 latestSeq: latestSeq
+                ),
+                roomID: roomID
             )
 
         case .unreadAnchor(let lastReadSeq, let latestSeq):
@@ -52,10 +55,13 @@ final class ChatMessageManager: ChatMessageManaging {
                 before: try await beforeMessages,
                 after: try await afterMessages
             )
-            return makeInitialWindow(
+            return try await appendingFailedOutgoingMessages(
+                to: makeInitialWindow(
                 messages: messages,
                 readBoundarySeq: lastReadSeq,
                 latestSeq: latestSeq
+                ),
+                roomID: roomID
             )
         }
     }
@@ -71,10 +77,13 @@ final class ChatMessageManager: ChatMessageManaging {
                 for: room,
                 limit: policy.latestTailSize
             )
-            return makeInitialWindow(
+            return try await appendingFailedOutgoingMessages(
+                to: makeInitialWindow(
                 messages: messages,
                 readBoundarySeq: nil,
                 latestSeq: latestSeq
+                ),
+                roomID: room.ID ?? ""
             )
 
         case .unreadAnchor(let lastReadSeq, let latestSeq):
@@ -93,10 +102,13 @@ final class ChatMessageManager: ChatMessageManaging {
                 before: try await beforeMessages,
                 after: try await afterMessages
             )
-            return makeInitialWindow(
+            return try await appendingFailedOutgoingMessages(
+                to: makeInitialWindow(
                 messages: messages,
                 readBoundarySeq: lastReadSeq,
                 latestSeq: latestSeq
+                ),
+                roomID: room.ID ?? ""
             )
         }
     }
@@ -371,6 +383,29 @@ final class ChatMessageManager: ChatMessageManaging {
             latestSeq: latestSeq,
             hasMoreOlder: firstSeq > 1,
             hasMoreNewer: windowMaxSeq < latestSeq
+        )
+    }
+
+    private func appendingFailedOutgoingMessages(
+        to window: ChatInitialWindow,
+        roomID: String
+    ) async throws -> ChatInitialWindow {
+        guard !roomID.isEmpty else { return window }
+        let senderID = LoginManager.shared.getUserEmail
+        let failed = try await grdbManager
+            .fetchFailedOutgoingMessages(inRoom: roomID, senderID: senderID)
+
+        guard !failed.isEmpty else { return window }
+        try? await grdbManager.saveChatMessages(failed)
+
+        let failedIDs = Set(failed.map(\.ID))
+        let messages = window.messages.filter { !failedIDs.contains($0.ID) } + failed
+        return ChatInitialWindow(
+            messages: messages,
+            readBoundarySeq: window.readBoundarySeq,
+            latestSeq: window.latestSeq,
+            hasMoreOlder: window.hasMoreOlder,
+            hasMoreNewer: window.hasMoreNewer
         )
     }
 }

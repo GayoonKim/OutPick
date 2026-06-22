@@ -1,31 +1,12 @@
 //
-//  OPStorageURLCache.swift
+//  OPVideoDiskCache.swift
 //  OutPick
 //
 //  Created by 김가윤 on 1/15/25.
 //
 
 import Foundation
-import FirebaseStorage
 import CryptoKit
-
-/// Firebase Storage downloadURL 캐시 (actor로 thread-safe 보장)
-actor OPStorageURLCache {
-    private var cache: [String: URL] = [:]
-    
-    func url(for path: String) async throws -> URL {
-        if let u = cache[path] { return u }
-        let ref = Storage.storage().reference(withPath: path)
-        let url = try await withCheckedThrowingContinuation { cont in
-            ref.downloadURL { url, err in
-                if let url { cont.resume(returning: url) }
-                else { cont.resume(throwing: err ?? NSError(domain: "Storage", code: -1, userInfo: [NSLocalizedDescriptionKey: "downloadURL failed"])) }
-            }
-        }
-        cache[path] = url
-        return url
-    }
-}
 
 /// 비디오 디스크 캐시 (progressive MP4 local caching)
 actor OPVideoDiskCache {
@@ -96,4 +77,3 @@ extension String {
         return hash.map { String(format: "%02x", $0) }.joined()
     }
 }
-

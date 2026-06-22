@@ -26,6 +26,36 @@ struct Attachment: Codable, Hashable, Sendable {
     var blurhash: String?                // 선택
 
     let duration: Double?
+    let approxBitrateMbps: Double?
+    let preset: String?
+
+    init(
+        type: AttachmentType,
+        index: Int,
+        pathThumb: String,
+        pathOriginal: String,
+        width: Int,
+        height: Int,
+        bytesOriginal: Int,
+        hash: String,
+        blurhash: String? = nil,
+        duration: Double? = nil,
+        approxBitrateMbps: Double? = nil,
+        preset: String? = nil
+    ) {
+        self.type = type
+        self.index = index
+        self.pathThumb = pathThumb
+        self.pathOriginal = pathOriginal
+        self.width = width
+        self.height = height
+        self.bytesOriginal = bytesOriginal
+        self.hash = hash
+        self.blurhash = blurhash
+        self.duration = duration
+        self.approxBitrateMbps = approxBitrateMbps
+        self.preset = preset
+    }
 
     // MARK: - Convenience (직렬화 제외)
     var thumbCacheKey: String { "att:\(hash):thumb" }
@@ -50,6 +80,12 @@ struct Attachment: Codable, Hashable, Sendable {
         if let b = blurhash { dict["blurhash"] = b }
         if type == .video, let d = duration {
             dict["duration"] = d
+        }
+        if type == .video, let approxBitrateMbps {
+            dict["approxBitrateMbps"] = approxBitrateMbps
+        }
+        if type == .video, let preset {
+            dict["preset"] = preset
         }
         return dict
     }

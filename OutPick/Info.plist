@@ -9,7 +9,9 @@
 	<key>NSAppTransportSecurity</key>
 	<dict/>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Yes</string>
+	<string>채팅방과 프로필에 사용할 사진을 선택하기 위해 사진 보관함 접근이 필요합니다.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>채팅방에서 받은 사진과 동영상을 사진 앱에 저장하기 위해 권한이 필요합니다.</string>
 	<key>API_KEY</key>
 	<string>${API_KEY}</string>
 	<key>CFBundleURLTypes</key>

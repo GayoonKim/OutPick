@@ -19,7 +19,7 @@ struct ChatMessage: SocketData, Codable, Sendable {
     var messageType: ChatMessageType? = nil
     let msg: String?                    // 메시지 내용
     let sentAt: Date?                   // 메시지 보낸 시간
-    let attachments: [Attachment]
+    var attachments: [Attachment]
     var sharedContent: LookbookSharedContent? = nil
     var replyPreview: ReplyPreview?
     var isFailed: Bool = false
@@ -386,7 +386,9 @@ extension ChatMessage {
             bytesOriginal: parseInt(dict["bytesOriginal"]) ?? parseInt(dict["size"]) ?? parseInt(dict["sizeBytes"]) ?? 0,
             hash: (dict["hash"] as? String) ?? ((dict["messageID"] as? String) ?? UUID().uuidString.replacingOccurrences(of: "-", with: "")),
             blurhash: dict["blurhash"] as? String,
-            duration: parseDouble(dict["duration"])
+            duration: parseDouble(dict["duration"]),
+            approxBitrateMbps: parseDouble(dict["approxBitrateMbps"]),
+            preset: dict["preset"] as? String
         )
     }
 

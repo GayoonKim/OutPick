@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import FirebaseStorage
 
 final class FirebaseVideoStorageRepository: FirebaseVideoStorageRepositoryProtocol {
 
@@ -49,6 +50,17 @@ final class FirebaseVideoStorageRepository: FirebaseVideoStorageRepositoryProtoc
             uploadFailure: FirebaseStorageError.FailedToUploadVideo,
             cacheControl: cacheControl
         )
+    }
+
+    func deleteVideoFromStorage(path: String) {
+        let fileRef = Storage.storage().reference().child(path)
+        fileRef.delete { error in
+            if let error {
+                print("🚫 비디오 삭제 실패: \(error.localizedDescription)")
+            } else {
+                print("✅ 비디오 삭제 성공: \(path)")
+            }
+        }
     }
 
     func setDataFallbackLimitMB(_ mb: Int) {

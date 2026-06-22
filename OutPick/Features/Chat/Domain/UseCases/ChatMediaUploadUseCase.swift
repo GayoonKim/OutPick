@@ -7,7 +7,20 @@
 
 import Foundation
 
+enum ChatMediaUploadUseCaseError: LocalizedError {
+    case socketDisconnectedBeforeUpload
+
+    var errorDescription: String? {
+        switch self {
+        case .socketDisconnectedBeforeUpload:
+            return "서버 연결이 끊겨 전송을 시작하지 못했습니다."
+        }
+    }
+}
+
 protocol ChatMediaUploadUseCaseProtocol {
+    var isSocketConnected: Bool { get }
+
     func makePendingImageMessage(
         roomID: String,
         messageID: String,
@@ -31,7 +44,7 @@ protocol ChatMediaUploadUseCaseProtocol {
         room: ChatRoom,
         attachments: [Attachment],
         clientMessageID: String
-    )
+    ) async throws
 
     func cacheFailedImageThumbnails(_ pairs: [DefaultMediaProcessingService.ImagePair]) async
     func cleanupImageOriginalFiles(_ pairs: [DefaultMediaProcessingService.ImagePair])
@@ -44,7 +57,7 @@ protocol ChatMediaUploadUseCaseProtocol {
         onProgress: @escaping (Double) -> Void
     ) async throws -> VideoMetaPayload
 
-    func sendUploadedVideo(roomID: String, payload: VideoMetaPayload)
+    func sendUploadedVideo(roomID: String, payload: VideoMetaPayload) async throws
     func sendFailedVideo(roomID: String, prepared: PreparedVideo)
 }
 
@@ -84,6 +97,10 @@ final class ChatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol {
         self.dateProvider = dateProvider
         self.previewDirectoryProvider = previewDirectoryProvider
         self.fileManager = fileManager
+    }
+
+    var isSocketConnected: Bool {
+        sendingRepository.isSocketConnected
     }
 
     func makePendingImageMessage(
@@ -160,8 +177,8 @@ final class ChatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol {
         room: ChatRoom,
         attachments: [Attachment],
         clientMessageID: String
-    ) {
-        sendingRepository.sendImages(
+    ) async throws {
+        try await sendingRepository.sendImages(
             room,
             attachments: attachments,
             senderAvatarPath: currentUserProvider().senderAvatarPath,
@@ -237,8 +254,8 @@ final class ChatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol {
         )
     }
 
-    func sendUploadedVideo(roomID: String, payload: VideoMetaPayload) {
-        sendingRepository.sendVideo(
+    func sendUploadedVideo(roomID: String, payload: VideoMetaPayload) async throws {
+        try await sendingRepository.sendVideo(
             roomID: roomID,
             payload: payload,
             senderAvatarPath: currentUserProvider().senderAvatarPath
@@ -322,7 +339,9 @@ final class ChatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol {
                 bytesOriginal: Int(prepared.sizeBytes),
                 hash: prepared.sha256,
                 blurhash: nil,
-                duration: prepared.duration
+                duration: prepared.duration,
+                approxBitrateMbps: prepared.approxBitrateMbps,
+                preset: prepared.preset.chatPayloadCode
             )
         } catch {
             print("pending video preview write 실패: \(error)")

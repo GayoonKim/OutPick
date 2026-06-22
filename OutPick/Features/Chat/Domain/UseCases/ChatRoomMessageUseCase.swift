@@ -10,7 +10,7 @@ import Combine
 
 protocol ChatRoomMessageUseCaseProtocol {
     func makeTextMessage(text: String, replyPreview: ReplyPreview?, room: ChatRoom) -> ChatMessage?
-    func sendPreparedMessage(_ message: ChatMessage, room: ChatRoom)
+    func sendPreparedMessage(_ message: ChatMessage, room: ChatRoom) async throws
     func loadMessagesAroundAnchor(
         room: ChatRoom,
         anchor: ChatMessage,
@@ -93,8 +93,8 @@ final class ChatRoomMessageUseCase: ChatRoomMessageUseCaseProtocol {
         )
     }
 
-    func sendPreparedMessage(_ message: ChatMessage, room: ChatRoom) {
-        sendingRepository.sendMessage(message, to: room)
+    func sendPreparedMessage(_ message: ChatMessage, room: ChatRoom) async throws {
+        try await sendingRepository.sendMessage(message, to: room)
     }
 
     func loadMessagesAroundAnchor(

@@ -163,8 +163,8 @@ final class ChatRoomViewModel {
         messageUseCase.makeTextMessage(text: text, replyPreview: replyPreview, room: room)
     }
 
-    func sendPreparedMessage(_ message: ChatMessage) {
-        messageUseCase.sendPreparedMessage(message, room: room)
+    func sendPreparedMessage(_ message: ChatMessage) async throws {
+        try await messageUseCase.sendPreparedMessage(message, room: room)
     }
 
     func openMessageStream(roomID: String) async throws -> ChatRoomRealtimeSession {

@@ -31,6 +31,12 @@ final class ChatContainer {
     private let chatRoomLifecycleUseCase: ChatRoomLifecycleUseCaseProtocol
     private let chatRoomExitUseCase: ChatRoomExitUseCaseProtocol
     private let chatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol
+    private let chatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol
+    private let storageDownloadURLCache: ChatStorageURLResolving
+    private let chatVideoDiskCache: ChatVideoDiskCaching
+    private let chatRemoteFileDownloader: ChatRemoteFileDownloading
+    private let chatVideoPlaybackResolver: ChatVideoPlaybackResolving
+    private let chatPhotoLibrarySaver: ChatPhotoLibrarySaving
     private let loadShareableJoinedRoomsUseCase: LoadShareableJoinedRoomsUseCaseProtocol
     private let shareLookbookContentToChatUseCase: ShareLookbookContentToChatUseCaseProtocol
     private var joinedRoomsRuntimeCancellable: AnyCancellable?
@@ -97,6 +103,19 @@ final class ChatContainer {
             imageStorageRepository: repositories.imageStorageRepository,
             videoStorageRepository: FirebaseVideoStorageRepository.shared
         )
+        self.chatOutgoingOutboxUseCase = ChatOutgoingOutboxUseCase(
+            imageStorageRepository: repositories.imageStorageRepository,
+            videoStorageRepository: FirebaseVideoStorageRepository.shared
+        )
+        self.storageDownloadURLCache = StorageDownloadURLCache.shared
+        self.chatVideoDiskCache = OPVideoDiskCache.shared
+        self.chatRemoteFileDownloader = URLSessionChatRemoteFileDownloader()
+        self.chatVideoPlaybackResolver = DefaultChatVideoPlaybackResolver(
+            storageURLResolver: storageDownloadURLCache,
+            videoDiskCache: chatVideoDiskCache,
+            fileDownloader: chatRemoteFileDownloader
+        )
+        self.chatPhotoLibrarySaver = DefaultChatPhotoLibrarySaver()
         let lookbookChatShareSendingRepository = SocketLookbookChatShareSendingRepository()
         self.loadShareableJoinedRoomsUseCase = LoadShareableJoinedRoomsUseCase(
             joinedRoomsUseCase: self.joinedRoomsUseCase
@@ -149,6 +168,18 @@ final class ChatContainer {
 
     func makeChatMediaUploadUseCase() -> ChatMediaUploadUseCaseProtocol {
         chatMediaUploadUseCase
+    }
+
+    func makeChatOutgoingOutboxUseCase() -> ChatOutgoingOutboxUseCaseProtocol {
+        chatOutgoingOutboxUseCase
+    }
+
+    func makeChatVideoPlaybackResolver() -> ChatVideoPlaybackResolving {
+        chatVideoPlaybackResolver
+    }
+
+    func makeChatPhotoLibrarySaver() -> ChatPhotoLibrarySaving {
+        chatPhotoLibrarySaver
     }
 
     func bindJoinedRoomsRuntimeIfNeeded() {

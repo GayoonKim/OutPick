@@ -8,18 +8,20 @@
 import Foundation
 
 protocol ChatMediaMessageSendingRepositoryProtocol {
+    var isSocketConnected: Bool { get }
+
     func sendImages(
         _ room: ChatRoom,
         attachments: [Attachment],
         senderAvatarPath: String?,
         clientMessageID: String?
-    )
+    ) async throws
 
     func sendVideo(
         roomID: String,
         payload: VideoMetaPayload,
         senderAvatarPath: String?
-    )
+    ) async throws
 
     func sendFailedVideo(
         roomID: String,
@@ -35,20 +37,22 @@ protocol ChatMediaMessageSendingRepositoryProtocol {
 }
 
 protocol ChatMediaSocketSending {
-    func sendImages(
+    var isSocketConnected: Bool { get }
+
+    func sendImagesAwaitingAck(
         _ room: ChatRoom,
         _ attachments: [[String: Any]],
         senderAvatarPath: String?,
-        clientMessageID: String?
-    )
+        clientMessageID: String?,
+        ackTimeout: Double
+    ) async throws
 
-    func sendVideo(
+    func sendVideoAwaitingAck(
         roomID: String,
         payload: VideoMetaPayload,
         senderAvatarPath: String?,
-        ackTimeout: Double,
-        completion: ((Result<Void, Error>) -> Void)?
-    )
+        ackTimeout: Double
+    ) async throws
 
     func sendFailedVideos(
         roomID: String,
@@ -70,17 +74,22 @@ final class SocketChatMediaMessageSendingRepository: ChatMediaMessageSendingRepo
         self.socketManager = socketManager
     }
 
+    var isSocketConnected: Bool {
+        socketManager.isSocketConnected
+    }
+
     func sendImages(
         _ room: ChatRoom,
         attachments: [Attachment],
         senderAvatarPath: String?,
         clientMessageID: String?
-    ) {
-        socketManager.sendImages(
+    ) async throws {
+        try await socketManager.sendImagesAwaitingAck(
             room,
             attachments.map { $0.toDict() },
             senderAvatarPath: senderAvatarPath,
-            clientMessageID: clientMessageID
+            clientMessageID: clientMessageID,
+            ackTimeout: 15.0
         )
     }
 
@@ -88,13 +97,12 @@ final class SocketChatMediaMessageSendingRepository: ChatMediaMessageSendingRepo
         roomID: String,
         payload: VideoMetaPayload,
         senderAvatarPath: String?
-    ) {
-        socketManager.sendVideo(
+    ) async throws {
+        try await socketManager.sendVideoAwaitingAck(
             roomID: roomID,
             payload: payload,
             senderAvatarPath: senderAvatarPath,
-            ackTimeout: 5.0,
-            completion: nil
+            ackTimeout: 5.0
         )
     }
 
