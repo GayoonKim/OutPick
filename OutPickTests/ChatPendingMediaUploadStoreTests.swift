@@ -76,7 +76,8 @@ struct ChatPendingMediaUploadStoreTests {
 
         let staged = store.stageVideoUpload(
             roomID: "room-1",
-            messageID: "video-1"
+            messageID: "video-1",
+            prepared: try makePreparedVideo()
         )
         let firstTask = Task<Void, Never> {}
         let secondTask = Task<Void, Never> {}
@@ -97,6 +98,63 @@ struct ChatPendingMediaUploadStoreTests {
         secondTask.cancel()
     }
 
+    @Test func retryPayloadUsesUploadedImageAttachmentsWhenFinalizeFailed() throws {
+        let store = ChatPendingMediaUploadStore()
+        let pair = try makeImagePair()
+        let attachment = makeAttachment()
+        _ = store.stageImageUpload(
+            room: makeRoom(id: "room-1"),
+            roomID: "room-1",
+            messageID: "message-1",
+            pairs: [pair]
+        )
+
+        store.setUploadedImageAttachments([attachment], for: "message-1")
+        store.failImageUpload(for: "message-1")
+
+        guard case let .finalizeImages(_, roomID, messageID, attachments) = store.mediaRetryPayload(for: "message-1") else {
+            Issue.record("Expected finalizeImages retry payload")
+            return
+        }
+        #expect(roomID == "room-1")
+        #expect(messageID == "message-1")
+        #expect(attachments == [attachment])
+    }
+
+    @Test func retryPayloadUsesUploadedVideoPayloadWhenFinalizeFailed() throws {
+        let store = ChatPendingMediaUploadStore()
+        let prepared = try makePreparedVideo()
+        let payload = VideoMetaPayload(
+            roomID: "room-1",
+            messageID: "video-1",
+            storagePath: "rooms/room-1/messages/video-1/video/video.mp4",
+            thumbnailPath: "rooms/room-1/messages/video-1/video/thumb.jpg",
+            duration: prepared.duration,
+            width: prepared.width,
+            height: prepared.height,
+            sizeBytes: prepared.sizeBytes,
+            approxBitrateMbps: prepared.approxBitrateMbps,
+            preset: "standard720"
+        )
+        _ = store.stageVideoUpload(
+            roomID: "room-1",
+            messageID: "video-1",
+            prepared: prepared
+        )
+
+        store.setUploadedVideoPayload(payload, for: "video-1")
+        store.setVideoUploadState(.failed, for: "video-1")
+
+        guard case let .finalizeVideo(roomID, messageID, retryPayload) = store.mediaRetryPayload(for: "video-1") else {
+            Issue.record("Expected finalizeVideo retry payload")
+            return
+        }
+        #expect(roomID == "room-1")
+        #expect(messageID == "video-1")
+        #expect(retryPayload.messageID == "video-1")
+        #expect(retryPayload.storagePath == payload.storagePath)
+    }
+
     private func makeImagePair() throws -> DefaultMediaProcessingService.ImagePair {
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
@@ -110,6 +168,39 @@ struct ChatPendingMediaUploadStoreTests {
             originalHeight: 80,
             bytesOriginal: 3,
             sha256: "image-sha"
+        )
+    }
+
+    private func makeAttachment() -> OutPick.Attachment {
+        OutPick.Attachment(
+            type: .image,
+            index: 0,
+            pathThumb: "rooms/room-1/messages/message-1/images/image-sha/thumb.jpg",
+            pathOriginal: "rooms/room-1/messages/message-1/images/image-sha/original.jpg",
+            width: 100,
+            height: 80,
+            bytesOriginal: 3,
+            hash: "image-sha",
+            blurhash: nil,
+            duration: nil
+        )
+    }
+
+    private func makePreparedVideo() throws -> PreparedVideo {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("mp4")
+        try Data([7, 7, 7]).write(to: fileURL)
+        return PreparedVideo(
+            compressedFileURL: fileURL,
+            thumbnailData: Data([3, 2, 1]),
+            sha256: "video-sha",
+            duration: 12.5,
+            width: 1280,
+            height: 720,
+            sizeBytes: 3,
+            approxBitrateMbps: 4.5,
+            preset: .standard720
         )
     }
 

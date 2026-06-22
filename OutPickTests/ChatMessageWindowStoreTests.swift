@@ -55,6 +55,37 @@ struct ChatMessageWindowStoreTests {
         #expect(store.message(for: "m1")?.msg == "new")
     }
 
+    @Test func applyReordersRetriedFailedMessageAfterServerConfirmation() {
+        var store = makeStore()
+        let sentAt = Date(timeIntervalSince1970: 100)
+        var firstFailed = makeMessage(id: "failed-1", seq: 0, sentAt: sentAt.addingTimeInterval(1))
+        firstFailed.isFailed = true
+        var secondFailed = makeMessage(id: "failed-2", seq: 0, sentAt: sentAt.addingTimeInterval(2))
+        secondFailed.isFailed = true
+        _ = store.reset(
+            messages: [
+                makeMessage(id: "m1", seq: 1, sentAt: sentAt),
+                firstFailed,
+                secondFailed
+            ],
+            readBoundarySeq: nil
+        )
+
+        let confirmed = makeMessage(id: "failed-2", seq: 2, sentAt: sentAt.addingTimeInterval(2))
+
+        let mutation = store.apply(
+            messages: [confirmed],
+            updateType: .newer,
+            isUserInCurrentRoom: true,
+            windowSize: 300
+        )
+
+        #expect(messageIDs(in: mutation.items) == ["m1", "failed-2", "failed-1"])
+        #expect(mutation.shouldReloadSnapshot == true)
+        #expect(mutation.reconfiguredItems.map(\.messageID) == ["failed-2"])
+        #expect(store.lastMessageID() == "failed-1")
+    }
+
     @Test func applyNewerInsertsReadMarkerWhenUnreadBoundaryIsCrossed() throws {
         var store = makeStore()
         let sentAt = Date(timeIntervalSince1970: 100)

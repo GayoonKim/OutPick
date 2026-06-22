@@ -88,7 +88,7 @@ struct ChatMediaUploadUseCaseTests {
             messageID: "message-1",
             onProgress: { progressValues.append($0) }
         )
-        useCase.sendUploadedImages(
+        try await useCase.sendUploadedImages(
             room: makeRoom(id: "room-1"),
             attachments: attachments,
             clientMessageID: "message-1"
@@ -135,7 +135,7 @@ struct ChatMediaUploadUseCaseTests {
             prepared: prepared,
             onProgress: { progressValues.append($0) }
         )
-        useCase.sendUploadedVideo(roomID: "room-1", payload: payload)
+        try await useCase.sendUploadedVideo(roomID: "room-1", payload: payload)
 
         #expect(payload.messageID == "video-1")
         #expect(payload.storagePath == "rooms/room-1/messages/video-1/video/video.mp4")
@@ -354,6 +354,8 @@ private final class FirebaseVideoStorageRepositoryFake: FirebaseVideoStorageRepo
         if let dataUploadError { throw dataUploadError }
     }
 
+    func deleteVideoFromStorage(path: String) {}
+
     func setDataFallbackLimitMB(_ mb: Int) {}
 }
 
@@ -387,12 +389,14 @@ private final class ChatMediaMessageSendingRepositorySpy: ChatMediaMessageSendin
     private(set) var videoCalls: [VideoCall] = []
     private(set) var failedVideoCalls: [FailedVideoCall] = []
 
+    var isSocketConnected = true
+
     func sendImages(
         _ room: ChatRoom,
         attachments: [ChatAttachment],
         senderAvatarPath: String?,
         clientMessageID: String?
-    ) {
+    ) async throws {
         imageCalls.append(ImageCall(
             room: room,
             attachments: attachments,
@@ -405,7 +409,7 @@ private final class ChatMediaMessageSendingRepositorySpy: ChatMediaMessageSendin
         roomID: String,
         payload: VideoMetaPayload,
         senderAvatarPath: String?
-    ) {
+    ) async throws {
         videoCalls.append(VideoCall(
             roomID: roomID,
             payload: payload,

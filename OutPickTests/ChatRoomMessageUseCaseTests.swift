@@ -43,13 +43,13 @@ struct ChatRoomMessageUseCaseTests {
         #expect(useCase.makeTextMessage(text: "안녕", replyPreview: nil, room: makeRoom(id: "   ")) == nil)
     }
 
-    @Test func sendPreparedMessageDelegatesToRepository() throws {
+    @Test func sendPreparedMessageDelegatesToRepository() async throws {
         let repository = ChatMessageSendingRepositorySpy()
         let useCase = makeUseCase(repository: repository)
         let room = makeRoom(id: "room-1")
         let message = try #require(useCase.makeTextMessage(text: "안녕", replyPreview: nil, room: room))
 
-        useCase.sendPreparedMessage(message, room: room)
+        try await useCase.sendPreparedMessage(message, room: room)
 
         #expect(repository.calls.count == 1)
         #expect(repository.calls.first?.message.ID == "message-1")
@@ -157,7 +157,7 @@ private final class ChatMessageSendingRepositorySpy: ChatMessageSendingRepositor
 
     private(set) var calls: [Call] = []
 
-    func sendMessage(_ message: ChatMessage, to room: ChatRoom) {
+    func sendMessage(_ message: ChatMessage, to room: ChatRoom) async throws {
         calls.append(Call(message: message, room: room))
     }
 }
