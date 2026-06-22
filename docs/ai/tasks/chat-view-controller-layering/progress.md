@@ -2,379 +2,497 @@
 
 ## 현재 상태
 
-- 상태: Phase 6 보강으로 읽음 상태 공유 Store/stream 전환 구현, targeted unit test, 앱 빌드/실행 검증 완료.
-- `lookbook-chat-share` MVP 완료 후속 작업인 `ChatViewController.swift` 레이어 분리를 독립 task로 승격했다.
-- 첫 코드 phase로 텍스트 메시지 생성/전송 책임을 `ChatViewController` 밖으로 이동했다.
-- 두 번째 코드 phase로 실시간 수신 socket session/task/close 경계를 Repository/UseCase/Subscription으로 이동했다.
-- 세 번째 코드 phase로 메시지 롱프레스 메뉴 선택 이벤트와 서버 상태 변경 액션 실행 경계를 분리했다.
-- 삭제 대상이 방의 마지막 메시지인 경우 참여중인 목록과 오픈채팅 목록에 삭제 표시가 반영되도록 room summary와 preview 렌더링 경로를 보정했다.
-- 다음 phase부터 iOS 빌드/테스트/시뮬레이터 실행 검증은 가능한 경우 Build iOS Apps 플러그인의 `xcodebuildmcp`를 우선 사용하기로 했다.
-- 네 번째 코드 phase로 메시지 window/list item 상태 계산을 `ChatMessageWindowStore`로 이동했다.
-- 다섯 번째 코드 phase로 pending image state/task/retry payload, preview attachment 생성, 이미지/비디오 Storage 업로드와 socket media broadcast 경계를 `ChatViewController` 밖으로 이동했다.
-- 여섯 번째 코드 phase로 읽음 seq 후보/final/flush 상태 계산을 `ChatReadStateStore`로 이동했다.
-- Phase 6 보강으로 참여중인 목록과 현재 채팅방이 공유하는 `ChatRoomReadStateStore`를 추가하고, `NotificationCenter` 기반 unread 갱신을 제거했다.
-- Phase 6 수동 QA 완료: 참여중인 목록 unread 갱신과 현재 채팅방 읽음 상태 공유가 정상 동작하는 것을 사용자 확인했다.
-- 다음 phase는 화면 이동/라우팅 책임을 Coordinator 경계로 정리하는 Phase 7로 잡는다.
+- 상태: Phase 16.6.1 완료, 실패 outgoing message 로컬 outbox 영속화와 재시도 성공 후 즉시 UI 정합성 보정 완료.
+- 원본 상세 기록은 `archive/progress-through-phase-9.md`에 보존했다.
+- 현재 task 목표는 `ChatViewController`에 몰려 있던 메시지 전송, 실시간 수신, 메시지 액션, 메시지 window/diffable, 미디어 업로드, 읽음 seq/lifecycle, 라우팅, 방 exit 실행 책임을 MVVM-C + Repository + UseCase + DI 흐름에 맞춰 분리하는 것이다.
 
-## Phase 0 완료 기록
+## Phase 인덱스
 
-- 새 task 문서 생성:
-  - `docs/ai/tasks/chat-view-controller-layering/plan.md`
-  - `docs/ai/tasks/chat-view-controller-layering/progress.md`
-  - `docs/ai/tasks/chat-view-controller-layering/decisions.md`
-- `docs/ai/tasks/active.md`를 새 task 기준으로 갱신했다.
-- 리팩토링 phase를 다음 순서로 정리했다.
-  - Phase 1: 텍스트 메시지 전송 경계 분리.
-  - Phase 2: 실시간 소켓 세션 관찰 분리.
-  - Phase 3: 메시지 액션/menu 분리.
-  - Phase 4: 메시지 window와 diffable helper 분리.
-  - Phase 5: 이미지/비디오 pending upload 분리.
-  - Phase 6: 읽음 seq와 lifecycle 정리.
+| Phase | 상태 | 핵심 결과 | 상세 기록 |
+| --- | --- | --- | --- |
+| 0 | 완료 | task 문서 생성, phase 계획 수립 | `archive/progress-through-phase-9.md` |
+| 1 | 완료 | 텍스트 메시지 생성/전송을 `ChatRoomMessageUseCase`와 socket sending repository 경계로 이동 | `archive/progress-through-phase-9.md` |
+| 2 | 완료 | 실시간 socket session/task/close 경계를 `ChatRoomRealtimeUseCase`, repository, subscription으로 이동 | `archive/progress-through-phase-9.md` |
+| 3 | 완료 | 메시지 action 값 분리, delete/announce 서버 액션을 ViewModel/UseCase 경계로 이동 | `archive/progress-through-phase-9.md` |
+| 4 | 완료 | `ChatMessageListItem`, `ChatMessageWindowStore`로 window/list item/reconfigure 계산 분리 | `archive/progress-through-phase-9.md` |
+| 5 | 완료 | pending media state/store, media upload use case, socket media repository 분리 | `archive/progress-through-phase-9.md` |
+| 6 | 완료 | `ChatReadStateStore`로 read seq 상태 계산 분리 | `archive/progress-through-phase-9.md` |
+| 6 보강 | 완료 | `ChatRoomReadStateStore`로 room별 read/latest snapshot 공유, NotificationCenter 제거 | `archive/progress-through-phase-9.md` |
+| 7 | 완료 | `ChatRoomRouting`/`ChatCoordinator`로 채팅 내부 라우팅 정리, 설정 패널 이벤트 `ChatRoomSettingEvent + onEvent` 통합 | `archive/progress-through-phase-9.md` |
+| 8 | 완료 | `ChatRoomExitUseCase`/repository/local cleaner로 방 나가기/닫기 실행 경계 분리 | `archive/progress-through-phase-9.md` |
+| 9 | 완료 | 채팅 화면 storyboard/coder 우회 진입로 제거, 코드 기반 DI 경로 확정 | `archive/progress-through-phase-9.md` |
+| 9.5 | 완료 | 긴 하네스 문서를 인덱스 + archive 구조로 압축 | 현재 문서 |
+| 10 | 완료 | `ChatDependencyContainer` 제거, `ChatViewController`의 핵심 ViewModel/UseCase 명시 주입 전환 | 현재 문서 |
+| 11 | 완료 | `room:closed` socket binding/해제와 미참여 방 transient GRDB cleanup을 runtime use case 경계로 이동 | 현재 문서 |
+| 12 | 완료 | 앱 공통 `CurrentUserProviding`을 Chat에 주입하고 `ChatViewController`의 `LoginManager.shared` 직접 접근 제거 | 현재 문서 |
+| 13 | 완료 | 채팅방 표시/이탈 presence-banner lifecycle을 runtime use case 경계로 이동 | 현재 문서 |
+| 14 | 완료 | 채팅방 본문 이미지/비디오 preview present는 `ChatRoomRouting`/`ChatCoordinator`, 비디오 URL/cache/save 파일 해석과 Photos 저장은 service 경계로 분리 | 현재 문서 |
+| 15 | 완료 | `OPStorageURLCache`를 `StorageDownloadURLCache.shared`로 Infra 승격하고 media preview concrete 선택을 `ChatContainer` 조립으로 이동 | 현재 문서 |
+| 16 | 완료 | `ChatMessageCell` 단발 이벤트 Combine 제거, `ChatMessageCellCommands` 기반 messageID command 계약으로 전환 | 현재 문서 |
+| 16.5 | 완료 | 텍스트 메시지 Socket.IO `"NO ACK"`/timeout ACK를 실패로 판정해 기존 optimistic 메시지가 failed 상태로 reconfigure되도록 보정 | 현재 문서 |
+| 16.6 | 완료 | 텍스트/media 전송 ACK 실패를 호출부까지 전파하고, media canonical ID에서 `pending` prefix를 제거하며 업로드 완료 후 finalize retry는 재업로드 없이 수행 | 현재 문서 |
+| 16.6.1 | 완료 | 실패 outgoing message를 GRDB outbox와 Application Support 파일로 영속화하고, 앱 재시작 후 text/image/video retry, local-only delete, 재시도 성공 즉시 재정렬/실패 UI 제거를 지원 | 현재 문서 |
+| 16.6.2 | 예정 | Phase 17 전 `ChatOutgoingOutboxUseCase`/media upload storage repository DI 정합성 보정 | 현재 문서 |
+| 17 | 설계 예정 | Chat 이미지 로딩 경계를 `ImageCachePipeline` 기반 service로 재정의 | 현재 문서 |
+| 18 | 설계 예정 | 비디오 asset warm-up/thumbnail 경계 분리 | 현재 문서 |
+| 19 | 설계 예정 | 갤러리/뷰어 Photos 저장 흐름 통합 | 현재 문서 |
+| 20 | 설계 예정 | 검색 UI orchestration 분리 | 현재 문서 |
+| 21 | 설계 예정 | `ChatViewController` 남은 runtime singleton/manager 직접 접근 최종 audit | 현재 문서 |
 
-## 완료한 결정
+## 최근 완료 상세
 
-- 첫 코드 phase는 텍스트 메시지 전송 경계 분리를 추천안으로 둔다.
-- 미디어 업로드 분리는 회귀 위험이 높으므로 초반 phase에서 제외한다.
-- `ChatViewController` 파일 분할만으로 끝내지 않고, UseCase/Repository/Service/Coordinator 경계로 책임을 이동한다.
-- Phase 0은 문서 작업이므로 자동 테스트와 빌드를 실행하지 않는다.
-- optimistic message는 UseCase가 생성하고, ViewController가 화면에 먼저 반영한 뒤 ViewModel을 통해 prepared message를 전송한다.
-- 실시간 stream 소유권은 Repository/UseCase가 stream을 제공하고 `ChatRoomRealtimeSubscription`이 task와 close를 소유하는 방식으로 정리한다.
-- 메시지 액션 실행 경계는 B안을 채택했다.
-  - delete/announce처럼 서버 상태를 바꾸는 액션은 ViewModel/UseCase 경계로 이동한다.
-  - reply/copy/report toast처럼 로컬 UI feedback 성격의 액션은 ViewController에 남긴다.
-  - report는 기존 toast만 유지하고 실제 신고 저장/서버 처리는 후속 기능 phase에서 별도 설계한다.
-- iOS 검증 도구는 Build iOS Apps 플러그인의 `xcodebuildmcp`를 우선 사용한다.
-  - 첫 build/run/test 전 `session_show_defaults`로 기본값을 확인한다.
-  - 빌드/실행은 `build_run_sim`, 테스트는 `test_sim`, 앱 재실행은 `launch_app_sim`, 시각 확인은 `screenshot`을 우선 검토한다.
-  - 플러그인 미지원 특수 검증에는 shell `xcodebuild`를 fallback으로 사용할 수 있다.
-- Phase 4 메시지 list item 타입 위치는 B안을 채택했다.
-  - `ChatViewController.Item` 내부 enum을 유지하지 않고 `ChatMessageListItem`으로 승격했다.
-  - 메시지 window 상태 계산은 `ChatMessageWindowStore`가 소유한다.
-  - pending image upload 처리는 Phase 5 범위로 남기고, Phase 4에서는 store의 메시지 상태 갱신만 연결했다.
-- Phase 5 이미지/비디오 업로드 분리 범위는 추천안을 채택했다.
-  - 이미지와 비디오 업로드 경계는 `ChatMediaUploadUseCase`로 묶는다.
-  - pending image 상태/task/retry payload는 `ChatPendingMediaUploadStore`가 소유한다.
-  - socket media broadcast는 `ChatMediaMessageSendingRepositoryProtocol` 뒤로 숨긴다.
-  - 비디오 pending cell/retry UX 통합은 이번 phase에서 하지 않고 기존 실패 메시지 흐름을 유지한다.
-- Phase 6 읽음 seq/lifecycle 정리 범위는 추천안을 채택했다.
-  - 읽음 seq 후보 계산, final seq 계산, pending/queued/persisted 상태 전이는 `ChatReadStateStore`가 소유한다.
-  - debounce task와 실제 persist orchestration은 `ChatRoomViewModel`에 유지한다.
-  - app lifecycle observer와 near-bottom UI 판정은 `ChatViewController`에 유지한다.
-  - Store 파일이 2개 이상 생겼으므로 `OutPick/Features/Chat/Stores/` 폴더를 만들고 Chat Store 파일을 모았다.
-- Phase 6 보강 읽음 상태 공유 구조는 추천안을 채택했다.
-  - 단일 방 flush 상태 머신인 `ChatReadStateStore`는 유지한다.
-  - roomID별 latest/read snapshot과 invalidation stream은 `ChatRoomReadStateStore`가 소유한다.
-  - `JoinedRoomsViewModel`은 `NotificationCenter` 대신 `ChatRoomReadStateStore`의 `AsyncStream`을 구독한다.
-  - bootstrap/pull-to-refresh 성격의 unread 계산은 서버 snapshot으로 Store를 seed하고, 런타임 중에는 Store snapshot으로 즉시 계산한다.
+### Phase 8
 
-## Phase 1 구현 기록
+- `ChatRoomExitUseCase`를 추가했다.
+  - 서버 leave/close 요청 성공 뒤 local cleanup을 실행한다.
+  - 서버 실패 시 local cleanup을 실행하지 않는다.
+  - local cleanup 실패는 로그만 남기고 성공 결과를 유지한다.
+- `ChatRoomExitRepositoryProtocol`과 `SocketChatRoomExitRepository`를 추가했다.
+  - Socket.IO ACK의 `mode: left/closed` 값을 `ChatRoomExitResult`로 보존한다.
+  - 기존 `requestLeaveOrCloseRoom(... Result<Void, Error>)` API는 호환용으로 유지한다.
+- `DefaultChatRoomLocalExitCleaner`를 추가했다.
+  - GRDB 정리는 참여중인 방 목록 캐시 삭제가 아니라 해당 방의 메시지/미디어/참여자 로컬 채팅 데이터 cleanup으로 정의했다.
+  - `JoinedRoomsStore.remove(roomID)`는 목록 캐시 삭제가 아니라 socket/banner runtime 구독 해제 보정으로 유지했다.
+- 설정 패널은 ConfirmView, 실패 alert, `.roomExited` 이벤트 전달만 담당한다.
+- 참여중인 목록 swipe 나가기도 exit use case로 통합했다.
+- 방장은 목록 swipe로 바로 방을 닫지 않고 설정 패널에서 닫도록 제한했다.
 
-- `ChatMessageSendingRepositoryProtocol`과 `SocketChatMessageSendingRepository`를 추가했다.
-- `SocketIOManager.sendMessage(_:_:)`는 `ChatTextMessageSocketSending` protocol 뒤로 감쌌다.
-- `ChatRoomMessageUseCase`에 텍스트 메시지 생성과 prepared message 전송 경계를 추가했다.
-  - `makeTextMessage(text:replyPreview:room:)`
-  - `sendPreparedMessage(_:room:)`
-- `ChatRoomMessageUseCase`는 current user snapshot, message ID, date provider를 주입받아 테스트 가능하게 만들었다.
-- `ChatRoomViewModel`은 ViewController가 사용할 좁은 API를 제공한다.
-  - `makeOutgoingTextMessage(text:replyPreview:)`
-  - `sendPreparedMessage(_:)`
-- `ChatContainer`는 socket sending repository를 생성해 `ChatRoomMessageUseCase`에 주입한다.
-- `ChatViewController.handleSendButtonTap`은 더 이상 `LoginManager.shared`와 `SocketIOManager.shared.sendMessage`를 직접 호출하지 않는다.
-- optimistic render 순서는 유지했다.
-  - ViewModel/UseCase가 outgoing message 생성.
-  - ViewController가 먼저 `addMessages(..., updateType: .newer)`로 표시.
-  - 이후 ViewModel을 통해 prepared message 전송.
-- `ChatRoomMessageUseCaseTests`를 추가했다.
-  - trim된 텍스트와 injected sender snapshot으로 optimistic message를 생성하는지 검증.
-  - blank text 또는 roomID 누락 시 메시지를 만들지 않는지 검증.
-  - prepared message 전송이 repository로 위임되는지 검증.
+검증:
 
-## Phase 2 구현 기록
+- `xcodebuildmcp.build_run_sim` 통과.
+- `xcodebuildmcp.test_sim -only-testing:OutPickTests/ChatRoomExitUseCaseTests` 통과, 5개.
 
-- `ChatRoomRealtimeRepositoryProtocol`과 `SocketChatRoomRealtimeRepository`를 추가했다.
-- `SocketIOManager.openRoomSession(for:)`는 `ChatRoomRealtimeSocketOpening` protocol 뒤로 감쌌다.
-- `ChatRoomRealtimeUseCase`를 추가해 ViewModel이 socket 구현을 직접 알지 않게 했다.
-- `ChatRoomRealtimeSubscription`을 추가했다.
-  - message stream task를 소유한다.
-  - opened session close/cancel 경계를 소유한다.
-  - stream 종료 시 subscription identity로 현재 구독인지 확인해 오래된 stream이 새 구독을 지우지 않게 한다.
-- `ChatRoomViewModel`은 `openMessageStream(roomID:)`만 제공한다.
-- `ChatContainer`는 realtime use case를 생성해 `ChatRoomViewModel`에 주입한다.
-- `ChatViewController.startRoomMessageStream`은 더 이상 `SocketIOManager.shared.openRoomSession`을 직접 호출하지 않는다.
-- `ChatViewController`에서 제거한 직접 소유 상태:
-  - `roomMessageTask`
-  - `roomSession`
-  - `activeRealtimeRoomID`
-  - `activeRealtimeStreamToken`
-- `ChatRoomRealtimeUseCaseTests`를 추가했다.
-  - fake realtime repository가 roomID를 받는지 검증.
-  - repository가 제공한 `AsyncStream<ChatMessage>`가 use case 경계 밖으로 전달되는지 검증.
+### Phase 9
 
-## Phase 3 구현 기록
+- `Main.storyboard`에서 채팅 관련 scene과 tab relationship을 제거했다.
+  - `ChatList`
+  - `chatListVC`
+  - `chatRoomVC`
+  - `chatRoomCreateVC`
+  - 기존 dummy 채팅 tab scene
+- 화면 단위 ViewController의 storyboard 생성 fallback을 닫았다.
+  - `ChatViewController.required init?(coder:)`
+  - `RoomListsCollectionViewController.required init?(coder:)`
+  - `JoinedRoomsViewController.required init?(coder:)`
+- `ChatViewController(provider:)`의 `ChatDependencyContainer.provider` 기본값을 제거했다.
+- `ChatContainer`의 storyboard fallback 관련 주석을 제거했다.
+- `ChatDependencyContainer` 자체는 제거하지 않았다.
+  - 아직 `ChatViewController` 내부 `requireFirebaseRepositories`, `requireJoinedRoomsStore`, `requireRoomReadStateStore` bridge가 남아 있다.
+  - 전체 제거는 후속 phase 후보로 남겼다.
 
-- `ChatMessageAction`과 `ChatMessageServerAction` 값을 추가했다.
-- `ChatMessageActionPolicy`에 `allows(_:)`를 추가해 메뉴 선택 이벤트 방어선을 순수 정책 객체에 유지했다.
-- `ChatCustomPopUpMenu`는 개별 action closure 다섯 개 대신 `onActionSelected` 하나로 선택된 action만 전달한다.
-- `ChatRoomViewModel`에 메시지 액션 경계를 추가했다.
-  - `messageActionPolicy(for:currentUserID:)`
-  - `performMessageServerAction(_:for:)`
-- `ChatViewController`는 롱프레스 메뉴 표시, confirm/toast/clipboard/reply UI feedback을 담당한다.
-- `ChatViewController`에서 `messageManager.deleteMessage` 직접 호출 fallback을 제거했다.
-- `OutPickTests/ChatRoomViewModelMessageActionTests.swift`를 추가했다.
-  - 방 생성자 기준 action policy 위임 검증.
-  - delete action이 message use case로 위임되는지 검증.
-  - announce action이 lifecycle use case로 위임되는지 검증.
-- 사용자 수동 QA 피드백 기준 답장은 동작하나 reply preview separator 대비가 약해 `ChatMessageCell.replyPreviewSeparator` 색을 `borderSubtle`에서 `iconSecondary.withAlphaComponent(0.65)`로 조정했다.
-- 삭제한 메시지가 목록에서 원문으로 남는 문제를 수정했다.
-  - `ChatRoomMessageUseCase.deleteMessage`가 삭제 처리 뒤 마지막 메시지 요약 갱신 경계를 호출한다.
-  - `FirebaseChatRoomRepository.updateDeletedLastMessageSummaryIfCurrent`는 Firestore transaction에서 room의 현재 `seq` 또는 `lastMessageSeq`가 삭제 대상 메시지 `seq`와 같을 때만 `lastMessage`를 "삭제된 메시지입니다."로 갱신한다.
-  - `lastMessageAt`은 갱신하지 않아 삭제 액션만으로 방 정렬이 최신으로 끌려오지 않게 했다.
-  - `RoomListCollectionViewCell.MessagePreviewView`는 `isDeleted`를 본문/첨부보다 먼저 확인해 오픈채팅 메시지 preview 배열도 삭제 표시를 우선 렌더링한다.
-- `ChatRoomMessageUseCaseTests`에 삭제 메시지 요약 갱신 테스트를 추가했다.
-  - `seq`가 있는 삭제 메시지는 summary updater로 위임되는지 검증.
-  - `seq`가 없으면 stale aggregate 갱신을 시도하지 않는지 검증.
+검증:
 
-## Phase 4 구현 기록
+- `xmllint --noout OutPick/Base.lproj/Main.storyboard` 통과.
+- `xcodebuildmcp.build_run_sim` 통과.
 
-- `ChatMessageListItem`을 추가해 collection view list item 타입을 `ChatViewController` 내부 enum에서 승격했다.
-  - `.message(ChatMessage)`
-  - `.dateSeparator(Date)`
-  - `.readMarker`
-- `ChatMessageWindowStore`를 추가했다.
-  - visible window item 배열을 소유한다.
-  - 메시지 ID 기준 최신 메시지 map을 소유한다.
-  - 중복 메시지 제거, 날짜 구분선 삽입, read marker 삽입, older/newer virtualization, reload/reconfigure 대상 계산을 담당한다.
-- `ChatViewController`는 `messageMap`, `lastMessageDate`, read marker/window 계산을 직접 소유하지 않는다.
-- `ChatViewController.addMessages`는 store mutation 결과를 diffable snapshot에 반영하는 역할로 축소했다.
-- 삭제 listener, 프로필 동기화, pending image upload 실패 상태, 미디어 프리페치, 이미지 뷰어, 롱프레스 메뉴는 store에서 최신 메시지를 조회하도록 연결했다.
-- pagination anchor는 snapshot scan 대신 `ChatMessageWindowStore.firstMessageID()`와 `lastMessageID()`를 사용한다.
-- `OutPickTests/ChatMessageWindowStoreTests.swift`를 추가했다.
-  - 초기 window의 날짜선/read marker 삽입 검증.
-  - 입력 중복 제거와 기존 메시지 reconfigure 검증.
-  - newer 메시지가 unread boundary를 넘을 때 read marker 삽입 검증.
-  - newer virtualization 시 오래된 메시지와 message map pruning 검증.
-  - reload 시 visible message와 reconfigure 대상 갱신 검증.
+### Phase 10
 
-## Phase 5 구현 기록
+- `ChatDependencyContainer` enum을 제거했다.
+- `ChatContainer`는 더 이상 전역 bridge에 provider/repository/store를 세팅하지 않는다.
+- `ChatCoordinator`는 더 이상 화면 생성 전에 `ChatDependencyContainer`를 갱신하지 않는다.
+- `ChatViewController`의 직접 DI 조립 경로를 제거했다.
+  - `injectedFirebaseRepositories` 제거.
+  - `firebaseRepositories` fallback 제거.
+  - `makeMediaUploadUseCase()` 제거.
+  - `ensureChatRoomViewModel()` 제거.
+- `ChatViewController`는 `ChatCoordinator`가 생성자에서 주입한 `ChatRoomViewModel`과 `ChatMediaUploadUseCaseProtocol`을 사용한다.
+- `ChatRoomViewModel`은 화면 핵심 의존성이므로 optional/configure 경로를 두지 않고 non-optional `let`으로 보관한다.
+- `ChatContainer`가 `ChatMediaUploadUseCase`를 생성/보관하고 `makeChatMediaUploadUseCase()`로 제공한다.
+- `UserProfileDetailCompositionRoot` 입력을 `ChatManagerProviding`에서 `ChatAvatarImageManaging`으로 좁혔다.
+  - Lookbook 댓글 프로필 상세가 `ChatDependencyContainer.provider` 대신 `AvatarImageService.shared`를 직접 전달한다.
 
-- `ChatPendingMediaUploadStore`를 추가했다.
-  - pending image upload의 `uploading/failed` 상태를 소유한다.
-  - messageID별 원본 image pair, retry payload, upload task 중복 방지를 관리한다.
-  - retry payload는 failed 상태이고 active task가 없을 때만 반환한다.
-- `ChatMediaUploadUseCase`를 추가했다.
-  - pending image preview attachment 파일 생성과 pending message 생성을 담당한다.
-  - 이미지 Storage 업로드, 성공 시 원본 temp cleanup, 실패 시 thumbnail cache 저장 경계를 제공한다.
-  - 비디오 Storage 업로드, thumbnail Storage 업로드, thumbnail cache 저장, `VideoMetaPayload` 생성을 담당한다.
-  - 서버 전송 성공/실패 media broadcast는 repository 경계로 위임한다.
-- `ChatMediaMessageSendingRepositoryProtocol`과 `SocketChatMediaMessageSendingRepository`를 추가했다.
-  - `SocketIOManager.sendImages`
-  - `SocketIOManager.sendVideo`
-  - `SocketIOManager.sendFailedVideos`
-  위 호출을 ViewController 밖으로 숨겼다.
-- `ChatViewController`는 pending image store/usecase를 사용한다.
-  - pending message 화면 삽입.
-  - upload progress overlay 반영.
-  - retry tap 이벤트 전달.
-  - HUD/alert 표시.
-  역할만 남겼다.
-- `ChatViewControllerExtension.uploadPendingImageMessage`는 Firebase Storage와 SocketIOManager를 직접 호출하지 않는다.
-- `ChatViewControllerExtension.uploadPreparedVideoAndBroadcast`는 기존 이름과 호출 흐름은 유지하되, 내부 구현을 `ChatMediaUploadUseCase` 호출로 축소했다.
-- `ChatMediaManaging.uploadCompressedVideoAndBroadcast` 요구사항과 `ChatMediaManager`의 fatalError 기본 구현을 제거했다.
-- `OutPickTests/ChatPendingMediaUploadStoreTests.swift`를 추가했다.
-  - stage 후 초기 uploading 상태와 실패 후 retry payload 반환 검증.
-  - active task 중복 시작 방지와 task finish 후 재시작 가능 검증.
-  - complete 후 state/payload 제거 검증.
-- `OutPickTests/ChatMediaUploadUseCaseTests.swift`를 추가했다.
-  - pending image message와 local preview attachment 생성 검증.
-  - 이미지 업로드 성공 시 원본 cleanup과 socket repository 위임 검증.
-  - 실패 image thumbnail cache 저장 검증.
-  - 비디오 업로드 payload/storage path/thumbnail upload/cache/send 위임 검증.
-  - local prepared video 실패 메시지 repository 위임 검증.
+검증:
 
-## Phase 6 구현 기록
+- `xcodebuildmcp.build_run_sim` 통과.
 
-- `OutPick/Features/Chat/Stores/` 폴더를 추가하고 Chat Store 파일을 모았다.
-  - `ChatMessageWindowStore`
-  - `ChatPendingMediaUploadStore`
-  - `ChatReadStateStore`
-- `ChatReadStateStore`를 추가했다.
-  - pending/queued/persisted last read seq 상태를 소유한다.
-  - near-bottom 조건을 반영한 next candidate 계산을 담당한다.
-  - 화면 이탈/종료 시 사용할 final seq max 계산을 담당한다.
-  - flush 대상 seq와 flush 완료 후 상태 전이를 담당한다.
-- `ChatRoomViewModel`은 읽음 seq 숫자 필드 세 개를 직접 들지 않고 `ChatReadStateStore`에 위임한다.
-- `ChatRoomViewModel`에 남긴 책임:
-  - debounce task 예약/취소.
-  - `ChatRoomLifecycleUseCase.updateLastReadSeq` 호출.
-  - 초기 메시지 동기화 시 read store reset.
-- `ChatViewController`에 유지한 책임:
-  - near-bottom UI state 판정.
-  - app lifecycle observer 등록.
-  - background/terminate/화면 이탈 시 ViewModel flush 호출.
-- `OutPickTests/ChatReadStateStoreTests.swift`를 추가했다.
-  - near-bottom 조건과 skip 조건 검증.
-  - queued/pending seq monotonic update 검증.
-  - flush 완료 후 persisted/pending 상태 전이 검증.
-  - final seq max 계산 검증.
-  - reset 동작 검증.
+### Phase 11
 
-## Phase 6 보강 구현 기록
+- `ChatRoomRuntimeUseCase`를 추가했다.
+  - `room:closed` 관찰은 runtime repository에 위임한다.
+  - 미참여 방 transient local data cleanup은 cleaner에 위임하고 실패는 로그로 흡수한다.
+- `ChatRoomRuntimeRepositoryProtocol`, `SocketChatRoomRuntimeRepository`, `ChatRoomRuntimeSubscription`을 추가했다.
+  - Socket.IO `room:closed` listener 등록/해제는 repository/socket observer 경계 안으로 이동했다.
+  - subscription `stop()`은 중복 호출되어도 한 번만 해제한다.
+- `DefaultChatRoomTransientLocalDataCleaner`를 추가했다.
+  - `GRDBManager.deleteMessages(inRoom:)`, `deleteImages(inRoom:)` 호출은 cleaner 구현체 안으로 이동했다.
+- `ChatRoomViewModel`은 runtime use case를 생성자 주입으로 받는다.
+  - default fallback 생성 없이 `ChatContainer`가 명시 주입한다.
+- `ChatViewController`는 더 이상 `SocketIOManager.shared.socket`이나 `GRDBManager.shared.deleteMessages/deleteImages`를 직접 호출하지 않는다.
+  - `roomClosedSubscription`만 보관하고 lifecycle에서 `stop()`한다.
+  - 방 닫힘 이벤트 수신 뒤 route 요청은 기존처럼 `router?.handleRoomExit(from:roomID:)`로 유지한다.
 
-- `ChatRoomReadStateStore`를 추가했다.
-  - roomID별 `latestSeq`, `lastReadSeq`, `lastMessageSenderID` snapshot을 소유한다.
-  - `AsyncStream<ChatRoomReadStateChange>`로 특정 room 또는 전체 room read-state 변경을 발행한다.
-  - snapshot이 충분하면 `latestSeq - lastReadSeq` 기준 unread count를 즉시 계산한다.
-  - 마지막 메시지 작성자가 현재 사용자면 기존 unread 보정 정책을 유지한다.
-- `ChatContainer`가 `ChatRoomReadStateStore` 공유 인스턴스를 생성/보관하고 `JoinedRoomsViewModel`, `ChatRoomViewModel`에 주입한다.
-- storyboard fallback을 위해 `ChatDependencyContainer.requireRoomReadStateStore()`를 추가했다.
-- `JoinedRoomsViewModel`은 read-state stream을 구독한다.
-  - room summary 수신/초기 bootstrap/tail page load 시 latest snapshot을 seed한다.
-  - 서버에서 읽어온 read snapshot으로 Store를 seed한다.
-  - Store 변경 이벤트를 받으면 가능한 경우 서버 재조회 없이 `state.unreadCounts`를 갱신한다.
-- `ChatRoomViewModel`은 shared read-state Store에 런타임 상태를 반영한다.
-  - 초기 메시지 sync 시 latest/read boundary를 seed한다.
-  - room document update와 실시간 수신 메시지로 latest snapshot을 seed한다.
-  - lastReadSeq flush 성공 후 `markReadFlushed(roomID:lastReadSeq:)`를 호출한다.
-- `ChatViewController`와 `JoinedRoomsViewController` 사이의 `.chatRoomLastReadSeqDidFlush` `NotificationCenter` 경로를 제거했다.
-- `ChatNotifications.swift`를 삭제했다.
-- `OutPickTests/ChatRoomReadStateStoreTests.swift`를 추가했다.
-  - unread 계산의 현재 사용자 sender 보정 검증.
-  - roomID 필터 stream 발행 검증.
-  - read seq monotonic update 검증.
-- `ChatRoomViewModelMessageActionTests`에 flush 성공 후 shared Store 반영 테스트를 추가했다.
+검증:
 
-## 아직 구현하지 않은 것
+- `xcodebuildmcp.build_run_sim` 통과.
+- `xcodebuildmcp.test_sim -only-testing:OutPickTests/ChatRoomRuntimeUseCaseTests` 통과, 4개.
 
-- Phase 7 채팅 화면 라우팅과 Coordinator 경계 정리.
+### Phase 12
 
-## 미확인 리스크
+- `OutPick/App/Session/CurrentUserProvider.swift`를 추가했다.
+  - `CurrentUserProviding`은 email, documentID, authIdentityKey, nickname, avatarPath, profile을 제공한다.
+  - `LoginManagerCurrentUserProvider`가 내부에서 `LoginManager.shared`를 감싼다.
+- `ChatContainer`가 `LoginManagerCurrentUserProvider`를 생성하고 `ChatRoomViewModel`에 명시 주입한다.
+- `ChatRoomViewModel`은 현재 사용자 판단과 값을 제공한다.
+  - 참여자 여부, 방장 여부, 현재 사용자 비교.
+  - 메시지 action policy 계산.
+  - read seq 저장용 current user documentID.
+  - 공지 author nickname.
+- `ChatViewController`의 `LoginManager.shared` 직접 접근을 제거했다.
+- Lookbook의 기존 `CurrentUserIDProviding`은 유지했다.
+  - 앱 공통 `CurrentUserProviding`으로 흡수하는 작업은 후속 후보로 남겼다.
 
-- 비디오 업로드 실패 후 재시도 UX는 pending image retry와 완전히 같은 UX가 아니다. 실패 시 pending video message 자체를 failed 상태로 표시하지만, 별도 retry payload 통합은 후속 제품 결정이 필요하다.
-- 실제 socket disconnected 실패 메시지 표시 동작은 로컬 socket 상태 재현이 필요하다.
-- background/terminate 시 실제 unread count 반영과 참여중인 목록 UI 반영은 사용자 수동 QA에서 정상 동작 확인됐다.
-- 룩북 공유 MVP 변경분이 아직 working tree에 많이 남아 있어 커밋 정리 시 작업 단위 분리가 필요하다.
+검증:
 
-## 다음 작업
+- `xcodebuildmcp.build_run_sim` 통과.
+- `xcodebuildmcp.test_sim -only-testing:OutPickTests/ChatRoomViewModelMessageActionTests` 통과, 6개.
 
-1. Phase 7 진입 전 라우팅 책임 inventory를 확인한다.
-   - 프로필 상세 이동.
-   - 룩북 공유 카드 상세 이동.
-   - 방 설정 진입/복귀.
-   - 방 나가기/닫힘 후 목록 복귀.
-2. `ChatRoomRouting` 확장 범위와 `AppContentRouting` 유지 범위를 논의한다.
+### Phase 13
 
-## 검증 기록
+- `ChatRoomRuntimeUseCase`에 visible room lifecycle을 추가했다.
+  - `enterVisibleRoom(roomID:)`
+  - `leaveVisibleRoom()`
+- `DefaultChatRoomVisibilityRuntimeManager`를 추가했다.
+  - `BannerManager.setVisibleRoom(roomID)`와 `PresenceManager.enterRoom(roomID)`를 runtime 경계 안으로 이동했다.
+  - `BannerManager.setVisibleRoom(nil)`와 `PresenceManager.leaveCurrentRoom()`도 runtime 경계 안으로 이동했다.
+- `ChatRoomViewModel`은 `handleRoomWillAppear()`/`handleRoomWillDisappear()`로 lifecycle intent를 노출한다.
+- `ChatViewController`는 `viewWillAppear`/`viewWillDisappear`에서 ViewModel 메서드만 호출한다.
+- `ChatViewController`의 `PresenceManager.shared`와 `BannerManager.shared.setVisibleRoom` 직접 접근을 제거했다.
 
-- Phase 0 문서 생성 후 `git diff --check -- docs/ai/tasks/active.md docs/ai/tasks/chat-view-controller-layering/plan.md docs/ai/tasks/chat-view-controller-layering/progress.md docs/ai/tasks/chat-view-controller-layering/decisions.md` 확인 완료.
-- Phase 1 후 `git diff --check -- OutPick/Features/Chat/Repositories/ChatMessageSendingRepository.swift OutPick/Features/Chat/Domain/UseCases/ChatRoomMessageUseCase.swift OutPick/Features/Chat/ViewModels/ChatRoomViewModel.swift OutPick/Features/Chat/ChatContainer.swift OutPick/Features/Chat/Controllers/ChatViewController.swift OutPickTests/ChatRoomMessageUseCaseTests.swift` 확인 완료.
-- Phase 1 첫 `xcodebuild -quiet -scheme OutPick -destination 'generic/platform=iOS Simulator' build-for-testing`는 `ChatRoomMessageUseCaseTests` stub의 `Empty()` generic 추론 오류로 실패했다.
-- stub cancellable 반환을 `AnyCancellable {}`로 수정했다.
-- Phase 1 재검증 `xcodebuild -quiet -scheme OutPick -destination 'generic/platform=iOS Simulator' build-for-testing` 통과.
-- Phase 2 후 `rg -n "roomMessageTask|roomSession|activeRealtimeRoomID|activeRealtimeStreamToken|SocketIOManager\\.shared\\.openRoomSession|ChatRoomSocketSession" ...` 확인 결과 `ChatViewController`에는 raw socket/session/task/token 참조가 남지 않았다.
-- Phase 2 첫 `xcodebuild -quiet -scheme OutPick -destination 'generic/platform=iOS Simulator' build-for-testing`는 `ChatViewController.deinit`에서 `@MainActor` subscription `stop()`을 직접 호출해 실패했다.
-- deinit 백업 정리를 `Task { @MainActor in realtimeSubscription?.stop() }`로 이동했다.
-- Phase 2 재검증 `xcodebuild -quiet -scheme OutPick -destination 'generic/platform=iOS Simulator' build-for-testing` 통과.
-- 사용자 수동 QA 확인 완료.
-  - 방 진입 후 실시간 수신 정상.
-  - 화면 이탈 후 중복 수신 없음.
-  - 기존 채팅 흐름 정상 동작.
-- Phase 2 빌드에서 기존 warning이 남아 있다.
+검증:
+
+- `xcodebuildmcp.build_run_sim` 통과.
+- `xcodebuildmcp.test_sim -only-testing:OutPickTests/ChatRoomRuntimeUseCaseTests` 통과, 5개.
+
+### Phase 14
+
+- 채팅방 본문 이미지/비디오 preview present 책임을 `ChatRoomRouting`/`ChatCoordinator`로 이동했다.
+  - `ChatViewController`는 이미지 viewer page data와 비디오 path만 라우터로 전달한다.
+  - `ChatCoordinator`가 `SimpleImageViewerVC`와 `ChatVideoPlayerViewController`를 생성/present한다.
+- `ChatMediaPreviewServices`를 추가했다.
+  - `DefaultChatVideoPlaybackResolver`가 로컬 파일, HTTP URL, Storage path, `OPVideoDiskCache`, downloadURL resolve, 저장용 로컬 파일 확보를 담당한다.
+  - `DefaultChatPhotoLibrarySaver`가 add-only Photos 권한 요청과 이미지/비디오 저장을 담당한다.
+- `ChatVideoPlayerViewController`를 추가했다.
+  - `AVPlayerViewController` embed, 저장 버튼, 저장 HUD/alert feedback만 담당한다.
+  - 저장 실행은 `ChatVideoPlaybackResolving`과 `ChatPhotoLibrarySaving`에 위임한다.
+- `ChatMediaManaging`에서 UIKit present/저장 파일 해석 메서드를 제거했다.
+  - `ChatMediaManager`는 이미지/비디오 캐시, URL resolve, 썸네일 생성 중심으로 좁혔다.
+- `Info.plist`의 Photos purpose string을 보강했다.
+  - `NSPhotoLibraryUsageDescription`의 `"Yes"` 문구를 실제 사용 목적 문구로 교체했다.
+  - `NSPhotoLibraryAddUsageDescription`을 추가했다.
+
+검증:
+
+- `plutil -lint OutPick/Info.plist` 통과.
+- `xcodebuild -scheme OutPick -destination 'generic/platform=iOS Simulator' build` 통과.
+- `xcodebuild -scheme OutPick -destination 'id=5A3BB941-9538-4DD9-93C2-F18ACCFB03B9' test -only-testing:OutPickTests/ChatMediaPreviewServicesTests` 통과, 6개.
+
+남은 위험:
+
+- `MediaGalleryViewController`, `SimpleImageViewerVC`, `LocalImageViewerVC` 내부에는 아직 Photos 저장 로직 중복이 남아 있다.
+- 이번 phase는 채팅방 본문 preview/save 경계 분리를 우선했고, 갤러리/뷰어 저장 흐름 통합은 후속 후보로 남긴다.
+
+### Phase 15
+
+- Chat 내부에 있던 `OPStorageURLCache`를 앱 공용 Infra cache인 `StorageDownloadURLCache.shared`로 승격했다.
+  - 위치: `OutPick/Infra/Storage/StorageDownloadURLCache.swift`
+  - 역할: 앱 실행 중 Firebase Storage path → downloadURL 변환 결과를 메모리에 캐시한다.
+  - `private init`으로 단일 shared instance 정책을 명확히 했다.
+- `StorageDownloadURLResolving` protocol을 추가해 호출부가 concrete actor가 아니라 URL resolve 계약에 의존할 수 있게 했다.
+- 기존 `OPStorageURLCache.swift` 파일은 `OPVideoDiskCache.swift`로 이름을 맞췄다.
+  - `OPVideoDiskCache.shared`와 비디오 디스크 캐시 정책은 유지했다.
+- `DefaultChatVideoPlaybackResolver`의 기본 concrete 인자를 제거했다.
+  - 더 이상 resolver 내부에서 Storage URL cache, `OPVideoDiskCache.shared`, `URLSessionChatRemoteFileDownloader()`를 직접 선택하지 않는다.
+- `ChatContainer`가 media preview dependency graph를 명시적으로 조립한다.
+  - `StorageDownloadURLCache.shared`
+  - `OPVideoDiskCache.shared`
+  - `URLSessionChatRemoteFileDownloader()`
+- `ChatMediaManager`는 기존 compatibility를 위해 `StorageDownloadURLCache.shared`를 기본값으로 사용한다.
+  - 이미지/비디오 service 경계 재정의는 Phase 17~18에서 정리한다.
+
+검증:
+
+- `xcodebuild -scheme OutPick -destination 'id=5A3BB941-9538-4DD9-93C2-F18ACCFB03B9' test -only-testing:OutPickTests/ChatMediaPreviewServicesTests` 통과.
+- `xcodebuild -scheme OutPick -destination 'generic/platform=iOS Simulator' build` 통과.
+
+### Phase 16
+
+- `ChatMessageCell`의 단발 이벤트 전달을 Combine publisher에서 `ChatMessageCellCommands`로 전환했다.
+  - media tap은 `messageID + attachmentIndex` command로 전달한다.
+  - profile tap은 `messageID` command로 전달한다.
+  - retry tap은 `messageID` command로 전달한다.
+  - lookbook share tap은 `LookbookSharedContent` command로 전달한다.
+- `ChatMessageCell`에서 `PassthroughSubject`와 publisher 4개를 제거했다.
+  - `imageTapPublisher`
+  - `profileTapPublisher`
+  - `retryTapPublisher`
+  - `lookbookShareTapPublisher`
+- `ChatMessageCell`의 `import Combine`을 제거했다.
+- `prepareForReuse`에서 `commands = ChatMessageCellCommands()`로 이전 message closure capture를 초기화한다.
+- `ChatViewController`의 `cellSubscriptions` dictionary와 셀별 subscription 생성 로직을 제거했다.
+- `ChatViewController`는 cell configure 시점에 command 구현을 주입한다.
+- media/profile/retry 처리는 `messageID`로 최신 message를 `messageWindowStore` 또는 현재 snapshot에서 다시 조회한다.
+- 이미지 viewer는 기존 `indexPath` capture 대신 현재 visible cell의 `representedMessageID`로 preview image를 조회한다.
+
+검증:
+
+- `xcodebuild -scheme OutPick -destination 'generic/platform=iOS Simulator' build` 통과.
+- 사용자 수동 QA 완료.
+  - 이미지 탭 → 이미지 viewer 확인.
+  - 비디오 탭 → video player 확인.
+  - 프로필 탭 → 프로필 상세 확인.
+  - retry 탭 → pending upload retry 확인.
+  - 룩북 공유 카드 탭 → 룩북 공유 흐름 확인.
+
+### Phase 16.5
+
+- 메시지 전송 실패 시 로컬 기기에서 성공 메시지처럼 보이는 문제를 긴급 수정했다.
+- 원인은 Socket.IO `emitWithAck(...).timingOut` timeout 응답인 `"NO ACK"`를 텍스트 메시지 ACK 판별에서 성공으로 처리하던 로직이었다.
+- `ChatMessageEmitAckMapper`를 추가해 ACK 성공/실패 판정을 테스트 가능한 작은 경계로 분리했다.
+- `SocketIOManager.isEmitAckSuccess(_:)`는 기존 join/create/media 호출부 호환을 위해 유지하되, 내부 판정을 `ChatMessageEmitAckMapper`로 위임한다.
+- `"NO ACK"`, `"no_ack"`, `"timeout"`은 실패로 판정한다.
+- 빈 ACK는 기존 서버 호환성을 위해 성공으로 유지한다.
+- 실패 판정 시 기존 `SocketIOManager.sendMessage`의 `isFailed = true` publish 경로가 동작하고, `ChatMessageWindowStore.apply`의 동일 messageID replacement/reconfigure 경로로 실패 아이콘이 표시된다.
+
+검증:
+
+- `xcodebuild -scheme OutPick -destination 'id=5A3BB941-9538-4DD9-93C2-F18ACCFB03B9' test -only-testing:OutPickTests/ChatMessageEmitAckMapperTests` 통과.
+- `xcodebuild -scheme OutPick -destination 'generic/platform=iOS Simulator' build` 통과.
+- `git diff --check` 통과.
+
+### Phase 16.6
+
+- 텍스트 메시지 전송 경로를 `ChatMessageSendingRepositoryProtocol` -> `ChatRoomMessageUseCaseProtocol` -> `ChatRoomViewModel`까지 `async throws`로 연결했다.
+- `SocketIOManager.sendMessage(_:_:ackTimeout:)`가 Socket.IO ACK 실패/timeout을 throw하고, `ChatViewController`는 기존 optimistic 메시지를 `isFailed = true`로 reconfigure한다.
+- 이미지/비디오 선택 시 `pending-`/`pending-video-` prefix가 붙은 messageID를 생성하지 않도록 변경했다.
+  - pending 여부는 local UI/store 상태로만 보관한다.
+  - canonical messageID, Storage path, Firestore messageID에는 pending 의미를 넣지 않는다.
+- `ChatMediaUploadUseCaseProtocol`/repository에 socket 연결 상태와 ACK 기반 media finalize API를 추가했다.
+- 이미지/비디오 Storage 업로드 시작 전에 socket 연결 상태를 확인한다.
+  - 연결되어 있지 않으면 Storage 업로드를 시작하지 않고 local failed 메시지로 전환한다.
+- Storage 업로드 성공 후 socket finalize 실패 시 업로드된 attachments/video payload를 `ChatPendingMediaUploadStore`에 보존한다.
+  - retry는 이미 업로드된 path/meta만 다시 socket finalize로 전송한다.
+  - 재업로드는 하지 않는다.
+
+검증:
+
+- `xcodebuild -scheme OutPick -destination 'generic/platform=iOS Simulator' build` 통과.
+- `xcodebuild -scheme OutPick -destination 'id=5A3BB941-9538-4DD9-93C2-F18ACCFB03B9' test -only-testing:OutPickTests/ChatPendingMediaUploadStoreTests -only-testing:OutPickTests/ChatMediaUploadUseCaseTests -only-testing:OutPickTests/ChatRoomMessageUseCaseTests` 통과.
+
+### Phase 16.6.1
+
+- 실패 outgoing message를 앱 재시작 후에도 복원할 수 있도록 로컬 outbox를 추가했다.
+  - GRDB `chatOutgoingOutbox` table이 messageID, roomID, kind, stage, local payload, uploaded payload, lastError를 저장한다.
+  - 이미지/비디오 원본/썸네일/압축 파일은 `Application Support/ChatOutgoingOutbox` 하위에 복사해 retry 가능한 local asset으로 보존한다.
+  - outbox 파일 경로는 앱 컨테이너 절대경로가 아니라 `ChatOutgoingOutbox` 기준 relative path로 저장하고, 사용할 때마다 현재 실행 중인 `Application Support` 경로에서 다시 해석한다.
+  - 기존 absolute path row는 `ChatOutgoingOutbox/` 이후 경로를 잘라 현재 컨테이너 기준으로 복구한다.
+- 텍스트/이미지/비디오 실패 메시지를 local DB에 `isFailed = true` 상태로 저장한다.
+  - 방 재진입 또는 앱 재시작 후 `ChatMessageManager`가 서버/로컬 window 뒤에 failed outgoing 메시지를 append한다.
+  - 실패 메시지는 서버 메시지와 섞이지 않고 로컬 목록 마지막에 `sentAt`, messageID 기준으로 정렬된다.
+- retry는 outbox stage와 payload를 보고 필요한 단계만 수행한다.
+  - 업로드 전 실패: 보존된 local asset으로 Storage 업로드부터 다시 수행한다.
+  - 업로드 후 finalize 실패: 보존된 uploaded attachment/video payload로 socket finalize만 다시 수행한다.
+  - 텍스트 실패: 기존 client messageID로 socket send만 다시 수행한다.
+- sender가 성공 broadcast를 다시 받는 서버 구조를 기준으로, 성공 확정은 broadcast 수신 replacement 경로를 사용한다.
+  - confirmed message 수신 후 outbox record와 local outbox 파일을 정리한다.
+  - 같은 messageID의 failed local message가 confirmed server message로 교체될 때 `isFailed` 또는 `seq` 변경을 재배치 신호로 보고 `ChatMessageWindowStore`가 snapshot을 재정렬한다.
+  - 성공 메시지는 server `seq` 기준 영역으로 올라가고, 남은 failed local message는 목록 tail에 유지된다.
+  - `ChatMessage` diffable identity가 ID 기반이라 같은 item 이동만으로는 cell configure가 다시 불리지 않을 수 있으므로, reorder snapshot에도 reconfigure target을 유지해 실패 느낌표/시간/overlay UI를 즉시 갱신한다.
+- 실패 메시지 local-only 삭제를 추가했다.
+  - UI에서는 로컬 목록에서만 제거한다.
+  - outbox record/local file을 삭제한다.
+  - 이미 Storage 업로드가 끝난 이미지/비디오는 local delete 시 Storage object도 삭제해 orphan을 줄인다.
+- 텍스트 실패 아이콘도 tap retry command를 실행하도록 `ChatMessageCell` 실패 아이콘 tap gesture를 연결했다.
+
+검증:
+
+- `git diff --check` 통과.
+- `xcodebuild -scheme OutPick -destination 'generic/platform=iOS Simulator' build` 통과.
+- `xcodebuild -scheme OutPick -destination 'id=5A3BB941-9538-4DD9-93C2-F18ACCFB03B9' test -only-testing:OutPickTests/ChatPendingMediaUploadStoreTests -only-testing:OutPickTests/ChatMediaUploadUseCaseTests -only-testing:OutPickTests/ChatMessageWindowStoreTests` 통과.
+- 마지막 QA 보정 후 `xcodebuild -scheme OutPick -destination 'generic/platform=iOS Simulator' build` 재통과.
+- 마지막 QA 보정 후 `xcodebuild -scheme OutPick -destination 'id=5A3BB941-9538-4DD9-93C2-F18ACCFB03B9' test -only-testing:OutPickTests/ChatMessageWindowStoreTests` 재통과.
+
+테스트 한계:
+
+- `ChatOutgoingOutboxUseCase`는 현재 `GRDBManager.shared` 파일 DB에 묶여 있어 in-memory GRDB seam이 없다.
+- 추후 GRDB test seam을 추가하면 앱 재시작 후 outbox retry payload 복원과 local-only delete의 Storage delete 호출을 fake repository 기반으로 보강한다.
+
+## 현재 남은 주요 위험
+
+- 현재 media 전송은 Storage 업로드 전 socket connected만 확인하므로, 방 존재/참여/종료/rate limit까지 검증하는 서버 preflight + finalize API는 후속 안정화로 남아 있다.
+- Storage 업로드 성공 후 finalize가 장기간 실패한 고아 object의 서버 TTL cleanup은 후속 안정화로 남아 있다.
+- local-only delete 시 업로드 완료 media object는 삭제하지만, 앱이 삭제 작업 중 종료되는 극단 케이스는 서버 TTL cleanup이 최종 보정해야 한다.
+- `ChatViewController`에는 아직 일부 runtime singleton 직접 접근과 UI orchestration 책임이 남아 있다.
+- `ChatMediaManager`는 `ImageCachePipeline`을 내부에서 사용하지만 이미지 로딩, 비디오 URL warm-up, 비디오 썸네일 생성 책임이 한 객체에 섞여 있다.
+- `ChatMediaManager`는 Phase 17~18 전까지 `StorageDownloadURLCache.shared`를 기본 URL resolver로 사용한다.
+- `ChatViewController`에는 아직 검색 UI orchestration 등이 남아 있다.
+- 갤러리/뷰어 계층에는 아직 Photos 저장 로직 중복이 남아 있다.
+- 기존 warning은 일부 남아 있다.
+  - `LoadChatRoomParticipantsUseCase` main actor isolation warning.
   - `ChatViewController.swift`의 `contentEdgeInsets` deprecation warning.
-  - `LoadChatRoomParticipantsUseCase` main actor isolation warning.
-  - `SocketIOManager.swift`의 unused weak self warning.
-  - functions node_modules linker search path warning.
-- Phase 3 후 `rg -n "chatCustomMenu\\.onReply|chatCustomMenu\\.onCopy|chatCustomMenu\\.onDelete|chatCustomMenu\\.onReport|chatCustomMenu\\.onAnnounce|messageManager\\.deleteMessage\\(message" ...` 확인 결과 남은 참조 없음.
-- Phase 3 후 `git diff --check -- ...` 통과.
-- Phase 3 후 `xcodebuild -quiet -scheme OutPick -destination 'generic/platform=iOS Simulator' build-for-testing` 통과.
-- Phase 3 targeted unit test 실행 통과.
-  - `xcodebuild -quiet -scheme OutPick -destination 'id=7544249E-D0EE-4B88-A48F-E384DF84E6A4' -only-testing:OutPickTests/ChatRoomViewModelMessageActionTests test`
-  - `ChatRoomViewModelMessageActionTests` 3개 통과.
-- Phase 3 사용자 수동 QA:
-  - 답장은 정상 동작 확인.
-  - 나머지 메시지 액션/menu 흐름도 정상 구현된 것으로 사용자 확인.
-  - 답장 메시지 preview separator가 잘 보이지 않는 UI 피드백을 받아 색상 대비 보정.
-- 답장 preview separator 보정 후 `git diff --check -- OutPick/Features/Chat/Views/Cell/ChatMessageCell.swift` 통과.
-- 답장 preview separator 보정 후 `xcodebuild -quiet -scheme OutPick -destination 'generic/platform=iOS Simulator' build-for-testing` 통과.
-- 삭제 메시지 목록 요약 보정 후 `git diff --check -- OutPick/Features/Chat/Domain/UseCases/ChatRoomMessageUseCase.swift OutPick/Features/Chat/ChatContainer.swift OutPick/DB/Firebase/DatabaseManager/Repositories/FirebaseChatRoomRepository.swift OutPick/Features/Chat/Views/Cell/RoomListCollectionViewCell.swift OutPickTests/ChatRoomMessageUseCaseTests.swift` 통과.
-- 삭제 메시지 목록 요약 보정 후 targeted unit test 실행 통과.
-  - `xcodebuild -quiet -scheme OutPick -destination 'id=7544249E-D0EE-4B88-A48F-E384DF84E6A4' -only-testing:OutPickTests/ChatRoomMessageUseCaseTests test`
-  - `ChatRoomMessageUseCaseTests` 5개 통과.
-- 삭제 메시지 목록 요약 보정 후 `xcodebuild -quiet -scheme OutPick -destination 'generic/platform=iOS Simulator' build-for-testing` 통과.
-- Phase 3 검증에서도 기존 warning이 남아 있다.
-  - storyboard prototype cell reuse identifier warning.
-  - `ChatViewController.swift` 등 기존 `contentEdgeInsets` deprecation warning.
-  - `LoadChatRoomParticipantsUseCase` main actor isolation warning.
-  - functions node_modules linker search path warning.
-- Phase 4 진입 전 `xcodebuildmcp.session_show_defaults` 확인 결과 기본값이 비어 있어 `list_schemes`, `list_sims` 후 `session_set_defaults`로 `OutPick.xcodeproj` / `OutPick` scheme / booted `iPhone 17 Pro Max` simulator를 설정했다.
-- Phase 4 첫 `xcodebuildmcp.test_sim -only-testing:OutPickTests/ChatMessageWindowStoreTests`는 `ChatMessageWindowStore.removeOrphanDateSeparators`의 Swift exclusivity 오류로 실패했다.
-- `items.removeAll` 클로저 안에서 `self`를 읽지 않도록 calendar/fallback date를 로컬 상수로 분리했다.
-- Phase 4 targeted unit test 재실행 통과.
-  - `xcodebuildmcp.test_sim` with `-only-testing:OutPickTests/ChatMessageWindowStoreTests`
-  - `ChatMessageWindowStoreTests` 5개 통과.
-- Phase 4 관련 targeted unit test 실행 통과.
-  - `xcodebuildmcp.test_sim` with `-only-testing:OutPickTests/ChatMessageWindowStoreTests`, `-only-testing:OutPickTests/ChatRoomMessageUseCaseTests`, `-only-testing:OutPickTests/ChatRoomViewModelMessageActionTests`
-  - 13개 통과.
-- Phase 4 앱 빌드/실행 검증 통과.
-  - `xcodebuildmcp.build_run_sim`
-  - bundle id `GayoonKim.OutPick`, simulator `7544249E-D0EE-4B88-A48F-E384DF84E6A4`.
-- Phase 4 검증에서도 기존 warning이 남아 있다.
-  - `ChatViewController.swift` 등 기존 `contentEdgeInsets` deprecation warning.
-  - `LoadChatRoomParticipantsUseCase` main actor isolation warning.
-  - functions node_modules linker search path warning.
-- Phase 4 사용자 수동 QA 확인 완료.
-  - 스크롤 pagination 정상.
-  - 검색 jump 정상.
-  - 삭제 메시지 reload 정상.
-  - pending image 기존 흐름 정상.
-- Phase 5 첫 관련 targeted unit test는 `ChatViewController.deinit`에서 `@MainActor` pending store method를 직접 호출해 실패했다.
-- deinit의 pending store task cancel/remove를 self capture 없는 `Task { @MainActor in ... }`로 이동했다.
-- Phase 5 두 번째 관련 targeted unit test는 테스트 코드에서 앱 `Attachment` 모델과 UIKit 이름 충돌로 실패했다.
-- 테스트에서 `typealias ChatAttachment = OutPick.Attachment`로 앱 모델을 명확히 지정했다.
-- Phase 5 관련 targeted unit test 실행 통과.
-  - `xcodebuildmcp.test_sim` with `-only-testing:OutPickTests/ChatMediaUploadUseCaseTests`, `-only-testing:OutPickTests/ChatPendingMediaUploadStoreTests`, `-only-testing:OutPickTests/ChatMessageWindowStoreTests`, `-only-testing:OutPickTests/ChatRoomMessageUseCaseTests`, `-only-testing:OutPickTests/ChatRoomViewModelMessageActionTests`
-  - 21개 통과.
-- Phase 5 앱 빌드/실행 검증 통과.
-  - `xcodebuildmcp.build_run_sim`
-  - bundle id `GayoonKim.OutPick`, simulator `7544249E-D0EE-4B88-A48F-E384DF84E6A4`.
-- Phase 5 수동 QA 후 비디오 전송 UX 보정 완료.
-  - 기존에는 비디오 업로드 시 화면 중앙 `CircularProgressHUD`가 뜨고 성공 후 사라지지 않는 문제가 있었다.
-  - 비디오 변환 완료 후 `PreparedVideo` 썸네일을 사용해 pending video message를 먼저 timeline에 추가하도록 변경했다.
-  - 비디오 업로드 progress는 이미지 pending upload와 같은 attachment overlay ring을 사용한다.
-  - 성공 시 같은 `messageID`로 `VideoMetaPayload`를 보내 서버 메시지가 pending video message를 대체하도록 했다.
-  - 업로드 실패 시 중복 failed video message를 만들지 않고 pending video message 자체를 failed 상태로 표시한다.
-  - `ChatMediaUploadUseCaseTests`에 pending video preview attachment 생성 테스트를 추가했다.
-  - `ChatPendingMediaUploadStoreTests`에 video upload state/task 중복 방지 테스트를 추가했다.
-- 비디오 전송 UX 보정 검증 통과.
-  - `xcodebuildmcp.test_sim` with `-only-testing:OutPickTests/ChatMediaUploadUseCaseTests`, `-only-testing:OutPickTests/ChatPendingMediaUploadStoreTests`
-  - 10개 통과.
-  - `xcodebuildmcp.build_run_sim` 통과.
-- Phase 5 검증에서도 기존 warning이 남아 있다.
-  - `LoadChatRoomParticipantsUseCase` main actor isolation warning.
-  - functions node_modules linker search path warning.
-- Phase 6 진입 전 `xcodebuildmcp.session_show_defaults` 확인 결과 `OutPick.xcodeproj` / `OutPick` / `iPhone 17 Pro Max` 기본값이 설정되어 있었다.
-- Phase 6 Store 관련 targeted unit test 실행 통과.
-  - `xcodebuildmcp.test_sim` with `-only-testing:OutPickTests/ChatReadStateStoreTests`, `-only-testing:OutPickTests/ChatMessageWindowStoreTests`, `-only-testing:OutPickTests/ChatPendingMediaUploadStoreTests`
-  - 14개 통과.
-- Phase 6 앱 빌드/실행 검증 통과.
-  - `xcodebuildmcp.build_run_sim`
-  - bundle id `GayoonKim.OutPick`, simulator `7544249E-D0EE-4B88-A48F-E384DF84E6A4`.
-- Phase 6 검증에서도 기존 warning이 남아 있다.
-  - `ChatViewController.swift` 등 기존 `contentEdgeInsets` deprecation warning.
-  - `LoadChatRoomParticipantsUseCase` main actor isolation warning.
-  - functions node_modules linker search path warning.
-- Phase 6 보강 첫 targeted unit test는 `ChatContainer` init 기본 인자에서 `@MainActor` `ChatRoomReadStateStore()`를 생성해 실패했다.
-- `ChatContainer` init 내부에서 optional store를 resolve하도록 수정했다.
-- Phase 6 보강 두 번째 targeted unit test는 `JoinedRoomsUseCase`가 `@MainActor` shared Store를 직접 조회해 실패했다.
-- Store 조회/seed 책임을 `JoinedRoomsViewModel`로 이동하고, `JoinedRoomsUseCase`는 서버 snapshot fetch만 제공하도록 수정했다.
-- Phase 6 보강 targeted unit test 실행 통과.
-  - `xcodebuildmcp.test_sim` with `-only-testing:OutPickTests/ChatRoomReadStateStoreTests`, `-only-testing:OutPickTests/ChatReadStateStoreTests`, `-only-testing:OutPickTests/ChatRoomViewModelMessageActionTests`
-  - 12개 통과.
-- Phase 6 보강 관련 확장 targeted unit test 실행 통과.
-  - `xcodebuildmcp.test_sim` with `-only-testing:OutPickTests/ChatRoomReadStateStoreTests`, `-only-testing:OutPickTests/ChatReadStateStoreTests`, `-only-testing:OutPickTests/ChatRoomViewModelMessageActionTests`, `-only-testing:OutPickTests/LookbookChatShareUseCaseTests`
-  - 23개 통과.
-- Phase 6 보강 앱 빌드/실행 검증 통과.
-  - `xcodebuildmcp.build_run_sim`
-  - bundle id `GayoonKim.OutPick`, simulator `7544249E-D0EE-4B88-A48F-E384DF84E6A4`.
-- Phase 6 보강 사용자 수동 QA 완료.
-  - read-state Store 기반 참여중인 목록 unread 갱신 정상 동작 확인.
-  - 현재 채팅방 읽음 상태 공유 정상 동작 확인.
+  - functions node_modules search path warning.
+
+## 다음 후보
+
+1. Phase 16.6.2: Phase 17 전 `ChatOutgoingOutboxUseCase`/media upload storage repository DI 정합성 보정.
+   - `FirebaseRepositoryProviding`에 video storage repository 제공 경로를 추가한다.
+   - `ChatOutgoingOutboxUseCase` initializer에서 image/video storage repository singleton 기본값을 제거한다.
+   - `ChatMediaUploadUseCase`와 `ChatOutgoingOutboxUseCase` 생성 시 `ChatContainer`가 repository provider를 통해 명시 주입한다.
+2. Phase 17: Chat 이미지 로딩 경계를 `ImageCachePipeline` 기반 service로 재정의.
+3. 후속 안정화 후보: media message preflight + finalize API 설계.
+   - Storage 업로드 전 서버가 방 존재, 참여 여부, 방 종료, rate limit, messageID 예약/업로드 prefix를 확인한다.
+   - 업로드 완료 후 finalize ACK로 Firestore 저장과 broadcast를 확정한다.
+4. 후속 안정화 후보: 고아 Storage 파일 TTL cleanup.
+   - Firestore 메시지에 참조되지 않는 media object 또는 장시간 finalize되지 않은 object를 Cloud Functions/Scheduler로 정리한다.
+5. Phase 18: 비디오 asset warm-up/thumbnail 경계 분리.
+6. Phase 19: 갤러리/뷰어 Photos 저장 흐름 통합.
+7. Phase 20: 검색 UI orchestration 분리.
+8. Phase 21: `ChatViewController` 남은 runtime singleton/manager 직접 접근 최종 audit.
+9. 별도 task 후보: Lookbook의 `CurrentUserIDProviding`을 앱 공통 `CurrentUserProviding`으로 흡수.
+
+### Phase 16.6.2 예정
+
+목표:
+
+- Phase 17 진입 전에 media upload/outbox storage repository 선택 위치를 `ChatContainer`/repository provider 경계로 정리한다.
+
+주요 검토 범위:
+
+- `FirebaseRepositoryProviding`에 `videoStorageRepository` 추가.
+- `FirebaseRepositoryProvider`가 `FirebaseVideoStorageRepository.shared`를 제공.
+- `ChatOutgoingOutboxUseCase`의 `imageStorageRepository`, `videoStorageRepository` 기본 singleton 인자 제거.
+- `ChatMediaUploadUseCase`와 `ChatOutgoingOutboxUseCase` 생성부를 `repositories.videoStorageRepository`로 통일.
+
+구현 전 논의 필요:
+
+- 현재 기준 추가 논의 필요 사항 없음.
+- `GRDBManager.shared`는 이번 작은 DI 보정 범위에서는 유지하고, local persistence protocol 분리는 후속 후보로 둔다.
+
+### Phase 15 설계 예정
+
+목표:
+
+- `DefaultChatVideoPlaybackResolver`가 production concrete를 직접 선택하지 않도록 하고, media preview dependency graph를 `ChatContainer`에서 명시적으로 조립한다.
+
+주요 검토 범위:
+
+- `DefaultChatVideoPlaybackResolver` initializer의 기본 concrete 인자 제거.
+- Chat 내부 `OPStorageURLCache`를 앱 공용 `StorageDownloadURLCache.shared`로 Infra 승격.
+- `StorageDownloadURLCache.shared`, `OPVideoDiskCache.shared`, `URLSessionChatRemoteFileDownloader` 선택 위치를 `ChatContainer`로 이동.
+- 기존 `ChatMediaPreviewServicesTests`의 fake 주입 구조 유지.
+
+구현 전 논의 필요:
+
+- `StorageDownloadURLCache.shared`는 앱 실행 중 Firebase Storage path → downloadURL 변환 결과를 공유하는 공용 Infra cache로 둔다.
+- `OPVideoDiskCache.shared`는 기존 캐시 생명주기 때문에 유지하되 접근 위치만 Container로 올리는 방안을 우선 적용한다.
+- 개발 편의용 기본 initializer는 제거하고, production 경로는 Container 명시 주입으로 통일한다.
+
+### Phase 16 완료 요약
+
+목표:
+
+- `ChatMessageCell`의 이미지/프로필/retry/lookbook 단발 탭 이벤트를 Combine publisher에서 `ChatMessageCellCommands` 기반 command 모델로 전환한다.
+
+완료 범위:
+
+- `ChatMessageCellCommands` 도입.
+- `imageTapPublisher`, `profileTapPublisher`, `retryTapPublisher`, `lookbookShareTapPublisher` 제거.
+- `ChatViewController`의 `cellSubscriptions[ObjectIdentifier(cell)]` 패턴 제거.
+- 셀 reuse 시 command 초기화로 오래된 message closure capture 방지.
+- media/profile/retry command payload는 `messageID`를 사용하고, VC가 최신 message를 다시 조회.
+
+후속 재검토 조건:
+
+- 셀 이벤트가 analytics/logging 또는 cross-feature command로 크게 늘어나면 `ChatMessageCellCommandHandling` protocol 분리 여부를 검토한다.
+- Reducer/Store dispatch는 현재 MVVM-C + ViewModel + Coordinator 경계와 겹치므로 이번 task에서는 도입하지 않는다.
+
+### Phase 17 설계 예정
+
+목표:
+
+- `ChatMediaManager`의 이미지 로딩 책임을 `ImageCachePipeline` 기반 얇은 service로 분리하고, `ChatViewController`가 이미지 전용 interface에 의존하게 한다.
+
+주요 검토 범위:
+
+- `ChatAttachmentImageLoading` 또는 `ChatAttachmentImageService` 도입.
+- `cachedImage`, `loadImage`, `prefetchImages` 이동.
+- local file path 처리와 Firebase Storage image fetch 정책의 위치.
+- `ChatMediaManager`에서 이미지 로딩 책임을 제거한 뒤 남는 책임.
+
+구현 전 논의 필요:
+
+- 채팅 첨부 이미지와 룩북 공유 썸네일을 같은 service가 처리할지, 별도 interface를 둘지 결정한다.
+- `ImageCachePipeline` disk folder와 size 정책을 현재 `ChatImageCache`로 유지할지 재검토한다.
+
+### Phase 18 설계 예정
+
+목표:
+
+- `ChatMediaManager`에 남은 비디오 URL warm-up, 비디오 디스크 캐시 연계, 썸네일 생성을 별도 service 경계로 분리한다.
+
+주요 검토 범위:
+
+- `ChatVideoAssetPreparing` 도입.
+- `ChatVideoThumbnailGenerating` 도입.
+- `ChatStorageURLResolving` 재사용 범위.
+- `ChatMediaManager`를 제거할지 facade 수준으로 축소할지 판단.
+
+구현 전 논의 필요:
+
+- 비디오 warm-up을 preview resolver와 합칠지, 스크롤 prefetch 전용 service로 분리할지 결정한다.
+- 비디오 썸네일 생성은 upload flow와 preview flow 중 어느 쪽 service에 가까운지 결정한다.
+
+### Phase 19 설계 예정
+
+목표:
+
+- `MediaGalleryViewController`, `SimpleImageViewerVC`, `LocalImageViewerVC`의 Photos 저장 중복을 `ChatPhotoLibrarySaving` 또는 앱 공용 saver로 통합한다.
+
+주요 검토 범위:
+
+- 이미지 저장 경로 통합.
+- 비디오 저장 경로 통합 가능성.
+- viewer별 저장 성공/실패 feedback 일관성.
+- `NSPhotoLibraryAddUsageDescription`과 실제 add-only 권한 요청 흐름 일치 여부.
+
+구현 전 논의 필요:
+
+- saver를 Chat feature service로 둘지, 앱 공용 media saver로 승격할지 결정한다.
+- `SimpleImageViewerVC`에 saver를 직접 주입할지, 별도 viewer factory/presenter를 둘지 결정한다.
+
+### Phase 20 설계 예정
+
+목표:
+
+- `ChatViewController`에 남은 검색 UI orchestration을 검색 상태/검색 실행/검색 결과 점프 책임과 화면 표시 책임으로 분리한다.
+
+주요 검토 범위:
+
+- `searchMessagesTask`, `searchJumpTask`, `searchGeneration`의 소유 위치.
+- navigation bar search publisher와 `ChatSearchUIView` up/down 이벤트 처리 경계.
+- 검색 결과 count/current index 계산을 ViewModel 또는 별도 search store로 이동할지 여부.
+- 검색 결과 message로 점프하는 scroll orchestration을 ViewController에 남길지, ViewModel이 target만 계산하게 할지 여부.
+
+구현 전 논의 필요:
+
+- 검색 task 취소와 generation guard를 ViewModel로 이동할지, UI interaction controller로 분리할지 결정한다.
+- collection view scroll 자체는 UIKit 책임이므로 ViewController에 남기되, target message/indexPath 계산 책임을 어디까지 분리할지 결정한다.
+- 검색은 수동 QA가 쉬운 happy path와 비동기 취소/중복 입력처럼 자동 테스트가 유리한 영역을 나눠 검증한다.
+
+### Phase 21 설계 예정
+
+목표:
+
+- Phase 15~20 이후 `ChatViewController`에 남은 runtime singleton/manager 직접 접근을 최종 점검하고, 분리할 대상과 UIKit 화면 책임으로 남길 대상을 확정한다.
+
+주요 검토 범위:
+
+- `LoadingIndicator.shared`, `AlertManager`, `NotificationCenter`, keyboard observer, app lifecycle observer 사용처.
+- 남은 provider/manager 접근이 ViewController 책임에 남아도 되는지 여부.
+- 남은 `present`, `dismiss`, alert, ConfirmView 호출이 Coordinator 경계로 이동해야 하는 화면 이동인지, 단순 UI feedback인지 구분.
+- `ChatViewController` 최종 책임 목록과 후속 리팩토링 종료 기준.
+
+구현 전 논의 필요:
+
+- 전역 singleton을 모두 제거하는 것이 목표인지, 화면 feedback singleton은 일단 허용할지 결정한다.
+- keyboard/app lifecycle NotificationCenter observer는 UIKit lifecycle glue로 남길지 별도 observer 객체로 분리할지 결정한다.
+- 이 phase를 실제 코드 수정 phase로 볼지, audit + 후속 backlog 확정 phase로 볼지 결정한다.
