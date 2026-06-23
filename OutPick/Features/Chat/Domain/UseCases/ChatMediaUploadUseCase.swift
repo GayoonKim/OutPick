@@ -65,7 +65,7 @@ final class ChatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol {
     private let imageStorageRepository: FirebaseImageStorageRepositoryProtocol
     private let videoStorageRepository: FirebaseVideoStorageRepositoryProtocol
     private let sendingRepository: ChatMediaMessageSendingRepositoryProtocol
-    private let imageCache: ChatImageCacheProtocol
+    private let attachmentImageLoader: ChatAttachmentImageLoading
     private let currentUserProvider: () -> ChatMessageSenderSnapshot
     private let dateProvider: () -> Date
     private let previewDirectoryProvider: () -> URL?
@@ -75,7 +75,7 @@ final class ChatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol {
         imageStorageRepository: FirebaseImageStorageRepositoryProtocol,
         videoStorageRepository: FirebaseVideoStorageRepositoryProtocol,
         sendingRepository: ChatMediaMessageSendingRepositoryProtocol = SocketChatMediaMessageSendingRepository(),
-        imageCache: ChatImageCacheProtocol = ChatImageCache.shared,
+        attachmentImageLoader: ChatAttachmentImageLoading,
         currentUserProvider: @escaping () -> ChatMessageSenderSnapshot = {
             ChatMessageSenderSnapshot(
                 senderID: LoginManager.shared.getUserEmail,
@@ -92,7 +92,7 @@ final class ChatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol {
         self.imageStorageRepository = imageStorageRepository
         self.videoStorageRepository = videoStorageRepository
         self.sendingRepository = sendingRepository
-        self.imageCache = imageCache
+        self.attachmentImageLoader = attachmentImageLoader
         self.currentUserProvider = currentUserProvider
         self.dateProvider = dateProvider
         self.previewDirectoryProvider = previewDirectoryProvider
@@ -188,7 +188,7 @@ final class ChatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol {
 
     func cacheFailedImageThumbnails(_ pairs: [DefaultMediaProcessingService.ImagePair]) async {
         for pair in pairs {
-            await imageCache.storeToDisk(data: pair.thumbData, forKey: pair.sha256)
+            await attachmentImageLoader.storeOutgoingPreview(data: pair.thumbData, forKey: pair.sha256)
         }
     }
 
@@ -221,7 +221,7 @@ final class ChatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol {
         let videoPaths = ChatStoragePath.roomMessageVideo(roomID: roomID, messageID: messageID)
 
         if !prepared.thumbnailData.isEmpty {
-            await imageCache.storeToDisk(data: prepared.thumbnailData, forKey: prepared.sha256)
+            await attachmentImageLoader.storeOutgoingPreview(data: prepared.thumbnailData, forKey: prepared.sha256)
             print(#function, "ThumbCache video thumb saved: \(prepared.sha256)")
         }
 

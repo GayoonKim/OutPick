@@ -10,13 +10,16 @@ import Combine
 
 final class ChatMessageManager: ChatMessageManaging {
     private let messageRepository: FirebaseMessageRepositoryProtocol
+    private let imageStorageRepository: FirebaseImageStorageRepositoryProtocol
     private let grdbManager: GRDBManager
     
     init(
         messageRepository: FirebaseMessageRepositoryProtocol = FirebaseRepositoryProvider.shared.messageRepository,
+        imageStorageRepository: FirebaseImageStorageRepositoryProtocol = FirebaseRepositoryProvider.shared.imageStorageRepository,
         grdbManager: GRDBManager = .shared
     ) {
         self.messageRepository = messageRepository
+        self.imageStorageRepository = imageStorageRepository
         self.grdbManager = grdbManager
     }
 
@@ -269,8 +272,8 @@ final class ChatMessageManager: ChatMessageManaging {
         
         await withTaskGroup(of: Void.self) { group in
             for path in uniquePaths {
-                group.addTask {
-                    FirebaseImageStorageRepository.shared.deleteImageFromStorage(path: path)
+                group.addTask { [imageStorageRepository] in
+                    imageStorageRepository.deleteImageFromStorage(path: path)
                 }
             }
         }

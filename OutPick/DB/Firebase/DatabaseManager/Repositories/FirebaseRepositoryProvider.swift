@@ -12,6 +12,7 @@ protocol FirebaseRepositoryProviding {
     var userProfileRepository: UserProfileRepositoryProtocol { get }
     var chatRoomRepository: FirebaseChatRoomRepositoryProtocol { get }
     var imageStorageRepository: FirebaseImageStorageRepositoryProtocol { get }
+    var videoStorageRepository: FirebaseVideoStorageRepositoryProtocol { get }
     var messageRepository: FirebaseMessageRepositoryProtocol { get }
     var mediaIndexRepository: FirebaseChatRoomMediaIndexRepositoryProtocol { get }
     var announcementRepository: FirebaseAnnouncementRepositoryProtocol { get }
@@ -21,6 +22,7 @@ struct FirebaseRepositoryProvider: FirebaseRepositoryProviding {
     let userProfileRepository: UserProfileRepositoryProtocol
     let chatRoomRepository: FirebaseChatRoomRepositoryProtocol
     let imageStorageRepository: FirebaseImageStorageRepositoryProtocol
+    let videoStorageRepository: FirebaseVideoStorageRepositoryProtocol
     let messageRepository: FirebaseMessageRepositoryProtocol
     let mediaIndexRepository: FirebaseChatRoomMediaIndexRepositoryProtocol
     let announcementRepository: FirebaseAnnouncementRepositoryProtocol
@@ -29,6 +31,7 @@ struct FirebaseRepositoryProvider: FirebaseRepositoryProviding {
         userProfileRepository: UserProfileRepositoryProtocol,
         chatRoomRepository: FirebaseChatRoomRepositoryProtocol,
         imageStorageRepository: FirebaseImageStorageRepositoryProtocol,
+        videoStorageRepository: FirebaseVideoStorageRepositoryProtocol,
         messageRepository: FirebaseMessageRepositoryProtocol,
         mediaIndexRepository: FirebaseChatRoomMediaIndexRepositoryProtocol,
         announcementRepository: FirebaseAnnouncementRepositoryProtocol
@@ -36,6 +39,7 @@ struct FirebaseRepositoryProvider: FirebaseRepositoryProviding {
         self.userProfileRepository = userProfileRepository
         self.chatRoomRepository = chatRoomRepository
         self.imageStorageRepository = imageStorageRepository
+        self.videoStorageRepository = videoStorageRepository
         self.messageRepository = messageRepository
         self.mediaIndexRepository = mediaIndexRepository
         self.announcementRepository = announcementRepository
@@ -48,6 +52,7 @@ struct FirebaseRepositoryProvider: FirebaseRepositoryProviding {
             userProfileRepository: UserProfileRepository(db: db),
             chatRoomRepository: FirebaseChatRoomRepository(db: db),
             imageStorageRepository: FirebaseImageStorageRepository.shared,
+            videoStorageRepository: FirebaseVideoStorageRepository.shared,
             messageRepository: FirebaseMessageRepository(
                 db: db,
                 mediaIndexRepository: mediaIndexRepository

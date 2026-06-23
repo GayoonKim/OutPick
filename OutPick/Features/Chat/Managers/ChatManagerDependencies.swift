@@ -9,7 +9,6 @@ import Foundation
 
 protocol ChatManagerProviding {
     var messageManager: ChatMessageManaging { get }
-    var mediaManager: ChatMediaManaging { get }
     var roomImageManager: RoomImageManaging { get }
     var avatarImageManager: ChatAvatarImageManaging { get }
     var searchManager: ChatSearchManaging { get }
@@ -19,7 +18,6 @@ protocol ChatManagerProviding {
 
 struct ChatManagerProvider: ChatManagerProviding {
     let messageManager: ChatMessageManaging
-    let mediaManager: ChatMediaManaging
     let roomImageManager: RoomImageManaging
     let avatarImageManager: ChatAvatarImageManaging
     let searchManager: ChatSearchManaging
@@ -27,24 +25,30 @@ struct ChatManagerProvider: ChatManagerProviding {
     let networkStatusProvider: NetworkStatusProviding
 
     init(
-        messageManager: ChatMessageManaging = ChatMessageManager(),
-        mediaManager: ChatMediaManaging = ChatMediaManager.shared,
-        roomImageManager: RoomImageManaging = RoomImageService.shared,
-        avatarImageManager: ChatAvatarImageManaging = AvatarImageService.shared,
+        repositories: FirebaseRepositoryProviding = FirebaseRepositoryProvider.shared,
+        messageManager: ChatMessageManaging? = nil,
+        roomImageManager: RoomImageManaging? = nil,
+        avatarImageManager: ChatAvatarImageManaging? = nil,
         searchManager: ChatSearchManaging? = nil,
         profileSyncManager: ChatProfileSyncManaging = ChatProfileSyncManager(),
         networkStatusProvider: NetworkStatusProviding = NWPathNetworkStatusProvider()
     ) {
         let resolvedNetworkStatusProvider = networkStatusProvider
         let resolvedSearchManager = searchManager ?? ChatSearchManager(
-            messageRepository: FirebaseRepositoryProvider.shared.messageRepository,
+            messageRepository: repositories.messageRepository,
             networkStatusProvider: resolvedNetworkStatusProvider
         )
 
-        self.messageManager = messageManager
-        self.mediaManager = mediaManager
-        self.roomImageManager = roomImageManager
-        self.avatarImageManager = avatarImageManager
+        self.messageManager = messageManager ?? ChatMessageManager(
+            messageRepository: repositories.messageRepository,
+            imageStorageRepository: repositories.imageStorageRepository
+        )
+        self.roomImageManager = roomImageManager ?? RoomImageService(
+            imageStorageRepository: repositories.imageStorageRepository
+        )
+        self.avatarImageManager = avatarImageManager ?? AvatarImageService(
+            imageStorageRepository: repositories.imageStorageRepository
+        )
         self.searchManager = resolvedSearchManager
         self.profileSyncManager = profileSyncManager
         self.networkStatusProvider = resolvedNetworkStatusProvider

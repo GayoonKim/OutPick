@@ -40,8 +40,8 @@ final class ChatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol {
 
     init(
         grdbManager: GRDBManager = .shared,
-        imageStorageRepository: FirebaseImageStorageRepositoryProtocol = FirebaseRepositoryProvider.shared.imageStorageRepository,
-        videoStorageRepository: FirebaseVideoStorageRepositoryProtocol = FirebaseVideoStorageRepository.shared,
+        imageStorageRepository: FirebaseImageStorageRepositoryProtocol,
+        videoStorageRepository: FirebaseVideoStorageRepositoryProtocol,
         fileManager: FileManager = .default,
         dateProvider: @escaping () -> Date = { Date() },
         outboxRootProvider: @escaping () -> URL? = {

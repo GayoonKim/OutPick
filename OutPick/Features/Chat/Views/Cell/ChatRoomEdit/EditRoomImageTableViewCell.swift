@@ -85,16 +85,5 @@ class EditRoomImageTableViewCell: UITableViewCell {
     
     @MainActor
     func configure(_ room: ChatRoom, selectedImage: UIImage?) {
-//        if let selectedImage = selectedImage {
-//            imgView.image = selectedImage
-//        } else if room.roomImagePath != "" {
-//                Task {
-//                    guard let imagePath = room.roomImagePath else { return }
-//                    let image = try await FirebaseImageStorageRepository.shared.fetchImageFromStorage(image: imagePath, location: .roomImage)
-//                    self.imgView.image = image
-//                }
-//        } else {
-//            self.imgView.image = UIImage(named: "Default_Profile")
-//        }
     }
 }

@@ -77,7 +77,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     // MARK: - Managers (의존성 주입)
     private let messageManager: ChatMessageManaging
-    private let mediaManager: ChatMediaManaging
+    private let attachmentImageLoader: ChatAttachmentImageLoading
+    private let videoAssetLoader: ChatVideoAssetLoading
+    private let storageURLResolver: ChatStorageURLResolving
+    private let videoThumbnailGenerator: ChatVideoThumbnailGenerating
     private let searchManager: ChatSearchManaging
     private let profileSyncManager: ChatProfileSyncManaging
     private let networkStatusProvider: NetworkStatusProviding
@@ -91,14 +94,21 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         provider: ChatManagerProviding,
         mediaUploadUseCase: ChatMediaUploadUseCaseProtocol,
         outgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol,
+        attachmentImageLoader: ChatAttachmentImageLoading,
+        videoAssetLoader: ChatVideoAssetLoading,
+        storageURLResolver: ChatStorageURLResolving,
+        videoThumbnailGenerator: ChatVideoThumbnailGenerating,
         viewModel: ChatRoomViewModel
     ) {
         self.provider = provider
         self.mediaUploadUseCase = mediaUploadUseCase
         self.outgoingOutboxUseCase = outgoingOutboxUseCase
+        self.attachmentImageLoader = attachmentImageLoader
+        self.videoAssetLoader = videoAssetLoader
+        self.storageURLResolver = storageURLResolver
+        self.videoThumbnailGenerator = videoThumbnailGenerator
         self.chatRoomViewModel = viewModel
         self.messageManager = provider.messageManager
-        self.mediaManager = provider.mediaManager
         self.searchManager = provider.searchManager
         self.profileSyncManager = provider.profileSyncManager
         self.networkStatusProvider = provider.networkStatusProvider
@@ -526,7 +536,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                         for msg in slice {
                             group.addTask { [weak self] in
                                 guard let self else { return }
-                                _ = await self.mediaManager.cacheImagesIfNeeded(for: msg)
+                                _ = await self.attachmentImageLoader.cacheImagesIfNeeded(
+                                    for: msg,
+                                    maxBytes: self.chatThumbnailMaxBytes
+                                )
                                 await MainActor.run {
                                     self.reloadVisibleMessageIfNeeded(messageID: msg.ID)
                                 }
@@ -547,7 +560,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                         for msg in slice {
                             group.addTask { [weak self] in
                                 guard let self else { return }
-                                await self.mediaManager.cacheVideoAssetsIfNeeded(for: msg, in: roomID)
+                                await self.videoAssetLoader.cacheVideoAssetsIfNeeded(
+                                    for: msg,
+                                    maxThumbnailBytes: self.chatThumbnailMaxBytes
+                                )
                                 await MainActor.run {
                                     self.reloadVisibleMessageIfNeeded(messageID: msg.ID)
                                 }
@@ -695,7 +711,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     // 수신 메시지를 저장 및 UI 반영
     @MainActor
     private func handleIncomingMessage(_ message: ChatMessage) async {
-        guard let room = self.room else { return }
+        guard self.room != nil else { return }
         if message.roomID != chatRoomViewModel.roomID { return }
         print("\(message.isFailed ? "전송 실패" : "전송 성공") 메시지 수신: \(message)")
 
@@ -703,12 +719,14 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         let hasImages = message.hasDisplayableImages
         let hasVideos = message.hasDisplayableVideos
         if hasImages || hasVideos {
-            let rid = room.ID ?? ""
             await withTaskGroup(of: Void.self) { group in
                 if hasImages || hasVideos {
                     group.addTask { [weak self] in
                         guard let self = self else { return }
-                        _ = await self.mediaManager.cacheImagesIfNeeded(for: message)
+                        _ = await self.attachmentImageLoader.cacheImagesIfNeeded(
+                            for: message,
+                            maxBytes: self.chatThumbnailMaxBytes
+                        )
                         await MainActor.run {
                             self.reloadVisibleMessageIfNeeded(messageID: message.ID)
                         }
@@ -717,7 +735,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 if hasVideos {
                     group.addTask { [weak self] in
                         guard let self = self else { return }
-                        await self.mediaManager.cacheVideoAssetsIfNeeded(for: message, in: rid)
+                        await self.videoAssetLoader.cacheVideoAssetsIfNeeded(
+                            for: message,
+                            maxThumbnailBytes: self.chatThumbnailMaxBytes
+                        )
                     }
                 }
                 await group.waitForAll()
@@ -2571,22 +2592,34 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     private func thumbnailImage(for attachment: Attachment) async -> UIImage? {
         for path in [attachment.pathThumb, attachment.pathOriginal] where !path.isEmpty {
-            if let image = await mediaManager.cachedImage(for: path) {
+            if let image = await attachmentImageLoader.cachedImage(for: path) {
                 return image
             }
-            if let image = try? await mediaManager.loadImage(for: path, maxBytes: chatThumbnailMaxBytes) {
+            if let image = try? await attachmentImageLoader.loadImage(for: path, maxBytes: chatThumbnailMaxBytes) {
                 return image
             }
         }
 
         guard attachment.type == .video,
               !attachment.pathOriginal.isEmpty,
-              let url = try? await mediaManager.resolveURL(for: attachment.pathOriginal),
-              let data = try? mediaManager.makeVideoThumbnailData(url: url, maxPixel: 360),
+              let url = try? await resolveVideoURL(for: attachment.pathOriginal),
+              let data = try? await videoThumbnailGenerator.thumbnailData(url: url, maxPixel: 360),
               let image = UIImage(data: data) else {
             return nil
         }
         return image
+    }
+
+    private func resolveVideoURL(for path: String) async throws -> URL {
+        if let direct = URL(string: path),
+           let scheme = direct.scheme?.lowercased(),
+           ["http", "https", "file"].contains(scheme) {
+            return direct
+        }
+        if path.hasPrefix("/") {
+            return URL(fileURLWithPath: path)
+        }
+        return try await storageURLResolver.url(for: path)
     }
 
     private func avatarImage(for path: String) async -> UIImage? {
@@ -2605,11 +2638,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private func lookbookShareThumbnailImage(for path: String) async -> UIImage? {
         guard !path.isEmpty else { return nil }
 
-        if let image = await mediaManager.cachedImage(for: path) {
+        if let image = await attachmentImageLoader.cachedImage(for: path) {
             return image
         }
 
-        return try? await mediaManager.loadImage(for: path, maxBytes: chatThumbnailMaxBytes)
+        return try? await attachmentImageLoader.loadImage(for: path, maxBytes: chatThumbnailMaxBytes)
     }
 
     @MainActor
@@ -2726,11 +2759,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             startIndex: start,
             cachedImageProvider: { [weak self] path in
                 guard let self else { return nil }
-                return await self.mediaManager.cachedImage(for: path)
+                return await self.attachmentImageLoader.cachedImage(for: path)
             },
             loadImageProvider: { [weak self] path, maxBytes in
                 guard let self else { return nil }
-                return try? await self.mediaManager.loadImage(for: path, maxBytes: maxBytes)
+                return try? await self.attachmentImageLoader.loadImage(for: path, maxBytes: maxBytes)
             }
         )
 
@@ -2751,7 +2784,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
         let nearTask = Task(priority: .utility) { [weak self] in
             guard let self, !nearPaths.isEmpty else { return }
-            await self.mediaManager.prefetchImages(
+            await self.attachmentImageLoader.prefetchImages(
                 paths: nearPaths,
                 maxBytes: 60 * 1024 * 1024,
                 maxConcurrent: 6
@@ -2762,7 +2795,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         if !restPaths.isEmpty {
             let restTask = Task(priority: .background) { [weak self] in
                 guard let self else { return }
-                await self.mediaManager.prefetchImages(
+                await self.attachmentImageLoader.prefetchImages(
                     paths: restPaths,
                     maxBytes: 60 * 1024 * 1024,
                     maxConcurrent: 3
@@ -2786,7 +2819,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
         let hasVideos = message.hasDisplayableVideos
         guard hasVideos else { return }
-        startVideoPrefetchIfNeeded(for: message, roomID: roomID)
+        startVideoPrefetchIfNeeded(for: message)
     }
 
     @MainActor
@@ -2798,7 +2831,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             guard let self else { return }
             if Task.isCancelled { return }
 
-            _ = try? await self.mediaManager.loadImage(for: path, maxBytes: self.chatThumbnailMaxBytes)
+            _ = try? await self.attachmentImageLoader.loadImage(for: path, maxBytes: self.chatThumbnailMaxBytes)
 
             await MainActor.run {
                 self.thumbnailPrefetchTasks[path] = nil
@@ -2809,7 +2842,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
 
     @MainActor
-    private func startVideoPrefetchIfNeeded(for message: ChatMessage, roomID: String) {
+    private func startVideoPrefetchIfNeeded(for message: ChatMessage) {
         let messageID = message.ID
         guard videoPrefetchTasks[messageID] == nil else { return }
 
@@ -2817,7 +2850,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             guard let self else { return }
             if Task.isCancelled { return }
 
-            await self.mediaManager.cacheVideoAssetsIfNeeded(for: message, in: roomID)
+            await self.videoAssetLoader.cacheVideoAssetsIfNeeded(
+                for: message,
+                maxThumbnailBytes: self.chatThumbnailMaxBytes
+            )
 
             await MainActor.run {
                 self.reloadVisibleMessageIfNeeded(messageID: message.ID)

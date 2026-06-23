@@ -147,6 +147,10 @@ final class ChatCoordinator {
             provider: container.provider,
             mediaUploadUseCase: container.makeChatMediaUploadUseCase(),
             outgoingOutboxUseCase: container.makeChatOutgoingOutboxUseCase(),
+            attachmentImageLoader: container.makeAttachmentImageLoader(),
+            videoAssetLoader: container.makeChatVideoAssetLoader(),
+            storageURLResolver: container.makeStorageURLResolver(),
+            videoThumbnailGenerator: container.makeChatVideoThumbnailGenerator(),
             viewModel: container.makeChatRoomViewModel(room: room)
         )
 
@@ -192,6 +196,8 @@ extension ChatCoordinator: ChatRoomRouting {
             room: room,
             provider: container.provider,
             repositories: container.firebaseRepositories,
+            attachmentImageLoader: container.makeAttachmentImageLoader(),
+            storageURLResolver: container.makeStorageURLResolver(),
             exitUseCase: container.makeChatRoomExitUseCase(),
             onEvent: { [weak self, weak source] event in
                 switch event {

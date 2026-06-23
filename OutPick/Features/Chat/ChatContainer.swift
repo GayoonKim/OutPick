@@ -32,6 +32,9 @@ final class ChatContainer {
     private let chatRoomExitUseCase: ChatRoomExitUseCaseProtocol
     private let chatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol
     private let chatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol
+    private let attachmentImageLoader: ChatAttachmentImageLoading
+    private let chatVideoAssetLoader: ChatVideoAssetLoading
+    private let chatVideoThumbnailGenerator: ChatVideoThumbnailGenerating
     private let storageDownloadURLCache: ChatStorageURLResolving
     private let chatVideoDiskCache: ChatVideoDiskCaching
     private let chatRemoteFileDownloader: ChatRemoteFileDownloading
@@ -44,7 +47,7 @@ final class ChatContainer {
     private var runtimeJoinedRooms: Set<String> = []
 
     init(
-        provider: ChatManagerProviding = ChatManagerProvider(),
+        provider: ChatManagerProviding? = nil,
         roomRepository: FirebaseChatRoomRepositoryProtocol? = nil,
         userProfileRepository: UserProfileRepositoryProtocol? = nil,
         joinedRoomsStore: JoinedRoomsStore,
@@ -52,8 +55,13 @@ final class ChatContainer {
         announcementRepository: FirebaseAnnouncementRepositoryProtocol? = nil,
         repositories: FirebaseRepositoryProviding = FirebaseRepositoryProvider.shared
     ) {
-        self.provider = provider
         self.firebaseRepositories = repositories
+        let attachmentImageLoader = ChatAttachmentImageService(
+            imageStorageRepository: repositories.imageStorageRepository
+        )
+        self.attachmentImageLoader = attachmentImageLoader
+        let resolvedProvider = provider ?? ChatManagerProvider(repositories: repositories)
+        self.provider = resolvedProvider
         self.roomRepository = roomRepository ?? repositories.chatRoomRepository
         self.userProfileRepository = userProfileRepository ?? repositories.userProfileRepository
         self.joinedRoomsStore = joinedRoomsStore
@@ -74,7 +82,7 @@ final class ChatContainer {
         self.roomSearchUseCase = RoomSearchUseCase(roomRepository: self.roomRepository)
         self.chatMessageSendingRepository = SocketChatMessageSendingRepository()
         self.chatRoomMessageUseCase = ChatRoomMessageUseCase(
-            messageManager: provider.messageManager,
+            messageManager: resolvedProvider.messageManager,
             sendingRepository: chatMessageSendingRepository,
             deletedLastMessageSummaryUpdater: self.roomRepository as? ChatDeletedLastMessageSummaryUpdating
         )
@@ -87,12 +95,12 @@ final class ChatContainer {
             transientLocalDataCleaner: DefaultChatRoomTransientLocalDataCleaner()
         )
         self.chatInitialLoadUseCase = DefaultChatInitialLoadUseCase(
-            messageManager: provider.messageManager,
+            messageManager: resolvedProvider.messageManager,
             userProfileRepository: self.userProfileRepository,
             chatRoomRepository: self.roomRepository,
-            networkStatusProvider: provider.networkStatusProvider
+            networkStatusProvider: resolvedProvider.networkStatusProvider
         )
-        self.chatRoomSearchUseCase = ChatRoomSearchUseCase(searchManager: provider.searchManager)
+        self.chatRoomSearchUseCase = ChatRoomSearchUseCase(searchManager: resolvedProvider.searchManager)
         self.chatRoomLifecycleUseCase = ChatRoomLifecycleUseCase(
             chatRoomRepository: self.roomRepository,
             userProfileRepository: self.userProfileRepository,
@@ -101,15 +109,21 @@ final class ChatContainer {
         )
         self.chatMediaUploadUseCase = ChatMediaUploadUseCase(
             imageStorageRepository: repositories.imageStorageRepository,
-            videoStorageRepository: FirebaseVideoStorageRepository.shared
+            videoStorageRepository: repositories.videoStorageRepository,
+            attachmentImageLoader: attachmentImageLoader
         )
         self.chatOutgoingOutboxUseCase = ChatOutgoingOutboxUseCase(
             imageStorageRepository: repositories.imageStorageRepository,
-            videoStorageRepository: FirebaseVideoStorageRepository.shared
+            videoStorageRepository: repositories.videoStorageRepository
         )
         self.storageDownloadURLCache = StorageDownloadURLCache.shared
         self.chatVideoDiskCache = OPVideoDiskCache.shared
         self.chatRemoteFileDownloader = URLSessionChatRemoteFileDownloader()
+        self.chatVideoAssetLoader = ChatVideoAssetService(
+            attachmentImageLoader: attachmentImageLoader,
+            storageURLResolver: storageDownloadURLCache
+        )
+        self.chatVideoThumbnailGenerator = DefaultChatVideoThumbnailGenerator()
         self.chatVideoPlaybackResolver = DefaultChatVideoPlaybackResolver(
             storageURLResolver: storageDownloadURLCache,
             videoDiskCache: chatVideoDiskCache,
@@ -172,6 +186,22 @@ final class ChatContainer {
 
     func makeChatOutgoingOutboxUseCase() -> ChatOutgoingOutboxUseCaseProtocol {
         chatOutgoingOutboxUseCase
+    }
+
+    func makeAttachmentImageLoader() -> ChatAttachmentImageLoading {
+        attachmentImageLoader
+    }
+
+    func makeChatVideoAssetLoader() -> ChatVideoAssetLoading {
+        chatVideoAssetLoader
+    }
+
+    func makeChatVideoThumbnailGenerator() -> ChatVideoThumbnailGenerating {
+        chatVideoThumbnailGenerator
+    }
+
+    func makeStorageURLResolver() -> ChatStorageURLResolving {
+        storageDownloadURLCache
     }
 
     func makeChatVideoPlaybackResolver() -> ChatVideoPlaybackResolving {

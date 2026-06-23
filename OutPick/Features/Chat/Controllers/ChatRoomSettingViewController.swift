@@ -48,7 +48,8 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
     var interactiveTransition: UIPercentDrivenInteractiveTransition?
     
     private let viewModel: ChatRoomSettingViewModel
-    private let mediaManager: ChatMediaManaging
+    private let attachmentImageLoader: ChatAttachmentImageLoading
+    private let storageURLResolver: ChatStorageURLResolving
     private let roomImageManager: RoomImageManaging
     private let avatarImageManager: ChatAvatarImageManaging
     private var lastRoomCoverKey: String? = nil
@@ -91,12 +92,14 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
     
     init(
         viewModel: ChatRoomSettingViewModel,
-        mediaManager: ChatMediaManaging,
+        attachmentImageLoader: ChatAttachmentImageLoading,
+        storageURLResolver: ChatStorageURLResolving,
         roomImageManager: RoomImageManaging,
         avatarImageManager: ChatAvatarImageManaging
     ) {
         self.viewModel = viewModel
-        self.mediaManager = mediaManager
+        self.attachmentImageLoader = attachmentImageLoader
+        self.storageURLResolver = storageURLResolver
         self.roomImageManager = roomImageManager
         self.avatarImageManager = avatarImageManager
         let layout = Self.configureLayout(
@@ -320,15 +323,16 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
             guard !items.isEmpty else { return }
             print(#function, "items: \(items)")
             let vc = MediaGalleryViewController(items: items)
-            let mediaManager = self.mediaManager
+            let attachmentImageLoader = self.attachmentImageLoader
+            let storageURLResolver = self.storageURLResolver
             vc.cachedImageProvider = { path in
-                await mediaManager.cachedImage(for: path)
+                await attachmentImageLoader.cachedImage(for: path)
             }
             vc.loadImageProvider = { path, maxBytes in
-                try? await mediaManager.loadImage(for: path, maxBytes: maxBytes)
+                try? await attachmentImageLoader.loadImage(for: path, maxBytes: maxBytes)
             }
             vc.downloadURLResolver = { path in
-                try await mediaManager.resolveURL(for: path)
+                try await storageURLResolver.url(for: path)
             }
             vc.modalPresentationStyle = .fullScreen
             self.pushOrPresent(vc)

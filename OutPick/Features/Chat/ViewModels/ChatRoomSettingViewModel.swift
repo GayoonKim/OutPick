@@ -38,7 +38,7 @@ final class ChatRoomSettingViewModel {
     private let loadParticipantsUseCase: LoadChatRoomParticipantsUseCaseProtocol
     private let loadMediaUseCase: LoadChatRoomMediaUseCaseProtocol
     private let exitUseCase: ChatRoomExitUseCaseProtocol
-    private let mediaManager: ChatMediaManaging
+    private let attachmentImageLoader: ChatAttachmentImageLoading
     private let avatarImageManager: ChatAvatarImageManaging
     private let networkStatusProvider: NetworkStatusProviding
     private let mediaThumbMaxBytes = 12 * 1024 * 1024
@@ -54,7 +54,7 @@ final class ChatRoomSettingViewModel {
     init(
         room: ChatRoom,
         initialParticipants: ChatRoomParticipantsLoadResult,
-        mediaManager: ChatMediaManaging,
+        attachmentImageLoader: ChatAttachmentImageLoading,
         avatarImageManager: ChatAvatarImageManaging,
         loadParticipantsUseCase: LoadChatRoomParticipantsUseCaseProtocol,
         loadMediaUseCase: LoadChatRoomMediaUseCaseProtocol,
@@ -66,7 +66,7 @@ final class ChatRoomSettingViewModel {
         self.localUsers = initialParticipants.users
         self.participantsIsLoadingStorage = true
         self.participantsHasMoreStorage = initialParticipants.hasMore
-        self.mediaManager = mediaManager
+        self.attachmentImageLoader = attachmentImageLoader
         self.avatarImageManager = avatarImageManager
         self.loadParticipantsUseCase = loadParticipantsUseCase
         self.loadMediaUseCase = loadMediaUseCase
@@ -207,7 +207,7 @@ final class ChatRoomSettingViewModel {
 
     private func materializeMediaThumb(for item: ChatRoomSettingMediaItem) async -> MaterializedMedia? {
         for path in item.previewPaths {
-            if let image = await mediaManager.cachedImage(for: path) {
+            if let image = await attachmentImageLoader.cachedImage(for: path) {
                 let composed = item.isVideo ? Self.drawPlayBadge(on: image) : image
                 return MaterializedMedia(item: item, image: composed)
             }
@@ -215,7 +215,7 @@ final class ChatRoomSettingViewModel {
 
         for path in item.previewPaths {
             do {
-                let image = try await mediaManager.loadImage(for: path, maxBytes: mediaThumbMaxBytes)
+                let image = try await attachmentImageLoader.loadImage(for: path, maxBytes: mediaThumbMaxBytes)
                 let composed = item.isVideo ? Self.drawPlayBadge(on: image) : image
                 return MaterializedMedia(item: item, image: composed)
             } catch {

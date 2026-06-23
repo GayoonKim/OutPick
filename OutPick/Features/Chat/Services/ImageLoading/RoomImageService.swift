@@ -9,16 +9,18 @@ import Foundation
 import UIKit
 
 final class RoomImageService: RoomImageManaging {
-    static let shared = RoomImageService()
+    static let shared = RoomImageService(
+        imageStorageRepository: FirebaseRepositoryProvider.shared.imageStorageRepository
+    )
 
     private static let sharedPipeline = makePipeline(
-        imageStorageRepository: FirebaseImageStorageRepository.shared
+        imageStorageRepository: FirebaseRepositoryProvider.shared.imageStorageRepository
     )
 
     private let pipeline: ImageCachePipeline
 
     init(
-        imageStorageRepository: FirebaseImageStorageRepositoryProtocol = FirebaseImageStorageRepository.shared,
+        imageStorageRepository: FirebaseImageStorageRepositoryProtocol,
         pipeline: ImageCachePipeline? = nil
     ) {
         if let pipeline {
