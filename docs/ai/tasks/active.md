@@ -3,7 +3,7 @@
 ## 현재 작업
 
 - 작업명: `chat-view-controller-layering`
-- 현재 상태: Phase 16.6.1 실패 outgoing message 로컬 outbox 영속화와 재시도 성공 후 즉시 UI 정합성 보정 완료.
+- 현재 상태: Phase 18 `ChatMediaManager` 제거 및 비디오 asset warm-up/thumbnail 경계 분리 완료.
 - 진행 문서:
   - `docs/ai/tasks/chat-view-controller-layering/plan.md`
   - `docs/ai/tasks/chat-view-controller-layering/progress.md`
@@ -53,6 +53,23 @@
   - local-only 삭제 시 로컬 메시지/outbox 파일을 제거하고, 이미 업로드된 media Storage object도 삭제한다.
   - outbox 파일 경로는 앱 컨테이너 absolute path가 아니라 `ChatOutgoingOutbox` 기준 relative path로 저장한다.
   - 재시도 성공 broadcast replacement 시 `isFailed`/`seq` 변경을 기준으로 snapshot을 재정렬하고, 같은 ID cell도 reconfigure해 실패 느낌표를 즉시 제거한다.
+- Phase 16.6.2: media upload/outbox storage repository DI 정합성 보정.
+  - `FirebaseRepositoryProviding`에 `videoStorageRepository` 제공 경로를 추가했다.
+  - `FirebaseRepositoryProvider.shared`가 `FirebaseVideoStorageRepository.shared`를 제공한다.
+  - `ChatContainer`가 `ChatMediaUploadUseCase`와 `ChatOutgoingOutboxUseCase`에 image/video storage repository를 명시 주입한다.
+  - `ChatOutgoingOutboxUseCase`의 image/video storage repository singleton 기본값을 제거했다.
+- Phase 17: Chat 이미지 로딩 경계를 `ChatAttachmentImageLoading` service로 분리.
+  - remote Storage 첨부 이미지와 local outgoing preview cache를 하나의 채팅 첨부 이미지 service에서 source별 메서드로 다룬다.
+  - remote Storage image pipeline과 local outgoing preview pipeline은 `ChatAttachmentImagePipelines`로 묶고, outgoing preview도 `ImageCachePipeline`을 통과한다.
+  - production 조립은 `ChatContainer`/`ChatManagerProvider`가 `FirebaseRepositoryProviding`을 기준으로 담당해 채팅 실행 경로의 image storage repository 직접 선택을 제거했다.
+  - 기존 `ChatMediaManager`의 이미지 로딩, 이미지 prefetch, message thumbnail cache 책임을 `ChatAttachmentImageService`로 이동했다.
+  - 기존 `ChatImageCache`/`ChatImageCacheProtocol`은 `ChatAttachmentImageService`의 outgoing preview cache 메서드로 흡수했다.
+- Phase 18: 비디오 asset warm-up/thumbnail 경계 분리.
+  - `ChatMediaManager`/`ChatMediaManaging`을 제거했다.
+  - `ChatVideoAssetLoading`/`ChatVideoAssetService`가 비디오 thumbnail cache와 원본 Storage downloadURL warm-up을 담당한다.
+  - 원본 비디오 파일은 prefetch하지 않고, 사용자가 실제 재생/저장할 때 기존 playback/save resolver 흐름에서 확보한다.
+  - `ChatVideoThumbnailGenerating`/`DefaultChatVideoThumbnailGenerator`가 `AVAssetImageGenerator` 기반 thumbnail data 생성을 담당한다.
+  - `ChatViewController`와 설정 화면은 `ChatAttachmentImageLoading`, `ChatVideoAssetLoading`, `ChatStorageURLResolving`, `ChatVideoThumbnailGenerating` 같은 좁은 dependency에 의존한다.
 
 ## 핵심 원칙
 
@@ -66,20 +83,14 @@
 
 ## 다음 작업 후보
 
-1. Phase 16.6.2: Phase 17 진입 전 `ChatOutgoingOutboxUseCase`/media upload storage repository DI 정합성 보정.
-   - `FirebaseRepositoryProviding`에 video storage repository 제공 경로를 추가한다.
-   - `ChatOutgoingOutboxUseCase`의 image/video storage repository singleton 기본값을 제거한다.
-   - `ChatMediaUploadUseCase`와 `ChatOutgoingOutboxUseCase` 모두 `ChatContainer`가 repository provider에서 명시 주입하도록 맞춘다.
-2. Phase 17: Chat 이미지 로딩 경계를 `ImageCachePipeline` 기반 service로 재정의.
-3. 후속 안정화 후보: media message preflight + finalize API 설계.
+1. 후속 안정화 후보: media message preflight + finalize API 설계.
    - Storage 업로드 전 서버가 방 존재, 참여 여부, 방 종료, rate limit, messageID 예약/업로드 prefix를 확인한다.
-4. 후속 안정화 후보: 고아 Storage 파일 TTL cleanup.
+2. 후속 안정화 후보: 고아 Storage 파일 TTL cleanup.
    - Firestore 메시지에 참조되지 않거나 장시간 finalize되지 않은 media object를 Cloud Functions/Scheduler로 정리한다.
-5. Phase 18: 비디오 asset warm-up/thumbnail 경계 분리.
-6. Phase 19: 갤러리/뷰어 Photos 저장 흐름을 `ChatPhotoLibrarySaving` 또는 앱 공용 saver로 통합.
-7. Phase 20: 검색 UI orchestration 분리.
-8. Phase 21: `ChatViewController` 남은 runtime singleton/manager 직접 접근 최종 audit.
-9. 별도 task 후보: Lookbook의 `CurrentUserIDProviding`을 앱 공통 `CurrentUserProviding`으로 흡수.
+3. Phase 19: 갤러리/뷰어 Photos 저장 흐름을 `ChatPhotoLibrarySaving` 또는 앱 공용 saver로 통합.
+4. Phase 20: 검색 UI orchestration 분리.
+5. Phase 21: `ChatViewController` 남은 runtime singleton/manager 직접 접근 최종 audit.
+6. 별도 task 후보: Lookbook의 `CurrentUserIDProviding`을 앱 공통 `CurrentUserProviding`으로 흡수.
 
 ## 압축 후 읽는 순서
 

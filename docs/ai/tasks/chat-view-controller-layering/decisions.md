@@ -319,11 +319,73 @@
 - media/profile/retry command는 `messageID`를 payload로 사용하고, `ChatViewController`가 최신 message를 `messageWindowStore` 또는 현재 snapshot에서 다시 조회한다.
 - Reducer/Store dispatch는 현재 OutPick MVVM-C + ViewModel + Coordinator 구조와 책임이 겹치므로 도입하지 않는다.
 
+### Media upload/outbox storage repository DI 정합성
+
+결정:
+
+- `FirebaseRepositoryProviding`에 `videoStorageRepository`를 추가한다.
+- `FirebaseRepositoryProvider.shared`는 image storage와 같은 provider 경계에서 `FirebaseVideoStorageRepository.shared`를 제공한다.
+- `ChatContainer`는 `ChatMediaUploadUseCase`와 `ChatOutgoingOutboxUseCase`에 image/video storage repository를 모두 명시 주입한다.
+- `ChatOutgoingOutboxUseCase` initializer의 image/video storage repository singleton 기본값은 제거한다.
+- `GRDBManager.shared` 기본값은 이번 작은 DI 보정 범위에서 유지하고, local persistence protocol 분리는 후속 후보로 둔다.
+
+이유:
+
+- media upload와 outbox retry/delete는 같은 Storage repository graph를 사용해야 한다.
+- `ChatContainer`가 Feature 내부 UseCase 조립을 담당한다는 기존 DI 원칙과 맞다.
+- `ChatOutgoingOutboxUseCase`가 storage repository 기본값을 직접 선택하면 테스트/조립 경계가 흐려진다.
+- GRDB seam까지 함께 분리하면 이번 phase가 persistence 리팩토링으로 커지므로, Phase 16.6.2는 storage repository 선택 위치만 보정한다.
+
+### Chat attachment image loading service
+
+결정:
+
+- 채팅 첨부 이미지 로딩은 `ChatAttachmentImageLoading` protocol과 `ChatAttachmentImageService`가 담당한다.
+- remote Storage 이미지와 local outgoing preview cache는 별도 service로 나누지 않고, 같은 service 안에서 source별 메서드로 구분한다.
+- remote Storage 첨부 이미지는 기존 `ChatMediaManager`의 `ImageCachePipeline` 정책을 유지한다.
+  - folder: `ChatImageCache`
+  - max size: 350MB
+  - trim target: 280MB
+  - fetch location: `.roomImage`
+- local outgoing preview cache는 기존 `ChatImageCache`의 `ThumbCache` folder와 `chatThumb|{key}` key prefix를 유지하되, `ChatAttachmentImageService.storeOutgoingPreview`/`cachedOutgoingPreview`로 흡수한다.
+- outgoing preview cache도 `ImageCacheMemoryStore`, `ImageCacheDiskStore`, `ImageCacheInFlightRegistry`를 service가 직접 만지지 않고 `ImageCachePipeline`으로 감싼다.
+- remote Storage image pipeline과 outgoing preview pipeline은 `ChatAttachmentImagePipelines`로 묶어 service 생성 시 주입한다.
+- production 조립은 `ChatContainer`/`ChatManagerProvider`가 `FirebaseRepositoryProviding`을 기준으로 담당한다.
+- `ChatAttachmentImageService`, `RoomImageService`, `AvatarImageService`, `ChatMessageManager`의 채팅 실행 경로는 `FirebaseImageStorageRepository.shared`를 직접 선택하지 않는다.
+- `ChatImageCache`/`ChatImageCacheProtocol`은 별도 facade로 유지하지 않는다.
+
+이유:
+
+- 채팅 cell, 이미지 viewer, 룩북 공유 썸네일, 실패 outgoing preview 모두 사용자 관점에서는 채팅 첨부 이미지 표시 경계에 속한다.
+- 다만 remote Storage path와 local outgoing preview key는 수명과 fetch 방식이 다르므로, 하나의 service 안에서 메서드로 구분하는 편이 책임을 모으면서도 의미를 잃지 않는다.
+- 기존 cache folder/size 정책을 유지하면 Phase 17이 구조 분리로 제한되고, 디스크 사용량/성능 정책 변경에 따른 회귀를 피할 수 있다.
+- 룩북 `BrandImageCache`처럼 도메인 service는 pipeline을 감싼 얇은 facade로 두고, fetcher/storage 정책은 pipeline 생성부에 모으는 편이 일관적이다.
+- production repository 선택이 service initializer 기본값에 남으면 Phase 16.6.2에서 올린 DI 경계와 어긋나므로, provider/container 조립으로 올린다.
+- `ChatMediaManager`는 이미지, 비디오 URL warm-up, 썸네일 생성이 섞여 있었으므로 이미지 책임을 먼저 빼야 Phase 18의 비디오 service 분리가 작아진다.
+
+### Chat video asset service
+
+결정:
+
+- `ChatMediaManager`/`ChatMediaManaging`은 제거한다.
+- 비디오 asset warm-up은 `ChatVideoAssetLoading` protocol과 `ChatVideoAssetService`가 담당한다.
+- 비디오 warm-up은 thumbnail image cache/load와 원본 Storage path downloadURL warm-up까지만 수행한다.
+- 원본 비디오 파일 선다운로드는 하지 않는다.
+- messageID 단위 중복 warm-up은 service 내부 actor registry가 담당한다.
+- 비디오 thumbnail data 생성은 `ChatVideoThumbnailGenerating` protocol과 `DefaultChatVideoThumbnailGenerator`가 담당한다.
+- `ChatViewController`와 설정 화면은 `ChatAttachmentImageLoading`, `ChatVideoAssetLoading`, `ChatStorageURLResolving`, `ChatVideoThumbnailGenerating`처럼 필요한 좁은 dependency만 주입받는다.
+- `ChatManagerProviding`은 더 이상 media manager를 제공하지 않는다.
+
+이유:
+
+- Phase 17 이후 `ChatMediaManager`는 이미지 facade와 비디오 warm-up/URL/thumbnail 생성이 섞인 낮은 응집도의 객체가 됐다.
+- 비디오 prefetch에서 원본 파일까지 다운로드하면 사용자가 보지 않을 대용량 파일을 네트워크/디스크에 쌓을 수 있다.
+- thumbnail cache와 downloadURL warm-up은 스크롤 체감 개선에 충분하고, 실제 파일 확보는 재생/저장 시점의 `ChatVideoPlaybackResolving` 경계가 담당하는 편이 비용 제어에 유리하다.
+- thumbnail data 생성은 `AVAssetImageGenerator` 작업이므로 ViewController 동기 helper보다 async service 뒤에 두는 편이 호출부 책임을 줄인다.
+
 ## 미결정 사항
 
 - Phase 15 결정: Storage URL cache는 feature-scoped instance가 아니라 앱 공용 `StorageDownloadURLCache.shared`로 둔다.
-- Phase 17 구현 전, 채팅 첨부 이미지와 룩북 공유 썸네일을 같은 image loading service가 처리할지 결정해야 한다.
-- Phase 18 구현 전, 비디오 warm-up을 preview resolver와 합칠지 스크롤 prefetch 전용 service로 분리할지 결정해야 한다.
 - Phase 19 구현 전, Photos saver를 Chat feature service로 유지할지 앱 공용 media saver로 승격할지 결정해야 한다.
 - Phase 20 구현 전, 검색 task/generation guard를 ViewModel로 옮길지 별도 search controller로 분리할지 결정해야 한다.
 - Phase 21 구현 전, 화면 feedback singleton과 UIKit lifecycle observer를 분리 대상에 포함할지 결정해야 한다.
