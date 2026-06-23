@@ -35,6 +35,11 @@
 
 ## 커밋 안내 형식
 
+- 사용자가 `커밋 정리`, `커밋 나눠줘`, `커밋 명령어 정리`처럼 짧게 요청하면 이 문서의 기준을 자동 적용한다.
+  - 먼저 `git status --short --untracked-files=all`을 확인한다.
+  - 이번 작업과 무관한 변경, 개인 산출물, `HANDOFF.md`/active/progress 같은 세션 상태 문서는 기본 커밋 명령에서 제외한다.
+  - 앱 Swift 코드, 테스트 코드, Firebase/Firestore, 공유 하네스 문서, 프로젝트 설정을 나눠 커밋 후보를 제안한다.
+  - 각 후보마다 실제 `git add ...`와 `git commit -m "..."` 명령을 제공한다.
 - 단순 커밋 메시지 후보 한 줄만 제시하지 않는다.
 - 커밋 안내 전에는 `git status --short --untracked-files=all`을 확인한다.
 - 필요하면 `git diff --name-only`, `git diff --cached --name-only`, `git ls-files -- {path}`, `git check-ignore -v {path}`로 추적/제외 상태를 확인한다.
