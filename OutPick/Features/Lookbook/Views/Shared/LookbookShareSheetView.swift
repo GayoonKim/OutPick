@@ -62,22 +62,36 @@ struct LookbookShareSheetView: View {
 
     private var roomList: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 18) {
                 if let sharedContent = viewModel.sharedContent {
-                    LookbookSharePreviewView(
-                        sharedContent: sharedContent,
-                        brandImageCache: brandImageCache
-                    )
+                    VStack(alignment: .leading, spacing: 10) {
+                        shareSectionHeader(
+                            title: "공유할 콘텐츠",
+                            message: "이 콘텐츠를 채팅방에 공유해요."
+                        )
+
+                        LookbookSharePreviewView(
+                            sharedContent: sharedContent,
+                            brandImageCache: brandImageCache
+                        )
+                    }
                 }
 
-                VStack(spacing: 10) {
-                    ForEach(viewModel.rooms, id: \.self) { room in
-                        LookbookShareRoomRowView(
-                            room: room,
-                            isSelected: viewModel.selectedRoomID == room.ID,
-                            roomImageManager: roomImageManager
-                        ) {
-                            viewModel.selectedRoomID = room.ID
+                VStack(alignment: .leading, spacing: 10) {
+                    shareSectionHeader(
+                        title: "공유할 채팅방 선택",
+                        message: "방을 하나 선택하면 공유할 수 있어요."
+                    )
+
+                    VStack(spacing: 10) {
+                        ForEach(viewModel.rooms, id: \.self) { room in
+                            LookbookShareRoomRowView(
+                                room: room,
+                                isSelected: viewModel.selectedRoomID == room.ID,
+                                roomImageManager: roomImageManager
+                            ) {
+                                viewModel.selectedRoomID = room.ID
+                            }
                         }
                     }
                 }
@@ -93,6 +107,14 @@ struct LookbookShareSheetView: View {
                 Text(message)
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(OutPickTheme.SwiftUIColor.warning)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            if let roomName = viewModel.selectedRoom?.roomName {
+                Text("선택한 방: \(roomName)")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+                    .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
@@ -114,8 +136,9 @@ struct LookbookShareSheetView: View {
                         Image(systemName: "paperplane.fill")
                     }
 
-                    Text(viewModel.isSending ? "공유 중" : "공유")
+                    Text(sendButtonTitle)
                         .font(.headline.weight(.bold))
+                        .lineLimit(1)
                 }
                 .foregroundStyle(OutPickTheme.SwiftUIColor.backgroundBase)
                 .frame(maxWidth: .infinity)
@@ -136,6 +159,30 @@ struct LookbookShareSheetView: View {
         .padding(.top, 12)
         .padding(.bottom, 16)
         .background(OutPickTheme.SwiftUIColor.surfaceBase)
+    }
+
+    private var sendButtonTitle: String {
+        if viewModel.isSending {
+            return "공유 중"
+        }
+
+        guard let roomName = viewModel.selectedRoom?.roomName else {
+            return "채팅방을 선택하세요"
+        }
+
+        return "\(roomName)에 공유"
+    }
+
+    private func shareSectionHeader(title: String, message: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
+
+            Text(message)
+                .font(.footnote)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+        }
     }
 
     private var loadingSection: some View {
