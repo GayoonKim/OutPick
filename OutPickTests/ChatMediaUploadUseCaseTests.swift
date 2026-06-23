@@ -106,25 +106,25 @@ struct ChatMediaUploadUseCaseTests {
     }
 
     @Test func cacheFailedImageThumbnailsStoresEveryPairThumb() async throws {
-        let cache = ChatImageCacheSpy()
-        let useCase = makeUseCase(imageCache: cache)
+        let imageLoader = ChatAttachmentImageLoaderSpy()
+        let useCase = makeUseCase(attachmentImageLoader: imageLoader)
         let first = try makeImagePair(index: 0, sha256: "first")
         let second = try makeImagePair(index: 1, sha256: "second")
 
         await useCase.cacheFailedImageThumbnails([first, second])
 
-        let keys = await cache.diskKeys()
+        let keys = await imageLoader.outgoingPreviewKeys()
         #expect(keys == ["first", "second"])
     }
 
     @Test func uploadVideoUploadsFileAndThumbnailThenSendsPayload() async throws {
         let videoRepository = FirebaseVideoStorageRepositoryFake()
         let sendingRepository = ChatMediaMessageSendingRepositorySpy()
-        let cache = ChatImageCacheSpy()
+        let imageLoader = ChatAttachmentImageLoaderSpy()
         let useCase = makeUseCase(
             videoRepository: videoRepository,
             sendingRepository: sendingRepository,
-            imageCache: cache
+            attachmentImageLoader: imageLoader
         )
         let prepared = try makePreparedVideo()
         var progressValues: [Double] = []
@@ -144,7 +144,7 @@ struct ChatMediaUploadUseCaseTests {
         #expect(videoRepository.fileUploadCalls.map(\.path) == [payload.storagePath])
         #expect(videoRepository.dataUploadCalls.map(\.path) == [payload.thumbnailPath])
         #expect(progressValues == [0.5, 1.0])
-        #expect(await cache.diskKeys() == ["video-sha"])
+        #expect(await imageLoader.outgoingPreviewKeys() == ["video-sha"])
         #expect(sendingRepository.videoCalls.count == 1)
         #expect(sendingRepository.videoCalls.first?.payload.messageID == "video-1")
         #expect(sendingRepository.videoCalls.first?.senderAvatarPath == "avatars/me.jpg")
@@ -169,14 +169,14 @@ struct ChatMediaUploadUseCaseTests {
         imageRepository: FirebaseImageStorageRepositoryFake = FirebaseImageStorageRepositoryFake(),
         videoRepository: FirebaseVideoStorageRepositoryFake = FirebaseVideoStorageRepositoryFake(),
         sendingRepository: ChatMediaMessageSendingRepositorySpy = ChatMediaMessageSendingRepositorySpy(),
-        imageCache: ChatImageCacheProtocol = ChatImageCacheSpy(),
+        attachmentImageLoader: ChatAttachmentImageLoading = ChatAttachmentImageLoaderSpy(),
         previewDirectory: URL? = nil
     ) -> ChatMediaUploadUseCase {
         ChatMediaUploadUseCase(
             imageStorageRepository: imageRepository,
             videoStorageRepository: videoRepository,
             sendingRepository: sendingRepository,
-            imageCache: imageCache,
+            attachmentImageLoader: attachmentImageLoader,
             currentUserProvider: {
                 ChatMessageSenderSnapshot(
                     senderID: "me@example.com",
@@ -442,19 +442,25 @@ private final class ChatMediaMessageSendingRepositorySpy: ChatMediaMessageSendin
     }
 }
 
-private actor ChatImageCacheSpy: ChatImageCacheProtocol {
-    private var diskEntries: [(data: Data, key: String)] = []
+private actor ChatAttachmentImageLoaderSpy: ChatAttachmentImageLoading {
+    private var outgoingPreviewEntries: [(data: Data, key: String)] = []
 
-    func storeToDisk(data: Data, forKey key: String) async {
-        diskEntries.append((data: data, key: key))
+    func cacheImagesIfNeeded(for message: ChatMessage, maxBytes: Int) async -> [UIImage] { [] }
+    func cachedImage(for path: String) async -> UIImage? { nil }
+    func loadImage(for path: String, maxBytes: Int) async throws -> UIImage {
+        throw TestError.unimplemented
+    }
+    func prefetchThumbnails(for messages: [ChatMessage], maxBytes: Int, maxConcurrent: Int) async {}
+    func prefetchImages(paths: [String], maxBytes: Int, maxConcurrent: Int) async {}
+
+    func storeOutgoingPreview(data: Data, forKey key: String) async {
+        outgoingPreviewEntries.append((data: data, key: key))
     }
 
-    func storeToMemory(image: UIImage, forKey key: String) async {}
-    func loadImage(forKey key: String) async -> UIImage? { nil }
-    func loadData(forKey key: String) async -> Data? { nil }
+    func cachedOutgoingPreview(forKey key: String) async -> UIImage? { nil }
 
-    func diskKeys() -> [String] {
-        diskEntries.map(\.key)
+    func outgoingPreviewKeys() -> [String] {
+        outgoingPreviewEntries.map(\.key)
     }
 }
 
