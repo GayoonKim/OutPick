@@ -2,7 +2,7 @@
 
 ## 현재 상태
 
-- 상태: Phase 18 완료, `ChatMediaManager` 제거 및 비디오 asset warm-up/thumbnail 경계 분리 완료.
+- 상태: Phase 21 완료, 갤러리/뷰어 Photos 저장 통합, 검색 task/generation guard ViewModel 이동, 남은 runtime singleton/manager 직접 접근 audit 및 종료 기준 확정 완료.
 - 원본 상세 기록은 `archive/progress-through-phase-9.md`에 보존했다.
 - 현재 task 목표는 `ChatViewController`에 몰려 있던 메시지 전송, 실시간 수신, 메시지 액션, 메시지 window/diffable, 미디어 업로드, 읽음 seq/lifecycle, 라우팅, 방 exit 실행 책임을 MVVM-C + Repository + UseCase + DI 흐름에 맞춰 분리하는 것이다.
 - Phase 19부터는 `AGENTS.md`의 phase 기반 운영 원칙과 `docs/ai/ADR.md`의 ADR-015에 따라 조사/설계 쟁점 발굴은 병렬화하고, 구현은 파일 충돌 가능성과 의존성 기준으로 순차 또는 별도 스레드 병렬 진행을 결정한다.
@@ -36,9 +36,9 @@
 | 16.6.2 | 완료 | Phase 17 전 `ChatOutgoingOutboxUseCase`/media upload storage repository DI 정합성 보정 | 현재 문서 |
 | 17 | 완료 | Chat 이미지 로딩 경계를 `ChatAttachmentImageLoading` service로 분리하고 remote Storage 이미지와 local outgoing preview cache를 한 service에서 source별로 처리 | 현재 문서 |
 | 18 | 완료 | `ChatMediaManager` 제거, 비디오 asset warm-up/thumbnail 생성/URL resolve를 좁은 service 경계로 분리 | 현재 문서 |
-| 19 | 설계 예정 | 갤러리/뷰어 Photos 저장 흐름 통합 | 현재 문서 |
-| 20 | 설계 예정 | 검색 UI orchestration 분리 | 현재 문서 |
-| 21 | 설계 예정 | `ChatViewController` 남은 runtime singleton/manager 직접 접근 최종 audit | 현재 문서 |
+| 19 | 완료 | 갤러리/뷰어 Photos 저장 흐름을 앱 공용 `PhotoLibrarySaving`으로 통합 | 현재 문서 |
+| 20 | 완료 | 검색 task/generation guard와 검색 표시 상태를 `ChatRoomViewModel` 경계로 이동 | 현재 문서 |
+| 21 | 완료 | 남은 runtime singleton/manager 직접 접근 audit 및 task 종료 기준 확정 | 현재 문서 |
 
 ## 최근 완료 상세
 
@@ -483,58 +483,87 @@
 - 셀 이벤트가 analytics/logging 또는 cross-feature command로 크게 늘어나면 `ChatMessageCellCommandHandling` protocol 분리 여부를 검토한다.
 - Reducer/Store dispatch는 현재 MVVM-C + ViewModel + Coordinator 경계와 겹치므로 이번 task에서는 도입하지 않는다.
 
-### Phase 19 설계 예정
+### Phase 19
 
 목표:
 
-- `MediaGalleryViewController`, `SimpleImageViewerVC`, `LocalImageViewerVC`의 Photos 저장 중복을 `ChatPhotoLibrarySaving` 또는 앱 공용 saver로 통합한다.
+- `MediaGalleryViewController`, `SimpleImageViewerVC`, `LocalImageViewerVC`, 비디오 overlay의 Photos 저장 중복을 앱 공용 saver로 통합한다.
 
-주요 검토 범위:
+완료 범위:
 
-- 이미지 저장 경로 통합.
-- 비디오 저장 경로 통합 가능성.
-- viewer별 저장 성공/실패 feedback 일관성.
-- `NSPhotoLibraryAddUsageDescription`과 실제 add-only 권한 요청 흐름 일치 여부.
+- `OutPick/Infra/Media/PhotoLibrarySaver.swift`에 앱 공용 `PhotoLibrarySaving`과 `DefaultPhotoLibrarySaver`를 추가했다.
+  - 이미지 저장과 비디오 저장을 같은 add-only Photos 권한 요청 경계로 통합했다.
+  - 권한 거부와 저장 실패를 `PhotoLibrarySaveError`로 구분한다.
+- Chat feature 전용 `ChatPhotoLibrarySaving`/`DefaultChatPhotoLibrarySaver`를 제거했다.
+- `ChatVideoPlayerViewController`는 공용 `PhotoLibrarySaving`을 생성자 주입으로 받는다.
+- `SimpleImageViewerVC`는 직접 `UIImageWriteToSavedPhotosAlbum`을 호출하지 않고, 생성자 주입된 `PhotoLibrarySaving`으로 이미지를 저장한다.
+  - Chat 이미지 viewer는 `ChatCoordinator`가 `ChatContainer`의 saver를 주입한다.
+  - Profile 이미지 viewer는 `UserProfileDetailViewController`가 `DefaultPhotoLibrarySaver`를 주입한다.
+- `MediaGalleryViewController`는 `PhotoLibrarySaving`과 `ChatVideoPlaybackResolving`을 생성자 주입으로 받는다.
+  - gallery 비디오 저장은 새 resolver를 만들지 않고 기존 `ChatVideoPlaybackResolving.localFileURLForSaving`을 재사용한다.
+  - `LocalImageViewerVC`와 `VideoPlayerOverlayVC`의 직접 Photos API 호출을 제거했다.
+- `ChatRoomSettingViewController`/`ChatCompositionRoot`는 `storageURLResolver` 직접 주입 대신 `videoResolver`와 `photoLibrarySaver`를 전달한다.
 
-구현 전 논의 필요:
+검증:
 
-- saver를 Chat feature service로 둘지, 앱 공용 media saver로 승격할지 결정한다.
-- `SimpleImageViewerVC`에 saver를 직접 주입할지, 별도 viewer factory/presenter를 둘지 결정한다.
+- `git diff --check` 통과.
+- `xcodebuild -scheme OutPick -destination 'generic/platform=iOS Simulator' build` 통과.
 
-### Phase 20 설계 예정
+### Phase 20
 
 목표:
 
 - `ChatViewController`에 남은 검색 UI orchestration을 검색 상태/검색 실행/검색 결과 점프 책임과 화면 표시 책임으로 분리한다.
 
-주요 검토 범위:
+완료 범위:
 
-- `searchMessagesTask`, `searchJumpTask`, `searchGeneration`의 소유 위치.
-- navigation bar search publisher와 `ChatSearchUIView` up/down 이벤트 처리 경계.
-- 검색 결과 count/current index 계산을 ViewModel 또는 별도 search store로 이동할지 여부.
-- 검색 결과 message로 점프하는 scroll orchestration을 ViewController에 남길지, ViewModel이 target만 계산하게 할지 여부.
+- `ChatRoomViewModel`이 검색 task와 generation guard를 소유한다.
+  - `startSearch(containing:onResultApplied:)`가 기존 검색 task 취소, generation 증가, 검색 fetch, 최신 generation guard, 검색 결과 적용을 담당한다.
+  - `cancelSearchWork()`가 view lifecycle/deinit cleanup에서 호출된다.
+- `ChatRoomViewModel.SearchDisplayState`를 추가했다.
+  - 내부 검색 index는 seq ASC 기준 1-based 값을 유지한다.
+  - UI 표시 index는 최신 메시지 기준 표시를 위해 `totalCount - currentIndex + 1`로 분리했다.
+  - up/down 버튼 가능 여부도 ViewModel state로 제공한다.
+- `ChatSearchUIView`는 count/current index 원시값 대신 `SearchDisplayState`를 받아 표시한다.
+- `ChatViewController`는 검색 keyword publisher, collection view scroll, `IndexPath` 계산, shake animation 같은 UIKit 책임만 유지한다.
+- `filterMessages(containing:generation:)`, `searchMessagesTask`, `searchGeneration`은 `ChatViewController`에서 제거했다.
 
-구현 전 논의 필요:
+검증:
 
-- 검색 task 취소와 generation guard를 ViewModel로 이동할지, UI interaction controller로 분리할지 결정한다.
-- collection view scroll 자체는 UIKit 책임이므로 ViewController에 남기되, target message/indexPath 계산 책임을 어디까지 분리할지 결정한다.
-- 검색은 수동 QA가 쉬운 happy path와 비동기 취소/중복 입력처럼 자동 테스트가 유리한 영역을 나눠 검증한다.
+- `git diff --check` 통과.
+- `xcodebuild -scheme OutPick -destination 'generic/platform=iOS Simulator' build` 통과.
 
-### Phase 21 설계 예정
+### Phase 21
 
 목표:
 
 - Phase 15~20 이후 `ChatViewController`에 남은 runtime singleton/manager 직접 접근을 최종 점검하고, 분리할 대상과 UIKit 화면 책임으로 남길 대상을 확정한다.
 
-주요 검토 범위:
+완료 범위:
 
-- `LoadingIndicator.shared`, `AlertManager`, `NotificationCenter`, keyboard observer, app lifecycle observer 사용처.
-- 남은 provider/manager 접근이 ViewController 책임에 남아도 되는지 여부.
-- 남은 `present`, `dismiss`, alert, ConfirmView 호출이 Coordinator 경계로 이동해야 하는 화면 이동인지, 단순 UI feedback인지 구분.
-- `ChatViewController` 최종 책임 목록과 후속 리팩토링 종료 기준.
+- Phase 21은 코드 대수술이 아니라 audit + 종료 기준 확정 phase로 처리했다.
+- 이번 task 종료 기준에서 아래 항목은 UIKit 화면 feedback 또는 lifecycle glue로 허용한다.
+  - `LoadingIndicator.shared`
+  - `AlertManager`
+  - `ConfirmView`
+  - keyboard/app lifecycle `NotificationCenter` observer
+- 아래 항목은 task 종료를 막지 않는 후속 후보로 분리했다.
+  - `DefaultMediaProcessingService.shared` 직접 접근 제거.
+  - `provider.avatarImageManager` 접근 폭 축소.
+  - media message preflight + finalize API 설계.
+  - 고아 Storage 파일 TTL cleanup.
+  - outbox GRDB persistence test seam.
+  - Lookbook `CurrentUserIDProviding`을 앱 공통 `CurrentUserProviding`으로 흡수.
+- `ChatViewController`는 현재 기준 UIKit 화면 조립, 사용자 이벤트 전달, collection view scroll/rendering 반영, 단순 화면 feedback 책임을 유지한다.
 
-구현 전 논의 필요:
+검증:
 
-- 전역 singleton을 모두 제거하는 것이 목표인지, 화면 feedback singleton은 일단 허용할지 결정한다.
-- keyboard/app lifecycle NotificationCenter observer는 UIKit lifecycle glue로 남길지 별도 observer 객체로 분리할지 결정한다.
-- 이 phase를 실제 코드 수정 phase로 볼지, audit + 후속 backlog 확정 phase로 볼지 결정한다.
+- 코드 변경 없는 audit/documentation phase로 처리했다.
+- Phase 19~20 구현 후 `xcodebuild -scheme OutPick -destination 'generic/platform=iOS Simulator' build` 통과 상태를 기준으로 종료한다.
+
+후속 소정리 후보:
+
+- `ChatSearchUIView`의 up/down 단발 탭 이벤트는 Combine publisher 대신 클로저 callback으로 줄인다.
+- `ChatSearchUIView.updateSearchResult`는 view rendering 책임으로 유지하되, `ChatRoomViewModel.SearchDisplayState` 직접 의존을 view 전용 state 또는 원시 표시 값으로 낮춘다.
+- `LocalImageViewerVC`의 fallback 의미를 원격 path 없는 메모리 `UIImage` 전용 viewer로 명확히 한다.
+- `LocalImageViewerVC`와 `VideoPlayerOverlayVC`는 `MediaGalleryViewController.swift`에서 별도 파일로 분리한다.

@@ -386,6 +386,30 @@
 ## 미결정 사항
 
 - Phase 15 결정: Storage URL cache는 feature-scoped instance가 아니라 앱 공용 `StorageDownloadURLCache.shared`로 둔다.
-- Phase 19 구현 전, Photos saver를 Chat feature service로 유지할지 앱 공용 media saver로 승격할지 결정해야 한다.
-- Phase 20 구현 전, 검색 task/generation guard를 ViewModel로 옮길지 별도 search controller로 분리할지 결정해야 한다.
-- Phase 21 구현 전, 화면 feedback singleton과 UIKit lifecycle observer를 분리 대상에 포함할지 결정해야 한다.
+- Phase 19 결정: Photos saver는 Chat feature service에 유지하지 않고 앱 공용 `PhotoLibrarySaving` 계열로 승격한다. `SimpleImageViewerVC`/`LocalImageViewerVC` 등 viewer에는 init 주입을 우선하고, 갤러리 비디오 저장은 `ChatVideoPlaybackResolving.localFileURLForSaving` 흐름을 재사용한다.
+- Phase 20 결정: 검색 task/generation guard는 `ChatRoomViewModel`과 작은 search state/helper 쪽으로 이동하고, 별도 search controller/store 도입은 보류한다. Collection view scroll, `IndexPath`, shake animation은 UIKit 책임으로 `ChatViewController`에 남긴다. 내부 index와 UI 표시 index는 명시적으로 분리한다.
+- Phase 21 결정: 1차는 코드 대수술이 아니라 audit + 종료 기준 확정 phase로 둔다. `LoadingIndicator.shared`, `AlertManager`, `ConfirmView` 같은 화면 feedback singleton과 keyboard/app lifecycle `NotificationCenter` observer는 이번 task 종료 기준에서 일단 허용 가능 항목으로 분류하고, `DefaultMediaProcessingService.shared` 직접 접근은 후속 제거 후보로 기록한다.
+- Phase 19/20 후속 소정리 결정: 기능 변경 없이 구조만 정리하는 후속 후보로 둔다.
+  - `ChatSearchUIView`의 up/down 단발 이벤트는 Combine `PassthroughSubject` 대신 클로저 callback으로 줄인다.
+  - `ChatSearchUIView.updateSearchResult` 위치는 view rendering 책임으로 유지하되, `ChatRoomViewModel.SearchDisplayState` 직접 의존은 view 전용 state 또는 원시 표시 값으로 낮춘다.
+  - `LocalImageViewerVC`의 fallback 의미는 "원격 path 없는 메모리 `UIImage` 전용 viewer"로 문서/주석을 명확히 한다.
+  - `LocalImageViewerVC`와 `VideoPlayerOverlayVC`는 `MediaGalleryViewController.swift`에서 별도 파일로 분리한다.
+- 후속 후보 일괄 설계 결정:
+  - media preflight는 Socket event `chat:mediaPreflight`로 둔다. 현재 채팅 전송, ACK, socket room join 검증이 Socket 중심이므로 Functions callable보다 기존 흐름과 잘 맞는다.
+  - media finalize는 새 공통 `chat:mediaFinalize`를 바로 만들지 않고 기존 `send images`/`chat:video` handler를 강화한다. 이미지/비디오 finalize 공통화는 후속으로 남긴다.
+  - preflight 성공 시 Firestore `Rooms/{roomID}/MediaUploads/{messageID}` reservation 문서를 만든다. 이 문서는 upload prefix/messageID 소유권, retry/idempotency, TTL cleanup 기준으로 사용한다.
+  - TTL cleanup은 reservation 기준 pending 만료 항목의 `rooms/{roomID}/messages/{messageID}/...` Storage prefix를 삭제하는 방식으로 시작한다. 실행 위치는 Firebase Functions scheduler로 둔다.
+  - outbox GRDB seam은 별도 repository 대수술 대신 `ChatOutgoingOutboxPersisting` protocol을 만들고 `GRDBManager`가 채택하는 방향으로 둔다. 실제 GRDB in-memory integration test는 후속으로 분리하고, 1차는 fake persistence 기반 unit test를 작성한다.
+  - `DefaultMediaProcessingService.shared` 직접 접근 제거는 이번에는 shared 주입 제거까지만 한다. `ImagePair`, `VideoUploadPreset`, static `makeThumbnailData` 타입 분리는 후속으로 남긴다.
+  - `provider.avatarImageManager` 접근 축소는 `ChatViewController`에 `ChatAvatarImageManaging`을 생성자 주입하는 수준으로 제한한다. `provider` 전체 제거는 후속으로 남긴다.
+  - Lookbook current user 통합은 앱 공용 `CurrentUserProviding`을 `LookbookContainer`에 주입하고, Lookbook 내부 adapter가 `UserID?`로 변환하는 방식으로 둔다. 앱 공용 provider가 Lookbook의 `UserID` 타입을 직접 알게 하지 않는다.
+
+### 이번 범위 제외 후속 기록
+
+- 새 공통 `chat:mediaFinalize` 이벤트로 이미지/비디오 finalize 통합.
+- `DefaultMediaProcessingService.ImagePair`, `VideoUploadPreset`, static `makeThumbnailData` 타입 분리.
+- 실제 GRDB in-memory integration test.
+- Storage 전체 sweep 방식 cleanup.
+- 대량 cleanup용 Cloud Run worker 승격.
+- `ChatViewController`의 `provider` 전체 제거.
+- Lookbook/Profile까지 포함한 avatar/image service 전면 DI 정리.
