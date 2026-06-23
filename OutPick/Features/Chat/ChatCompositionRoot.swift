@@ -40,7 +40,8 @@ enum ChatCompositionRoot {
         provider: ChatManagerProviding,
         repositories: FirebaseRepositoryProviding,
         attachmentImageLoader: ChatAttachmentImageLoading,
-        storageURLResolver: ChatStorageURLResolving,
+        videoResolver: ChatVideoPlaybackResolving,
+        photoLibrarySaver: PhotoLibrarySaving,
         exitUseCase: ChatRoomExitUseCaseProtocol,
         onEvent: @escaping (ChatRoomSettingEvent) -> Void = { _ in }
     ) -> ChatRoomSettingViewController {
@@ -73,7 +74,8 @@ enum ChatCompositionRoot {
         let settingVC = ChatRoomSettingViewController(
             viewModel: settingViewModel,
             attachmentImageLoader: attachmentImageLoader,
-            storageURLResolver: storageURLResolver,
+            videoResolver: videoResolver,
+            photoLibrarySaver: photoLibrarySaver,
             roomImageManager: provider.roomImageManager,
             avatarImageManager: provider.avatarImageManager
         )

@@ -34,6 +34,13 @@ final class ChatRoomViewModel {
         var currentIndex: Int?             // 1-based index in hits
     }
 
+    struct SearchDisplayState {
+        let totalCount: Int
+        let displayIndex: Int
+        let canMoveToPrevious: Bool
+        let canMoveToNext: Bool
+    }
+
     private(set) var room: ChatRoom
 
     private let initialLoadUseCase: ChatInitialLoadUseCaseProtocol
@@ -57,6 +64,24 @@ final class ChatRoomViewModel {
     var currentSearchResultCount: Int { searchSession?.totalCount ?? 0 }
     var currentSearchSource: ChatMessageSearchSource? { searchSession?.source }
     var isCurrentSearchAuthoritative: Bool { searchSession?.isAuthoritative ?? false }
+    var currentSearchDisplayState: SearchDisplayState {
+        guard let session = searchSession,
+              let currentIndex = session.currentIndex,
+              session.totalCount > 0 else {
+            return SearchDisplayState(
+                totalCount: 0,
+                displayIndex: 0,
+                canMoveToPrevious: false,
+                canMoveToNext: false
+            )
+        }
+        return SearchDisplayState(
+            totalCount: session.totalCount,
+            displayIndex: session.totalCount - currentIndex + 1,
+            canMoveToPrevious: currentIndex > 1,
+            canMoveToNext: currentIndex < session.hits.count
+        )
+    }
     private(set) var highlightedMessageIDs: Set<String> = []
     private(set) var currentSearchKeyword: String?
 
@@ -69,6 +94,8 @@ final class ChatRoomViewModel {
     private var liveBufferIDs: Set<String> = []
     private var readStateStore = ChatReadStateStore()
     private var lastReadFlushTask: Task<Void, Never>?
+    private var searchMessagesTask: Task<Void, Never>?
+    private var searchGeneration: Int = 0
     private let lastReadFlushDebounceNanoseconds: UInt64 = 3_000_000_000
 
     let minTriggerDistance: Int = 3
@@ -98,6 +125,7 @@ final class ChatRoomViewModel {
 
     deinit {
         lastReadFlushTask?.cancel()
+        searchMessagesTask?.cancel()
     }
 
     var roomID: String { room.ID ?? "" }
@@ -340,6 +368,37 @@ final class ChatRoomViewModel {
         applySearchResult(result)
     }
 
+    func startSearch(
+        containing keyword: String,
+        onResultApplied: @escaping @MainActor () -> Void
+    ) {
+        searchMessagesTask?.cancel()
+        searchGeneration &+= 1
+        let generation = searchGeneration
+
+        searchMessagesTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                try Task.checkCancellation()
+                let result = try await self.fetchSearchMessages(containing: keyword)
+                try Task.checkCancellation()
+                guard self.searchGeneration == generation else { return }
+                self.applySearchResult(result)
+                onResultApplied()
+            } catch is CancellationError {
+                return
+            } catch {
+                print("메시지 없음")
+            }
+        }
+    }
+
+    func cancelSearchWork() {
+        searchMessagesTask?.cancel()
+        searchMessagesTask = nil
+        searchGeneration &+= 1
+    }
+
     func fetchSearchMessages(containing keyword: String) async throws -> ChatMessageSearchResult {
         try await searchUseCase.searchMessages(roomID: roomID, keyword: keyword)
     }
@@ -410,6 +469,7 @@ final class ChatRoomViewModel {
     }
 
     func clearSearch() -> Set<String> {
+        cancelSearchWork()
         let previous = highlightedMessageIDs
         highlightedMessageIDs = searchUseCase.clearHighlight()
         currentSearchKeyword = nil

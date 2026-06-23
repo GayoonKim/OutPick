@@ -7,7 +7,6 @@
 
 import Foundation
 import UIKit
-import Photos
 
 struct ChatVideoPlaybackAsset: Equatable {
     let url: URL
@@ -159,73 +158,6 @@ final class URLSessionChatRemoteFileDownloader: ChatRemoteFileDownloading {
         try FileManager.default.moveItem(at: tmpURL, to: destination)
         onProgress(1.0)
         return destination
-    }
-}
-
-protocol ChatPhotoLibrarySaving {
-    func saveImage(_ image: UIImage) async throws
-    func saveVideo(fileURL: URL) async throws
-}
-
-final class DefaultChatPhotoLibrarySaver: ChatPhotoLibrarySaving {
-    func saveImage(_ image: UIImage) async throws {
-        let granted = await requestPhotoAddPermission()
-        guard granted else { throw ChatMediaPreviewError.photoPermissionDenied }
-
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            PHPhotoLibrary.shared().performChanges({
-                PHAssetChangeRequest.creationRequestForAsset(from: image)
-            }) { success, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else if success {
-                    continuation.resume(returning: ())
-                } else {
-                    continuation.resume(throwing: ChatMediaPreviewError.saveFailed)
-                }
-            }
-        }
-    }
-
-    func saveVideo(fileURL: URL) async throws {
-        let granted = await requestPhotoAddPermission()
-        guard granted else { throw ChatMediaPreviewError.photoPermissionDenied }
-
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            PHPhotoLibrary.shared().performChanges({
-                PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: fileURL)
-            }) { success, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else if success {
-                    continuation.resume(returning: ())
-                } else {
-                    continuation.resume(throwing: ChatMediaPreviewError.saveFailed)
-                }
-            }
-        }
-    }
-
-    private func requestPhotoAddPermission() async -> Bool {
-        if #available(iOS 14, *) {
-            let status = PHPhotoLibrary.authorizationStatus(for: .addOnly)
-            if status == .authorized || status == .limited {
-                return true
-            }
-            let nextStatus = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
-            return nextStatus == .authorized || nextStatus == .limited
-        } else {
-            let status = PHPhotoLibrary.authorizationStatus()
-            if status == .authorized {
-                return true
-            }
-            let nextStatus = await withCheckedContinuation { (continuation: CheckedContinuation<PHAuthorizationStatus, Never>) in
-                PHPhotoLibrary.requestAuthorization { status in
-                    continuation.resume(returning: status)
-                }
-            }
-            return nextStatus == .authorized
-        }
     }
 }
 

@@ -197,7 +197,8 @@ extension ChatCoordinator: ChatRoomRouting {
             provider: container.provider,
             repositories: container.firebaseRepositories,
             attachmentImageLoader: container.makeAttachmentImageLoader(),
-            storageURLResolver: container.makeStorageURLResolver(),
+            videoResolver: container.makeChatVideoPlaybackResolver(),
+            photoLibrarySaver: container.makePhotoLibrarySaver(),
             exitUseCase: container.makeChatRoomExitUseCase(),
             onEvent: { [weak self, weak source] event in
                 switch event {
@@ -255,7 +256,8 @@ extension ChatCoordinator: ChatRoomRouting {
             pages: pages,
             startIndex: startIndex,
             cachedImageProvider: cachedImageProvider,
-            loadImageProvider: loadImageProvider
+            loadImageProvider: loadImageProvider,
+            photoLibrarySaver: container.makePhotoLibrarySaver()
         )
         viewer.modalPresentationStyle = .fullScreen
         viewer.modalTransitionStyle = .crossDissolve
@@ -272,7 +274,7 @@ extension ChatCoordinator: ChatRoomRouting {
                 let playerViewController = ChatVideoPlayerViewController(
                     playbackAsset: playbackAsset,
                     videoResolver: videoResolver,
-                    photoLibrarySaver: container.makeChatPhotoLibrarySaver()
+                    photoLibrarySaver: container.makePhotoLibrarySaver()
                 )
                 playerViewController.modalPresentationStyle = .fullScreen
                 source.present(playerViewController, animated: true)

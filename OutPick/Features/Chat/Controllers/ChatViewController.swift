@@ -66,9 +66,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     var convertImagesTask: Task<Void, Error>? = nil
     var convertVideosTask: Task<Void, Error>? = nil
-    private var searchMessagesTask: Task<Void, Never>?
     private var searchJumpTask: Task<Void, Never>?
-    private var searchGeneration: Int = 0
 
     typealias PendingImageUploadState = ChatPendingMediaUploadState
     private let pendingMediaUploadStore = ChatPendingMediaUploadStore()
@@ -144,7 +142,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
         convertImagesTask?.cancel()
         convertVideosTask?.cancel()
-        searchMessagesTask?.cancel()
+        let chatRoomViewModel = chatRoomViewModel
+        Task { @MainActor in
+            chatRoomViewModel.cancelSearchWork()
+        }
         imageViewerPrefetchTasks.forEach { $0.cancel() }
         imageViewerPrefetchTasks.removeAll()
         thumbnailPrefetchTasks.values.forEach { $0.cancel() }
@@ -373,8 +374,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         stopAllPrefetchers()
         initialLoadTask?.cancel()
         initialLoadTask = nil
-        searchMessagesTask?.cancel()
-        searchMessagesTask = nil
+        chatRoomViewModel.cancelSearchWork()
         searchJumpTask?.cancel()
         searchJumpTask = nil
         cancellables.removeAll()
@@ -1394,14 +1394,14 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 guard let self = self else { return }
                 
                 self.clearPreviousHighlightIfNeeded()
-                self.searchGeneration &+= 1
-                let generation = self.searchGeneration
                 
                 guard let keyword = keyword, !keyword.isEmpty else {
                     print(#function, "✅✅✅✅✅ keyword is empty ✅✅✅✅✅")
                     return
                 }
-                filterMessages(containing: keyword, generation: generation)
+                self.chatRoomViewModel.startSearch(containing: keyword) { [weak self] in
+                    self?.applyHighlight()
+                }
             }
             .store(in: &cancellables)
         
@@ -1418,7 +1418,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             .sink { [weak self] in
                 guard let self = self else { return }
                 guard let index = self.chatRoomViewModel.moveToPreviousSearchResult() else { return }
-                self.searchUI.updateSearchResult(self.chatRoomViewModel.currentSearchResultCount, index)
+                self.searchUI.updateSearchResult(self.chatRoomViewModel.currentSearchDisplayState)
                 self.moveToMessageAndShake(index)
             }
             .store(in: &cancellables)
@@ -1428,32 +1428,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             .sink { [weak self] in
                 guard let self = self else { return }
                 guard let index = self.chatRoomViewModel.moveToNextSearchResult() else { return }
-                self.searchUI.updateSearchResult(self.chatRoomViewModel.currentSearchResultCount, index)
+                self.searchUI.updateSearchResult(self.chatRoomViewModel.currentSearchDisplayState)
                 self.moveToMessageAndShake(index)
             }
             .store(in: &cancellables)
-    }
-    
-    @MainActor
-    private func filterMessages(containing keyword: String, generation: Int) {
-        searchMessagesTask?.cancel()
-        searchMessagesTask = Task { [weak self] in
-            guard let self = self else { return }
-            do {
-                try Task.checkCancellation()
-                let result = try await self.chatRoomViewModel.fetchSearchMessages(containing: keyword)
-                try Task.checkCancellation()
-                await MainActor.run {
-                    guard self.searchGeneration == generation else { return }
-                    self.chatRoomViewModel.applySearchResult(result)
-                    self.applyHighlight()
-                }
-            } catch is CancellationError {
-                return
-            } catch {
-                print("메시지 없음")
-            }
-        }
     }
     
     @MainActor
@@ -1531,14 +1509,12 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             dataSource.apply(snapshot, animatingDifferences: false)
         }
         
-        searchUI.updateSearchResult(chatRoomViewModel.currentSearchResultCount, chatRoomViewModel.currentFilteredMessageIndex ?? 0)
+        searchUI.updateSearchResult(chatRoomViewModel.currentSearchDisplayState)
         if let idx = chatRoomViewModel.currentFilteredMessageIndex { moveToMessageAndShake(idx) }
     }
     
     @MainActor
     private func clearPreviousHighlightIfNeeded() {
-        searchMessagesTask?.cancel()
-        searchMessagesTask = nil
         searchJumpTask?.cancel()
         searchJumpTask = nil
 
@@ -1564,7 +1540,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             .compactMap { $0 as? ChatMessageCell }
             .forEach { $0.highlightKeyword(nil) }
         
-        searchUI.updateSearchResult(chatRoomViewModel.currentSearchResultCount, chatRoomViewModel.currentFilteredMessageIndex ?? 0)
+        searchUI.updateSearchResult(chatRoomViewModel.currentSearchDisplayState)
     }
     
     @MainActor

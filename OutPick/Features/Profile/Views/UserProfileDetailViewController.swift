@@ -258,7 +258,8 @@ final class UserProfileDetailViewController: UIViewController, ChatModalAnimatab
             loadImageProvider: { [weak self] path, maxBytes in
                 guard let self else { return nil }
                 return try? await self.avatarImageManager.loadAvatar(for: path, maxBytes: maxBytes)
-            }
+            },
+            photoLibrarySaver: DefaultPhotoLibrarySaver()
         )
         viewer.modalPresentationStyle = .fullScreen
         viewer.modalTransitionStyle = .crossDissolve

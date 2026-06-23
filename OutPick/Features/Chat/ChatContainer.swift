@@ -39,7 +39,7 @@ final class ChatContainer {
     private let chatVideoDiskCache: ChatVideoDiskCaching
     private let chatRemoteFileDownloader: ChatRemoteFileDownloading
     private let chatVideoPlaybackResolver: ChatVideoPlaybackResolving
-    private let chatPhotoLibrarySaver: ChatPhotoLibrarySaving
+    private let photoLibrarySaver: PhotoLibrarySaving
     private let loadShareableJoinedRoomsUseCase: LoadShareableJoinedRoomsUseCaseProtocol
     private let shareLookbookContentToChatUseCase: ShareLookbookContentToChatUseCaseProtocol
     private var joinedRoomsRuntimeCancellable: AnyCancellable?
@@ -129,7 +129,7 @@ final class ChatContainer {
             videoDiskCache: chatVideoDiskCache,
             fileDownloader: chatRemoteFileDownloader
         )
-        self.chatPhotoLibrarySaver = DefaultChatPhotoLibrarySaver()
+        self.photoLibrarySaver = DefaultPhotoLibrarySaver()
         let lookbookChatShareSendingRepository = SocketLookbookChatShareSendingRepository()
         self.loadShareableJoinedRoomsUseCase = LoadShareableJoinedRoomsUseCase(
             joinedRoomsUseCase: self.joinedRoomsUseCase
@@ -208,8 +208,8 @@ final class ChatContainer {
         chatVideoPlaybackResolver
     }
 
-    func makeChatPhotoLibrarySaver() -> ChatPhotoLibrarySaving {
-        chatPhotoLibrarySaver
+    func makePhotoLibrarySaver() -> PhotoLibrarySaving {
+        photoLibrarySaver
     }
 
     func bindJoinedRoomsRuntimeIfNeeded() {

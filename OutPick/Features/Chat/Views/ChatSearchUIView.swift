@@ -111,30 +111,11 @@ class ChatSearchUIView: UIView {
         downPublisher.send()
     }
     
-    func updateSearchResult(_ count: Int, _ index: Int) {
-        if count > 0 {
-            messageCountLabel.text = "\(count-index+1)/\(count)"
-            
-            if count == 1 {
-                // 결과가 하나뿐이면 버튼 모두 비활성화
-                upBtn.isEnabled = false
-                downBtn.isEnabled = false
-            } else {
-                // 여러 개일 때 현재 위치에 따라 활성화 상태 변경
-                if index <= 1 {
-                    // 첫 번째 결과 → 위로 이동 불가
-                    upBtn.isEnabled = false
-                    downBtn.isEnabled = true
-                } else if index >= count {
-                    // 마지막 결과 → 아래로 이동 불가
-                    upBtn.isEnabled = true
-                    downBtn.isEnabled = false
-                } else {
-                    // 중간 위치 → 모두 이동 가능
-                    upBtn.isEnabled = true
-                    downBtn.isEnabled = true
-                }
-            }
+    func updateSearchResult(_ state: ChatRoomViewModel.SearchDisplayState) {
+        if state.totalCount > 0 {
+            messageCountLabel.text = "\(state.displayIndex)/\(state.totalCount)"
+            upBtn.isEnabled = state.canMoveToPrevious
+            downBtn.isEnabled = state.canMoveToNext
         } else {
             // 결과가 없을 때
             messageCountLabel.text = "검색 결과 없음"

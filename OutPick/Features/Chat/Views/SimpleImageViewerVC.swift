@@ -6,7 +6,6 @@
 //
 
 import UIKit
-import Photos
 
 // MARK: - SimpleImageViewerVC
 // Image viewer with paging, initial offset, and progressive loading support.
@@ -40,6 +39,7 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
     let startIndex: Int
     private let cachedImageProvider: CachedImageProvider?
     private let loadImageProvider: LoadImageProvider?
+    private let photoLibrarySaver: PhotoLibrarySaving
     private let thumbnailMaxBytes = 12 * 1024 * 1024
     private let originalMaxBytes = 60 * 1024 * 1024
     private let scrollView = UIScrollView()
@@ -65,12 +65,14 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
         pages: [ProgressivePage],
         startIndex: Int,
         cachedImageProvider: CachedImageProvider?,
-        loadImageProvider: LoadImageProvider?
+        loadImageProvider: LoadImageProvider?,
+        photoLibrarySaver: PhotoLibrarySaving
     ) {
         self.pages = pages
         self.startIndex = startIndex
         self.cachedImageProvider = cachedImageProvider
         self.loadImageProvider = loadImageProvider
+        self.photoLibrarySaver = photoLibrarySaver
         super.init(nibName: nil, bundle: nil)
         modalPresentationCapturesStatusBarAppearance = true
     }
@@ -321,39 +323,17 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
     }
 
     private func saveImageToLibrary(_ image: UIImage) {
-        let performSave: () -> Void = { [weak self] in
+        Task { [weak self] in
             guard let self else { return }
-            Task { @MainActor in
-                UIImageWriteToSavedPhotosAlbum(image, self, #selector(self.saveCompletion(_:didFinishSavingWithError:contextInfo:)), nil)
-            }
-        }
-
-        if #available(iOS 14, *) {
-            PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
-                switch status {
-                case .authorized, .limited:
-                    performSave()
-                default:
-                    self.showToast("사진 접근 권한이 필요합니다")
+            do {
+                try await self.photoLibrarySaver.saveImage(image)
+                await MainActor.run {
+                    self.showToast("저장 완료")
                 }
-            }
-        } else {
-            PHPhotoLibrary.requestAuthorization { status in
-                if status == .authorized {
-                    performSave()
-                } else {
-                    self.showToast("사진 접근 권한이 필요합니다")
+            } catch {
+                await MainActor.run {
+                    self.showToast("저장 실패")
                 }
-            }
-        }
-    }
-
-    @objc private func saveCompletion(_ image: UIImage, didFinishSavingWithError error: Error?, contextInfo: UnsafeMutableRawPointer?) {
-        DispatchQueue.main.async {
-            if error == nil {
-                self.showToast("저장 완료")
-            } else {
-                self.showToast("저장 실패")
             }
         }
     }

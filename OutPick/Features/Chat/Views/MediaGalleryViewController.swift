@@ -6,9 +6,7 @@
 //
 
 import UIKit
-import Photos
 import AVKit
-import FirebaseStorage
 
 // MARK: - Media Gallery
 class MediaGalleryViewController: UICollectionViewController {
@@ -32,15 +30,20 @@ class MediaGalleryViewController: UICollectionViewController {
     private let titleLabel = UILabel()
     private let closeButton = UIButton(type: .system)
 
-    /// (옵션) 비디오 재생용 Firebase Storage path("rooms/.../file") → 다운로드 URL 해석기
-    /// 주입이 없으면 내부에서 FirebaseStorage.downloadURL()을 사용
-    var downloadURLResolver: ((String) async throws -> URL)?
     /// (옵션) 이미지 캐시 조회/로더 주입. path-only 뷰어에서 사용.
     var cachedImageProvider: SimpleImageViewerVC.CachedImageProvider?
     var loadImageProvider: SimpleImageViewerVC.LoadImageProvider?
+    private let photoLibrarySaver: PhotoLibrarySaving
+    private let videoResolver: ChatVideoPlaybackResolving
 
-    init(items: [GalleryItem]) {
+    init(
+        items: [GalleryItem],
+        photoLibrarySaver: PhotoLibrarySaving,
+        videoResolver: ChatVideoPlaybackResolving
+    ) {
         self.items = Self.uniqueItems(items)
+        self.photoLibrarySaver = photoLibrarySaver
+        self.videoResolver = videoResolver
         let layout = MediaGalleryViewController.makeLayout()
         super.init(collectionViewLayout: layout)
         self.title = "미디어"
@@ -285,11 +288,26 @@ extension MediaGalleryViewController {
             guard let self = self else { return }
             if g.isVideo {
                 let playbackPath = g.videoPath ?? g.originalPath ?? g.thumbnailPath
-                if let path = playbackPath, let url = await self.resolveVideoURL(forStoragePath: path) {
-                    await MainActor.run {
-                        let pvc = VideoPlayerOverlayVC(url: url)
-                        pvc.modalPresentationStyle = .fullScreen
-                        self.present(pvc, animated: true)
+                if let path = playbackPath {
+                    do {
+                        let playbackAsset = try await self.videoResolver.playbackAsset(forPath: path)
+                        await MainActor.run {
+                            let pvc = VideoPlayerOverlayVC(
+                                playbackAsset: playbackAsset,
+                                videoResolver: self.videoResolver,
+                                photoLibrarySaver: self.photoLibrarySaver
+                            )
+                            pvc.modalPresentationStyle = .fullScreen
+                            self.present(pvc, animated: true)
+                        }
+                    } catch {
+                        await MainActor.run {
+                            let alert = UIAlertController(title: "재생할 수 없음",
+                                                          message: "이 동영상의 경로를 다운로드 URL로 변환할 수 없습니다.",
+                                                          preferredStyle: .alert)
+                            alert.addAction(UIAlertAction(title: "확인", style: .default))
+                            self.present(alert, animated: true)
+                        }
                     }
                 } else {
                     await MainActor.run {
@@ -317,7 +335,8 @@ extension MediaGalleryViewController {
                         pages: [page],
                         startIndex: 0,
                         cachedImageProvider: self.cachedImageProvider,
-                        loadImageProvider: self.loadImageProvider
+                        loadImageProvider: self.loadImageProvider,
+                        photoLibrarySaver: self.photoLibrarySaver
                     )
                     viewer.modalPresentationCapturesStatusBarAppearance = true
                     viewer.modalPresentationStyle = .fullScreen
@@ -325,43 +344,14 @@ extension MediaGalleryViewController {
                 }
             } else {
                 await MainActor.run {
-                    let local = LocalImageViewerVC(image: g.image)
+                    let local = LocalImageViewerVC(
+                        image: g.image,
+                        photoLibrarySaver: self.photoLibrarySaver
+                    )
                     local.modalPresentationCapturesStatusBarAppearance = true
                     local.modalPresentationStyle = .fullScreen
                     self.present(local, animated: true)
                 }
-            }
-        }
-    }
-
-    private func resolveVideoURL(forStoragePath path: String) async -> URL? {
-        if path.hasPrefix("/") {
-            return URL(fileURLWithPath: path)
-        }
-
-        if path.hasPrefix("file://"),
-           let localURL = URL(string: path),
-           localURL.isFileURL {
-            return localURL
-        }
-
-        // 이미 http/https/file 이면 그대로 사용 (레거시/디버그 호환)
-        if let u = URL(string: path), let scheme = u.scheme?.lowercased(), ["http", "https", "file"].contains(scheme) {
-            return u
-        }
-        // 외부 주입 해결기 우선 사용
-        if let resolver = downloadURLResolver {
-            return try? await resolver(path)
-        }
-        // 폴백: Firebase Storage 경로라 가정하고 downloadURL 호출
-        do { return try await storageDownloadURL(forPath: path) } catch { return nil }
-    }
-
-    private func storageDownloadURL(forPath path: String) async throws -> URL {
-        try await withCheckedThrowingContinuation { cont in
-            Storage.storage().reference(withPath: path).downloadURL { url, err in
-                if let url = url { cont.resume(returning: url) }
-                else { cont.resume(throwing: err ?? URLError(.badURL)) }
             }
         }
     }
@@ -370,13 +360,18 @@ extension MediaGalleryViewController {
 // MARK: - Local single image viewer (fallback)
 final class LocalImageViewerVC: UIViewController, UIScrollViewDelegate {
     private let image: UIImage
+    private let photoLibrarySaver: PhotoLibrarySaving
     private let scrollView = UIScrollView()
     private let imageView = UIImageView()
     private let closeButton = UIButton(type: .system)
     private let saveButton = UIButton(type: .system)
 
-    init(image: UIImage) {
+    init(
+        image: UIImage,
+        photoLibrarySaver: PhotoLibrarySaving
+    ) {
         self.image = image
+        self.photoLibrarySaver = photoLibrarySaver
         super.init(nibName: nil, bundle: nil)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -486,46 +481,16 @@ final class LocalImageViewerVC: UIViewController, UIScrollViewDelegate {
     }
 
     @objc private func saveTapped() {
-        saveImageToPhotos(image)
-    }
-
-    private func saveImageToPhotos(_ image: UIImage) {
-        // iOS 14+: addOnly 권한 요청이 가능. 하위버전은 일반 권한 요청.
-        if #available(iOS 14, *) {
-            PHPhotoLibrary.requestAuthorization(for: .addOnly) { [weak self] status in
-                self?.handlePhotoAuthAndSave(status: status, image: image)
-            }
-        } else {
-            PHPhotoLibrary.requestAuthorization { [weak self] status in
-                self?.handlePhotoAuthAndSave(status: status, image: image)
-            }
-        }
-    }
-
-    private func handlePhotoAuthAndSave(status: PHAuthorizationStatus, image: UIImage) {
-        let canSave: Bool
-        if #available(iOS 14, *) {
-            // iOS 14+: .authorized 또는 .limited 면 저장 가능
-            canSave = (status == .authorized || status == .limited)
-        } else {
-            // iOS 13 이하: .authorized 만 허용
-            canSave = (status == .authorized)
-        }
-        guard canSave else {
-            DispatchQueue.main.async { [weak self] in
-                self?.showToast("사진 보관함 접근 권한이 필요합니다")
-            }
-            return
-        }
-
-        PHPhotoLibrary.shared().performChanges({
-            PHAssetChangeRequest.creationRequestForAsset(from: image)
-        }) { [weak self] success, error in
-            DispatchQueue.main.async {
-                if success {
-                    self?.showToast("저장 완료")
-                } else {
-                    self?.showToast("저장 실패: \(error?.localizedDescription ?? "알 수 없는 오류")")
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await self.photoLibrarySaver.saveImage(self.image)
+                await MainActor.run {
+                    self.showToast("저장 완료")
+                }
+            } catch {
+                await MainActor.run {
+                    self.showToast("저장 실패: \(error.localizedDescription)")
                 }
             }
         }
@@ -582,13 +547,21 @@ final class LocalImageViewerVC: UIViewController, UIScrollViewDelegate {
 
 // MARK: - Video player with bottom-left Save button
 final class VideoPlayerOverlayVC: UIViewController {
-    private let url: URL
+    private let playbackAsset: ChatVideoPlaybackAsset
+    private let videoResolver: ChatVideoPlaybackResolving
+    private let photoLibrarySaver: PhotoLibrarySaving
     private let playerVC = AVPlayerViewController()
     private let closeButton = UIButton(type: .system)
     private let saveButton = UIButton(type: .system)
 
-    init(url: URL) {
-        self.url = url
+    init(
+        playbackAsset: ChatVideoPlaybackAsset,
+        videoResolver: ChatVideoPlaybackResolving,
+        photoLibrarySaver: PhotoLibrarySaving
+    ) {
+        self.playbackAsset = playbackAsset
+        self.videoResolver = videoResolver
+        self.photoLibrarySaver = photoLibrarySaver
         super.init(nibName: nil, bundle: nil)
         modalPresentationCapturesStatusBarAppearance = true
     }
@@ -609,7 +582,7 @@ final class VideoPlayerOverlayVC: UIViewController {
             playerVC.view.trailingAnchor.constraint(equalTo: view.trailingAnchor)
         ])
         playerVC.didMove(toParent: self)
-        playerVC.player = AVPlayer(url: url)
+        playerVC.player = AVPlayer(url: playbackAsset.url)
         playerVC.showsPlaybackControls = true
 
         // Close (X) button — top-right
@@ -660,57 +633,17 @@ final class VideoPlayerOverlayVC: UIViewController {
         Task { [weak self] in
             guard let self = self else { return }
             do {
-                try await self.saveVideoToPhotos(from: self.url)
+                let fileURL = try await self.videoResolver.localFileURLForSaving(
+                    localURL: self.playbackAsset.url,
+                    storagePath: self.playbackAsset.storagePath,
+                    onProgress: { _ in }
+                )
+                try await self.photoLibrarySaver.saveVideo(fileURL: fileURL)
                 await MainActor.run { self.showToast("저장 완료") }
             } catch {
                 await MainActor.run { self.showToast("저장 실패: \(error.localizedDescription)") }
             }
         }
-    }
-
-    // MARK: Saving helpers
-    private func saveVideoToPhotos(from url: URL) async throws {
-        let canSave = await requestPhotoAddPermission()
-        guard canSave else { throw SaveError.permissionDenied }
-
-        let fileURL: URL
-        if url.isFileURL {
-            fileURL = url
-        } else {
-            fileURL = try await downloadToTemporaryFile(from: url)
-        }
-
-        try await withCheckedThrowingContinuation { cont in
-            PHPhotoLibrary.shared().performChanges({
-                PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: fileURL)
-            }, completionHandler: { success, error in
-                if success { cont.resume(returning: ()) }
-                else { cont.resume(throwing: error ?? SaveError.unknown) }
-            })
-        }
-    }
-
-    private func requestPhotoAddPermission() async -> Bool {
-        if #available(iOS 14, *) {
-            let status = await withCheckedContinuation { (cont: CheckedContinuation<PHAuthorizationStatus, Never>) in
-                PHPhotoLibrary.requestAuthorization(for: .addOnly) { s in cont.resume(returning: s) }
-            }
-            return status == .authorized || status == .limited
-        } else {
-            let status = await withCheckedContinuation { (cont: CheckedContinuation<PHAuthorizationStatus, Never>) in
-                PHPhotoLibrary.requestAuthorization { s in cont.resume(returning: s) }
-            }
-            return status == .authorized
-        }
-    }
-
-    private func downloadToTemporaryFile(from url: URL) async throws -> URL {
-        let (tmpURL, _) = try await URLSession.shared.download(from: url)
-        let ext = url.pathExtension.isEmpty ? "mp4" : url.pathExtension
-        let dest = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension(ext)
-        try? FileManager.default.removeItem(at: dest)
-        try FileManager.default.moveItem(at: tmpURL, to: dest)
-        return dest
     }
 
     // MARK: Toast
@@ -742,6 +675,4 @@ final class VideoPlayerOverlayVC: UIViewController {
             }
         }
     }
-
-    enum SaveError: Error { case permissionDenied, unknown }
 }

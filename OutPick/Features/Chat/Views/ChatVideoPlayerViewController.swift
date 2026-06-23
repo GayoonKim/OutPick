@@ -11,13 +11,13 @@ import AVKit
 final class ChatVideoPlayerViewController: UIViewController {
     private let playbackAsset: ChatVideoPlaybackAsset
     private let videoResolver: ChatVideoPlaybackResolving
-    private let photoLibrarySaver: ChatPhotoLibrarySaving
+    private let photoLibrarySaver: PhotoLibrarySaving
     private let playerViewController = AVPlayerViewController()
 
     init(
         playbackAsset: ChatVideoPlaybackAsset,
         videoResolver: ChatVideoPlaybackResolving,
-        photoLibrarySaver: ChatPhotoLibrarySaving
+        photoLibrarySaver: PhotoLibrarySaving
     ) {
         self.playbackAsset = playbackAsset
         self.videoResolver = videoResolver

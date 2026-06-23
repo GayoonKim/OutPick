@@ -49,7 +49,8 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
     
     private let viewModel: ChatRoomSettingViewModel
     private let attachmentImageLoader: ChatAttachmentImageLoading
-    private let storageURLResolver: ChatStorageURLResolving
+    private let videoResolver: ChatVideoPlaybackResolving
+    private let photoLibrarySaver: PhotoLibrarySaving
     private let roomImageManager: RoomImageManaging
     private let avatarImageManager: ChatAvatarImageManaging
     private var lastRoomCoverKey: String? = nil
@@ -93,13 +94,15 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
     init(
         viewModel: ChatRoomSettingViewModel,
         attachmentImageLoader: ChatAttachmentImageLoading,
-        storageURLResolver: ChatStorageURLResolving,
+        videoResolver: ChatVideoPlaybackResolving,
+        photoLibrarySaver: PhotoLibrarySaving,
         roomImageManager: RoomImageManaging,
         avatarImageManager: ChatAvatarImageManaging
     ) {
         self.viewModel = viewModel
         self.attachmentImageLoader = attachmentImageLoader
-        self.storageURLResolver = storageURLResolver
+        self.videoResolver = videoResolver
+        self.photoLibrarySaver = photoLibrarySaver
         self.roomImageManager = roomImageManager
         self.avatarImageManager = avatarImageManager
         let layout = Self.configureLayout(
@@ -322,17 +325,17 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
             let items = await self.buildGalleryItems()
             guard !items.isEmpty else { return }
             print(#function, "items: \(items)")
-            let vc = MediaGalleryViewController(items: items)
+            let vc = MediaGalleryViewController(
+                items: items,
+                photoLibrarySaver: self.photoLibrarySaver,
+                videoResolver: self.videoResolver
+            )
             let attachmentImageLoader = self.attachmentImageLoader
-            let storageURLResolver = self.storageURLResolver
             vc.cachedImageProvider = { path in
                 await attachmentImageLoader.cachedImage(for: path)
             }
             vc.loadImageProvider = { path, maxBytes in
                 try? await attachmentImageLoader.loadImage(for: path, maxBytes: maxBytes)
-            }
-            vc.downloadURLResolver = { path in
-                try await storageURLResolver.url(for: path)
             }
             vc.modalPresentationStyle = .fullScreen
             self.pushOrPresent(vc)
