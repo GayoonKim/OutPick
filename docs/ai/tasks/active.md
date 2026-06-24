@@ -3,7 +3,7 @@
 ## 현재 작업
 
 - 작업명: `chat-view-controller-layering`
-- 현재 상태: Phase 21 완료. 갤러리/뷰어 Photos 저장 통합, 검색 task/generation guard ViewModel 이동, 남은 runtime singleton/manager 직접 접근 audit 및 종료 기준 확정 완료.
+- 현재 상태: Phase 21 후속 안정화 완료 후, 다음 리팩토링 Phase A~D 계획 수립 완료. 구현은 아직 시작하지 않았다.
 - 진행 문서:
   - `docs/ai/tasks/chat-view-controller-layering/plan.md`
   - `docs/ai/tasks/chat-view-controller-layering/progress.md`
@@ -81,6 +81,15 @@
 - Phase 21: 남은 runtime singleton/manager 직접 접근 audit 및 종료 기준 확정.
   - `LoadingIndicator.shared`, `AlertManager`, `ConfirmView`, keyboard/app lifecycle `NotificationCenter` observer는 이번 task 종료 기준에서 허용한다.
   - `DefaultMediaProcessingService.shared`, `provider.avatarImageManager`, media preflight/finalize, TTL cleanup, outbox GRDB seam, Lookbook current user provider 통합은 후속 후보로 분리했다.
+- Phase 21 후속 안정화:
+  - Socket `chat:mediaPreflight`와 기존 `send images`/`chat:video` finalize handler reservation 검증을 추가했다.
+  - Firebase Functions scheduler 기반 reservation TTL cleanup을 추가하고 배포했다.
+  - `ChatOutgoingOutboxPersisting` protocol을 추가하고 `GRDBManager`가 채택하도록 outbox persistence seam을 만들었다.
+  - `ChatSearchUIView` 단발 탭 이벤트를 closure로 축소하고 view 전용 search result state로 ViewModel 타입 의존을 제거했다.
+  - `LocalImageViewerVC`/`VideoPlayerOverlayVC`를 별도 파일로 분리했다.
+  - `ChatViewController`는 avatar manager를 생성자 주입으로 받는다.
+  - Lookbook은 앱 공용 `CurrentUserProviding`을 `LookbookContainer`에 주입하고 내부 adapter가 `UserID?`로 변환한다.
+  - `DefaultMediaProcessingService.shared` 직접 접근을 제거하고 composition/default injection 지점에서 instance를 주입한다.
 
 ## 핵심 원칙
 
@@ -92,42 +101,66 @@
 - 룩북 공유 카드는 채팅에서 snapshot만 렌더링하고 원본 Repository를 조회하지 않는다.
 - iOS 검증은 가능한 경우 `xcodebuildmcp.session_show_defaults` 확인 뒤 `build_run_sim`, `test_sim`을 우선 사용한다.
 
-## 다음 작업 후보
+## 후속 후보 처리 상태
 
-### 메인 스레드 순차 구현 추천
+- 메인 스레드 순차 구현 후보였던 media preflight/finalize, reservation 기반 TTL cleanup, outbox GRDB persistence seam은 완료했다.
+- 별도 스레드/병렬 후보였던 UI 소정리, `provider.avatarImageManager` 접근 폭 축소, Lookbook current user adapter, `DefaultMediaProcessingService.shared` 직접 접근 제거는 완료했다.
 
-1. media preflight/finalize 안정화.
-   - Socket event `chat:mediaPreflight`를 추가한다.
-   - 기존 `send images`/`chat:video` finalize handler를 reservation 확인/idempotency 기준으로 강화한다.
-   - `Rooms/{roomID}/MediaUploads/{messageID}` reservation으로 upload prefix/messageID 소유권을 기록한다.
-2. reservation 기반 TTL cleanup.
-   - Firebase Functions scheduler가 오래된 pending reservation의 `rooms/{roomID}/messages/{messageID}/...` Storage prefix를 삭제한다.
-3. outbox GRDB persistence test seam.
-   - `ChatOutgoingOutboxPersisting` protocol을 만들고 `GRDBManager`가 채택한다.
-   - 실제 GRDB in-memory integration test는 후속으로 두고 fake persistence 기반 unit test를 우선 작성한다.
+### 구현 대기 Phase 계획
 
-### 별도 스레드/병렬 후보
+#### Phase A: Media processing concrete 타입 제거
 
-1. Phase 19/20 후속 소정리.
-   - `ChatSearchUIView` up/down 단발 이벤트를 Combine publisher에서 클로저 callback으로 축소한다.
-   - `ChatSearchUIView.updateSearchResult`는 유지하되 ViewModel 타입 직접 의존을 낮춘다.
-   - `LocalImageViewerVC` fallback 의미를 명확히 하고 `LocalImageViewerVC`/`VideoPlayerOverlayVC`를 별도 파일로 분리한다.
-2. `provider.avatarImageManager` 접근 폭 축소.
-   - `ChatViewController`에 `ChatAvatarImageManaging`을 생성자 주입하는 수준으로 제한한다.
-3. Lookbook current user adapter.
-   - 앱 공용 `CurrentUserProviding`을 `LookbookContainer`에 주입하고, Lookbook 내부 adapter가 `UserID?`로 변환한다.
-4. `DefaultMediaProcessingService.shared` 직접 접근 제거.
-   - 이번에는 shared 주입 제거까지만 하고, `ImagePair`/preset 타입 분리는 후속으로 남긴다.
+- 목표: `DefaultMediaProcessingService.ImagePair`, `DefaultMediaProcessingService.VideoUploadPreset`, static `makeThumbnailData` 직접 노출을 제거한다.
+- 앱 미배포 전제이므로 compatibility shim/typealias를 오래 유지하지 않고, concrete nested type 노출을 바로 공용 media 타입/utility로 전환한다.
+- 추천 방향:
+  - 이미지 타입은 `ProcessedImage` 같은 공용 Infra media 타입으로 분리한다.
+  - video preset은 `VideoUploadPreset` 공용 enum으로 분리하되 payload 문자열은 유지한다.
+  - thumbnail helper는 우선 `ImageThumbnailDataMaker` 같은 순수 utility로 분리한다.
+  - 압축 정책 변경, dead code 제거는 이번 phase 범위 밖으로 둔다.
+- 검증: `xcodebuild -scheme OutPick -destination 'generic/platform=iOS Simulator' build`, media/outbox 관련 unit test 재실행.
 
-### 이번 범위 제외 후속
+#### Phase B: 공통 `chat:mediaFinalize` 전송 이벤트 통합
 
-- 새 공통 `chat:mediaFinalize` 이벤트로 이미지/비디오 finalize 통합.
-- `DefaultMediaProcessingService.ImagePair`, `VideoUploadPreset`, static `makeThumbnailData` 타입 분리.
+- 목표: 이미지/비디오 업로드 완료 후 Socket finalize 전송 이벤트를 `chat:mediaFinalize`로 통합한다.
+- 수신 이벤트 `receiveImages`/`receiveVideo`는 유지한다.
+- 기존 `send images`/`chat:video` 서버 handler는 wrapper로 남기는 추천안을 적용한다.
+- 앱 도메인 API는 우선 `sendUploadedImages`/`sendUploadedVideo` 같은 외부 메서드를 유지하고 내부 Socket event만 공통화한다.
+- 검증: Swift media upload/outbox tests, Socket 서버 syntax/check, 이미지/비디오 finalize retry 수동 QA.
+
+#### Phase C: `ChatViewController.provider` 제거
+
+- 목표: `ChatViewController`가 `ChatManagerProviding` provider 묶음을 직접 보관하지 않게 한다.
+- 범위:
+  - `profileSyncManager`를 생성자에 직접 주입한다.
+  - 현재 미사용인 `messageManager`, `searchManager`, `networkStatusProvider` 필드는 제거한다.
+  - `ChatContainer.provider` 자체 제거는 이번 phase 범위 밖으로 둔다.
+- 검증: `ChatViewController.swift` 내 provider 참조 0건 확인, iOS build, 채팅방 진입/수신/profile sync 수동 QA.
+
+#### Phase D: Lookbook/Profile avatar/image service DI 정리
+
+- 목표: Lookbook/Profile까지 포함해 `AvatarImageService.shared` 기본값/직접 접근과 provider 경유 avatar 접근을 명시 DI로 정리한다.
+- 범위:
+  - 앱 미배포 전제이므로 `AvatarImageService.shared` 자체 제거를 목표로 한다.
+  - `ChatAvatarImageManaging` 이름은 이번 phase에서 유지한다.
+  - Profile 상세의 `LoginManager.shared` current user 접근은 avatar/image service 범위 밖으로 둔다.
+  - Lookbook VM/View, Profile coordinator, Chat 조립부의 avatar manager 전달을 정리한다.
+- 검증: iOS build, Lookbook 댓글/avatar/profile sheet 수동 QA, 필요 시 Lookbook VM fake avatar manager unit test.
+
+### 운영/성장 이후 보류
+
 - 실제 GRDB in-memory integration test.
+  - 목적은 이전 버전 호환성이 아니라 실제 SQL schema/migration/table column과 `ChatOutgoingOutboxPersisting` 계약 검증이다.
+  - 앱 미배포 전제와 현재 fake persistence test 커버리지를 고려해 지금은 필수 phase에서 제외한다.
 - Storage 전체 sweep 방식 cleanup.
+  - reservation TTL cleanup이 현재 1차 방어 역할을 하므로, 전체 sweep은 사용자/트래픽/Storage 비용 증가 후 dry-run report부터 별도 운영 phase로 검토한다.
 - 대량 cleanup용 Cloud Run worker 승격.
-- `ChatViewController`의 `provider` 전체 제거.
-- Lookbook/Profile까지 포함한 avatar/image service 전면 DI 정리.
+  - Functions scheduler timeout/대량 삭제 문제가 실제로 생긴 뒤 검토한다.
+
+### 장기 재검토 후보
+
+- `ChatContainer.provider` 자체 제거.
+- `ChatAvatarImageManaging`을 앱 공용 `AvatarImageManaging` 이름으로 rename.
+- Profile 상세 current user DI 정리.
 
 ## 압축 후 읽는 순서
 

@@ -396,6 +396,7 @@
   - `LocalImageViewerVC`와 `VideoPlayerOverlayVC`는 `MediaGalleryViewController.swift`에서 별도 파일로 분리한다.
 - 후속 후보 일괄 설계 결정:
   - media preflight는 Socket event `chat:mediaPreflight`로 둔다. 현재 채팅 전송, ACK, socket room join 검증이 Socket 중심이므로 Functions callable보다 기존 흐름과 잘 맞는다.
+  - Socket 서버는 사용자가 로컬에서 직접 실행하는 서버이므로 `Socket/index.js` 변경은 Firebase Functions 배포 대상이 아니고, 별도 운영 Socket 배포도 필요하지 않다.
   - media finalize는 새 공통 `chat:mediaFinalize`를 바로 만들지 않고 기존 `send images`/`chat:video` handler를 강화한다. 이미지/비디오 finalize 공통화는 후속으로 남긴다.
   - preflight 성공 시 Firestore `Rooms/{roomID}/MediaUploads/{messageID}` reservation 문서를 만든다. 이 문서는 upload prefix/messageID 소유권, retry/idempotency, TTL cleanup 기준으로 사용한다.
   - TTL cleanup은 reservation 기준 pending 만료 항목의 `rooms/{roomID}/messages/{messageID}/...` Storage prefix를 삭제하는 방식으로 시작한다. 실행 위치는 Firebase Functions scheduler로 둔다.
@@ -404,12 +405,45 @@
   - `provider.avatarImageManager` 접근 축소는 `ChatViewController`에 `ChatAvatarImageManaging`을 생성자 주입하는 수준으로 제한한다. `provider` 전체 제거는 후속으로 남긴다.
   - Lookbook current user 통합은 앱 공용 `CurrentUserProviding`을 `LookbookContainer`에 주입하고, Lookbook 내부 adapter가 `UserID?`로 변환하는 방식으로 둔다. 앱 공용 provider가 Lookbook의 `UserID` 타입을 직접 알게 하지 않는다.
 
-### 이번 범위 제외 후속 기록
+### Phase 21 후속 안정화 완료 기록
 
-- 새 공통 `chat:mediaFinalize` 이벤트로 이미지/비디오 finalize 통합.
-- `DefaultMediaProcessingService.ImagePair`, `VideoUploadPreset`, static `makeThumbnailData` 타입 분리.
-- 실제 GRDB in-memory integration test.
-- Storage 전체 sweep 방식 cleanup.
-- 대량 cleanup용 Cloud Run worker 승격.
-- `ChatViewController`의 `provider` 전체 제거.
-- Lookbook/Profile까지 포함한 avatar/image service 전면 DI 정리.
+- media preflight/finalize는 확정한 방향대로 구현했다.
+  - Socket event는 `chat:mediaPreflight`다.
+  - finalize는 새 공통 이벤트를 만들지 않고 기존 `send images`/`chat:video` handler를 강화했다.
+  - reservation 위치는 `Rooms/{roomID}/MediaUploads/{messageID}`다.
+- TTL cleanup은 Firebase Functions scheduler가 reservation 기준 pending 만료 항목의 `rooms/{roomID}/messages/{messageID}/...` Storage prefix를 삭제한다.
+- outbox seam은 `ChatOutgoingOutboxPersisting` protocol + `GRDBManager` 채택으로 구현했다.
+- UI 소정리는 확정한 방향대로 구현했다.
+  - `ChatSearchUIView` 단발 이벤트는 closure callback이다.
+  - search result 표시는 view 전용 `SearchResultState`를 사용한다.
+  - `LocalImageViewerVC`/`VideoPlayerOverlayVC`는 viewer 전용 파일로 분리했다.
+- `provider.avatarImageManager` 접근 축소는 `ChatViewController` 생성자에 `ChatAvatarImageManaging`을 주입하는 수준으로 구현했다.
+- Lookbook current user adapter는 앱 공용 `CurrentUserProviding` 주입 + Lookbook 내부 adapter 변환으로 구현했다.
+- `DefaultMediaProcessingService.shared` 직접 접근 제거는 shared 직접 접근 제거까지만 구현했다. nested type/static helper 분리는 아래 후속 기록에 유지한다.
+
+### 다음 리팩토링 Phase A~D 결정
+
+- Phase A는 media processing concrete 타입 제거로 둔다.
+  - 앱 미배포 전제이므로 `DefaultMediaProcessingService.ImagePair`/`VideoUploadPreset` 호환 shim을 길게 유지하지 않고 직접 노출을 바로 제거한다.
+  - 이미지 타입은 `ProcessedImage` 같은 공용 Infra media 타입으로 분리한다.
+  - video preset은 공용 `VideoUploadPreset`으로 분리하되 server/storage payload 문자열은 유지한다.
+  - thumbnail helper는 우선 `ImageThumbnailDataMaker` 같은 순수 utility로 분리한다.
+  - 압축 정책 변경과 dead code 제거는 이번 phase 범위 밖이다.
+- Phase B는 공통 `chat:mediaFinalize` 전송 이벤트 통합으로 둔다.
+  - 전송 finalize만 통합하고 수신 이벤트 `receiveImages`/`receiveVideo`는 유지한다.
+  - 기존 `send images`/`chat:video` Socket handler는 wrapper로 남긴다.
+  - 앱 도메인 API는 우선 `sendUploadedImages`/`sendUploadedVideo` 외부 메서드를 유지하고 내부 Socket event만 공통화한다.
+- Phase C는 `ChatViewController.provider` 제거로 둔다.
+  - `profileSyncManager`를 직접 주입한다.
+  - 현재 미사용인 `messageManager`, `searchManager`, `networkStatusProvider` 필드는 제거한다.
+  - `ChatContainer.provider` 자체 제거는 별도 장기 재검토 후보로 둔다.
+- Phase D는 Lookbook/Profile avatar/image service DI 정리로 둔다.
+  - 앱 미배포 전제이므로 `AvatarImageService.shared` 자체 제거를 목표로 한다.
+  - `ChatAvatarImageManaging` 이름은 이번 phase에서 유지한다.
+  - Profile 상세의 `LoginManager.shared` current user 접근은 avatar/image service 범위 밖으로 둔다.
+- 실제 GRDB in-memory integration test는 지금 필수 phase에서 제외한다.
+  - 목적은 이전 버전 호환성이 아니라 실제 SQL schema/migration/table column과 `ChatOutgoingOutboxPersisting` 계약 검증이다.
+  - 앱 미배포 전제와 fake persistence test 커버리지를 고려해 GRDB schema를 더 건드릴 때 재검토한다.
+- Storage 전체 sweep cleanup과 Cloud Run worker 승격은 운영/성장 이후 보류한다.
+  - 현재는 reservation TTL cleanup이 1차 방어 역할을 한다.
+  - 전체 sweep은 사용자/트래픽/Storage 비용 증가 후 dry-run report부터 별도 운영 phase로 검토한다.
