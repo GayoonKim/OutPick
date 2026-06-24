@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import Combine
 
 /// Chat feature DI container.
 @MainActor
@@ -43,9 +42,6 @@ final class ChatContainer {
     private let mediaProcessor: MediaProcessingServiceProtocol
     private let loadShareableJoinedRoomsUseCase: LoadShareableJoinedRoomsUseCaseProtocol
     private let shareLookbookContentToChatUseCase: ShareLookbookContentToChatUseCaseProtocol
-    private var joinedRoomsRuntimeCancellable: AnyCancellable?
-    private var isJoinedRoomsRuntimeBound = false
-    private var runtimeJoinedRooms: Set<String> = []
 
     init(
         provider: ChatManagerProviding? = nil,
@@ -224,29 +220,5 @@ final class ChatContainer {
 
     func makeProfileSyncManager() -> ChatProfileSyncManaging {
         provider.profileSyncManager
-    }
-
-    func bindJoinedRoomsRuntimeIfNeeded() {
-        guard !isJoinedRoomsRuntimeBound else { return }
-        isJoinedRoomsRuntimeBound = true
-
-        joinedRoomsRuntimeCancellable = joinedRoomsStore.publisher
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] joinedSet in
-                guard let self else { return }
-                let joinedRooms = Array(joinedSet)
-                BannerManager.shared.start(for: joinedRooms)
-
-                let toJoin = joinedSet.subtracting(self.runtimeJoinedRooms)
-                let toLeave = self.runtimeJoinedRooms.subtracting(joinedSet)
-                self.runtimeJoinedRooms = joinedSet
-
-                for roomID in toJoin {
-                    SocketIOManager.shared.joinRoom(roomID)
-                }
-                for roomID in toLeave {
-                    SocketIOManager.shared.leaveRoom(roomID)
-                }
-            }
     }
 }

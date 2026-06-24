@@ -34,32 +34,20 @@ protocol ChatRoomExitRepositoryProtocol {
 }
 
 protocol ChatRoomExitSocketRequesting: AnyObject {
-    func requestLeaveOrCloseRoomResult(
-        roomID: String,
-        ackTimeout: Double,
-        completion: ((Result<ChatRoomExitMode, Error>) -> Void)?
-    )
+    func leaveOrCloseRoom(roomID: String, ackTimeout: Double) async throws -> ChatRoomExitMode
 }
 
 final class SocketChatRoomExitRepository: ChatRoomExitRepositoryProtocol {
     private let socket: ChatRoomExitSocketRequesting
 
-    init(socket: ChatRoomExitSocketRequesting = SocketIOManager.shared) {
+    init(socket: ChatRoomExitSocketRequesting = RealtimeSocketService.shared) {
         self.socket = socket
     }
 
     func leaveOrClose(roomID: String) async throws -> ChatRoomExitResult {
-        try await withCheckedThrowingContinuation { continuation in
-            socket.requestLeaveOrCloseRoomResult(roomID: roomID, ackTimeout: 10.0) { result in
-                switch result {
-                case .success(let mode):
-                    continuation.resume(returning: ChatRoomExitResult(roomID: roomID, mode: mode))
-                case .failure(let error):
-                    continuation.resume(throwing: error)
-                }
-            }
-        }
+        let mode = try await socket.leaveOrCloseRoom(roomID: roomID, ackTimeout: 10.0)
+        return ChatRoomExitResult(roomID: roomID, mode: mode)
     }
 }
 
-extension SocketIOManager: ChatRoomExitSocketRequesting {}
+extension RealtimeSocketService: ChatRoomExitSocketRequesting {}

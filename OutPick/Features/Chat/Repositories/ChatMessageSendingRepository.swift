@@ -50,7 +50,7 @@ protocol ChatTextMessageSocketSending {
 final class SocketChatMessageSendingRepository: ChatMessageSendingRepositoryProtocol {
     private let socketManager: ChatTextMessageSocketSending
 
-    init(socketManager: ChatTextMessageSocketSending = SocketIOManager.shared) {
+    init(socketManager: ChatTextMessageSocketSending = RealtimeSocketService.shared) {
         self.socketManager = socketManager
     }
 
@@ -59,4 +59,4 @@ final class SocketChatMessageSendingRepository: ChatMessageSendingRepositoryProt
     }
 }
 
-extension SocketIOManager: ChatTextMessageSocketSending {}
+extension RealtimeSocketService: ChatTextMessageSocketSending {}

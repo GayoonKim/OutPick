@@ -43,7 +43,7 @@ protocol ChatMediaMessageSendingRepositoryProtocol {
 }
 
 protocol ChatMediaSocketSending {
-    var isSocketConnected: Bool { get }
+    func isConnected() async -> Bool
 
     func preflightMediaUploadAwaitingAck(
         roomID: String,
@@ -77,18 +77,19 @@ protocol ChatMediaSocketSending {
         width: Int,
         height: Int,
         presetCode: String
-    )
+    ) async
 }
 
 final class SocketChatMediaMessageSendingRepository: ChatMediaMessageSendingRepositoryProtocol {
     private let socketManager: ChatMediaSocketSending
 
-    init(socketManager: ChatMediaSocketSending = SocketIOManager.shared) {
+    init(socketManager: ChatMediaSocketSending = RealtimeSocketService.shared) {
         self.socketManager = socketManager
     }
 
     var isSocketConnected: Bool {
-        socketManager.isSocketConnected
+        // 정확한 연결 상태 확인은 preflight/send 단계에서 async로 다시 수행한다.
+        true
     }
 
     func preflightMediaUpload(
@@ -143,18 +144,20 @@ final class SocketChatMediaMessageSendingRepository: ChatMediaMessageSendingRepo
         height: Int,
         presetCode: String
     ) {
-        socketManager.sendFailedVideos(
-            roomID: roomID,
-            senderID: senderID,
-            senderNickname: senderNickname,
-            localURL: localURL,
-            thumbData: thumbData,
-            duration: duration,
-            width: width,
-            height: height,
-            presetCode: presetCode
-        )
+        Task {
+            await socketManager.sendFailedVideos(
+                roomID: roomID,
+                senderID: senderID,
+                senderNickname: senderNickname,
+                localURL: localURL,
+                thumbData: thumbData,
+                duration: duration,
+                width: width,
+                height: height,
+                presetCode: presetCode
+            )
+        }
     }
 }
 
-extension SocketIOManager: ChatMediaSocketSending {}
+extension RealtimeSocketService: ChatMediaSocketSending {}

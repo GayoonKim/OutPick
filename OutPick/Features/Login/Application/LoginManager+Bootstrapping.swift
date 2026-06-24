@@ -39,13 +39,6 @@ extension LoginManager: LoginBootstrappingProtocol {
         await brandAdminSessionStore.refreshCurrentSession(force: true)
         await brandAdminSessionStore.refreshWritableBrands(force: true)
 
-        // 4) 소켓 연결(대기하지 않아도 됨)
-        Task {
-            do {
-                try await SocketIOManager.shared.establishConnection()
-            } catch {
-                print("Socket establishConnection 실패: \(error.localizedDescription)")
-            }
-        }
+        // 4) 소켓 연결은 AppSessionRuntime이 인증 세션 시작 시 담당한다.
     }
 }

@@ -22,6 +22,7 @@ final class AppCoordinator {
     private let joinedRoomsStore = JoinedRoomsStore()
     private let brandAdminSessionStore = BrandAdminSessionStore()
     private let currentUserProvider: any CurrentUserProviding
+    private let appSessionRuntime: AppSessionRuntime
     
     private var profileCoordinator: ProfileCoordinator?
 
@@ -35,12 +36,14 @@ final class AppCoordinator {
         window: UIWindow,
         lookbookProvider: LookbookRepositoryProvider = .shared,
         userProfileRepository: UserProfileRepositoryProtocol,
-        currentUserProvider: any CurrentUserProviding = LoginManagerCurrentUserProvider()
+        currentUserProvider: any CurrentUserProviding = LoginManagerCurrentUserProvider(),
+        appSessionRuntime: AppSessionRuntime? = nil
     ) {
         self.window = window
         self.lookbookProvider = lookbookProvider
         self.userProfileRepository = userProfileRepository
         self.currentUserProvider = currentUserProvider
+        self.appSessionRuntime = appSessionRuntime ?? AppSessionRuntime()
         self.window.backgroundColor = OutPickTheme.ColorToken.backgroundBase
         Self.activeCoordinator = self
     }
@@ -89,15 +92,14 @@ final class AppCoordinator {
     private func routeAfterAuthenticated() async {
         print("[AppCoordinator] routeAfterAuthenticated identity=\(LoginManager.shared.getAuthIdentityKey)")
         await MainActor.run { self.setRoot(BootLoadingViewController(), animated: false) }
-        
+
         let profileResult = await LoginManager.shared.loadUserProfile()
         
         switch profileResult {
         case .success:
             print("[AppCoordinator] complete profile found. Showing main tab.")
             await MainActor.run {
-                let chatContainer = self.ensureChatContainer()
-                chatContainer.bindJoinedRoomsRuntimeIfNeeded()
+                _ = self.ensureChatContainer()
                 self.prewarmLookbookHome()
             }
 
@@ -131,11 +133,10 @@ final class AppCoordinator {
     @MainActor
     private func showLogin(windowScene: UIWindowScene) {
         self.joinedRoomsStore.clear()
-        Task { @MainActor in
-            await PresenceManager.shared.handleLogout()
+
+        Task { @MainActor [weak self] in
+            await self?.appSessionRuntime.stopAuthenticatedSession()
         }
-        SocketIOManager.shared.closeConnection()
-        SocketIOManager.shared.resetRoomMembership()
 
         self.profileCoordinator = nil
         self.lookbookContainer = nil
@@ -179,7 +180,6 @@ final class AppCoordinator {
         // 메인 탭 수명 동안 LookbookContainer(공유 VM/캐시)를 유지
         let lbcontainer = ensureLookbookContainer()
         let chatContainer = ensureChatContainer()
-        chatContainer.bindJoinedRoomsRuntimeIfNeeded()
 
         // 탭 조립은 MainTabCompositionRoot가 담당 (CustomTabBarVC는 룩북을 모름)
         let tab = MainTabCompositionRoot.makeMainTab(lookbookContainer: lbcontainer, chatContainer: chatContainer)
@@ -192,7 +192,10 @@ final class AppCoordinator {
 
         Task { @MainActor [weak self] in
             guard let self else { return }
-            await PresenceManager.shared.startAuthenticatedSession()
+            await self.appSessionRuntime.startAuthenticatedSession(
+                joinedRoomsStore: self.joinedRoomsStore,
+                brandAdminSessionStore: self.brandAdminSessionStore
+            )
             self.consumePendingNotificationRouteIfPossible()
         }
     }
@@ -213,8 +216,7 @@ final class AppCoordinator {
             onCompleted: { [weak self] _ in
                 guard let self else { return }
                 Task { @MainActor in
-                    let chatContainer = self.ensureChatContainer()
-                    chatContainer.bindJoinedRoomsRuntimeIfNeeded()
+                    _ = self.ensureChatContainer()
                 }
                 Task { [weak self] in
                     guard let self else { return }

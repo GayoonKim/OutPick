@@ -24,7 +24,7 @@ protocol ChatRoomRealtimeSocketOpening {
 final class SocketChatRoomRealtimeRepository: ChatRoomRealtimeRepositoryProtocol {
     private let socketManager: ChatRoomRealtimeSocketOpening
 
-    init(socketManager: ChatRoomRealtimeSocketOpening = SocketIOManager.shared) {
+    init(socketManager: ChatRoomRealtimeSocketOpening = RealtimeSocketService.shared) {
         self.socketManager = socketManager
     }
 
@@ -38,4 +38,4 @@ final class SocketChatRoomRealtimeRepository: ChatRoomRealtimeRepositoryProtocol
     }
 }
 
-extension SocketIOManager: ChatRoomRealtimeSocketOpening {}
+extension RealtimeSocketService: ChatRoomRealtimeSocketOpening {}

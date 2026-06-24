@@ -82,7 +82,7 @@ final class SocketLookbookChatShareSendingRepository: LookbookChatShareSendingRe
     private let ackTimeout: Double
 
     init(
-        socketManager: LookbookChatShareSocketSending = SocketIOManager.shared,
+        socketManager: LookbookChatShareSocketSending = RealtimeSocketService.shared,
         ackTimeout: Double = 5.0
     ) {
         self.socketManager = socketManager
@@ -266,4 +266,4 @@ extension LookbookSharedContent {
     }
 }
 
-extension SocketIOManager: LookbookChatShareSocketSending {}
+extension RealtimeSocketService: LookbookChatShareSocketSending {}

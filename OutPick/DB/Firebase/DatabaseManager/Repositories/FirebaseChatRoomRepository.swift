@@ -322,8 +322,10 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
             
             try await addRoomParticipant(room: room)
             
-            SocketIOManager.shared.createRoom(roomID)
-            SocketIOManager.shared.joinRoom(roomID)
+            Task {
+                await RealtimeSocketService.shared.createRoom(roomID)
+                await RealtimeSocketService.shared.joinRoom(roomID)
+            }
             
             print("✅ saveRoomInfoToFirestore: Firestore 저장 및 Socket.IO create/join 완료 (roomID=\(roomID))")
         } catch {

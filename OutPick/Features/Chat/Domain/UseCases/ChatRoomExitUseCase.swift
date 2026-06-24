@@ -58,18 +58,18 @@ final class DefaultChatRoomLocalExitCleaner: ChatRoomLocalExitCleaning {
     private let grdbManager: GRDBManager
     private let loginManager: LoginManager
     private let joinedRoomsStore: JoinedRoomsStore
-    private let socketManager: SocketIOManager
+    private let realtimeService: RealtimeSocketService
 
     init(
         grdbManager: GRDBManager = .shared,
         loginManager: LoginManager = .shared,
         joinedRoomsStore: JoinedRoomsStore,
-        socketManager: SocketIOManager = .shared
+        realtimeService: RealtimeSocketService = .shared
     ) {
         self.grdbManager = grdbManager
         self.loginManager = loginManager
         self.joinedRoomsStore = joinedRoomsStore
-        self.socketManager = socketManager
+        self.realtimeService = realtimeService
     }
 
     func cleanLocalRoomDataAfterExit(roomID: String) async throws {
@@ -86,8 +86,8 @@ final class DefaultChatRoomLocalExitCleaner: ChatRoomLocalExitCleaning {
                 loginManager.setCurrentUserProfile(profile)
             }
             joinedRoomsStore.remove(roomID)
-            socketManager.leaveRoom(roomID)
         }
+        await realtimeService.leaveRoom(roomID)
 
         if let localCleanupError {
             throw localCleanupError
