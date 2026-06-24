@@ -110,14 +110,6 @@ struct LookbookShareSheetView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            if let roomName = viewModel.selectedRoom?.roomName {
-                Text("선택한 방: \(roomName)")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
             Button {
                 Task {
                     await viewModel.send()
@@ -136,7 +128,7 @@ struct LookbookShareSheetView: View {
                         Image(systemName: "paperplane.fill")
                     }
 
-                    Text(sendButtonTitle)
+                    Text(viewModel.isSending ? "공유 중" : "공유")
                         .font(.headline.weight(.bold))
                         .lineLimit(1)
                 }
@@ -159,18 +151,6 @@ struct LookbookShareSheetView: View {
         .padding(.top, 12)
         .padding(.bottom, 16)
         .background(OutPickTheme.SwiftUIColor.surfaceBase)
-    }
-
-    private var sendButtonTitle: String {
-        if viewModel.isSending {
-            return "공유 중"
-        }
-
-        guard let roomName = viewModel.selectedRoom?.roomName else {
-            return "채팅방을 선택하세요"
-        }
-
-        return "\(roomName)에 공유"
     }
 
     private func shareSectionHeader(title: String, message: String) -> some View {
