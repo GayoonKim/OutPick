@@ -73,18 +73,12 @@ struct VideoIndexMeta: FetchableRecord, Decodable {
 final class GRDBManager: ChatOutgoingOutboxPersisting {
     static let shared = GRDBManager()
     let dbPool: DatabasePool
-    
-    private init() {
-        // DB 파일 경로 설정
-        let databaseURL = try! FileManager.default.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true).appendingPathComponent("OutPick.sqlite")
-        // DatabasePool 생성 (멀티스레드 대응)
-        dbPool = try! DatabasePool(path: databaseURL.path)
-        
-        // 마이그레이션 수행
-        var migrator = DatabaseMigrator()
+
+    static func registerBaseUserMigrations(_ migrator: inout DatabaseMigrator) {
         migrator.registerMigration("foreignKeysOn") { db in
             try db.execute(sql: "PRAGMA foreign_keys = ON;")
         }
+
         // Minimal LocalUser table (email, nickname, profileImagePath)
         migrator.registerMigration("createLocalUser_min") { db in
             try db.create(table: "LocalUser", options: [.ifNotExists]) { t in
@@ -94,7 +88,7 @@ final class GRDBManager: ChatOutgoingOutboxPersisting {
             }
             try db.create(index: "idx_LocalUser_nickname", on: "LocalUser", columns: ["nickname"], ifNotExists: true)
         }
-        
+
         // RoomMember junction table (roomID, userEmail)
         migrator.registerMigration("createRoomMember_min") { db in
             try db.create(table: "RoomMember", options: [.ifNotExists]) { t in
@@ -104,18 +98,19 @@ final class GRDBManager: ChatOutgoingOutboxPersisting {
             }
             try db.create(index: "idx_RoomMember_room", on: "RoomMember", columns: ["roomID"], ifNotExists: true)
         }
-        
+
         // Backfill LocalUser from legacy userProfile (if exists)
         migrator.registerMigration("backfill_LocalUser_from_userProfile") { db in
-            if try db.tableExists("userProfile") {
-                try db.execute(sql: """
-                    INSERT OR IGNORE INTO LocalUser (email, nickname, profileImagePath)
-                    SELECT email, COALESCE(nickname, ''), COALESCE(thumbPath, profileImagePath)
-                      FROM userProfile
-                """)
-            }
+            guard try db.tableExists("userProfile") else { return }
+
+            let profileImageExpression = try userProfileImageBackfillExpression(in: db)
+            try db.execute(sql: """
+                INSERT OR IGNORE INTO LocalUser (email, nickname, profileImagePath)
+                SELECT email, COALESCE(nickname, ''), \(profileImageExpression)
+                  FROM userProfile
+            """)
         }
-        
+
         // Backfill RoomMember from legacy roomParticipant (if exists)
         migrator.registerMigration("migrate_roomParticipant_to_RoomMember") { db in
             if try db.tableExists("roomParticipant") {
@@ -125,6 +120,33 @@ final class GRDBManager: ChatOutgoingOutboxPersisting {
                 """)
             }
         }
+    }
+
+    private static func userProfileImageBackfillExpression(in db: Database) throws -> String {
+        let columnRows = try Row.fetchAll(db, sql: "PRAGMA table_info(userProfile)")
+        let columns = Set(columnRows.compactMap { $0["name"] as String? })
+
+        switch (columns.contains("thumbPath"), columns.contains("profileImagePath")) {
+        case (true, true):
+            return "COALESCE(thumbPath, profileImagePath)"
+        case (true, false):
+            return "thumbPath"
+        case (false, true):
+            return "profileImagePath"
+        case (false, false):
+            return "NULL"
+        }
+    }
+
+    private init() {
+        // DB 파일 경로 설정
+        let databaseURL = try! FileManager.default.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true).appendingPathComponent("OutPick.sqlite")
+        // DatabasePool 생성 (멀티스레드 대응)
+        dbPool = try! DatabasePool(path: databaseURL.path)
+
+        // 마이그레이션 수행
+        var migrator = DatabaseMigrator()
+        Self.registerBaseUserMigrations(&migrator)
         migrator.registerMigration("createUserProfile") { db in
             try db.create(table: "userProfile") { t in
                 t.column("deviceID", .text)
