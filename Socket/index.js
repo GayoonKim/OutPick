@@ -900,316 +900,314 @@ io.on('connection', (socket) => {
       }
     });
 
-    // 🔁 Legacy support: "send images" → accept new/old payload, normalize, unified emit
-    socket.on('send images', async (data, callback) => {
-      try {
-        const {
-          roomID,
-          messageID,
-          clientMessageID,
-          attachments,        // new client shape (meta-only)
-          images,             // legacy client shape
-          senderID,
-          senderNickname,     // new key (camelcase)
-          senderNickName,     // legacy key
-          senderAvatarPath,   // propagate avatar path
-          sentAt,             // ISO8601 or epoch
-          type,               // optional (should be 'image')
-          msg                 // optional (usually '')
-        } = data || {};
+    async function handleMediaFinalize(data, callback, forcedKind) {
+      const mediaKind = normalizeMediaKind(forcedKind || data?.kind || data?.mediaKind || data?.type);
 
-        // ===== Validations =====
-        if (!roomID) return callback && callback({ ok: false, error: 'invalid_room_id' });
-        if (!rooms[roomID]) return callback && callback({ ok: false, error: 'room_not_found' });
-        if (!socket.rooms.has(roomID)) return callback && callback({ ok: false, error: 'not_joined' });
-        const imageSenderID = normalizeEmail(senderID);
-        const roomAccess = await loadRoomAccess(roomID, imageSenderID);
-        if (!roomAccess.ok) {
-          return callback && callback({ ok: false, error: roomAccess.error });
-        }
+      if (mediaKind === "images") {
+        try {
+          const {
+            roomID,
+            messageID,
+            clientMessageID,
+            attachments,
+            images,
+            senderID,
+            senderNickname,
+            senderNickName,
+            senderAvatarPath,
+            sentAt,
+            type,
+            msg
+          } = data || {};
 
-        // Input list (prefer new attachments, fallback to images)
-        const incoming = Array.isArray(attachments)
-          ? attachments
-          : (Array.isArray(images) ? images : []);
+          if (!roomID) return callback && callback({ ok: false, error: 'invalid_room_id' });
+          if (!rooms[roomID]) return callback && callback({ ok: false, error: 'room_not_found' });
+          if (!socket.rooms.has(roomID)) return callback && callback({ ok: false, error: 'not_joined' });
+          const imageSenderID = normalizeEmail(senderID);
+          const roomAccess = await loadRoomAccess(roomID, imageSenderID);
+          if (!roomAccess.ok) {
+            return callback && callback({ ok: false, error: roomAccess.error });
+          }
 
-        if (incoming.length === 0) {
-          return callback && callback({ ok: false, error: 'no_images' });
-        }
+          const incoming = Array.isArray(attachments)
+            ? attachments
+            : (Array.isArray(images) ? images : []);
 
-        // Rate-limit (per socket per room)
-        const imgRateKey = `${socket.id}:${roomID}:images`;
-        if (!allowRate(imgRateKey, RATE_MAX_IMAGES, RATE_WINDOW_MS)) {
-          return callback && callback({ ok: false, error: 'rate_limited' });
-        }
+          if (incoming.length === 0) {
+            return callback && callback({ ok: false, error: 'no_images' });
+          }
 
-        // De-dup by stable messageID (prefer new `messageID`, fallback to legacy `clientMessageID`)
-        let effectiveMessageID = (messageID && String(messageID))
-          || (clientMessageID && String(clientMessageID))
-          || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+          const imgRateKey = `${socket.id}:${roomID}:images`;
+          if (!allowRate(imgRateKey, RATE_MAX_IMAGES, RATE_WINDOW_MS)) {
+            return callback && callback({ ok: false, error: 'rate_limited' });
+          }
 
-        const dedupKey = `${roomID}:${effectiveMessageID}`;
-        if (deliveredImageKeys.has(dedupKey)) {
-          const existing = await loadExistingMessage(roomID, effectiveMessageID);
-          if (existing) {
+          let effectiveMessageID = (messageID && String(messageID))
+            || (clientMessageID && String(clientMessageID))
+            || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+          const dedupKey = `${roomID}:${effectiveMessageID}`;
+          if (deliveredImageKeys.has(dedupKey)) {
+            const existing = await loadExistingMessage(roomID, effectiveMessageID);
+            if (existing) {
+              return callback && callback({
+                ok: true,
+                duplicate: true,
+                messageID: effectiveMessageID,
+                seq: existing.seq
+              });
+            }
+          }
+          deliveredImageKeys.add(dedupKey);
+          if (deliveredImageKeys.size > 50000) deliveredImageKeys.clear();
+
+          const trimmed = incoming.length > MAX_IMAGES_PER_MESSAGE;
+          const capped = incoming.slice(0, MAX_IMAGES_PER_MESSAGE);
+          const prepared = (Array.isArray(attachments) ? capped : capped.map(sanitizeImageItem).map(withDerivedUrls));
+          const { images: budgeted, thumbTrimmed } = enforceThumbBudget(prepared, MAX_THUMB_PAYLOAD_BYTES);
+
+          const normalized = budgeted.map((it, i) => normalizeAttachment({
+            index: it.index ?? i,
+            pathThumb: it.pathThumb ?? it.thumbUrl ?? it.thumbURL,
+            pathOriginal: it.pathOriginal ?? it.originalUrl ?? it.originalURL ?? it.storagePath ?? it.url,
+            w: it.w ?? it.width,
+            h: it.h ?? it.height,
+            bytesOriginal: it.bytesOriginal ?? it.size,
+            hash: it.hash,
+            blurhash: it.blurhash
+          }, i)).filter(att => att.pathThumb || att.pathOriginal);
+
+          if (normalized.length === 0) {
+            return callback && callback({ ok: false, error: 'no_valid_attachments' });
+          }
+
+          const existingMessage = await loadExistingMessage(roomID, effectiveMessageID);
+          if (existingMessage) {
             return callback && callback({
               ok: true,
               duplicate: true,
               messageID: effectiveMessageID,
-              seq: existing.seq
+              seq: existingMessage.seq
             });
           }
-        }
-        deliveredImageKeys.add(dedupKey);
-        if (deliveredImageKeys.size > 50000) deliveredImageKeys.clear();
 
-        // Cap images per message
-        const trimmed = incoming.length > MAX_IMAGES_PER_MESSAGE;
-        const capped = incoming.slice(0, MAX_IMAGES_PER_MESSAGE);
-
-        // If legacy `images` were sent, sanitize/derive; if new `attachments`, they may be meta already
-        const prepared = (Array.isArray(attachments) ? capped : capped.map(sanitizeImageItem).map(withDerivedUrls));
-
-        // Enforce total thumbnail payload budget (600KB). (Best-effort: only applies if thumbData exists)
-        const { images: budgeted, thumbTrimmed } = enforceThumbBudget(prepared, MAX_THUMB_PAYLOAD_BYTES);
-
-        // Normalize to server attachment schema
-        const normalized = budgeted.map((it, i) => normalizeAttachment({
-          index: it.index ?? i,
-          pathThumb: it.pathThumb ?? it.thumbUrl ?? it.thumbURL,
-          pathOriginal: it.pathOriginal ?? it.originalUrl ?? it.originalURL ?? it.storagePath ?? it.url,
-          w: it.w ?? it.width,
-          h: it.h ?? it.height,
-          bytesOriginal: it.bytesOriginal ?? it.size,
-          hash: it.hash,
-          blurhash: it.blurhash
-        }, i)).filter(att => att.pathThumb || att.pathOriginal);
-
-        if (normalized.length === 0) {
-          return callback && callback({ ok: false, error: 'no_valid_attachments' });
-        }
-
-        const existingMessage = await loadExistingMessage(roomID, effectiveMessageID);
-        if (existingMessage) {
-          return callback && callback({
-            ok: true,
-            duplicate: true,
+          const reservation = await assertMediaUploadReservation({
+            roomID,
             messageID: effectiveMessageID,
-            seq: existingMessage.seq
+            senderID: imageSenderID,
+            kind: "images",
+            storagePaths: normalized.flatMap((attachment) => [
+              attachment.pathThumb,
+              attachment.pathOriginal
+            ])
           });
-        }
-
-        const reservation = await assertMediaUploadReservation({
-          roomID,
-          messageID: effectiveMessageID,
-          senderID: imageSenderID,
-          kind: "images",
-          storagePaths: normalized.flatMap((attachment) => [
-            attachment.pathThumb,
-            attachment.pathOriginal
-          ])
-        });
-        if (!reservation.ok) {
-          deliveredImageKeys.delete(dedupKey);
-          return callback && callback({ ok: false, error: reservation.error });
-        }
-        if (reservation.completed) {
-          return callback && callback({
-            ok: true,
-            duplicate: true,
-            messageID: effectiveMessageID
-          });
-        }
-
-        // Build server message payload (unified with text handler)
-        const nickname = senderNickname || senderNickName || '';
-        const finalType = type || 'image';
-        const finalMsg = typeof msg === 'string' ? msg : '';
-
-        // sentAt normalization → ISO8601 string
-        const when = (() => {
-          try {
-            if (!sentAt) return new Date();
-            if (typeof sentAt === 'string') return new Date(sentAt);
-            if (typeof sentAt === 'number') return new Date(sentAt > 3e9 ? sentAt : sentAt * 1000);
-            return new Date();
-          } catch (_) {
-            return new Date();
+          if (!reservation.ok) {
+            deliveredImageKeys.delete(dedupKey);
+            return callback && callback({ ok: false, error: reservation.error });
           }
-        })();
+          if (reservation.completed) {
+            return callback && callback({
+              ok: true,
+              duplicate: true,
+              messageID: effectiveMessageID
+            });
+          }
 
-        const serverMsg = buildServerImageMessage({
-          roomID,
-          messageID: effectiveMessageID,
-          type: finalType,
-          msg: finalMsg,
-          attachments: normalized,
-          senderID: imageSenderID,
-          senderNickname: nickname,
-          senderAvatarPath,
-          sentAt: when.toISOString()
-        });
+          const nickname = senderNickname || senderNickName || '';
+          const finalType = type || 'image';
+          const finalMsg = typeof msg === 'string' ? msg : '';
+          const when = (() => {
+            try {
+              if (!sentAt) return new Date();
+              if (typeof sentAt === 'string') return new Date(sentAt);
+              if (typeof sentAt === 'number') return new Date(sentAt > 3e9 ? sentAt : sentAt * 1000);
+              return new Date();
+            } catch (_) {
+              return new Date();
+            }
+          })();
 
-        // --- Persist with seq and broadcast ---
-        try {
-          const seq = await allocateSeqAndPersist(roomID, effectiveMessageID, serverMsg, {
-            mediaUploadRef: reservation.ref
+          const serverMsg = buildServerImageMessage({
+            roomID,
+            messageID: effectiveMessageID,
+            type: finalType,
+            msg: finalMsg,
+            attachments: normalized,
+            senderID: imageSenderID,
+            senderNickname: nickname,
+            senderAvatarPath,
+            sentAt: when.toISOString()
           });
-          serverMsg.seq = seq;
-        } catch (e) {
-          deliveredImageKeys.delete(dedupKey);
-          console.error('[send images] seq allocation/persist error:', e);
-          return callback && callback({ ok: false, error: 'seq_persist_error' });
-        }
 
-        // (Optional legacy channel for older clients)
-        console.log(`[Chat][${roomID}] ${senderNickname || "Anonymous"}: ${msg}`, serverMsg);
-//        io.to(roomID).emit(`receiveImages:${roomID}`, serverMsg);
-        io.to(roomID).emit(`receiveImages`, serverMsg);
-        void fanoutChatPush({
-          roomID,
-          messageData: serverMsg
-        });
-        return callback && callback({ ok: true, messageID: effectiveMessageID, trimmed, thumbTrimmed });
-      } catch (error) {
-        console.error('[send images] handler error:', error);
-        return callback && callback({ ok: false, error: 'internal_error' });
+          try {
+            const seq = await allocateSeqAndPersist(roomID, effectiveMessageID, serverMsg, {
+              mediaUploadRef: reservation.ref
+            });
+            serverMsg.seq = seq;
+          } catch (e) {
+            deliveredImageKeys.delete(dedupKey);
+            console.error('[chat:mediaFinalize/images] seq allocation/persist error:', e);
+            return callback && callback({ ok: false, error: 'seq_persist_error' });
+          }
+
+          console.log(`[Chat][${roomID}] ${senderNickname || "Anonymous"}: ${msg}`, serverMsg);
+          io.to(roomID).emit(`receiveImages`, serverMsg);
+          void fanoutChatPush({
+            roomID,
+            messageData: serverMsg
+          });
+          return callback && callback({ ok: true, messageID: effectiveMessageID, trimmed, thumbTrimmed });
+        } catch (error) {
+          console.error('[chat:mediaFinalize/images] handler error:', error);
+          return callback && callback({ ok: false, error: 'internal_error' });
+        }
       }
+
+      if (mediaKind === "video") {
+        try {
+          const {
+            roomID,
+            messageID,
+            storagePath,
+            thumbnailPath,
+            duration,
+            width,
+            height,
+            sizeBytes,
+            approxBitrateMbps,
+            preset,
+            senderID,
+            senderNickname,
+            senderNickName,
+            senderAvatarPath,
+            sentAt,
+            msg
+          } = data || {};
+
+          if (!roomID) return callback && callback({ ok: false, error: 'invalid_room_id' });
+          if (!rooms[roomID]) return callback && callback({ ok: false, error: 'room_not_found' });
+          if (!socket.rooms.has(roomID)) return callback && callback({ ok: false, error: 'not_joined' });
+          const videoSenderID = normalizeEmail(senderID);
+          const roomAccess = await loadRoomAccess(roomID, videoSenderID);
+          if (!roomAccess.ok) {
+            return callback && callback({ ok: false, error: roomAccess.error });
+          }
+
+          const vidRateKey = `${socket.id}:${roomID}:video`;
+          if (!allowRate(vidRateKey, RATE_MAX_VIDEOS, RATE_WINDOW_MS)) {
+            return callback && callback({ ok: false, error: 'rate_limited' });
+          }
+
+          const effectiveMessageID = (messageID && String(messageID)) || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+          const dedupKey = `${roomID}:${effectiveMessageID}`;
+          if (deliveredVideoKeys.has(dedupKey)) {
+            const existing = await loadExistingMessage(roomID, effectiveMessageID);
+            if (existing) {
+              return callback && callback({
+                ok: true,
+                duplicate: true,
+                messageID: effectiveMessageID,
+                seq: existing.seq
+              });
+            }
+          }
+          deliveredVideoKeys.add(dedupKey);
+          if (deliveredVideoKeys.size > 50000) deliveredVideoKeys.clear();
+
+          const nickname = senderNickname || senderNickName || '';
+          const attachment = {
+            pathOriginal: storagePath,
+            pathThumb: thumbnailPath,
+            width,
+            height,
+            sizeBytes,
+            duration,
+            approxBitrateMbps,
+            preset
+          };
+
+          const existingMessage = await loadExistingMessage(roomID, effectiveMessageID);
+          if (existingMessage) {
+            return callback && callback({
+              ok: true,
+              duplicate: true,
+              messageID: effectiveMessageID,
+              seq: existingMessage.seq
+            });
+          }
+
+          const reservation = await assertMediaUploadReservation({
+            roomID,
+            messageID: effectiveMessageID,
+            senderID: videoSenderID,
+            kind: "video",
+            storagePaths: [storagePath, thumbnailPath]
+          });
+          if (!reservation.ok) {
+            deliveredVideoKeys.delete(dedupKey);
+            return callback && callback({ ok: false, error: reservation.error });
+          }
+          if (reservation.completed) {
+            return callback && callback({
+              ok: true,
+              duplicate: true,
+              messageID: effectiveMessageID
+            });
+          }
+
+          const serverMsg = buildServerVideoMessage({
+            roomID,
+            messageID: effectiveMessageID,
+            msg: typeof msg === 'string' ? msg : '',
+            attachments: [attachment],
+            senderID: videoSenderID,
+            senderNickname: nickname,
+            senderAvatarPath,
+            sentAt
+          });
+
+          try {
+            const seq = await allocateSeqAndPersist(roomID, effectiveMessageID, serverMsg, {
+              mediaUploadRef: reservation.ref
+            });
+            serverMsg.seq = seq;
+          } catch (e) {
+            deliveredVideoKeys.delete(dedupKey);
+            console.error('[chat:mediaFinalize/video] seq allocation/persist error:', e);
+            return callback && callback({ ok: false, error: 'seq_persist_error' });
+          }
+
+          io.to(roomID).emit(`receiveVideo`, serverMsg);
+          void fanoutChatPush({
+            roomID,
+            messageData: serverMsg
+          });
+          console.log(`[Video][${roomID}] ${nickname || "Anonymous"} sent video meta`, serverMsg);
+
+          return callback && callback({ ok: true, messageID: effectiveMessageID });
+        } catch (error) {
+          console.error('[chat:mediaFinalize/video] handler error:', error);
+          return callback && callback({ ok: false, error: 'internal_error' });
+        }
+      }
+
+      return callback && callback({ ok: false, error: 'invalid_media_kind' });
+    }
+
+    socket.on('chat:mediaFinalize', async (data, callback) => {
+      return handleMediaFinalize(data, callback);
     });
 
-    // Receive meta-only video payload from client and broadcast to the room
+    // 🔁 Legacy support: "send images" → common media finalize handler
+    socket.on('send images', async (data, callback) => {
+      return handleMediaFinalize(data, callback, "images");
+
+    });
+
+    // Legacy support: "chat:video" → common media finalize handler
     socket.on('chat:video', async (data, callback) => {
-      try {
-        const {
-          roomID,
-          messageID,
-          storagePath,
-          thumbnailPath,
-          duration,
-          width,
-          height,
-          sizeBytes,
-          approxBitrateMbps,
-          preset,
-          senderID,
-          senderNickname,
-          senderNickName, // legacy
-          senderAvatarPath,
-          sentAt,
-          msg // optional
-        } = data || {};
+      return handleMediaFinalize(data, callback, "video");
 
-        // ===== Validations =====
-        if (!roomID) return callback && callback({ ok: false, error: 'invalid_room_id' });
-        if (!rooms[roomID]) return callback && callback({ ok: false, error: 'room_not_found' });
-        if (!socket.rooms.has(roomID)) return callback && callback({ ok: false, error: 'not_joined' });
-        const videoSenderID = normalizeEmail(senderID);
-        const roomAccess = await loadRoomAccess(roomID, videoSenderID);
-        if (!roomAccess.ok) {
-          return callback && callback({ ok: false, error: roomAccess.error });
-        }
-
-        // Rate-limit (per socket per room)
-        const vidRateKey = `${socket.id}:${roomID}:video`;
-        if (!allowRate(vidRateKey, RATE_MAX_VIDEOS, RATE_WINDOW_MS)) {
-          return callback && callback({ ok: false, error: 'rate_limited' });
-        }
-
-        // De-dup by stable messageID
-        const effectiveMessageID = (messageID && String(messageID)) || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-        const dedupKey = `${roomID}:${effectiveMessageID}`;
-        if (deliveredVideoKeys.has(dedupKey)) {
-          const existing = await loadExistingMessage(roomID, effectiveMessageID);
-          if (existing) {
-            return callback && callback({
-              ok: true,
-              duplicate: true,
-              messageID: effectiveMessageID,
-              seq: existing.seq
-            });
-          }
-        }
-        deliveredVideoKeys.add(dedupKey);
-        if (deliveredVideoKeys.size > 50000) deliveredVideoKeys.clear();
-
-        const nickname = senderNickname || senderNickName || '';
-        const attachment = {
-          pathOriginal: storagePath,
-          pathThumb: thumbnailPath,
-          width,
-          height,
-          sizeBytes,
-          duration,
-          approxBitrateMbps,
-          preset
-        };
-
-        const existingMessage = await loadExistingMessage(roomID, effectiveMessageID);
-        if (existingMessage) {
-          return callback && callback({
-            ok: true,
-            duplicate: true,
-            messageID: effectiveMessageID,
-            seq: existingMessage.seq
-          });
-        }
-
-        const reservation = await assertMediaUploadReservation({
-          roomID,
-          messageID: effectiveMessageID,
-          senderID: videoSenderID,
-          kind: "video",
-          storagePaths: [storagePath, thumbnailPath]
-        });
-        if (!reservation.ok) {
-          deliveredVideoKeys.delete(dedupKey);
-          return callback && callback({ ok: false, error: reservation.error });
-        }
-        if (reservation.completed) {
-          return callback && callback({
-            ok: true,
-            duplicate: true,
-            messageID: effectiveMessageID
-          });
-        }
-
-        const serverMsg = buildServerVideoMessage({
-          roomID,
-          messageID: effectiveMessageID,
-          msg: typeof msg === 'string' ? msg : '',
-          attachments: [attachment],
-          senderID: videoSenderID,
-          senderNickname: nickname,
-          senderAvatarPath,
-          sentAt
-        });
-
-        // --- Persist with seq and broadcast ---
-        try {
-          const seq = await allocateSeqAndPersist(roomID, effectiveMessageID, serverMsg, {
-            mediaUploadRef: reservation.ref
-          });
-          serverMsg.seq = seq;
-        } catch (e) {
-          deliveredVideoKeys.delete(dedupKey);
-          console.error('[chat:video] seq allocation/persist error:', e);
-          return callback && callback({ ok: false, error: 'seq_persist_error' });
-        }
-
-        // Broadcast to the room
-//        io.to(roomID).emit(`receiveVideo:${roomID}`, serverMsg);
-        io.to(roomID).emit(`receiveVideo`, serverMsg);
-        void fanoutChatPush({
-          roomID,
-          messageData: serverMsg
-        });
-        console.log(`[Video][${roomID}] ${nickname || "Anonymous"} sent video meta`, serverMsg);
-
-        return callback && callback({ ok: true, messageID: effectiveMessageID });
-      } catch (error) {
-        console.error('[chat:video] handler error:', error);
-        return callback && callback({ ok: false, error: 'internal_error' });
-      }
     });
     socket.on('disconnect', () => {
         console.log('User disconnected:', socket.id);
