@@ -31,6 +31,7 @@
 | 미디어 preview/save | 채팅방 본문 이미지/비디오 preview present는 `ChatRoomRouting`/`ChatCoordinator`, 비디오 URL/cache/save 파일 해석과 Photos 저장은 service 경계로 분리 | 현재 문서 |
 | 후속 phase 재정렬 | Phase 15~19는 media/cell 구조 부채를 먼저 정리하고, 검색 분리와 최종 audit은 Phase 20~21로 이동 | 현재 문서 |
 | 메시지 전송 ACK timeout | Socket.IO `"NO ACK"`/timeout ACK는 성공이 아니라 실패로 판정하고, 빈 ACK만 서버 호환성 차원에서 성공으로 유지 | 현재 문서 |
+| Realtime socket actor | `SocketIOManager`를 제거하고 `RealtimeSocketService` actor + `AppSessionRuntime`으로 socket/session lifecycle을 분리 | 현재 문서 |
 | media pending ID | pending은 로컬 UI/store 상태로만 보관하고 canonical messageID, Storage path, Firestore messageID에는 넣지 않음 | 현재 문서 |
 | 실패 outgoing outbox | 전송 실패 메시지는 GRDB outbox + Application Support 파일로 영속화하고, retry 시 업로드 필요 여부를 stage/payload로 판단 | 현재 문서 |
 | 실패 메시지 재시도 UI 정합성 | failed local message가 confirmed server message로 교체되면 `isFailed`/`seq` 변경을 재배치 신호로 보고 snapshot reorder와 reconfigure를 함께 수행 | 현재 문서 |
@@ -49,6 +50,34 @@
 - 룩북 공유 카드는 채팅에서 snapshot만 렌더링하고 원본 Repository를 조회하지 않는다.
 
 ## Phase 7 이후 핵심 결정
+
+### RealtimeSocketService Actor 전환
+
+결정:
+
+- `SocketIOManager` compatibility shim을 두지 않고 `RealtimeSocketService` actor로 대체한다.
+- `SocketManager.config`는 연결 시도마다 변경하지 않는다.
+- 로그인 identity가 바뀌면 기존 Socket.IO manager/client를 닫고 새 `SocketSessionIdentity` 기반으로 다시 만든다.
+- Socket/Realtime 경로의 Combine bridge는 제거하고 `AsyncStream` 중심으로 정리한다.
+- `BannerManager`는 `AnyCancellable` 대신 room별 `Task`로 realtime stream을 소비한다.
+- `AppSessionRuntime`이 인증 세션의 socket connect/disconnect, joined room join/leave, banner runtime 시작/정리를 담당한다.
+- `ChatContainer`는 joined room runtime binding을 직접 소유하지 않는다.
+- participant socket 이벤트는 현재 미사용/서버 계약 불명확 경로로 보고 actor public API로 승격하지 않는다.
+
+이유:
+
+- Socket.IO Swift `SocketManager`는 thread/queue safe가 아니므로 기존 singleton class에서 여러 Task/콜백이 직접 접근하면 data race와 `EXC_BAD_ACCESS` 위험이 있다.
+- socket 연결은 화면 전환 책임이 아니라 인증 세션 runtime 책임이다.
+- active manager config mutation보다 identity 단위 manager 재생성이 더 예측 가능하다.
+- Socket/Realtime message stream은 이미 채팅방 본문에서 `AsyncStream`을 사용하므로 배너 경로도 같은 모델로 통일하는 편이 단순하다.
+
+후속:
+
+- `AppSessionRuntime`이 profile listener, brand admin preload, presence app lifecycle까지 흡수할지는 별도 phase에서 검토한다.
+- participant realtime 계약은 서버 계약 확인 후 제거 또는 별도 use case 분리로 결정한다.
+- media upload의 동기 `isSocketConnected` guard는 async 상태 모델 또는 preflight 중심 흐름으로 정리한다.
+- `RealtimeSocketService.shared` 직접 접근은 장기 구조가 아니라 전환기 기본값으로 본다. race condition 방지는 actor isolation이 담당하고, lifecycle ownership과 동일 instance 공유는 composition root/DI가 담당하도록 후속 phase에서 정리한다.
+- `JoinedRoomsStore`는 Chat domain model이 아니라 앱 세션 membership snapshot/store 성격으로 재분류하고, 위치와 event API를 후속 phase에서 정리한다.
 
 ### 메시지 전송 ACK timeout
 

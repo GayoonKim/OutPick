@@ -3,7 +3,7 @@
 ## 현재 작업
 
 - 작업명: `chat-view-controller-layering`
-- 현재 상태: Phase 21 후속 안정화 완료 후, 다음 리팩토링 Phase A~D 계획 수립 완료. 구현은 아직 시작하지 않았다.
+- 현재 상태: Phase 22 `RealtimeSocketService` actor 전환 구현 및 빌드 검증 완료. 수동 QA는 남아 있다.
 - 진행 문서:
   - `docs/ai/tasks/chat-view-controller-layering/plan.md`
   - `docs/ai/tasks/chat-view-controller-layering/progress.md`
@@ -90,6 +90,15 @@
   - `ChatViewController`는 avatar manager를 생성자 주입으로 받는다.
   - Lookbook은 앱 공용 `CurrentUserProviding`을 `LookbookContainer`에 주입하고 내부 adapter가 `UserID?`로 변환한다.
   - `DefaultMediaProcessingService.shared` 직접 접근을 제거하고 composition/default injection 지점에서 instance를 주입한다.
+- Phase 22: Socket/Realtime runtime을 actor 기반으로 재구성.
+  - `SocketIOManager`를 제거하고 `RealtimeSocketService` actor를 도입했다.
+  - `SocketManager.config` 런타임 변경을 제거하고, `SocketSessionIdentity` 변경 시 새 Socket.IO manager/client를 만든다.
+  - Socket/Realtime 경로의 Combine bridge를 제거하고 `AsyncStream` 중심으로 정리했다.
+  - `BannerManager`는 room별 `Task`로 realtime stream을 소비한다.
+  - `AppSessionRuntime`을 도입해 인증 세션의 socket connect/disconnect, joined room join/leave, banner runtime 시작/정리를 담당한다.
+  - `ChatContainer.bindJoinedRoomsRuntimeIfNeeded()`는 제거했다.
+  - participant socket publisher/listener 경로는 미사용/계약 불명확 경로로 보고 actor public API로 승격하지 않았다.
+  - 검증: `xcodebuildmcp.build_run_sim` 통과.
 
 ## 핵심 원칙
 
@@ -107,6 +116,63 @@
 - 별도 스레드/병렬 후보였던 UI 소정리, `provider.avatarImageManager` 접근 폭 축소, Lookbook current user adapter, `DefaultMediaProcessingService.shared` 직접 접근 제거는 완료했다.
 
 ### 구현 대기 Phase 계획
+
+#### Phase 23: App session runtime 확장 후보 정리
+
+- 목표: Phase 22에서 작게 도입한 `AppSessionRuntime`의 장기 책임 범위를 정리한다.
+- 후보:
+  - `AppCoordinator` 생성자 기본값에서 `LoginManagerCurrentUserProvider()`와 `AppSessionRuntime()`을 직접 생성하는 경로를 CompositionRoot/SceneDelegate 조립으로 올린다.
+  - `CurrentUserProviding`, `AppSessionRuntime`, `RealtimeSocketService`, `JoinedRoomsSessionStore`를 앱 진입점에서 같은 dependency graph로 조립한다.
+  - Presence start/logout만 유지할지, app lifecycle/push device sync까지 session runtime 하위로 옮길지 검토한다.
+  - `LoginManager.bootstrapAfterLogin`의 profile listener, joined rooms 선주입, brand admin preload를 session runtime으로 옮길지 검토한다.
+- 제외:
+  - Firebase repository Combine 전체 제거.
+  - Profile/Login 구조 전면 재설계.
+
+#### Phase 23.5: Joined rooms session store 위치/API 정리
+
+- 목표: `JoinedRoomsStore`를 Chat domain model이 아니라 앱 인증 세션 membership runtime state로 재정의한다.
+- 현재 문제:
+  - `OutPick/Features/Chat/Domain/Models`에 있지만 실제로는 로그인 세션 전체의 joined room snapshot과 변경 이벤트를 가진다.
+  - `Combine` publisher 기반이라 Phase 22의 Socket/Realtime `AsyncStream` 방향과 결이 다르다.
+- 추천 방향:
+  - `OutPick/App/Session` 또는 `OutPick/App/Runtime` 하위 `JoinedRoomsSessionStore`로 이동/rename한다.
+  - `replace/add/remove/clear`는 유지하되 변경 관찰은 `AsyncStream<Set<String>>` 또는 명시적인 membership event stream으로 제공한다.
+  - 단순 1회성 command가 아니라 bootstrap replace, profile listener replace, room add/remove, logout clear를 포함하는 session snapshot store로 정의한다.
+- 검증:
+  - joined rooms 변경 시 AppSessionRuntime이 신규 방 join, 제거 방 leave, banner start/remove를 수행하는지 fake runtime으로 검증한다.
+
+#### Phase 24: Participant realtime 계약 정리
+
+- 목표: 기존 `room participant updated` / `new participant joined` socket 경로의 필요 여부를 확정한다.
+- 현재 판단:
+  - 앱 코드 기준 `participantUpdatePublisher`와 `notifyNewParticipant`는 사용처가 없다.
+  - 참여자 수/목록 갱신은 Firestore room document listener와 participant reconcile 흐름이 기준이다.
+- 후보:
+  - 미사용 API 제거.
+  - 서버 계약이 필요하면 transport actor는 raw event만 제공하고, profile fetch/GRDB 저장은 별도 use case로 분리한다.
+
+#### Phase 25: Media upload socket state model 정리
+
+- 목표: `ChatMediaUploadUseCase.isSocketConnected`의 동기 guard를 async 상태 모델 또는 preflight 중심 흐름으로 정리한다.
+- 배경:
+  - actor 전환 후 정확한 socket 상태는 async로 확인하는 편이 자연스럽다.
+  - 현재 Phase 22에서는 실제 업로드 전 preflight/send에서 최종 실패를 확정한다.
+
+#### Phase 26: RealtimeSocketService singleton 직접 접근 제거
+
+- 목표: `RealtimeSocketService.shared` 직접 접근을 composition root 주입 경로로 축소한다.
+- 현재 판단:
+  - actor isolation은 race condition을 막지만, `.shared` 직접 접근은 lifecycle ownership과 테스트 가능성을 흐린다.
+  - 장기 구조에서 race condition 방지는 actor가 담당하고, 객체 생명주기와 동일 instance 공유는 DI가 담당해야 한다.
+- 추천 방향:
+  - `AppSessionRuntime`이 주입받은 `RealtimeSocketService` instance를 앱 세션 runtime의 기준 instance로 둔다.
+  - `ChatContainer`가 socket-facing repository를 만들 때 같은 instance를 명시 주입한다.
+  - `FirebaseChatRoomRepository`의 socket create/join side effect는 repository 밖 use case/runtime 경계로 이동한다.
+  - `RealtimeSocketService.shared`는 transition default 또는 composition root fallback으로만 남기고 직접 호출 지점을 0에 가깝게 줄인다.
+- 검증:
+  - `rg "RealtimeSocketService.shared"`로 production 직접 접근 축소 확인.
+  - fake realtime service 주입 기반 repository/use case 테스트 보강.
 
 #### Phase A: Media processing concrete 타입 제거
 

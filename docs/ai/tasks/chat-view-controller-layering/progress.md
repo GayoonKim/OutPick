@@ -2,7 +2,7 @@
 
 ## 현재 상태
 
-- 상태: Phase 21 완료, 갤러리/뷰어 Photos 저장 통합, 검색 task/generation guard ViewModel 이동, 남은 runtime singleton/manager 직접 접근 audit 및 종료 기준 확정 완료.
+- 상태: Phase 22 `RealtimeSocketService` actor 전환 구현 및 빌드 검증 완료. 수동 QA는 남아 있다.
 - 원본 상세 기록은 `archive/progress-through-phase-9.md`에 보존했다.
 - 현재 task 목표는 `ChatViewController`에 몰려 있던 메시지 전송, 실시간 수신, 메시지 액션, 메시지 window/diffable, 미디어 업로드, 읽음 seq/lifecycle, 라우팅, 방 exit 실행 책임을 MVVM-C + Repository + UseCase + DI 흐름에 맞춰 분리하는 것이다.
 - Phase 19부터는 `AGENTS.md`의 phase 기반 운영 원칙과 `docs/ai/ADR.md`의 ADR-015에 따라 조사/설계 쟁점 발굴은 병렬화하고, 구현은 파일 충돌 가능성과 의존성 기준으로 순차 또는 별도 스레드 병렬 진행을 결정한다.
@@ -39,8 +39,35 @@
 | 19 | 완료 | 갤러리/뷰어 Photos 저장 흐름을 앱 공용 `PhotoLibrarySaving`으로 통합 | 현재 문서 |
 | 20 | 완료 | 검색 task/generation guard와 검색 표시 상태를 `ChatRoomViewModel` 경계로 이동 | 현재 문서 |
 | 21 | 완료 | 남은 runtime singleton/manager 직접 접근 audit 및 task 종료 기준 확정 | 현재 문서 |
+| 22 | 완료 | `SocketIOManager` 제거, `RealtimeSocketService` actor와 `AppSessionRuntime` 도입, Socket/Realtime Combine bridge 제거 | 현재 문서 |
 
 ## 최근 완료 상세
+
+### Phase 22
+
+- `SocketIOManager`를 제거하고 `RealtimeSocketService` actor를 추가했다.
+- `SocketSessionIdentity`를 추가해 email/nickname/avatar/clientKey/socketURL을 연결 단위 identity로 묶었다.
+- 연결 시도마다 `SocketManager.config`를 변경하지 않고, identity 변경 시 Socket.IO manager/client를 재생성한다.
+- Socket/Realtime 경로의 Combine bridge를 제거했다.
+  - `BannerManager`는 room별 `Task`와 `ChatRoomRealtimeSession`으로 메시지 stream을 소비한다.
+  - `ChatContainer.bindJoinedRoomsRuntimeIfNeeded()`는 제거했다.
+- `AppSessionRuntime`을 추가했다.
+  - 인증 세션 시작 시 socket connect, joinedRooms 기반 room join/leave, banner runtime start를 담당한다.
+  - 인증 세션 종료 시 banner stop, presence logout, socket disconnect/reset을 담당한다.
+- `AppCoordinator`는 socket/presence manager를 직접 호출하지 않고 `AppSessionRuntime`을 호출한다.
+- `LoginManager.bootstrapAfterLogin`의 socket connect fire-and-forget 경로를 제거했다.
+- socket-facing repository들이 `RealtimeSocketService`를 보도록 재배선했다.
+- participant socket publisher/listener 경로는 actor API로 승격하지 않았다.
+
+검증:
+
+- `xcodebuildmcp.build_run_sim` 통과.
+
+남은 위험:
+
+- 수동 QA는 아직 수행하지 않았다.
+- `ChatMediaUploadUseCase.isSocketConnected`는 아직 동기 guard라 actor 상태와 완전히 맞지 않는다. 실제 실패 확정은 preflight/send 단계에서 수행한다.
+- `AppSessionRuntime`의 장기 책임 범위는 후속 phase에서 정리한다.
 
 ### Phase 8
 
