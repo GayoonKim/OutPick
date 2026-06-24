@@ -222,6 +222,10 @@ final class ChatContainer {
         provider.avatarImageManager
     }
 
+    func makeProfileSyncManager() -> ChatProfileSyncManaging {
+        provider.profileSyncManager
+    }
+
     func bindJoinedRoomsRuntimeIfNeeded() {
         guard !isJoinedRoomsRuntimeBound else { return }
         isJoinedRoomsRuntimeBound = true

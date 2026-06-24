@@ -74,24 +74,19 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private let outgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol
     
     // MARK: - Managers (의존성 주입)
-    private let messageManager: ChatMessageManaging
     private let attachmentImageLoader: ChatAttachmentImageLoading
     private let videoAssetLoader: ChatVideoAssetLoading
     private let storageURLResolver: ChatStorageURLResolving
     private let videoThumbnailGenerator: ChatVideoThumbnailGenerating
     let mediaProcessor: MediaProcessingServiceProtocol
     private let avatarImageManager: ChatAvatarImageManaging
-    private let searchManager: ChatSearchManaging
     private let profileSyncManager: ChatProfileSyncManaging
-    private let networkStatusProvider: NetworkStatusProviding
-    private let provider: ChatManagerProviding
     weak var router: ChatRoomRouting?
     private let profileScopeID = UUID()
     private var isProfileSyncBound = false
     private var profileSyncCancellable: AnyCancellable?
 
     init(
-        provider: ChatManagerProviding,
         mediaUploadUseCase: ChatMediaUploadUseCaseProtocol,
         outgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol,
         attachmentImageLoader: ChatAttachmentImageLoading,
@@ -100,9 +95,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         videoThumbnailGenerator: ChatVideoThumbnailGenerating,
         mediaProcessor: MediaProcessingServiceProtocol,
         avatarImageManager: ChatAvatarImageManaging,
+        profileSyncManager: ChatProfileSyncManaging,
         viewModel: ChatRoomViewModel
     ) {
-        self.provider = provider
         self.mediaUploadUseCase = mediaUploadUseCase
         self.outgoingOutboxUseCase = outgoingOutboxUseCase
         self.attachmentImageLoader = attachmentImageLoader
@@ -111,11 +106,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         self.videoThumbnailGenerator = videoThumbnailGenerator
         self.mediaProcessor = mediaProcessor
         self.avatarImageManager = avatarImageManager
+        self.profileSyncManager = profileSyncManager
         self.chatRoomViewModel = viewModel
-        self.messageManager = provider.messageManager
-        self.searchManager = provider.searchManager
-        self.profileSyncManager = provider.profileSyncManager
-        self.networkStatusProvider = provider.networkStatusProvider
         self.room = viewModel.room
         super.init(nibName: nil, bundle: nil)
     }

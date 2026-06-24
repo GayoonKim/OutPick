@@ -13,6 +13,8 @@ struct PostCommentsSheetView: View {
     private let brandID: BrandID
     private let seasonID: SeasonID
     private let postID: PostID
+    private let avatarImageManager: ChatAvatarImageManaging
+    private let firebaseRepositories: any FirebaseRepositoryProviding
     @ObservedObject private var coordinator: PostCommentCoordinator
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var brandAdminSessionStore: BrandAdminSessionStore
@@ -26,7 +28,9 @@ struct PostCommentsSheetView: View {
         brandID: BrandID,
         seasonID: SeasonID,
         postID: PostID,
-        coordinator: PostCommentCoordinator
+        coordinator: PostCommentCoordinator,
+        avatarImageManager: ChatAvatarImageManaging,
+        firebaseRepositories: any FirebaseRepositoryProviding
     ) {
         _viewModel = StateObject(wrappedValue: viewModel)
         self.navigationCoordinator = navigationCoordinator
@@ -34,6 +38,8 @@ struct PostCommentsSheetView: View {
         self.seasonID = seasonID
         self.postID = postID
         self.coordinator = coordinator
+        self.avatarImageManager = avatarImageManager
+        self.firebaseRepositories = firebaseRepositories
     }
 
     var body: some View {
@@ -149,6 +155,7 @@ struct PostCommentsSheetView: View {
             isMutatingLike: viewModel.isMutatingLike(item.comment),
             author: item.author,
             badges: badges,
+            avatarImageManager: avatarImageManager,
             actions: .init(
                 onProfileTap: {
                     coordinator.presentProfile(for: item.author)
@@ -192,6 +199,7 @@ struct PostCommentsSheetView: View {
         let sheet = CommentDeleteConfirmationSheetView(
             author: item.author,
             isDeleting: viewModel.isPerformingCommentAction,
+            avatarImageManager: avatarImageManager,
             onCancel: {
                 pendingDeleteItem = nil
             },
@@ -205,7 +213,7 @@ struct PostCommentsSheetView: View {
         if #available(iOS 16.0, *) {
             sheet
                 .presentationDetents([.height(320)])
-                .presentationDragIndicator(.visible)
+                .presentationDragIndicator(.hidden)
         } else {
             sheet
         }
@@ -216,6 +224,7 @@ struct PostCommentsSheetView: View {
         let sheet = CommentReportSheetView(
             author: item.author,
             isReporting: viewModel.isPerformingCommentAction,
+            avatarImageManager: avatarImageManager,
             onCancel: {
                 pendingReportItem = nil
             },
@@ -234,7 +243,7 @@ struct PostCommentsSheetView: View {
         if #available(iOS 16.0, *) {
             sheet
                 .presentationDetents([.height(520)])
-                .presentationDragIndicator(.visible)
+                .presentationDragIndicator(.hidden)
         } else {
             sheet
         }
@@ -253,6 +262,7 @@ struct PostCommentsSheetView: View {
         let sheet = CommentBlockConfirmationSheetView(
             author: item.author,
             isBlocking: viewModel.isPerformingCommentAction,
+            avatarImageManager: avatarImageManager,
             onCancel: {
                 pendingBlockItem = nil
             },
@@ -269,7 +279,7 @@ struct PostCommentsSheetView: View {
         if #available(iOS 16.0, *) {
             sheet
                 .presentationDetents([.height(390)])
-                .presentationDragIndicator(.visible)
+                .presentationDragIndicator(.hidden)
         } else {
             sheet
         }
@@ -323,6 +333,8 @@ struct PostCommentsSheetView: View {
         if let route = coordinator.profileRoute {
             CommentUserProfileDetailView(
                 author: route.author,
+                avatarImageManager: avatarImageManager,
+                repositories: firebaseRepositories,
                 onBack: {
                     coordinator.dismissProfile()
                 }

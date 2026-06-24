@@ -20,6 +20,8 @@ final class LookbookContainer {
     let interactionStore: LookbookInteractionStore
     let debugFailureInjectionStore: LookbookDebugFailureInjectionStore
     let currentUserIDProvider: any CurrentUserIDProviding
+    private var avatarImageManager: ChatAvatarImageManaging
+    private let firebaseRepositories: any FirebaseRepositoryProviding
 
     private let loadPostCommentsUseCase: any LoadPostCommentsUseCaseProtocol
     private let loadCommentRepliesUseCase: any LoadCommentRepliesUseCaseProtocol
@@ -42,7 +44,9 @@ final class LookbookContainer {
     init(
         provider: LookbookRepositoryProvider = .shared,
         brandAdminSessionStore: BrandAdminSessionStore,
-        currentUserProvider: any CurrentUserProviding = LoginManagerCurrentUserProvider()
+        currentUserProvider: any CurrentUserProviding = LoginManagerCurrentUserProvider(),
+        firebaseRepositories: any FirebaseRepositoryProviding = FirebaseRepositoryProvider.shared,
+        avatarImageManager: ChatAvatarImageManaging? = nil
     ) {
         self.provider = provider
         self.brandAdminSessionStore = brandAdminSessionStore
@@ -52,6 +56,10 @@ final class LookbookContainer {
         LookbookDebugFailureLaunchArguments.apply(to: debugFailureInjectionStore)
         #endif
         self.currentUserIDProvider = LookbookCurrentUserIDProvider(currentUserProvider: currentUserProvider)
+        self.firebaseRepositories = firebaseRepositories
+        self.avatarImageManager = avatarImageManager ?? AvatarImageService(
+            imageStorageRepository: firebaseRepositories.imageStorageRepository
+        )
         self.loadPostCommentsUseCase = LoadPostCommentsUseCase(
             commentRepository: provider.commentRepository
         )
@@ -111,11 +119,13 @@ final class LookbookContainer {
     func configureLookbookChatShare(
         loadShareableJoinedRoomsUseCase: any LoadShareableJoinedRoomsUseCaseProtocol,
         shareLookbookContentToChatUseCase: any ShareLookbookContentToChatUseCaseProtocol,
-        roomImageManager: any RoomImageManaging
+        roomImageManager: any RoomImageManaging,
+        avatarImageManager: any ChatAvatarImageManaging
     ) {
         self.loadShareableJoinedRoomsUseCase = loadShareableJoinedRoomsUseCase
         self.shareLookbookContentToChatUseCase = shareLookbookContentToChatUseCase
         self.roomImageManager = roomImageManager
+        self.avatarImageManager = avatarImageManager
     }
 
     func configureAppContentRouter(_ appContentRouter: any AppContentRouting) {
@@ -219,6 +229,7 @@ final class LookbookContainer {
             coordinator: coordinator,
             commentCoordinator: coordinator.makePostCommentCoordinator(),
             brandImageCache: provider.brandImageCache,
+            avatarImageManager: avatarImageManager,
             shareSheetFactory: { [self] target, onCompleted in
                 self.makeLookbookShareSheet(
                     target: target,
@@ -430,7 +441,8 @@ final class LookbookContainer {
             loadHiddenUserIDsUseCase: loadHiddenCommentUserIDsUseCase,
             filterHiddenAuthorsUseCase: filterHiddenCommentAuthorsUseCase,
             commentInteractionStore: interactionStore,
-            currentUserIDProvider: currentUserIDProvider
+            currentUserIDProvider: currentUserIDProvider,
+            avatarImageManager: avatarImageManager
         )
     }
 
@@ -451,7 +463,9 @@ final class LookbookContainer {
             brandID: brandID,
             seasonID: seasonID,
             postID: postID,
-            coordinator: commentCoordinator
+            coordinator: commentCoordinator,
+            avatarImageManager: avatarImageManager,
+            firebaseRepositories: firebaseRepositories
         )
     }
 
@@ -467,7 +481,9 @@ final class LookbookContainer {
                 seasonID: seasonID,
                 postID: postID,
                 parentComment: parentComment
-            )
+            ),
+            avatarImageManager: avatarImageManager,
+            firebaseRepositories: firebaseRepositories
         )
     }
 
@@ -492,7 +508,8 @@ final class LookbookContainer {
             loadHiddenUserIDsUseCase: loadHiddenCommentUserIDsUseCase,
             filterHiddenAuthorsUseCase: filterHiddenCommentAuthorsUseCase,
             commentInteractionStore: interactionStore,
-            currentUserIDProvider: currentUserIDProvider
+            currentUserIDProvider: currentUserIDProvider,
+            avatarImageManager: avatarImageManager
         )
     }
 }

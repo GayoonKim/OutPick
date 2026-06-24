@@ -9,6 +9,8 @@ import SwiftUI
 
 struct PostCommentRepliesSheetView: View {
     @StateObject private var viewModel: PostCommentRepliesViewModel
+    private let avatarImageManager: ChatAvatarImageManaging
+    private let firebaseRepositories: any FirebaseRepositoryProviding
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var brandAdminSessionStore: BrandAdminSessionStore
     @State private var profileAuthor: CommentAuthorDisplay?
@@ -16,8 +18,14 @@ struct PostCommentRepliesSheetView: View {
     @State private var pendingReportItem: CommentDisplayItem?
     @State private var pendingBlockItem: CommentDisplayItem?
 
-    init(viewModel: PostCommentRepliesViewModel) {
+    init(
+        viewModel: PostCommentRepliesViewModel,
+        avatarImageManager: ChatAvatarImageManaging,
+        firebaseRepositories: any FirebaseRepositoryProviding
+    ) {
         _viewModel = StateObject(wrappedValue: viewModel)
+        self.avatarImageManager = avatarImageManager
+        self.firebaseRepositories = firebaseRepositories
     }
 
     var body: some View {
@@ -96,6 +104,7 @@ struct PostCommentRepliesSheetView: View {
                     isMutatingLike: viewModel.isMutatingLike(item.comment),
                     author: item.author,
                     badgeTitle: "원댓글",
+                    avatarImageManager: avatarImageManager,
                     actions: .init(
                         onProfileTap: {
                             profileAuthor = item.author
@@ -148,6 +157,7 @@ struct PostCommentRepliesSheetView: View {
                             isLiked: viewModel.isCommentLiked(item.comment),
                             isMutatingLike: viewModel.isMutatingLike(item.comment),
                             author: item.author,
+                            avatarImageManager: avatarImageManager,
                             actions: .init(
                                 onProfileTap: {
                                     profileAuthor = item.author
@@ -222,12 +232,13 @@ struct PostCommentRepliesSheetView: View {
         let sheet = CommentDeleteConfirmationSheetView(
             author: item.author,
             isDeleting: viewModel.isPerformingCommentAction,
+            avatarImageManager: avatarImageManager,
             onCancel: {
                 pendingDeleteItem = nil
             },
             onConfirm: {
                 Task {
-                    if let result = await viewModel.deleteComment(item.comment) {
+                    if await viewModel.deleteComment(item.comment) != nil {
                         if item.comment.id == viewModel.parentComment.id {
                             dismiss()
                         }
@@ -239,7 +250,7 @@ struct PostCommentRepliesSheetView: View {
         if #available(iOS 16.0, *) {
             sheet
                 .presentationDetents([.height(320)])
-                .presentationDragIndicator(.visible)
+                .presentationDragIndicator(.hidden)
         } else {
             sheet
         }
@@ -250,6 +261,7 @@ struct PostCommentRepliesSheetView: View {
         let sheet = CommentReportSheetView(
             author: item.author,
             isReporting: viewModel.isPerformingCommentAction,
+            avatarImageManager: avatarImageManager,
             onCancel: {
                 pendingReportItem = nil
             },
@@ -268,7 +280,7 @@ struct PostCommentRepliesSheetView: View {
         if #available(iOS 16.0, *) {
             sheet
                 .presentationDetents([.height(520)])
-                .presentationDragIndicator(.visible)
+                .presentationDragIndicator(.hidden)
         } else {
             sheet
         }
@@ -287,6 +299,7 @@ struct PostCommentRepliesSheetView: View {
         let sheet = CommentBlockConfirmationSheetView(
             author: item.author,
             isBlocking: viewModel.isPerformingCommentAction,
+            avatarImageManager: avatarImageManager,
             onCancel: {
                 pendingBlockItem = nil
             },
@@ -306,7 +319,7 @@ struct PostCommentRepliesSheetView: View {
         if #available(iOS 16.0, *) {
             sheet
                 .presentationDetents([.height(390)])
-                .presentationDragIndicator(.visible)
+                .presentationDragIndicator(.hidden)
         } else {
             sheet
         }
@@ -363,6 +376,8 @@ struct PostCommentRepliesSheetView: View {
         if let profileAuthor {
             CommentUserProfileDetailView(
                 author: profileAuthor,
+                avatarImageManager: avatarImageManager,
+                repositories: firebaseRepositories,
                 onBack: {
                     self.profileAuthor = nil
                 }

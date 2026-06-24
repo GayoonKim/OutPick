@@ -112,7 +112,7 @@ final class PostDetailScreenViewModel: ObservableObject {
         commentInteractionStore.likeCount(for: comment)
     }
 
-    func prefetchAuthorAvatars(for comments: [Comment], avatarImageManager: ChatAvatarImageManaging = AvatarImageService.shared) {
+    func prefetchAuthorAvatars(for comments: [Comment], avatarImageManager: ChatAvatarImageManaging) {
         let paths = comments
             .compactMap { authorDisplays[$0.userID]?.avatarPath }
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }

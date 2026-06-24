@@ -10,18 +10,18 @@ import SwiftUI
 struct CommentDeleteConfirmationSheetView: View {
     let author: CommentAuthorDisplay
     let isDeleting: Bool
+    let avatarImageManager: ChatAvatarImageManaging
     let onCancel: () -> Void
     let onConfirm: () -> Void
 
     var body: some View {
         VStack(spacing: 16) {
-            Capsule()
-                .fill(OutPickTheme.SwiftUIColor.borderSubtle)
-                .frame(width: 38, height: 5)
-                .padding(.top, 6)
-
             VStack(spacing: 10) {
-                CommentSafetyAvatarView(avatarPath: author.avatarPath, size: 52)
+                CommentSafetyAvatarView(
+                    avatarPath: author.avatarPath,
+                    size: 52,
+                    avatarImageManager: avatarImageManager
+                )
 
                 VStack(spacing: 4) {
                     Text("댓글을 삭제할까요?")
@@ -37,6 +37,7 @@ struct CommentDeleteConfirmationSheetView: View {
                 }
                 .layoutPriority(1)
             }
+            .padding(.top, 22)
 
             Spacer(minLength: 0)
 

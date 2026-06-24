@@ -85,7 +85,7 @@ final class PostCommentRepliesViewModel: ObservableObject {
         commentInteractionStore: any CommentInteractionManaging,
         currentUserIDProvider: any CurrentUserIDProviding,
         authorProfileStore: CommentAuthorProfileStore? = nil,
-        avatarImageManager: ChatAvatarImageManaging = AvatarImageService.shared,
+        avatarImageManager: ChatAvatarImageManaging,
         pageSize: Int = 30,
         avatarPrefetchLimit: Int = 16,
         avatarThumbnailMaxBytes: Int = 3 * 1024 * 1024

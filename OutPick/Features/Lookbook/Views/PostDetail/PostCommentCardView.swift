@@ -37,7 +37,7 @@ struct PostCommentCardView: View {
         badge: PostCommentBadge? = nil,
         badges: [PostCommentBadge] = [],
         badgeTitle: String? = nil,
-        avatarImageManager: ChatAvatarImageManaging = AvatarImageService.shared,
+        avatarImageManager: ChatAvatarImageManaging,
         actions: PostCommentCardActions = PostCommentCardActions()
     ) {
         self.comment = comment

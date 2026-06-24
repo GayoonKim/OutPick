@@ -18,7 +18,8 @@ enum MainTabCompositionRoot {
         lookbookContainer.configureLookbookChatShare(
             loadShareableJoinedRoomsUseCase: chatContainer.makeLoadShareableJoinedRoomsUseCase(),
             shareLookbookContentToChatUseCase: chatContainer.makeShareLookbookContentToChatUseCase(),
-            roomImageManager: chatContainer.provider.roomImageManager
+            roomImageManager: chatContainer.provider.roomImageManager,
+            avatarImageManager: chatContainer.makeAvatarImageManager()
         )
 
         // 탭 생성 책임은 빌더로 위임

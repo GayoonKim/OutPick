@@ -146,7 +146,6 @@ final class ChatCoordinator {
 
     private func makeChatRoomViewController(room: ChatRoom, isRoomSaving: Bool) -> ChatViewController {
         let chatRoomVC = ChatViewController(
-            provider: container.provider,
             mediaUploadUseCase: container.makeChatMediaUploadUseCase(),
             outgoingOutboxUseCase: container.makeChatOutgoingOutboxUseCase(),
             attachmentImageLoader: container.makeAttachmentImageLoader(),
@@ -155,6 +154,7 @@ final class ChatCoordinator {
             videoThumbnailGenerator: container.makeChatVideoThumbnailGenerator(),
             mediaProcessor: container.makeMediaProcessor(),
             avatarImageManager: container.makeAvatarImageManager(),
+            profileSyncManager: container.makeProfileSyncManager(),
             viewModel: container.makeChatRoomViewModel(room: room)
         )
 

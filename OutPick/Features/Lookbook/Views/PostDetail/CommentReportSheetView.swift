@@ -10,6 +10,7 @@ import SwiftUI
 struct CommentReportSheetView: View {
     let author: CommentAuthorDisplay
     let isReporting: Bool
+    let avatarImageManager: ChatAvatarImageManaging
     let onCancel: () -> Void
     let onSubmit: (CommentReportReason, String?) -> Void
 
@@ -17,14 +18,18 @@ struct CommentReportSheetView: View {
     @State private var detailText: String = ""
 
     var body: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: 20) {
             Capsule()
                 .fill(OutPickTheme.SwiftUIColor.borderSubtle)
                 .frame(width: 38, height: 5)
-                .padding(.top, 10)
+                .padding(.top, 14)
 
             VStack(spacing: 12) {
-                CommentSafetyAvatarView(avatarPath: author.avatarPath, size: 58)
+                CommentSafetyAvatarView(
+                    avatarPath: author.avatarPath,
+                    size: 58,
+                    avatarImageManager: avatarImageManager
+                )
 
                 VStack(spacing: 4) {
                     Text("\(author.nickname)님의 댓글을 신고할까요?")
@@ -39,6 +44,7 @@ struct CommentReportSheetView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            .padding(.top, 22)
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("신고 사유")

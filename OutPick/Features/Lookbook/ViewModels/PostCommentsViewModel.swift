@@ -79,7 +79,7 @@ final class PostCommentsViewModel: ObservableObject {
         commentInteractionStore: any CommentInteractionManaging,
         currentUserIDProvider: any CurrentUserIDProviding,
         authorProfileStore: CommentAuthorProfileStore? = nil,
-        avatarImageManager: ChatAvatarImageManaging = AvatarImageService.shared,
+        avatarImageManager: ChatAvatarImageManaging,
         initialSort: CommentSortOption = .latest,
         pageSize: Int = 30,
         avatarPrefetchLimit: Int = 16,
