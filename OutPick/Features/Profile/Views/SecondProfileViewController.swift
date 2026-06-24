@@ -9,6 +9,7 @@ import PhotosUI
 final class SecondProfileViewController: UIViewController {
 
     private let viewModel: SecondProfileViewModel
+    private let mediaProcessor: MediaProcessingServiceProtocol
 
     // VC 레벨에서 마지막 선택을 기억(복귀 시 복원용)
     private var lastPickedOriginalPath: String?
@@ -136,8 +137,12 @@ final class SecondProfileViewController: UIViewController {
 
     // MARK: - Init
 
-    init(viewModel: SecondProfileViewModel) {
+    init(
+        viewModel: SecondProfileViewModel,
+        mediaProcessor: MediaProcessingServiceProtocol = DefaultMediaProcessingService()
+    ) {
         self.viewModel = viewModel
+        self.mediaProcessor = mediaProcessor
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -497,7 +502,7 @@ extension SecondProfileViewController: PHPickerViewControllerDelegate {
             guard let self else { return }
             do {
                 // pair 생성(thumbData + originalURL + sha256)
-                let pair = try await DefaultMediaProcessingService.shared.makePair(from: first, index: 0)
+                let pair = try await mediaProcessor.makePair(from: first, index: 0)
 
                 // thumbData -> UIImage
                 guard let thumb = UIImage(data: pair.thumbData) else { return }

@@ -61,6 +61,7 @@ final class RoomCreateViewController: UIViewController, ChatModalAnimatable, UII
     private var isDefaultRoomImage = true
     private var imageData: DefaultMediaProcessingService.ImagePair?
     private let roomCreateViewModel: RoomCreateViewModel
+    private let mediaProcessor: MediaProcessingServiceProtocol
     private let makeCreatedRoomViewController: (ChatRoom) -> ChatViewController?
 
     private weak var createdChatRoomViewController: ChatViewController?
@@ -76,9 +77,11 @@ final class RoomCreateViewController: UIViewController, ChatModalAnimatable, UII
 
     init(
         viewModel: RoomCreateViewModel,
+        mediaProcessor: MediaProcessingServiceProtocol,
         makeCreatedRoomViewController: @escaping (ChatRoom) -> ChatViewController?
     ) {
         self.roomCreateViewModel = viewModel
+        self.mediaProcessor = mediaProcessor
         self.makeCreatedRoomViewController = makeCreatedRoomViewController
         super.init(nibName: nil, bundle: nil)
     }
@@ -321,7 +324,7 @@ extension RoomCreateViewController: PHPickerViewControllerDelegate {
         
         Task { @MainActor in
             guard !results.isEmpty else { return }
-            let p = try await DefaultMediaProcessingService.shared.preparePairs(results)
+            let p = try await mediaProcessor.preparePairs(results)
             guard let pair = p.first else { return }
             self.cleanupTempImageIfNeeded(self.imageData)
             self.imageData = pair

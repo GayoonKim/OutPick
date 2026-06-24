@@ -14,6 +14,15 @@ protocol MediaProcessingServiceProtocol: AnyObject {
     /// 이미지 여러 장 가공 (썸네일 + 원본 안전 URL + 메타)
     func prepareImages(_ results: [PHPickerResult]) async throws -> [PreparedImage]
 
+    /// 기존 채팅 방 생성/편집 경로의 ImagePair 기반 API.
+    func preparePairs(_ results: [PHPickerResult]) async throws -> [DefaultMediaProcessingService.ImagePair]
+
+    /// 단일 이미지 가공. 기존 프로필/브랜드 이미지 경로에서 사용한다.
+    func makePair(
+        from result: PHPickerResult,
+        index: Int
+    ) async throws -> DefaultMediaProcessingService.ImagePair
+
     /// 비디오 1개 가공 (압축 + 썸네일 + 메타)
     func prepareVideo(_ result: PHPickerResult,
                       preset: DefaultMediaProcessingService.VideoUploadPreset) async throws -> PreparedVideo

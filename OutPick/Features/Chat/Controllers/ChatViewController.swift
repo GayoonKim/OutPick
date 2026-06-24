@@ -79,6 +79,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private let videoAssetLoader: ChatVideoAssetLoading
     private let storageURLResolver: ChatStorageURLResolving
     private let videoThumbnailGenerator: ChatVideoThumbnailGenerating
+    let mediaProcessor: MediaProcessingServiceProtocol
+    private let avatarImageManager: ChatAvatarImageManaging
     private let searchManager: ChatSearchManaging
     private let profileSyncManager: ChatProfileSyncManaging
     private let networkStatusProvider: NetworkStatusProviding
@@ -96,6 +98,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         videoAssetLoader: ChatVideoAssetLoading,
         storageURLResolver: ChatStorageURLResolving,
         videoThumbnailGenerator: ChatVideoThumbnailGenerating,
+        mediaProcessor: MediaProcessingServiceProtocol,
+        avatarImageManager: ChatAvatarImageManaging,
         viewModel: ChatRoomViewModel
     ) {
         self.provider = provider
@@ -105,6 +109,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         self.videoAssetLoader = videoAssetLoader
         self.storageURLResolver = storageURLResolver
         self.videoThumbnailGenerator = videoThumbnailGenerator
+        self.mediaProcessor = mediaProcessor
+        self.avatarImageManager = avatarImageManager
         self.chatRoomViewModel = viewModel
         self.messageManager = provider.messageManager
         self.searchManager = provider.searchManager
@@ -207,6 +213,18 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         let view = ChatSearchUIView()
         view.isHidden = true
         view.translatesAutoresizingMaskIntoConstraints = false
+        view.onPreviousTapped = { [weak self] in
+            guard let self else { return }
+            guard let index = self.chatRoomViewModel.moveToPreviousSearchResult() else { return }
+            self.searchUI.updateSearchResult(self.makeSearchResultState())
+            self.moveToMessageAndShake(index)
+        }
+        view.onNextTapped = { [weak self] in
+            guard let self else { return }
+            guard let index = self.chatRoomViewModel.moveToNextSearchResult() else { return }
+            self.searchUI.updateSearchResult(self.makeSearchResultState())
+            self.moveToMessageAndShake(index)
+        }
         
         return view
     }()
@@ -1413,25 +1431,16 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             }
             .store(in: &cancellables)
         
-        searchUI.upPublisher
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] in
-                guard let self = self else { return }
-                guard let index = self.chatRoomViewModel.moveToPreviousSearchResult() else { return }
-                self.searchUI.updateSearchResult(self.chatRoomViewModel.currentSearchDisplayState)
-                self.moveToMessageAndShake(index)
-            }
-            .store(in: &cancellables)
-        
-        searchUI.downPublisher
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] in
-                guard let self = self else { return }
-                guard let index = self.chatRoomViewModel.moveToNextSearchResult() else { return }
-                self.searchUI.updateSearchResult(self.chatRoomViewModel.currentSearchDisplayState)
-                self.moveToMessageAndShake(index)
-            }
-            .store(in: &cancellables)
+    }
+
+    private func makeSearchResultState() -> ChatSearchUIView.SearchResultState {
+        let state = chatRoomViewModel.currentSearchDisplayState
+        return ChatSearchUIView.SearchResultState(
+            totalCount: state.totalCount,
+            displayIndex: state.displayIndex,
+            canMoveToPrevious: state.canMoveToPrevious,
+            canMoveToNext: state.canMoveToNext
+        )
     }
     
     @MainActor
@@ -1509,7 +1518,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             dataSource.apply(snapshot, animatingDifferences: false)
         }
         
-        searchUI.updateSearchResult(chatRoomViewModel.currentSearchDisplayState)
+        searchUI.updateSearchResult(makeSearchResultState())
         if let idx = chatRoomViewModel.currentFilteredMessageIndex { moveToMessageAndShake(idx) }
     }
     
@@ -1540,7 +1549,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             .compactMap { $0 as? ChatMessageCell }
             .forEach { $0.highlightKeyword(nil) }
         
-        searchUI.updateSearchResult(chatRoomViewModel.currentSearchDisplayState)
+        searchUI.updateSearchResult(makeSearchResultState())
     }
     
     @MainActor
@@ -2601,11 +2610,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private func avatarImage(for path: String) async -> UIImage? {
         guard !path.isEmpty else { return nil }
 
-        if let cached = await provider.avatarImageManager.cachedAvatar(for: path) {
+        if let cached = await avatarImageManager.cachedAvatar(for: path) {
             return cached
         }
 
-        return try? await provider.avatarImageManager.loadAvatar(
+        return try? await avatarImageManager.loadAvatar(
             for: path,
             maxBytes: 3 * 1024 * 1024
         )

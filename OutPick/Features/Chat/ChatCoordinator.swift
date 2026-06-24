@@ -101,6 +101,7 @@ final class ChatCoordinator {
         let createVC = ChatCompositionRoot.makeRoomCreateViewController(
             provider: container.provider,
             repositories: container.firebaseRepositories,
+            mediaProcessor: container.makeMediaProcessor(),
             makeCreatedRoomViewController: { [weak self] room in
                 self?.makeChatRoomViewController(room: room, isRoomSaving: true)
             }
@@ -133,6 +134,7 @@ final class ChatCoordinator {
             room: room,
             provider: container.provider,
             repositories: container.firebaseRepositories,
+            mediaProcessor: container.makeMediaProcessor(),
             onRoomEdited: { [weak source] updatedRoom in
                 guard let source else { return }
                 await source.applyEditedRoom(updatedRoom)
@@ -151,6 +153,8 @@ final class ChatCoordinator {
             videoAssetLoader: container.makeChatVideoAssetLoader(),
             storageURLResolver: container.makeStorageURLResolver(),
             videoThumbnailGenerator: container.makeChatVideoThumbnailGenerator(),
+            mediaProcessor: container.makeMediaProcessor(),
+            avatarImageManager: container.makeAvatarImageManager(),
             viewModel: container.makeChatRoomViewModel(room: room)
         )
 

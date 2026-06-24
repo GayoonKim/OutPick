@@ -21,6 +21,7 @@ enum ChatCompositionRoot {
     static func makeRoomCreateViewController(
         provider: ChatManagerProviding,
         repositories: FirebaseRepositoryProviding,
+        mediaProcessor: MediaProcessingServiceProtocol,
         makeCreatedRoomViewController: @escaping (ChatRoom) -> ChatViewController?
     ) -> RoomCreateViewController {
         let createRoomUseCase = CreateRoomUseCase(
@@ -31,6 +32,7 @@ enum ChatCompositionRoot {
         let viewModel = RoomCreateViewModel(createRoomUseCase: createRoomUseCase)
         return RoomCreateViewController(
             viewModel: viewModel,
+            mediaProcessor: mediaProcessor,
             makeCreatedRoomViewController: makeCreatedRoomViewController
         )
     }
@@ -87,6 +89,7 @@ enum ChatCompositionRoot {
         room: ChatRoom,
         provider: ChatManagerProviding,
         repositories: FirebaseRepositoryProviding,
+        mediaProcessor: MediaProcessingServiceProtocol,
         onRoomEdited: @escaping @MainActor (ChatRoom) async -> Void
     ) -> RoomEditViewController {
         let editUseCase = RoomEditUseCase(
@@ -95,7 +98,10 @@ enum ChatCompositionRoot {
             roomImageManager: provider.roomImageManager
         )
         let editViewModel = RoomEditViewModel(room: room, useCase: editUseCase)
-        let editVC = RoomEditViewController(viewModel: editViewModel)
+        let editVC = RoomEditViewController(
+            viewModel: editViewModel,
+            mediaProcessor: mediaProcessor
+        )
         editVC.onRoomEdited = onRoomEdited
         return editVC
     }

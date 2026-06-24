@@ -41,7 +41,8 @@ final class LookbookContainer {
 
     init(
         provider: LookbookRepositoryProvider = .shared,
-        brandAdminSessionStore: BrandAdminSessionStore
+        brandAdminSessionStore: BrandAdminSessionStore,
+        currentUserProvider: any CurrentUserProviding = LoginManagerCurrentUserProvider()
     ) {
         self.provider = provider
         self.brandAdminSessionStore = brandAdminSessionStore
@@ -50,7 +51,7 @@ final class LookbookContainer {
         #if DEBUG
         LookbookDebugFailureLaunchArguments.apply(to: debugFailureInjectionStore)
         #endif
-        self.currentUserIDProvider = LoginManagerCurrentUserIDProvider()
+        self.currentUserIDProvider = LookbookCurrentUserIDProvider(currentUserProvider: currentUserProvider)
         self.loadPostCommentsUseCase = LoadPostCommentsUseCase(
             commentRepository: provider.commentRepository
         )

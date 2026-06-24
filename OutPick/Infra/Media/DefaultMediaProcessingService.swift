@@ -18,7 +18,7 @@ import AVFoundation
 final class DefaultMediaProcessingService: @unchecked Sendable, MediaProcessingServiceProtocol {
 
     static let shared = DefaultMediaProcessingService()
-    private init() {}
+    init() {}
 
     // MARK: - 썸네일 설정
     /// 기본 썸네일 긴 변(px)
@@ -174,6 +174,18 @@ final class DefaultMediaProcessingService: @unchecked Sendable, MediaProcessingS
     }
 
     // MARK: - Image processing (기존 API)
+
+    func makePair(
+        from result: PHPickerResult,
+        index: Int
+    ) async throws -> ImagePair {
+        try await makePair(
+            from: result,
+            index: index,
+            thumbMaxPixel: DefaultMediaProcessingService.defaultThumbMaxPixel,
+            thumbQuality: DefaultMediaProcessingService.defaultThumbQuality
+        )
+    }
 
     func makePair(
         from result: PHPickerResult,
@@ -400,4 +412,3 @@ final class DefaultMediaProcessingService: @unchecked Sendable, MediaProcessingS
         )
     }
 }
-

@@ -7,9 +7,15 @@
 
 import Foundation
 import UIKit
-import Combine
 
 class ChatSearchUIView: UIView {
+    struct SearchResultState {
+        let totalCount: Int
+        let displayIndex: Int
+        let canMoveToPrevious: Bool
+        let canMoveToNext: Bool
+    }
+
     private var messageCountLabel: UILabel = {
         let lb = UILabel()
         lb.text = "검색 결과 없음"
@@ -57,8 +63,8 @@ class ChatSearchUIView: UIView {
         return btn
     }()
     
-    let upPublisher = PassthroughSubject<Void, Never>()
-    let downPublisher = PassthroughSubject<Void, Never>()
+    var onPreviousTapped: (() -> Void)?
+    var onNextTapped: (() -> Void)?
     
     private override init(frame: CGRect) {
         super.init(frame: frame)
@@ -104,14 +110,14 @@ class ChatSearchUIView: UIView {
     }
     
     @objc private func upBtnTapped() {
-        upPublisher.send()
+        onPreviousTapped?()
     }
     
     @objc private func downBtnTapped() {
-        downPublisher.send()
+        onNextTapped?()
     }
     
-    func updateSearchResult(_ state: ChatRoomViewModel.SearchDisplayState) {
+    func updateSearchResult(_ state: SearchResultState) {
         if state.totalCount > 0 {
             messageCountLabel.text = "\(state.displayIndex)/\(state.totalCount)"
             upBtn.isEnabled = state.canMoveToPrevious

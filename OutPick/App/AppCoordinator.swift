@@ -21,6 +21,7 @@ final class AppCoordinator {
     private var chatContainer: ChatContainer?
     private let joinedRoomsStore = JoinedRoomsStore()
     private let brandAdminSessionStore = BrandAdminSessionStore()
+    private let currentUserProvider: any CurrentUserProviding
     
     private var profileCoordinator: ProfileCoordinator?
 
@@ -33,11 +34,13 @@ final class AppCoordinator {
     init(
         window: UIWindow,
         lookbookProvider: LookbookRepositoryProvider = .shared,
-        userProfileRepository: UserProfileRepositoryProtocol
+        userProfileRepository: UserProfileRepositoryProtocol,
+        currentUserProvider: any CurrentUserProviding = LoginManagerCurrentUserProvider()
     ) {
         self.window = window
         self.lookbookProvider = lookbookProvider
         self.userProfileRepository = userProfileRepository
+        self.currentUserProvider = currentUserProvider
         self.window.backgroundColor = OutPickTheme.ColorToken.backgroundBase
         Self.activeCoordinator = self
     }
@@ -261,7 +264,8 @@ final class AppCoordinator {
 
         let created = LookbookContainer(
             provider: lookbookProvider,
-            brandAdminSessionStore: brandAdminSessionStore
+            brandAdminSessionStore: brandAdminSessionStore,
+            currentUserProvider: currentUserProvider
         )
         self.lookbookContainer = created
         return created
@@ -340,7 +344,8 @@ final class AppCoordinator {
             let fixtureProvider = LookbookUITestFixtureRepositoryProviderFactory.makeProvider()
             lookbookContainer = LookbookContainer(
                 provider: fixtureProvider,
-                brandAdminSessionStore: brandAdminSessionStore
+                brandAdminSessionStore: brandAdminSessionStore,
+                currentUserProvider: currentUserProvider
             )
             brandAdminSessionStore.applyUITestWritableBrands([
                 LookbookUITestFixtureRepositoryProviderFactory.brandID

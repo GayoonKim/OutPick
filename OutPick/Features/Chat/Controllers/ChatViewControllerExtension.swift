@@ -114,7 +114,7 @@ extension ChatViewController: PHPickerViewControllerDelegate {
                 for result in resultsForVideos {
                     do {
                         // 1) 비디오 개별 변환 (한 메시지 = 한 동영상)
-                        let prepared = try await DefaultMediaProcessingService.shared.prepareVideo(result, preset: .standard720)
+                        let prepared = try await self.mediaProcessor.prepareVideo(result, preset: .standard720)
                         
                         // 2) 방 식별 후 pending thumbnail을 먼저 표시하고 업로드+브로드캐스트
                         guard let roomID = self.room?.ID,
@@ -205,7 +205,7 @@ extension ChatViewController: PHPickerViewControllerDelegate {
                         try Task.checkCancellation()
                         
                         // 1) PHPickerResult 배열 -> [PreparedImage] -> [ImagePair] (썸네일 Data + 원본 파일URL + 메타)
-                        let prepared = try await DefaultMediaProcessingService.shared.prepareImages(chunk)
+                        let prepared = try await self.mediaProcessor.prepareImages(chunk)
                         let pairs = self.toImagePairs(prepared)
                         
                         // 2) 메시지/폴더 경로 식별자 준비

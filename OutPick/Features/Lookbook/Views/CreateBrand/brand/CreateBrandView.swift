@@ -18,14 +18,17 @@ struct CreateBrandView: View {
     @State private var isGuideVisible: Bool = false
     @State private var didStartEntranceAnimation: Bool = false
     @State private var entranceTask: Task<Void, Never>?
+    private let mediaProcessor: MediaProcessingServiceProtocol
     let onCompleted: (CreateBrandViewModel.CreatedBrand) -> Void
 
     /// RepositoryProvider 기반으로만 의존성을 주입합니다.
     /// - Note: 화면/상위 조립 계층(AppContainer 등)에서 provider를 내려주는 구조를 유지합니다.
     init(
         provider: LookbookRepositoryProvider = .shared,
+        mediaProcessor: MediaProcessingServiceProtocol = DefaultMediaProcessingService(),
         onCompleted: @escaping (CreateBrandViewModel.CreatedBrand) -> Void = { _ in }
     ) {
+        self.mediaProcessor = mediaProcessor
         _viewModel = StateObject(
             wrappedValue: CreateBrandViewModel(
                 brandStore: provider.brandStore,
@@ -52,7 +55,7 @@ struct CreateBrandView: View {
             )
         }
         .sheet(isPresented: $isImagePickerPresented) {
-            BrandLogoPicker { picked in
+            BrandLogoPicker(mediaProcessor: mediaProcessor) { picked in
                 viewModel.setPickedLogo(
                     thumbImage: picked.thumbImage,
                     thumbData: picked.thumbData,
@@ -315,6 +318,7 @@ private struct BrandLogoPickResult {
 
 private struct BrandLogoPicker: UIViewControllerRepresentable {
 
+    let mediaProcessor: MediaProcessingServiceProtocol
     let onPicked: (BrandLogoPickResult) -> Void
     let onFailed: (Error) -> Void
 
@@ -331,18 +335,25 @@ private struct BrandLogoPicker: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: PHPickerViewController, context: Context) {}
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onPicked: onPicked, onFailed: onFailed)
+        Coordinator(
+            mediaProcessor: mediaProcessor,
+            onPicked: onPicked,
+            onFailed: onFailed
+        )
     }
 
     final class Coordinator: NSObject, PHPickerViewControllerDelegate {
 
+        let mediaProcessor: MediaProcessingServiceProtocol
         let onPicked: (BrandLogoPickResult) -> Void
         let onFailed: (Error) -> Void
 
         init(
+            mediaProcessor: MediaProcessingServiceProtocol,
             onPicked: @escaping (BrandLogoPickResult) -> Void,
             onFailed: @escaping (Error) -> Void
         ) {
+            self.mediaProcessor = mediaProcessor
             self.onPicked = onPicked
             self.onFailed = onFailed
         }
@@ -354,7 +365,7 @@ private struct BrandLogoPicker: UIViewControllerRepresentable {
 
             Task {
                 do {
-                    let pair = try await DefaultMediaProcessingService.shared.makePair(from: first, index: 0)
+                    let pair = try await mediaProcessor.makePair(from: first, index: 0)
                     defer { try? FileManager.default.removeItem(at: pair.originalFileURL) }
 
                     guard let thumbImage = UIImage(data: pair.thumbData) else {

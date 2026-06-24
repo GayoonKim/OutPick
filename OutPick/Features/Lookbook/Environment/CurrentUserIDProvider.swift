@@ -11,20 +11,20 @@ protocol CurrentUserIDProviding {
     var currentUserID: UserID? { get }
 }
 
-struct LoginManagerCurrentUserIDProvider: CurrentUserIDProviding {
-    private let loginManager: LoginManager
+struct LookbookCurrentUserIDProvider: CurrentUserIDProviding {
+    private let currentUserProvider: any CurrentUserProviding
 
-    init(loginManager: LoginManager = .shared) {
-        self.loginManager = loginManager
+    init(currentUserProvider: any CurrentUserProviding = LoginManagerCurrentUserProvider()) {
+        self.currentUserProvider = currentUserProvider
     }
 
     var currentUserID: UserID? {
-        let userDocumentID = normalized(loginManager.getUserDocumentID)
+        let userDocumentID = normalized(currentUserProvider.documentID)
         if let userDocumentID {
             return UserID(value: userDocumentID)
         }
 
-        return normalized(loginManager.getAuthIdentityKey)
+        return normalized(currentUserProvider.authIdentityKey)
             .map { UserID(value: $0) }
     }
 
@@ -33,3 +33,5 @@ struct LoginManagerCurrentUserIDProvider: CurrentUserIDProviding {
         return normalizedValue.isEmpty ? nil : normalizedValue
     }
 }
+
+typealias LoginManagerCurrentUserIDProvider = LookbookCurrentUserIDProvider

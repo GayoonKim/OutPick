@@ -148,14 +148,19 @@ final class RoomEditViewController: UIViewController, PHPickerViewControllerDele
     var onRoomEdited: (@MainActor (ChatRoom) async -> Void)?
 
     private let viewModel: RoomEditViewModel
+    private let mediaProcessor: MediaProcessingServiceProtocol
     private var cancellables = Set<AnyCancellable>()
     private var convertImageTask: Task<Void, Never>?
     private var descHeightConstraint: NSLayoutConstraint?
     private var imageActionSheet: BottomActionSheetView?
     private let descMaxHeight: CGFloat = 220
 
-    init(viewModel: RoomEditViewModel) {
+    init(
+        viewModel: RoomEditViewModel,
+        mediaProcessor: MediaProcessingServiceProtocol
+    ) {
         self.viewModel = viewModel
+        self.mediaProcessor = mediaProcessor
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -355,7 +360,7 @@ final class RoomEditViewController: UIViewController, PHPickerViewControllerDele
         convertImageTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let pairs = try await DefaultMediaProcessingService.shared.preparePairs(results)
+                let pairs = try await mediaProcessor.preparePairs(results)
                 guard !Task.isCancelled, let pair = pairs.first else { return }
                 self.viewModel.selectImage(pair)
             } catch {
