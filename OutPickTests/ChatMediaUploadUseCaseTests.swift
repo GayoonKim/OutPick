@@ -94,6 +94,9 @@ struct ChatMediaUploadUseCaseTests {
             clientMessageID: "message-1"
         )
 
+        #expect(sendingRepository.preflightCalls == [
+            .init(roomID: "room-1", messageID: "message-1", kind: "images")
+        ])
         #expect(imageRepository.uploadCalls.count == 1)
         #expect(imageRepository.uploadCalls.first?.roomID == "room-1")
         #expect(imageRepository.uploadCalls.first?.messageID == "message-1")
@@ -103,6 +106,32 @@ struct ChatMediaUploadUseCaseTests {
         #expect(sendingRepository.imageCalls.first?.attachments == [attachment])
         #expect(sendingRepository.imageCalls.first?.senderAvatarPath == "avatars/me.jpg")
         #expect(sendingRepository.imageCalls.first?.clientMessageID == "message-1")
+    }
+
+    @Test func uploadPendingImagesDoesNotUploadWhenPreflightFails() async throws {
+        let imageRepository = FirebaseImageStorageRepositoryFake()
+        let sendingRepository = ChatMediaMessageSendingRepositorySpy()
+        sendingRepository.preflightError = TestError.unimplemented
+        let useCase = makeUseCase(
+            imageRepository: imageRepository,
+            sendingRepository: sendingRepository
+        )
+        let pair = try makeImagePair(index: 0, sha256: "image-sha")
+
+        do {
+            _ = try await useCase.uploadPendingImages(
+                pairs: [pair],
+                roomID: "room-1",
+                messageID: "message-1",
+                onProgress: nil
+            )
+            Issue.record("preflight 실패 시 업로드가 성공하면 안 됩니다.")
+        } catch {
+            #expect(imageRepository.uploadCalls.isEmpty)
+            #expect(FileManager.default.fileExists(atPath: pair.originalFileURL.path))
+        }
+
+        try? FileManager.default.removeItem(at: pair.originalFileURL)
     }
 
     @Test func cacheFailedImageThumbnailsStoresEveryPairThumb() async throws {
@@ -137,6 +166,9 @@ struct ChatMediaUploadUseCaseTests {
         )
         try await useCase.sendUploadedVideo(roomID: "room-1", payload: payload)
 
+        #expect(sendingRepository.preflightCalls == [
+            .init(roomID: "room-1", messageID: "video-1", kind: "video")
+        ])
         #expect(payload.messageID == "video-1")
         #expect(payload.storagePath == "rooms/room-1/messages/video-1/video/video.mp4")
         #expect(payload.thumbnailPath == "rooms/room-1/messages/video-1/video/thumb.jpg")
@@ -148,6 +180,32 @@ struct ChatMediaUploadUseCaseTests {
         #expect(sendingRepository.videoCalls.count == 1)
         #expect(sendingRepository.videoCalls.first?.payload.messageID == "video-1")
         #expect(sendingRepository.videoCalls.first?.senderAvatarPath == "avatars/me.jpg")
+    }
+
+    @Test func uploadVideoDoesNotUploadWhenPreflightFails() async throws {
+        let videoRepository = FirebaseVideoStorageRepositoryFake()
+        let sendingRepository = ChatMediaMessageSendingRepositorySpy()
+        sendingRepository.preflightError = TestError.unimplemented
+        let useCase = makeUseCase(
+            videoRepository: videoRepository,
+            sendingRepository: sendingRepository
+        )
+        let prepared = try makePreparedVideo()
+
+        do {
+            _ = try await useCase.uploadVideo(
+                roomID: "room-1",
+                messageID: "video-1",
+                prepared: prepared,
+                onProgress: { _ in }
+            )
+            Issue.record("preflight 실패 시 비디오 업로드가 성공하면 안 됩니다.")
+        } catch {
+            #expect(videoRepository.fileUploadCalls.isEmpty)
+            #expect(videoRepository.dataUploadCalls.isEmpty)
+        }
+
+        try? FileManager.default.removeItem(at: prepared.compressedFileURL)
     }
 
     @Test func sendFailedVideoDelegatesLocalPreparedVideoToRepository() throws {
@@ -360,6 +418,12 @@ private final class FirebaseVideoStorageRepositoryFake: FirebaseVideoStorageRepo
 }
 
 private final class ChatMediaMessageSendingRepositorySpy: ChatMediaMessageSendingRepositoryProtocol {
+    struct PreflightCall: Equatable {
+        let roomID: String
+        let messageID: String
+        let kind: String
+    }
+
     struct ImageCall {
         let room: ChatRoom
         let attachments: [ChatAttachment]
@@ -388,8 +452,21 @@ private final class ChatMediaMessageSendingRepositorySpy: ChatMediaMessageSendin
     private(set) var imageCalls: [ImageCall] = []
     private(set) var videoCalls: [VideoCall] = []
     private(set) var failedVideoCalls: [FailedVideoCall] = []
+    private(set) var preflightCalls: [PreflightCall] = []
+    var preflightError: Error?
 
     var isSocketConnected = true
+
+    func preflightMediaUpload(
+        roomID: String,
+        messageID: String,
+        kind: String
+    ) async throws {
+        preflightCalls.append(PreflightCall(roomID: roomID, messageID: messageID, kind: kind))
+        if let preflightError {
+            throw preflightError
+        }
+    }
 
     func sendImages(
         _ room: ChatRoom,

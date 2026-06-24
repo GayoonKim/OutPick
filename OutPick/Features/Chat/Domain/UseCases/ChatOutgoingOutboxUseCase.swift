@@ -28,7 +28,7 @@ protocol ChatOutgoingOutboxUseCaseProtocol {
 }
 
 final class ChatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol {
-    private let grdbManager: GRDBManager
+    private let persistence: ChatOutgoingOutboxPersisting
     private let imageStorageRepository: FirebaseImageStorageRepositoryProtocol
     private let videoStorageRepository: FirebaseVideoStorageRepositoryProtocol
     private let fileManager: FileManager
@@ -39,7 +39,7 @@ final class ChatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol {
     private let decoder = JSONDecoder()
 
     init(
-        grdbManager: GRDBManager = .shared,
+        persistence: ChatOutgoingOutboxPersisting = GRDBManager.shared,
         imageStorageRepository: FirebaseImageStorageRepositoryProtocol,
         videoStorageRepository: FirebaseVideoStorageRepositoryProtocol,
         fileManager: FileManager = .default,
@@ -50,7 +50,7 @@ final class ChatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol {
                 .appendingPathComponent("ChatOutgoingOutbox", isDirectory: true)
         }
     ) {
-        self.grdbManager = grdbManager
+        self.persistence = persistence
         self.imageStorageRepository = imageStorageRepository
         self.videoStorageRepository = videoStorageRepository
         self.fileManager = fileManager
@@ -142,14 +142,14 @@ final class ChatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol {
     }
 
     func markImageUploadCompleted(messageID: String, attachments: [Attachment]) async {
-        guard var record = try? await grdbManager.fetchOutgoingOutboxRecord(messageID: messageID) else { return }
+        guard var record = try? await persistence.fetchOutgoingOutboxRecord(messageID: messageID) else { return }
         record.stage = .uploaded
         record.updatedAt = dateProvider()
         record.uploadedPayloadJSON = encodeToString(ChatOutgoingOutboxUploadedImagesPayload(attachments: attachments))
         record.lastError = nil
-        try? await grdbManager.saveOutgoingOutboxRecord(record)
+        try? await persistence.saveOutgoingOutboxRecord(record)
 
-        if let failed = try? await grdbManager.fetchMessage(id: messageID, inRoom: record.roomID) {
+        if let failed = try? await persistence.fetchMessage(id: messageID, inRoom: record.roomID) {
             var updated = failed
             updated.isFailed = true
             updated.attachments = attachments
@@ -158,14 +158,14 @@ final class ChatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol {
     }
 
     func markVideoUploadCompleted(messageID: String, payload: VideoMetaPayload) async {
-        guard var record = try? await grdbManager.fetchOutgoingOutboxRecord(messageID: messageID) else { return }
+        guard var record = try? await persistence.fetchOutgoingOutboxRecord(messageID: messageID) else { return }
         record.stage = .uploaded
         record.updatedAt = dateProvider()
         record.uploadedPayloadJSON = encodeToString(payload)
         record.lastError = nil
-        try? await grdbManager.saveOutgoingOutboxRecord(record)
+        try? await persistence.saveOutgoingOutboxRecord(record)
 
-        if let failed = try? await grdbManager.fetchMessage(id: messageID, inRoom: record.roomID) {
+        if let failed = try? await persistence.fetchMessage(id: messageID, inRoom: record.roomID) {
             var updated = failed
             updated.isFailed = true
             updated.attachments = [makeVideoAttachment(from: payload)]
@@ -174,7 +174,7 @@ final class ChatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol {
     }
 
     func markFailed(message: ChatMessage, error: Error?) async {
-        guard var record = try? await grdbManager.fetchOutgoingOutboxRecord(messageID: message.ID) else {
+        guard var record = try? await persistence.fetchOutgoingOutboxRecord(messageID: message.ID) else {
             var failedMessage = message
             failedMessage.isFailed = true
             await stageTextMessage(failedMessage)
@@ -188,11 +188,11 @@ final class ChatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol {
         record.stage = record.uploadedPayloadJSON == nil ? .failed : .uploaded
         record.updatedAt = dateProvider()
         record.lastError = error?.localizedDescription
-        try? await grdbManager.saveOutgoingOutboxRecord(record)
+        try? await persistence.saveOutgoingOutboxRecord(record)
     }
 
     func retryPayload(for message: ChatMessage, room: ChatRoom) async -> ChatOutgoingOutboxRetryPayload? {
-        guard let record = try? await grdbManager.fetchOutgoingOutboxRecord(messageID: message.ID) else {
+        guard let record = try? await persistence.fetchOutgoingOutboxRecord(messageID: message.ID) else {
             if message.isFailed, message.attachments.isEmpty {
                 return .text(message)
             }
@@ -225,15 +225,15 @@ final class ChatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol {
 
     func completeServerConfirmedMessage(_ message: ChatMessage) async {
         guard !message.isFailed else { return }
-        guard (try? await grdbManager.fetchOutgoingOutboxRecord(messageID: message.ID)) != nil else { return }
-        try? await grdbManager.deleteOutgoingOutboxRecord(messageID: message.ID)
+        guard (try? await persistence.fetchOutgoingOutboxRecord(messageID: message.ID)) != nil else { return }
+        try? await persistence.deleteOutgoingOutboxRecord(messageID: message.ID)
         deleteLocalOutboxFiles(roomID: message.roomID, messageID: message.ID)
     }
 
     func deleteLocalFailedMessage(_ message: ChatMessage) async {
-        let record = try? await grdbManager.fetchOutgoingOutboxRecord(messageID: message.ID)
-        try? await grdbManager.hardDeleteMessage(id: message.ID, inRoom: message.roomID)
-        try? await grdbManager.deleteOutgoingOutboxRecord(messageID: message.ID)
+        let record = try? await persistence.fetchOutgoingOutboxRecord(messageID: message.ID)
+        try? await persistence.hardDeleteMessage(id: message.ID, inRoom: message.roomID)
+        try? await persistence.deleteOutgoingOutboxRecord(messageID: message.ID)
         deleteLocalOutboxFiles(roomID: message.roomID, messageID: message.ID)
         deleteUploadedStorageFiles(message: message, record: record)
     }
@@ -248,7 +248,7 @@ final class ChatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol {
         error: String?
     ) async {
         let now = dateProvider()
-        let existing = try? await grdbManager.fetchOutgoingOutboxRecord(messageID: messageID)
+        let existing = try? await persistence.fetchOutgoingOutboxRecord(messageID: messageID)
         let record = ChatOutgoingOutboxRecord(
             messageID: messageID,
             roomID: roomID,
@@ -260,11 +260,11 @@ final class ChatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol {
             uploadedPayloadJSON: uploadedPayloadJSON ?? existing?.uploadedPayloadJSON,
             lastError: error
         )
-        try? await grdbManager.saveOutgoingOutboxRecord(record)
+        try? await persistence.saveOutgoingOutboxRecord(record)
     }
 
     private func persistFailedMessage(_ message: ChatMessage) async {
-        try? await grdbManager.saveChatMessages([message])
+        try? await persistence.saveChatMessages([message])
     }
 
     private func preserveImagePayload(

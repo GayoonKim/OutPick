@@ -70,7 +70,7 @@ struct VideoIndexMeta: FetchableRecord, Decodable {
     let sentAt: Date
 }
 
-final class GRDBManager {
+final class GRDBManager: ChatOutgoingOutboxPersisting {
     static let shared = GRDBManager()
     let dbPool: DatabasePool
     

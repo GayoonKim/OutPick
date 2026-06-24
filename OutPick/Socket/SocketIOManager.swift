@@ -811,6 +811,44 @@ class SocketIOManager {
         Self.makeSocketError(code: code, message: message)
     }
 
+    func preflightMediaUploadAwaitingAck(
+        roomID: String,
+        messageID: String,
+        kind: String,
+        ackTimeout: Double = 5.0
+    ) async throws {
+        guard socket.status == .connected else {
+            throw makeSocketError(code: -1009, message: "소켓이 연결되어 있지 않습니다.")
+        }
+
+        let body: [String: Any] = [
+            "roomID": roomID,
+            "messageID": messageID,
+            "kind": kind,
+            "senderID": LoginManager.shared.getUserEmail
+        ]
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            socket.emitWithAck("chat:mediaPreflight", body).timingOut(after: ackTimeout) { [weak self] items in
+                guard let self else {
+                    continuation.resume(throwing: Self.makeSocketError(code: -1, message: "SocketIOManager가 해제되었습니다."))
+                    return
+                }
+
+                if self.isEmitAckSuccess(items) {
+                    continuation.resume()
+                } else {
+                    continuation.resume(
+                        throwing: Self.makeSocketError(
+                            code: -1,
+                            message: "미디어 업로드 사전 확인 실패 또는 timeout: \(items)"
+                        )
+                    )
+                }
+            }
+        }
+    }
+
     func sendImagesAwaitingAck(
         _ room: ChatRoom,
         _ attachments: [[String: Any]],

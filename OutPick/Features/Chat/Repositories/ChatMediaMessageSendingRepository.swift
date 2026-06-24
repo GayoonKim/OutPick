@@ -10,6 +10,12 @@ import Foundation
 protocol ChatMediaMessageSendingRepositoryProtocol {
     var isSocketConnected: Bool { get }
 
+    func preflightMediaUpload(
+        roomID: String,
+        messageID: String,
+        kind: String
+    ) async throws
+
     func sendImages(
         _ room: ChatRoom,
         attachments: [Attachment],
@@ -38,6 +44,13 @@ protocol ChatMediaMessageSendingRepositoryProtocol {
 
 protocol ChatMediaSocketSending {
     var isSocketConnected: Bool { get }
+
+    func preflightMediaUploadAwaitingAck(
+        roomID: String,
+        messageID: String,
+        kind: String,
+        ackTimeout: Double
+    ) async throws
 
     func sendImagesAwaitingAck(
         _ room: ChatRoom,
@@ -76,6 +89,19 @@ final class SocketChatMediaMessageSendingRepository: ChatMediaMessageSendingRepo
 
     var isSocketConnected: Bool {
         socketManager.isSocketConnected
+    }
+
+    func preflightMediaUpload(
+        roomID: String,
+        messageID: String,
+        kind: String
+    ) async throws {
+        try await socketManager.preflightMediaUploadAwaitingAck(
+            roomID: roomID,
+            messageID: messageID,
+            kind: kind,
+            ackTimeout: 5.0
+        )
     }
 
     func sendImages(

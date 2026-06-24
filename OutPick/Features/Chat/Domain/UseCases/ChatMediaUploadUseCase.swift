@@ -160,6 +160,11 @@ final class ChatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol {
         messageID: String,
         onProgress: ((Double) -> Void)?
     ) async throws -> [Attachment] {
+        try await sendingRepository.preflightMediaUpload(
+            roomID: roomID,
+            messageID: messageID,
+            kind: "images"
+        )
         let attachments = try await imageStorageRepository.uploadPairsToRoomMessage(
             pairs,
             roomID: roomID,
@@ -218,6 +223,11 @@ final class ChatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol {
         prepared: PreparedVideo,
         onProgress: @escaping (Double) -> Void
     ) async throws -> VideoMetaPayload {
+        try await sendingRepository.preflightMediaUpload(
+            roomID: roomID,
+            messageID: messageID,
+            kind: "video"
+        )
         let videoPaths = ChatStoragePath.roomMessageVideo(roomID: roomID, messageID: messageID)
 
         if !prepared.thumbnailData.isEmpty {
