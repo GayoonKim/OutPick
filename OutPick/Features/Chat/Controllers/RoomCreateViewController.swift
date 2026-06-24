@@ -59,7 +59,7 @@ final class RoomCreateViewController: UIViewController, ChatModalAnimatable, UII
     let maxHeight: CGFloat = 300
     
     private var isDefaultRoomImage = true
-    private var imageData: DefaultMediaProcessingService.ImagePair?
+    private var imageData: ProcessedImage?
     private let roomCreateViewModel: RoomCreateViewModel
     private let mediaProcessor: MediaProcessingServiceProtocol
     private let makeCreatedRoomViewController: (ChatRoom) -> ChatViewController?
@@ -210,7 +210,7 @@ final class RoomCreateViewController: UIViewController, ChatModalAnimatable, UII
         roomImageView.image = UIImage(named: "Default_Profile")
         self.imageData = nil
         isDefaultRoomImage = true
-        roomCreateViewModel.updateSelectedImagePair(nil)
+        roomCreateViewModel.updateSelectedProcessedImage(nil)
         sender.isHidden = true
     }
     
@@ -328,7 +328,7 @@ extension RoomCreateViewController: PHPickerViewControllerDelegate {
             guard let pair = p.first else { return }
             self.cleanupTempImageIfNeeded(self.imageData)
             self.imageData = pair
-            self.roomCreateViewModel.updateSelectedImagePair(pair)
+            self.roomCreateViewModel.updateSelectedProcessedImage(pair)
             
             self.roomImageView.image = UIImage(data: pair.thumbData)
             self.isDefaultRoomImage = false
@@ -339,7 +339,7 @@ extension RoomCreateViewController: PHPickerViewControllerDelegate {
 }
 
 private extension RoomCreateViewController {
-    func cleanupTempImageIfNeeded(_ pair: DefaultMediaProcessingService.ImagePair?) {
+    func cleanupTempImageIfNeeded(_ pair: ProcessedImage?) {
         guard let pair else { return }
         try? FileManager.default.removeItem(at: pair.originalFileURL)
     }
@@ -363,7 +363,7 @@ private extension RoomCreateViewController {
 
         roomCreateViewModel.updateRoomName(roomNameTextView.text ?? "")
         roomCreateViewModel.updateRoomDescription(roomDescriptionTextView.text ?? "")
-        roomCreateViewModel.updateSelectedImagePair(imageData)
+        roomCreateViewModel.updateSelectedProcessedImage(imageData)
     }
 
     func renderViewModelState(_ state: RoomCreateViewModel.State) {

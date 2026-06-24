@@ -16,5 +16,5 @@ struct PreparedVideo {
     let height: Int
     let sizeBytes: Int64
     let approxBitrateMbps: Double
-    let preset: DefaultMediaProcessingService.VideoUploadPreset
+    let preset: VideoUploadPreset
 }

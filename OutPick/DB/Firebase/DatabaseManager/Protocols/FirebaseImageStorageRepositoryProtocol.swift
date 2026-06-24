@@ -19,7 +19,7 @@ protocol FirebaseImageStorageRepositoryProtocol {
     ) async throws -> (avatarThumbPath: String, avatarPath: String)
 
     func uploadPairsToRoomMessage(
-        _ pairs: [DefaultMediaProcessingService.ImagePair],
+        _ pairs: [ProcessedImage],
         roomID: String,
         messageID: String,
         cacheTTLThumbDays: Int,

@@ -1914,7 +1914,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         room: ChatRoom,
         roomID: String,
         messageID: String,
-        pairs: [DefaultMediaProcessingService.ImagePair]
+        pairs: [ProcessedImage]
     ) -> Bool {
         guard let pendingMessage = mediaUploadUseCase.makePendingImageMessage(
             roomID: roomID,
@@ -1966,7 +1966,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         messageWindowStore.message(for: messageID)
     }
 
-    func stageOutgoingImageOutbox(message: ChatMessage, pairs: [DefaultMediaProcessingService.ImagePair]) async {
+    func stageOutgoingImageOutbox(message: ChatMessage, pairs: [ProcessedImage]) async {
         await outgoingOutboxUseCase.stageImageMessage(message, pairs: pairs)
     }
 
@@ -2031,7 +2031,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
 
     @MainActor
-    func schedulePendingImageUpload(room: ChatRoom, roomID: String, messageID: String, pairs: [DefaultMediaProcessingService.ImagePair]) {
+    func schedulePendingImageUpload(room: ChatRoom, roomID: String, messageID: String, pairs: [ProcessedImage]) {
         let task = Task { [weak self] in
             guard let self else { return }
             await self.uploadPendingImageMessage(room: room, roomID: roomID, messageID: messageID, pairs: pairs)
@@ -2120,7 +2120,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         setPendingVideoUploadState(.failed, for: messageID)
     }
 
-    func cleanupPendingImageOriginalFiles(_ pairs: [DefaultMediaProcessingService.ImagePair]) {
+    func cleanupPendingImageOriginalFiles(_ pairs: [ProcessedImage]) {
         mediaUploadUseCase.cleanupImageOriginalFiles(pairs)
     }
 

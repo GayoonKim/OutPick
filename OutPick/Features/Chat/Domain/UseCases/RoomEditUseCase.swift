@@ -12,7 +12,7 @@ protocol RoomEditUseCaseProtocol {
     func loadHeaderImage(for room: ChatRoom) async throws -> UIImage
     func execute(
         room: ChatRoom,
-        imagePair: DefaultMediaProcessingService.ImagePair?,
+        imagePair: ProcessedImage?,
         isImageRemoved: Bool,
         roomName: String,
         roomDescription: String
@@ -51,7 +51,7 @@ final class RoomEditUseCase: RoomEditUseCaseProtocol {
 
     func execute(
         room: ChatRoom,
-        imagePair: DefaultMediaProcessingService.ImagePair?,
+        imagePair: ProcessedImage?,
         isImageRemoved: Bool,
         roomName: String,
         roomDescription: String
@@ -113,7 +113,7 @@ final class RoomEditUseCase: RoomEditUseCaseProtocol {
     }
 
     private func uploadRoomImage(
-        pair: DefaultMediaProcessingService.ImagePair,
+        pair: ProcessedImage,
         roomID: String
     ) async throws -> UploadedRoomImage {
         let (thumbPath, originalPath) = try await imageStorageRepository.uploadImage(
@@ -152,7 +152,7 @@ final class RoomEditUseCase: RoomEditUseCaseProtocol {
         }
     }
 
-    private func cleanupTemporaryFileIfNeeded(for imagePair: DefaultMediaProcessingService.ImagePair?) {
+    private func cleanupTemporaryFileIfNeeded(for imagePair: ProcessedImage?) {
         guard let imagePair else { return }
         try? FileManager.default.removeItem(at: imagePair.originalFileURL)
     }

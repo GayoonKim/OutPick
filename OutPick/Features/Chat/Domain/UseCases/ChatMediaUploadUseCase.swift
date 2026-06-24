@@ -24,7 +24,7 @@ protocol ChatMediaUploadUseCaseProtocol {
     func makePendingImageMessage(
         roomID: String,
         messageID: String,
-        pairs: [DefaultMediaProcessingService.ImagePair]
+        pairs: [ProcessedImage]
     ) -> ChatMessage?
 
     func makePendingVideoMessage(
@@ -34,7 +34,7 @@ protocol ChatMediaUploadUseCaseProtocol {
     ) -> ChatMessage?
 
     func uploadPendingImages(
-        pairs: [DefaultMediaProcessingService.ImagePair],
+        pairs: [ProcessedImage],
         roomID: String,
         messageID: String,
         onProgress: ((Double) -> Void)?
@@ -46,8 +46,8 @@ protocol ChatMediaUploadUseCaseProtocol {
         clientMessageID: String
     ) async throws
 
-    func cacheFailedImageThumbnails(_ pairs: [DefaultMediaProcessingService.ImagePair]) async
-    func cleanupImageOriginalFiles(_ pairs: [DefaultMediaProcessingService.ImagePair])
+    func cacheFailedImageThumbnails(_ pairs: [ProcessedImage]) async
+    func cleanupImageOriginalFiles(_ pairs: [ProcessedImage])
     func cleanupReplacedLocalPreviewFiles(previous: ChatMessage, next: ChatMessage)
 
     func uploadVideo(
@@ -106,7 +106,7 @@ final class ChatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol {
     func makePendingImageMessage(
         roomID: String,
         messageID: String,
-        pairs: [DefaultMediaProcessingService.ImagePair]
+        pairs: [ProcessedImage]
     ) -> ChatMessage? {
         guard !roomID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
         let attachments = makePendingImagePreviewAttachments(messageID: messageID, pairs: pairs)
@@ -155,7 +155,7 @@ final class ChatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol {
     }
 
     func uploadPendingImages(
-        pairs: [DefaultMediaProcessingService.ImagePair],
+        pairs: [ProcessedImage],
         roomID: String,
         messageID: String,
         onProgress: ((Double) -> Void)?
@@ -191,13 +191,13 @@ final class ChatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol {
         )
     }
 
-    func cacheFailedImageThumbnails(_ pairs: [DefaultMediaProcessingService.ImagePair]) async {
+    func cacheFailedImageThumbnails(_ pairs: [ProcessedImage]) async {
         for pair in pairs {
             await attachmentImageLoader.storeOutgoingPreview(data: pair.thumbData, forKey: pair.sha256)
         }
     }
 
-    func cleanupImageOriginalFiles(_ pairs: [DefaultMediaProcessingService.ImagePair]) {
+    func cleanupImageOriginalFiles(_ pairs: [ProcessedImage]) {
         for pair in pairs {
             try? fileManager.removeItem(at: pair.originalFileURL)
         }
@@ -289,7 +289,7 @@ final class ChatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol {
 
     private func makePendingImagePreviewAttachments(
         messageID: String,
-        pairs: [DefaultMediaProcessingService.ImagePair]
+        pairs: [ProcessedImage]
     ) -> [Attachment] {
         guard let cachesDir = previewDirectoryProvider() else { return [] }
         let baseDir = cachesDir
@@ -360,7 +360,7 @@ final class ChatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol {
     }
 }
 
-extension DefaultMediaProcessingService.VideoUploadPreset {
+extension VideoUploadPreset {
     var chatPayloadCode: String {
         switch self {
         case .standard720: return "standard720"

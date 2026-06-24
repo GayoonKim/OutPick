@@ -75,21 +75,6 @@ extension ChatViewController: UIGestureRecognizerDelegate {
 
 extension ChatViewController: PHPickerViewControllerDelegate {
     private enum PickerConst { static let maxImagesPerMessage = 30 }
-
-    /// PreparedImage -> 업로드 API 호환용 ImagePair로 변환
-    private func toImagePairs(_ prepared: [PreparedImage]) -> [DefaultMediaProcessingService.ImagePair] {
-        prepared.map {
-            DefaultMediaProcessingService.ImagePair(
-                index: $0.index,
-                originalFileURL: $0.originalFileURL,
-                thumbData: $0.thumbData,
-                originalWidth: $0.originalWidth,
-                originalHeight: $0.originalHeight,
-                bytesOriginal: $0.bytesOriginal,
-                sha256: $0.sha256
-            )
-        }
-    }
     
     func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
         picker.dismiss(animated: true)
@@ -204,9 +189,8 @@ extension ChatViewController: PHPickerViewControllerDelegate {
                     for chunk in chunks {
                         try Task.checkCancellation()
                         
-                        // 1) PHPickerResult 배열 -> [PreparedImage] -> [ImagePair] (썸네일 Data + 원본 파일URL + 메타)
-                        let prepared = try await self.mediaProcessor.prepareImages(chunk)
-                        let pairs = self.toImagePairs(prepared)
+                        // 1) PHPickerResult 배열 -> [ProcessedImage] (썸네일 Data + 원본 파일URL + 메타)
+                        let pairs = try await self.mediaProcessor.prepareImages(chunk)
                         
                         // 2) 메시지/폴더 경로 식별자 준비
                         guard let room = self.room else {
@@ -268,7 +252,7 @@ extension ChatViewController {
         room: ChatRoom,
         roomID: String,
         messageID: String,
-        pairs: [DefaultMediaProcessingService.ImagePair]
+        pairs: [ProcessedImage]
     ) async {
         do {
             guard mediaUploadUseCase.isSocketConnected else {

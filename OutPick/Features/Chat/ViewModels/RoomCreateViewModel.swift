@@ -26,7 +26,7 @@ final class RoomCreateViewModel {
     }
 
     private let createRoomUseCase: CreateRoomUseCaseProtocol
-    private var selectedImagePair: DefaultMediaProcessingService.ImagePair?
+    private var selectedProcessedImage: ProcessedImage?
     private var submitTask: Task<Void, Never>?
     private let eventSubject = PassthroughSubject<Event, Never>()
 
@@ -53,8 +53,8 @@ final class RoomCreateViewModel {
         recomputeCreateEnabled()
     }
 
-    func updateSelectedImagePair(_ pair: DefaultMediaProcessingService.ImagePair?) {
-        selectedImagePair = pair
+    func updateSelectedProcessedImage(_ pair: ProcessedImage?) {
+        selectedProcessedImage = pair
     }
 
     func submit() {
@@ -71,7 +71,7 @@ final class RoomCreateViewModel {
         state.isSubmitting = true
         state.isCreateEnabled = false
 
-        let imagePair = selectedImagePair
+        let imagePair = selectedProcessedImage
         submitTask?.cancel()
         submitTask = Task { [weak self] in
             guard let self else { return }

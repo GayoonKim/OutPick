@@ -36,7 +36,7 @@ final class RoomEditViewModel {
 
     private let useCase: RoomEditUseCaseProtocol
     private let eventSubject = PassthroughSubject<Event, Never>()
-    private var selectedImagePair: DefaultMediaProcessingService.ImagePair?
+    private var selectedProcessedImage: ProcessedImage?
     private var isImageRemoved = false
     private var headerImageTask: Task<Void, Never>?
     private var submitTask: Task<Void, Never>?
@@ -55,7 +55,7 @@ final class RoomEditViewModel {
     }
 
     deinit {
-        Self.cleanupTemporaryFileIfNeeded(for: selectedImagePair)
+        Self.cleanupTemporaryFileIfNeeded(for: selectedProcessedImage)
         headerImageTask?.cancel()
         submitTask?.cancel()
     }
@@ -92,10 +92,10 @@ final class RoomEditViewModel {
         recomputeState()
     }
 
-    func selectImage(_ pair: DefaultMediaProcessingService.ImagePair) {
+    func selectImage(_ pair: ProcessedImage) {
         headerImageTask?.cancel()
-        Self.cleanupTemporaryFileIfNeeded(for: selectedImagePair)
-        selectedImagePair = pair
+        Self.cleanupTemporaryFileIfNeeded(for: selectedProcessedImage)
+        selectedProcessedImage = pair
         isImageRemoved = false
 
         if let previewImage = UIImage(data: pair.thumbData) {
@@ -107,8 +107,8 @@ final class RoomEditViewModel {
 
     func removeImage() {
         headerImageTask?.cancel()
-        Self.cleanupTemporaryFileIfNeeded(for: selectedImagePair)
-        selectedImagePair = nil
+        Self.cleanupTemporaryFileIfNeeded(for: selectedProcessedImage)
+        selectedProcessedImage = nil
 
         guard hasCustomImage else {
             isImageRemoved = false
@@ -137,7 +137,7 @@ final class RoomEditViewModel {
         state.isSubmitting = true
         state.isSubmitEnabled = false
 
-        let imagePair = selectedImagePair
+        let imagePair = selectedProcessedImage
         let isImageRemoved = isImageRemoved
 
         submitTask?.cancel()
@@ -173,7 +173,7 @@ final class RoomEditViewModel {
     }
 
     private var hasCustomImage: Bool {
-        if selectedImagePair != nil {
+        if selectedProcessedImage != nil {
             return true
         }
 
@@ -189,7 +189,7 @@ final class RoomEditViewModel {
         let hasValidName = !trimmedName.isEmpty
         let nameChanged = trimmedName != originalName
         let descriptionChanged = trimmedDescription != originalDescription
-        let imageChanged = selectedImagePair != nil || (isImageRemoved && Self.hasRemoteImage(in: room))
+        let imageChanged = selectedProcessedImage != nil || (isImageRemoved && Self.hasRemoteImage(in: room))
 
         state.isSubmitEnabled = !state.isSubmitting && hasValidName && (nameChanged || descriptionChanged || imageChanged)
     }
@@ -198,7 +198,7 @@ final class RoomEditViewModel {
         room.coverImagePath != nil
     }
 
-    nonisolated private static func cleanupTemporaryFileIfNeeded(for pair: DefaultMediaProcessingService.ImagePair?) {
+    nonisolated private static func cleanupTemporaryFileIfNeeded(for pair: ProcessedImage?) {
         guard let pair else { return }
         try? FileManager.default.removeItem(at: pair.originalFileURL)
     }

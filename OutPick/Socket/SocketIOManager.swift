@@ -873,10 +873,11 @@ class SocketIOManager {
             throw makeSocketError(code: -1009, message: "소켓이 연결되어 있지 않습니다.")
         }
 
-        let eventName = "send images"
+        let eventName = "chat:mediaFinalize"
         var body: [String: Any] = [
             "roomID": roomID,
             "messageID": resolvedClientMessageID,
+            "kind": "images",
             "type": "image",
             "msg": "",
             "attachments": attachments,
@@ -943,7 +944,8 @@ class SocketIOManager {
         }
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            socket.emitWithAck("chat:video", dict).timingOut(after: ackTimeout) { [weak self] items in
+            dict["kind"] = "video"
+            socket.emitWithAck("chat:mediaFinalize", dict).timingOut(after: ackTimeout) { [weak self] items in
                 guard let self else {
                     continuation.resume(throwing: Self.makeSocketError(code: -1, message: "SocketIOManager가 해제되었습니다."))
                     return
@@ -1030,135 +1032,15 @@ class SocketIOManager {
         }
     }
     
-    // MARK: - Emit (meta-only attachments)
-    /// 메타 전용 첨부(썸네일/원본 경로 등)를 소켓으로 전송
-    /// ChatViewController에서 attachments.map { $0.toDict() } 로 호출합니다.
-    func sendImages(_ room: ChatRoom,
-                    _ attachments: [[String: Any]],
-                    senderAvatarPath: String? = nil,
-                    clientMessageID: String? = nil) {
-        // 0) 가드
-        guard !attachments.isEmpty else { return }
-        let roomID = room.ID ?? ""
-        let senderID = LoginManager.shared.getUserEmail
-        let senderNickname = LoginManager.shared.currentUserProfile?.nickname ?? ""
-        let resolvedClientMessageID: String = {
-            if let clientMessageID, !clientMessageID.isEmpty {
-                return clientMessageID
-            }
-            return UUID().uuidString
-        }()
-        let now = Date()
-        let isoSentAt = Self.isoFormatter.string(from: now)
-        print(#function," attachments", attachments)
-        // 헬퍼: dict -> Attachment 모델 변환 (로컬 퍼블리시용)
-        func makeAttachment(from dict: [String: Any], fallbackIndex: Int) -> Attachment {
-            let index = dict["index"] as? Int ?? fallbackIndex
-            let pathThumb = (dict["pathThumb"] as? String) ?? ""
-            let pathOriginal = (dict["pathOriginal"] as? String) ?? ""
-            let width = (dict["w"] as? Int) ?? (dict["width"] as? Int) ?? 0
-            let height = (dict["h"] as? Int) ?? (dict["height"] as? Int) ?? 0
-            let bytesOriginal = (dict["bytesOriginal"] as? Int) ?? (dict["size"] as? Int) ?? 0
-            let hash = (dict["hash"] as? String) ?? UUID().uuidString.replacingOccurrences(of: "-", with: "")
-            let blurhash = dict["blurhash"] as? String
-            return Attachment(
-                type: .image,
-                index: index,
-                pathThumb: pathThumb,
-                pathOriginal: pathOriginal,
-                width: width,
-                height: height,
-                bytesOriginal: bytesOriginal,
-                hash: hash,
-                blurhash: blurhash,
-                duration: nil
-            )
-        }
-
-        // 연결 안 되어 있으면 실패 메시지 로컬 퍼블리시
-        guard socket.status == .connected else {
-            let atts = attachments.enumerated().map { makeAttachment(from: $0.element, fallbackIndex: $0.offset) }
-            var failed = ChatMessage(
-                ID: resolvedClientMessageID, seq: 0,
-                roomID: roomID,
-                senderID: senderID,
-                senderNickname: senderNickname,
-                msg: "",
-                sentAt: now,
-                attachments: atts,
-                replyPreview: nil,
-                isFailed: true
-            )
-            if let avatar = senderAvatarPath, !avatar.isEmpty {
-                failed.senderAvatarPath = avatar
-            }
-            emitToRoomPipeline(failed)
-            return
-        }
-            
-        // 1) 서버 이벤트/페이로드 구성(메타만 포함)
-        let eventName = "send images" // 새 프로토콜 이벤트명 (서버 index.js와 일치)
-        var body: [String: Any] = [
-            "roomID": roomID,
-            "messageID": resolvedClientMessageID,
-            "type": "image",
-            "msg": "",
-            "attachments": attachments,
-            "senderID": senderID,
-            "senderNickname": senderNickname,
-            "sentAt": isoSentAt
-        ]
-        if let avatar = senderAvatarPath, !avatar.isEmpty {
-            body["senderAvatarPath"] = avatar
-        }
-
-        // NOTE: 성공 시에는 로컬 퍼블리시를 하지 않는다.
-        // reason: 서버 브로드캐스트가 ACK보다 먼저 도착할 수 있어, 이후에 퍼블리시된 seq=0 스텁이
-        //         정규 메시지를 덮어써 UI 상에서 seq가 0으로 보이는 문제가 발생할 수 있음.
-        socket.emitWithAck(eventName, body).timingOut(after: 15) { [weak self] ackResponse in
-            guard let self = self else { return }
-
-            if self.isEmitAckSuccess(ackResponse) {
-                // 성공/중복(이미 서버가 브로드캐스트했을 가능성) 시에는
-                // 로컬에 seq=0 메시지를 퍼블리시하지 않습니다.
-                // → 서버의 'receiveImages' 브로드캐스트로 도착하는 정규 메시지(정확한 seq 포함)에 UI를 맡깁니다.
-                self.updateRoomSummaryAfterSend(
-                    roomID: roomID,
-                    sentAt: now,
-                    preview: "사진 \(attachments.count)장"
-                )
-                return
-            }
-
-            // 실패/타임아웃: 실패 메시지를 로컬에만 퍼블리시해 재시도 UX 제공
-            let atts = attachments.enumerated().map { makeAttachment(from: $0.element, fallbackIndex: $0.offset) }
-            var failed = ChatMessage(
-                ID: resolvedClientMessageID, seq: 0,
-                roomID: roomID,
-                senderID: senderID,
-                senderNickname: senderNickname,
-                msg: "",
-                sentAt: now,
-                attachments: atts,
-                replyPreview: nil,
-                isFailed: true
-            )
-            if let avatar = senderAvatarPath, !avatar.isEmpty {
-                failed.senderAvatarPath = avatar
-            }
-            self.emitToRoomPipeline(failed)
-        }
-    }
-    
-    /// 업로드/송신 실패 시: preparePairs에서 받은 ImagePair 배열을 이용해
+    /// 업로드/송신 실패 시: preparePairs에서 받은 ProcessedImage 배열을 이용해
     /// 로컬 프리뷰 파일을 만들고 실패 메시지(ChatMessage)를 생성한다.
     /// - Parameters:
     ///   - room: 대상 방
-    ///   - pairs: ImagePair 배열 (index 순서로 정렬됨이 보장되지는 않음)
+    ///   - pairs: ProcessedImage 배열 (index 순서로 정렬됨이 보장되지는 않음)
     ///   - publish: true면 내부에서 roomSubject로 곧바로 퍼블리시, false면 퍼블리시하지 않음
     ///   - onBuilt: 실패 메시지 객체를 콜백으로 전달(썸네일 캐시/추가 가공 후 VC에서 addMessages 호출용)
     func sendFailedImages(_ room: ChatRoom,
-                          fromPairs pairs: [DefaultMediaProcessingService.ImagePair],
+                          fromPairs pairs: [ProcessedImage],
                           publish: Bool = true) {
         guard !pairs.isEmpty else { return }
 
@@ -1327,73 +1209,6 @@ class SocketIOManager {
         emitToRoomPipeline(failedMessage)
     }
     
-    // MARK: - Send: Video
-    /// 비디오 메타만 서버로 전송 (바이너리 X). 서버는 이 메타로 메시지를 생성/중계한다.
-    /// - Parameters:
-    ///   - roomID: 방 ID
-    ///   - payload: 업로드 완료된 비디오의 메타 정보
-    ///   - ackTimeout: (선택) ACK 대기 시간
-    ///   - completion: (선택) 성공/실패 콜백
-    // MARK: - Send: Video
-    /// 비디오 메타만 서버로 전송 (바이너리 X). 서버는 이 메타로 메시지를 생성/중계한다.
-    /// 소켓 미연결/ACK 실패 시 로컬 실패 메시지를 주입한다.
-    func sendVideo(roomID: String,
-                   payload: VideoMetaPayload,
-                   senderAvatarPath: String? = nil,
-                   ackTimeout: Double = 5.0,
-                   completion: ((Result<Void, Error>) -> Void)? = nil) {
-        var dict: [String: Any] = [
-            "roomID": payload.roomID,
-            "messageID": payload.messageID,
-            "storagePath": payload.storagePath,
-            "thumbnailPath": payload.thumbnailPath,
-            "duration": payload.duration,
-            "width": payload.width,
-            "height": payload.height,
-            "sizeBytes": payload.sizeBytes,
-            "approxBitrateMbps": payload.approxBitrateMbps,
-            "preset": payload.preset,
-            // (선택) 보낸이 정보 포함
-            "senderID": LoginManager.shared.getUserEmail,
-            "senderNickname": LoginManager.shared.currentUserProfile?.nickname ?? ""
-        ]
-        if let avatar = senderAvatarPath, !avatar.isEmpty {
-            dict["senderAvatarPath"] = avatar
-        }
-
-        #if canImport(SocketIO)
-        if socket.status == .connected {
-            socket.emitWithAck("chat:video", dict).timingOut(after: ackTimeout) { [weak self] items in
-                guard let self = self else { return }
-                if self.isEmitAckSuccess(items) {
-                    self.updateRoomSummaryAfterSend(
-                        roomID: roomID,
-                        sentAt: Date(),
-                        preview: "동영상"
-                    )
-                    completion?(.success(()))
-                } else {
-                    // ACK 실패 → 로컬 실패 메시지 주입
-                    self.sendFailedVideos(roomID: payload.roomID, payload: payload)
-                    let err = NSError(domain: "SocketIO", code: -1,
-                                      userInfo: [NSLocalizedDescriptionKey: "서버 ACK 실패 또는 형식 불일치: \(items)"])
-                    completion?(.failure(err))
-                }
-            }
-        } else {
-            // 미연결: 실패 메시지 먼저 주입하고 재연결 시도
-            self.sendFailedVideos(roomID: payload.roomID, payload: payload)
-            socket.connect()
-            let err = NSError(domain: "SocketIO", code: -1009,
-                              userInfo: [NSLocalizedDescriptionKey: "소켓이 연결되어 있지 않습니다."])
-            completion?(.failure(err))
-        }
-        #else
-        // SocketIO 미링크 환경에서도 컴파일 가능하도록
-        completion?(.success(()))
-        #endif
-    }
-    
     // MARK: - Local Fail: Video
     /// 업로드 실패 또는 소켓 미연결 시, 로컬에서 '실패한 비디오 메시지'를 스트림에 주입합니다.
     /// 서버로는 아무 것도 전송하지 않으며, 재시도 UX를 위해 타임라인에 즉시 반영합니다.
@@ -1471,43 +1286,6 @@ class SocketIOManager {
         #endif
         
         // 6) 로컬 스트림으로 즉시 발행 (UI 업데이트)
-        emitToRoomPipeline(message)
-    }
-    
-    /// 업로드는 성공했으나 소켓 전송(브로드캐스트)이 실패한 경우: 원격(Storage) 경로 기반으로 실패 메시지 발행
-    func sendFailedVideos(roomID: String, payload: VideoMetaPayload) {
-        let senderID = LoginManager.shared.getUserEmail
-        let senderNickname = LoginManager.shared.currentUserProfile?.nickname ?? ""
-
-        // 서버 브로드캐스트 포맷과 동일한 첨부(.video), 단 isFailed만 true
-        let attachment = Attachment(
-            type: .video,
-            index: 0,
-            pathThumb: payload.thumbnailPath,
-            pathOriginal: payload.storagePath,
-            width: payload.width,
-            height: payload.height,
-            bytesOriginal: Int(payload.sizeBytes),
-            hash: payload.messageID,
-            blurhash: nil,
-            duration: payload.duration
-        )
-
-        // 실패 메시지 ID는 충돌 방지를 위해 prefix 부여
-        let failedID = "failed-\(payload.messageID)"
-        let message = ChatMessage(
-            ID: failedID, seq: 0,
-            roomID: roomID,
-            senderID: senderID,
-            senderNickname: senderNickname,
-            msg: "",
-            sentAt: Date(),
-            attachments: [attachment],
-            replyPreview: nil,
-            isFailed: true,
-            isDeleted: false
-        )
-
         emitToRoomPipeline(message)
     }
     

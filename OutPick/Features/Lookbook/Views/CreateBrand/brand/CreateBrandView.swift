@@ -377,7 +377,7 @@ private struct BrandLogoPicker: UIViewControllerRepresentable {
                     }
                     let detailPolicy = ThumbnailPolicies.brandLogoDetail
                     guard
-                        let detailData = DefaultMediaProcessingService.makeThumbnailData(
+                        let detailData = ImageThumbnailDataMaker.makeData(
                             from: pair.originalFileURL,
                             maxPixel: detailPolicy.maxPixelSize,
                             quality: detailPolicy.quality

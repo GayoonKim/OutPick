@@ -17,7 +17,7 @@ protocol CreateRoomUseCaseProtocol {
     func execute(
         roomName: String,
         roomDescription: String,
-        imagePair: DefaultMediaProcessingService.ImagePair?,
+        imagePair: ProcessedImage?,
         onEvent: @escaping @MainActor (CreateRoomUseCaseEvent) -> Void
     ) async throws
 }
@@ -49,7 +49,7 @@ final class CreateRoomUseCase: CreateRoomUseCaseProtocol {
     func execute(
         roomName: String,
         roomDescription: String,
-        imagePair: DefaultMediaProcessingService.ImagePair?,
+        imagePair: ProcessedImage?,
         onEvent: @escaping @MainActor (CreateRoomUseCaseEvent) -> Void
     ) async throws {
         let isDuplicate = try await chatRoomRepository.checkRoomNameDuplicate(roomName: roomName)
@@ -99,7 +99,7 @@ final class CreateRoomUseCase: CreateRoomUseCaseProtocol {
     private func uploadRoomImageAndPatchRoom(
         room: ChatRoom,
         roomID: String,
-        imagePair: DefaultMediaProcessingService.ImagePair
+        imagePair: ProcessedImage
     ) async throws {
         defer { try? FileManager.default.removeItem(at: imagePair.originalFileURL) }
 

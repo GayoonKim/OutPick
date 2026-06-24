@@ -94,7 +94,7 @@ final class FirebaseImageStorageRepository: FirebaseImageStorageRepositoryProtoc
 
     // MARK: - Chat image attachment meta
     /// Message용(썸네일 + 원본) 일괄 업로드
-    func uploadPairsToRoomMessage(_ pairs: [DefaultMediaProcessingService.ImagePair],
+    func uploadPairsToRoomMessage(_ pairs: [ProcessedImage],
                                   roomID: String,
                                   messageID: String,
                                   cacheTTLThumbDays: Int = 30,

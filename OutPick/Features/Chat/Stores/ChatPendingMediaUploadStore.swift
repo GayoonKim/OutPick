@@ -16,7 +16,7 @@ struct ChatPendingImageUploadPayload {
     let room: ChatRoom
     let roomID: String
     let messageID: String
-    let pairs: [DefaultMediaProcessingService.ImagePair]
+    let pairs: [ProcessedImage]
 }
 
 enum ChatPendingMediaRetryPayload {
@@ -32,7 +32,7 @@ final class ChatPendingMediaUploadStore {
         let room: ChatRoom
         let roomID: String
         let messageID: String
-        let pairs: [DefaultMediaProcessingService.ImagePair]
+        let pairs: [ProcessedImage]
         var state: ChatPendingMediaUploadState
         var task: Task<Void, Never>?
         var uploadedAttachments: [Attachment]?
@@ -54,7 +54,7 @@ final class ChatPendingMediaUploadStore {
         room: ChatRoom,
         roomID: String,
         messageID: String,
-        pairs: [DefaultMediaProcessingService.ImagePair]
+        pairs: [ProcessedImage]
     ) -> Bool {
         guard !roomID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               !messageID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,

@@ -376,7 +376,7 @@ final class RoomEditViewController: UIViewController, PHPickerViewControllerDele
     private func convertCameraImage(_ image: UIImage) {
         convertImageTask?.cancel()
         do {
-            let pair = try makeImagePair(from: image)
+            let pair = try makeProcessedImage(from: image)
             viewModel.selectImage(pair)
         } catch {
             AlertManager.showAlertNoHandler(
@@ -387,12 +387,12 @@ final class RoomEditViewController: UIViewController, PHPickerViewControllerDele
         }
     }
 
-    private func makeImagePair(from image: UIImage) throws -> DefaultMediaProcessingService.ImagePair {
+    private func makeProcessedImage(from image: UIImage) throws -> ProcessedImage {
         guard let originalData = image.jpegData(compressionQuality: 0.95) else {
             throw MediaError.failedToConvertImage
         }
 
-        guard let thumbData = DefaultMediaProcessingService.makeThumbnailData(from: image) else {
+        guard let thumbData = ImageThumbnailDataMaker.makeData(from: image) else {
             throw MediaError.failedToCreateImageData
         }
 
@@ -406,7 +406,7 @@ final class RoomEditViewController: UIViewController, PHPickerViewControllerDele
         let height = image.cgImage?.height ?? Int(image.size.height * image.scale)
         let fileBaseName = UUID().uuidString.replacingOccurrences(of: "-", with: "")
 
-        return DefaultMediaProcessingService.ImagePair(
+        return ProcessedImage(
             index: 0,
             originalFileURL: fileURL,
             thumbData: thumbData,

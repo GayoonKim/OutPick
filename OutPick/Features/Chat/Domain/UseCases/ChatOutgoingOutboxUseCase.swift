@@ -9,7 +9,7 @@ import Foundation
 
 enum ChatOutgoingOutboxRetryPayload {
     case text(ChatMessage)
-    case uploadImages(room: ChatRoom, messageID: String, pairs: [DefaultMediaProcessingService.ImagePair])
+    case uploadImages(room: ChatRoom, messageID: String, pairs: [ProcessedImage])
     case finalizeImages(room: ChatRoom, messageID: String, attachments: [Attachment])
     case uploadVideo(roomID: String, messageID: String, prepared: PreparedVideo)
     case finalizeVideo(roomID: String, messageID: String, payload: VideoMetaPayload)
@@ -17,7 +17,7 @@ enum ChatOutgoingOutboxRetryPayload {
 
 protocol ChatOutgoingOutboxUseCaseProtocol {
     func stageTextMessage(_ message: ChatMessage) async
-    func stageImageMessage(_ message: ChatMessage, pairs: [DefaultMediaProcessingService.ImagePair]) async
+    func stageImageMessage(_ message: ChatMessage, pairs: [ProcessedImage]) async
     func stageVideoMessage(_ message: ChatMessage, prepared: PreparedVideo) async
     func markImageUploadCompleted(messageID: String, attachments: [Attachment]) async
     func markVideoUploadCompleted(messageID: String, payload: VideoMetaPayload) async
@@ -75,7 +75,7 @@ final class ChatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol {
         )
     }
 
-    func stageImageMessage(_ message: ChatMessage, pairs: [DefaultMediaProcessingService.ImagePair]) async {
+    func stageImageMessage(_ message: ChatMessage, pairs: [ProcessedImage]) async {
         guard let payload = try? preserveImagePayload(roomID: message.roomID, messageID: message.ID, pairs: pairs) else {
             var failedMessage = message
             failedMessage.isFailed = true
@@ -209,7 +209,7 @@ final class ChatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol {
                 return .finalizeImages(room: room, messageID: record.messageID, attachments: uploaded.attachments)
             }
             guard let local: ChatOutgoingOutboxImagePayload = decodeFromString(record.localPayloadJSON),
-                  let pairs = makeImagePairs(from: local),
+                  let pairs = makeProcessedImages(from: local),
                   !pairs.isEmpty else { return nil }
             return .uploadImages(room: room, messageID: record.messageID, pairs: pairs)
 
@@ -270,7 +270,7 @@ final class ChatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol {
     private func preserveImagePayload(
         roomID: String,
         messageID: String,
-        pairs: [DefaultMediaProcessingService.ImagePair]
+        pairs: [ProcessedImage]
     ) throws -> ChatOutgoingOutboxImagePayload {
         let imageDir = try ensureMessageDirectory(roomID: roomID, messageID: messageID)
             .appendingPathComponent("images", isDirectory: true)
@@ -341,8 +341,8 @@ final class ChatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol {
         return directory
     }
 
-    private func makeImagePairs(from payload: ChatOutgoingOutboxImagePayload) -> [DefaultMediaProcessingService.ImagePair]? {
-        var pairs: [DefaultMediaProcessingService.ImagePair] = []
+    private func makeProcessedImages(from payload: ChatOutgoingOutboxImagePayload) -> [ProcessedImage]? {
+        var pairs: [ProcessedImage] = []
         for item in payload.items.sorted(by: { $0.index < $1.index }) {
             guard let originalURL = localOutboxURL(from: item.originalFilePath),
                   let thumbURL = localOutboxURL(from: item.thumbFilePath) else {
@@ -350,7 +350,7 @@ final class ChatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol {
             }
             guard fileManager.fileExists(atPath: originalURL.path),
                   let thumbData = try? Data(contentsOf: thumbURL) else { return nil }
-            pairs.append(DefaultMediaProcessingService.ImagePair(
+            pairs.append(ProcessedImage(
                 index: item.index,
                 originalFileURL: originalURL,
                 thumbData: thumbData,
@@ -380,7 +380,7 @@ final class ChatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol {
             height: payload.height,
             sizeBytes: payload.sizeBytes,
             approxBitrateMbps: payload.approxBitrateMbps,
-            preset: DefaultMediaProcessingService.VideoUploadPreset(chatPayloadCode: payload.preset)
+            preset: VideoUploadPreset(chatPayloadCode: payload.preset)
         )
     }
 
@@ -544,7 +544,7 @@ final class ChatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol {
     }
 }
 
-extension DefaultMediaProcessingService.VideoUploadPreset {
+extension VideoUploadPreset {
     init(chatPayloadCode: String) {
         switch chatPayloadCode {
         case "dataSaver720":

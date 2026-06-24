@@ -20,68 +20,6 @@ final class DefaultMediaProcessingService: @unchecked Sendable, MediaProcessingS
     static let shared = DefaultMediaProcessingService()
     init() {}
 
-    // MARK: - 썸네일 설정
-    /// 기본 썸네일 긴 변(px)
-    static let defaultThumbMaxPixel: Int = 500
-    /// 기본 JPEG 품질
-    static let defaultThumbQuality: CGFloat = 0.5
-
-    // MARK: - Video presets
-    enum VideoUploadPreset {
-        case dataSaver720    // ~2.0–2.5 Mbps, 720p
-        case standard720     // ~4.0–5.0 Mbps, 720p (권장 기본)
-        case high1080        // ~6.0–8.0 Mbps, 1080p
-    }
-
-    // MARK: - 내부 공통(썸네일/메타) 헬퍼
-
-    /// 내부 공통: CGImageSource -> 썸네일 JPEG 데이터
-    private static func makeThumbnailData(from source: CGImageSource,
-                                          maxPixel: Int,
-                                          quality: CGFloat) -> Data? {
-        let opts: [NSString: Any] = [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: maxPixel
-        ]
-        guard let cgThumb = CGImageSourceCreateThumbnailAtIndex(source, 0, opts as CFDictionary) else {
-            return nil
-        }
-        return UIImage(cgImage: cgThumb).jpegData(compressionQuality: quality)
-    }
-
-    /// 썸네일 데이터 생성(UIImage 입력)
-    static func makeThumbnailData(from image: UIImage,
-                                  maxPixel: Int = DefaultMediaProcessingService.defaultThumbMaxPixel,
-                                  quality: CGFloat = DefaultMediaProcessingService.defaultThumbQuality) -> Data? {
-        // 주: 여기서 재인코딩이 한 번 일어남. 가능하면 URL 기반 API를 쓰는 게 메모리/성능에 유리.
-        guard let imageData = image.jpegData(compressionQuality: 1.0),
-              let src = CGImageSourceCreateWithData(imageData as CFData, nil) else {
-            return nil
-        }
-        return makeThumbnailData(from: src, maxPixel: maxPixel, quality: quality)
-    }
-
-    /// 썸네일 데이터 생성(URL 입력)
-    static func makeThumbnailData(from url: URL,
-                                  maxPixel: Int = DefaultMediaProcessingService.defaultThumbMaxPixel,
-                                  quality: CGFloat = DefaultMediaProcessingService.defaultThumbQuality) -> Data? {
-        guard let src = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
-        return makeThumbnailData(from: src, maxPixel: maxPixel, quality: quality)
-    }
-
-    /// (이전 호환) 썸네일 CGImage 반환
-    @available(*, deprecated, message: "Use makeThumbnailData(from:maxPixel:quality:) that returns Data instead.")
-    static func compressImageWithImageIO(_ image: UIImage) -> CGImage? {
-        guard let data = makeThumbnailData(from: image, maxPixel: 500, quality: 0.5),
-              let ui = UIImage(data: data),
-              let cg = ui.cgImage else {
-            print("압축 이미지 데이터 생성 실패")
-            return nil
-        }
-        return cg
-    }
-
     /// 원본 픽셀 크기 추출
     private static func pixelSize(from source: CGImageSource) -> (Int, Int) {
         guard
@@ -159,40 +97,26 @@ final class DefaultMediaProcessingService: @unchecked Sendable, MediaProcessingS
         }
     }
 
-    // MARK: - ImagePair (내부 업로드 흐름과의 호환 유지용)
-
-    struct ImagePair {
-        let index: Int
-        let originalFileURL: URL
-        let thumbData: Data
-        let originalWidth: Int
-        let originalHeight: Int
-        let bytesOriginal: Int
-        let sha256: String
-
-        var fileBaseName: String { sha256 }
-    }
-
     // MARK: - Image processing (기존 API)
 
     func makePair(
         from result: PHPickerResult,
         index: Int
-    ) async throws -> ImagePair {
+    ) async throws -> ProcessedImage {
         try await makePair(
             from: result,
             index: index,
-            thumbMaxPixel: DefaultMediaProcessingService.defaultThumbMaxPixel,
-            thumbQuality: DefaultMediaProcessingService.defaultThumbQuality
+            thumbMaxPixel: ImageThumbnailDataMaker.defaultMaxPixel,
+            thumbQuality: ImageThumbnailDataMaker.defaultQuality
         )
     }
 
     func makePair(
         from result: PHPickerResult,
         index: Int,
-        thumbMaxPixel: Int = DefaultMediaProcessingService.defaultThumbMaxPixel,
-        thumbQuality: CGFloat = DefaultMediaProcessingService.defaultThumbQuality
-    ) async throws -> ImagePair {
+        thumbMaxPixel: Int = ImageThumbnailDataMaker.defaultMaxPixel,
+        thumbQuality: CGFloat = ImageThumbnailDataMaker.defaultQuality
+    ) async throws -> ProcessedImage {
         try await withCheckedThrowingContinuation { continuation in
             let itemProvider = result.itemProvider
 
@@ -222,9 +146,11 @@ final class DefaultMediaProcessingService: @unchecked Sendable, MediaProcessingS
 
                 let (ow, oh) = DefaultMediaProcessingService.pixelSize(from: source)
 
-                guard let thumb = DefaultMediaProcessingService.makeThumbnailData(from: source,
-                                                                                 maxPixel: thumbMaxPixel,
-                                                                                 quality: thumbQuality) else {
+                guard let thumb = ImageThumbnailDataMaker.makeData(
+                    from: source,
+                    maxPixel: thumbMaxPixel,
+                    quality: thumbQuality
+                ) else {
                     continuation.resume(throwing: MediaError.failedToCreateImageData)
                     return
                 }
@@ -232,7 +158,7 @@ final class DefaultMediaProcessingService: @unchecked Sendable, MediaProcessingS
                 let hash = DefaultMediaProcessingService.sha256(of: ownedURL)
                 let bytes = DefaultMediaProcessingService.fileBytes(of: ownedURL)
 
-                continuation.resume(returning: ImagePair(
+                continuation.resume(returning: ProcessedImage(
                     index: index,
                     originalFileURL: ownedURL,
                     thumbData: thumb,
@@ -245,15 +171,15 @@ final class DefaultMediaProcessingService: @unchecked Sendable, MediaProcessingS
         }
     }
 
-    func preparePairs(_ results: [PHPickerResult]) async throws -> [ImagePair] {
-        try await withThrowingTaskGroup(of: ImagePair.self) { group in
+    func preparePairs(_ results: [PHPickerResult]) async throws -> [ProcessedImage] {
+        try await withThrowingTaskGroup(of: ProcessedImage.self) { group in
             for (i, r) in results.enumerated() {
                 group.addTask { [self] in
                     try await makePair(from: r, index: i)
                 }
             }
 
-            var list = Array<ImagePair?>(repeating: nil, count: results.count)
+            var list = Array<ProcessedImage?>(repeating: nil, count: results.count)
             for try await pair in group {
                 list[pair.index] = pair
             }
@@ -359,21 +285,10 @@ final class DefaultMediaProcessingService: @unchecked Sendable, MediaProcessingS
         }
     }
 
-    // MARK: - MediaProcessingServiceProtocol 구현 (Prepared* 반환)
+    // MARK: - MediaProcessingServiceProtocol 구현
 
-    func prepareImages(_ results: [PHPickerResult]) async throws -> [PreparedImage] {
-        let pairs = try await preparePairs(results)
-        return pairs.map {
-            PreparedImage(
-                index: $0.index,
-                originalFileURL: $0.originalFileURL,
-                thumbData: $0.thumbData,
-                originalWidth: $0.originalWidth,
-                originalHeight: $0.originalHeight,
-                bytesOriginal: $0.bytesOriginal,
-                sha256: $0.sha256
-            )
-        }
+    func prepareImages(_ results: [PHPickerResult]) async throws -> [ProcessedImage] {
+        try await preparePairs(results)
     }
 
     func prepareVideo(_ result: PHPickerResult,
