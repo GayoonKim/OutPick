@@ -15,7 +15,7 @@ struct ChatOutgoingOutboxUseCaseTests {
         let persistence = ChatOutgoingOutboxPersistenceFake()
         let useCase = makeUseCase(persistence: persistence)
         let message = makeMessage(id: "image-1")
-        let pair = try makeImagePair()
+        let pair = try makeProcessedImage()
         let uploaded = makeAttachment(messageID: "image-1")
 
         await useCase.stageImageMessage(message, pairs: [pair])
@@ -35,7 +35,7 @@ struct ChatOutgoingOutboxUseCaseTests {
         let persistence = ChatOutgoingOutboxPersistenceFake()
         let useCase = makeUseCase(persistence: persistence)
         let message = makeMessage(id: "image-2")
-        let pair = try makeImagePair()
+        let pair = try makeProcessedImage()
 
         await useCase.stageImageMessage(message, pairs: [pair])
 
@@ -115,12 +115,12 @@ struct ChatOutgoingOutboxUseCaseTests {
         )
     }
 
-    private func makeImagePair() throws -> DefaultMediaProcessingService.ImagePair {
+    private func makeProcessedImage() throws -> ProcessedImage {
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension("jpg")
         try Data([9, 9, 9]).write(to: fileURL)
-        return DefaultMediaProcessingService.ImagePair(
+        return ProcessedImage(
             index: 0,
             originalFileURL: fileURL,
             thumbData: Data([1, 2, 3]),
@@ -201,7 +201,7 @@ private final class FirebaseImageStorageRepositoryFake: FirebaseImageStorageRepo
     }
 
     func uploadPairsToRoomMessage(
-        _ pairs: [DefaultMediaProcessingService.ImagePair],
+        _ pairs: [ProcessedImage],
         roomID: String,
         messageID: String,
         cacheTTLThumbDays: Int,

@@ -17,8 +17,8 @@ struct ChatMediaUploadUseCaseTests {
         let previewDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("ChatMediaUploadUseCaseTests-\(UUID().uuidString)", isDirectory: true)
         let useCase = makeUseCase(previewDirectory: previewDirectory)
-        let first = try makeImagePair(index: 2, sha256: "second-sha")
-        let second = try makeImagePair(index: 1, sha256: "first-sha")
+        let first = try makeProcessedImage(index: 2, sha256: "second-sha")
+        let second = try makeProcessedImage(index: 1, sha256: "first-sha")
 
         let message = try #require(useCase.makePendingImageMessage(
             roomID: "room-1",
@@ -77,7 +77,7 @@ struct ChatMediaUploadUseCaseTests {
             imageRepository: imageRepository,
             sendingRepository: sendingRepository
         )
-        let pair = try makeImagePair(index: 0, sha256: "image-sha")
+        let pair = try makeProcessedImage(index: 0, sha256: "image-sha")
         let attachment = makeAttachment(hash: "image-sha")
         imageRepository.uploadResult = [attachment]
         var progressValues: [Double] = []
@@ -116,7 +116,7 @@ struct ChatMediaUploadUseCaseTests {
             imageRepository: imageRepository,
             sendingRepository: sendingRepository
         )
-        let pair = try makeImagePair(index: 0, sha256: "image-sha")
+        let pair = try makeProcessedImage(index: 0, sha256: "image-sha")
 
         do {
             _ = try await useCase.uploadPendingImages(
@@ -137,8 +137,8 @@ struct ChatMediaUploadUseCaseTests {
     @Test func cacheFailedImageThumbnailsStoresEveryPairThumb() async throws {
         let imageLoader = ChatAttachmentImageLoaderSpy()
         let useCase = makeUseCase(attachmentImageLoader: imageLoader)
-        let first = try makeImagePair(index: 0, sha256: "first")
-        let second = try makeImagePair(index: 1, sha256: "second")
+        let first = try makeProcessedImage(index: 0, sha256: "first")
+        let second = try makeProcessedImage(index: 1, sha256: "second")
 
         await useCase.cacheFailedImageThumbnails([first, second])
 
@@ -248,15 +248,15 @@ struct ChatMediaUploadUseCaseTests {
         )
     }
 
-    private func makeImagePair(
+    private func makeProcessedImage(
         index: Int = 0,
         sha256: String = "image-sha"
-    ) throws -> DefaultMediaProcessingService.ImagePair {
+    ) throws -> ProcessedImage {
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension("jpg")
         try Data([9, 9, 9]).write(to: fileURL)
-        return DefaultMediaProcessingService.ImagePair(
+        return ProcessedImage(
             index: index,
             originalFileURL: fileURL,
             thumbData: Data([1, 2, UInt8(index + 3)]),
@@ -324,7 +324,7 @@ struct ChatMediaUploadUseCaseTests {
 
 private final class FirebaseImageStorageRepositoryFake: FirebaseImageStorageRepositoryProtocol {
     struct UploadCall {
-        let pairs: [DefaultMediaProcessingService.ImagePair]
+        let pairs: [ProcessedImage]
         let roomID: String
         let messageID: String
     }
@@ -345,7 +345,7 @@ private final class FirebaseImageStorageRepositoryFake: FirebaseImageStorageRepo
     }
 
     func uploadPairsToRoomMessage(
-        _ pairs: [DefaultMediaProcessingService.ImagePair],
+        _ pairs: [ProcessedImage],
         roomID: String,
         messageID: String,
         cacheTTLThumbDays: Int,

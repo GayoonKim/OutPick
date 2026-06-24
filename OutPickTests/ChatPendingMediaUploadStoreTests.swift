@@ -13,7 +13,7 @@ import Testing
 struct ChatPendingMediaUploadStoreTests {
     @Test func stageImageUploadTracksInitialStateAndRetryPayloadAfterFailure() throws {
         let store = ChatPendingMediaUploadStore()
-        let pair = try makeImagePair()
+        let pair = try makeProcessedImage()
 
         let staged = store.stageImageUpload(
             room: makeRoom(id: "room-1"),
@@ -35,7 +35,7 @@ struct ChatPendingMediaUploadStoreTests {
 
     @Test func startImageUploadTaskRejectsDuplicateTaskUntilFinished() throws {
         let store = ChatPendingMediaUploadStore()
-        let pair = try makeImagePair()
+        let pair = try makeProcessedImage()
         _ = store.stageImageUpload(
             room: makeRoom(id: "room-1"),
             roomID: "room-1",
@@ -57,7 +57,7 @@ struct ChatPendingMediaUploadStoreTests {
 
     @Test func completeImageUploadRemovesStateAndPayload() throws {
         let store = ChatPendingMediaUploadStore()
-        let pair = try makeImagePair()
+        let pair = try makeProcessedImage()
         _ = store.stageImageUpload(
             room: makeRoom(id: "room-1"),
             roomID: "room-1",
@@ -100,7 +100,7 @@ struct ChatPendingMediaUploadStoreTests {
 
     @Test func retryPayloadUsesUploadedImageAttachmentsWhenFinalizeFailed() throws {
         let store = ChatPendingMediaUploadStore()
-        let pair = try makeImagePair()
+        let pair = try makeProcessedImage()
         let attachment = makeAttachment()
         _ = store.stageImageUpload(
             room: makeRoom(id: "room-1"),
@@ -155,12 +155,12 @@ struct ChatPendingMediaUploadStoreTests {
         #expect(retryPayload.storagePath == payload.storagePath)
     }
 
-    private func makeImagePair() throws -> DefaultMediaProcessingService.ImagePair {
+    private func makeProcessedImage() throws -> ProcessedImage {
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension("jpg")
         try Data([9, 9, 9]).write(to: fileURL)
-        return DefaultMediaProcessingService.ImagePair(
+        return ProcessedImage(
             index: 0,
             originalFileURL: fileURL,
             thumbData: Data([1, 2, 3]),

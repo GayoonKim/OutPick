@@ -79,7 +79,7 @@ private final class FirebaseImageStorageRepositoryFake: FirebaseImageStorageRepo
     }
 
     func uploadPairsToRoomMessage(
-        _ pairs: [DefaultMediaProcessingService.ImagePair],
+        _ pairs: [ProcessedImage],
         roomID: String,
         messageID: String,
         cacheTTLThumbDays: Int,
