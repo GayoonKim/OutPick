@@ -4,12 +4,13 @@
 
 - 현재 작업은 `chat-view-controller-layering`이다.
 - 목표는 `ChatViewController.swift`에 몰린 메시지 전송, 실시간 수신, 메시지 액션, 메시지 window/diffable, 미디어 업로드, 읽음 seq/lifecycle, 라우팅, 방 exit 실행 책임을 OutPick의 MVVM-C + Repository + UseCase + DI 흐름에 맞춰 단계적으로 분리하는 것이다.
-- 현재 상태는 Phase 21 후속 안정화 완료 후, 다음 리팩토링 Phase A~D 계획 수립 완료다. 구현은 아직 시작하지 않았다.
+- 현재 상태는 Phase 22 `RealtimeSocketService` actor 전환 구현 및 빌드 검증 완료다. 수동 QA는 남아 있다.
   - Phase 19: 갤러리/뷰어 Photos 저장 흐름을 앱 공용 `PhotoLibrarySaving`으로 통합했다.
   - Phase 20: 검색 task/generation guard와 검색 표시 상태를 `ChatRoomViewModel` 경계로 이동했다.
   - Phase 21: 남은 runtime singleton/manager 직접 접근 audit 및 task 종료 기준을 확정했다.
   - Phase 21 후속 안정화: media preflight/finalize, reservation 기반 TTL cleanup, outbox GRDB seam, UI 소정리, avatar manager 축소, Lookbook current user adapter, `DefaultMediaProcessingService.shared` 직접 접근 제거를 완료했다.
-- 다음 우선순위는 구현 대기 Phase A부터 순차 진행하는 것이다.
+  - Phase 22: `SocketIOManager` 제거, `RealtimeSocketService` actor와 `AppSessionRuntime` 도입, Socket/Realtime Combine bridge 제거를 완료했다.
+- 다음 우선순위는 Phase 22 수동 QA 이후, 후속 Phase 23~26 또는 기존 구현 대기 Phase A부터 순차 진행하는 것이다.
 - Phase 19~21 진행 전 사용자가 확정한 운영 방식은 앞으로도 유지한다.
   - 다음 2~3개 phase를 함께 훑고, 설계 쟁점/예상 변경 파일/검증 계획을 통합 보고한다.
   - 코드 수정 없는 조사는 서브 에이전트로 병렬화한다.
@@ -59,6 +60,7 @@
 | 20 | 완료 | 검색 task/generation guard와 검색 표시 상태를 `ChatRoomViewModel` 경계로 이동 |
 | 21 | 완료 | 남은 runtime singleton/manager 직접 접근 audit 및 task 종료 기준 확정 |
 | 21 후속 안정화 | 완료 | media preflight/finalize, reservation TTL cleanup, outbox GRDB seam, UI 소정리, avatar manager 축소, Lookbook current user adapter, media processor shared 직접 접근 제거 |
+| 22 | 완료 | `SocketIOManager` 제거, `RealtimeSocketService` actor와 `AppSessionRuntime` 도입, Socket/Realtime Combine bridge 제거 |
 
 ## 4. 최근 핵심 변경
 
