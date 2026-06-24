@@ -15,6 +15,7 @@ import {randomUUID} from "node:crypto";
 
 import {CloudTasksClient} from "@google-cloud/tasks";
 import {onCall, HttpsError} from "firebase-functions/v2/https";
+import {onSchedule} from "firebase-functions/v2/scheduler";
 import {
   onDocumentUpdated,
   onDocumentWritten,
@@ -33,6 +34,7 @@ const LOOKBOOK_IMPORT_TASKS_QUEUE = "lookbook-import-jobs";
 const LOOKBOOK_IMPORT_TASK_ENDPOINT = "/tasks/import-job";
 const LOOKBOOK_IMPORT_TASK_MAX_ATTEMPTS = 3;
 const LOOKBOOK_ASSET_RETRY_MODE = "assetFailureRetry";
+const MEDIA_UPLOAD_CLEANUP_LIMIT = 100;
 
 let cloudTasksClient: CloudTasksClient | null = null;
 
@@ -2576,6 +2578,100 @@ export const onRoomClosed = onDocumentUpdated(
       );
       // 필요하면 여기서 throw 해서 재시도 유도 가능
       // throw err;
+    }
+  }
+);
+
+export const cleanupExpiredChatMediaUploads = onSchedule(
+  {
+    schedule: "every 60 minutes",
+    region: FUNCTIONS_REGION,
+    timeZone: "Asia/Seoul",
+  },
+  async () => {
+    const now = admin.firestore.Timestamp.now();
+    const snapshot = await db
+      .collectionGroup("MediaUploads")
+      .where("status", "==", "pending")
+      .where("expiresAt", "<=", now)
+      .limit(MEDIA_UPLOAD_CLEANUP_LIMIT)
+      .get();
+
+    if (snapshot.empty) {
+      console.log("[cleanupExpiredChatMediaUploads] No expired uploads.");
+      return;
+    }
+
+    const bucket = admin.storage().bucket();
+
+    for (const doc of snapshot.docs) {
+      const data = doc.data();
+      const roomRef = doc.ref.parent.parent;
+      const roomID = roomRef?.id;
+      const messageID = typeof data.messageID === "string" ?
+        data.messageID :
+        doc.id;
+      const storagePrefix = typeof data.storagePrefix === "string" ?
+        data.storagePrefix :
+        "";
+
+      if (!roomRef || !roomID || !messageID || storagePrefix.length === 0) {
+        await doc.ref.set({
+          status: "cleanupFailed",
+          lastError: "invalid_reservation",
+          updatedAt: FieldValue.serverTimestamp(),
+        }, {merge: true});
+        continue;
+      }
+
+      const expectedPrefix = `rooms/${roomID}/messages/${messageID}`;
+      if (storagePrefix !== expectedPrefix) {
+        await doc.ref.set({
+          status: "cleanupFailed",
+          lastError: "storage_prefix_mismatch",
+          updatedAt: FieldValue.serverTimestamp(),
+        }, {merge: true});
+        continue;
+      }
+
+      const messageSnap = await roomRef
+        .collection("Messages")
+        .doc(messageID)
+        .get();
+      if (messageSnap.exists) {
+        await doc.ref.set({
+          status: "completed",
+          completedAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        }, {merge: true});
+        continue;
+      }
+
+      try {
+        await bucket.deleteFiles({
+          prefix: `${storagePrefix}/`,
+          force: true,
+        });
+        await doc.ref.set({
+          status: "expired",
+          expiredAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        }, {merge: true});
+        console.log(
+          "[cleanupExpiredChatMediaUploads] Deleted expired media prefix",
+          {roomID, messageID, storagePrefix}
+        );
+      } catch (err) {
+        console.error(
+          "[cleanupExpiredChatMediaUploads] Failed to delete media prefix",
+          {roomID, messageID, storagePrefix, err}
+        );
+        await doc.ref.set({
+          status: "cleanupFailed",
+          lastError: err instanceof Error ? err.message : String(err),
+          updatedAt: FieldValue.serverTimestamp(),
+        }, {merge: true});
+      }
     }
   }
 );

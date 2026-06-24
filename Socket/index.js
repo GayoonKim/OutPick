@@ -288,6 +288,99 @@ const handleLookbookShare = createLookbookShareHandler({
   allowRate
 });
 
+const MEDIA_UPLOAD_RESERVATION_TTL_MS = 24 * 60 * 60 * 1000;
+
+function mediaUploadStoragePrefix(roomID, messageID) {
+  return `rooms/${roomID}/messages/${messageID}`;
+}
+
+function mediaUploadRef(roomID, messageID) {
+  return db
+    .collection("Rooms")
+    .doc(roomID)
+    .collection("MediaUploads")
+    .doc(messageID);
+}
+
+function messageRef(roomID, messageID) {
+  return db
+    .collection("Rooms")
+    .doc(roomID)
+    .collection("Messages")
+    .doc(messageID);
+}
+
+function normalizeMediaKind(kind) {
+  if (kind === "image" || kind === "images") return "images";
+  if (kind === "video") return "video";
+  return "";
+}
+
+function reservationExpiresAt() {
+  return admin.firestore.Timestamp.fromDate(
+    new Date(Date.now() + MEDIA_UPLOAD_RESERVATION_TTL_MS)
+  );
+}
+
+function timestampMillis(value) {
+  if (!value) return null;
+  if (typeof value.toMillis === "function") return value.toMillis();
+  if (value instanceof Date) return value.getTime();
+  return null;
+}
+
+async function loadExistingMessage(roomID, messageID) {
+  const snap = await messageRef(roomID, messageID).get();
+  if (!snap.exists) return null;
+  return snap.data() || {};
+}
+
+async function assertMediaUploadReservation({
+  roomID,
+  messageID,
+  senderID,
+  kind,
+  storagePaths
+}) {
+  const ref = mediaUploadRef(roomID, messageID);
+  const snap = await ref.get();
+  if (!snap.exists) {
+    return { ok: false, error: "media_reservation_not_found" };
+  }
+
+  const data = snap.data() || {};
+  if (data.status === "completed") {
+    return { ok: true, ref, data, completed: true };
+  }
+  if (data.status !== "pending") {
+    return { ok: false, error: "media_reservation_not_pending" };
+  }
+  if (normalizeEmail(data.senderID) !== normalizeEmail(senderID)) {
+    return { ok: false, error: "media_reservation_sender_mismatch" };
+  }
+  if (data.kind !== kind) {
+    return { ok: false, error: "media_reservation_kind_mismatch" };
+  }
+
+  const expiresAtMillis = timestampMillis(data.expiresAt);
+  if (expiresAtMillis && expiresAtMillis <= Date.now()) {
+    return { ok: false, error: "media_reservation_expired" };
+  }
+
+  const prefix = String(data.storagePrefix || "");
+  if (!prefix) {
+    return { ok: false, error: "media_reservation_missing_prefix" };
+  }
+  const allPathsMatch = storagePaths
+    .filter(Boolean)
+    .every((path) => String(path).startsWith(`${prefix}/`));
+  if (!allPathsMatch) {
+    return { ok: false, error: "media_reservation_prefix_mismatch" };
+  }
+
+  return { ok: true, ref, data };
+}
+
 async function stageRoomMembershipCleanup(batch, roomID, email, userRef = null) {
   const normalizedEmail = normalizeEmail(email);
   if (!normalizedEmail) return false;
@@ -710,6 +803,103 @@ io.on('connection', (socket) => {
       return handleLookbookShare(socket, data, callback);
     });
 
+    socket.on('chat:mediaPreflight', async (data, callback) => {
+      try {
+        const {
+          roomID,
+          messageID,
+          senderID,
+          kind
+        } = data || {};
+
+        if (!roomID || !isValidRoomID(String(roomID))) {
+          return callback && callback({ ok: false, error: 'invalid_room_id' });
+        }
+        if (!messageID || String(messageID).includes('/')) {
+          return callback && callback({ ok: false, error: 'invalid_message_id' });
+        }
+        if (!socket.rooms.has(roomID)) {
+          return callback && callback({ ok: false, error: 'not_joined' });
+        }
+
+        const mediaKind = normalizeMediaKind(kind);
+        if (!mediaKind) {
+          return callback && callback({ ok: false, error: 'invalid_media_kind' });
+        }
+
+        const senderEmail = normalizeEmail(senderID);
+        const access = await loadRoomAccess(roomID, senderEmail);
+        if (!access.ok) {
+          return callback && callback({ ok: false, error: access.error });
+        }
+
+        const rateKey = `${socket.id}:${roomID}:mediaPreflight:${mediaKind}`;
+        const rateMax = mediaKind === "video" ? RATE_MAX_VIDEOS : RATE_MAX_IMAGES;
+        if (!allowRate(rateKey, rateMax, RATE_WINDOW_MS)) {
+          return callback && callback({ ok: false, error: 'rate_limited' });
+        }
+
+        const ref = mediaUploadRef(roomID, String(messageID));
+        const existing = await ref.get();
+        const storagePrefix = mediaUploadStoragePrefix(roomID, String(messageID));
+        const now = admin.firestore.FieldValue.serverTimestamp();
+        const expiresAt = reservationExpiresAt();
+
+        if (existing.exists) {
+          const reservation = existing.data() || {};
+          if (reservation.status === "completed") {
+            return callback && callback({
+              ok: true,
+              duplicate: true,
+              status: "completed",
+              messageID: String(messageID),
+              storagePrefix
+            });
+          }
+          if (
+            reservation.status === "pending" &&
+            normalizeEmail(reservation.senderID) === senderEmail &&
+            reservation.kind === mediaKind
+          ) {
+            await ref.set({
+              expiresAt,
+              updatedAt: now
+            }, { merge: true });
+            return callback && callback({
+              ok: true,
+              duplicate: true,
+              status: "pending",
+              messageID: String(messageID),
+              storagePrefix: reservation.storagePrefix || storagePrefix
+            });
+          }
+          return callback && callback({ ok: false, error: "media_reservation_conflict" });
+        }
+
+        await ref.set({
+          roomID,
+          messageID: String(messageID),
+          senderID: senderEmail,
+          kind: mediaKind,
+          status: "pending",
+          storagePrefix,
+          createdAt: now,
+          updatedAt: now,
+          expiresAt
+        });
+
+        return callback && callback({
+          ok: true,
+          status: "pending",
+          messageID: String(messageID),
+          storagePrefix
+        });
+      } catch (error) {
+        console.error('[chat:mediaPreflight] handler error:', error);
+        return callback && callback({ ok: false, error: 'internal_error' });
+      }
+    });
+
     // 🔁 Legacy support: "send images" → accept new/old payload, normalize, unified emit
     socket.on('send images', async (data, callback) => {
       try {
@@ -720,7 +910,8 @@ io.on('connection', (socket) => {
           attachments,        // new client shape (meta-only)
           images,             // legacy client shape
           senderID,
-          senderNickname,     // new key (camelcase),     // legacy key
+          senderNickname,     // new key (camelcase)
+          senderNickName,     // legacy key
           senderAvatarPath,   // propagate avatar path
           sentAt,             // ISO8601 or epoch
           type,               // optional (should be 'image')
@@ -731,6 +922,11 @@ io.on('connection', (socket) => {
         if (!roomID) return callback && callback({ ok: false, error: 'invalid_room_id' });
         if (!rooms[roomID]) return callback && callback({ ok: false, error: 'room_not_found' });
         if (!socket.rooms.has(roomID)) return callback && callback({ ok: false, error: 'not_joined' });
+        const imageSenderID = normalizeEmail(senderID);
+        const roomAccess = await loadRoomAccess(roomID, imageSenderID);
+        if (!roomAccess.ok) {
+          return callback && callback({ ok: false, error: roomAccess.error });
+        }
 
         // Input list (prefer new attachments, fallback to images)
         const incoming = Array.isArray(attachments)
@@ -754,7 +950,15 @@ io.on('connection', (socket) => {
 
         const dedupKey = `${roomID}:${effectiveMessageID}`;
         if (deliveredImageKeys.has(dedupKey)) {
-          return callback && callback({ ok: true, duplicate: true, messageID: effectiveMessageID });
+          const existing = await loadExistingMessage(roomID, effectiveMessageID);
+          if (existing) {
+            return callback && callback({
+              ok: true,
+              duplicate: true,
+              messageID: effectiveMessageID,
+              seq: existing.seq
+            });
+          }
         }
         deliveredImageKeys.add(dedupKey);
         if (deliveredImageKeys.size > 50000) deliveredImageKeys.clear();
@@ -785,6 +989,38 @@ io.on('connection', (socket) => {
           return callback && callback({ ok: false, error: 'no_valid_attachments' });
         }
 
+        const existingMessage = await loadExistingMessage(roomID, effectiveMessageID);
+        if (existingMessage) {
+          return callback && callback({
+            ok: true,
+            duplicate: true,
+            messageID: effectiveMessageID,
+            seq: existingMessage.seq
+          });
+        }
+
+        const reservation = await assertMediaUploadReservation({
+          roomID,
+          messageID: effectiveMessageID,
+          senderID: imageSenderID,
+          kind: "images",
+          storagePaths: normalized.flatMap((attachment) => [
+            attachment.pathThumb,
+            attachment.pathOriginal
+          ])
+        });
+        if (!reservation.ok) {
+          deliveredImageKeys.delete(dedupKey);
+          return callback && callback({ ok: false, error: reservation.error });
+        }
+        if (reservation.completed) {
+          return callback && callback({
+            ok: true,
+            duplicate: true,
+            messageID: effectiveMessageID
+          });
+        }
+
         // Build server message payload (unified with text handler)
         const nickname = senderNickname || senderNickName || '';
         const finalType = type || 'image';
@@ -808,7 +1044,7 @@ io.on('connection', (socket) => {
           type: finalType,
           msg: finalMsg,
           attachments: normalized,
-          senderID,
+          senderID: imageSenderID,
           senderNickname: nickname,
           senderAvatarPath,
           sentAt: when.toISOString()
@@ -816,9 +1052,12 @@ io.on('connection', (socket) => {
 
         // --- Persist with seq and broadcast ---
         try {
-          const seq = await allocateSeqAndPersist(roomID, effectiveMessageID, serverMsg);
+          const seq = await allocateSeqAndPersist(roomID, effectiveMessageID, serverMsg, {
+            mediaUploadRef: reservation.ref
+          });
           serverMsg.seq = seq;
         } catch (e) {
+          deliveredImageKeys.delete(dedupKey);
           console.error('[send images] seq allocation/persist error:', e);
           return callback && callback({ ok: false, error: 'seq_persist_error' });
         }
@@ -864,6 +1103,11 @@ io.on('connection', (socket) => {
         if (!roomID) return callback && callback({ ok: false, error: 'invalid_room_id' });
         if (!rooms[roomID]) return callback && callback({ ok: false, error: 'room_not_found' });
         if (!socket.rooms.has(roomID)) return callback && callback({ ok: false, error: 'not_joined' });
+        const videoSenderID = normalizeEmail(senderID);
+        const roomAccess = await loadRoomAccess(roomID, videoSenderID);
+        if (!roomAccess.ok) {
+          return callback && callback({ ok: false, error: roomAccess.error });
+        }
 
         // Rate-limit (per socket per room)
         const vidRateKey = `${socket.id}:${roomID}:video`;
@@ -875,7 +1119,15 @@ io.on('connection', (socket) => {
         const effectiveMessageID = (messageID && String(messageID)) || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
         const dedupKey = `${roomID}:${effectiveMessageID}`;
         if (deliveredVideoKeys.has(dedupKey)) {
-          return callback && callback({ ok: true, duplicate: true, messageID: effectiveMessageID });
+          const existing = await loadExistingMessage(roomID, effectiveMessageID);
+          if (existing) {
+            return callback && callback({
+              ok: true,
+              duplicate: true,
+              messageID: effectiveMessageID,
+              seq: existing.seq
+            });
+          }
         }
         deliveredVideoKeys.add(dedupKey);
         if (deliveredVideoKeys.size > 50000) deliveredVideoKeys.clear();
@@ -892,12 +1144,41 @@ io.on('connection', (socket) => {
           preset
         };
 
+        const existingMessage = await loadExistingMessage(roomID, effectiveMessageID);
+        if (existingMessage) {
+          return callback && callback({
+            ok: true,
+            duplicate: true,
+            messageID: effectiveMessageID,
+            seq: existingMessage.seq
+          });
+        }
+
+        const reservation = await assertMediaUploadReservation({
+          roomID,
+          messageID: effectiveMessageID,
+          senderID: videoSenderID,
+          kind: "video",
+          storagePaths: [storagePath, thumbnailPath]
+        });
+        if (!reservation.ok) {
+          deliveredVideoKeys.delete(dedupKey);
+          return callback && callback({ ok: false, error: reservation.error });
+        }
+        if (reservation.completed) {
+          return callback && callback({
+            ok: true,
+            duplicate: true,
+            messageID: effectiveMessageID
+          });
+        }
+
         const serverMsg = buildServerVideoMessage({
           roomID,
           messageID: effectiveMessageID,
           msg: typeof msg === 'string' ? msg : '',
           attachments: [attachment],
-          senderID,
+          senderID: videoSenderID,
           senderNickname: nickname,
           senderAvatarPath,
           sentAt
@@ -905,9 +1186,12 @@ io.on('connection', (socket) => {
 
         // --- Persist with seq and broadcast ---
         try {
-          const seq = await allocateSeqAndPersist(roomID, effectiveMessageID, serverMsg);
+          const seq = await allocateSeqAndPersist(roomID, effectiveMessageID, serverMsg, {
+            mediaUploadRef: reservation.ref
+          });
           serverMsg.seq = seq;
         } catch (e) {
+          deliveredVideoKeys.delete(dedupKey);
           console.error('[chat:video] seq allocation/persist error:', e);
           return callback && callback({ ok: false, error: 'seq_persist_error' });
         }

@@ -1,7 +1,7 @@
 import { deriveLastMessage } from "./preview.js";
 
 export function createSequenceStore({ db, admin }) {
-  async function allocateSeqAndPersist(roomID, messageID, messageData) {
+  async function allocateSeqAndPersist(roomID, messageID, messageData, options = {}) {
     const roomRef = db.collection("Rooms").doc(roomID);
     const msgRef = roomRef.collection("Messages").doc(messageID);
     const lastMessageText = deriveLastMessage(messageData);
@@ -26,6 +26,13 @@ export function createSequenceStore({ db, admin }) {
         lastMessage: lastMessageText,
         lastMessageAt: admin.firestore.FieldValue.serverTimestamp()
       }, { merge: true });
+      if (options.mediaUploadRef) {
+        tx.set(options.mediaUploadRef, {
+          status: "completed",
+          completedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+      }
 
       return next;
     });
