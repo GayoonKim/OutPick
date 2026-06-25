@@ -2,7 +2,7 @@
 
 ## 현재 상태
 
-- 상태: Phase 22 `RealtimeSocketService` actor 전환 구현 및 빌드 검증 완료. 수동 QA는 남아 있다.
+- 상태: Phase 23/23.5/26 runtime DI 구현 및 JoinedRooms publisher 제거 리팩토링 검증 완료.
 - 원본 상세 기록은 `archive/progress-through-phase-9.md`에 보존했다.
 - 현재 task 목표는 `ChatViewController`에 몰려 있던 메시지 전송, 실시간 수신, 메시지 액션, 메시지 window/diffable, 미디어 업로드, 읽음 seq/lifecycle, 라우팅, 방 exit 실행 책임을 MVVM-C + Repository + UseCase + DI 흐름에 맞춰 분리하는 것이다.
 - Phase 19부터는 `AGENTS.md`의 phase 기반 운영 원칙과 `docs/ai/ADR.md`의 ADR-015에 따라 조사/설계 쟁점 발굴은 병렬화하고, 구현은 파일 충돌 가능성과 의존성 기준으로 순차 또는 별도 스레드 병렬 진행을 결정한다.
@@ -40,6 +40,9 @@
 | 20 | 완료 | 검색 task/generation guard와 검색 표시 상태를 `ChatRoomViewModel` 경계로 이동 | 현재 문서 |
 | 21 | 완료 | 남은 runtime singleton/manager 직접 접근 audit 및 task 종료 기준 확정 | 현재 문서 |
 | 22 | 완료 | `SocketIOManager` 제거, `RealtimeSocketService` actor와 `AppSessionRuntime` 도입, Socket/Realtime Combine bridge 제거 | 현재 문서 |
+| 23/23.5/26 설계 | 완료 | App session runtime ownership, joined rooms session store, realtime socket DI 축소 설계 정리 | `phase-23-runtime-design.md` |
+| 23/23.5/26 구현 | 완료 | AppCompositionRoot 조립, JoinedRoomsSessionStore 승격, Chat realtime 주입, Firebase repository socket side effect 제거 | 현재 문서 |
+| 23.6 | 완료 | `JoinedRoomsSessionStore.publisher` 제거, joined-room socket/banner side effect를 `AppSessionRuntime` 명시 command API로 전환 | 현재 문서 |
 
 ## 최근 완료 상세
 
@@ -62,12 +65,97 @@
 검증:
 
 - `xcodebuildmcp.build_run_sim` 통과.
+- 사용자 수동 QA 완료:
+  - 로그인 후 socket 연결.
+  - joined room runtime 기반 join/leave.
+  - 채팅방 진입/이탈.
+  - 배너 관련 핵심 흐름.
+  - 로그아웃 후 socket/banner/presence 정리.
 
 남은 위험:
 
-- 수동 QA는 아직 수행하지 않았다.
 - `ChatMediaUploadUseCase.isSocketConnected`는 아직 동기 guard라 actor 상태와 완전히 맞지 않는다. 실제 실패 확정은 preflight/send 단계에서 수행한다.
 - `AppSessionRuntime`의 장기 책임 범위는 후속 phase에서 정리한다.
+
+### Phase 23/23.5/26 설계 하네스
+
+- 하위 에이전트 3개로 코드 수정 없는 병렬 조사를 진행했다.
+  - AppSessionRuntime, AppCoordinator, SceneDelegate, Login bootstrap, Banner/Presence lifecycle.
+  - JoinedRoomsStore 위치/API/사용처와 Combine publisher 의존.
+  - RealtimeSocketService.shared 직접 접근과 socket-facing repository 주입 지점.
+- `phase-23-runtime-design.md`를 추가했다.
+  - App session dependency graph는 `AppCompositionRoot` 또는 `AppSessionCompositionRoot`가 소유하는 방향을 추천한다.
+  - `JoinedRoomsStore`는 `OutPick/App/Session/JoinedRoomsSessionStore.swift`로 이동/rename하고, 1차 구현에서는 기존 publisher API를 유지하는 방향을 추천한다.
+  - `RealtimeSocketService.shared`는 transition fallback 또는 composition root fallback으로 축소하고, `AppSessionRuntime`과 `ChatContainer`가 같은 instance를 명시 주입하는 방향을 추천한다.
+  - `FirebaseChatRoomRepository.saveRoomInfoToFirestore`의 socket create/join side effect는 repository 밖 runtime/use case 경계로 이동하는 방향을 추천한다.
+- 구현 순서는 Phase 23 → Phase 23.5 → Phase 26이다.
+- 세 phase는 같은 lifecycle graph, `ChatContainer`, socket-facing repository 조립을 건드리므로 병렬 구현하지 않고 메인 스레드에서 순차 진행한다.
+
+### Phase 23/23.5/26 구현
+
+- `AppCompositionRoot`를 추가했다.
+  - `UserProfileRepository`, `LoginManagerCurrentUserProvider`, `RealtimeSocketService.shared`, `JoinedRoomsSessionStore`, `BrandAdminSessionStore`, `AppSessionRuntime`을 같은 앱 graph에서 조립한다.
+  - `SceneDelegate`는 직접 Firebase repository/runtime을 만들지 않고 `AppCompositionRoot.makeCoordinator(window:)`만 호출한다.
+- `AppCoordinator`의 세션 dependency 직접 생성을 제거했다.
+  - `JoinedRoomsSessionStore`, `BrandAdminSessionStore`, `CurrentUserProviding`, `RealtimeSocketService`, `AppSessionRuntime`을 생성자 주입으로 받는다.
+  - `ensureChatContainer()`는 같은 current user provider와 realtime socket service를 `ChatContainer`에 전달한다.
+- Scene lifecycle presence 호출을 `AppSessionRuntime`으로 위임했다.
+  - `SceneDelegate.sceneDidBecomeActive`, `sceneWillResignActive`, `sceneDidEnterBackground`는 `AppCoordinator`를 거쳐 runtime 메서드를 호출한다.
+- `JoinedRoomsStore`를 `JoinedRoomsSessionStore`로 이동/rename했다.
+  - 새 위치: `OutPick/App/Session/JoinedRoomsSessionStore.swift`
+  - `JoinedRoomsSessionStoring` protocol을 추가했다.
+  - `LoginManager.bootstrapAfterLogin`, `AppSessionRuntime`, `ChatContainer`, `ChatRoomLifecycleUseCase`, `DefaultChatRoomLocalExitCleaner`가 protocol seam에 의존한다.
+- `ChatContainer`에서 socket-facing repository/use case를 만들 때 같은 `RealtimeSocketService` instance를 명시 주입한다.
+  - text message sending
+  - media message sending
+  - room realtime stream
+  - room runtime observer
+  - room exit
+  - lookbook chat share
+  - room lifecycle membership
+- `FirebaseChatRoomRepository.saveRoomInfoToFirestore`의 socket create/join side effect를 제거했다.
+- `ChatRoomLifecycleUseCase.activateJoinedRoomRealtime`의 `BannerManager.shared.addRoom` 직접 호출을 제거했다.
+- `JoinedRoomsSessionStoreTests`를 추가했다.
+
+검증:
+
+- `rg "JoinedRoomsStore"` 결과 production/test 0건.
+- `rg "BannerManager.shared.addRoom"` 결과 0건.
+- `git diff --check` 통과.
+- `xcodebuild -scheme OutPick -destination 'generic/platform=iOS Simulator' build` 통과.
+- `xcodebuild -scheme OutPick -destination 'id=5A3BB941-9538-4DD9-93C2-F18ACCFB03B9' test -only-testing:OutPickTests/JoinedRoomsSessionStoreTests` 통과, 2개.
+
+남은 위험:
+
+- `RealtimeSocketService.shared`는 `AppCompositionRoot` 기준 instance로 사용한다.
+- socket-facing repository/use case initializer의 `.shared` 기본값은 transition fallback으로 남아 있다.
+- `BannerManager.shared`와 `PresenceManager.shared` 자체 제거는 이번 phase 범위 밖으로 남겼다.
+
+### Phase 23.6 JoinedRooms publisher 제거
+
+- `JoinedRoomsSessionStore`에서 Combine `CurrentValueSubject`와 `publisher` API를 제거했다.
+- `JoinedRoomsSessionStore`는 `joined`, `replace`, `add`, `remove`, `contains`, `clear` snapshot API만 가진다.
+- `AppSessionRuntime`에 `JoinedRoomsSessionRuntimeHandling` command protocol을 추가했다.
+  - `replaceJoinedRooms(_:)`
+  - `addJoinedRoom(_:)`
+  - `removeJoinedRoom(_:)`
+  - `clearJoinedRooms()`
+- 로그인 bootstrap의 profile listener와 초기 joined rooms 선주입은 store snapshot 갱신 직후 runtime command를 명시 호출한다.
+- 방 생성/참여 성공 시 `ChatRoomLifecycleUseCase`가 store add와 runtime add command를 함께 호출한다.
+- 방 나가기 local cleanup 시 `DefaultChatRoomLocalExitCleaner`가 store remove와 runtime remove command를 함께 호출한다.
+- `ChatRoomLifecycleUseCase`/`DefaultChatRoomLocalExitCleaner`의 직접 socket join/leave 호출은 제거했다.
+
+검증:
+
+- `rg "JoinedRoomsSessionStoring|joinedRoomsStore.publisher|publisher: AnyPublisher<Set<String>|JoinedRoomsStore"`로 publisher/구 store 참조 제거 확인.
+- `git diff --check` 통과.
+- `xcodebuild -scheme OutPick -destination 'generic/platform=iOS Simulator' build` 통과.
+- `xcodebuild -scheme OutPick -destination 'id=5A3BB941-9538-4DD9-93C2-F18ACCFB03B9' test -only-testing:OutPickTests/JoinedRoomsSessionStoreTests` 통과.
+
+남은 위험:
+
+- `AppSessionRuntime` 자체 command side effect는 아직 concrete `RealtimeSocketService`/`BannerManager`에 묶여 있어 fake 기반 unit test는 추가하지 않았다.
+- 수동 QA는 로그인 후 joined rooms bootstrap, 방 생성/참여, 방 나가기, 로그아웃 cleanup 경로를 확인해야 한다.
 
 ### Phase 8
 
@@ -667,3 +755,41 @@
 
 - 이번 단계는 문서 계획 수립만 수행한다.
 - 구현은 아직 시작하지 않는다.
+
+### Phase 23.7 QA runtime 안정화
+
+목표:
+
+- Phase 23/23.6 이후 수동 QA에서 확인된 로그인 routing, socket connect, 메시지 배너, 설정 화면 참여자 초기 표시, 방 나가기 목록 stale 문제를 먼저 안정화한다.
+
+완료 범위:
+
+- `AppCoordinator`가 로그아웃 시 authenticated session reset task를 보관하되, 새 로그인 routing에서는 대기하지 않고 취소하도록 보정했다.
+- `AppSessionRuntime.startAuthenticatedSession`은 socket connect를 별도 `Task`로 던지지 않고 retry 후 joined room sync와 presence/banner start를 진행한다.
+- `RealtimeSocketService.closeRoomSession`은 consumer session만 닫고 실제 socket `leaveRoom`은 joined-room command 경로에서만 수행하도록 바꿨다.
+- `LoadChatRoomParticipantsUseCase.loadLocalInitial(room:)`가 local DB 초기값만 반환하지 않고 room document의 `participants` 배열로 즉시 reconcile한다.
+- `FirebaseChatRoomRepository.applyLocalRoomUpdate(_:)`가 joined rooms summary subject에도 room update를 반영한다.
+- `FirebaseChatRoomRepository.removeLocalJoinedRoom(roomID:)`를 추가하고, 방 나가기/닫기 성공 후 local cleaner가 joined rooms summary에서 즉시 제거한다.
+- 추가 QA 보정:
+  - 로그아웃 후 같은 앱 실행 세션에서 다시 로그인할 때 이전 reset task 완료를 기다리다 BootLoading/검은 화면에 머물지 않도록 routing 대기를 제거했다.
+  - 늦게 끝난 logout reset이 새 authenticated session socket을 끊지 못하도록 `AppSessionRuntime.stopAuthenticatedSession()`에 generation guard를 추가했다.
+  - Xcode Scheme 환경변수로 주입된 `OUTPICK_SOCKET_URL`을 저장하고, 기기에서 앱을 직접 다시 실행할 때 저장된 URL을 재사용하도록 했다.
+  - `MyPageViewController`의 레거시 로그아웃 root 교체 경로를 `AppCoordinator`로 연결해, 같은 앱 실행 세션에서 재로그인해도 `routeAfterAuthenticated()`가 실행되도록 했다.
+
+검증:
+
+- `git diff --check` 통과.
+- `xcodebuild -scheme OutPick -destination 'generic/platform=iOS Simulator' build` 통과.
+- `xcodebuild -scheme OutPick -destination 'id=5A3BB941-9538-4DD9-93C2-F18ACCFB03B9' test -only-testing:OutPickTests/ChatRoomExitUseCaseTests -only-testing:OutPickTests/JoinedRoomsSessionStoreTests` 통과.
+- 추가 QA 보정 후 `git diff --check`, `xcodebuild -scheme OutPick -destination 'generic/platform=iOS Simulator' build` 재통과.
+
+남은 수동 QA:
+
+- 로그아웃 후 로그인 성공 시 메인 탭으로 진입.
+- 앱 실행/로그인 직후 socket connect 및 joined room sync.
+- 방 생성 직후 설정 화면 진입 시 참여자 1명 이상 표시.
+- 방 참여 직후 설정 화면 진입 시 참여자 목록 반영.
+- 방 나가기 성공 후 참여중 목록에서 즉시 제거.
+- 다른 탭 또는 다른 방 화면에서 메시지 수신 시 배너 표시.
+- 현재 보고 있는 방의 메시지는 배너 skip.
+- foreground/background 전환 후 socket/presence 유지.

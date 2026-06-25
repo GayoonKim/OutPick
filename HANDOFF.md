@@ -4,13 +4,17 @@
 
 - 현재 작업은 `chat-view-controller-layering`이다.
 - 목표는 `ChatViewController.swift`에 몰린 메시지 전송, 실시간 수신, 메시지 액션, 메시지 window/diffable, 미디어 업로드, 읽음 seq/lifecycle, 라우팅, 방 exit 실행 책임을 OutPick의 MVVM-C + Repository + UseCase + DI 흐름에 맞춰 단계적으로 분리하는 것이다.
-- 현재 상태는 Phase 22 `RealtimeSocketService` actor 전환 구현 및 빌드 검증 완료다. 수동 QA는 남아 있다.
+- 현재 상태는 Phase 23/23.5/26 runtime DI 구현, Phase 23.6 JoinedRooms publisher 제거, Phase 23.7 QA runtime 안정화 검증 완료다.
   - Phase 19: 갤러리/뷰어 Photos 저장 흐름을 앱 공용 `PhotoLibrarySaving`으로 통합했다.
   - Phase 20: 검색 task/generation guard와 검색 표시 상태를 `ChatRoomViewModel` 경계로 이동했다.
   - Phase 21: 남은 runtime singleton/manager 직접 접근 audit 및 task 종료 기준을 확정했다.
   - Phase 21 후속 안정화: media preflight/finalize, reservation 기반 TTL cleanup, outbox GRDB seam, UI 소정리, avatar manager 축소, Lookbook current user adapter, `DefaultMediaProcessingService.shared` 직접 접근 제거를 완료했다.
   - Phase 22: `SocketIOManager` 제거, `RealtimeSocketService` actor와 `AppSessionRuntime` 도입, Socket/Realtime Combine bridge 제거를 완료했다.
-- 다음 우선순위는 Phase 22 수동 QA 이후, 후속 Phase 23~26 또는 기존 구현 대기 Phase A부터 순차 진행하는 것이다.
+  - Phase 23/23.5/26 설계: App session runtime ownership, joined rooms session store, realtime socket DI 축소 설계를 `phase-23-runtime-design.md`에 정리했다.
+  - Phase 23/23.5/26 구현: `AppCompositionRoot`, `JoinedRoomsSessionStore`, same realtime instance 주입, Firebase repository socket side effect 제거를 완료했다.
+  - Phase 23.6: `JoinedRoomsSessionStore.publisher`를 제거하고 joined-room socket/banner side effect를 `AppSessionRuntime` 명시 command API로 전환했다.
+  - Phase 23.7: 수동 QA에서 확인된 로그인 routing, 마이페이지 로그아웃 후 재로그인, socket connect, 메시지 배너, 참여자 초기 표시, 방 나가기 목록 stale 문제를 runtime command/로컬 summary 보정으로 안정화했다.
+- 다음 우선순위는 Phase A 또는 Phase C/D 등 남은 구조 개선 후보 중 무엇을 먼저 진행할지 사용자와 확정하는 것이다.
 - Phase 19~21 진행 전 사용자가 확정한 운영 방식은 앞으로도 유지한다.
   - 다음 2~3개 phase를 함께 훑고, 설계 쟁점/예상 변경 파일/검증 계획을 통합 보고한다.
   - 코드 수정 없는 조사는 서브 에이전트로 병렬화한다.
@@ -23,6 +27,7 @@
   - `docs/ai/tasks/active.md`
   - `docs/ai/tasks/chat-view-controller-layering/progress.md`
   - `docs/ai/tasks/chat-view-controller-layering/decisions.md`
+  - `docs/ai/tasks/chat-view-controller-layering/phase-23-runtime-design.md`
 - 상세 원문 archive:
   - `docs/ai/tasks/chat-view-controller-layering/archive/progress-through-phase-9.md`
   - `docs/ai/tasks/chat-view-controller-layering/archive/decisions-through-phase-9.md`
@@ -61,6 +66,10 @@
 | 21 | 완료 | 남은 runtime singleton/manager 직접 접근 audit 및 task 종료 기준 확정 |
 | 21 후속 안정화 | 완료 | media preflight/finalize, reservation TTL cleanup, outbox GRDB seam, UI 소정리, avatar manager 축소, Lookbook current user adapter, media processor shared 직접 접근 제거 |
 | 22 | 완료 | `SocketIOManager` 제거, `RealtimeSocketService` actor와 `AppSessionRuntime` 도입, Socket/Realtime Combine bridge 제거 |
+| 23/23.5/26 설계 | 완료 | App session runtime ownership, joined rooms session store, realtime socket DI 축소 설계 정리 |
+| 23/23.5/26 구현 | 완료 | AppCompositionRoot 조립, JoinedRoomsSessionStore 승격, Chat realtime 주입, Firebase repository socket side effect 제거 |
+| 23.6 | 완료 | `JoinedRoomsSessionStore.publisher` 제거, joined-room socket/banner side effect를 `AppSessionRuntime` command API로 전환 |
+| 23.7 | 완료 | QA 회귀 대응: 로그인 routing race, socket connect retry, room session close membership 제거, 참여자/joined summary 즉시 보정 |
 
 ## 4. 최근 핵심 변경
 
@@ -241,6 +250,22 @@
 - 별도 스레드/병렬 후보였던 UI 소정리, `provider.avatarImageManager` 접근 폭 축소, Lookbook current user adapter, `DefaultMediaProcessingService.shared` 직접 접근 제거는 완료했다.
 
 ### 구현 대기 Phase 계획
+
+#### Phase Dev-Local: 개발용 Bonjour socket discovery
+
+- 목표: 개발 환경에서 Xcode Scheme 환경변수 없이도 같은 로컬 네트워크의 Socket 서버를 자동 발견한다.
+- 배경:
+  - `OUTPICK_SOCKET_URL` Scheme 환경변수는 Xcode로 실행할 때만 주입된다.
+  - 기기에서 앱 아이콘으로 직접 재실행하면 Scheme env가 없어 production fallback 또는 마지막 저장 URL에 의존한다.
+- 추천 방향:
+  - Socket Node 서버가 Bonjour/mDNS service를 advertise한다. 예: `_outpick-socket._tcp`.
+  - iOS 앱은 개발 빌드에서 Bonjour discovery로 host/port를 resolve한다.
+  - URL 결정 우선순위는 명시 URL, Bonjour 발견 URL, 마지막 성공 URL, production URL 순서로 둔다.
+  - iOS 설정에는 `NSBonjourServices` 추가가 필요할 수 있다.
+- 검증:
+  - Xcode env 없이 앱 직접 실행 후 로컬 Socket 서버 발견 및 연결.
+  - 로컬 IP 변경 후 재실행 시 새 IP로 연결.
+  - Bonjour 실패 시 마지막 성공 URL 또는 production fallback 동작.
 
 #### Phase A: Media processing concrete 타입 제거
 

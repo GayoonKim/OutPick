@@ -24,7 +24,7 @@
 - Repositories/Managers: `OutPick/Features/Chat/Repositories`, `OutPick/Features/Chat/Managers`
 - Domain models: `OutPick/Features/Chat/Domain/Models`
 - Image loading services: `OutPick/Features/Chat/Services/ImageLoading`
-- Joined rooms store: `OutPick/Features/Chat/Domain/Models/JoinedRoomsStore.swift`
+- Joined rooms session store: `OutPick/App/Session/JoinedRoomsSessionStore.swift`
 
 ## Profile
 

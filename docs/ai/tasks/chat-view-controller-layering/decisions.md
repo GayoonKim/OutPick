@@ -32,6 +32,8 @@
 | 후속 phase 재정렬 | Phase 15~19는 media/cell 구조 부채를 먼저 정리하고, 검색 분리와 최종 audit은 Phase 20~21로 이동 | 현재 문서 |
 | 메시지 전송 ACK timeout | Socket.IO `"NO ACK"`/timeout ACK는 성공이 아니라 실패로 판정하고, 빈 ACK만 서버 호환성 차원에서 성공으로 유지 | 현재 문서 |
 | Realtime socket actor | `SocketIOManager`를 제거하고 `RealtimeSocketService` actor + `AppSessionRuntime`으로 socket/session lifecycle을 분리 | 현재 문서 |
+| Phase 23 runtime DI 설계 | App session dependency graph는 CompositionRoot가 소유하고, joined rooms는 App session store로 승격하며, `RealtimeSocketService.shared`는 fallback 수준으로 축소 | `phase-23-runtime-design.md` |
+| JoinedRooms command runtime | `JoinedRoomsSessionStore`는 snapshot store로만 유지하고, socket/banner side effect는 `AppSessionRuntime` command API를 명시 호출 | 현재 문서 |
 | media pending ID | pending은 로컬 UI/store 상태로만 보관하고 canonical messageID, Storage path, Firestore messageID에는 넣지 않음 | 현재 문서 |
 | 실패 outgoing outbox | 전송 실패 메시지는 GRDB outbox + Application Support 파일로 영속화하고, retry 시 업로드 필요 여부를 stage/payload로 판단 | 현재 문서 |
 | 실패 메시지 재시도 UI 정합성 | failed local message가 confirmed server message로 교체되면 `isFailed`/`seq` 변경을 재배치 신호로 보고 snapshot reorder와 reconfigure를 함께 수행 | 현재 문서 |
@@ -78,6 +80,43 @@
 - media upload의 동기 `isSocketConnected` guard는 async 상태 모델 또는 preflight 중심 흐름으로 정리한다.
 - `RealtimeSocketService.shared` 직접 접근은 장기 구조가 아니라 전환기 기본값으로 본다. race condition 방지는 actor isolation이 담당하고, lifecycle ownership과 동일 instance 공유는 composition root/DI가 담당하도록 후속 phase에서 정리한다.
 - `JoinedRoomsStore`는 Chat domain model이 아니라 앱 세션 membership snapshot/store 성격으로 재분류하고, 위치와 event API를 후속 phase에서 정리한다.
+
+### Phase 23/23.5/26 Runtime DI 설계
+
+결정:
+
+- App session dependency graph는 `AppCoordinator`가 직접 만들지 않고 `AppCompositionRoot` 또는 `AppSessionCompositionRoot` 같은 조립 지점이 소유하는 방향으로 진행한다.
+- `AppCoordinator`는 로그인/프로필/메인 탭 라우팅, force logout route, notification route 조율에 집중한다.
+- `JoinedRoomsStore`는 Chat domain model이 아니라 앱 인증 세션 membership state로 보고 `OutPick/App/Session/JoinedRoomsSessionStore.swift`로 이동/rename하는 방향을 채택한다.
+- 1차 구현에서는 joined rooms store의 `publisher`와 `replace/add/remove/clear/contains` API를 유지한다.
+- `AsyncStream<Set<String>>` 전환은 참여방 목록 UI publisher와 repository publisher까지 번질 수 있으므로 이번 phase에서는 보류한다.
+- `AppSessionRuntime`의 이번 정리 범위는 socket connect/disconnect/reset, joined rooms diff 기반 join/leave, banner runtime start/stop, presence start/logout, Scene lifecycle presence 위임 후보까지로 제한한다.
+- `LoginManager.bootstrapAfterLogin`의 profile listener 전체 이관, brand admin preload, push device sync, Profile/Login 구조 전면 재설계는 보류한다.
+- `RealtimeSocketService.shared` 직접 접근은 transition fallback 또는 composition root fallback으로만 남기는 방향으로 줄인다.
+- `AppSessionRuntime`과 `ChatContainer`는 같은 `RealtimeSocketService` instance를 주입받아야 한다.
+- `FirebaseChatRoomRepository.saveRoomInfoToFirestore`의 socket create/join side effect는 repository 밖 runtime/use case 경계로 이동한다.
+- Phase 23, Phase 23.5, Phase 26은 같은 lifecycle graph와 `ChatContainer` 조립부를 건드리므로 병렬 구현하지 않고 순차 진행한다.
+- 구현 결과, production 앱 조립 경로는 `AppCompositionRoot`가 기준 `RealtimeSocketService` instance를 만들고 `AppSessionRuntime`과 `ChatContainer`에 전달한다.
+- repository/use case initializer의 `.shared` 기본값은 transition fallback으로 남겼다.
+- 추가 리팩토링으로 `JoinedRoomsSessionStore.publisher`를 제거하고, `replace/add/remove/clear` snapshot 변경 직후 `AppSessionRuntime`의 joined-room command API를 호출하는 구조로 전환했다.
+- `JoinedRoomsSessionStore`는 상태 저장만 담당하고, socket join/leave 및 banner start/remove side effect는 `AppSessionRuntime`이 담당한다.
+- `ChatRoomLifecycleUseCase`와 `DefaultChatRoomLocalExitCleaner`는 socket join/leave를 직접 호출하지 않고 joined-room runtime command를 호출한다.
+
+이유:
+
+- 현재 구조는 `AppCoordinator`, `AppSessionRuntime`, `BannerManager`, `PresenceManager`, Chat socket-facing repository들이 각자 `.shared` 또는 기본값으로 의존성을 다시 선택해 인증 세션 graph가 코드로 강제되지 않는다.
+- `JoinedRoomsStore`는 Login bootstrap, App runtime, Chat join/exit use case가 공유하는 세션 snapshot이므로 Chat domain model 위치가 맞지 않는다.
+- `RealtimeSocketService.shared`는 actor isolation으로 race condition은 줄이지만 lifecycle ownership과 테스트 가능성을 흐린다.
+- Firestore repository 안의 socket side effect는 Repository 책임을 넘고, 방 생성 후 lifecycle use case의 create/join과 중복될 수 있다.
+- joined rooms 이벤트는 저빈도 세션 이벤트라 Combine publisher보다 명시 command 호출이 책임과 실행 지점을 더 잘 드러낸다.
+
+검증 방향:
+
+- `rg "RealtimeSocketService.shared"`로 production 직접 접근 축소를 확인한다.
+- `rg "JoinedRoomsStore"`로 rename/move 상태를 확인한다.
+- `AppSessionRuntimeTests`에서 joined rooms diff에 따른 join/leave와 banner start/remove를 fake 기반으로 검증한다.
+- `ChatRoomLifecycleUseCaseTests`에서 `handleRoomSaved` create/join 단일 호출과 session store add를 검증한다.
+- 수동 QA는 로그인 후 메인 진입, foreground/background presence, 방 생성/참여/나가기, 배너 수신, 로그아웃 cleanup을 확인한다.
 
 ### 메시지 전송 ACK timeout
 
@@ -476,3 +515,17 @@
 - Storage 전체 sweep cleanup과 Cloud Run worker 승격은 운영/성장 이후 보류한다.
   - 현재는 reservation TTL cleanup이 1차 방어 역할을 한다.
   - 전체 sweep은 사용자/트래픽/Storage 비용 증가 후 dry-run report부터 별도 운영 phase로 검토한다.
+
+### Phase 23.7 QA runtime 안정화 결정
+
+- 인증 세션 시작은 socket connect 시도와 joined room sync/banner start 순서를 `AppSessionRuntime` 안에서 직렬화한다.
+  - socket connect는 1회 fire-and-forget으로 두지 않고 짧은 retry를 수행한다.
+  - 로그아웃 reset과 새 로그인 routing이 겹칠 수 있으므로 `AppCoordinator`는 새 로그인 routing에서 reset task 대기를 제거하고, `AppSessionRuntime` generation guard로 늦게 끝난 stop이 새 세션을 끊지 못하게 한다.
+- 마이페이지 로그아웃 후 재로그인은 `MyPageViewController`가 직접 root를 교체하는 레거시 경로가 아니라 `AppCoordinator` routing 경로로 모은다.
+- socket room membership의 소유권은 joined-room command API에 둔다.
+  - 채팅 화면, 설정 화면, 배너 같은 consumer session 종료는 실제 socket `leaveRoom`을 호출하지 않는다.
+  - 실제 leave는 사용자가 방을 나가거나 authenticated session이 종료될 때만 수행한다.
+- 설정 화면 참여자 초기 표시는 local DB snapshot만 신뢰하지 않고 room document의 participants 배열로 즉시 reconcile한다.
+  - Firestore listener가 늦게 도착해도 방 생성/참여 직후 0명으로 보이는 상태를 줄이기 위함이다.
+- 방 나가기/닫기 성공 후 참여중 목록은 서버 listener를 기다리지 않고 local joined rooms summary에서 즉시 제거한다.
+  - 서버 실패 시에는 기존처럼 local cleanup을 건너뛴다.
