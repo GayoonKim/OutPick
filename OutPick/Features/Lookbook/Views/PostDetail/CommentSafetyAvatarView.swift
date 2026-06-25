@@ -11,7 +11,7 @@ import UIKit
 struct CommentSafetyAvatarView: View {
     let avatarPath: String?
     let size: CGFloat
-    let avatarImageManager: ChatAvatarImageManaging
+    let avatarImageManager: AvatarImageManaging
 
     @State private var image: UIImage?
     @State private var loadedPath: String?

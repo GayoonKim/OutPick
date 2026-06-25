@@ -10,7 +10,7 @@ import SwiftUI
 struct CommentDeleteConfirmationSheetView: View {
     let author: CommentAuthorDisplay
     let isDeleting: Bool
-    let avatarImageManager: ChatAvatarImageManaging
+    let avatarImageManager: AvatarImageManaging
     let onCancel: () -> Void
     let onConfirm: () -> Void
 

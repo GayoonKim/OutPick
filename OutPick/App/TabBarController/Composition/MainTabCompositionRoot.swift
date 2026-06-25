@@ -18,7 +18,7 @@ enum MainTabCompositionRoot {
         lookbookContainer.configureLookbookChatShare(
             loadShareableJoinedRoomsUseCase: chatContainer.makeLoadShareableJoinedRoomsUseCase(),
             shareLookbookContentToChatUseCase: chatContainer.makeShareLookbookContentToChatUseCase(),
-            roomImageManager: chatContainer.provider.roomImageManager,
+            roomImageManager: chatContainer.makeRoomImageManager(),
             avatarImageManager: chatContainer.makeAvatarImageManager()
         )
 

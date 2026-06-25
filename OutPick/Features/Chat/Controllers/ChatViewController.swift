@@ -79,7 +79,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private let storageURLResolver: ChatStorageURLResolving
     private let videoThumbnailGenerator: ChatVideoThumbnailGenerating
     let mediaProcessor: MediaProcessingServiceProtocol
-    private let avatarImageManager: ChatAvatarImageManaging
+    private let avatarImageManager: AvatarImageManaging
     private let profileSyncManager: ChatProfileSyncManaging
     weak var router: ChatRoomRouting?
     private let profileScopeID = UUID()
@@ -94,7 +94,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         storageURLResolver: ChatStorageURLResolving,
         videoThumbnailGenerator: ChatVideoThumbnailGenerating,
         mediaProcessor: MediaProcessingServiceProtocol,
-        avatarImageManager: ChatAvatarImageManaging,
+        avatarImageManager: AvatarImageManaging,
         profileSyncManager: ChatProfileSyncManaging,
         viewModel: ChatRoomViewModel
     ) {

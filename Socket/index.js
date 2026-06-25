@@ -1198,17 +1198,6 @@ io.on('connection', (socket) => {
       return handleMediaFinalize(data, callback);
     });
 
-    // 🔁 Legacy support: "send images" → common media finalize handler
-    socket.on('send images', async (data, callback) => {
-      return handleMediaFinalize(data, callback, "images");
-
-    });
-
-    // Legacy support: "chat:video" → common media finalize handler
-    socket.on('chat:video', async (data, callback) => {
-      return handleMediaFinalize(data, callback, "video");
-
-    });
     socket.on('disconnect', () => {
         console.log('User disconnected:', socket.id);
         for (const roomID in rooms) {

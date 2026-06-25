@@ -17,6 +17,9 @@ enum AppCompositionRoot {
         let realtimeSocketService = RealtimeSocketService.shared
         let joinedRoomsStore = JoinedRoomsSessionStore()
         let brandAdminSessionStore = BrandAdminSessionStore()
+        let avatarImageManager = AvatarImageService(
+            imageStorageRepository: FirebaseRepositoryProvider.shared.imageStorageRepository
+        )
         let appSessionRuntime = AppSessionRuntime(
             realtimeSocketService: realtimeSocketService,
             currentUserProvider: currentUserProvider
@@ -29,6 +32,7 @@ enum AppCompositionRoot {
             brandAdminSessionStore: brandAdminSessionStore,
             currentUserProvider: currentUserProvider,
             realtimeSocketService: realtimeSocketService,
+            avatarImageManager: avatarImageManager,
             appSessionRuntime: appSessionRuntime
         )
     }

@@ -160,12 +160,21 @@ private extension View {
     }
 }
 
+private final class PreviewAvatarImageManager: AvatarImageManaging {
+    func cachedAvatar(for path: String) async -> UIImage? { nil }
+    func loadAvatar(for path: String, maxBytes: Int) async throws -> UIImage { UIImage() }
+    func prefetchAvatars(paths: [String], maxBytes: Int, maxConcurrent: Int) async {}
+    func storeAvatarDataToCache(_ data: Data, for path: String) async throws {}
+    func removeCachedAvatar(for path: String) async {}
+}
+
 #Preview {
     let provider = LookbookRepositoryProvider.shared
     let brandAdminSessionStore = BrandAdminSessionStore()
     let container = LookbookContainer(
         provider: provider,
-        brandAdminSessionStore: brandAdminSessionStore
+        brandAdminSessionStore: brandAdminSessionStore,
+        avatarImageManager: PreviewAvatarImageManager()
     )
     let coordinator = LookbookCoordinator(container: container)
     let vm = LookbookHomeViewModel(

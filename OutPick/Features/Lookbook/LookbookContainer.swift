@@ -19,8 +19,9 @@ final class LookbookContainer {
     let lookbookHomeViewModel: LookbookHomeViewModel
     let interactionStore: LookbookInteractionStore
     let debugFailureInjectionStore: LookbookDebugFailureInjectionStore
+    let currentUserProvider: any CurrentUserProviding
     let currentUserIDProvider: any CurrentUserIDProviding
-    private var avatarImageManager: ChatAvatarImageManaging
+    private var avatarImageManager: AvatarImageManaging
     private let firebaseRepositories: any FirebaseRepositoryProviding
 
     private let loadPostCommentsUseCase: any LoadPostCommentsUseCaseProtocol
@@ -46,7 +47,7 @@ final class LookbookContainer {
         brandAdminSessionStore: BrandAdminSessionStore,
         currentUserProvider: any CurrentUserProviding = LoginManagerCurrentUserProvider(),
         firebaseRepositories: any FirebaseRepositoryProviding = FirebaseRepositoryProvider.shared,
-        avatarImageManager: ChatAvatarImageManaging? = nil
+        avatarImageManager: AvatarImageManaging
     ) {
         self.provider = provider
         self.brandAdminSessionStore = brandAdminSessionStore
@@ -55,11 +56,10 @@ final class LookbookContainer {
         #if DEBUG
         LookbookDebugFailureLaunchArguments.apply(to: debugFailureInjectionStore)
         #endif
+        self.currentUserProvider = currentUserProvider
         self.currentUserIDProvider = LookbookCurrentUserIDProvider(currentUserProvider: currentUserProvider)
         self.firebaseRepositories = firebaseRepositories
-        self.avatarImageManager = avatarImageManager ?? AvatarImageService(
-            imageStorageRepository: firebaseRepositories.imageStorageRepository
-        )
+        self.avatarImageManager = avatarImageManager
         self.loadPostCommentsUseCase = LoadPostCommentsUseCase(
             commentRepository: provider.commentRepository
         )
@@ -120,7 +120,7 @@ final class LookbookContainer {
         loadShareableJoinedRoomsUseCase: any LoadShareableJoinedRoomsUseCaseProtocol,
         shareLookbookContentToChatUseCase: any ShareLookbookContentToChatUseCaseProtocol,
         roomImageManager: any RoomImageManaging,
-        avatarImageManager: any ChatAvatarImageManaging
+        avatarImageManager: any AvatarImageManaging
     ) {
         self.loadShareableJoinedRoomsUseCase = loadShareableJoinedRoomsUseCase
         self.shareLookbookContentToChatUseCase = shareLookbookContentToChatUseCase
@@ -465,6 +465,7 @@ final class LookbookContainer {
             postID: postID,
             coordinator: commentCoordinator,
             avatarImageManager: avatarImageManager,
+            currentUserProvider: currentUserProvider,
             firebaseRepositories: firebaseRepositories
         )
     }
@@ -483,6 +484,7 @@ final class LookbookContainer {
                 parentComment: parentComment
             ),
             avatarImageManager: avatarImageManager,
+            currentUserProvider: currentUserProvider,
             firebaseRepositories: firebaseRepositories
         )
     }

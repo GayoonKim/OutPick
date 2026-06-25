@@ -8,7 +8,7 @@ import UIKit
 @MainActor
 final class UserProfileDetailViewController: UIViewController, ChatModalAnimatable {
     private let viewModel: UserProfileDetailViewModel
-    private let avatarImageManager: ChatAvatarImageManaging
+    private let avatarImageManager: AvatarImageManaging
 
     private var avatarLoadTask: Task<Void, Never>?
     private var currentAvatarSource = AvatarImageSource()
@@ -125,7 +125,7 @@ final class UserProfileDetailViewController: UIViewController, ChatModalAnimatab
 
     init(
         viewModel: UserProfileDetailViewModel,
-        avatarImageManager: ChatAvatarImageManaging
+        avatarImageManager: AvatarImageManaging
     ) {
         self.viewModel = viewModel
         self.avatarImageManager = avatarImageManager

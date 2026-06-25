@@ -19,15 +19,15 @@ enum ChatCompositionRoot {
     }
 
     static func makeRoomCreateViewController(
-        provider: ChatManagerProviding,
         repositories: FirebaseRepositoryProviding,
+        roomImageManager: RoomImageManaging,
         mediaProcessor: MediaProcessingServiceProtocol,
         makeCreatedRoomViewController: @escaping (ChatRoom) -> ChatViewController?
     ) -> RoomCreateViewController {
         let createRoomUseCase = CreateRoomUseCase(
             chatRoomRepository: repositories.chatRoomRepository,
             imageStorageRepository: repositories.imageStorageRepository,
-            roomImageManager: provider.roomImageManager
+            roomImageManager: roomImageManager
         )
         let viewModel = RoomCreateViewModel(createRoomUseCase: createRoomUseCase)
         return RoomCreateViewController(
@@ -39,11 +39,13 @@ enum ChatCompositionRoot {
 
     static func makeChatRoomSettingPanel(
         room: ChatRoom,
-        provider: ChatManagerProviding,
         repositories: FirebaseRepositoryProviding,
         attachmentImageLoader: ChatAttachmentImageLoading,
         videoResolver: ChatVideoPlaybackResolving,
         photoLibrarySaver: PhotoLibrarySaving,
+        roomImageManager: RoomImageManaging,
+        avatarImageManager: AvatarImageManaging,
+        networkStatusProvider: NetworkStatusProviding,
         exitUseCase: ChatRoomExitUseCaseProtocol,
         onEvent: @escaping (ChatRoomSettingEvent) -> Void = { _ in }
     ) -> ChatRoomSettingViewController {
@@ -67,19 +69,19 @@ enum ChatCompositionRoot {
             room: room,
             initialParticipants: initialParticipants,
             attachmentImageLoader: attachmentImageLoader,
-            avatarImageManager: provider.avatarImageManager,
+            avatarImageManager: avatarImageManager,
             loadParticipantsUseCase: participantsUseCase,
             loadMediaUseCase: mediaUseCase,
             exitUseCase: exitUseCase,
-            networkStatusProvider: provider.networkStatusProvider
+            networkStatusProvider: networkStatusProvider
         )
         let settingVC = ChatRoomSettingViewController(
             viewModel: settingViewModel,
             attachmentImageLoader: attachmentImageLoader,
             videoResolver: videoResolver,
             photoLibrarySaver: photoLibrarySaver,
-            roomImageManager: provider.roomImageManager,
-            avatarImageManager: provider.avatarImageManager
+            roomImageManager: roomImageManager,
+            avatarImageManager: avatarImageManager
         )
         settingVC.onEvent = onEvent
         return settingVC
@@ -87,15 +89,15 @@ enum ChatCompositionRoot {
 
     static func makeRoomEditViewController(
         room: ChatRoom,
-        provider: ChatManagerProviding,
         repositories: FirebaseRepositoryProviding,
+        roomImageManager: RoomImageManaging,
         mediaProcessor: MediaProcessingServiceProtocol,
         onRoomEdited: @escaping @MainActor (ChatRoom) async -> Void
     ) -> RoomEditViewController {
         let editUseCase = RoomEditUseCase(
             chatRoomRepository: repositories.chatRoomRepository,
             imageStorageRepository: repositories.imageStorageRepository,
-            roomImageManager: provider.roomImageManager
+            roomImageManager: roomImageManager
         )
         let editViewModel = RoomEditViewModel(room: room, useCase: editUseCase)
         let editVC = RoomEditViewController(

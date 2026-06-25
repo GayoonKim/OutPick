@@ -10,18 +10,21 @@ final class UserProfileDetailCoordinator {
     private weak var presentingViewController: UIViewController?
     private weak var presentedViewController: UIViewController?
 
-    private let provider: ChatManagerProviding
+    private let avatarImageManager: AvatarImageManaging
+    private let currentUserProvider: CurrentUserProviding
     private let repositories: FirebaseRepositoryProviding
     private let onFinish: () -> Void
 
     init(
         presentingViewController: UIViewController,
-        provider: ChatManagerProviding,
+        avatarImageManager: AvatarImageManaging,
+        currentUserProvider: CurrentUserProviding,
         repositories: FirebaseRepositoryProviding,
         onFinish: @escaping () -> Void
     ) {
         self.presentingViewController = presentingViewController
-        self.provider = provider
+        self.avatarImageManager = avatarImageManager
+        self.currentUserProvider = currentUserProvider
         self.repositories = repositories
         self.onFinish = onFinish
     }
@@ -34,7 +37,8 @@ final class UserProfileDetailCoordinator {
             email: email,
             seedNickname: nickname,
             seedAvatarPath: avatarPath,
-            avatarImageManager: provider.avatarImageManager,
+            avatarImageManager: avatarImageManager,
+            currentUserProvider: currentUserProvider,
             repositories: repositories,
             onBack: { [weak self] in
                 self?.dismiss()
@@ -53,7 +57,8 @@ final class UserProfileDetailCoordinator {
             userID: userID,
             seedNickname: nickname,
             seedAvatarPath: avatarPath,
-            avatarImageManager: provider.avatarImageManager,
+            avatarImageManager: avatarImageManager,
+            currentUserProvider: currentUserProvider,
             repositories: repositories,
             onBack: { [weak self] in
                 self?.dismiss()

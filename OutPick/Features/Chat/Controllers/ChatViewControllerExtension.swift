@@ -255,19 +255,6 @@ extension ChatViewController {
         pairs: [ProcessedImage]
     ) async {
         do {
-            guard mediaUploadUseCase.isSocketConnected else {
-                await mediaUploadUseCase.cacheFailedImageThumbnails(pairs)
-                if let message = await MainActor.run(body: {
-                    self.stagedMessageForOutbox(messageID: messageID)
-                }) {
-                    await markOutgoingMessageFailed(message, error: ChatMediaUploadUseCaseError.socketDisconnectedBeforeUpload)
-                }
-                await MainActor.run {
-                    self.markPendingImageUploadFailed(messageID: messageID)
-                }
-                return
-            }
-
             let attachments = try await mediaUploadUseCase.uploadPendingImages(
                 pairs: pairs,
                 roomID: roomID,
@@ -309,18 +296,6 @@ extension ChatViewController {
         prepared: PreparedVideo
     ) async {
         do {
-            guard mediaUploadUseCase.isSocketConnected else {
-                if let message = await MainActor.run(body: {
-                    self.stagedMessageForOutbox(messageID: messageID)
-                }) {
-                    await markOutgoingMessageFailed(message, error: ChatMediaUploadUseCaseError.socketDisconnectedBeforeUpload)
-                }
-                await MainActor.run {
-                    self.markPendingVideoUploadFailed(messageID: messageID)
-                }
-                return
-            }
-
             let payload = try await mediaUploadUseCase.uploadVideo(
                 roomID: roomID,
                 messageID: messageID,

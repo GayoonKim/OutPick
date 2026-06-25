@@ -7,20 +7,7 @@
 
 import Foundation
 
-enum ChatMediaUploadUseCaseError: LocalizedError {
-    case socketDisconnectedBeforeUpload
-
-    var errorDescription: String? {
-        switch self {
-        case .socketDisconnectedBeforeUpload:
-            return "서버 연결이 끊겨 전송을 시작하지 못했습니다."
-        }
-    }
-}
-
 protocol ChatMediaUploadUseCaseProtocol {
-    var isSocketConnected: Bool { get }
-
     func makePendingImageMessage(
         roomID: String,
         messageID: String,
@@ -97,10 +84,6 @@ final class ChatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol {
         self.dateProvider = dateProvider
         self.previewDirectoryProvider = previewDirectoryProvider
         self.fileManager = fileManager
-    }
-
-    var isSocketConnected: Bool {
-        sendingRepository.isSocketConnected
     }
 
     func makePendingImageMessage(

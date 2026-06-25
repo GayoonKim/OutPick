@@ -13,7 +13,7 @@ struct PostDetailView: View {
     let postID: PostID
 
     private let brandImageCache: any BrandImageCacheProtocol
-    private let avatarImageManager: ChatAvatarImageManaging
+    private let avatarImageManager: AvatarImageManaging
     private let coordinator: LookbookCoordinator
     private let shareSheetFactory: (LookbookShareTarget, @escaping (LookbookChatShareViewModel.Completion) -> Void) -> AnyView
     private let onShareMove: (LookbookChatShareViewModel.Completion) async throws -> Void
@@ -35,7 +35,7 @@ struct PostDetailView: View {
         coordinator: LookbookCoordinator,
         commentCoordinator: PostCommentCoordinator,
         brandImageCache: any BrandImageCacheProtocol,
-        avatarImageManager: ChatAvatarImageManaging,
+        avatarImageManager: AvatarImageManaging,
         shareSheetFactory: @escaping (LookbookShareTarget, @escaping (LookbookChatShareViewModel.Completion) -> Void) -> AnyView,
         onShareMove: @escaping (LookbookChatShareViewModel.Completion) async throws -> Void
     ) {

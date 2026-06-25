@@ -10,7 +10,7 @@ import SwiftUI
 struct CommentReportSheetView: View {
     let author: CommentAuthorDisplay
     let isReporting: Bool
-    let avatarImageManager: ChatAvatarImageManaging
+    let avatarImageManager: AvatarImageManaging
     let onCancel: () -> Void
     let onSubmit: (CommentReportReason, String?) -> Void
 

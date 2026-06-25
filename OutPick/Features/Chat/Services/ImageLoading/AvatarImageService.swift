@@ -8,7 +8,7 @@
 import Foundation
 import UIKit
 
-final class AvatarImageService: ChatAvatarImageManaging {
+final class AvatarImageService: AvatarImageManaging {
     private static let sharedPipeline = makePipeline(
         imageStorageRepository: FirebaseRepositoryProvider.shared.imageStorageRepository
     )

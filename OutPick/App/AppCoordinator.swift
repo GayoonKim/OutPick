@@ -23,6 +23,7 @@ final class AppCoordinator {
     private let brandAdminSessionStore: BrandAdminSessionStore
     private let currentUserProvider: any CurrentUserProviding
     private let realtimeSocketService: RealtimeSocketService
+    private let avatarImageManager: AvatarImageManaging
     private let appSessionRuntime: AppSessionRuntime
     private var sessionResetTask: Task<Void, Never>?
     
@@ -42,6 +43,7 @@ final class AppCoordinator {
         brandAdminSessionStore: BrandAdminSessionStore,
         currentUserProvider: any CurrentUserProviding,
         realtimeSocketService: RealtimeSocketService,
+        avatarImageManager: AvatarImageManaging,
         appSessionRuntime: AppSessionRuntime
     ) {
         self.window = window
@@ -51,6 +53,7 @@ final class AppCoordinator {
         self.brandAdminSessionStore = brandAdminSessionStore
         self.currentUserProvider = currentUserProvider
         self.realtimeSocketService = realtimeSocketService
+        self.avatarImageManager = avatarImageManager
         self.appSessionRuntime = appSessionRuntime
         self.window.backgroundColor = OutPickTheme.ColorToken.backgroundBase
         Self.activeCoordinator = self
@@ -297,7 +300,8 @@ final class AppCoordinator {
         let created = LookbookContainer(
             provider: lookbookProvider,
             brandAdminSessionStore: brandAdminSessionStore,
-            currentUserProvider: currentUserProvider
+            currentUserProvider: currentUserProvider,
+            avatarImageManager: avatarImageManager
         )
         self.lookbookContainer = created
         return created
@@ -313,7 +317,8 @@ final class AppCoordinator {
             joinedRoomsStore: joinedRoomsStore,
             joinedRoomsRuntime: appSessionRuntime,
             currentUserProvider: currentUserProvider,
-            realtimeSocketService: realtimeSocketService
+            realtimeSocketService: realtimeSocketService,
+            avatarImageManager: avatarImageManager
         )
         self.chatContainer = created
         return created
@@ -398,7 +403,8 @@ final class AppCoordinator {
             lookbookContainer = LookbookContainer(
                 provider: fixtureProvider,
                 brandAdminSessionStore: brandAdminSessionStore,
-                currentUserProvider: currentUserProvider
+                currentUserProvider: currentUserProvider,
+                avatarImageManager: avatarImageManager
             )
             brandAdminSessionStore.applyUITestWritableBrands([
                 LookbookUITestFixtureRepositoryProviderFactory.brandID

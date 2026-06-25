@@ -8,8 +8,6 @@
 import Foundation
 
 protocol ChatMediaMessageSendingRepositoryProtocol {
-    var isSocketConnected: Bool { get }
-
     func preflightMediaUpload(
         roomID: String,
         messageID: String,
@@ -43,8 +41,6 @@ protocol ChatMediaMessageSendingRepositoryProtocol {
 }
 
 protocol ChatMediaSocketSending {
-    func isConnected() async -> Bool
-
     func preflightMediaUploadAwaitingAck(
         roomID: String,
         messageID: String,
@@ -85,11 +81,6 @@ final class SocketChatMediaMessageSendingRepository: ChatMediaMessageSendingRepo
 
     init(socketManager: ChatMediaSocketSending = RealtimeSocketService.shared) {
         self.socketManager = socketManager
-    }
-
-    var isSocketConnected: Bool {
-        // 정확한 연결 상태 확인은 preflight/send 단계에서 async로 다시 수행한다.
-        true
     }
 
     func preflightMediaUpload(

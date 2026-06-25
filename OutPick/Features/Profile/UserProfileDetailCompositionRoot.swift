@@ -11,7 +11,8 @@ enum UserProfileDetailCompositionRoot {
         email: String,
         seedNickname: String,
         seedAvatarPath: String?,
-        avatarImageManager: ChatAvatarImageManaging,
+        avatarImageManager: AvatarImageManaging,
+        currentUserProvider: CurrentUserProviding,
         repositories: FirebaseRepositoryProviding,
         onBack: @escaping () -> Void
     ) -> UserProfileDetailViewController {
@@ -23,8 +24,8 @@ enum UserProfileDetailCompositionRoot {
             lookupKey: .email(email),
             seedNickname: seedNickname,
             seedAvatarSource: AvatarImageSource(seedPath: seedAvatarPath),
-            currentUserID: LoginManager.shared.getUserDocumentID,
-            currentUserEmail: LoginManager.shared.getUserEmail,
+            currentUserID: currentUserProvider.documentID,
+            currentUserEmail: currentUserProvider.email,
             loadUserProfileDetailUseCase: useCase,
             onBack: onBack
         )
@@ -40,7 +41,8 @@ enum UserProfileDetailCompositionRoot {
         userID: String,
         seedNickname: String,
         seedAvatarPath: String?,
-        avatarImageManager: ChatAvatarImageManaging,
+        avatarImageManager: AvatarImageManaging,
+        currentUserProvider: CurrentUserProviding,
         repositories: FirebaseRepositoryProviding,
         onBack: @escaping () -> Void
     ) -> UserProfileDetailViewController {
@@ -52,8 +54,8 @@ enum UserProfileDetailCompositionRoot {
             lookupKey: .userID(userID),
             seedNickname: seedNickname,
             seedAvatarSource: AvatarImageSource(seedPath: seedAvatarPath),
-            currentUserID: LoginManager.shared.getUserDocumentID,
-            currentUserEmail: LoginManager.shared.getUserEmail,
+            currentUserID: currentUserProvider.documentID,
+            currentUserEmail: currentUserProvider.email,
             loadUserProfileDetailUseCase: useCase,
             onBack: onBack
         )

@@ -39,7 +39,7 @@ final class ChatRoomSettingViewModel {
     private let loadMediaUseCase: LoadChatRoomMediaUseCaseProtocol
     private let exitUseCase: ChatRoomExitUseCaseProtocol
     private let attachmentImageLoader: ChatAttachmentImageLoading
-    private let avatarImageManager: ChatAvatarImageManaging
+    private let avatarImageManager: AvatarImageManaging
     private let networkStatusProvider: NetworkStatusProviding
     private let mediaThumbMaxBytes = 12 * 1024 * 1024
     private let avatarPrefetchMaxBytes = 3 * 1024 * 1024
@@ -55,7 +55,7 @@ final class ChatRoomSettingViewModel {
         room: ChatRoom,
         initialParticipants: ChatRoomParticipantsLoadResult,
         attachmentImageLoader: ChatAttachmentImageLoading,
-        avatarImageManager: ChatAvatarImageManaging,
+        avatarImageManager: AvatarImageManaging,
         loadParticipantsUseCase: LoadChatRoomParticipantsUseCaseProtocol,
         loadMediaUseCase: LoadChatRoomMediaUseCaseProtocol,
         exitUseCase: ChatRoomExitUseCaseProtocol,

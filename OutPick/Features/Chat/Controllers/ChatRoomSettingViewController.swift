@@ -52,7 +52,7 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
     private let videoResolver: ChatVideoPlaybackResolving
     private let photoLibrarySaver: PhotoLibrarySaving
     private let roomImageManager: RoomImageManaging
-    private let avatarImageManager: ChatAvatarImageManaging
+    private let avatarImageManager: AvatarImageManaging
     private var lastRoomCoverKey: String? = nil
     private var coverPrefetchTask: Task<Void, Never>? = nil
     /// 끝 근처에서 선로딩을 트리거할 임계값(px)
@@ -97,7 +97,7 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
         videoResolver: ChatVideoPlaybackResolving,
         photoLibrarySaver: PhotoLibrarySaving,
         roomImageManager: RoomImageManaging,
-        avatarImageManager: ChatAvatarImageManaging
+        avatarImageManager: AvatarImageManaging
     ) {
         self.viewModel = viewModel
         self.attachmentImageLoader = attachmentImageLoader

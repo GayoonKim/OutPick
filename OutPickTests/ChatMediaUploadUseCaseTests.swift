@@ -455,8 +455,6 @@ private final class ChatMediaMessageSendingRepositorySpy: ChatMediaMessageSendin
     private(set) var preflightCalls: [PreflightCall] = []
     var preflightError: Error?
 
-    var isSocketConnected = true
-
     func preflightMediaUpload(
         roomID: String,
         messageID: String,

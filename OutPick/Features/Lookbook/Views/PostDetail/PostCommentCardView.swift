@@ -24,7 +24,7 @@ struct PostCommentCardView: View {
     let isMutatingLike: Bool
     let author: CommentAuthorDisplay
     let badges: [PostCommentBadge]
-    let avatarImageManager: ChatAvatarImageManaging
+    let avatarImageManager: AvatarImageManaging
     let actions: PostCommentCardActions
 
     init(
@@ -37,7 +37,7 @@ struct PostCommentCardView: View {
         badge: PostCommentBadge? = nil,
         badges: [PostCommentBadge] = [],
         badgeTitle: String? = nil,
-        avatarImageManager: ChatAvatarImageManaging,
+        avatarImageManager: AvatarImageManaging,
         actions: PostCommentCardActions = PostCommentCardActions()
     ) {
         self.comment = comment
@@ -251,7 +251,7 @@ struct PostCommentCardView: View {
 
 private struct PostCommentAvatarView: View {
     let avatarPath: String?
-    let avatarImageManager: ChatAvatarImageManaging
+    let avatarImageManager: AvatarImageManaging
 
     @State private var image: UIImage?
     @State private var loadedPath: String?

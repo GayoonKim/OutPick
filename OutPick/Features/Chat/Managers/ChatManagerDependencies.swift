@@ -7,19 +7,9 @@
 
 import Foundation
 
-protocol ChatManagerProviding {
-    var messageManager: ChatMessageManaging { get }
-    var roomImageManager: RoomImageManaging { get }
-    var avatarImageManager: ChatAvatarImageManaging { get }
-    var searchManager: ChatSearchManaging { get }
-    var profileSyncManager: ChatProfileSyncManaging { get }
-    var networkStatusProvider: NetworkStatusProviding { get }
-}
-
-struct ChatManagerProvider: ChatManagerProviding {
+struct ChatManagerProvider {
     let messageManager: ChatMessageManaging
     let roomImageManager: RoomImageManaging
-    let avatarImageManager: ChatAvatarImageManaging
     let searchManager: ChatSearchManaging
     let profileSyncManager: ChatProfileSyncManaging
     let networkStatusProvider: NetworkStatusProviding
@@ -28,7 +18,6 @@ struct ChatManagerProvider: ChatManagerProviding {
         repositories: FirebaseRepositoryProviding = FirebaseRepositoryProvider.shared,
         messageManager: ChatMessageManaging? = nil,
         roomImageManager: RoomImageManaging? = nil,
-        avatarImageManager: ChatAvatarImageManaging? = nil,
         searchManager: ChatSearchManaging? = nil,
         profileSyncManager: ChatProfileSyncManaging = ChatProfileSyncManager(),
         networkStatusProvider: NetworkStatusProviding = NWPathNetworkStatusProvider()
@@ -44,9 +33,6 @@ struct ChatManagerProvider: ChatManagerProviding {
             imageStorageRepository: repositories.imageStorageRepository
         )
         self.roomImageManager = roomImageManager ?? RoomImageService(
-            imageStorageRepository: repositories.imageStorageRepository
-        )
-        self.avatarImageManager = avatarImageManager ?? AvatarImageService(
             imageStorageRepository: repositories.imageStorageRepository
         )
         self.searchManager = resolvedSearchManager

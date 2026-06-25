@@ -9,7 +9,8 @@ import SwiftUI
 
 struct PostCommentRepliesSheetView: View {
     @StateObject private var viewModel: PostCommentRepliesViewModel
-    private let avatarImageManager: ChatAvatarImageManaging
+    private let avatarImageManager: AvatarImageManaging
+    private let currentUserProvider: any CurrentUserProviding
     private let firebaseRepositories: any FirebaseRepositoryProviding
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var brandAdminSessionStore: BrandAdminSessionStore
@@ -20,11 +21,13 @@ struct PostCommentRepliesSheetView: View {
 
     init(
         viewModel: PostCommentRepliesViewModel,
-        avatarImageManager: ChatAvatarImageManaging,
+        avatarImageManager: AvatarImageManaging,
+        currentUserProvider: any CurrentUserProviding,
         firebaseRepositories: any FirebaseRepositoryProviding
     ) {
         _viewModel = StateObject(wrappedValue: viewModel)
         self.avatarImageManager = avatarImageManager
+        self.currentUserProvider = currentUserProvider
         self.firebaseRepositories = firebaseRepositories
     }
 
@@ -377,6 +380,7 @@ struct PostCommentRepliesSheetView: View {
             CommentUserProfileDetailView(
                 author: profileAuthor,
                 avatarImageManager: avatarImageManager,
+                currentUserProvider: currentUserProvider,
                 repositories: firebaseRepositories,
                 onBack: {
                     self.profileAuthor = nil

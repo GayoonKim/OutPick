@@ -61,7 +61,7 @@ final class ChatCoordinator {
     func makeJoinedRoomsRoot() -> UIViewController {
         let joinedVC = JoinedRoomsViewController(
             viewModel: container.makeJoinedRoomsViewModel(),
-            roomImageManager: container.provider.roomImageManager
+            roomImageManager: container.makeRoomImageManager()
         )
         print(#function, joinedVC)
         joinedVC.onOpenRoom = { [weak self, weak joinedVC] room in
@@ -99,8 +99,8 @@ final class ChatCoordinator {
 
     private func presentCreateRoom(from source: UIViewController) {
         let createVC = ChatCompositionRoot.makeRoomCreateViewController(
-            provider: container.provider,
             repositories: container.firebaseRepositories,
+            roomImageManager: container.makeRoomImageManager(),
             mediaProcessor: container.makeMediaProcessor(),
             makeCreatedRoomViewController: { [weak self] room in
                 self?.makeChatRoomViewController(room: room, isRoomSaving: true)
@@ -132,8 +132,8 @@ final class ChatCoordinator {
     private func presentRoomEdit(from source: ChatRoomSettingViewController, room: ChatRoom) {
         let editVC = ChatCompositionRoot.makeRoomEditViewController(
             room: room,
-            provider: container.provider,
             repositories: container.firebaseRepositories,
+            roomImageManager: container.makeRoomImageManager(),
             mediaProcessor: container.makeMediaProcessor(),
             onRoomEdited: { [weak source] updatedRoom in
                 guard let source else { return }
@@ -180,7 +180,8 @@ final class ChatCoordinator {
     ) {
         let coordinator = UserProfileDetailCoordinator(
             presentingViewController: source,
-            provider: container.provider,
+            avatarImageManager: container.makeAvatarImageManager(),
+            currentUserProvider: container.currentUserProvider,
             repositories: container.firebaseRepositories,
             onFinish: { [weak self] in
                 self?.userProfileDetailCoordinator = nil
@@ -198,11 +199,13 @@ extension ChatCoordinator: ChatRoomRouting {
         weak var settingVC: ChatRoomSettingViewController?
         let panelVC = ChatCompositionRoot.makeChatRoomSettingPanel(
             room: room,
-            provider: container.provider,
             repositories: container.firebaseRepositories,
             attachmentImageLoader: container.makeAttachmentImageLoader(),
             videoResolver: container.makeChatVideoPlaybackResolver(),
             photoLibrarySaver: container.makePhotoLibrarySaver(),
+            roomImageManager: container.makeRoomImageManager(),
+            avatarImageManager: container.makeAvatarImageManager(),
+            networkStatusProvider: container.makeNetworkStatusProvider(),
             exitUseCase: container.makeChatRoomExitUseCase(),
             onEvent: { [weak self, weak source] event in
                 switch event {

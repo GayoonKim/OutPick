@@ -10,7 +10,8 @@ import UIKit
 
 struct CommentUserProfileDetailView: UIViewControllerRepresentable {
     let author: CommentAuthorDisplay
-    let avatarImageManager: ChatAvatarImageManaging
+    let avatarImageManager: AvatarImageManaging
+    let currentUserProvider: any CurrentUserProviding
     let repositories: any FirebaseRepositoryProviding
     let onBack: () -> Void
 
@@ -20,6 +21,7 @@ struct CommentUserProfileDetailView: UIViewControllerRepresentable {
             seedNickname: author.nickname,
             seedAvatarPath: author.avatarPath,
             avatarImageManager: avatarImageManager,
+            currentUserProvider: currentUserProvider,
             repositories: repositories,
             onBack: onBack
         )

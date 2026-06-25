@@ -13,7 +13,8 @@ struct PostCommentsSheetView: View {
     private let brandID: BrandID
     private let seasonID: SeasonID
     private let postID: PostID
-    private let avatarImageManager: ChatAvatarImageManaging
+    private let avatarImageManager: AvatarImageManaging
+    private let currentUserProvider: any CurrentUserProviding
     private let firebaseRepositories: any FirebaseRepositoryProviding
     @ObservedObject private var coordinator: PostCommentCoordinator
     @Environment(\.dismiss) private var dismiss
@@ -29,7 +30,8 @@ struct PostCommentsSheetView: View {
         seasonID: SeasonID,
         postID: PostID,
         coordinator: PostCommentCoordinator,
-        avatarImageManager: ChatAvatarImageManaging,
+        avatarImageManager: AvatarImageManaging,
+        currentUserProvider: any CurrentUserProviding,
         firebaseRepositories: any FirebaseRepositoryProviding
     ) {
         _viewModel = StateObject(wrappedValue: viewModel)
@@ -39,6 +41,7 @@ struct PostCommentsSheetView: View {
         self.postID = postID
         self.coordinator = coordinator
         self.avatarImageManager = avatarImageManager
+        self.currentUserProvider = currentUserProvider
         self.firebaseRepositories = firebaseRepositories
     }
 
@@ -334,6 +337,7 @@ struct PostCommentsSheetView: View {
             CommentUserProfileDetailView(
                 author: route.author,
                 avatarImageManager: avatarImageManager,
+                currentUserProvider: currentUserProvider,
                 repositories: firebaseRepositories,
                 onBack: {
                     coordinator.dismissProfile()

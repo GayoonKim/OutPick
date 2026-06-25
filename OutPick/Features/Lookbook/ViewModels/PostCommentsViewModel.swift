@@ -39,7 +39,7 @@ final class PostCommentsViewModel: ObservableObject {
     private let commentInteractionStore: any CommentInteractionManaging
     private let currentUserIDProvider: any CurrentUserIDProviding
     private let authorProfileStore: CommentAuthorProfileStore
-    private let avatarImageManager: ChatAvatarImageManaging
+    private let avatarImageManager: AvatarImageManaging
     private let pageSize: Int
     private let avatarPrefetchLimit: Int
     private let avatarThumbnailMaxBytes: Int
@@ -79,7 +79,7 @@ final class PostCommentsViewModel: ObservableObject {
         commentInteractionStore: any CommentInteractionManaging,
         currentUserIDProvider: any CurrentUserIDProviding,
         authorProfileStore: CommentAuthorProfileStore? = nil,
-        avatarImageManager: ChatAvatarImageManaging,
+        avatarImageManager: AvatarImageManaging,
         initialSort: CommentSortOption = .latest,
         pageSize: Int = 30,
         avatarPrefetchLimit: Int = 16,

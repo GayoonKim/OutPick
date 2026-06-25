@@ -11,7 +11,7 @@ class ParticipantsSectionParticipantCell: UICollectionViewCell {
     static let reuseIdentifier = "ParticipantsSectionParticipantCell"
     
     private var userProfiles: [LocalUser] = []
-    private var avatarImageManager: ChatAvatarImageManaging?
+    private var avatarImageManager: AvatarImageManaging?
     var onSelectParticipant: ((LocalUser) -> Void)?
     
     private lazy var participantLabel: UILabel = {
@@ -84,7 +84,7 @@ class ParticipantsSectionParticipantCell: UICollectionViewCell {
         avatarImageManager = nil
     }
     
-    func configureCell(_ profiles: [LocalUser], avatarImageManager: ChatAvatarImageManaging) {
+    func configureCell(_ profiles: [LocalUser], avatarImageManager: AvatarImageManaging) {
         print(#function, "호출 완료: ", profiles.map { $0.nickname })
         self.userProfiles = profiles
         self.avatarImageManager = avatarImageManager

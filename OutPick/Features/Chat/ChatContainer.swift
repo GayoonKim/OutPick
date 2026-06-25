@@ -10,7 +10,6 @@ import Foundation
 /// Chat feature DI container.
 @MainActor
 final class ChatContainer {
-    let provider: ChatManagerProviding
     let firebaseRepositories: FirebaseRepositoryProviding
     let roomRepository: FirebaseChatRoomRepositoryProtocol
     let userProfileRepository: UserProfileRepositoryProtocol
@@ -20,6 +19,8 @@ final class ChatContainer {
     let currentUserProvider: CurrentUserProviding
     let realtimeSocketService: RealtimeSocketService
 
+    private let managers: ChatManagerProvider
+    private let avatarImageManager: AvatarImageManaging
     private let roomListUseCase: RoomListUseCaseProtocol
     private let joinedRoomsUseCase: JoinedRoomsUseCaseProtocol
     private let roomSearchUseCase: RoomSearchUseCaseProtocol
@@ -47,13 +48,13 @@ final class ChatContainer {
     private let shareLookbookContentToChatUseCase: ShareLookbookContentToChatUseCaseProtocol
 
     init(
-        provider: ChatManagerProviding? = nil,
         roomRepository: FirebaseChatRoomRepositoryProtocol? = nil,
         userProfileRepository: UserProfileRepositoryProtocol? = nil,
         joinedRoomsStore: JoinedRoomsSessionStoring,
         joinedRoomsRuntime: JoinedRoomsSessionRuntimeHandling,
         currentUserProvider: CurrentUserProviding,
         realtimeSocketService: RealtimeSocketService,
+        avatarImageManager: AvatarImageManaging,
         roomReadStateStore: ChatRoomReadStateStore? = nil,
         announcementRepository: FirebaseAnnouncementRepositoryProtocol? = nil,
         repositories: FirebaseRepositoryProviding = FirebaseRepositoryProvider.shared
@@ -63,8 +64,9 @@ final class ChatContainer {
             imageStorageRepository: repositories.imageStorageRepository
         )
         self.attachmentImageLoader = attachmentImageLoader
-        let resolvedProvider = provider ?? ChatManagerProvider(repositories: repositories)
-        self.provider = resolvedProvider
+        let managers = ChatManagerProvider(repositories: repositories)
+        self.managers = managers
+        self.avatarImageManager = avatarImageManager
         self.roomRepository = roomRepository ?? repositories.chatRoomRepository
         self.userProfileRepository = userProfileRepository ?? repositories.userProfileRepository
         self.joinedRoomsStore = joinedRoomsStore
@@ -93,7 +95,7 @@ final class ChatContainer {
             socketManager: realtimeSocketService
         )
         self.chatRoomMessageUseCase = ChatRoomMessageUseCase(
-            messageManager: resolvedProvider.messageManager,
+            messageManager: managers.messageManager,
             sendingRepository: chatMessageSendingRepository,
             deletedLastMessageSummaryUpdater: self.roomRepository as? ChatDeletedLastMessageSummaryUpdating
         )
@@ -106,12 +108,12 @@ final class ChatContainer {
             transientLocalDataCleaner: DefaultChatRoomTransientLocalDataCleaner()
         )
         self.chatInitialLoadUseCase = DefaultChatInitialLoadUseCase(
-            messageManager: resolvedProvider.messageManager,
+            messageManager: managers.messageManager,
             userProfileRepository: self.userProfileRepository,
             chatRoomRepository: self.roomRepository,
-            networkStatusProvider: resolvedProvider.networkStatusProvider
+            networkStatusProvider: managers.networkStatusProvider
         )
-        self.chatRoomSearchUseCase = ChatRoomSearchUseCase(searchManager: resolvedProvider.searchManager)
+        self.chatRoomSearchUseCase = ChatRoomSearchUseCase(searchManager: managers.searchManager)
         self.chatRoomLifecycleUseCase = ChatRoomLifecycleUseCase(
             chatRoomRepository: self.roomRepository,
             userProfileRepository: self.userProfileRepository,
@@ -236,11 +238,19 @@ final class ChatContainer {
         mediaProcessor
     }
 
-    func makeAvatarImageManager() -> ChatAvatarImageManaging {
-        provider.avatarImageManager
+    func makeAvatarImageManager() -> AvatarImageManaging {
+        avatarImageManager
     }
 
     func makeProfileSyncManager() -> ChatProfileSyncManaging {
-        provider.profileSyncManager
+        managers.profileSyncManager
+    }
+
+    func makeRoomImageManager() -> RoomImageManaging {
+        managers.roomImageManager
+    }
+
+    func makeNetworkStatusProvider() -> NetworkStatusProviding {
+        managers.networkStatusProvider
     }
 }

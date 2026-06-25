@@ -39,7 +39,7 @@ final class PostCommentRepliesViewModel: ObservableObject {
     private let commentInteractionStore: any CommentInteractionManaging
     private let currentUserIDProvider: any CurrentUserIDProviding
     private let authorProfileStore: CommentAuthorProfileStore
-    private let avatarImageManager: ChatAvatarImageManaging
+    private let avatarImageManager: AvatarImageManaging
     private let pageSize: Int
     private let avatarPrefetchLimit: Int
     private let avatarThumbnailMaxBytes: Int
@@ -85,7 +85,7 @@ final class PostCommentRepliesViewModel: ObservableObject {
         commentInteractionStore: any CommentInteractionManaging,
         currentUserIDProvider: any CurrentUserIDProviding,
         authorProfileStore: CommentAuthorProfileStore? = nil,
-        avatarImageManager: ChatAvatarImageManaging,
+        avatarImageManager: AvatarImageManaging,
         pageSize: Int = 30,
         avatarPrefetchLimit: Int = 16,
         avatarThumbnailMaxBytes: Int = 3 * 1024 * 1024

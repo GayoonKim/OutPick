@@ -1,5 +1,5 @@
 //
-//  ChatAvatarImageManaging.swift
+//  AvatarImageManaging.swift
 //  OutPick
 //
 //  Created by Codex on 3/24/26.
@@ -8,7 +8,7 @@
 import Foundation
 import UIKit
 
-protocol ChatAvatarImageManaging {
+protocol AvatarImageManaging {
     func cachedAvatar(for path: String) async -> UIImage?
     func loadAvatar(for path: String, maxBytes: Int) async throws -> UIImage
     func prefetchAvatars(paths: [String], maxBytes: Int, maxConcurrent: Int) async

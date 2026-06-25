@@ -68,7 +68,7 @@ class ParticipantListCell: UICollectionViewCell {
         userProfileImageView.image = UIImage(named: "Default_Profile")
     }
 
-    func configureCell(userProfile: LocalUser, avatarImageManager: ChatAvatarImageManaging) {
+    func configureCell(userProfile: LocalUser, avatarImageManager: AvatarImageManaging) {
         configureCell(userProfile: userProfile)
 
         guard let path = userProfile.profileImagePath, !path.isEmpty else { return }

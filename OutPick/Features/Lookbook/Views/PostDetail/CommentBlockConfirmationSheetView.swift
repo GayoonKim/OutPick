@@ -10,7 +10,7 @@ import SwiftUI
 struct CommentBlockConfirmationSheetView: View {
     let author: CommentAuthorDisplay
     let isBlocking: Bool
-    let avatarImageManager: ChatAvatarImageManaging
+    let avatarImageManager: AvatarImageManaging
     let onCancel: () -> Void
     let onConfirm: () -> Void
 
