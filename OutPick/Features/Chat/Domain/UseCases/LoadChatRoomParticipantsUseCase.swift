@@ -41,6 +41,7 @@ final class LoadChatRoomParticipantsUseCase: LoadChatRoomParticipantsUseCaseProt
     func loadLocalInitial(room: ChatRoom) throws -> ChatRoomParticipantsLoadResult {
         let roomID = room.ID ?? ""
         resetState(for: roomID)
+        try reconcileMembership(room: room, roomID: roomID)
 
         let (page, total) = try participantsRepository.fetchLocalUsersPage(
             roomID: roomID,

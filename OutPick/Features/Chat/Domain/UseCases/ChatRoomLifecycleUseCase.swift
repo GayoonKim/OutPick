@@ -33,28 +33,29 @@ protocol ChatRoomLifecycleUseCaseProtocol {
 }
 
 protocol ChatRoomMembershipRealtimeManaging {
-    func isConnected() async -> Bool
     func createRoom(_ roomID: String) async
-    func joinRoom(_ roomID: String) async
 }
 
 final class ChatRoomLifecycleUseCase: ChatRoomLifecycleUseCaseProtocol {
     private let chatRoomRepository: FirebaseChatRoomRepositoryProtocol
     private let userProfileRepository: UserProfileRepositoryProtocol
-    private let joinedRoomsStore: JoinedRoomsStore
+    private let joinedRoomsStore: JoinedRoomsSessionStoring
+    private let joinedRoomsRuntime: JoinedRoomsSessionRuntimeHandling
     private let announcementRepository: FirebaseAnnouncementRepositoryProtocol
     private let realtimeService: ChatRoomMembershipRealtimeManaging
 
     init(
         chatRoomRepository: FirebaseChatRoomRepositoryProtocol = FirebaseRepositoryProvider.shared.chatRoomRepository,
         userProfileRepository: UserProfileRepositoryProtocol = FirebaseRepositoryProvider.shared.userProfileRepository,
-        joinedRoomsStore: JoinedRoomsStore,
+        joinedRoomsStore: JoinedRoomsSessionStoring,
+        joinedRoomsRuntime: JoinedRoomsSessionRuntimeHandling,
         announcementRepository: FirebaseAnnouncementRepositoryProtocol = FirebaseRepositoryProvider.shared.announcementRepository,
         realtimeService: ChatRoomMembershipRealtimeManaging = RealtimeSocketService.shared
     ) {
         self.chatRoomRepository = chatRoomRepository
         self.userProfileRepository = userProfileRepository
         self.joinedRoomsStore = joinedRoomsStore
+        self.joinedRoomsRuntime = joinedRoomsRuntime
         self.announcementRepository = announcementRepository
         self.realtimeService = realtimeService
     }
@@ -80,18 +81,12 @@ final class ChatRoomLifecycleUseCase: ChatRoomLifecycleUseCaseProtocol {
         activateJoinedRoomRealtime(roomID: roomID)
         Task {
             await realtimeService.createRoom(roomID)
-            await realtimeService.joinRoom(roomID)
         }
     }
 
     @MainActor
     func joinRoom(roomID: String) async throws -> ChatRoom {
         guard !roomID.isEmpty else { throw FirebaseError.FailedToFetchRoom }
-
-        if await realtimeService.isConnected() {
-            await realtimeService.joinRoom(roomID)
-        }
-
         let updatedRoom = try await chatRoomRepository.addRoomParticipantReturningRoom(roomID: roomID)
         chatRoomRepository.applyLocalRoomUpdate(updatedRoom)
         activateJoinedRoomRealtime(roomID: roomID)
@@ -118,9 +113,7 @@ final class ChatRoomLifecycleUseCase: ChatRoomLifecycleUseCaseProtocol {
         guard !roomID.isEmpty else { return }
         chatRoomRepository.startListenRoomDoc(roomID: roomID)
         joinedRoomsStore.add(roomID)
-        // Directly register the banner subscription on join success to avoid
-        // timing gaps while the JoinedRoomsStore -> ChatContainer pipeline catches up.
-        BannerManager.shared.addRoom(roomID)
+        joinedRoomsRuntime.addJoinedRoom(roomID)
     }
 }
 

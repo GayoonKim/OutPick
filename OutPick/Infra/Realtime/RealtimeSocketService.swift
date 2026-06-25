@@ -146,6 +146,7 @@ actor RealtimeSocketService {
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return f
     }()
+    private static let persistedSocketURLKey = "OutPick.RealtimeSocketService.socketURL"
 
     private init(repositories: FirebaseRepositoryProviding = FirebaseRepositoryProvider.shared) {
         self.chatRoomRepository = repositories.chatRoomRepository
@@ -165,7 +166,15 @@ actor RealtimeSocketService {
                   let url = URL(string: urlString) else {
                 continue
             }
+            UserDefaults.standard.set(url.absoluteString, forKey: persistedSocketURLKey)
             return url
+        }
+
+        if let persistedURLString = UserDefaults.standard.string(forKey: persistedSocketURLKey)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !persistedURLString.isEmpty,
+           let persistedURL = URL(string: persistedURLString) {
+            return persistedURL
         }
 
         return URL(string: "https://outpick-socket-715386497547.asia-northeast3.run.app")!
@@ -253,7 +262,6 @@ actor RealtimeSocketService {
         let isEmpty = await sessionActor.removeConsumer(consumerID)
         if isEmpty {
             roomSessionActors.removeValue(forKey: roomID)
-            leaveRoom(roomID)
         }
 
         if roomSessionActors.isEmpty {

@@ -14,15 +14,18 @@ final class ChatContainer {
     let firebaseRepositories: FirebaseRepositoryProviding
     let roomRepository: FirebaseChatRoomRepositoryProtocol
     let userProfileRepository: UserProfileRepositoryProtocol
-    let joinedRoomsStore: JoinedRoomsStore
+    let joinedRoomsStore: JoinedRoomsSessionStoring
+    let joinedRoomsRuntime: JoinedRoomsSessionRuntimeHandling
     let roomReadStateStore: ChatRoomReadStateStore
     let currentUserProvider: CurrentUserProviding
+    let realtimeSocketService: RealtimeSocketService
 
     private let roomListUseCase: RoomListUseCaseProtocol
     private let joinedRoomsUseCase: JoinedRoomsUseCaseProtocol
     private let roomSearchUseCase: RoomSearchUseCaseProtocol
     private let chatRoomMessageUseCase: ChatRoomMessageUseCaseProtocol
     private let chatMessageSendingRepository: ChatMessageSendingRepositoryProtocol
+    private let chatMediaMessageSendingRepository: ChatMediaMessageSendingRepositoryProtocol
     private let chatRoomRealtimeUseCase: ChatRoomRealtimeUseCaseProtocol
     private let chatRoomRuntimeUseCase: ChatRoomRuntimeUseCaseProtocol
     private let chatInitialLoadUseCase: ChatInitialLoadUseCaseProtocol
@@ -47,7 +50,10 @@ final class ChatContainer {
         provider: ChatManagerProviding? = nil,
         roomRepository: FirebaseChatRoomRepositoryProtocol? = nil,
         userProfileRepository: UserProfileRepositoryProtocol? = nil,
-        joinedRoomsStore: JoinedRoomsStore,
+        joinedRoomsStore: JoinedRoomsSessionStoring,
+        joinedRoomsRuntime: JoinedRoomsSessionRuntimeHandling,
+        currentUserProvider: CurrentUserProviding,
+        realtimeSocketService: RealtimeSocketService,
         roomReadStateStore: ChatRoomReadStateStore? = nil,
         announcementRepository: FirebaseAnnouncementRepositoryProtocol? = nil,
         repositories: FirebaseRepositoryProviding = FirebaseRepositoryProvider.shared
@@ -62,14 +68,20 @@ final class ChatContainer {
         self.roomRepository = roomRepository ?? repositories.chatRoomRepository
         self.userProfileRepository = userProfileRepository ?? repositories.userProfileRepository
         self.joinedRoomsStore = joinedRoomsStore
-        self.currentUserProvider = LoginManagerCurrentUserProvider()
+        self.joinedRoomsRuntime = joinedRoomsRuntime
+        self.currentUserProvider = currentUserProvider
+        self.realtimeSocketService = realtimeSocketService
         let resolvedRoomReadStateStore = roomReadStateStore ?? ChatRoomReadStateStore()
         self.roomReadStateStore = resolvedRoomReadStateStore
         let announcementRepository = announcementRepository ?? repositories.announcementRepository
         self.roomListUseCase = RoomListUseCase(roomRepository: self.roomRepository)
         self.chatRoomExitUseCase = ChatRoomExitUseCase(
-            repository: SocketChatRoomExitRepository(),
-            localCleaner: DefaultChatRoomLocalExitCleaner(joinedRoomsStore: joinedRoomsStore)
+            repository: SocketChatRoomExitRepository(socket: realtimeSocketService),
+            localCleaner: DefaultChatRoomLocalExitCleaner(
+                joinedRoomsStore: joinedRoomsStore,
+                joinedRoomsRuntime: joinedRoomsRuntime,
+                roomRepository: self.roomRepository
+            )
         )
         self.joinedRoomsUseCase = JoinedRoomsUseCase(
             roomRepository: self.roomRepository,
@@ -77,17 +89,19 @@ final class ChatContainer {
             exitUseCase: self.chatRoomExitUseCase
         )
         self.roomSearchUseCase = RoomSearchUseCase(roomRepository: self.roomRepository)
-        self.chatMessageSendingRepository = SocketChatMessageSendingRepository()
+        self.chatMessageSendingRepository = SocketChatMessageSendingRepository(
+            socketManager: realtimeSocketService
+        )
         self.chatRoomMessageUseCase = ChatRoomMessageUseCase(
             messageManager: resolvedProvider.messageManager,
             sendingRepository: chatMessageSendingRepository,
             deletedLastMessageSummaryUpdater: self.roomRepository as? ChatDeletedLastMessageSummaryUpdating
         )
         self.chatRoomRealtimeUseCase = ChatRoomRealtimeUseCase(
-            repository: SocketChatRoomRealtimeRepository()
+            repository: SocketChatRoomRealtimeRepository(socketManager: realtimeSocketService)
         )
         self.chatRoomRuntimeUseCase = ChatRoomRuntimeUseCase(
-            repository: SocketChatRoomRuntimeRepository(),
+            repository: SocketChatRoomRuntimeRepository(socketObserver: realtimeSocketService),
             visibilityRuntimeManager: DefaultChatRoomVisibilityRuntimeManager(),
             transientLocalDataCleaner: DefaultChatRoomTransientLocalDataCleaner()
         )
@@ -102,11 +116,17 @@ final class ChatContainer {
             chatRoomRepository: self.roomRepository,
             userProfileRepository: self.userProfileRepository,
             joinedRoomsStore: joinedRoomsStore,
-            announcementRepository: announcementRepository
+            joinedRoomsRuntime: joinedRoomsRuntime,
+            announcementRepository: announcementRepository,
+            realtimeService: realtimeSocketService
+        )
+        self.chatMediaMessageSendingRepository = SocketChatMediaMessageSendingRepository(
+            socketManager: realtimeSocketService
         )
         self.chatMediaUploadUseCase = ChatMediaUploadUseCase(
             imageStorageRepository: repositories.imageStorageRepository,
             videoStorageRepository: repositories.videoStorageRepository,
+            sendingRepository: chatMediaMessageSendingRepository,
             attachmentImageLoader: attachmentImageLoader
         )
         self.chatOutgoingOutboxUseCase = ChatOutgoingOutboxUseCase(
@@ -128,7 +148,9 @@ final class ChatContainer {
         )
         self.photoLibrarySaver = DefaultPhotoLibrarySaver()
         self.mediaProcessor = DefaultMediaProcessingService()
-        let lookbookChatShareSendingRepository = SocketLookbookChatShareSendingRepository()
+        let lookbookChatShareSendingRepository = SocketLookbookChatShareSendingRepository(
+            socketManager: realtimeSocketService
+        )
         self.loadShareableJoinedRoomsUseCase = LoadShareableJoinedRoomsUseCase(
             joinedRoomsUseCase: self.joinedRoomsUseCase
         )

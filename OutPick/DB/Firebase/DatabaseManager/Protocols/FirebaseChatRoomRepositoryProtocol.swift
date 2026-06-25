@@ -33,6 +33,10 @@ protocol FirebaseChatRoomRepositoryProtocol {
     
     /// 로컬 방 정보 업데이트 (캐시 갱신)
     func applyLocalRoomUpdate(_ updatedRoom: ChatRoom)
+
+    /// 참여중 방 요약 스트림에서 방을 로컬로 즉시 제거
+    @MainActor
+    func removeLocalJoinedRoom(roomID: String)
     
     /// Top 방 목록 페이지네이션 조회
     func fetchTopRoomsPage(after lastSnapshot: DocumentSnapshot?, limit: Int) async throws

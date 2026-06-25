@@ -19,10 +19,12 @@ final class AppCoordinator {
     private let lookbookProvider: LookbookRepositoryProvider
     private var lookbookContainer: LookbookContainer?
     private var chatContainer: ChatContainer?
-    private let joinedRoomsStore = JoinedRoomsStore()
-    private let brandAdminSessionStore = BrandAdminSessionStore()
+    private let joinedRoomsStore: JoinedRoomsSessionStore
+    private let brandAdminSessionStore: BrandAdminSessionStore
     private let currentUserProvider: any CurrentUserProviding
+    private let realtimeSocketService: RealtimeSocketService
     private let appSessionRuntime: AppSessionRuntime
+    private var sessionResetTask: Task<Void, Never>?
     
     private var profileCoordinator: ProfileCoordinator?
 
@@ -36,14 +38,20 @@ final class AppCoordinator {
         window: UIWindow,
         lookbookProvider: LookbookRepositoryProvider = .shared,
         userProfileRepository: UserProfileRepositoryProtocol,
-        currentUserProvider: any CurrentUserProviding = LoginManagerCurrentUserProvider(),
-        appSessionRuntime: AppSessionRuntime? = nil
+        joinedRoomsStore: JoinedRoomsSessionStore,
+        brandAdminSessionStore: BrandAdminSessionStore,
+        currentUserProvider: any CurrentUserProviding,
+        realtimeSocketService: RealtimeSocketService,
+        appSessionRuntime: AppSessionRuntime
     ) {
         self.window = window
         self.lookbookProvider = lookbookProvider
         self.userProfileRepository = userProfileRepository
+        self.joinedRoomsStore = joinedRoomsStore
+        self.brandAdminSessionStore = brandAdminSessionStore
         self.currentUserProvider = currentUserProvider
-        self.appSessionRuntime = appSessionRuntime ?? AppSessionRuntime()
+        self.realtimeSocketService = realtimeSocketService
+        self.appSessionRuntime = appSessionRuntime
         self.window.backgroundColor = OutPickTheme.ColorToken.backgroundBase
         Self.activeCoordinator = self
     }
@@ -91,6 +99,8 @@ final class AppCoordinator {
 
     private func routeAfterAuthenticated() async {
         print("[AppCoordinator] routeAfterAuthenticated identity=\(LoginManager.shared.getAuthIdentityKey)")
+        sessionResetTask?.cancel()
+        sessionResetTask = nil
         await MainActor.run { self.setRoot(BootLoadingViewController(), animated: false) }
 
         let profileResult = await LoginManager.shared.loadUserProfile()
@@ -114,6 +124,7 @@ final class AppCoordinator {
             do {
                 try await LoginManager.shared.bootstrapAfterLogin(
                     joinedRoomsStore: joinedRoomsStore,
+                    joinedRoomsRuntime: appSessionRuntime,
                     brandAdminSessionStore: brandAdminSessionStore
                 )
             } catch {
@@ -128,14 +139,32 @@ final class AppCoordinator {
         }
     }
 
+    @MainActor
+    func routeToLoginAfterLogout() {
+        guard let scene = window.windowScene ?? currentWindowScene else { return }
+        showLogin(windowScene: scene)
+    }
+
+    @MainActor
+    func handleLoginSuccess(_ authenticatedUser: AuthenticatedUser) {
+        LoginManager.shared.setAuthenticatedUser(authenticatedUser)
+        Task { [weak self] in
+            guard let self else { return }
+            await self.routeAfterAuthenticated()
+        }
+    }
+
     // MARK: - 화면 전환
 
     @MainActor
     private func showLogin(windowScene: UIWindowScene) {
         self.joinedRoomsStore.clear()
+        self.appSessionRuntime.clearJoinedRooms()
 
-        Task { @MainActor [weak self] in
-            await self?.appSessionRuntime.stopAuthenticatedSession()
+        sessionResetTask?.cancel()
+        sessionResetTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.appSessionRuntime.stopAuthenticatedSession()
         }
 
         self.profileCoordinator = nil
@@ -223,6 +252,7 @@ final class AppCoordinator {
                     do {
                         try await LoginManager.shared.bootstrapAfterLogin(
                             joinedRoomsStore: self.joinedRoomsStore,
+                            joinedRoomsRuntime: self.appSessionRuntime,
                             brandAdminSessionStore: self.brandAdminSessionStore
                         )
                     } catch {
@@ -279,7 +309,12 @@ final class AppCoordinator {
             return chatContainer
         }
 
-        let created = ChatContainer(joinedRoomsStore: joinedRoomsStore)
+        let created = ChatContainer(
+            joinedRoomsStore: joinedRoomsStore,
+            joinedRoomsRuntime: appSessionRuntime,
+            currentUserProvider: currentUserProvider,
+            realtimeSocketService: realtimeSocketService
+        )
         self.chatContainer = created
         return created
     }
@@ -308,6 +343,22 @@ final class AppCoordinator {
                 print("[AppCoordinator] failed to open push route room(\(route.roomID)): \(error)")
             }
         }
+    }
+
+    @MainActor
+    func handleSceneDidBecomeActive() async {
+        await appSessionRuntime.handleSceneDidBecomeActive()
+        consumePendingNotificationRouteIfPossible()
+    }
+
+    @MainActor
+    func handleSceneWillResignActive() async {
+        await appSessionRuntime.handleSceneWillResignActive()
+    }
+
+    @MainActor
+    func handleSceneDidEnterBackground() async {
+        await appSessionRuntime.handleSceneDidEnterBackground()
     }
 
     #if DEBUG

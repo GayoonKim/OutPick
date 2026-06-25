@@ -12,7 +12,8 @@ extension LoginManager: LoginBootstrappingProtocol {
     /// 초기화만 담당
     /// 호출 위치: AppCoordinator에서 Main(Tab) 라우팅 직후
     func bootstrapAfterLogin(
-        joinedRoomsStore: JoinedRoomsStore,
+        joinedRoomsStore: JoinedRoomsSessionStoring,
+        joinedRoomsRuntime: JoinedRoomsSessionRuntimeHandling,
         brandAdminSessionStore: BrandAdminSessionStore
     ) async throws {
         // 0) 세션 사용자 문서 확정
@@ -23,6 +24,7 @@ extension LoginManager: LoginBootstrappingProtocol {
             onCurrentUserProfileUpdated: { profile in
                 Task { @MainActor in
                     joinedRoomsStore.replace(with: profile.joinedRooms)
+                    joinedRoomsRuntime.replaceJoinedRooms(Set(profile.joinedRooms))
                 }
             }
         )
@@ -32,6 +34,7 @@ extension LoginManager: LoginBootstrappingProtocol {
         if let profile = self.currentUserProfile {
             await MainActor.run {
                 joinedRoomsStore.replace(with: profile.joinedRooms)
+                joinedRoomsRuntime.replaceJoinedRooms(Set(profile.joinedRooms))
             }
         }
 

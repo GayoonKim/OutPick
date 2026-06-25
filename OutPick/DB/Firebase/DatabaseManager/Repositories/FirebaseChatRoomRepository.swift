@@ -58,6 +58,21 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
             let previews = topRoomsWithPreviews[idx].1
             topRoomsWithPreviews[idx] = (updatedRoom, previews)
         }
+
+        var rooms = joinedRoomsSummarySubject.value
+        if let idx = rooms.firstIndex(where: { $0.ID == rid }) {
+            rooms[idx] = updatedRoom
+        } else if updatedRoom.participants.contains(LoginManager.shared.getUserEmail) {
+            rooms.insert(updatedRoom, at: 0)
+        }
+        joinedRoomsSummarySubject.send(rooms)
+    }
+
+    @MainActor
+    func removeLocalJoinedRoom(roomID: String) {
+        guard !roomID.isEmpty else { return }
+        let rooms = joinedRoomsSummarySubject.value.filter { $0.ID != roomID }
+        joinedRoomsSummarySubject.send(rooms)
     }
 
     @MainActor
@@ -322,12 +337,7 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
             
             try await addRoomParticipant(room: room)
             
-            Task {
-                await RealtimeSocketService.shared.createRoom(roomID)
-                await RealtimeSocketService.shared.joinRoom(roomID)
-            }
-            
-            print("✅ saveRoomInfoToFirestore: Firestore 저장 및 Socket.IO create/join 완료 (roomID=\(roomID))")
+            print("✅ saveRoomInfoToFirestore: Firestore 저장 완료 (roomID=\(roomID))")
         } catch {
             print("🔥 saveRoomInfoToFirestore 실패: \(error)")
             throw error

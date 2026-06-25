@@ -5,8 +5,15 @@
 //  Created by Codex on 6/24/26.
 //
 
-import Combine
 import Foundation
+
+@MainActor
+protocol JoinedRoomsSessionRuntimeHandling: AnyObject {
+    func replaceJoinedRooms(_ roomIDs: Set<String>)
+    func addJoinedRoom(_ roomID: String)
+    func removeJoinedRoom(_ roomID: String)
+    func clearJoinedRooms()
+}
 
 @MainActor
 final class AppSessionRuntime {
@@ -15,8 +22,8 @@ final class AppSessionRuntime {
     private let presenceManager: PresenceManager
     private let bannerManager: BannerManager
 
-    private var joinedRoomsCancellable: AnyCancellable?
     private var runtimeJoinedRooms = Set<String>()
+    private var sessionGeneration = 0
 
     init(
         realtimeSocketService: RealtimeSocketService = .shared,
@@ -31,43 +38,57 @@ final class AppSessionRuntime {
     }
 
     func startAuthenticatedSession(
-        joinedRoomsStore: JoinedRoomsStore,
+        joinedRoomsStore: JoinedRoomsSessionStoring,
         brandAdminSessionStore: BrandAdminSessionStore
     ) async {
-        bindJoinedRoomsRuntimeIfNeeded(joinedRoomsStore: joinedRoomsStore)
-        syncJoinedRooms(joinedRoomsStore.joined)
-
+        sessionGeneration += 1
+        let generation = sessionGeneration
         let identity = SocketSessionIdentity.current(currentUserProvider: currentUserProvider)
-        Task {
-            do {
-                try await realtimeSocketService.connect(identity: identity)
-            } catch {
-                print("RealtimeSocketService connect 실패: \(error.localizedDescription)")
-            }
-        }
+
+        await connectSocketWithRetry(identity: identity, generation: generation)
+        guard generation == sessionGeneration else { return }
+
+        syncJoinedRooms(joinedRoomsStore.joined)
 
         await presenceManager.startAuthenticatedSession()
     }
 
+    private func connectSocketWithRetry(identity: SocketSessionIdentity, generation: Int) async {
+        let maxAttempts = 3
+        for attempt in 1...maxAttempts {
+            guard generation == sessionGeneration else { return }
+            do {
+                try await realtimeSocketService.connect(identity: identity)
+                return
+            } catch {
+                print("RealtimeSocketService connect 실패(\(attempt)/\(maxAttempts)): \(error.localizedDescription)")
+                guard attempt < maxAttempts else { return }
+                try? await Task.sleep(nanoseconds: UInt64(attempt) * 500_000_000)
+            }
+        }
+    }
+
     func stopAuthenticatedSession() async {
-        joinedRoomsCancellable?.cancel()
-        joinedRoomsCancellable = nil
+        sessionGeneration += 1
+        let generation = sessionGeneration
         runtimeJoinedRooms.removeAll()
         bannerManager.stopAll()
         await presenceManager.handleLogout()
+        guard generation == sessionGeneration else { return }
         await realtimeSocketService.disconnect()
         await realtimeSocketService.resetMembership()
     }
 
-    private func bindJoinedRoomsRuntimeIfNeeded(joinedRoomsStore: JoinedRoomsStore) {
-        guard joinedRoomsCancellable == nil else { return }
+    func handleSceneDidBecomeActive() async {
+        await presenceManager.handleAppDidBecomeActive()
+    }
 
-        joinedRoomsCancellable = joinedRoomsStore.publisher
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] joinedSet in
-                guard let self else { return }
-                self.syncJoinedRooms(joinedSet)
-            }
+    func handleSceneWillResignActive() async {
+        await presenceManager.handleAppWillResignActive()
+    }
+
+    func handleSceneDidEnterBackground() async {
+        await presenceManager.handleAppDidEnterBackground()
     }
 
     private func syncJoinedRooms(_ joinedSet: Set<String>) {
@@ -88,5 +109,25 @@ final class AppSessionRuntime {
                 await realtimeSocketService.leaveRoom(roomID)
             }
         }
+    }
+}
+
+extension AppSessionRuntime: JoinedRoomsSessionRuntimeHandling {
+    func replaceJoinedRooms(_ roomIDs: Set<String>) {
+        syncJoinedRooms(roomIDs)
+    }
+
+    func addJoinedRoom(_ roomID: String) {
+        guard !roomID.isEmpty else { return }
+        syncJoinedRooms(runtimeJoinedRooms.union([roomID]))
+    }
+
+    func removeJoinedRoom(_ roomID: String) {
+        guard !roomID.isEmpty else { return }
+        syncJoinedRooms(runtimeJoinedRooms.subtracting([roomID]))
+    }
+
+    func clearJoinedRooms() {
+        syncJoinedRooms([])
     }
 }

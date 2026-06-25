@@ -188,7 +188,7 @@ class MyPageViewController: UIViewController {
             return
         }
 
-        // 한국어 주석: CompositionRoot로 로그인 화면을 생성 (LoginViewController는 viewModel 주입 필요)
+        // CompositionRoot로 로그인 화면을 생성 (LoginViewController는 viewModel 주입 필요)
         let loginViewController = LoginCompositionRoot.makeLoginViewController(
             onLoginSuccess: { authenticatedUser in
                 Task { @MainActor in
@@ -214,7 +214,7 @@ class MyPageViewController: UIViewController {
     }
 
     private func routeToLoginOnce() {
-        // 한국어 주석: 구글/카카오 콜백이 각각 호출돼도 1회만 이동
+        // 구글/카카오 콜백이 각각 호출돼도 1회만 이동
         guard !didRouteToLogin else { return }
         didRouteToLogin = true
         Task { @MainActor in

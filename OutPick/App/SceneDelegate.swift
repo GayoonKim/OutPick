@@ -9,8 +9,6 @@ import UIKit
 import KakaoSDKCommon
 import KakaoSDKAuth
 import KakaoSDKUser
-import FirebaseCore
-import FirebaseFirestore
 import GoogleSignIn
 
 final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
@@ -41,16 +39,9 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             window = UIWindow(windowScene: windowScene)
         }
         guard let window else { return }
-        
-        if coordinator == nil {
-            // DI: AppCoordinator가 프로필 플로우에 사용할 Repository를 외부에서 주입받도록 구성
-            let db = Firestore.firestore()
-            let userProfileRepository: UserProfileRepositoryProtocol = UserProfileRepository(db: db)
 
-            coordinator = AppCoordinator(
-                window: window,
-                userProfileRepository: userProfileRepository
-            )
+        if coordinator == nil {
+            coordinator = AppCompositionRoot.makeCoordinator(window: window)
         }
         guard let coordinator else { return }
 
@@ -63,20 +54,20 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     func sceneDidBecomeActive(_ scene: UIScene) {
         Task { @MainActor in
-            await PresenceManager.shared.handleAppDidBecomeActive()
-            AppCoordinator.activeCoordinator?.consumePendingNotificationRouteIfPossible()
+            guard let coordinator else { return }
+            await coordinator.handleSceneDidBecomeActive()
         }
     }
 
     func sceneWillResignActive(_ scene: UIScene) {
         Task { @MainActor in
-            await PresenceManager.shared.handleAppWillResignActive()
+            await coordinator?.handleSceneWillResignActive()
         }
     }
 
     func sceneDidEnterBackground(_ scene: UIScene) {
         Task { @MainActor in
-            await PresenceManager.shared.handleAppDidEnterBackground()
+            await coordinator?.handleSceneDidEnterBackground()
         }
     }
 }

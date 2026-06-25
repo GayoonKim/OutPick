@@ -57,19 +57,22 @@ final class ChatRoomExitUseCase: ChatRoomExitUseCaseProtocol {
 final class DefaultChatRoomLocalExitCleaner: ChatRoomLocalExitCleaning {
     private let grdbManager: GRDBManager
     private let loginManager: LoginManager
-    private let joinedRoomsStore: JoinedRoomsStore
-    private let realtimeService: RealtimeSocketService
+    private let joinedRoomsStore: JoinedRoomsSessionStoring
+    private let joinedRoomsRuntime: JoinedRoomsSessionRuntimeHandling
+    private let roomRepository: FirebaseChatRoomRepositoryProtocol
 
     init(
         grdbManager: GRDBManager = .shared,
         loginManager: LoginManager = .shared,
-        joinedRoomsStore: JoinedRoomsStore,
-        realtimeService: RealtimeSocketService = .shared
+        joinedRoomsStore: JoinedRoomsSessionStoring,
+        joinedRoomsRuntime: JoinedRoomsSessionRuntimeHandling,
+        roomRepository: FirebaseChatRoomRepositoryProtocol
     ) {
         self.grdbManager = grdbManager
         self.loginManager = loginManager
         self.joinedRoomsStore = joinedRoomsStore
-        self.realtimeService = realtimeService
+        self.joinedRoomsRuntime = joinedRoomsRuntime
+        self.roomRepository = roomRepository
     }
 
     func cleanLocalRoomDataAfterExit(roomID: String) async throws {
@@ -86,8 +89,9 @@ final class DefaultChatRoomLocalExitCleaner: ChatRoomLocalExitCleaning {
                 loginManager.setCurrentUserProfile(profile)
             }
             joinedRoomsStore.remove(roomID)
+            joinedRoomsRuntime.removeJoinedRoom(roomID)
+            roomRepository.removeLocalJoinedRoom(roomID: roomID)
         }
-        await realtimeService.leaveRoom(roomID)
 
         if let localCleanupError {
             throw localCleanupError
