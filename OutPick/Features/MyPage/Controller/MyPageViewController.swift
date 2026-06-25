@@ -183,12 +183,21 @@ class MyPageViewController: UIViewController {
     
     @MainActor
     private func goToLoginScreen() {
+        if let coordinator = AppCoordinator.activeCoordinator {
+            coordinator.routeToLoginAfterLogout()
+            return
+        }
+
         // 한국어 주석: CompositionRoot로 로그인 화면을 생성 (LoginViewController는 viewModel 주입 필요)
         let loginViewController = LoginCompositionRoot.makeLoginViewController(
             onLoginSuccess: { authenticatedUser in
-                // 로그인 성공 후에는 AppCoordinator가 다시 라우팅하도록 설계하는 것이 이상적이지만,
-                // 이 VC는 현재 root를 직접 바꾸는 레거시 경로이므로 최소한 인증 identity를 세션에 저장합니다.
-                LoginManager.shared.setAuthenticatedUser(authenticatedUser)
+                Task { @MainActor in
+                    if let coordinator = AppCoordinator.activeCoordinator {
+                        coordinator.handleLoginSuccess(authenticatedUser)
+                    } else {
+                        LoginManager.shared.setAuthenticatedUser(authenticatedUser)
+                    }
+                }
             }
         )
 
