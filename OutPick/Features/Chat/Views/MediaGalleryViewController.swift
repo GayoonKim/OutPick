@@ -321,37 +321,24 @@ extension MediaGalleryViewController {
                 return
             }
 
-            // 이미지
             let thumbnailPath = g.thumbnailPath
             let originalPath = g.originalPath ?? g.thumbnailPath
-            if thumbnailPath != nil || originalPath != nil {
-                await MainActor.run {
-                    let page = SimpleImageViewerVC.ProgressivePage(
-                        thumbnailImage: g.image,
-                        thumbnailPath: thumbnailPath,
-                        originalPath: originalPath
-                    )
-                    let viewer = SimpleImageViewerVC(
-                        pages: [page],
-                        startIndex: 0,
-                        cachedImageProvider: self.cachedImageProvider,
-                        loadImageProvider: self.loadImageProvider,
-                        photoLibrarySaver: self.photoLibrarySaver
-                    )
-                    viewer.modalPresentationCapturesStatusBarAppearance = true
-                    viewer.modalPresentationStyle = .fullScreen
-                    self.present(viewer, animated: true)
-                }
-            } else {
-                await MainActor.run {
-                    let local = LocalImageViewerVC(
-                        image: g.image,
-                        photoLibrarySaver: self.photoLibrarySaver
-                    )
-                    local.modalPresentationCapturesStatusBarAppearance = true
-                    local.modalPresentationStyle = .fullScreen
-                    self.present(local, animated: true)
-                }
+            await MainActor.run {
+                let page = ImageViewerPage(
+                    initialImage: g.image,
+                    thumbnailPath: thumbnailPath,
+                    originalPath: originalPath
+                )
+                let viewer = SimpleImageViewerVC(
+                    pages: [page],
+                    startIndex: 0,
+                    cachedImageProvider: self.cachedImageProvider,
+                    loadImageProvider: self.loadImageProvider,
+                    photoLibrarySaver: self.photoLibrarySaver
+                )
+                viewer.modalPresentationCapturesStatusBarAppearance = true
+                viewer.modalPresentationStyle = .fullScreen
+                self.present(viewer, animated: true)
             }
         }
     }

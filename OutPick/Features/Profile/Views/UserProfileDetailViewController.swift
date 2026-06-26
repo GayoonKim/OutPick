@@ -9,6 +9,7 @@ import UIKit
 final class UserProfileDetailViewController: UIViewController, ChatModalAnimatable {
     private let viewModel: UserProfileDetailViewModel
     private let avatarImageManager: AvatarImageManaging
+    private let photoLibrarySaver: PhotoLibrarySaving
 
     private var avatarLoadTask: Task<Void, Never>?
     private var currentAvatarSource = AvatarImageSource()
@@ -125,10 +126,12 @@ final class UserProfileDetailViewController: UIViewController, ChatModalAnimatab
 
     init(
         viewModel: UserProfileDetailViewModel,
-        avatarImageManager: AvatarImageManaging
+        avatarImageManager: AvatarImageManaging,
+        photoLibrarySaver: PhotoLibrarySaving
     ) {
         self.viewModel = viewModel
         self.avatarImageManager = avatarImageManager
+        self.photoLibrarySaver = photoLibrarySaver
         super.init(nibName: nil, bundle: nil)
         modalPresentationCapturesStatusBarAppearance = true
     }
@@ -242,7 +245,7 @@ final class UserProfileDetailViewController: UIViewController, ChatModalAnimatab
 
         let viewer = SimpleImageViewerVC(
             pages: [
-                SimpleImageViewerVC.ProgressivePage(
+                ImageViewerPage(
                     initialImage: initialViewerImage,
                     thumbnailImage: nil,
                     thumbnailPath: avatarSource.viewerThumbnailPath,
@@ -259,7 +262,7 @@ final class UserProfileDetailViewController: UIViewController, ChatModalAnimatab
                 guard let self else { return nil }
                 return try? await self.avatarImageManager.loadAvatar(for: path, maxBytes: maxBytes)
             },
-            photoLibrarySaver: DefaultPhotoLibrarySaver()
+            photoLibrarySaver: photoLibrarySaver
         )
         viewer.modalPresentationStyle = .fullScreen
         viewer.modalTransitionStyle = .crossDissolve

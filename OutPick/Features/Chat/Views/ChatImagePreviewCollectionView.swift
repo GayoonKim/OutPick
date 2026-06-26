@@ -41,7 +41,7 @@ class ChatImagePreviewCollectionView: UIView {
     private var contentHeight: CGFloat = 0
     private var rows: [Int] = []
     private var previewItems: [ChatImagePreviewItem] = []
-    private var renderedImagesByDisplayIndex: [Int: UIImage] = [:]
+    private var renderedImagesByItemID: [String: UIImage] = [:]
     private var thumbnailLoader: ThumbnailLoader?
     
     // MARK: - Compact sizing
@@ -179,14 +179,14 @@ class ChatImagePreviewCollectionView: UIView {
             guard let self else { return nil }
 
             let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ChatImagePreviewCell.reuseIdentifier, for: indexPath) as! ChatImagePreviewCell
-            let renderedImage = self.renderedImagesByDisplayIndex[item.displayIndex]
+            let renderedImage = self.renderedImagesByItemID[item.id]
             cell.configure(
                 with: item,
                 image: renderedImage,
                 thumbnailLoader: self.thumbnailLoader
             ) { [weak self] image in
                 guard let self, let image else { return }
-                self.renderedImagesByDisplayIndex[item.displayIndex] = image
+                self.renderedImagesByItemID[item.id] = image
             }
 
             return cell
@@ -209,8 +209,8 @@ class ChatImagePreviewCollectionView: UIView {
         self.previewItems = items
         self.thumbnailLoader = thumbnailLoader
 
-        let validDisplayIndices = Set(items.map(\.displayIndex))
-        renderedImagesByDisplayIndex = renderedImagesByDisplayIndex.filter { validDisplayIndices.contains($0.key) }
+        let validItemIDs = Set(items.map(\.id))
+        renderedImagesByItemID = renderedImagesByItemID.filter { validItemIDs.contains($0.key) }
         
         // 컬렉션 뷰 레이아웃 업데이트
         collectionView.setCollectionViewLayout(configureLayout(), animated: false)
@@ -222,7 +222,7 @@ class ChatImagePreviewCollectionView: UIView {
     }
 
     func currentImages() -> [UIImage?] {
-        previewItems.map { renderedImagesByDisplayIndex[$0.displayIndex] }
+        previewItems.map { renderedImagesByItemID[$0.id] }
     }
     
     func index(at point: CGPoint) -> Int? {

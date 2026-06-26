@@ -1159,12 +1159,27 @@ class ChatMessageCell: UICollectionViewCell {
                 }
 
                 return ChatImagePreviewItem(
-                    id: "\(message.ID)#\(offset)#\(attachment.index)",
+                    id: previewItemID(messageID: message.ID, displayIndex: offset, attachment: attachment),
                     displayIndex: offset,
                     attachment: attachment,
                     durationText: durationText
                 )
             }
+    }
+
+    private func previewItemID(
+        messageID: String,
+        displayIndex: Int,
+        attachment: Attachment
+    ) -> String {
+        let contentKey = [
+            attachment.type.rawValue,
+            String(attachment.index),
+            attachment.hash,
+            attachment.normalizedThumbPath,
+            attachment.normalizedOriginalPath
+        ].joined(separator: "|")
+        return "\(messageID)#\(displayIndex)#\(contentKey)"
     }
     
     private func formatDuration(_ seconds: Double) -> String {
