@@ -329,6 +329,33 @@ function timestampMillis(value) {
   return null;
 }
 
+function validateMediaUploadContract(kind, attachmentCount, expectedPathCount) {
+  const count = Number(attachmentCount);
+  const pathCount = Number(expectedPathCount);
+  if (!Number.isInteger(count) || !Number.isInteger(pathCount)) {
+    return { ok: false, error: "invalid_attachment_count" };
+  }
+  if (kind === "images") {
+    if (count < 1 || count > MAX_IMAGES_PER_MESSAGE) {
+      return { ok: false, error: "invalid_attachment_count" };
+    }
+    if (pathCount !== count * 2) {
+      return { ok: false, error: "invalid_expected_path_count" };
+    }
+    return { ok: true, attachmentCount: count, expectedPathCount: pathCount };
+  }
+  if (kind === "video") {
+    if (count !== 1) {
+      return { ok: false, error: "invalid_attachment_count" };
+    }
+    if (pathCount !== 2) {
+      return { ok: false, error: "invalid_expected_path_count" };
+    }
+    return { ok: true, attachmentCount: count, expectedPathCount: pathCount };
+  }
+  return { ok: false, error: "invalid_media_kind" };
+}
+
 async function loadExistingMessage(roomID, messageID) {
   const snap = await messageRef(roomID, messageID).get();
   if (!snap.exists) return null;
@@ -340,6 +367,8 @@ async function assertMediaUploadReservation({
   messageID,
   senderID,
   kind,
+  attachmentCount,
+  expectedPathCount,
   storagePaths
 }) {
   const ref = mediaUploadRef(roomID, messageID);
@@ -349,9 +378,6 @@ async function assertMediaUploadReservation({
   }
 
   const data = snap.data() || {};
-  if (data.status === "completed") {
-    return { ok: true, ref, data, completed: true };
-  }
   if (data.status !== "pending") {
     return { ok: false, error: "media_reservation_not_pending" };
   }
@@ -360,6 +386,12 @@ async function assertMediaUploadReservation({
   }
   if (data.kind !== kind) {
     return { ok: false, error: "media_reservation_kind_mismatch" };
+  }
+  if (Number(data.attachmentCount) !== attachmentCount) {
+    return { ok: false, error: "media_reservation_attachment_count_mismatch" };
+  }
+  if (Number(data.expectedPathCount) !== expectedPathCount) {
+    return { ok: false, error: "media_reservation_path_count_mismatch" };
   }
 
   const expiresAtMillis = timestampMillis(data.expiresAt);
@@ -371,8 +403,11 @@ async function assertMediaUploadReservation({
   if (!prefix) {
     return { ok: false, error: "media_reservation_missing_prefix" };
   }
-  const allPathsMatch = storagePaths
-    .filter(Boolean)
+  const actualStoragePaths = storagePaths.filter(Boolean).map(String);
+  if (actualStoragePaths.length !== expectedPathCount) {
+    return { ok: false, error: "media_reservation_path_count_mismatch" };
+  }
+  const allPathsMatch = actualStoragePaths
     .every((path) => String(path).startsWith(`${prefix}/`));
   if (!allPathsMatch) {
     return { ok: false, error: "media_reservation_prefix_mismatch" };
@@ -809,7 +844,9 @@ io.on('connection', (socket) => {
           roomID,
           messageID,
           senderID,
-          kind
+          kind,
+          attachmentCount,
+          expectedPathCount
         } = data || {};
 
         if (!roomID || !isValidRoomID(String(roomID))) {
@@ -825,6 +862,10 @@ io.on('connection', (socket) => {
         const mediaKind = normalizeMediaKind(kind);
         if (!mediaKind) {
           return callback && callback({ ok: false, error: 'invalid_media_kind' });
+        }
+        const contract = validateMediaUploadContract(mediaKind, attachmentCount, expectedPathCount);
+        if (!contract.ok) {
+          return callback && callback({ ok: false, error: contract.error });
         }
 
         const senderEmail = normalizeEmail(senderID);
@@ -845,21 +886,24 @@ io.on('connection', (socket) => {
         const now = admin.firestore.FieldValue.serverTimestamp();
         const expiresAt = reservationExpiresAt();
 
+        const existingMessage = await loadExistingMessage(roomID, String(messageID));
+        if (existingMessage) {
+          return callback && callback({
+            ok: true,
+            duplicate: true,
+            messageID: String(messageID),
+            storagePrefix
+          });
+        }
+
         if (existing.exists) {
           const reservation = existing.data() || {};
-          if (reservation.status === "completed") {
-            return callback && callback({
-              ok: true,
-              duplicate: true,
-              status: "completed",
-              messageID: String(messageID),
-              storagePrefix
-            });
-          }
           if (
             reservation.status === "pending" &&
             normalizeEmail(reservation.senderID) === senderEmail &&
-            reservation.kind === mediaKind
+            reservation.kind === mediaKind &&
+            Number(reservation.attachmentCount) === contract.attachmentCount &&
+            Number(reservation.expectedPathCount) === contract.expectedPathCount
           ) {
             await ref.set({
               expiresAt,
@@ -870,7 +914,9 @@ io.on('connection', (socket) => {
               duplicate: true,
               status: "pending",
               messageID: String(messageID),
-              storagePrefix: reservation.storagePrefix || storagePrefix
+              storagePrefix: reservation.storagePrefix || storagePrefix,
+              attachmentCount: contract.attachmentCount,
+              expectedPathCount: contract.expectedPathCount
             });
           }
           return callback && callback({ ok: false, error: "media_reservation_conflict" });
@@ -883,6 +929,8 @@ io.on('connection', (socket) => {
           kind: mediaKind,
           status: "pending",
           storagePrefix,
+          attachmentCount: contract.attachmentCount,
+          expectedPathCount: contract.expectedPathCount,
           createdAt: now,
           updatedAt: now,
           expiresAt
@@ -892,7 +940,9 @@ io.on('connection', (socket) => {
           ok: true,
           status: "pending",
           messageID: String(messageID),
-          storagePrefix
+          storagePrefix,
+          attachmentCount: contract.attachmentCount,
+          expectedPathCount: contract.expectedPathCount
         });
       } catch (error) {
         console.error('[chat:mediaPreflight] handler error:', error);
@@ -936,6 +986,9 @@ io.on('connection', (socket) => {
           if (incoming.length === 0) {
             return callback && callback({ ok: false, error: 'no_images' });
           }
+          if (incoming.length > MAX_IMAGES_PER_MESSAGE) {
+            return callback && callback({ ok: false, error: 'invalid_attachment_count' });
+          }
 
           const imgRateKey = `${socket.id}:${roomID}:images`;
           if (!allowRate(imgRateKey, RATE_MAX_IMAGES, RATE_WINDOW_MS)) {
@@ -961,9 +1014,7 @@ io.on('connection', (socket) => {
           deliveredImageKeys.add(dedupKey);
           if (deliveredImageKeys.size > 50000) deliveredImageKeys.clear();
 
-          const trimmed = incoming.length > MAX_IMAGES_PER_MESSAGE;
-          const capped = incoming.slice(0, MAX_IMAGES_PER_MESSAGE);
-          const prepared = (Array.isArray(attachments) ? capped : capped.map(sanitizeImageItem).map(withDerivedUrls));
+          const prepared = (Array.isArray(attachments) ? incoming : incoming.map(sanitizeImageItem).map(withDerivedUrls));
           const { images: budgeted, thumbTrimmed } = enforceThumbBudget(prepared, MAX_THUMB_PAYLOAD_BYTES);
 
           const normalized = budgeted.map((it, i) => normalizeAttachment({
@@ -978,6 +1029,7 @@ io.on('connection', (socket) => {
           }, i)).filter(att => att.pathThumb || att.pathOriginal);
 
           if (normalized.length === 0) {
+            deliveredImageKeys.delete(dedupKey);
             return callback && callback({ ok: false, error: 'no_valid_attachments' });
           }
 
@@ -991,26 +1043,29 @@ io.on('connection', (socket) => {
             });
           }
 
+          const storagePaths = normalized.flatMap((attachment) => [
+            attachment.pathThumb,
+            attachment.pathOriginal
+          ]);
+          const actualPathCount = storagePaths.filter(Boolean).length;
+          const contract = validateMediaUploadContract("images", normalized.length, actualPathCount);
+          if (!contract.ok) {
+            deliveredImageKeys.delete(dedupKey);
+            return callback && callback({ ok: false, error: contract.error });
+          }
+
           const reservation = await assertMediaUploadReservation({
             roomID,
             messageID: effectiveMessageID,
             senderID: imageSenderID,
             kind: "images",
-            storagePaths: normalized.flatMap((attachment) => [
-              attachment.pathThumb,
-              attachment.pathOriginal
-            ])
+            attachmentCount: contract.attachmentCount,
+            expectedPathCount: contract.expectedPathCount,
+            storagePaths
           });
           if (!reservation.ok) {
             deliveredImageKeys.delete(dedupKey);
             return callback && callback({ ok: false, error: reservation.error });
-          }
-          if (reservation.completed) {
-            return callback && callback({
-              ok: true,
-              duplicate: true,
-              messageID: effectiveMessageID
-            });
           }
 
           const nickname = senderNickname || senderNickName || '';
@@ -1056,7 +1111,7 @@ io.on('connection', (socket) => {
             roomID,
             messageData: serverMsg
           });
-          return callback && callback({ ok: true, messageID: effectiveMessageID, trimmed, thumbTrimmed });
+          return callback && callback({ ok: true, messageID: effectiveMessageID, thumbTrimmed });
         } catch (error) {
           console.error('[chat:mediaFinalize/images] handler error:', error);
           return callback && callback({ ok: false, error: 'internal_error' });
@@ -1136,23 +1191,26 @@ io.on('connection', (socket) => {
             });
           }
 
+          const storagePaths = [storagePath, thumbnailPath];
+          const actualPathCount = storagePaths.filter(Boolean).length;
+          const contract = validateMediaUploadContract("video", 1, actualPathCount);
+          if (!contract.ok) {
+            deliveredVideoKeys.delete(dedupKey);
+            return callback && callback({ ok: false, error: contract.error });
+          }
+
           const reservation = await assertMediaUploadReservation({
             roomID,
             messageID: effectiveMessageID,
             senderID: videoSenderID,
             kind: "video",
-            storagePaths: [storagePath, thumbnailPath]
+            attachmentCount: contract.attachmentCount,
+            expectedPathCount: contract.expectedPathCount,
+            storagePaths
           });
           if (!reservation.ok) {
             deliveredVideoKeys.delete(dedupKey);
             return callback && callback({ ok: false, error: reservation.error });
-          }
-          if (reservation.completed) {
-            return callback && callback({
-              ok: true,
-              duplicate: true,
-              messageID: effectiveMessageID
-            });
           }
 
           const serverMsg = buildServerVideoMessage({
