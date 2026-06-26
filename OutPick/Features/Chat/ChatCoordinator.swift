@@ -183,6 +183,7 @@ final class ChatCoordinator {
             avatarImageManager: container.makeAvatarImageManager(),
             currentUserProvider: container.currentUserProvider,
             repositories: container.firebaseRepositories,
+            photoLibrarySaver: container.makePhotoLibrarySaver(),
             onFinish: { [weak self] in
                 self?.userProfileDetailCoordinator = nil
             }

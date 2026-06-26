@@ -105,7 +105,14 @@ struct BrandDetailHeaderView: View {
             }
             .fullScreenCover(isPresented: $isPresentingZoomPreview) {
                 if let image = uiImage {
-                    ZoomPreviewView(image: image)
+                    LookbookImageViewerView(
+                        initialImage: image,
+                        previewPath: headerImagePath,
+                        originalPath: preferredDetailPath ?? deferredDetailPath,
+                        remoteURL: nil,
+                        sourcePageURL: nil,
+                        brandImageCache: brandImageCache
+                    )
                 }
             }
             .onDisappear {
@@ -272,100 +279,5 @@ struct BrandDetailHeaderView: View {
                 self.detailUpgradeTask = nil
             }
         }
-    }
-}
-
-private struct ZoomPreviewView: View {
-    let image: UIImage
-
-    @Environment(\.dismiss) private var dismiss
-
-    @State private var scale: CGFloat = 1
-    @State private var baseScale: CGFloat = 1
-    @State private var offset: CGSize = .zero
-    @State private var baseOffset: CGSize = .zero
-
-    private let minScale: CGFloat = 1
-    private let maxScale: CGFloat = 5
-
-    var body: some View {
-        ZStack(alignment: .topTrailing) {
-            Color.black.ignoresSafeArea()
-
-            Image(uiImage: image)
-                .resizable()
-                .scaledToFit()
-                .scaleEffect(scale)
-                .offset(offset)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .contentShape(Rectangle())
-                .gesture(dragGesture)
-                .simultaneousGesture(magnificationGesture)
-                .onTapGesture(count: 2) {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        if scale > 1 {
-                            resetZoom()
-                        } else {
-                            scale = 2
-                            baseScale = 2
-                        }
-                    }
-                }
-
-            Button {
-                dismiss()
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 30))
-                    .foregroundStyle(.white)
-                    .padding(16)
-            }
-        }
-    }
-
-    private var dragGesture: some Gesture {
-        DragGesture()
-            .onChanged { value in
-                guard scale > 1 else { return }
-                offset = CGSize(
-                    width: baseOffset.width + value.translation.width,
-                    height: baseOffset.height + value.translation.height
-                )
-            }
-            .onEnded { _ in
-                if scale <= 1 {
-                    resetZoom()
-                } else {
-                    baseOffset = offset
-                }
-            }
-    }
-
-    private var magnificationGesture: some Gesture {
-        MagnificationGesture()
-            .onChanged { value in
-                let nextScale = min(max(baseScale * value, minScale), maxScale)
-                scale = nextScale
-                if nextScale <= minScale {
-                    offset = .zero
-                    baseOffset = .zero
-                }
-            }
-            .onEnded { _ in
-                if scale <= minScale {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        resetZoom()
-                    }
-                } else {
-                    baseScale = scale
-                }
-            }
-    }
-
-    private func resetZoom() {
-        scale = 1
-        baseScale = 1
-        offset = .zero
-        baseOffset = .zero
     }
 }

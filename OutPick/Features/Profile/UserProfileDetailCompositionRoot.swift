@@ -14,6 +14,7 @@ enum UserProfileDetailCompositionRoot {
         avatarImageManager: AvatarImageManaging,
         currentUserProvider: CurrentUserProviding,
         repositories: FirebaseRepositoryProviding,
+        photoLibrarySaver: PhotoLibrarySaving = DefaultPhotoLibrarySaver(),
         onBack: @escaping () -> Void
     ) -> UserProfileDetailViewController {
         let repository = UserProfileDetailRepository(
@@ -31,7 +32,8 @@ enum UserProfileDetailCompositionRoot {
         )
         let viewController = UserProfileDetailViewController(
             viewModel: viewModel,
-            avatarImageManager: avatarImageManager
+            avatarImageManager: avatarImageManager,
+            photoLibrarySaver: photoLibrarySaver
         )
         viewController.view.backgroundColor = OutPickTheme.ColorToken.backgroundBase
         return viewController
@@ -44,6 +46,7 @@ enum UserProfileDetailCompositionRoot {
         avatarImageManager: AvatarImageManaging,
         currentUserProvider: CurrentUserProviding,
         repositories: FirebaseRepositoryProviding,
+        photoLibrarySaver: PhotoLibrarySaving = DefaultPhotoLibrarySaver(),
         onBack: @escaping () -> Void
     ) -> UserProfileDetailViewController {
         let repository = UserProfileDetailRepository(
@@ -61,7 +64,8 @@ enum UserProfileDetailCompositionRoot {
         )
         let viewController = UserProfileDetailViewController(
             viewModel: viewModel,
-            avatarImageManager: avatarImageManager
+            avatarImageManager: avatarImageManager,
+            photoLibrarySaver: photoLibrarySaver
         )
         viewController.view.backgroundColor = OutPickTheme.ColorToken.backgroundBase
         return viewController

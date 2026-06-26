@@ -7,31 +7,32 @@
 
 import UIKit
 
+struct ImageViewerPage {
+    let initialImage: UIImage?
+    let thumbnailImage: UIImage?
+    let thumbnailPath: String?
+    let originalPath: String?
+    let shouldAlwaysResolveThumbnail: Bool
+
+    init(
+        initialImage: UIImage? = nil,
+        thumbnailImage: UIImage? = nil,
+        thumbnailPath: String?,
+        originalPath: String?,
+        shouldAlwaysResolveThumbnail: Bool = false
+    ) {
+        self.initialImage = initialImage
+        self.thumbnailImage = thumbnailImage
+        self.thumbnailPath = thumbnailPath
+        self.originalPath = originalPath
+        self.shouldAlwaysResolveThumbnail = shouldAlwaysResolveThumbnail
+    }
+}
+
 // MARK: - SimpleImageViewerVC
 // Image viewer with paging, initial offset, and progressive loading support.
 class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureRecognizerDelegate {
-    struct ProgressivePage {
-        let initialImage: UIImage?
-        let thumbnailImage: UIImage?
-        let thumbnailPath: String?
-        let originalPath: String?
-        let shouldAlwaysResolveThumbnail: Bool
-
-        init(
-            initialImage: UIImage? = nil,
-            thumbnailImage: UIImage? = nil,
-            thumbnailPath: String?,
-            originalPath: String?,
-            shouldAlwaysResolveThumbnail: Bool = false
-        ) {
-            self.initialImage = initialImage
-            self.thumbnailImage = thumbnailImage
-            self.thumbnailPath = thumbnailPath
-            self.originalPath = originalPath
-            self.shouldAlwaysResolveThumbnail = shouldAlwaysResolveThumbnail
-        }
-    }
-
+    typealias ProgressivePage = ImageViewerPage
     typealias CachedImageProvider = (String) async -> UIImage?
     typealias LoadImageProvider = (String, Int) async -> UIImage?
 
@@ -40,12 +41,18 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
     private let cachedImageProvider: CachedImageProvider?
     private let loadImageProvider: LoadImageProvider?
     private let photoLibrarySaver: PhotoLibrarySaving
+    private let onClose: (() -> Void)?
     private let thumbnailMaxBytes = 12 * 1024 * 1024
     private let originalMaxBytes = 60 * 1024 * 1024
+    private let swipeDownDismissTranslationThreshold: CGFloat = 120
+    private let swipeDownDismissVelocityThreshold: CGFloat = 900
+    private let swipeDownVerticalDominanceRatio: CGFloat = 1.5
+    private let minimumZoomEpsilon: CGFloat = 0.001
     private let scrollView = UIScrollView()
     private var imageViews: [UIImageView] = []
     private var pageZoomScrolls: [UIScrollView] = []
     private var pageLoadTasks: [Int: Task<Void, Never>] = [:]
+    private var pageLoadRoles: [Int: PageLoadRole] = [:]
     private var lastReportedPage: Int = -1
     private var pageControl: UIPageControl!
     private var closeButton: UIButton!
@@ -61,18 +68,25 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
         pages.count
     }
 
+    private enum PageLoadRole: Equatable {
+        case demand
+        case warmup
+    }
+
     init(
         pages: [ProgressivePage],
         startIndex: Int,
         cachedImageProvider: CachedImageProvider?,
         loadImageProvider: LoadImageProvider?,
-        photoLibrarySaver: PhotoLibrarySaving
+        photoLibrarySaver: PhotoLibrarySaving,
+        onClose: (() -> Void)? = nil
     ) {
         self.pages = pages
         self.startIndex = startIndex
         self.cachedImageProvider = cachedImageProvider
         self.loadImageProvider = loadImageProvider
         self.photoLibrarySaver = photoLibrarySaver
+        self.onClose = onClose
         super.init(nibName: nil, bundle: nil)
         modalPresentationCapturesStatusBarAppearance = true
     }
@@ -221,6 +235,21 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
         return true
     }
 
+    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return true }
+        let idx = currentIndex()
+        guard idx >= 0, idx < pageZoomScrolls.count else { return false }
+
+        let currentZoomScroll = pageZoomScrolls[idx]
+        guard abs(currentZoomScroll.zoomScale - currentZoomScroll.minimumZoomScale) <= minimumZoomEpsilon else {
+            return false
+        }
+
+        let velocity = pan.velocity(in: view)
+        guard velocity.y > 0 else { return false }
+        return abs(velocity.y) > abs(velocity.x) * swipeDownVerticalDominanceRatio
+    }
+
     private func currentIndex() -> Int {
         guard pageCount > 0 else { return 0 }
         let w = max(1, scrollView.bounds.width)
@@ -229,6 +258,28 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
     }
 
     @objc private func closeTapped() {
+        closeViewer()
+    }
+
+    @objc private func handleSwipeDownDismiss(_ gr: UIPanGestureRecognizer) {
+        guard gr.state == .ended else { return }
+
+        let translation = gr.translation(in: view)
+        let velocity = gr.velocity(in: view)
+        guard translation.y > 0,
+              abs(translation.y) > abs(translation.x) * swipeDownVerticalDominanceRatio,
+              translation.y >= swipeDownDismissTranslationThreshold || velocity.y >= swipeDownDismissVelocityThreshold else {
+            return
+        }
+
+        closeViewer()
+    }
+
+    private func closeViewer() {
+        if let onClose {
+            onClose()
+            return
+        }
         dismiss(animated: true)
     }
 
@@ -439,25 +490,43 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
         toggleTap.delaysTouchesEnded = false
         toggleTap.require(toFail: doubleTap)
         view.addGestureRecognizer(toggleTap)
+
+        let swipeDownDismiss = UIPanGestureRecognizer(target: self, action: #selector(handleSwipeDownDismiss(_:)))
+        swipeDownDismiss.cancelsTouchesInView = false
+        swipeDownDismiss.delegate = self
+        view.addGestureRecognizer(swipeDownDismiss)
     }
 
     private func scheduleProgressiveLoads(around index: Int) {
         guard !pages.isEmpty else { return }
+        let current = max(0, min(index, pages.count - 1))
         let lower = max(0, index - 2)
         let upper = min(pages.count - 1, index + 2)
         guard lower <= upper else { return }
 
-        for i in lower...upper where pageLoadTasks[i] == nil {
-            let page = pages[i]
-            startProgressiveLoad(for: i, page: page)
+        for taskIndex in Array(pageLoadTasks.keys) where taskIndex < lower || taskIndex > upper {
+            cancelPageLoadTask(for: taskIndex)
+        }
+
+        if pageLoadRoles[current] != .demand {
+            cancelPageLoadTask(for: current)
+        }
+        if pageLoadTasks[current] == nil {
+            startProgressiveLoad(for: current, page: pages[current], role: .demand)
+        }
+
+        for i in lower...upper where i != current && pageLoadTasks[i] == nil {
+            startProgressiveLoad(for: i, page: pages[i], role: .warmup)
         }
     }
 
     private func startProgressiveLoad(
         for index: Int,
-        page: ProgressivePage
+        page: ProgressivePage,
+        role: PageLoadRole
     ) {
-        let task = Task(priority: .userInitiated) { [weak self] in
+        let taskPriority: TaskPriority = role == .demand ? .userInitiated : .utility
+        let task = Task(priority: taskPriority) { [weak self] in
             guard let self else { return }
             if Task.isCancelled { return }
 
@@ -467,21 +536,37 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
                 return
             }
 
-            if Task.isCancelled { return }
-            if await self.shouldResolveThumbnail(for: index, page: page),
-               let thumbnail = await self.loadThumbnail(for: page) {
-                self.setImage(thumbnail, at: index)
-            }
+            if role == .demand {
+                if Task.isCancelled { return }
+                if await self.shouldResolveThumbnail(for: index, page: page),
+                   let thumbnail = await self.loadThumbnail(for: page) {
+                    self.setImage(thumbnail, at: index)
+                }
 
-            if Task.isCancelled { return }
-            if let original = await self.loadOriginalNetwork(for: page) {
-                self.setImage(original, at: index)
+                if Task.isCancelled { return }
+                if let original = await self.loadOriginalNetwork(for: page) {
+                    self.setImage(original, at: index)
+                }
+            } else {
+                if Task.isCancelled { return }
+                if await self.shouldResolveThumbnail(for: index, page: page),
+                   let thumbnail = await self.loadThumbnail(for: page) {
+                    self.setImage(thumbnail, at: index)
+                }
+
+                if Task.isCancelled { return }
+                try? await Task.sleep(nanoseconds: 150_000_000)
+                if Task.isCancelled { return }
+                if let original = await self.loadOriginalNetwork(for: page) {
+                    self.setImage(original, at: index)
+                }
             }
 
             self.clearPageLoadTask(for: index)
         }
 
         pageLoadTasks[index] = task
+        pageLoadRoles[index] = role
     }
 
     private func loadOriginalCached(
@@ -582,11 +667,19 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
     @MainActor
     private func clearPageLoadTask(for index: Int) {
         pageLoadTasks[index] = nil
+        pageLoadRoles[index] = nil
+    }
+
+    private func cancelPageLoadTask(for index: Int) {
+        pageLoadTasks[index]?.cancel()
+        pageLoadTasks[index] = nil
+        pageLoadRoles[index] = nil
     }
 
     private func cancelAllPageLoadTasks() {
         pageLoadTasks.values.forEach { $0.cancel() }
         pageLoadTasks.removeAll()
+        pageLoadRoles.removeAll()
     }
 
     // Simple padding label for toast

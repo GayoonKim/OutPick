@@ -2631,7 +2631,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     @MainActor
     private func openMedia(messageID: String, attachmentIndex: Int) {
         guard let currentMessage = messageForCommand(messageID: messageID) else { return }
-        let attachments = currentMessage.attachments.sorted { $0.index < $1.index }
+        let attachments = currentMessage.displayableAttachments
         guard attachmentIndex >= 0, attachmentIndex < attachments.count else { return }
         let attachment = attachments[attachmentIndex]
 
@@ -2687,12 +2687,12 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     @MainActor
     private func presentImageViewer(messageID: String, tappedIndex: Int) {
         guard let latestMessage = messageForCommand(messageID: messageID) else { return }
-        let sortedAttachments = latestMessage.attachments.sorted { $0.index < $1.index }
-        guard tappedIndex >= 0, tappedIndex < sortedAttachments.count else { return }
-        let tappedAttachment = sortedAttachments[tappedIndex]
+        let displayableAttachments = latestMessage.displayableAttachments
+        guard tappedIndex >= 0, tappedIndex < displayableAttachments.count else { return }
+        let tappedAttachment = displayableAttachments[tappedIndex]
         guard tappedAttachment.type == .image else { return }
 
-        let imageEntries: [(mediaIndex: Int, attachment: Attachment)] = sortedAttachments.enumerated().compactMap { offset, attachment in
+        let imageEntries: [(mediaIndex: Int, attachment: Attachment)] = displayableAttachments.enumerated().compactMap { offset, attachment in
             guard attachment.type == .image else { return nil }
             return (offset, attachment)
         }

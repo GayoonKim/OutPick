@@ -13,6 +13,7 @@ final class UserProfileDetailCoordinator {
     private let avatarImageManager: AvatarImageManaging
     private let currentUserProvider: CurrentUserProviding
     private let repositories: FirebaseRepositoryProviding
+    private let photoLibrarySaver: PhotoLibrarySaving
     private let onFinish: () -> Void
 
     init(
@@ -20,12 +21,14 @@ final class UserProfileDetailCoordinator {
         avatarImageManager: AvatarImageManaging,
         currentUserProvider: CurrentUserProviding,
         repositories: FirebaseRepositoryProviding,
+        photoLibrarySaver: PhotoLibrarySaving,
         onFinish: @escaping () -> Void
     ) {
         self.presentingViewController = presentingViewController
         self.avatarImageManager = avatarImageManager
         self.currentUserProvider = currentUserProvider
         self.repositories = repositories
+        self.photoLibrarySaver = photoLibrarySaver
         self.onFinish = onFinish
     }
 
@@ -40,6 +43,7 @@ final class UserProfileDetailCoordinator {
             avatarImageManager: avatarImageManager,
             currentUserProvider: currentUserProvider,
             repositories: repositories,
+            photoLibrarySaver: photoLibrarySaver,
             onBack: { [weak self] in
                 self?.dismiss()
             }
@@ -60,6 +64,7 @@ final class UserProfileDetailCoordinator {
             avatarImageManager: avatarImageManager,
             currentUserProvider: currentUserProvider,
             repositories: repositories,
+            photoLibrarySaver: photoLibrarySaver,
             onBack: { [weak self] in
                 self?.dismiss()
             }

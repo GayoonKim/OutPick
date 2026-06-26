@@ -14,6 +14,8 @@ final class SecondProfileViewController: UIViewController {
     // VC 레벨에서 마지막 선택을 기억(복귀 시 복원용)
     private var lastPickedOriginalPath: String?
     private var lastPickedSHA: String?
+    private var isSaving = false
+    private var didSaveDraftForExplicitBack = false
 
     // MARK: - UI (Header)
 
@@ -176,6 +178,25 @@ final class SecondProfileViewController: UIViewController {
         nicknameField.delegate = self
     }
 
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        updateInteractivePopGestureAvailability()
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        saveDraftAfterCompletedPopIfNeeded()
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+
+        guard let navigationController else { return }
+        if navigationController.topViewController !== self {
+            navigationController.interactivePopGestureRecognizer?.isEnabled = true
+        }
+    }
+
     // MARK: - Bind
 
     private func bind() {
@@ -186,6 +207,9 @@ final class SecondProfileViewController: UIViewController {
     }
 
     private func apply(_ state: SecondProfileViewModel.State) {
+        isSaving = state.isSaving
+        updateInteractivePopGestureAvailability()
+
         countLabel.text = state.nicknameCountText
 
         // 완료 버튼
@@ -367,6 +391,7 @@ final class SecondProfileViewController: UIViewController {
 
     @objc private func backTapped() {
         saveDraftToUserDefaults()
+        didSaveDraftForExplicitBack = true
         viewModel.backTapped()
     }
 
@@ -468,6 +493,31 @@ final class SecondProfileViewController: UIViewController {
 
     private func clearDraftFromUserDefaults() {
         UserDefaults.standard.removeObject(forKey: Self.draftKey)
+    }
+
+    private func updateInteractivePopGestureAvailability() {
+        navigationController?.interactivePopGestureRecognizer?.isEnabled = !isSaving
+    }
+
+    private func saveDraftAfterCompletedPopIfNeeded() {
+        guard isMovingFromParent || navigationController?.viewControllers.contains(self) == false else {
+            return
+        }
+
+        guard !didSaveDraftForExplicitBack else {
+            didSaveDraftForExplicitBack = false
+            return
+        }
+
+        guard let transitionCoordinator else {
+            saveDraftToUserDefaults()
+            return
+        }
+
+        transitionCoordinator.animate(alongsideTransition: nil) { [weak self] context in
+            guard let self, !context.isCancelled else { return }
+            self.saveDraftToUserDefaults()
+        }
     }
 }
 
