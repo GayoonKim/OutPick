@@ -2584,7 +2584,7 @@ export const onRoomClosed = onDocumentUpdated(
 
 export const cleanupExpiredChatMediaUploads = onSchedule(
   {
-    schedule: "every 60 minutes",
+    schedule: "0 4 * * *",
     region: FUNCTIONS_REGION,
     timeZone: "Asia/Seoul",
   },
@@ -2639,11 +2639,7 @@ export const cleanupExpiredChatMediaUploads = onSchedule(
         .doc(messageID)
         .get();
       if (messageSnap.exists) {
-        await doc.ref.set({
-          status: "completed",
-          completedAt: FieldValue.serverTimestamp(),
-          updatedAt: FieldValue.serverTimestamp(),
-        }, {merge: true});
+        await doc.ref.delete();
         continue;
       }
 
@@ -2652,11 +2648,7 @@ export const cleanupExpiredChatMediaUploads = onSchedule(
           prefix: `${storagePrefix}/`,
           force: true,
         });
-        await doc.ref.set({
-          status: "expired",
-          expiredAt: FieldValue.serverTimestamp(),
-          updatedAt: FieldValue.serverTimestamp(),
-        }, {merge: true});
+        await doc.ref.delete();
         console.log(
           "[cleanupExpiredChatMediaUploads] Deleted expired media prefix",
           {roomID, messageID, storagePrefix}
