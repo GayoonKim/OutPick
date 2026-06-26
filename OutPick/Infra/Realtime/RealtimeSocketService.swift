@@ -342,6 +342,8 @@ actor RealtimeSocketService {
         roomID: String,
         messageID: String,
         kind: String,
+        attachmentCount: Int,
+        expectedPathCount: Int,
         ackTimeout: Double = 5.0
     ) async throws {
         guard let socket, socket.status == .connected else {
@@ -352,6 +354,8 @@ actor RealtimeSocketService {
             "roomID": roomID,
             "messageID": messageID,
             "kind": kind,
+            "attachmentCount": attachmentCount,
+            "expectedPathCount": expectedPathCount,
             "senderID": identity?.email ?? ""
         ]
 

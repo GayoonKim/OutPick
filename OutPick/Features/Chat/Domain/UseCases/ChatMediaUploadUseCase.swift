@@ -30,7 +30,8 @@ protocol ChatMediaUploadUseCaseProtocol {
     func sendUploadedImages(
         room: ChatRoom,
         attachments: [Attachment],
-        clientMessageID: String
+        clientMessageID: String,
+        ensureReservation: Bool
     ) async throws
 
     func cacheFailedImageThumbnails(_ pairs: [ProcessedImage]) async
@@ -44,7 +45,7 @@ protocol ChatMediaUploadUseCaseProtocol {
         onProgress: @escaping (Double) -> Void
     ) async throws -> VideoMetaPayload
 
-    func sendUploadedVideo(roomID: String, payload: VideoMetaPayload) async throws
+    func sendUploadedVideo(roomID: String, payload: VideoMetaPayload, ensureReservation: Bool) async throws
     func sendFailedVideo(roomID: String, prepared: PreparedVideo)
 }
 
@@ -146,7 +147,9 @@ final class ChatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol {
         try await sendingRepository.preflightMediaUpload(
             roomID: roomID,
             messageID: messageID,
-            kind: "images"
+            kind: "images",
+            attachmentCount: pairs.count,
+            expectedPathCount: pairs.count * 2
         )
         let attachments = try await imageStorageRepository.uploadPairsToRoomMessage(
             pairs,
@@ -164,8 +167,21 @@ final class ChatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol {
     func sendUploadedImages(
         room: ChatRoom,
         attachments: [Attachment],
-        clientMessageID: String
+        clientMessageID: String,
+        ensureReservation: Bool = true
     ) async throws {
+        guard !attachments.isEmpty else { return }
+
+        if ensureReservation {
+            try await sendingRepository.preflightMediaUpload(
+                roomID: room.ID ?? "",
+                messageID: clientMessageID,
+                kind: "images",
+                attachmentCount: attachments.count,
+                expectedPathCount: attachments.count * 2
+            )
+        }
+        
         try await sendingRepository.sendImages(
             room,
             attachments: attachments,
@@ -209,7 +225,9 @@ final class ChatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol {
         try await sendingRepository.preflightMediaUpload(
             roomID: roomID,
             messageID: messageID,
-            kind: "video"
+            kind: "video",
+            attachmentCount: 1,
+            expectedPathCount: 2
         )
         let videoPaths = ChatStoragePath.roomMessageVideo(roomID: roomID, messageID: messageID)
 
@@ -247,7 +265,16 @@ final class ChatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol {
         )
     }
 
-    func sendUploadedVideo(roomID: String, payload: VideoMetaPayload) async throws {
+    func sendUploadedVideo(roomID: String, payload: VideoMetaPayload, ensureReservation: Bool = true) async throws {
+        if ensureReservation {
+            try await sendingRepository.preflightMediaUpload(
+                roomID: roomID,
+                messageID: payload.messageID,
+                kind: "video",
+                attachmentCount: 1,
+                expectedPathCount: 2
+            )
+        }
         try await sendingRepository.sendVideo(
             roomID: roomID,
             payload: payload,

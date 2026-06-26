@@ -77,13 +77,15 @@ struct ChatMediaUploadUseCaseTests {
             imageRepository: imageRepository,
             sendingRepository: sendingRepository
         )
-        let pair = try makeProcessedImage(index: 0, sha256: "image-sha")
-        let attachment = makeAttachment(hash: "image-sha")
-        imageRepository.uploadResult = [attachment]
+        let firstPair = try makeProcessedImage(index: 0, sha256: "image-sha-1")
+        let secondPair = try makeProcessedImage(index: 1, sha256: "image-sha-2")
+        let firstAttachment = makeAttachment(hash: "image-sha-1")
+        let secondAttachment = makeAttachment(hash: "image-sha-2")
+        imageRepository.uploadResult = [firstAttachment, secondAttachment]
         var progressValues: [Double] = []
 
         let attachments = try await useCase.uploadPendingImages(
-            pairs: [pair],
+            pairs: [firstPair, secondPair],
             roomID: "room-1",
             messageID: "message-1",
             onProgress: { progressValues.append($0) }
@@ -91,19 +93,27 @@ struct ChatMediaUploadUseCaseTests {
         try await useCase.sendUploadedImages(
             room: makeRoom(id: "room-1"),
             attachments: attachments,
-            clientMessageID: "message-1"
+            clientMessageID: "message-1",
+            ensureReservation: false
         )
 
         #expect(sendingRepository.preflightCalls == [
-            .init(roomID: "room-1", messageID: "message-1", kind: "images")
+            .init(
+                roomID: "room-1",
+                messageID: "message-1",
+                kind: "images",
+                attachmentCount: 2,
+                expectedPathCount: 4
+            )
         ])
         #expect(imageRepository.uploadCalls.count == 1)
         #expect(imageRepository.uploadCalls.first?.roomID == "room-1")
         #expect(imageRepository.uploadCalls.first?.messageID == "message-1")
         #expect(progressValues == [0.25, 1.0])
-        #expect(FileManager.default.fileExists(atPath: pair.originalFileURL.path) == false)
+        #expect(FileManager.default.fileExists(atPath: firstPair.originalFileURL.path) == false)
+        #expect(FileManager.default.fileExists(atPath: secondPair.originalFileURL.path) == false)
         #expect(sendingRepository.imageCalls.count == 1)
-        #expect(sendingRepository.imageCalls.first?.attachments == [attachment])
+        #expect(sendingRepository.imageCalls.first?.attachments == [firstAttachment, secondAttachment])
         #expect(sendingRepository.imageCalls.first?.senderAvatarPath == "avatars/me.jpg")
         #expect(sendingRepository.imageCalls.first?.clientMessageID == "message-1")
     }
@@ -164,10 +174,16 @@ struct ChatMediaUploadUseCaseTests {
             prepared: prepared,
             onProgress: { progressValues.append($0) }
         )
-        try await useCase.sendUploadedVideo(roomID: "room-1", payload: payload)
+        try await useCase.sendUploadedVideo(roomID: "room-1", payload: payload, ensureReservation: false)
 
         #expect(sendingRepository.preflightCalls == [
-            .init(roomID: "room-1", messageID: "video-1", kind: "video")
+            .init(
+                roomID: "room-1",
+                messageID: "video-1",
+                kind: "video",
+                attachmentCount: 1,
+                expectedPathCount: 2
+            )
         ])
         #expect(payload.messageID == "video-1")
         #expect(payload.storagePath == "rooms/room-1/messages/video-1/video/video.mp4")
@@ -422,6 +438,8 @@ private final class ChatMediaMessageSendingRepositorySpy: ChatMediaMessageSendin
         let roomID: String
         let messageID: String
         let kind: String
+        let attachmentCount: Int
+        let expectedPathCount: Int
     }
 
     struct ImageCall {
@@ -458,9 +476,17 @@ private final class ChatMediaMessageSendingRepositorySpy: ChatMediaMessageSendin
     func preflightMediaUpload(
         roomID: String,
         messageID: String,
-        kind: String
+        kind: String,
+        attachmentCount: Int,
+        expectedPathCount: Int
     ) async throws {
-        preflightCalls.append(PreflightCall(roomID: roomID, messageID: messageID, kind: kind))
+        preflightCalls.append(PreflightCall(
+            roomID: roomID,
+            messageID: messageID,
+            kind: kind,
+            attachmentCount: attachmentCount,
+            expectedPathCount: expectedPathCount
+        ))
         if let preflightError {
             throw preflightError
         }
