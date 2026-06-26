@@ -12,6 +12,9 @@ export function createSequenceStore({ db, admin }) {
         const ed = existing.data() || {};
         if (typeof ed.seq === "number") {
           tx.set(msgRef, { ...messageData, seq: ed.seq }, { merge: true });
+          if (options.mediaUploadRef) {
+            tx.delete(options.mediaUploadRef);
+          }
           return ed.seq;
         }
       }
@@ -27,11 +30,7 @@ export function createSequenceStore({ db, admin }) {
         lastMessageAt: admin.firestore.FieldValue.serverTimestamp()
       }, { merge: true });
       if (options.mediaUploadRef) {
-        tx.set(options.mediaUploadRef, {
-          status: "completed",
-          completedAt: admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        }, { merge: true });
+        tx.delete(options.mediaUploadRef);
       }
 
       return next;

@@ -271,7 +271,12 @@ extension ChatViewController {
                 self.setUploadedImageAttachments(attachments, for: messageID)
             }
             await markOutgoingImageUploadCompleted(messageID: messageID, attachments: attachments)
-            try await mediaUploadUseCase.sendUploadedImages(room: room, attachments: attachments, clientMessageID: messageID)
+            try await mediaUploadUseCase.sendUploadedImages(
+                room: room,
+                attachments: attachments,
+                clientMessageID: messageID,
+                ensureReservation: false
+            )
 
             await MainActor.run {
                 self.finishPendingImageUpload(messageID: messageID)
@@ -312,7 +317,11 @@ extension ChatViewController {
                 self.setUploadedVideoPayload(payload, for: messageID)
             }
             await markOutgoingVideoUploadCompleted(messageID: messageID, payload: payload)
-            try await mediaUploadUseCase.sendUploadedVideo(roomID: roomID, payload: payload)
+            try await mediaUploadUseCase.sendUploadedVideo(
+                roomID: roomID,
+                payload: payload,
+                ensureReservation: false
+            )
 
             await MainActor.run {
                 self.finishPendingVideoUpload(messageID: messageID)
@@ -347,7 +356,8 @@ extension ChatViewController {
             try await mediaUploadUseCase.sendUploadedImages(
                 room: room,
                 attachments: attachments,
-                clientMessageID: messageID
+                clientMessageID: messageID,
+                ensureReservation: true
             )
             await MainActor.run {
                 self.finishPendingImageUpload(messageID: messageID)
@@ -370,7 +380,11 @@ extension ChatViewController {
         payload: VideoMetaPayload
     ) async {
         do {
-            try await mediaUploadUseCase.sendUploadedVideo(roomID: roomID, payload: payload)
+            try await mediaUploadUseCase.sendUploadedVideo(
+                roomID: roomID,
+                payload: payload,
+                ensureReservation: true
+            )
             await MainActor.run {
                 self.finishPendingVideoUpload(messageID: messageID)
             }

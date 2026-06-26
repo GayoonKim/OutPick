@@ -11,7 +11,9 @@ protocol ChatMediaMessageSendingRepositoryProtocol {
     func preflightMediaUpload(
         roomID: String,
         messageID: String,
-        kind: String
+        kind: String,
+        attachmentCount: Int,
+        expectedPathCount: Int
     ) async throws
 
     func sendImages(
@@ -45,6 +47,8 @@ protocol ChatMediaSocketSending {
         roomID: String,
         messageID: String,
         kind: String,
+        attachmentCount: Int,
+        expectedPathCount: Int,
         ackTimeout: Double
     ) async throws
 
@@ -86,12 +90,16 @@ final class SocketChatMediaMessageSendingRepository: ChatMediaMessageSendingRepo
     func preflightMediaUpload(
         roomID: String,
         messageID: String,
-        kind: String
+        kind: String,
+        attachmentCount: Int,
+        expectedPathCount: Int
     ) async throws {
         try await socketManager.preflightMediaUploadAwaitingAck(
             roomID: roomID,
             messageID: messageID,
             kind: kind,
+            attachmentCount: attachmentCount,
+            expectedPathCount: expectedPathCount,
             ackTimeout: 5.0
         )
     }
