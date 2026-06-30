@@ -124,7 +124,7 @@ export function extractSeasonCandidates(
     }
 
     const previous = candidateMap.get(seasonURL);
-    if (!previous || shouldReplaceCandidate(previous, score, image)) {
+    if (!previous || shouldReplaceCandidate(previous, title, score, image)) {
       candidateMap.set(seasonURL, {
         title,
         seasonURL,
@@ -206,12 +206,14 @@ function isOutsideArchiveScope(
  * 같은 URL 후보를 새 후보로 교체할지 판단합니다.
  *
  * @param {AnchorCandidate} previous 기존 후보입니다.
+ * @param {string} nextTitle 새 후보 제목입니다.
  * @param {number} nextScore 새 후보 점수입니다.
  * @param {ImageCandidate | null} nextImage 새 후보 대표 이미지입니다.
  * @return {boolean} 교체해야 하면 true입니다.
  */
 function shouldReplaceCandidate(
   previous: AnchorCandidate,
+  nextTitle: string,
   nextScore: number,
   nextImage: ImageCandidate | null
 ): boolean {
@@ -224,7 +226,25 @@ function shouldReplaceCandidate(
   if (!nextHasCover && previousHasCover) {
     return false;
   }
+  if (
+    previous.score === nextScore &&
+    isFallbackSeasonTitle(previous.title) &&
+    !isFallbackSeasonTitle(nextTitle)
+  ) {
+    return true;
+  }
   return previous.score < nextScore;
+}
+
+/**
+ * URL 파일명에서 만든 fallback 제목인지 판단합니다.
+ *
+ * @param {string} title 표시용 시즌 후보 제목입니다.
+ * @return {boolean} fallback 제목이면 true입니다.
+ */
+function isFallbackSeasonTitle(title: string): boolean {
+  return /^(?:view|detail|archive-detail|collection|product|season 후보)$/i
+    .test(title.trim());
 }
 
 /**
@@ -277,7 +297,7 @@ function isIgnoredHref(href: string): boolean {
   if (isImageFileURL(url)) {
     return true;
   }
-  if (/\/product\/archive-detail\.html/i.test(url.pathname)) {
+  if (/\/product\/(?:archive-detail|detail_new)\.html/i.test(url.pathname)) {
     return false;
   }
   if (isNonSeasonPath(url)) {
