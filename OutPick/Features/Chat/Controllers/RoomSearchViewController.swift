@@ -292,7 +292,7 @@ class RoomSearchViewController: UIViewController {
     
     @MainActor
     private func backBtnTapped() {
-        self.dismiss(animated: true)
+        navigationController?.popViewController(animated: true)
     }
 }
 

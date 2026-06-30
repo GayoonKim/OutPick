@@ -84,7 +84,7 @@ final class ChatCoordinator {
 
     private func presentChatRoom(room: ChatRoom, from source: UIViewController) {
         let chatRoomVC = makeChatRoomViewController(room: room, isRoomSaving: false)
-        ChatModalTransitionManager.present(chatRoomVC, from: source)
+        push(chatRoomVC, from: source)
     }
 
     func openRoom(roomID: String, from source: UIViewController) async throws {
@@ -93,8 +93,7 @@ final class ChatCoordinator {
         let rooms = try await container.roomRepository.fetchRoomsWithIDs(byIDs: [roomID])
         guard let room = rooms.first else { throw FirebaseError.FailedToFetchRoom }
 
-        let presenter = topMostPresenter(startingFrom: source)
-        presentChatRoom(room: room, from: presenter)
+        presentChatRoom(room: room, from: source)
     }
 
     private func presentCreateRoom(from source: UIViewController) {
@@ -106,8 +105,7 @@ final class ChatCoordinator {
                 self?.makeChatRoomViewController(room: room, isRoomSaving: true)
             }
         )
-        createVC.modalPresentationStyle = .fullScreen
-        ChatModalTransitionManager.present(createVC, from: source)
+        push(createVC, from: source)
     }
 
     private func presentSearch(from source: UIViewController) {
@@ -116,17 +114,12 @@ final class ChatCoordinator {
             guard let self, let searchVC else { return }
             self.presentChatRoomFromSearch(room: room, searchVC: searchVC)
         }
-        searchVC.modalPresentationStyle = .fullScreen
-        ChatModalTransitionManager.present(searchVC, from: source)
+        push(searchVC, from: source)
     }
 
     private func presentChatRoomFromSearch(room: ChatRoom, searchVC: RoomSearchViewController) {
         let chatRoomVC = makeChatRoomViewController(room: room, isRoomSaving: false)
-
-        guard let presenter = searchVC.presentingViewController else { return }
-        searchVC.dismiss(animated: false) {
-            presenter.present(chatRoomVC, animated: true)
-        }
+        push(chatRoomVC, from: searchVC)
     }
 
     private func presentRoomEdit(from source: ChatRoomSettingViewController, room: ChatRoom) {
@@ -161,15 +154,38 @@ final class ChatCoordinator {
         chatRoomVC.isRoomSaving = isRoomSaving
         chatRoomVC.router = self
         chatRoomVC.modalPresentationStyle = .fullScreen
+        chatRoomVC.hidesBottomBarWhenPushed = true
         return chatRoomVC
     }
 
-    private func topMostPresenter(startingFrom source: UIViewController) -> UIViewController {
-        var current: UIViewController = source
-        while let presented = current.presentedViewController {
-            current = presented
+    private func push(_ viewController: UIViewController, from source: UIViewController) {
+        guard let nav = navigationController(startingFrom: source) else {
+            assertionFailure("ChatCoordinator requires a UINavigationController-owned Chat route.")
+            return
         }
-        return current
+        nav.setNavigationBarHidden(true, animated: false)
+        nav.interactivePopGestureRecognizer?.isEnabled = true
+        viewController.hidesBottomBarWhenPushed = true
+        nav.pushViewController(viewController, animated: true)
+    }
+
+    private func navigationController(startingFrom source: UIViewController) -> UINavigationController? {
+        if let nav = source.navigationController {
+            return nav
+        }
+
+        var current: UIViewController? = source
+        while let presenting = current?.presentingViewController {
+            if let nav = presenting as? UINavigationController {
+                return nav
+            }
+            if let nav = presenting.navigationController {
+                return nav
+            }
+            current = presenting
+        }
+
+        return nil
     }
 
     private func presentUserProfile(

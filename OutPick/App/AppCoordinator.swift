@@ -14,7 +14,7 @@ final class AppCoordinator {
 
     private let window: UIWindow
     private weak var currentWindowScene: UIWindowScene?
-    private weak var mainTabController: CustomTabBarViewController?
+    private weak var mainTabController: MainTabBarController?
 
     private let lookbookProvider: LookbookRepositoryProvider
     private var lookbookContainer: LookbookContainer?
@@ -219,7 +219,7 @@ final class AppCoordinator {
 
         setRoot(tab, animated: true)
         if let initialTabIndex {
-            tab.switchScreen(initialTabIndex)
+            tab.selectTab(initialTabIndex)
         }
 
         Task { @MainActor [weak self] in
@@ -333,7 +333,7 @@ final class AppCoordinator {
             return
         }
 
-        mainTabController.switchScreen(1)
+        mainTabController.selectTab(1)
 
         guard let builder = mainTabController.tabBuilder as? DefaultMainTabBuilder,
               let presenter = mainTabController.activeContentViewController else {

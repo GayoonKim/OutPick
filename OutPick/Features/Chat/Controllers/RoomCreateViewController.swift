@@ -133,7 +133,7 @@ final class RoomCreateViewController: UIViewController, ChatModalAnimatable, UII
         
         alert.addAction(UIAlertAction(title: "계속 작성하기", style: .default, handler: nil))
         alert.addAction(UIAlertAction(title: "개설 취소하기", style: .destructive, handler:  { _ in
-            ChatModalTransitionManager.dismiss(from: self)
+            self.navigationController?.popViewController(animated: true)
         }))
         
         self.present(alert, animated: true, completion: nil)
@@ -399,14 +399,14 @@ private extension RoomCreateViewController {
     }
 
     func presentCreatedRoom(_ room: ChatRoom) {
-        guard let presenter = self.presentingViewController else { return }
         guard let chatRoomVC = makeCreatedRoomViewController(room: room) else { return }
+        guard let navigationController else {
+            assertionFailure("RoomCreateViewController requires UINavigationController push routing.")
+            return
+        }
 
         createdChatRoomViewController = chatRoomVC
-
-        self.dismiss(animated: false) { [weak presenter] in
-            presenter?.present(chatRoomVC, animated: true)
-        }
+        navigationController.pushViewController(chatRoomVC, animated: true)
     }
 
     func makeCreatedRoomViewController(room: ChatRoom) -> ChatViewController? {

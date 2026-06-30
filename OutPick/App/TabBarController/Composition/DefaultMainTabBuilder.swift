@@ -26,6 +26,15 @@ final class DefaultMainTabBuilder: MainTabBuilding {
         self.chatCoordinator = ChatCoordinator(container: chatContainer)
     }
 
+    func makeTabViewControllers() -> [UIViewController] {
+        (0..<5).map { index in
+            let viewController = makeViewController(for: index)
+            configureTabItem(for: viewController, index: index)
+            configureNavigationControllerIfNeeded(viewController)
+            return viewController
+        }
+    }
+
     func makeViewController(for index: Int) -> UIViewController {
         switch index {
         case 0:
@@ -54,5 +63,57 @@ final class DefaultMainTabBuilder: MainTabBuilding {
 
     func openChatRoom(roomID: String, from source: UIViewController) async throws {
         try await chatCoordinator.openRoom(roomID: roomID, from: source)
+    }
+
+    private func configureTabItem(for viewController: UIViewController, index: Int) {
+        let item: UITabBarItem
+        switch index {
+        case 0:
+            item = UITabBarItem(
+                title: "오픈채팅",
+                image: UIImage(systemName: "bubble.left.and.bubble.right.fill"),
+                selectedImage: UIImage(systemName: "bubble.left.and.bubble.right.fill")
+            )
+
+        case 1:
+            item = UITabBarItem(
+                title: "채팅",
+                image: UIImage(systemName: "bubble.middle.bottom.fill"),
+                selectedImage: UIImage(systemName: "bubble.middle.bottom.fill")
+            )
+
+        case 2:
+            item = UITabBarItem(
+                title: "룩북",
+                image: UIImage(systemName: "book.fill"),
+                selectedImage: UIImage(systemName: "book.fill")
+            )
+
+        case 3:
+            item = UITabBarItem(
+                title: "좋아요",
+                image: UIImage(systemName: "heart.fill"),
+                selectedImage: UIImage(systemName: "heart.fill")
+            )
+
+        case 4:
+            item = UITabBarItem(
+                title: "내 정보",
+                image: UIImage(systemName: "gearshape.fill"),
+                selectedImage: UIImage(systemName: "gearshape.fill")
+            )
+
+        default:
+            item = UITabBarItem()
+        }
+
+        viewController.tabBarItem = item
+    }
+
+    private func configureNavigationControllerIfNeeded(_ viewController: UIViewController) {
+        guard let nav = viewController as? UINavigationController else { return }
+        nav.isNavigationBarHidden = true
+        nav.setNavigationBarHidden(true, animated: false)
+        nav.interactivePopGestureRecognizer?.isEnabled = true
     }
 }

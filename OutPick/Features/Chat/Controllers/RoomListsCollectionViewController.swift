@@ -46,8 +46,6 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
         super.viewDidLoad()
         self.view.backgroundColor = OutPickTheme.ColorToken.backgroundBase
         
-        self.attachInteractiveDismissGesture()
-        
         dataSource = configureDataSource()
         collectionView.register(RoomListCollectionViewCell.self, forCellWithReuseIdentifier: RoomListCollectionViewCell.identifier)
         collectionView.dataSource = dataSource

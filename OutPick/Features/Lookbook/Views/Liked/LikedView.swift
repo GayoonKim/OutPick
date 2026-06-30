@@ -9,10 +9,6 @@ import SwiftUI
 
 struct LikedView: View {
     @StateObject private var viewModel: LikedViewModel
-    @EnvironmentObject private var brandAdminSessionStore: BrandAdminSessionStore
-    @State private var selectedBrandID: BrandID?
-    @State private var selectedSeasonID: String?
-    @State private var selectedPostID: String?
 
     private let coordinator: LookbookCoordinator
     private let postColumns: [GridItem] = [
@@ -29,21 +25,18 @@ struct LikedView: View {
     }
 
     var body: some View {
-        NavigationView {
-            content
-                .lookbookNavigationBar(title: "OutPick")
-                .task {
-                    await viewModel.refreshForActivation()
-                }
-                .refreshable {
-                    await viewModel.reload()
-                }
-                .appToast(message: viewModel.engagementErrorMessage) {
-                    viewModel.clearEngagementError()
-                }
-        }
-        .navigationViewStyle(StackNavigationViewStyle())
-        .tint(OutPickTheme.SwiftUIColor.accent)
+        content
+            .lookbookNavigationBar(title: "OutPick")
+            .task {
+                await viewModel.refreshForActivation()
+            }
+            .refreshable {
+                await viewModel.reload()
+            }
+            .appToast(message: viewModel.engagementErrorMessage) {
+                viewModel.clearEngagementError()
+            }
+            .tint(OutPickTheme.SwiftUIColor.accent)
     }
 
     private var likedSectionsList: some View {
@@ -145,7 +138,7 @@ struct LikedView: View {
                 ForEach(viewModel.brandItems) { item in
                     ZStack(alignment: .topTrailing) {
                         Button {
-                            selectedBrandID = item.id
+                            coordinator.pushBrandDetail(brand: item.brand)
                         } label: {
                             LikedBrandCardView(
                                 item: item,
@@ -153,17 +146,6 @@ struct LikedView: View {
                             )
                         }
                         .buttonStyle(.plain)
-                        .background {
-                            NavigationLink(
-                                destination: coordinator.makeBrandDetailView(brand: item.brand)
-                                    .environmentObject(brandAdminSessionStore),
-                                tag: item.id,
-                                selection: $selectedBrandID
-                            ) {
-                                EmptyView()
-                            }
-                            .opacity(0)
-                        }
 
                         unlikeMenu {
                             await viewModel.unlikeBrand(item)
@@ -187,7 +169,7 @@ struct LikedView: View {
                 ForEach(viewModel.seasonItems) { item in
                     ZStack(alignment: .topTrailing) {
                         Button {
-                            selectedSeasonID = item.id
+                            coordinator.pushSeasonDetail(season: item.season)
                         } label: {
                             LikedSeasonCardView(
                                 item: item,
@@ -195,16 +177,6 @@ struct LikedView: View {
                             )
                         }
                         .buttonStyle(.plain)
-                        .background {
-                            NavigationLink(
-                                destination: coordinator.makeSeasonDetailView(season: item.season),
-                                tag: item.id,
-                                selection: $selectedSeasonID
-                            ) {
-                                EmptyView()
-                            }
-                            .opacity(0)
-                        }
 
                         unlikeMenu {
                             await viewModel.unlikeSeason(item)
@@ -227,7 +199,7 @@ struct LikedView: View {
             ForEach(viewModel.postItems) { item in
                 ZStack(alignment: .topTrailing) {
                     Button {
-                        selectedPostID = item.id
+                        coordinator.pushPostDetail(post: item.post)
                     } label: {
                         LikedPostCardView(
                             item: item,
@@ -235,16 +207,6 @@ struct LikedView: View {
                         )
                     }
                     .buttonStyle(.plain)
-                    .background {
-                        NavigationLink(
-                            destination: coordinator.makePostDetailView(post: item.post),
-                            tag: item.id,
-                            selection: $selectedPostID
-                        ) {
-                            EmptyView()
-                        }
-                        .opacity(0)
-                    }
 
                     unlikeMenu {
                         await viewModel.unlikePost(item)

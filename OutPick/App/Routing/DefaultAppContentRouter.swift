@@ -17,12 +17,12 @@ final class DefaultAppContentRouter: AppContentRouting {
         case unsupportedBuilder
     }
 
-    private weak var tabController: CustomTabBarViewController?
+    private weak var tabController: MainTabBarController?
     private let lookbookContainer: LookbookContainer
     private weak var tabBuilder: (any MainTabBuilding)?
 
     init(
-        tabController: CustomTabBarViewController,
+        tabController: MainTabBarController,
         lookbookContainer: LookbookContainer,
         tabBuilder: any MainTabBuilding
     ) {
@@ -35,7 +35,7 @@ final class DefaultAppContentRouter: AppContentRouting {
         guard let tabController else { throw RoutingError.missingPresenter }
 
         await dismissVisiblePresentationIfNeeded(from: tabController)
-        tabController.switchScreen(1)
+        tabController.selectTab(1)
 
         guard let presenter = tabController.activeContentViewController else {
             throw RoutingError.missingPresenter
@@ -49,19 +49,15 @@ final class DefaultAppContentRouter: AppContentRouting {
         guard let tabController else { throw RoutingError.missingPresenter }
 
         await dismissVisiblePresentationIfNeeded(from: tabController)
-        tabController.switchScreen(2)
+        tabController.selectTab(2)
 
-        guard let presenter = tabController.activeContentViewController else {
-            throw RoutingError.missingPresenter
-        }
-
-        let navigationController = presenter.navigationController
-            ?? presenter as? UINavigationController
+        let navigationController = tabController.selectedNavigationController
         guard let navigationController else {
             throw RoutingError.missingNavigationController
         }
 
         let coordinator = LookbookCoordinator(container: lookbookContainer)
+        coordinator.attach(navigationController: navigationController)
         let viewController: UIViewController
 
         switch content.contentType {
@@ -106,10 +102,11 @@ final class DefaultAppContentRouter: AppContentRouting {
             )
         }
 
+        viewController.hidesBottomBarWhenPushed = true
         navigationController.pushViewController(viewController, animated: true)
     }
 
-    private func dismissVisiblePresentationIfNeeded(from tabController: CustomTabBarViewController) async {
+    private func dismissVisiblePresentationIfNeeded(from tabController: MainTabBarController) async {
         if let active = tabController.activeContentViewController,
            active.presentingViewController != nil {
             await withCheckedContinuation { continuation in

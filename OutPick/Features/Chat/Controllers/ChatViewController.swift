@@ -403,7 +403,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             }
         }
         
-        self.navigationController?.setNavigationBarHidden(false, animated: false)
+        self.navigationController?.setNavigationBarHidden(true, animated: false)
         
         // push로 다른 화면을 덮은 게 아니라,
         // 네비게이션에서 빠져나가거나 dismiss 된 경우에만 true
@@ -1231,34 +1231,23 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     //MARK: 커스텀 내비게이션 바
     @MainActor
     @objc private func backButtonTapped() {
-        // ✅ 표준 네비게이션으로만 되돌아가기 (root 교체 금지)
-        // 1) 내비게이션 스택 우선
-        if let nav = self.navigationController {
-            // 바로 아래가 RoomCreateViewController이면, 그 이전 화면(또는 루트)로 복귀
-            if let idx = nav.viewControllers.firstIndex(of: self), idx > 0, nav.viewControllers[idx-1] is RoomCreateViewController {
-                if idx >= 2 {
-                    let target = nav.viewControllers[idx-2]
-                    nav.popToViewController(target, animated: true)
-                } else {
-                    nav.popToRootViewController(animated: true)
-                }
-            } else {
-                nav.popViewController(animated: true)
+        guard let nav = self.navigationController else {
+            if self.presentingViewController != nil {
+                self.dismiss(animated: true)
             }
             return
         }
 
-        // 2) 모달 표시된 경우에는 단순 dismiss
-        if self.presentingViewController != nil {
-            self.dismiss(animated: true)
-            return
-        }
-
-        // 3) 폴백: 탭바 아래의 내비게이션이 있으면 루트로 복귀
-        if let tab = self.view.window?.rootViewController as? UITabBarController,
-           let nav = tab.selectedViewController as? UINavigationController {
-            nav.popToRootViewController(animated: true)
-            return
+        // 바로 아래가 RoomCreateViewController이면, 그 이전 화면(또는 루트)로 복귀
+        if let idx = nav.viewControllers.firstIndex(of: self), idx > 0, nav.viewControllers[idx-1] is RoomCreateViewController {
+            if idx >= 2 {
+                let target = nav.viewControllers[idx-2]
+                nav.popToViewController(target, animated: true)
+            } else {
+                nav.popToRootViewController(animated: true)
+            }
+        } else {
+            nav.popViewController(animated: true)
         }
     }
 
@@ -1275,7 +1264,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     @MainActor
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        self.attachInteractiveDismissGesture()
         if needsTransientBindingsRestore {
             restoreTransientBindingsIfNeeded()
             needsTransientBindingsRestore = false
@@ -1365,7 +1353,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             completion?()
         }
         
-        self.attachInteractiveDismissGesture()
     }
 
     @MainActor
@@ -2540,13 +2527,13 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "확인", style: .default) { [weak self] _ in
             guard let self = self else { return }
-            if let nav = self.navigationController, nav.viewControllers.count > 1 {
-                nav.popViewController(animated: true)
+            guard let nav = self.navigationController, nav.viewControllers.count > 1 else {
+                if self.presentingViewController != nil {
+                    self.dismiss(animated: true)
+                }
                 return
             }
-            if self.presentingViewController != nil {
-                self.dismiss(animated: true)
-            }
+            nav.popViewController(animated: true)
         })
         present(alert, animated: true)
     }

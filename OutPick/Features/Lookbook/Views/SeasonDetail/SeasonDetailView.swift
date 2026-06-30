@@ -16,9 +16,7 @@ struct SeasonDetailView: View {
     private let shareSheetFactory: (LookbookShareTarget, @escaping (LookbookChatShareViewModel.Completion) -> Void) -> AnyView
     private let onShareMove: (LookbookChatShareViewModel.Completion) async throws -> Void
 
-    @Environment(\.dismiss) private var dismiss
     @StateObject private var viewModel: SeasonDetailViewModel
-    @State private var selectedPost: LookbookPost?
     @State private var activeShareTarget: LookbookShareTarget?
     @State private var shareCompletion: LookbookChatShareViewModel.Completion?
     @State private var shareMoveErrorMessage: String?
@@ -74,7 +72,7 @@ struct SeasonDetailView: View {
                             LazyVGrid(columns: columns, spacing: 10) {
                                 ForEach(viewModel.posts, id: \.id) { post in
                                     Button {
-                                        selectedPost = post
+                                        coordinator.pushPostDetail(post: post)
                                     } label: {
                                         SeasonLookGridItemView(
                                             post: post,
@@ -100,7 +98,7 @@ struct SeasonDetailView: View {
         .lookbookNavigationBar(
             title: "",
             showsBackButton: true,
-            onBack: { dismiss() }
+            onBack: { coordinator.pop() }
         )
         .sheet(item: $activeShareTarget) { target in
             shareSheetFactory(target) { completion in
@@ -121,7 +119,6 @@ struct SeasonDetailView: View {
             )
             .applyShareConfirmationSheetPresentation()
         }
-        .background(hiddenNavigationLink)
         .task {
             await viewModel.loadIfNeeded()
         }
@@ -186,37 +183,6 @@ struct SeasonDetailView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(OutPickTheme.SwiftUIColor.surfaceBase)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-    }
-
-    @ViewBuilder
-    private var hiddenNavigationLink: some View {
-        NavigationLink(
-            destination: selectedPostDestination,
-            isActive: selectedPostBinding
-        ) {
-            EmptyView()
-        }
-        .hidden()
-    }
-
-    @ViewBuilder
-    private var selectedPostDestination: some View {
-        if let selectedPost {
-            coordinator.makePostDetailView(post: selectedPost)
-        } else {
-            EmptyView()
-        }
-    }
-
-    private var selectedPostBinding: Binding<Bool> {
-        Binding(
-            get: { selectedPost != nil },
-            set: { isActive in
-                if !isActive {
-                    selectedPost = nil
-                }
-            }
-        )
     }
 
     private var shouldBlockInitialLoading: Bool {

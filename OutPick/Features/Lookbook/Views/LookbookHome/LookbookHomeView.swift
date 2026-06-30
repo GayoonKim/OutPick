@@ -13,7 +13,6 @@ struct LookbookHomeView: View {
     @StateObject private var viewModel: LookbookHomeViewModel
 
     @EnvironmentObject private var brandAdminSessionStore: BrandAdminSessionStore
-    @State private var selectedBrandID: Brand.ID?
     @State private var isPresentingCreateBrand = false
     @State private var createdBrandIDForSelection: Brand.ID?
 
@@ -27,37 +26,38 @@ struct LookbookHomeView: View {
     }
 
     var body: some View {
-        NavigationView {
-            mainContent
-                .lookbookNavigationBar(title: "OutPick") {
-                    if viewModel.canCreateBrand {
-                        LookbookNavigationTextButton(
-                            title: "브랜드 추가",
-                            accessibilityLabel: "브랜드 추가"
-                        ) {
-                            isPresentingCreateBrand = true
-                        }
+        mainContent
+            .lookbookNavigationBar(title: "OutPick") {
+                if viewModel.canCreateBrand {
+                    LookbookNavigationTextButton(
+                        title: "브랜드 추가",
+                        accessibilityLabel: "브랜드 추가"
+                    ) {
+                        isPresentingCreateBrand = true
                     }
                 }
-        }
-        .tint(OutPickTheme.SwiftUIColor.accent)
-        .navigationViewStyle(StackNavigationViewStyle())
-        .fullScreenCover(isPresented: $isPresentingCreateBrand, onDismiss: {
-            guard let createdBrandIDForSelection else { return }
-
-            Task {
-                await brandAdminSessionStore.refreshWritableBrands(force: true)
-                await viewModel.retry()
-                await viewModel.syncCreatedBrand(brandID: createdBrandIDForSelection)
-                selectedBrandID = createdBrandIDForSelection
-                self.createdBrandIDForSelection = nil
             }
-        }) {
-            createBrandSheet
-        }
-        .task {
-            await viewModel.loadInitialPageIfNeeded()
-        }
+            .tint(OutPickTheme.SwiftUIColor.accent)
+            .fullScreenCover(isPresented: $isPresentingCreateBrand, onDismiss: {
+                guard let createdBrandIDForSelection else { return }
+
+                Task {
+                    await brandAdminSessionStore.refreshWritableBrands(force: true)
+                    await viewModel.retry()
+                    await viewModel.syncCreatedBrand(brandID: createdBrandIDForSelection)
+                    await MainActor.run {
+                        if let createdBrand = viewModel.brands.first(where: { $0.id == createdBrandIDForSelection }) {
+                            coordinator.pushBrandDetail(brand: createdBrand)
+                        }
+                        self.createdBrandIDForSelection = nil
+                    }
+                }
+            }) {
+                createBrandSheet
+            }
+            .task {
+                await viewModel.loadInitialPageIfNeeded()
+            }
     }
 
     @ViewBuilder
@@ -95,17 +95,8 @@ struct LookbookHomeView: View {
                             BrandRowView(brand: brand, brandImageCache: viewModel.brandImageCache)
                                 .contentShape(Rectangle())
                                 .onTapGesture {
-                                    selectedBrandID = brand.id
+                                    coordinator.pushBrandDetail(brand: brand)
                                 }
-
-                            NavigationLink(
-                                destination: coordinator.makeBrandDetailView(brand: brand),
-                                tag: brand.id,
-                                selection: $selectedBrandID
-                            ) {
-                                EmptyView()
-                            }
-                            .hidden()
                         }
                         .onAppear {
                             Task { await viewModel.loadNextPageIfNeeded(current: brand) }

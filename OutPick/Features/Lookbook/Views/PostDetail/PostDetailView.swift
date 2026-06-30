@@ -18,7 +18,6 @@ struct PostDetailView: View {
     private let shareSheetFactory: (LookbookShareTarget, @escaping (LookbookChatShareViewModel.Completion) -> Void) -> AnyView
     private let onShareMove: (LookbookChatShareViewModel.Completion) async throws -> Void
 
-    @Environment(\.dismiss) private var dismiss
     @StateObject private var viewModel: PostDetailScreenViewModel
     @StateObject private var commentCoordinator: PostCommentCoordinator
     @State private var heroImageDidResolve: Bool = false
@@ -94,7 +93,7 @@ struct PostDetailView: View {
         .lookbookNavigationBar(
             title: "",
             showsBackButton: true,
-            onBack: { dismiss() }
+            onBack: { coordinator.pop() }
         )
         .sheet(isPresented: commentSheetBinding) {
             commentsSheet

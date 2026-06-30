@@ -17,7 +17,6 @@ struct BrandDetailView: View {
     let shareSheetFactory: (LookbookShareTarget, @escaping (LookbookChatShareViewModel.Completion) -> Void) -> AnyView
     let onShareMove: (LookbookChatShareViewModel.Completion) async throws -> Void
 
-    @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var brandAdminSessionStore: BrandAdminSessionStore
     @StateObject private var viewModel: BrandDetailViewModel
     @State private var isPresentingSeasonAddition: Bool = false
@@ -97,7 +96,7 @@ struct BrandDetailView: View {
         .lookbookNavigationBar(
             title: "",
             showsBackButton: true,
-            onBack: { dismiss() }
+            onBack: { coordinator.pop() }
         ) {
             if brandAdminSessionStore.canWrite(brandID: brand.id) {
                 Menu {

@@ -6,13 +6,41 @@
 //
 
 import SwiftUI
+import UIKit
 
 @MainActor
 final class LookbookCoordinator {
     private let container: LookbookContainer
+    private weak var navigationController: UINavigationController?
 
     init(container: LookbookContainer) {
         self.container = container
+    }
+
+    func attach(navigationController: UINavigationController) {
+        self.navigationController = navigationController
+        navigationController.setNavigationBarHidden(true, animated: false)
+        navigationController.interactivePopGestureRecognizer?.isEnabled = true
+    }
+
+    func pushBrandDetail(brand: Brand) {
+        push(makeBrandDetailView(brand: brand))
+    }
+
+    func pushSeasonDetail(season: Season) {
+        push(makeSeasonDetailView(season: season))
+    }
+
+    func pushPostDetail(post: LookbookPost) {
+        push(makePostDetailView(post: post))
+    }
+
+    func pop() {
+        guard let navigationController else {
+            assertionFailure("LookbookCoordinator requires an attached UINavigationController.")
+            return
+        }
+        navigationController.popViewController(animated: true)
     }
 
     func makeBrandDetailView(brand: Brand) -> BrandDetailView {
@@ -80,5 +108,21 @@ final class LookbookCoordinator {
             postID: postID,
             parentComment: parentComment
         )
+    }
+
+    private func push<Content: View>(_ view: Content) {
+        guard let navigationController else {
+            assertionFailure("LookbookCoordinator requires an attached UINavigationController.")
+            return
+        }
+
+        let hostingController = UIHostingController(
+            rootView: view
+                .environment(\.repositoryProvider, container.provider)
+                .environmentObject(container.brandAdminSessionStore)
+        )
+        hostingController.hidesBottomBarWhenPushed = true
+        navigationController.setNavigationBarHidden(true, animated: false)
+        navigationController.pushViewController(hostingController, animated: true)
     }
 }

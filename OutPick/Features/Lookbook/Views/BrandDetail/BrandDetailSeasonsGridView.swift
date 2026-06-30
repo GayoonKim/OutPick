@@ -17,8 +17,6 @@ struct BrandDetailSeasonsGridView: View {
     let coordinator: LookbookCoordinator
     let onSeasonAppear: (Season) -> Void
 
-    @State private var selectedSeason: Season?
-
     private let columns: [GridItem] = [
         GridItem(.flexible(), spacing: 12),
         GridItem(.flexible(), spacing: 12)
@@ -55,7 +53,7 @@ struct BrandDetailSeasonsGridView: View {
                 LazyVGrid(columns: columns, spacing: 12) {
                     ForEach(seasons, id: \.id) { season in
                         Button {
-                            selectedSeason = season
+                            coordinator.pushSeasonDetail(season: season)
                         } label: {
                             BrandDetailSeasonGridItemView(
                                 season: season,
@@ -74,7 +72,6 @@ struct BrandDetailSeasonsGridView: View {
                 .padding(.bottom, 16)
             }
         }
-        .background(hiddenNavigationLink)
     }
 
     private var loadingSection: some View {
@@ -95,37 +92,6 @@ struct BrandDetailSeasonsGridView: View {
         canManageBrand ?
             "등록된 시즌이 없습니다. 상단의 시즌 추가에서 시즌을 가져올 수 있습니다." :
             "등록된 시즌이 없습니다."
-    }
-
-    @ViewBuilder
-    private var hiddenNavigationLink: some View {
-        NavigationLink(
-            destination: selectedSeasonDestination,
-            isActive: selectedSeasonBinding
-        ) {
-            EmptyView()
-        }
-        .hidden()
-    }
-
-    @ViewBuilder
-    private var selectedSeasonDestination: some View {
-        if let selectedSeason {
-            coordinator.makeSeasonDetailView(season: selectedSeason)
-        } else {
-            EmptyView()
-        }
-    }
-
-    private var selectedSeasonBinding: Binding<Bool> {
-        Binding(
-            get: { selectedSeason != nil },
-            set: { isActive in
-                if !isActive {
-                    selectedSeason = nil
-                }
-            }
-        )
     }
 
 }
