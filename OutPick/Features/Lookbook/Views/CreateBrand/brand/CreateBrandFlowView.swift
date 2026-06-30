@@ -162,6 +162,7 @@ private extension CreateBrandFlowView {
                     candidateRepository: provider.seasonCandidateRepository,
                     seasonImportJobRepository: provider.seasonImportJobRepository
                 ),
+                refreshSeasonCandidatesUseCase: nil,
                 startSeasonImportExtractionUseCase: StartSeasonImportExtractionUseCase(
                     importJobRequestingRepository: provider.seasonImportJobRequestingRepository,
                     seasonImportJobRepository: provider.seasonImportJobRepository

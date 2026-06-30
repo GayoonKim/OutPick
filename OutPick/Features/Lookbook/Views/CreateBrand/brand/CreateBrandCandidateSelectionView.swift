@@ -22,6 +22,7 @@ struct CreateBrandCandidateSelectionView: View {
 
     let createdBrand: CreateBrandViewModel.CreatedBrand
     let loadSelectableSeasonCandidatesUseCase: any LoadSelectableSeasonCandidatesUseCaseProtocol
+    let refreshSeasonCandidatesUseCase: (any SeasonCandidateDiscoveryRepositoryProtocol)?
     let startSeasonImportExtractionUseCase: any StartSeasonImportExtractionUseCaseProtocol
     let discoveryErrorMessage: String?
     let emptySelectionButtonTitle: String
@@ -477,7 +478,7 @@ struct CreateBrandCandidateSelectionView: View {
     private var headerDescription: String {
         switch importProgressPhase {
         case .selecting:
-            return "이미 처리 중이거나 가져온 시즌은 보이지 않습니다."
+            return "새로 추가된 룩북을 확인한 뒤, 이미 처리 중이거나 가져온 시즌은 제외합니다."
         case .extracting:
             return "선택한 시즌의 사진을 가져오고 룩북 목록에 반영하고 있습니다."
         case .completed:
@@ -523,6 +524,15 @@ struct CreateBrandCandidateSelectionView: View {
         defer { isLoading = false }
 
         do {
+            if let refreshSeasonCandidatesUseCase {
+                do {
+                    _ = try await refreshSeasonCandidatesUseCase
+                        .discoverSeasonCandidates(brandID: createdBrand.id)
+                } catch {
+                    message = "최신 시즌을 확인하지 못해 저장된 후보를 보여드립니다."
+                }
+            }
+
             candidates = try await loadSelectableSeasonCandidatesUseCase.execute(
                 brandID: createdBrand.id
             )

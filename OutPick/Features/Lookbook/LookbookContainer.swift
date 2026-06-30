@@ -350,6 +350,7 @@ final class LookbookContainer {
                 candidateRepository: provider.seasonCandidateRepository,
                 seasonImportJobRepository: provider.seasonImportJobRepository
             ),
+            refreshSeasonCandidatesUseCase: provider.seasonCandidateDiscoveryRepository,
             startSeasonImportExtractionUseCase: StartSeasonImportExtractionUseCase(
                 importJobRequestingRepository: provider.seasonImportJobRequestingRepository,
                 seasonImportJobRepository: provider.seasonImportJobRepository
