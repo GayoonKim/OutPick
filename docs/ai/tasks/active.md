@@ -2,8 +2,73 @@
 
 ## 현재 작업
 
+- 작업명: `main-tab-shell-standardization`
+- 현재 상태: 종료.
+- 진행 문서:
+  - `docs/ai/tasks/main-tab-shell-standardization/design.md`
+  - `docs/ai/tasks/main-tab-shell-standardization/plan.md`
+  - `docs/ai/tasks/main-tab-shell-standardization/decisions.md`
+  - `docs/ai/tasks/main-tab-shell-standardization/progress.md`
+  - `docs/ai/tasks/main-tab-shell-standardization/qa-checklist.md`
+- 현재 기준:
+  - 메인 탭 shell은 `UITabBarController + 각 탭 UINavigationController` 구조로 전환한다.
+  - 상세 push 화면의 탭 바 숨김은 `hidesBottomBarWhenPushed`를 기준으로 처리한다.
+  - UIKit navigation bar는 계속 숨기고, OutPick 커스텀 navigation bar가 화면 chrome을 담당한다.
+  - 기존 `CustomTabBarView` 외형은 `UITabBarAppearance`로 근사한다.
+  - 탭 바는 현재처럼 60pt 성격을 유지하고, 필요하면 `UITabBar` subclass를 도입한다.
+  - 같은 탭 재선택은 아무 동작도 하지 않는다.
+  - Chat 검색/방 생성/방 본문과 Lookbook 브랜드/시즌/포스트 상세에서는 탭 바를 숨긴다.
+
+## 최근 종료 작업
+
+- 작업명: `image-viewer-unification`
+- 현재 상태: 종료.
+- 종료 기준:
+  - Phase 1~5 구현 완료.
+  - `SecondProfileViewController` swipe-back draft preservation 구현 완료.
+  - 전체 수동 QA는 2026-06-27 사용자 확인 완료.
+  - 검증 명령 통과:
+    - `git diff --check`
+    - `xcodebuild -scheme OutPick -destination 'id=5A3BB941-9538-4DD9-93C2-F18ACCFB03B9' test -only-testing:OutPickTests/ImageViewerPagePolicyTests`
+    - `xcodebuild -scheme OutPick -destination 'generic/platform=iOS Simulator' build`
+  - 커밋 패키징 완료:
+    - `cb3a268` 이미지 뷰어 공용화와 제스처 정리
+    - `8c5e91d` 이미지 뷰어 정책 테스트 추가
+    - `98e6932` 이미지 뷰어 설계 문서 정리
+  - 브랜치 `codex/image-viewer-unification` push 완료.
+  - GitHub connector PR 생성은 권한 403으로 실패했으며, 수동 PR 생성 URL은 `https://github.com/GayoonKim/OutPick/pull/new/codex/image-viewer-unification`이다.
+- 진행 문서:
+  - `docs/ai/tasks/image-viewer-unification/design.md`
+  - `docs/ai/tasks/image-viewer-unification/plan.md`
+  - `docs/ai/tasks/image-viewer-unification/decisions.md`
+  - `docs/ai/tasks/image-viewer-unification/progress.md`
+  - `docs/ai/tasks/image-viewer-unification/qa-checklist.md`
+- 현재 기준:
+  - 공용 image viewer는 `OutPick/Infra/Media/ImageViewer/SimpleImageViewerVC.swift`에 있다.
+  - `ImageViewerPage`가 공용 page/source 계약이다.
+  - `SimpleImageViewerVC.ProgressivePage`는 기존 호출부 호환 typealias다.
+  - `LocalImageViewerVC`는 공용 viewer에 흡수되어 제거됐다.
+  - Chat media gallery, Profile avatar, Lookbook post hero, Lookbook brand header가 공용 viewer에 연결됐다.
+  - SwiftUI full-screen cover 경로를 위해 공용 viewer는 optional `onClose` hook을 제공한다.
+  - 공용 viewer는 minimum zoom 상태에서 viewer 전용 swipe-down dismiss를 지원한다.
+  - swipe-down threshold는 운영/QA 튜닝값이다.
+  - `SecondProfileViewController`는 완료된 UIKit interactive pop에서 로컬 draft를 저장하고, 저장 중에는 swipe-back을 막는다.
+  - 전체 수동 QA는 2026-06-27 사용자 확인 완료.
+  - 다음 단계는 수동 PR 생성 또는 다음 작업 선택이다.
+- 완료한 worker:
+  - Worker C / Peirce / `019f0464-46b4-7963-b3d6-2cc9e5cbf2f1`: Chat media gallery + Profile avatar viewer.
+  - Worker D / Hume / `019f0464-7c07-7c83-b0cd-c4ddd30b7dc7`: Lookbook post/brand image viewer.
+  - Worker F / Lovelace / `019f0464-aa4e-7892-824c-20b85ffdd6ba`: tests + QA/docs.
+
+## 이전 종료 작업
+
 - 작업명: `chat-view-controller-layering`
-- 현재 상태: Phase 23/23.5/26 runtime DI 구현, JoinedRooms publisher 제거, QA runtime 안정화 검증 완료.
+- 현재 상태: 종료.
+- 종료 기준:
+  - Phase 24/25/A/B/C/D 및 작은 구조 정리 2건 구현 완료.
+  - Dev-Local Bonjour discovery는 개발 편의 대비 복잡도가 높아 task 범위에서 제외.
+  - `chat-view-controller-layering` 본류의 구현 대기 구조 개선 phase 없음.
+  - 남은 항목은 운영/성장 이후 보류 항목으로 분리.
 - 진행 문서:
   - `docs/ai/tasks/chat-view-controller-layering/plan.md`
   - `docs/ai/tasks/chat-view-controller-layering/progress.md`
@@ -13,10 +78,26 @@
   - `docs/ai/tasks/chat-view-controller-layering/archive/progress-through-phase-9.md`
   - `docs/ai/tasks/chat-view-controller-layering/archive/decisions-through-phase-9.md`
 
-## 현재 목표
+## 종료 목표
 
 - `ChatViewController.swift`에 몰려 있던 책임을 기존 OutPick MVVM-C + Repository + UseCase + DI 흐름에 맞춰 단계적으로 분리한다.
 - 파일 분할만으로 완료하지 않고 책임 소유권을 ViewModel, UseCase, Repository, Service, Coordinator 경계로 이동한다.
+
+## 코드 지도
+
+- OutPick 전체 코드 지도는 `docs/ai/ENTRYPOINTS.md`에서 시작한다.
+- 도메인별 상세 지도:
+  - 앱 조립/탭: `docs/ai/entrypoints/APP.md`
+  - Chat/realtime/joined rooms/media/outbox/avatar DI: `docs/ai/entrypoints/CHAT.md`
+  - Login/auth/bootstrap: `docs/ai/entrypoints/LOGIN.md`
+  - Lookbook: `docs/ai/entrypoints/LOOKBOOK.md`
+  - Profile: `docs/ai/entrypoints/PROFILE.md`
+  - MyPage/logout: `docs/ai/entrypoints/MYPAGE.md`
+  - 앱 data layer/Firebase/GRDB: `docs/ai/entrypoints/DATA.md`
+  - 공통 Infra/shared services: `docs/ai/entrypoints/INFRA.md`
+  - Functions/Firestore/worker: `docs/ai/entrypoints/FIREBASE.md`
+  - 테스트: `docs/ai/entrypoints/TESTS.md`
+- 코드 파일 추가/수정/이동/삭제가 생기면 관련 도메인 entrypoint 문서에 “어떤 내용을 알고 싶으면 어떤 파일을 보면 되는지”를 같은 phase 안에서 갱신한다.
 
 ## 완료한 주요 단계
 
@@ -83,7 +164,8 @@
   - `LoadingIndicator.shared`, `AlertManager`, `ConfirmView`, keyboard/app lifecycle `NotificationCenter` observer는 이번 task 종료 기준에서 허용한다.
   - `DefaultMediaProcessingService.shared`, `provider.avatarImageManager`, media preflight/finalize, TTL cleanup, outbox GRDB seam, Lookbook current user provider 통합은 후속 후보로 분리했다.
 - Phase 21 후속 안정화:
-  - Socket `chat:mediaPreflight`와 기존 `send images`/`chat:video` finalize handler reservation 검증을 추가했다.
+  - Socket `chat:mediaPreflight`와 당시 남아 있던 `send images`/`chat:video` finalize handler reservation 검증을 추가했다.
+  - 현재 설계에서는 `chat:mediaFinalize` 단일 finalize 계약을 기준으로 하며 `send images`/`chat:video` legacy wrapper는 이후 Phase B에서 제거 완료했다.
   - Firebase Functions scheduler 기반 reservation TTL cleanup을 추가하고 배포했다.
   - `ChatOutgoingOutboxPersisting` protocol을 추가하고 `GRDBManager`가 채택하도록 outbox persistence seam을 만들었다.
   - `ChatSearchUIView` 단발 탭 이벤트를 closure로 축소하고 view 전용 search result state로 ViewModel 타입 의존을 제거했다.
@@ -126,6 +208,26 @@
   - 방 생성/참여 직후 설정 화면 참여자 초기값은 room document participants 기반 reconcile로 보정한다.
   - 방 나가기 성공 후 joined room summary publisher도 로컬에서 즉시 제거한다.
   - 검증: `git diff --check`, `xcodebuild -scheme OutPick -destination 'generic/platform=iOS Simulator' build`, `xcodebuild -scheme OutPick -destination 'id=5A3BB941-9538-4DD9-93C2-F18ACCFB03B9' test -only-testing:OutPickTests/ChatRoomExitUseCaseTests -only-testing:OutPickTests/JoinedRoomsSessionStoreTests` 통과.
+  - 사용자 수동 QA 완료: 로그아웃 후 재로그인 메인 탭 진입, socket connect, 배너, 참여자 목록, 방 나가기.
+- Phase 24: Participant realtime 계약 정리.
+  - participant socket event는 앱 public 계약으로 복원하지 않는 것으로 확정했다.
+  - 설정 화면 진입 시 `ChatRoomSettingViewModel.loadInitialParticipants()`가 Firestore room document participants 기준 reconcile을 수행하는 현재 구조를 source of truth로 확인했다.
+  - 설정 화면이 이미 열린 상태에서 참여자 변경을 실시간 반영하는 것은 완료 기준에서 제외했다.
+- Phase 25: Media upload socket state model 정리.
+  - `ChatMediaUploadUseCaseProtocol`, `ChatMediaMessageSendingRepositoryProtocol`, socket sending 경계에서 동기 `isSocketConnected` guard를 제거했다.
+  - media upload 실패 확정은 `chat:mediaPreflight`와 `chat:mediaFinalize` ACK 실패 경로로 통일했다.
+- Phase A/B: Media processing concrete 타입 노출과 legacy socket wrapper 정리.
+  - `DefaultMediaProcessingService.ImagePair`/nested `VideoUploadPreset` 직접 노출 잔여가 없음을 확인했다.
+  - `Socket/index.js`에서 `send images`, `chat:video` legacy finalize wrapper를 제거하고 `chat:mediaFinalize` 단일 finalize 계약으로 정리했다.
+- Phase C/D: Provider/Avatar DI 일괄 정리.
+  - `ChatManagerProviding` protocol과 `ChatContainer.provider` 외부 노출을 제거했다.
+  - `AvatarImageService`는 `AppCompositionRoot`에서 앱 세션 단위로 생성해 Chat, Lookbook, Profile 경로에 명시 주입한다.
+  - `LookbookContainer`의 production avatar default 생성도 제거했다.
+  - 검증: `node --check Socket/index.js`, `git diff --check`, `xcodebuild -scheme OutPick -destination 'generic/platform=iOS Simulator' build`, `xcodebuild -scheme OutPick -destination 'id=5A3BB941-9538-4DD9-93C2-F18ACCFB03B9' test -only-testing:OutPickTests/ChatMediaUploadUseCaseTests` 통과.
+- 작은 구조 정리:
+  - `ChatAvatarImageManaging`을 앱 공용 성격의 `AvatarImageManaging`으로 rename했다.
+  - Profile 상세 화면 조립부의 current user 판정 값은 `LoginManager.shared` 직접 접근 대신 `CurrentUserProviding` 주입으로 받는다.
+  - Lookbook 댓글/답글에서 Profile 상세로 진입하는 SwiftUI wrapper도 같은 `CurrentUserProviding`을 전달한다.
 
 ## 핵심 원칙
 
@@ -142,78 +244,12 @@
 - 메인 스레드 순차 구현 후보였던 media preflight/finalize, reservation 기반 TTL cleanup, outbox GRDB persistence seam은 완료했다.
 - 별도 스레드/병렬 후보였던 UI 소정리, `provider.avatarImageManager` 접근 폭 축소, Lookbook current user adapter, `DefaultMediaProcessingService.shared` 직접 접근 제거는 완료했다.
 
-### 구현 대기 Phase 계획
+### 남은 후속 Phase 계획
 
-#### Phase 24: Participant realtime 계약 정리
-
-- 목표: 기존 `room participant updated` / `new participant joined` socket 경로의 필요 여부를 확정한다.
-- 현재 판단:
-  - 앱 코드 기준 `participantUpdatePublisher`와 `notifyNewParticipant`는 사용처가 없다.
-  - 참여자 수/목록 갱신은 Firestore room document listener와 participant reconcile 흐름이 기준이다.
-- 후보:
-  - 미사용 API 제거.
-  - 서버 계약이 필요하면 transport actor는 raw event만 제공하고, profile fetch/GRDB 저장은 별도 use case로 분리한다.
-
-#### Phase 25: Media upload socket state model 정리
-
-- 목표: `ChatMediaUploadUseCase.isSocketConnected`의 동기 guard를 async 상태 모델 또는 preflight 중심 흐름으로 정리한다.
-- 배경:
-  - actor 전환 후 정확한 socket 상태는 async로 확인하는 편이 자연스럽다.
-  - 현재 Phase 22에서는 실제 업로드 전 preflight/send에서 최종 실패를 확정한다.
-
-#### Phase Dev-Local: 개발용 Bonjour socket discovery
-
-- 목표: 개발 환경에서 Xcode Scheme 환경변수 없이도 같은 로컬 네트워크의 Socket 서버를 자동 발견한다.
-- 배경:
-  - `OUTPICK_SOCKET_URL` Scheme 환경변수는 Xcode로 실행할 때만 주입된다.
-  - 기기에서 앱 아이콘으로 직접 재실행하면 Scheme env가 없어 production fallback 또는 마지막 저장 URL에 의존한다.
-- 추천 방향:
-  - Socket Node 서버가 Bonjour/mDNS service를 advertise한다. 예: `_outpick-socket._tcp`.
-  - iOS 앱은 개발 빌드에서 Bonjour discovery로 host/port를 resolve한다.
-  - URL 결정 우선순위는 명시 URL, Bonjour 발견 URL, 마지막 성공 URL, production URL 순서로 둔다.
-  - iOS 설정에는 `NSBonjourServices` 추가가 필요할 수 있다.
-- 검증:
-  - Xcode env 없이 앱 직접 실행 후 로컬 Socket 서버 발견 및 연결.
-  - 로컬 IP 변경 후 재실행 시 새 IP로 연결.
-  - Bonjour 실패 시 마지막 성공 URL 또는 production fallback 동작.
-
-#### Phase A: Media processing concrete 타입 제거
-
-- 목표: `DefaultMediaProcessingService.ImagePair`, `DefaultMediaProcessingService.VideoUploadPreset`, static `makeThumbnailData` 직접 노출을 제거한다.
-- 앱 미배포 전제이므로 compatibility shim/typealias를 오래 유지하지 않고, concrete nested type 노출을 바로 공용 media 타입/utility로 전환한다.
-- 추천 방향:
-  - 이미지 타입은 `ProcessedImage` 같은 공용 Infra media 타입으로 분리한다.
-  - video preset은 `VideoUploadPreset` 공용 enum으로 분리하되 payload 문자열은 유지한다.
-  - thumbnail helper는 우선 `ImageThumbnailDataMaker` 같은 순수 utility로 분리한다.
-  - 압축 정책 변경, dead code 제거는 이번 phase 범위 밖으로 둔다.
-- 검증: `xcodebuild -scheme OutPick -destination 'generic/platform=iOS Simulator' build`, media/outbox 관련 unit test 재실행.
-
-#### Phase B: 공통 `chat:mediaFinalize` 전송 이벤트 통합
-
-- 목표: 이미지/비디오 업로드 완료 후 Socket finalize 전송 이벤트를 `chat:mediaFinalize`로 통합한다.
-- 수신 이벤트 `receiveImages`/`receiveVideo`는 유지한다.
-- 기존 `send images`/`chat:video` 서버 handler는 wrapper로 남기는 추천안을 적용한다.
-- 앱 도메인 API는 우선 `sendUploadedImages`/`sendUploadedVideo` 같은 외부 메서드를 유지하고 내부 Socket event만 공통화한다.
-- 검증: Swift media upload/outbox tests, Socket 서버 syntax/check, 이미지/비디오 finalize retry 수동 QA.
-
-#### Phase C: `ChatViewController.provider` 제거
-
-- 목표: `ChatViewController`가 `ChatManagerProviding` provider 묶음을 직접 보관하지 않게 한다.
-- 범위:
-  - `profileSyncManager`를 생성자에 직접 주입한다.
-  - 현재 미사용인 `messageManager`, `searchManager`, `networkStatusProvider` 필드는 제거한다.
-  - `ChatContainer.provider` 자체 제거는 이번 phase 범위 밖으로 둔다.
-- 검증: `ChatViewController.swift` 내 provider 참조 0건 확인, iOS build, 채팅방 진입/수신/profile sync 수동 QA.
-
-#### Phase D: Lookbook/Profile avatar/image service DI 정리
-
-- 목표: Lookbook/Profile까지 포함해 `AvatarImageService.shared` 기본값/직접 접근과 provider 경유 avatar 접근을 명시 DI로 정리한다.
-- 범위:
-  - 앱 미배포 전제이므로 `AvatarImageService.shared` 자체 제거를 목표로 한다.
-  - `ChatAvatarImageManaging` 이름은 이번 phase에서 유지한다.
-  - Profile 상세의 `LoginManager.shared` current user 접근은 avatar/image service 범위 밖으로 둔다.
-  - Lookbook VM/View, Profile coordinator, Chat 조립부의 avatar manager 전달을 정리한다.
-- 검증: iOS build, Lookbook 댓글/avatar/profile sheet 수동 QA, 필요 시 Lookbook VM fake avatar manager unit test.
+- `chat-view-controller-layering` 본류의 구현 대기 구조 개선 phase는 현재 없다.
+- Dev-Local Bonjour socket discovery는 이번 task 범위에서 제외한다.
+  - 이유: 현재 불편은 사이드 프로젝트의 로컬 Socket 서버 직접 실행 구조에서 오는 개발 편의 문제이며, 실서비스/실무 환경의 서버 연결 요청 흐름에서는 별도 Bonjour discovery까지 도입할 필요성이 낮다.
+  - 현재 유지 방식: Xcode Scheme 환경변수 `OUTPICK_SOCKET_URL`과 마지막 성공 URL 저장 경로를 사용한다.
 
 ### 운영/성장 이후 보류
 
@@ -227,9 +263,7 @@
 
 ### 장기 재검토 후보
 
-- `ChatContainer.provider` 자체 제거.
-- `ChatAvatarImageManaging`을 앱 공용 `AvatarImageManaging` 이름으로 rename.
-- Profile 상세 current user DI 정리.
+- 현재 없음.
 
 ## 압축 후 읽는 순서
 

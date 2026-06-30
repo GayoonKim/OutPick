@@ -23,6 +23,8 @@
 
 - Lookbook composition root: `OutPick/Features/Lookbook/LookbookCompositionRoot.swift`
   - Lookbook feature root를 앱 탭에 연결하는 조립 진입점이다.
+  - Lookbook/Liked root는 `UINavigationController(root: UIHostingController)` 구조이며, UIKit navigation bar는 숨김 유지한다.
+  - root nav 생성 뒤 `LookbookCoordinator.attach(navigationController:)`로 Coordinator가 같은 UIKit stack을 소유한다.
 - Lookbook container: `OutPick/Features/Lookbook/LookbookContainer.swift`
   - Lookbook repository/use case/store/view model factory를 확인한다.
   - Chat 공유 sheet, current user provider adapter, avatar manager 접합부를 볼 때도 확인한다.
@@ -30,6 +32,9 @@
   - 댓글/답글 sheet에서 Profile 상세로 들어갈 때도 `CurrentUserProviding`을 함께 전달한다.
 - Lookbook coordinator: `OutPick/Features/Lookbook/Coordinators/LookbookCoordinator.swift`
   - 홈, 브랜드 상세, 시즌 상세, 포스트 상세, 댓글, 공유 sheet navigation을 확인한다.
+  - navigation-swipe-back 작업 이후 브랜드/시즌/포스트 상세는 SwiftUI `NavigationLink`가 아니라 Coordinator가 `UIHostingController`를 만들어 UIKit nav stack에 push한다.
+  - 상세 화면 커스텀 back은 SwiftUI `dismiss()`가 아니라 Coordinator `pop()`을 호출한다.
+  - 상세 Hosting에는 `repositoryProvider` environment와 `BrandAdminSessionStore` environmentObject를 Coordinator가 다시 주입한다.
 - Comment coordinator: `OutPick/Features/Lookbook/Coordinators/PostCommentCoordinator.swift`
   - 댓글/답글 sheet, 신고/차단/삭제 action presentation을 확인한다.
 - Current user provider: `OutPick/Features/Lookbook/Environment/CurrentUserIDProvider.swift`
@@ -50,21 +55,28 @@
 
 - Lookbook home:
   - `OutPick/Features/Lookbook/Views/LookbookHome/LookbookHomeView.swift`
+    - root 화면이며 상세 이동은 `NavigationView`/hidden `NavigationLink` route state가 아니라 Coordinator action을 호출한다.
+    - 브랜드 생성 fullScreenCover 내부 `NavigationView`는 modal 내부 흐름으로 유지한다.
   - `OutPick/Features/Lookbook/Views/LookbookHome/BrandRowView.swift`
   - `OutPick/Features/Lookbook/ViewModels/LookbookHomeViewModel.swift`
 - Brand detail:
   - `OutPick/Features/Lookbook/Views/BrandDetail/BrandDetailView.swift`
+    - 커스텀 back은 Coordinator `pop()`을 호출한다.
   - `OutPick/Features/Lookbook/Views/BrandDetail/BrandDetailHeaderView.swift`
     - brand header image tap 확대는 공용 image viewer wrapper인 `LookbookImageViewerView`를 사용한다.
   - `OutPick/Features/Lookbook/Views/BrandDetail/BrandDetailSeasonsGridView.swift`
+    - 시즌 탭은 hidden `NavigationLink`가 아니라 Coordinator `pushSeasonDetail`을 호출한다.
   - `OutPick/Features/Lookbook/ViewModels/BrandDetailViewModel.swift`
 - Season detail:
   - `OutPick/Features/Lookbook/Views/SeasonDetail/SeasonDetailView.swift`
+    - 포스트 탭은 hidden `NavigationLink`가 아니라 Coordinator `pushPostDetail`을 호출한다.
+    - 커스텀 back은 Coordinator `pop()`을 호출한다.
   - `OutPick/Features/Lookbook/Views/SeasonDetail/SeasonDetailHeaderCardView.swift`
   - `OutPick/Features/Lookbook/Views/SeasonDetail/SeasonLookGridItemView.swift`
   - `OutPick/Features/Lookbook/ViewModels/SeasonDetailViewModel.swift`
 - Post detail/comments:
   - `OutPick/Features/Lookbook/Views/PostDetail/PostDetailView.swift`
+    - 커스텀 back은 Coordinator `pop()`을 호출한다.
   - `OutPick/Features/Lookbook/Views/PostDetail/PostImagePreviewView.swift`
     - post hero image 확대와 `LookbookImageViewerView` UIKit wrapper를 확인한다.
     - 1차 구현은 첫 번째 hero image만 열고, storage original 실패 시 remote URL fallback은 wrapper의 load provider 안에서 처리한다.
@@ -78,6 +90,7 @@
   - `OutPick/Features/Lookbook/ViewModels/PostCommentRepliesViewModel.swift`
 - Liked tab:
   - `OutPick/Features/Lookbook/Views/Liked/LikedView.swift`
+    - root 화면이며 좋아요 브랜드/시즌/포스트 상세 이동은 Coordinator push action을 호출한다.
   - `OutPick/Features/Lookbook/ViewModels/LikedViewModel.swift`
 - Create brand/season:
   - `OutPick/Features/Lookbook/Views/CreateBrand/brand/CreateBrandFlowView.swift`
