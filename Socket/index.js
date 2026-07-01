@@ -31,6 +31,7 @@ const io = new Server(server, {
   maxHttpBufferSize: 2 * 1024 * 1024,           // 최대 2MB까지 허용 (썸네일 버퍼 여유)
   perMessageDeflate: { threshold: 1024 }        // 작은 메시지에는 비활성(이미지엔 효과 제한)
 });
+let isShuttingDown = false;
 
 // Track connection attempts per client key (auth.clientKey | query.clientKey | remote address)
 const connectAttempts = new Map();
@@ -38,6 +39,7 @@ function getClientKey(handshake) {
   try {
     return (
       handshake.auth?.clientKey ||
+      handshake.headers?.['x-outpick-client-key'] ||
       handshake.query?.clientKey ||
       handshake.address || // e.g., "::ffff:127.0.0.1"
       'unknown'
@@ -45,6 +47,38 @@ function getClientKey(handshake) {
   } catch {
     return 'unknown';
   }
+}
+
+function extractFirebaseIDToken(handshake) {
+  const authToken = handshake.auth?.idToken || handshake.auth?.token;
+  if (typeof authToken === 'string' && authToken.trim()) {
+    return authToken.trim();
+  }
+
+  const authorization = handshake.headers?.authorization;
+  if (typeof authorization === 'string') {
+    const match = authorization.match(/^Bearer\s+(.+)$/i);
+    if (match?.[1]) {
+      return match[1].trim();
+    }
+  }
+
+  return '';
+}
+
+function emailFromDecodedToken(decodedToken) {
+  const directEmail = normalizeEmail(decodedToken?.email);
+  if (directEmail) return directEmail;
+
+  const identityEmails = decodedToken?.firebase?.identities?.email;
+  if (Array.isArray(identityEmails)) {
+    for (const email of identityEmails) {
+      const normalized = normalizeEmail(email);
+      if (normalized) return normalized;
+    }
+  }
+
+  return '';
 }
 
 // 이미지 메시지 중복 방지 및 용량 가드
@@ -254,11 +288,32 @@ function enforceThumbBudget(images, budgetBytes) {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+function sendHealthResponse(req, res) {
+  res.status(isShuttingDown ? 503 : 200).json({
+    ok: !isShuttingDown,
+    service: 'outpick-socket',
+    uptimeSeconds: Math.round(process.uptime()),
+    serverTime: new Date().toISOString()
+  });
+}
+
+app.get('/readyz', sendHealthResponse);
+
+app.get('/healthz', (req, res) => {
+  // Cloud Run/Google Frontend can reserve /healthz on public URLs.
+  // Keep this for local compatibility and use /readyz for external checks.
+  sendHealthResponse(req, res);
+});
+
 app.get('/', (req, res) => {
-  res.sendFile(join(__dirname, 'index.html'));
+  res.status(200).json({
+    service: 'outpick-socket',
+    health: '/readyz'
+  });
 });
 
 const {
+  findUserByUID,
   findUserDocRefByEmail,
   findUserDocRefsByEmails
 } = createUserLookup({ db });
@@ -457,10 +512,63 @@ io.use((socket, next) => {
   return next();
 });
 
-io.on('connection', (socket) => {
-    const email = normalizeEmail(socket.handshake.query.email);
-    socket.userEmail = email;
+io.use(async (socket, next) => {
+  const idToken = extractFirebaseIDToken(socket.handshake);
+  if (!idToken) {
+    console.warn('[auth] missing Firebase ID Token', {
+      clientKey: getClientKey(socket.handshake)
+    });
+    const err = new Error('unauthenticated');
+    err.data = { message: 'Firebase ID Token이 필요합니다.', error: 'missing_id_token' };
+    return next(err);
+  }
 
+  try {
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    const userUID = typeof decodedToken.uid === 'string' ? decodedToken.uid.trim() : '';
+    if (!userUID) {
+      console.warn('[auth] verified token without uid', {
+        clientKey: getClientKey(socket.handshake)
+      });
+      const err = new Error('unauthenticated');
+      err.data = { message: 'Firebase ID Token에 uid가 없습니다.', error: 'missing_token_uid' };
+      return next(err);
+    }
+
+    const tokenEmail = emailFromDecodedToken(decodedToken);
+    const userProfile = await findUserByUID(userUID);
+    const profileEmail = normalizeEmail(userProfile?.data?.email);
+    const userEmail = profileEmail || tokenEmail;
+
+    if (!userEmail) {
+      console.warn('[auth] user email not resolved from uid', {
+        uid: userUID,
+        hasUserProfile: !!userProfile,
+        tokenProvider: decodedToken?.firebase?.sign_in_provider || 'unknown',
+        clientKey: getClientKey(socket.handshake)
+      });
+      const err = new Error('unauthenticated');
+      err.data = { message: '사용자 프로필 email을 찾을 수 없습니다.', error: 'missing_user_profile_email' };
+      return next(err);
+    }
+
+    socket.userUID = userUID;
+    socket.userDocumentID = userProfile?.ref?.id || userUID;
+    socket.userEmail = userEmail;
+    socket.userEmailSource = profileEmail ? 'profile' : 'token';
+    return next();
+  } catch (error) {
+    console.warn('[auth] Firebase ID Token verification failed', {
+      code: error?.code,
+      message: error?.message
+    });
+    const err = new Error('unauthenticated');
+    err.data = { message: 'Firebase ID Token 검증에 실패했습니다.', error: 'invalid_id_token' };
+    return next(err);
+  }
+});
+
+io.on('connection', (socket) => {
     console.log('User connected:', socket.userEmail);
 
     // Advertise server reconnect policy & perform a lightweight hello/ack
@@ -531,6 +639,11 @@ io.on('connection', (socket) => {
         const roomExists = await ensureRoomLoaded(roomID);
 
         if (roomExists) {
+            const access = await loadRoomAccess(roomID, socket.userEmail);
+            if (!access.ok) {
+              callback && callback({ ok: false, message: access.error, error: access.error });
+              return;
+            }
             socket.join(roomID);
             if (!rooms[roomID].includes(username)) {
               rooms[roomID].push(username);
@@ -706,6 +819,7 @@ io.on('connection', (socket) => {
         const roomID = rawRoomID || roomName;
         const msg = typeof rawMsg === 'string' ? rawMsg : (typeof message === 'string' ? message : '');
         const nickname = senderNickname || senderNickName || '';
+        const senderEmail = socket.userEmail;
 
         // ===== 기본 검증 =====
         if (!roomID || typeof msg !== 'string' || msg.trim().length === 0) {
@@ -726,6 +840,11 @@ io.on('connection', (socket) => {
         if (!socket.rooms.has(roomID)) {
           console.warn(`[Chat] socket not joined to room: ${roomID}`);
           callback && callback({ ok: false, message: "not_joined", error: "not_joined" });
+          return;
+        }
+        const roomAccess = await loadRoomAccess(roomID, senderEmail);
+        if (!roomAccess.ok) {
+          callback && callback({ ok: false, message: roomAccess.error, error: roomAccess.error });
           return;
         }
         const msgBytes = Buffer.byteLength(msg, "utf8");
@@ -784,7 +903,7 @@ io.on('connection', (socket) => {
           ID,
           roomID,
           roomName: roomID,
-          senderID,
+          senderID: senderEmail,
           senderNickname: nickname,
           ...(senderAvatarPath ? { senderAvatarPath } : {}),
           msg,
@@ -843,7 +962,6 @@ io.on('connection', (socket) => {
         const {
           roomID,
           messageID,
-          senderID,
           kind,
           attachmentCount,
           expectedPathCount
@@ -868,7 +986,7 @@ io.on('connection', (socket) => {
           return callback && callback({ ok: false, error: contract.error });
         }
 
-        const senderEmail = normalizeEmail(senderID);
+        const senderEmail = socket.userEmail;
         const access = await loadRoomAccess(roomID, senderEmail);
         if (!access.ok) {
           return callback && callback({ ok: false, error: access.error });
@@ -973,7 +1091,7 @@ io.on('connection', (socket) => {
           if (!roomID) return callback && callback({ ok: false, error: 'invalid_room_id' });
           if (!rooms[roomID]) return callback && callback({ ok: false, error: 'room_not_found' });
           if (!socket.rooms.has(roomID)) return callback && callback({ ok: false, error: 'not_joined' });
-          const imageSenderID = normalizeEmail(senderID);
+          const imageSenderID = socket.userEmail;
           const roomAccess = await loadRoomAccess(roomID, imageSenderID);
           if (!roomAccess.ok) {
             return callback && callback({ ok: false, error: roomAccess.error });
@@ -1142,7 +1260,7 @@ io.on('connection', (socket) => {
           if (!roomID) return callback && callback({ ok: false, error: 'invalid_room_id' });
           if (!rooms[roomID]) return callback && callback({ ok: false, error: 'room_not_found' });
           if (!socket.rooms.has(roomID)) return callback && callback({ ok: false, error: 'not_joined' });
-          const videoSenderID = normalizeEmail(senderID);
+          const videoSenderID = socket.userEmail;
           const roomAccess = await loadRoomAccess(roomID, videoSenderID);
           if (!roomAccess.ok) {
             return callback && callback({ ok: false, error: roomAccess.error });
@@ -1267,18 +1385,53 @@ io.on('connection', (socket) => {
     // Removed automatic joining to all rooms on connection
 });
 
-// Fetch rooms from Firebase first, then start server
-fetchRoomsFromFirebase().then(() => {
-    // Log all initialized rooms
-    console.log("All rooms initialized and ready:", Object.keys(rooms));
+function startServer() {
+  server.listen(PORT, () => {
+    console.log(`server running at http://0.0.0.0:${PORT}`);
+  });
+}
 
-    server.listen(PORT, ()=> {
-        console.log(`server running at http://localhost:${PORT}`);
-    });
+function exitAfterServerClose(error) {
+  if (error && error.code !== 'ERR_SERVER_NOT_RUNNING') {
+    console.error('[shutdown] server close failed:', error);
+    process.exit(1);
+  }
+  console.log('[shutdown] server closed');
+  process.exit(0);
+}
+
+function shutdown(signal) {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  console.log(`[shutdown] received ${signal}, closing socket server`);
+
+  io.close(() => {
+    if (server.listening) {
+      server.close(exitAfterServerClose);
+    } else {
+      exitAfterServerClose();
+    }
+  });
+
+  setTimeout(() => {
+    console.error('[shutdown] forced exit after timeout');
+    process.exit(1);
+  }, 10_000).unref();
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+
+server.on('error', (error) => {
+  console.error('[server] listen error:', error);
+  process.exit(1);
+});
+
+// Fetch rooms from Firebase first, then start server.
+fetchRoomsFromFirebase().then(() => {
+  console.log("All rooms initialized and ready:", Object.keys(rooms));
+  startServer();
 }).catch((err) => {
   console.error("Failed to fetch rooms from Firebase:", err);
-  // Start server anyway
-  server.listen(PORT, ()=> {
-    console.log(`server running at http://localhost:${PORT}`);
-  });
+  startServer();
 });

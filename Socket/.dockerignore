@@ -1,0 +1,9 @@
+.DS_Store
+.env
+.env.*
+*.log
+*firebase-adminsdk*.json
+node_modules/
+npm-debug.log*
+Dockerfile
+.dockerignore

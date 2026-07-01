@@ -14,7 +14,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "check": "node --check index.js",
+    "check": "node --check index.js && find src -name '*.js' -print0 | xargs -0 -n1 node --check",
     "check:adc": "gcloud auth application-default print-access-token >/dev/null && echo \"ADC ready for Socket local server\""
   },
   "keywords": [],

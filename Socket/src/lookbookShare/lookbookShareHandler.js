@@ -107,7 +107,7 @@ export function createLookbookShareHandler({
         });
       }
 
-      const senderEmail = socket.userEmail || normalizeEmail(rawSenderID);
+      const senderEmail = socket.userEmail;
       if (!senderEmail) {
         return callback && callback({
           ok: false,
