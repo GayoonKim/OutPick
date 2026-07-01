@@ -26,7 +26,7 @@
   - 같은 탭 재선택은 no-op으로 처리한다.
   - selected tab의 active presenter와 navigation controller를 앱 라우터에 제공한다.
 - OutPickTabBar: `OutPick/App/TabBarController/MainTab/OutPickTabBar.swift`
-  - 60pt 성격의 탭 바 높이를 유지하는 `UITabBar` subclass다.
+  - 54pt 성격의 탭 바 높이를 유지하는 `UITabBar` subclass다.
 - DefaultMainTabBuilder: `OutPick/App/TabBarController/Composition/DefaultMainTabBuilder.swift`
   - 탭 index별 root `UINavigationController`와 tab bar item을 생성한다.
   - 현재 탭 순서: 채팅 목록, 참여 채팅방, 룩북, 좋아요, 마이페이지.

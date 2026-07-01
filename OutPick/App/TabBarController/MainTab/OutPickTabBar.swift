@@ -8,7 +8,7 @@
 import UIKit
 
 final class OutPickTabBar: UITabBar {
-    private let preferredContentHeight: CGFloat = 60
+    private let preferredContentHeight: CGFloat = 54
 
     override func sizeThatFits(_ size: CGSize) -> CGSize {
         var fittingSize = super.sizeThatFits(size)

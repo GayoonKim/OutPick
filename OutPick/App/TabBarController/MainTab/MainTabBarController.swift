@@ -13,7 +13,7 @@ final class MainTabBarController: UITabBarController {
         static let selectedColor = OutPickTheme.ColorToken.accent
         static let normalColor = OutPickTheme.ColorToken.iconSecondary
         static let backgroundColor = OutPickTheme.ColorToken.surfaceBase
-        static let tabBarContentHeight: CGFloat = 60
+        static let tabBarContentHeight: CGFloat = 54
     }
 
     var tabBuilder: (any MainTabBuilding)?
@@ -101,13 +101,15 @@ final class MainTabBarController: UITabBarController {
         itemAppearance.normal.iconColor = Constants.normalColor
         itemAppearance.normal.titleTextAttributes = [
             .foregroundColor: Constants.normalColor,
-            .font: UIFont.systemFont(ofSize: 10, weight: .medium)
+            .font: UIFont.systemFont(ofSize: 9, weight: .medium)
         ]
+        itemAppearance.normal.titlePositionAdjustment = UIOffset(horizontal: 0, vertical: -1)
         itemAppearance.selected.iconColor = Constants.selectedColor
         itemAppearance.selected.titleTextAttributes = [
             .foregroundColor: Constants.selectedColor,
-            .font: UIFont.systemFont(ofSize: 10, weight: .medium)
+            .font: UIFont.systemFont(ofSize: 9, weight: .medium)
         ]
+        itemAppearance.selected.titlePositionAdjustment = UIOffset(horizontal: 0, vertical: -1)
     }
 
     private func resolvedPresenter(from root: UIViewController?) -> UIViewController? {
