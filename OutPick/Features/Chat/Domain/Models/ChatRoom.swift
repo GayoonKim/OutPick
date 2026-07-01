@@ -76,6 +76,10 @@ struct ChatRoom: Codable {
     
     // Firestore에 저장하기 위한 변환 메서드
     func toDictionary() -> [String: Any] {
+        let searchIndex = ChatRoomSearchIndex.buildIndexedFields(
+            roomName: roomName,
+            roomDescription: roomDescription
+        )
         var data: [String: Any] = [
             "ID": ID ?? "",
             "roomName": roomName,
@@ -84,7 +88,11 @@ struct ChatRoom: Codable {
             "creatorID": creatorID,
             "createdAt": Timestamp(date: createdAt),
             "seq": seq,
-            "isClosed": isClosed
+            "isClosed": isClosed,
+            "roomSearchNormalized": searchIndex.normalizedText,
+            "roomSearchChars": searchIndex.searchChars,
+            "roomSearchNgrams2": searchIndex.searchNgrams2,
+            "roomSearchIndexVersion": searchIndex.version
         ]
 
         // 선택 필드들: 존재할 때만 저장

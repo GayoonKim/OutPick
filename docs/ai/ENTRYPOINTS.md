@@ -22,6 +22,7 @@
 ## 세부 진입점
 
 - 앱 조립, 탭, 주요 Feature: `docs/ai/entrypoints/APP.md`
+- Chat 앱 화면/검색/채팅방 흐름: `docs/ai/entrypoints/CHAT.md`
 - Lookbook 앱 화면/도메인: `docs/ai/entrypoints/LOOKBOOK.md`
 - Firebase Functions/Firestore: `docs/ai/entrypoints/FIREBASE.md`
 - 테스트: `docs/ai/entrypoints/TESTS.md`

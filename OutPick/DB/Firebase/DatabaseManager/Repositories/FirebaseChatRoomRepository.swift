@@ -261,13 +261,14 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
         roomName: String,
         roomDescription: String
     ) async throws {
+        let searchIndex = Self.searchIndexData(roomName: roomName, roomDescription: roomDescription)
         try await updateRoomDocument(
             roomID: roomID,
             data: [
                 "roomName": roomName,
                 "roomDescription": roomDescription,
                 "updatedAt": FieldValue.serverTimestamp()
-            ]
+            ].merging(searchIndex) { _, new in new }
         )
     }
 
@@ -278,6 +279,7 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
         thumbPath: String,
         originalPath: String
     ) async throws {
+        let searchIndex = Self.searchIndexData(roomName: roomName, roomDescription: roomDescription)
         try await updateRoomDocument(
             roomID: roomID,
             data: [
@@ -286,7 +288,7 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
                 "roomName": roomName,
                 "roomDescription": roomDescription,
                 "updatedAt": FieldValue.serverTimestamp()
-            ]
+            ].merging(searchIndex) { _, new in new }
         )
     }
 
@@ -295,6 +297,7 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
         roomName: String,
         roomDescription: String
     ) async throws {
+        let searchIndex = Self.searchIndexData(roomName: roomName, roomDescription: roomDescription)
         try await updateRoomDocument(
             roomID: roomID,
             data: [
@@ -303,7 +306,7 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
                 "roomName": roomName,
                 "roomDescription": roomDescription,
                 "updatedAt": FieldValue.serverTimestamp()
-            ]
+            ].merging(searchIndex) { _, new in new }
         )
     }
     
@@ -368,37 +371,51 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
         return result
     }
     
-    func searchRooms(keyword: String, limit: Int = 30, reset: Bool = true) async throws -> [ChatRoom] {
-        guard !keyword.isEmpty else { return [] }
+    func searchRooms(keyword: String, limit: Int = 30, reset: Bool = true) async throws -> RoomSearchPage {
+        let trimmedKeyword = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedKeyword.isEmpty else {
+            lastSearchSnapshot = nil
+            currentSearchKeyword = ""
+            return RoomSearchPage(rooms: [], hasMore: false)
+        }
+        guard let tokenQuery = ChatRoomSearchIndex.queryToken(for: trimmedKeyword) else {
+            lastSearchSnapshot = nil
+            currentSearchKeyword = ""
+            return RoomSearchPage(rooms: [], hasMore: false)
+        }
         
         if reset {
             lastSearchSnapshot = nil
-            currentSearchKeyword = keyword
+            currentSearchKeyword = trimmedKeyword
         }
         
-        var query: Query = db.collection("Rooms")
+        var indexedQuery: Query = db.collection("Rooms")
+            .whereField(tokenQuery.field, arrayContains: tokenQuery.token)
             .order(by: "lastMessageAt", descending: true)
             .limit(to: limit)
-        
-        query = query
-            .whereField("roomName", isGreaterThanOrEqualTo: keyword)
-            .whereField("roomName", isLessThanOrEqualTo: keyword + "\u{f8ff}")
-        
+
         if let last = lastSearchSnapshot {
-            query = query.start(afterDocument: last)
+            indexedQuery = indexedQuery.start(afterDocument: last)
         }
         
-        let snap = try await query.getDocuments()
-        lastSearchSnapshot = snap.documents.last
+        let indexedSnapshot = try await indexedQuery.getDocuments()
+        lastSearchSnapshot = indexedSnapshot.documents.last
         
-        let rooms = snap.documents.compactMap { doc -> ChatRoom? in
+        let rooms = indexedSnapshot.documents.compactMap { doc -> ChatRoom? in
             try? doc.data(as: ChatRoom.self)
         }
-        return rooms
+        .filter { ChatRoomSearchIndex.contains(room: $0, keyword: trimmedKeyword) }
+
+        return RoomSearchPage(
+            rooms: rooms,
+            hasMore: indexedSnapshot.documents.count == limit
+        )
     }
     
-    func loadMoreSearchRooms(limit: Int = 30) async throws -> [ChatRoom] {
-        guard !currentSearchKeyword.isEmpty else { return [] }
+    func loadMoreSearchRooms(limit: Int = 30) async throws -> RoomSearchPage {
+        guard !currentSearchKeyword.isEmpty else {
+            return RoomSearchPage(rooms: [], hasMore: false)
+        }
         return try await searchRooms(keyword: currentSearchKeyword, limit: limit, reset: false)
     }
 
@@ -551,7 +568,7 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
             throw FirebaseError.FailedToFetchRoom
         }
         
-        var updateData: [String: Any] = [:]
+        var updateData = Self.searchIndexData(roomName: roomName, roomDescription: roomDescription)
         updateData["roomImagePath"] = newImagePath
         updateData["roomName"] = roomName
         updateData["roomDescription"] = roomDescription
@@ -748,6 +765,19 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
         if let value = raw as? String, let parsed = Int64(value) { return parsed }
         if let value = raw as? Double { return Int64(value) }
         return nil
+    }
+
+    private static func searchIndexData(roomName: String, roomDescription: String) -> [String: Any] {
+        let searchIndex = ChatRoomSearchIndex.buildIndexedFields(
+            roomName: roomName,
+            roomDescription: roomDescription
+        )
+        return [
+            "roomSearchNormalized": searchIndex.normalizedText,
+            "roomSearchChars": searchIndex.searchChars,
+            "roomSearchNgrams2": searchIndex.searchNgrams2,
+            "roomSearchIndexVersion": searchIndex.version
+        ]
     }
 
     private func currentUserProfileRef() throws -> DocumentReference {

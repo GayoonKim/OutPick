@@ -11,8 +11,10 @@ import FirebaseFirestore
 
 class RoomSearchViewController: UIViewController {
     private let viewModel: RoomSearchViewModel
+    private let roomImageManager: RoomImageManaging
     
     private var cancellables = Set<AnyCancellable>()
+    private let loadMorePrefetchThreshold = 5
 
     private lazy var customNavigationBar: CustomNavigationBarView = {
         let customNavigationBar = CustomNavigationBarView()
@@ -59,8 +61,6 @@ class RoomSearchViewController: UIViewController {
         return tf
     }()
 
-    /// 외부에서 검색어 변경을 구독하고 싶을 때 사용
-    var onSearchTextChange: ((String) -> Void)?
     /// Coordinator 기반 라우팅을 위한 검색 결과 선택 콜백
     var onSelectRoom: ((ChatRoom) -> Void)?
 
@@ -100,10 +100,13 @@ class RoomSearchViewController: UIViewController {
     }()
 
     private var searchResultsCollection: UICollectionView!
-    private var isLoadingMore = false
 
-    init(viewModel: RoomSearchViewModel) {
+    init(
+        viewModel: RoomSearchViewModel,
+        roomImageManager: RoomImageManaging = RoomImageService.shared
+    ) {
         self.viewModel = viewModel
+        self.roomImageManager = roomImageManager
         super.init(nibName: nil, bundle: nil)
     }
     
@@ -120,6 +123,7 @@ class RoomSearchViewController: UIViewController {
         let roomRepository = FirebaseChatRoomRepository(db: db)
         let useCase = RoomSearchUseCase(roomRepository: roomRepository)
         self.viewModel = RoomSearchViewModel(useCase: useCase)
+        self.roomImageManager = RoomImageService.shared
         super.init(coder: coder)
     }
 
@@ -133,7 +137,6 @@ class RoomSearchViewController: UIViewController {
         setupSearchResultsCollection()
         bindViewModel()
         viewModel.loadInitialState()
-        viewModel.notifyCurrentState()
         bindPublishers()
     }
     
@@ -164,6 +167,7 @@ class RoomSearchViewController: UIViewController {
 
         searchResultsCollection.dataSource = self
         searchResultsCollection.delegate = self
+        searchResultsCollection.prefetchDataSource = self
         searchResultsCollection.register(SearchResultRoomCell.self, forCellWithReuseIdentifier: "SearchResultCell")
     }
     
@@ -172,29 +176,27 @@ class RoomSearchViewController: UIViewController {
     }
     
     private func bindViewModel() {
-        viewModel.onStateChanged = { [weak self] state in
-            guard let self else { return }
-            self.toggleSaveSwitch.isOn = state.isRecentSearchEnabled
-            self.recentSearchesCollection.reloadData()
-            self.searchResultsCollection.reloadData()
-            self.updateRecentPlaceholder()
-            self.searchResultsCollection.backgroundView?.isHidden = !state.searchResults.isEmpty
-        }
+        viewModel.statePublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] state in
+                guard let self else { return }
+                self.toggleSaveSwitch.isOn = state.isRecentSearchEnabled
+                self.recentSearchesCollection.reloadData()
+                self.searchResultsCollection.reloadData()
+                self.updateRecentPlaceholder()
+                self.searchResultsCollection.backgroundView?.isHidden = !state.hasSearched || state.isLoading || !state.searchResults.isEmpty
+            }
+            .store(in: &cancellables)
+
         toggleSaveSwitch.addTarget(self, action: #selector(toggleSaveSwitchChanged(_:)), for: .valueChanged)
     }
 
     private func bindPublishers() {
-        NotificationCenter.default.publisher(for: UITextField.textDidChangeNotification, object: searchTextField)
+        let searchTextPublisher = NotificationCenter.default.publisher(for: UITextField.textDidChangeNotification, object: searchTextField)
             .compactMap { ($0.object as? UITextField)?.text }
-            .debounce(for: .milliseconds(300), scheduler: RunLoop.main)
-            .removeDuplicates()
-            .sink { [weak self] text in
-                guard let self = self else { return }
-                Task {
-                    await self.viewModel.search(keyword: text, reset: true)
-                }
-            }
-            .store(in: &cancellables)
+            .eraseToAnyPublisher()
+
+        viewModel.bindSearchTextPublisher(searchTextPublisher)
     }
     
     @MainActor
@@ -301,8 +303,7 @@ extension RoomSearchViewController: UITextFieldDelegate {
         textField.resignFirstResponder()
         let text = textField.text ?? ""
         viewModel.recordRecentSearch(text)
-        onSearchTextChange?(text)
- 
+        viewModel.submitSearchText(text)
         
         return true
     }
@@ -338,10 +339,7 @@ extension RoomSearchViewController: UICollectionViewDataSource, UICollectionView
         if collectionView == recentSearchesCollection {
             guard let selected = viewModel.selectRecentSearch(at: indexPath.item) else { return }
             searchTextField.text = selected
-            onSearchTextChange?(selected)
-            Task { [weak self] in
-                await self?.viewModel.search(keyword: selected, reset: true)
-            }
+            viewModel.submitSearchText(selected)
         } else if collectionView == searchResultsCollection {
             let room = viewModel.state.searchResults[indexPath.item]
             guard let onSelectRoom else {
@@ -362,20 +360,40 @@ extension RoomSearchViewController: UICollectionViewDataSource, UICollectionView
             return CGSize(width: collectionView.bounds.width, height: 80)
         }
     }
-    
-    func scrollViewDidScroll(_ scrollView: UIScrollView) {
-        guard scrollView == searchResultsCollection else { return }
-        let offsetY = scrollView.contentOffset.y
-        let contentHeight = scrollView.contentSize.height
-        let height = scrollView.frame.size.height
-        
-        if offsetY > contentHeight - height * 2, !isLoadingMore {
-            isLoadingMore = true
-            Task {
-                await viewModel.loadMore()
-                await MainActor.run { self.isLoadingMore = false }
-            }
+}
+
+extension RoomSearchViewController: UICollectionViewDataSourcePrefetching {
+    func collectionView(_ collectionView: UICollectionView, prefetchItemsAt indexPaths: [IndexPath]) {
+        guard collectionView == searchResultsCollection else { return }
+
+        prefetchRoomImages(at: indexPaths)
+        triggerLoadMoreIfNeeded(for: indexPaths)
+    }
+
+    private func prefetchRoomImages(at indexPaths: [IndexPath]) {
+        let rooms = viewModel.state.searchResults
+        let paths = indexPaths.compactMap { indexPath -> String? in
+            guard rooms.indices.contains(indexPath.item) else { return nil }
+            return rooms[indexPath.item].coverImagePath
         }
+        guard !paths.isEmpty else { return }
+
+        Task { [roomImageManager] in
+            await roomImageManager.prefetchImages(
+                paths: paths,
+                maxBytes: 3 * 1024 * 1024,
+                maxConcurrent: 4
+            )
+        }
+    }
+
+    private func triggerLoadMoreIfNeeded(for indexPaths: [IndexPath]) {
+        let count = viewModel.state.searchResults.count
+        guard count > 0 else { return }
+        let thresholdIndex = max(0, count - loadMorePrefetchThreshold)
+        guard indexPaths.contains(where: { $0.item >= thresholdIndex }) else { return }
+
+        viewModel.loadMore()
     }
 }
 

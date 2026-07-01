@@ -76,11 +76,11 @@ protocol FirebaseChatRoomRepositoryProtocol {
     /// ID 목록으로 방 목록 조회
     func fetchRoomsWithIDs(byIDs ids: [String]) async throws -> [ChatRoom]
     
-    /// 방 이름으로 검색 (페이지네이션 지원)
-    func searchRooms(keyword: String, limit: Int, reset: Bool) async throws -> [ChatRoom]
+    /// 방 이름/설명 검색 (페이지네이션 지원)
+    func searchRooms(keyword: String, limit: Int, reset: Bool) async throws -> RoomSearchPage
     
     /// 검색 결과 다음 페이지 로드
-    func loadMoreSearchRooms(limit: Int) async throws -> [ChatRoom]
+    func loadMoreSearchRooms(limit: Int) async throws -> RoomSearchPage
 
     /// 참여중 방 head(요약) 실시간 리스너 시작
     @MainActor

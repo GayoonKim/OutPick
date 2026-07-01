@@ -29,6 +29,34 @@
       ]
     },
     {
+      "collectionGroup": "Rooms",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "roomSearchChars",
+          "arrayConfig": "CONTAINS"
+        },
+        {
+          "fieldPath": "lastMessageAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "Rooms",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "roomSearchNgrams2",
+          "arrayConfig": "CONTAINS"
+        },
+        {
+          "fieldPath": "lastMessageAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "mediaIndex",
       "queryScope": "COLLECTION",
       "fields": [
