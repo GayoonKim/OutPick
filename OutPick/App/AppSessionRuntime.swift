@@ -43,7 +43,13 @@ final class AppSessionRuntime {
     ) async {
         sessionGeneration += 1
         let generation = sessionGeneration
-        let identity = SocketSessionIdentity.current(currentUserProvider: currentUserProvider)
+        let identity: SocketSessionIdentity
+        do {
+            identity = try await SocketSessionIdentity.current(currentUserProvider: currentUserProvider)
+        } catch {
+            print("SocketSessionIdentity 생성 실패: \(error.localizedDescription)")
+            return
+        }
 
         await connectSocketWithRetry(identity: identity, generation: generation)
         guard generation == sessionGeneration else { return }
@@ -68,6 +74,23 @@ final class AppSessionRuntime {
         }
     }
 
+    private func reconnectSocketForForeground(generation: Int) async {
+        guard LoginManager.shared.hasAuthenticatedIdentity else { return }
+
+        let identity: SocketSessionIdentity
+        do {
+            identity = try await SocketSessionIdentity.current(currentUserProvider: currentUserProvider)
+        } catch {
+            print("포그라운드 소켓 identity 생성 실패: \(error.localizedDescription)")
+            return
+        }
+
+        print("포그라운드 복귀로 소켓 재연결 확인")
+        await connectSocketWithRetry(identity: identity, generation: generation)
+        guard generation == sessionGeneration else { return }
+        rejoinRuntimeRooms()
+    }
+
     func stopAuthenticatedSession() async {
         sessionGeneration += 1
         let generation = sessionGeneration
@@ -81,6 +104,8 @@ final class AppSessionRuntime {
 
     func handleSceneDidBecomeActive() async {
         await presenceManager.handleAppDidBecomeActive()
+        let generation = sessionGeneration
+        await reconnectSocketForForeground(generation: generation)
     }
 
     func handleSceneWillResignActive() async {
@@ -89,6 +114,7 @@ final class AppSessionRuntime {
 
     func handleSceneDidEnterBackground() async {
         await presenceManager.handleAppDidEnterBackground()
+        await realtimeSocketService.suspendForBackground()
     }
 
     private func syncJoinedRooms(_ joinedSet: Set<String>) {
@@ -107,6 +133,14 @@ final class AppSessionRuntime {
         for roomID in toLeave {
             Task {
                 await realtimeSocketService.leaveRoom(roomID)
+            }
+        }
+    }
+
+    private func rejoinRuntimeRooms() {
+        for roomID in runtimeJoinedRooms {
+            Task {
+                await realtimeSocketService.joinRoom(roomID)
             }
         }
     }

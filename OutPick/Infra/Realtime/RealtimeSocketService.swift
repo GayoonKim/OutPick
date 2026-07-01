@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import FirebaseAuth
 import Network
 import SocketIO
 import UIKit
@@ -16,11 +17,26 @@ struct SocketSessionIdentity: Equatable, Sendable {
     let avatarPath: String?
     let clientKey: String
     let socketURL: URL
+    let idToken: String
 
     var connectParams: [String: Any] {
         [
             "clientKey": clientKey,
             "email": email
+        ]
+    }
+
+    var extraHeaders: [String: String] {
+        [
+            "Authorization": "Bearer \(idToken)",
+            "X-OutPick-Client-Key": clientKey
+        ]
+    }
+
+    var authPayload: [String: Any] {
+        [
+            "idToken": idToken,
+            "clientKey": clientKey
         ]
     }
 }
@@ -29,16 +45,41 @@ extension SocketSessionIdentity {
     @MainActor
     static func current(
         currentUserProvider: CurrentUserProviding = LoginManagerCurrentUserProvider()
-    ) -> SocketSessionIdentity {
-        SocketSessionIdentity(
+    ) async throws -> SocketSessionIdentity {
+        let idToken = try await currentFirebaseIDToken()
+        return SocketSessionIdentity(
             email: currentUserProvider.email
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .lowercased(),
             nickname: currentUserProvider.nickname ?? "",
             avatarPath: currentUserProvider.avatarPath,
             clientKey: makeClientKey(),
-            socketURL: RealtimeSocketService.makeSocketURL()
+            socketURL: RealtimeSocketService.makeSocketURL(),
+            idToken: idToken
         )
+    }
+
+    @MainActor
+    private static func currentFirebaseIDToken() async throws -> String {
+        guard let user = Auth.auth().currentUser else {
+            throw SocketIdentityError.missingFirebaseUser
+        }
+
+        return try await withCheckedThrowingContinuation { continuation in
+            user.getIDToken { token, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+
+                guard let token, !token.isEmpty else {
+                    continuation.resume(throwing: SocketIdentityError.missingIDToken)
+                    return
+                }
+
+                continuation.resume(returning: token)
+            }
+        }
     }
 
     @MainActor
@@ -47,6 +88,20 @@ extension SocketSessionIdentity {
             return "ios-\(id)"
         }
         return "ios-\(UUID().uuidString)"
+    }
+}
+
+private enum SocketIdentityError: LocalizedError {
+    case missingFirebaseUser
+    case missingIDToken
+
+    var errorDescription: String? {
+        switch self {
+        case .missingFirebaseUser:
+            return "Firebase 로그인 사용자를 찾을 수 없습니다."
+        case .missingIDToken:
+            return "Firebase ID Token을 가져오지 못했습니다."
+        }
     }
 }
 
@@ -146,7 +201,7 @@ actor RealtimeSocketService {
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return f
     }()
-    private static let persistedSocketURLKey = "OutPick.RealtimeSocketService.socketURL"
+    private static let productionSocketURL = URL(string: "https://outpick-socket-2w7zhxurhq-du.a.run.app")!
 
     private init(repositories: FirebaseRepositoryProviding = FirebaseRepositoryProvider.shared) {
         self.chatRoomRepository = repositories.chatRoomRepository
@@ -154,30 +209,7 @@ actor RealtimeSocketService {
     }
 
     nonisolated static func makeSocketURL() -> URL {
-        let configuredURLStrings = [
-            ProcessInfo.processInfo.environment["OUTPICK_SOCKET_URL"],
-            Bundle.main.object(forInfoDictionaryKey: "OUTPICK_SOCKET_URL") as? String
-        ]
-
-        for rawURLString in configuredURLStrings {
-            guard let urlString = rawURLString?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !urlString.isEmpty,
-                  !urlString.contains("$("),
-                  let url = URL(string: urlString) else {
-                continue
-            }
-            UserDefaults.standard.set(url.absoluteString, forKey: persistedSocketURLKey)
-            return url
-        }
-
-        if let persistedURLString = UserDefaults.standard.string(forKey: persistedSocketURLKey)?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-           !persistedURLString.isEmpty,
-           let persistedURL = URL(string: persistedURLString) {
-            return persistedURL
-        }
-
-        return URL(string: "https://outpick-socket-715386497547.asia-northeast3.run.app")!
+        productionSocketURL
     }
 
     func isConnected() -> Bool {
@@ -213,7 +245,7 @@ actor RealtimeSocketService {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             connectWaiters.append(continuation)
             print("소켓 연결 시도")
-            socket.connect()
+            socket.connect(withPayload: newIdentity.authPayload)
         }
     }
 
@@ -222,6 +254,15 @@ actor RealtimeSocketService {
         manualAttempt = 0
         tearDownRoomStreams()
         failConnectWaiters(with: SocketError.connectionFailed(["manual disconnect"]))
+        socket?.disconnect()
+    }
+
+    func suspendForBackground() {
+        allowReconnect = false
+        manualAttempt = 0
+        failConnectWaiters(with: SocketError.connectionFailed(["background disconnect"]))
+        guard socket?.status == .connected || socket?.status == .connecting else { return }
+        print("백그라운드 진입으로 소켓 연결 해제")
         socket?.disconnect()
     }
 
@@ -655,9 +696,11 @@ actor RealtimeSocketService {
         let manager = SocketManager(socketURL: newIdentity.socketURL, config: [
             .log(true),
             .compress,
+            .secure(true),
             .forceWebsockets(true),
             .forcePolling(false),
             .connectParams(newIdentity.connectParams),
+            .extraHeaders(newIdentity.extraHeaders),
             .reconnects(false)
         ])
         let socket = manager.defaultSocket
