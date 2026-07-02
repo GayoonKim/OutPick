@@ -190,7 +190,8 @@ final class GRDBManager: ChatOutgoingOutboxPersisting {
                 t.column("id", .text).primaryKey() // 메시지 UUID 등
                 t.column("seq", .integer).notNull().defaults(to: 0)  // 방 내 단조 증가 시퀀스
                 t.column("roomID", .text).notNull()
-                t.column("senderID", .text).notNull()
+                t.column("senderUID", .text).notNull()
+                t.column("senderEmail", .text)
                 t.column("senderNickname", .text).notNull()
                 t.column("senderAvatarPath", .text)
                 t.column("msg", .text)
@@ -219,6 +220,26 @@ final class GRDBManager: ChatOutgoingOutboxPersisting {
                               ifNotExists: true)
             } catch {
                 print("[Migration] addSeqToChatMessage (create index) skipped or failed: \(error)")
+            }
+        }
+
+        migrator.registerMigration("migrateChatMessageSenderUID") { db in
+            do {
+                try db.alter(table: "chatMessage") { t in
+                    t.add(column: "senderUID", .text)
+                    t.add(column: "senderEmail", .text)
+                }
+            } catch {
+                print("[Migration] migrateChatMessageSenderUID (add columns) skipped or failed: \(error)")
+            }
+            do {
+                try db.execute(sql: """
+                    UPDATE chatMessage
+                       SET senderUID = COALESCE(NULLIF(senderUID, ''), senderID)
+                     WHERE senderUID IS NULL OR senderUID = ''
+                """)
+            } catch {
+                print("[Migration] migrateChatMessageSenderUID (backfill senderUID) skipped or failed: \(error)")
             }
         }
         
@@ -429,7 +450,7 @@ final class GRDBManager: ChatOutgoingOutboxPersisting {
             for message in messages {
                 // 1) Validate required fields (skip invalid rows to honor NOT NULL constraints)
                 guard !message.roomID.isEmpty,
-                      !message.senderID.isEmpty,
+                      !message.senderUID.isEmpty,
                       !message.senderNickname.isEmpty else {
 #if DEBUG
                     print("[GRDB] skip invalid message: id=\(message.ID) roomID/sender fields missing")
@@ -476,14 +497,15 @@ final class GRDBManager: ChatOutgoingOutboxPersisting {
                 try db.execute(
                     sql: """
                     INSERT OR REPLACE INTO chatMessage
-                    (id, seq, roomID, senderID, senderNickname, senderAvatarPath, messageType, msg, sentAt, attachments, sharedContent, isFailed, replyPreview, isDeleted)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (id, seq, roomID, senderUID, senderEmail, senderNickname, senderAvatarPath, messageType, msg, sentAt, attachments, sharedContent, isFailed, replyPreview, isDeleted)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     arguments: [
                         message.ID,
                         message.seq,
                         message.roomID,
-                        message.senderID,
+                        message.senderUID,
+                        message.senderEmail,
                         message.senderNickname,
                         message.senderAvatarPath,
                         message.messageType?.rawValue,
@@ -569,7 +591,7 @@ final class GRDBManager: ChatOutgoingOutboxPersisting {
         }
     }
 
-    func fetchFailedOutgoingMessages(inRoom roomID: String, senderID: String) async throws -> [ChatMessage] {
+    func fetchFailedOutgoingMessages(inRoom roomID: String, senderUID: String) async throws -> [ChatMessage] {
         try await dbPool.read { db in
             let rows = try Row.fetchAll(
                 db,
@@ -582,12 +604,12 @@ final class GRDBManager: ChatOutgoingOutboxPersisting {
                 LEFT JOIN chatOutgoingOutbox
                   ON chatOutgoingOutbox.messageID = chatMessage.id
                 WHERE chatMessage.roomID = ?
-                  AND chatMessage.senderID = ?
+                  AND chatMessage.senderUID = ?
                   AND chatMessage.isFailed = 1
                   AND chatMessage.isDeleted = 0
                 ORDER BY chatMessage.sentAt ASC, chatMessage.id ASC
                 """,
-                arguments: [roomID, senderID]
+                arguments: [roomID, senderUID]
             )
             return try rows.map { row in
                 var message = try self.makeChatMessage(from: row)
@@ -703,7 +725,8 @@ final class GRDBManager: ChatOutgoingOutboxPersisting {
             ID: row["id"],
             seq: (row["seq"] as? Int64) ?? 0,
             roomID: row["roomID"],
-            senderID: row["senderID"],
+            senderUID: row["senderUID"],
+            senderEmail: row["senderEmail"] as? String,
             senderNickname: row["senderNickname"],
             senderAvatarPath: row["senderAvatarPath"] as? String,
             messageType: messageType,

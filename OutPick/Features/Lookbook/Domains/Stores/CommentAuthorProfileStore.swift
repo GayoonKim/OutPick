@@ -13,17 +13,20 @@ final class CommentAuthorProfileStore {
 
     private let userProfileRepository: UserProfileRepositoryProtocol
     private let currentUserIDProvider: any CurrentUserIDProviding
+    private let currentUserProvider: any CurrentUserProviding
     private let maxRetryCount: Int
     private let retryDelayNanoseconds: UInt64
 
     init(
         userProfileRepository: UserProfileRepositoryProtocol = FirebaseRepositoryProvider.shared.userProfileRepository,
         currentUserIDProvider: any CurrentUserIDProviding = LoginManagerCurrentUserIDProvider(),
+        currentUserProvider: any CurrentUserProviding = LoginManagerCurrentUserProvider(),
         maxRetryCount: Int = 2,
         retryDelayNanoseconds: UInt64 = 300_000_000
     ) {
         self.userProfileRepository = userProfileRepository
         self.currentUserIDProvider = currentUserIDProvider
+        self.currentUserProvider = currentUserProvider
         self.maxRetryCount = max(0, maxRetryCount)
         self.retryDelayNanoseconds = retryDelayNanoseconds
     }
@@ -61,7 +64,7 @@ final class CommentAuthorProfileStore {
 
     func seedCurrentUserProfileIfPossible() {
         guard let userID = currentUserID else { return }
-        guard let profile = LoginManager.shared.currentUserProfile else { return }
+        guard let profile = currentUserProvider.profile else { return }
 
         authorDisplays[userID] = Self.makeAuthorDisplay(
             userID: userID,

@@ -17,7 +17,7 @@ final class LoadShareableJoinedRoomsUseCase: LoadShareableJoinedRoomsUseCaseProt
 
     init(
         joinedRoomsUseCase: JoinedRoomsUseCaseProtocol,
-        currentUserIDProvider: @escaping @Sendable () -> String = { LoginManager.shared.getUserEmail }
+        currentUserIDProvider: @escaping @Sendable () -> String = { LoginManager.shared.getUserUID }
     ) {
         self.joinedRoomsUseCase = joinedRoomsUseCase
         self.currentUserIDProvider = currentUserIDProvider

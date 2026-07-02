@@ -2481,7 +2481,7 @@ export const onRoomClosed = onDocumentUpdated(
 
     interface RoomDoc {
       isClosed?: boolean;
-      participantIDs?: string[];
+      participantUIDs?: string[];
     }
 
     const before = beforeSnap.data() as RoomDoc | undefined;
@@ -2506,47 +2506,42 @@ export const onRoomClosed = onDocumentUpdated(
     }
 
     const roomId = event.params.roomId as string;
-    const participantIDs: string[] =
-        Array.isArray(after.participantIDs) ?
-          after.participantIDs :
-          [];
+    const participantUIDs: string[] =
+        Array.isArray(before.participantUIDs) ?
+          before.participantUIDs :
+          Array.isArray(after.participantUIDs) ?
+            after.participantUIDs :
+            [];
 
     console.log(
       `[onRoomClosed] Room ${roomId} closed. participants = ` +
-        `${participantIDs.length}`
+        `${participantUIDs.length}`
     );
 
     // 2) joinedRooms 에서 roomId 제거
-    if (participantIDs.length > 0) {
+    if (participantUIDs.length > 0) {
       const BATCH_LIMIT = 500; // Firestore 배치 write 제한
-      const IN_QUERY_LIMIT = 30; // Firestore where-in 제한
 
-      for (let i = 0; i < participantIDs.length; i += BATCH_LIMIT) {
-        const slice = participantIDs.slice(i, i + BATCH_LIMIT);
+      for (let i = 0; i < participantUIDs.length; i += BATCH_LIMIT) {
+        const slice = participantUIDs.slice(i, i + BATCH_LIMIT);
         const batch = db.batch();
 
-        const normalizedSlice = Array.from(
+        const normalizedUIDs = Array.from(
           new Set(
             slice
-              .map((email) => email.trim().toLowerCase())
-              .filter((email) => email.length > 0)
+              .map((uid) => uid.trim())
+              .filter((uid) => uid.length > 0 && !uid.includes("/"))
           )
         );
 
         let updatedUsers = 0;
-        for (let j = 0; j < normalizedSlice.length; j += IN_QUERY_LIMIT) {
-          const emailChunk = normalizedSlice.slice(j, j + IN_QUERY_LIMIT);
-          const usersSnap = await db
-            .collection("users")
-            .where("email", "in", emailChunk)
-            .get();
-
-          for (const userDoc of usersSnap.docs) {
-            batch.update(userDoc.ref, {
-              joinedRooms: FieldValue.arrayRemove(roomId),
-            });
-            updatedUsers += 1;
-          }
+        for (const uid of normalizedUIDs) {
+          const userRef = db.collection("users").doc(uid);
+          batch.set(userRef, {
+            joinedRooms: FieldValue.arrayRemove(roomId),
+          }, {merge: true});
+          batch.delete(userRef.collection("roomStates").doc(roomId));
+          updatedUsers += 1;
         }
 
         console.log(

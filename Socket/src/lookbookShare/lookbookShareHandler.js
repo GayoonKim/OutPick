@@ -9,6 +9,7 @@ import { lookbookShareFallbackPreview } from "../messages/preview.js";
 import { sanitizeLookbookSharedContent } from "./sharedContentValidator.js";
 import {
   normalizeEmail,
+  normalizeUID,
   normalizeSentAt,
   trimString,
   utf8Bytes,
@@ -20,7 +21,8 @@ function buildServerLookbookShareMessage({
   messageID,
   msg,
   sharedContent,
-  senderID,
+  senderUID,
+  senderEmail,
   senderNickname,
   senderAvatarPath,
   sentAt
@@ -29,7 +31,8 @@ function buildServerLookbookShareMessage({
     ID: messageID,
     roomID,
     roomName: roomID,
-    senderID,
+    senderUID,
+    ...(senderEmail ? { senderEmail } : {}),
     senderNickname,
     ...(senderAvatarPath ? { senderAvatarPath } : {}),
     msg,
@@ -63,7 +66,6 @@ export function createLookbookShareHandler({
         roomName,
         msg: rawMsg,
         message,
-        senderID: rawSenderID,
         senderNickname,
         senderNickName,
         senderAvatarPath,
@@ -107,8 +109,9 @@ export function createLookbookShareHandler({
         });
       }
 
-      const senderEmail = socket.userEmail;
-      if (!senderEmail) {
+      const senderUID = normalizeUID(socket.userUID);
+      const senderEmail = normalizeEmail(socket.userEmail);
+      if (!senderUID) {
         return callback && callback({
           ok: false,
           message: "unauthenticated",
@@ -116,7 +119,7 @@ export function createLookbookShareHandler({
         });
       }
 
-      const access = await loadRoomAccess(roomID, senderEmail);
+      const access = await loadRoomAccess(roomID, senderUID);
       if (!access.ok) {
         return callback && callback({
           ok: false,
@@ -168,7 +171,8 @@ export function createLookbookShareHandler({
         messageID: effectiveMessageID,
         msg: finalMsg,
         sharedContent: normalizedSharedContent,
-        senderID: senderEmail,
+        senderUID,
+        senderEmail,
         senderNickname: nickname,
         senderAvatarPath,
         sentAt: sentAtISO
@@ -195,7 +199,7 @@ export function createLookbookShareHandler({
 
       console.log("[chat:lookbookShare] shared", {
         roomID,
-        senderID: senderEmail,
+        senderUID,
         messageID: effectiveMessageID,
         contentType: normalizedSharedContent.contentType,
         seq

@@ -2,6 +2,10 @@ export function normalizeEmail(email) {
   return typeof email === "string" ? email.trim().toLowerCase() : "";
 }
 
+export function normalizeUID(uid) {
+  return typeof uid === "string" ? uid.trim() : "";
+}
+
 export function trimString(value, limit = 1000) {
   if (typeof value !== "string") return "";
   return value.trim().slice(0, limit);

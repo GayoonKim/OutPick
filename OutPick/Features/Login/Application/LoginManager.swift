@@ -38,7 +38,6 @@ final class LoginManager {
     private var userDocumentID: String = ""
     private var hasResolvedUserDocumentID: Bool = false
     private(set) var authenticatedUser: AuthenticatedUser?
-    private(set) var currentUserProfile: UserProfile?
 
     var deviceIDListener: ListenerRegistration?
 
@@ -127,10 +126,6 @@ final class LoginManager {
         self.hasResolvedUserDocumentID = false
     }
 
-    func setCurrentUserProfile(_ profile: UserProfile?) {
-        self.currentUserProfile = profile
-    }
-
     private func profileCacheAccount(userDocumentID: String) -> String {
         let trimmed = userDocumentID.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? "UserProfile" : "UserProfile:\(trimmed)"
@@ -200,18 +195,15 @@ final class LoginManager {
         do {
             let profile = try await userProfileRepository.fetchCurrentUserProfile()
             guard isProfileValidForMainFlow(profile) else {
-                self.currentUserProfile = nil
                 KeychainManager.shared.delete(service: keychainService, account: cacheAccount)
                 return .failure(FirebaseError.IncompleteProfile)
             }
-            self.currentUserProfile = profile
 
             if let data = try? JSONEncoder().encode(profile) {
                 KeychainManager.shared.save(data, service: keychainService, account: cacheAccount)
             }
             return .success(profile)
         } catch {
-            self.currentUserProfile = nil
             KeychainManager.shared.delete(service: keychainService, account: cacheAccount)
             return .failure(error)
         }
@@ -365,7 +357,6 @@ final class LoginManager {
         self.userDocumentID = ""
         self.hasResolvedUserDocumentID = false
         self.authenticatedUser = nil
-        self.currentUserProfile = nil
 
         // 콜백 재사용을 위해 플래그 초기화
         self.didInvokeForceLogoutCallback = false

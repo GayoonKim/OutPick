@@ -12,6 +12,7 @@ import SocketIO
 import UIKit
 
 struct SocketSessionIdentity: Equatable, Sendable {
+    let uid: String
     let email: String
     let nickname: String
     let avatarPath: String?
@@ -48,6 +49,8 @@ extension SocketSessionIdentity {
     ) async throws -> SocketSessionIdentity {
         let idToken = try await currentFirebaseIDToken()
         return SocketSessionIdentity(
+            uid: currentUserProvider.uid
+                .trimmingCharacters(in: .whitespacesAndNewlines),
             email: currentUserProvider.email
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .lowercased(),
@@ -397,7 +400,8 @@ actor RealtimeSocketService {
             "kind": kind,
             "attachmentCount": attachmentCount,
             "expectedPathCount": expectedPathCount,
-            "senderID": identity?.email ?? ""
+            "senderUID": identity?.uid ?? "",
+            "senderEmail": identity?.email ?? ""
         ]
 
         try await emitAck(event: "chat:mediaPreflight", body, timeout: ackTimeout, failureMessage: "미디어 업로드 사전 확인 실패 또는 timeout")
@@ -416,7 +420,8 @@ actor RealtimeSocketService {
         }
 
         let roomID = room.ID ?? ""
-        let senderID = identity?.email ?? ""
+        let senderUID = identity?.uid ?? ""
+        let senderEmail = identity?.email ?? ""
         let senderNickname = identity?.nickname ?? ""
         let resolvedClientMessageID = clientMessageID?.isEmpty == false ? clientMessageID! : UUID().uuidString
         let now = Date()
@@ -429,7 +434,8 @@ actor RealtimeSocketService {
             "type": "image",
             "msg": "",
             "attachments": attachments,
-            "senderID": senderID,
+            "senderUID": senderUID,
+            "senderEmail": senderEmail,
             "senderNickname": senderNickname,
             "sentAt": isoSentAt
         ]
@@ -481,7 +487,8 @@ actor RealtimeSocketService {
             "sizeBytes": payload.sizeBytes,
             "approxBitrateMbps": payload.approxBitrateMbps,
             "preset": payload.preset,
-            "senderID": identity?.email ?? "",
+            "senderUID": identity?.uid ?? "",
+            "senderEmail": identity?.email ?? "",
             "senderNickname": identity?.nickname ?? "",
             "kind": "video"
         ]
@@ -536,7 +543,8 @@ actor RealtimeSocketService {
             "messageType": ChatMessageType.lookbookShare.rawValue,
             "msg": trimmedMessageText,
             "sentAt": Self.isoFormatter.string(from: now),
-            "senderID": identity?.email ?? "",
+            "senderUID": identity?.uid ?? "",
+            "senderEmail": identity?.email ?? "",
             "senderNickname": identity?.nickname ?? "",
             "attachments": [],
             "sharedContent": sharedContent.toDict()
@@ -571,7 +579,8 @@ actor RealtimeSocketService {
 
     func sendFailedVideos(
         roomID: String,
-        senderID: String,
+        senderUID: String,
+        senderEmail: String?,
         senderNickname: String,
         localURL: URL,
         thumbData: Data?,
@@ -615,7 +624,8 @@ actor RealtimeSocketService {
             ID: clientMessageID,
             seq: 0,
             roomID: roomID,
-            senderID: senderID,
+            senderUID: senderUID,
+            senderEmail: senderEmail,
             senderNickname: senderNickname,
             msg: "",
             sentAt: Date(),
@@ -1005,13 +1015,13 @@ actor RealtimeSocketService {
         guard !roomID.isEmpty else { return }
         let trimmedPreview = preview.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedPreview.isEmpty else { return }
-        let senderID = identity?.email ?? ""
+        let senderUID = identity?.uid ?? ""
 
         await chatRoomRepository.updateRoomLastMessage(
             roomID: roomID,
             date: sentAt,
             msg: trimmedPreview,
-            senderID: senderID
+            senderUID: senderUID
         )
     }
 

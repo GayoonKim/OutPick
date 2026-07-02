@@ -45,6 +45,7 @@ enum ChatCompositionRoot {
         photoLibrarySaver: PhotoLibrarySaving,
         roomImageManager: RoomImageManaging,
         avatarImageManager: AvatarImageManaging,
+        currentUserProvider: any CurrentUserProviding,
         networkStatusProvider: NetworkStatusProviding,
         exitUseCase: ChatRoomExitUseCaseProtocol,
         onEvent: @escaping (ChatRoomSettingEvent) -> Void = { _ in }
@@ -81,7 +82,8 @@ enum ChatCompositionRoot {
             videoResolver: videoResolver,
             photoLibrarySaver: photoLibrarySaver,
             roomImageManager: roomImageManager,
-            avatarImageManager: avatarImageManager
+            avatarImageManager: avatarImageManager,
+            currentUserProvider: currentUserProvider
         )
         settingVC.onEvent = onEvent
         return settingVC

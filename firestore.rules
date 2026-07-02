@@ -29,6 +29,22 @@ service cloud.firestore {
         );
     }
 
+    function roomPath(roomID) {
+      return /databases/$(database)/documents/Rooms/$(roomID);
+    }
+
+    function hasCurrentUID(listValue) {
+      return signedIn()
+        && listValue is list
+        && listValue.hasAny([request.auth.uid]);
+    }
+
+    function isRoomParticipant(roomID) {
+      return signedIn()
+        && exists(roomPath(roomID))
+        && hasCurrentUID(get(roomPath(roomID)).data.participantUIDs);
+    }
+
     match /brandAdmins/{adminID} {
       allow read, write: if false;
     }
@@ -123,10 +139,19 @@ service cloud.firestore {
     }
 
     match /Rooms/{roomID} {
-      allow read, write: if signedIn();
+      allow read: if hasCurrentUID(resource.data.participantUIDs);
+      allow create: if signedIn()
+        && request.resource.data.creatorUID == request.auth.uid
+        && hasCurrentUID(request.resource.data.participantUIDs);
+      allow update: if signedIn()
+        && (
+          hasCurrentUID(resource.data.participantUIDs)
+          || hasCurrentUID(request.resource.data.participantUIDs)
+        );
+      allow delete: if false;
 
       match /{document=**} {
-        allow read, write: if signedIn();
+        allow read, write: if isRoomParticipant(roomID);
       }
     }
 

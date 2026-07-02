@@ -12,7 +12,11 @@ import UIKit
 @MainActor
 enum MainTabCompositionRoot {
 
-    static func makeMainTab(lookbookContainer: LookbookContainer, chatContainer: ChatContainer) -> MainTabBarController {
+    static func makeMainTab(
+        lookbookContainer: LookbookContainer,
+        chatContainer: ChatContainer,
+        currentUserProvider: any CurrentUserProviding
+    ) -> MainTabBarController {
         let vc = MainTabBarController()
         vc.setValue(OutPickTabBar(), forKey: "tabBar")
 
@@ -24,7 +28,11 @@ enum MainTabCompositionRoot {
         )
 
         // 탭 생성 책임은 빌더로 위임
-        let tabBuilder = DefaultMainTabBuilder(lookbookContainer: lookbookContainer, chatContainer: chatContainer)
+        let tabBuilder = DefaultMainTabBuilder(
+            lookbookContainer: lookbookContainer,
+            chatContainer: chatContainer,
+            currentUserProvider: currentUserProvider
+        )
         vc.tabBuilder = tabBuilder
         vc.configure(viewControllers: tabBuilder.makeTabViewControllers())
 

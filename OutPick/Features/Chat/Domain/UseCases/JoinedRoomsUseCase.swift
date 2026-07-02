@@ -19,8 +19,8 @@ protocol JoinedRoomsUseCaseProtocol {
     func startRoomUpdates(limit: Int)
     @MainActor
     func stopRoomUpdates()
-    func fetchUnreadCount(roomID: String, lastMessageSeqHint: Int64?, lastMessageSenderID: String?) async -> Int64
-    func fetchReadSnapshot(roomID: String, lastMessageSeqHint: Int64?, lastMessageSenderID: String?) async -> ChatRoomReadSnapshot?
+    func fetchUnreadCount(roomID: String, lastMessageSeqHint: Int64?, lastMessageSenderUID: String?) async -> Int64
+    func fetchReadSnapshot(roomID: String, lastMessageSeqHint: Int64?, lastMessageSenderUID: String?) async -> ChatRoomReadSnapshot?
     func canLeaveFromList(room: ChatRoom) -> Bool
     func leave(room: ChatRoom) async throws -> ChatRoomExitResult
 }
@@ -45,7 +45,7 @@ final class JoinedRoomsUseCase: JoinedRoomsUseCaseProtocol {
 
     func fetchJoinedRoomsHead(limit: Int = 50) async throws -> (rooms: [ChatRoom], cursor: DocumentSnapshot?) {
         let page = try await roomRepository.fetchJoinedRoomsPage(
-            userEmail: LoginManager.shared.getUserEmail,
+            userUID: LoginManager.shared.getUserUID,
             after: nil,
             limit: limit
         )
@@ -54,7 +54,7 @@ final class JoinedRoomsUseCase: JoinedRoomsUseCaseProtocol {
 
     func loadMoreJoinedRooms(after cursor: DocumentSnapshot?, limit: Int = 50) async throws -> (rooms: [ChatRoom], cursor: DocumentSnapshot?) {
         let page = try await roomRepository.fetchJoinedRoomsPage(
-            userEmail: LoginManager.shared.getUserEmail,
+            userUID: LoginManager.shared.getUserUID,
             after: cursor,
             limit: limit
         )
@@ -63,7 +63,7 @@ final class JoinedRoomsUseCase: JoinedRoomsUseCaseProtocol {
 
     func syncJoinedRoomsTail(since: Date, limit: Int = 200) async throws -> [ChatRoom] {
         try await roomRepository.fetchJoinedRoomsUpdatedSince(
-            userEmail: LoginManager.shared.getUserEmail,
+            userUID: LoginManager.shared.getUserUID,
             since: since,
             limit: limit
         )
@@ -72,7 +72,7 @@ final class JoinedRoomsUseCase: JoinedRoomsUseCaseProtocol {
     @MainActor
     func startRoomUpdates(limit: Int = 50) {
         roomRepository.startListenJoinedRoomsSummary(
-            userEmail: LoginManager.shared.getUserEmail,
+            userUID: LoginManager.shared.getUserUID,
             limit: limit
         )
     }
@@ -82,18 +82,18 @@ final class JoinedRoomsUseCase: JoinedRoomsUseCaseProtocol {
         roomRepository.stopListenJoinedRoomsSummary()
     }
 
-    func fetchUnreadCount(roomID: String, lastMessageSeqHint: Int64?, lastMessageSenderID: String?) async -> Int64 {
+    func fetchUnreadCount(roomID: String, lastMessageSeqHint: Int64?, lastMessageSenderUID: String?) async -> Int64 {
         guard let snapshot = await fetchReadSnapshot(
             roomID: roomID,
             lastMessageSeqHint: lastMessageSeqHint,
-            lastMessageSenderID: lastMessageSenderID
+            lastMessageSenderUID: lastMessageSenderUID
         ) else {
             return 0
         }
-        return snapshot.unreadCount(currentUserID: LoginManager.shared.getUserEmail) ?? 0
+        return snapshot.unreadCount(currentUserID: LoginManager.shared.getUserUID) ?? 0
     }
 
-    func fetchReadSnapshot(roomID: String, lastMessageSeqHint: Int64?, lastMessageSenderID: String?) async -> ChatRoomReadSnapshot? {
+    func fetchReadSnapshot(roomID: String, lastMessageSeqHint: Int64?, lastMessageSenderUID: String?) async -> ChatRoomReadSnapshot? {
         do {
             let lastRead = try await userProfileRepository.fetchLastReadSeq(for: roomID)
             let latest: Int64 = {
@@ -112,7 +112,7 @@ final class JoinedRoomsUseCase: JoinedRoomsUseCaseProtocol {
                 roomID: roomID,
                 latestSeq: resolvedLatest,
                 lastReadSeq: lastRead,
-                lastMessageSenderID: lastMessageSenderID
+                lastMessageSenderUID: lastMessageSenderUID
             )
         } catch {
             print("⚠️ unread 계산 실패(roomID=\(roomID)): \(error)")
@@ -121,7 +121,7 @@ final class JoinedRoomsUseCase: JoinedRoomsUseCaseProtocol {
     }
 
     func canLeaveFromList(room: ChatRoom) -> Bool {
-        room.creatorID != LoginManager.shared.getUserEmail
+        room.creatorUID != LoginManager.shared.getUserUID
     }
 
     func leave(room: ChatRoom) async throws -> ChatRoomExitResult {

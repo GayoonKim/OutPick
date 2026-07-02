@@ -280,13 +280,13 @@ struct LookbookChatShareUseCaseTests {
             roomName: "Test Room",
             roomDescription: "Test Description",
             participants: participants,
-            creatorID: "owner@example.com",
+            creatorUID: "owner@example.com",
             createdAt: Date(timeIntervalSince1970: 0),
             thumbPath: nil,
             originalPath: nil,
             lastMessageAt: lastMessageAt,
             lastMessage: nil,
-            lastMessageSenderID: nil,
+            lastMessageSenderUID: nil,
             seq: 0,
             isClosed: isClosed,
             activeAnnouncementID: nil,
@@ -521,16 +521,16 @@ private final class JoinedRoomsUseCaseFake: JoinedRoomsUseCaseProtocol {
     @MainActor
     func stopRoomUpdates() {}
 
-    func fetchUnreadCount(roomID: String, lastMessageSeqHint: Int64?, lastMessageSenderID: String?) async -> Int64 {
+    func fetchUnreadCount(roomID: String, lastMessageSeqHint: Int64?, lastMessageSenderUID: String?) async -> Int64 {
         0
     }
 
-    func fetchReadSnapshot(roomID: String, lastMessageSeqHint: Int64?, lastMessageSenderID: String?) async -> ChatRoomReadSnapshot? {
+    func fetchReadSnapshot(roomID: String, lastMessageSeqHint: Int64?, lastMessageSenderUID: String?) async -> ChatRoomReadSnapshot? {
         ChatRoomReadSnapshot(
             roomID: roomID,
             latestSeq: lastMessageSeqHint,
             lastReadSeq: lastMessageSeqHint,
-            lastMessageSenderID: lastMessageSenderID
+            lastMessageSenderUID: lastMessageSenderUID
         )
     }
 

@@ -14,10 +14,10 @@ import Testing
 struct ChatRoomViewModelMessageActionTests {
     @Test func messageActionPolicyUsesCurrentRoomCreator() {
         let viewModel = makeViewModel(
-            room: makeRoom(id: "room-1", creatorID: "admin@example.com"),
-            currentUserProvider: CurrentUserProviderStub(email: "admin@example.com")
+            room: makeRoom(id: "room-1", creatorUID: "admin-uid"),
+            currentUserProvider: CurrentUserProviderStub(email: "admin@example.com", documentID: "admin-uid")
         )
-        let message = makeMessage(senderID: "sender@example.com", msg: "공지 후보")
+        let message = makeMessage(senderUID: "sender-uid", msg: "공지 후보")
 
         let policy = viewModel.messageActionPolicy(for: message)
 
@@ -29,7 +29,7 @@ struct ChatRoomViewModelMessageActionTests {
     @Test func performDeleteServerActionDelegatesToMessageUseCase() async throws {
         let messageUseCase = ChatRoomMessageUseCaseSpy()
         let viewModel = makeViewModel(messageUseCase: messageUseCase)
-        let message = makeMessage(senderID: "me@example.com", msg: "삭제할 메시지")
+        let message = makeMessage(senderUID: "me@example.com", msg: "삭제할 메시지")
 
         try await viewModel.performMessageServerAction(.delete, for: message)
 
@@ -40,7 +40,7 @@ struct ChatRoomViewModelMessageActionTests {
     @Test func performAnnounceServerActionDelegatesToLifecycleUseCase() async throws {
         let lifecycleUseCase = ChatRoomLifecycleUseCaseSpy()
         let viewModel = makeViewModel(lifecycleUseCase: lifecycleUseCase)
-        let message = makeMessage(senderID: "me@example.com", msg: "공지할 메시지")
+        let message = makeMessage(senderUID: "me@example.com", msg: "공지할 메시지")
 
         try await viewModel.performMessageServerAction(
             .announce(authorID: "관리자"),
@@ -61,7 +61,7 @@ struct ChatRoomViewModelMessageActionTests {
             lifecycleUseCase: lifecycleUseCase,
             roomReadStateStore: readStateStore
         )
-        let message = makeMessage(senderID: "other@example.com", msg: "새 메시지", seq: 12)
+        let message = makeMessage(senderUID: "other@example.com", msg: "새 메시지", seq: 12)
 
         viewModel.applyVisibleWindowAfterSearchJump([message])
         try await viewModel.persistFinalLastReadSeq(userUID: "user-1")
@@ -74,12 +74,12 @@ struct ChatRoomViewModelMessageActionTests {
 
     @Test func currentUserProviderDrivesParticipantAndAdminChecks() {
         let viewModel = makeViewModel(
-            room: makeRoom(id: "room-1", creatorID: "me@example.com"),
-            currentUserProvider: CurrentUserProviderStub(email: "me@example.com")
+            room: makeRoom(id: "room-1", creatorUID: "me-uid"),
+            currentUserProvider: CurrentUserProviderStub(email: "me@example.com", documentID: "me-uid")
         )
 
         #expect(viewModel.isCurrentUserParticipant)
-        #expect(viewModel.isCurrentUser("me@example.com"))
+        #expect(viewModel.isCurrentUser("me-uid"))
         #expect(viewModel.isCurrentUserAdmin(of: viewModel.room))
     }
 
@@ -89,7 +89,7 @@ struct ChatRoomViewModelMessageActionTests {
             lifecycleUseCase: lifecycleUseCase,
             currentUserProvider: CurrentUserProviderStub(documentID: "document-123")
         )
-        let message = makeMessage(senderID: "other@example.com", msg: "새 메시지", seq: 9)
+        let message = makeMessage(senderUID: "other@example.com", msg: "새 메시지", seq: 9)
 
         viewModel.applyVisibleWindowAfterSearchJump([message])
         try await viewModel.persistFinalLastReadSeqForCurrentUser()
@@ -107,7 +107,7 @@ struct ChatRoomViewModelMessageActionTests {
         roomReadStateStore: ChatRoomReadStateStore? = nil
     ) -> ChatRoomViewModel {
         ChatRoomViewModel(
-            room: room ?? makeRoom(id: "room-1", creatorID: "owner@example.com"),
+            room: room ?? makeRoom(id: "room-1", creatorUID: "owner@example.com"),
             initialLoadUseCase: ChatInitialLoadUseCaseStub(),
             messageUseCase: messageUseCase,
             searchUseCase: ChatRoomSearchUseCaseStub(),
@@ -119,19 +119,19 @@ struct ChatRoomViewModelMessageActionTests {
         )
     }
 
-    private func makeRoom(id: String?, creatorID: String) -> ChatRoom {
+    private func makeRoom(id: String?, creatorUID: String) -> ChatRoom {
         ChatRoom(
             ID: id,
             roomName: "Test Room",
             roomDescription: "Test Description",
-            participants: ["me@example.com", "sender@example.com"],
-            creatorID: creatorID,
+            participants: ["me-uid", "sender-uid"],
+            creatorUID: creatorUID,
             createdAt: Date(timeIntervalSince1970: 0),
             thumbPath: nil,
             originalPath: nil,
             lastMessageAt: nil,
             lastMessage: nil,
-            lastMessageSenderID: nil,
+            lastMessageSenderUID: nil,
             seq: 0,
             isClosed: false,
             activeAnnouncementID: nil,
@@ -140,12 +140,13 @@ struct ChatRoomViewModelMessageActionTests {
         )
     }
 
-    private func makeMessage(senderID: String, msg: String?, seq: Int64 = 1) -> ChatMessage {
+    private func makeMessage(senderUID: String, msg: String?, seq: Int64 = 1) -> ChatMessage {
         ChatMessage(
             ID: "message-1",
             seq: seq,
             roomID: "room-1",
-            senderID: senderID,
+            senderUID: senderUID,
+            senderEmail: nil,
             senderNickname: "sender",
             senderAvatarPath: nil,
             msg: msg,
@@ -320,6 +321,7 @@ private struct CurrentUserProviderStub: CurrentUserProviding {
     var email: String = "me@example.com"
     var documentID: String = "user-1"
     var authIdentityKey: String = "auth-user-1"
+    var uid: String { documentID.isEmpty ? authIdentityKey : documentID }
     var nickname: String? = "me"
     var avatarPath: String? = nil
     var profile: UserProfile? = nil

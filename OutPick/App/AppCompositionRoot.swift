@@ -13,7 +13,10 @@ enum AppCompositionRoot {
     static func makeCoordinator(window: UIWindow) -> AppCoordinator {
         let db = Firestore.firestore()
         let userProfileRepository: UserProfileRepositoryProtocol = UserProfileRepository(db: db)
-        let currentUserProvider = LoginManagerCurrentUserProvider()
+        let currentUserSessionStore = CurrentUserSessionStore()
+        let currentUserProvider = LoginManagerCurrentUserProvider(
+            sessionStore: currentUserSessionStore
+        )
         let realtimeSocketService = RealtimeSocketService.shared
         let joinedRoomsStore = JoinedRoomsSessionStore()
         let brandAdminSessionStore = BrandAdminSessionStore()
@@ -30,6 +33,7 @@ enum AppCompositionRoot {
             userProfileRepository: userProfileRepository,
             joinedRoomsStore: joinedRoomsStore,
             brandAdminSessionStore: brandAdminSessionStore,
+            currentUserSessionStore: currentUserSessionStore,
             currentUserProvider: currentUserProvider,
             realtimeSocketService: realtimeSocketService,
             avatarImageManager: avatarImageManager,

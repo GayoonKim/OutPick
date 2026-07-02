@@ -111,13 +111,13 @@ private func makeRoom(id: String, name: String, description: String = "") -> Cha
         roomName: name,
         roomDescription: description,
         participants: [],
-        creatorID: "owner@example.com",
+        creatorUID: "owner@example.com",
         createdAt: Date(timeIntervalSince1970: 0),
         thumbPath: nil,
         originalPath: nil,
         lastMessageAt: Date(timeIntervalSince1970: 10),
         lastMessage: nil,
-        lastMessageSenderID: nil
+        lastMessageSenderUID: nil
     )
 }
 

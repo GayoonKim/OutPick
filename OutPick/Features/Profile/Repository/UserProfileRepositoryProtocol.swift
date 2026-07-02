@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import Combine
 import FirebaseFirestore
 
 /// 사용자 프로필 관련 데이터베이스 작업을 위한 프로토콜
@@ -14,20 +13,8 @@ protocol UserProfileRepositoryProtocol {
     /// 로그인 identity(provider key)를 사용자 문서 ID로 사용해 users/{identityKey} 문서를 조회/생성
     func resolveOrCreateUserDocumentID(authenticatedUser: AuthenticatedUser) async throws -> String
 
-    /// 현재 로그인 사용자 프로필에 대한 실시간 리스너 시작
-    func listenToCurrentUserProfile(onCurrentUserProfileUpdated: ((UserProfile) -> Void)?)
-
-    /// 특정 사용자 프로필에 대한 실시간 리스너 시작
-    func listenToUserProfile(email: String, onCurrentUserProfileUpdated: ((UserProfile) -> Void)?)
-    
-    /// 사용자 프로필 변경을 구독할 수 있는 Publisher 반환
-    func userProfilePublisher(email: String) -> AnyPublisher<UserProfile, Error>
-    
-    /// 사용자 프로필 리스너 중지
-    func stopListenUserProfile(email: String)
-    
     /// Firestore에 사용자 프로필 저장
-    func saveCurrentUserProfile() async throws
+    func saveCurrentUserProfile(_ profile: UserProfile) async throws
     
     /// Firestore에서 현재 로그인 사용자 프로필 조회
     func fetchCurrentUserProfile() async throws -> UserProfile
@@ -64,11 +51,4 @@ protocol UserProfileRepositoryProtocol {
 
     /// 현재 로그인 디바이스의 push/presence 상태 갱신 (users/{id}/devices/{deviceID})
     func upsertPushDevice(userDocumentID: String, state: PushDeviceState) async throws
-}
-
-extension UserProfileRepositoryProtocol {
-    /// 기존 호출부 호환용 기본 오버로드
-    func listenToUserProfile(email: String) {
-        listenToUserProfile(email: email, onCurrentUserProfileUpdated: nil)
-    }
 }

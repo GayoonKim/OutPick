@@ -86,7 +86,7 @@ final class FirebaseChatRoomMediaIndexRepository: FirebaseChatRoomMediaIndexRepo
             "messageID": entry.messageID,
             "idx": entry.idx,
             "seq": entry.seq,
-            "senderID": entry.senderID,
+            "senderUID": entry.senderUID,
             "type": entry.type.rawValue,
             "isDeleted": entry.isDeleted,
             "sentAt": Timestamp(date: entry.sentAt)
@@ -133,7 +133,7 @@ final class FirebaseChatRoomMediaIndexRepository: FirebaseChatRoomMediaIndexRepo
 
         let seq = int64Value(from: data["seq"]) ?? 0
 
-        let senderID = data["senderID"] as? String ?? ""
+        let senderUID = data["senderUID"] as? String ?? ""
         let type = Attachment.AttachmentType(rawValue: data["type"] as? String ?? "image") ?? .image
         let sentAt = (data["sentAt"] as? Timestamp)?.dateValue() ?? Date.distantPast
 
@@ -142,7 +142,7 @@ final class FirebaseChatRoomMediaIndexRepository: FirebaseChatRoomMediaIndexRepo
             messageID: messageID,
             idx: idx,
             seq: seq,
-            senderID: senderID,
+            senderUID: senderUID,
             type: type,
             thumbKey: data["thumbKey"] as? String,
             originalKey: data["originalKey"] as? String,

@@ -15,15 +15,21 @@ final class DefaultMainTabBuilder: MainTabBuilding {
 
     private let lookbookContainer: LookbookContainer
     private let chatCoordinator: ChatCoordinator
+    private let currentUserProvider: any CurrentUserProviding
     var appContentRouter: (any AppContentRouting)? {
         didSet {
             chatCoordinator.appContentRouter = appContentRouter
         }
     }
 
-    init(lookbookContainer: LookbookContainer, chatContainer: ChatContainer) {
+    init(
+        lookbookContainer: LookbookContainer,
+        chatContainer: ChatContainer,
+        currentUserProvider: any CurrentUserProviding
+    ) {
         self.lookbookContainer = lookbookContainer
         self.chatCoordinator = ChatCoordinator(container: chatContainer)
+        self.currentUserProvider = currentUserProvider
     }
 
     func makeTabViewControllers() -> [UIViewController] {
@@ -51,7 +57,7 @@ final class DefaultMainTabBuilder: MainTabBuilding {
 
         case 4:
             // 내 설정 탭
-            let myPageVC = MyPageViewController()
+            let myPageVC = MyPageViewController(currentUserProvider: currentUserProvider)
             let nav = UINavigationController(rootViewController: myPageVC)
             nav.isNavigationBarHidden = true
             return nav

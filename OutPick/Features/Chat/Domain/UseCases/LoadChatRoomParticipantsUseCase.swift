@@ -26,7 +26,7 @@ final class LoadChatRoomParticipantsUseCase: LoadChatRoomParticipantsUseCaseProt
 
     private var activeRoomID: String?
     private var hasMore: Bool = true
-    private var loadedParticipantEmails: Set<String> = []
+    private var loadedParticipantUIDs: Set<String> = []
 
     init(
         participantsRepository: ChatRoomParticipantsRepositoryProtocol,
@@ -49,8 +49,8 @@ final class LoadChatRoomParticipantsUseCase: LoadChatRoomParticipantsUseCaseProt
             limit: pageSize
         )
 
-        loadedParticipantEmails = Set(page.map { normalizedEmail($0.email) })
-        hasMore = total > loadedParticipantEmails.count
+        loadedParticipantUIDs = Set(page.map { normalizedUID($0.email) })
+        hasMore = total > loadedParticipantUIDs.count
 
         return ChatRoomParticipantsLoadResult(users: page, hasMore: hasMore)
     }
@@ -73,8 +73,8 @@ final class LoadChatRoomParticipantsUseCase: LoadChatRoomParticipantsUseCaseProt
             limit: pageSize
         )
 
-        loadedParticipantEmails = Set(page.map { normalizedEmail($0.email) })
-        hasMore = total > loadedParticipantEmails.count
+        loadedParticipantUIDs = Set(page.map { normalizedUID($0.email) })
+        hasMore = total > loadedParticipantUIDs.count
 
         return ChatRoomParticipantsLoadResult(users: page, hasMore: hasMore)
     }
@@ -95,7 +95,7 @@ final class LoadChatRoomParticipantsUseCase: LoadChatRoomParticipantsUseCaseProt
         var nextUsers = nextUsersForDisplay(from: allUsers)
 
         if nextUsers.isEmpty {
-            let authoritativeCount = authoritativeParticipantEmails(for: room).count
+            let authoritativeCount = authoritativeParticipantUIDs(for: room).count
             if allUsers.count < authoritativeCount {
                 try fillParticipantsFromServerIfNeeded(
                     room: room,
@@ -108,13 +108,13 @@ final class LoadChatRoomParticipantsUseCase: LoadChatRoomParticipantsUseCaseProt
         }
 
         if !nextUsers.isEmpty {
-            try await refreshProfiles(emails: nextUsers.map(\.email))
+            try await refreshProfiles(userIDs: nextUsers.map(\.email))
             allUsers = try participantsRepository.fetchLocalUsers(in: roomID)
             nextUsers = nextUsersForDisplay(from: allUsers)
         }
 
-        loadedParticipantEmails.formUnion(nextUsers.map { normalizedEmail($0.email) })
-        hasMore = loadedParticipantEmails.count < allUsers.count
+        loadedParticipantUIDs.formUnion(nextUsers.map { normalizedUID($0.email) })
+        hasMore = loadedParticipantUIDs.count < allUsers.count
 
         return ChatRoomParticipantsLoadResult(users: nextUsers, hasMore: hasMore)
     }
@@ -122,35 +122,35 @@ final class LoadChatRoomParticipantsUseCase: LoadChatRoomParticipantsUseCaseProt
     private func resetState(for roomID: String) {
         activeRoomID = roomID
         hasMore = true
-        loadedParticipantEmails = []
+        loadedParticipantUIDs = []
     }
 
     private func nextUsersForDisplay(from users: [LocalUser]) -> [LocalUser] {
         Array(
             users.lazy
-                .filter { !self.loadedParticipantEmails.contains(self.normalizedEmail($0.email)) }
+                .filter { !self.loadedParticipantUIDs.contains(self.normalizedUID($0.email)) }
                 .prefix(pageSize)
         )
     }
 
     private func reconcileMembership(room: ChatRoom, roomID: String) throws {
-        let authoritativeParticipants = authoritativeParticipantEmails(for: room)
-        let localParticipantEmails = try participantsRepository.userEmails(in: roomID)
-        let localParticipantsByNormalized = Dictionary(grouping: localParticipantEmails, by: normalizedEmail)
+        let authoritativeParticipants = authoritativeParticipantUIDs(for: room)
+        let localParticipantUIDs = try participantsRepository.userEmails(in: roomID)
+        let localParticipantsByNormalized = Dictionary(grouping: localParticipantUIDs, by: normalizedUID)
         let localParticipants = Set(localParticipantsByNormalized.keys)
 
         let removedParticipants = localParticipants.subtracting(authoritativeParticipants).sorted()
         for normalized in removedParticipants {
-            for rawEmail in localParticipantsByNormalized[normalized] ?? [] {
-                try participantsRepository.removeLocalUser(rawEmail, fromRoom: roomID)
+            for rawUID in localParticipantsByNormalized[normalized] ?? [] {
+                try participantsRepository.removeLocalUser(rawUID, fromRoom: roomID)
             }
         }
 
         for normalized in authoritativeParticipants {
-            let rawEmails = localParticipantsByNormalized[normalized] ?? []
-            let nonCanonicalEmails = rawEmails.filter { $0 != normalized }
-            for rawEmail in nonCanonicalEmails {
-                try participantsRepository.removeLocalUser(rawEmail, fromRoom: roomID)
+            let rawUIDs = localParticipantsByNormalized[normalized] ?? []
+            let nonCanonicalUIDs = rawUIDs.filter { $0 != normalized }
+            for rawUID in nonCanonicalUIDs {
+                try participantsRepository.removeLocalUser(rawUID, fromRoom: roomID)
             }
         }
 
@@ -165,9 +165,9 @@ final class LoadChatRoomParticipantsUseCase: LoadChatRoomParticipantsUseCaseProt
         roomID: String,
         targetCount: Int
     ) throws {
-        let authoritativeParticipants = authoritativeParticipantEmails(for: room)
+        let authoritativeParticipants = authoritativeParticipantUIDs(for: room)
         let localParticipants = Set(
-            try participantsRepository.userEmails(in: roomID).map { normalizedEmail($0) }
+            try participantsRepository.userEmails(in: roomID).map { normalizedUID($0) }
         )
         let desiredCount = min(targetCount, authoritativeParticipants.count)
         guard localParticipants.count < desiredCount else { return }
@@ -180,16 +180,16 @@ final class LoadChatRoomParticipantsUseCase: LoadChatRoomParticipantsUseCaseProt
     }
 
     private func attachPlaceholderParticipants(
-        _ emails: [String],
+        _ uids: [String],
         toRoom roomID: String
     ) throws {
-        let normalizedEmails = uniqueNormalizedEmails(from: emails)
-        guard !normalizedEmails.isEmpty else { return }
+        let normalizedUIDs = uniqueNormalizedUIDs(from: uids)
+        guard !normalizedUIDs.isEmpty else { return }
 
-        for email in normalizedEmails {
-            let existingLocalUser = try participantsRepository.fetchLocalUser(email: email)
+        for uid in normalizedUIDs {
+            let existingLocalUser = try participantsRepository.fetchLocalUser(email: uid)
             let nickname = resolvedNickname(
-                email: email,
+                uid: uid,
                 fetchedNickname: nil,
                 existingNickname: existingLocalUser?.nickname,
                 allowPlaceholder: true
@@ -198,12 +198,12 @@ final class LoadChatRoomParticipantsUseCase: LoadChatRoomParticipantsUseCaseProt
 
             if let nickname {
                 try participantsRepository.upsertLocalUser(
-                    email: email,
+                    email: uid,
                     nickname: nickname,
                     profileImagePath: profileImagePath
                 )
             }
-            try participantsRepository.addLocalUser(email, toRoom: roomID)
+            try participantsRepository.addLocalUser(uid, toRoom: roomID)
         }
     }
 
@@ -213,24 +213,21 @@ final class LoadChatRoomParticipantsUseCase: LoadChatRoomParticipantsUseCaseProt
             offset: offset,
             limit: limit
         )
-        try await refreshProfiles(emails: page.map(\.email))
+        try await refreshProfiles(userIDs: page.map(\.email))
     }
 
-    private func refreshProfiles(emails: [String]) async throws {
-        let normalizedEmails = uniqueNormalizedEmails(from: emails)
-        guard !normalizedEmails.isEmpty else { return }
+    private func refreshProfiles(userIDs: [String]) async throws {
+        let normalizedUserIDs = uniqueNormalizedUIDs(from: userIDs)
+        guard !normalizedUserIDs.isEmpty else { return }
 
-        let fetchedProfiles = try await userProfileRepository.fetchUserProfiles(emails: normalizedEmails)
-        let profilesByEmail = Dictionary(
-            uniqueKeysWithValues: fetchedProfiles.map { (normalizedEmail($0.email), $0) }
-        )
+        let profilesByUserID = try await userProfileRepository.fetchUserProfiles(userIDs: normalizedUserIDs)
 
-        for email in normalizedEmails {
-            guard let profile = profilesByEmail[email] else { continue }
+        for userID in normalizedUserIDs {
+            guard let profile = profilesByUserID[userID] else { continue }
 
-            let existingLocalUser = try participantsRepository.fetchLocalUser(email: email)
+            let existingLocalUser = try participantsRepository.fetchLocalUser(email: userID)
             let nickname = resolvedNickname(
-                email: email,
+                uid: userID,
                 fetchedNickname: profile.nickname,
                 existingNickname: existingLocalUser?.nickname,
                 allowPlaceholder: false
@@ -244,28 +241,28 @@ final class LoadChatRoomParticipantsUseCase: LoadChatRoomParticipantsUseCaseProt
             }
 
             try participantsRepository.upsertLocalUser(
-                email: email,
+                email: userID,
                 nickname: nickname,
                 profileImagePath: nextProfileImagePath
             )
         }
     }
 
-    private func authoritativeParticipantEmails(for room: ChatRoom) -> Set<String> {
-        Set(uniqueNormalizedEmails(from: room.participants))
+    private func authoritativeParticipantUIDs(for room: ChatRoom) -> Set<String> {
+        Set(uniqueNormalizedUIDs(from: room.participants))
     }
 
-    private func uniqueNormalizedEmails(from emails: [String]) -> [String] {
+    private func uniqueNormalizedUIDs(from uids: [String]) -> [String] {
         var seen = Set<String>()
-        return emails.compactMap { raw in
-            let email = normalizedEmail(raw)
-            guard !email.isEmpty, seen.insert(email).inserted else { return nil }
-            return email
+        return uids.compactMap { raw in
+            let uid = normalizedUID(raw)
+            guard !uid.isEmpty, !uid.contains("/"), seen.insert(uid).inserted else { return nil }
+            return uid
         }
     }
 
     private func resolvedNickname(
-        email: String,
+        uid: String,
         fetchedNickname: String?,
         existingNickname: String?,
         allowPlaceholder: Bool
@@ -280,10 +277,10 @@ final class LoadChatRoomParticipantsUseCase: LoadChatRoomParticipantsUseCaseProt
             return existing
         }
 
-        return allowPlaceholder ? email : nil
+        return allowPlaceholder ? uid : nil
     }
 
-    private func normalizedEmail(_ email: String) -> String {
-        email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    private func normalizedUID(_ uid: String) -> String {
+        uid.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

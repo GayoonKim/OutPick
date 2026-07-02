@@ -520,7 +520,7 @@ class ChatMessageCell: UICollectionViewCell {
         hideVideoBadge()
 
         // Compute isMine once
-        let isMine = LoginManager.shared.getUserEmail == message.senderID
+        let isMine = LoginManager.shared.getUserUID == message.senderUID
         configureProfileArea(with: message, isMine: isMine, avatarLoader: avatarLoader)
 
         if message.isDeleted {
@@ -664,7 +664,7 @@ class ChatMessageCell: UICollectionViewCell {
 
             let containerWidth = UIScreen.main.bounds.width * 0.7
 
-            let isMine = LoginManager.shared.getUserEmail == message.senderID
+            let isMine = LoginManager.shared.getUserUID == message.senderUID
             configureProfileArea(with: message, isMine: isMine, avatarLoader: avatarLoader)
             if isMine {
                 // 본인이 보낸(삭제된) 메시지로 표시
@@ -745,7 +745,7 @@ class ChatMessageCell: UICollectionViewCell {
             }
         }
 
-        let isMine = LoginManager.shared.getUserEmail == message.senderID
+        let isMine = LoginManager.shared.getUserUID == message.senderUID
         configureProfileArea(with: message, isMine: isMine, avatarLoader: avatarLoader)
         if isMine {
             // 본인이 보낸 사진
@@ -825,7 +825,7 @@ class ChatMessageCell: UICollectionViewCell {
             return
         }
 
-        let isMine = LoginManager.shared.getUserEmail == message.senderID
+        let isMine = LoginManager.shared.getUserUID == message.senderUID
         configureProfileArea(with: message, isMine: isMine, avatarLoader: avatarLoader)
 
         representedLookbookSharedContent = message.sharedContent

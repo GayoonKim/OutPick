@@ -47,7 +47,7 @@ struct ChatMessageActionPolicy: Equatable, Sendable {
         currentUserID: String,
         roomCreatorID: String?
     ) -> ChatMessageActionPolicy {
-        let isOwner = currentUserID == message.senderID
+        let isOwner = currentUserID == message.senderUID
         let isAdmin = roomCreatorID == currentUserID
         let canDelete = isOwner || isAdmin
 

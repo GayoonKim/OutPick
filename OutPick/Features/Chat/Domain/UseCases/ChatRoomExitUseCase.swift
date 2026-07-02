@@ -56,20 +56,17 @@ final class ChatRoomExitUseCase: ChatRoomExitUseCaseProtocol {
 
 final class DefaultChatRoomLocalExitCleaner: ChatRoomLocalExitCleaning {
     private let grdbManager: GRDBManager
-    private let loginManager: LoginManager
     private let joinedRoomsStore: JoinedRoomsSessionStoring
     private let joinedRoomsRuntime: JoinedRoomsSessionRuntimeHandling
     private let roomRepository: FirebaseChatRoomRepositoryProtocol
 
     init(
         grdbManager: GRDBManager = .shared,
-        loginManager: LoginManager = .shared,
         joinedRoomsStore: JoinedRoomsSessionStoring,
         joinedRoomsRuntime: JoinedRoomsSessionRuntimeHandling,
         roomRepository: FirebaseChatRoomRepositoryProtocol
     ) {
         self.grdbManager = grdbManager
-        self.loginManager = loginManager
         self.joinedRoomsStore = joinedRoomsStore
         self.joinedRoomsRuntime = joinedRoomsRuntime
         self.roomRepository = roomRepository
@@ -84,10 +81,6 @@ final class DefaultChatRoomLocalExitCleaner: ChatRoomLocalExitCleaning {
         }
 
         await MainActor.run {
-            if var profile = loginManager.currentUserProfile {
-                profile.joinedRooms.removeAll { $0 == roomID }
-                loginManager.setCurrentUserProfile(profile)
-            }
             joinedRoomsStore.remove(roomID)
             joinedRoomsRuntime.removeJoinedRoom(roomID)
             roomRepository.removeLocalJoinedRoom(roomID: roomID)

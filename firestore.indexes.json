@@ -5,7 +5,7 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "participantIDs",
+          "fieldPath": "participantUIDs",
           "arrayConfig": "CONTAINS"
         },
         {
@@ -19,7 +19,7 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "participantIDs",
+          "fieldPath": "participantUIDs",
           "arrayConfig": "CONTAINS"
         },
         {

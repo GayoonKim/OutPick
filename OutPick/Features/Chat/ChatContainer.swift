@@ -97,7 +97,15 @@ final class ChatContainer {
         self.chatRoomMessageUseCase = ChatRoomMessageUseCase(
             messageManager: managers.messageManager,
             sendingRepository: chatMessageSendingRepository,
-            deletedLastMessageSummaryUpdater: self.roomRepository as? ChatDeletedLastMessageSummaryUpdating
+            deletedLastMessageSummaryUpdater: self.roomRepository as? ChatDeletedLastMessageSummaryUpdating,
+            currentUserProvider: {
+                ChatMessageSenderSnapshot(
+                    senderUID: currentUserProvider.uid,
+                    senderEmail: currentUserProvider.email,
+                    senderNickname: currentUserProvider.nickname ?? "",
+                    senderAvatarPath: currentUserProvider.avatarPath
+                )
+            }
         )
         self.chatRoomRealtimeUseCase = ChatRoomRealtimeUseCase(
             repository: SocketChatRoomRealtimeRepository(socketManager: realtimeSocketService)
@@ -129,7 +137,15 @@ final class ChatContainer {
             imageStorageRepository: repositories.imageStorageRepository,
             videoStorageRepository: repositories.videoStorageRepository,
             sendingRepository: chatMediaMessageSendingRepository,
-            attachmentImageLoader: attachmentImageLoader
+            attachmentImageLoader: attachmentImageLoader,
+            currentUserProvider: {
+                ChatMessageSenderSnapshot(
+                    senderUID: currentUserProvider.uid,
+                    senderEmail: currentUserProvider.email,
+                    senderNickname: currentUserProvider.nickname ?? "",
+                    senderAvatarPath: currentUserProvider.avatarPath
+                )
+            }
         )
         self.chatOutgoingOutboxUseCase = ChatOutgoingOutboxUseCase(
             imageStorageRepository: repositories.imageStorageRepository,

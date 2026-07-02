@@ -130,7 +130,7 @@ class RoomListCollectionViewCell: UICollectionViewCell {
         ])
     }
     
-    func configure(room: ChatRoom, messages: [ChatMessage]) {
+    func configure(room: ChatRoom, messages: [ChatMessage], currentUserUID: String) {
         imageLoadTask?.cancel()
         imageLoadTask = nil
         representedImagePath = room.coverImagePath
@@ -157,10 +157,9 @@ class RoomListCollectionViewCell: UICollectionViewCell {
             placeholder.heightAnchor.constraint(equalToConstant: 50).isActive = true
             previewStackView.addArrangedSubview(placeholder)
         } else {
-            let myNickname = LoginManager.shared.currentUserProfile?.nickname
             for message in messages {
                 let preview = MessagePreviewView()
-                let isMine = (message.senderNickname == myNickname)
+                let isMine = message.senderUID == currentUserUID
                 preview.configure(with: message, isMine: isMine)
                 previewStackView.addArrangedSubview(preview)
             }

@@ -27,9 +27,9 @@ protocol FirebaseChatRoomRepositoryProtocol {
     ///   - message: 마지막 메시지 프리뷰
     ///   - sentAt: 마지막 메시지 시각
     ///   - seq: 서버가 전달한 메시지 시퀀스(없으면 nil)
-    ///   - senderID: 마지막 메시지 발신자 ID(없으면 nil)
+    ///   - senderUID: 마지막 메시지 발신자 ID(없으면 nil)
     @MainActor
-    func applyRealtimeSummaryPatch(roomID: String, message: String, sentAt: Date, seq: Int64?, senderID: String?)
+    func applyRealtimeSummaryPatch(roomID: String, message: String, sentAt: Date, seq: Int64?, senderUID: String?)
     
     /// 로컬 방 정보 업데이트 (캐시 갱신)
     func applyLocalRoomUpdate(_ updatedRoom: ChatRoom)
@@ -42,7 +42,7 @@ protocol FirebaseChatRoomRepositoryProtocol {
     func fetchTopRoomsPage(after lastSnapshot: DocumentSnapshot?, limit: Int) async throws
     
     /// 방의 마지막 메시지 정보 업데이트
-    func updateRoomLastMessage(roomID: String, date: Date?, msg: String, senderID: String?) async
+    func updateRoomLastMessage(roomID: String, date: Date?, msg: String, senderUID: String?) async
     
     /// 방 이름/설명만 갱신
     func updateRoomMetadata(
@@ -84,7 +84,7 @@ protocol FirebaseChatRoomRepositoryProtocol {
 
     /// 참여중 방 head(요약) 실시간 리스너 시작
     @MainActor
-    func startListenJoinedRoomsSummary(userEmail: String, limit: Int)
+    func startListenJoinedRoomsSummary(userUID: String, limit: Int)
 
     /// 참여중 방 head(요약) 실시간 리스너 중지
     @MainActor
@@ -92,14 +92,14 @@ protocol FirebaseChatRoomRepositoryProtocol {
 
     /// 참여중 방 페이지 조회 (비실시간)
     func fetchJoinedRoomsPage(
-        userEmail: String,
+        userUID: String,
         after lastSnapshot: DocumentSnapshot?,
         limit: Int
     ) async throws -> (rooms: [ChatRoom], lastSnapshot: DocumentSnapshot?)
 
     /// 참여중 방 tail 변경분 조회 (delta sync)
     func fetchJoinedRoomsUpdatedSince(
-        userEmail: String,
+        userUID: String,
         since: Date,
         limit: Int
     ) async throws -> [ChatRoom]

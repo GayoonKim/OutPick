@@ -6,33 +6,21 @@
 //
 
 import Foundation
-import Combine
 import FirebaseFirestore
 
 final class UserProfileRepository: UserProfileRepositoryProtocol {
     private let db: Firestore
     private let usersCollection = "users"
-    
-    // users/{identityKey} 또는 users(email query) 프로필 스냅샷 리스너 캐시
-    private var userProfileListeners: [String: ListenerRegistration] = [:]
-    // 프로필 변경 스트림(Combine)
-    private var userProfileSubjects: [String: PassthroughSubject<UserProfile, Error>] = [:]
-    // 현재 사용자 프로필 갱신 훅(email key -> handler)
-    private var currentUserProfileHandlers: [String: (UserProfile) -> Void] = [:]
-    
     init(db: Firestore) {
         self.db = db
-    }
-    
-    deinit {
-        // 모든 리스너 정리
-        userProfileListeners.values.forEach { $0.remove() }
-        userProfileSubjects.values.forEach { $0.send(completion: .finished) }
-        currentUserProfileHandlers.removeAll()
     }
 
     private func normalizeEmail(_ email: String) -> String {
         email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    private func normalizeUserID(_ userID: String) -> String {
+        userID.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func currentUserDocumentID() -> String {
@@ -107,131 +95,8 @@ final class UserProfileRepository: UserProfileRepositoryProtocol {
         return userDocumentID
     }
 
-    func listenToCurrentUserProfile(onCurrentUserProfileUpdated: ((UserProfile) -> Void)? = nil) {
-        guard let docRef = currentUserDocumentRef() else { return }
-        let userDocumentID = docRef.documentID
-        let key = "current:\(userDocumentID)"
-
-        if let onCurrentUserProfileUpdated {
-            currentUserProfileHandlers[key] = onCurrentUserProfileUpdated
-        }
-        if userProfileListeners[key] != nil { return }
-
-        let subject: PassthroughSubject<UserProfile, Error>
-        if let s = userProfileSubjects[key] {
-            subject = s
-        } else {
-            let s = PassthroughSubject<UserProfile, Error>()
-            userProfileSubjects[key] = s
-            subject = s
-        }
-
-        let listener = docRef.addSnapshotListener { snapshot, error in
-            if let error {
-                subject.send(completion: .failure(error))
-                return
-            }
-            guard let snapshot, snapshot.exists, let data = snapshot.data(), self.hasRequiredProfileData(data) else {
-                return
-            }
-
-            let profile = self.decodeProfile(
-                data,
-                emailFallback: LoginManager.shared.getUserEmail
-            )
-            Task { @MainActor in
-                LoginManager.shared.setCurrentUserProfile(profile)
-            }
-            self.currentUserProfileHandlers[key]?(profile)
-            subject.send(profile)
-        }
-
-        userProfileListeners[key] = listener
-    }
-    
-    func listenToUserProfile(email: String, onCurrentUserProfileUpdated: ((UserProfile) -> Void)? = nil) {
-        let key = normalizeEmail(email)
-        guard !key.isEmpty else { return }
-        if let onCurrentUserProfileUpdated {
-            currentUserProfileHandlers[key] = onCurrentUserProfileUpdated
-        }
-        if let _ = userProfileListeners[key] { return }
-        
-        // subject 없으면 생성
-        let subject: PassthroughSubject<UserProfile, Error>
-        if let s = userProfileSubjects[key] {
-            subject = s
-        } else {
-            let s = PassthroughSubject<UserProfile, Error>()
-            userProfileSubjects[key] = s
-            subject = s
-        }
-
-        let query = db.collection(usersCollection)
-            .whereField("email", isEqualTo: key)
-            .limit(to: 10)
-        let listener = query.addSnapshotListener { snapshot, error in
-            if let error = error {
-                subject.send(completion: .failure(error))
-                return
-            }
-            let doc = snapshot?.documents.first(where: { self.hasRequiredProfileData($0.data()) })
-                ?? snapshot?.documents.first
-            guard let doc else { return }
-            let profile = self.decodeProfile(doc.data(), emailFallback: key)
-            subject.send(profile)
-        }
-
-        userProfileListeners[key] = listener
-        print(#function, "프로필 실시간 리스너 설정 갱신", userProfileListeners)
-    }
-    
-    func userProfilePublisher(email: String) -> AnyPublisher<UserProfile, Error> {
-        let key = normalizeEmail(email)
-        guard !key.isEmpty else {
-            return Fail(error: FirebaseError.FailedToFetchProfile).eraseToAnyPublisher()
-        }
-
-        // 1) subject 없으면 생성/캐시
-        let subject: PassthroughSubject<UserProfile, Error>
-        if let s = userProfileSubjects[key] {
-            subject = s
-        } else {
-            let s = PassthroughSubject<UserProfile, Error>()
-            userProfileSubjects[key] = s
-            subject = s
-        }
-        
-        // 2) 리스너 없으면 시작
-        if userProfileListeners[key] == nil {
-            listenToUserProfile(email: key)
-        }
-        
-        // 3) 외부에는 Publisher로만 노출
-        return subject.eraseToAnyPublisher()
-    }
-    
-    func stopListenUserProfile(email: String) {
-        let key = normalizeEmail(email)
-        guard !key.isEmpty else { return }
-
-        if let listener = userProfileListeners[key] {
-            listener.remove()
-            userProfileListeners.removeValue(forKey: key)
-        }
-        
-        if let subject = userProfileSubjects[key] {
-            subject.send(completion: .finished)
-            userProfileSubjects.removeValue(forKey: key)
-        }
-        currentUserProfileHandlers.removeValue(forKey: key)
-    }
-    
-    func saveCurrentUserProfile() async throws {
+    func saveCurrentUserProfile(_ profile: UserProfile) async throws {
         do {
-            guard let profile = LoginManager.shared.currentUserProfile else {
-                throw FirebaseError.FailedToSaveProfile
-            }
             let userDocumentID = try await LoginManager.shared.ensureUserDocumentID()
             guard !userDocumentID.isEmpty else {
                 throw FirebaseError.FailedToSaveProfile

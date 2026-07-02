@@ -62,7 +62,7 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
         var rooms = joinedRoomsSummarySubject.value
         if let idx = rooms.firstIndex(where: { $0.ID == rid }) {
             rooms[idx] = updatedRoom
-        } else if updatedRoom.participants.contains(LoginManager.shared.getUserEmail) {
+        } else if updatedRoom.participants.contains(LoginManager.shared.getUserUID) {
             rooms.insert(updatedRoom, at: 0)
         }
         joinedRoomsSummarySubject.send(rooms)
@@ -76,7 +76,7 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
     }
 
     @MainActor
-    func applyRealtimeSummaryPatch(roomID: String, message: String, sentAt: Date, seq: Int64?, senderID: String?) {
+    func applyRealtimeSummaryPatch(roomID: String, message: String, sentAt: Date, seq: Int64?, senderUID: String?) {
         guard !roomID.isEmpty else { return }
         let preview = message.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !preview.isEmpty else { return }
@@ -87,8 +87,8 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
         var room = rooms[idx]
         room.lastMessage = preview
         room.lastMessageAt = sentAt
-        if let senderID, !senderID.isEmpty {
-            room.lastMessageSenderID = senderID
+        if let senderUID, !senderUID.isEmpty {
+            room.lastMessageSenderUID = senderUID
         }
         if let seq, seq > room.seq {
             room.seq = seq
@@ -192,7 +192,7 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
     }
     
     @MainActor
-    func updateRoomLastMessage(roomID: String, date: Date? = nil, msg: String, senderID: String? = nil) async {
+    func updateRoomLastMessage(roomID: String, date: Date? = nil, msg: String, senderUID: String? = nil) async {
         guard !roomID.isEmpty else {
             print("❌ updateRoomLastMessageAt: roomID is empty")
             return
@@ -203,8 +203,8 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
             var updateData: [String: Any] = [:]
             
             updateData["lastMessage"] = msg
-            if let senderID, !senderID.isEmpty {
-                updateData["lastMessageSenderID"] = senderID
+            if let senderUID, !senderUID.isEmpty {
+                updateData["lastMessageSenderUID"] = senderUID
             }
             if let date = date {
                 updateData["lastMessageAt"] = Timestamp(date: date)
@@ -420,13 +420,13 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
     }
 
     @MainActor
-    func startListenJoinedRoomsSummary(userEmail: String, limit: Int = 50) {
-        let normalizedEmail = userEmail.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalizedEmail.isEmpty else { return }
+    func startListenJoinedRoomsSummary(userUID: String, limit: Int = 50) {
+        let normalizedUID = userUID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedUID.isEmpty else { return }
         let boundedLimit = max(1, limit)
 
         if let config = joinedRoomsSummaryConfig,
-           config.email == normalizedEmail,
+           config.email == normalizedUID,
            config.limit == boundedLimit,
            joinedRoomsSummaryListener != nil {
             return
@@ -434,10 +434,10 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
 
         joinedRoomsSummaryListener?.remove()
         joinedRoomsSummaryListener = nil
-        joinedRoomsSummaryConfig = (normalizedEmail, boundedLimit)
+        joinedRoomsSummaryConfig = (normalizedUID, boundedLimit)
 
         let query = db.collection("Rooms")
-            .whereField("participantIDs", arrayContains: normalizedEmail)
+            .whereField("participantUIDs", arrayContains: normalizedUID)
             .order(by: "lastMessageAt", descending: true)
             .limit(to: boundedLimit)
 
@@ -469,15 +469,15 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
     }
 
     func fetchJoinedRoomsPage(
-        userEmail: String,
+        userUID: String,
         after lastSnapshot: DocumentSnapshot? = nil,
         limit: Int = 50
     ) async throws -> (rooms: [ChatRoom], lastSnapshot: DocumentSnapshot?) {
-        let normalizedEmail = userEmail.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalizedEmail.isEmpty else { return ([], nil) }
+        let normalizedUID = userUID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedUID.isEmpty else { return ([], nil) }
 
         var query: Query = db.collection("Rooms")
-            .whereField("participantIDs", arrayContains: normalizedEmail)
+            .whereField("participantUIDs", arrayContains: normalizedUID)
             .order(by: "lastMessageAt", descending: true)
             .limit(to: max(1, limit))
 
@@ -498,15 +498,15 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
     }
 
     func fetchJoinedRoomsUpdatedSince(
-        userEmail: String,
+        userUID: String,
         since: Date,
         limit: Int = 200
     ) async throws -> [ChatRoom] {
-        let normalizedEmail = userEmail.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalizedEmail.isEmpty else { return [] }
+        let normalizedUID = userUID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedUID.isEmpty else { return [] }
 
         let snapshot = try await db.collection("Rooms")
-            .whereField("participantIDs", arrayContains: normalizedEmail)
+            .whereField("participantUIDs", arrayContains: normalizedUID)
             .whereField("updatedAt", isGreaterThan: Timestamp(date: since))
             .order(by: "updatedAt", descending: true)
             .limit(to: max(1, limit))
@@ -629,7 +629,7 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
                     "updatedAt": FieldValue.serverTimestamp()
                 ], forDocument: userProfileRef, merge: true)
                 transaction.updateData([
-                    "participantIDs": FieldValue.arrayUnion([LoginManager.shared.getUserEmail]),
+                    "participantUIDs": FieldValue.arrayUnion([LoginManager.shared.getUserUID]),
                     "updatedAt": FieldValue.serverTimestamp()
                 ], forDocument: roomDoc.reference)
                 return nil
@@ -652,7 +652,7 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
         guard !roomID.isEmpty else {
             throw FirebaseError.FailedToFetchRoom
         }
-        let email = LoginManager.shared.getUserEmail
+        let email = LoginManager.shared.getUserUID
         let roomRef = db.collection("Rooms").document(roomID)
         let userProfileRef = try currentUserProfileRef()
         
@@ -662,7 +662,7 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
                 "updatedAt": FieldValue.serverTimestamp()
             ], forDocument: userProfileRef, merge: true)
             transaction.updateData([
-                "participantIDs": FieldValue.arrayUnion([email]),
+                "participantUIDs": FieldValue.arrayUnion([email]),
                 "updatedAt": FieldValue.serverTimestamp()
             ], forDocument: roomRef)
             return nil
@@ -689,7 +689,7 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
                     print("⚠️ removeParticipant: roomID 없음")
                     return
                 }
-                let email = LoginManager.shared.getUserEmail
+                let email = LoginManager.shared.getUserUID
                 let userProfileRef = try currentUserProfileRef()
                 let roomRef = db.collection("Rooms").document(roomID)
                 let _ = try await db.runTransaction({ (transaction, errorPointer) -> Any? in
@@ -698,7 +698,7 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
                         "updatedAt": FieldValue.serverTimestamp()
                     ], forDocument: userProfileRef, merge: true)
                     transaction.updateData([
-                        "participantIDs": FieldValue.arrayRemove([email]),
+                        "participantUIDs": FieldValue.arrayRemove([email]),
                         "updatedAt": FieldValue.serverTimestamp()
                     ], forDocument: roomRef)
                     return nil

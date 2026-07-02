@@ -53,6 +53,7 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
     private let photoLibrarySaver: PhotoLibrarySaving
     private let roomImageManager: RoomImageManaging
     private let avatarImageManager: AvatarImageManaging
+    private let currentUserProvider: any CurrentUserProviding
     private var lastRoomCoverKey: String? = nil
     private var coverPrefetchTask: Task<Void, Never>? = nil
     /// 끝 근처에서 선로딩을 트리거할 임계값(px)
@@ -97,7 +98,8 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
         videoResolver: ChatVideoPlaybackResolving,
         photoLibrarySaver: PhotoLibrarySaving,
         roomImageManager: RoomImageManaging,
-        avatarImageManager: AvatarImageManaging
+        avatarImageManager: AvatarImageManaging,
+        currentUserProvider: any CurrentUserProviding
     ) {
         self.viewModel = viewModel
         self.attachmentImageLoader = attachmentImageLoader
@@ -105,6 +107,7 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
         self.photoLibrarySaver = photoLibrarySaver
         self.roomImageManager = roomImageManager
         self.avatarImageManager = avatarImageManager
+        self.currentUserProvider = currentUserProvider
         let layout = Self.configureLayout(
             viewModel.roomInfo,
             localUsers: viewModel.localUsers,
@@ -274,7 +277,11 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
             switch item {
             case .roomInfoItem(_):
                 let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ChatRoomInfoCell.reuseIdentifier, for: indexPath) as! ChatRoomInfoCell
-                cell.configureCell(room: self.roomInfo, roomImageManager: self.roomImageManager)
+                cell.configureCell(
+                    room: self.roomInfo,
+                    roomImageManager: self.roomImageManager,
+                    currentUserUID: self.currentUserProvider.uid
+                )
                 
                 cell.editButtonTapped = { [weak self] in
                     guard let self = self else { return }
@@ -394,7 +401,11 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
                 guard let self = self else { return }
                 if let indexPath = self.dataSource.indexPath(for: .roomInfoItem(self.roomInfo)),
                    let cell = self.collectionView.cellForItem(at: indexPath) as? ChatRoomInfoCell {
-                    cell.configureCell(room: self.roomInfo, roomImageManager: self.roomImageManager)
+                    cell.configureCell(
+                        room: self.roomInfo,
+                        roomImageManager: self.roomImageManager,
+                        currentUserUID: self.currentUserProvider.uid
+                    )
                 }
             }
         }
@@ -469,7 +480,7 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
     
     private func leaveRoomTapped() {
         ConfirmView.presentLeave(in: self.view,
-                                 isOwner: roomInfo.creatorID == LoginManager.shared.getUserEmail) { [weak self] in
+                                 isOwner: roomInfo.creatorUID == LoginManager.shared.getUserUID) { [weak self] in
             guard let self = self else { return }
             Task {
                 do {

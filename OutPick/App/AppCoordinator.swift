@@ -21,6 +21,7 @@ final class AppCoordinator {
     private var chatContainer: ChatContainer?
     private let joinedRoomsStore: JoinedRoomsSessionStore
     private let brandAdminSessionStore: BrandAdminSessionStore
+    private let currentUserSessionStore: CurrentUserSessionStore
     private let currentUserProvider: any CurrentUserProviding
     private let realtimeSocketService: RealtimeSocketService
     private let avatarImageManager: AvatarImageManaging
@@ -41,6 +42,7 @@ final class AppCoordinator {
         userProfileRepository: UserProfileRepositoryProtocol,
         joinedRoomsStore: JoinedRoomsSessionStore,
         brandAdminSessionStore: BrandAdminSessionStore,
+        currentUserSessionStore: CurrentUserSessionStore,
         currentUserProvider: any CurrentUserProviding,
         realtimeSocketService: RealtimeSocketService,
         avatarImageManager: AvatarImageManaging,
@@ -51,6 +53,7 @@ final class AppCoordinator {
         self.userProfileRepository = userProfileRepository
         self.joinedRoomsStore = joinedRoomsStore
         self.brandAdminSessionStore = brandAdminSessionStore
+        self.currentUserSessionStore = currentUserSessionStore
         self.currentUserProvider = currentUserProvider
         self.realtimeSocketService = realtimeSocketService
         self.avatarImageManager = avatarImageManager
@@ -109,9 +112,10 @@ final class AppCoordinator {
         let profileResult = await LoginManager.shared.loadUserProfile()
         
         switch profileResult {
-        case .success:
+        case .success(let profile):
             print("[AppCoordinator] complete profile found. Showing main tab.")
             await MainActor.run {
+                self.currentUserSessionStore.replaceProfile(profile)
                 _ = self.ensureChatContainer()
                 self.prewarmLookbookHome()
             }
@@ -126,6 +130,7 @@ final class AppCoordinator {
 
             do {
                 try await LoginManager.shared.bootstrapAfterLogin(
+                    currentUserProfile: profile,
                     joinedRoomsStore: joinedRoomsStore,
                     joinedRoomsRuntime: appSessionRuntime,
                     brandAdminSessionStore: brandAdminSessionStore
@@ -163,6 +168,7 @@ final class AppCoordinator {
     private func showLogin(windowScene: UIWindowScene) {
         self.joinedRoomsStore.clear()
         self.appSessionRuntime.clearJoinedRooms()
+        self.currentUserSessionStore.clear()
 
         sessionResetTask?.cancel()
         sessionResetTask = Task { @MainActor [weak self] in
@@ -214,7 +220,11 @@ final class AppCoordinator {
         let chatContainer = ensureChatContainer()
 
         // 탭 조립은 MainTabCompositionRoot가 담당 (CustomTabBarVC는 룩북을 모름)
-        let tab = MainTabCompositionRoot.makeMainTab(lookbookContainer: lbcontainer, chatContainer: chatContainer)
+        let tab = MainTabCompositionRoot.makeMainTab(
+            lookbookContainer: lbcontainer,
+            chatContainer: chatContainer,
+            currentUserProvider: currentUserProvider
+        )
         self.mainTabController = tab
 
         setRoot(tab, animated: true)
@@ -245,15 +255,17 @@ final class AppCoordinator {
         self.profileCoordinator = ProfileCoordinator(
             navigationController: nav,
             repository: userProfileRepository,
-            onCompleted: { [weak self] _ in
+            onCompleted: { [weak self] profile in
                 guard let self else { return }
                 Task { @MainActor in
+                    self.currentUserSessionStore.replaceProfile(profile)
                     _ = self.ensureChatContainer()
                 }
                 Task { [weak self] in
                     guard let self else { return }
                     do {
                         try await LoginManager.shared.bootstrapAfterLogin(
+                            currentUserProfile: profile,
                             joinedRoomsStore: self.joinedRoomsStore,
                             joinedRoomsRuntime: self.appSessionRuntime,
                             brandAdminSessionStore: self.brandAdminSessionStore
@@ -391,7 +403,7 @@ final class AppCoordinator {
             email: "uitest@outpick.local"
         )
         LoginManager.shared.setAuthenticatedUser(authenticatedUser)
-        LoginManager.shared.setCurrentUserProfile(
+        currentUserSessionStore.replaceProfile(
             UserProfile(
                 email: "uitest@outpick.local",
                 nickname: "UI 테스트"
@@ -429,7 +441,7 @@ final class AppCoordinator {
                 email: firebaseUser.email ?? email
             )
             LoginManager.shared.setAuthenticatedUser(authenticatedUser)
-            LoginManager.shared.setCurrentUserProfile(
+            currentUserSessionStore.replaceProfile(
                 UserProfile(
                     email: firebaseUser.email ?? email,
                     nickname: firebaseUser.displayName ?? "UI 테스트"

@@ -291,11 +291,11 @@ final class ChatMessageManager: ChatMessageManaging {
                 // LocalUser + RoomMember 업데이트
                 do {
                     _ = try grdbManager.upsertLocalUser(
-                        email: message.senderID,
+                        email: message.senderUID,
                         nickname: message.senderNickname,
                         profileImagePath: message.senderAvatarPath
                     )
-                    try grdbManager.addLocalUser(message.senderID, toRoom: message.roomID)
+                    try grdbManager.addLocalUser(message.senderUID, toRoom: message.roomID)
                 } catch {
                     print("⚠️ LocalUser/RoomMember 업데이트 실패: \(error)")
                 }
@@ -316,7 +316,7 @@ final class ChatMessageManager: ChatMessageManaging {
         }
         
         // 내가 보낸 정상 메시지면 Firebase 기록
-        if !message.isFailed, message.senderID == LoginManager.shared.getUserEmail {
+        if !message.isFailed, message.senderUID == LoginManager.shared.getUserUID {
             Task(priority: .utility) {
                 do {
                     try await messageRepository.saveMessage(message, room)
@@ -394,9 +394,9 @@ final class ChatMessageManager: ChatMessageManaging {
         roomID: String
     ) async throws -> ChatInitialWindow {
         guard !roomID.isEmpty else { return window }
-        let senderID = LoginManager.shared.getUserEmail
+        let senderUID = LoginManager.shared.getUserUID
         let failed = try await grdbManager
-            .fetchFailedOutgoingMessages(inRoom: roomID, senderID: senderID)
+            .fetchFailedOutgoingMessages(inRoom: roomID, senderUID: senderUID)
 
         guard !failed.isEmpty else { return window }
         try? await grdbManager.saveChatMessages(failed)

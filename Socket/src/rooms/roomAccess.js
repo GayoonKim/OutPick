@@ -1,7 +1,7 @@
-import { normalizeEmail } from "../utils/strings.js";
+import { normalizeUID } from "../utils/strings.js";
 
 export function createRoomAccess({ db }) {
-  async function loadRoomAccess(roomID, senderEmail) {
+  async function loadRoomAccess(roomID, senderUID) {
     const roomRef = db.collection("Rooms").doc(roomID);
     const snap = await roomRef.get();
 
@@ -14,11 +14,12 @@ export function createRoomAccess({ db }) {
       return { ok: false, error: "room_closed" };
     }
 
-    const participantIDs = Array.isArray(roomData.participantIDs)
-      ? roomData.participantIDs.map(normalizeEmail).filter(Boolean)
+    const participantUIDs = Array.isArray(roomData.participantUIDs)
+      ? roomData.participantUIDs.map(normalizeUID).filter(Boolean)
       : [];
 
-    if (!senderEmail || !participantIDs.includes(senderEmail)) {
+    const normalizedSenderUID = normalizeUID(senderUID);
+    if (!normalizedSenderUID || !participantUIDs.includes(normalizedSenderUID)) {
       return { ok: false, error: "not_joined" };
     }
 

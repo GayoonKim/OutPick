@@ -335,7 +335,8 @@ final class LookbookContainer {
             ),
             postInteractionStore: interactionStore,
             commentInteractionStore: interactionStore,
-            currentUserIDProvider: currentUserIDProvider
+            currentUserIDProvider: currentUserIDProvider,
+            authorProfileStore: makeCommentAuthorProfileStore()
         )
     }
 
@@ -443,6 +444,7 @@ final class LookbookContainer {
             filterHiddenAuthorsUseCase: filterHiddenCommentAuthorsUseCase,
             commentInteractionStore: interactionStore,
             currentUserIDProvider: currentUserIDProvider,
+            authorProfileStore: makeCommentAuthorProfileStore(),
             avatarImageManager: avatarImageManager
         )
     }
@@ -512,7 +514,16 @@ final class LookbookContainer {
             filterHiddenAuthorsUseCase: filterHiddenCommentAuthorsUseCase,
             commentInteractionStore: interactionStore,
             currentUserIDProvider: currentUserIDProvider,
+            authorProfileStore: makeCommentAuthorProfileStore(),
             avatarImageManager: avatarImageManager
+        )
+    }
+
+    private func makeCommentAuthorProfileStore() -> CommentAuthorProfileStore {
+        CommentAuthorProfileStore(
+            userProfileRepository: firebaseRepositories.userProfileRepository,
+            currentUserIDProvider: currentUserIDProvider,
+            currentUserProvider: currentUserProvider
         )
     }
 }

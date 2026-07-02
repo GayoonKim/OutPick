@@ -66,9 +66,10 @@ final class ChatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol {
         attachmentImageLoader: ChatAttachmentImageLoading,
         currentUserProvider: @escaping () -> ChatMessageSenderSnapshot = {
             ChatMessageSenderSnapshot(
-                senderID: LoginManager.shared.getUserEmail,
-                senderNickname: LoginManager.shared.currentUserProfile?.nickname ?? "",
-                senderAvatarPath: LoginManager.shared.currentUserProfile?.thumbPath
+                senderUID: LoginManager.shared.getUserUID,
+                senderEmail: LoginManager.shared.getUserEmail,
+                senderNickname: "",
+                senderAvatarPath: nil
             )
         },
         dateProvider: @escaping () -> Date = { Date() },
@@ -101,7 +102,8 @@ final class ChatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol {
             ID: messageID,
             seq: 0,
             roomID: roomID,
-            senderID: sender.senderID,
+            senderUID: sender.senderUID,
+            senderEmail: sender.senderEmail,
             senderNickname: sender.senderNickname,
             senderAvatarPath: sender.senderAvatarPath,
             msg: "",
@@ -127,7 +129,8 @@ final class ChatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol {
             ID: messageID,
             seq: 0,
             roomID: roomID,
-            senderID: sender.senderID,
+            senderUID: sender.senderUID,
+            senderEmail: sender.senderEmail,
             senderNickname: sender.senderNickname,
             senderAvatarPath: sender.senderAvatarPath,
             msg: "",
@@ -286,7 +289,8 @@ final class ChatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol {
         let sender = currentUserProvider()
         sendingRepository.sendFailedVideo(
             roomID: roomID,
-            senderID: sender.senderID,
+            senderUID: sender.senderUID,
+            senderEmail: sender.senderEmail,
             senderNickname: sender.senderNickname,
             localURL: prepared.compressedFileURL,
             thumbData: prepared.thumbnailData,

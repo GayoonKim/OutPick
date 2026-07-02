@@ -26,7 +26,7 @@ struct PushDeviceState: Sendable {
 struct PushNotificationRoute: Sendable, Equatable {
     let roomID: String
     let messageID: String?
-    let senderID: String?
+    let senderUID: String?
     let senderNickname: String?
     let roomName: String?
     let messageType: String?
@@ -38,7 +38,7 @@ struct PushNotificationRoute: Sendable, Equatable {
         return PushNotificationRoute(
             roomID: roomID,
             messageID: stringValue(in: userInfo, keys: ["messageID", "messageId"]),
-            senderID: stringValue(in: userInfo, keys: ["senderID", "senderId"]),
+            senderUID: stringValue(in: userInfo, keys: ["senderUID", "senderId"]),
             senderNickname: stringValue(in: userInfo, keys: ["senderNickname", "senderNickName"]),
             roomName: stringValue(in: userInfo, keys: ["roomName"]),
             messageType: stringValue(in: userInfo, keys: ["messageType", "type"])

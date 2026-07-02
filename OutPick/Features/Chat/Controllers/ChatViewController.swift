@@ -82,9 +82,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private let avatarImageManager: AvatarImageManaging
     private let profileSyncManager: ChatProfileSyncManaging
     weak var router: ChatRoomRouting?
-    private let profileScopeID = UUID()
-    private var isProfileSyncBound = false
-    private var profileSyncCancellable: AnyCancellable?
 
     init(
         mediaUploadUseCase: ChatMediaUploadUseCaseProtocol,
@@ -133,7 +130,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private var appLifecycleObservers: [NSObjectProtocol] = []
     
     deinit {
-        profileSyncCancellable?.cancel()
         let realtimeSubscription = realtimeSubscription
         Task { @MainActor in
             realtimeSubscription?.stop()
@@ -391,7 +387,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         
         convertImagesTask?.cancel()
         convertVideosTask?.cancel()
-        deactivateProfileSyncScope()
+        profileSyncManager.reset()
         removeReadMarkerIfNeeded()
         
         // 참여하지 않은 방이면 로컬 메시지 삭제 처리 (메인 바깥에서 비동기 실행)
@@ -505,7 +501,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         )
 
         applyWindowSnapshot(items, animatingDifferences: false)
-        activateProfileSync(with: messageWindowStore.visibleMessages)
+        scheduleProfileCacheRefresh(for: messageWindowStore.visibleMessages)
 
         if window.readBoundarySeq != nil {
             scrollToReadMarkerIfNeeded()
@@ -759,7 +755,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         case .buffered:
             return
         case .append:
-            profileSyncManager.ingestMessages([message], into: profileScopeID)
+            scheduleProfileCacheRefresh(for: [message])
             addMessages([message])
             maybeUpdateLastReadSeq(trigger: "liveIncoming")
         }
@@ -776,75 +772,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     // MARK: LocalUser + Profile sync 관련 함수
     @MainActor
-    private func handleProfileChanges(for senderIDs: Set<String>) {
-        let normalizedSenderIDs = Set(senderIDs.map(normalizedSenderID))
-        guard !normalizedSenderIDs.isEmpty else { return }
-
-        let currentProfiles: [String: LocalUser] = Dictionary(
-            uniqueKeysWithValues: normalizedSenderIDs.compactMap { senderID in
-                guard let profile = profileSyncManager.profile(for: senderID) else { return nil }
-                return (senderID, profile)
-            }
-        )
-        guard !currentProfiles.isEmpty else { return }
-
-        let updatedMessages = messageWindowStore.updateMessages(where: { message in
-            currentProfiles[normalizedSenderID(message.senderID)] != nil
-        }) { message in
-            let senderID = normalizedSenderID(message.senderID)
-            guard let profile = currentProfiles[senderID] else { return }
-            message.senderNickname = profile.nickname
-            message.senderAvatarPath = profile.profileImagePath
+    private func scheduleProfileCacheRefresh(for messages: [ChatMessage]) {
+        guard !messages.isEmpty else { return }
+        Task(priority: .utility) { [profileSyncManager] in
+            await profileSyncManager.refreshProfiles(from: messages)
         }
-        let updatedMessageIDs = Set(updatedMessages.map(\.ID))
-
-        var snapshot = dataSource.snapshot()
-        let items = snapshot.itemIdentifiers(inSection: .main)
-        let itemsToReload = items.filter { item in
-            guard case let .message(message) = item else { return false }
-            return updatedMessageIDs.contains(message.ID)
-        }
-
-        guard !itemsToReload.isEmpty else { return }
-        snapshot.reconfigureItems(itemsToReload)
-        dataSource.apply(snapshot, animatingDifferences: false)
-    }
-
-    @MainActor
-    private func activateProfileSync(with messages: [ChatMessage]) {
-        ensureProfileSyncBinding()
-        guard let roomID = room?.ID, !roomID.isEmpty else { return }
-
-        profileSyncManager.activateScope(profileScopeID, roomID: roomID, initialMessages: messages)
-        handleProfileChanges(for: Set(messages.map { normalizedSenderID($0.senderID) }))
-    }
-
-    @MainActor
-    private func ensureProfileSyncBinding() {
-        guard !isProfileSyncBound else { return }
-        isProfileSyncBound = true
-
-        profileSyncCancellable?.cancel()
-        profileSyncCancellable = profileSyncManager
-            .changedSenderIDsPublisher(scopeID: profileScopeID)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] senderIDs in
-                guard let self else { return }
-                self.handleProfileChanges(for: senderIDs)
-            }
-        profileSyncCancellable?.store(in: &cancellables)
-    }
-
-    @MainActor
-    private func deactivateProfileSyncScope() {
-        profileSyncCancellable?.cancel()
-        profileSyncCancellable = nil
-        isProfileSyncBound = false
-        profileSyncManager.deactivateScope(profileScopeID)
-    }
-
-    private func normalizedSenderID(_ senderID: String) -> String {
-        senderID.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
     @MainActor
@@ -1060,7 +992,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             return
         }
 
-        activateProfileSync(with: messageWindowStore.visibleMessages)
+        scheduleProfileCacheRefresh(for: messageWindowStore.visibleMessages)
         bindMessagePublishers()
     }
     
@@ -1606,7 +1538,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         NSLayoutConstraint.activate([
             showAbove ? chatCustomMenu.bottomAnchor.constraint(equalTo: cell.referenceView.topAnchor, constant: -8) : chatCustomMenu.topAnchor.constraint(equalTo: cell.referenceView.bottomAnchor, constant: 8),
             
-            chatRoomViewModel.isCurrentUser(latestMessage.senderID) ? chatCustomMenu.trailingAnchor.constraint(equalTo: cell.referenceView.trailingAnchor, constant: 0) : chatCustomMenu.leadingAnchor.constraint(equalTo: cell.referenceView.leadingAnchor, constant: 0)
+            chatRoomViewModel.isCurrentUser(latestMessage.senderUID) ? chatCustomMenu.trailingAnchor.constraint(equalTo: cell.referenceView.trailingAnchor, constant: 0) : chatCustomMenu.leadingAnchor.constraint(equalTo: cell.referenceView.leadingAnchor, constant: 0)
         ])
         
         // 3. 버튼 액션 설정
@@ -2400,7 +2332,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
 
         if updateType != .reload {
-            profileSyncManager.ingestMessages(messages, into: profileScopeID)
+            scheduleProfileCacheRefresh(for: messages)
         }
 
         guard mutation.hasSnapshotChanges else { return }
@@ -2634,13 +2566,13 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     @MainActor
     private func openSenderProfile(messageID: String) {
         guard let currentMessage = messageForCommand(messageID: messageID) else { return }
-        let senderEmail = currentMessage.senderID
+        let senderUID = currentMessage.senderUID
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !senderEmail.isEmpty else { return }
+        guard !senderUID.isEmpty else { return }
 
         router?.showUserProfile(
             from: self,
-            email: senderEmail,
+            userID: senderUID,
             nickname: currentMessage.senderNickname,
             avatarPath: currentMessage.senderAvatarPath
         )

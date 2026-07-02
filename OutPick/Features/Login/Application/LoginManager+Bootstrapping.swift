@@ -12,6 +12,7 @@ extension LoginManager: LoginBootstrappingProtocol {
     /// 초기화만 담당
     /// 호출 위치: AppCoordinator에서 Main(Tab) 라우팅 직후
     func bootstrapAfterLogin(
+        currentUserProfile: UserProfile,
         joinedRoomsStore: JoinedRoomsSessionStoring,
         joinedRoomsRuntime: JoinedRoomsSessionRuntimeHandling,
         brandAdminSessionStore: BrandAdminSessionStore
@@ -19,29 +20,16 @@ extension LoginManager: LoginBootstrappingProtocol {
         // 0) 세션 사용자 문서 확정
         _ = try await ensureUserDocumentID()
 
-        // 1) 프로필 리스너 시작
-        userProfileRepository.listenToCurrentUserProfile(
-            onCurrentUserProfileUpdated: { profile in
-                Task { @MainActor in
-                    joinedRoomsStore.replace(with: profile.joinedRooms)
-                    joinedRoomsRuntime.replaceJoinedRooms(Set(profile.joinedRooms))
-                }
-            }
-        )
-
-        // 2) 참여 방 선 주입
-        //    (AppCoordinator가 loadUserProfile 성공 후 호출하므로 currentUserProfile이 존재하는 것이 정상)
-        if let profile = self.currentUserProfile {
-            await MainActor.run {
-                joinedRoomsStore.replace(with: profile.joinedRooms)
-                joinedRoomsRuntime.replaceJoinedRooms(Set(profile.joinedRooms))
-            }
+        // 1) 참여 방 선 주입
+        await MainActor.run {
+            joinedRoomsStore.replace(with: currentUserProfile.joinedRooms)
+            joinedRoomsRuntime.replaceJoinedRooms(Set(currentUserProfile.joinedRooms))
         }
 
-        // 3) 브랜드 권한 선로딩
+        // 2) 브랜드 권한 선로딩
         await brandAdminSessionStore.refreshCurrentSession(force: true)
         await brandAdminSessionStore.refreshWritableBrands(force: true)
 
-        // 4) 소켓 연결은 AppSessionRuntime이 인증 세션 시작 시 담당한다.
+        // 3) 소켓 연결은 AppSessionRuntime이 인증 세션 시작 시 담당한다.
     }
 }

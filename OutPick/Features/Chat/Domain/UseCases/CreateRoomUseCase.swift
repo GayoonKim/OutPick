@@ -27,14 +27,14 @@ final class CreateRoomUseCase: CreateRoomUseCaseProtocol {
     private let chatRoomRepository: FirebaseChatRoomRepositoryProtocol
     private let imageStorageRepository: FirebaseImageStorageRepositoryProtocol
     private let roomImageManager: RoomImageManaging
-    private let currentUserEmailProvider: @Sendable () -> String
+    private let currentUserUIDProvider: @Sendable () -> String
     private let roomIDGenerator: @Sendable () -> String
 
     init(
         chatRoomRepository: FirebaseChatRoomRepositoryProtocol,
         imageStorageRepository: FirebaseImageStorageRepositoryProtocol,
         roomImageManager: RoomImageManaging,
-        currentUserEmailProvider: @escaping @Sendable () -> String = { LoginManager.shared.getUserEmail },
+        currentUserUIDProvider: @escaping @Sendable () -> String = { LoginManager.shared.getUserUID },
         roomIDGenerator: @escaping @Sendable () -> String = {
             Firestore.firestore().collection("Rooms").document().documentID
         }
@@ -42,7 +42,7 @@ final class CreateRoomUseCase: CreateRoomUseCaseProtocol {
         self.chatRoomRepository = chatRoomRepository
         self.imageStorageRepository = imageStorageRepository
         self.roomImageManager = roomImageManager
-        self.currentUserEmailProvider = currentUserEmailProvider
+        self.currentUserUIDProvider = currentUserUIDProvider
         self.roomIDGenerator = roomIDGenerator
     }
 
@@ -57,15 +57,15 @@ final class CreateRoomUseCase: CreateRoomUseCaseProtocol {
             throw RoomCreationError.duplicateName
         }
 
-        let currentUserEmail = currentUserEmailProvider()
+        let currentUserUID = currentUserUIDProvider()
         let roomID = roomIDGenerator()
 
         let room = ChatRoom(
             ID: roomID,
             roomName: roomName,
             roomDescription: roomDescription,
-            participants: [currentUserEmail],
-            creatorID: currentUserEmail,
+            participants: [currentUserUID],
+            creatorUID: currentUserUID,
             createdAt: Date()
         )
 

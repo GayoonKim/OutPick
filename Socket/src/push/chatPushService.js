@@ -4,7 +4,7 @@ import {
 } from "../config.js";
 import {
   chunkArray,
-  normalizeEmail,
+  normalizeUID,
   trimPushText
 } from "../utils/strings.js";
 import { buildPushPreview } from "../messages/preview.js";
@@ -27,7 +27,8 @@ function buildChatPushMulticast({
   roomName,
   messageID,
   messageType,
-  senderID,
+  senderUID,
+  senderEmail,
   senderNickname,
   preview,
   tokens
@@ -47,7 +48,8 @@ function buildChatPushMulticast({
       roomID: String(roomID || ""),
       roomName: String(roomName || ""),
       messageID: String(messageID || ""),
-      senderID: String(senderID || ""),
+      senderUID: String(senderUID || ""),
+      senderEmail: String(senderEmail || ""),
       senderNickname: String(senderNickname || ""),
       messageType: String(messageType || "Text"),
       preview: String(safePreview)
@@ -62,9 +64,15 @@ function buildChatPushMulticast({
   };
 }
 
-export function createChatPushService({ db, admin, findUserDocRefsByEmails }) {
-  async function loadDeviceDocsByUserRef(userRef) {
-    const snapshot = await userRef.collection(DEVICES_SUBCOLLECTION).get();
+export function createChatPushService({ db, admin }) {
+  async function loadDeviceDocsByUserUID(userUID) {
+    const normalizedUID = normalizeUID(userUID);
+    if (!normalizedUID || normalizedUID.includes("/")) return [];
+
+    const snapshot = await db.collection("users")
+      .doc(normalizedUID)
+      .collection(DEVICES_SUBCOLLECTION)
+      .get();
     return snapshot.docs.map((doc) => ({
       ref: doc.ref,
       ...doc.data()
@@ -87,16 +95,17 @@ export function createChatPushService({ db, admin, findUserDocRefsByEmails }) {
   }
 
   async function sendChatPushToUser({
-    userRef,
+    userUID,
     roomID,
     roomName,
     messageID,
     messageType,
-    senderID,
+    senderUID,
+    senderEmail,
     senderNickname,
     preview
   }) {
-    const devices = await loadDeviceDocsByUserRef(userRef);
+    const devices = await loadDeviceDocsByUserUID(userUID);
     if (!devices.length) {
       return { sent: 0, skippedReason: "no_devices" };
     }
@@ -137,7 +146,8 @@ export function createChatPushService({ db, admin, findUserDocRefsByEmails }) {
         roomName,
         messageID,
         messageType,
-        senderID,
+        senderUID,
+        senderEmail,
         senderNickname,
         preview,
         tokens: chunk.map((item) => item.token)
@@ -169,33 +179,28 @@ export function createChatPushService({ db, admin, findUserDocRefsByEmails }) {
       if (!roomSnapshot.exists) return;
 
       const roomData = roomSnapshot.data() || {};
-      const participants = Array.isArray(roomData.participantIDs)
-        ? [...new Set(roomData.participantIDs.map(normalizeEmail).filter(Boolean))]
+      const participants = Array.isArray(roomData.participantUIDs)
+        ? [...new Set(roomData.participantUIDs.map(normalizeUID).filter(Boolean))]
         : [];
 
-      const senderID = normalizeEmail(messageData?.senderID || "");
-      const recipients = participants.filter((email) => email && email !== senderID);
+      const senderUID = normalizeUID(messageData?.senderUID || "");
+      const recipients = participants.filter((uid) => uid && uid !== senderUID);
       if (!recipients.length) return;
 
-      const refsByEmail = await findUserDocRefsByEmails(recipients);
       const roomName = typeof roomData.roomName === "string" && roomData.roomName.trim()
         ? roomData.roomName.trim()
         : roomID;
       const preview = buildPushPreview(messageData);
 
-      const results = await Promise.all(recipients.map(async (recipientEmail) => {
-        const userRef = refsByEmail.get(recipientEmail);
-        if (!userRef) {
-          return { sent: 0, skippedReason: "user_not_found" };
-        }
-
+      const results = await Promise.all(recipients.map(async (recipientUID) => {
         return sendChatPushToUser({
-          userRef,
+          userUID: recipientUID,
           roomID,
           roomName,
           messageID: messageData?.ID,
           messageType: messageData?.messageType,
-          senderID: messageData?.senderID,
+          senderUID: messageData?.senderUID,
+          senderEmail: messageData?.senderEmail,
           senderNickname: messageData?.senderNickname,
           preview
         });

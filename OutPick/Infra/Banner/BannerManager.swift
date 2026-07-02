@@ -115,7 +115,7 @@ final class BannerManager {
         let messageDate = msg.sentAt ?? Date()
 
         #if DEBUG
-        print("[BannerManager] incoming room=\(roomID) msgID=\(msg.ID) sender=\(msg.senderID) visible=\(currentVisibleRoomID ?? "nil")")
+        print("[BannerManager] incoming room=\(roomID) msgID=\(msg.ID) sender=\(msg.senderUID) visible=\(currentVisibleRoomID ?? "nil")")
         #endif
 
         chatRoomRepository.applyRealtimeSummaryPatch(
@@ -123,7 +123,7 @@ final class BannerManager {
             message: text,
             sentAt: messageDate,
             seq: msg.seq > 0 ? msg.seq : nil,
-            senderID: msg.senderID
+            senderUID: msg.senderUID
         )
 
         // 현재 방 보고 있으면 배너 X (화면이 실시간 UI 반영)
@@ -143,9 +143,9 @@ final class BannerManager {
         }
         recentPerRoom[roomID]?.insert(id)
 
-        if muteOwnMessages, msg.senderID == LoginManager.shared.getUserEmail {
+        if muteOwnMessages, msg.senderUID == LoginManager.shared.getUserUID {
             #if DEBUG
-            print("[BannerManager] skip banner (own message) room=\(roomID) sender=\(msg.senderID)")
+            print("[BannerManager] skip banner (own message) room=\(roomID) sender=\(msg.senderUID)")
             #endif
             return
         }

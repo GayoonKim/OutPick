@@ -107,7 +107,11 @@ class ChatRoomInfoCell: UICollectionViewCell {
         editButtonView.isHidden = false
     }
 
-    func configureCell(room: ChatRoom, roomImageManager: RoomImageManaging) {
+    func configureCell(
+        room: ChatRoom,
+        roomImageManager: RoomImageManaging,
+        currentUserUID: String
+    ) {
         print(#function, "🔥🔥🔥🔥🔥 4. roomInfo", room)
 
         imageLoadTask?.cancel()
@@ -137,7 +141,7 @@ class ChatRoomInfoCell: UICollectionViewCell {
         roomParticipantCountLabel.text = "\(room.participants.count)명 참여"
         backgroundColor = OutPickTheme.ColorToken.backgroundBase
         
-        if LoginManager.shared.currentUserProfile?.email != room.creatorID {
+        if currentUserUID != room.creatorUID {
             editButtonView.isHidden = true
             NSLayoutConstraint.activate([
                 editButtonView.bottomAnchor.constraint(equalTo: roomParticipantCountLabel.bottomAnchor),

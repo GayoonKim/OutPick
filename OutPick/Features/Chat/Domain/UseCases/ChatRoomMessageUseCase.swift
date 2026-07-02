@@ -33,7 +33,8 @@ protocol ChatDeletedLastMessageSummaryUpdating {
 }
 
 struct ChatMessageSenderSnapshot: Equatable {
-    let senderID: String
+    let senderUID: String
+    let senderEmail: String?
     let senderNickname: String
     let senderAvatarPath: String?
 }
@@ -54,9 +55,10 @@ final class ChatRoomMessageUseCase: ChatRoomMessageUseCaseProtocol {
         deletedLastMessageSummaryUpdater: ChatDeletedLastMessageSummaryUpdating? = FirebaseRepositoryProvider.shared.chatRoomRepository as? ChatDeletedLastMessageSummaryUpdating,
         currentUserProvider: @escaping () -> ChatMessageSenderSnapshot = {
             ChatMessageSenderSnapshot(
-                senderID: LoginManager.shared.getUserEmail,
-                senderNickname: LoginManager.shared.currentUserProfile?.nickname ?? "",
-                senderAvatarPath: LoginManager.shared.currentUserProfile?.thumbPath
+                senderUID: LoginManager.shared.getUserUID,
+                senderEmail: LoginManager.shared.getUserEmail,
+                senderNickname: "",
+                senderAvatarPath: nil
             )
         },
         messageIDProvider: @escaping () -> String = { UUID().uuidString },
@@ -83,7 +85,8 @@ final class ChatRoomMessageUseCase: ChatRoomMessageUseCaseProtocol {
             ID: messageIDProvider(),
             seq: 0,
             roomID: roomID,
-            senderID: sender.senderID,
+            senderUID: sender.senderUID,
+            senderEmail: sender.senderEmail,
             senderNickname: sender.senderNickname,
             senderAvatarPath: sender.senderAvatarPath,
             msg: trimmed,

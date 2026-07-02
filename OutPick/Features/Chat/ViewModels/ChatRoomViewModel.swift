@@ -133,8 +133,8 @@ final class ChatRoomViewModel {
         lifecycleUseCase.roomChangePublisher
     }
 
-    var currentUserEmail: String {
-        currentUserProvider.email
+    var currentUserUID: String {
+        currentUserProvider.uid
     }
 
     var currentUserDocumentID: String {
@@ -146,19 +146,19 @@ final class ChatRoomViewModel {
     }
 
     var isCurrentUserParticipant: Bool {
-        room.participants.contains(currentUserEmail)
+        room.participants.contains(currentUserUID)
     }
 
     func isCurrentUserParticipant(in room: ChatRoom) -> Bool {
-        room.participants.contains(currentUserEmail)
+        room.participants.contains(currentUserUID)
     }
 
     func isCurrentUser(_ email: String?) -> Bool {
-        (email ?? "") == currentUserEmail
+        (email ?? "") == currentUserUID
     }
 
     func isCurrentUserAdmin(of room: ChatRoom) -> Bool {
-        room.creatorID == currentUserEmail
+        room.creatorUID == currentUserUID
     }
 
     func applyRoomUpdate(_ updatedRoom: ChatRoom) {
@@ -327,7 +327,7 @@ final class ChatRoomViewModel {
                 roomID: roomID,
                 latestSeq: state.latestSeq,
                 lastReadSeq: state.readBoundarySeq,
-                lastMessageSenderID: room.lastMessageSenderID
+                lastMessageSenderUID: room.lastMessageSenderUID
             )
         )
         lastReadFlushTask?.cancel()
@@ -345,8 +345,8 @@ final class ChatRoomViewModel {
     func messageActionPolicy(for message: ChatMessage) -> ChatMessageActionPolicy {
         ChatMessageActionPolicy.make(
             for: message,
-            currentUserID: currentUserEmail,
-            roomCreatorID: room.creatorID
+            currentUserID: currentUserUID,
+            roomCreatorID: room.creatorUID
         )
     }
 
@@ -586,7 +586,7 @@ final class ChatRoomViewModel {
         roomReadStateStore?.seedLatest(
             roomID: roomID,
             latestSeq: room.seq,
-            lastMessageSenderID: room.lastMessageSenderID
+            lastMessageSenderUID: room.lastMessageSenderUID
         )
     }
 
@@ -595,7 +595,7 @@ final class ChatRoomViewModel {
         roomReadStateStore?.seedLatest(
             roomID: roomID,
             latestSeq: message.seq,
-            lastMessageSenderID: message.senderID
+            lastMessageSenderUID: message.senderUID
         )
     }
 

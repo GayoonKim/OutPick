@@ -12,6 +12,7 @@ import FirebaseAuth
 import GoogleSignIn
 
 class MyPageViewController: UIViewController {
+    private let currentUserProvider: any CurrentUserProviding
     
     // 한국어 주석: 로그아웃 과정에서 여러 콜백이 동시에 돌아도 로그인 화면 전환은 1번만 수행
     private var didRouteToLogin = false
@@ -119,6 +120,15 @@ class MyPageViewController: UIViewController {
         l.text = "자기소개가 여기에 표시됩니다."
         return l
     }()
+
+    init(currentUserProvider: any CurrentUserProviding) {
+        self.currentUserProvider = currentUserProvider
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("Storyboard initialization is no longer supported for MyPageViewController.")
+    }
     
     private let infoSeparatorView: UIView = {
         let v = UIView()
@@ -132,7 +142,7 @@ class MyPageViewController: UIViewController {
         setupNavigationBar()
         setupMyPageBody()
         
-        guard let profile = LoginManager.shared.currentUserProfile else { return }
+        guard let profile = currentUserProvider.profile else { return }
         nicknameLabel.text = profile.nickname
         genderLabel.text = profile.gender?.description
     }
@@ -230,7 +240,6 @@ class MyPageViewController: UIViewController {
         KeychainManager.shared.delete(service: "GayoonKim.OutPick", account: "UserProfile")
         KeychainManager.shared.delete(service: "GayoonKim.OutPick", account: "AuthenticatedUser")
         LoginManager.shared.setUserEmail("")
-        LoginManager.shared.setCurrentUserProfile(nil)
         LoginManager.shared.clearAuthUserKey()
         LoginManager.shared.clearUserDocumentID()
         didRouteToLogin = false

@@ -15,7 +15,7 @@ struct ChatRoomReadStateStoreTests {
             roomID: "room-1",
             latestSeq: 10,
             lastReadSeq: 7,
-            lastMessageSenderID: "me@example.com"
+            lastMessageSenderUID: "me@example.com"
         )
 
         #expect(snapshot.unreadCount(currentUserID: "me@example.com") == 2)
@@ -30,14 +30,14 @@ struct ChatRoomReadStateStoreTests {
         store.seedLatest(
             roomID: "room-1",
             latestSeq: 4,
-            lastMessageSenderID: "other@example.com"
+            lastMessageSenderUID: "other@example.com"
         )
         store.seed(
             ChatRoomReadSnapshot(
                 roomID: "room-2",
                 latestSeq: 8,
                 lastReadSeq: 3,
-                lastMessageSenderID: "other@example.com"
+                lastMessageSenderUID: "other@example.com"
             )
         )
 
@@ -55,7 +55,7 @@ struct ChatRoomReadStateStoreTests {
                 roomID: "room-1",
                 latestSeq: 10,
                 lastReadSeq: 4,
-                lastMessageSenderID: "other@example.com"
+                lastMessageSenderUID: "other@example.com"
             )
         )
         store.markReadFlushed(roomID: "room-1", lastReadSeq: 9)

@@ -2,6 +2,74 @@
 
 ## 현재 작업
 
+- 작업명: `profile-session-state-refactor`
+- 현재 상태: 구현 완료, 수동 QA 미수행.
+- 진행 문서:
+  - `docs/ai/tasks/profile-session-state-refactor/design.md`
+  - `docs/ai/tasks/profile-session-state-refactor/plan.md`
+  - `docs/ai/tasks/profile-session-state-refactor/decisions.md`
+  - `docs/ai/tasks/profile-session-state-refactor/progress.md`
+  - `docs/ai/tasks/profile-session-state-refactor/qa-checklist.md`
+- 현재 기준:
+  - 프로필 문서 전체를 Firestore listener/Combine publisher stream으로 다루는 구조를 제거하는 방향이다.
+  - 내 프로필은 앱 시작/로그인 시 단발 fetch 후 앱 세션 메모리 상태를 1차 UI source로 사용한다.
+  - Phase 1에서 `CurrentUserSessionStore`를 도입하는 동시에 `LoginManager.currentUserProfile`/`setCurrentUserProfile(_:)`를 제거한다.
+  - 프로필 수정은 memory-first로 즉시 반영하고 서버 저장은 명시적 UseCase/Repository 호출로 처리한다.
+  - 저장 실패 시 rollback하지 않고 error 표시 + 다음 실행 시 서버 상태 복원 흐름을 사용한다.
+  - 다른 사용자 프로필은 listener가 아니라 `fetchUserProfiles(userIDs:)` batch fetch와 local/memory cache refresh로 표시한다.
+  - 채팅 메시지는 `senderNickname`/`senderAvatarPath` snapshot으로 표시하고, 프로필 수정으로 과거 메시지 문서를 업데이트하지 않는다.
+  - `UserProfileRepository`는 `LoginManager.shared.currentUserProfile` 같은 세션 singleton을 읽지 않는다.
+  - joined rooms runtime은 current profile listener에 의존하지 않도록 분리한다.
+  - `HotUserManager`는 profile listener 제거 후 사용처가 없어 삭제했다.
+  - GRDB `LocalUser.email`/`RoomMember.userEmail` 명명 cleanup은 후속 작업으로 분리한다.
+
+## 최근 종료 작업
+
+- 작업명: `chat-uid-identity-migration`
+- 현재 상태: 구현 완료, 배포/실기기 smoke QA 미수행.
+- 진행 문서:
+  - `docs/ai/tasks/chat-uid-identity-migration/design.md`
+  - `docs/ai/tasks/chat-uid-identity-migration/plan.md`
+  - `docs/ai/tasks/chat-uid-identity-migration/decisions.md`
+  - `docs/ai/tasks/chat-uid-identity-migration/progress.md`
+  - `docs/ai/tasks/chat-uid-identity-migration/qa-checklist.md`
+- 현재 기준:
+  - `participantUIDs`, `creatorUID`, `senderUID`를 canonical identity로 사용한다.
+  - `senderEmail`은 optional snapshot으로만 남기며 권한/쿼리/비교에 사용하지 않는다.
+  - Socket room access, 메시지/media/lookbook share, push fanout, Firestore rules/index, Functions room cleanup, iOS Chat/GRDB/outbox/realtime payload를 UID 기준으로 맞췄다.
+  - 배포 전 Firestore rules/index 배포 승인, 개발 데이터 초기화/cleanup, 실제 앱 smoke QA가 남았다.
+
+- 작업명: `socket-cloud-run-deploy`
+- 현재 상태: 종료.
+- 종료 기준:
+  - `Socket/` 서버를 Cloud Run `outpick-socket` 서비스로 배포 완료.
+  - Cloud Run service URL은 `https://outpick-socket-2w7zhxurhq-du.a.run.app`다.
+  - 최신 ready revision은 `outpick-socket-00003-4cm`다.
+  - 운영 Socket 연결은 Firebase ID Token 필수다.
+  - iOS 앱은 운영 Cloud Run URL을 고정 사용한다.
+  - 실제 기기/시뮬레이터에서 Socket 연결, 텍스트/이미지/비디오 메시지 송수신, 백그라운드/포그라운드 reconnect QA 완료.
+  - 검증 명령 통과:
+    - `npm --prefix Socket run check`
+    - `git diff --check`
+    - `xcodebuild -scheme OutPick -destination 'generic/platform=iOS Simulator' build`
+- 진행 문서:
+  - `docs/ai/tasks/socket-cloud-run-deploy/design.md`
+  - `docs/ai/tasks/socket-cloud-run-deploy/plan.md`
+  - `docs/ai/tasks/socket-cloud-run-deploy/decisions.md`
+  - `docs/ai/tasks/socket-cloud-run-deploy/progress.md`
+  - `docs/ai/tasks/socket-cloud-run-deploy/qa-checklist.md`
+- 현재 기준:
+  - 로컬에서 직접 켜던 `Socket/` Socket.IO 서버를 Cloud Run 운영 서비스로 전환한다.
+  - Cloud Run 서비스 이름은 `outpick-socket`으로 한다.
+  - 프로젝트는 `outpick-664ae`, 리전은 `asia-northeast3`로 한다.
+  - 초기 인스턴스 정책은 `min instances = 0`, `max instances = 1`로 한다.
+  - Redis/Socket.IO adapter는 초기 범위에서 제외한다.
+  - 운영 Socket 연결은 Firebase ID Token 필수로 한다.
+  - 운영 서버는 `handshake.query.email`을 인증 근거로 신뢰하지 않는다.
+  - Firebase Admin은 Cloud Run service account / ADC를 사용한다.
+  - 전용 service account는 `outpick-socket@outpick-664ae.iam.gserviceaccount.com`이다.
+  - Admin 웹 분리와 iOS 앱 내 브랜드/시즌 생성 UI 정리는 후속 task로 둔다.
+
 - 작업명: `main-tab-shell-standardization`
 - 현재 상태: 종료.
 - 진행 문서:
@@ -19,7 +87,7 @@
   - 같은 탭 재선택은 아무 동작도 하지 않는다.
   - Chat 검색/방 생성/방 본문과 Lookbook 브랜드/시즌/포스트 상세에서는 탭 바를 숨긴다.
 
-## 최근 종료 작업
+## 이전 종료 작업
 
 - 작업명: `image-viewer-unification`
 - 현재 상태: 종료.

@@ -19,6 +19,7 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
     var chatRooms: [ChatRoomPreviewItem] = []
     var dataSource: DataSourceType!
     private let viewModel: RoomListsViewModel
+    private let currentUserProvider: any CurrentUserProviding
 
     // MARK: - Navigation callbacks (Coordinator)
     var onSelectRoom: ((ChatRoom) -> Void)?
@@ -32,9 +33,11 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
 
     init(
         collectionViewLayout layout: UICollectionViewLayout,
-        viewModel: RoomListsViewModel
+        viewModel: RoomListsViewModel,
+        currentUserProvider: any CurrentUserProviding
     ) {
         self.viewModel = viewModel
+        self.currentUserProvider = currentUserProvider
         super.init(collectionViewLayout: layout)
     }
 
@@ -106,7 +109,11 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
             let cell = collectionView.dequeueReusableCell(withReuseIdentifier: RoomListCollectionViewCell.identifier, for: indexPath) as! RoomListCollectionViewCell
             cell.backgroundColor = OutPickTheme.ColorToken.backgroundBase
             
-            cell.configure(room: item.room, messages: item.messages)
+            cell.configure(
+                room: item.room,
+                messages: item.messages,
+                currentUserUID: self.currentUserProvider.uid
+            )
 
             return cell
         }

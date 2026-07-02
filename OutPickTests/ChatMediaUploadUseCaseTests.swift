@@ -28,7 +28,7 @@ struct ChatMediaUploadUseCaseTests {
 
         #expect(message.ID == "message-1")
         #expect(message.roomID == "room-1")
-        #expect(message.senderID == "me@example.com")
+        #expect(message.senderUID == "me@example.com")
         #expect(message.senderNickname == "나")
         #expect(message.senderAvatarPath == "avatars/me.jpg")
         #expect(message.attachments.map(\.index) == [1, 2])
@@ -57,7 +57,7 @@ struct ChatMediaUploadUseCaseTests {
         let attachment = try #require(message.attachments.first)
         #expect(message.ID == "video-1")
         #expect(message.roomID == "room-1")
-        #expect(message.senderID == "me@example.com")
+        #expect(message.senderUID == "me@example.com")
         #expect(attachment.type == .video)
         #expect(attachment.pathThumb.hasPrefix("file://"))
         #expect(attachment.pathOriginal == prepared.compressedFileURL.path)
@@ -233,7 +233,7 @@ struct ChatMediaUploadUseCaseTests {
 
         #expect(sendingRepository.failedVideoCalls.count == 1)
         #expect(sendingRepository.failedVideoCalls.first?.roomID == "room-1")
-        #expect(sendingRepository.failedVideoCalls.first?.senderID == "me@example.com")
+        #expect(sendingRepository.failedVideoCalls.first?.senderUID == "me@example.com")
         #expect(sendingRepository.failedVideoCalls.first?.senderNickname == "나")
         #expect(sendingRepository.failedVideoCalls.first?.localURL == prepared.compressedFileURL)
         #expect(sendingRepository.failedVideoCalls.first?.presetCode == "standard720")
@@ -253,7 +253,8 @@ struct ChatMediaUploadUseCaseTests {
             attachmentImageLoader: attachmentImageLoader,
             currentUserProvider: {
                 ChatMessageSenderSnapshot(
-                    senderID: "me@example.com",
+                    senderUID: "me@example.com",
+                    senderEmail: nil,
                     senderNickname: "나",
                     senderAvatarPath: "avatars/me.jpg"
                 )
@@ -322,13 +323,13 @@ struct ChatMediaUploadUseCaseTests {
             roomName: "Test Room",
             roomDescription: "Test Description",
             participants: ["me@example.com"],
-            creatorID: "owner@example.com",
+            creatorUID: "owner@example.com",
             createdAt: Date(timeIntervalSince1970: 0),
             thumbPath: nil,
             originalPath: nil,
             lastMessageAt: nil,
             lastMessage: nil,
-            lastMessageSenderID: nil,
+            lastMessageSenderUID: nil,
             seq: 0,
             isClosed: false,
             activeAnnouncementID: nil,
@@ -457,7 +458,8 @@ private final class ChatMediaMessageSendingRepositorySpy: ChatMediaMessageSendin
 
     struct FailedVideoCall {
         let roomID: String
-        let senderID: String
+        let senderUID: String
+        let senderEmail: String?
         let senderNickname: String
         let localURL: URL
         let thumbData: Data?
@@ -520,7 +522,8 @@ private final class ChatMediaMessageSendingRepositorySpy: ChatMediaMessageSendin
 
     func sendFailedVideo(
         roomID: String,
-        senderID: String,
+        senderUID: String,
+        senderEmail: String?,
         senderNickname: String,
         localURL: URL,
         thumbData: Data?,
@@ -531,7 +534,8 @@ private final class ChatMediaMessageSendingRepositorySpy: ChatMediaMessageSendin
     ) {
         failedVideoCalls.append(FailedVideoCall(
             roomID: roomID,
-            senderID: senderID,
+            senderUID: senderUID,
+            senderEmail: senderEmail,
             senderNickname: senderNickname,
             localURL: localURL,
             thumbData: thumbData,

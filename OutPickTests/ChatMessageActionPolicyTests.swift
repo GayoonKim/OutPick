@@ -12,7 +12,7 @@ import Testing
 struct ChatMessageActionPolicyTests {
     @Test func lookbookShareAllowsReplyButBlocksCopyAndAnnounce() {
         let message = makeMessage(
-            senderID: "sender@example.com",
+            senderUID: "sender@example.com",
             messageType: .lookbookShare,
             msg: "브랜드를 공유했어요",
             sharedContent: makeSharedContent()
@@ -33,7 +33,7 @@ struct ChatMessageActionPolicyTests {
 
     @Test func lookbookShareKeepsDeletePermissionForOwnerOrAdmin() {
         let message = makeMessage(
-            senderID: "sender@example.com",
+            senderUID: "sender@example.com",
             messageType: .lookbookShare,
             msg: nil,
             sharedContent: makeSharedContent()
@@ -59,7 +59,7 @@ struct ChatMessageActionPolicyTests {
 
     @Test func regularMessageKeepsExistingCopyAndAdminAnnouncementPolicy() {
         let message = makeMessage(
-            senderID: "sender@example.com",
+            senderUID: "sender@example.com",
             messageType: .text,
             msg: "안녕",
             sharedContent: nil
@@ -81,7 +81,7 @@ struct ChatMessageActionPolicyTests {
     @Test func lookbookSharePreviewUsesMessageTextThenFallback() {
         let content = makeSharedContent(contentType: .post)
         let messageWithText = makeMessage(
-            senderID: "sender@example.com",
+            senderUID: "sender@example.com",
             messageType: .lookbookShare,
             msg: "이 포스트 봐봐",
             sharedContent: content
@@ -89,7 +89,7 @@ struct ChatMessageActionPolicyTests {
         #expect(messageWithText.lookbookSharePreviewText == "이 포스트 봐봐")
 
         let messageWithoutText = makeMessage(
-            senderID: "sender@example.com",
+            senderUID: "sender@example.com",
             messageType: .lookbookShare,
             msg: "   ",
             sharedContent: content
@@ -97,7 +97,7 @@ struct ChatMessageActionPolicyTests {
         #expect(messageWithoutText.lookbookSharePreviewText == "포스트를 공유했어요")
 
         let invalidSnapshotMessage = makeMessage(
-            senderID: "sender@example.com",
+            senderUID: "sender@example.com",
             messageType: .lookbookShare,
             msg: nil,
             sharedContent: nil
@@ -106,7 +106,7 @@ struct ChatMessageActionPolicyTests {
     }
 
     private func makeMessage(
-        senderID: String,
+        senderUID: String,
         messageType: ChatMessageType?,
         msg: String?,
         sharedContent: LookbookSharedContent?
@@ -115,7 +115,8 @@ struct ChatMessageActionPolicyTests {
             ID: "message-1",
             seq: 1,
             roomID: "room-1",
-            senderID: senderID,
+            senderUID: senderUID,
+            senderEmail: nil,
             senderNickname: "sender",
             senderAvatarPath: nil,
             messageType: messageType,

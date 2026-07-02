@@ -181,9 +181,9 @@ final class JoinedRoomsViewModel {
     }
 
     private func applyHeadRooms(_ rooms: [ChatRoom], updateUnread: Bool = true) {
-        let previousSummaryByID = Dictionary(uniqueKeysWithValues: headRooms.compactMap { room -> (String, (seq: Int64, lastMessageAt: Date?, lastMessage: String?, lastMessageSenderID: String?))? in
+        let previousSummaryByID = Dictionary(uniqueKeysWithValues: headRooms.compactMap { room -> (String, (seq: Int64, lastMessageAt: Date?, lastMessage: String?, lastMessageSenderUID: String?))? in
             guard let roomID = room.ID else { return nil }
-            return (roomID, (room.seq, room.lastMessageAt, room.lastMessage, room.lastMessageSenderID))
+            return (roomID, (room.seq, room.lastMessageAt, room.lastMessage, room.lastMessageSenderUID))
         })
 
         headRooms = sortRooms(rooms)
@@ -197,7 +197,7 @@ final class JoinedRoomsViewModel {
             return old.seq != room.seq ||
                 old.lastMessageAt != room.lastMessageAt ||
                 old.lastMessage != room.lastMessage ||
-                old.lastMessageSenderID != room.lastMessageSenderID
+                old.lastMessageSenderUID != room.lastMessageSenderUID
         }
         guard !changedRooms.isEmpty else { return }
         Task { [weak self] in
@@ -231,7 +231,7 @@ final class JoinedRoomsViewModel {
     private func refreshUnreadCounts(for rooms: [ChatRoom]) async {
         let snapshots = await fetchReadSnapshots(for: rooms)
         var updates: [String: Int64] = [:]
-        let currentUserID = LoginManager.shared.getUserEmail
+        let currentUserID = LoginManager.shared.getUserUID
         for snapshot in snapshots {
             roomReadStateStore?.seed(snapshot)
             if let unread = snapshot.unreadCount(currentUserID: currentUserID) {
@@ -243,7 +243,7 @@ final class JoinedRoomsViewModel {
 
     private func computeUnreadCounts(for rooms: [ChatRoom]) async -> [String: Int64] {
         let snapshots = await fetchReadSnapshots(for: rooms)
-        let currentUserID = LoginManager.shared.getUserEmail
+        let currentUserID = LoginManager.shared.getUserUID
         var result: [String: Int64] = [:]
         for snapshot in snapshots {
             roomReadStateStore?.seed(snapshot)
@@ -255,7 +255,7 @@ final class JoinedRoomsViewModel {
     }
 
     private func fetchReadSnapshots(for rooms: [ChatRoom]) async -> [ChatRoomReadSnapshot] {
-        let currentUserID = LoginManager.shared.getUserEmail
+        let currentUserID = LoginManager.shared.getUserUID
         return await withTaskGroup(of: ChatRoomReadSnapshot?.self, returning: [ChatRoomReadSnapshot].self) { group in
             for room in rooms {
                 guard let roomID = room.ID else { continue }
@@ -272,7 +272,7 @@ final class JoinedRoomsViewModel {
                     return await self.useCase.fetchReadSnapshot(
                         roomID: roomID,
                         lastMessageSeqHint: room.seq,
-                        lastMessageSenderID: room.lastMessageSenderID
+                        lastMessageSenderUID: room.lastMessageSenderUID
                     )
                 }
             }
@@ -294,14 +294,14 @@ final class JoinedRoomsViewModel {
             roomReadStateStore.seedLatest(
                 roomID: roomID,
                 latestSeq: room.seq,
-                lastMessageSenderID: room.lastMessageSenderID
+                lastMessageSenderUID: room.lastMessageSenderUID
             )
         }
     }
 
     private func applyReadStateChange(_ change: ChatRoomReadStateChange) {
         guard state.rooms.contains(where: { $0.ID == change.roomID }) else { return }
-        guard let unread = change.snapshot.unreadCount(currentUserID: LoginManager.shared.getUserEmail) else { return }
+        guard let unread = change.snapshot.unreadCount(currentUserID: LoginManager.shared.getUserUID) else { return }
         state.unreadCounts[change.roomID] = unread
     }
 

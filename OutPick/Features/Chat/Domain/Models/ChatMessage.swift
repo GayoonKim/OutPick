@@ -13,7 +13,8 @@ struct ChatMessage: SocketData, Codable, Sendable {
     let ID: String
     let seq: Int64                    // 방 내 단조 증가 시퀀스(1,2,3,...) - 정렬/미읽음 계산용
     let roomID: String
-    let senderID: String                // 메시지 전송 사용자 아이디
+    let senderUID: String                // 메시지 전송 사용자 아이디
+    let senderEmail: String?             // 표시/디버깅용 snapshot. 권한 판단에는 사용하지 않는다.
     var senderNickname: String          // 메시지 전송 사용자 닉네임
     var senderAvatarPath: String? = nil // Storage 상대경로(예: "avatars/<uid>/v3.jpg")
     var messageType: ChatMessageType? = nil
@@ -35,7 +36,8 @@ struct ChatMessage: SocketData, Codable, Sendable {
         case ID
         case seq
         case roomID
-        case senderID
+        case senderUID
+        case senderEmail
         case senderNickname
         case senderAvatarPath
         case messageType
@@ -53,10 +55,13 @@ struct ChatMessage: SocketData, Codable, Sendable {
             "ID": ID,
             "roomID": roomID,
             "seq": seq,
-            "senderID": senderID,
+            "senderUID": senderUID,
             "senderNickname": senderNickname,
             "msg": msg ?? "",
         ]
+        if let senderEmail, !senderEmail.isEmpty {
+            dict["senderEmail"] = senderEmail
+        }
         if let messageType {
             dict["messageType"] = messageType.rawValue
         }
@@ -104,7 +109,7 @@ struct ChatMessage: SocketData, Codable, Sendable {
             "ID": ID,
             "roomID": roomID,
             "seq": seq,
-            "senderID": senderID,
+            "senderUID": senderUID,
             "senderNickname": senderNickname,
             "msg": msg ?? "",
             "sentAt": Timestamp(date: sentAt ?? Date()),
@@ -114,6 +119,9 @@ struct ChatMessage: SocketData, Codable, Sendable {
             "searchNgrams2": searchIndex.searchNgrams2,
             "searchIndexVersion": searchIndex.version
         ]
+        if let senderEmail, !senderEmail.isEmpty {
+            dict["senderEmail"] = senderEmail
+        }
         if let messageType {
             dict["messageType"] = messageType.rawValue
         }
@@ -176,7 +184,8 @@ extension ChatMessage {
         ID = try container.decode(String.self, forKey: .ID)
         seq = try container.decodeIfPresent(Int64.self, forKey: .seq) ?? 0
         roomID = try container.decode(String.self, forKey: .roomID)
-        senderID = try container.decode(String.self, forKey: .senderID)
+        senderUID = try container.decode(String.self, forKey: .senderUID)
+        senderEmail = try container.decodeIfPresent(String.self, forKey: .senderEmail)
         senderNickname = try container.decodeIfPresent(String.self, forKey: .senderNickname) ?? ""
         senderAvatarPath = try container.decodeIfPresent(String.self, forKey: .senderAvatarPath)
         messageType = decodedMessageType
@@ -194,7 +203,8 @@ extension ChatMessage {
         try container.encode(ID, forKey: .ID)
         try container.encode(seq, forKey: .seq)
         try container.encode(roomID, forKey: .roomID)
-        try container.encode(senderID, forKey: .senderID)
+        try container.encode(senderUID, forKey: .senderUID)
+        try container.encodeIfPresent(senderEmail, forKey: .senderEmail)
         try container.encode(senderNickname, forKey: .senderNickname)
         try container.encodeIfPresent(senderAvatarPath, forKey: .senderAvatarPath)
         try container.encodeIfPresent(messageType, forKey: .messageType)
@@ -241,7 +251,7 @@ extension ChatMessage {
         // Required IDs
         guard let id = (dict["ID"] as? String) ?? (dict["id"] as? String) ?? (dict["messageID"] as? String), !id.isEmpty,
               let roomID = (dict["roomID"] as? String) ?? (dict["roomName"] as? String),
-              let senderID = dict["senderID"] as? String else {
+              let senderUID = dict["senderUID"] as? String else {
             return nil
         }
 
@@ -317,7 +327,8 @@ extension ChatMessage {
             ID: id,
             seq: seq,
             roomID: roomID,
-            senderID: senderID,
+            senderUID: senderUID,
+            senderEmail: dict["senderEmail"] as? String,
             senderNickname: senderNickname,
             senderAvatarPath: senderAvatarPath,
             messageType: messageType,

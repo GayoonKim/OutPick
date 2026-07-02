@@ -25,7 +25,7 @@ struct ChatRoomMessageUseCaseTests {
         #expect(message.ID == "message-1")
         #expect(message.seq == 0)
         #expect(message.roomID == "room-1")
-        #expect(message.senderID == "me@example.com")
+        #expect(message.senderUID == "me@example.com")
         #expect(message.senderNickname == "나")
         #expect(message.senderAvatarPath == "avatars/me.jpg")
         #expect(message.msg == "안녕")
@@ -102,7 +102,8 @@ struct ChatRoomMessageUseCaseTests {
             deletedLastMessageSummaryUpdater: deletedLastMessageSummaryUpdater,
             currentUserProvider: {
                 ChatMessageSenderSnapshot(
-                    senderID: "me@example.com",
+                    senderUID: "me@example.com",
+                    senderEmail: nil,
                     senderNickname: "나",
                     senderAvatarPath: "avatars/me.jpg"
                 )
@@ -118,13 +119,13 @@ struct ChatRoomMessageUseCaseTests {
             roomName: "Test Room",
             roomDescription: "Test Description",
             participants: ["me@example.com"],
-            creatorID: "owner@example.com",
+            creatorUID: "owner@example.com",
             createdAt: Date(timeIntervalSince1970: 0),
             thumbPath: nil,
             originalPath: nil,
             lastMessageAt: nil,
             lastMessage: nil,
-            lastMessageSenderID: nil,
+            lastMessageSenderUID: nil,
             seq: 0,
             isClosed: false,
             activeAnnouncementID: nil,
@@ -138,7 +139,8 @@ struct ChatRoomMessageUseCaseTests {
             ID: id,
             seq: seq,
             roomID: roomID,
-            senderID: "me@example.com",
+            senderUID: "me@example.com",
+            senderEmail: nil,
             senderNickname: "나",
             senderAvatarPath: nil,
             msg: "삭제할 메시지",

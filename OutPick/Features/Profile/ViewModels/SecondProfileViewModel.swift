@@ -146,9 +146,8 @@ final class SecondProfileViewModel {
                 profile.originalPath = uploaded.avatarPath
             }
 
-            // 5) LoginManager에 현재 프로필 세팅 + Firestore 저장
-            LoginManager.shared.setCurrentUserProfile(profile)
-            try await repository.saveCurrentUserProfile()
+            // 5) Firestore 저장. 세션 상태 반영은 완료 콜백을 받은 상위 coordinator가 담당한다.
+            try await repository.saveCurrentUserProfile(profile)
 
             state.isSaving = false
             recompute()

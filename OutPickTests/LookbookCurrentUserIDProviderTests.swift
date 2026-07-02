@@ -45,6 +45,7 @@ private struct CurrentUserProviderStub: CurrentUserProviding {
     var email: String = "me@example.com"
     var documentID: String = ""
     var authIdentityKey: String = ""
+    var uid: String { documentID.isEmpty ? authIdentityKey : documentID }
     var nickname: String? = nil
     var avatarPath: String? = nil
     var profile: UserProfile? = nil
@@ -58,6 +59,7 @@ private struct EmailTrapCurrentUserProvider: CurrentUserProviding {
 
     var documentID: String { "" }
     var authIdentityKey: String { " " }
+    var uid: String { authIdentityKey }
     var nickname: String? { nil }
     var avatarPath: String? { nil }
     var profile: UserProfile? { nil }

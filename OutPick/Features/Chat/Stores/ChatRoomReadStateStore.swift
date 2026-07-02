@@ -11,16 +11,16 @@ struct ChatRoomReadSnapshot: Equatable {
     let roomID: String
     var latestSeq: Int64?
     var lastReadSeq: Int64?
-    var lastMessageSenderID: String?
+    var lastMessageSenderUID: String?
 
     func unreadCount(currentUserID: String) -> Int64? {
         guard let latestSeq, let lastReadSeq else { return nil }
 
         var unread = max(Int64(0), latestSeq - lastReadSeq)
         if unread > 0,
-           let lastMessageSenderID,
-           !lastMessageSenderID.isEmpty,
-           lastMessageSenderID == currentUserID {
+           let lastMessageSenderUID,
+           !lastMessageSenderUID.isEmpty,
+           lastMessageSenderUID == currentUserID {
             unread = max(Int64(0), unread - 1)
         }
         return unread
@@ -66,7 +66,7 @@ final class ChatRoomReadStateStore {
         return update(roomID: snapshot.roomID) { current in
             current.latestSeq = snapshot.latestSeq
             current.lastReadSeq = snapshot.lastReadSeq
-            current.lastMessageSenderID = snapshot.lastMessageSenderID
+            current.lastMessageSenderUID = snapshot.lastMessageSenderUID
         }
     }
 
@@ -74,7 +74,7 @@ final class ChatRoomReadStateStore {
     func seedLatest(
         roomID: String,
         latestSeq: Int64?,
-        lastMessageSenderID: String?
+        lastMessageSenderUID: String?
     ) -> ChatRoomReadSnapshot? {
         guard !roomID.isEmpty else { return nil }
         return update(roomID: roomID) { current in
@@ -83,9 +83,9 @@ final class ChatRoomReadStateStore {
                     return
                 }
                 current.latestSeq = latestSeq
-                current.lastMessageSenderID = lastMessageSenderID
+                current.lastMessageSenderUID = lastMessageSenderUID
             } else if current.latestSeq == nil {
-                current.lastMessageSenderID = lastMessageSenderID
+                current.lastMessageSenderUID = lastMessageSenderUID
             }
         }
     }
@@ -117,7 +117,7 @@ final class ChatRoomReadStateStore {
             roomID: roomID,
             latestSeq: nil,
             lastReadSeq: nil,
-            lastMessageSenderID: nil
+            lastMessageSenderUID: nil
         )
         let previous = snapshot
         mutate(&snapshot)

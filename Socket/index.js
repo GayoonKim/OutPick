@@ -23,7 +23,7 @@ import { createRoomAccess } from "./src/rooms/roomAccess.js";
 import { createRoomRegistry } from "./src/rooms/roomRegistry.js";
 import { createUserLookup } from "./src/users/userLookup.js";
 import { allowRate } from "./src/utils/rateLimit.js";
-import { normalizeEmail } from "./src/utils/strings.js";
+import { normalizeEmail, normalizeUID } from "./src/utils/strings.js";
 
 const app = express();
 const server = createServer(app);
@@ -189,7 +189,8 @@ function buildServerImageMessage(body) {
     type = 'image',
     msg = '',
     attachments = [],
-    senderID = '',
+    senderUID = '',
+    senderEmail = '',
     senderNickname = '',
     senderAvatarPath = '',
     sentAt
@@ -201,7 +202,8 @@ function buildServerImageMessage(body) {
     ID: messageID,                 // mirror client messageID
     roomID,
     roomName: roomID,
-    senderID,
+    senderUID,
+    ...(senderEmail ? { senderEmail } : {}),
     senderNickname,
     ...(senderAvatarPath ? { senderAvatarPath } : {}),
     msg,
@@ -238,7 +240,8 @@ function buildServerVideoMessage(body) {
     messageID,
     msg = '',
     attachments = [],
-    senderID = '',
+    senderUID = '',
+    senderEmail = '',
     senderNickname = '',
     senderAvatarPath = '',
     sentAt
@@ -250,7 +253,8 @@ function buildServerVideoMessage(body) {
     ID: messageID,
     roomID,
     roomName: roomID,
-    senderID,
+    senderUID,
+    ...(senderEmail ? { senderEmail } : {}),
     senderNickname,
     ...(senderAvatarPath ? { senderAvatarPath } : {}),
     msg,
@@ -313,9 +317,7 @@ app.get('/', (req, res) => {
 });
 
 const {
-  findUserByUID,
-  findUserDocRefByEmail,
-  findUserDocRefsByEmails
+  findUserByUID
 } = createUserLookup({ db });
 
 const {
@@ -328,8 +330,7 @@ const { loadRoomAccess } = createRoomAccess({ db });
 const { allocateSeqAndPersist } = createSequenceStore({ db, admin });
 const { fanoutChatPush } = createChatPushService({
   db,
-  admin,
-  findUserDocRefsByEmails
+  admin
 });
 
 const handleLookbookShare = createLookbookShareHandler({
@@ -420,7 +421,7 @@ async function loadExistingMessage(roomID, messageID) {
 async function assertMediaUploadReservation({
   roomID,
   messageID,
-  senderID,
+  senderUID,
   kind,
   attachmentCount,
   expectedPathCount,
@@ -436,7 +437,7 @@ async function assertMediaUploadReservation({
   if (data.status !== "pending") {
     return { ok: false, error: "media_reservation_not_pending" };
   }
-  if (normalizeEmail(data.senderID) !== normalizeEmail(senderID)) {
+  if (normalizeUID(data.senderUID) !== normalizeUID(senderUID)) {
     return { ok: false, error: "media_reservation_sender_mismatch" };
   }
   if (data.kind !== kind) {
@@ -471,21 +472,22 @@ async function assertMediaUploadReservation({
   return { ok: true, ref, data };
 }
 
-async function stageRoomMembershipCleanup(batch, roomID, email, userRef = null) {
-  const normalizedEmail = normalizeEmail(email);
-  if (!normalizedEmail) return false;
+async function stageRoomMembershipCleanup(batch, roomID, userUID) {
+  const normalizedUID = normalizeUID(userUID);
+  if (!normalizedUID || normalizedUID.includes("/")) return false;
 
-  const resolvedUserRef = userRef ?? await findUserDocRefByEmail(normalizedEmail);
-  if (!resolvedUserRef) {
-    console.warn("[room-membership] user doc not found", { roomID, email: normalizedEmail });
+  const userRef = db.collection("users").doc(normalizedUID);
+  const userSnap = await userRef.get();
+  if (!userSnap.exists) {
+    console.warn("[room-membership] user doc not found", { roomID, userUID: normalizedUID });
     return false;
   }
 
-  batch.set(resolvedUserRef, {
+  batch.set(userRef, {
     joinedRooms: admin.firestore.FieldValue.arrayRemove(roomID),
     updatedAt: admin.firestore.FieldValue.serverTimestamp()
   }, { merge: true });
-  batch.delete(resolvedUserRef.collection("roomStates").doc(roomID));
+  batch.delete(userRef.collection("roomStates").doc(roomID));
   return true;
 }
 
@@ -538,19 +540,7 @@ io.use(async (socket, next) => {
     const tokenEmail = emailFromDecodedToken(decodedToken);
     const userProfile = await findUserByUID(userUID);
     const profileEmail = normalizeEmail(userProfile?.data?.email);
-    const userEmail = profileEmail || tokenEmail;
-
-    if (!userEmail) {
-      console.warn('[auth] user email not resolved from uid', {
-        uid: userUID,
-        hasUserProfile: !!userProfile,
-        tokenProvider: decodedToken?.firebase?.sign_in_provider || 'unknown',
-        clientKey: getClientKey(socket.handshake)
-      });
-      const err = new Error('unauthenticated');
-      err.data = { message: '사용자 프로필 email을 찾을 수 없습니다.', error: 'missing_user_profile_email' };
-      return next(err);
-    }
+    const userEmail = profileEmail || tokenEmail || '';
 
     socket.userUID = userUID;
     socket.userDocumentID = userProfile?.ref?.id || userUID;
@@ -569,7 +559,7 @@ io.use(async (socket, next) => {
 });
 
 io.on('connection', (socket) => {
-    console.log('User connected:', socket.userEmail);
+    console.log('User connected:', socket.userUID);
 
     // Advertise server reconnect policy & perform a lightweight hello/ack
     socket.emit('server:connect:ready', {
@@ -639,7 +629,7 @@ io.on('connection', (socket) => {
         const roomExists = await ensureRoomLoaded(roomID);
 
         if (roomExists) {
-            const access = await loadRoomAccess(roomID, socket.userEmail);
+            const access = await loadRoomAccess(roomID, socket.userUID);
             if (!access.ok) {
               callback && callback({ ok: false, message: access.error, error: access.error });
               return;
@@ -680,9 +670,9 @@ io.on('connection', (socket) => {
     // 클라는 roomID + intent만 보냄: { roomID, intent: "leave-or-close" }
     socket.on('room:leave-or-close', async (payload = {}, callback) => {
       const { roomID } = payload || {};
-      const userEmail = socket.userEmail;
+      const userUID = normalizeUID(socket.userUID);
 
-      console.log('[room:leave-or-close] requested', { roomID, userEmail });
+      console.log('[room:leave-or-close] requested', { roomID, userUID });
 
       // --- 기본 검증 ---
       if (!roomID || !isValidRoomID(roomID)) {
@@ -691,8 +681,8 @@ io.on('connection', (socket) => {
         return;
       }
 
-      if (!userEmail || typeof userEmail !== 'string') {
-        console.warn('[room:leave-or-close] missing userEmail on socket');
+      if (!userUID) {
+        console.warn('[room:leave-or-close] missing userUID on socket');
         callback && callback({ ok: false, error: 'unauthenticated' });
         return;
       }
@@ -708,40 +698,37 @@ io.on('connection', (socket) => {
         }
 
         const roomData = snap.data() || {};
-        const participantIDs = Array.isArray(roomData.participantIDs)
-          ? [...new Set(roomData.participantIDs.map(normalizeEmail).filter(Boolean))]
+        const participantUIDs = Array.isArray(roomData.participantUIDs)
+          ? [...new Set(roomData.participantUIDs.map(normalizeUID).filter(Boolean))]
           : [];
-        if (userEmail && !participantIDs.includes(userEmail)) {
-          participantIDs.push(userEmail);
+        if (userUID && !participantUIDs.includes(userUID)) {
+          participantUIDs.push(userUID);
         }
 
-        // 🔑 방장 판단: creatorID 필드만 사용
-        const creatorID = typeof roomData.creatorID === 'string'
-          ? normalizeEmail(roomData.creatorID)
+        const creatorUID = typeof roomData.creatorUID === 'string'
+          ? normalizeUID(roomData.creatorUID)
           : null;
-        const isOwner = !!creatorID && creatorID === userEmail;
+        const isOwner = !!creatorUID && creatorUID === userUID;
 
         // =========================
         // 1) 방장인 경우 → 방 종료
         // =========================
         if (isOwner) {
-          console.log('[room:leave-or-close] owner closing room', { roomID, creatorID });
+          console.log('[room:leave-or-close] owner closing room', { roomID, creatorUID });
 
           const cleanupBatch = db.batch();
-          const userRefsByEmail = await findUserDocRefsByEmails(participantIDs);
           cleanupBatch.set(roomRef, {
             isClosed: true,
             closedAt: admin.firestore.FieldValue.serverTimestamp(),
-            closedBy: userEmail,
-            participantIDs: []
+            closedByUID: userUID,
+            participantUIDs: []
           }, { merge: true });
 
-          for (const participantEmail of participantIDs) {
+          for (const participantUID of participantUIDs) {
             await stageRoomMembershipCleanup(
               cleanupBatch,
               roomID,
-              participantEmail,
-              userRefsByEmail.get(participantEmail) ?? null
+              participantUID
             );
           }
 
@@ -750,7 +737,7 @@ io.on('connection', (socket) => {
           // 클라이언트들에게 "room closed" 알림
           io.to(roomID).emit('room:closed', {
             roomID,
-            closedBy: userEmail
+            closedByUID: userUID
           });
 
           // 서버 메모리 rooms 캐시 정리
@@ -774,13 +761,13 @@ io.on('connection', (socket) => {
         // =========================
         // 2) 일반 참여자인 경우 → 방 나가기
         // =========================
-        console.log('[room:leave-or-close] participant leaving room', { roomID, userEmail });
+        console.log('[room:leave-or-close] participant leaving room', { roomID, userUID });
 
         const cleanupBatch = db.batch();
         cleanupBatch.set(roomRef, {
-          participantIDs: admin.firestore.FieldValue.arrayRemove(userEmail)
+          participantUIDs: admin.firestore.FieldValue.arrayRemove(userUID)
         }, { merge: true });
-        await stageRoomMembershipCleanup(cleanupBatch, roomID, userEmail);
+        await stageRoomMembershipCleanup(cleanupBatch, roomID, userUID);
         await cleanupBatch.commit();
 
         // Socket.IO 방 탈퇴
@@ -808,7 +795,6 @@ io.on('connection', (socket) => {
           roomName,
           msg: rawMsg,
           message,
-          senderID,
           senderNickname,
           senderNickName,
           senderAvatarPath,   // 새 필드 지원
@@ -819,7 +805,8 @@ io.on('connection', (socket) => {
         const roomID = rawRoomID || roomName;
         const msg = typeof rawMsg === 'string' ? rawMsg : (typeof message === 'string' ? message : '');
         const nickname = senderNickname || senderNickName || '';
-        const senderEmail = socket.userEmail;
+        const senderUID = normalizeUID(socket.userUID);
+        const senderEmail = normalizeEmail(socket.userEmail);
 
         // ===== 기본 검증 =====
         if (!roomID || typeof msg !== 'string' || msg.trim().length === 0) {
@@ -842,7 +829,7 @@ io.on('connection', (socket) => {
           callback && callback({ ok: false, message: "not_joined", error: "not_joined" });
           return;
         }
-        const roomAccess = await loadRoomAccess(roomID, senderEmail);
+        const roomAccess = await loadRoomAccess(roomID, senderUID);
         if (!roomAccess.ok) {
           callback && callback({ ok: false, message: roomAccess.error, error: roomAccess.error });
           return;
@@ -903,7 +890,8 @@ io.on('connection', (socket) => {
           ID,
           roomID,
           roomName: roomID,
-          senderID: senderEmail,
+          senderUID,
+          ...(senderEmail ? { senderEmail } : {}),
           senderNickname: nickname,
           ...(senderAvatarPath ? { senderAvatarPath } : {}),
           msg,
@@ -986,8 +974,9 @@ io.on('connection', (socket) => {
           return callback && callback({ ok: false, error: contract.error });
         }
 
-        const senderEmail = socket.userEmail;
-        const access = await loadRoomAccess(roomID, senderEmail);
+        const senderUID = normalizeUID(socket.userUID);
+        const senderEmail = normalizeEmail(socket.userEmail);
+        const access = await loadRoomAccess(roomID, senderUID);
         if (!access.ok) {
           return callback && callback({ ok: false, error: access.error });
         }
@@ -1018,7 +1007,7 @@ io.on('connection', (socket) => {
           const reservation = existing.data() || {};
           if (
             reservation.status === "pending" &&
-            normalizeEmail(reservation.senderID) === senderEmail &&
+            normalizeUID(reservation.senderUID) === senderUID &&
             reservation.kind === mediaKind &&
             Number(reservation.attachmentCount) === contract.attachmentCount &&
             Number(reservation.expectedPathCount) === contract.expectedPathCount
@@ -1043,7 +1032,8 @@ io.on('connection', (socket) => {
         await ref.set({
           roomID,
           messageID: String(messageID),
-          senderID: senderEmail,
+          senderUID,
+          ...(senderEmail ? { senderEmail } : {}),
           kind: mediaKind,
           status: "pending",
           storagePrefix,
@@ -1079,7 +1069,6 @@ io.on('connection', (socket) => {
             clientMessageID,
             attachments,
             images,
-            senderID,
             senderNickname,
             senderNickName,
             senderAvatarPath,
@@ -1091,8 +1080,9 @@ io.on('connection', (socket) => {
           if (!roomID) return callback && callback({ ok: false, error: 'invalid_room_id' });
           if (!rooms[roomID]) return callback && callback({ ok: false, error: 'room_not_found' });
           if (!socket.rooms.has(roomID)) return callback && callback({ ok: false, error: 'not_joined' });
-          const imageSenderID = socket.userEmail;
-          const roomAccess = await loadRoomAccess(roomID, imageSenderID);
+          const imageSenderUID = normalizeUID(socket.userUID);
+          const imageSenderEmail = normalizeEmail(socket.userEmail);
+          const roomAccess = await loadRoomAccess(roomID, imageSenderUID);
           if (!roomAccess.ok) {
             return callback && callback({ ok: false, error: roomAccess.error });
           }
@@ -1175,7 +1165,7 @@ io.on('connection', (socket) => {
           const reservation = await assertMediaUploadReservation({
             roomID,
             messageID: effectiveMessageID,
-            senderID: imageSenderID,
+            senderUID: imageSenderUID,
             kind: "images",
             attachmentCount: contract.attachmentCount,
             expectedPathCount: contract.expectedPathCount,
@@ -1206,7 +1196,8 @@ io.on('connection', (socket) => {
             type: finalType,
             msg: finalMsg,
             attachments: normalized,
-            senderID: imageSenderID,
+            senderUID: imageSenderUID,
+            senderEmail: imageSenderEmail,
             senderNickname: nickname,
             senderAvatarPath,
             sentAt: when.toISOString()
@@ -1249,7 +1240,6 @@ io.on('connection', (socket) => {
             sizeBytes,
             approxBitrateMbps,
             preset,
-            senderID,
             senderNickname,
             senderNickName,
             senderAvatarPath,
@@ -1260,8 +1250,9 @@ io.on('connection', (socket) => {
           if (!roomID) return callback && callback({ ok: false, error: 'invalid_room_id' });
           if (!rooms[roomID]) return callback && callback({ ok: false, error: 'room_not_found' });
           if (!socket.rooms.has(roomID)) return callback && callback({ ok: false, error: 'not_joined' });
-          const videoSenderID = socket.userEmail;
-          const roomAccess = await loadRoomAccess(roomID, videoSenderID);
+          const videoSenderUID = normalizeUID(socket.userUID);
+          const videoSenderEmail = normalizeEmail(socket.userEmail);
+          const roomAccess = await loadRoomAccess(roomID, videoSenderUID);
           if (!roomAccess.ok) {
             return callback && callback({ ok: false, error: roomAccess.error });
           }
@@ -1320,7 +1311,7 @@ io.on('connection', (socket) => {
           const reservation = await assertMediaUploadReservation({
             roomID,
             messageID: effectiveMessageID,
-            senderID: videoSenderID,
+            senderUID: videoSenderUID,
             kind: "video",
             attachmentCount: contract.attachmentCount,
             expectedPathCount: contract.expectedPathCount,
@@ -1336,7 +1327,8 @@ io.on('connection', (socket) => {
             messageID: effectiveMessageID,
             msg: typeof msg === 'string' ? msg : '',
             attachments: [attachment],
-            senderID: videoSenderID,
+            senderUID: videoSenderUID,
+            senderEmail: videoSenderEmail,
             senderNickname: nickname,
             senderAvatarPath,
             sentAt

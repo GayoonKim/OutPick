@@ -18,7 +18,7 @@ struct ChatRoomMediaIndexEntry: Hashable {
     let messageID: String
     let idx: Int
     let seq: Int64
-    let senderID: String
+    let senderUID: String
     let type: Attachment.AttachmentType
     let thumbKey: String?
     let originalKey: String?
@@ -53,7 +53,7 @@ struct ChatRoomMediaIndexEntry: Hashable {
                     messageID: message.ID,
                     idx: attachment.index,
                     seq: message.seq,
-                    senderID: message.senderID,
+                    senderUID: message.senderUID,
                     type: attachment.type,
                     thumbKey: hash,
                     originalKey: hash.map { "\($0):orig" },

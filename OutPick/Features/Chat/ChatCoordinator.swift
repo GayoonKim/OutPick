@@ -10,7 +10,7 @@ import UIKit
 @MainActor
 protocol ChatRoomRouting: AnyObject {
     func showSettings(from source: ChatViewController)
-    func showUserProfile(from source: ChatViewController, email: String, nickname: String, avatarPath: String?)
+    func showUserProfile(from source: ChatViewController, userID: String, nickname: String, avatarPath: String?)
     func openLookbookSharedContent(from source: ChatViewController, sharedContent: LookbookSharedContent)
     func showImageViewer(
         from source: ChatViewController,
@@ -37,7 +37,8 @@ final class ChatCoordinator {
     func makeRoomListRoot() -> UIViewController {
         let listVC = RoomListsCollectionViewController(
             collectionViewLayout: UICollectionViewFlowLayout(),
-            viewModel: container.makeRoomListsViewModel()
+            viewModel: container.makeRoomListsViewModel(),
+            currentUserProvider: container.currentUserProvider
         )
 
         listVC.onSelectRoom = { [weak self, weak listVC] room in
@@ -190,7 +191,7 @@ final class ChatCoordinator {
 
     private func presentUserProfile(
         from source: UIViewController,
-        email: String,
+        userID: String,
         nickname: String,
         avatarPath: String?
     ) {
@@ -205,7 +206,7 @@ final class ChatCoordinator {
             }
         )
         userProfileDetailCoordinator = coordinator
-        coordinator.start(email: email, nickname: nickname, avatarPath: avatarPath)
+        coordinator.start(userID: userID, nickname: nickname, avatarPath: avatarPath)
     }
 }
 
@@ -222,6 +223,7 @@ extension ChatCoordinator: ChatRoomRouting {
             photoLibrarySaver: container.makePhotoLibrarySaver(),
             roomImageManager: container.makeRoomImageManager(),
             avatarImageManager: container.makeAvatarImageManager(),
+            currentUserProvider: container.currentUserProvider,
             networkStatusProvider: container.makeNetworkStatusProvider(),
             exitUseCase: container.makeChatRoomExitUseCase(),
             onEvent: { [weak self, weak source] event in
@@ -241,7 +243,7 @@ extension ChatCoordinator: ChatRoomRouting {
                     guard let self, let settingVC else { return }
                     self.presentUserProfile(
                         from: settingVC,
-                        email: user.email,
+                        userID: user.email,
                         nickname: user.nickname,
                         avatarPath: user.profileImagePath
                     )
@@ -252,8 +254,8 @@ extension ChatCoordinator: ChatRoomRouting {
         source.presentSettingPanel(panelVC)
     }
 
-    func showUserProfile(from source: ChatViewController, email: String, nickname: String, avatarPath: String?) {
-        presentUserProfile(from: source, email: email, nickname: nickname, avatarPath: avatarPath)
+    func showUserProfile(from source: ChatViewController, userID: String, nickname: String, avatarPath: String?) {
+        presentUserProfile(from: source, userID: userID, nickname: nickname, avatarPath: avatarPath)
     }
 
     func openLookbookSharedContent(from source: ChatViewController, sharedContent: LookbookSharedContent) {
