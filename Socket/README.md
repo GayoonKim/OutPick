@@ -80,7 +80,16 @@ gcloud projects add-iam-policy-binding outpick-664ae \
 gcloud projects add-iam-policy-binding outpick-664ae \
   --member="serviceAccount:outpick-socket@outpick-664ae.iam.gserviceaccount.com" \
   --role="roles/firebasecloudmessaging.admin"
+
+gcloud projects add-iam-policy-binding outpick-664ae \
+  --member="serviceAccount:outpick-socket@outpick-664ae.iam.gserviceaccount.com" \
+  --role="roles/storage.objectAdmin"
 ```
+
+The socket server initializes Firebase Admin with `OUTPICK_FIREBASE_STORAGE_BUCKET`
+or `FIREBASE_STORAGE_BUCKET` when provided. The production default is
+`outpick-664ae.appspot.com`, which is required for room close cleanup to delete
+the `rooms/{roomID}/` Storage prefix.
 
 Build and deploy candidate:
 
