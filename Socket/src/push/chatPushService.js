@@ -22,6 +22,13 @@ function isInvalidPushTokenCode(code) {
     || code === "messaging/invalid-registration-token";
 }
 
+function uniqueMemberUIDFromDoc(doc) {
+  const data = doc.data() || {};
+  const dataUID = normalizeUID(data.userID || "");
+  const docUID = normalizeUID(doc.id || "");
+  return dataUID || docUID;
+}
+
 function buildChatPushMulticast({
   roomID,
   roomName,
@@ -179,45 +186,68 @@ export function createChatPushService({ db, admin }) {
       if (!roomSnapshot.exists) return;
 
       const roomData = roomSnapshot.data() || {};
-      const participants = Array.isArray(roomData.participantUIDs)
-        ? [...new Set(roomData.participantUIDs.map(normalizeUID).filter(Boolean))]
-        : [];
-
       const senderUID = normalizeUID(messageData?.senderUID || "");
-      const recipients = participants.filter((uid) => uid && uid !== senderUID);
-      if (!recipients.length) return;
-
       const roomName = typeof roomData.roomName === "string" && roomData.roomName.trim()
         ? roomData.roomName.trim()
         : roomID;
       const preview = buildPushPreview(messageData);
 
-      const results = await Promise.all(recipients.map(async (recipientUID) => {
-        return sendChatPushToUser({
-          userUID: recipientUID,
-          roomID,
-          roomName,
-          messageID: messageData?.ID,
-          messageType: messageData?.messageType,
-          senderUID: messageData?.senderUID,
-          senderEmail: messageData?.senderEmail,
-          senderNickname: messageData?.senderNickname,
-          preview
-        });
-      }));
+      // TODO(chat-push-worker): members pagination removes participantUIDs,
+      // but long-term large-room fanout should move to a queue/worker.
+      const summary = { recipients: 0, sent: 0, skipped: {} };
+      let query = db.collection("Rooms")
+        .doc(roomID)
+        .collection("members")
+        .orderBy("__name__")
+        .limit(250);
 
-      const summary = results.reduce((acc, item) => {
-        acc.sent += item.sent || 0;
-        if (item.skippedReason) {
-          acc.skipped[item.skippedReason] = (acc.skipped[item.skippedReason] || 0) + 1;
+      while (true) {
+        const memberSnapshot = await query.get();
+        if (memberSnapshot.empty) break;
+
+        const recipients = [...new Set(
+          memberSnapshot.docs
+            .map(uniqueMemberUIDFromDoc)
+            .filter((uid) => uid && uid !== senderUID)
+        )];
+        summary.recipients += recipients.length;
+
+        const results = await Promise.all(recipients.map(async (recipientUID) => {
+          return sendChatPushToUser({
+            userUID: recipientUID,
+            roomID,
+            roomName,
+            messageID: messageData?.ID,
+            messageType: messageData?.messageType,
+            senderUID: messageData?.senderUID,
+            senderEmail: messageData?.senderEmail,
+            senderNickname: messageData?.senderNickname,
+            preview
+          });
+        }));
+
+        for (const item of results) {
+          summary.sent += item.sent || 0;
+          if (item.skippedReason) {
+            summary.skipped[item.skippedReason] = (summary.skipped[item.skippedReason] || 0) + 1;
+          }
         }
-        return acc;
-      }, { sent: 0, skipped: {} });
+
+        if (memberSnapshot.size < 250) break;
+        query = db.collection("Rooms")
+          .doc(roomID)
+          .collection("members")
+          .orderBy("__name__")
+          .startAfter(memberSnapshot.docs[memberSnapshot.docs.length - 1])
+          .limit(250);
+      }
+
+      if (summary.recipients === 0) return;
 
       console.log("[push] fanout complete", {
         roomID,
         messageID: messageData?.ID,
-        recipients: recipients.length,
+        recipients: summary.recipients,
         sent: summary.sent,
         skipped: summary.skipped
       });

@@ -5,34 +5,6 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "participantUIDs",
-          "arrayConfig": "CONTAINS"
-        },
-        {
-          "fieldPath": "lastMessageAt",
-          "order": "DESCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "Rooms",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "participantUIDs",
-          "arrayConfig": "CONTAINS"
-        },
-        {
-          "fieldPath": "updatedAt",
-          "order": "DESCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "Rooms",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
           "fieldPath": "roomSearchChars",
           "arrayConfig": "CONTAINS"
         },

@@ -27,7 +27,8 @@ export function createSequenceStore({ db, admin }) {
       tx.set(roomRef, {
         seq: next,
         lastMessage: lastMessageText,
-        lastMessageAt: admin.firestore.FieldValue.serverTimestamp()
+        lastMessageAt: admin.firestore.FieldValue.serverTimestamp(),
+        lastMessageSeq: next
       }, { merge: true });
       if (options.mediaUploadRef) {
         tx.delete(options.mediaUploadRef);

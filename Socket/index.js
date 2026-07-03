@@ -20,6 +20,7 @@ import { createLookbookShareHandler } from "./src/lookbookShare/lookbookShareHan
 import { createSequenceStore } from "./src/messages/sequenceStore.js";
 import { createChatPushService } from "./src/push/chatPushService.js";
 import { createRoomAccess } from "./src/rooms/roomAccess.js";
+import { createRoomCleanup } from "./src/rooms/roomCleanup.js";
 import { createRoomRegistry } from "./src/rooms/roomRegistry.js";
 import { createUserLookup } from "./src/users/userLookup.js";
 import { allowRate } from "./src/utils/rateLimit.js";
@@ -327,6 +328,10 @@ const {
 } = createRoomRegistry({ db, isValidRoomID });
 
 const { loadRoomAccess } = createRoomAccess({ db });
+const {
+  closeRoomImmediately,
+  leaveRoomMembership
+} = createRoomCleanup({ db, admin });
 const { allocateSeqAndPersist } = createSequenceStore({ db, admin });
 const { fanoutChatPush } = createChatPushService({
   db,
@@ -470,25 +475,6 @@ async function assertMediaUploadReservation({
   }
 
   return { ok: true, ref, data };
-}
-
-async function stageRoomMembershipCleanup(batch, roomID, userUID) {
-  const normalizedUID = normalizeUID(userUID);
-  if (!normalizedUID || normalizedUID.includes("/")) return false;
-
-  const userRef = db.collection("users").doc(normalizedUID);
-  const userSnap = await userRef.get();
-  if (!userSnap.exists) {
-    console.warn("[room-membership] user doc not found", { roomID, userUID: normalizedUID });
-    return false;
-  }
-
-  batch.set(userRef, {
-    joinedRooms: admin.firestore.FieldValue.arrayRemove(roomID),
-    updatedAt: admin.firestore.FieldValue.serverTimestamp()
-  }, { merge: true });
-  batch.delete(userRef.collection("roomStates").doc(roomID));
-  return true;
 }
 
 // Allow up to maxAttempts handshake tries within a moving window; otherwise reject with a descriptive error
@@ -666,6 +652,31 @@ io.on('connection', (socket) => {
       callback && callback({ ok: true, roomID });
     });
 
+    async function ensureAuthorizedSocketRoom(roomID, senderUID, context) {
+      if (!rooms[roomID]) {
+        const roomExists = await ensureRoomLoaded(roomID);
+        if (!roomExists) {
+          return { ok: false, error: "room_not_found" };
+        }
+      }
+
+      const access = await loadRoomAccess(roomID, senderUID);
+      if (!access.ok) {
+        return access;
+      }
+
+      if (!socket.rooms.has(roomID)) {
+        socket.join(roomID);
+        console.warn(`[${context}] socket room membership restored`, {
+          roomID,
+          socketID: socket.id,
+          senderUID
+        });
+      }
+
+      return access;
+    }
+
     // 방 나가기 / 방 종료 (서버가 Firestore 상태로 판단)
     // 클라는 roomID + intent만 보냄: { roomID, intent: "leave-or-close" }
     socket.on('room:leave-or-close', async (payload = {}, callback) => {
@@ -692,18 +703,12 @@ io.on('connection', (socket) => {
         const snap = await roomRef.get();
 
         if (!snap.exists) {
-          console.warn('[room:leave-or-close] room not found in Firestore', roomID);
-          callback && callback({ ok: false, error: 'room_not_found' });
+          console.warn('[room:leave-or-close] room already deleted', roomID);
+          callback && callback({ ok: true, mode: 'closed', alreadyDeleted: true });
           return;
         }
 
         const roomData = snap.data() || {};
-        const participantUIDs = Array.isArray(roomData.participantUIDs)
-          ? [...new Set(roomData.participantUIDs.map(normalizeUID).filter(Boolean))]
-          : [];
-        if (userUID && !participantUIDs.includes(userUID)) {
-          participantUIDs.push(userUID);
-        }
 
         const creatorUID = typeof roomData.creatorUID === 'string'
           ? normalizeUID(roomData.creatorUID)
@@ -716,23 +721,14 @@ io.on('connection', (socket) => {
         if (isOwner) {
           console.log('[room:leave-or-close] owner closing room', { roomID, creatorUID });
 
-          const cleanupBatch = db.batch();
-          cleanupBatch.set(roomRef, {
-            isClosed: true,
-            closedAt: admin.firestore.FieldValue.serverTimestamp(),
-            closedByUID: userUID,
-            participantUIDs: []
-          }, { merge: true });
-
-          for (const participantUID of participantUIDs) {
-            await stageRoomMembershipCleanup(
-              cleanupBatch,
-              roomID,
-              participantUID
-            );
+          const closeResult = await closeRoomImmediately({
+            roomID,
+            closedByUID: userUID
+          });
+          if (!closeResult.ok) {
+            callback && callback({ ok: false, error: closeResult.error || 'close_failed' });
+            return;
           }
-
-          await cleanupBatch.commit();
 
           // 클라이언트들에게 "room closed" 알림
           io.to(roomID).emit('room:closed', {
@@ -754,7 +750,11 @@ io.on('connection', (socket) => {
             }
           }
 
-          callback && callback({ ok: true, mode: 'closed' });
+          callback && callback({
+            ok: true,
+            mode: 'closed',
+            alreadyDeleted: closeResult.alreadyDeleted === true
+          });
           return;
         }
 
@@ -763,12 +763,11 @@ io.on('connection', (socket) => {
         // =========================
         console.log('[room:leave-or-close] participant leaving room', { roomID, userUID });
 
-        const cleanupBatch = db.batch();
-        cleanupBatch.set(roomRef, {
-          participantUIDs: admin.firestore.FieldValue.arrayRemove(userUID)
-        }, { merge: true });
-        await stageRoomMembershipCleanup(cleanupBatch, roomID, userUID);
-        await cleanupBatch.commit();
+        const leaveResult = await leaveRoomMembership({ roomID, userUID });
+        if (!leaveResult.ok) {
+          callback && callback({ ok: false, error: leaveResult.error || 'leave_failed' });
+          return;
+        }
 
         // Socket.IO 방 탈퇴
         socket.leave(roomID);
@@ -819,18 +818,12 @@ io.on('connection', (socket) => {
           callback && callback({ ok: false, message: "invalid_room_id", error: "invalid_room_id" });
           return;
         }
-        if (!rooms[roomID]) {
-          console.warn(`[Chat] room not found: ${roomID}`);
-          callback && callback({ ok: false, message: "room_not_found", error: "room_not_found" });
-          return;
-        }
-        if (!socket.rooms.has(roomID)) {
-          console.warn(`[Chat] socket not joined to room: ${roomID}`);
-          callback && callback({ ok: false, message: "not_joined", error: "not_joined" });
-          return;
-        }
-        const roomAccess = await loadRoomAccess(roomID, senderUID);
+        const roomAccess = await ensureAuthorizedSocketRoom(roomID, senderUID, "Chat");
         if (!roomAccess.ok) {
+          console.warn(`[Chat] room access denied: ${roomID}`, {
+            error: roomAccess.error,
+            senderUID
+          });
           callback && callback({ ok: false, message: roomAccess.error, error: roomAccess.error });
           return;
         }
@@ -961,10 +954,6 @@ io.on('connection', (socket) => {
         if (!messageID || String(messageID).includes('/')) {
           return callback && callback({ ok: false, error: 'invalid_message_id' });
         }
-        if (!socket.rooms.has(roomID)) {
-          return callback && callback({ ok: false, error: 'not_joined' });
-        }
-
         const mediaKind = normalizeMediaKind(kind);
         if (!mediaKind) {
           return callback && callback({ ok: false, error: 'invalid_media_kind' });
@@ -976,7 +965,7 @@ io.on('connection', (socket) => {
 
         const senderUID = normalizeUID(socket.userUID);
         const senderEmail = normalizeEmail(socket.userEmail);
-        const access = await loadRoomAccess(roomID, senderUID);
+        const access = await ensureAuthorizedSocketRoom(roomID, senderUID, "chat:mediaPreflight");
         if (!access.ok) {
           return callback && callback({ ok: false, error: access.error });
         }
@@ -1078,11 +1067,9 @@ io.on('connection', (socket) => {
           } = data || {};
 
           if (!roomID) return callback && callback({ ok: false, error: 'invalid_room_id' });
-          if (!rooms[roomID]) return callback && callback({ ok: false, error: 'room_not_found' });
-          if (!socket.rooms.has(roomID)) return callback && callback({ ok: false, error: 'not_joined' });
           const imageSenderUID = normalizeUID(socket.userUID);
           const imageSenderEmail = normalizeEmail(socket.userEmail);
-          const roomAccess = await loadRoomAccess(roomID, imageSenderUID);
+          const roomAccess = await ensureAuthorizedSocketRoom(roomID, imageSenderUID, "chat:mediaFinalize/images");
           if (!roomAccess.ok) {
             return callback && callback({ ok: false, error: roomAccess.error });
           }
@@ -1248,11 +1235,9 @@ io.on('connection', (socket) => {
           } = data || {};
 
           if (!roomID) return callback && callback({ ok: false, error: 'invalid_room_id' });
-          if (!rooms[roomID]) return callback && callback({ ok: false, error: 'room_not_found' });
-          if (!socket.rooms.has(roomID)) return callback && callback({ ok: false, error: 'not_joined' });
           const videoSenderUID = normalizeUID(socket.userUID);
           const videoSenderEmail = normalizeEmail(socket.userEmail);
-          const roomAccess = await loadRoomAccess(roomID, videoSenderUID);
+          const roomAccess = await ensureAuthorizedSocketRoom(roomID, videoSenderUID, "chat:mediaFinalize/video");
           if (!roomAccess.ok) {
             return callback && callback({ ok: false, error: roomAccess.error });
           }

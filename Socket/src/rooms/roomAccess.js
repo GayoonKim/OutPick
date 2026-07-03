@@ -14,16 +14,20 @@ export function createRoomAccess({ db }) {
       return { ok: false, error: "room_closed" };
     }
 
-    const participantUIDs = Array.isArray(roomData.participantUIDs)
-      ? roomData.participantUIDs.map(normalizeUID).filter(Boolean)
-      : [];
-
     const normalizedSenderUID = normalizeUID(senderUID);
-    if (!normalizedSenderUID || !participantUIDs.includes(normalizedSenderUID)) {
+    if (!normalizedSenderUID || normalizedSenderUID.includes("/")) {
       return { ok: false, error: "not_joined" };
     }
 
-    return { ok: true, roomData };
+    const memberSnap = await roomRef
+      .collection("members")
+      .doc(normalizedSenderUID)
+      .get();
+    if (!memberSnap.exists) {
+      return { ok: false, error: "not_joined" };
+    }
+
+    return { ok: true, roomData, memberData: memberSnap.data() || {} };
   }
 
   return { loadRoomAccess };

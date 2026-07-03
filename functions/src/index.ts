@@ -2481,7 +2481,6 @@ export const onRoomClosed = onDocumentUpdated(
 
     interface RoomDoc {
       isClosed?: boolean;
-      participantUIDs?: string[];
     }
 
     const before = beforeSnap.data() as RoomDoc | undefined;
@@ -2505,75 +2504,11 @@ export const onRoomClosed = onDocumentUpdated(
       return;
     }
 
-    const roomId = event.params.roomId as string;
-    const participantUIDs: string[] =
-        Array.isArray(before.participantUIDs) ?
-          before.participantUIDs :
-          Array.isArray(after.participantUIDs) ?
-            after.participantUIDs :
-            [];
-
     console.log(
-      `[onRoomClosed] Room ${roomId} closed. participants = ` +
-        `${participantUIDs.length}`
+      "[onRoomClosed] Room close cleanup is handled synchronously " +
+        "by the Socket close path. Skip trigger cleanup.",
+      {roomId: event.params.roomId}
     );
-
-    // 2) joinedRooms 에서 roomId 제거
-    if (participantUIDs.length > 0) {
-      const BATCH_LIMIT = 500; // Firestore 배치 write 제한
-
-      for (let i = 0; i < participantUIDs.length; i += BATCH_LIMIT) {
-        const slice = participantUIDs.slice(i, i + BATCH_LIMIT);
-        const batch = db.batch();
-
-        const normalizedUIDs = Array.from(
-          new Set(
-            slice
-              .map((uid) => uid.trim())
-              .filter((uid) => uid.length > 0 && !uid.includes("/"))
-          )
-        );
-
-        let updatedUsers = 0;
-        for (const uid of normalizedUIDs) {
-          const userRef = db.collection("users").doc(uid);
-          batch.set(userRef, {
-            joinedRooms: FieldValue.arrayRemove(roomId),
-          }, {merge: true});
-          batch.delete(userRef.collection("roomStates").doc(roomId));
-          updatedUsers += 1;
-        }
-
-        console.log(
-          "[onRoomClosed] Committing batch for " +
-            `${updatedUsers} users (roomId=${roomId})`
-        );
-        if (updatedUsers > 0) {
-          await batch.commit();
-        }
-      }
-    } else {
-      console.log(
-        "[onRoomClosed] No participants. " +
-          "Skipping joinedRooms cleanup."
-      );
-    }
-
-    // 3) 마지막으로 Rooms/{roomId} 문서 삭제
-    try {
-      await db.collection("Rooms").doc(roomId).delete();
-      console.log(
-        `[onRoomClosed] Room document deleted: ${roomId}`
-      );
-    } catch (err) {
-      console.error(
-        "[onRoomClosed] Failed to delete room " +
-          `${roomId} after cleanup`,
-        err
-      );
-      // 필요하면 여기서 throw 해서 재시도 유도 가능
-      // throw err;
-    }
   }
 );
 
