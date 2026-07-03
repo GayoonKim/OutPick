@@ -33,7 +33,7 @@ final class BrandAdminSessionStore: ObservableObject {
     }
 
     func refreshCurrentSession(force: Bool = false) async {
-        let identityKey = LoginManager.shared.getAuthIdentityKey
+        let identityKey = LoginManager.shared.canonicalUserID
         await refresh(identityKey: identityKey, force: force)
     }
 
@@ -95,7 +95,7 @@ final class BrandAdminSessionStore: ObservableObject {
     }
 
     func refreshWritableBrands(force: Bool = false) async {
-        let identityKey = LoginManager.shared.getAuthIdentityKey
+        let identityKey = LoginManager.shared.canonicalUserID
         let normalizedIdentityKey = identityKey.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !normalizedIdentityKey.isEmpty else {
@@ -145,7 +145,7 @@ final class BrandAdminSessionStore: ObservableObject {
     }
 
     func ensureWritableBrandsLoaded() async {
-        let identityKey = LoginManager.shared.getAuthIdentityKey
+        let identityKey = LoginManager.shared.canonicalUserID
         let normalizedIdentityKey = identityKey.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !normalizedIdentityKey.isEmpty else {
@@ -171,7 +171,7 @@ final class BrandAdminSessionStore: ObservableObject {
     #if DEBUG
     func applyUITestWritableBrands(_ brandIDs: Set<BrandID>) {
         writableBrandIDs = brandIDs
-        loadedWritableBrandsIdentityKey = LoginManager.shared.getAuthIdentityKey
+        loadedWritableBrandsIdentityKey = LoginManager.shared.canonicalUserID
         isWritableBrandsLoaded = true
     }
     #endif

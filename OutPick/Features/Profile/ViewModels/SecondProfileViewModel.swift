@@ -147,7 +147,12 @@ final class SecondProfileViewModel {
             }
 
             // 5) Firestore 저장. 세션 상태 반영은 완료 콜백을 받은 상위 coordinator가 담당한다.
-            try await repository.saveCurrentUserProfile(profile)
+            try await repository.saveCurrentUserProfile(
+                profile,
+                userID: userDocumentID,
+                email: email,
+                authenticatedUser: LoginManager.shared.authenticatedUser
+            )
 
             state.isSaving = false
             recompute()

@@ -112,7 +112,7 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
             cell.configure(
                 room: item.room,
                 messages: item.messages,
-                currentUserUID: self.currentUserProvider.uid
+                currentUserUID: self.currentUserProvider.canonicalUserID
             )
 
             return cell

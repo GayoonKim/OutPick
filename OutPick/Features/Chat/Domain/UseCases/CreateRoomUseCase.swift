@@ -34,7 +34,7 @@ final class CreateRoomUseCase: CreateRoomUseCaseProtocol {
         chatRoomRepository: FirebaseChatRoomRepositoryProtocol,
         imageStorageRepository: FirebaseImageStorageRepositoryProtocol,
         roomImageManager: RoomImageManaging,
-        currentUserUIDProvider: @escaping @Sendable () -> String = { LoginManager.shared.getUserUID },
+        currentUserUIDProvider: @escaping @Sendable () -> String = { LoginManager.shared.canonicalUserID },
         roomIDGenerator: @escaping @Sendable () -> String = {
             Firestore.firestore().collection("Rooms").document().documentID
         }

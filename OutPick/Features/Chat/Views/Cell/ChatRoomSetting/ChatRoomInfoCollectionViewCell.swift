@@ -138,7 +138,7 @@ class ChatRoomInfoCell: UICollectionViewCell {
         }
         
         roomNameLabel.text = room.roomName
-        roomParticipantCountLabel.text = "\(room.participants.count)명 참여"
+        roomParticipantCountLabel.text = "\(room.memberCount)명 참여"
         backgroundColor = OutPickTheme.ColorToken.backgroundBase
         
         if currentUserUID != room.creatorUID {

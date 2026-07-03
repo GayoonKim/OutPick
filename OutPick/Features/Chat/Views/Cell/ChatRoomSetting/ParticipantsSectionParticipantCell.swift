@@ -10,9 +10,9 @@ import UIKit
 class ParticipantsSectionParticipantCell: UICollectionViewCell {
     static let reuseIdentifier = "ParticipantsSectionParticipantCell"
     
-    private var userProfiles: [LocalUser] = []
+    private var userProfiles: [LocalChatUser] = []
     private var avatarImageManager: AvatarImageManaging?
-    var onSelectParticipant: ((LocalUser) -> Void)?
+    var onSelectParticipant: ((LocalChatUser) -> Void)?
     
     private lazy var participantLabel: UILabel = {
         let label = UILabel()
@@ -84,7 +84,7 @@ class ParticipantsSectionParticipantCell: UICollectionViewCell {
         avatarImageManager = nil
     }
     
-    func configureCell(_ profiles: [LocalUser], avatarImageManager: AvatarImageManaging) {
+    func configureCell(_ profiles: [LocalChatUser], avatarImageManager: AvatarImageManaging) {
         print(#function, "호출 완료: ", profiles.map { $0.nickname })
         self.userProfiles = profiles
         self.avatarImageManager = avatarImageManager

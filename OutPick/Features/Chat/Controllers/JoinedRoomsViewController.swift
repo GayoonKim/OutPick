@@ -29,6 +29,8 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
         
         return collectionV
     }()
+
+    private let refreshControl = UIRefreshControl()
     
     let viewModel: JoinedRoomsViewModel
     private let roomImageManager: RoomImageManaging
@@ -138,6 +140,8 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
         self.view.addSubview(joinedRoomListCollectionView)
         joinedRoomListCollectionView.translatesAutoresizingMaskIntoConstraints = false
         joinedRoomListCollectionView.delegate = self
+        refreshControl.addTarget(self, action: #selector(refreshControlTriggered), for: .valueChanged)
+        joinedRoomListCollectionView.refreshControl = refreshControl
 
         NSLayoutConstraint.activate([
             joinedRoomListCollectionView.topAnchor.constraint(equalTo: customNavigationBar.bottomAnchor),
@@ -155,7 +159,7 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
             
             cell.configure(
                 title: room.roomName,
-                participantCount: room.participants.count,
+                participantCount: room.memberCount,
                 lastMessageText: room.lastMessage,
                 lastMessageDate: room.lastMessageAt,
                 img: roomImages[roomID],
@@ -209,6 +213,14 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
             return
         }
         onSearchRoom()
+    }
+
+    @objc private func refreshControlTriggered() {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.viewModel.reloadJoinedRooms()
+            self.refreshControl.endRefreshing()
+        }
     }
     
     // MARK: Diffable DataSource

@@ -82,7 +82,8 @@ final class ChatContainer {
             localCleaner: DefaultChatRoomLocalExitCleaner(
                 joinedRoomsStore: joinedRoomsStore,
                 joinedRoomsRuntime: joinedRoomsRuntime,
-                roomRepository: self.roomRepository
+                roomRepository: self.roomRepository,
+                currentUserProvider: currentUserProvider
             )
         )
         self.joinedRoomsUseCase = JoinedRoomsUseCase(
@@ -100,7 +101,7 @@ final class ChatContainer {
             deletedLastMessageSummaryUpdater: self.roomRepository as? ChatDeletedLastMessageSummaryUpdating,
             currentUserProvider: {
                 ChatMessageSenderSnapshot(
-                    senderUID: currentUserProvider.uid,
+                    senderUID: currentUserProvider.canonicalUserID,
                     senderEmail: currentUserProvider.email,
                     senderNickname: currentUserProvider.nickname ?? "",
                     senderAvatarPath: currentUserProvider.avatarPath
@@ -119,7 +120,8 @@ final class ChatContainer {
             messageManager: managers.messageManager,
             userProfileRepository: self.userProfileRepository,
             chatRoomRepository: self.roomRepository,
-            networkStatusProvider: managers.networkStatusProvider
+            networkStatusProvider: managers.networkStatusProvider,
+            currentUserUIDProvider: { currentUserProvider.canonicalUserID }
         )
         self.chatRoomSearchUseCase = ChatRoomSearchUseCase(searchManager: managers.searchManager)
         self.chatRoomLifecycleUseCase = ChatRoomLifecycleUseCase(
@@ -140,7 +142,7 @@ final class ChatContainer {
             attachmentImageLoader: attachmentImageLoader,
             currentUserProvider: {
                 ChatMessageSenderSnapshot(
-                    senderUID: currentUserProvider.uid,
+                    senderUID: currentUserProvider.canonicalUserID,
                     senderEmail: currentUserProvider.email,
                     senderNickname: currentUserProvider.nickname ?? "",
                     senderAvatarPath: currentUserProvider.avatarPath
@@ -202,6 +204,7 @@ final class ChatContainer {
             realtimeUseCase: chatRoomRealtimeUseCase,
             runtimeUseCase: chatRoomRuntimeUseCase,
             currentUserProvider: currentUserProvider,
+            joinedRoomsStore: joinedRoomsStore,
             roomReadStateStore: roomReadStateStore
         )
     }

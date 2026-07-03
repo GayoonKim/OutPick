@@ -113,8 +113,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         fatalError("Storyboard initialization is no longer supported for ChatViewController.")
     }
 
-    private var hasBoundRoomChange = false
-    
     static var currentRoomID: String? = nil
     
     // 중복 호출 방지를 위한 최근 트리거 인덱스
@@ -316,6 +314,12 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private var scrollTargetIndex: IndexPath?
     
     private var lastContainerViewOriginY: Double = 0
+
+    @MainActor
+    private var isParticipantPreviewMode: Bool {
+        guard let room else { return false }
+        return chatRoomViewModel.isCurrentUserParticipant(in: room) == false
+    }
     
     // MARK: - Profile sync
     
@@ -355,6 +359,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        guard isParticipantPreviewMode == false else { return }
         Task { @MainActor [chatRoomViewModel] in
             await chatRoomViewModel.handleRoomWillAppear()
         }
@@ -362,8 +367,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        Task { @MainActor [chatRoomViewModel] in
-            await chatRoomViewModel.handleRoomWillDisappear()
+        if isParticipantPreviewMode == false {
+            Task { @MainActor [chatRoomViewModel] in
+                await chatRoomViewModel.handleRoomWillDisappear()
+            }
         }
         flushLastReadSeq(trigger: "viewWillDisappear")
         needsTransientBindingsRestore = !(self.isMovingFromParent || self.isBeingDismissed)
@@ -770,7 +777,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
     }
     
-    // MARK: LocalUser + Profile sync 관련 함수
+    // MARK: LocalChatUser + Profile sync 관련 함수
     @MainActor
     private func scheduleProfileCacheRefresh(for messages: [ChatMessage]) {
         guard !messages.isEmpty else { return }
@@ -824,6 +831,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     @MainActor
     private func handleSendButtonTap() {
+        guard isParticipantPreviewMode == false else { return }
         guard let message = self.chatUIView.messageTextView.text,
               let outgoingMessage = chatRoomViewModel.makeOutgoingTextMessage(
                 text: message,
@@ -882,6 +890,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
 
     private func openCamera() {
+        guard isParticipantPreviewMode == false else { return }
         if UIImagePickerController.isSourceTypeAvailable(.camera) {
             let imagePicker = UIImagePickerController()
             imagePicker.delegate = self
@@ -893,6 +902,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
     
     private func openPHPicker() {
+        guard isParticipantPreviewMode == false else { return }
         var configuration = PHPickerConfiguration()
         configuration.filter = .any(of: [.images, .videos])
         configuration.selectionLimit = 0
@@ -919,6 +929,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     @MainActor
     private func handleAttachmentButtonTap(identifier: String) {
+        guard isParticipantPreviewMode == false else { return }
         switch identifier {
         case "photo":
             print("Photo btn tapped!")
@@ -946,6 +957,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     private func bindRoomClosedEvent() {
         stopRoomClosedObservation()
+        guard isParticipantPreviewMode == false else { return }
         roomClosedSubscription = chatRoomViewModel.observeRoomClosed { [weak self] roomID in
             guard let self else { return }
             self.router?.handleRoomExit(from: self, roomID: roomID)
@@ -958,34 +970,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
     
     @MainActor
-    private func bindRoomChangePublisher() {
-        if hasBoundRoomChange { return }
-        hasBoundRoomChange = true
-        
-        chatRoomViewModel.startRoomUpdates()
-        chatRoomViewModel.roomChangePublisher
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] updatedRoom in
-                guard let self = self else { return }
-                guard let currentRoomID = self.room?.ID,
-                      updatedRoom.ID == currentRoomID else { return }
-                let previousRoom = self.room
-                self.room = updatedRoom
-                self.chatRoomViewModel.applyRoomUpdate(updatedRoom)
-                print(#function, "ChatViewController.swift 방 정보 변경: \(updatedRoom)")
-                Task { @MainActor in
-                    await self.applyRoomDiffs(old: previousRoom, new: updatedRoom)
-                }
-            }
-            .store(in: &cancellables)
-    }
-
-    @MainActor
     private func restoreTransientBindingsIfNeeded() {
         bindSearchEvents()
-
-        hasBoundRoomChange = false
-        bindRoomChangePublisher()
 
         guard let room = room,
               chatRoomViewModel.isCurrentUserParticipant(in: room) else {
@@ -1008,7 +994,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
         
         // 1) 타이틀/참여자 수 변경 시 상단 네비바만 갱신
-        if old.roomName != new.roomName || old.participants.count != new.participants.count {
+        if old.roomName != new.roomName || old.memberCount != new.memberCount {
             updateNavigationTitle(with: new)
         }
         
@@ -1032,7 +1018,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         room = chatRoomViewModel.room
         isRoomSaving = false
         updateNavigationTitle(with: savedRoom)
-        bindRoomChangePublisher()
         LoadingIndicator.shared.stop()
         view.isUserInteractionEnabled = true
     }
@@ -1046,7 +1031,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             setupChatUI()
             chatUIView.isHidden = false
             joinRoomBtn.isHidden = true
-            self.bindRoomChangePublisher()
             self.setupAnnouncementBannerIfNeeded()
             self.updateAnnouncementBanner(with: currentRoom.activeAnnouncement)
         } else {
@@ -1141,7 +1125,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                     self.setupChatUI()
                     self.chatUIView.isHidden = false
                     self.chatMessageCollectionView.isHidden = false
-                    self.bindRoomChangePublisher()
                     self.setupInitialMessages()
                     self.view.layoutIfNeeded()
                 }
@@ -1208,6 +1191,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
     
     @objc private func settingButtonTapped() {
+        guard isParticipantPreviewMode == false else { return }
         guard room != nil, let router else {
             assertionFailure("ChatViewController requires ChatRoomRouting for settings navigation.")
             return
@@ -1217,8 +1201,13 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     @MainActor
     func applyUpdatedRoom(_ updatedRoom: ChatRoom) {
+        let previousRoom = room
         self.room = updatedRoom
+        self.chatRoomViewModel.applyRoomUpdate(updatedRoom)
         self.updateNavigationTitle(with: updatedRoom)
+        Task { @MainActor in
+            await self.applyRoomDiffs(old: previousRoom, new: updatedRoom)
+        }
     }
 
     @MainActor
@@ -1307,7 +1296,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         // ✅ 커스텀 내비게이션 바 타이틀 업데이트
         customNavigationBar.configureForChatRoom(
             roomTitle: room.roomName,
-            participantCount: room.participants.count,
+            participantCount: room.memberCount,
             target: self,
             onBack: #selector(backButtonTapped),
             onSearch: #selector(searchButtonTapped),
@@ -1321,6 +1310,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             .receive(on: DispatchQueue.main)
             .sink { [weak self] keyword in
                 guard let self = self else { return }
+                guard self.isParticipantPreviewMode == false else { return }
                 
                 self.clearPreviousHighlightIfNeeded()
                 
@@ -1489,6 +1479,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     @MainActor
     @objc private func searchButtonTapped() {
+        guard isParticipantPreviewMode == false else { return }
         customNavigationBar.switchToSearchMode()
         setupSearchUI()
         
@@ -1512,6 +1503,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     //MARK: 메시지 삭제/답장/복사 관련
     @MainActor
     private func showCustomMenu(at indexPath: IndexPath/*, aboveCell: Bool*/) {
+        guard isParticipantPreviewMode == false else { return }
         guard let cell = chatMessageCollectionView.cellForItem(at: indexPath) as? ChatMessageCell,
               let item = dataSource.itemIdentifier(for: indexPath),
               case let .message(message) = item else { return }
@@ -1568,6 +1560,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     @MainActor
     private func handleMessageMenuAction(_ action: ChatMessageAction, message: ChatMessage) {
+        guard isParticipantPreviewMode == false else { return }
         switch action {
         case .reply:
             handleReply(message: message)
@@ -1641,6 +1634,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         successMessage: String? = nil,
         failureMessage: String? = nil
     ) {
+        guard isParticipantPreviewMode == false else { return }
         Task { @MainActor in
             do {
                 try await self.chatRoomViewModel.performMessageServerAction(action, for: message)
@@ -1678,6 +1672,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     @objc private func handleAnnouncementBannerLongPress(_ gesture: UILongPressGestureRecognizer) {
         guard gesture.state == .began,
+              isParticipantPreviewMode == false,
               let room = self.room,
               chatRoomViewModel.isCurrentUserAdmin(of: room) else { return }
         
@@ -1813,8 +1808,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         view.bringSubviewToFront(replyView)
     }
     
-    private func isCurrentUser(_ email: String?) -> Bool {
-        chatRoomViewModel.isCurrentUser(email)
+    private func isCurrentUser(_ userID: String?) -> Bool {
+        chatRoomViewModel.isCurrentUser(userID)
     }
     private func isCurrentUserAdmin(of room: ChatRoom) -> Bool {
         chatRoomViewModel.isCurrentUserAdmin(of: room)
@@ -2037,6 +2032,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     @MainActor
     private func confirmRetryUpload(for messageID: String) {
+        guard isParticipantPreviewMode == false else { return }
         guard let message = messageWindowStore.message(for: messageID),
               message.isFailed else { return }
         ConfirmView.present(
@@ -2056,6 +2052,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     @MainActor
     private func retryPendingMediaUpload(for messageID: String) {
+        guard isParticipantPreviewMode == false else { return }
         guard let payload = pendingMediaUploadStore.mediaRetryPayload(for: messageID) else {
             retryOutgoingOutboxMessage(for: messageID)
             return
@@ -2088,6 +2085,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     @MainActor
     private func retryOutgoingOutboxMessage(for messageID: String) {
+        guard isParticipantPreviewMode == false else { return }
         guard let room, let message = messageWindowStore.message(for: messageID) else { return }
         Task { [weak self] in
             guard let self else { return }
@@ -2240,18 +2238,22 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 
                 cell.commands = ChatMessageCellCommands(
                     openMedia: { [weak self] messageID, attachmentIndex in
+                        guard self?.isParticipantPreviewMode == false else { return }
                         self?.openMedia(messageID: messageID, attachmentIndex: attachmentIndex)
                     },
                     openSenderProfile: { [weak self] messageID in
+                        guard self?.isParticipantPreviewMode == false else { return }
                         self?.openSenderProfile(messageID: messageID)
                     },
                     retryUpload: { [weak self] messageID in
                         guard let self else { return }
+                        guard self.isParticipantPreviewMode == false else { return }
                         Task { @MainActor in
                             self.confirmRetryUpload(for: messageID)
                         }
                     },
                     openLookbookShare: { [weak self] sharedContent in
+                        guard self?.isParticipantPreviewMode == false else { return }
                         self?.handleLookbookShareCardTap(sharedContent)
                     }
                 )
@@ -2543,12 +2545,14 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     @MainActor
     private func handleLookbookShareCardTap(_ sharedContent: LookbookSharedContent) {
+        guard isParticipantPreviewMode == false else { return }
         guard let router else { return }
         router.openLookbookSharedContent(from: self, sharedContent: sharedContent)
     }
 
     @MainActor
     private func openMedia(messageID: String, attachmentIndex: Int) {
+        guard isParticipantPreviewMode == false else { return }
         guard let currentMessage = messageForCommand(messageID: messageID) else { return }
         let attachments = currentMessage.displayableAttachments
         guard attachmentIndex >= 0, attachmentIndex < attachments.count else { return }
@@ -2565,6 +2569,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     @MainActor
     private func openSenderProfile(messageID: String) {
+        guard isParticipantPreviewMode == false else { return }
         guard let currentMessage = messageForCommand(messageID: messageID) else { return }
         let senderUID = currentMessage.senderUID
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2899,7 +2904,7 @@ private extension ChatViewController {
         guard let room = self.room else { return }
         customNavigationBar.configureForChatRoom(
             roomTitle: room.roomName,
-            participantCount: room.participants.count,
+            participantCount: room.memberCount,
             target: self,
             onBack: #selector(backButtonTapped),
             onSearch: #selector(searchButtonTapped),

@@ -23,23 +23,6 @@ final class UserProfileRepository: UserProfileRepositoryProtocol {
         userID.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private func currentUserDocumentID() -> String {
-        let userDocumentID = LoginManager.shared.getUserDocumentID
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        if userDocumentID.isEmpty == false {
-            return userDocumentID
-        }
-
-        return LoginManager.shared.getAuthIdentityKey
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private func currentUserDocumentRef() -> DocumentReference? {
-        let userDocumentID = currentUserDocumentID()
-        guard !userDocumentID.isEmpty else { return nil }
-        return db.collection(usersCollection).document(userDocumentID)
-    }
-
     private func decodeProfile(_ data: [String: Any], emailFallback: String) -> UserProfile {
         let dto = UserProfileFirestoreCodec.fromDocument(data, emailFallback: emailFallback)
         return UserProfileMapper.toDomain(dto)
@@ -48,20 +31,6 @@ final class UserProfileRepository: UserProfileRepositoryProtocol {
     private func hasRequiredProfileData(_ data: [String: Any]) -> Bool {
         guard let nickname = data["nickname"] as? String else { return false }
         return !nickname.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    private func findProfileDocByEmail(normalizedEmail: String) async throws -> QueryDocumentSnapshot? {
-        let query = db.collection(usersCollection)
-            .whereField("email", isEqualTo: normalizedEmail)
-            .limit(to: 10)
-        let snap = try await query.getDocuments()
-        return snap.documents.first(where: { hasRequiredProfileData($0.data()) }) ?? snap.documents.first
-    }
-
-    private func fetchProfileByEmail(normalizedEmail: String) async throws -> UserProfile? {
-        let doc = try await findProfileDocByEmail(normalizedEmail: normalizedEmail)
-        guard let doc else { return nil }
-        return decodeProfile(doc.data(), emailFallback: normalizedEmail)
     }
 
     func resolveOrCreateUserDocumentID(authenticatedUser: AuthenticatedUser) async throws -> String {
@@ -95,9 +64,14 @@ final class UserProfileRepository: UserProfileRepositoryProtocol {
         return userDocumentID
     }
 
-    func saveCurrentUserProfile(_ profile: UserProfile) async throws {
+    func saveCurrentUserProfile(
+        _ profile: UserProfile,
+        userID: String,
+        email: String,
+        authenticatedUser: AuthenticatedUser?
+    ) async throws {
         do {
-            let userDocumentID = try await LoginManager.shared.ensureUserDocumentID()
+            let userDocumentID = normalizeUserID(userID)
             guard !userDocumentID.isEmpty else {
                 throw FirebaseError.FailedToSaveProfile
             }
@@ -106,8 +80,8 @@ final class UserProfileRepository: UserProfileRepositoryProtocol {
             let dto = UserProfileMapper.toDTO(profile)
             var profileData = UserProfileFirestoreCodec.toDocument(dto)
             profileData["userDocumentID"] = userDocumentID
-            profileData["email"] = normalizeEmail(LoginManager.shared.getUserEmail)
-            if let authenticatedUser = LoginManager.shared.authenticatedUser {
+            profileData["email"] = normalizeEmail(email)
+            if let authenticatedUser {
                 profileData["identityKey"] = authenticatedUser.identityKey
                 profileData["provider"] = authenticatedUser.provider.rawValue
                 profileData["providerUserID"] = authenticatedUser.providerUserID
@@ -123,32 +97,21 @@ final class UserProfileRepository: UserProfileRepositoryProtocol {
         }
     }
 
-    func fetchCurrentUserProfile() async throws -> UserProfile {
-        guard let docRef = currentUserDocumentRef() else {
+    func fetchCurrentUserProfile(userID: String, emailFallback: String) async throws -> UserProfile {
+        let userDocumentID = normalizeUserID(userID)
+        guard !userDocumentID.isEmpty else {
             throw FirebaseError.FailedToFetchProfile
         }
 
+        let docRef = db.collection(usersCollection).document(userDocumentID)
         let snapshot = try await docRef.getDocument()
         guard let data = snapshot.data(), hasRequiredProfileData(data) else {
             throw FirebaseError.FailedToFetchProfile
         }
 
-        return decodeProfile(data, emailFallback: LoginManager.shared.getUserEmail)
+        return decodeProfile(data, emailFallback: emailFallback)
     }
     
-    func fetchUserProfileFromFirestore(email: String) async throws -> UserProfile {
-        print("fetchUserProfileFromFirestore 호출")
-        let normalizedEmail = normalizeEmail(email)
-        guard !normalizedEmail.isEmpty else {
-            throw FirebaseError.FailedToFetchProfile
-        }
-
-        guard let fallbackProfile = try await fetchProfileByEmail(normalizedEmail: normalizedEmail) else {
-            throw FirebaseError.FailedToFetchProfile
-        }
-        return fallbackProfile
-    }
-
     func fetchUserProfile(userID: String) async throws -> UserProfile {
         let normalizedUserID = userID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedUserID.isEmpty,
@@ -165,31 +128,6 @@ final class UserProfileRepository: UserProfileRepositoryProtocol {
 
         let emailFallback = (data["email"] as? String) ?? normalizedUserID
         return decodeProfile(data, emailFallback: emailFallback)
-    }
-    
-    func fetchUserProfiles(emails: [String]) async throws -> [UserProfile] {
-        return try await withThrowingTaskGroup(of: UserProfile?.self) { group in
-            for email in emails {
-                group.addTask {
-                    do {
-                        let profile = try await self.fetchUserProfileFromFirestore(email: email)
-                        return profile
-                    } catch {
-                        print("\(email) 사용자 프로필 불러오기 실패: \(error)")
-                        return nil
-                    }
-                }
-            }
-            
-            var profiles = [UserProfile]()
-            for try await result in group {
-                if let profile = result {
-                    profiles.append(profile)
-                }
-            }
-            
-            return profiles
-        }
     }
 
     func fetchUserProfiles(userIDs: [String]) async throws -> [String: UserProfile] {
@@ -236,25 +174,28 @@ final class UserProfileRepository: UserProfileRepositoryProtocol {
     }
     
     func updateLastReadSeq(roomID: String, userUID: String, lastReadSeq: Int64) async throws {
-        guard !roomID.isEmpty, !userUID.isEmpty else { return }
+        let trimmedRoomID = roomID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let userDocumentID = normalizeUserID(userUID)
+        guard !trimmedRoomID.isEmpty, !userDocumentID.isEmpty else { return }
 
-        let stateRef = db.collection("users").document(userUID)
-            .collection("roomStates").document(roomID)
+        let joinedRoomRef = db.collection("users").document(userDocumentID)
+            .collection("joinedRooms").document(trimmedRoomID)
 
         _ = try await db.runTransaction { transaction, errorPointer -> Any? in
             do {
-                let stateSnap = try transaction.getDocument(stateRef)
+                let joinedRoomSnap = try transaction.getDocument(joinedRoomRef)
 
                 let requested = max(Int64(0), lastReadSeq)
-                let current = Self.toInt64(stateSnap.data()?["lastReadSeq"]) ?? 0
+                let current = Self.toInt64(joinedRoomSnap.data()?["lastReadSeq"]) ?? 0
                 let next = max(current, requested)
 
                 guard next > current else { return nil }
 
                 transaction.setData([
+                    "roomID": trimmedRoomID,
                     "lastReadSeq": next,
                     "updatedAt": FieldValue.serverTimestamp()
-                ], forDocument: stateRef, merge: true)
+                ], forDocument: joinedRoomRef, merge: true)
                 return nil
             } catch {
                 errorPointer?.pointee = error as NSError
@@ -263,28 +204,24 @@ final class UserProfileRepository: UserProfileRepositoryProtocol {
         }
     }
     
-    func fetchLastReadSeq(for roomID: String) async throws -> Int64 {
-        let userDocumentID = currentUserDocumentID()
-        guard !userDocumentID.isEmpty else { return 0 }
+    func fetchLastReadSeq(for roomID: String, userUID: String) async throws -> Int64 {
+        let trimmedRoomID = roomID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let userDocumentID = normalizeUserID(userUID)
+        guard !trimmedRoomID.isEmpty, !userDocumentID.isEmpty else { return 0 }
 
         let docRef = db.collection("users").document(userDocumentID)
-            .collection("roomStates").document(roomID)
+            .collection("joinedRooms").document(trimmedRoomID)
         
         let snap = try await docRef.getDocument()
         return Self.toInt64(snap.data()?["lastReadSeq"]) ?? 0
     }
 
-    func upsertDeviceID(deviceID: String) async throws {
-        let normalizedEmail = normalizeEmail(LoginManager.shared.getUserEmail)
-        let userDocumentID: String
-        if currentUserDocumentID().isEmpty {
-            userDocumentID = try await LoginManager.shared.ensureUserDocumentID()
-        } else {
-            userDocumentID = currentUserDocumentID()
-        }
-        guard !userDocumentID.isEmpty else { return }
+    func upsertDeviceID(userDocumentID: String, email: String, deviceID: String) async throws {
+        let normalizedEmail = normalizeEmail(email)
+        let normalizedUserDocumentID = normalizeUserID(userDocumentID)
+        guard !normalizedUserDocumentID.isEmpty else { return }
 
-        let userRef = db.collection(usersCollection).document(userDocumentID)
+        let userRef = db.collection(usersCollection).document(normalizedUserDocumentID)
         let sessionRef = userRef.collection("meta").document("session")
         let batch = db.batch()
         batch.setData([
@@ -299,17 +236,18 @@ final class UserProfileRepository: UserProfileRepositoryProtocol {
     }
 
     func listenToDeviceID(
+        userDocumentID: String,
         onUpdate: @escaping (String?) -> Void,
         onError: @escaping (Error) -> Void
     ) -> ListenerRegistration {
-        let userDocumentID = currentUserDocumentID()
-        guard !userDocumentID.isEmpty else {
+        let normalizedUserDocumentID = normalizeUserID(userDocumentID)
+        guard !normalizedUserDocumentID.isEmpty else {
             onUpdate(nil)
             return EmptyListenerRegistration()
         }
 
         let sessionRef = db.collection(usersCollection)
-            .document(userDocumentID)
+            .document(normalizedUserDocumentID)
             .collection("meta")
             .document("session")
 

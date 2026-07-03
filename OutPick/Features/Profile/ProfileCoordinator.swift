@@ -26,6 +26,8 @@ final class ProfileCoordinator {
 
     @MainActor
     func start() {
+        SecondProfileViewController.clearDraftCache()
+
         let vc = ProfileCompositionRoot.makeFirst(
             repository: repository,
             onNext: { [weak self] draft in

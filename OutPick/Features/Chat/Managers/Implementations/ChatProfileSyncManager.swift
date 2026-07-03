@@ -12,7 +12,7 @@ final class ChatProfileSyncManager: ChatProfileSyncManaging {
     private let grdbManager: GRDBManager
     private let maxRefreshUIDs: Int
 
-    private var cachedProfiles: [String: LocalUser] = [:]
+    private var cachedProfiles: [String: LocalChatUser] = [:]
 
     init(
         userProfileRepository: UserProfileRepositoryProtocol = FirebaseRepositoryProvider.shared.userProfileRepository,
@@ -54,16 +54,16 @@ final class ChatProfileSyncManager: ChatProfileSyncManaging {
                     continue
                 }
 
-                let local = LocalUser(
-                    email: userID,
+                let local = LocalChatUser(
+                    userID: userID,
                     nickname: nextNickname,
                     profileImagePath: nextAvatarPath
                 )
                 cachedProfiles[userID] = local
                 changedUserIDs.insert(userID)
 
-                _ = try grdbManager.upsertLocalUser(
-                    email: userID,
+                _ = try grdbManager.upsertLocalChatUser(
+                    userID: userID,
                     nickname: nextNickname,
                     profileImagePath: nextAvatarPath
                 )
@@ -76,7 +76,7 @@ final class ChatProfileSyncManager: ChatProfileSyncManaging {
         }
     }
 
-    func profile(for senderUID: String) -> LocalUser? {
+    func profile(for senderUID: String) -> LocalChatUser? {
         let senderUID = normalizedUID(senderUID)
         guard !senderUID.isEmpty else { return nil }
 
@@ -84,7 +84,7 @@ final class ChatProfileSyncManager: ChatProfileSyncManaging {
             return cached
         }
 
-        if let local = try? grdbManager.fetchLocalUser(email: senderUID) {
+        if let local = try? grdbManager.fetchLocalChatUser(userID: senderUID) {
             cachedProfiles[senderUID] = local
             return local
         }

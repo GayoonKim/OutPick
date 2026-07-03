@@ -5,14 +5,11 @@ import UIKit
 @MainActor
 final class BannerManager {
     static let shared = BannerManager()
-    private let chatRoomRepository: FirebaseChatRoomRepositoryProtocol
     private let realtimeSocketService: RealtimeSocketService
 
     private init(
-        repositories: FirebaseRepositoryProviding = FirebaseRepositoryProvider.shared,
         realtimeSocketService: RealtimeSocketService = .shared
     ) {
-        self.chatRoomRepository = repositories.chatRoomRepository
         self.realtimeSocketService = realtimeSocketService
     }
 
@@ -112,19 +109,10 @@ final class BannerManager {
 
     private func handleIncomingMessage(_ msg: ChatMessage, roomID: String) async {
         let text = bannerText(from: msg)
-        let messageDate = msg.sentAt ?? Date()
 
         #if DEBUG
         print("[BannerManager] incoming room=\(roomID) msgID=\(msg.ID) sender=\(msg.senderUID) visible=\(currentVisibleRoomID ?? "nil")")
         #endif
-
-        chatRoomRepository.applyRealtimeSummaryPatch(
-            roomID: roomID,
-            message: text,
-            sentAt: messageDate,
-            seq: msg.seq > 0 ? msg.seq : nil,
-            senderUID: msg.senderUID
-        )
 
         // 현재 방 보고 있으면 배너 X (화면이 실시간 UI 반영)
         if currentVisibleRoomID == roomID {
@@ -143,7 +131,7 @@ final class BannerManager {
         }
         recentPerRoom[roomID]?.insert(id)
 
-        if muteOwnMessages, msg.senderUID == LoginManager.shared.getUserUID {
+        if muteOwnMessages, msg.senderUID == LoginManager.shared.canonicalUserID {
             #if DEBUG
             print("[BannerManager] skip banner (own message) room=\(roomID) sender=\(msg.senderUID)")
             #endif

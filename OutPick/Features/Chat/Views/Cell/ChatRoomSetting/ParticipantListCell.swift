@@ -54,8 +54,10 @@ class ParticipantListCell: UICollectionViewCell {
         fatalError("init(coder:) has not been implemented")
     }
     
-    func configureCell(userProfile: LocalUser) {
-        nickNameLabel.text = userProfile.nickname
+    func configureCell(userProfile: LocalChatUser) {
+        print(#function, "불러온 사용자 프로필 => \(userProfile)")
+        let nickname = userProfile.nickname.trimmingCharacters(in: .whitespacesAndNewlines)
+        nickNameLabel.text = nickname.isEmpty ? Self.fallbackDisplayName() : nickname
         avatarLoadTask?.cancel()
         avatarLoadTask = nil
         userProfileImageView.image = UIImage(named: "Default_Profile")
@@ -68,7 +70,7 @@ class ParticipantListCell: UICollectionViewCell {
         userProfileImageView.image = UIImage(named: "Default_Profile")
     }
 
-    func configureCell(userProfile: LocalUser, avatarImageManager: AvatarImageManaging) {
+    func configureCell(userProfile: LocalChatUser, avatarImageManager: AvatarImageManaging) {
         configureCell(userProfile: userProfile)
 
         guard let path = userProfile.profileImagePath, !path.isEmpty else { return }
@@ -90,5 +92,9 @@ class ParticipantListCell: UICollectionViewCell {
                 self.userProfileImageView.image = UIImage(named: "Default_Profile")
             }
         }
+    }
+
+    private static func fallbackDisplayName() -> String {
+        "알 수 없는 사용자"
     }
 }

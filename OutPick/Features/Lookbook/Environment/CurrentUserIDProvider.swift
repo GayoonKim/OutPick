@@ -19,12 +19,7 @@ struct LookbookCurrentUserIDProvider: CurrentUserIDProviding {
     }
 
     var currentUserID: UserID? {
-        let userDocumentID = normalized(currentUserProvider.documentID)
-        if let userDocumentID {
-            return UserID(value: userDocumentID)
-        }
-
-        return normalized(currentUserProvider.authIdentityKey)
+        return normalized(currentUserProvider.canonicalUserID)
             .map { UserID(value: $0) }
     }
 

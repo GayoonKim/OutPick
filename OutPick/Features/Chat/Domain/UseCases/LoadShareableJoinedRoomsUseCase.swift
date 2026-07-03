@@ -17,7 +17,7 @@ final class LoadShareableJoinedRoomsUseCase: LoadShareableJoinedRoomsUseCaseProt
 
     init(
         joinedRoomsUseCase: JoinedRoomsUseCaseProtocol,
-        currentUserIDProvider: @escaping @Sendable () -> String = { LoginManager.shared.getUserUID }
+        currentUserIDProvider: @escaping @Sendable () -> String = { LoginManager.shared.canonicalUserID }
     ) {
         self.joinedRoomsUseCase = joinedRoomsUseCase
         self.currentUserIDProvider = currentUserIDProvider
@@ -26,9 +26,9 @@ final class LoadShareableJoinedRoomsUseCase: LoadShareableJoinedRoomsUseCaseProt
     func execute(limit: Int = 50) async throws -> [ChatRoom] {
         let boundedLimit = max(1, limit)
         let currentUserID = currentUserIDProvider()
-        let result = try await joinedRoomsUseCase.fetchJoinedRoomsHead(limit: boundedLimit)
+        let items = try await joinedRoomsUseCase.fetchJoinedRooms(limit: boundedLimit)
 
-        return result.rooms
+        return items.map(\.room)
             .filter {
                 LookbookChatShareRoomPolicy.isShareable($0, currentUserID: currentUserID)
             }
@@ -47,12 +47,7 @@ enum LookbookChatShareRoomPolicy {
         guard roomID(from: room) != nil else { return false }
         guard !room.isClosed else { return false }
 
-        let normalizedCurrentUserID = normalizedIdentifier(currentUserID)
-        guard !normalizedCurrentUserID.isEmpty else { return false }
-
-        return room.participants
-            .map(normalizedIdentifier)
-            .contains(normalizedCurrentUserID)
+        return true
     }
 
     static func normalizedIdentifier(_ value: String) -> String {

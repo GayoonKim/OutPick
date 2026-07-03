@@ -28,7 +28,7 @@ final class ChatRoomSettingViewModel {
 
     @Published private(set) var roomInfo: ChatRoom
     @Published private(set) var mediaItems: [ChatRoomSettingMediaItem]
-    @Published private(set) var localUsers: [LocalUser]
+    @Published private(set) var localUsers: [LocalChatUser]
 
     var participantsHasMore: Bool { participantsHasMoreStorage }
     var participantsIsLoading: Bool { participantsIsLoadingStorage }
@@ -231,7 +231,7 @@ final class ChatRoomSettingViewModel {
         galleryItemsByID = galleryItemsByID.filter { validIDs.contains($0.key) }
     }
 
-    private func scheduleAvatarPrefetch(for users: [LocalUser]) {
+    private func scheduleAvatarPrefetch(for users: [LocalChatUser]) {
         guard !users.isEmpty else { return }
 
         Task(priority: .utility) { [weak self] in
@@ -239,7 +239,7 @@ final class ChatRoomSettingViewModel {
         }
     }
 
-    private func prefetchProfileAvatars(for users: [LocalUser], topCount: Int = 50) async {
+    private func prefetchProfileAvatars(for users: [LocalChatUser], topCount: Int = 50) async {
         guard !users.isEmpty else { return }
 
         let sorted = users.sorted {

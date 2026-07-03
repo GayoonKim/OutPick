@@ -21,9 +21,13 @@ extension LoginManager: LoginBootstrappingProtocol {
         _ = try await ensureUserDocumentID()
 
         // 1) 참여 방 선 주입
+        let joinedRoomIDs = try await FirebaseRepositoryProvider.shared.chatRoomRepository
+            .fetchJoinedRoomList(userUID: canonicalUserID)
+            .map(\.roomID)
+
         await MainActor.run {
-            joinedRoomsStore.replace(with: currentUserProfile.joinedRooms)
-            joinedRoomsRuntime.replaceJoinedRooms(Set(currentUserProfile.joinedRooms))
+            joinedRoomsStore.replace(with: joinedRoomIDs)
+            joinedRoomsRuntime.replaceJoinedRooms(Set(joinedRoomIDs))
         }
 
         // 2) 브랜드 권한 선로딩

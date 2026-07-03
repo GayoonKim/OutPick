@@ -50,6 +50,7 @@ final class ChatRoomViewModel {
     private let searchUseCase: ChatRoomSearchUseCaseProtocol
     private let lifecycleUseCase: ChatRoomLifecycleUseCaseProtocol
     private let currentUserProvider: CurrentUserProviding
+    private let joinedRoomsStore: JoinedRoomsSessionStoring?
     private let roomReadStateStore: ChatRoomReadStateStore?
 
     private(set) var isInitialLoading: Bool = true
@@ -109,6 +110,7 @@ final class ChatRoomViewModel {
         realtimeUseCase: ChatRoomRealtimeUseCaseProtocol = ChatRoomRealtimeUseCase(),
         runtimeUseCase: ChatRoomRuntimeUseCaseProtocol,
         currentUserProvider: CurrentUserProviding,
+        joinedRoomsStore: JoinedRoomsSessionStoring? = nil,
         roomReadStateStore: ChatRoomReadStateStore? = nil
     ) {
         self.room = room
@@ -119,6 +121,7 @@ final class ChatRoomViewModel {
         self.searchUseCase = searchUseCase
         self.lifecycleUseCase = lifecycleUseCase
         self.currentUserProvider = currentUserProvider
+        self.joinedRoomsStore = joinedRoomsStore
         self.roomReadStateStore = roomReadStateStore
         seedRoomReadLatest(from: room)
     }
@@ -129,16 +132,13 @@ final class ChatRoomViewModel {
     }
 
     var roomID: String { room.ID ?? "" }
-    var roomChangePublisher: AnyPublisher<ChatRoom, Never> {
-        lifecycleUseCase.roomChangePublisher
-    }
 
     var currentUserUID: String {
-        currentUserProvider.uid
+        currentUserProvider.canonicalUserID
     }
 
     var currentUserDocumentID: String {
-        currentUserProvider.documentID
+        currentUserProvider.canonicalUserID
     }
 
     var currentUserNickname: String? {
@@ -146,15 +146,22 @@ final class ChatRoomViewModel {
     }
 
     var isCurrentUserParticipant: Bool {
-        room.participants.contains(currentUserUID)
+        isCurrentUserParticipant(in: room)
     }
 
     func isCurrentUserParticipant(in room: ChatRoom) -> Bool {
-        room.participants.contains(currentUserUID)
+        guard let roomID = room.ID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !roomID.isEmpty else {
+            return false
+        }
+        if let joinedRoomsStore {
+            return joinedRoomsStore.contains(roomID)
+        }
+        return room.participants.contains(currentUserUID)
     }
 
-    func isCurrentUser(_ email: String?) -> Bool {
-        (email ?? "") == currentUserUID
+    func isCurrentUser(_ userID: String?) -> Bool {
+        (userID ?? "") == currentUserUID
     }
 
     func isCurrentUserAdmin(of room: ChatRoom) -> Bool {
@@ -164,14 +171,6 @@ final class ChatRoomViewModel {
     func applyRoomUpdate(_ updatedRoom: ChatRoom) {
         room = updatedRoom
         seedRoomReadLatest(from: updatedRoom)
-    }
-
-    func startRoomUpdates() {
-        lifecycleUseCase.startRoomUpdates(roomID: roomID)
-    }
-
-    func stopRoomUpdates() {
-        lifecycleUseCase.stopRoomUpdates()
     }
 
     func handleRoomSaveCompleted(_ savedRoom: ChatRoom) {

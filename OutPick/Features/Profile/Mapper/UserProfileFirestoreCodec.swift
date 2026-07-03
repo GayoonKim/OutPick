@@ -20,7 +20,6 @@ enum UserProfileFirestoreCodec {
         static let nickname = "nickname"
         static let thumbPath = "thumbPath"
         static let originalPath = "originalPath"
-        static let joinedRooms = "joinedRooms"
 
         // createdAt 정책
         static let createdAt = "createdAt"                 // Timestamp
@@ -39,7 +38,6 @@ enum UserProfileFirestoreCodec {
         dict[Key.nickname] = dto.nickname ?? ""
         dict[Key.thumbPath] = dto.thumbPath ?? ""
         dict[Key.originalPath] = dto.originalPath ?? ""
-        dict[Key.joinedRooms] = dto.joinedRooms ?? []
 
         // 클라 복원용 ISO도 같이 보관(선택)
         if let isoString = dto.createdAtISO8601 {
@@ -62,7 +60,7 @@ enum UserProfileFirestoreCodec {
         let nickname = data[Key.nickname] as? String
         let thumbPath = data[Key.thumbPath] as? String
         let originalPath = data[Key.originalPath] as? String
-        let joinedRooms = data[Key.joinedRooms] as? [String]
+        let joinedRooms = data["joinedRooms"] as? [String]
 
         // createdAt 복원 우선순위:
         // 1) Timestamp -> ISO로 변환

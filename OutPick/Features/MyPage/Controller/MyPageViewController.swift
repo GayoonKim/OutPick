@@ -233,9 +233,9 @@ class MyPageViewController: UIViewController {
     }
     
     private func logOutBtnTapped(_ sender: UIButton) {
-        let currentProfileCacheAccount = LoginManager.shared.getUserDocumentID.isEmpty
+        let currentProfileCacheAccount = LoginManager.shared.canonicalUserID.isEmpty
             ? "UserProfile"
-            : "UserProfile:\(LoginManager.shared.getUserDocumentID)"
+            : "UserProfile:\(LoginManager.shared.canonicalUserID)"
         KeychainManager.shared.delete(service: "GayoonKim.OutPick", account: currentProfileCacheAccount)
         KeychainManager.shared.delete(service: "GayoonKim.OutPick", account: "UserProfile")
         KeychainManager.shared.delete(service: "GayoonKim.OutPick", account: "AuthenticatedUser")

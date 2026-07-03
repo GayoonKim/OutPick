@@ -131,8 +131,8 @@ final class SecondProfileViewController: UIViewController {
     }()
 
     private let activity: UIActivityIndicatorView = {
-        let a = UIActivityIndicatorView(style: .medium)
-        a.color = OutPickTheme.ColorToken.backgroundBase
+        let a = UIActivityIndicatorView(style: .large)
+        a.color = OutPickTheme.ColorToken.accent
         a.hidesWhenStopped = true
         return a
     }()
@@ -244,10 +244,12 @@ final class SecondProfileViewController: UIViewController {
 
         // 저장 중 UI
         if state.isSaving {
-            activity.startAnimating()
-            completeButton.setTitle("저장 중...", for: .normal)
+            completeButton.setTitle("완료 2/2", for: .normal)
             completeButton.isEnabled = false
-            completeButton.alpha = 0.6
+            completeButton.alpha = 1.0
+            completeButton.backgroundColor = OutPickTheme.ColorToken.accent
+            view.bringSubviewToFront(activity)
+            activity.startAnimating()
         } else {
             activity.stopAnimating()
             completeButton.setTitle("완료 2/2", for: .normal)
@@ -372,8 +374,8 @@ final class SecondProfileViewController: UIViewController {
             completeButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -14),
             completeButton.heightAnchor.constraint(equalToConstant: 52),
 
-            activity.centerYAnchor.constraint(equalTo: completeButton.centerYAnchor),
-            activity.trailingAnchor.constraint(equalTo: completeButton.trailingAnchor, constant: -16),
+            activity.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            activity.centerYAnchor.constraint(equalTo: view.centerYAnchor),
 
             addImageButton.centerXAnchor.constraint(equalTo: profileImageView.trailingAnchor),
             addImageButton.centerYAnchor.constraint(equalTo: profileImageView.bottomAnchor),
@@ -423,6 +425,10 @@ final class SecondProfileViewController: UIViewController {
 
     func clearDraftCacheAfterCompletion() {
         clearDraftFromUserDefaults()
+    }
+
+    static func clearDraftCache() {
+        UserDefaults.standard.removeObject(forKey: draftKey)
     }
     
     // MARK: - Draft Persistence (UserDefaults)
@@ -476,18 +482,20 @@ final class SecondProfileViewController: UIViewController {
         // 이미지(있으면)
         if let b64 = cache.thumbBase64,
            let d = Data(base64Encoded: b64),
-           let img = UIImage(data: d) {
-            profileImageView.image = img
-            // ✅ 썸네일만 복원되어도 사용자가 제거할 수 있어야 함
-            removeImageButton.isHidden = false
-
-            if let path = cache.originalPath,
-               let sha = cache.sha {
-                let url = URL(fileURLWithPath: path)
-                if FileManager.default.fileExists(atPath: url.path) {
-                    viewModel.setPickedImage(thumb: img, originalFileURL: url, sha: sha)
-                }
+           let img = UIImage(data: d),
+           let path = cache.originalPath,
+           let sha = cache.sha {
+            let url = URL(fileURLWithPath: path)
+            guard FileManager.default.fileExists(atPath: url.path) else {
+                clearDraftFromUserDefaults()
+                return
             }
+
+            profileImageView.image = img
+            removeImageButton.isHidden = false
+            lastPickedOriginalPath = path
+            lastPickedSHA = sha
+            viewModel.setPickedImage(thumb: img, originalFileURL: url, sha: sha)
         }
     }
 

@@ -32,27 +32,6 @@ final class UserProfileDetailCoordinator {
         self.onFinish = onFinish
     }
 
-    func start(email: String, nickname: String, avatarPath: String?) {
-        guard presentedViewController == nil,
-              let presentingViewController else { return }
-
-        let viewController = UserProfileDetailCompositionRoot.makeDetail(
-            email: email,
-            seedNickname: nickname,
-            seedAvatarPath: avatarPath,
-            avatarImageManager: avatarImageManager,
-            currentUserProvider: currentUserProvider,
-            repositories: repositories,
-            photoLibrarySaver: photoLibrarySaver,
-            onBack: { [weak self] in
-                self?.dismiss()
-            }
-        )
-        viewController.modalPresentationStyle = .overFullScreen
-        presentedViewController = viewController
-        ChatModalTransitionManager.present(viewController, from: presentingViewController)
-    }
-
     func start(userID: String, nickname: String, avatarPath: String?) {
         guard presentedViewController == nil,
               let presentingViewController else { return }

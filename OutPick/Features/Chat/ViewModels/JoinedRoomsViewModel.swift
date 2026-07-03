@@ -6,17 +6,9 @@
 //
 
 import Foundation
-import Combine
-import FirebaseFirestore
 
 @MainActor
 final class JoinedRoomsViewModel {
-    private enum Constants {
-        static let headRealtimeLimit: Int = 50
-        static let tailPageSize: Int = 50
-        static let tailSyncLimit: Int = 200
-    }
-
     struct State: Equatable {
         var rooms: [ChatRoom] = []
         var unreadCounts: [String: Int64] = [:]
@@ -26,17 +18,9 @@ final class JoinedRoomsViewModel {
 
     private let useCase: JoinedRoomsUseCaseProtocol
     private let roomReadStateStore: ChatRoomReadStateStore?
-    private var cancellables = Set<AnyCancellable>()
     private var readStateTask: Task<Void, Never>?
-    private var isBoundJoinedRooms = false
     private var isBoundReadState = false
-    private var headRooms: [ChatRoom] = []
-    private var tailRoomsByID: [String: ChatRoom] = [:]
-    private var tailCursor: DocumentSnapshot?
-    private var hasMoreTailPages: Bool = true
-    private var lastTailSyncAt: Date?
-    private var isTailSyncEnabled: Bool = true
-    private var hasLoggedTailSyncIndexIssue: Bool = false
+    private var joinedItems: [JoinedRoomListItem] = []
 
     private(set) var state: State {
         didSet { onStateChanged?(state) }
@@ -54,20 +38,13 @@ final class JoinedRoomsViewModel {
     }
 
     func start() {
-        if !isBoundJoinedRooms {
-            bindJoinedRoomsSummary()
-        }
         bindReadStateIfNeeded()
-        useCase.startRoomUpdates(limit: Constants.headRealtimeLimit)
-        Task { await bootstrapJoinedRooms() }
+        Task { await reloadJoinedRooms() }
     }
 
     func stop() {
-        useCase.stopRoomUpdates()
-        cancellables.removeAll()
         readStateTask?.cancel()
         readStateTask = nil
-        isBoundJoinedRooms = false
         isBoundReadState = false
     }
 
@@ -92,30 +69,11 @@ final class JoinedRoomsViewModel {
     }
 
     func loadMoreJoinedRooms() async {
-        guard hasMoreTailPages else { return }
-        do {
-            let result = try await useCase.loadMoreJoinedRooms(
-                after: tailCursor,
-                limit: Constants.tailPageSize
-            )
-            tailCursor = result.cursor
-            hasMoreTailPages = result.rooms.count >= Constants.tailPageSize
-            applyTailRooms(result.rooms)
-            await refreshUnreadCounts(for: result.rooms)
-        } catch {
-            state.errorMessage = "추가 참여 방을 불러오지 못했습니다."
-        }
+        // joinedRooms projection은 사용자당 참여 방 수가 제한적이라는 전제로 전체 fetch 후 클라이언트 정렬한다.
     }
 
-    private func bindJoinedRoomsSummary() {
-        useCase.joinedRoomsPublisher
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] rooms in
-                guard let self else { return }
-                self.applyHeadRooms(rooms)
-            }
-            .store(in: &cancellables)
-        isBoundJoinedRooms = true
+    func reloadJoinedRooms() async {
+        await bootstrapJoinedRooms()
     }
 
     private func bindReadStateIfNeeded() {
@@ -135,63 +93,35 @@ final class JoinedRoomsViewModel {
     private func bootstrapJoinedRooms() async {
         state.isLoading = true
         state.errorMessage = nil
-        let previousTailSyncAt = lastTailSyncAt
 
         do {
-            let headResult = try await useCase.fetchJoinedRoomsHead(limit: Constants.headRealtimeLimit)
-            tailCursor = headResult.cursor
-            hasMoreTailPages = headResult.rooms.count >= Constants.headRealtimeLimit
-            applyHeadRooms(headResult.rooms, updateUnread: false)
+            let items = try await useCase.fetchJoinedRooms(limit: nil)
+            applyJoinedItems(items, updateUnread: false)
 
-            if let previousTailSyncAt, isTailSyncEnabled {
-                do {
-                    try await syncTailChanges(since: previousTailSyncAt)
-                } catch {
-                    if isMissingFirestoreIndexError(error) {
-                        isTailSyncEnabled = false
-                        if !hasLoggedTailSyncIndexIssue {
-                            hasLoggedTailSyncIndexIssue = true
-                            print("⚠️ JoinedRooms tail sync skipped: missing Firestore composite index(updatedAt).")
-                        }
-                    } else {
-                        throw error
-                    }
-                }
-            }
-
-            state.unreadCounts = await computeUnreadCounts(for: state.rooms)
-            lastTailSyncAt = Date()
+            state.unreadCounts = computeUnreadCounts(from: joinedItems)
         } catch {
             state.errorMessage = "참여중인 방을 불러오지 못했습니다."
             state.rooms = []
             state.unreadCounts = [:]
+            joinedItems = []
         }
 
         state.isLoading = false
     }
 
-    private func syncTailChanges(since: Date) async throws {
-        let changedRooms = try await useCase.syncJoinedRoomsTail(
-            since: since,
-            limit: Constants.tailSyncLimit
-        )
-        guard !changedRooms.isEmpty else { return }
-        applyTailRooms(changedRooms)
-        await refreshUnreadCounts(for: changedRooms)
-    }
-
-    private func applyHeadRooms(_ rooms: [ChatRoom], updateUnread: Bool = true) {
-        let previousSummaryByID = Dictionary(uniqueKeysWithValues: headRooms.compactMap { room -> (String, (seq: Int64, lastMessageAt: Date?, lastMessage: String?, lastMessageSenderUID: String?))? in
+    private func applyJoinedItems(_ items: [JoinedRoomListItem], updateUnread: Bool = true) {
+        let previousSummaryByID = Dictionary(uniqueKeysWithValues: joinedItems.compactMap { item -> (String, (seq: Int64, lastMessageAt: Date?, lastMessage: String?, lastMessageSenderUID: String?))? in
+            let room = item.room
             guard let roomID = room.ID else { return nil }
             return (roomID, (room.seq, room.lastMessageAt, room.lastMessage, room.lastMessageSenderUID))
         })
 
-        headRooms = sortRooms(rooms)
-        seedLatestReadState(for: headRooms)
-        rebuildMergedState()
+        joinedItems = sortItems(items)
+        seedReadState(from: joinedItems)
+        state.rooms = joinedItems.map(\.room)
 
         guard updateUnread else { return }
-        let changedRooms = headRooms.filter { room in
+        let changedRooms = joinedItems.map(\.room).filter { room in
             guard let roomID = room.ID else { return false }
             guard let old = previousSummaryByID[roomID] else { return true }
             return old.seq != room.seq ||
@@ -206,32 +136,10 @@ final class JoinedRoomsViewModel {
         }
     }
 
-    private func applyTailRooms(_ rooms: [ChatRoom]) {
-        for room in rooms {
-            guard let roomID = room.ID else { continue }
-            tailRoomsByID[roomID] = room
-        }
-        seedLatestReadState(for: rooms)
-        rebuildMergedState()
-    }
-
-    private func rebuildMergedState() {
-        let headIDs = Set(headRooms.compactMap(\.ID))
-        let tailRooms = tailRoomsByID.values.filter { room in
-            guard let roomID = room.ID else { return false }
-            return !headIDs.contains(roomID)
-        }
-        let merged = sortRooms(headRooms + tailRooms)
-        state.rooms = merged
-
-        let validIDs = Set(merged.compactMap(\.ID))
-        state.unreadCounts = state.unreadCounts.filter { validIDs.contains($0.key) }
-    }
-
     private func refreshUnreadCounts(for rooms: [ChatRoom]) async {
         let snapshots = await fetchReadSnapshots(for: rooms)
         var updates: [String: Int64] = [:]
-        let currentUserID = LoginManager.shared.getUserUID
+        let currentUserID = LoginManager.shared.canonicalUserID
         for snapshot in snapshots {
             roomReadStateStore?.seed(snapshot)
             if let unread = snapshot.unreadCount(currentUserID: currentUserID) {
@@ -241,11 +149,11 @@ final class JoinedRoomsViewModel {
         state.unreadCounts.merge(updates) { _, new in new }
     }
 
-    private func computeUnreadCounts(for rooms: [ChatRoom]) async -> [String: Int64] {
-        let snapshots = await fetchReadSnapshots(for: rooms)
-        let currentUserID = LoginManager.shared.getUserUID
+    private func computeUnreadCounts(from items: [JoinedRoomListItem]) -> [String: Int64] {
+        let currentUserID = LoginManager.shared.canonicalUserID
         var result: [String: Int64] = [:]
-        for snapshot in snapshots {
+        for item in items {
+            let snapshot = item.readSnapshot()
             roomReadStateStore?.seed(snapshot)
             if let unread = snapshot.unreadCount(currentUserID: currentUserID) {
                 result[snapshot.roomID] = unread
@@ -255,7 +163,7 @@ final class JoinedRoomsViewModel {
     }
 
     private func fetchReadSnapshots(for rooms: [ChatRoom]) async -> [ChatRoomReadSnapshot] {
-        let currentUserID = LoginManager.shared.getUserUID
+        let currentUserID = LoginManager.shared.canonicalUserID
         return await withTaskGroup(of: ChatRoomReadSnapshot?.self, returning: [ChatRoomReadSnapshot].self) { group in
             for room in rooms {
                 guard let roomID = room.ID else { continue }
@@ -287,33 +195,23 @@ final class JoinedRoomsViewModel {
         }
     }
 
-    private func seedLatestReadState(for rooms: [ChatRoom]) {
+    private func seedReadState(from items: [JoinedRoomListItem]) {
         guard let roomReadStateStore else { return }
-        for room in rooms {
-            guard let roomID = room.ID else { continue }
-            roomReadStateStore.seedLatest(
-                roomID: roomID,
-                latestSeq: room.seq,
-                lastMessageSenderUID: room.lastMessageSenderUID
-            )
+        for item in items {
+            roomReadStateStore.seed(item.readSnapshot())
         }
     }
 
     private func applyReadStateChange(_ change: ChatRoomReadStateChange) {
         guard state.rooms.contains(where: { $0.ID == change.roomID }) else { return }
-        guard let unread = change.snapshot.unreadCount(currentUserID: LoginManager.shared.getUserUID) else { return }
+        guard let unread = change.snapshot.unreadCount(currentUserID: LoginManager.shared.canonicalUserID) else { return }
         state.unreadCounts[change.roomID] = unread
     }
 
-    private func sortRooms(_ rooms: [ChatRoom]) -> [ChatRoom] {
-        rooms.sorted { lhs, rhs in
-            (lhs.lastMessageAt ?? lhs.createdAt) > (rhs.lastMessageAt ?? rhs.createdAt)
+    private func sortItems(_ items: [JoinedRoomListItem]) -> [JoinedRoomListItem] {
+        items.sorted { lhs, rhs in
+            (lhs.room.lastMessageAt ?? lhs.room.createdAt) > (rhs.room.lastMessageAt ?? rhs.room.createdAt)
         }
     }
 
-    private func isMissingFirestoreIndexError(_ error: Error) -> Bool {
-        let nsError = error as NSError
-        guard nsError.domain == "FIRFirestoreErrorDomain", nsError.code == 9 else { return false }
-        return nsError.localizedDescription.localizedCaseInsensitiveContains("requires an index")
-    }
 }

@@ -522,7 +522,7 @@ class SearchResultRoomCell: UICollectionViewCell {
 
     func configure(with room: ChatRoom) {
         roomNameLabel.text = room.roomName
-        participantsLabel.text = "참여자 수: \(room.participants.count)"
+        participantsLabel.text = "참여자 수: \(room.memberCount)"
 
         if let date = room.lastMessageAt {
             let formatter = DateFormatter()

@@ -243,7 +243,7 @@ extension ChatCoordinator: ChatRoomRouting {
                     guard let self, let settingVC else { return }
                     self.presentUserProfile(
                         from: settingVC,
-                        userID: user.email,
+                        userID: user.userID,
                         nickname: user.nickname,
                         avatarPath: user.profileImagePath
                     )

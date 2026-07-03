@@ -9,6 +9,27 @@ import UIKit
 import Combine
 import PhotosUI
 
+private final class RoomEditNameTextField: UITextField {
+    private let textInsets = UIEdgeInsets(top: 0, left: 14, bottom: 0, right: 48)
+    private let clearButtonRightInset: CGFloat = 10
+
+    override func textRect(forBounds bounds: CGRect) -> CGRect {
+        bounds.inset(by: textInsets)
+    }
+
+    override func editingRect(forBounds bounds: CGRect) -> CGRect {
+        bounds.inset(by: textInsets)
+    }
+
+    override func placeholderRect(forBounds bounds: CGRect) -> CGRect {
+        bounds.inset(by: textInsets)
+    }
+
+    override func rightViewRect(forBounds bounds: CGRect) -> CGRect {
+        super.rightViewRect(forBounds: bounds).offsetBy(dx: -clearButtonRightInset, dy: 0)
+    }
+}
+
 @MainActor
 final class RoomEditViewController: UIViewController, PHPickerViewControllerDelegate, UIImagePickerControllerDelegate, UINavigationControllerDelegate, UITextFieldDelegate, UITextViewDelegate {
     private let customNavigationBar: CustomNavigationBarView = {
@@ -65,7 +86,7 @@ final class RoomEditViewController: UIViewController, PHPickerViewControllerDele
     }()
 
     private let nameField: UITextField = {
-        let textField = UITextField()
+        let textField = RoomEditNameTextField()
         textField.translatesAutoresizingMaskIntoConstraints = false
         textField.placeholder = "채팅방 이름 (필수)"
         textField.clearButtonMode = .never
@@ -91,7 +112,7 @@ final class RoomEditViewController: UIViewController, PHPickerViewControllerDele
         button.setImage(UIImage(systemName: "xmark.circle.fill"), for: .normal)
         button.tintColor = OutPickTheme.ColorToken.accent
         button.addTarget(self, action: #selector(clearNameTapped), for: .touchUpInside)
-        button.frame = CGRect(x: 0, y: 0, width: 28, height: 28)
+        button.frame = CGRect(x: 0, y: 0, width: 32, height: 32)
         return button
     }()
 

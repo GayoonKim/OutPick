@@ -12,10 +12,6 @@ final class UserProfileDetailRepository: UserProfileDetailRepositoryProtocol {
         self.userProfileRepository = userProfileRepository
     }
 
-    func fetchUserProfile(email: String) async throws -> UserProfile {
-        try await userProfileRepository.fetchUserProfileFromFirestore(email: email)
-    }
-
     func fetchUserProfile(userID: String) async throws -> UserProfile {
         try await userProfileRepository.fetchUserProfile(userID: userID)
     }

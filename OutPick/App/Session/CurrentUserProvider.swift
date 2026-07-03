@@ -9,9 +9,7 @@ import Foundation
 
 protocol CurrentUserProviding {
     var email: String { get }
-    var uid: String { get }
-    var documentID: String { get }
-    var authIdentityKey: String { get }
+    var canonicalUserID: String { get }
     var nickname: String? { get }
     var avatarPath: String? { get }
     var profile: UserProfile? { get }
@@ -33,16 +31,8 @@ struct LoginManagerCurrentUserProvider: CurrentUserProviding {
         loginManager.getUserEmail
     }
 
-    var uid: String {
-        loginManager.getUserUID
-    }
-
-    var documentID: String {
-        loginManager.getUserDocumentID
-    }
-
-    var authIdentityKey: String {
-        loginManager.getAuthIdentityKey
+    var canonicalUserID: String {
+        loginManager.canonicalUserID
     }
 
     var nickname: String? {

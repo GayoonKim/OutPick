@@ -66,7 +66,7 @@ final class ChatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol {
         attachmentImageLoader: ChatAttachmentImageLoading,
         currentUserProvider: @escaping () -> ChatMessageSenderSnapshot = {
             ChatMessageSenderSnapshot(
-                senderUID: LoginManager.shared.getUserUID,
+                senderUID: LoginManager.shared.canonicalUserID,
                 senderEmail: LoginManager.shared.getUserEmail,
                 senderNickname: "",
                 senderAvatarPath: nil

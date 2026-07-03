@@ -13,7 +13,7 @@ enum ChatRoomSettingEvent {
     case roomUpdated(ChatRoom)
     case roomExited(roomID: String)
     case requestEditRoom(ChatRoom)
-    case requestShowUserProfile(LocalUser)
+    case requestShowUserProfile(LocalChatUser)
 }
 
 class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecognizerDelegate, UINavigationControllerDelegate/*, ChatModalAnimatable*/ {
@@ -76,7 +76,7 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
     enum Item: Hashable {
         case roomInfoItem(ChatRoom)
         case mediaItem
-        case participantsItem([LocalUser])
+        case participantsItem([LocalChatUser])
     }
     
     typealias DataSourceType = UICollectionViewDiffableDataSource<Section, Item>
@@ -86,7 +86,7 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
 
     private var roomInfo: ChatRoom { viewModel.roomInfo }
     private var mediaItems: [ChatRoomSettingMediaItem] { viewModel.mediaItems }
-    private var localUsers: [LocalUser] { viewModel.localUsers }
+    private var localUsers: [LocalChatUser] { viewModel.localUsers }
     
     var onEvent: (ChatRoomSettingEvent) -> Void = { _ in }
 
@@ -190,7 +190,7 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
         coverPrefetchTask?.cancel()
     }
 
-    private static func configureLayout(_ room: ChatRoom, localUsers: [LocalUser], mediaCount: Int) -> UICollectionViewCompositionalLayout {
+    private static func configureLayout(_ room: ChatRoom, localUsers: [LocalChatUser], mediaCount: Int) -> UICollectionViewCompositionalLayout {
         return UICollectionViewCompositionalLayout { (sectionIndex: Int, environment: NSCollectionLayoutEnvironment) -> NSCollectionLayoutSection? in
             switch Section(rawValue: sectionIndex)! {
                 
@@ -280,7 +280,7 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
                 cell.configureCell(
                     room: self.roomInfo,
                     roomImageManager: self.roomImageManager,
-                    currentUserUID: self.currentUserProvider.uid
+                    currentUserUID: self.currentUserProvider.canonicalUserID
                 )
                 
                 cell.editButtonTapped = { [weak self] in
@@ -404,7 +404,7 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
                     cell.configureCell(
                         room: self.roomInfo,
                         roomImageManager: self.roomImageManager,
-                        currentUserUID: self.currentUserProvider.uid
+                        currentUserUID: self.currentUserProvider.canonicalUserID
                     )
                 }
             }
@@ -461,7 +461,7 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
     }
     
     @MainActor
-    private func updateParticipantsSection(with localUsers: [LocalUser]) {
+    private func updateParticipantsSection(with localUsers: [LocalChatUser]) {
         var snapshot = dataSource.snapshot()
         snapshot.deleteItems(snapshot.itemIdentifiers(inSection: .participantsSection))
         snapshot.appendItems([.participantsItem(localUsers)], toSection: .participantsSection)
@@ -480,7 +480,7 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
     
     private func leaveRoomTapped() {
         ConfirmView.presentLeave(in: self.view,
-                                 isOwner: roomInfo.creatorUID == LoginManager.shared.getUserUID) { [weak self] in
+                                 isOwner: roomInfo.creatorUID == LoginManager.shared.canonicalUserID) { [weak self] in
             guard let self = self else { return }
             Task {
                 do {

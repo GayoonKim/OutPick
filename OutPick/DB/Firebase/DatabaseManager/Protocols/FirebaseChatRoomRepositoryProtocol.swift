@@ -6,37 +6,21 @@
 //
 
 import Foundation
-import Combine
 import FirebaseFirestore
+
+struct RoomMemberPage {
+    let userIDs: [String]
+    let nextCursorUserID: String?
+    let hasMore: Bool
+}
 
 /// 채팅방 관련 데이터베이스 작업을 위한 프로토콜
 protocol FirebaseChatRoomRepositoryProtocol {
     /// 방 목록 캐시 상태
     var topRoomsWithPreviews: [(ChatRoom, [ChatMessage])] { get }
     
-    /// 방 변경 이벤트 Publisher
-    var roomChangePublisher: AnyPublisher<ChatRoom, Never> { get }
-
-    /// 참여중 방(요약) 변경 이벤트 Publisher
-    /// - Note: JoinedRooms 목록의 head 실시간 반영 전용
-    var joinedRoomsSummaryPublisher: AnyPublisher<[ChatRoom], Never> { get }
-
-    /// 소켓 실시간 메시지를 참여중 방 요약 스트림에 즉시 반영(로컬 패치)
-    /// - Parameters:
-    ///   - roomID: 대상 방 ID
-    ///   - message: 마지막 메시지 프리뷰
-    ///   - sentAt: 마지막 메시지 시각
-    ///   - seq: 서버가 전달한 메시지 시퀀스(없으면 nil)
-    ///   - senderUID: 마지막 메시지 발신자 ID(없으면 nil)
-    @MainActor
-    func applyRealtimeSummaryPatch(roomID: String, message: String, sentAt: Date, seq: Int64?, senderUID: String?)
-    
     /// 로컬 방 정보 업데이트 (캐시 갱신)
     func applyLocalRoomUpdate(_ updatedRoom: ChatRoom)
-
-    /// 참여중 방 요약 스트림에서 방을 로컬로 즉시 제거
-    @MainActor
-    func removeLocalJoinedRoom(roomID: String)
     
     /// Top 방 목록 페이지네이션 조회
     func fetchTopRoomsPage(after lastSnapshot: DocumentSnapshot?, limit: Int) async throws
@@ -82,36 +66,12 @@ protocol FirebaseChatRoomRepositoryProtocol {
     /// 검색 결과 다음 페이지 로드
     func loadMoreSearchRooms(limit: Int) async throws -> RoomSearchPage
 
-    /// 참여중 방 head(요약) 실시간 리스너 시작
-    @MainActor
-    func startListenJoinedRoomsSummary(userUID: String, limit: Int)
+    /// 참여중 방 목록 조회 (users/{uid}/joinedRooms projection + Rooms batch fetch)
+    func fetchJoinedRoomList(userUID: String) async throws -> [JoinedRoomListItem]
 
-    /// 참여중 방 head(요약) 실시간 리스너 중지
-    @MainActor
-    func stopListenJoinedRoomsSummary()
+    /// 방 멤버 UID 페이지 조회 (Rooms/{roomID}/members)
+    func fetchRoomMembersPage(roomID: String, limit: Int, afterUserID: String?) async throws -> RoomMemberPage
 
-    /// 참여중 방 페이지 조회 (비실시간)
-    func fetchJoinedRoomsPage(
-        userUID: String,
-        after lastSnapshot: DocumentSnapshot?,
-        limit: Int
-    ) async throws -> (rooms: [ChatRoom], lastSnapshot: DocumentSnapshot?)
-
-    /// 참여중 방 tail 변경분 조회 (delta sync)
-    func fetchJoinedRoomsUpdatedSince(
-        userUID: String,
-        since: Date,
-        limit: Int
-    ) async throws -> [ChatRoom]
-    
-    /// 단일 방 문서 리스너 시작
-    @MainActor
-    func startListenRoomDoc(roomID: String)
-    
-    /// 현재 방 문서 리스너 중지
-    @MainActor
-    func stopListenRoomDoc()
-    
     /// 방 정보 업데이트
     func updateRoomInfo(room: ChatRoom, newImagePath: String, roomName: String, roomDescription: String) async throws
     

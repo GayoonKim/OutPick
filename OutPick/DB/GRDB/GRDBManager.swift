@@ -11,12 +11,11 @@ import GRDB
 
 // MARK: - Minimal GRDB models used by GRDBManager
 
-/// LocalUser(email PK, nickname, profileImagePath)
-struct LocalUser: Codable, FetchableRecord, PersistableRecord, Hashable {
-    static let databaseTableName = "LocalUser"
-    enum Columns: String, ColumnExpression { case email, nickname, profileImagePath }
+struct LocalChatUser: Codable, FetchableRecord, PersistableRecord, Hashable {
+    static let databaseTableName = "LocalChatUser"
+    enum Columns: String, ColumnExpression { case userID, nickname, profileImagePath }
 
-    let email: String        // PK
+    let userID: String
     var nickname: String
     var profileImagePath: String?
 
@@ -24,13 +23,28 @@ struct LocalUser: Codable, FetchableRecord, PersistableRecord, Hashable {
     static let persistenceConflictPolicy = PersistenceConflictPolicy(insert: .replace, update: .replace)
 }
 
-/// RoomMember(roomID, userEmail)
 struct RoomMember: Codable, FetchableRecord, PersistableRecord, Hashable {
     static let databaseTableName = "RoomMember"
-    enum Columns: String, ColumnExpression { case roomID, userEmail }
+    enum Columns: String, ColumnExpression { case roomID, userID }
 
     let roomID: String
-    let userEmail: String    // FK → LocalUser.email
+    let userID: String
+}
+
+struct RoomProfileDisplayCache: Codable, FetchableRecord, PersistableRecord, Hashable {
+    static let databaseTableName = "RoomProfileDisplayCache"
+    enum Columns: String, ColumnExpression {
+        case roomID, userID, lastSeenAt, lastMessageSeq, lastMessageID, updatedAt
+    }
+
+    let roomID: String
+    let userID: String
+    let lastSeenAt: Date
+    let lastMessageSeq: Int?
+    let lastMessageID: String?
+    let updatedAt: Date
+
+    static let persistenceConflictPolicy = PersistenceConflictPolicy(insert: .replace, update: .replace)
 }
 
 struct ImageIndexMeta: FetchableRecord, Decodable {
@@ -79,63 +93,95 @@ final class GRDBManager: ChatOutgoingOutboxPersisting {
             try db.execute(sql: "PRAGMA foreign_keys = ON;")
         }
 
-        // Minimal LocalUser table (email, nickname, profileImagePath)
+        // Minimal LocalChatUser table (userID, nickname, profileImagePath)
         migrator.registerMigration("createLocalUser_min") { db in
-            try db.create(table: "LocalUser", options: [.ifNotExists]) { t in
-                t.column("email", .text).primaryKey()          // PK(email)
+            try db.create(table: "LocalChatUser", options: [.ifNotExists]) { t in
+                t.column("userID", .text).primaryKey()
                 t.column("nickname", .text).notNull()
                 t.column("profileImagePath", .text)
             }
-            try db.create(index: "idx_LocalUser_nickname", on: "LocalUser", columns: ["nickname"], ifNotExists: true)
+            try db.create(index: "idx_LocalChatUser_nickname", on: "LocalChatUser", columns: ["nickname"], ifNotExists: true)
         }
 
-        // RoomMember junction table (roomID, userEmail)
+        // Legacy RoomMember table. Production membership source is Firestore members.
         migrator.registerMigration("createRoomMember_min") { db in
             try db.create(table: "RoomMember", options: [.ifNotExists]) { t in
                 t.column("roomID", .text).notNull()
-                t.column("userEmail", .text).notNull().indexed().references("LocalUser", column: "email", onDelete: .cascade)
-                t.primaryKey(["roomID", "userEmail"]) // composite PK
+                t.column("userID", .text).notNull().indexed().references("LocalChatUser", column: "userID", onDelete: .cascade)
+                t.primaryKey(["roomID", "userID"]) // composite PK
             }
             try db.create(index: "idx_RoomMember_room", on: "RoomMember", columns: ["roomID"], ifNotExists: true)
         }
 
-        // Backfill LocalUser from legacy userProfile (if exists)
+        // Legacy migrations intentionally no-op. 앱 배포 전 canonical UID schema로 수렴한다.
         migrator.registerMigration("backfill_LocalUser_from_userProfile") { db in
-            guard try db.tableExists("userProfile") else { return }
-
-            let profileImageExpression = try userProfileImageBackfillExpression(in: db)
-            try db.execute(sql: """
-                INSERT OR IGNORE INTO LocalUser (email, nickname, profileImagePath)
-                SELECT email, COALESCE(nickname, ''), \(profileImageExpression)
-                  FROM userProfile
-            """)
+            _ = db
         }
 
-        // Backfill RoomMember from legacy roomParticipant (if exists)
         migrator.registerMigration("migrate_roomParticipant_to_RoomMember") { db in
-            if try db.tableExists("roomParticipant") {
-                try db.execute(sql: """
-                    INSERT OR IGNORE INTO RoomMember (roomID, userEmail)
-                    SELECT roomId, email FROM roomParticipant
-                """)
+            _ = db
+        }
+
+        migrator.registerMigration("rebuildLocalChatUserSchema_userID") { db in
+            if try db.tableExists("RoomMember") {
+                try db.drop(table: "RoomMember")
             }
+            if try db.tableExists("RoomProfileDisplayCache") {
+                try db.drop(table: "RoomProfileDisplayCache")
+            }
+            if try db.tableExists("LocalChatUser") {
+                try db.drop(table: "LocalChatUser")
+            }
+            if try db.tableExists("LocalUser") {
+                try db.drop(table: "LocalUser")
+            }
+            if try db.tableExists("roomParticipant") {
+                try db.drop(table: "roomParticipant")
+            }
+            if try db.tableExists("userProfile") {
+                try db.drop(table: "userProfile")
+            }
+            try db.create(table: "LocalChatUser", options: [.ifNotExists]) { t in
+                t.column("userID", .text).primaryKey()
+                t.column("nickname", .text).notNull()
+                t.column("profileImagePath", .text)
+            }
+            try db.create(table: "RoomMember", options: [.ifNotExists]) { t in
+                t.column("roomID", .text).notNull()
+                t.column("userID", .text).notNull().indexed().references("LocalChatUser", column: "userID", onDelete: .cascade)
+                t.primaryKey(["roomID", "userID"])
+            }
+            try db.create(index: "idx_LocalChatUser_nickname", on: "LocalChatUser", columns: ["nickname"], ifNotExists: true)
+            try db.create(index: "idx_RoomMember_room", on: "RoomMember", columns: ["roomID"], ifNotExists: true)
+        }
+
+        migrator.registerMigration("createRoomProfileDisplayCache") { db in
+            try createRoomProfileDisplayCacheTable(in: db)
         }
     }
 
-    private static func userProfileImageBackfillExpression(in db: Database) throws -> String {
-        let columnRows = try Row.fetchAll(db, sql: "PRAGMA table_info(userProfile)")
-        let columns = Set(columnRows.compactMap { $0["name"] as String? })
-
-        switch (columns.contains("thumbPath"), columns.contains("profileImagePath")) {
-        case (true, true):
-            return "COALESCE(thumbPath, profileImagePath)"
-        case (true, false):
-            return "thumbPath"
-        case (false, true):
-            return "profileImagePath"
-        case (false, false):
-            return "NULL"
+    private static func createRoomProfileDisplayCacheTable(in db: Database) throws {
+        try db.create(table: "RoomProfileDisplayCache", options: [.ifNotExists]) { t in
+            t.column("roomID", .text).notNull()
+            t.column("userID", .text).notNull().references("LocalChatUser", column: "userID", onDelete: .cascade)
+            t.column("lastSeenAt", .datetime).notNull()
+            t.column("lastMessageSeq", .integer)
+            t.column("lastMessageID", .text)
+            t.column("updatedAt", .datetime).notNull()
+            t.primaryKey(["roomID", "userID"])
         }
+        try db.create(index: "idx_RoomProfileDisplayCache_room",
+                      on: "RoomProfileDisplayCache",
+                      columns: ["roomID"],
+                      ifNotExists: true)
+        try db.create(index: "idx_RoomProfileDisplayCache_room_lru",
+                      on: "RoomProfileDisplayCache",
+                      columns: ["roomID", "lastSeenAt", "lastMessageSeq", "userID"],
+                      ifNotExists: true)
+        try db.create(index: "idx_RoomProfileDisplayCache_user",
+                      on: "RoomProfileDisplayCache",
+                      columns: ["userID"],
+                      ifNotExists: true)
     }
 
     private init() {
@@ -143,46 +189,24 @@ final class GRDBManager: ChatOutgoingOutboxPersisting {
         let databaseURL = try! FileManager.default.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true).appendingPathComponent("OutPick.sqlite")
         // DatabasePool 생성 (멀티스레드 대응)
         dbPool = try! DatabasePool(path: databaseURL.path)
+        migrate()
+    }
 
+    init(dbPool: DatabasePool) {
+        self.dbPool = dbPool
+        migrate()
+    }
+
+    private func migrate() {
         // 마이그레이션 수행
         var migrator = DatabaseMigrator()
         Self.registerBaseUserMigrations(&migrator)
         migrator.registerMigration("createUserProfile") { db in
-            try db.create(table: "userProfile") { t in
-                t.column("deviceID", .text)
-                t.column("email", .text).primaryKey()
-                t.column("gender", .text)
-                t.column("birthdate", .text)
-                t.column("nickname", .text)
-                t.column("profileImagePath", .text)
-                t.column("thumbPath", .text)
-                t.column("originalPath", .text)
-                t.column("joinedRooms", .text) // JSON 인코딩된 [String]
-                t.column("createdAt", .datetime).notNull()
-            }
+            _ = db
         }
 
         migrator.registerMigration("addThumbAndOriginalToUserProfile") { db in
-            do {
-                try db.alter(table: "userProfile") { t in
-                    t.add(column: "thumbPath", .text)
-                    t.add(column: "originalPath", .text)
-                }
-            } catch {
-                // 컬럼이 이미 존재하면 에러가 날 수 있으므로 무시(신규/기존 DB 모두 호환)
-                print("[Migration] addThumbAndOriginalToUserProfile skipped or failed: \(error)")
-            }
-            // 기존 profileImagePath 값을 thumbPath로 백필(있을 때만)
-            do {
-                try db.execute(sql: """
-                    UPDATE userProfile
-                       SET thumbPath = COALESCE(thumbPath, profileImagePath)
-                     WHERE (thumbPath IS NULL OR thumbPath = '')
-                       AND (profileImagePath IS NOT NULL AND profileImagePath <> '')
-                """)
-            } catch {
-                print("[Migration] backfill thumbPath from profileImagePath failed: \(error)")
-            }
+            _ = db
         }
 
         migrator.registerMigration("createChatMessage") { db in
@@ -295,11 +319,7 @@ final class GRDBManager: ChatOutgoingOutboxPersisting {
         }
         
         migrator.registerMigration("createRoomParticipant") { db in
-            try db.create(table: "roomParticipant") { t in
-                t.column("roomId", .text).notNull()
-                t.column("email", .text).notNull()
-                t.primaryKey(["roomId", "email"]) // 복합 기본 키
-            }
+            _ = db
         }
         
         migrator.registerMigration("createRoomImage") { db in
@@ -390,51 +410,6 @@ final class GRDBManager: ChatOutgoingOutboxPersisting {
         }
         
         try! migrator.migrate(dbPool)
-    }
-    
-    // MARK: 사용자 프로필
-    func insertUserProfile(_ profile: UserProfile) throws {
-        try dbPool.write { db in
-            try profile.save(db)
-        }
-    }
-    
-    func fetchAllProfiles() throws -> [UserProfile] {
-        try dbPool.read { db in
-            try UserProfile.fetchAll(db)
-        }
-    }
-    
-    func fetchProfile(_ email: String) throws -> UserProfile? {
-        try dbPool.read { db in
-            try UserProfile.fetchOne(db, key: email)
-        }
-    }
-    
-    // MARK: 중간 테이블 관리 (방 - 사용자)
-    func addUser(_ email: String, toRoom roomID: String) throws {
-        try dbPool.write { db in
-            try db.execute(sql: "INSERT OR IGNORE INTO roomParticipant (roomId, email) VALUES (?, ?)", arguments: [roomID, email])
-        }
-    }
-    
-    func removeUser(_ email: String, fromRoom roomID: String) throws {
-        try dbPool.write { db in
-            try db.execute(sql: "DELETE FROM roomParticipant WHERE roomId = ? AND email = ?", arguments: [roomID, email])
-        }
-    }
-    
-    func fetchUserProfiles(inRoom roomID: String) throws -> [UserProfile] {
-        try dbPool.read { db in
-            let sql = """
-                SELECT userProfile.*
-                  FROM userProfile
-                  JOIN roomParticipant ON userProfile.email = roomParticipant.email
-                 WHERE roomParticipant.roomId = ?
-                 ORDER BY userProfile.nickname COLLATE NOCASE ASC
-            """
-            return try UserProfile.fetchAll(db, sql: sql, arguments: [roomID])
-        }
     }
     
     // MARK: 방
@@ -1573,15 +1548,15 @@ final class GRDBManager: ChatOutgoingOutboxPersisting {
         }
     }
     
-    // MARK: - LocalUser & RoomMember API
-    /// email, nickname, profileImagePath만을 다루는 경량 CRUD
-    func deleteLocalRoomDataAndPruneUsers(roomID: String) throws {
+    // MARK: - LocalChatUser & Room Profile Display Cache API
+    /// userID, nickname, profileImagePath만을 다루는 경량 CRUD
+    func deleteLocalRoomDataAndPruneUsers(roomID: String, currentUserID: String) throws {
         try dbPool.write { db in
             // 1) 이 방의 로컬 데이터 삭제
             try deleteLocalRoomData(in: db, roomID: roomID)
 
-            // 2) 참조 없는 LocalUser 정리
-            try pruneOrphanLocalUsers(in: db)
+            // 2) 참조 없는 LocalChatUser 정리
+            try pruneOrphanLocalChatUsers(in: db, preservingUserID: currentUserID)
         }
     }
     
@@ -1613,195 +1588,131 @@ final class GRDBManager: ChatOutgoingOutboxPersisting {
             )
         }
 
-        // 3) 이 방 기준 참여자 관계 삭제
+        // 3) 이 방 기준 프로필 표시 캐시 삭제
+        if try db.tableExists("RoomProfileDisplayCache") {
+            try db.execute(
+                sql: "DELETE FROM RoomProfileDisplayCache WHERE roomID = ?",
+                arguments: [roomID]
+            )
+        }
+
+        // 4) 과거 migration chain에서 남은 로컬 참여자 관계 삭제
         if try db.tableExists("RoomMember") {
             try db.execute(
                 sql: "DELETE FROM RoomMember WHERE roomID = ?",
                 arguments: [roomID]
             )
         }
-        // 레거시 roomParticipant도 함께 정리
-        if try db.tableExists("roomParticipant") {
-            try db.execute(
-                sql: "DELETE FROM roomParticipant WHERE roomId = ?",
-                arguments: [roomID]
-            )
-        }
     }
     
-    func pruneOrphanLocalUsers(in db: Database) throws {
-        let myEmail = LoginManager.shared.getUserEmail
-
-        // RoomMember 테이블이 없으면 굳이 정리할 수 있는 정보가 없으므로 스킵
-        guard (try? db.tableExists("RoomMember")) == true else { return }
+    func pruneOrphanLocalChatUsers(in db: Database, preservingUserID currentUserID: String) throws {
+        let hasDisplayCache = (try? db.tableExists("RoomProfileDisplayCache")) == true
+        guard hasDisplayCache else { return }
 
         // 나 자신은 항상 유지하고,
-        // 어떤 RoomMember에도 등장하지 않는 email만 삭제
+        // 어떤 로컬 표시 캐시에도 등장하지 않는 userID만 삭제한다.
         try db.execute(
             sql: """
-            DELETE FROM LocalUser
-            WHERE email != ?
-              AND email NOT IN (
-                    SELECT DISTINCT userEmail
-                    FROM RoomMember
+            DELETE FROM LocalChatUser
+            WHERE userID != ?
+              AND userID NOT IN (
+                    SELECT DISTINCT userID FROM RoomProfileDisplayCache
               )
             """,
-            arguments: [myEmail]
+            arguments: [currentUserID]
         )
     }
     
-    func upsertLocalUser(email: String, nickname: String, profileImagePath: String?) throws -> LocalUser {
-        let user = LocalUser(email: email, nickname: nickname, profileImagePath: profileImagePath)
+    func upsertLocalChatUser(userID: String, nickname: String, profileImagePath: String?) throws -> LocalChatUser {
+        let user = LocalChatUser(userID: userID, nickname: nickname, profileImagePath: profileImagePath)
         try dbPool.write { db in
             try user.insert(db, onConflict: .replace)
         }
         return user
     }
 
-    func fetchLocalUser(email: String) throws -> LocalUser? {
+    func fetchLocalChatUser(userID: String) throws -> LocalChatUser? {
         try dbPool.read { db in
-            try LocalUser.fetchOne(db, key: email)
+            try LocalChatUser.fetchOne(db, key: userID)
         }
     }
-    
-    // MARK: RoomMember(신규) 멤버십 관리
-    func addLocalUser(_ email: String, toRoom roomID: String) throws {
-        let member = RoomMember(roomID: roomID, userEmail: email)
+
+    func upsertRoomProfileDisplayCache(
+        roomID: String,
+        userID: String,
+        lastSeenAt: Date,
+        lastMessageSeq: Int?,
+        lastMessageID: String?,
+        updatedAt: Date = Date(),
+        maxEntriesPerRoom: Int = 20
+    ) throws {
+        guard maxEntriesPerRoom > 0 else { return }
+
+        let cache = RoomProfileDisplayCache(
+            roomID: roomID,
+            userID: userID,
+            lastSeenAt: lastSeenAt,
+            lastMessageSeq: lastMessageSeq,
+            lastMessageID: lastMessageID,
+            updatedAt: updatedAt
+        )
+
         try dbPool.write { db in
-            try member.insert(db, onConflict: .replace)
+            let placeholder = LocalChatUser(userID: userID, nickname: "", profileImagePath: nil)
+            try placeholder.insert(db, onConflict: .ignore)
+            try cache.insert(db, onConflict: .replace)
+            try evictRoomProfileDisplayCache(in: db, roomID: roomID, maxEntriesPerRoom: maxEntriesPerRoom)
         }
     }
-    
-    func removeLocalUser(_ email: String, fromRoom roomID: String) throws {
-        try dbPool.write { db in
-            _ = try RoomMember
-                .filter(RoomMember.Columns.roomID == roomID && RoomMember.Columns.userEmail == email)
-                .deleteAll(db)
-        }
-    }
-    
-    /// 방의 모든 사용자를 LocalUser로 반환 (닉네임 오름차순)
-    func fetchLocalUsers(inRoom roomID: String) throws -> [LocalUser] {
+
+    func fetchRoomProfileDisplayCacheUserIDs(roomID: String) throws -> [String] {
         try dbPool.read { db in
-            if try db.tableExists("RoomMember") {
-                let rows = try Row.fetchAll(
-                    db,
-                    sql: """
-                        SELECT LOWER(m.userEmail) AS email,
-                               COALESCE(MAX(NULLIF(u.nickname, '')), LOWER(m.userEmail)) AS nickname,
-                               MAX(u.profileImagePath) AS profileImagePath
-                          FROM RoomMember m
-                          LEFT JOIN LocalUser u ON LOWER(u.email) = LOWER(m.userEmail)
-                         WHERE m.roomID = ?
-                         GROUP BY LOWER(m.userEmail)
-                         ORDER BY nickname COLLATE NOCASE ASC,
-                                  email COLLATE NOCASE ASC
-                    """,
-                    arguments: [roomID]
-                )
-                return rows.map { row in
-                    LocalUser(
-                        email: row["email"],
-                        nickname: row["nickname"],
-                        profileImagePath: row["profileImagePath"]
-                    )
-                }
-            } else {
-                // 레거시 roomParticipant + userProfile 폴백 → LocalUser 형태로 매핑
-                let sql = """
-                SELECT up.email AS email,
-                       COALESCE(up.nickname,'') AS nickname,
-                       COALESCE(up.thumbPath, up.profileImagePath) AS profileImagePath
-                  FROM userProfile up
-                  JOIN roomParticipant rp ON rp.email = up.email
-                 WHERE rp.roomId = ?
-                 ORDER BY up.nickname COLLATE NOCASE ASC
-                """
-                let rows = try Row.fetchAll(db, sql: sql, arguments: [roomID])
-                return rows.map { row in
-                    LocalUser(email: row["email"], nickname: row["nickname"], profileImagePath: row["profileImagePath"])
-                }
-            }
+            try String.fetchAll(
+                db,
+                sql: """
+                    SELECT userID
+                      FROM RoomProfileDisplayCache
+                     WHERE roomID = ?
+                     ORDER BY lastSeenAt DESC,
+                              COALESCE(lastMessageSeq, -1) DESC,
+                              userID COLLATE NOCASE ASC
+                """,
+                arguments: [roomID]
+            )
         }
     }
-    
-    func fetchLocalUsersPage(roomID: String, offset: Int, limit: Int) throws -> ([LocalUser], Int) {
+
+    func countRoomProfileDisplayCache(roomID: String) throws -> Int {
         try dbPool.read { db in
-            let hasLocal = (try? db.tableExists("LocalUser")) == true && (try? db.tableExists("RoomMember")) == true
-            if hasLocal {
-                let rows = try Row.fetchAll(
-                    db,
-                    sql: """
-                        SELECT LOWER(m.userEmail) AS email,
-                               COALESCE(MAX(NULLIF(u.nickname, '')), LOWER(m.userEmail)) AS nickname,
-                               MAX(u.profileImagePath) AS profileImagePath
-                          FROM RoomMember m
-                          LEFT JOIN LocalUser u ON LOWER(u.email) = LOWER(m.userEmail)
-                         WHERE m.roomID = ?
-                         GROUP BY LOWER(m.userEmail)
-                         ORDER BY nickname COLLATE NOCASE ASC,
-                                  email COLLATE NOCASE ASC
-                         LIMIT ? OFFSET ?
-                    """,
-                    arguments: [roomID, limit, offset]
-                )
-                let list = rows.map { row in
-                    LocalUser(
-                        email: row["email"],
-                        nickname: row["nickname"],
-                        profileImagePath: row["profileImagePath"]
-                    )
-                }
-                let total = try Int.fetchOne(db,
-                    sql: "SELECT COUNT(DISTINCT LOWER(userEmail)) FROM RoomMember WHERE roomID = ?",
-                    arguments: [roomID]) ?? list.count
-                return (list, total)
-            } else if (try? db.tableExists("userProfile")) == true && (try? db.tableExists("roomParticipant")) == true {
-                // Fallback: 레거시 테이블에서 최소 필드만 매핑
-                let rows = try Row.fetchAll(
-                    db,
-                    sql: """
-                        SELECT DISTINCT up.email AS email, COALESCE(up.nickname,'') AS nickname, up.profileImagePath AS profileImagePath
-                          FROM userProfile up
-                          JOIN roomParticipant rp ON up.email = rp.email
-                         WHERE rp.roomId = ?
-                         ORDER BY up.nickname COLLATE NOCASE ASC
-                         LIMIT ? OFFSET ?
-                    """,
-                    arguments: [roomID, limit, offset]
-                )
-                let list = rows.map { row in
-                    LocalUser(email: row["email"], nickname: row["nickname"], profileImagePath: row["profileImagePath"])
-                }
-                let total = try Int.fetchOne(db,
-                    sql: "SELECT COUNT(DISTINCT email) FROM roomParticipant WHERE roomId = ?",
-                    arguments: [roomID]) ?? list.count
-                return (list, total)
-            } else {
-                return ([], 0)
-            }
+            try Int.fetchOne(
+                db,
+                sql: "SELECT COUNT(*) FROM RoomProfileDisplayCache WHERE roomID = ?",
+                arguments: [roomID]
+            ) ?? 0
         }
     }
-    
-    /// 방의 모든 사용자 이메일을 반환
-    /// - 신규 스키마(RoomMember) 우선, 레거시(roomParticipant) 폴백 지원
-    func userEmails(in roomID: String) throws -> [String] {
-        try dbPool.read { db in
-            if try db.tableExists("RoomMember") {
-                return try String.fetchAll(
-                    db,
-                    sql: "SELECT userEmail FROM RoomMember WHERE roomID = ?",
-                    arguments: [roomID]
-                )
-            } else if try db.tableExists("roomParticipant") {
-                return try String.fetchAll(
-                    db,
-                    sql: "SELECT email FROM roomParticipant WHERE roomId = ?",
-                    arguments: [roomID]
-                )
-            } else {
-                return []
-            }
-        }
+
+    private func evictRoomProfileDisplayCache(
+        in db: Database,
+        roomID: String,
+        maxEntriesPerRoom: Int
+    ) throws {
+        try db.execute(
+            sql: """
+            DELETE FROM RoomProfileDisplayCache
+             WHERE roomID = ?
+               AND userID NOT IN (
+                    SELECT userID
+                      FROM RoomProfileDisplayCache
+                     WHERE roomID = ?
+                     ORDER BY lastSeenAt DESC,
+                              COALESCE(lastMessageSeq, -1) DESC,
+                              userID COLLATE NOCASE ASC
+                     LIMIT ?
+               )
+            """,
+            arguments: [roomID, roomID, maxEntriesPerRoom]
+        )
     }
+
 }

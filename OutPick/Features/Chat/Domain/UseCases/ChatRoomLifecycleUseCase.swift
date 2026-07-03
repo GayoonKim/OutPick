@@ -6,17 +6,8 @@
 //
 
 import Foundation
-import Combine
 
 protocol ChatRoomLifecycleUseCaseProtocol {
-    var roomChangePublisher: AnyPublisher<ChatRoom, Never> { get }
-
-    @MainActor
-    func startRoomUpdates(roomID: String)
-
-    @MainActor
-    func stopRoomUpdates()
-
     @MainActor
     func handleRoomSaved(roomID: String)
 
@@ -60,21 +51,6 @@ final class ChatRoomLifecycleUseCase: ChatRoomLifecycleUseCaseProtocol {
         self.realtimeService = realtimeService
     }
 
-    var roomChangePublisher: AnyPublisher<ChatRoom, Never> {
-        chatRoomRepository.roomChangePublisher
-    }
-
-    @MainActor
-    func startRoomUpdates(roomID: String) {
-        guard !roomID.isEmpty else { return }
-        chatRoomRepository.startListenRoomDoc(roomID: roomID)
-    }
-
-    @MainActor
-    func stopRoomUpdates() {
-        chatRoomRepository.stopListenRoomDoc()
-    }
-
     @MainActor
     func handleRoomSaved(roomID: String) {
         guard !roomID.isEmpty else { return }
@@ -111,7 +87,6 @@ final class ChatRoomLifecycleUseCase: ChatRoomLifecycleUseCaseProtocol {
     @MainActor
     private func activateJoinedRoomRealtime(roomID: String) {
         guard !roomID.isEmpty else { return }
-        chatRoomRepository.startListenRoomDoc(roomID: roomID)
         joinedRoomsStore.add(roomID)
         joinedRoomsRuntime.addJoinedRoom(roomID)
     }

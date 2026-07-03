@@ -167,8 +167,8 @@ final class PresenceManager {
             .lowercased()
 
         let userDocumentID: String
-        if !LoginManager.shared.getUserDocumentID.isEmpty {
-            userDocumentID = LoginManager.shared.getUserDocumentID
+        if !LoginManager.shared.canonicalUserID.isEmpty {
+            userDocumentID = LoginManager.shared.canonicalUserID
         } else {
             guard LoginManager.shared.hasAuthenticatedIdentity else {
                 return nil

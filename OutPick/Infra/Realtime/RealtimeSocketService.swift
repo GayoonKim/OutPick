@@ -49,7 +49,7 @@ extension SocketSessionIdentity {
     ) async throws -> SocketSessionIdentity {
         let idToken = try await currentFirebaseIDToken()
         return SocketSessionIdentity(
-            uid: currentUserProvider.uid
+            uid: currentUserProvider.canonicalUserID
                 .trimmingCharacters(in: .whitespacesAndNewlines),
             email: currentUserProvider.email
                 .trimmingCharacters(in: .whitespacesAndNewlines)

@@ -104,7 +104,7 @@ final class AppCoordinator {
     }
 
     private func routeAfterAuthenticated() async {
-        print("[AppCoordinator] routeAfterAuthenticated identity=\(LoginManager.shared.getAuthIdentityKey)")
+        print("[AppCoordinator] routeAfterAuthenticated identity=\(LoginManager.shared.canonicalUserID)")
         sessionResetTask?.cancel()
         sessionResetTask = nil
         await MainActor.run { self.setRoot(BootLoadingViewController(), animated: false) }

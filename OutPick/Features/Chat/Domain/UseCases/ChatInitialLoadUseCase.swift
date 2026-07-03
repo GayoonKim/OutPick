@@ -88,19 +88,22 @@ final class DefaultChatInitialLoadUseCase: ChatInitialLoadUseCaseProtocol {
     private let chatRoomRepository: FirebaseChatRoomRepositoryProtocol
     private let networkStatusProvider: NetworkStatusProviding
     private let policyResolver: ChatInitialLoadPolicyResolving
+    private let currentUserUIDProvider: @Sendable () -> String
 
     init(
         messageManager: ChatMessageManaging,
         userProfileRepository: UserProfileRepositoryProtocol,
         chatRoomRepository: FirebaseChatRoomRepositoryProtocol,
         networkStatusProvider: NetworkStatusProviding,
-        policyResolver: ChatInitialLoadPolicyResolving = DefaultChatInitialLoadPolicyResolver()
+        policyResolver: ChatInitialLoadPolicyResolving = DefaultChatInitialLoadPolicyResolver(),
+        currentUserUIDProvider: @escaping @Sendable () -> String = { LoginManager.shared.canonicalUserID }
     ) {
         self.messageManager = messageManager
         self.userProfileRepository = userProfileRepository
         self.chatRoomRepository = chatRoomRepository
         self.networkStatusProvider = networkStatusProvider
         self.policyResolver = policyResolver
+        self.currentUserUIDProvider = currentUserUIDProvider
     }
 
     func execute(
@@ -226,7 +229,10 @@ final class DefaultChatInitialLoadUseCase: ChatInitialLoadUseCaseProtocol {
 
     private func resolvedLastReadSeq(roomID: String) async throws -> Int64 {
         guard !roomID.isEmpty else { return 0 }
-        return try await userProfileRepository.fetchLastReadSeq(for: roomID)
+        return try await userProfileRepository.fetchLastReadSeq(
+            for: roomID,
+            userUID: currentUserUIDProvider()
+        )
     }
 
     private func resolvedLatestSeq(roomID: String) async throws -> Int64 {

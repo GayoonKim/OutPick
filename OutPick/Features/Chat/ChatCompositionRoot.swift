@@ -57,7 +57,8 @@ enum ChatCompositionRoot {
         )
         let participantsUseCase = LoadChatRoomParticipantsUseCase(
             participantsRepository: participantsRepository,
-            userProfileRepository: repositories.userProfileRepository
+            userProfileRepository: repositories.userProfileRepository,
+            chatRoomRepository: repositories.chatRoomRepository
         )
         let mediaUseCase = LoadChatRoomMediaUseCase(
             localMediaRepository: localMediaRepository,

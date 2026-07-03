@@ -30,7 +30,7 @@ final class ShareLookbookContentToChatUseCase: ShareLookbookContentToChatUseCase
 
     init(
         repository: LookbookChatShareSendingRepositoryProtocol,
-        currentUserIDProvider: @escaping @Sendable () -> String = { LoginManager.shared.getUserUID }
+        currentUserIDProvider: @escaping @Sendable () -> String = { LoginManager.shared.canonicalUserID }
     ) {
         self.repository = repository
         self.currentUserIDProvider = currentUserIDProvider

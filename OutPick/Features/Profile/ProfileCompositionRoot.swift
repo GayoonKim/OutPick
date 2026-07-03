@@ -25,14 +25,19 @@ enum ProfileCompositionRoot {
         onBack: @escaping () -> Void,
         onCompleted: @escaping (UserProfile) -> Void
     ) -> UIViewController {
+        weak var secondProfileViewController: SecondProfileViewController?
 
         let vm = SecondProfileViewModel(
             repository: repository,
             draft: draft,
             onBack: onBack,
-            onCompleted: onCompleted
+            onCompleted: { profile in
+                secondProfileViewController?.clearDraftCacheAfterCompletion()
+                onCompleted(profile)
+            }
         )
         let vc = SecondProfileViewController(viewModel: vm)
+        secondProfileViewController = vc
         vc.view.backgroundColor = OutPickTheme.ColorToken.backgroundBase
         return vc
     }

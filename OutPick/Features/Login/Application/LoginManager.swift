@@ -58,13 +58,10 @@ final class LoginManager {
     private var didInvokeForceLogoutCallback: Bool = false
 
     var getUserEmail: String { userEmail }
-    var getUserDocumentID: String { userDocumentID }
-    var getAuthIdentityKey: String { authUserKey }
-    var hasAuthenticatedIdentity: Bool { !authUserKey.isEmpty }
-    var getUserUID: String {
-        // Legacy getter name.
-        // authUserKey is the canonical users/{documentID}.
-        // (Google uses Firebase UID, Kakao uses "kakao:<id>")
+    var canonicalUserID: String {
+        if !userDocumentID.isEmpty {
+            return userDocumentID
+        }
         if !authUserKey.isEmpty {
             return authUserKey
         }
@@ -73,12 +70,10 @@ final class LoginManager {
         }
         return ""
     }
+    var hasAuthenticatedIdentity: Bool { !authUserKey.isEmpty }
     var getRoomStateUserKey: String {
-        if !getUserDocumentID.isEmpty {
-            return getUserDocumentID
-        }
-        if !getUserUID.isEmpty {
-            return getUserUID
+        if !canonicalUserID.isEmpty {
+            return canonicalUserID
         }
         return userEmail.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
@@ -193,7 +188,10 @@ final class LoginManager {
 
         let cacheAccount = profileCacheAccount(userDocumentID: resolvedUserDocumentID)
         do {
-            let profile = try await userProfileRepository.fetchCurrentUserProfile()
+            let profile = try await userProfileRepository.fetchCurrentUserProfile(
+                userID: resolvedUserDocumentID,
+                emailFallback: getUserEmail
+            )
             guard isProfileValidForMainFlow(profile) else {
                 KeychainManager.shared.delete(service: keychainService, account: cacheAccount)
                 return .failure(FirebaseError.IncompleteProfile)
@@ -278,9 +276,13 @@ final class LoginManager {
     /// 기존 기기는 리스너가 감지해서 로그아웃된다.
     func updateLogDevID() async throws {
         let deviceID = await UIDevice.persistentDeviceID
-        _ = try await ensureUserDocumentID()
+        let userDocumentID = try await ensureUserDocumentID()
 
-        try await userProfileRepository.upsertDeviceID(deviceID: deviceID)
+        try await userProfileRepository.upsertDeviceID(
+            userDocumentID: userDocumentID,
+            email: getUserEmail,
+            deviceID: deviceID
+        )
 
         // 덮어쓰기 성공 후에만 리스너를 붙인다
         try await setupDevIDListener()
@@ -290,7 +292,7 @@ final class LoginManager {
         deviceIDListener?.remove()
         deviceIDListener = nil
 
-        _ = try await ensureUserDocumentID()
+        let userDocumentID = try await ensureUserDocumentID()
 
         let currentDeviceID = await UIDevice.persistentDeviceID
         self.hasSeenOwnDeviceID = false
@@ -299,6 +301,7 @@ final class LoginManager {
         self.didInvokeForceLogoutCallback = false
 
         deviceIDListener = userProfileRepository.listenToDeviceID(
+            userDocumentID: userDocumentID,
             onUpdate: { [weak self] remoteDeviceID in
                 guard let self else { return }
                 

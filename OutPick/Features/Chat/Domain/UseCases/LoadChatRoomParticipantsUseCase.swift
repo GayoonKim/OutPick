@@ -8,7 +8,7 @@
 import Foundation
 
 struct ChatRoomParticipantsLoadResult {
-    let users: [LocalUser]
+    let users: [LocalChatUser]
     let hasMore: Bool
 }
 
@@ -22,240 +22,136 @@ protocol LoadChatRoomParticipantsUseCaseProtocol {
 final class LoadChatRoomParticipantsUseCase: LoadChatRoomParticipantsUseCaseProtocol {
     private let participantsRepository: ChatRoomParticipantsRepositoryProtocol
     private let userProfileRepository: UserProfileRepositoryProtocol
+    private let chatRoomRepository: FirebaseChatRoomRepositoryProtocol
     private let pageSize: Int
 
     private var activeRoomID: String?
+    private var nextCursorUserID: String?
     private var hasMore: Bool = true
     private var loadedParticipantUIDs: Set<String> = []
 
     init(
         participantsRepository: ChatRoomParticipantsRepositoryProtocol,
         userProfileRepository: UserProfileRepositoryProtocol,
+        chatRoomRepository: FirebaseChatRoomRepositoryProtocol,
         pageSize: Int = 50
     ) {
         self.participantsRepository = participantsRepository
         self.userProfileRepository = userProfileRepository
-        self.pageSize = pageSize
+        self.chatRoomRepository = chatRoomRepository
+        self.pageSize = max(1, pageSize)
     }
 
     func loadLocalInitial(room: ChatRoom) throws -> ChatRoomParticipantsLoadResult {
-        let roomID = room.ID ?? ""
+        let roomID = normalizedID(room.ID ?? "")
         resetState(for: roomID)
-        try reconcileMembership(room: room, roomID: roomID)
-
-        let (page, total) = try participantsRepository.fetchLocalUsersPage(
-            roomID: roomID,
-            offset: 0,
-            limit: pageSize
-        )
-
-        loadedParticipantUIDs = Set(page.map { normalizedUID($0.email) })
-        hasMore = total > loadedParticipantUIDs.count
-
-        return ChatRoomParticipantsLoadResult(users: page, hasMore: hasMore)
+        return ChatRoomParticipantsLoadResult(users: [], hasMore: !roomID.isEmpty)
     }
 
     func reconcileInitial(room: ChatRoom) async throws -> ChatRoomParticipantsLoadResult {
-        let roomID = room.ID ?? ""
-        if activeRoomID != roomID {
-            _ = try loadLocalInitial(room: room)
+        let roomID = normalizedID(room.ID ?? "")
+        resetState(for: roomID)
+        guard !roomID.isEmpty else {
+            return ChatRoomParticipantsLoadResult(users: [], hasMore: false)
         }
 
-        try reconcileMembership(room: room, roomID: roomID)
-        // 첫 번째 갱신으로 정렬이 바뀌면 placeholder 사용자가 상단 페이지로 다시 올라올 수 있어
-        // 한 번 더 현재 첫 페이지를 새로고쳐 visible section의 신선도를 높인다.
-        try await refreshProfilesForVisiblePage(roomID: roomID, offset: 0, limit: pageSize)
-        try await refreshProfilesForVisiblePage(roomID: roomID, offset: 0, limit: pageSize)
-
-        let (page, total) = try participantsRepository.fetchLocalUsersPage(
-            roomID: roomID,
-            offset: 0,
-            limit: pageSize
-        )
-
-        loadedParticipantUIDs = Set(page.map { normalizedUID($0.email) })
-        hasMore = total > loadedParticipantUIDs.count
-
-        return ChatRoomParticipantsLoadResult(users: page, hasMore: hasMore)
+        return try await loadRemotePage(roomID: roomID, afterUserID: nil)
     }
 
     func loadMore(room: ChatRoom) async throws -> ChatRoomParticipantsLoadResult {
-        let roomID = room.ID ?? ""
-        guard activeRoomID == roomID else {
-            _ = try loadLocalInitial(room: room)
-            return ChatRoomParticipantsLoadResult(users: [], hasMore: hasMore)
+        let roomID = normalizedID(room.ID ?? "")
+        guard !roomID.isEmpty else {
+            resetState(for: roomID)
+            return ChatRoomParticipantsLoadResult(users: [], hasMore: false)
+        }
+        if activeRoomID != roomID {
+            resetState(for: roomID)
         }
         guard hasMore else {
             return ChatRoomParticipantsLoadResult(users: [], hasMore: false)
         }
 
-        try reconcileMembership(room: room, roomID: roomID)
-
-        var allUsers = try participantsRepository.fetchLocalUsers(in: roomID)
-        var nextUsers = nextUsersForDisplay(from: allUsers)
-
-        if nextUsers.isEmpty {
-            let authoritativeCount = authoritativeParticipantUIDs(for: room).count
-            if allUsers.count < authoritativeCount {
-                try fillParticipantsFromServerIfNeeded(
-                    room: room,
-                    roomID: roomID,
-                    targetCount: authoritativeCount
-                )
-                allUsers = try participantsRepository.fetchLocalUsers(in: roomID)
-                nextUsers = nextUsersForDisplay(from: allUsers)
-            }
-        }
-
-        if !nextUsers.isEmpty {
-            try await refreshProfiles(userIDs: nextUsers.map(\.email))
-            allUsers = try participantsRepository.fetchLocalUsers(in: roomID)
-            nextUsers = nextUsersForDisplay(from: allUsers)
-        }
-
-        loadedParticipantUIDs.formUnion(nextUsers.map { normalizedUID($0.email) })
-        hasMore = loadedParticipantUIDs.count < allUsers.count
-
-        return ChatRoomParticipantsLoadResult(users: nextUsers, hasMore: hasMore)
+        return try await loadRemotePage(roomID: roomID, afterUserID: nextCursorUserID)
     }
 
     private func resetState(for roomID: String) {
         activeRoomID = roomID
+        nextCursorUserID = nil
         hasMore = true
         loadedParticipantUIDs = []
     }
 
-    private func nextUsersForDisplay(from users: [LocalUser]) -> [LocalUser] {
-        Array(
-            users.lazy
-                .filter { !self.loadedParticipantUIDs.contains(self.normalizedUID($0.email)) }
-                .prefix(pageSize)
-        )
-    }
-
-    private func reconcileMembership(room: ChatRoom, roomID: String) throws {
-        let authoritativeParticipants = authoritativeParticipantUIDs(for: room)
-        let localParticipantUIDs = try participantsRepository.userEmails(in: roomID)
-        let localParticipantsByNormalized = Dictionary(grouping: localParticipantUIDs, by: normalizedUID)
-        let localParticipants = Set(localParticipantsByNormalized.keys)
-
-        let removedParticipants = localParticipants.subtracting(authoritativeParticipants).sorted()
-        for normalized in removedParticipants {
-            for rawUID in localParticipantsByNormalized[normalized] ?? [] {
-                try participantsRepository.removeLocalUser(rawUID, fromRoom: roomID)
-            }
-        }
-
-        for normalized in authoritativeParticipants {
-            let rawUIDs = localParticipantsByNormalized[normalized] ?? []
-            let nonCanonicalUIDs = rawUIDs.filter { $0 != normalized }
-            for rawUID in nonCanonicalUIDs {
-                try participantsRepository.removeLocalUser(rawUID, fromRoom: roomID)
-            }
-        }
-
-        // RoomMember만 있고 LocalUser가 없는 상태도 화면에서 누락되지 않도록,
-        // authoritative participant 전원에 대해 멤버십 + 최소 LocalUser row를 보장한다.
-        let requiredParticipants = Array(authoritativeParticipants).sorted()
-        try attachPlaceholderParticipants(requiredParticipants, toRoom: roomID)
-    }
-
-    private func fillParticipantsFromServerIfNeeded(
-        room: ChatRoom,
-        roomID: String,
-        targetCount: Int
-    ) throws {
-        let authoritativeParticipants = authoritativeParticipantUIDs(for: room)
-        let localParticipants = Set(
-            try participantsRepository.userEmails(in: roomID).map { normalizedUID($0) }
-        )
-        let desiredCount = min(targetCount, authoritativeParticipants.count)
-        guard localParticipants.count < desiredCount else { return }
-
-        let missingParticipants = Array(authoritativeParticipants.subtracting(localParticipants)).sorted()
-        let need = min(desiredCount - localParticipants.count, missingParticipants.count)
-        guard need > 0 else { return }
-
-        try attachPlaceholderParticipants(Array(missingParticipants.prefix(need)), toRoom: roomID)
-    }
-
-    private func attachPlaceholderParticipants(
-        _ uids: [String],
-        toRoom roomID: String
-    ) throws {
-        let normalizedUIDs = uniqueNormalizedUIDs(from: uids)
-        guard !normalizedUIDs.isEmpty else { return }
-
-        for uid in normalizedUIDs {
-            let existingLocalUser = try participantsRepository.fetchLocalUser(email: uid)
-            let nickname = resolvedNickname(
-                uid: uid,
-                fetchedNickname: nil,
-                existingNickname: existingLocalUser?.nickname,
-                allowPlaceholder: true
-            )
-            let profileImagePath = existingLocalUser?.profileImagePath
-
-            if let nickname {
-                try participantsRepository.upsertLocalUser(
-                    email: uid,
-                    nickname: nickname,
-                    profileImagePath: profileImagePath
-                )
-            }
-            try participantsRepository.addLocalUser(uid, toRoom: roomID)
-        }
-    }
-
-    private func refreshProfilesForVisiblePage(roomID: String, offset: Int, limit: Int) async throws {
-        let (page, _) = try participantsRepository.fetchLocalUsersPage(
+    private func loadRemotePage(roomID: String, afterUserID: String?) async throws -> ChatRoomParticipantsLoadResult {
+        let page = try await chatRoomRepository.fetchRoomMembersPage(
             roomID: roomID,
-            offset: offset,
-            limit: limit
+            limit: pageSize,
+            afterUserID: afterUserID
         )
-        try await refreshProfiles(userIDs: page.map(\.email))
+        nextCursorUserID = page.nextCursorUserID
+        hasMore = page.hasMore
+
+        let pageUserIDs = uniqueNormalizedUIDs(from: page.userIDs)
+            .filter { loadedParticipantUIDs.insert($0).inserted }
+        let users = try await materializeUsers(userIDs: pageUserIDs)
+
+        return ChatRoomParticipantsLoadResult(users: users, hasMore: hasMore)
     }
 
-    private func refreshProfiles(userIDs: [String]) async throws {
-        let normalizedUserIDs = uniqueNormalizedUIDs(from: userIDs)
-        guard !normalizedUserIDs.isEmpty else { return }
+    private func materializeUsers(userIDs: [String]) async throws -> [LocalChatUser] {
+        guard !userIDs.isEmpty else { return [] }
 
-        let profilesByUserID = try await userProfileRepository.fetchUserProfiles(userIDs: normalizedUserIDs)
+        let profilesByUserID = try await userProfileRepository.fetchUserProfiles(userIDs: userIDs)
+        var users: [LocalChatUser] = []
+        users.reserveCapacity(userIDs.count)
 
-        for userID in normalizedUserIDs {
-            guard let profile = profilesByUserID[userID] else { continue }
-
-            let existingLocalUser = try participantsRepository.fetchLocalUser(email: userID)
+        for userID in userIDs {
+            let profile = profilesByUserID[userID]
+            let existingLocalUser = try participantsRepository.fetchLocalChatUser(userID: userID)
             let nickname = resolvedNickname(
                 uid: userID,
-                fetchedNickname: profile.nickname,
-                existingNickname: existingLocalUser?.nickname,
-                allowPlaceholder: false
+                fetchedNickname: profile?.nickname,
+                existingNickname: existingLocalUser?.nickname
             )
-            guard let nickname else { continue }
+            let profileImagePath = profile?.thumbPath ?? existingLocalUser?.profileImagePath
+            let displayUser = LocalChatUser(
+                userID: userID,
+                nickname: nickname ?? "알 수 없는 사용자",
+                profileImagePath: profileImagePath
+            )
+            users.append(displayUser)
 
-            let nextProfileImagePath = profile.thumbPath ?? existingLocalUser?.profileImagePath
-            guard existingLocalUser?.nickname != nickname ||
-                    existingLocalUser?.profileImagePath != nextProfileImagePath else {
+            guard shouldPersistLocalUser(
+                displayUser,
+                resolvedNickname: nickname,
+                existingLocalUser: existingLocalUser
+            ) else {
                 continue
             }
 
-            try participantsRepository.upsertLocalUser(
-                email: userID,
-                nickname: nickname,
-                profileImagePath: nextProfileImagePath
+            try participantsRepository.upsertLocalChatUser(
+                userID: displayUser.userID,
+                nickname: displayUser.nickname,
+                profileImagePath: displayUser.profileImagePath
             )
         }
+
+        return users
     }
 
-    private func authoritativeParticipantUIDs(for room: ChatRoom) -> Set<String> {
-        Set(uniqueNormalizedUIDs(from: room.participants))
+    private func shouldPersistLocalUser(
+        _ displayUser: LocalChatUser,
+        resolvedNickname: String?,
+        existingLocalUser: LocalChatUser?
+    ) -> Bool {
+        guard resolvedNickname != nil || displayUser.profileImagePath != nil else { return false }
+        return existingLocalUser?.nickname != displayUser.nickname ||
+            existingLocalUser?.profileImagePath != displayUser.profileImagePath
     }
 
     private func uniqueNormalizedUIDs(from uids: [String]) -> [String] {
         var seen = Set<String>()
         return uids.compactMap { raw in
-            let uid = normalizedUID(raw)
+            let uid = normalizedID(raw)
             guard !uid.isEmpty, !uid.contains("/"), seen.insert(uid).inserted else { return nil }
             return uid
         }
@@ -264,8 +160,7 @@ final class LoadChatRoomParticipantsUseCase: LoadChatRoomParticipantsUseCaseProt
     private func resolvedNickname(
         uid: String,
         fetchedNickname: String?,
-        existingNickname: String?,
-        allowPlaceholder: Bool
+        existingNickname: String?
     ) -> String? {
         let fetched = fetchedNickname?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !fetched.isEmpty {
@@ -273,14 +168,14 @@ final class LoadChatRoomParticipantsUseCase: LoadChatRoomParticipantsUseCaseProt
         }
 
         let existing = existingNickname?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if !existing.isEmpty {
+        if !existing.isEmpty, normalizedID(existing) != normalizedID(uid) {
             return existing
         }
 
-        return allowPlaceholder ? uid : nil
+        return nil
     }
 
-    private func normalizedUID(_ uid: String) -> String {
-        uid.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func normalizedID(_ id: String) -> String {
+        id.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

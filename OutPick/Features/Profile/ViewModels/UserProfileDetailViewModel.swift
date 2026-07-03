@@ -7,11 +7,6 @@ import Foundation
 
 @MainActor
 final class UserProfileDetailViewModel {
-    enum LookupKey: Equatable {
-        case email(String)
-        case userID(String)
-    }
-
     struct State: Equatable {
         var nickname: String
         var avatarSource: AvatarImageSource
@@ -25,25 +20,22 @@ final class UserProfileDetailViewModel {
 
     var onStateChanged: ((State) -> Void)?
 
-    private let lookupKey: LookupKey
+    private let userID: String
     private let currentUserID: String?
-    private let currentUserEmail: String?
     private let loadUserProfileDetailUseCase: LoadUserProfileDetailUseCaseProtocol
     private let onBack: () -> Void
     private var hasLoaded = false
 
     init(
-        lookupKey: LookupKey,
+        userID: String,
         seedNickname: String,
         seedAvatarSource: AvatarImageSource,
         currentUserID: String?,
-        currentUserEmail: String?,
         loadUserProfileDetailUseCase: LoadUserProfileDetailUseCaseProtocol,
         onBack: @escaping () -> Void
     ) {
-        self.lookupKey = lookupKey
+        self.userID = userID
         self.currentUserID = currentUserID?.normalizedForComparison
-        self.currentUserEmail = currentUserEmail?.normalizedForComparison
         self.loadUserProfileDetailUseCase = loadUserProfileDetailUseCase
         self.onBack = onBack
 
@@ -52,10 +44,8 @@ final class UserProfileDetailViewModel {
             nickname: fallbackNickname.isEmpty ? "알 수 없는 사용자" : fallbackNickname,
             avatarSource: seedAvatarSource,
             isCurrentUser: Self.isCurrentUser(
-                lookupKey: lookupKey,
-                profile: nil,
-                currentUserID: self.currentUserID,
-                currentUserEmail: self.currentUserEmail
+                userID: userID,
+                currentUserID: self.currentUserID
             )
         )
     }
@@ -78,13 +68,7 @@ final class UserProfileDetailViewModel {
         }
 
         do {
-            let profile: UserProfile
-            switch lookupKey {
-            case .email(let email):
-                profile = try await loadUserProfileDetailUseCase.execute(email: email)
-            case .userID(let userID):
-                profile = try await loadUserProfileDetailUseCase.execute(userID: userID)
-            }
+            let profile = try await loadUserProfileDetailUseCase.execute(userID: userID)
             if let nickname = profile.nickname?.trimmingCharacters(in: .whitespacesAndNewlines),
                !nickname.isEmpty {
                 state.nickname = nickname
@@ -92,10 +76,8 @@ final class UserProfileDetailViewModel {
 
             state.avatarSource = state.avatarSource.merged(with: profile)
             state.isCurrentUser = Self.isCurrentUser(
-                lookupKey: lookupKey,
-                profile: profile,
-                currentUserID: currentUserID,
-                currentUserEmail: currentUserEmail
+                userID: userID,
+                currentUserID: currentUserID
             )
         } catch {
             // seed data를 그대로 유지해 즉시 표시한다.
@@ -103,24 +85,10 @@ final class UserProfileDetailViewModel {
     }
 
     private static func isCurrentUser(
-        lookupKey: LookupKey,
-        profile: UserProfile?,
-        currentUserID: String?,
-        currentUserEmail: String?
+        userID: String,
+        currentUserID: String?
     ) -> Bool {
-        switch lookupKey {
-        case .userID(let userID):
-            if userID.normalizedForComparison == currentUserID {
-                return true
-            }
-        case .email(let email):
-            if email.normalizedForComparison == currentUserEmail {
-                return true
-            }
-        }
-
-        guard let profile else { return false }
-        return profile.email.normalizedForComparison == currentUserEmail
+        userID.normalizedForComparison == currentUserID
     }
 }
 

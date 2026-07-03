@@ -12,7 +12,7 @@ import FirebaseFirestore
 struct AnnouncementPayload: Codable, Hashable {
     /// 공지 본문(필수)
     let text: String
-    /// 작성자 ID(이메일 등 식별자)
+    /// 작성자 ID
     let authorID: String
     /// 생성 시각(배너 정렬/만료 로직 등에 활용)
     let createdAt: Date
@@ -40,6 +40,7 @@ struct ChatRoom: Codable {
     var lastMessageAt: Date?
     var lastMessage: String?
     var lastMessageSenderUID: String?
+    var memberCount: Int = 0
 
     /// 방의 현재 "tail" 시퀀스 값 (마지막으로 할당된 메시지 시퀀스)
     /// - 생성 시 0으로 시작하고, 새 메시지 저장 시 마지막 메시지의 seq로 갱신됩니다.
@@ -67,6 +68,7 @@ struct ChatRoom: Codable {
         case lastMessageAt
         case lastMessage
         case lastMessageSenderUID
+        case memberCount
         case isClosed
         case activeAnnouncementID
         case activeAnnouncement
@@ -87,6 +89,7 @@ struct ChatRoom: Codable {
             "participantUIDs": participants,
             "creatorUID": creatorUID,
             "createdAt": Timestamp(date: createdAt),
+            "memberCount": max(memberCount, participants.count),
             "seq": seq,
             "isClosed": isClosed,
             "roomSearchNormalized": searchIndex.normalizedText,
@@ -131,6 +134,35 @@ struct ChatRoom: Codable {
             return originalPath
         }
         return nil
+    }
+}
+
+extension ChatRoom {
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        if let firestoreDocumentID = try? container.decode(DocumentID<String>.self, forKey: .ID).wrappedValue {
+            ID = firestoreDocumentID
+        } else {
+            ID = try container.decodeIfPresent(String.self, forKey: .ID)
+        }
+
+        roomName = try container.decode(String.self, forKey: .roomName)
+        roomDescription = try container.decodeIfPresent(String.self, forKey: .roomDescription) ?? ""
+        participants = try container.decodeIfPresent([String].self, forKey: .participants) ?? []
+        creatorUID = try container.decodeIfPresent(String.self, forKey: .creatorUID) ?? ""
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        thumbPath = try container.decodeIfPresent(String.self, forKey: .thumbPath)
+        originalPath = try container.decodeIfPresent(String.self, forKey: .originalPath)
+        lastMessageAt = try container.decodeIfPresent(Date.self, forKey: .lastMessageAt)
+        lastMessage = try container.decodeIfPresent(String.self, forKey: .lastMessage)
+        lastMessageSenderUID = try container.decodeIfPresent(String.self, forKey: .lastMessageSenderUID)
+        memberCount = try container.decodeIfPresent(Int.self, forKey: .memberCount) ?? participants.count
+        seq = try container.decodeIfPresent(Int64.self, forKey: .seq) ?? 0
+        isClosed = try container.decodeIfPresent(Bool.self, forKey: .isClosed) ?? false
+        activeAnnouncementID = try container.decodeIfPresent(String.self, forKey: .activeAnnouncementID)
+        activeAnnouncement = try container.decodeIfPresent(AnnouncementPayload.self, forKey: .activeAnnouncement)
+        announcementUpdatedAt = try container.decodeIfPresent(Date.self, forKey: .announcementUpdatedAt)
     }
 }
 

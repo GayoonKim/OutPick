@@ -108,7 +108,6 @@ final class RoomEditUseCase: RoomEditUseCaseProtocol {
             )
         }
 
-        chatRoomRepository.applyLocalRoomUpdate(updatedRoom)
         return updatedRoom
     }
 
