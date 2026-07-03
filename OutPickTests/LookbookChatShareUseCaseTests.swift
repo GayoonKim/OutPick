@@ -5,7 +5,6 @@
 //  Created by Codex on 6/16/26.
 //
 
-import Combine
 import FirebaseFirestore
 import Foundation
 import Testing
@@ -16,7 +15,7 @@ struct LookbookChatShareUseCaseTests {
         let fake = JoinedRoomsUseCaseFake(rooms: [
             makeRoom(id: "room-1", participants: ["me@example.com"], lastMessageAt: Date(timeIntervalSince1970: 100)),
             makeRoom(id: "room-2", participants: ["me@example.com"], isClosed: true),
-            makeRoom(id: "room-3", participants: ["other@example.com"]),
+            makeRoom(id: "room-3", participants: ["other@example.com"], lastMessageAt: Date(timeIntervalSince1970: 150)),
             makeRoom(id: nil, participants: ["me@example.com"]),
             makeRoom(id: "room-4", participants: [" ME@EXAMPLE.COM "], lastMessageAt: Date(timeIntervalSince1970: 200))
         ])
@@ -28,7 +27,22 @@ struct LookbookChatShareUseCaseTests {
         let rooms = try await useCase.execute(limit: 20)
 
         #expect(fake.requestedHeadLimits == [20])
-        #expect(rooms.map { $0.ID ?? "" } == ["room-4", "room-1"])
+        #expect(rooms.map { $0.ID ?? "" } == ["room-4", "room-3", "room-1"])
+    }
+
+    @Test func loadShareableJoinedRoomsDoesNotTrustLegacyParticipantArray() async throws {
+        let fake = JoinedRoomsUseCaseFake(rooms: [
+            makeRoom(id: "room-legacy-empty", participants: []),
+            makeRoom(id: "room-legacy-stale", participants: ["other@example.com"])
+        ])
+        let useCase = LoadShareableJoinedRoomsUseCase(
+            joinedRoomsUseCase: fake,
+            currentUserIDProvider: { "me@example.com" }
+        )
+
+        let rooms = try await useCase.execute(limit: 20)
+
+        #expect(rooms.map { $0.ID ?? "" } == ["room-legacy-empty", "room-legacy-stale"])
     }
 
     @Test func shareLookbookContentSendsThroughRepository() async throws {
@@ -81,7 +95,7 @@ struct LookbookChatShareUseCaseTests {
         #expect(repository.calls.isEmpty)
     }
 
-    @Test func shareLookbookContentRejectsNonParticipantBeforeSending() async {
+    @Test func shareLookbookContentDoesNotTrustLegacyParticipantArrayBeforeSending() async throws {
         let repository = LookbookChatShareSendingRepositorySpy()
         let useCase = ShareLookbookContentToChatUseCase(
             repository: repository,
@@ -89,10 +103,9 @@ struct LookbookChatShareUseCaseTests {
         )
         let room = makeRoom(id: "room-1", participants: ["other@example.com"])
 
-        await expectShareError(.notJoined) {
-            _ = try await useCase.execute(sharedContent: makeSharedContent(), to: room)
-        }
-        #expect(repository.calls.isEmpty)
+        _ = try await useCase.execute(sharedContent: makeSharedContent(), to: room)
+
+        #expect(repository.calls.count == 1)
     }
 
     @Test func shareLookbookContentRejectsInvalidContentBeforeSending() async {
@@ -493,33 +506,33 @@ private final class SeasonRepositoryFake: SeasonRepositoryProtocol {
 }
 
 private final class JoinedRoomsUseCaseFake: JoinedRoomsUseCaseProtocol {
-    let joinedRoomsPublisher: AnyPublisher<[ChatRoom], Never>
     private let rooms: [ChatRoom]
     private(set) var requestedHeadLimits: [Int] = []
 
     init(rooms: [ChatRoom]) {
         self.rooms = rooms
-        self.joinedRoomsPublisher = Just(rooms).eraseToAnyPublisher()
     }
 
-    func fetchJoinedRoomsHead(limit: Int) async throws -> (rooms: [ChatRoom], cursor: DocumentSnapshot?) {
-        requestedHeadLimits.append(limit)
-        return (rooms, nil)
+    func fetchJoinedRooms(limit: Int?) async throws -> [JoinedRoomListItem] {
+        if let limit {
+            requestedHeadLimits.append(limit)
+        }
+        let source = limit.map { Array(rooms.prefix($0)) } ?? rooms
+        return source.enumerated().map { index, room in
+            let projectionRoomID = room.ID ?? "missing-room-\(index)"
+            return JoinedRoomListItem(
+                room: room,
+                projection: JoinedRoomProjection(
+                    documentID: projectionRoomID,
+                    data: [
+                        "roomID": projectionRoomID,
+                        "lastReadSeq": room.seq,
+                        "isClosed": room.isClosed
+                    ]
+                )!
+            )
+        }
     }
-
-    func loadMoreJoinedRooms(after cursor: DocumentSnapshot?, limit: Int) async throws -> (rooms: [ChatRoom], cursor: DocumentSnapshot?) {
-        ([], nil)
-    }
-
-    func syncJoinedRoomsTail(since: Date, limit: Int) async throws -> [ChatRoom] {
-        []
-    }
-
-    @MainActor
-    func startRoomUpdates(limit: Int) {}
-
-    @MainActor
-    func stopRoomUpdates() {}
 
     func fetchUnreadCount(roomID: String, lastMessageSeqHint: Int64?, lastMessageSenderUID: String?) async -> Int64 {
         0

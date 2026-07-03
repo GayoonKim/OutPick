@@ -10,29 +10,17 @@ import Testing
 @testable import OutPick
 
 struct LookbookCurrentUserIDProviderTests {
-    @Test func currentUserIDUsesDocumentIDBeforeAuthIdentityKey() {
+    @Test func currentUserIDUsesCanonicalUserID() {
         let provider = LookbookCurrentUserIDProvider(
             currentUserProvider: CurrentUserProviderStub(
-                documentID: " document-user ",
-                authIdentityKey: "auth-user"
+                canonicalUserID: " canonical-user "
             )
         )
 
-        #expect(provider.currentUserID == UserID(value: "document-user"))
+        #expect(provider.currentUserID == UserID(value: "canonical-user"))
     }
 
-    @Test func currentUserIDFallsBackToAuthIdentityKeyWhenDocumentIDIsBlank() {
-        let provider = LookbookCurrentUserIDProvider(
-            currentUserProvider: CurrentUserProviderStub(
-                documentID: " \n\t ",
-                authIdentityKey: " auth-user "
-            )
-        )
-
-        #expect(provider.currentUserID == UserID(value: "auth-user"))
-    }
-
-    @Test func currentUserIDReturnsNilWhenDocumentIDAndAuthIdentityKeyAreBlank() {
+    @Test func currentUserIDReturnsNilWhenCanonicalUserIDIsBlank() {
         let provider = LookbookCurrentUserIDProvider(
             currentUserProvider: EmailTrapCurrentUserProvider()
         )
@@ -43,9 +31,7 @@ struct LookbookCurrentUserIDProviderTests {
 
 private struct CurrentUserProviderStub: CurrentUserProviding {
     var email: String = "me@example.com"
-    var documentID: String = ""
-    var authIdentityKey: String = ""
-    var uid: String { documentID.isEmpty ? authIdentityKey : documentID }
+    var canonicalUserID: String = ""
     var nickname: String? = nil
     var avatarPath: String? = nil
     var profile: UserProfile? = nil
@@ -57,9 +43,7 @@ private struct EmailTrapCurrentUserProvider: CurrentUserProviding {
         return "email-should-not-be-used@example.com"
     }
 
-    var documentID: String { "" }
-    var authIdentityKey: String { " " }
-    var uid: String { authIdentityKey }
+    var canonicalUserID: String { " " }
     var nickname: String? { nil }
     var avatarPath: String? { nil }
     var profile: UserProfile? { nil }

@@ -15,7 +15,7 @@ struct ChatRoomViewModelMessageActionTests {
     @Test func messageActionPolicyUsesCurrentRoomCreator() {
         let viewModel = makeViewModel(
             room: makeRoom(id: "room-1", creatorUID: "admin-uid"),
-            currentUserProvider: CurrentUserProviderStub(email: "admin@example.com", documentID: "admin-uid")
+            currentUserProvider: CurrentUserProviderStub(email: "admin@example.com", canonicalUserID: "admin-uid")
         )
         let message = makeMessage(senderUID: "sender-uid", msg: "공지 후보")
 
@@ -75,7 +75,7 @@ struct ChatRoomViewModelMessageActionTests {
     @Test func currentUserProviderDrivesParticipantAndAdminChecks() {
         let viewModel = makeViewModel(
             room: makeRoom(id: "room-1", creatorUID: "me-uid"),
-            currentUserProvider: CurrentUserProviderStub(email: "me@example.com", documentID: "me-uid")
+            currentUserProvider: CurrentUserProviderStub(email: "me@example.com", canonicalUserID: "me-uid")
         )
 
         #expect(viewModel.isCurrentUserParticipant)
@@ -87,7 +87,7 @@ struct ChatRoomViewModelMessageActionTests {
         let lifecycleUseCase = ChatRoomLifecycleUseCaseSpy()
         let viewModel = makeViewModel(
             lifecycleUseCase: lifecycleUseCase,
-            currentUserProvider: CurrentUserProviderStub(documentID: "document-123")
+            currentUserProvider: CurrentUserProviderStub(canonicalUserID: "document-123")
         )
         let message = makeMessage(senderUID: "other@example.com", msg: "새 메시지", seq: 9)
 
@@ -214,16 +214,6 @@ private final class ChatRoomLifecycleUseCaseSpy: ChatRoomLifecycleUseCaseProtoco
     private(set) var setAnnouncementCalls: [SetAnnouncementCall] = []
     private(set) var lastReadSeqCalls: [LastReadSeqCall] = []
 
-    var roomChangePublisher: AnyPublisher<ChatRoom, Never> {
-        Empty().eraseToAnyPublisher()
-    }
-
-    @MainActor
-    func startRoomUpdates(roomID: String) {}
-
-    @MainActor
-    func stopRoomUpdates() {}
-
     @MainActor
     func handleRoomSaved(roomID: String) {}
 
@@ -319,9 +309,7 @@ private enum MessageActionTestError: Error {
 
 private struct CurrentUserProviderStub: CurrentUserProviding {
     var email: String = "me@example.com"
-    var documentID: String = "user-1"
-    var authIdentityKey: String = "auth-user-1"
-    var uid: String { documentID.isEmpty ? authIdentityKey : documentID }
+    var canonicalUserID: String = "user-1"
     var nickname: String? = "me"
     var avatarPath: String? = nil
     var profile: UserProfile? = nil

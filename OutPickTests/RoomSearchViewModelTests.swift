@@ -104,6 +104,32 @@ struct ChatRoomSearchIndexTests {
     }
 }
 
+struct ChatRoomDecodingTests {
+    @Test func missingParticipantUIDsDecodesAsEmptyParticipants() throws {
+        let json = """
+        {
+          "ID": "legacy-room",
+          "roomName": "Legacy Room",
+          "roomDescription": "created before participantUIDs",
+          "creatorUID": "owner-uid",
+          "createdAt": "2026-07-02T00:00:00Z",
+          "lastMessageAt": "2026-07-02T00:01:00Z",
+          "seq": 3
+        }
+        """
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let room = try decoder.decode(ChatRoom.self, from: Data(json.utf8))
+
+        #expect(room.ID == "legacy-room")
+        #expect(room.participants == [])
+        #expect(room.creatorUID == "owner-uid")
+        #expect(room.seq == 3)
+        #expect(room.isClosed == false)
+    }
+}
+
 @MainActor
 private func makeRoom(id: String, name: String, description: String = "") -> ChatRoom {
     ChatRoom(
