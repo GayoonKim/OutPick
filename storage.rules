@@ -1,0 +1,137 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function roomPath(roomID) {
+      return /databases/(default)/documents/Rooms/$(roomID);
+    }
+
+    function roomMemberPath(roomID, uid) {
+      return /databases/(default)/documents/Rooms/$(roomID)/members/$(uid);
+    }
+
+    function isRoomParticipant(roomID) {
+      return signedIn()
+        && firestore.exists(roomPath(roomID))
+        && firestore.exists(roomMemberPath(roomID, request.auth.uid));
+    }
+
+    function isRoomCreator(roomID) {
+      return signedIn()
+        && firestore.exists(roomPath(roomID))
+        && firestore.get(roomPath(roomID)).data.creatorUID == request.auth.uid;
+    }
+
+    function brandPath(brandID) {
+      return /databases/(default)/documents/brands/$(brandID);
+    }
+
+    function hasBrandWriteAccess(brandID) {
+      return signedIn()
+        && firestore.exists(brandPath(brandID))
+        && (
+          (
+            firestore.get(brandPath(brandID)).data.ownerUIDs is list
+            && firestore.get(brandPath(brandID)).data.ownerUIDs.hasAny([request.auth.uid])
+          )
+          || (
+            firestore.get(brandPath(brandID)).data.adminUIDs is list
+            && firestore.get(brandPath(brandID)).data.adminUIDs.hasAny([request.auth.uid])
+          )
+        );
+    }
+
+    function isImageUpload(maxBytes) {
+      return request.resource != null
+        && request.resource.size > 0
+        && request.resource.size <= maxBytes
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    function isJpegUpload(maxBytes) {
+      return request.resource != null
+        && request.resource.size > 0
+        && request.resource.size <= maxBytes
+        && request.resource.contentType == 'image/jpeg';
+    }
+
+    function isVideoUpload(maxBytes) {
+      return request.resource != null
+        && request.resource.size > 0
+        && request.resource.size <= maxBytes
+        && request.resource.contentType in [
+          'video/mp4',
+          'video/quicktime',
+          'video/x-m4v'
+        ];
+    }
+
+    match /rooms/{roomID}/cover/thumb/{fileName} {
+      allow get: if signedIn();
+      allow create, update: if isRoomCreator(roomID) && isJpegUpload(5 * 1024 * 1024);
+      allow delete: if isRoomCreator(roomID);
+      allow list: if false;
+    }
+
+    match /rooms/{roomID}/cover/original/{fileName} {
+      allow get: if signedIn();
+      allow create, update: if isRoomCreator(roomID) && isJpegUpload(30 * 1024 * 1024);
+      allow delete: if isRoomCreator(roomID);
+      allow list: if false;
+    }
+
+    match /rooms/{roomID}/messages/{messageID}/images/{imageID}/{fileName} {
+      allow get: if signedIn() && fileName in ['thumb.jpg', 'original.jpg'];
+      allow create, update: if isRoomParticipant(roomID)
+        && (
+          (fileName == 'thumb.jpg' && isJpegUpload(5 * 1024 * 1024))
+          || (fileName == 'original.jpg' && isJpegUpload(30 * 1024 * 1024))
+        );
+      allow delete: if isRoomParticipant(roomID);
+      allow list: if false;
+    }
+
+    match /rooms/{roomID}/messages/{messageID}/video/thumb.jpg {
+      allow get: if signedIn();
+      allow create, update: if isRoomParticipant(roomID) && isJpegUpload(5 * 1024 * 1024);
+      allow delete: if isRoomParticipant(roomID);
+      allow list: if false;
+    }
+
+    match /rooms/{roomID}/messages/{messageID}/video/{fileName} {
+      allow get: if signedIn();
+      allow create, update: if isRoomParticipant(roomID) && isVideoUpload(350 * 1024 * 1024);
+      allow delete: if isRoomParticipant(roomID);
+      allow list: if false;
+    }
+
+    match /profileImage/{userID}/{variant}/{fileName} {
+      allow get: if signedIn();
+      allow create, update: if signedIn()
+        && request.auth.uid == userID
+        && variant in ['thumb', 'original']
+        && isImageUpload(30 * 1024 * 1024);
+      allow delete: if signedIn() && request.auth.uid == userID;
+      allow list: if false;
+    }
+
+    match /brands/{brandID}/{assetPath=**} {
+      allow get: if signedIn();
+      allow create, update: if hasBrandWriteAccess(brandID)
+        && (
+          isImageUpload(30 * 1024 * 1024)
+          || isVideoUpload(350 * 1024 * 1024)
+        );
+      allow delete: if hasBrandWriteAccess(brandID);
+      allow list: if false;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
