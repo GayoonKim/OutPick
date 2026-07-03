@@ -68,7 +68,9 @@ struct JoinedRoomListItem: Equatable {
             roomID: roomID,
             latestSeq: room.seq,
             lastReadSeq: projection.lastReadSeq,
-            lastMessageSenderUID: room.lastMessageSenderUID
+            lastMessageSenderUID: room.lastMessageSenderUID,
+            latestMessagePreview: room.lastMessage,
+            latestMessageAt: room.lastMessageAt
         )
     }
 }

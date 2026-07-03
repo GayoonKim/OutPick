@@ -26,6 +26,9 @@ protocol RoomListUseCaseProtocol {
 
     @MainActor
     func refreshTopRooms(limit: Int) async throws -> [ChatRoomPreviewItem]
+
+    @MainActor
+    func removeCachedRoom(roomID: String)
 }
 
 @MainActor
@@ -45,5 +48,9 @@ final class RoomListUseCase: RoomListUseCaseProtocol {
     func refreshTopRooms(limit: Int = 30) async throws -> [ChatRoomPreviewItem] {
         try await roomRepository.fetchTopRoomsPage(after: nil, limit: limit)
         return cachedTopRooms()
+    }
+
+    func removeCachedRoom(roomID: String) {
+        roomRepository.removeLocalRoom(roomID: roomID)
     }
 }

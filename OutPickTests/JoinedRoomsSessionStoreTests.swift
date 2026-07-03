@@ -39,4 +39,24 @@ struct JoinedRoomsSessionStoreTests {
         store.remove("room-1")
         #expect(store.joined.isEmpty)
     }
+
+    @Test func changeStreamPublishesSnapshotsAfterMutations() async {
+        let store = JoinedRoomsSessionStore()
+        var iterator = store.changeStream().makeAsyncIterator()
+
+        let initial = await iterator.next()
+        #expect(initial == [])
+
+        store.replace(with: ["room-1", "room-2"])
+        let replaced = await iterator.next()
+        #expect(replaced == ["room-1", "room-2"])
+
+        store.remove("room-1")
+        let removed = await iterator.next()
+        #expect(removed == ["room-2"])
+
+        store.clear()
+        let cleared = await iterator.next()
+        #expect(cleared == [])
+    }
 }

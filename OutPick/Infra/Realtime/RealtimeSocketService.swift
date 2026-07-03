@@ -280,16 +280,29 @@ actor RealtimeSocketService {
     func openRoomSession(for roomID: String) async throws -> ChatRoomSocketSession {
         guard !roomID.isEmpty else { throw SocketError.invalidRoomID }
 
-        bindMessageListenersIfNeeded()
+        #if DEBUG
+        print("[RealtimeSocketService] openRoomSession requested roomID=\(roomID) socketStatus=\(String(describing: socket?.status)) hasIdentity=\(identity != nil)")
+        #endif
 
         let sessionActor = roomSessionActor(for: roomID)
         let consumer = await sessionActor.addConsumer()
 
-        if socket?.status != .connected, let identity {
-            try await connect(identity: identity)
+        if socket?.status != .connected {
+            let resolvedIdentity: SocketSessionIdentity
+            if let identity {
+                resolvedIdentity = identity
+            } else {
+                resolvedIdentity = try await SocketSessionIdentity.current()
+            }
+            try await connect(identity: resolvedIdentity)
         }
 
-        joinRoom(roomID)
+        bindMessageListenersIfNeeded()
+        try await joinRoomAwaitingAck(roomID)
+
+        #if DEBUG
+        print("[RealtimeSocketService] openRoomSession ready roomID=\(roomID)")
+        #endif
 
         return ChatRoomSocketSession(
             roomID: roomID,
@@ -746,6 +759,10 @@ actor RealtimeSocketService {
         manualAttempt = 0
         socket?.emitWithAck("client:hello", ["attempt": 0]).timingOut(after: 3) { _ in }
 
+        if !roomSessionActors.isEmpty {
+            bindMessageListenersIfNeeded()
+        }
+
         if let nickname = identity?.nickname, !nickname.isEmpty {
             socket?.emit("set username", nickname)
         }
@@ -903,7 +920,16 @@ actor RealtimeSocketService {
     private func emitToRoomPipeline(_ message: ChatMessage) {
         let roomID = message.roomID
         guard !roomID.isEmpty else { return }
-        guard let sessionActor = roomSessionActors[roomID] else { return }
+        guard let sessionActor = roomSessionActors[roomID] else {
+            #if DEBUG
+            print("[RealtimeSocketService] dropped incoming message without room session roomID=\(roomID) messageID=\(message.ID) seq=\(message.seq)")
+            #endif
+            return
+        }
+
+        #if DEBUG
+        print("[RealtimeSocketService] publish incoming roomID=\(roomID) messageID=\(message.ID) seq=\(message.seq) type=\(message.messageType?.rawValue ?? "nil")")
+        #endif
 
         Task {
             await sessionActor.publish(message)
@@ -956,6 +982,41 @@ actor RealtimeSocketService {
         } else {
             pendingRooms.insert(roomID)
             print("join room 실패:", roomID, ackResponse)
+        }
+    }
+
+    private func joinRoomAwaitingAck(_ roomID: String, timeout: Double = 5.0) async throws {
+        guard !roomID.isEmpty else { throw SocketError.invalidRoomID }
+        joinedRooms.insert(roomID)
+
+        guard let socket, socket.status == .connected else {
+            pendingRooms.insert(roomID)
+            throw makeSocketError(code: -1009, message: "소켓이 연결되어 있지 않습니다.")
+        }
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            socket.emitWithAck("join room", roomID).timingOut(after: timeout) { [weak self] ackResponse in
+                Task {
+                    await self?.handleJoinAck(roomID: roomID, ackResponse: ackResponse)
+                }
+
+                if ChatMessageEmitAckMapper.isSuccess(ackResponse) {
+                    #if DEBUG
+                    print("[RealtimeSocketService] join room ACK success roomID=\(roomID) response=\(ackResponse)")
+                    #endif
+                    continuation.resume()
+                } else {
+                    #if DEBUG
+                    print("[RealtimeSocketService] join room ACK failed roomID=\(roomID) response=\(ackResponse)")
+                    #endif
+                    continuation.resume(
+                        throwing: Self.makeSocketError(
+                            code: -1,
+                            message: "join room 실패: \(ackResponse)"
+                        )
+                    )
+                }
+            }
         }
     }
 

@@ -12,6 +12,7 @@ final class ChatProfileSyncManager: ChatProfileSyncManaging {
     private let grdbManager: GRDBManager
     private let maxRefreshUIDs: Int
 
+    private let cacheLock = NSLock()
     private var cachedProfiles: [String: LocalChatUser] = [:]
 
     init(
@@ -59,7 +60,7 @@ final class ChatProfileSyncManager: ChatProfileSyncManaging {
                     nickname: nextNickname,
                     profileImagePath: nextAvatarPath
                 )
-                cachedProfiles[userID] = local
+                setCachedProfile(local, for: userID)
                 changedUserIDs.insert(userID)
 
                 _ = try grdbManager.upsertLocalChatUser(
@@ -80,12 +81,12 @@ final class ChatProfileSyncManager: ChatProfileSyncManaging {
         let senderUID = normalizedUID(senderUID)
         guard !senderUID.isEmpty else { return nil }
 
-        if let cached = cachedProfiles[senderUID] {
+        if let cached = cachedProfile(for: senderUID) {
             return cached
         }
 
         if let local = try? grdbManager.fetchLocalChatUser(userID: senderUID) {
-            cachedProfiles[senderUID] = local
+            setCachedProfile(local, for: senderUID)
             return local
         }
 
@@ -93,7 +94,21 @@ final class ChatProfileSyncManager: ChatProfileSyncManaging {
     }
 
     func reset() {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
         cachedProfiles.removeAll()
+    }
+
+    private func cachedProfile(for userID: String) -> LocalChatUser? {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+        return cachedProfiles[userID]
+    }
+
+    private func setCachedProfile(_ profile: LocalChatUser, for userID: String) {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+        cachedProfiles[userID] = profile
     }
 
     private func recentSenderUIDs(from messages: [ChatMessage]) -> Set<String> {

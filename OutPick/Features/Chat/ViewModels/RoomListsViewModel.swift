@@ -16,7 +16,10 @@ final class RoomListsViewModel {
     }
 
     private let useCase: RoomListUseCaseProtocol
+    private let roomReadStateStore: ChatRoomReadStateStore?
     private var hasLoadedInitialRooms = false
+    private var readStateTask: Task<Void, Never>?
+    private var isBoundReadState = false
 
     private(set) var state: State {
         didSet { onStateChanged?(state) }
@@ -24,12 +27,17 @@ final class RoomListsViewModel {
 
     var onStateChanged: ((State) -> Void)?
 
-    init(useCase: RoomListUseCaseProtocol) {
+    init(
+        useCase: RoomListUseCaseProtocol,
+        roomReadStateStore: ChatRoomReadStateStore? = nil
+    ) {
         self.useCase = useCase
+        self.roomReadStateStore = roomReadStateStore
         self.state = State(rooms: useCase.cachedTopRooms())
     }
 
     func onAppear() {
+        bindReadStateIfNeeded()
         state.rooms = useCase.cachedTopRooms()
     }
 
@@ -54,7 +62,27 @@ final class RoomListsViewModel {
         state.isRefreshing = false
     }
 
+    func removeLocalRoom(roomID: String) {
+        guard !roomID.isEmpty else { return }
+        useCase.removeCachedRoom(roomID: roomID)
+        state.rooms.removeAll { $0.room.ID == roomID }
+    }
+
     func notifyCurrentState() {
         onStateChanged?(state)
+    }
+
+    private func bindReadStateIfNeeded() {
+        guard !isBoundReadState else { return }
+        guard let roomReadStateStore else { return }
+
+        isBoundReadState = true
+        readStateTask = Task { @MainActor [weak self, weak roomReadStateStore] in
+            guard let self, let roomReadStateStore else { return }
+            for await _ in roomReadStateStore.readStateChangeStream() {
+                if Task.isCancelled { return }
+                self.state.rooms = self.useCase.cachedTopRooms()
+            }
+        }
     }
 }

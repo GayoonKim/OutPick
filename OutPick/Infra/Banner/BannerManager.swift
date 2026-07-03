@@ -6,6 +6,8 @@ import UIKit
 final class BannerManager {
     static let shared = BannerManager()
     private let realtimeSocketService: RealtimeSocketService
+    private var roomReadStateStore: ChatRoomReadStateStore?
+    private var roomRepository: FirebaseChatRoomRepositoryProtocol?
 
     private init(
         realtimeSocketService: RealtimeSocketService = .shared
@@ -30,6 +32,14 @@ final class BannerManager {
     private let muteOwnMessages = true   // 내가 보낸 메시지는 배너 안 띄움 (선호에 맞게)
 
     // MARK: - Public
+
+    func configure(
+        roomReadStateStore: ChatRoomReadStateStore,
+        roomRepository: FirebaseChatRoomRepositoryProtocol
+    ) {
+        self.roomReadStateStore = roomReadStateStore
+        self.roomRepository = roomRepository
+    }
 
     /// 배너용 구독 시작(참여 중인 모든 방)
     func start(for joinedRoomIDs: [String]) {
@@ -109,6 +119,8 @@ final class BannerManager {
 
     private func handleIncomingMessage(_ msg: ChatMessage, roomID: String) async {
         let text = bannerText(from: msg)
+        roomReadStateStore?.seedIncomingMessage(msg)
+        roomRepository?.applyLocalIncomingMessagePreview(msg)
 
         #if DEBUG
         print("[BannerManager] incoming room=\(roomID) msgID=\(msg.ID) sender=\(msg.senderUID) visible=\(currentVisibleRoomID ?? "nil")")

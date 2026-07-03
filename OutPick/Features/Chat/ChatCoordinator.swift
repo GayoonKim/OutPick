@@ -315,6 +315,7 @@ extension ChatCoordinator: ChatRoomRouting {
     }
 
     func handleRoomExit(from source: ChatViewController, roomID: String) {
+        container.roomRepository.removeLocalRoom(roomID: roomID)
         guard source.isCurrentRoom(roomID: roomID) else {
             source.dismissSettingPanel()
             return

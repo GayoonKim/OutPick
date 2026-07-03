@@ -697,6 +697,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             },
             onMessage: { [weak self] receivedMessage in
                 guard let self else { return }
+                #if DEBUG
+                print("[ChatViewController] realtime onMessage roomID=\(roomID) messageID=\(receivedMessage.ID) seq=\(receivedMessage.seq)")
+                #endif
                 await self.handleIncomingMessage(receivedMessage)
             },
             onFailure: { error in
@@ -3077,7 +3080,8 @@ extension ChatViewController {
     }
 
     private func flushLastReadSeq(trigger: String) {
-        guard isUserInCurrentRoom else { return }
+        guard let room,
+              chatRoomViewModel.isCurrentUserParticipant(in: room) else { return }
         Task {
             do {
                 try await self.chatRoomViewModel.persistFinalLastReadSeqForCurrentUser()

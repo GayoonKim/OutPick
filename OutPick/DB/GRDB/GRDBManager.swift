@@ -23,14 +23,6 @@ struct LocalChatUser: Codable, FetchableRecord, PersistableRecord, Hashable {
     static let persistenceConflictPolicy = PersistenceConflictPolicy(insert: .replace, update: .replace)
 }
 
-struct RoomMember: Codable, FetchableRecord, PersistableRecord, Hashable {
-    static let databaseTableName = "RoomMember"
-    enum Columns: String, ColumnExpression { case roomID, userID }
-
-    let roomID: String
-    let userID: String
-}
-
 struct RoomProfileDisplayCache: Codable, FetchableRecord, PersistableRecord, Hashable {
     static let databaseTableName = "RoomProfileDisplayCache"
     enum Columns: String, ColumnExpression {
@@ -93,66 +85,13 @@ final class GRDBManager: ChatOutgoingOutboxPersisting {
             try db.execute(sql: "PRAGMA foreign_keys = ON;")
         }
 
-        // Minimal LocalChatUser table (userID, nickname, profileImagePath)
-        migrator.registerMigration("createLocalUser_min") { db in
+        migrator.registerMigration("createLocalChatUser") { db in
             try db.create(table: "LocalChatUser", options: [.ifNotExists]) { t in
                 t.column("userID", .text).primaryKey()
                 t.column("nickname", .text).notNull()
                 t.column("profileImagePath", .text)
             }
             try db.create(index: "idx_LocalChatUser_nickname", on: "LocalChatUser", columns: ["nickname"], ifNotExists: true)
-        }
-
-        // Legacy RoomMember table. Production membership source is Firestore members.
-        migrator.registerMigration("createRoomMember_min") { db in
-            try db.create(table: "RoomMember", options: [.ifNotExists]) { t in
-                t.column("roomID", .text).notNull()
-                t.column("userID", .text).notNull().indexed().references("LocalChatUser", column: "userID", onDelete: .cascade)
-                t.primaryKey(["roomID", "userID"]) // composite PK
-            }
-            try db.create(index: "idx_RoomMember_room", on: "RoomMember", columns: ["roomID"], ifNotExists: true)
-        }
-
-        // Legacy migrations intentionally no-op. 앱 배포 전 canonical UID schema로 수렴한다.
-        migrator.registerMigration("backfill_LocalUser_from_userProfile") { db in
-            _ = db
-        }
-
-        migrator.registerMigration("migrate_roomParticipant_to_RoomMember") { db in
-            _ = db
-        }
-
-        migrator.registerMigration("rebuildLocalChatUserSchema_userID") { db in
-            if try db.tableExists("RoomMember") {
-                try db.drop(table: "RoomMember")
-            }
-            if try db.tableExists("RoomProfileDisplayCache") {
-                try db.drop(table: "RoomProfileDisplayCache")
-            }
-            if try db.tableExists("LocalChatUser") {
-                try db.drop(table: "LocalChatUser")
-            }
-            if try db.tableExists("LocalUser") {
-                try db.drop(table: "LocalUser")
-            }
-            if try db.tableExists("roomParticipant") {
-                try db.drop(table: "roomParticipant")
-            }
-            if try db.tableExists("userProfile") {
-                try db.drop(table: "userProfile")
-            }
-            try db.create(table: "LocalChatUser", options: [.ifNotExists]) { t in
-                t.column("userID", .text).primaryKey()
-                t.column("nickname", .text).notNull()
-                t.column("profileImagePath", .text)
-            }
-            try db.create(table: "RoomMember", options: [.ifNotExists]) { t in
-                t.column("roomID", .text).notNull()
-                t.column("userID", .text).notNull().indexed().references("LocalChatUser", column: "userID", onDelete: .cascade)
-                t.primaryKey(["roomID", "userID"])
-            }
-            try db.create(index: "idx_LocalChatUser_nickname", on: "LocalChatUser", columns: ["nickname"], ifNotExists: true)
-            try db.create(index: "idx_RoomMember_room", on: "RoomMember", columns: ["roomID"], ifNotExists: true)
         }
 
         migrator.registerMigration("createRoomProfileDisplayCache") { db in
@@ -182,6 +121,74 @@ final class GRDBManager: ChatOutgoingOutboxPersisting {
                       on: "RoomProfileDisplayCache",
                       columns: ["userID"],
                       ifNotExists: true)
+    }
+
+    static func rebuildChatMessageSenderUIDSchemaIfNeeded(in db: Database) throws {
+        guard try db.tableExists("chatMessage") else { return }
+        let columnNames = Set(try db.columns(in: "chatMessage").map(\.name))
+        guard columnNames.contains("senderID") else { return }
+
+        func expression(_ column: String, fallback: String = "NULL") -> String {
+            columnNames.contains(column) ? column : fallback
+        }
+
+        let senderExpression: String = {
+            let candidates = [
+                columnNames.contains("senderUID") ? "NULLIF(senderUID, '')" : nil,
+                columnNames.contains("senderID") ? "NULLIF(senderID, '')" : nil
+            ].compactMap { $0 }
+            return "COALESCE(\(candidates.joined(separator: ", ")), '')"
+        }()
+
+        try db.execute(sql: "DROP TABLE IF EXISTS chatMessage_senderUID_rebuild")
+        try db.execute(sql: "ALTER TABLE chatMessage RENAME TO chatMessage_senderUID_rebuild")
+
+        try db.create(table: "chatMessage") { t in
+            t.column("id", .text).primaryKey()
+            t.column("seq", .integer).notNull().defaults(to: 0)
+            t.column("roomID", .text).notNull()
+            t.column("senderUID", .text).notNull()
+            t.column("senderEmail", .text)
+            t.column("senderNickname", .text).notNull()
+            t.column("senderAvatarPath", .text)
+            t.column("messageType", .text)
+            t.column("msg", .text)
+            t.column("sentAt", .datetime)
+            t.column("attachments", .text)
+            t.column("sharedContent", .text)
+            t.column("isFailed", .boolean).notNull().defaults(to: false)
+            t.column("replyPreview", .text)
+            t.column("isDeleted", .boolean).notNull().defaults(to: false)
+        }
+
+        try db.execute(sql: """
+            INSERT OR REPLACE INTO chatMessage
+            (id, seq, roomID, senderUID, senderEmail, senderNickname, senderAvatarPath, messageType, msg, sentAt, attachments, sharedContent, isFailed, replyPreview, isDeleted)
+            SELECT
+                id,
+                COALESCE(\(expression("seq", fallback: "0")), 0),
+                roomID,
+                \(senderExpression),
+                \(expression("senderEmail")),
+                COALESCE(\(expression("senderNickname", fallback: "''")), ''),
+                \(expression("senderAvatarPath")),
+                \(expression("messageType")),
+                \(expression("msg")),
+                \(expression("sentAt")),
+                COALESCE(\(expression("attachments", fallback: "'[]'")), '[]'),
+                \(expression("sharedContent")),
+                COALESCE(\(expression("isFailed", fallback: "0")), 0),
+                \(expression("replyPreview", fallback: expression("replyTo"))),
+                COALESCE(\(expression("isDeleted", fallback: "0")), 0)
+              FROM chatMessage_senderUID_rebuild
+             WHERE id IS NOT NULL
+               AND roomID IS NOT NULL
+               AND \(senderExpression) != ''
+        """)
+
+        try db.execute(sql: "DROP TABLE chatMessage_senderUID_rebuild")
+        try db.create(index: "idx_chatMessage_roomID_sentAt", on: "chatMessage", columns: ["roomID", "sentAt"], ifNotExists: true)
+        try db.create(index: "idx_chatMessage_roomID_seq", on: "chatMessage", columns: ["roomID", "seq"], ifNotExists: true)
     }
 
     private init() {
@@ -316,6 +323,10 @@ final class GRDBManager: ChatOutgoingOutboxPersisting {
             } catch {
                 print("[Migration] addLookbookShareToChatMessage skipped or failed: \(error)")
             }
+        }
+
+        migrator.registerMigration("rebuildChatMessageSenderUIDSchema") { db in
+            try Self.rebuildChatMessageSenderUIDSchemaIfNeeded(in: db)
         }
         
         migrator.registerMigration("createRoomParticipant") { db in
@@ -1592,14 +1603,6 @@ final class GRDBManager: ChatOutgoingOutboxPersisting {
         if try db.tableExists("RoomProfileDisplayCache") {
             try db.execute(
                 sql: "DELETE FROM RoomProfileDisplayCache WHERE roomID = ?",
-                arguments: [roomID]
-            )
-        }
-
-        // 4) 과거 migration chain에서 남은 로컬 참여자 관계 삭제
-        if try db.tableExists("RoomMember") {
-            try db.execute(
-                sql: "DELETE FROM RoomMember WHERE roomID = ?",
                 arguments: [roomID]
             )
         }

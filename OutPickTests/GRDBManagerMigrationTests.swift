@@ -11,22 +11,19 @@ import Testing
 @testable import OutPick
 
 struct GRDBManagerMigrationTests {
-    @Test func baseUserMigrationCreatesCanonicalLocalChatUserTables() throws {
+    @Test func baseUserMigrationCreatesCanonicalProfileDisplayCacheTables() throws {
         let dbQueue = try DatabaseQueue()
 
         try migrateBaseUserSchema(dbQueue)
 
         try dbQueue.read { db in
             #expect(try db.tableExists("LocalChatUser"))
-            #expect(try db.tableExists("RoomMember"))
+            let roomMemberExists = try db.tableExists("RoomMember")
+            #expect(roomMemberExists == false)
 
             let localUserColumns = try db.columns(in: "LocalChatUser").map(\.name)
             #expect(localUserColumns.contains("userID"))
             #expect(!localUserColumns.contains("email"))
-
-            let roomMemberColumns = try db.columns(in: "RoomMember").map(\.name)
-            #expect(roomMemberColumns.contains("userID"))
-            #expect(!roomMemberColumns.contains("userEmail"))
 
             #expect(try db.tableExists("RoomProfileDisplayCache"))
             let displayCacheColumns = try db.columns(in: "RoomProfileDisplayCache").map(\.name)
@@ -39,35 +36,22 @@ struct GRDBManagerMigrationTests {
         }
     }
 
-    @Test func baseUserMigrationDoesNotBackfillLegacyUserProfile() throws {
+    @Test func baseUserMigrationDoesNotCreateLegacyProfileOrMembershipTables() throws {
         let dbQueue = try DatabaseQueue()
-        try dbQueue.write { db in
-            try db.create(table: "userProfile") { t in
-                t.column("email", .text).primaryKey()
-                t.column("nickname", .text)
-                t.column("profileImagePath", .text)
-                t.column("thumbPath", .text)
-            }
-            try db.execute(
-                sql: """
-                    INSERT INTO userProfile (email, nickname, profileImagePath)
-                    VALUES (?, ?, ?)
-                """,
-                arguments: ["legacy@example.com", "Legacy", "profiles/legacy.jpg"]
-            )
-        }
 
         try migrateBaseUserSchema(dbQueue)
 
-        let legacyTableExists = try dbQueue.read { db in
-            #expect(!(try db.tableExists("userProfile")))
-            return try db.tableExists("userProfile")
+        try dbQueue.read { db in
+            let userProfileExists = try db.tableExists("userProfile")
+            let roomParticipantExists = try db.tableExists("roomParticipant")
+            let roomMemberExists = try db.tableExists("RoomMember")
+            let localUserExists = try db.tableExists("LocalUser")
+
+            #expect(userProfileExists == false)
+            #expect(roomParticipantExists == false)
+            #expect(roomMemberExists == false)
+            #expect(localUserExists == false)
         }
-        let localUser = try dbQueue.read { db in
-            try LocalChatUser.fetchOne(db, key: "legacy@example.com")
-        }
-        #expect(legacyTableExists == false)
-        #expect(localUser == nil)
     }
 
     @Test func roomProfileDisplayCacheEvictsPerRoomByRecentMessageOrder() throws {
@@ -75,7 +59,7 @@ struct GRDBManagerMigrationTests {
         let baseDate = Date(timeIntervalSince1970: 1_000)
 
         for index in 0..<5 {
-            try manager.upsertLocalChatUser(
+            _ = try manager.upsertLocalChatUser(
                 userID: "user-\(index)",
                 nickname: "User \(index)",
                 profileImagePath: nil
@@ -101,9 +85,9 @@ struct GRDBManagerMigrationTests {
         let manager = try makeTemporaryManager()
         let now = Date(timeIntervalSince1970: 2_000)
 
-        try manager.upsertLocalChatUser(userID: "current-user", nickname: "Me", profileImagePath: nil)
-        try manager.upsertLocalChatUser(userID: "leaving-room-user", nickname: "Leaving", profileImagePath: nil)
-        try manager.upsertLocalChatUser(userID: "other-room-user", nickname: "Other", profileImagePath: nil)
+        _ = try manager.upsertLocalChatUser(userID: "current-user", nickname: "Me", profileImagePath: nil)
+        _ = try manager.upsertLocalChatUser(userID: "leaving-room-user", nickname: "Leaving", profileImagePath: nil)
+        _ = try manager.upsertLocalChatUser(userID: "other-room-user", nickname: "Other", profileImagePath: nil)
 
         try manager.upsertRoomProfileDisplayCache(
             roomID: "leaving-room",
@@ -131,6 +115,59 @@ struct GRDBManagerMigrationTests {
         #expect(try manager.fetchLocalChatUser(userID: "leaving-room-user") == nil)
         #expect(try manager.fetchLocalChatUser(userID: "other-room-user") != nil)
         #expect(try manager.fetchLocalChatUser(userID: "current-user") != nil)
+    }
+
+    @Test func rebuildChatMessageSenderUIDSchemaRemovesLegacySenderIDNotNullColumn() throws {
+        let dbQueue = try DatabaseQueue()
+
+        try dbQueue.write { db in
+            try db.create(table: "chatMessage") { t in
+                t.column("id", .text).primaryKey()
+                t.column("seq", .integer).notNull().defaults(to: 0)
+                t.column("roomID", .text).notNull()
+                t.column("senderID", .text).notNull()
+                t.column("senderUID", .text)
+                t.column("senderEmail", .text)
+                t.column("senderNickname", .text).notNull()
+                t.column("msg", .text)
+                t.column("sentAt", .datetime)
+                t.column("attachments", .text)
+                t.column("isFailed", .boolean).notNull().defaults(to: false)
+                t.column("replyTo", .text)
+            }
+            try db.execute(
+                sql: """
+                INSERT INTO chatMessage
+                (id, seq, roomID, senderID, senderUID, senderEmail, senderNickname, msg, attachments, isFailed)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                arguments: [
+                    "message-1",
+                    12,
+                    "room-1",
+                    "legacy-sender",
+                    nil,
+                    "legacy@example.com",
+                    "Legacy",
+                    "hello",
+                    "[]",
+                    false
+                ]
+            )
+
+            try GRDBManager.rebuildChatMessageSenderUIDSchemaIfNeeded(in: db)
+        }
+
+        try dbQueue.read { db in
+            let columns = try db.columns(in: "chatMessage").map(\.name)
+            #expect(columns.contains("senderUID"))
+            #expect(!columns.contains("senderID"))
+
+            let row = try Row.fetchOne(db, sql: "SELECT senderUID, senderNickname, seq FROM chatMessage WHERE id = ?", arguments: ["message-1"])
+            #expect(row?["senderUID"] as String? == "legacy-sender")
+            #expect(row?["senderNickname"] as String? == "Legacy")
+            #expect(row?["seq"] as Int64? == 12)
+        }
     }
 
     private func migrateBaseUserSchema(_ dbQueue: DatabaseQueue) throws {

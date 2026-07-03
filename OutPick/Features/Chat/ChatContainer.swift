@@ -75,6 +75,10 @@ final class ChatContainer {
         self.realtimeSocketService = realtimeSocketService
         let resolvedRoomReadStateStore = roomReadStateStore ?? ChatRoomReadStateStore()
         self.roomReadStateStore = resolvedRoomReadStateStore
+        BannerManager.shared.configure(
+            roomReadStateStore: resolvedRoomReadStateStore,
+            roomRepository: self.roomRepository
+        )
         let announcementRepository = announcementRepository ?? repositories.announcementRepository
         self.roomListUseCase = RoomListUseCase(roomRepository: self.roomRepository)
         self.chatRoomExitUseCase = ChatRoomExitUseCase(
@@ -180,13 +184,17 @@ final class ChatContainer {
     }
 
     func makeRoomListsViewModel() -> RoomListsViewModel {
-        RoomListsViewModel(useCase: roomListUseCase)
+        RoomListsViewModel(
+            useCase: roomListUseCase,
+            roomReadStateStore: roomReadStateStore
+        )
     }
 
     func makeJoinedRoomsViewModel() -> JoinedRoomsViewModel {
         JoinedRoomsViewModel(
             useCase: joinedRoomsUseCase,
-            roomReadStateStore: roomReadStateStore
+            roomReadStateStore: roomReadStateStore,
+            joinedRoomsStore: joinedRoomsStore
         )
     }
 

@@ -21,6 +21,12 @@ protocol FirebaseChatRoomRepositoryProtocol {
     
     /// 로컬 방 정보 업데이트 (캐시 갱신)
     func applyLocalRoomUpdate(_ updatedRoom: ChatRoom)
+
+    /// 로컬 방 목록 캐시에서 방 제거
+    func removeLocalRoom(roomID: String)
+
+    /// realtime 수신 메시지를 로컬 방 목록 preview cache에 반영
+    func applyLocalIncomingMessagePreview(_ message: ChatMessage)
     
     /// Top 방 목록 페이지네이션 조회
     func fetchTopRoomsPage(after lastSnapshot: DocumentSnapshot?, limit: Int) async throws

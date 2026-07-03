@@ -247,6 +247,25 @@ extension ChatMessage {
         !displayableVideoAttachments.isEmpty
     }
 
+    var previewTextForRoomList: String {
+        if let text = msg?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
+            return text
+        }
+
+        let imageCount = attachments.filter { $0.type == .image }.count
+        let videoCount = attachments.filter { $0.type == .video }.count
+        switch (imageCount, videoCount) {
+        case (let images, 0) where images > 0:
+            return "사진 \(images)장"
+        case (0, let videos) where videos > 0:
+            return "동영상 \(videos)개"
+        case (let images, let videos) where images > 0 && videos > 0:
+            return "사진 \(images)장, 동영상 \(videos)개"
+        default:
+            return "(메시지)"
+        }
+    }
+
     static func from(_ dict: [String: Any]) -> ChatMessage? {
         // Required IDs
         guard let id = (dict["ID"] as? String) ?? (dict["id"] as? String) ?? (dict["messageID"] as? String), !id.isEmpty,

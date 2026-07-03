@@ -12,6 +12,8 @@ struct ChatRoomReadSnapshot: Equatable {
     var latestSeq: Int64?
     var lastReadSeq: Int64?
     var lastMessageSenderUID: String?
+    var latestMessagePreview: String? = nil
+    var latestMessageAt: Date? = nil
 
     func unreadCount(currentUserID: String) -> Int64? {
         guard let latestSeq, let lastReadSeq else { return nil }
@@ -64,9 +66,15 @@ final class ChatRoomReadStateStore {
     func seed(_ snapshot: ChatRoomReadSnapshot) -> ChatRoomReadSnapshot {
         guard !snapshot.roomID.isEmpty else { return snapshot }
         return update(roomID: snapshot.roomID) { current in
-            current.latestSeq = snapshot.latestSeq
-            current.lastReadSeq = snapshot.lastReadSeq
+            if let latestSeq = snapshot.latestSeq {
+                current.latestSeq = max(current.latestSeq ?? 0, latestSeq)
+            }
+            if let lastReadSeq = snapshot.lastReadSeq {
+                current.lastReadSeq = max(current.lastReadSeq ?? 0, lastReadSeq)
+            }
             current.lastMessageSenderUID = snapshot.lastMessageSenderUID
+            current.latestMessagePreview = snapshot.latestMessagePreview
+            current.latestMessageAt = snapshot.latestMessageAt
         }
     }
 
@@ -87,6 +95,20 @@ final class ChatRoomReadStateStore {
             } else if current.latestSeq == nil {
                 current.lastMessageSenderUID = lastMessageSenderUID
             }
+        }
+    }
+
+    @discardableResult
+    func seedIncomingMessage(_ message: ChatMessage) -> ChatRoomReadSnapshot? {
+        let roomID = message.roomID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !roomID.isEmpty, message.seq > 0 else { return nil }
+        return update(roomID: roomID) { current in
+            let currentLatest = current.latestSeq ?? 0
+            guard message.seq >= currentLatest else { return }
+            current.latestSeq = message.seq
+            current.lastMessageSenderUID = message.senderUID
+            current.latestMessagePreview = message.previewTextForRoomList
+            current.latestMessageAt = message.sentAt ?? Date()
         }
     }
 
@@ -117,7 +139,9 @@ final class ChatRoomReadStateStore {
             roomID: roomID,
             latestSeq: nil,
             lastReadSeq: nil,
-            lastMessageSenderUID: nil
+            lastMessageSenderUID: nil,
+            latestMessagePreview: nil,
+            latestMessageAt: nil
         )
         let previous = snapshot
         mutate(&snapshot)

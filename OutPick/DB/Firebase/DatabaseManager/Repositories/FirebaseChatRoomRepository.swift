@@ -41,6 +41,36 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
         }
 
     }
+
+    func removeLocalRoom(roomID: String) {
+        guard !roomID.isEmpty else { return }
+        topRoomsWithPreviews.removeAll { $0.0.ID == roomID }
+        previewByRoomID.removeValue(forKey: roomID)
+    }
+
+    func applyLocalIncomingMessagePreview(_ message: ChatMessage) {
+        let roomID = message.roomID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !roomID.isEmpty else { return }
+
+        let existingPreviews = previewByRoomID[roomID] ?? []
+        let withoutDuplicate = existingPreviews.filter { $0.ID != message.ID }
+        let nextPreviews = Array((withoutDuplicate + [message]).suffix(3))
+        previewByRoomID[roomID] = nextPreviews
+
+        guard let index = topRoomsWithPreviews.firstIndex(where: { $0.0.ID == roomID }) else { return }
+        var room = topRoomsWithPreviews[index].0
+        if message.seq > room.seq {
+            room.seq = message.seq
+        }
+        room.lastMessageAt = message.sentAt ?? Date()
+        room.lastMessage = message.previewTextForRoomList
+        room.lastMessageSenderUID = message.senderUID
+
+        topRoomsWithPreviews[index] = (room, nextPreviews)
+        topRoomsWithPreviews.sort {
+            ($0.0.lastMessageAt ?? $0.0.createdAt) > ($1.0.lastMessageAt ?? $1.0.createdAt)
+        }
+    }
     
     @MainActor
     func fetchTopRoomsPage(after lastSnapshot: DocumentSnapshot? = nil, limit: Int = 30) async throws {

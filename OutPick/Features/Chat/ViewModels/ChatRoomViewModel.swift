@@ -504,6 +504,7 @@ final class ChatRoomViewModel {
     func persistFinalLastReadSeq(userUID: String) async throws {
         let finalSeq = finalLastReadSeqForSessionEnd()
         readStateStore.queue(finalSeq)
+        roomReadStateStore?.markReadFlushed(roomID: roomID, lastReadSeq: finalSeq)
         lastReadFlushTask?.cancel()
         lastReadFlushTask = nil
         try await flushPendingLastReadSeq(userUID: userUID)
