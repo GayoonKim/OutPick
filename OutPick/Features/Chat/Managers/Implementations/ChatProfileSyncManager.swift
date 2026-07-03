@@ -8,30 +8,33 @@
 import Foundation
 
 final class ChatProfileSyncManager: ChatProfileSyncManaging {
-    private let userProfileRepository: UserProfileRepositoryProtocol
-    private let grdbManager: GRDBManager
     private let maxRefreshUIDs: Int
+    private let cacheActor: ChatProfileCacheActor
 
-    private let cacheLock = NSLock()
-    private var cachedProfiles: [String: LocalChatUser] = [:]
+    @MainActor
+    private var profileSnapshot: [String: LocalChatUser] = [:]
+    @MainActor
+    private var snapshotGeneration: Int = 0
 
     init(
         userProfileRepository: UserProfileRepositoryProtocol = FirebaseRepositoryProvider.shared.userProfileRepository,
         grdbManager: GRDBManager = .shared,
         maxRefreshUIDs: Int = 20
     ) {
-        self.userProfileRepository = userProfileRepository
-        self.grdbManager = grdbManager
         self.maxRefreshUIDs = max(1, maxRefreshUIDs)
+        self.cacheActor = ChatProfileCacheActor(
+            userProfileRepository: userProfileRepository,
+            grdbManager: grdbManager
+        )
     }
 
     @discardableResult
     func refreshProfiles(from messages: [ChatMessage]) async -> Set<String> {
         let senderIDs = recentSenderUIDs(from: messages)
-        return await refreshProfiles(userIDs: senderIDs)
+        return await refreshProfiles(userIDs: Array(senderIDs))
     }
 
-    private func refreshProfiles(userIDs: Set<String>) async -> Set<String> {
+    private func refreshProfiles(userIDs: [String]) async -> Set<String> {
         let normalizedUserIDs = Array(
             userIDs
                 .map(normalizedUID)
@@ -40,75 +43,41 @@ final class ChatProfileSyncManager: ChatProfileSyncManaging {
         )
         guard !normalizedUserIDs.isEmpty else { return [] }
 
-        do {
-            let profilesByID = try await userProfileRepository.fetchUserProfiles(userIDs: normalizedUserIDs)
+        let generation = await MainActor.run { snapshotGeneration }
+        let refreshedProfiles = await cacheActor.refreshProfiles(userIDs: normalizedUserIDs)
+        guard !refreshedProfiles.isEmpty else { return [] }
+
+        return await MainActor.run {
+            guard generation == snapshotGeneration else { return [] }
+
             var changedUserIDs = Set<String>()
-
-            for userID in normalizedUserIDs {
-                guard let fetchedProfile = profilesByID[userID] else { continue }
-                let nextNickname = fetchedProfile.nickname?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                let nextAvatarPath = fetchedProfile.thumbPath
-                let current = profile(for: userID)
-
-                guard current?.nickname != nextNickname ||
-                        current?.profileImagePath != nextAvatarPath else {
-                    continue
+            for (userID, profile) in refreshedProfiles {
+                let current = profileSnapshot[userID]
+                if current?.nickname != profile.nickname ||
+                    current?.profileImagePath != profile.profileImagePath {
+                    changedUserIDs.insert(userID)
                 }
-
-                let local = LocalChatUser(
-                    userID: userID,
-                    nickname: nextNickname,
-                    profileImagePath: nextAvatarPath
-                )
-                setCachedProfile(local, for: userID)
-                changedUserIDs.insert(userID)
-
-                _ = try grdbManager.upsertLocalChatUser(
-                    userID: userID,
-                    nickname: nextNickname,
-                    profileImagePath: nextAvatarPath
-                )
+                profileSnapshot[userID] = profile
             }
 
             return changedUserIDs
-        } catch {
-            print("⚠️ ChatProfileSyncManager profile refresh failed:", error)
-            return []
         }
     }
 
+    @MainActor
     func profile(for senderUID: String) -> LocalChatUser? {
         let senderUID = normalizedUID(senderUID)
         guard !senderUID.isEmpty else { return nil }
-
-        if let cached = cachedProfile(for: senderUID) {
-            return cached
-        }
-
-        if let local = try? grdbManager.fetchLocalChatUser(userID: senderUID) {
-            setCachedProfile(local, for: senderUID)
-            return local
-        }
-
-        return nil
+        return profileSnapshot[senderUID]
     }
 
+    @MainActor
     func reset() {
-        cacheLock.lock()
-        defer { cacheLock.unlock() }
-        cachedProfiles.removeAll()
-    }
-
-    private func cachedProfile(for userID: String) -> LocalChatUser? {
-        cacheLock.lock()
-        defer { cacheLock.unlock() }
-        return cachedProfiles[userID]
-    }
-
-    private func setCachedProfile(_ profile: LocalChatUser, for userID: String) {
-        cacheLock.lock()
-        defer { cacheLock.unlock() }
-        cachedProfiles[userID] = profile
+        snapshotGeneration += 1
+        profileSnapshot.removeAll()
+        Task { [cacheActor] in
+            await cacheActor.reset()
+        }
     }
 
     private func recentSenderUIDs(from messages: [ChatMessage]) -> Set<String> {
@@ -131,5 +100,64 @@ final class ChatProfileSyncManager: ChatProfileSyncManaging {
 
     private func normalizedUID(_ uid: String) -> String {
         uid.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+private actor ChatProfileCacheActor {
+    private let userProfileRepository: UserProfileRepositoryProtocol
+    private let grdbManager: GRDBManager
+    private var cachedProfiles: [String: LocalChatUser] = [:]
+    private var generation: Int = 0
+
+    init(
+        userProfileRepository: UserProfileRepositoryProtocol,
+        grdbManager: GRDBManager
+    ) {
+        self.userProfileRepository = userProfileRepository
+        self.grdbManager = grdbManager
+    }
+
+    func refreshProfiles(userIDs: [String]) async -> [String: LocalChatUser] {
+        let generationAtStart = generation
+
+        do {
+            let profilesByID = try await userProfileRepository.fetchUserProfiles(userIDs: userIDs)
+            guard generationAtStart == generation else { return [:] }
+
+            var refreshedProfiles: [String: LocalChatUser] = [:]
+            for userID in userIDs {
+                guard let fetchedProfile = profilesByID[userID] else { continue }
+                let local = LocalChatUser(
+                    userID: userID,
+                    nickname: fetchedProfile.nickname?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
+                    profileImagePath: fetchedProfile.thumbPath
+                )
+
+                refreshedProfiles[userID] = local
+                let current = cachedProfiles[userID] ?? (try? grdbManager.fetchLocalChatUser(userID: userID))
+                cachedProfiles[userID] = local
+
+                guard current?.nickname != local.nickname ||
+                    current?.profileImagePath != local.profileImagePath else {
+                    continue
+                }
+
+                _ = try grdbManager.upsertLocalChatUser(
+                    userID: userID,
+                    nickname: local.nickname,
+                    profileImagePath: local.profileImagePath
+                )
+            }
+
+            return refreshedProfiles
+        } catch {
+            print("⚠️ ChatProfileSyncManager profile refresh failed:", error)
+            return [:]
+        }
+    }
+
+    func reset() {
+        generation += 1
+        cachedProfiles.removeAll()
     }
 }

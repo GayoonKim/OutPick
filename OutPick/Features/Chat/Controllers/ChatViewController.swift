@@ -697,9 +697,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             },
             onMessage: { [weak self] receivedMessage in
                 guard let self else { return }
-                #if DEBUG
-                print("[ChatViewController] realtime onMessage roomID=\(roomID) messageID=\(receivedMessage.ID) seq=\(receivedMessage.seq)")
-                #endif
                 await self.handleIncomingMessage(receivedMessage)
             },
             onFailure: { error in
@@ -729,7 +726,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private func handleIncomingMessage(_ message: ChatMessage) async {
         guard self.room != nil else { return }
         if message.roomID != chatRoomViewModel.roomID { return }
-        print("\(message.isFailed ? "전송 실패" : "전송 성공") 메시지 수신: \(message)")
 
         // 1) 첨부 캐시 선행
         let hasImages = message.hasDisplayableImages
@@ -784,9 +780,43 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     @MainActor
     private func scheduleProfileCacheRefresh(for messages: [ChatMessage]) {
         guard !messages.isEmpty else { return }
-        Task(priority: .utility) { [profileSyncManager] in
-            await profileSyncManager.refreshProfiles(from: messages)
+        Task(priority: .utility) { [weak self, profileSyncManager] in
+            let changedUserIDs = await profileSyncManager.refreshProfiles(from: messages)
+            guard !changedUserIDs.isEmpty else { return }
+
+            await MainActor.run {
+                self?.applyProfileRefresh(changedUserIDs: changedUserIDs)
+            }
         }
+    }
+
+    @MainActor
+    private func applyProfileRefresh(changedUserIDs: Set<String>) {
+        let normalizedUserIDs = Set(
+            changedUserIDs
+                .map { normalizedProfileUID($0) }
+                .filter { !$0.isEmpty && !$0.contains("/") }
+        )
+        guard !normalizedUserIDs.isEmpty else { return }
+
+        let updatedMessages = messageWindowStore.updateMessages(where: { message in
+            normalizedUserIDs.contains(normalizedProfileUID(message.senderUID))
+        }, mutate: { [profileSyncManager] message in
+            guard let profile = profileSyncManager.profile(for: message.senderUID) else { return }
+            let nickname = profile.nickname.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !nickname.isEmpty {
+                message.senderNickname = nickname
+            }
+            message.senderAvatarPath = profile.profileImagePath
+        })
+
+        let messageIDs = Set(updatedMessages.map(\.ID))
+        guard !messageIDs.isEmpty else { return }
+        reconfigureMessageItems(messageIDs: messageIDs)
+    }
+
+    private func normalizedProfileUID(_ uid: String) -> String {
+        uid.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     @MainActor

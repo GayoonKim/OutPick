@@ -280,10 +280,6 @@ actor RealtimeSocketService {
     func openRoomSession(for roomID: String) async throws -> ChatRoomSocketSession {
         guard !roomID.isEmpty else { throw SocketError.invalidRoomID }
 
-        #if DEBUG
-        print("[RealtimeSocketService] openRoomSession requested roomID=\(roomID) socketStatus=\(String(describing: socket?.status)) hasIdentity=\(identity != nil)")
-        #endif
-
         let sessionActor = roomSessionActor(for: roomID)
         let consumer = await sessionActor.addConsumer()
 
@@ -299,10 +295,6 @@ actor RealtimeSocketService {
 
         bindMessageListenersIfNeeded()
         try await joinRoomAwaitingAck(roomID)
-
-        #if DEBUG
-        print("[RealtimeSocketService] openRoomSession ready roomID=\(roomID)")
-        #endif
 
         return ChatRoomSocketSession(
             roomID: roomID,
@@ -927,10 +919,6 @@ actor RealtimeSocketService {
             return
         }
 
-        #if DEBUG
-        print("[RealtimeSocketService] publish incoming roomID=\(roomID) messageID=\(message.ID) seq=\(message.seq) type=\(message.messageType?.rawValue ?? "nil")")
-        #endif
-
         Task {
             await sessionActor.publish(message)
         }
@@ -1001,14 +989,8 @@ actor RealtimeSocketService {
                 }
 
                 if ChatMessageEmitAckMapper.isSuccess(ackResponse) {
-                    #if DEBUG
-                    print("[RealtimeSocketService] join room ACK success roomID=\(roomID) response=\(ackResponse)")
-                    #endif
                     continuation.resume()
                 } else {
-                    #if DEBUG
-                    print("[RealtimeSocketService] join room ACK failed roomID=\(roomID) response=\(ackResponse)")
-                    #endif
                     continuation.resume(
                         throwing: Self.makeSocketError(
                             code: -1,
@@ -1196,18 +1178,10 @@ private extension RealtimeSocketService {
         guard let identity else { return }
 
         let limit = effectivePolicy.maxAttempts
-        guard manualAttempt < limit else {
-            #if DEBUG
-            print("[retry] max attempts reached (\(limit)) — stop")
-            #endif
-            return
-        }
+        guard manualAttempt < limit else { return }
 
         manualAttempt += 1
         let delay = backoffDelay(for: manualAttempt)
-        #if DEBUG
-        print("[retry] attempt \(manualAttempt)/\(limit) in \(String(format: "%.2f", delay))s")
-        #endif
 
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             Task {
