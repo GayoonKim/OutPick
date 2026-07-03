@@ -4,7 +4,7 @@
 
 - AppCompositionRoot: `OutPick/App/AppCompositionRoot.swift`
   - 앱 세션 dependency graph 조립 진입점이다.
-  - `RealtimeSocketService`, `JoinedRoomsSessionStore`, `BrandAdminSessionStore`, `CurrentUserProviding`, `AppSessionRuntime`, `AppCoordinator`를 같은 앱 graph에서 만든다.
+  - `RealtimeSocketService`, `JoinedRoomsSessionStore`, `BrandAdminSessionStore`, `CurrentUserSessionStore`, `CurrentUserProviding`, `AppSessionRuntime`, `AppCoordinator`를 같은 앱 graph에서 만든다.
   - 앱 세션 단위 `AvatarImageService`도 여기서 생성해 Chat/Lookbook/Profile로 전달한다.
 - AppCoordinator: `OutPick/App/AppCoordinator.swift`
   - 로그인 여부 확인, 로그인/프로필/메인 탭 루트 전환, 강제 로그아웃 라우팅을 담당한다.
@@ -18,6 +18,12 @@
 - JoinedRoomsSessionStore: `OutPick/App/Session/JoinedRoomsSessionStore.swift`
   - 앱 세션의 참여중 roomID snapshot store다.
   - `JoinedRoomsStore.swift`의 대체 진입점이며 Combine publisher 없이 명시 command API와 함께 사용한다.
+- CurrentUserSessionStore: `OutPick/App/Session/CurrentUserSessionStore.swift`
+  - 앱 세션의 current user profile snapshot store다.
+  - 로그인/프로필 생성/수정 후 메모리 profile source를 갱신한다.
+- CurrentUserProvider: `OutPick/App/Session/CurrentUserProvider.swift`
+  - 앱 공통 현재 사용자 조회 계약이다.
+  - 현재 사용자 식별자는 Firebase Auth UID 기반 `canonicalUserID` 하나로 노출한다.
 - MainTabCompositionRoot: `OutPick/App/TabBarController/Composition/MainTabCompositionRoot.swift`
   - `MainTabBarController` 조립 진입점이다.
   - `UITabBarController + 각 탭 UINavigationController` 기반 메인 탭 shell을 만든다.
@@ -80,6 +86,7 @@
 - ViewController: `OutPick/Features/Login/Presentation/LoginViewController.swift`
 - Boot loading: `OutPick/Features/Login/Presentation/BootLoadingViewController.swift`
 - Login manager: `OutPick/Features/Login/Application/LoginManager.swift`
+  - 현재 사용자 식별자는 `canonicalUserID`를 사용한다.
 - Login bootstrapping: `OutPick/Features/Login/Application/LoginManager+Bootstrapping.swift`
 - Auth Repository: `OutPick/Features/Login/Repository/DefaultSocialAuthRepository.swift`
 - Protocols: `OutPick/Features/Login/Protocols`

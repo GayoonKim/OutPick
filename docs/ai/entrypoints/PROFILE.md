@@ -26,6 +26,7 @@
   - 로컬 draft UserDefaults 저장/복원, back button 저장, UIKit interactive pop 완료 시 draft 저장, 저장 중 swipe-back 차단을 확인한다.
 - Second profile view model: `OutPick/Features/Profile/ViewModels/SecondProfileViewModel.swift`
   - avatar/profile draft 저장 흐름을 확인한다.
+  - 저장 완료 후 current user session profile 갱신은 상위 완료 콜백 경계와 연결된다.
 
 ## 사용자 프로필 상세
 
@@ -33,7 +34,7 @@
   - 다른 사용자 프로필 표시 UI와 avatar tap 확대 viewer 진입을 확인한다.
   - avatar 확대는 공용 `ImageViewerPage`/`SimpleImageViewerVC`를 사용하고, Photos 저장은 주입받은 `PhotoLibrarySaving`을 사용한다.
 - Detail view model: `OutPick/Features/Profile/ViewModels/UserProfileDetailViewModel.swift`
-  - userID/email 기반 프로필 로드, avatar 표시 state, 현재 사용자 판정을 확인한다.
+  - canonical user ID 기반 프로필 로드, avatar 표시 state, 현재 사용자 판정을 확인한다.
 - Load detail use case: `OutPick/Features/Profile/Domain/UseCases/LoadUserProfileDetailUseCase.swift`
   - 상세 프로필 로딩 orchestration을 확인한다.
 - Detail repository protocol/implementation:
@@ -62,6 +63,8 @@
   - 프로필 저장/조회 계약을 확인한다.
 - User profile repository: `OutPick/Features/Profile/Repository/UserProfileRepository.swift`
   - Firestore user profile 저장/조회 구현을 확인한다.
+  - 프로필 문서는 `users/{canonicalUserID}` 직접 조회/저장을 사용한다.
+  - 이메일/provider field 기반 fallback query는 사용하지 않는다.
 
 ## Avatar DI 접합부
 
@@ -70,6 +73,8 @@
 - Avatar service implementation: `OutPick/Features/Chat/Services/ImageLoading/AvatarImageService.swift`
   - avatar image loading/cache 구현을 확인한다.
 - Current user provider: `OutPick/App/Session/CurrentUserProvider.swift`
-  - Profile 상세의 현재 사용자 판정에 필요한 documentID/email 제공 계약을 확인한다.
+  - Profile 상세의 현재 사용자 판정에 필요한 `canonicalUserID` 제공 계약을 확인한다.
+- Current user session store: `OutPick/App/Session/CurrentUserSessionStore.swift`
+  - 앱 세션 current profile snapshot source를 확인한다.
 - 현재 설계 결정: `docs/ai/tasks/chat-view-controller-layering/decisions.md`
   - `Provider/Avatar DI 일괄 정리` 섹션을 확인한다.
