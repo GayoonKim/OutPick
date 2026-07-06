@@ -74,14 +74,19 @@
 - Admin:
   - `OutPick/Features/Lookbook/Views/Admin/LookbookAdminHomeView.swift`
     - Lookbook 관리 홈이며 `요청 목록`, `브랜드 추가`, `브랜드 관리` 메뉴를 제공한다.
+    - 총 관리자는 요청 목록/브랜드 추가/브랜드 관리를 모두 볼 수 있고, 브랜드별 owner/admin은 브랜드 관리 중심으로 진입한다.
     - 홈 진입은 `LookbookHomeView`의 `Lookbook 관리` 버튼에서 Coordinator push로 연결한다.
     - 브랜드 생성은 기존 `CreateBrandFlowView`를 fullScreenCover로 재사용한다.
   - `OutPick/Features/Lookbook/Views/Admin/AdminBrandRequestGroupsView.swift`
     - 브랜드 요청 group 목록, 상태 변경, processing group의 브랜드 생성/완료 처리를 담당한다.
+    - 처리 시작/검수 후 완료 확인은 중앙 작은 확인창으로 표시하고, 요청 보류 UI는 `룩북 확인 불가`, `스팸`, `기타` 사유 선택 sheet로 표시한다. `기타` 선택 시 admin note를 입력해 `updateBrandRequestGroupStage`로 전달한다.
+    - processing group의 브랜드 생성과 완료 처리는 분리한다. 브랜드 생성 직후 자동 완료하지 않고 `markBrandRequestGroupBrandCreated`로 `createdBrandID`를 저장한 뒤, 시즌 import/작업 검수 후 관리자가 `검수 후 완료 처리`를 눌러 `resolveBrandRequestGroup`을 호출한다. 처리중 row는 `상태 변경` 메뉴를 유지하고, `createdBrandID`가 있으면 앱 재실행 후에도 메뉴 안에 `브랜드 생성` 대신 `검수 후 완료 처리`를 보여준다.
   - `OutPick/Features/Lookbook/ViewModels/AdminBrandRequestGroupsViewModel.swift`
+    - 요청 group 상태 변경, 보류 사유/rejection reason, admin note 전달을 담당한다.
   - `OutPick/Features/Lookbook/Views/Admin/AdminBrandManagementView.swift`
     - `searchBrands`로 대상 브랜드를 검색/선택한 뒤 브랜드 수정, 로고 업로드, 관리자 추가/삭제, 시즌 추가, 가져오기 현황 진입을 제공한다.
   - `OutPick/Features/Lookbook/ViewModels/AdminBrandManagementViewModel.swift`
+    - 브랜드 정보 저장, 로고 저장, 관리자 추가/삭제, 중복 관리자 안내 성공성 메시지의 1초 자동 dismiss를 담당한다.
   - `OutPick/Features/Lookbook/Domains/Entities/BrandManagement.swift`
 - Brand detail:
   - `OutPick/Features/Lookbook/Views/BrandDetail/BrandDetailView.swift`
@@ -119,6 +124,7 @@
 - Create brand/season:
   - `OutPick/Features/Lookbook/Views/CreateBrand/brand/CreateBrandFlowView.swift`
   - `OutPick/Features/Lookbook/Views/CreateBrand/brand/CreateBrandView.swift`
+    - 브랜드 생성은 브랜드명과 선택 영문 브랜드명을 함께 입력한다. 브랜드 요청 group에서 진입하면 요청의 한글명/영문명이 초기값으로 들어간다.
   - `OutPick/Features/Lookbook/Views/CreateBrand/season/CreateSeasonView.swift`
   - `OutPick/Features/Lookbook/Views/CreateBrand/season/CreateSeasonFromURLView.swift`
   - `OutPick/Features/Lookbook/ViewModels/CreateBrandViewModel.swift`
@@ -233,6 +239,7 @@
   - `OutPick/Features/Lookbook/Domains/UseCases/UpdateBrandRequestGroupStageUseCase.swift`
   - `OutPick/Features/Lookbook/Domains/UseCases/ResolveBrandRequestGroupUseCase.swift`
   - `OutPick/Features/Lookbook/Repositories/Protocols/BrandRequestRepositoryProtocol.swift`
-- Phase 6A는 processing group에서 기존 `CreateBrandFlowView`를 재사용해 브랜드를 생성하고, 생성된 `brandID`로 `resolveBrandRequestGroup`을 호출한다.
+  - 상태 변경 메뉴, 처리 시작/검수 후 완료 확인창, 보류 사유 선택 UI는 `AdminBrandRequestGroupsView.swift`를 먼저 확인한다.
+- Phase 6A는 processing group에서 기존 `CreateBrandFlowView`를 재사용해 브랜드를 생성한다. 생성 직후 `markBrandRequestGroupBrandCreated`로 `createdBrandID`를 저장하고, 완료 처리는 자동 호출하지 않고 시즌 import/작업 검수 후 `검수 후 완료 처리`로 `resolveBrandRequestGroup`을 호출한다.
 - Phase 6B는 `AdminBrandManagementView`에서 브랜드 검색/선택 후 브랜드 수정, 로고 수정, 관리자 추가/삭제, 시즌 추가/import 현황 진입을 제공한다.
 - 사용자별 `brandRequests/{requestID}`는 개인 요청 기록이며, 사용자 노출 상태는 `listMyBrandRequests`가 group 상태를 반영해 반환한다.

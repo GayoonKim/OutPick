@@ -227,6 +227,7 @@ GRDB 로컬 캐시:
 
 - `brands`
 - `brandNameIndex/{normalizedName}`
+- `brands/{brandID}/admins`
 - `brands/{brandID}/seasons`
 - `brands/{brandID}/seasons/{seasonID}/posts`
 - `brandRequests`
@@ -241,11 +242,17 @@ GRDB 로컬 캐시:
 
 - 총 관리자 source는 `brandAdmins/{uid}` 문서다.
 - 총 관리자는 `brandAdmins/{uid}.isActive == true`일 때만 유효하다.
-- `brandAdmins`의 예전 `canCreateBrands`, `brandCreator`, `allowedBrandIDs` 성격의 필드는 현재 권한 판단 source로 사용하지 않는다.
-- `brands/{brandID}`는 브랜드 기본 정보와 관리자 권한 배열을 가진다.
+- `brandAdmins.roles`는 표시/감사용 선택 필드이며 권한 판단 source로 사용하지 않는다.
+- `brandAdmins`의 예전 `canCreateBrands`, `brandCreator`, `allowedBrandIDs` 성격의 필드는 권한 판단 source로 사용하지 않고 운영 문서에서 제거한다.
+- `brands/{brandID}`는 브랜드 기본 정보를 가진다.
+- 브랜드별 owner/admin source는 `brands/{brandID}/admins/{uid}` 문서다.
+- 브랜드 owner/admin은 `brands/{brandID}/admins/{uid}.role in ["owner", "admin"]`일 때만 유효하다.
+- `brands/{brandID}.ownerUIDs/adminUIDs` 배열은 legacy 모델이며 신규 권한 판단 source로 사용하지 않는다.
 - 주요 필드:
   - `name`
   - `normalizedName`
+  - `englishName`
+  - `normalizedEnglishName`
   - `websiteURL`
   - `lookbookArchiveURL`
   - `logoPath`
@@ -253,15 +260,23 @@ GRDB 로컬 캐시:
   - `logoDetailPath`
   - `logoOriginalPath`
   - `isFeatured`
-  - `ownerUIDs`
-  - `adminUIDs`
   - `updatedBy`
   - `updatedAt`
-- 브랜드명 중복 방지는 `brandNameIndex/{normalizedName}`으로 처리한다.
-- 브랜드명 변경은 `updateBrand` callable transaction에서 새 index 중복 검증, 이전 index 삭제, 브랜드 문서 갱신을 함께 처리한다.
+- `brands/{brandID}/admins/{uid}` 주요 필드:
+  - `uid`
+  - `brandID`
+  - `role`
+  - `email`
+  - `normalizedEmail`
+  - `addedBy`
+  - `addedAt`
+  - `updatedAt`
+- 브랜드명 중복 방지는 `brandNameIndex/{normalizedName}`과 `brandNameIndex/{normalizedEnglishName}`으로 처리한다.
+- 브랜드명/영문명 변경은 `updateBrand` callable transaction에서 새 index 중복 검증, 이전 index 삭제, 브랜드 문서 갱신을 함께 처리한다.
 - `isFeatured` 변경은 총 관리자만 가능하다.
-- 브랜드 owner/admin은 브랜드명, 공식 홈페이지 URL, 룩북 목록 URL, 로고 경로를 수정할 수 있다.
-- 브랜드 관리자 추가/삭제는 `addBrandManager`/`removeBrandManager` callable이 normalized email로 `users.email`을 조회해 대상 UID를 찾고 `ownerUIDs`/`adminUIDs`를 갱신한다.
+- 총 관리자는 브랜드 owner가 아니어도 브랜드명, 영문 브랜드명, 공식 홈페이지 URL, 룩북 목록 URL, 로고 경로, 시즌/포스트/커버 업로드를 관리할 수 있다.
+- 브랜드 owner/admin은 브랜드명, 영문 브랜드명, 공식 홈페이지 URL, 룩북 목록 URL, 로고 경로, 시즌/포스트/커버 업로드를 관리할 수 있다.
+- 브랜드 관리자 추가/삭제는 `addBrandManager`/`removeBrandManager` callable이 normalized email로 `users.email`을 조회해 대상 UID를 찾고 `brands/{brandID}/admins/{uid}`를 갱신한다.
 - 총 관리자는 owner/admin을 추가/삭제할 수 있다.
 - 브랜드 owner는 해당 브랜드 admin만 추가/삭제할 수 있다.
 - 브랜드 admin은 관리자 추가/삭제 권한이 없다.
@@ -279,8 +294,11 @@ GRDB 로컬 캐시:
 - 사용자 노출 상태는 `submitted`, `reviewing`, `added`, `rejected`다.
 - 운영자 내부 단계는 `requested`, `processing`, `completed`, `rejected`다.
 - `spam`은 운영자 단계가 아니라 `rejectionReason = spam`으로 기록한다.
-- 처리 완료된 요청은 사용자 기본 목록에서 14일간 보이고, 이후에는 이전 요청 보기에서 조회한다.
+- 사용자 `진행 중` 목록은 `submitted`, `reviewing`만 보여주고, `added`, `rejected`는 즉시 `이전 요청` 목록으로 이동한다.
 - `brandRequestNameIndex/{dedupeKeyHash}`는 전체 요청 수요와 운영 group을 집계한다.
+- `brandRequestNameIndex/{dedupeKeyHash}.createdBrandID`는 처리중 단계에서 브랜드 생성은 끝났지만 검수 완료 전인 중간 연결이다.
+- `brandRequestNameIndex/{dedupeKeyHash}.brandCreatedAt`, `brandCreatedBy`는 해당 중간 브랜드 생성 감사 필드다.
+- `brandRequestNameIndex/{dedupeKeyHash}.resolvedBrandID`는 검수 후 완료 처리된 최종 연결이다.
 - dedupe key는 `englishBrandName`이 있으면 normalized english name, 없으면 normalized brand name이다.
 - 원본 normalized brand name은 문서 필드 `normalizedBrandName`에 저장한다.
 - 선택 영문 브랜드명은 `englishBrandName`, `normalizedEnglishBrandName`에 저장한다.

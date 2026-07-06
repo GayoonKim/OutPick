@@ -22,7 +22,7 @@
 
 - 사용자별 요청 기록: `brandRequests/{requestID}`
 - 요청 처리 상태 source: `brandRequestNameIndex/{dedupeKeyHash}`
-- 브랜드 검색: callable `searchBrands`가 `brands.normalizedName` prefix query를 수행한다.
+- 브랜드 검색: callable `searchBrands`가 `brands.normalizedName`과 `brands.normalizedEnglishName` prefix query를 수행한 뒤 중복 브랜드를 제거한다.
 - 브랜드명 수요/group 집계: `brandRequestNameIndex/{dedupeKeyHash}`
 - `listMyBrandRequests`는 group 상태를 반영해 사용자 노출 상태를 반환한다.
 - 사용자 일일 제한: `brandRequestDailyCounters/{uid}/brandRequestDays/{yyyyMMdd}`
@@ -44,12 +44,12 @@ gcloud firestore fields ttls update expiresAt \
 
 - 브랜드 생성/수정/관리자 변경은 callable Functions 경계를 사용한다.
 - `createBrand`: 총 관리자(`brandAdmins/{uid}.isActive == true`)만 새 브랜드를 생성한다.
-- `updateBrand`: 브랜드 owner/admin 또는 총 관리자가 브랜드명, 공식 홈페이지 URL, 룩북 목록 URL을 수정한다.
+- `updateBrand`: 브랜드 owner/admin 또는 총 관리자가 브랜드명, 영문 브랜드명, 공식 홈페이지 URL, 룩북 목록 URL을 수정한다.
 - `updateBrand`의 `isFeatured` 변경은 총 관리자만 가능하다.
-- 브랜드명 변경 시 `brandNameIndex/{normalizedName}` 중복 검증과 이전 index 삭제를 transaction에서 처리한다.
+- 브랜드명/영문명 변경 시 `brandNameIndex/{normalizedName}`과 `brandNameIndex/{normalizedEnglishName}` 중복 검증과 이전 index 삭제를 transaction에서 처리한다.
 - `updateBrandLogoPaths`: 브랜드 owner/admin 또는 총 관리자가 Storage 업로드 후 로고 경로를 반영한다.
-- `addBrandManager`: normalized email로 `users.email`을 조회해 `brands/{brandID}.ownerUIDs/adminUIDs`를 갱신한다.
-- `removeBrandManager`: normalized email로 `users.email`을 조회해 owner/admin 권한을 제거한다.
+- `addBrandManager`: normalized email로 `users.email`을 조회해 `brands/{brandID}/admins/{uid}` 문서를 생성/갱신한다.
+- `removeBrandManager`: normalized email로 `users.email`을 조회해 `brands/{brandID}/admins/{uid}` 문서를 삭제한다.
 - 총 관리자는 owner/admin 모두 추가/삭제할 수 있다.
 - 브랜드 owner는 해당 브랜드 admin만 추가/삭제할 수 있고 owner 추가/삭제는 할 수 없다.
 - 브랜드 admin은 관리자 추가/삭제 권한을 갖지 않는다.
@@ -165,7 +165,7 @@ curl -sS \
   - `create/update/delete`: 본인만 허용.
 - Lookbook `brands/{brandID}/...`
   - `get`: 로그인 사용자 허용.
-  - `create/update/delete`: Firestore `brands/{brandID}.ownerUIDs/adminUIDs` 기반 write 권한 사용자만 허용.
+  - `create/update/delete`: 총 관리자 또는 Firestore `brands/{brandID}/admins/{uid}.role in ["owner", "admin"]` 기반 write 권한 사용자만 허용.
 - legacy prefix는 기본 deny한다.
 - 로컬 검증:
 
