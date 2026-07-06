@@ -30,19 +30,30 @@ service firebase.storage {
       return /databases/(default)/documents/brands/$(brandID);
     }
 
+    function totalBrandAdminPath(uid) {
+      return /databases/(default)/documents/brandAdmins/$(uid);
+    }
+
+    function isTotalBrandAdmin() {
+      return signedIn()
+        && firestore.exists(totalBrandAdminPath(request.auth.uid))
+        && firestore.get(totalBrandAdminPath(request.auth.uid)).data.isActive == true;
+    }
+
+    function brandManagerPath(brandID, uid) {
+      return /databases/(default)/documents/brands/$(brandID)/admins/$(uid);
+    }
+
+    function hasBrandManagerAccess(brandID) {
+      return signedIn()
+        && firestore.exists(brandManagerPath(brandID, request.auth.uid))
+        && firestore.get(brandManagerPath(brandID, request.auth.uid)).data.role in ["owner", "admin"];
+    }
+
     function hasBrandWriteAccess(brandID) {
       return signedIn()
         && firestore.exists(brandPath(brandID))
-        && (
-          (
-            firestore.get(brandPath(brandID)).data.ownerUIDs is list
-            && firestore.get(brandPath(brandID)).data.ownerUIDs.hasAny([request.auth.uid])
-          )
-          || (
-            firestore.get(brandPath(brandID)).data.adminUIDs is list
-            && firestore.get(brandPath(brandID)).data.adminUIDs.hasAny([request.auth.uid])
-          )
-        );
+        && (isTotalBrandAdmin() || hasBrandManagerAccess(brandID));
     }
 
     function isImageUpload(maxBytes) {

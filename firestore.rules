@@ -10,23 +10,30 @@ service cloud.firestore {
       return /databases/$(database)/documents/brands/$(brandID);
     }
 
-    function brandData(brandID) {
-      return get(brandPath(brandID)).data;
+    function totalBrandAdminPath(uid) {
+      return /databases/$(database)/documents/brandAdmins/$(uid);
+    }
+
+    function isTotalBrandAdmin() {
+      return signedIn()
+        && exists(totalBrandAdminPath(request.auth.uid))
+        && get(totalBrandAdminPath(request.auth.uid)).data.isActive == true;
+    }
+
+    function brandManagerPath(brandID, uid) {
+      return /databases/$(database)/documents/brands/$(brandID)/admins/$(uid);
+    }
+
+    function hasBrandManagerAccess(brandID) {
+      return signedIn()
+        && exists(brandManagerPath(brandID, request.auth.uid))
+        && get(brandManagerPath(brandID, request.auth.uid)).data.role in ["owner", "admin"];
     }
 
     function hasBrandWriteAccess(brandID) {
       return signedIn()
         && exists(brandPath(brandID))
-        && (
-          (
-            brandData(brandID).ownerUIDs is list
-            && brandData(brandID).ownerUIDs.hasAny([request.auth.uid])
-          )
-          || (
-            brandData(brandID).adminUIDs is list
-            && brandData(brandID).adminUIDs.hasAny([request.auth.uid])
-          )
-        );
+        && (isTotalBrandAdmin() || hasBrandManagerAccess(brandID));
     }
 
     function roomPath(roomID) {
@@ -157,6 +164,10 @@ service cloud.firestore {
     match /brands/{brandID} {
       allow read: if true;
       allow create, update, delete: if false;
+
+      match /admins/{adminID} {
+        allow read, write: if false;
+      }
 
       match /seasons/{seasonID} {
         allow read: if true;

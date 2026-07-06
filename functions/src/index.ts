@@ -201,12 +201,16 @@ function commentReportDocumentID(
 }
 
 function hasBrandWriteAccessData(
-  uid: string,
   data: FirebaseFirestore.DocumentData | undefined
 ): boolean {
-  const ownerUIDs = stringList(data?.ownerUIDs);
-  const adminUIDs = stringList(data?.adminUIDs);
-  return ownerUIDs.includes(uid) || adminUIDs.includes(uid);
+  const role = typeof data?.role === "string" ? data.role : "";
+  return role === "owner" || role === "admin";
+}
+
+function isBrandOwnerData(
+  data: FirebaseFirestore.DocumentData | undefined
+): boolean {
+  return data?.role === "owner";
 }
 
 function numericMetric(value: unknown): number {
@@ -755,6 +759,13 @@ function brandRequestGroupSummary(
     resolvedBrandID: typeof data?.resolvedBrandID === "string" ?
       data.resolvedBrandID :
       null,
+    createdBrandID: typeof data?.createdBrandID === "string" ?
+      data.createdBrandID :
+      null,
+    brandCreatedAt: timestampToISO(data?.brandCreatedAt),
+    brandCreatedBy: typeof data?.brandCreatedBy === "string" ?
+      data.brandCreatedBy :
+      null,
     adminNote: typeof data?.adminNote === "string" ? data.adminNote : null,
     lastRequestID: typeof data?.lastRequestID === "string" ?
       data.lastRequestID :
@@ -776,6 +787,9 @@ function brandSearchSummary(
   return {
     brandID,
     name: typeof data?.name === "string" ? data.name : "",
+    englishName: typeof data?.englishName === "string" ?
+      data.englishName :
+      null,
     websiteURL: typeof data?.websiteURL === "string" ? data.websiteURL : null,
     lookbookArchiveURL: typeof data?.lookbookArchiveURL === "string" ?
       data.lookbookArchiveURL :
@@ -806,6 +820,23 @@ function brandSearchSummary(
     },
     updatedAt: timestampToISO(data?.updatedAt),
   };
+}
+
+function brandNameIndexEntries(
+  normalizedName: string,
+  normalizedEnglishName: string | null
+): {key: string; source: "name" | "englishName"}[] {
+  const entries: {key: string; source: "name" | "englishName"}[] = [
+    {key: normalizedName, source: "name"},
+  ];
+  if (
+    normalizedEnglishName !== null &&
+    normalizedEnglishName.length > 0 &&
+    normalizedEnglishName !== normalizedName
+  ) {
+    entries.push({key: normalizedEnglishName, source: "englishName"});
+  }
+  return entries;
 }
 
 function spamLimitPatch(
@@ -1442,18 +1473,18 @@ async function assertBrandWriteAccess(
   brandID: string
 ): Promise<void> {
   const brandRef = db.collection("brands").doc(brandID);
-  const brandSnap = await brandRef.get();
+  const adminRef = brandRef.collection("admins").doc(uid);
+  const [brandSnap, totalAdmin, adminSnap] = await Promise.all([
+    brandRef.get(),
+    isTotalBrandAdmin(uid),
+    adminRef.get(),
+  ]);
 
   if (!brandSnap.exists) {
     throw new HttpsError("not-found", "브랜드를 찾을 수 없습니다.");
   }
 
-  const data = brandSnap.data();
-  const ownerUIDs = stringList(data?.ownerUIDs);
-  const adminUIDs = stringList(data?.adminUIDs);
-  const hasAccess = ownerUIDs.includes(uid) || adminUIDs.includes(uid);
-
-  if (!hasAccess) {
+  if (!totalAdmin && !hasBrandWriteAccessData(adminSnap.data())) {
     throw new HttpsError("permission-denied", "브랜드 수정 권한이 없습니다.");
   }
 }
@@ -1464,22 +1495,60 @@ async function assertBrandWriteAccess(
 async function brandAdminCapabilities(uid: string): Promise<{
   isTotalAdmin: boolean;
   roles: string[];
+  ownedBrandIDs: string[];
+  adminBrandIDs: string[];
 }> {
   const adminRef = db.collection("brandAdmins").doc(uid);
   const adminSnap = await adminRef.get();
+  const adminData = adminSnap.data();
+  const roles = stringList(adminData?.roles);
+  const isTotalAdmin = adminSnap.exists && adminData?.isActive === true;
+
+  if (isTotalAdmin) {
+    return {
+      isTotalAdmin: true,
+      roles,
+      ownedBrandIDs: [],
+      adminBrandIDs: [],
+    };
+  }
+
+  const brandManagersSnap = await db
+    .collectionGroup("admins")
+    .where("uid", "==", uid)
+    .get();
+
+  const ownedBrandIDs: string[] = [];
+  const adminBrandIDs: string[] = [];
+  brandManagersSnap.docs.forEach((doc) => {
+    const data = doc.data();
+    const brandID = typeof data.brandID === "string" ?
+      data.brandID :
+      doc.ref.parent.parent?.id ?? "";
+    if (brandID.length === 0) {
+      return;
+    }
+    if (data.role === "owner") {
+      ownedBrandIDs.push(brandID);
+    } else if (data.role === "admin") {
+      adminBrandIDs.push(brandID);
+    }
+  });
+
   if (!adminSnap.exists) {
     return {
       isTotalAdmin: false,
       roles: [],
+      ownedBrandIDs,
+      adminBrandIDs,
     };
   }
 
-  const data = adminSnap.data();
-  const roles = stringList(data?.roles);
-
   return {
-    isTotalAdmin: data?.isActive === true,
+    isTotalAdmin: false,
     roles,
+    ownedBrandIDs,
+    adminBrandIDs,
   };
 }
 
@@ -1602,6 +1671,8 @@ export const getBrandAdminCapabilities = onCall(
     return {
       isTotalAdmin: capabilities.isTotalAdmin,
       roles: capabilities.roles,
+      ownedBrandIDs: capabilities.ownedBrandIDs,
+      adminBrandIDs: capabilities.adminBrandIDs,
     };
   }
 );
@@ -1832,7 +1903,6 @@ export const listMyBrandRequests = onCall(
       throw new HttpsError("invalid-argument", "cursor 값이 올바르지 않습니다.");
     }
 
-    const now = new Date();
     const pageSize = limit * 3;
     let query: FirebaseFirestore.Query = db
       .collection("brandRequests")
@@ -1876,17 +1946,13 @@ export const listMyBrandRequests = onCall(
         const groupData = groupID ? groupDataByID.get(groupID) : undefined;
         const source = groupData ?? docData;
         const status = source.status;
-        const userVisibleUntil = source.userVisibleUntil;
         const isInProgress = status === "submitted" || status === "reviewing";
         const isResolved = status === "added" || status === "rejected";
-        const isRecentlyVisible =
-          userVisibleUntil instanceof admin.firestore.Timestamp &&
-          userVisibleUntil.toDate().getTime() > now.getTime();
 
         if (scope === "active") {
-          return isInProgress || (isResolved && isRecentlyVisible);
+          return isInProgress;
         }
-        return isResolved && !isRecentlyVisible;
+        return isResolved;
       })
       .slice(0, limit)
       .map((doc) => {
@@ -2276,6 +2342,84 @@ export const resolveBrandRequestGroup = onCall(
   }
 );
 
+export const markBrandRequestGroupBrandCreated = onCall(
+  {region: FUNCTIONS_REGION},
+  async (request) => {
+    const uid = requiredAuthUID(request.auth?.uid);
+    await assertOutPickAdmin(uid);
+
+    const data = recordData(request.data);
+    const groupID = requiredDocumentID(
+      requiredString(data, "groupID", 256),
+      "groupID"
+    );
+    const createdBrandID = requiredDocumentID(
+      requiredString(data, "createdBrandID", 128),
+      "createdBrandID"
+    );
+
+    const groupRef = db.collection("brandRequestNameIndex").doc(groupID);
+    const brandRef = db.collection("brands").doc(createdBrandID);
+
+    return await db.runTransaction(async (transaction) => {
+      const [groupSnap, brandSnap] = await Promise.all([
+        transaction.get(groupRef),
+        transaction.get(brandRef),
+      ]);
+
+      if (!groupSnap.exists) {
+        throw new HttpsError("not-found", "브랜드 요청 그룹을 찾을 수 없습니다.");
+      }
+      if (!brandSnap.exists) {
+        throw new HttpsError("not-found", "브랜드를 찾을 수 없습니다.");
+      }
+
+      const groupData = groupSnap.data();
+      const adminStage = typeof groupData?.adminStage === "string" ?
+        groupData.adminStage :
+        "requested";
+      if (adminStage !== "processing") {
+        throw new HttpsError(
+          "failed-precondition",
+          "처리 중인 브랜드 요청 그룹만 생성 브랜드를 연결할 수 있습니다."
+        );
+      }
+
+      const existingCreatedBrandID =
+        typeof groupData?.createdBrandID === "string" ?
+          groupData.createdBrandID :
+          null;
+      if (
+        existingCreatedBrandID !== null &&
+        existingCreatedBrandID !== createdBrandID
+      ) {
+        throw new HttpsError(
+          "already-exists",
+          "이미 다른 브랜드가 생성된 요청 그룹입니다."
+        );
+      }
+
+      const now = admin.firestore.Timestamp.fromDate(new Date());
+      transaction.update(groupRef, {
+        createdBrandID,
+        brandCreatedAt: groupData?.brandCreatedAt ?? now,
+        brandCreatedBy: groupData?.brandCreatedBy ?? uid,
+        updatedAt: now,
+      });
+
+      return {
+        groupID,
+        status: typeof groupData?.status === "string" ?
+          groupData.status :
+          "reviewing",
+        adminStage,
+        createdBrandID,
+        updatedRequestCount: numericRootValue(groupData, "requestCount"),
+      };
+    });
+  }
+);
+
 export const resolveBrandRequest = onCall(
   {region: FUNCTIONS_REGION},
   async (request) => {
@@ -2348,18 +2492,36 @@ export const searchBrands = onCall(
       BRAND_SEARCH_MAX_LIMIT
     );
 
-    const snapshot = await db
-      .collection("brands")
-      .orderBy("normalizedName")
-      .startAt(query)
-      .endAt(`${query}\uf8ff`)
-      .limit(limit)
-      .get();
+    const [nameSnapshot, englishNameSnapshot] = await Promise.all([
+      db
+        .collection("brands")
+        .orderBy("normalizedName")
+        .startAt(query)
+        .endAt(`${query}\uf8ff`)
+        .limit(limit)
+        .get(),
+      db
+        .collection("brands")
+        .orderBy("normalizedEnglishName")
+        .startAt(query)
+        .endAt(`${query}\uf8ff`)
+        .limit(limit)
+        .get(),
+    ]);
+
+    const brands = new Map<string, Record<string, unknown>>();
+    for (const doc of [...nameSnapshot.docs, ...englishNameSnapshot.docs]) {
+      if (brands.has(doc.id)) {
+        continue;
+      }
+      brands.set(doc.id, brandSearchSummary(doc.id, doc.data()));
+      if (brands.size >= limit) {
+        break;
+      }
+    }
 
     return {
-      brands: snapshot.docs.map((doc) =>
-        brandSearchSummary(doc.id, doc.data())
-      ),
+      brands: Array.from(brands.values()),
       query,
     };
   }
@@ -2373,6 +2535,13 @@ export const createBrand = onCall(
 
     const name = canonicalBrandName(requiredString(data, "name", 80));
     const normalizedName = normalizedBrandName(name);
+    const englishNameInput = optionalString(data, "englishName", 80);
+    const englishName = englishNameInput === null ?
+      null :
+      canonicalBrandName(englishNameInput);
+    const normalizedEnglishName = englishName === null ?
+      null :
+      normalizedBrandName(englishName);
     const isFeatured = data.isFeatured === true;
     const websiteURLInput = optionalString(data, "websiteURL", 2048);
     const websiteURL = websiteURLInput ?
@@ -2391,17 +2560,27 @@ export const createBrand = onCall(
 
     const brandRef = db.collection("brands").doc();
     const brandID = brandRef.id;
-    const nameIndexRef = db.collection("brandNameIndex").doc(normalizedName);
+    const nameIndexEntries = brandNameIndexEntries(
+      normalizedName,
+      normalizedEnglishName
+    );
+    const nameIndexRefs = nameIndexEntries.map((entry) =>
+      db.collection("brandNameIndex").doc(entry.key)
+    );
 
     await db.runTransaction(async (transaction) => {
-      const nameIndexSnap = await transaction.get(nameIndexRef);
-      if (nameIndexSnap.exists) {
+      const nameIndexSnaps = await Promise.all(
+        nameIndexRefs.map((ref) => transaction.get(ref))
+      );
+      if (nameIndexSnaps.some((snap) => snap.exists)) {
         throw new HttpsError("already-exists", "이미 존재하는 브랜드명입니다.");
       }
 
       transaction.set(brandRef, {
         name,
         normalizedName,
+        englishName,
+        normalizedEnglishName,
         websiteURL,
         lookbookArchiveURL,
         logoPath: null,
@@ -2418,18 +2597,22 @@ export const createBrand = onCall(
         popularScore: 0,
         createdBy: uid,
         updatedBy: uid,
-        ownerUIDs: [uid],
-        adminUIDs: [],
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       });
 
-      transaction.set(nameIndexRef, {
-        brandID,
-        name,
-        normalizedName,
-        createdBy: uid,
-        createdAt: FieldValue.serverTimestamp(),
+      nameIndexRefs.forEach((ref, index) => {
+        const entry = nameIndexEntries[index];
+        transaction.set(ref, {
+          brandID,
+          name,
+          normalizedName,
+          englishName,
+          normalizedEnglishName,
+          source: entry.source,
+          createdBy: uid,
+          createdAt: FieldValue.serverTimestamp(),
+        });
       });
     });
 
@@ -2452,6 +2635,19 @@ export const updateBrand = onCall(
       canonicalBrandName(requiredString(data, "name", 80)) :
       null;
     const normalizedName = name === null ? null : normalizedBrandName(name);
+    const hasEnglishNamePatch = Object.prototype.hasOwnProperty.call(
+      data,
+      "englishName"
+    );
+    const englishNamePatch = hasEnglishNamePatch ?
+      optionalString(data, "englishName", 80) :
+      null;
+    const englishName = !hasEnglishNamePatch || englishNamePatch === null ?
+      null :
+      canonicalBrandName(englishNamePatch);
+    const normalizedEnglishName = !hasEnglishNamePatch || englishName === null ?
+      null :
+      normalizedBrandName(englishName);
     const websiteURL = optionalHTTPURLPatch(data, "websiteURL");
     const lookbookArchiveURL = optionalHTTPURLPatch(data, "lookbookArchiveURL");
     const hasFeaturedPatch = hasBooleanPatch(data, "isFeatured");
@@ -2461,6 +2657,7 @@ export const updateBrand = onCall(
 
     if (
       !hasNamePatch &&
+      !hasEnglishNamePatch &&
       websiteURL === undefined &&
       lookbookArchiveURL === undefined &&
       !hasFeaturedPatch
@@ -2474,6 +2671,7 @@ export const updateBrand = onCall(
     }
 
     const brandRef = db.collection("brands").doc(brandID);
+    const managerRef = brandRef.collection("admins").doc(uid);
 
     await db.runTransaction(async (transaction) => {
       const brandSnap = await transaction.get(brandRef);
@@ -2482,8 +2680,11 @@ export const updateBrand = onCall(
       }
 
       const brandData = brandSnap.data();
-      const hasWriteAccess = isTotalAdmin ||
-        hasBrandWriteAccessData(uid, brandData);
+      let hasWriteAccess = isTotalAdmin;
+      if (!hasWriteAccess) {
+        const managerSnap = await transaction.get(managerRef);
+        hasWriteAccess = hasBrandWriteAccessData(managerSnap.data());
+      }
       if (!hasWriteAccess) {
         throw new HttpsError("permission-denied", "브랜드 수정 권한이 없습니다.");
       }
@@ -2493,42 +2694,93 @@ export const updateBrand = onCall(
         updatedAt: FieldValue.serverTimestamp(),
       };
 
-      if (name !== null && normalizedName !== null) {
+      if (
+        (hasNamePatch && name !== null && normalizedName !== null) ||
+        hasEnglishNamePatch
+      ) {
+        const nextName = name ?? (
+          typeof brandData?.name === "string" ? brandData.name : ""
+        );
+        const nextNormalizedName = normalizedName ?? (
+          typeof brandData?.normalizedName === "string" ?
+            brandData.normalizedName :
+            normalizedBrandName(nextName)
+        );
+        const nextEnglishName = hasEnglishNamePatch ?
+          englishName :
+          (typeof brandData?.englishName === "string" ?
+            brandData.englishName :
+            null);
+        const nextNormalizedEnglishName = hasEnglishNamePatch ?
+          normalizedEnglishName :
+          (typeof brandData?.normalizedEnglishName === "string" ?
+            brandData.normalizedEnglishName :
+            null);
         const previousNormalizedName =
           typeof brandData?.normalizedName === "string" ?
             brandData.normalizedName :
             "";
+        const previousNormalizedEnglishName =
+          typeof brandData?.normalizedEnglishName === "string" ?
+            brandData.normalizedEnglishName :
+            null;
+        const previousIndexKeys = new Set(
+          brandNameIndexEntries(
+            previousNormalizedName,
+            previousNormalizedEnglishName
+          ).map((entry) => entry.key)
+        );
+        const nextIndexEntries = brandNameIndexEntries(
+          nextNormalizedName,
+          nextNormalizedEnglishName
+        );
+        const nextIndexKeys = new Set(
+          nextIndexEntries.map((entry) => entry.key)
+        );
+        const refsToCheck = nextIndexEntries
+          .filter((entry) => !previousIndexKeys.has(entry.key))
+          .map((entry) => db.collection("brandNameIndex").doc(entry.key));
+        const newNameIndexSnaps = await Promise.all(
+          refsToCheck.map((ref) => transaction.get(ref))
+        );
+        if (
+          newNameIndexSnaps.some((snap) =>
+            snap.exists && snap.get("brandID") !== brandID
+          )
+        ) {
+          throw new HttpsError("already-exists", "이미 존재하는 브랜드명입니다.");
+        }
 
-        if (normalizedName !== previousNormalizedName) {
-          const newNameIndexRef = db
-            .collection("brandNameIndex")
-            .doc(normalizedName);
-          const newNameIndexSnap = await transaction.get(newNameIndexRef);
-          if (
-            newNameIndexSnap.exists &&
-            newNameIndexSnap.get("brandID") !== brandID
-          ) {
-            throw new HttpsError("already-exists", "이미 존재하는 브랜드명입니다.");
+        for (const previousKey of previousIndexKeys) {
+          if (!nextIndexKeys.has(previousKey)) {
+            transaction.delete(
+              db.collection("brandNameIndex").doc(previousKey)
+            );
           }
+        }
 
-          if (previousNormalizedName.length > 0) {
-            const previousNameIndexRef = db
-              .collection("brandNameIndex")
-              .doc(previousNormalizedName);
-            transaction.delete(previousNameIndexRef);
-          }
-
-          transaction.set(newNameIndexRef, {
+        for (const entry of nextIndexEntries) {
+          const indexRef = db.collection("brandNameIndex").doc(entry.key);
+          transaction.set(indexRef, {
             brandID,
-            name,
-            normalizedName,
+            name: nextName,
+            normalizedName: nextNormalizedName,
+            englishName: nextEnglishName,
+            normalizedEnglishName: nextNormalizedEnglishName,
+            source: entry.source,
             updatedBy: uid,
             updatedAt: FieldValue.serverTimestamp(),
           }, {merge: true});
         }
 
-        patch.name = name;
-        patch.normalizedName = normalizedName;
+        if (hasNamePatch && name !== null && normalizedName !== null) {
+          patch.name = name;
+          patch.normalizedName = normalizedName;
+        }
+        if (hasEnglishNamePatch) {
+          patch.englishName = englishName;
+          patch.normalizedEnglishName = normalizedEnglishName;
+        }
       }
 
       if (websiteURL !== undefined) {
@@ -2567,6 +2819,8 @@ export const addBrandManager = onCall(
     const targetUID = await findUserIDByEmail(email);
     const isTotalAdmin = await isTotalBrandAdmin(uid);
     const brandRef = db.collection("brands").doc(brandID);
+    const callerManagerRef = brandRef.collection("admins").doc(uid);
+    const targetManagerRef = brandRef.collection("admins").doc(targetUID);
 
     const result = await db.runTransaction(async (transaction) => {
       const brandSnap = await transaction.get(brandRef);
@@ -2574,10 +2828,11 @@ export const addBrandManager = onCall(
         throw new HttpsError("not-found", "브랜드를 찾을 수 없습니다.");
       }
 
-      const brandData = brandSnap.data();
-      const ownerUIDs = stringList(brandData?.ownerUIDs);
-      const adminUIDs = stringList(brandData?.adminUIDs);
-      const callerIsOwner = ownerUIDs.includes(uid);
+      let callerIsOwner = false;
+      if (!isTotalAdmin) {
+        const callerManagerSnap = await transaction.get(callerManagerRef);
+        callerIsOwner = isBrandOwnerData(callerManagerSnap.data());
+      }
 
       if (!isTotalAdmin) {
         if (!callerIsOwner) {
@@ -2588,26 +2843,53 @@ export const addBrandManager = onCall(
         }
       }
 
-      const nextOwnerUIDs = new Set(ownerUIDs);
-      const nextAdminUIDs = new Set(adminUIDs);
-      let duplicate = false;
+      const targetManagerSnap = await transaction.get(targetManagerRef);
+      const currentRole =
+        typeof targetManagerSnap.data()?.role === "string" ?
+          targetManagerSnap.data()?.role :
+          null;
+      let duplicate = currentRole === role;
 
       if (role === "owner") {
-        duplicate = nextOwnerUIDs.has(targetUID);
-        nextOwnerUIDs.add(targetUID);
-        nextAdminUIDs.delete(targetUID);
+        transaction.set(targetManagerRef, {
+          uid: targetUID,
+          brandID,
+          role,
+          email,
+          normalizedEmail: email,
+          addedBy: targetManagerSnap.exists ?
+            targetManagerSnap.data()?.addedBy ?? uid :
+            uid,
+          addedAt: targetManagerSnap.exists ?
+            targetManagerSnap.data()?.addedAt ?? FieldValue.serverTimestamp() :
+            FieldValue.serverTimestamp(),
+          updatedBy: uid,
+          updatedAt: FieldValue.serverTimestamp(),
+        }, {merge: true});
       } else {
-        duplicate = nextAdminUIDs.has(targetUID);
-        if (!nextOwnerUIDs.has(targetUID)) {
-          nextAdminUIDs.add(targetUID);
-        } else {
+        if (currentRole === "owner") {
           duplicate = true;
+        } else {
+          transaction.set(targetManagerRef, {
+            uid: targetUID,
+            brandID,
+            role,
+            email,
+            normalizedEmail: email,
+            addedBy: targetManagerSnap.exists ?
+              targetManagerSnap.data()?.addedBy ?? uid :
+              uid,
+            addedAt: targetManagerSnap.exists ?
+              targetManagerSnap.data()?.addedAt ??
+                FieldValue.serverTimestamp() :
+              FieldValue.serverTimestamp(),
+            updatedBy: uid,
+            updatedAt: FieldValue.serverTimestamp(),
+          }, {merge: true});
         }
       }
 
       transaction.update(brandRef, {
-        ownerUIDs: Array.from(nextOwnerUIDs),
-        adminUIDs: Array.from(nextAdminUIDs),
         updatedBy: uid,
         updatedAt: FieldValue.serverTimestamp(),
       });
@@ -2640,6 +2922,8 @@ export const removeBrandManager = onCall(
     const targetUID = await findUserIDByEmail(email);
     const isTotalAdmin = await isTotalBrandAdmin(uid);
     const brandRef = db.collection("brands").doc(brandID);
+    const callerManagerRef = brandRef.collection("admins").doc(uid);
+    const targetManagerRef = brandRef.collection("admins").doc(targetUID);
 
     const result = await db.runTransaction(async (transaction) => {
       const brandSnap = await transaction.get(brandRef);
@@ -2647,10 +2931,11 @@ export const removeBrandManager = onCall(
         throw new HttpsError("not-found", "브랜드를 찾을 수 없습니다.");
       }
 
-      const brandData = brandSnap.data();
-      const ownerUIDs = stringList(brandData?.ownerUIDs);
-      const adminUIDs = stringList(brandData?.adminUIDs);
-      const callerIsOwner = ownerUIDs.includes(uid);
+      let callerIsOwner = false;
+      if (!isTotalAdmin) {
+        const callerManagerSnap = await transaction.get(callerManagerRef);
+        callerIsOwner = isBrandOwnerData(callerManagerSnap.data());
+      }
 
       if (!isTotalAdmin) {
         if (!callerIsOwner) {
@@ -2661,25 +2946,39 @@ export const removeBrandManager = onCall(
         }
       }
 
-      const nextOwnerUIDs = new Set(ownerUIDs);
-      const nextAdminUIDs = new Set(adminUIDs);
+      const targetManagerSnap = await transaction.get(targetManagerRef);
+      const currentRole =
+        typeof targetManagerSnap.data()?.role === "string" ?
+          targetManagerSnap.data()?.role :
+          null;
       let removed = false;
 
-      if (role === "owner") {
-        removed = nextOwnerUIDs.delete(targetUID);
-        if (removed && nextOwnerUIDs.size === 0) {
+      if (currentRole === role) {
+        removed = true;
+      }
+
+      if (removed && role === "owner") {
+        const ownerQuerySnap = await transaction.get(
+          brandRef.collection("admins")
+            .where("role", "==", "owner")
+            .limit(2)
+        );
+        const hasOtherOwner = ownerQuerySnap.docs.some((doc) => {
+          return doc.id !== targetUID;
+        });
+        if (!hasOtherOwner) {
           throw new HttpsError(
             "failed-precondition",
             "마지막 owner는 삭제할 수 없습니다."
           );
         }
-      } else {
-        removed = nextAdminUIDs.delete(targetUID);
+      }
+
+      if (removed) {
+        transaction.delete(targetManagerRef);
       }
 
       transaction.update(brandRef, {
-        ownerUIDs: Array.from(nextOwnerUIDs),
-        adminUIDs: Array.from(nextAdminUIDs),
         updatedBy: uid,
         updatedAt: FieldValue.serverTimestamp(),
       });
@@ -3280,9 +3579,11 @@ export const deleteComment = onCall(
     const reason = optionalString(data, "reason", 500);
 
     const brandRef = db.collection("brands").doc(brandID);
+    const managerRef = brandRef.collection("admins").doc(uid);
     const postRef = lookbookPostDocument(brandID, seasonID, postID);
     const commentRef = postRef.collection("comments").doc(commentID);
     const deletionLogRef = db.collection("commentDeletionLogs").doc();
+    const isTotalAdmin = await isTotalBrandAdmin(uid);
 
     return await db.runTransaction(async (transaction) => {
       const brandSnap = await transaction.get(brandRef);
@@ -3311,8 +3612,11 @@ export const deleteComment = onCall(
         throw new HttpsError("failed-precondition", "댓글 작성자 정보가 없습니다.");
       }
 
-      const canDelete =
-        authorID === uid || hasBrandWriteAccessData(uid, brandSnap.data());
+      let canDelete = authorID === uid || isTotalAdmin;
+      if (!canDelete) {
+        const managerSnap = await transaction.get(managerRef);
+        canDelete = hasBrandWriteAccessData(managerSnap.data());
+      }
       if (!canDelete) {
         throw new HttpsError("permission-denied", "댓글 삭제 권한이 없습니다.");
       }
