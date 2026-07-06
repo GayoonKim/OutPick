@@ -9,6 +9,8 @@ DerivedData/
 # SwiftPM / build artifacts
 .build/
 build/
+output/
+tmp/
 
 # Firebase / local secrets
 **/GoogleService-Info*.plist

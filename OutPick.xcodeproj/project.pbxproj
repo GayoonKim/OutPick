@@ -50,9 +50,7 @@
 		056270932E217A70000F3613 /* Exceptions for "OutPick" folder in "OutPick" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				.firebaserc,
 				.gitignore,
-				firebase.json,
 				Info.plist,
 				node_modules,
 			);
