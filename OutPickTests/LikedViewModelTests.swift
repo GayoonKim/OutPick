@@ -502,6 +502,7 @@ struct LikedViewModelTests {
         Brand(
             id: id,
             name: "Brand \(id.value)",
+            englishName: nil,
             websiteURL: nil,
             lookbookArchiveURL: nil,
             logoThumbPath: nil,

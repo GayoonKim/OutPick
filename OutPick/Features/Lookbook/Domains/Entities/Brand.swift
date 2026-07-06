@@ -19,6 +19,7 @@ enum BrandDiscoveryStatus: String, Codable, CaseIterable, Equatable {
 struct Brand: Equatable, Codable, Identifiable {
     var id: BrandID
     var name: String
+    var englishName: String?
     var websiteURL: String?
     var lookbookArchiveURL: String?
 

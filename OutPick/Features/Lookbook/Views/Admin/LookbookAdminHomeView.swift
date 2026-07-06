@@ -92,20 +92,20 @@ struct LookbookAdminHomeView: View {
         Button(action: action) {
             HStack(spacing: 14) {
                 Image(systemName: systemImage)
-                    .font(.system(size: 16, weight: .bold))
+                    .font(.system(size: 20, weight: .bold))
                     .foregroundStyle(OutPickTheme.SwiftUIColor.accent)
-                    .frame(width: 38, height: 38)
+                    .frame(width: 48, height: 48)
                     .background(OutPickTheme.SwiftUIColor.surfaceElevated)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text(title)
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.system(size: 19, weight: .semibold))
                         .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
                         .lineLimit(1)
 
                     Text(subtitle)
-                        .font(.footnote)
+                        .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
@@ -114,10 +114,10 @@ struct LookbookAdminHomeView: View {
                 Spacer(minLength: 12)
 
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .bold))
+                    .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(OutPickTheme.SwiftUIColor.iconSecondary)
             }
-            .padding(14)
+            .padding(18)
             .background(OutPickTheme.SwiftUIColor.surfaceBase)
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(

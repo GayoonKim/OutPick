@@ -43,6 +43,7 @@ final class LookbookContainer {
     private let listBrandRequestGroupsUseCase: any ListBrandRequestGroupsUseCaseProtocol
     private let updateBrandRequestGroupStageUseCase: any UpdateBrandRequestGroupStageUseCaseProtocol
     private let resolveBrandRequestGroupUseCase: any ResolveBrandRequestGroupUseCaseProtocol
+    private let markBrandRequestGroupBrandCreatedUseCase: any MarkBrandRequestGroupBrandCreatedUseCaseProtocol
     private var loadShareableJoinedRoomsUseCase: (any LoadShareableJoinedRoomsUseCaseProtocol)?
     private var shareLookbookContentToChatUseCase: (any ShareLookbookContentToChatUseCaseProtocol)?
     private var roomImageManager: (any RoomImageManaging)?
@@ -129,6 +130,9 @@ final class LookbookContainer {
             repository: provider.brandRequestRepository
         )
         self.resolveBrandRequestGroupUseCase = ResolveBrandRequestGroupUseCase(
+            repository: provider.brandRequestRepository
+        )
+        self.markBrandRequestGroupBrandCreatedUseCase = MarkBrandRequestGroupBrandCreatedUseCase(
             repository: provider.brandRequestRepository
         )
         self.lookbookHomeViewModel = LookbookHomeViewModel(
@@ -269,10 +273,15 @@ final class LookbookContainer {
             viewModel: AdminBrandRequestGroupsViewModel(
                 listUseCase: listBrandRequestGroupsUseCase,
                 updateUseCase: updateBrandRequestGroupStageUseCase,
-                resolveUseCase: resolveBrandRequestGroupUseCase
+                resolveUseCase: resolveBrandRequestGroupUseCase,
+                markCreatedUseCase: markBrandRequestGroupBrandCreatedUseCase
             ),
-            createBrandFlowFactory: { [self] onCreatedBrand in
-                AnyView(self.makeCreateBrandFlow(onCreatedBrand: onCreatedBrand))
+            createBrandFlowFactory: { [self] initialBrandName, initialEnglishName, onCreatedBrand in
+                AnyView(self.makeCreateBrandFlow(
+                    initialBrandName: initialBrandName,
+                    initialEnglishName: initialEnglishName,
+                    onCreatedBrand: onCreatedBrand
+                ))
             },
             coordinator: coordinator
         )
@@ -346,10 +355,14 @@ final class LookbookContainer {
     }
 
     func makeCreateBrandFlow(
+        initialBrandName: String? = nil,
+        initialEnglishName: String? = nil,
         onCreatedBrand: @escaping (BrandID) -> Void
     ) -> some View {
         CreateBrandFlowView(
             provider: provider,
+            initialBrandName: initialBrandName,
+            initialEnglishName: initialEnglishName,
             onFinished: { createdBrandID in
                 guard let createdBrandID else { return }
                 onCreatedBrand(createdBrandID)
@@ -471,6 +484,7 @@ final class LookbookContainer {
             createdBrand: CreateBrandViewModel.CreatedBrand(
                 id: brand.id,
                 name: brand.name,
+                englishName: brand.englishName,
                 websiteURL: brand.websiteURL,
                 lookbookArchiveURL: brand.lookbookArchiveURL,
                 hasLogoAsset: brand.logoThumbPath != nil

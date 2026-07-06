@@ -13,6 +13,7 @@ protocol BrandStoringRepository {
     /// 브랜드를 생성하고 생성된 문서 ID를 반환합니다.
     func createBrand(
         name: String,
+        englishName: String?,
         isFeatured: Bool,
         websiteURL: String?,
         lookbookArchiveURL: String?
@@ -22,6 +23,7 @@ protocol BrandStoringRepository {
     func updateBrand(
         brandID: BrandID,
         name: String,
+        englishName: String?,
         websiteURL: String?,
         lookbookArchiveURL: String?,
         isFeatured: Bool?

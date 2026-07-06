@@ -312,6 +312,7 @@ struct LookbookChatShareUseCaseTests {
         Brand(
             id: BrandID(value: id),
             name: name,
+            englishName: nil,
             websiteURL: nil,
             lookbookArchiveURL: nil,
             logoThumbPath: "brand-thumb.jpg",

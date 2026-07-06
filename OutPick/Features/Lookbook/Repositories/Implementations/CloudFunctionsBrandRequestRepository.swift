@@ -73,4 +73,14 @@ final class CloudFunctionsBrandRequestRepository: BrandRequestRepositoryProtocol
             adminNote: adminNote
         )
     }
+
+    func markBrandRequestGroupBrandCreated(
+        groupID: String,
+        createdBrandID: BrandID
+    ) async throws -> AdminBrandRequestGroupStageUpdateReceipt {
+        try await cloudFunctionsManager.markBrandRequestGroupBrandCreated(
+            groupID: groupID,
+            createdBrandID: createdBrandID
+        )
+    }
 }

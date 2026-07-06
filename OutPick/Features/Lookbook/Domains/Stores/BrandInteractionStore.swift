@@ -131,6 +131,7 @@ private extension Brand {
         Brand(
             id: id,
             name: name,
+            englishName: englishName,
             websiteURL: websiteURL,
             lookbookArchiveURL: lookbookArchiveURL,
             logoThumbPath: logoThumbPath,

@@ -82,6 +82,7 @@ private final class LookbookUITestFixtureStore:
         Brand(
             id: LookbookUITestFixtureRepositoryProviderFactory.brandID,
             name: "UI Test Brand",
+            englishName: nil,
             websiteURL: nil,
             lookbookArchiveURL: nil,
             logoThumbPath: nil,

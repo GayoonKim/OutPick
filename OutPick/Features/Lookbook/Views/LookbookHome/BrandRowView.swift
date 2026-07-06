@@ -37,6 +37,12 @@ struct BrandRowView: View {
                 .font(.headline)
                 .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
 
+            if let englishName = brand.englishName, englishName.isEmpty == false {
+                Text(englishName)
+                    .font(.subheadline)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+            }
+
             HStack(spacing: 10) {
                 likeChip(value: brand.metrics.likeCount) // 좋아요만 표시
                 Spacer(minLength: 0)

@@ -146,9 +146,15 @@ final class LookbookCoordinator {
     }
 
     func makeCreateBrandFlow(
+        initialBrandName: String? = nil,
+        initialEnglishName: String? = nil,
         onCreatedBrand: @escaping (BrandID) -> Void
     ) -> some View {
-        container.makeCreateBrandFlow(onCreatedBrand: onCreatedBrand)
+        container.makeCreateBrandFlow(
+            initialBrandName: initialBrandName,
+            initialEnglishName: initialEnglishName,
+            onCreatedBrand: onCreatedBrand
+        )
     }
 
     private func replaceTopWithMyBrandRequests(initialScope: BrandRequestListScope) {

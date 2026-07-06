@@ -128,6 +128,12 @@ struct AdminBrandManagementView: View {
                                 Text(brand.name)
                                     .font(.subheadline.weight(.semibold))
                                     .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
+                                if let englishName = brand.englishName, englishName.isEmpty == false {
+                                    Text(englishName)
+                                        .font(.caption)
+                                        .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+                                        .lineLimit(1)
+                                }
                                 Text(brand.websiteURL ?? "공식 URL 없음")
                                     .font(.caption)
                                     .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
@@ -202,6 +208,7 @@ struct AdminBrandManagementView: View {
                     .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
 
                 adminTextField(title: "브랜드명", text: $viewModel.brandName)
+                adminTextField(title: "영문 브랜드명", text: $viewModel.englishName)
                 adminTextField(title: "공식 홈페이지 URL", text: $viewModel.websiteURLText)
                 adminTextField(title: "룩북 목록 URL", text: $viewModel.lookbookArchiveURLText)
 

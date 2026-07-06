@@ -18,12 +18,14 @@ struct CloudFunctionsBrandStore: BrandStoringRepository {
 
     func createBrand(
         name: String,
+        englishName: String?,
         isFeatured: Bool,
         websiteURL: String?,
         lookbookArchiveURL: String?
     ) async throws -> String {
         try await cloudFunctionsManager.createBrand(
             name: name,
+            englishName: englishName,
             isFeatured: isFeatured,
             websiteURL: websiteURL,
             lookbookArchiveURL: lookbookArchiveURL
@@ -33,6 +35,7 @@ struct CloudFunctionsBrandStore: BrandStoringRepository {
     func updateBrand(
         brandID: BrandID,
         name: String,
+        englishName: String?,
         websiteURL: String?,
         lookbookArchiveURL: String?,
         isFeatured: Bool?
@@ -40,6 +43,7 @@ struct CloudFunctionsBrandStore: BrandStoringRepository {
         try await cloudFunctionsManager.updateBrand(
             brandID: brandID.value,
             name: name,
+            englishName: englishName,
             websiteURL: websiteURL,
             lookbookArchiveURL: lookbookArchiveURL,
             isFeatured: isFeatured

@@ -15,6 +15,7 @@ final class CreateBrandViewModel: ObservableObject {
     struct CreatedBrand: Equatable {
         let id: BrandID
         let name: String
+        let englishName: String?
         let websiteURL: String?
         let lookbookArchiveURL: String?
         let hasLogoAsset: Bool
@@ -27,6 +28,7 @@ final class CreateBrandViewModel: ObservableObject {
 
     // MARK: - 입력 상태
     @Published var brandName: String = ""
+    @Published var englishName: String = ""
     @Published var websiteURLText: String = ""
     @Published var lookbookArchiveURLText: String = ""
     @Published var selectedLogoImage: UIImage? = nil
@@ -45,6 +47,8 @@ final class CreateBrandViewModel: ObservableObject {
     private var selectedLogoDetailData: Data?
 
     init(
+        initialBrandName: String? = nil,
+        initialEnglishName: String? = nil,
         brandStore: BrandStoringRepository,
         storageService: StorageServiceProtocol,
         thumbnailer: ImageThumbnailing
@@ -52,6 +56,8 @@ final class CreateBrandViewModel: ObservableObject {
         self.brandStore = brandStore
         self.storageService = storageService
         self.thumbnailer = thumbnailer
+        self.brandName = initialBrandName ?? ""
+        self.englishName = initialEnglishName ?? ""
     }
 
     func setPickedLogo(
@@ -78,6 +84,7 @@ final class CreateBrandViewModel: ObservableObject {
             message = "브랜드명을 입력해주세요."
             return nil
         }
+        let rawEnglishName = normalizedDisplayName(englishName)
 
         let websiteURL: String
         let lookbookArchiveURL: String
@@ -105,6 +112,7 @@ final class CreateBrandViewModel: ObservableObject {
                 : lookbookArchiveURL
             let docID = try await brandStore.createBrand(
                 name: rawName,
+                englishName: rawEnglishName.isEmpty ? nil : rawEnglishName,
                 isFeatured: isFeatured,
                 websiteURL: normalizedWebsiteURL,
                 lookbookArchiveURL: normalizedLookbookArchiveURL
@@ -114,6 +122,7 @@ final class CreateBrandViewModel: ObservableObject {
             return CreatedBrand(
                 id: BrandID(value: docID),
                 name: rawName,
+                englishName: rawEnglishName.isEmpty ? nil : rawEnglishName,
                 websiteURL: normalizedWebsiteURL,
                 lookbookArchiveURL: normalizedLookbookArchiveURL,
                 hasLogoAsset: selectedLogoImage != nil

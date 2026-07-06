@@ -18,6 +18,8 @@ struct KakaoFirebaseAuthBridgeResponse {
 struct BrandAdminCapabilitiesResponse {
     let isTotalAdmin: Bool
     let roles: [String]
+    let ownedBrandIDs: [String]
+    let adminBrandIDs: [String]
 }
 
 enum CloudFunctionsManagerError: LocalizedError {
@@ -88,6 +90,7 @@ final class CloudFunctionsManager {
 
     func createBrand(
         name: String,
+        englishName: String?,
         isFeatured: Bool,
         websiteURL: String?,
         lookbookArchiveURL: String?
@@ -96,6 +99,9 @@ final class CloudFunctionsManager {
             "name": name,
             "isFeatured": isFeatured
         ]
+        if let englishName {
+            data["englishName"] = englishName
+        }
         if let websiteURL {
             data["websiteURL"] = websiteURL
         }
@@ -108,34 +114,20 @@ final class CloudFunctionsManager {
     }
 
     func getBrandAdminCapabilities() async throws -> BrandAdminCapabilitiesResponse {
-        let response: [String: Any]
-        do {
-            response = try await callFunction("getBrandAdminCapabilities", data: [:])
-        } catch {
-            let nsError = error as NSError
-            print(
-                """
-                [CloudFunctionsManager] getBrandAdminCapabilities failed \
-                region=\(Self.region) domain=\(nsError.domain) code=\(nsError.code) \
-                description=\(nsError.localizedDescription). Retrying default region.
-                """
-            )
-            response = try await callFunction(
-                "getBrandAdminCapabilities",
-                data: [:],
-                functions: defaultFunctions
-            )
-        }
+        let response = try await callFunction("getBrandAdminCapabilities", data: [:])
 
         return BrandAdminCapabilitiesResponse(
             isTotalAdmin: response["isTotalAdmin"] as? Bool ?? false,
-            roles: stringArrayValue(response, key: "roles")
+            roles: stringArrayValue(response, key: "roles"),
+            ownedBrandIDs: stringArrayValue(response, key: "ownedBrandIDs"),
+            adminBrandIDs: stringArrayValue(response, key: "adminBrandIDs")
         )
     }
 
     func updateBrand(
         brandID: String,
         name: String,
+        englishName: String?,
         websiteURL: String?,
         lookbookArchiveURL: String?,
         isFeatured: Bool?
@@ -143,6 +135,7 @@ final class CloudFunctionsManager {
         var data: [String: Any] = [
             "brandID": brandID,
             "name": name,
+            "englishName": englishName ?? NSNull(),
             "websiteURL": websiteURL ?? "",
             "lookbookArchiveURL": lookbookArchiveURL ?? ""
         ]
@@ -742,6 +735,33 @@ final class CloudFunctionsManager {
         )
     }
 
+    func markBrandRequestGroupBrandCreated(
+        groupID: String,
+        createdBrandID: BrandID
+    ) async throws -> AdminBrandRequestGroupStageUpdateReceipt {
+        let response = try await callFunction(
+            "markBrandRequestGroupBrandCreated",
+            data: [
+                "groupID": groupID,
+                "createdBrandID": createdBrandID.value
+            ]
+        )
+
+        return AdminBrandRequestGroupStageUpdateReceipt(
+            groupID: try stringValue(response, key: "groupID"),
+            status: BrandRequestStatus(
+                rawValue: try stringValue(response, key: "status")
+            ) ?? .reviewing,
+            adminStage: BrandRequestAdminStage(
+                rawValue: try stringValue(response, key: "adminStage")
+            ) ?? .processing,
+            updatedRequestCount: optionalIntValue(
+                response,
+                key: "updatedRequestCount"
+            ) ?? 0
+        )
+    }
+
     private func callFunction(
         _ name: String,
         data: [String: Any],
@@ -859,6 +879,7 @@ final class CloudFunctionsManager {
         return Brand(
             id: BrandID(value: try stringValue(dictionary, key: "brandID")),
             name: try stringValue(dictionary, key: "name"),
+            englishName: optionalStringValue(dictionary, key: "englishName"),
             websiteURL: optionalStringValue(dictionary, key: "websiteURL"),
             lookbookArchiveURL: optionalStringValue(dictionary, key: "lookbookArchiveURL"),
             logoThumbPath: optionalStringValue(dictionary, key: "logoThumbPath"),
@@ -929,6 +950,10 @@ final class CloudFunctionsManager {
                 .flatMap { BrandRequestRejectionReason(rawValue: $0) },
             resolvedBrandID: optionalStringValue(dictionary, key: "resolvedBrandID")
                 .map { BrandID(value: $0) },
+            createdBrandID: optionalStringValue(dictionary, key: "createdBrandID")
+                .map { BrandID(value: $0) },
+            brandCreatedAt: optionalDateValue(dictionary, key: "brandCreatedAt"),
+            brandCreatedBy: optionalStringValue(dictionary, key: "brandCreatedBy"),
             adminNote: optionalStringValue(dictionary, key: "adminNote"),
             lastRequestID: optionalStringValue(dictionary, key: "lastRequestID"),
             lastRequestedAt: optionalDateValue(dictionary, key: "lastRequestedAt"),

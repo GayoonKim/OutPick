@@ -60,7 +60,7 @@ enum BrandRequestRejectionReason: String, Codable, CaseIterable, Equatable {
     var displayTitle: String {
         switch self {
         case .unavailable:
-            return "확인 불가"
+            return "룩북 확인 불가"
         case .spam:
             return "스팸"
         case .other:
@@ -117,6 +117,9 @@ struct AdminBrandRequestGroup: Identifiable, Equatable {
     let status: BrandRequestStatus
     let rejectionReason: BrandRequestRejectionReason?
     let resolvedBrandID: BrandID?
+    let createdBrandID: BrandID?
+    let brandCreatedAt: Date?
+    let brandCreatedBy: String?
     let adminNote: String?
     let lastRequestID: String?
     let lastRequestedAt: Date?

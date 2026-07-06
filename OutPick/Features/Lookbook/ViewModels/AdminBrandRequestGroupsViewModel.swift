@@ -35,6 +35,7 @@ final class AdminBrandRequestGroupsViewModel: ObservableObject {
     private let listUseCase: any ListBrandRequestGroupsUseCaseProtocol
     private let updateUseCase: any UpdateBrandRequestGroupStageUseCaseProtocol
     private let resolveUseCase: any ResolveBrandRequestGroupUseCaseProtocol
+    private let markCreatedUseCase: any MarkBrandRequestGroupBrandCreatedUseCaseProtocol
     private let pageLimit: Int
     private let prefetchThreshold: Int
     private var nextCursor: AdminBrandRequestGroupPage.Cursor?
@@ -44,12 +45,14 @@ final class AdminBrandRequestGroupsViewModel: ObservableObject {
         listUseCase: any ListBrandRequestGroupsUseCaseProtocol,
         updateUseCase: any UpdateBrandRequestGroupStageUseCaseProtocol,
         resolveUseCase: any ResolveBrandRequestGroupUseCaseProtocol,
+        markCreatedUseCase: any MarkBrandRequestGroupBrandCreatedUseCaseProtocol,
         pageLimit: Int = 30,
         prefetchThreshold: Int = 6
     ) {
         self.listUseCase = listUseCase
         self.updateUseCase = updateUseCase
         self.resolveUseCase = resolveUseCase
+        self.markCreatedUseCase = markCreatedUseCase
         self.pageLimit = pageLimit
         self.prefetchThreshold = prefetchThreshold
     }
@@ -125,12 +128,14 @@ final class AdminBrandRequestGroupsViewModel: ObservableObject {
 
     func reject(
         _ group: AdminBrandRequestGroup,
-        reason: BrandRequestRejectionReason
+        reason: BrandRequestRejectionReason,
+        adminNote: String?
     ) async {
         await updateStage(
             group,
             adminStage: .rejected,
-            rejectionReason: reason
+            rejectionReason: reason,
+            adminNote: adminNote
         )
     }
 
@@ -150,10 +155,31 @@ final class AdminBrandRequestGroupsViewModel: ObservableObject {
         adminNoteDraft = ""
     }
 
+    func markBrandCreated(
+        groupID: String,
+        createdBrandID: BrandID
+    ) async -> Bool {
+        updatingGroupID = groupID
+        defer { updatingGroupID = nil }
+
+        do {
+            _ = try await markCreatedUseCase.execute(
+                groupID: groupID,
+                createdBrandID: createdBrandID
+            )
+            await reload()
+            return true
+        } catch {
+            phase = .failed(error.localizedDescription)
+            return false
+        }
+    }
+
     private func updateStage(
         _ group: AdminBrandRequestGroup,
         adminStage: BrandRequestAdminStage,
-        rejectionReason: BrandRequestRejectionReason?
+        rejectionReason: BrandRequestRejectionReason?,
+        adminNote: String? = nil
     ) async {
         updatingGroupID = group.id
         defer { updatingGroupID = nil }
@@ -163,7 +189,7 @@ final class AdminBrandRequestGroupsViewModel: ObservableObject {
                 groupID: group.id,
                 adminStage: adminStage,
                 rejectionReason: rejectionReason,
-                adminNote: nil
+                adminNote: adminNote
             )
             adminNoteDraft = ""
             selectedStage = adminStage

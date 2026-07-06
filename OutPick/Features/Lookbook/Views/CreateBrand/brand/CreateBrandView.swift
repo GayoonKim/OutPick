@@ -25,12 +25,16 @@ struct CreateBrandView: View {
     /// - Note: 화면/상위 조립 계층(AppContainer 등)에서 provider를 내려주는 구조를 유지합니다.
     init(
         provider: LookbookRepositoryProvider = .shared,
+        initialBrandName: String? = nil,
+        initialEnglishName: String? = nil,
         mediaProcessor: MediaProcessingServiceProtocol = DefaultMediaProcessingService(),
         onCompleted: @escaping (CreateBrandViewModel.CreatedBrand) -> Void = { _ in }
     ) {
         self.mediaProcessor = mediaProcessor
         _viewModel = StateObject(
             wrappedValue: CreateBrandViewModel(
+                initialBrandName: initialBrandName,
+                initialEnglishName: initialEnglishName,
                 brandStore: provider.brandStore,
                 storageService: provider.storageService,
                 thumbnailer: provider.thumbnailer
@@ -75,7 +79,7 @@ struct CreateBrandView: View {
 }
 
 private extension CreateBrandView {
-    var totalAnimatedFormItemCount: Int { 6 }
+    var totalAnimatedFormItemCount: Int { 7 }
 
     func introSection(containerHeight: CGFloat, containerWidth: CGFloat) -> some View {
         let contentWidth = max(containerWidth - 40, 0)
@@ -106,13 +110,21 @@ private extension CreateBrandView {
         VStack(alignment: .leading, spacing: 18) {
             animatedFormItem(index: 0) {
                 formField(title: "브랜드명") {
-                    TextField("예: CHANEL", text: $viewModel.brandName)
+                    TextField("예: 언어팩티드", text: $viewModel.brandName)
                         .textInputAutocapitalization(.words)
                         .disableAutocorrection(true)
                 }
             }
 
             animatedFormItem(index: 1) {
+                formField(title: "영문 브랜드명") {
+                    TextField("예: UNAFFECTED", text: $viewModel.englishName)
+                        .textInputAutocapitalization(.words)
+                        .disableAutocorrection(true)
+                }
+            }
+
+            animatedFormItem(index: 2) {
                 formField(title: "공식 홈페이지 URL") {
                     TextField("https://www.example.com", text: $viewModel.websiteURLText)
                         .keyboardType(.URL)
@@ -121,7 +133,7 @@ private extension CreateBrandView {
                 }
             }
 
-            animatedFormItem(index: 2) {
+            animatedFormItem(index: 3) {
                 formField(title: "룩북 목록 URL") {
                     TextField("https://www.example.com/collections", text: $viewModel.lookbookArchiveURLText)
                         .keyboardType(.URL)
@@ -130,7 +142,7 @@ private extension CreateBrandView {
                 }
             }
 
-            animatedFormItem(index: 3) {
+            animatedFormItem(index: 4) {
                 formField(title: "로고") {
                     VStack(alignment: .leading, spacing: 12) {
                         Button {
@@ -173,7 +185,7 @@ private extension CreateBrandView {
                 }
             }
 
-            animatedFormItem(index: 4) {
+            animatedFormItem(index: 5) {
                 Toggle(isOn: $viewModel.isFeatured) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("피처드")
@@ -198,7 +210,7 @@ private extension CreateBrandView {
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
 
-            animatedFormItem(index: 5) {
+            animatedFormItem(index: 6) {
                 Button {
                     Task {
                         if let createdBrand = await viewModel.saveBrand() {

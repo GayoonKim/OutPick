@@ -5,6 +5,7 @@ struct BrandDTO: Codable {
     @DocumentID var id: String?
 
     let name: String
+    let englishName: String?
     let websiteURL: String?
     let lookbookArchiveURL: String?
 
@@ -47,6 +48,7 @@ struct BrandDTO: Codable {
         return Brand(
             id: BrandID(value: id),
             name: name,
+            englishName: englishName,
             websiteURL: websiteURL,
             lookbookArchiveURL: lookbookArchiveURL,
             logoThumbPath: resolvedThumbPath,

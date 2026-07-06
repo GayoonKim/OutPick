@@ -19,6 +19,7 @@ struct FirestoreBrandStore: BrandStoringRepository {
 
     func createBrand(
         name: String,
+        englishName: String?,
         isFeatured: Bool,
         websiteURL: String?,
         lookbookArchiveURL: String?
@@ -26,11 +27,14 @@ struct FirestoreBrandStore: BrandStoringRepository {
         let docRef = db.collection("brands").document()
         let docID = docRef.documentID
         let normalizedName = normalizeBrandName(name)
+        let normalizedEnglishName = englishName.map { normalizeBrandName($0) }
         let currentUID = Auth.auth().currentUser?.uid
 
         let data: [String: Any] = [
             "name": normalizedDisplayName(name),
             "normalizedName": normalizedName,
+            "englishName": englishName.map { normalizedDisplayName($0) } ?? NSNull(),
+            "normalizedEnglishName": normalizedEnglishName ?? NSNull(),
             "websiteURL": websiteURL ?? NSNull(),
             "lookbookArchiveURL": lookbookArchiveURL ?? NSNull(),
 
@@ -49,8 +53,6 @@ struct FirestoreBrandStore: BrandStoringRepository {
             "popularScore": 0.0,
             "createdBy": currentUID ?? NSNull(),
             "updatedBy": currentUID ?? NSNull(),
-            "ownerUIDs": currentUID.map { [$0] } ?? [],
-            "adminUIDs": [String](),
             "createdAt": FieldValue.serverTimestamp(),
             "updatedAt": FieldValue.serverTimestamp()
         ]
@@ -84,14 +86,18 @@ struct FirestoreBrandStore: BrandStoringRepository {
     func updateBrand(
         brandID: BrandID,
         name: String,
+        englishName: String?,
         websiteURL: String?,
         lookbookArchiveURL: String?,
         isFeatured: Bool?
     ) async throws -> Brand {
         let normalizedName = normalizeBrandName(name)
+        let normalizedEnglishName = englishName.map { normalizeBrandName($0) }
         var payload: [String: Any] = [
             "name": normalizedDisplayName(name),
             "normalizedName": normalizedName,
+            "englishName": englishName.map { normalizedDisplayName($0) } ?? NSNull(),
+            "normalizedEnglishName": normalizedEnglishName ?? NSNull(),
             "websiteURL": websiteURL ?? NSNull(),
             "lookbookArchiveURL": lookbookArchiveURL ?? NSNull(),
             "updatedAt": FieldValue.serverTimestamp()
@@ -107,6 +113,7 @@ struct FirestoreBrandStore: BrandStoringRepository {
         return Brand(
             id: brandID,
             name: normalizedDisplayName(name),
+            englishName: englishName.map { normalizedDisplayName($0) },
             websiteURL: websiteURL,
             lookbookArchiveURL: lookbookArchiveURL,
             logoThumbPath: nil,

@@ -393,12 +393,6 @@ struct CreateBrandCandidateSelectionView: View {
 
     private var progressCloseActionSection: some View {
         VStack(spacing: 10) {
-            Text("닫기를 눌러도 작업은 계속 진행됩니다. 가져오기 현황에서 나중에 확인할 수 있습니다.")
-                .font(.footnote)
-                .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-
             Button {
                 onComplete()
             } label: {
@@ -482,7 +476,7 @@ struct CreateBrandCandidateSelectionView: View {
         case .extracting:
             return "선택한 시즌의 사진을 가져오고 룩북 목록에 반영하고 있습니다."
         case .completed:
-            return "닫기를 눌러도 진행 중인 작업은 계속 처리됩니다. 가져오기 현황에서 나중에 확인할 수 있습니다."
+            return "시즌 불러오기 요청 결과를 확인하세요."
         }
     }
 

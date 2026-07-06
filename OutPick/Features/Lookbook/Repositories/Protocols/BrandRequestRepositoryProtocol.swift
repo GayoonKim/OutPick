@@ -37,4 +37,9 @@ protocol BrandRequestRepositoryProtocol {
         resolvedBrandID: BrandID,
         adminNote: String?
     ) async throws -> AdminBrandRequestGroupStageUpdateReceipt
+
+    func markBrandRequestGroupBrandCreated(
+        groupID: String,
+        createdBrandID: BrandID
+    ) async throws -> AdminBrandRequestGroupStageUpdateReceipt
 }

@@ -131,7 +131,7 @@ struct MyBrandRequestsView: View {
     private var emptySubtitle: String {
         viewModel.scope == .active
             ? "찾는 브랜드가 없을 때 요청하면 여기에서 상태를 볼 수 있어요."
-            : "완료되거나 보류된 요청이 시간이 지나면 여기에 모여요."
+            : "완료되거나 보류된 요청이 여기에 모여요."
     }
 }
 

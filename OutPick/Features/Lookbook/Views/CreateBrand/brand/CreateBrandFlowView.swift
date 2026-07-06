@@ -35,13 +35,19 @@ struct CreateBrandFlowView: View {
     @State private var discoveryErrorMessage: String?
 
     private let provider: LookbookRepositoryProvider
+    private let initialBrandName: String?
+    private let initialEnglishName: String?
     private let onFinished: (BrandID?) -> Void
 
     init(
         provider: LookbookRepositoryProvider = .shared,
+        initialBrandName: String? = nil,
+        initialEnglishName: String? = nil,
         onFinished: @escaping (BrandID?) -> Void = { _ in }
     ) {
         self.provider = provider
+        self.initialBrandName = initialBrandName
+        self.initialEnglishName = initialEnglishName
         self.onFinished = onFinished
     }
 
@@ -51,11 +57,14 @@ struct CreateBrandFlowView: View {
         onFinished: @escaping (BrandID?) -> Void = { _ in }
     ) {
         self.provider = provider
+        self.initialBrandName = nil
+        self.initialEnglishName = nil
         self.onFinished = onFinished
 
         let previewBrand = CreateBrandViewModel.CreatedBrand(
             id: BrandID(value: "preview-brand"),
             name: "Preview Atelier",
+            englishName: nil,
             websiteURL: "https://preview.example.com",
             lookbookArchiveURL: "https://preview.example.com/collections",
             hasLogoAsset: true
@@ -72,6 +81,7 @@ struct CreateBrandFlowView: View {
                 CreateBrandViewModel.CreatedBrand(
                     id: previewBrand.id,
                     name: previewBrand.name,
+                    englishName: previewBrand.englishName,
                     websiteURL: nil,
                     lookbookArchiveURL: nil,
                     hasLogoAsset: false
@@ -130,7 +140,11 @@ private extension CreateBrandFlowView {
     var content: some View {
         switch step {
         case .form:
-            CreateBrandView(provider: provider) { createdBrand in
+            CreateBrandView(
+                provider: provider,
+                initialBrandName: initialBrandName,
+                initialEnglishName: initialEnglishName
+            ) { createdBrand in
                 latestCreatedBrand = createdBrand
                 advanceAfterBrandCreation(createdBrand)
             }

@@ -127,6 +127,12 @@ struct BrandDetailHeaderView: View {
                     .fontWeight(.semibold)
                     .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
 
+                if let englishName = brand.englishName, englishName.isEmpty == false {
+                    Text(englishName)
+                        .font(.subheadline)
+                        .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+                }
+
                 Button {
                     Task {
                         await onLikeTap()

@@ -15,6 +15,7 @@ final class AdminBrandManagementViewModel: ObservableObject {
     @Published private(set) var searchResults: [Brand] = []
     @Published private(set) var selectedBrand: Brand?
     @Published var brandName: String = ""
+    @Published var englishName: String = ""
     @Published var websiteURLText: String = ""
     @Published var lookbookArchiveURLText: String = ""
     @Published var isFeatured: Bool = false
@@ -26,7 +27,11 @@ final class AdminBrandManagementViewModel: ObservableObject {
     @Published private(set) var isSavingBrand: Bool = false
     @Published private(set) var isUploadingLogo: Bool = false
     @Published private(set) var isMutatingManager: Bool = false
-    @Published var message: String?
+    @Published var message: String? {
+        didSet {
+            scheduleMessageAutoDismissIfNeeded(message)
+        }
+    }
 
     let isDirectBrandMode: Bool
     private let initialBrandID: BrandID?
@@ -39,6 +44,7 @@ final class AdminBrandManagementViewModel: ObservableObject {
     private var selectedLogoDetailData: Data?
     private var cancellables = Set<AnyCancellable>()
     private var searchTask: Task<Void, Never>?
+    private var messageDismissTask: Task<Void, Never>?
     private var didLoadInitialBrand = false
 
     init(
@@ -124,6 +130,7 @@ final class AdminBrandManagementViewModel: ObservableObject {
     func selectBrand(_ brand: Brand) {
         selectedBrand = brand
         brandName = brand.name
+        englishName = brand.englishName ?? ""
         websiteURLText = brand.websiteURL ?? ""
         lookbookArchiveURLText = brand.lookbookArchiveURL ?? ""
         isFeatured = brand.isFeatured
@@ -167,6 +174,7 @@ final class AdminBrandManagementViewModel: ObservableObject {
             message = "브랜드명을 입력해주세요."
             return
         }
+        let normalizedEnglishName = normalizedDisplayName(englishName)
 
         let websiteURL: String?
         let lookbookArchiveURL: String?
@@ -185,6 +193,7 @@ final class AdminBrandManagementViewModel: ObservableObject {
             let updatedBrand = try await brandStore.updateBrand(
                 brandID: selectedBrand.id,
                 name: name,
+                englishName: normalizedEnglishName.isEmpty ? nil : normalizedEnglishName,
                 websiteURL: websiteURL,
                 lookbookArchiveURL: lookbookArchiveURL,
                 isFeatured: canUpdateFeatured ? isFeatured : nil
@@ -226,6 +235,7 @@ final class AdminBrandManagementViewModel: ObservableObject {
             self.selectedBrand = Brand(
                 id: selectedBrand.id,
                 name: selectedBrand.name,
+                englishName: selectedBrand.englishName,
                 websiteURL: selectedBrand.websiteURL,
                 lookbookArchiveURL: selectedBrand.lookbookArchiveURL,
                 logoThumbPath: uploadedThumbPath,
@@ -367,5 +377,29 @@ private extension AdminBrandManagementViewModel {
         }
 
         return normalized
+    }
+
+    func scheduleMessageAutoDismissIfNeeded(_ message: String?) {
+        messageDismissTask?.cancel()
+        guard let message, isTransientMessage(message) else { return }
+
+        messageDismissTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard self?.message == message else { return }
+                self?.message = nil
+            }
+        }
+    }
+
+    func isTransientMessage(_ message: String) -> Bool {
+        [
+            "브랜드 정보를 저장했습니다.",
+            "로고를 저장했습니다.",
+            "관리자를 추가했습니다.",
+            "관리자를 삭제했습니다.",
+            "이미 등록된 관리자입니다."
+        ].contains(message)
     }
 }
