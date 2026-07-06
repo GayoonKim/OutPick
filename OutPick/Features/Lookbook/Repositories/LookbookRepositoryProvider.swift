@@ -13,6 +13,8 @@ final class LookbookRepositoryProvider {
 
     // MARK: - Lookbook Repositories (Protocol 타입으로 노출)
     let brandRepository: BrandRepositoryProtocol
+    let brandSearchRepository: BrandSearchRepositoryProtocol
+    let brandRequestRepository: BrandRequestRepositoryProtocol
     let brandEngagementRepository: BrandEngagementRepositoryProtocol
 
     let seasonRepository: SeasonRepositoryProtocol
@@ -57,6 +59,8 @@ final class LookbookRepositoryProvider {
 
     init(
         brandRepository: BrandRepositoryProtocol = FirestoreBrandRepository(),
+        brandSearchRepository: BrandSearchRepositoryProtocol = CloudFunctionsBrandSearchRepository(),
+        brandRequestRepository: BrandRequestRepositoryProtocol = CloudFunctionsBrandRequestRepository(),
         brandEngagementRepository: BrandEngagementRepositoryProtocol = CloudFunctionsBrandEngagementRepository(),
         brandStore: BrandStoringRepository = CloudFunctionsBrandStore(),
 
@@ -107,6 +111,8 @@ final class LookbookRepositoryProvider {
             ?? BrandImageCache(storage: storageService, pipeline: resolvedImageCachePipeline)
 
         self.brandRepository = brandRepository
+        self.brandSearchRepository = brandSearchRepository
+        self.brandRequestRepository = brandRequestRepository
         self.brandEngagementRepository = brandEngagementRepository
         self.postRepository = postRepository
         self.postEngagementRepository = postEngagementRepository

@@ -19,15 +19,28 @@ final class LookbookHomeViewModel: ObservableObject {
         case failed(String)
     }
 
+    enum SearchPhase: Equatable {
+        case idle
+        case searching
+        case results
+        case empty
+        case failed(String)
+    }
+
     @Published private(set) var phase: Phase = .idle
     @Published private(set) var brands: [Brand] = []
-    @Published private(set) var canCreateBrand: Bool = false
+    @Published var searchText: String = ""
+    @Published private(set) var searchPhase: SearchPhase = .idle
+    @Published private(set) var searchResults: [Brand] = []
+    @Published private(set) var canOpenAdminConsole: Bool = false
 
     /// DI
     private let repo: BrandRepositoryProtocol
+    private let searchUseCase: any SearchBrandsUseCaseProtocol
     private let brandAdminSessionStore: BrandAdminSessionStore
     let brandImageCache: any BrandImageCacheProtocol
     private var cancellables = Set<AnyCancellable>()
+    private var searchTask: Task<Void, Never>?
 
     /// 페이지네이션 기준(마지막 문서)
     private var lastBrandDocument: DocumentSnapshot? = nil
@@ -45,25 +58,31 @@ final class LookbookHomeViewModel: ObservableObject {
     private let prefetchConcurrency: Int
     /// 썸네일 다운로드 최대 바이트(목록 전용)
     private let thumbMaxBytes: Int
+    private let searchLimit: Int
 
     init(
         repo: BrandRepositoryProtocol,
+        searchUseCase: any SearchBrandsUseCaseProtocol,
         brandAdminSessionStore: BrandAdminSessionStore,
         brandImageCache: any BrandImageCacheProtocol,
         initialBrandLimit: Int = 12,
         prefetchLogoCount: Int = 4,
         prefetchConcurrency: Int = 4,
-        thumbMaxBytes: Int = 1 * 1024 * 1024
+        thumbMaxBytes: Int = 1 * 1024 * 1024,
+        searchLimit: Int = 20
     ) {
         self.repo = repo
+        self.searchUseCase = searchUseCase
         self.brandAdminSessionStore = brandAdminSessionStore
         self.brandImageCache = brandImageCache
         self.initialBrandLimit = initialBrandLimit
         self.prefetchLogoCount = prefetchLogoCount
         self.prefetchConcurrency = prefetchConcurrency
         self.thumbMaxBytes = thumbMaxBytes
-        self.canCreateBrand = brandAdminSessionStore.canCreateBrand
+        self.searchLimit = searchLimit
+        self.canOpenAdminConsole = brandAdminSessionStore.canOpenAdminConsole
         bindBrandAdminSessionStore()
+        bindSearchText()
     }
 
     /// 앱 시작 시 또는 룩북 탭 진입 전에 한 번 호출
@@ -99,6 +118,18 @@ final class LookbookHomeViewModel: ObservableObject {
         brands = []
         phase = .idle
         await loadInitialPageIfNeeded()
+    }
+
+    var isSearching: Bool {
+        normalizedSearchText.isEmpty == false
+    }
+
+    var normalizedSearchText: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    func clearSearch() {
+        searchText = ""
     }
 
     func refreshKeepingVisibleContent() async {
@@ -243,11 +274,67 @@ final class LookbookHomeViewModel: ObservableObject {
     }
 
     private func bindBrandAdminSessionStore() {
-        brandAdminSessionStore.$canCreateBrand
+        Publishers.CombineLatest(
+            brandAdminSessionStore.$isTotalAdmin,
+            brandAdminSessionStore.$writableBrandIDs
+        )
+            .map { isTotalAdmin, writableBrandIDs in
+                isTotalAdmin || writableBrandIDs.isEmpty == false
+            }
             .removeDuplicates()
-            .sink { [weak self] canCreateBrand in
-                self?.canCreateBrand = canCreateBrand
+            .sink { [weak self] canOpenAdminConsole in
+                self?.canOpenAdminConsole = canOpenAdminConsole
             }
             .store(in: &cancellables)
+    }
+
+    private func bindSearchText() {
+        $searchText
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .removeDuplicates()
+            .debounce(for: .milliseconds(300), scheduler: RunLoop.main)
+            .sink { [weak self] query in
+                self?.scheduleSearch(query: query)
+            }
+            .store(in: &cancellables)
+    }
+
+    private func scheduleSearch(query: String) {
+        searchTask?.cancel()
+
+        guard query.isEmpty == false else {
+            searchResults = []
+            searchPhase = .idle
+            return
+        }
+
+        searchTask = Task { [weak self] in
+            await self?.performSearch(query: query)
+        }
+    }
+
+    private func performSearch(query: String) async {
+        searchPhase = .searching
+
+        do {
+            let results = try await searchUseCase.execute(
+                query: query,
+                limit: searchLimit
+            )
+            guard !Task.isCancelled else { return }
+
+            searchResults = results
+            searchPhase = results.isEmpty ? .empty : .results
+
+            let prefetchTargets = makePrefetchTargets(
+                from: results,
+                count: min(results.count, prefetchLogoCount)
+            )
+            schedulePrefetch(items: prefetchTargets)
+        } catch {
+            guard !Task.isCancelled else { return }
+            searchResults = []
+            searchPhase = .failed(error.localizedDescription)
+        }
     }
 }

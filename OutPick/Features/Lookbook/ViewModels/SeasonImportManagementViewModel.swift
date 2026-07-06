@@ -27,7 +27,7 @@ final class SeasonImportManagementViewModel: ObservableObject {
         do {
             jobs = try await useCase.loadJobs(brandID: brandID)
         } catch {
-            errorMessage = "가져오기 현황을 불러오지 못했습니다."
+            errorMessage = "시즌 가져오기 현황을 불러오지 못했습니다."
         }
     }
 

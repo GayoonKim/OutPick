@@ -37,6 +37,12 @@ final class LookbookContainer {
     private let loadSeasonDetailUseCase: any LoadSeasonDetailUseCaseProtocol
     private let loadPostDetailUseCase: any LoadPostDetailUseCaseProtocol
     private let makeLookbookSharedContentUseCase: any MakeLookbookSharedContentUseCaseProtocol
+    private let searchBrandsUseCase: any SearchBrandsUseCaseProtocol
+    private let submitBrandRequestUseCase: any SubmitBrandRequestUseCaseProtocol
+    private let listMyBrandRequestsUseCase: any ListMyBrandRequestsUseCaseProtocol
+    private let listBrandRequestGroupsUseCase: any ListBrandRequestGroupsUseCaseProtocol
+    private let updateBrandRequestGroupStageUseCase: any UpdateBrandRequestGroupStageUseCaseProtocol
+    private let resolveBrandRequestGroupUseCase: any ResolveBrandRequestGroupUseCaseProtocol
     private var loadShareableJoinedRoomsUseCase: (any LoadShareableJoinedRoomsUseCaseProtocol)?
     private var shareLookbookContentToChatUseCase: (any ShareLookbookContentToChatUseCaseProtocol)?
     private var roomImageManager: (any RoomImageManaging)?
@@ -107,8 +113,27 @@ final class LookbookContainer {
             brandRepository: provider.brandRepository,
             seasonRepository: provider.seasonRepository
         )
+        self.searchBrandsUseCase = SearchBrandsUseCase(
+            repository: provider.brandSearchRepository
+        )
+        self.submitBrandRequestUseCase = SubmitBrandRequestUseCase(
+            repository: provider.brandRequestRepository
+        )
+        self.listMyBrandRequestsUseCase = ListMyBrandRequestsUseCase(
+            repository: provider.brandRequestRepository
+        )
+        self.listBrandRequestGroupsUseCase = ListBrandRequestGroupsUseCase(
+            repository: provider.brandRequestRepository
+        )
+        self.updateBrandRequestGroupStageUseCase = UpdateBrandRequestGroupStageUseCase(
+            repository: provider.brandRequestRepository
+        )
+        self.resolveBrandRequestGroupUseCase = ResolveBrandRequestGroupUseCase(
+            repository: provider.brandRequestRepository
+        )
         self.lookbookHomeViewModel = LookbookHomeViewModel(
             repo: provider.brandRepository,
+            searchUseCase: searchBrandsUseCase,
             brandAdminSessionStore: brandAdminSessionStore,
             brandImageCache: provider.brandImageCache,
             initialBrandLimit: 12,
@@ -145,21 +170,6 @@ final class LookbookContainer {
             viewModel: makeBrandDetailViewModel(),
             brandImageCache: provider.brandImageCache,
             coordinator: coordinator,
-            seasonAdditionSheetFactory: { [self] onDismiss in
-                return AnyView(
-                    self.makeSeasonAdditionSheet(
-                        brand: brand,
-                        onDismiss: onDismiss
-                    )
-                )
-            },
-            importManagementSheetFactory: { [self] in
-                AnyView(
-                    self.makeSeasonImportManagementView(
-                        brandID: brand.id
-                    )
-                )
-            },
             shareSheetFactory: { [self] target, onCompleted in
                 self.makeLookbookShareSheet(
                     target: target,
@@ -208,6 +218,96 @@ final class LookbookContainer {
         LikedView(
             viewModel: makeLikedViewModel(),
             coordinator: coordinator
+        )
+    }
+
+    func makeBrandRequestView(
+        initialBrandName: String,
+        onSubmitted: @escaping () -> Void,
+        coordinator: LookbookCoordinator
+    ) -> BrandRequestView {
+        BrandRequestView(
+            viewModel: BrandRequestViewModel(
+                initialBrandName: initialBrandName,
+                submitUseCase: submitBrandRequestUseCase
+            ),
+            onSubmitted: onSubmitted,
+            coordinator: coordinator
+        )
+    }
+
+    func makeMyBrandRequestsView(
+        initialScope: BrandRequestListScope,
+        coordinator: LookbookCoordinator
+    ) -> MyBrandRequestsView {
+        MyBrandRequestsView(
+            viewModel: MyBrandRequestsViewModel(
+                scope: initialScope,
+                listUseCase: listMyBrandRequestsUseCase
+            ),
+            coordinator: coordinator
+        )
+    }
+
+    func makeAdminHomeView(
+        coordinator: LookbookCoordinator,
+        onCreatedBrand: @escaping (BrandID) -> Void
+    ) -> LookbookAdminHomeView {
+        LookbookAdminHomeView(
+            coordinator: coordinator,
+            createBrandFlowFactory: { [self] onCreatedBrand in
+                AnyView(self.makeCreateBrandFlow(onCreatedBrand: onCreatedBrand))
+            },
+            onCreatedBrand: onCreatedBrand
+        )
+    }
+
+    func makeAdminBrandRequestGroupsView(
+        coordinator: LookbookCoordinator
+    ) -> AdminBrandRequestGroupsView {
+        AdminBrandRequestGroupsView(
+            viewModel: AdminBrandRequestGroupsViewModel(
+                listUseCase: listBrandRequestGroupsUseCase,
+                updateUseCase: updateBrandRequestGroupStageUseCase,
+                resolveUseCase: resolveBrandRequestGroupUseCase
+            ),
+            createBrandFlowFactory: { [self] onCreatedBrand in
+                AnyView(self.makeCreateBrandFlow(onCreatedBrand: onCreatedBrand))
+            },
+            coordinator: coordinator
+        )
+    }
+
+    func makeAdminBrandManagementView(
+        coordinator: LookbookCoordinator,
+        initialBrandID: BrandID? = nil
+    ) -> AdminBrandManagementView {
+        AdminBrandManagementView(
+            viewModel: AdminBrandManagementViewModel(
+                initialBrandID: initialBrandID,
+                brandRepository: provider.brandRepository,
+                searchUseCase: searchBrandsUseCase,
+                brandStore: provider.brandStore,
+                storageService: provider.storageService,
+                thumbnailer: provider.thumbnailer
+            ),
+            coordinator: coordinator,
+            brandImageCache: provider.brandImageCache,
+            seasonAdditionSheetFactory: { [self] brand, onDismiss in
+                AnyView(
+                    self.makeSeasonAdditionSheet(
+                        brand: brand,
+                        onDismiss: onDismiss
+                    )
+                )
+            },
+            importManagementSheetFactory: { [self] brand in
+                AnyView(
+                    self.makeSeasonImportManagementView(
+                        brandID: brand.id
+                    )
+                )
+            }
         )
     }
 

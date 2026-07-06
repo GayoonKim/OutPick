@@ -12,7 +12,7 @@ struct SeasonImportManagementView: View {
         NavigationView {
             Group {
                 if viewModel.isLoading && viewModel.jobs.isEmpty {
-                    ProgressView("가져오기 현황을 불러오는 중입니다.")
+                    ProgressView("시즌 가져오기 현황을 불러오는 중입니다.")
                         .tint(OutPickTheme.SwiftUIColor.accent)
                         .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
                 } else if viewModel.jobs.isEmpty {
@@ -38,7 +38,7 @@ struct SeasonImportManagementView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(OutPickTheme.SwiftUIColor.backgroundBase)
             .tint(OutPickTheme.SwiftUIColor.accent)
-            .navigationTitle("가져오기 현황")
+            .navigationTitle("시즌 가져오기 현황")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

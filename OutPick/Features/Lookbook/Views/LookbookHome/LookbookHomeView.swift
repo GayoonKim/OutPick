@@ -13,8 +13,6 @@ struct LookbookHomeView: View {
     @StateObject private var viewModel: LookbookHomeViewModel
 
     @EnvironmentObject private var brandAdminSessionStore: BrandAdminSessionStore
-    @State private var isPresentingCreateBrand = false
-    @State private var createdBrandIDForSelection: Brand.ID?
 
     private let coordinator: LookbookCoordinator
 
@@ -28,33 +26,29 @@ struct LookbookHomeView: View {
     var body: some View {
         mainContent
             .lookbookNavigationBar(title: "OutPick") {
-                if viewModel.canCreateBrand {
+                HStack(spacing: 8) {
                     LookbookNavigationTextButton(
-                        title: "브랜드 추가",
-                        accessibilityLabel: "브랜드 추가"
+                        title: "브랜드 요청",
+                        accessibilityLabel: "브랜드 요청 상황"
                     ) {
-                        isPresentingCreateBrand = true
+                        coordinator.pushMyBrandRequests(initialScope: .active)
+                    }
+
+                    if brandAdminSessionStore.isTotalAdmin {
+                        LookbookNavigationTextButton(
+                            title: "관리자",
+                            accessibilityLabel: "Lookbook 관리자"
+                        ) {
+                            coordinator.pushAdminHome { createdBrandID in
+                                Task {
+                                    await handleCreatedBrand(createdBrandID)
+                                }
+                            }
+                        }
                     }
                 }
             }
             .tint(OutPickTheme.SwiftUIColor.accent)
-            .fullScreenCover(isPresented: $isPresentingCreateBrand, onDismiss: {
-                guard let createdBrandIDForSelection else { return }
-
-                Task {
-                    await brandAdminSessionStore.refreshWritableBrands(force: true)
-                    await viewModel.retry()
-                    await viewModel.syncCreatedBrand(brandID: createdBrandIDForSelection)
-                    await MainActor.run {
-                        if let createdBrand = viewModel.brands.first(where: { $0.id == createdBrandIDForSelection }) {
-                            coordinator.pushBrandDetail(brand: createdBrand)
-                        }
-                        self.createdBrandIDForSelection = nil
-                    }
-                }
-            }) {
-                createBrandSheet
-            }
             .task {
                 await viewModel.loadInitialPageIfNeeded()
             }
@@ -89,25 +83,16 @@ struct LookbookHomeView: View {
                 }
 
             case .ready:
-                List {
-                    ForEach(viewModel.brands) { brand in
-                        ZStack {
-                            BrandRowView(brand: brand, brandImageCache: viewModel.brandImageCache)
-                                .contentShape(Rectangle())
-                                .onTapGesture {
-                                    coordinator.pushBrandDetail(brand: brand)
-                                }
-                        }
-                        .onAppear {
-                            Task { await viewModel.loadNextPageIfNeeded(current: brand) }
-                        }
+                VStack(spacing: 0) {
+                    searchBar
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 10)
+
+                    if viewModel.isSearching {
+                        searchContent
+                    } else {
+                        brandListContent
                     }
-                }
-                .listStyle(.plain)
-                .outpickHiddenScrollContentBackground()
-                .background(OutPickTheme.SwiftUIColor.backgroundBase)
-                .refreshable {
-                    await refreshWithMinimumIndicatorDuration()
                 }
             }
         }
@@ -115,13 +100,125 @@ struct LookbookHomeView: View {
         .background(OutPickTheme.SwiftUIColor.backgroundBase)
     }
 
-    private var createBrandSheet: some View {
-        NavigationView {
-            coordinator.makeCreateBrandFlow { createdBrandID in
-                createdBrandIDForSelection = createdBrandID
+    private var searchBar: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(OutPickTheme.SwiftUIColor.iconSecondary)
+
+            TextField("브랜드 검색", text: $viewModel.searchText)
+                .textInputAutocapitalization(.never)
+                .disableAutocorrection(true)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
+
+            if viewModel.searchText.isEmpty == false {
+                Button {
+                    viewModel.clearSearch()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(OutPickTheme.SwiftUIColor.iconSecondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("검색어 지우기")
             }
         }
-        .navigationViewStyle(StackNavigationViewStyle())
+        .padding(.horizontal, 14)
+        .frame(height: 46)
+        .background(OutPickTheme.SwiftUIColor.surfaceBase)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private var brandListContent: some View {
+        List {
+            ForEach(viewModel.brands) { brand in
+                brandRow(brand)
+                    .onAppear {
+                        Task { await viewModel.loadNextPageIfNeeded(current: brand) }
+                    }
+            }
+        }
+        .listStyle(.plain)
+        .outpickHiddenScrollContentBackground()
+        .background(OutPickTheme.SwiftUIColor.backgroundBase)
+        .refreshable {
+            await refreshWithMinimumIndicatorDuration()
+        }
+    }
+
+    @ViewBuilder
+    private var searchContent: some View {
+        switch viewModel.searchPhase {
+        case .idle, .searching:
+            Spacer()
+            ProgressView()
+                .tint(OutPickTheme.SwiftUIColor.accent)
+            Spacer()
+
+        case .results:
+            List {
+                ForEach(viewModel.searchResults) { brand in
+                    brandRow(brand)
+                }
+            }
+            .listStyle(.plain)
+            .outpickHiddenScrollContentBackground()
+            .background(OutPickTheme.SwiftUIColor.backgroundBase)
+
+        case .empty:
+            Spacer()
+            VStack(spacing: 14) {
+                Text("찾는 브랜드가 없어요")
+                    .font(.headline)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
+
+                Text("브랜드 추가를 요청하면 OutPick에서 공식 룩북 확인 가능 여부를 검토해요.")
+                    .font(.footnote)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+                    .multilineTextAlignment(.center)
+
+                Button {
+                    coordinator.pushBrandRequest(
+                        initialBrandName: viewModel.normalizedSearchText
+                    )
+                } label: {
+                    Text("브랜드 요청하기")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(OutPickTheme.SwiftUIColor.backgroundBase)
+                        .frame(height: 44)
+                        .padding(.horizontal, 18)
+                        .background(OutPickTheme.SwiftUIColor.accent)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 32)
+            Spacer()
+
+        case .failed(let message):
+            Spacer()
+            VStack(spacing: 12) {
+                Text("검색하지 못했어요")
+                    .font(.headline)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
+                Text(message)
+                    .font(.footnote)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+                    .multilineTextAlignment(.center)
+            }
+            .padding(.horizontal, 32)
+            Spacer()
+        }
+    }
+
+    private func brandRow(_ brand: Brand) -> some View {
+        ZStack {
+            BrandRowView(brand: brand, brandImageCache: viewModel.brandImageCache)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    coordinator.pushBrandDetail(brand: brand)
+                }
+        }
     }
 
     private func refreshWithMinimumIndicatorDuration() async {
@@ -137,6 +234,16 @@ struct LookbookHomeView: View {
             (pullToRefreshMinimumVisibleDuration - elapsed) * 1_000_000_000
         )
         try? await Task.sleep(nanoseconds: remainingNanoseconds)
+    }
+
+    private func handleCreatedBrand(_ createdBrandID: Brand.ID) async {
+        await brandAdminSessionStore.refreshWritableBrands(force: true)
+        await viewModel.retry()
+        await viewModel.syncCreatedBrand(brandID: createdBrandID)
+
+        if let createdBrand = viewModel.brands.first(where: { $0.id == createdBrandID }) {
+            coordinator.pushBrandDetail(brand: createdBrand)
+        }
     }
 }
 
@@ -170,6 +277,9 @@ private final class PreviewAvatarImageManager: AvatarImageManaging {
     let coordinator = LookbookCoordinator(container: container)
     let vm = LookbookHomeViewModel(
         repo: provider.brandRepository,
+        searchUseCase: SearchBrandsUseCase(
+            repository: provider.brandSearchRepository
+        ),
         brandAdminSessionStore: brandAdminSessionStore,
         brandImageCache: provider.brandImageCache,
         initialBrandLimit: 12,

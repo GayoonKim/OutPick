@@ -16,7 +16,7 @@ struct KakaoFirebaseAuthBridgeResponse {
 }
 
 struct BrandAdminCapabilitiesResponse {
-    let canCreateBrands: Bool
+    let isTotalAdmin: Bool
     let roles: [String]
 }
 
@@ -128,9 +128,70 @@ final class CloudFunctionsManager {
         }
 
         return BrandAdminCapabilitiesResponse(
-            canCreateBrands: response["canCreateBrands"] as? Bool ?? false,
+            isTotalAdmin: response["isTotalAdmin"] as? Bool ?? false,
             roles: stringArrayValue(response, key: "roles")
         )
+    }
+
+    func updateBrand(
+        brandID: String,
+        name: String,
+        websiteURL: String?,
+        lookbookArchiveURL: String?,
+        isFeatured: Bool?
+    ) async throws -> Brand {
+        var data: [String: Any] = [
+            "brandID": brandID,
+            "name": name,
+            "websiteURL": websiteURL ?? "",
+            "lookbookArchiveURL": lookbookArchiveURL ?? ""
+        ]
+        if let isFeatured {
+            data["isFeatured"] = isFeatured
+        }
+
+        let response = try await callFunction(
+            "updateBrand",
+            data: data
+        )
+        guard let rawBrand = response["brand"] as? [String: Any] else {
+            throw CloudFunctionsManagerError.missingField("brand")
+        }
+        return try brandValue(rawBrand)
+    }
+
+    func addBrandManager(
+        brandID: String,
+        email: String,
+        role: BrandManagerRole
+    ) async throws -> BrandManagerMutationReceipt {
+        let response = try await callFunction(
+            "addBrandManager",
+            data: [
+                "brandID": brandID,
+                "email": email,
+                "role": role.rawValue
+            ]
+        )
+
+        return try brandManagerMutationReceipt(response, fallbackRemoved: false)
+    }
+
+    func removeBrandManager(
+        brandID: String,
+        email: String,
+        role: BrandManagerRole
+    ) async throws -> BrandManagerMutationReceipt {
+        let response = try await callFunction(
+            "removeBrandManager",
+            data: [
+                "brandID": brandID,
+                "email": email,
+                "role": role.rawValue
+            ]
+        )
+
+        return try brandManagerMutationReceipt(response, fallbackRemoved: true)
     }
 
     func updateBrandLogoPaths(
@@ -482,6 +543,205 @@ final class CloudFunctionsManager {
         )
     }
 
+    func searchBrands(
+        query: String,
+        limit: Int
+    ) async throws -> [Brand] {
+        let response = try await callFunction(
+            "searchBrands",
+            data: [
+                "query": query,
+                "limit": limit
+            ]
+        )
+
+        guard let rawBrands = response["brands"] as? [[String: Any]] else {
+            throw CloudFunctionsManagerError.missingField("brands")
+        }
+
+        return try rawBrands.map { try brandValue($0) }
+    }
+
+    func submitBrandRequest(
+        brandName: String,
+        englishBrandName: String?
+    ) async throws -> BrandRequestSubmissionReceipt {
+        var data: [String: Any] = ["brandName": brandName]
+        if let englishBrandName {
+            data["englishBrandName"] = englishBrandName
+        }
+
+        let response = try await callFunction(
+            "submitBrandRequest",
+            data: data
+        )
+
+        return BrandRequestSubmissionReceipt(
+            requestID: try stringValue(response, key: "requestID"),
+            groupID: optionalStringValue(response, key: "groupID"),
+            status: BrandRequestStatus(
+                rawValue: try stringValue(response, key: "status")
+            ) ?? .submitted,
+            isDuplicate: optionalBoolValue(response, key: "isDuplicate") ?? false,
+            remainingToday: optionalIntValue(response, key: "remainingToday") ?? 0
+        )
+    }
+
+    func listMyBrandRequests(
+        scope: BrandRequestListScope,
+        limit: Int,
+        cursor: BrandRequestPage.Cursor?
+    ) async throws -> BrandRequestPage {
+        var data: [String: Any] = [
+            "scope": scope.rawValue,
+            "limit": limit
+        ]
+        if let cursor {
+            data["cursorCreatedAt"] = cursor.createdAt
+            data["cursorRequestID"] = cursor.requestID
+        }
+
+        let response = try await callFunction(
+            "listMyBrandRequests",
+            data: data
+        )
+
+        guard let rawRequests = response["requests"] as? [[String: Any]] else {
+            throw CloudFunctionsManagerError.missingField("requests")
+        }
+
+        let nextCursor: BrandRequestPage.Cursor?
+        if let rawCursor = response["nextCursor"] as? [String: Any],
+           let createdAt = rawCursor["createdAt"] as? String,
+           let requestID = rawCursor["requestID"] as? String {
+            nextCursor = BrandRequestPage.Cursor(
+                createdAt: createdAt,
+                requestID: requestID
+            )
+        } else {
+            nextCursor = nil
+        }
+
+        return BrandRequestPage(
+            requests: try rawRequests.map { try brandRequestValue($0) },
+            nextCursor: nextCursor,
+            scope: BrandRequestListScope(
+                rawValue: optionalStringValue(response, key: "scope") ?? scope.rawValue
+            ) ?? scope
+        )
+    }
+
+    func listBrandRequestGroups(
+        adminStage: BrandRequestAdminStage?,
+        limit: Int,
+        cursor: AdminBrandRequestGroupPage.Cursor?
+    ) async throws -> AdminBrandRequestGroupPage {
+        var data: [String: Any] = ["limit": limit]
+        if let adminStage {
+            data["adminStage"] = adminStage.rawValue
+        }
+        if let cursor {
+            data["cursorUpdatedAt"] = cursor.updatedAt
+            data["cursorGroupID"] = cursor.groupID
+        }
+
+        let response = try await callFunction(
+            "listBrandRequestGroups",
+            data: data
+        )
+
+        guard let rawGroups = response["groups"] as? [[String: Any]] else {
+            throw CloudFunctionsManagerError.missingField("groups")
+        }
+
+        let nextCursor: AdminBrandRequestGroupPage.Cursor?
+        if let rawCursor = response["nextCursor"] as? [String: Any],
+           let updatedAt = rawCursor["updatedAt"] as? String,
+           let groupID = rawCursor["groupID"] as? String {
+            nextCursor = AdminBrandRequestGroupPage.Cursor(
+                updatedAt: updatedAt,
+                groupID: groupID
+            )
+        } else {
+            nextCursor = nil
+        }
+
+        return AdminBrandRequestGroupPage(
+            groups: try rawGroups.map { try brandRequestGroupValue($0) },
+            nextCursor: nextCursor
+        )
+    }
+
+    func updateBrandRequestGroupStage(
+        groupID: String,
+        adminStage: BrandRequestAdminStage,
+        rejectionReason: BrandRequestRejectionReason?,
+        adminNote: String?
+    ) async throws -> AdminBrandRequestGroupStageUpdateReceipt {
+        var data: [String: Any] = [
+            "groupID": groupID,
+            "adminStage": adminStage.rawValue
+        ]
+        if let rejectionReason {
+            data["rejectionReason"] = rejectionReason.rawValue
+        }
+        if let adminNote {
+            data["adminNote"] = adminNote
+        }
+
+        let response = try await callFunction(
+            "updateBrandRequestGroupStage",
+            data: data
+        )
+
+        return AdminBrandRequestGroupStageUpdateReceipt(
+            groupID: try stringValue(response, key: "groupID"),
+            status: BrandRequestStatus(
+                rawValue: try stringValue(response, key: "status")
+            ) ?? .submitted,
+            adminStage: BrandRequestAdminStage(
+                rawValue: try stringValue(response, key: "adminStage")
+            ) ?? adminStage,
+            updatedRequestCount: optionalIntValue(
+                response,
+                key: "updatedRequestCount"
+            ) ?? 0
+        )
+    }
+
+    func resolveBrandRequestGroup(
+        groupID: String,
+        resolvedBrandID: BrandID,
+        adminNote: String?
+    ) async throws -> AdminBrandRequestGroupStageUpdateReceipt {
+        var data: [String: Any] = [
+            "groupID": groupID,
+            "resolvedBrandID": resolvedBrandID.value
+        ]
+        if let adminNote {
+            data["adminNote"] = adminNote
+        }
+
+        let response = try await callFunction(
+            "resolveBrandRequestGroup",
+            data: data
+        )
+
+        return AdminBrandRequestGroupStageUpdateReceipt(
+            groupID: try stringValue(response, key: "groupID"),
+            status: BrandRequestStatus(
+                rawValue: try stringValue(response, key: "status")
+            ) ?? .added,
+            adminStage: BrandRequestAdminStage(
+                rawValue: try stringValue(response, key: "adminStage")
+            ) ?? .completed,
+            updatedRequestCount: optionalIntValue(
+                response,
+                key: "updatedRequestCount"
+            ) ?? 0
+        )
+    }
+
     private func callFunction(
         _ name: String,
         data: [String: Any],
@@ -578,6 +838,135 @@ final class CloudFunctionsManager {
             return Date(timeIntervalSince1970: value.doubleValue / 1000)
         }
         throw CloudFunctionsManagerError.missingField(key)
+    }
+
+    private func optionalDateValue(_ dictionary: [String: Any], key: String) -> Date? {
+        guard let value = dictionary[key], !(value is NSNull) else {
+            return nil
+        }
+        if let number = value as? NSNumber {
+            return Date(timeIntervalSince1970: number.doubleValue / 1000)
+        }
+        if let string = value as? String {
+            return ISO8601DateFormatter().date(from: string)
+        }
+        return nil
+    }
+
+    private func brandValue(_ dictionary: [String: Any]) throws -> Brand {
+        let metricsDictionary = dictionary["metrics"] as? [String: Any] ?? [:]
+
+        return Brand(
+            id: BrandID(value: try stringValue(dictionary, key: "brandID")),
+            name: try stringValue(dictionary, key: "name"),
+            websiteURL: optionalStringValue(dictionary, key: "websiteURL"),
+            lookbookArchiveURL: optionalStringValue(dictionary, key: "lookbookArchiveURL"),
+            logoThumbPath: optionalStringValue(dictionary, key: "logoThumbPath"),
+            logoDetailPath: optionalStringValue(dictionary, key: "logoDetailPath"),
+            logoOriginalPath: optionalStringValue(dictionary, key: "logoOriginalPath"),
+            isFeatured: optionalBoolValue(dictionary, key: "isFeatured") ?? false,
+            discoveryStatus: BrandDiscoveryStatus(
+                rawValue: optionalStringValue(dictionary, key: "discoveryStatus") ?? ""
+            ) ?? .idle,
+            lastDiscoveryErrorMessage: optionalStringValue(dictionary, key: "lastDiscoveryErrorMessage"),
+            lastDiscoveryRequestedAt: optionalDateValue(dictionary, key: "lastDiscoveryRequestedAt"),
+            lastDiscoveryCompletedAt: optionalDateValue(dictionary, key: "lastDiscoveryCompletedAt"),
+            metrics: BrandMetrics(
+                likeCount: optionalIntValue(metricsDictionary, key: "likeCount") ?? 0,
+                viewCount: optionalIntValue(metricsDictionary, key: "viewCount") ?? 0,
+                popularScore: optionalDoubleValue(metricsDictionary, key: "popularScore") ?? 0
+            ),
+            updatedAt: optionalDateValue(dictionary, key: "updatedAt") ?? Date(timeIntervalSince1970: 0)
+        )
+    }
+
+    private func brandRequestValue(_ dictionary: [String: Any]) throws -> BrandRequest {
+        BrandRequest(
+            id: try stringValue(dictionary, key: "requestID"),
+            brandName: try stringValue(dictionary, key: "brandName"),
+            normalizedBrandName: optionalStringValue(dictionary, key: "normalizedBrandName") ?? "",
+            englishBrandName: optionalStringValue(dictionary, key: "englishBrandName"),
+            normalizedEnglishBrandName: optionalStringValue(dictionary, key: "normalizedEnglishBrandName"),
+            groupID: optionalStringValue(dictionary, key: "groupID"),
+            dedupeKey: optionalStringValue(dictionary, key: "dedupeKey"),
+            dedupeKeySource: optionalStringValue(dictionary, key: "dedupeKeySource"),
+            status: BrandRequestStatus(
+                rawValue: try stringValue(dictionary, key: "status")
+            ) ?? .submitted,
+            resolvedBrandID: optionalStringValue(dictionary, key: "resolvedBrandID")
+                .map { BrandID(value: $0) },
+            rejectionReason: optionalStringValue(dictionary, key: "rejectionReason"),
+            createdAt: optionalDateValue(dictionary, key: "createdAt"),
+            updatedAt: optionalDateValue(dictionary, key: "updatedAt")
+        )
+    }
+
+    private func brandRequestGroupValue(
+        _ dictionary: [String: Any]
+    ) throws -> AdminBrandRequestGroup {
+        AdminBrandRequestGroup(
+            id: try stringValue(dictionary, key: "groupID"),
+            dedupeKey: optionalStringValue(dictionary, key: "dedupeKey") ?? "",
+            dedupeKeySource: optionalStringValue(dictionary, key: "dedupeKeySource") ?? "",
+            displayNameSnapshot: try stringValue(dictionary, key: "displayNameSnapshot"),
+            normalizedBrandName: optionalStringValue(
+                dictionary,
+                key: "normalizedBrandName"
+            ) ?? "",
+            englishBrandName: optionalStringValue(dictionary, key: "englishBrandName"),
+            normalizedEnglishBrandName: optionalStringValue(
+                dictionary,
+                key: "normalizedEnglishBrandName"
+            ),
+            requestCount: optionalIntValue(dictionary, key: "requestCount") ?? 0,
+            adminStage: BrandRequestAdminStage(
+                rawValue: try stringValue(dictionary, key: "adminStage")
+            ) ?? .requested,
+            status: BrandRequestStatus(
+                rawValue: try stringValue(dictionary, key: "status")
+            ) ?? .submitted,
+            rejectionReason: optionalStringValue(dictionary, key: "rejectionReason")
+                .flatMap { BrandRequestRejectionReason(rawValue: $0) },
+            resolvedBrandID: optionalStringValue(dictionary, key: "resolvedBrandID")
+                .map { BrandID(value: $0) },
+            adminNote: optionalStringValue(dictionary, key: "adminNote"),
+            lastRequestID: optionalStringValue(dictionary, key: "lastRequestID"),
+            lastRequestedAt: optionalDateValue(dictionary, key: "lastRequestedAt"),
+            createdAt: optionalDateValue(dictionary, key: "createdAt"),
+            updatedAt: optionalDateValue(dictionary, key: "updatedAt"),
+            reviewedAt: optionalDateValue(dictionary, key: "reviewedAt"),
+            resolvedAt: optionalDateValue(dictionary, key: "resolvedAt"),
+            rejectedAt: optionalDateValue(dictionary, key: "rejectedAt")
+        )
+    }
+
+    private func brandManagerMutationReceipt(
+        _ dictionary: [String: Any],
+        fallbackRemoved: Bool
+    ) throws -> BrandManagerMutationReceipt {
+        BrandManagerMutationReceipt(
+            brandID: BrandID(value: try stringValue(dictionary, key: "brandID")),
+            userID: UserID(value: try stringValue(dictionary, key: "uid")),
+            email: try stringValue(dictionary, key: "email"),
+            role: BrandManagerRole(
+                rawValue: try stringValue(dictionary, key: "role")
+            ) ?? .admin,
+            duplicate: optionalBoolValue(dictionary, key: "duplicate") ?? false,
+            removed: optionalBoolValue(dictionary, key: "removed") ?? fallbackRemoved
+        )
+    }
+
+    private func optionalDoubleValue(_ dictionary: [String: Any], key: String) -> Double? {
+        guard let value = dictionary[key], !(value is NSNull) else {
+            return nil
+        }
+        if let double = value as? Double {
+            return double
+        }
+        if let number = value as? NSNumber {
+            return number.doubleValue
+        }
+        return nil
     }
 
     private func postMetricsValue(_ dictionary: [String: Any]) throws -> PostMetrics {

@@ -18,10 +18,31 @@ protocol BrandStoringRepository {
         lookbookArchiveURL: String?
     ) async throws -> String
 
+    /// 브랜드 기본 정보를 수정하고 최신 브랜드 값을 반환합니다.
+    func updateBrand(
+        brandID: BrandID,
+        name: String,
+        websiteURL: String?,
+        lookbookArchiveURL: String?,
+        isFeatured: Bool?
+    ) async throws -> Brand
+
     /// 생성 후 업로드된 로고 경로를 패치합니다.
     func updateLogoPaths(
         docID: String,
         logoThumbPath: String?,
         logoDetailPath: String?
     ) async throws
+
+    func addBrandManager(
+        brandID: BrandID,
+        email: String,
+        role: BrandManagerRole
+    ) async throws -> BrandManagerMutationReceipt
+
+    func removeBrandManager(
+        brandID: BrandID,
+        email: String,
+        role: BrandManagerRole
+    ) async throws -> BrandManagerMutationReceipt
 }

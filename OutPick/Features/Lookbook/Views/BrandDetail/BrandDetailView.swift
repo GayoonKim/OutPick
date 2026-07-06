@@ -12,15 +12,11 @@ struct BrandDetailView: View {
     let brandImageCache: any BrandImageCacheProtocol
     let maxBytes: Int
     let coordinator: LookbookCoordinator
-    let seasonAdditionSheetFactory: (@escaping () -> Void) -> AnyView
-    let importManagementSheetFactory: () -> AnyView
     let shareSheetFactory: (LookbookShareTarget, @escaping (LookbookChatShareViewModel.Completion) -> Void) -> AnyView
     let onShareMove: (LookbookChatShareViewModel.Completion) async throws -> Void
 
     @EnvironmentObject private var brandAdminSessionStore: BrandAdminSessionStore
     @StateObject private var viewModel: BrandDetailViewModel
-    @State private var isPresentingSeasonAddition: Bool = false
-    @State private var isPresentingImportManagement: Bool = false
     @State private var activeShareTarget: LookbookShareTarget?
     @State private var shareCompletion: LookbookChatShareViewModel.Completion?
     @State private var shareMoveErrorMessage: String?
@@ -31,8 +27,6 @@ struct BrandDetailView: View {
         viewModel: BrandDetailViewModel,
         brandImageCache: any BrandImageCacheProtocol,
         coordinator: LookbookCoordinator,
-        seasonAdditionSheetFactory: @escaping (@escaping () -> Void) -> AnyView,
-        importManagementSheetFactory: @escaping () -> AnyView,
         shareSheetFactory: @escaping (LookbookShareTarget, @escaping (LookbookChatShareViewModel.Completion) -> Void) -> AnyView,
         onShareMove: @escaping (LookbookChatShareViewModel.Completion) async throws -> Void,
         maxBytes: Int = 1_000_000
@@ -40,8 +34,6 @@ struct BrandDetailView: View {
         self.brand = brand
         self.brandImageCache = brandImageCache
         self.coordinator = coordinator
-        self.seasonAdditionSheetFactory = seasonAdditionSheetFactory
-        self.importManagementSheetFactory = importManagementSheetFactory
         self.shareSheetFactory = shareSheetFactory
         self.onShareMove = onShareMove
         self.maxBytes = maxBytes
@@ -99,32 +91,13 @@ struct BrandDetailView: View {
             onBack: { coordinator.pop() }
         ) {
             if brandAdminSessionStore.canWrite(brandID: brand.id) {
-                Menu {
-                    if hasLookbookArchiveURL {
-                        Button("시즌 추가") {
-                            isPresentingSeasonAddition = true
-                        }
-                    }
-                    Button("가져오기 현황") {
-                        isPresentingImportManagement = true
-                    }
-                } label: {
-                    LookbookNavigationIconLabel(systemImage: "ellipsis")
+                LookbookNavigationTextButton(
+                    title: "관리자",
+                    accessibilityLabel: "브랜드 관리자"
+                ) {
+                    coordinator.pushAdminBrandManagement(initialBrandID: brand.id)
                 }
-                .accessibilityLabel("브랜드 관리")
             }
-        }
-        .sheet(isPresented: $isPresentingSeasonAddition, onDismiss: {
-            Task {
-                await viewModel.refreshContents(brandID: brand.id)
-            }
-        }) {
-            seasonAdditionSheetFactory {
-                isPresentingSeasonAddition = false
-            }
-        }
-        .sheet(isPresented: $isPresentingImportManagement) {
-            importManagementSheetFactory()
         }
         .sheet(item: $activeShareTarget) { target in
             shareSheetFactory(target) { completion in
@@ -172,13 +145,6 @@ struct BrandDetailView: View {
                 shareMoveErrorMessage = "채팅방으로 이동할 수 없습니다."
             }
         }
-    }
-
-    private var hasLookbookArchiveURL: Bool {
-        guard let lookbookArchiveURL = brand.lookbookArchiveURL else {
-            return false
-        }
-        return !lookbookArchiveURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var shouldBlockInitialLoading: Bool {

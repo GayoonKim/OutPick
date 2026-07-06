@@ -138,6 +138,22 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    match /brandRequests/{requestID} {
+      allow read, write: if false;
+    }
+
+    match /brandRequestNameIndex/{normalizedBrandNameHash} {
+      allow read, write: if false;
+    }
+
+    match /brandRequestDailyCounters/{userID}/brandRequestDays/{dateKey} {
+      allow read, write: if false;
+    }
+
+    match /brandRequestUserLimits/{userID} {
+      allow read, write: if false;
+    }
+
     match /brands/{brandID} {
       allow read: if true;
       allow create, update, delete: if false;

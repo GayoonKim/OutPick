@@ -11,8 +11,10 @@ import FirebaseFirestore
 
 @MainActor
 final class BrandAdminSessionStore: ObservableObject {
-    @Published private(set) var canCreateBrand: Bool = false
+    @Published private(set) var isTotalAdmin: Bool = false
     @Published private(set) var roles: [String] = []
+    @Published private(set) var ownedBrandIDs: Set<BrandID> = []
+    @Published private(set) var adminBrandIDs: Set<BrandID> = []
     @Published private(set) var writableBrandIDs: Set<BrandID> = []
     @Published private(set) var isLoading: Bool = false
     @Published private(set) var isLoaded: Bool = false
@@ -67,14 +69,14 @@ final class BrandAdminSessionStore: ObservableObject {
 
         do {
             let capabilities = try await loadCapabilitiesWithRetry()
-            canCreateBrand = capabilities.canCreateBrands
+            isTotalAdmin = capabilities.isTotalAdmin
             roles = capabilities.roles
             loadedIdentityKey = identityKey
             isLoaded = true
             print(
                 """
                 [BrandAdminSessionStore] refreshed identity=\(identityKey) \
-                canCreateBrand=\(capabilities.canCreateBrands) \
+                isTotalAdmin=\(capabilities.isTotalAdmin) \
                 roles=\(capabilities.roles)
                 """
             )
@@ -118,14 +120,17 @@ final class BrandAdminSessionStore: ObservableObject {
         defer { isWritableBrandsLoading = false }
 
         do {
-            let brandIDs = try await loadWritableBrandIDsWithRetry(identityKey: normalizedIdentityKey)
-            writableBrandIDs = brandIDs
+            let access = try await loadWritableBrandAccessWithRetry(identityKey: normalizedIdentityKey)
+            ownedBrandIDs = access.ownedBrandIDs
+            adminBrandIDs = access.adminBrandIDs
+            writableBrandIDs = access.writableBrandIDs
             loadedWritableBrandsIdentityKey = normalizedIdentityKey
             isWritableBrandsLoaded = true
             print(
                 """
                 [BrandAdminSessionStore] writable brands refreshed identity=\(normalizedIdentityKey) \
-                count=\(brandIDs.count)
+                ownerCount=\(access.ownedBrandIDs.count) \
+                adminCount=\(access.adminBrandIDs.count)
                 """
             )
         } catch {
@@ -165,11 +170,21 @@ final class BrandAdminSessionStore: ObservableObject {
     }
 
     func canWrite(brandID: BrandID) -> Bool {
-        writableBrandIDs.contains(brandID)
+        isTotalAdmin || writableBrandIDs.contains(brandID)
+    }
+
+    func canManageBrandManagers(brandID: BrandID) -> Bool {
+        isTotalAdmin || ownedBrandIDs.contains(brandID)
+    }
+
+    var canOpenAdminConsole: Bool {
+        isTotalAdmin || writableBrandIDs.isEmpty == false
     }
 
     #if DEBUG
     func applyUITestWritableBrands(_ brandIDs: Set<BrandID>) {
+        ownedBrandIDs = brandIDs
+        adminBrandIDs = []
         writableBrandIDs = brandIDs
         loadedWritableBrandsIdentityKey = LoginManager.shared.canonicalUserID
         isWritableBrandsLoaded = true
@@ -188,11 +203,13 @@ final class BrandAdminSessionStore: ObservableObject {
     }
 
     private func clearCapabilities() {
-        canCreateBrand = false
+        isTotalAdmin = false
         roles = []
     }
 
     private func clearWritableBrandIDs() {
+        ownedBrandIDs = []
+        adminBrandIDs = []
         writableBrandIDs = []
     }
 
@@ -228,9 +245,9 @@ final class BrandAdminSessionStore: ObservableObject {
         }
     }
 
-    private func loadWritableBrandIDsWithRetry(identityKey: String) async throws -> Set<BrandID> {
+    private func loadWritableBrandAccessWithRetry(identityKey: String) async throws -> BrandAdminAccess {
         do {
-            return try await fetchWritableBrandIDs(identityKey: identityKey)
+            return try await fetchWritableBrandAccess(identityKey: identityKey)
         } catch {
             let nsError = error as NSError
             print(
@@ -240,11 +257,11 @@ final class BrandAdminSessionStore: ObservableObject {
                 """
             )
             try? await Task.sleep(nanoseconds: 500_000_000)
-            return try await fetchWritableBrandIDs(identityKey: identityKey)
+            return try await fetchWritableBrandAccess(identityKey: identityKey)
         }
     }
 
-    private func fetchWritableBrandIDs(identityKey: String) async throws -> Set<BrandID> {
+    private func fetchWritableBrandAccess(identityKey: String) async throws -> BrandAdminAccess {
         let brandsCollection = db.collection("brands")
 
         async let ownerQuery = brandsCollection
@@ -255,8 +272,21 @@ final class BrandAdminSessionStore: ObservableObject {
             .getDocuments()
 
         let (ownerSnapshot, adminSnapshot) = try await (ownerQuery, adminQuery)
-        let allDocuments = ownerSnapshot.documents + adminSnapshot.documents
+        let ownedBrandIDs = Set(ownerSnapshot.documents.map { BrandID(value: $0.documentID) })
+        let adminBrandIDs = Set(adminSnapshot.documents.map { BrandID(value: $0.documentID) })
 
-        return Set(allDocuments.map { BrandID(value: $0.documentID) })
+        return BrandAdminAccess(
+            ownedBrandIDs: ownedBrandIDs,
+            adminBrandIDs: adminBrandIDs
+        )
+    }
+}
+
+private struct BrandAdminAccess {
+    let ownedBrandIDs: Set<BrandID>
+    let adminBrandIDs: Set<BrandID>
+
+    var writableBrandIDs: Set<BrandID> {
+        ownedBrandIDs.union(adminBrandIDs)
     }
 }

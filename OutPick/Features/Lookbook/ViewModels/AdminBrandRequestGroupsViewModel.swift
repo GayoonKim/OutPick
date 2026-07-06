@@ -1,0 +1,199 @@
+//
+//  AdminBrandRequestGroupsViewModel.swift
+//  OutPick
+//
+//  Created by Codex on 7/6/26.
+//
+
+import Foundation
+
+@MainActor
+final class AdminBrandRequestGroupsViewModel: ObservableObject {
+    enum Phase: Equatable {
+        case idle
+        case loading
+        case ready
+        case failed(String)
+    }
+
+    struct PendingCompletion: Identifiable, Equatable {
+        let group: AdminBrandRequestGroup
+        let resolvedBrandID: BrandID
+
+        var id: String {
+            "\(group.id)_\(resolvedBrandID.value)"
+        }
+    }
+
+    @Published private(set) var phase: Phase = .idle
+    @Published private(set) var groups: [AdminBrandRequestGroup] = []
+    @Published private(set) var updatingGroupID: String?
+    @Published var selectedStage: BrandRequestAdminStage = .requested
+    @Published var pendingCompletion: PendingCompletion?
+    @Published var adminNoteDraft: String = ""
+
+    private let listUseCase: any ListBrandRequestGroupsUseCaseProtocol
+    private let updateUseCase: any UpdateBrandRequestGroupStageUseCaseProtocol
+    private let resolveUseCase: any ResolveBrandRequestGroupUseCaseProtocol
+    private let pageLimit: Int
+    private let prefetchThreshold: Int
+    private var nextCursor: AdminBrandRequestGroupPage.Cursor?
+    private var isLoading = false
+
+    init(
+        listUseCase: any ListBrandRequestGroupsUseCaseProtocol,
+        updateUseCase: any UpdateBrandRequestGroupStageUseCaseProtocol,
+        resolveUseCase: any ResolveBrandRequestGroupUseCaseProtocol,
+        pageLimit: Int = 30,
+        prefetchThreshold: Int = 6
+    ) {
+        self.listUseCase = listUseCase
+        self.updateUseCase = updateUseCase
+        self.resolveUseCase = resolveUseCase
+        self.pageLimit = pageLimit
+        self.prefetchThreshold = prefetchThreshold
+    }
+
+    var canLoadNextPage: Bool {
+        nextCursor != nil && isLoading == false
+    }
+
+    func loadInitial() async {
+        guard phase == .idle else { return }
+        await reload()
+    }
+
+    func reload() async {
+        guard !isLoading else { return }
+        isLoading = true
+        defer { isLoading = false }
+
+        phase = .loading
+        nextCursor = nil
+
+        do {
+            let page = try await listUseCase.execute(
+                adminStage: selectedStage,
+                limit: pageLimit,
+                cursor: nil
+            )
+            groups = page.groups
+            nextCursor = page.nextCursor
+            phase = .ready
+        } catch {
+            phase = .failed(error.localizedDescription)
+        }
+    }
+
+    func selectStage(_ stage: BrandRequestAdminStage) async {
+        guard selectedStage != stage else { return }
+        selectedStage = stage
+        pendingCompletion = nil
+        adminNoteDraft = ""
+        await reload()
+    }
+
+    func loadNextPageIfNeeded(current group: AdminBrandRequestGroup) async {
+        guard let nextCursor else { return }
+        guard shouldPrefetch(afterSeeing: group) else { return }
+        guard !isLoading else { return }
+
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            let page = try await listUseCase.execute(
+                adminStage: selectedStage,
+                limit: pageLimit,
+                cursor: nextCursor
+            )
+            groups.append(contentsOf: page.groups)
+            self.nextCursor = page.nextCursor
+            phase = .ready
+        } catch {
+            phase = .failed(error.localizedDescription)
+        }
+    }
+
+    func startProcessing(_ group: AdminBrandRequestGroup) async {
+        await updateStage(
+            group,
+            adminStage: .processing,
+            rejectionReason: nil
+        )
+    }
+
+    func reject(
+        _ group: AdminBrandRequestGroup,
+        reason: BrandRequestRejectionReason
+    ) async {
+        await updateStage(
+            group,
+            adminStage: .rejected,
+            rejectionReason: reason
+        )
+    }
+
+    func prepareCompletion(
+        group: AdminBrandRequestGroup,
+        resolvedBrandID: BrandID
+    ) {
+        pendingCompletion = PendingCompletion(
+            group: group,
+            resolvedBrandID: resolvedBrandID
+        )
+        adminNoteDraft = ""
+    }
+
+    func cancelPendingCompletion() {
+        pendingCompletion = nil
+        adminNoteDraft = ""
+    }
+
+    private func updateStage(
+        _ group: AdminBrandRequestGroup,
+        adminStage: BrandRequestAdminStage,
+        rejectionReason: BrandRequestRejectionReason?
+    ) async {
+        updatingGroupID = group.id
+        defer { updatingGroupID = nil }
+
+        do {
+            _ = try await updateUseCase.execute(
+                groupID: group.id,
+                adminStage: adminStage,
+                rejectionReason: rejectionReason,
+                adminNote: nil
+            )
+            adminNoteDraft = ""
+            selectedStage = adminStage
+            await reload()
+        } catch {
+            phase = .failed(error.localizedDescription)
+        }
+    }
+
+    func confirmCompletion(_ completion: PendingCompletion) async {
+        updatingGroupID = completion.group.id
+        defer { updatingGroupID = nil }
+
+        do {
+            _ = try await resolveUseCase.execute(
+                groupID: completion.group.id,
+                resolvedBrandID: completion.resolvedBrandID,
+                adminNote: nil
+            )
+            adminNoteDraft = ""
+            await reload()
+        } catch {
+            phase = .failed(error.localizedDescription)
+        }
+    }
+
+    private func shouldPrefetch(afterSeeing group: AdminBrandRequestGroup) -> Bool {
+        guard let index = groups.firstIndex(where: { $0.id == group.id }) else {
+            return false
+        }
+        return index >= max(groups.count - prefetchThreshold, 0)
+    }
+}

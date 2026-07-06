@@ -1,6 +1,74 @@
 {
   "indexes": [
     {
+      "collectionGroup": "brandRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "requesterUID",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "requestID",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "brandRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "adminStage",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "updatedAt",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "requestID",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "brandRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "updatedAt",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "requestID",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "brandRequestNameIndex",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "adminStage",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "updatedAt",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "groupID",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "Rooms",
       "queryScope": "COLLECTION",
       "fields": [

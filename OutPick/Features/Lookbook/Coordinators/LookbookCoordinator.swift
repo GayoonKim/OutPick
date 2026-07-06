@@ -35,6 +35,40 @@ final class LookbookCoordinator {
         push(makePostDetailView(post: post))
     }
 
+    func pushBrandRequest(initialBrandName: String) {
+        push(makeBrandRequestView(
+            initialBrandName: initialBrandName,
+            onSubmitted: { [weak self] in
+                self?.replaceTopWithMyBrandRequests(initialScope: .active)
+            }
+        ))
+    }
+
+    func pushBrandRequestFromRequestSituation(initialBrandName: String) {
+        push(makeBrandRequestView(
+            initialBrandName: initialBrandName,
+            onSubmitted: { [weak self] in
+                self?.pop()
+            }
+        ))
+    }
+
+    func pushMyBrandRequests(initialScope: BrandRequestListScope = .active) {
+        push(makeMyBrandRequestsView(initialScope: initialScope))
+    }
+
+    func pushAdminHome(onCreatedBrand: @escaping (BrandID) -> Void) {
+        push(makeAdminHomeView(onCreatedBrand: onCreatedBrand))
+    }
+
+    func pushAdminBrandRequestGroups() {
+        push(makeAdminBrandRequestGroupsView())
+    }
+
+    func pushAdminBrandManagement(initialBrandID: BrandID? = nil) {
+        push(makeAdminBrandManagementView(initialBrandID: initialBrandID))
+    }
+
     func pop() {
         guard let navigationController else {
             assertionFailure("LookbookCoordinator requires an attached UINavigationController.")
@@ -62,6 +96,46 @@ final class LookbookCoordinator {
         container.makeLikedView(coordinator: self)
     }
 
+    func makeBrandRequestView(
+        initialBrandName: String,
+        onSubmitted: @escaping () -> Void
+    ) -> BrandRequestView {
+        container.makeBrandRequestView(
+            initialBrandName: initialBrandName,
+            onSubmitted: onSubmitted,
+            coordinator: self
+        )
+    }
+
+    func makeMyBrandRequestsView(
+        initialScope: BrandRequestListScope = .active
+    ) -> MyBrandRequestsView {
+        container.makeMyBrandRequestsView(
+            initialScope: initialScope,
+            coordinator: self
+        )
+    }
+
+    func makeAdminHomeView(
+        onCreatedBrand: @escaping (BrandID) -> Void
+    ) -> LookbookAdminHomeView {
+        container.makeAdminHomeView(
+            coordinator: self,
+            onCreatedBrand: onCreatedBrand
+        )
+    }
+
+    func makeAdminBrandRequestGroupsView() -> AdminBrandRequestGroupsView {
+        container.makeAdminBrandRequestGroupsView(coordinator: self)
+    }
+
+    func makeAdminBrandManagementView(initialBrandID: BrandID? = nil) -> AdminBrandManagementView {
+        container.makeAdminBrandManagementView(
+            coordinator: self,
+            initialBrandID: initialBrandID
+        )
+    }
+
     func makePostDetailView(post: LookbookPost) -> PostDetailView {
         container.makePostDetailView(
             brandID: post.brandID,
@@ -75,6 +149,24 @@ final class LookbookCoordinator {
         onCreatedBrand: @escaping (BrandID) -> Void
     ) -> some View {
         container.makeCreateBrandFlow(onCreatedBrand: onCreatedBrand)
+    }
+
+    private func replaceTopWithMyBrandRequests(initialScope: BrandRequestListScope) {
+        guard let navigationController else {
+            assertionFailure("LookbookCoordinator requires an attached UINavigationController.")
+            return
+        }
+
+        var viewControllers = navigationController.viewControllers
+        guard viewControllers.isEmpty == false else {
+            pushMyBrandRequests(initialScope: initialScope)
+            return
+        }
+
+        viewControllers.removeLast()
+        let next = UIHostingController(rootView: makeMyBrandRequestsView(initialScope: initialScope))
+        viewControllers.append(next)
+        navigationController.setViewControllers(viewControllers, animated: true)
     }
 
     func makePostCommentCoordinator() -> PostCommentCoordinator {

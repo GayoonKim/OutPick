@@ -80,6 +80,71 @@ struct FirestoreBrandStore: BrandStoringRepository {
             .document(docID)
             .setDataAsync(data, merge: true)
     }
+
+    func updateBrand(
+        brandID: BrandID,
+        name: String,
+        websiteURL: String?,
+        lookbookArchiveURL: String?,
+        isFeatured: Bool?
+    ) async throws -> Brand {
+        let normalizedName = normalizeBrandName(name)
+        var payload: [String: Any] = [
+            "name": normalizedDisplayName(name),
+            "normalizedName": normalizedName,
+            "websiteURL": websiteURL ?? NSNull(),
+            "lookbookArchiveURL": lookbookArchiveURL ?? NSNull(),
+            "updatedAt": FieldValue.serverTimestamp()
+        ]
+        if let isFeatured {
+            payload["isFeatured"] = isFeatured
+        }
+        try await db
+            .collection("brands")
+            .document(brandID.value)
+            .setDataAsync(payload, merge: true)
+
+        return Brand(
+            id: brandID,
+            name: normalizedDisplayName(name),
+            websiteURL: websiteURL,
+            lookbookArchiveURL: lookbookArchiveURL,
+            logoThumbPath: nil,
+            logoDetailPath: nil,
+            logoOriginalPath: nil,
+            isFeatured: isFeatured ?? false,
+            discoveryStatus: .idle,
+            lastDiscoveryErrorMessage: nil,
+            lastDiscoveryRequestedAt: nil,
+            lastDiscoveryCompletedAt: nil,
+            metrics: BrandMetrics(likeCount: 0, viewCount: 0, popularScore: 0),
+            updatedAt: Date()
+        )
+    }
+
+    func addBrandManager(
+        brandID: BrandID,
+        email: String,
+        role: BrandManagerRole
+    ) async throws -> BrandManagerMutationReceipt {
+        throw NSError(
+            domain: "FirestoreBrandStore",
+            code: -10,
+            userInfo: [NSLocalizedDescriptionKey: "관리자 변경은 Cloud Functions에서만 지원합니다."]
+        )
+    }
+
+    func removeBrandManager(
+        brandID: BrandID,
+        email: String,
+        role: BrandManagerRole
+    ) async throws -> BrandManagerMutationReceipt {
+        throw NSError(
+            domain: "FirestoreBrandStore",
+            code: -11,
+            userInfo: [NSLocalizedDescriptionKey: "관리자 변경은 Cloud Functions에서만 지원합니다."]
+        )
+    }
 }
 
 private extension FirestoreBrandStore {
