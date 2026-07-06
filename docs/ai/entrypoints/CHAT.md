@@ -35,8 +35,10 @@ Chat 기능 수정 시 관련 화면, ViewModel, UseCase, Repository, 검색 인
 - Repository protocol: `OutPick/DB/Firebase/DatabaseManager/Protocols/FirebaseChatRoomRepositoryProtocol.swift`
 - Repository implementation: `OutPick/DB/Firebase/DatabaseManager/Repositories/FirebaseChatRoomRepository.swift`
 - Firestore indexes: `firestore.indexes.json`
+- Shared read state: `OutPick/Features/Chat/Stores/ChatRoomReadStateStore.swift`
+- App-running banner stream: `OutPick/Infra/Banner/BannerManager.swift`
 
-참여중 채팅방 목록은 Firestore realtime listener를 사용하지 않는다. 화면 진입/앱 재실행 시 단발 fetch로 표시하고, 사용자가 pull-to-refresh로 최신화한다. 현재 목록 source는 `users/{uid}/joinedRooms/{roomID}` projection이며, 해당 roomID로 `Rooms` 문서를 batch fetch한 뒤 클라이언트에서 `Rooms.lastMessageAt DESC`로 정렬한다.
+참여중 채팅방 목록은 Firestore realtime listener를 사용하지 않는다. 화면 진입/앱 재실행 시 단발 fetch로 authoritative snapshot을 만들고, 사용자가 pull-to-refresh로 재동기화한다. 앱 실행 중 참여중 방에 새 메시지가 도착하는 경우에는 `BannerManager`의 socket stream이 `ChatRoomReadStateStore`와 `FirebaseChatRoomRepository`의 local preview cache를 갱신해 목록 화면에 unread/마지막 메시지를 즉시 반영한다. 현재 목록 source는 `users/{uid}/joinedRooms/{roomID}` projection이며, 해당 roomID로 `Rooms` 문서를 batch fetch한 뒤 클라이언트에서 `Rooms.lastMessageAt DESC`로 정렬한다.
 
 대형 membership 전환 후 현재 계약:
 
@@ -48,6 +50,22 @@ Chat 기능 수정 시 관련 화면, ViewModel, UseCase, Repository, 검색 인
 - 메시지 전송 시 room metadata의 `lastMessage*`는 즉시 갱신하지만, 사용자별 projection의 `lastMessage*` fan-out은 하지 않는다.
 - cutover 후 사용자 프로필 문서의 `joinedRooms` 배열은 bootstrap/runtime source로 사용하지 않는다.
 - 관련 task: `docs/ai/tasks/chat-membership-model-transition/*`
+
+## Realtime, Banner, Read State
+
+- Socket transport: `OutPick/Infra/Realtime/RealtimeSocketService.swift`
+- 현재 채팅방 stream 연결: `OutPick/Features/Chat/Controllers/ChatViewController.swift`
+- 읽음/안 읽음 shared store: `OutPick/Features/Chat/Stores/ChatRoomReadStateStore.swift`
+- 앱 실행 중 방 밖 메시지 banner: `OutPick/Infra/Banner/BannerManager.swift`
+- 전체 방 목록 preview cache: `OutPick/DB/Firebase/DatabaseManager/Repositories/FirebaseChatRoomRepository.swift`
+- 참여중 목록 즉시 반영: `OutPick/Features/Chat/ViewModels/JoinedRoomsViewModel.swift`
+- 전체 방 목록 즉시 반영: `OutPick/Features/Chat/ViewModels/RoomListsViewModel.swift`
+
+채팅방 화면을 보고 있을 때는 `ChatViewController`가 `RealtimeSocketService.openRoomSession(for:)`로 room join ACK를 받은 뒤 메시지 stream을 구독한다. 수신 메시지는 ViewModel/GRDB 저장 경로를 거쳐 현재 화면에 반영된다.
+
+채팅방 화면을 보고 있지 않을 때는 `BannerManager`가 참여중 방 socket stream을 통해 메시지를 받고 banner를 표시한다. 동시에 `ChatRoomReadStateStore.seedIncomingMessage(_:)`로 `latestSeq`, `latestMessagePreview`, `latestMessageAt`, `lastMessageSenderUID`를 갱신하고, `FirebaseChatRoomRepository.applyLocalIncomingMessagePreview(_:)`로 전체 방 목록 preview cache를 갱신한다.
+
+`JoinedRoomsViewModel`은 shared read-state stream을 구독해 unread count와 마지막 메시지 summary를 즉시 반영한다. `RoomListsViewModel`은 같은 stream을 신호로 사용해 repository의 cached top rooms snapshot을 다시 발행한다. 단, 앱 재실행/네트워크 재동기화의 authoritative source는 여전히 Firestore 단발 fetch와 pull-to-refresh다.
 
 ## 방 정보 수정 반영
 
@@ -68,11 +86,13 @@ Chat 기능 수정 시 관련 화면, ViewModel, UseCase, Repository, 검색 인
 - `chat-legacy-identity-naming`에서 Swift/API와 물리 GRDB table/column을 `userID` 기준으로 정리했다.
 - 문서상 `userID == canonicalUserID == Firebase Auth uid`로 고정한다.
 - legacy `userProfile`/`roomParticipant` fallback은 제거한다.
-- 앱이 아직 배포/운영 중이지 않고 데이터가 작으므로 legacy compatibility는 고려하지 않는다. 필요한 개발 데이터 정리는 사용자가 수동으로 처리한다.
-- GRDB `RoomMember` table은 migration chain 호환 흔적으로 남아 있지만 production 참여자 목록 source나 write API로 사용하지 않는다.
+- 앱이 아직 TestFlight/App Store 등으로 배포되지 않았으므로 신규 legacy table compatibility는 만들지 않는다. 단, 개발 DB에서 실제로 재현된 `chatMessage.senderID NOT NULL` 잔존 오류는 `GRDBManager`의 `rebuildChatMessageSenderUIDSchema` migration으로 현재 `senderUID` schema로 재작성한다.
+- GRDB `RoomMember` table/model/migration은 제거했다. local membership replica는 유지하지 않는다.
 - Profile sync manager: `OutPick/Features/Chat/Managers/Implementations/ChatProfileSyncManager.swift`
   - 메시지 발신자 UID 목록을 batch fetch하고 local user cache를 refresh한다.
   - 프로필 문서 listener/Combine publisher 경로는 사용하지 않는다.
+  - mutable cache/remote refresh/GRDB upsert는 actor가 소유하고, UI 동기 read는 MainActor snapshot만 읽는다.
+  - snapshot miss 시 GRDB를 즉시 읽지 않으며, refresh 완료 후 변경 senderUID의 현재 메시지 item을 reconfigure한다.
 - Profile sync protocol: `OutPick/Features/Chat/Managers/Protocols/ChatProfileSyncManaging.swift`
   - 채팅 진입/메시지 ingest 시 필요한 refresh 계약을 확인한다.
 - Participants use case: `OutPick/Features/Chat/Domain/UseCases/LoadChatRoomParticipantsUseCase.swift`

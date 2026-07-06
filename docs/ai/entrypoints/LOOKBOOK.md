@@ -57,8 +57,32 @@
   - `OutPick/Features/Lookbook/Views/LookbookHome/LookbookHomeView.swift`
     - root 화면이며 상세 이동은 `NavigationView`/hidden `NavigationLink` route state가 아니라 Coordinator action을 호출한다.
     - 브랜드 생성 fullScreenCover 내부 `NavigationView`는 modal 내부 흐름으로 유지한다.
+    - 브랜드 검색 UI와 내 브랜드 요청 진입점을 제공한다.
   - `OutPick/Features/Lookbook/Views/LookbookHome/BrandRowView.swift`
   - `OutPick/Features/Lookbook/ViewModels/LookbookHomeViewModel.swift`
+    - 기존 홈 pagination 상태와 callable 기반 브랜드 검색 상태를 분리한다.
+- Brand request:
+  - `OutPick/Features/Lookbook/Views/BrandRequest/BrandRequestView.swift`
+  - `OutPick/Features/Lookbook/Views/BrandRequest/MyBrandRequestsView.swift`
+  - `OutPick/Features/Lookbook/ViewModels/BrandRequestViewModel.swift`
+  - `OutPick/Features/Lookbook/ViewModels/MyBrandRequestsViewModel.swift`
+  - `OutPick/Features/Lookbook/Domains/UseCases/SearchBrandsUseCase.swift`
+  - `OutPick/Features/Lookbook/Domains/UseCases/SubmitBrandRequestUseCase.swift`
+  - `OutPick/Features/Lookbook/Domains/UseCases/ListMyBrandRequestsUseCase.swift`
+  - `OutPick/Features/Lookbook/Repositories/Implementations/CloudFunctionsBrandSearchRepository.swift`
+  - `OutPick/Features/Lookbook/Repositories/Implementations/CloudFunctionsBrandRequestRepository.swift`
+- Admin:
+  - `OutPick/Features/Lookbook/Views/Admin/LookbookAdminHomeView.swift`
+    - Lookbook 관리 홈이며 `요청 목록`, `브랜드 추가`, `브랜드 관리` 메뉴를 제공한다.
+    - 홈 진입은 `LookbookHomeView`의 `Lookbook 관리` 버튼에서 Coordinator push로 연결한다.
+    - 브랜드 생성은 기존 `CreateBrandFlowView`를 fullScreenCover로 재사용한다.
+  - `OutPick/Features/Lookbook/Views/Admin/AdminBrandRequestGroupsView.swift`
+    - 브랜드 요청 group 목록, 상태 변경, processing group의 브랜드 생성/완료 처리를 담당한다.
+  - `OutPick/Features/Lookbook/ViewModels/AdminBrandRequestGroupsViewModel.swift`
+  - `OutPick/Features/Lookbook/Views/Admin/AdminBrandManagementView.swift`
+    - `searchBrands`로 대상 브랜드를 검색/선택한 뒤 브랜드 수정, 로고 업로드, 관리자 추가/삭제, 시즌 추가, 가져오기 현황 진입을 제공한다.
+  - `OutPick/Features/Lookbook/ViewModels/AdminBrandManagementViewModel.swift`
+  - `OutPick/Features/Lookbook/Domains/Entities/BrandManagement.swift`
 - Brand detail:
   - `OutPick/Features/Lookbook/Views/BrandDetail/BrandDetailView.swift`
     - 커스텀 back은 Coordinator `pop()`을 호출한다.
@@ -138,6 +162,8 @@
   - `OutPick/Features/Lookbook/Repositories/Implementations/FirestorePostUserStateRepository.swift`
   - `OutPick/Features/Lookbook/Repositories/Implementations/FirestoreCommentUserStateRepository.swift`
 - Cloud Functions repositories:
+  - `OutPick/Features/Lookbook/Repositories/Implementations/CloudFunctionsBrandStore.swift`
+    - 브랜드 생성, 브랜드 수정, 로고 경로 반영, 브랜드 관리자 추가/삭제 callable을 감싼다.
   - `OutPick/Features/Lookbook/Repositories/Implementations/CloudFunctionsBrandEngagementRepository.swift`
   - `OutPick/Features/Lookbook/Repositories/Implementations/CloudFunctionsSeasonEngagementRepository.swift`
   - `OutPick/Features/Lookbook/Repositories/Implementations/CloudFunctionsPostEngagementRepository.swift`
@@ -176,3 +202,37 @@
 - import 관리자 ViewModel/UseCase: `OutPick/Features/Lookbook/ViewModels/SeasonImportManagementViewModel.swift`, `OutPick/Features/Lookbook/Domains/UseCases/ManageSeasonImportJobsUseCase.swift`
 - 실패 asset 재시도 Repository: `OutPick/Features/Lookbook/Repositories/Implementations/CloudFunctionsSeasonAssetRetryRepository.swift`
 - Cloud Run worker 아키텍처: `docs/ai/architecture/LOOKBOOK_IMPORT_WORKER.md`
+
+## 브랜드 요청 API 진입점
+
+- Functions: `functions/src/index.ts`
+- callable:
+  - `searchBrands`
+  - `submitBrandRequest`
+  - `listMyBrandRequests`
+  - `listBrandRequests`
+  - `updateBrandRequestStage`
+  - `resolveBrandRequest`
+  - `listBrandRequestGroups`
+  - `updateBrandRequestGroupStage`
+  - `resolveBrandRequestGroup`
+  - `updateBrand`
+  - `addBrandManager`
+  - `removeBrandManager`
+- 데이터:
+  - `brandRequests/{requestID}`
+  - `brandRequestNameIndex/{dedupeKeyHash}`
+  - `brandRequestDailyCounters/{uid}/brandRequestDays/{yyyyMMdd}`
+  - `brandRequestUserLimits/{uid}`
+- Phase 2는 백엔드 계약만 구현한다.
+- Phase 3에서 Lookbook 홈 검색 결과 없음 CTA, 브랜드 요청 화면, Swift Repository/UseCase/CloudFunctionsManager wrapper를 연결한다.
+- Phase 5B iOS 관리자 요청 group 화면:
+  - `OutPick/Features/Lookbook/Views/Admin/AdminBrandRequestGroupsView.swift`
+  - `OutPick/Features/Lookbook/ViewModels/AdminBrandRequestGroupsViewModel.swift`
+  - `OutPick/Features/Lookbook/Domains/UseCases/ListBrandRequestGroupsUseCase.swift`
+  - `OutPick/Features/Lookbook/Domains/UseCases/UpdateBrandRequestGroupStageUseCase.swift`
+  - `OutPick/Features/Lookbook/Domains/UseCases/ResolveBrandRequestGroupUseCase.swift`
+  - `OutPick/Features/Lookbook/Repositories/Protocols/BrandRequestRepositoryProtocol.swift`
+- Phase 6A는 processing group에서 기존 `CreateBrandFlowView`를 재사용해 브랜드를 생성하고, 생성된 `brandID`로 `resolveBrandRequestGroup`을 호출한다.
+- Phase 6B는 `AdminBrandManagementView`에서 브랜드 검색/선택 후 브랜드 수정, 로고 수정, 관리자 추가/삭제, 시즌 추가/import 현황 진입을 제공한다.
+- 사용자별 `brandRequests/{requestID}`는 개인 요청 기록이며, 사용자 노출 상태는 `listMyBrandRequests`가 group 상태를 반영해 반환한다.

@@ -13,9 +13,11 @@
 - 탭 조립: `OutPick/App/TabBarController/Composition`
 - 기능 코드: `OutPick/Features`
 - 공통 인프라: `OutPick/Infra`
+- 로컬 DB/데이터 schema: `docs/ai/entrypoints/DATA.md`
 - Firebase Functions: `functions/src/index.ts`
 - Firestore rules: `firestore.rules`
 - Firestore indexes: `firestore.indexes.json`
+- Firebase/Storage 운영 권한 확인: `docs/ai/entrypoints/FIREBASE.md`
 - 단위 테스트: `OutPickTests`
 - UI 테스트: `OutPickUITests`
 
@@ -25,6 +27,7 @@
 - Chat 앱 화면/검색/채팅방 흐름: `docs/ai/entrypoints/CHAT.md`
 - Lookbook 앱 화면/도메인: `docs/ai/entrypoints/LOOKBOOK.md`
 - Profile 생성/수정/상세: `docs/ai/entrypoints/PROFILE.md`
+- Data/GRDB/Repository boundary: `docs/ai/entrypoints/DATA.md`
 - Firebase Functions/Firestore: `docs/ai/entrypoints/FIREBASE.md`
 - 테스트: `docs/ai/entrypoints/TESTS.md`
 
