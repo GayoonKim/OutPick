@@ -24,6 +24,14 @@ final class BrandImageCache: BrandImageCacheProtocol {
         try await pipeline.loadImage(path: path, maxBytes: maxBytes)
     }
 
+    func storeImageData(_ data: Data, path: String) async throws {
+        try await pipeline.storeImageData(data, path: path)
+    }
+
+    func removeImage(path: String) async {
+        await pipeline.removeImage(path: path)
+    }
+
     func prefetch(
         items: [(path: String, maxBytes: Int)],
         concurrency: Int,

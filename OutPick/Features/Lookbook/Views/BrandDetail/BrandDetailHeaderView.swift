@@ -23,6 +23,7 @@ struct BrandDetailHeaderView: View {
     @State private var loadFailed: Bool = false
     @State private var isPresentingZoomPreview: Bool = false
     @State private var detailUpgradeTask: Task<Void, Never>?
+    @State private var lastLoadKey: String?
 
     /// 홈에서 prewarm된 썸네일을 즉시 재사용하기 위해 썸네일을 우선 표시합니다.
     private var headerImagePath: String? {
@@ -99,7 +100,7 @@ struct BrandDetailHeaderView: View {
             .frame(maxWidth: .infinity)
             .frame(height: 220, alignment: .top)
             .clipped()
-            .task(id: "\(headerImagePath ?? "")|\(preferredDetailPath ?? deferredDetailPath ?? "")") {
+            .task(id: logoLoadKey) {
                 await loadLogoIfNeeded()
                 scheduleDetailUpgradeIfNeeded()
             }
@@ -231,6 +232,14 @@ struct BrandDetailHeaderView: View {
     }
 
     private func loadLogoIfNeeded() async {
+        if lastLoadKey != logoLoadKey {
+            lastLoadKey = logoLoadKey
+            uiImage = nil
+            loadFailed = false
+            detailUpgradeTask?.cancel()
+            detailUpgradeTask = nil
+        }
+
         // 이미 로딩된 이미지가 있거나 실패 상태면 재시도하지 않음(원하면 정책 바꿔도 됨)
         if uiImage != nil || loadFailed { return }
 
@@ -252,6 +261,10 @@ struct BrandDetailHeaderView: View {
         } catch {
             loadFailed = true
         }
+    }
+
+    private var logoLoadKey: String {
+        "\(headerImagePath ?? "")|\(preferredDetailPath ?? deferredDetailPath ?? "")|\(brand.updatedAt.timeIntervalSince1970)"
     }
 
     private func scheduleDetailUpgradeIfNeeded() {

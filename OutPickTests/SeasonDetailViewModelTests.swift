@@ -228,6 +228,10 @@ private struct SeasonDetailBrandImageCacheStub: BrandImageCacheProtocol {
         UIImage()
     }
 
+    func storeImageData(_ data: Data, path: String) async throws {}
+
+    func removeImage(path: String) async {}
+
     func prefetch(
         items: [(path: String, maxBytes: Int)],
         concurrency: Int,

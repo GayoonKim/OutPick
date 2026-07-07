@@ -189,6 +189,11 @@ final class LookbookHomeViewModel: ObservableObject {
         }
     }
 
+    func applyUpdatedBrand(_ brand: Brand) {
+        upsertBrand(brand)
+        prefetchIfNeeded(for: brand)
+    }
+
     /// 스크롤 바닥에서 다음 페이지 로드
     func loadNextPageIfNeeded(current brand: Brand) async {
         guard phase == .ready else { return }

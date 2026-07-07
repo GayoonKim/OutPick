@@ -289,16 +289,24 @@ final class LookbookContainer {
 
     func makeAdminBrandManagementView(
         coordinator: LookbookCoordinator,
-        initialBrandID: BrandID? = nil
+        initialBrand: Brand? = nil,
+        initialBrandID: BrandID? = nil,
+        onUpdatedBrand: ((Brand) -> Void)? = nil
     ) -> AdminBrandManagementView {
         AdminBrandManagementView(
             viewModel: AdminBrandManagementViewModel(
+                initialBrand: initialBrand,
                 initialBrandID: initialBrandID,
                 brandRepository: provider.brandRepository,
                 searchUseCase: searchBrandsUseCase,
                 brandStore: provider.brandStore,
                 storageService: provider.storageService,
-                thumbnailer: provider.thumbnailer
+                brandImageCache: provider.brandImageCache,
+                thumbnailer: provider.thumbnailer,
+                onBrandUpdated: { [weak self] brand in
+                    self?.lookbookHomeViewModel.applyUpdatedBrand(brand)
+                    onUpdatedBrand?(brand)
+                }
             ),
             coordinator: coordinator,
             brandImageCache: provider.brandImageCache,

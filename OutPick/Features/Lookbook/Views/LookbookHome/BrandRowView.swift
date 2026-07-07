@@ -20,7 +20,7 @@ struct BrandRowView: View {
     #endif
 
     @State private var loadFailed: Bool = false
-    @State private var lastRequestedPath: String?
+    @State private var lastRequestedKey: String?
 
     // 목록 썸네일이므로 다운로드 최대 용량을 낮게 유지합니다. (대략 1MB)
     private let maxLogoBytes: Int = 1 * 1024 * 1024
@@ -57,7 +57,7 @@ struct BrandRowView: View {
             RoundedRectangle(cornerRadius: 14)
                 .stroke(OutPickTheme.SwiftUIColor.borderSubtle, lineWidth: 1)
         )
-        .task(id: brand.listLogoPath ?? "__empty_logo_path__") {
+        .task(id: logoLoadKey) {
             await loadLogoIfNeeded()
         }
         .accessibilityIdentifier("lookbook.brand.card")
@@ -128,9 +128,8 @@ struct BrandRowView: View {
         let resolvedPath = brand.listLogoPath
         guard let path = resolvedPath, !path.isEmpty else { return }
 
-        // 한국어 주석: 같은 셀 인스턴스가 유지된 채 로고 경로만 바뀌는 경우를 위해 상태를 초기화합니다.
-        if lastRequestedPath != path {
-            lastRequestedPath = path
+        if lastRequestedKey != logoLoadKey {
+            lastRequestedKey = logoLoadKey
             loadFailed = false
             #if canImport(UIKit)
             uiImage = nil
@@ -155,5 +154,9 @@ struct BrandRowView: View {
         } catch {
             loadFailed = true
         }
+    }
+
+    private var logoLoadKey: String {
+        "\(brand.listLogoPath ?? "__empty_logo_path__")|\(brand.updatedAt.timeIntervalSince1970)"
     }
 }

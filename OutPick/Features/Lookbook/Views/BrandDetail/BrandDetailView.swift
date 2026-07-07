@@ -8,7 +8,6 @@
 import SwiftUI
 
 struct BrandDetailView: View {
-    let brand: Brand
     let brandImageCache: any BrandImageCacheProtocol
     let maxBytes: Int
     let coordinator: LookbookCoordinator
@@ -21,6 +20,7 @@ struct BrandDetailView: View {
     @State private var shareCompletion: LookbookChatShareViewModel.Completion?
     @State private var shareMoveErrorMessage: String?
     @State private var didPrepareInitialContent: Bool = false
+    @State private var brand: Brand
 
     init(
         brand: Brand,
@@ -31,12 +31,12 @@ struct BrandDetailView: View {
         onShareMove: @escaping (LookbookChatShareViewModel.Completion) async throws -> Void,
         maxBytes: Int = 1_000_000
     ) {
-        self.brand = brand
         self.brandImageCache = brandImageCache
         self.coordinator = coordinator
         self.shareSheetFactory = shareSheetFactory
         self.onShareMove = onShareMove
         self.maxBytes = maxBytes
+        _brand = State(initialValue: brand)
         _viewModel = StateObject(wrappedValue: viewModel)
     }
 
@@ -95,7 +95,9 @@ struct BrandDetailView: View {
                     title: "관리자",
                     accessibilityLabel: "브랜드 관리자"
                 ) {
-                    coordinator.pushAdminBrandManagement(initialBrandID: brand.id)
+                    coordinator.pushAdminBrandManagement(initialBrand: brand) { updatedBrand in
+                        brand = updatedBrand
+                    }
                 }
             }
         }

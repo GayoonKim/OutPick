@@ -65,8 +65,16 @@ final class LookbookCoordinator {
         push(makeAdminBrandRequestGroupsView())
     }
 
-    func pushAdminBrandManagement(initialBrandID: BrandID? = nil) {
-        push(makeAdminBrandManagementView(initialBrandID: initialBrandID))
+    func pushAdminBrandManagement(
+        initialBrand: Brand? = nil,
+        initialBrandID: BrandID? = nil,
+        onUpdatedBrand: ((Brand) -> Void)? = nil
+    ) {
+        push(makeAdminBrandManagementView(
+            initialBrand: initialBrand,
+            initialBrandID: initialBrandID,
+            onUpdatedBrand: onUpdatedBrand
+        ))
     }
 
     func pop() {
@@ -129,10 +137,16 @@ final class LookbookCoordinator {
         container.makeAdminBrandRequestGroupsView(coordinator: self)
     }
 
-    func makeAdminBrandManagementView(initialBrandID: BrandID? = nil) -> AdminBrandManagementView {
+    func makeAdminBrandManagementView(
+        initialBrand: Brand? = nil,
+        initialBrandID: BrandID? = nil,
+        onUpdatedBrand: ((Brand) -> Void)? = nil
+    ) -> AdminBrandManagementView {
         container.makeAdminBrandManagementView(
             coordinator: self,
-            initialBrandID: initialBrandID
+            initialBrand: initialBrand,
+            initialBrandID: initialBrandID,
+            onUpdatedBrand: onUpdatedBrand
         )
     }
 

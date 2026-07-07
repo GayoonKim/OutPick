@@ -229,7 +229,9 @@ struct AdminBrandManagementView: View {
                 primaryButton(
                     title: "브랜드 정보 저장",
                     isLoading: viewModel.isSavingBrand,
-                    isDisabled: !viewModel.canSaveBrand
+                    isDisabled: !viewModel.canSaveBrand(
+                        canUpdateFeatured: brandAdminSessionStore.isTotalAdmin
+                    )
                 ) {
                     Task {
                         await viewModel.saveBrand(
