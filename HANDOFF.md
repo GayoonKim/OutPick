@@ -2,10 +2,10 @@
 
 ## 1. 최종 목표
 
-- 2026-07-06 기준 다음 핵심 작업은 `admin-web-brand-season-management`다.
-- 목표는 iOS 앱 안에 있던 운영자용 브랜드/시즌 생성/import 흐름을 일반 사용자 기능에서 분리하되, 별도 Admin 웹이 아니라 관리자 계정 전용 iOS Lookbook 관리 콘솔로 재배치하는 것이다.
-- 총 관리자와 브랜드별 관리자를 구분하고, 브랜드별 관리자는 normalized email로 기존 `users.email`을 조회해 `brands.ownerUIDs/adminUIDs`에 추가하는 최소 모델로 도입한다.
-- Phase 2 백엔드 계약 구현을 진행했다. 기존 Lookbook import worker/Functions/App 진입점 문서를 기준으로 iOS 관리자 콘솔 구현을 phase 단위로 이어가야 한다.
+- 2026-07-07 기준 `admin-web-brand-season-management`는 Phase 2~7 구현, 운영 배포, 통합 수동 QA까지 완료 처리했다.
+- 목표는 iOS 앱 안에 있던 운영자용 브랜드/시즌 생성/import 흐름을 일반 사용자 기능에서 분리하되, 별도 Admin 웹이 아니라 관리자 계정 전용 iOS Lookbook 관리 콘솔로 재배치하는 것이었다.
+- 총 관리자와 브랜드별 관리자를 구분하고, 브랜드별 관리자는 normalized email로 기존 `users.email`을 조회해 `brands/{brandID}/admins/{uid}`에 추가하는 모델로 확정했다.
+- 다음 남은 제품/운영 논의는 App Review Notes용 관리자 데모 계정/설명 준비 여부와 브랜드 룩북 콘텐츠 수집/표시 권리 범위 검토 여부다.
 - 이전 chat identity/membership/profile cache boundary 핵심 전환은 완료했다.
 - 완료 처리한 핵심 작업:
   - `chat-legacy-identity-naming`
@@ -17,6 +17,7 @@
   - `Socket dependency audit` 보수 업데이트
   - `Storage rules/preview 권한 확인` read-only 운영 상태 점검
   - `Storage rules 최소 권한 설계/적용` 운영 배포와 핵심 chat upload QA
+  - `admin-web-brand-season-management` Phase 2~7 구현, 운영 배포, 통합 수동 QA
 
 ## 2. 완료한 작업
 
@@ -136,7 +137,7 @@
   - 기본 deny
   - `rooms/{roomID}/...` get은 로그인 사용자, write/delete는 room member 또는 creator 기준
   - `profileImage/{userID}/...` get은 로그인 사용자, write/delete는 본인 기준
-  - `brands/{brandID}/...` get은 로그인 사용자, write/delete는 `brands/{brandID}.ownerUIDs/adminUIDs` 기준
+  - `brands/{brandID}/...` get은 로그인 사용자, write/delete는 총 관리자 또는 `brands/{brandID}/admins/{uid}.role in ["owner", "admin"]` 기준
   - legacy prefix는 기본 deny
 - 검증:
   - `firebase deploy --only storage --project outpick-664ae --dry-run --non-interactive` 통과
@@ -243,7 +244,7 @@
 
 ### `admin-web-brand-season-management`
 
-- 상태: iOS 앱 내 관리자 계정 전용 Lookbook 관리 콘솔로 Phase 6B 구현과 운영 배포까지 완료. 수동 QA는 별도 수행 필요.
+- 상태: iOS 앱 내 관리자 계정 전용 Lookbook 관리 콘솔로 Phase 2~7 구현, 운영 배포, 통합 수동 QA까지 완료.
 - 2026-07-06 방향 전환: 별도 Admin 웹 구현 phase는 iOS 앱 내 관리자 계정 전용 Lookbook 관리 콘솔 phase로 치환했다.
 - 목적:
   - 브랜드/시즌 생성/import 기능을 일반 사용자 기능에서 분리하고 관리자 계정 전용 iOS 관리 콘솔로 재배치한다.
@@ -315,14 +316,13 @@
   - 검증: Functions `npm run lint`, Functions `npm run build`, `firebase deploy --only firestore:rules,storage --dry-run`, `xcodebuild -scheme OutPick -destination 'generic/platform=iOS Simulator' build`, `git diff --check` 통과.
   - 2026-07-07 `firebase deploy --only firestore:rules,storage --project outpick-664ae --non-interactive` 성공.
   - 2026-07-07 `firebase deploy --only functions --project outpick-664ae --non-interactive` 성공.
-- 남은 작업:
-  - 통합 수동 QA(Phase 6H + Phase 7): 권한 모델 전환 QA와 iOS 관리자 시즌 import 관리 QA를 한 번에 수행한다.
-    - 총 관리자: 전체 브랜드 관리 가능, owner가 아니어도 브랜드 수정/로고 업로드/시즌 추가/import 관리/시즌·포스트·커버 업로드 가능, owner/admin 추가·삭제 가능.
-    - 신규 브랜드 생성: 총 관리자 UID가 `brands/{brandID}/admins/{uid}`에 자동 등록되지 않는지 확인한다.
-    - 브랜드 owner: 해당 브랜드 관리 가능, admin 추가·삭제 가능, owner 추가·삭제 불가.
-    - 브랜드 admin: 해당 브랜드 정보/로고/import 관리 가능, 관리자 추가·삭제 UI/권한 없음.
-    - 비관리자: 관리자 콘솔 진입, 브랜드 write, Storage upload가 막히는지 확인한다.
-    - Phase 7 import 흐름: 시즌 import 관리 진입, URL import 요청, retry, candidate discovery, candidate 선택 import를 같은 브랜드에서 이어서 확인한다.
+- Phase 6H + Phase 7 통합 수동 QA 완료:
+  - 총 관리자: 전체 브랜드 관리 가능, owner가 아니어도 브랜드 수정/로고 업로드/시즌 추가/import 관리/시즌·포스트·커버 업로드 가능, owner/admin 추가·삭제 가능함을 확인했다.
+  - 신규 브랜드 생성: 총 관리자 UID가 `brands/{brandID}/admins/{uid}`에 자동 등록되지 않는 흐름을 확인했다.
+  - 브랜드 owner: 해당 브랜드 관리 가능, admin 추가·삭제 가능, owner 추가·삭제 불가를 확인했다.
+  - 브랜드 admin: 해당 브랜드 정보/로고/import 관리 가능, 관리자 추가·삭제 UI/권한 없음 확인.
+  - 비관리자: 관리자 콘솔 진입, 브랜드 write, Storage upload가 막히는지 확인했다.
+  - Phase 7 import 흐름: 시즌 import 관리 진입, URL import 요청, retry, candidate discovery, candidate 선택 import를 같은 브랜드에서 이어서 확인했다.
   - 2026-07-07 QA 중 `getBrandAdminCapabilities`가 `INTERNAL`을 반환하는 증상 확인.
     - 원인: `collectionGroup("admins").where("uid", "==", uid)` 쿼리에 필요한 `admins.uid` collection group single-field index 누락.
     - 조치: `firestore.indexes.json`에 `admins.uid` `COLLECTION_GROUP` ASC field override를 추가하고 배포했다.
@@ -337,7 +337,9 @@
   - 보류 UI는 사유 선택이 필요하므로 sheet에서 `룩북 확인 불가`, `스팸`, `기타`를 선택한다. 선택 사유별 point color 배경을 사용하고, `기타` 선택 시 작은 admin note 입력창을 보여준다.
   - 보류 확정 시 `AdminBrandRequestGroupsViewModel.reject(_:reason:adminNote:)`가 `updateBrandRequestGroupStage`에 rejection reason과 admin note를 전달한다.
   - 처리 중 요청의 `브랜드 생성`과 `완료 처리`는 분리했다. 브랜드 생성 직후에는 `markBrandRequestGroupBrandCreated`가 `brandRequestNameIndex/{groupID}`에 `createdBrandID`, `brandCreatedAt`, `brandCreatedBy`를 저장한다. 처리중 row는 `상태 변경` 메뉴를 유지하고, `createdBrandID`가 있으면 앱 재실행 후에도 메뉴 안에 `브랜드 생성` 대신 `검수 후 완료 처리`를 보여준다.
-  - `AdminBrandManagementViewModel`의 브랜드 정보 저장, 로고 저장, 관리자 추가/삭제, 중복 관리자 안내 메시지는 약 1초 후 자동으로 사라진다. 실패/입력 오류 메시지는 자동 dismiss 대상에서 제외한다.
+  - `AdminBrandManagementViewModel`의 브랜드 정보 저장, 로고 저장, 관리자 추가/삭제, 중복 관리자/삭제 대상 없음 안내 메시지는 짧게 자동으로 사라진다. 실패 메시지는 더 길게 자동 dismiss하고, 입력 오류 메시지는 자동 dismiss 대상에서 제외한다.
+  - 브랜드 상세에서 관리자 버튼으로 들어갈 때는 서버 재조회 없이 현재 `Brand`를 `initialBrand`로 `AdminBrandManagementViewModel`에 seed한다. 검색 기반 브랜드 관리에서는 검색어를 지우면 선택 브랜드와 draft를 초기화한다.
+  - 로고 수정은 같은 Storage path를 덮어쓰므로 `BrandImageCache.storeImageData`로 새 thumb/detail 데이터를 메모리/디스크 캐시에 즉시 반영하고, 홈/상세는 `brand.updatedAt`을 image load key에 포함해 path가 같아도 다시 렌더링한다.
   - 시즌 불러오기 결과 UI에서는 닫아도 작업이 계속된다는 별도 안내 문구를 제거했다.
   - 브랜드 생성/관리 모델은 `brands.name`과 `brands.englishName`을 함께 사용한다. `searchBrands`는 `normalizedName`/`normalizedEnglishName` 둘 다 prefix 검색하고, `brandNameIndex`는 한글명/영문명 중복을 함께 차단한다.
 - 먼저 확인할 문서:
@@ -355,6 +357,22 @@
 
 ## 4. 수정한 파일 목록
 
+- 최근 완료한 `admin-web-brand-season-management` Phase 6H/7 QA 수정 커밋:
+  - `OutPick/Features/Lookbook/ViewModels/AdminBrandManagementViewModel.swift`: 브랜드 관리 direct seed, dirty-state 저장 버튼, 결과 피드백 dismiss, 로고 저장 후 cache/store 갱신.
+  - `OutPick/Features/Lookbook/Views/Admin/AdminBrandManagementView.swift`: 저장 버튼 활성화 기준과 관리자 브랜드 관리 UI 접합.
+  - `OutPick/Features/Lookbook/Views/BrandDetail/BrandDetailView.swift`: 관리자 버튼에서 현재 `Brand`를 `initialBrand`로 넘기고 수정 후 local state 갱신.
+  - `OutPick/Features/Lookbook/Views/BrandDetail/BrandDetailHeaderView.swift`: `updatedAt` 기반 로고 reload key.
+  - `OutPick/Features/Lookbook/Views/LookbookHome/BrandRowView.swift`: `updatedAt` 기반 홈 로고 reload key.
+  - `OutPick/Features/Lookbook/Services/ImageLoading/BrandImageCacheProtocol.swift`, `OutPick/Features/Lookbook/Services/ImageLoading/BrandImageCache.swift`: 같은 Storage path 덮어쓰기용 `storeImageData`/`removeImage` cache 경계.
+  - `OutPick/Features/Lookbook/ViewModels/LookbookHomeViewModel.swift`: 관리자 변경 후 홈 브랜드 목록 갱신.
+  - `OutPick/Features/Lookbook/LookbookContainer.swift`, `OutPick/Features/Lookbook/Coordinators/LookbookCoordinator.swift`: 관리자 브랜드 관리 화면 factory/callback 전달.
+  - `OutPickTests/AdminBrandManagementViewModelTests.swift`: direct seed, 검색 reset, dirty-state, 권한별 저장 버튼 회귀 테스트.
+- 최근 완료한 문서 최신화:
+  - `docs/ai/tasks/active.md`
+  - `docs/ai/tasks/admin-web-brand-season-management/progress.md`
+  - `docs/ai/tasks/admin-web-brand-season-management/qa-checklist.md`
+  - `docs/ai/entrypoints/LOOKBOOK.md`
+  - `HANDOFF.md`
 - 최근 닫은 작업에서 중요한 파일:
   - `OutPick/DB/GRDB/GRDBManager.swift`
   - `OutPick/DB/Firebase/DatabaseManager/Protocols/FirebaseChatRoomRepositoryProtocol.swift`
@@ -384,8 +402,7 @@
   - `docs/ai/entrypoints/CHAT.md`
   - `docs/ai/tasks/active.md`
   - `docs/ai/tasks/chat-member-profile-cache-boundary/*`
-- working tree에는 앱/Socket/Firebase rules/문서 변경이 섞여 있다.
-- 커밋 정리 전 `git status --short`와 `git diff --name-only`를 다시 확인해야 한다.
+- 2026-07-07 커밋 `366b46e 룩북 관리자 브랜드 관리 QA 수정` 후 working tree는 깨끗한 상태였고, 이후 문서 최신화 변경만 진행 중이다. 최종 커밋 전 `git status --short`와 `git diff --name-only`를 다시 확인해야 한다.
 
 ## 5. 중요한 아키텍처 결정
 
@@ -408,23 +425,25 @@
 
 ## 6. 다시 확인해야 할 불확실한 부분
 
-- `admin-web-brand-season-management`는 별도 Admin 웹이 아니라 iOS 관리자 콘솔 방향으로 전환했다.
+- `admin-web-brand-season-management`는 별도 Admin 웹이 아니라 iOS 관리자 콘솔 방향으로 전환했고 Phase 2~7 구현/배포/수동 QA를 완료했다.
 - Admin 웹 위치/기술 스택 논의는 1차 범위에서 제외했다.
 - 관리자 인증은 Firebase Auth 현재 사용자 + `brandAdmins/{uid}.isActive == true` 기준으로 확정했다.
 - 브랜드별 관리자 권한은 `brands/{brandID}/admins/{uid}.role` 기준으로 확정했다.
 - 관리자 추가는 normalized email로 기존 `users.email`을 조회해 `brands/{brandID}/admins/{uid}` 문서를 추가하는 방식으로 확정했다. 운영 Firestore 샘플 기준 `users.email`은 존재하고 `normalizedEmail`/`normalized_email`은 없다.
-- 기존 Functions callable을 그대로 앱 관리자 콘솔에서 호출할지, 관리자 전용 API/Functions를 새로 둘지 재확인 필요.
+- 기존 Functions callable을 앱 관리자 콘솔에서 재사용하는 방향으로 구현/검증했다.
 - iOS 앱 내 브랜드/시즌 생성/import 진입점은 완전 제거가 아니라 관리자 전용 비노출/재사용 방향으로 확정했다.
 - Storage rules 최소 권한 rules는 운영 배포했고 cross-service IAM도 부여했다. 참여자 chat image/video upload, 방장 room cover create/update/delete, 비참여 preview image/video read, profile avatar upload, lookbook brand logo/season cover upload는 성공 확인했다.
 - Socket dependency audit의 남은 moderate 경고는 `firebase-admin@14.1.0`만으로 제거되지 않는다. upstream dependency 업데이트 또는 npm overrides는 별도 검토가 필요하다.
 - GRDB schema cleanup은 TestFlight/App Store 배포 이력 없음과 개발 DB 초기화 가능 기준으로 진행했다.
 - `chat-profile-snapshot-cache-refactor`는 자동 검증까지 완료했다. 별도 남은 설계 결정은 없다.
 - Realtime DEBUG 로그 정리는 정상 흐름 반복 로그 제거 기준으로 완료했다. 실패/예외 로그는 유지했다.
+- App Review Notes용 관리자 데모 계정/설명 필요 여부는 아직 결정하지 않았다.
+- 브랜드 룩북 콘텐츠 수집/표시 권리 범위는 확실하지 않음. 출시/심사 전 검토 필요 여부를 사용자와 결정해야 한다.
 
 ## 7. 다음 턴에서 바로 실행해야 할 작업
 
 1. `git status --short`와 `git diff --name-only`로 현재 working tree를 재확인한다.
-2. `admin-web-brand-season-management`의 iOS 관리자 콘솔 방향 문서를 기준으로 구현 전 코드 진입점을 재확인한다.
-3. 먼저 관련 문서와 진입점 문서를 읽고 요구사항/구현 디테일/제약/완료 기준/사용자 흐름/화면/API/데이터/아키텍처 쟁점을 정리한다.
-4. 모호한 항목이 생기면 사용자에게 질문한다.
-5. 사용자 승인 전까지 코드 수정은 하지 않는다.
+2. 문서 최신화 변경을 검토하고 필요하면 별도 문서 커밋으로 정리한다.
+3. 다음 제품/운영 논의는 App Review Notes용 관리자 데모 계정/설명 준비 여부다.
+4. 브랜드 룩북 콘텐츠 수집/표시 권리 범위 검토가 필요한지 사용자와 결정한다.
+5. 새 기능/큰 수정이 생기기 전까지 `admin-web-brand-season-management`는 완료 상태로 본다.

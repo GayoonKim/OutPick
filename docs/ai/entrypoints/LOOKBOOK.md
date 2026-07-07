@@ -85,14 +85,21 @@
     - 요청 group 상태 변경, 보류 사유/rejection reason, admin note 전달을 담당한다.
   - `OutPick/Features/Lookbook/Views/Admin/AdminBrandManagementView.swift`
     - `searchBrands`로 대상 브랜드를 검색/선택한 뒤 브랜드 수정, 로고 업로드, 관리자 추가/삭제, 시즌 추가, 가져오기 현황 진입을 제공한다.
+    - 검색 기반 진입에서는 검색어를 지우면 선택 브랜드와 수정 draft를 초기화한다.
+    - 브랜드 상세에서 직접 진입한 경우에는 검색 없이 `initialBrand`로 수정 패널을 즉시 seed한다.
   - `OutPick/Features/Lookbook/ViewModels/AdminBrandManagementViewModel.swift`
-    - 브랜드 정보 저장, 로고 저장, 관리자 추가/삭제, 중복 관리자 안내 성공성 메시지의 1초 자동 dismiss를 담당한다.
+    - 브랜드 정보 저장 dirty-state, 로고 저장, 관리자 추가/삭제, 결과 피드백 자동 dismiss를 담당한다.
+    - 성공/중복/삭제 대상 없음 등 작업 결과 메시지는 짧게 자동 dismiss하고, 실패 메시지는 더 길게 자동 dismiss한다. 입력 검증 오류는 사용자가 수정할 수 있도록 유지한다.
+    - 로고 저장은 같은 Storage path를 덮어쓰므로 저장 직후 `BrandImageCache.storeImageData`로 새 thumb/detail 데이터를 캐시에 반영하고 `onBrandUpdated`로 홈/상세 화면의 Brand state를 갱신한다.
   - `OutPick/Features/Lookbook/Domains/Entities/BrandManagement.swift`
 - Brand detail:
   - `OutPick/Features/Lookbook/Views/BrandDetail/BrandDetailView.swift`
     - 커스텀 back은 Coordinator `pop()`을 호출한다.
+    - 관리자 버튼은 서버 재조회 없이 현재 상세 화면이 가진 `Brand`를 `initialBrand`로 `AdminBrandManagementView`에 전달한다.
+    - 관리자 화면에서 브랜드 정보/로고가 수정되면 `onUpdatedBrand` 콜백으로 상세 화면의 local `Brand` state를 갱신한다.
   - `OutPick/Features/Lookbook/Views/BrandDetail/BrandDetailHeaderView.swift`
     - brand header image tap 확대는 공용 image viewer wrapper인 `LookbookImageViewerView`를 사용한다.
+    - 로고 이미지는 같은 Storage path가 덮어써질 수 있으므로 `brand.updatedAt`을 load key에 포함해 path가 같아도 새 이미지로 다시 로드한다.
   - `OutPick/Features/Lookbook/Views/BrandDetail/BrandDetailSeasonsGridView.swift`
     - 시즌 탭은 hidden `NavigationLink`가 아니라 Coordinator `pushSeasonDetail`을 호출한다.
   - `OutPick/Features/Lookbook/ViewModels/BrandDetailViewModel.swift`
@@ -192,6 +199,7 @@
 
 - Brand image cache: `OutPick/Features/Lookbook/Services/ImageLoading/BrandImageCache.swift`
 - Brand image cache protocol: `OutPick/Features/Lookbook/Services/ImageLoading/BrandImageCacheProtocol.swift`
+  - 같은 Storage path를 덮어쓰는 로고 수정 경로에서는 `storeImageData(_:path:)`로 메모리/디스크 캐시를 즉시 교체한다.
 - Image thumbnailing protocol: `OutPick/Features/Lookbook/Services/ImageProcessing/Protocols/ImageThumbnailing.swift`
 - ImageIO thumbnailer: `OutPick/Features/Lookbook/Services/ImageProcessing/Implementations/ImageIOThumbnailer.swift`
 - Thumbnail policies/defaults:
@@ -242,4 +250,6 @@
   - 상태 변경 메뉴, 처리 시작/검수 후 완료 확인창, 보류 사유 선택 UI는 `AdminBrandRequestGroupsView.swift`를 먼저 확인한다.
 - Phase 6A는 processing group에서 기존 `CreateBrandFlowView`를 재사용해 브랜드를 생성한다. 생성 직후 `markBrandRequestGroupBrandCreated`로 `createdBrandID`를 저장하고, 완료 처리는 자동 호출하지 않고 시즌 import/작업 검수 후 `검수 후 완료 처리`로 `resolveBrandRequestGroup`을 호출한다.
 - Phase 6B는 `AdminBrandManagementView`에서 브랜드 검색/선택 후 브랜드 수정, 로고 수정, 관리자 추가/삭제, 시즌 추가/import 현황 진입을 제공한다.
+- Phase 6H QA 수정은 `AdminBrandManagementViewModel`, `BrandDetailView`, `BrandDetailHeaderView`, `BrandRowView`, `BrandImageCache`를 함께 확인한다. 특히 상세에서 직접 관리자 진입은 `initialBrand` seed, 로고 수정 반영은 cache store + `updatedAt` load key가 핵심이다.
+- Phase 7 iOS 관리자 시즌 import QA는 `SeasonAdditionSheetView`, `SeasonImportManagementView`, `SeasonImportManagementViewModel`, `ManageSeasonImportJobsUseCase`와 `docs/ai/architecture/LOOKBOOK_IMPORT_WORKER.md`를 함께 확인한다.
 - 사용자별 `brandRequests/{requestID}`는 개인 요청 기록이며, 사용자 노출 상태는 `listMyBrandRequests`가 group 상태를 반영해 반환한다.

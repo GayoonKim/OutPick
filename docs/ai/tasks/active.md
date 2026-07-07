@@ -4,7 +4,7 @@
 
 - 현재 다음 핵심 task는 `admin-web-brand-season-management`다.
 - 2026-07-06 기준 이 task의 구현 방향은 별도 Admin 웹이 아니라 iOS 앱 내 관리자 계정 전용 Lookbook 관리 콘솔로 전환했다.
-- Phase 6B iOS 관리자 추가/삭제, 브랜드 수정/로고 수정, import 관리 진입 정리까지 구현했다.
+- Phase 6H 통합 관리자 브랜드 관리 QA와 Phase 7 iOS 관리자 시즌 import QA까지 완료 처리했다.
 - 2026-07-06 기준, 별도 Admin 웹 구현 phase는 iOS 관리자 화면 phase로 치환했다.
 - 아래 핵심 작업은 완료/마감 처리했다.
   - `chat-legacy-identity-naming`
@@ -18,6 +18,7 @@
   - `Storage rules 최소 권한 설계/적용` 운영 배포와 핵심 chat upload QA
   - `chat-profile-snapshot-cache-refactor`
   - Realtime DEBUG 로그 정리
+  - `admin-web-brand-season-management` Phase 2~7 구현, 운영 배포, 통합 수동 QA
 
 ## 완료한 핵심 작업
 
@@ -75,8 +76,8 @@
   - 기존 시즌 import Cloud Tasks/Cloud Run worker 흐름은 가능한 재사용하고, 호출 주체와 운영 UI를 관리자 콘솔로 정리한다.
   - iOS 앱 내 운영자용 생성/import 진입점은 일반 사용자에게 비노출하고, 관리자 계정에서만 접근하게 한다.
   - 총 관리자와 브랜드별 관리자를 구분한다.
-  - 총 관리자는 `brandAdmins/{uid}` 문서 존재 여부, 브랜드별 관리자는 `brands.ownerUIDs/adminUIDs` 포함 여부로 판단한다.
-  - 관리자 추가는 normalized email로 기존 `users.email`을 조회해 브랜드 owner/admin에 추가하는 방식으로 시작한다.
+  - 총 관리자는 `brandAdmins/{uid}.isActive == true`, 브랜드별 관리자는 `brands/{brandID}/admins/{uid}.role in ["owner", "admin"]` 기준으로 판단한다.
+  - 관리자 추가는 normalized email로 기존 `users.email`을 조회해 `brands/{brandID}/admins/{uid}` 문서에 추가한다.
   - 브랜드 요청 일일 제한은 `brandRequestDailyCounters/{uid}/brandRequestDays/{yyyyMMdd}`로 관리하고, TTL field는 `expiresAt`으로 둔다.
   - spam 누적 제한은 `brandRequestUserLimits/{uid}`에 기록한다.
   - 브랜드 요청 운영 단계는 `requested`, `processing`, `completed`, `rejected`로 둔다.
@@ -90,6 +91,8 @@
   - Phase 5B iOS 관리자 요청 group 목록/상태 변경 구현.
   - Phase 6A 요청 group 완료 처리 + 브랜드 연결 구현.
   - Phase 6B iOS 관리자 추가/삭제, 브랜드 수정/로고 수정, import 관리 진입 정리 구현.
+  - Phase 6H 통합 관리자 브랜드 관리 QA 수정 및 수동 QA 완료.
+  - Phase 7 iOS 관리자 시즌 import 관리 QA 완료.
 - Phase 6B 검증:
   - Functions `npm run lint` 통과.
   - Functions `npm run build` 통과.
@@ -101,11 +104,20 @@
   - 2026-07-06 Firestore indexes 배포 완료.
 - Phase 7 전 권한 모델 리팩토링:
   - 총 관리자는 `brandAdmins/{uid}.isActive == true` 기준으로 정리.
-  - 브랜드 owner/admin은 `brands.ownerUIDs/adminUIDs` 기준으로 유지.
+  - 브랜드 owner/admin은 `brands/{brandID}/admins/{uid}.role` 기준으로 정리.
   - `canCreateBrands`, `brandCreator`, `allowedBrandIDs`는 권한 판단 source에서 제외.
   - iOS 관리자 콘솔 노출을 총 관리자와 브랜드별 관리자 역할에 맞게 분리.
   - Functions lint/build, XcodeBuildMCP build 통과.
   - 2026-07-06 Functions 운영 배포 완료.
+- Phase 6H/7 QA 수정 코드 진입점:
+  - `OutPick/Features/Lookbook/Views/Admin/AdminBrandManagementView.swift`
+  - `OutPick/Features/Lookbook/ViewModels/AdminBrandManagementViewModel.swift`
+  - `OutPick/Features/Lookbook/Views/BrandDetail/BrandDetailView.swift`
+  - `OutPick/Features/Lookbook/Views/BrandDetail/BrandDetailHeaderView.swift`
+  - `OutPick/Features/Lookbook/Views/LookbookHome/BrandRowView.swift`
+  - `OutPick/Features/Lookbook/Services/ImageLoading/BrandImageCache.swift`
+  - `OutPick/Features/Lookbook/Services/ImageLoading/BrandImageCacheProtocol.swift`
+  - `OutPickTests/AdminBrandManagementViewModelTests.swift`
 - 먼저 확인할 문서:
   - `docs/ai/ENTRYPOINTS.md`
   - `docs/ai/entrypoints/LOOKBOOK.md`
@@ -116,8 +128,8 @@
   - `docs/ai/tasks/socket-cloud-run-deploy/design.md`
   - `docs/ai/tasks/socket-cloud-run-deploy/decisions.md`
 - 다음 구현 전 확인:
-  - Phase 6B 수동 QA 계정/데이터 준비 여부.
-  - Phase 7 iOS 관리자 시즌 import 관리의 상세 QA/개선 범위.
+  - App Review Notes용 관리자 데모 계정/설명 준비 여부.
+  - 브랜드 룩북 콘텐츠 수집/표시 권리 범위 검토 필요 여부.
 - 권장 검증:
   - 설계 하네스 완료 후 phase별로 별도 확정
   - Functions 변경 시 lint/build
@@ -127,6 +139,5 @@
 
 ## 다음 추천 순서
 
-1. 총 관리자/owner/admin/비관리자 권한별 Phase 6B 수동 QA
-2. Phase 7 시즌 import 관리 상세 QA/개선 범위 확정
-3. App Review Notes용 관리자 데모 계정/설명 준비 여부 결정
+1. App Review Notes용 관리자 데모 계정/설명 준비 여부 결정
+2. 브랜드 룩북 콘텐츠 수집/표시 권리 범위 검토 필요 여부 결정
