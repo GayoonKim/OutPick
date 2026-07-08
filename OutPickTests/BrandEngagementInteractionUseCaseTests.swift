@@ -136,6 +136,7 @@ struct BrandEngagementInteractionUseCaseTests {
                 viewCount: 0,
                 popularScore: 0
             ),
+            deletionStatus: .active,
             updatedAt: Date()
         )
     }

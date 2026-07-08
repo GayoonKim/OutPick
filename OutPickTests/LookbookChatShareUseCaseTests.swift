@@ -324,6 +324,7 @@ struct LookbookChatShareUseCaseTests {
             lastDiscoveryRequestedAt: nil,
             lastDiscoveryCompletedAt: nil,
             metrics: BrandMetrics(likeCount: 0, viewCount: 0, popularScore: 0),
+            deletionStatus: .active,
             updatedAt: Date(timeIntervalSince1970: 0)
         )
     }
@@ -342,6 +343,7 @@ struct LookbookChatShareUseCaseTests {
             tagIDs: [],
             tagConceptIDs: nil,
             status: .published,
+            deletionStatus: .active,
             assetSyncStatus: .ready,
             metadataStatus: .confirmed,
             metadataConfidence: nil,
@@ -379,6 +381,7 @@ struct LookbookChatShareUseCaseTests {
                 saveCount: 0,
                 viewCount: nil
             ),
+            deletionStatus: .active,
             createdAt: Date(timeIntervalSince1970: 0),
             updatedAt: Date(timeIntervalSince1970: 0)
         )

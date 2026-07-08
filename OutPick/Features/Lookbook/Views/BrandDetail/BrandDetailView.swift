@@ -14,13 +14,15 @@ struct BrandDetailView: View {
     let shareSheetFactory: (LookbookShareTarget, @escaping (LookbookChatShareViewModel.Completion) -> Void) -> AnyView
     let onShareMove: (LookbookChatShareViewModel.Completion) async throws -> Void
 
+    private let initialBrand: Brand
+    private let pullToRefreshMinimumVisibleDuration: TimeInterval = 0.6
+
     @EnvironmentObject private var brandAdminSessionStore: BrandAdminSessionStore
     @StateObject private var viewModel: BrandDetailViewModel
     @State private var activeShareTarget: LookbookShareTarget?
     @State private var shareCompletion: LookbookChatShareViewModel.Completion?
     @State private var shareMoveErrorMessage: String?
     @State private var didPrepareInitialContent: Bool = false
-    @State private var brand: Brand
 
     init(
         brand: Brand,
@@ -31,12 +33,12 @@ struct BrandDetailView: View {
         onShareMove: @escaping (LookbookChatShareViewModel.Completion) async throws -> Void,
         maxBytes: Int = 1_000_000
     ) {
+        self.initialBrand = brand
         self.brandImageCache = brandImageCache
         self.coordinator = coordinator
         self.shareSheetFactory = shareSheetFactory
         self.onShareMove = onShareMove
         self.maxBytes = maxBytes
-        _brand = State(initialValue: brand)
         _viewModel = StateObject(wrappedValue: viewModel)
     }
 
@@ -44,44 +46,10 @@ struct BrandDetailView: View {
         Group {
             if shouldBlockInitialLoading {
                 initialLoadingView
+            } else if let brand = viewModel.brand {
+                contentView(brand: brand)
             } else {
-                List {
-                    BrandDetailHeaderView(
-                        brand: brand,
-                        likeCount: viewModel.brandMetrics?.likeCount ?? brand.metrics.likeCount,
-                        isLiked: viewModel.brandUserState?.isLiked ?? false,
-                        isMutatingLike: viewModel.isMutatingLike,
-                        brandImageCache: brandImageCache,
-                        maxBytes: maxBytes,
-                        onLikeTap: {
-                            await viewModel.toggleBrandLike(brandID: brand.id)
-                        },
-                        onShareTap: {
-                            activeShareTarget = .brand(brand)
-                        }
-                    )
-                    .listRowInsets(EdgeInsets())
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(OutPickTheme.SwiftUIColor.backgroundBase)
-
-                    BrandDetailSeasonsGridView(
-                        seasons: viewModel.seasons,
-                        isLoading: viewModel.isLoading,
-                        errorMessage: viewModel.errorMessage,
-                        canManageBrand: brandAdminSessionStore.canWrite(brandID: brand.id),
-                        brandImageCache: brandImageCache,
-                        maxBytes: maxBytes,
-                        coordinator: coordinator,
-                        onSeasonAppear: { season in
-                            viewModel.seasonDidAppear(seasonID: season.id)
-                        }
-                    )
-                    .listRowInsets(EdgeInsets())
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(OutPickTheme.SwiftUIColor.backgroundBase)
-                }
-                .listStyle(.plain)
-                .background(OutPickTheme.SwiftUIColor.backgroundBase)
+                unavailableView
             }
         }
         .background(OutPickTheme.SwiftUIColor.backgroundBase)
@@ -90,13 +58,16 @@ struct BrandDetailView: View {
             showsBackButton: true,
             onBack: { coordinator.pop() }
         ) {
-            if brandAdminSessionStore.canWrite(brandID: brand.id) {
+            if let brand = viewModel.brand,
+               brandAdminSessionStore.canWrite(brandID: brand.id) {
                 LookbookNavigationTextButton(
                     title: "관리자",
                     accessibilityLabel: "브랜드 관리자"
                 ) {
                     coordinator.pushAdminBrandManagement(initialBrand: brand) { updatedBrand in
-                        brand = updatedBrand
+                        Task {
+                            await viewModel.applyUpdatedBrand(updatedBrand)
+                        }
                     }
                 }
             }
@@ -124,9 +95,9 @@ struct BrandDetailView: View {
             await brandAdminSessionStore.ensureWritableBrandsLoaded()
 
             if didPrepareInitialContent == false {
+                await viewModel.prepareInitialBrandIfNeeded(initialBrand)
                 await prewarmHeaderLogoIfNeeded()
-                await viewModel.prepareBrandInteractionIfNeeded(brand: brand)
-                await viewModel.loadContentsIfNeeded(brandID: brand.id)
+                await viewModel.loadContentsIfNeeded(brandID: initialBrand.id)
                 didPrepareInitialContent = true
             }
         }
@@ -136,6 +107,63 @@ struct BrandDetailView: View {
         .appToast(message: shareMoveErrorMessage) {
             shareMoveErrorMessage = nil
         }
+    }
+
+    private func contentView(brand: Brand) -> some View {
+        List {
+            BrandDetailHeaderView(
+                brand: brand,
+                likeCount: viewModel.brandMetrics?.likeCount ?? brand.metrics.likeCount,
+                isLiked: viewModel.brandUserState?.isLiked ?? false,
+                isMutatingLike: viewModel.isMutatingLike,
+                brandImageCache: brandImageCache,
+                maxBytes: maxBytes,
+                onLikeTap: {
+                    await viewModel.toggleBrandLike(brandID: brand.id)
+                },
+                onShareTap: {
+                    activeShareTarget = .brand(brand)
+                }
+            )
+            .listRowInsets(EdgeInsets())
+            .listRowSeparator(.hidden)
+            .listRowBackground(OutPickTheme.SwiftUIColor.backgroundBase)
+
+            BrandDetailSeasonsGridView(
+                seasons: viewModel.seasons,
+                isLoading: viewModel.isLoading,
+                errorMessage: viewModel.errorMessage,
+                canManageBrand: brandAdminSessionStore.canWrite(brandID: brand.id),
+                brandImageCache: brandImageCache,
+                maxBytes: maxBytes,
+                coordinator: coordinator,
+                onSeasonAppear: { season in
+                    viewModel.seasonDidAppear(seasonID: season.id)
+                }
+            )
+            .listRowInsets(EdgeInsets())
+            .listRowSeparator(.hidden)
+            .listRowBackground(OutPickTheme.SwiftUIColor.backgroundBase)
+        }
+        .listStyle(.plain)
+        .background(OutPickTheme.SwiftUIColor.backgroundBase)
+        .refreshable {
+            await refreshWithMinimumIndicatorDuration(brandID: brand.id)
+        }
+    }
+
+    private func refreshWithMinimumIndicatorDuration(brandID: BrandID) async {
+        let startedAt = Date()
+
+        await viewModel.refreshContents(brandID: brandID)
+
+        let elapsed = Date().timeIntervalSince(startedAt)
+        guard elapsed < pullToRefreshMinimumVisibleDuration else { return }
+
+        let remainingNanoseconds = UInt64(
+            (pullToRefreshMinimumVisibleDuration - elapsed) * 1_000_000_000
+        )
+        try? await Task.sleep(nanoseconds: remainingNanoseconds)
     }
 
     private func moveToSharedChatRoom(_ completion: LookbookChatShareViewModel.Completion) {
@@ -150,7 +178,7 @@ struct BrandDetailView: View {
     }
 
     private var shouldBlockInitialLoading: Bool {
-        didPrepareInitialContent == false && viewModel.seasons.isEmpty && viewModel.errorMessage == nil
+        didPrepareInitialContent == false && viewModel.brand == nil && viewModel.errorMessage == nil
     }
 
     private var initialLoadingView: some View {
@@ -170,7 +198,27 @@ struct BrandDetailView: View {
         )
     }
 
+    private var unavailableView: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("브랜드를 불러오지 못했습니다.")
+                .font(.headline)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
+
+            Text(viewModel.errorMessage ?? "잠시 후 다시 시도해주세요.")
+                .font(.footnote)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(OutPickTheme.SwiftUIColor.surfaceBase)
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 20)
+    }
+
     private var headerPrewarmPath: String? {
+        let brand = viewModel.brand ?? initialBrand
+
         if let thumb = brand.logoThumbPath, thumb.isEmpty == false {
             return thumb
         }

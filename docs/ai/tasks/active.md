@@ -4,7 +4,7 @@
 
 - 직전 핵심 task인 `lookbook-admin-soft-delete-lifecycle`은 핵심 구현, 운영 배포, OUTSTANDING 통합 QA까지 완료했다.
 - 다음 단계는 완료된 삭제 lifecycle 위에서 발견되는 수정 사항을 범위별로 점검하고 필요한 수정만 별도 작업으로 처리하는 것이다.
-- 후속 QA/보정은 Phase A 삭제 요청 목록 표시명 보정과 Phase B 관리자 브랜드 관리 화면 메뉴 리팩토링을 완료했고, Phase C `BrandDetailView` pull-to-refresh 추가만 남았다.
+- 후속 QA/보정은 Phase A 삭제 요청 목록 표시명 보정, Phase B 관리자 브랜드 관리 화면 메뉴 리팩토링, Phase C `BrandDetailView` pull-to-refresh 추가까지 완료했다.
 - 2026-07-08 기준 Phase 1 추천안 확정, Phase 2 서버 soft delete 기반 구현/운영 배포, Phase 3 사용자 노출 차단 구현/로컬 검증, Phase 4 관리자 삭제/복구 UI 구현/로컬 빌드 검증, Phase 5 scheduled purge 구현/운영 배포, Phase 6 OUTSTANDING 통합 QA를 완료했다.
 - 직전 핵심 task인 `admin-web-brand-season-management`는 Phase 2~7 구현, 운영 배포, 통합 수동 QA까지 완료 처리했다.
 - 삭제 lifecycle의 확정 정책:

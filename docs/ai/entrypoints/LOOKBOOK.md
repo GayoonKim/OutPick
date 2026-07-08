@@ -127,14 +127,17 @@
 - Brand detail:
   - `OutPick/Features/Lookbook/Views/BrandDetail/BrandDetailView.swift`
     - 커스텀 back은 Coordinator `pop()`을 호출한다.
-    - 관리자 버튼은 서버 재조회 없이 현재 상세 화면이 가진 `Brand`를 `initialBrand`로 `AdminBrandManagementView`에 전달한다.
-    - 관리자 화면에서 브랜드 정보/로고가 수정되면 `onUpdatedBrand` 콜백으로 상세 화면의 local `Brand` state를 갱신한다.
+    - 관리자 버튼은 `BrandDetailViewModel.brand`의 최신 `Brand`를 `initialBrand`로 `AdminBrandManagementView`에 전달한다.
+    - 관리자 화면에서 브랜드 정보/로고가 수정되면 `onUpdatedBrand` 콜백으로 `BrandDetailViewModel.applyUpdatedBrand`를 호출해 상세 화면 상태를 갱신한다.
+    - pull-to-refresh는 `BrandDetailViewModel.refreshContents(brandID:)`를 호출해 브랜드 단건, 브랜드 interaction state, 시즌 목록을 함께 갱신한다.
   - `OutPick/Features/Lookbook/Views/BrandDetail/BrandDetailHeaderView.swift`
     - brand header image tap 확대는 공용 image viewer wrapper인 `LookbookImageViewerView`를 사용한다.
     - 로고 이미지는 같은 Storage path가 덮어써질 수 있으므로 `brand.updatedAt`을 load key에 포함해 path가 같아도 새 이미지로 다시 로드한다.
   - `OutPick/Features/Lookbook/Views/BrandDetail/BrandDetailSeasonsGridView.swift`
     - 시즌 탭은 hidden `NavigationLink`가 아니라 Coordinator `pushSeasonDetail`을 호출한다.
   - `OutPick/Features/Lookbook/ViewModels/BrandDetailViewModel.swift`
+    - 초기 진입 브랜드를 seed한 뒤 `BrandRepositoryProtocol.fetchBrand`와 `SeasonRepositoryProtocol.fetchAllSeasons`로 상세 최신화를 담당한다.
+    - 브랜드가 `deletionRequested` 등 사용자 비노출 상태가 되면 `LookbookContentUnavailableError`를 받아 상세 표시 상태를 비우고 접근 불가 메시지를 노출한다.
 - Season detail:
   - `OutPick/Features/Lookbook/Views/SeasonDetail/SeasonDetailView.swift`
     - 포스트 탭은 hidden `NavigationLink`가 아니라 Coordinator `pushPostDetail`을 호출한다.
@@ -326,6 +329,6 @@
   - 상태 변경 메뉴, 처리 시작/검수 후 완료 확인창, 보류 사유 선택 UI는 `AdminBrandRequestGroupsView.swift`를 먼저 확인한다.
 - Phase 6A는 processing group에서 기존 `CreateBrandFlowView`를 재사용해 브랜드를 생성한다. 생성 직후 `markBrandRequestGroupBrandCreated`로 `createdBrandID`를 저장하고, 완료 처리는 자동 호출하지 않고 시즌 import/작업 검수 후 `검수 후 완료 처리`로 `resolveBrandRequestGroup`을 호출한다.
 - Phase 6B는 `AdminBrandManagementView`에서 브랜드 검색/선택 후 브랜드 수정, 로고 수정, 관리자 추가/삭제, 시즌 추가/import 현황 진입을 제공한다.
-- Phase 6H QA 수정은 `AdminBrandManagementViewModel`, `BrandDetailView`, `BrandDetailHeaderView`, `BrandRowView`, `BrandImageCache`를 함께 확인한다. 특히 상세에서 직접 관리자 진입은 `initialBrand` seed, 로고 수정 반영은 cache store + `updatedAt` load key가 핵심이다.
+- Phase 6H/후속 Phase C QA 수정은 `AdminBrandManagementViewModel`, `BrandDetailView`, `BrandDetailViewModel`, `BrandDetailHeaderView`, `BrandRowView`, `BrandImageCache`를 함께 확인한다. 특히 상세에서 직접 관리자 진입은 `initialBrand` seed, 로고 수정 반영은 cache store + `updatedAt` load key, 상세 pull-to-refresh는 브랜드 단건 + 시즌 목록 동시 최신화가 핵심이다.
 - Phase 7 iOS 관리자 시즌 import QA는 `SeasonAdditionSheetView`, `SeasonImportManagementView`, `SeasonImportManagementViewModel`, `ManageSeasonImportJobsUseCase`와 `docs/ai/architecture/LOOKBOOK_IMPORT_WORKER.md`를 함께 확인한다.
 - 사용자별 `brandRequests/{requestID}`는 개인 요청 기록이며, 사용자 노출 상태는 `listMyBrandRequests`가 group 상태를 반영해 반환한다.

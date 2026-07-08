@@ -145,6 +145,7 @@ struct SeasonDetailViewModelTests {
             tagIDs: [],
             tagConceptIDs: nil,
             status: .published,
+            deletionStatus: .active,
             assetSyncStatus: .ready,
             metadataStatus: .confirmed,
             metadataConfidence: nil,

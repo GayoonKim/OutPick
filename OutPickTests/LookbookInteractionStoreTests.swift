@@ -478,6 +478,7 @@ struct LookbookInteractionStoreTests {
                 saveCount: 0,
                 viewCount: nil
             ),
+            deletionStatus: .active,
             createdAt: Date(),
             updatedAt: Date()
         )
@@ -506,6 +507,7 @@ struct LookbookInteractionStoreTests {
                 viewCount: 0,
                 popularScore: 0
             ),
+            deletionStatus: .active,
             updatedAt: Date()
         )
     }

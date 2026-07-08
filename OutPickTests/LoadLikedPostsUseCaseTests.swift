@@ -95,6 +95,7 @@ struct LoadLikedPostsUseCaseTests {
                 saveCount: 0,
                 viewCount: nil
             ),
+            deletionStatus: .active,
             createdAt: Date(),
             updatedAt: Date()
         )

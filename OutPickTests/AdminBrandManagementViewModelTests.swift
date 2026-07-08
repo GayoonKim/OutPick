@@ -125,6 +125,7 @@ struct AdminBrandManagementViewModelTests {
             lastDiscoveryRequestedAt: nil,
             lastDiscoveryCompletedAt: nil,
             metrics: BrandMetrics(likeCount: 0, viewCount: 0, popularScore: 0),
+            deletionStatus: .active,
             updatedAt: Date()
         )
     }
@@ -192,6 +193,7 @@ private struct BrandStoringRepositoryStub: BrandStoringRepository {
             lastDiscoveryRequestedAt: nil,
             lastDiscoveryCompletedAt: nil,
             metrics: BrandMetrics(likeCount: 0, viewCount: 0, popularScore: 0),
+            deletionStatus: .active,
             updatedAt: Date()
         )
     }

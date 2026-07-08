@@ -518,6 +518,7 @@ struct LikedViewModelTests {
                 viewCount: 0,
                 popularScore: 0
             ),
+            deletionStatus: .active,
             updatedAt: Date()
         )
     }
@@ -540,6 +541,7 @@ struct LikedViewModelTests {
             tagIDs: [],
             tagConceptIDs: nil,
             status: .published,
+            deletionStatus: .active,
             assetSyncStatus: .ready,
             metadataStatus: .confirmed,
             metadataConfidence: nil,
@@ -583,6 +585,7 @@ struct LikedViewModelTests {
                 saveCount: 0,
                 viewCount: nil
             ),
+            deletionStatus: .active,
             createdAt: Date(),
             updatedAt: Date()
         )

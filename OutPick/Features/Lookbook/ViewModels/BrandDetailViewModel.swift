@@ -9,6 +9,7 @@ import Foundation
 
 @MainActor
 final class BrandDetailViewModel: ObservableObject {
+    @Published private(set) var brand: Brand?
     @Published private(set) var seasons: [Season] = []
     @Published private(set) var brandMetrics: BrandMetrics?
     @Published private(set) var brandUserState: BrandUserState?
@@ -20,6 +21,7 @@ final class BrandDetailViewModel: ObservableObject {
     private let initialPrefetchCount: Int
     private let lookAheadPrefetchCount: Int
     private let prefetchConcurrency: Int
+    private let brandRepository: any BrandRepositoryProtocol
     private let seasonRepository: any SeasonRepositoryProtocol
     private let brandUserStateRepository: any BrandUserStateRepositoryProtocol
     private let brandEngagementInteractionUseCase: BrandEngagementInteractionUseCase
@@ -35,6 +37,7 @@ final class BrandDetailViewModel: ObservableObject {
     private var brandStateInvalidationTask: Task<Void, Never>?
 
     init(
+        brandRepository: any BrandRepositoryProtocol,
         seasonRepository: any SeasonRepositoryProtocol,
         brandUserStateRepository: any BrandUserStateRepositoryProtocol,
         brandEngagementInteractionUseCase: BrandEngagementInteractionUseCase,
@@ -46,6 +49,7 @@ final class BrandDetailViewModel: ObservableObject {
         lookAheadPrefetchCount: Int = 8,
         prefetchConcurrency: Int = 6
     ) {
+        self.brandRepository = brandRepository
         self.seasonRepository = seasonRepository
         self.brandUserStateRepository = brandUserStateRepository
         self.brandEngagementInteractionUseCase = brandEngagementInteractionUseCase
@@ -64,6 +68,19 @@ final class BrandDetailViewModel: ObservableObject {
 
     var currentUserID: UserID? {
         currentUserIDProvider.currentUserID
+    }
+
+    func prepareInitialBrandIfNeeded(_ brand: Brand) async {
+        if self.brand == nil {
+            self.brand = brand
+        }
+        await prepareBrandInteractionIfNeeded(brand: brand)
+    }
+
+    func applyUpdatedBrand(_ brand: Brand) async {
+        self.brand = brand
+        loadedBrandInteractionID = nil
+        await prepareBrandInteractionIfNeeded(brand: brand)
     }
 
     func prepareBrandInteractionIfNeeded(brand: Brand) async {
@@ -105,7 +122,8 @@ final class BrandDetailViewModel: ObservableObject {
         if loadedBrandID == brandID, !seasons.isEmpty { return }
         await fetchAll(
             brandID: brandID,
-            force: false
+            force: false,
+            shouldRefreshBrand: true
         )
     }
 
@@ -113,13 +131,15 @@ final class BrandDetailViewModel: ObservableObject {
     func refreshContents(brandID: BrandID) async {
         await fetchAll(
             brandID: brandID,
-            force: true
+            force: true,
+            shouldRefreshBrand: true
         )
     }
 
     private func fetchAll(
         brandID: BrandID,
-        force: Bool
+        force: Bool,
+        shouldRefreshBrand: Bool
     ) async {
         if isRequesting { return }
         isRequesting = true
@@ -135,7 +155,21 @@ final class BrandDetailViewModel: ObservableObject {
         defer { isLoading = false }
 
         do {
-            let fetched = try await seasonRepository.fetchAllSeasons(brandID: brandID)
+            async let fetchedSeasonsTask = seasonRepository.fetchAllSeasons(brandID: brandID)
+
+            let refreshedBrand: Brand?
+            if shouldRefreshBrand {
+                refreshedBrand = try await brandRepository.fetchBrand(brandID: brandID)
+            } else {
+                refreshedBrand = brand
+            }
+            if let refreshedBrand {
+                brand = refreshedBrand
+                loadedBrandInteractionID = nil
+                await prepareBrandInteractionIfNeeded(brand: refreshedBrand)
+            }
+
+            let fetched = try await fetchedSeasonsTask
             prefetchedSeasonImagePaths.removeAll()
             let sorted = fetched.sorted(by: Season.defaultSort)
             let initialTargets = makePrefetchTargets(
@@ -150,10 +184,20 @@ final class BrandDetailViewModel: ObservableObject {
             )
             seasons = sorted
         } catch {
-            seasons = []
-            errorMessage = "시즌을 불러오지 못했습니다."
+            if error is LookbookContentUnavailableError {
+                brand = nil
+                seasons = []
+            }
+            errorMessage = unavailableMessage(for: error) ?? "브랜드와 시즌을 새로고침하지 못했습니다."
             prefetchedSeasonImagePaths.removeAll()
         }
+    }
+
+    private func unavailableMessage(for error: Error) -> String? {
+        guard let error = error as? LookbookContentUnavailableError else {
+            return nil
+        }
+        return error.errorDescription
     }
 
     func prefetchInitialSeasonCoversIfNeeded() {
