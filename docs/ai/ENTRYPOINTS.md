@@ -35,5 +35,8 @@
 
 - 현재 작업 포인터: `docs/ai/tasks/active.md`
 - 루트 포인터: `HANDOFF.md`
+- 룩북 삭제 lifecycle 완료 작업: `docs/ai/tasks/lookbook-admin-soft-delete-lifecycle/progress.md`, `docs/ai/tasks/lookbook-admin-soft-delete-lifecycle/qa-checklist.md`
+- 룩북 삭제 lifecycle 서버 경계: `functions/src/index.ts`, `firestore.rules`, `firestore.indexes.json`, `docs/ai/entrypoints/FIREBASE.md`
+- 룩북 삭제 lifecycle iOS 경계: `docs/ai/entrypoints/LOOKBOOK.md`
 
 작업 시작 시에는 이 문서와 `docs/ai/tasks/active.md`를 먼저 보고, 필요한 세부 진입점 문서만 추가로 확인한다.

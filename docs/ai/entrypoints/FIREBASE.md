@@ -55,6 +55,34 @@ gcloud firestore fields ttls update expiresAt \
 - 브랜드 admin은 관리자 추가/삭제 권한을 갖지 않는다.
 - 마지막 owner 삭제는 서버에서 차단한다.
 
+## Lookbook Soft Delete Lifecycle
+
+- 삭제 lifecycle API는 callable Functions 경계를 사용한다.
+- `requestBrandDeletion`: 총 관리자만 브랜드 삭제 요청을 생성한다. 브랜드 문서에 `deletionStatus = deletionRequested`를 기록하고 `lookbookDeletionRequests/{requestID}` projection과 `lookbookDeletionAuditLogs/{logID}` 감사 로그를 같은 transaction에서 쓴다.
+- `cancelBrandDeletion`: 총 관리자만 브랜드 삭제 요청을 취소한다. 브랜드 `deletionStatus`를 `active`로 되돌리고 projection 상태를 `cancelled`로 바꾼다.
+- `softDeleteSeason` / `restoreSeason`: 총 관리자 또는 `brands/{brandID}/admins/{uid}.role in ["owner", "admin"]`인 브랜드 관리자가 시즌 삭제 상태를 변경한다. 시즌 삭제는 하위 포스트를 즉시 `deleted`로 바꾸지 않는다.
+- `softDeletePost` / `restorePost`: 총 관리자 또는 브랜드 owner/admin이 포스트 삭제 상태를 변경한다. 부모 브랜드가 `deletionRequested`이거나 부모 시즌이 `deleted`이면 개별 포스트 삭제/복구를 막는다.
+- `batchSoftDeleteSeasons`: `brandID`와 최대 20개 `seasonIDs`를 받아 시즌 삭제 요청을 항목별 transaction으로 처리한다. 권한과 부모 브랜드 상태 정책은 `softDeleteSeason`과 동일하며, 일부 항목 실패 시 `results`에 항목별 성공/실패를 반환한다.
+- `batchSoftDeletePosts`: `brandID`, `seasonID`, 최대 20개 `postIDs`를 받아 같은 시즌 안의 포스트 삭제 요청을 항목별 transaction으로 처리한다. 권한과 부모 브랜드/시즌 상태 정책은 `softDeletePost`와 동일하며, 일부 항목 실패 시 `results`에 항목별 성공/실패를 반환한다.
+- `listLookbookDeletionRequests`: 총 관리자는 전역 삭제 요청 목록을 조회할 수 있고, 브랜드 owner/admin은 `brandID`를 지정한 자신 권한 브랜드 목록만 조회할 수 있다. 기존/부분 projection에 `targetDisplayName` 또는 `seasonTitle` 같은 표시 snapshot이 비어 있으면 원본 브랜드/시즌/포스트 문서를 읽어 응답 summary만 보강한다. 시즌 요청은 기존 projection의 `targetDisplayName`이 "삭제된 시즌" fallback이어도 `seasonTitle`이 있으면 응답 제목을 시즌명으로 보강한다. 시즌명은 시즌 문서의 `displayTitle`, legacy `title`, `sourceTitle` 순서로 읽는다. 이 보강은 운영 projection 문서 backfill write를 수행하지 않는다.
+- 삭제 요청 projection 컬렉션은 `lookbookDeletionRequests/{requestID}`이며 주요 필드는 `targetType`, `targetID`, `targetPath`, `brandID`, `seasonID`, `postID`, `status`, `requestedBy`, `requestedAt`, `restoreUntil`, `purgeAfter`, `reason`, `updatedAt`이다.
+- 신규 projection은 관리자 목록 표시용 snapshot인 `targetDisplayName`, `targetImagePath`, `brandName`, `brandEnglishName`, `brandLogoThumbPath`, `seasonTitle`, `seasonCoverThumbPath`, `postCaption`, `postImageThumbPath`를 함께 저장한다. 기존 projection에는 없을 수 있으므로 클라이언트는 fallback을 유지한다.
+- 감사 로그 컬렉션은 `lookbookDeletionAuditLogs/{logID}`이며 일반 클라이언트 직접 read/write는 허용하지 않는다.
+- 앱 또는 관리자 callable hard delete는 제공하지 않는다. 영구 삭제는 scheduled function만 수행한다.
+- `purgeExpiredLookbookDeletions`: Phase 5 scheduled hard delete function이다.
+  - `Asia/Seoul` 기준 매일 04:00 실행.
+  - 한 번에 최대 20개 deletion request target 처리.
+  - `active` 요청 또는 `status = failed`, `autoRetryEligible = true`, `purgeAfter <= now`, `retryAfter <= now 또는 retryAfter 없음`, `purgeAttemptCount < 3` 대상만 처리.
+  - 브랜드 purge는 `brands/{brandID}` 하위 Firestore 문서 전체, `brandNameIndex`, 관련 user state projection, `brands/{brandID}/` Storage prefix를 삭제한다.
+  - 시즌 purge는 시즌 하위 posts/comments/replacements, 관련 user state projection, `brands/{brandID}/seasons/{seasonID}/` Storage prefix를 삭제한다.
+  - 포스트 purge는 포스트 하위 comments/replacements, 관련 user state projection, `brands/{brandID}/seasons/{seasonID}/posts/{postID}/` Storage prefix를 삭제한다.
+  - 문서 필드에 저장된 Storage 파일은 raw Storage path만 삭제 대상으로 인정한다. `://`가 들어간 URL, 외부 `remoteURL`, `sourcePageURL`은 삭제하지 않는다.
+  - 부모 target이 purge되면 같은 범위의 하위 active/failed deletion request projection도 `purged`로 닫는다.
+  - 실패 시 `failed`, `purgeAttemptCount`, `lastPurgeAttemptAt`, `retryAfter`, `autoRetryEligible`, `purgeErrorMessage`와 감사 로그를 남기고, 3회 실패 후 자동 재시도에서 제외한다.
+- Firestore rules는 `lookbookDeletionRequests`, `lookbookDeletionAuditLogs` 직접 접근을 막고, `brands/{brandID}/seasons/{seasonID}`와 `posts/{postID}` 직접 `delete`를 막는다. 기존 create/update 권한은 유지한다.
+- 인덱스는 `firestore.indexes.json`의 `lookbookDeletionRequests` 목록/정리용 composite index와 `brandStates`, `seasonStates`, `postStates`, `commentStates` collection group field override를 사용한다.
+- 운영 배포와 OUTSTANDING 통합 QA 결과는 `docs/ai/tasks/lookbook-admin-soft-delete-lifecycle/progress.md`와 `docs/ai/tasks/lookbook-admin-soft-delete-lifecycle/qa-checklist.md`를 확인한다.
+
 ## Lookbook URL Import Worker
 
 Cloud Run worker 전환 기준의 URL 기반 시즌 등록 진입점이다.

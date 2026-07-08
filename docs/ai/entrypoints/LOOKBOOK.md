@@ -73,8 +73,9 @@
   - `OutPick/Features/Lookbook/Repositories/Implementations/CloudFunctionsBrandRequestRepository.swift`
 - Admin:
   - `OutPick/Features/Lookbook/Views/Admin/LookbookAdminHomeView.swift`
-    - Lookbook 관리 홈이며 `요청 목록`, `브랜드 추가`, `브랜드 관리` 메뉴를 제공한다.
-    - 총 관리자는 요청 목록/브랜드 추가/브랜드 관리를 모두 볼 수 있고, 브랜드별 owner/admin은 브랜드 관리 중심으로 진입한다.
+    - Lookbook 관리 홈이며 `요청 목록`, `삭제 요청 목록`, `브랜드 추가` 메뉴를 제공한다.
+    - 총 관리자의 브랜드 수정/삭제 요청 생성 흐름은 콘솔 브랜드 검색이 아니라 `LookbookHomeView` 브랜드 검색 → `BrandDetailView` → `관리자` 버튼 → `AdminBrandManagementView`로 통일한다.
+    - 브랜드별 owner/admin도 같은 상세 화면 관리자 버튼으로 해당 브랜드 관리 화면에 진입한다.
     - 홈 진입은 `LookbookHomeView`의 `Lookbook 관리` 버튼에서 Coordinator push로 연결한다.
     - 브랜드 생성은 기존 `CreateBrandFlowView`를 fullScreenCover로 재사용한다.
   - `OutPick/Features/Lookbook/Views/Admin/AdminBrandRequestGroupsView.swift`
@@ -84,13 +85,44 @@
   - `OutPick/Features/Lookbook/ViewModels/AdminBrandRequestGroupsViewModel.swift`
     - 요청 group 상태 변경, 보류 사유/rejection reason, admin note 전달을 담당한다.
   - `OutPick/Features/Lookbook/Views/Admin/AdminBrandManagementView.swift`
-    - `searchBrands`로 대상 브랜드를 검색/선택한 뒤 브랜드 수정, 로고 업로드, 관리자 추가/삭제, 시즌 추가, 가져오기 현황 진입을 제공한다.
-    - 검색 기반 진입에서는 검색어를 지우면 선택 브랜드와 수정 draft를 초기화한다.
-    - 브랜드 상세에서 직접 진입한 경우에는 검색 없이 `initialBrand`로 수정 패널을 즉시 seed한다.
+    - 브랜드 상세에서 전달된 `initialBrand`를 기준으로 특정 브랜드 관리 화면을 구성한다.
+    - 첫 화면은 `LookbookAdminHomeView`와 같은 메뉴 카드 목록이며, `정보`, `관리자`, `시즌 가져오기`, `삭제` 메뉴로 나뉜다.
+    - 메뉴 목록 위에는 선택 브랜드 로고/이름 헤더를 별도로 노출하지 않는다.
+    - `정보` 메뉴는 브랜드 정보 수정과 로고 업로드를 함께 제공하고, 로고 수정 섹션에는 현재 로고 미리보기를 표시한다.
+    - `관리자` 메뉴는 브랜드 관리자 추가/삭제 권한이 있는 사용자에게만 노출한다.
+    - `시즌 가져오기` 메뉴는 내부에서 `시즌 찾아오기`와 `현황` segmented control로 나뉘며, 현황은 `SeasonImportManagementView`를 navigation chrome 없이 임베드한다.
+    - `삭제` 메뉴는 `AdminLookbookDeletionManagementView`를 navigation bar 없이 임베드하고, 내부 `삭제` / `삭제 요청 목록` segmented control을 유지한다.
+    - 메뉴 내부 화면의 뒤로가기는 별도 버튼을 두지 않고 상단 navigation back 하나로 메뉴 목록 복귀를 처리한다.
+    - 브랜드 관리 화면은 더 이상 콘솔 검색 기반 진입을 주 흐름으로 쓰지 않는다. 선택 브랜드가 없으면 브랜드 상세의 관리자 버튼으로 진입하라는 빈 상태를 보여준다.
   - `OutPick/Features/Lookbook/ViewModels/AdminBrandManagementViewModel.swift`
     - 브랜드 정보 저장 dirty-state, 로고 저장, 관리자 추가/삭제, 결과 피드백 자동 dismiss를 담당한다.
     - 성공/중복/삭제 대상 없음 등 작업 결과 메시지는 짧게 자동 dismiss하고, 실패 메시지는 더 길게 자동 dismiss한다. 입력 검증 오류는 사용자가 수정할 수 있도록 유지한다.
     - 로고 저장은 같은 Storage path를 덮어쓰므로 저장 직후 `BrandImageCache.storeImageData`로 새 thumb/detail 데이터를 캐시에 반영하고 `onBrandUpdated`로 홈/상세 화면의 Brand state를 갱신한다.
+    - 검색 결과는 Firestore 단건 재조회로 삭제 요청 브랜드를 최종 제외한다.
+  - `OutPick/Features/Lookbook/Views/Admin/AdminLookbookDeletionManagementView.swift`
+    - 관리자 삭제 관리 화면이다.
+    - `삭제` / `삭제 요청 목록` segmented tab으로 나뉜다.
+    - 총 관리자 콘솔의 `삭제 요청 목록` 메뉴에서 진입하면 삭제 화면 없이 전역 활성 요청 목록만 보여준다.
+    - 전역 삭제 요청 목록은 브랜드별 row로 묶고, row 전체를 탭하면 브랜드/시즌/포스트 target별 진행 현황을 펼친다.
+    - 특정 브랜드 관리자 화면에서 `initialBrand`와 함께 임베드되면 브랜드 검색/선택 없이 해당 브랜드 scoped 삭제 관리만 제공한다.
+    - 브랜드 관리 메뉴에 임베드된 삭제 관리 화면에서는 이미 진입 브랜드가 정해져 있으므로 선택 브랜드 로고/한글명/영문명 섹션을 보여주지 않는다.
+    - 총 관리자에게만 브랜드 삭제 요청/복구 UI를 노출한다.
+    - 브랜드 owner/admin은 진입 브랜드의 시즌/포스트 삭제와 복구만 수행한다.
+    - 시즌 삭제 선택은 가로 스크롤 이미지 카드로, 포스트 삭제 선택은 선택 시즌의 2열 이미지 grid로 표시한다.
+    - 시즌/포스트 다중 선택 삭제는 batch deletion repository API를 호출한다.
+    - 삭제 요청 목록에서 복구 가능 기한, 삭제 사유, 표시용 snapshot 이미지/이름을 보여주며 hard delete 버튼은 제공하지 않는다.
+    - 시즌 삭제 요청 제목은 `targetDisplayName`보다 `seasonTitle`을 우선해 시즌명으로 표시한다.
+  - `OutPick/Features/Lookbook/ViewModels/AdminLookbookDeletionManagementViewModel.swift`
+    - 탭 상태, 총 관리자 전역 모드와 브랜드 scoped 모드, 브랜드 검색/선택, 시즌/포스트 선택 상태, 포스트 pagination, 활성 삭제 요청 목록, 삭제 요청/복구 mutation 상태를 관리한다.
+    - 시즌/포스트 batch 삭제 결과의 성공 항목은 선택 해제하고, 실패 항목은 선택 상태를 유지한다.
+    - 총 관리자가 아니면 삭제 요청 목록에서 brand target을 숨긴다.
+  - `OutPick/Features/Lookbook/Domains/Entities/LookbookDeletionRequest.swift`
+    - 삭제 요청 목록, target type, request status, mutation receipt, batch 삭제 결과 도메인 타입을 정의한다.
+    - 관리자 목록 표시용 deletion request snapshot 필드(`targetDisplayName`, `targetImagePath`, 브랜드/시즌/포스트 표시 필드)를 포함한다.
+  - `OutPick/Features/Lookbook/Repositories/Protocols/LookbookDeletionRepositoryProtocol.swift`
+    - 삭제 lifecycle callable과 시즌/포스트 batch 삭제 callable을 앱 repository 경계로 정의한다.
+  - `OutPick/Features/Lookbook/Repositories/Implementations/CloudFunctionsLookbookDeletionRepository.swift`
+    - `CloudFunctionsManager`의 삭제 lifecycle wrapper와 batch 삭제 wrapper를 호출한다.
   - `OutPick/Features/Lookbook/Domains/Entities/BrandManagement.swift`
 - Brand detail:
   - `OutPick/Features/Lookbook/Views/BrandDetail/BrandDetailView.swift`
@@ -191,9 +223,53 @@
 
 - DTOs: `OutPick/Features/Lookbook/Models/DTOs`
   - Firestore payload 구조를 확인한다.
+  - 브랜드/시즌/포스트 삭제 lifecycle은 `deletionStatus`를 decode한다. 기존 문서에 필드가 없으면 앱은 `active`로 처리한다.
 - Firestore mapper: `OutPick/Features/Lookbook/Models/Mapping/FirestoreMapper.swift`
   - DTO와 domain entity 변환을 확인한다.
 - Mapping error: `OutPick/Features/Lookbook/Models/Mapping/MappingError.swift`
+
+## 룩북 삭제 lifecycle 사용자 노출 차단
+
+- 삭제 상태 도메인 타입: `OutPick/Features/Lookbook/Domains/Entities/LookbookDeletionStatus.swift`
+  - `BrandDeletionStatus.active | deletionRequested`
+  - `ContentDeletionStatus.active | deleted`
+  - `LookbookContentUnavailableError`는 직접 접근 경로의 unavailable 상태를 표현한다.
+- Repository 필터:
+  - `FirestoreBrandRepository`: 브랜드 목록/featured 목록에서 `deletionRequested` 브랜드를 제거하고, 단건 조회도 unavailable error로 막는다.
+  - `FirestoreSeasonRepository`: 시즌 목록에서 `deleted` 시즌을 제거하고, 단건 조회도 unavailable error로 막는다.
+  - `FirestorePostRepository`: 포스트 목록/tag collection group에서 `deleted` 포스트를 제거하고, 단건 조회도 unavailable error로 막는다.
+- 직접 접근 보강:
+  - `LoadSeasonDetailUseCase`: 시즌 상세 진입 시 부모 브랜드 삭제 상태도 확인한다.
+  - `LoadPostDetailUseCase`: 포스트 상세 진입 시 부모 브랜드, 부모 시즌, 포스트 삭제 상태를 모두 확인한다.
+- 사용자 화면 정책:
+  - `LookbookHomeViewModel`: 홈 검색 결과와 업데이트 반영에서 삭제 요청 브랜드를 숨긴다.
+  - `SeasonDetailViewModel`, `PostDetailViewModel`: unavailable error는 “더 이상 볼 수 없습니다” 계열 사용자 문구로 표시한다.
+  - `MakeLookbookSharedContentUseCase`: 삭제 상태 대상은 공유 payload를 만들지 않는다.
+- 서버 검색 payload:
+  - `functions/src/index.ts`의 `brandSearchSummary`는 `deletionStatus`를 포함한다.
+  - iOS `CloudFunctionsManager.searchBrands`는 `deletionStatus`를 `Brand`에 매핑한다.
+
+## 룩북 삭제 lifecycle 관리자 UI
+
+- 완료 상태:
+  - 핵심 구현, 운영 배포, OUTSTANDING 통합 QA까지 완료했다.
+  - 전체 변경/검증 이력은 `docs/ai/tasks/lookbook-admin-soft-delete-lifecycle/progress.md`와 `docs/ai/tasks/lookbook-admin-soft-delete-lifecycle/qa-checklist.md`를 먼저 확인한다.
+- 화면 진입:
+  - `LookbookCoordinator.pushAdminLookbookDeletionManagement(initialBrand:)`
+  - `LookbookContainer.makeAdminLookbookDeletionManagementView(coordinator:initialBrand:)`
+- 관리자 홈 진입:
+  - `LookbookAdminHomeView`의 `삭제 요청 목록` 메뉴는 총 관리자에게만 보이고 전역 활성 삭제 요청 목록으로 진입한다.
+- 브랜드 관리 화면 진입:
+  - `LookbookHomeView` 브랜드 검색 → `BrandDetailView` → `관리자` 버튼 → `AdminBrandManagementView`.
+  - `AdminBrandManagementView` 안에서 `삭제` 메뉴를 선택하면 브랜드 scoped `AdminLookbookDeletionManagementView`가 임베드된다.
+- 권한 노출:
+  - 총 관리자만 브랜드 삭제 요청/취소 UI와 brand target 삭제 요청 목록을 본다.
+  - 브랜드 owner/admin은 brand target을 보지 않고, 권한 브랜드의 시즌/포스트 삭제와 복구만 본다.
+- 데이터 경계:
+  - 앱은 `LookbookDeletionRepositoryProtocol`을 통해 callable Functions를 호출한다.
+  - 시즌/포스트 다중 삭제는 `batchSoftDeleteSeasons`, `batchSoftDeletePosts`를 repository 경유로 호출한다.
+  - 삭제 요청 목록 제목은 `targetDisplayName`/`seasonTitle` 등 서버 표시 snapshot을 우선 사용하고, 시즌 요청은 `seasonTitle`을 최우선으로 표시한다. 값이 없으면 "삭제된 시즌"처럼 사람이 읽을 수 있는 fallback을 표시한다. UID/문서 ID는 제목 fallback으로 쓰지 않는다.
+  - `lookbookDeletionRequests`와 `lookbookDeletionAuditLogs` 직접 Firestore 접근은 하지 않는다.
 
 ## Image services
 

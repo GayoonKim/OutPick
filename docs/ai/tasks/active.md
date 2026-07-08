@@ -2,10 +2,22 @@
 
 ## 현재 상태
 
-- 현재 다음 핵심 task는 `admin-web-brand-season-management`다.
-- 2026-07-06 기준 이 task의 구현 방향은 별도 Admin 웹이 아니라 iOS 앱 내 관리자 계정 전용 Lookbook 관리 콘솔로 전환했다.
-- Phase 6H 통합 관리자 브랜드 관리 QA와 Phase 7 iOS 관리자 시즌 import QA까지 완료 처리했다.
-- 2026-07-06 기준, 별도 Admin 웹 구현 phase는 iOS 관리자 화면 phase로 치환했다.
+- 직전 핵심 task인 `lookbook-admin-soft-delete-lifecycle`은 핵심 구현, 운영 배포, OUTSTANDING 통합 QA까지 완료했다.
+- 다음 단계는 완료된 삭제 lifecycle 위에서 발견되는 수정 사항을 범위별로 점검하고 필요한 수정만 별도 작업으로 처리하는 것이다.
+- 후속 QA/보정은 Phase A 삭제 요청 목록 표시명 보정과 Phase B 관리자 브랜드 관리 화면 메뉴 리팩토링을 완료했고, Phase C `BrandDetailView` pull-to-refresh 추가만 남았다.
+- 2026-07-08 기준 Phase 1 추천안 확정, Phase 2 서버 soft delete 기반 구현/운영 배포, Phase 3 사용자 노출 차단 구현/로컬 검증, Phase 4 관리자 삭제/복구 UI 구현/로컬 빌드 검증, Phase 5 scheduled purge 구현/운영 배포, Phase 6 OUTSTANDING 통합 QA를 완료했다.
+- 직전 핵심 task인 `admin-web-brand-season-management`는 Phase 2~7 구현, 운영 배포, 통합 수동 QA까지 완료 처리했다.
+- 삭제 lifecycle의 확정 정책:
+  - 브랜드 owner/admin은 브랜드 삭제 요청을 할 수 없다.
+  - 브랜드 삭제 요청/취소와 브랜드 삭제 요청 상태 노출은 총 관리자에게만 제공한다.
+  - 브랜드 `deletionRequested` 상태는 사용자 화면에서 즉시 숨긴다.
+  - 브랜드 lifecycle은 `active -> deletionRequested -> purged`로 둔다.
+  - 시즌 삭제 시 하위 포스트는 즉시 `deleted`로 바꾸지 않는다.
+  - 시즌 `deleted` 상태로 시즌 탭/상세/하위 포스트 접근을 막고, 7일 후 scheduled function이 하위 컬렉션을 순회 삭제한다.
+  - 복구 가능 기간은 7일이다.
+  - 앱 관리자 UI에는 hard delete를 제공하지 않는다.
+  - hard delete는 삭제 요청 취소/복구가 없으면 scheduled function이 7일 후 수행한다.
+  - 브랜드 owner/admin에게 시즌/포스트 hard delete도 허용하지 않는다.
 - 아래 핵심 작업은 완료/마감 처리했다.
   - `chat-legacy-identity-naming`
   - `chat-membership-model-transition` 핵심 구현 및 운영 배포
@@ -67,9 +79,93 @@
   - iOS generic simulator build 통과
   - `GRDBManagerMigrationTests` 통과
 
-## 남은 작업 목록
+## 작업 상태 목록
 
-### 1. `admin-web-brand-season-management`
+### 1. `lookbook-admin-soft-delete-lifecycle` 완료
+
+- 목적:
+  - 브랜드/시즌/포스트 삭제 기능을 계정 탈취나 운영 실수에도 즉시 영구 삭제로 이어지지 않는 lifecycle로 설계한다.
+  - 관리자 콘솔은 삭제 요청 목록 확인, 삭제 요청 취소, 삭제 상태 복구만 제공한다.
+  - 실제 hard delete는 scheduled function이 7일 후 자동 처리한다.
+- 현재 상태:
+  - 핵심 구현, 운영 배포, OUTSTANDING 통합 QA까지 완료했다.
+  - Phase 1 하네스/계약 정리 완료.
+  - Phase 2 서버 soft delete 기반 구현 및 운영 배포 완료.
+  - Phase 3 사용자 노출 차단 구현 및 로컬 검증 완료.
+  - Phase 4 관리자 삭제/복구 UI 구현 및 로컬 빌드 검증 완료.
+  - Phase 5 scheduled purge 구현 및 운영 배포 완료.
+  - Phase 6 OUTSTANDING 통합 QA 완료.
+  - 다음 수정 작업은 아래 문서와 진입점을 먼저 보고 범위를 좁힌 뒤 진행한다.
+- 먼저 확인할 문서:
+  - `docs/ai/tasks/lookbook-admin-soft-delete-lifecycle/design.md`
+  - `docs/ai/tasks/lookbook-admin-soft-delete-lifecycle/decisions.md`
+  - `docs/ai/tasks/lookbook-admin-soft-delete-lifecycle/plan.md`
+  - `docs/ai/tasks/lookbook-admin-soft-delete-lifecycle/progress.md`
+  - `docs/ai/tasks/lookbook-admin-soft-delete-lifecycle/qa-checklist.md`
+  - `docs/ai/ENTRYPOINTS.md`
+  - `docs/ai/entrypoints/LOOKBOOK.md`
+  - `docs/ai/entrypoints/FIREBASE.md`
+  - `docs/ai/DATA_SCHEMA.md`
+- Phase 2 완료 범위:
+  - `requestBrandDeletion`, `cancelBrandDeletion`, `softDeleteSeason`, `restoreSeason`, `softDeletePost`, `restorePost`, `listLookbookDeletionRequests` callable 추가.
+  - `lookbookDeletionRequests` projection과 `lookbookDeletionAuditLogs` 감사 로그 기반 추가.
+  - Firestore rules에서 projection/audit 직접 접근 차단, 시즌/포스트 직접 delete 차단.
+  - `lookbookDeletionRequests` 목록 조회용 Firestore indexes 추가.
+  - hard delete callable과 scheduled purge 본체는 추가하지 않음.
+- Phase 2 검증:
+  - Functions `npm run build` 통과.
+  - Functions `npm run lint` 통과.
+  - Firestore rules/indexes dry-run 통과.
+- Phase 2 운영 배포:
+  - `firebase deploy --only functions --project outpick-664ae --non-interactive` 완료.
+  - `firebase deploy --only firestore:rules,firestore:indexes --project outpick-664ae --non-interactive` 완료.
+  - Firestore indexes 배포 중 로컬 파일에 없는 운영 field override 1개 경고가 있었고, `--force`를 쓰지 않아 삭제하지 않았다.
+- Phase 3 완료 범위:
+  - 브랜드/시즌/포스트 도메인과 DTO에 `deletionStatus`를 반영했다.
+  - 사용자 목록/탭/검색/좋아요 리스트에서는 삭제 상태 대상을 비노출한다.
+  - 공유/딥링크/좋아요 상세 직접 진입에서는 부모 브랜드/시즌/포스트 상태를 확인하고 unavailable 상태를 표시한다.
+  - 일반 사용자 unavailable 화면에는 삭제 요청 메모/사유를 노출하지 않는다.
+  - `searchBrands` 응답 summary에 `deletionStatus`를 포함했지만, 앱은 Functions 배포 전에도 Firestore 단건 재조회로 검색 결과를 최종 검증한다.
+- Phase 3 검증:
+  - iOS generic simulator build 통과.
+  - Functions `npm run lint` 통과.
+  - Functions `npm run build` 통과.
+- Phase 4 완료 범위:
+  - 총 관리자 전용 브랜드 삭제 요청/취소 UI를 추가했다.
+  - 브랜드 owner/admin에게 브랜드 삭제 요청/취소와 브랜드 `deletionRequested` 상태를 노출하지 않는다.
+  - 브랜드 owner/admin은 선택 브랜드의 시즌/포스트 삭제와 복구만 할 수 있다.
+  - 삭제 요청 목록, 복구 가능 기한, 삭제 사유 표시를 관리자 삭제 관리 화면에 추가했다.
+  - hard delete 버튼은 추가하지 않았다.
+- Phase 4 검증:
+  - iOS generic simulator build 통과.
+- Phase 5 확정 범위:
+  - Firestore 문서만이 아니라 관련 Firebase Storage 파일까지 삭제한다.
+  - 브랜드 purge는 `brands/{brandID}` 하위 Firestore 문서 전체, `brandNameIndex`, 관련 user state projection, `brands/{brandID}/` Storage prefix를 삭제한다.
+  - 시즌 purge는 하위 posts/comments/replacements, 관련 user state projection, `brands/{brandID}/seasons/{seasonID}/` Storage prefix를 삭제한다.
+  - 포스트 purge는 하위 comments/replacements, 관련 user state projection, `brands/{brandID}/seasons/{seasonID}/posts/{postID}/` Storage prefix를 삭제한다.
+  - `Asia/Seoul` 기준 매일 04:00, 최대 20개 target/run으로 시작한다.
+  - `failed` 요청은 `autoRetryEligible = true`, `retryAfter <= now`, `purgeAttemptCount < 3`일 때만 자동 재시도한다.
+- Phase 5 완료 범위:
+  - `functions/src/index.ts`의 `purgeExpiredLookbookDeletions`.
+  - `firestore.indexes.json` purge 대상 조회 및 user state projection 정리용 인덱스.
+  - Functions lint/build와 Firestore indexes dry-run 검증.
+  - 2026-07-08 `firebase deploy --only functions,firestore:indexes --project outpick-664ae --non-interactive` 운영 배포 완료.
+  - 새 scheduled function `purgeExpiredLookbookDeletions(asia-northeast3)` 생성 완료.
+- Phase 6 완료 범위:
+  - 사용자 수동 QA에서 권한/삭제/복구/비노출 흐름이 의도대로 동작함을 확인했다.
+  - OUTSTANDING 테스트 브랜드 기준 post/season/brand purge QA를 완료했다.
+  - 실패/재시도 QA에서 `failed`, `purgeAttemptCount`, `retryAfter`, `autoRetryEligible`, 3회 실패 후 자동 재시도 제외를 확인했다.
+  - user state projection collection group field override 누락을 발견해 `firestore.indexes.json`에 보강하고 운영 배포했다.
+- 다음 확인:
+  - 삭제 lifecycle 자체는 완료 상태로 보고, 이후는 발견된 수정 사항을 별도 작은 변경으로 처리한다.
+- 권장 검증:
+  - Functions 변경 시 lint/build.
+  - Firestore rules/indexes 변경 시 dry-run.
+  - iOS 변경 시 generic simulator build.
+  - 권한/상태 전이 unit test.
+  - 총 관리자/브랜드 owner/admin/비관리자 수동 QA.
+
+### 2. `admin-web-brand-season-management`
 
 - 목적:
   - 브랜드/시즌 생성/import 기능을 일반 사용자 기능에서 분리하고, iOS 앱 내 관리자 계정 전용 Lookbook 관리 콘솔로 재배치한다.
@@ -139,5 +235,6 @@
 
 ## 다음 추천 순서
 
-1. App Review Notes용 관리자 데모 계정/설명 준비 여부 결정
-2. 브랜드 룩북 콘텐츠 수집/표시 권리 범위 검토 필요 여부 결정
+1. `lookbook-admin-soft-delete-lifecycle` 변경분을 기준으로 수정이 필요한 부분을 확인한다.
+2. 수정 범위가 Swift 앱, Functions/Firestore, 문서 중 어디인지 나누고 해당 진입점 문서를 먼저 확인한다.
+3. 수정이 확정되면 작은 단위로 구현, 검증, 하네스 문서 갱신을 반복한다.

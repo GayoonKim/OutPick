@@ -234,6 +234,8 @@ GRDB 로컬 캐시:
 - `brandRequestNameIndex`
 - `brandRequestDailyCounters/{uid}/brandRequestDays/{yyyyMMdd}`
 - `brandRequestUserLimits`
+- `lookbookDeletionRequests`
+- `lookbookDeletionAuditLogs`
 - `users/{uid}/brandStates`
 - `users/{uid}/seasonStates`
 - 확실하지 않음: post/comment state 컬렉션 경로는 관련 Repository와 rules를 재확인해야 한다.
@@ -260,6 +262,13 @@ GRDB 로컬 캐시:
   - `logoDetailPath`
   - `logoOriginalPath`
   - `isFeatured`
+  - `deletionStatus`: `active | deletionRequested`
+  - `deletionRequestedAt`
+  - `deletionRequestedBy`
+  - `deletionReason`
+  - `restoreUntil`
+  - `purgeAfter`
+  - `deleteRequestID`
   - `updatedBy`
   - `updatedAt`
 - `brands/{brandID}/admins/{uid}` 주요 필드:
@@ -281,6 +290,92 @@ GRDB 로컬 캐시:
 - 브랜드 owner는 해당 브랜드 admin만 추가/삭제할 수 있다.
 - 브랜드 admin은 관리자 추가/삭제 권한이 없다.
 - 마지막 owner 삭제는 서버에서 차단한다.
+
+룩북 삭제 lifecycle:
+
+- 브랜드/시즌/포스트 hard delete는 앱 callable로 제공하지 않는다. 영구 삭제는 `purgeExpiredLookbookDeletions` scheduled function만 수행한다.
+- 브랜드 삭제 요청은 총 관리자만 가능하며 `brands/{brandID}.deletionStatus = deletionRequested`로 기록한다.
+- 시즌과 포스트 삭제 lifecycle은 기존 노출/운영 `status`와 분리된 `deletionStatus`를 사용한다.
+- 시즌 삭제 시 `brands/{brandID}/seasons/{seasonID}.deletionStatus = deleted`로 기록하고, 하위 포스트 문서를 즉시 `deleted`로 변경하지 않는다.
+- 포스트 삭제 시 `brands/{brandID}/seasons/{seasonID}/posts/{postID}.deletionStatus = deleted`로 기록한다.
+- iOS DTO decode는 기존 문서 호환을 위해 `deletionStatus`가 없으면 `active`로 처리한다.
+- 사용자 목록/탭/검색/좋아요 리스트는 삭제 상태 대상을 비노출한다.
+- 공유/딥링크/좋아요 상세 직접 진입은 부모 브랜드/시즌/포스트 삭제 상태를 확인하고 unavailable 상태로 처리한다.
+- 일반 사용자 unavailable 화면에는 삭제 요청 `reason`/메모 원문을 노출하지 않는다. 메모는 관리자 삭제 관리 화면 전용이다.
+- 브랜드 삭제 요청/취소 UI와 브랜드 `deletionRequested` 상태 노출은 총 관리자에게만 제공한다.
+- 브랜드 owner/admin은 권한 있는 브랜드의 시즌/포스트 삭제와 복구만 할 수 있다.
+- 시즌/포스트 다중 삭제 요청은 callable Functions `batchSoftDeleteSeasons`, `batchSoftDeletePosts`로 처리한다.
+  - 한 번에 최대 20개 target을 받는다.
+  - 각 target은 항목별 transaction으로 처리하며 일부 실패 시 응답 `results`에 항목별 성공/실패를 반환한다.
+  - batch 성공 항목도 단건 삭제와 동일하게 원본 문서 상태, `lookbookDeletionRequests` projection, `lookbookDeletionAuditLogs` 감사 로그를 갱신한다.
+- 복구 가능 기간은 7일이며 `restoreUntil`과 `purgeAfter`에 같은 timestamp를 기록한다.
+- Phase 5 scheduled purge는 `Asia/Seoul` 기준 매일 04:00 실행하고, 한 번에 최대 20개 deletion request target을 처리한다.
+- scheduled purge 대상은 `active` 요청 또는 `status = failed`, `autoRetryEligible = true`, `purgeAfter <= now`, `retryAfter <= now 또는 retryAfter 없음`, `purgeAttemptCount < 3`인 요청이다.
+- 삭제 요청 projection은 `lookbookDeletionRequests/{requestID}`에 둔다.
+- `lookbookDeletionRequests/{requestID}` 주요 필드:
+  - `requestID`
+  - `targetType`: `brand | season | post`
+  - `targetID`
+  - `targetPath`
+  - `brandID`
+  - `seasonID`
+  - `postID`
+  - `status`: `active | cancelled | restored | purged | failed`
+  - `requestedBy`
+  - `requestedAt`
+  - `restoreUntil`
+  - `purgeAfter`
+  - `reason`
+  - `cancelledBy`
+  - `cancelledAt`
+  - `restoredBy`
+  - `restoredAt`
+  - `updatedBy`
+  - `updatedAt`
+  - `purgeAttemptCount`
+  - `lastPurgeAttemptAt`
+  - `retryAfter`
+  - `autoRetryEligible`
+  - `purgedAt`
+  - `purgedBy`
+  - `purgeErrorMessage`
+  - `targetDisplayName`
+  - `targetImagePath`
+  - `brandName`
+  - `brandEnglishName`
+  - `brandLogoThumbPath`
+  - `seasonTitle`
+  - `seasonCoverThumbPath`
+  - `postCaption`
+  - `postImageThumbPath`
+- 표시용 snapshot 필드는 신규 삭제 요청부터 저장한다. 기존/부분 projection에는 없을 수 있으므로 `listLookbookDeletionRequests` callable이 원본 브랜드/시즌/포스트 문서를 읽어 응답 summary만 보강한다. 시즌명 snapshot은 시즌 문서의 `displayTitle`, legacy `title`, `sourceTitle` 순서로 읽는다. 이 보강은 `lookbookDeletionRequests` 문서 자체를 backfill write하지 않는다.
+- 클라이언트 목록 제목은 표시용 snapshot을 우선 사용하고, 값이 없으면 "삭제된 시즌"처럼 사람이 읽을 수 있는 fallback을 표시한다. `targetID`/UID는 제목 fallback으로 쓰지 않는다.
+- 삭제/복구/취소 감사 로그는 `lookbookDeletionAuditLogs/{logID}`에 둔다.
+- `lookbookDeletionAuditLogs/{logID}` 주요 필드:
+  - `action`
+  - `requestID`
+  - `targetType`
+  - `targetID`
+  - `targetPath`
+  - `brandID`
+  - `seasonID`
+  - `postID`
+  - `actorUID`
+  - `reason`
+  - `before.deletionStatus`
+  - `after.deletionStatus`
+  - `createdAt`
+- 클라이언트는 `lookbookDeletionRequests`와 `lookbookDeletionAuditLogs`를 직접 read/write하지 않고 callable Functions를 사용한다.
+- iOS 앱은 `LookbookDeletionRepositoryProtocol` / `CloudFunctionsLookbookDeletionRepository`를 통해 삭제 lifecycle callable을 호출한다.
+- `firestore.rules`는 `lookbookDeletionRequests`, `lookbookDeletionAuditLogs` 직접 접근을 막고, 시즌/포스트 직접 `delete`를 막으며 기존 create/update 권한은 유지한다.
+- scheduled purge 성공 시 projection status는 `purged`가 되고 `purgedAt`, `purgedBy = "system"`을 기록한다.
+- scheduled purge 실패 시 projection status는 `failed`가 되고 `purgeAttemptCount`, `lastPurgeAttemptAt`, `retryAfter`, `autoRetryEligible`, `purgeErrorMessage`를 기록한다. 3회 실패 후 자동 재시도 대상에서 제외한다.
+- 브랜드 purge는 `brands/{brandID}` 문서와 모든 하위 subcollection, 해당 브랜드의 `brandNameIndex` 문서, brand/season/post/comment user state projection, `brands/{brandID}/` Storage prefix를 삭제한다.
+- 시즌 purge는 시즌 문서와 하위 posts/comments/replacements, 관련 season/post/comment user state projection, `brands/{brandID}/seasons/{seasonID}/` Storage prefix를 삭제한다.
+- 포스트 purge는 포스트 문서와 하위 comments/replacements, 관련 post/comment user state projection, `brands/{brandID}/seasons/{seasonID}/posts/{postID}/` Storage prefix를 삭제한다.
+- 부모 target purge가 성공하면 같은 범위의 하위 active/failed deletion request projection도 `purged`로 닫는다.
+- 문서 필드에 저장된 Storage 경로는 raw Storage path만 삭제 대상으로 인정하며, `brands/{brandID}/` 하위 경로인지 검증한 뒤 포함한다. `://`가 들어간 URL, 외부 `remoteURL`, `sourcePageURL`은 삭제하지 않는다.
+- purge 대상 조회와 user state projection 정리 인덱스는 `firestore.indexes.json`의 `lookbookDeletionRequests` composite index와 `brandStates`, `seasonStates`, `postStates`, `commentStates` collection group field override를 확인한다.
 
 브랜드 요청:
 
