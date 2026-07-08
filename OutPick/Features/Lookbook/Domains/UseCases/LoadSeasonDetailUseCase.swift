@@ -20,13 +20,16 @@ protocol LoadSeasonDetailUseCaseProtocol {
 }
 
 final class LoadSeasonDetailUseCase: LoadSeasonDetailUseCaseProtocol {
+    private let brandRepository: any BrandRepositoryProtocol
     private let seasonRepository: any SeasonRepositoryProtocol
     private let postRepository: any PostRepositoryProtocol
 
     init(
+        brandRepository: any BrandRepositoryProtocol,
         seasonRepository: any SeasonRepositoryProtocol,
         postRepository: any PostRepositoryProtocol
     ) {
+        self.brandRepository = brandRepository
         self.seasonRepository = seasonRepository
         self.postRepository = postRepository
     }
@@ -35,6 +38,7 @@ final class LoadSeasonDetailUseCase: LoadSeasonDetailUseCaseProtocol {
         brandID: BrandID,
         seasonID: SeasonID
     ) async throws -> SeasonDetailContent {
+        async let brandTask = brandRepository.fetchBrand(brandID: brandID)
         async let seasonTask = seasonRepository.fetchSeason(
             brandID: brandID,
             seasonID: seasonID
@@ -47,7 +51,7 @@ final class LoadSeasonDetailUseCase: LoadSeasonDetailUseCaseProtocol {
             page: PageRequest(size: 60, cursor: nil)
         )
 
-        let (season, posts) = try await (seasonTask, postsTask)
+        let (_, season, posts) = try await (brandTask, seasonTask, postsTask)
         return SeasonDetailContent(
             season: season,
             posts: posts.items

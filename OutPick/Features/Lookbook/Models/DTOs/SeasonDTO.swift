@@ -36,6 +36,9 @@ struct SeasonDTO: Codable {
     /// 노출/운영 상태 (문서에 없을 수 있어 Optional)
     let status: SeasonStatus
 
+    /// 삭제 lifecycle 상태. 기존 문서 호환을 위해 없으면 active로 처리합니다.
+    let deletionStatus: ContentDeletionStatus?
+
     /// 에셋 동기화 상태
     let assetSyncStatus: AssetSyncStatus
 
@@ -86,6 +89,7 @@ struct SeasonDTO: Codable {
             tagIDs: domainTagIDs,
             tagConceptIDs: tagConceptIDs,
             status: status,
+            deletionStatus: deletionStatus ?? .active,
             assetSyncStatus: assetSyncStatus,
             metadataStatus: metadataStatus,
             metadataConfidence: metadataConfidence,
@@ -115,6 +119,7 @@ extension SeasonDTO {
             tagIDs: season.tagIDs.map { $0.value },
             tagConceptIDs: season.tagConceptIDs,
             status: season.status,
+            deletionStatus: season.deletionStatus,
             assetSyncStatus: season.assetSyncStatus,
             metadataStatus: season.metadataStatus,
             metadataConfidence: season.metadataConfidence,

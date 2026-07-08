@@ -86,6 +86,9 @@ struct Season: Equatable, Codable, Identifiable {
     /// 노출/운영 상태
     var status: SeasonStatus
 
+    /// 삭제 lifecycle 상태
+    var deletionStatus: ContentDeletionStatus
+
     /// 에셋 준비 상태
     var assetSyncStatus: AssetSyncStatus
 
@@ -116,6 +119,10 @@ struct Season: Equatable, Codable, Identifiable {
     /// UI 표기용 타이틀
     var title: String {
         displayTitle
+    }
+
+    var isVisibleToUsers: Bool {
+        deletionStatus == .active
     }
 
     /// 커버 썸네일 Storage 경로(path)

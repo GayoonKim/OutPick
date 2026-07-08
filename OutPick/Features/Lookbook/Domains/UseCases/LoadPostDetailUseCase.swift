@@ -24,13 +24,19 @@ protocol LoadPostDetailUseCaseProtocol {
 }
 
 final class LoadPostDetailUseCase: LoadPostDetailUseCaseProtocol {
+    private let brandRepository: any BrandRepositoryProtocol
+    private let seasonRepository: any SeasonRepositoryProtocol
     private let postRepository: any PostRepositoryProtocol
     private let commentRepository: any CommentRepositoryProtocol
 
     init(
+        brandRepository: any BrandRepositoryProtocol,
+        seasonRepository: any SeasonRepositoryProtocol,
         postRepository: any PostRepositoryProtocol,
         commentRepository: any CommentRepositoryProtocol
     ) {
+        self.brandRepository = brandRepository
+        self.seasonRepository = seasonRepository
         self.postRepository = postRepository
         self.commentRepository = commentRepository
     }
@@ -41,11 +47,17 @@ final class LoadPostDetailUseCase: LoadPostDetailUseCaseProtocol {
         postID: PostID,
         hiddenUserIDs: Set<UserID>
     ) async throws -> PostDetailContent {
-        let post = try await postRepository.fetchPost(
+        async let brandTask = brandRepository.fetchBrand(brandID: brandID)
+        async let seasonTask = seasonRepository.fetchSeason(
+            brandID: brandID,
+            seasonID: seasonID
+        )
+        async let postTask = postRepository.fetchPost(
             brandID: brandID,
             seasonID: seasonID,
             postID: postID
         )
+        let (_, _, post) = try await (brandTask, seasonTask, postTask)
 
         do {
             let representativeComment = try await commentRepository.fetchRepresentativeComment(

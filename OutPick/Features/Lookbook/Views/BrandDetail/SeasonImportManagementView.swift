@@ -3,58 +3,81 @@ import SwiftUI
 struct SeasonImportManagementView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var viewModel: SeasonImportManagementViewModel
+    private let showsNavigationChrome: Bool
 
-    init(viewModel: SeasonImportManagementViewModel) {
+    init(
+        viewModel: SeasonImportManagementViewModel,
+        showsNavigationChrome: Bool = true
+    ) {
         _viewModel = StateObject(wrappedValue: viewModel)
+        self.showsNavigationChrome = showsNavigationChrome
     }
 
     var body: some View {
-        NavigationView {
-            Group {
-                if viewModel.isLoading && viewModel.jobs.isEmpty {
-                    ProgressView("시즌 가져오기 현황을 불러오는 중입니다.")
-                        .tint(OutPickTheme.SwiftUIColor.accent)
-                        .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
-                } else if viewModel.jobs.isEmpty {
-                    VStack(spacing: 12) {
-                        Image(systemName: "tray")
-                            .font(.title)
-                        Text("가져오기 기록이 없습니다")
-                            .font(.headline)
-                    }
-                    .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
-                } else {
-                    List(viewModel.jobs) { job in
-                        jobRow(job)
-                            .listRowBackground(OutPickTheme.SwiftUIColor.backgroundBase)
-                    }
-                    .outpickHiddenScrollContentBackground()
-                    .background(OutPickTheme.SwiftUIColor.backgroundBase)
-                    .refreshable {
-                        await viewModel.load()
-                    }
+        Group {
+            if showsNavigationChrome {
+                NavigationView {
+                    content
+                        .navigationTitle("시즌 가져오기 현황")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button("닫기") {
+                                    dismiss()
+                                }
+                            }
+                        }
                 }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(OutPickTheme.SwiftUIColor.backgroundBase)
-            .tint(OutPickTheme.SwiftUIColor.accent)
-            .navigationTitle("시즌 가져오기 현황")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("닫기") {
-                        dismiss()
-                    }
-                }
-            }
-            .task {
-                await viewModel.monitor()
-            }
-            .appToast(message: viewModel.errorMessage) {
-                viewModel.clearError()
+                .navigationViewStyle(StackNavigationViewStyle())
+            } else {
+                content
             }
         }
-        .navigationViewStyle(StackNavigationViewStyle())
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        Group {
+            if viewModel.isLoading && viewModel.jobs.isEmpty {
+                ProgressView("시즌 가져오기 현황을 불러오는 중입니다.")
+                    .tint(OutPickTheme.SwiftUIColor.accent)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if viewModel.jobs.isEmpty {
+                VStack(spacing: 12) {
+                    Image(systemName: "tray")
+                        .font(.title)
+                    Text("가져오기 기록이 없습니다")
+                        .font(.headline)
+                }
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 10) {
+                        ForEach(viewModel.jobs) { job in
+                            jobRow(job)
+                                .padding(14)
+                                .background(OutPickTheme.SwiftUIColor.surfaceBase)
+                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        }
+                    }
+                    .padding(showsNavigationChrome ? 16 : 0)
+                }
+                .refreshable {
+                    await viewModel.load()
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(OutPickTheme.SwiftUIColor.backgroundBase)
+        .tint(OutPickTheme.SwiftUIColor.accent)
+        .task {
+            await viewModel.monitor()
+        }
+        .appToast(message: viewModel.errorMessage) {
+            viewModel.clearError()
+        }
     }
 
     private func jobRow(_ job: SeasonImportJob) -> some View {

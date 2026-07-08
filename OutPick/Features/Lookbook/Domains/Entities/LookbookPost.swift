@@ -16,6 +16,11 @@ struct LookbookPost: Equatable, Codable, Identifiable {
     var caption: String?
     var tagIDs: [TagID]
     var metrics: PostMetrics
+    var deletionStatus: ContentDeletionStatus
     var createdAt: Date
     var updatedAt: Date
+
+    var isVisibleToUsers: Bool {
+        deletionStatus == .active
+    }
 }

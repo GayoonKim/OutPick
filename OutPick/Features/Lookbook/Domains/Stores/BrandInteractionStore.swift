@@ -143,6 +143,7 @@ private extension Brand {
             lastDiscoveryRequestedAt: lastDiscoveryRequestedAt,
             lastDiscoveryCompletedAt: lastDiscoveryCompletedAt,
             metrics: metrics,
+            deletionStatus: deletionStatus,
             updatedAt: updatedAt
         )
     }

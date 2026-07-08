@@ -54,7 +54,9 @@ final class FirestorePostRepository: PostRepositoryProtocol {
 
         let snap = try await query.getDocuments()
         let dtos: [PostDTO] = try snap.documents.map { try FirestoreMapper.mapDocument($0) }
-        let items = try dtos.map { try $0.toDomain(brandID: brandID, seasonID: seasonID) }
+        let items = try dtos
+            .map { try $0.toDomain(brandID: brandID, seasonID: seasonID) }
+            .filter(\.isVisibleToUsers)
 
         let nextCursor: PageCursor? = (snap.documents.count == page.size)
             ? snap.documents.last.map { PageCursor(token: $0.documentID) }
@@ -73,8 +75,16 @@ final class FirestorePostRepository: PostRepositoryProtocol {
             .document(postID.value)
             .getDocument()
 
+        guard doc.exists else {
+            throw LookbookContentUnavailableError.postUnavailable
+        }
+
         let dto: PostDTO = try FirestoreMapper.mapDocument(doc)
-        return try dto.toDomain(brandID: brandID, seasonID: seasonID)
+        let post = try dto.toDomain(brandID: brandID, seasonID: seasonID)
+        guard post.isVisibleToUsers else {
+            throw LookbookContentUnavailableError.postUnavailable
+        }
+        return post
     }
 
     func fetchPostsByTag(tagID: TagID, sort: PostSortOption, page: PageRequest) async throws -> PageResponse<LookbookPost> {
@@ -95,7 +105,9 @@ final class FirestorePostRepository: PostRepositoryProtocol {
         let dtos: [PostDTO] = try snap.documents.map { try FirestoreMapper.mapDocument($0) }
 
         /// 전역 조회에서는 경로 주입이 어려우니 문서 필드에 brandID/seasonID가 들어있다는 전제의 변환 사용
-        let items = try dtos.map { try $0.toDomainFromEmbeddedPathIDs() }
+        let items = try dtos
+            .map { try $0.toDomainFromEmbeddedPathIDs() }
+            .filter(\.isVisibleToUsers)
 
         let nextCursor: PageCursor? = (snap.documents.count == page.size)
             ? snap.documents.last.map { PageCursor(token: $0.reference.path) } // 다음 커서도 fullPath로 저장

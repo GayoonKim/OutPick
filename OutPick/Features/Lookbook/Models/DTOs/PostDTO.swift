@@ -70,6 +70,7 @@ struct PostDTO: Codable {
     let caption: String?
     let tagIDs: [String]?
     let metrics: PostMetricsDTO?
+    let deletionStatus: ContentDeletionStatus?
     let createdAt: Timestamp?
     let updatedAt: Timestamp?
 
@@ -94,6 +95,7 @@ struct PostDTO: Codable {
             caption: caption,
             tagIDs: (tagIDs ?? []).map { TagID(value: $0) },
             metrics: domainMetrics,
+            deletionStatus: deletionStatus ?? .active,
             createdAt: createdAt?.dateValue() ?? Date(timeIntervalSince1970: 0),
             updatedAt: updatedAt?.dateValue() ?? Date(timeIntervalSince1970: 0)
         )

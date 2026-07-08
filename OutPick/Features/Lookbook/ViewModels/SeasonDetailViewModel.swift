@@ -199,10 +199,17 @@ final class SeasonDetailViewModel: ObservableObject {
             posts = []
             updatePinnedPostKeys([])
             bindInteractionStore(postKeys: [])
-            errorMessage = "시즌과 룩북 사진을 불러오지 못했습니다."
+            errorMessage = unavailableMessage(for: error) ?? "시즌과 룩북 사진을 불러오지 못했습니다."
             prefetchedPostImagePaths.removeAll()
             prefetchedThroughIndex = -1
         }
+    }
+
+    private func unavailableMessage(for error: Error) -> String? {
+        guard let error = error as? LookbookContentUnavailableError else {
+            return nil
+        }
+        return error.errorDescription
     }
 
     private func fetchSeasonUserStateIfPossible() async -> SeasonUserState? {

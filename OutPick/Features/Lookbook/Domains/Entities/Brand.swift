@@ -56,5 +56,10 @@ struct Brand: Equatable, Codable, Identifiable {
     var lastDiscoveryRequestedAt: Date?
     var lastDiscoveryCompletedAt: Date?
     var metrics: BrandMetrics
+    var deletionStatus: BrandDeletionStatus
     var updatedAt: Date
+
+    var isVisibleToUsers: Bool {
+        deletionStatus == .active
+    }
 }

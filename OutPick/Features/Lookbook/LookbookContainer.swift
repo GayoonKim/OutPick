@@ -103,10 +103,13 @@ final class LookbookContainer {
         )
         self.filterHiddenCommentAuthorsUseCase = FilterHiddenCommentAuthorsUseCase()
         self.loadSeasonDetailUseCase = LoadSeasonDetailUseCase(
+            brandRepository: provider.brandRepository,
             seasonRepository: provider.seasonRepository,
             postRepository: provider.postRepository
         )
         self.loadPostDetailUseCase = LoadPostDetailUseCase(
+            brandRepository: provider.brandRepository,
+            seasonRepository: provider.seasonRepository,
             postRepository: provider.postRepository,
             commentRepository: provider.commentRepository
         )
@@ -321,10 +324,43 @@ final class LookbookContainer {
             importManagementSheetFactory: { [self] brand in
                 AnyView(
                     self.makeSeasonImportManagementView(
-                        brandID: brand.id
+                        brandID: brand.id,
+                        showsNavigationChrome: false
+                    )
+                )
+            },
+            deletionManagementFactory: { [self] brand in
+                AnyView(
+                    self.makeAdminLookbookDeletionManagementView(
+                        coordinator: coordinator,
+                        initialBrand: brand,
+                        showsNavigationBar: false,
+                        allowsDeletionSelection: true
                     )
                 )
             }
+        )
+    }
+
+    func makeAdminLookbookDeletionManagementView(
+        coordinator: LookbookCoordinator,
+        initialBrand: Brand? = nil,
+        showsNavigationBar: Bool = true,
+        allowsDeletionSelection: Bool = true
+    ) -> AdminLookbookDeletionManagementView {
+        AdminLookbookDeletionManagementView(
+            viewModel: AdminLookbookDeletionManagementViewModel(
+                initialBrand: initialBrand,
+                brandRepository: provider.brandRepository,
+                searchUseCase: searchBrandsUseCase,
+                seasonRepository: provider.seasonRepository,
+                postRepository: provider.postRepository,
+                deletionRepository: provider.lookbookDeletionRepository
+            ),
+            coordinator: coordinator,
+            brandImageCache: provider.brandImageCache,
+            showsNavigationBar: showsNavigationBar,
+            allowsDeletionSelection: allowsDeletionSelection
         )
     }
 
@@ -503,7 +539,8 @@ final class LookbookContainer {
     }
 
     func makeSeasonImportManagementView(
-        brandID: BrandID
+        brandID: BrandID,
+        showsNavigationChrome: Bool = true
     ) -> SeasonImportManagementView {
         SeasonImportManagementView(
             viewModel: SeasonImportManagementViewModel(
@@ -512,7 +549,8 @@ final class LookbookContainer {
                     jobRepository: provider.seasonImportJobRepository,
                     retryRepository: provider.seasonAssetRetryRepository
                 )
-            )
+            ),
+            showsNavigationChrome: showsNavigationChrome
         )
     }
 

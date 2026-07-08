@@ -25,6 +25,7 @@ struct BrandDTO: Codable {
     let likeCount: Int?
     let viewCount: Int?
     let popularScore: Double?
+    let deletionStatus: BrandDeletionStatus?
     let updatedAt: Timestamp?
 
     func toDomain() throws -> Brand {
@@ -60,6 +61,7 @@ struct BrandDTO: Codable {
             lastDiscoveryRequestedAt: lastDiscoveryRequestedAt?.dateValue(),
             lastDiscoveryCompletedAt: lastDiscoveryCompletedAt?.dateValue(),
             metrics: metrics,
+            deletionStatus: deletionStatus ?? .active,
             updatedAt: updatedAt?.dateValue() ?? Date(timeIntervalSince1970: 0)
         )
     }

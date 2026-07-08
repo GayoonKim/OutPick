@@ -8,69 +8,113 @@
 import SwiftUI
 import UIKit
 
+private enum AdminBrandManagementTab: String, CaseIterable, Identifiable {
+    case info
+    case managers
+    case importSeasons
+    case deletion
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .info: return "정보"
+        case .managers: return "관리자"
+        case .importSeasons: return "시즌 가져오기"
+        case .deletion: return "삭제"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .info: return "브랜드 정보와 로고 수정"
+        case .managers: return "브랜드 소유자와 관리자 추가/삭제"
+        case .importSeasons: return "시즌 후보 찾기와 가져오기 현황"
+        case .deletion: return "브랜드/시즌/포스트 삭제 요청 관리"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .info: return "info.circle"
+        case .managers: return "person.2"
+        case .importSeasons: return "square.and.arrow.down"
+        case .deletion: return "trash"
+        }
+    }
+}
+
+private enum AdminBrandImportTab: String, CaseIterable, Identifiable {
+    case discover
+    case status
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .discover: return "시즌 찾아오기"
+        case .status: return "현황"
+        }
+    }
+}
+
 struct AdminBrandManagementView: View {
     @StateObject private var viewModel: AdminBrandManagementViewModel
     private let coordinator: LookbookCoordinator
     private let brandImageCache: any BrandImageCacheProtocol
     private let seasonAdditionSheetFactory: (Brand, @escaping () -> Void) -> AnyView
     private let importManagementSheetFactory: (Brand) -> AnyView
+    private let deletionManagementFactory: (Brand) -> AnyView
 
     @EnvironmentObject private var brandAdminSessionStore: BrandAdminSessionStore
     @State private var isImagePickerPresented = false
     @State private var isPresentingSeasonAddition = false
-    @State private var isPresentingImportManagement = false
+    @State private var selectedMenu: AdminBrandManagementTab?
+    @State private var selectedImportTab: AdminBrandImportTab = .discover
 
     init(
         viewModel: AdminBrandManagementViewModel,
         coordinator: LookbookCoordinator,
         brandImageCache: any BrandImageCacheProtocol,
         seasonAdditionSheetFactory: @escaping (Brand, @escaping () -> Void) -> AnyView,
-        importManagementSheetFactory: @escaping (Brand) -> AnyView
+        importManagementSheetFactory: @escaping (Brand) -> AnyView,
+        deletionManagementFactory: @escaping (Brand) -> AnyView
     ) {
         _viewModel = StateObject(wrappedValue: viewModel)
         self.coordinator = coordinator
         self.brandImageCache = brandImageCache
         self.seasonAdditionSheetFactory = seasonAdditionSheetFactory
         self.importManagementSheetFactory = importManagementSheetFactory
+        self.deletionManagementFactory = deletionManagementFactory
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                if viewModel.isDirectBrandMode == false {
-                    searchSection
-                } else if viewModel.isLoadingInitialBrand {
+        VStack(alignment: .leading, spacing: 0) {
+            if viewModel.isLoadingInitialBrand {
+                ScrollView {
                     loadingSection
+                        .padding(.horizontal, 20)
+                        .padding(.top, 24)
                 }
-
-                if let selectedBrand = viewModel.selectedBrand {
-                    editSection
-                    logoSection
-                    if brandAdminSessionStore.canManageBrandManagers(brandID: selectedBrand.id) {
-                        managerSection
-                    }
-                    importSection(selectedBrand)
+            } else if let selectedBrand = viewModel.selectedBrand {
+                if let selectedMenu, availableMenus(for: selectedBrand).contains(selectedMenu) {
+                    selectedMenuContent(selectedMenu, for: selectedBrand)
+                } else {
+                    managementMenuList(for: selectedBrand)
                 }
-
-                if let message = viewModel.message {
-                    Text(message)
-                        .font(.footnote)
-                        .foregroundStyle(OutPickTheme.SwiftUIColor.warning)
-                        .padding(14)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(OutPickTheme.SwiftUIColor.warning.opacity(0.12))
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            } else {
+                ScrollView {
+                    emptyBrandSelectionSection
+                        .padding(.horizontal, 20)
+                        .padding(.top, 24)
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 24)
-            .padding(.bottom, 40)
         }
         .background(OutPickTheme.SwiftUIColor.backgroundBase.ignoresSafeArea())
         .lookbookNavigationBar(
-            title: "브랜드 관리",
+            title: navigationTitle,
             showsBackButton: true,
-            onBack: { coordinator.pop() }
+            onBack: handleBack
         )
         .task {
             await viewModel.loadInitialBrandIfNeeded()
@@ -89,11 +133,6 @@ struct AdminBrandManagementView: View {
                 seasonAdditionSheetFactory(selectedBrand) {
                     isPresentingSeasonAddition = false
                 }
-            }
-        }
-        .sheet(isPresented: $isPresentingImportManagement) {
-            if let selectedBrand = viewModel.selectedBrand {
-                importManagementSheetFactory(selectedBrand)
             }
         }
     }
@@ -165,6 +204,171 @@ struct AdminBrandManagementView: View {
                     .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var emptyBrandSelectionSection: some View {
+        adminSection {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("브랜드 상세에서 진입해주세요.")
+                    .font(.headline)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
+                Text("브랜드 관리는 룩북 홈에서 브랜드를 검색한 뒤 상세 화면의 관리자 버튼으로 시작합니다.")
+                    .font(.footnote)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func managementMenuList(for brand: Brand) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                ForEach(availableMenus(for: brand)) { menu in
+                    managementMenuButton(menu)
+                }
+
+                messageSection
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 24)
+            .padding(.bottom, 40)
+        }
+    }
+
+    private func managementMenuButton(_ menu: AdminBrandManagementTab) -> some View {
+        Button {
+            selectedMenu = menu
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: menu.systemImage)
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(menu == .deletion ? OutPickTheme.SwiftUIColor.destructive : OutPickTheme.SwiftUIColor.accent)
+                    .frame(width: 48, height: 48)
+                    .background(OutPickTheme.SwiftUIColor.surfaceElevated)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(menu.title)
+                        .font(.system(size: 19, weight: .semibold))
+                        .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
+                        .lineLimit(1)
+
+                    Text(menu.subtitle)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 12)
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.iconSecondary)
+            }
+            .padding(18)
+            .background(OutPickTheme.SwiftUIColor.surfaceBase)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(OutPickTheme.SwiftUIColor.borderSubtle, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(menu.title)
+    }
+
+    @ViewBuilder
+    private func selectedMenuContent(
+        _ menu: AdminBrandManagementTab,
+        for brand: Brand
+    ) -> some View {
+        switch menu {
+        case .info:
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    editSection
+                    logoSection(brand)
+                    messageSection
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 24)
+                .padding(.bottom, 40)
+            }
+        case .managers:
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    managerSection
+                    messageSection
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 24)
+                .padding(.bottom, 40)
+            }
+        case .importSeasons:
+            importTabContent(for: brand)
+        case .deletion:
+            deletionManagementFactory(brand)
+        }
+    }
+
+    @ViewBuilder
+    private func importTabContent(for brand: Brand) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Picker("시즌 가져오기 메뉴", selection: $selectedImportTab) {
+                ForEach(AdminBrandImportTab.allCases) { tab in
+                    Text(tab.title).tag(tab)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 20)
+            .padding(.top, 24)
+
+            switch selectedImportTab {
+            case .discover:
+                ScrollView {
+                    importDiscoverySection(brand)
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 40)
+                }
+            case .status:
+                importManagementSheetFactory(brand)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var messageSection: some View {
+        if let message = viewModel.message {
+            Text(message)
+                .font(.footnote)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.warning)
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(OutPickTheme.SwiftUIColor.warning.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+    }
+
+    private func availableMenus(for brand: Brand) -> [AdminBrandManagementTab] {
+        var tabs: [AdminBrandManagementTab] = [.info]
+        if brandAdminSessionStore.canManageBrandManagers(brandID: brand.id) {
+            tabs.append(.managers)
+        }
+        tabs.append(contentsOf: [.importSeasons, .deletion])
+        return tabs
+    }
+
+    private var navigationTitle: String {
+        selectedMenu?.title ?? "브랜드 관리"
+    }
+
+    private func handleBack() {
+        if selectedMenu != nil {
+            selectedMenu = nil
+        } else {
+            coordinator.pop()
         }
     }
 
@@ -243,12 +447,28 @@ struct AdminBrandManagementView: View {
         }
     }
 
-    private var logoSection: some View {
+    private func logoSection(_ brand: Brand) -> some View {
         adminSection {
             VStack(alignment: .leading, spacing: 14) {
                 Text("로고")
                     .font(.headline)
                     .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
+
+                LookbookAssetImageView(
+                    primaryPath: brand.logoThumbPath,
+                    secondaryPath: brand.logoDetailPath ?? brand.logoOriginalPath,
+                    remoteURL: nil,
+                    sourcePageURL: nil,
+                    brandImageCache: brandImageCache,
+                    maxBytes: 800_000
+                )
+                .frame(width: 96, height: 96)
+                .background(OutPickTheme.SwiftUIColor.surfaceElevated)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(OutPickTheme.SwiftUIColor.borderSubtle, lineWidth: 1)
+                )
 
                 Button {
                     isImagePickerPresented = true
@@ -329,24 +549,23 @@ struct AdminBrandManagementView: View {
         }
     }
 
-    private func importSection(_ brand: Brand) -> some View {
+    private func importDiscoverySection(_ brand: Brand) -> some View {
         adminSection {
             VStack(alignment: .leading, spacing: 14) {
-                Text("시즌 가져오기")
+                Text("시즌 찾아오기")
                     .font(.headline)
                     .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
 
-                HStack(spacing: 10) {
-                    secondaryButton(
-                        title: "시즌 찾아오기",
-                        isDisabled: !hasLookbookArchiveURL(brand)
-                    ) {
-                        isPresentingSeasonAddition = true
-                    }
+                Text("브랜드의 룩북 목록 URL을 바탕으로 가져올 시즌 후보를 찾습니다.")
+                    .font(.caption)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
 
-                    secondaryButton(title: "진행 현황") {
-                        isPresentingImportManagement = true
-                    }
+                secondaryButton(
+                    title: "시즌 찾아오기 시작",
+                    isDisabled: !hasLookbookArchiveURL(brand)
+                ) {
+                    isPresentingSeasonAddition = true
                 }
             }
         }

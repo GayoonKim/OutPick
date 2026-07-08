@@ -143,12 +143,28 @@ final class AdminBrandManagementViewModel: ObservableObject {
         do {
             let results = try await searchUseCase.execute(query: query, limit: 20)
             guard !Task.isCancelled else { return }
-            searchResults = results
+            searchResults = await verifiedVisibleBrands(results)
         } catch {
             guard !Task.isCancelled else { return }
             searchResults = []
             message = "브랜드 검색 실패: \(error.localizedDescription)"
         }
+    }
+
+    private func verifiedVisibleBrands(_ brands: [Brand]) async -> [Brand] {
+        var visibleBrands: [Brand] = []
+        visibleBrands.reserveCapacity(brands.count)
+
+        for brand in brands where brand.isVisibleToUsers {
+            do {
+                let fetched = try await brandRepository.fetchBrand(brandID: brand.id)
+                visibleBrands.append(fetched)
+            } catch {
+                continue
+            }
+        }
+
+        return visibleBrands
     }
 
     func selectBrand(_ brand: Brand) {
@@ -300,6 +316,7 @@ final class AdminBrandManagementViewModel: ObservableObject {
                 lastDiscoveryRequestedAt: selectedBrand.lastDiscoveryRequestedAt,
                 lastDiscoveryCompletedAt: selectedBrand.lastDiscoveryCompletedAt,
                 metrics: selectedBrand.metrics,
+                deletionStatus: selectedBrand.deletionStatus,
                 updatedAt: Date()
             )
             self.selectedBrand = updatedBrand
@@ -349,6 +366,9 @@ final class AdminBrandManagementViewModel: ObservableObject {
 
             if isAdding {
                 message = receipt.duplicate ? "이미 등록된 관리자입니다." : "관리자를 추가했습니다."
+                if receipt.duplicate == false {
+                    managerEmail = ""
+                }
             } else {
                 message = receipt.removed ? "관리자를 삭제했습니다." : "대상 관리자가 등록되어 있지 않습니다."
             }

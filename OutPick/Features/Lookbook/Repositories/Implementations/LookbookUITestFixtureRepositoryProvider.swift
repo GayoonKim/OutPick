@@ -98,6 +98,7 @@ private final class LookbookUITestFixtureStore:
             lastDiscoveryRequestedAt: nil,
             lastDiscoveryCompletedAt: nil,
             metrics: BrandMetrics(likeCount: 0, viewCount: 0, popularScore: 0),
+            deletionStatus: .active,
             updatedAt: now
         )
     }
@@ -116,6 +117,7 @@ private final class LookbookUITestFixtureStore:
             tagIDs: [],
             tagConceptIDs: nil,
             status: .published,
+            deletionStatus: .active,
             assetSyncStatus: .ready,
             metadataStatus: .confirmed,
             metadataConfidence: nil,
@@ -153,6 +155,7 @@ private final class LookbookUITestFixtureStore:
                 saveCount: 1,
                 viewCount: 10
             ),
+            deletionStatus: .active,
             createdAt: now,
             updatedAt: now
         )

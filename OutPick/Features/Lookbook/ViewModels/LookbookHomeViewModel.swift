@@ -190,6 +190,11 @@ final class LookbookHomeViewModel: ObservableObject {
     }
 
     func applyUpdatedBrand(_ brand: Brand) {
+        guard brand.isVisibleToUsers else {
+            brands.removeAll { $0.id == brand.id }
+            searchResults.removeAll { $0.id == brand.id }
+            return
+        }
         upsertBrand(brand)
         prefetchIfNeeded(for: brand)
     }
@@ -245,6 +250,12 @@ final class LookbookHomeViewModel: ObservableObject {
     }
 
     private func upsertBrand(_ brand: Brand) {
+        guard brand.isVisibleToUsers else {
+            brands.removeAll { $0.id == brand.id }
+            searchResults.removeAll { $0.id == brand.id }
+            return
+        }
+
         if let index = brands.firstIndex(where: { $0.id == brand.id }) {
             brands[index] = brand
             return
@@ -328,12 +339,13 @@ final class LookbookHomeViewModel: ObservableObject {
             )
             guard !Task.isCancelled else { return }
 
-            searchResults = results
-            searchPhase = results.isEmpty ? .empty : .results
+            let visibleResults = await verifiedVisibleSearchResults(results)
+            searchResults = visibleResults
+            searchPhase = visibleResults.isEmpty ? .empty : .results
 
             let prefetchTargets = makePrefetchTargets(
-                from: results,
-                count: min(results.count, prefetchLogoCount)
+                from: visibleResults,
+                count: min(visibleResults.count, prefetchLogoCount)
             )
             schedulePrefetch(items: prefetchTargets)
         } catch {
@@ -341,5 +353,21 @@ final class LookbookHomeViewModel: ObservableObject {
             searchResults = []
             searchPhase = .failed(error.localizedDescription)
         }
+    }
+
+    private func verifiedVisibleSearchResults(_ results: [Brand]) async -> [Brand] {
+        var visibleResults: [Brand] = []
+        visibleResults.reserveCapacity(results.count)
+
+        for result in results where result.isVisibleToUsers {
+            do {
+                let brand = try await repo.fetchBrand(brandID: result.id)
+                visibleResults.append(brand)
+            } catch {
+                continue
+            }
+        }
+
+        return visibleResults
     }
 }

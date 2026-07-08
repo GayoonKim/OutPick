@@ -43,13 +43,22 @@ final class MakeLookbookSharedContentUseCase: MakeLookbookSharedContentUseCasePr
     func execute(target: LookbookShareTarget) async throws -> LookbookSharedContent {
         switch target {
         case .brand(let brand):
+            guard brand.isVisibleToUsers else {
+                throw LookbookContentUnavailableError.brandUnavailable
+            }
             return makeBrandContent(brand)
 
         case .season(let season):
+            guard season.isVisibleToUsers else {
+                throw LookbookContentUnavailableError.seasonUnavailable
+            }
             let brand = try await brandRepository.fetchBrand(brandID: season.brandID)
             return makeSeasonContent(season, brand: brand)
 
         case .post(let post):
+            guard post.isVisibleToUsers else {
+                throw LookbookContentUnavailableError.postUnavailable
+            }
             async let brandTask = brandRepository.fetchBrand(brandID: post.brandID)
             async let seasonTask = seasonRepository.fetchSeason(
                 brandID: post.brandID,

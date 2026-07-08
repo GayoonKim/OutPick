@@ -77,6 +77,13 @@ final class LookbookCoordinator {
         ))
     }
 
+    func pushAdminLookbookDeletionManagement(initialBrand: Brand? = nil) {
+        push(makeAdminLookbookDeletionManagementView(
+            initialBrand: initialBrand,
+            allowsDeletionSelection: initialBrand != nil
+        ))
+    }
+
     func pop() {
         guard let navigationController else {
             assertionFailure("LookbookCoordinator requires an attached UINavigationController.")
@@ -147,6 +154,17 @@ final class LookbookCoordinator {
             initialBrand: initialBrand,
             initialBrandID: initialBrandID,
             onUpdatedBrand: onUpdatedBrand
+        )
+    }
+
+    func makeAdminLookbookDeletionManagementView(
+        initialBrand: Brand? = nil,
+        allowsDeletionSelection: Bool = true
+    ) -> AdminLookbookDeletionManagementView {
+        container.makeAdminLookbookDeletionManagementView(
+            coordinator: self,
+            initialBrand: initialBrand,
+            allowsDeletionSelection: allowsDeletionSelection
         )
     }
 

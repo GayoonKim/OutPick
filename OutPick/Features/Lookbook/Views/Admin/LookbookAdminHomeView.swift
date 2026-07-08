@@ -51,12 +51,14 @@ struct LookbookAdminHomeView: View {
                     }
                 }
 
-                adminActionButton(
-                    title: "브랜드 관리",
-                    subtitle: "브랜드 수정, 관리자 추가, 시즌 가져오기 현황 관리",
-                    systemImage: "slider.horizontal.3"
-                ) {
-                    coordinator.pushAdminBrandManagement()
+                if brandAdminSessionStore.isTotalAdmin {
+                    adminActionButton(
+                        title: "삭제 요청 목록",
+                        subtitle: "브랜드/시즌/포스트 삭제 요청과 복구 현황",
+                        systemImage: "trash"
+                    ) {
+                        coordinator.pushAdminLookbookDeletionManagement()
+                    }
                 }
             }
             .padding(.horizontal, 20)

@@ -95,6 +95,7 @@ final class FirestoreSeasonRepository: SeasonRepositoryProtocol {
             tagIDs: tagIDs,
             tagConceptIDs: tagConceptIDs,
             status: .published,
+            deletionStatus: .active,
             assetSyncStatus: .ready,
             metadataStatus: .confirmed,
             metadataConfidence: 1,
@@ -165,7 +166,11 @@ final class FirestoreSeasonRepository: SeasonRepositoryProtocol {
         let dto: SeasonDTO = try FirestoreMapper.mapDocument(snapshot)
 
         // DTO → Domain 변환(brandID는 상위 경로에서 주입)
-        return try dto.toDomain(brandID: brandID)
+        let season = try dto.toDomain(brandID: brandID)
+        guard season.isVisibleToUsers else {
+            throw LookbookContentUnavailableError.seasonUnavailable
+        }
+        return season
     }
 
     func fetchSeasons(
@@ -194,9 +199,10 @@ final class FirestoreSeasonRepository: SeasonRepositoryProtocol {
 
         let snapshot = try await query.getDocuments()
 
-        let items: [Season] = try snapshot.documents.map { doc in
+        let items: [Season] = try snapshot.documents.compactMap { doc in
             let dto: SeasonDTO = try FirestoreMapper.mapDocument(doc)
-            return try dto.toDomain(brandID: brandID)
+            let season = try dto.toDomain(brandID: brandID)
+            return season.isVisibleToUsers ? season : nil
         }
 
         // 다음 페이지 커서(없으면 nil)
@@ -214,9 +220,10 @@ final class FirestoreSeasonRepository: SeasonRepositoryProtocol {
             .order(by: "createdAt", descending: true)
             .getDocuments()
 
-        return try snapshot.documents.map { doc in
+        return try snapshot.documents.compactMap { doc in
             let dto: SeasonDTO = try FirestoreMapper.mapDocument(doc)
-            return try dto.toDomain(brandID: brandID)
+            let season = try dto.toDomain(brandID: brandID)
+            return season.isVisibleToUsers ? season : nil
         }
     }
 }

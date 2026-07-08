@@ -15,6 +15,7 @@ final class LookbookRepositoryProvider {
     let brandRepository: BrandRepositoryProtocol
     let brandSearchRepository: BrandSearchRepositoryProtocol
     let brandRequestRepository: BrandRequestRepositoryProtocol
+    let lookbookDeletionRepository: LookbookDeletionRepositoryProtocol
     let brandEngagementRepository: BrandEngagementRepositoryProtocol
 
     let seasonRepository: SeasonRepositoryProtocol
@@ -61,6 +62,7 @@ final class LookbookRepositoryProvider {
         brandRepository: BrandRepositoryProtocol = FirestoreBrandRepository(),
         brandSearchRepository: BrandSearchRepositoryProtocol = CloudFunctionsBrandSearchRepository(),
         brandRequestRepository: BrandRequestRepositoryProtocol = CloudFunctionsBrandRequestRepository(),
+        lookbookDeletionRepository: LookbookDeletionRepositoryProtocol = CloudFunctionsLookbookDeletionRepository(),
         brandEngagementRepository: BrandEngagementRepositoryProtocol = CloudFunctionsBrandEngagementRepository(),
         brandStore: BrandStoringRepository = CloudFunctionsBrandStore(),
 
@@ -113,6 +115,7 @@ final class LookbookRepositoryProvider {
         self.brandRepository = brandRepository
         self.brandSearchRepository = brandSearchRepository
         self.brandRequestRepository = brandRequestRepository
+        self.lookbookDeletionRepository = lookbookDeletionRepository
         self.brandEngagementRepository = brandEngagementRepository
         self.postRepository = postRepository
         self.postEngagementRepository = postEngagementRepository

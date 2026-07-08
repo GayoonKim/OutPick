@@ -762,6 +762,180 @@ final class CloudFunctionsManager {
         )
     }
 
+    func requestBrandDeletion(
+        brandID: String,
+        reason: String?
+    ) async throws -> LookbookDeletionMutationReceipt {
+        var data: [String: Any] = ["brandID": brandID]
+        if let reason {
+            data["reason"] = reason
+        }
+
+        let response = try await callFunction("requestBrandDeletion", data: data)
+        return try lookbookDeletionMutationReceipt(response)
+    }
+
+    func cancelBrandDeletion(
+        brandID: String
+    ) async throws -> LookbookDeletionMutationReceipt {
+        let response = try await callFunction(
+            "cancelBrandDeletion",
+            data: ["brandID": brandID]
+        )
+        return try lookbookDeletionMutationReceipt(response)
+    }
+
+    func softDeleteSeason(
+        brandID: String,
+        seasonID: String,
+        reason: String?
+    ) async throws -> LookbookDeletionMutationReceipt {
+        var data: [String: Any] = [
+            "brandID": brandID,
+            "seasonID": seasonID
+        ]
+        if let reason {
+            data["reason"] = reason
+        }
+
+        let response = try await callFunction("softDeleteSeason", data: data)
+        return try lookbookDeletionMutationReceipt(response)
+    }
+
+    func batchSoftDeleteSeasons(
+        brandID: String,
+        seasonIDs: [String],
+        reason: String?
+    ) async throws -> LookbookDeletionBatchResult {
+        var data: [String: Any] = [
+            "brandID": brandID,
+            "seasonIDs": seasonIDs
+        ]
+        if let reason {
+            data["reason"] = reason
+        }
+
+        let response = try await callFunction("batchSoftDeleteSeasons", data: data)
+        return try lookbookDeletionBatchResult(response)
+    }
+
+    func restoreSeason(
+        brandID: String,
+        seasonID: String
+    ) async throws -> LookbookDeletionMutationReceipt {
+        let response = try await callFunction(
+            "restoreSeason",
+            data: [
+                "brandID": brandID,
+                "seasonID": seasonID
+            ]
+        )
+        return try lookbookDeletionMutationReceipt(response)
+    }
+
+    func softDeletePost(
+        brandID: String,
+        seasonID: String,
+        postID: String,
+        reason: String?
+    ) async throws -> LookbookDeletionMutationReceipt {
+        var data: [String: Any] = [
+            "brandID": brandID,
+            "seasonID": seasonID,
+            "postID": postID
+        ]
+        if let reason {
+            data["reason"] = reason
+        }
+
+        let response = try await callFunction("softDeletePost", data: data)
+        return try lookbookDeletionMutationReceipt(response)
+    }
+
+    func batchSoftDeletePosts(
+        brandID: String,
+        seasonID: String,
+        postIDs: [String],
+        reason: String?
+    ) async throws -> LookbookDeletionBatchResult {
+        var data: [String: Any] = [
+            "brandID": brandID,
+            "seasonID": seasonID,
+            "postIDs": postIDs
+        ]
+        if let reason {
+            data["reason"] = reason
+        }
+
+        let response = try await callFunction("batchSoftDeletePosts", data: data)
+        return try lookbookDeletionBatchResult(response)
+    }
+
+    func restorePost(
+        brandID: String,
+        seasonID: String,
+        postID: String
+    ) async throws -> LookbookDeletionMutationReceipt {
+        let response = try await callFunction(
+            "restorePost",
+            data: [
+                "brandID": brandID,
+                "seasonID": seasonID,
+                "postID": postID
+            ]
+        )
+        return try lookbookDeletionMutationReceipt(response)
+    }
+
+    func listLookbookDeletionRequests(
+        status: LookbookDeletionRequestStatus,
+        targetType: LookbookDeletionTargetType?,
+        brandID: BrandID?,
+        limit: Int,
+        cursor: LookbookDeletionRequestPage.Cursor?
+    ) async throws -> LookbookDeletionRequestPage {
+        var data: [String: Any] = [
+            "status": status.rawValue,
+            "limit": limit
+        ]
+        if let targetType {
+            data["targetType"] = targetType.rawValue
+        }
+        if let brandID {
+            data["brandID"] = brandID.value
+        }
+        if let cursor {
+            data["cursorUpdatedAt"] = cursor.updatedAt
+            data["cursorRequestID"] = cursor.requestID
+        }
+
+        let response = try await callFunction(
+            "listLookbookDeletionRequests",
+            data: data
+        )
+
+        guard let rawRequests = response["requests"] as? [[String: Any]] else {
+            throw CloudFunctionsManagerError.missingField("requests")
+        }
+
+        let nextCursor: LookbookDeletionRequestPage.Cursor?
+        if let rawCursor = response["nextCursor"] as? [String: Any],
+           let updatedAt = rawCursor["updatedAt"] as? String,
+           let requestID = rawCursor["requestID"] as? String {
+            nextCursor = LookbookDeletionRequestPage.Cursor(
+                updatedAt: updatedAt,
+                requestID: requestID
+            )
+        } else {
+            nextCursor = nil
+        }
+
+        return LookbookDeletionRequestPage(
+            requests: try rawRequests.map { try lookbookDeletionRequestValue($0) },
+            nextCursor: nextCursor
+        )
+    }
+
     private func callFunction(
         _ name: String,
         data: [String: Any],
@@ -897,6 +1071,9 @@ final class CloudFunctionsManager {
                 viewCount: optionalIntValue(metricsDictionary, key: "viewCount") ?? 0,
                 popularScore: optionalDoubleValue(metricsDictionary, key: "popularScore") ?? 0
             ),
+            deletionStatus: BrandDeletionStatus(
+                rawValue: optionalStringValue(dictionary, key: "deletionStatus") ?? ""
+            ) ?? .active,
             updatedAt: optionalDateValue(dictionary, key: "updatedAt") ?? Date(timeIntervalSince1970: 0)
         )
     }
@@ -978,6 +1155,108 @@ final class CloudFunctionsManager {
             ) ?? .admin,
             duplicate: optionalBoolValue(dictionary, key: "duplicate") ?? false,
             removed: optionalBoolValue(dictionary, key: "removed") ?? fallbackRemoved
+        )
+    }
+
+    private func lookbookDeletionMutationReceipt(
+        _ dictionary: [String: Any]
+    ) throws -> LookbookDeletionMutationReceipt {
+        LookbookDeletionMutationReceipt(
+            brandID: BrandID(value: try stringValue(dictionary, key: "brandID")),
+            seasonID: optionalStringValue(dictionary, key: "seasonID")
+                .map { SeasonID(value: $0) },
+            postID: optionalStringValue(dictionary, key: "postID")
+                .map { PostID(value: $0) },
+            requestID: optionalStringValue(dictionary, key: "requestID"),
+            status: optionalStringValue(dictionary, key: "status") ?? "",
+            duplicate: optionalBoolValue(dictionary, key: "duplicate") ?? false,
+            cancelled: optionalBoolValue(dictionary, key: "cancelled") ?? false,
+            restored: optionalBoolValue(dictionary, key: "restored") ?? false
+        )
+    }
+
+    private func lookbookDeletionBatchResult(
+        _ dictionary: [String: Any]
+    ) throws -> LookbookDeletionBatchResult {
+        guard let rawResults = dictionary["results"] as? [[String: Any]] else {
+            throw CloudFunctionsManagerError.missingField("results")
+        }
+
+        return LookbookDeletionBatchResult(
+            brandID: BrandID(value: try stringValue(dictionary, key: "brandID")),
+            targetType: LookbookDeletionTargetType(
+                rawValue: try stringValue(dictionary, key: "targetType")
+            ) ?? .post,
+            requestedCount: try intValue(dictionary, key: "requestedCount"),
+            succeededCount: try intValue(dictionary, key: "succeededCount"),
+            failedCount: try intValue(dictionary, key: "failedCount"),
+            results: try rawResults.map { try lookbookDeletionBatchItemResult($0) }
+        )
+    }
+
+    private func lookbookDeletionBatchItemResult(
+        _ dictionary: [String: Any]
+    ) throws -> LookbookDeletionBatchItemResult {
+        LookbookDeletionBatchItemResult(
+            success: optionalBoolValue(dictionary, key: "success") ?? false,
+            targetType: LookbookDeletionTargetType(
+                rawValue: try stringValue(dictionary, key: "targetType")
+            ) ?? .post,
+            targetID: try stringValue(dictionary, key: "targetID"),
+            brandID: BrandID(value: try stringValue(dictionary, key: "brandID")),
+            seasonID: optionalStringValue(dictionary, key: "seasonID")
+                .map { SeasonID(value: $0) },
+            postID: optionalStringValue(dictionary, key: "postID")
+                .map { PostID(value: $0) },
+            requestID: optionalStringValue(dictionary, key: "requestID"),
+            status: optionalStringValue(dictionary, key: "status"),
+            duplicate: optionalBoolValue(dictionary, key: "duplicate") ?? false,
+            code: optionalStringValue(dictionary, key: "code"),
+            message: optionalStringValue(dictionary, key: "message")
+        )
+    }
+
+    private func lookbookDeletionRequestValue(
+        _ dictionary: [String: Any]
+    ) throws -> LookbookDeletionRequest {
+        LookbookDeletionRequest(
+            requestID: try stringValue(dictionary, key: "requestID"),
+            targetType: LookbookDeletionTargetType(
+                rawValue: try stringValue(dictionary, key: "targetType")
+            ) ?? .brand,
+            targetID: try stringValue(dictionary, key: "targetID"),
+            targetPath: try stringValue(dictionary, key: "targetPath"),
+            brandID: BrandID(value: try stringValue(dictionary, key: "brandID")),
+            seasonID: optionalStringValue(dictionary, key: "seasonID")
+                .map { SeasonID(value: $0) },
+            postID: optionalStringValue(dictionary, key: "postID")
+                .map { PostID(value: $0) },
+            status: LookbookDeletionRequestStatus(
+                rawValue: try stringValue(dictionary, key: "status")
+            ) ?? .active,
+            requestedBy: UserID(value: optionalStringValue(dictionary, key: "requestedBy") ?? ""),
+            requestedAt: optionalDateValue(dictionary, key: "requestedAt"),
+            restoreUntil: optionalDateValue(dictionary, key: "restoreUntil"),
+            purgeAfter: optionalDateValue(dictionary, key: "purgeAfter"),
+            reason: optionalStringValue(dictionary, key: "reason"),
+            cancelledBy: optionalStringValue(dictionary, key: "cancelledBy")
+                .map { UserID(value: $0) },
+            cancelledAt: optionalDateValue(dictionary, key: "cancelledAt"),
+            restoredBy: optionalStringValue(dictionary, key: "restoredBy")
+                .map { UserID(value: $0) },
+            restoredAt: optionalDateValue(dictionary, key: "restoredAt"),
+            updatedBy: optionalStringValue(dictionary, key: "updatedBy")
+                .map { UserID(value: $0) },
+            updatedAt: optionalDateValue(dictionary, key: "updatedAt"),
+            targetDisplayName: optionalStringValue(dictionary, key: "targetDisplayName"),
+            targetImagePath: optionalStringValue(dictionary, key: "targetImagePath"),
+            brandName: optionalStringValue(dictionary, key: "brandName"),
+            brandEnglishName: optionalStringValue(dictionary, key: "brandEnglishName"),
+            brandLogoThumbPath: optionalStringValue(dictionary, key: "brandLogoThumbPath"),
+            seasonTitle: optionalStringValue(dictionary, key: "seasonTitle"),
+            seasonCoverThumbPath: optionalStringValue(dictionary, key: "seasonCoverThumbPath"),
+            postCaption: optionalStringValue(dictionary, key: "postCaption"),
+            postImageThumbPath: optionalStringValue(dictionary, key: "postImageThumbPath")
         )
     }
 
