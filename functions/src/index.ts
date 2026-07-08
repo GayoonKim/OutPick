@@ -425,6 +425,24 @@ type BrandRequestRejectionReason =
 type BrandRequestUserListScope = "active" | "history";
 
 type BrandManagerRole = "owner" | "admin";
+type LookbookDeletionTargetType = "brand" | "season" | "post";
+type LookbookDeletionRequestStatus =
+  "active" |
+  "cancelled" |
+  "restored" |
+  "purged" |
+  "failed";
+type LookbookDeletionAction =
+  "requestBrandDeletion" |
+  "cancelBrandDeletion" |
+  "softDeleteSeason" |
+  "restoreSeason" |
+  "softDeletePost" |
+  "restorePost" |
+  "purgeBrand" |
+  "purgeSeason" |
+  "purgePost" |
+  "purgeFailed";
 
 const BRAND_REQUEST_ADMIN_STAGES: BrandRequestAdminStage[] = [
   "requested",
@@ -449,6 +467,16 @@ const BRAND_REQUEST_MAX_ADMIN_LIMIT = 100;
 const BRAND_REQUEST_TIME_ZONE = "Asia/Seoul";
 const BRAND_SEARCH_DEFAULT_LIMIT = 20;
 const BRAND_SEARCH_MAX_LIMIT = 30;
+const LOOKBOOK_DELETION_RETENTION_DAYS = 7;
+const LOOKBOOK_DELETION_DEFAULT_LIMIT = 50;
+const LOOKBOOK_DELETION_MAX_LIMIT = 100;
+const LOOKBOOK_DELETION_BATCH_MAX_COUNT = 20;
+const LOOKBOOK_DELETION_BATCH_CONCURRENCY = 3;
+const LOOKBOOK_PURGE_TARGET_LIMIT = 20;
+const LOOKBOOK_PURGE_RETRY_LIMIT = 3;
+const LOOKBOOK_PURGE_RETRY_DELAY_HOURS = 24;
+const LOOKBOOK_PURGE_PAGE_SIZE = 200;
+const LOOKBOOK_PURGE_STORAGE_PREFIX_CONCURRENCY = 3;
 
 function normalizedEmail(rawValue: string): string {
   const email = rawValue.trim().toLocaleLowerCase();
@@ -807,6 +835,9 @@ function brandSearchSummary(
     discoveryStatus: typeof data?.discoveryStatus === "string" ?
       data.discoveryStatus :
       "idle",
+    deletionStatus: typeof data?.deletionStatus === "string" ?
+      data.deletionStatus :
+      "active",
     lastDiscoveryErrorMessage:
       typeof data?.lastDiscoveryErrorMessage === "string" ?
         data.lastDiscoveryErrorMessage :
@@ -837,6 +868,1106 @@ function brandNameIndexEntries(
     entries.push({key: normalizedEnglishName, source: "englishName"});
   }
   return entries;
+}
+
+function optionalDeletionTargetType(
+  data: Record<string, unknown>,
+  key: string
+): LookbookDeletionTargetType | null {
+  const value = data[key];
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (value !== "brand" && value !== "season" && value !== "post") {
+    throw new HttpsError("invalid-argument", `${key} 값이 올바르지 않습니다.`);
+  }
+  return value;
+}
+
+function optionalDeletionRequestStatus(
+  data: Record<string, unknown>,
+  key: string
+): LookbookDeletionRequestStatus | null {
+  const value = data[key];
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (
+    value !== "active" &&
+    value !== "cancelled" &&
+    value !== "restored" &&
+    value !== "purged" &&
+    value !== "failed"
+  ) {
+    throw new HttpsError("invalid-argument", `${key} 값이 올바르지 않습니다.`);
+  }
+  return value;
+}
+
+function deletionRequestSummary(
+  requestID: string,
+  data: FirebaseFirestore.DocumentData | undefined
+): Record<string, unknown> {
+  return {
+    requestID,
+    targetType: typeof data?.targetType === "string" ?
+      data.targetType :
+      "brand",
+    targetID: typeof data?.targetID === "string" ? data.targetID : "",
+    targetPath: typeof data?.targetPath === "string" ? data.targetPath : "",
+    brandID: typeof data?.brandID === "string" ? data.brandID : "",
+    seasonID: typeof data?.seasonID === "string" ? data.seasonID : null,
+    postID: typeof data?.postID === "string" ? data.postID : null,
+    status: typeof data?.status === "string" ? data.status : "active",
+    requestedBy: typeof data?.requestedBy === "string" ?
+      data.requestedBy :
+      "",
+    requestedAt: timestampToISO(data?.requestedAt),
+    restoreUntil: timestampToISO(data?.restoreUntil),
+    purgeAfter: timestampToISO(data?.purgeAfter),
+    reason: typeof data?.reason === "string" ? data.reason : null,
+    cancelledBy: typeof data?.cancelledBy === "string" ?
+      data.cancelledBy :
+      null,
+    cancelledAt: timestampToISO(data?.cancelledAt),
+    restoredBy: typeof data?.restoredBy === "string" ?
+      data.restoredBy :
+      null,
+    restoredAt: timestampToISO(data?.restoredAt),
+    updatedBy: typeof data?.updatedBy === "string" ? data.updatedBy : null,
+    updatedAt: timestampToISO(data?.updatedAt),
+    targetDisplayName: typeof data?.targetDisplayName === "string" ?
+      data.targetDisplayName :
+      null,
+    targetImagePath: typeof data?.targetImagePath === "string" ?
+      data.targetImagePath :
+      null,
+    brandName: typeof data?.brandName === "string" ? data.brandName : null,
+    brandEnglishName: typeof data?.brandEnglishName === "string" ?
+      data.brandEnglishName :
+      null,
+    brandLogoThumbPath: typeof data?.brandLogoThumbPath === "string" ?
+      data.brandLogoThumbPath :
+      null,
+    seasonTitle: typeof data?.seasonTitle === "string" ?
+      data.seasonTitle :
+      null,
+    seasonCoverThumbPath: typeof data?.seasonCoverThumbPath === "string" ?
+      data.seasonCoverThumbPath :
+      null,
+    postCaption: typeof data?.postCaption === "string" ?
+      data.postCaption :
+      null,
+    postImageThumbPath: typeof data?.postImageThumbPath === "string" ?
+      data.postImageThumbPath :
+      null,
+  };
+}
+
+function nonEmptyDisplayString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function firstNonEmptyDisplayString(values: unknown[]): string | null {
+  for (const value of values) {
+    if (nonEmptyDisplayString(value)) {
+      return value.trim();
+    }
+  }
+  return null;
+}
+
+function deletionFallbackDisplayName(
+  targetType: LookbookDeletionTargetType
+): string {
+  switch (targetType) {
+  case "brand":
+    return "삭제된 브랜드";
+  case "season":
+    return "삭제된 시즌";
+  case "post":
+    return "삭제된 포스트";
+  }
+}
+
+function displayTargetType(value: unknown): LookbookDeletionTargetType {
+  if (value === "season" || value === "post") {
+    return value;
+  }
+  return "brand";
+}
+
+function mergeMissingDisplaySnapshot(
+  summary: Record<string, unknown>,
+  snapshot: Record<string, unknown>
+): Record<string, unknown> {
+  const result = {...summary};
+  for (const [key, value] of Object.entries(snapshot)) {
+    if (!nonEmptyDisplayString(result[key]) && nonEmptyDisplayString(value)) {
+      result[key] = value;
+    }
+  }
+  return result;
+}
+
+async function deletionRequestSummaryWithDisplayFallback(
+  requestID: string,
+  data: FirebaseFirestore.DocumentData | undefined
+): Promise<Record<string, unknown>> {
+  const summary = deletionRequestSummary(requestID, data);
+  const targetType = displayTargetType(summary.targetType);
+  const hasPrimaryName = nonEmptyDisplayString(summary.targetDisplayName);
+  const hasTargetName =
+    targetType === "brand" ?
+      nonEmptyDisplayString(summary.brandName) :
+      targetType === "season" ?
+        nonEmptyDisplayString(summary.seasonTitle) :
+        nonEmptyDisplayString(summary.postCaption);
+
+  if (
+    targetType === "season" &&
+    nonEmptyDisplayString(summary.seasonTitle) &&
+    (
+      !hasPrimaryName ||
+      summary.targetDisplayName === deletionFallbackDisplayName("season")
+    )
+  ) {
+    return {
+      ...summary,
+      targetDisplayName: summary.seasonTitle,
+    };
+  }
+
+  if (hasPrimaryName && hasTargetName) {
+    return summary;
+  }
+
+  const brandID = nonEmptyDisplayString(summary.brandID) ?
+    summary.brandID :
+    null;
+  if (brandID === null) {
+    return {
+      ...summary,
+      targetDisplayName: hasPrimaryName ?
+        summary.targetDisplayName :
+        deletionFallbackDisplayName(targetType),
+    };
+  }
+
+  const brandRef = db.collection("brands").doc(brandID);
+  const seasonID = nonEmptyDisplayString(summary.seasonID) ?
+    summary.seasonID :
+    null;
+  const postID = nonEmptyDisplayString(summary.postID) ?
+    summary.postID :
+    null;
+
+  const brandSnap = await brandRef.get();
+  const seasonSnap =
+    seasonID !== null && (targetType === "season" || targetType === "post") ?
+      await brandRef.collection("seasons").doc(seasonID).get() :
+      null;
+  const postSnap =
+    seasonID !== null && postID !== null && targetType === "post" ?
+      await brandRef
+        .collection("seasons")
+        .doc(seasonID)
+        .collection("posts")
+        .doc(postID)
+        .get() :
+      null;
+
+  const enriched = mergeMissingDisplaySnapshot(
+    summary,
+    lookbookDeletionDisplaySnapshot(
+      targetType,
+      brandSnap.data(),
+      seasonSnap?.data(),
+      postSnap?.data()
+    )
+  );
+
+  if (!nonEmptyDisplayString(enriched.targetDisplayName)) {
+    enriched.targetDisplayName = deletionFallbackDisplayName(targetType);
+  }
+  if (
+    targetType === "season" &&
+    nonEmptyDisplayString(enriched.seasonTitle) &&
+    enriched.targetDisplayName === deletionFallbackDisplayName("season")
+  ) {
+    enriched.targetDisplayName = enriched.seasonTitle;
+  }
+  return enriched;
+}
+
+function mediaThumbPath(data: FirebaseFirestore.DocumentData | undefined):
+  string | null {
+  const media = data?.media;
+  if (!Array.isArray(media)) {
+    return null;
+  }
+
+  for (const item of media) {
+    if (item === null || typeof item !== "object" || Array.isArray(item)) {
+      continue;
+    }
+    const entry = item as Record<string, unknown>;
+    if (typeof entry.thumbPath === "string" && entry.thumbPath.length > 0) {
+      return entry.thumbPath;
+    }
+    if (typeof entry.detailPath === "string" && entry.detailPath.length > 0) {
+      return entry.detailPath;
+    }
+    if (
+      typeof entry.originalPath === "string" &&
+      entry.originalPath.length > 0
+    ) {
+      return entry.originalPath;
+    }
+  }
+  return null;
+}
+
+function lookbookDeletionDisplaySnapshot(
+  targetType: LookbookDeletionTargetType,
+  brandData: FirebaseFirestore.DocumentData | undefined,
+  seasonData?: FirebaseFirestore.DocumentData,
+  postData?: FirebaseFirestore.DocumentData
+): Record<string, unknown> {
+  const brandName = typeof brandData?.name === "string" ? brandData.name : null;
+  const brandEnglishName = typeof brandData?.englishName === "string" ?
+    brandData.englishName :
+    null;
+  const brandLogoThumbPath =
+    typeof brandData?.logoThumbPath === "string" ?
+      brandData.logoThumbPath :
+      (typeof brandData?.logoPath === "string" ? brandData.logoPath : null);
+  const seasonTitle = firstNonEmptyDisplayString([
+    seasonData?.displayTitle,
+    seasonData?.title,
+    seasonData?.sourceTitle,
+  ]);
+  const seasonCoverThumbPath =
+    typeof seasonData?.coverThumbPath === "string" ?
+      seasonData.coverThumbPath :
+      (typeof seasonData?.coverPath === "string" ?
+        seasonData.coverPath :
+        null);
+  const postCaption =
+    typeof postData?.caption === "string" ? postData.caption : null;
+  const postImageThumbPath = mediaThumbPath(postData);
+
+  let targetDisplayName: string | null = brandName;
+  let targetImagePath: string | null = brandLogoThumbPath;
+  if (targetType === "season") {
+    targetDisplayName = seasonTitle;
+    targetImagePath = seasonCoverThumbPath;
+  } else if (targetType === "post") {
+    targetDisplayName =
+      postCaption !== null && postCaption.trim().length > 0 ?
+        postCaption :
+        "포스트";
+    targetImagePath = postImageThumbPath;
+  }
+
+  return {
+    targetDisplayName,
+    targetImagePath,
+    brandName,
+    brandEnglishName,
+    brandLogoThumbPath,
+    seasonTitle,
+    seasonCoverThumbPath,
+    postCaption,
+    postImageThumbPath,
+  };
+}
+
+function deletionTargetID(
+  targetType: LookbookDeletionTargetType,
+  brandID: string,
+  seasonID: string | null,
+  postID: string | null
+): string {
+  switch (targetType) {
+  case "brand":
+    return brandID;
+  case "season":
+    return seasonID ?? "";
+  case "post":
+    return postID ?? "";
+  }
+}
+
+function deletionTargetPath(
+  targetType: LookbookDeletionTargetType,
+  brandID: string,
+  seasonID: string | null,
+  postID: string | null
+): string {
+  switch (targetType) {
+  case "brand":
+    return `brands/${brandID}`;
+  case "season":
+    return `brands/${brandID}/seasons/${seasonID ?? ""}`;
+  case "post":
+    return `brands/${brandID}/seasons/${seasonID ?? ""}/posts/${postID ?? ""}`;
+  }
+}
+
+function deletionRequestPatch(
+  requestID: string,
+  targetType: LookbookDeletionTargetType,
+  brandID: string,
+  seasonID: string | null,
+  postID: string | null,
+  actorUID: string,
+  reason: string | null,
+  nowDate: Date,
+  displaySnapshot: Record<string, unknown> = {}
+): Record<string, unknown> {
+  const now = admin.firestore.Timestamp.fromDate(nowDate);
+  const purgeAfter = admin.firestore.Timestamp.fromDate(
+    addDays(nowDate, LOOKBOOK_DELETION_RETENTION_DAYS)
+  );
+  return {
+    requestID,
+    targetType,
+    targetID: deletionTargetID(targetType, brandID, seasonID, postID),
+    targetPath: deletionTargetPath(targetType, brandID, seasonID, postID),
+    brandID,
+    seasonID,
+    postID,
+    status: "active",
+    requestedBy: actorUID,
+    requestedAt: now,
+    restoreUntil: purgeAfter,
+    purgeAfter,
+    reason,
+    cancelledBy: null,
+    cancelledAt: null,
+    restoredBy: null,
+    restoredAt: null,
+    purgeErrorMessage: null,
+    updatedBy: actorUID,
+    updatedAt: now,
+    ...displaySnapshot,
+  };
+}
+
+function deletionAuditPatch(
+  action: LookbookDeletionAction,
+  requestID: string,
+  targetType: LookbookDeletionTargetType,
+  brandID: string,
+  seasonID: string | null,
+  postID: string | null,
+  actorUID: string,
+  reason: string | null,
+  nowDate: Date,
+  beforeStatus: string | null,
+  afterStatus: string
+): Record<string, unknown> {
+  return {
+    action,
+    requestID,
+    targetType,
+    targetID: deletionTargetID(targetType, brandID, seasonID, postID),
+    targetPath: deletionTargetPath(targetType, brandID, seasonID, postID),
+    brandID,
+    seasonID,
+    postID,
+    actorUID,
+    reason,
+    before: {
+      deletionStatus: beforeStatus,
+    },
+    after: {
+      deletionStatus: afterStatus,
+    },
+    createdAt: admin.firestore.Timestamp.fromDate(nowDate),
+  };
+}
+
+function clearDeletionFields(): Record<string, unknown> {
+  return {
+    deletionStatus: "active",
+    deletionRequestedAt: FieldValue.delete(),
+    deletionRequestedBy: FieldValue.delete(),
+    deletedAt: FieldValue.delete(),
+    deletedBy: FieldValue.delete(),
+    deletionReason: FieldValue.delete(),
+    deleteReason: FieldValue.delete(),
+    restoreUntil: FieldValue.delete(),
+    purgeAfter: FieldValue.delete(),
+    deleteRequestID: FieldValue.delete(),
+    updatedAt: FieldValue.serverTimestamp(),
+  };
+}
+
+function lookbookDeletionFailureResult(
+  targetType: LookbookDeletionTargetType,
+  brandID: string,
+  seasonID: string | null,
+  postID: string | null,
+  error: unknown
+): Record<string, unknown> {
+  const codeValue = (error as {code?: unknown})?.code;
+  const code = typeof codeValue === "string" ? codeValue : "internal";
+  const message = error instanceof Error && error.message.length > 0 ?
+    error.message :
+    "삭제 요청을 처리하지 못했습니다.";
+  return {
+    success: false,
+    targetType,
+    targetID: deletionTargetID(targetType, brandID, seasonID, postID),
+    brandID,
+    seasonID,
+    postID,
+    code,
+    message: message.slice(0, 1000),
+  };
+}
+
+function lookbookDeletionBatchResponse(
+  targetType: LookbookDeletionTargetType,
+  brandID: string,
+  requestedCount: number,
+  results: Record<string, unknown>[]
+): Record<string, unknown> {
+  const succeededCount = results.filter((result) =>
+    result.success === true
+  ).length;
+  return {
+    brandID,
+    targetType,
+    requestedCount,
+    succeededCount,
+    failedCount: results.length - succeededCount,
+    results,
+  };
+}
+
+async function assertBatchDeletionPreconditions(
+  brandID: string,
+  seasonID: string | null,
+  targetLabel: "시즌" | "포스트"
+): Promise<void> {
+  const brandRef = db.collection("brands").doc(brandID);
+  const brandSnap = await brandRef.get();
+  if (!brandSnap.exists) {
+    throw new HttpsError("not-found", "브랜드를 찾을 수 없습니다.");
+  }
+  if (brandSnap.data()?.deletionStatus === "deletionRequested") {
+    throw new HttpsError(
+      "failed-precondition",
+      `삭제 요청 중인 브랜드의 ${targetLabel}는 삭제할 수 없습니다.`
+    );
+  }
+
+  if (seasonID === null) {
+    return;
+  }
+
+  const seasonSnap = await brandRef.collection("seasons").doc(seasonID).get();
+  if (!seasonSnap.exists) {
+    throw new HttpsError("not-found", "시즌을 찾을 수 없습니다.");
+  }
+  if (seasonSnap.data()?.deletionStatus === "deleted") {
+    throw new HttpsError(
+      "failed-precondition",
+      "삭제된 시즌의 포스트는 개별 삭제할 수 없습니다."
+    );
+  }
+}
+
+async function softDeleteSeasonTarget(
+  uid: string,
+  brandID: string,
+  seasonID: string,
+  reason: string | null
+): Promise<Record<string, unknown>> {
+  const requestID = randomUUID();
+  const brandRef = db.collection("brands").doc(brandID);
+  const seasonRef = brandRef.collection("seasons").doc(seasonID);
+  const requestRef = db.collection("lookbookDeletionRequests").doc(requestID);
+  const auditRef = db.collection("lookbookDeletionAuditLogs").doc();
+
+  return await db.runTransaction(async (transaction) => {
+    const [brandSnap, seasonSnap] = await Promise.all([
+      transaction.get(brandRef),
+      transaction.get(seasonRef),
+    ]);
+    if (!brandSnap.exists) {
+      throw new HttpsError("not-found", "브랜드를 찾을 수 없습니다.");
+    }
+    if (!seasonSnap.exists) {
+      throw new HttpsError("not-found", "시즌을 찾을 수 없습니다.");
+    }
+    if (brandSnap.data()?.deletionStatus === "deletionRequested") {
+      throw new HttpsError(
+        "failed-precondition",
+        "삭제 요청 중인 브랜드의 시즌은 삭제할 수 없습니다."
+      );
+    }
+
+    const brandData = brandSnap.data();
+    const seasonData = seasonSnap.data();
+    if (seasonData?.deletionStatus === "deleted") {
+      return {
+        success: true,
+        targetType: "season",
+        targetID: seasonID,
+        brandID,
+        seasonID,
+        requestID: typeof seasonData.deleteRequestID === "string" ?
+          seasonData.deleteRequestID :
+          null,
+        status: "active",
+        duplicate: true,
+      };
+    }
+
+    const nowDate = new Date();
+    const displaySnapshot = lookbookDeletionDisplaySnapshot(
+      "season",
+      brandData,
+      seasonData
+    );
+    const deletionPatch = deletionRequestPatch(
+      requestID,
+      "season",
+      brandID,
+      seasonID,
+      null,
+      uid,
+      reason,
+      nowDate,
+      displaySnapshot
+    );
+    transaction.update(seasonRef, {
+      deletionStatus: "deleted",
+      deletedAt: deletionPatch.requestedAt,
+      deletedBy: uid,
+      deleteReason: reason,
+      restoreUntil: deletionPatch.restoreUntil,
+      purgeAfter: deletionPatch.purgeAfter,
+      deleteRequestID: requestID,
+      updatedAt: deletionPatch.updatedAt,
+    });
+    transaction.set(requestRef, deletionPatch);
+    transaction.set(auditRef, deletionAuditPatch(
+      "softDeleteSeason",
+      requestID,
+      "season",
+      brandID,
+      seasonID,
+      null,
+      uid,
+      reason,
+      nowDate,
+      typeof seasonData?.deletionStatus === "string" ?
+        seasonData.deletionStatus :
+        "active",
+      "deleted"
+    ));
+
+    return {
+      success: true,
+      targetType: "season",
+      targetID: seasonID,
+      brandID,
+      seasonID,
+      requestID,
+      status: "active",
+      duplicate: false,
+    };
+  });
+}
+
+async function softDeletePostTarget(
+  uid: string,
+  brandID: string,
+  seasonID: string,
+  postID: string,
+  reason: string | null
+): Promise<Record<string, unknown>> {
+  const requestID = randomUUID();
+  const brandRef = db.collection("brands").doc(brandID);
+  const seasonRef = brandRef.collection("seasons").doc(seasonID);
+  const postRef = seasonRef.collection("posts").doc(postID);
+  const requestRef = db.collection("lookbookDeletionRequests").doc(requestID);
+  const auditRef = db.collection("lookbookDeletionAuditLogs").doc();
+
+  return await db.runTransaction(async (transaction) => {
+    const [brandSnap, seasonSnap, postSnap] = await Promise.all([
+      transaction.get(brandRef),
+      transaction.get(seasonRef),
+      transaction.get(postRef),
+    ]);
+    if (!brandSnap.exists) {
+      throw new HttpsError("not-found", "브랜드를 찾을 수 없습니다.");
+    }
+    if (!seasonSnap.exists) {
+      throw new HttpsError("not-found", "시즌을 찾을 수 없습니다.");
+    }
+    if (!postSnap.exists) {
+      throw new HttpsError("not-found", "포스트를 찾을 수 없습니다.");
+    }
+    if (brandSnap.data()?.deletionStatus === "deletionRequested") {
+      throw new HttpsError(
+        "failed-precondition",
+        "삭제 요청 중인 브랜드의 포스트는 삭제할 수 없습니다."
+      );
+    }
+    if (seasonSnap.data()?.deletionStatus === "deleted") {
+      throw new HttpsError(
+        "failed-precondition",
+        "삭제된 시즌의 포스트는 개별 삭제할 수 없습니다."
+      );
+    }
+
+    const brandData = brandSnap.data();
+    const seasonData = seasonSnap.data();
+    const postData = postSnap.data();
+    if (postData?.deletionStatus === "deleted") {
+      return {
+        success: true,
+        targetType: "post",
+        targetID: postID,
+        brandID,
+        seasonID,
+        postID,
+        requestID: typeof postData.deleteRequestID === "string" ?
+          postData.deleteRequestID :
+          null,
+        status: "active",
+        duplicate: true,
+      };
+    }
+
+    const nowDate = new Date();
+    const displaySnapshot = lookbookDeletionDisplaySnapshot(
+      "post",
+      brandData,
+      seasonData,
+      postData
+    );
+    const deletionPatch = deletionRequestPatch(
+      requestID,
+      "post",
+      brandID,
+      seasonID,
+      postID,
+      uid,
+      reason,
+      nowDate,
+      displaySnapshot
+    );
+    transaction.update(postRef, {
+      deletionStatus: "deleted",
+      deletedAt: deletionPatch.requestedAt,
+      deletedBy: uid,
+      deleteReason: reason,
+      restoreUntil: deletionPatch.restoreUntil,
+      purgeAfter: deletionPatch.purgeAfter,
+      deleteRequestID: requestID,
+      updatedAt: deletionPatch.updatedAt,
+    });
+    transaction.set(requestRef, deletionPatch);
+    transaction.set(auditRef, deletionAuditPatch(
+      "softDeletePost",
+      requestID,
+      "post",
+      brandID,
+      seasonID,
+      postID,
+      uid,
+      reason,
+      nowDate,
+      typeof postData?.deletionStatus === "string" ?
+        postData.deletionStatus :
+        "active",
+      "deleted"
+    ));
+
+    return {
+      success: true,
+      targetType: "post",
+      targetID: postID,
+      brandID,
+      seasonID,
+      postID,
+      requestID,
+      status: "active",
+      duplicate: false,
+    };
+  });
+}
+
+function firestoreTimestampMillis(value: unknown): number | null {
+  if (value instanceof admin.firestore.Timestamp) {
+    return value.toMillis();
+  }
+  return null;
+}
+
+function lookbookPurgeErrorMessage(error: unknown): string {
+  const rawMessage = error instanceof Error ? error.message : String(error);
+  return rawMessage.slice(0, 1000);
+}
+
+function retryAfterTimestamp(nowDate: Date): admin.firestore.Timestamp {
+  return admin.firestore.Timestamp.fromDate(
+    new Date(
+      nowDate.getTime() +
+      LOOKBOOK_PURGE_RETRY_DELAY_HOURS * 60 * 60 * 1000
+    )
+  );
+}
+
+function stringField(
+  data: FirebaseFirestore.DocumentData | undefined,
+  key: string
+): string | null {
+  const value = data?.[key];
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? null : trimmed;
+}
+
+function safeLookbookStoragePath(
+  brandID: string,
+  rawPath: string | null
+): string | null {
+  if (rawPath === null) {
+    return null;
+  }
+
+  const normalized = rawPath.trim().replace(/^\/+/, "");
+  if (
+    normalized.length === 0 ||
+    normalized.includes("..") ||
+    normalized.includes("://") ||
+    normalized.startsWith("/") ||
+    !normalized.startsWith(`brands/${brandID}/`)
+  ) {
+    return null;
+  }
+  return normalized;
+}
+
+function addStoragePath(
+  paths: Set<string>,
+  brandID: string,
+  rawPath: string | null
+): void {
+  const path = safeLookbookStoragePath(brandID, rawPath);
+  if (path !== null) {
+    paths.add(path);
+  }
+}
+
+function collectBrandStoragePaths(
+  brandID: string,
+  data: FirebaseFirestore.DocumentData | undefined,
+  paths: Set<string>
+): void {
+  addStoragePath(paths, brandID, stringField(data, "logoPath"));
+  addStoragePath(paths, brandID, stringField(data, "logoThumbPath"));
+  addStoragePath(paths, brandID, stringField(data, "logoDetailPath"));
+  addStoragePath(paths, brandID, stringField(data, "logoOriginalPath"));
+}
+
+function collectSeasonStoragePaths(
+  brandID: string,
+  data: FirebaseFirestore.DocumentData | undefined,
+  paths: Set<string>
+): void {
+  addStoragePath(paths, brandID, stringField(data, "coverPath"));
+  addStoragePath(paths, brandID, stringField(data, "coverThumbPath"));
+  addStoragePath(paths, brandID, stringField(data, "coverOriginalPath"));
+}
+
+function collectMediaStoragePaths(
+  brandID: string,
+  mediaValue: unknown,
+  paths: Set<string>
+): void {
+  if (!Array.isArray(mediaValue)) {
+    return;
+  }
+
+  for (const item of mediaValue) {
+    if (item === null || typeof item !== "object" || Array.isArray(item)) {
+      continue;
+    }
+    const media = item as Record<string, unknown>;
+    addStoragePath(paths, brandID, stringField(media, "thumbPath"));
+    addStoragePath(paths, brandID, stringField(media, "detailPath"));
+    addStoragePath(paths, brandID, stringField(media, "originalPath"));
+  }
+}
+
+function collectPostStoragePaths(
+  brandID: string,
+  data: FirebaseFirestore.DocumentData | undefined,
+  paths: Set<string>
+): void {
+  collectMediaStoragePaths(brandID, data?.media, paths);
+  addStoragePath(paths, brandID, stringField(data, "thumbPath"));
+  addStoragePath(paths, brandID, stringField(data, "detailPath"));
+  addStoragePath(paths, brandID, stringField(data, "originalPath"));
+}
+
+function collectReplacementStoragePaths(
+  brandID: string,
+  data: FirebaseFirestore.DocumentData | undefined,
+  paths: Set<string>
+): void {
+  collectMediaStoragePaths(brandID, data?.media, paths);
+  addStoragePath(paths, brandID, stringField(data, "thumbPath"));
+  addStoragePath(paths, brandID, stringField(data, "detailPath"));
+  addStoragePath(paths, brandID, stringField(data, "originalPath"));
+  addStoragePath(paths, brandID, stringField(data, "imagePath"));
+}
+
+function collectCommentStoragePaths(
+  brandID: string,
+  data: FirebaseFirestore.DocumentData | undefined,
+  paths: Set<string>
+): void {
+  collectMediaStoragePaths(brandID, data?.attachments, paths);
+  addStoragePath(paths, brandID, stringField(data, "thumbPath"));
+  addStoragePath(paths, brandID, stringField(data, "detailPath"));
+  addStoragePath(paths, brandID, stringField(data, "originalPath"));
+}
+
+async function deleteDocumentSnapshotPage(
+  snapshot: FirebaseFirestore.QuerySnapshot
+): Promise<number> {
+  if (snapshot.empty) {
+    return 0;
+  }
+
+  const batch = db.batch();
+  snapshot.docs.forEach((doc) => batch.delete(doc.ref));
+  await batch.commit();
+  return snapshot.size;
+}
+
+async function deleteCollectionGroupByField(
+  collectionID: string,
+  field: string,
+  value: string
+): Promise<number> {
+  let deletedCount = 0;
+  let hasMore = true;
+  while (hasMore) {
+    const snapshot = await db
+      .collectionGroup(collectionID)
+      .where(field, "==", value)
+      .limit(LOOKBOOK_PURGE_PAGE_SIZE)
+      .get();
+    if (snapshot.empty) {
+      return deletedCount;
+    }
+    deletedCount += await deleteDocumentSnapshotPage(snapshot);
+    hasMore = !snapshot.empty;
+  }
+  return deletedCount;
+}
+
+async function deleteCollectionGroupByFields(
+  collectionID: string,
+  filters: [string, string][]
+): Promise<number> {
+  let deletedCount = 0;
+  let hasMore = true;
+  while (hasMore) {
+    let query: FirebaseFirestore.Query = db.collectionGroup(collectionID);
+    for (const [field, value] of filters) {
+      query = query.where(field, "==", value);
+    }
+    const snapshot = await query
+      .limit(LOOKBOOK_PURGE_PAGE_SIZE)
+      .get();
+    if (snapshot.empty) {
+      return deletedCount;
+    }
+    deletedCount += await deleteDocumentSnapshotPage(snapshot);
+    hasMore = !snapshot.empty;
+  }
+  return deletedCount;
+}
+
+async function collectPostSubresourceStoragePaths(
+  brandID: string,
+  postRef: FirebaseFirestore.DocumentReference,
+  paths: Set<string>
+): Promise<void> {
+  let lastComment: FirebaseFirestore.QueryDocumentSnapshot | null = null;
+  let hasMoreComments = true;
+  while (hasMoreComments) {
+    let query: FirebaseFirestore.Query = postRef
+      .collection("comments")
+      .orderBy(admin.firestore.FieldPath.documentId())
+      .limit(LOOKBOOK_PURGE_PAGE_SIZE);
+    if (lastComment !== null) {
+      query = query.startAfter(lastComment);
+    }
+    const comments = await query.get();
+    if (comments.empty) {
+      break;
+    }
+    comments.forEach((doc) =>
+      collectCommentStoragePaths(brandID, doc.data(), paths)
+    );
+    lastComment = comments.docs[comments.docs.length - 1];
+    hasMoreComments = !comments.empty;
+  }
+
+  let lastReplacement: FirebaseFirestore.QueryDocumentSnapshot | null = null;
+  let hasMoreReplacements = true;
+  while (hasMoreReplacements) {
+    let query: FirebaseFirestore.Query = postRef
+      .collection("replacements")
+      .orderBy(admin.firestore.FieldPath.documentId())
+      .limit(LOOKBOOK_PURGE_PAGE_SIZE);
+    if (lastReplacement !== null) {
+      query = query.startAfter(lastReplacement);
+    }
+    const replacements = await query.get();
+    if (replacements.empty) {
+      break;
+    }
+    replacements.forEach((doc) =>
+      collectReplacementStoragePaths(brandID, doc.data(), paths)
+    );
+    lastReplacement = replacements.docs[replacements.docs.length - 1];
+    hasMoreReplacements = !replacements.empty;
+  }
+}
+
+async function collectSeasonSubresourceStoragePaths(
+  brandID: string,
+  seasonRef: FirebaseFirestore.DocumentReference,
+  paths: Set<string>
+): Promise<void> {
+  let lastPost: FirebaseFirestore.QueryDocumentSnapshot | null = null;
+  let hasMorePosts = true;
+  while (hasMorePosts) {
+    let query: FirebaseFirestore.Query = seasonRef
+      .collection("posts")
+      .orderBy(admin.firestore.FieldPath.documentId())
+      .limit(LOOKBOOK_PURGE_PAGE_SIZE);
+    if (lastPost !== null) {
+      query = query.startAfter(lastPost);
+    }
+    const posts = await query.get();
+    if (posts.empty) {
+      break;
+    }
+    for (const post of posts.docs) {
+      collectPostStoragePaths(brandID, post.data(), paths);
+      await collectPostSubresourceStoragePaths(brandID, post.ref, paths);
+    }
+    lastPost = posts.docs[posts.docs.length - 1];
+    hasMorePosts = !posts.empty;
+  }
+}
+
+async function collectBrandSubresourceStoragePaths(
+  brandID: string,
+  brandRef: FirebaseFirestore.DocumentReference,
+  paths: Set<string>
+): Promise<void> {
+  let lastSeason: FirebaseFirestore.QueryDocumentSnapshot | null = null;
+  let hasMoreSeasons = true;
+  while (hasMoreSeasons) {
+    let query: FirebaseFirestore.Query = brandRef
+      .collection("seasons")
+      .orderBy(admin.firestore.FieldPath.documentId())
+      .limit(LOOKBOOK_PURGE_PAGE_SIZE);
+    if (lastSeason !== null) {
+      query = query.startAfter(lastSeason);
+    }
+    const seasons = await query.get();
+    if (seasons.empty) {
+      break;
+    }
+    for (const season of seasons.docs) {
+      collectSeasonStoragePaths(brandID, season.data(), paths);
+      await collectSeasonSubresourceStoragePaths(brandID, season.ref, paths);
+    }
+    lastSeason = seasons.docs[seasons.docs.length - 1];
+    hasMoreSeasons = !seasons.empty;
+  }
+}
+
+async function deleteLookbookStorageTargets(
+  brandID: string,
+  prefixes: string[],
+  paths: Set<string>
+): Promise<void> {
+  const bucket = admin.storage().bucket();
+  const safePrefixes = prefixes
+    .map((prefix) => prefix.replace(/^\/+/, ""))
+    .filter((prefix) =>
+      prefix.startsWith(`brands/${brandID}/`) && !prefix.includes("..")
+    );
+
+  await mapWithConcurrency(
+    safePrefixes,
+    LOOKBOOK_PURGE_STORAGE_PREFIX_CONCURRENCY,
+    async (prefix) => {
+      await bucket.deleteFiles({prefix, force: true});
+    }
+  );
+
+  const prefixSet = new Set(safePrefixes);
+  const explicitPaths = Array.from(paths)
+    .filter((path) =>
+      !Array.from(prefixSet).some((prefix) => path.startsWith(prefix))
+    );
+
+  await mapWithConcurrency(explicitPaths, 10, async (path) => {
+    await bucket.file(path).delete({ignoreNotFound: true});
+  });
+}
+
+async function deleteBrandNameIndexes(
+  brandID: string,
+  brandData: FirebaseFirestore.DocumentData | undefined
+): Promise<number> {
+  const keys = new Set<string>();
+  const normalizedName = stringField(brandData, "normalizedName");
+  const normalizedEnglishName = stringField(brandData, "normalizedEnglishName");
+
+  if (normalizedName !== null) {
+    brandNameIndexEntries(normalizedName, normalizedEnglishName).forEach(
+      (entry) => keys.add(entry.key)
+    );
+  }
+
+  const snapshot = await db
+    .collection("brandNameIndex")
+    .where("brandID", "==", brandID)
+    .get();
+  snapshot.docs.forEach((doc) => keys.add(doc.id));
+
+  if (keys.size === 0) {
+    return 0;
+  }
+
+  const batch = db.batch();
+  Array.from(keys).forEach((key) =>
+    batch.delete(db.collection("brandNameIndex").doc(key))
+  );
+  await batch.commit();
+  return keys.size;
 }
 
 function spamLimitPatch(
@@ -3036,6 +4167,1040 @@ export const updateBrandLogoPaths = onCall(
     await db.collection("brands").doc(brandID).update(patch);
 
     return {brandID};
+  }
+);
+
+export const requestBrandDeletion = onCall(
+  {region: FUNCTIONS_REGION},
+  async (request) => {
+    const uid = requiredAuthUID(request.auth?.uid);
+    await assertOutPickAdmin(uid);
+
+    const data = recordData(request.data);
+    const brandID = requiredDocumentID(
+      requiredString(data, "brandID", 128),
+      "brandID"
+    );
+    const reason = optionalString(data, "reason", 1000);
+    const requestID = randomUUID();
+    const brandRef = db.collection("brands").doc(brandID);
+    const requestRef = db.collection("lookbookDeletionRequests").doc(requestID);
+    const auditRef = db.collection("lookbookDeletionAuditLogs").doc();
+
+    return await db.runTransaction(async (transaction) => {
+      const brandSnap = await transaction.get(brandRef);
+      if (!brandSnap.exists) {
+        throw new HttpsError("not-found", "브랜드를 찾을 수 없습니다.");
+      }
+
+      const brandData = brandSnap.data();
+      if (brandData?.deletionStatus === "deletionRequested") {
+        return {
+          brandID,
+          requestID: typeof brandData.deleteRequestID === "string" ?
+            brandData.deleteRequestID :
+            null,
+          status: "active",
+          duplicate: true,
+        };
+      }
+
+      const nowDate = new Date();
+      const displaySnapshot = lookbookDeletionDisplaySnapshot(
+        "brand",
+        brandData
+      );
+      const deletionPatch = deletionRequestPatch(
+        requestID,
+        "brand",
+        brandID,
+        null,
+        null,
+        uid,
+        reason,
+        nowDate,
+        displaySnapshot
+      );
+      transaction.update(brandRef, {
+        deletionStatus: "deletionRequested",
+        deletionRequestedAt: deletionPatch.requestedAt,
+        deletionRequestedBy: uid,
+        deletionReason: reason,
+        restoreUntil: deletionPatch.restoreUntil,
+        purgeAfter: deletionPatch.purgeAfter,
+        deleteRequestID: requestID,
+        updatedBy: uid,
+        updatedAt: deletionPatch.updatedAt,
+      });
+      transaction.set(requestRef, deletionPatch);
+      transaction.set(auditRef, deletionAuditPatch(
+        "requestBrandDeletion",
+        requestID,
+        "brand",
+        brandID,
+        null,
+        null,
+        uid,
+        reason,
+        nowDate,
+        typeof brandData?.deletionStatus === "string" ?
+          brandData.deletionStatus :
+          "active",
+        "deletionRequested"
+      ));
+
+      return {
+        brandID,
+        requestID,
+        status: "active",
+        duplicate: false,
+      };
+    });
+  }
+);
+
+export const cancelBrandDeletion = onCall(
+  {region: FUNCTIONS_REGION},
+  async (request) => {
+    const uid = requiredAuthUID(request.auth?.uid);
+    await assertOutPickAdmin(uid);
+
+    const data = recordData(request.data);
+    const brandID = requiredDocumentID(
+      requiredString(data, "brandID", 128),
+      "brandID"
+    );
+    const brandRef = db.collection("brands").doc(brandID);
+    const auditRef = db.collection("lookbookDeletionAuditLogs").doc();
+
+    return await db.runTransaction(async (transaction) => {
+      const brandSnap = await transaction.get(brandRef);
+      if (!brandSnap.exists) {
+        throw new HttpsError("not-found", "브랜드를 찾을 수 없습니다.");
+      }
+
+      const brandData = brandSnap.data();
+      if (brandData?.deletionStatus !== "deletionRequested") {
+        return {
+          brandID,
+          requestID: null,
+          status: "cancelled",
+          cancelled: false,
+        };
+      }
+
+      const requestID = typeof brandData.deleteRequestID === "string" ?
+        brandData.deleteRequestID :
+        "";
+      if (requestID.length === 0) {
+        throw new HttpsError(
+          "failed-precondition",
+          "삭제 요청 ID가 없습니다."
+        );
+      }
+
+      const nowDate = new Date();
+      const now = admin.firestore.Timestamp.fromDate(nowDate);
+      const requestRef = db
+        .collection("lookbookDeletionRequests")
+        .doc(requestID);
+
+      transaction.update(brandRef, {
+        ...clearDeletionFields(),
+        updatedBy: uid,
+      });
+      transaction.set(requestRef, {
+        status: "cancelled",
+        cancelledBy: uid,
+        cancelledAt: now,
+        updatedBy: uid,
+        updatedAt: now,
+      }, {merge: true});
+      transaction.set(auditRef, deletionAuditPatch(
+        "cancelBrandDeletion",
+        requestID,
+        "brand",
+        brandID,
+        null,
+        null,
+        uid,
+        typeof brandData.deletionReason === "string" ?
+          brandData.deletionReason :
+          null,
+        nowDate,
+        "deletionRequested",
+        "active"
+      ));
+
+      return {
+        brandID,
+        requestID,
+        status: "cancelled",
+        cancelled: true,
+      };
+    });
+  }
+);
+
+export const softDeleteSeason = onCall(
+  {region: FUNCTIONS_REGION},
+  async (request) => {
+    const uid = requiredAuthUID(request.auth?.uid);
+    const data = recordData(request.data);
+    const brandID = requiredDocumentID(
+      requiredString(data, "brandID", 128),
+      "brandID"
+    );
+    const seasonID = requiredDocumentID(
+      requiredString(data, "seasonID", 128),
+      "seasonID"
+    );
+    const reason = optionalString(data, "reason", 1000);
+
+    await assertBrandWriteAccess(uid, brandID);
+    return await softDeleteSeasonTarget(uid, brandID, seasonID, reason);
+  }
+);
+
+export const batchSoftDeleteSeasons = onCall(
+  {region: FUNCTIONS_REGION},
+  async (request) => {
+    const uid = requiredAuthUID(request.auth?.uid);
+    const data = recordData(request.data);
+    const brandID = requiredDocumentID(
+      requiredString(data, "brandID", 128),
+      "brandID"
+    );
+    const seasonIDs = requiredDocumentIDList(
+      data.seasonIDs,
+      "seasonIDs",
+      LOOKBOOK_DELETION_BATCH_MAX_COUNT
+    );
+    const reason = optionalString(data, "reason", 1000);
+
+    await assertBrandWriteAccess(uid, brandID);
+    await assertBatchDeletionPreconditions(brandID, null, "시즌");
+
+    const results = await mapWithConcurrency(
+      seasonIDs,
+      LOOKBOOK_DELETION_BATCH_CONCURRENCY,
+      async (seasonID) => {
+        try {
+          return await softDeleteSeasonTarget(uid, brandID, seasonID, reason);
+        } catch (error) {
+          return lookbookDeletionFailureResult(
+            "season",
+            brandID,
+            seasonID,
+            null,
+            error
+          );
+        }
+      }
+    );
+
+    return lookbookDeletionBatchResponse(
+      "season",
+      brandID,
+      seasonIDs.length,
+      results
+    );
+  }
+);
+
+export const restoreSeason = onCall(
+  {region: FUNCTIONS_REGION},
+  async (request) => {
+    const uid = requiredAuthUID(request.auth?.uid);
+    const data = recordData(request.data);
+    const brandID = requiredDocumentID(
+      requiredString(data, "brandID", 128),
+      "brandID"
+    );
+    const seasonID = requiredDocumentID(
+      requiredString(data, "seasonID", 128),
+      "seasonID"
+    );
+
+    await assertBrandWriteAccess(uid, brandID);
+
+    const brandRef = db.collection("brands").doc(brandID);
+    const seasonRef = brandRef.collection("seasons").doc(seasonID);
+    const auditRef = db.collection("lookbookDeletionAuditLogs").doc();
+
+    return await db.runTransaction(async (transaction) => {
+      const [brandSnap, seasonSnap] = await Promise.all([
+        transaction.get(brandRef),
+        transaction.get(seasonRef),
+      ]);
+      if (!brandSnap.exists) {
+        throw new HttpsError("not-found", "브랜드를 찾을 수 없습니다.");
+      }
+      if (!seasonSnap.exists) {
+        throw new HttpsError("not-found", "시즌을 찾을 수 없습니다.");
+      }
+      if (brandSnap.data()?.deletionStatus === "deletionRequested") {
+        throw new HttpsError(
+          "failed-precondition",
+          "삭제 요청 중인 브랜드의 시즌은 복구할 수 없습니다."
+        );
+      }
+
+      const seasonData = seasonSnap.data();
+      if (seasonData?.deletionStatus !== "deleted") {
+        return {
+          brandID,
+          seasonID,
+          requestID: null,
+          status: "restored",
+          restored: false,
+        };
+      }
+
+      const requestID = typeof seasonData.deleteRequestID === "string" ?
+        seasonData.deleteRequestID :
+        "";
+      if (requestID.length === 0) {
+        throw new HttpsError(
+          "failed-precondition",
+          "삭제 요청 ID가 없습니다."
+        );
+      }
+
+      const nowDate = new Date();
+      const now = admin.firestore.Timestamp.fromDate(nowDate);
+      const requestRef = db
+        .collection("lookbookDeletionRequests")
+        .doc(requestID);
+      transaction.update(seasonRef, clearDeletionFields());
+      transaction.set(requestRef, {
+        status: "restored",
+        restoredBy: uid,
+        restoredAt: now,
+        updatedBy: uid,
+        updatedAt: now,
+      }, {merge: true});
+      transaction.set(auditRef, deletionAuditPatch(
+        "restoreSeason",
+        requestID,
+        "season",
+        brandID,
+        seasonID,
+        null,
+        uid,
+        typeof seasonData.deleteReason === "string" ?
+          seasonData.deleteReason :
+          null,
+        nowDate,
+        "deleted",
+        "active"
+      ));
+
+      return {
+        brandID,
+        seasonID,
+        requestID,
+        status: "restored",
+        restored: true,
+      };
+    });
+  }
+);
+
+export const softDeletePost = onCall(
+  {region: FUNCTIONS_REGION},
+  async (request) => {
+    const uid = requiredAuthUID(request.auth?.uid);
+    const data = recordData(request.data);
+    const brandID = requiredDocumentID(
+      requiredString(data, "brandID", 128),
+      "brandID"
+    );
+    const seasonID = requiredDocumentID(
+      requiredString(data, "seasonID", 128),
+      "seasonID"
+    );
+    const postID = requiredDocumentID(
+      requiredString(data, "postID", 128),
+      "postID"
+    );
+    const reason = optionalString(data, "reason", 1000);
+
+    await assertBrandWriteAccess(uid, brandID);
+    return await softDeletePostTarget(uid, brandID, seasonID, postID, reason);
+  }
+);
+
+export const batchSoftDeletePosts = onCall(
+  {region: FUNCTIONS_REGION},
+  async (request) => {
+    const uid = requiredAuthUID(request.auth?.uid);
+    const data = recordData(request.data);
+    const brandID = requiredDocumentID(
+      requiredString(data, "brandID", 128),
+      "brandID"
+    );
+    const seasonID = requiredDocumentID(
+      requiredString(data, "seasonID", 128),
+      "seasonID"
+    );
+    const postIDs = requiredDocumentIDList(
+      data.postIDs,
+      "postIDs",
+      LOOKBOOK_DELETION_BATCH_MAX_COUNT
+    );
+    const reason = optionalString(data, "reason", 1000);
+
+    await assertBrandWriteAccess(uid, brandID);
+    await assertBatchDeletionPreconditions(brandID, seasonID, "포스트");
+
+    const results = await mapWithConcurrency(
+      postIDs,
+      LOOKBOOK_DELETION_BATCH_CONCURRENCY,
+      async (postID) => {
+        try {
+          return await softDeletePostTarget(
+            uid,
+            brandID,
+            seasonID,
+            postID,
+            reason
+          );
+        } catch (error) {
+          return lookbookDeletionFailureResult(
+            "post",
+            brandID,
+            seasonID,
+            postID,
+            error
+          );
+        }
+      }
+    );
+
+    return lookbookDeletionBatchResponse(
+      "post",
+      brandID,
+      postIDs.length,
+      results
+    );
+  }
+);
+
+export const restorePost = onCall(
+  {region: FUNCTIONS_REGION},
+  async (request) => {
+    const uid = requiredAuthUID(request.auth?.uid);
+    const data = recordData(request.data);
+    const brandID = requiredDocumentID(
+      requiredString(data, "brandID", 128),
+      "brandID"
+    );
+    const seasonID = requiredDocumentID(
+      requiredString(data, "seasonID", 128),
+      "seasonID"
+    );
+    const postID = requiredDocumentID(
+      requiredString(data, "postID", 128),
+      "postID"
+    );
+
+    await assertBrandWriteAccess(uid, brandID);
+
+    const brandRef = db.collection("brands").doc(brandID);
+    const seasonRef = brandRef.collection("seasons").doc(seasonID);
+    const postRef = seasonRef.collection("posts").doc(postID);
+    const auditRef = db.collection("lookbookDeletionAuditLogs").doc();
+
+    return await db.runTransaction(async (transaction) => {
+      const [brandSnap, seasonSnap, postSnap] = await Promise.all([
+        transaction.get(brandRef),
+        transaction.get(seasonRef),
+        transaction.get(postRef),
+      ]);
+      if (!brandSnap.exists) {
+        throw new HttpsError("not-found", "브랜드를 찾을 수 없습니다.");
+      }
+      if (!seasonSnap.exists) {
+        throw new HttpsError("not-found", "시즌을 찾을 수 없습니다.");
+      }
+      if (!postSnap.exists) {
+        throw new HttpsError("not-found", "포스트를 찾을 수 없습니다.");
+      }
+      if (brandSnap.data()?.deletionStatus === "deletionRequested") {
+        throw new HttpsError(
+          "failed-precondition",
+          "삭제 요청 중인 브랜드의 포스트는 복구할 수 없습니다."
+        );
+      }
+      if (seasonSnap.data()?.deletionStatus === "deleted") {
+        throw new HttpsError(
+          "failed-precondition",
+          "삭제된 시즌의 포스트는 개별 복구할 수 없습니다."
+        );
+      }
+
+      const postData = postSnap.data();
+      if (postData?.deletionStatus !== "deleted") {
+        return {
+          brandID,
+          seasonID,
+          postID,
+          requestID: null,
+          status: "restored",
+          restored: false,
+        };
+      }
+
+      const requestID = typeof postData.deleteRequestID === "string" ?
+        postData.deleteRequestID :
+        "";
+      if (requestID.length === 0) {
+        throw new HttpsError(
+          "failed-precondition",
+          "삭제 요청 ID가 없습니다."
+        );
+      }
+
+      const nowDate = new Date();
+      const now = admin.firestore.Timestamp.fromDate(nowDate);
+      const requestRef = db
+        .collection("lookbookDeletionRequests")
+        .doc(requestID);
+      transaction.update(postRef, clearDeletionFields());
+      transaction.set(requestRef, {
+        status: "restored",
+        restoredBy: uid,
+        restoredAt: now,
+        updatedBy: uid,
+        updatedAt: now,
+      }, {merge: true});
+      transaction.set(auditRef, deletionAuditPatch(
+        "restorePost",
+        requestID,
+        "post",
+        brandID,
+        seasonID,
+        postID,
+        uid,
+        typeof postData.deleteReason === "string" ?
+          postData.deleteReason :
+          null,
+        nowDate,
+        "deleted",
+        "active"
+      ));
+
+      return {
+        brandID,
+        seasonID,
+        postID,
+        requestID,
+        status: "restored",
+        restored: true,
+      };
+    });
+  }
+);
+
+export const listLookbookDeletionRequests = onCall(
+  {region: FUNCTIONS_REGION},
+  async (request) => {
+    const uid = requiredAuthUID(request.auth?.uid);
+    const capabilities = await brandAdminCapabilities(uid);
+
+    if (
+      !capabilities.isTotalAdmin &&
+      capabilities.ownedBrandIDs.length === 0 &&
+      capabilities.adminBrandIDs.length === 0
+    ) {
+      throw new HttpsError("permission-denied", "삭제 요청 조회 권한이 없습니다.");
+    }
+
+    const data = recordData(request.data ?? {});
+    const limit = positiveInteger(
+      data,
+      "limit",
+      LOOKBOOK_DELETION_DEFAULT_LIMIT,
+      LOOKBOOK_DELETION_MAX_LIMIT
+    );
+    const status = optionalDeletionRequestStatus(data, "status") ?? "active";
+    const targetType = optionalDeletionTargetType(data, "targetType");
+    const brandID = optionalDocumentID(
+      optionalString(data, "brandID", 128),
+      "brandID"
+    );
+    const cursorUpdatedAt = optionalTimestampFromISO(data, "cursorUpdatedAt");
+    const cursorRequestID = optionalString(data, "cursorRequestID", 256);
+
+    if ((cursorUpdatedAt === null) !== (cursorRequestID === null)) {
+      throw new HttpsError("invalid-argument", "cursor 값이 올바르지 않습니다.");
+    }
+
+    if (!capabilities.isTotalAdmin) {
+      if (brandID === null) {
+        throw new HttpsError(
+          "invalid-argument",
+          "브랜드 관리자 조회에는 brandID가 필요합니다."
+        );
+      }
+      const allowedBrandIDs = new Set([
+        ...capabilities.ownedBrandIDs,
+        ...capabilities.adminBrandIDs,
+      ]);
+      if (!allowedBrandIDs.has(brandID)) {
+        throw new HttpsError(
+          "permission-denied",
+          "해당 브랜드 삭제 요청 조회 권한이 없습니다."
+        );
+      }
+    }
+
+    let query: FirebaseFirestore.Query =
+      db.collection("lookbookDeletionRequests")
+        .where("status", "==", status);
+    if (brandID !== null) {
+      query = query.where("brandID", "==", brandID);
+    }
+    if (targetType !== null) {
+      query = query.where("targetType", "==", targetType);
+    }
+    query = query
+      .orderBy("updatedAt", "desc")
+      .orderBy("requestID", "desc")
+      .limit(limit);
+
+    if (cursorUpdatedAt && cursorRequestID) {
+      query = query.startAfter(cursorUpdatedAt, cursorRequestID);
+    }
+
+    const snapshot = await query.get();
+    const requests = await Promise.all(snapshot.docs.map((doc) =>
+      deletionRequestSummaryWithDisplayFallback(doc.id, doc.data())
+    )
+    );
+    const last = snapshot.docs[snapshot.docs.length - 1];
+
+    return {
+      requests,
+      nextCursor: last ? {
+        updatedAt: timestampToISO(last.get("updatedAt")),
+        requestID: last.get("requestID") ?? last.id,
+      } : null,
+    };
+  }
+);
+
+function shouldRetryFailedPurge(
+  data: FirebaseFirestore.DocumentData,
+  nowMillis: number
+): boolean {
+  const attemptCount = numericMetric(data.purgeAttemptCount);
+  if (attemptCount >= LOOKBOOK_PURGE_RETRY_LIMIT) {
+    return false;
+  }
+
+  const retryAfterMillis = firestoreTimestampMillis(data.retryAfter);
+  return retryAfterMillis === null || retryAfterMillis <= nowMillis;
+}
+
+async function loadExpiredDeletionRequests(
+  now: admin.firestore.Timestamp
+): Promise<FirebaseFirestore.QueryDocumentSnapshot[]> {
+  const snapshots = await Promise.all([
+    db.collection("lookbookDeletionRequests")
+      .where("status", "==", "active")
+      .where("purgeAfter", "<=", now)
+      .orderBy("purgeAfter", "asc")
+      .limit(LOOKBOOK_PURGE_TARGET_LIMIT)
+      .get(),
+    db.collection("lookbookDeletionRequests")
+      .where("status", "==", "failed")
+      .where("autoRetryEligible", "==", true)
+      .where("purgeAfter", "<=", now)
+      .orderBy("purgeAfter", "asc")
+      .limit(LOOKBOOK_PURGE_TARGET_LIMIT)
+      .get(),
+  ]);
+
+  const nowMillis = now.toMillis();
+  const byID = new Map<string, FirebaseFirestore.QueryDocumentSnapshot>();
+  snapshots.flatMap((snapshot) => snapshot.docs).forEach((doc) => {
+    const data = doc.data();
+    if (data.status === "failed" && !shouldRetryFailedPurge(data, nowMillis)) {
+      return;
+    }
+    byID.set(doc.id, doc);
+  });
+
+  return Array.from(byID.values())
+    .sort((lhs, rhs) => {
+      const lhsPurgeAfter =
+        firestoreTimestampMillis(lhs.get("purgeAfter")) ?? 0;
+      const rhsPurgeAfter =
+        firestoreTimestampMillis(rhs.get("purgeAfter")) ?? 0;
+      if (lhsPurgeAfter !== rhsPurgeAfter) {
+        return lhsPurgeAfter - rhsPurgeAfter;
+      }
+      return lhs.id.localeCompare(rhs.id);
+    })
+    .slice(0, LOOKBOOK_PURGE_TARGET_LIMIT);
+}
+
+function purgeSuccessPatch(
+  now: admin.firestore.Timestamp
+): Record<string, unknown> {
+  return {
+    status: "purged",
+    purgedBy: "system",
+    purgedAt: now,
+    autoRetryEligible: false,
+    purgeErrorMessage: null,
+    retryAfter: null,
+    updatedBy: "system",
+    updatedAt: now,
+  };
+}
+
+async function markDeletionRequestPurged(
+  ref: FirebaseFirestore.DocumentReference,
+  now: admin.firestore.Timestamp
+): Promise<void> {
+  await ref.set(purgeSuccessPatch(now), {merge: true});
+}
+
+async function markRelatedDeletionRequestsPurged(
+  currentRequestID: string,
+  brandID: string,
+  seasonID: string | null,
+  postID: string | null,
+  now: admin.firestore.Timestamp
+): Promise<number> {
+  let query: FirebaseFirestore.Query = db
+    .collection("lookbookDeletionRequests")
+    .where("brandID", "==", brandID)
+    .where("status", "in", ["active", "failed"]);
+
+  if (seasonID !== null) {
+    query = query.where("seasonID", "==", seasonID);
+  }
+  if (postID !== null) {
+    query = query.where("postID", "==", postID);
+  }
+
+  const snapshot = await query.get();
+  const relatedDocs = snapshot.docs.filter((doc) =>
+    doc.id !== currentRequestID
+  );
+  if (relatedDocs.length === 0) {
+    return 0;
+  }
+
+  let updatedCount = 0;
+  for (let index = 0; index < relatedDocs.length; index += 400) {
+    const batch = db.batch();
+    relatedDocs.slice(index, index + 400).forEach((doc) => {
+      batch.set(doc.ref, purgeSuccessPatch(now), {merge: true});
+    });
+    await batch.commit();
+    updatedCount += relatedDocs.slice(index, index + 400).length;
+  }
+  return updatedCount;
+}
+
+async function purgePostTarget(
+  brandID: string,
+  seasonID: string,
+  postID: string
+): Promise<Record<string, number>> {
+  const postRef = lookbookPostDocument(brandID, seasonID, postID);
+  const postSnap = await postRef.get();
+  const paths = new Set<string>();
+
+  if (postSnap.exists) {
+    collectPostStoragePaths(brandID, postSnap.data(), paths);
+    await collectPostSubresourceStoragePaths(brandID, postRef, paths);
+  }
+
+  const [postStateCount, commentStateCount] = await Promise.all([
+    deleteCollectionGroupByFields("postStates", [
+      ["brandID", brandID],
+      ["seasonID", seasonID],
+      ["postID", postID],
+    ]),
+    deleteCollectionGroupByFields("commentStates", [
+      ["brandID", brandID],
+      ["seasonID", seasonID],
+      ["postID", postID],
+    ]),
+  ]);
+
+  if (postSnap.exists) {
+    await db.recursiveDelete(postRef);
+  }
+  await deleteLookbookStorageTargets(
+    brandID,
+    [`brands/${brandID}/seasons/${seasonID}/posts/${postID}/`],
+    paths
+  );
+
+  return {
+    postStateCount,
+    commentStateCount,
+    storagePathCount: paths.size,
+  };
+}
+
+async function purgeSeasonTarget(
+  brandID: string,
+  seasonID: string
+): Promise<Record<string, number>> {
+  const seasonRef = db
+    .collection("brands")
+    .doc(brandID)
+    .collection("seasons")
+    .doc(seasonID);
+  const seasonSnap = await seasonRef.get();
+  const paths = new Set<string>();
+
+  if (seasonSnap.exists) {
+    collectSeasonStoragePaths(brandID, seasonSnap.data(), paths);
+    await collectSeasonSubresourceStoragePaths(brandID, seasonRef, paths);
+  }
+
+  const [seasonStateCount, postStateCount, commentStateCount] =
+    await Promise.all([
+      deleteCollectionGroupByFields("seasonStates", [
+        ["brandID", brandID],
+        ["seasonID", seasonID],
+      ]),
+      deleteCollectionGroupByFields("postStates", [
+        ["brandID", brandID],
+        ["seasonID", seasonID],
+      ]),
+      deleteCollectionGroupByFields("commentStates", [
+        ["brandID", brandID],
+        ["seasonID", seasonID],
+      ]),
+    ]);
+
+  if (seasonSnap.exists) {
+    await db.recursiveDelete(seasonRef);
+  }
+  await deleteLookbookStorageTargets(
+    brandID,
+    [`brands/${brandID}/seasons/${seasonID}/`],
+    paths
+  );
+
+  return {
+    seasonStateCount,
+    postStateCount,
+    commentStateCount,
+    storagePathCount: paths.size,
+  };
+}
+
+async function purgeBrandTarget(
+  brandID: string
+): Promise<Record<string, number>> {
+  const brandRef = db.collection("brands").doc(brandID);
+  const brandSnap = await brandRef.get();
+  const paths = new Set<string>();
+
+  if (brandSnap.exists) {
+    collectBrandStoragePaths(brandID, brandSnap.data(), paths);
+    await collectBrandSubresourceStoragePaths(brandID, brandRef, paths);
+  }
+
+  const [
+    brandStateCount,
+    seasonStateCount,
+    postStateCount,
+    commentStateCount,
+    brandNameIndexCount,
+  ] = await Promise.all([
+    deleteCollectionGroupByField("brandStates", "brandID", brandID),
+    deleteCollectionGroupByField("seasonStates", "brandID", brandID),
+    deleteCollectionGroupByField("postStates", "brandID", brandID),
+    deleteCollectionGroupByField("commentStates", "brandID", brandID),
+    deleteBrandNameIndexes(brandID, brandSnap.data()),
+  ]);
+
+  if (brandSnap.exists) {
+    await db.recursiveDelete(brandRef);
+  }
+  await deleteLookbookStorageTargets(
+    brandID,
+    [`brands/${brandID}/`],
+    paths
+  );
+
+  return {
+    brandStateCount,
+    seasonStateCount,
+    postStateCount,
+    commentStateCount,
+    brandNameIndexCount,
+    storagePathCount: paths.size,
+  };
+}
+
+async function purgeLookbookDeletionRequest(
+  doc: FirebaseFirestore.QueryDocumentSnapshot
+): Promise<void> {
+  const data = doc.data();
+  const targetType = data.targetType;
+  const brandID = stringField(data, "brandID");
+  const seasonID = stringField(data, "seasonID");
+  const postID = stringField(data, "postID");
+  const nowDate = new Date();
+  const now = admin.firestore.Timestamp.fromDate(nowDate);
+  const attemptCount = numericMetric(data.purgeAttemptCount) + 1;
+  const auditRef = db.collection("lookbookDeletionAuditLogs").doc();
+
+  try {
+    if (brandID === null) {
+      throw new Error("missing_brand_id");
+    }
+
+    let result: Record<string, number>;
+    let action: LookbookDeletionAction;
+    switch (targetType) {
+    case "brand":
+      result = await purgeBrandTarget(brandID);
+      action = "purgeBrand";
+      await markRelatedDeletionRequestsPurged(
+        doc.id,
+        brandID,
+        null,
+        null,
+        now
+      );
+      break;
+    case "season":
+      if (seasonID === null) {
+        throw new Error("missing_season_id");
+      }
+      result = await purgeSeasonTarget(brandID, seasonID);
+      action = "purgeSeason";
+      await markRelatedDeletionRequestsPurged(
+        doc.id,
+        brandID,
+        seasonID,
+        null,
+        now
+      );
+      break;
+    case "post":
+      if (seasonID === null || postID === null) {
+        throw new Error("missing_post_target_id");
+      }
+      result = await purgePostTarget(brandID, seasonID, postID);
+      action = "purgePost";
+      break;
+    default:
+      throw new Error("invalid_target_type");
+    }
+
+    await markDeletionRequestPurged(doc.ref, now);
+    await auditRef.set({
+      ...deletionAuditPatch(
+        action,
+        doc.id,
+        targetType as LookbookDeletionTargetType,
+        brandID,
+        seasonID,
+        postID,
+        "system",
+        typeof data.reason === "string" ? data.reason : null,
+        nowDate,
+        typeof data.status === "string" ? data.status : null,
+        "purged"
+      ),
+      purgeAttemptCount: attemptCount,
+      purgeResult: result,
+    });
+  } catch (error) {
+    const errorMessage = lookbookPurgeErrorMessage(error);
+    await doc.ref.set({
+      status: "failed",
+      purgeAttemptCount: attemptCount,
+      lastPurgeAttemptAt: now,
+      autoRetryEligible: attemptCount < LOOKBOOK_PURGE_RETRY_LIMIT,
+      retryAfter: attemptCount >= LOOKBOOK_PURGE_RETRY_LIMIT ?
+        null :
+        retryAfterTimestamp(nowDate),
+      purgeErrorMessage: errorMessage,
+      updatedBy: "system",
+      updatedAt: now,
+    }, {merge: true});
+
+    await auditRef.set({
+      ...deletionAuditPatch(
+        "purgeFailed",
+        doc.id,
+        targetType as LookbookDeletionTargetType,
+        brandID ?? "",
+        seasonID,
+        postID,
+        "system",
+        typeof data.reason === "string" ? data.reason : null,
+        nowDate,
+        typeof data.status === "string" ? data.status : null,
+        "failed"
+      ),
+      purgeAttemptCount: attemptCount,
+      errorMessage,
+    });
+    throw error;
+  }
+}
+
+export const purgeExpiredLookbookDeletions = onSchedule(
+  {
+    schedule: "0 4 * * *",
+    region: FUNCTIONS_REGION,
+    timeZone: "Asia/Seoul",
+    timeoutSeconds: 540,
+    memory: "1GiB",
+  },
+  async () => {
+    const now = admin.firestore.Timestamp.now();
+    const requests = await loadExpiredDeletionRequests(now);
+
+    if (requests.length === 0) {
+      console.log("[purgeExpiredLookbookDeletions] No expired requests.");
+      return;
+    }
+
+    let successCount = 0;
+    let failureCount = 0;
+    for (const requestDoc of requests) {
+      try {
+        await purgeLookbookDeletionRequest(requestDoc);
+        successCount += 1;
+      } catch (error) {
+        failureCount += 1;
+        console.error(
+          "[purgeExpiredLookbookDeletions] Failed to purge request",
+          {
+            requestID: requestDoc.id,
+            targetType: requestDoc.get("targetType"),
+            brandID: requestDoc.get("brandID"),
+            seasonID: requestDoc.get("seasonID"),
+            postID: requestDoc.get("postID"),
+            error,
+          }
+        );
+      }
+    }
+
+    console.log("[purgeExpiredLookbookDeletions] Completed", {
+      requestedCount: requests.length,
+      successCount,
+      failureCount,
+    });
   }
 );
 

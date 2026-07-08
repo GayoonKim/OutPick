@@ -161,6 +161,14 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    match /lookbookDeletionRequests/{requestID} {
+      allow read, write: if false;
+    }
+
+    match /lookbookDeletionAuditLogs/{logID} {
+      allow read, write: if false;
+    }
+
     match /brands/{brandID} {
       allow read: if true;
       allow create, update, delete: if false;
@@ -171,11 +179,13 @@ service cloud.firestore {
 
       match /seasons/{seasonID} {
         allow read: if true;
-        allow create, update, delete: if hasBrandWriteAccess(brandID);
+        allow create, update: if hasBrandWriteAccess(brandID);
+        allow delete: if false;
 
         match /posts/{postID} {
           allow read: if true;
-          allow create, update, delete: if hasBrandWriteAccess(brandID);
+          allow create, update: if hasBrandWriteAccess(brandID);
+          allow delete: if false;
 
           match /comments/{commentID} {
             allow read: if true;

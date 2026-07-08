@@ -195,6 +195,258 @@
           "order": "ASCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "lookbookDeletionRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "updatedAt",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "requestID",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "lookbookDeletionRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "brandID",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "updatedAt",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "requestID",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "lookbookDeletionRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "targetType",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "updatedAt",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "requestID",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "lookbookDeletionRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "brandID",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "targetType",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "updatedAt",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "requestID",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "lookbookDeletionRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "purgeAfter",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "lookbookDeletionRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "autoRetryEligible",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "purgeAfter",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "lookbookDeletionRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "brandID",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "lookbookDeletionRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "brandID",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "seasonID",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "lookbookDeletionRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "brandID",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "seasonID",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "postID",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "seasonStates",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {
+          "fieldPath": "brandID",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "seasonID",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "postStates",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {
+          "fieldPath": "brandID",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "seasonID",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "postStates",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {
+          "fieldPath": "brandID",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "seasonID",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "postID",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "commentStates",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {
+          "fieldPath": "brandID",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "seasonID",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "commentStates",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {
+          "fieldPath": "brandID",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "seasonID",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "postID",
+          "order": "ASCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": [
@@ -211,6 +463,46 @@
     {
       "collectionGroup": "admins",
       "fieldPath": "uid",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "brandStates",
+      "fieldPath": "brandID",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "seasonStates",
+      "fieldPath": "brandID",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "postStates",
+      "fieldPath": "brandID",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "commentStates",
+      "fieldPath": "brandID",
       "indexes": [
         {
           "order": "ASCENDING",
