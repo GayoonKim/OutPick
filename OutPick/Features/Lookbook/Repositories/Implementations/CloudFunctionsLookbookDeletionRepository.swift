@@ -105,14 +105,16 @@ final class CloudFunctionsLookbookDeletionRepository: LookbookDeletionRepository
     }
 
     func listDeletionRequests(
-        status: LookbookDeletionRequestStatus,
+        statusGroup: LookbookDeletionRequestStatusGroup,
+        processedScope: ProcessedRequestScope?,
         targetType: LookbookDeletionTargetType?,
         brandID: BrandID?,
         limit: Int,
         cursor: LookbookDeletionRequestPage.Cursor?
     ) async throws -> LookbookDeletionRequestPage {
         try await cloudFunctionsManager.listLookbookDeletionRequests(
-            status: status,
+            statusGroup: statusGroup,
+            processedScope: processedScope,
             targetType: targetType,
             brandID: brandID,
             limit: limit,

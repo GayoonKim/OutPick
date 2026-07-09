@@ -106,6 +106,7 @@ struct AdminBrandRequestGroupsView: View {
             Text("새 요청").tag(BrandRequestAdminStage.requested)
             Text("처리 중").tag(BrandRequestAdminStage.processing)
             Text("보류").tag(BrandRequestAdminStage.rejected)
+            Text("완료").tag(BrandRequestAdminStage.completed)
         }
         .pickerStyle(.segmented)
         .tint(OutPickTheme.SwiftUIColor.accent)
@@ -139,7 +140,7 @@ struct AdminBrandRequestGroupsView: View {
             Spacer()
 
         case .ready:
-            if viewModel.groups.isEmpty {
+            if viewModel.groups.isEmpty, viewModel.selectedStage.isProcessed == false {
                 emptyState
             } else {
                 groupList
@@ -149,37 +150,21 @@ struct AdminBrandRequestGroupsView: View {
 
     private var groupList: some View {
         List {
-            ForEach(viewModel.groups) { group in
-                AdminBrandRequestGroupRowView(
-                    group: group,
-                    isUpdating: viewModel.updatingGroupID == group.id,
-                    actions: AdminBrandRequestGroupRowView.Actions(
-                        startProcessing: {
-                            processingTarget = group
-                        },
-                        reject: {
-                            rejectionTarget = group
-                        },
-                        createBrand: {
-                            activeBrandCreationGroupID = group.id
-                            brandCreationDraft = BrandCreationDraft(group: group)
-                        },
-                        completeAfterReview: resolvedBrandID(for: group).map { brandID in
-                            {
-                                viewModel.prepareCompletion(
-                                    group: group,
-                                    resolvedBrandID: brandID
-                                )
+            if viewModel.groups.isEmpty {
+                emptyListRow(title: emptyTitle, subtitle: emptySubtitle)
+            } else {
+                ForEach(viewModel.groups) { group in
+                    groupRow(group, allowsHistoricalPrefetch: false)
+                        .onAppear {
+                            Task {
+                                await viewModel.loadNextPageIfNeeded(current: group)
                             }
                         }
-                    )
-                )
-                .listRowBackground(OutPickTheme.SwiftUIColor.backgroundBase)
-                .onAppear {
-                    Task {
-                        await viewModel.loadNextPageIfNeeded(current: group)
-                    }
                 }
+            }
+
+            if viewModel.selectedStage.isProcessed {
+                historicalGroupsSection
             }
         }
         .listStyle(.plain)
@@ -188,13 +173,128 @@ struct AdminBrandRequestGroupsView: View {
         }
     }
 
+    @ViewBuilder
+    private var historicalGroupsSection: some View {
+        if viewModel.isHistoricalGroupsVisible {
+            Section {
+                if viewModel.isLoadingHistoricalGroups {
+                    loadingListRow("이전 기록을 불러오는 중입니다.")
+                } else if viewModel.historicalGroups.isEmpty {
+                    emptyListRow(
+                        title: historicalEmptyTitle,
+                        subtitle: "14일 이전 처리 이력이 없어요."
+                    )
+                } else {
+                    ForEach(viewModel.historicalGroups) { group in
+                        groupRow(group, allowsHistoricalPrefetch: true)
+                    }
+                }
+
+                if viewModel.isLoadingMoreHistoricalGroups {
+                    loadingListRow("이전 기록을 더 불러오는 중입니다.")
+                }
+            } header: {
+                Text(historicalSectionTitle)
+                    .font(.footnote.weight(.bold))
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+                    .textCase(nil)
+                    .padding(.top, 8)
+            }
+        } else if viewModel.showsHistoricalGroupsButton {
+            Button {
+                Task {
+                    await viewModel.revealHistoricalGroups()
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text(historicalButtonTitle)
+                        .font(.subheadline.weight(.bold))
+                }
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(OutPickTheme.SwiftUIColor.surfaceElevated)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .listRowBackground(OutPickTheme.SwiftUIColor.backgroundBase)
+        }
+    }
+
+    private func groupRow(
+        _ group: AdminBrandRequestGroup,
+        allowsHistoricalPrefetch: Bool
+    ) -> some View {
+        AdminBrandRequestGroupRowView(
+            group: group,
+            isUpdating: viewModel.updatingGroupID == group.id,
+            actions: AdminBrandRequestGroupRowView.Actions(
+                startProcessing: {
+                    processingTarget = group
+                },
+                reject: {
+                    rejectionTarget = group
+                },
+                createBrand: {
+                    activeBrandCreationGroupID = group.id
+                    brandCreationDraft = BrandCreationDraft(group: group)
+                },
+                completeAfterReview: resolvedBrandID(for: group).map { brandID in
+                    {
+                        viewModel.prepareCompletion(
+                            group: group,
+                            resolvedBrandID: brandID
+                        )
+                    }
+                }
+            )
+        )
+        .listRowBackground(OutPickTheme.SwiftUIColor.backgroundBase)
+        .onAppear {
+            guard allowsHistoricalPrefetch else { return }
+            Task {
+                await viewModel.loadMoreHistoricalGroupsIfNeeded(current: group)
+            }
+        }
+    }
+
+    private func loadingListRow(_ message: String) -> some View {
+        HStack(spacing: 10) {
+            ProgressView()
+                .tint(OutPickTheme.SwiftUIColor.accent)
+            Text(message)
+                .font(.footnote)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.vertical, 18)
+        .listRowBackground(OutPickTheme.SwiftUIColor.backgroundBase)
+    }
+
+    private func emptyListRow(title: String, subtitle: String) -> some View {
+        VStack(spacing: 8) {
+            Text(title)
+                .font(.headline)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
+            Text(subtitle)
+                .font(.footnote)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 36)
+        .listRowBackground(OutPickTheme.SwiftUIColor.backgroundBase)
+    }
+
     private var emptyState: some View {
         VStack(spacing: 8) {
             Spacer()
             Text(emptyTitle)
                 .font(.headline)
                 .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
-            Text("상태를 바꾸면 이 목록에서 자동으로 이동해요.")
+            Text(emptySubtitle)
                 .font(.footnote)
                 .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
                 .multilineTextAlignment(.center)
@@ -210,9 +310,44 @@ struct AdminBrandRequestGroupsView: View {
         case .processing:
             return "처리 중인 요청이 없어요"
         case .rejected:
-            return "보류된 요청이 없어요"
+            return "최근 14일 내 보류된 요청이 없어요"
         case .completed:
-            return "완료된 요청이 없어요"
+            return "최근 14일 내 완료된 요청이 없어요"
+        }
+    }
+
+    private var emptySubtitle: String {
+        switch viewModel.selectedStage {
+        case .requested, .processing:
+            return "상태를 바꾸면 이 목록에서 자동으로 이동해요."
+        case .rejected, .completed:
+            return "최근 처리 이력만 표시하고 있어요."
+        }
+    }
+
+    private var historicalSectionTitle: String {
+        switch viewModel.selectedStage {
+        case .rejected:
+            return "이전 보류 기록"
+        case .completed:
+            return "이전 완료 기록"
+        case .requested, .processing:
+            return ""
+        }
+    }
+
+    private var historicalButtonTitle: String {
+        "\(historicalSectionTitle) 보기"
+    }
+
+    private var historicalEmptyTitle: String {
+        switch viewModel.selectedStage {
+        case .rejected:
+            return "이전 보류 요청이 없어요"
+        case .completed:
+            return "이전 완료 요청이 없어요"
+        case .requested, .processing:
+            return ""
         }
     }
 
@@ -563,6 +698,8 @@ private struct AdminBrandRequestGroupRowView: View {
         if isUpdating {
             ProgressView()
                 .tint(OutPickTheme.SwiftUIColor.accent)
+        } else if group.adminStage == .completed {
+            EmptyView()
         } else if group.adminStage == .processing {
             Menu {
                 Button("보류", role: .destructive, action: actions.reject)

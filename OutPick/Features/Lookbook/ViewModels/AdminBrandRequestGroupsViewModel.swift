@@ -27,8 +27,12 @@ final class AdminBrandRequestGroupsViewModel: ObservableObject {
 
     @Published private(set) var phase: Phase = .idle
     @Published private(set) var groups: [AdminBrandRequestGroup] = []
+    @Published private(set) var historicalGroups: [AdminBrandRequestGroup] = []
     @Published private(set) var updatingGroupID: String?
     @Published var selectedStage: BrandRequestAdminStage = .requested
+    @Published private(set) var isHistoricalGroupsVisible: Bool = false
+    @Published private(set) var isLoadingHistoricalGroups: Bool = false
+    @Published private(set) var isLoadingMoreHistoricalGroups: Bool = false
     @Published var pendingCompletion: PendingCompletion?
     @Published var adminNoteDraft: String = ""
 
@@ -39,6 +43,7 @@ final class AdminBrandRequestGroupsViewModel: ObservableObject {
     private let pageLimit: Int
     private let prefetchThreshold: Int
     private var nextCursor: AdminBrandRequestGroupPage.Cursor?
+    private var historicalNextCursor: AdminBrandRequestGroupPage.Cursor?
     private var isLoading = false
 
     init(
@@ -61,6 +66,12 @@ final class AdminBrandRequestGroupsViewModel: ObservableObject {
         nextCursor != nil && isLoading == false
     }
 
+    var showsHistoricalGroupsButton: Bool {
+        selectedStage.isProcessed &&
+            isHistoricalGroupsVisible == false &&
+            isLoading == false
+    }
+
     func loadInitial() async {
         guard phase == .idle else { return }
         await reload()
@@ -68,6 +79,8 @@ final class AdminBrandRequestGroupsViewModel: ObservableObject {
 
     func reload() async {
         guard !isLoading else { return }
+        let shouldReloadHistory = selectedStage.isProcessed && isHistoricalGroupsVisible
+
         isLoading = true
         defer { isLoading = false }
 
@@ -75,14 +88,15 @@ final class AdminBrandRequestGroupsViewModel: ObservableObject {
         nextCursor = nil
 
         do {
-            let page = try await listUseCase.execute(
-                adminStage: selectedStage,
-                limit: pageLimit,
-                cursor: nil
-            )
+            let page = try await fetchGroups(processedScope: listProcessedScope, cursor: nil)
             groups = page.groups
             nextCursor = page.nextCursor
             phase = .ready
+            if shouldReloadHistory {
+                await reloadHistoricalGroups()
+            } else if selectedStage.isProcessed == false {
+                resetHistoricalGroups()
+            }
         } catch {
             phase = .failed(error.localizedDescription)
         }
@@ -91,6 +105,7 @@ final class AdminBrandRequestGroupsViewModel: ObservableObject {
     func selectStage(_ stage: BrandRequestAdminStage) async {
         guard selectedStage != stage else { return }
         selectedStage = stage
+        resetHistoricalGroups()
         pendingCompletion = nil
         adminNoteDraft = ""
         await reload()
@@ -105,14 +120,44 @@ final class AdminBrandRequestGroupsViewModel: ObservableObject {
         defer { isLoading = false }
 
         do {
-            let page = try await listUseCase.execute(
-                adminStage: selectedStage,
-                limit: pageLimit,
-                cursor: nextCursor
-            )
+            let page = try await fetchGroups(processedScope: listProcessedScope, cursor: nextCursor)
             groups.append(contentsOf: page.groups)
             self.nextCursor = page.nextCursor
             phase = .ready
+        } catch {
+            phase = .failed(error.localizedDescription)
+        }
+    }
+
+    func revealHistoricalGroups() async {
+        guard selectedStage.isProcessed,
+              isHistoricalGroupsVisible == false
+        else {
+            return
+        }
+
+        isHistoricalGroupsVisible = true
+        await reloadHistoricalGroups()
+    }
+
+    func loadMoreHistoricalGroupsIfNeeded(current group: AdminBrandRequestGroup) async {
+        guard selectedStage.isProcessed,
+              isHistoricalGroupsVisible,
+              let historicalNextCursor,
+              isLoadingHistoricalGroups == false,
+              isLoadingMoreHistoricalGroups == false,
+              shouldPrefetchHistorical(afterSeeing: group)
+        else {
+            return
+        }
+
+        isLoadingMoreHistoricalGroups = true
+        defer { isLoadingMoreHistoricalGroups = false }
+
+        do {
+            let page = try await fetchGroups(processedScope: .history, cursor: historicalNextCursor)
+            historicalGroups.append(contentsOf: historicalOnlyGroups(page.groups))
+            self.historicalNextCursor = page.nextCursor
         } catch {
             phase = .failed(error.localizedDescription)
         }
@@ -193,6 +238,7 @@ final class AdminBrandRequestGroupsViewModel: ObservableObject {
             )
             adminNoteDraft = ""
             selectedStage = adminStage
+            resetHistoricalGroups()
             await reload()
         } catch {
             phase = .failed(error.localizedDescription)
@@ -221,5 +267,67 @@ final class AdminBrandRequestGroupsViewModel: ObservableObject {
             return false
         }
         return index >= max(groups.count - prefetchThreshold, 0)
+    }
+
+    private func shouldPrefetchHistorical(afterSeeing group: AdminBrandRequestGroup) -> Bool {
+        guard let index = historicalGroups.firstIndex(where: { $0.id == group.id }) else {
+            return false
+        }
+        return index >= max(historicalGroups.count - prefetchThreshold, 0)
+    }
+
+    private func fetchGroups(
+        processedScope: ProcessedRequestScope?,
+        cursor: AdminBrandRequestGroupPage.Cursor?
+    ) async throws -> AdminBrandRequestGroupPage {
+        try await listUseCase.execute(
+            adminStage: selectedStage,
+            processedScope: processedScope,
+            limit: pageLimit,
+            cursor: cursor
+        )
+    }
+
+    private func reloadHistoricalGroups() async {
+        guard selectedStage.isProcessed else {
+            resetHistoricalGroups()
+            return
+        }
+
+        isLoadingHistoricalGroups = true
+        defer { isLoadingHistoricalGroups = false }
+
+        do {
+            let page = try await fetchGroups(processedScope: .history, cursor: nil)
+            historicalGroups = historicalOnlyGroups(page.groups)
+            historicalNextCursor = page.nextCursor
+        } catch {
+            historicalGroups = []
+            historicalNextCursor = nil
+            phase = .failed(error.localizedDescription)
+        }
+    }
+
+    private func resetHistoricalGroups() {
+        historicalGroups = []
+        historicalNextCursor = nil
+        isHistoricalGroupsVisible = false
+        isLoadingHistoricalGroups = false
+        isLoadingMoreHistoricalGroups = false
+    }
+
+    private func historicalOnlyGroups(
+        _ fetchedGroups: [AdminBrandRequestGroup]
+    ) -> [AdminBrandRequestGroup] {
+        let recentIDs = Set(groups.map(\.id))
+        let existingHistoryIDs = Set(historicalGroups.map(\.id))
+        return fetchedGroups.filter { group in
+            recentIDs.contains(group.id) == false &&
+                existingHistoryIDs.contains(group.id) == false
+        }
+    }
+
+    private var listProcessedScope: ProcessedRequestScope? {
+        selectedStage.isProcessed ? .recent : nil
     }
 }

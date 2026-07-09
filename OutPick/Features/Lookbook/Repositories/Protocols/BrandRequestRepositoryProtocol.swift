@@ -21,6 +21,7 @@ protocol BrandRequestRepositoryProtocol {
 
     func listBrandRequestGroups(
         adminStage: BrandRequestAdminStage?,
+        processedScope: ProcessedRequestScope?,
         limit: Int,
         cursor: AdminBrandRequestGroupPage.Cursor?
     ) async throws -> AdminBrandRequestGroupPage

@@ -43,6 +43,22 @@ enum LookbookDeletionRequestStatus: String, Codable, CaseIterable, Equatable, Id
     }
 }
 
+enum LookbookDeletionRequestStatusGroup: String, Codable, CaseIterable, Equatable, Identifiable {
+    case active
+    case processed
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .active:
+            return "처리 중"
+        case .processed:
+            return "완료"
+        }
+    }
+}
+
 struct LookbookDeletionRequest: Equatable, Identifiable {
     let requestID: String
     let targetType: LookbookDeletionTargetType

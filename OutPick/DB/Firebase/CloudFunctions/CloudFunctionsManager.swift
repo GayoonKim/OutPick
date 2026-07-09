@@ -626,12 +626,16 @@ final class CloudFunctionsManager {
 
     func listBrandRequestGroups(
         adminStage: BrandRequestAdminStage?,
+        processedScope: ProcessedRequestScope?,
         limit: Int,
         cursor: AdminBrandRequestGroupPage.Cursor?
     ) async throws -> AdminBrandRequestGroupPage {
         var data: [String: Any] = ["limit": limit]
         if let adminStage {
             data["adminStage"] = adminStage.rawValue
+        }
+        if let processedScope {
+            data["processedScope"] = processedScope.rawValue
         }
         if let cursor {
             data["cursorUpdatedAt"] = cursor.updatedAt
@@ -888,16 +892,20 @@ final class CloudFunctionsManager {
     }
 
     func listLookbookDeletionRequests(
-        status: LookbookDeletionRequestStatus,
+        statusGroup: LookbookDeletionRequestStatusGroup,
+        processedScope: ProcessedRequestScope?,
         targetType: LookbookDeletionTargetType?,
         brandID: BrandID?,
         limit: Int,
         cursor: LookbookDeletionRequestPage.Cursor?
     ) async throws -> LookbookDeletionRequestPage {
         var data: [String: Any] = [
-            "status": status.rawValue,
+            "statusGroup": statusGroup.rawValue,
             "limit": limit
         ]
+        if let processedScope {
+            data["processedScope"] = processedScope.rawValue
+        }
         if let targetType {
             data["targetType"] = targetType.rawValue
         }

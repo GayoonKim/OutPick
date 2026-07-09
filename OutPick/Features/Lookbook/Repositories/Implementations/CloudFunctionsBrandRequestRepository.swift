@@ -38,11 +38,13 @@ final class CloudFunctionsBrandRequestRepository: BrandRequestRepositoryProtocol
 
     func listBrandRequestGroups(
         adminStage: BrandRequestAdminStage?,
+        processedScope: ProcessedRequestScope?,
         limit: Int,
         cursor: AdminBrandRequestGroupPage.Cursor?
     ) async throws -> AdminBrandRequestGroupPage {
         try await cloudFunctionsManager.listBrandRequestGroups(
             adminStage: adminStage,
+            processedScope: processedScope,
             limit: limit,
             cursor: cursor
         )

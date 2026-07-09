@@ -10,6 +10,7 @@ import Foundation
 protocol ListBrandRequestGroupsUseCaseProtocol {
     func execute(
         adminStage: BrandRequestAdminStage?,
+        processedScope: ProcessedRequestScope?,
         limit: Int,
         cursor: AdminBrandRequestGroupPage.Cursor?
     ) async throws -> AdminBrandRequestGroupPage
@@ -24,11 +25,13 @@ struct ListBrandRequestGroupsUseCase: ListBrandRequestGroupsUseCaseProtocol {
 
     func execute(
         adminStage: BrandRequestAdminStage?,
+        processedScope: ProcessedRequestScope?,
         limit: Int,
         cursor: AdminBrandRequestGroupPage.Cursor?
     ) async throws -> AdminBrandRequestGroupPage {
         try await repository.listBrandRequestGroups(
             adminStage: adminStage,
+            processedScope: processedScope,
             limit: limit,
             cursor: cursor
         )

@@ -32,6 +32,22 @@ enum BrandRequestListScope: String, Codable, CaseIterable, Equatable {
     case history
 }
 
+enum ProcessedRequestScope: String, Codable, CaseIterable, Equatable, Identifiable {
+    case recent
+    case history
+
+    var id: String { rawValue }
+
+    var displayTitle: String {
+        switch self {
+        case .recent:
+            return "최근 14일"
+        case .history:
+            return "이전"
+        }
+    }
+}
+
 enum BrandRequestAdminStage: String, Codable, CaseIterable, Equatable {
     case requested
     case processing
@@ -49,6 +65,10 @@ enum BrandRequestAdminStage: String, Codable, CaseIterable, Equatable {
         case .rejected:
             return "보류"
         }
+    }
+
+    var isProcessed: Bool {
+        self == .completed || self == .rejected
     }
 }
 

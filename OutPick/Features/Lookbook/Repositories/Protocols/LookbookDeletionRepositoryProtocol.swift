@@ -55,7 +55,8 @@ protocol LookbookDeletionRepositoryProtocol {
     ) async throws -> LookbookDeletionMutationReceipt
 
     func listDeletionRequests(
-        status: LookbookDeletionRequestStatus,
+        statusGroup: LookbookDeletionRequestStatusGroup,
+        processedScope: ProcessedRequestScope?,
         targetType: LookbookDeletionTargetType?,
         brandID: BrandID?,
         limit: Int,
