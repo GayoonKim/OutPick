@@ -423,6 +423,7 @@ type BrandRequestRejectionReason =
   "other";
 
 type BrandRequestUserListScope = "active" | "history";
+type ProcessedRequestScope = "recent" | "history";
 
 type BrandManagerRole = "owner" | "admin";
 type LookbookDeletionTargetType = "brand" | "season" | "post";
@@ -432,6 +433,7 @@ type LookbookDeletionRequestStatus =
   "restored" |
   "purged" |
   "failed";
+type LookbookDeletionRequestStatusGroup = "active" | "processed";
 type LookbookDeletionAction =
   "requestBrandDeletion" |
   "cancelBrandDeletion" |
@@ -464,6 +466,8 @@ const BRAND_REQUEST_DEFAULT_USER_LIMIT = 20;
 const BRAND_REQUEST_MAX_USER_LIMIT = 50;
 const BRAND_REQUEST_DEFAULT_ADMIN_LIMIT = 50;
 const BRAND_REQUEST_MAX_ADMIN_LIMIT = 100;
+const ADMIN_REQUEST_RECENT_PROCESSED_DAYS = 14;
+const ADMIN_REQUEST_MAX_RECENT_PROCESSED_DAYS = 30;
 const BRAND_REQUEST_TIME_ZONE = "Asia/Seoul";
 const BRAND_SEARCH_DEFAULT_LIMIT = 20;
 const BRAND_SEARCH_MAX_LIMIT = 30;
@@ -649,6 +653,43 @@ function optionalAdminStage(
     throw new HttpsError("invalid-argument", `${key} 값이 올바르지 않습니다.`);
   }
   return requiredAdminStage(value, BRAND_REQUEST_ADMIN_STAGES);
+}
+
+function optionalProcessedRequestScope(
+  data: Record<string, unknown>,
+  key: string
+): ProcessedRequestScope | null {
+  const value = data[key];
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (value !== "recent" && value !== "history") {
+    throw new HttpsError("invalid-argument", `${key} 값이 올바르지 않습니다.`);
+  }
+  return value;
+}
+
+function isProcessedBrandRequestStage(
+  adminStage: BrandRequestAdminStage | null
+): boolean {
+  return adminStage === "completed" || adminStage === "rejected";
+}
+
+function recentProcessedBoundary(
+  days: number,
+  now: Date = new Date()
+): admin.firestore.Timestamp {
+  return admin.firestore.Timestamp.fromDate(addDays(now, -days));
+}
+
+function applyProcessedScopeQuery(
+  query: FirebaseFirestore.Query,
+  scope: ProcessedRequestScope,
+  boundary: admin.firestore.Timestamp
+): FirebaseFirestore.Query {
+  return scope === "history" ?
+    query.where("updatedAt", "<", boundary) :
+    query.where("updatedAt", ">=", boundary);
 }
 
 function optionalRejectionReason(
@@ -904,6 +945,20 @@ function optionalDeletionRequestStatus(
   return value;
 }
 
+function optionalDeletionRequestStatusGroup(
+  data: Record<string, unknown>,
+  key: string
+): LookbookDeletionRequestStatusGroup | null {
+  const value = data[key];
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (value !== "active" && value !== "processed") {
+    throw new HttpsError("invalid-argument", `${key} 값이 올바르지 않습니다.`);
+  }
+  return value;
+}
+
 function deletionRequestSummary(
   requestID: string,
   data: FirebaseFirestore.DocumentData | undefined
@@ -990,6 +1045,58 @@ function deletionFallbackDisplayName(
   }
 }
 
+function targetSpecificDisplayName(
+  targetType: LookbookDeletionTargetType,
+  summary: Record<string, unknown>
+): string | null {
+  switch (targetType) {
+  case "brand":
+    return firstNonEmptyDisplayString([summary.brandName]);
+  case "season":
+    return firstNonEmptyDisplayString([summary.seasonTitle]);
+  case "post":
+    return firstNonEmptyDisplayString([summary.postCaption]);
+  }
+}
+
+function shouldReplaceDeletionTargetDisplayName(
+  targetType: LookbookDeletionTargetType,
+  targetDisplayName: unknown
+): boolean {
+  if (!nonEmptyDisplayString(targetDisplayName)) {
+    return true;
+  }
+  const trimmed = targetDisplayName.trim();
+  return trimmed === deletionFallbackDisplayName(targetType) ||
+    (targetType === "post" && trimmed === "포스트");
+}
+
+function normalizeDeletionDisplayName(
+  summary: Record<string, unknown>
+): Record<string, unknown> {
+  const targetType = displayTargetType(summary.targetType);
+  const targetName = targetSpecificDisplayName(targetType, summary);
+  if (
+    targetName !== null &&
+    shouldReplaceDeletionTargetDisplayName(
+      targetType,
+      summary.targetDisplayName
+    )
+  ) {
+    return {
+      ...summary,
+      targetDisplayName: targetName,
+    };
+  }
+  if (!nonEmptyDisplayString(summary.targetDisplayName)) {
+    return {
+      ...summary,
+      targetDisplayName: deletionFallbackDisplayName(targetType),
+    };
+  }
+  return summary;
+}
+
 function displayTargetType(value: unknown): LookbookDeletionTargetType {
   if (value === "season" || value === "post") {
     return value;
@@ -1016,42 +1123,28 @@ async function deletionRequestSummaryWithDisplayFallback(
 ): Promise<Record<string, unknown>> {
   const summary = deletionRequestSummary(requestID, data);
   const targetType = displayTargetType(summary.targetType);
-  const hasPrimaryName = nonEmptyDisplayString(summary.targetDisplayName);
-  const hasTargetName =
-    targetType === "brand" ?
-      nonEmptyDisplayString(summary.brandName) :
-      targetType === "season" ?
-        nonEmptyDisplayString(summary.seasonTitle) :
-        nonEmptyDisplayString(summary.postCaption);
-
-  if (
-    targetType === "season" &&
-    nonEmptyDisplayString(summary.seasonTitle) &&
-    (
-      !hasPrimaryName ||
-      summary.targetDisplayName === deletionFallbackDisplayName("season")
-    )
-  ) {
-    return {
-      ...summary,
-      targetDisplayName: summary.seasonTitle,
-    };
-  }
+  const hasTargetName = targetSpecificDisplayName(targetType, summary) !== null;
+  const hasPrimaryName =
+    nonEmptyDisplayString(summary.targetDisplayName) &&
+    !shouldReplaceDeletionTargetDisplayName(
+      targetType,
+      summary.targetDisplayName
+    );
 
   if (hasPrimaryName && hasTargetName) {
-    return summary;
+    return normalizeDeletionDisplayName(summary);
   }
 
   const brandID = nonEmptyDisplayString(summary.brandID) ?
     summary.brandID :
     null;
   if (brandID === null) {
-    return {
+    return normalizeDeletionDisplayName({
       ...summary,
       targetDisplayName: hasPrimaryName ?
         summary.targetDisplayName :
         deletionFallbackDisplayName(targetType),
-    };
+    });
   }
 
   const brandRef = db.collection("brands").doc(brandID);
@@ -1087,17 +1180,7 @@ async function deletionRequestSummaryWithDisplayFallback(
     )
   );
 
-  if (!nonEmptyDisplayString(enriched.targetDisplayName)) {
-    enriched.targetDisplayName = deletionFallbackDisplayName(targetType);
-  }
-  if (
-    targetType === "season" &&
-    nonEmptyDisplayString(enriched.seasonTitle) &&
-    enriched.targetDisplayName === deletionFallbackDisplayName("season")
-  ) {
-    enriched.targetDisplayName = enriched.seasonTitle;
-  }
-  return enriched;
+  return normalizeDeletionDisplayName(enriched);
 }
 
 function mediaThumbPath(data: FirebaseFirestore.DocumentData | undefined):
@@ -3175,6 +3258,16 @@ export const listBrandRequestGroups = onCall(
       BRAND_REQUEST_MAX_ADMIN_LIMIT
     );
     const adminStage = optionalAdminStage(data, "adminStage");
+    const processedScope = optionalProcessedRequestScope(
+      data,
+      "processedScope"
+    ) ?? "recent";
+    const recentProcessedDays = positiveInteger(
+      data,
+      "recentProcessedDays",
+      ADMIN_REQUEST_RECENT_PROCESSED_DAYS,
+      ADMIN_REQUEST_MAX_RECENT_PROCESSED_DAYS
+    );
     const cursorUpdatedAt = optionalTimestampFromISO(data, "cursorUpdatedAt");
     const cursorGroupID = optionalString(data, "cursorGroupID", 256);
 
@@ -3187,6 +3280,13 @@ export const listBrandRequestGroups = onCall(
       query = query.where("adminStage", "==", adminStage);
     } else {
       query = query.where("adminStage", "in", ["requested", "processing"]);
+    }
+    if (isProcessedBrandRequestStage(adminStage)) {
+      query = applyProcessedScopeQuery(
+        query,
+        processedScope,
+        recentProcessedBoundary(recentProcessedDays)
+      );
     }
     query = query
       .orderBy("updatedAt", "desc")
@@ -4724,7 +4824,18 @@ export const listLookbookDeletionRequests = onCall(
       LOOKBOOK_DELETION_DEFAULT_LIMIT,
       LOOKBOOK_DELETION_MAX_LIMIT
     );
-    const status = optionalDeletionRequestStatus(data, "status") ?? "active";
+    const status = optionalDeletionRequestStatus(data, "status");
+    const statusGroup = optionalDeletionRequestStatusGroup(data, "statusGroup");
+    const processedScope = optionalProcessedRequestScope(
+      data,
+      "processedScope"
+    ) ?? "recent";
+    const recentProcessedDays = positiveInteger(
+      data,
+      "recentProcessedDays",
+      ADMIN_REQUEST_RECENT_PROCESSED_DAYS,
+      ADMIN_REQUEST_MAX_RECENT_PROCESSED_DAYS
+    );
     const targetType = optionalDeletionTargetType(data, "targetType");
     const brandID = optionalDocumentID(
       optionalString(data, "brandID", 128),
@@ -4735,6 +4846,12 @@ export const listLookbookDeletionRequests = onCall(
 
     if ((cursorUpdatedAt === null) !== (cursorRequestID === null)) {
       throw new HttpsError("invalid-argument", "cursor 값이 올바르지 않습니다.");
+    }
+    if (status !== null && statusGroup !== null) {
+      throw new HttpsError(
+        "invalid-argument",
+        "status와 statusGroup은 함께 사용할 수 없습니다."
+      );
     }
 
     if (!capabilities.isTotalAdmin) {
@@ -4757,13 +4874,26 @@ export const listLookbookDeletionRequests = onCall(
     }
 
     let query: FirebaseFirestore.Query =
-      db.collection("lookbookDeletionRequests")
-        .where("status", "==", status);
+      db.collection("lookbookDeletionRequests");
+    if (status !== null) {
+      query = query.where("status", "==", status);
+    } else if (statusGroup === "processed") {
+      query = query.where("status", "==", "purged");
+    } else {
+      query = query.where("status", "in", ["active", "failed"]);
+    }
     if (brandID !== null) {
       query = query.where("brandID", "==", brandID);
     }
     if (targetType !== null) {
       query = query.where("targetType", "==", targetType);
+    }
+    if (statusGroup === "processed") {
+      query = applyProcessedScopeQuery(
+        query,
+        processedScope,
+        recentProcessedBoundary(recentProcessedDays)
+      );
     }
     query = query
       .orderBy("updatedAt", "desc")
