@@ -348,8 +348,9 @@ GRDB 로컬 캐시:
   - `seasonCoverThumbPath`
   - `postCaption`
   - `postImageThumbPath`
-- 표시용 snapshot 필드는 신규 삭제 요청부터 저장한다. 기존/부분 projection에는 없을 수 있으므로 `listLookbookDeletionRequests` callable이 원본 브랜드/시즌/포스트 문서를 읽어 응답 summary만 보강한다. 시즌명 snapshot은 시즌 문서의 `displayTitle`, legacy `title`, `sourceTitle` 순서로 읽는다. 이 보강은 `lookbookDeletionRequests` 문서 자체를 backfill write하지 않는다.
-- 클라이언트 목록 제목은 표시용 snapshot을 우선 사용하고, 값이 없으면 "삭제된 시즌"처럼 사람이 읽을 수 있는 fallback을 표시한다. `targetID`/UID는 제목 fallback으로 쓰지 않는다.
+- 표시용 snapshot 필드는 신규 삭제 요청부터 저장한다. 기존/부분 projection에는 없을 수 있으므로 `listLookbookDeletionRequests` callable이 원본 브랜드/시즌/포스트 문서를 읽어 응답 summary만 보강한다. `targetDisplayName`이 "삭제된 브랜드/시즌/포스트" fallback이더라도 `brandName`/`seasonTitle`/`postCaption`이 있으면 target별 snapshot 이름을 응답 제목으로 보강한다. 시즌명 snapshot은 시즌 문서의 `displayTitle`, legacy `title`, `sourceTitle` 순서로 읽는다. 이 보강은 `lookbookDeletionRequests` 문서 자체를 backfill write하지 않는다.
+- 클라이언트 목록 제목은 target별 표시용 snapshot을 우선 사용하고, 값이 없으면 유효한 `targetDisplayName`을 사용한다. `postCaption`이 없는 포스트는 서버 snapshot의 `targetDisplayName = "포스트"`를 표시할 수 있다. snapshot이 모두 없을 때만 "삭제된 시즌"처럼 사람이 읽을 수 있는 fallback을 표시한다. `targetID`/UID는 제목 fallback으로 쓰지 않는다.
+- `purged` 완료 목록은 이미지 UI를 표시하지 않는다. 삭제 요청 projection에는 Storage path snapshot만 저장하고 별도 이미지 파일을 보존하지 않으므로, 완료 목록 표시를 위해 삭제된 원본 이미지나 별도 이미지 snapshot 파일을 보존하지 않는다.
 - 삭제/복구/취소 감사 로그는 `lookbookDeletionAuditLogs/{logID}`에 둔다.
 - `lookbookDeletionAuditLogs/{logID}` 주요 필드:
   - `action`
@@ -388,6 +389,9 @@ GRDB 로컬 캐시:
 - `requestID`는 같은 사용자 + 같은 dedupe key 중복 요청을 막기 위해 deterministic ID를 사용한다.
 - 사용자 노출 상태는 `submitted`, `reviewing`, `added`, `rejected`다.
 - 운영자 내부 단계는 `requested`, `processing`, `completed`, `rejected`다.
+- 관리자 기본 처리 이력 노출 기간은 14일이다.
+- `listBrandRequestGroups`의 `processedScope = recent`는 `rejected/completed` group 중 최근 14일 이력을, `history`는 14일 이전 이력을 조회한다.
+- `listLookbookDeletionRequests`의 `statusGroup = processed`는 영구 삭제 완료 상태인 `purged`만 대상으로 `processedScope = recent`로 최근 14일 완료 이력을, `history`로 14일 이전 완료 이력을 조회한다. `restored`와 `cancelled`는 삭제 완료가 아니므로 iOS 완료 목록에 포함하지 않는다. iOS 삭제 요청 화면은 최근 14일 완료 목록을 기본 표시하고, 이전 완료 기록은 별도 history stream으로 아래에 추가 표시한다.
 - `spam`은 운영자 단계가 아니라 `rejectionReason = spam`으로 기록한다.
 - 사용자 `진행 중` 목록은 `submitted`, `reviewing`만 보여주고, `added`, `rejected`는 즉시 `이전 요청` 목록으로 이동한다.
 - `brandRequestNameIndex/{dedupeKeyHash}`는 전체 요청 수요와 운영 group을 집계한다.

@@ -25,6 +25,7 @@
 - 브랜드 검색: callable `searchBrands`가 `brands.normalizedName`과 `brands.normalizedEnglishName` prefix query를 수행한 뒤 중복 브랜드를 제거한다.
 - 브랜드명 수요/group 집계: `brandRequestNameIndex/{dedupeKeyHash}`
 - `listMyBrandRequests`는 group 상태를 반영해 사용자 노출 상태를 반환한다.
+- `listBrandRequestGroups`는 운영자 group 목록 source인 `brandRequestNameIndex`를 조회한다. `adminStage = rejected | completed`일 때 `processedScope = recent | history`를 지원하며, 기본 최근 처리 이력 기준은 14일이다.
 - 사용자 일일 제한: `brandRequestDailyCounters/{uid}/brandRequestDays/{yyyyMMdd}`
 - 사용자 spam/차단: `brandRequestUserLimits/{uid}`
 - 앱/관리자는 Firestore 직접 접근이 아니라 callable을 사용한다.
@@ -64,7 +65,9 @@ gcloud firestore fields ttls update expiresAt \
 - `softDeletePost` / `restorePost`: 총 관리자 또는 브랜드 owner/admin이 포스트 삭제 상태를 변경한다. 부모 브랜드가 `deletionRequested`이거나 부모 시즌이 `deleted`이면 개별 포스트 삭제/복구를 막는다.
 - `batchSoftDeleteSeasons`: `brandID`와 최대 20개 `seasonIDs`를 받아 시즌 삭제 요청을 항목별 transaction으로 처리한다. 권한과 부모 브랜드 상태 정책은 `softDeleteSeason`과 동일하며, 일부 항목 실패 시 `results`에 항목별 성공/실패를 반환한다.
 - `batchSoftDeletePosts`: `brandID`, `seasonID`, 최대 20개 `postIDs`를 받아 같은 시즌 안의 포스트 삭제 요청을 항목별 transaction으로 처리한다. 권한과 부모 브랜드/시즌 상태 정책은 `softDeletePost`와 동일하며, 일부 항목 실패 시 `results`에 항목별 성공/실패를 반환한다.
-- `listLookbookDeletionRequests`: 총 관리자는 전역 삭제 요청 목록을 조회할 수 있고, 브랜드 owner/admin은 `brandID`를 지정한 자신 권한 브랜드 목록만 조회할 수 있다. 기존/부분 projection에 `targetDisplayName` 또는 `seasonTitle` 같은 표시 snapshot이 비어 있으면 원본 브랜드/시즌/포스트 문서를 읽어 응답 summary만 보강한다. 시즌 요청은 기존 projection의 `targetDisplayName`이 "삭제된 시즌" fallback이어도 `seasonTitle`이 있으면 응답 제목을 시즌명으로 보강한다. 시즌명은 시즌 문서의 `displayTitle`, legacy `title`, `sourceTitle` 순서로 읽는다. 이 보강은 운영 projection 문서 backfill write를 수행하지 않는다.
+- `listLookbookDeletionRequests`: 총 관리자는 전역 삭제 요청 목록을 조회할 수 있고, 브랜드 owner/admin은 `brandID`를 지정한 자신 권한 브랜드 목록만 조회할 수 있다. `statusGroup = active`는 `active/failed`, `statusGroup = processed`는 영구 삭제가 끝난 `purged`만 조회한다. 복구된 `restored`와 취소된 `cancelled`는 완료 목록에 포함하지 않는다. processed group은 `processedScope = recent | history`를 지원하며, 기본 최근 처리 이력 기준은 14일이다. 기존/부분 projection에 `targetDisplayName` 또는 `brandName`/`seasonTitle`/`postCaption` 같은 표시 snapshot이 비어 있으면 원본 브랜드/시즌/포스트 문서를 읽어 응답 summary만 보강한다. `targetDisplayName`이 "삭제된 브랜드/시즌/포스트" fallback이더라도 target별 snapshot 이름이 있으면 브랜드명/시즌명/포스트명으로 보강한다. 시즌명은 시즌 문서의 `displayTitle`, legacy `title`, `sourceTitle` 순서로 읽는다. 이 보강은 운영 projection 문서 backfill write를 수행하지 않는다.
+- iOS callable wrapper는 `OutPick/DB/Firebase/CloudFunctions/CloudFunctionsManager.swift`, repository 경계는 `CloudFunctionsBrandRequestRepository.swift`와 `CloudFunctionsLookbookDeletionRepository.swift`를 확인한다.
+- 다음 핵심 작업인 포스트 삭제 audit thumbnail은 `docs/ai/tasks/post-deletion-audit-thumbnail/design.md`에 설계되어 있다. 아직 구현 전이며, 구현 시 포스트 요청에 한해 별도 Storage prefix와 projection 필드 추가가 필요하다.
 - 삭제 요청 projection 컬렉션은 `lookbookDeletionRequests/{requestID}`이며 주요 필드는 `targetType`, `targetID`, `targetPath`, `brandID`, `seasonID`, `postID`, `status`, `requestedBy`, `requestedAt`, `restoreUntil`, `purgeAfter`, `reason`, `updatedAt`이다.
 - 신규 projection은 관리자 목록 표시용 snapshot인 `targetDisplayName`, `targetImagePath`, `brandName`, `brandEnglishName`, `brandLogoThumbPath`, `seasonTitle`, `seasonCoverThumbPath`, `postCaption`, `postImageThumbPath`를 함께 저장한다. 기존 projection에는 없을 수 있으므로 클라이언트는 fallback을 유지한다.
 - 감사 로그 컬렉션은 `lookbookDeletionAuditLogs/{logID}`이며 일반 클라이언트 직접 read/write는 허용하지 않는다.

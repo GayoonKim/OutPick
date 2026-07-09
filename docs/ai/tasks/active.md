@@ -2,8 +2,24 @@
 
 ## 현재 상태
 
+- 현재 다음 핵심 task는 `post-deletion-audit-thumbnail`이다.
+- 목표는 포스트 삭제 요청이 영구 삭제(`purged`)된 뒤에도 운영자가 어떤 포스트가 삭제되었는지 식별할 수 있도록, 포스트에 한해서 감사용 저해상도 thumbnail snapshot을 남기는 것이다.
+- 브랜드/시즌 삭제 완료 목록은 이미지 UI를 표시하지 않는 현재 정책을 유지한다.
+- 포스트 삭제 완료 목록만 audit thumbnail을 표시한다.
+- 원본 포스트 이미지와 기존 Storage asset은 purge 시 계속 삭제한다.
+- audit thumbnail은 원본 보존이 아니라 운영 이력 식별용 제한 snapshot으로 별도 Storage prefix에 저장한다.
+- 신규 포스트 삭제 요청부터 적용하고, 이미 purge된 기존 포스트 요청은 이미지 복구 대상이 아니다.
+- 구현 전 `docs/ai/tasks/post-deletion-audit-thumbnail/` 하위 문서를 먼저 확인한다.
+- 구현 전 논의 필요 항목은 audit thumbnail 보존 기간, thumbnail 크기/포맷, Storage 접근 방식, cleanup 방식, thumbnail 생성 실패 시 삭제 요청 생성 실패 여부다.
+- 직전 핵심 task인 `admin-request-list-retention-unification`은 구현, 로컬 검증, Functions 운영 배포를 완료했다.
+- `admin-request-list-retention-unification` 목표는 총 관리자 브랜드 요청 목록과 총 관리자/브랜드 owner/admin 삭제 요청 목록의 진행 중/완료 요청 표시 정책을 14일 최근 처리 이력 기준으로 통일하는 것이다.
+- 2026-07-09 사용자 결정으로 완료된 요청 기본 노출 기간은 14일로 통일한다. 삭제 lifecycle의 7일 복구 가능 기간과 운영 목록의 14일 최근 처리 이력 노출 기간은 분리한다.
+- 2026-07-09 추가 사용자 결정으로 브랜드 요청 화면은 `새 요청`, `처리 중`, `보류`, `완료` segment로 가고, 14일 이전 처리 이력 조회도 이번 작업에 포함한다.
+- 2026-07-09 추가 사용자 결정으로 삭제 요청 `완료` 목록은 영구 삭제가 끝난 `purged`만 표시한다. 최근 14일 완료 목록을 기본 표시하고, `이전 완료 기록 보기` 버튼 후 14일 이전 완료 기록을 같은 화면 아래에 추가 표시한다. 이전 완료 기록은 스크롤 prefetch로 추가 로드한다.
+- 2026-07-09 추가 사용자 결정으로 브랜드 요청 `보류`/`완료`도 최근 14일 목록을 기본 표시하고, 이전 기록 보기 버튼 후 14일 이전 기록을 같은 화면 아래에 추가 표시한다. 이전 기록은 스크롤 prefetch로 추가 로드한다.
+- 2026-07-09 구현, 로컬 검증, Functions 운영 배포를 완료했다.
+- 구현 전 설계 문서는 `docs/ai/tasks/admin-request-list-retention-unification/` 하위 문서를 먼저 확인한다.
 - 직전 핵심 task인 `lookbook-admin-soft-delete-lifecycle`은 핵심 구현, 운영 배포, OUTSTANDING 통합 QA까지 완료했다.
-- 다음 단계는 완료된 삭제 lifecycle 위에서 발견되는 수정 사항을 범위별로 점검하고 필요한 수정만 별도 작업으로 처리하는 것이다.
 - 후속 QA/보정은 Phase A 삭제 요청 목록 표시명 보정, Phase B 관리자 브랜드 관리 화면 메뉴 리팩토링, Phase C `BrandDetailView` pull-to-refresh 추가까지 완료했다.
 - 2026-07-08 기준 Phase 1 추천안 확정, Phase 2 서버 soft delete 기반 구현/운영 배포, Phase 3 사용자 노출 차단 구현/로컬 검증, Phase 4 관리자 삭제/복구 UI 구현/로컬 빌드 검증, Phase 5 scheduled purge 구현/운영 배포, Phase 6 OUTSTANDING 통합 QA를 완료했다.
 - 직전 핵심 task인 `admin-web-brand-season-management`는 Phase 2~7 구현, 운영 배포, 통합 수동 QA까지 완료 처리했다.
@@ -81,7 +97,95 @@
 
 ## 작업 상태 목록
 
-### 1. `lookbook-admin-soft-delete-lifecycle` 완료
+### 1. `post-deletion-audit-thumbnail` 설계 시작
+
+- 목적:
+  - 포스트 삭제 완료 목록에서 운영자가 어떤 포스트가 삭제되었는지 식별할 수 있게 한다.
+  - 브랜드/시즌 완료 목록은 이미지 없이 텍스트 snapshot만 표시한다.
+  - 포스트 완료 목록만 감사용 저해상도 thumbnail을 표시한다.
+  - 원본 이미지 삭제 정책과 감사용 snapshot 보존 정책을 분리한다.
+- 현재 상태:
+  - 설계 문서, phase 계획, 결정 문서, QA 체크리스트를 생성했다.
+  - 아직 구현은 시작하지 않았다.
+- 먼저 확인할 문서:
+  - `docs/ai/tasks/post-deletion-audit-thumbnail/design.md`
+  - `docs/ai/tasks/post-deletion-audit-thumbnail/decisions.md`
+  - `docs/ai/tasks/post-deletion-audit-thumbnail/plan.md`
+  - `docs/ai/tasks/post-deletion-audit-thumbnail/progress.md`
+  - `docs/ai/tasks/post-deletion-audit-thumbnail/qa-checklist.md`
+  - `docs/ai/entrypoints/LOOKBOOK.md`
+  - `docs/ai/entrypoints/FIREBASE.md`
+  - `docs/ai/DATA_SCHEMA.md`
+- 주요 진입점:
+  - Functions: `functions/src/index.ts`의 포스트 삭제 요청 생성 경로, `listLookbookDeletionRequests`, `purgeExpiredLookbookDeletions`
+  - iOS: `AdminLookbookDeletionManagementView.swift`, `AdminLookbookDeletionManagementViewModel.swift`, `LookbookDeletionRequest.swift`
+  - Repository/Cloud Functions wrapper: `CloudFunctionsLookbookDeletionRepository.swift`, `CloudFunctionsManager.swift`
+  - 권한/Storage: `firestore.rules`, Storage rules 위치 재확인 필요
+- 확정 방향:
+  - 포스트만 audit thumbnail을 남긴다.
+  - 브랜드/시즌 완료 목록은 이미지 UI를 표시하지 않는다.
+  - 원본 이미지는 purge 시 계속 삭제한다.
+  - 기존 purge 완료 포스트는 image backfill 대상이 아니다.
+- 구현 전 논의 필요:
+  - 보존 기간: 30일, 90일, 180일 중 선택.
+  - thumbnail 크기: 긴 변 160px, 200px, 240px 중 선택.
+  - 포맷: JPEG 고정 또는 WebP 지원.
+  - Storage 접근 방식: 관리자 권한 rules 또는 callable URL.
+  - cleanup 방식: Storage lifecycle rule 또는 scheduled function.
+  - thumbnail 생성 실패 시 삭제 요청 생성 실패 여부.
+- 권장 검증:
+  - Functions `npm run lint`, `npm run build`.
+  - iOS generic simulator build.
+  - Storage 권한/thumbnail 생성/삭제 후 보존 수동 QA.
+
+### 2. `admin-request-list-retention-unification` 구현 완료
+
+- 목적:
+  - 관리자 콘솔 요청 목록에서 진행 중 요청과 최근 처리 완료 요청을 일관되게 보여준다.
+  - 브랜드 요청 목록은 `새 요청`, `처리 중`, `보류`, `완료` 구조로 가고, `completed`/`rejected` 처리 이력은 최근 14일 기본 노출과 14일 이전 이력 조회를 모두 제공한다.
+  - 삭제 요청 목록은 `처리 중(active/failed)`과 `완료(purged)`를 분리하고, 영구 삭제 완료 요청은 최근 14일 기본 노출과 14일 이전 이력 조회를 모두 제공한다.
+  - 삭제 lifecycle의 7일 복구 기간은 유지하되, 관리자 운영 목록 노출 기간과 혼동하지 않는다.
+- 현재 상태:
+  - 설계 문서, phase 계획, 결정 문서, QA 체크리스트를 생성했다.
+  - Functions/iOS 구현을 완료했다.
+  - Functions 운영 배포를 완료했다.
+- 먼저 확인할 문서:
+  - `docs/ai/tasks/admin-request-list-retention-unification/design.md`
+  - `docs/ai/tasks/admin-request-list-retention-unification/decisions.md`
+  - `docs/ai/tasks/admin-request-list-retention-unification/plan.md`
+  - `docs/ai/tasks/admin-request-list-retention-unification/progress.md`
+  - `docs/ai/tasks/admin-request-list-retention-unification/qa-checklist.md`
+  - `docs/ai/entrypoints/LOOKBOOK.md`
+  - `docs/ai/entrypoints/FIREBASE.md`
+  - `docs/ai/DATA_SCHEMA.md`
+- 주요 진입점:
+  - Functions: `functions/src/index.ts`의 `listBrandRequestGroups`, `listLookbookDeletionRequests`
+  - 브랜드 요청 iOS: `AdminBrandRequestGroupsView.swift`, `AdminBrandRequestGroupsViewModel.swift`, `BrandRequest.swift`
+  - 삭제 요청 iOS: `AdminLookbookDeletionManagementView.swift`, `AdminLookbookDeletionManagementViewModel.swift`, `LookbookDeletionRequest.swift`
+  - Repository/UseCase: 브랜드 요청/삭제 요청 list 관련 protocol, CloudFunctions repository, CloudFunctionsManager wrapper
+- 확정된 화면/범위:
+  - 브랜드 요청 화면은 `새 요청`, `처리 중`, `보류`, `완료` segment로 간다.
+  - 14일 이전 처리 이력 조회도 이번 작업에 포함한다.
+  - 재시도 UX/API는 이번 핵심 작업 완료 후 별도 논의한다.
+- 완료 범위:
+  - `listBrandRequestGroups`는 `rejected/completed` group에서 `processedScope = recent | history`를 지원한다.
+  - `listLookbookDeletionRequests`는 `statusGroup = active | processed`와 `processedScope = recent | history`를 지원한다.
+  - 브랜드 요청 관리자 화면에 `완료` segment를 추가했다.
+  - 브랜드 요청 `보류`/`완료`는 최근 14일 목록을 기본 표시하고, 이전 기록 보기 버튼 후 14일 이전 기록을 아래에 추가 표시한다.
+  - 브랜드 요청 14일 이전 기록은 스크롤 prefetch로 다음 page를 불러온다.
+  - 삭제 요청 목록에 `처리 중` / `완료` status group picker를 추가했다.
+  - 삭제 요청 `완료`는 최근 14일 목록을 기본 표시하고, `이전 완료 기록 보기` 버튼 후 14일 이전 완료 기록을 아래에 추가 표시한다.
+  - 삭제 요청 14일 이전 완료 기록은 스크롤 prefetch로 다음 page를 불러온다.
+  - 삭제 요청 완료 목록 제목은 삭제 완료 후 원본 브랜드/시즌/포스트 문서가 없어도 요청 projection의 `brandName`/`seasonTitle`/`postCaption` snapshot을 fallback보다 우선 표시한다.
+- 검증:
+  - Functions `npm run lint` 통과.
+  - Functions `npm run build` 통과.
+  - iOS generic simulator build 통과.
+- 권장 검증:
+  - 총 관리자/브랜드 owner/admin 수동 QA.
+  - 삭제 요청 processed query에서 Firestore index 요구가 나오면 `firestore.indexes.json` 보강.
+
+### 2. `lookbook-admin-soft-delete-lifecycle` 완료
 
 - 목적:
   - 브랜드/시즌/포스트 삭제 기능을 계정 탈취나 운영 실수에도 즉시 영구 삭제로 이어지지 않는 lifecycle로 설계한다.

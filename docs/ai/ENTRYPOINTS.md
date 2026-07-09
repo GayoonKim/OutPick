@@ -35,6 +35,10 @@
 
 - 현재 작업 포인터: `docs/ai/tasks/active.md`
 - 루트 포인터: `HANDOFF.md`
+- 포스트 삭제 audit thumbnail 작업: `docs/ai/tasks/post-deletion-audit-thumbnail/design.md`, `docs/ai/tasks/post-deletion-audit-thumbnail/plan.md`, `docs/ai/tasks/post-deletion-audit-thumbnail/qa-checklist.md`
+- 포스트 삭제 audit thumbnail 서버/iOS 경계: `functions/src/index.ts`, `OutPick/Features/Lookbook/Views/Admin/AdminLookbookDeletionManagementView.swift`, `OutPick/Features/Lookbook/ViewModels/AdminLookbookDeletionManagementViewModel.swift`, `OutPick/Features/Lookbook/Domains/Entities/LookbookDeletionRequest.swift`
+- 관리자 요청 목록 14일 표시 정책 통일 작업: `docs/ai/tasks/admin-request-list-retention-unification/design.md`, `docs/ai/tasks/admin-request-list-retention-unification/plan.md`, `docs/ai/tasks/admin-request-list-retention-unification/qa-checklist.md`
+- 관리자 요청 목록 서버/iOS 경계: `functions/src/index.ts`, `OutPick/Features/Lookbook/Views/Admin/AdminBrandRequestGroupsView.swift`, `OutPick/Features/Lookbook/ViewModels/AdminBrandRequestGroupsViewModel.swift`, `OutPick/Features/Lookbook/Views/Admin/AdminLookbookDeletionManagementView.swift`, `OutPick/Features/Lookbook/ViewModels/AdminLookbookDeletionManagementViewModel.swift`
 - 룩북 삭제 lifecycle 완료 작업: `docs/ai/tasks/lookbook-admin-soft-delete-lifecycle/progress.md`, `docs/ai/tasks/lookbook-admin-soft-delete-lifecycle/qa-checklist.md`
 - 룩북 삭제 lifecycle 서버 경계: `functions/src/index.ts`, `firestore.rules`, `firestore.indexes.json`, `docs/ai/entrypoints/FIREBASE.md`
 - 룩북 삭제 lifecycle iOS 경계: `docs/ai/entrypoints/LOOKBOOK.md`
