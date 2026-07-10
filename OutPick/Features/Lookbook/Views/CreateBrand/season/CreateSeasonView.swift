@@ -177,6 +177,7 @@ struct CreateSeasonView: View {
             .tint(OutPickTheme.SwiftUIColor.accent)
             .outpickHiddenScrollContentBackground()
             .background(OutPickTheme.SwiftUIColor.backgroundBase)
+            .outpickDismissKeyboardOnTap()
             // ✅ 스크롤 시작 시 자동으로 닫기 (탭 충돌 없음)
             .simultaneousGesture(
                 DragGesture(minimumDistance: 10)

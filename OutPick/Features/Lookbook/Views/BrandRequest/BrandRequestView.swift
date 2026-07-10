@@ -121,6 +121,7 @@ struct BrandRequestView: View {
             showsBackButton: true,
             onBack: { coordinator.pop() }
         )
+        .outpickDismissKeyboardOnTap()
     }
 }
 

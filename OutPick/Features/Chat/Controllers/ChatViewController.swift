@@ -340,6 +340,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         
         view.addGestureRecognizer(tapGesture)
         view.addGestureRecognizer(longPressGesture)
+        installKeyboardDismissTapGesture()
         
         setupCustomNavigationBar()
         setupJoinRoomButtonIfNeeded()

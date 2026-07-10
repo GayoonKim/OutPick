@@ -131,6 +131,7 @@ class RoomSearchViewController: UIViewController {
         super.viewDidLoad()
         self.view.backgroundColor = OutPickTheme.ColorToken.backgroundBase
         
+        installKeyboardDismissTapGesture()
         setupNavigationBar()
         setupSearchBar()
         setupRecentSearchUI()

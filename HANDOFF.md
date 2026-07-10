@@ -20,6 +20,24 @@
 
 ## 2. 완료한 작업
 
+### 입력 화면 키보드 dismiss UX 보강
+
+- 2026-07-10 ad hoc UX 보강으로 입력 화면에서 키보드가 올라온 상태에 입력 영역 외부를 탭하면 키보드가 내려가도록 처리했다.
+- 공통 helper `OutPick/Infra/Utility/Support/KeyboardDismissSupport.swift`를 추가했다.
+  - UIKit 화면은 `installKeyboardDismissTapGesture()`를 적용한다.
+  - SwiftUI 화면은 `outpickDismissKeyboardOnTap()` modifier를 적용한다.
+  - `UITextField`/`UITextView` 내부 탭은 무시해 커서 이동과 입력 포커스를 방해하지 않는다.
+  - `cancelsTouchesInView = false`와 simultaneous gesture 허용으로 버튼/셀/스크롤 탭 흐름을 유지한다.
+- UIKit 적용 화면:
+  - 채팅방, 채팅방 생성, 채팅방 편집, 채팅방 검색, 프로필 2단계.
+- SwiftUI 적용 화면:
+  - 룩북 홈 검색, 브랜드 요청, 브랜드 생성, 시즌 생성, 시즌 URL 등록, 브랜드 관리, 브랜드 요청 보류 메모, 삭제 관리, 댓글/답글 입력, 댓글 신고 상세 입력.
+- 사용자 수동 확인으로 의도한 대로 동작함을 확인했다.
+- 검증:
+  - `git diff --check` 통과.
+  - `xcodebuild -scheme OutPick -destination 'generic/platform=iOS Simulator' build` 통과.
+  - 기존 linker search path 경고는 남아 있으나 빌드는 성공했다.
+
 ### 새 핵심 작업 설계
 
 - `docs/ai/tasks/post-deletion-audit-thumbnail/` task 디렉터리를 생성했다.
@@ -106,6 +124,7 @@
 
 ## 3. 아직 남은 작업
 
+- 키보드 dismiss UX 보강은 구현/빌드 검증/사용자 수동 QA 완료 상태다.
 - 새 핵심 작업 `admin-request-list-retention-unification`은 구현/로컬 검증/Functions 운영 배포 완료 상태다.
 - 새 핵심 작업 `post-deletion-audit-thumbnail`은 설계 문서화 완료, 구현 전 논의 대기 상태다.
 - `post-deletion-audit-thumbnail` 구현 전 결정 필요 항목은 audit thumbnail 보존 기간, thumbnail 크기/포맷, Storage 접근 방식, cleanup 방식, thumbnail 생성 실패 시 요청 생성 실패 여부다.
@@ -195,6 +214,32 @@
   - Phase C 완료와 검증 결과 반영. `.git/info/exclude` 대상이라 커밋에는 미포함.
 - `HANDOFF.md`
   - 현재 Phase C 완료 상태 기준으로 7개 항목 최신화.
+- `OutPick/Infra/Utility/Support/KeyboardDismissSupport.swift`
+  - UIKit/SwiftUI 공통 키보드 dismiss tap helper 추가.
+- `OutPick/Features/Chat/Controllers/ChatViewController.swift`
+- `OutPick/Features/Chat/Controllers/RoomCreateViewController.swift`
+- `OutPick/Features/Chat/Controllers/RoomEditViewController.swift`
+- `OutPick/Features/Chat/Controllers/RoomSearchViewController.swift`
+- `OutPick/Features/Profile/Views/SecondProfileViewController.swift`
+  - UIKit 입력 화면에 `installKeyboardDismissTapGesture()` 적용.
+- `OutPick/Features/Lookbook/Views/LookbookHome/LookbookHomeView.swift`
+- `OutPick/Features/Lookbook/Views/BrandRequest/BrandRequestView.swift`
+- `OutPick/Features/Lookbook/Views/CreateBrand/brand/CreateBrandView.swift`
+- `OutPick/Features/Lookbook/Views/CreateBrand/season/CreateSeasonView.swift`
+- `OutPick/Features/Lookbook/Views/CreateBrand/season/CreateSeasonFromURLView.swift`
+- `OutPick/Features/Lookbook/Views/Admin/AdminBrandManagementView.swift`
+- `OutPick/Features/Lookbook/Views/Admin/AdminBrandRequestGroupsView.swift`
+- `OutPick/Features/Lookbook/Views/Admin/AdminLookbookDeletionManagementView.swift`
+- `OutPick/Features/Lookbook/Views/PostDetail/CommentReportSheetView.swift`
+- `OutPick/Features/Lookbook/Views/PostDetail/PostCommentsSheetView.swift`
+- `OutPick/Features/Lookbook/Views/PostDetail/PostCommentRepliesSheetView.swift`
+  - SwiftUI 입력 화면에 `outpickDismissKeyboardOnTap()` 적용.
+- `docs/ai/ENTRYPOINTS.md`
+- `docs/ai/entrypoints/APP.md`
+- `docs/ai/entrypoints/CHAT.md`
+- `docs/ai/entrypoints/LOOKBOOK.md`
+- `docs/ai/entrypoints/PROFILE.md`
+  - 키보드 dismiss 공통 helper와 화면별 진입점 문서화.
 
 ## 5. 중요한 아키텍처 결정
 

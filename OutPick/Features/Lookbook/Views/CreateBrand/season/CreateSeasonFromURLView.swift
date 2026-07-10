@@ -70,6 +70,7 @@ struct CreateSeasonFromURLView: View {
             .tint(OutPickTheme.SwiftUIColor.accent)
             .outpickHiddenScrollContentBackground()
             .background(OutPickTheme.SwiftUIColor.backgroundBase)
+            .outpickDismissKeyboardOnTap()
             .navigationTitle("시즌 URL로 등록")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

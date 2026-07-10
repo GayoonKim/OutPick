@@ -43,6 +43,7 @@ struct AdminBrandRequestGroupsView: View {
             showsBackButton: true,
             onBack: { coordinator.pop() }
         )
+        .outpickDismissKeyboardOnTap()
         .task {
             await viewModel.loadInitial()
         }
@@ -524,6 +525,7 @@ private struct RejectionReasonSheet: View {
         }
         .padding(20)
         .background(OutPickTheme.SwiftUIColor.backgroundBase.ignoresSafeArea())
+        .outpickDismissKeyboardOnTap()
     }
 }
 

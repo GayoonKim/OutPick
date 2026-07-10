@@ -49,6 +49,7 @@ struct LookbookHomeView: View {
                 }
             }
             .tint(OutPickTheme.SwiftUIColor.accent)
+            .outpickDismissKeyboardOnTap()
             .task {
                 await viewModel.loadInitialPageIfNeeded()
             }

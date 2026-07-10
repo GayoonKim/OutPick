@@ -101,6 +101,7 @@ final class RoomCreateViewController: UIViewController, ChatModalAnimatable, UII
         setupCustomNavigationBar()
         setupTextView(roomNameTextView)
         setupTextView(roomDescriptionTextView)
+        installKeyboardDismissTapGesture()
         addImageButtonSetup()
         setupCreateButton()
 

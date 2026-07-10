@@ -2,6 +2,8 @@
 
 ## 현재 상태
 
+- 2026-07-10 ad hoc UX 보강으로, 입력 화면에서 키보드가 올라온 상태에 입력 영역 외부를 탭하면 키보드가 내려가도록 공통 helper와 주요 UIKit/SwiftUI 입력 화면 적용을 완료했다.
+- 키보드 dismiss 공통 진입점은 `OutPick/Infra/Utility/Support/KeyboardDismissSupport.swift`이며, UIKit은 `installKeyboardDismissTapGesture()`, SwiftUI는 `outpickDismissKeyboardOnTap()`을 사용한다.
 - 현재 다음 핵심 task는 `post-deletion-audit-thumbnail`이다.
 - 목표는 포스트 삭제 요청이 영구 삭제(`purged`)된 뒤에도 운영자가 어떤 포스트가 삭제되었는지 식별할 수 있도록, 포스트에 한해서 감사용 저해상도 thumbnail snapshot을 남기는 것이다.
 - 브랜드/시즌 삭제 완료 목록은 이미지 UI를 표시하지 않는 현재 정책을 유지한다.

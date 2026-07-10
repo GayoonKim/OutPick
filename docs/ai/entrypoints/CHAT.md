@@ -18,6 +18,8 @@ Chat 기능 수정 시 관련 화면, ViewModel, UseCase, Repository, 검색 인
 
 방 목록 검색은 방 이름과 방 설명에서 자동 생성한 검색 token을 기준으로 동작한다. 입력과 상태 흐름은 `RoomSearchViewModel`의 Combine state publisher가 소유하고, 방 선택 같은 단발 라우팅 이벤트는 `RoomSearchViewController`의 클로저를 유지한다.
 
+검색창 외 영역 탭 시 키보드 dismiss는 `KeyboardDismissSupport.installKeyboardDismissTapGesture()`로 처리한다.
+
 ## 전체 채팅방 목록 미리보기
 
 - 화면: `OutPick/Features/Chat/Controllers/RoomListsCollectionViewController.swift`
@@ -41,6 +43,8 @@ Chat 기능 수정 시 관련 화면, ViewModel, UseCase, Repository, 검색 인
 - Firestore rules: `firestore.rules`
 
 비참여 사용자는 전체 채팅방 목록/검색에서 방을 열어 메시지, 이미지 버블, 비디오 썸네일/메타를 미리 볼 수 있다. 단, 참여 전에는 뒤로가기와 하단 input bar 위치의 참여하기 버튼 외 상호작용을 막는다. 이미지 확대, 동영상 재생, 설정/검색, 메시지 전송/첨부, retry, 메시지 메뉴, 발신자 프로필/룩북 공유 이동 같은 참여자 전용 동작은 `ChatViewController`의 preview guard에서 차단한다.
+
+채팅방 입력창 외 영역 탭 시 키보드 dismiss는 기존 attachment close tap 흐름과 함께 `KeyboardDismissSupport.installKeyboardDismissTapGesture()`로 보강한다.
 
 ## 참여중 채팅방 목록
 

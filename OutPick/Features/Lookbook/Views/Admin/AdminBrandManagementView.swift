@@ -116,6 +116,7 @@ struct AdminBrandManagementView: View {
             showsBackButton: true,
             onBack: handleBack
         )
+        .outpickDismissKeyboardOnTap()
         .task {
             await viewModel.loadInitialBrandIfNeeded()
         }

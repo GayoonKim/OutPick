@@ -42,6 +42,7 @@ struct PostCommentRepliesSheetView: View {
             repliesContent
         }
         .background(OutPickTheme.SwiftUIColor.backgroundBase.ignoresSafeArea())
+        .outpickDismissKeyboardOnTap()
         .safeAreaInset(edge: .bottom) {
             inputBar
         }

@@ -58,6 +58,7 @@ struct CreateBrandView: View {
                 OutPickTheme.SwiftUIColor.backgroundBase.ignoresSafeArea()
             )
         }
+        .outpickDismissKeyboardOnTap()
         .sheet(isPresented: $isImagePickerPresented) {
             BrandLogoPicker(mediaProcessor: mediaProcessor) { picked in
                 viewModel.setPickedLogo(

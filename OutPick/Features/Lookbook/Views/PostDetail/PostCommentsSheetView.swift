@@ -68,6 +68,7 @@ struct PostCommentsSheetView: View {
             }
         }
         .background(OutPickTheme.SwiftUIColor.backgroundBase.ignoresSafeArea())
+        .outpickDismissKeyboardOnTap()
         .safeAreaInset(edge: .bottom) {
             inputBar
         }

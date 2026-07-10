@@ -158,6 +158,7 @@ final class SecondProfileViewController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = OutPickTheme.ColorToken.backgroundBase
 
+        installKeyboardDismissTapGesture()
         backButton.tintColor = OutPickTheme.ColorToken.accent
         backButton.setTitleColor(OutPickTheme.ColorToken.accent, for: .normal)
 

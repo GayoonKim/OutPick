@@ -161,6 +161,7 @@ struct CommentReportSheetView: View {
         .padding(.horizontal, 20)
         .padding(.bottom, 14)
         .background(OutPickTheme.SwiftUIColor.backgroundBase.ignoresSafeArea())
+        .outpickDismissKeyboardOnTap()
     }
 
     private var reportDetail: String? {

@@ -13,6 +13,7 @@
 - 탭 조립: `OutPick/App/TabBarController/Composition`
 - 기능 코드: `OutPick/Features`
 - 공통 인프라: `OutPick/Infra`
+- 공통 키보드 dismiss helper: `OutPick/Infra/Utility/Support/KeyboardDismissSupport.swift`
 - 로컬 DB/데이터 schema: `docs/ai/entrypoints/DATA.md`
 - Firebase Functions: `functions/src/index.ts`
 - Firestore rules: `firestore.rules`

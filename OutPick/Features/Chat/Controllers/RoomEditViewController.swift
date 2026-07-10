@@ -197,6 +197,7 @@ final class RoomEditViewController: UIViewController, PHPickerViewControllerDele
         super.viewDidLoad()
         view.backgroundColor = OutPickTheme.ColorToken.backgroundBase
 
+        installKeyboardDismissTapGesture()
         setupCustomNavigationBar()
         bindKeyboardPublisher()
         setupScrollUI()

@@ -45,6 +45,7 @@ struct AdminLookbookDeletionManagementView: View {
                 title: allowsDeletionSelection ? "삭제 관리" : "삭제 요청 목록",
                 onBack: { coordinator.pop() }
             )
+            .outpickDismissKeyboardOnTap()
             .task {
                 await brandAdminSessionStore.ensureWritableBrandsLoaded()
                 await viewModel.loadInitialContent(isTotalAdmin: brandAdminSessionStore.isTotalAdmin)

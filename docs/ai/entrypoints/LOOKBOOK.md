@@ -18,6 +18,8 @@
 - DTO/Firestore mapping: `OutPick/Features/Lookbook/Models`
 - Media/image services: `OutPick/Features/Lookbook/Services`
 - Navigation helpers: `OutPick/Features/Lookbook/Navigation`
+- 입력 화면 키보드 dismiss: `OutPick/Infra/Utility/Support/KeyboardDismissSupport.swift`
+  - SwiftUI 입력 화면은 root 또는 sheet root에 `outpickDismissKeyboardOnTap()`을 적용한다.
 
 ## 조립과 환경
 

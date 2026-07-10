@@ -24,6 +24,7 @@
 - Second profile view controller: `OutPick/Features/Profile/Views/SecondProfileViewController.swift`
   - 두 번째 프로필 입력/이미지 선택 UI를 확인한다.
   - 로컬 draft UserDefaults 저장/복원, back button 저장, UIKit interactive pop 완료 시 draft 저장, 저장 중 swipe-back 차단을 확인한다.
+  - 닉네임 입력 외 영역 탭 시 키보드 dismiss는 `KeyboardDismissSupport.installKeyboardDismissTapGesture()`로 처리한다.
 - Second profile view model: `OutPick/Features/Profile/ViewModels/SecondProfileViewModel.swift`
   - avatar/profile draft 저장 흐름을 확인한다.
   - 저장 완료 후 current user session profile 갱신은 상위 완료 콜백 경계와 연결된다.

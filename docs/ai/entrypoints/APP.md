@@ -105,4 +105,7 @@
 - Keychain: `OutPick/Infra/Keychain`
 - Cache/Image cache: `OutPick/Infra/Cache`
 - Shared UI: `OutPick/Infra/ShareView`
+- Keyboard dismiss: `OutPick/Infra/Utility/Support/KeyboardDismissSupport.swift`
+  - UIKit 화면은 `installKeyboardDismissTapGesture()`를 view/controller에 적용한다.
+  - SwiftUI 화면은 `outpickDismissKeyboardOnTap()` modifier를 root 또는 입력 sheet root에 적용한다.
 - Navigation transitions: `OutPick/Infra/Utility/Transitions`
