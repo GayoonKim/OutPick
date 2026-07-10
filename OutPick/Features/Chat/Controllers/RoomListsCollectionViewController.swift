@@ -8,7 +8,7 @@
 import UIKit
 import Kingfisher
 
-class RoomListsCollectionViewController: UICollectionViewController, UIGestureRecognizerDelegate, ChatModalAnimatable {
+class RoomListsCollectionViewController: UICollectionViewController, UIGestureRecognizerDelegate, UICollectionViewDataSourcePrefetching, ChatModalAnimatable {
     enum Section: Hashable {
         case main
     }
@@ -20,6 +20,9 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
     var dataSource: DataSourceType!
     private let viewModel: RoomListsViewModel
     private let currentUserProvider: any CurrentUserProviding
+    private let roomImageManager: RoomImageManaging
+    private let avatarImageManager: AvatarImageManaging
+    private var imagePrefetchTasks: [IndexPath: Task<Void, Never>] = [:]
 
     // MARK: - Navigation callbacks (Coordinator)
     var onSelectRoom: ((ChatRoom) -> Void)?
@@ -34,15 +37,23 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
     init(
         collectionViewLayout layout: UICollectionViewLayout,
         viewModel: RoomListsViewModel,
-        currentUserProvider: any CurrentUserProviding
+        currentUserProvider: any CurrentUserProviding,
+        roomImageManager: RoomImageManaging,
+        avatarImageManager: AvatarImageManaging
     ) {
         self.viewModel = viewModel
         self.currentUserProvider = currentUserProvider
+        self.roomImageManager = roomImageManager
+        self.avatarImageManager = avatarImageManager
         super.init(collectionViewLayout: layout)
     }
 
     required init?(coder: NSCoder) {
         fatalError("Storyboard initialization is no longer supported for RoomListsCollectionViewController.")
+    }
+
+    deinit {
+        imagePrefetchTasks.values.forEach { $0.cancel() }
     }
 
     override func viewDidLoad() {
@@ -52,6 +63,7 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
         dataSource = configureDataSource()
         collectionView.register(RoomListCollectionViewCell.self, forCellWithReuseIdentifier: RoomListCollectionViewCell.identifier)
         collectionView.dataSource = dataSource
+        collectionView.prefetchDataSource = self
         collectionView.collectionViewLayout = configureLayout()
         collectionView.backgroundColor = OutPickTheme.ColorToken.backgroundBase
         collectionView.translatesAutoresizingMaskIntoConstraints = false
@@ -112,7 +124,9 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
             cell.configure(
                 room: item.room,
                 messages: item.messages,
-                currentUserUID: self.currentUserProvider.canonicalUserID
+                currentUserUID: self.currentUserProvider.canonicalUserID,
+                roomImageManager: self.roomImageManager,
+                avatarImageManager: self.avatarImageManager
             )
 
             return cell
@@ -149,6 +163,46 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
         onSelectRoom(selectedItem.room)
     }
 
+    func collectionView(_ collectionView: UICollectionView, prefetchItemsAt indexPaths: [IndexPath]) {
+        let items = indexPaths.compactMap { indexPath -> (IndexPath, ChatRoomPreviewItem)? in
+            guard let item = dataSource.itemIdentifier(for: indexPath) else { return nil }
+            return (indexPath, item)
+        }
+
+        for (indexPath, item) in items {
+            guard imagePrefetchTasks[indexPath] == nil else { continue }
+
+            let roomPaths = roomCoverPaths(from: [item])
+            let avatarPaths = senderAvatarPaths(from: [item])
+            guard !roomPaths.isEmpty || !avatarPaths.isEmpty else { continue }
+
+            let roomImageManager = self.roomImageManager
+            let avatarImageManager = self.avatarImageManager
+            imagePrefetchTasks[indexPath] = Task { [weak self] in
+                await roomImageManager.prefetchImages(
+                    paths: roomPaths,
+                    maxBytes: 3 * 1024 * 1024,
+                    maxConcurrent: 2
+                )
+                await avatarImageManager.prefetchAvatars(
+                    paths: avatarPaths,
+                    maxBytes: 2 * 1024 * 1024,
+                    maxConcurrent: 3
+                )
+                await MainActor.run {
+                    self?.imagePrefetchTasks[indexPath] = nil
+                }
+            }
+        }
+    }
+
+    func collectionView(_ collectionView: UICollectionView, cancelPrefetchingForItemsAt indexPaths: [IndexPath]) {
+        for indexPath in indexPaths {
+            imagePrefetchTasks[indexPath]?.cancel()
+            imagePrefetchTasks[indexPath] = nil
+        }
+    }
+
     @objc private func createRoomBtnTapped() {
         guard let onCreateRoom else {
             assertionFailure("RoomListsCollectionViewController requires coordinator-owned room creation routing.")
@@ -181,11 +235,29 @@ private extension RoomListsCollectionViewController {
             self.collectionView.topAnchor.constraint(equalTo: navBar.bottomAnchor),
             self.collectionView.leadingAnchor.constraint(equalTo: self.view.leadingAnchor),
             self.collectionView.trailingAnchor.constraint(equalTo: self.view.trailingAnchor),
-            self.collectionView.bottomAnchor.constraint(equalTo: self.view.bottomAnchor)
+            self.collectionView.bottomAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.bottomAnchor)
         ]
 
         NSLayoutConstraint.activate(constraints)
         
         navBar.configureForRoomList(target: self, onSearch: #selector(searchBtnTapped), onCreate: #selector(createRoomBtnTapped))
+    }
+
+    func roomCoverPaths(from items: [ChatRoomPreviewItem]) -> [String] {
+        Array(Set(items.compactMap { item in
+            guard let path = item.room.coverImagePath, !path.isEmpty else { return nil }
+            return path
+        }))
+    }
+
+    func senderAvatarPaths(from items: [ChatRoomPreviewItem]) -> [String] {
+        let currentUserUID = currentUserProvider.canonicalUserID
+        let paths = items.flatMap(\.messages).compactMap { message -> String? in
+            guard message.senderUID != currentUserUID,
+                  let path = message.senderAvatarPath,
+                  !path.isEmpty else { return nil }
+            return path
+        }
+        return Array(Set(paths))
     }
 }

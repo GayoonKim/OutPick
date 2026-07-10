@@ -145,7 +145,7 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
 
         NSLayoutConstraint.activate([
             joinedRoomListCollectionView.topAnchor.constraint(equalTo: customNavigationBar.bottomAnchor),
-            joinedRoomListCollectionView.bottomAnchor.constraint(equalTo: self.view.bottomAnchor),
+            joinedRoomListCollectionView.bottomAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.bottomAnchor),
             joinedRoomListCollectionView.leadingAnchor.constraint(equalTo: self.view.leadingAnchor),
             joinedRoomListCollectionView.trailingAnchor.constraint(equalTo: self.view.trailingAnchor),
         ])

@@ -38,7 +38,9 @@ final class ChatCoordinator {
         let listVC = RoomListsCollectionViewController(
             collectionViewLayout: UICollectionViewFlowLayout(),
             viewModel: container.makeRoomListsViewModel(),
-            currentUserProvider: container.currentUserProvider
+            currentUserProvider: container.currentUserProvider,
+            roomImageManager: container.makeRoomImageManager(),
+            avatarImageManager: container.makeAvatarImageManager()
         )
 
         listVC.onSelectRoom = { [weak self, weak listVC] room in

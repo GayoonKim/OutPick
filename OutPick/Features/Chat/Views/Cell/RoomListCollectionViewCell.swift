@@ -9,7 +9,6 @@ import UIKit
 
 class RoomListCollectionViewCell: UICollectionViewCell {
     static let identifier = "RoomListCollectionViewCell"
-    private let roomImageManager: RoomImageManaging = RoomImageService.shared
     private var imageLoadTask: Task<Void, Never>?
     private var representedImagePath: String?
 
@@ -130,7 +129,13 @@ class RoomListCollectionViewCell: UICollectionViewCell {
         ])
     }
     
-    func configure(room: ChatRoom, messages: [ChatMessage], currentUserUID: String) {
+    func configure(
+        room: ChatRoom,
+        messages: [ChatMessage],
+        currentUserUID: String,
+        roomImageManager: RoomImageManaging,
+        avatarImageManager: AvatarImageManaging
+    ) {
         imageLoadTask?.cancel()
         imageLoadTask = nil
         representedImagePath = room.coverImagePath
@@ -160,22 +165,25 @@ class RoomListCollectionViewCell: UICollectionViewCell {
             for message in messages {
                 let preview = MessagePreviewView()
                 let isMine = message.senderUID == currentUserUID
-                preview.configure(with: message, isMine: isMine)
+                preview.configure(
+                    with: message,
+                    isMine: isMine,
+                    avatarImageManager: avatarImageManager
+                )
                 previewStackView.addArrangedSubview(preview)
             }
         }
 
-        loadRoomImageIfNeeded(for: room)
+        loadRoomImageIfNeeded(for: room, roomImageManager: roomImageManager)
     }
     
     func configureJoined(room: ChatRoom, message: ChatMessage) {
         
     }
 
-    private func loadRoomImageIfNeeded(for room: ChatRoom) {
+    private func loadRoomImageIfNeeded(for room: ChatRoom, roomImageManager: RoomImageManaging) {
         guard let imagePath = room.coverImagePath, !imagePath.isEmpty else { return }
 
-        let roomImageManager = self.roomImageManager
         imageLoadTask = Task { [weak self] in
             guard let self else { return }
 
@@ -215,6 +223,11 @@ class RoomListCollectionViewCell: UICollectionViewCell {
 
 // MARK: - MessagePreviewView
 private class MessagePreviewView: UIView {
+    private let avatarMaxBytes = 2 * 1024 * 1024
+    private var avatarLoadTask: Task<Void, Never>?
+    private var representedMessageID: String?
+    private var representedAvatarPath: String?
+
     private let profileImageView: UIImageView = {
         let imageView = UIImageView()
         imageView.translatesAutoresizingMaskIntoConstraints = false
@@ -351,6 +364,10 @@ private class MessagePreviewView: UIView {
         super.init(coder: coder)
         setupLayout()
     }
+
+    deinit {
+        avatarLoadTask?.cancel()
+    }
     
     private func setupLayout() {
         self.backgroundColor = OutPickTheme.ColorToken.backgroundRaised
@@ -424,7 +441,17 @@ private class MessagePreviewView: UIView {
         setContentCompressionResistancePriority(.required, for: .vertical)
     }
     
-    func configure(with message: ChatMessage, isMine: Bool) {
+    func configure(
+        with message: ChatMessage,
+        isMine: Bool,
+        avatarImageManager: AvatarImageManaging
+    ) {
+        avatarLoadTask?.cancel()
+        avatarLoadTask = nil
+        representedMessageID = message.ID
+        representedAvatarPath = nil
+        profileImageView.image = UIImage(named: "Default_Profile")
+
         // 기본 본문/닉네임 세팅
         nicknameLabel.text = message.senderNickname
         if message.isDeleted {
@@ -502,6 +529,48 @@ private class MessagePreviewView: UIView {
             timeRightOfBubbleLeading?.isActive = true
             timeLabel.textAlignment = .left
             timeLabel.textColor = OutPickTheme.ColorToken.textTertiary
+
+            loadAvatarIfNeeded(
+                for: message,
+                avatarImageManager: avatarImageManager
+            )
+        }
+    }
+
+    private func loadAvatarIfNeeded(
+        for message: ChatMessage,
+        avatarImageManager: AvatarImageManaging
+    ) {
+        guard let avatarPath = message.senderAvatarPath, !avatarPath.isEmpty else { return }
+
+        representedAvatarPath = avatarPath
+        let messageID = message.ID
+        let avatarMaxBytes = self.avatarMaxBytes
+
+        avatarLoadTask = Task { [weak self] in
+            guard let self else { return }
+
+            if let cached = await avatarImageManager.cachedAvatar(for: avatarPath) {
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    guard self.representedMessageID == messageID,
+                          self.representedAvatarPath == avatarPath else { return }
+                    self.profileImageView.image = cached
+                }
+                return
+            }
+
+            guard let image = try? await avatarImageManager.loadAvatar(
+                for: avatarPath,
+                maxBytes: avatarMaxBytes
+            ) else { return }
+
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard self.representedMessageID == messageID,
+                      self.representedAvatarPath == avatarPath else { return }
+                self.profileImageView.image = image
+            }
         }
     }
     

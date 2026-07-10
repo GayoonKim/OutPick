@@ -18,6 +18,21 @@ Chat 기능 수정 시 관련 화면, ViewModel, UseCase, Repository, 검색 인
 
 방 목록 검색은 방 이름과 방 설명에서 자동 생성한 검색 token을 기준으로 동작한다. 입력과 상태 흐름은 `RoomSearchViewModel`의 Combine state publisher가 소유하고, 방 선택 같은 단발 라우팅 이벤트는 `RoomSearchViewController`의 클로저를 유지한다.
 
+## 전체 채팅방 목록 미리보기
+
+- 화면: `OutPick/Features/Chat/Controllers/RoomListsCollectionViewController.swift`
+- 셀: `OutPick/Features/Chat/Views/Cell/RoomListCollectionViewCell.swift`
+- 화면 조립/DI: `OutPick/Features/Chat/ChatCoordinator.swift`
+- ViewModel: `OutPick/Features/Chat/ViewModels/RoomListsViewModel.swift`
+- UseCase: `OutPick/Features/Chat/Domain/UseCases/RoomListUseCase.swift`
+- Repository protocol: `OutPick/DB/Firebase/DatabaseManager/Protocols/FirebaseChatRoomRepositoryProtocol.swift`
+- Repository implementation: `OutPick/DB/Firebase/DatabaseManager/Repositories/FirebaseChatRoomRepository.swift`
+- 방 커버 이미지: `OutPick/Features/Chat/Services/ImageLoading/RoomImageService.swift`
+- 메시지 발신자 avatar: `OutPick/Features/Chat/Services/ImageLoading/AvatarImageService.swift`
+- 이미지 메모리/디스크 캐시: `OutPick/Infra/Cache/ImageCache/ImageCachePipeline.swift`
+
+전체 채팅방 목록은 `Rooms.lastMessageAt DESC` 기준으로 방을 가져오고, 각 방의 최근 메시지 3개를 함께 불러와 미리보기로 표시한다. `ChatCoordinator`는 room/avatar image manager를 목록 화면에 주입한다. `RoomListsCollectionViewController`는 `UICollectionViewDataSourcePrefetching`으로 곧 보일 방의 커버 이미지와 상대방 메시지 `senderAvatarPath`를 미리 캐시에 적재한다. 셀 구성 시 `RoomListCollectionViewCell`은 주입받은 room/avatar image manager를 사용해 캐시를 먼저 확인하고, 없으면 Storage에서 로드한다. 내 메시지 미리보기는 avatar를 숨기고, 상대방 메시지 미리보기만 avatar를 표시한다. 이미지 캐시 정책은 `RoomImageService`/`AvatarImageService`가 `ImageCachePipeline`을 통해 메모리와 전용 디스크 캐시에 저장하는 흐름을 따른다. 컬렉션 뷰 하단은 메인 탭 바와 겹치지 않도록 `view.safeAreaLayoutGuide.bottomAnchor`에 맞춘다.
+
 ## 비참여 채팅방 Preview
 
 - 화면: `OutPick/Features/Chat/Controllers/ChatViewController.swift`
@@ -37,6 +52,7 @@ Chat 기능 수정 시 관련 화면, ViewModel, UseCase, Repository, 검색 인
 - Firestore indexes: `firestore.indexes.json`
 - Shared read state: `OutPick/Features/Chat/Stores/ChatRoomReadStateStore.swift`
 - App-running banner stream: `OutPick/Infra/Banner/BannerManager.swift`
+- 하단 레이아웃: `OutPick/Features/Chat/Controllers/JoinedRoomsViewController.swift`
 
 참여중 채팅방 목록은 Firestore realtime listener를 사용하지 않는다. 화면 진입/앱 재실행 시 단발 fetch로 authoritative snapshot을 만들고, 사용자가 pull-to-refresh로 재동기화한다. 앱 실행 중 참여중 방에 새 메시지가 도착하는 경우에는 `BannerManager`의 socket stream이 `ChatRoomReadStateStore`와 `FirebaseChatRoomRepository`의 local preview cache를 갱신해 목록 화면에 unread/마지막 메시지를 즉시 반영한다. 현재 목록 source는 `users/{uid}/joinedRooms/{roomID}` projection이며, 해당 roomID로 `Rooms` 문서를 batch fetch한 뒤 클라이언트에서 `Rooms.lastMessageAt DESC`로 정렬한다.
 
@@ -50,6 +66,7 @@ Chat 기능 수정 시 관련 화면, ViewModel, UseCase, Repository, 검색 인
 - 메시지 전송 시 room metadata의 `lastMessage*`는 즉시 갱신하지만, 사용자별 projection의 `lastMessage*` fan-out은 하지 않는다.
 - cutover 후 사용자 프로필 문서의 `joinedRooms` 배열은 bootstrap/runtime source로 사용하지 않는다.
 - 관련 task: `docs/ai/tasks/chat-membership-model-transition/*`
+- 참여중 목록 컬렉션 뷰 하단은 메인 탭 바와 겹치지 않도록 `view.safeAreaLayoutGuide.bottomAnchor`에 맞춘다.
 
 ## Realtime, Banner, Read State
 
