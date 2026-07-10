@@ -43,6 +43,7 @@ struct CreateBrandCandidateSelectionView: View {
     @State private var submissionTask: Task<Void, Never>?
     @State private var isLoading: Bool = false
     @State private var isSubmitting: Bool = false
+    @State private var didFailToDiscoverCandidates: Bool = false
     @State private var message: String?
 
     var body: some View {
@@ -170,7 +171,9 @@ struct CreateBrandCandidateSelectionView: View {
                 }
             }
 
-            if candidates.isEmpty {
+            if didFailToDiscoverCandidates {
+                discoveryFailureSection
+            } else if candidates.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
                     Text(isLoading ? "시즌을 불러오고 있습니다." : "더 가져올 시즌이 없습니다.")
                         .font(.subheadline.weight(.semibold))
@@ -234,6 +237,46 @@ struct CreateBrandCandidateSelectionView: View {
                 }
             }
         }
+    }
+
+    private var discoveryFailureSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(message ?? "시즌 목록을 불러오지 못했습니다.")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text("0개 시즌을 불러왔습니다.")
+                .font(.footnote)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button {
+                Task {
+                    await loadCandidates()
+                }
+            } label: {
+                HStack {
+                    if isLoading {
+                        ProgressView()
+                            .tint(OutPickTheme.SwiftUIColor.backgroundBase)
+                    } else {
+                        Text("재시도")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+            }
+            .foregroundStyle(OutPickTheme.SwiftUIColor.backgroundBase)
+            .background(OutPickTheme.SwiftUIColor.accent)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .disabled(isLoading)
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(OutPickTheme.SwiftUIColor.surfaceBase)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
     private var submitButton: some View {
@@ -515,16 +558,13 @@ struct CreateBrandCandidateSelectionView: View {
     private func loadCandidates() async {
         isLoading = true
         message = nil
+        didFailToDiscoverCandidates = false
         defer { isLoading = false }
 
         do {
             if let refreshSeasonCandidatesUseCase {
-                do {
-                    _ = try await refreshSeasonCandidatesUseCase
-                        .discoverSeasonCandidates(brandID: createdBrand.id)
-                } catch {
-                    message = "최신 시즌을 확인하지 못해 저장된 후보를 보여드립니다."
-                }
+                _ = try await refreshSeasonCandidatesUseCase
+                    .discoverSeasonCandidates(brandID: createdBrand.id)
             }
 
             candidates = try await loadSelectableSeasonCandidatesUseCase.execute(
@@ -537,7 +577,10 @@ struct CreateBrandCandidateSelectionView: View {
                 message = "지금 바로 가져올 수 있는 시즌이 없습니다."
             }
         } catch {
-            message = "시즌 후보를 불러오지 못했습니다."
+            candidates = []
+            selectedCandidateIDs = []
+            didFailToDiscoverCandidates = true
+            message = "시즌 목록을 불러오지 못했습니다."
         }
     }
 

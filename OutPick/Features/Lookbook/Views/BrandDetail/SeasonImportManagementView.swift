@@ -98,39 +98,38 @@ struct SeasonImportManagementView: View {
 
             if job.assetCompletedCount > 0 || job.assetFailedCount > 0 {
                 Text(
-                    "이미지 성공 \(job.assetCompletedCount) · 실패 \(job.assetFailedCount)"
+                    "이미지 \(job.assetCompletedCount + job.assetFailedCount)개 중 \(job.assetCompletedCount)개 완료, \(job.assetFailedCount)개 실패"
                 )
                 .font(.footnote)
                 .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
             }
 
-            if let errorMessage = job.errorMessage, !errorMessage.isEmpty {
-                Text(errorMessage)
-                    .font(.footnote)
-                    .foregroundStyle(OutPickTheme.SwiftUIColor.warning)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
             if job.canRetryAssets || viewModel.hasActiveRetry(for: job) {
-                Button {
-                    Task {
-                        await viewModel.retryAssets(for: job)
+                HStack {
+                    Spacer()
+                    Button {
+                        Task {
+                            await viewModel.retryAssets(for: job)
+                        }
+                    } label: {
+                        if viewModel.retryingJobID == job.id {
+                            ProgressView()
+                                .tint(OutPickTheme.SwiftUIColor.accent)
+                                .frame(width: 44)
+                        } else if viewModel.hasActiveRetry(for: job) {
+                            Text("재시도 중")
+                        } else {
+                            Text("재시도")
+                        }
                     }
-                } label: {
-                    if viewModel.retryingJobID == job.id {
-                        ProgressView()
-                            .tint(OutPickTheme.SwiftUIColor.accent)
-                    } else if viewModel.hasActiveRetry(for: job) {
-                        Text("이미지 재시도 진행 중")
-                    } else {
-                        Text("실패 이미지 다시 가져오기")
-                    }
+                    .font(.caption.weight(.semibold))
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(
+                        viewModel.retryingJobID != nil ||
+                        viewModel.hasActiveRetry(for: job)
+                    )
                 }
-                .buttonStyle(.bordered)
-                .disabled(
-                    viewModel.retryingJobID != nil ||
-                    viewModel.hasActiveRetry(for: job)
-                )
             }
         }
         .padding(.vertical, 6)

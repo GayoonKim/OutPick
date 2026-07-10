@@ -536,6 +536,59 @@ final class CloudFunctionsManager {
         )
     }
 
+    func runLookbookExtractionDiagnostic(
+        brandID: String,
+        type: LookbookExtractionDiagnosticType,
+        sourceImportJobID: String? = nil,
+        seasonID: String? = nil
+    ) async throws -> LookbookExtractionDiagnostic {
+        var data: [String: Any] = [
+            "brandID": brandID,
+            "type": type.rawValue
+        ]
+        if let sourceImportJobID {
+            data["sourceImportJobID"] = sourceImportJobID
+        }
+        if let seasonID {
+            data["seasonID"] = seasonID
+        }
+
+        let response = try await callFunction(
+            "runLookbookExtractionDiagnostic",
+            data: data
+        )
+        guard let rawDiagnostic = response["diagnostic"] as? [String: Any] else {
+            throw CloudFunctionsManagerError.missingField("diagnostic")
+        }
+        return try lookbookExtractionDiagnosticValue(rawDiagnostic)
+    }
+
+    func getLatestLookbookExtractionDiagnostic(
+        brandID: String,
+        type: LookbookExtractionDiagnosticType,
+        sourceImportJobID: String? = nil
+    ) async throws -> LookbookExtractionDiagnostic? {
+        var data: [String: Any] = [
+            "brandID": brandID,
+            "type": type.rawValue
+        ]
+        if let sourceImportJobID {
+            data["sourceImportJobID"] = sourceImportJobID
+        }
+
+        let response = try await callFunction(
+            "getLatestLookbookExtractionDiagnostic",
+            data: data
+        )
+        guard let value = response["diagnostic"], !(value is NSNull) else {
+            return nil
+        }
+        guard let rawDiagnostic = value as? [String: Any] else {
+            throw CloudFunctionsManagerError.missingField("diagnostic")
+        }
+        return try lookbookExtractionDiagnosticValue(rawDiagnostic)
+    }
+
     func searchBrands(
         query: String,
         limit: Int
@@ -1312,6 +1365,157 @@ final class CloudFunctionsManager {
                     ?? "시즌 가져오기 작업을 준비하지 못했습니다."
             )
         }
+    }
+
+    private func lookbookExtractionDiagnosticValue(
+        _ dictionary: [String: Any]
+    ) throws -> LookbookExtractionDiagnostic {
+        let rawType = try stringValue(dictionary, key: "type")
+        let rawStatus = try stringValue(dictionary, key: "status")
+
+        return LookbookExtractionDiagnostic(
+            id: try stringValue(dictionary, key: "id"),
+            brandID: BrandID(value: try stringValue(dictionary, key: "brandID")),
+            type: LookbookExtractionDiagnosticType(rawValue: rawType) ?? .seasonDiscovery,
+            status: LookbookExtractionDiagnosticStatus(rawValue: rawStatus) ?? .failed,
+            sourceURL: optionalStringValue(dictionary, key: "sourceURL"),
+            summaryMessage: optionalStringValue(dictionary, key: "summaryMessage"),
+            errorMessage: optionalStringValue(dictionary, key: "errorMessage"),
+            failureReasons: lookbookExtractionFailureReasons(dictionary),
+            suggestedFixScope: LookbookExtractionSuggestedFixScope(
+                rawValue: optionalStringValue(
+                    dictionary,
+                    key: "suggestedFixScope"
+                ) ?? ""
+            ) ?? .unknown,
+            suggestedFixes: lookbookExtractionSuggestedFixes(dictionary),
+            seasonDiscovery: seasonDiscoveryDiagnosticDetail(dictionary),
+            seasonImageImport: seasonImageImportDiagnosticDetail(dictionary),
+            createdAt: optionalDateValue(dictionary, key: "createdAt"),
+            updatedAt: optionalDateValue(dictionary, key: "updatedAt"),
+            completedAt: optionalDateValue(dictionary, key: "completedAt"),
+            expiresAt: optionalDateValue(dictionary, key: "expiresAt")
+        )
+    }
+
+    private func lookbookExtractionFailureReasons(
+        _ dictionary: [String: Any]
+    ) -> [LookbookExtractionFailureReason] {
+        stringArrayValue(dictionary, key: "failureReasons")
+            .compactMap { LookbookExtractionFailureReason(rawValue: $0) }
+    }
+
+    private func lookbookExtractionSuggestedFixes(
+        _ dictionary: [String: Any]
+    ) -> [LookbookExtractionSuggestedFix] {
+        guard let rawItems = dictionary["suggestedFixes"] as? [[String: Any]] else {
+            return []
+        }
+        return rawItems.compactMap { item in
+            guard let type = optionalStringValue(item, key: "type") else {
+                return nil
+            }
+            return LookbookExtractionSuggestedFix(
+                type: type,
+                scope: LookbookExtractionSuggestedFixScope(
+                    rawValue: optionalStringValue(item, key: "scope") ?? ""
+                ) ?? .unknown,
+                confidence: optionalDoubleValue(item, key: "confidence") ?? 0,
+                message: optionalStringValue(item, key: "message") ?? ""
+            )
+        }
+    }
+
+    private func seasonDiscoveryDiagnosticDetail(
+        _ dictionary: [String: Any]
+    ) -> SeasonDiscoveryDiagnosticDetail? {
+        guard let detail = dictionary["seasonDiscovery"] as? [String: Any] else {
+            return nil
+        }
+        return SeasonDiscoveryDiagnosticDetail(
+            staticCandidateCount: optionalIntValue(
+                detail,
+                key: "staticCandidateCount"
+            ) ?? 0,
+            renderedCandidateCount: optionalIntValue(
+                detail,
+                key: "renderedCandidateCount"
+            ),
+            candidateCountBeforeExpansion: optionalIntValue(
+                detail,
+                key: "candidateCountBeforeExpansion"
+            ) ?? 0,
+            candidateCountAfterExpansion: optionalIntValue(
+                detail,
+                key: "candidateCountAfterExpansion"
+            ) ?? 0,
+            storedCandidateCount: optionalIntValue(
+                detail,
+                key: "storedCandidateCount"
+            ) ?? 0,
+            diagnosticCandidateCount: optionalIntValue(
+                detail,
+                key: "diagnosticCandidateCount"
+            ) ?? 0,
+            loadMoreDetected: optionalBoolValue(
+                detail,
+                key: "loadMoreDetected"
+            ) ?? false,
+            loadMoreClickCount: optionalIntValue(
+                detail,
+                key: "loadMoreClickCount"
+            ) ?? 0,
+            infiniteScrollAttempted: optionalBoolValue(
+                detail,
+                key: "infiniteScrollAttempted"
+            ) ?? false,
+            scrollAttemptCount: optionalIntValue(
+                detail,
+                key: "scrollAttemptCount"
+            ) ?? 0,
+            dynamicRenderingDetected: optionalBoolValue(
+                detail,
+                key: "dynamicRenderingDetected"
+            ) ?? false,
+            renderedFallbackUsed: optionalBoolValue(
+                detail,
+                key: "renderedFallbackUsed"
+            ) ?? false,
+            parserStrategy: optionalStringValue(
+                detail,
+                key: "parserStrategy"
+            ) ?? "unknown",
+            adapterKey: optionalStringValue(detail, key: "adapterKey")
+        )
+    }
+
+    private func seasonImageImportDiagnosticDetail(
+        _ dictionary: [String: Any]
+    ) -> SeasonImageImportDiagnosticDetail? {
+        guard let detail = dictionary["seasonImageImport"] as? [String: Any] else {
+            return nil
+        }
+        return SeasonImageImportDiagnosticDetail(
+            sourceImportJobID: optionalStringValue(
+                detail,
+                key: "sourceImportJobID"
+            ) ?? "",
+            targetSeasonID: optionalStringValue(detail, key: "targetSeasonID"),
+            seasonTitle: optionalStringValue(detail, key: "seasonTitle"),
+            expectedImageCount: optionalIntValue(
+                detail,
+                key: "expectedImageCount"
+            ) ?? 0,
+            importedImageCount: optionalIntValue(
+                detail,
+                key: "importedImageCount"
+            ) ?? 0,
+            failedImageCount: optionalIntValue(
+                detail,
+                key: "failedImageCount"
+            ) ?? 0,
+            retryable: optionalBoolValue(detail, key: "retryable") ?? false
+        )
     }
 
     private func commentMutationResult(

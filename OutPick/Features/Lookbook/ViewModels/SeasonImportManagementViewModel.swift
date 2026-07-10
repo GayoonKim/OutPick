@@ -27,7 +27,7 @@ final class SeasonImportManagementViewModel: ObservableObject {
         do {
             jobs = try await useCase.loadJobs(brandID: brandID)
         } catch {
-            errorMessage = "시즌 가져오기 현황을 불러오지 못했습니다."
+            errorMessage = jobs.isEmpty ? nil : "시즌 가져오기 현황을 불러오지 못했습니다."
         }
     }
 
@@ -64,7 +64,7 @@ final class SeasonImportManagementViewModel: ObservableObject {
             jobs = try await useCase.loadJobs(brandID: brandID)
             await pollActiveJobs()
         } catch {
-            errorMessage = "실패한 이미지를 다시 요청하지 못했습니다."
+            errorMessage = "재시도하지 못했습니다."
         }
     }
 
