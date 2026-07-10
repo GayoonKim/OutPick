@@ -32,9 +32,21 @@ const FUNCTIONS_REGION = "asia-northeast3";
 const LOOKBOOK_IMPORT_TASKS_LOCATION = "asia-northeast3";
 const LOOKBOOK_IMPORT_TASKS_QUEUE = "lookbook-import-jobs";
 const LOOKBOOK_IMPORT_TASK_ENDPOINT = "/tasks/import-job";
+const LOOKBOOK_DISCOVERY_DIAGNOSTIC_ENDPOINT =
+  "/tasks/discover-seasons-diagnostic";
 const LOOKBOOK_IMPORT_TASK_MAX_ATTEMPTS = 3;
 const LOOKBOOK_ASSET_RETRY_MODE = "assetFailureRetry";
 const MEDIA_UPLOAD_CLEANUP_LIMIT = 100;
+const LOOKBOOK_EXTRACTION_DIAGNOSTIC_RETENTION_DAYS = 90;
+const LOOKBOOK_EXTRACTION_DIAGNOSTIC_CLEANUP_LIMIT = 100;
+const LOOKBOOK_DIAGNOSTIC_LIMITS = {
+  maxLoadMoreClicks: 20,
+  maxScrollAttempts: 20,
+  settleMs: 800,
+  timeoutMs: 45000,
+  maxDiagnosticCandidates: 120,
+  maxStoredCandidates: 80,
+};
 
 let cloudTasksClient: CloudTasksClient | null = null;
 
@@ -398,6 +410,69 @@ type LookbookImportTaskConfig = {
 type LookbookImportTaskReceipt = {
   taskName: string;
   alreadyExists: boolean;
+};
+
+type LookbookExtractionDiagnosticType =
+  "season_discovery" | "season_image_import";
+type LookbookExtractionDiagnosticStatus =
+  "passed" | "failed" | "needsReview";
+type LookbookExtractionSuggestedFixScope =
+  "common_logic" | "brand_adapter" | "unknown";
+type LookbookExtractionFailureReason =
+  "archive_url_missing" |
+  "archive_url_fetch_failed" |
+  "no_candidates_found" |
+  "low_confidence_candidates" |
+  "load_more_detected" |
+  "dynamic_rendering_detected" |
+  "worker_timeout" |
+  "worker_failed" |
+  "image_load_failed" |
+  "asset_sync_failed" |
+  "permission_denied" |
+  "unknown";
+
+type LookbookExtractionSuggestedFix = {
+  type: string;
+  scope: LookbookExtractionSuggestedFixScope;
+  confidence: number;
+  message: string;
+};
+
+type DiagnosticSeasonCandidate = {
+  title: string;
+  seasonURL: string;
+  coverImageURL: string | null;
+  score: number;
+};
+
+type SeasonDiscoveryWorkerDiagnostic = {
+  staticCandidateCount: number;
+  renderedCandidateCount: number | null;
+  candidateCountBeforeExpansion: number;
+  candidateCountAfterExpansion: number;
+  storedCandidateCount: number;
+  diagnosticCandidateCount: number;
+  loadMoreDetected: boolean;
+  loadMoreClickCount: number;
+  infiniteScrollAttempted: boolean;
+  scrollAttemptCount: number;
+  dynamicRenderingDetected: boolean;
+  renderedFallbackUsed: boolean;
+  parserStrategy: string;
+  adapterKey: string | null;
+  failureReasons: LookbookExtractionFailureReason[];
+  suggestedFixScope: LookbookExtractionSuggestedFixScope;
+  suggestedFixes: LookbookExtractionSuggestedFix[];
+  summaryMessage: string | null;
+  errorMessage: string | null;
+};
+
+type SeasonDiscoveryWorkerResponse = {
+  status: LookbookExtractionDiagnosticStatus;
+  sourceURL: string;
+  candidates: DiagnosticSeasonCandidate[];
+  diagnostic: SeasonDiscoveryWorkerDiagnostic;
 };
 
 type AssetFailureRetryReceipt = {
@@ -2194,6 +2269,179 @@ async function mapWithConcurrency<T, R>(
   return results;
 }
 
+function lookbookDiagnosticCollection(): FirebaseFirestore.CollectionReference {
+  return db.collection("lookbookExtractionDiagnostics");
+}
+
+function requiredDiagnosticType(
+  value: unknown
+): LookbookExtractionDiagnosticType {
+  if (value !== "season_discovery" && value !== "season_image_import") {
+    throw new HttpsError("invalid-argument", "type 값이 올바르지 않습니다.");
+  }
+  return value;
+}
+
+function diagnosticExpiresAt(nowDate = new Date()): admin.firestore.Timestamp {
+  return admin.firestore.Timestamp.fromDate(
+    addDays(nowDate, LOOKBOOK_EXTRACTION_DIAGNOSTIC_RETENTION_DAYS)
+  );
+}
+
+function diagnosticCandidateID(seasonURL: string): string {
+  return createHash("sha1").update(seasonURL).digest("hex").slice(0, 24);
+}
+
+async function identityTokenForAudience(audience: string): Promise<string> {
+  const url =
+    "http://metadata/computeMetadata/v1/instance/service-accounts/default/" +
+    `identity?audience=${encodeURIComponent(audience)}`;
+  const response = await fetch(url, {
+    headers: {"Metadata-Flavor": "Google"},
+  });
+  if (!response.ok) {
+    throw new Error(`worker 인증 토큰 발급 실패: HTTP ${response.status}`);
+  }
+  return (await response.text()).trim();
+}
+
+async function callSeasonDiscoveryDiagnosticWorker(
+  brandID: string,
+  archiveURL: string,
+  requestedBy: string,
+  diagnosticID: string
+): Promise<SeasonDiscoveryWorkerResponse> {
+  const config = lookbookImportTaskConfig();
+  const token = await identityTokenForAudience(config.audience);
+  const response = await fetch(
+    `${config.workerURL}${LOOKBOOK_DISCOVERY_DIAGNOSTIC_ENDPOINT}`,
+    {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        brandID,
+        archiveURL,
+        requestedBy,
+        diagnosticID,
+        limits: LOOKBOOK_DIAGNOSTIC_LIMITS,
+      }),
+    }
+  );
+  const rawBody = await response.text();
+  if (!response.ok) {
+    throw new Error(
+      `worker 시즌 목록 진단 실패: HTTP ${response.status} ${rawBody}`
+    );
+  }
+  return JSON.parse(rawBody) as SeasonDiscoveryWorkerResponse;
+}
+
+async function replaceDiagnosticSeasonCandidates(
+  brandID: string,
+  archiveURL: string,
+  candidates: DiagnosticSeasonCandidate[]
+): Promise<void> {
+  const collectionRef = db
+    .collection("brands")
+    .doc(brandID)
+    .collection("seasonCandidates");
+  const existingSnapshot = await collectionRef.limit(300).get();
+  const batch = db.batch();
+
+  existingSnapshot.docs.forEach((doc) => {
+    batch.delete(doc.ref);
+  });
+  candidates.forEach((candidate, index) => {
+    batch.set(collectionRef.doc(diagnosticCandidateID(candidate.seasonURL)), {
+      brandID,
+      title: candidate.title,
+      seasonURL: candidate.seasonURL,
+      coverImageURL: candidate.coverImageURL,
+      sourceArchiveURL: archiveURL,
+      extractionScore: candidate.score,
+      sortIndex: index,
+      status: "pending",
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  });
+
+  await batch.commit();
+}
+
+function diagnosticSummary(
+  diagnosticID: string,
+  data: FirebaseFirestore.DocumentData
+): Record<string, unknown> {
+  const seasonDiscovery = data.seasonDiscovery &&
+    typeof data.seasonDiscovery === "object" ?
+    data.seasonDiscovery as Record<string, unknown> :
+    null;
+  const seasonImageImport = data.seasonImageImport &&
+    typeof data.seasonImageImport === "object" ?
+    data.seasonImageImport as Record<string, unknown> :
+    null;
+  const summary: Record<string, unknown> = {
+    id: diagnosticID,
+    brandID: data.brandID ?? "",
+    type: data.type ?? "season_discovery",
+    status: data.status ?? "failed",
+    phase: data.phase ?? "completed",
+    sourceURL: data.sourceURL ?? null,
+    summaryMessage: data.summaryMessage ?? null,
+    errorMessage: data.errorMessage ?? null,
+    failureReasons: Array.isArray(data.failureReasons) ?
+      data.failureReasons :
+      [],
+    suggestedFixScope: data.suggestedFixScope ?? "unknown",
+    suggestedFixes: Array.isArray(data.suggestedFixes) ?
+      data.suggestedFixes :
+      [],
+    createdAt: timestampToISO(data.createdAt),
+    updatedAt: timestampToISO(data.updatedAt),
+    completedAt: timestampToISO(data.completedAt),
+    expiresAt: timestampToISO(data.expiresAt),
+  };
+  if (seasonDiscovery) {
+    summary.seasonDiscovery = {
+      staticCandidateCount: seasonDiscovery.staticCandidateCount ?? 0,
+      renderedCandidateCount: seasonDiscovery.renderedCandidateCount ?? null,
+      candidateCountBeforeExpansion:
+        seasonDiscovery.candidateCountBeforeExpansion ?? 0,
+      candidateCountAfterExpansion:
+        seasonDiscovery.candidateCountAfterExpansion ?? 0,
+      storedCandidateCount: seasonDiscovery.storedCandidateCount ?? 0,
+      diagnosticCandidateCount:
+        seasonDiscovery.diagnosticCandidateCount ?? 0,
+      loadMoreDetected: seasonDiscovery.loadMoreDetected === true,
+      loadMoreClickCount: seasonDiscovery.loadMoreClickCount ?? 0,
+      infiniteScrollAttempted:
+        seasonDiscovery.infiniteScrollAttempted === true,
+      scrollAttemptCount: seasonDiscovery.scrollAttemptCount ?? 0,
+      dynamicRenderingDetected:
+        seasonDiscovery.dynamicRenderingDetected === true,
+      renderedFallbackUsed: seasonDiscovery.renderedFallbackUsed === true,
+      parserStrategy: seasonDiscovery.parserStrategy ?? "unknown",
+      adapterKey: seasonDiscovery.adapterKey ?? null,
+    };
+  }
+  if (seasonImageImport) {
+    summary.seasonImageImport = {
+      sourceImportJobID: seasonImageImport.sourceImportJobID ?? "",
+      targetSeasonID: seasonImageImport.targetSeasonID ?? null,
+      seasonTitle: seasonImageImport.seasonTitle ?? null,
+      expectedImageCount: seasonImageImport.expectedImageCount ?? 0,
+      importedImageCount: seasonImageImport.importedImageCount ?? 0,
+      failedImageCount: seasonImageImport.failedImageCount ?? 0,
+      retryable: seasonImageImport.retryable === true,
+    };
+  }
+  return summary;
+}
+
 function seasonCandidateImportSeedFromData(
   data: FirebaseFirestore.DocumentData | undefined
 ): SeasonCandidateImportSeed {
@@ -2668,6 +2916,244 @@ async function requestSeasonAssetFailureRetry(
     });
     throw error;
   }
+}
+
+async function runSeasonDiscoveryDiagnostic(
+  uid: string,
+  brandID: string
+): Promise<Record<string, unknown>> {
+  const brandRef = db.collection("brands").doc(brandID);
+  const brandSnap = await brandRef.get();
+  if (!brandSnap.exists) {
+    throw new HttpsError("not-found", "브랜드를 찾을 수 없습니다.");
+  }
+  const brandData = brandSnap.data() ?? {};
+  const brandName =
+    typeof brandData.name === "string" ? brandData.name.trim() : null;
+  const diagnosticRef = lookbookDiagnosticCollection().doc();
+  const nowDate = new Date();
+  const now = admin.firestore.Timestamp.fromDate(nowDate);
+  const expiresAt = diagnosticExpiresAt(nowDate);
+  const archiveURLValue = brandData.lookbookArchiveURL;
+
+  if (
+    typeof archiveURLValue !== "string" ||
+    archiveURLValue.trim().length === 0
+  ) {
+    const documentData = {
+      brandID,
+      brandName,
+      type: "season_discovery",
+      status: "failed",
+      phase: "completed",
+      sourceURL: null,
+      requestedBy: uid,
+      failureReasons: ["archive_url_missing"],
+      suggestedFixScope: "unknown",
+      suggestedFixes: [],
+      summaryMessage: null,
+      errorMessage: "룩북 목록 URL이 등록되어 있지 않습니다.",
+      expiresAt,
+      createdAt: now,
+      updatedAt: now,
+      completedAt: now,
+      seasonDiscovery: null,
+      seasonImageImport: null,
+    };
+    await diagnosticRef.set(documentData);
+    await brandRef.update({
+      lastSeasonDiscoveryDiagnosticID: diagnosticRef.id,
+      lastSeasonDiscoveryStatus: "failed",
+      lastSeasonDiscoveryCandidateCount: 0,
+      lastSeasonDiscoverySuggestedFixScope: "unknown",
+      lastSeasonDiscoveryAt: FieldValue.serverTimestamp(),
+      lastSeasonDiscoveryErrorMessage: documentData.errorMessage,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    return diagnosticSummary(diagnosticRef.id, documentData);
+  }
+
+  const archiveURL = normalizedHTTPURL(
+    archiveURLValue,
+    "lookbookArchiveURL"
+  );
+  const workerResponse = await callSeasonDiscoveryDiagnosticWorker(
+    brandID,
+    archiveURL,
+    uid,
+    diagnosticRef.id
+  );
+  const diagnostic = workerResponse.diagnostic;
+  const documentData = {
+    brandID,
+    brandName,
+    type: "season_discovery",
+    status: workerResponse.status,
+    phase: "completed",
+    sourceURL: workerResponse.sourceURL,
+    requestedBy: uid,
+    failureReasons: diagnostic.failureReasons,
+    suggestedFixScope: diagnostic.suggestedFixScope,
+    suggestedFixes: diagnostic.suggestedFixes,
+    summaryMessage: diagnostic.summaryMessage,
+    errorMessage: diagnostic.errorMessage,
+    expiresAt,
+    createdAt: now,
+    updatedAt: now,
+    completedAt: now,
+    seasonDiscovery: {
+      archiveURL,
+      staticCandidateCount: diagnostic.staticCandidateCount,
+      renderedCandidateCount: diagnostic.renderedCandidateCount,
+      candidateCountBeforeExpansion:
+        diagnostic.candidateCountBeforeExpansion,
+      candidateCountAfterExpansion: diagnostic.candidateCountAfterExpansion,
+      storedCandidateCount: diagnostic.storedCandidateCount,
+      diagnosticCandidateCount: diagnostic.diagnosticCandidateCount,
+      loadMoreDetected: diagnostic.loadMoreDetected,
+      loadMoreClickCount: diagnostic.loadMoreClickCount,
+      infiniteScrollAttempted: diagnostic.infiniteScrollAttempted,
+      scrollAttemptCount: diagnostic.scrollAttemptCount,
+      dynamicRenderingDetected: diagnostic.dynamicRenderingDetected,
+      renderedFallbackUsed: diagnostic.renderedFallbackUsed,
+      parserStrategy: diagnostic.parserStrategy,
+      adapterKey: diagnostic.adapterKey,
+      limits: LOOKBOOK_DIAGNOSTIC_LIMITS,
+    },
+    seasonImageImport: null,
+  };
+
+  await replaceDiagnosticSeasonCandidates(
+    brandID,
+    archiveURL,
+    workerResponse.candidates
+  );
+  await diagnosticRef.set(documentData);
+  await brandRef.update({
+    lastSeasonDiscoveryDiagnosticID: diagnosticRef.id,
+    lastSeasonDiscoveryStatus: workerResponse.status,
+    lastSeasonDiscoveryCandidateCount: diagnostic.storedCandidateCount,
+    lastSeasonDiscoverySuggestedFixScope: diagnostic.suggestedFixScope,
+    lastSeasonDiscoveryAt: FieldValue.serverTimestamp(),
+    lastSeasonDiscoveryErrorMessage: diagnostic.errorMessage,
+    discoveryStatus: workerResponse.status === "passed" ?
+      "success" :
+      "failed",
+    lastDiscoveryCompletedAt: FieldValue.serverTimestamp(),
+    lastDiscoveryErrorMessage: diagnostic.errorMessage,
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+  return diagnosticSummary(diagnosticRef.id, documentData);
+}
+
+async function runSeasonImageImportDiagnostic(
+  uid: string,
+  brandID: string,
+  sourceImportJobID: string,
+  seasonID: string | null
+): Promise<Record<string, unknown>> {
+  const brandRef = db.collection("brands").doc(brandID);
+  const brandSnap = await brandRef.get();
+  if (!brandSnap.exists) {
+    throw new HttpsError("not-found", "브랜드를 찾을 수 없습니다.");
+  }
+  const jobRef = brandRef.collection("importJobs").doc(sourceImportJobID);
+  const jobSnap = await jobRef.get();
+  if (!jobSnap.exists) {
+    throw new HttpsError("not-found", "source import job을 찾을 수 없습니다.");
+  }
+  const jobData = jobSnap.data() ?? {};
+  if (jobData.jobType !== "importSeasonFromURL") {
+    throw new HttpsError(
+      "failed-precondition",
+      "시즌 URL import job만 이미지 진단을 실행할 수 있습니다."
+    );
+  }
+  const targetSeasonID =
+    typeof jobData.targetSeasonID === "string" ?
+      requiredDocumentID(jobData.targetSeasonID, "targetSeasonID") :
+      null;
+  if (
+    seasonID !== null &&
+    targetSeasonID !== null &&
+    seasonID !== targetSeasonID
+  ) {
+    throw new HttpsError(
+      "invalid-argument",
+      "seasonID가 source import job의 시즌과 일치하지 않습니다."
+    );
+  }
+  const sourceURL = normalizedHTTPURL(
+    requiredString(jobData, "sourceURL", 2048),
+    "sourceURL"
+  );
+  const importedImageCount = numericMetric(jobData.assetCompletedCount);
+  const failedImageCount = numericMetric(jobData.assetFailedCount);
+  const expectedImageCount = importedImageCount + failedImageCount;
+  const status: LookbookExtractionDiagnosticStatus =
+    failedImageCount > 0 ? "failed" : "passed";
+  const nowDate = new Date();
+  const now = admin.firestore.Timestamp.fromDate(nowDate);
+  const expiresAt = diagnosticExpiresAt(nowDate);
+  const diagnosticRef = lookbookDiagnosticCollection().doc();
+  const seasonTitle =
+    typeof jobData.sourceTitle === "string" ?
+      jobData.sourceTitle.trim() :
+      null;
+  const summaryMessage =
+    `이미지 ${expectedImageCount}개 중 ${failedImageCount}개 실패`;
+  const documentData = {
+    brandID,
+    brandName:
+      typeof brandSnap.data()?.name === "string" ?
+        brandSnap.data()?.name :
+        null,
+    type: "season_image_import",
+    status,
+    phase: "completed",
+    sourceURL,
+    requestedBy: uid,
+    failureReasons: failedImageCount > 0 ? ["image_load_failed"] : [],
+    suggestedFixScope: failedImageCount > 0 ? "common_logic" : "unknown",
+    suggestedFixes: failedImageCount > 0 ? [{
+      type: "inspect_remote_image_failure",
+      scope: "common_logic",
+      confidence: 0.7,
+      message: "원격 이미지 로드 실패 원인을 확인해야 합니다.",
+    }] : [{
+      type: "none",
+      scope: "unknown",
+      confidence: 1,
+      message: "추가 조치가 필요하지 않습니다.",
+    }],
+    summaryMessage,
+    errorMessage: failedImageCount > 0 ? summaryMessage : null,
+    expiresAt,
+    createdAt: now,
+    updatedAt: now,
+    completedAt: now,
+    seasonDiscovery: null,
+    seasonImageImport: {
+      sourceImportJobID,
+      targetSeasonID,
+      seasonID: seasonID ?? targetSeasonID,
+      seasonTitle,
+      sourceURL,
+      expectedImageCount,
+      importedImageCount,
+      failedImageCount,
+      retryable: failedImageCount > 0 && targetSeasonID !== null,
+    },
+  };
+
+  await diagnosticRef.set(documentData);
+  await jobRef.update({
+    lastImageImportDiagnosticID: diagnosticRef.id,
+    lastImageImportDiagnosticStatus: status,
+    lastImageImportDiagnosticAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+  return diagnosticSummary(diagnosticRef.id, documentData);
 }
 
 /**
@@ -6442,6 +6928,122 @@ export const requestSeasonCandidateImportJobs = onCall(
   }
 );
 
+export const runLookbookExtractionDiagnostic = onCall(
+  {region: FUNCTIONS_REGION, timeoutSeconds: 120, memory: "512MiB"},
+  async (request) => {
+    const uid = requiredAuthUID(request.auth?.uid);
+    const data = recordData(request.data);
+    const brandID = requiredDocumentID(
+      requiredString(data, "brandID", 128),
+      "brandID"
+    );
+    const type = requiredDiagnosticType(data.type);
+    const sourceImportJobID = optionalDocumentID(
+      optionalString(data, "sourceImportJobID", 128),
+      "sourceImportJobID"
+    );
+    const seasonID = optionalDocumentID(
+      optionalString(data, "seasonID", 128),
+      "seasonID"
+    );
+
+    await assertBrandWriteAccess(uid, brandID);
+
+    if (type === "season_discovery") {
+      if (sourceImportJobID !== null || seasonID !== null) {
+        throw new HttpsError(
+          "invalid-argument",
+          "시즌 목록 진단에는 sourceImportJobID와 seasonID를 보낼 수 없습니다."
+        );
+      }
+      return {
+        diagnostic: await runSeasonDiscoveryDiagnostic(uid, brandID),
+      };
+    }
+
+    if (sourceImportJobID === null) {
+      throw new HttpsError(
+        "invalid-argument",
+        "이미지 진단에는 sourceImportJobID가 필요합니다."
+      );
+    }
+    return {
+      diagnostic: await runSeasonImageImportDiagnostic(
+        uid,
+        brandID,
+        sourceImportJobID,
+        seasonID
+      ),
+    };
+  }
+);
+
+export const getLatestLookbookExtractionDiagnostic = onCall(
+  {region: FUNCTIONS_REGION},
+  async (request) => {
+    const uid = requiredAuthUID(request.auth?.uid);
+    const data = recordData(request.data);
+    const brandID = requiredDocumentID(
+      requiredString(data, "brandID", 128),
+      "brandID"
+    );
+    const type = requiredDiagnosticType(data.type);
+    const sourceImportJobID = optionalDocumentID(
+      optionalString(data, "sourceImportJobID", 128),
+      "sourceImportJobID"
+    );
+
+    await assertBrandWriteAccess(uid, brandID);
+
+    let diagnosticID: string | null = null;
+    if (type === "season_discovery") {
+      if (sourceImportJobID !== null) {
+        throw new HttpsError(
+          "invalid-argument",
+          "시즌 목록 진단 조회에는 sourceImportJobID를 보낼 수 없습니다."
+        );
+      }
+      const brandSnap = await db.collection("brands").doc(brandID).get();
+      const value = brandSnap.data()?.lastSeasonDiscoveryDiagnosticID;
+      diagnosticID = typeof value === "string" ? value : null;
+    } else {
+      if (sourceImportJobID === null) {
+        throw new HttpsError(
+          "invalid-argument",
+          "이미지 진단 조회에는 sourceImportJobID가 필요합니다."
+        );
+      }
+      const jobSnap = await db
+        .collection("brands")
+        .doc(brandID)
+        .collection("importJobs")
+        .doc(sourceImportJobID)
+        .get();
+      if (!jobSnap.exists) {
+        throw new HttpsError("not-found", "source import job을 찾을 수 없습니다.");
+      }
+      const value = jobSnap.data()?.lastImageImportDiagnosticID;
+      diagnosticID = typeof value === "string" ? value : null;
+    }
+
+    if (diagnosticID === null) {
+      return {diagnostic: null};
+    }
+    const diagnosticSnap = await lookbookDiagnosticCollection()
+      .doc(diagnosticID)
+      .get();
+    if (!diagnosticSnap.exists) {
+      return {diagnostic: null};
+    }
+    return {
+      diagnostic: diagnosticSummary(
+        diagnosticSnap.id,
+        diagnosticSnap.data() ?? {}
+      ),
+    };
+  }
+);
+
 export const onSeasonImportQueued = onDocumentWritten(
   {
     document: "brands/{brandID}/importJobs/{jobID}",
@@ -6668,6 +7270,35 @@ export const cleanupExpiredChatMediaUploads = onSchedule(
         }, {merge: true});
       }
     }
+  }
+);
+
+export const cleanupExpiredLookbookExtractionDiagnostics = onSchedule(
+  {
+    schedule: "30 4 * * *",
+    region: FUNCTIONS_REGION,
+    timeZone: "Asia/Seoul",
+  },
+  async () => {
+    const now = admin.firestore.Timestamp.now();
+    const snapshot = await lookbookDiagnosticCollection()
+      .where("expiresAt", "<=", now)
+      .limit(LOOKBOOK_EXTRACTION_DIAGNOSTIC_CLEANUP_LIMIT)
+      .get();
+
+    if (snapshot.empty) {
+      console.log(
+        "[cleanupExpiredLookbookExtractionDiagnostics] No expired diagnostics."
+      );
+      return;
+    }
+
+    const batch = db.batch();
+    snapshot.docs.forEach((doc) => batch.delete(doc.ref));
+    await batch.commit();
+    console.log("[cleanupExpiredLookbookExtractionDiagnostics] Completed", {
+      deletedCount: snapshot.size,
+    });
   }
 );
 
