@@ -236,6 +236,7 @@ GRDB 로컬 캐시:
 - `brandRequestUserLimits`
 - `lookbookDeletionRequests`
 - `lookbookDeletionAuditLogs`
+- `lookbookExtractionDiagnostics`
 - `users/{uid}/brandStates`
 - `users/{uid}/seasonStates`
 - 확실하지 않음: post/comment state 컬렉션 경로는 관련 Repository와 rules를 재확인해야 한다.
@@ -271,6 +272,14 @@ GRDB 로컬 캐시:
   - `deleteRequestID`
   - `updatedBy`
   - `updatedAt`
+- 룩북 import 진단 Phase 1 계약 source of truth는 `docs/ai/tasks/lookbook-import-diagnostics/phase-1-data-api-contract.md`다.
+- 브랜드 문서에는 최신 시즌 목록 추출 진단 포인터를 추가한다.
+  - `lastSeasonDiscoveryDiagnosticID`
+  - `lastSeasonDiscoveryStatus`: `passed | failed | needsReview`
+  - `lastSeasonDiscoveryCandidateCount`
+  - `lastSeasonDiscoverySuggestedFixScope`: `common_logic | brand_adapter | unknown`
+  - `lastSeasonDiscoveryAt`
+  - `lastSeasonDiscoveryErrorMessage`
 - `brands/{brandID}/admins/{uid}` 주요 필드:
   - `uid`
   - `brandID`
@@ -290,6 +299,24 @@ GRDB 로컬 캐시:
 - 브랜드 owner는 해당 브랜드 admin만 추가/삭제할 수 있다.
 - 브랜드 admin은 관리자 추가/삭제 권한이 없다.
 - 마지막 owner 삭제는 서버에서 차단한다.
+
+룩북 import 진단:
+
+- 진단 문서는 `lookbookExtractionDiagnostics/{diagnosticId}`에 저장한다.
+- 앱은 진단 문서를 직접 Firestore read하지 않고 callable로 최신 진단 1개만 조회한다.
+- callable은 `runLookbookExtractionDiagnostic`, `getLatestLookbookExtractionDiagnostic`로 둔다.
+- 이력 목록 API는 1차 구현에서 만들지 않는다.
+- 진단 유형은 `season_discovery | season_image_import`다.
+- 진단 상태는 `passed | failed | needsReview`다.
+- `brands/{brandID}/importJobs/{jobID}`에는 최신 시즌 이미지 import 진단 포인터를 추가한다.
+  - `lastImageImportDiagnosticID`
+  - `lastImageImportDiagnosticStatus`: `passed | failed | needsReview`
+  - `lastImageImportDiagnosticAt`
+- 시즌 목록 추출 성공 시 worker 후보는 `brands/{brandID}/seasonCandidates/{candidateID}`에 upsert한다. 앱은 성공 요약을 별도로 보여주지 않고 candidate 목록을 바로 표시한다.
+- 시즌 목록 추출 실패 시 앱은 과거 candidate를 fallback으로 보여주지 않는다. 실패 화면에는 불러온 시즌 수와 `재시도`만 노출하고, 원인/추천 수정 범위는 진단 문서와 운영 로그에서 확인한다.
+- 시즌 이미지 import 진단의 앱 표시 요약은 `이미지 N개 중 M개 완료, F개 실패` 형태이며 URL, HTTP status, 내부 오류 문자열은 관리자 UI에 노출하지 않는다.
+- 진단 문서는 90일 보존하고 `cleanupExpiredLookbookExtractionDiagnostics` scheduled cleanup으로 정리한다.
+- `lookbookExtractionDiagnostics`는 클라이언트 직접 read/write를 허용하지 않고 callable Functions 경계로 접근한다.
 
 룩북 삭제 lifecycle:
 

@@ -94,12 +94,23 @@ Cloud Run worker 전환 기준의 URL 기반 시즌 등록 진입점이다.
 - Season candidate discovery: `functions/src/lookbookSeasonCandidateDiscovery.ts`
 - Cloud Run worker package: `tools/lookbook-import-worker/`
 - Cloud Run worker server: `tools/lookbook-import-worker/src/server.ts`
+- Cloud Run worker season discovery diagnostic endpoint: `tools/lookbook-import-worker/src/season-discovery.ts`
 - Cloud Run worker processor: `tools/lookbook-import-worker/src/processor.ts`
+- Cloud Run worker tests: `tools/lookbook-import-worker/src/season-discovery.test.ts`, `tools/lookbook-import-worker/src/processor.test.ts`
 - Cloud Run worker lifecycle/retry 분류: `tools/lookbook-import-worker/src/job-lifecycle.ts`, `tools/lookbook-import-worker/src/import-error.ts`
 - 공개 URL/SSRF 방어 HTTP boundary: `tools/lookbook-import-worker/src/public-http.ts`
 - Cloud Run worker Firebase boundary: `tools/lookbook-import-worker/src/firebase.ts`
 - Cloud Run worker config/env boundary: `tools/lookbook-import-worker/src/config.ts`
 - 배포/운영 자동화 후보: `scripts/ai/`
+- 룩북 import 진단 Phase 1 계약: `docs/ai/tasks/lookbook-import-diagnostics/phase-1-data-api-contract.md`
+- 룩북 import 진단 Phase 2A worker endpoint 설계: `docs/ai/tasks/lookbook-import-diagnostics/phase-2a-worker-diagnostic-endpoint-design.md`
+- 룩북 import 진단 callable: `runLookbookExtractionDiagnostic`, `getLatestLookbookExtractionDiagnostic`
+- 룩북 import 진단 cleanup: `cleanupExpiredLookbookExtractionDiagnostics`
+- 룩북 import 진단 컬렉션: `lookbookExtractionDiagnostics/{diagnosticId}`
+- 시즌 목록 discovery의 Playwright 렌더링은 Functions가 아니라 Cloud Run worker endpoint에서 처리한다.
+- OUTSTANDING류 Cafe24 페이지의 시즌명 보강은 `season-discovery.ts`의 이미지 `alt`/`title`과 `상품명` 라벨 우선순위를 확인한다.
+- 상세 이미지 import에서 JS template 문자열이 가짜 이미지 URL로 저장되는 경우는 `processor.ts`의 template image filter와 `processor.test.ts` 회귀 테스트를 확인한다.
+- 2026-07-10 기준 운영 worker `lookbook-import-worker` 최종 배포 revision은 `lookbook-import-worker-00014-w94`이며 100% traffic을 받는다.
 
 ## Lookbook Import Worker 문서 지도
 

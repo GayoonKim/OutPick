@@ -102,7 +102,10 @@
     - 메뉴 목록 위에는 선택 브랜드 로고/이름 헤더를 별도로 노출하지 않는다.
     - `정보` 메뉴는 브랜드 정보 수정과 로고 업로드를 함께 제공하고, 로고 수정 섹션에는 현재 로고 미리보기를 표시한다.
     - `관리자` 메뉴는 브랜드 관리자 추가/삭제 권한이 있는 사용자에게만 노출한다.
-    - `시즌 가져오기` 메뉴는 내부에서 `시즌 찾아오기`와 `현황` segmented control로 나뉘며, 현황은 `SeasonImportManagementView`를 navigation chrome 없이 임베드한다.
+    - `시즌 가져오기` 메뉴는 내부에서 `시즌 찾아오기`, `현황` segmented control로 나뉜다.
+    - `시즌 찾아오기`는 후보 선택 sheet를 열고, sheet 진입 시 최신 룩북 목록 URL을 다시 확인한다.
+    - 시즌 목록 확인은 내부적으로 `runLookbookExtractionDiagnostic(type: season_discovery)`를 호출해 진단 문서 저장과 후보 upsert를 함께 수행하지만, 앱 UI에는 개발용 진단 상세를 노출하지 않는다.
+    - `현황`은 `SeasonImportManagementView`를 navigation chrome 없이 임베드한다.
     - `삭제` 메뉴는 `AdminLookbookDeletionManagementView`를 navigation bar 없이 임베드하고, 내부 `삭제` / `삭제 요청 목록` segmented control을 유지한다.
     - 메뉴 내부 화면의 뒤로가기는 별도 버튼을 두지 않고 상단 navigation back 하나로 메뉴 목록 복귀를 처리한다.
     - 브랜드 관리 화면은 더 이상 콘솔 검색 기반 진입을 주 흐름으로 쓰지 않는다. 선택 브랜드가 없으면 브랜드 상세의 관리자 버튼으로 진입하라는 빈 상태를 보여준다.
@@ -142,6 +145,17 @@
   - `OutPick/DB/Firebase/CloudFunctions/CloudFunctionsManager.swift`
     - 브랜드 요청 group과 삭제 요청 목록 callable의 Swift wrapper를 제공하며 `processedScope`, `statusGroup` 파라미터를 서버로 전달한다.
   - `OutPick/Features/Lookbook/Domains/Entities/BrandManagement.swift`
+- Admin season discovery diagnostics:
+  - `OutPick/Features/Lookbook/Views/CreateBrand/brand/CreateBrandCandidateSelectionView.swift`
+    - 브랜드 생성 직후와 관리자 `시즌 찾아오기` sheet에서 함께 쓰는 후보 선택 화면이다.
+    - sheet 진입 시 최신 룩북 목록 URL을 확인하고, 성공하면 후보 선택 목록을 바로 보여준다.
+    - 시즌 목록 확인 실패 시 저장된 과거 후보를 대신 보여주지 않고 실패 요약과 `재시도` 버튼만 제공한다.
+  - `OutPick/Features/Lookbook/Domains/Entities/LookbookExtractionDiagnostic.swift`
+    - `season_discovery`와 `season_image_import` 진단 공용 domain 타입, 실패 사유, 추천 수정 범위, 상세 요약을 정의한다.
+  - `OutPick/Features/Lookbook/Repositories/Implementations/CloudFunctionsSeasonCandidateDiscoveryRepository.swift`
+    - 앱의 기존 시즌 후보 discovery repository 경계를 유지하면서 내부 호출은 `runLookbookExtractionDiagnostic(type: season_discovery)`로 연결한다.
+  - `OutPick/DB/Firebase/CloudFunctions/CloudFunctionsManager.swift`
+    - 룩북 import 진단 callable wrapper와 payload/domain mapping을 제공한다.
 - Brand detail:
   - `OutPick/Features/Lookbook/Views/BrandDetail/BrandDetailView.swift`
     - 커스텀 back은 Coordinator `pop()`을 호출한다.
@@ -313,6 +327,16 @@
 - import 관리자 ViewModel/UseCase: `OutPick/Features/Lookbook/ViewModels/SeasonImportManagementViewModel.swift`, `OutPick/Features/Lookbook/Domains/UseCases/ManageSeasonImportJobsUseCase.swift`
 - 실패 asset 재시도 Repository: `OutPick/Features/Lookbook/Repositories/Implementations/CloudFunctionsSeasonAssetRetryRepository.swift`
 - Cloud Run worker 아키텍처: `docs/ai/architecture/LOOKBOOK_IMPORT_WORKER.md`
+- 룩북 import 진단 task: `docs/ai/tasks/lookbook-import-diagnostics/design.md`
+- 룩북 import 진단 Phase 1 데이터/API 계약: `docs/ai/tasks/lookbook-import-diagnostics/phase-1-data-api-contract.md`
+- 룩북 import 진단 Phase 2A worker endpoint 설계: `docs/ai/tasks/lookbook-import-diagnostics/phase-2a-worker-diagnostic-endpoint-design.md`
+- 관리자 `시즌 가져오기` 메뉴는 `시즌 찾아오기`, `현황` 2개 탭을 유지한다.
+- `시즌 찾아오기`는 성공 시 별도 요약 없이 가져올 시즌 후보 선택 목록을 보여주고, 실패 시에만 요약과 `재시도` 버튼을 제공한다.
+- 시즌 후보명은 worker `tools/lookbook-import-worker/src/season-discovery.ts`에서 카드 이미지 `alt`/`title`과 Cafe24 `상품명` 라벨을 우선 사용한다. URL path fallback의 `detail` 같은 값은 표시명으로 쓰지 않는다.
+- 기존 `현황` 탭은 시즌별 import job 상태를 유지하고, 이미지 실패는 개발용 오류 문구 없이 `이미지 N개 중 M개 완료, F개 실패` 요약과 `재시도` 버튼만 표시한다.
+- `현황` 탭의 목록 refresh 실패는 기존 목록이 비어 있으면 별도 실패 문구를 띄우지 않고 빈 상태만 보여준다.
+- `재시도` 버튼은 실패 row 오른쪽 하단에 작게 배치한다.
+- OUTSTANDING처럼 상세 페이지 script template이 이미지 후보로 오탐되면 앱이 아니라 worker `tools/lookbook-import-worker/src/processor.ts`의 image URL filter와 `processor.test.ts`를 먼저 확인한다.
 
 ## 브랜드 요청 API 진입점
 
