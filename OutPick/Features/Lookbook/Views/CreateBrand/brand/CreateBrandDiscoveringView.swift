@@ -24,18 +24,6 @@ struct CreateBrandDiscoveringView: View {
                     .font(.subheadline)
                     .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
-
-                if let lookbookArchiveURL = createdBrand.lookbookArchiveURL,
-                   !lookbookArchiveURL.isEmpty {
-                    Label(lookbookArchiveURL, systemImage: "photo.on.rectangle")
-                        .font(.footnote)
-                        .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
-                } else {
-                    Text("룩북 주소가 없어도 브랜드는 그대로 저장됩니다.")
-                        .font(.footnote)
-                        .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
             }
 
             VStack(spacing: 14) {

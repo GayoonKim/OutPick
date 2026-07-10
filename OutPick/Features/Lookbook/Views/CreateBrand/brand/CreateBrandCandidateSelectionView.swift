@@ -47,22 +47,29 @@ struct CreateBrandCandidateSelectionView: View {
     @State private var message: String?
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 24) {
-                switch importProgressPhase {
-                case .selecting:
-                    headerSection
-                    candidateListSection
-                    submitButton
-                case .extracting, .completed:
-                    extractionProgressSection
-                        .frame(maxWidth: .infinity, minHeight: 520, alignment: .center)
+        GeometryReader { geometry in
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 24) {
+                    switch importProgressPhase {
+                    case .selecting:
+                        headerSection
+                        candidateListSection
+                        submitButton
+                    case .extracting, .completed:
+                        extractionProgressSection
+                            .frame(maxWidth: .infinity, alignment: .center)
+                    }
                 }
+                .frame(
+                    maxWidth: .infinity,
+                    minHeight: progressContentMinimumHeight(in: geometry.size.height),
+                    alignment: progressContentAlignment
+                )
+                .padding(.horizontal, 24)
+                .padding(.vertical, 32)
             }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 32)
+            .background(OutPickTheme.SwiftUIColor.backgroundBase.ignoresSafeArea())
         }
-        .background(OutPickTheme.SwiftUIColor.backgroundBase.ignoresSafeArea())
         .task {
             await loadCandidates()
         }
@@ -75,6 +82,15 @@ struct CreateBrandCandidateSelectionView: View {
         .onChange(of: importProgressPhase) { _ in
             notifyToolbarCloseVisibility()
         }
+    }
+
+    private var progressContentAlignment: Alignment {
+        importProgressPhase == .extracting ? .center : .topLeading
+    }
+
+    private func progressContentMinimumHeight(in containerHeight: CGFloat) -> CGFloat? {
+        guard importProgressPhase == .extracting else { return nil }
+        return max(0, containerHeight - 64)
     }
 
     private var headerSection: some View {
