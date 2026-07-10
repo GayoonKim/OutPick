@@ -110,7 +110,7 @@ Cloud Run worker 전환 기준의 URL 기반 시즌 등록 진입점이다.
 - 시즌 목록 discovery의 Playwright 렌더링은 Functions가 아니라 Cloud Run worker endpoint에서 처리한다.
 - OUTSTANDING류 Cafe24 페이지의 시즌명 보강은 `season-discovery.ts`의 이미지 `alt`/`title`과 `상품명` 라벨 우선순위를 확인한다.
 - 상세 이미지 import에서 JS template 문자열이 가짜 이미지 URL로 저장되는 경우는 `processor.ts`의 template image filter와 `processor.test.ts` 회귀 테스트를 확인한다.
-- 2026-07-10 기준 운영 worker `lookbook-import-worker` 최종 배포 revision은 `lookbook-import-worker-00014-w94`이며 100% traffic을 받는다.
+- 2026-07-10 기준 운영 worker `lookbook-import-worker` 최종 배포 revision은 `lookbook-import-worker-00015-q6x`이며 100% traffic을 받는다.
 
 ## Lookbook Import Worker 문서 지도
 

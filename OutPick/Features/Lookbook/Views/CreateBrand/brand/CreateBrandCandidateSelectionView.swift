@@ -453,9 +453,10 @@ struct CreateBrandCandidateSelectionView: View {
     private var progressCloseActionSection: some View {
         VStack(spacing: 10) {
             Button {
+                guard isSubmitting == false else { return }
                 onComplete()
             } label: {
-                Text("닫기")
+                Text(isSubmitting ? "요청을 보내는 중" : "현황에서 계속 확인")
                     .font(.subheadline.weight(.semibold))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
@@ -464,6 +465,15 @@ struct CreateBrandCandidateSelectionView: View {
             .overlay {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .stroke(OutPickTheme.SwiftUIColor.accent, lineWidth: 1)
+            }
+            .disabled(isSubmitting)
+
+            if isSubmitting {
+                Text("선택한 시즌 작업을 등록한 뒤 닫을 수 있습니다.")
+                    .font(.caption)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(.top, 4)
@@ -533,7 +543,7 @@ struct CreateBrandCandidateSelectionView: View {
         case .selecting:
             return "새로 추가된 룩북을 확인한 뒤, 이미 처리 중이거나 가져온 시즌은 제외합니다."
         case .extracting:
-            return "선택한 시즌의 사진을 가져오고 룩북 목록에 반영하고 있습니다."
+            return "선택한 시즌의 사진을 가져오고 있습니다. 닫은 뒤에는 현황에서 계속 확인할 수 있습니다."
         case .completed:
             return "시즌 불러오기 요청 결과를 확인하세요."
         }

@@ -105,6 +105,7 @@
     - `시즌 가져오기` 메뉴는 내부에서 `시즌 찾아오기`, `현황` segmented control로 나뉜다.
     - `시즌 찾아오기`는 후보 선택 sheet를 열고, sheet 진입 시 최신 룩북 목록 URL을 다시 확인한다.
     - 시즌 목록 확인은 내부적으로 `runLookbookExtractionDiagnostic(type: season_discovery)`를 호출해 진단 문서 저장과 후보 upsert를 함께 수행하지만, 앱 UI에는 개발용 진단 상세를 노출하지 않는다.
+    - 후보 선택 후 이미지 import 요청을 서버에 등록하는 중에는 진행 화면의 닫기 버튼을 비활성화한다. 등록이 끝난 뒤 닫으면 Cloud Tasks 기반 worker는 계속 진행되고, 관리자는 `현황` 탭에서 이어서 확인한다.
     - `현황`은 `SeasonImportManagementView`를 navigation chrome 없이 임베드한다.
     - `삭제` 메뉴는 `AdminLookbookDeletionManagementView`를 navigation bar 없이 임베드하고, 내부 `삭제` / `삭제 요청 목록` segmented control을 유지한다.
     - 메뉴 내부 화면의 뒤로가기는 별도 버튼을 두지 않고 상단 navigation back 하나로 메뉴 목록 복귀를 처리한다.
@@ -336,7 +337,7 @@
 - 기존 `현황` 탭은 시즌별 import job 상태를 유지하고, 이미지 실패는 개발용 오류 문구 없이 `이미지 N개 중 M개 완료, F개 실패` 요약과 `재시도` 버튼만 표시한다.
 - `현황` 탭의 목록 refresh 실패는 기존 목록이 비어 있으면 별도 실패 문구를 띄우지 않고 빈 상태만 보여준다.
 - `재시도` 버튼은 실패 row 오른쪽 하단에 작게 배치한다.
-- OUTSTANDING처럼 상세 페이지 script template이 이미지 후보로 오탐되면 앱이 아니라 worker `tools/lookbook-import-worker/src/processor.ts`의 image URL filter와 `processor.test.ts`를 먼저 확인한다.
+- OUTSTANDING처럼 상세 페이지 이미지 후보가 누락되거나 script template이 이미지 후보로 오탐되면 앱이 아니라 worker `tools/lookbook-import-worker/src/processor.ts`의 image URL filter와 `processor.test.ts`를 먼저 확인한다. Cafe24 NNEditor 본문 이미지의 `copy-...jpg` 접두사는 실제 룩북 이미지일 수 있으므로 copy 아이콘 노이즈로 제외하지 않는다.
 
 ## 브랜드 요청 API 진입점
 

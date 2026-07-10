@@ -263,7 +263,7 @@ const HARD_NOISE_IMAGE_URL_PATTERNS = [
   /(?:social|sns|facebook|kakao|naver|instagram|twitter|fb_icon|insta_icon)/i,
   /\/img\/common\/global\/[^/?#]*_32x24\.png(?:[?#]|$)/i,
   /\/[^/?#]*(?:bg[_-]?search|youtube[_-]?icon|ic[_-]?(?:arr|star))[^/?#]*\.(?:gif|jpe?g|png|svg|webp)(?:[?#]|$)/i,
-  /\/[^/?#]*(?:btn|button|icon-plus|count_|page_(?:first|prev|next)|close|copy|share|menu)[^/?#]*\.(?:gif|jpe?g|png|svg|webp)(?:[?#]|$)/i,
+  /\/[^/?#]*(?:btn|button|icon-plus|count_|page_(?:first|prev|next)|close|share|menu|copy[_-]?icon|icon[_-]?copy)[^/?#]*\.(?:gif|jpe?g|png|svg|webp)(?:[?#]|$)/i,
   /(?:echosting\.cafe24\.com\/skin|\/skin\/base|\/SkinImg\/|\/morenvyimg\/)/i,
   /(?:cursor|txt_progress|img_loading|top_banner|topbanner)/i,
 ];
