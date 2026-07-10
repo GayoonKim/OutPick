@@ -7,6 +7,10 @@ import {
   type ImportJobTaskRequest,
   type WakeRequest,
 } from "./processor.js";
+import {
+  processDiscoverSeasonsDiagnosticRequest,
+  type DiscoverSeasonsDiagnosticRequest,
+} from "./season-discovery.js";
 import {isRetryableImportError} from "./import-error.js";
 
 interface ServerDependencies {
@@ -63,6 +67,27 @@ export function createServer(dependencies: ServerDependencies): Express {
         response.status(200).json(result);
       } catch (error) {
         console.error("[lookbook-import-worker] task request failed", error);
+        response.status(isRetryableImportError(error) ? 503 : 500).json({
+          accepted: false,
+          errorMessage: errorMessage(error),
+        });
+      }
+    },
+  );
+
+  app.post(
+    "/tasks/discover-seasons-diagnostic",
+    async (request: Request, response: Response) => {
+      try {
+        const result = await processDiscoverSeasonsDiagnosticRequest(
+          request.body as DiscoverSeasonsDiagnosticRequest,
+        );
+        response.status(200).json(result);
+      } catch (error) {
+        console.error(
+          "[lookbook-import-worker] season discovery diagnostic failed",
+          error,
+        );
         response.status(isRetryableImportError(error) ? 503 : 500).json({
           accepted: false,
           errorMessage: errorMessage(error),

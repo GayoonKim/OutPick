@@ -152,6 +152,7 @@ test("소셜/버튼/템플릿 이미지는 raw 후보에서도 제외한다", ()
       "<img src=\"/SkinImg/img/login_sns1.png\" alt=\"sns\">",
       "<img src=\"/morenvyimg/top_searchbox_btn01.gif\" alt=\"search\">",
       "<img src=\"/%7B%7B%7Bimage_url%7D%7D%7D\" alt=\"template\">",
+      "<img src=\"' + $(this).attr('src') + '\" alt=\"template\">",
       "<img src=\"/web/upload/NNEditor/20260608/look-01.jpg\" alt=\"look\">",
     ].join(""),
     "https://brand.example/lookbook/detail.html?product_no=1",

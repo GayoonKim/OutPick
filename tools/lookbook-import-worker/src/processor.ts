@@ -2024,7 +2024,11 @@ function normalizedImageURL(rawValue: string | null, baseURL: string): string | 
 }
 
 function isTemplateImageValue(value: string): boolean {
-  return /{{|}}|\$\{?image|image_url|image_medium|image_small|\+\s*src\s*\+/i.test(value);
+  return (
+    /{{|}}|\$\{?image|image_url|image_medium|image_small|\+\s*src\s*\+/i.test(value) ||
+    /\$\([^)]*\)\.attr\((?:'|")src(?:'|")\)/i.test(value) ||
+    /(?:'\s*\+|"\s*\+|\+\s*'|\+\s*")/.test(value)
+  );
 }
 
 function decodeURIComponentSafe(value: string): string {
