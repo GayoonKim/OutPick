@@ -85,11 +85,11 @@ struct CreateBrandCandidateSelectionView: View {
     }
 
     private var progressContentAlignment: Alignment {
-        importProgressPhase == .extracting ? .center : .topLeading
+        importProgressPhase == .selecting ? .topLeading : .center
     }
 
     private func progressContentMinimumHeight(in containerHeight: CGFloat) -> CGFloat? {
-        guard importProgressPhase == .extracting else { return nil }
+        guard importProgressPhase != .selecting else { return nil }
         return max(0, containerHeight - 64)
     }
 
