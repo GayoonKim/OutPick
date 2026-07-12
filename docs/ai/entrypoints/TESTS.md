@@ -15,6 +15,7 @@ xcodebuild -scheme OutPick -destination 'generic/platform=iOS Simulator' build
 - Lookbook interaction/store tests: `OutPickTests/LookbookInteractionStoreTests.swift`, `OutPickTests/LookbookDebugFailureInjectionStoreTests.swift`
 - Lookbook detail tests: `OutPickTests/PostDetailScreenViewModelTests.swift`, `OutPickTests/SeasonDetailViewModelTests.swift`
 - 좋아요 탭 tests: `OutPickTests/LikedViewModelTests.swift`, `OutPickTests/LoadLikedSeasonsUseCaseTests.swift`
+- 삭제 요청 관리 pagination/retry tests: `OutPickTests/AdminLookbookDeletionManagementViewModelTests.swift`
 - UI smoke/failure tests: `OutPickUITests/LookbookSmokeUITests.swift`, `OutPickUITests/LookbookInteractionFailureToastUITests.swift`
 - UI test support/robots: `OutPickUITests/LookbookUITestSupport.swift`, `OutPickUITests/LookbookPostDetailRobot.swift`, `OutPickUITests/LookbookCommentsRobot.swift`
 
@@ -29,6 +30,9 @@ Firebase Functions tests/build entry:
 
 - Functions package: `functions/package.json`
 - Functions source: `functions/src`
+- Lookbook deletion purge lease policy: `functions/src/lookbookDeletionPurgeLease.ts`
+- Lookbook deletion purge lease tests: `functions/src/lookbookDeletionPurgeLease.test.ts`
+- 실행: `cd functions && npm test`
 - Functions workflow: `.codex/skills/firebase-functions-workflow/SKILL.md`
 
 ## Chat / Realtime

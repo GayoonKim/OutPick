@@ -366,6 +366,15 @@ GRDB 로컬 캐시:
   - `purgedAt`
   - `purgedBy`
   - `purgeErrorMessage`
+  - `manualRetryState`: `queued | running | failed | null`
+  - `manualRetryToken`
+  - `manualRetryCount`
+  - `manualRetryRequestedAt`
+  - `manualRetryRequestedBy`
+  - `purgeLeaseToken`
+  - `purgeLeaseUntil`
+  - `purgeExecutionSource`: `scheduled | manual | null`
+  - `lastPurgeClaimedAt`
   - `targetDisplayName`
   - `targetImagePath`
   - `brandName`
@@ -377,7 +386,7 @@ GRDB 로컬 캐시:
   - `postImageThumbPath`
 - 표시용 snapshot 필드는 신규 삭제 요청부터 저장한다. 기존/부분 projection에는 없을 수 있으므로 `listLookbookDeletionRequests` callable이 원본 브랜드/시즌/포스트 문서를 읽어 응답 summary만 보강한다. `targetDisplayName`이 "삭제된 브랜드/시즌/포스트" fallback이더라도 `brandName`/`seasonTitle`/`postCaption`이 있으면 target별 snapshot 이름을 응답 제목으로 보강한다. 시즌명 snapshot은 시즌 문서의 `displayTitle`, legacy `title`, `sourceTitle` 순서로 읽는다. 이 보강은 `lookbookDeletionRequests` 문서 자체를 backfill write하지 않는다.
 - 클라이언트 목록 제목은 target별 표시용 snapshot을 우선 사용하고, 값이 없으면 유효한 `targetDisplayName`을 사용한다. `postCaption`이 없는 포스트는 서버 snapshot의 `targetDisplayName = "포스트"`를 표시할 수 있다. snapshot이 모두 없을 때만 "삭제된 시즌"처럼 사람이 읽을 수 있는 fallback을 표시한다. `targetID`/UID는 제목 fallback으로 쓰지 않는다.
-- `purged` 완료 목록은 이미지 UI를 표시하지 않는다. 삭제 요청 projection에는 Storage path snapshot만 저장하고 별도 이미지 파일을 보존하지 않으므로, 완료 목록 표시를 위해 삭제된 원본 이미지나 별도 이미지 snapshot 파일을 보존하지 않는다.
+- 앱 삭제 요청 목록은 `active/failed`만 표시하고 `purged` projection은 서버 운영 이력으로만 유지한다. 별도 이미지 파일은 보존하지 않는다.
 - 삭제/복구/취소 감사 로그는 `lookbookDeletionAuditLogs/{logID}`에 둔다.
 - `lookbookDeletionAuditLogs/{logID}` 주요 필드:
   - `action`
@@ -394,10 +403,16 @@ GRDB 로컬 캐시:
   - `after.deletionStatus`
   - `createdAt`
 - 클라이언트는 `lookbookDeletionRequests`와 `lookbookDeletionAuditLogs`를 직접 read/write하지 않고 callable Functions를 사용한다.
+- failed purge manual retry 요청은 총 관리자 callable `retryFailedLookbookDeletionPurge`만 생성한다. 새 request를 만들지 않고 기존 requestID에 새 token과 `queued` 상태를 기록한다.
+- `onLookbookDeletionManualRetryQueued` trigger는 token 변경 + queued 상태에서 즉시 purge를 시작한다.
+- purge 동시 실행 잠금은 `lookbookDeletionPurgeLeases/{brandID}`에 둔다. 주요 필드는 `leaseToken`, `leaseUntil`, `requestID`, `brandID`, `source`, `claimedAt`이다.
+- lease는 15분이며 request의 `purgeLeaseToken`과 lease 문서 token이 모두 실행 token과 일치할 때만 finalize한다.
+- 브랜드 단위 lease로 같은 브랜드의 브랜드/시즌/포스트 purge를 직렬화한다. lease collection은 클라이언트 직접 접근을 허용하지 않는다.
+- manual trigger가 실행되지 않거나 timeout되면 `autoRetryEligible = true`, `retryAfter = now`인 기존 scheduler query가 fallback한다.
 - iOS 앱은 `LookbookDeletionRepositoryProtocol` / `CloudFunctionsLookbookDeletionRepository`를 통해 삭제 lifecycle callable을 호출한다.
 - `firestore.rules`는 `lookbookDeletionRequests`, `lookbookDeletionAuditLogs` 직접 접근을 막고, 시즌/포스트 직접 `delete`를 막으며 기존 create/update 권한은 유지한다.
-- scheduled purge 성공 시 projection status는 `purged`가 되고 `purgedAt`, `purgedBy = "system"`을 기록한다.
-- scheduled purge 실패 시 projection status는 `failed`가 되고 `purgeAttemptCount`, `lastPurgeAttemptAt`, `retryAfter`, `autoRetryEligible`, `purgeErrorMessage`를 기록한다. 3회 실패 후 자동 재시도 대상에서 제외한다.
+- scheduled/manual purge 성공 시 projection status는 `purged`가 되고 `purgedAt`, `purgedBy = "system"`을 기록한다.
+- scheduled/manual purge 실패 시 projection status는 `failed`가 되고 `purgeAttemptCount`, `lastPurgeAttemptAt`, `retryAfter`, `autoRetryEligible`, `purgeErrorMessage`를 기록한다. 3회 실패 후 자동 재시도 대상에서 제외한다.
 - 브랜드 purge는 `brands/{brandID}` 문서와 모든 하위 subcollection, 해당 브랜드의 `brandNameIndex` 문서, brand/season/post/comment user state projection, `brands/{brandID}/` Storage prefix를 삭제한다.
 - 시즌 purge는 시즌 문서와 하위 posts/comments/replacements, 관련 season/post/comment user state projection, `brands/{brandID}/seasons/{seasonID}/` Storage prefix를 삭제한다.
 - 포스트 purge는 포스트 문서와 하위 comments/replacements, 관련 post/comment user state projection, `brands/{brandID}/seasons/{seasonID}/posts/{postID}/` Storage prefix를 삭제한다.
@@ -418,7 +433,7 @@ GRDB 로컬 캐시:
 - 운영자 내부 단계는 `requested`, `processing`, `completed`, `rejected`다.
 - 관리자 기본 처리 이력 노출 기간은 14일이다.
 - `listBrandRequestGroups`의 `processedScope = recent`는 `rejected/completed` group 중 최근 14일 이력을, `history`는 14일 이전 이력을 조회한다.
-- `listLookbookDeletionRequests`의 `statusGroup = processed`는 영구 삭제 완료 상태인 `purged`만 대상으로 `processedScope = recent`로 최근 14일 완료 이력을, `history`로 14일 이전 완료 이력을 조회한다. `restored`와 `cancelled`는 삭제 완료가 아니므로 iOS 완료 목록에 포함하지 않는다. iOS 삭제 요청 화면은 최근 14일 완료 목록을 기본 표시하고, 이전 완료 기록은 별도 history stream으로 아래에 추가 표시한다.
+- `listLookbookDeletionRequests`는 서버에서 `status in [active, failed]`를 고정 적용한다. 서버는 삭제 요청 조회의 `status/statusGroup/processedScope/recentProcessedDays`를 소비하지 않는다. `targetType`, `brandID`, `limit`, cursor를 지원하고 `limit + 1` query로 실제 다음 page가 있을 때만 `nextCursor`를 반환한다. iOS wrapper도 같은 단순화 계약을 사용한다. `purged/cancelled/restored` projection과 감사 로그는 서버 운영 이력으로 유지하지만 앱 목록 API에는 반환하지 않는다.
 - `spam`은 운영자 단계가 아니라 `rejectionReason = spam`으로 기록한다.
 - 사용자 `진행 중` 목록은 `submitted`, `reviewing`만 보여주고, `added`, `rejected`는 즉시 `이전 요청` 목록으로 이동한다.
 - `brandRequestNameIndex/{dedupeKeyHash}`는 전체 요청 수요와 운영 group을 집계한다.

@@ -118,10 +118,9 @@
   - `OutPick/Features/Lookbook/Views/Admin/AdminLookbookDeletionManagementView.swift`
     - 관리자 삭제 관리 화면이다.
     - `삭제` / `삭제 요청 목록` segmented tab으로 나뉜다.
-    - `삭제 요청 목록` 내부는 `처리 중(active/failed)`과 `완료(purged)`로 나뉜다.
-    - `완료`는 최근 14일 내 영구 삭제 완료 목록을 기본 표시하고, `이전 완료 기록 보기` 버튼 후 14일 이전 완료 기록을 아래에 추가 표시한다.
-    - 14일 이전 완료 기록은 스크롤 prefetch로 다음 page를 불러온다.
+    - `삭제 요청 목록`에는 서버가 반환하는 `active/failed` 처리 대상만 표시하며 처리 중/완료 picker와 완료/history UI는 제거됐다.
     - 총 관리자 콘솔의 `삭제 요청 목록` 메뉴에서 진입하면 삭제 화면 없이 전역 삭제 요청 목록만 보여준다.
+    - 전역 화면과 브랜드 관리 내부 `삭제 요청 목록` 탭 모두 이미 상위 navigation/tab에 맥락이 있으므로 같은 섹션 제목과 보조 문구를 반복하지 않는다.
     - 전역 삭제 요청 목록은 브랜드별 row로 묶고, row 전체를 탭하면 브랜드/시즌/포스트 target별 진행 현황을 펼친다.
     - 특정 브랜드 관리자 화면에서 `initialBrand`와 함께 임베드되면 브랜드 검색/선택 없이 해당 브랜드 scoped 삭제 관리만 제공한다.
     - 브랜드 관리 메뉴에 임베드된 삭제 관리 화면에서는 이미 진입 브랜드가 정해져 있으므로 선택 브랜드 로고/한글명/영문명 섹션을 보여주지 않는다.
@@ -130,21 +129,26 @@
     - 시즌 삭제 선택은 가로 스크롤 이미지 카드로, 포스트 삭제 선택은 선택 시즌의 2열 이미지 grid로 표시한다.
     - 시즌/포스트 다중 선택 삭제는 batch deletion repository API를 호출한다.
     - 삭제 요청 처리 중 목록에서는 복구 가능 기한, 삭제 사유, 표시용 snapshot 이미지/이름을 보여주며 hard delete 버튼은 제공하지 않는다.
-    - `purged` 완료 목록은 이미지 UI를 표시하지 않는다. 원본 Storage object가 삭제된 뒤 이미지를 보장하지 않으며, 완료 목록 표시를 위해 별도 이미지 snapshot 파일은 보존하지 않는다.
+    - `purged/cancelled/restored` 요청은 앱 목록에 표시하지 않고 별도 이미지 snapshot 파일도 보존하지 않는다.
     - 시즌 삭제 요청 제목은 `targetDisplayName`보다 `seasonTitle`을 우선해 시즌명으로 표시한다.
+    - 처리 대상 next cursor가 있으면 목록 전체 하단의 공통 sentinel `onAppear`가 다음 50개를 요청한다. 개별 row나 접힌 target row에는 pagination trigger를 두지 않는다.
+    - 총 관리자의 failed row는 queued/running/유효 lease 중 `삭제 처리 중`을 표시하고, 그 외 failed에는 `삭제 다시 시도` action을 제공한다.
+    - 브랜드 owner/admin의 failed row는 자동 재시도 대상 또는 실행 중이면 `삭제를 다시 처리하고 있습니다.`, 최종 실패면 `관리자 확인이 필요합니다.`를 표시한다.
   - `OutPick/Features/Lookbook/ViewModels/AdminLookbookDeletionManagementViewModel.swift`
-    - 탭 상태, 총 관리자 전역 모드와 브랜드 scoped 모드, 브랜드 검색/선택, 시즌/포스트 선택 상태, 포스트 pagination, 삭제 요청 status group, 최근/이전 완료 기록 stream, 삭제 요청/복구 mutation 상태를 관리한다.
+    - 탭 상태, 총 관리자 전역 모드와 브랜드 scoped 모드, 브랜드 검색/선택, 시즌/포스트 선택 상태, 포스트 pagination, 삭제 요청 cursor pagination, 삭제 요청/복구/failed purge retry mutation 상태를 관리한다.
+    - 삭제 요청 page append는 `requestID`로 중복 제거하며 다음 page 호출은 `isLoadingMoreDeletionRequests`로 중복 실행을 막는다.
     - 시즌/포스트 batch 삭제 결과의 성공 항목은 선택 해제하고, 실패 항목은 선택 상태를 유지한다.
     - 총 관리자가 아니면 삭제 요청 목록에서 brand target을 숨긴다.
   - `OutPick/Features/Lookbook/Domains/Entities/LookbookDeletionRequest.swift`
-    - 삭제 요청 목록, target type, request status/status group, mutation receipt, batch 삭제 결과 도메인 타입을 정의한다.
+    - 삭제 요청 목록, target type/status, purge retry metadata/receipt, mutation receipt, batch 삭제 결과 도메인 타입을 정의한다.
     - 관리자 목록 표시용 deletion request snapshot 필드(`targetDisplayName`, `targetImagePath`, 브랜드/시즌/포스트 표시 필드)를 포함한다.
   - `OutPick/Features/Lookbook/Repositories/Protocols/LookbookDeletionRepositoryProtocol.swift`
-    - 삭제 lifecycle callable, 시즌/포스트 batch 삭제 callable, 삭제 요청 `statusGroup`/`processedScope` 목록 조회를 앱 repository 경계로 정의한다.
+    - 삭제 lifecycle callable, 시즌/포스트 batch 삭제 callable, `active/failed` 고정 목록 조회와 failed purge retry를 앱 repository 경계로 정의한다.
   - `OutPick/Features/Lookbook/Repositories/Implementations/CloudFunctionsLookbookDeletionRepository.swift`
-    - `CloudFunctionsManager`의 삭제 lifecycle wrapper, batch 삭제 wrapper, 삭제 요청 `statusGroup`/`processedScope` wrapper를 호출한다.
+    - `CloudFunctionsManager`의 삭제 lifecycle wrapper, batch 삭제 wrapper, 단순화된 목록 및 retry wrapper를 호출한다.
   - `OutPick/DB/Firebase/CloudFunctions/CloudFunctionsManager.swift`
-    - 브랜드 요청 group과 삭제 요청 목록 callable의 Swift wrapper를 제공하며 `processedScope`, `statusGroup` 파라미터를 서버로 전달한다.
+    - 브랜드 요청 group의 `processedScope` wrapper는 유지하고, 삭제 요청 목록은 `targetType/brandID/limit/cursor`만 전달한다.
+    - 삭제 요청 응답의 retry metadata를 decoding하고 `retryFailedLookbookDeletionPurge` callable receipt를 매핑한다.
   - `OutPick/Features/Lookbook/Domains/Entities/BrandManagement.swift`
 - Admin season discovery diagnostics:
   - `OutPick/Features/Lookbook/Views/CreateBrand/brand/CreateBrandCandidateSelectionView.swift`
@@ -376,5 +380,5 @@
 - Phase 7 iOS 관리자 시즌 import QA는 `SeasonAdditionSheetView`, `SeasonImportManagementView`, `SeasonImportManagementViewModel`, `ManageSeasonImportJobsUseCase`와 `docs/ai/architecture/LOOKBOOK_IMPORT_WORKER.md`를 함께 확인한다.
 - 사용자별 `brandRequests/{requestID}`는 개인 요청 기록이며, 사용자 노출 상태는 `listMyBrandRequests`가 group 상태를 반영해 반환한다.
 - `listBrandRequestGroups`는 `adminStage = rejected | completed`에서 `processedScope = recent | history`를 지원한다. 기본 `recent`는 최근 14일, `history`는 14일 이전 처리 이력이다.
-- `listLookbookDeletionRequests`는 `statusGroup = active | processed`와 `processedScope = recent | history`를 지원한다. `processed`는 `purged`만 조회하며 `restored`/`cancelled`는 완료 목록에서 제외한다.
-- 다음 핵심 작업인 포스트 삭제 audit thumbnail은 `docs/ai/tasks/post-deletion-audit-thumbnail/design.md`를 먼저 확인한다. 구현 전 기준은 브랜드/시즌 완료 row는 이미지 없음, 포스트 완료 row만 감사용 저해상도 thumbnail 표시다.
+- Functions `listLookbookDeletionRequests`는 Phase 2부터 `active/failed` 전용 계약이며 `targetType`, `brandID`, `limit`, cursor만 전달받는다. `limit + 1` query로 실제 다음 page가 있을 때만 `nextCursor`를 반환한다.
+- 삭제 요청 목록 단순화는 `docs/ai/tasks/lookbook-deletion-request-list-simplification/progress.md` 기준으로 2026-07-13 iOS 구현, Functions 운영 배포, 사용자 수동 QA를 완료했다.

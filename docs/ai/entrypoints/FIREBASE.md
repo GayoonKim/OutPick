@@ -65,13 +65,16 @@ gcloud firestore fields ttls update expiresAt \
 - `softDeletePost` / `restorePost`: 총 관리자 또는 브랜드 owner/admin이 포스트 삭제 상태를 변경한다. 부모 브랜드가 `deletionRequested`이거나 부모 시즌이 `deleted`이면 개별 포스트 삭제/복구를 막는다.
 - `batchSoftDeleteSeasons`: `brandID`와 최대 20개 `seasonIDs`를 받아 시즌 삭제 요청을 항목별 transaction으로 처리한다. 권한과 부모 브랜드 상태 정책은 `softDeleteSeason`과 동일하며, 일부 항목 실패 시 `results`에 항목별 성공/실패를 반환한다.
 - `batchSoftDeletePosts`: `brandID`, `seasonID`, 최대 20개 `postIDs`를 받아 같은 시즌 안의 포스트 삭제 요청을 항목별 transaction으로 처리한다. 권한과 부모 브랜드/시즌 상태 정책은 `softDeletePost`와 동일하며, 일부 항목 실패 시 `results`에 항목별 성공/실패를 반환한다.
-- `listLookbookDeletionRequests`: 총 관리자는 전역 삭제 요청 목록을 조회할 수 있고, 브랜드 owner/admin은 `brandID`를 지정한 자신 권한 브랜드 목록만 조회할 수 있다. `statusGroup = active`는 `active/failed`, `statusGroup = processed`는 영구 삭제가 끝난 `purged`만 조회한다. 복구된 `restored`와 취소된 `cancelled`는 완료 목록에 포함하지 않는다. processed group은 `processedScope = recent | history`를 지원하며, 기본 최근 처리 이력 기준은 14일이다. 기존/부분 projection에 `targetDisplayName` 또는 `brandName`/`seasonTitle`/`postCaption` 같은 표시 snapshot이 비어 있으면 원본 브랜드/시즌/포스트 문서를 읽어 응답 summary만 보강한다. `targetDisplayName`이 "삭제된 브랜드/시즌/포스트" fallback이더라도 target별 snapshot 이름이 있으면 브랜드명/시즌명/포스트명으로 보강한다. 시즌명은 시즌 문서의 `displayTitle`, legacy `title`, `sourceTitle` 순서로 읽는다. 이 보강은 운영 projection 문서 backfill write를 수행하지 않는다.
+- `listLookbookDeletionRequests`: 총 관리자는 전역 삭제 요청 목록을 조회할 수 있고, 브랜드 owner/admin은 `brandID`를 지정한 자신 권한 브랜드 목록만 조회할 수 있다. 서버가 `status in [active, failed]`를 고정 적용하며 `status/statusGroup/processedScope/recentProcessedDays`를 소비하지 않는다. `targetType`, `brandID`, `limit`, cursor 입력을 지원한다. `limit + 1`개를 조회해 실제 다음 page가 있을 때만 마지막 반환 문서 기준 `nextCursor`를 제공한다. 기존/부분 projection에 `targetDisplayName` 또는 `brandName`/`seasonTitle`/`postCaption` 같은 표시 snapshot이 비어 있으면 원본 브랜드/시즌/포스트 문서를 읽어 응답 summary만 보강한다. `targetDisplayName`이 "삭제된 브랜드/시즌/포스트" fallback이더라도 target별 snapshot 이름이 있으면 브랜드명/시즌명/포스트명으로 보강한다. 시즌명은 시즌 문서의 `displayTitle`, legacy `title`, `sourceTitle` 순서로 읽는다. 이 보강은 운영 projection 문서 backfill write를 수행하지 않는다. iOS wrapper도 status group 입력을 제거한 계약으로 운영 서버와 일치한다.
 - iOS callable wrapper는 `OutPick/DB/Firebase/CloudFunctions/CloudFunctionsManager.swift`, repository 경계는 `CloudFunctionsBrandRequestRepository.swift`와 `CloudFunctionsLookbookDeletionRepository.swift`를 확인한다.
-- 다음 핵심 작업인 포스트 삭제 audit thumbnail은 `docs/ai/tasks/post-deletion-audit-thumbnail/design.md`에 설계되어 있다. 아직 구현 전이며, 구현 시 포스트 요청에 한해 별도 Storage prefix와 projection 필드 추가가 필요하다.
-- 삭제 요청 projection 컬렉션은 `lookbookDeletionRequests/{requestID}`이며 주요 필드는 `targetType`, `targetID`, `targetPath`, `brandID`, `seasonID`, `postID`, `status`, `requestedBy`, `requestedAt`, `restoreUntil`, `purgeAfter`, `reason`, `updatedAt`이다.
+- `retryFailedLookbookDeletionPurge`: 총 관리자만 `failed` 요청의 기존 requestID를 즉시 background purge로 재시도할 수 있다. callable은 새 manual retry token과 `queued` 상태를 transaction으로 기록하고 purge 완료를 기다리지 않고 응답한다. queued 상태나 유효 request lease가 있으면 새 token을 만들지 않고 duplicate receipt를 반환한다.
+- `onLookbookDeletionManualRetryQueued`: `before.manualRetryToken != after.manualRetryToken`이고 새 상태가 `queued`일 때만 실행되는 Firestore update trigger다. manual purge를 즉시 시작하고 오류는 request/audit에 기록하며 scheduler fallback을 위해 throw 재시도를 반복하지 않는다.
+- scheduled/manual purge는 `lookbookDeletionPurgeLeases/{brandID}` 브랜드 단위 lease를 공통 claim한다. lease는 15분이며 request와 lease 문서 token이 모두 일치할 때만 성공/실패 상태를 finalize한다. 같은 브랜드의 브랜드/시즌/포스트 purge를 직렬화해 Storage prefix가 겹치는 실행도 막는다.
+- 삭제 요청 목록 단순화는 `docs/ai/tasks/lookbook-deletion-request-list-simplification/progress.md` 기준으로 2026-07-13 구현, 운영 배포, 사용자 수동 QA를 완료했다. 실제 lease 경쟁과 scheduler fallback의 destructive 재현은 후속 운영 회귀 QA다.
+- 삭제 요청 projection 컬렉션은 `lookbookDeletionRequests/{requestID}`이며 주요 필드는 `targetType`, `targetID`, `targetPath`, `brandID`, `seasonID`, `postID`, `status`, `requestedBy`, `requestedAt`, `restoreUntil`, `purgeAfter`, `reason`, `updatedAt`, `purgeAttemptCount`, `autoRetryEligible`, `retryAfter`, `purgeErrorMessage`, `manualRetryState`, `manualRetryToken`, `manualRetryCount`, `manualRetryRequestedAt`, `manualRetryRequestedBy`, `purgeLeaseToken`, `purgeLeaseUntil`, `purgeExecutionSource`다.
 - 신규 projection은 관리자 목록 표시용 snapshot인 `targetDisplayName`, `targetImagePath`, `brandName`, `brandEnglishName`, `brandLogoThumbPath`, `seasonTitle`, `seasonCoverThumbPath`, `postCaption`, `postImageThumbPath`를 함께 저장한다. 기존 projection에는 없을 수 있으므로 클라이언트는 fallback을 유지한다.
 - 감사 로그 컬렉션은 `lookbookDeletionAuditLogs/{logID}`이며 일반 클라이언트 직접 read/write는 허용하지 않는다.
-- 앱 또는 관리자 callable hard delete는 제공하지 않는다. 영구 삭제는 scheduled function만 수행한다.
+- 신규 hard delete 대상을 직접 선택하는 앱 callable은 제공하지 않는다. 기존 failed request의 재시도만 총 관리자 callable로 등록하며 실제 영구 삭제는 scheduled function 또는 manual retry trigger가 공통 purge helper를 통해 수행한다.
 - `purgeExpiredLookbookDeletions`: Phase 5 scheduled hard delete function이다.
   - `Asia/Seoul` 기준 매일 04:00 실행.
   - 한 번에 최대 20개 deletion request target 처리.
@@ -82,8 +85,10 @@ gcloud firestore fields ttls update expiresAt \
   - 문서 필드에 저장된 Storage 파일은 raw Storage path만 삭제 대상으로 인정한다. `://`가 들어간 URL, 외부 `remoteURL`, `sourcePageURL`은 삭제하지 않는다.
   - 부모 target이 purge되면 같은 범위의 하위 active/failed deletion request projection도 `purged`로 닫는다.
   - 실패 시 `failed`, `purgeAttemptCount`, `lastPurgeAttemptAt`, `retryAfter`, `autoRetryEligible`, `purgeErrorMessage`와 감사 로그를 남기고, 3회 실패 후 자동 재시도에서 제외한다.
+  - scheduled worker도 실행 전 브랜드 단위 15분 lease를 claim하며 manual trigger와 동시 실행하지 않는다.
 - Firestore rules는 `lookbookDeletionRequests`, `lookbookDeletionAuditLogs` 직접 접근을 막고, `brands/{brandID}/seasons/{seasonID}`와 `posts/{postID}` 직접 `delete`를 막는다. 기존 create/update 권한은 유지한다.
 - 인덱스는 `firestore.indexes.json`의 `lookbookDeletionRequests` 목록/정리용 composite index와 `brandStates`, `seasonStates`, `postStates`, `commentStates` collection group field override를 사용한다.
+- `lookbookDeletionPurgeLeases`는 서버 전용 top-level collection이며 Firestore rules의 최종 deny fallback으로 클라이언트 접근이 차단된다.
 - 운영 배포와 OUTSTANDING 통합 QA 결과는 `docs/ai/tasks/lookbook-admin-soft-delete-lifecycle/progress.md`와 `docs/ai/tasks/lookbook-admin-soft-delete-lifecycle/qa-checklist.md`를 확인한다.
 
 ## Lookbook URL Import Worker
