@@ -55,11 +55,13 @@ protocol LookbookDeletionRepositoryProtocol {
     ) async throws -> LookbookDeletionMutationReceipt
 
     func listDeletionRequests(
-        statusGroup: LookbookDeletionRequestStatusGroup,
-        processedScope: ProcessedRequestScope?,
         targetType: LookbookDeletionTargetType?,
         brandID: BrandID?,
         limit: Int,
         cursor: LookbookDeletionRequestPage.Cursor?
     ) async throws -> LookbookDeletionRequestPage
+
+    func retryFailedPurge(
+        requestID: String
+    ) async throws -> LookbookDeletionRetryReceipt
 }

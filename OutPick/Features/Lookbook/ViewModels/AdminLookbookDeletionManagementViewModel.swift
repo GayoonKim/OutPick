@@ -32,9 +32,6 @@ final class AdminLookbookDeletionManagementViewModel: ObservableObject {
     @Published private(set) var expandedSeason: Season?
     @Published private(set) var posts: [LookbookPost] = []
     @Published private(set) var deletionRequests: [LookbookDeletionRequest] = []
-    @Published private(set) var historicalDeletionRequests: [LookbookDeletionRequest] = []
-    @Published var selectedRequestStatusGroup: LookbookDeletionRequestStatusGroup = .active
-    @Published private(set) var isHistoricalDeletionRequestsVisible: Bool = false
     @Published private(set) var selectedSeasonIDs: Set<SeasonID> = []
     @Published private(set) var selectedPostIDs: Set<PostID> = []
     @Published var reasonText: String = ""
@@ -43,8 +40,7 @@ final class AdminLookbookDeletionManagementViewModel: ObservableObject {
     @Published private(set) var isLoadingPosts: Bool = false
     @Published private(set) var isLoadingMorePosts: Bool = false
     @Published private(set) var isLoadingRequests: Bool = false
-    @Published private(set) var isLoadingHistoricalDeletionRequests: Bool = false
-    @Published private(set) var isLoadingMoreHistoricalDeletionRequests: Bool = false
+    @Published private(set) var isLoadingMoreDeletionRequests: Bool = false
     @Published private(set) var mutationKey: String?
     @Published var message: String?
 
@@ -61,9 +57,8 @@ final class AdminLookbookDeletionManagementViewModel: ObservableObject {
     private let isBrandScoped: Bool
     private let postPageSize: Int = 24
     private let deletionRequestPageLimit: Int = 50
-    private let deletionRequestPrefetchThreshold: Int = 6
     private var nextPostCursor: PageCursor?
-    private var historicalDeletionRequestsNextCursor: LookbookDeletionRequestPage.Cursor?
+    private var deletionRequestsNextCursor: LookbookDeletionRequestPage.Cursor?
     private var cancellables = Set<AnyCancellable>()
     private var searchTask: Task<Void, Never>?
     private var messageDismissTask: Task<Void, Never>?
@@ -102,10 +97,8 @@ final class AdminLookbookDeletionManagementViewModel: ObservableObject {
         nextPostCursor != nil
     }
 
-    var showsHistoricalDeletionRequestButton: Bool {
-        selectedRequestStatusGroup == .processed &&
-            isHistoricalDeletionRequestsVisible == false &&
-            isLoadingRequests == false
+    var hasMoreDeletionRequests: Bool {
+        deletionRequestsNextCursor != nil
     }
 
     var normalizedReason: String? {
@@ -126,20 +119,9 @@ final class AdminLookbookDeletionManagementViewModel: ObservableObject {
         }
     }
 
-    func selectRequestStatusGroup(
-        _ statusGroup: LookbookDeletionRequestStatusGroup,
-        isTotalAdmin: Bool
-    ) async {
-        guard selectedRequestStatusGroup != statusGroup else { return }
-        selectedRequestStatusGroup = statusGroup
-        resetHistoricalDeletionRequests()
-        await reloadDeletionRequests(isTotalAdmin: isTotalAdmin)
-    }
-
     func selectBrand(_ brand: Brand, isTotalAdmin: Bool) async {
         selectedBrand = brand
         resetSelectionState()
-        resetHistoricalDeletionRequests()
         searchText = ""
         searchResults = []
         message = nil
@@ -152,7 +134,6 @@ final class AdminLookbookDeletionManagementViewModel: ObservableObject {
         seasons = []
         posts = []
         resetSelectionState()
-        resetHistoricalDeletionRequests()
         await reloadDeletionRequests(isTotalAdmin: isTotalAdmin)
     }
 
@@ -278,78 +259,59 @@ final class AdminLookbookDeletionManagementViewModel: ObservableObject {
     }
 
     func reloadDeletionRequests(isTotalAdmin: Bool) async {
-        let shouldReloadHistory = selectedRequestStatusGroup == .processed &&
-            isHistoricalDeletionRequestsVisible
-
         isLoadingRequests = true
         defer { isLoadingRequests = false }
 
         do {
             let page = try await fetchDeletionRequests(
-                statusGroup: selectedRequestStatusGroup,
-                processedScope: selectedRequestStatusGroup == .processed ? .recent : nil,
                 isTotalAdmin: isTotalAdmin,
                 cursor: nil
             )
-            deletionRequests = visibleDeletionRequests(page.requests, isTotalAdmin: isTotalAdmin)
-
-            if shouldReloadHistory {
-                await reloadHistoricalDeletionRequests(isTotalAdmin: isTotalAdmin)
-            } else if selectedRequestStatusGroup != .processed {
-                resetHistoricalDeletionRequests()
-            }
+            deletionRequests = deduplicatedDeletionRequests(
+                visibleDeletionRequests(page.requests, isTotalAdmin: isTotalAdmin)
+            )
+            deletionRequestsNextCursor = page.nextCursor
         } catch {
             deletionRequests = []
-            if selectedRequestStatusGroup != .processed {
-                resetHistoricalDeletionRequests()
-            }
+            deletionRequestsNextCursor = nil
             if selectedBrand != nil || isTotalAdmin {
                 setMessage("삭제 요청 목록을 불러오지 못했습니다: \(error.localizedDescription)", autoDismiss: false)
             }
         }
     }
 
-    func revealHistoricalDeletionRequests(isTotalAdmin: Bool) async {
-        guard selectedRequestStatusGroup == .processed,
-              isHistoricalDeletionRequestsVisible == false
-        else {
-            return
-        }
+    func loadMoreDeletionRequestsIfNeeded(isTotalAdmin: Bool) async {
+        guard let cursor = deletionRequestsNextCursor,
+              isLoadingRequests == false,
+              isLoadingMoreDeletionRequests == false
+        else { return }
 
-        isHistoricalDeletionRequestsVisible = true
-        await reloadHistoricalDeletionRequests(isTotalAdmin: isTotalAdmin)
-    }
-
-    func loadMoreHistoricalDeletionRequestsIfNeeded(
-        current request: LookbookDeletionRequest,
-        isTotalAdmin: Bool
-    ) async {
-        guard selectedRequestStatusGroup == .processed,
-              isHistoricalDeletionRequestsVisible,
-              let cursor = historicalDeletionRequestsNextCursor,
-              isLoadingHistoricalDeletionRequests == false,
-              isLoadingMoreHistoricalDeletionRequests == false,
-              shouldLoadMoreHistoricalDeletionRequests(currentRequestID: request.requestID)
-        else {
-            return
-        }
-
-        isLoadingMoreHistoricalDeletionRequests = true
-        defer { isLoadingMoreHistoricalDeletionRequests = false }
+        isLoadingMoreDeletionRequests = true
+        defer { isLoadingMoreDeletionRequests = false }
 
         do {
             let page = try await fetchDeletionRequests(
-                statusGroup: .processed,
-                processedScope: .history,
                 isTotalAdmin: isTotalAdmin,
                 cursor: cursor
             )
-            historicalDeletionRequests.append(contentsOf: historicalOnlyDeletionRequests(
-                visibleDeletionRequests(page.requests, isTotalAdmin: isTotalAdmin)
-            ))
-            historicalDeletionRequestsNextCursor = page.nextCursor
+            deletionRequests = deduplicatedDeletionRequests(
+                deletionRequests + visibleDeletionRequests(page.requests, isTotalAdmin: isTotalAdmin)
+            )
+            deletionRequestsNextCursor = page.nextCursor
         } catch {
-            setMessage("이전 완료 기록을 더 불러오지 못했습니다: \(error.localizedDescription)", autoDismiss: false)
+            setMessage("삭제 요청을 더 불러오지 못했습니다: \(error.localizedDescription)", autoDismiss: false)
+        }
+    }
+
+    func retryFailedPurge(
+        _ request: LookbookDeletionRequest,
+        isTotalAdmin: Bool
+    ) async {
+        guard isTotalAdmin, request.status == .failed else { return }
+        await performDeletionMutation(key: "retry:\(request.requestID)") {
+            _ = try await deletionRepository.retryFailedPurge(requestID: request.requestID)
+            setMessage("삭제를 다시 처리합니다.", autoDismiss: true)
+            await reloadDeletionRequests(isTotalAdmin: isTotalAdmin)
         }
     }
 
@@ -541,46 +503,15 @@ final class AdminLookbookDeletionManagementViewModel: ObservableObject {
     }
 
     private func fetchDeletionRequests(
-        statusGroup: LookbookDeletionRequestStatusGroup,
-        processedScope: ProcessedRequestScope?,
         isTotalAdmin: Bool,
         cursor: LookbookDeletionRequestPage.Cursor?
     ) async throws -> LookbookDeletionRequestPage {
         try await deletionRepository.listDeletionRequests(
-            statusGroup: statusGroup,
-            processedScope: processedScope,
             targetType: nil,
             brandID: deletionRequestBrandID(isTotalAdmin: isTotalAdmin),
             limit: deletionRequestPageLimit,
             cursor: cursor
         )
-    }
-
-    private func reloadHistoricalDeletionRequests(isTotalAdmin: Bool) async {
-        guard selectedRequestStatusGroup == .processed else {
-            resetHistoricalDeletionRequests()
-            return
-        }
-
-        isLoadingHistoricalDeletionRequests = true
-        defer { isLoadingHistoricalDeletionRequests = false }
-
-        do {
-            let page = try await fetchDeletionRequests(
-                statusGroup: .processed,
-                processedScope: .history,
-                isTotalAdmin: isTotalAdmin,
-                cursor: nil
-            )
-            historicalDeletionRequests = historicalOnlyDeletionRequests(
-                visibleDeletionRequests(page.requests, isTotalAdmin: isTotalAdmin)
-            )
-            historicalDeletionRequestsNextCursor = page.nextCursor
-        } catch {
-            historicalDeletionRequests = []
-            historicalDeletionRequestsNextCursor = nil
-            setMessage("이전 완료 기록을 불러오지 못했습니다: \(error.localizedDescription)", autoDismiss: false)
-        }
     }
 
     private func visibleDeletionRequests(
@@ -606,23 +537,11 @@ final class AdminLookbookDeletionManagementViewModel: ObservableObject {
         selectedPostIDs = []
     }
 
-    private func resetHistoricalDeletionRequests() {
-        historicalDeletionRequests = []
-        historicalDeletionRequestsNextCursor = nil
-        isHistoricalDeletionRequestsVisible = false
-        isLoadingHistoricalDeletionRequests = false
-        isLoadingMoreHistoricalDeletionRequests = false
-    }
-
-    private func historicalOnlyDeletionRequests(
-        _ fetchedRequests: [LookbookDeletionRequest]
+    private func deduplicatedDeletionRequests(
+        _ requests: [LookbookDeletionRequest]
     ) -> [LookbookDeletionRequest] {
-        let recentIDs = Set(deletionRequests.map(\.requestID))
-        let existingHistoryIDs = Set(historicalDeletionRequests.map(\.requestID))
-        return fetchedRequests.filter { request in
-            recentIDs.contains(request.requestID) == false &&
-                existingHistoryIDs.contains(request.requestID) == false
-        }
+        var seenRequestIDs = Set<String>()
+        return requests.filter { seenRequestIDs.insert($0.requestID).inserted }
     }
 
     private func shouldLoadMorePosts(currentPostID: PostID) -> Bool {
@@ -630,13 +549,6 @@ final class AdminLookbookDeletionManagementViewModel: ObservableObject {
             return false
         }
         return index >= max(posts.count - 6, 0)
-    }
-
-    private func shouldLoadMoreHistoricalDeletionRequests(currentRequestID: String) -> Bool {
-        guard let index = historicalDeletionRequests.firstIndex(where: { $0.requestID == currentRequestID }) else {
-            return false
-        }
-        return index >= max(historicalDeletionRequests.count - deletionRequestPrefetchThreshold, 0)
     }
 
     private func applySeasonBatchResult(_ result: LookbookDeletionBatchResult) {
@@ -689,7 +601,9 @@ final class AdminLookbookDeletionManagementViewModel: ObservableObject {
         if message.contains("실패") || message.contains("불러오지 못했습니다") {
             return FeedbackDismissDelay.failure
         }
-        if message.contains("등록했습니다") || message.contains("복구했습니다") {
+        if message.contains("등록했습니다") ||
+            message.contains("복구했습니다") ||
+            message.contains("처리합니다") {
             return FeedbackDismissDelay.result
         }
         return nil

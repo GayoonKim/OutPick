@@ -43,20 +43,10 @@ enum LookbookDeletionRequestStatus: String, Codable, CaseIterable, Equatable, Id
     }
 }
 
-enum LookbookDeletionRequestStatusGroup: String, Codable, CaseIterable, Equatable, Identifiable {
-    case active
-    case processed
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .active:
-            return "처리 중"
-        case .processed:
-            return "완료"
-        }
-    }
+enum LookbookDeletionManualRetryState: String, Codable, Equatable {
+    case queued
+    case running
+    case failed
 }
 
 struct LookbookDeletionRequest: Equatable, Identifiable {
@@ -88,8 +78,29 @@ struct LookbookDeletionRequest: Equatable, Identifiable {
     let seasonCoverThumbPath: String?
     let postCaption: String?
     let postImageThumbPath: String?
+    let autoRetryEligible: Bool
+    let retryAfter: Date?
+    let purgeAttemptCount: Int
+    let purgeErrorMessage: String?
+    let manualRetryState: LookbookDeletionManualRetryState?
+    let manualRetryCount: Int
+    let purgeInProgress: Bool
 
     var id: String { requestID }
+
+    var isPurgeRetryInProgress: Bool {
+        purgeInProgress || manualRetryState == .queued || manualRetryState == .running
+    }
+
+    var isPurgeRetryPendingOrInProgress: Bool {
+        autoRetryEligible || isPurgeRetryInProgress
+    }
+}
+
+struct LookbookDeletionRetryReceipt: Equatable {
+    let requestID: String
+    let manualRetryState: LookbookDeletionManualRetryState
+    let duplicate: Bool
 }
 
 struct LookbookDeletionRequestPage {

@@ -945,20 +945,12 @@ final class CloudFunctionsManager {
     }
 
     func listLookbookDeletionRequests(
-        statusGroup: LookbookDeletionRequestStatusGroup,
-        processedScope: ProcessedRequestScope?,
         targetType: LookbookDeletionTargetType?,
         brandID: BrandID?,
         limit: Int,
         cursor: LookbookDeletionRequestPage.Cursor?
     ) async throws -> LookbookDeletionRequestPage {
-        var data: [String: Any] = [
-            "statusGroup": statusGroup.rawValue,
-            "limit": limit
-        ]
-        if let processedScope {
-            data["processedScope"] = processedScope.rawValue
-        }
+        var data: [String: Any] = ["limit": limit]
         if let targetType {
             data["targetType"] = targetType.rawValue
         }
@@ -994,6 +986,25 @@ final class CloudFunctionsManager {
         return LookbookDeletionRequestPage(
             requests: try rawRequests.map { try lookbookDeletionRequestValue($0) },
             nextCursor: nextCursor
+        )
+    }
+
+    func retryFailedLookbookDeletionPurge(
+        requestID: String
+    ) async throws -> LookbookDeletionRetryReceipt {
+        let response = try await callFunction(
+            "retryFailedLookbookDeletionPurge",
+            data: ["requestID": requestID]
+        )
+        guard let state = LookbookDeletionManualRetryState(
+            rawValue: try stringValue(response, key: "manualRetryState")
+        ) else {
+            throw CloudFunctionsManagerError.invalidResponse
+        }
+        return LookbookDeletionRetryReceipt(
+            requestID: try stringValue(response, key: "requestID"),
+            manualRetryState: state,
+            duplicate: try boolValue(response, key: "duplicate")
         )
     }
 
@@ -1317,7 +1328,15 @@ final class CloudFunctionsManager {
             seasonTitle: optionalStringValue(dictionary, key: "seasonTitle"),
             seasonCoverThumbPath: optionalStringValue(dictionary, key: "seasonCoverThumbPath"),
             postCaption: optionalStringValue(dictionary, key: "postCaption"),
-            postImageThumbPath: optionalStringValue(dictionary, key: "postImageThumbPath")
+            postImageThumbPath: optionalStringValue(dictionary, key: "postImageThumbPath"),
+            autoRetryEligible: optionalBoolValue(dictionary, key: "autoRetryEligible") ?? false,
+            retryAfter: optionalDateValue(dictionary, key: "retryAfter"),
+            purgeAttemptCount: optionalIntValue(dictionary, key: "purgeAttemptCount") ?? 0,
+            purgeErrorMessage: optionalStringValue(dictionary, key: "purgeErrorMessage"),
+            manualRetryState: optionalStringValue(dictionary, key: "manualRetryState")
+                .flatMap(LookbookDeletionManualRetryState.init(rawValue:)),
+            manualRetryCount: optionalIntValue(dictionary, key: "manualRetryCount") ?? 0,
+            purgeInProgress: optionalBoolValue(dictionary, key: "purgeInProgress") ?? false
         )
     }
 

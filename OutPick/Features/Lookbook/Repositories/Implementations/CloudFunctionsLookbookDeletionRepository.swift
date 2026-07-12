@@ -105,20 +105,24 @@ final class CloudFunctionsLookbookDeletionRepository: LookbookDeletionRepository
     }
 
     func listDeletionRequests(
-        statusGroup: LookbookDeletionRequestStatusGroup,
-        processedScope: ProcessedRequestScope?,
         targetType: LookbookDeletionTargetType?,
         brandID: BrandID?,
         limit: Int,
         cursor: LookbookDeletionRequestPage.Cursor?
     ) async throws -> LookbookDeletionRequestPage {
         try await cloudFunctionsManager.listLookbookDeletionRequests(
-            statusGroup: statusGroup,
-            processedScope: processedScope,
             targetType: targetType,
             brandID: brandID,
             limit: limit,
             cursor: cursor
+        )
+    }
+
+    func retryFailedPurge(
+        requestID: String
+    ) async throws -> LookbookDeletionRetryReceipt {
+        try await cloudFunctionsManager.retryFailedLookbookDeletionPurge(
+            requestID: requestID
         )
     }
 }

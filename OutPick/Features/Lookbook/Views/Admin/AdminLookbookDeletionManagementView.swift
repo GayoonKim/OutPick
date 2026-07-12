@@ -318,129 +318,62 @@ struct AdminLookbookDeletionManagementView: View {
     private var deletionRequestsSection: some View {
         adminSection {
             VStack(alignment: .leading, spacing: 14) {
-                sectionHeader(
-                    title: "삭제 요청 목록",
-                    subtitle: requestListSubtitle
-                )
-
-                requestStatusGroupPicker
-
                 if viewModel.isLoadingRequests {
                     loadingRow("삭제 요청을 불러오는 중입니다.")
                 } else {
                     deletionRequestList(
                         viewModel.deletionRequests,
-                        emptyMessage: deletionRequestEmptyMessage,
-                        allowsHistoricalPrefetch: false
+                        emptyMessage: deletionRequestEmptyMessage
                     )
 
-                    historicalDeletionRequestsSection
+                    deletionRequestPaginationSentinel
                 }
             }
         }
     }
 
-    private var requestStatusGroupPicker: some View {
-        Picker("삭제 요청 상태", selection: Binding(
-            get: { viewModel.selectedRequestStatusGroup },
-            set: { statusGroup in
+    @ViewBuilder
+    private var deletionRequestPaginationSentinel: some View {
+        if viewModel.hasMoreDeletionRequests {
+            Group {
+                if viewModel.isLoadingMoreDeletionRequests {
+                    loadingRow("삭제 요청을 더 불러오는 중입니다.")
+                } else {
+                    Color.clear
+                        .frame(height: 1)
+                        .accessibilityHidden(true)
+                }
+            }
+            .onAppear {
                 Task {
-                    await viewModel.selectRequestStatusGroup(
-                        statusGroup,
+                    await viewModel.loadMoreDeletionRequestsIfNeeded(
                         isTotalAdmin: brandAdminSessionStore.isTotalAdmin
                     )
                 }
             }
-        )) {
-            ForEach(LookbookDeletionRequestStatusGroup.allCases) { statusGroup in
-                Text(statusGroup.title).tag(statusGroup)
-            }
         }
-        .pickerStyle(.segmented)
-        .tint(OutPickTheme.SwiftUIColor.accent)
     }
 
     @ViewBuilder
     private func deletionRequestList(
         _ requests: [LookbookDeletionRequest],
-        emptyMessage: String,
-        allowsHistoricalPrefetch: Bool
+        emptyMessage: String
     ) -> some View {
         if requests.isEmpty {
             emptyText(emptyMessage)
         } else if allowsDeletionSelection == false,
                   brandAdminSessionStore.isTotalAdmin,
                   viewModel.selectedBrand == nil {
-            globalDeletionRequestGroups(
-                requests,
-                allowsHistoricalPrefetch: allowsHistoricalPrefetch
-            )
+            globalDeletionRequestGroups(requests)
         } else {
             ForEach(requests) { request in
                 deletionRequestRow(request)
-                    .onAppear {
-                        prefetchHistoricalDeletionRequestsIfNeeded(
-                            request,
-                            isEnabled: allowsHistoricalPrefetch
-                        )
-                    }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var historicalDeletionRequestsSection: some View {
-        if viewModel.selectedRequestStatusGroup == .processed {
-            if viewModel.isHistoricalDeletionRequestsVisible {
-                VStack(alignment: .leading, spacing: 12) {
-                    sectionHeader(
-                        title: "이전 완료 기록",
-                        subtitle: "14일 이전에 처리된 삭제 요청을 스크롤에 맞춰 더 불러옵니다."
-                    )
-
-                    if viewModel.isLoadingHistoricalDeletionRequests {
-                        loadingRow("이전 완료 기록을 불러오는 중입니다.")
-                    } else {
-                        deletionRequestList(
-                            viewModel.historicalDeletionRequests,
-                            emptyMessage: "이전 완료 삭제 요청이 없습니다.",
-                            allowsHistoricalPrefetch: true
-                        )
-                    }
-
-                    if viewModel.isLoadingMoreHistoricalDeletionRequests {
-                        loadingRow("이전 완료 기록을 더 불러오는 중입니다.")
-                    }
-                }
-                .padding(.top, 6)
-            } else if viewModel.showsHistoricalDeletionRequestButton {
-                Button {
-                    Task {
-                        await viewModel.revealHistoricalDeletionRequests(
-                            isTotalAdmin: brandAdminSessionStore.isTotalAdmin
-                        )
-                    }
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "clock.arrow.circlepath")
-                            .font(.system(size: 14, weight: .semibold))
-                        Text("이전 완료 기록 보기")
-                            .font(.subheadline.weight(.bold))
-                    }
-                    .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(OutPickTheme.SwiftUIColor.surfaceElevated)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                }
-                .buttonStyle(.plain)
             }
         }
     }
 
     private func globalDeletionRequestGroups(
-        _ requests: [LookbookDeletionRequest],
-        allowsHistoricalPrefetch: Bool
+        _ requests: [LookbookDeletionRequest]
     ) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             ForEach(groupedDeletionRequests(requests)) { group in
@@ -476,18 +409,15 @@ struct AdminLookbookDeletionManagementView: View {
                     if expandedRequestBrandIDs.contains(group.brandID) {
                         groupedTargetSection(
                             type: .brand,
-                            requests: group.requests.filter { $0.targetType == .brand },
-                            allowsHistoricalPrefetch: allowsHistoricalPrefetch
+                            requests: group.requests.filter { $0.targetType == .brand }
                         )
                         groupedTargetSection(
                             type: .season,
-                            requests: group.requests.filter { $0.targetType == .season },
-                            allowsHistoricalPrefetch: allowsHistoricalPrefetch
+                            requests: group.requests.filter { $0.targetType == .season }
                         )
                         groupedTargetSection(
                             type: .post,
-                            requests: group.requests.filter { $0.targetType == .post },
-                            allowsHistoricalPrefetch: allowsHistoricalPrefetch
+                            requests: group.requests.filter { $0.targetType == .post }
                         )
                     }
                 }
@@ -501,8 +431,7 @@ struct AdminLookbookDeletionManagementView: View {
     @ViewBuilder
     private func groupedTargetSection(
         type: LookbookDeletionTargetType,
-        requests: [LookbookDeletionRequest],
-        allowsHistoricalPrefetch: Bool
+        requests: [LookbookDeletionRequest]
     ) -> some View {
         if requests.isEmpty == false {
             VStack(alignment: .leading, spacing: 10) {
@@ -524,12 +453,6 @@ struct AdminLookbookDeletionManagementView: View {
 
                 ForEach(requests) { request in
                     deletionRequestRow(request)
-                        .onAppear {
-                            prefetchHistoricalDeletionRequestsIfNeeded(
-                                request,
-                                isEnabled: allowsHistoricalPrefetch
-                            )
-                        }
                 }
             }
             .padding(12)
@@ -539,28 +462,8 @@ struct AdminLookbookDeletionManagementView: View {
         }
     }
 
-    private var requestListSubtitle: String {
-        let scopeText: String
-        switch viewModel.selectedRequestStatusGroup {
-        case .active:
-            scopeText = "처리 중인 삭제 요청과 실패 요청을 확인합니다."
-        case .processed:
-            scopeText = "최근 14일 내 영구 삭제 완료 요청을 확인합니다."
-        }
-
-        if brandAdminSessionStore.isTotalAdmin, viewModel.selectedBrand == nil {
-            return "전체 \(scopeText)"
-        }
-        return "현재 브랜드의 \(scopeText)"
-    }
-
     private var deletionRequestEmptyMessage: String {
-        switch viewModel.selectedRequestStatusGroup {
-        case .active:
-            return "진행 중인 삭제 요청이 없습니다."
-        case .processed:
-            return "최근 14일 내 영구 삭제 완료 요청이 없습니다."
-        }
+        "처리할 삭제 요청이 없습니다."
     }
 
     private func groupedDeletionRequests(
@@ -627,19 +530,6 @@ struct AdminLookbookDeletionManagementView: View {
             expandedRequestBrandIDs.remove(brandID)
         } else {
             expandedRequestBrandIDs.insert(brandID)
-        }
-    }
-
-    private func prefetchHistoricalDeletionRequestsIfNeeded(
-        _ request: LookbookDeletionRequest,
-        isEnabled: Bool
-    ) {
-        guard isEnabled else { return }
-        Task {
-            await viewModel.loadMoreHistoricalDeletionRequestsIfNeeded(
-                current: request,
-                isTotalAdmin: brandAdminSessionStore.isTotalAdmin
-            )
         }
     }
 
@@ -894,7 +784,7 @@ struct AdminLookbookDeletionManagementView: View {
 
                 Spacer()
 
-                Text(request.status.title)
+                Text(deletionRequestStatusTitle(request))
                     .font(.caption.weight(.bold))
                     .foregroundStyle(OutPickTheme.SwiftUIColor.accent)
             }
@@ -933,12 +823,51 @@ struct AdminLookbookDeletionManagementView: View {
                             )
                         }
                     }
+                } else if request.status == .failed,
+                          brandAdminSessionStore.isTotalAdmin,
+                          request.isPurgeRetryInProgress == false {
+                    secondaryInlineButton(
+                        title: "삭제 다시 시도",
+                        isLoading: viewModel.mutationKey == "retry:\(request.requestID)"
+                    ) {
+                        Task {
+                            await viewModel.retryFailedPurge(
+                                request,
+                                isTotalAdmin: brandAdminSessionStore.isTotalAdmin
+                            )
+                        }
+                    }
                 }
+            }
+
+            if request.status == .failed,
+               brandAdminSessionStore.isTotalAdmin == false {
+                Text(brandAdminFailureMessage(request))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
             }
         }
         .padding(12)
         .background(OutPickTheme.SwiftUIColor.surfaceElevated)
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private func deletionRequestStatusTitle(
+        _ request: LookbookDeletionRequest
+    ) -> String {
+        if request.status == .failed,
+           request.isPurgeRetryInProgress {
+            return "삭제 처리 중"
+        }
+        return request.status.title
+    }
+
+    private func brandAdminFailureMessage(
+        _ request: LookbookDeletionRequest
+    ) -> String {
+        request.isPurgeRetryPendingOrInProgress ?
+            "삭제를 다시 처리하고 있습니다." :
+            "관리자 확인이 필요합니다."
     }
 
     private func deletionRequestImage(_ request: LookbookDeletionRequest) -> some View {
