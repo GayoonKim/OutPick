@@ -24,6 +24,14 @@ import {getFirestore, FieldValue} from "firebase-admin/firestore";
 import {
   discoverSeasonCandidates as runDiscoverSeasonCandidates,
 } from "./lookbookSeasonCandidateDiscovery.js";
+import {
+  canFinalizePurgeLease,
+  isManualRetryDuplicate,
+  isPurgeLeaseActive,
+  shouldStartManualRetryTrigger,
+  visibleManualRetryState,
+  type ManualRetryState,
+} from "./lookbookDeletionPurgeLease.js";
 
 admin.initializeApp();
 const db = getFirestore();
@@ -36,6 +44,8 @@ const LOOKBOOK_DISCOVERY_DIAGNOSTIC_ENDPOINT =
   "/tasks/discover-seasons-diagnostic";
 const LOOKBOOK_IMPORT_TASK_MAX_ATTEMPTS = 3;
 const LOOKBOOK_ASSET_RETRY_MODE = "assetFailureRetry";
+const LOOKBOOK_PURGE_LEASE_DURATION_MINUTES = 15;
+const LOOKBOOK_PURGE_LEASES_COLLECTION = "lookbookDeletionPurgeLeases";
 const MEDIA_UPLOAD_CLEANUP_LIMIT = 100;
 const LOOKBOOK_EXTRACTION_DIAGNOSTIC_RETENTION_DAYS = 90;
 const LOOKBOOK_EXTRACTION_DIAGNOSTIC_CLEANUP_LIMIT = 100;
@@ -502,13 +512,7 @@ type ProcessedRequestScope = "recent" | "history";
 
 type BrandManagerRole = "owner" | "admin";
 type LookbookDeletionTargetType = "brand" | "season" | "post";
-type LookbookDeletionRequestStatus =
-  "active" |
-  "cancelled" |
-  "restored" |
-  "purged" |
-  "failed";
-type LookbookDeletionRequestStatusGroup = "active" | "processed";
+type LookbookPurgeExecutionSource = "scheduled" | "manual";
 type LookbookDeletionAction =
   "requestBrandDeletion" |
   "cancelBrandDeletion" |
@@ -519,7 +523,17 @@ type LookbookDeletionAction =
   "purgeBrand" |
   "purgeSeason" |
   "purgePost" |
-  "purgeFailed";
+  "purgeFailed" |
+  "retryPurgeRequested";
+
+type LookbookPurgeLeaseClaim = {
+  requestRef: FirebaseFirestore.DocumentReference;
+  leaseRef: FirebaseFirestore.DocumentReference;
+  requestID: string;
+  leaseToken: string;
+  source: LookbookPurgeExecutionSource;
+  data: FirebaseFirestore.DocumentData;
+};
 
 const BRAND_REQUEST_ADMIN_STAGES: BrandRequestAdminStage[] = [
   "requested",
@@ -1000,44 +1014,40 @@ function optionalDeletionTargetType(
   return value;
 }
 
-function optionalDeletionRequestStatus(
-  data: Record<string, unknown>,
-  key: string
-): LookbookDeletionRequestStatus | null {
-  const value = data[key];
-  if (value === undefined || value === null) {
+function manualRetryState(value: unknown): ManualRetryState {
+  if (value === "queued" || value === "running" || value === "failed") {
+    return value;
+  }
+  return null;
+}
+
+function sanitizedPurgeErrorMessage(value: unknown): string | null {
+  if (typeof value !== "string" || value.length === 0) {
     return null;
   }
   if (
-    value !== "active" &&
-    value !== "cancelled" &&
-    value !== "restored" &&
-    value !== "purged" &&
-    value !== "failed"
+    value === "missing_brand_id" ||
+    value === "missing_season_id" ||
+    value === "missing_post_target_id" ||
+    value === "invalid_target_type"
   ) {
-    throw new HttpsError("invalid-argument", `${key} 값이 올바르지 않습니다.`);
+    return "삭제 대상 정보가 올바르지 않습니다.";
   }
-  return value;
-}
-
-function optionalDeletionRequestStatusGroup(
-  data: Record<string, unknown>,
-  key: string
-): LookbookDeletionRequestStatusGroup | null {
-  const value = data[key];
-  if (value === undefined || value === null) {
-    return null;
-  }
-  if (value !== "active" && value !== "processed") {
-    throw new HttpsError("invalid-argument", `${key} 값이 올바르지 않습니다.`);
-  }
-  return value;
+  return "삭제 처리 중 오류가 발생했습니다. 서버 로그를 확인해주세요.";
 }
 
 function deletionRequestSummary(
   requestID: string,
-  data: FirebaseFirestore.DocumentData | undefined
+  data: FirebaseFirestore.DocumentData | undefined,
+  includesPurgeError: boolean
 ): Record<string, unknown> {
+  const leaseUntilMillis = firestoreTimestampMillis(data?.purgeLeaseUntil);
+  const purgeInProgress = isPurgeLeaseActive(leaseUntilMillis, Date.now());
+  const storedManualRetryState = manualRetryState(data?.manualRetryState);
+  const responseManualRetryState = visibleManualRetryState(
+    storedManualRetryState,
+    purgeInProgress
+  );
   return {
     requestID,
     targetType: typeof data?.targetType === "string" ?
@@ -1091,6 +1101,15 @@ function deletionRequestSummary(
     postImageThumbPath: typeof data?.postImageThumbPath === "string" ?
       data.postImageThumbPath :
       null,
+    autoRetryEligible: data?.autoRetryEligible === true,
+    retryAfter: timestampToISO(data?.retryAfter),
+    purgeAttemptCount: numericMetric(data?.purgeAttemptCount),
+    purgeErrorMessage: includesPurgeError ?
+      sanitizedPurgeErrorMessage(data?.purgeErrorMessage) :
+      null,
+    manualRetryState: responseManualRetryState,
+    manualRetryCount: numericMetric(data?.manualRetryCount),
+    purgeInProgress,
   };
 }
 
@@ -1194,9 +1213,14 @@ function mergeMissingDisplaySnapshot(
 
 async function deletionRequestSummaryWithDisplayFallback(
   requestID: string,
-  data: FirebaseFirestore.DocumentData | undefined
+  data: FirebaseFirestore.DocumentData | undefined,
+  includesPurgeError: boolean
 ): Promise<Record<string, unknown>> {
-  const summary = deletionRequestSummary(requestID, data);
+  const summary = deletionRequestSummary(
+    requestID,
+    data,
+    includesPurgeError
+  );
   const targetType = displayTargetType(summary.targetType);
   const hasTargetName = targetSpecificDisplayName(targetType, summary) !== null;
   const hasPrimaryName =
@@ -5310,18 +5334,6 @@ export const listLookbookDeletionRequests = onCall(
       LOOKBOOK_DELETION_DEFAULT_LIMIT,
       LOOKBOOK_DELETION_MAX_LIMIT
     );
-    const status = optionalDeletionRequestStatus(data, "status");
-    const statusGroup = optionalDeletionRequestStatusGroup(data, "statusGroup");
-    const processedScope = optionalProcessedRequestScope(
-      data,
-      "processedScope"
-    ) ?? "recent";
-    const recentProcessedDays = positiveInteger(
-      data,
-      "recentProcessedDays",
-      ADMIN_REQUEST_RECENT_PROCESSED_DAYS,
-      ADMIN_REQUEST_MAX_RECENT_PROCESSED_DAYS
-    );
     const targetType = optionalDeletionTargetType(data, "targetType");
     const brandID = optionalDocumentID(
       optionalString(data, "brandID", 128),
@@ -5333,13 +5345,6 @@ export const listLookbookDeletionRequests = onCall(
     if ((cursorUpdatedAt === null) !== (cursorRequestID === null)) {
       throw new HttpsError("invalid-argument", "cursor 값이 올바르지 않습니다.");
     }
-    if (status !== null && statusGroup !== null) {
-      throw new HttpsError(
-        "invalid-argument",
-        "status와 statusGroup은 함께 사용할 수 없습니다."
-      );
-    }
-
     if (!capabilities.isTotalAdmin) {
       if (brandID === null) {
         throw new HttpsError(
@@ -5360,46 +5365,39 @@ export const listLookbookDeletionRequests = onCall(
     }
 
     let query: FirebaseFirestore.Query =
-      db.collection("lookbookDeletionRequests");
-    if (status !== null) {
-      query = query.where("status", "==", status);
-    } else if (statusGroup === "processed") {
-      query = query.where("status", "==", "purged");
-    } else {
-      query = query.where("status", "in", ["active", "failed"]);
-    }
+      db.collection("lookbookDeletionRequests")
+        .where("status", "in", ["active", "failed"]);
     if (brandID !== null) {
       query = query.where("brandID", "==", brandID);
     }
     if (targetType !== null) {
       query = query.where("targetType", "==", targetType);
     }
-    if (statusGroup === "processed") {
-      query = applyProcessedScopeQuery(
-        query,
-        processedScope,
-        recentProcessedBoundary(recentProcessedDays)
-      );
-    }
     query = query
       .orderBy("updatedAt", "desc")
       .orderBy("requestID", "desc")
-      .limit(limit);
+      .limit(limit + 1);
 
     if (cursorUpdatedAt && cursorRequestID) {
       query = query.startAfter(cursorUpdatedAt, cursorRequestID);
     }
 
     const snapshot = await query.get();
-    const requests = await Promise.all(snapshot.docs.map((doc) =>
-      deletionRequestSummaryWithDisplayFallback(doc.id, doc.data())
+    const hasNextPage = snapshot.docs.length > limit;
+    const pageDocs = snapshot.docs.slice(0, limit);
+    const requests = await Promise.all(pageDocs.map((doc) =>
+      deletionRequestSummaryWithDisplayFallback(
+        doc.id,
+        doc.data(),
+        capabilities.isTotalAdmin
+      )
     )
     );
-    const last = snapshot.docs[snapshot.docs.length - 1];
+    const last = pageDocs[pageDocs.length - 1];
 
     return {
       requests,
-      nextCursor: last ? {
+      nextCursor: hasNextPage && last ? {
         updatedAt: timestampToISO(last.get("updatedAt")),
         requestID: last.get("requestID") ?? last.id,
       } : null,
@@ -5463,6 +5461,121 @@ async function loadExpiredDeletionRequests(
     .slice(0, LOOKBOOK_PURGE_TARGET_LIMIT);
 }
 
+function purgeLeaseUntilTimestamp(
+  nowDate: Date
+): admin.firestore.Timestamp {
+  return admin.firestore.Timestamp.fromDate(
+    new Date(
+      nowDate.getTime() +
+      LOOKBOOK_PURGE_LEASE_DURATION_MINUTES * 60 * 1000
+    )
+  );
+}
+
+function lookbookPurgeLeaseRef(
+  brandID: string | null,
+  requestID: string
+): FirebaseFirestore.DocumentReference {
+  const leaseScopeID = brandID ?? `request-${requestID}`;
+  return db.collection(LOOKBOOK_PURGE_LEASES_COLLECTION).doc(leaseScopeID);
+}
+
+function scheduledPurgeEligible(
+  data: FirebaseFirestore.DocumentData,
+  nowMillis: number
+): boolean {
+  const purgeAfterMillis = firestoreTimestampMillis(data.purgeAfter);
+  if (purgeAfterMillis === null || purgeAfterMillis > nowMillis) {
+    return false;
+  }
+  if (data.status === "active") {
+    return true;
+  }
+  return data.status === "failed" &&
+    data.autoRetryEligible === true &&
+    shouldRetryFailedPurge(data, nowMillis);
+}
+
+async function claimLookbookDeletionPurge(
+  requestRef: FirebaseFirestore.DocumentReference,
+  source: LookbookPurgeExecutionSource,
+  expectedManualRetryToken: string | null
+): Promise<LookbookPurgeLeaseClaim | null> {
+  const nowDate = new Date();
+  const now = admin.firestore.Timestamp.fromDate(nowDate);
+  const nowMillis = now.toMillis();
+  const leaseUntil = purgeLeaseUntilTimestamp(nowDate);
+  const leaseToken = randomUUID();
+
+  return db.runTransaction(async (transaction) => {
+    const requestSnap = await transaction.get(requestRef);
+    if (!requestSnap.exists) {
+      return null;
+    }
+
+    const data = requestSnap.data() ?? {};
+    const manualToken = stringField(data, "manualRetryToken");
+    const currentManualState = manualRetryState(data.manualRetryState);
+
+    if (source === "manual") {
+      if (
+        data.status !== "failed" ||
+        expectedManualRetryToken === null ||
+        manualToken !== expectedManualRetryToken ||
+        currentManualState !== "queued"
+      ) {
+        return null;
+      }
+    } else if (!scheduledPurgeEligible(data, nowMillis)) {
+      return null;
+    }
+
+    const brandID = stringField(data, "brandID");
+    const leaseRef = lookbookPurgeLeaseRef(brandID, requestRef.id);
+    const leaseSnap = await transaction.get(leaseRef);
+    const leaseData = leaseSnap.data();
+    const activeLease = isPurgeLeaseActive(
+      firestoreTimestampMillis(leaseData?.leaseUntil),
+      nowMillis
+    );
+    if (activeLease) {
+      return null;
+    }
+
+    transaction.set(leaseRef, {
+      leaseToken,
+      leaseUntil,
+      requestID: requestRef.id,
+      brandID,
+      source,
+      claimedAt: now,
+    });
+
+    const requestPatch: Record<string, unknown> = {
+      purgeLeaseToken: leaseToken,
+      purgeLeaseUntil: leaseUntil,
+      purgeExecutionSource: source,
+      lastPurgeClaimedAt: now,
+    };
+    if (currentManualState === "queued") {
+      requestPatch.manualRetryState = "running";
+    }
+    transaction.set(requestRef, requestPatch, {merge: true});
+
+    return {
+      requestRef,
+      leaseRef,
+      requestID: requestRef.id,
+      leaseToken,
+      source,
+      data: {
+        ...data,
+        ...requestPatch,
+      },
+    };
+  });
+}
+
 function purgeSuccessPatch(
   now: admin.firestore.Timestamp
 ): Record<string, unknown> {
@@ -5473,16 +5586,92 @@ function purgeSuccessPatch(
     autoRetryEligible: false,
     purgeErrorMessage: null,
     retryAfter: null,
+    manualRetryState: null,
+    purgeLeaseToken: null,
+    purgeLeaseUntil: null,
+    purgeExecutionSource: null,
     updatedBy: "system",
     updatedAt: now,
   };
 }
 
-async function markDeletionRequestPurged(
-  ref: FirebaseFirestore.DocumentReference,
-  now: admin.firestore.Timestamp
-): Promise<void> {
-  await ref.set(purgeSuccessPatch(now), {merge: true});
+async function finalizePurgeSuccess(
+  claim: LookbookPurgeLeaseClaim,
+  now: admin.firestore.Timestamp,
+  attemptCount: number
+): Promise<boolean> {
+  return db.runTransaction(async (transaction) => {
+    const [requestSnap, leaseSnap] = await Promise.all([
+      transaction.get(claim.requestRef),
+      transaction.get(claim.leaseRef),
+    ]);
+    const requestToken = stringField(
+      requestSnap.data(),
+      "purgeLeaseToken"
+    );
+    const leaseToken = stringField(leaseSnap.data(), "leaseToken");
+    if (
+      !canFinalizePurgeLease(requestToken, claim.leaseToken) ||
+      !canFinalizePurgeLease(leaseToken, claim.leaseToken)
+    ) {
+      return false;
+    }
+
+    transaction.set(claim.requestRef, {
+      ...purgeSuccessPatch(now),
+      purgeAttemptCount: attemptCount,
+    }, {merge: true});
+    transaction.delete(claim.leaseRef);
+    return true;
+  });
+}
+
+async function finalizePurgeFailure(
+  claim: LookbookPurgeLeaseClaim,
+  nowDate: Date,
+  attemptCount: number,
+  errorMessage: string
+): Promise<boolean> {
+  const now = admin.firestore.Timestamp.fromDate(nowDate);
+  return db.runTransaction(async (transaction) => {
+    const [requestSnap, leaseSnap] = await Promise.all([
+      transaction.get(claim.requestRef),
+      transaction.get(claim.leaseRef),
+    ]);
+    const requestToken = stringField(
+      requestSnap.data(),
+      "purgeLeaseToken"
+    );
+    const leaseToken = stringField(leaseSnap.data(), "leaseToken");
+    if (
+      !canFinalizePurgeLease(requestToken, claim.leaseToken) ||
+      !canFinalizePurgeLease(leaseToken, claim.leaseToken)
+    ) {
+      return false;
+    }
+
+    transaction.set(claim.requestRef, {
+      status: "failed",
+      purgeAttemptCount: attemptCount,
+      lastPurgeAttemptAt: now,
+      autoRetryEligible: attemptCount < LOOKBOOK_PURGE_RETRY_LIMIT,
+      retryAfter: attemptCount >= LOOKBOOK_PURGE_RETRY_LIMIT ?
+        null :
+        retryAfterTimestamp(nowDate),
+      purgeErrorMessage: errorMessage,
+      manualRetryState: stringField(
+        claim.data,
+        "manualRetryToken"
+      ) !== null ? "failed" : null,
+      purgeLeaseToken: null,
+      purgeLeaseUntil: null,
+      purgeExecutionSource: null,
+      updatedBy: "system",
+      updatedAt: now,
+    }, {merge: true});
+    transaction.delete(claim.leaseRef);
+    return true;
+  });
 }
 
 async function markRelatedDeletionRequestsPurged(
@@ -5662,10 +5851,10 @@ async function purgeBrandTarget(
   };
 }
 
-async function purgeLookbookDeletionRequest(
-  doc: FirebaseFirestore.QueryDocumentSnapshot
+async function purgeClaimedLookbookDeletionRequest(
+  claim: LookbookPurgeLeaseClaim
 ): Promise<void> {
-  const data = doc.data();
+  const data = claim.data;
   const targetType = data.targetType;
   const brandID = stringField(data, "brandID");
   const seasonID = stringField(data, "seasonID");
@@ -5674,20 +5863,20 @@ async function purgeLookbookDeletionRequest(
   const now = admin.firestore.Timestamp.fromDate(nowDate);
   const attemptCount = numericMetric(data.purgeAttemptCount) + 1;
   const auditRef = db.collection("lookbookDeletionAuditLogs").doc();
+  let result: Record<string, number>;
+  let action: LookbookDeletionAction;
 
   try {
     if (brandID === null) {
       throw new Error("missing_brand_id");
     }
 
-    let result: Record<string, number>;
-    let action: LookbookDeletionAction;
     switch (targetType) {
     case "brand":
       result = await purgeBrandTarget(brandID);
       action = "purgeBrand";
       await markRelatedDeletionRequestsPurged(
-        doc.id,
+        claim.requestID,
         brandID,
         null,
         null,
@@ -5701,7 +5890,7 @@ async function purgeLookbookDeletionRequest(
       result = await purgeSeasonTarget(brandID, seasonID);
       action = "purgeSeason";
       await markRelatedDeletionRequestsPurged(
-        doc.id,
+        claim.requestID,
         brandID,
         seasonID,
         null,
@@ -5718,60 +5907,255 @@ async function purgeLookbookDeletionRequest(
     default:
       throw new Error("invalid_target_type");
     }
-
-    await markDeletionRequestPurged(doc.ref, now);
-    await auditRef.set({
-      ...deletionAuditPatch(
-        action,
-        doc.id,
-        targetType as LookbookDeletionTargetType,
-        brandID,
-        seasonID,
-        postID,
-        "system",
-        typeof data.reason === "string" ? data.reason : null,
-        nowDate,
-        typeof data.status === "string" ? data.status : null,
-        "purged"
-      ),
-      purgeAttemptCount: attemptCount,
-      purgeResult: result,
-    });
   } catch (error) {
     const errorMessage = lookbookPurgeErrorMessage(error);
-    await doc.ref.set({
-      status: "failed",
-      purgeAttemptCount: attemptCount,
-      lastPurgeAttemptAt: now,
-      autoRetryEligible: attemptCount < LOOKBOOK_PURGE_RETRY_LIMIT,
-      retryAfter: attemptCount >= LOOKBOOK_PURGE_RETRY_LIMIT ?
-        null :
-        retryAfterTimestamp(nowDate),
-      purgeErrorMessage: errorMessage,
-      updatedBy: "system",
-      updatedAt: now,
-    }, {merge: true});
-
-    await auditRef.set({
-      ...deletionAuditPatch(
-        "purgeFailed",
-        doc.id,
-        targetType as LookbookDeletionTargetType,
-        brandID ?? "",
-        seasonID,
-        postID,
-        "system",
-        typeof data.reason === "string" ? data.reason : null,
-        nowDate,
-        typeof data.status === "string" ? data.status : null,
-        "failed"
-      ),
-      purgeAttemptCount: attemptCount,
-      errorMessage,
-    });
+    const finalized = await finalizePurgeFailure(
+      claim,
+      nowDate,
+      attemptCount,
+      errorMessage
+    );
+    if (finalized) {
+      await auditRef.set({
+        ...deletionAuditPatch(
+          "purgeFailed",
+          claim.requestID,
+          targetType as LookbookDeletionTargetType,
+          brandID ?? "",
+          seasonID,
+          postID,
+          "system",
+          typeof data.reason === "string" ? data.reason : null,
+          nowDate,
+          typeof data.status === "string" ? data.status : null,
+          "failed"
+        ),
+        purgeAttemptCount: attemptCount,
+        purgeExecutionSource: claim.source,
+        errorMessage,
+      }).catch((auditError) => {
+        console.error(
+          "[purgeLookbookDeletionRequest] Failed to write failure audit",
+          {requestID: claim.requestID, auditError}
+        );
+      });
+    } else {
+      console.warn(
+        "[purgeLookbookDeletionRequest] Ignored stale failure finalize",
+        {requestID: claim.requestID, leaseToken: claim.leaseToken}
+      );
+    }
     throw error;
   }
+
+  const finalized = await finalizePurgeSuccess(claim, now, attemptCount);
+  if (!finalized) {
+    console.warn(
+      "[purgeLookbookDeletionRequest] Ignored stale success finalize",
+      {requestID: claim.requestID, leaseToken: claim.leaseToken}
+    );
+    return;
+  }
+
+  await auditRef.set({
+    ...deletionAuditPatch(
+      action,
+      claim.requestID,
+      targetType as LookbookDeletionTargetType,
+      brandID ?? "",
+      seasonID,
+      postID,
+      "system",
+      typeof data.reason === "string" ? data.reason : null,
+      nowDate,
+      typeof data.status === "string" ? data.status : null,
+      "purged"
+    ),
+    purgeAttemptCount: attemptCount,
+    purgeExecutionSource: claim.source,
+    purgeResult: result,
+  }).catch((auditError) => {
+    console.error(
+      "[purgeLookbookDeletionRequest] Failed to write success audit",
+      {requestID: claim.requestID, auditError}
+    );
+  });
 }
+
+async function runLookbookDeletionPurge(
+  requestRef: FirebaseFirestore.DocumentReference,
+  source: LookbookPurgeExecutionSource,
+  expectedManualRetryToken: string | null
+): Promise<boolean> {
+  const claim = await claimLookbookDeletionPurge(
+    requestRef,
+    source,
+    expectedManualRetryToken
+  );
+  if (claim === null) {
+    return false;
+  }
+  await purgeClaimedLookbookDeletionRequest(claim);
+  return true;
+}
+
+export const retryFailedLookbookDeletionPurge = onCall(
+  {region: FUNCTIONS_REGION},
+  async (request) => {
+    const uid = requiredAuthUID(request.auth?.uid);
+    await assertOutPickAdmin(uid);
+
+    const payload = recordData(request.data ?? {});
+    const requestID = requiredDocumentID(
+      requiredString(payload, "requestID", 256),
+      "requestID"
+    );
+    const requestRef = db
+      .collection("lookbookDeletionRequests")
+      .doc(requestID);
+    const auditRef = db.collection("lookbookDeletionAuditLogs").doc();
+
+    return db.runTransaction(async (transaction) => {
+      const requestSnap = await transaction.get(requestRef);
+      if (!requestSnap.exists) {
+        throw new HttpsError(
+          "not-found",
+          "삭제 요청을 찾을 수 없습니다."
+        );
+      }
+
+      const data = requestSnap.data() ?? {};
+      if (data.status !== "failed") {
+        throw new HttpsError(
+          "failed-precondition",
+          "실패한 삭제 요청만 다시 시도할 수 있습니다."
+        );
+      }
+
+      const targetType = data.targetType;
+      if (
+        targetType !== "brand" &&
+        targetType !== "season" &&
+        targetType !== "post"
+      ) {
+        throw new HttpsError(
+          "failed-precondition",
+          "삭제 요청 대상 정보가 올바르지 않습니다."
+        );
+      }
+
+      const currentState = manualRetryState(data.manualRetryState);
+      const currentToken = stringField(data, "manualRetryToken");
+      const requestLeaseActive = isPurgeLeaseActive(
+        firestoreTimestampMillis(data.purgeLeaseUntil),
+        Date.now()
+      );
+      if (isManualRetryDuplicate(currentState, requestLeaseActive)) {
+        return {
+          requestID,
+          manualRetryToken: currentToken,
+          manualRetryState: currentState ?? "running",
+          duplicate: true,
+        };
+      }
+
+      const nowDate = new Date();
+      const now = admin.firestore.Timestamp.fromDate(nowDate);
+      const manualRetryToken = randomUUID();
+      const manualRetryCount = numericMetric(data.manualRetryCount) + 1;
+      const brandID = stringField(data, "brandID") ?? "";
+      const seasonID = stringField(data, "seasonID");
+      const postID = stringField(data, "postID");
+
+      transaction.set(requestRef, {
+        autoRetryEligible: true,
+        retryAfter: now,
+        purgeAttemptCount: 0,
+        manualRetryState: "queued",
+        manualRetryToken,
+        manualRetryCount,
+        manualRetryRequestedAt: now,
+        manualRetryRequestedBy: uid,
+        purgeLeaseToken: null,
+        purgeLeaseUntil: null,
+        purgeExecutionSource: null,
+        updatedBy: uid,
+        updatedAt: now,
+      }, {merge: true});
+      transaction.set(auditRef, {
+        ...deletionAuditPatch(
+          "retryPurgeRequested",
+          requestID,
+          targetType,
+          brandID,
+          seasonID,
+          postID,
+          uid,
+          typeof data.reason === "string" ? data.reason : null,
+          nowDate,
+          "failed",
+          "failed"
+        ),
+        manualRetryToken,
+        manualRetryCount,
+      });
+
+      return {
+        requestID,
+        manualRetryToken,
+        manualRetryState: "queued",
+        duplicate: false,
+      };
+    });
+  }
+);
+
+export const onLookbookDeletionManualRetryQueued = onDocumentUpdated(
+  {
+    document: "lookbookDeletionRequests/{requestID}",
+    region: FUNCTIONS_REGION,
+    timeoutSeconds: 540,
+    memory: "1GiB",
+  },
+  async (event) => {
+    const beforeSnap = event.data?.before;
+    const afterSnap = event.data?.after;
+    if (!beforeSnap?.exists || !afterSnap?.exists) {
+      return;
+    }
+
+    const beforeData = beforeSnap.data();
+    const afterData = afterSnap.data();
+    const beforeToken = stringField(beforeData, "manualRetryToken");
+    const afterToken = stringField(afterData, "manualRetryToken");
+    if (!shouldStartManualRetryTrigger(
+      beforeToken,
+      afterToken,
+      manualRetryState(afterData.manualRetryState)
+    )) {
+      return;
+    }
+
+    try {
+      const started = await runLookbookDeletionPurge(
+        afterSnap.ref,
+        "manual",
+        afterToken
+      );
+      if (!started) {
+        console.log(
+          "[onLookbookDeletionManualRetryQueued] Purge claim skipped",
+          {requestID: afterSnap.id}
+        );
+      }
+    } catch (error) {
+      console.error(
+        "[onLookbookDeletionManualRetryQueued] Purge failed",
+        {requestID: afterSnap.id, error}
+      );
+    }
+  }
+);
 
 export const purgeExpiredLookbookDeletions = onSchedule(
   {
@@ -5792,10 +6176,19 @@ export const purgeExpiredLookbookDeletions = onSchedule(
 
     let successCount = 0;
     let failureCount = 0;
+    let skippedCount = 0;
     for (const requestDoc of requests) {
       try {
-        await purgeLookbookDeletionRequest(requestDoc);
-        successCount += 1;
+        const started = await runLookbookDeletionPurge(
+          requestDoc.ref,
+          "scheduled",
+          null
+        );
+        if (started) {
+          successCount += 1;
+        } else {
+          skippedCount += 1;
+        }
       } catch (error) {
         failureCount += 1;
         console.error(
@@ -5816,6 +6209,7 @@ export const purgeExpiredLookbookDeletions = onSchedule(
       requestedCount: requests.length,
       successCount,
       failureCount,
+      skippedCount,
     });
   }
 );
