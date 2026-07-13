@@ -65,12 +65,13 @@ struct ChatOutgoingOutboxUseCaseTests {
     }
 
     private func makeUseCase(
-        persistence: ChatOutgoingOutboxPersisting
+        persistence: ChatOutgoingOutboxPersistenceFake
     ) -> ChatOutgoingOutboxUseCase {
         let outboxRoot = FileManager.default.temporaryDirectory
             .appendingPathComponent("ChatOutgoingOutboxUseCaseTests-\(UUID().uuidString)", isDirectory: true)
         return ChatOutgoingOutboxUseCase(
-            persistence: persistence,
+            outboxPersistence: persistence,
+            messagePersistence: persistence,
             imageStorageRepository: FirebaseImageStorageRepositoryFake(),
             videoStorageRepository: FirebaseVideoStorageRepositoryFake(),
             fileManager: .default,
@@ -148,7 +149,7 @@ struct ChatOutgoingOutboxUseCaseTests {
     }
 }
 
-private actor ChatOutgoingOutboxPersistenceFake: ChatOutgoingOutboxPersisting {
+private actor ChatOutgoingOutboxPersistenceFake: ChatOutgoingOutboxPersisting, ChatFailedOutgoingMessagePersisting {
     private var records: [String: ChatOutgoingOutboxRecord] = [:]
     private var messages: [String: ChatMessage] = [:]
 

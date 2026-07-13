@@ -7,7 +7,6 @@
 
 import Foundation
 import FirebaseFirestore
-import GRDB
 import Testing
 @testable import OutPick
 
@@ -15,13 +14,13 @@ struct ChatProfileSyncManagerTests {
     @Test
     @MainActor
     func profileSnapshotMissDoesNotReadGRDBSynchronously() throws {
-        let grdbManager = try makeTemporaryManager()
+        let profileStore = try makeTemporaryStore()
         let manager = ChatProfileSyncManager(
             userProfileRepository: UserProfileRepositoryFake(),
-            grdbManager: grdbManager
+            profileCache: profileStore
         )
 
-        _ = try grdbManager.upsertLocalChatUser(
+        _ = try profileStore.upsertLocalChatUser(
             userID: "user-1",
             nickname: "Cached User",
             profileImagePath: "avatars/user-1.jpg"
@@ -33,7 +32,7 @@ struct ChatProfileSyncManagerTests {
     @Test
     @MainActor
     func refreshProfilesUpdatesSnapshotAndReturnsChangedUserIDs() async throws {
-        let grdbManager = try makeTemporaryManager()
+        let profileStore = try makeTemporaryStore()
         let repository = UserProfileRepositoryFake(profilesByID: [
             "user-1": UserProfile(
                 email: "user-1@example.com",
@@ -43,7 +42,7 @@ struct ChatProfileSyncManagerTests {
         ])
         let manager = ChatProfileSyncManager(
             userProfileRepository: repository,
-            grdbManager: grdbManager
+            profileCache: profileStore
         )
 
         let changedUserIDs = await manager.refreshProfiles(from: [
@@ -54,19 +53,19 @@ struct ChatProfileSyncManagerTests {
         let profile = manager.profile(for: "user-1")
         #expect(profile?.nickname == "Fresh User")
         #expect(profile?.profileImagePath == "avatars/fresh-user.jpg")
-        #expect(try grdbManager.fetchLocalChatUser(userID: "user-1")?.nickname == "Fresh User")
+        #expect(try profileStore.fetchLocalChatUser(userID: "user-1")?.nickname == "Fresh User")
     }
 
     @Test
     @MainActor
     func resetClearsMainActorSnapshot() async throws {
-        let grdbManager = try makeTemporaryManager()
+        let profileStore = try makeTemporaryStore()
         let repository = UserProfileRepositoryFake(profilesByID: [
             "user-1": UserProfile(email: "user-1@example.com", nickname: "Fresh User")
         ])
         let manager = ChatProfileSyncManager(
             userProfileRepository: repository,
-            grdbManager: grdbManager
+            profileCache: profileStore
         )
 
         _ = await manager.refreshProfiles(from: [
@@ -79,13 +78,8 @@ struct ChatProfileSyncManagerTests {
         #expect(manager.profile(for: "user-1") == nil)
     }
 
-    private func makeTemporaryManager() throws -> GRDBManager {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let databaseURL = directory.appendingPathComponent("OutPick.sqlite")
-        let dbPool = try DatabasePool(path: databaseURL.path)
-        return GRDBManager(dbPool: dbPool)
+    private func makeTemporaryStore() throws -> GRDBChatProfileCacheStore {
+        GRDBChatProfileCacheStore(database: try TemporaryAppDatabase.make())
     }
 
     private func makeMessage(
