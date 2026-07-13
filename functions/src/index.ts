@@ -32,6 +32,14 @@ import {
   visibleManualRetryState,
   type ManualRetryState,
 } from "./lookbookDeletionPurgeLease.js";
+import {
+  drainPurgeCandidatePages,
+  initialPurgeDrainSummary,
+  mergePurgeDrainSummaries,
+  type PurgeDrainCandidate,
+  type PurgeDrainPage,
+  type PurgeDrainTargetType,
+} from "./lookbookDeletionPurgeDrain.js";
 
 admin.initializeApp();
 const db = getFirestore();
@@ -565,7 +573,9 @@ const LOOKBOOK_DELETION_DEFAULT_LIMIT = 50;
 const LOOKBOOK_DELETION_MAX_LIMIT = 100;
 const LOOKBOOK_DELETION_BATCH_MAX_COUNT = 20;
 const LOOKBOOK_DELETION_BATCH_CONCURRENCY = 3;
-const LOOKBOOK_PURGE_TARGET_LIMIT = 20;
+const LOOKBOOK_PURGE_QUERY_PAGE_SIZE = 20;
+const LOOKBOOK_PURGE_MAX_CONCURRENT_BRANDS = 3;
+const LOOKBOOK_PURGE_START_BUDGET_MILLIS = 7 * 60 * 1000;
 const LOOKBOOK_PURGE_RETRY_LIMIT = 3;
 const LOOKBOOK_PURGE_RETRY_DELAY_HOURS = 24;
 const LOOKBOOK_PURGE_PAGE_SIZE = 200;
@@ -5418,47 +5428,121 @@ function shouldRetryFailedPurge(
   return retryAfterMillis === null || retryAfterMillis <= nowMillis;
 }
 
-async function loadExpiredDeletionRequests(
-  now: admin.firestore.Timestamp
-): Promise<FirebaseFirestore.QueryDocumentSnapshot[]> {
-  const snapshots = await Promise.all([
-    db.collection("lookbookDeletionRequests")
-      .where("status", "==", "active")
-      .where("purgeAfter", "<=", now)
-      .orderBy("purgeAfter", "asc")
-      .limit(LOOKBOOK_PURGE_TARGET_LIMIT)
-      .get(),
-    db.collection("lookbookDeletionRequests")
-      .where("status", "==", "failed")
-      .where("autoRetryEligible", "==", true)
-      .where("purgeAfter", "<=", now)
-      .orderBy("purgeAfter", "asc")
-      .limit(LOOKBOOK_PURGE_TARGET_LIMIT)
-      .get(),
-  ]);
+type ActivePurgeQueryCursor = {
+  purgeAfter: admin.firestore.Timestamp;
+  requestID: string;
+};
 
-  const nowMillis = now.toMillis();
-  const byID = new Map<string, FirebaseFirestore.QueryDocumentSnapshot>();
-  snapshots.flatMap((snapshot) => snapshot.docs).forEach((doc) => {
-    const data = doc.data();
-    if (data.status === "failed" && !shouldRetryFailedPurge(data, nowMillis)) {
-      return;
+type FailedPurgeQueryCursor = ActivePurgeQueryCursor & {
+  retryAfter: admin.firestore.Timestamp;
+};
+
+type ScheduledPurgeCandidate = PurgeDrainCandidate & {
+  requestRef: FirebaseFirestore.DocumentReference;
+  seasonID: string | null;
+  postID: string | null;
+};
+
+function scheduledPurgeCandidate(
+  doc: FirebaseFirestore.QueryDocumentSnapshot,
+  targetType: PurgeDrainTargetType
+): ScheduledPurgeCandidate {
+  const data = doc.data();
+  return {
+    requestID: doc.id,
+    requestRef: doc.ref,
+    brandID: stringField(data, "brandID"),
+    seasonID: stringField(data, "seasonID"),
+    postID: stringField(data, "postID"),
+    targetType,
+    purgeAfterMillis: firestoreTimestampMillis(data.purgeAfter) ?? 0,
+  };
+}
+
+function expiredDeletionRequestPageLoader(
+  now: admin.firestore.Timestamp,
+  targetType: PurgeDrainTargetType
+): () => Promise<PurgeDrainPage<ScheduledPurgeCandidate>> {
+  let activeCursor: ActivePurgeQueryCursor | null = null;
+  let failedCursor: FailedPurgeQueryCursor | null = null;
+  let activeExhausted = false;
+  let failedExhausted = false;
+
+  return async () => {
+    let activeQuery: FirebaseFirestore.Query | null = activeExhausted ?
+      null :
+      db.collection("lookbookDeletionRequests")
+        .where("status", "==", "active")
+        .where("targetType", "==", targetType)
+        .where("purgeAfter", "<=", now)
+        .orderBy("purgeAfter", "asc")
+        .orderBy("requestID", "asc")
+        .limit(LOOKBOOK_PURGE_QUERY_PAGE_SIZE);
+    if (activeQuery !== null && activeCursor !== null) {
+      activeQuery = activeQuery.startAfter(
+        activeCursor.purgeAfter,
+        activeCursor.requestID
+      );
     }
-    byID.set(doc.id, doc);
-  });
 
-  return Array.from(byID.values())
-    .sort((lhs, rhs) => {
-      const lhsPurgeAfter =
-        firestoreTimestampMillis(lhs.get("purgeAfter")) ?? 0;
-      const rhsPurgeAfter =
-        firestoreTimestampMillis(rhs.get("purgeAfter")) ?? 0;
-      if (lhsPurgeAfter !== rhsPurgeAfter) {
-        return lhsPurgeAfter - rhsPurgeAfter;
+    let failedQuery: FirebaseFirestore.Query | null = failedExhausted ?
+      null :
+      db.collection("lookbookDeletionRequests")
+        .where("status", "==", "failed")
+        .where("autoRetryEligible", "==", true)
+        .where("targetType", "==", targetType)
+        .where("purgeAfter", "<=", now)
+        .where("retryAfter", "<=", now)
+        .orderBy("purgeAfter", "asc")
+        .orderBy("retryAfter", "asc")
+        .orderBy("requestID", "asc")
+        .limit(LOOKBOOK_PURGE_QUERY_PAGE_SIZE);
+    if (failedQuery !== null && failedCursor !== null) {
+      failedQuery = failedQuery.startAfter(
+        failedCursor.purgeAfter,
+        failedCursor.retryAfter,
+        failedCursor.requestID
+      );
+    }
+
+    const [activeSnapshot, failedSnapshot] = await Promise.all([
+      activeQuery?.get() ?? Promise.resolve(null),
+      failedQuery?.get() ?? Promise.resolve(null),
+    ]);
+
+    if (activeSnapshot !== null) {
+      const last = activeSnapshot.docs[activeSnapshot.docs.length - 1];
+      if (last !== undefined) {
+        activeCursor = {
+          purgeAfter: last.get("purgeAfter"),
+          requestID: last.get("requestID"),
+        };
       }
-      return lhs.id.localeCompare(rhs.id);
-    })
-    .slice(0, LOOKBOOK_PURGE_TARGET_LIMIT);
+      activeExhausted =
+        activeSnapshot.docs.length < LOOKBOOK_PURGE_QUERY_PAGE_SIZE;
+    }
+    if (failedSnapshot !== null) {
+      const last = failedSnapshot.docs[failedSnapshot.docs.length - 1];
+      if (last !== undefined) {
+        failedCursor = {
+          purgeAfter: last.get("purgeAfter"),
+          retryAfter: last.get("retryAfter"),
+          requestID: last.get("requestID"),
+        };
+      }
+      failedExhausted =
+        failedSnapshot.docs.length < LOOKBOOK_PURGE_QUERY_PAGE_SIZE;
+    }
+
+    const candidates = [
+      ...(activeSnapshot?.docs ?? []),
+      ...(failedSnapshot?.docs ?? []),
+    ].map((doc) => scheduledPurgeCandidate(doc, targetType));
+    return {
+      candidates,
+      hasMore: !activeExhausted || !failedExhausted,
+    };
+  };
 }
 
 function purgeLeaseUntilTimestamp(
@@ -6166,50 +6250,59 @@ export const purgeExpiredLookbookDeletions = onSchedule(
     memory: "1GiB",
   },
   async () => {
+    const startedAtMillis = Date.now();
+    const stopStartingAtMillis =
+      startedAtMillis + LOOKBOOK_PURGE_START_BUDGET_MILLIS;
     const now = admin.firestore.Timestamp.now();
-    const requests = await loadExpiredDeletionRequests(now);
+    const canStartNewWork = () => Date.now() < stopStartingAtMillis;
+    let summary = initialPurgeDrainSummary();
 
-    if (requests.length === 0) {
-      console.log("[purgeExpiredLookbookDeletions] No expired requests.");
-      return;
-    }
-
-    let successCount = 0;
-    let failureCount = 0;
-    let skippedCount = 0;
-    for (const requestDoc of requests) {
-      try {
-        const started = await runLookbookDeletionPurge(
-          requestDoc.ref,
-          "scheduled",
-          null
-        );
-        if (started) {
-          successCount += 1;
-        } else {
-          skippedCount += 1;
-        }
-      } catch (error) {
-        failureCount += 1;
-        console.error(
-          "[purgeExpiredLookbookDeletions] Failed to purge request",
-          {
-            requestID: requestDoc.id,
-            targetType: requestDoc.get("targetType"),
-            brandID: requestDoc.get("brandID"),
-            seasonID: requestDoc.get("seasonID"),
-            postID: requestDoc.get("postID"),
-            error,
+    const targetTypes: PurgeDrainTargetType[] = [
+      "brand",
+      "season",
+      "post",
+    ];
+    for (const targetType of targetTypes) {
+      const targetSummary = await drainPurgeCandidatePages({
+        loadPage: expiredDeletionRequestPageLoader(now, targetType),
+        execute: async (candidate) => {
+          try {
+            const started = await runLookbookDeletionPurge(
+              candidate.requestRef,
+              "scheduled",
+              null
+            );
+            return started ? "succeeded" : "skipped";
+          } catch (error) {
+            console.error(
+              "[purgeExpiredLookbookDeletions] Failed to purge request",
+              {
+                requestID: candidate.requestID,
+                targetType: candidate.targetType,
+                brandID: candidate.brandID,
+                seasonID: candidate.seasonID,
+                postID: candidate.postID,
+                error,
+              }
+            );
+            return "failed";
           }
-        );
+        },
+        canStartNewWork,
+        maxConcurrentBrands: LOOKBOOK_PURGE_MAX_CONCURRENT_BRANDS,
+      });
+      summary = mergePurgeDrainSummaries(summary, targetSummary);
+      if (targetSummary.stopReason === "time_budget") {
+        break;
       }
     }
 
     console.log("[purgeExpiredLookbookDeletions] Completed", {
-      requestedCount: requests.length,
-      successCount,
-      failureCount,
-      skippedCount,
+      ...summary,
+      elapsedMillis: Date.now() - startedAtMillis,
+      pageSize: LOOKBOOK_PURGE_QUERY_PAGE_SIZE,
+      maxConcurrentBrands: LOOKBOOK_PURGE_MAX_CONCURRENT_BRANDS,
+      startBudgetMillis: LOOKBOOK_PURGE_START_BUDGET_MILLIS,
     });
   }
 );
