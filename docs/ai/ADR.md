@@ -46,6 +46,7 @@ ADR에 기록하지 않을 것:
 | ADR-016 | accepted | 채팅 미디어 업로드는 얇은 reservation과 메시지 ready projection으로 처리한다. | [상세](adr/ADR-016-채팅-미디어-업로드는-얇은-reservation과-메시지-ready-projection으로-처리한다.md) |
 | ADR-017 | accepted | 이미지 확대 viewer는 Infra 공용 UIKit viewer로 통일한다. | [상세](adr/ADR-017-이미지-확대-viewer는-infra-공용-uikit-viewer로-통일한다.md) |
 | ADR-018 | accepted | 룩북 영구 삭제는 일일 bounded drain과 브랜드 lease로 처리한다. | [상세](adr/ADR-018-룩북-영구-삭제는-일일-bounded-drain과-브랜드-lease로-처리한다.md) |
+| ADR-019 | accepted | 핵심 인프라는 기능별 모듈러 경계와 현재 배포 단위를 유지한다. | [상세](adr/ADR-019-핵심-인프라는-기능별-모듈러-경계와-현재-배포-단위를-유지한다.md) |
 
 ## 새 ADR 추가 절차
 

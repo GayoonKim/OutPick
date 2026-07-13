@@ -1,384 +1,169 @@
 # Lookbook Entrypoints
 
-## 공통 구조
+## 목적과 탐색 순서
 
-- CompositionRoot: `OutPick/Features/Lookbook/LookbookCompositionRoot.swift`
-- Container: `OutPick/Features/Lookbook/LookbookContainer.swift`
-- Coordinator: `OutPick/Features/Lookbook/Coordinators/LookbookCoordinator.swift`
-- Comment coordinator: `OutPick/Features/Lookbook/Coordinators/PostCommentCoordinator.swift`
-- ViewModels: `OutPick/Features/Lookbook/ViewModels`
-- Views: `OutPick/Features/Lookbook/Views`
-- UseCases: `OutPick/Features/Lookbook/Domains/UseCases`
-- Entities: `OutPick/Features/Lookbook/Domains/Entities`
-- Repository protocols: `OutPick/Features/Lookbook/Repositories/Protocols`
-- Repository implementations: `OutPick/Features/Lookbook/Repositories/Implementations`
-- Repository provider: `OutPick/Features/Lookbook/Repositories/LookbookRepositoryProvider.swift`
-- Environment: `OutPick/Features/Lookbook/Environment`
-- Shared stores: `OutPick/Features/Lookbook/Domains/Stores`
-- DTO/Firestore mapping: `OutPick/Features/Lookbook/Models`
-- Media/image services: `OutPick/Features/Lookbook/Services`
-- Navigation helpers: `OutPick/Features/Lookbook/Navigation`
-- 입력 화면 키보드 dismiss: `OutPick/Infra/Utility/Support/KeyboardDismissSupport.swift`
-  - SwiftUI 입력 화면은 root 또는 sheet root에 `outpickDismissKeyboardOnTap()`을 적용한다.
+Lookbook 변경 시 필요한 코드만 찾기 위한 인덱스다.
 
-## 조립과 환경
+1. 화면/사용자 흐름 변경: 이 문서의 화면 표
+2. 데이터/API 변경: `docs/ai/DATA_SCHEMA.md`, `docs/ai/entrypoints/FIREBASE.md`
+3. 장기 기술 결정: `docs/ai/ADR.md`
+4. 완료 상태·QA: 관련 task의 `progress.md`, `qa-checklist.md`
 
-- Lookbook composition root: `OutPick/Features/Lookbook/LookbookCompositionRoot.swift`
-  - Lookbook feature root를 앱 탭에 연결하는 조립 진입점이다.
-  - Lookbook/Liked root는 `UINavigationController(root: UIHostingController)` 구조이며, UIKit navigation bar는 숨김 유지한다.
-  - root nav 생성 뒤 `LookbookCoordinator.attach(navigationController:)`로 Coordinator가 같은 UIKit stack을 소유한다.
-- Lookbook container: `OutPick/Features/Lookbook/LookbookContainer.swift`
-  - Lookbook repository/use case/store/view model factory를 확인한다.
-  - Chat 공유 sheet, current user provider adapter, avatar manager 접합부를 볼 때도 확인한다.
-  - avatar manager는 production 기본값을 만들지 않고 앱 세션 조립부에서 명시 주입받는다.
-  - 댓글/답글 sheet에서 Profile 상세로 들어갈 때도 `CurrentUserProviding`을 함께 전달한다.
-- Lookbook coordinator: `OutPick/Features/Lookbook/Coordinators/LookbookCoordinator.swift`
-  - 홈, 브랜드 상세, 시즌 상세, 포스트 상세, 댓글, 공유 sheet navigation을 확인한다.
-  - navigation-swipe-back 작업 이후 브랜드/시즌/포스트 상세는 SwiftUI `NavigationLink`가 아니라 Coordinator가 `UIHostingController`를 만들어 UIKit nav stack에 push한다.
-  - 상세 화면 커스텀 back은 SwiftUI `dismiss()`가 아니라 Coordinator `pop()`을 호출한다.
-  - 상세 Hosting에는 `repositoryProvider` environment와 `BrandAdminSessionStore` environmentObject를 Coordinator가 다시 주입한다.
-- Comment coordinator: `OutPick/Features/Lookbook/Coordinators/PostCommentCoordinator.swift`
-  - 댓글/답글 sheet, 신고/차단/삭제 action presentation을 확인한다.
-- Current user provider: `OutPick/Features/Lookbook/Environment/CurrentUserIDProvider.swift`
-  - Lookbook 내부 `UserID?` current user adapter 계약을 확인한다.
-- Provider environment: `OutPick/Features/Lookbook/Environment/Provider+Environment.swift`
-  - SwiftUI environment 주입을 확인한다.
+## 공통 조립
 
-## 자주 쓰는 Lookbook 흐름
+| 책임 | 진입점 |
+| --- | --- |
+| 앱 탭 조립 | `OutPick/Features/Lookbook/LookbookCompositionRoot.swift` |
+| Feature DI/factory | `OutPick/Features/Lookbook/LookbookContainer.swift` |
+| 화면 전환 | `OutPick/Features/Lookbook/Coordinators/LookbookCoordinator.swift` |
+| 댓글 전환 | `OutPick/Features/Lookbook/Coordinators/PostCommentCoordinator.swift` |
+| Repository 조립 | `OutPick/Features/Lookbook/Repositories/LookbookRepositoryProvider.swift` |
+| SwiftUI environment | `OutPick/Features/Lookbook/Environment` |
+| 공용 store | `OutPick/Features/Lookbook/Domains/Stores` |
+| DTO/mapper | `OutPick/Features/Lookbook/Models` |
+| 이미지/미디어 | `OutPick/Features/Lookbook/Services` |
 
-- 홈: `Views/LookbookHome`, `ViewModels/LookbookHomeViewModel.swift`
-- 브랜드 상세: `Views/BrandDetail`, `ViewModels/BrandDetailViewModel.swift`
-- 시즌 상세: `Views/SeasonDetail`, `ViewModels/SeasonDetailViewModel.swift`
-- 포스트 상세/댓글: `Views/PostDetail`, `ViewModels/PostDetailViewModel.swift`, `ViewModels/PostCommentsViewModel.swift`
-- 좋아요 탭: `Views/Liked`, `ViewModels/LikedViewModel.swift`
-- 브랜드/시즌 생성: `Views/CreateBrand`, `ViewModels/CreateBrandViewModel.swift`, `ViewModels/CreateSeasonViewModel.swift`
+- Lookbook/Liked root는 UIKit navigation stack 위 SwiftUI Hosting 구조다.
+- 상세 push/pop은 SwiftUI hidden route가 아니라 `LookbookCoordinator`가 소유한다.
+- View는 Repository/Firebase를 직접 만들지 않고 Container가 주입한다.
+- SwiftUI 입력 화면 키보드 dismiss는 `KeyboardDismissSupport.outpickDismissKeyboardOnTap()`을 사용한다.
 
-## 화면별 주요 파일
+## 화면별 진입점
 
-- Lookbook home:
-  - `OutPick/Features/Lookbook/Views/LookbookHome/LookbookHomeView.swift`
-    - root 화면이며 상세 이동은 `NavigationView`/hidden `NavigationLink` route state가 아니라 Coordinator action을 호출한다.
-    - 브랜드 생성 fullScreenCover 내부 `NavigationView`는 modal 내부 흐름으로 유지한다.
-    - 브랜드 검색 UI와 내 브랜드 요청 진입점을 제공한다.
-  - `OutPick/Features/Lookbook/Views/LookbookHome/BrandRowView.swift`
-  - `OutPick/Features/Lookbook/ViewModels/LookbookHomeViewModel.swift`
-    - 기존 홈 pagination 상태와 callable 기반 브랜드 검색 상태를 분리한다.
-- Brand request:
-  - `OutPick/Features/Lookbook/Views/BrandRequest/BrandRequestView.swift`
-  - `OutPick/Features/Lookbook/Views/BrandRequest/MyBrandRequestsView.swift`
-  - `OutPick/Features/Lookbook/ViewModels/BrandRequestViewModel.swift`
-  - `OutPick/Features/Lookbook/ViewModels/MyBrandRequestsViewModel.swift`
-  - `OutPick/Features/Lookbook/Domains/UseCases/SearchBrandsUseCase.swift`
-  - `OutPick/Features/Lookbook/Domains/UseCases/SubmitBrandRequestUseCase.swift`
-  - `OutPick/Features/Lookbook/Domains/UseCases/ListMyBrandRequestsUseCase.swift`
-  - `OutPick/Features/Lookbook/Repositories/Implementations/CloudFunctionsBrandSearchRepository.swift`
-  - `OutPick/Features/Lookbook/Repositories/Implementations/CloudFunctionsBrandRequestRepository.swift`
-- Admin:
-  - `OutPick/Features/Lookbook/Views/Admin/LookbookAdminHomeView.swift`
-    - Lookbook 관리 홈이며 `요청 목록`, `삭제 요청 목록`, `브랜드 추가` 메뉴를 제공한다.
-    - 총 관리자의 브랜드 수정/삭제 요청 생성 흐름은 콘솔 브랜드 검색이 아니라 `LookbookHomeView` 브랜드 검색 → `BrandDetailView` → `관리자` 버튼 → `AdminBrandManagementView`로 통일한다.
-    - 브랜드별 owner/admin도 같은 상세 화면 관리자 버튼으로 해당 브랜드 관리 화면에 진입한다.
-    - 홈 진입은 `LookbookHomeView`의 `Lookbook 관리` 버튼에서 Coordinator push로 연결한다.
-    - 브랜드 생성은 기존 `CreateBrandFlowView`를 fullScreenCover로 재사용한다.
-  - `OutPick/Features/Lookbook/Views/Admin/AdminBrandRequestGroupsView.swift`
-    - 브랜드 요청 group 목록, 상태 변경, processing group의 브랜드 생성/완료 처리를 담당한다.
-    - 목록 segment는 `새 요청(requested)`, `처리 중(processing)`, `보류(rejected)`, `완료(completed)`로 나뉜다.
-    - `보류`와 `완료`는 최근 14일 목록을 기본 표시하고, 이전 기록 보기 버튼 후 14일 이전 기록을 아래에 추가 표시한다.
-    - 14일 이전 브랜드 요청 기록은 스크롤 prefetch로 다음 page를 불러온다.
-    - 처리 시작/검수 후 완료 확인은 중앙 작은 확인창으로 표시하고, 요청 보류 UI는 `룩북 확인 불가`, `스팸`, `기타` 사유 선택 sheet로 표시한다. `기타` 선택 시 admin note를 입력해 `updateBrandRequestGroupStage`로 전달한다.
-    - processing group의 브랜드 생성과 완료 처리는 분리한다. 브랜드 생성 직후 자동 완료하지 않고 `markBrandRequestGroupBrandCreated`로 `createdBrandID`를 저장한 뒤, 시즌 import/작업 검수 후 관리자가 `검수 후 완료 처리`를 눌러 `resolveBrandRequestGroup`을 호출한다. 처리중 row는 `상태 변경` 메뉴를 유지하고, `createdBrandID`가 있으면 앱 재실행 후에도 메뉴 안에 `브랜드 생성` 대신 `검수 후 완료 처리`를 보여준다.
-  - `OutPick/Features/Lookbook/ViewModels/AdminBrandRequestGroupsViewModel.swift`
-    - 요청 group 상태 변경, 보류 사유/rejection reason, admin note 전달, 처리 이력 scope 전환을 담당한다.
-  - `OutPick/Features/Lookbook/Domains/Entities/BrandRequest.swift`
-    - 브랜드 요청 group domain과 `ProcessedRequestScope`, `BrandRequestAdminStage.isProcessed`를 정의한다.
-  - `OutPick/Features/Lookbook/Domains/UseCases/ListBrandRequestGroupsUseCase.swift`
-    - 관리자 브랜드 요청 group 목록 조회 use case이며 최근/이전 처리 이력 scope를 repository로 전달한다.
-  - `OutPick/Features/Lookbook/Repositories/Protocols/BrandRequestRepositoryProtocol.swift`
-  - `OutPick/Features/Lookbook/Repositories/Implementations/CloudFunctionsBrandRequestRepository.swift`
-    - `listBrandRequestGroups` callable 호출 경계이며 `processedScope = recent | history`를 전달한다.
-  - `OutPick/Features/Lookbook/Views/Admin/AdminBrandManagementView.swift`
-    - 브랜드 상세에서 전달된 `initialBrand`를 기준으로 특정 브랜드 관리 화면을 구성한다.
-    - 첫 화면은 `LookbookAdminHomeView`와 같은 메뉴 카드 목록이며, `정보`, `관리자`, `시즌 가져오기`, `삭제` 메뉴로 나뉜다.
-    - 메뉴 목록 위에는 선택 브랜드 로고/이름 헤더를 별도로 노출하지 않는다.
-    - `정보` 메뉴는 브랜드 정보 수정과 로고 업로드를 함께 제공하고, 로고 수정 섹션에는 현재 로고 미리보기를 표시한다.
-    - `관리자` 메뉴는 브랜드 관리자 추가/삭제 권한이 있는 사용자에게만 노출한다.
-    - `시즌 가져오기` 메뉴는 내부에서 `시즌 찾아오기`, `현황` segmented control로 나뉜다.
-    - `시즌 찾아오기`는 후보 선택 sheet를 열고, sheet 진입 시 최신 룩북 목록 URL을 다시 확인한다.
-    - 시즌 목록 확인은 내부적으로 `runLookbookExtractionDiagnostic(type: season_discovery)`를 호출해 진단 문서 저장과 후보 upsert를 함께 수행하지만, 앱 UI에는 개발용 진단 상세를 노출하지 않는다.
-    - 후보 선택 후 이미지 import 요청을 서버에 등록하는 중에는 진행 화면의 닫기 버튼을 비활성화한다. 등록이 끝난 뒤 닫으면 Cloud Tasks 기반 worker는 계속 진행되고, 관리자는 `현황` 탭에서 이어서 확인한다.
-    - `현황`은 `SeasonImportManagementView`를 navigation chrome 없이 임베드한다.
-    - `삭제` 메뉴는 `AdminLookbookDeletionManagementView`를 navigation bar 없이 임베드하고, 내부 `삭제` / `삭제 요청 목록` segmented control을 유지한다.
-    - 메뉴 내부 화면의 뒤로가기는 별도 버튼을 두지 않고 상단 navigation back 하나로 메뉴 목록 복귀를 처리한다.
-    - 브랜드 관리 화면은 더 이상 콘솔 검색 기반 진입을 주 흐름으로 쓰지 않는다. 선택 브랜드가 없으면 브랜드 상세의 관리자 버튼으로 진입하라는 빈 상태를 보여준다.
-  - `OutPick/Features/Lookbook/ViewModels/AdminBrandManagementViewModel.swift`
-    - 브랜드 정보 저장 dirty-state, 로고 저장, 관리자 추가/삭제, 결과 피드백 자동 dismiss를 담당한다.
-    - 성공/중복/삭제 대상 없음 등 작업 결과 메시지는 짧게 자동 dismiss하고, 실패 메시지는 더 길게 자동 dismiss한다. 입력 검증 오류는 사용자가 수정할 수 있도록 유지한다.
-    - 로고 저장은 같은 Storage path를 덮어쓰므로 저장 직후 `BrandImageCache.storeImageData`로 새 thumb/detail 데이터를 캐시에 반영하고 `onBrandUpdated`로 홈/상세 화면의 Brand state를 갱신한다.
-    - 검색 결과는 Firestore 단건 재조회로 삭제 요청 브랜드를 최종 제외한다.
-  - `OutPick/Features/Lookbook/Views/Admin/AdminLookbookDeletionManagementView.swift`
-    - 관리자 삭제 관리 화면이다.
-    - `삭제` / `삭제 요청 목록` segmented tab으로 나뉜다.
-    - `삭제 요청 목록`에는 서버가 반환하는 `active/failed` 처리 대상만 표시하며 처리 중/완료 picker와 완료/history UI는 제거됐다.
-    - 총 관리자 콘솔의 `삭제 요청 목록` 메뉴에서 진입하면 삭제 화면 없이 전역 삭제 요청 목록만 보여준다.
-    - 전역 화면과 브랜드 관리 내부 `삭제 요청 목록` 탭 모두 이미 상위 navigation/tab에 맥락이 있으므로 같은 섹션 제목과 보조 문구를 반복하지 않는다.
-    - 전역 삭제 요청 목록은 브랜드별 row로 묶고, row 전체를 탭하면 브랜드/시즌/포스트 target별 진행 현황을 펼친다.
-    - 특정 브랜드 관리자 화면에서 `initialBrand`와 함께 임베드되면 브랜드 검색/선택 없이 해당 브랜드 scoped 삭제 관리만 제공한다.
-    - 브랜드 관리 메뉴에 임베드된 삭제 관리 화면에서는 이미 진입 브랜드가 정해져 있으므로 선택 브랜드 로고/한글명/영문명 섹션을 보여주지 않는다.
-    - 총 관리자에게만 브랜드 삭제 요청/복구 UI를 노출한다.
-    - 브랜드 owner/admin은 진입 브랜드의 시즌/포스트 삭제와 복구만 수행한다.
-    - 시즌 삭제 선택은 가로 스크롤 이미지 카드로, 포스트 삭제 선택은 선택 시즌의 2열 이미지 grid로 표시한다.
-    - 시즌/포스트 다중 선택 삭제는 batch deletion repository API를 호출한다.
-    - 삭제 요청 처리 중 목록에서는 복구 가능 기한, 삭제 사유, 표시용 snapshot 이미지/이름을 보여주며 hard delete 버튼은 제공하지 않는다.
-    - `purged/cancelled/restored` 요청은 앱 목록에 표시하지 않고 별도 이미지 snapshot 파일도 보존하지 않는다.
-    - 시즌 삭제 요청 제목은 `targetDisplayName`보다 `seasonTitle`을 우선해 시즌명으로 표시한다.
-    - 처리 대상 next cursor가 있으면 목록 전체 하단의 공통 sentinel `onAppear`가 다음 50개를 요청한다. 개별 row나 접힌 target row에는 pagination trigger를 두지 않는다.
-    - 총 관리자의 failed row는 queued/running/유효 lease 중 `삭제 처리 중`을 표시하고, 그 외 failed에는 `삭제 다시 시도` action을 제공한다.
-    - 브랜드 owner/admin의 failed row는 자동 재시도 대상 또는 실행 중이면 `삭제를 다시 처리하고 있습니다.`, 최종 실패면 `관리자 확인이 필요합니다.`를 표시한다.
-  - `OutPick/Features/Lookbook/ViewModels/AdminLookbookDeletionManagementViewModel.swift`
-    - 탭 상태, 총 관리자 전역 모드와 브랜드 scoped 모드, 브랜드 검색/선택, 시즌/포스트 선택 상태, 포스트 pagination, 삭제 요청 cursor pagination, 삭제 요청/복구/failed purge retry mutation 상태를 관리한다.
-    - 삭제 요청 page append는 `requestID`로 중복 제거하며 다음 page 호출은 `isLoadingMoreDeletionRequests`로 중복 실행을 막는다.
-    - 시즌/포스트 batch 삭제 결과의 성공 항목은 선택 해제하고, 실패 항목은 선택 상태를 유지한다.
-    - 총 관리자가 아니면 삭제 요청 목록에서 brand target을 숨긴다.
-  - `OutPick/Features/Lookbook/Domains/Entities/LookbookDeletionRequest.swift`
-    - 삭제 요청 목록, target type/status, purge retry metadata/receipt, mutation receipt, batch 삭제 결과 도메인 타입을 정의한다.
-    - 관리자 목록 표시용 deletion request snapshot 필드(`targetDisplayName`, `targetImagePath`, 브랜드/시즌/포스트 표시 필드)를 포함한다.
-  - `OutPick/Features/Lookbook/Repositories/Protocols/LookbookDeletionRepositoryProtocol.swift`
-    - 삭제 lifecycle callable, 시즌/포스트 batch 삭제 callable, `active/failed` 고정 목록 조회와 failed purge retry를 앱 repository 경계로 정의한다.
-  - `OutPick/Features/Lookbook/Repositories/Implementations/CloudFunctionsLookbookDeletionRepository.swift`
-    - `CloudFunctionsManager`의 삭제 lifecycle wrapper, batch 삭제 wrapper, 단순화된 목록 및 retry wrapper를 호출한다.
-  - `OutPick/DB/Firebase/CloudFunctions/CloudFunctionsManager.swift`
-    - 브랜드 요청 group의 `processedScope` wrapper는 유지하고, 삭제 요청 목록은 `targetType/brandID/limit/cursor`만 전달한다.
-    - 삭제 요청 응답의 retry metadata를 decoding하고 `retryFailedLookbookDeletionPurge` callable receipt를 매핑한다.
-  - `OutPick/Features/Lookbook/Domains/Entities/BrandManagement.swift`
-- Admin season discovery diagnostics:
-  - `OutPick/Features/Lookbook/Views/CreateBrand/brand/CreateBrandCandidateSelectionView.swift`
-    - 브랜드 생성 직후와 관리자 `시즌 찾아오기` sheet에서 함께 쓰는 후보 선택 화면이다.
-    - sheet 진입 시 최신 룩북 목록 URL을 확인하고, 성공하면 후보 선택 목록을 바로 보여준다.
-    - 시즌 목록 확인 실패 시 저장된 과거 후보를 대신 보여주지 않고 실패 요약과 `재시도` 버튼만 제공한다.
-  - `OutPick/Features/Lookbook/Domains/Entities/LookbookExtractionDiagnostic.swift`
-    - `season_discovery`와 `season_image_import` 진단 공용 domain 타입, 실패 사유, 추천 수정 범위, 상세 요약을 정의한다.
-  - `OutPick/Features/Lookbook/Repositories/Implementations/CloudFunctionsSeasonCandidateDiscoveryRepository.swift`
-    - 앱의 기존 시즌 후보 discovery repository 경계를 유지하면서 내부 호출은 `runLookbookExtractionDiagnostic(type: season_discovery)`로 연결한다.
-  - `OutPick/DB/Firebase/CloudFunctions/CloudFunctionsManager.swift`
-    - 룩북 import 진단 callable wrapper와 payload/domain mapping을 제공한다.
-- Brand detail:
-  - `OutPick/Features/Lookbook/Views/BrandDetail/BrandDetailView.swift`
-    - 커스텀 back은 Coordinator `pop()`을 호출한다.
-    - 관리자 버튼은 `BrandDetailViewModel.brand`의 최신 `Brand`를 `initialBrand`로 `AdminBrandManagementView`에 전달한다.
-    - 관리자 화면에서 브랜드 정보/로고가 수정되면 `onUpdatedBrand` 콜백으로 `BrandDetailViewModel.applyUpdatedBrand`를 호출해 상세 화면 상태를 갱신한다.
-    - pull-to-refresh는 `BrandDetailViewModel.refreshContents(brandID:)`를 호출해 브랜드 단건, 브랜드 interaction state, 시즌 목록을 함께 갱신한다.
-  - `OutPick/Features/Lookbook/Views/BrandDetail/BrandDetailHeaderView.swift`
-    - brand header image tap 확대는 공용 image viewer wrapper인 `LookbookImageViewerView`를 사용한다.
-    - 로고 이미지는 같은 Storage path가 덮어써질 수 있으므로 `brand.updatedAt`을 load key에 포함해 path가 같아도 새 이미지로 다시 로드한다.
-  - `OutPick/Features/Lookbook/Views/BrandDetail/BrandDetailSeasonsGridView.swift`
-    - 시즌 탭은 hidden `NavigationLink`가 아니라 Coordinator `pushSeasonDetail`을 호출한다.
-  - `OutPick/Features/Lookbook/ViewModels/BrandDetailViewModel.swift`
-    - 초기 진입 브랜드를 seed한 뒤 `BrandRepositoryProtocol.fetchBrand`와 `SeasonRepositoryProtocol.fetchAllSeasons`로 상세 최신화를 담당한다.
-    - 브랜드가 `deletionRequested` 등 사용자 비노출 상태가 되면 `LookbookContentUnavailableError`를 받아 상세 표시 상태를 비우고 접근 불가 메시지를 노출한다.
-- Season detail:
-  - `OutPick/Features/Lookbook/Views/SeasonDetail/SeasonDetailView.swift`
-    - 포스트 탭은 hidden `NavigationLink`가 아니라 Coordinator `pushPostDetail`을 호출한다.
-    - 커스텀 back은 Coordinator `pop()`을 호출한다.
-  - `OutPick/Features/Lookbook/Views/SeasonDetail/SeasonDetailHeaderCardView.swift`
-  - `OutPick/Features/Lookbook/Views/SeasonDetail/SeasonLookGridItemView.swift`
-  - `OutPick/Features/Lookbook/ViewModels/SeasonDetailViewModel.swift`
-- Post detail/comments:
-  - `OutPick/Features/Lookbook/Views/PostDetail/PostDetailView.swift`
-    - 커스텀 back은 Coordinator `pop()`을 호출한다.
-  - `OutPick/Features/Lookbook/Views/PostDetail/PostImagePreviewView.swift`
-    - post hero image 확대와 `LookbookImageViewerView` UIKit wrapper를 확인한다.
-    - 1차 구현은 첫 번째 hero image만 열고, storage original 실패 시 remote URL fallback은 wrapper의 load provider 안에서 처리한다.
-  - `OutPick/Features/Lookbook/Views/PostDetail/PostCommentsSheetView.swift`
-  - `OutPick/Features/Lookbook/Views/PostDetail/PostCommentCardView.swift`
-  - `OutPick/Features/Lookbook/Views/PostDetail/PostCommentCardActions.swift`
-  - `OutPick/Features/Lookbook/Views/PostDetail/PostCommentRepliesSheetView.swift`
-  - `OutPick/Features/Lookbook/Views/PostDetail/CommentUserProfileDetailView.swift`
-  - `OutPick/Features/Lookbook/ViewModels/PostDetailViewModel.swift`
-  - `OutPick/Features/Lookbook/ViewModels/PostCommentsViewModel.swift`
-  - `OutPick/Features/Lookbook/ViewModels/PostCommentRepliesViewModel.swift`
-- Liked tab:
-  - `OutPick/Features/Lookbook/Views/Liked/LikedView.swift`
-    - root 화면이며 좋아요 브랜드/시즌/포스트 상세 이동은 Coordinator push action을 호출한다.
-  - `OutPick/Features/Lookbook/ViewModels/LikedViewModel.swift`
-- Create brand/season:
-  - `OutPick/Features/Lookbook/Views/CreateBrand/brand/CreateBrandFlowView.swift`
-  - `OutPick/Features/Lookbook/Views/CreateBrand/brand/CreateBrandView.swift`
-    - 브랜드 생성은 브랜드명과 선택 영문 브랜드명을 함께 입력한다. 브랜드 요청 group에서 진입하면 요청의 한글명/영문명이 초기값으로 들어간다.
-  - `OutPick/Features/Lookbook/Views/CreateBrand/season/CreateSeasonView.swift`
-  - `OutPick/Features/Lookbook/Views/CreateBrand/season/CreateSeasonFromURLView.swift`
-  - `OutPick/Features/Lookbook/ViewModels/CreateBrandViewModel.swift`
-  - `OutPick/Features/Lookbook/ViewModels/CreateSeasonViewModel.swift`
-  - `OutPick/Features/Lookbook/ViewModels/CreateSeasonFromURLViewModel.swift`
-- Shared views:
-  - `OutPick/Features/Lookbook/Views/Shared/LookbookAssetImageView.swift`
-  - `OutPick/Features/Lookbook/Views/Shared/LookbookShareSheetView.swift`
-  - `OutPick/Features/Lookbook/Views/Shared/LookbookShareSheetPresentation.swift`
-  - `OutPick/Features/Lookbook/Views/Shared/LookbookSharePreviewView.swift`
+| 변경 목적 | View | ViewModel/상태 |
+| --- | --- | --- |
+| 홈·검색 | `Views/LookbookHome/LookbookHomeView.swift` | `ViewModels/LookbookHomeViewModel.swift` |
+| 브랜드 요청 | `Views/BrandRequest` | `BrandRequestViewModel.swift`, `MyBrandRequestsViewModel.swift` |
+| 브랜드 상세 | `Views/BrandDetail/BrandDetailView.swift` | `BrandDetailViewModel.swift` |
+| 시즌 상세 | `Views/SeasonDetail/SeasonDetailView.swift` | `SeasonDetailViewModel.swift` |
+| 포스트·댓글 | `Views/PostDetail` | `PostDetailViewModel.swift`, `PostCommentsViewModel.swift` |
+| 좋아요 | `Views/Liked` | `LikedViewModel.swift` |
+| 브랜드·시즌 생성 | `Views/CreateBrand` | `CreateBrandViewModel.swift`, `CreateSeasonViewModel.swift` |
+| 관리자 홈 | `Views/Admin/LookbookAdminHomeView.swift` | `BrandAdminSessionStore` |
+| 브랜드 요청 관리 | `Views/Admin/AdminBrandRequestGroupsView.swift` | `AdminBrandRequestGroupsViewModel.swift` |
+| 브랜드 관리 | `Views/Admin/AdminBrandManagementView.swift` | `AdminBrandManagementViewModel.swift` |
+| 삭제 관리 | `Views/Admin/AdminLookbookDeletionManagementView.swift` | `AdminLookbookDeletionManagementViewModel.swift` |
+| import 현황 | `Views/BrandDetail/SeasonImportManagementView.swift` | `SeasonImportManagementViewModel.swift` |
 
-## Domain stores and interaction state
+경로 prefix는 `OutPick/Features/Lookbook/`이다.
 
-- Interaction root store: `OutPick/Features/Lookbook/Domains/Stores/LookbookInteractionStore.swift`
-  - brand/post/season/comment optimistic interaction store root를 확인한다.
-- Brand/Post/Season/Comment stores:
-  - `OutPick/Features/Lookbook/Domains/Stores/BrandInteractionStore.swift`
-  - `OutPick/Features/Lookbook/Domains/Stores/PostInteractionStore.swift`
-  - `OutPick/Features/Lookbook/Domains/Stores/SeasonInteractionStore.swift`
-  - `OutPick/Features/Lookbook/Domains/Stores/CommentInteractionStore.swift`
-- Pin/cache helpers:
-  - `OutPick/Features/Lookbook/Domains/Stores/PinAwareInteractionCache.swift`
-  - `OutPick/Features/Lookbook/Domains/Stores/InteractionPinScope.swift`
-- Comment author profile store: `OutPick/Features/Lookbook/Domains/Stores/CommentAuthorProfileStore.swift`
-- Debug failure injection: `OutPick/Features/Lookbook/Domains/Stores/LookbookDebugFailureInjectionStore.swift`
+## 자주 수정하는 흐름
 
-## Repository layer
+### 브랜드 상세
 
-- Repository provider: `OutPick/Features/Lookbook/Repositories/LookbookRepositoryProvider.swift`
-  - Lookbook repository 묶음 조립을 확인한다.
-- Firestore repositories:
-  - `OutPick/Features/Lookbook/Repositories/Implementations/FirestoreBrandRepository.swift`
-  - `OutPick/Features/Lookbook/Repositories/Implementations/FirestoreSeasonRepository.swift`
-  - `OutPick/Features/Lookbook/Repositories/Implementations/FirestorePostRepository.swift`
-  - `OutPick/Features/Lookbook/Repositories/Implementations/FirestoreCommentRepository.swift`
-  - `OutPick/Features/Lookbook/Repositories/Implementations/FirestoreReplacementRepository.swift`
-  - `OutPick/Features/Lookbook/Repositories/Implementations/FirestoreTagRepository.swift`
-- User state repositories:
-  - `OutPick/Features/Lookbook/Repositories/Implementations/FirestoreBrandUserStateRepository.swift`
-  - `OutPick/Features/Lookbook/Repositories/Implementations/FirestoreSeasonUserStateRepository.swift`
-  - `OutPick/Features/Lookbook/Repositories/Implementations/FirestorePostUserStateRepository.swift`
-  - `OutPick/Features/Lookbook/Repositories/Implementations/FirestoreCommentUserStateRepository.swift`
-- Cloud Functions repositories:
-  - `OutPick/Features/Lookbook/Repositories/Implementations/CloudFunctionsBrandStore.swift`
-    - 브랜드 생성, 브랜드 수정, 로고 경로 반영, 브랜드 관리자 추가/삭제 callable을 감싼다.
-  - `OutPick/Features/Lookbook/Repositories/Implementations/CloudFunctionsBrandEngagementRepository.swift`
-  - `OutPick/Features/Lookbook/Repositories/Implementations/CloudFunctionsSeasonEngagementRepository.swift`
-  - `OutPick/Features/Lookbook/Repositories/Implementations/CloudFunctionsPostEngagementRepository.swift`
-  - `OutPick/Features/Lookbook/Repositories/Implementations/CloudFunctionsCommentEngagementRepository.swift`
-  - `OutPick/Features/Lookbook/Repositories/Implementations/CloudFunctionsCommentWritingRepository.swift`
-  - `OutPick/Features/Lookbook/Repositories/Implementations/CloudFunctionsCommentSafetyRepository.swift`
-  - `OutPick/Features/Lookbook/Repositories/Implementations/CloudFunctionsUserBlockRepository.swift`
-- Storage service: `OutPick/Features/Lookbook/Repositories/Implementations/LookbookStorageService.swift`
-- UI test fixture provider: `OutPick/Features/Lookbook/Repositories/Implementations/LookbookUITestFixtureRepositoryProvider.swift`
+읽기 순서:
 
-## DTO / Mapping
+1. `BrandDetailView.swift`
+2. `BrandDetailViewModel.swift`
+3. `BrandRepositoryProtocol.swift`, `SeasonRepositoryProtocol.swift`
+4. 관련 repository implementation
+5. `LookbookContainer.swift`, `LookbookCoordinator.swift`
 
-- DTOs: `OutPick/Features/Lookbook/Models/DTOs`
-  - Firestore payload 구조를 확인한다.
-  - 브랜드/시즌/포스트 삭제 lifecycle은 `deletionStatus`를 decode한다. 기존 문서에 필드가 없으면 앱은 `active`로 처리한다.
-- Firestore mapper: `OutPick/Features/Lookbook/Models/Mapping/FirestoreMapper.swift`
-  - DTO와 domain entity 변환을 확인한다.
-- Mapping error: `OutPick/Features/Lookbook/Models/Mapping/MappingError.swift`
+현재 계약:
 
-## 룩북 삭제 lifecycle 사용자 노출 차단
+- 초기 `Brand` snapshot으로 빠르게 표시한 뒤 단건 브랜드와 시즌 목록을 최신화한다.
+- pull-to-refresh는 브랜드, interaction state, 시즌을 함께 갱신한다.
+- 삭제 요청 등 사용자 비노출 상태면 상세 상태를 비우고 unavailable을 표시한다.
+- 관리자 수정 결과는 `applyUpdatedBrand(_:)`로 상세 상태에 반영한다.
+- 이미지 확대는 공용 `LookbookImageViewerView`/Infra UIKit viewer를 사용한다. 선택 이유는 ADR-017.
 
-- 삭제 상태 도메인 타입: `OutPick/Features/Lookbook/Domains/Entities/LookbookDeletionStatus.swift`
-  - `BrandDeletionStatus.active | deletionRequested`
-  - `ContentDeletionStatus.active | deleted`
-  - `LookbookContentUnavailableError`는 직접 접근 경로의 unavailable 상태를 표현한다.
-- Repository 필터:
-  - `FirestoreBrandRepository`: 브랜드 목록/featured 목록에서 `deletionRequested` 브랜드를 제거하고, 단건 조회도 unavailable error로 막는다.
-  - `FirestoreSeasonRepository`: 시즌 목록에서 `deleted` 시즌을 제거하고, 단건 조회도 unavailable error로 막는다.
-  - `FirestorePostRepository`: 포스트 목록/tag collection group에서 `deleted` 포스트를 제거하고, 단건 조회도 unavailable error로 막는다.
-- 직접 접근 보강:
-  - `LoadSeasonDetailUseCase`: 시즌 상세 진입 시 부모 브랜드 삭제 상태도 확인한다.
-  - `LoadPostDetailUseCase`: 포스트 상세 진입 시 부모 브랜드, 부모 시즌, 포스트 삭제 상태를 모두 확인한다.
-- 사용자 화면 정책:
-  - `LookbookHomeViewModel`: 홈 검색 결과와 업데이트 반영에서 삭제 요청 브랜드를 숨긴다.
-  - `SeasonDetailViewModel`, `PostDetailViewModel`: unavailable error는 “더 이상 볼 수 없습니다” 계열 사용자 문구로 표시한다.
-  - `MakeLookbookSharedContentUseCase`: 삭제 상태 대상은 공유 payload를 만들지 않는다.
-- 서버 검색 payload:
-  - `functions/src/index.ts`의 `brandSearchSummary`는 `deletionStatus`를 포함한다.
-  - iOS `CloudFunctionsManager.searchBrands`는 `deletionStatus`를 `Brand`에 매핑한다.
+### 관리자 브랜드 요청
 
-## 룩북 삭제 lifecycle 관리자 UI
+읽기 순서:
 
-- 완료 상태:
-  - 핵심 구현, 운영 배포, OUTSTANDING 통합 QA까지 완료했다.
-  - 전체 변경/검증 이력은 `docs/ai/tasks/lookbook-admin-soft-delete-lifecycle/progress.md`와 `docs/ai/tasks/lookbook-admin-soft-delete-lifecycle/qa-checklist.md`를 먼저 확인한다.
-- 화면 진입:
-  - `LookbookCoordinator.pushAdminLookbookDeletionManagement(initialBrand:)`
-  - `LookbookContainer.makeAdminLookbookDeletionManagementView(coordinator:initialBrand:)`
-- 관리자 홈 진입:
-  - `LookbookAdminHomeView`의 `삭제 요청 목록` 메뉴는 총 관리자에게만 보이고 전역 활성 삭제 요청 목록으로 진입한다.
-- 브랜드 관리 화면 진입:
-  - `LookbookHomeView` 브랜드 검색 → `BrandDetailView` → `관리자` 버튼 → `AdminBrandManagementView`.
-  - `AdminBrandManagementView` 안에서 `삭제` 메뉴를 선택하면 브랜드 scoped `AdminLookbookDeletionManagementView`가 임베드된다.
-- 권한 노출:
-  - 총 관리자만 브랜드 삭제 요청/취소 UI와 brand target 삭제 요청 목록을 본다.
-  - 브랜드 owner/admin은 brand target을 보지 않고, 권한 브랜드의 시즌/포스트 삭제와 복구만 본다.
-- 데이터 경계:
-  - 앱은 `LookbookDeletionRepositoryProtocol`을 통해 callable Functions를 호출한다.
-  - 시즌/포스트 다중 삭제는 `batchSoftDeleteSeasons`, `batchSoftDeletePosts`를 repository 경유로 호출한다.
-  - 삭제 요청 목록 제목은 target별 snapshot인 `brandName`/`seasonTitle`/`postCaption`을 최우선으로 표시한다. 값이 없으면 유효한 `targetDisplayName`을 사용하고, 그래도 없으면 "삭제된 브랜드/시즌/포스트"처럼 사람이 읽을 수 있는 fallback을 표시한다. `postCaption`이 없는 포스트는 서버 snapshot의 `targetDisplayName = "포스트"`를 표시할 수 있다. UID/문서 ID는 제목 fallback으로 쓰지 않는다.
-  - `lookbookDeletionRequests`와 `lookbookDeletionAuditLogs` 직접 Firestore 접근은 하지 않는다.
+1. `AdminBrandRequestGroupsView.swift`
+2. `AdminBrandRequestGroupsViewModel.swift`
+3. `Domains/Entities/BrandRequest.swift`
+4. `ListBrandRequestGroupsUseCase.swift`
+5. `BrandRequestRepositoryProtocol.swift`
+6. `CloudFunctionsBrandRequestRepository.swift`
 
-## Image services
+현재 계약:
 
-- Brand image cache: `OutPick/Features/Lookbook/Services/ImageLoading/BrandImageCache.swift`
-- Brand image cache protocol: `OutPick/Features/Lookbook/Services/ImageLoading/BrandImageCacheProtocol.swift`
-  - 같은 Storage path를 덮어쓰는 로고 수정 경로에서는 `storeImageData(_:path:)`로 메모리/디스크 캐시를 즉시 교체한다.
-- Image thumbnailing protocol: `OutPick/Features/Lookbook/Services/ImageProcessing/Protocols/ImageThumbnailing.swift`
-- ImageIO thumbnailer: `OutPick/Features/Lookbook/Services/ImageProcessing/Implementations/ImageIOThumbnailer.swift`
-- Thumbnail policies/defaults:
-  - `OutPick/Features/Lookbook/Services/ImageProcessing/ThumbnailPolicy.swift`
-  - `OutPick/Features/Lookbook/Services/ImageProcessing/ThumbnailPolicies.swift`
-  - `OutPick/Features/Lookbook/Services/ImageProcessing/ThumbnailDefaults.swift`
+- segment는 `새 요청/처리 중/보류/완료`다.
+- `보류/완료`는 최근 14일을 기본 표시하고 이전 기록은 별도 pagination한다.
+- 브랜드 생성과 검수 완료는 분리한다.
+- 삭제 요청 목록의 `active/failed` 정책과 혼동하지 않는다.
 
-## URL 기반 시즌 import 앱 진입점
+### 관리자 브랜드·시즌 관리
 
-- 앱 브랜드/시즌 생성 화면: `OutPick/Features/Lookbook/Views/CreateBrand`
-- 앱 생성 ViewModel: `OutPick/Features/Lookbook/ViewModels/CreateBrandViewModel.swift`, `OutPick/Features/Lookbook/ViewModels/CreateSeasonViewModel.swift`
-- 시즌 import 시작 UseCase: `OutPick/Features/Lookbook/Domains/UseCases/StartSeasonImportExtractionUseCase.swift`
-- import 관리자 화면: `OutPick/Features/Lookbook/Views/BrandDetail/SeasonImportManagementView.swift`
-- import 관리자 ViewModel/UseCase: `OutPick/Features/Lookbook/ViewModels/SeasonImportManagementViewModel.swift`, `OutPick/Features/Lookbook/Domains/UseCases/ManageSeasonImportJobsUseCase.swift`
-- 실패 asset 재시도 Repository: `OutPick/Features/Lookbook/Repositories/Implementations/CloudFunctionsSeasonAssetRetryRepository.swift`
-- Cloud Run worker 아키텍처: `docs/ai/architecture/LOOKBOOK_IMPORT_WORKER.md`
-- 룩북 import 진단 task: `docs/ai/tasks/lookbook-import-diagnostics/design.md`
-- 룩북 import 진단 Phase 1 데이터/API 계약: `docs/ai/tasks/lookbook-import-diagnostics/phase-1-data-api-contract.md`
-- 룩북 import 진단 Phase 2A worker endpoint 설계: `docs/ai/tasks/lookbook-import-diagnostics/phase-2a-worker-diagnostic-endpoint-design.md`
-- 관리자 `시즌 가져오기` 메뉴는 `시즌 찾아오기`, `현황` 2개 탭을 유지한다.
-- `시즌 찾아오기`는 성공 시 별도 요약 없이 가져올 시즌 후보 선택 목록을 보여주고, 실패 시에만 요약과 `재시도` 버튼을 제공한다.
-- 시즌 후보명은 worker `tools/lookbook-import-worker/src/season-discovery.ts`에서 카드 이미지 `alt`/`title`과 Cafe24 `상품명` 라벨을 우선 사용한다. URL path fallback의 `detail` 같은 값은 표시명으로 쓰지 않는다.
-- 기존 `현황` 탭은 시즌별 import job 상태를 유지하고, 이미지 실패는 개발용 오류 문구 없이 `이미지 N개 중 M개 완료, F개 실패` 요약과 `재시도` 버튼만 표시한다.
-- `현황` 탭의 목록 refresh 실패는 기존 목록이 비어 있으면 별도 실패 문구를 띄우지 않고 빈 상태만 보여준다.
-- `재시도` 버튼은 실패 row 오른쪽 하단에 작게 배치한다.
-- OUTSTANDING처럼 상세 페이지 이미지 후보가 누락되거나 script template이 이미지 후보로 오탐되면 앱이 아니라 worker `tools/lookbook-import-worker/src/processor.ts`의 image URL filter와 `processor.test.ts`를 먼저 확인한다. Cafe24 NNEditor 본문 이미지의 `copy-...jpg` 접두사는 실제 룩북 이미지일 수 있으므로 copy 아이콘 노이즈로 제외하지 않는다.
+읽기 순서:
 
-## 브랜드 요청 API 진입점
+1. `AdminBrandManagementView.swift`
+2. `AdminBrandManagementViewModel.swift`
+3. `Domains/Entities/BrandManagement.swift`
+4. 관련 repository/use case
+5. `LookbookContainer.swift`
 
-- Functions: `functions/src/index.ts`
-- callable:
-  - `searchBrands`
-  - `submitBrandRequest`
-  - `listMyBrandRequests`
-  - `listBrandRequests`
-  - `updateBrandRequestStage`
-  - `resolveBrandRequest`
-  - `listBrandRequestGroups`
-  - `updateBrandRequestGroupStage`
-  - `resolveBrandRequestGroup`
-  - `updateBrand`
-  - `addBrandManager`
-  - `removeBrandManager`
-- 데이터:
-  - `brandRequests/{requestID}`
-  - `brandRequestNameIndex/{dedupeKeyHash}`
-  - `brandRequestDailyCounters/{uid}/brandRequestDays/{yyyyMMdd}`
-  - `brandRequestUserLimits/{uid}`
-- Phase 2는 백엔드 계약만 구현한다.
-- Phase 3에서 Lookbook 홈 검색 결과 없음 CTA, 브랜드 요청 화면, Swift Repository/UseCase/CloudFunctionsManager wrapper를 연결한다.
-- Phase 5B iOS 관리자 요청 group 화면:
-  - `OutPick/Features/Lookbook/Views/Admin/AdminBrandRequestGroupsView.swift`
-  - `OutPick/Features/Lookbook/ViewModels/AdminBrandRequestGroupsViewModel.swift`
-  - `OutPick/Features/Lookbook/Domains/UseCases/ListBrandRequestGroupsUseCase.swift`
-  - `OutPick/Features/Lookbook/Domains/UseCases/UpdateBrandRequestGroupStageUseCase.swift`
-  - `OutPick/Features/Lookbook/Domains/UseCases/ResolveBrandRequestGroupUseCase.swift`
-  - `OutPick/Features/Lookbook/Repositories/Protocols/BrandRequestRepositoryProtocol.swift`
-  - 상태 변경 메뉴, 처리 시작/검수 후 완료 확인창, 보류 사유 선택 UI, 이전 기록 보기/스크롤 prefetch UI는 `AdminBrandRequestGroupsView.swift`를 먼저 확인한다.
-- Phase 6A는 processing group에서 기존 `CreateBrandFlowView`를 재사용해 브랜드를 생성한다. 생성 직후 `markBrandRequestGroupBrandCreated`로 `createdBrandID`를 저장하고, 완료 처리는 자동 호출하지 않고 시즌 import/작업 검수 후 `검수 후 완료 처리`로 `resolveBrandRequestGroup`을 호출한다.
-- Phase 6B는 `AdminBrandManagementView`에서 브랜드 검색/선택 후 브랜드 수정, 로고 수정, 관리자 추가/삭제, 시즌 추가/import 현황 진입을 제공한다.
-- Phase 6H/후속 Phase C QA 수정은 `AdminBrandManagementViewModel`, `BrandDetailView`, `BrandDetailViewModel`, `BrandDetailHeaderView`, `BrandRowView`, `BrandImageCache`를 함께 확인한다. 특히 상세에서 직접 관리자 진입은 `initialBrand` seed, 로고 수정 반영은 cache store + `updatedAt` load key, 상세 pull-to-refresh는 브랜드 단건 + 시즌 목록 동시 최신화가 핵심이다.
-- Phase 7 iOS 관리자 시즌 import QA는 `SeasonAdditionSheetView`, `SeasonImportManagementView`, `SeasonImportManagementViewModel`, `ManageSeasonImportJobsUseCase`와 `docs/ai/architecture/LOOKBOOK_IMPORT_WORKER.md`를 함께 확인한다.
-- 사용자별 `brandRequests/{requestID}`는 개인 요청 기록이며, 사용자 노출 상태는 `listMyBrandRequests`가 group 상태를 반영해 반환한다.
-- `listBrandRequestGroups`는 `adminStage = rejected | completed`에서 `processedScope = recent | history`를 지원한다. 기본 `recent`는 최근 14일, `history`는 14일 이전 처리 이력이다.
-- Functions `listLookbookDeletionRequests`는 Phase 2부터 `active/failed` 전용 계약이며 `targetType`, `brandID`, `limit`, cursor만 전달받는다. `limit + 1` query로 실제 다음 page가 있을 때만 `nextCursor`를 반환한다.
-- 삭제 요청 목록 단순화는 `docs/ai/tasks/lookbook-deletion-request-list-simplification/progress.md` 기준으로 2026-07-13 iOS 구현, Functions 운영 배포, 사용자 수동 QA를 완료했다.
+현재 계약:
+
+- 총 관리자와 브랜드 owner/admin 권한을 분리한다.
+- 메뉴는 정보, 관리자, 시즌 가져오기, 삭제 흐름으로 구성한다.
+- 시즌 가져오기는 후보 discovery와 import job 현황을 분리한다.
+- 실제 worker 구조는 `docs/ai/architecture/LOOKBOOK_IMPORT_WORKER.md`를 먼저 본다.
+
+### 삭제 관리 화면
+
+읽기 순서:
+
+1. `Views/Admin/AdminLookbookDeletionManagementView.swift`
+2. `ViewModels/AdminLookbookDeletionManagementViewModel.swift`
+3. `Domains/Entities/LookbookDeletionRequest.swift`
+4. `Repositories/Protocols/LookbookDeletionRepositoryProtocol.swift`
+5. `Repositories/Implementations/CloudFunctionsLookbookDeletionRepository.swift`
+6. `Repositories/Implementations/CloudFunctionsMappers/LookbookDeletionCloudFunctionsMapper.swift`
+7. `OutPick/DB/Firebase/CloudFunctions/Core/FirebaseCloudFunctionsTransport.swift`
+8. `docs/ai/entrypoints/FIREBASE.md`의 삭제 lifecycle
+
+현재 계약:
+
+- 앱 목록은 `active/failed`만 표시한다. 완료/history picker는 없다.
+- 총 관리자 전역 목록은 브랜드별로 묶고, 브랜드 관리 내부는 해당 브랜드로 scope한다.
+- 총 관리자만 브랜드 삭제 요청/복구와 failed manual retry를 수행한다.
+- 브랜드 owner/admin은 해당 브랜드의 시즌·포스트 삭제/복구만 수행한다.
+- owner/admin failed 문구는 실행 중/자동 재시도와 최종 실패를 구분한다.
+- 다음 page는 목록 전체 하단 sentinel이 요청하며 `requestID`로 중복 제거한다.
+- 상세 정책과 검증: `docs/ai/tasks/lookbook-deletion-request-list-simplification/`.
+
+## Domain·Repository 지도
+
+| 영역 | Entity/Store | Repository/UseCase |
+| --- | --- | --- |
+| 브랜드 | `Brand.swift`, `BrandUserState.swift`, `BrandInteractionStore` | `BrandRepositoryProtocol`, brand use cases |
+| 시즌 | `Season.swift`, `SeasonUserState.swift`, `SeasonInteractionStore` | `SeasonRepositoryProtocol`, season use cases |
+| 포스트 | `LookbookPost.swift`, `PostUserState.swift`, `PostInteractionStore` | `PostRepositoryProtocol`, post use cases |
+| 댓글 | `Comment.swift`, `CommentUserState.swift`, `CommentInteractionStore` | comment repository/use cases |
+| 관리자 | `BrandManagement.swift`, `BrandRequest.swift` | brand admin/request repository/use cases |
+| 삭제 | `LookbookDeletionRequest.swift` | `LookbookDeletionRepositoryProtocol` |
+| import | `SeasonImportJob.swift`, `SeasonCandidate.swift`, `LookbookExtractionDiagnostic.swift` | import/discovery repositories |
+
+- protocol은 `Domains/UseCases`, `Repositories/Protocols`에서 찾는다.
+- 외부 구현은 `Repositories/Implementations`, DTO는 `Models/DTOs`, 변환은 `Models/Mapper`에서 찾는다.
+- 상호작용 정합성은 `LookbookInteractionStore`와 대상별 store를 먼저 확인한다.
+
+## 이미지·공유·Navigation
+
+### 이미지
+
+- 공용 로딩/캐시: `Services/ImageLoading`.
+- 확대 viewer: `Navigation/LookbookImageViewerView.swift`와 Infra viewer.
+- 같은 Storage path 덮어쓰기 시 `updatedAt` 기반 cache invalidation을 확인한다.
+
+### Chat 공유
+
+- Lookbook 쪽 payload/bridge: `OutPick/Features/Lookbook/`의 share 관련 View/Navigation.
+- Chat 접합부: `docs/ai/entrypoints/CHAT.md`.
+- snapshot/상세 최신화 결정: ADR-011~013.
+
+### URL 기반 시즌 import
+
+- 앱: `CreateBrandCandidateSelectionView.swift`, `AdminBrandManagementView.swift`, `SeasonImportManagementView.swift`.
+- repository: `CloudFunctionsSeasonCandidateDiscoveryRepository.swift`와 import repository.
+- Functions/worker: `docs/ai/entrypoints/FIREBASE.md`, `docs/ai/architecture/LOOKBOOK_IMPORT_WORKER.md`.
+
+## 변경 시 함께 갱신할 문서
+
+- 화면·DI·Coordinator 위치: 이 문서와 `docs/ai/ENTRYPOINTS.md`.
+- 데이터/API: `docs/ai/DATA_SCHEMA.md`, `docs/ai/entrypoints/FIREBASE.md`.
+- 장기 선택: 새 ADR 또는 기존 ADR.
+- phase 상태와 QA: 관련 task의 `progress.md`, `qa-checklist.md`.

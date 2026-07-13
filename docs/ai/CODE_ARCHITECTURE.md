@@ -88,6 +88,23 @@ CompositionRoot
 - 사용자가 리뷰에서 “이 파일이 너무 크다”, “이 요소는 따로 관리하자”라고 지적한 패턴은 이후 유사 구현에 선제 적용한다.
 - 파일 수를 줄이는 것보다 책임과 탐색 비용을 줄이는 것을 우선한다.
 
+## 핵심 인프라 모듈 경계
+
+Cloud Functions 호출, GRDB, Firebase Functions, Socket처럼 여러 기능이 공유하는 런타임도 기능별 책임과 소비자 계약을 우선한다.
+
+- 대형 manager나 entrypoint를 여러 extension/file로만 나누지 않는다.
+- 소비자는 필요한 capability Protocol만 받는다.
+- 기능별 Client/Store/handler/service가 payload 변환, query, 기능 orchestration을 소유한다.
+- 공통 transport/database/runtime는 SDK 호출, connection/pool, 공통 오류와 초기화 같은 횡단 책임만 소유한다.
+- 앱/Container/CompositionRoot 또는 서버 bootstrap이 concrete dependency를 한 번 생성하고 조립한다.
+- GRDB의 `AppDatabase`는 `DatabasePool`과 migration lifecycle만 소유한다. message, outbox, media, profile cache, room cleanup query/transaction은 기능별 Store가 소유한다.
+- `ChatPersistenceProvider`는 같은 `AppDatabase`로 Store를 조립하고, 소비자에는 필요한 persistence Protocol만 전달한다.
+- Functions `index.ts`는 기존 이름의 flat export로 유지한다. Socket `index.js`는 Firebase/runtime bootstrap, room preload, listen/signal만 담당하고 `Socket/src/app/`이 application과 production dependency를 조립하며 `Socket/src/handlers/`가 event 등록을 담당한다.
+- source module 분리와 deployment unit 분리를 구분한다. 현재 iOS 앱, Firebase Functions codebase, Socket Cloud Run service 배포 경계는 유지한다.
+- 독립 배포, autoscaling, 장애, IAM, 데이터 소유권 근거가 생길 때만 microservice 분리를 재검토한다.
+
+상세 결정은 ADR-019, 현재 작업은 docs/ai/tasks/core-infrastructure-modularization/을 확인한다.
+
 ## 주요 디렉터리
 
 - `OutPick/App`: 앱 진입점, AppCoordinator, SceneDelegate, AppDelegate, 탭 조립 흐름.

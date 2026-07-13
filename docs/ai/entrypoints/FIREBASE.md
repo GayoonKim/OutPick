@@ -1,280 +1,197 @@
 # Firebase Entrypoints
 
-## Firebase Functions
+## 목적과 source of truth
 
-- Export entry: `functions/src/index.ts`
-- Season candidate discovery: `functions/src/lookbookSeasonCandidateDiscovery.ts`
+Firebase 변경 시 Functions, Firestore, Storage의 실제 경계를 찾기 위한 인덱스다.
 
-## 주요 callable/trigger
+| 영역 | source of truth | workflow |
+| --- | --- | --- |
+| Functions | `functions/src/index.ts`, `functions/src/{core,shared,auth,brand,chat,lookbook}/` | `.codex/skills/firebase-functions-workflow/SKILL.md` |
+| Firestore rules | `firestore.rules` | `.codex/skills/firestore-workflow/SKILL.md` |
+| Firestore indexes | `firestore.indexes.json` | `.codex/skills/firestore-workflow/SKILL.md` |
+| Storage rules | `storage.rules`, root `firebase.json` | 배포 전 rules dry-run과 운영 권한 확인 |
+| iOS callable transport | `OutPick/DB/Firebase/CloudFunctions/Core/FirebaseCloudFunctionsTransport.swift` | 기능별 Repository/Client와 mapper를 함께 확인 |
 
-- Auth: `exchangeKakaoToken`
-- Brand: `getBrandAdminCapabilities`, `createBrand`, `updateBrand`, `updateBrandLogoPaths`, `addBrandManager`, `removeBrandManager`, `setBrandEngagement`
-- Brand request: `searchBrands`, `submitBrandRequest`, `listMyBrandRequests`, `listBrandRequests`, `updateBrandRequestStage`, `resolveBrandRequest`
-- Brand request group: `listBrandRequestGroups`, `updateBrandRequestGroupStage`, `resolveBrandRequestGroup`
-- Post: `setPostEngagement`
-- Season: `setSeasonEngagement`
-- Comment: `setCommentEngagement`, `createComment`, `createReply`, `deleteComment`, `reportComment`
-- User safety: `blockUser`, `loadHiddenCommentUserIDs`
-- Season import: `requestSeasonImport`, `requestSeasonAssetRetry`, `requestSeasonCandidateImportJobs`
-- Firestore triggers: `onSeasonImportQueued`, `onRoomClosed`
+- 운영 배포 revision과 일회성 QA 로그는 관련 task의 `progress.md`에 기록한다.
+- 장기 기술 결정은 `docs/ai/ADR.md`, 데이터 계약은 `docs/ai/DATA_SCHEMA.md`를 확인한다.
+- 데이터 삭제, rules 완화, 운영 배포 범위가 모호하면 구현/배포를 멈추고 사용자와 논의한다.
 
-## Brand Request
+## Functions 코드 지도
 
-- 사용자별 요청 기록: `brandRequests/{requestID}`
-- 요청 처리 상태 source: `brandRequestNameIndex/{dedupeKeyHash}`
-- 브랜드 검색: callable `searchBrands`가 `brands.normalizedName`과 `brands.normalizedEnglishName` prefix query를 수행한 뒤 중복 브랜드를 제거한다.
-- 브랜드명 수요/group 집계: `brandRequestNameIndex/{dedupeKeyHash}`
-- `listMyBrandRequests`는 group 상태를 반영해 사용자 노출 상태를 반환한다.
-- `listBrandRequestGroups`는 운영자 group 목록 source인 `brandRequestNameIndex`를 조회한다. `adminStage = rejected | completed`일 때 `processedScope = recent | history`를 지원하며, 기본 최근 처리 이력 기준은 14일이다.
-- 사용자 일일 제한: `brandRequestDailyCounters/{uid}/brandRequestDays/{yyyyMMdd}`
-- 사용자 spam/차단: `brandRequestUserLimits/{uid}`
-- 앱/관리자는 Firestore 직접 접근이 아니라 callable을 사용한다.
-- Firestore rules는 위 컬렉션들의 client read/write를 차단한다.
-- TTL 후보:
+`functions/src/index.ts`는 기존 49개 배포 이름의 명시적 flat re-export만 가진다. 실제 handler와 helper는 아래 기능 module에서 찾는다.
+
+Phase 4 구현 결과와 결정은 `docs/ai/tasks/core-infrastructure-modularization/phases/phase-4-firebase-functions.md`, contract/service/policy 테스트는 `phase-4-firebase-functions-tests.md`와 `functions/src/**/*.test.ts`를 따른다.
+
+Phase 6 전체 회귀와 운영 배포는 `docs/ai/tasks/core-infrastructure-modularization/phases/phase-6-integration-tests.md`, `docs/ai/tasks/core-infrastructure-modularization/phases/phase-6-deployment.md`를 따른다. Functions는 Socket gate 통과 후 49개 export 전체를 배포하며 prior source rollback 기준을 확보하지 못하면 배포하지 않는다.
+
+| 변경 목적 | 검색할 함수/파일 |
+| --- | --- |
+| 인증 | `functions/src/auth/functions.ts`, `kakaoService.ts` |
+| 총 관리자·브랜드 권한 | `functions/src/shared/brandAuthorization.ts` |
+| 브랜드 요청 | `functions/src/brand/requests/functions.ts` |
+| 브랜드 관리 | `functions/src/brand/admin/functions.ts`, `shared/brandValidation.ts` |
+| 룩북 삭제 lifecycle | `functions/src/lookbook/deletion/`과 아래 전용 섹션 |
+| engagement/comment/safety | `functions/src/lookbook/{engagement,comments,safety}/functions.ts` |
+| 시즌 import·추출 진단 | `functions/src/lookbook/import/` |
+| Chat room cleanup | `functions/src/chat/cleanup/functions.ts`, `cleanupService.ts` |
+
+기본 검증:
 
 ```bash
-gcloud firestore fields ttls update expiresAt \
-  --collection-group=brandRequestDays \
-  --enable-ttl \
-  --project=outpick-664ae
+cd functions
+npm test
+npm run lint
+npm run build
 ```
 
-- TTL policy 적용은 사용자 명시 승인 후 별도 수행한다.
+운영 배포는 사용자 승인 후 workflow가 지정한 명령을 사용한다.
 
-## Brand Management
+## 브랜드 권한과 요청
 
-- 브랜드 생성/수정/관리자 변경은 callable Functions 경계를 사용한다.
-- `createBrand`: 총 관리자(`brandAdmins/{uid}.isActive == true`)만 새 브랜드를 생성한다.
-- `updateBrand`: 브랜드 owner/admin 또는 총 관리자가 브랜드명, 영문 브랜드명, 공식 홈페이지 URL, 룩북 목록 URL을 수정한다.
-- `updateBrand`의 `isFeatured` 변경은 총 관리자만 가능하다.
-- 브랜드명/영문명 변경 시 `brandNameIndex/{normalizedName}`과 `brandNameIndex/{normalizedEnglishName}` 중복 검증과 이전 index 삭제를 transaction에서 처리한다.
-- `updateBrandLogoPaths`: 브랜드 owner/admin 또는 총 관리자가 Storage 업로드 후 로고 경로를 반영한다.
-- `addBrandManager`: normalized email로 `users.email`을 조회해 `brands/{brandID}/admins/{uid}` 문서를 생성/갱신한다.
-- `removeBrandManager`: normalized email로 `users.email`을 조회해 `brands/{brandID}/admins/{uid}` 문서를 삭제한다.
-- 총 관리자는 owner/admin 모두 추가/삭제할 수 있다.
-- 브랜드 owner는 해당 브랜드 admin만 추가/삭제할 수 있고 owner 추가/삭제는 할 수 없다.
-- 브랜드 admin은 관리자 추가/삭제 권한을 갖지 않는다.
-- 마지막 owner 삭제는 서버에서 차단한다.
+### 권한
 
-## Lookbook Soft Delete Lifecycle
+- 총 관리자 source: `brandAdmins/{uid}.isActive == true`.
+- 브랜드 owner/admin source: `brands/{brandID}/admins/{uid}.role in [owner, admin]`.
+- legacy capability/UID 배열은 신규 권한 판단에 사용하지 않는다.
+- 권한은 iOS 표시 조건만 믿지 않고 Functions와 rules에서 최종 검증한다.
 
-- 삭제 lifecycle API는 callable Functions 경계를 사용한다.
-- `requestBrandDeletion`: 총 관리자만 브랜드 삭제 요청을 생성한다. 브랜드 문서에 `deletionStatus = deletionRequested`를 기록하고 `lookbookDeletionRequests/{requestID}` projection과 `lookbookDeletionAuditLogs/{logID}` 감사 로그를 같은 transaction에서 쓴다.
-- `cancelBrandDeletion`: 총 관리자만 브랜드 삭제 요청을 취소한다. 브랜드 `deletionStatus`를 `active`로 되돌리고 projection 상태를 `cancelled`로 바꾼다.
-- `softDeleteSeason` / `restoreSeason`: 총 관리자 또는 `brands/{brandID}/admins/{uid}.role in ["owner", "admin"]`인 브랜드 관리자가 시즌 삭제 상태를 변경한다. 시즌 삭제는 하위 포스트를 즉시 `deleted`로 바꾸지 않는다.
-- `softDeletePost` / `restorePost`: 총 관리자 또는 브랜드 owner/admin이 포스트 삭제 상태를 변경한다. 부모 브랜드가 `deletionRequested`이거나 부모 시즌이 `deleted`이면 개별 포스트 삭제/복구를 막는다.
-- `batchSoftDeleteSeasons`: `brandID`와 최대 20개 `seasonIDs`를 받아 시즌 삭제 요청을 항목별 transaction으로 처리한다. 권한과 부모 브랜드 상태 정책은 `softDeleteSeason`과 동일하며, 일부 항목 실패 시 `results`에 항목별 성공/실패를 반환한다.
-- `batchSoftDeletePosts`: `brandID`, `seasonID`, 최대 20개 `postIDs`를 받아 같은 시즌 안의 포스트 삭제 요청을 항목별 transaction으로 처리한다. 권한과 부모 브랜드/시즌 상태 정책은 `softDeletePost`와 동일하며, 일부 항목 실패 시 `results`에 항목별 성공/실패를 반환한다.
-- `listLookbookDeletionRequests`: 총 관리자는 전역 삭제 요청 목록을 조회할 수 있고, 브랜드 owner/admin은 `brandID`를 지정한 자신 권한 브랜드 목록만 조회할 수 있다. 서버가 `status in [active, failed]`를 고정 적용하며 `status/statusGroup/processedScope/recentProcessedDays`를 소비하지 않는다. `targetType`, `brandID`, `limit`, cursor 입력을 지원한다. `limit + 1`개를 조회해 실제 다음 page가 있을 때만 마지막 반환 문서 기준 `nextCursor`를 제공한다. 기존/부분 projection에 `targetDisplayName` 또는 `brandName`/`seasonTitle`/`postCaption` 같은 표시 snapshot이 비어 있으면 원본 브랜드/시즌/포스트 문서를 읽어 응답 summary만 보강한다. `targetDisplayName`이 "삭제된 브랜드/시즌/포스트" fallback이더라도 target별 snapshot 이름이 있으면 브랜드명/시즌명/포스트명으로 보강한다. 시즌명은 시즌 문서의 `displayTitle`, legacy `title`, `sourceTitle` 순서로 읽는다. 이 보강은 운영 projection 문서 backfill write를 수행하지 않는다. iOS wrapper도 status group 입력을 제거한 계약으로 운영 서버와 일치한다.
-- iOS callable wrapper는 `OutPick/DB/Firebase/CloudFunctions/CloudFunctionsManager.swift`, repository 경계는 `CloudFunctionsBrandRequestRepository.swift`와 `CloudFunctionsLookbookDeletionRepository.swift`를 확인한다.
-- `retryFailedLookbookDeletionPurge`: 총 관리자만 `failed` 요청의 기존 requestID를 즉시 background purge로 재시도할 수 있다. callable은 새 manual retry token과 `queued` 상태를 transaction으로 기록하고 purge 완료를 기다리지 않고 응답한다. queued 상태나 유효 request lease가 있으면 새 token을 만들지 않고 duplicate receipt를 반환한다.
-- `onLookbookDeletionManualRetryQueued`: `before.manualRetryToken != after.manualRetryToken`이고 새 상태가 `queued`일 때만 실행되는 Firestore update trigger다. manual purge를 즉시 시작하고 오류는 request/audit에 기록하며 scheduler fallback을 위해 throw 재시도를 반복하지 않는다.
-- scheduled/manual purge는 `lookbookDeletionPurgeLeases/{brandID}` 브랜드 단위 lease를 공통 claim한다. lease는 15분이며 request와 lease 문서 token이 모두 일치할 때만 성공/실패 상태를 finalize한다. 같은 브랜드의 브랜드/시즌/포스트 purge를 직렬화해 Storage prefix가 겹치는 실행도 막는다.
-- 삭제 요청 목록 단순화는 `docs/ai/tasks/lookbook-deletion-request-list-simplification/progress.md` 기준으로 2026-07-13 구현, 운영 배포, 사용자 수동 QA를 완료했다. 실제 lease 경쟁과 scheduler fallback의 destructive 재현은 후속 운영 회귀 QA다.
-- 삭제 요청 projection 컬렉션은 `lookbookDeletionRequests/{requestID}`이며 주요 필드는 `targetType`, `targetID`, `targetPath`, `brandID`, `seasonID`, `postID`, `status`, `requestedBy`, `requestedAt`, `restoreUntil`, `purgeAfter`, `reason`, `updatedAt`, `purgeAttemptCount`, `autoRetryEligible`, `retryAfter`, `purgeErrorMessage`, `manualRetryState`, `manualRetryToken`, `manualRetryCount`, `manualRetryRequestedAt`, `manualRetryRequestedBy`, `purgeLeaseToken`, `purgeLeaseUntil`, `purgeExecutionSource`다.
-- 신규 projection은 관리자 목록 표시용 snapshot인 `targetDisplayName`, `targetImagePath`, `brandName`, `brandEnglishName`, `brandLogoThumbPath`, `seasonTitle`, `seasonCoverThumbPath`, `postCaption`, `postImageThumbPath`를 함께 저장한다. 기존 projection에는 없을 수 있으므로 클라이언트는 fallback을 유지한다.
-- 감사 로그 컬렉션은 `lookbookDeletionAuditLogs/{logID}`이며 일반 클라이언트 직접 read/write는 허용하지 않는다.
-- 신규 hard delete 대상을 직접 선택하는 앱 callable은 제공하지 않는다. 기존 failed request의 재시도만 총 관리자 callable로 등록하며 실제 영구 삭제는 scheduled function 또는 manual retry trigger가 공통 purge helper를 통해 수행한다.
-- `purgeExpiredLookbookDeletions`: Phase 5 scheduled hard delete function이다.
-  - `Asia/Seoul` 기준 매일 04:00 실행.
-  - 20개는 active/failed 독립 query의 page 크기이며 한 실행의 전체 처리량 상한이 아니다. cursor를 반복 전진하며 시간 예산 안에서 eligible queue를 소진한다.
-  - `brand -> season -> post` 세 pass로 부모 target을 먼저 처리한다. 같은 target type은 `purgeAfter`, `requestID` 오름차순이다.
-  - `active` query는 `status`, `targetType`, `purgeAfter <= now`를 사용한다.
-  - `failed` query는 `status = failed`, `autoRetryEligible = true`, `targetType`, `purgeAfter <= now`, `retryAfter <= now`를 Firestore에서 함께 필터링한다. `retryAfter`가 없거나 Timestamp가 아닌 문서는 query 대상이 아니다.
-  - page 요청은 브랜드별 순차 queue로 묶고 서로 다른 브랜드 queue만 최대 3개 병렬 처리한다.
-  - 실행 후 7분부터 신규 purge claim을 시작하지 않으며 이미 시작한 purge는 완료를 기다린다.
-  - 실행 요약 로그는 page/load/start/success/failure/skip/unstarted 수, 종료 원인, 잔여 candidate 여부, 실행 시간과 실행 설정을 기록한다. cursor 미소진, 시간 종료 또는 lease skip이 있으면 잔여 candidate를 보수적으로 `true`로 기록한다.
-  - 브랜드 purge는 `brands/{brandID}` 하위 Firestore 문서 전체, `brandNameIndex`, 관련 user state projection, `brands/{brandID}/` Storage prefix를 삭제한다.
-  - 시즌 purge는 시즌 하위 posts/comments/replacements, 관련 user state projection, `brands/{brandID}/seasons/{seasonID}/` Storage prefix를 삭제한다.
-  - 포스트 purge는 포스트 하위 comments/replacements, 관련 user state projection, `brands/{brandID}/seasons/{seasonID}/posts/{postID}/` Storage prefix를 삭제한다.
-  - 문서 필드에 저장된 Storage 파일은 raw Storage path만 삭제 대상으로 인정한다. `://`가 들어간 URL, 외부 `remoteURL`, `sourcePageURL`은 삭제하지 않는다.
-  - 부모 target이 purge되면 같은 범위의 하위 active/failed deletion request projection도 `purged`로 닫는다.
-  - 실패 시 `failed`, `purgeAttemptCount`, `lastPurgeAttemptAt`, `retryAfter`, `autoRetryEligible`, `purgeErrorMessage`와 감사 로그를 남기고, 3회 실패 후 자동 재시도에서 제외한다.
-  - scheduled worker도 실행 전 브랜드 단위 15분 lease를 claim하며 manual trigger와 동시 실행하지 않는다.
-- Firestore rules는 `lookbookDeletionRequests`, `lookbookDeletionAuditLogs` 직접 접근을 막고, `brands/{brandID}/seasons/{seasonID}`와 `posts/{postID}` 직접 `delete`를 막는다. 기존 create/update 권한은 유지한다.
-- 인덱스는 `firestore.indexes.json`의 `lookbookDeletionRequests` 목록/정리용 composite index와 `brandStates`, `seasonStates`, `postStates`, `commentStates` collection group field override를 사용한다. purge drain은 active용 `status + targetType + purgeAfter + requestID`, failed용 `status + autoRetryEligible + targetType + purgeAfter + retryAfter + requestID` index를 사용한다.
-- `lookbookDeletionPurgeLeases`는 서버 전용 top-level collection이며 Firestore rules의 최종 deny fallback으로 클라이언트 접근이 차단된다.
-- purge drain Phase 3는 2026-07-13 index READY 확인 후 Functions 운영 배포를 완료했다. QA 요청 31개로 20개 초과 pagination, 시즌 cascade, eligible/future failed, Storage 삭제를 확인했고 유효 manual source lease가 scheduled 실행을 skip하는 것도 확인했다. QA 브랜드/request/audit/lease/Storage 잔여물은 모두 정리했다.
-- purge drain 코드 확인 순서:
-  - 정책과 트레이드오프: `docs/ai/adr/ADR-018-룩북-영구-삭제는-일일-bounded-drain과-브랜드-lease로-처리한다.md`.
-  - page 반복, 브랜드 queue, 동시성, cutoff, summary: `functions/src/lookbookDeletionPurgeDrain.ts`.
-  - Firestore query/cursor: `functions/src/index.ts`의 `expiredDeletionRequestPageLoader`.
-  - request claim/purge/finalize: `functions/src/index.ts`의 `claimLookbookDeletionPurge`, `runLookbookDeletionPurge`, `purgeClaimedLookbookDeletionRequest`.
-  - scheduler target pass와 운영 로그: `functions/src/index.ts`의 `purgeExpiredLookbookDeletions`.
-  - scheduled/manual 상호 배제: `functions/src/lookbookDeletionPurgeLease.ts`와 `lookbookDeletionPurgeLeases/{brandID}`.
-  - query index: `firestore.indexes.json`의 active `status + targetType + purgeAfter + requestID`, failed `status + autoRetryEligible + targetType + purgeAfter + retryAfter + requestID`.
-  - 회귀 검증: `cd functions && npm test && npm run lint && npm run build`.
-- scheduler 완료 로그의 주요 필드는 `pageCount`, `loadedCount`, `startedCount`, `successCount`, `failureCount`, `skippedCount`, `unstartedCount`, `stopReason`, `hasRemainingCandidates`, `elapsedMillis`다.
-- 운영 배포와 OUTSTANDING 통합 QA 결과는 `docs/ai/tasks/lookbook-admin-soft-delete-lifecycle/progress.md`와 `docs/ai/tasks/lookbook-admin-soft-delete-lifecycle/qa-checklist.md`를 확인한다.
+### 브랜드 요청
 
-## Lookbook URL Import Worker
+- 앱은 `CloudFunctionsBrandRequestRepository`를 통해 callable을 사용한다.
+- 사용자 요청과 관리자 group 상태는 별도 collection/projection으로 관리한다.
+- 관리자 `rejected/completed` 목록은 `processedScope = recent | history`를 지원한다.
+- 상세 데이터 계약: `docs/ai/DATA_SCHEMA.md`.
 
-Cloud Run worker 전환 기준의 URL 기반 시즌 등록 진입점이다.
+## Lookbook 삭제 lifecycle
 
-- Cloud Functions wake-up trigger/export 후보: `functions/src/index.ts`
-- Season candidate discovery: `functions/src/lookbookSeasonCandidateDiscovery.ts`
-- Cloud Run worker package: `tools/lookbook-import-worker/`
-- Cloud Run worker server: `tools/lookbook-import-worker/src/server.ts`
-- Cloud Run worker season discovery diagnostic endpoint: `tools/lookbook-import-worker/src/season-discovery.ts`
-- Cloud Run worker processor: `tools/lookbook-import-worker/src/processor.ts`
-- Cloud Run worker tests: `tools/lookbook-import-worker/src/season-discovery.test.ts`, `tools/lookbook-import-worker/src/processor.test.ts`
-- Cloud Run worker lifecycle/retry 분류: `tools/lookbook-import-worker/src/job-lifecycle.ts`, `tools/lookbook-import-worker/src/import-error.ts`
-- 공개 URL/SSRF 방어 HTTP boundary: `tools/lookbook-import-worker/src/public-http.ts`
-- Cloud Run worker Firebase boundary: `tools/lookbook-import-worker/src/firebase.ts`
-- Cloud Run worker config/env boundary: `tools/lookbook-import-worker/src/config.ts`
-- 배포/운영 자동화 후보: `scripts/ai/`
-- 룩북 import 진단 Phase 1 계약: `docs/ai/tasks/lookbook-import-diagnostics/phase-1-data-api-contract.md`
-- 룩북 import 진단 Phase 2A worker endpoint 설계: `docs/ai/tasks/lookbook-import-diagnostics/phase-2a-worker-diagnostic-endpoint-design.md`
-- 룩북 import 진단 callable: `runLookbookExtractionDiagnostic`, `getLatestLookbookExtractionDiagnostic`
-- 룩북 import 진단 cleanup: `cleanupExpiredLookbookExtractionDiagnostics`
-- 룩북 import 진단 컬렉션: `lookbookExtractionDiagnostics/{diagnosticId}`
-- 시즌 목록 discovery의 Playwright 렌더링은 Functions가 아니라 Cloud Run worker endpoint에서 처리한다.
-- OUTSTANDING류 Cafe24 페이지의 시즌명 보강은 `season-discovery.ts`의 이미지 `alt`/`title`과 `상품명` 라벨 우선순위를 확인한다.
-- 상세 이미지 import에서 JS template 문자열이 가짜 이미지 URL로 저장되는 경우는 `processor.ts`의 template image filter와 `processor.test.ts` 회귀 테스트를 확인한다.
-- 2026-07-10 기준 운영 worker `lookbook-import-worker` 최종 배포 revision은 `lookbook-import-worker-00015-q6x`이며 100% traffic을 받는다.
+### 읽기 순서
 
-## Lookbook Import Worker 문서 지도
+1. 제품/작업 결정: 관련 task `decisions.md`, ADR-018
+2. 목록·soft delete·retry handler: `functions/src/lookbook/deletion/functions.ts`
+3. purge orchestration: `functions/src/lookbook/deletion/purgeDrain.ts`
+4. lease 정책: `functions/src/lookbook/deletion/purgeLease.ts`
+5. query index: `firestore.indexes.json`
+6. 권한: `firestore.rules`
+7. 앱 연결: `CloudFunctionsLookbookDeletionRepository.swift` → `LookbookDeletionCloudFunctionsMapper.swift` → 공통 transport
+8. 검증: 두 helper의 `*.test.ts`, task `qa-checklist.md`
 
-처음 구조를 이해할 때:
+### Soft delete와 목록
 
-- 전체 책임 경계와 기술 선택 요약: `docs/ai/architecture/LOOKBOOK_IMPORT_WORKER.md`
-- Firebase/worker 코드 진입점: 이 문서의 `Lookbook URL Import Worker` 섹션
+`functions/src/lookbook/deletion/functions.ts`에서 다음 이름을 찾는다.
 
-현재 작업 상태를 볼 때:
+- `requestBrandDeletion`, `cancelBrandDeletion`
+- `softDeleteSeason`, `restoreSeason`, `batchSoftDeleteSeasons`
+- `softDeletePost`, `restorePost`, `batchSoftDeletePosts`
+- `listLookbookDeletionRequests`
+- `retryFailedLookbookDeletionPurge`
+- `onLookbookDeletionManualRetryQueued`
 
-- 현재 task 포인터: `docs/ai/tasks/active.md`
-- 진행상황과 검증 상태: `docs/ai/tasks/lookbook-import-worker/progress.md`
-- phase별 목표와 완료 기준: `docs/ai/tasks/lookbook-import-worker/plan.md`
+현재 계약:
 
-기술 결정 이유를 볼 때:
+- 앱 목록은 서버가 `active/failed`만 조회한다.
+- 입력은 `targetType`, 선택적 `brandID`, `limit`, cursor다.
+- `limit + 1`로 실제 다음 page가 있을 때만 `nextCursor`를 반환한다.
+- 총 관리자만 failed manual retry token을 생성한다.
+- trigger는 새 queued token만 처리하고 실패 시 scheduled fallback을 유지한다.
 
-- 작업 중 결정 상세: `docs/ai/tasks/lookbook-import-worker/decisions.md`
-- 여러 작업에 반복 적용될 아키텍처 요약: `docs/ai/architecture/LOOKBOOK_IMPORT_WORKER.md`
+### Scheduled purge
 
-Phase 4.5 이후 운영 설계를 볼 때:
+`functions/src/lookbook/deletion/functions.ts`에서 다음 순서로 확인한다.
 
-- Cloud Tasks target architecture, job lifecycle, fallback, observability: `docs/ai/tasks/lookbook-import-worker/phase-4-5-design.md`
+1. `expiredDeletionRequestPageLoader`: active/failed query와 cursor
+2. `claimLookbookDeletionPurge`: 실행 직전 eligibility와 lease claim
+3. `runLookbookDeletionPurge`: target별 Firestore/Storage 정리
+4. `purgeClaimedLookbookDeletionRequest`: finalize와 실패 상태
+5. `purgeExpiredLookbookDeletions`: target pass, drain 설정, 운영 로그
 
-커밋 포함 여부를 판단할 때:
+`lookbook/deletion/purgeDrain.ts`가 담당하는 순수 정책:
 
-- 하네스 커밋 기준: `docs/ai/workflows/implementation/commits.md`
+- active/failed 독립 page drain
+- `brand -> season -> post` pass
+- 같은 브랜드 순차 queue
+- 서로 다른 브랜드 최대 3개 병렬
+- 7분 이후 신규 claim 중단
+- 실행 결과와 잔여 candidate 요약
+
+`lookbook/deletion/purgeLease.ts`와 `lookbookDeletionPurgeLeases/{brandID}`가 scheduled/manual 상호 배제를 담당한다.
+
+인덱스:
+
+- active: `status + targetType + purgeAfter + requestID`
+- failed: `status + autoRetryEligible + targetType + purgeAfter + retryAfter + requestID`
+
+주요 완료 로그:
+
+- `pageCount`, `loadedCount`, `startedCount`
+- `successCount`, `failureCount`, `skippedCount`, `unstartedCount`
+- `stopReason`, `hasRemainingCandidates`, `elapsedMillis`
+
+운영/QA 상세는 `docs/ai/tasks/lookbook-deletion-purge-drain/progress.md`를 확인한다.
+
+## URL 기반 시즌 import
+
+### 구조 지도
+
+| 책임 | 진입점 |
+| --- | --- |
+| Functions trigger/callable | `functions/src/lookbook/import/functions.ts` |
+| 후보 discovery/parser | `functions/src/lookbook/import/seasonCandidateDiscovery.ts`, `seasonCandidateParser.ts` |
+| Cloud Run package | `tools/lookbook-import-worker/` |
+| HTTP server | `tools/lookbook-import-worker/src/server.ts` |
+| 시즌 discovery | `tools/lookbook-import-worker/src/season-discovery.ts` |
+| import 처리 | `tools/lookbook-import-worker/src/processor.ts` |
+| lifecycle/retry | `job-lifecycle.ts`, `import-error.ts` |
+| SSRF/HTTP 경계 | `public-http.ts` |
+| Firebase/env 경계 | `firebase.ts`, `config.ts` |
+| 아키텍처 | `docs/ai/architecture/LOOKBOOK_IMPORT_WORKER.md` |
 
 권장 흐름:
 
 ```text
-앱 브랜드 생성/시즌 선택
-→ Firestore seasonCandidates/importJobs 등록
-→ Functions Firestore trigger가 Cloud Tasks enqueue
-→ Cloud Tasks가 Cloud Run worker task endpoint 호출
-→ Cloud Run worker가 importJob 처리
-→ Firestore seasons/posts와 Storage thumb/detail 갱신
+앱이 candidate/import job 등록
+→ Functions trigger가 Cloud Tasks enqueue
+→ Cloud Tasks가 Cloud Run worker 호출
+→ worker가 원본을 처리하고 Firestore/Storage 갱신
 → 앱이 job 상태와 생성 문서를 표시
 ```
 
+진단 계약과 현재 상태는 `docs/ai/tasks/lookbook-import-diagnostics/` 및 `docs/ai/tasks/lookbook-import-worker/`의 `progress.md`를 확인한다.
+
 ## Firestore
 
-- Firestore rules: `firestore.rules`
-- Firestore indexes: `firestore.indexes.json`
+### Rules
 
-## Firebase Storage Rules
+- 클라이언트 접근은 Firebase Auth UID와 authoritative admin/member 문서로 검증한다.
+- 서버 전용 projection/audit/lease collection은 클라이언트 직접 접근을 차단한다.
+- 시즌/포스트 hard delete는 앱에서 직접 수행하지 않는다.
+- 변경 시 emulator 또는 deploy dry-run, diff check 후 승인된 범위만 배포한다.
 
-- Storage rules source: `storage.rules`
-- Deploy config: root `firebase.json`의 `"storage": { "rules": "storage.rules" }`
-- `OutPick/firebase.json`은 Functions 설정만 갖고 있어 Firebase source of truth로 쓰지 않는다.
-- 운영 bucket 확인:
+### Indexes
 
-```bash
-gcloud storage buckets list --project outpick-664ae --format='value(name,location,uniformBucketLevelAccess)'
-```
+- query의 equality/range/orderBy 순서와 `firestore.indexes.json`을 함께 확인한다.
+- 운영에만 존재하는 field override 삭제 경고가 있으면 `--force`를 임의 사용하지 않는다.
+- index READY 확인이 선행되어야 하는 Functions query는 index 배포와 상태 확인 후 Functions를 배포한다.
 
-- 운영 Rules release 확인:
+## Firebase Storage
 
-```bash
-TOKEN=$(gcloud auth print-access-token)
-curl -sS \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "x-goog-user-project: outpick-664ae" \
-  "https://firebaserules.googleapis.com/v1/projects/outpick-664ae/releases"
-```
+- root `firebase.json`의 Storage rules source는 `storage.rules`다.
+- 기본 deny 후 path별 read/write 권한을 허용한다.
+- Chat `rooms/{roomID}` write는 member/creator, profile write는 본인, Lookbook `brands/{brandID}` write는 총 관리자 또는 브랜드 owner/admin 기준이다.
+- cross-service `firestore.get/exists`를 사용하는 rules는 Storage service agent의 Firestore Rules 권한도 확인한다.
+- 운영 release ID, 과거 전역 허용 rules, 배포 당시 QA 상세는 task/운영 기록에서 확인하고 이 인덱스에는 복사하지 않는다.
 
-- 2026-07-03 최소 권한 rules 배포 전 확인된 운영 Storage release:
-  - release: `projects/outpick-664ae/releases/firebase.storage/outpick-664ae.appspot.com`
-  - ruleset: `projects/outpick-664ae/rulesets/a9ad4934-efaf-40d4-bdba-7e088743c817`
-  - updateTime: `2024-10-03T10:51:50.370558Z`
-- ruleset 본문 확인:
-
-```bash
-TOKEN=$(gcloud auth print-access-token)
-curl -sS \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "x-goog-user-project: outpick-664ae" \
-  "https://firebaserules.googleapis.com/v1/projects/outpick-664ae/rulesets/a9ad4934-efaf-40d4-bdba-7e088743c817"
-```
-
-- 배포 전 운영 Storage rules 본문은 `match /{allPaths=**} { allow read, write; }` 전역 허용 상태였다.
-- 따라서 당시 비참여 preview 이미지/비디오 read는 운영 권한상 허용됐지만, write까지 열려 있어 출시/외부 테스트 전 최소 권한 rules 적용이 필요했다.
-- 2026-07-03 사용자 승인 후 repo source of truth와 운영 배포를 완료했다.
-
-2026-07-03 로컬 초안:
-
-- root `firebase.json`에 `"storage": { "rules": "storage.rules" }`를 추가했다.
-- `storage.rules` 초안은 기본 deny 후 path별 최소 권한을 허용한다.
-- Chat `rooms/{roomID}/...`
-  - `get`: 로그인 사용자 허용. Firestore `Rooms/{roomID}/Messages` read가 `signedIn()`이라 비참여 preview 요구사항과 맞춘다.
-  - `create/update`: room member 또는 creator로 제한한다.
-  - `delete`: room member 또는 creator로 제한한다.
-- Profile `profileImage/{userID}/...`
-  - `get`: 로그인 사용자 허용.
-  - `create/update/delete`: 본인만 허용.
-- Lookbook `brands/{brandID}/...`
-  - `get`: 로그인 사용자 허용.
-  - `create/update/delete`: 총 관리자 또는 Firestore `brands/{brandID}/admins/{uid}.role in ["owner", "admin"]` 기반 write 권한 사용자만 허용.
-- legacy prefix는 기본 deny한다.
-- 로컬 검증:
+검증 예시:
 
 ```bash
 firebase deploy --only storage --project outpick-664ae --dry-run --non-interactive
 git diff --check -- firebase.json storage.rules
 ```
 
-- dry-run compile은 통과했다.
-- 2026-07-03 운영 배포:
+실제 배포는 사용자 명시 승인 후 수행한다.
 
-```bash
-firebase deploy --only storage --project outpick-664ae --non-interactive
-```
+## 변경 시 하네스 갱신
 
-- 배포 완료 후 release:
-  - release: `projects/outpick-664ae/releases/firebase.storage/outpick-664ae.appspot.com`
-  - ruleset: `projects/outpick-664ae/rulesets/148e8921-6195-42df-b575-09b17bbc88c4`
-  - updateTime: `2026-07-03T10:04:35.211531Z`
-- 배포 후 ruleset 본문이 로컬 `storage.rules`와 같은 최소 권한 rules임을 REST API로 확인했다.
-- 배포 직후 앱 수동 QA에서 chat media upload와 room cover upload가 실패했다.
-- 원인: Storage rules의 `firestore.get()`/`firestore.exists()` cross-service lookup을 위해 Firebase Storage service agent에 Firestore read 권한이 필요했지만 IAM binding이 없었다.
-- 2026-07-03 추가한 IAM binding:
-
-```bash
-gcloud projects add-iam-policy-binding outpick-664ae \
-  --member="serviceAccount:service-715386497547@gcp-sa-firebasestorage.iam.gserviceaccount.com" \
-  --role="roles/firebaserules.firestoreServiceAgent"
-```
-
-- 확인 명령:
-
-```bash
-gcloud projects get-iam-policy outpick-664ae \
-  --flatten='bindings[].members' \
-  --filter='bindings.role:roles/firebaserules.firestoreServiceAgent OR bindings.members:service-715386497547@gcp-sa-firebasestorage.iam.gserviceaccount.com' \
-  --format='table(bindings.role,bindings.members)'
-```
-
-- 확인 결과 `roles/firebaserules.firestoreServiceAgent`와 `roles/firebasestorage.serviceAgent`가 Firebase Storage service agent에 부여되어 있다.
-- IAM 반영 후 앱 수동 QA:
-  - 참여자가 `채팅 참여하기`로 `Rooms/{roomID}/members/{uid}`를 만든 뒤 이미지 메시지 전송 성공.
-  - 참여자가 `채팅 참여하기`로 `Rooms/{roomID}/members/{uid}`를 만든 뒤 비디오 메시지 전송 성공.
-  - 방장이 채팅방 cover 생성/수정/삭제 성공.
-- 2026-07-04 남은 앱 수동 QA를 완료했다.
-  - 비참여 사용자가 preview에서 이미지/비디오 thumbnail을 볼 수 있음을 확인했다.
-  - 본인이 profile avatar를 업로드할 수 있음을 확인했다.
-  - 브랜드 owner/admin이 brand logo 또는 season cover를 업로드할 수 있음을 확인했다.
-  - legacy prefix가 필요한 화면은 확인되지 않았다.
+- 코드 위치 변경: `docs/ai/ENTRYPOINTS.md`와 이 문서.
+- 데이터/API 계약 변경: `docs/ai/DATA_SCHEMA.md`.
+- 장기 선택 변경: ADR.
+- phase 상태·배포·QA: 관련 task `progress.md`와 `qa-checklist.md`.

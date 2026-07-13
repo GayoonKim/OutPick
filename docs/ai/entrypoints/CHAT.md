@@ -75,6 +75,12 @@ Chat 기능 수정 시 관련 화면, ViewModel, UseCase, Repository, 검색 인
 ## Realtime, Banner, Read State
 
 - Socket transport: `OutPick/Infra/Realtime/RealtimeSocketService.swift`
+- Socket server bootstrap: `Socket/index.js`
+- Socket application/production DI: `Socket/src/app/createSocketApplication.js`, `Socket/src/app/createProductionDependencies.js`
+- Socket 인증/event 등록: `Socket/src/auth/`, `Socket/src/handlers/`
+- Socket room/message/media 작업 단위: `Socket/src/rooms/`, `Socket/src/messages/`, `Socket/src/media/`
+- Socket lifecycle/runtime: `Socket/src/lifecycle/`, `Socket/src/runtime/`
+- Socket 검증: `Socket/test/`, `Socket/scripts/run-tests.mjs`
 - 현재 채팅방 stream 연결: `OutPick/Features/Chat/Controllers/ChatViewController.swift`
 - 읽음/안 읽음 shared store: `OutPick/Features/Chat/Stores/ChatRoomReadStateStore.swift`
 - 앱 실행 중 방 밖 메시지 banner: `OutPick/Infra/Banner/BannerManager.swift`
@@ -107,8 +113,9 @@ Chat 기능 수정 시 관련 화면, ViewModel, UseCase, Repository, 검색 인
 - `chat-legacy-identity-naming`에서 Swift/API와 물리 GRDB table/column을 `userID` 기준으로 정리했다.
 - 문서상 `userID == canonicalUserID == Firebase Auth uid`로 고정한다.
 - legacy `userProfile`/`roomParticipant` fallback은 제거한다.
-- 앱이 아직 TestFlight/App Store 등으로 배포되지 않았으므로 신규 legacy table compatibility는 만들지 않는다. 단, 개발 DB에서 실제로 재현된 `chatMessage.senderID NOT NULL` 잔존 오류는 `GRDBManager`의 `rebuildChatMessageSenderUIDSchema` migration으로 현재 `senderUID` schema로 재작성한다.
+- 앱이 아직 TestFlight/App Store 등으로 배포되지 않았으므로 신규 legacy table compatibility는 만들지 않는다. 단, migration fixture의 `chatMessage.senderID NOT NULL` 잔존 오류는 `ChatMessageSenderUIDSchemaRebuilder`를 사용하는 `rebuildChatMessageSenderUIDSchema` migration으로 현재 `senderUID` schema로 재작성한다.
 - GRDB `RoomMember` table/model/migration은 제거했다. local membership replica는 유지하지 않는다.
+- 현재 local persistence는 `OutPick/Features/Chat/Persistence/`의 소비자별 Protocol과 `ChatPersistenceProvider`, `OutPick/DB/GRDB/Stores/`의 기능별 Store를 사용한다. `AppDatabase`는 pool/migration만 소유하고 Store가 message/FTS/media, LRU, cleanup transaction을 소유한다. 구현 결과와 테스트 범위는 `docs/ai/tasks/core-infrastructure-modularization/phases/phase-3-grdb.md`, `phase-3-grdb-tests.md`를 따른다.
 - Profile sync manager: `OutPick/Features/Chat/Managers/Implementations/ChatProfileSyncManager.swift`
   - 메시지 발신자 UID 목록을 batch fetch하고 local user cache를 refresh한다.
   - 프로필 문서 listener/Combine publisher 경로는 사용하지 않는다.

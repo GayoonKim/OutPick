@@ -4,6 +4,7 @@
 
 - AppCompositionRoot: `OutPick/App/AppCompositionRoot.swift`
   - 앱 세션 dependency graph 조립 진입점이다.
+  - `AppDatabase.live` factory를 가장 먼저 실행하고 실패를 `AppBootstrapError`로 변환한다.
   - `RealtimeSocketService`, `JoinedRoomsSessionStore`, `BrandAdminSessionStore`, `CurrentUserSessionStore`, `CurrentUserProviding`, `AppSessionRuntime`, `AppCoordinator`를 같은 앱 graph에서 만든다.
   - 앱 세션 단위 `AvatarImageService`도 여기서 생성해 Chat/Lookbook/Profile로 전달한다.
 - AppCoordinator: `OutPick/App/AppCoordinator.swift`
@@ -11,8 +12,14 @@
   - Lookbook/Chat Container를 메인 탭 수명 동안 유지한다.
   - 인증 세션 runtime 시작/정지, 같은 realtime service 주입, 같은 avatar manager 주입 흐름을 연결한다.
 - SceneDelegate: `OutPick/App/SceneDelegate.swift`
-  - UIWindow 생성, AppCoordinator 생성, Kakao/Google URL callback, notification route 전달을 담당한다.
+  - UIWindow 생성, throwable AppCoordinator 생성, Kakao/Google URL callback, notification route 전달을 담당한다.
+  - DB bootstrap 실패 시 성공하지 않은 Coordinator는 보관하지 않고 독립 실패 화면을 root로 표시하며 수동 재시도를 연결한다.
+  - 알림 launch route는 bootstrap보다 먼저 저장한다.
   - Scene lifecycle presence는 AppCoordinator를 거쳐 AppSessionRuntime으로 위임한다.
+- App bootstrap failure: `OutPick/App/Bootstrap/`
+  - `AppBootstrapError.swift`: 앱 조립 경계의 로컬 DB 초기화 오류다.
+  - `AppBootstrapFailureViewController.swift`: DB에 의존하지 않는 실패 root와 `다시 시도` 동작이다.
+  - `AppBootstrapFailureInjector.swift`: DEBUG에서만 `--app-bootstrap-fail-database-once`/`--app-bootstrap-fail-database-always`를 해석한다. 실제 DB 파일을 손상·삭제하지 않는다.
 - AppSessionRuntime: `OutPick/App/AppSessionRuntime.swift`
   - 인증 세션의 socket connect/disconnect/reset, joined room join/leave command, banner runtime 시작/정지를 담당한다.
 - JoinedRoomsSessionStore: `OutPick/App/Session/JoinedRoomsSessionStore.swift`
