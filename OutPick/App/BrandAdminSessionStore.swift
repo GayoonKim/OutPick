@@ -20,14 +20,14 @@ final class BrandAdminSessionStore: ObservableObject {
     @Published private(set) var isWritableBrandsLoading: Bool = false
     @Published private(set) var isWritableBrandsLoaded: Bool = false
 
-    private let cloudFunctionsManager: CloudFunctionsManager
+    private let capabilitiesClient: any BrandAdminCapabilitiesCalling
     private var loadedIdentityKey: String?
     private var loadedWritableBrandsIdentityKey: String?
 
     init(
-        cloudFunctionsManager: CloudFunctionsManager = .shared
+        capabilitiesClient: any BrandAdminCapabilitiesCalling
     ) {
-        self.cloudFunctionsManager = cloudFunctionsManager
+        self.capabilitiesClient = capabilitiesClient
     }
 
     func refreshCurrentSession(force: Bool = false) async {
@@ -238,7 +238,7 @@ final class BrandAdminSessionStore: ObservableObject {
 
     private func loadCapabilitiesWithRetry() async throws -> BrandAdminCapabilitiesResponse {
         do {
-            return try await cloudFunctionsManager.getBrandAdminCapabilities()
+            return try await capabilitiesClient.getBrandAdminCapabilities()
         } catch {
             let nsError = error as NSError
             print(
@@ -248,7 +248,7 @@ final class BrandAdminSessionStore: ObservableObject {
                 """
             )
             try? await Task.sleep(nanoseconds: 500_000_000)
-            return try await cloudFunctionsManager.getBrandAdminCapabilities()
+            return try await capabilitiesClient.getBrandAdminCapabilities()
         }
     }
 

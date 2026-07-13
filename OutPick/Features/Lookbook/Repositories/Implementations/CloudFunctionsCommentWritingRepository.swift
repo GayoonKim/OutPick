@@ -8,10 +8,10 @@
 import Foundation
 
 final class CloudFunctionsCommentWritingRepository: CommentWritingRepositoryProtocol {
-    private let cloudFunctionsManager: CloudFunctionsManager
+    private let transport: any CloudFunctionsTransporting
 
-    init(cloudFunctionsManager: CloudFunctionsManager = .shared) {
-        self.cloudFunctionsManager = cloudFunctionsManager
+    init(transport: any CloudFunctionsTransporting = FirebaseCloudFunctionsTransport()) {
+        self.transport = transport
     }
 
     func createComment(
@@ -20,12 +20,16 @@ final class CloudFunctionsCommentWritingRepository: CommentWritingRepositoryProt
         postID: PostID,
         message: String
     ) async throws -> CommentMutationResult {
-        try await cloudFunctionsManager.createComment(
-            brandID: brandID.value,
-            seasonID: seasonID.value,
-            postID: postID.value,
-            message: message
+        let response = try await transport.call(
+            "createComment",
+            data: [
+                "brandID": brandID.value,
+                "seasonID": seasonID.value,
+                "postID": postID.value,
+                "message": message
+            ]
         )
+        return try CommentCloudFunctionsMapper.mutation(response)
     }
 
     func createReply(
@@ -35,13 +39,17 @@ final class CloudFunctionsCommentWritingRepository: CommentWritingRepositoryProt
         parentCommentID: CommentID,
         message: String
     ) async throws -> CommentMutationResult {
-        try await cloudFunctionsManager.createReply(
-            brandID: brandID.value,
-            seasonID: seasonID.value,
-            postID: postID.value,
-            parentCommentID: parentCommentID.value,
-            message: message
+        let response = try await transport.call(
+            "createReply",
+            data: [
+                "brandID": brandID.value,
+                "seasonID": seasonID.value,
+                "postID": postID.value,
+                "parentCommentID": parentCommentID.value,
+                "message": message
+            ]
         )
+        return try CommentCloudFunctionsMapper.mutation(response)
     }
 
     func deleteComment(
@@ -51,12 +59,14 @@ final class CloudFunctionsCommentWritingRepository: CommentWritingRepositoryProt
         commentID: CommentID,
         reason: String?
     ) async throws -> CommentDeletionResult {
-        try await cloudFunctionsManager.deleteComment(
-            brandID: brandID.value,
-            seasonID: seasonID.value,
-            postID: postID.value,
-            commentID: commentID.value,
-            reason: reason
-        )
+        var data: [String: Any] = [
+            "brandID": brandID.value,
+            "seasonID": seasonID.value,
+            "postID": postID.value,
+            "commentID": commentID.value
+        ]
+        if let reason { data["reason"] = reason }
+        let response = try await transport.call("deleteComment", data: data)
+        return try CommentCloudFunctionsMapper.deletion(response)
     }
 }

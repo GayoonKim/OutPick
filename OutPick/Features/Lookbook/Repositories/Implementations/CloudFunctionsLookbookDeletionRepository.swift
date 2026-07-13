@@ -8,26 +8,25 @@
 import Foundation
 
 final class CloudFunctionsLookbookDeletionRepository: LookbookDeletionRepositoryProtocol {
-    private let cloudFunctionsManager: CloudFunctionsManager
+    private let transport: any CloudFunctionsTransporting
 
-    init(cloudFunctionsManager: CloudFunctionsManager = .shared) {
-        self.cloudFunctionsManager = cloudFunctionsManager
+    init(transport: any CloudFunctionsTransporting = FirebaseCloudFunctionsTransport()) {
+        self.transport = transport
     }
 
     func requestBrandDeletion(
         brandID: BrandID,
         reason: String?
     ) async throws -> LookbookDeletionMutationReceipt {
-        try await cloudFunctionsManager.requestBrandDeletion(
-            brandID: brandID.value,
-            reason: reason
-        )
+        var data: [String: Any] = ["brandID": brandID.value]
+        if let reason { data["reason"] = reason }
+        return try await mutation("requestBrandDeletion", data: data)
     }
 
     func cancelBrandDeletion(
         brandID: BrandID
     ) async throws -> LookbookDeletionMutationReceipt {
-        try await cloudFunctionsManager.cancelBrandDeletion(brandID: brandID.value)
+        try await mutation("cancelBrandDeletion", data: ["brandID": brandID.value])
     }
 
     func softDeleteSeason(
@@ -35,11 +34,9 @@ final class CloudFunctionsLookbookDeletionRepository: LookbookDeletionRepository
         seasonID: SeasonID,
         reason: String?
     ) async throws -> LookbookDeletionMutationReceipt {
-        try await cloudFunctionsManager.softDeleteSeason(
-            brandID: brandID.value,
-            seasonID: seasonID.value,
-            reason: reason
-        )
+        var data: [String: Any] = ["brandID": brandID.value, "seasonID": seasonID.value]
+        if let reason { data["reason"] = reason }
+        return try await mutation("softDeleteSeason", data: data)
     }
 
     func batchSoftDeleteSeasons(
@@ -47,20 +44,22 @@ final class CloudFunctionsLookbookDeletionRepository: LookbookDeletionRepository
         seasonIDs: [SeasonID],
         reason: String?
     ) async throws -> LookbookDeletionBatchResult {
-        try await cloudFunctionsManager.batchSoftDeleteSeasons(
-            brandID: brandID.value,
-            seasonIDs: seasonIDs.map(\.value),
-            reason: reason
-        )
+        var data: [String: Any] = [
+            "brandID": brandID.value,
+            "seasonIDs": seasonIDs.map(\.value)
+        ]
+        if let reason { data["reason"] = reason }
+        let response = try await transport.call("batchSoftDeleteSeasons", data: data)
+        return try LookbookDeletionCloudFunctionsMapper.batchResult(response)
     }
 
     func restoreSeason(
         brandID: BrandID,
         seasonID: SeasonID
     ) async throws -> LookbookDeletionMutationReceipt {
-        try await cloudFunctionsManager.restoreSeason(
-            brandID: brandID.value,
-            seasonID: seasonID.value
+        try await mutation(
+            "restoreSeason",
+            data: ["brandID": brandID.value, "seasonID": seasonID.value]
         )
     }
 
@@ -70,12 +69,13 @@ final class CloudFunctionsLookbookDeletionRepository: LookbookDeletionRepository
         postID: PostID,
         reason: String?
     ) async throws -> LookbookDeletionMutationReceipt {
-        try await cloudFunctionsManager.softDeletePost(
-            brandID: brandID.value,
-            seasonID: seasonID.value,
-            postID: postID.value,
-            reason: reason
-        )
+        var data: [String: Any] = [
+            "brandID": brandID.value,
+            "seasonID": seasonID.value,
+            "postID": postID.value
+        ]
+        if let reason { data["reason"] = reason }
+        return try await mutation("softDeletePost", data: data)
     }
 
     func batchSoftDeletePosts(
@@ -84,12 +84,14 @@ final class CloudFunctionsLookbookDeletionRepository: LookbookDeletionRepository
         postIDs: [PostID],
         reason: String?
     ) async throws -> LookbookDeletionBatchResult {
-        try await cloudFunctionsManager.batchSoftDeletePosts(
-            brandID: brandID.value,
-            seasonID: seasonID.value,
-            postIDs: postIDs.map(\.value),
-            reason: reason
-        )
+        var data: [String: Any] = [
+            "brandID": brandID.value,
+            "seasonID": seasonID.value,
+            "postIDs": postIDs.map(\.value)
+        ]
+        if let reason { data["reason"] = reason }
+        let response = try await transport.call("batchSoftDeletePosts", data: data)
+        return try LookbookDeletionCloudFunctionsMapper.batchResult(response)
     }
 
     func restorePost(
@@ -97,10 +99,13 @@ final class CloudFunctionsLookbookDeletionRepository: LookbookDeletionRepository
         seasonID: SeasonID,
         postID: PostID
     ) async throws -> LookbookDeletionMutationReceipt {
-        try await cloudFunctionsManager.restorePost(
-            brandID: brandID.value,
-            seasonID: seasonID.value,
-            postID: postID.value
+        try await mutation(
+            "restorePost",
+            data: [
+                "brandID": brandID.value,
+                "seasonID": seasonID.value,
+                "postID": postID.value
+            ]
         )
     }
 
@@ -110,19 +115,32 @@ final class CloudFunctionsLookbookDeletionRepository: LookbookDeletionRepository
         limit: Int,
         cursor: LookbookDeletionRequestPage.Cursor?
     ) async throws -> LookbookDeletionRequestPage {
-        try await cloudFunctionsManager.listLookbookDeletionRequests(
-            targetType: targetType,
-            brandID: brandID,
-            limit: limit,
-            cursor: cursor
-        )
+        var data: [String: Any] = ["limit": limit]
+        if let targetType { data["targetType"] = targetType.rawValue }
+        if let brandID { data["brandID"] = brandID.value }
+        if let cursor {
+            data["cursorUpdatedAt"] = cursor.updatedAt
+            data["cursorRequestID"] = cursor.requestID
+        }
+        let response = try await transport.call("listLookbookDeletionRequests", data: data)
+        return try LookbookDeletionCloudFunctionsMapper.requestPage(response)
     }
 
     func retryFailedPurge(
         requestID: String
     ) async throws -> LookbookDeletionRetryReceipt {
-        try await cloudFunctionsManager.retryFailedLookbookDeletionPurge(
-            requestID: requestID
+        let response = try await transport.call(
+            "retryFailedLookbookDeletionPurge",
+            data: ["requestID": requestID]
         )
+        return try LookbookDeletionCloudFunctionsMapper.retryReceipt(response)
+    }
+
+    private func mutation(
+        _ name: String,
+        data: [String: Any]
+    ) async throws -> LookbookDeletionMutationReceipt {
+        let response = try await transport.call(name, data: data)
+        return try LookbookDeletionCloudFunctionsMapper.mutationReceipt(response)
     }
 }

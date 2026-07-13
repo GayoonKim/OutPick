@@ -11,17 +11,20 @@ import Combine
 final class ChatMessageManager: ChatMessageManaging {
     private let messageRepository: FirebaseMessageRepositoryProtocol
     private let imageStorageRepository: FirebaseImageStorageRepositoryProtocol
-    private let grdbManager: GRDBManager
+    private let messagePersistence: ChatMessagePersisting
+    private let profileCache: ChatProfileCachePersisting
     private let profileDisplayCacheLimit = 20
     
     init(
         messageRepository: FirebaseMessageRepositoryProtocol = FirebaseRepositoryProvider.shared.messageRepository,
         imageStorageRepository: FirebaseImageStorageRepositoryProtocol = FirebaseRepositoryProvider.shared.imageStorageRepository,
-        grdbManager: GRDBManager = .shared
+        messagePersistence: ChatMessagePersisting,
+        profileCache: ChatProfileCachePersisting
     ) {
         self.messageRepository = messageRepository
         self.imageStorageRepository = imageStorageRepository
-        self.grdbManager = grdbManager
+        self.messagePersistence = messagePersistence
+        self.profileCache = profileCache
     }
 
     func loadLocalInitialWindow(
@@ -32,7 +35,7 @@ final class ChatMessageManager: ChatMessageManaging {
         switch mode {
         case .latestTail(let latestSeq):
             let messages = try await Task(priority: .userInitiated) {
-                try await grdbManager.fetchRecentMessages(inRoom: roomID, limit: policy.latestTailSize)
+                try await messagePersistence.fetchRecentMessages(inRoom: roomID, limit: policy.latestTailSize)
             }.value
             return try await appendingFailedOutgoingMessages(
                 to: makeInitialWindow(
@@ -44,12 +47,12 @@ final class ChatMessageManager: ChatMessageManaging {
             )
 
         case .unreadAnchor(let lastReadSeq, let latestSeq):
-            async let beforeMessages = grdbManager.fetchMessagesBeforeSeq(
+            async let beforeMessages = messagePersistence.fetchMessagesBeforeSeq(
                 inRoom: roomID,
                 beforeSeq: lastReadSeq + 1,
                 limit: policy.unreadBeforeContextSize
             )
-            async let afterMessages = grdbManager.fetchMessagesAfterSeq(
+            async let afterMessages = messagePersistence.fetchMessagesAfterSeq(
                 inRoom: roomID,
                 afterSeq: lastReadSeq,
                 limit: policy.unreadAfterSize
@@ -119,7 +122,7 @@ final class ChatMessageManager: ChatMessageManaging {
 
     func persistFetchedServerMessages(_ messages: [ChatMessage]) async throws {
         guard !messages.isEmpty else { return }
-        try await grdbManager.saveChatMessages(messages)
+        try await messagePersistence.saveChatMessages(messages)
         persistSenderDisplayCache(for: messages)
     }
 
@@ -135,12 +138,12 @@ final class ChatMessageManager: ChatMessageManaging {
         let normalizedBefore = max(0, beforeLimit)
         let normalizedAfter = max(0, afterLimit)
 
-        var localOlder = try await grdbManager.fetchOlderMessages(
+        var localOlder = try await messagePersistence.fetchOlderMessages(
             inRoom: roomID,
             before: anchor.ID,
             limit: normalizedBefore
         )
-        var localNewer = try await grdbManager.fetchNewerMessages(
+        var localNewer = try await messagePersistence.fetchNewerMessages(
             inRoom: roomID,
             after: anchor.ID,
             limit: normalizedAfter
@@ -181,7 +184,7 @@ final class ChatMessageManager: ChatMessageManaging {
 
         if !fetchedFromServer.isEmpty {
             do {
-                try await grdbManager.saveChatMessages(fetchedFromServer)
+                try await messagePersistence.saveChatMessages(fetchedFromServer)
                 persistSenderDisplayCache(for: fetchedFromServer)
             } catch {
                 print("⚠️ fetched messages local persistence failed:", error)
@@ -207,7 +210,7 @@ final class ChatMessageManager: ChatMessageManaging {
         let roomID = room.ID ?? ""
         
         // 1. GRDB에서 먼저 최대 100개
-        let local = try await grdbManager.fetchOlderMessages(inRoom: roomID, before: messageID ?? "", limit: 100)
+        let local = try await messagePersistence.fetchOlderMessages(inRoom: roomID, before: messageID ?? "", limit: 100)
         var loadedMessages = local
         
         // 2. 부족분은 서버에서 채우기
@@ -220,7 +223,7 @@ final class ChatMessageManager: ChatMessageManaging {
             )
             
             if !server.isEmpty {
-                try await grdbManager.saveChatMessages(server)
+                try await messagePersistence.saveChatMessages(server)
                 persistSenderDisplayCache(for: server)
                 loadedMessages.append(contentsOf: server)
             }
@@ -237,7 +240,7 @@ final class ChatMessageManager: ChatMessageManaging {
         )
         
         guard !server.isEmpty else { return [] }
-        try await grdbManager.saveChatMessages(server)
+        try await messagePersistence.saveChatMessages(server)
         persistSenderDisplayCache(for: server)
         
         return server
@@ -295,7 +298,7 @@ final class ChatMessageManager: ChatMessageManaging {
         
         for attempt in 1...maxRetries {
             do {
-                try await grdbManager.saveChatMessages([message])
+                try await messagePersistence.saveChatMessages([message])
                 persistSenderDisplayCache(for: [message])
                 
                 lastError = nil
@@ -352,10 +355,7 @@ final class ChatMessageManager: ChatMessageManaging {
     private func applyLocalDeletion(_ messageIDs: [String], inRoom roomID: String) async throws {
         guard !messageIDs.isEmpty, !roomID.isEmpty else { return }
 
-        try await grdbManager.updateMessagesIsDeleted(messageIDs, isDeleted: true, inRoom: roomID)
-        try await grdbManager.updateReplyPreviewsIsDeleted(referencing: messageIDs, isDeleted: true, inRoom: roomID)
-        try grdbManager.deleteImageIndex(forMessageIDs: messageIDs, inRoom: roomID)
-        try grdbManager.deleteVideoIndex(forMessageIDs: messageIDs, inRoom: roomID)
+        try await messagePersistence.applyDeletion(messageIDs: messageIDs, inRoom: roomID)
     }
 
     private func persistSenderDisplayCache(for messages: [ChatMessage]) {
@@ -373,12 +373,12 @@ final class ChatMessageManager: ChatMessageManaging {
             }
 
             do {
-                _ = try grdbManager.upsertLocalChatUser(
+                _ = try profileCache.upsertLocalChatUser(
                     userID: senderUID,
                     nickname: message.senderNickname,
                     profileImagePath: message.senderAvatarPath
                 )
-                try grdbManager.upsertRoomProfileDisplayCache(
+                try profileCache.upsertRoomProfileDisplayCache(
                     roomID: roomID,
                     userID: senderUID,
                     lastSeenAt: message.sentAt ?? Date(),
@@ -461,11 +461,11 @@ final class ChatMessageManager: ChatMessageManaging {
     ) async throws -> ChatInitialWindow {
         guard !roomID.isEmpty else { return window }
         let senderUID = LoginManager.shared.canonicalUserID
-        let failed = try await grdbManager
+        let failed = try await messagePersistence
             .fetchFailedOutgoingMessages(inRoom: roomID, senderUID: senderUID)
 
         guard !failed.isEmpty else { return window }
-        try? await grdbManager.saveChatMessages(failed)
+        try? await messagePersistence.saveChatMessages(failed)
 
         let failedIDs = Set(failed.map(\.ID))
         let messages = window.messages.filter { !failedIDs.contains($0.ID) } + failed

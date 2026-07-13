@@ -220,6 +220,8 @@ extension ChatCoordinator: ChatRoomRouting {
         let panelVC = ChatCompositionRoot.makeChatRoomSettingPanel(
             room: room,
             repositories: container.firebaseRepositories,
+            participantsRepository: container.makeLocalParticipantsRepository(),
+            localMediaRepository: container.makeLocalMediaRepository(),
             attachmentImageLoader: container.makeAttachmentImageLoader(),
             videoResolver: container.makeChatVideoPlaybackResolver(),
             photoLibrarySaver: container.makePhotoLibrarySaver(),

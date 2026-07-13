@@ -32,6 +32,7 @@ final class MainTabBarController: UITabBarController {
     override func viewDidLoad() {
         super.viewDidLoad()
         delegate = self
+        view.accessibilityIdentifier = "app.main.root"
         view.backgroundColor = OutPickTheme.ColorToken.backgroundBase
         configureTabBarAppearance()
     }

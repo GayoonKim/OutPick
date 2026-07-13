@@ -24,11 +24,18 @@ enum LookbookUITestFixtureRepositoryProviderFactory {
         let fixture = LookbookUITestFixtureStore()
         return LookbookRepositoryProvider(
             brandRepository: fixture,
+            brandSearchRepository: fixture,
+            brandRequestRepository: fixture,
+            lookbookDeletionRepository: fixture,
             brandEngagementRepository: fixture,
-            brandStore: CloudFunctionsBrandStore(),
+            brandStore: fixture,
             seasonRepository: fixture,
             seasonEngagementRepository: fixture,
             seasonUserStateRepository: fixture,
+            seasonImportRepository: fixture,
+            seasonImportJobRequestingRepository: fixture,
+            seasonAssetRetryRepository: fixture,
+            seasonCandidateDiscoveryRepository: fixture,
             postRepository: fixture,
             postEngagementRepository: fixture,
             commentRepository: fixture,
@@ -65,10 +72,18 @@ private final class LookbookUITestFixtureImageCache: BrandImageCacheProtocol {
 
 private final class LookbookUITestFixtureStore:
     BrandRepositoryProtocol,
+    BrandSearchRepositoryProtocol,
+    BrandRequestRepositoryProtocol,
+    LookbookDeletionRepositoryProtocol,
     BrandEngagementRepositoryProtocol,
+    BrandStoringRepository,
     SeasonRepositoryProtocol,
     SeasonEngagementRepositoryProtocol,
     SeasonUserStateRepositoryProtocol,
+    SeasonImportRequestingRepository,
+    SeasonImportJobRequestingRepositoryProtocol,
+    SeasonAssetRetryRequestingRepository,
+    SeasonCandidateDiscoveryRepositoryProtocol,
     PostRepositoryProtocol,
     PostEngagementRepositoryProtocol,
     CommentRepositoryProtocol,
@@ -79,6 +94,10 @@ private final class LookbookUITestFixtureStore:
     PostUserStateRepositoryProtocol,
     BrandUserStateRepositoryProtocol,
     CommentUserStateRepositoryProtocol {
+
+    private enum FixtureError: Error {
+        case unsupported
+    }
 
     private let now = Date(timeIntervalSince1970: 1_779_100_000)
 
@@ -232,6 +251,152 @@ private final class LookbookUITestFixtureStore:
     ) async throws -> BrandPage {
         BrandPage(items: [brand], last: nil)
     }
+
+    func searchBrands(query: String, limit: Int) async throws -> [Brand] { [brand] }
+
+    func createBrand(
+        name: String,
+        englishName: String?,
+        isFeatured: Bool,
+        websiteURL: String?,
+        lookbookArchiveURL: String?
+    ) async throws -> String { brand.id.value }
+
+    func updateBrand(
+        brandID: BrandID,
+        name: String,
+        englishName: String?,
+        websiteURL: String?,
+        lookbookArchiveURL: String?,
+        isFeatured: Bool?
+    ) async throws -> Brand { brand }
+
+    func updateLogoPaths(docID: String, logoThumbPath: String?, logoDetailPath: String?) async throws {}
+
+    func addBrandManager(
+        brandID: BrandID,
+        email: String,
+        role: BrandManagerRole
+    ) async throws -> BrandManagerMutationReceipt { throw FixtureError.unsupported }
+
+    func removeBrandManager(
+        brandID: BrandID,
+        email: String,
+        role: BrandManagerRole
+    ) async throws -> BrandManagerMutationReceipt { throw FixtureError.unsupported }
+
+    func submitBrandRequest(
+        brandName: String,
+        englishBrandName: String?
+    ) async throws -> BrandRequestSubmissionReceipt { throw FixtureError.unsupported }
+
+    func listMyBrandRequests(
+        scope: BrandRequestListScope,
+        limit: Int,
+        cursor: BrandRequestPage.Cursor?
+    ) async throws -> BrandRequestPage { throw FixtureError.unsupported }
+
+    func listBrandRequestGroups(
+        adminStage: BrandRequestAdminStage?,
+        processedScope: ProcessedRequestScope?,
+        limit: Int,
+        cursor: AdminBrandRequestGroupPage.Cursor?
+    ) async throws -> AdminBrandRequestGroupPage { throw FixtureError.unsupported }
+
+    func updateBrandRequestGroupStage(
+        groupID: String,
+        adminStage: BrandRequestAdminStage,
+        rejectionReason: BrandRequestRejectionReason?,
+        adminNote: String?
+    ) async throws -> AdminBrandRequestGroupStageUpdateReceipt { throw FixtureError.unsupported }
+
+    func resolveBrandRequestGroup(
+        groupID: String,
+        resolvedBrandID: BrandID,
+        adminNote: String?
+    ) async throws -> AdminBrandRequestGroupStageUpdateReceipt { throw FixtureError.unsupported }
+
+    func markBrandRequestGroupBrandCreated(
+        groupID: String,
+        createdBrandID: BrandID
+    ) async throws -> AdminBrandRequestGroupStageUpdateReceipt { throw FixtureError.unsupported }
+
+    func requestBrandDeletion(
+        brandID: BrandID,
+        reason: String?
+    ) async throws -> LookbookDeletionMutationReceipt { throw FixtureError.unsupported }
+
+    func cancelBrandDeletion(brandID: BrandID) async throws -> LookbookDeletionMutationReceipt {
+        throw FixtureError.unsupported
+    }
+
+    func softDeleteSeason(
+        brandID: BrandID,
+        seasonID: SeasonID,
+        reason: String?
+    ) async throws -> LookbookDeletionMutationReceipt { throw FixtureError.unsupported }
+
+    func batchSoftDeleteSeasons(
+        brandID: BrandID,
+        seasonIDs: [SeasonID],
+        reason: String?
+    ) async throws -> LookbookDeletionBatchResult { throw FixtureError.unsupported }
+
+    func restoreSeason(
+        brandID: BrandID,
+        seasonID: SeasonID
+    ) async throws -> LookbookDeletionMutationReceipt { throw FixtureError.unsupported }
+
+    func softDeletePost(
+        brandID: BrandID,
+        seasonID: SeasonID,
+        postID: PostID,
+        reason: String?
+    ) async throws -> LookbookDeletionMutationReceipt { throw FixtureError.unsupported }
+
+    func batchSoftDeletePosts(
+        brandID: BrandID,
+        seasonID: SeasonID,
+        postIDs: [PostID],
+        reason: String?
+    ) async throws -> LookbookDeletionBatchResult { throw FixtureError.unsupported }
+
+    func restorePost(
+        brandID: BrandID,
+        seasonID: SeasonID,
+        postID: PostID
+    ) async throws -> LookbookDeletionMutationReceipt { throw FixtureError.unsupported }
+
+    func listDeletionRequests(
+        targetType: LookbookDeletionTargetType?,
+        brandID: BrandID?,
+        limit: Int,
+        cursor: LookbookDeletionRequestPage.Cursor?
+    ) async throws -> LookbookDeletionRequestPage { throw FixtureError.unsupported }
+
+    func retryFailedPurge(requestID: String) async throws -> LookbookDeletionRetryReceipt {
+        throw FixtureError.unsupported
+    }
+
+    func requestSeasonImport(
+        brandID: BrandID,
+        seasonURL: String,
+        sourceCandidateID: String?
+    ) async throws -> SeasonImportRequestReceipt { throw FixtureError.unsupported }
+
+    func requestSeasonCandidateImportJobs(
+        brandID: BrandID,
+        candidateIDs: [String]
+    ) async throws -> SeasonImportBatchRequestResult { throw FixtureError.unsupported }
+
+    func requestAssetRetry(
+        brandID: BrandID,
+        sourceJobID: String
+    ) async throws -> SeasonAssetRetryReceipt { throw FixtureError.unsupported }
+
+    func discoverSeasonCandidates(
+        brandID: BrandID
+    ) async throws -> SeasonCandidateDiscoveryResult { throw FixtureError.unsupported }
 
     func createSeason(
         brandID: BrandID,

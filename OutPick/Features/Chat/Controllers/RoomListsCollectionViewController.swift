@@ -74,15 +74,6 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
         bindViewModel()
         viewModel.notifyCurrentState()
         Task { await viewModel.loadInitiallyIfNeeded() }
-        
-        CloudFunctionsManager.shared.callHelloUser(name: "가윤") { result in
-            switch result {
-            case .success(let message):
-                print("함수 결과:", message)  // "Hello, 가윤"
-            case .failure(let error):
-                print("에러:", error.localizedDescription)
-            }
-        }
     }
     
     override func viewWillAppear(_ animated: Bool) {

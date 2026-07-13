@@ -10,10 +10,10 @@ import Foundation
 /// Cloud Functions를 통해 브랜드 문서를 생성/수정하는 BrandStoring 구현입니다.
 /// - Note: 브랜드 문서 직접 쓰기는 Firestore Rules에서 차단하고, 서버 권한 검증을 통과한 요청만 반영합니다.
 struct CloudFunctionsBrandStore: BrandStoringRepository {
-    private let cloudFunctionsManager: CloudFunctionsManager
+    private let transport: any CloudFunctionsTransporting
 
-    init(cloudFunctionsManager: CloudFunctionsManager = .shared) {
-        self.cloudFunctionsManager = cloudFunctionsManager
+    init(transport: any CloudFunctionsTransporting = FirebaseCloudFunctionsTransport()) {
+        self.transport = transport
     }
 
     func createBrand(
@@ -23,13 +23,12 @@ struct CloudFunctionsBrandStore: BrandStoringRepository {
         websiteURL: String?,
         lookbookArchiveURL: String?
     ) async throws -> String {
-        try await cloudFunctionsManager.createBrand(
-            name: name,
-            englishName: englishName,
-            isFeatured: isFeatured,
-            websiteURL: websiteURL,
-            lookbookArchiveURL: lookbookArchiveURL
-        )
+        var data: [String: Any] = ["name": name, "isFeatured": isFeatured]
+        if let englishName { data["englishName"] = englishName }
+        if let websiteURL { data["websiteURL"] = websiteURL }
+        if let lookbookArchiveURL { data["lookbookArchiveURL"] = lookbookArchiveURL }
+        let response = try await transport.call("createBrand", data: data)
+        return try CloudFunctionResponseDecoder(dictionary: response).string("brandID")
     }
 
     func updateBrand(
@@ -40,14 +39,18 @@ struct CloudFunctionsBrandStore: BrandStoringRepository {
         lookbookArchiveURL: String?,
         isFeatured: Bool?
     ) async throws -> Brand {
-        try await cloudFunctionsManager.updateBrand(
-            brandID: brandID.value,
-            name: name,
-            englishName: englishName,
-            websiteURL: websiteURL,
-            lookbookArchiveURL: lookbookArchiveURL,
-            isFeatured: isFeatured
-        )
+        var data: [String: Any] = [
+            "brandID": brandID.value,
+            "name": name,
+            "englishName": englishName ?? NSNull(),
+            "websiteURL": websiteURL ?? "",
+            "lookbookArchiveURL": lookbookArchiveURL ?? ""
+        ]
+        if let isFeatured { data["isFeatured"] = isFeatured }
+        let response = try await transport.call("updateBrand", data: data)
+        let brand = try CloudFunctionResponseDecoder(dictionary: response)
+            .nestedDictionary("brand")
+        return try BrandCloudFunctionsMapper.brand(brand)
     }
 
     func updateLogoPaths(
@@ -55,11 +58,10 @@ struct CloudFunctionsBrandStore: BrandStoringRepository {
         logoThumbPath: String?,
         logoDetailPath: String?
     ) async throws {
-        _ = try await CloudFunctionsManager.shared.updateBrandLogoPaths(
-            brandID: docID,
-            logoThumbPath: logoThumbPath,
-            logoDetailPath: logoDetailPath
-        )
+        var data: [String: Any] = ["brandID": docID]
+        if let logoThumbPath { data["logoThumbPath"] = logoThumbPath }
+        if let logoDetailPath { data["logoDetailPath"] = logoDetailPath }
+        _ = try await transport.call("updateBrandLogoPaths", data: data)
     }
 
     func addBrandManager(
@@ -67,11 +69,11 @@ struct CloudFunctionsBrandStore: BrandStoringRepository {
         email: String,
         role: BrandManagerRole
     ) async throws -> BrandManagerMutationReceipt {
-        try await cloudFunctionsManager.addBrandManager(
-            brandID: brandID.value,
-            email: email,
-            role: role
+        let response = try await transport.call(
+            "addBrandManager",
+            data: ["brandID": brandID.value, "email": email, "role": role.rawValue]
         )
+        return try BrandCloudFunctionsMapper.managerReceipt(response, fallbackRemoved: false)
     }
 
     func removeBrandManager(
@@ -79,10 +81,10 @@ struct CloudFunctionsBrandStore: BrandStoringRepository {
         email: String,
         role: BrandManagerRole
     ) async throws -> BrandManagerMutationReceipt {
-        try await cloudFunctionsManager.removeBrandManager(
-            brandID: brandID.value,
-            email: email,
-            role: role
+        let response = try await transport.call(
+            "removeBrandManager",
+            data: ["brandID": brandID.value, "email": email, "role": role.rawValue]
         )
+        return try BrandCloudFunctionsMapper.managerReceipt(response, fallbackRemoved: true)
     }
 }

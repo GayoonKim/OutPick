@@ -267,9 +267,22 @@ private final class PreviewAvatarImageManager: AvatarImageManaging {
     func removeCachedAvatar(for path: String) async {}
 }
 
+private struct PreviewBrandAdminCapabilitiesClient: BrandAdminCapabilitiesCalling {
+    func getBrandAdminCapabilities() async throws -> BrandAdminCapabilitiesResponse {
+        BrandAdminCapabilitiesResponse(
+            isTotalAdmin: false,
+            roles: [],
+            ownedBrandIDs: [],
+            adminBrandIDs: []
+        )
+    }
+}
+
 #Preview {
     let provider = LookbookRepositoryProvider.shared
-    let brandAdminSessionStore = BrandAdminSessionStore()
+    let brandAdminSessionStore = BrandAdminSessionStore(
+        capabilitiesClient: PreviewBrandAdminCapabilitiesClient()
+    )
     let container = LookbookContainer(
         provider: provider,
         brandAdminSessionStore: brandAdminSessionStore,

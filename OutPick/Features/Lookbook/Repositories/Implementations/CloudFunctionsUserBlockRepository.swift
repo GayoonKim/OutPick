@@ -9,14 +9,14 @@ import Foundation
 import FirebaseFirestore
 
 final class CloudFunctionsUserBlockRepository: UserBlockRepositoryProtocol {
-    private let cloudFunctionsManager: CloudFunctionsManager
+    private let transport: any CloudFunctionsTransporting
     private let db: Firestore
 
     init(
-        cloudFunctionsManager: CloudFunctionsManager = .shared,
+        transport: any CloudFunctionsTransporting = FirebaseCloudFunctionsTransport(),
         db: Firestore = Firestore.firestore()
     ) {
-        self.cloudFunctionsManager = cloudFunctionsManager
+        self.transport = transport
         self.db = db
     }
 
@@ -26,12 +26,16 @@ final class CloudFunctionsUserBlockRepository: UserBlockRepositoryProtocol {
         blockedUserNicknameSnapshot: String?,
         source: UserBlockSource
     ) async throws -> UserBlock {
-        try await cloudFunctionsManager.blockUser(
-            blockerUserID: blockerUserID.value,
-            blockedUserID: blockedUserID.value,
-            blockedUserNicknameSnapshot: blockedUserNicknameSnapshot,
-            source: source
-        )
+        var data: [String: Any] = [
+            "blockerUserID": blockerUserID.value,
+            "blockedUserID": blockedUserID.value,
+            "source": source.rawValue
+        ]
+        if let blockedUserNicknameSnapshot {
+            data["blockedUserNicknameSnapshot"] = blockedUserNicknameSnapshot
+        }
+        let response = try await transport.call("blockUser", data: data)
+        return try CommentCloudFunctionsMapper.userBlock(response)
     }
 
     func fetchBlockedUserIDs(
@@ -49,8 +53,14 @@ final class CloudFunctionsUserBlockRepository: UserBlockRepositoryProtocol {
     func fetchHiddenCommentUserIDs(
         currentUserID: UserID
     ) async throws -> Set<UserID> {
-        try await cloudFunctionsManager.loadHiddenCommentUserIDs(
-            currentUserID: currentUserID.value
+        let response = try await transport.call(
+            "loadHiddenCommentUserIDs",
+            data: ["currentUserID": currentUserID.value]
+        )
+        return Set(
+            CloudFunctionResponseDecoder(dictionary: response)
+                .stringArray("hiddenUserIDs")
+                .map(UserID.init(value:))
         )
     }
 }

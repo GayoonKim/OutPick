@@ -8,16 +8,16 @@
 import Foundation
 
 final class ChatSearchManager: ChatSearchManaging {
-    private let grdbManager: GRDBManager
+    private let messageSearch: ChatMessageSearching
     private let messageRepository: FirebaseMessageRepositoryProtocol
     private let networkStatusProvider: NetworkStatusProviding
     
     init(
-        grdbManager: GRDBManager = .shared,
+        messageSearch: ChatMessageSearching,
         messageRepository: FirebaseMessageRepositoryProtocol = FirebaseRepositoryProvider.shared.messageRepository,
         networkStatusProvider: NetworkStatusProviding? = nil
     ) {
-        self.grdbManager = grdbManager
+        self.messageSearch = messageSearch
         self.messageRepository = messageRepository
 
         if let networkStatusProvider {
@@ -65,7 +65,7 @@ final class ChatSearchManager: ChatSearchManaging {
     }
 
     private func loadLocalHits(roomID: String, keyword: String) async throws -> [ChatMessageSearchHit] {
-        let messages = try await grdbManager.fetchMessages(in: roomID, containing: keyword)
+        let messages = try await messageSearch.fetchMessages(in: roomID, containing: keyword)
         return messages.map { message in
             ChatMessageSearchHit(message: message, snippet: message.msg)
         }

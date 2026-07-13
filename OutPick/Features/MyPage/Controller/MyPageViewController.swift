@@ -200,6 +200,7 @@ class MyPageViewController: UIViewController {
 
         // CompositionRoot로 로그인 화면을 생성 (LoginViewController는 viewModel 주입 필요)
         let loginViewController = LoginCompositionRoot.makeLoginViewController(
+            authRepository: DefaultSocialAuthRepository.live(),
             onLoginSuccess: { authenticatedUser in
                 Task { @MainActor in
                     if let coordinator = AppCoordinator.activeCoordinator {

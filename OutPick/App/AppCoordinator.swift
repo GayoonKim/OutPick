@@ -21,11 +21,13 @@ final class AppCoordinator {
     private var chatContainer: ChatContainer?
     private let joinedRoomsStore: JoinedRoomsSessionStore
     private let brandAdminSessionStore: BrandAdminSessionStore
+    private let socialAuthRepository: SocialAuthRepositoryProtocol
     private let currentUserSessionStore: CurrentUserSessionStore
     private let currentUserProvider: any CurrentUserProviding
     private let realtimeSocketService: RealtimeSocketService
     private let avatarImageManager: AvatarImageManaging
     private let appSessionRuntime: AppSessionRuntime
+    private let chatPersistence: ChatPersistenceProvider
     private var sessionResetTask: Task<Void, Never>?
     
     private var profileCoordinator: ProfileCoordinator?
@@ -38,26 +40,30 @@ final class AppCoordinator {
 
     init(
         window: UIWindow,
-        lookbookProvider: LookbookRepositoryProvider = .shared,
+        lookbookProvider: LookbookRepositoryProvider,
         userProfileRepository: UserProfileRepositoryProtocol,
         joinedRoomsStore: JoinedRoomsSessionStore,
         brandAdminSessionStore: BrandAdminSessionStore,
+        socialAuthRepository: SocialAuthRepositoryProtocol,
         currentUserSessionStore: CurrentUserSessionStore,
         currentUserProvider: any CurrentUserProviding,
         realtimeSocketService: RealtimeSocketService,
         avatarImageManager: AvatarImageManaging,
-        appSessionRuntime: AppSessionRuntime
+        appSessionRuntime: AppSessionRuntime,
+        chatPersistence: ChatPersistenceProvider
     ) {
         self.window = window
         self.lookbookProvider = lookbookProvider
         self.userProfileRepository = userProfileRepository
         self.joinedRoomsStore = joinedRoomsStore
         self.brandAdminSessionStore = brandAdminSessionStore
+        self.socialAuthRepository = socialAuthRepository
         self.currentUserSessionStore = currentUserSessionStore
         self.currentUserProvider = currentUserProvider
         self.realtimeSocketService = realtimeSocketService
         self.avatarImageManager = avatarImageManager
         self.appSessionRuntime = appSessionRuntime
+        self.chatPersistence = chatPersistence
         self.window.backgroundColor = OutPickTheme.ColorToken.backgroundBase
         Self.activeCoordinator = self
     }
@@ -192,6 +198,7 @@ final class AppCoordinator {
         if window.windowScene == nil { window.windowScene = windowScene }
 
         let loginVC = LoginCompositionRoot.makeLoginViewController(
+            authRepository: socialAuthRepository,
             onLoginSuccess: { [weak self] authenticatedUser in
                 guard let self else { return }
                 LoginManager.shared.setAuthenticatedUser(authenticatedUser)
@@ -326,6 +333,7 @@ final class AppCoordinator {
         }
 
         let created = ChatContainer(
+            persistence: chatPersistence,
             joinedRoomsStore: joinedRoomsStore,
             joinedRoomsRuntime: appSessionRuntime,
             currentUserProvider: currentUserProvider,

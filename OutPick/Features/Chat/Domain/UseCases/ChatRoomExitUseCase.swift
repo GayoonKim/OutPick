@@ -55,20 +55,20 @@ final class ChatRoomExitUseCase: ChatRoomExitUseCaseProtocol {
 }
 
 final class DefaultChatRoomLocalExitCleaner: ChatRoomLocalExitCleaning {
-    private let grdbManager: GRDBManager
+    private let localDataStore: ChatRoomLocalDataPersisting
     private let joinedRoomsStore: JoinedRoomsSessionStoring
     private let joinedRoomsRuntime: JoinedRoomsSessionRuntimeHandling
     private let roomRepository: FirebaseChatRoomRepositoryProtocol
     private let currentUserProvider: CurrentUserProviding
 
     init(
-        grdbManager: GRDBManager = .shared,
+        localDataStore: ChatRoomLocalDataPersisting,
         joinedRoomsStore: JoinedRoomsSessionStoring,
         joinedRoomsRuntime: JoinedRoomsSessionRuntimeHandling,
         roomRepository: FirebaseChatRoomRepositoryProtocol,
         currentUserProvider: CurrentUserProviding
     ) {
-        self.grdbManager = grdbManager
+        self.localDataStore = localDataStore
         self.joinedRoomsStore = joinedRoomsStore
         self.joinedRoomsRuntime = joinedRoomsRuntime
         self.roomRepository = roomRepository
@@ -78,7 +78,7 @@ final class DefaultChatRoomLocalExitCleaner: ChatRoomLocalExitCleaning {
     func cleanLocalRoomDataAfterExit(roomID: String) async throws {
         var localCleanupError: Error?
         do {
-            try grdbManager.deleteLocalRoomDataAndPruneUsers(
+            try localDataStore.cleanRoomDataAfterExit(
                 roomID: roomID,
                 currentUserID: currentUserProvider.canonicalUserID
             )

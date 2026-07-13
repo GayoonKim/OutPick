@@ -10,6 +10,7 @@ import Foundation
 /// Chat feature DI container.
 @MainActor
 final class ChatContainer {
+    let persistence: ChatPersistenceProvider
     let firebaseRepositories: FirebaseRepositoryProviding
     let roomRepository: FirebaseChatRoomRepositoryProtocol
     let userProfileRepository: UserProfileRepositoryProtocol
@@ -48,6 +49,7 @@ final class ChatContainer {
     private let shareLookbookContentToChatUseCase: ShareLookbookContentToChatUseCaseProtocol
 
     init(
+        persistence: ChatPersistenceProvider,
         roomRepository: FirebaseChatRoomRepositoryProtocol? = nil,
         userProfileRepository: UserProfileRepositoryProtocol? = nil,
         joinedRoomsStore: JoinedRoomsSessionStoring,
@@ -59,12 +61,13 @@ final class ChatContainer {
         announcementRepository: FirebaseAnnouncementRepositoryProtocol? = nil,
         repositories: FirebaseRepositoryProviding = FirebaseRepositoryProvider.shared
     ) {
+        self.persistence = persistence
         self.firebaseRepositories = repositories
         let attachmentImageLoader = ChatAttachmentImageService(
             imageStorageRepository: repositories.imageStorageRepository
         )
         self.attachmentImageLoader = attachmentImageLoader
-        let managers = ChatManagerProvider(repositories: repositories)
+        let managers = ChatManagerProvider(repositories: repositories, persistence: persistence)
         self.managers = managers
         self.avatarImageManager = avatarImageManager
         self.roomRepository = roomRepository ?? repositories.chatRoomRepository
@@ -84,6 +87,7 @@ final class ChatContainer {
         self.chatRoomExitUseCase = ChatRoomExitUseCase(
             repository: SocketChatRoomExitRepository(socket: realtimeSocketService),
             localCleaner: DefaultChatRoomLocalExitCleaner(
+                localDataStore: persistence.roomLocalDataStore,
                 joinedRoomsStore: joinedRoomsStore,
                 joinedRoomsRuntime: joinedRoomsRuntime,
                 roomRepository: self.roomRepository,
@@ -118,7 +122,9 @@ final class ChatContainer {
         self.chatRoomRuntimeUseCase = ChatRoomRuntimeUseCase(
             repository: SocketChatRoomRuntimeRepository(socketObserver: realtimeSocketService),
             visibilityRuntimeManager: DefaultChatRoomVisibilityRuntimeManager(),
-            transientLocalDataCleaner: DefaultChatRoomTransientLocalDataCleaner()
+            transientLocalDataCleaner: DefaultChatRoomTransientLocalDataCleaner(
+                localDataStore: persistence.roomLocalDataStore
+            )
         )
         self.chatInitialLoadUseCase = DefaultChatInitialLoadUseCase(
             messageManager: managers.messageManager,
@@ -154,6 +160,8 @@ final class ChatContainer {
             }
         )
         self.chatOutgoingOutboxUseCase = ChatOutgoingOutboxUseCase(
+            outboxPersistence: persistence.outboxStore,
+            messagePersistence: persistence.messageStore,
             imageStorageRepository: repositories.imageStorageRepository,
             videoStorageRepository: repositories.videoStorageRepository
         )
@@ -235,6 +243,14 @@ final class ChatContainer {
 
     func makeChatOutgoingOutboxUseCase() -> ChatOutgoingOutboxUseCaseProtocol {
         chatOutgoingOutboxUseCase
+    }
+
+    func makeLocalParticipantsRepository() -> ChatRoomParticipantsRepositoryProtocol {
+        persistence.profileStore
+    }
+
+    func makeLocalMediaRepository() -> ChatRoomMediaIndexRepositoryProtocol {
+        persistence.mediaStore
     }
 
     func makeAttachmentImageLoader() -> ChatAttachmentImageLoading {

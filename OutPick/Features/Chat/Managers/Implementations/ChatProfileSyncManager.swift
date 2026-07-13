@@ -18,13 +18,13 @@ final class ChatProfileSyncManager: ChatProfileSyncManaging {
 
     init(
         userProfileRepository: UserProfileRepositoryProtocol = FirebaseRepositoryProvider.shared.userProfileRepository,
-        grdbManager: GRDBManager = .shared,
+        profileCache: ChatProfileCachePersisting,
         maxRefreshUIDs: Int = 20
     ) {
         self.maxRefreshUIDs = max(1, maxRefreshUIDs)
         self.cacheActor = ChatProfileCacheActor(
             userProfileRepository: userProfileRepository,
-            grdbManager: grdbManager
+            profileCache: profileCache
         )
     }
 
@@ -105,16 +105,16 @@ final class ChatProfileSyncManager: ChatProfileSyncManaging {
 
 private actor ChatProfileCacheActor {
     private let userProfileRepository: UserProfileRepositoryProtocol
-    private let grdbManager: GRDBManager
+    private let profileCache: ChatProfileCachePersisting
     private var cachedProfiles: [String: LocalChatUser] = [:]
     private var generation: Int = 0
 
     init(
         userProfileRepository: UserProfileRepositoryProtocol,
-        grdbManager: GRDBManager
+        profileCache: ChatProfileCachePersisting
     ) {
         self.userProfileRepository = userProfileRepository
-        self.grdbManager = grdbManager
+        self.profileCache = profileCache
     }
 
     func refreshProfiles(userIDs: [String]) async -> [String: LocalChatUser] {
@@ -134,7 +134,7 @@ private actor ChatProfileCacheActor {
                 )
 
                 refreshedProfiles[userID] = local
-                let current = cachedProfiles[userID] ?? (try? grdbManager.fetchLocalChatUser(userID: userID))
+                let current = cachedProfiles[userID] ?? (try? profileCache.fetchLocalChatUser(userID: userID))
                 cachedProfiles[userID] = local
 
                 guard current?.nickname != local.nickname ||
@@ -142,7 +142,7 @@ private actor ChatProfileCacheActor {
                     continue
                 }
 
-                _ = try grdbManager.upsertLocalChatUser(
+                _ = try profileCache.upsertLocalChatUser(
                     userID: userID,
                     nickname: local.nickname,
                     profileImagePath: local.profileImagePath

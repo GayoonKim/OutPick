@@ -8,10 +8,10 @@
 import Foundation
 
 final class CloudFunctionsCommentSafetyRepository: CommentSafetyRepositoryProtocol {
-    private let cloudFunctionsManager: CloudFunctionsManager
+    private let transport: any CloudFunctionsTransporting
 
-    init(cloudFunctionsManager: CloudFunctionsManager = .shared) {
-        self.cloudFunctionsManager = cloudFunctionsManager
+    init(transport: any CloudFunctionsTransporting = FirebaseCloudFunctionsTransport()) {
+        self.transport = transport
     }
 
     func reportComment(
@@ -20,11 +20,21 @@ final class CloudFunctionsCommentSafetyRepository: CommentSafetyRepositoryProtoc
         reason: CommentReportReason,
         detail: String?
     ) async throws -> CommentReport {
-        try await cloudFunctionsManager.reportComment(
-            reporterUserID: reporterUserID.value,
-            target: target,
-            reason: reason,
-            detail: detail
-        )
+        var data: [String: Any] = [
+            "reporterUserID": reporterUserID.value,
+            "targetType": target.targetType.rawValue,
+            "brandID": target.brandID.value,
+            "seasonID": target.seasonID.value,
+            "postID": target.postID.value,
+            "commentID": target.commentID.value,
+            "reason": reason.rawValue
+        ]
+        if let value = target.parentCommentID?.value { data["parentCommentID"] = value }
+        if let value = target.authorNicknameSnapshot {
+            data["targetAuthorNicknameSnapshot"] = value
+        }
+        if let detail { data["detail"] = detail }
+        let response = try await transport.call("reportComment", data: data)
+        return try CommentCloudFunctionsMapper.report(response)
     }
 }

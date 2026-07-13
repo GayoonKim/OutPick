@@ -40,6 +40,8 @@ enum ChatCompositionRoot {
     static func makeChatRoomSettingPanel(
         room: ChatRoom,
         repositories: FirebaseRepositoryProviding,
+        participantsRepository: ChatRoomParticipantsRepositoryProtocol,
+        localMediaRepository: ChatRoomMediaIndexRepositoryProtocol,
         attachmentImageLoader: ChatAttachmentImageLoading,
         videoResolver: ChatVideoPlaybackResolving,
         photoLibrarySaver: PhotoLibrarySaving,
@@ -50,8 +52,6 @@ enum ChatCompositionRoot {
         exitUseCase: ChatRoomExitUseCaseProtocol,
         onEvent: @escaping (ChatRoomSettingEvent) -> Void = { _ in }
     ) -> ChatRoomSettingViewController {
-        let participantsRepository = GRDBChatRoomParticipantsRepository()
-        let localMediaRepository = GRDBChatRoomMediaIndexRepository()
         let remoteMediaRepository = FirebaseChatRoomMediaIndexAdapter(
             repository: repositories.mediaIndexRepository
         )

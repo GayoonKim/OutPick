@@ -12,14 +12,13 @@ protocol ChatRoomTransientLocalDataCleaning {
 }
 
 final class DefaultChatRoomTransientLocalDataCleaner: ChatRoomTransientLocalDataCleaning {
-    private let grdbManager: GRDBManager
+    private let localDataStore: ChatRoomLocalDataPersisting
 
-    init(grdbManager: GRDBManager = .shared) {
-        self.grdbManager = grdbManager
+    init(localDataStore: ChatRoomLocalDataPersisting) {
+        self.localDataStore = localDataStore
     }
 
     func cleanTransientLocalRoomData(roomID: String) async throws {
-        try grdbManager.deleteMessages(inRoom: roomID)
-        try grdbManager.deleteImages(inRoom: roomID)
+        try localDataStore.cleanTransientRoomData(roomID: roomID)
     }
 }

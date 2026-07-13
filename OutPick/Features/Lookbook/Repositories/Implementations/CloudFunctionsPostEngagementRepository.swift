@@ -8,10 +8,10 @@
 import Foundation
 
 final class CloudFunctionsPostEngagementRepository: PostEngagementRepositoryProtocol {
-    private let cloudFunctionsManager: CloudFunctionsManager
+    private let transport: any CloudFunctionsTransporting
 
-    init(cloudFunctionsManager: CloudFunctionsManager = .shared) {
-        self.cloudFunctionsManager = cloudFunctionsManager
+    init(transport: any CloudFunctionsTransporting = FirebaseCloudFunctionsTransport()) {
+        self.transport = transport
     }
 
     func setLike(
@@ -20,10 +20,10 @@ final class CloudFunctionsPostEngagementRepository: PostEngagementRepositoryProt
         postID: PostID,
         isLiked: Bool
     ) async throws -> PostEngagementResult {
-        try await cloudFunctionsManager.setPostEngagement(
-            brandID: brandID.value,
-            seasonID: seasonID.value,
-            postID: postID.value,
+        try await setEngagement(
+            brandID: brandID,
+            seasonID: seasonID,
+            postID: postID,
             kind: "like",
             isEnabled: isLiked
         )
@@ -35,12 +35,36 @@ final class CloudFunctionsPostEngagementRepository: PostEngagementRepositoryProt
         postID: PostID,
         isSaved: Bool
     ) async throws -> PostEngagementResult {
-        try await cloudFunctionsManager.setPostEngagement(
-            brandID: brandID.value,
-            seasonID: seasonID.value,
-            postID: postID.value,
+        try await setEngagement(
+            brandID: brandID,
+            seasonID: seasonID,
+            postID: postID,
             kind: "save",
             isEnabled: isSaved
+        )
+    }
+
+    private func setEngagement(
+        brandID: BrandID,
+        seasonID: SeasonID,
+        postID: PostID,
+        kind: String,
+        isEnabled: Bool
+    ) async throws -> PostEngagementResult {
+        let response = try await transport.call(
+            "setPostEngagement",
+            data: [
+                "brandID": brandID.value,
+                "seasonID": seasonID.value,
+                "postID": postID.value,
+                "kind": kind,
+                "isEnabled": isEnabled
+            ]
+        )
+        return try EngagementCloudFunctionsMapper.post(
+            response,
+            brandID: brandID,
+            seasonID: seasonID
         )
     }
 }

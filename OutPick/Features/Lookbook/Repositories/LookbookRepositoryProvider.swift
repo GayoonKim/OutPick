@@ -9,7 +9,33 @@ import Foundation
 import FirebaseFirestore
 
 final class LookbookRepositoryProvider {
-    static let shared = LookbookRepositoryProvider()
+    static let shared = LookbookRepositoryProvider.live()
+
+    static func live(
+        transport: any CloudFunctionsTransporting = FirebaseCloudFunctionsTransport()
+    ) -> LookbookRepositoryProvider {
+        LookbookRepositoryProvider(
+            brandSearchRepository: CloudFunctionsBrandSearchRepository(transport: transport),
+            brandRequestRepository: CloudFunctionsBrandRequestRepository(transport: transport),
+            lookbookDeletionRepository: CloudFunctionsLookbookDeletionRepository(transport: transport),
+            brandEngagementRepository: CloudFunctionsBrandEngagementRepository(transport: transport),
+            brandStore: CloudFunctionsBrandStore(transport: transport),
+            seasonEngagementRepository: CloudFunctionsSeasonEngagementRepository(transport: transport),
+            seasonImportRepository: CloudFunctionsSeasonImportRepository(transport: transport),
+            seasonImportJobRequestingRepository: CloudFunctionsSeasonImportJobRequestingRepository(
+                transport: transport
+            ),
+            seasonAssetRetryRepository: CloudFunctionsSeasonAssetRetryRepository(transport: transport),
+            seasonCandidateDiscoveryRepository: CloudFunctionsSeasonCandidateDiscoveryRepository(
+                transport: transport
+            ),
+            postEngagementRepository: CloudFunctionsPostEngagementRepository(transport: transport),
+            commentWritingRepository: CloudFunctionsCommentWritingRepository(transport: transport),
+            commentEngagementRepository: CloudFunctionsCommentEngagementRepository(transport: transport),
+            commentSafetyRepository: CloudFunctionsCommentSafetyRepository(transport: transport),
+            userBlockRepository: CloudFunctionsUserBlockRepository(transport: transport)
+        )
+    }
 
     // MARK: - Lookbook Repositories (Protocol 타입으로 노출)
     let brandRepository: BrandRepositoryProtocol

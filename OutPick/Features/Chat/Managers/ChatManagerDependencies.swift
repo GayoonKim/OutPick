@@ -16,27 +16,34 @@ struct ChatManagerProvider {
 
     init(
         repositories: FirebaseRepositoryProviding = FirebaseRepositoryProvider.shared,
+        persistence: ChatPersistenceProvider,
         messageManager: ChatMessageManaging? = nil,
         roomImageManager: RoomImageManaging? = nil,
         searchManager: ChatSearchManaging? = nil,
-        profileSyncManager: ChatProfileSyncManaging = ChatProfileSyncManager(),
+        profileSyncManager: ChatProfileSyncManaging? = nil,
         networkStatusProvider: NetworkStatusProviding = NWPathNetworkStatusProvider()
     ) {
         let resolvedNetworkStatusProvider = networkStatusProvider
         let resolvedSearchManager = searchManager ?? ChatSearchManager(
+            messageSearch: persistence.messageStore,
             messageRepository: repositories.messageRepository,
             networkStatusProvider: resolvedNetworkStatusProvider
         )
 
         self.messageManager = messageManager ?? ChatMessageManager(
             messageRepository: repositories.messageRepository,
-            imageStorageRepository: repositories.imageStorageRepository
+            imageStorageRepository: repositories.imageStorageRepository,
+            messagePersistence: persistence.messageStore,
+            profileCache: persistence.profileStore
         )
         self.roomImageManager = roomImageManager ?? RoomImageService(
             imageStorageRepository: repositories.imageStorageRepository
         )
         self.searchManager = resolvedSearchManager
-        self.profileSyncManager = profileSyncManager
+        self.profileSyncManager = profileSyncManager ?? ChatProfileSyncManager(
+            userProfileRepository: repositories.userProfileRepository,
+            profileCache: persistence.profileStore
+        )
         self.networkStatusProvider = resolvedNetworkStatusProvider
         self.networkStatusProvider.startMonitoring()
     }

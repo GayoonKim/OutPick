@@ -8,19 +8,20 @@
 import Foundation
 
 final class CloudFunctionsBrandEngagementRepository: BrandEngagementRepositoryProtocol {
-    private let cloudFunctionsManager: CloudFunctionsManager
+    private let transport: any CloudFunctionsTransporting
 
-    init(cloudFunctionsManager: CloudFunctionsManager = .shared) {
-        self.cloudFunctionsManager = cloudFunctionsManager
+    init(transport: any CloudFunctionsTransporting = FirebaseCloudFunctionsTransport()) {
+        self.transport = transport
     }
 
     func setLike(
         brandID: BrandID,
         isLiked: Bool
     ) async throws -> BrandEngagementResult {
-        try await cloudFunctionsManager.setBrandEngagement(
-            brandID: brandID.value,
-            isLiked: isLiked
+        let response = try await transport.call(
+            "setBrandEngagement",
+            data: ["brandID": brandID.value, "isLiked": isLiked]
         )
+        return try EngagementCloudFunctionsMapper.brand(response)
     }
 }

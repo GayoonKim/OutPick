@@ -8,16 +8,19 @@
 import Foundation
 
 final class CloudFunctionsBrandSearchRepository: BrandSearchRepositoryProtocol {
-    private let cloudFunctionsManager: CloudFunctionsManager
+    private let transport: any CloudFunctionsTransporting
 
-    init(cloudFunctionsManager: CloudFunctionsManager = .shared) {
-        self.cloudFunctionsManager = cloudFunctionsManager
+    init(transport: any CloudFunctionsTransporting = FirebaseCloudFunctionsTransport()) {
+        self.transport = transport
     }
 
     func searchBrands(query: String, limit: Int) async throws -> [Brand] {
-        try await cloudFunctionsManager.searchBrands(
-            query: query,
-            limit: limit
+        let response = try await transport.call(
+            "searchBrands",
+            data: ["query": query, "limit": limit]
         )
+        return try CloudFunctionResponseDecoder(dictionary: response)
+            .dictionaries("brands")
+            .map(BrandCloudFunctionsMapper.brand)
     }
 }

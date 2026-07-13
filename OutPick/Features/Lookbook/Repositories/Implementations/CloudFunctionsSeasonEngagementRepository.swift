@@ -8,10 +8,10 @@
 import Foundation
 
 final class CloudFunctionsSeasonEngagementRepository: SeasonEngagementRepositoryProtocol {
-    private let cloudFunctionsManager: CloudFunctionsManager
+    private let transport: any CloudFunctionsTransporting
 
-    init(cloudFunctionsManager: CloudFunctionsManager = .shared) {
-        self.cloudFunctionsManager = cloudFunctionsManager
+    init(transport: any CloudFunctionsTransporting = FirebaseCloudFunctionsTransport()) {
+        self.transport = transport
     }
 
     func setLike(
@@ -19,10 +19,14 @@ final class CloudFunctionsSeasonEngagementRepository: SeasonEngagementRepository
         seasonID: SeasonID,
         isLiked: Bool
     ) async throws -> SeasonEngagementResult {
-        try await cloudFunctionsManager.setSeasonEngagement(
-            brandID: brandID.value,
-            seasonID: seasonID.value,
-            isLiked: isLiked
+        let response = try await transport.call(
+            "setSeasonEngagement",
+            data: [
+                "brandID": brandID.value,
+                "seasonID": seasonID.value,
+                "isLiked": isLiked
+            ]
         )
+        return try EngagementCloudFunctionsMapper.season(response)
     }
 }

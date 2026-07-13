@@ -8,19 +8,26 @@
 import Foundation
 
 final class CloudFunctionsBrandRequestRepository: BrandRequestRepositoryProtocol {
-    private let cloudFunctionsManager: CloudFunctionsManager
+    private let transport: any CloudFunctionsTransporting
 
-    init(cloudFunctionsManager: CloudFunctionsManager = .shared) {
-        self.cloudFunctionsManager = cloudFunctionsManager
+    init(transport: any CloudFunctionsTransporting = FirebaseCloudFunctionsTransport()) {
+        self.transport = transport
     }
 
     func submitBrandRequest(
         brandName: String,
         englishBrandName: String?
     ) async throws -> BrandRequestSubmissionReceipt {
-        try await cloudFunctionsManager.submitBrandRequest(
-            brandName: brandName,
-            englishBrandName: englishBrandName
+        var data: [String: Any] = ["brandName": brandName]
+        if let englishBrandName { data["englishBrandName"] = englishBrandName }
+        let response = try await transport.call("submitBrandRequest", data: data)
+        let decoder = CloudFunctionResponseDecoder(dictionary: response)
+        return BrandRequestSubmissionReceipt(
+            requestID: try decoder.string("requestID"),
+            groupID: decoder.optionalString("groupID"),
+            status: BrandRequestStatus(rawValue: try decoder.string("status")) ?? .submitted,
+            isDuplicate: decoder.optionalBool("isDuplicate") ?? false,
+            remainingToday: decoder.optionalInt("remainingToday") ?? 0
         )
     }
 
@@ -29,10 +36,27 @@ final class CloudFunctionsBrandRequestRepository: BrandRequestRepositoryProtocol
         limit: Int,
         cursor: BrandRequestPage.Cursor?
     ) async throws -> BrandRequestPage {
-        try await cloudFunctionsManager.listMyBrandRequests(
-            scope: scope,
-            limit: limit,
-            cursor: cursor
+        var data: [String: Any] = ["scope": scope.rawValue, "limit": limit]
+        if let cursor {
+            data["cursorCreatedAt"] = cursor.createdAt
+            data["cursorRequestID"] = cursor.requestID
+        }
+        let response = try await transport.call("listMyBrandRequests", data: data)
+        let decoder = CloudFunctionResponseDecoder(dictionary: response)
+        let nextCursor: BrandRequestPage.Cursor?
+        if let raw = response["nextCursor"] as? [String: Any],
+           let createdAt = raw["createdAt"] as? String,
+           let requestID = raw["requestID"] as? String {
+            nextCursor = .init(createdAt: createdAt, requestID: requestID)
+        } else {
+            nextCursor = nil
+        }
+        return BrandRequestPage(
+            requests: try decoder.dictionaries("requests").map(BrandRequestCloudFunctionsMapper.request),
+            nextCursor: nextCursor,
+            scope: BrandRequestListScope(
+                rawValue: decoder.optionalString("scope") ?? scope.rawValue
+            ) ?? scope
         )
     }
 
@@ -42,11 +66,26 @@ final class CloudFunctionsBrandRequestRepository: BrandRequestRepositoryProtocol
         limit: Int,
         cursor: AdminBrandRequestGroupPage.Cursor?
     ) async throws -> AdminBrandRequestGroupPage {
-        try await cloudFunctionsManager.listBrandRequestGroups(
-            adminStage: adminStage,
-            processedScope: processedScope,
-            limit: limit,
-            cursor: cursor
+        var data: [String: Any] = ["limit": limit]
+        if let adminStage { data["adminStage"] = adminStage.rawValue }
+        if let processedScope { data["processedScope"] = processedScope.rawValue }
+        if let cursor {
+            data["cursorUpdatedAt"] = cursor.updatedAt
+            data["cursorGroupID"] = cursor.groupID
+        }
+        let response = try await transport.call("listBrandRequestGroups", data: data)
+        let decoder = CloudFunctionResponseDecoder(dictionary: response)
+        let nextCursor: AdminBrandRequestGroupPage.Cursor?
+        if let raw = response["nextCursor"] as? [String: Any],
+           let updatedAt = raw["updatedAt"] as? String,
+           let groupID = raw["groupID"] as? String {
+            nextCursor = .init(updatedAt: updatedAt, groupID: groupID)
+        } else {
+            nextCursor = nil
+        }
+        return AdminBrandRequestGroupPage(
+            groups: try decoder.dictionaries("groups").map(BrandRequestCloudFunctionsMapper.group),
+            nextCursor: nextCursor
         )
     }
 
@@ -56,11 +95,14 @@ final class CloudFunctionsBrandRequestRepository: BrandRequestRepositoryProtocol
         rejectionReason: BrandRequestRejectionReason?,
         adminNote: String?
     ) async throws -> AdminBrandRequestGroupStageUpdateReceipt {
-        try await cloudFunctionsManager.updateBrandRequestGroupStage(
-            groupID: groupID,
-            adminStage: adminStage,
-            rejectionReason: rejectionReason,
-            adminNote: adminNote
+        var data: [String: Any] = ["groupID": groupID, "adminStage": adminStage.rawValue]
+        if let rejectionReason { data["rejectionReason"] = rejectionReason.rawValue }
+        if let adminNote { data["adminNote"] = adminNote }
+        let response = try await transport.call("updateBrandRequestGroupStage", data: data)
+        return try BrandRequestCloudFunctionsMapper.stageReceipt(
+            response,
+            fallbackStatus: .submitted,
+            fallbackStage: adminStage
         )
     }
 
@@ -69,10 +111,16 @@ final class CloudFunctionsBrandRequestRepository: BrandRequestRepositoryProtocol
         resolvedBrandID: BrandID,
         adminNote: String?
     ) async throws -> AdminBrandRequestGroupStageUpdateReceipt {
-        try await cloudFunctionsManager.resolveBrandRequestGroup(
-            groupID: groupID,
-            resolvedBrandID: resolvedBrandID,
-            adminNote: adminNote
+        var data: [String: Any] = [
+            "groupID": groupID,
+            "resolvedBrandID": resolvedBrandID.value
+        ]
+        if let adminNote { data["adminNote"] = adminNote }
+        let response = try await transport.call("resolveBrandRequestGroup", data: data)
+        return try BrandRequestCloudFunctionsMapper.stageReceipt(
+            response,
+            fallbackStatus: .added,
+            fallbackStage: .completed
         )
     }
 
@@ -80,9 +128,14 @@ final class CloudFunctionsBrandRequestRepository: BrandRequestRepositoryProtocol
         groupID: String,
         createdBrandID: BrandID
     ) async throws -> AdminBrandRequestGroupStageUpdateReceipt {
-        try await cloudFunctionsManager.markBrandRequestGroupBrandCreated(
-            groupID: groupID,
-            createdBrandID: createdBrandID
+        let response = try await transport.call(
+            "markBrandRequestGroupBrandCreated",
+            data: ["groupID": groupID, "createdBrandID": createdBrandID.value]
+        )
+        return try BrandRequestCloudFunctionsMapper.stageReceipt(
+            response,
+            fallbackStatus: .reviewing,
+            fallbackStage: .processing
         )
     }
 }

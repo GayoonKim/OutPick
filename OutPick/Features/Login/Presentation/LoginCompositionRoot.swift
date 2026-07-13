@@ -10,18 +10,21 @@ import UIKit
 enum LoginCompositionRoot {
 
     @MainActor
-    static func makeViewModel() -> LoginViewModel {
+    static func makeViewModel(
+        authRepository: SocialAuthRepositoryProtocol
+    ) -> LoginViewModel {
         return LoginViewModel(
-            authRepository: DefaultSocialAuthRepository()
+            authRepository: authRepository
         )
     }
 
     /// AppCoordinator가 호출할 엔트리
     @MainActor
     static func makeLoginViewController(
+        authRepository: SocialAuthRepositoryProtocol,
         onLoginSuccess: @escaping (AuthenticatedUser) -> Void
     ) -> LoginViewController {
-        let vm = makeViewModel()
+        let vm = makeViewModel(authRepository: authRepository)
         vm.onLoginSuccess = onLoginSuccess
         return LoginViewController(viewModel: vm)
     }

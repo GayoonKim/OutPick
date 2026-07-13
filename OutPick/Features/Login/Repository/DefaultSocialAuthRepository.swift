@@ -14,6 +14,19 @@ import KakaoSDKAuth
 import KakaoSDKUser
 
 final class DefaultSocialAuthRepository: SocialAuthRepositoryProtocol {
+    private let kakaoAuthBridge: any KakaoAuthBridgeCalling
+
+    init(kakaoAuthBridge: any KakaoAuthBridgeCalling) {
+        self.kakaoAuthBridge = kakaoAuthBridge
+    }
+
+    static func live(
+        transport: any CloudFunctionsTransporting = FirebaseCloudFunctionsTransport()
+    ) -> DefaultSocialAuthRepository {
+        DefaultSocialAuthRepository(
+            kakaoAuthBridge: CloudFunctionsKakaoAuthBridgeClient(transport: transport)
+        )
+    }
 
     // MARK: - Launch restore
 
@@ -197,7 +210,7 @@ final class DefaultSocialAuthRepository: SocialAuthRepositoryProtocol {
         accessToken: String,
         kakaoUser: KakaoSDKUser.User
     ) async throws -> AuthenticatedUser {
-        let bridge = try await CloudFunctionsManager.shared.exchangeKakaoToken(
+        let bridge = try await kakaoAuthBridge.exchangeKakaoToken(
             accessToken: accessToken
         )
 

@@ -50,7 +50,7 @@ final class LookbookContainer {
     private weak var appContentRouter: (any AppContentRouting)?
 
     init(
-        provider: LookbookRepositoryProvider = .shared,
+        provider: LookbookRepositoryProvider,
         brandAdminSessionStore: BrandAdminSessionStore,
         currentUserProvider: any CurrentUserProviding = LoginManagerCurrentUserProvider(),
         firebaseRepositories: any FirebaseRepositoryProviding = FirebaseRepositoryProvider.shared,

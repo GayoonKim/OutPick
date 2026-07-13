@@ -25,7 +25,7 @@ final class LoginManager {
     // DI를 위한 이니셜라이저(테스트/스테이징에서 Mock 주입 가능)
     // - 참고: 운영 코드에서는 `LoginManager.shared`만 사용하면 됩니다.
     init(
-        authRepository: SocialAuthRepositoryProtocol = DefaultSocialAuthRepository(),
+        authRepository: SocialAuthRepositoryProtocol = DefaultSocialAuthRepository.live(),
         repositories: FirebaseRepositoryProviding = FirebaseRepositoryProvider.shared
     ) {
         self.authRepository = authRepository

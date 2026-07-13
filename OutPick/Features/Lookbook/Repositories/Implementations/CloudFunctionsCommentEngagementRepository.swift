@@ -8,10 +8,10 @@
 import Foundation
 
 final class CloudFunctionsCommentEngagementRepository: CommentEngagementRepositoryProtocol {
-    private let cloudFunctionsManager: CloudFunctionsManager
+    private let transport: any CloudFunctionsTransporting
 
-    init(cloudFunctionsManager: CloudFunctionsManager = .shared) {
-        self.cloudFunctionsManager = cloudFunctionsManager
+    init(transport: any CloudFunctionsTransporting = FirebaseCloudFunctionsTransport()) {
+        self.transport = transport
     }
 
     func setLike(
@@ -21,12 +21,16 @@ final class CloudFunctionsCommentEngagementRepository: CommentEngagementReposito
         commentID: CommentID,
         isLiked: Bool
     ) async throws -> CommentEngagementResult {
-        try await cloudFunctionsManager.setCommentEngagement(
-            brandID: brandID.value,
-            seasonID: seasonID.value,
-            postID: postID.value,
-            commentID: commentID.value,
-            isLiked: isLiked
+        let response = try await transport.call(
+            "setCommentEngagement",
+            data: [
+                "brandID": brandID.value,
+                "seasonID": seasonID.value,
+                "postID": postID.value,
+                "commentID": commentID.value,
+                "isLiked": isLiked
+            ]
         )
+        return try EngagementCloudFunctionsMapper.comment(response)
     }
 }

@@ -19,13 +19,27 @@ enum SeasonCandidateDiscoveryError: LocalizedError {
 }
 
 struct CloudFunctionsSeasonCandidateDiscoveryRepository: SeasonCandidateDiscoveryRepositoryProtocol {
+    private let transport: any CloudFunctionsTransporting
+
+    init(transport: any CloudFunctionsTransporting = FirebaseCloudFunctionsTransport()) {
+        self.transport = transport
+    }
+
     func discoverSeasonCandidates(
         brandID: BrandID
     ) async throws -> SeasonCandidateDiscoveryResult {
-        let diagnostic = try await CloudFunctionsManager.shared.runLookbookExtractionDiagnostic(
-            brandID: brandID.value,
-            type: .seasonDiscovery
+        let response = try await transport.call(
+            "runLookbookExtractionDiagnostic",
+            data: [
+                "brandID": brandID.value,
+                "type": LookbookExtractionDiagnosticType.seasonDiscovery.rawValue
+            ]
         )
+        let diagnosticDictionary = try CloudFunctionResponseDecoder(
+            dictionary: response
+        ).nestedDictionary("diagnostic")
+        let diagnostic = try LookbookExtractionDiagnosticCloudFunctionsMapper
+            .diagnostic(diagnosticDictionary)
         let candidateCount = diagnostic.seasonDiscovery?.storedCandidateCount ?? 0
         if diagnostic.status == .failed {
             throw SeasonCandidateDiscoveryError.failed(loadedCount: candidateCount)
