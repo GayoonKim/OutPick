@@ -5,7 +5,7 @@ import {
   comparePurgeDrainCandidates,
   drainPurgeCandidatePages,
   type PurgeDrainCandidate,
-} from "./lookbookDeletionPurgeDrain.js";
+} from "./purgeDrain.js";
 
 interface TestCandidate extends PurgeDrainCandidate {
   sequence: number;

@@ -4,7 +4,7 @@ import {FieldValue} from "firebase-admin/firestore";
 import {
   extractSeasonCandidates,
   type SeasonCandidate,
-} from "./lookbookSeasonCandidateParser.js";
+} from "./seasonCandidateParser.js";
 
 type DiscoveryResult = {
   brandID: string;

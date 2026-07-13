@@ -7,7 +7,7 @@ import {
   isPurgeLeaseActive,
   shouldStartManualRetryTrigger,
   visibleManualRetryState,
-} from "./lookbookDeletionPurgeLease.js";
+} from "./purgeLease.js";
 
 test("lease는 만료 시각 전까지만 유효하다", () => {
   assert.equal(isPurgeLeaseActive(2_000, 1_999), true);
