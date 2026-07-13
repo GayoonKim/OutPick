@@ -71,7 +71,7 @@ function buildChatPushMulticast({
   };
 }
 
-export function createChatPushService({ db, admin }) {
+export function createChatPushService({ db, admin, clock }) {
   async function loadDeviceDocsByUserUID(userUID) {
     const normalizedUID = normalizeUID(userUID);
     if (!normalizedUID || normalizedUID.includes("/")) return [];
@@ -130,7 +130,7 @@ export function createChatPushService({ db, admin }) {
       if (!token) continue;
       if (device?.pushEnabled === false) continue;
 
-      const ageMs = Date.now() - toMillis(device?.updatedAt);
+      const ageMs = clock.nowMillis() - toMillis(device?.updatedAt);
       const normalizedState = typeof device?.appState === "string" ? device.appState : "offline";
       const effectiveState = ageMs > 90_000 ? "offline" : normalizedState;
       if (effectiveState === "foreground") continue;

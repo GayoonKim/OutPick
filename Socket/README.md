@@ -2,6 +2,24 @@
 
 OutPick 채팅과 룩북 공유의 Socket.IO 런타임 서버다. 로컬 개발은 Application Default Credentials를 사용하고, 운영 배포는 Cloud Run service account / ADC를 사용한다.
 
+## Source Structure
+
+- `index.js`: Firebase/runtime bootstrap, room preload, listen과 signal 연결만 담당한다.
+- `src/app/`: Express/HTTP/Socket.IO application과 production dependency graph를 조립한다.
+- `src/auth/`, `src/handlers/`: handshake 인증과 기능별 Socket event 등록을 담당한다.
+- `src/rooms/`, `src/messages/`, `src/media/`: 기능별 validation, payload, persistence orchestration을 담당한다.
+- `src/lifecycle/`, `src/runtime/`: health/shutdown과 clock/ID 같은 runtime capability를 담당한다.
+- `test/`: application, 계약, handler/service/state의 `node:test` 검증이다.
+
+## Verification
+
+```bash
+npm run check
+npm test
+```
+
+테스트 runner는 `test/` 아래의 모든 `*.test.js`를 재귀적으로 실행하며 테스트가 하나도 없으면 실패한다.
+
 ## Local Firebase Admin Auth
 
 The local Socket server uses Firebase Admin through Application Default Credentials (ADC).

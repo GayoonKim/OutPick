@@ -55,7 +55,9 @@ export function createLookbookShareHandler({
   loadRoomAccess,
   allocateSeqAndPersist,
   fanoutChatPush,
-  allowRate
+  allowRate,
+  clock,
+  generateMessageID
 }) {
   return async function handleLookbookShare(socket, data, callback) {
     try {
@@ -162,9 +164,9 @@ export function createLookbookShareHandler({
       }
 
       const effectiveMessageID = String(
-        rawMessageID || ID || `${Date.now()}-${Math.random().toString(16).slice(2)}`
+        rawMessageID || ID || generateMessageID()
       );
-      const sentAtISO = normalizeSentAt(sentAt) || new Date().toISOString();
+      const sentAtISO = normalizeSentAt(sentAt) || clock.nowDate().toISOString();
       const nickname = senderNickname || senderNickName || "";
       const messageDoc = buildServerLookbookShareMessage({
         roomID,
