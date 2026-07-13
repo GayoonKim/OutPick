@@ -307,6 +307,58 @@
           "order": "ASCENDING"
         },
         {
+          "fieldPath": "targetType",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "purgeAfter",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "requestID",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "lookbookDeletionRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "autoRetryEligible",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "targetType",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "purgeAfter",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "retryAfter",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "requestID",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "lookbookDeletionRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
           "fieldPath": "autoRetryEligible",
           "order": "ASCENDING"
         },
