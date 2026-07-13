@@ -45,6 +45,7 @@ ADR에 기록하지 않을 것:
 | ADR-015 | accepted | 여러 Phase 작업은 병렬 조사와 충돌 기준 구현 분기를 사용한다. | [상세](adr/ADR-015-여러-phase-작업은-병렬-조사와-충돌-기준-구현-분기를-사용한다.md) |
 | ADR-016 | accepted | 채팅 미디어 업로드는 얇은 reservation과 메시지 ready projection으로 처리한다. | [상세](adr/ADR-016-채팅-미디어-업로드는-얇은-reservation과-메시지-ready-projection으로-처리한다.md) |
 | ADR-017 | accepted | 이미지 확대 viewer는 Infra 공용 UIKit viewer로 통일한다. | [상세](adr/ADR-017-이미지-확대-viewer는-infra-공용-uikit-viewer로-통일한다.md) |
+| ADR-018 | accepted | 룩북 영구 삭제는 일일 bounded drain과 브랜드 lease로 처리한다. | [상세](adr/ADR-018-룩북-영구-삭제는-일일-bounded-drain과-브랜드-lease로-처리한다.md) |
 
 ## 새 ADR 추가 절차
 

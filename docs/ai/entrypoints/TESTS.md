@@ -32,7 +32,12 @@ Firebase Functions tests/build entry:
 - Functions source: `functions/src`
 - Lookbook deletion purge lease policy: `functions/src/lookbookDeletionPurgeLease.ts`
 - Lookbook deletion purge lease tests: `functions/src/lookbookDeletionPurgeLease.test.ts`
+- Lookbook deletion purge drain orchestration: `functions/src/lookbookDeletionPurgeDrain.ts`
+- Lookbook deletion purge drain tests: `functions/src/lookbookDeletionPurgeDrain.test.ts`
+- `functions/package.json`의 `npm test`는 Functions build 후 `lib/*.test.js`를 모두 실행한다.
 - 실행: `cd functions && npm test`
+- purge drain 핵심 시나리오: 20개 초과 page 반복, 서로 다른 브랜드 최대 3개, 같은 브랜드 순차, 부모 target 우선, 실패/lease skip 후 계속 처리, 7분 cutoff.
+- 운영 통합 결과와 남은 관찰 항목: `docs/ai/tasks/lookbook-deletion-purge-drain/progress.md`, `qa-checklist.md`.
 - Functions workflow: `.codex/skills/firebase-functions-workflow/SKILL.md`
 
 ## Chat / Realtime

@@ -336,8 +336,11 @@ GRDB 로컬 캐시:
   - 각 target은 항목별 transaction으로 처리하며 일부 실패 시 응답 `results`에 항목별 성공/실패를 반환한다.
   - batch 성공 항목도 단건 삭제와 동일하게 원본 문서 상태, `lookbookDeletionRequests` projection, `lookbookDeletionAuditLogs` 감사 로그를 갱신한다.
 - 복구 가능 기간은 7일이며 `restoreUntil`과 `purgeAfter`에 같은 timestamp를 기록한다.
-- Phase 5 scheduled purge는 `Asia/Seoul` 기준 매일 04:00 실행하고, 한 번에 최대 20개 deletion request target을 처리한다.
-- scheduled purge 대상은 `active` 요청 또는 `status = failed`, `autoRetryEligible = true`, `purgeAfter <= now`, `retryAfter <= now 또는 retryAfter 없음`, `purgeAttemptCount < 3`인 요청이다.
+- scheduled purge는 `Asia/Seoul` 기준 매일 04:00 실행한다. 20개는 active/failed 독립 query의 page 크기이며 전체 실행 처리량 상한이 아니다.
+- scheduled purge는 `brand -> season -> post` 순서로 target type별 cursor를 소진하고, 같은 브랜드는 순차 처리하며 서로 다른 브랜드만 최대 3개 병렬 처리한다.
+- `active` 대상은 `status = active`, `targetType`, `purgeAfter <= now` 조건으로 조회한다.
+- 자동 재시도 대상은 `status = failed`, `autoRetryEligible = true`, `targetType`, `purgeAfter <= now`, `retryAfter <= now` 조건으로 Firestore에서 직접 조회한다. 최대 시도 횟수와 실행 직전 eligibility는 claim transaction에서 다시 검증한다.
+- 실행 후 7분부터 신규 purge claim을 시작하지 않고 이미 시작한 purge는 완료를 기다린다. cursor 미소진, 시간 종료 또는 lease skip은 잔여 candidate로 기록한다.
 - 삭제 요청 projection은 `lookbookDeletionRequests/{requestID}`에 둔다.
 - `lookbookDeletionRequests/{requestID}` 주요 필드:
   - `requestID`
@@ -418,7 +421,7 @@ GRDB 로컬 캐시:
 - 포스트 purge는 포스트 문서와 하위 comments/replacements, 관련 post/comment user state projection, `brands/{brandID}/seasons/{seasonID}/posts/{postID}/` Storage prefix를 삭제한다.
 - 부모 target purge가 성공하면 같은 범위의 하위 active/failed deletion request projection도 `purged`로 닫는다.
 - 문서 필드에 저장된 Storage 경로는 raw Storage path만 삭제 대상으로 인정하며, `brands/{brandID}/` 하위 경로인지 검증한 뒤 포함한다. `://`가 들어간 URL, 외부 `remoteURL`, `sourcePageURL`은 삭제하지 않는다.
-- purge 대상 조회와 user state projection 정리 인덱스는 `firestore.indexes.json`의 `lookbookDeletionRequests` composite index와 `brandStates`, `seasonStates`, `postStates`, `commentStates` collection group field override를 확인한다.
+- purge 대상 조회와 user state projection 정리 인덱스는 `firestore.indexes.json`의 `lookbookDeletionRequests` composite index와 `brandStates`, `seasonStates`, `postStates`, `commentStates` collection group field override를 확인한다. drain query는 active용 `status + targetType + purgeAfter + requestID`, failed용 `status + autoRetryEligible + targetType + purgeAfter + retryAfter + requestID` index를 사용한다.
 
 브랜드 요청:
 

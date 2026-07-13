@@ -2,14 +2,40 @@
 
 ## 1. 최종 목표
 
-- 현재 핵심 목표는 `post-deletion-audit-thumbnail` 설계 확정과 후속 구현 준비다.
-- 이 작업은 포스트 삭제 요청이 영구 삭제(`purged`)된 뒤에도 운영자가 어떤 포스트가 삭제되었는지 식별할 수 있도록, 포스트에 한해서 감사용 저해상도 thumbnail snapshot을 남기는 것이다.
-- 브랜드/시즌 삭제 완료 목록은 이미지 UI를 표시하지 않는 현재 정책을 유지한다.
-- 포스트 삭제 완료 목록만 audit thumbnail을 표시한다.
-- 원본 포스트 이미지와 기존 Storage asset은 purge 시 계속 삭제한다.
-- audit thumbnail은 원본 보존이 아니라 운영 이력 식별용 제한 snapshot으로 별도 Storage prefix에 저장한다.
-- 신규 포스트 삭제 요청부터 적용하고, 이미 purge된 기존 포스트 요청은 이미지 복구 대상이 아니다.
-- 구현 전 보존 기간, thumbnail 크기/포맷, Storage 접근 방식, cleanup 방식, thumbnail 생성 실패 시 요청 생성 실패 여부를 확정해야 한다.
+- `lookbook-deletion-request-list-simplification`은 2026-07-13 Phase 2~6 구현, Functions 운영 배포, 사용자 수동 QA를 완료하고 마감했다.
+- `lookbook-deletion-purge-drain`은 2026-07-13 Phase 1~3 설계, 구현, 운영 배포, destructive smoke QA를 완료했다.
+- 목표는 매일 04:00 purge 스케줄은 유지하면서 한 실행의 전체 20개 고정 상한을 제거하고, 시간 예산 안에서 eligible 요청을 페이지 반복 조회와 bounded concurrency로 계속 소진하는 것이다.
+- 같은 브랜드 purge는 기존 15분 lease로 직렬화하고 서로 다른 브랜드만 제한적으로 병렬 처리한다.
+- 페이지 크기 20개, 동시 브랜드 3개, 실행 후 7분 신규 claim 중단으로 확정·구현했다.
+- active/failed 독립 cursor, failed `retryAfter <= now` query, `brand -> season -> post` pass, 브랜드별 순차 queue를 구현했다.
+- 신규 Firestore index READY 확인 후 Functions 운영 배포를 완료했고 스케줄은 `Asia/Seoul` 매일 04:00, timeout 540초, memory 1024Mi를 유지한다.
+- QA 요청 31개로 20개 초과 pagination, 시즌 cascade, eligible/future failed, Storage 삭제를 확인했고 별도 유효 manual lease fixture로 scheduled skip을 확인했다. 모든 QA 잔여물은 정리했다.
+- 장기 결정과 재검토 조건은 `docs/ai/adr/ADR-018-룩북-영구-삭제는-일일-bounded-drain과-브랜드-lease로-처리한다.md`에 기록했다.
+- 총 관리자와 브랜드 owner/admin 삭제 요청 화면에는 복구 가능한 `active`와 운영 대응이 필요한 `failed`만 표시한다.
+- 총 관리자 전역 목록의 기존 브랜드별 접기/펼치기 구조와 복구 가능 포스트의 원본 썸네일 표시는 유지한다.
+- 처리 중/완료 picker, `purged` 완료 목록, 최근 14일/이전 완료 기록 UI와 history pagination을 제거한다.
+- 삭제 요청 전용 `status/statusGroup/processedScope/recentProcessedDays` API 입력도 Functions와 iOS에서 함께 제거한다.
+- 앱은 아직 배포되지 않아 구버전 API 호환 분기를 유지하지 않는다.
+- `purged` projection과 `lookbookDeletionAuditLogs`는 서버 운영 이력으로 유지한다.
+- purge 이후 별도 audit thumbnail은 만들지 않으며 기존 `post-deletion-audit-thumbnail` 작업은 폐기했다.
+- 브랜드 등록 요청의 `새 요청/처리 중/보류/완료` UI와 이전 이력 조회는 변경하지 않는다.
+- 처리 대상 pagination은 전체 목록 하단 sentinel scroll prefetch로 구현하고 서버는 `limit + 1` query로 정확한 `nextCursor`를 반환한다.
+- 총 관리자는 failed row에서 manual retry를 요청할 수 있고, callable이 token을 기록하면 Firestore trigger가 background purge를 즉시 시작한다.
+- scheduled/manual purge는 공통 15분 lease로 동시 실행을 막고 scheduler fallback을 유지한다.
+- 브랜드 owner/admin 실행 중 문구는 `삭제를 다시 처리하고 있습니다.`, 최종 실패 문구는 `관리자 확인이 필요합니다.`로 한다.
+- 2026-07-12 Phase 2에서 `listLookbookDeletionRequests`의 완료/history 입력과 query를 제거하고 `active/failed` 고정 query 및 `limit + 1` 기반 정확한 cursor를 구현했다.
+- Phase 2 목록 계약은 2026-07-13 Phase 3 함수들과 함께 운영 배포했다.
+- 2026-07-12 Phase 3에서 총 관리자 failed retry callable, 새 queued token Firestore trigger, 브랜드 단위 scheduled/manual 공통 15분 lease를 구현했다.
+- request와 lease token이 모두 실행 token과 일치할 때만 finalize하며 trigger 실패/timeout은 scheduler가 fallback한다.
+- Phase 3 lease helper Node 테스트 5개, Functions lint/build가 통과했다.
+- 2026-07-13 Phase 4에서 iOS 삭제 요청 status group/processed scope와 완료/history 상태를 제거하고 active/failed cursor pagination, requestID 중복 제거, retry metadata/총 관리자 mutation 경계를 구현했다.
+- status group 타입 제거와 빌드 가능성을 맞추기 위해 picker 및 완료/history UI 제거도 Phase 4에 포함했다.
+- Phase 4 generic simulator build, build-for-testing, ViewModel 선택 테스트 4개가 통과했다.
+- 2026-07-13 Phase 5에서 목록 하단 공통 sentinel, 총 관리자 failed retry action/실행 상태, 브랜드 owner/admin 실행 중/최종 실패 문구를 화면에 연결했다.
+- retry 표시 상태 조합 테스트를 추가해 Phase 5 기준 선택 테스트 5개와 generic simulator build가 통과했다.
+- 2026-07-13 Phase 6에서 Functions 테스트/lint/build, iOS 선택 테스트 5개, generic simulator build를 재검증하고 Functions 전체 운영 배포를 완료했다.
+- 배포 후 새 callable/trigger와 목록/scheduler 함수 등록을 확인했고, 비로그인 목록 호출이 `UNAUTHENTICATED`로 거부되는 것도 확인했다.
+- 사용자가 총 관리자와 브랜드 owner/admin 삭제 요청 목록 화면을 직접 확인했다. 실제 lease 경쟁/scheduler fallback destructive 재현은 후속 운영 회귀 QA로 분리했다.
 - 직전 핵심 작업 `admin-request-list-retention-unification`은 구현 마감과 후속 운영 QA 단계다.
 - 해당 작업은 총 관리자 브랜드 요청 목록과 총 관리자/브랜드 owner/admin 삭제 요청 목록의 진행 중/완료 요청 표시 정책을 14일 최근 처리 이력 기준으로 통일한다.
 - 2026-07-09 사용자 결정으로 완료된 요청 기본 노출 기간은 14일로 통일한다. 삭제 lifecycle의 7일 복구 가능 기간과 관리자 운영 목록의 14일 최근 처리 이력 노출 기간은 분리한다.
@@ -19,6 +45,18 @@
 - 구현, 로컬 검증, Functions 운영 배포를 완료했다.
 
 ## 2. 완료한 작업
+
+### `lookbook-deletion-purge-drain` Phase 1~3 완료
+
+- 2026-07-13 `design.md`, `decisions.md`, `plan.md`, `progress.md`, `qa-checklist.md` 기준 Phase 1 정책을 확정했다.
+- `functions/src/lookbookDeletionPurgeDrain.ts`와 테스트를 추가하고 `functions/src/index.ts`, `functions/package.json`, `firestore.indexes.json`을 변경했다.
+- Functions 테스트 11개, lint, build, Firestore index dry-run이 통과했다.
+- 신규 index 두 개가 READY인 것을 확인한 뒤 Firestore indexes와 Functions 운영 배포를 완료했다.
+- QA run `qa-purge-drain-20260713T075809Z`에서 브랜드 5개, 요청 31개, Storage marker 31개로 통합 검증했다.
+- 1차 실행은 `pageCount 4 / loaded 25 / success 25 / failure 0`, 2차 future retry 실행은 `loaded 1 / success 1`이었다.
+- 시즌 purge가 하위 포스트 요청 5개를 `purged`로 닫았고 최종 요청 31개, purge 감사 26개, Storage 삭제를 확인했다.
+- 유효 manual source lease 실행은 `skipped 1 / hasRemainingCandidates true`, lease 제거 후 실행은 `success 1`이었다.
+- QA 브랜드/request/audit/lease/Storage 잔여물과 전역 eligible 요청은 최종 0건이었다.
 
 ### 입력 화면 키보드 dismiss UX 보강
 
@@ -40,14 +78,40 @@
 
 ### 새 핵심 작업 설계
 
-- `docs/ai/tasks/post-deletion-audit-thumbnail/` task 디렉터리를 생성했다.
+- `docs/ai/tasks/lookbook-deletion-request-list-simplification/` task 디렉터리를 생성했다.
 - `design.md`에 요구사항, 구현 디테일, 제약 조건, 완료 기준, 구현 가능성, 기술 스택, 사용자 흐름, 화면/API/데이터/아키텍처 설계를 정리했다.
-- `plan.md`에 Phase 1~6 구현 계획을 정리했다.
-- `decisions.md`에 포스트 audit thumbnail 방향, 별도 Storage prefix, 기존 purge 완료 포스트 backfill 제외, 구현 전 논의 필요 사항을 기록했다.
-- `qa-checklist.md`에 서버/iOS/권한/Storage 수동 QA와 테스트 설계를 정리했다.
-- `progress.md`에 2026-07-09 설계 시작 상태를 기록했다.
-- `docs/ai/tasks/active.md`에 다음 핵심 작업으로 등록했다.
-- `docs/ai/ENTRYPOINTS.md`에 작업별 진입점을 추가했다.
+- `plan.md`에 Phase 1~5 구현 계획을 정리했다.
+- `decisions.md`에 `active/failed` 전용 목록, 브랜드 grouping 유지, scroll prefetch, 삭제 요청 processed API 제거, 즉시 background retry, lease, 감사 기록 유지 결정을 기록했다.
+- `qa-checklist.md`에 Functions/iOS/권한/이미지 식별 수동 QA와 테스트 설계를 정리했다.
+- `progress.md`에 2026-07-12 설계 시작 상태를 기록했다.
+- 폐기된 `docs/ai/tasks/post-deletion-audit-thumbnail/` task 문서와 하네스 참조를 제거했다.
+- `docs/ai/tasks/active.md`, `docs/ai/ENTRYPOINTS.md`, 관련 entrypoint 문서를 새 핵심 작업 기준으로 갱신했다.
+
+### `lookbook-deletion-request-list-simplification` Phase 2
+
+- `functions/src/index.ts`의 `listLookbookDeletionRequests`를 `active/failed` 전용 계약으로 단순화했다.
+- 삭제 요청 전용 `status`, `statusGroup`, `processedScope`, `recentProcessedDays` 파싱과 완료 query를 제거했다.
+- 삭제 요청 전용 status/status group type과 parser helper를 제거했다.
+- `targetType`, `brandID`, `limit`, cursor와 권한 검증은 유지했다.
+- `limit + 1` query로 실제 다음 page가 있을 때만 `nextCursor`를 반환한다.
+- 기존 `firestore.indexes.json`은 active/failed 목록과 purge에도 필요하므로 변경하지 않았다.
+- 관련 FIREBASE/LOOKBOOK/DATA_SCHEMA/task 문서를 갱신했다.
+- `functions` `npm run lint`, `npm run build`가 통과했다.
+- Functions 운영 배포는 수행하지 않았다.
+
+### `lookbook-deletion-request-list-simplification` Phase 3
+
+- 총 관리자 전용 `retryFailedLookbookDeletionPurge` callable을 추가했다.
+- `onLookbookDeletionManualRetryQueued` Firestore trigger가 새 queued token을 감지해 background purge를 즉시 시작한다.
+- scheduled/manual purge 모두 `lookbookDeletionPurgeLeases/{brandID}` 브랜드 단위 15분 lease를 claim한다.
+- 같은 브랜드의 브랜드/시즌/포스트 purge를 직렬화해 계층 Storage prefix 충돌을 막는다.
+- request와 lease token이 모두 실행 token과 같을 때만 성공/실패를 finalize한다.
+- manual trigger 실패/timeout 시 `autoRetryEligible`, `retryAfter` 기반 scheduler fallback을 유지한다.
+- 목록 summary에 retry metadata와 서버 계산 `purgeInProgress`를 추가했다.
+- raw lease token은 iOS 응답에 포함하지 않고 purge 오류 상세는 총 관리자에게만 정제해 반환한다.
+- `functions/src/lookbookDeletionPurgeLease.ts`와 Node test를 추가했다.
+- `npm test` 5개, `npm run lint`, `npm run build`가 통과했다.
+- Functions 운영 배포와 destructive smoke QA는 수행하지 않았다.
 
 ### 이전 핵심 작업 설계
 
@@ -124,13 +188,16 @@
 
 ## 3. 아직 남은 작업
 
+- `lookbook-deletion-purge-drain` Phase 1~3은 완료했다.
+- 합성 QA로 실제 대규모 브랜드의 최악 처리 시간과 7분 cutoff 종료는 재현하지 않았으므로 운영 로그에서 관찰한다.
 - 키보드 dismiss UX 보강은 구현/빌드 검증/사용자 수동 QA 완료 상태다.
 - 새 핵심 작업 `admin-request-list-retention-unification`은 구현/로컬 검증/Functions 운영 배포 완료 상태다.
-- 새 핵심 작업 `post-deletion-audit-thumbnail`은 설계 문서화 완료, 구현 전 논의 대기 상태다.
-- `post-deletion-audit-thumbnail` 구현 전 결정 필요 항목은 audit thumbnail 보존 기간, thumbnail 크기/포맷, Storage 접근 방식, cleanup 방식, thumbnail 생성 실패 시 요청 생성 실패 여부다.
+- 새 핵심 작업 `lookbook-deletion-request-list-simplification`은 설계 문서화와 Phase 2~3 Functions 구현/로컬 검증 완료 상태다.
+- iOS에서는 status group/history 상태와 완료 UI를 제거하되 총 관리자 브랜드 grouping, scroll prefetch, 포스트 이미지, 복구 action, failed retry 상태/action을 구현해야 한다.
+- 완료 projection/감사 로그 보존 기간은 후속 논의이며 이번 구현 blocker는 아니다.
 - 남은 작업은 총 관리자/브랜드 owner/admin 수동 QA다.
 - OUTSTANDING QA brand `qAVnr5qWjaFVc07Tq4HM`는 2026-07-09 수동 scheduler 실행으로 영구 삭제 완료했다. 삭제 요청 완료 표시 제목 계산 결과는 브랜드 `아웃스탠딩`, 시즌 `OUTSTANDING Vintage Reissue Collection Manufactured by TART OPTICAL CO`, 포스트 `포스트`다.
-- 재시도 UX/API는 이번 핵심 작업 완료 후 별도 논의로 분리했다.
+- 삭제 요청 failed 재시도 UX/API는 현재 핵심 작업 Phase 3~5에 편입했다. 브랜드 요청 재시도 정책은 별도 논의다.
 - Phase C 자체는 완료 상태다.
 - 커밋 정리는 완료했다.
   - 커밋: `9e754fc 룩북 브랜드 상세 새로고침 정리`
@@ -140,16 +207,46 @@
 
 ## 4. 수정한 파일 목록
 
-- `docs/ai/tasks/post-deletion-audit-thumbnail/design.md`
-  - 포스트 audit thumbnail 설계.
-- `docs/ai/tasks/post-deletion-audit-thumbnail/plan.md`
+- `docs/ai/tasks/lookbook-deletion-purge-drain/design.md`
+  - 일일 스케줄 유지와 전체 20개 상한 제거를 전제로 한 bounded drain 설계.
+- `docs/ai/tasks/lookbook-deletion-purge-drain/decisions.md`
+  - 확정 결정과 구현 전 수치 확정 항목 구분.
+- `docs/ai/tasks/lookbook-deletion-purge-drain/plan.md`
+  - 정책 수치 확정, Functions 구현, 통합 QA/배포의 Phase 1~3 계획.
+- `docs/ai/tasks/lookbook-deletion-purge-drain/progress.md`
+  - 핵심 작업 등록 상태와 미구현 상태 기록.
+- `docs/ai/tasks/lookbook-deletion-purge-drain/qa-checklist.md`
+  - 20개 초과 drain, 동시성, 실패 격리, 시간 예산, lease 회귀 검증 범위.
+- `functions/src/lookbookDeletionPurgeDrain.ts`
+  - 브랜드별 bounded worker, page 반복, 시간 예산, 결과 집계 순수 helper.
+- `functions/src/lookbookDeletionPurgeDrain.test.ts`
+  - 20개 초과, 동시 브랜드 3개, 같은 브랜드 순차, 부모 우선, 실패/skip, 시간 예산 테스트.
+- `functions/src/index.ts`
+  - active/failed 독립 cursor query와 `brand -> season -> post` scheduled drain 연결.
+- `functions/package.json`
+  - 빌드된 모든 Functions test 실행.
+- `firestore.indexes.json`
+  - active/failed purge drain query용 복합 index 추가.
+- `docs/ai/entrypoints/FIREBASE.md`, `docs/ai/DATA_SCHEMA.md`, `docs/ai/entrypoints/TESTS.md`
+  - drain query, worker, index, 테스트와 운영 QA 진입점 반영.
+- `docs/ai/tasks/active.md`
+  - 현재 핵심 작업 포인터를 `lookbook-deletion-purge-drain`으로 변경.
+- `docs/ai/ENTRYPOINTS.md`
+  - 새 task 문서와 Functions 서버 진입점 추가.
+- `HANDOFF.md`
+  - 새 목표, 확정 결정, 남은 논의와 다음 실행 순서 반영.
+- `docs/ai/tasks/lookbook-deletion-request-list-simplification/design.md`
+  - 처리 가능한 삭제 요청만 앱에 표시하는 요구사항과 서버/iOS 설계.
+- `docs/ai/tasks/lookbook-deletion-request-list-simplification/plan.md`
   - Phase별 목표, 변경 범위, 완료 기준, 검증 방법.
-- `docs/ai/tasks/post-deletion-audit-thumbnail/decisions.md`
-  - 포스트만 audit thumbnail을 남기는 방향과 구현 전 결정사항.
-- `docs/ai/tasks/post-deletion-audit-thumbnail/qa-checklist.md`
-  - 서버/iOS/Storage 권한 QA와 테스트 설계.
-- `docs/ai/tasks/post-deletion-audit-thumbnail/progress.md`
-  - 설계 시작 상태.
+- `docs/ai/tasks/lookbook-deletion-request-list-simplification/decisions.md`
+  - `active/failed` 전용 목록, scroll prefetch, 완료/history API 제거, 즉시 background retry, 15분 lease, 감사 기록 유지 결정.
+- `docs/ai/tasks/lookbook-deletion-request-list-simplification/qa-checklist.md`
+  - Functions/iOS/권한/이미지 식별 QA와 테스트 설계.
+- `docs/ai/tasks/lookbook-deletion-request-list-simplification/progress.md`
+  - Phase 2~6 구현, 검증, 운영 배포 결과와 보류된 수동 QA.
+- `docs/ai/tasks/post-deletion-audit-thumbnail/`
+  - 완료 목록 제거 결정으로 작업 전체를 폐기하고 문서를 삭제했다.
 - `docs/ai/tasks/admin-request-list-retention-unification/design.md`
   - 관리자 요청 목록 14일 표시 정책 통일 설계.
 - `docs/ai/tasks/admin-request-list-retention-unification/plan.md`
@@ -161,7 +258,17 @@
 - `docs/ai/tasks/admin-request-list-retention-unification/progress.md`
   - 설계 시작, 구현 완료, 검증 결과.
 - `functions/src/index.ts`
-  - 관리자 요청 목록 recent/history query scope 추가.
+  - 기존 관리자 요청 목록 recent/history query 이력.
+  - 현재 핵심 task Phase 2에서 삭제 요청 목록을 `active/failed` 전용 + 정확한 cursor로 단순화.
+  - Phase 3에서 총 관리자 manual retry callable, Firestore trigger, 브랜드 단위 15분 lease와 scheduler fallback 추가.
+- `functions/src/lookbookDeletionPurgeLease.ts`
+  - lease 만료, trigger token, stale finalize, duplicate retry, 화면 상태 정규화 순수 정책 helper.
+- `functions/src/lookbookDeletionPurgeLease.test.ts`
+  - purge lease 순수 정책 Node 테스트.
+- `functions/package.json`
+  - Functions lease test 실행용 `npm test` script 추가.
+- `docs/ai/entrypoints/TESTS.md`
+  - Functions purge lease 테스트 진입점과 실행 명령 추가.
 - `OutPick/DB/Firebase/CloudFunctions/CloudFunctionsManager.swift`
   - 브랜드 요청 group과 삭제 요청 목록 callable 파라미터에 processed scope/status group 추가.
 - `OutPick/Features/Lookbook/Domains/Entities/BrandRequest.swift`
@@ -244,31 +351,64 @@
 ## 5. 중요한 아키텍처 결정
 
 선택:
-- 포스트 삭제 완료 목록에는 audit thumbnail을 표시한다.
-- 브랜드/시즌 삭제 완료 목록에는 이미지 UI를 표시하지 않는다.
-- 원본 포스트 이미지는 purge 시 계속 삭제하고, audit thumbnail은 별도 Storage prefix에 둔다.
+- `purgeExpiredLookbookDeletions`는 매일 04:00 실행을 유지한다.
+- 한 실행의 전체 20개 고정 상한은 제거하고 페이지 반복 조회 + bounded concurrency로 시간 예산 안에서 큐를 소진한다.
+- 기존 scheduled/manual 공통 브랜드 lease와 요청 단위 purge helper를 재사용한다.
+- active/failed query는 독립 cursor를 사용하고 failed eligibility는 `retryAfter <= now`를 Firestore에서 직접 필터링한다.
+- 부모 target 우선순위는 `brand -> season -> post`, 같은 target type은 `purgeAfter -> requestID`다.
+- page는 브랜드별 queue로 묶고 서로 다른 브랜드만 최대 3개 병렬 처리한다.
+- 실행 후 7분부터 신규 claim을 중단하고 이미 시작한 purge는 완료를 기다린다.
 
 이유:
-- 포스트는 caption이 없을 수 있고 이미지가 사실상 식별자라, 완료 목록에서 텍스트만으로 어떤 포스트였는지 알기 어렵다.
-- 원본 이미지를 보존하는 것은 영구 삭제 정책과 충돌할 수 있으므로, 운영 이력 식별용 저해상도 snapshot으로 제한한다.
+- 초기 사용자 규모에서는 15분 스케줄이 필요하지 않지만, 21번째 요청을 무조건 다음 날로 미루는 고정 상한도 불필요하다.
+- 요청별 삭제량이 달라 무제한 병렬화는 timeout과 Firestore/Storage 부하 위험이 있다.
 
 트레이드오프:
-- 삭제된 콘텐츠의 파생 이미지를 일정 기간 보존하므로 개인정보/콘텐츠 삭제 정책상 보존 기간과 접근 권한을 명확히 해야 한다.
-- 서버에서 이미지 리사이즈와 Storage 저장을 처리해야 하므로 Functions 의존성과 실패 처리 정책이 추가된다.
+- 하루 1회이므로 정확히 7일이 되는 순간이 아니라 다음 04:00에 삭제된다.
+- 시간 예산 안에 backlog를 다 처리하지 못하면 나머지는 다음 날까지 대기한다.
 
 보류한 대안:
-- 포스트도 이미지 없이 텍스트 snapshot만 표시하는 방식은 caption 없는 포스트 식별성이 낮아 보류했다.
-- 원본 이미지를 보존하는 방식은 삭제 완료 정책과 충돌 가능성이 커서 보류했다.
+- 15분 스케줄은 운영 backlog가 확인될 때 재검토한다.
+- Cloud Tasks나 별도 Cloud Run worker는 현재 규모에 비해 복잡도가 커서 도입하지 않는다.
 
 재검토 조건:
-- audit thumbnail 보존도 정책상 부담이 크다고 판단되는 경우.
-- 포스트에 안정적인 텍스트 식별자나 permalink가 생겨 이미지 없이도 충분히 식별 가능한 경우.
+- 잔여 backlog가 반복되거나 삭제 완료 지연 요구가 생기면 스케줄 주기, 동시성, 별도 queue 도입을 재검토한다.
+
+선택:
+- 앱 삭제 요청 목록에는 총 관리자와 브랜드 owner/admin 모두 `active/failed`만 표시한다.
+- 총 관리자 전역 브랜드 grouping과 복구 가능 포스트의 원본 썸네일은 유지한다.
+- `purged/cancelled/restored` 완료 UI와 삭제 요청 전용 processed/history API 계약은 제거한다.
+- `purged` projection과 감사 로그는 서버 운영 이력으로 유지하고, purge 이후 별도 audit thumbnail은 만들지 않는다.
+- 처리 대상 pagination은 목록 하단 sentinel scroll prefetch로 구현한다.
+- failed purge는 총 관리자 callable이 token을 기록하고 Firestore trigger가 즉시 background 실행한다.
+- scheduled/manual purge는 15분 lease로 동시 실행을 막고 scheduler fallback을 유지한다.
+
+이유:
+- `active`는 복구 가능하고 `failed`는 운영 대응이 필요하지만, 종료된 요청에는 앱에서 실행할 action이 없다.
+- 포스트는 제목이 없어 이미지 식별이 필요하지만 7일 복구 기간에는 원본 Storage asset이 남아 별도 파생 이미지가 필요하지 않다.
+- 앱 미배포 상태라 구버전 호환 분기를 유지할 필요가 없다.
+- failed 상태에서 새 삭제 요청을 만들 수 없고 partial purge 가능성 때문에 일반 복구도 안전하지 않아 전용 retry가 필요하다.
+
+트레이드오프:
+- 앱에서 완료 이력을 조회할 수 없지만 일상 운영 화면이 처리 대상에 집중된다.
+- 완료 처리 분석은 앱 UI가 아니라 서버 projection과 감사 로그를 이용해야 한다.
+- immediate purge는 background trigger로 시작되므로 앱은 완료를 동기 대기하지 않고 상태를 다시 조회해야 한다.
+- lease metadata와 동시성 테스트가 추가돼 구현 범위가 커지지만 destructive action 중복 실행 위험을 줄인다.
+
+보류한 대안:
+- 완료 목록과 audit thumbnail을 유지하는 방식은 action 없는 UI, 이미지 보존 정책, Functions/Storage 복잡도가 추가돼 폐기했다.
+- 완료 projection과 감사 로그 자체를 삭제하는 방식은 운영 추적을 잃으므로 선택하지 않았다.
+- callable이 cascade purge 완료까지 기다리는 방식은 앱/Functions timeout 위험 때문에 선택하지 않았다.
+- scheduled purge만 다시 예약하는 방식은 최대 하루 지연돼 즉시 운영 대응 요구에 맞지 않아 선택하지 않았다.
+
+재검토 조건:
+- 운영자가 앱 안에서 완료 이력을 조회해야 하는 구체적인 업무 요구가 생기면 metadata 전용 운영 화면을 별도 검토한다.
 
 선택:
 - 관리자 요청 목록의 최근 처리 이력 기본 노출 기간은 브랜드 요청과 삭제 요청 모두 14일로 통일한다.
 - 브랜드 요청 화면은 `새 요청`, `처리 중`, `보류`, `완료` segment로 간다.
 - 14일 이전 처리 이력 조회도 이번 작업 범위에 포함한다.
-- 재시도 UX/API는 후속 논의로 분리한다.
+- 당시 재시도 UX/API는 후속 논의로 분리했다. 삭제 요청 failed retry는 현재 핵심 task에서 즉시 background retry로 편입했으며, 브랜드 요청 재시도 논의만 별도로 남는다.
 
 이유:
 - 기존 브랜드 요청 하네스가 이미 `completed`/`rejected` 처리 이력을 최근 14일 기준으로 기록하고 있다.
@@ -308,17 +448,17 @@
 
 ## 6. 다시 확인해야 할 불확실한 부분
 
-- `post-deletion-audit-thumbnail`의 보존 기간, thumbnail 크기/포맷, Storage 접근 방식, cleanup 방식, thumbnail 생성 실패 시 요청 생성 실패 여부는 구현 전 사용자 확정이 필요하다.
-- Firestore가 삭제 요청 `status in [...]`와 `brandID`/`targetType` 조합에 요구할 composite index는 dry-run 또는 실제 query로 재확인해야 한다. 확실하지 않음.
+- 실제 대규모 브랜드의 최악 처리 시간과 7분 cutoff 운영 종료는 합성 QA로 재현하지 않았다. 운영 로그에서 관찰이 필요하다.
+- 현재 `firestore.indexes.json`의 삭제 요청 composite index는 `active/failed` 목록과 purge query에도 필요하므로 이번 작업에서 제거하지 않는다.
+- Firestore의 고정 `status in [active, failed]`와 `brandID`/`targetType` 조합은 실제 총 관리자/브랜드 관리자 인증 호출로 재확인해야 한다. 비로그인 권한 거부까지만 운영 확인했다. 확실하지 않음.
+- Firestore trigger와 scheduler lease 경쟁, trigger timeout 후 scheduler fallback은 자동 테스트와 운영 전 smoke QA가 필요하다.
 - `updatedAt` 누락 legacy 문서가 있는지는 재확인 필요.
 - `docs/ai/tasks/lookbook-admin-soft-delete-lifecycle/progress.md`는 `.git/info/exclude`의 `docs/ai/tasks/` 규칙 때문에 `git status --short`에 표시되지 않는다. 실제 파일은 갱신했다.
-- 테스트 실행은 하지 않았다. `build-for-testing`까지만 확인했다.
+- 현재 작업의 Functions 테스트 5개와 iOS 선택 테스트 5개는 실행해 통과했다.
 - App Review Notes용 관리자 데모 계정/설명 준비 필요 여부는 아직 결정되지 않았다.
 - 브랜드 룩북 콘텐츠 수집/표시 권리 범위는 확실하지 않음. 출시/심사 전 사용자와 검토 필요.
 
 ## 7. 다음 턴에서 바로 실행해야 할 작업
 
-1. `git status --short`로 현재 변경 범위를 확인한다.
-2. `docs/ai/tasks/post-deletion-audit-thumbnail/design.md`와 `decisions.md`를 기준으로 구현 전 결정사항을 사용자와 확정한다.
-3. 결정 필요 항목: 보존 기간, thumbnail 크기/포맷, Storage 접근 방식, cleanup 방식, thumbnail 생성 실패 시 요청 생성 실패 여부.
-4. 총 관리자/브랜드 owner/admin 수동 QA에서 기존 관리자 요청 목록 보류/완료, 삭제 요청 처리 중/완료, 이전 기록 prefetch도 확인한다.
+1. `lookbook-deletion-purge-drain`은 완료 상태로 유지하고 운영 backlog/elapsed/cutoff 로그를 관찰한다.
+2. 다음 핵심 작업을 사용자와 선택한다.

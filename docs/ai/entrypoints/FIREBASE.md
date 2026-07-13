@@ -77,8 +77,13 @@ gcloud firestore fields ttls update expiresAt \
 - 신규 hard delete 대상을 직접 선택하는 앱 callable은 제공하지 않는다. 기존 failed request의 재시도만 총 관리자 callable로 등록하며 실제 영구 삭제는 scheduled function 또는 manual retry trigger가 공통 purge helper를 통해 수행한다.
 - `purgeExpiredLookbookDeletions`: Phase 5 scheduled hard delete function이다.
   - `Asia/Seoul` 기준 매일 04:00 실행.
-  - 한 번에 최대 20개 deletion request target 처리.
-  - `active` 요청 또는 `status = failed`, `autoRetryEligible = true`, `purgeAfter <= now`, `retryAfter <= now 또는 retryAfter 없음`, `purgeAttemptCount < 3` 대상만 처리.
+  - 20개는 active/failed 독립 query의 page 크기이며 한 실행의 전체 처리량 상한이 아니다. cursor를 반복 전진하며 시간 예산 안에서 eligible queue를 소진한다.
+  - `brand -> season -> post` 세 pass로 부모 target을 먼저 처리한다. 같은 target type은 `purgeAfter`, `requestID` 오름차순이다.
+  - `active` query는 `status`, `targetType`, `purgeAfter <= now`를 사용한다.
+  - `failed` query는 `status = failed`, `autoRetryEligible = true`, `targetType`, `purgeAfter <= now`, `retryAfter <= now`를 Firestore에서 함께 필터링한다. `retryAfter`가 없거나 Timestamp가 아닌 문서는 query 대상이 아니다.
+  - page 요청은 브랜드별 순차 queue로 묶고 서로 다른 브랜드 queue만 최대 3개 병렬 처리한다.
+  - 실행 후 7분부터 신규 purge claim을 시작하지 않으며 이미 시작한 purge는 완료를 기다린다.
+  - 실행 요약 로그는 page/load/start/success/failure/skip/unstarted 수, 종료 원인, 잔여 candidate 여부, 실행 시간과 실행 설정을 기록한다. cursor 미소진, 시간 종료 또는 lease skip이 있으면 잔여 candidate를 보수적으로 `true`로 기록한다.
   - 브랜드 purge는 `brands/{brandID}` 하위 Firestore 문서 전체, `brandNameIndex`, 관련 user state projection, `brands/{brandID}/` Storage prefix를 삭제한다.
   - 시즌 purge는 시즌 하위 posts/comments/replacements, 관련 user state projection, `brands/{brandID}/seasons/{seasonID}/` Storage prefix를 삭제한다.
   - 포스트 purge는 포스트 하위 comments/replacements, 관련 user state projection, `brands/{brandID}/seasons/{seasonID}/posts/{postID}/` Storage prefix를 삭제한다.
@@ -87,8 +92,19 @@ gcloud firestore fields ttls update expiresAt \
   - 실패 시 `failed`, `purgeAttemptCount`, `lastPurgeAttemptAt`, `retryAfter`, `autoRetryEligible`, `purgeErrorMessage`와 감사 로그를 남기고, 3회 실패 후 자동 재시도에서 제외한다.
   - scheduled worker도 실행 전 브랜드 단위 15분 lease를 claim하며 manual trigger와 동시 실행하지 않는다.
 - Firestore rules는 `lookbookDeletionRequests`, `lookbookDeletionAuditLogs` 직접 접근을 막고, `brands/{brandID}/seasons/{seasonID}`와 `posts/{postID}` 직접 `delete`를 막는다. 기존 create/update 권한은 유지한다.
-- 인덱스는 `firestore.indexes.json`의 `lookbookDeletionRequests` 목록/정리용 composite index와 `brandStates`, `seasonStates`, `postStates`, `commentStates` collection group field override를 사용한다.
+- 인덱스는 `firestore.indexes.json`의 `lookbookDeletionRequests` 목록/정리용 composite index와 `brandStates`, `seasonStates`, `postStates`, `commentStates` collection group field override를 사용한다. purge drain은 active용 `status + targetType + purgeAfter + requestID`, failed용 `status + autoRetryEligible + targetType + purgeAfter + retryAfter + requestID` index를 사용한다.
 - `lookbookDeletionPurgeLeases`는 서버 전용 top-level collection이며 Firestore rules의 최종 deny fallback으로 클라이언트 접근이 차단된다.
+- purge drain Phase 3는 2026-07-13 index READY 확인 후 Functions 운영 배포를 완료했다. QA 요청 31개로 20개 초과 pagination, 시즌 cascade, eligible/future failed, Storage 삭제를 확인했고 유효 manual source lease가 scheduled 실행을 skip하는 것도 확인했다. QA 브랜드/request/audit/lease/Storage 잔여물은 모두 정리했다.
+- purge drain 코드 확인 순서:
+  - 정책과 트레이드오프: `docs/ai/adr/ADR-018-룩북-영구-삭제는-일일-bounded-drain과-브랜드-lease로-처리한다.md`.
+  - page 반복, 브랜드 queue, 동시성, cutoff, summary: `functions/src/lookbookDeletionPurgeDrain.ts`.
+  - Firestore query/cursor: `functions/src/index.ts`의 `expiredDeletionRequestPageLoader`.
+  - request claim/purge/finalize: `functions/src/index.ts`의 `claimLookbookDeletionPurge`, `runLookbookDeletionPurge`, `purgeClaimedLookbookDeletionRequest`.
+  - scheduler target pass와 운영 로그: `functions/src/index.ts`의 `purgeExpiredLookbookDeletions`.
+  - scheduled/manual 상호 배제: `functions/src/lookbookDeletionPurgeLease.ts`와 `lookbookDeletionPurgeLeases/{brandID}`.
+  - query index: `firestore.indexes.json`의 active `status + targetType + purgeAfter + requestID`, failed `status + autoRetryEligible + targetType + purgeAfter + retryAfter + requestID`.
+  - 회귀 검증: `cd functions && npm test && npm run lint && npm run build`.
+- scheduler 완료 로그의 주요 필드는 `pageCount`, `loadedCount`, `startedCount`, `successCount`, `failureCount`, `skippedCount`, `unstartedCount`, `stopReason`, `hasRemainingCandidates`, `elapsedMillis`다.
 - 운영 배포와 OUTSTANDING 통합 QA 결과는 `docs/ai/tasks/lookbook-admin-soft-delete-lifecycle/progress.md`와 `docs/ai/tasks/lookbook-admin-soft-delete-lifecycle/qa-checklist.md`를 확인한다.
 
 ## Lookbook URL Import Worker

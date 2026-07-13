@@ -4,7 +4,14 @@
 
 - 2026-07-10 ad hoc UX 보강으로, 입력 화면에서 키보드가 올라온 상태에 입력 영역 외부를 탭하면 키보드가 내려가도록 공통 helper와 주요 UIKit/SwiftUI 입력 화면 적용을 완료했다.
 - 키보드 dismiss 공통 진입점은 `OutPick/Infra/Utility/Support/KeyboardDismissSupport.swift`이며, UIKit은 `installKeyboardDismissTapGesture()`, SwiftUI는 `outpickDismissKeyboardOnTap()`을 사용한다.
-- 현재 진행 중인 다음 핵심 task는 없다.
+- `lookbook-deletion-purge-drain`은 2026-07-13 Phase 1~3 설계, 구현, 로컬 검증, 인덱스/Functions 운영 배포, destructive smoke QA를 완료했다.
+- 목표는 `purgeExpiredLookbookDeletions`의 매일 04:00 주기는 유지하면서, 한 실행의 전체 처리량을 20개로 제한하는 고정 상한을 제거하고 시간 예산 안에서 eligible 요청을 bounded concurrency로 계속 소진하는 것이다.
+- 같은 브랜드의 브랜드/시즌/포스트 purge는 기존 15분 lease로 직렬화하고, 서로 다른 브랜드만 제한적으로 병렬 처리한다.
+- 운영 로그를 근거로 추후 스케줄 주기를 조정하며, 이번 작업에서는 15분 주기나 별도 Cloud Run/Cloud Tasks queue를 도입하지 않는다.
+- Phase 1에서 page 20개, 동시 브랜드 3개, 실행 후 7분 신규 claim 중단, active/failed 독립 cursor, failed `retryAfter <= now` query, `brand -> season -> post` 우선순위를 확정했다.
+- 2026-07-13 Phase 2에서 `functions/src/lookbookDeletionPurgeDrain.ts` 순수 helper와 단위 테스트, target type별 cursor drain, 브랜드별 bounded worker, failed eligibility index를 구현하고 로컬 검증했다.
+- 2026-07-13 Phase 3에서 신규 인덱스 READY 확인 후 Functions를 운영 배포했다. QA 브랜드 5개와 삭제 요청 31개로 20개 초과 pagination, 시즌 cascade, eligible/future failed, Storage 삭제를 검증했고, 별도 manual source lease fixture로 skip과 후속 정상 purge를 확인했다. QA 데이터는 exact ID/prefix로 모두 정리했다.
+- 설계 진입점은 `docs/ai/tasks/lookbook-deletion-purge-drain/design.md`, 결정은 `decisions.md`, phase 계획은 `plan.md`, 현재 상태는 `progress.md`, 검증 범위는 `qa-checklist.md`를 확인한다.
 - `lookbook-deletion-request-list-simplification`은 2026-07-13 구현, Functions 운영 배포, 사용자 수동 QA를 완료하고 마감했다.
 - 목표는 총 관리자와 브랜드 owner/admin 삭제 요청 화면을 복구 또는 운영 대응이 가능한 `active/failed` 요청에 집중하도록 단순화하는 것이다.
 - 총 관리자 전역 목록의 기존 브랜드별 접기/펼치기 구조는 유지한다.
