@@ -75,6 +75,7 @@ Chat 기능 수정 시 관련 화면, ViewModel, UseCase, Repository, 검색 인
 ## Realtime, Banner, Read State
 
 - Socket transport: `OutPick/Infra/Realtime/RealtimeSocketService.swift`
+- Socket listener one-time binding: `OutPick/Infra/Realtime/RealtimeSocketListenerBinder.swift`
 - Socket server bootstrap: `Socket/index.js`
 - Socket application/production DI: `Socket/src/app/createSocketApplication.js`, `Socket/src/app/createProductionDependencies.js`
 - Socket 인증/event 등록: `Socket/src/auth/`, `Socket/src/handlers/`
@@ -90,9 +91,20 @@ Chat 기능 수정 시 관련 화면, ViewModel, UseCase, Repository, 검색 인
 
 채팅방 화면을 보고 있을 때는 `ChatViewController`가 `RealtimeSocketService.openRoomSession(for:)`로 room join ACK를 받은 뒤 메시지 stream을 구독한다. 수신 메시지는 ViewModel/GRDB 저장 경로를 거쳐 현재 화면에 반영된다.
 
+`RealtimeSocketService`는 새 `SocketIOClient`를 만들 때 lifecycle 3개와 named event 5개 listener를 연결 전에 한 번 등록한다. reconnect나 room consumer 생성·종료 중에는 `off/on`으로 Socket.IO handler 배열을 변경하지 않으며, listener lifetime은 Socket client lifetime과 같다. consumer가 없는 메시지는 actor의 room session lookup에서 drop한다. Socket.IO raw logger는 인증 payload 노출을 막기 위해 사용하지 않는다. 관련 안정화 설계와 반복 reconnect gate는 `docs/ai/tasks/core-infrastructure-modularization/phases/phase-6-ios-socket-stabilization.md`를 따른다.
+
 채팅방 화면을 보고 있지 않을 때는 `BannerManager`가 참여중 방 socket stream을 통해 메시지를 받고 banner를 표시한다. 동시에 `ChatRoomReadStateStore.seedIncomingMessage(_:)`로 `latestSeq`, `latestMessagePreview`, `latestMessageAt`, `lastMessageSenderUID`를 갱신하고, `FirebaseChatRoomRepository.applyLocalIncomingMessagePreview(_:)`로 전체 방 목록 preview cache를 갱신한다.
 
 `JoinedRoomsViewModel`은 shared read-state stream을 구독해 unread count와 마지막 메시지 summary를 즉시 반영한다. `RoomListsViewModel`은 같은 stream을 신호로 사용해 repository의 cached top rooms snapshot을 다시 발행한다. 단, 앱 재실행/네트워크 재동기화의 authoritative source는 여전히 Firestore 단발 fetch와 pull-to-refresh다.
+
+## Firestore DocumentID 경고 후속
+
+- 경고 진입점: `OutPick/Features/Chat/Domain/Models/ChatRoom.swift`
+- 추가 점검 대상: `OutPick/Features/Lookbook/Models/DTOs/SeasonDTO.swift`와 `@DocumentID` DTO들
+- 확인된 증상: Firestore room 목록 디코딩 시 `I-FST000002`가 문서별로 출력된다.
+- 가장 유력한 원인: `ChatRoom.init(from:)`가 Firestore에서 디코딩한 `DocumentID<String>`의 wrapped value를 `ID`에 non-nil로 다시 초기화한다.
+- 현재 영향: Firestore가 read 시 문서 ID를 자동 주입하므로 즉시 기능 실패나 D49 reconnect 회귀는 확인되지 않았다. 다만 `@DocumentID` 값은 write 시 무시되므로 경고와 문서 경로 ID/`ID` field의 이중 source를 후속 정리한다.
+- 구현 전 결정: `ChatRoom`의 backing wrapper 직접 디코딩만 적용할지, 앱 미배포를 근거로 Firestore DTO와 domain model을 분리하고 저장 문서의 중복 `ID` field까지 제거할지 범위를 확정한다.
 
 ## 방 정보 수정 반영
 
