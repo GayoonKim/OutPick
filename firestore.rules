@@ -141,6 +141,14 @@ service cloud.firestore {
         );
     }
 
+    function roomCreateHasNoDocumentIDFields() {
+      return !request.resource.data.keys().hasAny(["ID", "id"]);
+    }
+
+    function roomUpdateDoesNotChangeDocumentIDFields() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(["ID", "id"]);
+    }
+
     match /brandAdmins/{adminID} {
       allow read, write: if false;
     }
@@ -283,12 +291,14 @@ service cloud.firestore {
       allow create: if signedIn()
         && request.resource.data.creatorUID == request.auth.uid
         && !request.resource.data.keys().hasAny(["participantUIDs"])
+        && roomCreateHasNoDocumentIDFields()
         && request.resource.data.keys().hasAll([
           "creatorUID",
           "memberCount",
           "isClosed"
         ]);
       allow update: if signedIn()
+        && roomUpdateDoesNotChangeDocumentIDFields()
         && (
           (
             isRoomCreator(roomID)
