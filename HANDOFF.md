@@ -56,7 +56,7 @@
 - `docs/ai/entrypoints/TESTS.md`: D49 targeted test와 실제 reconnect gate 기록.
 - `docs/ai/tasks/active.md`: 현재 task 없음과 핵심 인프라 모듈화 완료 상태 기록.
 - `HANDOFF.md`: 완료 상태, 후속 작업과 다음 진입점을 7개 항목으로 갱신.
-- `docs/ai/tasks/core-infrastructure-modularization/*`: 로컬 하네스의 최종 진행·QA·Phase 상태 갱신. 이 경로는 `.git/info/exclude` 대상이다.
+- `docs/ai/tasks/core-infrastructure-modularization/*`: 최종 진행·QA·Phase 상태를 담은 34개 하네스 문서. 기본 `.git/info/exclude` 대상이지만 사용자 명시 승인으로 완료 아카이브에 포함했다.
 
 ## 5. 중요한 아키텍처 결정
 
