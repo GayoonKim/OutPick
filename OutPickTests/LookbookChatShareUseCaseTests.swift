@@ -16,7 +16,7 @@ struct LookbookChatShareUseCaseTests {
             makeRoom(id: "room-1", participants: ["me@example.com"], lastMessageAt: Date(timeIntervalSince1970: 100)),
             makeRoom(id: "room-2", participants: ["me@example.com"], isClosed: true),
             makeRoom(id: "room-3", participants: ["other@example.com"], lastMessageAt: Date(timeIntervalSince1970: 150)),
-            makeRoom(id: nil, participants: ["me@example.com"]),
+            makeRoom(id: "", participants: ["me@example.com"]),
             makeRoom(id: "room-4", participants: [" ME@EXAMPLE.COM "], lastMessageAt: Date(timeIntervalSince1970: 200))
         ])
         let useCase = LoadShareableJoinedRoomsUseCase(
@@ -27,7 +27,7 @@ struct LookbookChatShareUseCaseTests {
         let rooms = try await useCase.execute(limit: 20)
 
         #expect(fake.requestedHeadLimits == [20])
-        #expect(rooms.map { $0.ID ?? "" } == ["room-4", "room-3", "room-1"])
+        #expect(rooms.map(\.id) == ["room-4", "room-3", "room-1"])
     }
 
     @Test func loadShareableJoinedRoomsDoesNotTrustLegacyParticipantArray() async throws {
@@ -42,7 +42,7 @@ struct LookbookChatShareUseCaseTests {
 
         let rooms = try await useCase.execute(limit: 20)
 
-        #expect(rooms.map { $0.ID ?? "" } == ["room-legacy-empty", "room-legacy-stale"])
+        #expect(rooms.map(\.id) == ["room-legacy-empty", "room-legacy-stale"])
     }
 
     @Test func shareLookbookContentSendsThroughRepository() async throws {
@@ -61,7 +61,7 @@ struct LookbookChatShareUseCaseTests {
         #expect(repository.calls.count == 1)
         #expect(repository.calls.first?.sharedContent == content)
         #expect(repository.calls.first?.messageText == nil)
-        #expect(repository.calls.first?.room.ID == "room-1")
+        #expect(repository.calls.first?.room.id == "room-1")
     }
 
     @Test func shareLookbookContentForwardsOptionalMessageText() async throws {
@@ -283,13 +283,13 @@ struct LookbookChatShareUseCaseTests {
     }
 
     private func makeRoom(
-        id: String?,
+        id: String,
         participants: [String],
         isClosed: Bool = false,
         lastMessageAt: Date? = nil
     ) -> ChatRoom {
         ChatRoom(
-            ID: id,
+            id: id,
             roomName: "Test Room",
             roomDescription: "Test Description",
             participants: participants,
@@ -523,7 +523,7 @@ private final class JoinedRoomsUseCaseFake: JoinedRoomsUseCaseProtocol {
         }
         let source = limit.map { Array(rooms.prefix($0)) } ?? rooms
         return source.enumerated().map { index, room in
-            let projectionRoomID = room.ID ?? "missing-room-\(index)"
+            let projectionRoomID = room.id.isEmpty ? "missing-room-\(index)" : room.id
             return JoinedRoomListItem(
                 room: room,
                 projection: JoinedRoomProjection(
@@ -556,7 +556,7 @@ private final class JoinedRoomsUseCaseFake: JoinedRoomsUseCaseProtocol {
     }
 
     func leave(room: ChatRoom) async throws -> ChatRoomExitResult {
-        ChatRoomExitResult(roomID: room.ID ?? "", mode: .left)
+        ChatRoomExitResult(roomID: room.id, mode: .left)
     }
 }
 

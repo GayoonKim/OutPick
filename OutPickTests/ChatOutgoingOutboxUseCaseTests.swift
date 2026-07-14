@@ -98,7 +98,7 @@ struct ChatOutgoingOutboxUseCaseTests {
 
     private func makeRoom() -> ChatRoom {
         ChatRoom(
-            ID: "room-1",
+            id: "room-1",
             roomName: "Test Room",
             roomDescription: "Test Description",
             participants: ["me@example.com"],

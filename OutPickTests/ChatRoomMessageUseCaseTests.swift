@@ -39,7 +39,7 @@ struct ChatRoomMessageUseCaseTests {
         let useCase = makeUseCase()
 
         #expect(useCase.makeTextMessage(text: "   ", replyPreview: nil, room: makeRoom(id: "room-1")) == nil)
-        #expect(useCase.makeTextMessage(text: "안녕", replyPreview: nil, room: makeRoom(id: nil)) == nil)
+        #expect(useCase.makeTextMessage(text: "안녕", replyPreview: nil, room: makeRoom(id: "")) == nil)
         #expect(useCase.makeTextMessage(text: "안녕", replyPreview: nil, room: makeRoom(id: "   ")) == nil)
     }
 
@@ -53,7 +53,7 @@ struct ChatRoomMessageUseCaseTests {
 
         #expect(repository.calls.count == 1)
         #expect(repository.calls.first?.message.ID == "message-1")
-        #expect(repository.calls.first?.room.ID == "room-1")
+        #expect(repository.calls.first?.room.id == "room-1")
     }
 
     @Test func deleteMessageUpdatesDeletedLastMessageSummaryWhenMessageHasSeq() async throws {
@@ -113,9 +113,9 @@ struct ChatRoomMessageUseCaseTests {
         )
     }
 
-    private func makeRoom(id: String?) -> ChatRoom {
+    private func makeRoom(id: String) -> ChatRoom {
         ChatRoom(
-            ID: id,
+            id: id,
             roomName: "Test Room",
             roomDescription: "Test Description",
             participants: ["me@example.com"],

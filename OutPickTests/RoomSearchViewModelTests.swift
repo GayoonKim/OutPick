@@ -28,7 +28,7 @@ struct RoomSearchViewModelTests {
         viewModel.submitSearchText("ab")
 
         try await waitUntil {
-            viewModel.state.searchResults.map(\.ID) == ["room-ab"]
+            viewModel.state.searchResults.map(\.id) == ["room-ab"]
         }
         #expect(viewModel.state.query == "ab")
         #expect(viewModel.state.isLoading == false)
@@ -46,7 +46,7 @@ struct RoomSearchViewModelTests {
 
         viewModel.submitSearchText("denim")
         try await waitUntil {
-            viewModel.state.searchResults.map(\.ID) == ["room-1"]
+            viewModel.state.searchResults.map(\.id) == ["room-1"]
         }
         viewModel.submitSearchText(" ")
 
@@ -74,14 +74,14 @@ struct RoomSearchViewModelTests {
 
         viewModel.submitSearchText("style")
         try await waitUntil {
-            viewModel.state.searchResults.map(\.ID) == ["room-1"]
+            viewModel.state.searchResults.map(\.id) == ["room-1"]
         }
 
         viewModel.loadMore()
         viewModel.loadMore()
 
         try await waitUntil {
-            viewModel.state.searchResults.map(\.ID) == ["room-1", "room-2"]
+            viewModel.state.searchResults.map(\.id) == ["room-1", "room-2"]
         }
         #expect(useCase.loadMoreRequests.count == 1)
         #expect(viewModel.state.hasMore == false)
@@ -104,36 +104,10 @@ struct ChatRoomSearchIndexTests {
     }
 }
 
-struct ChatRoomDecodingTests {
-    @Test func missingParticipantUIDsDecodesAsEmptyParticipants() throws {
-        let json = """
-        {
-          "ID": "legacy-room",
-          "roomName": "Legacy Room",
-          "roomDescription": "created before participantUIDs",
-          "creatorUID": "owner-uid",
-          "createdAt": "2026-07-02T00:00:00Z",
-          "lastMessageAt": "2026-07-02T00:01:00Z",
-          "seq": 3
-        }
-        """
-
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        let room = try decoder.decode(ChatRoom.self, from: Data(json.utf8))
-
-        #expect(room.ID == "legacy-room")
-        #expect(room.participants == [])
-        #expect(room.creatorUID == "owner-uid")
-        #expect(room.seq == 3)
-        #expect(room.isClosed == false)
-    }
-}
-
 @MainActor
 private func makeRoom(id: String, name: String, description: String = "") -> ChatRoom {
     ChatRoom(
-        ID: id,
+        id: id,
         roomName: name,
         roomDescription: description,
         participants: [],

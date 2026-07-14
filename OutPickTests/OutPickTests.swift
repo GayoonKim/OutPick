@@ -220,7 +220,7 @@ private final class RemoteMediaRepositoryStub: RemoteChatRoomMediaIndexRepositor
 
 private func makeRoom(id: String) -> ChatRoom {
     ChatRoom(
-        ID: id,
+        id: id,
         roomName: "Test Room",
         roomDescription: "Test Description",
         participants: [],

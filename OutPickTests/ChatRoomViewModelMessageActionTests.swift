@@ -34,7 +34,7 @@ struct ChatRoomViewModelMessageActionTests {
         try await viewModel.performMessageServerAction(.delete, for: message)
 
         #expect(messageUseCase.deletedMessages.map(\.ID) == ["message-1"])
-        #expect(messageUseCase.deletedRooms.map(\.ID) == ["room-1"])
+        #expect(messageUseCase.deletedRooms.map(\.id) == ["room-1"])
     }
 
     @Test func performAnnounceServerActionDelegatesToLifecycleUseCase() async throws {
@@ -119,9 +119,9 @@ struct ChatRoomViewModelMessageActionTests {
         )
     }
 
-    private func makeRoom(id: String?, creatorUID: String) -> ChatRoom {
+    private func makeRoom(id: String, creatorUID: String) -> ChatRoom {
         ChatRoom(
-            ID: id,
+            id: id,
             roomName: "Test Room",
             roomDescription: "Test Description",
             participants: ["me-uid", "sender-uid"],

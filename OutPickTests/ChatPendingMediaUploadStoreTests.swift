@@ -204,9 +204,9 @@ struct ChatPendingMediaUploadStoreTests {
         )
     }
 
-    private func makeRoom(id: String?) -> ChatRoom {
+    private func makeRoom(id: String) -> ChatRoom {
         ChatRoom(
-            ID: id,
+            id: id,
             roomName: "Test Room",
             roomDescription: "Test Description",
             participants: ["me@example.com"],
