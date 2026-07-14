@@ -29,7 +29,7 @@ final class FirebaseAnnouncementRepository: FirebaseAnnouncementRepositoryProtoc
         }
         
         if let payload = payload {
-            update["activeAnnouncement"] = payload.toDictionary()
+            update["activeAnnouncement"] = ChatRoomFirestoreMapper.announcementData(payload)
             update["announcementUpdatedAt"] = Timestamp(date: payload.createdAt)
         } else {
             update["activeAnnouncement"] = FieldValue.delete()
@@ -44,7 +44,8 @@ final class FirebaseAnnouncementRepository: FirebaseAnnouncementRepositoryProtoc
     func setActiveAnnouncement(room: ChatRoom,
                                messageID: String?,
                                payload: AnnouncementPayload?) async throws {
-        guard let roomID = room.ID else { throw FirebaseError.FailedToFetchRoom }
+        let roomID = room.id
+        guard !roomID.isEmpty else { throw FirebaseError.FailedToFetchRoom }
         try await setActiveAnnouncement(roomID: roomID, messageID: messageID, payload: payload)
     }
     
@@ -63,9 +64,8 @@ final class FirebaseAnnouncementRepository: FirebaseAnnouncementRepositoryProtoc
     
     @MainActor
     func clearActiveAnnouncement(room: ChatRoom) async throws {
-        guard let roomID = room.ID else { throw FirebaseError.FailedToFetchRoom }
+        let roomID = room.id
+        guard !roomID.isEmpty else { throw FirebaseError.FailedToFetchRoom }
         try await clearActiveAnnouncement(roomID: roomID)
     }
 }
-
-

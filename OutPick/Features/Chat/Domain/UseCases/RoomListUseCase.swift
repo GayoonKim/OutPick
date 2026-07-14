@@ -12,11 +12,11 @@ struct ChatRoomPreviewItem: Hashable {
     let messages: [ChatMessage]
 
     func hash(into hasher: inout Hasher) {
-        hasher.combine(room.ID)
+        hasher.combine(room.id)
     }
 
     static func == (lhs: ChatRoomPreviewItem, rhs: ChatRoomPreviewItem) -> Bool {
-        lhs.room.ID == rhs.room.ID
+        lhs.room.id == rhs.room.id
     }
 }
 

@@ -192,7 +192,10 @@ final class FirestoreCommentRepository: CommentRepositoryProtocol {
         try documents
             .map { document in
                 let dto: CommentDTO = try FirestoreMapper.mapDocument(document)
-                return try dto.toDomain(postID: postID)
+                return try dto.toDomain(
+                    documentID: document.documentID,
+                    postID: postID
+                )
             }
             .filter { $0.isDeleted == false }
     }

@@ -53,7 +53,7 @@ final class LookbookChatShareViewModel: ObservableObject {
 
     var selectedRoom: ChatRoom? {
         guard let selectedRoomID else { return nil }
-        return rooms.first { $0.ID == selectedRoomID }
+        return rooms.first { $0.id == selectedRoomID }
     }
 
     var canSend: Bool {

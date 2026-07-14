@@ -9,19 +9,17 @@ import Foundation
 import FirebaseFirestore
 
 /// Firestore tagAliases 문서 ↔︎ Domain 변환 DTO
-struct TagAliasDTO: Codable {
-    @DocumentID var id: String?
-
+struct TagAliasDTO: Decodable {
     let raw: String
     let displayName: String
     let conceptId: String
     let createdAt: Timestamp?
     let updatedAt: Timestamp?
 
-    func toDomain() throws -> TagAlias {
-        guard let id else { throw MappingError.missingDocumentID }
+    func toDomain(documentID: String) throws -> TagAlias {
+        guard !documentID.isEmpty else { throw MappingError.missingDocumentID }
         return TagAlias(
-            id: id,
+            id: documentID,
             raw: raw,
             displayName: displayName,
             conceptId: conceptId

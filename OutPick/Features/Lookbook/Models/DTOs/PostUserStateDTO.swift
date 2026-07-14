@@ -8,9 +8,7 @@
 import Foundation
 import FirebaseFirestore
 
-struct PostUserStateDTO: Codable {
-    @DocumentID var id: String?
-
+struct PostUserStateDTO: Decodable {
     /// 보통 `users/{userId}/postStates/{postId}` 구조라서 userID/postID는 경로로 주입하는 편이 깔끔합니다.
     let brandID: String?
     let seasonID: String?

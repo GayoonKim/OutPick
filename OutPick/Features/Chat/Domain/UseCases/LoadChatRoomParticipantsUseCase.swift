@@ -43,13 +43,13 @@ final class LoadChatRoomParticipantsUseCase: LoadChatRoomParticipantsUseCaseProt
     }
 
     func loadLocalInitial(room: ChatRoom) throws -> ChatRoomParticipantsLoadResult {
-        let roomID = normalizedID(room.ID ?? "")
+        let roomID = normalizedID(room.id)
         resetState(for: roomID)
         return ChatRoomParticipantsLoadResult(users: [], hasMore: !roomID.isEmpty)
     }
 
     func reconcileInitial(room: ChatRoom) async throws -> ChatRoomParticipantsLoadResult {
-        let roomID = normalizedID(room.ID ?? "")
+        let roomID = normalizedID(room.id)
         resetState(for: roomID)
         guard !roomID.isEmpty else {
             return ChatRoomParticipantsLoadResult(users: [], hasMore: false)
@@ -59,7 +59,7 @@ final class LoadChatRoomParticipantsUseCase: LoadChatRoomParticipantsUseCaseProt
     }
 
     func loadMore(room: ChatRoom) async throws -> ChatRoomParticipantsLoadResult {
-        let roomID = normalizedID(room.ID ?? "")
+        let roomID = normalizedID(room.id)
         guard !roomID.isEmpty else {
             resetState(for: roomID)
             return ChatRoomParticipantsLoadResult(users: [], hasMore: false)

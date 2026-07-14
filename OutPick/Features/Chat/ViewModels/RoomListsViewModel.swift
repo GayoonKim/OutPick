@@ -65,7 +65,7 @@ final class RoomListsViewModel {
     func removeLocalRoom(roomID: String) {
         guard !roomID.isEmpty else { return }
         useCase.removeCachedRoom(roomID: roomID)
-        state.rooms.removeAll { $0.room.ID == roomID }
+        state.rooms.removeAll { $0.room.id == roomID }
     }
 
     func notifyCurrentState() {

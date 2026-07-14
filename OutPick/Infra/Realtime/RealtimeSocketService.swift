@@ -358,7 +358,7 @@ actor RealtimeSocketService {
                 if ChatMessageEmitAckMapper.isSuccess(ackResponse) {
                     Task {
                         await self?.updateRoomSummaryAfterSend(
-                            roomID: room.ID ?? "",
+                            roomID: room.id,
                             sentAt: message.sentAt ?? Date(),
                             preview: message.msg ?? ""
                         )
@@ -413,7 +413,7 @@ actor RealtimeSocketService {
             throw makeSocketError(code: -1009, message: "소켓이 연결되어 있지 않습니다.")
         }
 
-        let roomID = room.ID ?? ""
+        let roomID = room.id
         let senderUID = identity?.uid ?? ""
         let senderEmail = identity?.email ?? ""
         let senderNickname = identity?.nickname ?? ""

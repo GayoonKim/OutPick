@@ -21,7 +21,6 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
     private var currentSearchKeyword: String = ""
     
     // 작업 관리
-    private var addRoomParticipantTask: Task<Void, Error>?
     private var removeParticipantTask: Task<Void, Never>?
     
     init(db: Firestore) {
@@ -29,13 +28,12 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
     }
     
     deinit {
-        addRoomParticipantTask?.cancel()
         removeParticipantTask?.cancel()
     }
     
     func applyLocalRoomUpdate(_ updatedRoom: ChatRoom) {
-        guard let rid = updatedRoom.ID, !rid.isEmpty else { return }
-        if let idx = topRoomsWithPreviews.firstIndex(where: { $0.0.ID == rid }) {
+        guard !updatedRoom.id.isEmpty else { return }
+        if let idx = topRoomsWithPreviews.firstIndex(where: { $0.0.id == updatedRoom.id }) {
             let previews = topRoomsWithPreviews[idx].1
             topRoomsWithPreviews[idx] = (updatedRoom, previews)
         }
@@ -44,7 +42,7 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
 
     func removeLocalRoom(roomID: String) {
         guard !roomID.isEmpty else { return }
-        topRoomsWithPreviews.removeAll { $0.0.ID == roomID }
+        topRoomsWithPreviews.removeAll { $0.0.id == roomID }
         previewByRoomID.removeValue(forKey: roomID)
     }
 
@@ -57,7 +55,7 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
         let nextPreviews = Array((withoutDuplicate + [message]).suffix(3))
         previewByRoomID[roomID] = nextPreviews
 
-        guard let index = topRoomsWithPreviews.firstIndex(where: { $0.0.ID == roomID }) else { return }
+        guard let index = topRoomsWithPreviews.firstIndex(where: { $0.0.id == roomID }) else { return }
         var room = topRoomsWithPreviews[index].0
         if message.seq > room.seq {
             room.seq = message.seq
@@ -94,7 +92,8 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
         // 각 방의 최근 메시지 3개 동시 로드
         let previewsByRoomID: [String: [ChatMessage]] = await withTaskGroup(of: (String, [ChatMessage]).self) { group in
             for r in rooms {
-                guard let rid = r.ID, !rid.isEmpty else { continue }
+                let rid = r.id
+                guard !rid.isEmpty else { continue }
                 group.addTask { [weak self] in
                     guard let self = self else { return ("", []) }
                     let msgs = await self.fetchPreviewMessages(roomID: rid, limit: 3)
@@ -112,7 +111,7 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
         
         self.previewByRoomID = previewsByRoomID
         self.topRoomsWithPreviews = rooms.map { room in
-            let rid = room.ID ?? ""
+            let rid = room.id
             let previews = previewsByRoomID[rid] ?? []
             return (room, previews)
         }
@@ -282,40 +281,59 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
         )
     }
     
-    func getRoomDoc(room: ChatRoom) async throws -> DocumentSnapshot? {
-        let roomRef = db.collection("Rooms").document(room.ID ?? "")
-        let room_snapshot = try await roomRef.getDocument()
-        
-        guard room_snapshot.exists else {
-            print("방 문서 불러오기 실패")
-            return nil
-        }
-        
-        return room_snapshot
-    }
-    
-    func saveRoomInfoToFirestore(room: ChatRoom) async throws {
-        guard let roomID = room.ID, !roomID.isEmpty else {
-            print("❌ saveRoomInfoToFirestore: room.ID is nil/empty")
+    func createRoom(input: CreateChatRoomInput) async throws -> ChatRoom {
+        let creatorUID = input.creatorUID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let roomName = input.roomName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !roomName.isEmpty,
+              !creatorUID.isEmpty,
+              !creatorUID.contains("/") else {
             throw FirebaseError.FailedToFetchRoom
         }
-        
+
+        let roomID = db.collection("Rooms").document().documentID
         let roomRef = db.collection("Rooms").document(roomID)
-        
+        let memberRef = roomRef.collection("members").document(creatorUID)
+        let joinedRoomRef = db.collection("users")
+            .document(creatorUID)
+            .collection("joinedRooms")
+            .document(roomID)
+        let room = ChatRoom(
+            id: roomID,
+            roomName: input.roomName,
+            roomDescription: input.roomDescription,
+            participants: [creatorUID],
+            creatorUID: creatorUID,
+            createdAt: input.createdAt,
+            lastMessageAt: input.createdAt,
+            memberCount: 1
+        )
+
         do {
             _ = try await db.runTransaction({ (transaction, errorPointer) -> Any? in
-                var roomData = room.toDictionary()
-                roomData.removeValue(forKey: "participantUIDs")
-                roomData["updatedAt"] = FieldValue.serverTimestamp()
-                transaction.setData(roomData, forDocument: roomRef)
+                transaction.setData(
+                    ChatRoomFirestoreMapper.creationData(from: room),
+                    forDocument: roomRef
+                )
+                transaction.setData([
+                    "userID": creatorUID,
+                    "role": "owner",
+                    "joinedAt": FieldValue.serverTimestamp(),
+                    "createdAt": FieldValue.serverTimestamp(),
+                    "updatedAt": FieldValue.serverTimestamp()
+                ], forDocument: memberRef)
+                transaction.setData([
+                    "roomID": roomID,
+                    "role": "owner",
+                    "joinedAt": FieldValue.serverTimestamp(),
+                    "isClosed": false,
+                    "updatedAt": FieldValue.serverTimestamp()
+                ], forDocument: joinedRoomRef)
                 return nil
             })
-            
-            try await addRoomParticipant(room: room)
-            
-            print("✅ saveRoomInfoToFirestore: Firestore 저장 완료 (roomID=\(roomID))")
+
+            return room
         } catch {
-            print("🔥 saveRoomInfoToFirestore 실패: \(error)")
+            print("🔥 createRoom 실패: \(error)")
             throw error
         }
     }
@@ -380,7 +398,7 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
         lastSearchSnapshot = indexedSnapshot.documents.last
         
         let rooms = indexedSnapshot.documents.compactMap { doc -> ChatRoom? in
-            try? doc.data(as: ChatRoom.self)
+            try? createRoom(from: doc)
         }
         .filter { ChatRoomSearchIndex.contains(room: $0, keyword: trimmedKeyword) }
 
@@ -412,11 +430,7 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
         guard !projections.isEmpty else { return [] }
 
         let rooms = try await fetchRoomsWithIDs(byIDs: projections.map(\.roomID))
-        let roomByID = Dictionary(uniqueKeysWithValues: rooms.compactMap { room -> (String, ChatRoom)? in
-            guard let roomID = room.ID?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !roomID.isEmpty else { return nil }
-            return (roomID, room)
-        })
+        let roomByID = Dictionary(uniqueKeysWithValues: rooms.map { ($0.id, $0) })
 
         return projections.compactMap { projection in
             guard let room = roomByID[projection.roomID] else { return nil }
@@ -465,7 +479,7 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
 
     @MainActor
     func updateRoomInfo(room: ChatRoom, newImagePath: String, roomName: String, roomDescription: String) async throws {
-        guard let roomDoc = try await getRoomDoc(room: room) else {
+        guard !room.id.isEmpty else {
             throw FirebaseError.FailedToFetchRoom
         }
         
@@ -475,7 +489,7 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
         updateData["roomDescription"] = roomDescription
         updateData["updatedAt"] = FieldValue.serverTimestamp()
         
-        try await roomDoc.reference.updateData(updateData)
+        try await db.collection("Rooms").document(room.id).updateData(updateData)
     }
 
     private func updateRoomDocument(roomID: String, data: [String: Any]) async throws {
@@ -511,59 +525,6 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
                 continuation.resume(returning: isDuplicate)
             }
         }
-    }
-    
-    func addRoomParticipant(room: ChatRoom) async throws {
-        addRoomParticipantTask?.cancel()
-        let task = Task { [weak self] in
-            guard let self else { return }
-            guard let roomDoc = try await self.getRoomDoc(room: room) else { return }
-            guard let roomID = room.ID, !roomID.isEmpty else {
-                throw FirebaseError.FailedToFetchRoom
-            }
-
-            let canonicalUserID = LoginManager.shared.canonicalUserID
-            let memberRef = roomDoc.reference.collection("members").document(canonicalUserID)
-            let joinedRoomRef = try self.currentUserJoinedRoomRef(roomID: roomID)
-
-            _ = try await self.db.runTransaction({ (transaction, errorPointer) -> Any? in
-                do {
-                    let joinedRoomSnap = try transaction.getDocument(joinedRoomRef)
-                    let role = room.creatorUID == canonicalUserID ? "owner" : "member"
-
-                    transaction.setData([
-                        "userID": canonicalUserID,
-                        "role": role,
-                        "joinedAt": FieldValue.serverTimestamp(),
-                        "createdAt": FieldValue.serverTimestamp(),
-                        "updatedAt": FieldValue.serverTimestamp()
-                    ], forDocument: memberRef)
-                    if joinedRoomSnap.exists == false {
-                        transaction.setData([
-                            "roomID": roomID,
-                            "role": role,
-                            "joinedAt": FieldValue.serverTimestamp(),
-                            "isClosed": room.isClosed,
-                            "updatedAt": FieldValue.serverTimestamp()
-                        ], forDocument: joinedRoomRef)
-                    }
-                } catch {
-                    errorPointer?.pointee = error as NSError
-                }
-                return nil
-            })
-        }
-        addRoomParticipantTask = task
-        defer { addRoomParticipantTask = nil }
-
-        do {
-            try await task.value
-            print(#function, "참여자 업데이트 성공")
-        } catch {
-            print(#function, "방 참여자 업데이트 트랜젝션 실패: \(error)")
-            throw error
-        }
-
     }
     
     func addRoomParticipantReturningRoom(roomID: String) async throws -> ChatRoom {
@@ -629,7 +590,8 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
         removeParticipantTask?.cancel()
         removeParticipantTask = Task {
             do {
-                guard let roomID = room.ID, !roomID.isEmpty else {
+                let roomID = room.id
+                guard !roomID.isEmpty else {
                     print("⚠️ removeParticipant: roomID 없음")
                     return
                 }
@@ -702,7 +664,8 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
     // MARK: - Private Helpers
     private func createRoom(from document: DocumentSnapshot) throws -> ChatRoom {
         do {
-            return try document.data(as: ChatRoom.self)
+            let dto = try document.data(as: ChatRoomFirestoreDTO.self)
+            return try ChatRoomFirestoreMapper.map(dto: dto, documentID: document.documentID)
         } catch {
             print("채팅방 디코딩 실패: \(error), docID: \(document.documentID)")
             throw FirebaseError.FailedToParseRoomData

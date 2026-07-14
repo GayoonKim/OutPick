@@ -91,7 +91,7 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
     private func syncRoomImages(for rooms: [ChatRoom]) async {
         let roomIDsWithoutImage = Set(
             rooms.compactMap { room -> String? in
-                guard let roomID = room.ID else { return nil }
+                let roomID = room.id
                 return room.coverImagePath == nil ? roomID : nil
             }
         )
@@ -101,8 +101,8 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
         }
 
         let pairs: [(String, String)] = rooms.compactMap { room in
-            guard let roomID = room.ID,
-                  let imagePath = room.coverImagePath else { return nil }
+            guard let imagePath = room.coverImagePath else { return nil }
+            let roomID = room.id
             return (roomID, imagePath)
         }
         let roomImageManager = self.roomImageManager
@@ -154,8 +154,8 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
     private func configureDataSource() {
         dataSource = DataSourceType(collectionView: joinedRoomListCollectionView) { [weak self] (collectionView, indexPath, room) -> UICollectionViewCell? in
             guard let cell = collectionView.dequeueReusableCell(withReuseIdentifier: JoinedRoomCell.reuseID, for: indexPath) as? JoinedRoomCell else { return UICollectionViewCell() }
-            guard let self = self,
-                  let roomID = room.ID else { return cell }
+            guard let self = self else { return cell }
+            let roomID = room.id
             
             cell.configure(
                 title: room.roomName,
@@ -241,7 +241,7 @@ extension JoinedRoomsViewController: UICollectionViewDelegate {
     }
 
     func collectionView(_ collectionView: UICollectionView, trailingSwipeActionsConfigurationForItemAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {
-        guard let room = dataSource.itemIdentifier(for: indexPath), room.ID != nil else { return nil }
+        guard let room = dataSource.itemIdentifier(for: indexPath) else { return nil }
         let leave = UIContextualAction(style: .destructive, title: "나가기") { [weak self] _, _, completion in
             guard let self else {
                 completion(false)

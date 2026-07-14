@@ -8,7 +8,7 @@
 import Foundation
 import FirebaseFirestore
 
-struct CommentAttachmentDTO: Codable {
+struct CommentAttachmentDTO: Decodable {
     let id: String?
     let type: String
     let remoteURL: String?
@@ -65,9 +65,7 @@ struct CommentAttachmentDTO: Codable {
     }
 }
 
-struct CommentDTO: Codable {
-    @DocumentID var id: String?
-
+struct CommentDTO: Decodable {
     /// comments가 `posts/{postId}/comments/{commentId}`라면 postID는 경로에서 주입 추천
     let postID: String?
 
@@ -85,15 +83,15 @@ struct CommentDTO: Codable {
     let parentCommentID: String?
     let attachments: [CommentAttachmentDTO]?
 
-    func toDomain(postID: PostID) throws -> Comment {
-        guard let id else { throw MappingError.missingDocumentID }
+    func toDomain(documentID: String, postID: PostID) throws -> Comment {
+        guard !documentID.isEmpty else { throw MappingError.missingDocumentID }
         guard let authorID = normalizedUserID else {
             throw MappingError.missingRequiredField("userID")
         }
         let domainAttachments = try (attachments ?? []).map { try $0.toDomain() }
 
         return Comment(
-            id: CommentID(value: id),
+            id: CommentID(value: documentID),
             postID: postID,
             userID: UserID(value: authorID),
             message: message,
@@ -110,11 +108,14 @@ struct CommentDTO: Codable {
     }
 
     /// 선택: 문서에 postID가 포함된 경우
-    func toDomainFromEmbeddedPostID() throws -> Comment {
+    func toDomainFromEmbeddedPostID(documentID: String) throws -> Comment {
         guard let embeddedPostID = postID, !embeddedPostID.isEmpty else {
             throw MappingError.missingRequiredField("postID")
         }
-        return try toDomain(postID: PostID(value: embeddedPostID))
+        return try toDomain(
+            documentID: documentID,
+            postID: PostID(value: embeddedPostID)
+        )
     }
 
     private var normalizedUserID: String? {

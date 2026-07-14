@@ -380,7 +380,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         stopRoomMessageStream()
         
         if let room = self.room {
-            if ChatViewController.currentRoomID == room.ID {
+            if ChatViewController.currentRoomID == room.id {
                 ChatViewController.currentRoomID = nil    // ✅ 나갈 때 초기화
             }
         }
@@ -401,7 +401,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         // 참여하지 않은 방이면 로컬 메시지 삭제 처리 (메인 바깥에서 비동기 실행)
         if let room = self.room,
            !chatRoomViewModel.isCurrentUserParticipant(in: room) {
-            let roomID = room.ID ?? ""
+            let roomID = room.id
             Task(priority: .utility) { [chatRoomViewModel] in
                 await chatRoomViewModel.cleanTransientLocalRoomData(roomID: roomID)
             }
@@ -532,7 +532,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private func scheduleInitialMediaWarmup(for messages: [ChatMessage], maxConcurrent: Int) {
         guard !messages.isEmpty else { return }
         let concurrency = max(1, maxConcurrent)
-        let roomID = room?.ID ?? ""
+        let roomID = room?.id ?? ""
         let thumbnailMessages = messages.filter {
             $0.hasDisplayableAttachments
         }
@@ -652,7 +652,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     @MainActor
     private func bindMessagePublishers() {
         guard let room = self.room else { return }
-        let roomID = room.ID ?? ""
+        let roomID = room.id
         guard !roomID.isEmpty else { return }
 
         // Prevent duplicate subscriptions for the same room on repeated UI setup/binding paths.
@@ -1219,7 +1219,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
         
         if let room = self.room {
-            ChatViewController.currentRoomID = room.ID
+            ChatViewController.currentRoomID = room.id
         } // ✅ 현재 방 ID 저장
         pruneRoomCreateFromNavStackIfNeeded()
     }
@@ -1312,7 +1312,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     @MainActor
     func isCurrentRoom(roomID: String) -> Bool {
-        room?.ID == roomID
+        room?.id == roomID
     }
 
     @MainActor
@@ -2149,17 +2149,17 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         case .uploadImages(let room, let messageID, let pairs):
             _ = pendingMediaUploadStore.stageImageUpload(
                 room: room,
-                roomID: room.ID ?? "",
+                roomID: room.id,
                 messageID: messageID,
                 pairs: pairs
             )
             setPendingImageUploadState(.uploading(0), for: messageID)
-            schedulePendingImageUpload(room: room, roomID: room.ID ?? "", messageID: messageID, pairs: pairs)
+            schedulePendingImageUpload(room: room, roomID: room.id, messageID: messageID, pairs: pairs)
 
         case .finalizeImages(let room, let messageID, let attachments):
             _ = pendingMediaUploadStore.stageUploadedImageFinalize(
                 room: room,
-                roomID: room.ID ?? "",
+                roomID: room.id,
                 messageID: messageID,
                 attachments: attachments
             )
@@ -3042,9 +3042,9 @@ extension ChatViewController: UICollectionViewDelegate {
 extension ChatViewController: UICollectionViewDataSourcePrefetching {
     func collectionView(_ collectionView: UICollectionView, prefetchItemsAt indexPaths: [IndexPath]) {
         guard collectionView === chatMessageCollectionView else { return }
-//        guard let roomID = room?.ID, !roomID.isEmpty else { return }
+//        guard let roomID = room?.id, !roomID.isEmpty else { return }
 
-        let roomID = room?.ID ?? ""
+        let roomID = room?.id ?? ""
 
         guard !roomID.isEmpty else { return }
 

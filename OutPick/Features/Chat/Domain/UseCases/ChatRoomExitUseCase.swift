@@ -39,8 +39,8 @@ final class ChatRoomExitUseCase: ChatRoomExitUseCaseProtocol {
     }
 
     func leaveOrClose(room: ChatRoom) async throws -> ChatRoomExitResult {
-        guard let roomID = room.ID?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !roomID.isEmpty else {
+        let roomID = room.id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !roomID.isEmpty else {
             throw ChatRoomExitError.missingRoomID
         }
 

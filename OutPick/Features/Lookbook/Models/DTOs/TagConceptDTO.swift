@@ -9,15 +9,13 @@ import Foundation
 import FirebaseFirestore
 
 /// Firestore tagConcepts 문서 ↔︎ Domain 변환 DTO
-struct TagConceptDTO: Codable {
-    @DocumentID var id: String?
-
+struct TagConceptDTO: Decodable {
     let displayName: String
     let createdAt: Timestamp?
     let updatedAt: Timestamp?
 
-    func toDomain() throws -> TagConcept {
-        guard let id else { throw MappingError.missingDocumentID }
-        return TagConcept(id: id, displayName: displayName)
+    func toDomain(documentID: String) throws -> TagConcept {
+        guard !documentID.isEmpty else { throw MappingError.missingDocumentID }
+        return TagConcept(id: documentID, displayName: displayName)
     }
 }

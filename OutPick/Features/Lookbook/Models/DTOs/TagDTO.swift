@@ -8,17 +8,15 @@
 import Foundation
 import FirebaseFirestore
 
-struct TagDTO: Codable {
-    @DocumentID var id: String?
-
+struct TagDTO: Decodable {
     let name: String
     let normalized: String?
 
-    func toDomain() throws -> Tag {
-        guard let id else { throw MappingError.missingDocumentID }
+    func toDomain(documentID: String) throws -> Tag {
+        guard !documentID.isEmpty else { throw MappingError.missingDocumentID }
 
         return Tag(
-            id: TagID(value: id),
+            id: TagID(value: documentID),
             name: name,
             normalized: normalized
         )

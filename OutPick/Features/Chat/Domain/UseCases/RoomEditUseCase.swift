@@ -56,7 +56,8 @@ final class RoomEditUseCase: RoomEditUseCaseProtocol {
         roomName: String,
         roomDescription: String
     ) async throws -> ChatRoom {
-        guard let roomID = room.ID, !roomID.isEmpty else {
+        let roomID = room.id
+        guard !roomID.isEmpty else {
             throw FirebaseError.FailedToFetchRoom
         }
 

@@ -22,7 +22,7 @@ final class FirestoreTagRepository: TagRepositoryProtocol {
             .getDocument()
 
         let dto: TagDTO = try FirestoreMapper.mapDocument(doc)
-        return try dto.toDomain()
+        return try dto.toDomain(documentID: doc.documentID)
     }
 
     /// 여러 태그를 한 번에 조회(참고: Firestore whereIn은 10개 제한)
@@ -40,8 +40,11 @@ final class FirestoreTagRepository: TagRepositoryProtocol {
                 .whereField(FieldPath.documentID(), in: ids)
                 .getDocuments()
 
-            let dtos: [TagDTO] = try snap.documents.map { try FirestoreMapper.mapDocument($0) }
-            results.append(contentsOf: try dtos.map { try $0.toDomain() })
+            let tags = try snap.documents.map { document in
+                let dto: TagDTO = try FirestoreMapper.mapDocument(document)
+                return try dto.toDomain(documentID: document.documentID)
+            }
+            results.append(contentsOf: tags)
         }
 
         // 한국어 주석: 요청 순서 보존
@@ -64,7 +67,9 @@ final class FirestoreTagRepository: TagRepositoryProtocol {
             .limit(to: limit)
             .getDocuments()
 
-        let dtos: [TagDTO] = try snap.documents.map { try FirestoreMapper.mapDocument($0) }
-        return try dtos.map { try $0.toDomain() }
+        return try snap.documents.map { document in
+            let dto: TagDTO = try FirestoreMapper.mapDocument(document)
+            return try dto.toDomain(documentID: document.documentID)
+        }
     }
 }

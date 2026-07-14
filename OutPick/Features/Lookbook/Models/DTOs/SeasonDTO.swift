@@ -10,9 +10,7 @@ import FirebaseFirestore
 
 /// Firestore Season 문서 ↔︎ Domain Season 변환용 DTO
 /// - Note: 시즌 문서는 보통 `brands/{brandId}/seasons/{seasonId}` 경로에 있으므로 `brandID`는 "경로에서 주입"을 권장합니다.
-struct SeasonDTO: Codable {
-    @DocumentID var id: String?
-
+struct SeasonDTO: Decodable {
     let displayTitle: String
     let sourceTitle: String?
     let year: Int?
@@ -67,8 +65,8 @@ struct SeasonDTO: Codable {
     let createdAt: Timestamp?
     let updatedAt: Timestamp?
 
-    func toDomain(brandID: BrandID) throws -> Season {
-        guard let id else { throw MappingError.missingDocumentID }
+    func toDomain(documentID: String, brandID: BrandID) throws -> Season {
+        guard !documentID.isEmpty else { throw MappingError.missingDocumentID }
         let trimmedDisplayTitle = displayTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedDisplayTitle.isEmpty else {
             throw MappingError.missingRequiredField("displayTitle")
@@ -77,7 +75,7 @@ struct SeasonDTO: Codable {
         let domainTagIDs: [TagID] = (tagIDs ?? []).map { TagID(value: $0) }
 
         return Season(
-            id: SeasonID(value: id),
+            id: SeasonID(value: documentID),
             brandID: brandID,
             displayTitle: trimmedDisplayTitle,
             sourceTitle: sourceTitle,
@@ -100,36 +98,6 @@ struct SeasonDTO: Codable {
             likeCount: max(0, likeCount ?? 0),
             createdAt: createdAt?.dateValue() ?? Date(timeIntervalSince1970: 0),
             updatedAt: updatedAt?.dateValue() ?? Date(timeIntervalSince1970: 0)
-        )
-    }
-}
-
-// MARK: - Domain -> DTO
-extension SeasonDTO {
-    static func fromDomain(_ season: Season) -> SeasonDTO {
-        SeasonDTO(
-            id: season.id.value,
-            displayTitle: season.displayTitle,
-            sourceTitle: season.sourceTitle,
-            year: season.year,
-            term: season.term,
-            coverPath: season.coverPath,
-            coverRemoteURL: season.coverRemoteURL,
-            description: season.description,
-            tagIDs: season.tagIDs.map { $0.value },
-            tagConceptIDs: season.tagConceptIDs,
-            status: season.status,
-            deletionStatus: season.deletionStatus,
-            assetSyncStatus: season.assetSyncStatus,
-            metadataStatus: season.metadataStatus,
-            metadataConfidence: season.metadataConfidence,
-            sourceURL: season.sourceURL,
-            sourceImportJobID: season.sourceImportJobID,
-            sourceSortIndex: season.sourceSortIndex,
-            postCount: season.postCount,
-            likeCount: season.likeCount,
-            createdAt: Timestamp(date: season.createdAt),
-            updatedAt: Timestamp(date: season.updatedAt)
         )
     }
 }

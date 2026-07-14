@@ -48,7 +48,7 @@ final class LoadChatRoomMediaUseCase: LoadChatRoomMediaUseCaseProtocol {
     }
 
     func loadInitial(room: ChatRoom) async throws -> ChatRoomMediaLoadResult {
-        let roomID = room.ID ?? ""
+        let roomID = room.id
         resetState(for: roomID)
 
         try loadInitialLocalBatch(roomID: roomID)
@@ -66,7 +66,7 @@ final class LoadChatRoomMediaUseCase: LoadChatRoomMediaUseCaseProtocol {
     }
 
     func loadMore(room: ChatRoom) async throws -> ChatRoomMediaLoadResult {
-        let roomID = room.ID ?? ""
+        let roomID = room.id
         guard activeRoomID == roomID else {
             return try await loadInitial(room: room)
         }

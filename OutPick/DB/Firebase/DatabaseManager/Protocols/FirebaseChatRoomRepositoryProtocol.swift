@@ -14,8 +14,22 @@ struct RoomMemberPage {
     let hasMore: Bool
 }
 
+/// 채팅방 생성 화면이 요구하는 최소 Repository 계약
+protocol CreateRoomRepositoryProtocol {
+    func checkRoomNameDuplicate(roomName: String) async throws -> Bool
+    func createRoom(input: CreateChatRoomInput) async throws -> ChatRoom
+    func updateRoomMetadataWithImagePaths(
+        roomID: String,
+        roomName: String,
+        roomDescription: String,
+        thumbPath: String,
+        originalPath: String
+    ) async throws
+    func applyLocalRoomUpdate(_ updatedRoom: ChatRoom)
+}
+
 /// 채팅방 관련 데이터베이스 작업을 위한 프로토콜
-protocol FirebaseChatRoomRepositoryProtocol {
+protocol FirebaseChatRoomRepositoryProtocol: CreateRoomRepositoryProtocol {
     /// 방 목록 캐시 상태
     var topRoomsWithPreviews: [(ChatRoom, [ChatMessage])] { get }
     
@@ -57,12 +71,6 @@ protocol FirebaseChatRoomRepositoryProtocol {
         roomDescription: String
     ) async throws
     
-    /// 특정 방 문서 조회
-    func getRoomDoc(room: ChatRoom) async throws -> DocumentSnapshot?
-    
-    /// 방 정보 Firestore에 저장
-    func saveRoomInfoToFirestore(room: ChatRoom) async throws
-    
     /// ID 목록으로 방 목록 조회
     func fetchRoomsWithIDs(byIDs ids: [String]) async throws -> [ChatRoom]
     
@@ -84,12 +92,6 @@ protocol FirebaseChatRoomRepositoryProtocol {
     /// 방 이름 중복 검사
     func checkRoomName(roomName: String, completion: @escaping (Bool, Error?) -> Void)
 
-    /// 방 이름 중복 검사 (async/await)
-    func checkRoomNameDuplicate(roomName: String) async throws -> Bool
-    
-    /// 방 참여자 추가
-    func addRoomParticipant(room: ChatRoom) async throws
-    
     /// 방 참여자 추가 및 최신 방 정보 반환
     func addRoomParticipantReturningRoom(roomID: String) async throws -> ChatRoom
     

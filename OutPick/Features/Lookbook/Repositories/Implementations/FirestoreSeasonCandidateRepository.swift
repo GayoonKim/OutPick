@@ -25,12 +25,11 @@ final class FirestoreSeasonCandidateRepository: SeasonCandidateRepositoryProtoco
             .order(by: "sortIndex")
             .getDocuments()
 
-        let dtos: [SeasonCandidateDTO] = try snapshot.documents.map {
-            try FirestoreMapper.mapDocument($0)
-        }
-
-        return try dtos
-            .map { try $0.toDomain() }
+        return try snapshot.documents
+            .map { document in
+                let dto: SeasonCandidateDTO = try FirestoreMapper.mapDocument(document)
+                return try dto.toDomain(documentID: document.documentID)
+            }
             .sorted { lhs, rhs in
                 if lhs.sortIndex != rhs.sortIndex {
                     return lhs.sortIndex < rhs.sortIndex

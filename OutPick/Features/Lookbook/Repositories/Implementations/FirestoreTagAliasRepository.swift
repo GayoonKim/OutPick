@@ -34,7 +34,7 @@ final class FirestoreTagAliasRepository: TagAliasRepositoryProtocol {
 
         var results: [TagAlias] = try rawSnap.documents.map { doc in
             let dto: TagAliasDTO = try FirestoreMapper.mapDocument(doc)
-            return try dto.toDomain()
+            return try dto.toDomain(documentID: doc.documentID)
         }
 
         // 2) displayName 기준 보완
@@ -49,7 +49,7 @@ final class FirestoreTagAliasRepository: TagAliasRepositoryProtocol {
 
             let more: [TagAlias] = try displaySnap.documents.map { doc in
                 let dto: TagAliasDTO = try FirestoreMapper.mapDocument(doc)
-                return try dto.toDomain()
+                return try dto.toDomain(documentID: doc.documentID)
             }
 
             // 중복 제거(문서ID 기준)

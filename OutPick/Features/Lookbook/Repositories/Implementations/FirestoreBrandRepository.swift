@@ -39,7 +39,7 @@ final class FirestoreBrandRepository: BrandRepositoryProtocol {
         }
 
         let dto: BrandDTO = try FirestoreMapper.mapDocument(snapshot)
-        let brand = try dto.toDomain()
+        let brand = try dto.toDomain(documentID: snapshot.documentID)
         guard brand.isVisibleToUsers else {
             throw LookbookContentUnavailableError.brandUnavailable
         }
@@ -63,9 +63,11 @@ final class FirestoreBrandRepository: BrandRepositoryProtocol {
         }
 
         let snap = try await q.getDocuments()
-        let dtos: [BrandDTO] = try snap.documents.map { try FirestoreMapper.mapDocument($0) }
-        let items = try dtos
-            .map { try $0.toDomain() }
+        let items = try snap.documents
+            .map { document in
+                let dto: BrandDTO = try FirestoreMapper.mapDocument(document)
+                return try dto.toDomain(documentID: document.documentID)
+            }
             .filter(\.isVisibleToUsers)
 
         return BrandPage(items: items, last: snap.documents.last)
@@ -89,9 +91,11 @@ final class FirestoreBrandRepository: BrandRepositoryProtocol {
         }
 
         let snap = try await q.getDocuments()
-        let dtos: [BrandDTO] = try snap.documents.map { try FirestoreMapper.mapDocument($0) }
-        let items = try dtos
-            .map { try $0.toDomain() }
+        let items = try snap.documents
+            .map { document in
+                let dto: BrandDTO = try FirestoreMapper.mapDocument(document)
+                return try dto.toDomain(documentID: document.documentID)
+            }
             .filter(\.isVisibleToUsers)
 
         return BrandPage(items: items, last: snap.documents.last)

@@ -118,7 +118,7 @@ final class DefaultChatInitialLoadUseCase: ChatInitialLoadUseCaseProtocol {
 
                 let network = networkStatusProvider.currentStatus
                 let policy = policyResolver.policy(for: network)
-                let roomID = room.ID ?? ""
+                let roomID = room.id
 
                 do {
                     guard isParticipant else {

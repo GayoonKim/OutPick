@@ -8,9 +8,7 @@
 import Foundation
 import FirebaseFirestore
 
-struct ReplacementItemDTO: Codable {
-    @DocumentID var id: String?
-
+struct ReplacementItemDTO: Decodable {
     /// replacements가 `posts/{postId}/replacements/{replacementId}`라면 postID는 경로에서 주입하는 편이 깔끔합니다.
     /// 전역 조회가 필요하면 문서에 postID를 중복 저장해도 됩니다.
     let postID: String?
@@ -25,11 +23,11 @@ struct ReplacementItemDTO: Codable {
 //    let createdBy: String?
     let createdAt: Timestamp?
 
-    func toDomain(postID: PostID) throws -> ReplacementItem {
-        guard let id else { throw MappingError.missingDocumentID }
+    func toDomain(documentID: String, postID: PostID) throws -> ReplacementItem {
+        guard !documentID.isEmpty else { throw MappingError.missingDocumentID }
 
         return ReplacementItem(
-            id: ReplacementID(value: id),
+            id: ReplacementID(value: documentID),
             postID: postID,
             title: title,
             brandName: brandName,
@@ -44,10 +42,13 @@ struct ReplacementItemDTO: Codable {
     }
 
     /// 선택: 문서에 postID가 포함된 경우
-    func toDomainFromEmbeddedPostID() throws -> ReplacementItem {
+    func toDomainFromEmbeddedPostID(documentID: String) throws -> ReplacementItem {
         guard let embeddedPostID = postID, !embeddedPostID.isEmpty else {
             throw MappingError.missingRequiredField("postID")
         }
-        return try toDomain(postID: PostID(value: embeddedPostID))
+        return try toDomain(
+            documentID: documentID,
+            postID: PostID(value: embeddedPostID)
+        )
     }
 }

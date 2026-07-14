@@ -90,7 +90,7 @@ final class ChatMessageManager: ChatMessageManaging {
                 readBoundarySeq: nil,
                 latestSeq: latestSeq
                 ),
-                roomID: room.ID ?? ""
+                roomID: room.id
             )
 
         case .unreadAnchor(let lastReadSeq, let latestSeq):
@@ -115,7 +115,7 @@ final class ChatMessageManager: ChatMessageManaging {
                 readBoundarySeq: lastReadSeq,
                 latestSeq: latestSeq
                 ),
-                roomID: room.ID ?? ""
+                roomID: room.id
             )
         }
     }
@@ -132,7 +132,7 @@ final class ChatMessageManager: ChatMessageManaging {
         beforeLimit: Int,
         afterLimit: Int
     ) async throws -> [ChatMessage] {
-        let roomID = room.ID ?? ""
+        let roomID = room.id
         guard !roomID.isEmpty else { return [anchor] }
 
         let normalizedBefore = max(0, beforeLimit)
@@ -207,7 +207,7 @@ final class ChatMessageManager: ChatMessageManaging {
     }
     
     func loadOlderMessages(room: ChatRoom, before messageID: String?) async throws -> [ChatMessage] {
-        let roomID = room.ID ?? ""
+        let roomID = room.id
         
         // 1. GRDB에서 먼저 최대 100개
         let local = try await messagePersistence.fetchOlderMessages(inRoom: roomID, before: messageID ?? "", limit: 100)
@@ -250,13 +250,13 @@ final class ChatMessageManager: ChatMessageManaging {
         let localIDs = localMessages.map { $0.ID }
         let localDeletionStates = Dictionary(uniqueKeysWithValues: localMessages.map { ($0.ID, $0.isDeleted) })
         
-        let serverMap = try await messageRepository.fetchDeletionStates(roomID: room.ID ?? "", messageIDs: localIDs)
+        let serverMap = try await messageRepository.fetchDeletionStates(roomID: room.id, messageIDs: localIDs)
         
         // 서버가 true인데 로컬은 false인 ID만 업데이트 대상
         let idsToUpdate = localIDs.filter { (serverMap[$0] ?? false) && ((localDeletionStates[$0] ?? false) == false) }
         guard !idsToUpdate.isEmpty else { return [] }
         
-        let roomID = room.ID ?? ""
+        let roomID = room.id
         try await applyLocalDeletion(idsToUpdate, inRoom: roomID)
         
         return idsToUpdate
@@ -264,7 +264,7 @@ final class ChatMessageManager: ChatMessageManaging {
     
     func deleteMessage(message: ChatMessage, room: ChatRoom) async throws {
         let messageID = message.ID
-        let roomID = room.ID ?? ""
+        let roomID = room.id
         
         // 1. GRDB 업데이트
         try await applyLocalDeletion([messageID], inRoom: roomID)

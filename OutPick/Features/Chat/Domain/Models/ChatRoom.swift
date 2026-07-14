@@ -1,40 +1,26 @@
 //
-//  Room.swift
+//  ChatRoom.swift
 //  OutPick
 //
 //  Created by 김가윤 on 9/25/24.
 //
 
 import Foundation
-import FirebaseFirestore
 
 /// 방 상단 배너에 표시할 간단한 공지 페이로드
 struct AnnouncementPayload: Codable, Hashable {
-    /// 공지 본문(필수)
     let text: String
-    /// 작성자 ID
     let authorID: String
-    /// 생성 시각(배너 정렬/만료 로직 등에 활용)
     let createdAt: Date
-    
-    /// Firestore 저장용 딕셔너리 변환(수동 저장 시 사용)
-    func toDictionary() -> [String: Any] {
-        return [
-            "text": text,
-            "authorID": authorID,
-            "createdAt": Timestamp(date: createdAt)
-        ]
-    }
 }
 
-struct ChatRoom: Codable {
-    
-    @DocumentID var ID: String?
-    var roomName: String                // 방 이름
-    var roomDescription: String         // 방 주제 및 설명
-    var participants: [String]          // 방 참여 사용자들
-    let creatorUID: String               // 방 생성자 ID
-    let createdAt: Date                 // 방 생성 시간
+struct ChatRoom {
+    let id: String
+    var roomName: String
+    var roomDescription: String
+    var participants: [String]
+    let creatorUID: String
+    let createdAt: Date
     var thumbPath: String?
     var originalPath: String?
     var lastMessageAt: Date?
@@ -42,89 +28,15 @@ struct ChatRoom: Codable {
     var lastMessageSenderUID: String?
     var memberCount: Int = 0
 
-    /// 방의 현재 "tail" 시퀀스 값 (마지막으로 할당된 메시지 시퀀스)
-    /// - 생성 시 0으로 시작하고, 새 메시지 저장 시 마지막 메시지의 seq로 갱신됩니다.
-    /// - 오래된 문서에 키가 없어도 디코딩되도록 기본값 0을 둡니다.
+    /// 방의 현재 tail 시퀀스 값입니다.
     var seq: Int64 = 0
-    
-    /// 방이 종료(닫힘) 상태인지 여부
-    /// - 기본값은 false이며, Firestore 문서에 필드가 없더라도 디코딩 시 false로 취급됩니다.
-    var isClosed: Bool = false
-    
-    // 현재 방의 활성 공지(배너) 상태
-    var activeAnnouncementID: String?       // 메시지 히스토리(.announcement) 문서 ID
-    var activeAnnouncement: AnnouncementPayload? // 빠른 렌더를 위한 디노말라이즈 사본
-    var announcementUpdatedAt: Date?        // 표시/정렬용 타임스탬프
-    
-    enum CodingKeys: String, CodingKey {
-        case ID
-        case roomName
-        case roomDescription
-        case participants = "participantUIDs"  // 매핑
-        case creatorUID
-        case createdAt
-        case thumbPath
-        case originalPath
-        case lastMessageAt
-        case lastMessage
-        case lastMessageSenderUID
-        case memberCount
-        case isClosed
-        case activeAnnouncementID
-        case activeAnnouncement
-        case announcementUpdatedAt
-        case seq
-    }
-    
-    // Firestore에 저장하기 위한 변환 메서드
-    func toDictionary() -> [String: Any] {
-        let searchIndex = ChatRoomSearchIndex.buildIndexedFields(
-            roomName: roomName,
-            roomDescription: roomDescription
-        )
-        var data: [String: Any] = [
-            "ID": ID ?? "",
-            "roomName": roomName,
-            "roomDescription": roomDescription,
-            "participantUIDs": participants,
-            "creatorUID": creatorUID,
-            "createdAt": Timestamp(date: createdAt),
-            "memberCount": max(memberCount, participants.count),
-            "seq": seq,
-            "isClosed": isClosed,
-            "roomSearchNormalized": searchIndex.normalizedText,
-            "roomSearchChars": searchIndex.searchChars,
-            "roomSearchNgrams2": searchIndex.searchNgrams2,
-            "roomSearchIndexVersion": searchIndex.version
-        ]
 
-        // 선택 필드들: 존재할 때만 저장
-        data["lastMessageAt"] = Timestamp(date: lastMessageAt ?? createdAt)
-        
-        if let lastMessage = lastMessage, !lastMessage.isEmpty {
-            data["lastMessage"] = lastMessage
-        }
-        if let lastMessageSenderUID = lastMessageSenderUID, !lastMessageSenderUID.isEmpty {
-            data["lastMessageSenderUID"] = lastMessageSenderUID
-        }
-        if let thumbPath = thumbPath, !thumbPath.isEmpty {
-            data["thumbPath"] = thumbPath     // 🔧 key 대소문자 교정
-        }
-        if let originalPath = originalPath, !originalPath.isEmpty {
-            data["originalPath"] = originalPath
-        }
-        if let activeAnnouncementID = activeAnnouncementID {
-            data["activeAnnouncementID"] = activeAnnouncementID
-        }
-        if let activeAnnouncement = activeAnnouncement {
-            data["activeAnnouncement"] = activeAnnouncement.toDictionary()
-            data["announcementUpdatedAt"] = Timestamp(date: activeAnnouncement.createdAt)
-        } else if let announcementUpdatedAt = announcementUpdatedAt {
-            data["announcementUpdatedAt"] = Timestamp(date: announcementUpdatedAt)
-        }
-        
-        return data
-    }
+    /// 방이 종료된 상태인지 나타냅니다.
+    var isClosed: Bool = false
+
+    var activeAnnouncementID: String?
+    var activeAnnouncement: AnnouncementPayload?
+    var announcementUpdatedAt: Date?
 
     var coverImagePath: String? {
         if let thumbPath, !thumbPath.isEmpty {
@@ -137,41 +49,12 @@ struct ChatRoom: Codable {
     }
 }
 
-extension ChatRoom {
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-
-        if let firestoreDocumentID = try? container.decode(DocumentID<String>.self, forKey: .ID).wrappedValue {
-            ID = firestoreDocumentID
-        } else {
-            ID = try container.decodeIfPresent(String.self, forKey: .ID)
-        }
-
-        roomName = try container.decode(String.self, forKey: .roomName)
-        roomDescription = try container.decodeIfPresent(String.self, forKey: .roomDescription) ?? ""
-        participants = try container.decodeIfPresent([String].self, forKey: .participants) ?? []
-        creatorUID = try container.decodeIfPresent(String.self, forKey: .creatorUID) ?? ""
-        createdAt = try container.decode(Date.self, forKey: .createdAt)
-        thumbPath = try container.decodeIfPresent(String.self, forKey: .thumbPath)
-        originalPath = try container.decodeIfPresent(String.self, forKey: .originalPath)
-        lastMessageAt = try container.decodeIfPresent(Date.self, forKey: .lastMessageAt)
-        lastMessage = try container.decodeIfPresent(String.self, forKey: .lastMessage)
-        lastMessageSenderUID = try container.decodeIfPresent(String.self, forKey: .lastMessageSenderUID)
-        memberCount = try container.decodeIfPresent(Int.self, forKey: .memberCount) ?? participants.count
-        seq = try container.decodeIfPresent(Int64.self, forKey: .seq) ?? 0
-        isClosed = try container.decodeIfPresent(Bool.self, forKey: .isClosed) ?? false
-        activeAnnouncementID = try container.decodeIfPresent(String.self, forKey: .activeAnnouncementID)
-        activeAnnouncement = try container.decodeIfPresent(AnnouncementPayload.self, forKey: .activeAnnouncement)
-        announcementUpdatedAt = try container.decodeIfPresent(Date.self, forKey: .announcementUpdatedAt)
-    }
-}
-
 extension ChatRoom: Hashable {
     func hash(into hasher: inout Hasher) {
-        hasher.combine(ID)
+        hasher.combine(id)
     }
-    
+
     static func == (lhs: ChatRoom, rhs: ChatRoom) -> Bool {
-        return lhs.ID == rhs.ID
+        lhs.id == rhs.id
     }
 }

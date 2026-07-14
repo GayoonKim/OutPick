@@ -71,7 +71,7 @@ final class JoinedRoomsViewModel {
     }
 
     func refreshUnreadCount(roomID: String) {
-        guard let target = state.rooms.first(where: { $0.ID == roomID }) else { return }
+        guard let target = state.rooms.first(where: { $0.id == roomID }) else { return }
         Task { [weak self] in
             guard let self else { return }
             await self.refreshUnreadCounts(for: [target])
@@ -136,7 +136,7 @@ final class JoinedRoomsViewModel {
     private func applyJoinedItems(_ items: [JoinedRoomListItem], updateUnread: Bool = true) {
         let previousSummaryByID = Dictionary(uniqueKeysWithValues: joinedItems.compactMap { item -> (String, (seq: Int64, lastMessageAt: Date?, lastMessage: String?, lastMessageSenderUID: String?))? in
             let room = item.room
-            guard let roomID = room.ID else { return nil }
+            let roomID = room.id
             return (roomID, (room.seq, room.lastMessageAt, room.lastMessage, room.lastMessageSenderUID))
         })
 
@@ -146,7 +146,7 @@ final class JoinedRoomsViewModel {
 
         guard updateUnread else { return }
         let changedRooms = joinedItems.map(\.room).filter { room in
-            guard let roomID = room.ID else { return false }
+            let roomID = room.id
             guard let old = previousSummaryByID[roomID] else { return true }
             return old.seq != room.seq ||
                 old.lastMessageAt != room.lastMessageAt ||
@@ -190,7 +190,7 @@ final class JoinedRoomsViewModel {
         let currentUserID = LoginManager.shared.canonicalUserID
         return await withTaskGroup(of: ChatRoomReadSnapshot?.self, returning: [ChatRoomReadSnapshot].self) { group in
             for room in rooms {
-                guard let roomID = room.ID else { continue }
+                let roomID = room.id
                 if let snapshot = roomReadStateStore?.snapshot(for: roomID),
                    snapshot.unreadCount(currentUserID: currentUserID) != nil {
                     group.addTask {
@@ -227,7 +227,7 @@ final class JoinedRoomsViewModel {
     }
 
     private func applyReadStateChange(_ change: ChatRoomReadStateChange) {
-        guard state.rooms.contains(where: { $0.ID == change.roomID }) else { return }
+        guard state.rooms.contains(where: { $0.id == change.roomID }) else { return }
         guard let unread = change.snapshot.unreadCount(currentUserID: LoginManager.shared.canonicalUserID) else { return }
         state.unreadCounts[change.roomID] = unread
         applyRoomSummaryChange(change)
@@ -258,7 +258,7 @@ final class JoinedRoomsViewModel {
 
         var didUpdate = false
         state.rooms = state.rooms.map { room in
-            guard room.ID == change.roomID else { return room }
+            guard room.id == change.roomID else { return room }
             var copy = room
             update(&copy)
             didUpdate = true
@@ -267,7 +267,7 @@ final class JoinedRoomsViewModel {
 
         if didUpdate {
             joinedItems = joinedItems.map { item in
-                guard item.room.ID == change.roomID else { return item }
+                guard item.room.id == change.roomID else { return item }
                 var room = item.room
                 update(&room)
                 return JoinedRoomListItem(room: room, projection: item.projection)
@@ -279,16 +279,14 @@ final class JoinedRoomsViewModel {
 
     private func pruneRoomsNotInSessionStore(_ joinedRoomIDs: Set<String>) {
         guard !joinedRoomIDs.isEmpty || !state.rooms.isEmpty else { return }
-        let removedRoomIDs = Set(state.rooms.compactMap(\.ID)).subtracting(joinedRoomIDs)
+        let removedRoomIDs = Set(state.rooms.map(\.id)).subtracting(joinedRoomIDs)
         guard !removedRoomIDs.isEmpty else { return }
 
         joinedItems.removeAll { item in
-            guard let roomID = item.room.ID else { return false }
-            return removedRoomIDs.contains(roomID)
+            removedRoomIDs.contains(item.room.id)
         }
         state.rooms.removeAll { room in
-            guard let roomID = room.ID else { return false }
-            return removedRoomIDs.contains(roomID)
+            removedRoomIDs.contains(room.id)
         }
         for roomID in removedRoomIDs {
             state.unreadCounts.removeValue(forKey: roomID)

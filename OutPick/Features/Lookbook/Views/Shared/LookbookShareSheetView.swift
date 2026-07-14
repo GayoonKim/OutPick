@@ -87,10 +87,10 @@ struct LookbookShareSheetView: View {
                         ForEach(viewModel.rooms, id: \.self) { room in
                             LookbookShareRoomRowView(
                                 room: room,
-                                isSelected: viewModel.selectedRoomID == room.ID,
+                                isSelected: viewModel.selectedRoomID == room.id,
                                 roomImageManager: roomImageManager
                             ) {
-                                viewModel.selectedRoomID = room.ID
+                                viewModel.selectedRoomID = room.id
                             }
                         }
                     }

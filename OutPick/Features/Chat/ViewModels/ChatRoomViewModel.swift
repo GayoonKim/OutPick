@@ -131,7 +131,7 @@ final class ChatRoomViewModel {
         searchMessagesTask?.cancel()
     }
 
-    var roomID: String { room.ID ?? "" }
+    var roomID: String { room.id }
 
     var currentUserUID: String {
         currentUserProvider.canonicalUserID
@@ -150,8 +150,8 @@ final class ChatRoomViewModel {
     }
 
     func isCurrentUserParticipant(in room: ChatRoom) -> Bool {
-        guard let roomID = room.ID?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !roomID.isEmpty else {
+        let roomID = room.id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !roomID.isEmpty else {
             return false
         }
         if let joinedRoomsStore {
@@ -176,7 +176,7 @@ final class ChatRoomViewModel {
     func handleRoomSaveCompleted(_ savedRoom: ChatRoom) {
         room = savedRoom
         seedRoomReadLatest(from: savedRoom)
-        lifecycleUseCase.handleRoomSaved(roomID: savedRoom.ID ?? "")
+        lifecycleUseCase.handleRoomSaved(roomID: savedRoom.id)
     }
 
     func joinCurrentRoom() async throws -> ChatRoom {
@@ -582,7 +582,8 @@ final class ChatRoomViewModel {
     }
 
     private func seedRoomReadLatest(from room: ChatRoom) {
-        guard let roomID = room.ID, !roomID.isEmpty else { return }
+        let roomID = room.id
+        guard !roomID.isEmpty else { return }
         roomReadStateStore?.seedLatest(
             roomID: roomID,
             latestSeq: room.seq,

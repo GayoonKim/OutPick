@@ -41,8 +41,13 @@ final class FirestoreReplacementRepository: ReplacementRepositoryProtocol {
         }
 
         let snap = try await query.getDocuments()
-        let dtos: [ReplacementItemDTO] = try snap.documents.map { try FirestoreMapper.mapDocument($0) }
-        let items = try dtos.map { try $0.toDomain(postID: postID) }
+        let items = try snap.documents.map { document in
+            let dto: ReplacementItemDTO = try FirestoreMapper.mapDocument(document)
+            return try dto.toDomain(
+                documentID: document.documentID,
+                postID: postID
+            )
+        }
 
         let nextCursor: PageCursor? = (snap.documents.count == page.size)
             ? snap.documents.last.map { PageCursor(token: $0.documentID) }

@@ -22,7 +22,7 @@ final class FirestoreTagConceptRepository: TagConceptRepositoryProtocol {
             .getDocument()
 
         let dto: TagConceptDTO = try FirestoreMapper.mapDocument(doc)
-        return try dto.toDomain()
+        return try dto.toDomain(documentID: doc.documentID)
     }
 
     /// whereIn 10개 제한 대응
@@ -39,8 +39,11 @@ final class FirestoreTagConceptRepository: TagConceptRepositoryProtocol {
                 .whereField(FieldPath.documentID(), in: ids)
                 .getDocuments()
 
-            let dtos: [TagConceptDTO] = try snap.documents.map { try FirestoreMapper.mapDocument($0) }
-            results.append(contentsOf: try dtos.map { try $0.toDomain() })
+            let concepts = try snap.documents.map { document in
+                let dto: TagConceptDTO = try FirestoreMapper.mapDocument(document)
+                return try dto.toDomain(documentID: document.documentID)
+            }
+            results.append(contentsOf: concepts)
         }
 
         // 요청 순서 보존

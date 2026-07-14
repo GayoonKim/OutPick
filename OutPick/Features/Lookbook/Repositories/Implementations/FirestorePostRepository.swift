@@ -53,9 +53,15 @@ final class FirestorePostRepository: PostRepositoryProtocol {
         }
 
         let snap = try await query.getDocuments()
-        let dtos: [PostDTO] = try snap.documents.map { try FirestoreMapper.mapDocument($0) }
-        let items = try dtos
-            .map { try $0.toDomain(brandID: brandID, seasonID: seasonID) }
+        let items = try snap.documents
+            .map { document in
+                let dto: PostDTO = try FirestoreMapper.mapDocument(document)
+                return try dto.toDomain(
+                    documentID: document.documentID,
+                    brandID: brandID,
+                    seasonID: seasonID
+                )
+            }
             .filter(\.isVisibleToUsers)
 
         let nextCursor: PageCursor? = (snap.documents.count == page.size)
@@ -80,7 +86,11 @@ final class FirestorePostRepository: PostRepositoryProtocol {
         }
 
         let dto: PostDTO = try FirestoreMapper.mapDocument(doc)
-        let post = try dto.toDomain(brandID: brandID, seasonID: seasonID)
+        let post = try dto.toDomain(
+            documentID: doc.documentID,
+            brandID: brandID,
+            seasonID: seasonID
+        )
         guard post.isVisibleToUsers else {
             throw LookbookContentUnavailableError.postUnavailable
         }
@@ -102,11 +112,14 @@ final class FirestorePostRepository: PostRepositoryProtocol {
         }
 
         let snap = try await query.getDocuments()
-        let dtos: [PostDTO] = try snap.documents.map { try FirestoreMapper.mapDocument($0) }
-
         /// 전역 조회에서는 경로 주입이 어려우니 문서 필드에 brandID/seasonID가 들어있다는 전제의 변환 사용
-        let items = try dtos
-            .map { try $0.toDomainFromEmbeddedPathIDs() }
+        let items = try snap.documents
+            .map { document in
+                let dto: PostDTO = try FirestoreMapper.mapDocument(document)
+                return try dto.toDomainFromEmbeddedPathIDs(
+                    documentID: document.documentID
+                )
+            }
             .filter(\.isVisibleToUsers)
 
         let nextCursor: PageCursor? = (snap.documents.count == page.size)

@@ -40,7 +40,7 @@ final class LoadShareableJoinedRoomsUseCase: LoadShareableJoinedRoomsUseCaseProt
 
 enum LookbookChatShareRoomPolicy {
     static func roomID(from room: ChatRoom) -> String? {
-        trimmedNonEmpty(room.ID)
+        trimmedNonEmpty(room.id)
     }
 
     static func isShareable(_ room: ChatRoom, currentUserID: String) -> Bool {

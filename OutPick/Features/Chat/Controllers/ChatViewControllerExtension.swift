@@ -102,7 +102,7 @@ extension ChatViewController: PHPickerViewControllerDelegate {
                         let prepared = try await self.mediaProcessor.prepareVideo(result, preset: .standard720)
                         
                         // 2) 방 식별 후 pending thumbnail을 먼저 표시하고 업로드+브로드캐스트
-                        guard let roomID = self.room?.ID,
+                        guard let roomID = self.room?.id,
                               !roomID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                             await MainActor.run {
                                 AlertManager.showAlertNoHandler(
@@ -197,7 +197,7 @@ extension ChatViewController: PHPickerViewControllerDelegate {
                             self.cleanupPendingImageOriginalFiles(pairs)
                             continue
                         }
-                        let roomID = room.ID ?? ""
+                        let roomID = room.id
                         let messageID = UUID().uuidString
                         let staged = await MainActor.run {
                             self.stagePendingImageMessage(room: room, roomID: roomID, messageID: messageID, pairs: pairs)

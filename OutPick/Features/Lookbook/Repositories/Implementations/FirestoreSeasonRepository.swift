@@ -110,7 +110,7 @@ final class FirestoreSeasonRepository: SeasonRepositoryProtocol {
 
         // 4) Firestore 저장
         do {
-            let dto = SeasonDTO.fromDomain(season)
+            let dto = SeasonWriteDTO.fromDomain(season)
             try seasonRef.setData(from: dto, merge: false)
             return season
         } catch {
@@ -166,7 +166,10 @@ final class FirestoreSeasonRepository: SeasonRepositoryProtocol {
         let dto: SeasonDTO = try FirestoreMapper.mapDocument(snapshot)
 
         // DTO → Domain 변환(brandID는 상위 경로에서 주입)
-        let season = try dto.toDomain(brandID: brandID)
+        let season = try dto.toDomain(
+            documentID: snapshot.documentID,
+            brandID: brandID
+        )
         guard season.isVisibleToUsers else {
             throw LookbookContentUnavailableError.seasonUnavailable
         }
@@ -201,7 +204,10 @@ final class FirestoreSeasonRepository: SeasonRepositoryProtocol {
 
         let items: [Season] = try snapshot.documents.compactMap { doc in
             let dto: SeasonDTO = try FirestoreMapper.mapDocument(doc)
-            let season = try dto.toDomain(brandID: brandID)
+            let season = try dto.toDomain(
+                documentID: doc.documentID,
+                brandID: brandID
+            )
             return season.isVisibleToUsers ? season : nil
         }
 
@@ -222,7 +228,10 @@ final class FirestoreSeasonRepository: SeasonRepositoryProtocol {
 
         return try snapshot.documents.compactMap { doc in
             let dto: SeasonDTO = try FirestoreMapper.mapDocument(doc)
-            let season = try dto.toDomain(brandID: brandID)
+            let season = try dto.toDomain(
+                documentID: doc.documentID,
+                brandID: brandID
+            )
             return season.isVisibleToUsers ? season : nil
         }
     }

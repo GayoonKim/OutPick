@@ -74,9 +74,8 @@ final class ChatRoomMessageUseCase: ChatRoomMessageUseCaseProtocol {
 
     func makeTextMessage(text: String, replyPreview: ReplyPreview?, room: ChatRoom) -> ChatMessage? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty,
-              let roomID = room.ID,
-              !roomID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        let roomID = room.id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !roomID.isEmpty else {
             return nil
         }
 
@@ -137,9 +136,8 @@ final class ChatRoomMessageUseCase: ChatRoomMessageUseCaseProtocol {
 
     private func updateDeletedLastMessageSummaryIfNeeded(message: ChatMessage, room: ChatRoom) async throws {
         guard let deletedLastMessageSummaryUpdater else { return }
-        guard let roomID = room.ID?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !roomID.isEmpty,
-              message.seq > 0 else {
+        let roomID = room.id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !roomID.isEmpty, message.seq > 0 else {
             return
         }
 

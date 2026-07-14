@@ -8,9 +8,7 @@
 import Foundation
 import FirebaseFirestore
 
-struct SeasonUserStateDTO: Codable {
-    @DocumentID var id: String?
-
+struct SeasonUserStateDTO: Decodable {
     let brandID: String?
     let seasonID: String?
     let userID: String?

@@ -210,7 +210,7 @@ final class RoomSearchViewModel {
         unique.reserveCapacity(rooms.count)
 
         for room in rooms {
-            let key = room.ID ?? "\(room.roomName)|\(room.createdAt.timeIntervalSince1970)"
+            let key = room.id
             if seen.insert(key).inserted {
                 unique.append(room)
             }

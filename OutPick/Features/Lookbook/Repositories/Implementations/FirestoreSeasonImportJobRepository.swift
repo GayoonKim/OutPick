@@ -27,12 +27,11 @@ final class FirestoreSeasonImportJobRepository: SeasonImportJobRepositoryProtoco
             .limit(to: limit)
             .getDocuments()
 
-        let dtos: [SeasonImportJobDTO] = try snapshot.documents.map {
-            try FirestoreMapper.mapDocument($0)
-        }
-
-        return try dtos
-            .map { try $0.toDomain() }
+        return try snapshot.documents
+            .map { document in
+                let dto: SeasonImportJobDTO = try FirestoreMapper.mapDocument(document)
+                return try dto.toDomain(documentID: document.documentID)
+            }
             .filter { $0.jobType == .importSeasonFromURL }
             .sorted { $0.updatedAt > $1.updatedAt }
     }
@@ -52,12 +51,11 @@ final class FirestoreSeasonImportJobRepository: SeasonImportJobRepositoryProtoco
             .limit(to: 300)
             .getDocuments()
 
-        let dtos: [SeasonImportJobDTO] = try snapshot.documents.map {
-            try FirestoreMapper.mapDocument($0)
-        }
-
-        return try dtos
-            .map { try $0.toDomain() }
+        return try snapshot.documents
+            .map { document in
+                let dto: SeasonImportJobDTO = try FirestoreMapper.mapDocument(document)
+                return try dto.toDomain(documentID: document.documentID)
+            }
             .filter { $0.jobType == .importSeasonFromURL }
             .filter { $0.status.blocksDuplicateImportRequest }
             .sorted { $0.updatedAt > $1.updatedAt }
@@ -79,12 +77,11 @@ final class FirestoreSeasonImportJobRepository: SeasonImportJobRepositoryProtoco
                 .whereField("sourceCandidateID", in: chunk)
                 .getDocuments()
 
-            let dtos: [SeasonImportJobDTO] = try snapshot.documents.map {
-                try FirestoreMapper.mapDocument($0)
-            }
-
-            let chunkJobs = try dtos
-                .map { try $0.toDomain() }
+            let chunkJobs: [SeasonImportJob] = try snapshot.documents
+                .map { document in
+                    let dto: SeasonImportJobDTO = try FirestoreMapper.mapDocument(document)
+                    return try dto.toDomain(documentID: document.documentID)
+                }
                 .filter { $0.jobType == .importSeasonFromURL }
 
             jobs.append(contentsOf: chunkJobs)

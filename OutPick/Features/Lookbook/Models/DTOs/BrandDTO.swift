@@ -1,9 +1,7 @@
 import Foundation
 import FirebaseFirestore
 
-struct BrandDTO: Codable {
-    @DocumentID var id: String?
-
+struct BrandDTO: Decodable {
     let name: String
     let englishName: String?
     let websiteURL: String?
@@ -28,8 +26,8 @@ struct BrandDTO: Codable {
     let deletionStatus: BrandDeletionStatus?
     let updatedAt: Timestamp?
 
-    func toDomain() throws -> Brand {
-        guard let id else { throw MappingError.missingDocumentID }
+    func toDomain(documentID: String) throws -> Brand {
+        guard !documentID.isEmpty else { throw MappingError.missingDocumentID }
 
         let metrics = BrandMetrics(
             likeCount: likeCount ?? 0,
@@ -47,7 +45,7 @@ struct BrandDTO: Codable {
         let resolvedOriginalPath = logoOriginalPath
 
         return Brand(
-            id: BrandID(value: id),
+            id: BrandID(value: documentID),
             name: name,
             englishName: englishName,
             websiteURL: websiteURL,

@@ -24,7 +24,8 @@ final class FirebaseMessageRepository: FirebaseMessageRepositoryProtocol {
     
     func saveMessage(_ message: ChatMessage, _ room: ChatRoom) async throws {
         do {
-            guard let roomID = room.ID, !roomID.isEmpty else {
+            let roomID = room.id
+            guard !roomID.isEmpty else {
                 throw FirebaseError.FailedToFetchRoom
             }
             let messageRef = db.collection("Rooms")
@@ -124,8 +125,9 @@ final class FirebaseMessageRepository: FirebaseMessageRepositoryProtocol {
     }
     
     func fetchMessagesPaged(for room: ChatRoom, pageSize: Int = 50, reset: Bool = false) async throws -> [ChatMessage] {
-        guard let roomID = room.ID else {
-            print("❌ fetchMessagesPaged: room.ID is nil")
+        let roomID = room.id
+        guard !roomID.isEmpty else {
+            print("❌ fetchMessagesPaged: room.id is empty")
             return []
         }
         
@@ -150,7 +152,7 @@ final class FirebaseMessageRepository: FirebaseMessageRepositoryProtocol {
     }
 
     func fetchLatestMessages(for room: ChatRoom, limit: Int) async throws -> [ChatMessage] {
-        guard let roomID = room.ID else { return [] }
+        let roomID = room.id
 
         let snapshot = try await db
             .collection("Rooms").document(roomID)
@@ -163,7 +165,7 @@ final class FirebaseMessageRepository: FirebaseMessageRepositoryProtocol {
     }
 
     func fetchMessagesAfterSeq(room: ChatRoom, afterSeq: Int64, limit: Int) async throws -> [ChatMessage] {
-        guard let roomID = room.ID else { return [] }
+        let roomID = room.id
         guard limit > 0 else { return [] }
 
         let snapshot = try await db
@@ -178,7 +180,7 @@ final class FirebaseMessageRepository: FirebaseMessageRepositoryProtocol {
     }
 
     func fetchMessagesBeforeSeq(room: ChatRoom, beforeSeq: Int64, limit: Int) async throws -> [ChatMessage] {
-        guard let roomID = room.ID else { return [] }
+        let roomID = room.id
         guard limit > 0 else { return [] }
 
         let snapshot = try await db
@@ -193,7 +195,7 @@ final class FirebaseMessageRepository: FirebaseMessageRepositoryProtocol {
     }
     
     func fetchOlderMessages(for room: ChatRoom, before messageID: String, limit: Int = 100) async throws -> [ChatMessage] {
-        guard let roomID = room.ID else { return [] }
+        let roomID = room.id
         
         let anchorDoc = try await db
             .collection("Rooms").document(roomID)
@@ -232,7 +234,7 @@ final class FirebaseMessageRepository: FirebaseMessageRepositoryProtocol {
     }
     
     func fetchMessagesAfter(room: ChatRoom, after messageID: String, limit: Int = 100) async throws -> [ChatMessage] {
-        guard let roomID = room.ID else { return [] }
+        let roomID = room.id
         
         let anchorDoc = try await db
             .collection("Rooms").document(roomID)

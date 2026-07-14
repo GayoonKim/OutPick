@@ -8,9 +8,7 @@
 import Foundation
 import FirebaseFirestore
 
-struct BrandUserStateDTO: Codable {
-    @DocumentID var id: String?
-
+struct BrandUserStateDTO: Decodable {
     let brandID: String?
     let userID: String?
     let isLiked: Bool?

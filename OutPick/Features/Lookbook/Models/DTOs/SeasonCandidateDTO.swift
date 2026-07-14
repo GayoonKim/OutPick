@@ -8,9 +8,7 @@
 import Foundation
 import FirebaseFirestore
 
-struct SeasonCandidateDTO: Codable {
-    @DocumentID var id: String?
-
+struct SeasonCandidateDTO: Decodable {
     let brandID: String
     let title: String
     let seasonURL: String
@@ -22,14 +20,14 @@ struct SeasonCandidateDTO: Codable {
     let createdAt: Timestamp?
     let updatedAt: Timestamp?
 
-    func toDomain() throws -> SeasonCandidate {
-        guard let id else { throw MappingError.missingDocumentID }
+    func toDomain(documentID: String) throws -> SeasonCandidate {
+        guard !documentID.isEmpty else { throw MappingError.missingDocumentID }
         guard !brandID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw MappingError.missingRequiredField("brandID")
         }
 
         return SeasonCandidate(
-            id: id,
+            id: documentID,
             brandID: BrandID(value: brandID),
             title: title,
             seasonURL: seasonURL,

@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import FirebaseFirestore
 
 enum CreateRoomUseCaseEvent {
     case presentCreatedRoom(ChatRoom)
@@ -24,26 +23,21 @@ protocol CreateRoomUseCaseProtocol {
 
 @MainActor
 final class CreateRoomUseCase: CreateRoomUseCaseProtocol {
-    private let chatRoomRepository: FirebaseChatRoomRepositoryProtocol
+    private let chatRoomRepository: CreateRoomRepositoryProtocol
     private let imageStorageRepository: FirebaseImageStorageRepositoryProtocol
     private let roomImageManager: RoomImageManaging
     private let currentUserUIDProvider: @Sendable () -> String
-    private let roomIDGenerator: @Sendable () -> String
 
     init(
-        chatRoomRepository: FirebaseChatRoomRepositoryProtocol,
+        chatRoomRepository: CreateRoomRepositoryProtocol,
         imageStorageRepository: FirebaseImageStorageRepositoryProtocol,
         roomImageManager: RoomImageManaging,
-        currentUserUIDProvider: @escaping @Sendable () -> String = { LoginManager.shared.canonicalUserID },
-        roomIDGenerator: @escaping @Sendable () -> String = {
-            Firestore.firestore().collection("Rooms").document().documentID
-        }
+        currentUserUIDProvider: @escaping @Sendable () -> String = { LoginManager.shared.canonicalUserID }
     ) {
         self.chatRoomRepository = chatRoomRepository
         self.imageStorageRepository = imageStorageRepository
         self.roomImageManager = roomImageManager
         self.currentUserUIDProvider = currentUserUIDProvider
-        self.roomIDGenerator = roomIDGenerator
     }
 
     func execute(
@@ -58,20 +52,17 @@ final class CreateRoomUseCase: CreateRoomUseCaseProtocol {
         }
 
         let currentUserUID = currentUserUIDProvider()
-        let roomID = roomIDGenerator()
-
-        let room = ChatRoom(
-            ID: roomID,
+        let input = CreateChatRoomInput(
             roomName: roomName,
             roomDescription: roomDescription,
-            participants: [currentUserUID],
             creatorUID: currentUserUID,
             createdAt: Date()
         )
 
         // Core write must succeed before the UI treats the room as created.
+        let room: ChatRoom
         do {
-            try await chatRoomRepository.saveRoomInfoToFirestore(room: room)
+            room = try await chatRoomRepository.createRoom(input: input)
         } catch {
             throw (error as? RoomCreationError) ?? .saveFailed
         }
@@ -79,13 +70,13 @@ final class CreateRoomUseCase: CreateRoomUseCaseProtocol {
         onEvent(.presentCreatedRoom(room))
         onEvent(.roomSaveCompleted(room))
 
-        if let imagePair, let roomID = room.ID, !roomID.isEmpty {
+        if let imagePair, !room.id.isEmpty {
             Task(priority: .background) { [weak self] in
                 guard let self else { return }
                 do {
                     try await self.uploadRoomImageAndPatchRoom(
                         room: room,
-                        roomID: roomID,
+                        roomID: room.id,
                         imagePair: imagePair
                     )
                 } catch {

@@ -177,7 +177,7 @@ final class ChatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol {
 
         if ensureReservation {
             try await sendingRepository.preflightMediaUpload(
-                roomID: room.ID ?? "",
+                roomID: room.id,
                 messageID: clientMessageID,
                 kind: "images",
                 attachmentCount: attachments.count,
