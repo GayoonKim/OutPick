@@ -177,6 +177,7 @@ actor RealtimeSocketService {
 
     private var manager: SocketManager?
     private var socket: SocketIOClient?
+    private var listenerBinder: RealtimeSocketListenerBinder?
     private var identity: SocketSessionIdentity?
 
     private var clientPolicy = ReconnectPolicy(maxAttempts: 5, baseDelay: 0.5, maxDelay: 8.0, jitter: 0.3)
@@ -185,7 +186,6 @@ actor RealtimeSocketService {
     private var allowReconnect = true
 
     private var connectWaiters: [CheckedContinuation<Void, Error>] = []
-    private var didBindSocketLifecycle = false
 
     private var joinedRooms = Set<String>()
     private var pendingRooms: Set<String> = []
@@ -194,9 +194,6 @@ actor RealtimeSocketService {
     private var creatingRooms = Set<String>()
 
     private var roomSessionActors = [String: ChatRoomSessionActor]()
-    private var isChatMessageListenerBound = false
-    private var isImageMessageListenerBound = false
-    private var isVideoMessageListenerBound = false
     private var roomClosedContinuations = [UUID: AsyncStream<String>.Continuation]()
 
     private static let isoFormatter: ISO8601DateFormatter = {
@@ -293,7 +290,6 @@ actor RealtimeSocketService {
             try await connect(identity: resolvedIdentity)
         }
 
-        bindMessageListenersIfNeeded()
         try await joinRoomAwaitingAck(roomID)
 
         return ChatRoomSocketSession(
@@ -311,12 +307,6 @@ actor RealtimeSocketService {
         let isEmpty = await sessionActor.removeConsumer(consumerID)
         if isEmpty {
             roomSessionActors.removeValue(forKey: roomID)
-        }
-
-        if roomSessionActors.isEmpty {
-            detachChatListener()
-            detachImageListener()
-            detachVideoListener()
         }
     }
 
@@ -346,7 +336,6 @@ actor RealtimeSocketService {
         AsyncStream { continuation in
             let id = UUID()
             roomClosedContinuations[id] = continuation
-            bindRoomClosedListenerIfNeeded()
 
             continuation.onTermination = { [weak self] _ in
                 Task {
@@ -702,14 +691,10 @@ actor RealtimeSocketService {
         manager?.disconnect()
         manager = nil
         socket = nil
-        didBindSocketLifecycle = false
-        isChatMessageListenerBound = false
-        isImageMessageListenerBound = false
-        isVideoMessageListenerBound = false
+        listenerBinder = nil
         identity = newIdentity
 
         let manager = SocketManager(socketURL: newIdentity.socketURL, config: [
-            .log(true),
             .compress,
             .secure(true),
             .forceWebsockets(true),
@@ -721,39 +706,63 @@ actor RealtimeSocketService {
         let socket = manager.defaultSocket
         self.manager = manager
         self.socket = socket
-        bindSocketLifecycleIfNeeded(socket: socket)
+        bindSocketListenersOnce(socket: socket)
     }
 
-    private func bindSocketLifecycleIfNeeded(socket: SocketIOClient) {
-        guard !didBindSocketLifecycle else { return }
-        didBindSocketLifecycle = true
-
-        socket.on(clientEvent: .connect) { [weak self] _, _ in
-            Task { await self?.handleConnected() }
-        }
-
-        socket.on(clientEvent: .error) { [weak self] data, _ in
-            Task { await self?.handleSocketError(data) }
-        }
-
-        socket.on(clientEvent: .disconnect) { [weak self] data, _ in
-            Task { await self?.handleSocketDisconnect(data) }
-        }
-
-        socket.off("server:connect:ready")
-        socket.on("server:connect:ready") { [weak self] data, _ in
-            Task { await self?.handleServerConnectReady(data) }
-        }
+    private func bindSocketListenersOnce(socket: SocketIOClient) {
+        let binder = RealtimeSocketListenerBinder()
+        let listener = SocketIOEventListenerAdapter(socket: socket)
+        binder.bind(
+            to: listener,
+            callbacks: RealtimeSocketListenerCallbacks(
+                connected: { [weak self] _ in
+                    Task { await self?.handleConnected() }
+                },
+                error: { [weak self] data in
+                    Task { await self?.handleSocketError(data) }
+                },
+                disconnected: { [weak self] data in
+                    Task { await self?.handleSocketDisconnect(data) }
+                },
+                serverConnectReady: { [weak self] data in
+                    Task { await self?.handleServerConnectReady(data) }
+                },
+                chatMessage: { [weak self] data in
+                    Task {
+                        await self?.handleIncomingData(
+                            data,
+                            event: RealtimeSocketListenerBinder.chatMessageEvent
+                        )
+                    }
+                },
+                imagesReceived: { [weak self] data in
+                    Task {
+                        await self?.handleIncomingData(
+                            data,
+                            event: RealtimeSocketListenerBinder.imagesReceivedEvent
+                        )
+                    }
+                },
+                videoReceived: { [weak self] data in
+                    Task {
+                        await self?.handleIncomingData(
+                            data,
+                            event: RealtimeSocketListenerBinder.videoReceivedEvent
+                        )
+                    }
+                },
+                roomClosed: { [weak self] data in
+                    Task { await self?.handleRoomClosedData(data) }
+                }
+            )
+        )
+        listenerBinder = binder
     }
 
     private func handleConnected() {
         print("Socket Connected")
         manualAttempt = 0
         socket?.emitWithAck("client:hello", ["attempt": 0]).timingOut(after: 3) { _ in }
-
-        if !roomSessionActors.isEmpty {
-            bindMessageListenersIfNeeded()
-        }
 
         if let nickname = identity?.nickname, !nickname.isEmpty {
             socket?.emit("set username", nickname)
@@ -808,23 +817,12 @@ actor RealtimeSocketService {
         )
     }
 
-    private func bindMessageListenersIfNeeded() {
-        attachChatListener()
-        attachImageListener()
-        attachVideoListener()
-    }
-
-    private func bindRoomClosedListenerIfNeeded() {
-        guard let socket else { return }
-        socket.off("room:closed")
-        socket.on("room:closed") { [weak self] data, _ in
-            guard
-                let dict = data.first as? [String: Any],
-                let closedRoomID = dict["roomID"] as? String
-            else { return }
-
-            Task { await self?.publishRoomClosed(closedRoomID) }
-        }
+    private func handleRoomClosedData(_ data: [Any]) {
+        guard
+            let dict = data.first as? [String: Any],
+            let closedRoomID = dict["roomID"] as? String
+        else { return }
+        publishRoomClosed(closedRoomID)
     }
 
     private func publishRoomClosed(_ roomID: String) {
@@ -836,66 +834,11 @@ actor RealtimeSocketService {
     private func removeRoomClosedContinuation(_ id: UUID) {
         roomClosedContinuations[id]?.finish()
         roomClosedContinuations.removeValue(forKey: id)
-        if roomClosedContinuations.isEmpty {
-            socket?.off("room:closed")
-        }
     }
 
-    private func attachChatListener() {
-        guard !isChatMessageListenerBound, let socket else { return }
-        isChatMessageListenerBound = true
-        let event = "chat message"
-        socket.off(event)
-        socket.on(event) { [weak self] data, _ in
-            guard let dict = data.first as? [String: Any] else { return }
-            Task {
-                await self?.handleIncomingPayload(dict, event: event)
-            }
-        }
-    }
-
-    private func detachChatListener() {
-        guard isChatMessageListenerBound else { return }
-        socket?.off("chat message")
-        isChatMessageListenerBound = false
-    }
-
-    private func attachImageListener() {
-        guard !isImageMessageListenerBound, let socket else { return }
-        isImageMessageListenerBound = true
-        let event = "receiveImages"
-        socket.off(event)
-        socket.on(event) { [weak self] data, _ in
-            guard let dict = data.first as? [String: Any] else { return }
-            Task {
-                await self?.handleIncomingPayload(dict, event: event)
-            }
-        }
-    }
-
-    private func detachImageListener() {
-        guard isImageMessageListenerBound else { return }
-        socket?.off("receiveImages")
-        isImageMessageListenerBound = false
-    }
-
-    private func attachVideoListener() {
-        guard !isVideoMessageListenerBound, let socket else { return }
-        isVideoMessageListenerBound = true
-        let event = "receiveVideo"
-        socket.off(event)
-        socket.on(event) { [weak self] data, _ in
-            guard let dict = data.first as? [String: Any] else { return }
-            Task {
-                await self?.handleIncomingPayload(dict, event: event)
-            }
-        }
-    }
-
-    private func detachVideoListener() {
-        guard isVideoMessageListenerBound else { return }
-        socket?.off("receiveVideo")
-        isVideoMessageListenerBound = false
+    private func handleIncomingData(_ data: [Any], event: String) {
+        guard let payload = data.first as? [String: Any] else { return }
+        handleIncomingPayload(payload, event: event)
     }
 
     private func handleIncomingPayload(_ payload: [String: Any], event: String) {
@@ -942,9 +885,6 @@ actor RealtimeSocketService {
                 await actor.finishAll()
             }
         }
-        detachChatListener()
-        detachImageListener()
-        detachVideoListener()
     }
 
     private func emitJoinRoomIfNeeded(_ roomID: String) {
