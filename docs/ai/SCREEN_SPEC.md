@@ -135,7 +135,7 @@ OutPick의 화면 구성과 화면별 책임을 AI 에이전트가 빠르게 확
 
 - 폴더: `OutPick/Features/Lookbook/Views/CreateBrand`
 - ViewModels: `CreateBrandViewModel`, `CreateSeasonViewModel`, `CreateSeasonFromURLViewModel`
-- 책임: 브랜드 생성, 시즌 생성, URL 기반 시즌 생성/가져오기.
+- 책임: 브랜드 생성과 URL 기반 시즌 생성/가져오기. `CreateSeasonView`/`CreateSeasonViewModel` 구현은 남아 있지만 production 조립·표시 진입점은 없으며, 직접 시즌 생성 복원 또는 미사용 코드 제거는 별도 후속 후보다.
 
 ### Liked
 

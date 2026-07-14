@@ -78,6 +78,9 @@ Chat repository:
 
 - Protocol: `OutPick/DB/Firebase/DatabaseManager/Protocols/FirebaseChatRoomRepositoryProtocol.swift`
 - Implementation: `OutPick/DB/Firebase/DatabaseManager/Repositories/FirebaseChatRoomRepository.swift`
+- Room read DTO: `OutPick/DB/Firebase/DatabaseManager/DTOs/ChatRoomFirestoreDTO.swift`
+- Room read/write mapper: `OutPick/DB/Firebase/DatabaseManager/Mappers/ChatRoomFirestoreMapper.swift`
+- Room identity는 snapshot document ID를 mapper에 주입하며, 생성 payload는 자기 `ID`/`id`와 legacy `participantUIDs`를 제외한다.
 
 User profile repository:
 
@@ -91,6 +94,16 @@ Data 접근 원칙:
 - 서버 상태 변경은 Repository 또는 Cloud Functions 경계 뒤로 둔다.
 - DTO/Firestore path 변경은 `docs/ai/DATA_SCHEMA.md`와 관련 entrypoint 문서를 함께 갱신한다.
 
+Firestore 문서 ID 경계:
+
+- canonical source: `DocumentSnapshot.documentID`.
+- Repository가 경로 ID를 DTO→Domain mapper에 명시적으로 전달한다.
+- 자기 문서의 기본키는 write payload의 `ID`/`id`로 중복 저장하지 않는다.
+- 부모·컨텍스트 ID와 query projection용 ID는 별도 데이터 계약으로 유지한다.
+- 상세 결정과 진행 상태: ADR-020, `docs/ai/tasks/firestore-document-id-boundary-cleanup/`.
+- Chat 구현을 찾을 때는 `CHAT.md`의 `채팅방 Firestore ID 경계와 생성`, Lookbook 구현을 찾을 때는 `LOOKBOOK.md`의 `Firestore 문서 ID 경계` 표에서 DTO→Mapper→Repository 순서로 확인한다.
+- rules·배포·운영 cleanup 상태는 `FIREBASE.md`, 자동·수동 검증은 `TESTS.md`와 task `qa-checklist.md`를 확인한다.
+
 ## 검증
 
 GRDB 변경:
@@ -103,6 +116,7 @@ xcodebuild -project OutPick.xcodeproj -scheme OutPick -destination 'generic/plat
 Firestore rules/indexes 변경:
 
 - `.codex/skills/firestore-workflow/SKILL.md` 절차를 먼저 확인한다.
+- rules emulator 계약 테스트는 `firestore-tests/`에서 `npm test`로 실행한다.
 - 운영 deploy는 사용자 명시 승인 후 진행한다.
 
 Firebase Functions 변경:

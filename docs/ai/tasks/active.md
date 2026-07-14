@@ -3,9 +3,10 @@
 ## 현재 상태
 
 - 현재 진행 중인 핵심 task는 없다.
+- `firestore-document-id-boundary-cleanup`은 Phase 1~4 구현·QA, rules 운영 배포, 운영 `Rooms.ID` cleanup과 사후 재감사까지 완료하고 2026-07-14 종료했다.
 - `core-infrastructure-modularization`은 Phase 2~5 구현, Phase 6 동일 SHA 회귀, Socket/Functions 운영 배포, D49 안정화와 통합 수동 QA까지 완료하고 2026-07-14 종료했다.
-- FCM fanout은 Apple 개발자 계정 결제 후 별도 QA task로 진행한다. D40 media dedupe와 Firestore `@DocumentID` 경고도 이번 작업 범위 밖 후속이다.
-- 최근 완료 구현 작업은 `core-infrastructure-modularization`이다.
+- FCM fanout은 Apple 개발자 계정 결제 후 별도 QA task로 진행한다. `socket-media-dedupe-hardening`은 다음 핵심 task 후보다.
+- 최근 완료 구현 작업은 `firestore-document-id-boundary-cleanup`이다.
 - 새 작업을 시작할 때 이 문서에는 현재 task 한 건과 바로 이전 완료 작업만 상세 링크로 유지한다.
 - 오래된 완료 이력은 각 task의 `progress.md`, 장기 결정은 `docs/ai/ADR.md`에서 확인한다.
 
@@ -17,6 +18,7 @@
 
 | 작업 | 상태 | 핵심 결과 | 상세 |
 | --- | --- | --- | --- |
+| `firestore-document-id-boundary-cleanup` | 완료·rules 운영 배포·데이터 cleanup·통합 QA 완료 | 경로 document ID를 canonical source로 통일하고 앱 `@DocumentID`와 운영 Rooms 중복 ID를 제거 | [progress](firestore-document-id-boundary-cleanup/progress.md), [qa](firestore-document-id-boundary-cleanup/qa-checklist.md), [ADR-020](../adr/ADR-020-firestore-문서-identity는-문서-경로-id를-단일-기준으로-사용한다.md) |
 | `core-infrastructure-modularization` | 완료·운영 배포·통합 QA 완료, FCM 별도 보류 | iOS Functions/GRDB, Firebase Functions, Socket을 기능별 경계와 공통 runtime, 얇은 entrypoint로 전환 | [progress](core-infrastructure-modularization/progress.md), [qa](core-infrastructure-modularization/qa-checklist.md), [ADR-019](../adr/ADR-019-핵심-인프라는-기능별-모듈러-경계와-현재-배포-단위를-유지한다.md) |
 | `lookbook-deletion-purge-drain` | 완료·운영 배포·QA 완료 | 일일 purge의 전체 20개 상한 제거, cursor drain, 브랜드별 lease/최대 3개 병렬, 7분 claim cutoff | [progress](lookbook-deletion-purge-drain/progress.md), [decisions](lookbook-deletion-purge-drain/decisions.md), [ADR-018](../adr/ADR-018-룩북-영구-삭제는-일일-bounded-drain과-브랜드-lease로-처리한다.md) |
 | `lookbook-deletion-request-list-simplification` | 완료·운영 배포·수동 QA 완료 | 앱 삭제 요청 목록을 `active/failed`로 단순화하고 총 관리자 manual retry 추가 | [progress](lookbook-deletion-request-list-simplification/progress.md), [decisions](lookbook-deletion-request-list-simplification/decisions.md) |

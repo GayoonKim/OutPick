@@ -14,6 +14,7 @@
 
 - Firebase, Firestore, Cloud Functions, GRDB, Storage는 View가 직접 접근하지 않는다.
 - Domain entity와 외부 DTO를 분리하고 mapper가 변환을 담당한다.
+- Firestore 문서의 자기 identity는 ADR-020에 따라 문서 경로 ID를 사용하고 payload에 `ID`/`id`로 중복 저장하지 않는다.
 - ViewModel은 Repository/UseCase 계약에 의존한다.
 - 확정되지 않은 collection, field, index는 추가하지 않고 사용자와 논의한다.
 - 실제 보안 계약은 `firestore.rules`, query 계약은 `firestore.indexes.json`, Storage 계약은 `storage.rules`가 최종 source다.
@@ -37,6 +38,8 @@
 - 문서상 `userID == canonicalUserID == Firebase Auth uid`다.
 - 프로필 경로는 `users/{uid}`이며 이메일/provider fallback query는 사용하지 않는다.
 - `Rooms.creatorUID`, `Messages.senderUID`, member 문서 ID, joinedRooms owner 경로는 같은 UID를 저장한다.
+- Chat room 자기 identity는 `Rooms/{roomID}` 경로의 document ID이며 `ChatRoom.id`로 주입한다. 새 room payload에는 자기 `ID`/`id`를 저장하지 않는다.
+- 2026-07-14 운영 Rooms의 legacy 자기 `ID` 4건을 cleanup했으며 사후 감사 기준 `Rooms.ID`/`Rooms.id` 보유 문서는 0건이다.
 - `Rooms.participantUIDs`, 사용자 문서의 legacy `joinedRooms` 배열, `roomStates`는 신규 source로 사용하지 않는다.
 - GRDB `LocalChatUser.userID`, `RoomProfileDisplayCache.userID`, `chatMessage.senderUID`도 같은 UID 의미다.
 - 개발 DB에서 재현된 legacy `chatMessage.senderID NOT NULL` schema만 migration으로 현재 schema로 재작성한다.
@@ -49,6 +52,7 @@
 
 - authoritative membership: `Rooms/{roomID}/members/{uid}`. 나가면 member 문서를 hard delete한다.
 - 참여중 목록 projection: `users/{uid}/joinedRooms/{roomID}`.
+- 방 생성은 room 문서, owner member 문서, joinedRooms projection을 하나의 transaction으로 저장한다.
 - projection 필드: `roomID`, `role`, `joinedAt`, `lastReadSeq`, `isClosed`, `updatedAt`.
 - 마지막 메시지는 `Rooms.lastMessage*`만 source로 사용하며 사용자별 projection으로 fan-out하지 않는다.
 - 전체 참여자 목록은 member collection을 stable document ID 순서로 pagination한다.
@@ -79,6 +83,8 @@
 - 브랜드 owner/admin: `brands/{brandID}/admins/{uid}.role in [owner, admin]`.
 - `brands.ownerUIDs/adminUIDs`와 과거 capability 필드는 신규 권한 source로 사용하지 않는다.
 - 브랜드명 중복 방지는 `brandNameIndex/{normalizedName}` 계열 transaction으로 처리한다.
+- Lookbook read DTO는 경로 ID를 포함하지 않고 Repository가 `DocumentSnapshot.documentID`를 mapper에 전달한다.
+- 시즌 생성 write는 `SeasonWriteDTO`를 사용하며 read DTO와 자기 문서 ID를 encode하지 않는다.
 
 ### 사용자 상태
 

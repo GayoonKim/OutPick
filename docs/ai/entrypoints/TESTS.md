@@ -13,6 +13,9 @@ xcodebuild -scheme OutPick -destination 'generic/platform=iOS Simulator' build
 - Phase 6 통합 회귀: `docs/ai/tasks/core-infrastructure-modularization/phases/phase-6-integration-tests.md`
 - Phase 6 배포·smoke gate: `docs/ai/tasks/core-infrastructure-modularization/phases/phase-6-deployment.md`
 - Phase 6는 Phase 2~5 targeted test, iOS generic build, Functions test/lint/build와 Socket check/test를 같은 배포 commit SHA 기준으로 실행한다.
+- Firestore rules emulator: `firestore-tests/room-document-id.rules.test.mjs`
+  - room/member/joinedRooms 원자 transaction과 Rooms `ID`/`id` create/update 차단을 검증한다.
+  - 실행: `cd firestore-tests && npm install && npm test`.
 
 ## Lookbook
 
@@ -24,6 +27,11 @@ xcodebuild -scheme OutPick -destination 'generic/platform=iOS Simulator' build
 - Lookbook detail tests: `OutPickTests/PostDetailScreenViewModelTests.swift`, `OutPickTests/SeasonDetailViewModelTests.swift`
 - 좋아요 탭 tests: `OutPickTests/LikedViewModelTests.swift`, `OutPickTests/LoadLikedSeasonsUseCaseTests.swift`
 - 삭제 요청 관리 pagination/retry tests: `OutPickTests/AdminLookbookDeletionManagementViewModelTests.swift`
+- Firestore 문서 ID 경계: `OutPickTests/FirestoreDocumentIDBoundaryTests.swift`
+  - 저장된 legacy `id`보다 경로 ID가 우선하는지, 빈 경로 ID가 실패하는지, Season write payload에 `ID`/`id`가 없는지 검증한다.
+  - 실행: `xcodebuild -project OutPick.xcodeproj -scheme OutPick -destination 'platform=iOS Simulator,id={simulator-id}' -only-testing:OutPickTests/FirestoreDocumentIDBoundaryTests test`.
+  - 2026-07-14 Phase 4에서 영향 범위 11개 suite의 runtime test 59개, Firestore Emulator 11개, generic Simulator build와 test target build-for-testing이 통과했다. 실제 로그인 QA에서도 Chat/Lookbook read·write 경계와 `I-FST000002` 0건을 확인했다.
+  - rules 운영 배포와 Rooms legacy `ID` 4건 cleanup 후 재감사에서 `ID`/`id` 보유 0건, 방 4개 유지, 핵심 불변식 누락 0건과 로그인 앱 목록 read를 확인했다.
 - UI smoke/failure tests: `OutPickUITests/LookbookSmokeUITests.swift`, `OutPickUITests/LookbookInteractionFailureToastUITests.swift`
 - UI test support/robots: `OutPickUITests/LookbookUITestSupport.swift`, `OutPickUITests/LookbookPostDetailRobot.swift`, `OutPickUITests/LookbookCommentsRobot.swift`
 
@@ -94,6 +102,10 @@ xcodebuild -scheme OutPick -destination 'platform=iOS Simulator,name={simulator}
   - `JoinedRoomsSessionStore` snapshot API, replace/add/remove/clear/contains 동작을 확인한다.
 - Room exit use case tests: `OutPickTests/ChatRoomExitUseCaseTests.swift`
   - socket leave/close 성공/실패, local cleanup, joined room remove 경로를 확인한다.
+- Chat room Firestore mapper tests: `OutPickTests/ChatRoomFirestoreMapperTests.swift`
+  - 경로 document ID 우선, 핵심 필드 검증, ancillary 기본값과 identity-free write payload를 확인한다.
+- Create room use case tests: `OutPickTests/CreateRoomUseCaseTests.swift`
+  - duplicate 차단, Repository 반환 room 이벤트, 저장 실패 시 이벤트 미발행을 확인한다.
 - Media upload tests: `OutPickTests/ChatMediaUploadUseCaseTests.swift`
   - image/video upload orchestration, preflight/finalize 실패, pending/outbox 연동을 확인한다.
   - 동기 socket connected guard가 아니라 preflight/finalize ACK 실패 경로를 검증한다.

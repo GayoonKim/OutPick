@@ -165,6 +165,13 @@ npm run build
 - 서버 전용 projection/audit/lease collection은 클라이언트 직접 접근을 차단한다.
 - 시즌/포스트 hard delete는 앱에서 직접 수행하지 않는다.
 - 변경 시 emulator 또는 deploy dry-run, diff check 후 승인된 범위만 배포한다.
+- Firestore rules emulator package: `firestore-tests/`
+- 문서 ID 경계 rules test: `firestore-tests/room-document-id.rules.test.mjs`
+- 로컬 실행: `cd firestore-tests && npm install && npm test`
+- `Rooms` create는 `ID`/`id`를 거부하고, update는 해당 필드 추가·변경·삭제를 거부하되 기존 legacy 값이 불변인 metadata update는 허용한다.
+- rules 구현 진입점: `firestore.rules`의 `roomCreateHasNoDocumentIDFields`, `roomUpdateDoesNotChangeDocumentIDFields`, `match /Rooms/{roomID}`.
+- 2026-07-14 Emulator 11/11과 dry-run 통과 후 `outpick-664ae`에 rules를 운영 배포했다.
+- 같은 날 별도 승인된 Admin transaction으로 기존 Rooms 4건의 uppercase `ID`만 삭제했다. 사후 감사 기준 `Rooms.ID`/`Rooms.id` 보유 문서는 0건이다.
 
 ### Indexes
 

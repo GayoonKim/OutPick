@@ -12,7 +12,7 @@ Chat 기능 수정 시 관련 화면, ViewModel, UseCase, Repository, 검색 인
 - Repository protocol: `OutPick/DB/Firebase/DatabaseManager/Protocols/FirebaseChatRoomRepositoryProtocol.swift`
 - Repository implementation: `OutPick/DB/Firebase/DatabaseManager/Repositories/FirebaseChatRoomRepository.swift`
 - 검색 인덱스 모델: `OutPick/Features/Chat/Domain/Models/ChatRoomSearchIndex.swift`
-- Room 저장 인덱스 반영: `OutPick/Features/Chat/Domain/Models/ChatRoom.swift`
+- Room 저장 인덱스 반영: `OutPick/DB/Firebase/DatabaseManager/Mappers/ChatRoomFirestoreMapper.swift`
 - Firestore indexes: `firestore.indexes.json`
 - Firestore room/message/media preview read rules: `firestore.rules`
 
@@ -97,14 +97,23 @@ Chat 기능 수정 시 관련 화면, ViewModel, UseCase, Repository, 검색 인
 
 `JoinedRoomsViewModel`은 shared read-state stream을 구독해 unread count와 마지막 메시지 summary를 즉시 반영한다. `RoomListsViewModel`은 같은 stream을 신호로 사용해 repository의 cached top rooms snapshot을 다시 발행한다. 단, 앱 재실행/네트워크 재동기화의 authoritative source는 여전히 Firestore 단발 fetch와 pull-to-refresh다.
 
-## Firestore DocumentID 경고 후속
+## 채팅방 Firestore ID 경계와 생성
 
-- 경고 진입점: `OutPick/Features/Chat/Domain/Models/ChatRoom.swift`
-- 추가 점검 대상: `OutPick/Features/Lookbook/Models/DTOs/SeasonDTO.swift`와 `@DocumentID` DTO들
-- 확인된 증상: Firestore room 목록 디코딩 시 `I-FST000002`가 문서별로 출력된다.
-- 가장 유력한 원인: `ChatRoom.init(from:)`가 Firestore에서 디코딩한 `DocumentID<String>`의 wrapped value를 `ID`에 non-nil로 다시 초기화한다.
-- 현재 영향: Firestore가 read 시 문서 ID를 자동 주입하므로 즉시 기능 실패나 D49 reconnect 회귀는 확인되지 않았다. 다만 `@DocumentID` 값은 write 시 무시되므로 경고와 문서 경로 ID/`ID` field의 이중 source를 후속 정리한다.
-- 구현 전 결정: `ChatRoom`의 backing wrapper 직접 디코딩만 적용할지, 앱 미배포를 근거로 Firestore DTO와 domain model을 분리하고 저장 문서의 중복 `ID` field까지 제거할지 범위를 확정한다.
+| 확인할 내용 | 코드 진입점 |
+| --- | --- |
+| Domain identity와 화면 상태 | `OutPick/Features/Chat/Domain/Models/ChatRoom.swift`; `ChatRoom.id: String`이 non-optional identity |
+| 생성 시 입력 상태 | `OutPick/Features/Chat/Domain/Models/CreateChatRoomInput.swift` |
+| Firestore read schema | `OutPick/DB/Firebase/DatabaseManager/DTOs/ChatRoomFirestoreDTO.swift` |
+| 핵심 불변식 검증과 write payload | `OutPick/DB/Firebase/DatabaseManager/Mappers/ChatRoomFirestoreMapper.swift` |
+| 생성 orchestration과 event | `OutPick/Features/Chat/Domain/UseCases/CreateRoomUseCase.swift` |
+| ID 생성과 room/member/joined transaction | `OutPick/DB/Firebase/DatabaseManager/Repositories/FirebaseChatRoomRepository.swift` |
+| 생성 전용 최소 계약 | `OutPick/DB/Firebase/DatabaseManager/Protocols/FirebaseChatRoomRepositoryProtocol.swift`의 `CreateRoomRepositoryProtocol` |
+| rules 차단 | `firestore.rules`의 `roomCreateHasNoDocumentIDFields`, `roomUpdateDoesNotChangeDocumentIDFields` |
+| mapper/UseCase/rules 회귀 | `OutPickTests/ChatRoomFirestoreMapperTests.swift`, `OutPickTests/CreateRoomUseCaseTests.swift`, `firestore-tests/room-document-id.rules.test.mjs` |
+
+채팅방 자기 identity는 `DocumentSnapshot.documentID`만 source로 사용한다. Mapper는 document ID, `roomName`, `creatorUID`, `createdAt`을 핵심 불변식으로 검증하고 부가 필드는 legacy 기본값을 허용한다. 새 방은 `Rooms/{roomID}`, `Rooms/{roomID}/members/{creatorUID}`, `users/{creatorUID}/joinedRooms/{roomID}`를 단일 transaction으로 생성하며 room payload에 `ID`, `id`, `participantUIDs`를 쓰지 않는다.
+
+2026-07-14 운영 rules 배포와 기존 Rooms 4건의 uppercase `ID` cleanup을 완료했다. 사후 감사 기준 `Rooms.ID`/`Rooms.id` 보유 문서는 0건이며 방 4개와 핵심 불변식은 유지됐다.
 
 ## 방 정보 수정 반영
 
