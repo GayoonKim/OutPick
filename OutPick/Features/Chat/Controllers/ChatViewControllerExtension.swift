@@ -271,11 +271,16 @@ extension ChatViewController {
                 self.setUploadedImageAttachments(attachments, for: messageID)
             }
             await markOutgoingImageUploadCompleted(messageID: messageID, attachments: attachments)
-            try await mediaUploadUseCase.sendUploadedImages(
+            let receipt = try await mediaUploadUseCase.sendUploadedImages(
                 room: room,
                 attachments: attachments,
                 clientMessageID: messageID,
                 ensureReservation: false
+            )
+
+            await reconcileServerConfirmedOutgoingMessage(
+                receipt: receipt,
+                confirmedAttachments: attachments
             )
 
             await MainActor.run {
@@ -317,10 +322,15 @@ extension ChatViewController {
                 self.setUploadedVideoPayload(payload, for: messageID)
             }
             await markOutgoingVideoUploadCompleted(messageID: messageID, payload: payload)
-            try await mediaUploadUseCase.sendUploadedVideo(
+            let receipt = try await mediaUploadUseCase.sendUploadedVideo(
                 roomID: roomID,
                 payload: payload,
                 ensureReservation: false
+            )
+
+            await reconcileServerConfirmedOutgoingMessage(
+                receipt: receipt,
+                confirmedAttachments: [payload.confirmedAttachment]
             )
 
             await MainActor.run {
@@ -353,11 +363,15 @@ extension ChatViewController {
         attachments: [Attachment]
     ) async {
         do {
-            try await mediaUploadUseCase.sendUploadedImages(
+            let receipt = try await mediaUploadUseCase.sendUploadedImages(
                 room: room,
                 attachments: attachments,
                 clientMessageID: messageID,
                 ensureReservation: true
+            )
+            await reconcileServerConfirmedOutgoingMessage(
+                receipt: receipt,
+                confirmedAttachments: attachments
             )
             await MainActor.run {
                 self.finishPendingImageUpload(messageID: messageID)
@@ -380,10 +394,14 @@ extension ChatViewController {
         payload: VideoMetaPayload
     ) async {
         do {
-            try await mediaUploadUseCase.sendUploadedVideo(
+            let receipt = try await mediaUploadUseCase.sendUploadedVideo(
                 roomID: roomID,
                 payload: payload,
                 ensureReservation: true
+            )
+            await reconcileServerConfirmedOutgoingMessage(
+                receipt: receipt,
+                confirmedAttachments: [payload.confirmedAttachment]
             )
             await MainActor.run {
                 self.finishPendingVideoUpload(messageID: messageID)

@@ -7,11 +7,7 @@
 
 import Foundation
 
-struct LookbookChatShareSendResult: Equatable, Sendable {
-    let roomID: String
-    let messageID: String
-    let seq: Int64?
-}
+typealias LookbookChatShareSendResult = ChatMessageSendReceipt
 
 enum LookbookChatShareError: Error, Equatable, LocalizedError, Sendable {
     case invalidRoomID
@@ -53,6 +49,7 @@ enum LookbookChatShareError: Error, Equatable, LocalizedError, Sendable {
 
 protocol LookbookChatShareSendingRepositoryProtocol {
     func sendLookbookShare(
+        messageID: String,
         sharedContent: LookbookSharedContent,
         messageText: String?,
         to room: ChatRoom
@@ -61,16 +58,23 @@ protocol LookbookChatShareSendingRepositoryProtocol {
 
 extension LookbookChatShareSendingRepositoryProtocol {
     func sendLookbookShare(
+        messageID: String,
         sharedContent: LookbookSharedContent,
         to room: ChatRoom
     ) async throws -> LookbookChatShareSendResult {
-        try await sendLookbookShare(sharedContent: sharedContent, messageText: nil, to: room)
+        try await sendLookbookShare(
+            messageID: messageID,
+            sharedContent: sharedContent,
+            messageText: nil,
+            to: room
+        )
     }
 }
 
 protocol LookbookChatShareSocketSending {
     func sendLookbookShare(
         roomID: String,
+        messageID: String,
         sharedContent: LookbookSharedContent,
         messageText: String?,
         ackTimeout: Double
@@ -90,6 +94,7 @@ final class SocketLookbookChatShareSendingRepository: LookbookChatShareSendingRe
     }
 
     func sendLookbookShare(
+        messageID: String,
         sharedContent: LookbookSharedContent,
         messageText: String? = nil,
         to room: ChatRoom
@@ -104,6 +109,7 @@ final class SocketLookbookChatShareSendingRepository: LookbookChatShareSendingRe
 
         return try await socketManager.sendLookbookShare(
             roomID: roomID,
+            messageID: messageID,
             sharedContent: sharedContent,
             messageText: messageText,
             ackTimeout: ackTimeout
@@ -121,7 +127,8 @@ enum LookbookChatShareAckMapper {
             return LookbookChatShareSendResult(
                 roomID: roomID,
                 messageID: fallbackMessageID,
-                seq: nil
+                seq: nil,
+                duplicate: false
             )
         }
 
@@ -143,7 +150,12 @@ enum LookbookChatShareAckMapper {
     ) throws -> LookbookChatShareSendResult {
         let normalized = normalizedAckText(text)
         if normalized.isEmpty {
-            return LookbookChatShareSendResult(roomID: roomID, messageID: fallbackMessageID, seq: nil)
+            return LookbookChatShareSendResult(
+                roomID: roomID,
+                messageID: fallbackMessageID,
+                seq: nil,
+                duplicate: false
+            )
         }
 
         if ["no ack", "no_ack", "timeout"].contains(normalized) {
@@ -154,7 +166,12 @@ enum LookbookChatShareAckMapper {
             throw LookbookChatShareError.server(text)
         }
 
-        return LookbookChatShareSendResult(roomID: roomID, messageID: fallbackMessageID, seq: nil)
+        return LookbookChatShareSendResult(
+            roomID: roomID,
+            messageID: fallbackMessageID,
+            seq: nil,
+            duplicate: false
+        )
     }
 
     private static func parseDictAck(
@@ -164,18 +181,34 @@ enum LookbookChatShareAckMapper {
     ) throws -> LookbookChatShareSendResult {
         let messageID = stringValue(dict["messageID"]) ?? fallbackMessageID
         let seq = int64Value(dict["seq"])
+        let duplicate = boolValue(dict["duplicate"]) ?? false
 
-        if boolValue(dict["duplicate"]) == true {
-            return LookbookChatShareSendResult(roomID: roomID, messageID: messageID, seq: seq)
+        if duplicate {
+            return LookbookChatShareSendResult(
+                roomID: roomID,
+                messageID: messageID,
+                seq: seq,
+                duplicate: true
+            )
         }
 
         if boolValue(dict["ok"]) == true || boolValue(dict["success"]) == true {
-            return LookbookChatShareSendResult(roomID: roomID, messageID: messageID, seq: seq)
+            return LookbookChatShareSendResult(
+                roomID: roomID,
+                messageID: messageID,
+                seq: seq,
+                duplicate: false
+            )
         }
 
         if let status = stringValue(dict["status"])?.lowercased() {
             if ["ok", "success", "accepted", "duplicate"].contains(status) {
-                return LookbookChatShareSendResult(roomID: roomID, messageID: messageID, seq: seq)
+                return LookbookChatShareSendResult(
+                    roomID: roomID,
+                    messageID: messageID,
+                    seq: seq,
+                    duplicate: duplicate
+                )
             }
             if ["error", "failed", "fail"].contains(status) {
                 throw mapError(from: dict)

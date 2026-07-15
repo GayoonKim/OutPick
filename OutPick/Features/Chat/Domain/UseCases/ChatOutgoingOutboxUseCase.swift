@@ -228,7 +228,10 @@ final class ChatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol {
 
     func completeServerConfirmedMessage(_ message: ChatMessage) async {
         guard !message.isFailed else { return }
-        guard (try? await outboxPersistence.fetchOutgoingOutboxRecord(messageID: message.ID)) != nil else { return }
+        try? await messagePersistence.saveChatMessages([message])
+        guard (try? await outboxPersistence.fetchOutgoingOutboxRecord(messageID: message.ID)) != nil else {
+            return
+        }
         try? await outboxPersistence.deleteOutgoingOutboxRecord(messageID: message.ID)
         deleteLocalOutboxFiles(roomID: message.roomID, messageID: message.ID)
     }
@@ -491,20 +494,7 @@ final class ChatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol {
     }
 
     private func makeVideoAttachment(from payload: VideoMetaPayload) -> Attachment {
-        Attachment(
-            type: .video,
-            index: 0,
-            pathThumb: payload.thumbnailPath,
-            pathOriginal: payload.storagePath,
-            width: payload.width,
-            height: payload.height,
-            bytesOriginal: Int(payload.sizeBytes),
-            hash: payload.messageID,
-            blurhash: nil,
-            duration: payload.duration,
-            approxBitrateMbps: payload.approxBitrateMbps,
-            preset: payload.preset
-        )
+        payload.confirmedAttachment
     }
 
     private func deleteLocalOutboxFiles(roomID: String, messageID: String) {

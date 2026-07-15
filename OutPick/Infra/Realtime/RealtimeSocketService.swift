@@ -108,6 +108,41 @@ private enum SocketIdentityError: LocalizedError {
     }
 }
 
+#if DEBUG
+struct SocketDebugQAConfiguration: Sendable {
+    static let socketURLKey = "OUTPICK_DEBUG_SOCKET_URL"
+    static let dropFirstMessageAckKindKey = "OUTPICK_DEBUG_DROP_FIRST_MESSAGE_ACK_KIND"
+
+    private let environment: [String: String]
+
+    init(environment: [String: String] = ProcessInfo.processInfo.environment) {
+        self.environment = environment
+    }
+
+    func socketURL(productionURL: URL) -> URL {
+        guard let rawValue = environment[Self.socketURLKey]?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !rawValue.isEmpty,
+              let url = URL(string: rawValue),
+              let scheme = url.scheme?.lowercased(),
+              ["http", "https"].contains(scheme),
+              url.host != nil else {
+            return productionURL
+        }
+        return url
+    }
+
+    func shouldDropFirstMessageAck(kind: String) -> Bool {
+        let configuredKinds = Set(
+            (environment[Self.dropFirstMessageAckKindKey] ?? "")
+                .split(separator: ",")
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+                .filter { !$0.isEmpty }
+        )
+        return configuredKinds.contains("all") || configuredKinds.contains(kind.lowercased())
+    }
+}
+#endif
+
 struct ChatRoomSocketSession: Sendable {
     let roomID: String
     let messages: AsyncStream<ChatMessage>
@@ -120,7 +155,17 @@ actor ChatRoomSessionActor {
         let stream: AsyncStream<ChatMessage>
     }
 
+    private let roomID: String
+    private let recentMessageCapacity: Int
     private var continuations: [UUID: AsyncStream<ChatMessage>.Continuation] = [:]
+    private var recentMessageIDs = Set<String>()
+    private var recentMessageOrder: [String] = []
+    private var recentSeqByMessageID: [String: Int64] = [:]
+
+    init(roomID: String, recentMessageCapacity: Int = 300) {
+        self.roomID = roomID
+        self.recentMessageCapacity = max(1, recentMessageCapacity)
+    }
 
     func addConsumer() -> Consumer {
         let consumerID = UUID()
@@ -133,10 +178,46 @@ actor ChatRoomSessionActor {
     func removeConsumer(_ consumerID: UUID) -> Bool {
         continuations[consumerID]?.finish()
         continuations.removeValue(forKey: consumerID)
-        return continuations.isEmpty
+        let isEmpty = continuations.isEmpty
+        if isEmpty {
+            removeRecentMessages()
+        }
+        return isEmpty
     }
 
-    func publish(_ message: ChatMessage) {
+    func publishIncoming(_ message: ChatMessage) {
+        if recentMessageIDs.contains(message.ID) {
+            let previousSeq = recentSeqByMessageID[message.ID] ?? message.seq
+            #if DEBUG
+            if previousSeq != message.seq {
+                print(
+                    "[ChatRoomSessionActor] duplicate seq mismatch " +
+                    "roomID=\(roomID) messageID=\(message.ID) " +
+                    "previousSeq=\(previousSeq) incomingSeq=\(message.seq)"
+                )
+            }
+            #endif
+            return
+        }
+
+        recentMessageIDs.insert(message.ID)
+        recentMessageOrder.append(message.ID)
+        recentSeqByMessageID[message.ID] = message.seq
+
+        if recentMessageOrder.count > recentMessageCapacity {
+            let oldestMessageID = recentMessageOrder.removeFirst()
+            recentMessageIDs.remove(oldestMessageID)
+            recentSeqByMessageID.removeValue(forKey: oldestMessageID)
+        }
+
+        yield(message)
+    }
+
+    func publishLocal(_ message: ChatMessage) {
+        yield(message)
+    }
+
+    private func yield(_ message: ChatMessage) {
         for continuation in continuations.values {
             continuation.yield(message)
         }
@@ -147,6 +228,13 @@ actor ChatRoomSessionActor {
             continuation.finish()
         }
         continuations.removeAll()
+        removeRecentMessages()
+    }
+
+    private func removeRecentMessages() {
+        recentMessageIDs.removeAll(keepingCapacity: false)
+        recentMessageOrder.removeAll(keepingCapacity: false)
+        recentSeqByMessageID.removeAll(keepingCapacity: false)
     }
 
     nonisolated private static func makeStream() -> (AsyncStream<ChatMessage>, AsyncStream<ChatMessage>.Continuation) {
@@ -196,6 +284,11 @@ actor RealtimeSocketService {
     private var roomSessionActors = [String: ChatRoomSessionActor]()
     private var roomClosedContinuations = [UUID: AsyncStream<String>.Continuation]()
 
+    #if DEBUG
+    private let debugQAConfiguration = SocketDebugQAConfiguration()
+    private var debugAckLossArmedMessageKeys = Set<String>()
+    #endif
+
     private static let isoFormatter: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -209,7 +302,11 @@ actor RealtimeSocketService {
     }
 
     nonisolated static func makeSocketURL() -> URL {
+        #if DEBUG
+        return SocketDebugQAConfiguration().socketURL(productionURL: productionSocketURL)
+        #else
         productionSocketURL
+        #endif
     }
 
     func isConnected() -> Bool {
@@ -345,17 +442,37 @@ actor RealtimeSocketService {
         }
     }
 
-    func sendMessage(_ room: ChatRoom, _ message: ChatMessage, ackTimeout: Double = 5.0) async throws {
+    func sendMessage(
+        _ room: ChatRoom,
+        _ message: ChatMessage,
+        ackTimeout: Double = 5.0
+    ) async throws -> ChatMessageSendReceipt {
         guard let socket, socket.status == .connected else {
             throw makeSocketError(code: -1009, message: "소켓이 연결되어 있지 않습니다.")
         }
 
         let payload = message.toSocketRepresentation()
-        print("📤 전송할 소켓 데이터: \(payload)")
+        let shouldDropSuccessfulAck = armDebugAckLossIfNeeded(kind: "text", messageID: message.ID)
 
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+        return try await withCheckedThrowingContinuation { continuation in
             socket.emitWithAck("chat message", payload).timingOut(after: ackTimeout) { [weak self] ackResponse in
-                if ChatMessageEmitAckMapper.isSuccess(ackResponse) {
+                if let receipt = ChatMessageEmitAckMapper.receipt(
+                    from: ackResponse,
+                    roomID: room.id,
+                    fallbackMessageID: message.ID
+                ) {
+                    if shouldDropSuccessfulAck {
+                        #if DEBUG
+                        print("[SocketDebugQA] 성공 ACK를 결과 불명으로 처리 kind=text messageID=\(message.ID)")
+                        #endif
+                        continuation.resume(
+                            throwing: Self.makeSocketError(
+                                code: -1001,
+                                message: "DEBUG QA: 서버 성공 ACK 유실을 재현했습니다."
+                            )
+                        )
+                        return
+                    }
                     Task {
                         await self?.updateRoomSummaryAfterSend(
                             roomID: room.id,
@@ -363,7 +480,7 @@ actor RealtimeSocketService {
                             preview: message.msg ?? ""
                         )
                     }
-                    continuation.resume()
+                    continuation.resume(returning: receipt)
                 } else {
                     continuation.resume(
                         throwing: Self.makeSocketError(
@@ -407,8 +524,10 @@ actor RealtimeSocketService {
         senderAvatarPath: String? = nil,
         clientMessageID: String? = nil,
         ackTimeout: Double = 15.0
-    ) async throws {
-        guard !attachments.isEmpty else { return }
+    ) async throws -> ChatMessageSendReceipt {
+        guard !attachments.isEmpty else {
+            throw makeSocketError(code: -2, message: "이미지 attachment가 비어 있습니다.")
+        }
         guard let socket, socket.status == .connected else {
             throw makeSocketError(code: -1009, message: "소켓이 연결되어 있지 않습니다.")
         }
@@ -436,10 +555,30 @@ actor RealtimeSocketService {
         if let avatar = senderAvatarPath ?? identity?.avatarPath, !avatar.isEmpty {
             body["senderAvatarPath"] = avatar
         }
+        let shouldDropSuccessfulAck = armDebugAckLossIfNeeded(
+            kind: "images",
+            messageID: resolvedClientMessageID
+        )
 
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+        return try await withCheckedThrowingContinuation { continuation in
             socket.emitWithAck("chat:mediaFinalize", body).timingOut(after: ackTimeout) { [weak self] ackResponse in
-                if ChatMessageEmitAckMapper.isSuccess(ackResponse) {
+                if let receipt = ChatMessageEmitAckMapper.receipt(
+                    from: ackResponse,
+                    roomID: roomID,
+                    fallbackMessageID: resolvedClientMessageID
+                ) {
+                    if shouldDropSuccessfulAck {
+                        #if DEBUG
+                        print("[SocketDebugQA] 성공 ACK를 결과 불명으로 처리 kind=images messageID=\(resolvedClientMessageID)")
+                        #endif
+                        continuation.resume(
+                            throwing: Self.makeSocketError(
+                                code: -1001,
+                                message: "DEBUG QA: 서버 성공 ACK 유실을 재현했습니다."
+                            )
+                        )
+                        return
+                    }
                     Task {
                         await self?.updateRoomSummaryAfterSend(
                             roomID: roomID,
@@ -447,7 +586,7 @@ actor RealtimeSocketService {
                             preview: "사진 \(attachments.count)장"
                         )
                     }
-                    continuation.resume()
+                    continuation.resume(returning: receipt)
                 } else {
                     continuation.resume(
                         throwing: Self.makeSocketError(
@@ -465,7 +604,7 @@ actor RealtimeSocketService {
         payload: VideoMetaPayload,
         senderAvatarPath: String? = nil,
         ackTimeout: Double = 5.0
-    ) async throws {
+    ) async throws -> ChatMessageSendReceipt {
         guard let socket, socket.status == .connected else {
             throw makeSocketError(code: -1009, message: "소켓이 연결되어 있지 않습니다.")
         }
@@ -489,10 +628,30 @@ actor RealtimeSocketService {
         if let avatar = senderAvatarPath ?? identity?.avatarPath, !avatar.isEmpty {
             dict["senderAvatarPath"] = avatar
         }
+        let shouldDropSuccessfulAck = armDebugAckLossIfNeeded(
+            kind: "video",
+            messageID: payload.messageID
+        )
 
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+        return try await withCheckedThrowingContinuation { continuation in
             socket.emitWithAck("chat:mediaFinalize", dict).timingOut(after: ackTimeout) { [weak self] items in
-                if ChatMessageEmitAckMapper.isSuccess(items) {
+                if let receipt = ChatMessageEmitAckMapper.receipt(
+                    from: items,
+                    roomID: roomID,
+                    fallbackMessageID: payload.messageID
+                ) {
+                    if shouldDropSuccessfulAck {
+                        #if DEBUG
+                        print("[SocketDebugQA] 성공 ACK를 결과 불명으로 처리 kind=video messageID=\(payload.messageID)")
+                        #endif
+                        continuation.resume(
+                            throwing: Self.makeSocketError(
+                                code: -1001,
+                                message: "DEBUG QA: 서버 성공 ACK 유실을 재현했습니다."
+                            )
+                        )
+                        return
+                    }
                     Task {
                         await self?.updateRoomSummaryAfterSend(
                             roomID: roomID,
@@ -500,7 +659,7 @@ actor RealtimeSocketService {
                             preview: "동영상"
                         )
                     }
-                    continuation.resume()
+                    continuation.resume(returning: receipt)
                 } else {
                     continuation.resume(
                         throwing: Self.makeSocketError(
@@ -515,24 +674,26 @@ actor RealtimeSocketService {
 
     func sendLookbookShare(
         roomID: String,
+        messageID: String,
         sharedContent: LookbookSharedContent,
         messageText: String? = nil,
         ackTimeout: Double = 5.0
     ) async throws -> LookbookChatShareSendResult {
         let trimmedRoomID = roomID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedRoomID.isEmpty else { throw LookbookChatShareError.invalidRoomID }
+        let trimmedMessageID = messageID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedMessageID.isEmpty else { throw LookbookChatShareError.server("invalid_message_id") }
         guard sharedContent.isValid else { throw LookbookChatShareError.invalidSharedContent }
         guard let socket, socket.status == .connected else { throw LookbookChatShareError.socketDisconnected }
 
         let now = Date()
-        let messageID = UUID().uuidString
         let trimmedMessageText = (messageText ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let localFallbackPreview = trimmedMessageText.isEmpty
             ? sharedContent.lookbookShareFallbackPreviewText
             : trimmedMessageText
         var payload: [String: Any] = [
-            "ID": messageID,
-            "messageID": messageID,
+            "ID": trimmedMessageID,
+            "messageID": trimmedMessageID,
             "roomID": trimmedRoomID,
             "messageType": ChatMessageType.lookbookShare.rawValue,
             "msg": trimmedMessageText,
@@ -547,6 +708,10 @@ actor RealtimeSocketService {
            !avatar.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             payload["senderAvatarPath"] = avatar
         }
+        let shouldDropSuccessfulAck = armDebugAckLossIfNeeded(
+            kind: "lookbook",
+            messageID: trimmedMessageID
+        )
 
         return try await withCheckedThrowingContinuation { continuation in
             socket.emitWithAck("chat:lookbookShare", payload).timingOut(after: ackTimeout) { [weak self] ackResponse in
@@ -554,8 +719,20 @@ actor RealtimeSocketService {
                     let result = try LookbookChatShareAckMapper.parse(
                         ackResponse,
                         roomID: trimmedRoomID,
-                        fallbackMessageID: messageID
+                        fallbackMessageID: trimmedMessageID
                     )
+                    if shouldDropSuccessfulAck {
+                        #if DEBUG
+                        print("[SocketDebugQA] 성공 ACK를 결과 불명으로 처리 kind=lookbook messageID=\(trimmedMessageID)")
+                        #endif
+                        continuation.resume(
+                            throwing: Self.makeSocketError(
+                                code: -1001,
+                                message: "DEBUG QA: 서버 성공 ACK 유실을 재현했습니다."
+                            )
+                        )
+                        return
+                    }
                     Task {
                         await self?.updateRoomSummaryAfterSend(
                             roomID: trimmedRoomID,
@@ -633,7 +810,7 @@ actor RealtimeSocketService {
         print("[sendFailedVideos] roomID=\(roomID) preset=\(presetCode) duration=\(duration)s size=\(bytes)B")
         #endif
 
-        emitToRoomPipeline(message)
+        emitToRoomPipeline(message, source: .local)
     }
 
     func leaveOrCloseRoom(roomID: String, ackTimeout: Double = 10.0) async throws -> ChatRoomExitMode {
@@ -707,6 +884,15 @@ actor RealtimeSocketService {
         self.manager = manager
         self.socket = socket
         bindSocketListenersOnce(socket: socket)
+    }
+
+    private func armDebugAckLossIfNeeded(kind: String, messageID: String) -> Bool {
+        #if DEBUG
+        guard debugQAConfiguration.shouldDropFirstMessageAck(kind: kind) else { return false }
+        return debugAckLossArmedMessageKeys.insert("\(kind)::\(messageID)").inserted
+        #else
+        return false
+        #endif
     }
 
     private func bindSocketListenersOnce(socket: SocketIOClient) {
@@ -849,10 +1035,15 @@ actor RealtimeSocketService {
             #endif
             return
         }
-        emitToRoomPipeline(message)
+        emitToRoomPipeline(message, source: .socketIngress)
     }
 
-    private func emitToRoomPipeline(_ message: ChatMessage) {
+    private enum RoomPipelineSource {
+        case socketIngress
+        case local
+    }
+
+    private func emitToRoomPipeline(_ message: ChatMessage, source: RoomPipelineSource) {
         let roomID = message.roomID
         guard !roomID.isEmpty else { return }
         guard let sessionActor = roomSessionActors[roomID] else {
@@ -863,7 +1054,12 @@ actor RealtimeSocketService {
         }
 
         Task {
-            await sessionActor.publish(message)
+            switch source {
+            case .socketIngress:
+                await sessionActor.publishIncoming(message)
+            case .local:
+                await sessionActor.publishLocal(message)
+            }
         }
     }
 
@@ -872,7 +1068,7 @@ actor RealtimeSocketService {
             return actor
         }
 
-        let actor = ChatRoomSessionActor()
+        let actor = ChatRoomSessionActor(roomID: roomID)
         roomSessionActors[roomID] = actor
         return actor
     }

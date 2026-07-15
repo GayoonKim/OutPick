@@ -37,18 +37,22 @@ final class LookbookChatShareViewModel: ObservableObject {
     private let makeSharedContentUseCase: any MakeLookbookSharedContentUseCaseProtocol
     private let loadRoomsUseCase: any LoadShareableJoinedRoomsUseCaseProtocol
     private let shareUseCase: any ShareLookbookContentToChatUseCaseProtocol
+    private let messageIDProvider: () -> String
     private var didLoad = false
+    private var pendingSendIdentity: (roomID: String, messageID: String)?
 
     init(
         target: LookbookShareTarget,
         makeSharedContentUseCase: any MakeLookbookSharedContentUseCaseProtocol,
         loadRoomsUseCase: any LoadShareableJoinedRoomsUseCaseProtocol,
-        shareUseCase: any ShareLookbookContentToChatUseCaseProtocol
+        shareUseCase: any ShareLookbookContentToChatUseCaseProtocol,
+        messageIDProvider: @escaping () -> String = { UUID().uuidString }
     ) {
         self.target = target
         self.makeSharedContentUseCase = makeSharedContentUseCase
         self.loadRoomsUseCase = loadRoomsUseCase
         self.shareUseCase = shareUseCase
+        self.messageIDProvider = messageIDProvider
     }
 
     var selectedRoom: ChatRoom? {
@@ -85,6 +89,7 @@ final class LookbookChatShareViewModel: ObservableObject {
         selectedRoomID = nil
         sharedContent = nil
         completion = nil
+        pendingSendIdentity = nil
         await loadIfNeeded()
     }
 
@@ -95,11 +100,21 @@ final class LookbookChatShareViewModel: ObservableObject {
         completion = nil
         defer { isSending = false }
 
+        let messageID: String
+        if let pendingSendIdentity, pendingSendIdentity.roomID == selectedRoom.id {
+            messageID = pendingSendIdentity.messageID
+        } else {
+            messageID = messageIDProvider()
+            pendingSendIdentity = (roomID: selectedRoom.id, messageID: messageID)
+        }
+
         do {
             let result = try await shareUseCase.execute(
+                messageID: messageID,
                 sharedContent: sharedContent,
                 to: selectedRoom
             )
+            pendingSendIdentity = nil
             completion = Completion(
                 roomID: result.roomID,
                 roomName: selectedRoom.roomName,

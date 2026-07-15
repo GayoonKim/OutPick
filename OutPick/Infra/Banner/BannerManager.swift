@@ -21,14 +21,10 @@ final class BannerManager {
     // 참여 중인 방 구독 저장소 (roomID -> cancellable)
     private var roomTasks: [String: Task<Void, Never>] = [:]
 
-    // 중복 배너 방지: 방별 최근 메시지 ID LRU
-    private var recentPerRoom: [String: RecentSet<String>] = [:]
-
     // 배너 표시 콜백(앱 전역에서 주입: 토스트/상단 배너 등)
     var onPresentBanner: ((BannerPayload) -> Void)?
 
     // 설정
-    private let maxRecentIDsPerRoom = 200
     private let muteOwnMessages = true   // 내가 보낸 메시지는 배너 안 띄움 (선호에 맞게)
 
     // MARK: - Public
@@ -63,11 +59,6 @@ final class BannerManager {
         print("[BannerManager] addRoom subscription room=\(roomID)")
         #endif
 
-        // LRU 준비
-        if recentPerRoom[roomID] == nil {
-            recentPerRoom[roomID] = RecentSet(capacity: maxRecentIDsPerRoom)
-        }
-
         roomTasks[roomID] = Task { [weak self] in
             guard let self else { return }
             do {
@@ -97,7 +88,6 @@ final class BannerManager {
         #endif
         roomTasks[roomID]?.cancel()
         roomTasks[roomID] = nil
-        recentPerRoom[roomID] = nil
     }
 
     func stopAll() {
@@ -105,7 +95,6 @@ final class BannerManager {
             task.cancel()
         }
         roomTasks.removeAll()
-        recentPerRoom.removeAll()
         currentVisibleRoomID = nil
     }
 
@@ -133,15 +122,6 @@ final class BannerManager {
             #endif
             return
         }
-
-        let id = msg.ID
-        if recentPerRoom[roomID]?.contains(id) == true {
-            #if DEBUG
-            print("[BannerManager] skip banner (duplicate) room=\(roomID) msgID=\(id)")
-            #endif
-            return
-        }
-        recentPerRoom[roomID]?.insert(id)
 
         if muteOwnMessages, msg.senderUID == LoginManager.shared.canonicalUserID {
             #if DEBUG
@@ -191,26 +171,6 @@ private func bannerText(from msg: ChatMessage) -> String {
     case (let i, let v) where i > 0 && v > 0:  return "사진 \(i)장, 동영상 \(v)개"
     default: return "(메시지)"
     }
-}
-
-// 최근 ID LRU (간단 구현)
-private struct RecentSet<Element: Hashable> {
-    private(set) var set: Set<Element> = []
-    private var queue: [Element] = []
-    let capacity: Int
-
-    init(capacity: Int) { self.capacity = max(1, capacity) }
-
-    mutating func insert(_ e: Element) {
-        if set.contains(e) { return }
-        set.insert(e)
-        queue.append(e)
-        if queue.count > capacity, let old = queue.first {
-            queue.removeFirst()
-            set.remove(old)
-        }
-    }
-    func contains(_ e: Element) -> Bool { set.contains(e) }
 }
 
 // 배너 표시용 모델

@@ -21,13 +21,13 @@ protocol ChatMediaMessageSendingRepositoryProtocol {
         attachments: [Attachment],
         senderAvatarPath: String?,
         clientMessageID: String?
-    ) async throws
+    ) async throws -> ChatMessageSendReceipt
 
     func sendVideo(
         roomID: String,
         payload: VideoMetaPayload,
         senderAvatarPath: String?
-    ) async throws
+    ) async throws -> ChatMessageSendReceipt
 
     func sendFailedVideo(
         roomID: String,
@@ -59,14 +59,14 @@ protocol ChatMediaSocketSending {
         senderAvatarPath: String?,
         clientMessageID: String?,
         ackTimeout: Double
-    ) async throws
+    ) async throws -> ChatMessageSendReceipt
 
     func sendVideoAwaitingAck(
         roomID: String,
         payload: VideoMetaPayload,
         senderAvatarPath: String?,
         ackTimeout: Double
-    ) async throws
+    ) async throws -> ChatMessageSendReceipt
 
     func sendFailedVideos(
         roomID: String,
@@ -111,7 +111,7 @@ final class SocketChatMediaMessageSendingRepository: ChatMediaMessageSendingRepo
         attachments: [Attachment],
         senderAvatarPath: String?,
         clientMessageID: String?
-    ) async throws {
+    ) async throws -> ChatMessageSendReceipt {
         try await socketManager.sendImagesAwaitingAck(
             room,
             attachments.map { $0.toDict() },
@@ -125,7 +125,7 @@ final class SocketChatMediaMessageSendingRepository: ChatMediaMessageSendingRepo
         roomID: String,
         payload: VideoMetaPayload,
         senderAvatarPath: String?
-    ) async throws {
+    ) async throws -> ChatMessageSendReceipt {
         try await socketManager.sendVideoAwaitingAck(
             roomID: roomID,
             payload: payload,

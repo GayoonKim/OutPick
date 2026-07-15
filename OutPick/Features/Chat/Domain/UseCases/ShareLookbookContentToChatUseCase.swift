@@ -9,6 +9,7 @@ import Foundation
 
 protocol ShareLookbookContentToChatUseCaseProtocol {
     func execute(
+        messageID: String,
         sharedContent: LookbookSharedContent,
         messageText: String?,
         to room: ChatRoom
@@ -17,10 +18,16 @@ protocol ShareLookbookContentToChatUseCaseProtocol {
 
 extension ShareLookbookContentToChatUseCaseProtocol {
     func execute(
+        messageID: String,
         sharedContent: LookbookSharedContent,
         to room: ChatRoom
     ) async throws -> LookbookChatShareSendResult {
-        try await execute(sharedContent: sharedContent, messageText: nil, to: room)
+        try await execute(
+            messageID: messageID,
+            sharedContent: sharedContent,
+            messageText: nil,
+            to: room
+        )
     }
 }
 
@@ -37,6 +44,7 @@ final class ShareLookbookContentToChatUseCase: ShareLookbookContentToChatUseCase
     }
 
     func execute(
+        messageID: String,
         sharedContent: LookbookSharedContent,
         messageText: String? = nil,
         to room: ChatRoom
@@ -58,6 +66,7 @@ final class ShareLookbookContentToChatUseCase: ShareLookbookContentToChatUseCase
         }
 
         return try await repository.sendLookbookShare(
+            messageID: messageID,
             sharedContent: sharedContent,
             messageText: messageText,
             to: room

@@ -147,6 +147,9 @@ class ChatMessageCell: UICollectionViewCell {
         imageView.translatesAutoresizingMaskIntoConstraints = false
         imageView.isHidden = true
         imageView.isUserInteractionEnabled = true
+        imageView.isAccessibilityElement = true
+        imageView.accessibilityLabel = "메시지 다시 시도"
+        imageView.accessibilityTraits = .button
         
         return imageView
     }()

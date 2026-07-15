@@ -884,7 +884,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         Task { [weak self] in
             guard let self else { return }
             do {
-                try await self.chatRoomViewModel.sendPreparedMessage(outgoingMessage)
+                let receipt = try await self.chatRoomViewModel.sendPreparedMessage(outgoingMessage)
+                await self.reconcileServerConfirmedOutgoingMessage(receipt: receipt)
             } catch {
                 await self.outgoingOutboxUseCase.stageTextMessage(outgoingMessage)
                 await MainActor.run {
@@ -2039,6 +2040,31 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         reconfigureMessageItem(messageID: messageID)
     }
 
+    func reconcileServerConfirmedOutgoingMessage(
+        receipt: ChatMessageSendReceipt,
+        confirmedAttachments: [Attachment]? = nil
+    ) async {
+        let confirmedMessage = await MainActor.run { () -> ChatMessage? in
+            guard let current = self.messageWindowStore.message(for: receipt.messageID),
+                  let confirmed = ChatOutgoingMessageReceiptMerger.merge(
+                    message: current,
+                    receipt: receipt,
+                    confirmedAttachments: confirmedAttachments
+                  ) else {
+                return nil
+            }
+
+            _ = self.messageWindowStore.updateMessage(id: receipt.messageID) { message in
+                message = confirmed
+            }
+            self.reconfigureMessageItem(messageID: receipt.messageID)
+            return confirmed
+        }
+
+        guard let confirmedMessage else { return }
+        await outgoingOutboxUseCase.completeServerConfirmedMessage(confirmedMessage)
+    }
+
     @MainActor
     func finishPendingImageUpload(messageID: String) {
         pendingMediaUploadStore.completeImageUpload(for: messageID)
@@ -2137,7 +2163,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             Task { [weak self] in
                 guard let self else { return }
                 do {
-                    try await self.chatRoomViewModel.sendPreparedMessage(message)
+                    let receipt = try await self.chatRoomViewModel.sendPreparedMessage(message)
+                    await self.reconcileServerConfirmedOutgoingMessage(receipt: receipt)
                 } catch {
                     await self.outgoingOutboxUseCase.markFailed(message: message, error: error)
                     await MainActor.run {

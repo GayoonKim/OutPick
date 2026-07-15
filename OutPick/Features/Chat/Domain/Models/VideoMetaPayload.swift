@@ -19,3 +19,22 @@ struct VideoMetaPayload: Codable, Sendable {
     let approxBitrateMbps: Double
     let preset: String           // "standard720" | "dataSaver720" | "high1080"
 }
+
+extension VideoMetaPayload {
+    var confirmedAttachment: Attachment {
+        Attachment(
+            type: .video,
+            index: 0,
+            pathThumb: thumbnailPath,
+            pathOriginal: storagePath,
+            width: width,
+            height: height,
+            bytesOriginal: Int(sizeBytes),
+            hash: messageID,
+            blurhash: nil,
+            duration: duration,
+            approxBitrateMbps: approxBitrateMbps,
+            preset: preset
+        )
+    }
+}

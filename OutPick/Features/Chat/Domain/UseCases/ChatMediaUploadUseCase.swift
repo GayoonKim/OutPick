@@ -7,6 +7,10 @@
 
 import Foundation
 
+enum ChatMediaUploadError: Error {
+    case emptyImageAttachments
+}
+
 protocol ChatMediaUploadUseCaseProtocol {
     func makePendingImageMessage(
         roomID: String,
@@ -32,7 +36,7 @@ protocol ChatMediaUploadUseCaseProtocol {
         attachments: [Attachment],
         clientMessageID: String,
         ensureReservation: Bool
-    ) async throws
+    ) async throws -> ChatMessageSendReceipt
 
     func cacheFailedImageThumbnails(_ pairs: [ProcessedImage]) async
     func cleanupImageOriginalFiles(_ pairs: [ProcessedImage])
@@ -45,7 +49,11 @@ protocol ChatMediaUploadUseCaseProtocol {
         onProgress: @escaping (Double) -> Void
     ) async throws -> VideoMetaPayload
 
-    func sendUploadedVideo(roomID: String, payload: VideoMetaPayload, ensureReservation: Bool) async throws
+    func sendUploadedVideo(
+        roomID: String,
+        payload: VideoMetaPayload,
+        ensureReservation: Bool
+    ) async throws -> ChatMessageSendReceipt
     func sendFailedVideo(roomID: String, prepared: PreparedVideo)
 }
 
@@ -172,8 +180,10 @@ final class ChatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol {
         attachments: [Attachment],
         clientMessageID: String,
         ensureReservation: Bool = true
-    ) async throws {
-        guard !attachments.isEmpty else { return }
+    ) async throws -> ChatMessageSendReceipt {
+        guard !attachments.isEmpty else {
+            throw ChatMediaUploadError.emptyImageAttachments
+        }
 
         if ensureReservation {
             try await sendingRepository.preflightMediaUpload(
@@ -185,7 +195,7 @@ final class ChatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol {
             )
         }
         
-        try await sendingRepository.sendImages(
+        return try await sendingRepository.sendImages(
             room,
             attachments: attachments,
             senderAvatarPath: currentUserProvider().senderAvatarPath,
@@ -268,7 +278,11 @@ final class ChatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol {
         )
     }
 
-    func sendUploadedVideo(roomID: String, payload: VideoMetaPayload, ensureReservation: Bool = true) async throws {
+    func sendUploadedVideo(
+        roomID: String,
+        payload: VideoMetaPayload,
+        ensureReservation: Bool = true
+    ) async throws -> ChatMessageSendReceipt {
         if ensureReservation {
             try await sendingRepository.preflightMediaUpload(
                 roomID: roomID,
@@ -278,7 +292,7 @@ final class ChatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol {
                 expectedPathCount: 2
             )
         }
-        try await sendingRepository.sendVideo(
+        return try await sendingRepository.sendVideo(
             roomID: roomID,
             payload: payload,
             senderAvatarPath: currentUserProvider().senderAvatarPath
