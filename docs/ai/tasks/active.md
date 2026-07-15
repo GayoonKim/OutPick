@@ -2,17 +2,19 @@
 
 ## 현재 상태
 
-- 현재 진행 중인 핵심 task는 없다.
+- 현재 핵심 task는 `socket-message-dedupe-hardening`이다. Phase 1~3 구현과 candidate 동일 ID retry의 서버·수신 dedupe를 검증했고, duplicate ACK 뒤 발신 iOS 실패 UI/outbox 성공 수렴 보완이 다음 gate다.
 - `firestore-document-id-boundary-cleanup`은 Phase 1~4 구현·QA, rules 운영 배포, 운영 `Rooms.ID` cleanup과 사후 재감사까지 완료하고 2026-07-14 종료했다.
 - `core-infrastructure-modularization`은 Phase 2~5 구현, Phase 6 동일 SHA 회귀, Socket/Functions 운영 배포, D49 안정화와 통합 수동 QA까지 완료하고 2026-07-14 종료했다.
-- FCM fanout은 Apple 개발자 계정 결제 후 별도 QA task로 진행한다. `socket-media-dedupe-hardening`은 다음 핵심 task 후보다.
+- FCM fanout은 Apple 개발자 계정 결제 후 별도 QA task로 진행한다.
 - 최근 완료 구현 작업은 `firestore-document-id-boundary-cleanup`이다.
 - 새 작업을 시작할 때 이 문서에는 현재 task 한 건과 바로 이전 완료 작업만 상세 링크로 유지한다.
 - 오래된 완료 이력은 각 task의 `progress.md`, 장기 결정은 `docs/ai/ADR.md`에서 확인한다.
 
 ## 현재 핵심 작업
 
-없음. 새 작업은 설계 하네스와 사용자 승인 후 등록한다.
+| 작업 | 상태 | 핵심 목표 | 상세 |
+| --- | --- | --- | --- |
+| `socket-message-dedupe-hardening` | candidate `outpick-socket-dedupe0715` traffic 0%·동일 ID 서버/수신 dedupe 통과, 발신 receipt 수렴 blocker 발견 | text/Lookbook/image/video의 winner-only emit/push와 iOS 방별 최근 ID 300개 ingress dedupe | [design](socket-message-dedupe-hardening/design.md), [decisions](socket-message-dedupe-hardening/decisions.md), [plan](socket-message-dedupe-hardening/plan.md), [progress](socket-message-dedupe-hardening/progress.md), [qa](socket-message-dedupe-hardening/qa-checklist.md) |
 
 ## 최근 완료 작업
 

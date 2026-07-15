@@ -47,7 +47,7 @@
 | D37 | 확정 | startup, health와 graceful shutdown 계약을 보존한다. | [Phase 5 결정](decisions/phase-5-socket.md) |
 | D38 | 확정 | dependency 없는 재귀 `node:test` runner를 사용한다. | [Phase 5 결정](decisions/phase-5-socket.md) |
 | D39 | 확정 | 기존 Docker image와 Socket Cloud Run service 배포 경계를 유지한다. | [Phase 5 결정](decisions/phase-5-socket.md) |
-| D40 | 후속 방향 확정·상세 수치 승인 대기 | media dedupe를 in-flight Promise, TTL/LRU와 Firestore transaction winner 기반 단일 emit/push로 강화한다. | [Phase 5 결정](decisions/phase-5-socket.md) |
+| D40 | 후속 task에서 최종 범위 재확정 | 실시간 발신 메시지 전체를 in-flight Promise와 Firestore transaction winner 기반 단일 emit/push로 강화하고, iOS 수신 ingress에서 방별 최근 message ID 300개를 중복 제거한다. | [Phase 5 결정](decisions/phase-5-socket.md), [후속 결정](../socket-message-dedupe-hardening/decisions.md) |
 | D41 | 확정 | Phase 2~5 관련 targeted test와 iOS generic build를 통합 회귀 기준으로 사용한다. | [Phase 6 결정](decisions/phase-6-integration-deployment.md) |
 | D42 | 확정 | 새 Firebase emulator를 도입하지 않고 기존 자동 계약 테스트와 통제된 운영 smoke를 결합한다. | [Phase 6 결정](decisions/phase-6-integration-deployment.md) |
 | D43 | 확정 | 배포 가능한 commit과 복구 가능한 rollback 기준을 배포 전에 확정한다. | [Phase 6 결정](decisions/phase-6-integration-deployment.md) |
@@ -60,7 +60,7 @@
 
 ## 현재 상태
 
-- D4~D19는 2026-07-13, D20~D49는 2026-07-14 사용자 승인으로 확정됐다. D40의 방향은 확정됐지만 TTL·용량·timeout 수치는 후속 구현 계획 전에 승인받는다.
+- D4~D19는 2026-07-13, D20~D49는 2026-07-14 사용자 승인으로 확정됐다. D40은 후속 `socket-message-dedupe-hardening`에서 완료 캐시 제외, 별도 owner timeout 미도입, text/Lookbook/image/video 상세 transaction winner 계약과 iOS 방별 최근 message ID 300개 ingress dedupe로 최종 범위를 재확정했다.
 - Phase 1 계약 inventory는 완료했다.
 - Phase 2 설계, 코드 구현과 자동 검증을 완료했다.
 - Phase 3와 후속 D19 구현·자동 검증을 완료했다. D19-A~E와 DEBUG once/always 실패·복구 UI가 코드와 테스트에 반영됐다.

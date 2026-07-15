@@ -80,6 +80,7 @@ Chat 기능 수정 시 관련 화면, ViewModel, UseCase, Repository, 검색 인
 - Socket application/production DI: `Socket/src/app/createSocketApplication.js`, `Socket/src/app/createProductionDependencies.js`
 - Socket 인증/event 등록: `Socket/src/auth/`, `Socket/src/handlers/`
 - Socket room/message/media 작업 단위: `Socket/src/rooms/`, `Socket/src/messages/`, `Socket/src/media/`
+- Socket message single-flight/outcome: `Socket/src/messages/messageDeliverySingleFlight.js`, `Socket/src/messages/sequenceStore.js`
 - Socket lifecycle/runtime: `Socket/src/lifecycle/`, `Socket/src/runtime/`
 - Socket 검증: `Socket/test/`, `Socket/scripts/run-tests.mjs`
 - 현재 채팅방 stream 연결: `OutPick/Features/Chat/Controllers/ChatViewController.swift`
@@ -91,7 +92,11 @@ Chat 기능 수정 시 관련 화면, ViewModel, UseCase, Repository, 검색 인
 
 채팅방 화면을 보고 있을 때는 `ChatViewController`가 `RealtimeSocketService.openRoomSession(for:)`로 room join ACK를 받은 뒤 메시지 stream을 구독한다. 수신 메시지는 ViewModel/GRDB 저장 경로를 거쳐 현재 화면에 반영된다.
 
+`ChatRoomSessionActor`는 Socket에서 decode한 메시지를 consumer에게 fan-out하기 전에 방별 최근 message ID 300개로 first-wins 중복 제거한다. 같은 ID·다른 seq도 첫 event를 유지하며, actor가 마지막 consumer와 함께 제거되면 dedupe state도 해제된다. 로컬 실패 메시지 publish는 이 ingress state에 기록하지 않아 같은 ID의 후속 서버 확인 event가 정상 전달된다. `BannerManager`는 별도 recent-ID cache를 두지 않고 같은 actor stream을 사용하며, `ChatMessageWindowStore`와 GRDB upsert는 300개 범위 밖 재수신의 최종 수렴 장치다.
+
 `RealtimeSocketService`는 새 `SocketIOClient`를 만들 때 lifecycle 3개와 named event 5개 listener를 연결 전에 한 번 등록한다. reconnect나 room consumer 생성·종료 중에는 `off/on`으로 Socket.IO handler 배열을 변경하지 않으며, listener lifetime은 Socket client lifetime과 같다. consumer가 없는 메시지는 actor의 room session lookup에서 drop한다. Socket.IO raw logger는 인증 payload 노출을 막기 위해 사용하지 않는다. 관련 안정화 설계와 반복 reconnect gate는 `docs/ai/tasks/core-infrastructure-modularization/phases/phase-6-ios-socket-stabilization.md`를 따른다.
+
+`socket-message-dedupe-hardening` Phase 1~3에서 `messageDeliverySingleFlight`가 `kind + roomID + messageID` 단위 instance 내부 owner/follower Promise를 소유한다. `sequenceStore.allocateSeqAndPersist`는 Firestore transaction 결과를 `{ seq, created }`로 반환하고 기존 message는 다시 쓰지 않는다. text/Lookbook/image/video handler는 요청별 보호 검증 후 이 경계에 참여하며 `created: true` winner만 Socket emit과 FCM push를 수행한다. media 완료 retry는 저장된 senderUID, media 종류와 attachment path가 현재 요청과 일치할 때만 기존 seq를 duplicate ACK한다.
 
 채팅방 화면을 보고 있지 않을 때는 `BannerManager`가 참여중 방 socket stream을 통해 메시지를 받고 banner를 표시한다. 동시에 `ChatRoomReadStateStore.seedIncomingMessage(_:)`로 `latestSeq`, `latestMessagePreview`, `latestMessageAt`, `lastMessageSenderUID`를 갱신하고, `FirebaseChatRoomRepository.applyLocalIncomingMessagePreview(_:)`로 전체 방 목록 preview cache를 갱신한다.
 
@@ -114,6 +119,18 @@ Chat 기능 수정 시 관련 화면, ViewModel, UseCase, Repository, 검색 인
 채팅방 자기 identity는 `DocumentSnapshot.documentID`만 source로 사용한다. Mapper는 document ID, `roomName`, `creatorUID`, `createdAt`을 핵심 불변식으로 검증하고 부가 필드는 legacy 기본값을 허용한다. 새 방은 `Rooms/{roomID}`, `Rooms/{roomID}/members/{creatorUID}`, `users/{creatorUID}/joinedRooms/{roomID}`를 단일 transaction으로 생성하며 room payload에 `ID`, `id`, `participantUIDs`를 쓰지 않는다.
 
 2026-07-14 운영 rules 배포와 기존 Rooms 4건의 uppercase `ID` cleanup을 완료했다. 사후 감사 기준 `Rooms.ID`/`Rooms.id` 보유 문서는 0건이며 방 4개와 핵심 불변식은 유지됐다.
+
+## Socket candidate retry QA
+
+- `RealtimeSocketService.swift`의 `SocketDebugQAConfiguration`은 DEBUG build에서만 launch environment로 Socket URL을 교체한다.
+- `OUTPICK_DEBUG_SOCKET_URL`은 `http`/`https`와 host가 유효할 때만 production URL을 대체한다.
+- `OUTPICK_DEBUG_DROP_FIRST_MESSAGE_ACK_KIND`는 `text,lookbook,images,video` 또는 `all`을 받아 message ID별 첫 성공 ACK만 결과 불명 실패로 바꾼다.
+- 2026-07-15 candidate revision `outpick-socket-dedupe0715`은 운영 traffic 0%, tag `dedupe-qa`로 배포했다. 운영 revision `outpick-socket-00006-k8k`는 100%를 유지한다.
+- 실제 text QA에서 서버는 동일 ID retry를 기존 `seq=15`의 duplicate 성공으로 처리하고 Firestore document와 수신 room preview를 한 건으로 유지했다.
+- `ChatMessageSendReceipt`와 `ChatOutgoingMessageReceiptMerger`가 text/Lookbook/images/video ACK의 `messageID/seq/duplicate`를 공통 계약으로 소비한다.
+- `ChatViewController.reconcileServerConfirmedOutgoingMessage`는 matching optimistic message의 실패 상태와 seq/attachment를 갱신하고 GRDB 저장·outbox 정리를 완료한다.
+- Lookbook share는 결과 불명 실패 뒤 같은 방에서 최초 message ID를 재사용한다.
+- 재검증 text `messageID=9B79F1C2-E3BC-431A-AF3E-D4C0D50C8B4E`, `seq=17`은 같은 ID retry 뒤 발신 실패 아이콘이 사라지고 수신 room preview가 한 건으로 유지됐다.
 
 ## 방 정보 수정 반영
 

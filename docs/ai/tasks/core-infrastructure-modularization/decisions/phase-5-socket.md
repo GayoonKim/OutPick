@@ -85,7 +85,9 @@
 - MSA, Kubernetes, 별도 media service와 새 데이터 저장소를 추가하지 않는다.
 - Phase 5 구현 중 운영 배포하지 않고 전체 check/test 완료 후 별도 사용자 승인을 받는다.
 
-## D40. media dedupe는 in-flight 병합, bounded 완료 캐시와 단일 side effect 방식으로 후속 강화한다
+## D40. 실시간 발신 메시지 전체는 in-flight 병합과 단일 side effect 방식으로 후속 강화한다
+
+> 후속 확정(2026-07-15): `socket-message-dedupe-hardening` 논의에서 서버 범위를 text/Lookbook/image/video 전체로 확대하고, 정확성 핵심을 in-flight single-flight와 Firestore transaction winner로 제한했다. 운영 비용 근거가 없는 TTL/LRU 완료 캐시와 별도 owner timeout은 첫 구현 범위에서 제외하고, iOS 수신 ingress에는 방별 최근 message ID 300개 중복 제거를 추가했다. 최종 결정은 `docs/ai/tasks/socket-message-dedupe-hardening/decisions.md`를 우선한다.
 
 ### 해결할 현재 한계
 
@@ -96,16 +98,15 @@
 
 ### 확정한 목표 동작
 
-1. media dedupe capability는 `kind + roomID + messageID` namespace로 key를 구분한다.
+1. 전체 message dedupe capability는 `kind + roomID + messageID` namespace로 key를 구분한다.
 2. 같은 instance에서 첫 요청은 owner가 되고, 같은 key의 후속 요청은 owner의 in-flight Promise 결과를 기다린다.
-3. owner 성공 결과는 TTL과 최대 용량이 있는 LRU 완료 캐시에 제한적으로 보관한다.
-4. 실패한 in-flight entry는 모든 실패 경로에서 해제해 재시도를 허용한다.
-5. Firestore sequence/persist transaction은 `seq`뿐 아니라 새 message를 만든 winner인지 나타내는 결과를 반환한다.
-6. transaction winner만 Socket emit과 FCM push를 수행한다. 이미 존재한 message를 확인한 요청은 side effect를 반복하지 않고 duplicate ACK를 반환한다.
-7. Firestore message/reservation을 교차 instance의 최종 권위로 유지하고 local cache는 정확성의 유일한 근거로 사용하지 않는다.
-8. 용량 초과 시 전체 cache를 비우지 않고 만료되었거나 가장 오래 사용되지 않은 entry부터 제거한다.
+3. 성공·실패한 in-flight entry는 모든 경로에서 해제하고 완료 후 retry는 Firestore 권위를 다시 확인한다.
+4. Firestore sequence/persist transaction은 `seq`뿐 아니라 새 message를 만든 winner인지 나타내는 결과를 반환한다.
+5. transaction winner만 Socket emit과 FCM push를 수행한다. 이미 존재한 message를 확인한 요청은 side effect를 반복하지 않고 duplicate ACK를 반환한다.
+6. Firestore message/reservation을 교차 instance의 최종 권위로 유지하고 process-local state만으로 정확성을 보장하지 않는다.
+7. iOS `ChatRoomSessionActor`는 방별 최근 message ID 300개를 consumer fan-out 전에 중복 제거한다.
 
-### 구현 전에 추가로 수치화할 항목
+### 당시 구현 전에 추가로 수치화하려던 항목
 
 - 완료 결과 TTL.
 - image/video 통합 최대 entry 수와 eviction 단위.
@@ -113,7 +114,7 @@
 - 동시 follower의 duplicate ACK optional key와 callback timing을 기존 iOS 계약과 대조한 최종 fixture.
 - process 종료 중 in-flight 요청을 기다릴 시간과 취소 정책.
 
-위 수치는 Phase 5 구조 리팩터링에 임의로 포함하지 않고 D40 구현 계획 승인 전에 확정한다.
+위 항목은 Phase 5 당시 media 전용 후속 후보였다. 최종 후속 결정에서는 완료 캐시와 별도 owner timeout을 첫 구현 범위에서 제외했으므로 TTL·용량·eviction 수치를 정하지 않는다. follower ACK와 전체 메시지 범위, iOS ingress dedupe는 `socket-message-dedupe-hardening`의 승인된 계약을 따른다.
 
 ### 필수 자동 테스트
 
@@ -121,18 +122,18 @@
 - 서로 다른 local state를 가진 두 instance를 모사해 Firestore transaction winner만 emit/push한다.
 - follower는 owner 완료 후 같은 `messageID`와 `seq`의 duplicate ACK를 받는다.
 - owner 실패 시 follower가 같은 실패를 받고 entry가 해제되며 다음 요청은 재시도할 수 있다.
-- 성공 결과가 TTL 전에는 재사용되고 TTL 후에는 Firestore 권위 확인 경로로 돌아간다.
-- 최대 용량 초과 시 LRU entry만 제거되고 in-flight entry는 임의 제거되지 않는다.
-- image와 video key namespace가 충돌하지 않는다.
+- 성공 뒤 local entry가 제거되고 완료 후 retry가 Firestore 권위 확인 경로로 돌아간다.
+- text, Lookbook, image와 video key namespace가 충돌하지 않는다.
 - persist 실패 시 emit/push/success ACK가 없고, duplicate transaction 결과에서는 emit/push가 없다.
+- iOS consumer 한 명과 여러 명 모두 같은 message ID를 각각 한 번만 받고 방별 300개 oldest eviction이 유지된다.
 
 ## 선택하지 않은 대안
 
 - Phase 5에서 dedupe 의미까지 동시에 변경: 구조 이동 회귀와 동시성 동작 변경을 분리하기 어렵다.
 - process-local Promise만으로 단일 side effect 보장: 같은 instance에는 유효하지만 여러 Cloud Run instance를 포괄하지 못한다.
 - Redis 같은 새 분산 lock 저장소 도입: 현재 Firestore transaction으로 winner를 결정할 수 있어 운영 복잡성 증가 근거가 부족하다.
-- 무제한 완료 Map/Set: 장기 실행 instance에서 메모리 상한이 없다.
-- 용량 초과 시 전체 clear: 갑작스럽게 local dedupe 효과가 사라진다.
+- 완료 cache: read 비용이 병목이라는 관측 근거가 없어 첫 구현에서 제외한다.
+- 별도 owner timeout: 실제 Firestore 작업을 취소하지 못해 뒤늦은 commit과 retry를 다시 겹치게 할 수 있어 제외한다.
 
 ## 재검토 조건
 
