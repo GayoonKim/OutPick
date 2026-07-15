@@ -131,6 +131,7 @@ Chat 기능 수정 시 관련 화면, ViewModel, UseCase, Repository, 검색 인
 - 실제 text QA에서 서버는 동일 ID retry를 기존 `seq=15`의 duplicate 성공으로 처리하고 Firestore document와 수신 room preview를 한 건으로 유지했다.
 - 실제 Lookbook/image/video QA에서도 동일 ID retry가 각각 기존 seq의 duplicate 성공으로 수렴했고 Firestore message document는 한 건으로 유지됐다.
 - 최신 video B(`seq=21`) 뒤 오래된 image A(`seq=20`)를 retry한 회귀 QA에서 A는 발신 성공으로 수렴했지만 room summary와 수신 목록 preview는 B의 `[동영상]`, `lastMessageSeq=21`, 기존 `lastMessageAt`을 유지했다.
+- 실제 transport 실패 text는 Firestore 미생성·발신 `seq=0/isFailed=1`·outbox failed 상태를 확인한 뒤 앱 재연결과 같은 ID retry로 `seq=22`에 성공했다. Firestore 한 문서, 발신 outbox 삭제와 수신 room preview 한 건으로 수렴해 2026-07-16 task를 종료했다.
 - `ChatMessageSendReceipt`와 `ChatOutgoingMessageReceiptMerger`가 text/Lookbook/images/video ACK의 `messageID/seq/duplicate`를 공통 계약으로 소비한다.
 - `ChatViewController.reconcileServerConfirmedOutgoingMessage`는 matching optimistic message의 실패 상태와 seq/attachment를 갱신하고 GRDB 저장·outbox 정리를 완료한다.
 - Lookbook share는 결과 불명 실패 뒤 같은 방에서 최초 message ID를 재사용한다.

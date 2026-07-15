@@ -2,7 +2,7 @@
 
 ## 현재 상태
 
-- 현재 핵심 task는 `socket-message-dedupe-hardening`이다. Phase 1~3 구현과 candidate 동일 ID retry의 서버·수신 dedupe를 검증했고, duplicate ACK 뒤 발신 iOS 실패 UI/outbox 성공 수렴 보완이 다음 gate다.
+- 현재 등록된 핵심 task는 없다. `socket-message-dedupe-hardening`은 구현·자동 회귀·candidate closeout을 완료하고 2026-07-16 종료했다.
 - `firestore-document-id-boundary-cleanup`은 Phase 1~4 구현·QA, rules 운영 배포, 운영 `Rooms.ID` cleanup과 사후 재감사까지 완료하고 2026-07-14 종료했다.
 - `core-infrastructure-modularization`은 Phase 2~5 구현, Phase 6 동일 SHA 회귀, Socket/Functions 운영 배포, D49 안정화와 통합 수동 QA까지 완료하고 2026-07-14 종료했다.
 - FCM fanout은 Apple 개발자 계정 결제 후 별도 QA task로 진행한다.
@@ -12,14 +12,13 @@
 
 ## 현재 핵심 작업
 
-| 작업 | 상태 | 핵심 목표 | 상세 |
-| --- | --- | --- | --- |
-| `socket-message-dedupe-hardening` | candidate `outpick-socket-dedupe0715` traffic 0%·동일 ID 서버/수신 dedupe 통과, 발신 receipt 수렴 blocker 발견 | text/Lookbook/image/video의 winner-only emit/push와 iOS 방별 최근 ID 300개 ingress dedupe | [design](socket-message-dedupe-hardening/design.md), [decisions](socket-message-dedupe-hardening/decisions.md), [plan](socket-message-dedupe-hardening/plan.md), [progress](socket-message-dedupe-hardening/progress.md), [qa](socket-message-dedupe-hardening/qa-checklist.md) |
+등록된 작업 없음.
 
 ## 최근 완료 작업
 
 | 작업 | 상태 | 핵심 결과 | 상세 |
 | --- | --- | --- | --- |
+| `socket-message-dedupe-hardening` | 완료·candidate closeout 완료·운영 traffic 전환 별도 승인 | 전체 실시간 메시지 winner-only emit/push, 공통 ACK 수렴과 iOS 최근 ID 300개 ingress dedupe | [progress](socket-message-dedupe-hardening/progress.md), [qa](socket-message-dedupe-hardening/qa-checklist.md) |
 | `firestore-document-id-boundary-cleanup` | 완료·rules 운영 배포·데이터 cleanup·통합 QA 완료 | 경로 document ID를 canonical source로 통일하고 앱 `@DocumentID`와 운영 Rooms 중복 ID를 제거 | [progress](firestore-document-id-boundary-cleanup/progress.md), [qa](firestore-document-id-boundary-cleanup/qa-checklist.md), [ADR-020](../adr/ADR-020-firestore-문서-identity는-문서-경로-id를-단일-기준으로-사용한다.md) |
 | `core-infrastructure-modularization` | 완료·운영 배포·통합 QA 완료, FCM 별도 보류 | iOS Functions/GRDB, Firebase Functions, Socket을 기능별 경계와 공통 runtime, 얇은 entrypoint로 전환 | [progress](core-infrastructure-modularization/progress.md), [qa](core-infrastructure-modularization/qa-checklist.md), [ADR-019](../adr/ADR-019-핵심-인프라는-기능별-모듈러-경계와-현재-배포-단위를-유지한다.md) |
 | `lookbook-deletion-purge-drain` | 완료·운영 배포·QA 완료 | 일일 purge의 전체 20개 상한 제거, cursor drain, 브랜드별 lease/최대 3개 병렬, 7분 claim cutoff | [progress](lookbook-deletion-purge-drain/progress.md), [decisions](lookbook-deletion-purge-drain/decisions.md), [ADR-018](../adr/ADR-018-룩북-영구-삭제는-일일-bounded-drain과-브랜드-lease로-처리한다.md) |
