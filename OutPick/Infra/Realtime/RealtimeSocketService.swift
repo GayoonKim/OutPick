@@ -259,7 +259,6 @@ actor RealtimeSocketService {
         var jitter: Double
     }
 
-    private let chatRoomRepository: FirebaseChatRoomRepositoryProtocol
     private let pathMonitor = NWPathMonitor()
     private let pathQueue = DispatchQueue(label: "outpick.socket.pathmonitor")
 
@@ -296,8 +295,7 @@ actor RealtimeSocketService {
     }()
     private static let productionSocketURL = URL(string: "https://outpick-socket-2w7zhxurhq-du.a.run.app")!
 
-    private init(repositories: FirebaseRepositoryProviding = FirebaseRepositoryProvider.shared) {
-        self.chatRoomRepository = repositories.chatRoomRepository
+    private init() {
         startPathMonitor()
     }
 
@@ -455,7 +453,7 @@ actor RealtimeSocketService {
         let shouldDropSuccessfulAck = armDebugAckLossIfNeeded(kind: "text", messageID: message.ID)
 
         return try await withCheckedThrowingContinuation { continuation in
-            socket.emitWithAck("chat message", payload).timingOut(after: ackTimeout) { [weak self] ackResponse in
+            socket.emitWithAck("chat message", payload).timingOut(after: ackTimeout) { ackResponse in
                 if let receipt = ChatMessageEmitAckMapper.receipt(
                     from: ackResponse,
                     roomID: room.id,
@@ -472,13 +470,6 @@ actor RealtimeSocketService {
                             )
                         )
                         return
-                    }
-                    Task {
-                        await self?.updateRoomSummaryAfterSend(
-                            roomID: room.id,
-                            sentAt: message.sentAt ?? Date(),
-                            preview: message.msg ?? ""
-                        )
                     }
                     continuation.resume(returning: receipt)
                 } else {
@@ -561,7 +552,7 @@ actor RealtimeSocketService {
         )
 
         return try await withCheckedThrowingContinuation { continuation in
-            socket.emitWithAck("chat:mediaFinalize", body).timingOut(after: ackTimeout) { [weak self] ackResponse in
+            socket.emitWithAck("chat:mediaFinalize", body).timingOut(after: ackTimeout) { ackResponse in
                 if let receipt = ChatMessageEmitAckMapper.receipt(
                     from: ackResponse,
                     roomID: roomID,
@@ -578,13 +569,6 @@ actor RealtimeSocketService {
                             )
                         )
                         return
-                    }
-                    Task {
-                        await self?.updateRoomSummaryAfterSend(
-                            roomID: roomID,
-                            sentAt: now,
-                            preview: "사진 \(attachments.count)장"
-                        )
                     }
                     continuation.resume(returning: receipt)
                 } else {
@@ -634,7 +618,7 @@ actor RealtimeSocketService {
         )
 
         return try await withCheckedThrowingContinuation { continuation in
-            socket.emitWithAck("chat:mediaFinalize", dict).timingOut(after: ackTimeout) { [weak self] items in
+            socket.emitWithAck("chat:mediaFinalize", dict).timingOut(after: ackTimeout) { items in
                 if let receipt = ChatMessageEmitAckMapper.receipt(
                     from: items,
                     roomID: roomID,
@@ -651,13 +635,6 @@ actor RealtimeSocketService {
                             )
                         )
                         return
-                    }
-                    Task {
-                        await self?.updateRoomSummaryAfterSend(
-                            roomID: roomID,
-                            sentAt: Date(),
-                            preview: "동영상"
-                        )
                     }
                     continuation.resume(returning: receipt)
                 } else {
@@ -688,9 +665,6 @@ actor RealtimeSocketService {
 
         let now = Date()
         let trimmedMessageText = (messageText ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        let localFallbackPreview = trimmedMessageText.isEmpty
-            ? sharedContent.lookbookShareFallbackPreviewText
-            : trimmedMessageText
         var payload: [String: Any] = [
             "ID": trimmedMessageID,
             "messageID": trimmedMessageID,
@@ -714,7 +688,7 @@ actor RealtimeSocketService {
         )
 
         return try await withCheckedThrowingContinuation { continuation in
-            socket.emitWithAck("chat:lookbookShare", payload).timingOut(after: ackTimeout) { [weak self] ackResponse in
+            socket.emitWithAck("chat:lookbookShare", payload).timingOut(after: ackTimeout) { ackResponse in
                 do {
                     let result = try LookbookChatShareAckMapper.parse(
                         ackResponse,
@@ -732,13 +706,6 @@ actor RealtimeSocketService {
                             )
                         )
                         return
-                    }
-                    Task {
-                        await self?.updateRoomSummaryAfterSend(
-                            roomID: trimmedRoomID,
-                            sentAt: now,
-                            preview: localFallbackPreview
-                        )
                     }
                     continuation.resume(returning: result)
                 } catch {
@@ -1188,20 +1155,6 @@ actor RealtimeSocketService {
                 }
             }
         }
-    }
-
-    private func updateRoomSummaryAfterSend(roomID: String, sentAt: Date, preview: String) async {
-        guard !roomID.isEmpty else { return }
-        let trimmedPreview = preview.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedPreview.isEmpty else { return }
-        let senderUID = identity?.uid ?? ""
-
-        await chatRoomRepository.updateRoomLastMessage(
-            roomID: roomID,
-            date: sentAt,
-            msg: trimmedPreview,
-            senderUID: senderUID
-        )
     }
 
     private func normalizeIncomingPayload(_ payload: [String: Any], event: String) -> [String: Any] {
