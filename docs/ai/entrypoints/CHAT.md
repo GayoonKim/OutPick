@@ -67,7 +67,7 @@ Chat 기능 수정 시 관련 화면, ViewModel, UseCase, Repository, 검색 인
 - 전체 참여자 배열과 `unreadCount`는 projection에 넣지 않는다.
 - `lastMessage`, `lastMessageAt`, `lastMessageSeq`는 `Rooms/{roomID}` 문서만 source로 사용한다.
 - 참여중 목록은 joinedRooms 전체 또는 충분한 범위 fetch 후 `Rooms` batch fetch, `Rooms.lastMessageAt DESC` 클라이언트 정렬로 구성한다.
-- 메시지 전송 시 room metadata의 `lastMessage*`는 즉시 갱신하지만, 사용자별 projection의 `lastMessage*` fan-out은 하지 않는다.
+- 메시지 전송 시 Socket 서버의 seq transaction이 room metadata의 `lastMessage*`를 즉시 갱신하며, 사용자별 projection의 `lastMessage*` fan-out은 하지 않는다.
 - cutover 후 사용자 프로필 문서의 `joinedRooms` 배열은 bootstrap/runtime source로 사용하지 않는다.
 - 관련 task: `docs/ai/tasks/chat-membership-model-transition/*`
 - 참여중 목록 컬렉션 뷰 하단은 메인 탭 바와 겹치지 않도록 `view.safeAreaLayoutGuide.bottomAnchor`에 맞춘다.
@@ -98,6 +98,8 @@ Chat 기능 수정 시 관련 화면, ViewModel, UseCase, Repository, 검색 인
 
 `socket-message-dedupe-hardening` Phase 1~3에서 `messageDeliverySingleFlight`가 `kind + roomID + messageID` 단위 instance 내부 owner/follower Promise를 소유한다. `sequenceStore.allocateSeqAndPersist`는 Firestore transaction 결과를 `{ seq, created }`로 반환하고 기존 message는 다시 쓰지 않는다. text/Lookbook/image/video handler는 요청별 보호 검증 후 이 경계에 참여하며 `created: true` winner만 Socket emit과 FCM push를 수행한다. media 완료 retry는 저장된 senderUID, media 종류와 attachment path가 현재 요청과 일치할 때만 기존 seq를 duplicate ACK한다.
 
+`Rooms.lastMessage`, `lastMessageAt`, `lastMessageSeq` 갱신의 단일 소유자는 `sequenceStore.allocateSeqAndPersist` transaction이다. iOS `RealtimeSocketService`는 성공 또는 duplicate ACK 뒤에 room summary를 직접 쓰지 않는다. 따라서 새 메시지 B가 확정된 뒤 오래된 메시지 A를 동일 ID로 retry해도 A의 client timestamp/preview가 B의 room summary를 덮어쓰지 않는다.
+
 채팅방 화면을 보고 있지 않을 때는 `BannerManager`가 참여중 방 socket stream을 통해 메시지를 받고 banner를 표시한다. 동시에 `ChatRoomReadStateStore.seedIncomingMessage(_:)`로 `latestSeq`, `latestMessagePreview`, `latestMessageAt`, `lastMessageSenderUID`를 갱신하고, `FirebaseChatRoomRepository.applyLocalIncomingMessagePreview(_:)`로 전체 방 목록 preview cache를 갱신한다.
 
 `JoinedRoomsViewModel`은 shared read-state stream을 구독해 unread count와 마지막 메시지 summary를 즉시 반영한다. `RoomListsViewModel`은 같은 stream을 신호로 사용해 repository의 cached top rooms snapshot을 다시 발행한다. 단, 앱 재실행/네트워크 재동기화의 authoritative source는 여전히 Firestore 단발 fetch와 pull-to-refresh다.
@@ -127,6 +129,8 @@ Chat 기능 수정 시 관련 화면, ViewModel, UseCase, Repository, 검색 인
 - `OUTPICK_DEBUG_DROP_FIRST_MESSAGE_ACK_KIND`는 `text,lookbook,images,video` 또는 `all`을 받아 message ID별 첫 성공 ACK만 결과 불명 실패로 바꾼다.
 - 2026-07-15 candidate revision `outpick-socket-dedupe0715`은 운영 traffic 0%, tag `dedupe-qa`로 배포했다. 운영 revision `outpick-socket-00006-k8k`는 100%를 유지한다.
 - 실제 text QA에서 서버는 동일 ID retry를 기존 `seq=15`의 duplicate 성공으로 처리하고 Firestore document와 수신 room preview를 한 건으로 유지했다.
+- 실제 Lookbook/image/video QA에서도 동일 ID retry가 각각 기존 seq의 duplicate 성공으로 수렴했고 Firestore message document는 한 건으로 유지됐다.
+- 최신 video B(`seq=21`) 뒤 오래된 image A(`seq=20`)를 retry한 회귀 QA에서 A는 발신 성공으로 수렴했지만 room summary와 수신 목록 preview는 B의 `[동영상]`, `lastMessageSeq=21`, 기존 `lastMessageAt`을 유지했다.
 - `ChatMessageSendReceipt`와 `ChatOutgoingMessageReceiptMerger`가 text/Lookbook/images/video ACK의 `messageID/seq/duplicate`를 공통 계약으로 소비한다.
 - `ChatViewController.reconcileServerConfirmedOutgoingMessage`는 matching optimistic message의 실패 상태와 seq/attachment를 갱신하고 GRDB 저장·outbox 정리를 완료한다.
 - Lookbook share는 결과 불명 실패 뒤 같은 방에서 최초 message ID를 재사용한다.

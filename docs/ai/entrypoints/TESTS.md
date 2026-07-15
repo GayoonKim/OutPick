@@ -93,6 +93,10 @@ Firebase Functions tests/build entry:
   - outbox 유무와 관계없는 서버 확정 GRDB 저장과 Lookbook 결과 불명 retry의 동일 message ID 재사용을 검증한다.
   - 2026-07-15 receipt 영향 범위 9개 suite test, test target build-for-testing, Debug/Release generic Simulator build가 통과했다.
 
+- Socket room summary ownership regression: `OutPickTests/RealtimeSocketRoomSummaryOwnershipTests.swift`
+  - Socket ACK 이후 iOS가 `updateRoomLastMessage`를 호출하지 않고 서버 seq transaction만 `Rooms.lastMessage*`를 쓰는 source 계약을 검증한다.
+  - 2026-07-15 기존 ACK mapper/outbox/Lookbook suite와 합친 targeted test 26개와 양쪽 Simulator Debug build가 통과했다.
+
 - App database bootstrap unit tests: `OutPickTests/AppBootstrapFailureInjectorTests.swift`, `OutPickTests/AppCompositionRootTests.swift`
   - DEBUG once/always 실패 주입 상태와 database factory 오류 mapping을 검증한다.
 - App database bootstrap UI tests: `OutPickUITests/AppBootstrapFailureUITests.swift`
