@@ -54,10 +54,12 @@ export function createLookbookShareHandler({
   ensureRoomLoaded,
   loadRoomAccess,
   allocateSeqAndPersist,
+  messageDeliverySingleFlight,
   fanoutChatPush,
   allowRate,
   clock,
-  generateMessageID
+  generateMessageID,
+  logger = console
 }) {
   return async function handleLookbookShare(socket, data, callback) {
     try {
@@ -180,11 +182,37 @@ export function createLookbookShareHandler({
         sentAt: sentAtISO
       });
 
-      let seq = 0;
+      let delivery;
       try {
-        seq = await allocateSeqAndPersist(roomID, effectiveMessageID, messageDoc);
+        delivery = await messageDeliverySingleFlight.run({
+          kind: "lookbook",
+          roomID,
+          messageID: effectiveMessageID
+        }, async () => {
+          const outcome = await allocateSeqAndPersist(
+            roomID,
+            effectiveMessageID,
+            messageDoc
+          );
+          if (outcome.created) {
+            const serverMsg = { ...messageDoc, seq: outcome.seq };
+            io.to(roomID).emit("chat message", serverMsg);
+            void fanoutChatPush({
+              roomID,
+              messageData: serverMsg
+            });
+            logger.log("[chat:lookbookShare] shared", {
+              roomID,
+              senderUID,
+              messageID: effectiveMessageID,
+              contentType: normalizedSharedContent.contentType,
+              seq: outcome.seq
+            });
+          }
+          return outcome;
+        });
       } catch (e) {
-        console.error("[chat:lookbookShare] seq allocation/persist error:", e);
+        logger.error("[chat:lookbookShare] seq allocation/persist error:", e);
         return callback && callback({
           ok: false,
           message: "seq_persist_error",
@@ -192,29 +220,16 @@ export function createLookbookShareHandler({
         });
       }
 
-      const serverMsg = { ...messageDoc, seq };
-      io.to(roomID).emit("chat message", serverMsg);
-      void fanoutChatPush({
-        roomID,
-        messageData: serverMsg
-      });
-
-      console.log("[chat:lookbookShare] shared", {
-        roomID,
-        senderUID,
-        messageID: effectiveMessageID,
-        contentType: normalizedSharedContent.contentType,
-        seq
-      });
-
+      const duplicate = delivery.duplicate || !delivery.value.created;
       return callback && callback({
         ok: true,
         success: true,
-        seq,
+        duplicate,
+        seq: delivery.value.seq,
         messageID: effectiveMessageID
       });
     } catch (error) {
-      console.error("[chat:lookbookShare] handler error:", error);
+      logger.error("[chat:lookbookShare] handler error:", error);
       return callback && callback({
         ok: false,
         message: "internal_error",

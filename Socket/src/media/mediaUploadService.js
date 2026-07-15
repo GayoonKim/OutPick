@@ -41,6 +41,80 @@ function timestampMillis(value) {
   return null;
 }
 
+function normalizedPaths(paths) {
+  return paths.filter(Boolean).map(String).sort();
+}
+
+function existingMediaDetails(existingMessage) {
+  const attachments = Array.isArray(existingMessage?.attachments)
+    ? existingMessage.attachments
+    : [];
+  return {
+    attachments,
+    kind: String(existingMessage?.messageType || "").toLowerCase() === "image"
+      ? "images"
+      : (String(existingMessage?.messageType || "").toLowerCase() === "video"
+          ? "video"
+          : ""),
+    storagePaths: normalizedPaths(attachments.flatMap((attachment) => [
+      attachment?.pathThumb,
+      attachment?.pathOriginal
+    ]))
+  };
+}
+
+function existingMediaIdentityMatches(existingMessage, senderUID, kind) {
+  const details = existingMediaDetails(existingMessage);
+  return normalizeUID(existingMessage?.senderUID) === normalizeUID(senderUID) &&
+    details.kind === kind;
+}
+
+export function validateExistingMediaPreflight({
+  existingMessage,
+  senderUID,
+  kind,
+  contract
+}) {
+  if (!existingMessage) return { ok: true, exists: false };
+  const details = existingMediaDetails(existingMessage);
+  if (
+    typeof existingMessage.seq !== "number" ||
+    !existingMediaIdentityMatches(existingMessage, senderUID, kind) ||
+    details.attachments.length !== contract.attachmentCount ||
+    details.storagePaths.length !== contract.expectedPathCount
+  ) {
+    return { ok: false, error: "media_message_conflict" };
+  }
+  return { ok: true, exists: true, seq: existingMessage.seq };
+}
+
+export function validateExistingMediaMessage({
+  existingMessage,
+  senderUID,
+  kind,
+  storagePaths
+}) {
+  if (!existingMessage) return { ok: true, exists: false };
+  if (kind !== "images" && kind !== "video") {
+    return { ok: false, error: "media_message_conflict" };
+  }
+
+  const details = existingMediaDetails(existingMessage);
+  const requestedPaths = normalizedPaths(storagePaths);
+  const pathsMatch = details.storagePaths.length === requestedPaths.length &&
+    details.storagePaths.every((path, index) => path === requestedPaths[index]);
+
+  if (
+    typeof existingMessage.seq !== "number" ||
+    !existingMediaIdentityMatches(existingMessage, senderUID, kind) ||
+    !pathsMatch
+  ) {
+    return { ok: false, error: "media_message_conflict" };
+  }
+
+  return { ok: true, exists: true, seq: existingMessage.seq };
+}
+
 export function createMediaUploadService({ db, admin, clock }) {
   const storagePrefix = (roomID, messageID) => `rooms/${roomID}/messages/${messageID}`;
   const reservationRef = (roomID, messageID) => db
@@ -69,8 +143,16 @@ export function createMediaUploadService({ db, admin, clock }) {
       new Date(clock.nowMillis() + MEDIA_UPLOAD_RESERVATION_TTL_MS)
     );
 
-    const existingMessage = await loadExistingMessage(roomID, messageID);
-    if (existingMessage) {
+    const existingResult = validateExistingMediaPreflight({
+      existingMessage: await loadExistingMessage(roomID, messageID),
+      senderUID,
+      kind,
+      contract
+    });
+    if (!existingResult.ok) {
+      return { ok: false, error: existingResult.error };
+    }
+    if (existingResult.exists) {
       return { ok: true, duplicate: true, messageID, storagePrefix: prefix };
     }
 

@@ -8,8 +8,8 @@ import { registerMediaHandlers } from "../handlers/mediaHandlers.js";
 import { registerMessageHandlers } from "../handlers/messageHandlers.js";
 import { registerRoomHandlers } from "../handlers/roomHandlers.js";
 import { createLookbookShareHandler } from "../lookbookShare/lookbookShareHandler.js";
-import { createMediaDeliveryState } from "../media/mediaDeliveryState.js";
 import { createMediaUploadService } from "../media/mediaUploadService.js";
+import { createMessageDeliverySingleFlight } from "../messages/messageDeliverySingleFlight.js";
 import { createSequenceStore } from "../messages/sequenceStore.js";
 import { createChatPushService } from "../push/chatPushService.js";
 import { createRoomAccess } from "../rooms/roomAccess.js";
@@ -32,7 +32,7 @@ export function createProductionDependencies({
 }) {
   const generateMessageID = createMessageIDGenerator({ clock });
   const { allowRate } = createRateLimiter({ clock });
-  const mediaDeliveryState = createMediaDeliveryState();
+  const messageDeliverySingleFlight = createMessageDeliverySingleFlight();
   const mediaUploadService = createMediaUploadService({ db, admin, clock });
   const { findUserByUID } = createUserLookup({ db });
   const { rooms, fetchRoomsFromFirebase, ensureRoomLoaded } = createRoomRegistry({
@@ -61,10 +61,12 @@ export function createProductionDependencies({
     ensureRoomLoaded,
     loadRoomAccess,
     allocateSeqAndPersist,
+    messageDeliverySingleFlight,
     fanoutChatPush,
     allowRate,
     clock,
-    generateMessageID
+    generateMessageID,
+    logger
   });
 
   const reconnectMiddleware = createReconnectAttemptMiddleware({
@@ -106,6 +108,7 @@ export function createProductionDependencies({
       generateMessageID,
       clock,
       allocateSeqAndPersist,
+      messageDeliverySingleFlight,
       fanoutChatPush,
       handleLookbookShare,
       logger
@@ -118,9 +121,9 @@ export function createProductionDependencies({
       allowRate,
       generateMessageID,
       clock,
-      mediaDeliveryState,
       mediaUploadService,
       allocateSeqAndPersist,
+      messageDeliverySingleFlight,
       fanoutChatPush,
       imageCdnBase: env.IMAGE_CDN_BASE,
       logger

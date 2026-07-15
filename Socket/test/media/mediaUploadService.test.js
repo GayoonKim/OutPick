@@ -4,6 +4,8 @@ import test from "node:test";
 import {
   createMediaUploadService,
   normalizeMediaKind,
+  validateExistingMediaMessage,
+  validateExistingMediaPreflight,
   validateMediaUploadContract
 } from "../../src/media/mediaUploadService.js";
 
@@ -123,4 +125,79 @@ test("reservation sender/kind/path/prefix/expiry 검증을 유지한다", async 
     ...input,
     storagePaths: ["outside/video.mp4", "outside/thumb.jpg"]
   })).error, "media_reservation_prefix_mismatch");
+});
+
+test("완료된 media retry는 sender/kind/path가 모두 일치할 때만 기존 seq를 반환한다", () => {
+  const existingMessage = {
+    seq: 12,
+    senderUID: "user",
+    messageType: "Image",
+    attachments: [{
+      pathThumb: "rooms/room/messages/message/thumb.jpg",
+      pathOriginal: "rooms/room/messages/message/original.jpg"
+    }]
+  };
+  const input = {
+    existingMessage,
+    senderUID: "user",
+    kind: "images",
+    storagePaths: [
+      "rooms/room/messages/message/original.jpg",
+      "rooms/room/messages/message/thumb.jpg"
+    ]
+  };
+
+  assert.deepEqual(validateExistingMediaMessage(input), {
+    ok: true,
+    exists: true,
+    seq: 12
+  });
+  assert.equal(validateExistingMediaMessage({
+    ...input,
+    senderUID: "other"
+  }).error, "media_message_conflict");
+  assert.equal(validateExistingMediaMessage({
+    ...input,
+    kind: "video"
+  }).error, "media_message_conflict");
+  assert.equal(validateExistingMediaMessage({
+    ...input,
+    storagePaths: ["other/thumb.jpg", "other/original.jpg"]
+  }).error, "media_message_conflict");
+});
+
+test("완료된 media preflight는 sender/kind/count가 일치할 때만 duplicate로 인정한다", () => {
+  const existingMessage = {
+    seq: 12,
+    senderUID: "user",
+    messageType: "Video",
+    attachments: [{
+      pathThumb: "rooms/room/messages/message/thumb.jpg",
+      pathOriginal: "rooms/room/messages/message/video.mp4"
+    }]
+  };
+  const input = {
+    existingMessage,
+    senderUID: "user",
+    kind: "video",
+    contract: { attachmentCount: 1, expectedPathCount: 2 }
+  };
+
+  assert.deepEqual(validateExistingMediaPreflight(input), {
+    ok: true,
+    exists: true,
+    seq: 12
+  });
+  assert.equal(validateExistingMediaPreflight({
+    ...input,
+    senderUID: "other"
+  }).error, "media_message_conflict");
+  assert.equal(validateExistingMediaPreflight({
+    ...input,
+    kind: "images"
+  }).error, "media_message_conflict");
+  assert.equal(validateExistingMediaPreflight({
+    ...input,
+    contract: { attachmentCount: 2, expectedPathCount: 4 }
+  }).error, "media_message_conflict");
 });

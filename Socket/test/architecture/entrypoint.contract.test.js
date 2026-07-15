@@ -32,3 +32,16 @@ test("application factory는 process/listen을 직접 소유하지 않는다", a
   assert.equal(source.includes("process.exit("), false);
   assert.equal(source.includes(".listen("), false);
 });
+
+test("production DI는 공통 message single-flight만 한 번 생성한다", async () => {
+  const source = await readFile(
+    join(socketRoot, "src", "app", "createProductionDependencies.js"),
+    "utf8"
+  );
+  assert.equal(
+    (source.match(/createMessageDeliverySingleFlight\(\)/g) || []).length,
+    1
+  );
+  assert.equal(source.includes("createMediaDeliveryState"), false);
+  assert.equal(source.includes("mediaDeliveryState"), false);
+});

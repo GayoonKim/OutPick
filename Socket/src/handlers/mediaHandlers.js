@@ -15,6 +15,7 @@ import {
 } from "../media/mediaPayload.js";
 import {
   normalizeMediaKind,
+  validateExistingMediaMessage,
   validateMediaUploadContract
 } from "../media/mediaUploadService.js";
 import { normalizeEmail, normalizeUID } from "../utils/strings.js";
@@ -27,9 +28,9 @@ export function registerMediaHandlers({
   allowRate,
   generateMessageID,
   clock,
-  mediaDeliveryState,
   mediaUploadService,
   allocateSeqAndPersist,
+  messageDeliverySingleFlight,
   fanoutChatPush,
   imageCdnBase,
   logger = console
@@ -124,19 +125,6 @@ export function registerMediaHandlers({
       const effectiveMessageID = (messageID && String(messageID)) ||
         (clientMessageID && String(clientMessageID)) ||
         generateMessageID();
-      const dedupKey = `${roomID}:${effectiveMessageID}`;
-      if (mediaDeliveryState.has("images", dedupKey)) {
-        const existing = await mediaUploadService.loadExistingMessage(roomID, effectiveMessageID);
-        if (existing) {
-          return callback?.({
-            ok: true,
-            duplicate: true,
-            messageID: effectiveMessageID,
-            seq: existing.seq
-          });
-        }
-      }
-      mediaDeliveryState.add("images", dedupKey);
 
       const prepared = Array.isArray(attachments)
         ? incoming
@@ -160,21 +148,7 @@ export function registerMediaHandlers({
       }, index)).filter((attachment) => attachment.pathThumb || attachment.pathOriginal);
 
       if (normalized.length === 0) {
-        mediaDeliveryState.remove("images", dedupKey);
         return callback?.({ ok: false, error: "no_valid_attachments" });
-      }
-
-      const existingMessage = await mediaUploadService.loadExistingMessage(
-        roomID,
-        effectiveMessageID
-      );
-      if (existingMessage) {
-        return callback?.({
-          ok: true,
-          duplicate: true,
-          messageID: effectiveMessageID,
-          seq: existingMessage.seq
-        });
       }
 
       const storagePaths = normalized.flatMap((attachment) => [
@@ -187,8 +161,29 @@ export function registerMediaHandlers({
         storagePaths.filter(Boolean).length
       );
       if (!contract.ok) {
-        mediaDeliveryState.remove("images", dedupKey);
         return callback?.({ ok: false, error: contract.error });
+      }
+
+      const existingResult = validateExistingMediaMessage({
+        existingMessage: await mediaUploadService.loadExistingMessage(
+          roomID,
+          effectiveMessageID
+        ),
+        senderUID,
+        kind: "images",
+        storagePaths
+      });
+      if (!existingResult.ok) {
+        return callback?.({ ok: false, error: existingResult.error });
+      }
+      if (existingResult.exists) {
+        return callback?.({
+          ok: true,
+          duplicate: true,
+          messageID: effectiveMessageID,
+          seq: existingResult.seq,
+          thumbTrimmed
+        });
       }
 
       const reservation = await mediaUploadService.assertReservation({
@@ -201,7 +196,27 @@ export function registerMediaHandlers({
         storagePaths
       });
       if (!reservation.ok) {
-        mediaDeliveryState.remove("images", dedupKey);
+        const completedResult = validateExistingMediaMessage({
+          existingMessage: await mediaUploadService.loadExistingMessage(
+            roomID,
+            effectiveMessageID
+          ),
+          senderUID,
+          kind: "images",
+          storagePaths
+        });
+        if (!completedResult.ok) {
+          return callback?.({ ok: false, error: completedResult.error });
+        }
+        if (completedResult.exists) {
+          return callback?.({
+            ok: true,
+            duplicate: true,
+            messageID: effectiveMessageID,
+            seq: completedResult.seq,
+            thumbTrimmed
+          });
+        }
         return callback?.({ ok: false, error: reservation.error });
       }
 
@@ -229,22 +244,38 @@ export function registerMediaHandlers({
         sentAt: when.toISOString()
       }, clock.nowDate());
 
+      let delivery;
       try {
-        serverMessage.seq = await allocateSeqAndPersist(
+        delivery = await messageDeliverySingleFlight.run({
+          kind: "images",
           roomID,
-          effectiveMessageID,
-          serverMessage,
-          { mediaUploadRef: reservation.ref }
-        );
+          messageID: effectiveMessageID
+        }, async () => {
+          const outcome = await allocateSeqAndPersist(
+            roomID,
+            effectiveMessageID,
+            serverMessage,
+            { mediaUploadRef: reservation.ref }
+          );
+          if (outcome.created) {
+            const persistedMessage = { ...serverMessage, seq: outcome.seq };
+            io.to(roomID).emit("receiveImages", persistedMessage);
+            void fanoutChatPush({ roomID, messageData: persistedMessage });
+          }
+          return outcome;
+        });
       } catch (error) {
-        mediaDeliveryState.remove("images", dedupKey);
         logger.error("[chat:mediaFinalize/images] seq allocation/persist error:", error);
         return callback?.({ ok: false, error: "seq_persist_error" });
       }
 
-      io.to(roomID).emit("receiveImages", serverMessage);
-      void fanoutChatPush({ roomID, messageData: serverMessage });
-      return callback?.({ ok: true, messageID: effectiveMessageID, thumbTrimmed });
+      return callback?.({
+        ok: true,
+        duplicate: delivery.duplicate || !delivery.value.created,
+        messageID: effectiveMessageID,
+        seq: delivery.value.seq,
+        thumbTrimmed
+      });
     } catch (error) {
       logger.error("[chat:mediaFinalize/images] handler error:", error);
       return callback?.({ ok: false, error: "internal_error" });
@@ -286,32 +317,6 @@ export function registerMediaHandlers({
       }
 
       const effectiveMessageID = (messageID && String(messageID)) || generateMessageID();
-      const dedupKey = `${roomID}:${effectiveMessageID}`;
-      if (mediaDeliveryState.has("video", dedupKey)) {
-        const existing = await mediaUploadService.loadExistingMessage(roomID, effectiveMessageID);
-        if (existing) {
-          return callback?.({
-            ok: true,
-            duplicate: true,
-            messageID: effectiveMessageID,
-            seq: existing.seq
-          });
-        }
-      }
-      mediaDeliveryState.add("video", dedupKey);
-
-      const existingMessage = await mediaUploadService.loadExistingMessage(
-        roomID,
-        effectiveMessageID
-      );
-      if (existingMessage) {
-        return callback?.({
-          ok: true,
-          duplicate: true,
-          messageID: effectiveMessageID,
-          seq: existingMessage.seq
-        });
-      }
 
       const storagePaths = [storagePath, thumbnailPath];
       const contract = validateMediaUploadContract(
@@ -320,8 +325,28 @@ export function registerMediaHandlers({
         storagePaths.filter(Boolean).length
       );
       if (!contract.ok) {
-        mediaDeliveryState.remove("video", dedupKey);
         return callback?.({ ok: false, error: contract.error });
+      }
+
+      const existingResult = validateExistingMediaMessage({
+        existingMessage: await mediaUploadService.loadExistingMessage(
+          roomID,
+          effectiveMessageID
+        ),
+        senderUID,
+        kind: "video",
+        storagePaths
+      });
+      if (!existingResult.ok) {
+        return callback?.({ ok: false, error: existingResult.error });
+      }
+      if (existingResult.exists) {
+        return callback?.({
+          ok: true,
+          duplicate: true,
+          messageID: effectiveMessageID,
+          seq: existingResult.seq
+        });
       }
 
       const reservation = await mediaUploadService.assertReservation({
@@ -334,7 +359,26 @@ export function registerMediaHandlers({
         storagePaths
       });
       if (!reservation.ok) {
-        mediaDeliveryState.remove("video", dedupKey);
+        const completedResult = validateExistingMediaMessage({
+          existingMessage: await mediaUploadService.loadExistingMessage(
+            roomID,
+            effectiveMessageID
+          ),
+          senderUID,
+          kind: "video",
+          storagePaths
+        });
+        if (!completedResult.ok) {
+          return callback?.({ ok: false, error: completedResult.error });
+        }
+        if (completedResult.exists) {
+          return callback?.({
+            ok: true,
+            duplicate: true,
+            messageID: effectiveMessageID,
+            seq: completedResult.seq
+          });
+        }
         return callback?.({ ok: false, error: reservation.error });
       }
 
@@ -359,22 +403,37 @@ export function registerMediaHandlers({
         sentAt
       }, clock.nowDate());
 
+      let delivery;
       try {
-        serverMessage.seq = await allocateSeqAndPersist(
+        delivery = await messageDeliverySingleFlight.run({
+          kind: "video",
           roomID,
-          effectiveMessageID,
-          serverMessage,
-          { mediaUploadRef: reservation.ref }
-        );
+          messageID: effectiveMessageID
+        }, async () => {
+          const outcome = await allocateSeqAndPersist(
+            roomID,
+            effectiveMessageID,
+            serverMessage,
+            { mediaUploadRef: reservation.ref }
+          );
+          if (outcome.created) {
+            const persistedMessage = { ...serverMessage, seq: outcome.seq };
+            io.to(roomID).emit("receiveVideo", persistedMessage);
+            void fanoutChatPush({ roomID, messageData: persistedMessage });
+          }
+          return outcome;
+        });
       } catch (error) {
-        mediaDeliveryState.remove("video", dedupKey);
         logger.error("[chat:mediaFinalize/video] seq allocation/persist error:", error);
         return callback?.({ ok: false, error: "seq_persist_error" });
       }
 
-      io.to(roomID).emit("receiveVideo", serverMessage);
-      void fanoutChatPush({ roomID, messageData: serverMessage });
-      return callback?.({ ok: true, messageID: effectiveMessageID });
+      return callback?.({
+        ok: true,
+        duplicate: delivery.duplicate || !delivery.value.created,
+        messageID: effectiveMessageID,
+        seq: delivery.value.seq
+      });
     } catch (error) {
       logger.error("[chat:mediaFinalize/video] handler error:", error);
       return callback?.({ ok: false, error: "internal_error" });

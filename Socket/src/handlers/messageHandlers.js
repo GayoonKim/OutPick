@@ -15,6 +15,7 @@ export function registerMessageHandlers({
   generateMessageID,
   clock,
   allocateSeqAndPersist,
+  messageDeliverySingleFlight,
   fanoutChatPush,
   handleLookbookShare,
   logger = console
@@ -83,9 +84,29 @@ export function registerMessageHandlers({
         nowDate: clock.nowDate()
       });
 
-      let seq = 0;
+      let delivery;
       try {
-        seq = await allocateSeqAndPersist(roomID, messageID, messageDocument);
+        delivery = await messageDeliverySingleFlight.run({
+          kind: "text",
+          roomID,
+          messageID
+        }, async () => {
+          const outcome = await allocateSeqAndPersist(
+            roomID,
+            messageID,
+            messageDocument
+          );
+          const serverMessage = { ...messageDocument, seq: outcome.seq };
+          if (outcome.created) {
+            io.to(roomID).emit("chat message", serverMessage);
+            void fanoutChatPush({ roomID, messageData: serverMessage });
+            logger.log(
+              `[Chat][${roomID}] ${nickname || "Anonymous"}: ${msg}`,
+              serverMessage
+            );
+          }
+          return outcome;
+        });
       } catch (error) {
         logger.error("[Chat] seq allocation/persist error:", error);
         callback?.({
@@ -96,11 +117,14 @@ export function registerMessageHandlers({
         return;
       }
 
-      const serverMessage = { ...messageDocument, seq };
-      io.to(roomID).emit("chat message", serverMessage);
-      void fanoutChatPush({ roomID, messageData: serverMessage });
-      logger.log(`[Chat][${roomID}] ${nickname || "Anonymous"}: ${msg}`, serverMessage);
-      callback?.({ ok: true, success: true, seq, messageID });
+      const duplicate = delivery.duplicate || !delivery.value.created;
+      callback?.({
+        ok: true,
+        success: true,
+        duplicate,
+        seq: delivery.value.seq,
+        messageID
+      });
     } catch (error) {
       logger.error("[Chat] Error processing message:", error);
       callback?.({ ok: false, message: error.message, error: error.message });

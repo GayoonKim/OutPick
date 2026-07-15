@@ -11,11 +11,7 @@ export function createSequenceStore({ db, admin }) {
       if (existing.exists) {
         const ed = existing.data() || {};
         if (typeof ed.seq === "number") {
-          tx.set(msgRef, { ...messageData, seq: ed.seq }, { merge: true });
-          if (options.mediaUploadRef) {
-            tx.delete(options.mediaUploadRef);
-          }
-          return ed.seq;
+          return { seq: ed.seq, created: false };
         }
       }
 
@@ -34,7 +30,7 @@ export function createSequenceStore({ db, admin }) {
         tx.delete(options.mediaUploadRef);
       }
 
-      return next;
+      return { seq: next, created: true };
     });
   }
 
