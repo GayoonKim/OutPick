@@ -62,6 +62,20 @@ struct ChatOutgoingOutboxUseCaseTests {
         await useCase.completeServerConfirmedMessage(confirmed)
 
         #expect(await persistence.record(messageID: "text-1") == nil)
+        #expect(await persistence.message(messageID: "text-1", roomID: "room-1")?.isFailed == false)
+    }
+
+    @Test func completeServerConfirmedMessagePersistsReceiptWithoutOutboxRecord() async {
+        let persistence = ChatOutgoingOutboxPersistenceFake()
+        let useCase = makeUseCase(persistence: persistence)
+        let confirmed = makeMessage(id: "text-without-outbox", isFailed: false)
+
+        await useCase.completeServerConfirmedMessage(confirmed)
+
+        #expect(await persistence.message(
+            messageID: "text-without-outbox",
+            roomID: "room-1"
+        )?.isFailed == false)
     }
 
     private func makeUseCase(
@@ -181,6 +195,10 @@ private actor ChatOutgoingOutboxPersistenceFake: ChatOutgoingOutboxPersisting, C
 
     func record(messageID: String) -> ChatOutgoingOutboxRecord? {
         records[messageID]
+    }
+
+    func message(messageID: String, roomID: String) -> ChatMessage? {
+        messages[key(messageID: messageID, roomID: roomID)]
     }
 
     private func key(messageID: String, roomID: String) -> String {

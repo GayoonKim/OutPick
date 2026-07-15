@@ -159,8 +159,9 @@ private final class ChatMessageSendingRepositorySpy: ChatMessageSendingRepositor
 
     private(set) var calls: [Call] = []
 
-    func sendMessage(_ message: ChatMessage, to room: ChatRoom) async throws {
+    func sendMessage(_ message: ChatMessage, to room: ChatRoom) async throws -> ChatMessageSendReceipt {
         calls.append(Call(message: message, room: room))
+        return ChatMessageSendReceipt(roomID: room.id, messageID: message.ID, seq: 42)
     }
 }
 

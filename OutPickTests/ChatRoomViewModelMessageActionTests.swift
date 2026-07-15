@@ -165,7 +165,12 @@ private final class ChatRoomMessageUseCaseSpy: ChatRoomMessageUseCaseProtocol {
         nil
     }
 
-    func sendPreparedMessage(_ message: ChatMessage, room: ChatRoom) async throws {}
+    func sendPreparedMessage(
+        _ message: ChatMessage,
+        room: ChatRoom
+    ) async throws -> ChatMessageSendReceipt {
+        ChatMessageSendReceipt(roomID: room.id, messageID: message.ID, seq: 42)
+    }
 
     func loadMessagesAroundAnchor(
         room: ChatRoom,

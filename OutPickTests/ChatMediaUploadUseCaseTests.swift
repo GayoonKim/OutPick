@@ -499,25 +499,31 @@ private final class ChatMediaMessageSendingRepositorySpy: ChatMediaMessageSendin
         attachments: [ChatAttachment],
         senderAvatarPath: String?,
         clientMessageID: String?
-    ) async throws {
+    ) async throws -> ChatMessageSendReceipt {
         imageCalls.append(ImageCall(
             room: room,
             attachments: attachments,
             senderAvatarPath: senderAvatarPath,
             clientMessageID: clientMessageID
         ))
+        return ChatMessageSendReceipt(
+            roomID: room.id,
+            messageID: clientMessageID ?? "image-message",
+            seq: 42
+        )
     }
 
     func sendVideo(
         roomID: String,
         payload: VideoMetaPayload,
         senderAvatarPath: String?
-    ) async throws {
+    ) async throws -> ChatMessageSendReceipt {
         videoCalls.append(VideoCall(
             roomID: roomID,
             payload: payload,
             senderAvatarPath: senderAvatarPath
         ))
+        return ChatMessageSendReceipt(roomID: roomID, messageID: payload.messageID, seq: 42)
     }
 
     func sendFailedVideo(
