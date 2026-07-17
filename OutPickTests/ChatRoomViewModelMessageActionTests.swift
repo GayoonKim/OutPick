@@ -64,6 +64,10 @@ struct ChatRoomViewModelMessageActionTests {
         let message = makeMessage(senderUID: "other@example.com", msg: "새 메시지", seq: 12)
 
         viewModel.applyVisibleWindowAfterSearchJump([message])
+        _ = viewModel.recordVisibleMessage(
+            highestVisibleSeq: 12,
+            contiguousLoadedThroughSeq: 12
+        )
         try await viewModel.persistFinalLastReadSeq(userUID: "user-1")
 
         let call = try #require(lifecycleUseCase.lastReadSeqCalls.first)
@@ -92,11 +96,271 @@ struct ChatRoomViewModelMessageActionTests {
         let message = makeMessage(senderUID: "other@example.com", msg: "새 메시지", seq: 9)
 
         viewModel.applyVisibleWindowAfterSearchJump([message])
+        _ = viewModel.recordVisibleMessage(
+            highestVisibleSeq: 9,
+            contiguousLoadedThroughSeq: 9
+        )
         try await viewModel.persistFinalLastReadSeqForCurrentUser()
 
         let call = try #require(lifecycleUseCase.lastReadSeqCalls.first)
         #expect(call.userUID == "document-123")
         #expect(call.lastReadSeq == 9)
+    }
+
+    @Test func catchingUpIncomingKeepsOnlyScalarHighWatermark() {
+        let viewModel = makeViewModel()
+        viewModel.applyInitialMessageSyncState(
+            ChatInitialSessionState(window: ChatInitialWindow(
+                messages: [makeMessage(senderUID: "other", msg: "anchor", seq: 80)],
+                readBoundarySeq: 10,
+                latestSeq: 10_010,
+                hasMoreOlder: true,
+                hasMoreNewer: true
+            ))
+        )
+
+        var lastAction: ChatRoomViewModel.IncomingMessageAction?
+        for seq in Int64(10_011)...Int64(20_010) {
+            lastAction = viewModel.handleIncomingMessage(
+                makeMessage(senderUID: "other", msg: "message", seq: seq)
+            )
+        }
+
+        #expect(lastAction == .persistOnly)
+        #expect(viewModel.liveMode == .catchingUp)
+        #expect(viewModel.unreadCatchUpState.knownLatestSeq == 20_010)
+        #expect(viewModel.unreadCatchUpState.unreadCount == 20_000)
+    }
+
+    @Test func initialEntryTailDoesNotShowLatestJumpWithoutRealtimeEvent() {
+        let viewModel = makeViewModel(
+            currentUserProvider: CurrentUserProviderStub(canonicalUserID: "me-uid")
+        )
+        viewModel.applyInitialMessageSyncState(
+            ChatInitialSessionState(window: ChatInitialWindow(
+                messages: [makeMessage(senderUID: "other", msg: "anchor", seq: 80)],
+                readBoundarySeq: 10,
+                latestSeq: 10_010,
+                hasMoreOlder: true,
+                hasMoreNewer: true
+            ))
+        )
+
+        #expect(viewModel.latestJumpPresentation.isVisible == false)
+        #expect(viewModel.latestJumpPresentation.preview == nil)
+        #expect(viewModel.latestJumpPresentation.unreadAccessibilityText == nil)
+        #expect(viewModel.latestJumpPresentation.isLoading == false)
+    }
+
+    @Test func realtimeMessageShowsSenderAndContentUntilDismissed() throws {
+        let viewModel = makeViewModel(
+            currentUserProvider: CurrentUserProviderStub(canonicalUserID: "me-uid")
+        )
+        viewModel.applyInitialMessageSyncState(
+            ChatInitialSessionState(window: ChatInitialWindow(
+                messages: [makeMessage(senderUID: "other", msg: "anchor", seq: 80)],
+                readBoundarySeq: 10,
+                latestSeq: 100,
+                hasMoreOlder: true,
+                hasMoreNewer: true
+            ))
+        )
+        let message = makeMessage(senderUID: "sender-uid", msg: "새로 도착한 내용", seq: 101)
+
+        _ = viewModel.handleIncomingMessage(message)
+        let preview = try #require(viewModel.latestJumpPresentation.preview)
+        #expect(viewModel.latestJumpPresentation.isVisible)
+        #expect(preview.senderName == "sender")
+        #expect(preview.text == "새로 도착한 내용")
+        #expect(viewModel.dismissRealtimePreview(targetSeq: 101))
+        #expect(viewModel.latestJumpPresentation.isVisible == false)
+        #expect(viewModel.latestJumpPresentation.preview == nil)
+        #expect(viewModel.readFrontierSeq == 10)
+    }
+
+    @Test func realtimeMessageUsesGenericSenderFallbackOnlyWhenNicknameIsMissing() throws {
+        let viewModel = makeViewModel(
+            currentUserProvider: CurrentUserProviderStub(canonicalUserID: "me-uid")
+        )
+        viewModel.applyInitialMessageSyncState(
+            ChatInitialSessionState(window: ChatInitialWindow(
+                messages: [makeMessage(senderUID: "other", msg: "anchor", seq: 80)],
+                readBoundarySeq: 10,
+                latestSeq: 100,
+                hasMoreOlder: true,
+                hasMoreNewer: true
+            ))
+        )
+
+        _ = viewModel.handleIncomingMessage(
+            makeMessage(
+                senderUID: "sender-uid",
+                senderNickname: "   ",
+                msg: "내용은 있어요",
+                seq: 101
+            )
+        )
+
+        let preview = try #require(viewModel.latestJumpPresentation.preview)
+        #expect(preview.senderName == nil)
+        #expect(preview.text == "내용은 있어요")
+    }
+
+    @Test func visibleReadRequiresContiguousLoadedRange() {
+        let viewModel = makeViewModel()
+        viewModel.applyInitialMessageSyncState(
+            ChatInitialSessionState(window: ChatInitialWindow(
+                messages: [makeMessage(senderUID: "other", msg: "anchor", seq: 20)],
+                readBoundarySeq: 10,
+                latestSeq: 100,
+                hasMoreOlder: true,
+                hasMoreNewer: true
+            ))
+        )
+
+        let gapResult = viewModel.recordVisibleMessage(
+            highestVisibleSeq: 20,
+            contiguousLoadedThroughSeq: 10
+        )
+        let contiguousResult = viewModel.recordVisibleMessage(
+            highestVisibleSeq: 15,
+            contiguousLoadedThroughSeq: 15
+        )
+
+        #expect(gapResult == nil)
+        #expect(contiguousResult == 15)
+        #expect(viewModel.readFrontierSeq == 15)
+        #expect(viewModel.finalLastReadSeqForSessionEnd() == 15)
+    }
+
+    @Test func latestJumpApprovesOnlyFrozenDisplayedTarget() throws {
+        let viewModel = makeViewModel(
+            currentUserProvider: CurrentUserProviderStub(canonicalUserID: "me-uid")
+        )
+        viewModel.applyInitialMessageSyncState(
+            ChatInitialSessionState(window: ChatInitialWindow(
+                messages: [makeMessage(senderUID: "other", msg: "anchor", seq: 80)],
+                readBoundarySeq: 10,
+                latestSeq: 100,
+                hasMoreOlder: true,
+                hasMoreNewer: true
+            ))
+        )
+        _ = viewModel.handleIncomingMessage(
+            makeMessage(senderUID: "other", msg: "현재 realtime", seq: 100)
+        )
+
+        let request = try #require(viewModel.beginLatestJump())
+        _ = viewModel.handleIncomingMessage(
+            makeMessage(senderUID: "other", msg: "new", seq: 101)
+        )
+
+        #expect(viewModel.latestJumpPresentation.preview?.targetSeq == 100)
+
+        let approved = viewModel.completeLatestJump(request, didDisplayTarget: true)
+
+        #expect(approved)
+        #expect(request.targetSeq == 100)
+        #expect(viewModel.readFrontierSeq == 100)
+        #expect(viewModel.unreadCatchUpState.unreadCount == 1)
+        #expect(viewModel.liveMode == .catchingUp)
+        #expect(viewModel.latestJumpPresentation.isVisible)
+        #expect(viewModel.latestJumpPresentation.preview?.targetSeq == 101)
+        #expect(viewModel.latestJumpPresentation.preview?.text == "new")
+    }
+
+    @Test func explicitLatestJumpPersistsFrozenTargetImmediately() async throws {
+        let lifecycleUseCase = ChatRoomLifecycleUseCaseSpy()
+        let readStateStore = ChatRoomReadStateStore()
+        let viewModel = makeViewModel(
+            lifecycleUseCase: lifecycleUseCase,
+            currentUserProvider: CurrentUserProviderStub(canonicalUserID: "me-uid"),
+            roomReadStateStore: readStateStore
+        )
+        viewModel.applyInitialMessageSyncState(
+            ChatInitialSessionState(window: ChatInitialWindow(
+                messages: [makeMessage(senderUID: "other", msg: "anchor", seq: 80)],
+                readBoundarySeq: 10,
+                latestSeq: 100,
+                hasMoreOlder: true,
+                hasMoreNewer: true
+            ))
+        )
+        _ = viewModel.handleIncomingMessage(
+            makeMessage(senderUID: "other", msg: "현재 realtime", seq: 100)
+        )
+
+        let request = try #require(viewModel.beginLatestJump())
+        #expect(viewModel.completeLatestJump(request, didDisplayTarget: true))
+        try await viewModel.persistExplicitLatestJumpForCurrentUser()
+
+        let call = try #require(lifecycleUseCase.lastReadSeqCalls.last)
+        #expect(call.userUID == "me-uid")
+        #expect(call.lastReadSeq == 100)
+        let readbackCall = try #require(lifecycleUseCase.authoritativeLastReadSeqCalls.last)
+        #expect(readbackCall.roomID == "room-1")
+        #expect(readbackCall.userUID == "me-uid")
+        #expect(readStateStore.snapshot(for: "room-1")?.lastReadSeq == 100)
+    }
+
+    @Test func failedExplicitReadPersistenceKeepsPendingAndDoesNotAdvanceSharedRead() async throws {
+        let lifecycleUseCase = ChatRoomLifecycleUseCaseSpy()
+        lifecycleUseCase.lastReadSeqError = MessageActionTestError.unimplemented
+        let readStateStore = ChatRoomReadStateStore()
+        let viewModel = makeViewModel(
+            lifecycleUseCase: lifecycleUseCase,
+            currentUserProvider: CurrentUserProviderStub(canonicalUserID: "me-uid"),
+            roomReadStateStore: readStateStore
+        )
+        viewModel.applyInitialMessageSyncState(
+            ChatInitialSessionState(window: ChatInitialWindow(
+                messages: [makeMessage(senderUID: "other", msg: "anchor", seq: 80)],
+                readBoundarySeq: 10,
+                latestSeq: 100,
+                hasMoreOlder: true,
+                hasMoreNewer: true
+            ))
+        )
+        _ = viewModel.handleIncomingMessage(
+            makeMessage(senderUID: "other", msg: "현재 realtime", seq: 100)
+        )
+
+        let request = try #require(viewModel.beginLatestJump())
+        #expect(viewModel.completeLatestJump(request, didDisplayTarget: true))
+        do {
+            try await viewModel.persistExplicitLatestJumpForCurrentUser()
+            Issue.record("read persistence 실패가 전달되어야 합니다.")
+        } catch {
+            // 예상된 실패
+        }
+
+        #expect(viewModel.finalLastReadSeqForSessionEnd() == 100)
+        #expect(readStateStore.snapshot(for: "room-1")?.lastReadSeq == 10)
+        #expect(lifecycleUseCase.authoritativeLastReadSeqCalls.isEmpty)
+    }
+
+    @Test func failedLatestJumpKeepsFrontierAndAllowsRetry() throws {
+        let viewModel = makeViewModel()
+        viewModel.applyInitialMessageSyncState(
+            ChatInitialSessionState(window: ChatInitialWindow(
+                messages: [makeMessage(senderUID: "other", msg: "anchor", seq: 80)],
+                readBoundarySeq: 10,
+                latestSeq: 100,
+                hasMoreOlder: true,
+                hasMoreNewer: true
+            ))
+        )
+        _ = viewModel.handleIncomingMessage(
+            makeMessage(senderUID: "other", msg: "현재 realtime", seq: 100)
+        )
+
+        let first = try #require(viewModel.beginLatestJump())
+        #expect(viewModel.failLatestJump(first))
+        let retry = try #require(viewModel.beginLatestJump())
+
+        #expect(viewModel.readFrontierSeq == 10)
+        #expect(retry.targetSeq == 100)
+        #expect(retry.generation != first.generation)
     }
 
     private func makeViewModel(
@@ -119,7 +383,13 @@ struct ChatRoomViewModelMessageActionTests {
         )
     }
 
-    private func makeRoom(id: String, creatorUID: String) -> ChatRoom {
+    private func makeRoom(
+        id: String,
+        creatorUID: String,
+        lastMessage: String? = nil,
+        lastMessageSenderUID: String? = nil,
+        seq: Int64 = 0
+    ) -> ChatRoom {
         ChatRoom(
             id: id,
             roomName: "Test Room",
@@ -130,9 +400,9 @@ struct ChatRoomViewModelMessageActionTests {
             thumbPath: nil,
             originalPath: nil,
             lastMessageAt: nil,
-            lastMessage: nil,
-            lastMessageSenderUID: nil,
-            seq: 0,
+            lastMessage: lastMessage,
+            lastMessageSenderUID: lastMessageSenderUID,
+            seq: seq,
             isClosed: false,
             activeAnnouncementID: nil,
             activeAnnouncement: nil,
@@ -140,14 +410,19 @@ struct ChatRoomViewModelMessageActionTests {
         )
     }
 
-    private func makeMessage(senderUID: String, msg: String?, seq: Int64 = 1) -> ChatMessage {
+    private func makeMessage(
+        senderUID: String,
+        senderNickname: String = "sender",
+        msg: String?,
+        seq: Int64 = 1
+    ) -> ChatMessage {
         ChatMessage(
             ID: "message-1",
             seq: seq,
             roomID: "room-1",
             senderUID: senderUID,
             senderEmail: nil,
-            senderNickname: "sender",
+            senderNickname: senderNickname,
             senderAvatarPath: nil,
             msg: msg,
             sentAt: Date(timeIntervalSince1970: 123),
@@ -189,6 +464,10 @@ private final class ChatRoomMessageUseCaseSpy: ChatRoomMessageUseCaseProtocol {
         throw MessageActionTestError.unimplemented
     }
 
+    func loadLatestMessageWindow(room: ChatRoom, targetSeq: Int64) async throws -> ChatLatestMessageWindow {
+        throw MessageActionTestError.unimplemented
+    }
+
     func handleIncomingMessage(_ message: ChatMessage, room: ChatRoom) async throws {
         throw MessageActionTestError.unimplemented
     }
@@ -216,8 +495,16 @@ private final class ChatRoomLifecycleUseCaseSpy: ChatRoomLifecycleUseCaseProtoco
         let lastReadSeq: Int64
     }
 
+    struct AuthoritativeLastReadSeqCall {
+        let roomID: String
+        let userUID: String
+    }
+
     private(set) var setAnnouncementCalls: [SetAnnouncementCall] = []
     private(set) var lastReadSeqCalls: [LastReadSeqCall] = []
+    private(set) var authoritativeLastReadSeqCalls: [AuthoritativeLastReadSeqCall] = []
+    var lastReadSeqError: Error?
+    var authoritativeLastReadSeq: Int64? = 100
 
     @MainActor
     func handleRoomSaved(roomID: String) {}
@@ -228,6 +515,9 @@ private final class ChatRoomLifecycleUseCaseSpy: ChatRoomLifecycleUseCaseProtoco
     }
 
     func updateLastReadSeq(roomID: String, userUID: String, lastReadSeq: Int64) async throws {
+        if let lastReadSeqError {
+            throw lastReadSeqError
+        }
         lastReadSeqCalls.append(
             LastReadSeqCall(
                 roomID: roomID,
@@ -235,6 +525,13 @@ private final class ChatRoomLifecycleUseCaseSpy: ChatRoomLifecycleUseCaseProtoco
                 lastReadSeq: lastReadSeq
             )
         )
+    }
+
+    func fetchAuthoritativeLastReadSeq(roomID: String, userUID: String) async throws -> Int64? {
+        authoritativeLastReadSeqCalls.append(
+            AuthoritativeLastReadSeqCall(roomID: roomID, userUID: userUID)
+        )
+        return authoritativeLastReadSeq
     }
 
     @MainActor
@@ -297,7 +594,10 @@ private struct ChatRoomRuntimeUseCaseStub: ChatRoomRuntimeUseCaseProtocol {
 }
 
 private struct ChatRoomRealtimeUseCaseStub: ChatRoomRealtimeUseCaseProtocol {
-    func openMessageStream(roomID: String) async throws -> ChatRoomRealtimeSession {
+    func openMessageStream(
+        roomID: String,
+        baselineSeq: Int64
+    ) async throws -> ChatRoomRealtimeSession {
         ChatRoomRealtimeSession(
             roomID: roomID,
             messages: AsyncStream { continuation in

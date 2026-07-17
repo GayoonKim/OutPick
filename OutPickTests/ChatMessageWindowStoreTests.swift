@@ -135,6 +135,79 @@ struct ChatMessageWindowStoreTests {
         #expect(store.lastMessageID() == "m6")
     }
 
+    @Test func applyOlderSameDayPageKeepsDateSeparatorIdentityUnique() {
+        var store = makeStore()
+        let day = Date(timeIntervalSince1970: 100)
+        _ = store.reset(
+            messages: [
+                makeMessage(id: "m3", seq: 3, sentAt: day.addingTimeInterval(120)),
+                makeMessage(id: "m4", seq: 4, sentAt: day.addingTimeInterval(180))
+            ],
+            readBoundarySeq: nil
+        )
+
+        let mutation = store.apply(
+            messages: [
+                makeMessage(id: "m1", seq: 1, sentAt: day),
+                makeMessage(id: "m2", seq: 2, sentAt: day.addingTimeInterval(60))
+            ],
+            updateType: .older,
+            isUserInCurrentRoom: true,
+            windowSize: 300
+        )
+
+        #expect(messageIDs(in: mutation.items) == ["m1", "m2", "m3", "m4"])
+        #expect(mutation.items.filter(isDateSeparator).count == 1)
+        #expect(Set(mutation.items).count == mutation.items.count)
+    }
+
+    @Test func applyOlderCrossDayPageBuildsOneSeparatorPerDay() {
+        var store = makeStore()
+        let firstDay = Date(timeIntervalSince1970: 100)
+        let secondDay = firstDay.addingTimeInterval(86_400)
+        _ = store.reset(
+            messages: [
+                makeMessage(id: "m3", seq: 3, sentAt: secondDay),
+                makeMessage(id: "m4", seq: 4, sentAt: secondDay.addingTimeInterval(60))
+            ],
+            readBoundarySeq: nil
+        )
+
+        let mutation = store.apply(
+            messages: [
+                makeMessage(id: "m1", seq: 1, sentAt: firstDay),
+                makeMessage(id: "m2", seq: 2, sentAt: secondDay.addingTimeInterval(-60))
+            ],
+            updateType: .older,
+            isUserInCurrentRoom: true,
+            windowSize: 300
+        )
+
+        #expect(messageIDs(in: mutation.items) == ["m1", "m2", "m3", "m4"])
+        #expect(mutation.items.filter(isDateSeparator).count == 2)
+        #expect(Set(mutation.items).count == mutation.items.count)
+    }
+
+    @Test func applyNewerSameDayPageKeepsDateSeparatorIdentityUnique() {
+        var store = makeStore()
+        let day = Date(timeIntervalSince1970: 100)
+        _ = store.reset(
+            messages: [makeMessage(id: "m1", seq: 1, sentAt: day)],
+            readBoundarySeq: nil
+        )
+
+        let mutation = store.apply(
+            messages: [makeMessage(id: "m2", seq: 2, sentAt: day.addingTimeInterval(60))],
+            updateType: .newer,
+            isUserInCurrentRoom: true,
+            windowSize: 300
+        )
+
+        #expect(messageIDs(in: mutation.items) == ["m1", "m2"])
+        #expect(mutation.items.filter(isDateSeparator).count == 1)
+        #expect(Set(mutation.items).count == mutation.items.count)
+    }
+
     @Test func reloadUpdatesVisibleMessageAndReturnsReconfiguredItem() {
         var store = makeStore()
         let sentAt = Date(timeIntervalSince1970: 100)
@@ -149,6 +222,44 @@ struct ChatMessageWindowStoreTests {
 
         #expect(mutation.reconfiguredItems.map(\.messageID) == ["m1"])
         #expect(store.message(for: "m1")?.isDeleted == true)
+    }
+
+    @Test func highestContiguousSeqStopsAtFirstGap() {
+        var store = makeStore()
+        let sentAt = Date(timeIntervalSince1970: 100)
+        _ = store.reset(
+            messages: [
+                makeMessage(id: "m11", seq: 11, sentAt: sentAt),
+                makeMessage(id: "m12", seq: 12, sentAt: sentAt.addingTimeInterval(1)),
+                makeMessage(id: "m14", seq: 14, sentAt: sentAt.addingTimeInterval(2))
+            ],
+            readBoundarySeq: 10
+        )
+
+        #expect(store.highestContiguousSeq(after: 10) == 12)
+        #expect(store.highestContiguousSeq(after: 12) == 12)
+    }
+
+    @Test func latestWindowReplacementKeepsOnlyUnresolvedFailedLocalMessages() {
+        var store = makeStore()
+        let sentAt = Date(timeIntervalSince1970: 100)
+        var unresolved = makeMessage(id: "failed", seq: 0, sentAt: sentAt)
+        unresolved.isFailed = true
+        var serverConfirmed = makeMessage(id: "m80", seq: 0, sentAt: sentAt)
+        serverConfirmed.isFailed = true
+
+        let window = ChatLatestMessageWindow(
+            targetSeq: 80,
+            messages: [makeMessage(id: "m80", seq: 80, sentAt: sentAt)]
+        )
+        let items = store.replaceWithLatestWindow(
+            window,
+            preservingFailedMessages: [unresolved, serverConfirmed]
+        )
+
+        #expect(messageIDs(in: items) == ["m80", "failed"])
+        #expect(store.message(for: "m80")?.isFailed == false)
+        #expect(store.message(for: "failed")?.isFailed == true)
     }
 
     private func makeStore() -> ChatMessageWindowStore {

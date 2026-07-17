@@ -91,15 +91,36 @@ struct ChatRoomMessageUseCaseTests {
         #expect(summaryUpdater.calls.isEmpty)
     }
 
+    @Test func latestWindowAndIncomingReconcileOnlyAfterManagerSucceeds() async throws {
+        let targetMessage = makeMessage(id: "target", roomID: "room-1", seq: 80)
+        let manager = ChatMessageManagerStub(
+            latestWindow: ChatLatestMessageWindow(targetSeq: 80, messages: [targetMessage])
+        )
+        let reconciler = ServerConfirmedMessageReconcilerSpy()
+        let useCase = makeUseCase(
+            messageManager: manager,
+            serverConfirmedMessageReconciler: reconciler
+        )
+        let room = makeRoom(id: "room-1")
+
+        let window = try await useCase.loadLatestMessageWindow(room: room, targetSeq: 80)
+        try await useCase.handleIncomingMessage(targetMessage, room: room)
+
+        #expect(window.messages.map(\.ID) == ["target"])
+        #expect(reconciler.calls.map { $0.map(\.ID) } == [["target"], ["target"]])
+    }
+
     private func makeUseCase(
         messageManager: ChatMessageManaging = ChatMessageManagerStub(),
         repository: ChatMessageSendingRepositorySpy = ChatMessageSendingRepositorySpy(),
-        deletedLastMessageSummaryUpdater: ChatDeletedLastMessageSummaryUpdating? = nil
+        deletedLastMessageSummaryUpdater: ChatDeletedLastMessageSummaryUpdating? = nil,
+        serverConfirmedMessageReconciler: ChatServerConfirmedMessageReconciling? = nil
     ) -> ChatRoomMessageUseCase {
         ChatRoomMessageUseCase(
             messageManager: messageManager,
             sendingRepository: repository,
             deletedLastMessageSummaryUpdater: deletedLastMessageSummaryUpdater,
+            serverConfirmedMessageReconciler: serverConfirmedMessageReconciler,
             currentUserProvider: {
                 ChatMessageSenderSnapshot(
                     senderUID: "me@example.com",
@@ -166,6 +187,11 @@ private final class ChatMessageSendingRepositorySpy: ChatMessageSendingRepositor
 }
 
 private final class ChatMessageManagerStub: ChatMessageManaging {
+    private let latestWindow: ChatLatestMessageWindow?
+
+    init(latestWindow: ChatLatestMessageWindow? = nil) {
+        self.latestWindow = latestWindow
+    }
     func loadLocalInitialWindow(
         roomID: String,
         mode: ChatInitialOpenMode,
@@ -203,6 +229,11 @@ private final class ChatMessageManagerStub: ChatMessageManaging {
         throw StubError.unimplemented
     }
 
+    func loadLatestMessageWindow(room: ChatRoom, targetSeq: Int64) async throws -> ChatLatestMessageWindow {
+        guard let latestWindow else { throw StubError.unimplemented }
+        return latestWindow
+    }
+
     func syncDeletedStates(localMessages: [ChatMessage], room: ChatRoom) async throws -> [String] {
         throw StubError.unimplemented
     }
@@ -212,7 +243,7 @@ private final class ChatMessageManagerStub: ChatMessageManaging {
     }
 
     func handleIncomingMessage(_ message: ChatMessage, room: ChatRoom) async throws {
-        throw StubError.unimplemented
+        // 성공 경로 spy
     }
 
     func setupDeletionListener(roomID: String, onDeleted: @escaping (String) -> Void) -> AnyCancellable {
@@ -225,6 +256,14 @@ private final class ChatMessageManagerStub: ChatMessageManaging {
 
     private enum StubError: Error {
         case unimplemented
+    }
+}
+
+private final class ServerConfirmedMessageReconcilerSpy: ChatServerConfirmedMessageReconciling {
+    private(set) var calls: [[ChatMessage]] = []
+
+    func reconcileServerConfirmedMessages(_ messages: [ChatMessage]) async throws {
+        calls.append(messages)
     }
 }
 
@@ -266,6 +305,10 @@ private final class ChatMessageDeleteManagerSpy: ChatMessageManaging {
     }
 
     func loadNewerMessages(room: ChatRoom, after messageID: String?) async throws -> [ChatMessage] {
+        throw StubError.unimplemented
+    }
+
+    func loadLatestMessageWindow(room: ChatRoom, targetSeq: Int64) async throws -> ChatLatestMessageWindow {
         throw StubError.unimplemented
     }
 

@@ -78,6 +78,30 @@ struct ChatOutgoingOutboxUseCaseTests {
         )?.isFailed == false)
     }
 
+    @Test func batchReconciliationDeletesOnlyServerConfirmedOutboxRecords() async throws {
+        let persistence = ChatOutgoingOutboxPersistenceFake()
+        let useCase = makeUseCase(persistence: persistence)
+        let firstFailed = makeMessage(id: "text-1", isFailed: true)
+        let secondFailed = makeMessage(id: "text-2", isFailed: true)
+        let unresolved = makeMessage(id: "text-3", isFailed: true)
+
+        await useCase.stageTextMessage(firstFailed)
+        await useCase.stageTextMessage(secondFailed)
+        await useCase.stageTextMessage(unresolved)
+
+        var firstConfirmed = firstFailed
+        firstConfirmed.isFailed = false
+        var secondConfirmed = secondFailed
+        secondConfirmed.isFailed = false
+        try await persistence.saveChatMessages([firstConfirmed, secondConfirmed])
+
+        try await useCase.reconcileServerConfirmedMessages([firstConfirmed, secondConfirmed])
+
+        #expect(await persistence.record(messageID: "text-1") == nil)
+        #expect(await persistence.record(messageID: "text-2") == nil)
+        #expect(await persistence.record(messageID: "text-3") != nil)
+    }
+
     private func makeUseCase(
         persistence: ChatOutgoingOutboxPersistenceFake
     ) -> ChatOutgoingOutboxUseCase {
@@ -189,8 +213,18 @@ private actor ChatOutgoingOutboxPersistenceFake: ChatOutgoingOutboxPersisting, C
         records[messageID]
     }
 
+    func fetchOutgoingOutboxRecords(messageIDs: [String]) async throws -> [ChatOutgoingOutboxRecord] {
+        messageIDs.compactMap { records[$0] }
+    }
+
     func deleteOutgoingOutboxRecord(messageID: String) async throws {
         records.removeValue(forKey: messageID)
+    }
+
+    func deleteOutgoingOutboxRecords(messageIDs: [String]) async throws {
+        for messageID in messageIDs {
+            records.removeValue(forKey: messageID)
+        }
     }
 
     func record(messageID: String) -> ChatOutgoingOutboxRecord? {
