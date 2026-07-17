@@ -2,17 +2,44 @@
 import Foundation
 import UIKit
 
+protocol RealtimeBackgroundRoomSessionOpening: Sendable {
+    func openBackgroundRoomSession(for roomID: String) async throws -> ChatRoomSocketSession
+}
+
+extension RealtimeSocketService: RealtimeBackgroundRoomSessionOpening {}
+
+struct BannerSubscriptionRetryPolicy: Equatable, Sendable {
+    let baseDelay: TimeInterval
+    let maxDelay: TimeInterval
+
+    init(baseDelay: TimeInterval = 0.5, maxDelay: TimeInterval = 8) {
+        self.baseDelay = baseDelay
+        self.maxDelay = maxDelay
+    }
+
+    func delay(forFailureAttempt attempt: Int) -> TimeInterval {
+        min(maxDelay, baseDelay * pow(2, Double(max(0, attempt - 1))))
+    }
+}
+
 @MainActor
 final class BannerManager {
     static let shared = BannerManager()
-    private let realtimeSocketService: RealtimeSocketService
+    private var realtimeSocketService: (any RealtimeBackgroundRoomSessionOpening)?
     private var roomReadStateStore: ChatRoomReadStateStore?
     private var roomRepository: FirebaseChatRoomRepositoryProtocol?
+    private let retryPolicy: BannerSubscriptionRetryPolicy
+    private let retrySleep: @Sendable (TimeInterval) async -> Void
 
-    private init(
-        realtimeSocketService: RealtimeSocketService = .shared
+    init(
+        retryPolicy: BannerSubscriptionRetryPolicy = BannerSubscriptionRetryPolicy(),
+        retrySleep: @escaping @Sendable (TimeInterval) async -> Void = { delay in
+            guard delay > 0 else { return }
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+        }
     ) {
-        self.realtimeSocketService = realtimeSocketService
+        self.retryPolicy = retryPolicy
+        self.retrySleep = retrySleep
     }
 
     // 현재 화면에서 보고 있는 roomID (nil이면 채팅 화면이 아님)
@@ -20,6 +47,9 @@ final class BannerManager {
 
     // 참여 중인 방 구독 저장소 (roomID -> cancellable)
     private var roomTasks: [String: Task<Void, Never>] = [:]
+    private var presentationQueue = BannerPresentationQueueState()
+    // window attach 재시도 중에도 view와 queue completion을 유지한다.
+    private var currentBannerView: ChatBannerView?
 
     // 배너 표시 콜백(앱 전역에서 주입: 토스트/상단 배너 등)
     var onPresentBanner: ((BannerPayload) -> Void)?
@@ -35,6 +65,10 @@ final class BannerManager {
     ) {
         self.roomReadStateStore = roomReadStateStore
         self.roomRepository = roomRepository
+    }
+
+    func configure(realtimeSocketService: any RealtimeBackgroundRoomSessionOpening) {
+        self.realtimeSocketService = realtimeSocketService
     }
 
     /// 배너용 구독 시작(참여 중인 모든 방)
@@ -54,6 +88,10 @@ final class BannerManager {
     /// 개별 방 추가
     func addRoom(_ roomID: String) {
         guard roomTasks[roomID] == nil else { return }
+        guard let realtimeSocketService else {
+            assertionFailure("BannerManager realtime socket service가 설정되지 않았습니다.")
+            return
+        }
 
         #if DEBUG
         print("[BannerManager] addRoom subscription room=\(roomID)")
@@ -61,22 +99,41 @@ final class BannerManager {
 
         roomTasks[roomID] = Task { [weak self] in
             guard let self else { return }
-            do {
-                let session = try await self.realtimeSocketService.openRoomSession(for: roomID)
-                defer {
-                    Task {
-                        await session.close()
+            var failureAttempt = 0
+
+            while !Task.isCancelled {
+                do {
+                    let session = try await realtimeSocketService.openBackgroundRoomSession(
+                        for: roomID
+                    )
+                    failureAttempt = 0
+
+                    for await msg in session.messages {
+                        if Task.isCancelled { break }
+                        await self.handleIncomingMessage(msg, roomID: roomID)
                     }
+                    await session.close()
+
+                    guard !Task.isCancelled else { break }
+                    failureAttempt += 1
+                } catch {
+                    guard !Task.isCancelled else { break }
+                    guard Self.shouldRetrySubscription(after: error) else {
+                        #if DEBUG
+                        print("[BannerManager] terminal stream failure room=\(roomID): \(error)")
+                        #endif
+                        break
+                    }
+                    failureAttempt += 1
+
+                    #if DEBUG
+                    print("[BannerManager] stream failed room=\(roomID), retry=\(failureAttempt): \(error)")
+                    #endif
                 }
 
-                for await msg in session.messages {
-                    if Task.isCancelled { break }
-                    await self.handleIncomingMessage(msg, roomID: roomID)
-                }
-            } catch {
-                #if DEBUG
-                print("[BannerManager] stream failed room=\(roomID): \(error)")
-                #endif
+                await self.retrySleep(
+                    self.retryPolicy.delay(forFailureAttempt: failureAttempt)
+                )
             }
         }
     }
@@ -96,6 +153,9 @@ final class BannerManager {
         }
         roomTasks.removeAll()
         currentVisibleRoomID = nil
+        presentationQueue.reset()
+        currentBannerView?.dismiss()
+        currentBannerView = nil
     }
 
     // 화면 전환 시 호출(채팅방 진입/이탈)
@@ -104,6 +164,11 @@ final class BannerManager {
         print("[BannerManager] setVisibleRoom -> \(roomID ?? "nil")")
         #endif
         currentVisibleRoomID = roomID
+    }
+
+    nonisolated private static func shouldRetrySubscription(after error: Error) -> Bool {
+        let nsError = error as NSError
+        return !(nsError.domain == "SocketIO" && nsError.code == -1003)
     }
 
     private func handleIncomingMessage(_ msg: ChatMessage, roomID: String) async {
@@ -137,7 +202,9 @@ final class BannerManager {
             attachmentsCount: msg.attachments.count
         )
 
-        showBanner(message: payload)
+        if let next = presentationQueue.enqueue(payload) {
+            showBanner(message: next)
+        }
     }
     
     private func showBanner(message: BannerPayload) {
@@ -145,14 +212,24 @@ final class BannerManager {
         let msg = message.body
         print(#function, title, msg)
         let bannerView = ChatBannerView()
+        currentBannerView = bannerView
         bannerView.configure(title: title, subtitle: msg, onTap: { [weak self] in
             guard self != nil else { return }
             
             print(#function, "메시지 배너 탭", message)
         }
         )
-        
-        bannerView.show()
+
+        onPresentBanner?(message)
+        bannerView.show { [weak self, weak bannerView] in
+            guard let self else { return }
+            if self.currentBannerView === bannerView {
+                self.currentBannerView = nil
+            }
+            if let next = self.presentationQueue.finishCurrent() {
+                self.showBanner(message: next)
+            }
+        }
     }
 }
 
@@ -174,7 +251,7 @@ private func bannerText(from msg: ChatMessage) -> String {
 }
 
 // 배너 표시용 모델
-struct BannerPayload {
+struct BannerPayload: Equatable, Sendable {
     let roomID: String
     let title: String
     let body: String

@@ -27,7 +27,11 @@ protocol ChatOutgoingOutboxUseCaseProtocol {
     func deleteLocalFailedMessage(_ message: ChatMessage) async
 }
 
-final class ChatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol {
+protocol ChatServerConfirmedMessageReconciling {
+    func reconcileServerConfirmedMessages(_ messages: [ChatMessage]) async throws
+}
+
+final class ChatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol, ChatServerConfirmedMessageReconciling {
     private let outboxPersistence: ChatOutgoingOutboxPersisting
     private let messagePersistence: ChatFailedOutgoingMessagePersisting
     private let imageStorageRepository: FirebaseImageStorageRepositoryProtocol
@@ -229,11 +233,27 @@ final class ChatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol {
     func completeServerConfirmedMessage(_ message: ChatMessage) async {
         guard !message.isFailed else { return }
         try? await messagePersistence.saveChatMessages([message])
-        guard (try? await outboxPersistence.fetchOutgoingOutboxRecord(messageID: message.ID)) != nil else {
-            return
+        try? await reconcileServerConfirmedMessages([message])
+    }
+
+    func reconcileServerConfirmedMessages(_ messages: [ChatMessage]) async throws {
+        var seenIDs = Set<String>()
+        let confirmed = messages.filter {
+            !$0.isFailed && !$0.ID.isEmpty && seenIDs.insert($0.ID).inserted
         }
-        try? await outboxPersistence.deleteOutgoingOutboxRecord(messageID: message.ID)
-        deleteLocalOutboxFiles(roomID: message.roomID, messageID: message.ID)
+        guard !confirmed.isEmpty else { return }
+
+        let records = try await outboxPersistence.fetchOutgoingOutboxRecords(
+            messageIDs: confirmed.map(\.ID)
+        )
+        guard !records.isEmpty else { return }
+
+        try await outboxPersistence.deleteOutgoingOutboxRecords(
+            messageIDs: records.map(\.messageID)
+        )
+        for record in records {
+            deleteLocalOutboxFiles(roomID: record.roomID, messageID: record.messageID)
+        }
     }
 
     func deleteLocalFailedMessage(_ message: ChatMessage) async {

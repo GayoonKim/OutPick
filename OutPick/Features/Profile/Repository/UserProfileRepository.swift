@@ -181,26 +181,52 @@ final class UserProfileRepository: UserProfileRepositoryProtocol {
         let joinedRoomRef = db.collection("users").document(userDocumentID)
             .collection("joinedRooms").document(trimmedRoomID)
 
-        _ = try await db.runTransaction { transaction, errorPointer -> Any? in
-            do {
-                let joinedRoomSnap = try transaction.getDocument(joinedRoomRef)
+        do {
+            let result = try await db.runTransaction { transaction, errorPointer -> Any? in
+                do {
+                    let joinedRoomSnap = try transaction.getDocument(joinedRoomRef)
 
-                let requested = max(Int64(0), lastReadSeq)
-                let current = Self.toInt64(joinedRoomSnap.data()?["lastReadSeq"]) ?? 0
-                let next = max(current, requested)
+                    let requested = max(Int64(0), lastReadSeq)
+                    let current = Self.toInt64(joinedRoomSnap.data()?["lastReadSeq"]) ?? 0
+                    let next = max(current, requested)
+                    let didWrite = next > current
 
-                guard next > current else { return nil }
-
-                transaction.setData([
-                    "roomID": trimmedRoomID,
-                    "lastReadSeq": next,
-                    "updatedAt": FieldValue.serverTimestamp()
-                ], forDocument: joinedRoomRef, merge: true)
-                return nil
-            } catch {
-                errorPointer?.pointee = error as NSError
-                return nil
+                    if didWrite {
+                        transaction.setData([
+                            "roomID": trimmedRoomID,
+                            "lastReadSeq": next,
+                            "updatedAt": FieldValue.serverTimestamp()
+                        ], forDocument: joinedRoomRef, merge: true)
+                    }
+                    return [
+                        "current": current,
+                        "requested": requested,
+                        "next": next,
+                        "didWrite": didWrite
+                    ]
+                } catch {
+                    errorPointer?.pointee = error as NSError
+                    return nil
+                }
             }
+            let values = result as? [String: Any]
+            print(
+                "[ChatReadPersistence][transaction] "
+                    + "room=\(Self.maskedIdentifier(trimmedRoomID)) "
+                    + "user=\(Self.maskedIdentifier(userDocumentID)) "
+                    + "current=\(Self.toInt64(values?["current"]) ?? -1) "
+                    + "requested=\(Self.toInt64(values?["requested"]) ?? lastReadSeq) "
+                    + "next=\(Self.toInt64(values?["next"]) ?? -1) "
+                    + "didWrite=\((values?["didWrite"] as? Bool) ?? false)"
+            )
+        } catch {
+            print(
+                "[ChatReadPersistence][transaction-failure] "
+                    + "room=\(Self.maskedIdentifier(trimmedRoomID)) "
+                    + "user=\(Self.maskedIdentifier(userDocumentID)) "
+                    + "requested=\(lastReadSeq) error=\(error)"
+            )
+            throw error
         }
     }
     
@@ -214,6 +240,22 @@ final class UserProfileRepository: UserProfileRepositoryProtocol {
         
         let snap = try await docRef.getDocument()
         return Self.toInt64(snap.data()?["lastReadSeq"]) ?? 0
+    }
+
+    func fetchAuthoritativeLastReadSeq(for roomID: String, userUID: String) async throws -> Int64 {
+        let trimmedRoomID = roomID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let userDocumentID = normalizeUserID(userUID)
+        guard !trimmedRoomID.isEmpty, !userDocumentID.isEmpty else { return 0 }
+
+        let docRef = db.collection("users").document(userDocumentID)
+            .collection("joinedRooms").document(trimmedRoomID)
+        let snapshot = try await docRef.getDocument(source: .server)
+        return Self.toInt64(snapshot.data()?["lastReadSeq"]) ?? 0
+    }
+
+    private static func maskedIdentifier(_ value: String) -> String {
+        guard value.count > 4 else { return "***" }
+        return "\(value.prefix(2))…\(value.suffix(2))"
     }
 
     func upsertDeviceID(userDocumentID: String, email: String, deviceID: String) async throws {

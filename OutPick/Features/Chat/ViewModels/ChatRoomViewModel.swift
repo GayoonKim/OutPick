@@ -10,18 +10,17 @@ import Combine
 
 @MainActor
 final class ChatRoomViewModel {
-    enum LiveMode {
+    enum LiveMode: Equatable {
         case catchingUp
         case live
     }
 
     struct NewerMessagesResult {
         let messages: [ChatMessage]
-        let bufferedMessagesToFlush: [ChatMessage]
     }
 
-    enum IncomingMessageAction {
-        case buffered
+    enum IncomingMessageAction: Equatable {
+        case persistOnly
         case append
     }
 
@@ -91,15 +90,38 @@ final class ChatRoomViewModel {
     private(set) var windowMaxSeq: Int64 = 0
     private(set) var initialReadBoundarySeq: Int64? = nil
 
-    private var liveBuffer: [ChatMessage] = []
-    private var liveBufferIDs: Set<String> = []
     private var readStateStore = ChatReadStateStore()
+    private(set) var unreadCatchUpState = ChatUnreadCatchUpState()
     private var lastReadFlushTask: Task<Void, Never>?
     private var searchMessagesTask: Task<Void, Never>?
     private var searchGeneration: Int = 0
     private let lastReadFlushDebounceNanoseconds: UInt64 = 3_000_000_000
 
     let minTriggerDistance: Int = 3
+
+    var latestJumpPresentation: ChatLatestJumpPresentation {
+        let unreadCount = unreadCatchUpState.unreadCount
+        let preview = unreadCatchUpState.presentedPreview
+        let isVisible = isCurrentUserParticipant
+            && unreadCount > 0
+            && preview != nil
+        return ChatLatestJumpPresentation(
+            isVisible: isVisible,
+            isLoading: unreadCatchUpState.isJumpLoading,
+            preview: preview,
+            unreadAccessibilityText: isVisible
+                ? "읽지 않은 메시지 \(unreadCount)개"
+                : nil
+        )
+    }
+
+    var readFrontierSeq: Int64 {
+        readStateStore.frontierSeq
+    }
+
+    var realtimePreviewTargetSeq: Int64? {
+        unreadCatchUpState.latestPreview?.targetSeq
+    }
 
     init(
         room: ChatRoom,
@@ -194,8 +216,14 @@ final class ChatRoomViewModel {
         try await messageUseCase.sendPreparedMessage(message, room: room)
     }
 
-    func openMessageStream(roomID: String) async throws -> ChatRoomRealtimeSession {
-        try await realtimeUseCase.openMessageStream(roomID: roomID)
+    func openMessageStream(
+        roomID: String,
+        baselineSeq: Int64
+    ) async throws -> ChatRoomRealtimeSession {
+        try await realtimeUseCase.openMessageStream(
+            roomID: roomID,
+            baselineSeq: baselineSeq
+        )
     }
 
     func observeRoomClosed(onClosed: @escaping (String) -> Void) -> ChatRoomRuntimeSubscription? {
@@ -269,7 +297,7 @@ final class ChatRoomViewModel {
 
     func loadNewerMessages(after messageID: String?) async throws -> NewerMessagesResult {
         guard !isLoadingNewer else {
-            return NewerMessagesResult(messages: [], bufferedMessagesToFlush: [])
+            return NewerMessagesResult(messages: [])
         }
 
         isLoadingNewer = true
@@ -284,26 +312,89 @@ final class ChatRoomViewModel {
             windowMaxSeq = pageMax
         }
 
-        var bufferedMessagesToFlush: [ChatMessage] = []
-        if liveMode == .catchingUp && windowMaxSeq >= entryTailSeq {
+        if liveMode == .catchingUp && windowMaxSeq >= unreadCatchUpState.knownLatestSeq {
             liveMode = .live
             hasMoreNewer = false
-            bufferedMessagesToFlush = flushBufferedLiveMessages()
         }
 
-        return NewerMessagesResult(messages: loaded, bufferedMessagesToFlush: bufferedMessagesToFlush)
+        return NewerMessagesResult(messages: loaded)
+    }
+
+    func loadLatestMessageWindow(targetSeq: Int64) async throws -> ChatLatestMessageWindow {
+        try await messageUseCase.loadLatestMessageWindow(room: room, targetSeq: targetSeq)
+    }
+
+    func beginLatestJump() -> ChatLatestJumpRequest? {
+        unreadCatchUpState.beginLatestJump()
+    }
+
+    func isCurrentLatestJump(_ request: ChatLatestJumpRequest) -> Bool {
+        unreadCatchUpState.isCurrentJump(request)
+    }
+
+    @discardableResult
+    func completeLatestJump(
+        _ request: ChatLatestJumpRequest,
+        didDisplayTarget: Bool
+    ) -> Bool {
+        guard let approvedTarget = unreadCatchUpState.completeLatestJump(
+            generation: request.generation,
+            didDisplayTarget: didDisplayTarget
+        ) else {
+            return false
+        }
+
+        _ = readStateStore.queueExplicitJumpTarget(approvedTarget)
+        unreadCatchUpState.syncReadFrontier(approvedTarget)
+        windowMaxSeq = approvedTarget
+        liveMode = approvedTarget >= unreadCatchUpState.knownLatestSeq ? .live : .catchingUp
+        hasMoreOlder = true
+        hasMoreNewer = liveMode == .catchingUp
+        return true
+    }
+
+    @discardableResult
+    func failLatestJump(_ request: ChatLatestJumpRequest) -> Bool {
+        unreadCatchUpState.failLatestJump(generation: request.generation)
+    }
+
+    func cancelLatestJump() {
+        unreadCatchUpState.cancelLatestJump()
+    }
+
+    @discardableResult
+    func dismissRealtimePreview(targetSeq: Int64) -> Bool {
+        unreadCatchUpState.dismissRealtimePreview(targetSeq: targetSeq)
+    }
+
+    func clearRealtimePreview() {
+        unreadCatchUpState.clearRealtimePreview()
+    }
+
+    @discardableResult
+    func recordVisibleMessage(
+        highestVisibleSeq: Int64,
+        contiguousLoadedThroughSeq: Int64
+    ) -> Int64? {
+        guard let candidate = readStateStore.queueVisibleCandidate(
+            highestVisibleSeq,
+            contiguousLoadedThroughSeq: contiguousLoadedThroughSeq
+        ) else {
+            return nil
+        }
+
+        unreadCatchUpState.syncReadFrontier(candidate)
+        scheduleDebouncedLastReadFlush(userUID: currentUserDocumentID)
+        return candidate
     }
 
     func handleIncomingMessage(_ message: ChatMessage) -> IncomingMessageAction {
         seedRoomReadLatest(from: message)
+        unreadCatchUpState.observeLatestMessage(message)
 
         switch liveMode {
         case .catchingUp:
-            if !liveBufferIDs.contains(message.ID) {
-                liveBufferIDs.insert(message.ID)
-                liveBuffer.append(message)
-            }
-            return .buffered
+            return .persistOnly
 
         case .live:
             if message.seq > windowMaxSeq {
@@ -313,14 +404,19 @@ final class ChatRoomViewModel {
         }
     }
 
-    private func applyInitialMessageSyncState(_ state: ChatInitialSessionState) {
+    func applyInitialMessageSyncState(_ state: ChatInitialSessionState) {
         entryTailSeq = state.latestSeq
         windowMaxSeq = state.windowMaxSeq
         initialReadBoundarySeq = state.readBoundarySeq
         hasMoreOlder = state.hasMoreOlder
         hasMoreNewer = state.hasMoreNewer
         liveMode = (windowMaxSeq >= entryTailSeq) ? .live : .catchingUp
-        readStateStore.reset()
+        let persistedFrontier = state.readBoundarySeq ?? 0
+        readStateStore.reset(persistedLastReadSeq: persistedFrontier)
+        unreadCatchUpState = ChatUnreadCatchUpState(
+            knownLatestSeq: state.latestSeq,
+            readFrontierSeq: persistedFrontier
+        )
         roomReadStateStore?.seed(
             ChatRoomReadSnapshot(
                 roomID: roomID,
@@ -498,13 +594,12 @@ final class ChatRoomViewModel {
     }
 
     func finalLastReadSeqForSessionEnd() -> Int64 {
-        readStateStore.finalSeqForSessionEnd(windowMaxSeq: windowMaxSeq)
+        readStateStore.finalSeqForSessionEnd()
     }
 
     func persistFinalLastReadSeq(userUID: String) async throws {
         let finalSeq = finalLastReadSeqForSessionEnd()
         readStateStore.queue(finalSeq)
-        roomReadStateStore?.markReadFlushed(roomID: roomID, lastReadSeq: finalSeq)
         lastReadFlushTask?.cancel()
         lastReadFlushTask = nil
         try await flushPendingLastReadSeq(userUID: userUID)
@@ -514,37 +609,46 @@ final class ChatRoomViewModel {
         try await persistFinalLastReadSeq(userUID: currentUserDocumentID)
     }
 
-    func nextLastReadSeqCandidate(isNearBottom: Bool, skipNearBottomCheck: Bool) -> Int64? {
-        readStateStore.nextCandidate(
-            windowMaxSeq: windowMaxSeq,
-            isNearBottom: isNearBottom,
-            skipNearBottomCheck: skipNearBottomCheck
+    func persistExplicitLatestJumpForCurrentUser() async throws {
+        lastReadFlushTask?.cancel()
+        lastReadFlushTask = nil
+        let userUID = currentUserDocumentID
+        let requestedSeq = readStateStore.pendingFlushSeq()
+        print(
+            "[ChatReadPersistence][explicit-preflight] "
+                + "room=\(maskedIdentifier(roomID)) "
+                + "user=\(maskedIdentifier(userUID)) "
+                + "requested=\(requestedSeq.map(String.init) ?? "nil") "
+                + "pending=\(readStateStore.pendingLastReadSeq) "
+                + "persisted=\(readStateStore.persistedLastReadSeq) "
+                + "frontier=\(readStateStore.frontierSeq)"
         )
-    }
-
-    func persistIncrementalLastReadSeq(
-        userUID: String,
-        isNearBottom: Bool,
-        skipNearBottomCheck: Bool
-    ) async throws {
-        guard let seq = nextLastReadSeqCandidate(
-            isNearBottom: isNearBottom,
-            skipNearBottomCheck: skipNearBottomCheck
-        ) else { return }
-
-        readStateStore.queue(seq)
-        scheduleDebouncedLastReadFlush(userUID: userUID)
-    }
-
-    func persistIncrementalLastReadSeqForCurrentUser(
-        isNearBottom: Bool,
-        skipNearBottomCheck: Bool
-    ) async throws {
-        try await persistIncrementalLastReadSeq(
-            userUID: currentUserDocumentID,
-            isNearBottom: isNearBottom,
-            skipNearBottomCheck: skipNearBottomCheck
+        try await flushPendingLastReadSeq(userUID: userUID)
+        print(
+            "[ChatReadPersistence][explicit-write-success] "
+                + "room=\(maskedIdentifier(roomID)) "
+                + "user=\(maskedIdentifier(userUID)) "
+                + "requested=\(requestedSeq.map(String.init) ?? "nil")"
         )
+        do {
+            let authoritativeSeq = try await lifecycleUseCase.fetchAuthoritativeLastReadSeq(
+                roomID: roomID,
+                userUID: userUID
+            )
+            print(
+                "[ChatReadPersistence][explicit-readback] "
+                    + "room=\(maskedIdentifier(roomID)) "
+                    + "user=\(maskedIdentifier(userUID)) "
+                    + "requested=\(requestedSeq.map(String.init) ?? "nil") "
+                    + "authoritative=\(authoritativeSeq.map(String.init) ?? "unsupported")"
+            )
+        } catch {
+            print(
+                "[ChatReadPersistence][explicit-readback-failure] "
+                    + "room=\(maskedIdentifier(roomID)) "
+                    + "user=\(maskedIdentifier(userUID)) error=\(error)"
+            )
+        }
     }
 
     private func scheduleDebouncedLastReadFlush(userUID: String) {
@@ -591,6 +695,11 @@ final class ChatRoomViewModel {
         )
     }
 
+    private func maskedIdentifier(_ value: String) -> String {
+        guard value.count > 4 else { return "***" }
+        return "\(value.prefix(2))…\(value.suffix(2))"
+    }
+
     private func seedRoomReadLatest(from message: ChatMessage) {
         guard message.seq > 0 else { return }
         roomReadStateStore?.seedLatest(
@@ -600,17 +709,4 @@ final class ChatRoomViewModel {
         )
     }
 
-    private func flushBufferedLiveMessages() -> [ChatMessage] {
-        guard !liveBuffer.isEmpty else { return [] }
-
-        let sorted = liveBuffer.sorted { $0.seq < $1.seq }
-        liveBuffer.removeAll()
-        liveBufferIDs.removeAll()
-
-        if let maxSeq = sorted.map(\.seq).max(), maxSeq > windowMaxSeq {
-            windowMaxSeq = maxSeq
-        }
-
-        return sorted
-    }
 }

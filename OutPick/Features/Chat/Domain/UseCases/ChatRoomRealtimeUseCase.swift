@@ -8,7 +8,10 @@
 import Foundation
 
 protocol ChatRoomRealtimeUseCaseProtocol {
-    func openMessageStream(roomID: String) async throws -> ChatRoomRealtimeSession
+    func openMessageStream(
+        roomID: String,
+        baselineSeq: Int64
+    ) async throws -> ChatRoomRealtimeSession
 }
 
 final class ChatRoomRealtimeUseCase: ChatRoomRealtimeUseCaseProtocol {
@@ -18,8 +21,14 @@ final class ChatRoomRealtimeUseCase: ChatRoomRealtimeUseCaseProtocol {
         self.repository = repository
     }
 
-    func openMessageStream(roomID: String) async throws -> ChatRoomRealtimeSession {
-        try await repository.openMessageStream(roomID: roomID)
+    func openMessageStream(
+        roomID: String,
+        baselineSeq: Int64
+    ) async throws -> ChatRoomRealtimeSession {
+        try await repository.openMessageStream(
+            roomID: roomID,
+            baselineSeq: baselineSeq
+        )
     }
 }
 

@@ -156,6 +156,9 @@ final class ChatCoordinator {
 
         chatRoomVC.isRoomSaving = isRoomSaving
         chatRoomVC.router = self
+        chatRoomVC.onRouteRemoved = { [weak self] source in
+            self?.finishChatRoute(source)
+        }
         chatRoomVC.modalPresentationStyle = .fullScreen
         chatRoomVC.hidesBottomBarWhenPushed = true
         return chatRoomVC
@@ -168,8 +171,18 @@ final class ChatCoordinator {
         }
         nav.setNavigationBarHidden(true, animated: false)
         nav.interactivePopGestureRecognizer?.isEnabled = true
+        if viewController is ChatViewController {
+            nav.viewControllers
+                .compactMap { $0 as? ChatViewController }
+                .filter { $0 !== viewController }
+                .forEach(finishChatRoute)
+        }
         viewController.hidesBottomBarWhenPushed = true
         nav.pushViewController(viewController, animated: true)
+    }
+
+    private func finishChatRoute(_ source: ChatViewController) {
+        source.finishRouteLifecycleForCoordinator()
     }
 
     private func navigationController(startingFrom source: UIViewController) -> UINavigationController? {

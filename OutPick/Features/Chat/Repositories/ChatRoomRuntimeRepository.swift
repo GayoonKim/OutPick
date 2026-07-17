@@ -47,6 +47,7 @@ final class SocketChatRoomRuntimeRepository: ChatRoomRuntimeRepositoryProtocol {
         let task = Task { [socketObserver] in
             let stream = await socketObserver.observeRoomClosed(roomID: roomID)
             for await closedRoomID in stream {
+                guard closedRoomID == roomID else { continue }
                 await MainActor.run {
                     onClosed(closedRoomID)
                 }

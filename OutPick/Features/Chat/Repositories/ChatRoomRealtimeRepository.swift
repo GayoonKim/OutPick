@@ -14,11 +14,17 @@ struct ChatRoomRealtimeSession: Sendable {
 }
 
 protocol ChatRoomRealtimeRepositoryProtocol {
-    func openMessageStream(roomID: String) async throws -> ChatRoomRealtimeSession
+    func openMessageStream(
+        roomID: String,
+        baselineSeq: Int64
+    ) async throws -> ChatRoomRealtimeSession
 }
 
 protocol ChatRoomRealtimeSocketOpening {
-    func openRoomSession(for roomID: String) async throws -> ChatRoomSocketSession
+    func openVisibleRoomSession(
+        for roomID: String,
+        baselineSeq: Int64
+    ) async throws -> ChatRoomSocketSession
 }
 
 final class SocketChatRoomRealtimeRepository: ChatRoomRealtimeRepositoryProtocol {
@@ -28,8 +34,14 @@ final class SocketChatRoomRealtimeRepository: ChatRoomRealtimeRepositoryProtocol
         self.socketManager = socketManager
     }
 
-    func openMessageStream(roomID: String) async throws -> ChatRoomRealtimeSession {
-        let session = try await socketManager.openRoomSession(for: roomID)
+    func openMessageStream(
+        roomID: String,
+        baselineSeq: Int64
+    ) async throws -> ChatRoomRealtimeSession {
+        let session = try await socketManager.openVisibleRoomSession(
+            for: roomID,
+            baselineSeq: baselineSeq
+        )
         return ChatRoomRealtimeSession(
             roomID: session.roomID,
             messages: session.messages,

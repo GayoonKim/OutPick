@@ -84,6 +84,23 @@ class ChatMessageCollectionView: UICollectionView {
               indexPath.item < self.numberOfItems(inSection: indexPath.section) else { return }
         self.scrollToItem(at: indexPath, at: .centeredVertically, animated: true)
     }
+
+    @MainActor
+    func displayMessage(at indexPath: IndexPath) -> Bool {
+        layoutIfNeeded()
+        guard indexPath.section >= 0,
+              indexPath.section < numberOfSections,
+              indexPath.item >= 0,
+              indexPath.item < numberOfItems(inSection: indexPath.section) else {
+            return false
+        }
+
+        scrollToItem(at: indexPath, at: .centeredVertically, animated: false)
+        layoutIfNeeded()
+        guard let attributes = layoutAttributesForItem(at: indexPath) else { return false }
+        let visibleBounds = CGRect(origin: contentOffset, size: bounds.size)
+        return attributes.frame.intersects(visibleBounds)
+    }
 }
 
 extension UIView {

@@ -36,7 +36,10 @@ enum AppCompositionRoot {
         let lookbookProvider = LookbookRepositoryProvider.live(
             transport: cloudFunctionsTransport
         )
-        let realtimeSocketService = RealtimeSocketService.shared
+        let realtimeSocketService = RealtimeSocketService(
+            gapRecoveryLoader: FirebaseChatRealtimeGapRecoveryLoader(db: db)
+        )
+        BannerManager.shared.configure(realtimeSocketService: realtimeSocketService)
         let joinedRoomsStore = JoinedRoomsSessionStore()
         let brandAdminSessionStore = BrandAdminSessionStore(
             capabilitiesClient: BrandAdminCapabilitiesCloudFunctionsClient(

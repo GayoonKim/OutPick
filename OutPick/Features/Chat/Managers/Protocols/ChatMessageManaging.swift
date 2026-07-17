@@ -40,6 +40,9 @@ protocol ChatMessageManaging {
     
     /// 최신 메시지 로드
     func loadNewerMessages(room: ChatRoom, after messageID: String?) async throws -> [ChatMessage]
+
+    /// 고정 target을 포함하는 bounded authoritative tail 로드
+    func loadLatestMessageWindow(room: ChatRoom, targetSeq: Int64) async throws -> ChatLatestMessageWindow
     
     /// 삭제 상태 동기화
     func syncDeletedStates(localMessages: [ChatMessage], room: ChatRoom) async throws -> [String]

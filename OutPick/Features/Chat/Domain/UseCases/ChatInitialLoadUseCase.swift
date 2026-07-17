@@ -89,6 +89,7 @@ final class DefaultChatInitialLoadUseCase: ChatInitialLoadUseCaseProtocol {
     private let networkStatusProvider: NetworkStatusProviding
     private let policyResolver: ChatInitialLoadPolicyResolving
     private let currentUserUIDProvider: @Sendable () -> String
+    private let serverConfirmedMessageReconciler: ChatServerConfirmedMessageReconciling?
 
     init(
         messageManager: ChatMessageManaging,
@@ -96,6 +97,7 @@ final class DefaultChatInitialLoadUseCase: ChatInitialLoadUseCaseProtocol {
         chatRoomRepository: FirebaseChatRoomRepositoryProtocol,
         networkStatusProvider: NetworkStatusProviding,
         policyResolver: ChatInitialLoadPolicyResolving = DefaultChatInitialLoadPolicyResolver(),
+        serverConfirmedMessageReconciler: ChatServerConfirmedMessageReconciling? = nil,
         currentUserUIDProvider: @escaping @Sendable () -> String = { LoginManager.shared.canonicalUserID }
     ) {
         self.messageManager = messageManager
@@ -103,6 +105,7 @@ final class DefaultChatInitialLoadUseCase: ChatInitialLoadUseCaseProtocol {
         self.chatRoomRepository = chatRoomRepository
         self.networkStatusProvider = networkStatusProvider
         self.policyResolver = policyResolver
+        self.serverConfirmedMessageReconciler = serverConfirmedMessageReconciler
         self.currentUserUIDProvider = currentUserUIDProvider
     }
 
@@ -151,6 +154,12 @@ final class DefaultChatInitialLoadUseCase: ChatInitialLoadUseCaseProtocol {
                     let latestSeq = max(Int64(room.seq), try await resolvedLatestSeq(roomID: roomID))
                     let lastReadSeq = try await resolvedLastReadSeq(roomID: roomID)
                     let mode = makeOpenMode(lastReadSeq: lastReadSeq, latestSeq: latestSeq)
+                    print(
+                        "[ChatReadPersistence][initial-open] "
+                            + "room=\(Self.maskedIdentifier(roomID)) "
+                            + "user=\(Self.maskedIdentifier(currentUserUIDProvider())) "
+                            + "lastRead=\(lastReadSeq) latest=\(latestSeq) mode=\(mode)"
+                    )
 
                     continuation.yield(.phaseChanged(.loadingLocal))
                     let localWindow = try await messageManager.loadLocalInitialWindow(
@@ -195,6 +204,9 @@ final class DefaultChatInitialLoadUseCase: ChatInitialLoadUseCaseProtocol {
                     }
 
                     try await messageManager.persistFetchedServerMessages(serverWindow.messages)
+                    try await serverConfirmedMessageReconciler?.reconcileServerConfirmedMessages(
+                        serverWindow.messages.filter { !$0.isFailed }
+                    )
                     let deletedIDs = try await messageManager.syncDeletedStates(localMessages: serverWindow.messages, room: room)
                     if Task.isCancelled { return }
 
@@ -245,5 +257,10 @@ final class DefaultChatInitialLoadUseCase: ChatInitialLoadUseCaseProtocol {
             return .unreadAnchor(lastReadSeq: lastReadSeq, latestSeq: latestSeq)
         }
         return .latestTail(latestSeq: latestSeq)
+    }
+
+    private static func maskedIdentifier(_ value: String) -> String {
+        guard value.count > 4 else { return "***" }
+        return "\(value.prefix(2))…\(value.suffix(2))"
     }
 }

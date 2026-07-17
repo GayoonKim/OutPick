@@ -103,10 +103,18 @@ final class ChatContainer {
         self.chatMessageSendingRepository = SocketChatMessageSendingRepository(
             socketManager: realtimeSocketService
         )
+        let chatOutgoingOutboxUseCase = ChatOutgoingOutboxUseCase(
+            outboxPersistence: persistence.outboxStore,
+            messagePersistence: persistence.messageStore,
+            imageStorageRepository: repositories.imageStorageRepository,
+            videoStorageRepository: repositories.videoStorageRepository
+        )
+        self.chatOutgoingOutboxUseCase = chatOutgoingOutboxUseCase
         self.chatRoomMessageUseCase = ChatRoomMessageUseCase(
             messageManager: managers.messageManager,
             sendingRepository: chatMessageSendingRepository,
             deletedLastMessageSummaryUpdater: self.roomRepository as? ChatDeletedLastMessageSummaryUpdating,
+            serverConfirmedMessageReconciler: chatOutgoingOutboxUseCase,
             currentUserProvider: {
                 ChatMessageSenderSnapshot(
                     senderUID: currentUserProvider.canonicalUserID,
@@ -131,6 +139,7 @@ final class ChatContainer {
             userProfileRepository: self.userProfileRepository,
             chatRoomRepository: self.roomRepository,
             networkStatusProvider: managers.networkStatusProvider,
+            serverConfirmedMessageReconciler: chatOutgoingOutboxUseCase,
             currentUserUIDProvider: { currentUserProvider.canonicalUserID }
         )
         self.chatRoomSearchUseCase = ChatRoomSearchUseCase(searchManager: managers.searchManager)
@@ -158,12 +167,6 @@ final class ChatContainer {
                     senderAvatarPath: currentUserProvider.avatarPath
                 )
             }
-        )
-        self.chatOutgoingOutboxUseCase = ChatOutgoingOutboxUseCase(
-            outboxPersistence: persistence.outboxStore,
-            messagePersistence: persistence.messageStore,
-            imageStorageRepository: repositories.imageStorageRepository,
-            videoStorageRepository: repositories.videoStorageRepository
         )
         self.storageDownloadURLCache = StorageDownloadURLCache.shared
         self.chatVideoDiskCache = OPVideoDiskCache.shared

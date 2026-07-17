@@ -35,6 +35,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private var cancellables = Set<AnyCancellable>()
     private var initialLoadTask: Task<Void, Never>?
     private var realtimeSubscription: ChatRoomRealtimeSubscription?
+    private var routeLifecycleState = ChatRoomRouteLifecycleState()
+    var onRouteRemoved: ((ChatViewController) -> Void)?
     private var chatCustomMemucancellables = Set<AnyCancellable>()
     
     private var messageWindowStore = ChatMessageWindowStore()
@@ -67,6 +69,28 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     var convertImagesTask: Task<Void, Error>? = nil
     var convertVideosTask: Task<Void, Error>? = nil
     private var searchJumpTask: Task<Void, Never>?
+    private var latestJumpTask: Task<Void, Never>?
+    private var latestJumpErrorTask: Task<Void, Never>?
+    private var latestJumpPreviewImageTask: Task<Void, Never>?
+    private var latestPreviewAutoDismissTask: Task<Void, Never>?
+
+    private let latestMessageJumpView = ChatLatestMessageJumpView()
+    private lazy var latestJumpErrorLabel: UILabel = {
+        let label = UILabel()
+        label.text = "최신 메시지를 불러오지 못했어요. 다시 시도해 주세요."
+        label.textColor = OutPickTheme.ColorToken.textPrimary
+        label.font = .systemFont(ofSize: 13, weight: .medium)
+        label.textAlignment = .center
+        label.numberOfLines = 0
+        label.backgroundColor = OutPickTheme.ColorToken.surfaceElevated
+        label.layer.cornerRadius = 12
+        label.layer.masksToBounds = true
+        label.isHidden = true
+        label.alpha = 0
+        label.accessibilityIdentifier = "chat.latestMessageJumpError"
+        label.translatesAutoresizingMaskIntoConstraints = false
+        return label
+    }()
 
     typealias PendingImageUploadState = ChatPendingMediaUploadState
     private let pendingMediaUploadStore = ChatPendingMediaUploadStore()
@@ -134,6 +158,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
         convertImagesTask?.cancel()
         convertVideosTask?.cancel()
+        latestJumpTask?.cancel()
+        latestJumpErrorTask?.cancel()
+        latestJumpPreviewImageTask?.cancel()
+        latestPreviewAutoDismissTask?.cancel()
         let chatRoomViewModel = chatRoomViewModel
         Task { @MainActor in
             chatRoomViewModel.cancelSearchWork()
@@ -374,10 +402,14 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             }
         }
         flushLastReadSeq(trigger: "viewWillDisappear")
-        needsTransientBindingsRestore = !(self.isMovingFromParent || self.isBeingDismissed)
+        routeLifecycleState.willDisappear(
+            isMovingFromParent: isMovingFromParent,
+            isBeingDismissed: isBeingDismissed
+        )
+        // interactive pop 취소도 viewWillDisappear를 거치므로, 실제 복귀 시에는 항상 복원한다.
+        needsTransientBindingsRestore = true
         
         isUserInCurrentRoom = false
-        stopRoomMessageStream()
         
         if let room = self.room {
             if ChatViewController.currentRoomID == room.id {
@@ -391,6 +423,12 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         chatRoomViewModel.cancelSearchWork()
         searchJumpTask?.cancel()
         searchJumpTask = nil
+        latestJumpTask?.cancel()
+        latestJumpTask = nil
+        latestJumpErrorTask?.cancel()
+        latestJumpErrorTask = nil
+        chatRoomViewModel.cancelLatestJump()
+        clearRealtimePreviewCard()
         cancellables.removeAll()
         
         convertImagesTask?.cancel()
@@ -411,13 +449,15 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         
         // push로 다른 화면을 덮은 게 아니라,
         // 네비게이션에서 빠져나가거나 dismiss 된 경우에만 true
-        if self.isMovingFromParent || self.isBeingDismissed {
-            stopRoomClosedObservation()
-        }
     }
     
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
+        let isStillInNavigationStack = navigationController?.viewControllers.contains(where: { $0 === self }) ?? false
+
+        if routeLifecycleState.shouldFinishAfterDisappearance(isStillInNavigationStack: isStillInNavigationStack) {
+            onRouteRemoved?(self)
+        }
     }
 
     override func viewDidLayoutSubviews() {
@@ -461,7 +501,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                     switch command {
                     case .replaceWindow(let window):
                         self.setCenteredStatusMessage(nil)
-                        self.setMessageWindow(window)
+                        await self.setMessageWindow(window)
                         stopLoadingIfNeeded()
 
                     case .reloadDeleted(let messages):
@@ -480,6 +520,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
                 case .participantSessionReady(_, let bindRealtime):
                     self.isUserInCurrentRoom = true
+                    self.renderLatestMessageJump()
                     if bindRealtime {
                         self.bindMessagePublishers()
                     }
@@ -502,31 +543,352 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
 
     @MainActor
-    private func setMessageWindow(_ window: ChatInitialWindow) {
+    private func setMessageWindow(_ window: ChatInitialWindow) async {
         let items = messageWindowStore.reset(
             messages: window.messages,
             readBoundarySeq: window.readBoundarySeq
         )
 
-        applyWindowSnapshot(items, animatingDifferences: false)
+        await applyInitialWindowSnapshotAndWait(items)
+        guard !Task.isCancelled else { return }
+
         scheduleProfileCacheRefresh(for: messageWindowStore.visibleMessages)
 
-        if window.readBoundarySeq != nil {
-            scrollToReadMarkerIfNeeded()
-        } else {
-            chatMessageCollectionView.scrollToBottom()
+        var didApplyInitialPosition = false
+        var previousContentHeight: CGFloat?
+        var stableLayoutPassCount = 0
+        for _ in 0..<12 {
+            try? await Task.sleep(nanoseconds: 16_666_667)
+            await waitForNextMainRunLoop()
+            guard !Task.isCancelled else { return }
+
+            if window.readBoundarySeq != nil {
+                didApplyInitialPosition = scrollToReadMarkerIfNeeded()
+            } else {
+                didApplyInitialPosition = displayLatestMessageIfNeeded()
+            }
+
+            chatMessageCollectionView.layoutIfNeeded()
+            let contentHeight = chatMessageCollectionView.contentSize.height
+            if let previousContentHeight,
+               abs(previousContentHeight - contentHeight) < 0.5,
+               didApplyInitialPosition {
+                stableLayoutPassCount += 1
+                if stableLayoutPassCount >= 2 { break }
+            } else {
+                stableLayoutPassCount = 0
+            }
+            previousContentHeight = contentHeight
+        }
+        renderLatestMessageJump()
+        DispatchQueue.main.async { [weak self] in
+            self?.reportVisibleReadFrontier()
         }
     }
 
     @MainActor
-    private func scrollToReadMarkerIfNeeded() {
+    private func waitForNextMainRunLoop() async {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async {
+                continuation.resume()
+            }
+        }
+    }
+
+    @MainActor
+    @discardableResult
+    private func displayLatestMessageIfNeeded() -> Bool {
+        let items = dataSource.snapshot().itemIdentifiers(inSection: .main)
+        guard let index = items.lastIndex(where: { $0.message != nil }) else {
+            return false
+        }
+        return chatMessageCollectionView.displayMessage(
+            at: IndexPath(item: index, section: 0)
+        )
+    }
+
+    @MainActor
+    @discardableResult
+    private func scrollToReadMarkerIfNeeded() -> Bool {
         chatMessageCollectionView.layoutIfNeeded()
         let items = dataSource.snapshot().itemIdentifiers(inSection: .main)
         guard let index = items.firstIndex(where: {
             if case .readMarker = $0 { return true }
             return false
-        }) else { return }
-        chatMessageCollectionView.scrollToMessage(at: IndexPath(item: index, section: 0))
+        }) else { return false }
+
+        let indexPath = IndexPath(item: index, section: 0)
+        chatMessageCollectionView.scrollToItem(
+            at: indexPath,
+            at: .centeredVertically,
+            animated: false
+        )
+        chatMessageCollectionView.layoutIfNeeded()
+        return chatMessageCollectionView.indexPathsForVisibleItems.contains(indexPath)
+    }
+
+    @MainActor
+    private func renderLatestMessageJump() {
+        let state = chatRoomViewModel.latestJumpPresentation
+        let canPresent = isUserInCurrentRoom
+            && !isParticipantPreviewMode
+            && searchUI.isHidden
+        let presentation = ChatLatestJumpPresentation(
+            isVisible: state.isVisible && canPresent,
+            isLoading: state.isLoading,
+            preview: state.preview,
+            unreadAccessibilityText: state.unreadAccessibilityText
+        )
+        latestMessageJumpView.configure(presentation)
+        loadCachedLatestPreviewImage(for: presentation)
+    }
+
+    @MainActor
+    private func scheduleRealtimePreviewAutoDismiss(targetSeq: Int64) {
+        guard chatRoomViewModel.realtimePreviewTargetSeq == targetSeq else { return }
+        latestPreviewAutoDismissTask?.cancel()
+        latestPreviewAutoDismissTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: 3_000_000_000)
+            } catch {
+                return
+            }
+            guard let self,
+                  self.chatRoomViewModel.dismissRealtimePreview(targetSeq: targetSeq) else {
+                return
+            }
+            self.latestPreviewAutoDismissTask = nil
+            self.renderLatestMessageJump()
+        }
+    }
+
+    @MainActor
+    @discardableResult
+    private func dismissRealtimePreviewIfVisible(targetSeq: Int64) -> Bool {
+        chatMessageCollectionView.layoutIfNeeded()
+        let isVisible = chatMessageCollectionView.indexPathsForVisibleItems.contains { indexPath in
+            dataSource.itemIdentifier(for: indexPath)?.message?.seq == targetSeq
+        }
+        guard isVisible,
+              chatRoomViewModel.dismissRealtimePreview(targetSeq: targetSeq) else {
+            return false
+        }
+        latestPreviewAutoDismissTask?.cancel()
+        latestPreviewAutoDismissTask = nil
+        renderLatestMessageJump()
+        return true
+    }
+
+    @MainActor
+    private func clearRealtimePreviewCard() {
+        latestPreviewAutoDismissTask?.cancel()
+        latestPreviewAutoDismissTask = nil
+        chatRoomViewModel.clearRealtimePreview()
+    }
+
+    @MainActor
+    private func loadCachedLatestPreviewImage(for presentation: ChatLatestJumpPresentation) {
+        latestJumpPreviewImageTask?.cancel()
+        latestJumpPreviewImageTask = nil
+        guard presentation.isVisible,
+              let preview = presentation.preview,
+              let imageSource = preview.imageSource else {
+            return
+        }
+
+        latestJumpPreviewImageTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let image: UIImage?
+            switch imageSource {
+            case .avatar(let path):
+                image = await self.avatarImageManager.cachedAvatar(for: path)
+            case .attachment(let path):
+                image = await self.attachmentImageLoader.cachedImage(for: path)
+            }
+            guard !Task.isCancelled,
+                  self.chatRoomViewModel.latestJumpPresentation.preview?.targetSeq == preview.targetSeq,
+                  let image else {
+                return
+            }
+            self.latestMessageJumpView.setCachedPreviewImage(
+                image,
+                targetSeq: preview.targetSeq
+            )
+        }
+    }
+
+    @MainActor
+    @objc private func latestMessageJumpTapped() {
+        guard latestJumpTask == nil,
+              let request = chatRoomViewModel.beginLatestJump() else {
+            return
+        }
+
+        latestPreviewAutoDismissTask?.cancel()
+        latestPreviewAutoDismissTask = nil
+        renderLatestMessageJump()
+        latestJumpTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                self.latestJumpTask = nil
+                self.renderLatestMessageJump()
+                if self.latestPreviewAutoDismissTask == nil,
+                   let targetSeq = self.chatRoomViewModel.realtimePreviewTargetSeq {
+                    self.scheduleRealtimePreviewAutoDismiss(targetSeq: targetSeq)
+                }
+            }
+
+            do {
+                let window = try await self.chatRoomViewModel.loadLatestMessageWindow(
+                    targetSeq: request.targetSeq
+                )
+                try Task.checkCancellation()
+                guard self.chatRoomViewModel.isCurrentLatestJump(request) else { return }
+
+                let didCommit = await self.applyLatestMessageWindow(
+                    window,
+                    request: request
+                )
+                guard didCommit else {
+                    if self.chatRoomViewModel.failLatestJump(request) {
+                        self.showLatestJumpError()
+                    }
+                    return
+                }
+
+                do {
+                    try await self.chatRoomViewModel.persistExplicitLatestJumpForCurrentUser()
+                } catch {
+                    print("⚠️ explicit latest lastReadSeq flush 실패: \(error)")
+                }
+
+                self.scheduleInitialMediaWarmup(
+                    for: window.messages,
+                    maxConcurrent: 2
+                )
+                self.reportVisibleReadFrontier()
+            } catch is CancellationError {
+                _ = self.chatRoomViewModel.failLatestJump(request)
+            } catch {
+                if self.chatRoomViewModel.failLatestJump(request) {
+                    self.showLatestJumpError()
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private func applyLatestMessageWindow(
+        _ window: ChatLatestMessageWindow,
+        request: ChatLatestJumpRequest
+    ) async -> Bool {
+        guard chatRoomViewModel.isCurrentLatestJump(request),
+              let targetMessageID = window.messages.first(where: { $0.seq == request.targetSeq })?.ID else {
+            return false
+        }
+
+        let previousStore = messageWindowStore
+        let previousItems = previousStore.items
+        let previousOffset = chatMessageCollectionView.contentOffset
+        let failedMessages = previousStore.visibleMessages.filter(\.isFailed)
+        let replacementItems = messageWindowStore.replaceWithLatestWindow(
+            window,
+            preservingFailedMessages: failedMessages
+        )
+
+        await applyWindowSnapshotAndWait(replacementItems)
+        guard chatRoomViewModel.isCurrentLatestJump(request),
+              let targetIndex = dataSource.snapshot().itemIdentifiers(inSection: .main).firstIndex(where: {
+                  $0.messageID == targetMessageID
+              }),
+              chatMessageCollectionView.displayMessage(
+                  at: IndexPath(item: targetIndex, section: 0)
+              ),
+              chatRoomViewModel.completeLatestJump(request, didDisplayTarget: true) else {
+            messageWindowStore = previousStore
+            await applyWindowSnapshotAndWait(previousItems)
+            chatMessageCollectionView.setContentOffset(previousOffset, animated: false)
+            return false
+        }
+
+        scheduleProfileCacheRefresh(for: messageWindowStore.visibleMessages)
+        return true
+    }
+
+    @MainActor
+    private func applyWindowSnapshotAndWait(_ items: [Item]) async {
+        await withCheckedContinuation { continuation in
+            applyWindowSnapshot(
+                items,
+                animatingDifferences: false,
+                completion: { continuation.resume() }
+            )
+        }
+    }
+
+    @MainActor
+    private func applyInitialWindowSnapshotAndWait(_ items: [Item]) async {
+        await withCheckedContinuation { continuation in
+            var snapshot = NSDiffableDataSourceSnapshot<Section, Item>()
+            snapshot.appendSections([.main])
+            snapshot.appendItems(items, toSection: .main)
+            dataSource.applySnapshotUsingReloadData(
+                snapshot,
+                completion: { continuation.resume() }
+            )
+        }
+    }
+
+    @MainActor
+    private func showLatestJumpError() {
+        latestJumpErrorTask?.cancel()
+        latestJumpErrorLabel.isHidden = false
+        UIView.animate(withDuration: 0.2) {
+            self.latestJumpErrorLabel.alpha = 1
+        }
+        UIAccessibility.post(
+            notification: .announcement,
+            argument: latestJumpErrorLabel.text
+        )
+
+        latestJumpErrorTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: 3_000_000_000)
+            } catch {
+                return
+            }
+            guard let self else { return }
+            UIView.animate(withDuration: 0.2, animations: {
+                self.latestJumpErrorLabel.alpha = 0
+            }, completion: { _ in
+                self.latestJumpErrorLabel.isHidden = true
+            })
+        }
+    }
+
+    @MainActor
+    private func reportVisibleReadFrontier() {
+        guard isUserInCurrentRoom,
+              searchUI.isHidden else { return }
+
+        let visibleSeqs = chatMessageCollectionView.indexPathsForVisibleItems
+            .compactMap { dataSource.itemIdentifier(for: $0)?.message?.seq }
+            .filter { $0 > 0 }
+        if let targetSeq = chatRoomViewModel.realtimePreviewTargetSeq {
+            _ = dismissRealtimePreviewIfVisible(targetSeq: targetSeq)
+        }
+        let highestVisibleSeq = visibleSeqs.max()
+        guard let highestVisibleSeq else { return }
+
+        let contiguousLoadedThroughSeq = messageWindowStore.highestContiguousSeq(
+            after: chatRoomViewModel.readFrontierSeq
+        )
+        if chatRoomViewModel.recordVisibleMessage(
+            highestVisibleSeq: highestVisibleSeq,
+            contiguousLoadedThroughSeq: contiguousLoadedThroughSeq
+        ) != nil {
+            renderLatestMessageJump()
+        }
     }
 
     private func scheduleInitialMediaWarmup(for messages: [ChatMessage], maxConcurrent: Int) {
@@ -629,9 +991,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private func loadNewerMessagesIfNeeded(after messageID: String?) async {
         do {
             let result = try await chatRoomViewModel.loadNewerMessages(after: messageID)
-            appendMessagesInChunks(result.bufferedMessagesToFlush, updateType: .newer)
-            maybeUpdateLastReadSeq(trigger: "newerPage", skipNearBottomCheck: true)
             appendMessagesInChunks(result.messages, updateType: .newer)
+            renderLatestMessageJump()
+            DispatchQueue.main.async { [weak self] in
+                self?.reportVisibleReadFrontier()
+            }
         } catch {
             print("❌ loadNewerMessagesIfNeeded 실패:", error)
         }
@@ -691,10 +1055,14 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     @MainActor
     private func startRoomMessageStream(for roomID: String) {
+        let baselineSeq = chatRoomViewModel.entryTailSeq
         let subscription = ChatRoomRealtimeSubscription(
             roomID: roomID,
             openSession: { [chatRoomViewModel] in
-                try await chatRoomViewModel.openMessageStream(roomID: roomID)
+                try await chatRoomViewModel.openMessageStream(
+                    roomID: roomID,
+                    baselineSeq: baselineSeq
+                )
             },
             onMessage: { [weak self] receivedMessage in
                 guard let self else { return }
@@ -721,6 +1089,19 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         realtimeSubscription?.stop()
         realtimeSubscription = nil
     }
+
+    @MainActor
+    func finishRouteLifecycleForCoordinator() {
+        _ = routeLifecycleState.finishForReplacement()
+        latestJumpTask?.cancel()
+        latestJumpTask = nil
+        clearRealtimePreviewCard()
+        latestJumpPreviewImageTask?.cancel()
+        latestJumpPreviewImageTask = nil
+        chatRoomViewModel.cancelLatestJump()
+        stopRoomMessageStream()
+        stopRoomClosedObservation()
+    }
     
     // 수신 메시지를 저장 및 UI 반영
     @MainActor
@@ -728,14 +1109,23 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         guard self.room != nil else { return }
         if message.roomID != chatRoomViewModel.roomID { return }
 
-        // 1) 첨부 캐시 선행
-        let hasImages = message.hasDisplayableImages
-        let hasVideos = message.hasDisplayableVideos
-        if hasImages || hasVideos {
-            await withTaskGroup(of: Void.self) { group in
-                if hasImages || hasVideos {
+        let wasNearBottom = isNearBottom()
+        let action = chatRoomViewModel.handleIncomingMessage(message)
+        switch action {
+        case .persistOnly:
+            renderLatestMessageJump()
+            scheduleRealtimePreviewAutoDismiss(targetSeq: message.seq)
+        case .append:
+            if !wasNearBottom {
+                renderLatestMessageJump()
+                scheduleRealtimePreviewAutoDismiss(targetSeq: message.seq)
+            }
+            let hasImages = message.hasDisplayableImages
+            let hasVideos = message.hasDisplayableVideos
+            if hasImages || hasVideos {
+                await withTaskGroup(of: Void.self) { group in
                     group.addTask { [weak self] in
-                        guard let self = self else { return }
+                        guard let self else { return }
                         _ = await self.attachmentImageLoader.cacheImagesIfNeeded(
                             for: message,
                             maxBytes: self.chatThumbnailMaxBytes
@@ -744,36 +1134,34 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                             self.reloadVisibleMessageIfNeeded(messageID: message.ID)
                         }
                     }
-                }
-                if hasVideos {
-                    group.addTask { [weak self] in
-                        guard let self = self else { return }
-                        await self.videoAssetLoader.cacheVideoAssetsIfNeeded(
-                            for: message,
-                            maxThumbnailBytes: self.chatThumbnailMaxBytes
-                        )
+                    if hasVideos {
+                        group.addTask { [weak self] in
+                            guard let self else { return }
+                            await self.videoAssetLoader.cacheVideoAssetsIfNeeded(
+                                for: message,
+                                maxThumbnailBytes: self.chatThumbnailMaxBytes
+                            )
+                        }
                     }
+                    await group.waitForAll()
                 }
-                await group.waitForAll()
             }
-        }
-
-        switch chatRoomViewModel.handleIncomingMessage(message) {
-        case .buffered:
-            return
-        case .append:
             scheduleProfileCacheRefresh(for: [message])
-            addMessages([message])
-            maybeUpdateLastReadSeq(trigger: "liveIncoming")
+            addMessages([message]) { [weak self] in
+                guard let self else { return }
+                if !self.dismissRealtimePreviewIfVisible(targetSeq: message.seq),
+                   wasNearBottom {
+                    self.renderLatestMessageJump()
+                    self.scheduleRealtimePreviewAutoDismiss(targetSeq: message.seq)
+                }
+                self.reportVisibleReadFrontier()
+            }
         }
 
-        Task(priority: .userInitiated) {
-            do {
-                try await self.chatRoomViewModel.persistIncomingMessage(message)
-                await self.outgoingOutboxUseCase.completeServerConfirmedMessage(message)
-            } catch {
-                print("❌ 메시지 저장 실패: \(error)")
-            }
+        do {
+            try await chatRoomViewModel.persistIncomingMessage(message)
+        } catch {
+            print("❌ 메시지 저장 실패: \(error)")
         }
     }
     
@@ -829,11 +1217,17 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         if chatUIView.superview != nil {
             chatUIView.removeFromSuperview()
         }
+        latestMessageJumpView.removeFromSuperview()
+        latestJumpErrorLabel.removeFromSuperview()
         
         view.addSubview(chatUIView)
         chatUIView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(chatMessageCollectionView)
         chatMessageCollectionView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(latestMessageJumpView)
+        view.addSubview(latestJumpErrorLabel)
+        latestMessageJumpView.removeTarget(self, action: #selector(latestMessageJumpTapped), for: .touchUpInside)
+        latestMessageJumpView.addTarget(self, action: #selector(latestMessageJumpTapped), for: .touchUpInside)
         chatUIView.backgroundColor = OutPickTheme.ColorToken.backgroundBase
         chatMessageCollectionView.backgroundColor = OutPickTheme.ColorToken.backgroundBase
         
@@ -849,10 +1243,24 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             chatMessageCollectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             chatMessageCollectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             chatMessageCollectionView.bottomAnchor.constraint(equalTo: chatUIView.topAnchor),
+
+            latestMessageJumpView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            latestMessageJumpView.bottomAnchor.constraint(equalTo: chatUIView.topAnchor, constant: -12),
+            latestMessageJumpView.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 20),
+            latestMessageJumpView.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -20),
+
+            latestJumpErrorLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            latestJumpErrorLabel.bottomAnchor.constraint(equalTo: latestMessageJumpView.topAnchor, constant: -8),
+            latestJumpErrorLabel.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 24),
+            latestJumpErrorLabel.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -24),
+            latestJumpErrorLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 340),
+            latestJumpErrorLabel.heightAnchor.constraint(greaterThanOrEqualToConstant: 40),
         ]
         NSLayoutConstraint.activate(chatConstraints)
         
         view.bringSubviewToFront(chatUIView)
+        view.bringSubviewToFront(latestMessageJumpView)
+        view.bringSubviewToFront(latestJumpErrorLabel)
         view.bringSubviewToFront(customNavigationBar)
         chatMessageCollectionView.contentInset.top = 5
         chatMessageCollectionView.verticalScrollIndicatorInsets.top = 5
@@ -861,6 +1269,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         
         NSLayoutConstraint.deactivate(joinConsraints)
         setupCopyReplyDeleteView()
+        renderLatestMessageJump()
     }
     
     @MainActor
@@ -992,7 +1401,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     private func bindRoomClosedEvent() {
         stopRoomClosedObservation()
-        guard isParticipantPreviewMode == false else { return }
+        // 방 종료는 참여 상태가 아니라 route 생존 여부에 속한다.
+        // 미참여 미리보기에서 같은 화면으로 참여 전환해도 observer를 유지해야 한다.
         roomClosedSubscription = chatRoomViewModel.observeRoomClosed { [weak self] roomID in
             guard let self else { return }
             self.router?.handleRoomExit(from: self, roomID: roomID)
@@ -1214,6 +1624,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     @MainActor
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        routeLifecycleState.didAppear(
+            isNavigationOwned: navigationController?
+                .viewControllers
+                .contains(where: { $0 === self }) ?? false
+        )
         if needsTransientBindingsRestore {
             restoreTransientBindingsIfNeeded()
             needsTransientBindingsRestore = false
@@ -1495,6 +1910,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         self.chatUIView.isHidden = false
         
         clearPreviousHighlightIfNeeded()
+        renderLatestMessageJump()
     }
     
     @MainActor
@@ -1515,11 +1931,16 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     @MainActor
     @objc private func searchButtonTapped() {
         guard isParticipantPreviewMode == false else { return }
+        latestJumpTask?.cancel()
+        latestJumpTask = nil
+        chatRoomViewModel.cancelLatestJump()
+        clearRealtimePreviewCard()
         customNavigationBar.switchToSearchMode()
         setupSearchUI()
         
         searchUI.isHidden = false
         chatUIView.isHidden = true
+        renderLatestMessageJump()
     }
     
     private func indexPath(ofMessageID messageID: String) -> IndexPath? {
@@ -2376,8 +2797,15 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
     
     @MainActor
-    func addMessages(_ messages: [ChatMessage], updateType: MessageUpdateType = .initial) {
-        guard !messages.isEmpty else { return }
+    func addMessages(
+        _ messages: [ChatMessage],
+        updateType: MessageUpdateType = .initial,
+        completion: (() -> Void)? = nil
+    ) {
+        guard !messages.isEmpty else {
+            completion?()
+            return
+        }
         let windowSize = 300
 
         let mutation = messageWindowStore.apply(
@@ -2398,7 +2826,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             scheduleProfileCacheRefresh(for: messages)
         }
 
-        guard mutation.hasSnapshotChanges else { return }
+        guard mutation.hasSnapshotChanges else {
+            completion?()
+            return
+        }
 
         let animate = shouldAnimateDifferences(
             for: updateType,
@@ -2407,14 +2838,16 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         applyWindowSnapshot(
             mutation.items,
             reconfiguring: mutation.reconfiguredItems,
-            animatingDifferences: animate
+            animatingDifferences: animate,
+            completion: completion
         )
     }
 
     private func applyWindowSnapshot(
         _ items: [Item],
         reconfiguring reconfiguredItems: [Item] = [],
-        animatingDifferences: Bool
+        animatingDifferences: Bool,
+        completion: (() -> Void)? = nil
     ) {
         var snapshot = NSDiffableDataSourceSnapshot<Section, Item>()
         snapshot.appendSections([.main])
@@ -2425,7 +2858,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             snapshot.reconfigureItems(visibleReconfiguredItems)
         }
 
-        dataSource.apply(snapshot, animatingDifferences: animatingDifferences)
+        dataSource.apply(
+            snapshot,
+            animatingDifferences: animatingDifferences,
+            completion: completion
+        )
     }
     
     // 캐시된 포맷터
@@ -2986,7 +3423,9 @@ extension ChatViewController: UIScrollViewDelegate {
     }
 
     func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
+        guard scrollView === chatMessageCollectionView else { return }
         triggerShakeIfNeeded()
+        reportVisibleReadFrontier()
         Task { @MainActor in
             self.scheduleMediaPrefetchCleanup(
                 delayMs: self.mediaPrefetchCleanupDelayMs,
@@ -2996,7 +3435,9 @@ extension ChatViewController: UIScrollViewDelegate {
     }
     
     func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+        guard scrollView === chatMessageCollectionView else { return }
         triggerShakeIfNeeded()
+        reportVisibleReadFrontier()
         Task { @MainActor in
             self.scheduleMediaPrefetchCleanup(
                 delayMs: self.mediaPrefetchCleanupDelayMs,
@@ -3006,8 +3447,10 @@ extension ChatViewController: UIScrollViewDelegate {
     }
     
     func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+        guard scrollView === chatMessageCollectionView else { return }
         if !decelerate {
             triggerShakeIfNeeded()
+            reportVisibleReadFrontier()
             Task { @MainActor in
                 self.scheduleMediaPrefetchCleanup(
                     delayMs: self.mediaPrefetchCleanupDelayMs,
@@ -3122,21 +3565,6 @@ extension ChatViewController: UICollectionViewDataSourcePrefetching {
 
 //MARK: seq 업데이트 헬퍼
 extension ChatViewController {
-    @MainActor
-    private func maybeUpdateLastReadSeq(trigger: String, skipNearBottomCheck: Bool = false) {
-        guard isUserInCurrentRoom else { return }
-        Task {
-            do {
-                try await self.chatRoomViewModel.persistIncrementalLastReadSeqForCurrentUser(
-                    isNearBottom: isNearBottom(),
-                    skipNearBottomCheck: skipNearBottomCheck
-                )
-            } catch {
-                print("⚠️ maybeUpdateLastReadSeq(\(trigger)) 실패: \(error)")
-            }
-        }
-    }
-
     private func flushLastReadSeq(trigger: String) {
         guard let room,
               chatRoomViewModel.isCurrentUserParticipant(in: room) else { return }

@@ -12,6 +12,8 @@ final class ChatBannerView: UIView {
     private var onTap: (() -> Void)?
     private var dismissWorkItem: DispatchWorkItem?
     private var hasPresented = false
+    private var isDismissing = false
+    private var onDismiss: (() -> Void)?
     
     private let titleLabel: UILabel = {
         let label = UILabel()
@@ -67,6 +69,11 @@ final class ChatBannerView: UIView {
     }
     
     func show() {
+        show(onDismiss: {})
+    }
+
+    func show(onDismiss: @escaping () -> Void) {
+        self.onDismiss = onDismiss
         show(retryCount: 6)
     }
 
@@ -128,13 +135,19 @@ final class ChatBannerView: UIView {
     }
     
     func dismiss() {
+        guard !isDismissing else { return }
+        isDismissing = true
         dismissWorkItem?.cancel()
-        guard let window = superview else { return }
+        guard let window = superview else {
+            completeDismissal()
+            return
+        }
         UIView.animate(withDuration: 0.3, animations: {
             self.topConstraint?.constant = -(self.frame.height)
             window.layoutIfNeeded()
         }) { _ in
             self.removeFromSuperview()
+            self.completeDismissal()
         }
     }
 
@@ -177,9 +190,18 @@ final class ChatBannerView: UIView {
     }
 
     private func retryShow(remaining: Int) {
-        guard remaining > 0 else { return }
+        guard remaining > 0 else {
+            completeDismissal()
+            return
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
             self?.show(retryCount: remaining - 1)
         }
+    }
+
+    private func completeDismissal() {
+        let completion = onDismiss
+        onDismiss = nil
+        completion?()
     }
 }

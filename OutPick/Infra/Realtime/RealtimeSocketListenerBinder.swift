@@ -1,6 +1,50 @@
 import Foundation
 import SocketIO
 
+struct RealtimeSocketMessageIngressEvent: @unchecked Sendable {
+    let data: [Any]
+    let event: String
+}
+
+/// Socket.IO의 동기 callback 순서를 하나의 비동기 consumer에 그대로 전달한다.
+final class RealtimeSocketMessageIngressQueue: @unchecked Sendable {
+    let stream: AsyncStream<RealtimeSocketMessageIngressEvent>
+
+    private let continuation: AsyncStream<RealtimeSocketMessageIngressEvent>.Continuation
+    private let lock = NSLock()
+    private var isFinished = false
+
+    init() {
+        var resolvedContinuation: AsyncStream<RealtimeSocketMessageIngressEvent>.Continuation!
+        stream = AsyncStream(bufferingPolicy: .unbounded) { continuation in
+            resolvedContinuation = continuation
+        }
+        continuation = resolvedContinuation
+    }
+
+    @discardableResult
+    func enqueue(data: [Any], event: String) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !isFinished else { return false }
+        continuation.yield(
+            RealtimeSocketMessageIngressEvent(data: data, event: event)
+        )
+        return true
+    }
+
+    func finish() {
+        lock.lock()
+        guard !isFinished else {
+            lock.unlock()
+            return
+        }
+        isFinished = true
+        continuation.finish()
+        lock.unlock()
+    }
+}
+
 protocol RealtimeSocketEventListening: AnyObject {
     func on(clientEvent event: SocketClientEvent, callback: @escaping ([Any]) -> Void)
     func on(_ event: String, callback: @escaping ([Any]) -> Void)

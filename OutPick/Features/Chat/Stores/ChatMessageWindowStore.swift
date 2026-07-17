@@ -87,6 +87,22 @@ struct ChatMessageWindowStore {
         items.compactMap(\.messageID).last
     }
 
+    func highestContiguousSeq(after frontierSeq: Int64) -> Int64 {
+        let normalizedFrontier = max(Int64(0), frontierSeq)
+        let loadedSeqs = Set(
+            visibleMessages.lazy
+                .map(\.seq)
+                .filter { $0 > normalizedFrontier }
+        )
+
+        var contiguousSeq = normalizedFrontier
+        while contiguousSeq < Int64.max,
+              loadedSeqs.contains(contiguousSeq + 1) {
+            contiguousSeq += 1
+        }
+        return contiguousSeq
+    }
+
     func item(forMessageID messageID: String) -> ChatMessageListItem? {
         items.first { $0.messageID == messageID }
     }
@@ -112,6 +128,20 @@ struct ChatMessageWindowStore {
         self.items = insertingReadMarkerIfNeeded(into: builtItems, readBoundarySeq: readBoundarySeq)
         pruneMessageMapToVisibleItems()
         return items
+    }
+
+    mutating func replaceWithLatestWindow(
+        _ window: ChatLatestMessageWindow,
+        preservingFailedMessages failedMessages: [ChatMessage] = []
+    ) -> [ChatMessageListItem] {
+        let serverIDs = Set(window.messages.map(\.ID))
+        let unresolvedFailed = failedMessages.filter {
+            $0.isFailed && !serverIDs.contains($0.ID)
+        }
+        return reset(
+            messages: window.messages + unresolvedFailed,
+            readBoundarySeq: nil
+        )
     }
 
     mutating func apply(
@@ -170,6 +200,9 @@ struct ChatMessageWindowStore {
 
         insert(newItems, updateType: updateType)
         applyVirtualization(updateType: updateType, windowSize: windowSize)
+        // Pagination chunk 경계에서 같은 날짜 separator가 중복되지 않도록
+        // 최종 visible window 전체를 기준으로 파생 item을 다시 만든다.
+        rebuildItemsPreservingVisibleOrder()
 
         return makeMutation(
             insertedItems: newItems,

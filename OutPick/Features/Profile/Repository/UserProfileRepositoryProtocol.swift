@@ -39,6 +39,9 @@ protocol UserProfileRepositoryProtocol {
     /// 사용자의 방 읽기 상태 조회
     func fetchLastReadSeq(for roomID: String, userUID: String) async throws -> Int64
 
+    /// 진단용 서버 권위 읽기 상태 조회
+    func fetchAuthoritativeLastReadSeq(for roomID: String, userUID: String) async throws -> Int64
+
     /// 로그인 기기 식별자 갱신 (users/{id}/meta/session)
     func upsertDeviceID(userDocumentID: String, email: String, deviceID: String) async throws
 
@@ -51,4 +54,10 @@ protocol UserProfileRepositoryProtocol {
 
     /// 현재 로그인 디바이스의 push/presence 상태 갱신 (users/{id}/devices/{deviceID})
     func upsertPushDevice(userDocumentID: String, state: PushDeviceState) async throws
+}
+
+extension UserProfileRepositoryProtocol {
+    func fetchAuthoritativeLastReadSeq(for roomID: String, userUID: String) async throws -> Int64 {
+        try await fetchLastReadSeq(for: roomID, userUID: userUID)
+    }
 }

@@ -16,11 +16,19 @@ protocol ChatRoomLifecycleUseCaseProtocol {
 
     func updateLastReadSeq(roomID: String, userUID: String, lastReadSeq: Int64) async throws
 
+    func fetchAuthoritativeLastReadSeq(roomID: String, userUID: String) async throws -> Int64?
+
     @MainActor
     func setActiveAnnouncement(roomID: String, messageID: String?, payload: AnnouncementPayload?) async throws
 
     @MainActor
     func clearActiveAnnouncement(roomID: String) async throws
+}
+
+extension ChatRoomLifecycleUseCaseProtocol {
+    func fetchAuthoritativeLastReadSeq(roomID: String, userUID: String) async throws -> Int64? {
+        nil
+    }
 }
 
 protocol ChatRoomMembershipRealtimeManaging {
@@ -72,6 +80,13 @@ final class ChatRoomLifecycleUseCase: ChatRoomLifecycleUseCaseProtocol {
 
     func updateLastReadSeq(roomID: String, userUID: String, lastReadSeq: Int64) async throws {
         try await userProfileRepository.updateLastReadSeq(roomID: roomID, userUID: userUID, lastReadSeq: lastReadSeq)
+    }
+
+    func fetchAuthoritativeLastReadSeq(roomID: String, userUID: String) async throws -> Int64? {
+        try await userProfileRepository.fetchAuthoritativeLastReadSeq(
+            for: roomID,
+            userUID: userUID
+        )
     }
 
     @MainActor

@@ -245,6 +245,31 @@ final class ChatMessageManager: ChatMessageManaging {
         
         return server
     }
+
+    func loadLatestMessageWindow(
+        room: ChatRoom,
+        targetSeq: Int64
+    ) async throws -> ChatLatestMessageWindow {
+        let query = try ChatLatestMessageWindow.query(for: targetSeq)
+        let fetched: [ChatMessage]
+        switch query {
+        case .latest(let limit):
+            fetched = try await messageRepository.fetchLatestMessages(for: room, limit: limit)
+        case .beforeSeq(let beforeSeq, let limit):
+            fetched = try await messageRepository.fetchMessagesBeforeSeq(
+                room: room,
+                beforeSeq: beforeSeq,
+                limit: limit
+            )
+        }
+
+        let window = try ChatLatestMessageWindow.make(targetSeq: targetSeq, fetched: fetched)
+        let messages = window.messages
+
+        try await messagePersistence.saveChatMessages(messages)
+        persistSenderDisplayCache(for: messages)
+        return window
+    }
     
     func syncDeletedStates(localMessages: [ChatMessage], room: ChatRoom) async throws -> [String] {
         let localIDs = localMessages.map { $0.ID }
@@ -314,6 +339,7 @@ final class ChatMessageManager: ChatMessageManaging {
         
         if let err = lastError {
             print("❌ GRDB saveChatMessages 최종 실패: \(err)")
+            throw err
         }
         
         // 내가 보낸 정상 메시지면 Firebase 기록
@@ -467,8 +493,9 @@ final class ChatMessageManager: ChatMessageManaging {
         guard !failed.isEmpty else { return window }
         try? await messagePersistence.saveChatMessages(failed)
 
-        let failedIDs = Set(failed.map(\.ID))
-        let messages = window.messages.filter { !failedIDs.contains($0.ID) } + failed
+        let serverIDs = Set(window.messages.map(\.ID))
+        let unresolvedFailed = failed.filter { !serverIDs.contains($0.ID) }
+        let messages = window.messages + unresolvedFailed
         return ChatInitialWindow(
             messages: messages,
             readBoundarySeq: window.readBoundarySeq,
