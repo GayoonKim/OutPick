@@ -61,9 +61,31 @@ Firebase Functions tests/build entry:
 
 ## Chat / Realtime
 
+- Phase 6-A read frontier/catch-up state: `OutPickTests/ChatReadStateStoreTests.swift`, `OutPickTests/ChatUnreadCatchUpStateTests.swift`
+  - seeded monotonic frontier, visible candidate의 연속 상한, explicit gap 승인과 window 없는 final frontier를 검증한다.
+  - scalar unread count, 고정 target, generation 기반 stale/중복/실패 거부와 10,000개 latest event payload 비보관을 검증한다.
+  - 2026-07-17 iPhone 15 Pro iOS 17.2 Simulator에서 2개 suite 19개 테스트와 generic Simulator build가 통과했다.
+
+- Phase 6-B bounded catch-up/persistence: `OutPickTests/ChatLatestMessageWindowTests.swift`, `ChatRoomMessageUseCaseTests.swift`, `ChatOutgoingOutboxUseCaseTests.swift`, `ChatRoomViewModelMessageActionTests.swift`
+  - 고정 80개 server-authoritative target query, `Int64.max` 분기, target 이하 정규화·누락 실패를 검증한다.
+  - 10,000개 catching-up incoming의 scalar-only 상태, manager 저장 성공 이후 outbox reconciliation, 서버 확정 ID batch 삭제를 검증한다.
+  - 2026-07-17 iPhone 15 Pro Simulator에서 4개 suite 22개 테스트와 generic iOS Simulator build가 통과했다.
+
+- Phase 6-C latest UI/read handshake state: `OutPickTests/ChatReadStateStoreTests.swift`, `ChatUnreadCatchUpStateTests.swift`, `ChatLatestMessageWindowTests.swift`, `ChatMessageWindowStoreTests.swift`, `ChatRoomViewModelMessageActionTests.swift`
+  - realtime 없는 initial entry tail preview 상태, target/preview 동시 고정과 이후 신규 seq 잔존, 표시 실패/retry, visible 연속 상한과 window-independent final frontier를 검증한다.
+  - latest window 교체의 서버 확정 ID 우선과 unresolved failed local message 보존, 날짜 separator/300개 virtualization 회귀를 검증한다.
+  - explicit 이동 표시 성공 뒤 즉시 server persistence, server 성공 이후 shared mark, 실패 pending 보존을 lifecycle spy로 검증한다.
+  - 2026-07-17 iPhone 17 Pro Max Simulator에서 5개 suite 고유 테스트 48개와 앱 전체 Simulator build가 통과했다. 실제 Firebase pop/re-entry persistence, preview card·keyboard/reply/notice 충돌과 VoiceOver는 Phase 6-D 수동 재QA 대상이다.
+  - 후속 initial preview sender 계약으로 local profile cache hit의 닉네임+내용과 cache miss의 nil sender fallback 테스트 2개를 `ChatRoomViewModelMessageActionTests`에 추가했다. 프로젝트 실행 원칙에 따라 새 테스트 실행은 보류했고 2026-07-17 iPhone 17 Pro Max Simulator 앱 build는 통과했다.
+  - 2026-07-17 최종 제품 결정으로 위 initial preview 테스트 계약을 폐기하고 `initialEntryTailShowsLatestJumpWithoutRealtimeEvent`와 local profile cache 테스트를 제거·반전했다. no-realtime 미표시, realtime 닉네임+내용, sender 누락 fallback, dismiss 시 unread 불변과 stale timer target 방어 테스트를 추가했다. Phase 6 관련 5개 suite 52개를 실행해 실패·skip 0개로 통과했다. 실제 3초 경과와 pop/re-entry 비복원은 두 Simulator 수동 QA도 통과했으며 diffable visible target 억제는 남아 있다.
+  - persistence 계측 추가 뒤 동일 5개 suite 52개를 재실행해 실패·skip 0개로 통과했다. explicit 성공은 authoritative readback 호출을, write 실패는 readback 미호출을 spy로 검증한다. 계측 추가 빌드도 iPhone 17 Pro Max Simulator에서 성공했다.
+  - initial latest 위치 수정 중 같은 52개 테스트를 다시 실행해 실패·skip 0개를 확인했다. 최종 UIKit-only reload/layout-settle 변경은 Simulator build와 실제 Firebase `lastRead/latest=92`, `999999` 재진입 화면으로 수동 검증했다.
+
 - iOS Socket listener 안정화 test: `OutPickTests/RealtimeSocketListenerBinderTests.swift`
   - client event 3개와 named event 5개의 최초 1회 등록, 같은 binder 재호출 무효, 반복 connect callback 중 등록 수 불변, 새 Socket/binder 독립 등록과 payload 전달을 검증한다.
+  - Phase 1의 mixed message event FIFO와 queue 종료, joined-room 공통 ID admission의 room 분리·local seq 0 우회·300개 eviction·reset, background high watermark promotion과 stale visible lease 종료 거부를 검증한다.
   - 실행: `xcodebuild -project OutPick.xcodeproj -scheme OutPick -destination 'platform=iOS Simulator,id={simulator-id}' -only-testing:OutPickTests/RealtimeSocketListenerBinderTests test`.
+  - 2026-07-16 `RealtimeSocketListenerBinderTests`와 `ChatRoomSessionActorTests` 대상 19개 테스트가 iPhone 15 Pro iOS 17.2 Simulator에서 통과했다.
   - 실제 reconnect gate는 cold launch 5회와 background/foreground 5회, room rejoin/text 중복 부재와 credential raw log 부재를 확인한다. 상세 절차는 `docs/ai/tasks/core-infrastructure-modularization/phases/phase-6-ios-socket-stabilization.md`에 있다.
 
 - Phase 5 Socket 테스트 계획: `docs/ai/tasks/core-infrastructure-modularization/phases/phase-5-socket-tests.md`
@@ -83,6 +105,10 @@ Firebase Functions tests/build entry:
   - 한 명/두 명 consumer의 동일 ID 단일 전달, 종류와 무관한 ID 정책, 같은 ID·다른 seq first-wins, 실제 300개 oldest eviction과 actor 재생성 reset을 검증한다.
   - 로컬 실패 메시지가 같은 ID의 후속 서버 확인 event를 차단하지 않는 source 분리도 검증한다.
   - 2026-07-15 신규 actor 6개와 `ChatMessageWindowStoreTests`, `GRDBChatMessageStoreTests`, `RealtimeSocketListenerBinderTests` 회귀를 합친 고유 테스트 20개, generic Simulator build가 통과했다.
+  - 공통 admission은 Phase 1에서 구현했다. Phase 2·3 strict seq/recovery와 Phase 4 suspend/rejoin 감사·terminal 종료는 `OutPickTests/RealtimeChatIngressOrderingTests.swift`, Banner hard-cap summary는 `OutPickTests/BannerPresentationQueueStateTests.swift`, baseline 전달은 `ChatRoomRealtimeUseCaseTests.swift`, 실제 route 판정은 `ChatRoomRouteLifecycleStateTests.swift`에서 검증한다.
+  - Phase 5 차단 결함 회귀는 `ChatMessageWindowStoreTests`의 same-day/cross-day older·newer separator identity, `RealtimeRoomJoinStateTests`의 concurrent join/stale ACK/reconnect invalidation, `BannerSubscriptionRetryPolicyTests`의 capped backoff와 recoverable 재구독으로 검증한다. 관련 17개 suite 87개 테스트와 generic Simulator build가 2026-07-16 통과했다.
+  - room-close 최종 회귀는 `RealtimeSocketListenerBinderTests`의 authoritative closure 선행/observer 후행 replay와 same-room create reset, room-not-found ACK mapping, `ChatRoomRuntimeUseCaseTests`, `ChatRoomRouteLifecycleStateTests`로 검증한다. 2026-07-17 대상 테스트가 통과했다.
+  - 실제 QA는 셀룰러 iPhone 14 disconnect/reconnect의 `680001 → 680004`, `990001` leave 목록 제거, room close 자동 route 종료와 Cloud Run 종료 후 join 재시도 0회까지 통과했다.
 
 - Socket candidate QA configuration tests: `OutPickTests/SocketDebugQAConfigurationTests.swift`
   - DEBUG 전용 candidate URL override의 유효 URL 선택·잘못된 값 production fallback과 message kind별 첫 성공 ACK 유실 설정을 검증한다.

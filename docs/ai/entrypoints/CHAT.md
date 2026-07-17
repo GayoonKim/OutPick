@@ -85,22 +85,52 @@ Chat 기능 수정 시 관련 화면, ViewModel, UseCase, Repository, 검색 인
 - Socket 검증: `Socket/test/`, `Socket/scripts/run-tests.mjs`
 - 현재 채팅방 stream 연결: `OutPick/Features/Chat/Controllers/ChatViewController.swift`
 - 읽음/안 읽음 shared store: `OutPick/Features/Chat/Stores/ChatRoomReadStateStore.swift`
+- 화면 read frontier 순수 상태: `OutPick/Features/Chat/Stores/ChatReadStateStore.swift`
+- 대규모 unread/latest jump 순수 상태: `OutPick/Features/Chat/Domain/Models/ChatUnreadCatchUpState.swift`
 - 앱 실행 중 방 밖 메시지 banner: `OutPick/Infra/Banner/BannerManager.swift`
 - 전체 방 목록 preview cache: `OutPick/DB/Firebase/DatabaseManager/Repositories/FirebaseChatRoomRepository.swift`
 - 참여중 목록 즉시 반영: `OutPick/Features/Chat/ViewModels/JoinedRoomsViewModel.swift`
 - 전체 방 목록 즉시 반영: `OutPick/Features/Chat/ViewModels/RoomListsViewModel.swift`
 
-채팅방 화면을 보고 있을 때는 `ChatViewController`가 `RealtimeSocketService.openRoomSession(for:)`로 room join ACK를 받은 뒤 메시지 stream을 구독한다. 수신 메시지는 ViewModel/GRDB 저장 경로를 거쳐 현재 화면에 반영된다.
+채팅방 화면을 보고 있을 때는 initial load의 `entryTailSeq`가 Controller→ViewModel→UseCase→Repository를 지나 `RealtimeSocketService.openVisibleRoomSession(for:baselineSeq:)`에 전달된다. room join ACK 뒤 `ChatRoomStrictSessionActor`가 `entryTailSeq + 1`부터 연속 seq만 stream으로 release하고 수신 메시지는 ViewModel/GRDB 저장 경로를 거쳐 현재 화면에 반영된다.
 
-`ChatRoomSessionActor`는 Socket에서 decode한 메시지를 consumer에게 fan-out하기 전에 방별 최근 message ID 300개로 first-wins 중복 제거한다. 같은 ID·다른 seq도 첫 event를 유지하며, actor가 마지막 consumer와 함께 제거되면 dedupe state도 해제된다. 로컬 실패 메시지 publish는 이 ingress state에 기록하지 않아 같은 ID의 후속 서버 확인 event가 정상 전달된다. `BannerManager`는 별도 recent-ID cache를 두지 않고 같은 actor stream을 사용하며, `ChatMessageWindowStore`와 GRDB upsert는 300개 범위 밖 재수신의 최종 수렴 장치다.
+Socket의 text/Lookbook/images/video message callback은 `RealtimeSocketMessageIngressQueue`에 동기 enqueue되고 단일 consumer가 순서대로 decode한다. `RealtimeSocketService`의 공통 admission은 joined room별 최근 message ID 300개를 first-wins로 제거한 뒤 routing한다. 방 탈퇴·로그아웃/UID 변경에서는 해당 상태를 제거하고, local `seq == 0` 메시지는 admission을 우회해 같은 ID의 후속 서버 확정 event를 차단하지 않는다.
+
+`RealtimeRoomRoutingState`는 `roomID + generation` visible lease, initial `entryTailSeq` baseline과 background high watermark를 보관한다. promotion은 현재 background watermark를 recovery 상한으로 캡처하고 stale lease 종료는 새 visible route를 해제하지 못한다. Chat strict stream과 Banner background stream은 분리됐지만 visible event도 read-state/room preview 갱신을 위해 background actor에 전달되며 `BannerManager`가 visible room UI만 억제한다.
+
+`ChatRoomStrictSessionActor`는 pending 100개에서 즉시 recovery, 300개 payload hard cap, 0.5초 grace, 100개 ASC page와 최대 3회 retry를 사용한다. `ChatRealtimeGapRecoveryLoading`은 roomID/afterSeq/limit만 노출하고 production 구현은 `FirebaseChatRealtimeGapRecoveryLoader`이며 `AppCompositionRoot`가 단일 service에 주입한다. 기존 `ChatRoomSessionActor`의 최근 ID 300개 first-wins 검사는 background fan-out 최종 방어선으로 남는다. background/네트워크 disconnect에서는 checkpoint·pending·recent ID를 보존하고 timer/recovery만 중지하며, 성공한 같은 방 rejoin ACK 뒤 `lastReleasedSeq` 다음부터 즉시 감사한다. permission-denied/not-found는 terminal로 변환해 strict stream을 종료한다.
+
+`ChatRoomRouteLifecycleState`는 UIKit appearance와 실제 route 소유권을 분리한다. `ChatViewController.viewWillDisappear`는 strict stream을 닫지 않으며, `viewDidDisappear`에서 navigation stack 제거 또는 modal dismiss가 확정됐을 때 `ChatCoordinator`의 `onRouteRemoved` callback이 stream과 room-close observation을 종료한다. 취소된 interactive pop과 자식 화면은 기존 session을 유지하고, Coordinator가 다른 Chat route를 push하면 이전 Chat route를 replacement 종료한다.
 
 `RealtimeSocketService`는 새 `SocketIOClient`를 만들 때 lifecycle 3개와 named event 5개 listener를 연결 전에 한 번 등록한다. reconnect나 room consumer 생성·종료 중에는 `off/on`으로 Socket.IO handler 배열을 변경하지 않으며, listener lifetime은 Socket client lifetime과 같다. consumer가 없는 메시지는 actor의 room session lookup에서 drop한다. Socket.IO raw logger는 인증 payload 노출을 막기 위해 사용하지 않는다. 관련 안정화 설계와 반복 reconnect gate는 `docs/ai/tasks/core-infrastructure-modularization/phases/phase-6-ios-socket-stabilization.md`를 따른다.
+
+room join의 단일 owner는 `RealtimeSocketService`의 `RealtimeRoomJoinState`다. runtime rejoin, background Banner session과 visible strict session이 같은 room join attempt/ACK에 합류하며 reconnect에서는 confirmed membership만 무효화하고 desired joined room은 유지한다. Socket client 교체 시 generation이 다른 이전 client의 connect/disconnect/error/room-close callback은 무시한다. `NO ACK`는 recoverable timeout, 명시적인 room/access 거부 ACK는 terminal join 오류로 분리한다.
 
 `socket-message-dedupe-hardening` Phase 1~3에서 `messageDeliverySingleFlight`가 `kind + roomID + messageID` 단위 instance 내부 owner/follower Promise를 소유한다. `sequenceStore.allocateSeqAndPersist`는 Firestore transaction 결과를 `{ seq, created }`로 반환하고 기존 message는 다시 쓰지 않는다. text/Lookbook/image/video handler는 요청별 보호 검증 후 이 경계에 참여하며 `created: true` winner만 Socket emit과 FCM push를 수행한다. media 완료 retry는 저장된 senderUID, media 종류와 attachment path가 현재 요청과 일치할 때만 기존 seq를 duplicate ACK한다.
 
 `Rooms.lastMessage`, `lastMessageAt`, `lastMessageSeq` 갱신의 단일 소유자는 `sequenceStore.allocateSeqAndPersist` transaction이다. iOS `RealtimeSocketService`는 성공 또는 duplicate ACK 뒤에 room summary를 직접 쓰지 않는다. 따라서 새 메시지 B가 확정된 뒤 오래된 메시지 A를 동일 ID로 retry해도 A의 client timestamp/preview가 B의 room summary를 덮어쓰지 않는다.
 
-채팅방 화면을 보고 있지 않을 때는 `BannerManager`가 참여중 방 socket stream을 통해 메시지를 받고 banner를 표시한다. 동시에 `ChatRoomReadStateStore.seedIncomingMessage(_:)`로 `latestSeq`, `latestMessagePreview`, `latestMessageAt`, `lastMessageSenderUID`를 갱신하고, `FirebaseChatRoomRepository.applyLocalIncomingMessagePreview(_:)`로 전체 방 목록 preview cache를 갱신한다.
+`BannerManager`는 참여중 방의 background stream에서 high watermark보다 큰 seq만 즉시 받고, visible 방이면 UI만 생략한다. 모든 accepted event는 `ChatRoomReadStateStore.seedIncomingMessage(_:)`와 `FirebaseChatRoomRepository.applyLocalIncomingMessagePreview(_:)`를 거쳐 목록 metadata를 갱신한다. UI는 단일 FIFO로 5개 outstanding까지만 개별 보관하고 초과분은 단일 summary로 합친다.
+
+background session open이 `NO ACK`·disconnect 등 recoverable 오류로 실패하면 `BannerSubscriptionRetryPolicy`의 0.5초 시작·최대 8초 capped exponential backoff로 같은 room subscription을 유지한다. room_not_found/access rejection 같은 terminal join 오류와 leave/close/logout cancellation에서는 재구독하지 않는다. session open 실패로 만들어진 consumer는 즉시 정리한다.
+
+reconnect는 캐시 token 재사용 대신 Firebase ID token을 강제 갱신하고 새 `SocketIOClient` generation을 만든다. network 복구 뒤 confirmed membership을 다시 join하고 visible strict actor는 마지막 release 다음 seq부터 감사를 시작한다. 2026-07-17 셀룰러 iPhone 14 단절 QA에서 `680001 → 680004` 누락·중복·미래 realtime이 정상임을 확인했다.
+
+room close observation은 현재 참여 여부가 아니라 실제 Chat route의 생존 기간에 결합한다. 따라서 미참여 미리보기에서 같은 화면으로 참여 전환해도 closure를 받으며, authoritative closure가 observer 등록보다 먼저 도착하면 service가 같은 room create 전까지 상태를 기억해 등록 직후 replay한다. Coordinator는 closure를 받으면 실제 route를 제거하고 service는 join/admission/routing/Banner 상태를 정리해 재구독을 막는다.
+
+`ChatMessageWindowStore`는 older/newer pagination chunk를 합친 뒤 최대 300개 visible message window 전체를 seq 순으로 재구성해 날짜 separator와 read marker를 파생한다. 따라서 같은 날짜가 page/chunk 경계를 가로질러도 `dateSeparator(Date)` identity는 날짜별 한 개만 존재한다.
+
+`ChatReadStateStore`는 persisted/queued/pending 최댓값을 read frontier로 사용한다. 일반 visible candidate는 `contiguousLoadedThroughSeq` 이하에서만 queue하고 explicit latest target만 의도적으로 gap을 건너뛴다. Phase 6-C에서 incremental/final 읽음의 `windowMaxSeq` 입력을 제거했으며 `finalSeqForSessionEnd()`는 실제 frontier만 반환한다.
+
+`ChatLatestMessageJumpView`는 참여 중 Chat 화면에서 새 realtime 메시지가 도착했을 때만 입력창 위에 발신자·한 줄 요약·cache-only 이미지/종류 아이콘·아래 화살표와 loading/VoiceOver 상태를 렌더링한다. 진입 전에 쌓인 unread에는 card를 표시하지 않고 initial unread anchor부터 읽는다. `ChatUnreadCatchUpState`는 realtime `ChatMessage.senderNickname + previewTextForRoomList`로 현재 preview 1개와 탭 중 고정 target/generation/loading을 소유하며 payload에 sender 정보가 없을 때만 `새 메시지`로 fallback한다. `ChatViewController`는 최신 realtime마다 cancellable 3초 auto-dismiss task를 다시 시작하고 target 일치 시 읽음 변경 없이 preview만 제거한다. diffable snapshot completion 뒤 target item이 실제 visible이면 즉시 제거하며 route/search 종료에서도 transient preview와 task를 정리하므로 pop/re-entry에서 복원되지 않는다.
+
+최신 이동은 `ChatViewController`가 기존 `ChatMessageWindowStore`, diffable snapshot과 content offset을 백업한 뒤 bounded target window를 적용한다. snapshot completion 후 target item의 실제 layout 가시성이 확인되어야 `ChatRoomViewModel.completeLatestJump`가 explicit frontier를 승인한다. 승인 직후 pending frontier를 `persistExplicitLatestJumpForCurrentUser()`로 await 저장하며 server 성공 뒤에만 local/shared flushed mark를 적용한다. 실패 pending은 route 종료/background final flush 재시도에 남는다. 실패·취소·stale completion은 이전 window/offset/frontier로 복구하고, 이동 중 target보다 높은 realtime seq는 완료 뒤 새 preview로 남긴다. 일반 스크롤 읽음은 settled visible max와 `ChatMessageWindowStore.highestContiguousSeq(after:)` 조합만 사용하며 search window에서는 보고하지 않는다.
+
+Explicit read 진단은 `ChatRoomViewModel.persistExplicitLatestJumpForCurrentUser()`의 저장 직전 상태, `UserProfileRepository.updateLastReadSeq` Firestore transaction의 `current/requested/next/didWrite`, `.server` 강제 재조회 결과를 `[ChatReadPersistence]` 로그로 연결한다. room/user 식별자는 마스킹한다. `DefaultChatInitialLoadUseCase`는 재진입의 `lastRead/latest/openMode`도 기록한다. 2026-07-17 실제 QA에서 `92 → transaction 89/92/92/write=true → authoritative 92`, 재진입 `lastRead=92/latest=92/latestTail`을 확인해 persistence가 정상임을 확정했다.
+
+초기 최신 위치 진입점은 `ChatViewController.setMessageWindow`다. 초기 local→server 전체 window 교체에는 `applySnapshotUsingReloadData`를 사용해 stale cell을 제거하고, snapshot completion 뒤 마지막 message/read marker를 직접 표시한다. estimated-height 셀의 self-sizing으로 content height가 여러 layout pass에 걸쳐 증가하므로 최대 12 frame, 약 0.2초 안에서 height가 2회 연속 안정될 때까지만 위치를 재검증한다. realtime/pagination 증분 snapshot은 기존 diffable apply 경로를 유지한다. 실제 `999999(seq=92)` 재진입 QA에서 최신 target 표시를 확인했다.
+
+`ChatRoomMessageUseCase.loadLatestMessageWindow` → `ChatMessageManager`는 고정 target을 포함하는 서버 권위 tail을 최대 80개로 반환한다. 일반 target은 exclusive `beforeSeq = targetSeq + 1`, `Int64.max`는 latest query를 사용하며 결과는 target 이하·ASC·ID 단일성·target 포함을 검증한다. authoritative initial/history/latest와 realtime incoming은 GRDB 저장 성공 뒤 `ChatOutgoingOutboxUseCase.reconcileServerConfirmedMessages`로 batch outbox 수렴한다. catching-up offscreen event는 UI append와 attachment warmup을 하지 않는다.
 
 `JoinedRoomsViewModel`은 shared read-state stream을 구독해 unread count와 마지막 메시지 summary를 즉시 반영한다. `RoomListsViewModel`은 같은 stream을 신호로 사용해 repository의 cached top rooms snapshot을 다시 발행한다. 단, 앱 재실행/네트워크 재동기화의 authoritative source는 여전히 Firestore 단발 fetch와 pull-to-refresh다.
 

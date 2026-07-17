@@ -2,11 +2,14 @@
 
 ## 현재 상태
 
-- 현재 등록된 핵심 task는 없다. `socket-message-dedupe-hardening`은 구현·자동 회귀·candidate closeout을 완료하고 2026-07-16 종료했다.
+- 현재 등록된 핵심 task는 없다. `socket-ingress-ordering-hardening`은 Phase 1~6 구현, 자동 회귀와 실제 Firebase/Simulator 핵심 QA를 완료하고 2026-07-17 종료했다.
+- `socket-message-dedupe-hardening`은 구현·자동 회귀·candidate closeout을 완료하고 2026-07-16 종료했다.
 - `firestore-document-id-boundary-cleanup`은 Phase 1~4 구현·QA, rules 운영 배포, 운영 `Rooms.ID` cleanup과 사후 재감사까지 완료하고 2026-07-14 종료했다.
 - `core-infrastructure-modularization`은 Phase 2~5 구현, Phase 6 동일 SHA 회귀, Socket/Functions 운영 배포, D49 안정화와 통합 수동 QA까지 완료하고 2026-07-14 종료했다.
-- FCM fanout은 Apple 개발자 계정 결제 후 별도 QA task로 진행한다.
-- 최근 완료 구현 작업은 `firestore-document-id-boundary-cleanup`이다.
+- FCM/APNs 채팅 알림은 Apple Developer 계정 결제와 APNs/Firebase Apple app 설정 후 별도 구현·실기기 QA task로 진행한다. 초기에는 메시지별 알림과 방별 thread grouping을 사용하고 custom 요약은 운영 피드백 이후 검토한다.
+- Chat route/ViewModel 중복 생존 가능성은 별도 후속 분석 후보다. 새 Chat push가 기존 route lifecycle만 종료하고 navigation stack에서 제거하지 않는 경로를 동일 방 재진입·알림/deep link·deinit 증거로 확인한 뒤, 결함으로 판정될 때만 수정안을 논의한다.
+- `socket-ingress-ordering-hardening`의 선택적 후속 QA는 이미 보이는 target의 card 억제와 실기기 VoiceOver 발화·포커스 확인이다. 핵심 읽음·수렴 정확성 완료를 막지 않으며 필요할 때 별도 QA로 수행한다.
+- 최근 완료 구현 작업은 `socket-ingress-ordering-hardening`이다.
 - 새 작업을 시작할 때 이 문서에는 현재 task 한 건과 바로 이전 완료 작업만 상세 링크로 유지한다.
 - 오래된 완료 이력은 각 task의 `progress.md`, 장기 결정은 `docs/ai/ADR.md`에서 확인한다.
 
@@ -18,6 +21,7 @@
 
 | 작업 | 상태 | 핵심 결과 | 상세 |
 | --- | --- | --- | --- |
+| `socket-ingress-ordering-hardening` | 완료·Phase 1~6 자동 회귀와 실제 Firebase/Simulator QA 완료 | 순차 ingress, visible strict recovery, bounded Banner, reconnect/route lifecycle, 대규모 unread catch-up과 visible read frontier | [progress](socket-ingress-ordering-hardening/progress.md), [qa](socket-ingress-ordering-hardening/qa-checklist.md), [Phase 6](socket-ingress-ordering-hardening/phase-6-unread-catch-up-read-frontier.md) |
 | `socket-message-dedupe-hardening` | 완료·candidate closeout 완료·운영 traffic 전환 별도 승인 | 전체 실시간 메시지 winner-only emit/push, 공통 ACK 수렴과 iOS 최근 ID 300개 ingress dedupe | [progress](socket-message-dedupe-hardening/progress.md), [qa](socket-message-dedupe-hardening/qa-checklist.md) |
 | `firestore-document-id-boundary-cleanup` | 완료·rules 운영 배포·데이터 cleanup·통합 QA 완료 | 경로 document ID를 canonical source로 통일하고 앱 `@DocumentID`와 운영 Rooms 중복 ID를 제거 | [progress](firestore-document-id-boundary-cleanup/progress.md), [qa](firestore-document-id-boundary-cleanup/qa-checklist.md), [ADR-020](../adr/ADR-020-firestore-문서-identity는-문서-경로-id를-단일-기준으로-사용한다.md) |
 | `core-infrastructure-modularization` | 완료·운영 배포·통합 QA 완료, FCM 별도 보류 | iOS Functions/GRDB, Firebase Functions, Socket을 기능별 경계와 공통 runtime, 얇은 entrypoint로 전환 | [progress](core-infrastructure-modularization/progress.md), [qa](core-infrastructure-modularization/qa-checklist.md), [ADR-019](../adr/ADR-019-핵심-인프라는-기능별-모듈러-경계와-현재-배포-단위를-유지한다.md) |
