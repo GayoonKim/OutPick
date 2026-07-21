@@ -173,6 +173,8 @@ Repository가 `DocumentSnapshot.documentID`를 같은 snapshot에서 decode한 D
 - Lookbook 쪽 payload/bridge: `OutPick/Features/Lookbook/`의 share 관련 View/Navigation.
 - Chat 접합부: `docs/ai/entrypoints/CHAT.md`.
 - snapshot/상세 최신화 결정: ADR-011~013.
+- 공유 완료 확인 UI: `Views/Shared/LookbookShareConfirmationBar.swift`와 `BrandDetailView.swift`, `SeasonDetailView.swift`, `PostDetailView.swift`.
+- `채팅방으로 이동` 처리 중에는 로딩을 표시하고 이동·계속 보기 버튼과 interactive sheet dismiss를 모두 잠근다. 성공하면 확인 sheet를 닫고, 최신 유효 요청의 실제 실패만 오류 toast와 재시도를 허용한다.
 
 ### URL 기반 시즌 import
 

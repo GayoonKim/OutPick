@@ -101,6 +101,12 @@ Firebase Functions tests/build entry:
   - 2026-07-16 closeout에서 syntax check와 전체 62개 테스트를 다시 통과했다.
   - 2026-07-15 `npm --prefix Socket run check`와 Socket 전체 62개 `node:test`가 통과했다.
 
+- Chat route lifecycle hardening tests: `OutPickTests/ChatNavigationStackPolicyTests.swift`, `ChatOpenRoomRequestStateTests.swift`, `ChatOpenRoomRequestRegistryTests.swift`, `ChatRoomRouteLifecycleStateTests.swift`
+  - 같은 stack의 기존 Chat route 교체와 non-Chat prefix 보존, top same-room no-op를 검증한다.
+  - stack별 요청 격리, same-room 실제 Task 공유, same-stack latest-wins, stale 성공·실패 무시와 실패 후 재시도를 검증한다.
+  - terminal route가 `didAppear`로 부활하지 않고 transient binding 복구 대상에서 제외되는 lifecycle 계약을 검증한다.
+  - 2026-07-21 관련 고유 시나리오 20개와 generic Simulator build가 통과했다. 탭별 stack/Back/deinit과 룩북 이동 loading·닫기 잠금은 로그인 Simulator 수동 QA가 남아 있다.
+
 - iOS message ingress dedupe Phase 3 tests: `OutPickTests/ChatRoomSessionActorTests.swift`
   - 한 명/두 명 consumer의 동일 ID 단일 전달, 종류와 무관한 ID 정책, 같은 ID·다른 seq first-wins, 실제 300개 oldest eviction과 actor 재생성 reset을 검증한다.
   - 로컬 실패 메시지가 같은 ID의 후속 서버 확인 event를 차단하지 않는 source 분리도 검증한다.
