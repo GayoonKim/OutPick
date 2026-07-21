@@ -4,11 +4,11 @@ struct ChatRoomRouteLifecycleState: Equatable {
     private(set) var isNavigationOwned = false
     private(set) var isDismissalCandidate = false
     private(set) var isFinished = false
+    var canRestoreTransientState: Bool { !isFinished }
 
     mutating func didAppear(isNavigationOwned: Bool) {
         self.isNavigationOwned = isNavigationOwned
         isDismissalCandidate = false
-        isFinished = false
     }
 
     mutating func willDisappear(isMovingFromParent: Bool, isBeingDismissed: Bool) {

@@ -1423,8 +1423,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             return
         }
 
+        isUserInCurrentRoom = true
         scheduleProfileCacheRefresh(for: messageWindowStore.visibleMessages)
         bindMessagePublishers()
+        renderLatestMessageJump()
     }
     
     /// 방 정보(old → new) 변경점을 비교하고 필요한 UI/동기화만 수행
@@ -1629,6 +1631,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 .viewControllers
                 .contains(where: { $0 === self }) ?? false
         )
+        guard routeLifecycleState.canRestoreTransientState else {
+            needsTransientBindingsRestore = false
+            return
+        }
         if needsTransientBindingsRestore {
             restoreTransientBindingsIfNeeded()
             needsTransientBindingsRestore = false

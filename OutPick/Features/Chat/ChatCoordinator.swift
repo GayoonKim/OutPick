@@ -26,8 +26,22 @@ protocol ChatRoomRouting: AnyObject {
 @MainActor
 final class ChatCoordinator {
 
+    private struct NavigationSnapshot: Equatable {
+        let revision: UInt64
+        let viewControllerIDs: [ObjectIdentifier]
+    }
+
+    private enum RoutingError: Error {
+        case navigationUnavailable
+    }
+
     private let container: ChatContainer
     private var userProfileDetailCoordinator: UserProfileDetailCoordinator?
+    private var navigationRevisions: [ObjectIdentifier: UInt64] = [:]
+    private let openRoomRequests = ChatOpenRoomRequestRegistry<
+        ObjectIdentifier,
+        NavigationSnapshot
+    >()
     weak var appContentRouter: (any AppContentRouting)?
 
     init(container: ChatContainer) {
@@ -86,17 +100,42 @@ final class ChatCoordinator {
     }
 
     private func presentChatRoom(room: ChatRoom, from source: UIViewController) {
-        let chatRoomVC = makeChatRoomViewController(room: room, isRoomSaving: false)
-        push(chatRoomVC, from: source)
+        guard let nav = navigationController(startingFrom: source) else {
+            assertionFailure("ChatCoordinator requires a UINavigationController-owned Chat route.")
+            return
+        }
+        presentChatRoom(room: room, in: nav)
     }
 
     func openRoom(roomID: String, from source: UIViewController) async throws {
         guard !roomID.isEmpty else { throw FirebaseError.FailedToFetchRoom }
+        guard let nav = navigationController(startingFrom: source) else {
+            throw RoutingError.navigationUnavailable
+        }
+        guard (nav.topViewController as? ChatViewController)?.room?.id != roomID else {
+            return
+        }
 
-        let rooms = try await container.roomRepository.fetchRoomsWithIDs(byIDs: [roomID])
-        guard let room = rooms.first else { throw FirebaseError.FailedToFetchRoom }
+        let stackID = ObjectIdentifier(nav)
+        let snapshot = navigationSnapshot(for: nav)
+        let acquisition = openRoomRequests.acquire(
+            stackID: stackID,
+            roomID: roomID,
+            snapshot: snapshot,
+            makeTask: { request in
+                self.makeOpenRoomTask(
+                    roomID: roomID,
+                    request: request,
+                    stackID: stackID,
+                    navigationController: nav
+                )
+            }
+        )
 
-        presentChatRoom(room: room, from: source)
+        defer {
+            openRoomRequests.finish(stackID: stackID, token: acquisition.request.token)
+        }
+        try await acquisition.task.value
     }
 
     private func presentCreateRoom(from source: UIViewController) {
@@ -121,8 +160,7 @@ final class ChatCoordinator {
     }
 
     private func presentChatRoomFromSearch(room: ChatRoom, searchVC: RoomSearchViewController) {
-        let chatRoomVC = makeChatRoomViewController(room: room, isRoomSaving: false)
-        push(chatRoomVC, from: searchVC)
+        presentChatRoom(room: room, from: searchVC)
     }
 
     private func presentRoomEdit(from source: ChatRoomSettingViewController, room: ChatRoom) {
@@ -171,14 +209,110 @@ final class ChatCoordinator {
         }
         nav.setNavigationBarHidden(true, animated: false)
         nav.interactivePopGestureRecognizer?.isEnabled = true
-        if viewController is ChatViewController {
-            nav.viewControllers
-                .compactMap { $0 as? ChatViewController }
-                .filter { $0 !== viewController }
-                .forEach(finishChatRoute)
-        }
         viewController.hidesBottomBarWhenPushed = true
         nav.pushViewController(viewController, animated: true)
+        incrementNavigationRevision(for: nav)
+    }
+
+    private func presentChatRoom(room: ChatRoom, in nav: UINavigationController) {
+        let currentViewControllers = nav.viewControllers
+        let currentChatRoomIDs = currentViewControllers.map { viewController in
+            (viewController as? ChatViewController)?.room?.id
+        }
+
+        switch ChatNavigationStackPolicy.action(
+            currentChatRoomIDs: currentChatRoomIDs,
+            destinationRoomID: room.id
+        ) {
+        case .noOp:
+            return
+
+        case .place(let retainedIndices, let replacedChatIndices):
+            let replacedChatRoutes = replacedChatIndices.compactMap { index in
+                currentViewControllers[index] as? ChatViewController
+            }
+            replacedChatRoutes.forEach(finishChatRoute)
+
+            let chatRoomVC = makeChatRoomViewController(room: room, isRoomSaving: false)
+            let retainedViewControllers = retainedIndices.map { currentViewControllers[$0] }
+
+            nav.setNavigationBarHidden(true, animated: false)
+            nav.interactivePopGestureRecognizer?.isEnabled = true
+            chatRoomVC.hidesBottomBarWhenPushed = true
+
+            if replacedChatRoutes.isEmpty {
+                nav.pushViewController(chatRoomVC, animated: true)
+            } else {
+                nav.setViewControllers(retainedViewControllers + [chatRoomVC], animated: true)
+            }
+            incrementNavigationRevision(for: nav)
+        }
+    }
+
+    private func makeOpenRoomTask(
+        roomID: String,
+        request: ChatOpenRoomRequestState<ObjectIdentifier, NavigationSnapshot>.Request,
+        stackID: ObjectIdentifier,
+        navigationController: UINavigationController
+    ) -> Task<Void, Error> {
+        Task { @MainActor [weak self, weak navigationController] in
+            guard let self else { return }
+
+            let room: ChatRoom
+            do {
+                let rooms = try await container.roomRepository.fetchRoomsWithIDs(byIDs: [roomID])
+                guard let fetchedRoom = rooms.first, fetchedRoom.id == roomID else {
+                    throw FirebaseError.FailedToFetchRoom
+                }
+                room = fetchedRoom
+            } catch {
+                guard let navigationController else { return }
+                let currentSnapshot = navigationSnapshot(for: navigationController)
+                guard openRoomRequests.isCurrent(
+                    stackID: stackID,
+                    token: request.token,
+                    snapshot: currentSnapshot
+                ) else {
+                    return
+                }
+                throw error
+            }
+
+            guard let navigationController else {
+                guard openRoomRequests.isCurrent(
+                    stackID: stackID,
+                    token: request.token,
+                    snapshot: request.snapshot
+                ) else {
+                    return
+                }
+                throw RoutingError.navigationUnavailable
+            }
+
+            let currentSnapshot = navigationSnapshot(for: navigationController)
+            guard openRoomRequests.isCurrent(
+                stackID: stackID,
+                token: request.token,
+                snapshot: currentSnapshot
+            ) else {
+                return
+            }
+
+            presentChatRoom(room: room, in: navigationController)
+        }
+    }
+
+    private func navigationSnapshot(for nav: UINavigationController) -> NavigationSnapshot {
+        let stackID = ObjectIdentifier(nav)
+        return NavigationSnapshot(
+            revision: navigationRevisions[stackID, default: 0],
+            viewControllerIDs: nav.viewControllers.map(ObjectIdentifier.init)
+        )
+    }
+
+    private func incrementNavigationRevision(for nav: UINavigationController) {
+        let stackID = ObjectIdentifier(nav)
+        navigationRevisions[stackID, default: 0] &+= 1
     }
 
     private func finishChatRoute(_ source: ChatViewController) {

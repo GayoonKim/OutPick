@@ -20,6 +20,7 @@ struct SeasonDetailView: View {
     @State private var activeShareTarget: LookbookShareTarget?
     @State private var shareCompletion: LookbookChatShareViewModel.Completion?
     @State private var shareMoveErrorMessage: String?
+    @State private var isShareMoveInProgress = false
 
     private let columns: [GridItem] = [
         GridItem(.flexible(), spacing: 10),
@@ -110,6 +111,7 @@ struct SeasonDetailView: View {
         .sheet(item: $shareCompletion) { completion in
             LookbookShareConfirmationBar(
                 roomName: completion.roomName,
+                isMoving: isShareMoveInProgress,
                 onMove: {
                     moveToSharedChatRoom(completion)
                 },
@@ -134,11 +136,16 @@ struct SeasonDetailView: View {
     }
 
     private func moveToSharedChatRoom(_ completion: LookbookChatShareViewModel.Completion) {
+        guard !isShareMoveInProgress else { return }
+        isShareMoveInProgress = true
+        shareMoveErrorMessage = nil
         Task {
             do {
                 try await onShareMove(completion)
+                isShareMoveInProgress = false
                 shareCompletion = nil
             } catch {
+                isShareMoveInProgress = false
                 shareMoveErrorMessage = "채팅방으로 이동할 수 없습니다."
             }
         }

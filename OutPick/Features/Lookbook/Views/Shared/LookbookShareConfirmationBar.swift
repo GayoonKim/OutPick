@@ -9,6 +9,7 @@ import SwiftUI
 
 struct LookbookShareConfirmationBar: View {
     let roomName: String
+    let isMoving: Bool
     let onMove: () -> Void
     let onClose: () -> Void
 
@@ -26,20 +27,30 @@ struct LookbookShareConfirmationBar: View {
 
             VStack(spacing: 10) {
                 Button(action: onMove) {
-                    Text("채팅방으로 이동")
-                        .font(.headline.weight(.bold))
-                        .foregroundStyle(OutPickTheme.SwiftUIColor.backgroundBase)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 50)
-                        .background(OutPickTheme.SwiftUIColor.accent)
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    ZStack {
+                        Text("채팅방으로 이동")
+                            .opacity(isMoving ? 0 : 1)
+                        if isMoving {
+                            ProgressView()
+                                .tint(OutPickTheme.SwiftUIColor.backgroundBase)
+                        }
+                    }
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.backgroundBase)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 50)
+                    .background(OutPickTheme.SwiftUIColor.accent)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 }
                 .buttonStyle(.plain)
+                .disabled(isMoving)
+                .accessibilityLabel(isMoving ? "채팅방으로 이동 중" : "채팅방으로 이동")
 
                 Button("계속 보기", action: onClose)
                     .font(.footnote.weight(.bold))
                     .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
                     .frame(height: 34)
+                    .disabled(isMoving)
             }
         }
         .padding(.horizontal, 16)
@@ -47,5 +58,6 @@ struct LookbookShareConfirmationBar: View {
         .padding(.bottom, 18)
         .frame(maxWidth: .infinity)
         .background(OutPickTheme.SwiftUIColor.backgroundBase)
+        .interactiveDismissDisabled(isMoving)
     }
 }
