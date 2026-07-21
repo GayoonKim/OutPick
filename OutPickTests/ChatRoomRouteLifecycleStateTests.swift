@@ -13,6 +13,7 @@ struct ChatRoomRouteLifecycleStateTests {
 
         #expect(!shouldFinish)
         #expect(!state.isFinished)
+        #expect(state.canRestoreTransientState)
     }
 
     @Test func completedNavigationPopFinishesRoute() {
@@ -61,5 +62,19 @@ struct ChatRoomRouteLifecycleStateTests {
         let secondReplacementFinish = replacementState.finishForReplacement()
         #expect(firstReplacementFinish)
         #expect(!secondReplacementFinish)
+    }
+
+    @Test func terminalReplacementDoesNotBecomeActiveAgainOnAppearance() {
+        var state = ChatRoomRouteLifecycleState()
+        state.didAppear(isNavigationOwned: true)
+        let firstFinish = state.finishForReplacement()
+
+        state.didAppear(isNavigationOwned: true)
+        let secondFinish = state.finishForReplacement()
+
+        #expect(firstFinish)
+        #expect(state.isFinished)
+        #expect(!state.canRestoreTransientState)
+        #expect(!secondFinish)
     }
 }
