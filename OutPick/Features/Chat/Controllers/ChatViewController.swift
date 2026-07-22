@@ -14,10 +14,6 @@ import FirebaseStorage
 import CryptoKit
 import FirebaseFirestore
 
-protocol ChatMessageCellDelegate: AnyObject {
-    func cellDidLongPress(_ cell: ChatMessageCell)
-}
-
 class ChatViewController: UIViewController, UINavigationControllerDelegate, ChatModalAnimatable {
     typealias Item = ChatMessageListItem
     typealias MessageUpdateType = ChatMessageWindowUpdateType
@@ -25,10 +21,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     // Paging buffer size for scroll triggers
     private var pagingBuffer = 200
     
-    var sideMenuBtn: UIBarButtonItem?
     private var joinRoomBtn: UIButton = UIButton(type: .system)
-    
-    var swipeRecognizer: UISwipeGestureRecognizer!
     
     private var chatMessageCollectionView = ChatMessageCollectionView()
     private var dataSource: UICollectionViewDiffableDataSource<Section, Item>!
@@ -300,8 +293,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         bannerLongPress.minimumPressDuration = 0.35
         bannerLongPress.cancelsTouchesInView = true
         v.addGestureRecognizer(bannerLongPress)
-        // Ensure the global long press (used for message cells) doesn't steal this interaction
-        self.longPressGesture.require(toFail: bannerLongPress)
         return v
     }()
     private var baseTopInsetForBanner: CGFloat?
@@ -322,20 +313,17 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private var joinConsraints: [NSLayoutConstraint] = []
     private var joinButtonConstraints: [NSLayoutConstraint] = []
     
-    private var interactionController: UIPercentDrivenInteractiveTransition?
-    
-    private lazy var tapGesture: UITapGestureRecognizer = {
+    private lazy var backgroundTapGesture: UITapGestureRecognizer = {
         let gesture = UITapGestureRecognizer(target: self, action: #selector(handleTapGesture))
         gesture.delegate = self
         gesture.cancelsTouchesInView = false
         return gesture
     }()
     
-    lazy var longPressGesture: UILongPressGestureRecognizer = {
-        let gesture = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
-        gesture.delegate = self
-        return gesture
-    }()
+    private lazy var messageLongPressGesture = UILongPressGestureRecognizer(
+        target: self,
+        action: #selector(handleLongPress(_:))
+    )
     
     private var searchUIBottomConstraint: NSLayoutConstraint?
     
@@ -366,9 +354,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             LoadingIndicator.shared.stop()
         }
         
-        view.addGestureRecognizer(tapGesture)
-        view.addGestureRecognizer(longPressGesture)
-        installKeyboardDismissTapGesture()
+        view.addGestureRecognizer(backgroundTapGesture)
+        chatMessageCollectionView.addGestureRecognizer(messageLongPressGesture)
         
         setupCustomNavigationBar()
         setupJoinRoomButtonIfNeeded()
@@ -1669,7 +1656,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     @MainActor
     func presentSettingPanel(_ VC: ChatRoomSettingViewController) {
         guard settingPanelVC == nil else { return }
-        self.detachInteractiveDismissGesture()
         settingPanelVC = VC
         
         if dimView.superview == nil {
@@ -1678,7 +1664,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             let dimTap = UITapGestureRecognizer(target: self, action: #selector(didTapDimView))
             dimTap.cancelsTouchesInView = true
             dimView.addGestureRecognizer(dimTap)
-            tapGesture.require(toFail: dimTap)
             
             NSLayoutConstraint.activate([
                 dimView.topAnchor.constraint(equalTo: view.topAnchor),

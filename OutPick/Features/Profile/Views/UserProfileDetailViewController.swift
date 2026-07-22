@@ -14,8 +14,11 @@ final class UserProfileDetailViewController: UIViewController, ChatModalAnimatab
     private var avatarLoadTask: Task<Void, Never>?
     private var currentAvatarSource = AvatarImageSource()
     private var displayedAvatarImage: UIImage?
+    private var isDismissRequested = false
     private let avatarThumbnailMaxBytes = 3 * 1024 * 1024
     private let avatarOriginalMaxBytes = 20 * 1024 * 1024
+    private let edgeDismissProgressThreshold: CGFloat = 0.35
+    private let edgeDismissVelocityThreshold: CGFloat = 900
 
     private lazy var backButton: UIButton = {
         let button = UIButton(type: .system)
@@ -192,6 +195,14 @@ final class UserProfileDetailViewController: UIViewController, ChatModalAnimatab
     private func setupActions() {
         let tapGesture = UITapGestureRecognizer(target: self, action: #selector(profileImageTapped))
         profileImageView.addGestureRecognizer(tapGesture)
+
+        let edgeDismissGesture = UIScreenEdgePanGestureRecognizer(
+            target: self,
+            action: #selector(handleEdgeDismissGesture(_:))
+        )
+        edgeDismissGesture.edges = .left
+        edgeDismissGesture.cancelsTouchesInView = false
+        view.addGestureRecognizer(edgeDismissGesture)
     }
 
     private func bind() {
@@ -231,6 +242,25 @@ final class UserProfileDetailViewController: UIViewController, ChatModalAnimatab
     }
 
     @objc private func backTapped() {
+        requestDismiss()
+    }
+
+    @objc private func handleEdgeDismissGesture(_ gesture: UIScreenEdgePanGestureRecognizer) {
+        guard gesture.state == .ended else { return }
+
+        let viewWidth = max(view.bounds.width, 1)
+        let progress = max(gesture.translation(in: view).x, 0) / viewWidth
+        let velocityX = gesture.velocity(in: view).x
+
+        guard progress >= edgeDismissProgressThreshold ||
+                velocityX >= edgeDismissVelocityThreshold else { return }
+
+        requestDismiss()
+    }
+
+    private func requestDismiss() {
+        guard !isDismissRequested else { return }
+        isDismissRequested = true
         viewModel.backTapped()
     }
 

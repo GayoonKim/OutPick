@@ -53,23 +53,29 @@ extension UITextView {
 }
 
 extension ChatViewController: UIGestureRecognizerDelegate {
-    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-        return true
-    }
-    
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-        
-        // 터치된 뷰가 UIButton일 경우 제스처 제외
-        if let touchedView = touch.view, touchedView is UIButton {
-            return false
+        var touchedView = touch.view
+        var containsControl = false
+        var isMessageCellTouch = false
+
+        while let currentView = touchedView {
+            if currentView is UITextField || currentView is UITextView {
+                return false
+            }
+            containsControl = containsControl || currentView is UIControl
+            isMessageCellTouch = isMessageCellTouch || currentView is ChatMessageCell
+            touchedView = currentView.superview
         }
-        
-        if let excludeView = touch.view, excludeView.tag == 99 || excludeView.tag == 98 {
-            return false
-        }
-        
-        return true
-        
+
+        return isMessageCellTouch || !containsControl
+    }
+
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        // background dismiss와 cell 전용 tap action을 함께 실행한다.
+        true
     }
 }
 

@@ -30,10 +30,6 @@ class ChatMessageCell: UICollectionViewCell {
     private var avatarLoadTask: Task<Void, Never>?
     var commands = ChatMessageCellCommands()
     
-    protocol ChatMessageCellDelegate: AnyObject {
-        func cellDidLongPress(_ cell: ChatMessageCell)
-    }
-    
     private let profileImageView: UIImageView = {
         var imageView = UIImageView()
         imageView.layer.cornerRadius = 10

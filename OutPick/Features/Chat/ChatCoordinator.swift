@@ -70,7 +70,7 @@ final class ChatCoordinator {
             self.presentSearch(from: source)
         }
 
-        let nav = UINavigationController(rootViewController: listVC)
+        let nav = ChatNavigationController(rootViewController: listVC)
         nav.isNavigationBarHidden = true
         return nav
     }
@@ -94,7 +94,7 @@ final class ChatCoordinator {
             self.presentSearch(from: source)
         }
 
-        let nav = UINavigationController(rootViewController: joinedVC)
+        let nav = ChatNavigationController(rootViewController: joinedVC)
         nav.isNavigationBarHidden = true
         return nav
     }

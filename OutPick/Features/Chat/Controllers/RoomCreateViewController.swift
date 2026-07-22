@@ -10,7 +10,9 @@ import PhotosUI
 import Combine
 
 @MainActor
-final class RoomCreateViewController: UIViewController, ChatModalAnimatable, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+final class RoomCreateViewController: UIViewController, ChatModalAnimatable, ChatInteractivePopControlling, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+    var allowsChatInteractivePop: Bool { false }
+
     
     private let rootContentView = RoomCreateContentView()
     
