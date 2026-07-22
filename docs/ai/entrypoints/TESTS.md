@@ -101,11 +101,30 @@ Firebase Functions tests/build entry:
   - 2026-07-16 closeout에서 syntax check와 전체 62개 테스트를 다시 통과했다.
   - 2026-07-15 `npm --prefix Socket run check`와 Socket 전체 62개 `node:test`가 통과했다.
 
-- Chat route lifecycle hardening tests: `OutPickTests/ChatNavigationStackPolicyTests.swift`, `ChatOpenRoomRequestStateTests.swift`, `ChatOpenRoomRequestRegistryTests.swift`, `ChatRoomRouteLifecycleStateTests.swift`
+- Chat route lifecycle hardening tests: `OutPickTests/ChatNavigationControllerTests.swift`, `ChatNavigationStackPolicyTests.swift`, `ChatOpenRoomRequestStateTests.swift`, `ChatOpenRoomRequestRegistryTests.swift`, `ChatRoomRouteLifecycleStateTests.swift`
+  - Chat navigation은 root edge-pop 차단, 일반 push 허용, 화면 정책에 따른 방 생성형 push 차단, iOS 26 content-pop 유지 계약을 검증한다.
   - 같은 stack의 기존 Chat route 교체와 non-Chat prefix 보존, top same-room no-op를 검증한다.
   - stack별 요청 격리, same-room 실제 Task 공유, same-stack latest-wins, stale 성공·실패 무시와 실패 후 재시도를 검증한다.
   - terminal route가 `didAppear`로 부활하지 않고 transient binding 복구 대상에서 제외되는 lifecycle 계약을 검증한다.
-  - 2026-07-21 관련 고유 시나리오 20개와 generic Simulator build가 통과했다. 탭별 stack/Back/deinit과 룩북 이동 loading·닫기 잠금은 로그인 Simulator 수동 QA가 남아 있다.
+  - 2026-07-22 D19 방 생성 차단 보강 뒤 Chat navigation 4개와 관련 navigation/route/lifecycle/request 묶음 24개, iOS 26.2 Simulator build/install/launch가 통과했다. 방 생성 swipe 차단과 Back 확인창도 Simulator 수동 QA를 통과했으며 이 시점에는 실제 Chat·실기기 swipe가 남아 있었다.
+  - 같은 날 실제 Chat·검색 실기기 swipe 취소/완료로 Phase 6을 종료했다. Phase 7 dead transition 네 파일 제거 뒤 정적 참조 0건, 같은 24개 회귀와 generic Simulator build가 통과했다.
+  - Phase 7 삭제 후 Chat push/pop과 Profile modal 열기/닫기 수동 smoke QA도 통과했다.
+  - Phase 7B Profile modal edge-swipe는 단순 touch wiring이라 별도 UI unit test를 추가하지 않았다. 기존 24개 회귀와 generic Simulator build, iOS 26.2 Simulator 설치·실행이 통과했고 사용자가 짧은 swipe 유지, 임계값 충족 닫기, X 버튼·avatar tap을 수동 확인해 Phase 7B를 종료했다.
+  - Phase 8 Chat gesture는 UIKit touch arbitration 전용 추상화를 추가하지 않고 기존 `ChatRoomViewModelMessageActionTests`, `ChatMessageActionPolicyTests`를 회귀 대상으로 유지한다. 제거 symbol 참조 0건, `git diff --check`, generic Simulator build가 통과했고 기존 테스트 실행은 보류했다. iPhone 17 Pro Max iOS 26.2에서 keyboard/attachment/message menu background dismiss, input/attachment control 보존, message/announcement long press, settings dim, Lookbook과 retry cell tap이 통과했다. 마지막 media/profile cell tap도 사용자의 실제 Simulator 확인으로 통과해 Phase 8 수동 QA를 완료했다.
+  - Phase 9 최종 회귀에서 위 5개 suite 24/24를 재실행했다. 이어 `ChatRoomSessionActorTests`, `RealtimeChatIngressOrderingTests`, `RealtimeSocketRoomSummaryOwnershipTests`, `RealtimeSocketListenerBinderTests`, `ChatReadStateStoreTests`, `ChatRoomReadStateStoreTests`, `ChatUnreadCatchUpStateTests`, `ChatMessageWindowStoreTests`, `ChatRoomViewModelMessageActionTests` 86/86과 최신 Debug build/install/launch가 통과했다.
+  - 실제 Simulator에서 검색 prefix 보존, RoomCreate 취소 흐름, Lookbook 공유 완료 후 명시적 Chat 이동, 참여중/Lookbook stack 복원을 확인했다. 실제 Firebase 완료 순서 역전은 fetch가 빨라 수동 재현하지 않았고 request state/registry 자동 테스트를 최종 판정 근거로 사용한다.
+
+### Chat route 테스트 파일 지도
+
+| 테스트 파일 | 고정하는 계약 |
+| --- | --- |
+| `OutPickTests/ChatNavigationControllerTests.swift` | root 차단, push 허용, 화면별 opt-out과 iOS 26 content-pop 유지 |
+| `OutPickTests/ChatNavigationStackPolicyTests.swift` | non-Chat prefix 보존, 기존 Chat 제거, same-room no-op |
+| `OutPickTests/ChatOpenRoomRequestStateTests.swift` | stack별 token/snapshot, supersede와 stale completion 판정 |
+| `OutPickTests/ChatOpenRoomRequestRegistryTests.swift` | 실제 Task coalesce, 오류 공유, retry cleanup과 same-stack latest-wins |
+| `OutPickTests/ChatRoomRouteLifecycleStateTests.swift` | transient cover, 취소/완료 pop, dismiss/replacement 단일 finish와 terminal 비가역 |
+
+Chat gesture 자체는 UIKit touch delivery를 위한 별도 추상화를 만들지 않았으므로 전용 unit test가 없다. gesture wiring은 Simulator/실기기 수동 QA로, gesture 이후 message/read/realtime 상태는 Phase 9의 86개 영향 범위 테스트로 검증한다.
 
 - iOS message ingress dedupe Phase 3 tests: `OutPickTests/ChatRoomSessionActorTests.swift`
   - 한 명/두 명 consumer의 동일 ID 단일 전달, 종류와 무관한 ID 정책, 같은 ID·다른 seq first-wins, 실제 300개 oldest eviction과 actor 재생성 reset을 검증한다.

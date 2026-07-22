@@ -34,6 +34,8 @@
 - Detail view controller: `OutPick/Features/Profile/Views/UserProfileDetailViewController.swift`
   - 다른 사용자 프로필 표시 UI와 avatar tap 확대 viewer 진입을 확인한다.
   - avatar 확대는 공용 `ImageViewerPage`/`SimpleImageViewerVC`를 사용하고, Photos 저장은 주입받은 `PhotoLibrarySaving`을 사용한다.
+  - `.overFullScreen` modal의 왼쪽 edge pan은 종료 시 거리 35% 또는 오른쪽 속도 900pt/s 임계값을 넘으면 X 버튼과 같은 dismiss request를 보낸다.
+  - 닫기는 새 interactive transition이 아니라 `UserProfileDetailCoordinator`와 `ChatModalTransitionManager`의 기존 왼쪽→오른쪽 애니메이션을 사용한다.
 - Detail view model: `OutPick/Features/Profile/ViewModels/UserProfileDetailViewModel.swift`
   - canonical user ID 기반 프로필 로드, avatar 표시 state, 현재 사용자 판정을 확인한다.
 - Load detail use case: `OutPick/Features/Profile/Domain/UseCases/LoadUserProfileDetailUseCase.swift`
@@ -42,6 +44,17 @@
   - `OutPick/Features/Profile/Repository/UserProfileDetailRepositoryProtocol.swift`
   - `OutPick/Features/Profile/Repository/UserProfileDetailRepository.swift`
   - Firestore user profile 상세 조회 구현을 확인한다.
+
+### Modal edge dismiss 파일 지도
+
+| 알고 싶은 내용 | 파일 | 확인할 코드 책임 |
+| --- | --- | --- |
+| edge gesture 임계값과 중복 요청 차단 | `OutPick/Features/Profile/Views/UserProfileDetailViewController.swift` | `edgeDismissProgressThreshold = 0.35`, `edgeDismissVelocityThreshold = 900`, `isDismissRequested`와 `requestDismiss()`를 확인한다. |
+| X 버튼과 edge gesture의 공통 사용자 이벤트 | `OutPick/Features/Profile/ViewModels/UserProfileDetailViewModel.swift` | 두 입력이 최종적으로 사용하는 `backTapped()` 출력 계약을 확인한다. |
+| modal presentation/dismiss route | `OutPick/Features/Profile/UserProfileDetailCoordinator.swift` | 상세 화면 생성과 실제 dismiss 요청 처리를 확인한다. |
+| 기존 왼쪽→오른쪽 modal animation | `OutPick/Infra/Utility/Transitions/ChatModalTransitionManager.swift` | Profile 상세가 재사용하는 presentation/dismiss animator를 확인한다. navigation edge-pop과는 별도 경로다. |
+
+Phase 7에서 삭제한 `UIViewController+InteractiveTransition.swift` 등 미사용 custom transition은 이 modal 경로의 owner가 아니다. Profile 상세는 별도 percent-driven interactive transition을 만들지 않고 threshold 통과 시 위 기존 dismiss 경로를 한 번 호출한다.
 
 ## 도메인, DTO, mapper
 

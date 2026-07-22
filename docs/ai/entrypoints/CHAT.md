@@ -44,7 +44,7 @@ Chat 기능 수정 시 관련 화면, ViewModel, UseCase, Repository, 검색 인
 
 비참여 사용자는 전체 채팅방 목록/검색에서 방을 열어 메시지, 이미지 버블, 비디오 썸네일/메타를 미리 볼 수 있다. 단, 참여 전에는 뒤로가기와 하단 input bar 위치의 참여하기 버튼 외 상호작용을 막는다. 이미지 확대, 동영상 재생, 설정/검색, 메시지 전송/첨부, retry, 메시지 메뉴, 발신자 프로필/룩북 공유 이동 같은 참여자 전용 동작은 `ChatViewController`의 preview guard에서 차단한다.
 
-채팅방 입력창 외 영역 탭 시 키보드 dismiss는 기존 attachment close tap 흐름과 함께 `KeyboardDismissSupport.installKeyboardDismissTapGesture()`로 보강한다.
+채팅방은 `ChatViewController.backgroundTapGesture`가 키보드, attachment, message menu 닫기를 한 곳에서 담당한다. text input과 일반 `UIControl` superview chain touch는 제외하고, message/media/profile/retry/Lookbook cell tap은 `cancelsTouchesInView = false`와 동시 인식으로 원래 action과 background dismiss를 함께 실행한다. `ChatMessageCell` 내부 retry control도 cell action 우선순위로 허용한다. message long press는 `chatMessageCollectionView`, announcement long press와 settings dim tap은 각 leaf view가 소유한다. 공통 `KeyboardDismissSupport` 중복 설치는 Chat에서 사용하지 않는다.
 
 ## 참여중 채팅방 목록
 
@@ -102,9 +102,32 @@ Socket의 text/Lookbook/images/video message callback은 `RealtimeSocketMessageI
 
 `ChatRoomRouteLifecycleState`는 UIKit appearance와 실제 route 소유권을 분리하며 terminal finish는 비가역이다. `ChatViewController.viewWillDisappear`는 strict stream을 닫지 않으며, `viewDidDisappear`에서 navigation stack 제거 또는 modal dismiss가 확정됐을 때 `ChatCoordinator`의 `onRouteRemoved` callback이 stream과 room-close observation을 종료한다. 취소된 interactive pop과 자식 화면 복귀에서는 realtime/search binding과 사용자 활성 상태를 복원하되, terminal route는 어떤 appearance에서도 다시 활성화하지 않는다.
 
+두 Chat root는 `ChatNavigationController`를 사용한다. stack과 push/pop animation은 UIKit 기본 구현을 유지하고, system `interactivePopGestureRecognizer`의 delegate만 Chat 전용 안전 delegate로 교체한다. root stack 또는 active transition에서는 시작을 거부하고 일반 push 화면에서는 leading-edge pop을 허용한다. 화면이 `ChatInteractivePopControlling`으로 거부하면 pop을 시작하지 않으며, `RoomCreateViewController`는 작성 내용의 무확인 유실을 막기 위해 항상 거부한다. 방 생성 이탈은 커스텀 navigation bar의 Back 버튼과 기존 취소 확인창만 사용한다. iOS 26 `interactiveContentPopGestureRecognizer`는 비활성화하지 않는다. 2026-07-22 A/B에서 content-pop만 끈 설정은 실패했고 edge delegate만 교체한 설정은 수동 swipe가 통과했다.
+
+Phase 7에서 호출자가 없던 navigation/modal interactive transition extension과 `PushAnimator`/`PopAnimator`를 제거했다. UIKit 전역 타입의 retroactive navigation/transition delegate conformance는 더 이상 없으며, 실제 Profile modal 경로가 사용하는 `ChatModalTransitionManager`는 유지한다.
+
 같은 navigation stack에서 다른 Chat을 열 때는 `ChatNavigationStackPolicy`가 기존 Chat route를 stack에서 제거하고 non-Chat prefix를 보존한 뒤 새 Chat을 배치한다. 따라서 `목록 → A → B → Back → A` 형태의 종료 route 부활을 허용하지 않는다. 오픈채팅과 참여중 목록은 서로 다른 navigation stack을 계속 소유하므로 탭별 방문 기록은 독립적으로 유지된다.
 
 room ID만 가진 외부 진입은 `ChatCoordinator.openRoom`이 stack별 request gate를 소유한다. `ChatOpenRoomRequestState`가 current token을, `ChatOpenRoomRequestRegistry`가 실제 공유 Task와 정리를 소유한다. 같은 stack·room·snapshot 요청은 동일 Task에 합류하고, 같은 stack의 다른 room은 latest-wins, 다른 stack 요청은 독립 실행한다. 완료 시 token과 navigation snapshot을 다시 검사하므로 같은 target stack에서 직접 방을 열거나 Back/검색/방 생성으로 stack이 변한 이전 결과는 stale drop된다. 단순 탭 전환은 target stack snapshot을 바꾸지 않으며 현재 탭을 강제로 전환하지 않는다. 실제 최신 요청 오류만 호출자에게 전달하고 superseded/stale 완료는 사용자 오류 없이 종료한다.
+
+### Route/lifecycle/gesture 변경 파일 빠른 지도
+
+| 알고 싶은 내용 | 먼저 볼 파일 | 확인할 코드 책임 |
+| --- | --- | --- |
+| 오픈채팅·참여중 root navigation 조립, 외부 room 진입과 같은 stack 교체 | `OutPick/Features/Chat/ChatCoordinator.swift` | 두 root를 `ChatNavigationController`로 만들고, `openRoom` request gate와 `presentChatRoom` stack mutation을 연결한다. |
+| UIKit leading-edge pop 허용/차단 | `OutPick/Features/Chat/ChatNavigationController.swift` | system edge recognizer delegate, root/active transition 차단, `ChatInteractivePopControlling` 화면별 opt-out을 소유한다. iOS 26 content-pop은 유지한다. |
+| 방 생성 화면의 edge-pop 차단과 기존 취소 흐름 | `OutPick/Features/Chat/Controllers/RoomCreateViewController.swift` | `allowsChatInteractivePop == false`로 swipe를 차단하고 기존 custom Back/취소 확인창을 유지한다. |
+| 같은 stack의 Chat 배치 결과 | `OutPick/Features/Chat/ChatNavigationStackPolicy.swift` | non-Chat prefix 보존, 기존 Chat 제거, top same-room no-op를 순수 정책으로 계산한다. |
+| 같은 stack·같은 room 합류와 stale token 판정 | `OutPick/Features/Chat/ChatOpenRoomRequestState.swift` | stack별 current token, room, navigation snapshot과 stale completion 판정을 소유한다. |
+| 실제 fetch Task 공유·취소·정리 | `OutPick/Features/Chat/ChatOpenRoomRequestRegistry.swift` | same-room Task coalesce, same-stack latest-wins, 다른 stack 독립과 실패 후 retry entry 정리를 소유한다. |
+| terminal finish와 transient 복귀 가능 여부 | `OutPick/Features/Chat/ChatRoomRouteLifecycleState.swift` | pop/dismiss/replacement의 비가역 finish와 취소 pop/자식 화면 복귀 상태를 순수하게 판정한다. |
+| Chat route appearance, background dismiss, message long press 설치 위치 | `OutPick/Features/Chat/Controllers/ChatViewController.swift` | route 종료/복귀 wiring, root `backgroundTapGesture`, collection view `messageLongPressGesture`, settings dim과 announcement gesture owner를 확인한다. |
+| background tap이 받을 touch와 cell action 동시 인식 | `OutPick/Features/Chat/Controllers/ChatViewControllerExtension.swift` | text input·일반 control 제외, `ChatMessageCell` action 예외, simultaneous recognition 정책을 확인한다. |
+| retry/media/profile/Lookbook cell action 전달 | `OutPick/Features/Chat/Views/Cell/ChatMessageCell.swift` | `ChatMessageCellCommands` 기반 action 연결을 확인한다. 미사용 long-press delegate는 제거됐다. |
+| Profile modal edge dismiss | `OutPick/Features/Profile/Views/UserProfileDetailViewController.swift`, `docs/ai/entrypoints/PROFILE.md` | 35%/900pt/s threshold, 중복 dismiss gate와 기존 Coordinator/transition 재사용을 확인한다. |
+| 제거된 custom transition의 대체 경계 | `OutPick/Features/Chat/ChatNavigationController.swift`, `OutPick/Infra/Utility/Transitions/ChatModalTransitionManager.swift` | navigation은 UIKit system pop, Profile modal은 실제 사용 중인 modal transition manager가 담당한다. 삭제된 네 transition 파일을 다시 참조하지 않는다. |
+
+삭제 완료 파일은 `OutPick/Infra/Utility/Transitions/UINavigationController+InteractiveTransition.swift`, `UIViewController+InteractiveTransition.swift`, `PushAnimator.swift`, `PopAnimator.swift`다. 호출자가 없던 전역 custom navigation/interactive transition 경로이며, 현재 navigation과 Profile modal의 실제 owner는 위 표를 따른다.
 
 `RealtimeSocketService`는 새 `SocketIOClient`를 만들 때 lifecycle 3개와 named event 5개 listener를 연결 전에 한 번 등록한다. reconnect나 room consumer 생성·종료 중에는 `off/on`으로 Socket.IO handler 배열을 변경하지 않으며, listener lifetime은 Socket client lifetime과 같다. consumer가 없는 메시지는 actor의 room session lookup에서 drop한다. Socket.IO raw logger는 인증 payload 노출을 막기 위해 사용하지 않는다. 관련 안정화 설계와 반복 reconnect gate는 `docs/ai/tasks/core-infrastructure-modularization/phases/phase-6-ios-socket-stabilization.md`를 따른다.
 
@@ -176,6 +199,7 @@ Explicit read 진단은 `ChatRoomViewModel.persistExplicitLatestJumpForCurrentUs
 - 설정 화면: `OutPick/Features/Chat/Controllers/ChatRoomSettingViewController.swift`
 - 수정 UseCase: `OutPick/Features/Chat/Domain/UseCases/RoomEditUseCase.swift`
 - 화면 라우팅/이벤트: `OutPick/Features/Chat/ChatCoordinator.swift`
+- Chat navigation edge-pop: `OutPick/Features/Chat/ChatNavigationController.swift`
 - 현재 채팅 화면 반영: `OutPick/Features/Chat/Controllers/ChatViewController.swift`
 
 방장 사용자가 방 정보를 수정하면 Firestore room document listener가 아니라 설정 화면 완료 콜백과 Coordinator 이벤트로 현재 채팅 화면의 메모리 room snapshot을 갱신한다. `ChatViewController.applyUpdatedRoom(_:)`가 navigation title, room diff, ViewModel room snapshot 갱신을 담당한다.

@@ -2,28 +2,27 @@
 
 ## 현재 상태
 
-- 현재 핵심 task는 `chat-route-lifecycle-hardening`이다. runtime 분석과 D1~D13 제품·기술 결정 뒤 Phase 1~4 구현, 관련 20개 자동 시나리오와 하네스 최신화를 완료했다. 로그인 iPhone 17 Pro Max에서 탭별 stack, A→B 교체/Back과 Brand/Season/Post 이동 성공 QA가 통과했고, 지연 중 잠금과 비오염 A deinit 증거만 남았다.
+- 현재 진행 중인 핵심 task는 없다. `chat-route-lifecycle-hardening`은 Phase 6~9 구현, 최신 24개 핵심·86개 영향 범위 회귀와 검색 prefix·Lookbook→Chat·탭별 stack 수동 QA를 완료하고 2026-07-22 종료했다.
 - `socket-ingress-ordering-hardening`은 Phase 1~6 구현, 자동 회귀와 실제 Firebase/Simulator 핵심 QA를 완료하고 2026-07-17 종료했다.
 - `socket-message-dedupe-hardening`은 구현·자동 회귀·candidate closeout을 완료하고 2026-07-16 종료했다.
 - `firestore-document-id-boundary-cleanup`은 Phase 1~4 구현·QA, rules 운영 배포, 운영 `Rooms.ID` cleanup과 사후 재감사까지 완료하고 2026-07-14 종료했다.
 - `core-infrastructure-modularization`은 Phase 2~5 구현, Phase 6 동일 SHA 회귀, Socket/Functions 운영 배포, D49 안정화와 통합 수동 QA까지 완료하고 2026-07-14 종료했다.
 - FCM/APNs 채팅 알림은 Apple Developer 계정 결제와 APNs/Firebase Apple app 설정 후 별도 구현·실기기 QA task로 진행한다. 초기에는 메시지별 알림과 방별 thread grouping을 사용하고 custom 요약은 운영 피드백 이후 검토한다.
-- Chat route/ViewModel 생존 분석에서 LLDB expression retain 오염과 production Back deinit을 분리해 retain leak 가설은 기각했다. 대신 같은 stack의 A → B → Back에서 종료된 A가 부분 복귀하는 lifecycle 결함과 `openRoom` 경쟁 경계를 확정했으며 `chat-route-lifecycle-hardening`에서 설계·구현한다.
+- Chat route/ViewModel 생존 분석에서 LLDB expression retain 오염과 production Back deinit을 분리해 retain leak 가설은 기각했다. 확인된 같은 stack의 종료 route 부분 복귀와 `openRoom` 경쟁은 완료한 `chat-route-lifecycle-hardening`에서 수정·검증했다.
 - `socket-ingress-ordering-hardening`의 선택적 후속 QA는 이미 보이는 target의 card 억제와 실기기 VoiceOver 발화·포커스 확인이다. 핵심 읽음·수렴 정확성 완료를 막지 않으며 필요할 때 별도 QA로 수행한다.
-- 최근 완료 구현 작업은 `socket-ingress-ordering-hardening`이다.
+- 최근 완료 구현 작업은 `chat-route-lifecycle-hardening`이다.
 - 새 작업을 시작할 때 이 문서에는 현재 task 한 건과 바로 이전 완료 작업만 상세 링크로 유지한다.
 - 오래된 완료 이력은 각 task의 `progress.md`, 장기 결정은 `docs/ai/ADR.md`에서 확인한다.
 
 ## 현재 핵심 작업
 
-| 작업 | 상태 | 목표 | 상세 |
-| --- | --- | --- | --- |
-| `chat-route-lifecycle-hardening` | Phase 1~4 구현·자동 검증 완료, 핵심 화면 QA 통과·지연/비오염 deinit QA 잔여 | 탭별 stack 독립을 유지하면서 같은 stack Chat 교체, stack별 `openRoom` single-flight/latest-wins, terminal/transient lifecycle과 룩북 이동 UX를 일관되게 만든다. | [design](chat-route-lifecycle-hardening/design.md), [decisions](chat-route-lifecycle-hardening/decisions.md), [plan](chat-route-lifecycle-hardening/plan.md), [progress](chat-route-lifecycle-hardening/progress.md), [qa](chat-route-lifecycle-hardening/qa-checklist.md) |
+- 없음.
 
 ## 최근 완료 작업
 
 | 작업 | 상태 | 핵심 결과 | 상세 |
 | --- | --- | --- | --- |
+| `chat-route-lifecycle-hardening` | 완료·Phase 6~9 자동 회귀와 Simulator/실기기 QA 완료 | 탭별 Chat stack, same-stack 교체, stack별 request 경쟁, terminal/transient lifecycle, UIKit edge-pop과 Chat gesture 책임 정리 | [progress](chat-route-lifecycle-hardening/progress.md), [qa](chat-route-lifecycle-hardening/qa-checklist.md) |
 | `socket-ingress-ordering-hardening` | 완료·Phase 1~6 자동 회귀와 실제 Firebase/Simulator QA 완료 | 순차 ingress, visible strict recovery, bounded Banner, reconnect/route lifecycle, 대규모 unread catch-up과 visible read frontier | [progress](socket-ingress-ordering-hardening/progress.md), [qa](socket-ingress-ordering-hardening/qa-checklist.md), [Phase 6](socket-ingress-ordering-hardening/phase-6-unread-catch-up-read-frontier.md) |
 | `socket-message-dedupe-hardening` | 완료·candidate closeout 완료·운영 traffic 전환 별도 승인 | 전체 실시간 메시지 winner-only emit/push, 공통 ACK 수렴과 iOS 최근 ID 300개 ingress dedupe | [progress](socket-message-dedupe-hardening/progress.md), [qa](socket-message-dedupe-hardening/qa-checklist.md) |
 | `firestore-document-id-boundary-cleanup` | 완료·rules 운영 배포·데이터 cleanup·통합 QA 완료 | 경로 document ID를 canonical source로 통일하고 앱 `@DocumentID`와 운영 Rooms 중복 ID를 제거 | [progress](firestore-document-id-boundary-cleanup/progress.md), [qa](firestore-document-id-boundary-cleanup/qa-checklist.md), [ADR-020](../adr/ADR-020-firestore-문서-identity는-문서-경로-id를-단일-기준으로-사용한다.md) |
@@ -49,8 +48,9 @@
 7. 화면 transient 복귀: `OutPick/Features/Chat/Controllers/ChatViewController.swift`
 8. cross-feature route: `OutPick/App/Routing/DefaultAppContentRouter.swift`
 9. 룩북 이동 UI: `OutPick/Features/Lookbook/Views/Shared/LookbookShareConfirmationBar.swift`, Brand/Season/Post detail views
-10. 자동 검증: `OutPickTests/ChatNavigationStackPolicyTests.swift`, `ChatOpenRoomRequestStateTests.swift`, `ChatOpenRoomRequestRegistryTests.swift`, `ChatRoomRouteLifecycleStateTests.swift`
+10. 자동 검증: `OutPickTests/ChatNavigationControllerTests.swift`, `ChatNavigationStackPolicyTests.swift`, `ChatOpenRoomRequestStateTests.swift`, `ChatOpenRoomRequestRegistryTests.swift`, `ChatRoomRouteLifecycleStateTests.swift`
 11. 검증 설계: `chat-route-lifecycle-hardening/qa-checklist.md`
+12. 완료한 Phase 6~9: UIKit pop A/B와 최소 수정 → 미사용 interactive transition 제거 → Chat tap/long-press 범위 축소 → 핵심 24개·영향 범위 86개 회귀와 실기기 QA
 
 ### 삭제 purge drain
 
