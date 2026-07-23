@@ -27,7 +27,7 @@ struct LookbookExtractionReviewViewModelTests {
 
     @Test func insufficientImagesStaysOnReviewAndReloads() async {
         let repository = ExtractionReviewRepositoryFake()
-        repository.review = makeReview()
+        repository.review = makeReview(expectedCounts: [45])
         let viewModel = LookbookExtractionReviewViewModel(
             brandID: BrandID(value: "brand-1"),
             jobID: "job-1",
@@ -41,6 +41,71 @@ struct LookbookExtractionReviewViewModelTests {
         #expect(repository.submittedDecision == .insufficientImages)
         #expect(repository.submittedExpectedCount == 45)
         #expect(repository.loadCount == 2)
+    }
+
+    @Test func fewerCandidatesPrefillsExpectedCountAndBlocksApproval() async {
+        let repository = ExtractionReviewRepositoryFake()
+        let review = makeReview(expectedCounts: [24])
+        repository.review = review
+        var completed = false
+        let viewModel = LookbookExtractionReviewViewModel(
+            brandID: review.brandID,
+            jobID: review.jobID,
+            useCase: ManageLookbookExtractionReviewUseCase(repository: repository),
+            onCompleted: { completed = true }
+        )
+
+        await viewModel.load()
+        #expect(viewModel.expectedCandidateCountText == "24")
+        #expect(viewModel.canReportInsufficientImages)
+
+        await viewModel.approve()
+        #expect(repository.submittedDecision == nil)
+        #expect(!completed)
+    }
+
+    @Test func unknownExpectedCountAllowsApprovalAndRequiresCountForShortage() async {
+        let repository = ExtractionReviewRepositoryFake()
+        let review = makeReview(expectedCounts: [])
+        repository.review = review
+        let viewModel = LookbookExtractionReviewViewModel(
+            brandID: review.brandID,
+            jobID: review.jobID,
+            useCase: ManageLookbookExtractionReviewUseCase(repository: repository),
+            onCompleted: {}
+        )
+
+        await viewModel.load()
+        #expect(review.allowsApproval)
+        #expect(review.showsInsufficientImagesForm)
+        #expect(!viewModel.canReportInsufficientImages)
+
+        viewModel.expectedCandidateCountText = "2"
+        #expect(viewModel.canReportInsufficientImages)
+    }
+
+    @Test func contentIntegrityIssueBlocksApprovalAndShortageReport() async {
+        let repository = ExtractionReviewRepositoryFake()
+        let review = makeReview(
+            expectedCounts: [1],
+            qualityReasons: ["content_hash_incomplete"]
+        )
+        repository.review = review
+        let viewModel = LookbookExtractionReviewViewModel(
+            brandID: review.brandID,
+            jobID: review.jobID,
+            useCase: ManageLookbookExtractionReviewUseCase(repository: repository),
+            onCompleted: {}
+        )
+
+        await viewModel.load()
+        await viewModel.approve()
+        viewModel.expectedCandidateCountText = "2"
+        await viewModel.reportInsufficientImages()
+
+        #expect(repository.submittedDecision == nil)
+        #expect(!review.allowsApproval)
+        #expect(!review.showsInsufficientImagesForm)
     }
 
     @Test func loadFailureCanRetryWithoutRecreatingViewModel() async {
@@ -90,7 +155,10 @@ struct LookbookExtractionReviewViewModelTests {
         #expect(completed)
     }
 
-    private func makeReview() -> LookbookExtractionReview {
+    private func makeReview(
+        expectedCounts: [Int] = [0],
+        qualityReasons: [String] = ["expected_count_mismatch"]
+    ) -> LookbookExtractionReview {
         LookbookExtractionReview(
             jobID: "job-1",
             brandID: BrandID(value: "brand-1"),
@@ -98,8 +166,8 @@ struct LookbookExtractionReviewViewModelTests {
             reviewStatus: .pending,
             reviewGeneration: 1,
             reviewSnapshotHash: "snapshot",
-            qualityReasons: ["programmatic_gallery_requires_review"],
-            expectedCandidateCounts: [1],
+            qualityReasons: qualityReasons,
+            expectedCandidateCounts: expectedCounts,
             candidates: [
                 LookbookExtractionReviewCandidate(
                     candidateKey: "candidate-1",
