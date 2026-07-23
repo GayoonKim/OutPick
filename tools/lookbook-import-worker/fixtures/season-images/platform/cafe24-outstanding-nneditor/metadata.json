@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "platform-cafe24-outstanding-nneditor",
+  "kind": "season_images",
+  "classification": "platform",
+  "sourceURL": "https://outstanding-co.kr/lookbook/detail.html?product_no=5151",
+  "inputFile": "input.html",
+  "provenance": {
+    "kind": "synthetic",
+    "issue": "NNEditor copy 접두 파일과 Cafe24 관리 asset 필터 회귀"
+  }
+}

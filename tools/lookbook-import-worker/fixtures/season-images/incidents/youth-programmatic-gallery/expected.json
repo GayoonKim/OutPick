@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "candidates": [
+    {
+      "type": "exact",
+      "key": "https://youth-lab.kr/web/upload/youth/ss26-hero.jpg"
+    },
+    {
+      "type": "numeric_range",
+      "template": "https://youth-lab.kr/web/upload/youth/ss26_lookbook_2/sep/{index}.jpg",
+      "start": 1,
+      "end": 45
+    }
+  ],
+  "negativeCandidateKeys": [],
+  "orderPolicy": "strict",
+  "strategy": "playwright:lookbookContent+staticMerge",
+  "adapter": {
+    "platformKey": "cafe24",
+    "domainKey": null
+  },
+  "quality": {
+    "status": "needsReview",
+    "reasons": ["programmatic_gallery_requires_review"]
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "incident-youth-programmatic-gallery",
+  "kind": "season_images",
+  "classification": "incident",
+  "sourceURL": "https://youth-lab.kr/page/collection_detail.html?product_no=6052&cate_no=25&display_group=1",
+  "inputFile": "input.html",
+  "renderedFile": "rendered.html",
+  "provenance": {
+    "kind": "incident_minimized",
+    "issue": "strong static hero 1개가 script gallery 45개를 가린 silent under-extraction"
+  }
+}

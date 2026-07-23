@@ -7,7 +7,8 @@
   "scripts": {
     "build": "tsc",
     "lint": "eslint --ext .ts src",
-    "test": "npm run build && node --test lib/**/*.test.js",
+    "test": "npm run build && node --test lib/*.test.js lib/**/*.test.js",
+    "test:fixtures": "npm run build && node lib/fixture/run-corpus.js",
     "start": "node lib/index.js",
     "dev": "tsx src/index.ts"
   },

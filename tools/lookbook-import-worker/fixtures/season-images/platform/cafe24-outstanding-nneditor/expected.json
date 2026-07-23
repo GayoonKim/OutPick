@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "candidates": [
+    {
+      "type": "exact",
+      "key": "https://outstanding-co.kr/web/upload/NNEditor/20260430/copy-1777525142-22028Low29.jpg"
+    },
+    {
+      "type": "exact",
+      "key": "https://outstanding-co.kr/web/upload/NNEditor/20260430/copy-1777525142-32028Low29.jpg"
+    },
+    {
+      "type": "exact",
+      "key": "https://outstanding-co.kr/web/upload/NNEditor/20260623/1.jpg"
+    }
+  ],
+  "negativeCandidateKeys": [
+    "https://img.echosting.cafe24.com/skin/base_ko_KR/product/btn_count_up.gif"
+  ],
+  "orderPolicy": "strict",
+  "strategy": "mainContent",
+  "adapter": {
+    "platformKey": "cafe24",
+    "domainKey": null
+  },
+  "quality": {
+    "status": "accepted",
+    "reasons": []
+  }
+}

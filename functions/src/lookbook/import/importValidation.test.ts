@@ -7,7 +7,13 @@ import {
 } from "./functions.js";
 
 test("중복 season import를 막는 상태 계약을 유지한다", () => {
-  for (const status of ["queued", "processing", "succeeded", "partialFailed"]) {
+  for (const status of [
+    "queued",
+    "processing",
+    "awaitingReview",
+    "succeeded",
+    "partialFailed",
+  ]) {
     assert.equal(blocksDuplicateSeasonImport(status), true);
   }
   assert.equal(blocksDuplicateSeasonImport("failed"), false);

@@ -62,6 +62,12 @@ const callableNames = [
   "requestSeasonImport",
   "requestSeasonAssetRetry",
   "requestSeasonCandidateImportJobs",
+  "getLookbookExtractionReview",
+  "reviewLookbookExtraction",
+  "requestLookbookExtractionReanalysis",
+  "requestLookbookSeasonRepair",
+  "previewLookbookSeasonRepair",
+  "applyLookbookSeasonRepair",
   "runLookbookExtractionDiagnostic",
   "getLatestLookbookExtractionDiagnostic",
   "discoverSeasonCandidates",
@@ -107,12 +113,19 @@ const scheduleEndpoints = {
     timeoutSeconds: null,
     availableMemoryMb: null,
   },
+  cleanupExpiredLookbookExtractionEvidence: {
+    schedule: "45 4 * * *",
+    timeZone: "Asia/Seoul",
+    timeoutSeconds: null,
+    availableMemoryMb: null,
+  },
 } as const;
 
 const callableOverrides = {
   requestSeasonCandidateImportJobs: {timeoutSeconds: 120, availableMemoryMb: 512},
   runLookbookExtractionDiagnostic: {timeoutSeconds: 120, availableMemoryMb: 512},
   discoverSeasonCandidates: {timeoutSeconds: 60, availableMemoryMb: 512},
+  applyLookbookSeasonRepair: {timeoutSeconds: 120, availableMemoryMb: 512},
 } as const;
 
 function endpoint(namedExport: string): Endpoint {
@@ -131,13 +144,13 @@ function runtimeNumber(value: unknown): number | null {
   return typeof value === "number" ? value : null;
 }
 
-test("Firebase deployment export 이름 49개를 유지한다", () => {
+test("Firebase deployment export 이름 56개를 유지한다", () => {
   const expected = [
     ...callableNames,
     ...Object.keys(firestoreEndpoints),
     ...Object.keys(scheduleEndpoints),
   ].sort();
-  assert.equal(expected.length, 49);
+  assert.equal(expected.length, 56);
   assert.deepEqual(Object.keys(exportedFunctions).sort(), expected);
 });
 

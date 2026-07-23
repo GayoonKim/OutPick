@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "platform-cafe24-outstanding-discovery",
+  "kind": "discovery",
+  "classification": "platform",
+  "sourceURL": "https://outstanding-co.kr/lookbook/list.html?cate_no=125",
+  "inputFile": "input.html",
+  "provenance": {
+    "kind": "synthetic",
+    "issue": "OUTSTANDING inline 회귀를 Cafe24 discovery 최소 구조로 승격"
+  }
+}

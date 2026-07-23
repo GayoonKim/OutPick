@@ -4,9 +4,27 @@ import test from "node:test";
 import {
   extractImageCandidates,
   fallbackReasonForExtraction,
+  requiresApprovedReviewSnapshot,
 } from "./processor.js";
 
 const candidate = {sourceURL: "https://brand.example/lookbook.jpg", alt: null};
+
+test("repair materializing 재개는 review snapshot을 별도로 요구하지 않는다", () => {
+  assert.equal(
+    requiresApprovedReviewSnapshot({
+      resumeFrom: "materializing",
+      repairTargetSeasonID: "season-1",
+    }),
+    false,
+  );
+  assert.equal(
+    requiresApprovedReviewSnapshot({
+      resumeFrom: "materializing",
+      repairTargetSeasonID: null,
+    }),
+    true,
+  );
+});
 
 test("정적 후보가 없으면 Playwright fallback 대상이다", () => {
   assert.equal(
@@ -33,6 +51,58 @@ test("강한 section 후보가 충분하면 fallback을 실행하지 않는다",
     ),
     null,
   );
+});
+
+test("이미지 후보에 extraction evidence와 version을 연결한다", () => {
+  const extraction = extractImageCandidates(
+    [
+      "<div class=\"xans-product-additional archive-source-detail\">",
+      "<img src=\"/look-01.jpg\">",
+      "<img src=\"/look-02.jpg\">",
+      "</div>",
+    ].join(""),
+    "https://brand.example/archive?token=secret&cate_no=25",
+  );
+
+  assert.equal(extraction.candidateEvidence.length, 2);
+  assert.match(
+    extraction.candidateEvidence[0]?.candidateKey ?? "",
+    /^[a-f0-9]{24}$/,
+  );
+  assert.equal(
+    extraction.candidateEvidence[0]?.strategy,
+    "archiveSourceDetail",
+  );
+  assert.deepEqual(extraction.candidateEvidence[0]?.source.queryKeys, [
+    "cate_no",
+    "token",
+  ]);
+  assert.equal(
+    JSON.stringify(extraction.candidateEvidence).includes("secret"),
+    false,
+  );
+  assert.deepEqual(extraction.versions, {
+    extractorVersion: "1.2.0",
+    platformAdapterKey: "cafe24",
+    platformAdapterVersion: "1.0.0",
+    domainAdapterKey: null,
+    domainAdapterVersion: null,
+  });
+});
+
+test("Cafe24 근거가 없는 archive class는 platform 규칙을 적용하지 않는다", () => {
+  const extraction = extractImageCandidates(
+    [
+      "<div class=\"archive-source-detail\">",
+      "<img src=\"/look-01.jpg\">",
+      "<img src=\"/look-02.jpg\">",
+      "</div>",
+    ].join(""),
+    "https://generic.example/archive",
+  );
+
+  assert.equal(extraction.strategy, "filteredPageImages");
+  assert.equal(extraction.versions.platformAdapterKey, null);
 });
 
 test("낮은 strategy의 단일 후보는 fallback 대상이다", () => {

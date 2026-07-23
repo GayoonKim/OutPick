@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "candidates": [
+    {
+      "type": "exact",
+      "key": "https://hatchingroom.com/web/upload/NNEditor/20260608/Hatchingroom2026SS_man_5_052.jpg"
+    },
+    {
+      "type": "exact",
+      "key": "https://hatchingroom.com/web/upload/NNEditor/20260608/Hatchingroom2026SS_man_5_085.jpg"
+    },
+    {
+      "type": "exact",
+      "key": "https://hatchingroom.com/web/upload/NNEditor/20260608/copy-Hatchingroom2026SS_man_2_351.jpg"
+    }
+  ],
+  "negativeCandidateKeys": [
+    "https://img.echosting.cafe24.com/skin/base_ko_KR/product/btn_count_up.gif"
+  ],
+  "orderPolicy": "strict",
+  "strategy": "archiveSourceDetail",
+  "adapter": {
+    "platformKey": "cafe24",
+    "domainKey": null
+  },
+  "quality": {
+    "status": "accepted",
+    "reasons": []
+  }
+}

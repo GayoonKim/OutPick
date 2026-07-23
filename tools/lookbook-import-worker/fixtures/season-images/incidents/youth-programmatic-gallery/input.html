@@ -1,0 +1,23 @@
+<!doctype html>
+<html>
+<body>
+  <div class="xans-product-additional">
+    <img ec-data-src="/web/upload/youth/ss26-hero.jpg" alt="YOUTH SS26">
+  </div>
+  <div id="lookbookGrid2"></div>
+  <script>
+    const GRID_CONFIG = {
+      lookbookGrid2: {
+        total: 45,
+        baseURL: "/web/upload/youth/ss26_lookbook_2/sep/"
+      }
+    };
+    const config = GRID_CONFIG.lookbookGrid2;
+    for (let index = 1; index <= config.total; index += 1) {
+      const image = document.createElement("img");
+      image.setAttribute("data-src", config.baseURL + index + ".jpg");
+      document.getElementById("lookbookGrid2").appendChild(image);
+    }
+  </script>
+</body>
+</html>

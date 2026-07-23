@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "platform-cafe24-hatchingroom-archive-source",
+  "kind": "season_images",
+  "classification": "platform",
+  "sourceURL": "https://hatchingroom.com/product/archive-detail.html?cate_no=226&display_group=1&product_no=3757",
+  "inputFile": "input.html",
+  "provenance": {
+    "kind": "incident_minimized",
+    "issue": "2026-07-22 공개 페이지의 archive-source-detail/NNEditor 최소 구조"
+  }
+}

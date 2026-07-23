@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "candidates": [
+    {
+      "type": "exact",
+      "key": "https://outstanding-co.kr/product/archive-detail.html?product_no=5153&cate_no=125",
+      "title": "OUTSTANDING FW 2026"
+    },
+    {
+      "type": "exact",
+      "key": "https://outstanding-co.kr/product/archive-detail.html?product_no=5001&cate_no=125",
+      "title": "OUTSTANDING SS 2026"
+    },
+    {
+      "type": "exact",
+      "key": "https://outstanding-co.kr/product/archive-detail.html?product_no=4901&cate_no=125",
+      "title": "OUTSTANDING FW 2025"
+    }
+  ],
+  "negativeCandidateKeys": [
+    "https://outstanding-co.kr/cart",
+    "https://instagram.com/outstanding"
+  ],
+  "orderPolicy": "strict",
+  "strategy": "staticAnchors",
+  "adapter": {
+    "platformKey": "cafe24",
+    "domainKey": null
+  },
+  "quality": null
+}
