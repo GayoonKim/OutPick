@@ -2,14 +2,15 @@
 
 ## 현재 상태
 
-- 현재 진행 중인 핵심 task는 없다. `chat-route-lifecycle-hardening`은 Phase 6~9 구현, 최신 24개 핵심·86개 영향 범위 회귀와 검색 prefix·Lookbook→Chat·탭별 stack 수동 QA를 완료하고 2026-07-22 종료했다.
+- 현재 진행 중인 핵심 task는 없다. `lookbook-extraction-learning-loop`는 Phase 1~8 구현·자동 회귀·운영 worker 배포·승인된 실제 URL smoke까지 완료했다. 이후 사용자 승인으로 운영 YOUTH 브랜드/시즌/포스트/import/extraction 데이터와 Storage를 영구 삭제했으며 Chat 공유 snapshot 1개와 최소 감사 로그 1개만 보존했다.
+- 현재 룩북 작업 다음 핵심 task는 `development-production-environment-separation`으로 확정했다. 하나의 Xcode 프로젝트와 app target을 유지하면서 Development는 `GayoonKim.OutPick.dev`/`outpick-test`, Production은 `GayoonKim.OutPick`/`outpick-664ae`로 분리하고 `feature/* → PR → main → release tag → 승인 기반 운영 배포` 흐름을 구성한다. 현재는 문서 기록만 완료했으며 룩북 작업 종료와 사용자 재개 승인 전에는 브랜치·Xcode·Firebase·외부 콘솔·배포를 변경하지 않는다.
 - `socket-ingress-ordering-hardening`은 Phase 1~6 구현, 자동 회귀와 실제 Firebase/Simulator 핵심 QA를 완료하고 2026-07-17 종료했다.
-- `socket-message-dedupe-hardening`은 구현·자동 회귀·candidate closeout을 완료하고 2026-07-16 종료했다.
+- `socket-message-dedupe-hardening`은 구현·자동 회귀·candidate closeout을 완료하고 2026-07-16 종료했으며, 2026-07-22 사용자 승인 후 candidate를 운영 traffic 100%로 전환했다.
 - `firestore-document-id-boundary-cleanup`은 Phase 1~4 구현·QA, rules 운영 배포, 운영 `Rooms.ID` cleanup과 사후 재감사까지 완료하고 2026-07-14 종료했다.
 - `core-infrastructure-modularization`은 Phase 2~5 구현, Phase 6 동일 SHA 회귀, Socket/Functions 운영 배포, D49 안정화와 통합 수동 QA까지 완료하고 2026-07-14 종료했다.
 - FCM/APNs 채팅 알림은 Apple Developer 계정 결제와 APNs/Firebase Apple app 설정 후 별도 구현·실기기 QA task로 진행한다. 초기에는 메시지별 알림과 방별 thread grouping을 사용하고 custom 요약은 운영 피드백 이후 검토한다.
-- Chat route/ViewModel 생존 분석에서 LLDB expression retain 오염과 production Back deinit을 분리해 retain leak 가설은 기각했다. 확인된 같은 stack의 종료 route 부분 복귀와 `openRoom` 경쟁은 완료한 `chat-route-lifecycle-hardening`에서 수정·검증했다.
-- `socket-ingress-ordering-hardening`의 선택적 후속 QA는 이미 보이는 target의 card 억제와 실기기 VoiceOver 발화·포커스 확인이다. 핵심 읽음·수렴 정확성 완료를 막지 않으며 필요할 때 별도 QA로 수행한다.
+- Chat route/ViewModel 생존 분석에서 LLDB expression retain 오염과 production Back deinit을 분리해 retain leak 가설은 기각했다. 확인된 같은 stack의 종료 route 부분 복귀와 `openRoom` 경쟁은 완료한 `chat-route-lifecycle-hardening`에서 수정·검증했다. 추가 retain 경로 분석은 2026-07-22 사용자 결정으로 후속 목록에서 제외했으며, 디버거 오염 없는 production 지속 생존이 새로 재현될 때만 별도 leak task로 연다.
+- `socket-ingress-ordering-hardening`의 이미 보이는 target card 억제는 2026-07-22 사용자 수동 QA로 완료했다. 실기기 VoiceOver 발화·포커스 확인은 같은 날 사용자 결정으로 후속 범위에서 제외했다. 기존 접근성 label/value 구현은 유지한다.
 - 최근 완료 구현 작업은 `chat-route-lifecycle-hardening`이다.
 - 새 작업을 시작할 때 이 문서에는 현재 task 한 건과 바로 이전 완료 작업만 상세 링크로 유지한다.
 - 오래된 완료 이력은 각 task의 `progress.md`, 장기 결정은 `docs/ai/ADR.md`에서 확인한다.
@@ -18,13 +19,22 @@
 
 - 없음.
 
+## 다음 핵심 작업
+
+- `development-production-environment-separation`
+  - [design](development-production-environment-separation/design.md)
+  - [decisions](development-production-environment-separation/decisions.md)
+  - [progress](development-production-environment-separation/progress.md)
+  - 상태: 사용자 결정 D1~D7 문서화 완료, 구현 보류. 현재 룩북 작업 완료 후 깨끗한 `main`에서 별도 작업으로 활성화한다.
+
 ## 최근 완료 작업
 
 | 작업 | 상태 | 핵심 결과 | 상세 |
 | --- | --- | --- | --- |
+| `lookbook-extraction-learning-loop` | 완료·Phase 1~8·운영 worker 배포와 실제 URL smoke·YOUTH 데이터 정리 완료 | silent under-extraction 차단, review/trust/evidence/repair, Generic→Cafe24 adapter와 fixture differential | [progress](lookbook-extraction-learning-loop/progress.md), [qa](lookbook-extraction-learning-loop/qa-checklist.md) |
 | `chat-route-lifecycle-hardening` | 완료·Phase 6~9 자동 회귀와 Simulator/실기기 QA 완료 | 탭별 Chat stack, same-stack 교체, stack별 request 경쟁, terminal/transient lifecycle, UIKit edge-pop과 Chat gesture 책임 정리 | [progress](chat-route-lifecycle-hardening/progress.md), [qa](chat-route-lifecycle-hardening/qa-checklist.md) |
 | `socket-ingress-ordering-hardening` | 완료·Phase 1~6 자동 회귀와 실제 Firebase/Simulator QA 완료 | 순차 ingress, visible strict recovery, bounded Banner, reconnect/route lifecycle, 대규모 unread catch-up과 visible read frontier | [progress](socket-ingress-ordering-hardening/progress.md), [qa](socket-ingress-ordering-hardening/qa-checklist.md), [Phase 6](socket-ingress-ordering-hardening/phase-6-unread-catch-up-read-frontier.md) |
-| `socket-message-dedupe-hardening` | 완료·candidate closeout 완료·운영 traffic 전환 별도 승인 | 전체 실시간 메시지 winner-only emit/push, 공통 ACK 수렴과 iOS 최근 ID 300개 ingress dedupe | [progress](socket-message-dedupe-hardening/progress.md), [qa](socket-message-dedupe-hardening/qa-checklist.md) |
+| `socket-message-dedupe-hardening` | 완료·candidate closeout·운영 traffic 100% 전환 완료 | 전체 실시간 메시지 winner-only emit/push, 공통 ACK 수렴과 iOS 최근 ID 300개 ingress dedupe | [progress](socket-message-dedupe-hardening/progress.md), [qa](socket-message-dedupe-hardening/qa-checklist.md) |
 | `firestore-document-id-boundary-cleanup` | 완료·rules 운영 배포·데이터 cleanup·통합 QA 완료 | 경로 document ID를 canonical source로 통일하고 앱 `@DocumentID`와 운영 Rooms 중복 ID를 제거 | [progress](firestore-document-id-boundary-cleanup/progress.md), [qa](firestore-document-id-boundary-cleanup/qa-checklist.md), [ADR-020](../adr/ADR-020-firestore-문서-identity는-문서-경로-id를-단일-기준으로-사용한다.md) |
 | `core-infrastructure-modularization` | 완료·운영 배포·통합 QA 완료, FCM 별도 보류 | iOS Functions/GRDB, Firebase Functions, Socket을 기능별 경계와 공통 runtime, 얇은 entrypoint로 전환 | [progress](core-infrastructure-modularization/progress.md), [qa](core-infrastructure-modularization/qa-checklist.md), [ADR-019](../adr/ADR-019-핵심-인프라는-기능별-모듈러-경계와-현재-배포-단위를-유지한다.md) |
 | `lookbook-deletion-purge-drain` | 완료·운영 배포·QA 완료 | 일일 purge의 전체 20개 상한 제거, cursor drain, 브랜드별 lease/최대 3개 병렬, 7분 claim cutoff | [progress](lookbook-deletion-purge-drain/progress.md), [decisions](lookbook-deletion-purge-drain/decisions.md), [ADR-018](../adr/ADR-018-룩북-영구-삭제는-일일-bounded-drain과-브랜드-lease로-처리한다.md) |

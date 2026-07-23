@@ -61,6 +61,8 @@ Repository가 `DocumentSnapshot.documentID`를 같은 snapshot에서 decode한 D
 | 브랜드 관리 | `Views/Admin/AdminBrandManagementView.swift` | `AdminBrandManagementViewModel.swift` |
 | 삭제 관리 | `Views/Admin/AdminLookbookDeletionManagementView.swift` | `AdminLookbookDeletionManagementViewModel.swift` |
 | import 현황 | `Views/BrandDetail/SeasonImportManagementView.swift` | `SeasonImportManagementViewModel.swift` |
+| extraction 검토 | `Views/BrandDetail/LookbookExtractionReviewView.swift` | `LookbookExtractionReviewViewModel.swift` |
+| 기존 시즌 보수 | `Views/BrandDetail/LookbookSeasonRepairView.swift` | `LookbookSeasonRepairViewModel.swift` |
 
 경로 prefix는 `OutPick/Features/Lookbook/`이다.
 
@@ -153,6 +155,8 @@ Repository가 `DocumentSnapshot.documentID`를 같은 snapshot에서 decode한 D
 | 관리자 | `BrandManagement.swift`, `BrandRequest.swift` | brand admin/request repository/use cases |
 | 삭제 | `LookbookDeletionRequest.swift` | `LookbookDeletionRepositoryProtocol` |
 | import | `SeasonImportJob.swift`, `SeasonCandidate.swift`, `LookbookExtractionDiagnostic.swift` | import/discovery repositories |
+| extraction review | `LookbookExtractionReview.swift` | `LookbookExtractionReviewRepositoryProtocol`, `ManageLookbookExtractionReviewUseCase` |
+| existing-season repair | `LookbookSeasonRepair.swift` | `LookbookSeasonRepairRepositoryProtocol`, `ManageLookbookSeasonRepairUseCase` |
 
 - protocol은 `Domains/UseCases`, `Repositories/Protocols`에서 찾는다.
 - 외부 구현은 `Repositories/Implementations`, DTO는 `Models/DTOs`, 변환은 `Models/Mapper`에서 찾는다.
@@ -165,6 +169,8 @@ Repository가 `DocumentSnapshot.documentID`를 같은 snapshot에서 decode한 D
 ### 이미지
 
 - 공용 로딩/캐시: `Services/ImageLoading`.
+- extraction review와 existing-season repair의 외부 이미지 preview는 `LookbookRemotePreviewImageLoader` 단일 인스턴스를 Container에서 공유한다. 메모리·디스크 캐시, 동일 요청 in-flight 병합, 중복 제거된 8개 window prefetch와 최대 동시 4개 다운로드를 사용한다.
+- 공용 렌더링은 `Views/Shared/LookbookRemotePreviewImageView.swift`다. extraction review는 기존 2열 grid, repair는 keep/add/reorder/remove-candidate 구역별 2열 `LazyVGrid`로 표시한다.
 - 확대 viewer: `Navigation/LookbookImageViewerView.swift`와 Infra viewer.
 - 같은 Storage path 덮어쓰기 시 `updatedAt` 기반 cache invalidation을 확인한다.
 
@@ -180,6 +186,11 @@ Repository가 `DocumentSnapshot.documentID`를 같은 snapshot에서 decode한 D
 
 - 앱: `CreateBrandCandidateSelectionView.swift`, `AdminBrandManagementView.swift`, `SeasonImportManagementView.swift`.
 - repository: `CloudFunctionsSeasonCandidateDiscoveryRepository.swift`와 import repository.
+- review: `LookbookExtractionReviewView.swift`, `LookbookExtractionReviewViewModel.swift`, `CloudFunctionsLookbookExtractionReviewRepository.swift`.
+- import 현황의 검토 action은 `LookbookCoordinator`가 상세 화면을 push하고 `LookbookContainer`가 Repository/UseCase/ViewModel을 조립한다.
+- review 화면은 고정 generation 후보의 정상 승인, 선택 후보 제외 승인, 이미지 부족 보고를 제공한다. correctionRequired 재분석은 총 관리자에게만 노출한다.
+- 두 review 화면의 외부 후보 이미지는 같은 remote preview loader/cache를 공유하며 URL별 중복 네트워크 요청을 병합한다.
+- `원본과 다시 비교` 진행 화면은 설명 아래 accent `ProgressView`를 표시한다. diff가 없으면 상세 화면을 자동 종료하고 목록의 `원본과 다시 비교` 상태로 복귀하며, 실제 변경이 있을 때만 `변경 검토`로 전환한다.
 - Functions/worker: `docs/ai/entrypoints/FIREBASE.md`, `docs/ai/architecture/LOOKBOOK_IMPORT_WORKER.md`.
 
 ## 변경 시 함께 갱신할 문서

@@ -99,6 +99,28 @@
 - 브랜드 요청 `rejected/completed`는 최근 14일과 이전 이력을 지원한다.
 - 삭제 요청 목록에는 이 14일 계약을 적용하지 않는다.
 
+### 시즌 import extraction metadata
+
+- `importJobs.imageCandidates`는 materialization에 쓰는 기존 `{sourceURL, alt}` 배열 계약을 유지한다.
+- `imageCandidateEvidence`는 candidate fingerprint, parser strategy, static/rendered source kind와 query value를 제거한 source origin/path/query key를 가진다.
+- `imageExtractorVersion`, `platformAdapterKey/version`, `domainAdapterKey/version`은 extraction run의 재현 경계다. Phase 7 extractor는 `1.2.0`, Cafe24 platform adapter는 `cafe24@1.0.0`이다. Generic 결과와 현재 미등록 상태인 domain adapter 값은 `null`이다.
+- extraction cache는 candidate/hash/quality뿐 아니라 extractor와 platform/domain adapter key/version 전체가 현재 registry와 일치할 때만 재사용한다.
+- discovery diagnostic은 같은 의미의 `candidateEvidence`, `extractionVersions`를 반환한다.
+- candidate/source fingerprint에는 원본 query value를 저장하지 않는다.
+- Phase 2 import job은 `expectedCountEvidence`, `programmaticGalleryEvidence`, `extractionQualityStatus/reasons`, static/rendered/source/content-hash candidate count와 hash 완료·실패 수를 기록한다.
+- `imageCandidates`는 content hash가 확인된 동일 bytes 후보를 first-wins로 제거한 materialization 입력이다. hash 조회 실패 후보는 자동 제거하지 않는다.
+- Phase 4 import job은 `dispatchGeneration`, `reviewGeneration`, `reviewSnapshotHash`, `reviewStatus`, `resumeFrom`, `templateSignature`, `trustBaselineID/trustBaselineMatched`, `reviewCandidateKeys/approvedCandidateKeys`를 가진다.
+- `status=awaitingReview`, `phase=reviewing`이면 season/post materialization 전 관리자 판단을 기다린다. 승인 후 같은 job이 `resumeFrom=materializing`으로 재개되며 task identity는 `dispatchGeneration`을 포함한다.
+- `brands/{brandID}/importJobs/{jobID}/reviews/{reviewGeneration}`은 snapshot hash, decision, 승인/제외 후보, expected count, reviewer와 extraction version을 보존하는 server-only audit다.
+- `lookbookExtractionTrustBaselines/{trustBaselineID}`은 `brandID + host + templateSignature + extractor major + adapter versions` scope의 자동 승인 baseline이다. 안전한 정상 승인만 생성하며 클라이언트 직접 read/write 대상이 아니다.
+- `lookbookExtractionEvidence/{evidenceID}`은 `brandID`, `jobID`, `dispatchGeneration`, `status/stage`, `issueFingerprint`, `storagePath`, `expiresAt`을 가진 server-only 7일 cleanup ledger다.
+- Storage `lookbook-extraction-evidence/{evidenceID}.json`은 failed/needsReview run의 allowlist DOM 구조, redacted source, 후보/expected evidence와 extraction version만 가진다. 전체 HTML/script/screenshot과 query value는 저장하지 않는다.
+- `lookbookExtractionIssueClusters/{fingerprint}`은 `stage + platform + parserStrategy + failureReasons + qualityReasons + templateSignature + extractorMajorVersion` fingerprint를 document ID로 사용한다.
+- cluster는 `occurrenceCount`, `affectedDomains/Count`, `sampleEvidenceIDs`, `firstSeenAt/lastSeenAt`, `status`, `fixedInExtractorVersion`, `recurrenceCount`와 관리자 부족 feedback을 가진다. 같은 evidence ledger ID는 occurrence를 다시 증가시키지 않는다.
+- Phase 6 import job은 `repairStatus`, `repairGeneration`, `repairTargetSeasonID`, `repairSnapshotHash`와 keep/add/reorder/remove count를 가진다. `repairStatus=noChanges`는 add/reorder/removeCandidates가 모두 0이라 시즌 write와 관리자 적용이 필요 없는 terminal 비교 결과다.
+- `brands/{brandID}/importJobs/{jobID}/repairs/{repairGeneration}`은 keep/add/reorder/removeCandidates, `orderedPostIDs/allPostIDs`, `resultingPostCount`, `repairSnapshotHash`, 적용 audit를 가진 server-only preview다. 변경 없음도 audit status `noChanges`로 남긴다.
+- repair 적용은 기존 post의 `orderIndex/sourceSortIndex`만 보정하고 새 post에만 deterministic ID와 새 `createdAt`을 부여한다. remove-candidate post는 삭제하지 않고 후보 뒤 순서로 보존한다.
+
 ## 룩북 삭제 계약
 
 ### Lifecycle

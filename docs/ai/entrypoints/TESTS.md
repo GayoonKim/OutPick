@@ -37,10 +37,32 @@ xcodebuild -scheme OutPick -destination 'generic/platform=iOS Simulator' build
 
 Lookbook import worker tests:
 
+- `tools/lookbook-import-worker/src/extraction/core.test.ts`
+- `tools/lookbook-import-worker/src/extraction/adapter-registry.test.ts`
+- `tools/lookbook-import-worker/src/extraction/review.test.ts`
+- `tools/lookbook-import-worker/src/extraction/retained-evidence.test.ts`
+- `tools/lookbook-import-worker/src/extraction/youth-fixture.test.ts`
+- `tools/lookbook-import-worker/fixtures/season-images/incidents/youth-programmatic-gallery/`
+- `tools/lookbook-import-worker/src/fixture/corpus.test.ts`
+- `tools/lookbook-import-worker/src/fixture/run-corpus.ts`
+- `tools/lookbook-import-worker/fixtures/{discovery,season-images}/`
 - `tools/lookbook-import-worker/src/processor.test.ts`
 - `tools/lookbook-import-worker/src/job-lifecycle.test.ts`
 - `tools/lookbook-import-worker/src/public-http.test.ts`
 - `tools/lookbook-import-worker/src/config.test.ts`
+- 실행: `cd tools/lookbook-import-worker && npm test` (root와 하위 test 모두 포함, Phase 8 기준 65/65 통과).
+- fixture gate: `cd tools/lookbook-import-worker && npm run test:fixtures` (외부 fetch 없이 corpus 4/4와 구조화된 differential을 검증).
+- extraction review Functions contract: `functions/src/lookbook/import/reviewContract.test.ts`, `taskService.test.ts`, `importValidation.test.ts`, `functions/src/index.contract.test.ts`.
+- extraction review iOS targeted tests: `OutPickTests/LookbookExtractionReviewViewModelTests.swift`, `OutPickTests/CloudFunctions/CloudFunctionsSeasonImportRepositoryTests.swift`.
+- existing-season reconcile: worker `src/extraction/reconcile.test.ts`, Functions `repairContract.test.ts`, iOS `LookbookSeasonRepairViewModelTests.swift`와 `CloudFunctionsSeasonImportRepositoryTests.swift`.
+- review 이미지 로더: `OutPickTests/LookbookRemotePreviewImageLoaderTests.swift`에서 동일 URL 동시 load 병합과 prefetch URL 중복 제거/동시성 상한을 검증한다.
+- 2026-07-23 Phase 4에서 Functions 53/53와 lint/build, iOS targeted 6/6와 iPhone 17 Pro Max Simulator build가 통과했다. 실제 Firebase/Cloud Tasks 통합과 관리자 화면 수동 QA는 미수행이다.
+- Phase 5 cleanup path contract는 `functions/src/lookbook/import/evidenceCleanup.test.ts`에서 검증한다. Phase 5 전체 Functions 55/55와 lint/build가 통과했으며 실제 Storage delete smoke QA는 배포 전까지 보류한다.
+- Phase 6 전체는 worker 57/57, fixture 4/4, Functions 57/57, iOS 관련 targeted 9/9가 통과했다. 2026-07-23 운영 배포 후 YOUTH repair preview `keep 1/add 45/reorder 0/remove 0`을 같은 season에 적용해 post `1 → 46`, 기존 `post_0000` 보존, post asset `ready` 46과 job asset failed 0을 확인했다.
+- 2026-07-23 Phase 7 전 review UI 보완은 Functions 57/57와 lint/build, remote preview loader·review/repair ViewModel·Cloud Functions repository targeted 11/11, iPhone 17 Pro Max Simulator build/run을 통과했다. repair 2열 grid의 실제 운영 데이터 스크롤 시각 QA는 남아 있다.
+- 같은 날 repair no-change terminal 보완은 Worker 59/59와 fixture 4/4, Functions 58/58와 lint/build, iOS repair 상태/ViewModel/repository/loader targeted 10/10 및 Simulator build/run을 통과했다. worker `lookbook-import-worker-00017-stx`와 Firebase Functions 운영 재배포 후 Ready/traffic 100%, 큐 RUNNING, 새 revision recent ERROR 0건과 repair callable ACTIVE를 확인했다. 실제 운영 no-change 비교 smoke는 데이터 mutation을 수반하므로 별도 실행 대상으로 남겼다.
+- Phase 7 adapter registry는 Cafe24 positive, Generic/비-Cafe24 negative, domain fixture/host gate, 전체 adapter version cache invalidation을 자동 검증한다.
+- Phase 8은 Worker lint/build와 65/65, fixture corpus 4/4·diff 0건, Functions lint/build와 58/58, iOS targeted 14/14 및 Simulator build/run을 통과했다. 운영 worker `lookbook-import-worker-00018-zwl` 배포 뒤 OUTSTANDING static 12 → rendered 44, YOUTH read-only live URL static 1 → source 46, HATCHINGROOM 후보 17을 확인했고 queue pending 0건과 새 revision ERROR 0건이었다.
 
 Firebase Functions tests/build entry:
 

@@ -18,7 +18,7 @@ Firebase 변경 시 Functions, Firestore, Storage의 실제 경계를 찾기 위
 
 ## Functions 코드 지도
 
-`functions/src/index.ts`는 기존 49개 배포 이름의 명시적 flat re-export만 가진다. 실제 handler와 helper는 아래 기능 module에서 찾는다.
+`functions/src/index.ts`는 현재 53개 배포 이름의 명시적 flat re-export만 가진다. 실제 handler와 helper는 아래 기능 module에서 찾는다.
 
 Phase 4 구현 결과와 결정은 `docs/ai/tasks/core-infrastructure-modularization/phases/phase-4-firebase-functions.md`, contract/service/policy 테스트는 `phase-4-firebase-functions-tests.md`와 `functions/src/**/*.test.ts`를 따른다.
 
@@ -33,6 +33,9 @@ Phase 6 전체 회귀와 운영 배포는 `docs/ai/tasks/core-infrastructure-mod
 | 룩북 삭제 lifecycle | `functions/src/lookbook/deletion/`과 아래 전용 섹션 |
 | engagement/comment/safety | `functions/src/lookbook/{engagement,comments,safety}/functions.ts` |
 | 시즌 import·추출 진단 | `functions/src/lookbook/import/` |
+| extraction review·재분석·trust | `functions/src/lookbook/import/functions.ts`, `reviewContract.ts` |
+| extraction evidence cleanup | `functions/src/lookbook/import/functions.ts`, `evidenceCleanup.ts` |
+| existing-season repair preview/apply | `functions/src/lookbook/import/functions.ts`, `repairContract.ts` |
 | Chat room cleanup | `functions/src/chat/cleanup/functions.ts`, `cleanupService.ts` |
 
 기본 검증:
@@ -140,6 +143,14 @@ npm run build
 | HTTP server | `tools/lookbook-import-worker/src/server.ts` |
 | 시즌 discovery | `tools/lookbook-import-worker/src/season-discovery.ts` |
 | import 처리 | `tools/lookbook-import-worker/src/processor.ts` |
+| extraction 결과·candidate evidence 계약 | `tools/lookbook-import-worker/src/extraction/core.ts` |
+| source URL 마스킹·fingerprint | `tools/lookbook-import-worker/src/extraction/evidence.ts` |
+| extractor/platform/domain version | `tools/lookbook-import-worker/src/extraction/version.ts` |
+| Generic/Platform/Domain adapter registry | `tools/lookbook-import-worker/src/extraction/adapters/{registry,cafe24,types}.ts` |
+| expected count/programmatic gallery | `tools/lookbook-import-worker/src/extraction/{expected-count,programmatic-gallery}.ts` |
+| quality/canonical·content hash | `tools/lookbook-import-worker/src/extraction/{quality,dedupe}.ts` |
+| existing post reconcile diff | `tools/lookbook-import-worker/src/extraction/reconcile.ts` |
+| fixture manifest/corpus/differential | `tools/lookbook-import-worker/src/fixture/`, `tools/lookbook-import-worker/fixtures/` |
 | lifecycle/retry | `job-lifecycle.ts`, `import-error.ts` |
 | SSRF/HTTP 경계 | `public-http.ts` |
 | Firebase/env 경계 | `firebase.ts`, `config.ts` |
@@ -155,7 +166,19 @@ npm run build
 → 앱이 job 상태와 생성 문서를 표시
 ```
 
-진단 계약과 현재 상태는 `docs/ai/tasks/lookbook-import-diagnostics/` 및 `docs/ai/tasks/lookbook-import-worker/`의 `progress.md`를 확인한다.
+진단 계약과 현재 상태는 `docs/ai/tasks/lookbook-import-diagnostics/`, `docs/ai/tasks/lookbook-import-worker/`, `docs/ai/tasks/lookbook-extraction-learning-loop/`의 `progress.md`를 확인한다. Phase 1부터 import job은 candidate evidence/version을 기록한다. Phase 2는 expected/programmatic evidence, quality, static/rendered/source/content-hash count를 추가했다. Phase 3의 `npm run test:fixtures`는 외부 fetch 없이 golden differential을 검증한다. Phase 4는 `needsReview` 결과를 materialization 전에 `awaitingReview`로 멈추고 아래 callable로 검토·재개한다.
+
+- `getLookbookExtractionReview({brandID, jobID})`: 현재 generation/hash와 고정 후보를 조회한다.
+- `reviewLookbookExtraction({brandID, jobID, reviewGeneration, reviewSnapshotHash, decision, excludedCandidateKeys?, expectedCandidateCount?, note?})`: 정상/오탐 제외/이미지 부족 결정을 generation별 audit로 기록한다.
+- `requestLookbookExtractionReanalysis({brandID, jobID})`: 총 관리자만 correctionRequired job의 review/dispatch generation을 증가시켜 같은 job을 parsing부터 재실행한다.
+- 안전한 정상 승인만 scoped trust baseline을 자동 등록한다. 별도 trust checkbox는 없고 review audit/trust baseline은 server-only다.
+- Phase 5 evidence는 Worker가 전용 Storage prefix와 `lookbookExtractionEvidence` ledger에 7일 expiry로 저장하고 `lookbookExtractionIssueClusters`를 transaction 집계한다.
+- `cleanupExpiredLookbookExtractionEvidence`는 매일 04:45 만료 ledger를 조회하고 결정적 `lookbook-extraction-evidence/{evidenceID}.json` path만 삭제한 뒤 성공한 ledger만 제거한다.
+- Phase 6은 `requestLookbookSeasonRepair` → Worker generation별 diff → 변경이 있을 때만 `previewLookbookSeasonRepair` → generation/hash 기반 `applyLookbookSeasonRepair` 순서다. add/reorder/remove-candidate가 모두 0이면 audit `noChanges`와 job `succeeded/completed`로 종료하며 season/post를 쓰지 않는다. 적용 경로는 기존 season/post ID를 보존하고 삭제 후보를 자동 삭제하지 않는다.
+- Phase 7은 discovery와 season-image 추출 전에 같은 adapter registry를 선택한다. Generic은 adapter 없이 동작하고 Cafe24 공통 section/noise 규칙은 `cafe24@1.0.0`에만 적용된다. 실제 domain adapter는 없으며 host와 등록된 fixture가 없는 domain 등록은 거부된다. job/diagnostic과 cache는 extractor `1.2.0` 및 전체 adapter version set을 사용한다.
+- 2026-07-23 운영 worker `lookbook-import-worker-00016-thf`와 관련 Functions를 배포했다. YOUTH source job `MTTKsL7GJPY0VdrYqjmb`의 generation 1 preview `keep 1/add 45/reorder 0/remove 0`을 적용해 같은 season의 post를 46개로 복구했고 기존 `post_0000`을 유지했다. 세부 운영 증거는 task `progress.md`를 따른다.
+- Phase 8에서 adapter registry 포함 worker를 `lookbook-import-worker-00018-zwl`로 운영 배포했다. rollback 기준은 `lookbook-import-worker-00017-stx`다. OUTSTANDING 운영 diagnostic은 static 12 → rendered/source 44와 `needsReview`, YOUTH 실제 URL read-only dry-run은 static 1 → source 46, HATCHINGROOM read-only dry-run은 static 후보 17을 확인했다. queue pending과 새 revision ERROR는 모두 0건이었다.
+- 운영 bucket에는 2026-07-23 확인 기준 lifecycle rule이 없다. 기존 미디어에 영향을 주는 bucket 전역 정책 대신 위 scheduler를 사용한다.
 
 ## Firestore
 
