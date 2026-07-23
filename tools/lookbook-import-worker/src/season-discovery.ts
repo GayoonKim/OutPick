@@ -978,7 +978,7 @@ function isLikelySeasonCandidateURL(
   try {
     const url = new URL(rawURL);
     if (
-      /\/(?:product|lookbook|archive|collection|campaigns?)\/(?:archive-)?detail(?:_basic|_new)?\.html$/i
+      /\/(?:product|lookbook|archive|collection|campaigns?)(?:\/|_)(?:archive[-_])?detail(?:_basic|_new)?\.html$/i
         .test(url.pathname)
     ) {
       return true;

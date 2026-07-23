@@ -19,7 +19,7 @@ test("Cafe24 공통 구조는 Cafe24 platform adapter를 선택한다", () => {
   });
 
   assert.deepEqual(selection.versions, {
-    extractorVersion: "1.2.0",
+    extractorVersion: "1.2.3",
     platformAdapterKey: "cafe24",
     platformAdapterVersion: "1.0.0",
     domainAdapterKey: null,

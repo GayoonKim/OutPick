@@ -10,7 +10,7 @@ import type {
   PlatformExtractionAdapter,
 } from "./types.js";
 
-const EXTRACTOR_VERSION = "1.2.0";
+const EXTRACTOR_VERSION = "1.2.3";
 const EMPTY_IMAGE_RULES: ImageExtractionRules = {
   contentSectionRules: [],
   noiseImageURLPatterns: [],

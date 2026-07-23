@@ -20,7 +20,7 @@
     "domainKey": null
   },
   "quality": {
-    "status": "needsReview",
-    "reasons": ["programmatic_gallery_requires_review"]
+    "status": "accepted",
+    "reasons": []
   }
 }

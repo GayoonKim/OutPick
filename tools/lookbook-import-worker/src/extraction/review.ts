@@ -24,6 +24,7 @@ export function makeReviewContract(input: {
   expectedCountEvidence: ExpectedCountEvidence[];
   programmaticGalleryEvidence: ProgrammaticGalleryEvidence;
   quality: ExtractionQuality;
+  candidateCount: number;
   renderedCandidateCount: number | null;
   contentHashComplete: boolean;
   versions: ExtractionVersionSet;
@@ -63,7 +64,7 @@ export function makeReviewContract(input: {
     trustEligible: trustEligible({
       quality: input.quality,
       expectedCountEvidence: input.expectedCountEvidence,
-      renderedCandidateCount: input.renderedCandidateCount,
+      candidateCount: input.candidateCount,
       contentHashComplete: input.contentHashComplete,
     }),
   };
@@ -99,8 +100,7 @@ export function reviewDisposition(input: {
   quality: ExtractionQuality;
   trustEligible: boolean;
 }): "materialize" | "awaitingReview" {
-  return input.trusted &&
-    trustCanAutoApprove(input.quality, input.trustEligible) ?
+  return trustCanAutoApprove(input.quality, input.trustEligible) ?
     "materialize" :
     "awaitingReview";
 }
@@ -108,7 +108,7 @@ export function reviewDisposition(input: {
 function trustEligible(input: {
   quality: ExtractionQuality;
   expectedCountEvidence: ExpectedCountEvidence[];
-  renderedCandidateCount: number | null;
+  candidateCount: number;
   contentHashComplete: boolean;
 }): boolean {
   if (!input.contentHashComplete) {
@@ -118,14 +118,9 @@ function trustEligible(input: {
   if (unsafeReasons.length > 0) {
     return false;
   }
-  if (!input.quality.reasons.includes("programmatic_gallery_requires_review")) {
-    return input.quality.status === "accepted";
-  }
-  const declaredCounts = input.expectedCountEvidence
-    .filter((item) => item.kind === "declared_script_total")
-    .map((item) => item.value);
-  return input.renderedCandidateCount !== null &&
-    declaredCounts.includes(input.renderedCandidateCount);
+  const expectedCounts = input.expectedCountEvidence.map((item) => item.value);
+  return input.quality.status === "accepted" &&
+    expectedCounts.includes(input.candidateCount);
 }
 
 function unsafeTrustReasons(

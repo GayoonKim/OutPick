@@ -40,7 +40,11 @@ test("YOUTH programmatic gallery는 rendered fallback과 검토 대상이다", a
   const expected = JSON.parse(expectedText) as FixtureExpected;
   const staticExtraction = extractImageCandidates(staticHTML, sourceURL);
   const renderedExtraction = extractImageCandidates(renderedHTML, sourceURL);
-  const countEvidence = collectExpectedCountEvidence(staticHTML, sourceURL);
+  const countEvidence = collectExpectedCountEvidence(
+    staticHTML,
+    sourceURL,
+    staticExtraction.candidates.length,
+  );
   const programmaticEvidence = detectProgrammaticGallery(staticHTML);
 
   assert.equal(
@@ -53,7 +57,11 @@ test("YOUTH programmatic gallery는 rendered fallback과 검토 대상이다", a
     45,
   );
   assert.equal(renderedExtraction.strategy, "lookbookContent");
-  assert.deepEqual(countEvidence.map((item) => item.value), [45]);
+  assert.deepEqual(countEvidence.map((item) => item.value), [45, 46]);
+  assert.deepEqual(countEvidence.map((item) => item.kind), [
+    "declared_script_total",
+    "scoped_gallery_candidate_total",
+  ]);
   assert.equal(programmaticEvidence.detected, true);
   assert.equal(
     fallbackReasonForExtraction(
@@ -90,10 +98,7 @@ test("YOUTH programmatic gallery는 rendered fallback과 검토 대상이다", a
     programmaticGalleryDetected: true,
   });
   assert.equal(staticQuality.status, "needsReview");
-  assert.deepEqual(staticQuality.reasons, [
-    "programmatic_gallery_requires_review",
-    "expected_count_unverified",
-  ]);
+  assert.deepEqual(staticQuality.reasons, ["expected_count_mismatch"]);
 
   const renderedQuality = evaluateExtractionQuality({
     candidateCount: merged.candidates.length,
@@ -103,10 +108,38 @@ test("YOUTH programmatic gallery는 rendered fallback과 검토 대상이다", a
     expectedCountEvidence: countEvidence,
     programmaticGalleryDetected: true,
   });
-  assert.deepEqual(renderedQuality, {
-    status: "needsReview",
-    reasons: ["programmatic_gallery_requires_review"],
-  });
+  assert.deepEqual(renderedQuality, {status: "accepted", reasons: []});
+});
+
+test("YOUTH 활성 grid evidence는 다른 시즌 total을 제외한다", () => {
+  const summerHTML = `
+    <ul id="lookbookGrid3"></ul>
+    <script>
+      const GRID_CONFIG = {
+        lookbookGrid: { total: 75 },
+        lookbookGrid2: { total: 45 },
+        lookbookGrid3: { total: 42 }
+      };
+    </script>
+  `;
+  const evidence = collectExpectedCountEvidence(
+    summerHTML,
+    "https://youth-lab.kr/page/collection_detail.html?product_no=6159",
+    7,
+  );
+
+  assert.deepEqual(evidence.map((item) => item.value), [42, 49]);
+  assert.equal(evidence.some((item) => item.value === 75), false);
+
+  const alreadyRendered = collectExpectedCountEvidence(
+    summerHTML.replace(
+      "<ul id=\"lookbookGrid3\"></ul>",
+      "<ul id=\"lookbookGrid3\"><li><img src=\"/look-1.jpg\"></li></ul>",
+    ),
+    "https://youth-lab.kr/page/collection_detail.html?product_no=6159",
+    7,
+  );
+  assert.deepEqual(alreadyRendered.map((item) => item.value), [42]);
 });
 
 test("content hash dedupe는 source 후보 수와 최종 고유 수를 분리한다", async () => {
@@ -158,7 +191,7 @@ test("content hash dedupe는 source 후보 수와 최종 고유 수를 분리한
   assert.equal(partial.candidates.length, 2);
 });
 
-test("실제 1장 strong section은 근거 없이 실패하지 않는다", () => {
+test("예상 수를 알 수 없는 실제 1장 strong section은 검토한다", () => {
   const quality = evaluateExtractionQuality({
     candidateCount: 1,
     rawCandidateCount: 1,
@@ -167,7 +200,10 @@ test("실제 1장 strong section은 근거 없이 실패하지 않는다", () =>
     expectedCountEvidence: [],
     programmaticGalleryDetected: false,
   });
-  assert.deepEqual(quality, {status: "accepted", reasons: []});
+  assert.deepEqual(quality, {
+    status: "needsReview",
+    reasons: ["expected_count_unverified"],
+  });
 
   const incompleteHash = evaluateExtractionQuality({
     candidateCount: 1,
@@ -180,11 +216,26 @@ test("실제 1장 strong section은 근거 없이 실패하지 않는다", () =>
   });
   assert.deepEqual(incompleteHash, {
     status: "needsReview",
-    reasons: ["content_hash_incomplete"],
+    reasons: ["expected_count_unverified", "content_hash_incomplete"],
   });
 });
 
-test("count 불일치, 근거 없는 rendered 급증과 filter drop을 분류한다", () => {
+test("예상 수 일치와 불일치, 예상 수 없는 filter drop을 분류한다", () => {
+  const matched = evaluateExtractionQuality({
+    candidateCount: 24,
+    rawCandidateCount: 72,
+    staticCandidateCount: 24,
+    renderedCandidateCount: null,
+    expectedCountEvidence: [{
+      kind: "declared_script_total",
+      value: 24,
+      confidence: 0.82,
+      sourceFingerprint: "fixture",
+    }],
+    programmaticGalleryDetected: false,
+  });
+  assert.deepEqual(matched, {status: "accepted", reasons: []});
+
   const mismatch = evaluateExtractionQuality({
     candidateCount: 44,
     rawCandidateCount: 44,
@@ -209,7 +260,7 @@ test("count 불일치, 근거 없는 rendered 급증과 filter drop을 분류한
     programmaticGalleryDetected: false,
   });
   assert.deepEqual(unexplainedDelta.reasons, [
-    "large_rendered_delta_without_expected_evidence",
+    "expected_count_unverified",
   ]);
 
   const filterDrop = evaluateExtractionQuality({
@@ -220,5 +271,5 @@ test("count 불일치, 근거 없는 rendered 급증과 filter drop을 분류한
     expectedCountEvidence: [],
     programmaticGalleryDetected: false,
   });
-  assert.deepEqual(filterDrop.reasons, ["raw_candidate_drop"]);
+  assert.deepEqual(filterDrop.reasons, ["expected_count_unverified"]);
 });

@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "candidates": [
+    {
+      "type": "exact",
+      "key": "https://brand.example/page/collection_detail.html?product_no=6159&cate_no=25&display_group=1",
+      "title": "Summer 26 Lookbook observatory"
+    },
+    {
+      "type": "exact",
+      "key": "https://brand.example/page/collection_detail.html?product_no=6052&cate_no=25&display_group=1",
+      "title": "Spring 26 Lookbook One after another 2nd"
+    },
+    {
+      "type": "exact",
+      "key": "https://brand.example/page/collection_detail.html?product_no=6005&cate_no=25&display_group=1",
+      "title": "Spring 26 Lookbook One after another 1st"
+    }
+  ],
+  "negativeCandidateKeys": [
+    "https://brand.example/cart"
+  ],
+  "orderPolicy": "strict",
+  "strategy": "staticAnchors",
+  "adapter": {
+    "platformKey": "cafe24",
+    "domainKey": null
+  },
+  "quality": null
+}

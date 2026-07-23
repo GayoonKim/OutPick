@@ -30,38 +30,12 @@ export function evaluateExtractionQuality(input: {
   }
 
   const reasons: ExtractionQualityReason[] = [];
-  const declaredCounts = input.expectedCountEvidence
-    .filter((item) => item.kind === "declared_script_total")
-    .map((item) => item.value);
+  const expectedCounts = input.expectedCountEvidence.map((item) => item.value);
 
-  if (input.programmaticGalleryDetected) {
-    reasons.push("programmatic_gallery_requires_review");
-    if (input.renderedCandidateCount === null) {
-      reasons.push("expected_count_unverified");
-    } else if (
-      declaredCounts.length > 0 &&
-      !declaredCounts.includes(input.renderedCandidateCount)
-    ) {
-      reasons.push("expected_count_mismatch");
-    }
-  }
-
-  if (
-    input.renderedCandidateCount !== null &&
-    declaredCounts.length === 0 &&
-    input.renderedCandidateCount >= Math.max(
-      input.staticCandidateCount + 3,
-      input.staticCandidateCount * 2,
-    )
-  ) {
-    reasons.push("large_rendered_delta_without_expected_evidence");
-  }
-
-  if (
-    input.rawCandidateCount >= 8 &&
-    input.candidateCount <= Math.max(1, Math.floor(input.rawCandidateCount / 3))
-  ) {
-    reasons.push("raw_candidate_drop");
+  if (expectedCounts.length === 0) {
+    reasons.push("expected_count_unverified");
+  } else if (!expectedCounts.includes(input.candidateCount)) {
+    reasons.push("expected_count_mismatch");
   }
   if (input.contentHashComplete === false) {
     reasons.push("content_hash_incomplete");

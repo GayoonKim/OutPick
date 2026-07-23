@@ -21,6 +21,7 @@ test("전체 fixture corpus가 golden 계약을 통과한다", async () => {
       "platform-cafe24-hatchingroom-archive-source",
       "platform-cafe24-outstanding-discovery",
       "platform-cafe24-outstanding-nneditor",
+      "platform-cafe24-underscore-detail-discovery",
     ],
   );
   assert.equal(results.every((result) => result.passed), true);

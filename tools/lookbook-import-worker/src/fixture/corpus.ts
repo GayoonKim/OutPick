@@ -106,6 +106,7 @@ function seasonImageSnapshot(fixture: FixtureCase): FixtureSnapshot {
   const expectedCountEvidence = collectExpectedCountEvidence(
     fixture.inputHTML,
     fixture.metadata.sourceURL,
+    staticExtraction.candidates.length,
   );
   const programmatic = detectProgrammaticGallery(fixture.inputHTML);
   const renderedExtraction = fixture.renderedHTML === null ?

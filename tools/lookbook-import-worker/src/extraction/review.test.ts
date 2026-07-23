@@ -36,9 +36,10 @@ test("review snapshot과 trust baseline ID는 결정적이다", () => {
     expectedCountEvidence: evidence,
     programmaticGalleryEvidence: programmatic,
     quality: {
-      status: "needsReview" as const,
-      reasons: ["programmatic_gallery_requires_review" as const],
+      status: "accepted" as const,
+      reasons: [],
     },
+    candidateCount: 2,
     renderedCandidateCount: 2,
     contentHashComplete: true,
     versions: CURRENT_EXTRACTION_VERSIONS,
@@ -68,7 +69,7 @@ test("template structure token은 관련 container만 정규화한다", () => {
   );
 });
 
-test("첫 signature는 멈추고 신뢰된 안전 signature만 materialize한다", () => {
+test("예상 수와 일치하는 안전한 결과는 첫 signature도 materialize한다", () => {
   const quality = {
     status: "accepted" as const,
     reasons: [],
@@ -77,10 +78,21 @@ test("첫 signature는 멈추고 신뢰된 안전 signature만 materialize한다
     trusted: false,
     quality,
     trustEligible: true,
-  }), "awaitingReview");
+  }), "materialize");
   assert.equal(reviewDisposition({
     trusted: true,
     quality,
     trustEligible: true,
   }), "materialize");
+});
+
+test("예상 수를 확인할 수 없는 결과는 기존 trust가 있어도 검토한다", () => {
+  assert.equal(reviewDisposition({
+    trusted: true,
+    quality: {
+      status: "needsReview",
+      reasons: ["expected_count_unverified"],
+    },
+    trustEligible: false,
+  }), "awaitingReview");
 });

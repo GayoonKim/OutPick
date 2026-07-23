@@ -24,7 +24,7 @@
     "domainKey": null
   },
   "quality": {
-    "status": "accepted",
-    "reasons": []
+    "status": "needsReview",
+    "reasons": ["expected_count_unverified"]
   }
 }

@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "platform-cafe24-underscore-detail-discovery",
+  "kind": "discovery",
+  "classification": "platform",
+  "sourceURL": "https://brand.example/page/collection.html?cate_no=25",
+  "inputFile": "input.html",
+  "provenance": {
+    "kind": "incident_minimized",
+    "issue": "YOUTH Cafe24 목록의 collection_detail 경로와 분리된 이미지·제목 링크 회귀"
+  }
+}

@@ -1224,6 +1224,7 @@ async function ensureParsed(
     const expectedCountEvidence = collectExpectedCountEvidence(
       html,
       claim.sourceURL,
+      staticExtraction.candidates.length,
     );
     const programmaticGalleryEvidence = detectProgrammaticGallery(
       html,
@@ -1259,7 +1260,7 @@ async function ensureParsed(
       },
     });
     const quality = evaluateExtractionQuality({
-      candidateCount: sourceExtraction.candidates.length,
+      candidateCount: contentHashDedupe.candidates.length,
       rawCandidateCount: sourceExtraction.rawCandidateCount,
       staticCandidateCount: staticExtraction.candidates.length,
       renderedCandidateCount: fallbackExtraction.renderedCandidateCount,
@@ -1283,6 +1284,7 @@ async function ensureParsed(
         expectedCountEvidence,
         programmaticGalleryEvidence,
         quality,
+        candidateCount: extraction.candidates.length,
         renderedCandidateCount: fallbackExtraction.renderedCandidateCount,
         contentHashComplete: contentHashDedupe.complete,
         versions: extraction.versions,
@@ -1553,7 +1555,7 @@ async function pauseForReviewIfNeeded(
     trustEligible: review.trustEligible,
   }) === "materialize") {
     await jobRef.update({
-      trustBaselineMatched: true,
+      trustBaselineMatched: trusted,
       resumeFrom: "materializing",
       updatedAt: FieldValue.serverTimestamp(),
     });
