@@ -25,6 +25,8 @@ xcodebuild -scheme OutPick -destination 'generic/platform=iOS Simulator' build
 
 - Lookbook interaction/store tests: `OutPickTests/LookbookInteractionStoreTests.swift`, `OutPickTests/LookbookDebugFailureInjectionStoreTests.swift`
 - Lookbook detail tests: `OutPickTests/PostDetailScreenViewModelTests.swift`, `OutPickTests/SeasonDetailViewModelTests.swift`
+  - 시즌 상세는 24개 초기 page, 마지막 12개 trigger, page 간 PostID 중복 제거, 동시 호출 병합, 빈 visibility page 연속 조회, refresh race와 실패 재시도를 검증한다.
+  - 이미지 prefetch는 첫 12개·현재 위치 앞 32개·concurrency 4, append 직후 새 page 24개 등록, 반복 카드 노출의 경로 중복 방지를 `SeasonDetailBrandImageCacheSpy`로 검증한다.
 - 좋아요 탭 tests: `OutPickTests/LikedViewModelTests.swift`, `OutPickTests/LoadLikedSeasonsUseCaseTests.swift`
 - 삭제 요청 관리 pagination/retry tests: `OutPickTests/AdminLookbookDeletionManagementViewModelTests.swift`
 - Firestore 문서 ID 경계: `OutPickTests/FirestoreDocumentIDBoundaryTests.swift`
@@ -46,12 +48,13 @@ Lookbook import worker tests:
 - `tools/lookbook-import-worker/src/fixture/corpus.test.ts`
 - `tools/lookbook-import-worker/src/fixture/run-corpus.ts`
 - `tools/lookbook-import-worker/fixtures/{discovery,season-images}/`
+- `tools/lookbook-import-worker/fixtures/discovery/platform/cafe24-underscore-detail-list/`
 - `tools/lookbook-import-worker/src/processor.test.ts`
 - `tools/lookbook-import-worker/src/job-lifecycle.test.ts`
 - `tools/lookbook-import-worker/src/public-http.test.ts`
 - `tools/lookbook-import-worker/src/config.test.ts`
-- 실행: `cd tools/lookbook-import-worker && npm test` (root와 하위 test 모두 포함, Phase 8 기준 65/65 통과).
-- fixture gate: `cd tools/lookbook-import-worker && npm run test:fixtures` (외부 fetch 없이 corpus 4/4와 구조화된 differential을 검증).
+- 실행: `cd tools/lookbook-import-worker && npm test` (root와 하위 test 모두 포함, extraction review 수량 기준 보완 후 66/66 통과).
+- fixture gate: `cd tools/lookbook-import-worker && npm run test:fixtures` (외부 fetch 없이 현재 corpus 5/5와 구조화된 differential을 검증).
 - extraction review Functions contract: `functions/src/lookbook/import/reviewContract.test.ts`, `taskService.test.ts`, `importValidation.test.ts`, `functions/src/index.contract.test.ts`.
 - extraction review iOS targeted tests: `OutPickTests/LookbookExtractionReviewViewModelTests.swift`, `OutPickTests/CloudFunctions/CloudFunctionsSeasonImportRepositoryTests.swift`.
 - existing-season reconcile: worker `src/extraction/reconcile.test.ts`, Functions `repairContract.test.ts`, iOS `LookbookSeasonRepairViewModelTests.swift`와 `CloudFunctionsSeasonImportRepositoryTests.swift`.
@@ -63,6 +66,11 @@ Lookbook import worker tests:
 - 같은 날 repair no-change terminal 보완은 Worker 59/59와 fixture 4/4, Functions 58/58와 lint/build, iOS repair 상태/ViewModel/repository/loader targeted 10/10 및 Simulator build/run을 통과했다. worker `lookbook-import-worker-00017-stx`와 Firebase Functions 운영 재배포 후 Ready/traffic 100%, 큐 RUNNING, 새 revision recent ERROR 0건과 repair callable ACTIVE를 확인했다. 실제 운영 no-change 비교 smoke는 데이터 mutation을 수반하므로 별도 실행 대상으로 남겼다.
 - Phase 7 adapter registry는 Cafe24 positive, Generic/비-Cafe24 negative, domain fixture/host gate, 전체 adapter version cache invalidation을 자동 검증한다.
 - Phase 8은 Worker lint/build와 65/65, fixture corpus 4/4·diff 0건, Functions lint/build와 58/58, iOS targeted 14/14 및 Simulator build/run을 통과했다. 운영 worker `lookbook-import-worker-00018-zwl` 배포 뒤 OUTSTANDING static 12 → rendered 44, YOUTH read-only live URL static 1 → source 46, HATCHINGROOM 후보 17을 확인했고 queue pending 0건과 새 revision ERROR 0건이었다.
+- Phase 8 종료 후 YOUTH 신규 등록 회귀 보완은 `collection_detail.html`과 분리된 이미지/제목 anchor 최소 fixture를 추가했다. extractor `1.2.1`, Worker lint/build와 65/65, fixture corpus 5/5·diff 0건이 통과했고 2026-07-23 현재 YOUTH 공개 목록 HTML의 정적 후보가 `0 → 20`으로 복구됨을 읽기 전용으로 확인했다.
+- 같은 보완 worker를 `lookbook-import-worker-00019-ftd`로 운영 배포해 Ready/traffic 100%, startup probe·port listen, ERROR 0건과 queue task 0건을 확인했다. 별도 health task는 Cloud Run 인증 계층 404로 container request log에 도달하지 않아 모두 삭제했지만, 이후 사용자 수동 QA에서 실제 앱의 YOUTH 시즌 추출 목록이 정상 표시돼 callable→worker→후보 저장·표시 smoke를 완료했다.
+- extraction review 수량 기준 보완은 예상 수 일치/불일치/미확인, 첫 signature 자동 진행, raw 후보 감소 evidence-only, content hash 차단을 Worker 66/66과 fixture 5/5로 검증했다. iOS는 미달 승인 차단·예상 수 prefill·미확인 수동 승인/부족 보고·무결성 차단과 repository contract targeted 10/10, Simulator build/run을 통과했다.
+- 같은 worker를 `lookbook-import-worker-00021-ghs`로 운영 배포해 Ready/traffic 100%, startup probe·port 8080 listen, recent ERROR 0건, queue RUNNING/pending 0건을 확인했다. rollback은 `lookbook-import-worker-00019-ftd`다.
+- expected-count 활성 grid scope 후 extractor `1.2.3` Worker 67/67·lint/build·fixture 5/5와 실제 저장 YOUTH HTML `46/49` evidence를 확인했다. 운영 `lookbook-import-worker-00022-5gn`은 Ready/Active·traffic 100%, recent ERROR 0건, queue RUNNING/pending 0건이며 rollback은 `00021-ghs`다.
 
 Firebase Functions tests/build entry:
 

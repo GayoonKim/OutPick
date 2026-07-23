@@ -170,9 +170,18 @@ Repository가 `DocumentSnapshot.documentID`를 같은 snapshot에서 decode한 D
 
 - 공용 로딩/캐시: `Services/ImageLoading`.
 - extraction review와 existing-season repair의 외부 이미지 preview는 `LookbookRemotePreviewImageLoader` 단일 인스턴스를 Container에서 공유한다. 메모리·디스크 캐시, 동일 요청 in-flight 병합, 중복 제거된 8개 window prefetch와 최대 동시 4개 다운로드를 사용한다.
-- 공용 렌더링은 `Views/Shared/LookbookRemotePreviewImageView.swift`다. extraction review는 기존 2열 grid, repair는 keep/add/reorder/remove-candidate 구역별 2열 `LazyVGrid`로 표시한다.
+- 공용 렌더링은 `Views/Shared/LookbookRemotePreviewImageView.swift`다. extraction review는 순번·제외 상태가 있는 가로 단일 행 `LazyHStack`, repair는 keep/add/reorder/remove-candidate 구역별 2열 `LazyVGrid`로 표시한다.
 - 확대 viewer: `Navigation/LookbookImageViewerView.swift`와 Infra viewer.
 - 같은 Storage path 덮어쓰기 시 `updatedAt` 기반 cache invalidation을 확인한다.
+
+시즌 상세 목록 계약:
+
+- `LoadSeasonDetailUseCase`는 source order 포스트를 첫 24개와 `PageCursor`로 반환하고, ViewModel이 cursor를 보존한다.
+- 마지막 12개 카드 영역에서 다음 24개를 요청하며 `PostID` 중복 제거, 동일 cursor 동시 호출 차단, refresh generation 이전 결과 폐기를 적용한다.
+- Firestore visibility filter로 빈 page가 반환돼도 `nextCursor`가 있으면 다음 page까지 이어서 조회한다.
+- 첫 12개와 현재 위치 앞 32개 이미지를 prefetch하고, 다음 page가 append되면 새 이미지 최대 24개를 카드 노출 전에 즉시 큐에 등록한다.
+- prefetch concurrency는 4로 제한해 공용 `ImageCachePipeline`의 네트워크 permit 6개 중 2개를 실제 visible image load에 남긴다. 저장은 `.memoryAndDisk`, 동일 경로 in-flight 병합과 중복 방지는 기존 pipeline과 ViewModel path set이 담당한다.
+- load-more 실패는 기존 포스트를 유지하고 화면 하단 재시도를 제공한다.
 
 ### Chat 공유
 
@@ -188,10 +197,12 @@ Repository가 `DocumentSnapshot.documentID`를 같은 snapshot에서 decode한 D
 - repository: `CloudFunctionsSeasonCandidateDiscoveryRepository.swift`와 import repository.
 - review: `LookbookExtractionReviewView.swift`, `LookbookExtractionReviewViewModel.swift`, `CloudFunctionsLookbookExtractionReviewRepository.swift`.
 - import 현황의 검토 action은 `LookbookCoordinator`가 상세 화면을 push하고 `LookbookContainer`가 Repository/UseCase/ViewModel을 조립한다.
-- review 화면은 고정 generation 후보의 정상 승인, 선택 후보 제외 승인, 이미지 부족 보고를 제공한다. correctionRequired 재분석은 총 관리자에게만 노출한다.
+- review 화면은 예상/발견 수량 방향을 기준으로 동작한다. 초과·예상 수 미확인은 불필요 후보 제외와 `승인`, 미달은 승인 없이 `누락된 이미지 알리기`, content hash 미완료는 승인 차단을 제공한다. correctionRequired 재분석은 총 관리자에게만 노출한다.
+- review 초기 로딩 화면은 안내 문구 아래에 accent 색상의 큰 진행 표시를 배치한다.
 - 두 review 화면의 외부 후보 이미지는 같은 remote preview loader/cache를 공유하며 URL별 중복 네트워크 요청을 병합한다.
 - `원본과 다시 비교` 진행 화면은 설명 아래 accent `ProgressView`를 표시한다. diff가 없으면 상세 화면을 자동 종료하고 목록의 `원본과 다시 비교` 상태로 복귀하며, 실제 변경이 있을 때만 `변경 검토`로 전환한다.
 - Functions/worker: `docs/ai/entrypoints/FIREBASE.md`, `docs/ai/architecture/LOOKBOOK_IMPORT_WORKER.md`.
+- Cafe24 목록의 `collection_detail.html`처럼 section과 detail을 underscore로 연결한 상세 경로도 공통 discovery 후보로 인정한다. 이미지 링크와 제목 링크가 같은 URL로 분리된 목록은 URL 기준 병합으로 한 시즌 후보에 수렴한다.
 
 ## 변경 시 함께 갱신할 문서
 

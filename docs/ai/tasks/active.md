@@ -2,8 +2,9 @@
 
 ## 현재 상태
 
-- 현재 진행 중인 핵심 task는 없다. `lookbook-extraction-learning-loop`는 Phase 1~8 구현·자동 회귀·운영 worker 배포·승인된 실제 URL smoke까지 완료했다. 이후 사용자 승인으로 운영 YOUTH 브랜드/시즌/포스트/import/extraction 데이터와 Storage를 영구 삭제했으며 Chat 공유 snapshot 1개와 최소 감사 로그 1개만 보존했다.
-- 현재 룩북 작업 다음 핵심 task는 `development-production-environment-separation`으로 확정했다. 하나의 Xcode 프로젝트와 app target을 유지하면서 Development는 `GayoonKim.OutPick.dev`/`outpick-test`, Production은 `GayoonKim.OutPick`/`outpick-664ae`로 분리하고 `feature/* → PR → main → release tag → 승인 기반 운영 배포` 흐름을 구성한다. 현재는 문서 기록만 완료했으며 룩북 작업 종료와 사용자 재개 승인 전에는 브랜치·Xcode·Firebase·외부 콘솔·배포를 변경하지 않는다.
+- 현재 진행 중인 핵심 task는 없다. `lookbook-extraction-learning-loop`는 Phase 1~8 구현·자동 회귀·운영 worker 배포·승인된 실제 URL smoke까지 완료했다. 이후 YOUTH 신규 등록 season discovery 0건 회귀와 extraction review 단순화를 배포했다. 마감 QA 후속으로 expected-count를 활성 grid에 scope하는 extractor `1.2.3` 코드와 Season 상세 24개 cursor pagination을 구현했다. 빠른 스크롤 보완으로 load trigger를 마지막 12개로 앞당기고, 첫 12개·앞 32개·append page 24개를 concurrency 4로 prefetch한다. worker 67/67·fixture 5/5, iOS targeted 11/11·Simulator build/run을 확인했으며 worker `lookbook-import-worker-00022-5gn`은 Ready/Active·traffic 100%, rollback은 `00021-ghs`다. 2026-07-24 사용자 승인으로 현재·과거 운영 YOUTH 데이터와 Chat snapshot·삭제 감사 로그까지 완전 삭제했고 Firestore·Storage·queue 사후 0건을 확인했다.
+- 다음 핵심 task는 `lookbook-discovery-learning-loop`로 확정했다. season discovery에도 구조 evidence, issue cluster, 관리자 정상/누락/오탐 ground truth, 최소 fixture 승격, extractor version gate를 season-image extraction과 같은 원칙으로 연결한다. 현재는 사용자 대화 기준 범위와 우선순위만 기록하며, 요구사항·데이터/API·관리자 UX·보존 정책을 논의하고 구현 승인을 받기 전에는 task 문서나 코드를 생성·수정하지 않는다.
+- `development-production-environment-separation`은 그다음 핵심 후속 후보로 유지한다. 하나의 Xcode 프로젝트와 app target을 유지하면서 Development는 `GayoonKim.OutPick.dev`/`outpick-test`, Production은 `GayoonKim.OutPick`/`outpick-664ae`로 분리하고 `feature/* → PR → main → release tag → 승인 기반 운영 배포` 흐름을 구성한다. 현재는 문서 기록만 완료했으며 사용자 재개 승인 전에는 브랜치·Xcode·Firebase·외부 콘솔·배포를 변경하지 않는다.
 - `socket-ingress-ordering-hardening`은 Phase 1~6 구현, 자동 회귀와 실제 Firebase/Simulator 핵심 QA를 완료하고 2026-07-17 종료했다.
 - `socket-message-dedupe-hardening`은 구현·자동 회귀·candidate closeout을 완료하고 2026-07-16 종료했으며, 2026-07-22 사용자 승인 후 candidate를 운영 traffic 100%로 전환했다.
 - `firestore-document-id-boundary-cleanup`은 Phase 1~4 구현·QA, rules 운영 배포, 운영 `Rooms.ID` cleanup과 사후 재감사까지 완료하고 2026-07-14 종료했다.
@@ -21,11 +22,17 @@
 
 ## 다음 핵심 작업
 
+- `lookbook-discovery-learning-loop`
+  - 범위: 구조 evidence, issue cluster, 관리자 정상/누락/오탐 피드백, 최소 fixture 승격, extractor version gate.
+  - 상태: 사용자 대화 기준 다음 핵심 작업으로 등록. 설계 하네스와 구현은 별도 논의·승인 전까지 보류.
+
+## 그다음 핵심 후속 후보
+
 - `development-production-environment-separation`
   - [design](development-production-environment-separation/design.md)
   - [decisions](development-production-environment-separation/decisions.md)
   - [progress](development-production-environment-separation/progress.md)
-  - 상태: 사용자 결정 D1~D7 문서화 완료, 구현 보류. 현재 룩북 작업 완료 후 깨끗한 `main`에서 별도 작업으로 활성화한다.
+  - 상태: 사용자 결정 D1~D7 문서화 완료, 구현 보류.
 
 ## 최근 완료 작업
 

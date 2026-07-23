@@ -50,12 +50,15 @@ Cloud Run worker:
 - `processor.ts`와 `season-discovery.ts`는 기존 parser/fallback 동작을 유지하면서 공통 extraction 결과 계약과 `extraction/adapters/registry.ts`의 동일 adapter 선택 결과를 소비한다.
 - Phase 7은 Generic → Platform → Domain 경계를 production 추출 경로에 연결했다. Cafe24의 `xans-product-additional`, `archive-source-detail`, `NNEditor`, Cafe24 관리 asset 제외 규칙은 `cafe24@1.0.0`에 격리되며 다른 플랫폼에는 적용하지 않는다. 실제 domain adapter는 아직 없고 등록 시 정확한 host와 registry가 확인한 fixture ID가 필수다.
 - extractor `1.2.0`부터 cache 재사용은 extractor뿐 아니라 platform/domain adapter key/version 전체가 현재 registry와 일치해야 한다. adapter/version 변화는 scoped trust와 cache 경계를 모두 새로 만든다.
+- extractor `1.2.1`은 Cafe24 목록의 `collection_detail.html` 같은 underscore-detail 경로를 공통 시즌 상세 URL로 인식한다. 이미지 anchor와 제목 anchor가 같은 URL로 분리돼도 후보 병합 전에 경로가 탈락하지 않으며, 최소 platform fixture가 이 계약을 고정한다.
+- extractor `1.2.2`는 content hash 중복 제거 후 최종 후보 수를 expected-count evidence와 비교한다. 하나라도 일치하고 hash 확인이 완료됐으면 첫 signature도 자동 materialization하며, 예상 수 미확인·수량 불일치·hash 미완료만 review gate로 남긴다. raw 후보 감소와 programmatic 구조 자체는 진단 evidence로만 유지한다.
+- extractor `1.2.3`은 여러 시즌 grid 설정을 공유하는 상세 페이지에서 실제 DOM에 존재하는 grid ID의 config만 declared total로 채택한다. 활성 grid 밖의 정적 고유 후보 수를 더한 scoped candidate total도 evidence로 남겨 programmatic gallery와 정적 후보가 합쳐지는 최종 기대 수를 표현한다. 현재 production worker는 `lookbook-import-worker-00022-5gn`, rollback은 `lookbook-import-worker-00021-ghs`다.
 - Phase 2는 script declared total과 programmatic DOM gallery 신호가 함께 있으면 strong static section이 있어도 rendered fallback을 실행한다. 정적/rendered 후보를 canonical URL로 병합한 뒤 image bytes hash가 확인된 중복만 first-wins로 제거한다.
 - Phase 3 fixture corpus는 브랜드 수가 아닌 `generic/platform/incident` 실패 구조로 분류한다. `src/fixture/`가 manifest load, current snapshot, golden differential을 담당하며 `fixtures/`에는 최소 HTML과 expected 계약만 둔다. 새 extractor 변경은 `npm run test:fixtures`로 후보·순서·title·strategy·adapter·quality diff를 확인한다.
 - hash 조회 실패는 asset 실패와 구분해 후보를 보존하고 `content_hash_incomplete` quality reason을 남긴다.
-- Phase 4는 parsing 결과의 candidate/evidence/version을 `reviewGeneration`/`reviewSnapshotHash`로 고정한다. 새롭거나 위험한 구조는 `awaitingReview`에서 lease를 반납하고 materialization 전에 멈춘다.
+- Phase 4는 parsing 결과의 candidate/evidence/version을 `reviewGeneration`/`reviewSnapshotHash`로 고정한다. 예상 수 미확인·최종 수량 불일치·content hash 미완료 결과는 `awaitingReview`에서 lease를 반납하고 materialization 전에 멈춘다.
 - 승인 task는 generation/hash를 다시 검증하고 `approvedCandidateKeys`만으로 같은 job의 `materializing`부터 재개해 재파싱하지 않는다. correctionRequired 재분석만 generation을 증가시켜 parsing부터 다시 실행한다.
-- 안전한 정상 승인으로 만들어진 scoped trust baseline이 동일 brand/host/template/extractor major/adapter version에 일치하고 허용 quality reason만 있으면 후속 run이 자동으로 materialization할 수 있다.
+- scoped trust baseline과 review audit은 기존 이력 호환을 위해 유지한다. 현재 자동 materialization 기준은 signature의 최초 여부가 아니라 expected-count 일치와 content hash 완료다.
 - Phase 5는 failed/needsReview parsing run만 allowlist 구조 evidence를 `lookbook-extraction-evidence/` Storage prefix에 7일 보존한다. query value·전체 HTML/script/screenshot은 저장하지 않는다.
 - evidence ledger ID는 job/dispatch generation/stage/fingerprint로 결정적이며, 같은 run retry는 cluster occurrence를 중복 증가시키지 않는다.
 - Phase 6 `extraction/reconcile.ts`는 기존 post와 새 후보의 canonical URL/content hash 매칭, deterministic add ID, keep/add/reorder/remove-candidate와 snapshot hash를 순수 계산한다.
