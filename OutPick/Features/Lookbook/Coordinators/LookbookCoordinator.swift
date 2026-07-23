@@ -84,6 +84,30 @@ final class LookbookCoordinator {
         ))
     }
 
+    func pushLookbookExtractionReview(
+        brandID: BrandID,
+        jobID: String
+    ) {
+        push(container.makeLookbookExtractionReviewView(
+            brandID: brandID,
+            jobID: jobID,
+            coordinator: self
+        ))
+    }
+
+    func pushLookbookSeasonRepair(
+        brandID: BrandID,
+        seasonID: SeasonID,
+        sourceImportJobID: String
+    ) {
+        push(container.makeLookbookSeasonRepairView(
+            brandID: brandID,
+            seasonID: seasonID,
+            sourceImportJobID: sourceImportJobID,
+            coordinator: self
+        ))
+    }
+
     func pop() {
         guard let navigationController else {
             assertionFailure("LookbookCoordinator requires an attached UINavigationController.")

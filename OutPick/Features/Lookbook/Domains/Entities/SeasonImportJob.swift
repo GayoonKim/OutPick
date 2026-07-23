@@ -15,6 +15,7 @@ enum SeasonImportJobType: String, Codable, Equatable {
 enum SeasonImportJobStatus: String, Codable, CaseIterable, Equatable {
     case queued
     case processing
+    case awaitingReview
     case succeeded
     case partialFailed
     case failed
@@ -22,7 +23,7 @@ enum SeasonImportJobStatus: String, Codable, CaseIterable, Equatable {
 
     var blocksDuplicateImportRequest: Bool {
         switch self {
-        case .queued, .processing, .succeeded, .partialFailed:
+        case .queued, .processing, .awaitingReview, .succeeded, .partialFailed:
             return true
         case .failed, .cancelled:
             return false
@@ -33,7 +34,7 @@ enum SeasonImportJobStatus: String, Codable, CaseIterable, Equatable {
         switch self {
         case .succeeded, .partialFailed, .failed, .cancelled:
             return true
-        case .queued, .processing:
+        case .queued, .processing, .awaitingReview:
             return false
         }
     }
@@ -42,7 +43,7 @@ enum SeasonImportJobStatus: String, Codable, CaseIterable, Equatable {
         switch self {
         case .partialFailed, .failed:
             return true
-        case .queued, .processing, .succeeded, .cancelled:
+        case .queued, .processing, .awaitingReview, .succeeded, .cancelled:
             return false
         }
     }
@@ -51,9 +52,27 @@ enum SeasonImportJobStatus: String, Codable, CaseIterable, Equatable {
 enum SeasonImportJobPhase: String, Codable, Equatable {
     case dispatching
     case parsing
+    case reviewing
     case materializing
     case syncingAssets
     case completed
+}
+
+enum SeasonImportReviewStatus: String, Codable, Equatable {
+    case pending
+    case correctionRequired
+    case reanalyzing
+    case repairPreviewReady
+    case approved
+}
+
+enum SeasonRepairStatus: String, Codable, Equatable {
+    case analyzing
+    case previewReady
+    case noChanges
+    case applying
+    case applied
+    case failed
 }
 
 enum SeasonAssetRetryStatus: String, Codable, Equatable {
@@ -89,6 +108,11 @@ struct SeasonImportJob: Equatable, Identifiable, Codable {
     let assetRetryStatus: SeasonAssetRetryStatus?
     let assetCompletedCount: Int
     let assetFailedCount: Int
+    let reviewStatus: SeasonImportReviewStatus?
+    let reviewGeneration: Int
+    let repairStatus: SeasonRepairStatus?
+    let repairGeneration: Int
+    let extractionQualityReasons: [String]
     let createdAt: Date
     let updatedAt: Date
 
@@ -102,6 +126,21 @@ struct SeasonImportJob: Equatable, Identifiable, Codable {
 
     var isAssetRetryInFlight: Bool {
         assetRetryStatus?.isInFlight == true
+    }
+
+    var needsExtractionReview: Bool {
+        status == .awaitingReview && repairStatus != .previewReady
+    }
+
+    var canRequestSeasonRepair: Bool {
+        jobType == .importSeasonFromURL
+        && targetSeasonID != nil
+        && (status == .succeeded || status == .partialFailed || status == .failed)
+        && repairStatus != .applying
+    }
+
+    var needsSeasonRepairPreview: Bool {
+        status == .awaitingReview && repairStatus == .previewReady
     }
 
     var displayTitle: String {

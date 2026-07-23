@@ -4,13 +4,19 @@ struct SeasonImportManagementView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var viewModel: SeasonImportManagementViewModel
     private let showsNavigationChrome: Bool
+    private let onReview: (String) -> Void
+    private let onRepair: (String, SeasonID) -> Void
 
     init(
         viewModel: SeasonImportManagementViewModel,
-        showsNavigationChrome: Bool = true
+        showsNavigationChrome: Bool = true,
+        onReview: @escaping (String) -> Void = { _ in },
+        onRepair: @escaping (String, SeasonID) -> Void = { _, _ in }
     ) {
         _viewModel = StateObject(wrappedValue: viewModel)
         self.showsNavigationChrome = showsNavigationChrome
+        self.onReview = onReview
+        self.onRepair = onRepair
     }
 
     var body: some View {
@@ -75,6 +81,9 @@ struct SeasonImportManagementView: View {
         .task {
             await viewModel.monitor()
         }
+        .onAppear {
+            Task { await viewModel.load() }
+        }
         .appToast(message: viewModel.errorMessage) {
             viewModel.clearError()
         }
@@ -131,6 +140,35 @@ struct SeasonImportManagementView: View {
                     )
                 }
             }
+
+            if job.needsExtractionReview {
+                HStack {
+                    Spacer()
+                    Button("검토하기") {
+                        onReview(job.id)
+                    }
+                    .font(.caption.weight(.semibold))
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                }
+            }
+
+            if let seasonID = job.targetSeasonID,
+               job.canRequestSeasonRepair || job.needsSeasonRepairPreview {
+                HStack {
+                    Spacer()
+                    Button(
+                        job.needsSeasonRepairPreview
+                            ? "변경 검토"
+                            : "원본과 다시 비교"
+                    ) {
+                        onRepair(job.id, seasonID)
+                    }
+                    .font(.caption.weight(.semibold))
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                }
+            }
         }
         .padding(.vertical, 6)
     }
@@ -148,6 +186,7 @@ struct SeasonImportManagementView: View {
         switch status {
         case .queued: return "대기 중"
         case .processing: return "처리 중"
+        case .awaitingReview: return "검토 필요"
         case .succeeded: return "완료"
         case .partialFailed: return "일부 실패"
         case .failed: return "실패"
@@ -159,6 +198,7 @@ struct SeasonImportManagementView: View {
         switch phase {
         case .dispatching: return "작업 요청을 전달하고 있습니다."
         case .parsing: return "시즌 페이지를 분석하고 있습니다."
+        case .reviewing: return "추출 결과의 관리자 검토가 필요합니다."
         case .materializing: return "시즌과 포스트를 만들고 있습니다."
         case .syncingAssets: return "이미지를 저장하고 있습니다."
         case .completed: return "작업이 종료되었습니다."
@@ -173,7 +213,7 @@ struct SeasonImportManagementView: View {
             return OutPickTheme.SwiftUIColor.warning
         case .cancelled:
             return OutPickTheme.SwiftUIColor.textSecondary
-        case .queued, .processing:
+        case .queued, .processing, .awaitingReview:
             return OutPickTheme.SwiftUIColor.accent
         }
     }

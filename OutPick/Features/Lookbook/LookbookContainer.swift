@@ -23,6 +23,7 @@ final class LookbookContainer {
     let currentUserIDProvider: any CurrentUserIDProviding
     private var avatarImageManager: AvatarImageManaging
     private let firebaseRepositories: any FirebaseRepositoryProviding
+    private let remotePreviewImageLoader: any LookbookRemotePreviewImageLoading
 
     private let loadPostCommentsUseCase: any LoadPostCommentsUseCaseProtocol
     private let loadCommentRepliesUseCase: any LoadCommentRepliesUseCaseProtocol
@@ -54,7 +55,9 @@ final class LookbookContainer {
         brandAdminSessionStore: BrandAdminSessionStore,
         currentUserProvider: any CurrentUserProviding = LoginManagerCurrentUserProvider(),
         firebaseRepositories: any FirebaseRepositoryProviding = FirebaseRepositoryProvider.shared,
-        avatarImageManager: AvatarImageManaging
+        avatarImageManager: AvatarImageManaging,
+        remotePreviewImageLoader: any LookbookRemotePreviewImageLoading =
+            LookbookRemotePreviewImageLoader()
     ) {
         self.provider = provider
         self.brandAdminSessionStore = brandAdminSessionStore
@@ -67,6 +70,7 @@ final class LookbookContainer {
         self.currentUserIDProvider = LookbookCurrentUserIDProvider(currentUserProvider: currentUserProvider)
         self.firebaseRepositories = firebaseRepositories
         self.avatarImageManager = avatarImageManager
+        self.remotePreviewImageLoader = remotePreviewImageLoader
         self.loadPostCommentsUseCase = LoadPostCommentsUseCase(
             commentRepository: provider.commentRepository
         )
@@ -325,7 +329,8 @@ final class LookbookContainer {
                 AnyView(
                     self.makeSeasonImportManagementView(
                         brandID: brand.id,
-                        showsNavigationChrome: false
+                        showsNavigationChrome: false,
+                        coordinator: coordinator
                     )
                 )
             },
@@ -541,7 +546,8 @@ final class LookbookContainer {
 
     func makeSeasonImportManagementView(
         brandID: BrandID,
-        showsNavigationChrome: Bool = true
+        showsNavigationChrome: Bool = true,
+        coordinator: LookbookCoordinator
     ) -> SeasonImportManagementView {
         SeasonImportManagementView(
             viewModel: SeasonImportManagementViewModel(
@@ -551,7 +557,60 @@ final class LookbookContainer {
                     retryRepository: provider.seasonAssetRetryRepository
                 )
             ),
-            showsNavigationChrome: showsNavigationChrome
+            showsNavigationChrome: showsNavigationChrome,
+            onReview: { [weak coordinator] jobID in
+                coordinator?.pushLookbookExtractionReview(
+                    brandID: brandID,
+                    jobID: jobID
+                )
+            },
+            onRepair: { [weak coordinator] jobID, seasonID in
+                coordinator?.pushLookbookSeasonRepair(
+                    brandID: brandID,
+                    seasonID: seasonID,
+                    sourceImportJobID: jobID
+                )
+            }
+        )
+    }
+
+    func makeLookbookSeasonRepairView(
+        brandID: BrandID,
+        seasonID: SeasonID,
+        sourceImportJobID: String,
+        coordinator: LookbookCoordinator
+    ) -> LookbookSeasonRepairView {
+        LookbookSeasonRepairView(
+            viewModel: LookbookSeasonRepairViewModel(
+                brandID: brandID,
+                seasonID: seasonID,
+                sourceImportJobID: sourceImportJobID,
+                useCase: ManageLookbookSeasonRepairUseCase(
+                    repository: provider.lookbookSeasonRepairRepository
+                ),
+                onCompleted: { [weak coordinator] in coordinator?.pop() }
+            ),
+            imageLoader: remotePreviewImageLoader,
+            onBack: { [weak coordinator] in coordinator?.pop() }
+        )
+    }
+
+    func makeLookbookExtractionReviewView(
+        brandID: BrandID,
+        jobID: String,
+        coordinator: LookbookCoordinator
+    ) -> LookbookExtractionReviewView {
+        LookbookExtractionReviewView(
+            viewModel: LookbookExtractionReviewViewModel(
+                brandID: brandID,
+                jobID: jobID,
+                useCase: ManageLookbookExtractionReviewUseCase(
+                    repository: provider.lookbookExtractionReviewRepository
+                ),
+                onCompleted: { [weak coordinator] in coordinator?.pop() }
+            ),
+            imageLoader: remotePreviewImageLoader,
+            onBack: { [weak coordinator] in coordinator?.pop() }
         )
     }
 

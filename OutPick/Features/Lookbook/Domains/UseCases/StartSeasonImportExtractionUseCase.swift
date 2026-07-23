@@ -95,7 +95,7 @@ final class StartSeasonImportExtractionUseCase: StartSeasonImportExtractionUseCa
             return .succeeded
         case .partialFailed, .failed, .cancelled:
             return .failed
-        case .queued, .processing:
+        case .queued, .processing, .awaitingReview:
             return .processing
         }
     }

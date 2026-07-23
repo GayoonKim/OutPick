@@ -46,7 +46,7 @@ final class LoadSeasonDetailUseCase: LoadSeasonDetailUseCaseProtocol {
         async let postsTask = postRepository.fetchPosts(
             brandID: brandID,
             seasonID: seasonID,
-            sort: .newest,
+            sort: .sourceOrder,
             filterTagIDs: [],
             page: PageRequest(size: 60, cursor: nil)
         )

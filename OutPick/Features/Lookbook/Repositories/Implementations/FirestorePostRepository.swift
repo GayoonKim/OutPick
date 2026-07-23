@@ -131,6 +131,8 @@ final class FirestorePostRepository: PostRepositoryProtocol {
 
     private func applySort(_ query: Query, sort: PostSortOption) -> Query {
         switch sort {
+        case .sourceOrder:
+            return query.order(by: "orderIndex", descending: false)
         case .newest:
             return query.order(by: "createdAt", descending: true)
         case .mostCommented:

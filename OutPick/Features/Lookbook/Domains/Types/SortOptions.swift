@@ -9,6 +9,7 @@ import Foundation
 
 // MARK: - 정렬/페이지네이션/필터 (화면 공통으로 재사용)
 enum PostSortOption: String, Codable {
+    case sourceOrder
     case newest
     case mostCommented
     case mostReplaced

@@ -26,6 +26,10 @@ final class LookbookRepositoryProvider {
                 transport: transport
             ),
             seasonAssetRetryRepository: CloudFunctionsSeasonAssetRetryRepository(transport: transport),
+            lookbookExtractionReviewRepository:
+                CloudFunctionsLookbookExtractionReviewRepository(transport: transport),
+            lookbookSeasonRepairRepository:
+                CloudFunctionsLookbookSeasonRepairRepository(transport: transport),
             seasonCandidateDiscoveryRepository: CloudFunctionsSeasonCandidateDiscoveryRepository(
                 transport: transport
             ),
@@ -52,6 +56,8 @@ final class LookbookRepositoryProvider {
     let seasonImportJobRepository: SeasonImportJobRepositoryProtocol
     let seasonImportJobRequestingRepository: SeasonImportJobRequestingRepositoryProtocol
     let seasonAssetRetryRepository: SeasonAssetRetryRequestingRepository
+    let lookbookExtractionReviewRepository: LookbookExtractionReviewRepositoryProtocol
+    let lookbookSeasonRepairRepository: LookbookSeasonRepairRepositoryProtocol
     let seasonCandidateRepository: SeasonCandidateRepositoryProtocol
     let seasonCandidateDiscoveryRepository: SeasonCandidateDiscoveryRepositoryProtocol
 
@@ -100,6 +106,10 @@ final class LookbookRepositoryProvider {
         seasonImportJobRepository: SeasonImportJobRepositoryProtocol = FirestoreSeasonImportJobRepository(),
         seasonImportJobRequestingRepository: SeasonImportJobRequestingRepositoryProtocol = CloudFunctionsSeasonImportJobRequestingRepository(),
         seasonAssetRetryRepository: SeasonAssetRetryRequestingRepository = CloudFunctionsSeasonAssetRetryRepository(),
+        lookbookExtractionReviewRepository: LookbookExtractionReviewRepositoryProtocol =
+            CloudFunctionsLookbookExtractionReviewRepository(),
+        lookbookSeasonRepairRepository: LookbookSeasonRepairRepositoryProtocol =
+            CloudFunctionsLookbookSeasonRepairRepository(),
         seasonCandidateRepository: SeasonCandidateRepositoryProtocol = FirestoreSeasonCandidateRepository(),
         seasonCandidateDiscoveryRepository: SeasonCandidateDiscoveryRepositoryProtocol = CloudFunctionsSeasonCandidateDiscoveryRepository(),
 
@@ -174,6 +184,8 @@ final class LookbookRepositoryProvider {
         self.seasonImportJobRepository = seasonImportJobRepository
         self.seasonImportJobRequestingRepository = seasonImportJobRequestingRepository
         self.seasonAssetRetryRepository = seasonAssetRetryRepository
+        self.lookbookExtractionReviewRepository = lookbookExtractionReviewRepository
+        self.lookbookSeasonRepairRepository = lookbookSeasonRepairRepository
         self.seasonCandidateRepository = seasonCandidateRepository
         self.seasonCandidateDiscoveryRepository = seasonCandidateDiscoveryRepository
         self.brandStore = brandStore

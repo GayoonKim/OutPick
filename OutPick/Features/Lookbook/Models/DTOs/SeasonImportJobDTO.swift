@@ -24,6 +24,11 @@ struct SeasonImportJobDTO: Decodable {
     let assetRetryStatus: SeasonAssetRetryStatus?
     let assetCompletedCount: Int?
     let assetFailedCount: Int?
+    let reviewStatus: SeasonImportReviewStatus?
+    let reviewGeneration: Int?
+    let repairStatus: SeasonRepairStatus?
+    let repairGeneration: Int?
+    let extractionQualityReasons: [String]?
     let createdAt: Timestamp?
     let updatedAt: Timestamp?
 
@@ -50,6 +55,11 @@ struct SeasonImportJobDTO: Decodable {
             assetRetryStatus: assetRetryStatus,
             assetCompletedCount: assetCompletedCount ?? 0,
             assetFailedCount: assetFailedCount ?? 0,
+            reviewStatus: reviewStatus,
+            reviewGeneration: reviewGeneration ?? 0,
+            repairStatus: repairStatus,
+            repairGeneration: repairGeneration ?? 0,
+            extractionQualityReasons: extractionQualityReasons ?? [],
             createdAt: createdAt?.dateValue() ?? Date(timeIntervalSince1970: 0),
             updatedAt: updatedAt?.dateValue() ?? Date(timeIntervalSince1970: 0)
         )
