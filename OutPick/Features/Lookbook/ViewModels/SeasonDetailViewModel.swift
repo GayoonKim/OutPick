@@ -14,10 +14,14 @@ final class SeasonDetailViewModel: ObservableObject {
     @Published private(set) var posts: [LookbookPost] = []
     @Published private(set) var visibleCommentCounts: [PostID: Int] = [:]
     @Published private(set) var isLoading: Bool = false
+    @Published private(set) var isLoadingMore: Bool = false
     @Published private(set) var isMutatingLike: Bool = false
     @Published private(set) var errorMessage: String?
+    @Published private(set) var loadMoreErrorMessage: String?
     @Published private(set) var engagementErrorMessage: String?
 
+    private let postPageSize: Int
+    private let loadMoreThreshold: Int
     private let initialPrefetchCount: Int
     private let lookAheadPrefetchCount: Int
     private let prefetchConcurrency: Int
@@ -34,6 +38,8 @@ final class SeasonDetailViewModel: ObservableObject {
 
     private var loadedKey: String?
     private var isRequesting: Bool = false
+    private var nextPostCursor: PageCursor?
+    private var loadGeneration: UInt = 0
     private var prefetchedPostImagePaths = Set<String>()
     private var prefetchedThroughIndex: Int = -1
     private var pinnedPostKeys: Set<PostInteractionKey> = []
@@ -51,9 +57,11 @@ final class SeasonDetailViewModel: ObservableObject {
         postInteractionStore: any PostInteractionManaging,
         currentUserIDProvider: any CurrentUserIDProviding,
         maxBytes: Int,
-        initialPrefetchCount: Int = 8,
-        lookAheadPrefetchCount: Int = 20,
-        prefetchConcurrency: Int = 8
+        postPageSize: Int = 24,
+        loadMoreThreshold: Int = 12,
+        initialPrefetchCount: Int = 12,
+        lookAheadPrefetchCount: Int = 32,
+        prefetchConcurrency: Int = 4
     ) {
         self.brandID = brandID
         self.seasonID = seasonID
@@ -65,6 +73,8 @@ final class SeasonDetailViewModel: ObservableObject {
         self.postInteractionStore = postInteractionStore
         self.currentUserIDProvider = currentUserIDProvider
         self.maxBytes = maxBytes
+        self.postPageSize = postPageSize
+        self.loadMoreThreshold = loadMoreThreshold
         self.initialPrefetchCount = initialPrefetchCount
         self.lookAheadPrefetchCount = lookAheadPrefetchCount
         self.prefetchConcurrency = prefetchConcurrency
@@ -154,9 +164,13 @@ final class SeasonDetailViewModel: ObservableObject {
 
     private func load() async {
         if isRequesting { return }
+        loadGeneration &+= 1
+        let generation = loadGeneration
         isRequesting = true
         isLoading = true
+        isLoadingMore = false
         errorMessage = nil
+        loadMoreErrorMessage = nil
         defer {
             isRequesting = false
             isLoading = false
@@ -165,38 +179,41 @@ final class SeasonDetailViewModel: ObservableObject {
         do {
             let content = try await useCase.execute(
                 brandID: brandID,
-                seasonID: seasonID
+                seasonID: seasonID,
+                pageSize: postPageSize
             )
+            guard generation == loadGeneration else { return }
             let userState = await fetchSeasonUserStateIfPossible()
+            guard generation == loadGeneration else { return }
             prefetchedPostImagePaths.removeAll()
             prefetchedThroughIndex = -1
             let initialTargets = makePrefetchTargets(
-                from: content.posts,
+                from: content.postsPage.items,
                 startingAt: 0,
                 count: initialPrefetchCount,
                 maxBytes: maxBytes
             )
-            await prefetchImmediately(
-                items: initialTargets,
-                brandImageCache: brandImageCache
-            )
             prefetchedThroughIndex = min(
-                content.posts.count - 1,
+                content.postsPage.items.count - 1,
                 max(initialPrefetchCount - 1, -1)
             )
             season = content.season
             seasonUserState = userState
             seasonInteractionStore.seedSeason(content.season, userState: userState)
-            posts = content.posts
-            content.posts.forEach { postInteractionStore.seedPostMetrics($0) }
-            let loadedPostKeys = Set(content.posts.map(PostInteractionKey.init(post:)))
+            posts = content.postsPage.items
+            nextPostCursor = content.postsPage.nextCursor
+            content.postsPage.items.forEach { postInteractionStore.seedPostMetrics($0) }
+            let loadedPostKeys = Set(content.postsPage.items.map(PostInteractionKey.init(post:)))
             updatePinnedPostKeys(loadedPostKeys)
             bindInteractionStore(postKeys: loadedPostKeys)
             loadedKey = "\(brandID.value)|\(seasonID.value)"
+            schedulePrefetch(items: initialTargets, brandImageCache: brandImageCache)
         } catch {
+            guard generation == loadGeneration else { return }
             season = nil
             seasonUserState = nil
             posts = []
+            nextPostCursor = nil
             updatePinnedPostKeys([])
             bindInteractionStore(postKeys: [])
             errorMessage = unavailableMessage(for: error) ?? "시즌과 룩북 사진을 불러오지 못했습니다."
@@ -270,6 +287,18 @@ final class SeasonDetailViewModel: ObservableObject {
         )
         prefetchedThroughIndex = requestedEndIndex
         schedulePrefetch(items: targets, brandImageCache: brandImageCache)
+    }
+
+    func loadMorePostsIfNeeded(currentPostID: PostID) async {
+        guard shouldLoadMorePosts(currentPostID: currentPostID) else {
+            return
+        }
+        await loadNextPostsPage()
+    }
+
+    func retryLoadingMorePosts() async {
+        guard loadMoreErrorMessage != nil else { return }
+        await loadNextPostsPage()
     }
 
     func displayCommentCount(for post: LookbookPost) -> Int {
@@ -387,22 +416,92 @@ final class SeasonDetailViewModel: ObservableObject {
             await brandImageCache.prefetch(
                 items: items,
                 concurrency: concurrency,
-                storePolicy: .memoryOnly
+                storePolicy: .memoryAndDisk
             )
         }
     }
 
-    private func prefetchImmediately(
-        items: [(path: String, maxBytes: Int)],
-        brandImageCache: any BrandImageCacheProtocol
-    ) async {
-        guard !items.isEmpty else { return }
+    private func loadNextPostsPage() async {
+        guard let cursor = nextPostCursor,
+              isLoading == false,
+              isLoadingMore == false else {
+            return
+        }
 
-        await brandImageCache.prefetch(
-            items: items,
-            concurrency: prefetchConcurrency,
-            storePolicy: .memoryOnly
-        )
+        let generation = loadGeneration
+        isLoadingMore = true
+        loadMoreErrorMessage = nil
+        defer {
+            if generation == loadGeneration {
+                isLoadingMore = false
+            }
+        }
+
+        do {
+            var requestedCursor = cursor
+            var requestedCursorTokens = Set<String>()
+            var appendedPosts: [LookbookPost] = []
+            var appendedStartIndex: Int?
+
+            while true {
+                guard requestedCursorTokens.insert(requestedCursor.token).inserted else {
+                    nextPostCursor = nil
+                    break
+                }
+                let page = try await useCase.loadPosts(
+                    brandID: brandID,
+                    seasonID: seasonID,
+                    page: PageRequest(size: postPageSize, cursor: requestedCursor)
+                )
+                guard generation == loadGeneration else { return }
+
+                var existingPostIDs = Set(posts.map(\.id))
+                appendedPosts = page.items.filter {
+                    existingPostIDs.insert($0.id).inserted
+                }
+                if appendedPosts.isEmpty == false {
+                    appendedStartIndex = posts.count
+                }
+                posts.append(contentsOf: appendedPosts)
+                nextPostCursor = page.nextCursor
+
+                guard appendedPosts.isEmpty,
+                      let nextCursor = page.nextCursor else {
+                    break
+                }
+                requestedCursor = nextCursor
+            }
+
+            appendedPosts.forEach { postInteractionStore.seedPostMetrics($0) }
+            let loadedPostKeys = Set(posts.map(PostInteractionKey.init(post:)))
+            updatePinnedPostKeys(loadedPostKeys)
+            bindInteractionStore(postKeys: loadedPostKeys)
+
+            if let appendedStartIndex {
+                let targets = makePrefetchTargets(
+                    startingAt: appendedStartIndex,
+                    count: appendedPosts.count,
+                    maxBytes: maxBytes
+                )
+                prefetchedThroughIndex = max(
+                    prefetchedThroughIndex,
+                    appendedStartIndex + appendedPosts.count - 1
+                )
+                schedulePrefetch(items: targets, brandImageCache: brandImageCache)
+            }
+        } catch {
+            guard generation == loadGeneration else { return }
+            loadMoreErrorMessage = "다음 룩을 불러오지 못했어요."
+        }
+    }
+
+    private func shouldLoadMorePosts(currentPostID: PostID) -> Bool {
+        guard nextPostCursor != nil,
+              let index = posts.firstIndex(where: { $0.id == currentPostID })
+        else {
+            return false
+        }
+        return index >= max(posts.count - loadMoreThreshold, 0)
     }
 
     private func preferredPrefetchPath(for post: LookbookPost) -> String? {

@@ -85,9 +85,16 @@ struct SeasonDetailView: View {
                                     .accessibilityIdentifier("lookbook.post.card")
                                     .onAppear {
                                         viewModel.postDidAppear(postID: post.id)
+                                        Task {
+                                            await viewModel.loadMorePostsIfNeeded(
+                                                currentPostID: post.id
+                                            )
+                                        }
                                     }
                                 }
                             }
+
+                            loadMoreSection
                         }
                     }
                     .padding(.horizontal, 16)
@@ -190,6 +197,32 @@ struct SeasonDetailView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(OutPickTheme.SwiftUIColor.surfaceBase)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+
+    @ViewBuilder
+    private var loadMoreSection: some View {
+        if viewModel.isLoadingMore {
+            ProgressView()
+                .tint(OutPickTheme.SwiftUIColor.accent)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+        } else if let message = viewModel.loadMoreErrorMessage {
+            VStack(spacing: 8) {
+                Text(message)
+                    .font(.footnote)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+
+                Button("다시 불러오기") {
+                    Task {
+                        await viewModel.retryLoadingMorePosts()
+                    }
+                }
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(OutPickTheme.SwiftUIColor.accent)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+        }
     }
 
     private var shouldBlockInitialLoading: Bool {

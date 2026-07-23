@@ -9,14 +9,21 @@ import Foundation
 
 struct SeasonDetailContent: Equatable {
     let season: Season
-    let posts: [LookbookPost]
+    let postsPage: PageResponse<LookbookPost>
 }
 
 protocol LoadSeasonDetailUseCaseProtocol {
     func execute(
         brandID: BrandID,
-        seasonID: SeasonID
+        seasonID: SeasonID,
+        pageSize: Int
     ) async throws -> SeasonDetailContent
+
+    func loadPosts(
+        brandID: BrandID,
+        seasonID: SeasonID,
+        page: PageRequest
+    ) async throws -> PageResponse<LookbookPost>
 }
 
 final class LoadSeasonDetailUseCase: LoadSeasonDetailUseCaseProtocol {
@@ -36,7 +43,8 @@ final class LoadSeasonDetailUseCase: LoadSeasonDetailUseCaseProtocol {
 
     func execute(
         brandID: BrandID,
-        seasonID: SeasonID
+        seasonID: SeasonID,
+        pageSize: Int
     ) async throws -> SeasonDetailContent {
         async let brandTask = brandRepository.fetchBrand(brandID: brandID)
         async let seasonTask = seasonRepository.fetchSeason(
@@ -48,13 +56,27 @@ final class LoadSeasonDetailUseCase: LoadSeasonDetailUseCaseProtocol {
             seasonID: seasonID,
             sort: .sourceOrder,
             filterTagIDs: [],
-            page: PageRequest(size: 60, cursor: nil)
+            page: PageRequest(size: pageSize, cursor: nil)
         )
 
         let (_, season, posts) = try await (brandTask, seasonTask, postsTask)
         return SeasonDetailContent(
             season: season,
-            posts: posts.items
+            postsPage: posts
+        )
+    }
+
+    func loadPosts(
+        brandID: BrandID,
+        seasonID: SeasonID,
+        page: PageRequest
+    ) async throws -> PageResponse<LookbookPost> {
+        try await postRepository.fetchPosts(
+            brandID: brandID,
+            seasonID: seasonID,
+            sort: .sourceOrder,
+            filterTagIDs: [],
+            page: page
         )
     }
 }

@@ -33,13 +33,22 @@ final class LookbookExtractionReviewViewModel: ObservableObject {
         errorMessage = nil
         defer { isLoading = false }
         do {
-            review = try await useCase.load(brandID: brandID, jobID: jobID)
+            let loadedReview = try await useCase.load(
+                brandID: brandID,
+                jobID: jobID
+            )
+            review = loadedReview
+            if expectedCandidateCountText.isEmpty,
+               let expected = loadedReview.expectedCandidateCount {
+                expectedCandidateCountText = String(expected)
+            }
         } catch {
             errorMessage = "검토 정보를 불러오지 못했습니다."
         }
     }
 
     func toggle(candidateKey: String) {
+        guard review?.allowsCandidateExclusion == true else { return }
         if excludedCandidateKeys.contains(candidateKey) {
             excludedCandidateKeys.remove(candidateKey)
         } else {
@@ -48,7 +57,7 @@ final class LookbookExtractionReviewViewModel: ObservableObject {
     }
 
     func approve() async {
-        guard let review, !isSubmitting else { return }
+        guard let review, review.allowsApproval, !isSubmitting else { return }
         isSubmitting = true
         errorMessage = nil
         defer { isSubmitting = false }
@@ -65,7 +74,10 @@ final class LookbookExtractionReviewViewModel: ObservableObject {
     }
 
     func reportInsufficientImages() async {
-        guard let review, !isSubmitting else { return }
+        guard let review,
+              review.showsInsufficientImagesForm,
+              canReportInsufficientImages,
+              !isSubmitting else { return }
         let expectedCount = Int(expectedCandidateCountText)
         isSubmitting = true
         errorMessage = nil
@@ -98,5 +110,13 @@ final class LookbookExtractionReviewViewModel: ObservableObject {
 
     func clearError() {
         errorMessage = nil
+    }
+
+    var canReportInsufficientImages: Bool {
+        guard let review,
+              let expectedCount = Int(expectedCandidateCountText) else {
+            return false
+        }
+        return expectedCount > review.candidates.count
     }
 }
