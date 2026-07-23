@@ -2,6 +2,16 @@
 import type {Page} from "playwright";
 
 import {
+  extractionResult,
+  extractionResultWithStrategy,
+  mergeExtractionVersionSets,
+  type ExtractionCandidateEvidence,
+  type ExtractionResult,
+} from "./extraction/core.js";
+import {selectExtractionAdapters} from "./extraction/adapters/registry.js";
+import {extractionCandidateKey} from "./extraction/evidence.js";
+import type {ExtractionVersionSet} from "./extraction/version.js";
+import {
   assertPublicHTTPURL,
   fetchPublicHTTP,
   responseBytes,
@@ -21,12 +31,12 @@ type AnchorCandidate = SeasonCandidate & {
 };
 
 type DiagnosticLimits = {
-  maxLoadMoreClicks: 20;
-  maxScrollAttempts: 20;
-  settleMs: 800;
-  timeoutMs: 45000;
-  maxDiagnosticCandidates: 120;
-  maxStoredCandidates: 80;
+  maxLoadMoreClicks: number;
+  maxScrollAttempts: number;
+  settleMs: number;
+  timeoutMs: number;
+  maxDiagnosticCandidates: number;
+  maxStoredCandidates: number;
 };
 
 type SuggestedFixScope = "common_logic" | "brand_adapter" | "unknown";
@@ -55,9 +65,7 @@ type SuggestedFix = {
   message: string;
 };
 
-type DiscoveryExtraction = {
-  candidates: SeasonCandidate[];
-  strategy: string;
+export type DiscoveryExtraction = ExtractionResult<SeasonCandidate> & {
   loadMoreDetected: boolean;
   dynamicRenderingDetected: boolean;
 };
@@ -96,6 +104,8 @@ export type DiscoverSeasonsDiagnosticResponse = {
     renderedFallbackUsed: boolean;
     parserStrategy: string;
     adapterKey: string | null;
+    candidateEvidence: ExtractionCandidateEvidence[];
+    extractionVersions: ExtractionVersionSet;
     failureReasons: FailureReason[];
     suggestedFixScope: SuggestedFixScope;
     suggestedFixes: SuggestedFix[];
@@ -228,7 +238,10 @@ export function extractSeasonCandidates(
 }
 
 export function shouldUseRenderedDiscovery(
-  extraction: DiscoveryExtraction,
+  extraction: Pick<
+    DiscoveryExtraction,
+    "candidates" | "strategy" | "loadMoreDetected" | "dynamicRenderingDetected"
+  >,
 ): boolean {
   if (extraction.candidates.length === 0) {
     return true;
@@ -346,6 +359,20 @@ async function runDiscovery(
     limits.maxDiagnosticCandidates,
   );
   const storedCandidates = mergedCandidates.slice(0, limits.maxStoredCandidates);
+  const selectedStrategy = renderedExtraction?.strategy ?? staticExtraction.strategy;
+  const selectedVersions = mergeExtractionVersionSets([
+    staticExtraction.versions,
+    ...(renderedExtraction === null ? [] : [renderedExtraction.versions]),
+  ]);
+  const selectedExtraction = extractionResult({
+    candidates: storedCandidates,
+    strategy: selectedStrategy,
+    rawCandidateCount: mergedCandidates.length,
+    sourceURL,
+    candidateKey: (candidate) => extractionCandidateKey(candidate.seasonURL),
+    sourceKind: renderedExtraction === null ? "static_dom" : "rendered_dom",
+    versions: selectedVersions,
+  });
   const candidateCountAfterExpansion =
     renderedExtraction?.candidates.length ?? staticExtraction.candidates.length;
   const renderedImproved =
@@ -386,8 +413,10 @@ async function runDiscovery(
         staticExtraction.dynamicRenderingDetected ||
         (renderedExtraction?.dynamicRenderingDetected ?? false),
       renderedFallbackUsed: renderedExtraction !== null,
-      parserStrategy: renderedExtraction?.strategy ?? staticExtraction.strategy,
-      adapterKey: null,
+      parserStrategy: selectedStrategy,
+      adapterKey: selectedVersions.platformAdapterKey,
+      candidateEvidence: selectedExtraction.candidateEvidence,
+      extractionVersions: selectedExtraction.versions,
       failureReasons: classification.failureReasons,
       suggestedFixScope: classification.suggestedFixScope,
       suggestedFixes: classification.suggestedFixes,
@@ -429,17 +458,42 @@ function extractionFromHTML(
   sourceURL: string,
   limits: DiagnosticLimits,
 ): DiscoveryExtraction {
+  const adapterSelection = selectExtractionAdapters({
+    html,
+    sourceURL,
+    kind: "discovery",
+  });
   const candidates = extractSeasonCandidates(
     html,
     sourceURL,
     limits.maxDiagnosticCandidates,
   );
   return {
-    candidates,
-    strategy: candidates.length <= 2 ? "lowConfidenceStatic" : "staticAnchors",
+    ...extractionResult({
+      candidates,
+      strategy: candidates.length <= 2 ? "lowConfidenceStatic" : "staticAnchors",
+      rawCandidateCount: candidates.length,
+      sourceURL,
+      candidateKey: (candidate) => extractionCandidateKey(candidate.seasonURL),
+      versions: adapterSelection.versions,
+    }),
     loadMoreDetected: loadMoreSignalDetected(html),
     dynamicRenderingDetected: dynamicRenderingSignalCount(html) > 0,
   };
+}
+
+export function extractSeasonCandidateResult(
+  html: string,
+  sourceURL: string,
+  limit = DEFAULT_LIMITS.maxDiagnosticCandidates,
+): DiscoveryExtraction {
+  return extractionFromHTML(html, sourceURL, {
+    ...DEFAULT_LIMITS,
+    maxDiagnosticCandidates: Math.min(
+      Math.max(1, limit),
+      DEFAULT_LIMITS.maxDiagnosticCandidates,
+    ),
+  });
 }
 
 async function renderedDiscovery(
@@ -482,8 +536,11 @@ async function renderedDiscovery(
       const finalHTML = await page.content();
       const finalExtraction = extractionFromHTML(finalHTML, sourceURL, limits);
       return {
-        ...finalExtraction,
-        strategy: `playwright:${finalExtraction.strategy}`,
+        ...extractionResultWithStrategy(
+          finalExtraction,
+          `playwright:${finalExtraction.strategy}`,
+          "rendered_dom",
+        ),
         candidateCountBeforeExpansion: beforeExtraction.candidates.length,
         loadMoreClickCount: interaction.loadMoreClickCount,
         infiniteScrollAttempted: interaction.scrollAttemptCount > 0,

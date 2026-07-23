@@ -1,6 +1,7 @@
 export type ImportJobLifecycle =
   | "queued"
   | "processing"
+  | "awaitingReview"
   | "succeeded"
   | "partialFailed"
   | "failed"

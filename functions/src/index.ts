@@ -54,12 +54,19 @@ export {
   reportComment,
 } from "./lookbook/safety/functions.js";
 export {
+  applyLookbookSeasonRepair,
+  cleanupExpiredLookbookExtractionEvidence,
   cleanupExpiredLookbookExtractionDiagnostics,
   discoverSeasonCandidates,
+  getLookbookExtractionReview,
   getLatestLookbookExtractionDiagnostic,
   onSeasonImportQueued,
+  previewLookbookSeasonRepair,
+  requestLookbookExtractionReanalysis,
+  requestLookbookSeasonRepair,
   requestSeasonAssetRetry,
   requestSeasonCandidateImportJobs,
   requestSeasonImport,
+  reviewLookbookExtraction,
   runLookbookExtractionDiagnostic,
 } from "./lookbook/import/functions.js";

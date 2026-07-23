@@ -16,9 +16,22 @@ import {
 } from "../../core/callable.js";
 import {mapWithConcurrency} from "../../core/concurrency.js";
 import {isAlreadyExistsError, messageFromError} from "../../core/errors.js";
-import {db} from "../../core/firebase.js";
+import {db, defaultStorageBucket} from "../../core/firebase.js";
 import {FUNCTIONS_REGION} from "../../core/runtime.js";
-import {assertBrandWriteAccess} from "../../shared/brandAuthorization.js";
+import {
+  assertBrandWriteAccess,
+  isTotalBrandAdmin,
+} from "../../shared/brandAuthorization.js";
+import {
+  approvedCandidateKeys,
+  nextGeneration,
+  requiredReviewDecision,
+} from "./reviewContract.js";
+import {extractionEvidenceCleanupTarget} from "./evidenceCleanup.js";
+import {
+  repairRequestDisposition,
+  seasonRepairPlan,
+} from "./repairContract.js";
 import {
   discoverSeasonCandidates as runDiscoverSeasonCandidates,
 } from "./seasonCandidateDiscovery.js";
@@ -32,6 +45,7 @@ const LOOKBOOK_IMPORT_TASK_MAX_ATTEMPTS = 3;
 const LOOKBOOK_ASSET_RETRY_MODE = "assetFailureRetry";
 const LOOKBOOK_EXTRACTION_DIAGNOSTIC_RETENTION_DAYS = 90;
 const LOOKBOOK_EXTRACTION_DIAGNOSTIC_CLEANUP_LIMIT = 100;
+const LOOKBOOK_EXTRACTION_EVIDENCE_CLEANUP_LIMIT = 100;
 const LOOKBOOK_DIAGNOSTIC_LIMITS = {
   maxLoadMoreClicks: 20,
   maxScrollAttempts: 20,
@@ -102,10 +116,50 @@ function requiredDocumentIDList(
   return uniqueIDs;
 }
 
+function optionalDocumentIDList(
+  value: unknown,
+  fieldName: string,
+  maxCount: number
+): string[] {
+  if (value === undefined || value === null) {
+    return [];
+  }
+  if (!Array.isArray(value) || value.length > maxCount) {
+    throw new HttpsError("invalid-argument", `${fieldName} 값이 올바르지 않습니다.`);
+  }
+  return Array.from(new Set(value.map((item) => {
+    if (typeof item !== "string") {
+      throw new HttpsError("invalid-argument", `${fieldName} 값이 올바르지 않습니다.`);
+    }
+    return requiredDocumentID(item, fieldName);
+  })));
+}
+
+function nonNegativeIntegerValue(value: unknown, fallback: number): number {
+  return Number.isInteger(value) && Number(value) >= 0 ?
+    Number(value) :
+    fallback;
+}
+
+function optionalNonNegativeIntegerValue(value: unknown): number | null {
+  return Number.isInteger(value) && Number(value) >= 0 ? Number(value) : null;
+}
+
+function requiredNonNegativeIntegerValue(
+  value: unknown,
+  fieldName: string
+): number {
+  if (!Number.isInteger(value) || Number(value) < 0) {
+    throw new HttpsError("invalid-argument", `${fieldName} 값이 올바르지 않습니다.`);
+  }
+  return Number(value);
+}
+
 export function blocksDuplicateSeasonImport(status: unknown): boolean {
   return (
     status === "queued" ||
     status === "processing" ||
+    status === "awaitingReview" ||
     status === "succeeded" ||
     status === "partialFailed"
   );
@@ -287,10 +341,11 @@ function tasksClient(): CloudTasksClient {
 
 export function deterministicImportTaskID(
   brandID: string,
-  jobID: string
+  jobID: string,
+  dispatchGeneration = 0
 ): string {
   const encoded = Buffer
-    .from(`${brandID}:${jobID}`)
+    .from(`${brandID}:${jobID}:${dispatchGeneration}`)
     .toString("base64url");
   return `import-${encoded}`.slice(0, 500);
 }
@@ -497,7 +552,10 @@ function seasonCandidateImportSeedFromData(
 
 async function enqueueLookbookImportTask(
   brandID: string,
-  jobID: string
+  jobID: string,
+  dispatchGeneration: number,
+  reviewGeneration: number | null,
+  reviewSnapshotHash: string | null
 ): Promise<LookbookImportTaskReceipt> {
   const config = lookbookImportTaskConfig();
   const client = tasksClient();
@@ -510,11 +568,14 @@ async function enqueueLookbookImportTask(
     config.projectID,
     config.locationID,
     config.queueID,
-    deterministicImportTaskID(brandID, jobID)
+    deterministicImportTaskID(brandID, jobID, dispatchGeneration)
   );
   const payload = {
     brandID,
     jobID,
+    dispatchGeneration,
+    reviewGeneration,
+    reviewSnapshotHash,
     maxAttempts: LOOKBOOK_IMPORT_TASK_MAX_ATTEMPTS,
     requestedAt: new Date().toISOString(),
   };
@@ -770,6 +831,10 @@ async function createSeasonImportJobFromSeed(
         errorMessage: null,
         assetCompletedCount: 0,
         assetFailedCount: 0,
+        dispatchGeneration: 0,
+        reviewGeneration: 0,
+        reviewStatus: null,
+        resumeFrom: "parsing",
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       });
@@ -1491,6 +1556,740 @@ export const getLatestLookbookExtractionDiagnostic = onCall(
   }
 );
 
+export const getLookbookExtractionReview = onCall(
+  {region: FUNCTIONS_REGION},
+  async (request) => {
+    const uid = requiredAuthUID(request.auth?.uid);
+    const data = recordData(request.data);
+    const brandID = requiredDocumentID(
+      requiredString(data, "brandID", 128),
+      "brandID"
+    );
+    const jobID = requiredDocumentID(
+      requiredString(data, "jobID", 128),
+      "jobID"
+    );
+    await assertBrandWriteAccess(uid, brandID);
+    const snapshot = await db
+      .collection("brands")
+      .doc(brandID)
+      .collection("importJobs")
+      .doc(jobID)
+      .get();
+    const job = snapshot.data();
+    if (!snapshot.exists || !job) {
+      throw new HttpsError("not-found", "검토할 import job을 찾을 수 없습니다.");
+    }
+    const candidateKeys = Array.isArray(job.reviewCandidateKeys) ?
+      job.reviewCandidateKeys.filter((value): value is string =>
+        typeof value === "string") :
+      [];
+    const imageCandidates = Array.isArray(job.imageCandidates) ?
+      job.imageCandidates :
+      [];
+    return {
+      jobID,
+      brandID,
+      status: job.status ?? null,
+      reviewStatus: job.reviewStatus ?? null,
+      reviewGeneration: nonNegativeIntegerValue(job.reviewGeneration, 0),
+      reviewSnapshotHash: job.reviewSnapshotHash ?? null,
+      qualityStatus: job.extractionQualityStatus ?? null,
+      qualityReasons: job.extractionQualityReasons ?? [],
+      expectedCountEvidence: job.expectedCountEvidence ?? [],
+      templateSignature: job.templateSignature ?? null,
+      canReanalyze: await isTotalBrandAdmin(uid),
+      candidates: imageCandidates.map((candidate, index) => {
+        const item = candidate as Record<string, unknown>;
+        return {
+          candidateKey: candidateKeys[index] ?? null,
+          sourceURL: typeof item.sourceURL === "string" ? item.sourceURL : null,
+          alt: typeof item.alt === "string" ? item.alt : null,
+        };
+      }).filter((candidate) =>
+        candidate.candidateKey !== null && candidate.sourceURL !== null),
+    };
+  }
+);
+
+export const reviewLookbookExtraction = onCall(
+  {region: FUNCTIONS_REGION},
+  async (request) => {
+    const uid = requiredAuthUID(request.auth?.uid);
+    const data = recordData(request.data);
+    const brandID = requiredDocumentID(
+      requiredString(data, "brandID", 128),
+      "brandID"
+    );
+    const jobID = requiredDocumentID(
+      requiredString(data, "jobID", 128),
+      "jobID"
+    );
+    const reviewGeneration = requiredNonNegativeIntegerValue(
+      data.reviewGeneration,
+      "reviewGeneration"
+    );
+    const reviewSnapshotHash = requiredString(
+      data,
+      "reviewSnapshotHash",
+      128
+    );
+    let decision;
+    try {
+      decision = requiredReviewDecision(data.decision);
+    } catch (error) {
+      throw new HttpsError("invalid-argument", messageFromError(error));
+    }
+    const excludedCandidateKeys = optionalDocumentIDList(
+      data.excludedCandidateKeys,
+      "excludedCandidateKeys",
+      240
+    );
+    const expectedCandidateCount = data.expectedCandidateCount === undefined ||
+      data.expectedCandidateCount === null ?
+      null :
+      requiredNonNegativeIntegerValue(
+        data.expectedCandidateCount,
+        "expectedCandidateCount"
+      );
+    const note = optionalString(data, "note", 500);
+    await assertBrandWriteAccess(uid, brandID);
+
+    const jobRef = db.collection("brands").doc(brandID)
+      .collection("importJobs").doc(jobID);
+    const reviewRef = jobRef.collection("reviews")
+      .doc(String(reviewGeneration));
+    return db.runTransaction(async (transaction) => {
+      const [jobSnapshot, existingReview] = await Promise.all([
+        transaction.get(jobRef),
+        transaction.get(reviewRef),
+      ]);
+      if (existingReview.exists) {
+        const existing = existingReview.data() ?? {};
+        if (
+          existing.reviewSnapshotHash !== reviewSnapshotHash ||
+          existing.decision !== decision
+        ) {
+          throw new HttpsError(
+            "failed-precondition",
+            "이미 다른 검토 결과로 확정된 generation입니다."
+          );
+        }
+        return {
+          jobID,
+          reviewGeneration,
+          decision,
+          duplicate: true,
+          status: existing.resultStatus ?? "awaitingReview",
+        };
+      }
+      const job = jobSnapshot.data();
+      if (!jobSnapshot.exists || !job) {
+        throw new HttpsError("not-found", "검토할 import job을 찾을 수 없습니다.");
+      }
+      if (
+        job.status !== "awaitingReview" ||
+        nonNegativeIntegerValue(job.reviewGeneration, 0) !== reviewGeneration ||
+        job.reviewSnapshotHash !== reviewSnapshotHash
+      ) {
+        throw new HttpsError(
+          "failed-precondition",
+          "검토 snapshot이 최신 상태가 아닙니다."
+        );
+      }
+      const candidateKeys = Array.isArray(job.reviewCandidateKeys) ?
+        job.reviewCandidateKeys.filter((value): value is string =>
+          typeof value === "string") :
+        [];
+      let approvedKeys: string[];
+      try {
+        approvedKeys = approvedCandidateKeys({
+          decision,
+          candidateKeys,
+          excludedCandidateKeys,
+        });
+      } catch (error) {
+        throw new HttpsError("invalid-argument", messageFromError(error));
+      }
+      const issueFingerprint =
+        typeof job.issueFingerprint === "string" &&
+        /^[a-f0-9]{40}$/.test(job.issueFingerprint) ?
+          job.issueFingerprint :
+          null;
+      const issueClusterRef = decision === "insufficientImages" &&
+        issueFingerprint !== null ?
+        db.collection("lookbookExtractionIssueClusters")
+          .doc(issueFingerprint) :
+        null;
+      const issueClusterSnapshot = issueClusterRef === null ?
+        null :
+        await transaction.get(issueClusterRef);
+      const now = FieldValue.serverTimestamp();
+      const resultStatus = decision === "insufficientImages" ?
+        "awaitingReview" :
+        "queued";
+      transaction.set(reviewRef, {
+        brandID,
+        jobID,
+        reviewGeneration,
+        reviewSnapshotHash,
+        decision,
+        positiveCandidateKeys: approvedKeys,
+        negativeCandidateKeys: excludedCandidateKeys,
+        expectedCandidateCount,
+        note,
+        qualityStatus: job.extractionQualityStatus ?? null,
+        qualityReasons: job.extractionQualityReasons ?? [],
+        templateSignature: job.templateSignature ?? null,
+        imageExtractorVersion: job.imageExtractorVersion ?? null,
+        platformAdapterKey: job.platformAdapterKey ?? null,
+        platformAdapterVersion: job.platformAdapterVersion ?? null,
+        domainAdapterKey: job.domainAdapterKey ?? null,
+        domainAdapterVersion: job.domainAdapterVersion ?? null,
+        issueFingerprint,
+        reviewedBy: uid,
+        reviewedAt: now,
+        resultStatus,
+      });
+      if (decision === "insufficientImages") {
+        transaction.update(jobRef, {
+          reviewStatus: "correctionRequired",
+          adminExpectedCandidateCount: expectedCandidateCount,
+          reviewedBy: uid,
+          reviewedAt: now,
+          updatedAt: now,
+        });
+        if (issueClusterRef !== null && issueClusterSnapshot?.exists) {
+          const issueCluster = issueClusterSnapshot.data() ?? {};
+          const existingCounts = Array.isArray(
+            issueCluster.adminExpectedCandidateCounts
+          ) ?
+            issueCluster.adminExpectedCandidateCounts.filter(
+              (value): value is number =>
+                typeof value === "number" && Number.isInteger(value)
+            ) :
+            [];
+          const adminExpectedCandidateCounts =
+            expectedCandidateCount === null ?
+              existingCounts :
+              Array.from(new Set([
+                ...existingCounts,
+                expectedCandidateCount,
+              ])).sort((left, right) => left - right).slice(-20);
+          transaction.update(issueClusterRef, {
+            adminFeedbackCount:
+              numericMetric(issueCluster.adminFeedbackCount) + 1,
+            adminExpectedCandidateCounts,
+            lastAdminFeedbackAt: now,
+            updatedAt: now,
+          });
+        }
+      } else {
+        const dispatchGeneration = nextGeneration(job.dispatchGeneration);
+        transaction.update(jobRef, {
+          status: "queued",
+          phase: "dispatching",
+          resumeFrom: "materializing",
+          reviewStatus: "approved",
+          approvedCandidateKeys: approvedKeys,
+          dispatchGeneration,
+          reviewedBy: uid,
+          reviewedAt: now,
+          leaseOwner: null,
+          leaseExpiresAt: null,
+          updatedAt: now,
+        });
+        if (
+          decision === "approved" &&
+          job.trustEligible === true &&
+          typeof job.trustBaselineID === "string" &&
+          /^[a-f0-9]{40}$/.test(job.trustBaselineID)
+        ) {
+          transaction.set(
+            db.collection("lookbookExtractionTrustBaselines")
+              .doc(job.trustBaselineID),
+            {
+              isActive: true,
+              brandID,
+              sourceHost: new URL(String(job.sourceURL)).hostname.toLowerCase(),
+              templateSignature: job.templateSignature ?? null,
+              imageExtractorVersion: job.imageExtractorVersion ?? null,
+              platformAdapterKey: job.platformAdapterKey ?? null,
+              platformAdapterVersion: job.platformAdapterVersion ?? null,
+              domainAdapterKey: job.domainAdapterKey ?? null,
+              domainAdapterVersion: job.domainAdapterVersion ?? null,
+              approvedBy: uid,
+              approvedAt: now,
+              sourceImportJobID: jobID,
+              updatedAt: now,
+            },
+            {merge: true}
+          );
+        }
+      }
+      return {
+        jobID,
+        reviewGeneration,
+        decision,
+        duplicate: false,
+        status: resultStatus,
+      };
+    });
+  }
+);
+
+export const requestLookbookExtractionReanalysis = onCall(
+  {region: FUNCTIONS_REGION},
+  async (request) => {
+    const uid = requiredAuthUID(request.auth?.uid);
+    if (!(await isTotalBrandAdmin(uid))) {
+      throw new HttpsError("permission-denied", "총 관리자 권한이 필요합니다.");
+    }
+    const data = recordData(request.data);
+    const brandID = requiredDocumentID(
+      requiredString(data, "brandID", 128),
+      "brandID"
+    );
+    const jobID = requiredDocumentID(
+      requiredString(data, "jobID", 128),
+      "jobID"
+    );
+    const jobRef = db.collection("brands").doc(brandID)
+      .collection("importJobs").doc(jobID);
+    return db.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(jobRef);
+      const job = snapshot.data();
+      if (!snapshot.exists || !job) {
+        throw new HttpsError("not-found", "재분석할 import job이 없습니다.");
+      }
+      if (
+        job.status !== "awaitingReview" ||
+        job.reviewStatus !== "correctionRequired"
+      ) {
+        throw new HttpsError(
+          "failed-precondition",
+          "이미지 부족 상태의 job만 재분석할 수 있습니다."
+        );
+      }
+      const reviewGeneration = nextGeneration(job.reviewGeneration);
+      const dispatchGeneration = nextGeneration(job.dispatchGeneration);
+      transaction.update(jobRef, {
+        status: "queued",
+        phase: "dispatching",
+        resumeFrom: "parsing",
+        reviewStatus: "reanalyzing",
+        reviewGeneration,
+        dispatchGeneration,
+        approvedCandidateKeys: [],
+        imageCandidates: [],
+        reviewCandidateKeys: [],
+        reviewSnapshotHash: null,
+        trustBaselineMatched: false,
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      return {
+        jobID,
+        status: "queued",
+        reviewGeneration,
+        dispatchGeneration,
+        extractorVersionUnchanged: true,
+      };
+    });
+  }
+);
+
+export const requestLookbookSeasonRepair = onCall(
+  {region: FUNCTIONS_REGION},
+  async (request) => {
+    const uid = requiredAuthUID(request.auth?.uid);
+    const data = recordData(request.data);
+    const brandID = requiredDocumentID(
+      requiredString(data, "brandID", 128),
+      "brandID"
+    );
+    const seasonID = requiredDocumentID(
+      requiredString(data, "seasonID", 128),
+      "seasonID"
+    );
+    const sourceImportJobID = requiredDocumentID(
+      requiredString(data, "sourceImportJobID", 128),
+      "sourceImportJobID"
+    );
+    await assertBrandWriteAccess(uid, brandID);
+    const seasonRef = db.collection("brands").doc(brandID)
+      .collection("seasons").doc(seasonID);
+    const jobRef = db.collection("brands").doc(brandID)
+      .collection("importJobs").doc(sourceImportJobID);
+    return db.runTransaction(async (transaction) => {
+      const [seasonSnapshot, jobSnapshot] = await Promise.all([
+        transaction.get(seasonRef),
+        transaction.get(jobRef),
+      ]);
+      const season = seasonSnapshot.data();
+      const job = jobSnapshot.data();
+      if (!seasonSnapshot.exists || !season) {
+        throw new HttpsError("not-found", "보수할 시즌을 찾을 수 없습니다.");
+      }
+      if (!jobSnapshot.exists || !job) {
+        throw new HttpsError("not-found", "원본 import job을 찾을 수 없습니다.");
+      }
+      if (
+        season.sourceImportJobID !== sourceImportJobID ||
+        job.targetSeasonID !== seasonID ||
+        job.jobType !== "importSeasonFromURL"
+      ) {
+        throw new HttpsError(
+          "failed-precondition",
+          "시즌과 원본 import job 연결이 올바르지 않습니다."
+        );
+      }
+      let disposition;
+      try {
+        disposition = repairRequestDisposition({
+          jobStatus: job.status,
+          repairStatus: job.repairStatus,
+          repairTargetSeasonID: job.repairTargetSeasonID,
+          requestedSeasonID: seasonID,
+        });
+      } catch (error) {
+        throw new HttpsError("failed-precondition", messageFromError(error));
+      }
+      if (disposition === "duplicate") {
+        return {
+          jobID: sourceImportJobID,
+          seasonID,
+          repairGeneration: nonNegativeIntegerValue(
+            job.repairGeneration,
+            0
+          ),
+          status: job.repairStatus,
+          duplicate: true,
+        };
+      }
+      const repairGeneration = nextGeneration(job.repairGeneration);
+      const dispatchGeneration = nextGeneration(job.dispatchGeneration);
+      const now = FieldValue.serverTimestamp();
+      transaction.update(jobRef, {
+        status: "queued",
+        phase: "dispatching",
+        resumeFrom: "parsing",
+        reviewStatus: "reanalyzing",
+        repairStatus: "analyzing",
+        repairGeneration,
+        repairTargetSeasonID: seasonID,
+        repairSnapshotHash: null,
+        dispatchGeneration,
+        imageCandidates: [],
+        imageCandidateContentHashes: [],
+        reviewCandidateKeys: [],
+        reviewSnapshotHash: null,
+        approvedCandidateKeys: [],
+        parseStatus: "pending",
+        contentStatus: "pending",
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        repairRequestedBy: uid,
+        repairRequestedAt: now,
+        updatedAt: now,
+      });
+      return {
+        jobID: sourceImportJobID,
+        seasonID,
+        repairGeneration,
+        dispatchGeneration,
+        status: "analyzing",
+        duplicate: false,
+      };
+    });
+  }
+);
+
+export const previewLookbookSeasonRepair = onCall(
+  {region: FUNCTIONS_REGION},
+  async (request) => {
+    const uid = requiredAuthUID(request.auth?.uid);
+    const data = recordData(request.data);
+    const brandID = requiredDocumentID(
+      requiredString(data, "brandID", 128),
+      "brandID"
+    );
+    const jobID = requiredDocumentID(
+      requiredString(data, "jobID", 128),
+      "jobID"
+    );
+    await assertBrandWriteAccess(uid, brandID);
+    const jobRef = db.collection("brands").doc(brandID)
+      .collection("importJobs").doc(jobID);
+    const jobSnapshot = await jobRef.get();
+    const job = jobSnapshot.data();
+    if (!jobSnapshot.exists || !job) {
+      throw new HttpsError("not-found", "시즌 보수 job을 찾을 수 없습니다.");
+    }
+    const repairGeneration = nonNegativeIntegerValue(
+      job.repairGeneration,
+      0
+    );
+    if (
+      (
+        job.repairStatus !== "previewReady" &&
+        job.repairStatus !== "noChanges"
+      ) ||
+      repairGeneration <= 0 ||
+      typeof job.repairSnapshotHash !== "string"
+    ) {
+      throw new HttpsError(
+        "failed-precondition",
+        "시즌 보수 미리보기를 준비하고 있습니다."
+      );
+    }
+    const repairSnapshot = await jobRef.collection("repairs")
+      .doc(String(repairGeneration))
+      .get();
+    const repair = repairSnapshot.data();
+    if (!repairSnapshot.exists || !repair) {
+      throw new HttpsError("not-found", "시즌 보수 미리보기가 없습니다.");
+    }
+    return {
+      jobID,
+      brandID,
+      seasonID: repair.seasonID,
+      repairGeneration,
+      repairSnapshotHash: repair.repairSnapshotHash,
+      status: repair.status,
+      keep: repair.keep ?? [],
+      add: repair.add ?? [],
+      reorder: repair.reorder ?? [],
+      removeCandidates: repair.removeCandidates ?? [],
+      resultingPostCount: repair.resultingPostCount ?? 0,
+    };
+  }
+);
+
+export const applyLookbookSeasonRepair = onCall(
+  {region: FUNCTIONS_REGION, timeoutSeconds: 120, memory: "512MiB"},
+  async (request) => {
+    const uid = requiredAuthUID(request.auth?.uid);
+    const data = recordData(request.data);
+    const brandID = requiredDocumentID(
+      requiredString(data, "brandID", 128),
+      "brandID"
+    );
+    const jobID = requiredDocumentID(
+      requiredString(data, "jobID", 128),
+      "jobID"
+    );
+    const repairGeneration = requiredNonNegativeIntegerValue(
+      data.repairGeneration,
+      "repairGeneration"
+    );
+    const repairSnapshotHash = requiredString(
+      data,
+      "repairSnapshotHash",
+      128
+    );
+    await assertBrandWriteAccess(uid, brandID);
+    const jobRef = db.collection("brands").doc(brandID)
+      .collection("importJobs").doc(jobID);
+    const repairRef = jobRef.collection("repairs")
+      .doc(String(repairGeneration));
+    const claim = await db.runTransaction(async (transaction) => {
+      const [jobSnapshot, repairSnapshot] = await Promise.all([
+        transaction.get(jobRef),
+        transaction.get(repairRef),
+      ]);
+      const job = jobSnapshot.data();
+      const repair = repairSnapshot.data();
+      if (!jobSnapshot.exists || !job || !repairSnapshot.exists || !repair) {
+        throw new HttpsError("not-found", "시즌 보수 미리보기가 없습니다.");
+      }
+      if (
+        nonNegativeIntegerValue(job.repairGeneration, 0) !==
+          repairGeneration ||
+        job.repairSnapshotHash !== repairSnapshotHash ||
+        repair.repairSnapshotHash !== repairSnapshotHash
+      ) {
+        throw new HttpsError(
+          "failed-precondition",
+          "시즌 보수 미리보기가 최신 상태가 아닙니다."
+        );
+      }
+      if (repair.status === "applied") {
+        return {
+          duplicate: true as const,
+          seasonID: requiredDocumentID(
+            requiredString(repair, "seasonID", 128),
+            "seasonID"
+          ),
+        };
+      }
+      if (
+        repair.status !== "previewReady" &&
+        repair.status !== "applying"
+      ) {
+        throw new HttpsError(
+          "failed-precondition",
+          "적용할 수 없는 시즌 보수 상태입니다."
+        );
+      }
+      let plan;
+      try {
+        plan = seasonRepairPlan(repair);
+      } catch (error) {
+        throw new HttpsError("data-loss", messageFromError(error));
+      }
+      const seasonID = requiredDocumentID(
+        requiredString(repair, "seasonID", 128),
+        "seasonID"
+      );
+      const now = FieldValue.serverTimestamp();
+      transaction.update(repairRef, {
+        status: "applying",
+        appliedBy: uid,
+        applyStartedAt: now,
+        updatedAt: now,
+      });
+      transaction.update(jobRef, {
+        repairStatus: "applying",
+        updatedAt: now,
+      });
+      return {duplicate: false as const, seasonID, plan};
+    });
+    if (claim.duplicate) {
+      return {
+        jobID,
+        seasonID: claim.seasonID,
+        repairGeneration,
+        status: "applied",
+        duplicate: true,
+      };
+    }
+
+    const seasonRef = db.collection("brands").doc(brandID)
+      .collection("seasons").doc(claim.seasonID);
+    const seasonSnapshot = await seasonRef.get();
+    if (!seasonSnapshot.exists) {
+      throw new HttpsError("not-found", "보수할 시즌이 없습니다.");
+    }
+    const addRefs = claim.plan.add.map((entry) =>
+      seasonRef.collection("posts").doc(entry.postID)
+    );
+    const addSnapshots = addRefs.length > 0 ?
+      await db.getAll(...addRefs) :
+      [];
+    const existingAddIDs = new Set(
+      addSnapshots.filter((snapshot) => snapshot.exists)
+        .map((snapshot) => snapshot.id)
+    );
+    const now = admin.firestore.Timestamp.now();
+    const batch = db.batch();
+    [
+      ...claim.plan.keep,
+      ...claim.plan.reorder,
+      ...claim.plan.removeCandidates,
+    ].forEach((entry) => {
+      batch.set(seasonRef.collection("posts").doc(entry.postID), {
+        orderIndex: entry.proposedIndex,
+        sourceSortIndex: entry.proposedIndex,
+        repairedAt: now,
+        updatedAt: now,
+      }, {merge: true});
+    });
+    claim.plan.add.forEach((entry) => {
+      if (existingAddIDs.has(entry.postID)) {
+        batch.set(seasonRef.collection("posts").doc(entry.postID), {
+          orderIndex: entry.proposedIndex,
+          sourceSortIndex: entry.proposedIndex,
+          repairedAt: now,
+          updatedAt: now,
+        }, {merge: true});
+        return;
+      }
+      batch.set(seasonRef.collection("posts").doc(entry.postID), {
+        brandID,
+        seasonID: claim.seasonID,
+        authorID: null,
+        orderIndex: entry.proposedIndex,
+        sourceSortIndex: entry.proposedIndex,
+        status: "published",
+        assetSyncStatus: "pending",
+        sourceImportJobID: jobID,
+        media: [{
+          type: "image",
+          remoteURL: entry.sourceURL,
+          thumbPath: null,
+          detailPath: null,
+          sourcePageURL: seasonSnapshot.data()?.sourceURL ?? null,
+          contentHash: entry.contentHash,
+        }],
+        caption: entry.alt,
+        tagIDs: [],
+        metrics: {
+          likeCount: 0,
+          commentCount: 0,
+          replacementCount: 0,
+          saveCount: 0,
+          viewCount: 0,
+        },
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+    batch.set(seasonRef, {
+      postCount: claim.plan.resultingPostCount,
+      assetSyncStatus: "pending",
+      repairGeneration,
+      lastRepairSourceImportJobID: jobID,
+      repairedAt: now,
+      updatedAt: now,
+    }, {merge: true});
+    const dispatchGenerationSnapshot = await jobRef.get();
+    const dispatchGeneration = nextGeneration(
+      dispatchGenerationSnapshot.data()?.dispatchGeneration
+    );
+    const hasCover = typeof seasonSnapshot.data()?.coverRemoteURL === "string";
+    batch.update(jobRef, {
+      status: "queued",
+      phase: "dispatching",
+      resumeFrom: "materializing",
+      reviewStatus: "approved",
+      repairStatus: "applied",
+      targetSeasonID: claim.seasonID,
+      createdPostIDs: claim.plan.allPostIDs,
+      createdPostCount: claim.plan.resultingPostCount,
+      assetTotalCount: claim.plan.allPostIDs.length + (hasCover ? 1 : 0),
+      assetCompletedCount: 0,
+      assetFailedCount: 0,
+      dispatchGeneration,
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      repairedBy: uid,
+      repairedAt: now,
+      updatedAt: now,
+    });
+    batch.update(repairRef, {
+      status: "applied",
+      appliedBy: uid,
+      appliedAt: now,
+      updatedAt: now,
+    });
+    await batch.commit();
+    return {
+      jobID,
+      seasonID: claim.seasonID,
+      repairGeneration,
+      dispatchGeneration,
+      status: "applied",
+      duplicate: false,
+      addedCount: claim.plan.add.length,
+      reorderedCount: claim.plan.reorder.length,
+      preservedRemoveCandidateCount:
+        claim.plan.removeCandidates.length,
+    };
+  }
+);
+
 export const onSeasonImportQueued = onDocumentWritten(
   {
     document: "brands/{brandID}/importJobs/{jobID}",
@@ -1532,7 +2331,23 @@ export const onSeasonImportQueued = onDocumentWritten(
       return;
     }
 
-    const receipt = await enqueueLookbookImportTask(brandID, jobID);
+    const dispatchGeneration = nonNegativeIntegerValue(
+      after.dispatchGeneration,
+      0
+    );
+    const reviewGeneration = optionalNonNegativeIntegerValue(
+      after.reviewGeneration
+    );
+    const reviewSnapshotHash = typeof after.reviewSnapshotHash === "string" ?
+      after.reviewSnapshotHash :
+      null;
+    const receipt = await enqueueLookbookImportTask(
+      brandID,
+      jobID,
+      dispatchGeneration,
+      reviewGeneration,
+      reviewSnapshotHash
+    );
     await afterSnap.ref.set({
       phase: "dispatching",
       dispatchMode: "cloudTasks",
@@ -1610,6 +2425,69 @@ export const cleanupExpiredLookbookExtractionDiagnostics = onSchedule(
     await batch.commit();
     console.log("[cleanupExpiredLookbookExtractionDiagnostics] Completed", {
       deletedCount: snapshot.size,
+    });
+  }
+);
+
+export const cleanupExpiredLookbookExtractionEvidence = onSchedule(
+  {
+    schedule: "45 4 * * *",
+    region: FUNCTIONS_REGION,
+    timeZone: "Asia/Seoul",
+  },
+  async () => {
+    const now = admin.firestore.Timestamp.now();
+    const snapshot = await db.collection("lookbookExtractionEvidence")
+      .where("expiresAt", "<=", now)
+      .limit(LOOKBOOK_EXTRACTION_EVIDENCE_CLEANUP_LIMIT)
+      .get();
+    if (snapshot.empty) {
+      console.log(
+        "[cleanupExpiredLookbookExtractionEvidence] No expired evidence."
+      );
+      return;
+    }
+
+    const targets = snapshot.docs.map((document) => ({
+      document,
+      target: extractionEvidenceCleanupTarget({
+        evidenceID: document.id,
+        storagePath: document.data().storagePath,
+      }),
+    }));
+    const results = await mapWithConcurrency(targets, 10, async (item) => {
+      if (item.target === null) {
+        console.error(
+          "[cleanupExpiredLookbookExtractionEvidence] Invalid storage path",
+          {evidenceID: item.document.id}
+        );
+        return {document: item.document, deleted: false};
+      }
+      try {
+        await defaultStorageBucket()
+          .file(item.target.storagePath)
+          .delete({ignoreNotFound: true});
+        return {document: item.document, deleted: true};
+      } catch (error) {
+        console.error(
+          "[cleanupExpiredLookbookExtractionEvidence] Storage delete failed",
+          {
+            evidenceID: item.document.id,
+            errorMessage: messageFromError(error),
+          }
+        );
+        return {document: item.document, deleted: false};
+      }
+    });
+    const deleted = results.filter((result) => result.deleted);
+    if (deleted.length > 0) {
+      const batch = db.batch();
+      deleted.forEach((result) => batch.delete(result.document.ref));
+      await batch.commit();
+    }
+    console.log("[cleanupExpiredLookbookExtractionEvidence] Completed", {
+      candidateCount: snapshot.size,
+      deletedCount: deleted.length,
     });
   }
 );

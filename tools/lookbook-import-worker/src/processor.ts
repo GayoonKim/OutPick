@@ -21,18 +21,101 @@ import {
   isFinalTaskAttempt,
   type ImportJobLifecycle,
 } from "./job-lifecycle.js";
+import {
+  extractionResult,
+  extractionResultWithStrategy,
+  mergeExtractionResults,
+  selectExtractionCandidates,
+  type ExtractionResult,
+} from "./extraction/core.js";
+import {
+  canonicalCandidateURL,
+  resolveContentHashDedupe,
+} from "./extraction/dedupe.js";
+import {
+  extractionCandidateKey,
+  extractionSourceEvidence,
+} from "./extraction/evidence.js";
+import {
+  collectExpectedCountEvidence,
+  type ExpectedCountEvidence,
+} from "./extraction/expected-count.js";
+import {
+  detectProgrammaticGallery,
+  type ProgrammaticGalleryEvidence,
+} from "./extraction/programmatic-gallery.js";
+import {
+  evaluateExtractionQuality,
+  type ExtractionQuality,
+} from "./extraction/quality.js";
+import {
+  extractionStructureTokens,
+  makeReviewContract,
+  reviewDisposition,
+  type ReviewContract,
+} from "./extraction/review.js";
+import {
+  makeSeasonReconcilePreview,
+  seasonRepairPreviewDisposition,
+  type ReconcileCandidate,
+  type ReconcileExistingPost,
+} from "./extraction/reconcile.js";
+import {
+  buildRetainedExtractionEvidence,
+  evidenceExpiresAt,
+  extractionEvidenceID,
+  extractionEvidenceStoragePath,
+  extractionIssueIdentity,
+  nextExtractionIssueClusterState,
+  type RetainedExtractionEvidence,
+} from "./extraction/retained-evidence.js";
+import {selectExtractionAdapters} from "./extraction/adapters/registry.js";
+import type {
+  ContentSectionRule,
+  ImageExtractionRules,
+} from "./extraction/adapters/types.js";
+import {
+  CURRENT_EXTRACTION_VERSIONS,
+  isReusableExtractionCache,
+} from "./extraction/version.js";
 
 type WorkerStatus = ImportJobLifecycle;
+
+export function requiresApprovedReviewSnapshot(input: {
+  resumeFrom: "parsing" | "materializing";
+  repairTargetSeasonID: string | null;
+}): boolean {
+  return input.resumeFrom === "materializing" &&
+    input.repairTargetSeasonID === null;
+}
 
 type ImageCandidate = {
   sourceURL: string;
   alt: string | null;
 };
 
-type ImageExtractionResult = {
-  candidates: ImageCandidate[];
+type ImageExtractionResult = ExtractionResult<ImageCandidate>;
+
+type EvaluatedImageExtraction = {
+  extraction: ImageExtractionResult;
+  expectedCountEvidence: ExpectedCountEvidence[];
+  programmaticGalleryEvidence: ProgrammaticGalleryEvidence;
+  quality: ExtractionQuality;
+  staticCandidateCount: number;
+  renderedCandidateCount: number | null;
+};
+
+type ReviewGate = ReviewContract & {
+  quality: ExtractionQuality;
+};
+
+type ParsedExtractionResult = {
+  ok: true;
+  fallbackUsed: boolean;
+  fallbackReason: string | null;
   strategy: string;
-  rawCandidateCount: number;
+  review: ReviewGate;
+  retainedEvidence: RetainedExtractionEvidence | null;
 };
 
 type ImportJobData = {
@@ -46,6 +129,32 @@ type ImportJobData = {
   coverRemoteURL?: unknown;
   sourceSortIndex?: unknown;
   imageCandidates?: unknown;
+  imageExtractorVersion?: unknown;
+  platformAdapterKey?: unknown;
+  platformAdapterVersion?: unknown;
+  domainAdapterKey?: unknown;
+  domainAdapterVersion?: unknown;
+  extractionQualityStatus?: unknown;
+  extractionQualityReasons?: unknown;
+  contentHashResolutionComplete?: unknown;
+  imageCandidateContentHashes?: unknown;
+  imageExtractionStrategy?: unknown;
+  expectedCountEvidence?: unknown;
+  programmaticGalleryEvidence?: unknown;
+  renderedImageCandidateCount?: unknown;
+  templateSignature?: unknown;
+  trustBaselineID?: unknown;
+  reviewSnapshotHash?: unknown;
+  reviewCandidateKeys?: unknown;
+  reviewGeneration?: unknown;
+  reviewStatus?: unknown;
+  trustEligible?: unknown;
+  resumeFrom?: unknown;
+  approvedCandidateKeys?: unknown;
+  dispatchGeneration?: unknown;
+  repairGeneration?: unknown;
+  repairStatus?: unknown;
+  repairTargetSeasonID?: unknown;
   targetSeasonID?: unknown;
   createdPostIDs?: unknown;
   parseStatus?: unknown;
@@ -72,6 +181,10 @@ type SeasonData = {
 type PostData = {
   media?: unknown;
   assetSyncErrorMessage?: unknown;
+  orderIndex?: unknown;
+  sourceSortIndex?: unknown;
+  deletionStatus?: unknown;
+  createdAt?: unknown;
 };
 
 type AssetFailureData = {
@@ -88,6 +201,7 @@ type MediaData = {
   sourcePageURL?: unknown;
   thumbPath?: unknown;
   detailPath?: unknown;
+  contentHash?: unknown;
 };
 
 type JobTarget = {
@@ -101,6 +215,12 @@ type ClaimedJob = JobTarget & {
   sourceCandidateID: string | null;
   sourceImportJobID: string | null;
   targetSeasonID: string | null;
+  resumeFrom: "parsing" | "materializing";
+  reviewGeneration: number;
+  reviewSnapshotHash: string | null;
+  dispatchGeneration: number;
+  repairGeneration: number;
+  repairTargetSeasonID: string | null;
 };
 
 type JobResult = JobTarget & {
@@ -138,6 +258,9 @@ export type ImportJobTaskRequest = {
   requestID?: unknown;
   maxAttempts?: unknown;
   requestedAt?: unknown;
+  dispatchGeneration?: unknown;
+  reviewGeneration?: unknown;
+  reviewSnapshotHash?: unknown;
 };
 
 export type WakeResult = {
@@ -206,23 +329,7 @@ const PLAYWRIGHT_NAVIGATION_TIMEOUT_MS = 20_000;
 const PLAYWRIGHT_RENDER_SETTLE_MS = 1_500;
 const HTML_MAX_BYTES = 5 * 1024 * 1024;
 const REMOTE_IMAGE_MAX_BYTES = 25 * 1024 * 1024;
-const CONTENT_SECTION_RULES: Array<{
-  label: string;
-  pattern: RegExp;
-  weight: number;
-}> = [
-  {
-    label: "archiveSourceDetail",
-    pattern:
-      /archive[_-]?source[_-]?detail|archive-source-detail/i,
-    weight: 430,
-  },
-  {
-    label: "cafe24ProductAdditional",
-    pattern:
-      /xans-product-additional|prdDetailContentLazy|product-additional/i,
-    weight: 360,
-  },
+const GENERIC_CONTENT_SECTION_RULES: ContentSectionRule[] = [
   {
     label: "productDetailContent",
     pattern:
@@ -231,7 +338,7 @@ const CONTENT_SECTION_RULES: Array<{
   },
   {
     label: "editorContent",
-    pattern: /NNEditor|fr-view|se-main-container|editor|edibot/i,
+    pattern: /fr-view|se-main-container|editor|edibot/i,
     weight: 260,
   },
   {
@@ -250,7 +357,6 @@ const CONTENT_SECTION_RULES: Array<{
 const NOISE_IMAGE_URL_PATTERNS = [
   /\/(?:M_banner|banner|banners|icon|icons|logo|favicon|layout)\//i,
   /\/web\/product\/(?:tiny|small|medium|list)\//i,
-  /\/(?:ec_admin|skin\/base_|design\/skin\/admin|design\/skin\/default)\//i,
   /(?:btn_count_|btn_price_delete|ico_pay_point|icon_(?:facebook|twitter))\.(?:gif|png|jpg|jpeg|webp)(?:\?|$)/i,
   /(?:sprite|blank|placeholder|loading)\.(?:gif|png|svg)(?:\?|$)/i,
 ];
@@ -264,7 +370,6 @@ const HARD_NOISE_IMAGE_URL_PATTERNS = [
   /\/img\/common\/global\/[^/?#]*_32x24\.png(?:[?#]|$)/i,
   /\/[^/?#]*(?:bg[_-]?search|youtube[_-]?icon|ic[_-]?(?:arr|star))[^/?#]*\.(?:gif|jpe?g|png|svg|webp)(?:[?#]|$)/i,
   /\/[^/?#]*(?:btn|button|icon-plus|count_|page_(?:first|prev|next)|close|share|menu|copy[_-]?icon|icon[_-]?copy)[^/?#]*\.(?:gif|jpe?g|png|svg|webp)(?:[?#]|$)/i,
-  /(?:echosting\.cafe24\.com\/skin|\/skin\/base|\/SkinImg\/|\/morenvyimg\/)/i,
   /(?:cursor|txt_progress|img_loading|top_banner|topbanner)/i,
 ];
 
@@ -349,6 +454,17 @@ export async function processImportJobTaskRequest(
     target,
     workerID,
     retryPolicy,
+    {
+      dispatchGeneration: nonNegativeInteger(
+        request.dispatchGeneration ?? 0,
+        "dispatchGeneration",
+      ),
+      reviewGeneration: optionalNonNegativeInteger(
+        request.reviewGeneration,
+        "reviewGeneration",
+      ),
+      reviewSnapshotHash: optionalStringField(request.reviewSnapshotHash),
+    },
   );
   return {
     accepted: true,
@@ -417,10 +533,20 @@ async function processJob(
   target: JobTarget,
   workerID: string,
   retryPolicy?: TaskRetryPolicy,
+  dispatchContract?: {
+    dispatchGeneration: number;
+    reviewGeneration: number | null;
+    reviewSnapshotHash: string | null;
+  },
 ): Promise<JobResult> {
   const db = dependencies.firestore;
   const jobRef = importJobRef(db, target);
-  const claim = await claimJob(db, target, workerID);
+  const claim = await claimJob(
+    db,
+    target,
+    workerID,
+    dispatchContract,
+  );
   if (!claim.claimed) {
     return {
       ...target,
@@ -436,6 +562,12 @@ async function processJob(
     sourceCandidateID: claim.sourceCandidateID,
     sourceImportJobID: claim.sourceImportJobID,
     targetSeasonID: claim.targetSeasonID,
+    resumeFrom: claim.resumeFrom,
+    reviewGeneration: claim.reviewGeneration,
+    reviewSnapshotHash: claim.reviewSnapshotHash,
+    dispatchGeneration: claim.dispatchGeneration,
+    repairGeneration: claim.repairGeneration,
+    repairTargetSeasonID: claim.repairTargetSeasonID,
   };
   const logContext: LogContext = {
     brandID: claimedJob.brandID,
@@ -445,6 +577,11 @@ async function processJob(
     workerID,
   };
   const jobStartedAt = Date.now();
+  const failurePatch = (
+    patch: Record<string, unknown>,
+  ): Record<string, unknown> => claimedJob.repairTargetSeasonID === null ?
+    patch :
+    {...patch, repairStatus: "failed"};
   await logJobStarted(jobRef, logContext, retryPolicy);
 
   const leaseTimer = setInterval(() => {
@@ -467,21 +604,66 @@ async function processJob(
       return result;
     }
 
-    const parseStartedAt = Date.now();
-    const parseResult = await ensureParsed(db, jobRef, claimedJob);
-    logPhaseCompleted(logContext, "parsing", elapsedMs(parseStartedAt), {
-      fallbackUsed: parseResult.ok ? parseResult.fallbackUsed : false,
-    });
-    if (parseResult.ok && parseResult.fallbackUsed) {
-      logFallbackUsed(logContext, {
-        reason: parseResult.fallbackReason,
-        strategy: parseResult.strategy,
+    if (claimedJob.resumeFrom === "parsing") {
+      const parseStartedAt = Date.now();
+      const parseResult = await ensureParsed(db, jobRef, claimedJob);
+      logPhaseCompleted(logContext, "parsing", elapsedMs(parseStartedAt), {
+        fallbackUsed: parseResult.ok ? parseResult.fallbackUsed : false,
       });
-    }
-    if (!parseResult.ok) {
-      return await failJob(jobRef, target, parseResult.errorMessage, {
-        parseStatus: "failed",
-      });
+      if (parseResult.ok && parseResult.fallbackUsed) {
+        logFallbackUsed(logContext, {
+          reason: parseResult.fallbackReason,
+          strategy: parseResult.strategy,
+        });
+      }
+      if (!parseResult.ok) {
+        await retainExtractionEvidenceSafely(
+          dependencies,
+          jobRef,
+          claimedJob,
+          parseResult.retainedEvidence,
+        );
+        return await failJob(jobRef, target, parseResult.errorMessage, failurePatch({
+          parseStatus: "failed",
+        }));
+      }
+      if (parseResult.retainedEvidence !== null) {
+        await retainExtractionEvidenceSafely(
+          dependencies,
+          jobRef,
+          claimedJob,
+          parseResult.retainedEvidence,
+        );
+      }
+      if (claimedJob.repairTargetSeasonID !== null) {
+        return await prepareSeasonRepairPreview(
+          dependencies,
+          jobRef,
+          claimedJob,
+        );
+      }
+      const reviewResult = await pauseForReviewIfNeeded(
+        db,
+        jobRef,
+        claimedJob,
+        parseResult.review,
+      );
+      if (reviewResult !== null) {
+        return reviewResult;
+      }
+    } else if (
+      requiresApprovedReviewSnapshot(claimedJob) &&
+      (
+        claimedJob.reviewSnapshotHash === null ||
+        claimedJob.reviewGeneration <= 0
+      )
+    ) {
+      return await failJob(
+        jobRef,
+        target,
+        "승인된 review snapshot 정보가 없습니다.",
+        failurePatch({contentStatus: "failed"}),
+      );
     }
 
     const materializeStartedAt = Date.now();
@@ -496,9 +678,9 @@ async function processJob(
       },
     );
     if (!materializeResult.ok) {
-      return await failJob(jobRef, target, materializeResult.errorMessage, {
+      return await failJob(jobRef, target, materializeResult.errorMessage, failurePatch({
         contentStatus: "failed",
-      });
+      }));
     }
 
     const assetSyncStartedAt = Date.now();
@@ -560,15 +742,39 @@ async function processJob(
           retryPolicy.maxAttempts,
         )
       ) {
-        return failJob(jobRef, target, error.message, {
+        const source = extractionSourceEvidence(claimedJob.sourceURL);
+        const retainedEvidence = buildRetainedExtractionEvidence({
+          status: "failed",
+          stage: "parsing",
+          sourceURL: claimedJob.sourceURL,
+          strategy: "unknown",
+          failureReasons: ["retry_exhausted"],
+          templateSignature: createHash("sha256")
+            .update(JSON.stringify({stage: "parsing", source}))
+            .digest("hex")
+            .slice(0, 32),
+          versions: CURRENT_EXTRACTION_VERSIONS,
+        });
+        await retainExtractionEvidenceSafely(
+          dependencies,
+          jobRef,
+          claimedJob,
+          retainedEvidence,
+        );
+        return failJob(jobRef, target, error.message, failurePatch({
           parseStatus: "failed",
           errorCode: "retryExhausted",
-        });
+        }));
       }
       await releaseJobForTaskRetry(jobRef, error.message);
       throw error;
     }
-    return await failJob(jobRef, target, errorMessage(error), {});
+    return await failJob(
+      jobRef,
+      target,
+      errorMessage(error),
+      failurePatch({}),
+    );
   } finally {
     clearInterval(leaseTimer);
   }
@@ -578,6 +784,11 @@ async function claimJob(
   db: Firestore,
   target: JobTarget,
   workerID: string,
+  dispatchContract?: {
+    dispatchGeneration: number;
+    reviewGeneration: number | null;
+    reviewSnapshotHash: string | null;
+  },
 ): Promise<
   | {
       claimed: true;
@@ -586,6 +797,12 @@ async function claimJob(
       sourceCandidateID: string | null;
       sourceImportJobID: string | null;
       targetSeasonID: string | null;
+      resumeFrom: "parsing" | "materializing";
+      reviewGeneration: number;
+      reviewSnapshotHash: string | null;
+      dispatchGeneration: number;
+      repairGeneration: number;
+      repairTargetSeasonID: string | null;
     }
   | {claimed: false; reason: string}
 > {
@@ -611,10 +828,34 @@ async function claimJob(
         reason: `notClaimable:${String(data.status ?? "unknown")}`,
       };
     }
+    const dispatchGeneration = integerField(data.dispatchGeneration, 0);
+    if (
+      dispatchContract !== undefined &&
+      dispatchContract.dispatchGeneration !== dispatchGeneration
+    ) {
+      return {claimed: false, reason: "staleDispatchGeneration"};
+    }
+    const resumeFrom = data.resumeFrom === "materializing" ?
+      "materializing" :
+      "parsing";
+    const reviewGeneration = integerField(data.reviewGeneration, 0);
+    const reviewSnapshotHash = optionalStringField(data.reviewSnapshotHash);
+    const repairGeneration = integerField(data.repairGeneration, 0);
+    const repairTargetSeasonID = optionalStringField(data.repairTargetSeasonID);
+    if (
+      dispatchContract?.reviewGeneration !== null &&
+      dispatchContract?.reviewGeneration !== undefined &&
+      (
+        dispatchContract.reviewGeneration !== reviewGeneration ||
+        dispatchContract.reviewSnapshotHash !== reviewSnapshotHash
+      )
+    ) {
+      return {claimed: false, reason: "staleReviewSnapshot"};
+    }
 
     transaction.update(jobRef, {
       status: "processing",
-      phase: "parsing",
+      phase: resumeFrom,
       processingEngine: "cloudRunWorker",
       parseStatus: data.parseStatus ?? "pending",
       contentStatus: data.contentStatus ?? "pending",
@@ -635,6 +876,12 @@ async function claimJob(
       sourceCandidateID: optionalStringField(data.sourceCandidateID),
       sourceImportJobID: optionalStringField(data.sourceImportJobID),
       targetSeasonID: optionalStringField(data.targetSeasonID),
+      resumeFrom,
+      reviewGeneration,
+      reviewSnapshotHash,
+      dispatchGeneration,
+      repairGeneration,
+      repairTargetSeasonID,
     };
   });
 }
@@ -891,19 +1138,54 @@ async function ensureParsed(
   jobRef: FirebaseFirestore.DocumentReference,
   claim: ClaimedJob,
 ): Promise<
+  | ParsedExtractionResult
   | {
-      ok: true;
-      fallbackUsed: boolean;
-      fallbackReason: string | null;
-      strategy: string;
+      ok: false;
+      errorMessage: string;
+      retainedEvidence: RetainedExtractionEvidence;
     }
-  | {ok: false; errorMessage: string}
 > {
   const snapshot = await jobRef.get();
   const data = snapshot.data() as ImportJobData | undefined;
-  if (parsedImageCandidates(data?.imageCandidates).length > 0) {
+  const cachedCandidates = parsedImageCandidates(data?.imageCandidates);
+  const cachedReview = parsedReviewGate(data);
+  const canReuseCachedExtraction = isReusableExtractionCache({
+    candidateCount: cachedCandidates.length,
+    extractorVersion: data?.imageExtractorVersion,
+    platformAdapterKey: data?.platformAdapterKey,
+    platformAdapterVersion: data?.platformAdapterVersion,
+    domainAdapterKey: data?.domainAdapterKey,
+    domainAdapterVersion: data?.domainAdapterVersion,
+    qualityStatus: data?.extractionQualityStatus,
+    contentHashResolutionComplete: data?.contentHashResolutionComplete,
+  });
+  if (canReuseCachedExtraction && cachedReview !== null) {
+    const cachedVersions = {
+      extractorVersion: CURRENT_EXTRACTION_VERSIONS.extractorVersion,
+      platformAdapterKey: optionalStringField(data?.platformAdapterKey),
+      platformAdapterVersion: optionalStringField(data?.platformAdapterVersion),
+      domainAdapterKey: optionalStringField(data?.domainAdapterKey),
+      domainAdapterVersion: optionalStringField(data?.domainAdapterVersion),
+    };
+    const cachedExtraction = extractionResult({
+      candidates: cachedCandidates,
+      strategy: "cached",
+      rawCandidateCount: cachedCandidates.length,
+      sourceURL: claim.sourceURL,
+      candidateKey: (candidate) => extractionCandidateKey(candidate.sourceURL),
+      versions: cachedVersions,
+    });
     await jobRef.update({
       parseStatus: "succeeded",
+      imageCandidateEvidence: cachedExtraction.candidateEvidence.slice(
+        0,
+        MAX_IMAGE_CANDIDATES_TO_STORE,
+      ),
+      imageExtractorVersion: CURRENT_EXTRACTION_VERSIONS.extractorVersion,
+      platformAdapterKey: cachedVersions.platformAdapterKey,
+      platformAdapterVersion: cachedVersions.platformAdapterVersion,
+      domainAdapterKey: cachedVersions.domainAdapterKey,
+      domainAdapterVersion: cachedVersions.domainAdapterVersion,
       parsedAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
@@ -912,6 +1194,19 @@ async function ensureParsed(
       fallbackUsed: false,
       fallbackReason: null,
       strategy: "cached",
+      review: cachedReview,
+      retainedEvidence: cachedReview.quality.status === "needsReview" ?
+        buildRetainedExtractionEvidence({
+          status: "needsReview",
+          stage: "parsing",
+          sourceURL: claim.sourceURL,
+          strategy: stringValue(data?.imageExtractionStrategy, "cached"),
+          qualityReasons: cachedReview.quality.reasons,
+          templateSignature: cachedReview.templateSignature,
+          candidateEvidence: cachedExtraction.candidateEvidence,
+          versions: cachedExtraction.versions,
+        }) :
+        null,
     };
   }
 
@@ -921,20 +1216,80 @@ async function ensureParsed(
     updatedAt: FieldValue.serverTimestamp(),
   });
 
+  let retainedHTML: string | null = null;
   try {
     const html = await withImmediateRetry(() => fetchHTML(claim.sourceURL));
+    retainedHTML = html;
     const staticExtraction = extractImageCandidates(html, claim.sourceURL);
-    const fallbackReason = fallbackReasonForExtraction(staticExtraction, html);
-    const extraction = fallbackReason === null ?
-      staticExtraction :
+    const expectedCountEvidence = collectExpectedCountEvidence(
+      html,
+      claim.sourceURL,
+    );
+    const programmaticGalleryEvidence = detectProgrammaticGallery(
+      html,
+    );
+    const fallbackReason = fallbackReasonForExtraction(
+      staticExtraction,
+      html,
+      programmaticGalleryEvidence,
+    );
+    const fallbackExtraction = fallbackReason === null ?
+      {extraction: staticExtraction, renderedCandidateCount: null} :
       await extractionWithPlaywrightFallback(
         claim.sourceURL,
         staticExtraction,
         fallbackReason,
       );
-    if (extraction.candidates.length === 0) {
+    const sourceExtraction = fallbackExtraction.extraction;
+    if (sourceExtraction.candidates.length === 0) {
       throw new Error("이미지 후보를 찾지 못했습니다.");
     }
+    const contentHashDedupe = await resolveContentHashDedupe({
+      candidates: sourceExtraction.candidates,
+      concurrency: 4,
+      loadBytes: async (candidate) => {
+        try {
+          return await fetchRemoteImageBytes(
+            candidate.sourceURL,
+            claim.sourceURL,
+          );
+        } catch {
+          return null;
+        }
+      },
+    });
+    const quality = evaluateExtractionQuality({
+      candidateCount: sourceExtraction.candidates.length,
+      rawCandidateCount: sourceExtraction.rawCandidateCount,
+      staticCandidateCount: staticExtraction.candidates.length,
+      renderedCandidateCount: fallbackExtraction.renderedCandidateCount,
+      expectedCountEvidence,
+      programmaticGalleryDetected: programmaticGalleryEvidence.detected,
+      contentHashComplete: contentHashDedupe.complete,
+    });
+    const extraction = selectExtractionCandidates({
+      result: sourceExtraction,
+      candidates: contentHashDedupe.candidates,
+      candidateKey: (candidate) => canonicalCandidateURL(candidate.sourceURL),
+    });
+    const review = {
+      ...makeReviewContract({
+        brandID: claim.brandID,
+        sourceURL: claim.sourceURL,
+        strategy: extraction.strategy,
+        candidateKeys: extraction.candidateEvidence.map(
+          (evidence) => evidence.candidateKey,
+        ),
+        expectedCountEvidence,
+        programmaticGalleryEvidence,
+        quality,
+        renderedCandidateCount: fallbackExtraction.renderedCandidateCount,
+        contentHashComplete: contentHashDedupe.complete,
+        versions: extraction.versions,
+        structureTokens: extractionStructureTokens(html),
+      }),
+      quality,
+    };
 
     await jobRef.update({
       parseStatus: "succeeded",
@@ -946,6 +1301,38 @@ async function ensureParsed(
         fallbackReason :
         null,
       rawImageCandidateCount: extraction.rawCandidateCount,
+      staticImageCandidateCount: staticExtraction.candidates.length,
+      renderedImageCandidateCount: fallbackExtraction.renderedCandidateCount,
+      sourceImageCandidateCount: contentHashDedupe.sourceCandidateCount,
+      contentHashResolvedCandidateCount:
+        contentHashDedupe.resolvedCandidateCount,
+      contentHashCandidateCount: contentHashDedupe.contentHashCandidateCount,
+      contentHashResolutionFailureCount: contentHashDedupe.failureCount,
+      contentHashResolutionComplete: contentHashDedupe.complete,
+      imageCandidateContentHashes: contentHashDedupe.contentHashes.map(
+        (item) => ({
+          candidateKey: extractionCandidateKey(item.canonicalURL),
+          contentHash: item.contentHash,
+        }),
+      ),
+      expectedCountEvidence,
+      programmaticGalleryEvidence,
+      extractionQualityStatus: quality.status,
+      extractionQualityReasons: quality.reasons,
+      imageCandidateEvidence: extraction.candidateEvidence.slice(
+        0,
+        MAX_IMAGE_CANDIDATES_TO_STORE,
+      ),
+      imageExtractorVersion: extraction.versions.extractorVersion,
+      platformAdapterKey: extraction.versions.platformAdapterKey,
+      platformAdapterVersion: extraction.versions.platformAdapterVersion,
+      domainAdapterKey: extraction.versions.domainAdapterKey,
+      domainAdapterVersion: extraction.versions.domainAdapterVersion,
+      templateSignature: review.templateSignature,
+      trustBaselineID: review.trustBaselineID,
+      reviewSnapshotHash: review.reviewSnapshotHash,
+      reviewCandidateKeys: review.reviewCandidateKeys,
+      trustEligible: review.trustEligible,
       parsedAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
@@ -956,13 +1343,430 @@ async function ensureParsed(
         fallbackReason :
         null,
       strategy: extraction.strategy,
+      review,
+      retainedEvidence: quality.status === "needsReview" ?
+        buildRetainedExtractionEvidence({
+          status: "needsReview",
+          stage: "parsing",
+          sourceURL: claim.sourceURL,
+          html,
+          strategy: extraction.strategy,
+          qualityReasons: quality.reasons,
+          templateSignature: review.templateSignature,
+          candidateEvidence: extraction.candidateEvidence,
+          expectedCountEvidence,
+          programmaticGalleryEvidence,
+          structureTokens: extractionStructureTokens(html),
+          versions: extraction.versions,
+        }) :
+        null,
     };
   } catch (error) {
     if (isRetryableImportError(error)) {
       throw error;
     }
-    return {ok: false, errorMessage: errorMessage(error)};
+    const structureTokens = retainedHTML === null ?
+      [] :
+      extractionStructureTokens(retainedHTML);
+    const failureVersions = retainedHTML === null ?
+      CURRENT_EXTRACTION_VERSIONS :
+      selectExtractionAdapters({
+        html: retainedHTML,
+        sourceURL: claim.sourceURL,
+        kind: "season_images",
+      }).versions;
+    const templateSignature = createHash("sha256")
+      .update(JSON.stringify({stage: "parsing", structureTokens}))
+      .digest("hex")
+      .slice(0, 32);
+    return {
+      ok: false,
+      errorMessage: errorMessage(error),
+      retainedEvidence: buildRetainedExtractionEvidence({
+        status: "failed",
+        stage: "parsing",
+        sourceURL: claim.sourceURL,
+        html: retainedHTML,
+        strategy: "unknown",
+        failureReasons: ["parse_failed"],
+        qualityReasons: ["no_candidates"],
+        templateSignature,
+        structureTokens,
+        versions: failureVersions,
+      }),
+    };
   }
+}
+
+async function retainExtractionEvidenceSafely(
+  dependencies: ProcessorDependencies,
+  jobRef: FirebaseFirestore.DocumentReference,
+  claim: ClaimedJob,
+  evidence: RetainedExtractionEvidence,
+): Promise<void> {
+  try {
+    await retainExtractionEvidence(dependencies, jobRef, claim, evidence);
+  } catch (error) {
+    console.warn("[lookbook-import-worker] evidence retention failed", {
+      brandID: claim.brandID,
+      jobID: claim.jobID,
+      error: errorMessage(error),
+    });
+    await jobRef.update({
+      evidenceRetentionStatus: "failed",
+      evidenceRetentionErrorMessage: "구조 evidence 저장에 실패했습니다.",
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  }
+}
+
+async function retainExtractionEvidence(
+  dependencies: ProcessorDependencies,
+  jobRef: FirebaseFirestore.DocumentReference,
+  claim: ClaimedJob,
+  evidence: RetainedExtractionEvidence,
+): Promise<void> {
+  const issue = extractionIssueIdentity(evidence);
+  const evidenceID = extractionEvidenceID({
+    brandID: claim.brandID,
+    jobID: claim.jobID,
+    dispatchGeneration: claim.dispatchGeneration,
+    stage: evidence.stage,
+    fingerprint: issue.fingerprint,
+  });
+  const storagePath = extractionEvidenceStoragePath(evidenceID);
+  const evidenceRef = dependencies.firestore
+    .collection("lookbookExtractionEvidence")
+    .doc(evidenceID);
+  const existingEvidence = await evidenceRef.get();
+  if (existingEvidence.exists) {
+    await jobRef.update({
+      evidenceRetentionStatus: "stored",
+      evidenceID,
+      evidenceStoragePath: storagePath,
+      evidenceExpiresAt: existingEvidence.data()?.expiresAt ?? null,
+      issueFingerprint: issue.fingerprint,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    return;
+  }
+
+  const nowDate = new Date();
+  const expiresAtDate = evidenceExpiresAt(nowDate);
+  const expiresAt = Timestamp.fromDate(expiresAtDate);
+  const payload = Buffer.from(JSON.stringify({
+    evidenceID,
+    createdAt: nowDate.toISOString(),
+    expiresAt: expiresAtDate.toISOString(),
+    evidence,
+  }));
+  await dependencies.storage.bucket().file(storagePath).save(payload, {
+    resumable: false,
+    contentType: "application/json",
+    metadata: {
+      cacheControl: "private, no-store",
+      metadata: {
+        evidenceID,
+        expiresAt: expiresAtDate.toISOString(),
+      },
+    },
+  });
+
+  const clusterRef = dependencies.firestore
+    .collection("lookbookExtractionIssueClusters")
+    .doc(issue.fingerprint);
+  await dependencies.firestore.runTransaction(async (transaction) => {
+    const [ledgerSnapshot, clusterSnapshot] = await Promise.all([
+      transaction.get(evidenceRef),
+      transaction.get(clusterRef),
+    ]);
+    if (ledgerSnapshot.exists) {
+      return;
+    }
+    const cluster = clusterSnapshot.data() ?? {};
+    const sourceHost = new URL(evidence.source.origin).hostname.toLowerCase();
+    const clusterState = nextExtractionIssueClusterState({
+      previous: cluster,
+      sourceHost,
+      evidenceID,
+      extractorVersion: evidence.versions.extractorVersion,
+    });
+    const now = FieldValue.serverTimestamp();
+
+    transaction.create(evidenceRef, {
+      evidenceID,
+      brandID: claim.brandID,
+      jobID: claim.jobID,
+      dispatchGeneration: claim.dispatchGeneration,
+      status: evidence.status,
+      stage: evidence.stage,
+      issueFingerprint: issue.fingerprint,
+      storagePath,
+      expiresAt,
+      createdAt: now,
+      updatedAt: now,
+    });
+    transaction.set(clusterRef, {
+      fingerprint: issue.fingerprint,
+      stage: issue.stage,
+      platform: issue.platform,
+      parserStrategy: issue.strategy,
+      failureReasons: issue.failureReasons,
+      qualityReasons: issue.qualityReasons,
+      templateSignature: issue.templateSignature,
+      extractorMajorVersion: issue.extractorMajorVersion,
+      occurrenceCount: clusterState.occurrenceCount,
+      affectedDomains: clusterState.affectedDomains,
+      affectedDomainCount: clusterState.affectedDomainCount,
+      sampleEvidenceIDs: clusterState.sampleEvidenceIDs,
+      status: clusterState.status,
+      recurrenceCount: clusterState.recurrenceCount,
+      firstSeenAt: cluster.firstSeenAt ?? now,
+      lastSeenAt: now,
+      updatedAt: now,
+    }, {merge: true});
+    transaction.update(jobRef, {
+      evidenceRetentionStatus: "stored",
+      evidenceID,
+      evidenceStoragePath: storagePath,
+      evidenceExpiresAt: expiresAt,
+      issueFingerprint: issue.fingerprint,
+      updatedAt: now,
+    });
+  });
+}
+
+async function pauseForReviewIfNeeded(
+  db: Firestore,
+  jobRef: FirebaseFirestore.DocumentReference,
+  claim: ClaimedJob,
+  review: ReviewGate,
+): Promise<JobResult | null> {
+  const baseline = await db
+    .collection("lookbookExtractionTrustBaselines")
+    .doc(review.trustBaselineID)
+    .get();
+  const trusted = baseline.exists && baseline.data()?.isActive === true;
+  if (reviewDisposition({
+    trusted,
+    quality: review.quality,
+    trustEligible: review.trustEligible,
+  }) === "materialize") {
+    await jobRef.update({
+      trustBaselineMatched: true,
+      resumeFrom: "materializing",
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    return null;
+  }
+
+  const snapshot = await jobRef.get();
+  const data = snapshot.data() as ImportJobData | undefined;
+  const currentGeneration = integerField(data?.reviewGeneration, 0);
+  const generation = data?.reviewStatus === "reanalyzing" ?
+    currentGeneration :
+    currentGeneration + 1;
+  await jobRef.update({
+    status: "awaitingReview",
+    phase: "reviewing",
+    reviewStatus: "pending",
+    reviewGeneration: generation,
+    reviewSnapshotHash: review.reviewSnapshotHash,
+    reviewCandidateKeys: review.reviewCandidateKeys,
+    reviewRequestedAt: FieldValue.serverTimestamp(),
+    resumeFrom: "materializing",
+    trustBaselineMatched: false,
+    leaseOwner: null,
+    leaseExpiresAt: null,
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+  return {
+    brandID: claim.brandID,
+    jobID: claim.jobID,
+    processed: true,
+    status: "awaitingReview",
+    parseStatus: "succeeded",
+    contentStatus: "pending",
+    reason: review.quality.reasons.join(",") || "untrustedTemplateSignature",
+  };
+}
+
+async function prepareSeasonRepairPreview(
+  dependencies: ProcessorDependencies,
+  jobRef: FirebaseFirestore.DocumentReference,
+  claim: ClaimedJob,
+): Promise<JobResult> {
+  if (claim.repairTargetSeasonID === null || claim.repairGeneration <= 0) {
+    return failJob(jobRef, claim, "시즌 보수 generation 정보가 없습니다.", {
+      contentStatus: "failed",
+      repairStatus: "failed",
+    });
+  }
+  const [jobSnapshot, postSnapshot] = await Promise.all([
+    jobRef.get(),
+    seasonRefFor(
+      dependencies.firestore,
+      claim.brandID,
+      claim.repairTargetSeasonID,
+    ).collection("posts").get(),
+  ]);
+  const jobData = jobSnapshot.data() as ImportJobData | undefined;
+  if (!jobSnapshot.exists || !jobData) {
+    return failJob(jobRef, claim, "시즌 보수 job을 읽지 못했습니다.", {
+      contentStatus: "failed",
+      repairStatus: "failed",
+    });
+  }
+  const candidateHashes = candidateContentHashMap(
+    jobData.imageCandidateContentHashes,
+  );
+  const candidates: ReconcileCandidate[] = parsedImageCandidates(
+    jobData.imageCandidates,
+  ).map((candidate) => {
+    const candidateKey = extractionCandidateKey(candidate.sourceURL);
+    return {
+      candidateKey,
+      sourceURL: candidate.sourceURL,
+      alt: candidate.alt,
+      contentHash: candidateHashes.get(candidateKey) ?? null,
+    };
+  });
+  const activePosts = postSnapshot.docs.filter((document) => {
+    const data = document.data() as PostData;
+    return data.deletionStatus === undefined ||
+      data.deletionStatus === null ||
+      data.deletionStatus === "active";
+  });
+  const orderedPosts = [...activePosts].sort((left, right) => {
+    const leftData = left.data() as PostData;
+    const rightData = right.data() as PostData;
+    const leftIndex = optionalInteger(leftData.sourceSortIndex) ??
+      optionalInteger(leftData.orderIndex);
+    const rightIndex = optionalInteger(rightData.sourceSortIndex) ??
+      optionalInteger(rightData.orderIndex);
+    if (leftIndex !== null && rightIndex !== null) {
+      return leftIndex - rightIndex;
+    }
+    return timestampMillis(rightData.createdAt) -
+      timestampMillis(leftData.createdAt);
+  });
+  const existingPosts = await mapWithLimit(
+    orderedPosts,
+    4,
+    async (document, index): Promise<ReconcileExistingPost | null> => {
+      const data = document.data() as PostData;
+      const media = firstMediaData(data.media);
+      const sourceURL = optionalStringField(media?.remoteURL);
+      if (sourceURL === null) {
+        return null;
+      }
+      let contentHash = optionalStringField(media?.contentHash);
+      if (contentHash === null) {
+        try {
+          const bytes = await fetchRemoteImageBytes(
+            sourceURL,
+            optionalStringField(media?.sourcePageURL) ?? claim.sourceURL,
+          );
+          contentHash = createHash("sha256").update(bytes).digest("hex");
+        } catch {
+          contentHash = null;
+        }
+      }
+      return {
+        postID: document.id,
+        sourceURL,
+        contentHash,
+        sourceSortIndex: optionalInteger(data.sourceSortIndex) ??
+          optionalInteger(data.orderIndex) ??
+          index,
+      };
+    },
+  );
+  const preview = makeSeasonReconcilePreview({
+    existingPosts: existingPosts.filter(
+      (post): post is ReconcileExistingPost => post !== null,
+    ),
+    candidates,
+  });
+  const repairRef = jobRef.collection("repairs")
+    .doc(String(claim.repairGeneration));
+  const now = FieldValue.serverTimestamp();
+  const disposition = seasonRepairPreviewDisposition(preview);
+  const repairStatus = disposition === "noChanges" ?
+    "noChanges" :
+    "previewReady";
+  await repairRef.set({
+    brandID: claim.brandID,
+    jobID: claim.jobID,
+    seasonID: claim.repairTargetSeasonID,
+    repairGeneration: claim.repairGeneration,
+    repairSnapshotHash: preview.snapshotHash,
+    status: repairStatus,
+    keep: preview.keep,
+    add: preview.add,
+    reorder: preview.reorder,
+    removeCandidates: preview.removeCandidates,
+    orderedPostIDs: preview.orderedPostIDs,
+    allPostIDs: preview.allPostIDs,
+    resultingPostCount: preview.resultingPostCount,
+    imageExtractorVersion: jobData.imageExtractorVersion ?? null,
+    templateSignature: jobData.templateSignature ?? null,
+    createdAt: now,
+    updatedAt: now,
+  });
+  if (disposition === "noChanges") {
+    await jobRef.update({
+      status: "succeeded",
+      phase: "completed",
+      parseStatus: "succeeded",
+      contentStatus: "succeeded",
+      reviewStatus: null,
+      repairStatus,
+      repairSnapshotHash: preview.snapshotHash,
+      repairKeepCount: preview.keep.length,
+      repairAddCount: 0,
+      repairReorderCount: 0,
+      repairRemoveCandidateCount: 0,
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      completedAt: now,
+      updatedAt: now,
+    });
+    return {
+      brandID: claim.brandID,
+      jobID: claim.jobID,
+      processed: true,
+      status: "succeeded",
+      parseStatus: "succeeded",
+      contentStatus: "succeeded",
+      seasonID: claim.repairTargetSeasonID,
+      reason: "repairNoChanges",
+    };
+  }
+  await jobRef.update({
+    status: "awaitingReview",
+    phase: "reviewing",
+    reviewStatus: "repairPreviewReady",
+    repairStatus: "previewReady",
+    repairSnapshotHash: preview.snapshotHash,
+    repairKeepCount: preview.keep.length,
+    repairAddCount: preview.add.length,
+    repairReorderCount: preview.reorder.length,
+    repairRemoveCandidateCount: preview.removeCandidates.length,
+    leaseOwner: null,
+    leaseExpiresAt: null,
+    updatedAt: now,
+  });
+  return {
+    brandID: claim.brandID,
+    jobID: claim.jobID,
+    processed: true,
+    status: "awaitingReview",
+    parseStatus: "succeeded",
+    contentStatus: "pending",
+    seasonID: claim.repairTargetSeasonID,
+    reason: "repairPreviewReady",
+  };
 }
 
 async function ensureMaterialized(
@@ -997,7 +1801,12 @@ async function ensureMaterialized(
     if (!snapshot.exists || !data) {
       throw new Error("import job 문서를 읽지 못했습니다.");
     }
-    const imageCandidates = parsedImageCandidates(data.imageCandidates);
+    const allCandidates = parsedImageCandidates(data.imageCandidates);
+    const approvedKeys = new Set(stringArray(data.approvedCandidateKeys));
+    const imageCandidates = approvedKeys.size === 0 ?
+      allCandidates :
+      allCandidates.filter((candidate) =>
+        approvedKeys.has(extractionCandidateKey(candidate.sourceURL)));
     if (imageCandidates.length === 0) {
       throw new Error("이미지 후보가 없어 시즌을 만들 수 없습니다.");
     }
@@ -1670,10 +2479,31 @@ export function extractImageCandidates(
   html: string,
   baseURL: string,
 ): ImageExtractionResult {
-  const rawCandidates = collectImageCandidates(html, baseURL, false, true);
-  const sections = contentSections(html)
+  const adapterSelection = selectExtractionAdapters({
+    html,
+    sourceURL: baseURL,
+    kind: "season_images",
+  });
+  const rules = adapterSelection.imageRules;
+  const rawCandidates = collectImageCandidates(
+    html,
+    baseURL,
+    false,
+    true,
+    rules,
+  );
+  const sections = contentSections(
+    html,
+    [...rules.contentSectionRules, ...GENERIC_CONTENT_SECTION_RULES],
+  )
     .map((section) => {
-      const candidates = collectImageCandidates(section.html, baseURL, true, false);
+      const candidates = collectImageCandidates(
+        section.html,
+        baseURL,
+        true,
+        false,
+        rules,
+      );
       return {
         candidates,
         label: section.label,
@@ -1687,27 +2517,46 @@ export function extractImageCandidates(
     bestSection &&
     (bestSection.score >= MIN_STRONG_SECTION_WEIGHT || bestSection.candidates.length >= 2)
   ) {
-    return {
+    return extractionResult({
       candidates: bestSection.candidates,
       strategy: bestSection.label,
       rawCandidateCount: rawCandidates.length,
-    };
+      sourceURL: baseURL,
+      candidateKey: (candidate) => extractionCandidateKey(candidate.sourceURL),
+      versions: adapterSelection.versions,
+    });
   }
-  const filteredCandidates = collectImageCandidates(html, baseURL, true, false);
-  return {
+  const filteredCandidates = collectImageCandidates(
+    html,
+    baseURL,
+    true,
+    false,
+    rules,
+  );
+  return extractionResult({
     candidates: filteredCandidates.length > 0 ? filteredCandidates : rawCandidates,
     strategy: filteredCandidates.length > 0 ? "filteredPageImages" : "allPageImages",
     rawCandidateCount: rawCandidates.length,
-  };
+    sourceURL: baseURL,
+    candidateKey: (candidate) => extractionCandidateKey(candidate.sourceURL),
+    versions: adapterSelection.versions,
+  });
 }
 
 export function fallbackReasonForExtraction(
-  extraction: ImageExtractionResult,
+  extraction: Pick<
+    ImageExtractionResult,
+    "candidates" | "strategy" | "rawCandidateCount"
+  >,
   html: string,
+  programmaticGalleryEvidence = detectProgrammaticGallery(html),
 ): string | null {
   const candidateCount = extraction.candidates.length;
   if (candidateCount === 0) {
     return "noStaticCandidates";
+  }
+  if (programmaticGalleryEvidence.detected) {
+    return "programmaticGallerySignals";
   }
   if (candidateCount === 1 && LOW_CONFIDENCE_STRATEGIES.has(extraction.strategy)) {
     return "singleLowConfidenceCandidate";
@@ -1734,9 +2583,12 @@ async function extractionWithPlaywrightFallback(
   sourceURL: string,
   staticExtraction: ImageExtractionResult,
   fallbackReason: string,
-): Promise<ImageExtractionResult> {
+): Promise<Pick<
+  EvaluatedImageExtraction,
+  "extraction" | "renderedCandidateCount"
+>> {
   console.log("[lookbook-import-worker] playwright fallback start", {
-    sourceURL,
+    source: extractionSourceEvidence(sourceURL),
     fallbackReason,
     staticStrategy: staticExtraction.strategy,
     staticCandidateCount: staticExtraction.candidates.length,
@@ -1747,7 +2599,7 @@ async function extractionWithPlaywrightFallback(
     const renderedHTML = await renderHTMLWithPlaywright(sourceURL);
     const renderedExtraction = extractImageCandidates(renderedHTML, sourceURL);
     console.log("[lookbook-import-worker] playwright fallback completed", {
-      sourceURL,
+      source: extractionSourceEvidence(sourceURL),
       fallbackReason,
       elapsedMs: Date.now() - startedAt,
       renderedStrategy: renderedExtraction.strategy,
@@ -1755,26 +2607,44 @@ async function extractionWithPlaywrightFallback(
       renderedRawCandidateCount: renderedExtraction.rawCandidateCount,
     });
     if (renderedExtraction.candidates.length > staticExtraction.candidates.length) {
+      const renderedResult = extractionResultWithStrategy(
+        renderedExtraction,
+        `playwright:${renderedExtraction.strategy}`,
+        "rendered_dom",
+      );
       return {
-        ...renderedExtraction,
-        strategy: `playwright:${renderedExtraction.strategy}`,
+        extraction: mergeExtractionResults({
+          results: [staticExtraction, renderedResult],
+          strategy: `${renderedResult.strategy}+staticMerge`,
+          candidateKey: (candidate) =>
+            canonicalCandidateURL(candidate.sourceURL),
+        }),
+        renderedCandidateCount: renderedExtraction.candidates.length,
       };
     }
     return {
-      ...staticExtraction,
-      strategy: `static:${staticExtraction.strategy}`,
+      extraction: extractionResultWithStrategy(
+        staticExtraction,
+        `static:${staticExtraction.strategy}`,
+        "static_dom",
+      ),
+      renderedCandidateCount: renderedExtraction.candidates.length,
     };
   } catch (error) {
     console.warn("[lookbook-import-worker] playwright fallback failed", {
-      sourceURL,
+      source: extractionSourceEvidence(sourceURL),
       fallbackReason,
       elapsedMs: Date.now() - startedAt,
       errorMessage: errorMessage(error),
     });
     if (staticExtraction.candidates.length > 0) {
       return {
-        ...staticExtraction,
-        strategy: `static:${staticExtraction.strategy}`,
+        extraction: extractionResultWithStrategy(
+          staticExtraction,
+          `static:${staticExtraction.strategy}`,
+          "static_dom",
+        ),
+        renderedCandidateCount: null,
       };
     }
     throw error;
@@ -1833,6 +2703,7 @@ function collectImageCandidates(
   baseURL: string,
   applyNoiseFilter: boolean,
   includeMetaImages: boolean,
+  adapterRules: ImageExtractionRules,
 ): ImageCandidate[] {
   const candidates: ImageCandidate[] = [];
   const seen = new Set<string>();
@@ -1846,6 +2717,7 @@ function collectImageCandidates(
       attributeValue(tag, "alt"),
       tagContext(html, match.index ?? 0),
       applyNoiseFilter,
+      adapterRules,
     );
   }
   for (const match of html.matchAll(/<source\b[^>]*>/gi)) {
@@ -1861,6 +2733,7 @@ function collectImageCandidates(
       null,
       tagContext(html, match.index ?? 0),
       applyNoiseFilter,
+      adapterRules,
     );
   }
   if (!includeMetaImages) {
@@ -1880,12 +2753,16 @@ function collectImageCandidates(
       null,
       tag,
       applyNoiseFilter,
+      adapterRules,
     );
   }
   return candidates;
 }
 
-function contentSections(html: string): Array<{
+function contentSections(
+  html: string,
+  rules: ContentSectionRule[],
+): Array<{
   html: string;
   index: number;
   label: string;
@@ -1898,7 +2775,7 @@ function contentSections(html: string): Array<{
     weight: number;
   }> = [];
   for (const match of html.matchAll(/<(main|article|section|div)\b[^>]*>/gi)) {
-    const rule = CONTENT_SECTION_RULES.find((item) => item.pattern.test(match[0]));
+    const rule = rules.find((item) => item.pattern.test(match[0]));
     if (!rule) {
       continue;
     }
@@ -1958,14 +2835,18 @@ function appendURLs(
   alt: string | null,
   context: string,
   applyNoiseFilter: boolean,
+  adapterRules: ImageExtractionRules,
 ): void {
   for (const rawValue of rawValues) {
     const normalizedURL = normalizedImageURL(rawValue, baseURL);
     if (
       !normalizedURL ||
       seen.has(normalizedURL) ||
-      isHardNoiseImage(normalizedURL) ||
-      (applyNoiseFilter && isLikelyNoiseImage(normalizedURL, context))
+      isHardNoiseImage(normalizedURL, adapterRules) ||
+      (
+        applyNoiseFilter &&
+        isLikelyNoiseImage(normalizedURL, context, adapterRules)
+      )
     ) {
       continue;
     }
@@ -2048,13 +2929,26 @@ function htmlDecode(value: string): string {
     .replace(/&gt;/g, ">");
 }
 
-function isLikelyNoiseImage(imageURL: string, context: string): boolean {
-  return NOISE_IMAGE_URL_PATTERNS.some((pattern) => pattern.test(imageURL)) ||
+function isLikelyNoiseImage(
+  imageURL: string,
+  context: string,
+  adapterRules: ImageExtractionRules,
+): boolean {
+  return [
+    ...NOISE_IMAGE_URL_PATTERNS,
+    ...adapterRules.noiseImageURLPatterns,
+  ].some((pattern) => pattern.test(imageURL)) ||
     NOISE_CONTEXT_PATTERN.test(context);
 }
 
-function isHardNoiseImage(imageURL: string): boolean {
-  return HARD_NOISE_IMAGE_URL_PATTERNS.some((pattern) => pattern.test(imageURL));
+function isHardNoiseImage(
+  imageURL: string,
+  adapterRules: ImageExtractionRules,
+): boolean {
+  return [
+    ...HARD_NOISE_IMAGE_URL_PATTERNS,
+    ...adapterRules.hardNoiseImageURLPatterns,
+  ].some((pattern) => pattern.test(imageURL));
 }
 
 async function seasonMetadata(
@@ -2412,6 +3306,35 @@ function parsedImageCandidates(value: unknown): ImageCandidate[] {
     .filter((item): item is ImageCandidate => item !== null);
 }
 
+function parsedReviewGate(data: ImportJobData | undefined): ReviewGate | null {
+  const templateSignature = optionalStringField(data?.templateSignature);
+  const trustBaselineID = optionalStringField(data?.trustBaselineID);
+  const reviewSnapshotHash = optionalStringField(data?.reviewSnapshotHash);
+  const reviewCandidateKeys = stringArray(data?.reviewCandidateKeys);
+  const status = data?.extractionQualityStatus;
+  const reasons = stringArray(data?.extractionQualityReasons);
+  if (
+    templateSignature === null ||
+    trustBaselineID === null ||
+    reviewSnapshotHash === null ||
+    reviewCandidateKeys.length === 0 ||
+    (status !== "accepted" && status !== "needsReview" && status !== "failed")
+  ) {
+    return null;
+  }
+  return {
+    templateSignature,
+    trustBaselineID,
+    reviewSnapshotHash,
+    reviewCandidateKeys,
+    trustEligible: data?.trustEligible === true,
+    quality: {
+      status,
+      reasons: reasons as ExtractionQuality["reasons"],
+    },
+  };
+}
+
 function parseBatchSize(value: unknown): number {
   if (value === undefined) {
     return DEFAULT_BATCH_SIZE;
@@ -2471,6 +3394,10 @@ function optionalStringField(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function stringValue(value: unknown, fallback: string): string {
+  return optionalStringField(value) ?? fallback;
+}
+
 function optionalInteger(value: unknown): number | null {
   if (!Number.isInteger(value)) {
     return null;
@@ -2492,6 +3419,20 @@ function nonNegativeInteger(value: unknown, fieldName: string): number {
   return Number(value);
 }
 
+function optionalNonNegativeInteger(
+  value: unknown,
+  fieldName: string,
+): number | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  return nonNegativeInteger(value, fieldName);
+}
+
+function integerField(value: unknown, fallback: number): number {
+  return Number.isInteger(value) ? Number(value) : fallback;
+}
+
 function firstNonEmptyString(values: Array<string | null>): string | null {
   return values.find((value) => {
     return typeof value === "string" && value.trim().length > 0;
@@ -2506,6 +3447,54 @@ function stringArray(value: unknown): string[] {
     .filter((item) => typeof item === "string")
     .map((item) => item.trim())
     .filter((item) => item.length > 0) as string[];
+}
+
+function candidateContentHashMap(value: unknown): Map<string, string> {
+  const result = new Map<string, string>();
+  if (!Array.isArray(value)) {
+    return result;
+  }
+  value.forEach((item) => {
+    if (item === null || typeof item !== "object" || Array.isArray(item)) {
+      return;
+    }
+    const record = item as Record<string, unknown>;
+    const candidateKey = optionalStringField(record.candidateKey);
+    const contentHash = optionalStringField(record.contentHash);
+    if (
+      candidateKey !== null &&
+      contentHash !== null &&
+      /^[a-f0-9]{64}$/.test(contentHash)
+    ) {
+      result.set(candidateKey, contentHash);
+    }
+  });
+  return result;
+}
+
+async function mapWithLimit<Input, Output>(
+  values: Input[],
+  concurrency: number,
+  work: (value: Input, index: number) => Promise<Output>,
+): Promise<Output[]> {
+  const results: Output[] = [];
+  let cursor = 0;
+  const workers = Array.from(
+    {length: Math.min(Math.max(1, concurrency), values.length)},
+    async () => {
+      for (;;) {
+        const index = cursor;
+        cursor += 1;
+        const value = values[index];
+        if (value === undefined) {
+          return;
+        }
+        results[index] = await work(value, index);
+      }
+    },
+  );
+  await Promise.all(workers);
+  return results;
 }
 
 function timestampMillis(value: unknown): number {
