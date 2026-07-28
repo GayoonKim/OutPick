@@ -86,7 +86,7 @@ struct LoadLikedSeasonsUseCaseTests {
             coverRemoteURL: nil,
             description: "",
             tagIDs: [],
-            tagConceptIDs: nil,
+            moodIDs: [],
             status: .published,
             deletionStatus: .active,
             assetSyncStatus: .ready,
@@ -146,18 +146,6 @@ private final class SeasonRepositoryFake: SeasonRepositoryProtocol {
 
     init(seasons: [SeasonID: Season]) {
         self.seasons = seasons
-    }
-
-    func createSeason(
-        brandID: BrandID,
-        year: Int,
-        term: SeasonTerm,
-        description: String,
-        coverImageData: Data?,
-        tagIDs: [TagID],
-        tagConceptIDs: [String]?
-    ) async throws -> Season {
-        throw NSError(domain: "SeasonRepositoryFake", code: -1)
     }
 
     func fetchSeason(brandID: BrandID, seasonID: SeasonID) async throws -> Season {

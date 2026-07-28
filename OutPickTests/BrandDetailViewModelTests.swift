@@ -138,18 +138,6 @@ private final class SeasonRepositorySpy: SeasonRepositoryProtocol {
         self.seasons = seasons
     }
 
-    func createSeason(
-        brandID: BrandID,
-        year: Int,
-        term: SeasonTerm,
-        description: String,
-        coverImageData: Data?,
-        tagIDs: [TagID],
-        tagConceptIDs: [String]?
-    ) async throws -> Season {
-        makeSeason(brandID: brandID, seasonID: SeasonID(value: "created-season"))
-    }
-
     func fetchSeason(brandID: BrandID, seasonID: SeasonID) async throws -> Season {
         makeSeason(brandID: brandID, seasonID: seasonID)
     }
@@ -260,7 +248,7 @@ private func makeSeason(
         coverRemoteURL: nil,
         description: "",
         tagIDs: [],
-        tagConceptIDs: nil,
+        moodIDs: [],
         status: .published,
         deletionStatus: .active,
         assetSyncStatus: .ready,

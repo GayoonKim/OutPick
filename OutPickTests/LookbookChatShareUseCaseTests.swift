@@ -368,7 +368,7 @@ struct LookbookChatShareUseCaseTests {
             coverRemoteURL: nil,
             description: "",
             tagIDs: [],
-            tagConceptIDs: nil,
+            moodIDs: [],
             status: .published,
             deletionStatus: .active,
             assetSyncStatus: .ready,
@@ -512,18 +512,6 @@ private final class SeasonRepositoryFake: SeasonRepositoryProtocol {
         self.seasonsByKey = Dictionary(
             uniqueKeysWithValues: seasons.map { ("\($0.brandID.value)|\($0.id.value)", $0) }
         )
-    }
-
-    func createSeason(
-        brandID: BrandID,
-        year: Int,
-        term: SeasonTerm,
-        description: String,
-        coverImageData: Data?,
-        tagIDs: [TagID],
-        tagConceptIDs: [String]?
-    ) async throws -> Season {
-        throw NSError(domain: "SeasonRepositoryFake", code: -2)
     }
 
     func fetchSeason(brandID: BrandID, seasonID: SeasonID) async throws -> Season {

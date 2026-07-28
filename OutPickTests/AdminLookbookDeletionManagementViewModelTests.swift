@@ -217,7 +217,6 @@ private struct DeletionSearchBrandsUseCaseStub: SearchBrandsUseCaseProtocol {
 }
 
 private struct DeletionSeasonRepositoryStub: SeasonRepositoryProtocol {
-    func createSeason(brandID: BrandID, year: Int, term: SeasonTerm, description: String, coverImageData: Data?, tagIDs: [TagID], tagConceptIDs: [String]?) async throws -> Season { throw StubError.unused }
     func fetchSeason(brandID: BrandID, seasonID: SeasonID) async throws -> Season { throw StubError.unused }
     func fetchSeasons(brandID: BrandID, pageSize: Int, after last: DocumentSnapshot?) async throws -> SeasonPage { throw StubError.unused }
     func fetchAllSeasons(brandID: BrandID) async throws -> [Season] { [] }

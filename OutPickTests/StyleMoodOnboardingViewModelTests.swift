@@ -57,7 +57,7 @@ struct StyleMoodOnboardingViewModelTests {
     func defaultShowsFeaturedAndSearchFiltersAllActiveMoods() async {
         let moods = [
             StyleMood(id: "minimal", displayName: "미니멀", displayGroup: .essential, sortOrder: 1, isFeaturedInOnboarding: true),
-            StyleMood(id: "avant_garde", displayName: "아방가르드", displayGroup: .experimental, sortOrder: 2, isFeaturedInOnboarding: false)
+            StyleMood(id: "avant_garde", displayName: "아방가르드", displayGroup: .romantic, sortOrder: 2, isFeaturedInOnboarding: false)
         ]
         let viewModel = makeViewModel(moods: moods)
         await viewModel.loadMoods()

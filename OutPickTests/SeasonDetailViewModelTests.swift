@@ -484,7 +484,7 @@ struct SeasonDetailViewModelTests {
             coverRemoteURL: nil,
             description: "",
             tagIDs: [],
-            tagConceptIDs: nil,
+            moodIDs: [],
             status: .published,
             deletionStatus: .active,
             assetSyncStatus: .ready,

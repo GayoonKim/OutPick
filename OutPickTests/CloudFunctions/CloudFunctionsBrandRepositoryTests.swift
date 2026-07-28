@@ -28,7 +28,8 @@ struct CloudFunctionsBrandRepositoryTests {
             englishName: nil,
             isFeatured: true,
             websiteURL: nil,
-            lookbookArchiveURL: "https://archive.example.com"
+            lookbookArchiveURL: "https://archive.example.com",
+            moodIDs: ["minimal"]
         )
         _ = try await store.updateBrand(
             brandID: BrandID(value: "brand-1"),
@@ -36,7 +37,8 @@ struct CloudFunctionsBrandRepositoryTests {
             englishName: nil,
             websiteURL: nil,
             lookbookArchiveURL: nil,
-            isFeatured: nil
+            isFeatured: nil,
+            moodIDs: []
         )
         try await store.updateLogoPaths(
             docID: "brand-1",
@@ -61,9 +63,11 @@ struct CloudFunctionsBrandRepositoryTests {
         ])
         #expect(transport.calls[0].data["englishName"] == nil)
         #expect(transport.calls[0].data["lookbookArchiveURL"] as? String == "https://archive.example.com")
+        #expect(transport.calls[0].data["moodIDs"] as? [String] == ["minimal"])
         #expect(transport.calls[1].data["englishName"] is NSNull)
         #expect(transport.calls[1].data["websiteURL"] as? String == "")
         #expect(transport.calls[1].data["isFeatured"] == nil)
+        #expect(transport.calls[1].data["moodIDs"] as? [String] == [])
         #expect(transport.calls[2].data["logoThumbPath"] as? String == "thumb.jpg")
         #expect(transport.calls[2].data["logoDetailPath"] == nil)
         #expect(removed.removed)

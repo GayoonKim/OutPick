@@ -45,6 +45,26 @@ struct AdminBrandManagementViewModelTests {
         #expect(viewModel.canSaveBrand(canUpdateFeatured: true) == true)
     }
 
+    @Test func moodChangeOnlyCountsForTotalAdminSavePermission() {
+        let viewModel = makeViewModel()
+        viewModel.selectBrand(makeBrand(moodIDs: ["minimal"]))
+
+        viewModel.selectedMoodIDs = ["street"]
+
+        #expect(
+            viewModel.canSaveBrand(
+                canUpdateFeatured: false,
+                canUpdateMoodIDs: false
+            ) == false
+        )
+        #expect(
+            viewModel.canSaveBrand(
+                canUpdateFeatured: false,
+                canUpdateMoodIDs: true
+            )
+        )
+    }
+
     @Test func clearSearchClearsSelectedBrandAndDraftInputs() {
         let viewModel = makeViewModel()
         viewModel.searchText = "hat"
@@ -87,9 +107,49 @@ struct AdminBrandManagementViewModelTests {
         #expect(viewModel.selectedBrand == nil)
     }
 
+    @Test func seasonStyleSearchMatchesDisplaySourceYearAndTerm() async {
+        let seasons = [
+            makeSeason(
+                id: "fw-2025",
+                displayTitle: "25 F/W",
+                sourceTitle: "Autumn Winter Collection",
+                year: 2025,
+                term: .fw
+            ),
+            makeSeason(
+                id: "ss-2024",
+                displayTitle: "24 S/S",
+                sourceTitle: "Spring Summer Archive",
+                year: 2024,
+                term: .ss
+            )
+        ]
+        let viewModel = makeViewModel(
+            initialBrand: makeBrand(),
+            seasonRepository: SeasonRepositoryStub(seasons: seasons)
+        )
+        await viewModel.loadMoodManagementData()
+
+        viewModel.seasonSearchText = "winter"
+        #expect(viewModel.visibleSeasons.map(\.id.value) == ["fw-2025"])
+
+        viewModel.seasonSearchText = "2024"
+        #expect(viewModel.visibleSeasons.map(\.id.value) == ["ss-2024"])
+
+        viewModel.seasonSearchText = "SS"
+        #expect(viewModel.visibleSeasons.map(\.id.value) == ["ss-2024"])
+
+        viewModel.seasonSearchText = "F/W"
+        #expect(viewModel.visibleSeasons.map(\.id.value) == ["fw-2025"])
+
+        viewModel.seasonSearchText = "없는 시즌"
+        #expect(viewModel.visibleSeasons.isEmpty)
+    }
+
     private func makeViewModel(
         initialBrand: Brand? = nil,
-        initialBrandID: BrandID? = nil
+        initialBrandID: BrandID? = nil,
+        seasonRepository: SeasonRepositoryProtocol = SeasonRepositoryStub()
     ) -> AdminBrandManagementViewModel {
         AdminBrandManagementViewModel(
             initialBrand: initialBrand,
@@ -99,7 +159,9 @@ struct AdminBrandManagementViewModelTests {
             brandStore: BrandStoringRepositoryStub(),
             storageService: StorageServiceStub(),
             brandImageCache: BrandImageCacheStub(),
-            thumbnailer: ImageThumbnailerStub()
+            thumbnailer: ImageThumbnailerStub(),
+            moodRepository: AdminStyleMoodRepositoryStub(),
+            seasonRepository: seasonRepository
         )
     }
 
@@ -108,7 +170,8 @@ struct AdminBrandManagementViewModelTests {
         englishName: String? = nil,
         websiteURL: String? = nil,
         lookbookArchiveURL: String? = nil,
-        isFeatured: Bool = false
+        isFeatured: Bool = false,
+        moodIDs: [String] = []
     ) -> Brand {
         Brand(
             id: BrandID(value: "brand-1"),
@@ -120,6 +183,7 @@ struct AdminBrandManagementViewModelTests {
             logoDetailPath: nil,
             logoOriginalPath: nil,
             isFeatured: isFeatured,
+            moodIDs: moodIDs,
             discoveryStatus: .idle,
             lastDiscoveryErrorMessage: nil,
             lastDiscoveryRequestedAt: nil,
@@ -128,6 +192,72 @@ struct AdminBrandManagementViewModelTests {
             deletionStatus: .active,
             updatedAt: Date()
         )
+    }
+
+    private func makeSeason(
+        id: String,
+        displayTitle: String,
+        sourceTitle: String?,
+        year: Int?,
+        term: SeasonTerm?
+    ) -> Season {
+        Season(
+            id: SeasonID(value: id),
+            brandID: BrandID(value: "brand-1"),
+            displayTitle: displayTitle,
+            sourceTitle: sourceTitle,
+            year: year,
+            term: term,
+            coverPath: nil,
+            coverRemoteURL: nil,
+            description: "",
+            tagIDs: [],
+            moodIDs: [],
+            status: .published,
+            deletionStatus: .active,
+            assetSyncStatus: .ready,
+            metadataStatus: .confirmed,
+            metadataConfidence: nil,
+            sourceURL: nil,
+            sourceImportJobID: nil,
+            sourceSortIndex: nil,
+            postCount: 0,
+            likeCount: 0,
+            createdAt: Date(),
+            updatedAt: Date()
+        )
+    }
+}
+
+private struct AdminStyleMoodRepositoryStub: StyleMoodRepositoryProtocol {
+    func fetchOnboardingMoods() async throws -> [StyleMood] { [] }
+    func fetchAllMoods() async throws -> [StyleMood] { [] }
+}
+
+private struct SeasonRepositoryStub: SeasonRepositoryProtocol {
+    let seasons: [Season]
+
+    init(seasons: [Season] = []) {
+        self.seasons = seasons
+    }
+
+    func fetchSeason(brandID: BrandID, seasonID: SeasonID) async throws -> Season {
+        guard let season = seasons.first(where: { $0.id == seasonID }) else {
+            throw NSError(domain: "SeasonRepositoryStub", code: -1)
+        }
+        return season
+    }
+
+    func fetchSeasons(
+        brandID: BrandID,
+        pageSize: Int,
+        after last: DocumentSnapshot?
+    ) async throws -> SeasonPage {
+        throw NSError(domain: "SeasonRepositoryStub", code: -1)
+    }
+
+    func fetchAllSeasons(brandID: BrandID) async throws -> [Season] {
+        seasons
     }
 }
 
@@ -165,7 +295,8 @@ private struct BrandStoringRepositoryStub: BrandStoringRepository {
         englishName: String?,
         isFeatured: Bool,
         websiteURL: String?,
-        lookbookArchiveURL: String?
+        lookbookArchiveURL: String?,
+        moodIDs: [String]
     ) async throws -> String {
         "brand-1"
     }
@@ -176,7 +307,8 @@ private struct BrandStoringRepositoryStub: BrandStoringRepository {
         englishName: String?,
         websiteURL: String?,
         lookbookArchiveURL: String?,
-        isFeatured: Bool?
+        isFeatured: Bool?,
+        moodIDs: [String]?
     ) async throws -> Brand {
         Brand(
             id: brandID,
@@ -188,6 +320,7 @@ private struct BrandStoringRepositoryStub: BrandStoringRepository {
             logoDetailPath: nil,
             logoOriginalPath: nil,
             isFeatured: isFeatured ?? false,
+            moodIDs: moodIDs ?? [],
             discoveryStatus: .idle,
             lastDiscoveryErrorMessage: nil,
             lastDiscoveryRequestedAt: nil,
