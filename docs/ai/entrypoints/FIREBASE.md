@@ -6,7 +6,7 @@ Firebase 변경 시 Functions, Firestore, Storage의 실제 경계를 찾기 위
 
 | 영역 | source of truth | workflow |
 | --- | --- | --- |
-| Functions | `functions/src/index.ts`, `functions/src/{core,shared,auth,brand,chat,lookbook}/` | `.codex/skills/firebase-functions-workflow/SKILL.md` |
+| Functions | `functions/src/index.ts`, `functions/src/{core,shared,auth,brand,chat,lookbook,profile,styleMoods}/` | `.codex/skills/firebase-functions-workflow/SKILL.md` |
 | Firestore rules | `firestore.rules` | `.codex/skills/firestore-workflow/SKILL.md` |
 | Firestore indexes | `firestore.indexes.json` | `.codex/skills/firestore-workflow/SKILL.md` |
 | Storage rules | `storage.rules`, root `firebase.json` | 배포 전 rules dry-run과 운영 권한 확인 |
@@ -18,7 +18,7 @@ Firebase 변경 시 Functions, Firestore, Storage의 실제 경계를 찾기 위
 
 ## Functions 코드 지도
 
-`functions/src/index.ts`는 현재 53개 배포 이름의 명시적 flat re-export만 가진다. 실제 handler와 helper는 아래 기능 module에서 찾는다.
+`functions/src/index.ts`는 현재 62개 배포 이름의 명시적 flat re-export만 가진다. 실제 handler와 helper는 아래 기능 module에서 찾는다.
 
 Phase 4 구현 결과와 결정은 `docs/ai/tasks/core-infrastructure-modularization/phases/phase-4-firebase-functions.md`, contract/service/policy 테스트는 `phase-4-firebase-functions-tests.md`와 `functions/src/**/*.test.ts`를 따른다.
 
@@ -30,6 +30,9 @@ Phase 6 전체 회귀와 운영 배포는 `docs/ai/tasks/core-infrastructure-mod
 | 총 관리자·브랜드 권한 | `functions/src/shared/brandAuthorization.ts` |
 | 브랜드 요청 | `functions/src/brand/requests/functions.ts` |
 | 브랜드 관리 | `functions/src/brand/admin/functions.ts`, `shared/brandValidation.ts` |
+| 스타일 무드 관리 | `functions/src/styleMoods/{functions,repository,policy,contracts}.ts` |
+| 계정·공개 프로필 | `functions/src/profile/{functions,profileTransaction,policy,contracts}.ts` |
+| active 계정 guard | `functions/src/shared/accountStatus.ts` |
 | 룩북 삭제 lifecycle | `functions/src/lookbook/deletion/`과 아래 전용 섹션 |
 | engagement/comment/safety | `functions/src/lookbook/{engagement,comments,safety}/functions.ts` |
 | 시즌 import·추출 진단 | `functions/src/lookbook/import/` |
@@ -48,6 +51,42 @@ npm run build
 ```
 
 운영 배포는 사용자 승인 후 workflow가 지정한 명령을 사용한다.
+
+## 스타일 무드
+
+- callable: `createStyleMood`, `updateStyleMood`.
+- 권한: `brandAdmins/{uid}.isActive == true`인 총 관리자.
+- 이름·alias 정책: `functions/src/styleMoods/policy.ts`.
+- Firestore transaction과 term index 교체: `functions/src/styleMoods/repository.ts`.
+- v1 56개 원본: `functions/seeds/style-moods.v1.json`.
+- seed 실행기: `functions/scripts/seed-style-moods.mjs`.
+- seed 기본은 dry-run이고 `--apply --project {projectID}`를 모두 명시해야 쓴다.
+- 일반 클라이언트는 active `styleMoods`만 읽고 총 관리자는 inactive도 읽는다. 모든 클라이언트 쓰기와 `styleMoodTermIndex`/`styleMoodSeedMetadata` 접근은 금지한다.
+- rules/index 검증: `firestore-tests/style-moods.rules.test.mjs`, `run-firestore-tests.mjs`.
+- 2026-07-28 `outpick-664ae`에 index·rules·Functions를 배포하고 v1 seed를 적용했다.
+  - index `CICAgOi3voUK`: `READY`
+  - `createStyleMood` revision `createstylemood-00001-zip`: `ACTIVE`
+  - `updateStyleMood` revision `updatestylemood-00001-vuv`: `ACTIVE`
+  - seed hash `3a83ea71f06ce096672021e06e6112593a974fa0901bf35e6088651f63b40177`
+  - 사후 dry-run은 create/update/upsert/delete 0건이다.
+
+## 계정과 공개 프로필
+
+- callable: `checkNicknameAvailability`, `completeOnboarding`, `updatePublicProfile`, `updateStylePreferences`.
+- 비공개 계정: `users/{uid}`. 본인 read, 모든 client write 금지.
+- 공개 프로필: `userPublicProfiles/{uid}`. signed-in read, 모든 client write 금지.
+- 닉네임 충돌 인덱스: 서버 전용 `nicknameIndex/{sha256(normalizedNickname)}`.
+- `checkNicknameAvailability`는 인증 사용자에게 가용성만 반환하며 닉네임을 예약하지 않는다.
+- `completeOnboarding`은 비공개 계정·공개 프로필·닉네임 인덱스를 한 transaction으로 생성한다.
+- 관심 무드는 1~5개의 고유한 active `styleMoods`만 허용한다.
+- `updatePublicProfile`은 기존/신규 닉네임 인덱스를 한 transaction으로 교체한다.
+- 프로필 이미지 Storage 쓰기는 owner이며 `users.accountStatus == active`일 때만 허용한다.
+- 신규 온보딩 아바타는 계정 생성 후 업로드하고 `updatePublicProfile`로 경로를 기록한다.
+- 이메일 기반 관리자 지정은 `firebaseAuth.getUserByEmail`을 사용하며 Firestore `users.email` query를 사용하지 않는다.
+- 검증: `functions/src/profile/*.test.ts`, `functions/src/shared/accountStatus.test.ts`, `firestore-tests/profile*.test.mjs`.
+- 2026-07-28 Phase 3 앱 호환 전환과 자동 검증 후 `outpick-664ae`에 Functions·Firestore rules·Storage rules를 운영 배포했다.
+- `firebase functions:list`에서 네 callable 모두 v2, `asia-northeast3`, Node.js 24로 등록됨을 확인했다. `checkNicknameAvailability`는 2026-07-28 운영 create operation까지 완료했다.
+- iOS 연결은 `CloudFunctionsProfileMutationRepository`, `CheckNicknameAvailabilityUseCase`, `CompleteOnboardingUseCase`를 사용한다.
 
 ## 브랜드 권한과 요청
 
@@ -195,7 +234,9 @@ npm run build
 - 변경 시 emulator 또는 deploy dry-run, diff check 후 승인된 범위만 배포한다.
 - Firestore rules emulator package: `firestore-tests/`
 - 문서 ID 경계 rules test: `firestore-tests/room-document-id.rules.test.mjs`
+- 스타일 무드 rules test: `firestore-tests/style-moods.rules.test.mjs`
 - 로컬 실행: `cd firestore-tests && npm install && npm test`
+- 위 실행은 style mood seed의 빈 DB dry-run → Emulator apply → 재-dry-run 변경 0건도 함께 검증한다.
 - `Rooms` create는 `ID`/`id`를 거부하고, update는 해당 필드 추가·변경·삭제를 거부하되 기존 legacy 값이 불변인 metadata update는 허용한다.
 - rules 구현 진입점: `firestore.rules`의 `roomCreateHasNoDocumentIDFields`, `roomUpdateDoesNotChangeDocumentIDFields`, `match /Rooms/{roomID}`.
 - 2026-07-14 Emulator 11/11과 dry-run 통과 후 `outpick-664ae`에 rules를 운영 배포했다.
@@ -211,7 +252,7 @@ npm run build
 
 - root `firebase.json`의 Storage rules source는 `storage.rules`다.
 - 기본 deny 후 path별 read/write 권한을 허용한다.
-- Chat `rooms/{roomID}` write는 member/creator, profile write는 본인, Lookbook `brands/{brandID}` write는 총 관리자 또는 브랜드 owner/admin 기준이다.
+- Chat `rooms/{roomID}` write는 member/creator와 active 계정, profile write는 owner와 active 계정, Lookbook `brands/{brandID}` write는 총 관리자 또는 브랜드 owner/admin 기준이다.
 - cross-service `firestore.get/exists`를 사용하는 rules는 Storage service agent의 Firestore Rules 권한도 확인한다.
 - 운영 release ID, 과거 전역 허용 rules, 배포 당시 QA 상세는 task/운영 기록에서 확인하고 이 인덱스에는 복사하지 않는다.
 

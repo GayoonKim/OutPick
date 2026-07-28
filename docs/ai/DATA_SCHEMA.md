@@ -23,11 +23,12 @@
 
 | 도메인 | 핵심 source | 코드/상세 진입점 |
 | --- | --- | --- |
-| 인증·사용자 | Firebase Auth UID, `users/{uid}` | `AuthenticatedUser.swift`, `UserProfile.swift`, [DATA](entrypoints/DATA.md) |
+| 인증·사용자 | Firebase Auth UID, `users/{uid}`, `userPublicProfiles/{uid}` | ADR-021, [FIREBASE](entrypoints/FIREBASE.md), [DATA](entrypoints/DATA.md) |
 | Chat room/membership | `Rooms/{roomID}`, `Rooms/{roomID}/members/{uid}`, `users/{uid}/joinedRooms/{roomID}` | [CHAT](entrypoints/CHAT.md), ADR 관련 task |
 | Chat message/cache | `Rooms/{roomID}/Messages/{messageID}`, GRDB `chatMessage`, `LocalChatUser`, `RoomProfileDisplayCache` | [CHAT](entrypoints/CHAT.md), [DATA](entrypoints/DATA.md) |
 | Lookbook | `brands/{brandID}/seasons/{seasonID}/posts/{postID}` | [LOOKBOOK](entrypoints/LOOKBOOK.md) |
 | 브랜드 관리 | `brandAdmins/{uid}`, `brands/{brandID}/admins/{uid}` | [LOOKBOOK](entrypoints/LOOKBOOK.md), [FIREBASE](entrypoints/FIREBASE.md) |
+| 스타일 무드 | `styleMoods`, `styleMoodTermIndex`, `styleMoodSeedMetadata` | [FIREBASE](entrypoints/FIREBASE.md), ADR-022 |
 | 브랜드 요청 | `brandRequests`, `brandRequestNameIndex`, daily counter/user limit | [FIREBASE](entrypoints/FIREBASE.md) |
 | 시즌 import | `seasonCandidates`, `importJobs`, `lookbookExtractionDiagnostics` | [worker architecture](architecture/LOOKBOOK_IMPORT_WORKER.md) |
 | 룩북 삭제 | `lookbookDeletionRequests`, `lookbookDeletionAuditLogs`, `lookbookDeletionPurgeLeases` | 아래 계약, [FIREBASE](entrypoints/FIREBASE.md), ADR-018 |
@@ -36,7 +37,8 @@
 
 - canonical user key는 Firebase Auth `uid`다.
 - 문서상 `userID == canonicalUserID == Firebase Auth uid`다.
-- 프로필 경로는 `users/{uid}`이며 이메일/provider fallback query는 사용하지 않는다.
+- 비공개 계정 경로는 `users/{uid}`, 앱 내 공개 프로필 경로는 `userPublicProfiles/{uid}`다.
+- 이메일/provider fallback query는 사용하지 않고 관리자 이메일 조회는 Firebase Auth를 사용한다.
 - `Rooms.creatorUID`, `Messages.senderUID`, member 문서 ID, joinedRooms owner 경로는 같은 UID를 저장한다.
 - Chat room 자기 identity는 `Rooms/{roomID}` 경로의 document ID이며 `ChatRoom.id`로 주입한다. 새 room payload에는 자기 `ID`/`id`를 저장하지 않는다.
 - 2026-07-14 운영 Rooms의 legacy 자기 `ID` 4건을 cleanup했으며 사후 감사 기준 `Rooms.ID`/`Rooms.id` 보유 문서는 0건이다.
@@ -45,6 +47,21 @@
 - 개발 DB에서 재현된 legacy `chatMessage.senderID NOT NULL` schema만 migration으로 현재 schema로 재작성한다.
 - 현재 구현은 앱 미배포 clean break를 적용한 fresh 15개 migration이다. legacy no-op 3개와 `createRoomImage`/`roomImage` table/API는 제거했으며 Phase 3 이전 개발 DB는 앱 삭제·재설치로 초기화한다.
 - 메시지 저장 중 FTS 오류는 삼키지 않고 message/FTS/media transaction 전체를 rollback한다. 상세 결정은 `docs/ai/tasks/core-infrastructure-modularization/decisions/phase-3-grdb.md`를 따른다.
+
+### 비공개 계정과 공개 프로필
+
+- `users/{uid}`: `onboardingVersion`, `selectedMoodIDs`, `accountStatus`, 완료/생성/수정 timestamp만 저장한다. 본인 read, client write 금지다.
+- `userPublicProfiles/{uid}`: `nickname`, nullable avatar thumb/original path, 생성/수정 timestamp만 저장한다. signed-in read, client write 금지다.
+- `nicknameIndex/{sha256(normalizedNickname)}`는 서버 전용이며 UID와 timestamp만 저장한다.
+- legacy `userIdentities`는 현재 앱·Functions에서 사용하지 않는다. Phase 10 개발 데이터 전체 초기화에서 전량 삭제하고 0건을 검증하되, Firestore Rules의 명시적 deny는 유지한다.
+- nickname은 NFKC/trim/공백 축약/case-insensitive key를 사용하고 길이는 2~20자다.
+- 온보딩 관심 무드는 고유한 active 무드 1~5개다.
+- 계정/공개 프로필 생성과 nickname 변경은 Functions transaction만 사용한다.
+- Storage avatar 쓰기는 active 계정만 가능하므로 신규 온보딩은 계정 생성 후 avatar를 업로드하고 공개 프로필을 갱신한다.
+- 프로필 편집의 avatar mutation은 유지·새 경로 설정·명시적 제거를 구분한다. 교체는 새 객체 업로드 → 공개 프로필 경로 변경 → 이전 객체 삭제 순서이며, 제거는 공개 경로를 null로 변경한 뒤 이전 객체를 삭제한다.
+- 공개 프로필 경로 변경 뒤 Storage 정리가 실패하면 삭제 대상 경로를 로컬 cleanup store에 보존하고 다음 마이페이지 진입에서 재시도한다.
+- 현재 세션, Chat 참여자·sender, Lookbook 댓글 작성자, 사용자 상세는 `UserPublicProfile`을 직접 소비하며 legacy `UserProfile` 호환 모델은 사용하지 않는다.
+- 상세 결정: ADR-021과 현재 task `data-api-contract.md`.
 
 ## Chat 핵심 계약
 
@@ -74,6 +91,22 @@
 - 기존 `messageType == nil` 메시지는 attachments 유무로 text/media 호환 decode한다.
 - 선택 이유: ADR-011, ADR-012, ADR-013.
 
+## 스타일 무드 계약
+
+- canonical 문서: `styleMoods/{moodID}`. `moodID`는 변경하지 않는 lower snake_case ID이며 동적 관리자 생성은 Firestore 자동 ID를 사용할 수 있다.
+- 공개 필드: `schemaVersion`, `displayName`, `normalizedName`, `displayGroup`, `aliases`, `sortOrder`, `isFeaturedInOnboarding`, `status`, `createdAt`, `updatedAt`.
+- `displayGroup`은 선택 UI 분류이며 taxonomy 자체는 flat하다.
+- 일반 인증 사용자는 `status == active` 문서만 읽고, 실제 `brandAdmins/{uid}.isActive == true`인 총 관리자는 inactive도 읽는다. 모든 클라이언트 직접 쓰기는 금지한다.
+- 이름/alias 충돌 방지: 서버 전용 `styleMoodTermIndex/{sha256(normalizedTerm)}`. `moodID`, `termType`, `createdAt`을 가진다.
+- `displayGroup` canonical 값은 `베이직·포멀`, `스트릿·트렌드`, `헤리티지·유틸리티`, `스포츠·아웃도어`, `빈티지·서브컬처`, `로맨틱·익스프레시브`이며 iOS도 같은 raw value를 사용한다.
+- `brands/{brandID}.moodIDs`와 `brands/{brandID}/seasons/{seasonID}.moodIDs`는 각각 별도의 0...5개 고유 active mood ID 집합이며 순서·대표 무드 의미가 없다.
+- 브랜드·시즌 `moodIDs` patch는 총 관리자 callable만 수행한다. 자동 import 시즌은 `moodIDs: []`로 생성하고 시즌 문서 client create/update는 허용하지 않는다.
+- seed 상태: 서버 전용 `styleMoodSeedMetadata/current`. `version`, `contentHash`, `count`, `appliedAt`을 가진다.
+- 초기 v1은 56개, 온보딩 기본 노출은 20개다. 원본은 `functions/seeds/style-moods.v1.json`이다.
+- 관리 write는 총 관리자 callable `createStyleMood`, `updateStyleMood`만 사용한다. 사용 중인 무드는 hard delete하지 않고 `inactive`로 전환한다.
+- seed는 `npm run seed:style-moods -- --project {projectID}`가 dry-run이며 `--apply`를 명시해야만 transaction으로 반영한다.
+- 상세 결정: ADR-022와 현재 task의 `seed-spec.md`, `data-api-contract.md`.
+
 ## Lookbook 핵심 계약
 
 ### 기본 계층과 권한
@@ -84,7 +117,7 @@
 - `brands.ownerUIDs/adminUIDs`와 과거 capability 필드는 신규 권한 source로 사용하지 않는다.
 - 브랜드명 중복 방지는 `brandNameIndex/{normalizedName}` 계열 transaction으로 처리한다.
 - Lookbook read DTO는 경로 ID를 포함하지 않고 Repository가 `DocumentSnapshot.documentID`를 mapper에 전달한다.
-- 시즌 생성 write는 `SeasonWriteDTO`를 사용하며 read DTO와 자기 문서 ID를 encode하지 않는다.
+- 시즌 생성은 import worker의 Admin SDK materialization만 사용하며 문서 identity는 Firestore 경로 ID를 canonical source로 유지한다. 앱 client direct create/update는 허용하지 않는다.
 
 ### 사용자 상태
 

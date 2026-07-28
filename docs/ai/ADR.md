@@ -48,6 +48,8 @@ ADR에 기록하지 않을 것:
 | ADR-018 | accepted | 룩북 영구 삭제는 일일 bounded drain과 브랜드 lease로 처리한다. | [상세](adr/ADR-018-룩북-영구-삭제는-일일-bounded-drain과-브랜드-lease로-처리한다.md) |
 | ADR-019 | accepted | 핵심 인프라는 기능별 모듈러 경계와 현재 배포 단위를 유지한다. | [상세](adr/ADR-019-핵심-인프라는-기능별-모듈러-경계와-현재-배포-단위를-유지한다.md) |
 | ADR-020 | accepted | Firestore 문서 identity는 문서 경로 ID를 단일 기준으로 사용한다. | [상세](adr/ADR-020-firestore-문서-identity는-문서-경로-id를-단일-기준으로-사용한다.md) |
+| ADR-021 | accepted | 사용자 계정과 앱 내 공개 프로필을 분리하고 서버가 쓰기를 통제한다. | [상세](adr/ADR-021-사용자-계정과-앱내-공개-프로필을-분리한다.md) |
+| ADR-022 | accepted | 브랜드·시즌·사용자는 공용 스타일 무드 ID를 사용한다. | [상세](adr/ADR-022-브랜드-시즌-사용자는-공용-스타일-무드-id를-사용한다.md) |
 
 ## 새 ADR 추가 절차
 

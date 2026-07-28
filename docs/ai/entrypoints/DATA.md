@@ -46,6 +46,8 @@ GRDB cleanup/변경 시 우선 확인:
 - Firestore indexes: `firestore.indexes.json`
 - Firebase entrypoint: `docs/ai/entrypoints/FIREBASE.md`
 - Firestore workflow skill: `.codex/skills/firestore-workflow/SKILL.md`
+- 스타일 무드 schema/policy: `docs/ai/DATA_SCHEMA.md`의 `스타일 무드 계약`, `functions/src/styleMoods/`
+- 스타일 무드 seed/index 검증: `functions/seeds/style-moods.v1.json`, `firestore-tests/style-moods.rules.test.mjs`
 
 Rules/indexes 변경 전 확인:
 
@@ -84,8 +86,12 @@ Chat repository:
 
 User profile repository:
 
-- Protocol/implementation: `OutPick/Features/Profile/Repository`와 `OutPick/DB/Firebase/DatabaseManager/Repositories`
-- 주요 사용처: Login bootstrap, Chat profile fetch, Lookbook author profile fetch
+- 계정 read: `CurrentUserAccountRepositoryProtocol`, `FirestoreCurrentUserAccountRepository`
+- 공개 프로필 read: `UserPublicProfileRepositoryProtocol`, `FirestoreUserPublicProfileRepository`
+- mutation: `ProfileMutationRepositoryProtocol`, `CloudFunctionsProfileMutationRepository`
+- 앱 bootstrap: `LoadCurrentUserBootstrapUseCase`
+- Chat 참여자·메시지 프로필 cache, Lookbook 댓글 작성자와 사용자 상세은 `UserPublicProfileRepositoryProtocol`을 직접 사용한다.
+- `UserProfileRepository`는 joinedRooms read state와 device/push 하위 상태처럼 공개 프로필이 아닌 기존 사용자 하위 데이터 책임만 유지한다.
 
 Data 접근 원칙:
 

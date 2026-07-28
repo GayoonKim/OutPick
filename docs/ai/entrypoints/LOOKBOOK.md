@@ -159,6 +159,7 @@ Repository가 `DocumentSnapshot.documentID`를 같은 snapshot에서 decode한 D
 | existing-season repair | `LookbookSeasonRepair.swift` | `LookbookSeasonRepairRepositoryProtocol`, `ManageLookbookSeasonRepairUseCase` |
 
 - protocol은 `Domains/UseCases`, `Repositories/Protocols`에서 찾는다.
+- 댓글 작성자 표시값은 `Domains/Stores/CommentAuthorProfileStore.swift`가 `UserPublicProfile`로 해석한다. 최초·pagination은 누락 작성자만 조회하고, 댓글 목록·답글·포스트 상세의 명시적 refresh는 이미 캐시된 작성자도 강제 재조회한다. 조회 실패는 기존 표시값을 보존하며 `.unknown`을 cache entry로 저장하지 않아 다음 refresh에서 재시도할 수 있다.
 - 외부 구현은 `Repositories/Implementations`, DTO는 `Models/DTOs`, 변환은 `Models/Mapper`에서 찾는다.
 - 기본 identity가 필요한 DTO mapper는 `documentID`를 명시적으로 받고, Repository가 `DocumentSnapshot.documentID`를 전달한다.
 - `SeasonDTO`는 read-only이며 생성 write는 `Models/DTOs/SeasonWriteDTO.swift`를 사용한다.

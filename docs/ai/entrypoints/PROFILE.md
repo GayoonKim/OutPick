@@ -2,93 +2,141 @@
 
 ## 목적
 
-프로필 생성/수정, 사용자 프로필 상세, avatar source, profile repository/mapper를 수정할 때 어느 파일을 먼저 보면 되는지 정리한다.
+새 사용자 온보딩, 계정 bootstrap, 공개 프로필 조회, avatar 업로드와 사용자 프로필 상세의 진입점을 정리한다.
 
-## 프로필 조립과 라우팅
+## 앱 bootstrap과 온보딩 route
 
-- Profile composition root: `OutPick/Features/Profile/ProfileCompositionRoot.swift`
-  - 프로필 생성/수정 플로우 조립을 확인한다.
-- Profile coordinator: `OutPick/Features/Profile/ProfileCoordinator.swift`
-  - 첫 번째/두 번째 프로필 화면 전환과 완료 route를 확인한다.
-- User profile detail composition root: `OutPick/Features/Profile/UserProfileDetailCompositionRoot.swift`
-  - 사용자 프로필 상세 화면 조립, avatar manager, current user provider, photo library saver 주입 경계를 확인한다.
-- User profile detail coordinator: `OutPick/Features/Profile/UserProfileDetailCoordinator.swift`
-  - 상세 화면 presentation/navigation과 Chat 접합부에서 avatar manager, current user provider, photo library saver 전달을 확인한다.
+- 앱 조립: `OutPick/App/AppCompositionRoot.swift`
+  - 계정·공개 프로필·스타일 무드 Repository와 `LoadCurrentUserBootstrapUseCase`, `CompleteOnboardingUseCase`를 생성한다.
+- 앱 route: `OutPick/App/AppCoordinator.swift`
+  - `needsOnboarding`, `ready`, `deletionPending`을 분기한다.
+  - 온보딩 완료 후 `UserPublicProfile`을 세션에 저장하고 Chat/Lookbook bootstrap을 시작한다.
+- 온보딩 조립: `OutPick/Features/Profile/ProfileCompositionRoot.swift`
+- 온보딩 화면 전환: `OutPick/Features/Profile/ProfileCoordinator.swift`
+  - 닉네임 → 선택적 아바타 → 관심 스타일 → 완료 순서와 draft를 소유한다.
+  - 닉네임 확인이 성공한 경우에만 아바타 화면을 push한다.
+  - `OnboardingTransitionAnimator`를 navigation delegate에 연결한다.
 
-## 프로필 생성/수정 화면
+## 온보딩 화면과 상태
 
-- First profile view controller: `OutPick/Features/Profile/Views/FirstProfileViewController.swift`
-  - 첫 프로필 입력 화면 UI와 이벤트를 확인한다.
-- First profile view model: `OutPick/Features/Profile/ViewModels/FirstProfileViewModel.swift`
-  - 첫 프로필 입력 state와 validation을 확인한다.
-- Second profile view controller: `OutPick/Features/Profile/Views/SecondProfileViewController.swift`
-  - 두 번째 프로필 입력/이미지 선택 UI를 확인한다.
-  - 로컬 draft UserDefaults 저장/복원, back button 저장, UIKit interactive pop 완료 시 draft 저장, 저장 중 swipe-back 차단을 확인한다.
-  - 닉네임 입력 외 영역 탭 시 키보드 dismiss는 `KeyboardDismissSupport.installKeyboardDismissTapGesture()`로 처리한다.
-- Second profile view model: `OutPick/Features/Profile/ViewModels/SecondProfileViewModel.swift`
-  - avatar/profile draft 저장 흐름을 확인한다.
-  - 저장 완료 후 current user session profile 갱신은 상위 완료 콜백 경계와 연결된다.
+- 프로필 입력:
+  - `OutPick/Features/Profile/ViewModels/ProfileSetupViewModel.swift`
+  - `OutPick/Features/Profile/Views/ProfileSetupViewController.swift`
+  - `01/03` 닉네임 2~20자를 입력하고 큰 타이포그래피에 반영한다.
+  - 다음 탭에서 `CheckNicknameAvailabilityUseCase`를 실행하며 중복·조회 실패는 현재 화면에 표시한다.
+- 아바타:
+  - `OutPick/Features/Profile/ViewModels/AvatarSetupViewModel.swift`
+  - `OutPick/Features/Profile/Views/AvatarSetupViewController.swift`
+  - `02/03` 시스템 사진 선택기를 사용자 액션 때 열고 선택/해제/건너뛰기를 처리한다.
+- 관심 무드:
+  - `OutPick/Features/Profile/ViewModels/StyleMoodOnboardingViewModel.swift`
+  - `OutPick/Features/Profile/Views/StyleMoodOnboardingViewController.swift`
+  - `OutPick/Features/StyleMood/Views/StyleMoodPickerView.swift`
+  - `03/03` 검색어가 없으면 featured, 검색 중에는 전체 active 이름 필터를 표시하며 1~5개 선택만 완료 가능하다.
+  - 로딩과 `OutPick 시작하기` 저장 중 진행 표시는 `OutPickTheme.ColorToken.accent`를 사용한다.
+- 공통 텍스트 카드:
+  - `OutPick/Features/StyleMood/Views/StyleMoodTextCard.swift`
+- 공통 에디토리얼 UI/전환:
+  - `OutPick/Features/Profile/Views/OnboardingEditorialHeaderView.swift`
+  - `OutPick/Features/Profile/Transitions/OnboardingTransitionAnimator.swift`
+  - Reduce Motion에서는 이동·stagger 없이 fade만 사용한다.
+
+## 도메인·DTO·Mapper
+
+- 비공개 계정:
+  - Domain `OutPick/Features/Profile/Domain/UserAccount.swift`
+  - DTO `OutPick/Features/Profile/DTO/UserAccountDTO.swift`
+  - Mapper `OutPick/Features/Profile/Mapper/UserAccountMapper.swift`
+- 공개 프로필:
+  - Domain `OutPick/Features/Profile/Domain/UserPublicProfile.swift`
+  - DTO `OutPick/Features/Profile/DTO/UserPublicProfileDTO.swift`
+  - Mapper `OutPick/Features/Profile/Mapper/UserPublicProfileMapper.swift`
+- 온보딩 입력:
+  - `OutPick/Features/Profile/Domain/OnboardingDraft.swift`
+- 스타일 무드:
+  - `OutPick/Features/StyleMood/Domain/StyleMood.swift`
+  - `OutPick/Features/StyleMood/Domain/StyleMoodGroup.swift`
+  - `OutPick/Features/StyleMood/Models/StyleMoodDTO.swift`
+
+성별·생년월일과 기존 단일 `users` 프로필 DTO/codec/mapper는 clean break로 제거했다.
+
+## Repository와 UseCase
+
+- 계정 read:
+  - `CurrentUserAccountRepositoryProtocol.swift`
+  - `FirestoreCurrentUserAccountRepository.swift`
+- 공개 프로필 read:
+  - `UserPublicProfileRepositoryProtocol.swift`
+  - `FirestoreUserPublicProfileRepository.swift`
+- 프로필 mutation callable:
+  - `ProfileMutationRepositoryProtocol.swift`
+  - `CloudFunctionsProfileMutationRepository.swift`
+- 닉네임 사전 확인:
+  - `Domain/UseCases/CheckNicknameAvailabilityUseCase.swift`
+  - 사전 확인은 닉네임을 예약하지 않으며 최종 `completeOnboarding`이 transaction에서 다시 검증한다.
+- 아바타 업로드 최소 경계:
+  - `ProfileAvatarUploader.swift`
+  - `ProfileAvatarCleanupStore.swift`는 공개 경로 갱신 후 실패한 이전 Storage 객체 정리를 재시도한다.
+- 스타일 무드 read:
+  - `StyleMoodRepositoryProtocol.swift`
+  - `FirestoreStyleMoodRepository.swift`
+- bootstrap:
+  - `LoadCurrentUserBootstrapUseCase.swift`
+- 온보딩 완료:
+  - `CompleteOnboardingUseCase.swift`
+  - 먼저 `completeOnboarding`으로 계정·공개 프로필을 생성한다.
+  - 선택한 아바타는 active 계정 생성 뒤 Storage에 올리고 `updatePublicProfile`로 경로를 기록한다.
+  - 아바타 실패는 계정 완료를 되돌리지 않고 부분 실패로 반환한다.
+
+## 마이페이지 편집
+
+- 조립/route:
+  - `OutPick/Features/MyPage/MyPageCompositionRoot.swift`
+  - `MyPageContainer.swift`, `MyPageCoordinator.swift`
+- 화면/상태:
+  - `MyPageViewModel.swift`, `Controller/MyPageViewController.swift`
+  - `ProfileEditViewModel.swift`, `Views/ProfileEditViewController.swift`
+  - `StylePreferenceEditViewModel.swift`, `Views/StylePreferenceEditViewController.swift`
+  - `Views/MyPageEditorialComponents.swift`: 공통 serif/monospaced 계층, mood chip, hairline action row, primary CTA
+- mutation:
+  - `UpdatePublicProfileUseCase.swift`: 닉네임 사전 확인, 아바타 유지·변경·제거, 이전 Storage 정리
+  - `UpdateStylePreferencesUseCase.swift`: active 관심 무드 1~5개 저장
+- 프로필 이미지 변경은 새 파일 업로드 → 공개 경로 갱신 → 이전 파일 삭제 순서다. 삭제 실패 경로는 로컬 cleanup store에 기록하고 다음 마이페이지 진입 때 재시도한다.
+- 세 화면은 좌측 정렬 에디토리얼 헤더, 원형 avatar, outlined mood chip, hairline row와 하단 accent CTA를 공유한다. Reduce Motion에서는 루트 진입 이동 애니메이션을 생략한다.
+
+## 공개 프로필 직접 소비 경계
+
+- 현재 세션은 `UserPublicProfile`을 직접 보유한다.
+- Chat profile sync/participant, Lookbook 댓글 작성자, 사용자 상세는 `UserPublicProfileRepositoryProtocol`을 직접 사용한다.
+- legacy `UserProfile`과 `UserProfileCompatibilityAdapter`는 제거했다.
+- 루트 `users/{uid}`에 email/device/profile 값을 쓰지 않는다. device/push state는 기존 하위 문서만 사용한다.
 
 ## 사용자 프로필 상세
 
-- Detail view controller: `OutPick/Features/Profile/Views/UserProfileDetailViewController.swift`
-  - 다른 사용자 프로필 표시 UI와 avatar tap 확대 viewer 진입을 확인한다.
-  - avatar 확대는 공용 `ImageViewerPage`/`SimpleImageViewerVC`를 사용하고, Photos 저장은 주입받은 `PhotoLibrarySaving`을 사용한다.
-  - `.overFullScreen` modal의 왼쪽 edge pan은 종료 시 거리 35% 또는 오른쪽 속도 900pt/s 임계값을 넘으면 X 버튼과 같은 dismiss request를 보낸다.
-  - 닫기는 새 interactive transition이 아니라 `UserProfileDetailCoordinator`와 `ChatModalTransitionManager`의 기존 왼쪽→오른쪽 애니메이션을 사용한다.
-- Detail view model: `OutPick/Features/Profile/ViewModels/UserProfileDetailViewModel.swift`
-  - canonical user ID 기반 프로필 로드, avatar 표시 state, 현재 사용자 판정을 확인한다.
-- Load detail use case: `OutPick/Features/Profile/Domain/UseCases/LoadUserProfileDetailUseCase.swift`
-  - 상세 프로필 로딩 orchestration을 확인한다.
-- Detail repository protocol/implementation:
-  - `OutPick/Features/Profile/Repository/UserProfileDetailRepositoryProtocol.swift`
-  - `OutPick/Features/Profile/Repository/UserProfileDetailRepository.swift`
-  - Firestore user profile 상세 조회 구현을 확인한다.
+- 조립/route:
+  - `UserProfileDetailCompositionRoot.swift`
+  - `UserProfileDetailCoordinator.swift`
+- 화면/상태:
+  - `Views/UserProfileDetailViewController.swift`
+  - `ViewModels/UserProfileDetailViewModel.swift`
+- read orchestration:
+  - `Domain/UseCases/LoadUserProfileDetailUseCase.swift`
+  - `Repository/UserProfileDetailRepository.swift`
+- avatar:
+  - `Domain/AvatarImageSource.swift`
+  - 공용 `AvatarImageManaging`/`AvatarImageService`
 
-### Modal edge dismiss 파일 지도
+상세 modal의 edge dismiss는 기존 `ChatModalTransitionManager`를 사용한다.
 
-| 알고 싶은 내용 | 파일 | 확인할 코드 책임 |
-| --- | --- | --- |
-| edge gesture 임계값과 중복 요청 차단 | `OutPick/Features/Profile/Views/UserProfileDetailViewController.swift` | `edgeDismissProgressThreshold = 0.35`, `edgeDismissVelocityThreshold = 900`, `isDismissRequested`와 `requestDismiss()`를 확인한다. |
-| X 버튼과 edge gesture의 공통 사용자 이벤트 | `OutPick/Features/Profile/ViewModels/UserProfileDetailViewModel.swift` | 두 입력이 최종적으로 사용하는 `backTapped()` 출력 계약을 확인한다. |
-| modal presentation/dismiss route | `OutPick/Features/Profile/UserProfileDetailCoordinator.swift` | 상세 화면 생성과 실제 dismiss 요청 처리를 확인한다. |
-| 기존 왼쪽→오른쪽 modal animation | `OutPick/Infra/Utility/Transitions/ChatModalTransitionManager.swift` | Profile 상세가 재사용하는 presentation/dismiss animator를 확인한다. navigation edge-pop과는 별도 경로다. |
+## 검증
 
-Phase 7에서 삭제한 `UIViewController+InteractiveTransition.swift` 등 미사용 custom transition은 이 modal 경로의 owner가 아니다. Profile 상세는 별도 percent-driven interactive transition을 만들지 않고 threshold 통과 시 위 기존 dismiss 경로를 한 번 호출한다.
-
-## 도메인, DTO, mapper
-
-- Domain model: `OutPick/Features/Profile/Domain/UserProfile.swift`
-  - 앱 내부 사용자 프로필 모델을 확인한다.
-- Draft model: `OutPick/Features/Profile/Domain/UserProfileDraft.swift`
-  - 프로필 생성/수정 중간 state를 확인한다.
-- Avatar source: `OutPick/Features/Profile/Domain/AvatarImageSource.swift`
-  - avatar 이미지 source/type 정책을 확인한다.
-- DTO: `OutPick/Features/Profile/DTO/UserProfileDTO.swift`
-  - Firestore 저장/조회 payload를 확인한다.
-- Firestore codec: `OutPick/Features/Profile/Mapper/UserProfileFirestoreCodec.swift`
-  - Firestore document encode/decode를 확인한다.
-- Mapper: `OutPick/Features/Profile/Mapper/UserProfileMapper.swift`
-  - DTO와 domain model 변환을 확인한다.
-
-## Repository
-
-- User profile repository protocol: `OutPick/Features/Profile/Repository/UserProfileRepositoryProtocol.swift`
-  - 프로필 저장/조회 계약을 확인한다.
-- User profile repository: `OutPick/Features/Profile/Repository/UserProfileRepository.swift`
-  - Firestore user profile 저장/조회 구현을 확인한다.
-  - 프로필 문서는 `users/{canonicalUserID}` 직접 조회/저장을 사용한다.
-  - 이메일/provider field 기반 fallback query는 사용하지 않는다.
-
-## Avatar DI 접합부
-
-- 앱 공용 avatar interface: `OutPick/Features/Chat/Services/ImageLoading/AvatarImageManaging.swift`
-  - Chat, Lookbook, Profile 상세가 공유하는 avatar image interface를 확인한다.
-- Avatar service implementation: `OutPick/Features/Chat/Services/ImageLoading/AvatarImageService.swift`
-  - avatar image loading/cache 구현을 확인한다.
-- Current user provider: `OutPick/App/Session/CurrentUserProvider.swift`
-  - Profile 상세의 현재 사용자 판정에 필요한 `canonicalUserID` 제공 계약을 확인한다.
-- Current user session store: `OutPick/App/Session/CurrentUserSessionStore.swift`
-  - 앱 세션 current profile snapshot source를 확인한다.
-- 현재 설계 결정: `docs/ai/tasks/chat-view-controller-layering/decisions.md`
-  - `Provider/Avatar DI 일괄 정리` 섹션을 확인한다.
+- `OutPickTests/ProfileSetupViewModelTests.swift`
+- `OutPickTests/AvatarSetupViewModelTests.swift`
+- `OutPickTests/StyleMoodOnboardingViewModelTests.swift`
+- `OutPickTests/LoadCurrentUserBootstrapUseCaseTests.swift`
+- `OutPickTests/CompleteOnboardingUseCaseTests.swift`
+- `OutPickTests/CloudFunctions/CloudFunctionsProfileMutationRepositoryTests.swift`
+- `OutPickTests/UpdatePublicProfileUseCaseTests.swift`
+- `OutPickTests/ProfileEditViewModelTests.swift`
+- `OutPickTests/StylePreferenceEditViewModelTests.swift`
+- 서버·rules 검증은 `docs/ai/entrypoints/FIREBASE.md`와 현재 task QA 문서를 따른다.

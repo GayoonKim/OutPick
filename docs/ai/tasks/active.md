@@ -2,7 +2,7 @@
 
 ## 현재 상태
 
-- 현재 진행 중인 핵심 task는 없다. `lookbook-extraction-learning-loop`는 Phase 1~8 구현·자동 회귀·운영 worker 배포·승인된 실제 URL smoke까지 완료했다. 이후 YOUTH 신규 등록 season discovery 0건 회귀와 extraction review 단순화를 배포했다. 마감 QA 후속으로 expected-count를 활성 grid에 scope하는 extractor `1.2.3` 코드와 Season 상세 24개 cursor pagination을 구현했다. 빠른 스크롤 보완으로 load trigger를 마지막 12개로 앞당기고, 첫 12개·앞 32개·append page 24개를 concurrency 4로 prefetch한다. worker 67/67·fixture 5/5, iOS targeted 11/11·Simulator build/run을 확인했으며 worker `lookbook-import-worker-00022-5gn`은 Ready/Active·traffic 100%, rollback은 `00021-ghs`다. 2026-07-24 사용자 승인으로 현재·과거 운영 YOUTH 데이터와 Chat snapshot·삭제 감사 로그까지 완전 삭제했고 Firestore·Storage·queue 사후 0건을 확인했다.
+- 현재 진행 중인 핵심 task는 `style-mood-personalization-account-privacy`다. 온보딩을 닉네임·아바타·관심 무드로 교체하고, 공개/비공개 프로필 분리, 브랜드·시즌 공용 무드, 관심 스타일 홈, 앱 내 계정 삭제, 마지막 개발 데이터 전체 초기화를 포함한다. Phase 1~4 구현·자동 검증·사용자 수동 QA를 완료했고 Phase 1 seed/index와 Phase 2 Functions·Firestore rules·Storage rules를 운영 반영했다. Phase 5의 시즌 server-only mutation, 총 관리자 moodIDs 권한, Lookbook 관리자 콘솔의 스타일 무드 관리 route와 iOS 그룹 canonical 값까지 확정했으며 보정 계획 구현 승인을 기다린다. 개발 데이터 전체 삭제는 마지막 Phase의 별도 승인 전까지 진행하지 않는다.
 - 다음 핵심 task는 `lookbook-discovery-learning-loop`로 확정했다. season discovery에도 구조 evidence, issue cluster, 관리자 정상/누락/오탐 ground truth, 최소 fixture 승격, extractor version gate를 season-image extraction과 같은 원칙으로 연결한다. 현재는 사용자 대화 기준 범위와 우선순위만 기록하며, 요구사항·데이터/API·관리자 UX·보존 정책을 논의하고 구현 승인을 받기 전에는 task 문서나 코드를 생성·수정하지 않는다.
 - `development-production-environment-separation`은 그다음 핵심 후속 후보로 유지한다. 하나의 Xcode 프로젝트와 app target을 유지하면서 Development는 `GayoonKim.OutPick.dev`/`outpick-test`, Production은 `GayoonKim.OutPick`/`outpick-664ae`로 분리하고 `feature/* → PR → main → release tag → 승인 기반 운영 배포` 흐름을 구성한다. 현재는 문서 기록만 완료했으며 사용자 재개 승인 전에는 브랜치·Xcode·Firebase·외부 콘솔·배포를 변경하지 않는다.
 - `socket-ingress-ordering-hardening`은 Phase 1~6 구현, 자동 회귀와 실제 Firebase/Simulator 핵심 QA를 완료하고 2026-07-17 종료했다.
@@ -18,7 +18,16 @@
 
 ## 현재 핵심 작업
 
-- 없음.
+- `style-mood-personalization-account-privacy`
+  - [design](style-mood-personalization-account-privacy/design.md)
+  - [decisions](style-mood-personalization-account-privacy/decisions.md)
+  - [seed](style-mood-personalization-account-privacy/seed-spec.md)
+  - [data/API](style-mood-personalization-account-privacy/data-api-contract.md)
+  - [plan](style-mood-personalization-account-privacy/plan.md)
+  - [QA](style-mood-personalization-account-privacy/qa-checklist.md)
+  - [reset runbook](style-mood-personalization-account-privacy/data-reset-runbook.md)
+  - [progress](style-mood-personalization-account-privacy/progress.md)
+  - 상태: Phase 4 완료. Phase 5 데이터/API/권한·route와 파일 계획 보정 완료, 구현 승인 대기.
 
 ## 다음 핵심 작업
 

@@ -85,6 +85,39 @@ Firebase Functions tests/build entry:
 - 기능 단위 테스트: `functions/src/{auth,brand,chat,lookbook}/**/*.test.ts`
 - `functions/package.json`의 `npm test`는 clean build 후 `lib/` 아래 `*.test.js`를 재귀 발견해 실행하며 0개면 실패한다.
 - 실행: `cd functions && npm test`
+- 스타일 무드: `functions/src/styleMoods/{policy,functions,seedValidation}.test.ts`
+  - NFKC/공백/소문자 정규화, ID·그룹·alias 충돌, 최종 update 조합, 관리자 handler, v1 56개·featured 20개·전체 용어 고유성을 검증한다.
+- Firestore rules: `firestore-tests/style-moods.rules.test.mjs`
+  - 인증 사용자의 active-only read, 비인증 read 거부, 모든 client write와 term/metadata 접근 거부를 검증한다.
+  - `cd firestore-tests && npm test`는 Emulator에서 rules 16개와 seed 초기 dry-run/apply/재-dry-run 변경 0건을 함께 검증한다.
+- 계정·공개 프로필: `functions/src/profile/{policy,functions}.test.ts`, `functions/src/shared/accountStatus.test.ts`
+  - 닉네임 정규화·인증 기반 가용성 조회, 관심 무드 1~5개, UID 소유 avatar path, handler active guard와 Firebase Auth email lookup을 검증한다.
+  - `firestore-tests/profile.rules.test.mjs`는 private/public/index 접근 경계를 검증한다.
+  - `profile-storage.rules.test.mjs`는 owner+active upload/delete와 signed-in read를 검증한다.
+  - `profile-transactions.emulator.test.mjs`는 닉네임 동시 단일 승자, inactive/missing mood rollback, nickname index 교체/rollback을 실제 Admin transaction으로 검증한다.
+  - 2026-07-28 Phase 2 결과: Functions 80/80, rules 23/23, transaction 5/5.
+- iOS 새 온보딩·bootstrap:
+  - `ProfileSetupViewModelTests.swift`
+  - `AvatarSetupViewModelTests.swift`
+  - `StyleMoodOnboardingViewModelTests.swift`
+  - `LoadCurrentUserBootstrapUseCaseTests.swift`
+  - `CompleteOnboardingUseCaseTests.swift`
+  - `CloudFunctions/CloudFunctionsProfileMutationRepositoryTests.swift`
+  - 2026-07-28 iPhone 17 Pro Max iOS 26.2 Simulator에서 13/13, 앱 compile-only build가 통과했다.
+  - 에디토리얼 3단계 UX 보완 후 닉네임·아바타 선택/건너뛰기·featured/검색/선택 유지와 기존 완료/bootstrap을 묶은 15/15가 같은 Simulator에서 통과했다.
+  - 문구 보완과 닉네임 사전 확인 추가 후 중복/사용 가능/조회 실패를 포함한 관련 17/17, Simulator build가 통과했다. Functions는 81/81·lint·build가 통과했고 신규 callable 운영 등록도 확인했다.
+  - 닉네임 확인을 첫 단계로 이동한 후 성공/중복/조회 실패와 아바타 선택/건너뛰기, callable mapping 관련 9/9와 Simulator build가 통과했다.
+- iOS Phase 4 마이페이지·공개 프로필 직접 소비:
+  - `UpdatePublicProfileUseCaseTests.swift`
+  - `ProfileEditViewModelTests.swift`
+  - `StylePreferenceEditViewModelTests.swift`
+  - `ChatProfileSyncManagerTests.swift`
+  - `RoomPreviewProfileOverlayTests.swift`
+  - `CommentAuthorProfileStoreTests.swift`
+  - `CloudFunctionsProfileMutationRepositoryTests.swift`
+  - 아바타 누락/문자열/null payload, 업로드→mutation→이전 파일 삭제 순서, cleanup 부분 실패 기록, 닉네임 사전 확인, 관심 스타일 1~5개와 공개 프로필 cache 직접 소비를 검증한다.
+  - 2026-07-28 관련 24/24와 iPhone 17 Pro Max iOS 26.2 Simulator build/install/launch가 통과했다.
+  - 2026-07-28 피드백 회귀 27/27에서 방 목록 최신 공개 프로필 overlay, 댓글 작성자 강제 refresh/실패 보존, upload/callable/cleanup 실패, 닉네임 확인 네트워크 실패, 관심 스타일 load/save 실패와 저장 중 중복 호출을 검증했다.
 - purge drain 핵심 시나리오: 20개 초과 page 반복, 서로 다른 브랜드 최대 3개, 같은 브랜드 순차, 부모 target 우선, 실패/lease skip 후 계속 처리, 7분 cutoff.
 - 운영 통합 결과와 남은 관찰 항목: `docs/ai/tasks/lookbook-deletion-purge-drain/progress.md`, `qa-checklist.md`.
 - Functions workflow: `.codex/skills/firebase-functions-workflow/SKILL.md`
