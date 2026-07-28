@@ -1841,7 +1841,7 @@ async function ensureMaterialized(
       coverRemoteURL: metadata.coverRemoteURL,
       description: "",
       tagIDs: [],
-      tagConceptIDs: [],
+      moodIDs: [],
       status: "published",
       assetSyncStatus: "pending",
       metadataStatus: metadata.metadataStatus,

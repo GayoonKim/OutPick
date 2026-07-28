@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
 import test from "node:test";
 
 import {
@@ -8,6 +9,12 @@ import {
 } from "./processor.js";
 
 const candidate = {sourceURL: "https://brand.example/lookbook.jpg", alt: null};
+
+test("새 시즌은 빈 moodIDs로 materialize하고 legacy concept를 쓰지 않는다", () => {
+  const source = readFileSync(new URL("../src/processor.ts", import.meta.url), "utf8");
+  assert.match(source, /moodIDs:\s*\[\]/);
+  assert.doesNotMatch(source, /tagConceptIDs/);
+});
 
 test("repair materializing 재개는 review snapshot을 별도로 요구하지 않는다", () => {
   assert.equal(
