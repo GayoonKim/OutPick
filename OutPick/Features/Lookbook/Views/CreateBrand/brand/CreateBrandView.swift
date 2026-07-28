@@ -13,6 +13,7 @@ struct CreateBrandView: View {
 
     @StateObject private var viewModel: CreateBrandViewModel
     @State private var isImagePickerPresented: Bool = false
+    @State private var isMoodEditorPresented: Bool = false
     @State private var heroProgress: CGFloat = 0
     @State private var revealedFormItemCount: Int = 0
     @State private var isGuideVisible: Bool = false
@@ -37,7 +38,9 @@ struct CreateBrandView: View {
                 initialEnglishName: initialEnglishName,
                 brandStore: provider.brandStore,
                 storageService: provider.storageService,
-                thumbnailer: provider.thumbnailer
+                thumbnailer: provider.thumbnailer,
+                moodRepository: provider.styleMoodRepository,
+                moodAdminRepository: provider.styleMoodAdminRepository
             )
         )
         self.onCompleted = onCompleted
@@ -73,14 +76,31 @@ struct CreateBrandView: View {
         .onAppear {
             startEntranceAnimationIfNeeded()
         }
+        .task {
+            await viewModel.loadMoods()
+        }
         .onDisappear {
             entranceTask?.cancel()
+        }
+        .sheet(isPresented: $isMoodEditorPresented) {
+            StyleMoodEditorView(
+                existingMood: nil,
+                isSaving: viewModel.isCreatingMood,
+                onCancel: { isMoodEditorPresented = false },
+                onSave: { draft, _ in
+                    Task {
+                        if await viewModel.createMood(draft) {
+                            isMoodEditorPresented = false
+                        }
+                    }
+                }
+            )
         }
     }
 }
 
 private extension CreateBrandView {
-    var totalAnimatedFormItemCount: Int { 7 }
+    var totalAnimatedFormItemCount: Int { 8 }
 
     func introSection(containerHeight: CGFloat, containerWidth: CGFloat) -> some View {
         let contentWidth = max(containerWidth - 40, 0)
@@ -187,6 +207,16 @@ private extension CreateBrandView {
             }
 
             animatedFormItem(index: 5) {
+                StyleMoodSelectionSection(
+                    moods: viewModel.moods,
+                    selectedMoodIDs: $viewModel.selectedMoodIDs,
+                    showsAddButton: true,
+                    requiresSearchToBrowse: true,
+                    onAddMood: { isMoodEditorPresented = true }
+                )
+            }
+
+            animatedFormItem(index: 6) {
                 Toggle(isOn: $viewModel.isFeatured) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("피처드")
@@ -211,7 +241,7 @@ private extension CreateBrandView {
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
 
-            animatedFormItem(index: 6) {
+            animatedFormItem(index: 7) {
                 Button {
                     Task {
                         if let createdBrand = await viewModel.saveBrand() {

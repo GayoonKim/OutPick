@@ -11,6 +11,7 @@ import UIKit
 private enum AdminBrandManagementTab: String, CaseIterable, Identifiable {
     case info
     case managers
+    case moods
     case importSeasons
     case deletion
 
@@ -20,6 +21,7 @@ private enum AdminBrandManagementTab: String, CaseIterable, Identifiable {
         switch self {
         case .info: return "정보"
         case .managers: return "관리자"
+        case .moods: return "브랜드 스타일"
         case .importSeasons: return "시즌 가져오기"
         case .deletion: return "삭제"
         }
@@ -29,6 +31,7 @@ private enum AdminBrandManagementTab: String, CaseIterable, Identifiable {
         switch self {
         case .info: return "브랜드 정보와 로고 수정"
         case .managers: return "브랜드 소유자와 관리자 추가/삭제"
+        case .moods: return "브랜드와 시즌에 연결할 스타일 키워드 편집"
         case .importSeasons: return "시즌 후보 찾기와 가져오기 현황"
         case .deletion: return "브랜드/시즌/포스트 삭제 요청 관리"
         }
@@ -38,6 +41,7 @@ private enum AdminBrandManagementTab: String, CaseIterable, Identifiable {
         switch self {
         case .info: return "info.circle"
         case .managers: return "person.2"
+        case .moods: return "sparkles"
         case .importSeasons: return "square.and.arrow.down"
         case .deletion: return "trash"
         }
@@ -71,6 +75,8 @@ struct AdminBrandManagementView: View {
     @State private var isPresentingSeasonAddition = false
     @State private var selectedMenu: AdminBrandManagementTab?
     @State private var selectedImportTab: AdminBrandImportTab = .discover
+    @State private var isPresentingMoodEditor = false
+    @State private var editingSeason: Season?
 
     init(
         viewModel: AdminBrandManagementViewModel,
@@ -120,6 +126,10 @@ struct AdminBrandManagementView: View {
         .task {
             await viewModel.loadInitialBrandIfNeeded()
         }
+        .task(id: viewModel.selectedBrand?.id) {
+            guard brandAdminSessionStore.isTotalAdmin else { return }
+            await viewModel.loadMoodManagementData()
+        }
         .sheet(isPresented: $isImagePickerPresented) {
             PhotoPicker { data in
                 guard let data, let image = UIImage(data: data) else {
@@ -135,6 +145,38 @@ struct AdminBrandManagementView: View {
                     isPresentingSeasonAddition = false
                 }
             }
+        }
+        .sheet(isPresented: $isPresentingMoodEditor) {
+            StyleMoodEditorView(
+                existingMood: nil,
+                isSaving: viewModel.isCreatingMood,
+                onCancel: { isPresentingMoodEditor = false },
+                onSave: { draft, _ in
+                    Task {
+                        if await viewModel.createMood(draft) {
+                            isPresentingMoodEditor = false
+                        }
+                    }
+                }
+            )
+        }
+        .sheet(item: $editingSeason) { season in
+            SeasonMoodManagementView(
+                season: season,
+                moods: viewModel.moods,
+                isSaving: viewModel.savingSeasonIDs.contains(season.id),
+                onCancel: { editingSeason = nil },
+                onSave: { selectedMoodIDs in
+                    Task {
+                        if await viewModel.updateSeasonMoods(
+                            seasonID: season.id,
+                            selectedMoodIDs: selectedMoodIDs
+                        ) {
+                            editingSeason = nil
+                        }
+                    }
+                }
+            )
         }
     }
 
@@ -307,6 +349,16 @@ struct AdminBrandManagementView: View {
                 .padding(.top, 24)
                 .padding(.bottom, 40)
             }
+        case .moods:
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    seasonMoodSection
+                    messageSection
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 24)
+                .padding(.bottom, 40)
+            }
         case .importSeasons:
             importTabContent(for: brand)
         case .deletion:
@@ -356,6 +408,9 @@ struct AdminBrandManagementView: View {
         var tabs: [AdminBrandManagementTab] = [.info]
         if brandAdminSessionStore.canManageBrandManagers(brandID: brand.id) {
             tabs.append(.managers)
+        }
+        if brandAdminSessionStore.isTotalAdmin {
+            tabs.append(.moods)
         }
         tabs.append(contentsOf: [.importSeasons, .deletion])
         return tabs
@@ -429,18 +484,28 @@ struct AdminBrandManagementView: View {
                         }
                     }
                     .tint(OutPickTheme.SwiftUIColor.accent)
+
+                    StyleMoodSelectionSection(
+                        moods: viewModel.moods,
+                        selectedMoodIDs: $viewModel.selectedMoodIDs,
+                        showsAddButton: true,
+                        requiresSearchToBrowse: true,
+                        onAddMood: { isPresentingMoodEditor = true }
+                    )
                 }
 
                 primaryButton(
                     title: "브랜드 정보 저장",
                     isLoading: viewModel.isSavingBrand,
                     isDisabled: !viewModel.canSaveBrand(
-                        canUpdateFeatured: brandAdminSessionStore.isTotalAdmin
+                        canUpdateFeatured: brandAdminSessionStore.isTotalAdmin,
+                        canUpdateMoodIDs: brandAdminSessionStore.isTotalAdmin
                     )
                 ) {
                     Task {
                         await viewModel.saveBrand(
-                            canUpdateFeatured: brandAdminSessionStore.isTotalAdmin
+                            canUpdateFeatured: brandAdminSessionStore.isTotalAdmin,
+                            canUpdateMoodIDs: brandAdminSessionStore.isTotalAdmin
                         )
                     }
                 }
@@ -548,6 +613,96 @@ struct AdminBrandManagementView: View {
                 }
             }
         }
+    }
+
+    private var seasonMoodSection: some View {
+        adminSection {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("시즌")
+                    .font(.headline)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
+
+                if viewModel.isLoadingMoodData {
+                    ProgressView()
+                        .tint(OutPickTheme.SwiftUIColor.accent)
+                } else if viewModel.seasons.isEmpty {
+                    Text("등록된 시즌이 없습니다")
+                        .font(.footnote)
+                        .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+                } else {
+                    seasonSearchField
+
+                    if viewModel.visibleSeasons.isEmpty {
+                        Text("검색 결과가 없습니다")
+                            .font(.footnote)
+                            .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 20)
+                    }
+
+                    ForEach(viewModel.visibleSeasons) { season in
+                        Button {
+                            editingSeason = season
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(season.displayTitle)
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
+                                    Text(seasonMoodNames(season))
+                                        .font(.caption)
+                                        .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+                                        .lineLimit(1)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .foregroundStyle(OutPickTheme.SwiftUIColor.iconSecondary)
+                            }
+                            .padding(14)
+                            .background(OutPickTheme.SwiftUIColor.surfaceElevated)
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
+    private func seasonMoodNames(_ season: Season) -> String {
+        let names = viewModel.moods
+            .filter { season.moodIDs.contains($0.id) }
+            .map(\.displayName)
+        return names.isEmpty ? "선택된 스타일 없음" : names.joined(separator: " · ")
+    }
+
+    private var seasonSearchField: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(OutPickTheme.SwiftUIColor.iconSecondary)
+
+            TextField("시즌명, 연도 또는 S/S·F/W 검색", text: $viewModel.seasonSearchText)
+                .textInputAutocapitalization(.never)
+                .disableAutocorrection(true)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
+
+            if viewModel.seasonSearchText.isEmpty == false {
+                Button {
+                    viewModel.seasonSearchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(OutPickTheme.SwiftUIColor.iconSecondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("시즌 검색어 지우기")
+            }
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 46)
+        .background(OutPickTheme.SwiftUIColor.surfaceElevated)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     private func importDiscoverySection(_ brand: Brand) -> some View {

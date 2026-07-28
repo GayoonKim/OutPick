@@ -59,11 +59,11 @@ final class StyleMoodOnboardingViewModel {
             applyMoodFilter()
             state.isLoading = false
             if moods.isEmpty {
-                state.errorMessage = "선택 가능한 관심 무드가 없어요"
+                state.errorMessage = "선택 가능한 관심 스타일이 없어요"
             }
         } catch {
             state.isLoading = false
-            state.errorMessage = "관심 무드를 불러오지 못했어요"
+            state.errorMessage = "관심 스타일을 불러오지 못했어요"
         }
     }
 
@@ -86,7 +86,7 @@ final class StyleMoodOnboardingViewModel {
             state.selectedMoodIDs.insert(id)
             state.errorMessage = nil
         } else {
-            state.errorMessage = "관심 무드는 최대 5개까지 선택할 수 있어요"
+            state.errorMessage = "관심 스타일은 최대 5개까지 선택할 수 있어요"
         }
         recompute()
     }

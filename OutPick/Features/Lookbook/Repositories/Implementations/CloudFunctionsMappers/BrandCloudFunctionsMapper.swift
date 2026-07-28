@@ -17,6 +17,7 @@ enum BrandCloudFunctionsMapper {
             logoDetailPath: decoder.optionalString("logoDetailPath"),
             logoOriginalPath: decoder.optionalString("logoOriginalPath"),
             isFeatured: decoder.optionalBool("isFeatured") ?? false,
+            moodIDs: decoder.stringArray("moodIDs"),
             discoveryStatus: BrandDiscoveryStatus(
                 rawValue: decoder.optionalString("discoveryStatus") ?? ""
             ) ?? .idle,

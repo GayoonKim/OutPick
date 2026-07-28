@@ -19,6 +19,10 @@ final class AdminBrandManagementViewModel: ObservableObject {
     @Published var websiteURLText: String = ""
     @Published var lookbookArchiveURLText: String = ""
     @Published var isFeatured: Bool = false
+    @Published private(set) var moods: [StyleMood] = []
+    @Published var selectedMoodIDs: Set<String> = []
+    @Published private(set) var seasons: [Season] = []
+    @Published var seasonSearchText: String = ""
     @Published var managerEmail: String = ""
     @Published var managerRole: BrandManagerRole = .admin
     @Published private(set) var selectedLogoImage: UIImage?
@@ -27,6 +31,9 @@ final class AdminBrandManagementViewModel: ObservableObject {
     @Published private(set) var isSavingBrand: Bool = false
     @Published private(set) var isUploadingLogo: Bool = false
     @Published private(set) var isMutatingManager: Bool = false
+    @Published private(set) var isLoadingMoodData: Bool = false
+    @Published private(set) var isCreatingMood: Bool = false
+    @Published private(set) var savingSeasonIDs: Set<SeasonID> = []
     @Published var message: String? {
         didSet {
             scheduleMessageAutoDismissIfNeeded(message)
@@ -41,6 +48,10 @@ final class AdminBrandManagementViewModel: ObservableObject {
     private let storageService: StorageServiceProtocol
     private let brandImageCache: any BrandImageCacheProtocol
     private let thumbnailer: ImageThumbnailing
+    private let moodRepository: StyleMoodRepositoryProtocol
+    private let moodAdminRepository: StyleMoodAdminRepositoryProtocol
+    private let seasonRepository: SeasonRepositoryProtocol
+    private let seasonMoodAdminRepository: SeasonMoodAdminRepositoryProtocol
     private let onBrandUpdated: ((Brand) -> Void)?
     private var selectedLogoThumbData: Data?
     private var selectedLogoDetailData: Data?
@@ -63,6 +74,13 @@ final class AdminBrandManagementViewModel: ObservableObject {
         storageService: StorageServiceProtocol,
         brandImageCache: any BrandImageCacheProtocol,
         thumbnailer: ImageThumbnailing,
+        moodRepository: StyleMoodRepositoryProtocol =
+            FirestoreStyleMoodRepository(db: .firestore()),
+        moodAdminRepository: StyleMoodAdminRepositoryProtocol =
+            CloudFunctionsStyleMoodAdminRepository(),
+        seasonRepository: SeasonRepositoryProtocol = FirestoreSeasonRepository(),
+        seasonMoodAdminRepository: SeasonMoodAdminRepositoryProtocol =
+            CloudFunctionsSeasonMoodAdminRepository(),
         onBrandUpdated: ((Brand) -> Void)? = nil
     ) {
         self.initialBrandID = initialBrandID ?? initialBrand?.id
@@ -73,6 +91,10 @@ final class AdminBrandManagementViewModel: ObservableObject {
         self.storageService = storageService
         self.brandImageCache = brandImageCache
         self.thumbnailer = thumbnailer
+        self.moodRepository = moodRepository
+        self.moodAdminRepository = moodAdminRepository
+        self.seasonRepository = seasonRepository
+        self.seasonMoodAdminRepository = seasonMoodAdminRepository
         self.onBrandUpdated = onBrandUpdated
         bindSearchText()
 
@@ -88,10 +110,16 @@ final class AdminBrandManagementViewModel: ObservableObject {
         canSaveBrand(canUpdateFeatured: true)
     }
 
-    func canSaveBrand(canUpdateFeatured: Bool) -> Bool {
+    func canSaveBrand(
+        canUpdateFeatured: Bool,
+        canUpdateMoodIDs: Bool = false
+    ) -> Bool {
         selectedBrand != nil &&
         brandName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false &&
-        hasBrandInfoChanges(canUpdateFeatured: canUpdateFeatured) &&
+        hasBrandInfoChanges(
+            canUpdateFeatured: canUpdateFeatured,
+            canUpdateMoodIDs: canUpdateMoodIDs
+        ) &&
         isSavingBrand == false
     }
 
@@ -106,6 +134,26 @@ final class AdminBrandManagementViewModel: ObservableObject {
         selectedBrand != nil &&
         managerEmail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false &&
         isMutatingManager == false
+    }
+
+    var visibleSeasons: [Season] {
+        let query = normalizedSearchTerm(seasonSearchText)
+        guard query.isEmpty == false else { return seasons }
+
+        return seasons.filter { season in
+            let searchTerms = [
+                season.displayTitle,
+                season.sourceTitle,
+                season.year.map { String($0) },
+                season.term?.rawValue,
+                season.term?.displayText
+            ]
+            .compactMap { $0 }
+
+            return searchTerms.contains {
+                normalizedSearchTerm($0).contains(query)
+            }
+        }
     }
 
     func clearSearch() {
@@ -174,13 +222,19 @@ final class AdminBrandManagementViewModel: ObservableObject {
         websiteURLText = brand.websiteURL ?? ""
         lookbookArchiveURLText = brand.lookbookArchiveURL ?? ""
         isFeatured = brand.isFeatured
+        selectedMoodIDs = Set(brand.moodIDs)
+        seasons = []
+        seasonSearchText = ""
         selectedLogoImage = nil
         selectedLogoThumbData = nil
         selectedLogoDetailData = nil
         message = nil
     }
 
-    func hasBrandInfoChanges(canUpdateFeatured: Bool) -> Bool {
+    func hasBrandInfoChanges(
+        canUpdateFeatured: Bool,
+        canUpdateMoodIDs: Bool = false
+    ) -> Bool {
         guard let selectedBrand else { return false }
 
         let normalizedName = normalizedDisplayName(brandName)
@@ -190,6 +244,7 @@ final class AdminBrandManagementViewModel: ObservableObject {
         if urlInputDiffers(websiteURLText, from: selectedBrand.websiteURL) { return true }
         if urlInputDiffers(lookbookArchiveURLText, from: selectedBrand.lookbookArchiveURL) { return true }
         if canUpdateFeatured, isFeatured != selectedBrand.isFeatured { return true }
+        if canUpdateMoodIDs, selectedMoodIDs != Set(selectedBrand.moodIDs) { return true }
 
         return false
     }
@@ -219,7 +274,10 @@ final class AdminBrandManagementViewModel: ObservableObject {
         selectedLogoDetailData = nil
     }
 
-    func saveBrand(canUpdateFeatured: Bool) async {
+    func saveBrand(
+        canUpdateFeatured: Bool,
+        canUpdateMoodIDs: Bool = false
+    ) async {
         guard let selectedBrand else { return }
         message = nil
 
@@ -244,13 +302,18 @@ final class AdminBrandManagementViewModel: ObservableObject {
         defer { isSavingBrand = false }
 
         do {
+            let moodIDsPatch = canUpdateMoodIDs &&
+                selectedMoodIDs != Set(selectedBrand.moodIDs)
+                ? orderedMoodIDs(selectedMoodIDs)
+                : nil
             let updatedBrand = try await brandStore.updateBrand(
                 brandID: selectedBrand.id,
                 name: name,
                 englishName: normalizedEnglishName.isEmpty ? nil : normalizedEnglishName,
                 websiteURL: websiteURL,
                 lookbookArchiveURL: lookbookArchiveURL,
-                isFeatured: canUpdateFeatured ? isFeatured : nil
+                isFeatured: canUpdateFeatured ? isFeatured : nil,
+                moodIDs: moodIDsPatch
             )
             self.selectedBrand = updatedBrand
             self.brandName = updatedBrand.name
@@ -258,6 +321,7 @@ final class AdminBrandManagementViewModel: ObservableObject {
             self.websiteURLText = updatedBrand.websiteURL ?? ""
             self.lookbookArchiveURLText = updatedBrand.lookbookArchiveURL ?? ""
             self.isFeatured = updatedBrand.isFeatured
+            self.selectedMoodIDs = Set(updatedBrand.moodIDs)
             onBrandUpdated?(updatedBrand)
             message = "브랜드 정보를 저장했습니다."
         } catch {
@@ -311,6 +375,7 @@ final class AdminBrandManagementViewModel: ObservableObject {
                 logoDetailPath: uploadedDetailPath,
                 logoOriginalPath: selectedBrand.logoOriginalPath,
                 isFeatured: selectedBrand.isFeatured,
+                moodIDs: selectedBrand.moodIDs,
                 discoveryStatus: selectedBrand.discoveryStatus,
                 lastDiscoveryErrorMessage: selectedBrand.lastDiscoveryErrorMessage,
                 lastDiscoveryRequestedAt: selectedBrand.lastDiscoveryRequestedAt,
@@ -334,6 +399,70 @@ final class AdminBrandManagementViewModel: ObservableObject {
 
     func removeManager() async {
         await mutateManager(isAdding: false)
+    }
+
+    func loadMoodManagementData() async {
+        guard let selectedBrand else { return }
+        isLoadingMoodData = true
+        message = nil
+        defer { isLoadingMoodData = false }
+
+        do {
+            async let loadedMoods = moodRepository.fetchAllMoods()
+            async let loadedSeasons = seasonRepository.fetchAllSeasons(brandID: selectedBrand.id)
+            let (moods, seasons) = try await (loadedMoods, loadedSeasons)
+            guard self.selectedBrand?.id == selectedBrand.id else { return }
+            self.moods = moods
+            self.seasons = seasons
+        } catch {
+            message = "브랜드·시즌 스타일 정보를 불러오지 못했습니다: \(error.localizedDescription)"
+        }
+    }
+
+    func createMood(_ draft: StyleMoodMutationDraft) async -> Bool {
+        guard isCreatingMood == false else { return false }
+        guard selectedMoodIDs.count < 5 else {
+            message = "브랜드 스타일은 최대 5개까지 선택할 수 있습니다"
+            return false
+        }
+        isCreatingMood = true
+        defer { isCreatingMood = false }
+        do {
+            let moodID = try await moodAdminRepository.createMood(draft)
+            moods = try await moodRepository.fetchAllMoods()
+            selectedMoodIDs.insert(moodID)
+            return true
+        } catch {
+            message = "스타일 키워드를 추가하지 못했습니다: \(error.localizedDescription)"
+            return false
+        }
+    }
+
+    func updateSeasonMoods(
+        seasonID: SeasonID,
+        selectedMoodIDs: Set<String>
+    ) async -> Bool {
+        guard let brandID = selectedBrand?.id else { return false }
+        guard savingSeasonIDs.contains(seasonID) == false else { return false }
+        savingSeasonIDs.insert(seasonID)
+        defer { savingSeasonIDs.remove(seasonID) }
+
+        do {
+            let moodIDs = orderedMoodIDs(selectedMoodIDs)
+            try await seasonMoodAdminRepository.updateSeasonMoods(
+                brandID: brandID,
+                seasonID: seasonID,
+                moodIDs: moodIDs
+            )
+            if let index = seasons.firstIndex(where: { $0.id == seasonID }) {
+                seasons[index].moodIDs = moodIDs
+            }
+            message = "시즌 스타일을 저장했습니다."
+            return true
+        } catch {
+            message = "시즌 스타일을 저장하지 못했습니다: \(error.localizedDescription)"
+            return false
+        }
     }
 
     private func mutateManager(isAdding: Bool) async {
@@ -379,6 +508,16 @@ final class AdminBrandManagementViewModel: ObservableObject {
 }
 
 private extension AdminBrandManagementViewModel {
+    func orderedMoodIDs(_ selectedIDs: Set<String>) -> [String] {
+        moods
+            .filter { selectedIDs.contains($0.id) }
+            .sorted {
+                if $0.sortOrder != $1.sortOrder { return $0.sortOrder < $1.sortOrder }
+                return $0.id < $1.id
+            }
+            .map(\.id)
+    }
+
     func bindSearchText() {
         $searchText
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -411,6 +550,12 @@ private extension AdminBrandManagementViewModel {
         rawValue
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+    }
+
+    func normalizedSearchTerm(_ rawValue: String) -> String {
+        rawValue
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
     }
 
     func normalizedOptionalDisplayName(_ rawValue: String) -> String? {
@@ -519,6 +664,9 @@ private extension AdminBrandManagementViewModel {
         websiteURLText = ""
         lookbookArchiveURLText = ""
         isFeatured = false
+        selectedMoodIDs = []
+        seasons = []
+        seasonSearchText = ""
         managerEmail = ""
         managerRole = .admin
         selectedLogoImage = nil

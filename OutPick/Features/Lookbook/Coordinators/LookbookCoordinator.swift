@@ -65,6 +65,10 @@ final class LookbookCoordinator {
         push(makeAdminBrandRequestGroupsView())
     }
 
+    func pushStyleMoodManagement() {
+        push(container.makeStyleMoodManagementView(coordinator: self))
+    }
+
     func pushAdminBrandManagement(
         initialBrand: Brand? = nil,
         initialBrandID: BrandID? = nil,

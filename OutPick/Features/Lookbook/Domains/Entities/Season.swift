@@ -80,8 +80,8 @@ struct Season: Equatable, Codable, Identifiable {
     /// 시즌 무드 태그(표현 단위). 예: "미니멀", "minimal" 등
     var tagIDs: [TagID]
 
-    /// 시즌 무드 태그(의미/개념 단위). 예: concept_minimal 등
-    var tagConceptIDs: [String]?
+    /// 브랜드와 공용 taxonomy를 사용하는 시즌 스타일 무드 ID
+    var moodIDs: [String] = []
 
     /// 노출/운영 상태
     var status: SeasonStatus

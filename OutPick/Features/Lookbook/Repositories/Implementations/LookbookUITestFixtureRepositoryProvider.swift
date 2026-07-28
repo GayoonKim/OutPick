@@ -134,7 +134,7 @@ private final class LookbookUITestFixtureStore:
             coverRemoteURL: nil,
             description: "UI 테스트용 시즌",
             tagIDs: [],
-            tagConceptIDs: nil,
+            moodIDs: [],
             status: .published,
             deletionStatus: .active,
             assetSyncStatus: .ready,
@@ -259,7 +259,8 @@ private final class LookbookUITestFixtureStore:
         englishName: String?,
         isFeatured: Bool,
         websiteURL: String?,
-        lookbookArchiveURL: String?
+        lookbookArchiveURL: String?,
+        moodIDs: [String]
     ) async throws -> String { brand.id.value }
 
     func updateBrand(
@@ -268,7 +269,8 @@ private final class LookbookUITestFixtureStore:
         englishName: String?,
         websiteURL: String?,
         lookbookArchiveURL: String?,
-        isFeatured: Bool?
+        isFeatured: Bool?,
+        moodIDs: [String]?
     ) async throws -> Brand { brand }
 
     func updateLogoPaths(docID: String, logoThumbPath: String?, logoDetailPath: String?) async throws {}
@@ -397,16 +399,6 @@ private final class LookbookUITestFixtureStore:
     func discoverSeasonCandidates(
         brandID: BrandID
     ) async throws -> SeasonCandidateDiscoveryResult { throw FixtureError.unsupported }
-
-    func createSeason(
-        brandID: BrandID,
-        year: Int,
-        term: SeasonTerm,
-        description: String,
-        coverImageData: Data?,
-        tagIDs: [TagID],
-        tagConceptIDs: [String]?
-    ) async throws -> Season { season }
 
     func fetchSeason(brandID: BrandID, seasonID: SeasonID) async throws -> Season { season }
 

@@ -51,6 +51,7 @@ struct Brand: Equatable, Codable, Identifiable {
     }
 
     var isFeatured: Bool
+    var moodIDs: [String] = []
     var discoveryStatus: BrandDiscoveryStatus
     var lastDiscoveryErrorMessage: String?
     var lastDiscoveryRequestedAt: Date?

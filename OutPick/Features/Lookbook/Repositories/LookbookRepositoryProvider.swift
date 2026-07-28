@@ -20,6 +20,10 @@ final class LookbookRepositoryProvider {
             lookbookDeletionRepository: CloudFunctionsLookbookDeletionRepository(transport: transport),
             brandEngagementRepository: CloudFunctionsBrandEngagementRepository(transport: transport),
             brandStore: CloudFunctionsBrandStore(transport: transport),
+            styleMoodAdminRepository:
+                CloudFunctionsStyleMoodAdminRepository(transport: transport),
+            seasonMoodAdminRepository:
+                CloudFunctionsSeasonMoodAdminRepository(transport: transport),
             seasonEngagementRepository: CloudFunctionsSeasonEngagementRepository(transport: transport),
             seasonImportRepository: CloudFunctionsSeasonImportRepository(transport: transport),
             seasonImportJobRequestingRepository: CloudFunctionsSeasonImportJobRequestingRepository(
@@ -47,6 +51,9 @@ final class LookbookRepositoryProvider {
     let brandRequestRepository: BrandRequestRepositoryProtocol
     let lookbookDeletionRepository: LookbookDeletionRepositoryProtocol
     let brandEngagementRepository: BrandEngagementRepositoryProtocol
+    let styleMoodRepository: StyleMoodRepositoryProtocol
+    let styleMoodAdminRepository: StyleMoodAdminRepositoryProtocol
+    let seasonMoodAdminRepository: SeasonMoodAdminRepositoryProtocol
 
     let seasonRepository: SeasonRepositoryProtocol
     let seasonEngagementRepository: SeasonEngagementRepositoryProtocol
@@ -65,9 +72,6 @@ final class LookbookRepositoryProvider {
     let postEngagementRepository: PostEngagementRepositoryProtocol
 
     let tagRepository: TagRepositoryProtocol
-    let tagAliasRepository: TagAliasRepositoryProtocol
-    let tagConceptRepository: TagConceptRepositoryProtocol
-
     let commentRepository: CommentRepositoryProtocol
     let commentWritingRepository: CommentWritingRepositoryProtocol
     let commentEngagementRepository: CommentEngagementRepositoryProtocol
@@ -97,6 +101,12 @@ final class LookbookRepositoryProvider {
         lookbookDeletionRepository: LookbookDeletionRepositoryProtocol = CloudFunctionsLookbookDeletionRepository(),
         brandEngagementRepository: BrandEngagementRepositoryProtocol = CloudFunctionsBrandEngagementRepository(),
         brandStore: BrandStoringRepository = CloudFunctionsBrandStore(),
+        styleMoodRepository: StyleMoodRepositoryProtocol =
+            FirestoreStyleMoodRepository(db: .firestore()),
+        styleMoodAdminRepository: StyleMoodAdminRepositoryProtocol =
+            CloudFunctionsStyleMoodAdminRepository(),
+        seasonMoodAdminRepository: SeasonMoodAdminRepositoryProtocol =
+            CloudFunctionsSeasonMoodAdminRepository(),
 
         seasonRepository: SeasonRepositoryProtocol? = nil,
         seasonEngagementRepository: SeasonEngagementRepositoryProtocol = CloudFunctionsSeasonEngagementRepository(),
@@ -117,9 +127,6 @@ final class LookbookRepositoryProvider {
         postEngagementRepository: PostEngagementRepositoryProtocol = CloudFunctionsPostEngagementRepository(),
 
         tagRepository: TagRepositoryProtocol = FirestoreTagRepository(),
-        tagAliasRepository: TagAliasRepositoryProtocol = FirestoreTagAliasRepository(),
-        tagConceptRepository: TagConceptRepositoryProtocol = FirestoreTagConceptRepository(),
-
         commentRepository: CommentRepositoryProtocol = FirestoreCommentRepository(),
         commentWritingRepository: CommentWritingRepositoryProtocol = CloudFunctionsCommentWritingRepository(),
         commentEngagementRepository: CommentEngagementRepositoryProtocol = CloudFunctionsCommentEngagementRepository(),
@@ -153,15 +160,15 @@ final class LookbookRepositoryProvider {
         self.brandRequestRepository = brandRequestRepository
         self.lookbookDeletionRepository = lookbookDeletionRepository
         self.brandEngagementRepository = brandEngagementRepository
+        self.styleMoodRepository = styleMoodRepository
+        self.styleMoodAdminRepository = styleMoodAdminRepository
+        self.seasonMoodAdminRepository = seasonMoodAdminRepository
         self.postRepository = postRepository
         self.postEngagementRepository = postEngagementRepository
         self.seasonEngagementRepository = seasonEngagementRepository
         self.seasonUserStateRepository = seasonUserStateRepository
 
         self.tagRepository = tagRepository
-        self.tagAliasRepository = tagAliasRepository
-        self.tagConceptRepository = tagConceptRepository
-
         self.commentRepository = commentRepository
         self.commentWritingRepository = commentWritingRepository
         self.commentEngagementRepository = commentEngagementRepository
@@ -174,11 +181,7 @@ final class LookbookRepositoryProvider {
 
         // Provider가 season repo를 조립할 때 thumbnailer/policy를 공유 주입
         self.seasonRepository = seasonRepository
-            ?? FirestoreSeasonRepository(
-                storage: storageService,
-                thumbnailer: thumbnailer,
-                coverThumbnailPolicy: seasonCoverThumbnailPolicy
-            )
+            ?? FirestoreSeasonRepository()
         self.seasonCoverThumbnailPolicy = seasonCoverThumbnailPolicy
         self.seasonImportRepository = seasonImportRepository
         self.seasonImportJobRepository = seasonImportJobRepository

@@ -299,6 +299,18 @@ final class LookbookContainer {
         )
     }
 
+    func makeStyleMoodManagementView(
+        coordinator: LookbookCoordinator
+    ) -> StyleMoodManagementView {
+        StyleMoodManagementView(
+            viewModel: StyleMoodManagementViewModel(
+                moodRepository: provider.styleMoodRepository,
+                adminRepository: provider.styleMoodAdminRepository
+            ),
+            coordinator: coordinator
+        )
+    }
+
     func makeAdminBrandManagementView(
         coordinator: LookbookCoordinator,
         initialBrand: Brand? = nil,
@@ -315,6 +327,10 @@ final class LookbookContainer {
                 storageService: provider.storageService,
                 brandImageCache: provider.brandImageCache,
                 thumbnailer: provider.thumbnailer,
+                moodRepository: provider.styleMoodRepository,
+                moodAdminRepository: provider.styleMoodAdminRepository,
+                seasonRepository: provider.seasonRepository,
+                seasonMoodAdminRepository: provider.seasonMoodAdminRepository,
                 onBrandUpdated: { [weak self] brand in
                     self?.lookbookHomeViewModel.applyUpdatedBrand(brand)
                     onUpdatedBrand?(brand)
@@ -542,7 +558,8 @@ final class LookbookContainer {
                 englishName: brand.englishName,
                 websiteURL: brand.websiteURL,
                 lookbookArchiveURL: brand.lookbookArchiveURL,
-                hasLogoAsset: brand.logoThumbPath != nil
+                hasLogoAsset: brand.logoThumbPath != nil,
+                moodIDs: brand.moodIDs
             ),
             container: self,
             onDismiss: onDismiss

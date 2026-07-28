@@ -22,7 +22,8 @@ struct FirestoreBrandStore: BrandStoringRepository {
         englishName: String?,
         isFeatured: Bool,
         websiteURL: String?,
-        lookbookArchiveURL: String?
+        lookbookArchiveURL: String?,
+        moodIDs: [String]
     ) async throws -> String {
         let docRef = db.collection("brands").document()
         let docID = docRef.documentID
@@ -44,6 +45,7 @@ struct FirestoreBrandStore: BrandStoringRepository {
             "logoOriginalPath": NSNull(),
 
             "isFeatured": isFeatured,
+            "moodIDs": moodIDs,
             "discoveryStatus": BrandDiscoveryStatus.idle.rawValue,
             "lastDiscoveryErrorMessage": NSNull(),
             "lastDiscoveryRequestedAt": NSNull(),
@@ -89,7 +91,8 @@ struct FirestoreBrandStore: BrandStoringRepository {
         englishName: String?,
         websiteURL: String?,
         lookbookArchiveURL: String?,
-        isFeatured: Bool?
+        isFeatured: Bool?,
+        moodIDs: [String]?
     ) async throws -> Brand {
         let normalizedName = normalizeBrandName(name)
         let normalizedEnglishName = englishName.map { normalizeBrandName($0) }
@@ -104,6 +107,9 @@ struct FirestoreBrandStore: BrandStoringRepository {
         ]
         if let isFeatured {
             payload["isFeatured"] = isFeatured
+        }
+        if let moodIDs {
+            payload["moodIDs"] = moodIDs
         }
         try await db
             .collection("brands")
@@ -120,6 +126,7 @@ struct FirestoreBrandStore: BrandStoringRepository {
             logoDetailPath: nil,
             logoOriginalPath: nil,
             isFeatured: isFeatured ?? false,
+            moodIDs: moodIDs ?? [],
             discoveryStatus: .idle,
             lastDiscoveryErrorMessage: nil,
             lastDiscoveryRequestedAt: nil,

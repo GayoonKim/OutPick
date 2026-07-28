@@ -28,8 +28,8 @@ struct SeasonDTO: Decodable {
     /// 시즌 무드 태그 (도메인에서는 [TagID]로 변환)
     let tagIDs: [String]?
 
-    /// 시즌 무드 태그(의미/개념 단위)
-    let tagConceptIDs: [String]?
+    /// 브랜드와 공용 taxonomy를 사용하는 시즌 스타일 무드 ID
+    let moodIDs: [String]?
 
     /// 노출/운영 상태 (문서에 없을 수 있어 Optional)
     let status: SeasonStatus
@@ -85,7 +85,7 @@ struct SeasonDTO: Decodable {
             coverRemoteURL: coverRemoteURL,
             description: description,
             tagIDs: domainTagIDs,
-            tagConceptIDs: tagConceptIDs,
+            moodIDs: moodIDs ?? [],
             status: status,
             deletionStatus: deletionStatus ?? .active,
             assetSyncStatus: assetSyncStatus,

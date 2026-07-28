@@ -21,9 +21,14 @@ struct CloudFunctionsBrandStore: BrandStoringRepository {
         englishName: String?,
         isFeatured: Bool,
         websiteURL: String?,
-        lookbookArchiveURL: String?
+        lookbookArchiveURL: String?,
+        moodIDs: [String]
     ) async throws -> String {
-        var data: [String: Any] = ["name": name, "isFeatured": isFeatured]
+        var data: [String: Any] = [
+            "name": name,
+            "isFeatured": isFeatured,
+            "moodIDs": moodIDs
+        ]
         if let englishName { data["englishName"] = englishName }
         if let websiteURL { data["websiteURL"] = websiteURL }
         if let lookbookArchiveURL { data["lookbookArchiveURL"] = lookbookArchiveURL }
@@ -37,7 +42,8 @@ struct CloudFunctionsBrandStore: BrandStoringRepository {
         englishName: String?,
         websiteURL: String?,
         lookbookArchiveURL: String?,
-        isFeatured: Bool?
+        isFeatured: Bool?,
+        moodIDs: [String]?
     ) async throws -> Brand {
         var data: [String: Any] = [
             "brandID": brandID.value,
@@ -47,6 +53,7 @@ struct CloudFunctionsBrandStore: BrandStoringRepository {
             "lookbookArchiveURL": lookbookArchiveURL ?? ""
         ]
         if let isFeatured { data["isFeatured"] = isFeatured }
+        if let moodIDs { data["moodIDs"] = moodIDs }
         let response = try await transport.call("updateBrand", data: data)
         let brand = try CloudFunctionResponseDecoder(dictionary: response)
             .nestedDictionary("brand")

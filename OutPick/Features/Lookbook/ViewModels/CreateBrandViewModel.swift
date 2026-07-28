@@ -19,6 +19,25 @@ final class CreateBrandViewModel: ObservableObject {
         let websiteURL: String?
         let lookbookArchiveURL: String?
         let hasLogoAsset: Bool
+        let moodIDs: [String]
+
+        init(
+            id: BrandID,
+            name: String,
+            englishName: String?,
+            websiteURL: String?,
+            lookbookArchiveURL: String?,
+            hasLogoAsset: Bool,
+            moodIDs: [String] = []
+        ) {
+            self.id = id
+            self.name = name
+            self.englishName = englishName
+            self.websiteURL = websiteURL
+            self.lookbookArchiveURL = lookbookArchiveURL
+            self.hasLogoAsset = hasLogoAsset
+            self.moodIDs = moodIDs
+        }
 
         var canDiscoverSeasons: Bool {
             guard let lookbookArchiveURL else { return false }
@@ -33,14 +52,20 @@ final class CreateBrandViewModel: ObservableObject {
     @Published var lookbookArchiveURLText: String = ""
     @Published var selectedLogoImage: UIImage? = nil
     @Published var isFeatured: Bool = false
+    @Published private(set) var moods: [StyleMood] = []
+    @Published var selectedMoodIDs: Set<String> = []
 
     // MARK: - UI 상태
     @Published var isSaving: Bool = false
+    @Published private(set) var isLoadingMoods: Bool = false
+    @Published private(set) var isCreatingMood: Bool = false
     @Published var message: String? = nil
 
     private let brandStore: BrandStoringRepository
     private let storageService: StorageServiceProtocol
     private let thumbnailer: ImageThumbnailing
+    private let moodRepository: StyleMoodRepositoryProtocol
+    private let moodAdminRepository: StyleMoodAdminRepositoryProtocol
 
     // 선택 직후 전처리된 업로드 입력
     private var selectedLogoThumbData: Data?
@@ -51,11 +76,17 @@ final class CreateBrandViewModel: ObservableObject {
         initialEnglishName: String? = nil,
         brandStore: BrandStoringRepository,
         storageService: StorageServiceProtocol,
-        thumbnailer: ImageThumbnailing
+        thumbnailer: ImageThumbnailing,
+        moodRepository: StyleMoodRepositoryProtocol =
+            FirestoreStyleMoodRepository(db: .firestore()),
+        moodAdminRepository: StyleMoodAdminRepositoryProtocol =
+            CloudFunctionsStyleMoodAdminRepository()
     ) {
         self.brandStore = brandStore
         self.storageService = storageService
         self.thumbnailer = thumbnailer
+        self.moodRepository = moodRepository
+        self.moodAdminRepository = moodAdminRepository
         self.brandName = initialBrandName ?? ""
         self.englishName = initialEnglishName ?? ""
     }
@@ -74,6 +105,35 @@ final class CreateBrandViewModel: ObservableObject {
         selectedLogoImage = nil
         selectedLogoThumbData = nil
         selectedLogoDetailData = nil
+    }
+
+    func loadMoods() async {
+        isLoadingMoods = true
+        defer { isLoadingMoods = false }
+        do {
+            moods = try await moodRepository.fetchOnboardingMoods()
+        } catch {
+            message = "브랜드 스타일을 불러오지 못했습니다: \(error.localizedDescription)"
+        }
+    }
+
+    func createMood(_ draft: StyleMoodMutationDraft) async -> Bool {
+        guard isCreatingMood == false else { return false }
+        guard selectedMoodIDs.count < 5 else {
+            message = "브랜드 스타일은 최대 5개까지 선택할 수 있습니다"
+            return false
+        }
+        isCreatingMood = true
+        defer { isCreatingMood = false }
+        do {
+            let moodID = try await moodAdminRepository.createMood(draft)
+            await loadMoods()
+            selectedMoodIDs.insert(moodID)
+            return true
+        } catch {
+            message = "스타일 키워드를 추가하지 못했습니다: \(error.localizedDescription)"
+            return false
+        }
     }
 
     func saveBrand() async -> CreatedBrand? {
@@ -115,7 +175,8 @@ final class CreateBrandViewModel: ObservableObject {
                 englishName: rawEnglishName.isEmpty ? nil : rawEnglishName,
                 isFeatured: isFeatured,
                 websiteURL: normalizedWebsiteURL,
-                lookbookArchiveURL: normalizedLookbookArchiveURL
+                lookbookArchiveURL: normalizedLookbookArchiveURL,
+                moodIDs: orderedSelectedMoodIDs
             )
 
             enqueueLogoUploadIfNeeded(docID: docID)
@@ -125,7 +186,8 @@ final class CreateBrandViewModel: ObservableObject {
                 englishName: rawEnglishName.isEmpty ? nil : rawEnglishName,
                 websiteURL: normalizedWebsiteURL,
                 lookbookArchiveURL: normalizedLookbookArchiveURL,
-                hasLogoAsset: selectedLogoImage != nil
+                hasLogoAsset: selectedLogoImage != nil,
+                moodIDs: orderedSelectedMoodIDs
             )
         } catch {
             message = "저장 실패: \(error.localizedDescription)"
@@ -135,6 +197,16 @@ final class CreateBrandViewModel: ObservableObject {
 }
 
 private extension CreateBrandViewModel {
+    var orderedSelectedMoodIDs: [String] {
+        moods
+            .filter { selectedMoodIDs.contains($0.id) }
+            .sorted {
+                if $0.sortOrder != $1.sortOrder { return $0.sortOrder < $1.sortOrder }
+                return $0.id < $1.id
+            }
+            .map(\.id)
+    }
+
     struct PreparedLogoUpload {
         let thumbData: Data
         let detailData: Data

@@ -16,6 +16,7 @@ struct BrandDTO: Decodable {
     let logoOriginalPath: String?
 
     let isFeatured: Bool?
+    let moodIDs: [String]?
     let discoveryStatus: BrandDiscoveryStatus?
     let lastDiscoveryErrorMessage: String?
     let lastDiscoveryRequestedAt: Timestamp?
@@ -54,6 +55,7 @@ struct BrandDTO: Decodable {
             logoDetailPath: resolvedDetailPath,
             logoOriginalPath: resolvedOriginalPath,
             isFeatured: isFeatured ?? false,
+            moodIDs: moodIDs ?? [],
             discoveryStatus: discoveryStatus ?? .idle,
             lastDiscoveryErrorMessage: lastDiscoveryErrorMessage,
             lastDiscoveryRequestedAt: lastDiscoveryRequestedAt?.dateValue(),

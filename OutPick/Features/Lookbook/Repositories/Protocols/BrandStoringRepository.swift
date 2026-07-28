@@ -16,7 +16,8 @@ protocol BrandStoringRepository {
         englishName: String?,
         isFeatured: Bool,
         websiteURL: String?,
-        lookbookArchiveURL: String?
+        lookbookArchiveURL: String?,
+        moodIDs: [String]
     ) async throws -> String
 
     /// 브랜드 기본 정보를 수정하고 최신 브랜드 값을 반환합니다.
@@ -26,7 +27,8 @@ protocol BrandStoringRepository {
         englishName: String?,
         websiteURL: String?,
         lookbookArchiveURL: String?,
-        isFeatured: Bool?
+        isFeatured: Bool?,
+        moodIDs: [String]?
     ) async throws -> Brand
 
     /// 생성 후 업로드된 로고 경로를 패치합니다.

@@ -49,6 +49,14 @@ struct LookbookAdminHomeView: View {
                     ) {
                         isPresentingCreateBrand = true
                     }
+
+                    adminActionButton(
+                        title: "스타일 키워드 관리",
+                        subtitle: "브랜드와 시즌에 연결할 스타일 키워드 편집",
+                        systemImage: "sparkles"
+                    ) {
+                        coordinator.pushStyleMoodManagement()
+                    }
                 }
 
                 if brandAdminSessionStore.isTotalAdmin {
