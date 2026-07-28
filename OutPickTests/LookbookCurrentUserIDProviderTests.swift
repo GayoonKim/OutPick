@@ -34,7 +34,7 @@ private struct CurrentUserProviderStub: CurrentUserProviding {
     var canonicalUserID: String = ""
     var nickname: String? = nil
     var avatarPath: String? = nil
-    var profile: UserProfile? = nil
+    var profile: UserPublicProfile? = nil
 }
 
 private struct EmailTrapCurrentUserProvider: CurrentUserProviding {
@@ -46,5 +46,5 @@ private struct EmailTrapCurrentUserProvider: CurrentUserProviding {
     var canonicalUserID: String { " " }
     var nickname: String? { nil }
     var avatarPath: String? { nil }
-    var profile: UserProfile? { nil }
+    var profile: UserPublicProfile? { nil }
 }

@@ -617,5 +617,5 @@ private struct CurrentUserProviderStub: CurrentUserProviding {
     var canonicalUserID: String = "user-1"
     var nickname: String? = "me"
     var avatarPath: String? = nil
-    var profile: UserProfile? = nil
+    var profile: UserPublicProfile? = nil
 }

@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import FirebaseFirestore
 import Testing
 @testable import OutPick
 
@@ -16,7 +15,7 @@ struct ChatProfileSyncManagerTests {
     func profileSnapshotMissDoesNotReadGRDBSynchronously() throws {
         let profileStore = try makeTemporaryStore()
         let manager = ChatProfileSyncManager(
-            userProfileRepository: UserProfileRepositoryFake(),
+            publicProfileRepository: UserPublicProfileRepositoryFake(),
             profileCache: profileStore
         )
 
@@ -33,15 +32,18 @@ struct ChatProfileSyncManagerTests {
     @MainActor
     func refreshProfilesUpdatesSnapshotAndReturnsChangedUserIDs() async throws {
         let profileStore = try makeTemporaryStore()
-        let repository = UserProfileRepositoryFake(profilesByID: [
-            "user-1": UserProfile(
-                email: "user-1@example.com",
+        let repository = UserPublicProfileRepositoryFake(profilesByID: [
+            "user-1": UserPublicProfile(
+                userID: "user-1",
                 nickname: "Fresh User",
-                thumbPath: "avatars/fresh-user.jpg"
+                avatarThumbPath: "avatars/fresh-user.jpg",
+                avatarOriginalPath: nil,
+                createdAt: nil,
+                updatedAt: nil
             )
         ])
         let manager = ChatProfileSyncManager(
-            userProfileRepository: repository,
+            publicProfileRepository: repository,
             profileCache: profileStore
         )
 
@@ -60,11 +62,18 @@ struct ChatProfileSyncManagerTests {
     @MainActor
     func resetClearsMainActorSnapshot() async throws {
         let profileStore = try makeTemporaryStore()
-        let repository = UserProfileRepositoryFake(profilesByID: [
-            "user-1": UserProfile(email: "user-1@example.com", nickname: "Fresh User")
+        let repository = UserPublicProfileRepositoryFake(profilesByID: [
+            "user-1": UserPublicProfile(
+                userID: "user-1",
+                nickname: "Fresh User",
+                avatarThumbPath: nil,
+                avatarOriginalPath: nil,
+                createdAt: nil,
+                updatedAt: nil
+            )
         ])
         let manager = ChatProfileSyncManager(
-            userProfileRepository: repository,
+            publicProfileRepository: repository,
             profileCache: profileStore
         )
 
@@ -107,67 +116,21 @@ struct ChatProfileSyncManagerTests {
     }
 }
 
-private final class UserProfileRepositoryFake: UserProfileRepositoryProtocol {
-    var profilesByID: [String: UserProfile]
+private final class UserPublicProfileRepositoryFake: UserPublicProfileRepositoryProtocol {
+    var profilesByID: [String: UserPublicProfile]
 
-    init(profilesByID: [String: UserProfile] = [:]) {
+    init(profilesByID: [String: UserPublicProfile] = [:]) {
         self.profilesByID = profilesByID
     }
 
-    func resolveOrCreateUserDocumentID(authenticatedUser: AuthenticatedUser) async throws -> String {
-        fatalError("Unused in ChatProfileSyncManagerTests")
+    func fetchProfile(userID: String) async throws -> UserPublicProfile {
+        guard let profile = profilesByID[userID] else {
+            throw FirebaseError.FailedToFetchProfile
+        }
+        return profile
     }
 
-    func saveCurrentUserProfile(
-        _ profile: UserProfile,
-        userID: String,
-        email: String,
-        authenticatedUser: AuthenticatedUser?
-    ) async throws {
-        fatalError("Unused in ChatProfileSyncManagerTests")
-    }
-
-    func fetchCurrentUserProfile(userID: String, emailFallback: String) async throws -> UserProfile {
-        fatalError("Unused in ChatProfileSyncManagerTests")
-    }
-
-    func fetchUserProfile(userID: String) async throws -> UserProfile {
-        fatalError("Unused in ChatProfileSyncManagerTests")
-    }
-
-    func fetchUserProfiles(userIDs: [String]) async throws -> [String: UserProfile] {
+    func fetchProfiles(userIDs: [String]) async throws -> [String: UserPublicProfile] {
         profilesByID.filter { userIDs.contains($0.key) }
     }
-
-    func checkDuplicate(strToCompare: String, fieldToCompare: String, collectionName: String) async throws -> Bool {
-        fatalError("Unused in ChatProfileSyncManagerTests")
-    }
-
-    func updateLastReadSeq(roomID: String, userUID: String, lastReadSeq: Int64) async throws {
-        fatalError("Unused in ChatProfileSyncManagerTests")
-    }
-
-    func fetchLastReadSeq(for roomID: String, userUID: String) async throws -> Int64 {
-        fatalError("Unused in ChatProfileSyncManagerTests")
-    }
-
-    func upsertDeviceID(userDocumentID: String, email: String, deviceID: String) async throws {
-        fatalError("Unused in ChatProfileSyncManagerTests")
-    }
-
-    func listenToDeviceID(
-        userDocumentID: String,
-        onUpdate: @escaping (String?) -> Void,
-        onError: @escaping (Error) -> Void
-    ) -> ListenerRegistration {
-        NoopListenerRegistration()
-    }
-
-    func upsertPushDevice(userDocumentID: String, state: PushDeviceState) async throws {
-        fatalError("Unused in ChatProfileSyncManagerTests")
-    }
-}
-
-private final class NoopListenerRegistration: NSObject, ListenerRegistration {
-    func remove() {}
 }
