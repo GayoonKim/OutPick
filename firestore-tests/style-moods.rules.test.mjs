@@ -64,6 +64,13 @@ beforeEach(async () => {
       setDoc(doc(firestore, "brandAdmins", "total-admin"), {
         isActive: true,
       }),
+      setDoc(doc(firestore, "brands", "brand-1"), {
+        name: "Brand",
+      }),
+      setDoc(doc(firestore, "brands", "brand-1", "seasons", "season-1"), {
+        displayTitle: "25 F/W",
+        moodIDs: [],
+      }),
     ]);
   });
 });
@@ -147,6 +154,30 @@ describe("style mood rules", () => {
     await assertFails(setDoc(
       doc(firestore, "styleMoodTermIndex", "new-term"),
       {moodID: "minimal"},
+    ));
+  });
+
+  test("총 관리자와 브랜드 관리자도 시즌 문서를 직접 쓸 수 없다", async () => {
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(
+        doc(context.firestore(), "brands", "brand-1", "admins", "brand-admin"),
+        {uid: "brand-admin", role: "owner"},
+      );
+    });
+    const totalAdminFirestore = testEnvironment
+      .authenticatedContext("total-admin")
+      .firestore();
+    const brandAdminFirestore = testEnvironment
+      .authenticatedContext("brand-admin")
+      .firestore();
+
+    await assertFails(updateDoc(
+      doc(totalAdminFirestore, "brands", "brand-1", "seasons", "season-1"),
+      {moodIDs: ["minimal"]},
+    ));
+    await assertFails(setDoc(
+      doc(brandAdminFirestore, "brands", "brand-1", "seasons", "season-2"),
+      {displayTitle: "26 S/S", moodIDs: []},
     ));
   });
 });

@@ -26,6 +26,10 @@ import {
   normalizedBrandName,
   normalizedHTTPURL,
 } from "../../shared/brandValidation.js";
+import {
+  assertActiveStyleMoodIDs,
+  requiredStyleMoodIDs,
+} from "../../shared/styleMoodAssignmentPolicy.js";
 
 type BrandManagerRole = "owner" | "admin";
 
@@ -62,6 +66,11 @@ function brandSearchSummary(
     logoOriginalPath: typeof data?.logoOriginalPath === "string" ?
       data.logoOriginalPath : null,
     isFeatured: data?.isFeatured === true,
+    moodIDs: Array.isArray(data?.moodIDs) ?
+      data.moodIDs.filter(
+        (value): value is string => typeof value === "string"
+      ) :
+      [],
     discoveryStatus: typeof data?.discoveryStatus === "string" ?
       data.discoveryStatus : "idle",
     deletionStatus: typeof data?.deletionStatus === "string" ?
@@ -137,6 +146,19 @@ function hasBooleanPatch(
 ): boolean {
   return Object.prototype.hasOwnProperty.call(data, key);
 }
+
+export function assertRestrictedBrandPatchAccess(
+  hasFeaturedPatch: boolean,
+  hasMoodIDsPatch: boolean,
+  isTotalAdmin: boolean
+): void {
+  if ((hasFeaturedPatch || hasMoodIDsPatch) && !isTotalAdmin) {
+    throw new HttpsError(
+      "permission-denied",
+      "피처드 또는 스타일 무드 수정 권한이 없습니다."
+    );
+  }
+}
 function brandNameIndexEntries(
   normalizedName: string,
   normalizedEnglishName: string | null
@@ -184,6 +206,7 @@ export const createBrand = onCall(
       null :
       normalizedBrandName(englishName);
     const isFeatured = data.isFeatured === true;
+    const moodIDs = requiredStyleMoodIDs(data.moodIDs ?? []);
     const websiteURLInput = optionalString(data, "websiteURL", 2048);
     const websiteURL = websiteURLInput ?
       normalizedHTTPURL(websiteURLInput, "websiteURL") :
@@ -216,6 +239,7 @@ export const createBrand = onCall(
       if (nameIndexSnaps.some((snap) => snap.exists)) {
         throw new HttpsError("already-exists", "이미 존재하는 브랜드명입니다.");
       }
+      await assertActiveStyleMoodIDs(transaction, moodIDs);
 
       transaction.set(brandRef, {
         name,
@@ -229,6 +253,7 @@ export const createBrand = onCall(
         logoDetailPath: null,
         logoOriginalPath: null,
         isFeatured,
+        moodIDs,
         discoveryStatus: "idle",
         lastDiscoveryErrorMessage: null,
         lastDiscoveryRequestedAt: null,
@@ -295,21 +320,29 @@ export const updateBrand = onCall(
     const isFeatured = hasFeaturedPatch ?
       requiredBoolean(data, "isFeatured") :
       null;
+    const hasMoodIDsPatch = Object.prototype.hasOwnProperty.call(
+      data,
+      "moodIDs"
+    );
+    const moodIDs = hasMoodIDsPatch ? requiredStyleMoodIDs(data.moodIDs) : null;
 
     if (
       !hasNamePatch &&
       !hasEnglishNamePatch &&
       websiteURL === undefined &&
       lookbookArchiveURL === undefined &&
-      !hasFeaturedPatch
+      !hasFeaturedPatch &&
+      !hasMoodIDsPatch
     ) {
       throw new HttpsError("invalid-argument", "수정할 브랜드 필드가 없습니다.");
     }
 
     const isTotalAdmin = await isTotalBrandAdmin(uid);
-    if (hasFeaturedPatch && !isTotalAdmin) {
-      throw new HttpsError("permission-denied", "피처드 수정 권한이 없습니다.");
-    }
+    assertRestrictedBrandPatchAccess(
+      hasFeaturedPatch,
+      hasMoodIDsPatch,
+      isTotalAdmin
+    );
 
     const brandRef = db.collection("brands").doc(brandID);
     const managerRef = brandRef.collection("admins").doc(uid);
@@ -328,6 +361,9 @@ export const updateBrand = onCall(
       }
       if (!hasWriteAccess) {
         throw new HttpsError("permission-denied", "브랜드 수정 권한이 없습니다.");
+      }
+      if (moodIDs !== null) {
+        await assertActiveStyleMoodIDs(transaction, moodIDs);
       }
 
       const patch: Record<string, unknown> = {
@@ -432,6 +468,9 @@ export const updateBrand = onCall(
       }
       if (isFeatured !== null) {
         patch.isFeatured = isFeatured;
+      }
+      if (moodIDs !== null) {
+        patch.moodIDs = moodIDs;
       }
 
       transaction.update(brandRef, patch);

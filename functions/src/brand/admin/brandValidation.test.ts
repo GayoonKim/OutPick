@@ -8,6 +8,7 @@ import {
   normalizedHTTPURL,
 } from "../../shared/brandValidation.js";
 import {
+  assertRestrictedBrandPatchAccess,
   normalizedEmail,
   optionalHTTPURLPatch,
   requiredBrandManagerRole,
@@ -43,6 +44,23 @@ test("logo path는 요청 브랜드의 고정 경로만 허용한다", () => {
       "brands/brand-2/logo/thumb.jpg",
       "thumb.jpg"
     ),
+    HttpsError
+  );
+});
+
+test("피처드와 무드 patch는 총 관리자에게만 허용한다", () => {
+  assert.doesNotThrow(() =>
+    assertRestrictedBrandPatchAccess(false, false, false)
+  );
+  assert.doesNotThrow(() =>
+    assertRestrictedBrandPatchAccess(false, true, true)
+  );
+  assert.throws(
+    () => assertRestrictedBrandPatchAccess(false, true, false),
+    HttpsError
+  );
+  assert.throws(
+    () => assertRestrictedBrandPatchAccess(true, false, false),
     HttpsError
   );
 });

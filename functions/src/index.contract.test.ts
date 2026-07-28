@@ -26,6 +26,7 @@ const callableNames = [
   "getBrandAdminCapabilities",
   "createStyleMood",
   "updateStyleMood",
+  "updateSeasonMoods",
   "checkNicknameAvailability",
   "completeOnboarding",
   "updatePublicProfile",
@@ -150,13 +151,13 @@ function runtimeNumber(value: unknown): number | null {
   return typeof value === "number" ? value : null;
 }
 
-test("Firebase deployment export 이름 62개를 유지한다", () => {
+test("Firebase deployment export 이름 63개를 유지한다", () => {
   const expected = [
     ...callableNames,
     ...Object.keys(firestoreEndpoints),
     ...Object.keys(scheduleEndpoints),
   ].sort();
-  assert.equal(expected.length, 62);
+  assert.equal(expected.length, 63);
   assert.deepEqual(Object.keys(exportedFunctions).sort(), expected);
 });
 

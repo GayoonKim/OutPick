@@ -74,6 +74,7 @@ export {
   createStyleMood,
   updateStyleMood,
 } from "./styleMoods/functions.js";
+export {updateSeasonMoods} from "./lookbook/admin/seasonMoodFunctions.js";
 
 export {
   checkNicknameAvailability,
