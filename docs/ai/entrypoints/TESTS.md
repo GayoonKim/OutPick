@@ -118,6 +118,17 @@ Firebase Functions tests/build entry:
   - 아바타 누락/문자열/null payload, 업로드→mutation→이전 파일 삭제 순서, cleanup 부분 실패 기록, 닉네임 사전 확인, 관심 스타일 1~5개와 공개 프로필 cache 직접 소비를 검증한다.
   - 2026-07-28 관련 24/24와 iPhone 17 Pro Max iOS 26.2 Simulator build/install/launch가 통과했다.
   - 2026-07-28 피드백 회귀 27/27에서 방 목록 최신 공개 프로필 overlay, 댓글 작성자 강제 refresh/실패 보존, upload/callable/cleanup 실패, 닉네임 확인 네트워크 실패, 관심 스타일 load/save 실패와 저장 중 중복 호출을 검증했다.
+- Phase 5 브랜드·시즌 스타일 무드:
+  - Functions는 `functions/src/shared/styleMoodAssignmentPolicy.test.ts`, `functions/src/lookbook/admin/seasonMoodFunctions.test.ts`, `functions/src/brand/admin/brandValidation.test.ts`, `functions/src/index.contract.test.ts`에서 0~5개 할당, 중복·잘못된 ID, 총 관리자 guard, restricted brand patch와 callable export를 검증한다.
+  - import worker는 `tools/lookbook-import-worker/src/processor.test.ts`에서 신규 시즌의 `moodIDs: []`와 legacy `tagConceptIDs` 미기록을 고정한다.
+  - Firestore rules는 `firestore-tests/style-moods.rules.test.mjs`에서 총 관리자와 브랜드 owner의 season client direct create/update 거부를 검증한다.
+  - iOS는 `AdminBrandManagementViewModelTests.swift`, `CloudFunctionsBrandRepositoryTests.swift`, `CloudFunctionsStyleMoodAdminRepositoryTests.swift`, `StyleMoodManagementViewModelTests.swift`, `FirestoreDocumentIDBoundaryTests.swift`에서 권한별 저장 가능 상태, callable payload, 생성 무드 즉시 선택, canonical 그룹과 Brand/Season `moodIDs` mapping을 검증한다.
+  - 관리자 검색 회귀는 `StyleMoodManagementViewModelTests.swift`의 키워드 이름·alias·그룹 필터와 `AdminBrandManagementViewModelTests.swift`의 시즌 표시명·원본명·연도·S/S·F/W 필터로 검증한다. 검색 중 선택 유지와 화면 빈 상태는 실제 앱 QA 대상이다.
+  - 2026-07-29 관리자 검색 관련 11/11과 iPhone 17 Pro Max Simulator build/install/launch가 통과했다.
+  - 브랜드 search-first picker 정책은 `StyleMoodManagementViewModelTests.swift`에서 빈 검색 결과 0개, active 이름·alias 부분 검색, inactive 제외, 결과 없음·5개 미만에서만 생성 액션 노출을 검증한다.
+  - 2026-07-29 search-first picker 정책을 포함한 관련 iOS 13/13과 iPhone 17 Pro Max Simulator build/install/launch가 통과했다.
+  - 2026-07-28 Functions lint/build·87/87, worker lint/build·68/68, rules 24/24, profile transaction 5/5, seed 재-dry-run 변경 0건, iOS 핵심 14/14와 iPhone 17 Pro Max iOS 26.2 Simulator build/install/launch가 통과했다.
+  - 운영 배포 후 기존 무드 editor sheet의 초기 target이 create 상태로 고정되는 결함을 `StyleMoodManagementView`의 식별 가능한 sheet target으로 수정했다. 관련 ViewModel·callable 계약 3/3과 Simulator build/install/launch, 운영 `미니멀` 값 초기화·동일 값 저장을 확인했다.
 - purge drain 핵심 시나리오: 20개 초과 page 반복, 서로 다른 브랜드 최대 3개, 같은 브랜드 순차, 부모 target 우선, 실패/lease skip 후 계속 처리, 7분 cutoff.
 - 운영 통합 결과와 남은 관찰 항목: `docs/ai/tasks/lookbook-deletion-purge-drain/progress.md`, `qa-checklist.md`.
 - Functions workflow: `.codex/skills/firebase-functions-workflow/SKILL.md`

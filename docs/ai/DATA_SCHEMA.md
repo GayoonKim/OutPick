@@ -100,7 +100,7 @@
 - 이름/alias 충돌 방지: 서버 전용 `styleMoodTermIndex/{sha256(normalizedTerm)}`. `moodID`, `termType`, `createdAt`을 가진다.
 - `displayGroup` canonical 값은 `베이직·포멀`, `스트릿·트렌드`, `헤리티지·유틸리티`, `스포츠·아웃도어`, `빈티지·서브컬처`, `로맨틱·익스프레시브`이며 iOS도 같은 raw value를 사용한다.
 - `brands/{brandID}.moodIDs`와 `brands/{brandID}/seasons/{seasonID}.moodIDs`는 각각 별도의 0...5개 고유 active mood ID 집합이며 순서·대표 무드 의미가 없다.
-- 브랜드·시즌 `moodIDs` patch는 총 관리자 callable만 수행한다. 자동 import 시즌은 `moodIDs: []`로 생성하고 시즌 문서 client create/update는 허용하지 않는다.
+- 브랜드·시즌 `moodIDs` patch는 총 관리자 callable만 수행한다. `updateBrand`는 일반 필드와 선택적 무드 patch 권한을 분리하고, `updateSeasonMoods`는 기존 시즌의 무드만 교체한다. 자동 import 시즌은 `moodIDs: []`로 생성하고 시즌 문서 client create/update는 허용하지 않는다.
 - seed 상태: 서버 전용 `styleMoodSeedMetadata/current`. `version`, `contentHash`, `count`, `appliedAt`을 가진다.
 - 초기 v1은 56개, 온보딩 기본 노출은 20개다. 원본은 `functions/seeds/style-moods.v1.json`이다.
 - 관리 write는 총 관리자 callable `createStyleMood`, `updateStyleMood`만 사용한다. 사용 중인 무드는 hard delete하지 않고 `inactive`로 전환한다.

@@ -134,8 +134,19 @@ OutPick의 화면 구성과 화면별 책임을 AI 에이전트가 빠르게 확
 ### Create Brand/Season
 
 - 폴더: `OutPick/Features/Lookbook/Views/CreateBrand`
-- ViewModels: `CreateBrandViewModel`, `CreateSeasonViewModel`, `CreateSeasonFromURLViewModel`
-- 책임: 브랜드 생성과 URL 기반 시즌 생성/가져오기. `CreateSeasonView`/`CreateSeasonViewModel` 구현은 남아 있지만 production 조립·표시 진입점은 없으며, 직접 시즌 생성 복원 또는 미사용 코드 제거는 별도 후속 후보다.
+- ViewModels: `CreateBrandViewModel`, `CreateSeasonFromURLViewModel`
+- 책임: 브랜드 정보·`브랜드 스타일` 0~5개 생성과 URL 기반 시즌 가져오기. 앱의 수동 시즌 직접 생성 화면은 제거했고 import worker만 시즌 문서를 생성한다.
+
+### Style Keyword Admin
+
+- 진입: Lookbook 홈 총 관리자 `관리자` → 관리자 콘솔 `스타일 키워드 관리`
+- View/ViewModel: `StyleMoodManagementView`, `StyleMoodEditorView`, `StyleMoodManagementViewModel`
+- 책임: 키워드 이름·그룹·alias·온보딩 노출·active 상태 관리. 이름·alias를 로컬 검색하며 결과가 없는 그룹은 숨긴다. 브랜드 생성/편집에서 새 키워드를 만들면 현재 브랜드 선택에 즉시 포함한다.
+- 브랜드 picker: 기본에는 검색창·선택 수·선택 칩만 표시한다. 검색 중에만 이름·alias가 일치하는 active 키워드를 표시하고, 결과가 없을 때만 새 키워드 추가를 제공한다. 검색어와 무관하게 선택 Set과 최대 5개 제한을 유지한다.
+- 시즌 편집: 브랜드 관리 `브랜드 스타일` 메뉴 → 시즌명·원본명·연도·S/S·F/W 로컬 검색 → `SeasonMoodManagementView`
+- 시즌 picker: 키워드 이름·alias를 로컬 검색하며 검색 결과 밖의 선택도 유지한다.
+- 용어 경계: 사용자 화면은 `관심 스타일`, 관리자 taxonomy는 `스타일 키워드`, 연결 화면은 `브랜드 스타일`·`시즌 스타일`로 표시한다. 내부 타입/API/Firestore 필드는 `StyleMood`·`moodIDs`를 유지한다.
+- Phase 5.1: 스타일 키워드 생성·편집은 에디토리얼 입력 카드·가로 그룹 선택 칩·설정 카드·하단 고정 CTA를 사용한다. 브랜드 picker는 단일 행 검색 결과와 선택 칩, 통합 빈 상태 카드를 사용하고 브랜드 스타일 메뉴의 시즌 목록 제목은 `시즌`으로 표시한다. 시즌 picker도 같은 search-first 공용 컴포넌트를 사용하되 신규 키워드 추가는 제공하지 않는다.
 
 ### Liked
 

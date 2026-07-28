@@ -24,7 +24,11 @@
 - Firebase Functions 공통 runtime/callable: `functions/src/core/`
 - Firebase Functions 기능 구현: `functions/src/{auth,brand,chat,lookbook,profile,styleMoods}/`
 - 계정·공개 프로필 서버 경계: `functions/src/profile/`, `functions/src/shared/accountStatus.ts`
-- 스타일 무드 서버·seed: `functions/src/styleMoods/`, `functions/seeds/style-moods.v1.json`, `functions/scripts/seed-style-moods.mjs`
+- 스타일 무드 서버·seed·할당: `functions/src/styleMoods/`, `functions/src/shared/styleMoodAssignmentPolicy.ts`, `functions/src/lookbook/admin/seasonMoodFunctions.ts`, `functions/seeds/style-moods.v1.json`
+- iOS 스타일 키워드 관리자·검색: `LookbookAdminHomeView.swift` → `LookbookCoordinator.pushStyleMoodManagement()` → `StyleMoodManagementViewModel.swift` / `StyleMoodManagementView.swift`
+- iOS 브랜드·시즌 스타일 검색/선택: `AdminBrandManagementViewModel.swift` / `AdminBrandManagementView.swift` → `SeasonMoodManagementView.swift` / `StyleMoodSelectionSection.swift`
+- iOS 브랜드 search-first picker 정책: `StyleMood.swift`의 `StyleMoodPickerPolicy` → `StyleMoodSelectionSection.swift` → `CreateBrandView.swift` / `AdminBrandManagementView.swift`
+- Phase 5.1 스타일 관리 UX 구현·QA: `StyleMoodEditorView.swift` / `StyleMoodSelectionSection.swift` / `SeasonMoodManagementView.swift` → `docs/ai/tasks/style-mood-personalization-account-privacy/plan.md`의 Phase 5.1 → `decisions.md` D62~D64 → `qa-checklist.md`
 - iOS 계정 bootstrap·새 온보딩: `AppCoordinator.swift` → `LoadCurrentUserBootstrapUseCase.swift` → `ProfileCoordinator.swift` → `ProfileSetupViewController.swift` → `StyleMoodOnboardingViewController.swift`
 - iOS 계정/공개 프로필 read·mutation: `FirestoreCurrentUserAccountRepository.swift`, `FirestoreUserPublicProfileRepository.swift`, `CloudFunctionsProfileMutationRepository.swift`
 - iOS 마이페이지 프로필·관심 스타일 편집: `MyPageCompositionRoot.swift` → `MyPageCoordinator.swift` → `ProfileEditViewController.swift` / `StylePreferenceEditViewController.swift` → `UpdatePublicProfileUseCase.swift` / `UpdateStylePreferencesUseCase.swift`

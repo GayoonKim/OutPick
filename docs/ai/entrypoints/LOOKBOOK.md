@@ -27,7 +27,7 @@ Lookbook 변경 시 필요한 코드만 찾기 위한 인덱스다.
 - 상세 push/pop은 SwiftUI hidden route가 아니라 `LookbookCoordinator`가 소유한다.
 - View는 Repository/Firebase를 직접 만들지 않고 Container가 주입한다.
 - SwiftUI 입력 화면 키보드 dismiss는 `KeyboardDismissSupport.outpickDismissKeyboardOnTap()`을 사용한다.
-- Firestore 기본 identity는 ADR-020에 따라 문서 경로 ID를 사용한다. read DTO는 `Decodable`, Season write payload는 `SeasonWriteDTO`로 분리한다.
+- Firestore 기본 identity는 ADR-020에 따라 문서 경로 ID를 사용한다. 앱의 Season DTO/Repository는 read-only이며 생성은 import worker의 Admin SDK materialization만 사용한다.
 
 ## Firestore 문서 ID 경계
 
@@ -37,9 +37,9 @@ Lookbook 변경 시 필요한 코드만 찾기 위한 인덱스다.
 | snapshot 경로 ID 전달 | `OutPick/Features/Lookbook/Repositories/Implementations/Firestore*Repository.swift` |
 | 브랜드·시즌·포스트 기본 identity | `BrandDTO.swift`, `SeasonDTO.swift`, `PostDTO.swift`와 각 Firestore Repository |
 | 댓글·replacement 기본 identity | `CommentDTO.swift`, `ReplacementDTO.swift`와 `FirestoreCommentRepository.swift`, `FirestoreReplacementRepository.swift` |
-| 태그·alias·concept 기본 identity | `TagDTO.swift`, `TagAliasDTO.swift`, `TagConceptDTO.swift`와 각 Firestore Repository |
+| 태그 기본 identity | `TagDTO.swift`, `FirestoreTagRepository.swift` |
 | import job·candidate 기본 identity | `SeasonImportJobDTO.swift`, `SeasonCandidateDTO.swift`와 각 Firestore Repository |
-| Season 생성 write payload | `SeasonWriteDTO.swift`, `FirestoreSeasonRepository.swift`의 create 경로 |
+| Season 생성·무드 수정 | worker `processor.ts`의 create, `updateSeasonMoods` callable의 기존 문서 patch |
 | 경계 회귀 테스트 | `OutPickTests/FirestoreDocumentIDBoundaryTests.swift` |
 
 Repository가 `DocumentSnapshot.documentID`를 같은 snapshot에서 decode한 DTO와 함께 mapper에 전달한다. 자기 문서 ID는 DTO 필드로 중복 저장하지 않으며, `brandID`, `postID`, `userID`처럼 부모 경로나 별도 query 계약을 나타내는 ID는 해당 데이터 계약대로 유지한다.
@@ -55,8 +55,8 @@ Repository가 `DocumentSnapshot.documentID`를 같은 snapshot에서 decode한 D
 | 포스트·댓글 | `Views/PostDetail` | `PostDetailViewModel.swift`, `PostCommentsViewModel.swift` |
 | 좋아요 | `Views/Liked` | `LikedViewModel.swift` |
 | 브랜드 생성 | `Views/CreateBrand/brand` | `CreateBrandViewModel.swift`, `CreateBrandFlowView.swift` |
-| 시즌 직접 생성 | `Views/CreateBrand/season/CreateSeasonView.swift` | `CreateSeasonViewModel.swift`; production 조립·표시 호출부가 없어 현재 앱 진입 불가 |
 | 관리자 홈 | `Views/Admin/LookbookAdminHomeView.swift` | `BrandAdminSessionStore` |
+| 스타일 무드 관리 | `Features/StyleMood/Views/StyleMoodManagementView.swift` | `StyleMoodManagementViewModel.swift` |
 | 브랜드 요청 관리 | `Views/Admin/AdminBrandRequestGroupsView.swift` | `AdminBrandRequestGroupsViewModel.swift` |
 | 브랜드 관리 | `Views/Admin/AdminBrandManagementView.swift` | `AdminBrandManagementViewModel.swift` |
 | 삭제 관리 | `Views/Admin/AdminLookbookDeletionManagementView.swift` | `AdminLookbookDeletionManagementViewModel.swift` |
@@ -117,7 +117,13 @@ Repository가 `DocumentSnapshot.documentID`를 같은 snapshot에서 decode한 D
 현재 계약:
 
 - 총 관리자와 브랜드 owner/admin 권한을 분리한다.
-- 메뉴는 정보, 관리자, 시즌 가져오기, 삭제 흐름으로 구성한다.
+- 메뉴는 정보, 관리자, `브랜드 스타일`, 시즌 가져오기, 삭제 흐름으로 구성한다. 브랜드 스타일 메뉴는 총 관리자에게만 보인다.
+- 총 관리자는 정보 화면에서 브랜드 스타일 0~5개, 브랜드 스타일 메뉴의 시즌 목록에서 시즌 스타일 0~5개를 편집한다.
+- 관리자 taxonomy 화면명은 `스타일 키워드 관리`이며 이름·alias 로컬 검색과 빈 그룹 숨김을 지원한다.
+- 시즌 목록 검색은 `displayTitle`·`sourceTitle`·`year`·`term`을 대상으로 하고, 시즌 스타일 picker는 키워드 이름·alias를 검색해도 기존 선택 Set을 유지한다.
+- 브랜드 생성·편집 picker의 `새 스타일 키워드 추가`는 생성 성공한 키워드를 현재 선택에 즉시 포함한다.
+- 브랜드 생성·편집 picker는 전체 키워드를 기본 노출하지 않는다. 검색어가 있을 때만 이름·alias가 일치하는 active 키워드를 표시하고, 선택값은 별도 칩으로 유지하며, 결과가 없고 5개 미만일 때만 새 키워드 추가를 표시한다.
+- 표시 용어만 변경하며 내부 `StyleMood` 타입, callable 이름, `styleMoods`·`moodIDs` 데이터 계약은 유지한다.
 - 시즌 가져오기는 후보 discovery와 import job 현황을 분리한다.
 - 실제 worker 구조는 `docs/ai/architecture/LOOKBOOK_IMPORT_WORKER.md`를 먼저 본다.
 
@@ -153,6 +159,7 @@ Repository가 `DocumentSnapshot.documentID`를 같은 snapshot에서 decode한 D
 | 포스트 | `LookbookPost.swift`, `PostUserState.swift`, `PostInteractionStore` | `PostRepositoryProtocol`, post use cases |
 | 댓글 | `Comment.swift`, `CommentUserState.swift`, `CommentInteractionStore` | comment repository/use cases |
 | 관리자 | `BrandManagement.swift`, `BrandRequest.swift` | brand admin/request repository/use cases |
+| 스타일 무드 | `Features/StyleMood/Domain/StyleMood.swift` | read/admin/season mood repository |
 | 삭제 | `LookbookDeletionRequest.swift` | `LookbookDeletionRepositoryProtocol` |
 | import | `SeasonImportJob.swift`, `SeasonCandidate.swift`, `LookbookExtractionDiagnostic.swift` | import/discovery repositories |
 | extraction review | `LookbookExtractionReview.swift` | `LookbookExtractionReviewRepositoryProtocol`, `ManageLookbookExtractionReviewUseCase` |
@@ -162,7 +169,7 @@ Repository가 `DocumentSnapshot.documentID`를 같은 snapshot에서 decode한 D
 - 댓글 작성자 표시값은 `Domains/Stores/CommentAuthorProfileStore.swift`가 `UserPublicProfile`로 해석한다. 최초·pagination은 누락 작성자만 조회하고, 댓글 목록·답글·포스트 상세의 명시적 refresh는 이미 캐시된 작성자도 강제 재조회한다. 조회 실패는 기존 표시값을 보존하며 `.unknown`을 cache entry로 저장하지 않아 다음 refresh에서 재시도할 수 있다.
 - 외부 구현은 `Repositories/Implementations`, DTO는 `Models/DTOs`, 변환은 `Models/Mapper`에서 찾는다.
 - 기본 identity가 필요한 DTO mapper는 `documentID`를 명시적으로 받고, Repository가 `DocumentSnapshot.documentID`를 전달한다.
-- `SeasonDTO`는 read-only이며 생성 write는 `Models/DTOs/SeasonWriteDTO.swift`를 사용한다.
+- `SeasonDTO`와 `FirestoreSeasonRepository`는 read-only다. 앱 client create/update는 rules에서 거부하고 기존 시즌 무드는 총 관리자 callable로만 수정한다.
 - 상호작용 정합성은 `LookbookInteractionStore`와 대상별 store를 먼저 확인한다.
 
 ## 이미지·공유·Navigation

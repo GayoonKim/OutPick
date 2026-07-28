@@ -18,7 +18,7 @@ Firebase 변경 시 Functions, Firestore, Storage의 실제 경계를 찾기 위
 
 ## Functions 코드 지도
 
-`functions/src/index.ts`는 현재 62개 배포 이름의 명시적 flat re-export만 가진다. 실제 handler와 helper는 아래 기능 module에서 찾는다.
+`functions/src/index.ts`는 현재 63개 배포 이름의 명시적 flat re-export만 가진다. 실제 handler와 helper는 아래 기능 module에서 찾는다.
 
 Phase 4 구현 결과와 결정은 `docs/ai/tasks/core-infrastructure-modularization/phases/phase-4-firebase-functions.md`, contract/service/policy 테스트는 `phase-4-firebase-functions-tests.md`와 `functions/src/**/*.test.ts`를 따른다.
 
@@ -31,6 +31,7 @@ Phase 6 전체 회귀와 운영 배포는 `docs/ai/tasks/core-infrastructure-mod
 | 브랜드 요청 | `functions/src/brand/requests/functions.ts` |
 | 브랜드 관리 | `functions/src/brand/admin/functions.ts`, `shared/brandValidation.ts` |
 | 스타일 무드 관리 | `functions/src/styleMoods/{functions,repository,policy,contracts}.ts` |
+| 브랜드·시즌 무드 할당 | `functions/src/shared/styleMoodAssignmentPolicy.ts`, `functions/src/lookbook/admin/seasonMoodFunctions.ts` |
 | 계정·공개 프로필 | `functions/src/profile/{functions,profileTransaction,policy,contracts}.ts` |
 | active 계정 guard | `functions/src/shared/accountStatus.ts` |
 | 룩북 삭제 lifecycle | `functions/src/lookbook/deletion/`과 아래 전용 섹션 |
@@ -54,7 +55,7 @@ npm run build
 
 ## 스타일 무드
 
-- callable: `createStyleMood`, `updateStyleMood`.
+- callable: `createStyleMood`, `updateStyleMood`, `updateSeasonMoods`.
 - 권한: `brandAdmins/{uid}.isActive == true`인 총 관리자.
 - 이름·alias 정책: `functions/src/styleMoods/policy.ts`.
 - Firestore transaction과 term index 교체: `functions/src/styleMoods/repository.ts`.
@@ -62,6 +63,8 @@ npm run build
 - seed 실행기: `functions/scripts/seed-style-moods.mjs`.
 - seed 기본은 dry-run이고 `--apply --project {projectID}`를 모두 명시해야 쓴다.
 - 일반 클라이언트는 active `styleMoods`만 읽고 총 관리자는 inactive도 읽는다. 모든 클라이언트 쓰기와 `styleMoodTermIndex`/`styleMoodSeedMetadata` 접근은 금지한다.
+- 브랜드 생성과 총 관리자 브랜드 수정은 active `moodIDs` 0~5개를 검증한다. 기존 시즌은 총 관리자 전용 `updateSeasonMoods`만 수정하며 모든 client season create/update를 거부한다.
+- import worker가 생성하는 시즌은 `moodIDs: []`로 시작한다.
 - rules/index 검증: `firestore-tests/style-moods.rules.test.mjs`, `run-firestore-tests.mjs`.
 - 2026-07-28 `outpick-664ae`에 index·rules·Functions를 배포하고 v1 seed를 적용했다.
   - index `CICAgOi3voUK`: `READY`
@@ -222,6 +225,7 @@ npm run build
 - extractor `1.2.2` worker `lookbook-import-worker-00021-ghs`는 Ready/traffic 100%, startup probe·port 8080 listen, recent ERROR 0건이며 queue는 RUNNING/pending 0건이다. rollback revision은 `lookbook-import-worker-00019-ftd`다.
 - extractor `1.2.3`은 script 전체의 `total`을 모으지 않고 현재 HTML에 존재하는 gallery element ID와 같은 config block만 declared evidence로 사용한다. programmatic gallery 밖 정적 후보 수도 별도 scoped evidence로 더해 YOUTH Spring 2nd `45+1=46`, Summer `42+7=49`를 표현한다.
 - extractor `1.2.3` worker `lookbook-import-worker-00022-5gn`은 Ready/Active·traffic 100%, container healthy 2.05초, recent ERROR 0건이며 queue는 RUNNING/pending 0건이다. rollback revision은 `lookbook-import-worker-00021-ghs`다.
+- 2026-07-28 Phase 5 시즌 기본 `moodIDs: []` materialization을 포함한 worker `lookbook-import-worker-00023-879`을 운영 배포했다. Ready/traffic 100%, container healthy 1.88초, recent ERROR 0건과 queue task 0건을 확인했으며 rollback revision은 `lookbook-import-worker-00022-5gn`이다.
 - 운영 bucket에는 2026-07-23 확인 기준 lifecycle rule이 없다. 기존 미디어에 영향을 주는 bucket 전역 정책 대신 위 scheduler를 사용한다.
 
 ## Firestore
