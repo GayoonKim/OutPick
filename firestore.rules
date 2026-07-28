@@ -6,6 +6,16 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function userPath(uid) {
+      return /databases/$(database)/documents/users/$(uid);
+    }
+
+    function isAccountActive() {
+      return signedIn()
+        && exists(userPath(request.auth.uid))
+        && get(userPath(request.auth.uid)).data.accountStatus == "active";
+    }
+
     function brandPath(brandID) {
       return /databases/$(database)/documents/brands/$(brandID);
     }
@@ -57,7 +67,7 @@ service cloud.firestore {
     }
 
     function createsRoomMember(roomID, uid) {
-      return signedIn()
+      return isAccountActive()
         && uid == request.auth.uid
         && request.resource.data.userID == uid
         && request.resource.data.role in ["owner", "member"]
@@ -83,21 +93,6 @@ service cloud.firestore {
         );
     }
 
-    function userProfileWriteDoesNotTouchJoinedRooms(userID) {
-      return signedIn()
-        && request.auth.uid == userID
-        && (
-          (
-            !exists(/databases/$(database)/documents/users/$(userID))
-            && !request.resource.data.keys().hasAny(["joinedRooms"])
-          )
-          || (
-            exists(/databases/$(database)/documents/users/$(userID))
-            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(["joinedRooms"])
-          )
-        );
-    }
-
     function validLastReadSeqUpdate() {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(["lastReadSeq", "updatedAt"])
         && request.resource.data.lastReadSeq is int
@@ -108,7 +103,7 @@ service cloud.firestore {
     }
 
     function validJoinedRoomCreate(userID, roomID) {
-      return signedIn()
+      return isAccountActive()
         && request.auth.uid == userID
         && request.resource.data.roomID == roomID
         && request.resource.data.role in ["owner", "member"]
@@ -224,9 +219,8 @@ service cloud.firestore {
     }
 
     match /users/{userID} {
-      allow read: if signedIn();
-      allow create, update: if userProfileWriteDoesNotTouchJoinedRooms(userID);
-      allow delete: if false;
+      allow read: if signedIn() && request.auth.uid == userID;
+      allow create, update, delete: if false;
 
       match /postStates/{stateID} {
         allow read: if signedIn() && request.auth.uid == userID;
@@ -261,25 +255,36 @@ service cloud.firestore {
       match /joinedRooms/{roomID} {
         allow read: if signedIn() && request.auth.uid == userID;
         allow create: if validJoinedRoomCreate(userID, roomID);
-        allow update: if signedIn()
+        allow update: if isAccountActive()
           && request.auth.uid == userID
           && validLastReadSeqUpdate();
-        allow delete: if signedIn()
+        allow delete: if isAccountActive()
           && request.auth.uid == userID
           && !existsAfter(roomMemberPath(roomID, userID));
       }
 
       match /meta/session {
-        allow read, write: if signedIn() && request.auth.uid == userID;
+        allow read: if signedIn() && request.auth.uid == userID;
+        allow write: if isAccountActive() && request.auth.uid == userID;
       }
 
       match /devices/{deviceID} {
-        allow read, write: if signedIn() && request.auth.uid == userID;
+        allow read: if signedIn() && request.auth.uid == userID;
+        allow write: if isAccountActive() && request.auth.uid == userID;
       }
 
       match /{document=**} {
         allow read, write: if false;
       }
+    }
+
+    match /userPublicProfiles/{userID} {
+      allow read: if signedIn();
+      allow create, update, delete: if false;
+    }
+
+    match /nicknameIndex/{normalizedNicknameHash} {
+      allow read, write: if false;
     }
 
     match /commentReports/{reportID} {
@@ -288,7 +293,7 @@ service cloud.firestore {
 
     match /Rooms/{roomID} {
       allow read: if signedIn();
-      allow create: if signedIn()
+      allow create: if isAccountActive()
         && request.resource.data.creatorUID == request.auth.uid
         && !request.resource.data.keys().hasAny(["participantUIDs"])
         && roomCreateHasNoDocumentIDFields()
@@ -297,7 +302,7 @@ service cloud.firestore {
           "memberCount",
           "isClosed"
         ]);
-      allow update: if signedIn()
+      allow update: if isAccountActive()
         && roomUpdateDoesNotChangeDocumentIDFields()
         && (
           (
@@ -317,31 +322,46 @@ service cloud.firestore {
 
       match /Messages/{messageID} {
         allow read: if signedIn();
-        allow write: if isRoomParticipant(roomID);
+        allow write: if isAccountActive() && isRoomParticipant(roomID);
       }
 
       match /mediaIndex/{mediaID} {
         allow read: if signedIn();
-        allow write: if isRoomParticipant(roomID);
+        allow write: if isAccountActive() && isRoomParticipant(roomID);
       }
 
       match /members/{uid} {
         allow read: if isRoomParticipant(roomID);
         allow create: if createsRoomMember(roomID, uid);
-        allow delete: if signedIn()
+        allow delete: if isAccountActive()
           && request.auth.uid == uid
           && !isRoomCreator(roomID);
         allow update: if false;
       }
 
       match /{document=**} {
-        allow read, write: if isRoomParticipant(roomID);
+        allow read: if isRoomParticipant(roomID);
+        allow write: if isAccountActive() && isRoomParticipant(roomID);
       }
     }
 
     match /tags/{tagID} {
       allow read: if true;
       allow write: if signedIn();
+    }
+
+    match /styleMoods/{moodID} {
+      allow read: if signedIn()
+        && (resource.data.status == "active" || isTotalBrandAdmin());
+      allow create, update, delete: if false;
+    }
+
+    match /styleMoodTermIndex/{termHash} {
+      allow read, write: if false;
+    }
+
+    match /styleMoodSeedMetadata/{documentID} {
+      allow read, write: if false;
     }
 
     match /tagAliases/{tagAliasID} {

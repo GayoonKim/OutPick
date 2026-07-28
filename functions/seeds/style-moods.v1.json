@@ -1,0 +1,562 @@
+[
+  {
+    "moodID": "casual",
+    "schemaVersion": 1,
+    "displayName": "캐주얼",
+    "displayGroup": "베이직·포멀",
+    "aliases": ["casual"],
+    "sortOrder": 10,
+    "isFeaturedInOnboarding": true,
+    "status": "active"
+  },
+  {
+    "moodID": "minimal",
+    "schemaVersion": 1,
+    "displayName": "미니멀",
+    "displayGroup": "베이직·포멀",
+    "aliases": ["minimal"],
+    "sortOrder": 20,
+    "isFeaturedInOnboarding": true,
+    "status": "active"
+  },
+  {
+    "moodID": "maximal",
+    "schemaVersion": 1,
+    "displayName": "맥시멀",
+    "displayGroup": "베이직·포멀",
+    "aliases": ["maximal", "maximalist"],
+    "sortOrder": 30,
+    "isFeaturedInOnboarding": false,
+    "status": "active"
+  },
+  {
+    "moodID": "modern",
+    "schemaVersion": 1,
+    "displayName": "모던",
+    "displayGroup": "베이직·포멀",
+    "aliases": ["modern"],
+    "sortOrder": 40,
+    "isFeaturedInOnboarding": true,
+    "status": "active"
+  },
+  {
+    "moodID": "contemporary",
+    "schemaVersion": 1,
+    "displayName": "컨템포러리",
+    "displayGroup": "베이직·포멀",
+    "aliases": ["contemporary"],
+    "sortOrder": 50,
+    "isFeaturedInOnboarding": true,
+    "status": "active"
+  },
+  {
+    "moodID": "classic",
+    "schemaVersion": 1,
+    "displayName": "클래식",
+    "displayGroup": "베이직·포멀",
+    "aliases": ["classic"],
+    "sortOrder": 60,
+    "isFeaturedInOnboarding": true,
+    "status": "active"
+  },
+  {
+    "moodID": "formal",
+    "schemaVersion": 1,
+    "displayName": "포멀",
+    "displayGroup": "베이직·포멀",
+    "aliases": ["formal"],
+    "sortOrder": 70,
+    "isFeaturedInOnboarding": false,
+    "status": "active"
+  },
+  {
+    "moodID": "smart_casual",
+    "schemaVersion": 1,
+    "displayName": "스마트 캐주얼",
+    "displayGroup": "베이직·포멀",
+    "aliases": ["smart casual"],
+    "sortOrder": 80,
+    "isFeaturedInOnboarding": false,
+    "status": "active"
+  },
+  {
+    "moodID": "business",
+    "schemaVersion": 1,
+    "displayName": "비즈니스",
+    "displayGroup": "베이직·포멀",
+    "aliases": ["business", "office", "오피스"],
+    "sortOrder": 90,
+    "isFeaturedInOnboarding": false,
+    "status": "active"
+  },
+  {
+    "moodID": "chic",
+    "schemaVersion": 1,
+    "displayName": "시크",
+    "displayGroup": "베이직·포멀",
+    "aliases": ["chic"],
+    "sortOrder": 100,
+    "isFeaturedInOnboarding": false,
+    "status": "active"
+  },
+  {
+    "moodID": "elegant",
+    "schemaVersion": 1,
+    "displayName": "엘레강스",
+    "displayGroup": "베이직·포멀",
+    "aliases": ["elegant"],
+    "sortOrder": 110,
+    "isFeaturedInOnboarding": false,
+    "status": "active"
+  },
+  {
+    "moodID": "dandy",
+    "schemaVersion": 1,
+    "displayName": "댄디",
+    "displayGroup": "베이직·포멀",
+    "aliases": ["dandy"],
+    "sortOrder": 120,
+    "isFeaturedInOnboarding": false,
+    "status": "active"
+  },
+  {
+    "moodID": "preppy",
+    "schemaVersion": 1,
+    "displayName": "프레피",
+    "displayGroup": "베이직·포멀",
+    "aliases": ["preppy"],
+    "sortOrder": 130,
+    "isFeaturedInOnboarding": true,
+    "status": "active"
+  },
+  {
+    "moodID": "ivy",
+    "schemaVersion": 1,
+    "displayName": "아이비",
+    "displayGroup": "베이직·포멀",
+    "aliases": ["ivy", "ivy league", "아이비리그"],
+    "sortOrder": 140,
+    "isFeaturedInOnboarding": false,
+    "status": "active"
+  },
+  {
+    "moodID": "trad",
+    "schemaVersion": 1,
+    "displayName": "트래드",
+    "displayGroup": "베이직·포멀",
+    "aliases": ["trad", "traditional"],
+    "sortOrder": 150,
+    "isFeaturedInOnboarding": false,
+    "status": "active"
+  },
+  {
+    "moodID": "normcore",
+    "schemaVersion": 1,
+    "displayName": "놈코어",
+    "displayGroup": "베이직·포멀",
+    "aliases": ["normcore"],
+    "sortOrder": 160,
+    "isFeaturedInOnboarding": false,
+    "status": "active"
+  },
+  {
+    "moodID": "streetwear",
+    "schemaVersion": 1,
+    "displayName": "스트릿",
+    "displayGroup": "스트릿·트렌드",
+    "aliases": ["streetwear", "street", "스트리트"],
+    "sortOrder": 170,
+    "isFeaturedInOnboarding": true,
+    "status": "active"
+  },
+  {
+    "moodID": "skate",
+    "schemaVersion": 1,
+    "displayName": "스케이트",
+    "displayGroup": "스트릿·트렌드",
+    "aliases": ["skate", "skater", "스케이터"],
+    "sortOrder": 180,
+    "isFeaturedInOnboarding": false,
+    "status": "active"
+  },
+  {
+    "moodID": "hiphop",
+    "schemaVersion": 1,
+    "displayName": "힙합",
+    "displayGroup": "스트릿·트렌드",
+    "aliases": ["hip hop", "hip-hop"],
+    "sortOrder": 190,
+    "isFeaturedInOnboarding": false,
+    "status": "active"
+  },
+  {
+    "moodID": "y2k",
+    "schemaVersion": 1,
+    "displayName": "Y2K",
+    "displayGroup": "스트릿·트렌드",
+    "aliases": [],
+    "sortOrder": 200,
+    "isFeaturedInOnboarding": true,
+    "status": "active"
+  },
+  {
+    "moodID": "cityboy",
+    "schemaVersion": 1,
+    "displayName": "시티보이",
+    "displayGroup": "스트릿·트렌드",
+    "aliases": ["city boy"],
+    "sortOrder": 210,
+    "isFeaturedInOnboarding": true,
+    "status": "active"
+  },
+  {
+    "moodID": "old_money",
+    "schemaVersion": 1,
+    "displayName": "올드머니",
+    "displayGroup": "스트릿·트렌드",
+    "aliases": ["old money"],
+    "sortOrder": 220,
+    "isFeaturedInOnboarding": true,
+    "status": "active"
+  },
+  {
+    "moodID": "quiet_luxury",
+    "schemaVersion": 1,
+    "displayName": "콰이어트 럭셔리",
+    "displayGroup": "스트릿·트렌드",
+    "aliases": ["quiet luxury"],
+    "sortOrder": 230,
+    "isFeaturedInOnboarding": false,
+    "status": "active"
+  },
+  {
+    "moodID": "blokecore",
+    "schemaVersion": 1,
+    "displayName": "블록코어",
+    "displayGroup": "스트릿·트렌드",
+    "aliases": ["blokecore", "bloke core"],
+    "sortOrder": 240,
+    "isFeaturedInOnboarding": false,
+    "status": "active"
+  },
+  {
+    "moodID": "amekaji",
+    "schemaVersion": 1,
+    "displayName": "아메카지",
+    "displayGroup": "헤리티지·유틸리티",
+    "aliases": ["amekaji", "american casual", "아메리칸 캐주얼"],
+    "sortOrder": 250,
+    "isFeaturedInOnboarding": true,
+    "status": "active"
+  },
+  {
+    "moodID": "workwear",
+    "schemaVersion": 1,
+    "displayName": "워크웨어",
+    "displayGroup": "헤리티지·유틸리티",
+    "aliases": ["workwear", "work wear"],
+    "sortOrder": 260,
+    "isFeaturedInOnboarding": true,
+    "status": "active"
+  },
+  {
+    "moodID": "military",
+    "schemaVersion": 1,
+    "displayName": "밀리터리",
+    "displayGroup": "헤리티지·유틸리티",
+    "aliases": ["military"],
+    "sortOrder": 270,
+    "isFeaturedInOnboarding": false,
+    "status": "active"
+  },
+  {
+    "moodID": "heritage",
+    "schemaVersion": 1,
+    "displayName": "헤리티지",
+    "displayGroup": "헤리티지·유틸리티",
+    "aliases": ["heritage"],
+    "sortOrder": 280,
+    "isFeaturedInOnboarding": false,
+    "status": "active"
+  },
+  {
+    "moodID": "utility",
+    "schemaVersion": 1,
+    "displayName": "유틸리티",
+    "displayGroup": "헤리티지·유틸리티",
+    "aliases": ["utility"],
+    "sortOrder": 290,
+    "isFeaturedInOnboarding": false,
+    "status": "active"
+  },
+  {
+    "moodID": "western",
+    "schemaVersion": 1,
+    "displayName": "웨스턴",
+    "displayGroup": "헤리티지·유틸리티",
+    "aliases": ["western"],
+    "sortOrder": 300,
+    "isFeaturedInOnboarding": false,
+    "status": "active"
+  },
+  {
+    "moodID": "sports",
+    "schemaVersion": 1,
+    "displayName": "스포츠",
+    "displayGroup": "스포츠·아웃도어",
+    "aliases": ["sports", "sporty", "스포티"],
+    "sortOrder": 310,
+    "isFeaturedInOnboarding": true,
+    "status": "active"
+  },
+  {
+    "moodID": "athleisure",
+    "schemaVersion": 1,
+    "displayName": "애슬레저",
+    "displayGroup": "스포츠·아웃도어",
+    "aliases": ["athleisure"],
+    "sortOrder": 320,
+    "isFeaturedInOnboarding": true,
+    "status": "active"
+  },
+  {
+    "moodID": "outdoor",
+    "schemaVersion": 1,
+    "displayName": "아웃도어",
+    "displayGroup": "스포츠·아웃도어",
+    "aliases": ["outdoor"],
+    "sortOrder": 330,
+    "isFeaturedInOnboarding": true,
+    "status": "active"
+  },
+  {
+    "moodID": "gorpcore",
+    "schemaVersion": 1,
+    "displayName": "고프코어",
+    "displayGroup": "스포츠·아웃도어",
+    "aliases": ["gorpcore"],
+    "sortOrder": 340,
+    "isFeaturedInOnboarding": true,
+    "status": "active"
+  },
+  {
+    "moodID": "techwear",
+    "schemaVersion": 1,
+    "displayName": "테크웨어",
+    "displayGroup": "스포츠·아웃도어",
+    "aliases": ["techwear", "tech wear"],
+    "sortOrder": 350,
+    "isFeaturedInOnboarding": false,
+    "status": "active"
+  },
+  {
+    "moodID": "motorsport",
+    "schemaVersion": 1,
+    "displayName": "모터스포츠",
+    "displayGroup": "스포츠·아웃도어",
+    "aliases": ["motorsport", "motor sport"],
+    "sortOrder": 360,
+    "isFeaturedInOnboarding": false,
+    "status": "active"
+  },
+  {
+    "moodID": "vintage",
+    "schemaVersion": 1,
+    "displayName": "빈티지",
+    "displayGroup": "빈티지·서브컬처",
+    "aliases": ["vintage"],
+    "sortOrder": 370,
+    "isFeaturedInOnboarding": true,
+    "status": "active"
+  },
+  {
+    "moodID": "retro",
+    "schemaVersion": 1,
+    "displayName": "레트로",
+    "displayGroup": "빈티지·서브컬처",
+    "aliases": ["retro"],
+    "sortOrder": 380,
+    "isFeaturedInOnboarding": true,
+    "status": "active"
+  },
+  {
+    "moodID": "grunge",
+    "schemaVersion": 1,
+    "displayName": "그런지",
+    "displayGroup": "빈티지·서브컬처",
+    "aliases": ["grunge"],
+    "sortOrder": 390,
+    "isFeaturedInOnboarding": false,
+    "status": "active"
+  },
+  {
+    "moodID": "punk",
+    "schemaVersion": 1,
+    "displayName": "펑크",
+    "displayGroup": "빈티지·서브컬처",
+    "aliases": ["punk"],
+    "sortOrder": 400,
+    "isFeaturedInOnboarding": false,
+    "status": "active"
+  },
+  {
+    "moodID": "gothic",
+    "schemaVersion": 1,
+    "displayName": "고딕",
+    "displayGroup": "빈티지·서브컬처",
+    "aliases": ["gothic", "goth"],
+    "sortOrder": 410,
+    "isFeaturedInOnboarding": false,
+    "status": "active"
+  },
+  {
+    "moodID": "rock",
+    "schemaVersion": 1,
+    "displayName": "록",
+    "displayGroup": "빈티지·서브컬처",
+    "aliases": ["rock"],
+    "sortOrder": 420,
+    "isFeaturedInOnboarding": false,
+    "status": "active"
+  },
+  {
+    "moodID": "kitsch",
+    "schemaVersion": 1,
+    "displayName": "키치",
+    "displayGroup": "빈티지·서브컬처",
+    "aliases": ["kitsch"],
+    "sortOrder": 430,
+    "isFeaturedInOnboarding": false,
+    "status": "active"
+  },
+  {
+    "moodID": "rave",
+    "schemaVersion": 1,
+    "displayName": "레이브",
+    "displayGroup": "빈티지·서브컬처",
+    "aliases": ["rave"],
+    "sortOrder": 440,
+    "isFeaturedInOnboarding": false,
+    "status": "active"
+  },
+  {
+    "moodID": "romantic",
+    "schemaVersion": 1,
+    "displayName": "로맨틱",
+    "displayGroup": "로맨틱·익스프레시브",
+    "aliases": ["romantic"],
+    "sortOrder": 450,
+    "isFeaturedInOnboarding": true,
+    "status": "active"
+  },
+  {
+    "moodID": "feminine",
+    "schemaVersion": 1,
+    "displayName": "페미닌",
+    "displayGroup": "로맨틱·익스프레시브",
+    "aliases": ["feminine"],
+    "sortOrder": 460,
+    "isFeaturedInOnboarding": false,
+    "status": "active"
+  },
+  {
+    "moodID": "girlish",
+    "schemaVersion": 1,
+    "displayName": "걸리시",
+    "displayGroup": "로맨틱·익스프레시브",
+    "aliases": ["girlish"],
+    "sortOrder": 470,
+    "isFeaturedInOnboarding": false,
+    "status": "active"
+  },
+  {
+    "moodID": "balletcore",
+    "schemaVersion": 1,
+    "displayName": "발레코어",
+    "displayGroup": "로맨틱·익스프레시브",
+    "aliases": ["balletcore", "ballet core"],
+    "sortOrder": 480,
+    "isFeaturedInOnboarding": false,
+    "status": "active"
+  },
+  {
+    "moodID": "bohemian",
+    "schemaVersion": 1,
+    "displayName": "보헤미안",
+    "displayGroup": "로맨틱·익스프레시브",
+    "aliases": ["bohemian", "boho"],
+    "sortOrder": 490,
+    "isFeaturedInOnboarding": false,
+    "status": "active"
+  },
+  {
+    "moodID": "cottagecore",
+    "schemaVersion": 1,
+    "displayName": "코티지코어",
+    "displayGroup": "로맨틱·익스프레시브",
+    "aliases": ["cottagecore", "cottage core"],
+    "sortOrder": 500,
+    "isFeaturedInOnboarding": false,
+    "status": "active"
+  },
+  {
+    "moodID": "avant_garde",
+    "schemaVersion": 1,
+    "displayName": "아방가르드",
+    "displayGroup": "로맨틱·익스프레시브",
+    "aliases": ["avant-garde", "avant garde"],
+    "sortOrder": 510,
+    "isFeaturedInOnboarding": true,
+    "status": "active"
+  },
+  {
+    "moodID": "resort",
+    "schemaVersion": 1,
+    "displayName": "리조트",
+    "displayGroup": "로맨틱·익스프레시브",
+    "aliases": ["resort"],
+    "sortOrder": 520,
+    "isFeaturedInOnboarding": false,
+    "status": "active"
+  },
+  {
+    "moodID": "glamorous",
+    "schemaVersion": 1,
+    "displayName": "글램",
+    "displayGroup": "로맨틱·익스프레시브",
+    "aliases": ["glamorous", "glamour", "글래머러스"],
+    "sortOrder": 530,
+    "isFeaturedInOnboarding": false,
+    "status": "active"
+  },
+  {
+    "moodID": "eclectic",
+    "schemaVersion": 1,
+    "displayName": "에클레틱",
+    "displayGroup": "로맨틱·익스프레시브",
+    "aliases": ["eclectic"],
+    "sortOrder": 540,
+    "isFeaturedInOnboarding": false,
+    "status": "active"
+  },
+  {
+    "moodID": "coquette",
+    "schemaVersion": 1,
+    "displayName": "코케트",
+    "displayGroup": "로맨틱·익스프레시브",
+    "aliases": ["coquette"],
+    "sortOrder": 550,
+    "isFeaturedInOnboarding": false,
+    "status": "active"
+  },
+  {
+    "moodID": "clean_girl",
+    "schemaVersion": 1,
+    "displayName": "클린 걸",
+    "displayGroup": "로맨틱·익스프레시브",
+    "aliases": ["clean girl"],
+    "sortOrder": 560,
+    "isFeaturedInOnboarding": false,
+    "status": "active"
+  }
+]

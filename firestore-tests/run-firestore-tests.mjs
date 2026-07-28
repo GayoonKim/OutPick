@@ -30,10 +30,18 @@ const result = spawnSync(
   [
     "emulators:exec",
     "--only",
-    "firestore",
+    "firestore,storage",
     "--project",
     "outpick-rules-test",
-    "node --test room-document-id.rules.test.mjs",
+    "npm --prefix ../functions run build " +
+      "&& node --test --test-concurrency=1 " +
+      "room-document-id.rules.test.mjs style-moods.rules.test.mjs " +
+      "profile.rules.test.mjs profile-storage.rules.test.mjs " +
+      "&& node --test profile-transactions.emulator.test.mjs " +
+      "&& node ../functions/scripts/seed-style-moods.mjs " +
+      "--apply --project outpick-rules-test " +
+      "&& node ../functions/scripts/seed-style-moods.mjs " +
+      "--project outpick-rules-test",
   ],
   {
     env: environment,

@@ -14,6 +14,7 @@ import {
   hasBrandWriteAccessData,
   isTotalBrandAdmin,
 } from "../../shared/brandAuthorization.js";
+import {assertAccountActive} from "../../shared/accountStatus.js";
 
 function numericMetric(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
@@ -64,6 +65,7 @@ export const createComment = onCall(
   {region: FUNCTIONS_REGION},
   async (request) => {
     const uid = requiredAuthUID(request.auth?.uid);
+    await assertAccountActive(uid);
     const data = recordData(request.data);
 
     const brandID = requiredDocumentID(
@@ -132,6 +134,7 @@ export const createReply = onCall(
   {region: FUNCTIONS_REGION},
   async (request) => {
     const uid = requiredAuthUID(request.auth?.uid);
+    await assertAccountActive(uid);
     const data = recordData(request.data);
 
     const brandID = requiredDocumentID(
@@ -227,6 +230,7 @@ export const deleteComment = onCall(
   {region: FUNCTIONS_REGION},
   async (request) => {
     const uid = requiredAuthUID(request.auth?.uid);
+    await assertAccountActive(uid);
     const data = recordData(request.data);
 
     const brandID = requiredDocumentID(

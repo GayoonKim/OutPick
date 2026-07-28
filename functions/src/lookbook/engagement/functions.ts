@@ -10,6 +10,7 @@ import {
 } from "../../core/callable.js";
 import {db} from "../../core/firebase.js";
 import {FUNCTIONS_REGION} from "../../core/runtime.js";
+import {assertAccountActive} from "../../shared/accountStatus.js";
 export function postStateDocumentID(
   brandID: string,
   seasonID: string,
@@ -87,6 +88,7 @@ export const setBrandEngagement = onCall(
   {region: FUNCTIONS_REGION},
   async (request) => {
     const uid = requiredAuthUID(request.auth?.uid);
+    await assertAccountActive(uid);
     const data = recordData(request.data);
 
     const brandID = requiredDocumentID(
@@ -147,6 +149,7 @@ export const setPostEngagement = onCall(
   {region: FUNCTIONS_REGION},
   async (request) => {
     const uid = requiredAuthUID(request.auth?.uid);
+    await assertAccountActive(uid);
     const data = recordData(request.data);
 
     const brandID = requiredDocumentID(
@@ -263,6 +266,7 @@ export const setSeasonEngagement = onCall(
   {region: FUNCTIONS_REGION},
   async (request) => {
     const uid = requiredAuthUID(request.auth?.uid);
+    await assertAccountActive(uid);
     const data = recordData(request.data);
 
     const brandID = requiredDocumentID(
@@ -337,6 +341,7 @@ export const setCommentEngagement = onCall(
   {region: FUNCTIONS_REGION},
   async (request) => {
     const uid = requiredAuthUID(request.auth?.uid);
+    await assertAccountActive(uid);
     const data = recordData(request.data);
 
     const brandID = requiredDocumentID(

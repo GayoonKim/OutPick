@@ -11,6 +11,7 @@ import {
 } from "../../core/callable.js";
 import {db} from "../../core/firebase.js";
 import {FUNCTIONS_REGION} from "../../core/runtime.js";
+import {assertAccountActive} from "../../shared/accountStatus.js";
 function lookbookPostDocument(
   brandID: string,
   seasonID: string,
@@ -46,6 +47,7 @@ export const reportComment = onCall(
   {region: FUNCTIONS_REGION},
   async (request) => {
     const uid = requiredAuthUID(request.auth?.uid);
+    await assertAccountActive(uid);
     const data = recordData(request.data);
 
     const reporterUserID = requiredDocumentID(
@@ -205,6 +207,7 @@ export const blockUser = onCall(
   {region: FUNCTIONS_REGION},
   async (request) => {
     const uid = requiredAuthUID(request.auth?.uid);
+    await assertAccountActive(uid);
     const data = recordData(request.data);
 
     const blockerUserID = requiredDocumentID(
@@ -265,6 +268,7 @@ export const loadHiddenCommentUserIDs = onCall(
   {region: FUNCTIONS_REGION},
   async (request) => {
     const uid = requiredAuthUID(request.auth?.uid);
+    await assertAccountActive(uid);
     const data = recordData(request.data);
     const currentUserID = requiredDocumentID(
       requiredString(data, "currentUserID", 128),

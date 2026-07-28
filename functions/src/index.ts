@@ -70,3 +70,14 @@ export {
   reviewLookbookExtraction,
   runLookbookExtractionDiagnostic,
 } from "./lookbook/import/functions.js";
+export {
+  createStyleMood,
+  updateStyleMood,
+} from "./styleMoods/functions.js";
+
+export {
+  checkNicknameAvailability,
+  completeOnboarding,
+  updatePublicProfile,
+  updateStylePreferences,
+} from "./profile/functions.js";

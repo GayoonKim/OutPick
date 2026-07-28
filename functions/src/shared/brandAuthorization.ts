@@ -1,6 +1,6 @@
 /* eslint-disable require-jsdoc */
 import {HttpsError} from "firebase-functions/v2/https";
-import {db} from "../core/firebase.js";
+import {db, firebaseAuth} from "../core/firebase.js";
 
 export function hasBrandWriteAccessData(
   data: FirebaseFirestore.DocumentData | undefined
@@ -97,20 +97,28 @@ export async function assertOutPickAdmin(uid: string): Promise<void> {
   }
 }
 
-export async function findUserIDByEmail(email: string): Promise<string> {
-  const snapshot = await db
-    .collection("users")
-    .where("email", "==", email)
-    .limit(2)
-    .get();
-  if (snapshot.empty) {
-    throw new HttpsError("not-found", "이메일에 해당하는 사용자를 찾을 수 없습니다.");
+interface AuthUserLookup {
+  getUserByEmail(email: string): Promise<{uid: string}>;
+}
+
+function errorCode(error: unknown): string {
+  if (!error || typeof error !== "object" || !("code" in error)) return "";
+  return typeof error.code === "string" ? error.code : "";
+}
+
+export async function findUserIDByEmail(
+  email: string,
+  auth: AuthUserLookup = firebaseAuth
+): Promise<string> {
+  try {
+    return (await auth.getUserByEmail(email)).uid;
+  } catch (error) {
+    if (errorCode(error) === "auth/user-not-found") {
+      throw new HttpsError(
+        "not-found",
+        "이메일에 해당하는 사용자를 찾을 수 없습니다."
+      );
+    }
+    throw error;
   }
-  if (snapshot.size > 1) {
-    throw new HttpsError(
-      "failed-precondition",
-      "같은 이메일을 가진 사용자가 여러 명입니다."
-    );
-  }
-  return snapshot.docs[0].id;
 }

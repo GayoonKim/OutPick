@@ -35,6 +35,11 @@ before(async () => {
 
 beforeEach(async () => {
   await testEnvironment.clearFirestore();
+  await testEnvironment.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), "users", ownerUID), {
+      accountStatus: "active",
+    });
+  });
 });
 
 after(async () => {
@@ -136,6 +141,18 @@ describe("Rooms document ID boundary", () => {
 
     await assertFails(createRoomTransaction(firestore, "room-unauthenticated"));
     await assertRoomCreationWasAtomic("room-unauthenticated");
+  });
+
+  test("deletionPending 계정은 새 채팅방을 만들 수 없다", async () => {
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await updateDoc(doc(context.firestore(), "users", ownerUID), {
+        accountStatus: "deletionPending",
+      });
+    });
+    const firestore = testEnvironment.authenticatedContext(ownerUID).firestore();
+
+    await assertFails(createRoomTransaction(firestore, "room-pending-account"));
+    await assertRoomCreationWasAtomic("room-pending-account");
   });
 
   test("creator mismatch fails atomically", async () => {

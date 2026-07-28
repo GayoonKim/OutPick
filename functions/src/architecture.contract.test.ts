@@ -39,7 +39,14 @@ test("root index는 명시적 flat re-export만 가진다", () => {
 });
 
 test("feature는 다른 최상위 feature를 직접 import하지 않는다", () => {
-  const featureRoots = new Set(["auth", "brand", "chat", "lookbook"]);
+  const featureRoots = new Set([
+    "auth",
+    "brand",
+    "chat",
+    "lookbook",
+    "profile",
+    "styleMoods",
+  ]);
   const violations: string[] = [];
   for (const file of sourceFiles()) {
     const relativeFile = path.relative(sourceRoot, file);

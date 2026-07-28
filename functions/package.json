@@ -5,6 +5,7 @@
     "lint": "eslint --ext .js,.ts .",
     "build": "npm run clean && tsc",
     "test": "npm run build && node scripts/run-tests.mjs",
+    "seed:style-moods": "npm run build && node scripts/seed-style-moods.mjs",
     "build:watch": "tsc --watch",
     "serve": "npm run build && firebase emulators:start --only functions",
     "shell": "npm run build && firebase functions:shell",

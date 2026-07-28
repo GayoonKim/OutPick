@@ -6,6 +6,16 @@ service firebase.storage {
       return request.auth != null;
     }
 
+    function userPath(uid) {
+      return /databases/(default)/documents/users/$(uid);
+    }
+
+    function isAccountActive() {
+      return signedIn()
+        && firestore.exists(userPath(request.auth.uid))
+        && firestore.get(userPath(request.auth.uid)).data.accountStatus == "active";
+    }
+
     function roomPath(roomID) {
       return /databases/(default)/documents/Rooms/$(roomID);
     }
@@ -122,11 +132,11 @@ service firebase.storage {
 
     match /profileImage/{userID}/{variant}/{fileName} {
       allow get: if signedIn();
-      allow create, update: if signedIn()
+      allow create, update: if isAccountActive()
         && request.auth.uid == userID
         && variant in ['thumb', 'original']
         && isImageUpload(30 * 1024 * 1024);
-      allow delete: if signedIn() && request.auth.uid == userID;
+      allow delete: if isAccountActive() && request.auth.uid == userID;
       allow list: if false;
     }
 
