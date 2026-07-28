@@ -15,7 +15,8 @@ enum MainTabCompositionRoot {
     static func makeMainTab(
         lookbookContainer: LookbookContainer,
         chatContainer: ChatContainer,
-        currentUserProvider: any CurrentUserProviding
+        currentUserProvider: any CurrentUserProviding,
+        myPageContainer: MyPageContainer
     ) -> MainTabBarController {
         let vc = MainTabBarController()
         vc.setValue(OutPickTabBar(), forKey: "tabBar")
@@ -31,7 +32,8 @@ enum MainTabCompositionRoot {
         let tabBuilder = DefaultMainTabBuilder(
             lookbookContainer: lookbookContainer,
             chatContainer: chatContainer,
-            currentUserProvider: currentUserProvider
+            currentUserProvider: currentUserProvider,
+            myPageContainer: myPageContainer
         )
         vc.tabBuilder = tabBuilder
         vc.configure(viewControllers: tabBuilder.makeTabViewControllers())

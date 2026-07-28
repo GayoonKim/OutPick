@@ -12,7 +12,6 @@ extension LoginManager: LoginBootstrappingProtocol {
     /// 초기화만 담당
     /// 호출 위치: AppCoordinator에서 Main(Tab) 라우팅 직후
     func bootstrapAfterLogin(
-        currentUserProfile: UserProfile,
         joinedRoomsStore: JoinedRoomsSessionStoring,
         joinedRoomsRuntime: JoinedRoomsSessionRuntimeHandling,
         brandAdminSessionStore: BrandAdminSessionStore

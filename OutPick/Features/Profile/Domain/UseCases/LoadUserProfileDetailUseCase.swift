@@ -6,7 +6,7 @@
 import Foundation
 
 protocol LoadUserProfileDetailUseCaseProtocol {
-    func execute(userID: String) async throws -> UserProfile
+    func execute(userID: String) async throws -> UserPublicProfile
 }
 
 final class LoadUserProfileDetailUseCase: LoadUserProfileDetailUseCaseProtocol {
@@ -16,7 +16,7 @@ final class LoadUserProfileDetailUseCase: LoadUserProfileDetailUseCaseProtocol {
         self.repository = repository
     }
 
-    func execute(userID: String) async throws -> UserProfile {
+    func execute(userID: String) async throws -> UserPublicProfile {
         try await repository.fetchUserProfile(userID: userID)
     }
 }

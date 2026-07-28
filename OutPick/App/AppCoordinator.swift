@@ -34,6 +34,14 @@ final class AppCoordinator {
 
     // Profile flow DI
     private let userProfileRepository: UserProfileRepositoryProtocol
+    private let publicProfileRepository: UserPublicProfileRepositoryProtocol
+    private let loadCurrentUserBootstrapUseCase: LoadCurrentUserBootstrapUseCase
+    private let styleMoodRepository: StyleMoodRepositoryProtocol
+    private let checkNicknameAvailabilityUseCase: CheckNicknameAvailabilityUseCase
+    private let completeOnboardingUseCase: CompleteOnboardingUseCase
+    private let updatePublicProfileUseCase: UpdatePublicProfileUseCase
+    private let updateStylePreferencesUseCase: UpdateStylePreferencesUseCase
+    private let accountRepository: CurrentUserAccountRepositoryProtocol
 
     // 로그인 화면이 이미 떠있는데 또 showLogin()을 타는 걸 막기 위한 플래그
     private var isShowingLogin: Bool = false
@@ -42,6 +50,14 @@ final class AppCoordinator {
         window: UIWindow,
         lookbookProvider: LookbookRepositoryProvider,
         userProfileRepository: UserProfileRepositoryProtocol,
+        publicProfileRepository: UserPublicProfileRepositoryProtocol,
+        loadCurrentUserBootstrapUseCase: LoadCurrentUserBootstrapUseCase,
+        styleMoodRepository: StyleMoodRepositoryProtocol,
+        checkNicknameAvailabilityUseCase: CheckNicknameAvailabilityUseCase,
+        completeOnboardingUseCase: CompleteOnboardingUseCase,
+        updatePublicProfileUseCase: UpdatePublicProfileUseCase,
+        updateStylePreferencesUseCase: UpdateStylePreferencesUseCase,
+        accountRepository: CurrentUserAccountRepositoryProtocol,
         joinedRoomsStore: JoinedRoomsSessionStore,
         brandAdminSessionStore: BrandAdminSessionStore,
         socialAuthRepository: SocialAuthRepositoryProtocol,
@@ -55,6 +71,14 @@ final class AppCoordinator {
         self.window = window
         self.lookbookProvider = lookbookProvider
         self.userProfileRepository = userProfileRepository
+        self.publicProfileRepository = publicProfileRepository
+        self.loadCurrentUserBootstrapUseCase = loadCurrentUserBootstrapUseCase
+        self.styleMoodRepository = styleMoodRepository
+        self.checkNicknameAvailabilityUseCase = checkNicknameAvailabilityUseCase
+        self.completeOnboardingUseCase = completeOnboardingUseCase
+        self.updatePublicProfileUseCase = updatePublicProfileUseCase
+        self.updateStylePreferencesUseCase = updateStylePreferencesUseCase
+        self.accountRepository = accountRepository
         self.joinedRoomsStore = joinedRoomsStore
         self.brandAdminSessionStore = brandAdminSessionStore
         self.socialAuthRepository = socialAuthRepository
@@ -115,13 +139,15 @@ final class AppCoordinator {
         sessionResetTask = nil
         await MainActor.run { self.setRoot(BootLoadingViewController(), animated: false) }
 
-        let profileResult = await LoginManager.shared.loadUserProfile()
-        
-        switch profileResult {
-        case .success(let profile):
+        do {
+            let userID = try await LoginManager.shared.ensureUserDocumentID()
+            let outcome = try await loadCurrentUserBootstrapUseCase.execute(userID: userID)
+
+            switch outcome {
+            case .ready(_, let publicProfile):
             print("[AppCoordinator] complete profile found. Showing main tab.")
             await MainActor.run {
-                self.currentUserSessionStore.replaceProfile(profile)
+                self.currentUserSessionStore.replaceProfile(publicProfile)
                 _ = self.ensureChatContainer()
                 self.prewarmLookbookHome()
             }
@@ -136,7 +162,6 @@ final class AppCoordinator {
 
             do {
                 try await LoginManager.shared.bootstrapAfterLogin(
-                    currentUserProfile: profile,
                     joinedRoomsStore: joinedRoomsStore,
                     joinedRoomsRuntime: appSessionRuntime,
                     brandAdminSessionStore: brandAdminSessionStore
@@ -147,9 +172,17 @@ final class AppCoordinator {
 
             await MainActor.run { self.showMainTab() }
 
-        case .failure(let error):
-            print("[AppCoordinator] profile is missing/incomplete. Showing profile flow. error=\(error)")
-            await MainActor.run { self.showProfileFlow() }
+            case .needsOnboarding:
+                print("[AppCoordinator] account is missing/incomplete. Showing onboarding.")
+                await MainActor.run { self.showProfileFlow(userID: userID) }
+
+            case .deletionPending:
+                print("[AppCoordinator] account deletion is pending.")
+                await MainActor.run { self.showDeletionPending() }
+            }
+        } catch {
+            print("[AppCoordinator] bootstrap failed. error=\(error)")
+            await MainActor.run { self.showAuthenticatedBootstrapFailure() }
         }
     }
 
@@ -230,7 +263,8 @@ final class AppCoordinator {
         let tab = MainTabCompositionRoot.makeMainTab(
             lookbookContainer: lbcontainer,
             chatContainer: chatContainer,
-            currentUserProvider: currentUserProvider
+            currentUserProvider: currentUserProvider,
+            myPageContainer: makeMyPageContainer()
         )
         self.mainTabController = tab
 
@@ -250,7 +284,7 @@ final class AppCoordinator {
     }
 
     @MainActor
-    private func showProfileFlow() {
+    private func showProfileFlow(userID: String) {
         print("[AppCoordinator] showProfileFlow")
         isShowingLogin = false
         installForceLogoutHandler()
@@ -261,18 +295,20 @@ final class AppCoordinator {
 
         self.profileCoordinator = ProfileCoordinator(
             navigationController: nav,
-            repository: userProfileRepository,
-            onCompleted: { [weak self] profile in
+            userID: userID,
+            moodRepository: styleMoodRepository,
+            checkNicknameAvailabilityUseCase: checkNicknameAvailabilityUseCase,
+            completeOnboardingUseCase: completeOnboardingUseCase,
+            onCompleted: { [weak self] outcome in
                 guard let self else { return }
                 Task { @MainActor in
-                    self.currentUserSessionStore.replaceProfile(profile)
+                    self.currentUserSessionStore.replaceProfile(outcome.publicProfile)
                     _ = self.ensureChatContainer()
                 }
                 Task { [weak self] in
                     guard let self else { return }
                     do {
                         try await LoginManager.shared.bootstrapAfterLogin(
-                            currentUserProfile: profile,
                             joinedRoomsStore: self.joinedRoomsStore,
                             joinedRoomsRuntime: self.appSessionRuntime,
                             brandAdminSessionStore: self.brandAdminSessionStore
@@ -283,6 +319,9 @@ final class AppCoordinator {
                     await MainActor.run {
                         self.prewarmLookbookHome()
                         self.showMainTab()  // 완료 후 메인 탭으로
+                        if outcome.avatarUploadFailed {
+                            self.showAvatarUploadWarning()
+                        }
                     }
                 }
             }
@@ -290,6 +329,37 @@ final class AppCoordinator {
         self.profileCoordinator?.start()
 
         setRoot(nav, animated: true)
+    }
+
+    @MainActor
+    private func showAuthenticatedBootstrapFailure() {
+        let failure = AppBootstrapFailureViewController { [weak self] in
+            guard let self else { return }
+            Task { [weak self] in
+                await self?.routeAfterAuthenticated()
+            }
+        }
+        setRoot(failure, animated: true)
+    }
+
+    @MainActor
+    private func showDeletionPending() {
+        let controller = AccountDeletionPendingViewController {
+            LoginManager.shared.logout()
+        }
+        setRoot(controller, animated: true)
+    }
+
+    @MainActor
+    private func showAvatarUploadWarning() {
+        guard let presenter = mainTabController else { return }
+        let alert = UIAlertController(
+            title: "프로필 사진을 저장하지 못했어요",
+            message: "계정과 관심 스타일은 저장됐어요. 프로필 사진은 나중에 다시 설정할 수 있어요",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "확인", style: .default))
+        presenter.present(alert, animated: true)
     }
 
     @MainActor
@@ -320,10 +390,25 @@ final class AppCoordinator {
             provider: lookbookProvider,
             brandAdminSessionStore: brandAdminSessionStore,
             currentUserProvider: currentUserProvider,
+            publicProfileRepository: publicProfileRepository,
             avatarImageManager: avatarImageManager
         )
         self.lookbookContainer = created
         return created
+    }
+
+    private func makeMyPageContainer() -> MyPageContainer {
+        MyPageContainer(
+            userID: currentUserProvider.canonicalUserID,
+            accountRepository: accountRepository,
+            publicProfileRepository: publicProfileRepository,
+            moodRepository: styleMoodRepository,
+            updatePublicProfileUseCase: updatePublicProfileUseCase,
+            updateStylePreferencesUseCase: updateStylePreferencesUseCase,
+            sessionStore: currentUserSessionStore,
+            currentUserProvider: currentUserProvider,
+            avatarImageManager: avatarImageManager
+        )
     }
 
     @MainActor
@@ -334,6 +419,7 @@ final class AppCoordinator {
 
         let created = ChatContainer(
             persistence: chatPersistence,
+            publicProfileRepository: publicProfileRepository,
             joinedRoomsStore: joinedRoomsStore,
             joinedRoomsRuntime: appSessionRuntime,
             currentUserProvider: currentUserProvider,
@@ -412,9 +498,13 @@ final class AppCoordinator {
         )
         LoginManager.shared.setAuthenticatedUser(authenticatedUser)
         currentUserSessionStore.replaceProfile(
-            UserProfile(
-                email: "uitest@outpick.local",
-                nickname: "UI 테스트"
+            UserPublicProfile(
+                userID: authenticatedUser.identityKey,
+                nickname: "UI 테스트",
+                avatarThumbPath: nil,
+                avatarOriginalPath: nil,
+                createdAt: Date(),
+                updatedAt: Date()
             )
         )
 
@@ -450,9 +540,13 @@ final class AppCoordinator {
             )
             LoginManager.shared.setAuthenticatedUser(authenticatedUser)
             currentUserSessionStore.replaceProfile(
-                UserProfile(
-                    email: firebaseUser.email ?? email,
-                    nickname: firebaseUser.displayName ?? "UI 테스트"
+                UserPublicProfile(
+                    userID: firebaseUser.uid,
+                    nickname: firebaseUser.displayName ?? "UI 테스트",
+                    avatarThumbPath: nil,
+                    avatarOriginalPath: nil,
+                    createdAt: Date(),
+                    updatedAt: Date()
                 )
             )
         } catch {

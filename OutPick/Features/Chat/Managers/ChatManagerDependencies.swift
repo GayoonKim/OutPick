@@ -16,6 +16,7 @@ struct ChatManagerProvider {
 
     init(
         repositories: FirebaseRepositoryProviding = FirebaseRepositoryProvider.shared,
+        publicProfileRepository: UserPublicProfileRepositoryProtocol,
         persistence: ChatPersistenceProvider,
         messageManager: ChatMessageManaging? = nil,
         roomImageManager: RoomImageManaging? = nil,
@@ -41,7 +42,7 @@ struct ChatManagerProvider {
         )
         self.searchManager = resolvedSearchManager
         self.profileSyncManager = profileSyncManager ?? ChatProfileSyncManager(
-            userProfileRepository: repositories.userProfileRepository,
+            publicProfileRepository: publicProfileRepository,
             profileCache: persistence.profileStore
         )
         self.networkStatusProvider = resolvedNetworkStatusProvider

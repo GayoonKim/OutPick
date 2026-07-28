@@ -12,7 +12,7 @@ protocol CurrentUserProviding {
     var canonicalUserID: String { get }
     var nickname: String? { get }
     var avatarPath: String? { get }
-    var profile: UserProfile? { get }
+    var profile: UserPublicProfile? { get }
 }
 
 struct LoginManagerCurrentUserProvider: CurrentUserProviding {
@@ -40,10 +40,10 @@ struct LoginManagerCurrentUserProvider: CurrentUserProviding {
     }
 
     var avatarPath: String? {
-        sessionStore.currentProfile?.thumbPath
+        sessionStore.currentProfile?.avatarThumbPath
     }
 
-    var profile: UserProfile? {
+    var profile: UserPublicProfile? {
         sessionStore.currentProfile
     }
 }

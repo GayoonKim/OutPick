@@ -8,13 +8,13 @@
 import Foundation
 
 final class CurrentUserSessionStore {
-    private(set) var currentProfile: UserProfile?
+    private(set) var currentProfile: UserPublicProfile?
 
-    func replaceProfile(_ profile: UserProfile?) {
+    func replaceProfile(_ profile: UserPublicProfile?) {
         currentProfile = profile
     }
 
-    func updateProfile(_ mutate: (inout UserProfile) -> Void) {
+    func updateProfile(_ mutate: (inout UserPublicProfile) -> Void) {
         guard var profile = currentProfile else { return }
         mutate(&profile)
         currentProfile = profile

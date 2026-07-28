@@ -348,7 +348,7 @@ final class ChatCoordinator {
             presentingViewController: source,
             avatarImageManager: container.makeAvatarImageManager(),
             currentUserProvider: container.currentUserProvider,
-            repositories: container.firebaseRepositories,
+            publicProfileRepository: container.publicProfileRepository,
             photoLibrarySaver: container.makePhotoLibrarySaver(),
             onFinish: { [weak self] in
                 self?.userProfileDetailCoordinator = nil
@@ -367,6 +367,7 @@ extension ChatCoordinator: ChatRoomRouting {
         let panelVC = ChatCompositionRoot.makeChatRoomSettingPanel(
             room: room,
             repositories: container.firebaseRepositories,
+            publicProfileRepository: container.publicProfileRepository,
             participantsRepository: container.makeLocalParticipantsRepository(),
             localMediaRepository: container.makeLocalMediaRepository(),
             attachmentImageLoader: container.makeAttachmentImageLoader(),

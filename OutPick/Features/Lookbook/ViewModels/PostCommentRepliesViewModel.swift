@@ -130,6 +130,9 @@ final class PostCommentRepliesViewModel: ObservableObject {
         loadedKey = nil
         didLoadHiddenUserIDs = false
         await loadPage(reset: true)
+        let visibleComments = isParentCommentHidden ? replies : [parentComment] + replies
+        await authorProfileStore.refreshAuthors(for: visibleComments)
+        syncAuthorDisplays()
     }
 
     func loadNextPage() async {

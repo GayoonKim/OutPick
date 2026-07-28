@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import FirebaseFirestore
 import SwiftUI
 
 @MainActor
@@ -23,6 +24,7 @@ final class LookbookContainer {
     let currentUserIDProvider: any CurrentUserIDProviding
     private var avatarImageManager: AvatarImageManaging
     private let firebaseRepositories: any FirebaseRepositoryProviding
+    private let publicProfileRepository: UserPublicProfileRepositoryProtocol
     private let remotePreviewImageLoader: any LookbookRemotePreviewImageLoading
 
     private let loadPostCommentsUseCase: any LoadPostCommentsUseCaseProtocol
@@ -55,6 +57,8 @@ final class LookbookContainer {
         brandAdminSessionStore: BrandAdminSessionStore,
         currentUserProvider: any CurrentUserProviding = LoginManagerCurrentUserProvider(),
         firebaseRepositories: any FirebaseRepositoryProviding = FirebaseRepositoryProvider.shared,
+        publicProfileRepository: UserPublicProfileRepositoryProtocol =
+            FirestoreUserPublicProfileRepository(db: .firestore()),
         avatarImageManager: AvatarImageManaging,
         remotePreviewImageLoader: any LookbookRemotePreviewImageLoading =
             LookbookRemotePreviewImageLoader()
@@ -69,6 +73,7 @@ final class LookbookContainer {
         self.currentUserProvider = currentUserProvider
         self.currentUserIDProvider = LookbookCurrentUserIDProvider(currentUserProvider: currentUserProvider)
         self.firebaseRepositories = firebaseRepositories
+        self.publicProfileRepository = publicProfileRepository
         self.avatarImageManager = avatarImageManager
         self.remotePreviewImageLoader = remotePreviewImageLoader
         self.loadPostCommentsUseCase = LoadPostCommentsUseCase(
@@ -741,7 +746,7 @@ final class LookbookContainer {
 
     private func makeCommentAuthorProfileStore() -> CommentAuthorProfileStore {
         CommentAuthorProfileStore(
-            userProfileRepository: firebaseRepositories.userProfileRepository,
+            publicProfileRepository: publicProfileRepository,
             currentUserIDProvider: currentUserIDProvider,
             currentUserProvider: currentUserProvider
         )

@@ -21,7 +21,7 @@ protocol LoadChatRoomParticipantsUseCaseProtocol {
 @MainActor
 final class LoadChatRoomParticipantsUseCase: LoadChatRoomParticipantsUseCaseProtocol {
     private let participantsRepository: ChatRoomParticipantsRepositoryProtocol
-    private let userProfileRepository: UserProfileRepositoryProtocol
+    private let publicProfileRepository: UserPublicProfileRepositoryProtocol
     private let chatRoomRepository: FirebaseChatRoomRepositoryProtocol
     private let pageSize: Int
 
@@ -32,12 +32,12 @@ final class LoadChatRoomParticipantsUseCase: LoadChatRoomParticipantsUseCaseProt
 
     init(
         participantsRepository: ChatRoomParticipantsRepositoryProtocol,
-        userProfileRepository: UserProfileRepositoryProtocol,
+        publicProfileRepository: UserPublicProfileRepositoryProtocol,
         chatRoomRepository: FirebaseChatRoomRepositoryProtocol,
         pageSize: Int = 50
     ) {
         self.participantsRepository = participantsRepository
-        self.userProfileRepository = userProfileRepository
+        self.publicProfileRepository = publicProfileRepository
         self.chatRoomRepository = chatRoomRepository
         self.pageSize = max(1, pageSize)
     }
@@ -100,7 +100,7 @@ final class LoadChatRoomParticipantsUseCase: LoadChatRoomParticipantsUseCaseProt
     private func materializeUsers(userIDs: [String]) async throws -> [LocalChatUser] {
         guard !userIDs.isEmpty else { return [] }
 
-        let profilesByUserID = try await userProfileRepository.fetchUserProfiles(userIDs: userIDs)
+        let profilesByUserID = try await publicProfileRepository.fetchProfiles(userIDs: userIDs)
         var users: [LocalChatUser] = []
         users.reserveCapacity(userIDs.count)
 
@@ -112,7 +112,7 @@ final class LoadChatRoomParticipantsUseCase: LoadChatRoomParticipantsUseCaseProt
                 fetchedNickname: profile?.nickname,
                 existingNickname: existingLocalUser?.nickname
             )
-            let profileImagePath = profile?.thumbPath ?? existingLocalUser?.profileImagePath
+            let profileImagePath = profile?.avatarThumbPath ?? existingLocalUser?.profileImagePath
             let displayUser = LocalChatUser(
                 userID: userID,
                 nickname: nickname ?? "알 수 없는 사용자",

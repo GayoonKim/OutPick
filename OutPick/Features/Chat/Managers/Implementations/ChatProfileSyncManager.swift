@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import FirebaseFirestore
 
 final class ChatProfileSyncManager: ChatProfileSyncManaging {
     private let maxRefreshUIDs: Int
@@ -17,13 +18,14 @@ final class ChatProfileSyncManager: ChatProfileSyncManaging {
     private var snapshotGeneration: Int = 0
 
     init(
-        userProfileRepository: UserProfileRepositoryProtocol = FirebaseRepositoryProvider.shared.userProfileRepository,
+        publicProfileRepository: UserPublicProfileRepositoryProtocol =
+            FirestoreUserPublicProfileRepository(db: .firestore()),
         profileCache: ChatProfileCachePersisting,
         maxRefreshUIDs: Int = 20
     ) {
         self.maxRefreshUIDs = max(1, maxRefreshUIDs)
         self.cacheActor = ChatProfileCacheActor(
-            userProfileRepository: userProfileRepository,
+            publicProfileRepository: publicProfileRepository,
             profileCache: profileCache
         )
     }
@@ -104,16 +106,16 @@ final class ChatProfileSyncManager: ChatProfileSyncManaging {
 }
 
 private actor ChatProfileCacheActor {
-    private let userProfileRepository: UserProfileRepositoryProtocol
+    private let publicProfileRepository: UserPublicProfileRepositoryProtocol
     private let profileCache: ChatProfileCachePersisting
     private var cachedProfiles: [String: LocalChatUser] = [:]
     private var generation: Int = 0
 
     init(
-        userProfileRepository: UserProfileRepositoryProtocol,
+        publicProfileRepository: UserPublicProfileRepositoryProtocol,
         profileCache: ChatProfileCachePersisting
     ) {
-        self.userProfileRepository = userProfileRepository
+        self.publicProfileRepository = publicProfileRepository
         self.profileCache = profileCache
     }
 
@@ -121,7 +123,7 @@ private actor ChatProfileCacheActor {
         let generationAtStart = generation
 
         do {
-            let profilesByID = try await userProfileRepository.fetchUserProfiles(userIDs: userIDs)
+            let profilesByID = try await publicProfileRepository.fetchProfiles(userIDs: userIDs)
             guard generationAtStart == generation else { return [:] }
 
             var refreshedProfiles: [String: LocalChatUser] = [:]
@@ -129,8 +131,8 @@ private actor ChatProfileCacheActor {
                 guard let fetchedProfile = profilesByID[userID] else { continue }
                 let local = LocalChatUser(
                     userID: userID,
-                    nickname: fetchedProfile.nickname?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
-                    profileImagePath: fetchedProfile.thumbPath
+                    nickname: fetchedProfile.nickname.trimmingCharacters(in: .whitespacesAndNewlines),
+                    profileImagePath: fetchedProfile.avatarThumbPath
                 )
 
                 refreshedProfiles[userID] = local

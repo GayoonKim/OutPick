@@ -69,8 +69,8 @@ final class UserProfileDetailViewModel {
 
         do {
             let profile = try await loadUserProfileDetailUseCase.execute(userID: userID)
-            if let nickname = profile.nickname?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !nickname.isEmpty {
+            let nickname = profile.nickname.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !nickname.isEmpty {
                 state.nickname = nickname
             }
 

@@ -98,8 +98,12 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
         viewModel.onStateChanged = { [weak self] state in
             guard let self else { return }
             self.chatRooms = state.rooms
-            let itemBySection = [Section.main: state.rooms]
-            self.dataSource.applySnapshotUsing(sectionIDs: [Section.main], itemsBySection: itemBySection)
+            var snapshot = NSDiffableDataSourceSnapshot<Section, Item>()
+            if state.rooms.isEmpty == false {
+                snapshot.appendSections([.main])
+                snapshot.appendItems(state.rooms, toSection: .main)
+            }
+            self.dataSource.applySnapshotUsingReloadData(snapshot)
             if !state.isRefreshing {
                 self.refreshControl.endRefreshing()
             }

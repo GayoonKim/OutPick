@@ -44,14 +44,14 @@ struct AvatarImageSource: Equatable, Hashable {
         return originalPath
     }
 
-    func merged(with profile: UserProfile) -> AvatarImageSource {
+    func merged(with profile: UserPublicProfile) -> AvatarImageSource {
         var merged = self
 
-        if let thumbPath = Self.normalize(profile.thumbPath) {
+        if let thumbPath = Self.normalize(profile.avatarThumbPath) {
             merged.thumbnailPath = thumbPath
         }
 
-        if let originalPath = Self.normalize(profile.originalPath) {
+        if let originalPath = Self.normalize(profile.avatarOriginalPath) {
             merged.originalPath = originalPath
         }
 

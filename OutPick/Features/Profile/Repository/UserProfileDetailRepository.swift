@@ -6,13 +6,13 @@
 import Foundation
 
 final class UserProfileDetailRepository: UserProfileDetailRepositoryProtocol {
-    private let userProfileRepository: UserProfileRepositoryProtocol
+    private let publicProfileRepository: UserPublicProfileRepositoryProtocol
 
-    init(userProfileRepository: UserProfileRepositoryProtocol) {
-        self.userProfileRepository = userProfileRepository
+    init(publicProfileRepository: UserPublicProfileRepositoryProtocol) {
+        self.publicProfileRepository = publicProfileRepository
     }
 
-    func fetchUserProfile(userID: String) async throws -> UserProfile {
-        try await userProfileRepository.fetchUserProfile(userID: userID)
+    func fetchUserProfile(userID: String) async throws -> UserPublicProfile {
+        try await publicProfileRepository.fetchProfile(userID: userID)
     }
 }

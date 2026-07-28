@@ -98,6 +98,8 @@ final class PostDetailScreenViewModel: ObservableObject {
         ensureInteractionPinScope()
         loadedKey = nil
         await load()
+        await authorProfileStore.refreshAuthors(for: comments)
+        syncAuthorDisplays()
     }
 
     func displayItem(for comment: Comment) -> CommentDisplayItem {

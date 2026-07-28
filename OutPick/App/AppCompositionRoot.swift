@@ -24,12 +24,40 @@ enum AppCompositionRoot {
         }
 
         let db = Firestore.firestore()
+        let publicProfileRepository = FirestoreUserPublicProfileRepository(db: db)
         let userProfileRepository: UserProfileRepositoryProtocol = UserProfileRepository(db: db)
         let currentUserSessionStore = CurrentUserSessionStore()
         let currentUserProvider = LoginManagerCurrentUserProvider(
             sessionStore: currentUserSessionStore
         )
         let cloudFunctionsTransport = FirebaseCloudFunctionsTransport()
+        let accountRepository = FirestoreCurrentUserAccountRepository(db: db)
+        let profileMutationRepository = CloudFunctionsProfileMutationRepository(
+            transport: cloudFunctionsTransport
+        )
+        let styleMoodRepository = FirestoreStyleMoodRepository(db: db)
+        let loadCurrentUserBootstrapUseCase = LoadCurrentUserBootstrapUseCase(
+            accountRepository: accountRepository,
+            publicProfileRepository: publicProfileRepository
+        )
+        let completeOnboardingUseCase = CompleteOnboardingUseCase(
+            mutationRepository: profileMutationRepository,
+            avatarUploader: FirebaseProfileAvatarUploader(
+                imageRepository: FirebaseRepositoryProvider.shared.imageStorageRepository
+            )
+        )
+        let updatePublicProfileUseCase = UpdatePublicProfileUseCase(
+            mutationRepository: profileMutationRepository,
+            avatarUploader: FirebaseProfileAvatarUploader(
+                imageRepository: FirebaseRepositoryProvider.shared.imageStorageRepository
+            )
+        )
+        let updateStylePreferencesUseCase = UpdateStylePreferencesUseCase(
+            mutationRepository: profileMutationRepository
+        )
+        let checkNicknameAvailabilityUseCase = CheckNicknameAvailabilityUseCase(
+            mutationRepository: profileMutationRepository
+        )
         let socialAuthRepository = DefaultSocialAuthRepository.live(
             transport: cloudFunctionsTransport
         )
@@ -59,6 +87,14 @@ enum AppCompositionRoot {
             window: window,
             lookbookProvider: lookbookProvider,
             userProfileRepository: userProfileRepository,
+            publicProfileRepository: publicProfileRepository,
+            loadCurrentUserBootstrapUseCase: loadCurrentUserBootstrapUseCase,
+            styleMoodRepository: styleMoodRepository,
+            checkNicknameAvailabilityUseCase: checkNicknameAvailabilityUseCase,
+            completeOnboardingUseCase: completeOnboardingUseCase,
+            updatePublicProfileUseCase: updatePublicProfileUseCase,
+            updateStylePreferencesUseCase: updateStylePreferencesUseCase,
+            accountRepository: accountRepository,
             joinedRoomsStore: joinedRoomsStore,
             brandAdminSessionStore: brandAdminSessionStore,
             socialAuthRepository: socialAuthRepository,

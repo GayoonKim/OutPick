@@ -6,25 +6,27 @@
 //
 
 import Foundation
+import FirebaseFirestore
 
 @MainActor
 final class CommentAuthorProfileStore {
     private(set) var authorDisplays: [UserID: CommentAuthorDisplay] = [:]
 
-    private let userProfileRepository: UserProfileRepositoryProtocol
+    private let publicProfileRepository: UserPublicProfileRepositoryProtocol
     private let currentUserIDProvider: any CurrentUserIDProviding
     private let currentUserProvider: any CurrentUserProviding
     private let maxRetryCount: Int
     private let retryDelayNanoseconds: UInt64
 
     init(
-        userProfileRepository: UserProfileRepositoryProtocol = FirebaseRepositoryProvider.shared.userProfileRepository,
+        publicProfileRepository: UserPublicProfileRepositoryProtocol =
+            FirestoreUserPublicProfileRepository(db: .firestore()),
         currentUserIDProvider: any CurrentUserIDProviding = LoginManagerCurrentUserIDProvider(),
         currentUserProvider: any CurrentUserProviding = LoginManagerCurrentUserProvider(),
         maxRetryCount: Int = 2,
         retryDelayNanoseconds: UInt64 = 300_000_000
     ) {
-        self.userProfileRepository = userProfileRepository
+        self.publicProfileRepository = publicProfileRepository
         self.currentUserIDProvider = currentUserIDProvider
         self.currentUserProvider = currentUserProvider
         self.maxRetryCount = max(0, maxRetryCount)
@@ -46,17 +48,26 @@ final class CommentAuthorProfileStore {
         guard missingUserIDs.isEmpty == false else { return }
 
         let profiles = await fetchProfilesWithRetry(userIDs: missingUserIDs)
+        apply(profiles: profiles)
+    }
+
+    func refreshAuthors(for comments: [Comment]) async {
+        let userIDs = Array(Set(comments.map(\.userID)))
+        guard userIDs.isEmpty == false else { return }
+
+        let profiles = await fetchProfilesWithRetry(userIDs: userIDs)
+        apply(profiles: profiles)
+    }
+
+    private func apply(profiles: [UserID: UserPublicProfile]) {
+        guard profiles.isEmpty == false else { return }
         var nextAuthorDisplays = authorDisplays
 
-        for userID in missingUserIDs {
-            if let profile = profiles[userID] {
-                nextAuthorDisplays[userID] = Self.makeAuthorDisplay(
-                    userID: userID,
-                    profile: profile
-                )
-            } else {
-                nextAuthorDisplays[userID] = .unknown(userID: userID)
-            }
+        for (userID, profile) in profiles {
+            nextAuthorDisplays[userID] = Self.makeAuthorDisplay(
+                userID: userID,
+                profile: profile
+            )
         }
 
         authorDisplays = nextAuthorDisplays
@@ -76,15 +87,15 @@ final class CommentAuthorProfileStore {
         authorDisplays = [:]
     }
 
-    private func fetchProfilesWithRetry(userIDs: [UserID]) async -> [UserID: UserProfile] {
+    private func fetchProfilesWithRetry(userIDs: [UserID]) async -> [UserID: UserPublicProfile] {
         var remainingUserIDs = Set(userIDs)
-        var profilesByUserID: [UserID: UserProfile] = [:]
+        var profilesByUserID: [UserID: UserPublicProfile] = [:]
 
         for attempt in 0...maxRetryCount {
             guard remainingUserIDs.isEmpty == false else { break }
 
             let rawUserIDs = remainingUserIDs.map(\.value)
-            let fetchedProfiles = (try? await userProfileRepository.fetchUserProfiles(userIDs: rawUserIDs)) ?? [:]
+            let fetchedProfiles = (try? await publicProfileRepository.fetchProfiles(userIDs: rawUserIDs)) ?? [:]
 
             for userID in remainingUserIDs {
                 if let profile = fetchedProfiles[userID.value] {
@@ -106,18 +117,18 @@ final class CommentAuthorProfileStore {
 
     private static func makeAuthorDisplay(
         userID: UserID,
-        profile: UserProfile
+        profile: UserPublicProfile
     ) -> CommentAuthorDisplay {
         CommentAuthorDisplay(
             userID: userID,
             nickname: resolvedNickname(from: profile),
-            avatarPath: profile.thumbPath ?? profile.originalPath
+            avatarPath: profile.avatarThumbPath ?? profile.avatarOriginalPath
         )
     }
 
-    private static func resolvedNickname(from profile: UserProfile) -> String {
-        let nickname = profile.nickname?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let nickname, nickname.isEmpty == false {
+    private static func resolvedNickname(from profile: UserPublicProfile) -> String {
+        let nickname = profile.nickname.trimmingCharacters(in: .whitespacesAndNewlines)
+        if nickname.isEmpty == false {
             return nickname
         }
         return "알 수 없는 사용자"

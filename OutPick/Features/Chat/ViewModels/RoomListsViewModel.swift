@@ -19,6 +19,7 @@ final class RoomListsViewModel {
     private let roomReadStateStore: ChatRoomReadStateStore?
     private var hasLoadedInitialRooms = false
     private var readStateTask: Task<Void, Never>?
+    private var profileRefreshTask: Task<Void, Never>?
     private var isBoundReadState = false
 
     private(set) var state: State {
@@ -39,6 +40,13 @@ final class RoomListsViewModel {
     func onAppear() {
         bindReadStateIfNeeded()
         state.rooms = useCase.cachedTopRooms()
+        profileRefreshTask?.cancel()
+        profileRefreshTask = Task { [weak self] in
+            guard let self else { return }
+            let rooms = await self.useCase.refreshCachedProfiles()
+            guard Task.isCancelled == false else { return }
+            self.state.rooms = rooms
+        }
     }
 
     func loadInitiallyIfNeeded() async {

@@ -7,6 +7,7 @@
 
 import SwiftUI
 import UIKit
+import FirebaseFirestore
 
 struct CommentUserProfileDetailView: UIViewControllerRepresentable {
     let author: CommentAuthorDisplay
@@ -22,7 +23,7 @@ struct CommentUserProfileDetailView: UIViewControllerRepresentable {
             seedAvatarPath: author.avatarPath,
             avatarImageManager: avatarImageManager,
             currentUserProvider: currentUserProvider,
-            repositories: repositories,
+            publicProfileRepository: FirestoreUserPublicProfileRepository(db: .firestore()),
             onBack: onBack
         )
     }

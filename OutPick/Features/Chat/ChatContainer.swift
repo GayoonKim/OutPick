@@ -14,6 +14,7 @@ final class ChatContainer {
     let firebaseRepositories: FirebaseRepositoryProviding
     let roomRepository: FirebaseChatRoomRepositoryProtocol
     let userProfileRepository: UserProfileRepositoryProtocol
+    let publicProfileRepository: UserPublicProfileRepositoryProtocol
     let joinedRoomsStore: JoinedRoomsSessionStoring
     let joinedRoomsRuntime: JoinedRoomsSessionRuntimeHandling
     let roomReadStateStore: ChatRoomReadStateStore
@@ -52,6 +53,7 @@ final class ChatContainer {
         persistence: ChatPersistenceProvider,
         roomRepository: FirebaseChatRoomRepositoryProtocol? = nil,
         userProfileRepository: UserProfileRepositoryProtocol? = nil,
+        publicProfileRepository: UserPublicProfileRepositoryProtocol,
         joinedRoomsStore: JoinedRoomsSessionStoring,
         joinedRoomsRuntime: JoinedRoomsSessionRuntimeHandling,
         currentUserProvider: CurrentUserProviding,
@@ -67,11 +69,16 @@ final class ChatContainer {
             imageStorageRepository: repositories.imageStorageRepository
         )
         self.attachmentImageLoader = attachmentImageLoader
-        let managers = ChatManagerProvider(repositories: repositories, persistence: persistence)
+        let managers = ChatManagerProvider(
+            repositories: repositories,
+            publicProfileRepository: publicProfileRepository,
+            persistence: persistence
+        )
         self.managers = managers
         self.avatarImageManager = avatarImageManager
         self.roomRepository = roomRepository ?? repositories.chatRoomRepository
         self.userProfileRepository = userProfileRepository ?? repositories.userProfileRepository
+        self.publicProfileRepository = publicProfileRepository
         self.joinedRoomsStore = joinedRoomsStore
         self.joinedRoomsRuntime = joinedRoomsRuntime
         self.currentUserProvider = currentUserProvider
@@ -83,7 +90,10 @@ final class ChatContainer {
             roomRepository: self.roomRepository
         )
         let announcementRepository = announcementRepository ?? repositories.announcementRepository
-        self.roomListUseCase = RoomListUseCase(roomRepository: self.roomRepository)
+        self.roomListUseCase = RoomListUseCase(
+            roomRepository: self.roomRepository,
+            profileSyncManager: managers.profileSyncManager
+        )
         self.chatRoomExitUseCase = ChatRoomExitUseCase(
             repository: SocketChatRoomExitRepository(socket: realtimeSocketService),
             localCleaner: DefaultChatRoomLocalExitCleaner(

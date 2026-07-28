@@ -121,6 +121,10 @@ final class LoginManager {
         self.hasResolvedUserDocumentID = false
     }
 
+    func logout() {
+        clearSessionAndNotifyForceLogout()
+    }
+
     private func profileCacheAccount(userDocumentID: String) -> String {
         let trimmed = userDocumentID.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? "UserProfile" : "UserProfile:\(trimmed)"
@@ -167,44 +171,6 @@ final class LoginManager {
             }
         }
         return false
-    }
-
-    // MARK: - 프로필
-
-    private func isProfileValidForMainFlow(_ profile: UserProfile) -> Bool {
-        guard let nickname = profile.nickname?.trimmingCharacters(in: .whitespacesAndNewlines) else {
-            return false
-        }
-        return !nickname.isEmpty
-    }
-
-    func loadUserProfile() async -> Result<UserProfile, Error> {
-        let resolvedUserDocumentID: String
-        do {
-            resolvedUserDocumentID = try await ensureUserDocumentID()
-        } catch {
-            return .failure(error)
-        }
-
-        let cacheAccount = profileCacheAccount(userDocumentID: resolvedUserDocumentID)
-        do {
-            let profile = try await userProfileRepository.fetchCurrentUserProfile(
-                userID: resolvedUserDocumentID,
-                emailFallback: getUserEmail
-            )
-            guard isProfileValidForMainFlow(profile) else {
-                KeychainManager.shared.delete(service: keychainService, account: cacheAccount)
-                return .failure(FirebaseError.IncompleteProfile)
-            }
-
-            if let data = try? JSONEncoder().encode(profile) {
-                KeychainManager.shared.save(data, service: keychainService, account: cacheAccount)
-            }
-            return .success(profile)
-        } catch {
-            KeychainManager.shared.delete(service: keychainService, account: cacheAccount)
-            return .failure(error)
-        }
     }
 
     func ensureUserDocumentID() async throws -> String {

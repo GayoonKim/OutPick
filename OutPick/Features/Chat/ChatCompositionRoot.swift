@@ -40,6 +40,7 @@ enum ChatCompositionRoot {
     static func makeChatRoomSettingPanel(
         room: ChatRoom,
         repositories: FirebaseRepositoryProviding,
+        publicProfileRepository: UserPublicProfileRepositoryProtocol,
         participantsRepository: ChatRoomParticipantsRepositoryProtocol,
         localMediaRepository: ChatRoomMediaIndexRepositoryProtocol,
         attachmentImageLoader: ChatAttachmentImageLoading,
@@ -57,7 +58,7 @@ enum ChatCompositionRoot {
         )
         let participantsUseCase = LoadChatRoomParticipantsUseCase(
             participantsRepository: participantsRepository,
-            userProfileRepository: repositories.userProfileRepository,
+            publicProfileRepository: publicProfileRepository,
             chatRoomRepository: repositories.chatRoomRepository
         )
         let mediaUseCase = LoadChatRoomMediaUseCase(

@@ -124,6 +124,9 @@ final class PostCommentsViewModel: ObservableObject {
         loadedKey = nil
         didLoadHiddenUserIDs = false
         await loadPage(reset: true)
+        await authorProfileStore.refreshAuthors(for: commentFeedComments)
+        syncAuthorDisplays()
+        prefetchInitialAuthorAvatars()
     }
 
     func selectSort(_ sort: CommentSortOption) async {

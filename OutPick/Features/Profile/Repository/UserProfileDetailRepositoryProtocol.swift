@@ -6,5 +6,5 @@
 import Foundation
 
 protocol UserProfileDetailRepositoryProtocol {
-    func fetchUserProfile(userID: String) async throws -> UserProfile
+    func fetchUserProfile(userID: String) async throws -> UserPublicProfile
 }

@@ -13,12 +13,12 @@ enum UserProfileDetailCompositionRoot {
         seedAvatarPath: String?,
         avatarImageManager: AvatarImageManaging,
         currentUserProvider: CurrentUserProviding,
-        repositories: FirebaseRepositoryProviding,
+        publicProfileRepository: UserPublicProfileRepositoryProtocol,
         photoLibrarySaver: PhotoLibrarySaving = DefaultPhotoLibrarySaver(),
         onBack: @escaping () -> Void
     ) -> UserProfileDetailViewController {
         let repository = UserProfileDetailRepository(
-            userProfileRepository: repositories.userProfileRepository
+            publicProfileRepository: publicProfileRepository
         )
         let useCase = LoadUserProfileDetailUseCase(repository: repository)
         let viewModel = UserProfileDetailViewModel(
