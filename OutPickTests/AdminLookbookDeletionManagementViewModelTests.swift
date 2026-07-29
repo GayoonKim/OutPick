@@ -210,6 +210,7 @@ private struct DeletionBrandRepositoryStub: BrandRepositoryProtocol {
     func fetchBrand(brandID: BrandID) async throws -> Brand { throw StubError.unused }
     func fetchBrands(sort: BrandSort?, limit: Int, after last: DocumentSnapshot?) async throws -> BrandPage { throw StubError.unused }
     func fetchFeaturedBrands(sort: BrandSort?, limit: Int, after last: DocumentSnapshot?) async throws -> BrandPage { throw StubError.unused }
+    func fetchInterestedStyleBrands(moodIDs: [String], limit: Int, after cursor: InterestedStyleBrandCursor?) async throws -> InterestedStyleBrandPage { throw StubError.unused }
 }
 
 private struct DeletionSearchBrandsUseCaseStub: SearchBrandsUseCaseProtocol {

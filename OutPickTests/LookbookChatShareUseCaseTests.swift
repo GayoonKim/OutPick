@@ -503,6 +503,14 @@ private final class BrandRepositoryFake: BrandRepositoryProtocol {
     func fetchFeaturedBrands(sort: BrandSort?, limit: Int, after last: DocumentSnapshot?) async throws -> BrandPage {
         BrandPage(items: Array(brandsByID.values), last: nil)
     }
+
+    func fetchInterestedStyleBrands(
+        moodIDs: [String],
+        limit: Int,
+        after cursor: InterestedStyleBrandCursor?
+    ) async throws -> InterestedStyleBrandPage {
+        InterestedStyleBrandPage(items: Array(brandsByID.values), nextCursor: nil)
+    }
 }
 
 private final class SeasonRepositoryFake: SeasonRepositoryProtocol {

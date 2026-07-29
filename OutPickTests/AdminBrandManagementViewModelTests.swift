@@ -281,6 +281,14 @@ private struct BrandRepositoryStub: BrandRepositoryProtocol {
     ) async throws -> BrandPage {
         throw NSError(domain: "BrandRepositoryStub", code: -1)
     }
+
+    func fetchInterestedStyleBrands(
+        moodIDs: [String],
+        limit: Int,
+        after cursor: InterestedStyleBrandCursor?
+    ) async throws -> InterestedStyleBrandPage {
+        throw NSError(domain: "BrandRepositoryStub", code: -1)
+    }
 }
 
 private struct SearchBrandsUseCaseStub: SearchBrandsUseCaseProtocol {

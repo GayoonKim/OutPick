@@ -128,6 +128,14 @@ private final class BrandRepositorySpy: BrandRepositoryProtocol {
     ) async throws -> BrandPage {
         BrandPage(items: [brand], last: nil)
     }
+
+    func fetchInterestedStyleBrands(
+        moodIDs: [String],
+        limit: Int,
+        after cursor: InterestedStyleBrandCursor?
+    ) async throws -> InterestedStyleBrandPage {
+        InterestedStyleBrandPage(items: [brand], nextCursor: nil)
+    }
 }
 
 private final class SeasonRepositorySpy: SeasonRepositoryProtocol {
