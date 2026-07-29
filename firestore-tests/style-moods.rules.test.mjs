@@ -64,6 +64,9 @@ beforeEach(async () => {
       setDoc(doc(firestore, "brandAdmins", "total-admin"), {
         isActive: true,
       }),
+      setDoc(doc(firestore, "users", "total-admin"), {
+        accountStatus: "active",
+      }),
       setDoc(doc(firestore, "brands", "brand-1"), {
         name: "Brand",
       }),

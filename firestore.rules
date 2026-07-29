@@ -25,7 +25,7 @@ service cloud.firestore {
     }
 
     function isTotalBrandAdmin() {
-      return signedIn()
+      return isAccountActive()
         && exists(totalBrandAdminPath(request.auth.uid))
         && get(totalBrandAdminPath(request.auth.uid)).data.isActive == true;
     }
@@ -35,7 +35,7 @@ service cloud.firestore {
     }
 
     function hasBrandManagerAccess(brandID) {
-      return signedIn()
+      return isAccountActive()
         && exists(brandManagerPath(brandID, request.auth.uid))
         && get(brandManagerPath(brandID, request.auth.uid)).data.role in ["owner", "admin"];
     }
@@ -172,6 +172,26 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    match /accountDeletionIntents/{intentID} {
+      allow read, write: if false;
+    }
+
+    match /accountDeletionRequests/{requestID} {
+      allow read, write: if false;
+    }
+
+    match /accountDeletionNotificationOutbox/{eventID} {
+      allow read, write: if false;
+    }
+
+    match /completedDeletionSuppressions/{suppressionID} {
+      allow read, write: if false;
+    }
+
+    match /accountDeletionAuditLogs/{auditID} {
+      allow read, write: if false;
+    }
+
     match /brands/{brandID} {
       allow read: if true;
       allow create, update, delete: if false;
@@ -278,7 +298,9 @@ service cloud.firestore {
     }
 
     match /userPublicProfiles/{userID} {
-      allow read: if signedIn();
+      allow read: if isAccountActive()
+        && exists(userPath(userID))
+        && get(userPath(userID)).data.accountStatus == "active";
       allow create, update, delete: if false;
     }
 
@@ -291,7 +313,7 @@ service cloud.firestore {
     }
 
     match /Rooms/{roomID} {
-      allow read: if signedIn();
+      allow read: if isAccountActive();
       allow create: if isAccountActive()
         && request.resource.data.creatorUID == request.auth.uid
         && !request.resource.data.keys().hasAny(["participantUIDs"])
@@ -320,12 +342,12 @@ service cloud.firestore {
       allow delete: if false;
 
       match /Messages/{messageID} {
-        allow read: if signedIn();
+        allow read: if isAccountActive();
         allow write: if isAccountActive() && isRoomParticipant(roomID);
       }
 
       match /mediaIndex/{mediaID} {
-        allow read: if signedIn();
+        allow read: if isAccountActive();
         allow write: if isAccountActive() && isRoomParticipant(roomID);
       }
 
@@ -346,7 +368,7 @@ service cloud.firestore {
 
     match /tags/{tagID} {
       allow read: if true;
-      allow write: if signedIn();
+      allow write: if isAccountActive();
     }
 
     match /styleMoods/{moodID} {

@@ -43,6 +43,11 @@ beforeEach(async () => {
         onboardingVersion: 1,
         selectedMoodIDs: ["minimal"],
       }),
+      setDoc(doc(firestore, "users", otherUID), {
+        accountStatus: "active",
+        onboardingVersion: 1,
+        selectedMoodIDs: ["minimal"],
+      }),
       setDoc(doc(firestore, "userPublicProfiles", ownerUID), {
         nickname: "아웃픽",
         avatarThumbPath: null,
@@ -89,6 +94,27 @@ describe("profile document boundary", () => {
       doc(owner, "userPublicProfiles", ownerUID),
       {nickname: "변경닉네임"},
     ));
+  });
+
+  test("pending 계정의 공개 프로필과 삭제 내부 문서는 노출하지 않는다", async () => {
+    const other = testEnvironment.authenticatedContext(otherUID).firestore();
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await Promise.all([
+        updateDoc(doc(context.firestore(), "users", ownerUID), {
+          accountStatus: "deletionPending",
+        }),
+        setDoc(doc(context.firestore(), "accountDeletionRequests", "request"), {
+          status: "grace",
+        }),
+      ]);
+    });
+
+    await assertFails(
+      getDoc(doc(other, "userPublicProfiles", ownerUID)),
+    );
+    await assertFails(
+      getDoc(doc(other, "accountDeletionRequests", "request")),
+    );
   });
 
   test("닉네임 인덱스는 모든 클라이언트 접근을 거부한다", async () => {

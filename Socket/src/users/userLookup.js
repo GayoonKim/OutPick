@@ -28,7 +28,20 @@ export function createUserLookup({ db }) {
     };
   }
 
+  function watchUserAccountStatus(uid, onInactive, onError = () => {}) {
+    const normalizedUID = typeof uid === "string" ? uid.trim() : "";
+    if (!normalizedUID || normalizedUID.includes("/")) return () => {};
+    return db.collection(USERS_COLLECTION).doc(normalizedUID).onSnapshot(
+      (snapshot) => {
+        const status = snapshot.exists ? snapshot.data()?.accountStatus : null;
+        if (status !== "active") onInactive(status);
+      },
+      onError
+    );
+  }
+
   return {
-    findUserByUID
+    findUserByUID,
+    watchUserAccountStatus
   };
 }

@@ -38,6 +38,7 @@ const result = spawnSync(
       "room-document-id.rules.test.mjs style-moods.rules.test.mjs " +
       "profile.rules.test.mjs profile-storage.rules.test.mjs " +
       "&& node --test profile-transactions.emulator.test.mjs " +
+      "account-deletion.emulator.test.mjs " +
       "&& node ../functions/scripts/seed-style-moods.mjs " +
       "--apply --project outpick-rules-test " +
       "&& node ../functions/scripts/seed-style-moods.mjs " +

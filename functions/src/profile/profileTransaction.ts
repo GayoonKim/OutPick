@@ -1,4 +1,5 @@
 /* eslint-disable require-jsdoc, max-len */
+import {randomUUID} from "node:crypto";
 import {FieldValue} from "firebase-admin/firestore";
 import {HttpsError} from "firebase-functions/v2/https";
 import {db} from "../core/firebase.js";
@@ -78,6 +79,7 @@ export async function completeOnboardingRecord(
       onboardingVersion: CURRENT_ONBOARDING_VERSION,
       selectedMoodIDs: input.selectedMoodIDs,
       accountStatus: "active",
+      accountGenerationID: randomUUID(),
       onboardingCompletedAt: timestamp,
       createdAt: timestamp,
       updatedAt: timestamp,

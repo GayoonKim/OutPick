@@ -31,6 +31,10 @@ const callableNames = [
   "completeOnboarding",
   "updatePublicProfile",
   "updateStylePreferences",
+  "prepareAccountDeletion",
+  "requestAccountDeletion",
+  "cancelAccountDeletion",
+  "getAccountDeletionStatus",
   "createBrand",
   "updateBrand",
   "addBrandManager",
@@ -102,6 +106,12 @@ const firestoreEndpoints = {
 } as const;
 
 const scheduleEndpoints = {
+  finalizeExpiredAccountDeletions: {
+    schedule: "0 * * * *",
+    timeZone: "Asia/Seoul",
+    timeoutSeconds: 540,
+    availableMemoryMb: 1024,
+  },
   purgeExpiredLookbookDeletions: {
     schedule: "0 4 * * *",
     timeZone: "Asia/Seoul",
@@ -151,13 +161,13 @@ function runtimeNumber(value: unknown): number | null {
   return typeof value === "number" ? value : null;
 }
 
-test("Firebase deployment export 이름 63개를 유지한다", () => {
+test("Firebase deployment export 이름 68개를 유지한다", () => {
   const expected = [
     ...callableNames,
     ...Object.keys(firestoreEndpoints),
     ...Object.keys(scheduleEndpoints),
   ].sort();
-  assert.equal(expected.length, 63);
+  assert.equal(expected.length, 68);
   assert.deepEqual(Object.keys(exportedFunctions).sort(), expected);
 });
 

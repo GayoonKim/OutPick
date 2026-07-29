@@ -71,6 +71,18 @@ export function createFirebaseAuthMiddleware({
 
       const tokenEmail = emailFromDecodedToken(decodedToken);
       const userProfile = await findUserByUID(userUID);
+      if (!userProfile || userProfile.data?.accountStatus !== "active") {
+        logger.warn("[auth] inactive account rejected", {
+          userUID,
+          accountStatus: userProfile?.data?.accountStatus || "missing"
+        });
+        const error = new Error("account_inactive");
+        error.data = {
+          message: "활성 상태의 계정이 필요합니다.",
+          error: "account_inactive"
+        };
+        return next(error);
+      }
       const profileEmail = normalizeEmail(userProfile?.data?.email);
 
       socket.userUID = userUID;

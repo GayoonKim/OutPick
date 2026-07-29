@@ -1,5 +1,14 @@
 export {exchangeKakaoToken} from "./auth/functions.js";
 export {
+  cancelAccountDeletion,
+  getAccountDeletionStatus,
+  prepareAccountDeletion,
+  requestAccountDeletion,
+} from "./accountDeletion/functions.js";
+export {
+  finalizeExpiredAccountDeletions,
+} from "./accountDeletion/drain.js";
+export {
   addBrandManager,
   createBrand,
   getBrandAdminCapabilities,

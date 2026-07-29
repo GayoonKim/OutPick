@@ -62,7 +62,7 @@ test("Firebase auth middleware는 profile email을 우선해 socket identity를 
     },
     findUserByUID: async () => ({
       ref: { id: "document-1" },
-      data: { email: "profile@example.com" }
+      data: { email: "profile@example.com", accountStatus: "active" }
     }),
     logger: silentLogger()
   });
@@ -74,6 +74,24 @@ test("Firebase auth middleware는 profile email을 우선해 socket identity를 
   assert.equal(socket.userDocumentID, "document-1");
   assert.equal(socket.userEmail, "profile@example.com");
   assert.equal(socket.userEmailSource, "profile");
+});
+
+test("Firebase auth middleware는 pending 계정 연결을 거부한다", async () => {
+  const middleware = createFirebaseAuthMiddleware({
+    verifyIDToken: async () => ({ uid: "user-1" }),
+    findUserByUID: async () => ({
+      ref: { id: "user-1" },
+      data: { accountStatus: "deletionPending" }
+    }),
+    logger: silentLogger()
+  });
+  let received;
+  await middleware(
+    { handshake: { auth: { idToken: "token" }, headers: {} } },
+    (error) => { received = error; }
+  );
+  assert.equal(received.message, "account_inactive");
+  assert.equal(received.data.error, "account_inactive");
 });
 
 test("Firebase auth middleware는 missing/invalid token error 계약을 유지한다", async () => {

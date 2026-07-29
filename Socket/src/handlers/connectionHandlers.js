@@ -6,6 +6,7 @@ export function registerConnectionHandlers({
   rooms,
   clock,
   reconnectPolicy,
+  watchUserAccountStatus,
   logger = console
 }) {
   logger.log("User connected:", socket.userUID);
@@ -32,6 +33,28 @@ export function registerConnectionHandlers({
 
   socket.emit("room list", Object.keys(rooms));
 
+  const stopAccountStatusWatch = watchUserAccountStatus?.(
+    socket.userUID,
+    (accountStatus) => {
+      logger.warn("[account] inactive socket disconnected", {
+        userUID: socket.userUID,
+        accountStatus: accountStatus || "missing",
+        socketID: socket.id
+      });
+      socket.emit("account:inactive", {
+        accountStatus: accountStatus || "missing"
+      });
+      socket.disconnect(true);
+    },
+    (error) => {
+      logger.error("[account] status watch failed; disconnecting", {
+        userUID: socket.userUID,
+        message: error?.message
+      });
+      socket.disconnect(true);
+    }
+  );
+
   socket.on("set username", (username) => {
     socket.username = username || "Anonymous";
     logger.log(`Username set: ${socket.username}`);
@@ -39,6 +62,7 @@ export function registerConnectionHandlers({
   });
 
   socket.on("disconnect", () => {
+    stopAccountStatusWatch?.();
     logger.log("User disconnected:", socket.id);
     for (const roomID in rooms) {
       rooms[roomID] = rooms[roomID].filter((user) => user !== socket.username);

@@ -109,4 +109,18 @@ describe("profile storage boundary", () => {
     await assertSucceeds(avatarReference(other).getDownloadURL());
     await assertFails(avatarReference(unauthenticated).getDownloadURL());
   });
+
+  test("pending 사용자의 기존 프로필 이미지는 다른 사용자에게도 숨긴다", async () => {
+    const owner = testEnvironment.authenticatedContext(ownerUID);
+    const other = testEnvironment.authenticatedContext(otherUID);
+    const reference = avatarReference(owner);
+    await assertSucceeds(uploadAvatar(reference));
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await updateDoc(doc(context.firestore(), "users", ownerUID), {
+        accountStatus: "deletionPending",
+      });
+    });
+
+    await assertFails(avatarReference(other).getDownloadURL());
+  });
 });

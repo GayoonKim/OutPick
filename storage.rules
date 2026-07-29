@@ -45,7 +45,7 @@ service firebase.storage {
     }
 
     function isTotalBrandAdmin() {
-      return signedIn()
+      return isAccountActive()
         && firestore.exists(totalBrandAdminPath(request.auth.uid))
         && firestore.get(totalBrandAdminPath(request.auth.uid)).data.isActive == true;
     }
@@ -55,7 +55,7 @@ service firebase.storage {
     }
 
     function hasBrandManagerAccess(brandID) {
-      return signedIn()
+      return isAccountActive()
         && firestore.exists(brandManagerPath(brandID, request.auth.uid))
         && firestore.get(brandManagerPath(brandID, request.auth.uid)).data.role in ["owner", "admin"];
     }
@@ -92,21 +92,21 @@ service firebase.storage {
     }
 
     match /rooms/{roomID}/cover/thumb/{fileName} {
-      allow get: if signedIn();
+      allow get: if isAccountActive();
       allow create, update: if isRoomCreator(roomID) && isJpegUpload(5 * 1024 * 1024);
       allow delete: if isRoomCreator(roomID);
       allow list: if false;
     }
 
     match /rooms/{roomID}/cover/original/{fileName} {
-      allow get: if signedIn();
+      allow get: if isAccountActive();
       allow create, update: if isRoomCreator(roomID) && isJpegUpload(30 * 1024 * 1024);
       allow delete: if isRoomCreator(roomID);
       allow list: if false;
     }
 
     match /rooms/{roomID}/messages/{messageID}/images/{imageID}/{fileName} {
-      allow get: if signedIn() && fileName in ['thumb.jpg', 'original.jpg'];
+      allow get: if isAccountActive() && fileName in ['thumb.jpg', 'original.jpg'];
       allow create, update: if isRoomParticipant(roomID)
         && (
           (fileName == 'thumb.jpg' && isJpegUpload(5 * 1024 * 1024))
@@ -117,21 +117,23 @@ service firebase.storage {
     }
 
     match /rooms/{roomID}/messages/{messageID}/video/thumb.jpg {
-      allow get: if signedIn();
+      allow get: if isAccountActive();
       allow create, update: if isRoomParticipant(roomID) && isJpegUpload(5 * 1024 * 1024);
       allow delete: if isRoomParticipant(roomID);
       allow list: if false;
     }
 
     match /rooms/{roomID}/messages/{messageID}/video/{fileName} {
-      allow get: if signedIn();
+      allow get: if isAccountActive();
       allow create, update: if isRoomParticipant(roomID) && isVideoUpload(350 * 1024 * 1024);
       allow delete: if isRoomParticipant(roomID);
       allow list: if false;
     }
 
     match /profileImage/{userID}/{variant}/{fileName} {
-      allow get: if signedIn();
+      allow get: if isAccountActive()
+        && firestore.exists(userPath(userID))
+        && firestore.get(userPath(userID)).data.accountStatus == "active";
       allow create, update: if isAccountActive()
         && request.auth.uid == userID
         && variant in ['thumb', 'original']
@@ -141,7 +143,7 @@ service firebase.storage {
     }
 
     match /brands/{brandID}/{assetPath=**} {
-      allow get: if signedIn();
+      allow get: if isAccountActive();
       allow create, update: if hasBrandWriteAccess(brandID)
         && (
           isImageUpload(30 * 1024 * 1024)
