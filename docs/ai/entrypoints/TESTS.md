@@ -96,6 +96,21 @@ Firebase Functions tests/build entry:
   - `profile-storage.rules.test.mjs`는 owner+active upload/delete와 signed-in read를 검증한다.
   - `profile-transactions.emulator.test.mjs`는 닉네임 동시 단일 승자, inactive/missing mood rollback, nickname index 교체/rollback을 실제 Admin transaction으로 검증한다.
   - 2026-07-28 Phase 2 결과: Functions 80/80, rules 23/23, transaction 5/5.
+- Phase 7 계정 삭제:
+  - `functions/src/accountDeletion/{policy,functions,providerCleanup}.test.ts`는 generation request ID, intent 입력, 최근 인증, 정확한 취소 경계, retry backoff, provider claim과 Kakao unlink 멱등성을 검증한다.
+  - `firestore-tests/account-deletion.emulator.test.mjs`는 intent 단일 소비, 즉시 pending 잠금, 취소 복원, 정확한 만료 시각 거부를 실제 transaction으로 검증한다.
+  - `Socket/test/auth/socketAuthMiddleware.test.js`, `Socket/test/users/userLookup.test.js`는 pending handshake 거부와 상태 listener fail-closed를 검증한다.
+  - 2026-07-29 Functions 97/97·lint/build, Socket check·64/64, Rules 26/26, account/profile transaction 7/7이 통과했다.
+- Phase 8 iOS 계정 삭제:
+  - `AccountDeletionUseCaseTests.swift`: 재인증 선행, 서버 수락 전 세션 보존, 수락 후 receipt/scrub 실패 fail-closed, provider 불일치 취소 차단과 receipt 유실 취소 인증을 검증한다.
+  - `CloudFunctions/CloudFunctionsAccountDeletionRepositoryTests.swift`: prepare/request/status/cancel callable 이름·payload·응답 상태 guard를 검증한다.
+  - `AccountDeletionReceiptStoreTests.swift`: 고유 Keychain service에서 opaque receipt 저장·조회·삭제를 검증한다.
+  - `GRDB/AccountDeletionLocalDataCleanupTests.swift`: message/FTS/media/outbox/profile cache 7개 테이블의 원자 정리를 검증한다.
+  - `GoogleAccountDeletionReauthenticationPolicyTests.swift`: pending scrub 후 세션 없음 sign-in, 같은 UID reauthenticate, 다른 UID 거부를 검증한다.
+  - `OutPickAppCheckProviderPolicyTests.swift`: Simulator Debug Provider와 실기기 App Attest 분기를 검증한다.
+  - 2026-07-29 iPhone 17 Pro Max Simulator에서 신규 targeted 9/9와 앱 build/install/launch가 통과했다.
+  - App Check와 Google pending 취소 보완 후 관련 targeted 14/14, Simulator build/run, Kakao AD-1·Google AD-2 운영 요청/취소 QA가 통과했다.
+  - 전체 회귀는 422 passed, 18 skipped, 3 failed이며 실패는 Phase 8 비관련 관심 스타일 비동기·media dedupe·기존 문구 기대값이다.
 - iOS 새 온보딩·bootstrap:
   - `ProfileSetupViewModelTests.swift`
   - `AvatarSetupViewModelTests.swift`
@@ -107,6 +122,14 @@ Firebase Functions tests/build entry:
   - 에디토리얼 3단계 UX 보완 후 닉네임·아바타 선택/건너뛰기·featured/검색/선택 유지와 기존 완료/bootstrap을 묶은 15/15가 같은 Simulator에서 통과했다.
   - 문구 보완과 닉네임 사전 확인 추가 후 중복/사용 가능/조회 실패를 포함한 관련 17/17, Simulator build가 통과했다. Functions는 81/81·lint·build가 통과했고 신규 callable 운영 등록도 확인했다.
   - 닉네임 확인을 첫 단계로 이동한 후 성공/중복/조회 실패와 아바타 선택/건너뛰기, callable mapping 관련 9/9와 Simulator build가 통과했다.
+- iOS Phase 6 관심 스타일 브랜드:
+  - `LoadInterestedStyleBrandsUseCaseTests.swift`
+  - `InterestedStyleBrandListViewModelTests.swift`
+  - `LookbookHomeViewModelInterestTests.swift`
+  - 정렬·가시성·ID 중복 제거, 빈 관심값 query 생략, 전체 보기 append·동일 커서 중복 호출 차단, 관심 스타일 변경 재조회, 개인화 빈 상태·실패와 전체 브랜드 목록 상태 분리를 검증한다.
+  - 2026-07-29 iPhone 17 Pro Max iOS 26.2 Simulator에서 신규 targeted test 10/10이 통과했다.
+  - 같은 날 운영 index `CICAgLiT_JAK`가 `READY`가 된 뒤 실제 query의 실패→재시도→매칭 0건, 빈 상태 CTA 두 경로, 검색 중 섹션 숨김·복원을 확인했다. DEBUG fixture에서는 매칭 카드 상세와 전체 보기 진입을 확인했다.
+  - 비정상적인 관심 스타일 0개에서 query를 생략하고 섹션을 숨기는 `noStylePreferenceHidesSectionWithoutQuery` 테스트를 추가했다. 이번 문구·섹션 구분 보완에서는 프로젝트 테스트 실행 원칙에 따라 별도 테스트 실행은 보류했고 Simulator build/install/launch로 컴파일을 확인했다.
 - iOS Phase 4 마이페이지·공개 프로필 직접 소비:
   - `UpdatePublicProfileUseCaseTests.swift`
   - `ProfileEditViewModelTests.swift`

@@ -49,6 +49,7 @@ Repository가 `DocumentSnapshot.documentID`를 같은 snapshot에서 decode한 D
 | 변경 목적 | View | ViewModel/상태 |
 | --- | --- | --- |
 | 홈·검색 | `Views/LookbookHome/LookbookHomeView.swift` | `ViewModels/LookbookHomeViewModel.swift` |
+| 관심 스타일 브랜드 전체 보기 | `Views/LookbookHome/InterestedStyleBrandListView.swift` | `ViewModels/InterestedStyleBrandListViewModel.swift` |
 | 브랜드 요청 | `Views/BrandRequest` | `BrandRequestViewModel.swift`, `MyBrandRequestsViewModel.swift` |
 | 브랜드 상세 | `Views/BrandDetail/BrandDetailView.swift` | `BrandDetailViewModel.swift` |
 | 시즌 상세 | `Views/SeasonDetail/SeasonDetailView.swift` | `SeasonDetailViewModel.swift` |
@@ -67,6 +68,28 @@ Repository가 `DocumentSnapshot.documentID`를 같은 snapshot에서 decode한 D
 경로 prefix는 `OutPick/Features/Lookbook/`이다.
 
 ## 자주 수정하는 흐름
+
+### 관심 스타일 브랜드
+
+읽기 순서:
+
+1. `App/Session/CurrentUserStylePreferenceStore.swift`
+2. `Domains/UseCases/LoadInterestedStyleBrandsUseCase.swift`
+3. `Repositories/Protocols/BrandRepositoryProtocol.swift`, `Repositories/Implementations/FirestoreBrandRepository.swift`
+4. `ViewModels/LookbookHomeViewModel.swift`, `ViewModels/InterestedStyleBrandListViewModel.swift`
+5. `Views/LookbookHome/InterestedStyleBrandSectionView.swift`, `InterestedStyleBrandListView.swift`
+6. `LookbookContainer.swift`, `Coordinators/LookbookCoordinator.swift`
+
+현재 계약:
+
+- 비공개 `users.selectedMoodIDs`와 공개 `brands.moodIDs`의 교집합을 `array-contains-any`로 조회한다.
+- 정렬은 `likeCount DESC`, 문서 ID ASC이며 홈은 10개, 전체 보기는 첫 결과를 이어받아 이후 20개 단위로 조회한다.
+- 커서는 `(likeCount, brandID)` field-value keyset이다. append는 브랜드 ID를 중복 제거하고 동일 커서 동시 호출을 막는다.
+- `deletionStatus`가 없는 기존 활성 브랜드도 보존하기 위해 query 조건에는 넣지 않고 Domain의 `isVisibleToUsers`로 비노출 문서를 거른다.
+- 검색 중에는 섹션을 표시하지 않으며, 조회 실패는 기존 전체 브랜드 목록과 분리해 재시도한다.
+- 활성 계정은 관심 스타일을 1~5개 유지하므로 룩북에 편집 CTA를 두지 않는다. 방어적으로 관심 스타일이 0개면 개인화 섹션을 숨기고, 매칭 브랜드가 0개면 중앙 정렬한 안내와 브랜드 요청 CTA만 표시한다. 관심 스타일 섹션과 세로 목록 사이는 divider와 `전체 브랜드` 헤더로 구분한다.
+- `CurrentUserStylePreferenceStore`는 bootstrap·온보딩 완료·마이페이지 저장·로그아웃에 맞춰 갱신되며 홈과 전체 보기의 첫 페이지를 다시 구성한다.
+- `popularScore`는 계산·갱신 경로가 없어 Phase 6 정렬에 사용하지 않는다.
 
 ### 브랜드 상세
 

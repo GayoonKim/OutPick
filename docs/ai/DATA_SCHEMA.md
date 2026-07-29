@@ -82,6 +82,17 @@
 - 앱 재실행 시 Firestore `Rooms`와 joinedRooms projection에서 복원한다.
 - snapshot은 `latestSeq`, `lastReadSeq`, `lastMessageSenderUID`, `latestMessagePreview`, `latestMessageAt`를 가진다.
 
+## 계정 삭제 계약
+
+- `users/{uid}`는 `accountStatus: active | deletionPending`과 서버 발급 `accountGenerationID`를 가진다.
+- `accountDeletionIntents/{intentID}`는 UID/generation/provider/auth session/nonce hash/5분 `expiresAt`을 가진 서버 전용 일회성 문서다.
+- `accountDeletionRequests/{requestID}`는 `grace | finalizing | retryPending | completed | cancelled`, stage, lease, retry, `cancelableUntil`, receipt hash를 가진다.
+- request ID는 UID와 generation으로 만든 비식별 결정적 hash이며, 새 generation의 재가입 계정과 과거 worker를 분리한다.
+- 완료/cancelled request와 notification outbox는 `expiresAt` 기준 30일, 비식별 `accountDeletionAuditLogs`는 90일 TTL 대상이다.
+- `completedDeletionSuppressions`는 백업 복구 시 의도적 삭제를 되살리지 않기 위한 HMAC 원장이다.
+- 모든 deletion collection은 클라이언트 read/write를 거부한다. 상태 조회는 App Check를 강제하는 opaque receipt callable만 사용한다.
+- pending 사용자의 공개 프로필/프로필 이미지 read, 모든 쓰기·관리자 권한·Socket 연결을 차단한다.
+
 ### 룩북 공유 메시지
 
 - 메시지 경로: `Rooms/{roomID}/Messages/{messageID}`.
@@ -100,6 +111,8 @@
 - 이름/alias 충돌 방지: 서버 전용 `styleMoodTermIndex/{sha256(normalizedTerm)}`. `moodID`, `termType`, `createdAt`을 가진다.
 - `displayGroup` canonical 값은 `베이직·포멀`, `스트릿·트렌드`, `헤리티지·유틸리티`, `스포츠·아웃도어`, `빈티지·서브컬처`, `로맨틱·익스프레시브`이며 iOS도 같은 raw value를 사용한다.
 - `brands/{brandID}.moodIDs`와 `brands/{brandID}/seasons/{seasonID}.moodIDs`는 각각 별도의 0...5개 고유 active mood ID 집합이며 순서·대표 무드 의미가 없다.
+- 관심 스타일 브랜드 조회는 사용자 `selectedMoodIDs` 최대 5개를 `brands.moodIDs array-contains-any`에 전달하고 `likeCount DESC`, 문서 ID ASC로 정렬한다.
+- 관심 스타일 pagination cursor는 정렬 필드 값 `(likeCount, brandID)`을 사용한다. `deletionStatus` 누락 legacy 브랜드 호환을 위해 query 조건에는 포함하지 않고 Domain 가시성 정책으로 필터링한다.
 - 브랜드·시즌 `moodIDs` patch는 총 관리자 callable만 수행한다. `updateBrand`는 일반 필드와 선택적 무드 patch 권한을 분리하고, `updateSeasonMoods`는 기존 시즌의 무드만 교체한다. 자동 import 시즌은 `moodIDs: []`로 생성하고 시즌 문서 client create/update는 허용하지 않는다.
 - seed 상태: 서버 전용 `styleMoodSeedMetadata/current`. `version`, `contentHash`, `count`, `appliedAt`을 가진다.
 - 초기 v1은 56개, 온보딩 기본 노출은 20개다. 원본은 `functions/seeds/style-moods.v1.json`이다.

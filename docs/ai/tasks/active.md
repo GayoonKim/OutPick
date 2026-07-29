@@ -2,7 +2,7 @@
 
 ## 현재 상태
 
-- 현재 진행 중인 핵심 task는 `style-mood-personalization-account-privacy`다. 온보딩을 닉네임·아바타·관심 무드로 교체하고, 공개/비공개 프로필 분리, 브랜드·시즌 공용 무드, 관심 스타일 홈, 앱 내 계정 삭제, 마지막 개발 데이터 전체 초기화를 포함한다. Phase 1~5.1 구현·자동 검증·사용자 수동 QA를 완료했고 Phase 1 seed/index, Phase 2 Functions·Firestore rules·Storage rules, Phase 5 Functions·Rules·worker를 운영 반영했다. 현재는 Phase 6 관심 스타일 홈의 설계 재확인과 사용자 구현 승인을 기다린다. 개발 데이터 전체 삭제는 마지막 Phase의 별도 승인 전까지 진행하지 않는다.
+- 현재 진행 중인 핵심 task는 `style-mood-personalization-account-privacy`다. Phase 1~8은 완료 처리했다. Phase 7은 계정 삭제 Functions·Secrets·TTL·Rules·Socket 운영 반영과 Google/Kakao 요청·취소 E2E까지 완료했고, Phase 8도 iOS UI·재인증·receipt·로컬 scrub·복원을 완료했다. Apple Developer Program 가입 후 App Attest 등록·실기기 QA와 PITR·예약 백업·Storage 30일 soft delete·별도 복구 훈련은 Phase 미완성이 아닌 출시 운영 게이트로 분리한다. 개발 데이터 전체 삭제는 마지막 Phase의 별도 승인 전까지 진행하지 않는다.
 - 다음 핵심 task는 `lookbook-discovery-learning-loop`로 확정했다. season discovery에도 구조 evidence, issue cluster, 관리자 정상/누락/오탐 ground truth, 최소 fixture 승격, extractor version gate를 season-image extraction과 같은 원칙으로 연결한다. 현재는 사용자 대화 기준 범위와 우선순위만 기록하며, 요구사항·데이터/API·관리자 UX·보존 정책을 논의하고 구현 승인을 받기 전에는 task 문서나 코드를 생성·수정하지 않는다.
 - `development-production-environment-separation`은 그다음 핵심 후속 후보로 유지한다. 하나의 Xcode 프로젝트와 app target을 유지하면서 Development는 `GayoonKim.OutPick.dev`/`outpick-test`, Production은 `GayoonKim.OutPick`/`outpick-664ae`로 분리하고 `feature/* → PR → main → release tag → 승인 기반 운영 배포` 흐름을 구성한다. 현재는 문서 기록만 완료했으며 사용자 재개 승인 전에는 브랜치·Xcode·Firebase·외부 콘솔·배포를 변경하지 않는다.
 - `socket-ingress-ordering-hardening`은 Phase 1~6 구현, 자동 회귀와 실제 Firebase/Simulator 핵심 QA를 완료하고 2026-07-17 종료했다.
@@ -27,7 +27,7 @@
   - [QA](style-mood-personalization-account-privacy/qa-checklist.md)
   - [reset runbook](style-mood-personalization-account-privacy/data-reset-runbook.md)
   - [progress](style-mood-personalization-account-privacy/progress.md)
-  - 상태: Phase 5·5.1 구현·자동 검증·운영 배포·사용자 수동 QA 완료. Phase 6 설계 재확인·구현 승인 대기.
+  - 상태: Phase 1~8 완료. Phase 7·8 구현·운영 Simulator QA 완료. App Attest 실기기와 운영 백업 항목은 Apple Developer Program 가입 이후 출시 운영 게이트로 보류.
 
 ## 다음 핵심 작업
 

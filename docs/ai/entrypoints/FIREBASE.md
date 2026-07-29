@@ -33,6 +33,7 @@ Phase 6 전체 회귀와 운영 배포는 `docs/ai/tasks/core-infrastructure-mod
 | 스타일 무드 관리 | `functions/src/styleMoods/{functions,repository,policy,contracts}.ts` |
 | 브랜드·시즌 무드 할당 | `functions/src/shared/styleMoodAssignmentPolicy.ts`, `functions/src/lookbook/admin/seasonMoodFunctions.ts` |
 | 계정·공개 프로필 | `functions/src/profile/{functions,profileTransaction,policy,contracts}.ts` |
+| 계정 삭제 | `functions/src/accountDeletion/{functions,repository,policy,drain,cleanup,providerCleanup}.ts` |
 | active 계정 guard | `functions/src/shared/accountStatus.ts` |
 | 룩북 삭제 lifecycle | `functions/src/lookbook/deletion/`과 아래 전용 섹션 |
 | engagement/comment/safety | `functions/src/lookbook/{engagement,comments,safety}/functions.ts` |
@@ -77,7 +78,7 @@ npm run build
 
 - callable: `checkNicknameAvailability`, `completeOnboarding`, `updatePublicProfile`, `updateStylePreferences`.
 - 비공개 계정: `users/{uid}`. 본인 read, 모든 client write 금지.
-- 공개 프로필: `userPublicProfiles/{uid}`. signed-in read, 모든 client write 금지.
+- 공개 프로필: `userPublicProfiles/{uid}`. active 조회자가 active 대상만 read하며 모든 client write 금지.
 - 닉네임 충돌 인덱스: 서버 전용 `nicknameIndex/{sha256(normalizedNickname)}`.
 - `checkNicknameAvailability`는 인증 사용자에게 가용성만 반환하며 닉네임을 예약하지 않는다.
 - `completeOnboarding`은 비공개 계정·공개 프로필·닉네임 인덱스를 한 transaction으로 생성한다.
@@ -90,6 +91,39 @@ npm run build
 - 2026-07-28 Phase 3 앱 호환 전환과 자동 검증 후 `outpick-664ae`에 Functions·Firestore rules·Storage rules를 운영 배포했다.
 - `firebase functions:list`에서 네 callable 모두 v2, `asia-northeast3`, Node.js 24로 등록됨을 확인했다. `checkNicknameAvailability`는 2026-07-28 운영 create operation까지 완료했다.
 - iOS 연결은 `CloudFunctionsProfileMutationRepository`, `CheckNicknameAvailabilityUseCase`, `CompleteOnboardingUseCase`를 사용한다.
+
+## Phase 7 계정 삭제 서버
+
+- callable: `prepareAccountDeletion`, `requestAccountDeletion`, `cancelAccountDeletion`, `getAccountDeletionStatus`.
+- scheduler: `finalizeExpiredAccountDeletions`, 매시 정각, `asia-northeast3`.
+- 요청은 최근 인증, App Check, 5분 TTL 일회성 intent를 요구한다.
+- 요청 transaction은 `users.accountStatus = deletionPending`과 삭제 요청/outbox를 원자 생성하고 refresh token revoke를 수행한다.
+- 취소는 서버 시각이 `cancelableUntil`보다 이른 `grace` 상태에서만 성공한다.
+- worker는 UID + `accountGenerationID`, lease, stage를 검증하고 공개 프로필·engagement·댓글·메시지/reply preview·방·역할·개인 상태·provider/Auth 순으로 정리한다.
+- Socket은 handshake에서 active 상태를 확인하고 연결 뒤 사용자 문서 listener가 pending/missing 상태를 감지하면 fail closed로 연결을 종료한다.
+- 서버 전용 컬렉션: `accountDeletionIntents`, `accountDeletionRequests`, `accountDeletionNotificationOutbox`, `completedDeletionSuppressions`, `accountDeletionAuditLogs`.
+- 필수 Secret: `KAKAO_ADMIN_KEY`, `ACCOUNT_DELETION_LEDGER_HMAC_KEY`.
+- 검증: Functions 97/97, Socket 64/64, Rules 26/26, account/profile transaction 7/7.
+- iOS App Check 진입점:
+  - `OutPick/App/Firebase/OutPickAppCheckProviderFactory.swift`
+  - 시뮬레이터는 Debug Provider, 모든 실기기는 App Attest를 사용한다.
+  - `AppDelegate.configureFirebaseApp`이 `FirebaseApp.configure`보다 먼저 Provider Factory를 등록한다.
+  - `OutPick/OutPick.entitlements`의 App Attest environment는 Firebase 요구에 따라 `production`이다.
+- 2026-07-29 부분 운영 반영:
+  - Secret Manager API 활성화, `ACCOUNT_DELETION_LEDGER_HMAC_KEY` 생성
+  - 계정 삭제 TTL 4개 `ACTIVE`
+  - Firestore rules/indexes와 Storage rules 배포
+  - Socket `outpick-socket-00008-4wl` traffic 100%, `/readyz` 정상, 배포 직후 ERROR 0건
+- 출시 전 보류 상태:
+  - PITR 비활성, 예약 백업 0개, Storage soft delete 7일
+  - 실제 Google/Kakao 요청·취소 smoke 미완료
+  - Apple Developer Program 가입 후 Team ID 발급·Firebase App Attest 등록·지원되는 iPhone 실기기 검증
+  - 실제 앱 출시 게이트에서 PITR·예약 백업·30일 soft delete·별도 export/복구 훈련을 적용·검증한다.
+- 2026-07-29 운영 반영:
+  - HMAC·Kakao Secrets version 1 enabled
+  - 계정 삭제 callable 4개와 hourly finalizer 배포
+  - 공식 App Check Debug Token API로 현재 iOS Simulator token 등록
+  - Debug Token 원문은 저장소·하네스·채팅에 기록하지 않는다.
 
 ## 브랜드 권한과 요청
 
@@ -251,6 +285,7 @@ npm run build
 - query의 equality/range/orderBy 순서와 `firestore.indexes.json`을 함께 확인한다.
 - 운영에만 존재하는 field override 삭제 경고가 있으면 `--force`를 임의 사용하지 않는다.
 - index READY 확인이 선행되어야 하는 Functions query는 index 배포와 상태 확인 후 Functions를 배포한다.
+- 2026-07-29 Phase 6 관심 스타일 브랜드용 `brands(moodIDs ARRAY_CONTAINS, likeCount DESC, __name__ ASC)` index `CICAgLiT_JAK`를 `outpick-664ae`에 배포하고 `READY`를 확인했다. 기존 운영 field override 1개는 `--force` 없이 보존했다.
 
 ## Firebase Storage
 

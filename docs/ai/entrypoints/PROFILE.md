@@ -8,6 +8,7 @@
 
 - 앱 조립: `OutPick/App/AppCompositionRoot.swift`
   - 계정·공개 프로필·스타일 무드 Repository와 `LoadCurrentUserBootstrapUseCase`, `CompleteOnboardingUseCase`를 생성한다.
+  - `CurrentUserStylePreferenceStore`를 앱 세션 단일 인스턴스로 생성해 Lookbook과 MyPage에 주입한다.
 - 앱 route: `OutPick/App/AppCoordinator.swift`
   - `needsOnboarding`, `ready`, `deletionPending`을 분기한다.
   - 온보딩 완료 후 `UserPublicProfile`을 세션에 저장하고 Chat/Lookbook bootstrap을 시작한다.
@@ -101,8 +102,41 @@
 - mutation:
   - `UpdatePublicProfileUseCase.swift`: 닉네임 사전 확인, 아바타 유지·변경·제거, 이전 Storage 정리
   - `UpdateStylePreferencesUseCase.swift`: active 관심 무드 1~5개 저장
+- 관심 스타일 공유 상태:
+  - `OutPick/App/Session/CurrentUserStylePreferenceStore.swift`
+  - bootstrap·온보딩 완료 시 계정 값을 반영하고, 관심 스타일 저장 성공 시 즉시 교체하며 로그아웃 시 비운다.
+  - Lookbook 홈·전체 보기는 이 Store를 구독해 개인화 첫 페이지를 다시 조회한다.
 - 프로필 이미지 변경은 새 파일 업로드 → 공개 경로 갱신 → 이전 파일 삭제 순서다. 삭제 실패 경로는 로컬 cleanup store에 기록하고 다음 마이페이지 진입 때 재시도한다.
 - 세 화면은 좌측 정렬 에디토리얼 헤더, 원형 avatar, outlined mood chip, hairline row와 하단 accent CTA를 공유한다. Reduce Motion에서는 루트 진입 이동 애니메이션을 생략한다.
+
+## 계정 삭제 iOS 흐름
+
+- 진입/화면:
+  - `MyPageViewController` 설정 메뉴 → `MyPageCoordinator.showAccountDeletion()`
+  - `Views/AccountDeletionConfirmationViewController.swift`
+  - `Views/AccountDeletionPendingViewController.swift`
+- Domain/API:
+  - `Domain/AccountDeletion.swift`
+  - `Repositories/AccountDeletionRepositoryProtocol.swift`
+  - `Repositories/CloudFunctionsAccountDeletionRepository.swift`
+  - callable은 `prepareAccountDeletion` → `requestAccountDeletion`, `getAccountDeletionStatus`, `cancelAccountDeletion`이다.
+- orchestration:
+  - `RequestAccountDeletionUseCase.swift`: provider 재인증 → intent → 요청 → receipt 저장 → 로컬 scrub
+  - `CancelAccountDeletionUseCase.swift`: 같은 provider/identity 재인증 → 서버 취소 → receipt 제거
+  - `LoadAccountDeletionStatusUseCase.swift`: opaque receipt 기반 최소 상태 조회
+- provider 재인증:
+  - `OutPick/Features/Login/Repository/DefaultSocialAuthRepository.swift`
+  - Google 취소는 pending scrub으로 Firebase current user가 없으면 interactive sign-in 후 expected UID와 Google provider user ID를 검증한다.
+  - 같은 Firebase UID 세션이 있으면 `reauthenticate`, 다른 UID 세션은 UI 인증 전에 거부한다.
+  - Kakao는 강제 login prompt 후 UID·provider user ID를 검증하고 Firebase custom-token bridge로 재인증한다.
+- 로컬 보안 경계:
+  - `AccountDeletionReceiptStore.swift`: UID/email 없이 request ID·opaque token·시각·provider만 `WhenUnlockedThisDeviceOnly` Keychain에 저장
+  - `AccountDeletionLocalDataScrubber.swift`: GRDB, 등록·기지정 이미지 disk cache/Kingfisher, 최근 방 검색·avatar cleanup UserDefaults, 로그인 Keychain과 `PersistentDeviceID`, Firebase/Google/Kakao 세션 정리
+  - `AppDatabase.deleteAllUserSessionData()`: message/FTS/media/outbox/profile cache를 단일 write transaction으로 삭제
+- 앱 루트 복구:
+  - `AppCoordinator.start()`가 cleanup retry marker와 receipt를 자동 로그인보다 먼저 검사한다.
+  - receipt 유실은 같은 provider 로그인 후 `LoadCurrentUserBootstrapUseCase.deletionPending`으로 pending 화면을 복원한다.
+  - 취소 성공은 인증 사용자를 복원하고 bootstrap을 다시 수행한다.
 
 ## 공개 프로필 직접 소비 경계
 
@@ -139,4 +173,10 @@
 - `OutPickTests/UpdatePublicProfileUseCaseTests.swift`
 - `OutPickTests/ProfileEditViewModelTests.swift`
 - `OutPickTests/StylePreferenceEditViewModelTests.swift`
+- `OutPickTests/AccountDeletionUseCaseTests.swift`
+- `OutPickTests/AccountDeletionReceiptStoreTests.swift`
+- `OutPickTests/CloudFunctions/CloudFunctionsAccountDeletionRepositoryTests.swift`
+- `OutPickTests/GRDB/AccountDeletionLocalDataCleanupTests.swift`
+- `OutPickTests/GoogleAccountDeletionReauthenticationPolicyTests.swift`
+- `OutPickTests/OutPickAppCheckProviderPolicyTests.swift`
 - 서버·rules 검증은 `docs/ai/entrypoints/FIREBASE.md`와 현재 task QA 문서를 따른다.
