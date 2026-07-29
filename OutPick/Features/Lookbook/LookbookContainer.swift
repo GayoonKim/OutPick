@@ -22,6 +22,7 @@ final class LookbookContainer {
     let debugFailureInjectionStore: LookbookDebugFailureInjectionStore
     let currentUserProvider: any CurrentUserProviding
     let currentUserIDProvider: any CurrentUserIDProviding
+    let stylePreferenceStore: CurrentUserStylePreferenceStore
     private var avatarImageManager: AvatarImageManaging
     private let firebaseRepositories: any FirebaseRepositoryProviding
     private let publicProfileRepository: UserPublicProfileRepositoryProtocol
@@ -41,6 +42,7 @@ final class LookbookContainer {
     private let loadPostDetailUseCase: any LoadPostDetailUseCaseProtocol
     private let makeLookbookSharedContentUseCase: any MakeLookbookSharedContentUseCaseProtocol
     private let searchBrandsUseCase: any SearchBrandsUseCaseProtocol
+    private let loadInterestedStyleBrandsUseCase: any LoadInterestedStyleBrandsUseCaseProtocol
     private let submitBrandRequestUseCase: any SubmitBrandRequestUseCaseProtocol
     private let listMyBrandRequestsUseCase: any ListMyBrandRequestsUseCaseProtocol
     private let listBrandRequestGroupsUseCase: any ListBrandRequestGroupsUseCaseProtocol
@@ -56,6 +58,7 @@ final class LookbookContainer {
         provider: LookbookRepositoryProvider,
         brandAdminSessionStore: BrandAdminSessionStore,
         currentUserProvider: any CurrentUserProviding = LoginManagerCurrentUserProvider(),
+        stylePreferenceStore: CurrentUserStylePreferenceStore,
         firebaseRepositories: any FirebaseRepositoryProviding = FirebaseRepositoryProvider.shared,
         publicProfileRepository: UserPublicProfileRepositoryProtocol =
             FirestoreUserPublicProfileRepository(db: .firestore()),
@@ -72,6 +75,7 @@ final class LookbookContainer {
         #endif
         self.currentUserProvider = currentUserProvider
         self.currentUserIDProvider = LookbookCurrentUserIDProvider(currentUserProvider: currentUserProvider)
+        self.stylePreferenceStore = stylePreferenceStore
         self.firebaseRepositories = firebaseRepositories
         self.publicProfileRepository = publicProfileRepository
         self.avatarImageManager = avatarImageManager
@@ -129,6 +133,9 @@ final class LookbookContainer {
         self.searchBrandsUseCase = SearchBrandsUseCase(
             repository: provider.brandSearchRepository
         )
+        self.loadInterestedStyleBrandsUseCase = LoadInterestedStyleBrandsUseCase(
+            repository: provider.brandRepository
+        )
         self.submitBrandRequestUseCase = SubmitBrandRequestUseCase(
             repository: provider.brandRequestRepository
         )
@@ -150,6 +157,8 @@ final class LookbookContainer {
         self.lookbookHomeViewModel = LookbookHomeViewModel(
             repo: provider.brandRepository,
             searchUseCase: searchBrandsUseCase,
+            loadInterestedStyleBrandsUseCase: loadInterestedStyleBrandsUseCase,
+            stylePreferenceStore: stylePreferenceStore,
             brandAdminSessionStore: brandAdminSessionStore,
             brandImageCache: provider.brandImageCache,
             initialBrandLimit: 12,
@@ -171,6 +180,21 @@ final class LookbookContainer {
 
     func configureAppContentRouter(_ appContentRouter: any AppContentRouting) {
         self.appContentRouter = appContentRouter
+    }
+
+    func makeInterestedStyleBrandListView(
+        coordinator: LookbookCoordinator
+    ) -> InterestedStyleBrandListView {
+        InterestedStyleBrandListView(
+            viewModel: InterestedStyleBrandListViewModel(
+                initialBrands: lookbookHomeViewModel.interestedStyleBrands,
+                initialCursor: lookbookHomeViewModel.interestedStyleNextCursor,
+                loadUseCase: loadInterestedStyleBrandsUseCase,
+                stylePreferenceStore: stylePreferenceStore,
+                brandImageCache: provider.brandImageCache
+            ),
+            coordinator: coordinator
+        )
     }
 
     func preloadLookbook() {

@@ -101,6 +101,71 @@ final class FirestoreBrandRepository: BrandRepositoryProtocol {
         return BrandPage(items: items, last: snap.documents.last)
     }
 
+    func fetchInterestedStyleBrands(
+        moodIDs: [String],
+        limit: Int,
+        after cursor: InterestedStyleBrandCursor? = nil
+    ) async throws -> InterestedStyleBrandPage {
+        let pageSize = max(1, limit)
+        var nextQueryCursor = cursor
+        var visibleBrands: [Brand] = []
+
+        while visibleBrands.count < pageSize {
+            var query: Query = db.collection("brands")
+                .whereField("moodIDs", arrayContainsAny: moodIDs)
+                .order(by: "likeCount", descending: true)
+                .order(by: FieldPath.documentID())
+                .limit(to: pageSize)
+
+            if let nextQueryCursor {
+                query = query.start(after: [
+                    nextQueryCursor.likeCount,
+                    nextQueryCursor.brandID.value
+                ])
+            }
+
+            let snapshot = try await query.getDocuments()
+            guard snapshot.documents.isEmpty == false else {
+                return InterestedStyleBrandPage(
+                    items: visibleBrands,
+                    nextCursor: nil
+                )
+            }
+
+            for document in snapshot.documents {
+                let dto: BrandDTO = try FirestoreMapper.mapDocument(document)
+                let brand = try dto.toDomain(documentID: document.documentID)
+                let documentCursor = InterestedStyleBrandCursor(
+                    likeCount: brand.metrics.likeCount,
+                    brandID: brand.id
+                )
+                nextQueryCursor = documentCursor
+
+                guard brand.isVisibleToUsers else { continue }
+                visibleBrands.append(brand)
+
+                if visibleBrands.count == pageSize {
+                    return InterestedStyleBrandPage(
+                        items: visibleBrands,
+                        nextCursor: documentCursor
+                    )
+                }
+            }
+
+            if snapshot.documents.count < pageSize {
+                return InterestedStyleBrandPage(
+                    items: visibleBrands,
+                    nextCursor: nil
+                )
+            }
+        }
+
+        return InterestedStyleBrandPage(
+            items: visibleBrands,
+            nextCursor: nextQueryCursor
+        )
+    }
+
     private func applyOrdering(to query: Query, sort: BrandSort?) -> Query {
         var q = query
 

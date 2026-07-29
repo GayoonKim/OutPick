@@ -258,6 +258,8 @@ class CustomNavigationBarView: UIView {
         backBtn.removeTarget(nil, action: nil, for: .allEvents)
         searchBtn.removeTarget(nil, action: nil, for: .allEvents)
         settingBtn.removeTarget(nil, action: nil, for: .allEvents)
+        settingBtn.menu = nil
+        settingBtn.showsMenuAsPrimaryAction = false
         
         backBtn.addTarget(target, action: onBack, for: .touchUpInside)
         searchBtn.addTarget(target, action: onSearch, for: .touchUpInside)
@@ -270,14 +272,13 @@ class CustomNavigationBarView: UIView {
         )
     }
     
-    func configureForMyPage(target: AnyObject, onSetting: Selector) {
+    func configureForMyPage(menu: UIMenu) {
         titleLabel.text = "마이페이지"
-        
-        
+
         settingBtn.removeTarget(nil, action: nil, for: .allEvents)
-        
-        settingBtn.addTarget((target), action: onSetting, for: .touchUpInside)
-        
+        settingBtn.menu = menu
+        settingBtn.showsMenuAsPrimaryAction = true
+
         configure(leftViews: [], centerViews: [titleLabel], rightViews: [settingBtn])
     }
     

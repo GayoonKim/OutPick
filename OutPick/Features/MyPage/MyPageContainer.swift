@@ -8,7 +8,13 @@ final class MyPageContainer {
     let moodRepository: StyleMoodRepositoryProtocol
     let updatePublicProfileUseCase: UpdatePublicProfileUseCase
     let updateStylePreferencesUseCase: UpdateStylePreferencesUseCase
+    let requestAccountDeletionUseCase: RequestAccountDeletionUseCase
+    let onAccountDeletionAccepted: (
+        AccountDeletionRequestOutcome,
+        AuthenticatedUser
+    ) -> Void
     let sessionStore: CurrentUserSessionStore
+    let stylePreferenceStore: CurrentUserStylePreferenceStore
     let currentUserProvider: CurrentUserProviding
     let avatarImageManager: AvatarImageManaging
 
@@ -19,7 +25,13 @@ final class MyPageContainer {
         moodRepository: StyleMoodRepositoryProtocol,
         updatePublicProfileUseCase: UpdatePublicProfileUseCase,
         updateStylePreferencesUseCase: UpdateStylePreferencesUseCase,
+        requestAccountDeletionUseCase: RequestAccountDeletionUseCase,
+        onAccountDeletionAccepted: @escaping (
+            AccountDeletionRequestOutcome,
+            AuthenticatedUser
+        ) -> Void,
         sessionStore: CurrentUserSessionStore,
+        stylePreferenceStore: CurrentUserStylePreferenceStore,
         currentUserProvider: CurrentUserProviding,
         avatarImageManager: AvatarImageManaging
     ) {
@@ -29,7 +41,10 @@ final class MyPageContainer {
         self.moodRepository = moodRepository
         self.updatePublicProfileUseCase = updatePublicProfileUseCase
         self.updateStylePreferencesUseCase = updateStylePreferencesUseCase
+        self.requestAccountDeletionUseCase = requestAccountDeletionUseCase
+        self.onAccountDeletionAccepted = onAccountDeletionAccepted
         self.sessionStore = sessionStore
+        self.stylePreferenceStore = stylePreferenceStore
         self.currentUserProvider = currentUserProvider
         self.avatarImageManager = avatarImageManager
     }

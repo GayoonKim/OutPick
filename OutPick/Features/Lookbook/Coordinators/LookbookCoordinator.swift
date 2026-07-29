@@ -57,6 +57,10 @@ final class LookbookCoordinator {
         push(makeMyBrandRequestsView(initialScope: initialScope))
     }
 
+    func pushInterestedStyleBrands() {
+        push(container.makeInterestedStyleBrandListView(coordinator: self))
+    }
+
     func pushAdminHome(onCreatedBrand: @escaping (BrandID) -> Void) {
         push(makeAdminHomeView(onCreatedBrand: onCreatedBrand))
     }

@@ -8,6 +8,7 @@ import UIKit
 import KakaoSDKCommon
 import KakaoSDKAuth
 import KakaoSDKUser
+import FirebaseAppCheck
 import FirebaseCore
 import FirebaseAuth
 import FirebaseStorage
@@ -45,6 +46,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     private func configureFirebaseApp(processInfo: ProcessInfo = .processInfo) {
+        AppCheck.setAppCheckProviderFactory(OutPickAppCheckProviderFactory())
+
         #if DEBUG
         if processInfo.environment["UITESTS"] == "1",
            processInfo.arguments.contains("--uitest-test-firebase") {

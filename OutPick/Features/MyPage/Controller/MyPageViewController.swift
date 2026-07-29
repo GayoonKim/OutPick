@@ -62,7 +62,7 @@ final class MyPageViewController: UIViewController {
 
     private func configureUI() {
         view.backgroundColor = OutPickTheme.ColorToken.backgroundBase
-        customNavigationBar.configureForMyPage(target: self, onSetting: #selector(settingTapped))
+        customNavigationBar.configureForMyPage(menu: makeSettingsMenu())
 
         editorialHeader.configure(
             eyebrow: "MY OUTPICK",
@@ -211,31 +211,22 @@ final class MyPageViewController: UIViewController {
         viewModel.editStylesTapped()
     }
 
-    @objc private func settingTapped() {
-        guard let button = findSettingsButton(in: customNavigationBar) else { return }
-        button.menu = UIMenu(children: [
+    private func makeSettingsMenu() -> UIMenu {
+        UIMenu(children: [
             UIAction(
                 title: "로그아웃",
-                image: UIImage(systemName: "rectangle.portrait.and.arrow.right"),
-                attributes: .destructive
+                image: UIImage(systemName: "rectangle.portrait.and.arrow.right")
             ) { [weak self] _ in
                 self?.logOut()
+            },
+            UIAction(
+                title: "계정 삭제",
+                image: UIImage(systemName: "trash"),
+                attributes: .destructive
+            ) { [weak self] _ in
+                self?.viewModel.deleteAccountTapped()
             }
         ])
-        button.showsMenuAsPrimaryAction = true
-        button.sendActions(for: .primaryActionTriggered)
-    }
-
-    private func findSettingsButton(in root: UIView) -> UIButton? {
-        for subview in root.subviews {
-            if let button = subview as? UIButton,
-               (button.actions(forTarget: self, forControlEvent: .touchUpInside) ?? [])
-                .contains("settingTapped") {
-                return button
-            }
-            if let found = findSettingsButton(in: subview) { return found }
-        }
-        return nil
     }
 
     private func logOut() {

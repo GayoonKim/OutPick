@@ -27,20 +27,35 @@ final class LookbookHomeViewModel: ObservableObject {
         case failed(String)
     }
 
+    enum InterestPhase: Equatable {
+        case idle
+        case loading
+        case ready
+        case unconfigured
+        case empty
+        case failed(String)
+    }
+
     @Published private(set) var phase: Phase = .idle
     @Published private(set) var brands: [Brand] = []
     @Published var searchText: String = ""
     @Published private(set) var searchPhase: SearchPhase = .idle
     @Published private(set) var searchResults: [Brand] = []
     @Published private(set) var canOpenAdminConsole: Bool = false
+    @Published private(set) var interestPhase: InterestPhase = .idle
+    @Published private(set) var interestedStyleBrands: [Brand] = []
+    @Published private(set) var interestedStyleNextCursor: InterestedStyleBrandCursor?
 
     /// DI
     private let repo: BrandRepositoryProtocol
     private let searchUseCase: any SearchBrandsUseCaseProtocol
+    private let loadInterestedStyleBrandsUseCase: any LoadInterestedStyleBrandsUseCaseProtocol
+    private let stylePreferenceStore: CurrentUserStylePreferenceStore
     private let brandAdminSessionStore: BrandAdminSessionStore
     let brandImageCache: any BrandImageCacheProtocol
     private var cancellables = Set<AnyCancellable>()
     private var searchTask: Task<Void, Never>?
+    private var interestLoadGeneration = 0
 
     /// 페이지네이션 기준(마지막 문서)
     private var lastBrandDocument: DocumentSnapshot? = nil
@@ -63,6 +78,8 @@ final class LookbookHomeViewModel: ObservableObject {
     init(
         repo: BrandRepositoryProtocol,
         searchUseCase: any SearchBrandsUseCaseProtocol,
+        loadInterestedStyleBrandsUseCase: any LoadInterestedStyleBrandsUseCaseProtocol,
+        stylePreferenceStore: CurrentUserStylePreferenceStore,
         brandAdminSessionStore: BrandAdminSessionStore,
         brandImageCache: any BrandImageCacheProtocol,
         initialBrandLimit: Int = 12,
@@ -73,6 +90,8 @@ final class LookbookHomeViewModel: ObservableObject {
     ) {
         self.repo = repo
         self.searchUseCase = searchUseCase
+        self.loadInterestedStyleBrandsUseCase = loadInterestedStyleBrandsUseCase
+        self.stylePreferenceStore = stylePreferenceStore
         self.brandAdminSessionStore = brandAdminSessionStore
         self.brandImageCache = brandImageCache
         self.initialBrandLimit = initialBrandLimit
@@ -83,6 +102,7 @@ final class LookbookHomeViewModel: ObservableObject {
         self.canOpenAdminConsole = brandAdminSessionStore.canOpenAdminConsole
         bindBrandAdminSessionStore()
         bindSearchText()
+        bindStylePreferenceStore()
     }
 
     /// 앱 시작 시 또는 룩북 탭 진입 전에 한 번 호출
@@ -107,6 +127,7 @@ final class LookbookHomeViewModel: ObservableObject {
             self.lastBrandDocument = page.last
             self.phase = .ready
             didLoadInitialPage = true
+            await reloadInterestedStyleBrands()
         } catch {
             self.phase = .failed(error.localizedDescription)
         }
@@ -122,6 +143,10 @@ final class LookbookHomeViewModel: ObservableObject {
 
     var isSearching: Bool {
         normalizedSearchText.isEmpty == false
+    }
+
+    var shouldShowInterestedStyleSection: Bool {
+        interestPhase != .unconfigured
     }
 
     var normalizedSearchText: String {
@@ -162,8 +187,58 @@ final class LookbookHomeViewModel: ObservableObject {
             lastBrandDocument = page.last
             didLoadInitialPage = true
             phase = .ready
+            await reloadInterestedStyleBrands(keepsExistingContentOnFailure: true)
         } catch {
             // 한국어 주석: 당겨서 새로고침 실패 시에는 기존 목록을 유지해 화면이 갑자기 비지 않도록 합니다.
+        }
+    }
+
+    func retryInterestedStyleBrands() async {
+        await reloadInterestedStyleBrands()
+    }
+
+    func reloadInterestedStyleBrands(
+        keepsExistingContentOnFailure: Bool = false
+    ) async {
+        interestLoadGeneration += 1
+        let generation = interestLoadGeneration
+        let moodIDs = stylePreferenceStore.selectedMoodIDs
+
+        guard moodIDs.isEmpty == false else {
+            interestedStyleBrands = []
+            interestedStyleNextCursor = nil
+            interestPhase = .unconfigured
+            return
+        }
+
+        interestPhase = .loading
+
+        do {
+            let page = try await loadInterestedStyleBrandsUseCase.execute(
+                moodIDs: moodIDs,
+                limit: 10,
+                after: nil
+            )
+            guard generation == interestLoadGeneration else { return }
+
+            interestedStyleBrands = page.items
+            interestedStyleNextCursor = page.nextCursor
+            interestPhase = page.items.isEmpty ? .empty : .ready
+            schedulePrefetch(
+                items: makePrefetchTargets(
+                    from: page.items,
+                    count: page.items.count
+                )
+            )
+        } catch {
+            guard generation == interestLoadGeneration else { return }
+            if keepsExistingContentOnFailure, interestedStyleBrands.isEmpty == false {
+                interestPhase = .ready
+            } else {
+                interestedStyleBrands = []
+                interestedStyleNextCursor = nil
+                interestPhase = .failed("관심 스타일 브랜드를 불러오지 못했어요")
+            }
         }
     }
 
@@ -311,6 +386,18 @@ final class LookbookHomeViewModel: ObservableObject {
             .debounce(for: .milliseconds(300), scheduler: RunLoop.main)
             .sink { [weak self] query in
                 self?.scheduleSearch(query: query)
+            }
+            .store(in: &cancellables)
+    }
+
+    private func bindStylePreferenceStore() {
+        stylePreferenceStore.$selectedMoodIDs
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    await self?.reloadInterestedStyleBrands()
+                }
             }
             .store(in: &cancellables)
     }

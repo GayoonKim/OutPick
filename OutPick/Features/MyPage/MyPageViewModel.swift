@@ -17,11 +17,13 @@ final class MyPageViewModel {
     var onStateChanged: ((State) -> Void)?
     var onEditProfile: ((UserPublicProfile) -> Void)?
     var onEditStyles: (([String]) -> Void)?
+    var onDeleteAccount: (() -> Void)?
 
     private let userID: String
     private let accountRepository: CurrentUserAccountRepositoryProtocol
     private let publicProfileRepository: UserPublicProfileRepositoryProtocol
     private let moodRepository: StyleMoodRepositoryProtocol
+    private let stylePreferenceStore: CurrentUserStylePreferenceStore
     private var currentProfile: UserPublicProfile?
     private var selectedMoodIDs: [String] = []
 
@@ -30,12 +32,14 @@ final class MyPageViewModel {
         accountRepository: CurrentUserAccountRepositoryProtocol,
         publicProfileRepository: UserPublicProfileRepositoryProtocol,
         moodRepository: StyleMoodRepositoryProtocol,
+        stylePreferenceStore: CurrentUserStylePreferenceStore,
         initialProfile: UserPublicProfile?
     ) {
         self.userID = userID
         self.accountRepository = accountRepository
         self.publicProfileRepository = publicProfileRepository
         self.moodRepository = moodRepository
+        self.stylePreferenceStore = stylePreferenceStore
         currentProfile = initialProfile
         state.nickname = initialProfile?.nickname ?? ""
         state.avatarPath = initialProfile?.avatarThumbPath ?? initialProfile?.avatarOriginalPath
@@ -60,6 +64,7 @@ final class MyPageViewModel {
             )
             currentProfile = profile
             selectedMoodIDs = account?.selectedMoodIDs ?? []
+            stylePreferenceStore.replace(selectedMoodIDs: selectedMoodIDs)
             let selectedSet = Set(selectedMoodIDs)
             state.nickname = profile.nickname
             state.avatarPath = profile.avatarThumbPath ?? profile.avatarOriginalPath
@@ -80,6 +85,10 @@ final class MyPageViewModel {
 
     func editStylesTapped() {
         onEditStyles?(selectedMoodIDs)
+    }
+
+    func deleteAccountTapped() {
+        onDeleteAccount?()
     }
 
     func apply(profile: UserPublicProfile) {

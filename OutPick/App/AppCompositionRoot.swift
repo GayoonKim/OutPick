@@ -27,6 +27,7 @@ enum AppCompositionRoot {
         let publicProfileRepository = FirestoreUserPublicProfileRepository(db: db)
         let userProfileRepository: UserProfileRepositoryProtocol = UserProfileRepository(db: db)
         let currentUserSessionStore = CurrentUserSessionStore()
+        let currentUserStylePreferenceStore = CurrentUserStylePreferenceStore()
         let currentUserProvider = LoginManagerCurrentUserProvider(
             sessionStore: currentUserSessionStore
         )
@@ -61,6 +62,28 @@ enum AppCompositionRoot {
         let socialAuthRepository = DefaultSocialAuthRepository.live(
             transport: cloudFunctionsTransport
         )
+        let accountDeletionRepository = CloudFunctionsAccountDeletionRepository(
+            transport: cloudFunctionsTransport
+        )
+        let accountDeletionReceiptStore = AccountDeletionReceiptStore()
+        let accountDeletionLocalDataScrubber = AccountDeletionLocalDataScrubber(
+            database: appDatabase
+        )
+        let requestAccountDeletionUseCase = RequestAccountDeletionUseCase(
+            repository: accountDeletionRepository,
+            reauthenticator: socialAuthRepository,
+            receiptStore: accountDeletionReceiptStore,
+            localDataScrubber: accountDeletionLocalDataScrubber
+        )
+        let cancelAccountDeletionUseCase = CancelAccountDeletionUseCase(
+            repository: accountDeletionRepository,
+            reauthenticator: socialAuthRepository,
+            receiptStore: accountDeletionReceiptStore
+        )
+        let loadAccountDeletionStatusUseCase = LoadAccountDeletionStatusUseCase(
+            repository: accountDeletionRepository,
+            receiptStore: accountDeletionReceiptStore
+        )
         let lookbookProvider = LookbookRepositoryProvider.live(
             transport: cloudFunctionsTransport
         )
@@ -94,11 +117,16 @@ enum AppCompositionRoot {
             completeOnboardingUseCase: completeOnboardingUseCase,
             updatePublicProfileUseCase: updatePublicProfileUseCase,
             updateStylePreferencesUseCase: updateStylePreferencesUseCase,
+            requestAccountDeletionUseCase: requestAccountDeletionUseCase,
+            cancelAccountDeletionUseCase: cancelAccountDeletionUseCase,
+            loadAccountDeletionStatusUseCase: loadAccountDeletionStatusUseCase,
+            accountDeletionLocalDataScrubber: accountDeletionLocalDataScrubber,
             accountRepository: accountRepository,
             joinedRoomsStore: joinedRoomsStore,
             brandAdminSessionStore: brandAdminSessionStore,
             socialAuthRepository: socialAuthRepository,
             currentUserSessionStore: currentUserSessionStore,
+            currentUserStylePreferenceStore: currentUserStylePreferenceStore,
             currentUserProvider: currentUserProvider,
             realtimeSocketService: realtimeSocketService,
             avatarImageManager: avatarImageManager,

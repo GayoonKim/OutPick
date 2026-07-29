@@ -20,6 +20,7 @@
 		054C94872E28F5E200FD364C /* FirebaseFirestoreCombine-Community in Frameworks */ = {isa = PBXBuildFile; productRef = 054C94862E28F5E200FD364C /* FirebaseFirestoreCombine-Community */; };
 		05F169622EE08CE3005C1868 /* FirebaseFunctions in Frameworks */ = {isa = PBXBuildFile; productRef = 05F169612EE08CE3005C1868 /* FirebaseFunctions */; };
 		0A1B2C3D4E5F678901234569 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = 0A1B2C3D4E5F678901234568 /* FirebaseMessaging */; };
+		0A1B2C3D4E5F67890123456B /* FirebaseAppCheck in Frameworks */ = {isa = PBXBuildFile; productRef = 0A1B2C3D4E5F67890123456A /* FirebaseAppCheck */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -97,6 +98,7 @@
 				054C94742E28F4C400FD364C /* FirebaseStorage in Frameworks */,
 				054C947A2E28F4F600FD364C /* GRDB in Frameworks */,
 				05F169622EE08CE3005C1868 /* FirebaseFunctions in Frameworks */,
+				0A1B2C3D4E5F67890123456B /* FirebaseAppCheck in Frameworks */,
 				054C94872E28F5E200FD364C /* FirebaseFirestoreCombine-Community in Frameworks */,
 				054C946B2E28F3C100FD364C /* KakaoSDK in Frameworks */,
 				054C94802E28F53600FD364C /* SocketIO in Frameworks */,
@@ -182,6 +184,7 @@
 				054C94862E28F5E200FD364C /* FirebaseFirestoreCombine-Community */,
 				0A1B2C3D4E5F678901234568 /* FirebaseMessaging */,
 				05F169612EE08CE3005C1868 /* FirebaseFunctions */,
+				0A1B2C3D4E5F67890123456A /* FirebaseAppCheck */,
 			);
 			productName = OutPick;
 			productReference = 05E4F8A12E214B05000079C2 /* OutPick.app */;
@@ -353,6 +356,7 @@
 				API_KEY = 934b7b2086ff3fa2bc0365cece7c892c;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = OutPick/OutPick.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 3YZYVZ7VUF;
@@ -387,6 +391,7 @@
 				API_KEY = 934b7b2086ff3fa2bc0365cece7c892c;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = OutPick/OutPick.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 3YZYVZ7VUF;
@@ -763,6 +768,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 054C946C2E28F45C00FD364C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseMessaging;
+		};
+		0A1B2C3D4E5F67890123456A /* FirebaseAppCheck */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 054C946C2E28F45C00FD364C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAppCheck;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

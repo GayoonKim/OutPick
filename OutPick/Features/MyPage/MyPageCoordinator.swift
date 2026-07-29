@@ -23,6 +23,7 @@ final class MyPageCoordinator {
             accountRepository: container.accountRepository,
             publicProfileRepository: container.publicProfileRepository,
             moodRepository: container.moodRepository,
+            stylePreferenceStore: container.stylePreferenceStore,
             initialProfile: container.currentUserProvider.profile
         )
         viewModel.onEditProfile = { [weak self] profile in
@@ -30,6 +31,9 @@ final class MyPageCoordinator {
         }
         viewModel.onEditStyles = { [weak self] selectedMoodIDs in
             self?.showStyleEdit(selectedMoodIDs: selectedMoodIDs)
+        }
+        viewModel.onDeleteAccount = { [weak self] in
+            self?.showAccountDeletion()
         }
         rootViewModel = viewModel
         navigationController.setViewControllers([
@@ -70,11 +74,34 @@ final class MyPageCoordinator {
             updateUseCase: container.updateStylePreferencesUseCase,
             onSaved: { [weak self] selectedIDs, moods in
                 guard let self else { return }
+                self.container.stylePreferenceStore.replace(selectedMoodIDs: selectedIDs)
                 self.rootViewModel?.apply(selectedMoodIDs: selectedIDs, moods: moods)
                 self.navigationController.popViewController(animated: true)
             }
         )
         let viewController = StylePreferenceEditViewController(viewModel: viewModel)
+        viewController.hidesBottomBarWhenPushed = true
+        navigationController.pushViewController(viewController, animated: true)
+    }
+
+    private func showAccountDeletion() {
+        guard let authenticatedUser = LoginManager.shared.authenticatedUser else {
+            let alert = UIAlertController(
+                title: "로그인 정보를 확인할 수 없어요",
+                message: "다시 로그인한 뒤 계정 삭제를 요청해 주세요.",
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "확인", style: .default))
+            navigationController.present(alert, animated: true)
+            return
+        }
+
+        let viewModel = AccountDeletionViewModel(
+            expectedUser: authenticatedUser,
+            requestUseCase: container.requestAccountDeletionUseCase
+        )
+        viewModel.onAccepted = container.onAccountDeletionAccepted
+        let viewController = AccountDeletionConfirmationViewController(viewModel: viewModel)
         viewController.hidesBottomBarWhenPushed = true
         navigationController.pushViewController(viewController, animated: true)
     }

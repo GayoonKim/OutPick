@@ -13,7 +13,29 @@ import KakaoSDKCommon
 import KakaoSDKAuth
 import KakaoSDKUser
 
-final class DefaultSocialAuthRepository: SocialAuthRepositoryProtocol {
+enum GoogleAccountDeletionReauthenticationMode: Equatable {
+    case reauthenticate
+    case signIn
+}
+
+enum GoogleAccountDeletionReauthenticationPolicy {
+    static func mode(
+        currentFirebaseUserID: String?,
+        expectedFirebaseUserID: String
+    ) throws -> GoogleAccountDeletionReauthenticationMode {
+        guard let currentFirebaseUserID else {
+            return .signIn
+        }
+        guard currentFirebaseUserID == expectedFirebaseUserID else {
+            throw AccountDeletionClientError.identityMismatch
+        }
+        return .reauthenticate
+    }
+}
+
+final class DefaultSocialAuthRepository:
+    SocialAuthRepositoryProtocol,
+    AccountDeletionReauthenticating {
     private let kakaoAuthBridge: any KakaoAuthBridgeCalling
 
     init(kakaoAuthBridge: any KakaoAuthBridgeCalling) {
@@ -180,6 +202,157 @@ final class DefaultSocialAuthRepository: SocialAuthRepositoryProtocol {
         )
     }
 
+    @MainActor
+    func reauthenticateForAccountDeletion(
+        expectedUser: AuthenticatedUser,
+        presenter: UIViewController
+    ) async throws {
+        switch expectedUser.provider {
+        case .google:
+            try await reauthenticateGoogle(
+                expectedUser: expectedUser,
+                presenter: presenter
+            )
+        case .kakao:
+            try await reauthenticateKakao(expectedUser: expectedUser)
+        }
+    }
+
+    @MainActor
+    func authenticatePendingAccount(
+        provider: AuthProvider,
+        presenter: UIViewController
+    ) async throws -> AuthenticatedUser {
+        switch provider {
+        case .google:
+            return try await signInWithGoogle(presenter: presenter)
+        case .kakao:
+            return try await signInWithKakao(presenter: presenter)
+        }
+    }
+
+    @MainActor
+    private func reauthenticateGoogle(
+        expectedUser: AuthenticatedUser,
+        presenter: UIViewController
+    ) async throws {
+        let currentUser = Auth.auth().currentUser
+        let mode = try GoogleAccountDeletionReauthenticationPolicy.mode(
+            currentFirebaseUserID: currentUser?.uid,
+            expectedFirebaseUserID: expectedUser.identityKey
+        )
+
+        let googleUser: GIDGoogleUser = try await withCheckedThrowingContinuation { cont in
+            GIDSignIn.sharedInstance.signIn(withPresenting: presenter) { result, error in
+                if let error {
+                    cont.resume(throwing: error)
+                    return
+                }
+                guard let user = result?.user else {
+                    cont.resume(throwing: LoginAuthError.missingIDToken)
+                    return
+                }
+                cont.resume(returning: user)
+            }
+        }
+        guard let idToken = googleUser.idToken?.tokenString else {
+            throw LoginAuthError.missingIDToken
+        }
+        let credential = GoogleAuthProvider.credential(
+            withIDToken: idToken,
+            accessToken: googleUser.accessToken.tokenString
+        )
+        let result: AuthDataResult
+        switch mode {
+        case .reauthenticate:
+            guard let currentUser else {
+                throw AccountDeletionClientError.missingAuthenticatedUser
+            }
+            result = try await withCheckedThrowingContinuation {
+                (continuation: CheckedContinuation<AuthDataResult, Error>) in
+                currentUser.reauthenticate(with: credential) { result, error in
+                    if let error {
+                        continuation.resume(throwing: error)
+                    } else if let result {
+                        continuation.resume(returning: result)
+                    } else {
+                        continuation.resume(throwing: LoginAuthError.missingIDToken)
+                    }
+                }
+            }
+        case .signIn:
+            result = try await withCheckedThrowingContinuation {
+                (continuation: CheckedContinuation<AuthDataResult, Error>) in
+                Auth.auth().signIn(with: credential) { result, error in
+                    if let error {
+                        continuation.resume(throwing: error)
+                    } else if let result {
+                        continuation.resume(returning: result)
+                    } else {
+                        continuation.resume(throwing: LoginAuthError.missingIDToken)
+                    }
+                }
+            }
+        }
+
+        let googleProviderUserID = result.user.providerData
+            .first(where: { $0.providerID == "google.com" })?
+            .uid
+        guard result.user.uid == expectedUser.identityKey,
+              googleProviderUserID == expectedUser.providerUserID else {
+            throw AccountDeletionClientError.identityMismatch
+        }
+        try await refreshIDToken(for: result.user)
+    }
+
+    @MainActor
+    private func reauthenticateKakao(
+        expectedUser: AuthenticatedUser
+    ) async throws {
+        let accessToken: String = try await withCheckedThrowingContinuation { cont in
+            UserApi.shared.loginWithKakaoAccount(prompts: [.Login]) { token, error in
+                if let error {
+                    cont.resume(throwing: error)
+                } else if let accessToken = token?.accessToken, !accessToken.isEmpty {
+                    cont.resume(returning: accessToken)
+                } else {
+                    cont.resume(throwing: LoginAuthError.missingIDToken)
+                }
+            }
+        }
+        let kakaoUser: KakaoSDKUser.User = try await withCheckedThrowingContinuation { cont in
+            UserApi.shared.me { user, error in
+                if let error {
+                    cont.resume(throwing: error)
+                } else if let user {
+                    cont.resume(returning: user)
+                } else {
+                    cont.resume(throwing: LoginAuthError.missingIDToken)
+                }
+            }
+        }
+        guard let candidate = makeKakaoAuthenticatedUser(from: kakaoUser),
+              candidate.provider == expectedUser.provider else {
+            throw AccountDeletionClientError.providerMismatch
+        }
+        guard candidate.identityKey == expectedUser.identityKey,
+              candidate.providerUserID == expectedUser.providerUserID else {
+            throw AccountDeletionClientError.identityMismatch
+        }
+
+        let authenticated = try await signInToFirebaseWithKakao(
+            accessToken: accessToken,
+            kakaoUser: kakaoUser
+        )
+        guard authenticated.identityKey == expectedUser.identityKey else {
+            throw AccountDeletionClientError.identityMismatch
+        }
+        guard let currentUser = Auth.auth().currentUser else {
+            throw AccountDeletionClientError.missingAuthenticatedUser
+        }
+        try await refreshIDToken(for: currentUser)
+    }
+
     private func makeGoogleAuthenticatedUser(from user: FirebaseAuth.User) -> AuthenticatedUser {
         let googleProviderID = user.providerData
             .first(where: { $0.providerID == "google.com" })?
@@ -191,6 +364,19 @@ final class DefaultSocialAuthRepository: SocialAuthRepositoryProtocol {
             providerUserID: googleProviderID ?? user.uid,
             email: user.email
         )
+    }
+
+    private func refreshIDToken(for user: FirebaseAuth.User) async throws {
+        try await withCheckedThrowingContinuation {
+            (continuation: CheckedContinuation<Void, Error>) in
+            user.getIDTokenForcingRefresh(true) { _, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume()
+                }
+            }
+        }
     }
 
     private func makeKakaoAuthenticatedUser(from user: KakaoSDKUser.User?) -> AuthenticatedUser? {

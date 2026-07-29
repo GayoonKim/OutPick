@@ -25,4 +25,10 @@ protocol BrandRepositoryProtocol {
         limit: Int,
         after last: DocumentSnapshot?
     ) async throws -> BrandPage
+
+    func fetchInterestedStyleBrands(
+        moodIDs: [String],
+        limit: Int,
+        after cursor: InterestedStyleBrandCursor?
+    ) async throws -> InterestedStyleBrandPage
 }

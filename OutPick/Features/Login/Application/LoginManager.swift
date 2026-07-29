@@ -9,6 +9,7 @@ import Foundation
 import FirebaseFirestore
 import FirebaseAuth
 import GoogleSignIn
+import KakaoSDKAuth
 import KakaoSDKUser
 
 final class LoginManager {
@@ -123,6 +124,38 @@ final class LoginManager {
 
     func logout() {
         clearSessionAndNotifyForceLogout()
+    }
+
+    @MainActor
+    func clearSessionForAccountDeletion() async {
+        deviceIDListener?.remove()
+        deviceIDListener = nil
+        hasSeenOwnDeviceID = false
+        didHandleKick = false
+        isPresentingDuplicateAlert = false
+        didInvokeForceLogoutCallback = false
+
+        let cacheAccount = profileCacheAccount(userDocumentID: userDocumentID)
+        userEmail = ""
+        authUserKey = ""
+        userDocumentID = ""
+        hasResolvedUserDocumentID = false
+        authenticatedUser = nil
+
+        KeychainManager.shared.delete(service: keychainService, account: cacheAccount)
+        KeychainManager.shared.delete(service: keychainService, account: "UserProfile")
+        KeychainManager.shared.delete(service: keychainService, account: authenticatedUserAccount)
+        KeychainManager.shared.delete(service: "OutPick", account: "PersistentDeviceID")
+
+        try? Auth.auth().signOut()
+        GIDSignIn.sharedInstance.signOut()
+        UserApi.shared.logout { error in
+            if let error {
+                print("Kakao account deletion logout error: \(error)")
+            }
+        }
+        // 네트워크 응답과 무관하게 기기 안의 Kakao 토큰은 즉시 제거한다.
+        AUTH.tokenManager.deleteToken()
     }
 
     private func profileCacheAccount(userDocumentID: String) -> String {

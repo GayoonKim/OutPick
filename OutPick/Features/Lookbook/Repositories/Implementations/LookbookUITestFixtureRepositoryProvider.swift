@@ -112,6 +112,7 @@ private final class LookbookUITestFixtureStore:
             logoDetailPath: nil,
             logoOriginalPath: nil,
             isFeatured: true,
+            moodIDs: ["minimal"],
             discoveryStatus: .success,
             lastDiscoveryErrorMessage: nil,
             lastDiscoveryRequestedAt: nil,
@@ -250,6 +251,18 @@ private final class LookbookUITestFixtureStore:
         after last: DocumentSnapshot?
     ) async throws -> BrandPage {
         BrandPage(items: [brand], last: nil)
+    }
+
+    func fetchInterestedStyleBrands(
+        moodIDs: [String],
+        limit: Int,
+        after cursor: InterestedStyleBrandCursor?
+    ) async throws -> InterestedStyleBrandPage {
+        let matches = brand.moodIDs.contains { moodIDs.contains($0) }
+        return InterestedStyleBrandPage(
+            items: matches ? [brand] : [],
+            nextCursor: nil
+        )
     }
 
     func searchBrands(query: String, limit: Int) async throws -> [Brand] { [brand] }

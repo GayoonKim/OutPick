@@ -147,6 +147,22 @@ actor ImageCacheDiskStore {
         try? fileManager.removeItem(at: url)
     }
 
+    func removeAll() {
+        guard let files = try? fileManager.contentsOfDirectory(
+            at: baseDir,
+            includingPropertiesForKeys: nil
+        ) else {
+            currentSizeBytes = 0
+            hasScannedSize = true
+            return
+        }
+        for file in files {
+            try? fileManager.removeItem(at: file)
+        }
+        currentSizeBytes = 0
+        hasScannedSize = true
+    }
+
     private func fileURL(forKey key: String) -> URL {
         let hashed = key.sha256Hex
         return baseDir.appendingPathComponent("\(hashed).bin")
@@ -244,6 +260,11 @@ actor ImageCacheInFlightRegistry {
     func remove(_ key: String) {
         tasks.removeValue(forKey: key)
     }
+
+    func cancelAll() {
+        tasks.values.forEach { $0.cancel() }
+        tasks.removeAll()
+    }
 }
 
 /// 동일 키 prefetch 요청을 병합하는 레지스트리
@@ -260,6 +281,11 @@ actor ImageCachePrefetchRegistry {
 
     func remove(_ key: String) {
         tasks.removeValue(forKey: key)
+    }
+
+    func cancelAll() {
+        tasks.values.forEach { $0.cancel() }
+        tasks.removeAll()
     }
 }
 
@@ -332,6 +358,8 @@ final class ImageCachePipeline {
     private let inflight: ImageCacheInFlightRegistry
     private let prefetchRegistry: ImageCachePrefetchRegistry
     private let loadLimiter: ImageCacheAsyncLimiter
+    private static let registryLock = NSLock()
+    private static let registry = NSHashTable<ImageCachePipeline>.weakObjects()
 
     init(
         fetcher: @escaping Fetcher,
@@ -347,6 +375,9 @@ final class ImageCachePipeline {
         self.inflight = inflight
         self.prefetchRegistry = prefetchRegistry
         self.loadLimiter = loadLimiter
+        Self.registryLock.lock()
+        Self.registry.add(self)
+        Self.registryLock.unlock()
     }
 
     func cachedImage(path: String) async -> UIImage? {
@@ -459,6 +490,30 @@ final class ImageCachePipeline {
         let key = canonicalKey(for: path)
         memory.remove(forKey: key)
         await disk.remove(forKey: key)
+    }
+
+    func removeAllCachedImages() async {
+        await inflight.cancelAll()
+        await prefetchRegistry.cancelAll()
+        memory.removeAll()
+        await disk.removeAll()
+    }
+
+    static func removeAllRegisteredCaches() async {
+        let pipelines = registeredPipelines()
+        await withTaskGroup(of: Void.self) { group in
+            for pipeline in pipelines {
+                group.addTask {
+                    await pipeline.removeAllCachedImages()
+                }
+            }
+        }
+    }
+
+    private static func registeredPipelines() -> [ImageCachePipeline] {
+        registryLock.lock()
+        defer { registryLock.unlock() }
+        return registry.allObjects
     }
 
     func prefetch(

@@ -23,6 +23,7 @@ final class AppCoordinator {
     private let brandAdminSessionStore: BrandAdminSessionStore
     private let socialAuthRepository: SocialAuthRepositoryProtocol
     private let currentUserSessionStore: CurrentUserSessionStore
+    private let currentUserStylePreferenceStore: CurrentUserStylePreferenceStore
     private let currentUserProvider: any CurrentUserProviding
     private let realtimeSocketService: RealtimeSocketService
     private let avatarImageManager: AvatarImageManaging
@@ -41,6 +42,10 @@ final class AppCoordinator {
     private let completeOnboardingUseCase: CompleteOnboardingUseCase
     private let updatePublicProfileUseCase: UpdatePublicProfileUseCase
     private let updateStylePreferencesUseCase: UpdateStylePreferencesUseCase
+    private let requestAccountDeletionUseCase: RequestAccountDeletionUseCase
+    private let cancelAccountDeletionUseCase: CancelAccountDeletionUseCase
+    private let loadAccountDeletionStatusUseCase: LoadAccountDeletionStatusUseCase
+    private let accountDeletionLocalDataScrubber: AccountDeletionLocalDataScrubbing
     private let accountRepository: CurrentUserAccountRepositoryProtocol
 
     // 로그인 화면이 이미 떠있는데 또 showLogin()을 타는 걸 막기 위한 플래그
@@ -57,11 +62,16 @@ final class AppCoordinator {
         completeOnboardingUseCase: CompleteOnboardingUseCase,
         updatePublicProfileUseCase: UpdatePublicProfileUseCase,
         updateStylePreferencesUseCase: UpdateStylePreferencesUseCase,
+        requestAccountDeletionUseCase: RequestAccountDeletionUseCase,
+        cancelAccountDeletionUseCase: CancelAccountDeletionUseCase,
+        loadAccountDeletionStatusUseCase: LoadAccountDeletionStatusUseCase,
+        accountDeletionLocalDataScrubber: AccountDeletionLocalDataScrubbing,
         accountRepository: CurrentUserAccountRepositoryProtocol,
         joinedRoomsStore: JoinedRoomsSessionStore,
         brandAdminSessionStore: BrandAdminSessionStore,
         socialAuthRepository: SocialAuthRepositoryProtocol,
         currentUserSessionStore: CurrentUserSessionStore,
+        currentUserStylePreferenceStore: CurrentUserStylePreferenceStore,
         currentUserProvider: any CurrentUserProviding,
         realtimeSocketService: RealtimeSocketService,
         avatarImageManager: AvatarImageManaging,
@@ -78,11 +88,16 @@ final class AppCoordinator {
         self.completeOnboardingUseCase = completeOnboardingUseCase
         self.updatePublicProfileUseCase = updatePublicProfileUseCase
         self.updateStylePreferencesUseCase = updateStylePreferencesUseCase
+        self.requestAccountDeletionUseCase = requestAccountDeletionUseCase
+        self.cancelAccountDeletionUseCase = cancelAccountDeletionUseCase
+        self.loadAccountDeletionStatusUseCase = loadAccountDeletionStatusUseCase
+        self.accountDeletionLocalDataScrubber = accountDeletionLocalDataScrubber
         self.accountRepository = accountRepository
         self.joinedRoomsStore = joinedRoomsStore
         self.brandAdminSessionStore = brandAdminSessionStore
         self.socialAuthRepository = socialAuthRepository
         self.currentUserSessionStore = currentUserSessionStore
+        self.currentUserStylePreferenceStore = currentUserStylePreferenceStore
         self.currentUserProvider = currentUserProvider
         self.realtimeSocketService = realtimeSocketService
         self.avatarImageManager = avatarImageManager
@@ -109,6 +124,23 @@ final class AppCoordinator {
 
         Task { [weak self] in
             guard let self else { return }
+
+            if self.accountDeletionLocalDataScrubber.requiresRetry {
+                try? await self.accountDeletionLocalDataScrubber.scrub()
+            }
+
+            do {
+                if let receipt = try self.loadAccountDeletionStatusUseCase.storedReceipt() {
+                    self.showDeletionPending(
+                        receipt: receipt,
+                        expectedUser: nil,
+                        provider: receipt.provider
+                    )
+                    return
+                }
+            } catch {
+                print("[AppCoordinator] deletion receipt load failed. error=\(error)")
+            }
 
             let ok = await LoginManager.shared.checkExistingLogin()
             if ok {
@@ -144,10 +176,13 @@ final class AppCoordinator {
             let outcome = try await loadCurrentUserBootstrapUseCase.execute(userID: userID)
 
             switch outcome {
-            case .ready(_, let publicProfile):
+            case .ready(let account, let publicProfile):
             print("[AppCoordinator] complete profile found. Showing main tab.")
             await MainActor.run {
                 self.currentUserSessionStore.replaceProfile(publicProfile)
+                self.currentUserStylePreferenceStore.replace(
+                    selectedMoodIDs: account.selectedMoodIDs
+                )
                 _ = self.ensureChatContainer()
                 self.prewarmLookbookHome()
             }
@@ -178,7 +213,20 @@ final class AppCoordinator {
 
             case .deletionPending:
                 print("[AppCoordinator] account deletion is pending.")
-                await MainActor.run { self.showDeletionPending() }
+                await MainActor.run {
+                    guard let authenticatedUser = LoginManager.shared.authenticatedUser else {
+                        if let scene = self.window.windowScene ?? self.currentWindowScene {
+                            self.showLogin(windowScene: scene)
+                        }
+                        return
+                    }
+                    let receipt = try? self.loadAccountDeletionStatusUseCase.storedReceipt()
+                    self.showDeletionPending(
+                        receipt: receipt,
+                        expectedUser: authenticatedUser,
+                        provider: receipt?.provider ?? authenticatedUser.provider
+                    )
+                }
             }
         } catch {
             print("[AppCoordinator] bootstrap failed. error=\(error)")
@@ -208,6 +256,7 @@ final class AppCoordinator {
         self.joinedRoomsStore.clear()
         self.appSessionRuntime.clearJoinedRooms()
         self.currentUserSessionStore.clear()
+        self.currentUserStylePreferenceStore.clear()
 
         sessionResetTask?.cancel()
         sessionResetTask = Task { @MainActor [weak self] in
@@ -303,6 +352,9 @@ final class AppCoordinator {
                 guard let self else { return }
                 Task { @MainActor in
                     self.currentUserSessionStore.replaceProfile(outcome.publicProfile)
+                    self.currentUserStylePreferenceStore.replace(
+                        selectedMoodIDs: outcome.account.selectedMoodIDs
+                    )
                     _ = self.ensureChatContainer()
                 }
                 Task { [weak self] in
@@ -343,11 +395,64 @@ final class AppCoordinator {
     }
 
     @MainActor
-    private func showDeletionPending() {
-        let controller = AccountDeletionPendingViewController {
-            LoginManager.shared.logout()
+    private func showDeletionPending(
+        receipt: AccountDeletionReceipt?,
+        expectedUser: AuthenticatedUser?,
+        provider: AuthProvider
+    ) {
+        clearAuthenticatedRuntimeForDeletionPending()
+
+        let viewModel = AccountDeletionPendingViewModel(
+            receipt: receipt,
+            expectedUser: expectedUser,
+            provider: provider,
+            loadStatusUseCase: loadAccountDeletionStatusUseCase,
+            cancelUseCase: cancelAccountDeletionUseCase
+        )
+        viewModel.onCancelled = { [weak self] outcome in
+            guard let self else { return }
+            LoginManager.shared.setAuthenticatedUser(outcome.authenticatedUser)
+            Task { [weak self] in
+                await self?.routeAfterAuthenticated()
+            }
         }
+        viewModel.onFinished = { [weak self] in
+            guard let self,
+                  let scene = self.window.windowScene ?? self.currentWindowScene else { return }
+            self.showLogin(windowScene: scene)
+        }
+        let controller = AccountDeletionPendingViewController(viewModel: viewModel)
         setRoot(controller, animated: true)
+    }
+
+    private func clearAuthenticatedRuntimeForDeletionPending() {
+        joinedRoomsStore.clear()
+        appSessionRuntime.clearJoinedRooms()
+        currentUserSessionStore.clear()
+        currentUserStylePreferenceStore.clear()
+        brandAdminSessionStore.reset()
+        profileCoordinator = nil
+        lookbookContainer = nil
+        chatContainer = nil
+        mainTabController = nil
+        isShowingLogin = false
+        LoginManager.shared.onForceLogout = nil
+
+        sessionResetTask?.cancel()
+        sessionResetTask = Task { @MainActor [weak self] in
+            await self?.appSessionRuntime.stopAuthenticatedSession()
+        }
+    }
+
+    private func handleAccountDeletionAccepted(
+        outcome: AccountDeletionRequestOutcome,
+        expectedUser: AuthenticatedUser
+    ) {
+        showDeletionPending(
+            receipt: outcome.receipt,
+            expectedUser: expectedUser,
+            provider: outcome.receipt.provider
+        )
     }
 
     @MainActor
@@ -390,6 +495,7 @@ final class AppCoordinator {
             provider: lookbookProvider,
             brandAdminSessionStore: brandAdminSessionStore,
             currentUserProvider: currentUserProvider,
+            stylePreferenceStore: currentUserStylePreferenceStore,
             publicProfileRepository: publicProfileRepository,
             avatarImageManager: avatarImageManager
         )
@@ -405,7 +511,15 @@ final class AppCoordinator {
             moodRepository: styleMoodRepository,
             updatePublicProfileUseCase: updatePublicProfileUseCase,
             updateStylePreferencesUseCase: updateStylePreferencesUseCase,
+            requestAccountDeletionUseCase: requestAccountDeletionUseCase,
+            onAccountDeletionAccepted: { [weak self] outcome, expectedUser in
+                self?.handleAccountDeletionAccepted(
+                    outcome: outcome,
+                    expectedUser: expectedUser
+                )
+            },
             sessionStore: currentUserSessionStore,
+            stylePreferenceStore: currentUserStylePreferenceStore,
             currentUserProvider: currentUserProvider,
             avatarImageManager: avatarImageManager
         )
@@ -507,6 +621,7 @@ final class AppCoordinator {
                 updatedAt: Date()
             )
         )
+        currentUserStylePreferenceStore.replace(selectedMoodIDs: ["minimal"])
 
         if shouldUseFixture {
             let fixtureProvider = LookbookUITestFixtureRepositoryProviderFactory.makeProvider()
@@ -514,6 +629,7 @@ final class AppCoordinator {
                 provider: fixtureProvider,
                 brandAdminSessionStore: brandAdminSessionStore,
                 currentUserProvider: currentUserProvider,
+                stylePreferenceStore: currentUserStylePreferenceStore,
                 avatarImageManager: avatarImageManager
             )
             brandAdminSessionStore.applyUITestWritableBrands([

@@ -22,4 +22,16 @@ final class AppDatabase {
             try GRDBMigrationRegistry.migrate(dbPool)
         }
     }
+
+    func deleteAllUserSessionData() async throws {
+        try await dbPool.write { db in
+            try db.execute(sql: "DELETE FROM RoomProfileDisplayCache")
+            try db.execute(sql: "DELETE FROM LocalChatUser")
+            try db.execute(sql: "DELETE FROM chatOutgoingOutbox")
+            try db.execute(sql: "DELETE FROM imageIndex")
+            try db.execute(sql: "DELETE FROM videoIndex")
+            try db.execute(sql: "DELETE FROM chatMessageFTS")
+            try db.execute(sql: "DELETE FROM chatMessage")
+        }
+    }
 }

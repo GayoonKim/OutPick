@@ -132,6 +132,18 @@ struct LookbookHomeView: View {
 
     private var brandListContent: some View {
         List {
+            if viewModel.shouldShowInterestedStyleSection {
+                interestSection
+                    .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(OutPickTheme.SwiftUIColor.backgroundBase)
+            }
+
+            overallBrandSectionHeader
+                .listRowInsets(EdgeInsets())
+                .listRowSeparator(.hidden)
+                .listRowBackground(OutPickTheme.SwiftUIColor.backgroundBase)
+
             ForEach(viewModel.brands) { brand in
                 brandRow(brand)
                     .onAppear {
@@ -145,6 +157,46 @@ struct LookbookHomeView: View {
         .refreshable {
             await refreshWithMinimumIndicatorDuration()
         }
+    }
+
+    private var interestSection: some View {
+        InterestedStyleBrandSectionView(
+            phase: viewModel.interestPhase,
+            brands: viewModel.interestedStyleBrands,
+            brandImageCache: viewModel.brandImageCache,
+            onSelectBrand: { brand in
+                coordinator.pushBrandDetail(brand: brand)
+            },
+            onShowAll: {
+                coordinator.pushInterestedStyleBrands()
+            },
+            onRequestBrand: {
+                coordinator.pushBrandRequest(initialBrandName: "")
+            },
+            onRetry: {
+                Task { await viewModel.retryInterestedStyleBrands() }
+            }
+        )
+    }
+
+    private var overallBrandSectionHeader: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Divider()
+                .overlay(OutPickTheme.SwiftUIColor.borderSubtle)
+                .padding(.bottom, 24)
+
+            Text("전체 브랜드")
+                .font(.system(size: 25, weight: .bold, design: .serif))
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
+
+            Text("OutPick에서 만날 수 있는 브랜드")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+                .padding(.top, 5)
+        }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 12)
+        .accessibilityIdentifier("lookbook.allBrands.sectionHeader")
     }
 
     @ViewBuilder
@@ -286,6 +338,7 @@ private struct PreviewBrandAdminCapabilitiesClient: BrandAdminCapabilitiesCallin
     let container = LookbookContainer(
         provider: provider,
         brandAdminSessionStore: brandAdminSessionStore,
+        stylePreferenceStore: CurrentUserStylePreferenceStore(),
         avatarImageManager: PreviewAvatarImageManager()
     )
     let coordinator = LookbookCoordinator(container: container)
@@ -294,6 +347,10 @@ private struct PreviewBrandAdminCapabilitiesClient: BrandAdminCapabilitiesCallin
         searchUseCase: SearchBrandsUseCase(
             repository: provider.brandSearchRepository
         ),
+        loadInterestedStyleBrandsUseCase: LoadInterestedStyleBrandsUseCase(
+            repository: provider.brandRepository
+        ),
+        stylePreferenceStore: CurrentUserStylePreferenceStore(),
         brandAdminSessionStore: brandAdminSessionStore,
         brandImageCache: provider.brandImageCache,
         initialBrandLimit: 12,
