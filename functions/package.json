@@ -6,6 +6,8 @@
     "build": "npm run clean && tsc",
     "test": "npm run build && node scripts/run-tests.mjs",
     "seed:style-moods": "npm run build && node scripts/seed-style-moods.mjs",
+    "audit:brand-chat-reset": "npm run build && node scripts/audit-brand-chat-reset.mjs",
+    "reset:brand-chat-data": "npm run build && node scripts/reset-brand-chat-data.mjs",
     "build:watch": "tsc --watch",
     "serve": "npm run build && firebase emulators:start --only functions",
     "shell": "npm run build && firebase functions:shell",
