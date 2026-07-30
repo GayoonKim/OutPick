@@ -143,7 +143,10 @@ private extension CreateBrandFlowView {
             CreateBrandView(
                 provider: provider,
                 initialBrandName: initialBrandName,
-                initialEnglishName: initialEnglishName
+                initialEnglishName: initialEnglishName,
+                onDocumentCreated: { createdBrand in
+                    latestCreatedBrand = createdBrand
+                }
             ) { createdBrand in
                 latestCreatedBrand = createdBrand
                 advanceAfterBrandCreation(createdBrand)

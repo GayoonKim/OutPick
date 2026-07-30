@@ -59,6 +59,7 @@ final class CreateBrandViewModel: ObservableObject {
     @Published var isSaving: Bool = false
     @Published private(set) var isLoadingMoods: Bool = false
     @Published private(set) var isCreatingMood: Bool = false
+    @Published private(set) var createdBrandDocument: CreatedBrand?
     @Published var message: String? = nil
 
     private let brandStore: BrandStoringRepository
@@ -165,32 +166,58 @@ final class CreateBrandViewModel: ObservableObject {
         isSaving = true
         defer { isSaving = false }
 
-        do {
-            let normalizedWebsiteURL = websiteURL.isEmpty ? nil : websiteURL
-            let normalizedLookbookArchiveURL = lookbookArchiveURL.isEmpty
-                ? nil
-                : lookbookArchiveURL
-            let docID = try await brandStore.createBrand(
-                name: rawName,
-                englishName: rawEnglishName.isEmpty ? nil : rawEnglishName,
-                isFeatured: isFeatured,
-                websiteURL: normalizedWebsiteURL,
-                lookbookArchiveURL: normalizedLookbookArchiveURL,
-                moodIDs: orderedSelectedMoodIDs
-            )
+        let createdBrand: CreatedBrand
+        if let createdBrandDocument {
+            createdBrand = createdBrandDocument
+        } else {
+            do {
+                let normalizedWebsiteURL = websiteURL.isEmpty ? nil : websiteURL
+                let normalizedLookbookArchiveURL = lookbookArchiveURL.isEmpty
+                    ? nil
+                    : lookbookArchiveURL
+                let docID = try await brandStore.createBrand(
+                    name: rawName,
+                    englishName: rawEnglishName.isEmpty ? nil : rawEnglishName,
+                    isFeatured: isFeatured,
+                    websiteURL: normalizedWebsiteURL,
+                    lookbookArchiveURL: normalizedLookbookArchiveURL,
+                    moodIDs: orderedSelectedMoodIDs
+                )
+                createdBrand = CreatedBrand(
+                    id: BrandID(value: docID),
+                    name: rawName,
+                    englishName: rawEnglishName.isEmpty ? nil : rawEnglishName,
+                    websiteURL: normalizedWebsiteURL,
+                    lookbookArchiveURL: normalizedLookbookArchiveURL,
+                    hasLogoAsset: false,
+                    moodIDs: orderedSelectedMoodIDs
+                )
+                createdBrandDocument = createdBrand
+            } catch {
+                message = "저장 실패: \(error.localizedDescription)"
+                return nil
+            }
+        }
 
-            enqueueLogoUploadIfNeeded(docID: docID)
-            return CreatedBrand(
-                id: BrandID(value: docID),
-                name: rawName,
-                englishName: rawEnglishName.isEmpty ? nil : rawEnglishName,
-                websiteURL: normalizedWebsiteURL,
-                lookbookArchiveURL: normalizedLookbookArchiveURL,
-                hasLogoAsset: selectedLogoImage != nil,
-                moodIDs: orderedSelectedMoodIDs
+        guard selectedLogoImage != nil else {
+            return createdBrand
+        }
+
+        do {
+            try await uploadLogo(docID: createdBrand.id.value)
+            let completedBrand = CreatedBrand(
+                id: createdBrand.id,
+                name: createdBrand.name,
+                englishName: createdBrand.englishName,
+                websiteURL: createdBrand.websiteURL,
+                lookbookArchiveURL: createdBrand.lookbookArchiveURL,
+                hasLogoAsset: true,
+                moodIDs: createdBrand.moodIDs
             )
+            createdBrandDocument = completedBrand
+            return completedBrand
         } catch {
-            message = "저장 실패: \(error.localizedDescription)"
+            message = "브랜드는 생성됐지만 로고를 저장하지 못했습니다. 다시 시도해주세요: \(error.localizedDescription)"
             return nil
         }
     }
@@ -298,56 +325,36 @@ private extension CreateBrandViewModel {
         )
     }
 
-    func enqueueLogoUploadIfNeeded(docID: String) {
-        let preparedLogo: PreparedLogoUpload?
+    func uploadLogo(docID: String) async throws {
+        guard let preparedLogo = try prepareLogoUpload() else { return }
+
+        let thumbPath = "brands/\(docID)/logo/thumb.jpg"
+        let detailPath = "brands/\(docID)/logo/detail.jpg"
+        var uploadedPaths: [String] = []
 
         do {
-            preparedLogo = try prepareLogoUpload()
+            let uploadedThumbPath = try await storageService.uploadImage(
+                data: preparedLogo.thumbData,
+                to: thumbPath
+            )
+            uploadedPaths.append(uploadedThumbPath)
+
+            let uploadedDetailPath = try await storageService.uploadImage(
+                data: preparedLogo.detailData,
+                to: detailPath
+            )
+            uploadedPaths.append(uploadedDetailPath)
+
+            try await brandStore.updateLogoPaths(
+                docID: docID,
+                logoThumbPath: uploadedThumbPath,
+                logoDetailPath: uploadedDetailPath
+            )
         } catch {
-            print("⚠️ 브랜드 로고 준비 실패(docID=\(docID)): \(error.localizedDescription)")
-            return
-        }
-
-        guard let preparedLogo else { return }
-
-        let storageService = self.storageService
-        let brandStore = self.brandStore
-
-        Task(priority: .utility) {
-            let thumbPath = "brands/\(docID)/logo/thumb.jpg"
-            let detailPath = "brands/\(docID)/logo/detail.jpg"
-            var uploadedThumbPathForRollback: String?
-
-            do {
-                let uploadedThumbPath = try await storageService.uploadImage(
-                    data: preparedLogo.thumbData,
-                    to: thumbPath
-                )
-                uploadedThumbPathForRollback = uploadedThumbPath
-
-                try await brandStore.updateLogoPaths(
-                    docID: docID,
-                    logoThumbPath: uploadedThumbPath,
-                    logoDetailPath: nil
-                )
-
-                uploadedThumbPathForRollback = nil
-
-                let uploadedDetailPath = try await storageService.uploadImage(
-                    data: preparedLogo.detailData,
-                    to: detailPath
-                )
-                try await brandStore.updateLogoPaths(
-                    docID: docID,
-                    logoThumbPath: nil,
-                    logoDetailPath: uploadedDetailPath
-                )
-            } catch {
-                if let rollbackPath = uploadedThumbPathForRollback {
-                    try? await storageService.deleteFile(at: rollbackPath)
-                }
-                print("⚠️ 브랜드 로고 업로드/패치 실패(docID=\(docID)): \(error.localizedDescription)")
+            for path in uploadedPaths {
+                try? await storageService.deleteFile(at: path)
             }
+            throw error
         }
     }
 }

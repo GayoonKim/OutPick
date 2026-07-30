@@ -143,7 +143,12 @@ final class FirebaseStorageTransferRepository: FirebaseStorageTransferRepository
                 if let error {
                     let ns = error as NSError
                     print("🚫 upload(data) 실패(\(path)) \(String(format: "(%.0fms)", elapsedMs)): code=\(ns.code) domain=\(ns.domain) desc=\(ns.localizedDescription)")
-                    continuation.resume(throwing: uploadFailure)
+                    continuation.resume(
+                        throwing: self.preservingUploadFailure(
+                            uploadFailure,
+                            underlying: error
+                        )
+                    )
                     return
                 }
 
@@ -235,7 +240,12 @@ final class FirebaseStorageTransferRepository: FirebaseStorageTransferRepository
                 if let error {
                     let ns = error as NSError
                     print("🚫 uploadFile 실패(\(path)): code=\(ns.code) domain=\(ns.domain) desc=\(ns.localizedDescription)")
-                    continuation.resume(throwing: uploadFailure)
+                    continuation.resume(
+                        throwing: self.preservingUploadFailure(
+                            uploadFailure,
+                            underlying: error
+                        )
+                    )
                     return
                 }
                 continuation.resume(returning: path)
@@ -262,6 +272,23 @@ final class FirebaseStorageTransferRepository: FirebaseStorageTransferRepository
             return [-999, -1001, -1005, -1009].contains(underlying.code)
         }
         return false
+    }
+
+    private func preservingUploadFailure(
+        _ uploadFailure: Error,
+        underlying: Error
+    ) -> Error {
+        let failure = uploadFailure as NSError
+        var userInfo = failure.userInfo
+        userInfo[NSUnderlyingErrorKey] = underlying
+        if userInfo[NSLocalizedDescriptionKey] == nil {
+            userInfo[NSLocalizedDescriptionKey] = failure.localizedDescription
+        }
+        return NSError(
+            domain: failure.domain,
+            code: failure.code,
+            userInfo: userInfo
+        )
     }
 }
 

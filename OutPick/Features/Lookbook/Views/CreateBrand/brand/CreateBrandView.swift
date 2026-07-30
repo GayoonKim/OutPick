@@ -20,6 +20,7 @@ struct CreateBrandView: View {
     @State private var didStartEntranceAnimation: Bool = false
     @State private var entranceTask: Task<Void, Never>?
     private let mediaProcessor: MediaProcessingServiceProtocol
+    let onDocumentCreated: (CreateBrandViewModel.CreatedBrand) -> Void
     let onCompleted: (CreateBrandViewModel.CreatedBrand) -> Void
 
     /// RepositoryProvider 기반으로만 의존성을 주입합니다.
@@ -29,6 +30,7 @@ struct CreateBrandView: View {
         initialBrandName: String? = nil,
         initialEnglishName: String? = nil,
         mediaProcessor: MediaProcessingServiceProtocol = DefaultMediaProcessingService(),
+        onDocumentCreated: @escaping (CreateBrandViewModel.CreatedBrand) -> Void = { _ in },
         onCompleted: @escaping (CreateBrandViewModel.CreatedBrand) -> Void = { _ in }
     ) {
         self.mediaProcessor = mediaProcessor
@@ -43,6 +45,7 @@ struct CreateBrandView: View {
                 moodAdminRepository: provider.styleMoodAdminRepository
             )
         )
+        self.onDocumentCreated = onDocumentCreated
         self.onCompleted = onCompleted
     }
 
@@ -244,8 +247,15 @@ private extension CreateBrandView {
             animatedFormItem(index: 7) {
                 Button {
                     Task {
+                        let previousCreatedBrand = viewModel.createdBrandDocument
                         if let createdBrand = await viewModel.saveBrand() {
+                            if previousCreatedBrand == nil {
+                                onDocumentCreated(createdBrand)
+                            }
                             onCompleted(createdBrand)
+                        } else if previousCreatedBrand == nil,
+                                  let createdBrand = viewModel.createdBrandDocument {
+                            onDocumentCreated(createdBrand)
                         }
                     }
                 } label: {
@@ -255,7 +265,11 @@ private extension CreateBrandView {
                             ProgressView()
                                 .tint(OutPickTheme.SwiftUIColor.backgroundBase)
                         } else {
-                            Text("브랜드 생성")
+                            Text(
+                                viewModel.createdBrandDocument == nil
+                                ? "브랜드 생성"
+                                : "로고 업로드 다시 시도"
+                            )
                                 .font(.headline)
                         }
                         Spacer()
@@ -312,7 +326,12 @@ private extension CreateBrandView {
         let isVisible = revealedFormItemCount > index
 
         return content()
-            .opacity(isVisible ? 1 : 0)
+            .disabled(index < 7 && viewModel.createdBrandDocument != nil)
+            .opacity(
+                isVisible
+                ? (index < 7 && viewModel.createdBrandDocument != nil ? 0.55 : 1)
+                : 0
+            )
             .offset(x: isVisible ? 0 : -24)
     }
 
