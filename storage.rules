@@ -36,10 +36,6 @@ service firebase.storage {
         && firestore.get(roomPath(roomID)).data.creatorUID == request.auth.uid;
     }
 
-    function brandPath(brandID) {
-      return /databases/(default)/documents/brands/$(brandID);
-    }
-
     function totalBrandAdminPath(uid) {
       return /databases/(default)/documents/brandAdmins/$(uid);
     }
@@ -62,7 +58,6 @@ service firebase.storage {
 
     function hasBrandWriteAccess(brandID) {
       return signedIn()
-        && firestore.exists(brandPath(brandID))
         && (isTotalBrandAdmin() || hasBrandManagerAccess(brandID));
     }
 

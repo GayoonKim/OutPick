@@ -37,6 +37,7 @@ const result = spawnSync(
       "&& node --test --test-concurrency=1 " +
       "room-document-id.rules.test.mjs style-moods.rules.test.mjs " +
       "profile.rules.test.mjs profile-storage.rules.test.mjs " +
+      "brand-storage.rules.test.mjs " +
       "&& node --test profile-transactions.emulator.test.mjs " +
       "account-deletion.emulator.test.mjs " +
       "&& node ../functions/scripts/seed-style-moods.mjs " +
