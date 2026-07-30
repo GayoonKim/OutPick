@@ -67,6 +67,21 @@ Repository가 `DocumentSnapshot.documentID`를 같은 snapshot에서 decode한 D
 
 경로 prefix는 `OutPick/Features/Lookbook/`이다.
 
+### 좋아요 탭
+
+- 화면 조립: `LookbookCompositionRoot.makeLikedRoot` → `LookbookContainer.makeLikedView` → `Views/Liked/LikedView.swift`
+- 카드: `LikedBrandCardView.swift`, `LikedSeasonCardView.swift`, `LikedPostCardView.swift`
+- 표현 계약: `SAVED EDITS` 헤더, serif 섹션 제목, monospaced 인덱스·카운트, hairline 구분선과 작은 모서리를 사용한다. 브랜드는 정방형 가로 카드, 시즌은 세로형 가로 카드, 포스트는 2열 타이트 그리드다.
+- 상태 계약: `LikedViewModel`의 브랜드·시즌·포스트 `SectionState`를 독립 렌더링한다. 부분 실패가 다른 섹션을 가리지 않으며 섹션 패널에서 전체 reload를 재시도한다.
+- 동작 계약: pull-to-refresh, 섹션별 pagination, 좋아요 취소, 상세 push는 기존 ViewModel/UseCase/Repository/Coordinator 경계를 유지한다.
+
+### 브랜드 생성과 로고
+
+- 흐름: `CreateBrandFlowView` → `CreateBrandView` → `CreateBrandViewModel.saveBrand()` → `CloudFunctionsBrandStore.createBrand` → `LookbookStorageService` → `CloudFunctionsBrandStore.updateLogoPaths`.
+- 완료 기준: 로고를 선택한 경우 `brands/{brandID}/logo/thumb.jpg`, `detail.jpg` 업로드와 두 경로의 단일 패치가 모두 성공해야 생성 완료 단계로 이동한다.
+- 실패 기준: 업로드 또는 경로 패치 실패 시 성공한 업로드 객체를 rollback하고, 생성된 브랜드 ID를 `createdBrandDocument`로 유지해 같은 문서에 재시도한다. 재시도 중 브랜드 기본 입력은 잠근다.
+- Storage 권한: `storage.rules`의 브랜드 쓰기는 계정 문서와 총 관리자/브랜드 관리자 문서만 조회해 Storage rules의 Firestore 교차 조회 2문서 한도를 지킨다. 총 관리자는 신뢰된 운영 주체이므로 별도 브랜드 존재 조회를 하지 않으며, 클라이언트 경로는 생성된 brandID로 고정한다.
+
 ## 자주 수정하는 흐름
 
 ### 관심 스타일 브랜드

@@ -28,6 +28,11 @@ xcodebuild -scheme OutPick -destination 'generic/platform=iOS Simulator' build
   - 시즌 상세는 24개 초기 page, 마지막 12개 trigger, page 간 PostID 중복 제거, 동시 호출 병합, 빈 visibility page 연속 조회, refresh race와 실패 재시도를 검증한다.
   - 이미지 prefetch는 첫 12개·현재 위치 앞 32개·concurrency 4, append 직후 새 page 24개 등록, 반복 카드 노출의 경로 중복 방지를 `SeasonDetailBrandImageCacheSpy`로 검증한다.
 - 좋아요 탭 tests: `OutPickTests/LikedViewModelTests.swift`, `OutPickTests/LoadLikedSeasonsUseCaseTests.swift`
+  - 자동 회귀: 섹션별 초기 로드·부분 실패·pagination·좋아요 취소와 무효화 store 연동은 ViewModel 테스트로 검증한다.
+  - 수동 QA: `SAVED EDITS` 헤더, 브랜드/시즌 가로 카드, 포스트 2열 그리드, 섹션별 로딩·빈 상태·실패 패널, 메뉴·상세 이동·pull-to-refresh를 Simulator에서 확인한다.
+- 브랜드 생성 로고 tests: `OutPickTests/CreateBrandViewModelTests.swift`, `firestore-tests/brand-storage.rules.test.mjs`
+  - ViewModel은 두 로고 업로드·경로 패치 완료 대기, 실패 후 같은 브랜드 문서 재시도, detail 실패 시 thumb rollback을 검증한다.
+  - Storage emulator는 active 총 관리자·브랜드 관리자의 로고 업로드 허용과 inactive/무권한 사용자 거부를 검증한다.
 - 삭제 요청 관리 pagination/retry tests: `OutPickTests/AdminLookbookDeletionManagementViewModelTests.swift`
 - Firestore 문서 ID 경계: `OutPickTests/FirestoreDocumentIDBoundaryTests.swift`
   - 저장된 legacy `id`보다 경로 ID가 우선하는지, 빈 경로 ID가 실패하는지, Season write payload에 `ID`/`id`가 없는지 검증한다.
@@ -153,6 +158,7 @@ Firebase Functions tests/build entry:
   - 2026-07-28 Functions lint/build·87/87, worker lint/build·68/68, rules 24/24, profile transaction 5/5, seed 재-dry-run 변경 0건, iOS 핵심 14/14와 iPhone 17 Pro Max iOS 26.2 Simulator build/install/launch가 통과했다.
   - 운영 배포 후 기존 무드 editor sheet의 초기 target이 create 상태로 고정되는 결함을 `StyleMoodManagementView`의 식별 가능한 sheet target으로 수정했다. 관련 ViewModel·callable 계약 3/3과 Simulator build/install/launch, 운영 `미니멀` 값 초기화·동일 값 저장을 확인했다.
 - purge drain 핵심 시나리오: 20개 초과 page 반복, 서로 다른 브랜드 최대 3개, 같은 브랜드 순차, 부모 target 우선, 실패/lease skip 후 계속 처리, 7분 cutoff.
+- 브랜드·채팅 선택 초기화: `functions/src/developmentReset/brandChatManifest.test.ts`에서 root collection 분류, 보존 경계, 안정적인 confirmation hash, project·queue·미분류 collection apply gate를 검증한다. 실제 데이터 삭제는 자동 테스트하지 않고 dry-run manifest와 사후 audit로 검증한다.
 - 운영 통합 결과와 남은 관찰 항목: `docs/ai/tasks/lookbook-deletion-purge-drain/progress.md`, `qa-checklist.md`.
 - Functions workflow: `.codex/skills/firebase-functions-workflow/SKILL.md`
 

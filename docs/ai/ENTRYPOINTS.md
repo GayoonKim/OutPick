@@ -27,6 +27,7 @@
 - 계정 삭제 서버 상태 머신·정리 worker: `functions/src/accountDeletion/` → `firestore.rules`/`storage.rules`/`firestore.indexes.json`
 - 계정 삭제 Socket 차단: `Socket/src/users/userLookup.js` → `Socket/src/auth/socketAuthMiddleware.js` → `Socket/src/handlers/connectionHandlers.js`
 - 스타일 무드 서버·seed·할당: `functions/src/styleMoods/`, `functions/src/shared/styleMoodAssignmentPolicy.ts`, `functions/src/lookbook/admin/seasonMoodFunctions.ts`, `functions/seeds/style-moods.v1.json`
+- 브랜드·채팅 개발 데이터 선택 초기화: `functions/src/developmentReset/brandChatManifest.ts` → `functions/scripts/audit-brand-chat-reset.mjs` → 승인 후 `functions/scripts/reset-brand-chat-data.mjs`
 - iOS 스타일 키워드 관리자·검색: `LookbookAdminHomeView.swift` → `LookbookCoordinator.pushStyleMoodManagement()` → `StyleMoodManagementViewModel.swift` / `StyleMoodManagementView.swift`
 - iOS 브랜드·시즌 스타일 검색/선택: `AdminBrandManagementViewModel.swift` / `AdminBrandManagementView.swift` → `SeasonMoodManagementView.swift` / `StyleMoodSelectionSection.swift`
 - iOS 브랜드 search-first picker 정책: `StyleMood.swift`의 `StyleMoodPickerPolicy` → `StyleMoodSelectionSection.swift` → `CreateBrandView.swift` / `AdminBrandManagementView.swift`
@@ -38,6 +39,8 @@
 - iOS App Check: `AppDelegate.configureFirebaseApp()` → `OutPickAppCheckProviderFactory.swift` → Simulator Debug Provider / 실기기 App Attest → `OutPick.entitlements`
 - 계정 삭제 provider 재인증: `DefaultSocialAuthRepository.swift` → Google pending sign-in/동일 세션 reauthenticate 또는 Kakao 강제 login prompt → callable
 - iOS 관심 스타일 브랜드 홈·전체 보기: `CurrentUserStylePreferenceStore.swift` → `LoadInterestedStyleBrandsUseCase.swift` → `LookbookHomeViewModel.swift` / `InterestedStyleBrandListViewModel.swift` → `LookbookCoordinator.swift`
+- iOS 좋아요 에디토리얼 화면·독립 섹션 상태: `LikedView.swift` → `LikedBrandCardView.swift` / `LikedSeasonCardView.swift` / `LikedPostCardView.swift` → `LikedViewModel.swift` → `LookbookCoordinator.swift`
+- iOS 브랜드 생성·로고 업로드 재시도: `CreateBrandView.swift` → `CreateBrandViewModel.saveBrand()` → `CloudFunctionsBrandStore.createBrand/updateLogoPaths` + `LookbookStorageService` → `CreateBrandFlowView`
 - Lookbook import extraction core/evidence/version: `tools/lookbook-import-worker/src/extraction/`, `processor.ts`, `season-discovery.ts`
 - Lookbook extraction adapter registry: `tools/lookbook-import-worker/src/extraction/adapters/{registry,cafe24,types}.ts`
 - Lookbook extraction review/trust/resume: worker `src/extraction/review.ts`, Functions `src/lookbook/import/{functions,reviewContract}.ts`, iOS `LookbookExtractionReview*`

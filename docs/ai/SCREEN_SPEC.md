@@ -148,6 +148,13 @@ OutPick의 화면 구성과 화면별 책임을 AI 에이전트가 빠르게 확
 - 용어 경계: 사용자 화면은 `관심 스타일`, 관리자 taxonomy는 `스타일 키워드`, 연결 화면은 `브랜드 스타일`·`시즌 스타일`로 표시한다. 내부 타입/API/Firestore 필드는 `StyleMood`·`moodIDs`를 유지한다.
 - Phase 5.1: 스타일 키워드 생성·편집은 에디토리얼 입력 카드·가로 그룹 선택 칩·설정 카드·하단 고정 CTA를 사용한다. 브랜드 picker는 단일 행 검색 결과와 선택 칩, 통합 빈 상태 카드를 사용하고 브랜드 스타일 메뉴의 시즌 목록 제목은 `시즌`으로 표시한다. 시즌 picker도 같은 search-first 공용 컴포넌트를 사용하되 신규 키워드 추가는 제공하지 않는다.
 
+### Create Brand
+
+- 파일: `OutPick/Features/Lookbook/Views/CreateBrand/brand/CreateBrandView.swift`, `CreateBrandFlowView.swift`
+- ViewModel: `CreateBrandViewModel`
+- 저장 계약: 브랜드 문서를 먼저 한 번 생성한 뒤 선택한 로고의 `thumb.jpg`와 `detail.jpg` 업로드, 두 경로의 서버 패치까지 완료해야 다음 단계로 이동한다.
+- 실패 복구: 로고 업로드 또는 경로 패치 실패 시 일부 업로드 객체를 rollback하고 이미 생성한 브랜드 ID를 보존한다. 입력을 잠근 상태에서 `로고 업로드 다시 시도`를 제공하며 브랜드 문서를 중복 생성하지 않는다.
+
 ### Liked
 
 - 파일: `OutPick/Features/Lookbook/Views/Liked/LikedView.swift`
@@ -155,7 +162,9 @@ OutPick의 화면 구성과 화면별 책임을 AI 에이전트가 빠르게 확
 - 조립: `LookbookCompositionRoot.makeLikedRoot`
 - factory: `LookbookContainer.makeLikedView`
 - 책임: 좋아요 브랜드/시즌/포스트 섹션 표시.
-- 현재 목표: 섹션별 독립 상태와 부분 실패 처리를 지원한다.
+- 화면 구조: `SAVED EDITS` 에디토리얼 헤더 아래 브랜드 정방형 가로 카드, 시즌 세로형 가로 카드, 포스트 2열 타이트 그리드를 배치한다. serif 제목, monospaced 인덱스·카운트, hairline 구분선과 작은 모서리를 공통 시각 언어로 사용한다.
+- 상태: 전역 로딩/실패 화면으로 콘텐츠를 가리지 않고 섹션별 독립 로딩·빈 상태·실패 패널을 같은 지면 안에 표시한다. 한 섹션 실패 시 나머지 섹션의 콘텐츠와 상호작용을 보존한다.
+- 상호작용: pull-to-refresh, 섹션별 pagination, 좋아요 취소 메뉴, 브랜드/시즌/포스트 상세 이동은 기존 `LikedViewModel`과 `LookbookCoordinator` 계약을 유지한다.
 
 ## MyPage 화면
 

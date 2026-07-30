@@ -64,10 +64,11 @@ Rules/indexes 변경 전 확인:
 - 2026-07-03 이전 운영 Storage rules는 전역 `allow read, write;` 상태였다.
 - 2026-07-03 로컬 `storage.rules` 초안과 root `firebase.json` storage 설정을 추가했고, `firebase deploy --only storage --project outpick-664ae --dry-run --non-interactive` compile은 통과했다.
 - 2026-07-03 `firebase deploy --only storage --project outpick-664ae --non-interactive`로 기본 deny + path별 최소 권한 rules 운영 배포를 완료했다.
-- 운영 release는 `projects/outpick-664ae/releases/firebase.storage/outpick-664ae.appspot.com`, ruleset은 `projects/outpick-664ae/rulesets/148e8921-6195-42df-b575-09b17bbc88c4`다.
+- 운영 release는 `projects/outpick-664ae/releases/firebase.storage/outpick-664ae.appspot.com`, 현재 ruleset은 `projects/outpick-664ae/rulesets/e0e75181-a23b-4dcf-a13c-df95bb9a70c6`다.
 - Firebase Storage service agent의 cross-service Firestore lookup을 위해 `roles/firebaserules.firestoreServiceAgent` IAM binding을 추가했다.
 - 확인 완료: room membership 생성 후 참여자 이미지/비디오 메시지 업로드, 방장 room cover 생성/수정/삭제.
 - 2026-07-04 남은 수동 QA 완료: 비참여 preview 이미지/비디오 read, profile avatar 업로드, lookbook brand logo/season cover 업로드, legacy prefix 미사용 확인.
+- 2026-07-30 active 계정 검사를 추가한 뒤 브랜드 asset write가 Storage rules의 Firestore 교차 조회 2문서 한도를 넘겨 거부된 회귀를 수정했다. 브랜드 존재 조회를 제거하고 active 사용자 + 총 관리자/브랜드 관리자 두 문서만 조회하며 emulator 회귀 테스트 후 운영 배포했다.
 - Storage rules 추가/수정/배포는 사용자 명시 승인 없이 진행하지 않는다.
 
 ## Firebase Repository Boundary

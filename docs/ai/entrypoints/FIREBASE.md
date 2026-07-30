@@ -290,6 +290,8 @@ npm run build
 ## Firebase Storage
 
 - root `firebase.json`의 Storage rules source는 `storage.rules`다.
+- 브랜드 asset write는 `users/{uid}`와 `brandAdmins/{uid}` 또는 `brands/{brandID}/admins/{uid}` 두 문서만 교차 조회한다. Storage rules는 한 번의 평가에서 Firestore 문서를 최대 2개만 조회할 수 있으므로 `brands/{brandID}` 존재 확인을 추가하지 않는다.
+- 브랜드 생성 로고 계약은 `thumb.jpg`·`detail.jpg` 업로드 후 `updateBrandLogoPaths`로 두 경로를 함께 패치한다. 앱은 완료를 기다리며 실패 시 생성 문서를 재사용해 재시도한다.
 - 기본 deny 후 path별 read/write 권한을 허용한다.
 - Chat `rooms/{roomID}` write는 member/creator와 active 계정, profile write는 owner와 active 계정, Lookbook `brands/{brandID}` write는 총 관리자 또는 브랜드 owner/admin 기준이다.
 - cross-service `firestore.get/exists`를 사용하는 rules는 Storage service agent의 Firestore Rules 권한도 확인한다.
@@ -303,6 +305,15 @@ git diff --check -- firebase.json storage.rules
 ```
 
 실제 배포는 사용자 명시 승인 후 수행한다.
+
+## 브랜드·채팅 개발 데이터 선택 초기화
+
+- 순수 삭제 범위·project/hash/apply gate: `functions/src/developmentReset/brandChatManifest.ts`
+- 읽기 전용 manifest: `npm run audit:brand-chat-reset -- --project outpick-664ae`
+- 실제 삭제: `npm run reset:brand-chat-data -- --apply --project outpick-664ae --confirmation-hash HASH`
+- Auth, 사용자 계정/공개 프로필/관심 스타일, 총 관리자, 스타일 무드는 보존한다.
+- 브랜드·룩북·채팅 root/하위 문서와 관련 Storage/user projection만 삭제한다.
+- 실제 삭제는 미분류 root collection 0개, queue `PAUSED`, task 0개, 최신 hash와 별도 사용자 승인을 모두 요구한다.
 
 ## 변경 시 하네스 갱신
 
