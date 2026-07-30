@@ -12,7 +12,7 @@ struct LikedSeasonCardView: View {
     let brandImageCache: any BrandImageCacheProtocol
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 9) {
             LookbookAssetImageView(
                 primaryPath: item.season.coverThumbPath,
                 secondaryPath: item.season.coverPath,
@@ -21,29 +21,41 @@ struct LikedSeasonCardView: View {
                 brandImageCache: brandImageCache,
                 maxBytes: 1 * 1024 * 1024
             )
-            .frame(width: 132, height: 176)
-            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .frame(width: 156, height: 208)
+            .clipShape(RoundedRectangle(cornerRadius: 3))
             .background(
-                RoundedRectangle(cornerRadius: 10)
+                RoundedRectangle(cornerRadius: 3)
                     .fill(OutPickTheme.SwiftUIColor.surfaceBase)
             )
+            .overlay {
+                RoundedRectangle(cornerRadius: 3)
+                    .stroke(OutPickTheme.SwiftUIColor.borderSubtle, lineWidth: 1)
+            }
 
             Text(item.season.title)
-                .font(.footnote.weight(.semibold))
+                .font(.system(size: 17, weight: .semibold, design: .serif))
                 .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
                 .lineLimit(2)
 
-            HStack(spacing: 4) {
+            HStack(spacing: 7) {
+                Text("SEASON")
+                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                    .tracking(1)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.accent)
+
+                Spacer(minLength: 0)
+
                 Image(systemName: "heart.fill")
-                    .imageScale(.small)
+                    .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(OutPickTheme.SwiftUIColor.like)
+
                 Text("\(item.season.likeCount)")
                     .monospacedDigit()
                     .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
             }
-            .font(.caption)
+            .font(.caption2)
         }
-        .frame(width: 132, alignment: .leading)
+        .frame(width: 156, alignment: .leading)
         .contentShape(Rectangle())
         .accessibilityIdentifier("lookbook.likedSeason.card")
     }
