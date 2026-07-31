@@ -106,6 +106,16 @@ final class AdminLookbookDeletionManagementViewModel: ObservableObject {
         return trimmed.isEmpty ? nil : trimmed
     }
 
+    var hasPendingDeletionDraft: Bool {
+        selectedSeasonIDs.isEmpty == false ||
+        selectedPostIDs.isEmpty == false ||
+        normalizedReason != nil
+    }
+
+    var disablesInteractivePop: Bool {
+        mutationKey != nil || hasPendingDeletionDraft
+    }
+
     func loadInitialContent(isTotalAdmin: Bool) async {
         await reloadDeletionRequests(isTotalAdmin: isTotalAdmin)
         guard selectedBrand != nil else { return }

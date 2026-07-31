@@ -73,7 +73,7 @@ struct BrandRequestView: View {
                     BrandRequestGuideRow(text: "브랜드명은 공식 표기와 최대한 가깝게 입력해주세요.")
                     BrandRequestGuideRow(text: "영문 공식명이 있으면 함께 입력해주세요.")
                     BrandRequestGuideRow(text: "룩북 확인이 어렵거나 브랜드 확인이 어려우면 보류될 수 있어요.")
-                    BrandRequestGuideRow(text: "요청 상태는 브랜드 요청 상황에서 확인할 수 있어요.")
+                    BrandRequestGuideRow(text: "요청 상태는 마이페이지의 브랜드 요청 내역에서 확인할 수 있어요.")
                 }
 
                 if case .failed(let message) = viewModel.phase {
@@ -122,6 +122,7 @@ struct BrandRequestView: View {
             onBack: { coordinator.pop() }
         )
         .outpickDismissKeyboardOnTap()
+        .lookbookInteractivePopDisabled(viewModel.disablesInteractivePop)
     }
 }
 

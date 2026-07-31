@@ -32,6 +32,9 @@ final class MyPageCoordinator {
         viewModel.onEditStyles = { [weak self] selectedMoodIDs in
             self?.showStyleEdit(selectedMoodIDs: selectedMoodIDs)
         }
+        viewModel.onOpenBrandRequests = { [weak self] in
+            self?.showBrandRequests()
+        }
         viewModel.onDeleteAccount = { [weak self] in
             self?.showAccountDeletion()
         }
@@ -84,6 +87,21 @@ final class MyPageCoordinator {
         navigationController.pushViewController(viewController, animated: true)
     }
 
+    private func showBrandRequests() {
+        guard let appContentRouter = container.appContentRouter else {
+            presentBrandRequestsRouteError()
+            return
+        }
+
+        Task { [weak self] in
+            do {
+                try await appContentRouter.openMyBrandRequests()
+            } catch {
+                self?.presentBrandRequestsRouteError()
+            }
+        }
+    }
+
     private func showAccountDeletion() {
         guard let authenticatedUser = LoginManager.shared.authenticatedUser else {
             let alert = UIAlertController(
@@ -104,6 +122,16 @@ final class MyPageCoordinator {
         let viewController = AccountDeletionConfirmationViewController(viewModel: viewModel)
         viewController.hidesBottomBarWhenPushed = true
         navigationController.pushViewController(viewController, animated: true)
+    }
+
+    private func presentBrandRequestsRouteError() {
+        let alert = UIAlertController(
+            title: "요청 내역을 열 수 없어요",
+            message: "잠시 후 다시 시도해 주세요.",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "확인", style: .default))
+        navigationController.present(alert, animated: true)
     }
 
     private func presentCleanupWarning() {

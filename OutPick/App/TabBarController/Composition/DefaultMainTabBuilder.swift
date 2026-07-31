@@ -20,6 +20,7 @@ final class DefaultMainTabBuilder: MainTabBuilding {
     var appContentRouter: (any AppContentRouting)? {
         didSet {
             chatCoordinator.appContentRouter = appContentRouter
+            myPageContainer.configureAppContentRouter(appContentRouter)
         }
     }
 

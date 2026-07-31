@@ -66,6 +66,7 @@ struct LookbookSeasonRepairView: View {
         .appToast(message: viewModel.errorMessage) {
             viewModel.clearError()
         }
+        .lookbookInteractivePopDisabled(viewModel.isApplying)
     }
 
     private func previewContent(

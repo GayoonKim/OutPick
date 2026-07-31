@@ -17,6 +17,7 @@ final class MyPageViewModel {
     var onStateChanged: ((State) -> Void)?
     var onEditProfile: ((UserPublicProfile) -> Void)?
     var onEditStyles: (([String]) -> Void)?
+    var onOpenBrandRequests: (() -> Void)?
     var onDeleteAccount: (() -> Void)?
 
     private let userID: String
@@ -85,6 +86,10 @@ final class MyPageViewModel {
 
     func editStylesTapped() {
         onEditStyles?(selectedMoodIDs)
+    }
+
+    func brandRequestsTapped() {
+        onOpenBrandRequests?()
     }
 
     func deleteAccountTapped() {

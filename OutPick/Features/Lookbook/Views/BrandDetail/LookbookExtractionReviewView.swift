@@ -53,6 +53,7 @@ struct LookbookExtractionReviewView: View {
         .appToast(message: viewModel.errorMessage) {
             viewModel.clearError()
         }
+        .lookbookInteractivePopDisabled(viewModel.disablesInteractivePop)
     }
 
     private func reviewContent(_ review: LookbookExtractionReview) -> some View {

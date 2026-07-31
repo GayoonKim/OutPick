@@ -6,7 +6,6 @@ struct InterestedStyleBrandSectionView: View {
     let brandImageCache: any BrandImageCacheProtocol
     let onSelectBrand: (Brand) -> Void
     let onShowAll: () -> Void
-    let onRequestBrand: () -> Void
     let onRetry: () -> Void
 
     var body: some View {
@@ -99,20 +98,11 @@ struct InterestedStyleBrandSectionView: View {
                 .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
                 .multilineTextAlignment(.center)
 
-            Text("OutPick에서 만나고 싶은 브랜드가 있다면 요청해 주세요")
+            Text("브랜드 검색에서 원하는 브랜드를 찾아보세요")
                 .font(.system(size: 13))
                 .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
-
-            Button("브랜드 요청하기", action: onRequestBrand)
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(OutPickTheme.SwiftUIColor.backgroundBase)
-                .padding(.horizontal, 16)
-                .frame(height: 40)
-                .background(OutPickTheme.SwiftUIColor.accent)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .buttonStyle(.plain)
         }
         .frame(maxWidth: .infinity)
         .padding(18)

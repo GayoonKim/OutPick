@@ -17,6 +17,7 @@ final class MyPageContainer {
     let stylePreferenceStore: CurrentUserStylePreferenceStore
     let currentUserProvider: CurrentUserProviding
     let avatarImageManager: AvatarImageManaging
+    private(set) weak var appContentRouter: (any AppContentRouting)?
 
     init(
         userID: String,
@@ -47,5 +48,9 @@ final class MyPageContainer {
         self.stylePreferenceStore = stylePreferenceStore
         self.currentUserProvider = currentUserProvider
         self.avatarImageManager = avatarImageManager
+    }
+
+    func configureAppContentRouter(_ appContentRouter: (any AppContentRouting)?) {
+        self.appContentRouter = appContentRouter
     }
 }

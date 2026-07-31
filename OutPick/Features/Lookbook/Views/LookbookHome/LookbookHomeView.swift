@@ -26,23 +26,14 @@ struct LookbookHomeView: View {
     var body: some View {
         mainContent
             .lookbookNavigationBar(title: "OutPick") {
-                HStack(spacing: 8) {
+                if brandAdminSessionStore.isTotalAdmin {
                     LookbookNavigationTextButton(
-                        title: "브랜드 요청",
-                        accessibilityLabel: "브랜드 요청 상황"
+                        title: "관리자",
+                        accessibilityLabel: "Lookbook 관리자"
                     ) {
-                        coordinator.pushMyBrandRequests(initialScope: .active)
-                    }
-
-                    if brandAdminSessionStore.isTotalAdmin {
-                        LookbookNavigationTextButton(
-                            title: "관리자",
-                            accessibilityLabel: "Lookbook 관리자"
-                        ) {
-                            coordinator.pushAdminHome { createdBrandID in
-                                Task {
-                                    await handleCreatedBrand(createdBrandID)
-                                }
+                        coordinator.pushAdminHome { createdBrandID in
+                            Task {
+                                await handleCreatedBrand(createdBrandID)
                             }
                         }
                     }
@@ -169,9 +160,6 @@ struct LookbookHomeView: View {
             },
             onShowAll: {
                 coordinator.pushInterestedStyleBrands()
-            },
-            onRequestBrand: {
-                coordinator.pushBrandRequest(initialBrandName: "")
             },
             onRetry: {
                 Task { await viewModel.retryInterestedStyleBrands() }

@@ -20,57 +20,88 @@ final class LookbookCoordinator {
     func attach(navigationController: UINavigationController) {
         self.navigationController = navigationController
         navigationController.setNavigationBarHidden(true, animated: false)
-        navigationController.interactivePopGestureRecognizer?.isEnabled = true
+        if let navigationController = navigationController as? LookbookNavigationController {
+            navigationController.refreshInteractivePopAvailability()
+        } else {
+            navigationController.interactivePopGestureRecognizer?.isEnabled = true
+        }
     }
 
     func pushBrandDetail(brand: Brand) {
-        push(makeBrandDetailView(brand: brand))
+        push(makeBrandDetailView(brand: brand), policy: .browse)
     }
 
     func pushSeasonDetail(season: Season) {
-        push(makeSeasonDetailView(season: season))
+        pushSeasonDetail(brandID: season.brandID, seasonID: season.id)
+    }
+
+    func pushSeasonDetail(brandID: BrandID, seasonID: SeasonID) {
+        push(
+            container.makeSeasonDetailView(
+                brandID: brandID,
+                seasonID: seasonID,
+                coordinator: self
+            ),
+            policy: .browse
+        )
     }
 
     func pushPostDetail(post: LookbookPost) {
-        push(makePostDetailView(post: post))
+        pushPostDetail(
+            brandID: post.brandID,
+            seasonID: post.seasonID,
+            postID: post.id
+        )
+    }
+
+    func pushPostDetail(brandID: BrandID, seasonID: SeasonID, postID: PostID) {
+        push(
+            container.makePostDetailView(
+                brandID: brandID,
+                seasonID: seasonID,
+                postID: postID,
+                coordinator: self
+            ),
+            policy: .browse
+        )
     }
 
     func pushBrandRequest(initialBrandName: String) {
-        push(makeBrandRequestView(
-            initialBrandName: initialBrandName,
-            onSubmitted: { [weak self] in
-                self?.replaceTopWithMyBrandRequests(initialScope: .active)
-            }
-        ))
-    }
-
-    func pushBrandRequestFromRequestSituation(initialBrandName: String) {
-        push(makeBrandRequestView(
-            initialBrandName: initialBrandName,
-            onSubmitted: { [weak self] in
-                self?.pop()
-            }
-        ))
+        push(
+            makeBrandRequestView(
+                initialBrandName: initialBrandName,
+                onSubmitted: { [weak self] in
+                    self?.replaceTopWithMyBrandRequests(initialScope: .active)
+                }
+            ),
+            policy: .stateful
+        )
     }
 
     func pushMyBrandRequests(initialScope: BrandRequestListScope = .active) {
-        push(makeMyBrandRequestsView(initialScope: initialScope))
+        push(makeMyBrandRequestsView(initialScope: initialScope), policy: .browse)
     }
 
     func pushInterestedStyleBrands() {
-        push(container.makeInterestedStyleBrandListView(coordinator: self))
+        push(
+            container.makeInterestedStyleBrandListView(coordinator: self),
+            policy: .browse
+        )
     }
 
     func pushAdminHome(onCreatedBrand: @escaping (BrandID) -> Void) {
-        push(makeAdminHomeView(onCreatedBrand: onCreatedBrand))
+        push(makeAdminHomeView(onCreatedBrand: onCreatedBrand), policy: .browse)
     }
 
     func pushAdminBrandRequestGroups() {
-        push(makeAdminBrandRequestGroupsView())
+        push(makeAdminBrandRequestGroupsView(), policy: .browse)
     }
 
     func pushStyleMoodManagement() {
-        push(container.makeStyleMoodManagementView(coordinator: self))
+        push(
+            container.makeStyleMoodManagementView(coordinator: self),
+            policy: .browse
+        )
     }
 
     func pushAdminBrandManagement(
@@ -78,29 +109,38 @@ final class LookbookCoordinator {
         initialBrandID: BrandID? = nil,
         onUpdatedBrand: ((Brand) -> Void)? = nil
     ) {
-        push(makeAdminBrandManagementView(
-            initialBrand: initialBrand,
-            initialBrandID: initialBrandID,
-            onUpdatedBrand: onUpdatedBrand
-        ))
+        push(
+            makeAdminBrandManagementView(
+                initialBrand: initialBrand,
+                initialBrandID: initialBrandID,
+                onUpdatedBrand: onUpdatedBrand
+            ),
+            policy: .stateful
+        )
     }
 
     func pushAdminLookbookDeletionManagement(initialBrand: Brand? = nil) {
-        push(makeAdminLookbookDeletionManagementView(
-            initialBrand: initialBrand,
-            allowsDeletionSelection: initialBrand != nil
-        ))
+        push(
+            makeAdminLookbookDeletionManagementView(
+                initialBrand: initialBrand,
+                allowsDeletionSelection: initialBrand != nil
+            ),
+            policy: .stateful
+        )
     }
 
     func pushLookbookExtractionReview(
         brandID: BrandID,
         jobID: String
     ) {
-        push(container.makeLookbookExtractionReviewView(
-            brandID: brandID,
-            jobID: jobID,
-            coordinator: self
-        ))
+        push(
+            container.makeLookbookExtractionReviewView(
+                brandID: brandID,
+                jobID: jobID,
+                coordinator: self
+            ),
+            policy: .stateful
+        )
     }
 
     func pushLookbookSeasonRepair(
@@ -108,12 +148,15 @@ final class LookbookCoordinator {
         seasonID: SeasonID,
         sourceImportJobID: String
     ) {
-        push(container.makeLookbookSeasonRepairView(
-            brandID: brandID,
-            seasonID: seasonID,
-            sourceImportJobID: sourceImportJobID,
-            coordinator: self
-        ))
+        push(
+            container.makeLookbookSeasonRepairView(
+                brandID: brandID,
+                seasonID: seasonID,
+                sourceImportJobID: sourceImportJobID,
+                coordinator: self
+            ),
+            policy: .stateful
+        )
     }
 
     func pop() {
@@ -234,7 +277,10 @@ final class LookbookCoordinator {
         }
 
         viewControllers.removeLast()
-        let next = UIHostingController(rootView: makeMyBrandRequestsView(initialScope: initialScope))
+        let next = makeHostingController(
+            makeMyBrandRequestsView(initialScope: initialScope),
+            policy: .browse
+        )
         viewControllers.append(next)
         navigationController.setViewControllers(viewControllers, animated: true)
     }
@@ -272,19 +318,36 @@ final class LookbookCoordinator {
         )
     }
 
-    private func push<Content: View>(_ view: Content) {
+    private func push<Content: View>(
+        _ view: Content,
+        policy: LookbookInteractivePopPolicy
+    ) {
         guard let navigationController else {
             assertionFailure("LookbookCoordinator requires an attached UINavigationController.")
             return
         }
 
-        let hostingController = UIHostingController(
-            rootView: view
-                .environment(\.repositoryProvider, container.provider)
-                .environmentObject(container.brandAdminSessionStore)
-        )
+        let hostingController = makeHostingController(view, policy: policy)
         hostingController.hidesBottomBarWhenPushed = true
         navigationController.setNavigationBarHidden(true, animated: false)
         navigationController.pushViewController(hostingController, animated: true)
+    }
+
+    private func makeHostingController<Content: View>(
+        _ view: Content,
+        policy: LookbookInteractivePopPolicy
+    ) -> UIViewController {
+        let interactivePopState = LookbookInteractivePopState(
+            isAllowed: policy.initiallyAllowsPop
+        )
+        let rootView = view
+            .environment(\.repositoryProvider, container.provider)
+            .environmentObject(container.brandAdminSessionStore)
+            .environment(\.lookbookInteractivePopState, interactivePopState)
+
+        return LookbookHostingController(
+            rootView: rootView,
+            interactivePopState: interactivePopState
+        )
     }
 }

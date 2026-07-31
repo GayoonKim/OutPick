@@ -32,7 +32,7 @@ enum LookbookCompositionRoot {
         let hostingVC = UIHostingController(rootView: lookbookView)
 
         // 한국어 주석: 탭 내부 push 흐름 확장을 위해 UINavigationController로 감싸둠
-        let nav = UINavigationController(rootViewController: hostingVC)
+        let nav = LookbookNavigationController(rootViewController: hostingVC)
         nav.isNavigationBarHidden = true
         coordinator.attach(navigationController: nav)
         return nav
@@ -45,7 +45,7 @@ enum LookbookCompositionRoot {
             .environmentObject(container.brandAdminSessionStore)
 
         let hostingVC = UIHostingController(rootView: likedView)
-        let nav = UINavigationController(rootViewController: hostingVC)
+        let nav = LookbookNavigationController(rootViewController: hostingVC)
         nav.isNavigationBarHidden = true
         coordinator.attach(navigationController: nav)
         return nav

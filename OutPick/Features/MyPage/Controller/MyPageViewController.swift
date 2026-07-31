@@ -17,6 +17,7 @@ final class MyPageViewController: UIViewController {
     private let moodSectionLabel = UILabel()
     private let moodChipsView = MyPageMoodChipsView()
     private let actionSectionLabel = UILabel()
+    private let activitySectionLabel = UILabel()
     private let editProfileButton = MyPageActionRowButton(
         title: "프로필 편집",
         subtitle: "닉네임과 프로필 이미지를 관리해요"
@@ -24,6 +25,10 @@ final class MyPageViewController: UIViewController {
     private let editStylesButton = MyPageActionRowButton(
         title: "관심 스타일",
         subtitle: "내 취향을 보여주는 스타일을 골라요"
+    )
+    private let brandRequestsButton = MyPageActionRowButton(
+        title: "브랜드 요청 내역",
+        subtitle: "요청한 브랜드의 진행 상황을 확인해요"
     )
     private let activityIndicator = UIActivityIndicatorView(style: .medium)
     private let errorLabel = UILabel()
@@ -87,9 +92,15 @@ final class MyPageViewController: UIViewController {
 
         configureSectionLabel(moodSectionLabel, text: "MY STYLE")
         configureSectionLabel(actionSectionLabel, text: "EDIT")
+        configureSectionLabel(activitySectionLabel, text: "ACTIVITY")
 
         editProfileButton.addTarget(self, action: #selector(editProfileTapped), for: .touchUpInside)
         editStylesButton.addTarget(self, action: #selector(editStylesTapped), for: .touchUpInside)
+        brandRequestsButton.addTarget(
+            self,
+            action: #selector(brandRequestsTapped),
+            for: .touchUpInside
+        )
 
         activityIndicator.color = OutPickTheme.ColorToken.accent
         errorLabel.font = .systemFont(ofSize: 13)
@@ -109,6 +120,7 @@ final class MyPageViewController: UIViewController {
         [
             editorialHeader, identityRow, moodSectionLabel, moodChipsView,
             actionSectionLabel, editProfileButton, editStylesButton,
+            activitySectionLabel, brandRequestsButton,
             activityIndicator, errorLabel
         ].forEach(stackView.addArrangedSubview)
         profileImageView.widthAnchor.constraint(equalToConstant: 100).isActive = true
@@ -118,7 +130,9 @@ final class MyPageViewController: UIViewController {
         stackView.setCustomSpacing(14, after: moodSectionLabel)
         stackView.setCustomSpacing(42, after: moodChipsView)
         stackView.setCustomSpacing(5, after: actionSectionLabel)
-        stackView.setCustomSpacing(20, after: editStylesButton)
+        stackView.setCustomSpacing(34, after: editStylesButton)
+        stackView.setCustomSpacing(5, after: activitySectionLabel)
+        stackView.setCustomSpacing(20, after: brandRequestsButton)
 
         [customNavigationBar, scrollView, stackView].forEach {
             $0.translatesAutoresizingMaskIntoConstraints = false
@@ -209,6 +223,10 @@ final class MyPageViewController: UIViewController {
 
     @objc private func editStylesTapped() {
         viewModel.editStylesTapped()
+    }
+
+    @objc private func brandRequestsTapped() {
+        viewModel.brandRequestsTapped()
     }
 
     private func makeSettingsMenu() -> UIMenu {

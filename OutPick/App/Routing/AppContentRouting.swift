@@ -11,4 +11,5 @@ import Foundation
 protocol AppContentRouting: AnyObject {
     func openJoinedChatRoom(roomID: String) async throws
     func openLookbookSharedContent(_ content: LookbookSharedContent) async throws
+    func openMyBrandRequests() async throws
 }

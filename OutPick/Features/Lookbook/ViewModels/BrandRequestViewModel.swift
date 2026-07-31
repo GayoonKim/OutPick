@@ -21,12 +21,14 @@ final class BrandRequestViewModel: ObservableObject {
     @Published private(set) var phase: Phase = .idle
 
     private let submitUseCase: any SubmitBrandRequestUseCaseProtocol
+    private let initialBrandName: String
 
     init(
         initialBrandName: String,
         submitUseCase: any SubmitBrandRequestUseCaseProtocol
     ) {
         self.brandName = initialBrandName
+        self.initialBrandName = initialBrandName
         self.submitUseCase = submitUseCase
     }
 
@@ -40,6 +42,15 @@ final class BrandRequestViewModel: ObservableObject {
 
     var canSubmit: Bool {
         trimmedBrandName.isEmpty == false && phase != .submitting
+    }
+
+    var hasDraftChanges: Bool {
+        trimmedBrandName != initialBrandName.trimmingCharacters(in: .whitespacesAndNewlines) ||
+        trimmedEnglishBrandName.isEmpty == false
+    }
+
+    var disablesInteractivePop: Bool {
+        phase == .submitting || hasDraftChanges
     }
 
     func submit() async -> BrandRequestSubmissionReceipt? {

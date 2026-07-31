@@ -119,4 +119,16 @@ final class LookbookExtractionReviewViewModel: ObservableObject {
         }
         return expectedCount > review.candidates.count
     }
+
+    var hasPendingReviewChanges: Bool {
+        guard let review else { return false }
+        let originalExpectedCount = review.expectedCandidateCount.map(String.init) ?? ""
+        return excludedCandidateKeys.isEmpty == false ||
+            expectedCandidateCountText.trimmingCharacters(in: .whitespacesAndNewlines) != originalExpectedCount ||
+            note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+    }
+
+    var disablesInteractivePop: Bool {
+        isSubmitting || hasPendingReviewChanges
+    }
 }

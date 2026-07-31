@@ -46,6 +46,7 @@ struct AdminLookbookDeletionManagementView: View {
                 onBack: { coordinator.pop() }
             )
             .outpickDismissKeyboardOnTap()
+            .lookbookInteractivePopDisabled(viewModel.disablesInteractivePop)
             .task {
                 await brandAdminSessionStore.ensureWritableBrandsLoaded()
                 await viewModel.loadInitialContent(isTotalAdmin: brandAdminSessionStore.isTotalAdmin)

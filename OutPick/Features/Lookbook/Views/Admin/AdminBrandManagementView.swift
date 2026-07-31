@@ -123,6 +123,7 @@ struct AdminBrandManagementView: View {
             onBack: handleBack
         )
         .outpickDismissKeyboardOnTap()
+        .lookbookInteractivePopDisabled(disablesInteractivePop)
         .task {
             await viewModel.loadInitialBrandIfNeeded()
         }
@@ -418,6 +419,15 @@ struct AdminBrandManagementView: View {
 
     private var navigationTitle: String {
         selectedMenu?.title ?? "브랜드 관리"
+    }
+
+    private var disablesInteractivePop: Bool {
+        selectedMenu != nil ||
+        viewModel.isSavingBrand ||
+        viewModel.isUploadingLogo ||
+        viewModel.isMutatingManager ||
+        viewModel.isCreatingMood ||
+        viewModel.savingSeasonIDs.isEmpty == false
     }
 
     private func handleBack() {

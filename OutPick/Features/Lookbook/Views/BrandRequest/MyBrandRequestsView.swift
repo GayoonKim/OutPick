@@ -32,14 +32,7 @@ struct MyBrandRequestsView: View {
             title: "브랜드 요청 상황",
             showsBackButton: true,
             onBack: { coordinator.pop() }
-        ) {
-            LookbookNavigationIconButton(
-                systemImage: "plus",
-                accessibilityLabel: "새 브랜드 요청"
-            ) {
-                coordinator.pushBrandRequestFromRequestSituation(initialBrandName: "")
-            }
-        }
+        )
         .onAppear {
             Task {
                 await viewModel.reload()
