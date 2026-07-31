@@ -99,6 +99,10 @@
   - `ProfileEditViewModel.swift`, `Views/ProfileEditViewController.swift`
   - `StylePreferenceEditViewModel.swift`, `Views/StylePreferenceEditViewController.swift`
   - `Views/MyPageEditorialComponents.swift`: 공통 serif/monospaced 계층, mood chip, hairline action row, primary CTA
+- 활동:
+  - `MyPageViewController`의 `ACTIVITY > 브랜드 요청 내역` → `MyPageViewModel.brandRequestsTapped()` → `MyPageCoordinator.showBrandRequests()`
+  - `MyPageContainer`에 약한 참조로 주입된 `AppContentRouting`을 사용해 `DefaultAppContentRouter.openMyBrandRequests()`가 현재 MyPage navigation stack에 Lookbook 요청 상황 화면을 push한다.
+  - 새 브랜드 요청은 룩북 검색 결과가 없을 때만 시작하며, 마이페이지에서는 본인 요청 내역 조회만 제공한다.
 - mutation:
   - `UpdatePublicProfileUseCase.swift`: 닉네임 사전 확인, 아바타 유지·변경·제거, 이전 Storage 정리
   - `UpdateStylePreferencesUseCase.swift`: active 관심 무드 1~5개 저장

@@ -46,6 +46,7 @@
 - DefaultAppContentRouter: `OutPick/App/Routing/DefaultAppContentRouter.swift`
   - 탭 전환과 cross-feature route를 담당한다.
   - `UITabBarController.selectedIndex`와 selected navigation controller를 기준으로 joined chat room/lookbook shared content route를 연다.
+  - 마이페이지의 일반 사용자 브랜드 요청 내역 진입 시 MyPage 탭 navigation stack에 Lookbook 요청 상황 화면을 push한다.
 
 ## Chat
 
@@ -100,8 +101,10 @@
 
 ## MyPage
 
-- Root controller: `OutPick/Features/MyPage/MyPageController/MyPageViewController.swift`
+- Root controller: `OutPick/Features/MyPage/Controller/MyPageViewController.swift`
 - 탭 진입점: `DefaultMainTabBuilder`의 index 4.
+- `EDIT`에는 프로필 편집과 관심 스타일을, `ACTIVITY`에는 일반 사용자 본인의 브랜드 요청 내역을 표시한다.
+- 브랜드 요청 내역 route는 `MyPageCoordinator` → `MyPageContainer.appContentRouter` → `DefaultAppContentRouter.openMyBrandRequests()`다.
 
 ## Infra
 

@@ -25,6 +25,10 @@ Lookbook 변경 시 필요한 코드만 찾기 위한 인덱스다.
 
 - Lookbook/Liked root는 UIKit navigation stack 위 SwiftUI Hosting 구조다.
 - 상세 push/pop은 SwiftUI hidden route가 아니라 `LookbookCoordinator`가 소유한다.
+- Lookbook/Liked root navigation stack은 `LookbookNavigationController`가 소유한다. Coordinator가 push하는 SwiftUI 화면은 화면별 `LookbookInteractivePopState`를 가진 `LookbookHostingController`로 감싼다.
+- browse route는 edge/content pop을 허용하고, 작성 초안·관리자 내부 단계·mutation 상태는 `lookbookInteractivePopDisabled(_:)`로 동적으로 차단한다.
+- 브랜드 요청, 삭제 관리, extraction 검토, 시즌 보수와 `AdminBrandManagementView`가 stateful 정책 대상이다. `AdminBrandManagementView` 내부 메뉴의 실제 push route 전환은 후속 작업이다.
+- `DefaultAppContentRouter`의 룩북 상세·브랜드 요청 내역 진입도 HostingController를 직접 만들지 않고 `LookbookCoordinator` push를 사용한다.
 - View는 Repository/Firebase를 직접 만들지 않고 Container가 주입한다.
 - SwiftUI 입력 화면 키보드 dismiss는 `KeyboardDismissSupport.outpickDismissKeyboardOnTap()`을 사용한다.
 - Firestore 기본 identity는 ADR-020에 따라 문서 경로 ID를 사용한다. 앱의 Season DTO/Repository는 read-only이며 생성은 import worker의 Admin SDK materialization만 사용한다.
@@ -102,9 +106,28 @@ Repository가 `DocumentSnapshot.documentID`를 같은 snapshot에서 decode한 D
 - 커서는 `(likeCount, brandID)` field-value keyset이다. append는 브랜드 ID를 중복 제거하고 동일 커서 동시 호출을 막는다.
 - `deletionStatus`가 없는 기존 활성 브랜드도 보존하기 위해 query 조건에는 넣지 않고 Domain의 `isVisibleToUsers`로 비노출 문서를 거른다.
 - 검색 중에는 섹션을 표시하지 않으며, 조회 실패는 기존 전체 브랜드 목록과 분리해 재시도한다.
-- 활성 계정은 관심 스타일을 1~5개 유지하므로 룩북에 편집 CTA를 두지 않는다. 방어적으로 관심 스타일이 0개면 개인화 섹션을 숨기고, 매칭 브랜드가 0개면 중앙 정렬한 안내와 브랜드 요청 CTA만 표시한다. 관심 스타일 섹션과 세로 목록 사이는 divider와 `전체 브랜드` 헤더로 구분한다.
+- 활성 계정은 관심 스타일을 1~5개 유지하므로 룩북에 편집 CTA를 두지 않는다. 방어적으로 관심 스타일이 0개면 개인화 섹션을 숨기고, 매칭 브랜드가 0개면 중앙 정렬한 안내만 표시하며 요청 CTA는 노출하지 않는다. 관심 스타일 섹션과 세로 목록 사이는 divider와 `전체 브랜드` 헤더로 구분한다.
 - `CurrentUserStylePreferenceStore`는 bootstrap·온보딩 완료·마이페이지 저장·로그아웃에 맞춰 갱신되며 홈과 전체 보기의 첫 페이지를 다시 구성한다.
 - `popularScore`는 계산·갱신 경로가 없어 Phase 6 정렬에 사용하지 않는다.
+
+### 일반 사용자 브랜드 요청
+
+읽기 순서:
+
+1. `LookbookHomeView.swift`
+2. `BrandRequestView.swift`, `MyBrandRequestsView.swift`
+3. `LookbookCoordinator.swift`, `LookbookContainer.swift`
+4. `MyPageViewController.swift`, `MyPageCoordinator.swift`
+5. `AppContentRouting.swift`, `DefaultAppContentRouter.swift`
+
+현재 계약:
+
+- 일반 사용자의 새 브랜드 요청은 룩북 검색 결과가 없을 때만 노출하며, 정규화한 검색어를 요청 화면의 초기 브랜드명으로 전달한다.
+- 룩북 홈 상단과 관심 스타일 빈 상태에는 요청 진입점을 두지 않는다. 홈 상단의 관리자 버튼은 총 관리자에게만 유지한다.
+- `MyBrandRequestsView`는 진행 중/이전 요청 조회에 집중하며 새 요청 `+` 버튼을 제공하지 않는다.
+- 요청 제출 성공 시 기존처럼 현재 요청 화면을 본인 요청 상황 화면으로 교체한다.
+- 이후 재진입은 마이페이지 `ACTIVITY > 브랜드 요청 내역`에서 시작하며, `DefaultAppContentRouter.openMyBrandRequests()`가 MyPage navigation stack에 Lookbook 요청 상황 화면을 push한다.
+- 총 관리자의 전체 요청 처리 화면은 관리자 콘솔의 브랜드 요청 메뉴로 분리하며 일반 사용자 본인 요청 내역과 혼동하지 않는다.
 
 ### 브랜드 상세
 

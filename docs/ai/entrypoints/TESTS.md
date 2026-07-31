@@ -210,6 +210,8 @@ Firebase Functions tests/build entry:
   - stack별 요청 격리, same-room 실제 Task 공유, same-stack latest-wins, stale 성공·실패 무시와 실패 후 재시도를 검증한다.
   - terminal route가 `didAppear`로 부활하지 않고 transient binding 복구 대상에서 제외되는 lifecycle 계약을 검증한다.
   - 2026-07-22 D19 방 생성 차단 보강 뒤 Chat navigation 4개와 관련 navigation/route/lifecycle/request 묶음 24개, iOS 26.2 Simulator build/install/launch가 통과했다. 방 생성 swipe 차단과 Back 확인창도 Simulator 수동 QA를 통과했으며 이 시점에는 실제 Chat·실기기 swipe가 남아 있었다.
+- Lookbook interactive-pop tests: `OutPickTests/LookbookNavigationControllerTests.swift`, `BrandRequestViewModelTests.swift`, `AdminLookbookDeletionManagementViewModelTests.swift`, `LookbookExtractionReviewViewModelTests.swift`
+  - root/browse/stateful 동적 허용, iOS 26 content-pop 상태와 브랜드 요청·삭제·검토 draft 판정을 검증한다.
   - 같은 날 실제 Chat·검색 실기기 swipe 취소/완료로 Phase 6을 종료했다. Phase 7 dead transition 네 파일 제거 뒤 정적 참조 0건, 같은 24개 회귀와 generic Simulator build가 통과했다.
   - Phase 7 삭제 후 Chat push/pop과 Profile modal 열기/닫기 수동 smoke QA도 통과했다.
   - Phase 7B Profile modal edge-swipe는 단순 touch wiring이라 별도 UI unit test를 추가하지 않았다. 기존 24개 회귀와 generic Simulator build, iOS 26.2 Simulator 설치·실행이 통과했고 사용자가 짧은 swipe 유지, 임계값 충족 닫기, X 버튼·avatar tap을 수동 확인해 Phase 7B를 종료했다.
