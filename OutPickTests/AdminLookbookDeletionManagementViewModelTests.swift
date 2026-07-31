@@ -5,6 +5,21 @@ import Testing
 
 @MainActor
 struct AdminLookbookDeletionManagementViewModelTests {
+    @Test func interactivePopIsBlockedForPendingReasonDraft() {
+        let repository = DeletionRepositoryFake(pages: [page([], next: nil)])
+        let viewModel = makeViewModel(deletionRepository: repository)
+
+        #expect(viewModel.hasPendingDeletionDraft == false)
+        #expect(viewModel.disablesInteractivePop == false)
+
+        viewModel.reasonText = "   "
+        #expect(viewModel.hasPendingDeletionDraft == false)
+
+        viewModel.reasonText = "중복된 시즌"
+        #expect(viewModel.hasPendingDeletionDraft)
+        #expect(viewModel.disablesInteractivePop)
+    }
+
     @Test func reloadReplacesFirstPageAndStoresNextCursor() async {
         let repository = DeletionRepositoryFake(pages: [
             page([request("request-1")], next: cursor("request-1"))

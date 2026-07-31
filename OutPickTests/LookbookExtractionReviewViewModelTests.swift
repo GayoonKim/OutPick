@@ -4,6 +4,30 @@ import Testing
 
 @MainActor
 struct LookbookExtractionReviewViewModelTests {
+    @Test func interactivePopTracksPendingReviewChanges() async {
+        let repository = ExtractionReviewRepositoryFake()
+        let review = makeReview(expectedCounts: [24])
+        repository.review = review
+        let viewModel = LookbookExtractionReviewViewModel(
+            brandID: review.brandID,
+            jobID: review.jobID,
+            useCase: ManageLookbookExtractionReviewUseCase(repository: repository),
+            onCompleted: {}
+        )
+
+        await viewModel.load()
+        #expect(viewModel.hasPendingReviewChanges == false)
+        #expect(viewModel.disablesInteractivePop == false)
+
+        viewModel.note = "2페이지 하단 확인 필요"
+        #expect(viewModel.hasPendingReviewChanges)
+        #expect(viewModel.disablesInteractivePop)
+
+        viewModel.note = ""
+        viewModel.toggle(candidateKey: "candidate-1")
+        #expect(viewModel.hasPendingReviewChanges)
+    }
+
     @Test func excludesCandidateAndApprovesThroughUseCase() async {
         let repository = ExtractionReviewRepositoryFake()
         let review = makeReview()
