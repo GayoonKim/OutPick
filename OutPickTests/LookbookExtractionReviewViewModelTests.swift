@@ -6,7 +6,7 @@ import Testing
 struct LookbookExtractionReviewViewModelTests {
     @Test func interactivePopTracksPendingReviewChanges() async {
         let repository = ExtractionReviewRepositoryFake()
-        let review = makeReview(expectedCounts: [24])
+        let review = makeReview(expectedCounts: [0])
         repository.review = review
         let viewModel = LookbookExtractionReviewViewModel(
             brandID: review.brandID,
@@ -26,6 +26,28 @@ struct LookbookExtractionReviewViewModelTests {
         viewModel.note = ""
         viewModel.toggle(candidateKey: "candidate-1")
         #expect(viewModel.hasPendingReviewChanges)
+    }
+
+    @Test func correctionRequiredStateClearsInteractivePopBlock() async {
+        let repository = ExtractionReviewRepositoryFake()
+        let review = makeReview(
+            expectedCounts: [24],
+            reviewStatus: .correctionRequired
+        )
+        repository.review = review
+        let viewModel = LookbookExtractionReviewViewModel(
+            brandID: review.brandID,
+            jobID: review.jobID,
+            useCase: ManageLookbookExtractionReviewUseCase(repository: repository),
+            onCompleted: {}
+        )
+
+        viewModel.expectedCandidateCountText = "30"
+        viewModel.note = "저장 완료된 참고 내용"
+        await viewModel.load()
+
+        #expect(viewModel.hasPendingReviewChanges == false)
+        #expect(viewModel.disablesInteractivePop == false)
     }
 
     @Test func excludesCandidateAndApprovesThroughUseCase() async {
@@ -181,13 +203,14 @@ struct LookbookExtractionReviewViewModelTests {
 
     private func makeReview(
         expectedCounts: [Int] = [0],
-        qualityReasons: [String] = ["expected_count_mismatch"]
+        qualityReasons: [String] = ["expected_count_mismatch"],
+        reviewStatus: SeasonImportReviewStatus = .pending
     ) -> LookbookExtractionReview {
         LookbookExtractionReview(
             jobID: "job-1",
             brandID: BrandID(value: "brand-1"),
             status: .awaitingReview,
-            reviewStatus: .pending,
+            reviewStatus: reviewStatus,
             reviewGeneration: 1,
             reviewSnapshotHash: "snapshot",
             qualityReasons: qualityReasons,

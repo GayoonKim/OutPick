@@ -18,6 +18,7 @@ struct LookbookNavigationControllerTests {
     @Test func allowsInteractivePopForBrowseController() throws {
         let navigationController = makeNavigationController()
         navigationController.pushViewController(UIViewController(), animated: false)
+        navigationController.refreshInteractivePopAvailability()
         let gestureRecognizer = try #require(
             navigationController.interactivePopGestureRecognizer
         )
