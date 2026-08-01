@@ -28,6 +28,7 @@ Lookbook 변경 시 필요한 코드만 찾기 위한 인덱스다.
 - Lookbook/Liked root navigation stack은 `LookbookNavigationController`가 소유한다. Coordinator가 push하는 SwiftUI 화면은 화면별 `LookbookInteractivePopState`를 가진 `LookbookHostingController`로 감싼다.
 - browse route는 edge/content pop을 허용하고, 작성 초안·관리자 내부 단계·mutation 상태는 `lookbookInteractivePopDisabled(_:)`로 동적으로 차단한다.
 - 브랜드 요청, 삭제 관리, extraction 검토, 시즌 보수와 `AdminBrandManagementView`가 stateful 정책 대상이다. `AdminBrandManagementView` 내부 메뉴의 실제 push route 전환은 후속 작업이다.
+- extraction 부족 이미지 보고가 저장되어 `correctionRequired`로 전환된 뒤에는 입력 폼이 더 이상 초안이 아니므로 interactive-pop 차단을 해제한다.
 - `DefaultAppContentRouter`의 룩북 상세·브랜드 요청 내역 진입도 HostingController를 직접 만들지 않고 `LookbookCoordinator` push를 사용한다.
 - View는 Repository/Firebase를 직접 만들지 않고 Container가 주입한다.
 - SwiftUI 입력 화면 키보드 dismiss는 `KeyboardDismissSupport.outpickDismissKeyboardOnTap()`을 사용한다.

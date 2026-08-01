@@ -2,9 +2,9 @@
 
 ## 현재 상태
 
-- 현재 진행 중인 핵심 task는 `style-mood-personalization-account-privacy`다. Phase 1~8은 완료 처리했다. Phase 7은 계정 삭제 Functions·Secrets·TTL·Rules·Socket 운영 반영과 Google/Kakao 요청·취소 E2E까지 완료했고, Phase 8도 iOS UI·재인증·receipt·로컬 scrub·복원을 완료했다. Apple Developer Program 가입 후 App Attest 등록·실기기 QA와 PITR·예약 백업·Storage 30일 soft delete·별도 복구 훈련은 Phase 미완성이 아닌 출시 운영 게이트로 분리한다. 개발 데이터 전체 삭제는 마지막 Phase의 별도 승인 전까지 진행하지 않는다.
-- 다음 핵심 task는 `lookbook-discovery-learning-loop`로 확정했다. season discovery에도 구조 evidence, issue cluster, 관리자 정상/누락/오탐 ground truth, 최소 fixture 승격, extractor version gate를 season-image extraction과 같은 원칙으로 연결한다. 현재는 사용자 대화 기준 범위와 우선순위만 기록하며, 요구사항·데이터/API·관리자 UX·보존 정책을 논의하고 구현 승인을 받기 전에는 task 문서나 코드를 생성·수정하지 않는다.
-- `development-production-environment-separation`은 그다음 핵심 후속 후보로 유지한다. 하나의 Xcode 프로젝트와 app target을 유지하면서 Development는 `GayoonKim.OutPick.dev`/`outpick-test`, Production은 `GayoonKim.OutPick`/`outpick-664ae`로 분리하고 `feature/* → PR → main → release tag → 승인 기반 운영 배포` 흐름을 구성한다. 현재는 문서 기록만 완료했으며 사용자 재개 승인 전에는 브랜치·Xcode·Firebase·외부 콘솔·배포를 변경하지 않는다.
+- 현재 진행 중인 핵심 task는 `development-production-environment-separation`이다. 하나의 Xcode 프로젝트와 app target을 유지하면서 Development는 `GayoonKim.OutPick.dev`/`outpick-test`, Production은 `GayoonKim.OutPick`/`outpick-664ae`로 분리한다. 2026-08-01 사용자 승인으로 Xcode/Firebase 분리, fail-fast 검증, Development backend 기능 동등성, Simulator 우선 검증을 순차 진행한다.
+- 이전 핵심 task `style-mood-personalization-account-privacy`의 Phase 1~8은 완료 처리했다. Apple Developer Program 가입 후 App Attest 실기기 QA와 운영 백업 설정은 출시 운영 게이트로 분리하고, 개발 데이터 전체 삭제는 마지막 Phase의 별도 승인 전까지 진행하지 않는다.
+- `lookbook-discovery-learning-loop`는 그다음 핵심 후속 후보로 조정했다. season discovery의 구조 evidence, issue cluster, 관리자 ground truth, 최소 fixture, extractor version gate 범위는 유지하되 별도 논의·승인 전에는 task 문서나 코드를 생성·수정하지 않는다.
 - `socket-ingress-ordering-hardening`은 Phase 1~6 구현, 자동 회귀와 실제 Firebase/Simulator 핵심 QA를 완료하고 2026-07-17 종료했다.
 - `socket-message-dedupe-hardening`은 구현·자동 회귀·candidate closeout을 완료하고 2026-07-16 종료했으며, 2026-07-22 사용자 승인 후 candidate를 운영 traffic 100%로 전환했다.
 - `firestore-document-id-boundary-cleanup`은 Phase 1~4 구현·QA, rules 운영 배포, 운영 `Rooms.ID` cleanup과 사후 재감사까지 완료하고 2026-07-14 종료했다.
@@ -18,30 +18,24 @@
 
 ## 현재 핵심 작업
 
-- `style-mood-personalization-account-privacy`
-  - [design](style-mood-personalization-account-privacy/design.md)
-  - [decisions](style-mood-personalization-account-privacy/decisions.md)
-  - [seed](style-mood-personalization-account-privacy/seed-spec.md)
-  - [data/API](style-mood-personalization-account-privacy/data-api-contract.md)
-  - [plan](style-mood-personalization-account-privacy/plan.md)
-  - [QA](style-mood-personalization-account-privacy/qa-checklist.md)
-  - [reset runbook](style-mood-personalization-account-privacy/data-reset-runbook.md)
-  - [progress](style-mood-personalization-account-privacy/progress.md)
-  - 상태: Phase 1~8 완료. Phase 7·8 구현·운영 Simulator QA 완료. App Attest 실기기와 운영 백업 항목은 Apple Developer Program 가입 이후 출시 운영 게이트로 보류.
-
-## 다음 핵심 작업
-
-- `lookbook-discovery-learning-loop`
-  - 범위: 구조 evidence, issue cluster, 관리자 정상/누락/오탐 피드백, 최소 fixture 승격, extractor version gate.
-  - 상태: 사용자 대화 기준 다음 핵심 작업으로 등록. 설계 하네스와 구현은 별도 논의·승인 전까지 보류.
-
-## 그다음 핵심 후속 후보
-
 - `development-production-environment-separation`
   - [design](development-production-environment-separation/design.md)
   - [decisions](development-production-environment-separation/decisions.md)
   - [progress](development-production-environment-separation/progress.md)
-  - 상태: 사용자 결정 D1~D7 문서화 완료, 구현 보류.
+  - 범위: Development/Production Bundle ID·Scheme/Build Configuration·Firebase plist/project 분리, 잘못된 조합 build-time 실패, `OutPick DEV` 표시 이름, Development Functions·Socket 기능 동등성.
+  - 상태: 2026-08-01 구현 승인. Phase 2 기존 변경을 커밋으로 보존한 뒤 전용 브랜치에서 Phase 1을 시작한다.
+
+## 이전 핵심 작업
+
+- `style-mood-personalization-account-privacy`
+  - [progress](style-mood-personalization-account-privacy/progress.md)
+  - 상태: Phase 1~8 완료. App Attest 실기기와 운영 백업 항목은 출시 운영 게이트로 보류.
+
+## 그다음 핵심 후속 후보
+
+- `lookbook-discovery-learning-loop`
+  - 범위: 구조 evidence, issue cluster, 관리자 정상/누락/오탐 피드백, 최소 fixture 승격, extractor version gate.
+  - 상태: 사용자 대화 기준 범위만 유지. 설계 하네스와 구현은 별도 논의·승인 전까지 보류.
 
 ## 최근 완료 작업
 
