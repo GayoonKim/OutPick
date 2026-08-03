@@ -106,6 +106,44 @@ struct AppRuntimeConfigurationTests {
         }
     }
 
+    @Test func developmentRejectsProductionFirebaseProject() throws {
+        let configuration = try makeConfiguration(
+            environment: "development",
+            bundleIdentifier: "GayoonKim.OutPick.dev",
+            projectID: "outpick-test",
+            socketURL: developmentSocketURL
+        )
+        let productionProject = try FirebaseClientConfiguration(dictionary: [
+            "BUNDLE_ID": "GayoonKim.OutPick.dev",
+            "PROJECT_ID": "outpick-664ae",
+            "CLIENT_ID": "development.apps.googleusercontent.com",
+            "REVERSED_CLIENT_ID": "com.googleusercontent.apps.development"
+        ])
+
+        expectError(.firebaseProjectMismatch) {
+            try configuration.validate(firebase: productionProject)
+        }
+    }
+
+    @Test func productionRejectsDevelopmentFirebaseProject() throws {
+        let configuration = try makeConfiguration(
+            environment: "production",
+            bundleIdentifier: "GayoonKim.OutPick",
+            projectID: "outpick-664ae",
+            socketURL: productionSocketURL
+        )
+        let developmentProject = try FirebaseClientConfiguration(dictionary: [
+            "BUNDLE_ID": "GayoonKim.OutPick",
+            "PROJECT_ID": "outpick-test",
+            "CLIENT_ID": "production.apps.googleusercontent.com",
+            "REVERSED_CLIENT_ID": "com.googleusercontent.apps.development"
+        ])
+
+        expectError(.firebaseProjectMismatch) {
+            try configuration.validate(firebase: developmentProject)
+        }
+    }
+
     @Test func googleCallbackMustMatchFirebasePlist() throws {
         let configuration = try makeConfiguration(
             environment: "production",
