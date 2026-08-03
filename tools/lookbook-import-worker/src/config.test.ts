@@ -5,6 +5,12 @@ import {loadConfig} from "./config.js";
 
 const baseEnv = {
   OUTPICK_FIREBASE_PROJECT_ID: "outpick-test",
+  OUTPICK_IMPORT_OIDC_AUDIENCE:
+    "https://lookbook-import-worker.example.run.app",
+  OUTPICK_IMPORT_TASKS_SERVICE_ACCOUNT_EMAIL:
+    "outpick-lookbook-task-dev@outpick-test.iam.gserviceaccount.com",
+  OUTPICK_IMPORT_FUNCTIONS_SERVICE_ACCOUNT_EMAIL:
+    "86635107099-compute@developer.gserviceaccount.com",
 };
 
 test("asset sync concurrency는 미설정 시 기본값 3을 사용한다", () => {
@@ -51,5 +57,29 @@ test("asset sync concurrency가 범위를 벗어나면 config error를 던진다
       OUTPICK_IMPORT_ASSET_SYNC_CONCURRENCY: "fast",
     }),
     /OUTPICK_IMPORT_ASSET_SYNC_CONCURRENCY/,
+  );
+});
+
+test("OIDC audience와 호출 서비스 계정을 fail-fast 검증한다", () => {
+  assert.throws(
+    () => loadConfig({
+      ...baseEnv,
+      OUTPICK_IMPORT_OIDC_AUDIENCE: "http://worker.example.com",
+    }),
+    /OUTPICK_IMPORT_OIDC_AUDIENCE/,
+  );
+  assert.throws(
+    () => loadConfig({
+      ...baseEnv,
+      OUTPICK_IMPORT_TASKS_SERVICE_ACCOUNT_EMAIL: "user@example.com",
+    }),
+    /OUTPICK_IMPORT_TASKS_SERVICE_ACCOUNT_EMAIL/,
+  );
+  assert.throws(
+    () => loadConfig({
+      ...baseEnv,
+      OUTPICK_IMPORT_FUNCTIONS_SERVICE_ACCOUNT_EMAIL: "",
+    }),
+    /OUTPICK_IMPORT_FUNCTIONS_SERVICE_ACCOUNT_EMAIL/,
   );
 });

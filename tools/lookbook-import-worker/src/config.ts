@@ -3,6 +3,9 @@ export interface WorkerConfig {
   storageBucket: string;
   port: number;
   assetSyncConcurrency: number;
+  oidcAudience: string;
+  taskServiceAccountEmail: string;
+  functionsServiceAccountEmail: string;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv): WorkerConfig {
@@ -18,12 +21,27 @@ export function loadConfig(env: NodeJS.ProcessEnv): WorkerConfig {
     1,
     8,
   );
+  const oidcAudience = requiredURL(
+    env,
+    "OUTPICK_IMPORT_OIDC_AUDIENCE",
+  );
+  const taskServiceAccountEmail = requiredServiceAccountEmail(
+    env,
+    "OUTPICK_IMPORT_TASKS_SERVICE_ACCOUNT_EMAIL",
+  );
+  const functionsServiceAccountEmail = requiredServiceAccountEmail(
+    env,
+    "OUTPICK_IMPORT_FUNCTIONS_SERVICE_ACCOUNT_EMAIL",
+  );
 
   return {
     projectID,
     storageBucket,
     port,
     assetSyncConcurrency,
+    oidcAudience,
+    taskServiceAccountEmail,
+    functionsServiceAccountEmail,
   };
 }
 
@@ -38,6 +56,33 @@ function requiredEnv(env: NodeJS.ProcessEnv, key: string): string {
 function optionalEnv(env: NodeJS.ProcessEnv, key: string): string | null {
   const value = env[key]?.trim();
   return value && value.length > 0 ? value : null;
+}
+
+function requiredURL(env: NodeJS.ProcessEnv, key: string): string {
+  const value = requiredEnv(env, key).replace(/\/+$/, "");
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`${key} 환경 변수가 올바른 URL이 아닙니다.`);
+  }
+  if (url.protocol !== "https:" || url.origin !== value) {
+    throw new Error(`${key} 환경 변수는 HTTPS origin이어야 합니다.`);
+  }
+  return value;
+}
+
+function requiredServiceAccountEmail(
+  env: NodeJS.ProcessEnv,
+  key: string,
+): string {
+  const value = requiredEnv(env, key).toLowerCase();
+  const serviceAccountPattern =
+    /^[a-z0-9-]+@(?:[a-z0-9-]+\.iam|developer)\.gserviceaccount\.com$/;
+  if (!serviceAccountPattern.test(value)) {
+    throw new Error(`${key} 환경 변수가 서비스 계정 email 형식이 아닙니다.`);
+  }
+  return value;
 }
 
 function parsePort(rawPort: string | undefined): number {

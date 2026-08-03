@@ -2,6 +2,7 @@ import {type Server} from "node:http";
 
 import {loadConfig} from "./config.js";
 import {initializeFirebaseClients} from "./firebase.js";
+import {GoogleOIDCTokenVerifier} from "./oidc-auth.js";
 import {createServer} from "./server.js";
 
 let httpServer: Server | null = null;
@@ -16,6 +17,12 @@ async function main(): Promise<void> {
     projectID: config.projectID,
     assetSyncConcurrency: config.assetSyncConcurrency,
     firebase,
+    auth: {
+      audience: config.oidcAudience,
+      taskServiceAccountEmail: config.taskServiceAccountEmail,
+      functionsServiceAccountEmail: config.functionsServiceAccountEmail,
+      verifier: new GoogleOIDCTokenVerifier(),
+    },
   });
 
   httpServer = app.listen(config.port, () => {

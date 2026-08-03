@@ -11,7 +11,10 @@ import {
 const candidate = {sourceURL: "https://brand.example/lookbook.jpg", alt: null};
 
 test("새 시즌은 빈 moodIDs로 materialize하고 legacy concept를 쓰지 않는다", () => {
-  const source = readFileSync(new URL("../src/processor.ts", import.meta.url), "utf8");
+  const source = readFileSync(
+    new URL("../src/processor.ts", import.meta.url),
+    "utf8",
+  );
   assert.match(source, /moodIDs:\s*\[\]/);
   assert.doesNotMatch(source, /tagConceptIDs/);
 });
