@@ -57,7 +57,7 @@ case "$action" in
     ;;
 esac
 
-candidate_tag="candidate-$(date -u +%Y%m%d-%H%M%S)"
+candidate_tag="cand-$(date -u +%Y%m%d-%H%M%S)"
 env_vars="OUTPICK_FIREBASE_PROJECT_ID=$project_id"
 env_vars+=",OUTPICK_FIREBASE_STORAGE_BUCKET=$storage_bucket"
 env_vars+=",OUTPICK_IMPORT_ASSET_SYNC_CONCURRENCY=3"

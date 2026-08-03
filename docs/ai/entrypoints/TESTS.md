@@ -57,7 +57,7 @@ Lookbook import worker tests:
 - `tools/lookbook-import-worker/src/config.test.ts`, `oidc-auth.test.ts`, `server.test.ts`
   - 환경별 canonical Storage bucket·audience·caller 계정 조합과 route별 401/403, 올바른 caller의 handler 진입을 검증한다.
 - `scripts/ai/test-deploy-lookbook-import-worker.sh`
-  - Development/Production 배포 project·service·runtime account·Storage bucket·OIDC identity 조합과 `--no-traffic`, Production 확인 gate를 검증한다.
+  - Development/Production 배포 project·service·runtime account·Storage bucket·OIDC identity 조합과 `--no-traffic`, Production 확인 gate, Cloud Run candidate tag 결합 길이 제한을 검증한다.
 - `tools/lookbook-import-worker/src/fixture/run-corpus.ts`
 - `tools/lookbook-import-worker/fixtures/{discovery,season-images}/`
 - `tools/lookbook-import-worker/fixtures/discovery/platform/cafe24-underscore-detail-list/`

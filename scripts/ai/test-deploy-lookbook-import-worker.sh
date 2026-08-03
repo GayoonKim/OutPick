@@ -62,6 +62,14 @@ grep -Fq "functions_service_account=715386497547-compute@developer.gserviceaccou
 grep -Fq -- "--no-traffic" "$production_plan"
 grep -Fq -- "--no-allow-unauthenticated" "$production_plan"
 
+production_service="$(plan_value "$production_plan" service)"
+production_candidate_tag="$(plan_value "$production_plan" candidate_tag)"
+[[ "$production_candidate_tag" =~ ^cand-[0-9]{8}-[0-9]{6}$ ]]
+if (( ${#production_service} + ${#production_candidate_tag} > 46 )); then
+  echo "Production service와 candidate tag 결합 길이가 Cloud Run 제한을 초과합니다." >&2
+  exit 1
+fi
+
 if OUTPICK_CONFIRM_WORKER_DEPLOY=wrong \
   "$DEPLOY_SCRIPT" production --deploy-candidate >"$TEMPORARY_DIRECTORY/rejected.txt" 2>&1; then
   echo "잘못된 Production 확인값이 배포 gate를 통과했습니다." >&2
