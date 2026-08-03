@@ -7,7 +7,7 @@
 - 앱 빌드 기본 검증:
 
 ```bash
-xcodebuild -scheme OutPick -destination 'generic/platform=iOS Simulator' build
+xcodebuild -scheme OutPick-Development -destination 'generic/platform=iOS Simulator' build
 ```
 
 - Phase 6 통합 회귀: `docs/ai/tasks/core-infrastructure-modularization/phases/phase-6-integration-tests.md`
@@ -36,7 +36,7 @@ xcodebuild -scheme OutPick -destination 'generic/platform=iOS Simulator' build
 - 삭제 요청 관리 pagination/retry tests: `OutPickTests/AdminLookbookDeletionManagementViewModelTests.swift`
 - Firestore 문서 ID 경계: `OutPickTests/FirestoreDocumentIDBoundaryTests.swift`
   - 저장된 legacy `id`보다 경로 ID가 우선하는지, 빈 경로 ID가 실패하는지, Season write payload에 `ID`/`id`가 없는지 검증한다.
-  - 실행: `xcodebuild -project OutPick.xcodeproj -scheme OutPick -destination 'platform=iOS Simulator,id={simulator-id}' -only-testing:OutPickTests/FirestoreDocumentIDBoundaryTests test`.
+  - 실행: `xcodebuild -project OutPick.xcodeproj -scheme OutPick-Development -destination 'platform=iOS Simulator,id={simulator-id}' -only-testing:OutPickTests/FirestoreDocumentIDBoundaryTests test`.
   - 2026-07-14 Phase 4에서 영향 범위 11개 suite의 runtime test 59개, Firestore Emulator 11개, generic Simulator build와 test target build-for-testing이 통과했다. 실제 로그인 QA에서도 Chat/Lookbook read·write 경계와 `I-FST000002` 0건을 확인했다.
   - rules 운영 배포와 Rooms legacy `ID` 4건 cleanup 후 재감사에서 `ID`/`id` 보유 0건, 방 4개 유지, 핵심 불변식 누락 0건과 로그인 앱 목록 read를 확인했다.
 - UI smoke/failure tests: `OutPickUITests/LookbookSmokeUITests.swift`, `OutPickUITests/LookbookInteractionFailureToastUITests.swift`
@@ -51,6 +51,8 @@ Lookbook import worker tests:
 - `tools/lookbook-import-worker/src/extraction/youth-fixture.test.ts`
 - `tools/lookbook-import-worker/fixtures/season-images/incidents/youth-programmatic-gallery/`
 - `tools/lookbook-import-worker/src/fixture/corpus.test.ts`
+- `tools/lookbook-import-worker/src/config.test.ts`, `oidc-auth.test.ts`, `server.test.ts`
+  - 환경별 canonical audience·caller 계정 조합과 route별 401/403, 올바른 caller의 handler 진입을 검증한다.
 - `tools/lookbook-import-worker/src/fixture/run-corpus.ts`
 - `tools/lookbook-import-worker/fixtures/{discovery,season-images}/`
 - `tools/lookbook-import-worker/fixtures/discovery/platform/cafe24-underscore-detail-list/`
@@ -187,7 +189,7 @@ Firebase Functions tests/build entry:
 - iOS Socket listener 안정화 test: `OutPickTests/RealtimeSocketListenerBinderTests.swift`
   - client event 3개와 named event 5개의 최초 1회 등록, 같은 binder 재호출 무효, 반복 connect callback 중 등록 수 불변, 새 Socket/binder 독립 등록과 payload 전달을 검증한다.
   - Phase 1의 mixed message event FIFO와 queue 종료, joined-room 공통 ID admission의 room 분리·local seq 0 우회·300개 eviction·reset, background high watermark promotion과 stale visible lease 종료 거부를 검증한다.
-  - 실행: `xcodebuild -project OutPick.xcodeproj -scheme OutPick -destination 'platform=iOS Simulator,id={simulator-id}' -only-testing:OutPickTests/RealtimeSocketListenerBinderTests test`.
+  - 실행: `xcodebuild -project OutPick.xcodeproj -scheme OutPick-Development -destination 'platform=iOS Simulator,id={simulator-id}' -only-testing:OutPickTests/RealtimeSocketListenerBinderTests test`.
   - 2026-07-16 `RealtimeSocketListenerBinderTests`와 `ChatRoomSessionActorTests` 대상 19개 테스트가 iPhone 15 Pro iOS 17.2 Simulator에서 통과했다.
   - 실제 reconnect gate는 cold launch 5회와 background/foreground 5회, room rejoin/text 중복 부재와 credential raw log 부재를 확인한다. 상세 절차는 `docs/ai/tasks/core-infrastructure-modularization/phases/phase-6-ios-socket-stabilization.md`에 있다.
 
@@ -241,9 +243,9 @@ Chat gesture 자체는 UIKit touch delivery를 위한 별도 추상화를 만들
   - 실제 QA는 셀룰러 iPhone 14 disconnect/reconnect의 `680001 → 680004`, `990001` leave 목록 제거, room close 자동 route 종료와 Cloud Run 종료 후 join 재시도 0회까지 통과했다.
 
 - Socket candidate QA configuration tests: `OutPickTests/SocketDebugQAConfigurationTests.swift`
-  - DEBUG 전용 candidate URL override의 유효 URL 선택·잘못된 값 production fallback과 message kind별 첫 성공 ACK 유실 설정을 검증한다.
-  - launch environment key는 `OUTPICK_DEBUG_SOCKET_URL`, `OUTPICK_DEBUG_DROP_FIRST_MESSAGE_ACK_KIND`이며 Release에서는 코드가 컴파일되지 않는다.
-  - 2026-07-15 신규 3개와 ingress actor 6개 targeted test, Release generic Simulator build가 통과했다.
+  - DEBUG 전용 message kind별 첫 성공 ACK 유실 설정을 검증한다.
+  - launch environment key는 `OUTPICK_DEBUG_DROP_FIRST_MESSAGE_ACK_KIND`이며 Release에서는 코드가 컴파일되지 않는다.
+  - Socket URL DEBUG override는 환경 분리 작업에서 제거했다. 앱은 선택한 scheme의 canonical Socket URL만 사용한다.
 
 - iOS send receipt tests: `OutPickTests/ChatMessageEmitAckMapperTests.swift`, `ChatOutgoingOutboxUseCaseTests.swift`, `LookbookChatShareUseCaseTests.swift`
   - ACK의 identity/seq/duplicate 파싱, matching message 실패 해제와 서버 attachment 병합, identity mismatch 거부를 검증한다.
@@ -273,11 +275,11 @@ Chat gesture 자체는 UIKit touch delivery를 위한 별도 추상화를 만들
     - `ChatImagePreviewItem.previewPaths` thumb/original ordering and duplicate local pending path handling.
     - `ChatMessage.displayableAttachments` sorting/filtering contract used by chat preview/viewer mapping.
     - `ImageViewerPage` local-only initial image contract and `SimpleImageViewerVC.ProgressivePage` compatibility alias.
-  - 기본 회귀 확인은 1장/30장/pending/final/빠른 paging/manual save QA와 `xcodebuild -scheme OutPick -destination 'generic/platform=iOS Simulator' build`를 기준으로 한다.
+  - 기본 회귀 확인은 1장/30장/pending/final/빠른 paging/manual save QA와 `xcodebuild -scheme OutPick-Development -destination 'generic/platform=iOS Simulator' build`를 기준으로 한다.
 - Image viewer targeted test:
 
 ```bash
-xcodebuild -scheme OutPick -destination 'platform=iOS Simulator,name={simulator}' test -only-testing:OutPickTests/ImageViewerPagePolicyTests
+xcodebuild -scheme OutPick-Development -destination 'platform=iOS Simulator,name={simulator}' test -only-testing:OutPickTests/ImageViewerPagePolicyTests
 ```
 
 - Joined rooms session store tests: `OutPickTests/JoinedRoomsSessionStoreTests.swift`
@@ -297,6 +299,6 @@ xcodebuild -scheme OutPick -destination 'platform=iOS Simulator,name={simulator}
 최근 targeted test 예시:
 
 ```bash
-xcodebuild -scheme OutPick -destination 'id=5A3BB941-9538-4DD9-93C2-F18ACCFB03B9' test -only-testing:OutPickTests/JoinedRoomsSessionStoreTests
-xcodebuild -scheme OutPick -destination 'id=5A3BB941-9538-4DD9-93C2-F18ACCFB03B9' test -only-testing:OutPickTests/ChatRoomExitUseCaseTests -only-testing:OutPickTests/JoinedRoomsSessionStoreTests
+xcodebuild -scheme OutPick-Development -destination 'id={simulator-id}' test -only-testing:OutPickTests/JoinedRoomsSessionStoreTests
+xcodebuild -scheme OutPick-Development -destination 'id={simulator-id}' test -only-testing:OutPickTests/ChatRoomExitUseCaseTests -only-testing:OutPickTests/JoinedRoomsSessionStoreTests
 ```

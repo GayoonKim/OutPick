@@ -23,10 +23,9 @@
 ## 이전 핵심 작업
 
 - `development-production-environment-separation`
-  - [design](development-production-environment-separation/design.md)
-  - [decisions](development-production-environment-separation/decisions.md)
-  - [progress](development-production-environment-separation/progress.md)
-  - [qa](development-production-environment-separation/qa-checklist.md)
+  - [앱 환경 진입점](../entrypoints/APP.md)
+  - [Firebase·worker 환경 진입점](../entrypoints/FIREBASE.md)
+  - [PR #3](https://github.com/GayoonKim/OutPick/pull/3)
   - 상태: Phase 1~4, Production 인증 Function identity 전환, 실제 Development import smoke와 QA 데이터 정리 완료. 실기기 App Attest만 Apple Developer Program 가입 후 외부 의존 후속 작업으로 유지.
 
 ## 그다음 핵심 후속 후보
@@ -39,7 +38,7 @@
 
 | 작업 | 상태 | 핵심 결과 | 상세 |
 | --- | --- | --- | --- |
-| `development-production-environment-separation` | 완료·Phase 1~4·Development backend 및 Production 인증 identity 반영 | 두 scheme/네 configuration, Firebase·Socket fail-fast, `outpick-test` 기능 동등성, 환경별 auth service account | [progress](development-production-environment-separation/progress.md), [qa](development-production-environment-separation/qa-checklist.md), [decisions](development-production-environment-separation/decisions.md) |
+| `development-production-environment-separation` | 완료·Phase 1~4·Development backend 및 Production 인증 identity 반영 | 두 scheme/네 configuration, Firebase·Socket fail-fast, `outpick-test` 기능 동등성, 환경별 auth service account | [APP](../entrypoints/APP.md), [FIREBASE](../entrypoints/FIREBASE.md), [PR #3](https://github.com/GayoonKim/OutPick/pull/3) |
 | `lookbook-extraction-learning-loop` | 완료·Phase 1~8·운영 worker 배포와 실제 URL smoke·YOUTH 데이터 정리 완료 | silent under-extraction 차단, review/trust/evidence/repair, Generic→Cafe24 adapter와 fixture differential | [progress](lookbook-extraction-learning-loop/progress.md), [qa](lookbook-extraction-learning-loop/qa-checklist.md) |
 | `chat-route-lifecycle-hardening` | 완료·Phase 6~9 자동 회귀와 Simulator/실기기 QA 완료 | 탭별 Chat stack, same-stack 교체, stack별 request 경쟁, terminal/transient lifecycle, UIKit edge-pop과 Chat gesture 책임 정리 | [progress](chat-route-lifecycle-hardening/progress.md), [qa](chat-route-lifecycle-hardening/qa-checklist.md) |
 | `socket-ingress-ordering-hardening` | 완료·Phase 1~6 자동 회귀와 실제 Firebase/Simulator QA 완료 | 순차 ingress, visible strict recovery, bounded Banner, reconnect/route lifecycle, 대규모 unread catch-up과 visible read frontier | [progress](socket-ingress-ordering-hardening/progress.md), [qa](socket-ingress-ordering-hardening/qa-checklist.md), [Phase 6](socket-ingress-ordering-hardening/phase-6-unread-catch-up-read-frontier.md) |

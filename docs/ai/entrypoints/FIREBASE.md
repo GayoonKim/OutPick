@@ -69,10 +69,10 @@ npm run build
 ### 환경별 Kakao custom-token runtime
 
 - `exchangeKakaoToken`의 handler와 runtime option은 `functions/src/auth/functions.ts`, Kakao 검증·Firebase custom-token 계약은 `kakaoService.ts`에서 찾는다.
-- 전용 service account Functions parameter와 fail-fast 검증은 `functions/src/auth/runtime.ts`, 회귀 테스트는 `runtime.test.ts`다.
+- Firebase CLI가 제공하는 `GCLOUD_PROJECT` 계열 값에서 전용 service account를 정확히 결정하는 fail-closed 매핑은 `functions/src/auth/runtime.ts`, project 누락·미지원·교차 선택 회귀 테스트는 `runtime.test.ts`다. `serviceAccount` 옵션은 literal만 허용하므로 CEL parameter expression을 사용하지 않는다.
 - Development runtime identity는 `outpick-auth-functions-dev@outpick-test.iam.gserviceaccount.com`, Production runtime identity는 `outpick-auth-functions-prod@outpick-664ae.iam.gserviceaccount.com`이며 이 함수 하나에만 연결한다.
 - Token Creator는 project-level binding이 아니라 service account 자기 리소스에 대한 `roles/iam.serviceAccountTokenCreator` binding만 사용한다.
-- 로컬 배포값 `OUTPICK_AUTH_FUNCTIONS_SERVICE_ACCOUNT_EMAIL`은 Git 제외 파일 `functions/.env.{project-id}`에 두며 parameter validation이 승인된 환경별 계정 외 값을 거부한다.
+- service account 이메일을 `.env`에서 입력받지 않는다. `outpick-test`와 `outpick-664ae`만 각각의 canonical 계정으로 매핑하고 그 밖의 project는 유효한 runtime identity를 선택하지 않는다.
 - Development 배포·검증 명령은 `firebase deploy --only functions:exchangeKakaoToken --project outpick-test`와 `gcloud functions describe exchangeKakaoToken --gen2 --region asia-northeast3 --project outpick-test`다.
 - Production은 `firebase deploy --only functions:exchangeKakaoToken --project outpick-664ae --dry-run --non-interactive`로 사전 검증하고 사용자 명시 승인 후 실제 배포한다. 2026-08-03 revision `exchangekakaotoken-00042-geb`부터 Production 전용 identity를 사용한다.
 - Simulator App Check debug token은 Firebase App Check API에 등록하되 원문을 Git, 하네스, 자동 runtime log에 기록하지 않는다. 재설치로 token이 바뀌면 기존 token을 폐기하고 새 token을 등록한다.
@@ -299,7 +299,7 @@ npm run build
 - 2026-07-28 Phase 5 시즌 기본 `moodIDs: []` materialization을 포함한 worker `lookbook-import-worker-00023-879`을 운영 배포했다. Ready/traffic 100%, container healthy 1.88초, recent ERROR 0건과 queue task 0건을 확인했으며 rollback revision은 `lookbook-import-worker-00022-5gn`이다.
 - 2026-08-01 Development 전용 worker `lookbook-import-worker-development-00003-5kc`를 `outpick-test`에 배포하고 worker 의존 Functions 15개를 연결했다. Cloud Run은 비공개 IAM으로 task service account만 직접 호출할 수 있고, worker가 Google OIDC의 서명·만료·issuer·audience·검증된 email을 다시 확인한다. `/tasks/import-job`은 task service account, `/wake`와 `/tasks/discover-seasons-diagnostic`은 Functions runtime service account만 허용한다. `/readyz` Cloud Tasks OIDC 200, task identity의 빈 import payload 500, Functions identity의 빈 diagnostic payload 500, Functions identity의 import 경로 403으로 transport·앱 인증·경로 분리를 확인했다.
 - 2026-08-03 W3C 전용 sample로 실제 trigger → Cloud Tasks → worker → review → materialization smoke를 완료했다. job은 `succeeded`, post 5개, asset 6/6 `ready`, worker ERROR 0건이었고 smoke 브랜드·Storage 12개·evidence/issue cluster는 검증 후 삭제해 잔존 0건을 확인했다.
-- Development worker 배포에는 `OUTPICK_IMPORT_OIDC_AUDIENCE`, `OUTPICK_IMPORT_TASKS_SERVICE_ACCOUNT_EMAIL`, `OUTPICK_IMPORT_FUNCTIONS_SERVICE_ACCOUNT_EMAIL`이 필수다. Production에 같은 소스를 배포할 때는 Production URL과 service account를 별도로 주입해야 하며 Development 값을 재사용하지 않는다.
+- Worker 배포에는 `OUTPICK_IMPORT_OIDC_AUDIENCE`, `OUTPICK_IMPORT_TASKS_SERVICE_ACCOUNT_EMAIL`, `OUTPICK_IMPORT_FUNCTIONS_SERVICE_ACCOUNT_EMAIL`이 필수다. worker는 `OUTPICK_FIREBASE_PROJECT_ID`별 canonical audience·task 계정·Functions 계정의 정확한 조합만 허용해 Development/Production 값 교차 주입과 임의의 유효한 계정을 시작 전에 거부한다.
 - 운영 bucket에는 2026-07-23 확인 기준 lifecycle rule이 없다. 기존 미디어에 영향을 주는 bucket 전역 정책 대신 위 scheduler를 사용한다.
 
 ## Firestore

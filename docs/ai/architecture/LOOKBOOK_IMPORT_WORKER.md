@@ -74,7 +74,7 @@ Cloud Run worker:
 - worker는 Google OIDC ID token을 애플리케이션 계층에서도 검증한다. `google-auth-library`가 서명, 만료, Google issuer, 정확한 audience를 검증하고 worker가 `email_verified`와 경로별 service account email을 추가 확인한다.
 - `/tasks/import-job`은 Cloud Tasks service account만 허용하고, `/wake`와 `/tasks/discover-seasons-diagnostic`은 Firebase Functions runtime service account만 허용한다.
 - `/healthz`와 `/readyz`는 worker 내부 인증 middleware를 거치지 않지만 Cloud Run IAM 경계는 그대로 적용된다. 현재 Development smoke 기준으로 Cloud Tasks OIDC를 사용한 `/readyz`가 컨테이너까지 도달해 200을 반환한다.
-- 필수 환경값은 `OUTPICK_IMPORT_OIDC_AUDIENCE`, `OUTPICK_IMPORT_TASKS_SERVICE_ACCOUNT_EMAIL`, `OUTPICK_IMPORT_FUNCTIONS_SERVICE_ACCOUNT_EMAIL`이다. 누락되거나 audience가 HTTPS origin이 아니거나 service account 형식이 잘못되면 시작 전에 실패한다.
+- 필수 환경값은 `OUTPICK_IMPORT_OIDC_AUDIENCE`, `OUTPICK_IMPORT_TASKS_SERVICE_ACCOUNT_EMAIL`, `OUTPICK_IMPORT_FUNCTIONS_SERVICE_ACCOUNT_EMAIL`이다. 누락·형식뿐 아니라 `OUTPICK_FIREBASE_PROJECT_ID`별 canonical audience·task 계정·Functions 계정과 다르면 시작 전에 실패한다.
 - Development와 Production은 URL, audience, task identity, Functions identity를 각각 별도 주입한다. 환경 간 fallback은 허용하지 않는다.
 - 2026-08-03 Development 실제 smoke에서 Firestore trigger → Cloud Tasks → worker parsing → `awaitingReview` → 승인된 snapshot의 materialization → Storage asset sync가 통과했다. 전용 smoke 데이터와 evidence는 검증 후 모두 삭제했다.
 

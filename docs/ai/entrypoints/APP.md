@@ -6,13 +6,13 @@
 - Build Configuration: `Development-Debug`, `Development-Release`, `Production-Debug`, `Production-Release`.
 - 공통·환경별 설정: `Configurations/Base.xcconfig`, `Configurations/Development.xcconfig`, `Configurations/Production.xcconfig`.
 - 앱 번들 환경값: `OutPick/Info.plist`의 `OUTPICK_ENVIRONMENT`, `OUTPICK_EXPECTED_FIREBASE_PROJECT_ID`, `OUTPICK_SOCKET_URL`, Google/Kakao callback 설정.
-- runtime source of truth: `OutPick/App/Firebase/AppRuntimeConfiguration.swift`가 Bundle ID, Firebase project, Socket URL, Google callback을 검증하고, xcconfig 실제값과 독립된 환경별 canonical Kakao Native App Key로 키·callback scheme의 교차 환경 사용을 차단한다.
+- runtime source of truth: `OutPick/App/Firebase/AppRuntimeConfiguration.swift`가 Bundle ID, Firebase project, HTTPS origin Socket URL, Google callback을 검증하고, xcconfig 실제값과 독립된 환경별 canonical Socket URL·Kakao Native App Key로 교차 환경 사용을 차단한다.
 - Firebase bootstrap: `OutPick/App/AppDelegate.swift`가 선택된 plist를 명시적으로 읽고 runtime 정합성 확인 후 `FirebaseApp.configure(options:)`를 호출한다.
-- Firebase build gate: `scripts/build/validate-and-copy-firebase-config.sh`가 로컬 plist의 존재 여부와 Bundle ID/Firebase project/Google callback/Socket 조합, 환경별 canonical Kakao 키·callback을 검증한 뒤 앱 번들에 `GoogleService-Info.plist`로 복사한다.
+- Firebase build gate: `scripts/build/validate-and-copy-firebase-config.sh`가 로컬 plist의 존재 여부와 Bundle ID/Firebase project/Google callback, 환경별 canonical Socket URL·Kakao 키·callback을 검증한 뒤 앱 번들에 `GoogleService-Info.plist`로 복사한다.
 - 실제 plist는 `LocalSecrets/Firebase/{Development,Production}/GoogleService-Info.plist`에 두며 Git에 커밋하지 않는다.
 - Development는 `GayoonKim.OutPick.dev`·`OutPick DEV`·`outpick-test`, Production은 `GayoonKim.OutPick`·`OutPick`·`outpick-664ae`가 고정 계약이다.
 - Google/Kakao callback은 환경별 xcconfig로 분리한다. Development Kakao Native App Key는 `f5f18b00bc7b163aa5be39fef99e646d`, Production은 기존 키 `a2b20f7bedfb9582147f572ef004d0f0`을 사용하며 URL scheme은 각 키에서 파생된다. 같은 xcconfig의 기대값으로 자기 비교하지 않고 Swift runtime과 build gate가 각각 독립된 canonical 키를 보유해 Development↔Production 키·scheme 동시 교체도 실패시킨다.
-- Development Socket은 `outpick-test`의 Cloud Run `outpick-socket-development` canonical URL을 사용한다. Production Socket URL과 같아지거나 누락되면 build/runtime에서 실패한다.
+- Development와 Production Socket은 각각 독립된 canonical HTTPS origin만 사용한다. 다른 host뿐 아니라 trailing slash·query·fragment·port 변형도 build/runtime에서 실패한다.
 - iOS Socket 선택 진입점은 `RealtimeSocketService.makeSocketURL()`이며 하드코딩 운영 URL이 아니라 검증된 `AppRuntimeConfiguration.socketURL`만 사용한다.
 
 ## 앱 조립과 탭
