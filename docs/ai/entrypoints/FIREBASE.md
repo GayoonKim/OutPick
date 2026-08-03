@@ -20,11 +20,12 @@ Firebase 변경 시 Functions, Firestore, Storage의 실제 경계를 찾기 위
 
 - Development/Production 실제 plist는 각각 `LocalSecrets/Firebase/Development/GoogleService-Info.plist`, `LocalSecrets/Firebase/Production/GoogleService-Info.plist`에 보관하며 Git에서 제외한다.
 - `Configurations/Development.xcconfig`는 `GayoonKim.OutPick.dev`와 `outpick-test`, `Configurations/Production.xcconfig`는 `GayoonKim.OutPick`과 `outpick-664ae`를 기대값으로 제공한다.
-- `scripts/build/validate-and-copy-firebase-config.sh`는 선택된 plist의 `BUNDLE_ID`, `PROJECT_ID`, Google `CLIENT_ID/REVERSED_CLIENT_ID`를 build setting과 대조하고, 잘못된 조합이면 Firebase 초기화 전에 빌드를 실패시킨다.
+- `scripts/build/validate-and-copy-firebase-config.sh`는 선택된 plist의 `BUNDLE_ID`, `PROJECT_ID`, Google `CLIENT_ID/REVERSED_CLIENT_ID`를 build setting과 대조하고, 환경별 canonical Kakao Native App Key·callback scheme도 독립적으로 검증한다. Development↔Production 카카오 키·scheme을 함께 교차해도 Firebase 초기화 전에 빌드를 실패시킨다.
 - 검증 fixture와 negative test는 `scripts/build/fixtures/GoogleService-Info-Fixture.plist`, `scripts/build/test-validate-and-copy-firebase-config.sh`다. fixture는 실제 credential이 아닌 테스트 전용 값만 포함한다.
 - build phase가 검증을 통과한 단일 plist만 앱 번들의 `GoogleService-Info.plist`로 복사한다. 소스 트리의 plist를 target resource로 직접 포함하지 않는다.
 - Development 실제 양성 빌드는 Firebase Console에 `GayoonKim.OutPick.dev` 앱을 등록하고 발급받은 plist를 설치한 뒤 수행한다. 콘솔 등록은 외부 상태 변경이므로 사용자 명시 요청 후 진행한다.
 - runtime 검증은 `OutPick/App/Firebase/AppRuntimeConfiguration.swift`, 초기화는 `OutPick/App/AppDelegate.swift`가 담당한다. 기본 Firebase app은 검증된 plist로만 명시 구성한다.
+- runtime은 xcconfig에서 받은 Kakao 실제값을 `OutPickEnvironment.expectedKakaoNativeAppKey`와 대조한다. build gate와 runtime에 둔 환경별 공개 키 상수는 설정 오조합을 두 단계에서 차단하기 위한 의도적 중복이다.
 - 실제 Firebase UI test override 기본 경로도 `LocalSecrets/Firebase/Development/GoogleService-Info.plist`를 사용해 Development Bundle ID와 test project 조합을 유지한다.
 
 ## Functions 코드 지도
@@ -142,7 +143,8 @@ npm run build
   - Socket `outpick-socket-00008-4wl` traffic 100%, `/readyz` 정상, 배포 직후 ERROR 0건
 - 출시 전 보류 상태:
   - PITR 비활성, 예약 백업 0개, Storage soft delete 7일
-  - 실제 Google/Kakao 요청·취소 smoke 미완료
+  - Production Kakao 실제 로그인은 callback → `exchangeKakaoToken` HTTP 200 → 기존 프로필 복원 → 앱 로그아웃까지 완료했고 기존 Auth/Firestore를 보존했다.
+  - Production Google 실제 로그인과 provider별 계정 삭제 요청·취소 재인증 smoke는 미완료
   - Apple Developer Program 가입 후 Team ID 발급·Firebase App Attest 등록·지원되는 iPhone 실기기 검증
   - 실제 앱 출시 게이트에서 PITR·예약 백업·30일 soft delete·별도 export/복구 훈련을 적용·검증한다.
 - 2026-07-29 운영 반영:
