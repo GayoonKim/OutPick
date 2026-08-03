@@ -3,6 +3,15 @@ import Foundation
 enum OutPickEnvironment: String, Equatable, Sendable {
     case development
     case production
+
+    var expectedKakaoNativeAppKey: String {
+        switch self {
+        case .development:
+            "f5f18b00bc7b163aa5be39fef99e646d"
+        case .production:
+            "a2b20f7bedfb9582147f572ef004d0f0"
+        }
+    }
 }
 
 struct FirebaseClientConfiguration: Equatable, Sendable {
@@ -74,7 +83,10 @@ struct AppRuntimeConfiguration: Equatable, Sendable {
             "OUTPICK_KAKAO_URL_SCHEME",
             in: infoDictionary
         )
-        guard kakaoURLScheme == "kakao\(kakaoNativeAppKey)" else {
+        guard kakaoNativeAppKey == environment.expectedKakaoNativeAppKey else {
+            throw AppEnvironmentError.kakaoEnvironmentMismatch
+        }
+        guard kakaoURLScheme == "kakao\(environment.expectedKakaoNativeAppKey)" else {
             throw AppEnvironmentError.kakaoCallbackMismatch
         }
 
@@ -182,6 +194,7 @@ enum AppEnvironmentError: LocalizedError, Equatable {
     case invalidFirebasePlist
     case missingFirebaseValue(String)
     case googleCallbackMismatch
+    case kakaoEnvironmentMismatch
     case kakaoCallbackMismatch
 
     var errorDescription: String? {
@@ -212,8 +225,10 @@ enum AppEnvironmentError: LocalizedError, Equatable {
             "Firebase plist의 \(key) 값이 없습니다."
         case .googleCallbackMismatch:
             "Google OAuth callback scheme이 Firebase plist와 일치하지 않습니다."
+        case .kakaoEnvironmentMismatch:
+            "Kakao Native App Key가 앱 환경과 일치하지 않습니다."
         case .kakaoCallbackMismatch:
-            "Kakao callback scheme이 Native App Key와 일치하지 않습니다."
+            "Kakao callback scheme이 앱 환경의 Native App Key와 일치하지 않습니다."
         }
     }
 }

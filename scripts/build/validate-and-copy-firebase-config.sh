@@ -22,9 +22,6 @@ require_value OUTPICK_GOOGLE_REVERSED_CLIENT_ID
 require_value OUTPICK_KAKAO_NATIVE_APP_KEY
 require_value OUTPICK_KAKAO_URL_SCHEME
 
-[ "$OUTPICK_KAKAO_URL_SCHEME" = "kakao$OUTPICK_KAKAO_NATIVE_APP_KEY" ] || \
-  fail "Kakao callback scheme이 Native App Key와 일치하지 않습니다."
-
 [ -f "$OUTPICK_FIREBASE_PLIST_PATH" ] || fail "Firebase plist를 찾을 수 없습니다: $OUTPICK_FIREBASE_PLIST_PATH"
 
 plist_bundle_id=$(/usr/libexec/PlistBuddy -c "Print :BUNDLE_ID" "$OUTPICK_FIREBASE_PLIST_PATH" 2>/dev/null) || \
@@ -46,6 +43,7 @@ plist_reversed_client_id=$(/usr/libexec/PlistBuddy -c "Print :REVERSED_CLIENT_ID
 
 case "$OUTPICK_ENVIRONMENT" in
   development)
+    expected_kakao_native_app_key="f5f18b00bc7b163aa5be39fef99e646d"
     [ "$PRODUCT_BUNDLE_IDENTIFIER" = "GayoonKim.OutPick.dev" ] || \
       fail "Development Bundle ID는 GayoonKim.OutPick.dev여야 합니다."
     [ "$OUTPICK_EXPECTED_FIREBASE_PROJECT_ID" = "outpick-test" ] || \
@@ -55,6 +53,7 @@ case "$OUTPICK_ENVIRONMENT" in
       fail "Development에서 Production Socket URL을 사용할 수 없습니다."
     ;;
   production)
+    expected_kakao_native_app_key="a2b20f7bedfb9582147f572ef004d0f0"
     [ "$PRODUCT_BUNDLE_IDENTIFIER" = "GayoonKim.OutPick" ] || \
       fail "Production Bundle ID는 GayoonKim.OutPick이어야 합니다."
     [ "$OUTPICK_EXPECTED_FIREBASE_PROJECT_ID" = "outpick-664ae" ] || \
@@ -66,6 +65,11 @@ case "$OUTPICK_ENVIRONMENT" in
     fail "지원하지 않는 OUTPICK_ENVIRONMENT입니다: $OUTPICK_ENVIRONMENT"
     ;;
 esac
+
+[ "$OUTPICK_KAKAO_NATIVE_APP_KEY" = "$expected_kakao_native_app_key" ] || \
+  fail "Kakao Native App Key가 실행 환경과 일치하지 않습니다."
+[ "$OUTPICK_KAKAO_URL_SCHEME" = "kakao$expected_kakao_native_app_key" ] || \
+  fail "Kakao callback scheme이 실행 환경의 Native App Key와 일치하지 않습니다."
 
 if [ "${OUTPICK_VALIDATE_ONLY:-0}" = "1" ]; then
   exit 0
