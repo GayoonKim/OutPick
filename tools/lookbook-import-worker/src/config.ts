@@ -10,11 +10,15 @@ export interface WorkerConfig {
 
 type WorkerEnvironmentContract = Pick<
   WorkerConfig,
-  "oidcAudience" | "taskServiceAccountEmail" | "functionsServiceAccountEmail"
+  | "storageBucket"
+  | "oidcAudience"
+  | "taskServiceAccountEmail"
+  | "functionsServiceAccountEmail"
 >;
 
 const workerEnvironmentContracts: Record<string, WorkerEnvironmentContract> = {
   "outpick-test": {
+    storageBucket: "outpick-test.firebasestorage.app",
     oidcAudience:
       "https://lookbook-import-worker-development-xyenspjiwa-du.a.run.app",
     taskServiceAccountEmail:
@@ -23,6 +27,7 @@ const workerEnvironmentContracts: Record<string, WorkerEnvironmentContract> = {
       "86635107099-compute@developer.gserviceaccount.com",
   },
   "outpick-664ae": {
+    storageBucket: "outpick-664ae.appspot.com",
     oidcAudience:
       "https://lookbook-import-worker-715386497547.asia-northeast3.run.app",
     taskServiceAccountEmail:
@@ -35,9 +40,11 @@ const workerEnvironmentContracts: Record<string, WorkerEnvironmentContract> = {
 export function loadConfig(env: NodeJS.ProcessEnv): WorkerConfig {
   const projectID = requiredEnv(env, "OUTPICK_FIREBASE_PROJECT_ID");
   const environmentContract = requiredEnvironmentContract(projectID);
-  const storageBucket =
-    optionalEnv(env, "OUTPICK_FIREBASE_STORAGE_BUCKET") ??
-    `${projectID}.appspot.com`;
+  const storageBucket = requiredExactValue(
+    requiredEnv(env, "OUTPICK_FIREBASE_STORAGE_BUCKET"),
+    environmentContract.storageBucket,
+    "OUTPICK_FIREBASE_STORAGE_BUCKET",
+  );
   const port = parsePort(env.PORT);
   const assetSyncConcurrency = parseBoundedInteger(
     env.OUTPICK_IMPORT_ASSET_SYNC_CONCURRENCY,
@@ -108,11 +115,6 @@ function requiredEnv(env: NodeJS.ProcessEnv, key: string): string {
     throw new Error(`${key} 환경 변수가 필요합니다.`);
   }
   return value;
-}
-
-function optionalEnv(env: NodeJS.ProcessEnv, key: string): string | null {
-  const value = env[key]?.trim();
-  return value && value.length > 0 ? value : null;
 }
 
 function requiredURL(env: NodeJS.ProcessEnv, key: string): string {

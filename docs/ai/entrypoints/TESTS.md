@@ -55,17 +55,16 @@ Lookbook import worker tests:
 - `tools/lookbook-import-worker/fixtures/season-images/incidents/youth-programmatic-gallery/`
 - `tools/lookbook-import-worker/src/fixture/corpus.test.ts`
 - `tools/lookbook-import-worker/src/config.test.ts`, `oidc-auth.test.ts`, `server.test.ts`
-  - 환경별 canonical audience·caller 계정 조합과 route별 401/403, 올바른 caller의 handler 진입을 검증한다.
+  - 환경별 canonical Storage bucket·audience·caller 계정 조합과 route별 401/403, 올바른 caller의 handler 진입을 검증한다.
 - `scripts/ai/test-deploy-lookbook-import-worker.sh`
-  - Development/Production 배포 project·service·runtime account·OIDC identity 조합과 `--no-traffic`, Production 확인 gate를 검증한다.
+  - Development/Production 배포 project·service·runtime account·Storage bucket·OIDC identity 조합과 `--no-traffic`, Production 확인 gate를 검증한다.
 - `tools/lookbook-import-worker/src/fixture/run-corpus.ts`
 - `tools/lookbook-import-worker/fixtures/{discovery,season-images}/`
 - `tools/lookbook-import-worker/fixtures/discovery/platform/cafe24-underscore-detail-list/`
 - `tools/lookbook-import-worker/src/processor.test.ts`
 - `tools/lookbook-import-worker/src/job-lifecycle.test.ts`
 - `tools/lookbook-import-worker/src/public-http.test.ts`
-- `tools/lookbook-import-worker/src/config.test.ts`
-- 실행: `cd tools/lookbook-import-worker && npm test` (root와 하위 test 모두 포함, extraction review 수량 기준 보완 후 66/66 통과).
+- 실행: `cd tools/lookbook-import-worker && npm test` (root와 하위 test 모두 포함, 현재 83/83 통과).
 - fixture gate: `cd tools/lookbook-import-worker && npm run test:fixtures` (외부 fetch 없이 현재 corpus 5/5와 구조화된 differential을 검증).
 - extraction review Functions contract: `functions/src/lookbook/import/reviewContract.test.ts`, `taskService.test.ts`, `importValidation.test.ts`, `functions/src/index.contract.test.ts`.
 - extraction review iOS targeted tests: `OutPickTests/LookbookExtractionReviewViewModelTests.swift`, `OutPickTests/CloudFunctions/CloudFunctionsSeasonImportRepositoryTests.swift`.

@@ -2,7 +2,7 @@
 
 ## 목적
 
-Development와 Production Worker의 project, URL/OIDC audience, 호출 계정이 교차되지 않도록 배포 계약과 candidate 검증·traffic 전환·rollback 절차를 고정한다.
+Development와 Production Worker의 project, Storage bucket, URL/OIDC audience, 호출 계정이 교차되지 않도록 배포 계약과 candidate 검증·traffic 전환·rollback 절차를 고정한다.
 
 실제 배포는 사용자 명시 승인 후에만 진행한다. 스크립트 기본 동작은 명령과 계약만 출력하는 `--plan`이며 외부 상태를 변경하지 않는다.
 
