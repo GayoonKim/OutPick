@@ -14,8 +14,6 @@
 	<string>$(OUTPICK_KAKAO_NATIVE_APP_KEY)</string>
 	<key>OUTPICK_KAKAO_URL_SCHEME</key>
 	<string>$(OUTPICK_KAKAO_URL_SCHEME)</string>
-	<key>OUTPICK_PRODUCTION_SOCKET_URL</key>
-	<string>$(OUTPICK_PRODUCTION_SOCKET_URL)</string>
 	<key>OUTPICK_SOCKET_URL</key>
 	<string>$(OUTPICK_SOCKET_URL)</string>
 	<key>NSLocationWhenInUseUsageDescription</key>

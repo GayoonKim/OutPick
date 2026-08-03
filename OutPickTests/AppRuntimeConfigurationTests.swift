@@ -3,7 +3,10 @@ import Testing
 @testable import OutPick
 
 struct AppRuntimeConfigurationTests {
-    private let productionSocketURL = "https://production.example.com"
+    private let developmentSocketURL =
+        "https://outpick-socket-development-xyenspjiwa-du.a.run.app"
+    private let productionSocketURL =
+        "https://outpick-socket-2w7zhxurhq-du.a.run.app"
     private let developmentKakaoNativeAppKey = "f5f18b00bc7b163aa5be39fef99e646d"
     private let productionKakaoNativeAppKey = "a2b20f7bedfb9582147f572ef004d0f0"
 
@@ -12,11 +15,11 @@ struct AppRuntimeConfigurationTests {
             environment: "development",
             bundleIdentifier: "GayoonKim.OutPick.dev",
             projectID: "outpick-test",
-            socketURL: "https://development.example.com"
+            socketURL: developmentSocketURL
         )
 
         #expect(configuration.environment == .development)
-        #expect(configuration.socketURL.absoluteString == "https://development.example.com")
+        #expect(configuration.socketURL.absoluteString == developmentSocketURL)
     }
 
     @Test func productionConfigurationRequiresCanonicalSocket() throws {
@@ -28,11 +31,11 @@ struct AppRuntimeConfigurationTests {
         )
 
         #expect(configuration.environment == .production)
-        #expect(configuration.socketURL == configuration.productionSocketURL)
+        #expect(configuration.socketURL.absoluteString == productionSocketURL)
     }
 
     @Test func developmentRejectsProductionSocket() {
-        expectError(.developmentUsesProductionSocket) {
+        expectError(.developmentSocketMismatch) {
             _ = try makeConfiguration(
                 environment: "development",
                 bundleIdentifier: "GayoonKim.OutPick.dev",
@@ -42,12 +45,54 @@ struct AppRuntimeConfigurationTests {
         }
     }
 
+    @Test func developmentRejectsProductionSocketURLVariants() {
+        let variants = [
+            "\(productionSocketURL)/",
+            "\(productionSocketURL)?source=development",
+            "\(productionSocketURL)#development",
+            "https://outpick-socket-2w7zhxurhq-du.a.run.app:443"
+        ]
+
+        for socketURL in variants {
+            expectError(.invalidURL("OUTPICK_SOCKET_URL")) {
+                _ = try makeConfiguration(
+                    environment: "development",
+                    bundleIdentifier: "GayoonKim.OutPick.dev",
+                    projectID: "outpick-test",
+                    socketURL: socketURL
+                )
+            }
+        }
+    }
+
+    @Test func developmentRequiresCanonicalSocket() {
+        expectError(.developmentSocketMismatch) {
+            _ = try makeConfiguration(
+                environment: "development",
+                bundleIdentifier: "GayoonKim.OutPick.dev",
+                projectID: "outpick-test",
+                socketURL: "https://other-development-socket.example.com"
+            )
+        }
+    }
+
+    @Test func productionRejectsCanonicalSocketVariant() {
+        expectError(.invalidURL("OUTPICK_SOCKET_URL")) {
+            _ = try makeConfiguration(
+                environment: "production",
+                bundleIdentifier: "GayoonKim.OutPick",
+                projectID: "outpick-664ae",
+                socketURL: "\(productionSocketURL)/"
+            )
+        }
+    }
+
     @Test func firebaseBundleAndProjectMustMatchRuntimeEnvironment() throws {
         let configuration = try makeConfiguration(
             environment: "development",
             bundleIdentifier: "GayoonKim.OutPick.dev",
             projectID: "outpick-test",
-            socketURL: "https://development.example.com"
+            socketURL: developmentSocketURL
         )
         let wrongBundle = try FirebaseClientConfiguration(dictionary: [
             "BUNDLE_ID": "GayoonKim.OutPick",
@@ -86,7 +131,7 @@ struct AppRuntimeConfigurationTests {
                 environment: "development",
                 bundleIdentifier: "GayoonKim.OutPick.dev",
                 projectID: "outpick-test",
-                socketURL: "https://development.example.com",
+                socketURL: developmentSocketURL,
                 kakaoURLScheme: "kakaowrong-key"
             )
         }
@@ -98,7 +143,7 @@ struct AppRuntimeConfigurationTests {
                 environment: "development",
                 bundleIdentifier: "GayoonKim.OutPick.dev",
                 projectID: "outpick-test",
-                socketURL: "https://development.example.com",
+                socketURL: developmentSocketURL,
                 kakaoNativeAppKey: productionKakaoNativeAppKey
             )
         }
@@ -132,7 +177,6 @@ struct AppRuntimeConfigurationTests {
                 "OUTPICK_ENVIRONMENT": environment,
                 "OUTPICK_EXPECTED_FIREBASE_PROJECT_ID": projectID,
                 "OUTPICK_SOCKET_URL": socketURL,
-                "OUTPICK_PRODUCTION_SOCKET_URL": productionSocketURL,
                 "OUTPICK_GOOGLE_REVERSED_CLIENT_ID": "com.googleusercontent.apps.development",
                 "OUTPICK_KAKAO_NATIVE_APP_KEY": resolvedKakaoNativeAppKey,
                 "OUTPICK_KAKAO_URL_SCHEME": kakaoURLScheme ?? "kakao\(resolvedKakaoNativeAppKey)"

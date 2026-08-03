@@ -17,7 +17,7 @@ require_value OUTPICK_ENVIRONMENT
 require_value PRODUCT_BUNDLE_IDENTIFIER
 require_value OUTPICK_EXPECTED_FIREBASE_PROJECT_ID
 require_value OUTPICK_FIREBASE_PLIST_PATH
-require_value OUTPICK_PRODUCTION_SOCKET_URL
+require_value OUTPICK_SOCKET_URL
 require_value OUTPICK_GOOGLE_REVERSED_CLIENT_ID
 require_value OUTPICK_KAKAO_NATIVE_APP_KEY
 require_value OUTPICK_KAKAO_URL_SCHEME
@@ -44,21 +44,22 @@ plist_reversed_client_id=$(/usr/libexec/PlistBuddy -c "Print :REVERSED_CLIENT_ID
 case "$OUTPICK_ENVIRONMENT" in
   development)
     expected_kakao_native_app_key="f5f18b00bc7b163aa5be39fef99e646d"
+    expected_socket_url="https://outpick-socket-development-xyenspjiwa-du.a.run.app"
     [ "$PRODUCT_BUNDLE_IDENTIFIER" = "GayoonKim.OutPick.dev" ] || \
       fail "Development Bundle ID는 GayoonKim.OutPick.dev여야 합니다."
     [ "$OUTPICK_EXPECTED_FIREBASE_PROJECT_ID" = "outpick-test" ] || \
       fail "Development Firebase project는 outpick-test여야 합니다."
-    require_value OUTPICK_SOCKET_URL
-    [ "$OUTPICK_SOCKET_URL" != "$OUTPICK_PRODUCTION_SOCKET_URL" ] || \
-      fail "Development에서 Production Socket URL을 사용할 수 없습니다."
+    [ "$OUTPICK_SOCKET_URL" = "$expected_socket_url" ] || \
+      fail "Development Socket URL이 canonical URL과 다릅니다."
     ;;
   production)
     expected_kakao_native_app_key="a2b20f7bedfb9582147f572ef004d0f0"
+    expected_socket_url="https://outpick-socket-2w7zhxurhq-du.a.run.app"
     [ "$PRODUCT_BUNDLE_IDENTIFIER" = "GayoonKim.OutPick" ] || \
       fail "Production Bundle ID는 GayoonKim.OutPick이어야 합니다."
     [ "$OUTPICK_EXPECTED_FIREBASE_PROJECT_ID" = "outpick-664ae" ] || \
       fail "Production Firebase project는 outpick-664ae여야 합니다."
-    [ "${OUTPICK_SOCKET_URL:-}" = "$OUTPICK_PRODUCTION_SOCKET_URL" ] || \
+    [ "$OUTPICK_SOCKET_URL" = "$expected_socket_url" ] || \
       fail "Production Socket URL이 canonical 운영 URL과 다릅니다."
     ;;
   *)

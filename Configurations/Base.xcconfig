@@ -1,6 +1,5 @@
 // OutPick 공통 build setting
 
-OUTPICK_PRODUCTION_SOCKET_URL = https:/$()/outpick-socket-2w7zhxurhq-du.a.run.app
 OUTPICK_KAKAO_NATIVE_APP_KEY = a2b20f7bedfb9582147f572ef004d0f0
 OUTPICK_KAKAO_URL_SCHEME = kakao$(OUTPICK_KAKAO_NATIVE_APP_KEY)
 

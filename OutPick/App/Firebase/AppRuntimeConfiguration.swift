@@ -12,6 +12,15 @@ enum OutPickEnvironment: String, Equatable, Sendable {
             "a2b20f7bedfb9582147f572ef004d0f0"
         }
     }
+
+    var expectedSocketURL: String {
+        switch self {
+        case .development:
+            "https://outpick-socket-development-xyenspjiwa-du.a.run.app"
+        case .production:
+            "https://outpick-socket-2w7zhxurhq-du.a.run.app"
+        }
+    }
 }
 
 struct FirebaseClientConfiguration: Equatable, Sendable {
@@ -53,7 +62,6 @@ struct AppRuntimeConfiguration: Equatable, Sendable {
     let bundleIdentifier: String
     let expectedFirebaseProjectID: String
     let socketURL: URL
-    let productionSocketURL: URL
     let googleReversedClientID: String
     let kakaoNativeAppKey: String
     let kakaoURLScheme: String
@@ -69,8 +77,7 @@ struct AppRuntimeConfiguration: Equatable, Sendable {
             "OUTPICK_EXPECTED_FIREBASE_PROJECT_ID",
             in: infoDictionary
         )
-        let socketURL = try Self.httpURL("OUTPICK_SOCKET_URL", in: infoDictionary)
-        let productionSocketURL = try Self.httpURL("OUTPICK_PRODUCTION_SOCKET_URL", in: infoDictionary)
+        let socketURL = try Self.httpsOriginURL("OUTPICK_SOCKET_URL", in: infoDictionary)
         let googleReversedClientID = try Self.requiredString(
             "OUTPICK_GOOGLE_REVERSED_CLIENT_ID",
             in: infoDictionary
@@ -98,8 +105,8 @@ struct AppRuntimeConfiguration: Equatable, Sendable {
             guard expectedFirebaseProjectID == "outpick-test" else {
                 throw AppEnvironmentError.firebaseProjectMismatch
             }
-            guard socketURL != productionSocketURL else {
-                throw AppEnvironmentError.developmentUsesProductionSocket
+            guard socketURL.absoluteString == environment.expectedSocketURL else {
+                throw AppEnvironmentError.developmentSocketMismatch
             }
         case .production:
             guard bundleIdentifier == "GayoonKim.OutPick" else {
@@ -108,7 +115,7 @@ struct AppRuntimeConfiguration: Equatable, Sendable {
             guard expectedFirebaseProjectID == "outpick-664ae" else {
                 throw AppEnvironmentError.firebaseProjectMismatch
             }
-            guard socketURL == productionSocketURL else {
+            guard socketURL.absoluteString == environment.expectedSocketURL else {
                 throw AppEnvironmentError.productionSocketMismatch
             }
         }
@@ -117,7 +124,6 @@ struct AppRuntimeConfiguration: Equatable, Sendable {
         self.bundleIdentifier = bundleIdentifier
         self.expectedFirebaseProjectID = expectedFirebaseProjectID
         self.socketURL = socketURL
-        self.productionSocketURL = productionSocketURL
         self.googleReversedClientID = googleReversedClientID
         self.kakaoNativeAppKey = kakaoNativeAppKey
         self.kakaoURLScheme = kakaoURLScheme
@@ -168,12 +174,18 @@ struct AppRuntimeConfiguration: Equatable, Sendable {
         return value
     }
 
-    private static func httpURL(_ key: String, in dictionary: [String: Any]) throws -> URL {
+    private static func httpsOriginURL(_ key: String, in dictionary: [String: Any]) throws -> URL {
         let value = try requiredString(key, in: dictionary)
         guard let url = URL(string: value),
               let scheme = url.scheme?.lowercased(),
-              ["http", "https"].contains(scheme),
-              url.host != nil else {
+              scheme == "https",
+              url.host != nil,
+              url.user == nil,
+              url.password == nil,
+              url.port == nil,
+              url.path.isEmpty,
+              url.query == nil,
+              url.fragment == nil else {
             throw AppEnvironmentError.invalidURL(key)
         }
         return url
@@ -188,7 +200,7 @@ enum AppEnvironmentError: LocalizedError, Equatable {
     case bundleIdentifierMismatch
     case firebaseBundleIdentifierMismatch
     case firebaseProjectMismatch
-    case developmentUsesProductionSocket
+    case developmentSocketMismatch
     case productionSocketMismatch
     case missingFirebasePlist
     case invalidFirebasePlist
@@ -213,8 +225,8 @@ enum AppEnvironmentError: LocalizedError, Equatable {
             "앱 Bundle ID와 Firebase plist의 BUNDLE_ID가 일치하지 않습니다."
         case .firebaseProjectMismatch:
             "앱 환경과 Firebase project가 일치하지 않습니다."
-        case .developmentUsesProductionSocket:
-            "Development 앱은 Production Socket을 사용할 수 없습니다."
+        case .developmentSocketMismatch:
+            "Development Socket URL이 canonical URL과 일치하지 않습니다."
         case .productionSocketMismatch:
             "Production Socket URL이 canonical URL과 일치하지 않습니다."
         case .missingFirebasePlist:
