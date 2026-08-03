@@ -2,7 +2,7 @@
 
 ## 현재 상태
 
-- 현재 진행 중인 핵심 task는 `development-production-environment-separation`이다. 하나의 Xcode 프로젝트와 app target을 유지하면서 Development는 `GayoonKim.OutPick.dev`/`outpick-test`, Production은 `GayoonKim.OutPick`/`outpick-664ae`로 분리한다. 2026-08-01 사용자 승인으로 Xcode/Firebase 분리, fail-fast 검증, Development backend 기능 동등성, Simulator 우선 검증을 순차 진행한다.
+- 현재 진행 중인 핵심 task는 없다. `development-production-environment-separation`은 2026-08-03 Phase 1~4 구현, Development backend 배포, 통합 QA, Production 인증 Function 전용 identity 전환과 실제 Development import smoke·QA 데이터 정리까지 완료 처리했다.
 - 이전 핵심 task `style-mood-personalization-account-privacy`의 Phase 1~8은 완료 처리했다. Apple Developer Program 가입 후 App Attest 실기기 QA와 운영 백업 설정은 출시 운영 게이트로 분리하고, 개발 데이터 전체 삭제는 마지막 Phase의 별도 승인 전까지 진행하지 않는다.
 - `lookbook-discovery-learning-loop`는 그다음 핵심 후속 후보로 조정했다. season discovery의 구조 evidence, issue cluster, 관리자 ground truth, 최소 fixture, extractor version gate 범위는 유지하되 별도 논의·승인 전에는 task 문서나 코드를 생성·수정하지 않는다.
 - `socket-ingress-ordering-hardening`은 Phase 1~6 구현, 자동 회귀와 실제 Firebase/Simulator 핵심 QA를 완료하고 2026-07-17 종료했다.
@@ -12,24 +12,22 @@
 - FCM/APNs 채팅 알림은 Apple Developer 계정 결제와 APNs/Firebase Apple app 설정 후 별도 구현·실기기 QA task로 진행한다. 초기에는 메시지별 알림과 방별 thread grouping을 사용하고 custom 요약은 운영 피드백 이후 검토한다.
 - Chat route/ViewModel 생존 분석에서 LLDB expression retain 오염과 production Back deinit을 분리해 retain leak 가설은 기각했다. 확인된 같은 stack의 종료 route 부분 복귀와 `openRoom` 경쟁은 완료한 `chat-route-lifecycle-hardening`에서 수정·검증했다. 추가 retain 경로 분석은 2026-07-22 사용자 결정으로 후속 목록에서 제외했으며, 디버거 오염 없는 production 지속 생존이 새로 재현될 때만 별도 leak task로 연다.
 - `socket-ingress-ordering-hardening`의 이미 보이는 target card 억제는 2026-07-22 사용자 수동 QA로 완료했다. 실기기 VoiceOver 발화·포커스 확인은 같은 날 사용자 결정으로 후속 범위에서 제외했다. 기존 접근성 label/value 구현은 유지한다.
-- 최근 완료 구현 작업은 `chat-route-lifecycle-hardening`이다.
+- 최근 완료 구현 작업은 `development-production-environment-separation`이다.
 - 새 작업을 시작할 때 이 문서에는 현재 task 한 건과 바로 이전 완료 작업만 상세 링크로 유지한다.
 - 오래된 완료 이력은 각 task의 `progress.md`, 장기 결정은 `docs/ai/ADR.md`에서 확인한다.
 
 ## 현재 핵심 작업
 
+- 없음. 다음 핵심 작업은 별도 논의·승인 후 지정한다.
+
+## 이전 핵심 작업
+
 - `development-production-environment-separation`
   - [design](development-production-environment-separation/design.md)
   - [decisions](development-production-environment-separation/decisions.md)
   - [progress](development-production-environment-separation/progress.md)
-  - 범위: Development/Production Bundle ID·Scheme/Build Configuration·Firebase plist/project 분리, 잘못된 조합 build-time 실패, `OutPick DEV` 표시 이름, Development Functions·Socket 기능 동등성.
-  - 상태: 2026-08-01 구현 승인. Phase 2 기존 변경을 커밋으로 보존한 뒤 전용 브랜치에서 Phase 1을 시작한다.
-
-## 이전 핵심 작업
-
-- `style-mood-personalization-account-privacy`
-  - [progress](style-mood-personalization-account-privacy/progress.md)
-  - 상태: Phase 1~8 완료. App Attest 실기기와 운영 백업 항목은 출시 운영 게이트로 보류.
+  - [qa](development-production-environment-separation/qa-checklist.md)
+  - 상태: Phase 1~4, Production 인증 Function identity 전환, 실제 Development import smoke와 QA 데이터 정리 완료. 실기기 App Attest만 Apple Developer Program 가입 후 외부 의존 후속 작업으로 유지.
 
 ## 그다음 핵심 후속 후보
 
@@ -41,6 +39,7 @@
 
 | 작업 | 상태 | 핵심 결과 | 상세 |
 | --- | --- | --- | --- |
+| `development-production-environment-separation` | 완료·Phase 1~4·Development backend 및 Production 인증 identity 반영 | 두 scheme/네 configuration, Firebase·Socket fail-fast, `outpick-test` 기능 동등성, 환경별 auth service account | [progress](development-production-environment-separation/progress.md), [qa](development-production-environment-separation/qa-checklist.md), [decisions](development-production-environment-separation/decisions.md) |
 | `lookbook-extraction-learning-loop` | 완료·Phase 1~8·운영 worker 배포와 실제 URL smoke·YOUTH 데이터 정리 완료 | silent under-extraction 차단, review/trust/evidence/repair, Generic→Cafe24 adapter와 fixture differential | [progress](lookbook-extraction-learning-loop/progress.md), [qa](lookbook-extraction-learning-loop/qa-checklist.md) |
 | `chat-route-lifecycle-hardening` | 완료·Phase 6~9 자동 회귀와 Simulator/실기기 QA 완료 | 탭별 Chat stack, same-stack 교체, stack별 request 경쟁, terminal/transient lifecycle, UIKit edge-pop과 Chat gesture 책임 정리 | [progress](chat-route-lifecycle-hardening/progress.md), [qa](chat-route-lifecycle-hardening/qa-checklist.md) |
 | `socket-ingress-ordering-hardening` | 완료·Phase 1~6 자동 회귀와 실제 Firebase/Simulator QA 완료 | 순차 ingress, visible strict recovery, bounded Banner, reconnect/route lifecycle, 대규모 unread catch-up과 visible read frontier | [progress](socket-ingress-ordering-hardening/progress.md), [qa](socket-ingress-ordering-hardening/qa-checklist.md), [Phase 6](socket-ingress-ordering-hardening/phase-6-unread-catch-up-read-frontier.md) |
@@ -92,7 +91,7 @@
 ## 검증 기준
 
 - Functions: `cd functions && npm test && npm run lint && npm run build`
-- iOS: `xcodebuild -scheme OutPick -destination 'generic/platform=iOS Simulator' build`
+- iOS: `OutPick-Development` 또는 `OutPick-Production` scheme과 대응 configuration을 명시해 build
 - Firestore: 관련 workflow에 따라 rules/index dry-run 후 승인된 범위만 배포
 - 데이터 삭제/운영 배포: 사용자 명시 승인 필요
 

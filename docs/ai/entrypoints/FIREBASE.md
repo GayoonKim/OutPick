@@ -16,6 +16,17 @@ Firebase 변경 시 Functions, Firestore, Storage의 실제 경계를 찾기 위
 - 장기 기술 결정은 `docs/ai/ADR.md`, 데이터 계약은 `docs/ai/DATA_SCHEMA.md`를 확인한다.
 - 데이터 삭제, rules 완화, 운영 배포 범위가 모호하면 구현/배포를 멈추고 사용자와 논의한다.
 
+## iOS 환경별 Firebase 설정
+
+- Development/Production 실제 plist는 각각 `LocalSecrets/Firebase/Development/GoogleService-Info.plist`, `LocalSecrets/Firebase/Production/GoogleService-Info.plist`에 보관하며 Git에서 제외한다.
+- `Configurations/Development.xcconfig`는 `GayoonKim.OutPick.dev`와 `outpick-test`, `Configurations/Production.xcconfig`는 `GayoonKim.OutPick`과 `outpick-664ae`를 기대값으로 제공한다.
+- `scripts/build/validate-and-copy-firebase-config.sh`는 선택된 plist의 `BUNDLE_ID`, `PROJECT_ID`, Google `CLIENT_ID/REVERSED_CLIENT_ID`를 build setting과 대조하고, 잘못된 조합이면 Firebase 초기화 전에 빌드를 실패시킨다.
+- 검증 fixture와 negative test는 `scripts/build/fixtures/GoogleService-Info-Fixture.plist`, `scripts/build/test-validate-and-copy-firebase-config.sh`다. fixture는 실제 credential이 아닌 테스트 전용 값만 포함한다.
+- build phase가 검증을 통과한 단일 plist만 앱 번들의 `GoogleService-Info.plist`로 복사한다. 소스 트리의 plist를 target resource로 직접 포함하지 않는다.
+- Development 실제 양성 빌드는 Firebase Console에 `GayoonKim.OutPick.dev` 앱을 등록하고 발급받은 plist를 설치한 뒤 수행한다. 콘솔 등록은 외부 상태 변경이므로 사용자 명시 요청 후 진행한다.
+- runtime 검증은 `OutPick/App/Firebase/AppRuntimeConfiguration.swift`, 초기화는 `OutPick/App/AppDelegate.swift`가 담당한다. 기본 Firebase app은 검증된 plist로만 명시 구성한다.
+- 실제 Firebase UI test override 기본 경로도 `LocalSecrets/Firebase/Development/GoogleService-Info.plist`를 사용해 Development Bundle ID와 test project 조합을 유지한다.
+
 ## Functions 코드 지도
 
 `functions/src/index.ts`는 현재 63개 배포 이름의 명시적 flat re-export만 가진다. 실제 handler와 helper는 아래 기능 module에서 찾는다.
@@ -26,7 +37,7 @@ Phase 6 전체 회귀와 운영 배포는 `docs/ai/tasks/core-infrastructure-mod
 
 | 변경 목적 | 검색할 함수/파일 |
 | --- | --- |
-| 인증 | `functions/src/auth/functions.ts`, `kakaoService.ts` |
+| 인증 | `functions/src/auth/functions.ts`, `kakaoService.ts`, `runtime.ts` |
 | 총 관리자·브랜드 권한 | `functions/src/shared/brandAuthorization.ts` |
 | 브랜드 요청 | `functions/src/brand/requests/functions.ts` |
 | 브랜드 관리 | `functions/src/brand/admin/functions.ts`, `shared/brandValidation.ts` |
@@ -54,6 +65,17 @@ npm run build
 
 운영 배포는 사용자 승인 후 workflow가 지정한 명령을 사용한다.
 
+### 환경별 Kakao custom-token runtime
+
+- `exchangeKakaoToken`의 handler와 runtime option은 `functions/src/auth/functions.ts`, Kakao 검증·Firebase custom-token 계약은 `kakaoService.ts`에서 찾는다.
+- 전용 service account Functions parameter와 fail-fast 검증은 `functions/src/auth/runtime.ts`, 회귀 테스트는 `runtime.test.ts`다.
+- Development runtime identity는 `outpick-auth-functions-dev@outpick-test.iam.gserviceaccount.com`, Production runtime identity는 `outpick-auth-functions-prod@outpick-664ae.iam.gserviceaccount.com`이며 이 함수 하나에만 연결한다.
+- Token Creator는 project-level binding이 아니라 service account 자기 리소스에 대한 `roles/iam.serviceAccountTokenCreator` binding만 사용한다.
+- 로컬 배포값 `OUTPICK_AUTH_FUNCTIONS_SERVICE_ACCOUNT_EMAIL`은 Git 제외 파일 `functions/.env.{project-id}`에 두며 parameter validation이 승인된 환경별 계정 외 값을 거부한다.
+- Development 배포·검증 명령은 `firebase deploy --only functions:exchangeKakaoToken --project outpick-test`와 `gcloud functions describe exchangeKakaoToken --gen2 --region asia-northeast3 --project outpick-test`다.
+- Production은 `firebase deploy --only functions:exchangeKakaoToken --project outpick-664ae --dry-run --non-interactive`로 사전 검증하고 사용자 명시 승인 후 실제 배포한다. 2026-08-03 revision `exchangekakaotoken-00042-geb`부터 Production 전용 identity를 사용한다.
+- Simulator App Check debug token은 Firebase App Check API에 등록하되 원문을 Git, 하네스, 자동 runtime log에 기록하지 않는다. 재설치로 token이 바뀌면 기존 token을 폐기하고 새 token을 등록한다.
+
 ## 스타일 무드
 
 - callable: `createStyleMood`, `updateStyleMood`, `updateSeasonMoods`.
@@ -73,6 +95,10 @@ npm run build
   - `updateStyleMood` revision `updatestylemood-00001-vuv`: `ACTIVE`
   - seed hash `3a83ea71f06ce096672021e06e6112593a974fa0901bf35e6088651f63b40177`
   - 사후 dry-run은 create/update/upsert/delete 0건이다.
+- 2026-08-03 `outpick-test`에도 동일 v1 seed를 적용했다.
+  - 무드 56개, `styleMoodTermIndex` 137개, metadata version 1/count 56
+  - content hash `3a83ea71f06ce096672021e06e6112593a974fa0901bf35e6088651f63b40177`
+  - 사후 dry-run create/update/upsert/delete 0건, 실제 Kakao 신규 사용자 온보딩 완료 확인
 
 ## 계정과 공개 프로필
 
@@ -124,6 +150,14 @@ npm run build
   - 계정 삭제 callable 4개와 hourly finalizer 배포
   - 공식 App Check Debug Token API로 현재 iOS Simulator token 등록
   - Debug Token 원문은 저장소·하네스·채팅에 기록하지 않는다.
+
+## Development Socket runtime
+
+- `outpick-test` Cloud Run `outpick-socket-development`는 전용 service account로 Firebase Admin ADC를 사용한다.
+- Storage bucket은 `OUTPICK_FIREBASE_STORAGE_BUCKET=outpick-test.firebasestorage.app`으로 명시하며 운영 bucket 기본값 사용을 금지한다.
+- service account의 Storage 객체 권한은 Development bucket 하나에만 부여한다.
+- Cloud Run transport는 iOS 접속을 허용하지만 Socket.IO handshake에서 Development Firebase ID Token과 active account를 검증한다.
+- Socket 전용 App Check 검증은 아직 없으며 별도 보안 강화 후보다.
 
 ## 브랜드 권한과 요청
 
@@ -217,6 +251,7 @@ npm run build
 | 후보 discovery/parser | `functions/src/lookbook/import/seasonCandidateDiscovery.ts`, `seasonCandidateParser.ts` |
 | Cloud Run package | `tools/lookbook-import-worker/` |
 | HTTP server | `tools/lookbook-import-worker/src/server.ts` |
+| Cloud Run IAM·경로별 OIDC 검증 | `tools/lookbook-import-worker/src/oidc-auth.ts`, `config.ts` |
 | 시즌 discovery | `tools/lookbook-import-worker/src/season-discovery.ts` |
 | import 처리 | `tools/lookbook-import-worker/src/processor.ts` |
 | extraction 결과·candidate evidence 계약 | `tools/lookbook-import-worker/src/extraction/core.ts` |
@@ -260,6 +295,9 @@ npm run build
 - extractor `1.2.3`은 script 전체의 `total`을 모으지 않고 현재 HTML에 존재하는 gallery element ID와 같은 config block만 declared evidence로 사용한다. programmatic gallery 밖 정적 후보 수도 별도 scoped evidence로 더해 YOUTH Spring 2nd `45+1=46`, Summer `42+7=49`를 표현한다.
 - extractor `1.2.3` worker `lookbook-import-worker-00022-5gn`은 Ready/Active·traffic 100%, container healthy 2.05초, recent ERROR 0건이며 queue는 RUNNING/pending 0건이다. rollback revision은 `lookbook-import-worker-00021-ghs`다.
 - 2026-07-28 Phase 5 시즌 기본 `moodIDs: []` materialization을 포함한 worker `lookbook-import-worker-00023-879`을 운영 배포했다. Ready/traffic 100%, container healthy 1.88초, recent ERROR 0건과 queue task 0건을 확인했으며 rollback revision은 `lookbook-import-worker-00022-5gn`이다.
+- 2026-08-01 Development 전용 worker `lookbook-import-worker-development-00003-5kc`를 `outpick-test`에 배포하고 worker 의존 Functions 15개를 연결했다. Cloud Run은 비공개 IAM으로 task service account만 직접 호출할 수 있고, worker가 Google OIDC의 서명·만료·issuer·audience·검증된 email을 다시 확인한다. `/tasks/import-job`은 task service account, `/wake`와 `/tasks/discover-seasons-diagnostic`은 Functions runtime service account만 허용한다. `/readyz` Cloud Tasks OIDC 200, task identity의 빈 import payload 500, Functions identity의 빈 diagnostic payload 500, Functions identity의 import 경로 403으로 transport·앱 인증·경로 분리를 확인했다.
+- 2026-08-03 W3C 전용 sample로 실제 trigger → Cloud Tasks → worker → review → materialization smoke를 완료했다. job은 `succeeded`, post 5개, asset 6/6 `ready`, worker ERROR 0건이었고 smoke 브랜드·Storage 12개·evidence/issue cluster는 검증 후 삭제해 잔존 0건을 확인했다.
+- Development worker 배포에는 `OUTPICK_IMPORT_OIDC_AUDIENCE`, `OUTPICK_IMPORT_TASKS_SERVICE_ACCOUNT_EMAIL`, `OUTPICK_IMPORT_FUNCTIONS_SERVICE_ACCOUNT_EMAIL`이 필수다. Production에 같은 소스를 배포할 때는 Production URL과 service account를 별도로 주입해야 하며 Development 값을 재사용하지 않는다.
 - 운영 bucket에는 2026-07-23 확인 기준 lifecycle rule이 없다. 기존 미디어에 영향을 주는 bucket 전역 정책 대신 위 scheduler를 사용한다.
 
 ## Firestore
@@ -309,8 +347,9 @@ git diff --check -- firebase.json storage.rules
 ## 브랜드·채팅 개발 데이터 선택 초기화
 
 - 순수 삭제 범위·project/hash/apply gate: `functions/src/developmentReset/brandChatManifest.ts`
-- 읽기 전용 manifest: `npm run audit:brand-chat-reset -- --project outpick-664ae`
-- 실제 삭제: `npm run reset:brand-chat-data -- --apply --project outpick-664ae --confirmation-hash HASH`
+- 읽기 전용 manifest: `npm run audit:brand-chat-reset -- --project outpick-test`
+- 실제 삭제: `npm run reset:brand-chat-data -- --apply --project outpick-test --confirmation-hash HASH`
+- reset gate는 `outpick-test`와 `outpick-test.firebasestorage.app`만 허용하며 운영 project `outpick-664ae`는 테스트로 명시적으로 거부한다.
 - Auth, 사용자 계정/공개 프로필/관심 스타일, 총 관리자, 스타일 무드는 보존한다.
 - 브랜드·룩북·채팅 root/하위 문서와 관련 Storage/user projection만 삭제한다.
 - 실제 삭제는 미분류 root collection 0개, queue `PAUSED`, task 0개, 최신 hash와 별도 사용자 승인을 모두 요구한다.

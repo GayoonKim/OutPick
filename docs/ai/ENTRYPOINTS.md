@@ -9,6 +9,7 @@
 ## 공통 진입점
 
 - 앱 시작/루트 라우팅: `OutPick/App/AppCoordinator.swift`
+- iOS Development/Production 빌드 환경: `Configurations/` → `OutPick.xcodeproj/xcshareddata/xcschemes/` → `scripts/build/validate-and-copy-firebase-config.sh` → `OutPick/Info.plist`
 - Scene 연결/초기 DI와 bootstrap 실패 복구: `OutPick/App/SceneDelegate.swift`, `OutPick/App/Bootstrap/`
 - 탭 조립: `OutPick/App/TabBarController/Composition`
 - 기능 코드: `OutPick/Features`
@@ -23,6 +24,7 @@
 - Firebase Functions flat export: `functions/src/index.ts`
 - Firebase Functions 공통 runtime/callable: `functions/src/core/`
 - Firebase Functions 기능 구현: `functions/src/{auth,brand,chat,lookbook,profile,styleMoods}/`
+- Kakao custom-token 함수·전용 runtime identity: `functions/src/auth/{functions,kakaoService,runtime}.ts`
 - 계정·공개 프로필 서버 경계: `functions/src/profile/`, `functions/src/shared/accountStatus.ts`
 - 계정 삭제 서버 상태 머신·정리 worker: `functions/src/accountDeletion/` → `firestore.rules`/`storage.rules`/`firestore.indexes.json`
 - 계정 삭제 Socket 차단: `Socket/src/users/userLookup.js` → `Socket/src/auth/socketAuthMiddleware.js` → `Socket/src/handlers/connectionHandlers.js`
@@ -37,12 +39,13 @@
 - iOS 마이페이지 프로필·관심 스타일 편집: `MyPageCompositionRoot.swift` → `MyPageCoordinator.swift` → `ProfileEditViewController.swift` / `StylePreferenceEditViewController.swift` → `UpdatePublicProfileUseCase.swift` / `UpdateStylePreferencesUseCase.swift`
 - iOS 일반 사용자 브랜드 요청·내역: `LookbookHomeView.swift` 검색 빈 결과 → `BrandRequestView.swift` → 제출 후 `MyBrandRequestsView.swift`; 재진입은 `MyPageViewController.swift`의 `ACTIVITY` → `MyPageCoordinator.swift` → `DefaultAppContentRouter.openMyBrandRequests()`
 - iOS 계정 삭제·취소·로컬 scrub: `MyPageCoordinator.swift` → `AccountDeletionConfirmationViewController.swift` / `AccountDeletionPendingViewController.swift` → `RequestAccountDeletionUseCase.swift` / `CancelAccountDeletionUseCase.swift` → `AccountDeletionReceiptStore.swift` / `AccountDeletionLocalDataScrubber.swift` → `AppCoordinator.swift`
-- iOS App Check: `AppDelegate.configureFirebaseApp()` → `OutPickAppCheckProviderFactory.swift` → Simulator Debug Provider / 실기기 App Attest → `OutPick.entitlements`
+- iOS 환경/Firebase bootstrap: `AppRuntimeConfiguration.swift` → `AppDelegate.configureFirebaseApp(runtimeConfiguration:)` → `OutPickAppCheckProviderFactory.swift` → Simulator Debug Provider / 실기기 App Attest → `OutPick.entitlements`
 - 계정 삭제 provider 재인증: `DefaultSocialAuthRepository.swift` → Google pending sign-in/동일 세션 reauthenticate 또는 Kakao 강제 login prompt → callable
 - iOS 관심 스타일 브랜드 홈·전체 보기: `CurrentUserStylePreferenceStore.swift` → `LoadInterestedStyleBrandsUseCase.swift` → `LookbookHomeViewModel.swift` / `InterestedStyleBrandListViewModel.swift` → `LookbookCoordinator.swift`
 - iOS 좋아요 에디토리얼 화면·독립 섹션 상태: `LikedView.swift` → `LikedBrandCardView.swift` / `LikedSeasonCardView.swift` / `LikedPostCardView.swift` → `LikedViewModel.swift` → `LookbookCoordinator.swift`
 - iOS 브랜드 생성·로고 업로드 재시도: `CreateBrandView.swift` → `CreateBrandViewModel.saveBrand()` → `CloudFunctionsBrandStore.createBrand/updateLogoPaths` + `LookbookStorageService` → `CreateBrandFlowView`
 - Lookbook import extraction core/evidence/version: `tools/lookbook-import-worker/src/extraction/`, `processor.ts`, `season-discovery.ts`
+- Lookbook import worker HTTP/OIDC 경계: `tools/lookbook-import-worker/src/server.ts`, `config.ts`, `oidc-auth.ts`
 - Lookbook extraction adapter registry: `tools/lookbook-import-worker/src/extraction/adapters/{registry,cafe24,types}.ts`
 - Lookbook extraction review/trust/resume: worker `src/extraction/review.ts`, Functions `src/lookbook/import/{functions,reviewContract}.ts`, iOS `LookbookExtractionReview*`
 - Lookbook extraction count-based review gate/UI: worker `src/extraction/{quality,review}.ts`, iOS `LookbookExtractionReview.swift`, `LookbookExtractionReviewViewModel.swift`, `LookbookExtractionReviewView.swift`

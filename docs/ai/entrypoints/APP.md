@@ -1,5 +1,20 @@
 # App Entrypoints
 
+## Development/Production 빌드 환경
+
+- 공유 scheme: `OutPick.xcodeproj/xcshareddata/xcschemes/OutPick-{Development,Production}.xcscheme`.
+- Build Configuration: `Development-Debug`, `Development-Release`, `Production-Debug`, `Production-Release`.
+- 공통·환경별 설정: `Configurations/Base.xcconfig`, `Configurations/Development.xcconfig`, `Configurations/Production.xcconfig`.
+- 앱 번들 환경값: `OutPick/Info.plist`의 `OUTPICK_ENVIRONMENT`, `OUTPICK_EXPECTED_FIREBASE_PROJECT_ID`, `OUTPICK_SOCKET_URL`, Google/Kakao callback 설정.
+- runtime source of truth: `OutPick/App/Firebase/AppRuntimeConfiguration.swift`가 Bundle ID, Firebase project, Socket URL, Google callback, Kakao Native App Key와 callback scheme의 환경 정합성을 검증한다.
+- Firebase bootstrap: `OutPick/App/AppDelegate.swift`가 선택된 plist를 명시적으로 읽고 runtime 정합성 확인 후 `FirebaseApp.configure(options:)`를 호출한다.
+- Firebase build gate: `scripts/build/validate-and-copy-firebase-config.sh`가 로컬 plist의 존재 여부와 Bundle ID/Firebase project/Google callback/Socket 조합을 검증한 뒤 앱 번들에 `GoogleService-Info.plist`로 복사한다.
+- 실제 plist는 `LocalSecrets/Firebase/{Development,Production}/GoogleService-Info.plist`에 두며 Git에 커밋하지 않는다.
+- Development는 `GayoonKim.OutPick.dev`·`OutPick DEV`·`outpick-test`, Production은 `GayoonKim.OutPick`·`OutPick`·`outpick-664ae`가 고정 계약이다.
+- Google/Kakao callback은 환경별 xcconfig로 분리한다. Development Kakao Native App Key는 `f5f18b00bc7b163aa5be39fef99e646d`, Production은 기존 키 `a2b20f7bedfb9582147f572ef004d0f0`을 사용하며 URL scheme은 각 키에서 파생된다.
+- Development Socket은 `outpick-test`의 Cloud Run `outpick-socket-development` canonical URL을 사용한다. Production Socket URL과 같아지거나 누락되면 build/runtime에서 실패한다.
+- iOS Socket 선택 진입점은 `RealtimeSocketService.makeSocketURL()`이며 하드코딩 운영 URL이 아니라 검증된 `AppRuntimeConfiguration.socketURL`만 사용한다.
+
 ## 앱 조립과 탭
 
 - AppCompositionRoot: `OutPick/App/AppCompositionRoot.swift`
