@@ -2,7 +2,7 @@
 
 ## 현재 상태
 
-- 현재 진행 중인 핵심 task는 없다. `development-production-environment-separation`은 2026-08-03 Phase 1~4 구현, Development backend 배포, 통합 QA, Production 인증 Function 전용 identity 전환과 실제 Development import smoke·QA 데이터 정리까지 완료 처리했다.
+- 현재 진행 중인 핵심 task는 없다. `development-production-environment-separation`은 2026-08-03 Phase 1~4 구현, Development backend 배포, 통합 QA, Production 인증 Function 전용 identity 전환, 실제 Development import smoke·QA 데이터 정리, PR #3 병합과 Production Worker 배포·smoke까지 완료 처리했다.
 - 이전 핵심 task `style-mood-personalization-account-privacy`의 Phase 1~8은 완료 처리했다. Apple Developer Program 가입 후 App Attest 실기기 QA와 운영 백업 설정은 출시 운영 게이트로 분리하고, 개발 데이터 전체 삭제는 마지막 Phase의 별도 승인 전까지 진행하지 않는다.
 - `lookbook-discovery-learning-loop`는 그다음 핵심 후속 후보로 조정했다. season discovery의 구조 evidence, issue cluster, 관리자 ground truth, 최소 fixture, extractor version gate 범위는 유지하되 별도 논의·승인 전에는 task 문서나 코드를 생성·수정하지 않는다.
 - `socket-ingress-ordering-hardening`은 Phase 1~6 구현, 자동 회귀와 실제 Firebase/Simulator 핵심 QA를 완료하고 2026-07-17 종료했다.
@@ -26,7 +26,7 @@
   - [앱 환경 진입점](../entrypoints/APP.md)
   - [Firebase·worker 환경 진입점](../entrypoints/FIREBASE.md)
   - [PR #3](https://github.com/GayoonKim/OutPick/pull/3)
-  - 상태: Phase 1~4, Production 인증 Function identity 전환, 실제 Development import smoke와 QA 데이터 정리 완료. 실기기 App Attest만 Apple Developer Program 가입 후 외부 의존 후속 작업으로 유지.
+  - 상태: Phase 1~4, Production 인증 Function identity 전환, Development/Production import smoke, PR #3 병합과 Production Worker traffic 전환 완료. 실기기 App Attest만 Apple Developer Program 가입 후 외부 의존 후속 작업으로 유지.
 
 ## 그다음 핵심 후속 후보
 
@@ -38,7 +38,7 @@
 
 | 작업 | 상태 | 핵심 결과 | 상세 |
 | --- | --- | --- | --- |
-| `development-production-environment-separation` | 완료·Phase 1~4·Development backend 및 Production 인증 identity 반영 | 두 scheme/네 configuration, Firebase·Socket fail-fast, `outpick-test` 기능 동등성, 환경별 auth service account | [APP](../entrypoints/APP.md), [FIREBASE](../entrypoints/FIREBASE.md), [PR #3](https://github.com/GayoonKim/OutPick/pull/3) |
+| `development-production-environment-separation` | 완료·PR #3 병합·Production Worker traffic 100% | 두 scheme/네 configuration, Firebase·Socket·Worker fail-fast, 환경별 auth/OIDC identity, Development/Production import smoke | [APP](../entrypoints/APP.md), [FIREBASE](../entrypoints/FIREBASE.md), [PR #3](https://github.com/GayoonKim/OutPick/pull/3) |
 | `lookbook-extraction-learning-loop` | 완료·Phase 1~8·운영 worker 배포와 실제 URL smoke·YOUTH 데이터 정리 완료 | silent under-extraction 차단, review/trust/evidence/repair, Generic→Cafe24 adapter와 fixture differential | [progress](lookbook-extraction-learning-loop/progress.md), [qa](lookbook-extraction-learning-loop/qa-checklist.md) |
 | `chat-route-lifecycle-hardening` | 완료·Phase 6~9 자동 회귀와 Simulator/실기기 QA 완료 | 탭별 Chat stack, same-stack 교체, stack별 request 경쟁, terminal/transient lifecycle, UIKit edge-pop과 Chat gesture 책임 정리 | [progress](chat-route-lifecycle-hardening/progress.md), [qa](chat-route-lifecycle-hardening/qa-checklist.md) |
 | `socket-ingress-ordering-hardening` | 완료·Phase 1~6 자동 회귀와 실제 Firebase/Simulator QA 완료 | 순차 ingress, visible strict recovery, bounded Banner, reconnect/route lifecycle, 대규모 unread catch-up과 visible read frontier | [progress](socket-ingress-ordering-hardening/progress.md), [qa](socket-ingress-ordering-hardening/qa-checklist.md), [Phase 6](socket-ingress-ordering-hardening/phase-6-unread-catch-up-read-frontier.md) |

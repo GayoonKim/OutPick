@@ -66,6 +66,7 @@ Lookbook import worker tests:
 - `tools/lookbook-import-worker/src/public-http.test.ts`
 - 실행: `cd tools/lookbook-import-worker && npm test` (root와 하위 test 모두 포함, 현재 83/83 통과).
 - fixture gate: `cd tools/lookbook-import-worker && npm run test:fixtures` (외부 fetch 없이 현재 corpus 5/5와 구조화된 differential을 검증).
+- 2026-08-03 Production candidate `lookbook-import-worker-00024-fow`에서 task `/readyz` 200, task 빈 import 500, Functions 빈 diagnostic 500, Functions→import 교차 caller 403을 확인했다. traffic 100% 전환 후 전용 W3C import가 post 5개·asset 6/6 `ready`로 성공했고 ERROR·queue pending·smoke 데이터 잔존은 모두 0건이었다.
 - extraction review Functions contract: `functions/src/lookbook/import/reviewContract.test.ts`, `taskService.test.ts`, `importValidation.test.ts`, `functions/src/index.contract.test.ts`.
 - extraction review iOS targeted tests: `OutPickTests/LookbookExtractionReviewViewModelTests.swift`, `OutPickTests/CloudFunctions/CloudFunctionsSeasonImportRepositoryTests.swift`.
 - existing-season reconcile: worker `src/extraction/reconcile.test.ts`, Functions `repairContract.test.ts`, iOS `LookbookSeasonRepairViewModelTests.swift`와 `CloudFunctionsSeasonImportRepositoryTests.swift`.
