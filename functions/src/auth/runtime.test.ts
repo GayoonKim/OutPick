@@ -1,44 +1,56 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  AUTH_FUNCTIONS_SERVICE_ACCOUNT_EMAIL_PATTERN,
-  authFunctionsServiceAccountEmail,
+  DEVELOPMENT_AUTH_FUNCTIONS_SERVICE_ACCOUNT_EMAIL,
+  DEVELOPMENT_PROJECT_ID,
+  PRODUCTION_AUTH_FUNCTIONS_SERVICE_ACCOUNT_EMAIL,
+  PRODUCTION_PROJECT_ID,
+  authFunctionsServiceAccountEmailForEnvironment,
+  authFunctionsServiceAccountEmailForProject,
 } from "./runtime.js";
 
-const developmentServiceAccount =
-  "outpick-auth-functions-dev@outpick-test.iam.gserviceaccount.com";
-const productionServiceAccount =
-  "outpick-auth-functions-prod@outpick-664ae.iam.gserviceaccount.com";
-
-test("인증 Function parameter 이름을 고정한다", () => {
+test("Firebase project별 인증 Function 계정을 정확히 선택한다", () => {
   assert.equal(
-    authFunctionsServiceAccountEmail.name,
-    "OUTPICK_AUTH_FUNCTIONS_SERVICE_ACCOUNT_EMAIL"
+    authFunctionsServiceAccountEmailForProject(DEVELOPMENT_PROJECT_ID),
+    DEVELOPMENT_AUTH_FUNCTIONS_SERVICE_ACCOUNT_EMAIL
+  );
+  assert.equal(
+    authFunctionsServiceAccountEmailForProject(PRODUCTION_PROJECT_ID),
+    PRODUCTION_AUTH_FUNCTIONS_SERVICE_ACCOUNT_EMAIL
   );
 });
 
-test("Development와 Production 전용 인증 계정만 허용한다", () => {
-  assert.match(
-    developmentServiceAccount,
-    AUTH_FUNCTIONS_SERVICE_ACCOUNT_EMAIL_PATTERN
-  );
-  assert.match(
-    productionServiceAccount,
-    AUTH_FUNCTIONS_SERVICE_ACCOUNT_EMAIL_PATTERN
+test("지원하지 않는 project는 인증 Function 계정을 선택하지 않는다", () => {
+  assert.throws(
+    () => authFunctionsServiceAccountEmailForProject("other-project"),
+    /지원하지 않는 Firebase project/
   );
 });
 
-test("형식만 맞거나 환경이 교차된 인증 계정은 거부한다", () => {
-  assert.doesNotMatch(
-    "outpick-auth-functions-dev@outpick-664ae.iam.gserviceaccount.com",
-    AUTH_FUNCTIONS_SERVICE_ACCOUNT_EMAIL_PATTERN
+test("배포 환경은 Firebase CLI가 제공한 project로 계정을 선택한다", () => {
+  assert.equal(
+    authFunctionsServiceAccountEmailForEnvironment({
+      GCLOUD_PROJECT: DEVELOPMENT_PROJECT_ID,
+    }),
+    DEVELOPMENT_AUTH_FUNCTIONS_SERVICE_ACCOUNT_EMAIL
   );
-  assert.doesNotMatch(
-    "other-auth-functions@outpick-test.iam.gserviceaccount.com",
-    AUTH_FUNCTIONS_SERVICE_ACCOUNT_EMAIL_PATTERN
+  assert.equal(
+    authFunctionsServiceAccountEmailForEnvironment({
+      GOOGLE_CLOUD_PROJECT: PRODUCTION_PROJECT_ID,
+    }),
+    PRODUCTION_AUTH_FUNCTIONS_SERVICE_ACCOUNT_EMAIL
   );
-  assert.doesNotMatch(
-    "not-an-email",
-    AUTH_FUNCTIONS_SERVICE_ACCOUNT_EMAIL_PATTERN
+});
+
+test("배포 project가 누락되거나 미지원이면 fail closed한다", () => {
+  assert.throws(
+    () => authFunctionsServiceAccountEmailForEnvironment({}),
+    /Google Cloud project ID/
+  );
+  assert.throws(
+    () => authFunctionsServiceAccountEmailForEnvironment({
+      GCLOUD_PROJECT: "other-project",
+    }),
+    /지원하지 않는 Firebase project/
   );
 });

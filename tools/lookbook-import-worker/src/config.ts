@@ -8,8 +8,33 @@ export interface WorkerConfig {
   functionsServiceAccountEmail: string;
 }
 
+type WorkerEnvironmentContract = Pick<
+  WorkerConfig,
+  "oidcAudience" | "taskServiceAccountEmail" | "functionsServiceAccountEmail"
+>;
+
+const workerEnvironmentContracts: Record<string, WorkerEnvironmentContract> = {
+  "outpick-test": {
+    oidcAudience:
+      "https://lookbook-import-worker-development-xyenspjiwa-du.a.run.app",
+    taskServiceAccountEmail:
+      "outpick-lookbook-task-dev@outpick-test.iam.gserviceaccount.com",
+    functionsServiceAccountEmail:
+      "86635107099-compute@developer.gserviceaccount.com",
+  },
+  "outpick-664ae": {
+    oidcAudience:
+      "https://lookbook-import-worker-715386497547.asia-northeast3.run.app",
+    taskServiceAccountEmail:
+      "lookbook-import-task-invoker@outpick-664ae.iam.gserviceaccount.com",
+    functionsServiceAccountEmail:
+      "715386497547-compute@developer.gserviceaccount.com",
+  },
+};
+
 export function loadConfig(env: NodeJS.ProcessEnv): WorkerConfig {
   const projectID = requiredEnv(env, "OUTPICK_FIREBASE_PROJECT_ID");
+  const environmentContract = requiredEnvironmentContract(projectID);
   const storageBucket =
     optionalEnv(env, "OUTPICK_FIREBASE_STORAGE_BUCKET") ??
     `${projectID}.appspot.com`;
@@ -21,16 +46,25 @@ export function loadConfig(env: NodeJS.ProcessEnv): WorkerConfig {
     1,
     8,
   );
-  const oidcAudience = requiredURL(
-    env,
+  const oidcAudience = requiredExactValue(
+    requiredURL(env, "OUTPICK_IMPORT_OIDC_AUDIENCE"),
+    environmentContract.oidcAudience,
     "OUTPICK_IMPORT_OIDC_AUDIENCE",
   );
-  const taskServiceAccountEmail = requiredServiceAccountEmail(
-    env,
+  const taskServiceAccountEmail = requiredExactValue(
+    requiredServiceAccountEmail(
+      env,
+      "OUTPICK_IMPORT_TASKS_SERVICE_ACCOUNT_EMAIL",
+    ),
+    environmentContract.taskServiceAccountEmail,
     "OUTPICK_IMPORT_TASKS_SERVICE_ACCOUNT_EMAIL",
   );
-  const functionsServiceAccountEmail = requiredServiceAccountEmail(
-    env,
+  const functionsServiceAccountEmail = requiredExactValue(
+    requiredServiceAccountEmail(
+      env,
+      "OUTPICK_IMPORT_FUNCTIONS_SERVICE_ACCOUNT_EMAIL",
+    ),
+    environmentContract.functionsServiceAccountEmail,
     "OUTPICK_IMPORT_FUNCTIONS_SERVICE_ACCOUNT_EMAIL",
   );
 
@@ -43,6 +77,29 @@ export function loadConfig(env: NodeJS.ProcessEnv): WorkerConfig {
     taskServiceAccountEmail,
     functionsServiceAccountEmail,
   };
+}
+
+function requiredEnvironmentContract(
+  projectID: string,
+): WorkerEnvironmentContract {
+  const contract = workerEnvironmentContracts[projectID];
+  if (!contract) {
+    throw new Error(
+      `지원하지 않는 OUTPICK_FIREBASE_PROJECT_ID입니다: ${projectID}`,
+    );
+  }
+  return contract;
+}
+
+function requiredExactValue(
+  value: string,
+  expectedValue: string,
+  key: string,
+): string {
+  if (value !== expectedValue) {
+    throw new Error(`${key} 환경 변수가 Firebase project와 일치하지 않습니다.`);
+  }
+  return value;
 }
 
 function requiredEnv(env: NodeJS.ProcessEnv, key: string): string {
