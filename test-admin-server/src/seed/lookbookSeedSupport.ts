@@ -55,6 +55,8 @@ export function userProfileDocument(
   nickname: string
 ): Record<string, unknown> {
   return {
+    accountStatus: "active",
+    accountGenerationID: `uitest-generation:${email}`,
     deviceID: "",
     email,
     gender: "",

@@ -4,9 +4,13 @@ import {recordData, requiredString} from "../core/callable.js";
 import {firebaseAuth} from "../core/firebase.js";
 import {FUNCTIONS_REGION} from "../core/runtime.js";
 import {exchangeKakaoAccessToken} from "./kakaoService.js";
+import {authFunctionsServiceAccountEmail} from "./runtime.js";
 
 export const exchangeKakaoToken = onCall(
-  {region: FUNCTIONS_REGION},
+  {
+    region: FUNCTIONS_REGION,
+    serviceAccount: authFunctionsServiceAccountEmail,
+  },
   async (request) => {
     try {
       const data = recordData(request.data);

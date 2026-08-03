@@ -1,9 +1,9 @@
 /* eslint-disable require-jsdoc */
 import {createHash} from "node:crypto";
 
-export const EXPECTED_DEVELOPMENT_PROJECT_ID = "outpick-664ae";
+export const EXPECTED_DEVELOPMENT_PROJECT_ID = "outpick-test";
 export const EXPECTED_DEVELOPMENT_STORAGE_BUCKET =
-  "outpick-664ae.appspot.com";
+  "outpick-test.firebasestorage.app";
 export const LOOKBOOK_IMPORT_QUEUE_LOCATION = "asia-northeast3";
 export const LOOKBOOK_IMPORT_QUEUE_ID = "lookbook-import-jobs";
 
