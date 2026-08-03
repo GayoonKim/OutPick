@@ -1,12 +1,17 @@
 /* eslint-disable require-jsdoc, max-len */
 import assert from "node:assert/strict";
 import test from "node:test";
-import * as exportedFunctions from "./index.js";
+import {DEVELOPMENT_AUTH_FUNCTIONS_SERVICE_ACCOUNT_EMAIL} from "./auth/runtime.js";
+
+process.env.GCLOUD_PROJECT ??= "outpick-test";
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const exportedFunctions = require("./index.js") as typeof import("./index.js");
 
 type Endpoint = {
   availableMemoryMb?: number | null;
   timeoutSeconds?: number | null;
   maxInstances?: number | null;
+  serviceAccountEmail?: string;
   region?: string[];
   callableTrigger?: Record<string, unknown>;
   eventTrigger?: {
@@ -181,6 +186,11 @@ test("callable runtime metadata를 유지한다", () => {
     assert.equal(runtimeNumber(value.timeoutSeconds), runtimeNumber(override?.timeoutSeconds), `${name} timeout`);
     assert.equal(runtimeNumber(value.availableMemoryMb), runtimeNumber(override?.availableMemoryMb), `${name} memory`);
   }
+
+  assert.equal(
+    endpoint("exchangeKakaoToken").serviceAccountEmail,
+    DEVELOPMENT_AUTH_FUNCTIONS_SERVICE_ACCOUNT_EMAIL
+  );
 });
 
 test("Firestore trigger metadata를 유지한다", () => {

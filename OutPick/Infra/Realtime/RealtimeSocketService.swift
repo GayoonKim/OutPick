@@ -57,7 +57,7 @@ extension SocketSessionIdentity {
             nickname: currentUserProvider.nickname ?? "",
             avatarPath: currentUserProvider.avatarPath,
             clientKey: makeClientKey(),
-            socketURL: RealtimeSocketService.makeSocketURL(),
+            socketURL: try RealtimeSocketService.makeSocketURL(),
             idToken: idToken
         )
     }
@@ -137,25 +137,12 @@ private enum SocketIdentityError: LocalizedError {
 
 #if DEBUG
 struct SocketDebugQAConfiguration: Sendable {
-    static let socketURLKey = "OUTPICK_DEBUG_SOCKET_URL"
     static let dropFirstMessageAckKindKey = "OUTPICK_DEBUG_DROP_FIRST_MESSAGE_ACK_KIND"
 
     private let environment: [String: String]
 
     init(environment: [String: String] = ProcessInfo.processInfo.environment) {
         self.environment = environment
-    }
-
-    func socketURL(productionURL: URL) -> URL {
-        guard let rawValue = environment[Self.socketURLKey]?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !rawValue.isEmpty,
-              let url = URL(string: rawValue),
-              let scheme = url.scheme?.lowercased(),
-              ["http", "https"].contains(scheme),
-              url.host != nil else {
-            return productionURL
-        }
-        return url
     }
 
     func shouldDropFirstMessageAck(kind: String) -> Bool {
@@ -656,8 +643,6 @@ actor RealtimeSocketService {
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return f
     }()
-    private static let productionSocketURL = URL(string: "https://outpick-socket-2w7zhxurhq-du.a.run.app")!
-
     init(
         gapRecoveryLoader: ChatRealtimeGapRecoveryLoading,
         orderingClock: RealtimeOrderingClock = LiveRealtimeOrderingClock(),
@@ -671,12 +656,8 @@ actor RealtimeSocketService {
         startPathMonitor()
     }
 
-    nonisolated static func makeSocketURL() -> URL {
-        #if DEBUG
-        return SocketDebugQAConfiguration().socketURL(productionURL: productionSocketURL)
-        #else
-        productionSocketURL
-        #endif
+    nonisolated static func makeSocketURL() throws -> URL {
+        try AppRuntimeConfiguration.load().socketURL
     }
 
     func isConnected() -> Bool {

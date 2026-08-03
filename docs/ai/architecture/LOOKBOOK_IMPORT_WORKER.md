@@ -68,6 +68,17 @@ Cloud Run worker:
 - HTTP server scaffold는 Express를 사용한다.
 - Cloud Run의 외부 endpoint는 HTTPS로 노출되고, 컨테이너 내부 Express server는 `process.env.PORT`에서 plain HTTP로 listen한다.
 
+## 호출 인증 경계
+
+- Cloud Run transport는 `allUsers`를 허용하지 않는 비공개 IAM을 기본으로 하고 Cloud Tasks 호출 service account에만 `roles/run.invoker`를 부여한다.
+- worker는 Google OIDC ID token을 애플리케이션 계층에서도 검증한다. `google-auth-library`가 서명, 만료, Google issuer, 정확한 audience를 검증하고 worker가 `email_verified`와 경로별 service account email을 추가 확인한다.
+- `/tasks/import-job`은 Cloud Tasks service account만 허용하고, `/wake`와 `/tasks/discover-seasons-diagnostic`은 Firebase Functions runtime service account만 허용한다.
+- `/healthz`와 `/readyz`는 worker 내부 인증 middleware를 거치지 않지만 Cloud Run IAM 경계는 그대로 적용된다. 현재 Development smoke 기준으로 Cloud Tasks OIDC를 사용한 `/readyz`가 컨테이너까지 도달해 200을 반환한다.
+- 필수 환경값은 `OUTPICK_FIREBASE_STORAGE_BUCKET`, `OUTPICK_IMPORT_OIDC_AUDIENCE`, `OUTPICK_IMPORT_TASKS_SERVICE_ACCOUNT_EMAIL`, `OUTPICK_IMPORT_FUNCTIONS_SERVICE_ACCOUNT_EMAIL`이다. 누락·형식뿐 아니라 `OUTPICK_FIREBASE_PROJECT_ID`별 canonical Storage bucket·audience·task 계정·Functions 계정과 다르면 시작 전에 실패한다.
+- Development와 Production은 Storage bucket, URL, audience, task identity, Functions identity를 각각 별도 주입한다. 환경 간 fallback은 허용하지 않는다.
+- 환경별 배포값은 `scripts/ai/deploy-lookbook-import-worker.sh`가 단일 매핑으로 소유한다. 기본 `--plan`은 외부 상태를 바꾸지 않고, `--deploy-candidate`도 `--no-traffic` revision만 생성한다. candidate 검증·traffic 전환·rollback은 `docs/ai/runbooks/LOOKBOOK_IMPORT_WORKER_DEPLOYMENT.md`를 따른다.
+- 2026-08-03 Development 실제 smoke에서 Firestore trigger → Cloud Tasks → worker parsing → `awaitingReview` → 승인된 snapshot의 materialization → Storage asset sync가 통과했다. 전용 smoke 데이터와 evidence는 검증 후 모두 삭제했다.
+
 ## 권장 흐름
 
 ```text

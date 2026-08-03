@@ -3,13 +3,48 @@ export interface WorkerConfig {
   storageBucket: string;
   port: number;
   assetSyncConcurrency: number;
+  oidcAudience: string;
+  taskServiceAccountEmail: string;
+  functionsServiceAccountEmail: string;
 }
+
+type WorkerEnvironmentContract = Pick<
+  WorkerConfig,
+  | "storageBucket"
+  | "oidcAudience"
+  | "taskServiceAccountEmail"
+  | "functionsServiceAccountEmail"
+>;
+
+const workerEnvironmentContracts: Record<string, WorkerEnvironmentContract> = {
+  "outpick-test": {
+    storageBucket: "outpick-test.firebasestorage.app",
+    oidcAudience:
+      "https://lookbook-import-worker-development-xyenspjiwa-du.a.run.app",
+    taskServiceAccountEmail:
+      "outpick-lookbook-task-dev@outpick-test.iam.gserviceaccount.com",
+    functionsServiceAccountEmail:
+      "86635107099-compute@developer.gserviceaccount.com",
+  },
+  "outpick-664ae": {
+    storageBucket: "outpick-664ae.appspot.com",
+    oidcAudience:
+      "https://lookbook-import-worker-715386497547.asia-northeast3.run.app",
+    taskServiceAccountEmail:
+      "lookbook-import-task-invoker@outpick-664ae.iam.gserviceaccount.com",
+    functionsServiceAccountEmail:
+      "715386497547-compute@developer.gserviceaccount.com",
+  },
+};
 
 export function loadConfig(env: NodeJS.ProcessEnv): WorkerConfig {
   const projectID = requiredEnv(env, "OUTPICK_FIREBASE_PROJECT_ID");
-  const storageBucket =
-    optionalEnv(env, "OUTPICK_FIREBASE_STORAGE_BUCKET") ??
-    `${projectID}.appspot.com`;
+  const environmentContract = requiredEnvironmentContract(projectID);
+  const storageBucket = requiredExactValue(
+    requiredEnv(env, "OUTPICK_FIREBASE_STORAGE_BUCKET"),
+    environmentContract.storageBucket,
+    "OUTPICK_FIREBASE_STORAGE_BUCKET",
+  );
   const port = parsePort(env.PORT);
   const assetSyncConcurrency = parseBoundedInteger(
     env.OUTPICK_IMPORT_ASSET_SYNC_CONCURRENCY,
@@ -18,13 +53,60 @@ export function loadConfig(env: NodeJS.ProcessEnv): WorkerConfig {
     1,
     8,
   );
+  const oidcAudience = requiredExactValue(
+    requiredURL(env, "OUTPICK_IMPORT_OIDC_AUDIENCE"),
+    environmentContract.oidcAudience,
+    "OUTPICK_IMPORT_OIDC_AUDIENCE",
+  );
+  const taskServiceAccountEmail = requiredExactValue(
+    requiredServiceAccountEmail(
+      env,
+      "OUTPICK_IMPORT_TASKS_SERVICE_ACCOUNT_EMAIL",
+    ),
+    environmentContract.taskServiceAccountEmail,
+    "OUTPICK_IMPORT_TASKS_SERVICE_ACCOUNT_EMAIL",
+  );
+  const functionsServiceAccountEmail = requiredExactValue(
+    requiredServiceAccountEmail(
+      env,
+      "OUTPICK_IMPORT_FUNCTIONS_SERVICE_ACCOUNT_EMAIL",
+    ),
+    environmentContract.functionsServiceAccountEmail,
+    "OUTPICK_IMPORT_FUNCTIONS_SERVICE_ACCOUNT_EMAIL",
+  );
 
   return {
     projectID,
     storageBucket,
     port,
     assetSyncConcurrency,
+    oidcAudience,
+    taskServiceAccountEmail,
+    functionsServiceAccountEmail,
   };
+}
+
+function requiredEnvironmentContract(
+  projectID: string,
+): WorkerEnvironmentContract {
+  const contract = workerEnvironmentContracts[projectID];
+  if (!contract) {
+    throw new Error(
+      `지원하지 않는 OUTPICK_FIREBASE_PROJECT_ID입니다: ${projectID}`,
+    );
+  }
+  return contract;
+}
+
+function requiredExactValue(
+  value: string,
+  expectedValue: string,
+  key: string,
+): string {
+  if (value !== expectedValue) {
+    throw new Error(`${key} 환경 변수가 Firebase project와 일치하지 않습니다.`);
+  }
+  return value;
 }
 
 function requiredEnv(env: NodeJS.ProcessEnv, key: string): string {
@@ -35,9 +117,31 @@ function requiredEnv(env: NodeJS.ProcessEnv, key: string): string {
   return value;
 }
 
-function optionalEnv(env: NodeJS.ProcessEnv, key: string): string | null {
-  const value = env[key]?.trim();
-  return value && value.length > 0 ? value : null;
+function requiredURL(env: NodeJS.ProcessEnv, key: string): string {
+  const value = requiredEnv(env, key).replace(/\/+$/, "");
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`${key} 환경 변수가 올바른 URL이 아닙니다.`);
+  }
+  if (url.protocol !== "https:" || url.origin !== value) {
+    throw new Error(`${key} 환경 변수는 HTTPS origin이어야 합니다.`);
+  }
+  return value;
+}
+
+function requiredServiceAccountEmail(
+  env: NodeJS.ProcessEnv,
+  key: string,
+): string {
+  const value = requiredEnv(env, key).toLowerCase();
+  const serviceAccountPattern =
+    /^[a-z0-9-]+@(?:[a-z0-9-]+\.iam|developer)\.gserviceaccount\.com$/;
+  if (!serviceAccountPattern.test(value)) {
+    throw new Error(`${key} 환경 변수가 서비스 계정 email 형식이 아닙니다.`);
+  }
+  return value;
 }
 
 function parsePort(rawPort: string | undefined): number {

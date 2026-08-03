@@ -181,8 +181,17 @@ Explicit read 진단은 `ChatRoomViewModel.persistExplicitLatestJumpForCurrentUs
 
 ## Socket candidate retry QA
 
-- `RealtimeSocketService.swift`의 `SocketDebugQAConfiguration`은 DEBUG build에서만 launch environment로 Socket URL을 교체한다.
-- `OUTPICK_DEBUG_SOCKET_URL`은 `http`/`https`와 host가 유효할 때만 production URL을 대체한다.
+### Development Socket 환경
+
+- Development Cloud Run: project `outpick-test`, region `asia-northeast3`, service `outpick-socket-development`.
+- canonical URL: `https://outpick-socket-development-xyenspjiwa-du.a.run.app`.
+- runtime identity: `outpick-socket-development@outpick-test.iam.gserviceaccount.com`.
+- Firestore/FCM은 Development project 역할을 사용하고, Storage 객체 권한은 `outpick-test.firebasestorage.app` bucket 하나로 제한한다.
+- iOS 연결값은 `Configurations/Development.xcconfig`의 `OUTPICK_SOCKET_URL`이며 Production endpoint fallback은 금지한다.
+- handshake는 Firebase ID Token, active account, room access, rate limit을 검증한다. Socket 전용 App Check는 후속 강화 후보다.
+
+- iOS Socket URL은 `AppRuntimeConfiguration`이 검증한 환경별 `OUTPICK_SOCKET_URL`만 사용한다. DEBUG launch environment로 URL을 덮어쓰는 경로는 없다.
+- `RealtimeSocketService.swift`의 `SocketDebugQAConfiguration`은 DEBUG build에서 ACK 손실 주입만 담당한다.
 - `OUTPICK_DEBUG_DROP_FIRST_MESSAGE_ACK_KIND`는 `text,lookbook,images,video` 또는 `all`을 받아 message ID별 첫 성공 ACK만 결과 불명 실패로 바꾼다.
 - 2026-07-15 candidate revision `outpick-socket-dedupe0715`은 운영 traffic 0%, tag `dedupe-qa`로 배포했다. 운영 revision `outpick-socket-00006-k8k`는 100%를 유지한다.
 - 실제 text QA에서 서버는 동일 ID retry를 기존 `seq=15`의 duplicate 성공으로 처리하고 Firestore document와 수신 room preview를 한 건으로 유지했다.

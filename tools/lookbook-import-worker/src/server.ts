@@ -1,4 +1,9 @@
-import express, {type Express, type Request, type Response} from "express";
+import express, {
+  type Express,
+  type NextFunction,
+  type Request,
+  type Response,
+} from "express";
 
 import {type FirebaseClients} from "./firebase.js";
 import {
@@ -12,11 +17,19 @@ import {
   type DiscoverSeasonsDiagnosticRequest,
 } from "./season-discovery.js";
 import {isRetryableImportError} from "./import-error.js";
+import {
+  authenticateOIDCRequest,
+  OIDCAuthenticationError,
+  type OIDCTokenVerifier,
+  type WorkerAuthConfig,
+  type WorkerCaller,
+} from "./oidc-auth.js";
 
 interface ServerDependencies {
   projectID: string;
   assetSyncConcurrency: number;
   firebase: FirebaseClients;
+  auth: WorkerAuthConfig & {verifier: OIDCTokenVerifier};
 }
 
 export function createServer(dependencies: ServerDependencies): Express {
@@ -24,7 +37,7 @@ export function createServer(dependencies: ServerDependencies): Express {
   app.disable("x-powered-by");
   app.use(express.json({limit: "64kb"}));
 
-  app.get("/healthz", (_request: Request, response: Response) => {
+  app.get(["/healthz", "/readyz"], (_request: Request, response: Response) => {
     response.status(200).json({
       ok: true,
       service: "lookbook-import-worker",
@@ -32,27 +45,32 @@ export function createServer(dependencies: ServerDependencies): Express {
     });
   });
 
-  app.post("/wake", async (request: Request, response: Response) => {
-    try {
-      const result = await processWakeRequest(
-        {
-          firestore: dependencies.firebase.firestore,
-          storage: dependencies.firebase.storage,
-          assetSyncConcurrency: dependencies.assetSyncConcurrency,
-        },
+  app.post(
+    "/wake",
+    requireCaller("functions", dependencies.auth),
+    async (request: Request, response: Response) => {
+      try {
+        const result = await processWakeRequest(
+          {
+            firestore: dependencies.firebase.firestore,
+            storage: dependencies.firebase.storage,
+            assetSyncConcurrency: dependencies.assetSyncConcurrency,
+          },
         request.body as WakeRequest,
-      );
-      response.status(200).json(result);
-    } catch (error) {
-      response.status(400).json({
-        accepted: false,
-        errorMessage: errorMessage(error),
-      });
-    }
-  });
+        );
+        response.status(200).json(result);
+      } catch (error) {
+        response.status(400).json({
+          accepted: false,
+          errorMessage: errorMessage(error),
+        });
+      }
+    },
+  );
 
   app.post(
     "/tasks/import-job",
+    requireCaller("task", dependencies.auth),
     async (request: Request, response: Response) => {
       try {
         const result = await processImportJobTaskRequest(
@@ -77,6 +95,7 @@ export function createServer(dependencies: ServerDependencies): Express {
 
   app.post(
     "/tasks/discover-seasons-diagnostic",
+    requireCaller("functions", dependencies.auth),
     async (request: Request, response: Response) => {
       try {
         const result = await processDiscoverSeasonsDiagnosticRequest(
@@ -97,6 +116,39 @@ export function createServer(dependencies: ServerDependencies): Express {
   );
 
   return app;
+}
+
+function requireCaller(
+  caller: WorkerCaller,
+  auth: WorkerAuthConfig & {verifier: OIDCTokenVerifier},
+) {
+  return async (
+    request: Request,
+    response: Response,
+    next: NextFunction,
+  ): Promise<void> => {
+    try {
+      await authenticateOIDCRequest(
+        request.header("authorization"),
+        caller,
+        auth,
+        auth.verifier,
+      );
+      next();
+    } catch (error) {
+      if (error instanceof OIDCAuthenticationError) {
+        response.status(error.statusCode).json({
+          accepted: false,
+          errorMessage: error.message,
+        });
+        return;
+      }
+      response.status(401).json({
+        accepted: false,
+        errorMessage: "OIDC 인증에 실패했습니다.",
+      });
+    }
+  };
 }
 
 function errorMessage(error: unknown): string {

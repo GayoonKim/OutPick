@@ -67,6 +67,14 @@ test("apply gate는 정확한 project·hash와 정지된 빈 queue만 허용한�
 
   assert.doesNotThrow(() => assertApplyGate(valid));
   assert.throws(
+    () => assertApplyGate({
+      ...valid,
+      requestedProjectID: "outpick-664ae",
+      initializedProjectID: "outpick-664ae",
+    }),
+    /허용되지 않은 Firebase project/
+  );
+  assert.throws(
     () => assertApplyGate({...valid, queueState: "RUNNING"}),
     /PAUSED/
   );

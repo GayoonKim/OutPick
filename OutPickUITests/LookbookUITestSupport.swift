@@ -61,7 +61,9 @@ enum LookbookUITestSupport {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .appendingPathComponent("LocalSecrets")
-            .appendingPathComponent("GoogleService-Info-Test.plist")
+            .appendingPathComponent("Firebase")
+            .appendingPathComponent("Development")
+            .appendingPathComponent("GoogleService-Info.plist")
             .path
     }
 

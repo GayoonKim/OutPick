@@ -1,0 +1,9 @@
+#include "Base.xcconfig"
+
+OUTPICK_ENVIRONMENT = production
+OUTPICK_PRODUCT_BUNDLE_IDENTIFIER = GayoonKim.OutPick
+OUTPICK_APP_DISPLAY_NAME = OutPick
+OUTPICK_EXPECTED_FIREBASE_PROJECT_ID = outpick-664ae
+OUTPICK_FIREBASE_PLIST_PATH = $(SRCROOT)/LocalSecrets/Firebase/Production/GoogleService-Info.plist
+OUTPICK_GOOGLE_REVERSED_CLIENT_ID = com.googleusercontent.apps.715386497547-u14nuem8t03f3k69gq4dkf0nmdveid73
+OUTPICK_SOCKET_URL = https:/$()/outpick-socket-2w7zhxurhq-du.a.run.app

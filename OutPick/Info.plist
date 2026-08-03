@@ -2,6 +2,20 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>CFBundleDisplayName</key>
+	<string>$(OUTPICK_APP_DISPLAY_NAME)</string>
+	<key>OUTPICK_ENVIRONMENT</key>
+	<string>$(OUTPICK_ENVIRONMENT)</string>
+	<key>OUTPICK_EXPECTED_FIREBASE_PROJECT_ID</key>
+	<string>$(OUTPICK_EXPECTED_FIREBASE_PROJECT_ID)</string>
+	<key>OUTPICK_GOOGLE_REVERSED_CLIENT_ID</key>
+	<string>$(OUTPICK_GOOGLE_REVERSED_CLIENT_ID)</string>
+	<key>OUTPICK_KAKAO_NATIVE_APP_KEY</key>
+	<string>$(OUTPICK_KAKAO_NATIVE_APP_KEY)</string>
+	<key>OUTPICK_KAKAO_URL_SCHEME</key>
+	<string>$(OUTPICK_KAKAO_URL_SCHEME)</string>
+	<key>OUTPICK_SOCKET_URL</key>
+	<string>$(OUTPICK_SOCKET_URL)</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>현재 위치를 사용하시겠습니까?</string>
 	<key>NSLocalNetworkUsageDescription</key>
@@ -21,7 +35,7 @@
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>kakaoa2b20f7bedfb9582147f572ef004d0f0</string>
+				<string>$(OUTPICK_KAKAO_URL_SCHEME)</string>
 			</array>
 		</dict>
 		<dict>
@@ -29,7 +43,7 @@
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>com.googleusercontent.apps.715386497547-u14nuem8t03f3k69gq4dkf0nmdveid73</string>
+				<string>$(OUTPICK_GOOGLE_REVERSED_CLIENT_ID)</string>
 			</array>
 		</dict>
 	</array>

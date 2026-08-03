@@ -116,8 +116,8 @@ Firestore 문서 ID 경계:
 GRDB 변경:
 
 ```bash
-xcodebuild -project OutPick.xcodeproj -scheme OutPick -destination 'platform=iOS Simulator,id={available-simulator-id}' test -only-testing:OutPickTests/AppDatabaseMigrationTests -only-testing:OutPickTests/ChatMessageRecordMapperTests -only-testing:OutPickTests/GRDBChatMessageStoreTests -only-testing:OutPickTests/GRDBChatOutgoingOutboxStoreTests -only-testing:OutPickTests/GRDBChatMediaIndexStoreTests -only-testing:OutPickTests/GRDBChatProfileCacheStoreTests -only-testing:OutPickTests/GRDBChatRoomLocalDataStoreTests
-xcodebuild -project OutPick.xcodeproj -scheme OutPick -destination 'generic/platform=iOS Simulator' build
+xcodebuild -project OutPick.xcodeproj -scheme OutPick-Development -destination 'platform=iOS Simulator,id={available-simulator-id}' test -only-testing:OutPickTests/AppDatabaseMigrationTests -only-testing:OutPickTests/ChatMessageRecordMapperTests -only-testing:OutPickTests/GRDBChatMessageStoreTests -only-testing:OutPickTests/GRDBChatOutgoingOutboxStoreTests -only-testing:OutPickTests/GRDBChatMediaIndexStoreTests -only-testing:OutPickTests/GRDBChatProfileCacheStoreTests -only-testing:OutPickTests/GRDBChatRoomLocalDataStoreTests
+xcodebuild -project OutPick.xcodeproj -scheme OutPick-Development -destination 'generic/platform=iOS Simulator' build
 ```
 
 Firestore rules/indexes 변경:
