@@ -10,6 +10,9 @@
 xcodebuild -scheme OutPick-Development -destination 'generic/platform=iOS Simulator' build
 ```
 
+- iOS 실행 환경 경계: `OutPickTests/AppRuntimeConfigurationTests.swift`
+  - Development/Production canonical Socket·Kakao 조합, Firebase Bundle ID·project·Google callback 불일치와 양방향 Firebase project 교차를 검증한다.
+
 - Phase 6 통합 회귀: `docs/ai/tasks/core-infrastructure-modularization/phases/phase-6-integration-tests.md`
 - Phase 6 배포·smoke gate: `docs/ai/tasks/core-infrastructure-modularization/phases/phase-6-deployment.md`
 - Phase 6는 Phase 2~5 targeted test, iOS generic build, Functions test/lint/build와 Socket check/test를 같은 배포 commit SHA 기준으로 실행한다.
@@ -53,6 +56,8 @@ Lookbook import worker tests:
 - `tools/lookbook-import-worker/src/fixture/corpus.test.ts`
 - `tools/lookbook-import-worker/src/config.test.ts`, `oidc-auth.test.ts`, `server.test.ts`
   - 환경별 canonical audience·caller 계정 조합과 route별 401/403, 올바른 caller의 handler 진입을 검증한다.
+- `scripts/ai/test-deploy-lookbook-import-worker.sh`
+  - Development/Production 배포 project·service·runtime account·OIDC identity 조합과 `--no-traffic`, Production 확인 gate를 검증한다.
 - `tools/lookbook-import-worker/src/fixture/run-corpus.ts`
 - `tools/lookbook-import-worker/fixtures/{discovery,season-images}/`
 - `tools/lookbook-import-worker/fixtures/discovery/platform/cafe24-underscore-detail-list/`
