@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>BUNDLE_ID</key>
+	<string>GayoonKim.OutPick.dev</string>
+	<key>PROJECT_ID</key>
+	<string>outpick-test</string>
+	<key>CLIENT_ID</key>
+	<string>development.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.development</string>
+</dict>
+</plist>

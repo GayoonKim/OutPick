@@ -26,6 +26,13 @@ ServiceAccountKey.json
 serviceAccount*.json
 **/*firebase-adminsdk*.json
 
+# Versioned Xcode environment validation scripts and non-secret fixture
+!scripts/build/
+!scripts/build/fixtures/
+!scripts/build/validate-and-copy-firebase-config.sh
+!scripts/build/test-validate-and-copy-firebase-config.sh
+!scripts/build/fixtures/GoogleService-Info-Fixture.plist
+
 # Node / Firebase Functions artifacts
 node_modules/
 Socket/node_modules/

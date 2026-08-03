@@ -24,14 +24,19 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil) -> Bool {
-
-        KakaoSDK.initSDK(appKey: "a2b20f7bedfb9582147f572ef004d0f0")
-        configureFirebaseApp()
+        let firebaseConfiguration: FirebaseClientConfiguration
+        do {
+            let runtimeConfiguration = try AppRuntimeConfiguration.load()
+            KakaoSDK.initSDK(appKey: runtimeConfiguration.kakaoNativeAppKey)
+            firebaseConfiguration = try configureFirebaseApp(runtimeConfiguration: runtimeConfiguration)
+        } catch {
+            fatalError("OutPick 환경 설정 검증에 실패했습니다: \(error.localizedDescription)")
+        }
         warmUpFirebaseStorage()
 //        runLookbookImageABTestIfNeeded()
 
         // GoogleSignIn configuration (prevents "No active configuration" crash)
-        if let clientID = FirebaseApp.app()?.options.clientID {
+        if let clientID = firebaseConfiguration.clientID {
             GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: clientID)
         } else if isRunningTestFirebaseUITest() {
             // 테스트 Firebase plist는 Google Sign-In OAuth client를 포함하지 않는다.
@@ -45,24 +50,56 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         return true
     }
 
-    private func configureFirebaseApp(processInfo: ProcessInfo = .processInfo) {
+    private func configureFirebaseApp(
+        runtimeConfiguration: AppRuntimeConfiguration,
+        processInfo: ProcessInfo = .processInfo
+    ) throws -> FirebaseClientConfiguration {
         AppCheck.setAppCheckProviderFactory(OutPickAppCheckProviderFactory())
+
+        let plistPath: String
+        let allowsMissingGoogleOAuth: Bool
 
         #if DEBUG
         if processInfo.environment["UITESTS"] == "1",
            processInfo.arguments.contains("--uitest-test-firebase") {
-            guard let plistPath = processInfo.environment["OUTPICK_TEST_FIREBASE_PLIST_PATH"],
-                  plistPath.isEmpty == false,
-                  let options = FirebaseOptions(contentsOfFile: plistPath) else {
+            guard let overridePlistPath = processInfo.environment["OUTPICK_TEST_FIREBASE_PLIST_PATH"],
+                  overridePlistPath.isEmpty == false else {
                 fatalError("OUTPICK_TEST_FIREBASE_PLIST_PATH로 유효한 테스트 Firebase plist 경로를 전달해야 합니다.")
             }
-
-            FirebaseApp.configure(options: options)
-            return
+            plistPath = overridePlistPath
+            allowsMissingGoogleOAuth = true
+        } else {
+            guard let bundledPlistPath = Bundle.main.path(
+                forResource: "GoogleService-Info",
+                ofType: "plist"
+            ) else {
+                throw AppEnvironmentError.missingFirebasePlist
+            }
+            plistPath = bundledPlistPath
+            allowsMissingGoogleOAuth = false
         }
+        #else
+        guard let bundledPlistPath = Bundle.main.path(
+            forResource: "GoogleService-Info",
+            ofType: "plist"
+        ) else {
+            throw AppEnvironmentError.missingFirebasePlist
+        }
+        plistPath = bundledPlistPath
+        allowsMissingGoogleOAuth = false
         #endif
 
-        FirebaseApp.configure()
+        let firebaseConfiguration = try FirebaseClientConfiguration(contentsOfFile: plistPath)
+        try runtimeConfiguration.validate(
+            firebase: firebaseConfiguration,
+            allowsMissingGoogleOAuth: allowsMissingGoogleOAuth
+        )
+
+        guard let options = FirebaseOptions(contentsOfFile: plistPath) else {
+            throw AppEnvironmentError.invalidFirebasePlist
+        }
+        FirebaseApp.configure(options: options)
+        return firebaseConfiguration
     }
 
     private func isRunningTestFirebaseUITest(processInfo: ProcessInfo = .processInfo) -> Bool {
