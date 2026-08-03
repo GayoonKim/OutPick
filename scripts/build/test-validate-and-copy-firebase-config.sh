@@ -6,6 +6,8 @@ script_directory=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 validator="$script_directory/validate-and-copy-firebase-config.sh"
 fixture="$script_directory/fixtures/GoogleService-Info-Fixture.plist"
 production_url="https://outpick-socket-2w7zhxurhq-du.a.run.app"
+development_kakao_key="f5f18b00bc7b163aa5be39fef99e646d"
+production_kakao_key="a2b20f7bedfb9582147f572ef004d0f0"
 temporary_directory=$(mktemp -d)
 
 cleanup() {
@@ -50,8 +52,8 @@ run_validator \
   "$development_plist" \
   https://development-socket.example.com \
   com.googleusercontent.apps.development \
-  development-kakao-key \
-  kakaodevelopment-kakao-key
+  "$development_kakao_key" \
+  "kakao$development_kakao_key"
 
 run_validator \
   production \
@@ -60,8 +62,8 @@ run_validator \
   "$production_plist" \
   "$production_url" \
   com.googleusercontent.apps.production \
-  production-kakao-key \
-  kakaoproduction-kakao-key
+  "$production_kakao_key" \
+  "kakao$production_kakao_key"
 
 expect_failure run_validator \
   development \
@@ -70,8 +72,8 @@ expect_failure run_validator \
   "$temporary_directory/Missing.plist" \
   https://development-socket.example.com \
   com.googleusercontent.apps.development \
-  development-kakao-key \
-  kakaodevelopment-kakao-key
+  "$development_kakao_key" \
+  "kakao$development_kakao_key"
 
 expect_failure run_validator \
   development \
@@ -80,8 +82,8 @@ expect_failure run_validator \
   "$development_plist" \
   https://development-socket.example.com \
   com.googleusercontent.apps.development \
-  development-kakao-key \
-  kakaodevelopment-kakao-key
+  "$development_kakao_key" \
+  "kakao$development_kakao_key"
 
 expect_failure run_validator \
   development \
@@ -90,8 +92,8 @@ expect_failure run_validator \
   "$development_plist" \
   https://development-socket.example.com \
   com.googleusercontent.apps.development \
-  development-kakao-key \
-  kakaodevelopment-kakao-key
+  "$development_kakao_key" \
+  "kakao$development_kakao_key"
 
 expect_failure run_validator \
   development \
@@ -100,8 +102,8 @@ expect_failure run_validator \
   "$development_plist" \
   "$production_url" \
   com.googleusercontent.apps.development \
-  development-kakao-key \
-  kakaodevelopment-kakao-key
+  "$development_kakao_key" \
+  "kakao$development_kakao_key"
 
 expect_failure run_validator \
   development \
@@ -110,8 +112,8 @@ expect_failure run_validator \
   "$development_plist" \
   https://development-socket.example.com \
   com.googleusercontent.apps.wrong \
-  development-kakao-key \
-  kakaodevelopment-kakao-key
+  "$development_kakao_key" \
+  "kakao$development_kakao_key"
 
 expect_failure run_validator \
   development \
@@ -120,7 +122,27 @@ expect_failure run_validator \
   "$development_plist" \
   https://development-socket.example.com \
   com.googleusercontent.apps.development \
-  development-kakao-key \
+  "$development_kakao_key" \
   kakaowrong-key
+
+expect_failure run_validator \
+  development \
+  GayoonKim.OutPick.dev \
+  outpick-test \
+  "$development_plist" \
+  https://development-socket.example.com \
+  com.googleusercontent.apps.development \
+  "$production_kakao_key" \
+  "kakao$production_kakao_key"
+
+expect_failure run_validator \
+  production \
+  GayoonKim.OutPick \
+  outpick-664ae \
+  "$production_plist" \
+  "$production_url" \
+  com.googleusercontent.apps.production \
+  "$development_kakao_key" \
+  "kakao$development_kakao_key"
 
 echo "Firebase environment validator tests passed."

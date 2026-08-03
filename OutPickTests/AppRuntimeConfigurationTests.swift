@@ -4,6 +4,8 @@ import Testing
 
 struct AppRuntimeConfigurationTests {
     private let productionSocketURL = "https://production.example.com"
+    private let developmentKakaoNativeAppKey = "f5f18b00bc7b163aa5be39fef99e646d"
+    private let productionKakaoNativeAppKey = "a2b20f7bedfb9582147f572ef004d0f0"
 
     @Test func developmentConfigurationAcceptsOnlyDevelopmentBoundaries() throws {
         let configuration = try makeConfiguration(
@@ -90,25 +92,57 @@ struct AppRuntimeConfigurationTests {
         }
     }
 
+    @Test func developmentRejectsProductionKakaoConfiguration() {
+        expectError(.kakaoEnvironmentMismatch) {
+            _ = try makeConfiguration(
+                environment: "development",
+                bundleIdentifier: "GayoonKim.OutPick.dev",
+                projectID: "outpick-test",
+                socketURL: "https://development.example.com",
+                kakaoNativeAppKey: productionKakaoNativeAppKey
+            )
+        }
+    }
+
+    @Test func productionRejectsDevelopmentKakaoConfiguration() {
+        expectError(.kakaoEnvironmentMismatch) {
+            _ = try makeConfiguration(
+                environment: "production",
+                bundleIdentifier: "GayoonKim.OutPick",
+                projectID: "outpick-664ae",
+                socketURL: productionSocketURL,
+                kakaoNativeAppKey: developmentKakaoNativeAppKey
+            )
+        }
+    }
+
     private func makeConfiguration(
         environment: String,
         bundleIdentifier: String,
         projectID: String,
         socketURL: String,
-        kakaoURLScheme: String = "kakaotest-kakao-key"
+        kakaoNativeAppKey: String? = nil,
+        kakaoURLScheme: String? = nil
     ) throws -> AppRuntimeConfiguration {
-        try AppRuntimeConfiguration(
+        let resolvedKakaoNativeAppKey = kakaoNativeAppKey ?? expectedKakaoNativeAppKey(
+            for: environment
+        )
+        return try AppRuntimeConfiguration(
             infoDictionary: [
                 "OUTPICK_ENVIRONMENT": environment,
                 "OUTPICK_EXPECTED_FIREBASE_PROJECT_ID": projectID,
                 "OUTPICK_SOCKET_URL": socketURL,
                 "OUTPICK_PRODUCTION_SOCKET_URL": productionSocketURL,
                 "OUTPICK_GOOGLE_REVERSED_CLIENT_ID": "com.googleusercontent.apps.development",
-                "OUTPICK_KAKAO_NATIVE_APP_KEY": "test-kakao-key",
-                "OUTPICK_KAKAO_URL_SCHEME": kakaoURLScheme
+                "OUTPICK_KAKAO_NATIVE_APP_KEY": resolvedKakaoNativeAppKey,
+                "OUTPICK_KAKAO_URL_SCHEME": kakaoURLScheme ?? "kakao\(resolvedKakaoNativeAppKey)"
             ],
             bundleIdentifier: bundleIdentifier
         )
+    }
+
+    private func expectedKakaoNativeAppKey(for environment: String) -> String {
+        environment == "production" ? productionKakaoNativeAppKey : developmentKakaoNativeAppKey
     }
 
     private func expectError(
