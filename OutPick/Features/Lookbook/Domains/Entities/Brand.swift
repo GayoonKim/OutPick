@@ -11,8 +11,14 @@ enum BrandDiscoveryStatus: String, Codable, CaseIterable, Equatable {
     case idle
     case queued
     case running
+    // 구형 단일 탐색 경로가 저장한 성공 상태를 계속 읽는다.
     case success
+    case succeeded
+    case awaitingReview
+    case correctionRequired
     case failed
+    case cancelled
+    case superseded
 }
 
 // MARK:- 핵심 엔티티들

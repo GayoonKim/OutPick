@@ -26,9 +26,9 @@ struct CreateBrandFlowView: View {
 
     @Environment(\.dismiss) private var dismiss
 
+    @StateObject private var discoveryViewModel: CreateBrandDiscoveryViewModel
     @State private var step: Step = .form
     @State private var latestCreatedBrand: CreateBrandViewModel.CreatedBrand?
-    @State private var discoveryTask: Task<Void, Never>?
     @State private var logoPreparationTask: Task<Void, Never>?
     @State private var isShowingCloseConfirmation: Bool = false
     @State private var isToolbarCloseVisible: Bool = true
@@ -46,6 +46,9 @@ struct CreateBrandFlowView: View {
         onFinished: @escaping (BrandID?) -> Void = { _ in }
     ) {
         self.provider = provider
+        _discoveryViewModel = StateObject(wrappedValue: CreateBrandDiscoveryViewModel(
+            repository: provider.seasonCandidateDiscoveryRepository
+        ))
         self.initialBrandName = initialBrandName
         self.initialEnglishName = initialEnglishName
         self.onFinished = onFinished
@@ -57,6 +60,9 @@ struct CreateBrandFlowView: View {
         onFinished: @escaping (BrandID?) -> Void = { _ in }
     ) {
         self.provider = provider
+        _discoveryViewModel = StateObject(wrappedValue: CreateBrandDiscoveryViewModel(
+            repository: provider.seasonCandidateDiscoveryRepository
+        ))
         self.initialBrandName = nil
         self.initialEnglishName = nil
         self.onFinished = onFinished
@@ -129,8 +135,19 @@ struct CreateBrandFlowView: View {
                 Text(closeConfirmationMessage)
             }
             .onDisappear {
-                discoveryTask?.cancel()
+                discoveryViewModel.stopObserving()
                 logoPreparationTask?.cancel()
+            }
+            .onChange(of: discoveryViewModel.result) { result in
+                guard result != nil,
+                      let createdBrand = latestCreatedBrand else { return }
+                step = .candidateSelection(createdBrand)
+            }
+            .onChange(of: discoveryViewModel.errorMessage) { errorMessage in
+                guard let errorMessage,
+                      let createdBrand = latestCreatedBrand else { return }
+                discoveryErrorMessage = errorMessage
+                step = .candidateSelection(createdBrand)
             }
     }
 }
@@ -167,7 +184,7 @@ private extension CreateBrandFlowView {
             CreateBrandDiscoveringView(
                 createdBrand: createdBrand,
                 onSkip: {
-                    discoveryTask?.cancel()
+                    discoveryViewModel.stopObserving()
                     step = .candidateSelection(createdBrand)
                 }
             )
@@ -179,7 +196,6 @@ private extension CreateBrandFlowView {
                     candidateRepository: provider.seasonCandidateRepository,
                     seasonImportJobRepository: provider.seasonImportJobRepository
                 ),
-                refreshSeasonCandidatesUseCase: nil,
                 startSeasonImportExtractionUseCase: StartSeasonImportExtractionUseCase(
                     importJobRequestingRepository: provider.seasonImportJobRequestingRepository,
                     seasonImportJobRepository: provider.seasonImportJobRepository
@@ -203,7 +219,7 @@ private extension CreateBrandFlowView {
             return
         }
 
-        discoveryTask?.cancel()
+        discoveryViewModel.stopObserving()
 
         if createdBrand.hasLogoAsset {
             step = .finishing(createdBrand)
@@ -214,24 +230,11 @@ private extension CreateBrandFlowView {
     }
 
     func startSeasonCandidateDiscovery(for createdBrand: CreateBrandViewModel.CreatedBrand) {
-        discoveryTask?.cancel()
         discoveryErrorMessage = nil
-        discoveryTask = Task {
-            do {
-                _ = try await provider.seasonCandidateDiscoveryRepository
-                    .discoverSeasonCandidates(brandID: createdBrand.id)
-            } catch {
-                await MainActor.run {
-                    discoveryErrorMessage = "시즌을 바로 찾지 못했습니다. 다음 화면에서 직접 확인할 수 있습니다."
-                }
-            }
-
-            await MainActor.run {
-                guard !Task.isCancelled else { return }
-                guard latestCreatedBrand == createdBrand else { return }
-                step = .candidateSelection(createdBrand)
-            }
-        }
+        discoveryViewModel.start(
+            brandID: createdBrand.id,
+            existingJobID: createdBrand.discoveryJobID
+        )
     }
 
     func scheduleLogoPreparationTransition(for createdBrand: CreateBrandViewModel.CreatedBrand) {

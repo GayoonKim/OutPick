@@ -2,21 +2,34 @@ import SwiftUI
 
 struct SeasonImportManagementView: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var brandAdminSessionStore: BrandAdminSessionStore
     @StateObject private var viewModel: SeasonImportManagementViewModel
+    private let brand: Brand
     private let showsNavigationChrome: Bool
     private let onReview: (String) -> Void
     private let onRepair: (String, SeasonID) -> Void
+    private let onSelectCandidates: () -> Void
+    private let onDiscoveryReview: (SeasonCandidateDiscoveryResult) -> Void
+    private let onUpdateSourceURL: () -> Void
 
     init(
         viewModel: SeasonImportManagementViewModel,
+        brand: Brand,
         showsNavigationChrome: Bool = true,
         onReview: @escaping (String) -> Void = { _ in },
-        onRepair: @escaping (String, SeasonID) -> Void = { _, _ in }
+        onRepair: @escaping (String, SeasonID) -> Void = { _, _ in },
+        onSelectCandidates: @escaping () -> Void = {},
+        onDiscoveryReview: @escaping (SeasonCandidateDiscoveryResult) -> Void = { _ in },
+        onUpdateSourceURL: @escaping () -> Void = {}
     ) {
         _viewModel = StateObject(wrappedValue: viewModel)
+        self.brand = brand
         self.showsNavigationChrome = showsNavigationChrome
         self.onReview = onReview
         self.onRepair = onRepair
+        self.onSelectCandidates = onSelectCandidates
+        self.onDiscoveryReview = onDiscoveryReview
+        self.onUpdateSourceURL = onUpdateSourceURL
     }
 
     var body: some View {
@@ -43,37 +56,43 @@ struct SeasonImportManagementView: View {
 
     @ViewBuilder
     private var content: some View {
-        Group {
-            if viewModel.isLoading && viewModel.jobs.isEmpty {
-                ProgressView("시즌 가져오기 현황을 불러오는 중입니다.")
-                    .tint(OutPickTheme.SwiftUIColor.accent)
-                    .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if viewModel.jobs.isEmpty {
-                VStack(spacing: 12) {
-                    Image(systemName: "tray")
-                        .font(.title)
-                    Text("가져오기 기록이 없습니다")
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 18) {
+                discoveryCard
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("시즌 이미지 가져오기 현황")
                         .font(.headline)
-                }
-                .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: 10) {
+                        .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
+
+                    if viewModel.isLoading && viewModel.jobs.isEmpty {
+                        ProgressView("가져오기 현황을 불러오는 중입니다.")
+                            .tint(OutPickTheme.SwiftUIColor.accent)
+                            .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 18)
+                    } else if viewModel.jobs.isEmpty {
+                        Text("아직 이미지를 가져온 시즌이 없습니다.")
+                            .font(.subheadline)
+                            .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(16)
+                            .background(OutPickTheme.SwiftUIColor.surfaceBase)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    } else {
                         ForEach(viewModel.jobs) { job in
                             jobRow(job)
                                 .padding(14)
                                 .background(OutPickTheme.SwiftUIColor.surfaceBase)
                                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         }
+                        }
                     }
-                    .padding(showsNavigationChrome ? 16 : 0)
-                }
-                .refreshable {
-                    await viewModel.load()
                 }
             }
+            .padding(showsNavigationChrome ? 16 : 0)
+        .refreshable {
+            await viewModel.load()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(OutPickTheme.SwiftUIColor.backgroundBase)
@@ -81,11 +100,259 @@ struct SeasonImportManagementView: View {
         .task {
             await viewModel.monitor()
         }
-        .onAppear {
-            Task { await viewModel.load() }
-        }
-        .appToast(message: viewModel.errorMessage) {
+        .appToast(message: viewModel.presentedErrorMessage) {
             viewModel.clearError()
+        }
+    }
+
+    private var discoveryCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("시즌 목록 탐색")
+                    .font(.headline)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
+                Spacer()
+                if let result = viewModel.discoveryResult {
+                    Text(discoveryStatusText(result))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(discoveryStatusColor(result))
+                }
+            }
+
+            if let result = viewModel.discoveryResult {
+                discoveryResultContent(result)
+            } else {
+                Text("브랜드의 룩북 목록 URL에서 가져올 시즌을 찾습니다.")
+                    .font(.subheadline)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+                discoveryButton("시즌 찾아오기 시작") {
+                    await viewModel.requestDiscovery()
+                }
+                .disabled(!hasSourceURL || viewModel.isMutatingDiscovery)
+            }
+        }
+        .padding(16)
+        .background(OutPickTheme.SwiftUIColor.surfaceBase)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(OutPickTheme.SwiftUIColor.borderSubtle, lineWidth: 1)
+        )
+    }
+
+    @ViewBuilder
+    private func discoveryResultContent(
+        _ result: SeasonCandidateDiscoveryResult
+    ) -> some View {
+        if result.status.isActive {
+            activeDiscoveryContent(result)
+        } else if result.candidateCount > 0 {
+            Text(
+                "발견 \(result.candidateCount)개 · 신규 \(result.newSeasonCandidateCount)개 · 기존 연결 \(result.matchedCandidateCount)개 · 검토 필요 \(result.reviewCandidateCount)개"
+            )
+            .font(.subheadline)
+            .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+
+        if let errorMessage = result.errorMessage, !errorMessage.isEmpty {
+            Text(errorMessage)
+                .font(.footnote)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.warning)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+
+        if let date = result.completedAt ?? result.requestedAt {
+            Text(date.formatted(date: .abbreviated, time: .shortened))
+                .font(.caption)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textTertiary)
+        }
+
+        discoveryActions(result)
+    }
+
+    private func activeDiscoveryContent(
+        _ result: SeasonCandidateDiscoveryResult
+    ) -> some View {
+        VStack(spacing: 10) {
+            ProgressView()
+                .tint(OutPickTheme.SwiftUIColor.accent)
+
+            Text(discoveryPhaseText(result.phase))
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
+
+            Text("잠시만 기다려 주세요")
+                .font(.footnote)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+        }
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity, minHeight: 112, alignment: .center)
+        .padding(.vertical, 8)
+    }
+
+    @ViewBuilder
+    private func discoveryActions(_ result: SeasonCandidateDiscoveryResult) -> some View {
+        switch result.status {
+        case .queued, .dispatching, .running:
+            discoveryButton("작업 취소", prominent: false) {
+                await viewModel.cancelDiscovery()
+            }
+        case .awaitingReview:
+            if result.newSeasonCandidateCount > 0 {
+                discoveryButton("검토 불필요 시즌 선택") {
+                    onSelectCandidates()
+                }
+            }
+            discoveryButton("시즌 후보 검토") {
+                onDiscoveryReview(result)
+            }
+        case .correctionRequired:
+            Text(correctionRequiredMessage(result))
+                .font(.footnote)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            switch result.improvementState {
+            case .requestable:
+                discoveryButton("추출 개선 요청") {
+                    await viewModel.requestDiscoveryImprovement()
+                }
+            case .ready where brandAdminSessionStore.isTotalAdmin:
+                discoveryButton("다시 가져오기") {
+                    await viewModel.reanalyzeDiscovery()
+                }
+            case .unavailable, .requested, .ready:
+                EmptyView()
+            }
+        case .failed:
+            if result.retryable || result.recommendedAction == "retry" {
+                discoveryButton("다시 시도") {
+                    await viewModel.retryDiscovery()
+                }
+            } else if result.recommendedAction == "updateSourceURL" {
+                discoveryButton("룩북 목록 URL 수정") {
+                    onUpdateSourceURL()
+                }
+            }
+        case .succeeded:
+            if result.newSeasonCandidateCount > 0 {
+                discoveryButton("신규 시즌 선택") {
+                    onSelectCandidates()
+                }
+            }
+            discoveryButton("다시 찾아오기", prominent: false) {
+                await viewModel.requestDiscovery()
+            }
+        case .cancelled, .superseded, .unknown:
+            discoveryButton("시즌 다시 찾아오기") {
+                await viewModel.requestDiscovery()
+            }
+        }
+    }
+
+    private func discoveryButton(
+        _ title: String,
+        prominent: Bool = true,
+        action: @escaping () async -> Void
+    ) -> some View {
+        Group {
+            if prominent {
+                Button {
+                    Task { await action() }
+                } label: {
+                    discoveryButtonLabel(title)
+                }
+                .buttonStyle(.borderedProminent)
+            } else {
+                Button {
+                    Task { await action() }
+                } label: {
+                    discoveryButtonLabel(title)
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .disabled(viewModel.isMutatingDiscovery)
+    }
+
+    private func discoveryButtonLabel(_ title: String) -> some View {
+        HStack {
+            Spacer()
+            if viewModel.isMutatingDiscovery {
+                ProgressView()
+            } else {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+            }
+            Spacer()
+        }
+    }
+
+    private var hasSourceURL: Bool {
+        guard let value = brand.lookbookArchiveURL else { return false }
+        return !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func discoveryStatusText(_ result: SeasonCandidateDiscoveryResult) -> String {
+        switch result.status {
+        case .queued, .dispatching: return "대기 중"
+        case .running: return "탐색 중"
+        case .succeeded: return "완료"
+        case .awaitingReview: return "검토 필요"
+        case .correctionRequired:
+            switch result.improvementState {
+            case .requestable: return "확인 필요"
+            case .requested: return "개선 요청됨"
+            case .ready: return "다시 가져오기 가능"
+            case .unavailable: return "확인 필요"
+            }
+        case .failed: return "실패"
+        case .cancelled: return "취소됨"
+        case .superseded: return "새 요청으로 대체됨"
+        case .unknown: return "상태 확인 필요"
+        }
+    }
+
+    private func discoveryStatusColor(_ result: SeasonCandidateDiscoveryResult) -> Color {
+        if result.improvementState == .ready {
+            return OutPickTheme.SwiftUIColor.success
+        }
+        switch result.status {
+        case .succeeded: return OutPickTheme.SwiftUIColor.success
+        case .failed, .correctionRequired: return OutPickTheme.SwiftUIColor.warning
+        case .awaitingReview: return OutPickTheme.SwiftUIColor.accent
+        default: return OutPickTheme.SwiftUIColor.textSecondary
+        }
+    }
+
+    private func correctionRequiredMessage(
+        _ result: SeasonCandidateDiscoveryResult
+    ) -> String {
+        switch result.improvementState {
+        case .requestable:
+            return "일부 시즌이 누락됐을 수 있어 결과를 확정하지 않았어요."
+        case .requested:
+            return "더 정확하게 가져올 수 있도록 개선 요청을 등록했어요."
+        case .ready:
+            if brandAdminSessionStore.isTotalAdmin {
+                return "개선된 방식으로 시즌 목록을 다시 확인할 수 있어요."
+            }
+            return "개선된 방식이 준비됐어요. 총 관리자가 다시 가져오기를 진행할 수 있어요."
+        case .unavailable:
+            return "시즌 목록 결과를 확인해 주세요."
+        }
+    }
+
+    private func discoveryPhaseText(_ phase: String?) -> String {
+        switch phase {
+        case "dispatching":
+            return "시즌 목록을 준비하고 있어요"
+        case "fetching", "rendering":
+            return "룩북 페이지를 불러오고 있어요"
+        case "parsing", "matchingExistingSeasons", "publishing":
+            return "시즌 목록을 확인하고 있어요"
+        default:
+            return "시즌 목록을 찾고 있어요"
         }
     }
 
@@ -144,7 +411,7 @@ struct SeasonImportManagementView: View {
             if job.needsExtractionReview {
                 HStack {
                     Spacer()
-                    Button("검토하기") {
+                    Button("이미지 추출 검토") {
                         onReview(job.id)
                     }
                     .font(.caption.weight(.semibold))

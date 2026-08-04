@@ -10,6 +10,9 @@ import Foundation
 protocol SeasonImportJobRequestingRepositoryProtocol {
     func requestSeasonCandidateImportJobs(
         brandID: BrandID,
-        candidateIDs: [String]
+        discoveryJobID: String,
+        generation: Int,
+        candidateIDs: [String],
+        candidateSnapshotHash: String
     ) async throws -> SeasonImportBatchRequestResult
 }

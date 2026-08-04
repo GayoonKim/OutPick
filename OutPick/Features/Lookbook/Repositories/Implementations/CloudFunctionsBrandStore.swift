@@ -23,7 +23,7 @@ struct CloudFunctionsBrandStore: BrandStoringRepository {
         websiteURL: String?,
         lookbookArchiveURL: String?,
         moodIDs: [String]
-    ) async throws -> String {
+    ) async throws -> BrandCreationReceipt {
         var data: [String: Any] = [
             "name": name,
             "isFeatured": isFeatured,
@@ -33,7 +33,11 @@ struct CloudFunctionsBrandStore: BrandStoringRepository {
         if let websiteURL { data["websiteURL"] = websiteURL }
         if let lookbookArchiveURL { data["lookbookArchiveURL"] = lookbookArchiveURL }
         let response = try await transport.call("createBrand", data: data)
-        return try CloudFunctionResponseDecoder(dictionary: response).string("brandID")
+        let decoder = CloudFunctionResponseDecoder(dictionary: response)
+        return BrandCreationReceipt(
+            brandID: try decoder.string("brandID"),
+            discoveryJobID: decoder.optionalString("discoveryJobID")
+        )
     }
 
     func updateBrand(

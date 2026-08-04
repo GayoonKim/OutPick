@@ -35,11 +35,27 @@ final class StartSeasonImportExtractionUseCase: StartSeasonImportExtractionUseCa
         brandID: BrandID,
         candidates: [SeasonCandidate]
     ) async throws -> SeasonImportBatchRequestResult {
+        guard let first = candidates.first,
+              candidates.allSatisfy({
+                  $0.discoveryJobID == first.discoveryJobID &&
+                  $0.discoveryGeneration == first.discoveryGeneration &&
+                  $0.candidateSnapshotHash == first.candidateSnapshotHash &&
+                  $0.resolution == "newSeason"
+              }) else {
+            throw NSError(
+                domain: "StartSeasonImportExtractionUseCase",
+                code: -1,
+                userInfo: [NSLocalizedDescriptionKey: "현재 공개된 신규 시즌 후보만 선택할 수 있습니다."]
+            )
+        }
         let candidateIDs = candidates.map(\.id)
         return try await importJobRequestingRepository
             .requestSeasonCandidateImportJobs(
                 brandID: brandID,
-                candidateIDs: candidateIDs
+                discoveryJobID: first.discoveryJobID,
+                generation: first.discoveryGeneration,
+                candidateIDs: candidateIDs,
+                candidateSnapshotHash: first.candidateSnapshotHash
             )
     }
 

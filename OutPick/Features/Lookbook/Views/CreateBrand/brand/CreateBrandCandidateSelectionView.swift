@@ -22,7 +22,6 @@ struct CreateBrandCandidateSelectionView: View {
 
     let createdBrand: CreateBrandViewModel.CreatedBrand
     let loadSelectableSeasonCandidatesUseCase: any LoadSelectableSeasonCandidatesUseCaseProtocol
-    let refreshSeasonCandidatesUseCase: (any SeasonCandidateDiscoveryRepositoryProtocol)?
     let startSeasonImportExtractionUseCase: any StartSeasonImportExtractionUseCaseProtocol
     let discoveryErrorMessage: String?
     let emptySelectionButtonTitle: String
@@ -588,11 +587,6 @@ struct CreateBrandCandidateSelectionView: View {
         defer { isLoading = false }
 
         do {
-            if let refreshSeasonCandidatesUseCase {
-                _ = try await refreshSeasonCandidatesUseCase
-                    .discoverSeasonCandidates(brandID: createdBrand.id)
-            }
-
             candidates = try await loadSelectableSeasonCandidatesUseCase.execute(
                 brandID: createdBrand.id
             )

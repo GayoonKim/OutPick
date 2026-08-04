@@ -18,10 +18,21 @@ final class FirestoreSeasonCandidateRepository: SeasonCandidateRepositoryProtoco
     func fetchSeasonCandidates(
         brandID: BrandID
     ) async throws -> [SeasonCandidate] {
-        let snapshot = try await db
-            .collection("brands")
-            .document(brandID.value)
-            .collection("seasonCandidates")
+        let brandRef = db.collection("brands").document(brandID.value)
+        let brandSnapshot = try await brandRef.getDocument()
+        guard let discoveryJobID = brandSnapshot.data()?["publishedSeasonDiscoveryJobID"] as? String,
+              discoveryJobID.isEmpty == false else {
+            return []
+        }
+        if let expiresAt = brandSnapshot.data()?["publishedSeasonDiscoveryExpiresAt"] as? Timestamp,
+           expiresAt.dateValue() <= Date() {
+            return []
+        }
+        let snapshot = try await brandRef
+            .collection("seasonDiscoveryJobs")
+            .document(discoveryJobID)
+            .collection("candidates")
+            .whereField("resolution", isEqualTo: "newSeason")
             .order(by: "sortIndex")
             .getDocuments()
 

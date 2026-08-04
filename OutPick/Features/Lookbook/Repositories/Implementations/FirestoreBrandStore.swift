@@ -24,7 +24,7 @@ struct FirestoreBrandStore: BrandStoringRepository {
         websiteURL: String?,
         lookbookArchiveURL: String?,
         moodIDs: [String]
-    ) async throws -> String {
+    ) async throws -> BrandCreationReceipt {
         let docRef = db.collection("brands").document()
         let docID = docRef.documentID
         let normalizedName = normalizeBrandName(name)
@@ -60,7 +60,7 @@ struct FirestoreBrandStore: BrandStoringRepository {
         ]
 
         try await docRef.setDataAsync(data, merge: false)
-        return docID
+        return BrandCreationReceipt(brandID: docID, discoveryJobID: nil)
     }
 
     func updateLogoPaths(

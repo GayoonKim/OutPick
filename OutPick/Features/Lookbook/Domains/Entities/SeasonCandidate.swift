@@ -17,6 +17,10 @@ struct SeasonCandidate: Equatable, Identifiable, Codable {
     let extractionScore: Double
     let sortIndex: Int
     let status: String
+    let discoveryJobID: String
+    let discoveryGeneration: Int
+    let candidateSnapshotHash: String
+    let resolution: String
     let createdAt: Date
     let updatedAt: Date
 }
