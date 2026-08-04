@@ -147,6 +147,47 @@ export function deterministicSeasonDiscoveryTaskID(
   return `season-discovery-${encoded}`.slice(0, 500);
 }
 
+export function canRecordSeasonDiscoveryDispatch(input: {
+  status: unknown;
+  generation: unknown;
+  dispatchGeneration: unknown;
+  expectedGeneration: number;
+  expectedDispatchGeneration: number;
+}): boolean {
+  return input.status === "queued" &&
+    input.generation === input.expectedGeneration &&
+    input.dispatchGeneration === input.expectedDispatchGeneration;
+}
+
+export function isCurrentPublishedSeasonDiscoverySnapshot(input: {
+  publishedJobID: unknown;
+  publishedGeneration: unknown;
+  publishedSnapshotHash: unknown;
+  publishedExpiresAtMillis: number | null;
+  jobID: string;
+  jobGeneration: unknown;
+  jobSnapshotHash: unknown;
+  jobStatus: unknown;
+  candidateGeneration: unknown;
+  candidateSnapshotHash: unknown;
+  candidateResolution: unknown;
+  expectedGeneration: number;
+  expectedSnapshotHash: string;
+  nowMillis: number;
+}): boolean {
+  return input.publishedJobID === input.jobID &&
+    input.publishedGeneration === input.expectedGeneration &&
+    input.publishedSnapshotHash === input.expectedSnapshotHash &&
+    input.jobGeneration === input.expectedGeneration &&
+    input.jobSnapshotHash === input.expectedSnapshotHash &&
+    (input.jobStatus === "succeeded" || input.jobStatus === "awaitingReview") &&
+    input.candidateGeneration === input.expectedGeneration &&
+    input.candidateSnapshotHash === input.expectedSnapshotHash &&
+    input.candidateResolution === "newSeason" &&
+    (input.publishedExpiresAtMillis === null ||
+      input.publishedExpiresAtMillis > input.nowMillis);
+}
+
 export function isSeasonAvailableForDiscoveryReview(
   data: Record<string, unknown> | undefined
 ): boolean {

@@ -28,6 +28,7 @@ import {
   SEASON_DISCOVERY_SCHEMA_VERSION,
 } from "../../shared/seasonDiscoveryCreation.js";
 import {
+  canRecordSeasonDiscoveryDispatch,
   deterministicSeasonDiscoveryTaskID,
   isActiveSeasonDiscoveryStatus,
   isSeasonAvailableForDiscoveryReview,
@@ -132,6 +133,10 @@ export const requestSeasonDiscovery = onCall(
         activeSeasonDiscoveryJobID: newJobRef.id,
         lastSeasonDiscoveryGeneration: generation,
         discoveryStatus: "queued",
+        publishedSeasonDiscoveryJobID: null,
+        publishedSeasonDiscoveryGeneration: null,
+        publishedSeasonDiscoverySnapshotHash: null,
+        publishedSeasonDiscoveryExpiresAt: null,
         lastDiscoveryRequestedAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       });
@@ -522,6 +527,10 @@ export const reanalyzeSeasonDiscoveryWithLatestExtractor = onCall(
         activeSeasonDiscoveryJobID: newJobRef.id,
         lastSeasonDiscoveryGeneration: nextGeneration,
         discoveryStatus: "queued",
+        publishedSeasonDiscoveryJobID: null,
+        publishedSeasonDiscoveryGeneration: null,
+        publishedSeasonDiscoverySnapshotHash: null,
+        publishedSeasonDiscoveryExpiresAt: null,
         lastDiscoveryRequestedAt: now,
         updatedAt: now,
       });
@@ -559,9 +568,6 @@ export const onSeasonDiscoveryQueued = onDocumentWritten(
       after.extractionContractRevision,
       SEASON_DISCOVERY_CONTRACT_REVISION
     );
-    if (!Number.isInteger(after.extractionContractRevision)) {
-      await afterSnap.ref.set({extractionContractRevision}, {merge: true});
-    }
     const receipt = await enqueueTask(
       brandID,
       jobID,
@@ -570,14 +576,26 @@ export const onSeasonDiscoveryQueued = onDocumentWritten(
       String(after.extractorVersion ?? ""),
       extractionContractRevision
     );
-    await afterSnap.ref.set({
-      status: "dispatching",
-      phase: "dispatching",
-      taskName: receipt.taskName,
-      dispatchStatus: receipt.alreadyExists ? "alreadyEnqueued" : "enqueued",
-      taskEnqueuedAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
-    }, {merge: true});
+    await db.runTransaction(async (transaction) => {
+      const freshSnap = await transaction.get(afterSnap.ref);
+      const fresh = freshSnap.data();
+      if (!freshSnap.exists || !canRecordSeasonDiscoveryDispatch({
+        status: fresh?.status,
+        generation: integer(fresh?.generation, -1),
+        dispatchGeneration: integer(fresh?.dispatchGeneration, 0),
+        expectedGeneration: generation,
+        expectedDispatchGeneration: dispatchGeneration,
+      })) return;
+      transaction.update(afterSnap.ref, {
+        status: "dispatching",
+        phase: "dispatching",
+        taskName: receipt.taskName,
+        dispatchStatus: receipt.alreadyExists ? "alreadyEnqueued" : "enqueued",
+        taskEnqueuedAt: FieldValue.serverTimestamp(),
+        extractionContractRevision,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    });
   }
 );
 
