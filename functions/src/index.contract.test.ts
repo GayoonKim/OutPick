@@ -1,5 +1,6 @@
 /* eslint-disable require-jsdoc, max-len */
 import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
 import test from "node:test";
 import {DEVELOPMENT_AUTH_FUNCTIONS_SERVICE_ACCOUNT_EMAIL} from "./auth/runtime.js";
 
@@ -57,6 +58,7 @@ const callableNames = [
   "searchBrands",
   "requestBrandDeletion",
   "cancelBrandDeletion",
+  "cancelSeasonDiscovery",
   "softDeleteSeason",
   "batchSoftDeleteSeasons",
   "restoreSeason",
@@ -78,6 +80,11 @@ const callableNames = [
   "requestSeasonImport",
   "requestSeasonAssetRetry",
   "requestSeasonCandidateImportJobs",
+  "requestSeasonDiscovery",
+  "requestSeasonDiscoveryImprovement",
+  "reanalyzeSeasonDiscoveryWithLatestExtractor",
+  "resolveSeasonDiscoveryCandidate",
+  "retrySeasonDiscovery",
   "getLookbookExtractionReview",
   "reviewLookbookExtraction",
   "requestLookbookExtractionReanalysis",
@@ -99,6 +106,12 @@ const firestoreEndpoints = {
   onSeasonImportQueued: {
     eventType: "google.cloud.firestore.document.v1.written",
     document: "brands/{brandID}/importJobs/{jobID}",
+    timeoutSeconds: 60,
+    availableMemoryMb: 256,
+  },
+  onSeasonDiscoveryQueued: {
+    eventType: "google.cloud.firestore.document.v1.written",
+    document: "brands/{brandID}/seasonDiscoveryJobs/{jobID}",
     timeoutSeconds: 60,
     availableMemoryMb: 256,
   },
@@ -141,6 +154,12 @@ const scheduleEndpoints = {
     timeoutSeconds: null,
     availableMemoryMb: null,
   },
+  reconcileSeasonDiscoveryJobs: {
+    schedule: "every 10 minutes",
+    timeZone: "Asia/Seoul",
+    timeoutSeconds: null,
+    availableMemoryMb: null,
+  },
 } as const;
 
 const callableOverrides = {
@@ -166,13 +185,13 @@ function runtimeNumber(value: unknown): number | null {
   return typeof value === "number" ? value : null;
 }
 
-test("Firebase deployment export 이름 68개를 유지한다", () => {
+test("Firebase deployment export 이름 76개를 유지한다", () => {
   const expected = [
     ...callableNames,
     ...Object.keys(firestoreEndpoints),
     ...Object.keys(scheduleEndpoints),
   ].sort();
-  assert.equal(expected.length, 68);
+  assert.equal(expected.length, 76);
   assert.deepEqual(Object.keys(exportedFunctions).sort(), expected);
 });
 
@@ -217,4 +236,46 @@ test("scheduler metadata를 유지한다", () => {
     assert.equal(runtimeNumber(value.timeoutSeconds), expected.timeoutSeconds, `${name} timeout`);
     assert.equal(runtimeNumber(value.availableMemoryMb), expected.availableMemoryMb, `${name} memory`);
   }
+});
+
+test("시즌 탐색 watchdog 상태 조회용 컬렉션 그룹 인덱스를 유지한다", () => {
+  const indexConfig = JSON.parse(
+    readFileSync("../firestore.indexes.json", "utf8")
+  ) as {
+    indexes?: Array<{
+      collectionGroup?: string;
+      queryScope?: string;
+      fields?: Array<{fieldPath?: string; order?: string}>;
+    }>;
+    fieldOverrides?: Array<{
+      collectionGroup?: string;
+      fieldPath?: string;
+      indexes?: Array<{order?: string; queryScope?: string}>;
+    }>;
+  };
+
+  const statusOverride = indexConfig.fieldOverrides?.find(
+    (override) =>
+      override.collectionGroup === "seasonDiscoveryJobs" &&
+      override.fieldPath === "status"
+  );
+
+  assert.ok(statusOverride, "seasonDiscoveryJobs/status field override가 필요합니다.");
+  assert.ok(
+    statusOverride.indexes?.some(
+      (index) =>
+        index.order === "ASCENDING" &&
+        index.queryScope === "COLLECTION_GROUP"
+    ),
+    "watchdog collectionGroup 조회용 ASCENDING 인덱스가 필요합니다."
+  );
+  assert.ok(
+    indexConfig.indexes?.some((index) =>
+      index.collectionGroup === "seasonDiscoveryJobs" &&
+      index.queryScope === "COLLECTION_GROUP" &&
+      index.fields?.map((field) => field.fieldPath).join(",") ===
+        "status,improvementRequested"
+    ),
+    "개선 요청 reconciler용 복합 인덱스가 필요합니다."
+  );
 });

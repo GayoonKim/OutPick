@@ -1,4 +1,4 @@
-/* eslint-disable require-jsdoc, valid-jsdoc */
+/* eslint-disable require-jsdoc, valid-jsdoc, max-len */
 import * as admin from "firebase-admin";
 import {CloudTasksClient} from "@google-cloud/tasks";
 import {createHash, randomUUID} from "node:crypto";
@@ -43,7 +43,7 @@ const LOOKBOOK_DISCOVERY_DIAGNOSTIC_ENDPOINT =
   "/tasks/discover-seasons-diagnostic";
 const LOOKBOOK_IMPORT_TASK_MAX_ATTEMPTS = 3;
 const LOOKBOOK_ASSET_RETRY_MODE = "assetFailureRetry";
-const LOOKBOOK_EXTRACTION_DIAGNOSTIC_RETENTION_DAYS = 90;
+const LOOKBOOK_EXTRACTION_DIAGNOSTIC_RETENTION_DAYS = 60;
 const LOOKBOOK_EXTRACTION_DIAGNOSTIC_CLEANUP_LIMIT = 100;
 const LOOKBOOK_EXTRACTION_EVIDENCE_CLEANUP_LIMIT = 100;
 const LOOKBOOK_DIAGNOSTIC_LIMITS = {
@@ -1318,12 +1318,51 @@ export const requestSeasonCandidateImportJobs = onCall(
       "candidateIDs",
       80
     );
+    const discoveryJobID = requiredDocumentID(
+      requiredString(data, "discoveryJobID", 128),
+      "discoveryJobID"
+    );
+    const generation = requiredNonNegativeIntegerValue(
+      data.generation,
+      "generation"
+    );
+    const candidateSnapshotHash = requiredString(
+      data,
+      "candidateSnapshotHash",
+      128
+    );
 
     await assertBrandWriteAccess(uid, brandID);
 
     const brandRef = db.collection("brands").doc(brandID);
+    const [brandSnapshot, discoveryJobSnapshot] = await Promise.all([
+      brandRef.get(),
+      brandRef.collection("seasonDiscoveryJobs").doc(discoveryJobID).get(),
+    ]);
+    const brandData = brandSnapshot.data();
+    const discoveryJobData = discoveryJobSnapshot.data();
+    const publishedExpiresAt = brandData?.publishedSeasonDiscoveryExpiresAt;
+    if (
+      !brandSnapshot.exists ||
+      !discoveryJobSnapshot.exists ||
+      brandData?.publishedSeasonDiscoveryJobID !== discoveryJobID ||
+      brandData?.publishedSeasonDiscoveryGeneration !== generation ||
+      brandData?.publishedSeasonDiscoverySnapshotHash !== candidateSnapshotHash ||
+      discoveryJobData?.generation !== generation ||
+      discoveryJobData?.candidateSnapshotHash !== candidateSnapshotHash ||
+      !["succeeded", "awaitingReview"].includes(discoveryJobData?.status) ||
+      (
+        publishedExpiresAt instanceof admin.firestore.Timestamp &&
+        publishedExpiresAt.toMillis() <= Date.now()
+      )
+    ) {
+      throw new HttpsError(
+        "failed-precondition",
+        "현재 공개된 시즌 후보 snapshot과 요청이 일치하지 않습니다."
+      );
+    }
     const candidateRefs = candidateIDs.map((candidateID) => {
-      return brandRef.collection("seasonCandidates").doc(candidateID);
+      return discoveryJobSnapshot.ref.collection("candidates").doc(candidateID);
     });
     const candidateSnapshots = await db.getAll(...candidateRefs);
     const failures: SeasonCandidateImportFailure[] = [];
@@ -1342,6 +1381,19 @@ export const requestSeasonCandidateImportJobs = onCall(
           candidateID,
           title,
           errorMessage: "시즌 후보를 찾을 수 없습니다.",
+        });
+        return;
+      }
+
+      if (
+        candidateData.resolution !== "newSeason" ||
+        candidateData.generation !== generation ||
+        candidateData.snapshotHash !== candidateSnapshotHash
+      ) {
+        failures.push({
+          candidateID,
+          title,
+          errorMessage: "신규 시즌으로 확정된 현재 후보만 가져올 수 있습니다.",
         });
         return;
       }
@@ -1425,6 +1477,9 @@ export const requestSeasonCandidateImportJobs = onCall(
     );
     return {
       brandID,
+      discoveryJobID,
+      generation,
+      candidateSnapshotHash,
       candidateIDs,
       jobIDs,
       requestedJobCount: candidateIDs.length,

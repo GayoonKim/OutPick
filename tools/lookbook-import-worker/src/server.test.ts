@@ -20,6 +20,7 @@ test("보호 route는 Bearer OIDC 토큰이 없으면 401을 반환한다", asyn
     for (const path of [
       "/wake",
       "/tasks/import-job",
+      "/tasks/discover-seasons",
       "/tasks/discover-seasons-diagnostic",
     ]) {
       const response = await post(baseURL, path);
@@ -32,12 +33,10 @@ test("route별 caller가 바뀌면 handler 실행 전에 403을 반환한다", a
   await withServer(
     fakeVerifier(functionsServiceAccountEmail),
     async (baseURL) => {
-      const response = await post(
-        baseURL,
-        "/tasks/import-job",
-        "Bearer functions-token",
-      );
-      assert.equal(response.status, 403);
+      for (const path of ["/tasks/import-job", "/tasks/discover-seasons"]) {
+        const response = await post(baseURL, path, "Bearer functions-token");
+        assert.equal(response.status, 403, path);
+      }
     },
   );
 
@@ -51,12 +50,10 @@ test("route별 caller가 바뀌면 handler 실행 전에 403을 반환한다", a
 
 test("route별 올바른 caller는 인증을 통과해 payload 검증까지 도달한다", async () => {
   await withServer(fakeVerifier(taskServiceAccountEmail), async (baseURL) => {
-    const response = await post(
-      baseURL,
-      "/tasks/import-job",
-      "Bearer task-token",
-    );
-    assert.equal(response.status, 500);
+    for (const path of ["/tasks/import-job", "/tasks/discover-seasons"]) {
+      const response = await post(baseURL, path, "Bearer task-token");
+      assert.equal(response.status, 500, path);
+    }
   });
 
   await withServer(

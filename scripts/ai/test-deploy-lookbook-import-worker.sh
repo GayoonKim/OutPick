@@ -50,6 +50,13 @@ grep -Fq "service=lookbook-import-worker-development" "$development_plan"
 grep -Fq "storage_bucket=outpick-test.firebasestorage.app" "$development_plan"
 grep -Fq "oidc_audience=https://lookbook-import-worker-development-xyenspjiwa-du.a.run.app" "$development_plan"
 grep -Fq "task_service_account=outpick-lookbook-task-dev@outpick-test.iam.gserviceaccount.com" "$development_plan"
+development_service_name="$(plan_value "$development_plan" service)"
+development_tag="$(plan_value "$development_plan" candidate_tag)"
+[[ "$development_tag" =~ ^c[0-9]{10}$ ]]
+if (( ${#development_tag} + ${#development_service_name} + 1 > 46 )); then
+  echo "Development candidate tag와 service명 결합 길이가 46자를 초과합니다." >&2
+  exit 1
+fi
 grep -Fq "functions_service_account=86635107099-compute@developer.gserviceaccount.com" "$development_plan"
 
 grep -Fq "project=outpick-664ae" "$production_plan"
@@ -64,8 +71,8 @@ grep -Fq -- "--no-allow-unauthenticated" "$production_plan"
 
 production_service="$(plan_value "$production_plan" service)"
 production_candidate_tag="$(plan_value "$production_plan" candidate_tag)"
-[[ "$production_candidate_tag" =~ ^cand-[0-9]{8}-[0-9]{6}$ ]]
-if (( ${#production_service} + ${#production_candidate_tag} > 46 )); then
+[[ "$production_candidate_tag" =~ ^c[0-9]{10}$ ]]
+if (( ${#production_service} + ${#production_candidate_tag} + 1 > 46 )); then
   echo "Production service와 candidate tag 결합 길이가 Cloud Run 제한을 초과합니다." >&2
   exit 1
 fi

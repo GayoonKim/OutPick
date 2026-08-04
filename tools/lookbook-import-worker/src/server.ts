@@ -1,3 +1,4 @@
+/* eslint-disable max-len */
 import express, {
   type Express,
   type NextFunction,
@@ -16,6 +17,10 @@ import {
   processDiscoverSeasonsDiagnosticRequest,
   type DiscoverSeasonsDiagnosticRequest,
 } from "./season-discovery.js";
+import {
+  processSeasonDiscoveryTaskRequest,
+  type SeasonDiscoveryTaskRequest,
+} from "./season-discovery-processor.js";
 import {isRetryableImportError} from "./import-error.js";
 import {
   authenticateOIDCRequest,
@@ -85,6 +90,27 @@ export function createServer(dependencies: ServerDependencies): Express {
         response.status(200).json(result);
       } catch (error) {
         console.error("[lookbook-import-worker] task request failed", error);
+        response.status(isRetryableImportError(error) ? 503 : 500).json({
+          accepted: false,
+          errorMessage: errorMessage(error),
+        });
+      }
+    },
+  );
+
+  app.post(
+    "/tasks/discover-seasons",
+    requireCaller("task", dependencies.auth),
+    async (request: Request, response: Response) => {
+      try {
+        const result = await processSeasonDiscoveryTaskRequest(
+          dependencies.firebase.firestore,
+          request.body as SeasonDiscoveryTaskRequest,
+          cloudTasksRetryCount(request),
+        );
+        response.status(200).json(result);
+      } catch (error) {
+        console.error("[lookbook-import-worker] season discovery task failed", error);
         response.status(isRetryableImportError(error) ? 503 : 500).json({
           accepted: false,
           errorMessage: errorMessage(error),

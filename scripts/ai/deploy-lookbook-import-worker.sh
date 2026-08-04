@@ -57,7 +57,9 @@ case "$action" in
     ;;
 esac
 
-candidate_tag="cand-$(date -u +%Y%m%d-%H%M%S)"
+# Cloud Run은 service명과 traffic tag의 결합 길이를 46자로 제한한다.
+# Development service명이 길어 분 단위 UTC timestamp를 포함한 11자 tag를 사용한다.
+candidate_tag="c$(date -u +%y%m%d%H%M)"
 env_vars="OUTPICK_FIREBASE_PROJECT_ID=$project_id"
 env_vars+=",OUTPICK_FIREBASE_STORAGE_BUCKET=$storage_bucket"
 env_vars+=",OUTPICK_IMPORT_ASSET_SYNC_CONCURRENCY=3"
