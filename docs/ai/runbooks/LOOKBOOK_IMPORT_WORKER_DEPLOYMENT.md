@@ -45,7 +45,7 @@ Production 기준:
 ## 3. Candidate 배포
 
 Candidate 배포는 `--no-traffic`으로 새 revision만 만들며 기존 사용자 traffic을 바꾸지 않는다.
-Candidate tag는 Cloud Run의 service명과 tag 결합 길이 46자 제한을 지키는 `cand-YYYYMMDD-HHMMSS` 형식을 사용한다.
+Candidate tag는 Cloud Run의 service명과 tag 결합 길이 46자 제한을 지키는 `cYYMMDDHHMM` 형식을 사용한다. Development의 긴 service명도 이 계약으로 revision 생성 전에 차단되지 않는다.
 
 Development:
 

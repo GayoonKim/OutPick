@@ -6,12 +6,15 @@
 결정:
 
 - 앱은 브랜드 생성, 시즌 후보 선택, import job 등록, 진행 상태 표시를 담당한다.
-- `seasonCandidates`와 `importJobs`는 Firestore에 저장해 앱 종료, 재진입, 실패, 재시도, 중복 방지를 견딜 수 있게 한다.
+- 시즌 목록은 `seasonDiscoveryJobs/{jobID}` 하위 immutable candidate snapshot으로, 선택한 시즌 이미지 작업은 `importJobs`로 저장해 앱 종료, 재진입, 실패, 재시도, 중복 방지를 견딜 수 있게 한다.
+- 같은 brand/canonical archive URL/extraction contract의 active discovery 요청은 하나로 병합하고, 다른 입력만 새 generation으로 만든다. 최신 유효 generation만 브랜드 published pointer로 공개한다.
+- 최초 discovery job은 `createBrand` transaction에서 브랜드와 함께 만들고, 전용 Cloud Tasks와 10분 watchdog으로 dispatch·lease·retry를 복구한다.
 - URL 기반 시즌 import의 무거운 작업은 Cloud Run worker가 담당한다.
 - Cloud Run worker는 queued import job을 가져와 URL 파싱, 이미지 후보 추출, 시즌/포스트 문서 생성, Storage thumb/detail asset sync, Firestore 상태 갱신을 처리한다.
 - Firebase Functions는 긴 import 작업을 직접 수행하지 않고, Firestore trigger로 Cloud Run worker를 깨우는 wake-up 역할을 우선 담당한다.
 - worker는 batch size, 동시성 제한, retry/backoff, already-synced skip 정책을 내부에서 관리한다.
 - 앱은 Firestore의 job 상태와 생성된 시즌/포스트 문서를 구독하거나 재조회해 사용자에게 진행률, 실패, 재시도 진입점을 표시한다.
+- URL이 같은 후보는 기존 시즌으로 연결한다. URL이 달라도 동일 브랜드의 정규화 시즌명이 하나만 일치할 때만 연결하고 source URL만 갱신하며, 모호하거나 복수인 일치는 관리자 검토로 보낸다.
 
 이유:
 
@@ -29,14 +32,13 @@
 - Cloud Run, Artifact Registry, IAM, 배포 스크립트 같은 운영 요소가 추가된다.
 - Functions trigger와 Cloud Run worker 사이의 인증, 중복 wake-up, idempotency를 설계해야 한다.
 - worker가 꺼져 있거나 배포 실패 상태면 import job이 queued/pending에 머물 수 있다.
-- Cloud Scheduler 또는 Cloud Tasks를 바로 도입하지 않으면 장애 복구 wake-up은 별도 phase에서 보강해야 한다.
+- discovery용 Cloud Tasks queue와 watchdog을 별도로 운영해야 하므로 queue rate, retry, IAM 설정 표면이 늘어난다.
 - 이미 생성된 asset이 손상된 경우 기본 skip 정책만으로는 복구할 수 없고, 추후 force 재생성 옵션이 필요할 수 있다.
 
 재검토 조건:
 
-- `queued`, `processing`, `pending` job이 반복적으로 장시간 남으면 Cloud Scheduler polling recovery 또는 Cloud Tasks 기반 큐를 도입한다.
+- `queued`, `dispatching`, `running` discovery job이 반복적으로 장시간 남으면 watchdog 주기, lease, queue retry 설정을 재조정한다.
 - 중복 worker 실행이 Firestore write 충돌이나 중복 Storage upload를 만들면 job lease, generation, idempotency key 정책을 강화한다.
 - asset 파일 손상이나 잘못된 thumb/detail 경로가 확인되면 force resync 옵션을 추가한다.
-- import job과 season candidate 문서가 과도하게 쌓이면 TTL 또는 완료 후 정리 정책을 도입한다.
+- 현재 terminal candidate snapshot은 30일, 실패 요약·검토 audit은 60일, evidence는 7일 보존한다. 장애 조사량이나 비용이 달라지면 기간을 재조정한다.
 - worker 운영 비용, cold start, 처리 latency가 사용자 경험에 영향을 주면 min instances, batch size, 동시성, Cloud Tasks 전환을 재검토한다.
-

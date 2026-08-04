@@ -30,7 +30,7 @@
 | 브랜드 관리 | `brandAdmins/{uid}`, `brands/{brandID}/admins/{uid}` | [LOOKBOOK](entrypoints/LOOKBOOK.md), [FIREBASE](entrypoints/FIREBASE.md) |
 | 스타일 무드 | `styleMoods`, `styleMoodTermIndex`, `styleMoodSeedMetadata` | [FIREBASE](entrypoints/FIREBASE.md), ADR-022 |
 | 브랜드 요청 | `brandRequests`, `brandRequestNameIndex`, daily counter/user limit | [FIREBASE](entrypoints/FIREBASE.md) |
-| 시즌 import | `seasonCandidates`, `importJobs`, `lookbookExtractionDiagnostics` | [worker architecture](architecture/LOOKBOOK_IMPORT_WORKER.md) |
+| 시즌 import/discovery | `seasonDiscoveryJobs/{jobID}/candidates`, `seasonDiscoveryJobs/{jobID}/reviews`, `importJobs`, `lookbookExtractionDiagnostics` | [worker architecture](architecture/LOOKBOOK_IMPORT_WORKER.md) |
 | 룩북 삭제 | `lookbookDeletionRequests`, `lookbookDeletionAuditLogs`, `lookbookDeletionPurgeLeases` | 아래 계약, [FIREBASE](entrypoints/FIREBASE.md), ADR-018 |
 
 ## 인증과 사용자 식별
@@ -152,6 +152,12 @@
 - `imageExtractorVersion`, `platformAdapterKey/version`, `domainAdapterKey/version`은 extraction run의 재현 경계다. Phase 7 extractor는 `1.2.0`, Cafe24 platform adapter는 `cafe24@1.0.0`이다. Generic 결과와 현재 미등록 상태인 domain adapter 값은 `null`이다.
 - extraction cache는 candidate/hash/quality뿐 아니라 extractor와 platform/domain adapter key/version 전체가 현재 registry와 일치할 때만 재사용한다.
 - discovery diagnostic은 같은 의미의 `candidateEvidence`, `extractionVersions`를 반환한다.
+- 일반 시즌 discovery의 source of truth는 `brands/{brandID}/seasonDiscoveryJobs/{jobID}`다. 후보는 job 하위 `candidates`, 관리자 동일성 결정은 `reviews`에 저장한다. 브랜드 문서의 active/published job·generation·snapshot hash는 빠른 진입용 projection이다.
+- 브랜드 projection의 `discoveryStatus`는 구형 경로의 `idle/queued/running/success/failed`와 durable 경로의 `succeeded/awaitingReview/correctionRequired/cancelled/superseded`를 모두 읽을 수 있어야 한다. 세부 작업 상태와 action 판단의 source of truth는 job 문서다.
+- discovery job은 비교 가능한 단조 증가 정수 `extractionContractRevision`을 가진다. `correctionRequired` job은 `blockedByExtractionContractRevision`, `improvementRequested`, `improvementRequestedAt`, `improvementRequestedBy`, `availableExtractionContractRevision`, `resolvedByJobID`를 선택적으로 가지며 동일 contract 재시도와 더 높은 revision 새 generation을 구분한다. 사람이 읽는 extractor/adapter version 문자열은 재현용 metadata이지 readiness 비교 source가 아니다.
+- Phase 4A의 개선 요청은 기존 `lookbookExtractionIssueClusters/{fingerprint}`에 `stage=seasonDiscovery`, `improvementRequestCount`, bounded `sampleJobPaths/affectedDomains`, 최초·최근 요청 시각으로 합친다. Phase 4B에서는 로직 불충분 판정 시 같은 occurrence를 사용자 버튼 없이 자동 기록하고 기존 요청 필드는 migration/호환 대상으로 둔다. 시즌 discovery도 redacted 40자 issue fingerprint 계약을 사용하며 cluster에는 원본 URL query, HTML, script를 저장하지 않는다. 배포 전 64자 legacy fingerprint는 앞 40자로 정규화한다.
+- 이미지 import 요청은 `discoveryJobID`, `generation`, `candidateSnapshotHash`, `candidateIDs`를 함께 검증하며 `newSeason` 후보 seed를 기존 `importJobs`에 복사한다.
+- `expiresAt`은 job/candidate/review collection group 각각에 TTL을 설정한다. active 및 `awaitingReview`/`correctionRequired`에는 값을 두지 않고, 일반 terminal/candidate는 30일, 실패 요약/review audit은 60일이다.
 - candidate/source fingerprint에는 원본 query value를 저장하지 않는다.
 - Phase 2 import job은 `expectedCountEvidence`, `programmaticGalleryEvidence`, `extractionQualityStatus/reasons`, static/rendered/source/content-hash candidate count와 hash 완료·실패 수를 기록한다.
 - `imageCandidates`는 content hash가 확인된 동일 bytes 후보를 first-wins로 제거한 materialization 입력이다. hash 조회 실패 후보는 자동 제거하지 않는다.
@@ -162,7 +168,9 @@
 - `lookbookExtractionEvidence/{evidenceID}`은 `brandID`, `jobID`, `dispatchGeneration`, `status/stage`, `issueFingerprint`, `storagePath`, `expiresAt`을 가진 server-only 7일 cleanup ledger다.
 - Storage `lookbook-extraction-evidence/{evidenceID}.json`은 failed/needsReview run의 allowlist DOM 구조, redacted source, 후보/expected evidence와 extraction version만 가진다. 전체 HTML/script/screenshot과 query value는 저장하지 않는다.
 - `lookbookExtractionIssueClusters/{fingerprint}`은 `stage + platform + parserStrategy + failureReasons + qualityReasons + templateSignature + extractorMajorVersion` fingerprint를 document ID로 사용한다.
-- cluster는 `occurrenceCount`, `affectedDomains/Count`, `sampleEvidenceIDs`, `firstSeenAt/lastSeenAt`, `status`, `fixedInExtractorVersion`, `recurrenceCount`와 관리자 부족 feedback을 가진다. 같은 evidence ledger ID는 occurrence를 다시 증가시키지 않는다.
+- cluster는 `occurrenceCount`, `affectedDomains/Count`, `sampleEvidenceIDs/sampleJobPaths`, `firstSeenAt/lastSeenAt`, `status`, `fixedInExtractorVersion`, `recurrenceCount`와 관리자 부족 feedback을 가진다. 같은 evidence ledger ID 또는 같은 job generation occurrence는 횟수를 다시 증가시키지 않는다.
+- Phase 4B의 논리 상태는 `open/triaged/inProgress/needsGroundTruth/fixReady/fixed/verified/wontFix`다. claim owner/시각/version, 마지막 triage, ground truth 요구, fixed commit·Worker/Functions revision, verified job과 compare-and-set audit가 필요하며 최종 field/path 이름은 상세 하네스에서 확정한다.
+- job에는 사용자 표시를 위한 issue fingerprint/stage, blocked revision과 operator status projection만 두고 issue 운영 상세를 복제하지 않는다. 실제 Production revision verifier가 `fixed`를 기록한 뒤에만 정확히 일치하는 영향 job의 available revision을 공개한다.
 - Phase 6 import job은 `repairStatus`, `repairGeneration`, `repairTargetSeasonID`, `repairSnapshotHash`와 keep/add/reorder/remove count를 가진다. `repairStatus=noChanges`는 add/reorder/removeCandidates가 모두 0이라 시즌 write와 관리자 적용이 필요 없는 terminal 비교 결과다.
 - `brands/{brandID}/importJobs/{jobID}/repairs/{repairGeneration}`은 keep/add/reorder/removeCandidates, `orderedPostIDs/allPostIDs`, `resultingPostCount`, `repairSnapshotHash`, 적용 audit를 가진 server-only preview다. 변경 없음도 audit status `noChanges`로 남긴다.
 - repair 적용은 기존 post의 `orderIndex/sourceSortIndex`만 보정하고 새 post에만 deterministic ID와 새 `createdAt`을 부여한다. remove-candidate post는 삭제하지 않고 후보 뒤 순서로 보존한다.
