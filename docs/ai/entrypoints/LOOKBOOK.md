@@ -278,7 +278,7 @@ Repository가 `DocumentSnapshot.documentID`를 같은 snapshot에서 decode한 D
 - discovery 상태 owner: `CreateBrandDiscoveryViewModel.swift`. View가 사라질 때는 Firestore 관찰만 끝내고 서버 job은 취소하지 않는다.
 - repository: `CloudFunctionsSeasonCandidateDiscoveryRepository.swift`가 최초 `discoveryJobID` 또는 브랜드 published pointer를 관찰하고, `FirestoreSeasonCandidateRepository.swift`가 `newSeason` nested candidate만 로드한다.
 - `BrandStoringRepository.createBrand`는 `BrandCreationReceipt(brandID, discoveryJobID)`를 반환해 브랜드 생성 transaction에서 함께 만들어진 최초 job을 그대로 이어받는다.
-- 이미지 import 요청은 `discoveryJobID`, `generation`, `candidateSnapshotHash`를 전달하며 서버가 최신 published snapshot과 `newSeason` resolution을 다시 검증한다.
+- 이미지 import 요청은 `discoveryJobID`, `generation`, `candidateSnapshotHash`를 전달한다. 새 discovery generation이 시작되면 브랜드의 published pointer를 같은 transaction에서 즉시 비우며, 서버는 각 import job 생성 또는 asset retry transaction 안에서 브랜드 pointer·job·candidate의 generation/hash, 만료, `newSeason` resolution과 URL을 다시 검증한다.
 - review: `LookbookExtractionReviewView.swift`, `LookbookExtractionReviewViewModel.swift`, `CloudFunctionsLookbookExtractionReviewRepository.swift`.
 - import 현황의 검토 action은 `LookbookCoordinator`가 상세 화면을 push하고 `LookbookContainer`가 Repository/UseCase/ViewModel을 조립한다.
 - review 화면은 예상/발견 수량 방향을 기준으로 동작한다. 초과·예상 수 미확인은 불필요 후보 제외와 `승인`, 미달은 승인 없이 `누락된 이미지 알리기`, content hash 미완료는 승인 차단을 제공한다. correctionRequired 재분석은 총 관리자에게만 노출한다.

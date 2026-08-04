@@ -271,6 +271,8 @@ npm run build
 | Firebase/env 경계 | `firebase.ts`, `config.ts` |
 | 아키텍처 | `docs/ai/architecture/LOOKBOOK_IMPORT_WORKER.md` |
 
+durable 시즌 discovery의 enqueue 완료 기록은 job을 transaction으로 다시 읽어 같은 `queued` generation/dispatch generation일 때만 `dispatching`으로 전이한다. Worker가 먼저 완료한 상태를 trigger가 되돌리지 않는다. 새 generation 접수·재분석은 기존 published pointer를 즉시 무효화하고, candidate import/asset retry는 실제 mutation transaction 안에서 현재 published snapshot 동일성을 재검증한다.
+
 권장 흐름:
 
 ```text
