@@ -15,6 +15,7 @@ struct CreateBrandViewModelTests {
         let result = await viewModel.saveBrand()
 
         #expect(result?.hasLogoAsset == true)
+        #expect(result?.discoveryJobID == "discovery-1")
         #expect(viewModel.createdBrandDocument?.hasLogoAsset == true)
         #expect(viewModel.message == nil)
         #expect(await brandStore.createCallCount == 1)
@@ -110,9 +111,9 @@ private actor CreateBrandStoreSpy: BrandStoringRepository {
         websiteURL: String?,
         lookbookArchiveURL: String?,
         moodIDs: [String]
-    ) async throws -> String {
+    ) async throws -> BrandCreationReceipt {
         createCallCount += 1
-        return "brand-1"
+        return BrandCreationReceipt(brandID: "brand-1", discoveryJobID: "discovery-1")
     }
 
     func updateBrand(
