@@ -18,6 +18,7 @@ final class CreateBrandViewModel: ObservableObject {
         let englishName: String?
         let websiteURL: String?
         let lookbookArchiveURL: String?
+        let discoveryJobID: String?
         let hasLogoAsset: Bool
         let moodIDs: [String]
 
@@ -27,6 +28,7 @@ final class CreateBrandViewModel: ObservableObject {
             englishName: String?,
             websiteURL: String?,
             lookbookArchiveURL: String?,
+            discoveryJobID: String? = nil,
             hasLogoAsset: Bool,
             moodIDs: [String] = []
         ) {
@@ -35,6 +37,7 @@ final class CreateBrandViewModel: ObservableObject {
             self.englishName = englishName
             self.websiteURL = websiteURL
             self.lookbookArchiveURL = lookbookArchiveURL
+            self.discoveryJobID = discoveryJobID
             self.hasLogoAsset = hasLogoAsset
             self.moodIDs = moodIDs
         }
@@ -175,7 +178,7 @@ final class CreateBrandViewModel: ObservableObject {
                 let normalizedLookbookArchiveURL = lookbookArchiveURL.isEmpty
                     ? nil
                     : lookbookArchiveURL
-                let docID = try await brandStore.createBrand(
+                let receipt = try await brandStore.createBrand(
                     name: rawName,
                     englishName: rawEnglishName.isEmpty ? nil : rawEnglishName,
                     isFeatured: isFeatured,
@@ -184,11 +187,12 @@ final class CreateBrandViewModel: ObservableObject {
                     moodIDs: orderedSelectedMoodIDs
                 )
                 createdBrand = CreatedBrand(
-                    id: BrandID(value: docID),
+                    id: BrandID(value: receipt.brandID),
                     name: rawName,
                     englishName: rawEnglishName.isEmpty ? nil : rawEnglishName,
                     websiteURL: normalizedWebsiteURL,
                     lookbookArchiveURL: normalizedLookbookArchiveURL,
+                    discoveryJobID: receipt.discoveryJobID,
                     hasLogoAsset: false,
                     moodIDs: orderedSelectedMoodIDs
                 )
@@ -211,6 +215,7 @@ final class CreateBrandViewModel: ObservableObject {
                 englishName: createdBrand.englishName,
                 websiteURL: createdBrand.websiteURL,
                 lookbookArchiveURL: createdBrand.lookbookArchiveURL,
+                discoveryJobID: createdBrand.discoveryJobID,
                 hasLogoAsset: true,
                 moodIDs: createdBrand.moodIDs
             )

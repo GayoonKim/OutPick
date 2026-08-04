@@ -13,18 +13,28 @@ struct CloudFunctionsSeasonImportRepositoryTests {
             ],
             ["sourceImportJobID": "job-1", "seasonID": "season-1", "status": "queued"],
             [
-                "diagnostic": [
-                    "id": "diagnostic-1", "brandID": "brand-1", "type": "season_discovery",
-                    "status": "passed", "sourceURL": "https://archive.example.com",
-                    "seasonDiscovery": ["storedCandidateCount": 4]
-                ]
+                "brandID": "brand-1", "jobID": "discovery-1", "generation": 3,
+                "status": "queued", "coalesced": true,
+                "sourceArchiveURL": "https://archive.example.com"
             ]
         ]
         let brandID = BrandID(value: "brand-1")
         let importing = CloudFunctionsSeasonImportRepository(transport: transport)
         let jobs = CloudFunctionsSeasonImportJobRequestingRepository(transport: transport)
         let retry = CloudFunctionsSeasonAssetRetryRepository(transport: transport)
-        let discovery = CloudFunctionsSeasonCandidateDiscoveryRepository(transport: transport)
+        let discovery = CloudFunctionsSeasonCandidateDiscoveryRepository(
+            transport: transport,
+            observeJob: { _, _ in
+                AsyncThrowingStream { continuation in
+                    continuation.yield([
+                        "status": "succeeded",
+                        "candidateCount": 4,
+                        "candidateSnapshotHash": "snapshot-hash"
+                    ])
+                    continuation.finish()
+                }
+            }
+        )
 
         _ = try await importing.requestSeasonImport(
             brandID: brandID,
@@ -33,17 +43,20 @@ struct CloudFunctionsSeasonImportRepositoryTests {
         )
         let batch = try await jobs.requestSeasonCandidateImportJobs(
             brandID: brandID,
-            candidateIDs: ["candidate-1"]
+            discoveryJobID: "discovery-1",
+            generation: 3,
+            candidateIDs: ["candidate-1"],
+            candidateSnapshotHash: "snapshot-hash"
         )
         _ = try await retry.requestAssetRetry(brandID: brandID, sourceJobID: "job-1")
         let result = try await discovery.discoverSeasonCandidates(brandID: brandID)
 
         #expect(transport.calls.map(\.name) == [
             "requestSeasonImport", "requestSeasonCandidateImportJobs",
-            "requestSeasonAssetRetry", "runLookbookExtractionDiagnostic"
+            "requestSeasonAssetRetry", "requestSeasonDiscovery"
         ])
         #expect(transport.calls[0].data["sourceCandidateID"] == nil)
-        #expect(transport.calls[3].data["type"] as? String == "season_discovery")
+        #expect(transport.calls[3].data["requestReason"] as? String == "manualRefresh")
         #expect(batch.requestedImportJobCount == 1)
         #expect(result.candidateCount == 4)
     }

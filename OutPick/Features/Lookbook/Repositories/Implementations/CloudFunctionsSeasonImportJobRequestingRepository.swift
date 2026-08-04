@@ -17,13 +17,19 @@ struct CloudFunctionsSeasonImportJobRequestingRepository: SeasonImportJobRequest
 
     func requestSeasonCandidateImportJobs(
         brandID: BrandID,
-        candidateIDs: [String]
+        discoveryJobID: String,
+        generation: Int,
+        candidateIDs: [String],
+        candidateSnapshotHash: String
     ) async throws -> SeasonImportBatchRequestResult {
         let response = try await transport.call(
             "requestSeasonCandidateImportJobs",
             data: [
                 "brandID": brandID.value,
-                "candidateIDs": candidateIDs
+                "discoveryJobID": discoveryJobID,
+                "generation": generation,
+                "candidateIDs": candidateIDs,
+                "candidateSnapshotHash": candidateSnapshotHash
             ]
         )
         return try SeasonImportCloudFunctionsMapper.batchRequestResult(response)

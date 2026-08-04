@@ -64,9 +64,12 @@ Lookbook import worker tests:
 - `tools/lookbook-import-worker/src/processor.test.ts`
 - `tools/lookbook-import-worker/src/job-lifecycle.test.ts`
 - `tools/lookbook-import-worker/src/public-http.test.ts`
-- 실행: `cd tools/lookbook-import-worker && npm test` (root와 하위 test 모두 포함, 현재 83/83 통과).
+- 실행: `cd tools/lookbook-import-worker && npm test` (root와 하위 test 모두 포함, 2026-08-04 기준 88/88 통과).
+- durable 시즌 discovery: `src/season-identity.test.ts`, `src/season-discovery-processor.test.ts`, `src/server.test.ts`에서 URL/정규화 이름 동일성, 충돌·복수 일치, task identity route와 publish 경계를 검증한다.
+- 관리자 discovery UI: `OutPickTests/SeasonDiscoveryManagementViewModelTests.swift`에서 최신 상태 stream 반영, 요청·재시도·취소, review 성공 완료와 실패 시 후보 보존을 검증한다. 2026-08-04 iPhone 17 Pro iOS 26.2 Simulator에서 4/4 통과했다.
 - fixture gate: `cd tools/lookbook-import-worker && npm run test:fixtures` (외부 fetch 없이 현재 corpus 5/5와 구조화된 differential을 검증).
 - 2026-08-03 Production candidate `lookbook-import-worker-00024-fow`에서 task `/readyz` 200, task 빈 import 500, Functions 빈 diagnostic 500, Functions→import 교차 caller 403을 확인했다. traffic 100% 전환 후 전용 W3C import가 post 5개·asset 6/6 `ready`로 성공했고 ERROR·queue pending·smoke 데이터 잔존은 모두 0건이었다.
+- 2026-08-04 Development Worker `00004-xal`에서 Cloud Tasks OIDC `/readyz` 200을 확인하고 traffic 100%로 전환했다. OUTSTANDING 실제 URL discovery 2회가 HTTP 200·attempt 1로 완료됐고, 동시 callable 3건은 job 하나로 합쳐졌다. 실제 품질 결과는 44개 후보와 `load_more_detected`/`dynamic_rendering_detected`로 `correctionRequired`였으며 queue·ERROR·QA 데이터 잔존은 0건이었다.
 - extraction review Functions contract: `functions/src/lookbook/import/reviewContract.test.ts`, `taskService.test.ts`, `importValidation.test.ts`, `functions/src/index.contract.test.ts`.
 - extraction review iOS targeted tests: `OutPickTests/LookbookExtractionReviewViewModelTests.swift`, `OutPickTests/CloudFunctions/CloudFunctionsSeasonImportRepositoryTests.swift`.
 - existing-season reconcile: worker `src/extraction/reconcile.test.ts`, Functions `repairContract.test.ts`, iOS `LookbookSeasonRepairViewModelTests.swift`와 `CloudFunctionsSeasonImportRepositoryTests.swift`.
@@ -97,6 +100,9 @@ Firebase Functions tests/build entry:
 - 기능 단위 테스트: `functions/src/{auth,brand,chat,lookbook}/**/*.test.ts`
 - `functions/package.json`의 `npm test`는 clean build 후 `lib/` 아래 `*.test.js`를 재귀 발견해 실행하며 0개면 실패한다.
 - 실행: `cd functions && npm test`
+- durable 시즌 discovery: `functions/src/lookbook/import/seasonDiscoveryContract.test.ts`, `functions/src/index.contract.test.ts`에서 fingerprint/status/retention/task ID, review 연결 대상의 삭제 lifecycle, revision readiness·legacy fingerprint 호환, enqueue 후 terminal 상태 덮어쓰기 방지, 현재 published snapshot import gate, 76개 export metadata와 watchdog/readiness collection-group index 설정을 검증한다. 2026-08-05 기준 전체 113/113 통과.
+- 브랜드 discovery projection 호환성: `OutPickTests/FirestoreDocumentIDBoundaryTests.swift`가 구형 `success`와 durable pipeline의 `succeeded/awaitingReview/correctionRequired/cancelled/superseded`를 포함한 모든 영속 상태의 Firestore 디코딩을 검증한다. iPhone 17 Pro Max iOS 26.2에서 suite 4/4가 통과했다.
+- 개선 요청 구현은 Functions 순수 계약 테스트로 `extractionContractRevision` 경계와 legacy 호환을, iOS fake Repository로 요청됨·higher revision ready·새 queued generation 전이를 검증한다. callable의 실제 권한·중복·stale snapshot·transaction 경합과 진행 묶음 중앙 배치는 마지막 Development 통합 QA에서 확인한다.
 - 스타일 무드: `functions/src/styleMoods/{policy,functions,seedValidation}.test.ts`
   - NFKC/공백/소문자 정규화, ID·그룹·alias 충돌, 최종 update 조합, 관리자 handler, v1 56개·featured 20개·전체 용어 고유성을 검증한다.
 - Firestore rules: `firestore-tests/style-moods.rules.test.mjs`
@@ -307,3 +313,9 @@ xcodebuild -scheme OutPick-Development -destination 'platform=iOS Simulator,name
 xcodebuild -scheme OutPick-Development -destination 'id={simulator-id}' test -only-testing:OutPickTests/JoinedRoomsSessionStoreTests
 xcodebuild -scheme OutPick-Development -destination 'id={simulator-id}' test -only-testing:OutPickTests/ChatRoomExitUseCaseTests -only-testing:OutPickTests/JoinedRoomsSessionStoreTests
 ```
+
+- 시즌 discovery learning-loop 테스트:
+  - Functions `seasonDiscoveryContract.test.ts`는 canonical fingerprint, legacy 64→40 issue fingerprint, revision readiness와 retention 계약을 검증한다. `index.contract.test.ts`는 callable export와 `status + improvementRequested` 복합 인덱스를 고정한다.
+  - Worker `season-discovery-processor.test.ts`는 명시 revision exact claim, 무필드 legacy revision 1 호환, 40자 redacted issue fingerprint를 검증한다.
+  - iOS `SeasonDiscoveryManagementViewModelTests.swift`는 개선 요청 직후 requested 전이, higher revision ready 판정, 재분석 뒤 새 queued generation 교체를 fake Repository로 검증한다.
+  - 2026-08-04 Functions lint/build 및 111개, Worker lint/build 및 89개, iOS targeted 7개가 통과했다.

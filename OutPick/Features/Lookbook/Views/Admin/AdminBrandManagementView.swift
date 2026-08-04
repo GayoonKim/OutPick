@@ -48,33 +48,22 @@ private enum AdminBrandManagementTab: String, CaseIterable, Identifiable {
     }
 }
 
-private enum AdminBrandImportTab: String, CaseIterable, Identifiable {
-    case discover
-    case status
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .discover: return "시즌 찾아오기"
-        case .status: return "현황"
-        }
-    }
-}
-
 struct AdminBrandManagementView: View {
     @StateObject private var viewModel: AdminBrandManagementViewModel
     private let coordinator: LookbookCoordinator
     private let brandImageCache: any BrandImageCacheProtocol
     private let seasonAdditionSheetFactory: (Brand, @escaping () -> Void) -> AnyView
-    private let importManagementSheetFactory: (Brand) -> AnyView
+    private let importManagementSheetFactory: (
+        Brand,
+        @escaping () -> Void,
+        @escaping () -> Void
+    ) -> AnyView
     private let deletionManagementFactory: (Brand) -> AnyView
 
     @EnvironmentObject private var brandAdminSessionStore: BrandAdminSessionStore
     @State private var isImagePickerPresented = false
     @State private var isPresentingSeasonAddition = false
     @State private var selectedMenu: AdminBrandManagementTab?
-    @State private var selectedImportTab: AdminBrandImportTab = .discover
     @State private var isPresentingMoodEditor = false
     @State private var editingSeason: Season?
 
@@ -83,7 +72,11 @@ struct AdminBrandManagementView: View {
         coordinator: LookbookCoordinator,
         brandImageCache: any BrandImageCacheProtocol,
         seasonAdditionSheetFactory: @escaping (Brand, @escaping () -> Void) -> AnyView,
-        importManagementSheetFactory: @escaping (Brand) -> AnyView,
+        importManagementSheetFactory: @escaping (
+            Brand,
+            @escaping () -> Void,
+            @escaping () -> Void
+        ) -> AnyView,
         deletionManagementFactory: @escaping (Brand) -> AnyView
     ) {
         _viewModel = StateObject(wrappedValue: viewModel)
@@ -369,27 +362,14 @@ struct AdminBrandManagementView: View {
 
     @ViewBuilder
     private func importTabContent(for brand: Brand) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Picker("시즌 가져오기 메뉴", selection: $selectedImportTab) {
-                ForEach(AdminBrandImportTab.allCases) { tab in
-                    Text(tab.title).tag(tab)
-                }
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal, 20)
-            .padding(.top, 24)
-
-            switch selectedImportTab {
-            case .discover:
-                ScrollView {
-                    importDiscoverySection(brand)
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 40)
-                }
-            case .status:
-                importManagementSheetFactory(brand)
-            }
-        }
+        importManagementSheetFactory(
+            brand,
+            { isPresentingSeasonAddition = true },
+            { selectedMenu = .info }
+        )
+        .padding(.horizontal, 20)
+        .padding(.top, 24)
+        .padding(.bottom, 40)
     }
 
     @ViewBuilder
@@ -713,28 +693,6 @@ struct AdminBrandManagementView: View {
         .frame(height: 46)
         .background(OutPickTheme.SwiftUIColor.surfaceElevated)
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-    }
-
-    private func importDiscoverySection(_ brand: Brand) -> some View {
-        adminSection {
-            VStack(alignment: .leading, spacing: 14) {
-                Text("시즌 찾아오기")
-                    .font(.headline)
-                    .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
-
-                Text("브랜드의 룩북 목록 URL을 바탕으로 가져올 시즌 후보를 찾습니다.")
-                    .font(.caption)
-                    .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                secondaryButton(
-                    title: "시즌 찾아오기 시작",
-                    isDisabled: !hasLookbookArchiveURL(brand)
-                ) {
-                    isPresentingSeasonAddition = true
-                }
-            }
-        }
     }
 
     private func adminSection<Content: View>(

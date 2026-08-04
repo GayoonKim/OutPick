@@ -2,9 +2,9 @@
 
 ## 현재 상태
 
-- 현재 진행 중인 핵심 task는 없다. `development-production-environment-separation`은 2026-08-03 Phase 1~4 구현, Development backend 배포, 통합 QA, Production 인증 Function 전용 identity 전환, 실제 Development import smoke·QA 데이터 정리, PR #3 병합과 Production Worker 배포·smoke까지 완료 처리했다.
+- 현재 핵심 task는 `lookbook-discovery-learning-loop`다. 시즌 후보 discovery의 durable server background job, 최신 snapshot publish, 기존 시즌 동일성, iOS 생성 플로우와 관리자 review/re-entry UI 구현을 완료했다. Development 통합 배포와 실제 URL 수동 QA는 남아 있다.
 - 이전 핵심 task `style-mood-personalization-account-privacy`의 Phase 1~8은 완료 처리했다. Apple Developer Program 가입 후 App Attest 실기기 QA와 운영 백업 설정은 출시 운영 게이트로 분리하고, 개발 데이터 전체 삭제는 마지막 Phase의 별도 승인 전까지 진행하지 않는다.
-- `lookbook-discovery-learning-loop`는 그다음 핵심 후속 후보로 조정했다. season discovery의 구조 evidence, issue cluster, 관리자 ground truth, 최소 fixture, extractor version gate 범위는 유지하되 별도 논의·승인 전에는 task 문서나 코드를 생성·수정하지 않는다.
+- `lookbook-discovery-learning-loop`는 사용자 승인으로 task 문서를 생성했다. 동일 active 요청 병합, latest generation publish, 기존 시즌 동일성, 7/30/60일 retention, failure action, watchdog 복구, 관리자 review와 fixture/version gate를 설계 기준으로 확정했다.
 - `socket-ingress-ordering-hardening`은 Phase 1~6 구현, 자동 회귀와 실제 Firebase/Simulator 핵심 QA를 완료하고 2026-07-17 종료했다.
 - `socket-message-dedupe-hardening`은 구현·자동 회귀·candidate closeout을 완료하고 2026-07-16 종료했으며, 2026-07-22 사용자 승인 후 candidate를 운영 traffic 100%로 전환했다.
 - `firestore-document-id-boundary-cleanup`은 Phase 1~4 구현·QA, rules 운영 배포, 운영 `Rooms.ID` cleanup과 사후 재감사까지 완료하고 2026-07-14 종료했다.
@@ -18,7 +18,13 @@
 
 ## 현재 핵심 작업
 
-- 없음. 다음 핵심 작업은 별도 논의·승인 후 지정한다.
+- `lookbook-discovery-learning-loop`
+  - [설계](lookbook-discovery-learning-loop/design.md)
+  - [결정](lookbook-discovery-learning-loop/decisions.md)
+  - [Phase 계획](lookbook-discovery-learning-loop/plan.md)
+  - [현재 상태](lookbook-discovery-learning-loop/progress.md)
+  - [QA 기준](lookbook-discovery-learning-loop/qa-checklist.md)
+  - 상태: Phase 1·3 완료, Phase 2 핵심 구현 완료·통합 배포 대기, Phase 4 backend review 완료·learning UI 일부 대기.
 
 ## 이전 핵심 작업
 
@@ -28,11 +34,16 @@
   - [PR #3](https://github.com/GayoonKim/OutPick/pull/3)
   - 상태: Phase 1~4, Production 인증 Function identity 전환, Development/Production import smoke, PR #3 병합과 Production Worker traffic 전환 완료. 실기기 App Attest만 Apple Developer Program 가입 후 외부 의존 후속 작업으로 유지.
 
-## 그다음 핵심 후속 후보
+## 현재 핵심 작업 상세
 
 - `lookbook-discovery-learning-loop`
-  - 범위: 구조 evidence, issue cluster, 관리자 정상/누락/오탐 피드백, 최소 fixture 승격, extractor version gate.
-  - 상태: 사용자 대화 기준 범위만 유지. 설계 하네스와 구현은 별도 논의·승인 전까지 보류.
+  - 범위: 브랜드 생성 직후 시즌 후보를 자동 추출하고, 관리자 확인 후 선택한 시즌의 이미지만 추출하는 흐름을 유지한다. season discovery의 구조 evidence, issue cluster, 관리자 정상/누락/오탐 피드백, 최소 fixture 승격, extractor version gate를 포함한다.
+  - 비동기 경계: `CreateBrandDiscoveryViewModel`이 Firestore 관찰을 소유하고 화면 종료 시 관찰만 끝낸다. 서버 job은 계속되며 최초 job ID 또는 브랜드 published pointer로 상태와 결과를 복원한다.
+  - 시즌 동일성: URL 일치 여부를 우선 사용하되, URL이 달라도 동일 브랜드 안에서 정규화한 시즌 이름이 기존 시즌 하나와 유일하게 일치하면 새 시즌을 만들지 않고 기존 시즌으로 연결해 최신 source URL만 갱신한다. 대소문자·공백과 `F/W`/`FW`, `S/S`/`SS` 표기를 정규화하고, `LOOKBOOK`·`COLLECTION`·`CAMPAIGN`처럼 구체적이지 않은 이름이나 복수 일치는 자동 연결하지 않고 관리자 검토 대상으로 둔다. URL 갱신만으로 이미지 재추출을 자동 시작하지 않는다.
+  - 회귀·배포 게이트: Generic/Platform/Domain 추출 규칙 변경은 영향 범위가 다르지만 항상 전체 fixture corpus를 실행한다. Domain은 정확한 host·platform·실제 fixture 연결과 비대상 host 격리를, Platform은 여러 브랜드 fixture와 타 플랫폼 오탐 방지를, Generic은 모든 platform/domain/incident differential과 대표 실제 URL smoke를 추가로 요구한다. 기존 성공 결과의 후보 수·집합·순서·제목·strategy·adapter·quality가 예상하지 않게 바뀌면 candidate 배포를 중단한다. 의도된 개선은 관리자 ground truth 확인, golden expected 명시 갱신, extractor/adapter version bump, Development smoke와 사용자 승인 후에만 Production으로 전환한다. 장기적으로 CI required check와 검증되지 않은 직접 배포·traffic 전환 차단을 포함한 강한 게이트를 설계한다.
+  - Fixture·재발 관리: fixture는 브랜드 수와 1:1로 늘리지 않고 platform, template signature, strategy, failure/quality reason, 구조 token을 기준으로 같은 원인은 기존 issue cluster와 대표 fixture에 통합한다. 새 fixture는 기존 fixture가 표현하지 못하는 의미 있는 구조·동작 분기에만 추가한다. `fixedInExtractorVersion`보다 낮은 Worker에서 생긴 occurrence는 배포 drift로 분리하고, 수정 버전 이상에서 같은 fingerprint가 재발하면 cluster를 `open`으로 되돌려 `recurrenceCount`를 증가시키며 새 실패보다 우선 조사한다. 이때 기존 fixture도 실패하면 코드 회귀로 배포 중단·rollback, fixture는 통과하지만 실제 URL만 실패하면 fixture 불충분·새 구조 변형·adapter 미선택·잘못된 계층 배치·네트워크/차단 원인을 구분한다. 같은 cluster로 묶는 것은 중복 fixture 생성을 막는 것이며 재발을 무시하거나 자동 승인하는 의미가 아니다.
+  - 실패·복구: 최초 job은 `createBrand` transaction에서 함께 만들고, active job은 watchdog이 누락 task·만료 lease·stale generation·retry 소진을 감시해 복구 또는 종료 상태로 수렴시킨다. `awaitingReview/correctionRequired`는 실행 중이 아닌 action-required 상태이며 관리자 판단, 로직 보강 후 재분석, 취소로 닫는다. 시즌 목록은 새 discovery generation, 시즌 이미지는 기존 import job의 새 review/dispatch generation으로 재분석한다.
+  - 상태: durable Functions/Worker, rules/index/TTL 설정, iOS 생성 플로우 접합부 구현과 자동 검증 완료. 관리자 review/re-entry UI, extractor 재분석/issue cluster UI, Development/Production 배포는 미수행.
 
 ## 최근 완료 작업
 

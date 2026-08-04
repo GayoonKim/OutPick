@@ -29,6 +29,26 @@ struct FirestoreDocumentIDBoundaryTests {
         }
     }
 
+    @Test func brandDTOReadsEveryPersistedDiscoveryStatus() throws {
+        let statuses = [
+            "idle", "queued", "running", "success", "succeeded",
+            "awaitingReview", "correctionRequired", "failed",
+            "cancelled", "superseded"
+        ]
+
+        for status in statuses {
+            let dto = try Firestore.Decoder().decode(
+                BrandDTO.self,
+                from: [
+                    "name": "Discovery Status Brand",
+                    "discoveryStatus": status
+                ]
+            )
+
+            #expect(dto.discoveryStatus?.rawValue == status)
+        }
+    }
+
     @Test func seasonDomainUsesPathIDAndReadsMoodIDs() throws {
         let dto = try Firestore.Decoder().decode(
             SeasonDTO.self,

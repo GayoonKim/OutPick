@@ -370,12 +370,14 @@ final class LookbookContainer {
                     )
                 )
             },
-            importManagementSheetFactory: { [self] brand in
+            importManagementSheetFactory: { [self] brand, onSelect, onUpdateURL in
                 AnyView(
                     self.makeSeasonImportManagementView(
-                        brandID: brand.id,
+                        brand: brand,
                         showsNavigationChrome: false,
-                        coordinator: coordinator
+                        coordinator: coordinator,
+                        onSelectCandidates: onSelect,
+                        onUpdateSourceURL: onUpdateURL
                     )
                 )
             },
@@ -559,7 +561,6 @@ final class LookbookContainer {
                 candidateRepository: provider.seasonCandidateRepository,
                 seasonImportJobRepository: provider.seasonImportJobRepository
             ),
-            refreshSeasonCandidatesUseCase: provider.seasonCandidateDiscoveryRepository,
             startSeasonImportExtractionUseCase: StartSeasonImportExtractionUseCase(
                 importJobRequestingRepository: provider.seasonImportJobRequestingRepository,
                 seasonImportJobRepository: provider.seasonImportJobRepository
@@ -591,32 +592,41 @@ final class LookbookContainer {
     }
 
     func makeSeasonImportManagementView(
-        brandID: BrandID,
+        brand: Brand,
         showsNavigationChrome: Bool = true,
-        coordinator: LookbookCoordinator
+        coordinator: LookbookCoordinator,
+        onSelectCandidates: @escaping () -> Void = {},
+        onUpdateSourceURL: @escaping () -> Void = {}
     ) -> SeasonImportManagementView {
         SeasonImportManagementView(
             viewModel: SeasonImportManagementViewModel(
-                brandID: brandID,
+                brandID: brand.id,
                 useCase: ManageSeasonImportJobsUseCase(
                     jobRepository: provider.seasonImportJobRepository,
                     retryRepository: provider.seasonAssetRetryRepository
-                )
+                ),
+                discoveryRepository: provider.seasonCandidateDiscoveryRepository
             ),
+            brand: brand,
             showsNavigationChrome: showsNavigationChrome,
             onReview: { [weak coordinator] jobID in
                 coordinator?.pushLookbookExtractionReview(
-                    brandID: brandID,
+                    brandID: brand.id,
                     jobID: jobID
                 )
             },
             onRepair: { [weak coordinator] jobID, seasonID in
                 coordinator?.pushLookbookSeasonRepair(
-                    brandID: brandID,
+                    brandID: brand.id,
                     seasonID: seasonID,
                     sourceImportJobID: jobID
                 )
-            }
+            },
+            onSelectCandidates: onSelectCandidates,
+            onDiscoveryReview: { [weak coordinator] result in
+                coordinator?.pushSeasonDiscoveryReview(job: result)
+            },
+            onUpdateSourceURL: onUpdateSourceURL
         )
     }
 
@@ -637,6 +647,21 @@ final class LookbookContainer {
                 onCompleted: { [weak coordinator] in coordinator?.pop() }
             ),
             imageLoader: remotePreviewImageLoader,
+            onBack: { [weak coordinator] in coordinator?.pop() }
+        )
+    }
+
+    func makeSeasonDiscoveryReviewView(
+        job: SeasonCandidateDiscoveryResult,
+        coordinator: LookbookCoordinator
+    ) -> SeasonDiscoveryReviewView {
+        SeasonDiscoveryReviewView(
+            viewModel: SeasonDiscoveryReviewViewModel(
+                job: job,
+                repository: provider.seasonCandidateDiscoveryRepository,
+                seasonRepository: provider.seasonRepository,
+                onCompleted: { [weak coordinator] in coordinator?.pop() }
+            ),
             onBack: { [weak coordinator] in coordinator?.pop() }
         )
     }

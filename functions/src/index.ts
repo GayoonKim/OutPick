@@ -80,6 +80,16 @@ export {
   runLookbookExtractionDiagnostic,
 } from "./lookbook/import/functions.js";
 export {
+  cancelSeasonDiscovery,
+  onSeasonDiscoveryQueued,
+  reconcileSeasonDiscoveryJobs,
+  reanalyzeSeasonDiscoveryWithLatestExtractor,
+  requestSeasonDiscoveryImprovement,
+  resolveSeasonDiscoveryCandidate,
+  retrySeasonDiscovery,
+  requestSeasonDiscovery,
+} from "./lookbook/import/seasonDiscoveryJobs.js";
+export {
   createStyleMood,
   updateStyleMood,
 } from "./styleMoods/functions.js";

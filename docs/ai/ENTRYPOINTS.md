@@ -45,6 +45,7 @@
 - iOS 좋아요 에디토리얼 화면·독립 섹션 상태: `LikedView.swift` → `LikedBrandCardView.swift` / `LikedSeasonCardView.swift` / `LikedPostCardView.swift` → `LikedViewModel.swift` → `LookbookCoordinator.swift`
 - iOS 브랜드 생성·로고 업로드 재시도: `CreateBrandView.swift` → `CreateBrandViewModel.saveBrand()` → `CloudFunctionsBrandStore.createBrand/updateLogoPaths` + `LookbookStorageService` → `CreateBrandFlowView`
 - Lookbook import extraction core/evidence/version: `tools/lookbook-import-worker/src/extraction/`, `processor.ts`, `season-discovery.ts`
+- 시즌 목록 durable discovery: `functions/src/lookbook/import/seasonDiscoveryJobs.ts` → `tools/lookbook-import-worker/src/season-discovery-processor.ts` → `brands/{brandID}/seasonDiscoveryJobs/{jobID}`. 생성 흐름 상태 owner는 `CreateBrandDiscoveryViewModel.swift`, 관리자 개선 요청·재분석 상태 owner는 `SeasonImportManagementViewModel.swift`와 `SeasonCandidateDiscoveryResult.improvementState`다.
 - Lookbook import worker HTTP/OIDC 경계와 배포 계약: `tools/lookbook-import-worker/src/server.ts`, `config.ts`, `oidc-auth.ts` → `scripts/ai/deploy-lookbook-import-worker.sh` → `docs/ai/runbooks/LOOKBOOK_IMPORT_WORKER_DEPLOYMENT.md`
 - Lookbook extraction adapter registry: `tools/lookbook-import-worker/src/extraction/adapters/{registry,cafe24,types}.ts`
 - Lookbook extraction review/trust/resume: worker `src/extraction/review.ts`, Functions `src/lookbook/import/{functions,reviewContract}.ts`, iOS `LookbookExtractionReview*`
@@ -52,6 +53,7 @@
 - Lookbook expected-count 활성 gallery scope: worker `src/extraction/expected-count.ts`, YOUTH incident fixture/test
 - Lookbook 시즌 상세 pagination·이미지 prefetch: `LoadSeasonDetailUseCase.swift`, `SeasonDetailViewModel.swift`, `SeasonDetailView.swift`, 공용 `BrandImageCache`→`ImageCachePipeline`
 - Lookbook extraction evidence/issue cluster: worker `src/extraction/retained-evidence.ts`, Functions `src/lookbook/import/evidenceCleanup.ts`
+- Lookbook Phase 4B Codex 운영 API·단순 앱 상태(설계 확정, 미구현): `docs/ai/tasks/lookbook-discovery-learning-loop/decisions.md` D-025 → `design.md` Phase 4B → `plan.md` Phase 4B
 - Lookbook existing-season reconcile: worker `src/extraction/reconcile.ts`, Functions `src/lookbook/import/{functions,repairContract}.ts`, iOS `LookbookSeasonRepair*`
 - Lookbook 관리자 remote preview 이미지: `Services/ImageLoading/LookbookRemotePreviewImage{Loading,Loader}.swift`, `Views/Shared/LookbookRemotePreviewImageView.swift`
 - Lookbook extraction fixture/differential gate: `tools/lookbook-import-worker/src/fixture/`, `tools/lookbook-import-worker/fixtures/`, `npm run test:fixtures`

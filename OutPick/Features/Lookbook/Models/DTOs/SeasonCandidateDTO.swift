@@ -17,6 +17,10 @@ struct SeasonCandidateDTO: Decodable {
     let extractionScore: Double?
     let sortIndex: Int?
     let status: String?
+    let jobID: String
+    let generation: Int
+    let snapshotHash: String
+    let resolution: String
     let createdAt: Timestamp?
     let updatedAt: Timestamp?
 
@@ -36,6 +40,10 @@ struct SeasonCandidateDTO: Decodable {
             extractionScore: extractionScore ?? 0,
             sortIndex: sortIndex ?? Int.max,
             status: status ?? "pending",
+            discoveryJobID: jobID,
+            discoveryGeneration: generation,
+            candidateSnapshotHash: snapshotHash,
+            resolution: resolution,
             createdAt: createdAt?.dateValue() ?? Date(timeIntervalSince1970: 0),
             updatedAt: updatedAt?.dateValue() ?? Date(timeIntervalSince1970: 0)
         )

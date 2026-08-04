@@ -274,7 +274,9 @@ private final class LookbookUITestFixtureStore:
         websiteURL: String?,
         lookbookArchiveURL: String?,
         moodIDs: [String]
-    ) async throws -> String { brand.id.value }
+    ) async throws -> BrandCreationReceipt {
+        BrandCreationReceipt(brandID: brand.id.value, discoveryJobID: nil)
+    }
 
     func updateBrand(
         brandID: BrandID,
@@ -401,7 +403,10 @@ private final class LookbookUITestFixtureStore:
 
     func requestSeasonCandidateImportJobs(
         brandID: BrandID,
-        candidateIDs: [String]
+        discoveryJobID: String,
+        generation: Int,
+        candidateIDs: [String],
+        candidateSnapshotHash: String
     ) async throws -> SeasonImportBatchRequestResult { throw FixtureError.unsupported }
 
     func requestAssetRetry(
@@ -412,6 +417,52 @@ private final class LookbookUITestFixtureStore:
     func discoverSeasonCandidates(
         brandID: BrandID
     ) async throws -> SeasonCandidateDiscoveryResult { throw FixtureError.unsupported }
+
+    func requestSeasonDiscovery(
+        brandID: BrandID
+    ) async throws -> SeasonCandidateDiscoveryResult { throw FixtureError.unsupported }
+
+    func observeSeasonDiscovery(
+        brandID: BrandID,
+        jobID: String
+    ) async throws -> SeasonCandidateDiscoveryResult { throw FixtureError.unsupported }
+
+    func observeLatestSeasonDiscovery(
+        brandID: BrandID
+    ) -> AsyncThrowingStream<SeasonCandidateDiscoveryResult?, Error> {
+        AsyncThrowingStream { continuation in continuation.finish() }
+    }
+
+    func retrySeasonDiscovery(brandID: BrandID, jobID: String) async throws {
+        throw FixtureError.unsupported
+    }
+
+    func cancelSeasonDiscovery(brandID: BrandID, jobID: String) async throws {
+        throw FixtureError.unsupported
+    }
+
+    func requestSeasonDiscoveryImprovement(
+        brandID: BrandID,
+        job: SeasonCandidateDiscoveryResult
+    ) async throws { throw FixtureError.unsupported }
+
+    func reanalyzeSeasonDiscoveryWithLatestExtractor(
+        brandID: BrandID,
+        job: SeasonCandidateDiscoveryResult
+    ) async throws -> SeasonCandidateDiscoveryResult { throw FixtureError.unsupported }
+
+    func fetchReviewCandidates(
+        brandID: BrandID,
+        jobID: String
+    ) async throws -> [SeasonDiscoveryReviewCandidate] { throw FixtureError.unsupported }
+
+    func resolveReviewCandidate(
+        brandID: BrandID,
+        job: SeasonCandidateDiscoveryResult,
+        candidateID: String,
+        decision: String,
+        targetSeasonID: SeasonID?
+    ) async throws { throw FixtureError.unsupported }
 
     func fetchSeason(brandID: BrandID, seasonID: SeasonID) async throws -> Season { season }
 

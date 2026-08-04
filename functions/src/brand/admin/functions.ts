@@ -1,4 +1,4 @@
-/* eslint-disable require-jsdoc, valid-jsdoc */
+/* eslint-disable require-jsdoc, valid-jsdoc, max-len */
 import * as admin from "firebase-admin";
 import {FieldValue} from "firebase-admin/firestore";
 import {onCall, HttpsError} from "firebase-functions/v2/https";
@@ -30,6 +30,7 @@ import {
   assertActiveStyleMoodIDs,
   requiredStyleMoodIDs,
 } from "../../shared/styleMoodAssignmentPolicy.js";
+import {initialSeasonDiscoveryJob} from "../../shared/seasonDiscoveryCreation.js";
 
 type BrandManagerRole = "owner" | "admin";
 
@@ -232,6 +233,7 @@ export const createBrand = onCall(
       db.collection("brandNameIndex").doc(entry.key)
     );
 
+    let discoveryJobID: string | null = null;
     await db.runTransaction(async (transaction) => {
       const nameIndexSnaps = await Promise.all(
         nameIndexRefs.map((ref) => transaction.get(ref))
@@ -240,6 +242,12 @@ export const createBrand = onCall(
         throw new HttpsError("already-exists", "이미 존재하는 브랜드명입니다.");
       }
       await assertActiveStyleMoodIDs(transaction, moodIDs);
+
+      const initialDiscovery = lookbookArchiveURL === null ? null :
+        initialSeasonDiscoveryJob(
+          transaction, brandRef, uid, lookbookArchiveURL
+        );
+      discoveryJobID = initialDiscovery?.jobID ?? null;
 
       transaction.set(brandRef, {
         name,
@@ -254,9 +262,16 @@ export const createBrand = onCall(
         logoOriginalPath: null,
         isFeatured,
         moodIDs,
-        discoveryStatus: "idle",
+        discoveryStatus: initialDiscovery === null ? "idle" : "queued",
+        activeSeasonDiscoveryJobID: initialDiscovery?.jobID ?? null,
+        lastSeasonDiscoveryGeneration: initialDiscovery?.generation ?? 0,
+        publishedSeasonDiscoveryJobID: null,
+        publishedSeasonDiscoveryGeneration: null,
+        publishedSeasonDiscoverySnapshotHash: null,
+        publishedSeasonDiscoveryExpiresAt: null,
         lastDiscoveryErrorMessage: null,
-        lastDiscoveryRequestedAt: null,
+        lastDiscoveryRequestedAt: initialDiscovery === null ?
+          null : FieldValue.serverTimestamp(),
         lastDiscoveryCompletedAt: null,
         likeCount: 0,
         viewCount: 0,
@@ -282,7 +297,7 @@ export const createBrand = onCall(
       });
     });
 
-    return {brandID};
+    return {brandID, discoveryJobID};
   }
 );
 

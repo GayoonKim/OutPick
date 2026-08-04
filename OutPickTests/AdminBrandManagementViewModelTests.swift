@@ -305,8 +305,8 @@ private struct BrandStoringRepositoryStub: BrandStoringRepository {
         websiteURL: String?,
         lookbookArchiveURL: String?,
         moodIDs: [String]
-    ) async throws -> String {
-        "brand-1"
+    ) async throws -> BrandCreationReceipt {
+        BrandCreationReceipt(brandID: "brand-1", discoveryJobID: nil)
     }
 
     func updateBrand(

@@ -31,14 +31,16 @@ URL 기반 브랜드/시즌 등록 파이프라인을 Firestore job queue와 Clo
 
 Firestore:
 
-- `seasonCandidates`와 `importJobs`를 import 파이프라인의 내구성 있는 상태 저장소로 유지한다.
+- `seasonDiscoveryJobs/{jobID}`와 그 하위 `candidates`, `reviews`, 그리고 `importJobs`를 import 파이프라인의 내구성 있는 상태 저장소로 유지한다.
 - 앱 종료, worker 중단, 네트워크 실패, 재시도, 중복 실행을 견디기 위한 복구 기준이다.
+- 브랜드의 active/published discovery pointer는 빠른 재진입을 위한 projection이며, 후보 snapshot 원본은 job 하위 컬렉션이다.
 
 Firebase Functions:
 
 - 긴 import 작업을 직접 수행하지 않는다.
 - Firestore import job 생성 또는 queued 상태 변경을 감지해 Cloud Run worker를 깨우는 wake-up 역할을 우선 담당한다.
 - wake-up 중복은 허용하되 worker의 claim/idempotency 정책으로 안전하게 처리한다.
+- 시즌 목록 discovery는 동일 fingerprint의 active 요청을 transaction에서 병합하고, 다른 입력만 새 generation으로 만든다. 전용 Cloud Tasks dispatch와 10분 watchdog이 누락 dispatch·stale lease·retry 소진을 수렴시킨다.
 
 Cloud Run worker:
 
@@ -66,6 +68,13 @@ Cloud Run worker:
 - repair diff의 add/reorder/remove-candidate가 모두 0이면 audit만 `noChanges`로 고정하고 job을 `succeeded/completed`로 종료한다. 이 경로는 season/post를 쓰거나 `awaitingReview`에 진입하지 않는다.
 - issue fingerprint는 stage/platform/strategy/failure·quality reason/template signature/extractor major로 만들고 root cluster에 occurrence, 영향 domain과 fixed-version recurrence를 transaction으로 누적한다.
 - HTTP server scaffold는 Express를 사용한다.
+- `/tasks/discover-seasons`는 task identity만 허용한다. Worker는 job lease, generation, `extractionContractRevision`을 재검증하고 immutable candidate snapshot을 모두 쓴 뒤 latest pointer를 원자적으로 공개한다. rollout 호환을 위해 revision 필드가 없는 기존 task/job만 최초 revision 1로 해석하며 명시된 revision은 exact match한다.
+- 시즌 discovery 품질 불충분 fingerprint는 원본 query/HTML을 저장하지 않는 40자 SHA-256 prefix다. 배포 전 64자 job은 개선 요청 callable이 같은 prefix 40자로 정규화한다.
+- Phase 4B에서 Worker는 시즌 목록·시즌 이미지 추출 로직 불충분을 issue cluster와 redacted evidence에 자동 기록한다. 코드 수정·배포는 자동화하지 않는다.
+- 사용자의 명시 요청이 있을 때 Codex가 IAM 인증 내부 운영 API/CLI로 열린 issue를 조회·분류하고, 승인된 issue만 기존 개발 하네스에 따라 보강한다.
+- 앱은 `개선 대기 중/개선 처리 중/다시 가져오기 가능`만 표시한다. 실제 Production Worker/Functions revision을 검증한 release 절차만 `fixedRevision`을 기록하며, readiness 뒤에도 실패 job을 자동 재실행하지 않는다.
+- 내부 API runtime/caller identity와 Production revision verifier는 Phase 4B 상세 하네스에서 확정하며 현재 코드에는 아직 없다.
+- 기존 시즌 동일성은 canonical URL을 우선하고, URL이 달라도 동일 브랜드의 정규화 이름이 하나만 일치할 때만 연결한다. 모호한 이름·복수 일치·URL/이름 충돌은 review로 보내며 source URL 갱신만으로 이미지 import를 시작하지 않는다.
 - Cloud Run의 외부 endpoint는 HTTPS로 노출되고, 컨테이너 내부 Express server는 `process.env.PORT`에서 plain HTTP로 listen한다.
 
 ## 호출 인증 경계
@@ -82,9 +91,12 @@ Cloud Run worker:
 ## 권장 흐름
 
 ```text
-앱 브랜드 생성/시즌 선택
-→ Firestore seasonCandidates/importJobs 등록
-→ Functions Firestore trigger가 Cloud Run worker wake-up
+앱 브랜드 생성 또는 수동 시즌 목록 갱신
+→ Firestore seasonDiscoveryJobs 등록/동일 active 요청 병합
+→ 전용 Cloud Tasks가 Cloud Run worker의 시즌 discovery route 호출
+→ Worker가 후보 snapshot 저장 후 최신 generation pointer 공개
+→ 앱이 published 신규 시즌 후보를 선택
+→ Functions가 snapshot identity를 검증해 importJobs 등록
 → Cloud Run worker가 queued importJobs parsing
 → 저신뢰 결과는 awaitingReview에서 관리자 판단
 → 승인 또는 신뢰된 안전 결과만 materializing

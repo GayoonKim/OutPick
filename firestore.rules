@@ -230,6 +230,21 @@ service cloud.firestore {
         allow read: if hasBrandWriteAccess(brandID);
         allow create, update, delete: if false;
       }
+
+      match /seasonDiscoveryJobs/{jobID} {
+        allow read: if hasBrandWriteAccess(brandID);
+        allow create, update, delete: if false;
+
+        match /candidates/{candidateID} {
+          allow read: if hasBrandWriteAccess(brandID);
+          allow create, update, delete: if false;
+        }
+
+        match /reviews/{reviewID} {
+          allow read: if hasBrandWriteAccess(brandID);
+          allow create, update, delete: if false;
+        }
+      }
     }
 
     match /userIdentities/{identityKey} {

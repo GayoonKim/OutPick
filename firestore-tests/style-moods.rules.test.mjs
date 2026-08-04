@@ -67,6 +67,9 @@ beforeEach(async () => {
       setDoc(doc(firestore, "users", "total-admin"), {
         accountStatus: "active",
       }),
+      setDoc(doc(firestore, "users", "brand-admin"), {
+        accountStatus: "active",
+      }),
       setDoc(doc(firestore, "brands", "brand-1"), {
         name: "Brand",
       }),
@@ -74,6 +77,15 @@ beforeEach(async () => {
         displayTitle: "25 F/W",
         moodIDs: [],
       }),
+      setDoc(doc(
+        firestore,
+        "brands", "brand-1", "seasonDiscoveryJobs", "job-1",
+      ), {status: "succeeded", generation: 1}),
+      setDoc(doc(
+        firestore,
+        "brands", "brand-1", "seasonDiscoveryJobs", "job-1",
+        "candidates", "candidate-1",
+      ), {title: "25 F/W", resolution: "newSeason"}),
     ]);
   });
 });
@@ -181,6 +193,29 @@ describe("style mood rules", () => {
     await assertFails(setDoc(
       doc(brandAdminFirestore, "brands", "brand-1", "seasons", "season-2"),
       {displayTitle: "26 S/S", moodIDs: []},
+    ));
+  });
+
+  test("discovery snapshot은 브랜드 관리자만 읽고 누구도 직접 쓰지 못한다", async () => {
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(
+        doc(context.firestore(), "brands", "brand-1", "admins", "brand-admin"),
+        {uid: "brand-admin", role: "owner"},
+      );
+    });
+    const admin = testEnvironment.authenticatedContext("brand-admin").firestore();
+    const user = testEnvironment.authenticatedContext(userUID).firestore();
+    const jobPath = ["brands", "brand-1", "seasonDiscoveryJobs", "job-1"];
+    const candidatePath = [...jobPath, "candidates", "candidate-1"];
+
+    await assertSucceeds(getDoc(doc(admin, ...jobPath)));
+    await assertSucceeds(getDoc(doc(admin, ...candidatePath)));
+    await assertFails(getDoc(doc(user, ...jobPath)));
+    await assertFails(getDoc(doc(user, ...candidatePath)));
+    await assertFails(updateDoc(doc(admin, ...jobPath), {status: "cancelled"}));
+    await assertFails(setDoc(
+      doc(admin, ...jobPath, "reviews", "review-1"),
+      {decision: "keepAsNew"},
     ));
   });
 });

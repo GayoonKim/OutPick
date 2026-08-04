@@ -255,6 +255,8 @@ npm run build
 | HTTP server | `tools/lookbook-import-worker/src/server.ts` |
 | Cloud Run IAM·경로별 OIDC 검증 | `tools/lookbook-import-worker/src/oidc-auth.ts`, `config.ts` |
 | 시즌 discovery | `tools/lookbook-import-worker/src/season-discovery.ts` |
+| durable 시즌 discovery 접수/dispatch/watchdog/review | `functions/src/lookbook/import/seasonDiscoveryJobs.ts`, `functions/src/shared/seasonDiscoveryCreation.ts` |
+| durable 시즌 discovery Worker/publish/동일성 | `tools/lookbook-import-worker/src/season-discovery-processor.ts`, `season-identity.ts`, `server.ts`의 `/tasks/discover-seasons` |
 | import 처리 | `tools/lookbook-import-worker/src/processor.ts` |
 | extraction 결과·candidate evidence 계약 | `tools/lookbook-import-worker/src/extraction/core.ts` |
 | source URL 마스킹·fingerprint | `tools/lookbook-import-worker/src/extraction/evidence.ts` |
@@ -268,6 +270,8 @@ npm run build
 | SSRF/HTTP 경계 | `public-http.ts` |
 | Firebase/env 경계 | `firebase.ts`, `config.ts` |
 | 아키텍처 | `docs/ai/architecture/LOOKBOOK_IMPORT_WORKER.md` |
+
+durable 시즌 discovery의 enqueue 완료 기록은 job을 transaction으로 다시 읽어 같은 `queued` generation/dispatch generation일 때만 `dispatching`으로 전이한다. Worker가 먼저 완료한 상태를 trigger가 되돌리지 않는다. 새 generation 접수·재분석은 기존 published pointer를 즉시 무효화하고, candidate import/asset retry는 실제 mutation transaction 안에서 현재 published snapshot 동일성을 재검증한다.
 
 권장 흐름:
 
@@ -364,3 +368,15 @@ git diff --check -- firebase.json storage.rules
 - 데이터/API 계약 변경: `docs/ai/DATA_SCHEMA.md`.
 - 장기 선택 변경: ADR.
 - phase 상태·배포·QA: 관련 task `progress.md`와 `qa-checklist.md`.
+- 시즌 목록 discovery는 이미지 import와 분리된 `lookbook-discovery-jobs` queue를 사용한다. `createBrand` transaction이 최초 job을 만들며, 수동 요청은 같은 fingerprint의 active job에 coalesce된다. Worker는 lease와 generation을 재검증하고 candidate snapshot 전체 저장 뒤 brand published pointer를 전환한다.
+- 2026-08-04 Development 배포 기준 Worker는 `lookbook-import-worker-development-00004-xal` traffic 100%, rollback은 `00003-5kc`다. discovery queue는 초당 1건·동시 1건·최대 3회이며, 관련 Functions 8개는 `ACTIVE`, watchdog Scheduler와 rules/index, 세 collection group TTL도 활성 상태다.
+- discovery callable은 `requestSeasonDiscovery`, `retrySeasonDiscovery`, `cancelSeasonDiscovery`, `resolveSeasonDiscoveryCandidate`, `requestSeasonDiscoveryImprovement`, `reanalyzeSeasonDiscoveryWithLatestExtractor`다. enqueue trigger는 `onSeasonDiscoveryQueued`, 10분 reconciler는 `reconcileSeasonDiscoveryJobs`다.
+- 환경 변수는 기존 Worker URL/service account/audience를 재사용하고, discovery queue/location만 `OUTPICK_LOOKBOOK_DISCOVERY_TASKS_QUEUE`, `OUTPICK_LOOKBOOK_DISCOVERY_TASKS_LOCATION`으로 분리한다.
+- watchdog의 `collectionGroup("seasonDiscoveryJobs").where("status", "in", ...)`는 `firestore.indexes.json`의 `seasonDiscoveryJobs.status` ASCENDING/COLLECTION_GROUP field override가 필수다. Development에서 `READY` 확인 뒤 실제 stale job 재dispatch를 통과했으며 `functions/src/index.contract.test.ts`가 이 배포 계약을 고정한다.
+- 개선 요청 API `requestSeasonDiscoveryImprovement`는 브랜드 write 관리자도 실행할 수 있고, 새 revision 재분석 API `reanalyzeSeasonDiscoveryWithLatestExtractor`는 총 관리자만 실행한다. 둘 다 `brandID/jobID/generation/candidateSnapshotHash`를 검증한다. 10분 reconciler의 readiness query는 `status=correctionRequired + improvementRequested=true` 복합 인덱스를 사용하므로 해당 인덱스를 Functions보다 먼저 배포·READY 확인한다.
+- extraction contract rollout은 Worker가 무필드 legacy revision 1과 명시 revision을 모두 안전하게 claim할 수 있는 candidate 상태에서 먼저 준비되고, 그 뒤 Functions canonical revision을 올린다. 기존 64자 시즌 issue fingerprint는 개선 요청 시 결정적으로 40자로 축약한다.
+- 개선 readiness는 문자열 version이 아니라 `extractionContractRevision` 정수로 비교한다. Worker candidate 검증과 환경 traffic 준비가 끝난 뒤에만 Functions canonical revision을 올려, 준비되지 않은 Worker에 새 generation을 보내지 않는다.
+- Phase 4B에서는 시즌 목록과 이미지 추출의 로직 불충분을 별도 사용자 버튼 없이 같은 issue cluster에 자동 기록한다. 기존 `requestSeasonDiscoveryImprovement` UI/API는 호환·migration 후 제거 후보이며 자동 code-generation trigger로 확장하지 않는다.
+- Codex는 IAM 인증 내부 운영 목록/상세 API와 read-only 기본 CLI로 allowlist evidence만 조회한다. claim/ground-truth/release/fix/verify mutation은 별도 endpoint, compare-and-set과 audit으로 제한한다.
+- 실제 Production Worker traffic과 Functions contract revision을 확인한 release verifier만 `fixedRevision`을 기록하고 readiness reconciler가 정확한 영향 job을 `다시 가져오기 가능`으로 전환한다. 자동 Production rollout은 추가하지 않는다.
+- 내부 API runtime/caller identity, collection migration과 revision verifier의 구체 계약은 Phase 4B 상세 하네스에서 확정하며 현재 코드에는 아직 없다.

@@ -66,7 +66,8 @@ Repository가 `DocumentSnapshot.documentID`를 같은 snapshot에서 decode한 D
 | 브랜드 요청 관리 | `Views/Admin/AdminBrandRequestGroupsView.swift` | `AdminBrandRequestGroupsViewModel.swift` |
 | 브랜드 관리 | `Views/Admin/AdminBrandManagementView.swift` | `AdminBrandManagementViewModel.swift` |
 | 삭제 관리 | `Views/Admin/AdminLookbookDeletionManagementView.swift` | `AdminLookbookDeletionManagementViewModel.swift` |
-| import 현황 | `Views/BrandDetail/SeasonImportManagementView.swift` | `SeasonImportManagementViewModel.swift` |
+| 시즌 discovery·import 통합 현황 | `Views/BrandDetail/SeasonImportManagementView.swift` | `SeasonImportManagementViewModel.swift` |
+| 시즌 동일성 후보 검토 | `Views/BrandDetail/SeasonDiscoveryReviewView.swift` | `SeasonDiscoveryReviewViewModel.swift` |
 | extraction 검토 | `Views/BrandDetail/LookbookExtractionReviewView.swift` | `LookbookExtractionReviewViewModel.swift` |
 | 기존 시즌 보수 | `Views/BrandDetail/LookbookSeasonRepairView.swift` | `LookbookSeasonRepairViewModel.swift` |
 
@@ -186,7 +187,17 @@ Repository가 `DocumentSnapshot.documentID`를 같은 snapshot에서 decode한 D
 - 브랜드 생성·편집 picker의 `새 스타일 키워드 추가`는 생성 성공한 키워드를 현재 선택에 즉시 포함한다.
 - 브랜드 생성·편집 picker는 전체 키워드를 기본 노출하지 않는다. 검색어가 있을 때만 이름·alias가 일치하는 active 키워드를 표시하고, 선택값은 별도 칩으로 유지하며, 결과가 없고 5개 미만일 때만 새 키워드 추가를 표시한다.
 - 표시 용어만 변경하며 내부 `StyleMood` 타입, callable 이름, `styleMoods`·`moodIDs` 데이터 계약은 유지한다.
-- 시즌 가져오기는 후보 discovery와 import job 현황을 분리한다.
+- 시즌 가져오기는 별도 segment 없이 한 화면에서 위쪽 discovery 상태 카드와 아래쪽 시즌 이미지 import job 목록을 함께 표시한다.
+- discovery 요청은 즉시 job receipt를 반환하고, 화면은 브랜드의 최신 job을 Firestore stream으로 관찰한다. 화면 종료는 관찰만 끝내며 서버 job을 취소하지 않는다.
+- 상태 카드는 queued/dispatching/running, succeeded, awaitingReview, correctionRequired, failed, cancelled, superseded를 구분하고 각 상태에 맞는 취소·재시도·URL 수정·후보 선택·동일성 검토 진입점만 제공한다. active 본문은 `ProgressView + 주 문구 + 보조 문구` 묶음 전체를 카드 본문 중앙에 두고 취소 action은 하단에 분리한다.
+- Phase 3A 구현은 `SeasonImportManagementView.activeDiscoveryContent`와 `discoveryPhaseText`에서 확인한다. 카드 본문 최소 높이 안에서 묶음 전체를 중앙 정렬하며 dispatching/fetching/rendering/parsing/matching/publishing을 사용자 문구로 변환한다.
+- `correctionRequired`는 `추출 개선 요청 → 개선 요청됨 → 다시 가져오기 가능`으로 구현됐다. 개선 요청은 같은 issue cluster에 멱등 등록하며 같은 revision을 재시도하지 않는다. 더 높은 extraction contract가 준비된 뒤 총 관리자만 새 generation 재분석을 실행한다. 앱 진입점은 `SeasonCandidateDiscoveryResult.improvementState`, Repository의 두 mutation, `SeasonImportManagementViewModel`, `SeasonImportManagementView.discoveryActions`다.
+- 위 문장은 현재 Phase 4A 구현 상태다. 확정된 Phase 4B에서는 `추출 개선 요청` 버튼을 제거하고 서버가 시즌 목록·시즌 이미지 추출 로직 불충분을 자동 기록한다.
+- Phase 4B 앱은 해당 job 카드에 `개선 대기 중`, Codex claim 뒤 `개선 처리 중`, Production revision 검증 뒤 `다시 가져오기 가능`만 표시한다. 일반 관리자에게 issue 목록·fingerprint·fixture·PR·배포 정보를 노출하지 않고, 총 관리자에게 필요한 job에서만 ground truth 검토 진입점을 제공한다. 관련 Entity/Repository/ViewModel 변경은 아직 구현되지 않았다.
+- `awaitingReview` 후보는 `SeasonDiscoveryReviewView`에서 신규 유지, 제외, 기존 시즌 연결 중 하나로 결정한다. 기존 시즌 연결 대상은 시즌명으로 표시하며 job ID는 운영 화면에 노출하지 않는다.
+- `awaitingReview`여도 안전하게 `newSeason`으로 분류된 후보는 검토 완료를 기다리지 않고 별도 선택할 수 있다.
+- 이미지 import job 행의 기본 식별값은 `SeasonImportJob.displayTitle`이다. `seasonTitle`을 우선하고 `sourceTitle`을 보조로 사용하며 내부 import job ID를 제목으로 표시하지 않는다.
+- 신규 시즌 선택 화면은 published snapshot만 읽고, 화면 진입 자체로 discovery를 중복 시작하지 않는다.
 - 실제 worker 구조는 `docs/ai/architecture/LOOKBOOK_IMPORT_WORKER.md`를 먼저 본다.
 
 ### 삭제 관리 화면
@@ -264,7 +275,10 @@ Repository가 `DocumentSnapshot.documentID`를 같은 snapshot에서 decode한 D
 ### URL 기반 시즌 import
 
 - 앱: `CreateBrandCandidateSelectionView.swift`, `AdminBrandManagementView.swift`, `SeasonImportManagementView.swift`.
-- repository: `CloudFunctionsSeasonCandidateDiscoveryRepository.swift`와 import repository.
+- discovery 상태 owner: `CreateBrandDiscoveryViewModel.swift`. View가 사라질 때는 Firestore 관찰만 끝내고 서버 job은 취소하지 않는다.
+- repository: `CloudFunctionsSeasonCandidateDiscoveryRepository.swift`가 최초 `discoveryJobID` 또는 브랜드 published pointer를 관찰하고, `FirestoreSeasonCandidateRepository.swift`가 `newSeason` nested candidate만 로드한다.
+- `BrandStoringRepository.createBrand`는 `BrandCreationReceipt(brandID, discoveryJobID)`를 반환해 브랜드 생성 transaction에서 함께 만들어진 최초 job을 그대로 이어받는다.
+- 이미지 import 요청은 `discoveryJobID`, `generation`, `candidateSnapshotHash`를 전달한다. 새 discovery generation이 시작되면 브랜드의 published pointer를 같은 transaction에서 즉시 비우며, 서버는 각 import job 생성 또는 asset retry transaction 안에서 브랜드 pointer·job·candidate의 generation/hash, 만료, `newSeason` resolution과 URL을 다시 검증한다.
 - review: `LookbookExtractionReviewView.swift`, `LookbookExtractionReviewViewModel.swift`, `CloudFunctionsLookbookExtractionReviewRepository.swift`.
 - import 현황의 검토 action은 `LookbookCoordinator`가 상세 화면을 push하고 `LookbookContainer`가 Repository/UseCase/ViewModel을 조립한다.
 - review 화면은 예상/발견 수량 방향을 기준으로 동작한다. 초과·예상 수 미확인은 불필요 후보 제외와 `승인`, 미달은 승인 없이 `누락된 이미지 알리기`, content hash 미완료는 승인 차단을 제공한다. correctionRequired 재분석은 총 관리자에게만 노출한다.

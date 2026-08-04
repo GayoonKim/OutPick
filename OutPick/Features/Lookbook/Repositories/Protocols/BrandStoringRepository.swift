@@ -7,6 +7,11 @@
 
 import Foundation
 
+struct BrandCreationReceipt: Equatable {
+    let brandID: String
+    let discoveryJobID: String?
+}
+
 /// 브랜드 문서를 저장하는 저장소 추상화입니다.
 /// - Note: ViewModel이 Firestore/Cloud Functions 세부 구현을 모르도록 분리합니다.
 protocol BrandStoringRepository {
@@ -18,7 +23,7 @@ protocol BrandStoringRepository {
         websiteURL: String?,
         lookbookArchiveURL: String?,
         moodIDs: [String]
-    ) async throws -> String
+    ) async throws -> BrandCreationReceipt
 
     /// 브랜드 기본 정보를 수정하고 최신 브랜드 값을 반환합니다.
     func updateBrand(

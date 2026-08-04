@@ -143,6 +143,16 @@ final class LookbookCoordinator {
         )
     }
 
+    func pushSeasonDiscoveryReview(job: SeasonCandidateDiscoveryResult) {
+        push(
+            container.makeSeasonDiscoveryReviewView(
+                job: job,
+                coordinator: self
+            ),
+            policy: .stateful
+        )
+    }
+
     func pushLookbookSeasonRepair(
         brandID: BrandID,
         seasonID: SeasonID,
