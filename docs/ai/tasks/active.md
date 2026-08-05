@@ -2,7 +2,8 @@
 
 ## 현재 상태
 
-- 현재 핵심 task는 `lookbook-discovery-learning-loop`다. 시즌 후보 discovery의 durable server background job, 최신 snapshot publish, 기존 시즌 동일성, iOS 생성 플로우와 관리자 review/re-entry UI 구현을 완료했다. Development 통합 배포와 실제 URL 수동 QA는 남아 있다.
+- 현재 핵심 task는 `lookbook-discovery-learning-loop`다. 시즌 후보 discovery의 durable server background job, 최신 snapshot publish, 기존 시즌 동일성, iOS 생성 플로우와 관리자 review/re-entry UI, Phase 4A 개선 요청·revision readiness 구현과 자동 검증을 완료했다. Phase 3A/4A 통합 수동 QA와 현재 배포 상태 재확인이 남아 있다.
+- 다음 핵심 task는 `lookbook-extraction-issue-operations`다. Phase 1~5의 자동 issue, IAM 운영 API·CLI, runtime contract/실제 재추출 verifier와 iOS 단순 상태·fixed-only 재시도를 구현했다. 다음은 Development 통합 QA다.
 - 이전 핵심 task `style-mood-personalization-account-privacy`의 Phase 1~8은 완료 처리했다. Apple Developer Program 가입 후 App Attest 실기기 QA와 운영 백업 설정은 출시 운영 게이트로 분리하고, 개발 데이터 전체 삭제는 마지막 Phase의 별도 승인 전까지 진행하지 않는다.
 - `lookbook-discovery-learning-loop`는 사용자 승인으로 task 문서를 생성했다. 동일 active 요청 병합, latest generation publish, 기존 시즌 동일성, 7/30/60일 retention, failure action, watchdog 복구, 관리자 review와 fixture/version gate를 설계 기준으로 확정했다.
 - `socket-ingress-ordering-hardening`은 Phase 1~6 구현, 자동 회귀와 실제 Firebase/Simulator 핵심 QA를 완료하고 2026-07-17 종료했다.
@@ -33,6 +34,19 @@
   - [Firebase·worker 환경 진입점](../entrypoints/FIREBASE.md)
   - [PR #3](https://github.com/GayoonKim/OutPick/pull/3)
   - 상태: Phase 1~4, Production 인증 Function identity 전환, Development/Production import smoke, PR #3 병합과 Production Worker traffic 전환 완료. 실기기 App Attest만 Apple Developer Program 가입 후 외부 의존 후속 작업으로 유지.
+
+## 다음 핵심 작업
+
+- `lookbook-extraction-issue-operations`
+  - [상세 설계](lookbook-extraction-issue-operations/design.md)
+  - [결정](lookbook-extraction-issue-operations/decisions.md)
+  - [Phase 계획](lookbook-extraction-issue-operations/plan.md)
+  - [현재 상태](lookbook-extraction-issue-operations/progress.md)
+  - [QA 기준](lookbook-extraction-issue-operations/qa-checklist.md)
+  - 목표: 실패 자동 기록 → Codex cluster 목록 요약·bounded batch 상세 조회 → 사용자 선택 issue 처리 → Production Worker/Functions revision 검증 → 영향 job 재시도 활성화.
+  - 앱 범위: 전역 issue UI 없이 `개선 대기 중/개선 처리 중/다시 가져오기 가능`만 job 카드에 표시한다.
+  - 제외: 담당자·연차별 할당, Jira, 댓글·멘션, SLA, 칸반 보드, 자동 code-generation과 자동 Production rollout.
+  - 상태: API/data/security/release 상세 설계와 Phase 1~5 구현·자동 검증 완료. Phase 3 Development 배포 완료, Phase 4~5 배포는 별도 승인 전 보류. Phase 6 Development 통합 QA가 다음 단계다.
 
 ## 현재 핵심 작업 상세
 

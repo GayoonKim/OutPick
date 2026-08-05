@@ -191,9 +191,9 @@ Repository가 `DocumentSnapshot.documentID`를 같은 snapshot에서 decode한 D
 - discovery 요청은 즉시 job receipt를 반환하고, 화면은 브랜드의 최신 job을 Firestore stream으로 관찰한다. 화면 종료는 관찰만 끝내며 서버 job을 취소하지 않는다.
 - 상태 카드는 queued/dispatching/running, succeeded, awaitingReview, correctionRequired, failed, cancelled, superseded를 구분하고 각 상태에 맞는 취소·재시도·URL 수정·후보 선택·동일성 검토 진입점만 제공한다. active 본문은 `ProgressView + 주 문구 + 보조 문구` 묶음 전체를 카드 본문 중앙에 두고 취소 action은 하단에 분리한다.
 - Phase 3A 구현은 `SeasonImportManagementView.activeDiscoveryContent`와 `discoveryPhaseText`에서 확인한다. 카드 본문 최소 높이 안에서 묶음 전체를 중앙 정렬하며 dispatching/fetching/rendering/parsing/matching/publishing을 사용자 문구로 변환한다.
-- `correctionRequired`는 `추출 개선 요청 → 개선 요청됨 → 다시 가져오기 가능`으로 구현됐다. 개선 요청은 같은 issue cluster에 멱등 등록하며 같은 revision을 재시도하지 않는다. 더 높은 extraction contract가 준비된 뒤 총 관리자만 새 generation 재분석을 실행한다. 앱 진입점은 `SeasonCandidateDiscoveryResult.improvementState`, Repository의 두 mutation, `SeasonImportManagementViewModel`, `SeasonImportManagementView.discoveryActions`다.
-- 위 문장은 현재 Phase 4A 구현 상태다. 확정된 Phase 4B에서는 `추출 개선 요청` 버튼을 제거하고 서버가 시즌 목록·시즌 이미지 추출 로직 불충분을 자동 기록한다.
-- Phase 4B 앱은 해당 job 카드에 `개선 대기 중`, Codex claim 뒤 `개선 처리 중`, Production revision 검증 뒤 `다시 가져오기 가능`만 표시한다. 일반 관리자에게 issue 목록·fingerprint·fixture·PR·배포 정보를 노출하지 않고, 총 관리자에게 필요한 job에서만 ground truth 검토 진입점을 제공한다. 관련 Entity/Repository/ViewModel 변경은 아직 구현되지 않았다.
+- `correctionRequired`는 job projection의 issue status를 `개선 대기 중`, `개선 처리 중`, `다시 가져오기 가능`, `추가 작업 필요`로 표시한다. 앱은 issue 목록·fingerprint·fixture·PR·배포 정보를 노출하지 않는다.
+- 시즌 목록과 이미지 재시도는 총 관리자에게만 보이며 `fixed`와 상위 동일-stage runtime이 모두 있어야 한다. 앱 ViewModel과 callable 서버가 이 조건을 각각 검사하며 기존 개선 요청 버튼과 동일-version 즉시 재분석 경로는 제거했다.
+- `wontFix` 중 원본 부재·접근 제한인 시즌 목록 문제는 기존 룩북 목록 URL 수정 action만 제공한다. 상세 구현 기준은 `docs/ai/tasks/lookbook-extraction-issue-operations/`다.
 - `awaitingReview` 후보는 `SeasonDiscoveryReviewView`에서 신규 유지, 제외, 기존 시즌 연결 중 하나로 결정한다. 기존 시즌 연결 대상은 시즌명으로 표시하며 job ID는 운영 화면에 노출하지 않는다.
 - `awaitingReview`여도 안전하게 `newSeason`으로 분류된 후보는 검토 완료를 기다리지 않고 별도 선택할 수 있다.
 - 이미지 import job 행의 기본 식별값은 `SeasonImportJob.displayTitle`이다. `seasonTitle`을 우선하고 `sourceTitle`을 보조로 사용하며 내부 import job ID를 제목으로 표시하지 않는다.
