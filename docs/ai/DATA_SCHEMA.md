@@ -149,7 +149,7 @@
 
 - `importJobs.imageCandidates`는 materialization에 쓰는 기존 `{sourceURL, alt}` 배열 계약을 유지한다.
 - `imageCandidateEvidence`는 candidate fingerprint, parser strategy, static/rendered source kind와 query value를 제거한 source origin/path/query key를 가진다.
-- `imageExtractorVersion`, `platformAdapterKey/version`, `domainAdapterKey/version`은 extraction run의 재현 경계다. Phase 7 extractor는 `1.2.0`, Cafe24 platform adapter는 `cafe24@1.0.0`이다. Generic 결과와 현재 미등록 상태인 domain adapter 값은 `null`이다.
+- `imageExtractorVersion`, `platformAdapterKey/version`, `domainAdapterKey/version`은 extraction run의 재현 경계다. Phase 7 extractor는 `1.2.3`, Cafe24 platform adapter는 `cafe24@1.0.1`이다. Generic 결과와 현재 미등록 상태인 domain adapter 값은 `null`이다.
 - extraction cache는 candidate/hash/quality뿐 아니라 extractor와 platform/domain adapter key/version 전체가 현재 registry와 일치할 때만 재사용한다.
 - discovery diagnostic은 같은 의미의 `candidateEvidence`, `extractionVersions`를 반환한다.
 - 일반 시즌 discovery의 source of truth는 `brands/{brandID}/seasonDiscoveryJobs/{jobID}`다. 후보는 job 하위 `candidates`, 관리자 동일성 결정은 `reviews`에 저장한다. 브랜드 문서의 active/published job·generation·snapshot hash는 빠른 진입용 projection이다.

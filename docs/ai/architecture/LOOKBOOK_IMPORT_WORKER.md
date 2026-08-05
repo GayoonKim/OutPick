@@ -50,7 +50,7 @@ Cloud Run worker:
 - worker는 독립 `package.json`을 가진 Node.js/TypeScript 패키지로 시작한다.
 - `src/extraction/core.ts`는 candidate 배열과 strategy/evidence/version 결과 계약을 소유하고, `evidence.ts`는 query value를 제거한 source fingerprint, `version.ts`는 deterministic extractor/adapter version set을 소유한다.
 - `processor.ts`와 `season-discovery.ts`는 기존 parser/fallback 동작을 유지하면서 공통 extraction 결과 계약과 `extraction/adapters/registry.ts`의 동일 adapter 선택 결과를 소비한다.
-- Phase 7은 Generic → Platform → Domain 경계를 production 추출 경로에 연결했다. Cafe24의 `xans-product-additional`, `archive-source-detail`, `NNEditor`, Cafe24 관리 asset 제외 규칙은 `cafe24@1.0.0`에 격리되며 다른 플랫폼에는 적용하지 않는다. 실제 domain adapter는 아직 없고 등록 시 정확한 host와 registry가 확인한 fixture ID가 필수다.
+- Phase 7은 Generic → Platform → Domain 경계를 production 추출 경로에 연결했다. Cafe24의 `xans-product-additional`, 직접 `collection-images`, `archive-source-detail`, `NNEditor`, Cafe24 관리 asset 제외 규칙은 `cafe24@1.0.1`에 격리되며 다른 플랫폼에는 적용하지 않는다. 실제 domain adapter는 아직 없고 등록 시 정확한 host와 registry가 확인한 fixture ID가 필수다.
 - extractor `1.2.0`부터 cache 재사용은 extractor뿐 아니라 platform/domain adapter key/version 전체가 현재 registry와 일치해야 한다. adapter/version 변화는 scoped trust와 cache 경계를 모두 새로 만든다.
 - extractor `1.2.1`은 Cafe24 목록의 `collection_detail.html` 같은 underscore-detail 경로를 공통 시즌 상세 URL로 인식한다. 이미지 anchor와 제목 anchor가 같은 URL로 분리돼도 후보 병합 전에 경로가 탈락하지 않으며, 최소 platform fixture가 이 계약을 고정한다.
 - extractor `1.2.2`는 content hash 중복 제거 후 최종 후보 수를 expected-count evidence와 비교한다. 하나라도 일치하고 hash 확인이 완료됐으면 첫 signature도 자동 materialization하며, 예상 수 미확인·수량 불일치·hash 미완료만 review gate로 남긴다. raw 후보 감소와 programmatic 구조 자체는 진단 evidence로만 유지한다.
