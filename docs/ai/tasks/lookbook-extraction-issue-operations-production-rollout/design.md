@@ -12,13 +12,13 @@
 - 이번 task는 기존 구현의 배포·환경 계약 검증이 중심이다. 읽기 전용 감사에서 코드 또는 설정 gap이 발견된 경우에만 별도 변경안을 작성하고 사용자 승인을 받는다.
 - Worker는 `--no-traffic` candidate로 먼저 만들고 `/readyz`, `/runtime-contract`, OIDC caller 분리, 실제 read-only extraction smoke를 검증한다.
 - Production Functions의 exact 배포 목록과 canonical season discovery contract revision은 감사 결과로 확정한다.
-- contract 2 Functions와 contract 3 Worker의 전환 중 불일치 가능성을 감사한다. 필요한 경우 queue pause/drain과 active job 0 확인을 포함한 cutover choreography를 별도 승인안으로 제시한다.
+- Production은 durable discovery 도입 전 레거시 Worker/Functions 상태임을 실제 배포 소스로 확인했다. 기존 경로와 호환되는 contract 3 Worker를 먼저 no-traffic candidate로 검증·전환한 뒤 durable discovery Functions와 backend prerequisite를 도입한다.
 - Production operator identity는 key 없이 exact service account resource의 좁은 OIDC ID token 생성 권한만 임시 사용하고 완료 후 회수하는 방향을 우선한다.
 
 ## 3. 제약 조건
 
 - Production traffic, Functions, IAM, index/TTL, queue 상태를 사용자 승인 없이 변경하지 않는다.
-- Worker traffic 전환과 Functions canonical contract 변경 사이의 불일치 window를 임의로 허용하지 않는다.
+- 신규 durable discovery Functions를 Worker contract 3보다 먼저 활성화하지 않는다.
 - service-account JSON, 장기 key, project-level 광범위 impersonation 권한을 만들지 않는다.
 - 기존 callable 삭제, legacy cluster/evidence/data cleanup과 과거 실패 job 자동 재실행은 범위에서 제외한다.
 - 기존 앱 화면, MVVM-C, Repository, UseCase, DI, Coordinator는 변경하지 않는다.
@@ -36,8 +36,8 @@
 ## 5. 구현 가능성
 
 - Development에서 Worker contract 3, Functions contract 3, 실제 시즌 상세 fallback과 목록 cover 회귀를 검증했으므로 기술적으로 배포 가능하다.
-- Production은 현재 contract 2로 기록되어 있어 실제 외부 상태 재확인이 필요하다. revision, traffic, IAM, index/TTL 상태는 감사 전 `재확인 필요`다.
-- contract cutover의 무중단 순서는 현재 active job과 queue 상태를 본 뒤 확정해야 한다.
+- Production Worker `00024-fow`는 extractor `1.2.3`, Cafe24 adapter `1.0.0`인 durable discovery 도입 전 레거시 runtime이다. `/runtime-contract`, durable `/tasks/discover-seasons`, source/contract metadata가 없다.
+- Production에는 durable discovery Functions·queue·job이 없고 기존 import queue pending도 0건이므로 pause/drain 없이 Worker contract 3을 먼저 전환할 수 있다.
 
 ## 6. 기술 스택
 
@@ -51,10 +51,10 @@
 1. Codex가 Production을 읽기 전용 감사한다.
 2. exact diff, rollback, cutover 순서와 승인 단위를 사용자에게 제시한다.
 3. 사용자가 candidate/IAM/index/Functions 배포 범위를 승인한다.
-4. no-traffic candidate와 backend prerequisite를 검증한다.
-5. 사용자가 Production traffic/canonical contract 전환을 별도 승인한다.
-6. 실제 smoke, queue, ERROR와 rollback 가능 상태를 확인한다.
-7. 임시 IAM을 회수하고 task를 종료한다.
+4. no-traffic Worker candidate를 검증한다.
+5. 사용자가 Worker traffic 전환을 별도 승인하고 contract 3으로 전환한다.
+6. durable discovery Functions·queue·index/TTL·최소 IAM을 적용하고 실제 smoke를 수행한다.
+7. queue, ERROR와 rollback 가능 상태를 확인하고 임시 IAM을 회수한다.
 
 ## 8. 화면 설계
 
@@ -83,7 +83,7 @@
 - Development 구현 task와 Production rollout task를 분리한다.
 - 이벤트 기반 `seasonImageImport fixed → retry → verified`는 실제 결함 발생 시 실행하는 운영 게이트로 유지한다.
 - legacy callable/data cleanup은 성공한 rollout 뒤에도 자동 포함하지 않고 별도 파괴 승인 대상으로 둔다.
-- Production cutover 순서는 읽기 전용 감사 전 확정하지 않는다.
+- Production cutover는 `Worker no-traffic candidate → Worker contract 3 traffic → durable discovery/issue operations prerequisite와 Functions → 실제 smoke` 순서로 한다.
 
 ## 13. 최종 문서
 
@@ -93,4 +93,3 @@
 - 검증 기준: `qa-checklist.md`
 - Worker 배포: `docs/ai/runbooks/LOOKBOOK_IMPORT_WORKER_DEPLOYMENT.md`
 - issue operations: `docs/ai/runbooks/LOOKBOOK_EXTRACTION_ISSUE_OPERATIONS.md`
-

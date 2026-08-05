@@ -29,6 +29,14 @@
 
 ## D-006. contract cutover는 queue와 active job을 먼저 감사한다
 
-- contract 2 Functions와 contract 3 Worker의 불일치 window를 임의로 허용하지 않는다.
-- queue pause/drain 필요 여부와 배포 순서는 실제 Production 상태를 확인한 뒤 사용자와 확정한다.
+- 감사 결과 Production은 contract 2가 아니라 durable discovery 도입 전 레거시 상태다.
+- discovery queue·durable job이 없고 import queue pending도 0건이므로 pause/drain은 하지 않는다.
+- 기존 diagnostic/import 경로와 호환되는 Worker contract 3을 먼저 전환한 뒤 durable discovery Functions를 활성화한다.
 
+## D-007. Phase 1 exact diff를 승인 단위로 분리한다
+
+- Worker candidate 생성과 검증, Worker traffic 전환, backend prerequisite/Functions 배포, 실제 smoke를 각각 관찰 가능한 게이트로 둔다.
+- Firestore는 local contract의 field override 9개(필드 index 3개, TTL 6개)를 exact diff로 적용한다.
+- discovery queue는 Development 검증값인 동시 실행 1, 초당 1, 최대 3회, 30~300초 backoff, retry duration 1시간으로 생성한다.
+- Production operator `outpick-extraction-ops-prod@outpick-664ae.iam.gserviceaccount.com`은 현재 없으므로 생성과 최소 OIDC/invoker IAM을 별도 승인 resource로 둔다.
+- 신규 durable discovery/issue operations Function 11개와 초기 job 생성을 연결하는 기존 `createBrand` 재배포를 합쳐 Function 12개를 exact target으로 둔다.

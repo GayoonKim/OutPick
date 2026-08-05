@@ -2,7 +2,7 @@
 
 ## 전체 상태
 
-- 상태: Phase 1 읽기 전용 감사 대기.
+- 상태: Phase 1 완료, Phase 2 exact mutation 승인 대기.
 - Production mutation: 미승인·미수행.
 
 ## Phase 1. Production 읽기 전용 감사
@@ -27,7 +27,7 @@
 
 논의 필요 사항:
 
-- 감사 결과에 따른 exact 배포 범위와 cutover choreography.
+- 없음. Production이 durable discovery 도입 전 레거시 상태이고 active job/queue backlog가 없어 pause/drain 불필요로 확정했다.
 
 ## Phase 2. 배포안·rollback·승인 게이트 확정
 
@@ -44,6 +44,19 @@
 - IAM/index/TTL/Functions/candidate 범위 승인.
 - traffic/canonical contract 전환은 별도 승인 항목으로 분리.
 
+승인 제안 범위:
+
+1. Worker contract 3 no-traffic candidate 생성과 read-only 검증.
+2. 별도 확인 뒤 live traffic을 candidate 100%로 전환하고 `00024-fow`를 rollback으로 보존.
+3. `lookbook-discovery-jobs` queue, Firestore field override 9개, Production operator와 최소 IAM 생성.
+   - index: `seasonDiscoveryJobs.status`, `seasonDiscoveryJobs.extractionIssueFingerprint`, `importJobs.extractionIssueFingerprint`.
+   - TTL: `lookbookExtractionIssueAuditLogs.expiresAt`, `lookbookExtractionFixVerificationRuns.expiresAt`, `lookbookExtractionFixReleases.expiresAt`, `seasonDiscoveryJobs.expiresAt`, `candidates.expiresAt`, `reviews.expiresAt`.
+4. 다음 Function 12개를 exact target으로 배포.
+   - durable discovery: `requestSeasonDiscovery`, `retrySeasonDiscovery`, `cancelSeasonDiscovery`, `resolveSeasonDiscoveryCandidate`, `retrySeasonDiscoveryAfterExtractionFix`, `onSeasonDiscoveryQueued`, `reconcileSeasonDiscoveryJobs`.
+   - issue operations: `lookbookExtractionIssueOpsRead`, `lookbookExtractionIssueOpsWrite`, `verifyLookbookExtractionFix`, `reconcileLookbookExtractionFixReleases`.
+   - 기존 Function 계약 갱신: `createBrand`.
+5. 별도 확정한 Production 브랜드/URL로 실제 discovery·대표 이미지 smoke.
+
 검증:
 
 - 명령 dry-run 또는 describe 결과와 expected diff 대조.
@@ -52,19 +65,19 @@
 
 - Production mutation 승인 필수.
 
-## Phase 3. Production prerequisite와 no-traffic candidate
+## Phase 3. Production no-traffic Worker candidate
 
 목표:
 
-- 승인된 최소 IAM/index/TTL/Functions prerequisite와 Worker candidate를 준비한다.
+- Worker contract 3 candidate를 traffic 0%로 준비하고 기존 Production 경로 호환성을 검증한다.
 
 변경 범위:
 
-- 승인된 Production resource만.
+- 승인된 Worker candidate revision만.
 
 완료 기준:
 
-- candidate Ready, traffic 0%, rollback revision 보존.
+- candidate Ready, traffic 0%, live `00024-fow`와 rollback `00023-879` 보존.
 - `/readyz`, `/runtime-contract`, task/functions caller 경계와 read-only actual smoke 통과.
 
 검증:
@@ -75,16 +88,16 @@
 
 - candidate 검증 실패 시 traffic 전환 금지.
 
-## Phase 4. Production cutover
+## Phase 4. Worker traffic과 backend cutover
 
 목표:
 
-- 별도 승인된 순서로 Worker와 Functions canonical contract를 일치시킨다.
+- Worker를 contract 3으로 먼저 전환한 뒤 durable discovery backend와 Functions를 활성화한다.
 
 변경 범위:
 
-- Worker traffic과 승인된 Functions deployment.
-- 필요하다고 확정된 경우에만 queue pause/resume.
+- Worker traffic, Firestore field override, discovery queue, 최소 IAM과 승인된 Functions deployment.
+- queue pause/resume은 수행하지 않는다.
 
 완료 기준:
 
@@ -122,4 +135,3 @@
 논의 필요 사항:
 
 - smoke 대상과 데이터 삭제는 실행 전에 확정한다.
-
