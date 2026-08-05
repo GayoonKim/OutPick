@@ -73,6 +73,8 @@ Repository가 `DocumentSnapshot.documentID`를 같은 snapshot에서 decode한 D
 
 경로 prefix는 `OutPick/Features/Lookbook/`이다.
 
+- 시즌 후보 카드의 대표 이미지는 기존 nullable `coverImageURL`과 placeholder를 그대로 사용한다. Phase 7 backend는 목록 이미지 우선, 시즌 상세 콘텐츠 영역의 최상단 첫 유효 이미지 차선으로 URL을 채우며 SwiftUI 화면·Coordinator·DI는 변경하지 않는다. Worker 진입점은 `extraction/{image-candidates,season-cover}.ts`와 `season-discovery.ts`이고 상세 계약은 task의 `phase-7-season-cover-enrichment.md`다.
+
 ### 좋아요 탭
 
 - 화면 조립: `LookbookCompositionRoot.makeLikedRoot` → `LookbookContainer.makeLikedView` → `Views/Liked/LikedView.swift`

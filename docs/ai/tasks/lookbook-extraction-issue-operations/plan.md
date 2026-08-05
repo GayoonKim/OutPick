@@ -4,6 +4,7 @@
 
 - 제품·운영·API·data·security·release 상세 설계 완료.
 - Phase 1 공통 계약과 Phase 2 자동 occurrence/cluster/대표 evidence 구현 완료.
+- Phase 7 시즌 대표 이미지 보강의 상세 설계와 구현 계획을 확정했으며 구현 승인을 기다린다.
 - 각 phase의 Production 배포와 데이터 cleanup은 별도 명시 승인을 받는다.
 
 ## Phase 1. 공통 계약과 순수 테스트
@@ -181,3 +182,72 @@
 논의 필요 사항:
 
 - Production 배포, traffic 전환, callable 삭제와 기존 데이터 cleanup은 각각 사용자 명시 승인 필요.
+
+## Phase 7. 시즌 대표 이미지 보강
+
+상태: 로컬 구현·자동 검증 완료. Development 배포·실제 QA 승인 대기.
+
+목표:
+
+- 시즌 identity 결과와 대표 이미지 표시를 분리하고, 모든 브랜드에서 목록 이미지가 없으면 시즌 상세 콘텐츠 영역의 최상단 첫 유효 이미지로 보강한다.
+
+변경 범위:
+
+- Worker 공통 이미지 후보 추출 모듈과 bounded season-cover enrichment 모듈.
+- `season-discovery.ts`의 cover 기반 후보 제거 삭제, 목록 우선 병합과 상세 보강 orchestration.
+- Generic detail fallback과 Platform/Domain content-section 보강 계약.
+- candidate provenance와 season discovery job cover 집계.
+- Functions/Worker season discovery runtime `contract:3` 정렬.
+- Worker 단위 테스트, AMOMENTO 상세 fixture와 전체 corpus differential.
+- 관련 Worker/Firebase/Test/data/architecture 진입점 문서와 task 하네스.
+
+예상 변경 파일:
+
+- `tools/lookbook-import-worker/src/extraction/{image-candidates,season-cover}.ts` 신규 후보
+- 필요 시 `tools/lookbook-import-worker/src/extraction/adapters/{types,cafe24}.ts`
+- `tools/lookbook-import-worker/src/{processor,season-discovery,season-discovery-processor}.ts`
+- 관련 `*.test.ts`, `fixtures/discovery/generic/season-detail-cover/` 신규 후보와 `fixtures/discovery/platform/cafe24-modal-data-url/`
+- `functions/src/shared/seasonDiscoveryCreation.ts`
+- `functions/src/lookbook/import/seasonDiscoveryContract.test.ts`
+- `scripts/ai/deploy-lookbook-import-worker.sh`
+- 관련 `docs/ai/` 문서
+
+구현 순서:
+
+1. 이미지 content-section 선택 순수 로직을 side effect 없는 공유 모듈로 분리하고 기존 이미지 import 회귀 테스트를 유지한다.
+2. cover 기반 후보 필터를 제거하고 목록 대표 이미지의 우선순위·출처를 고정한다.
+3. 모든 플랫폼에 공통인 Generic 콘텐츠 영역 판정과 Platform/Domain 보강, 30개·동시 3개·`min(15초, 전체 deadline 잔여 시간)` 제한을 가진 best-effort 보강기를 구현한다.
+4. candidate provenance와 job 집계를 저장하고 snapshot/runtime 계약을 `contract:3`으로 맞춘다.
+5. adapter 없는 Generic 상세 fixture, AMOMENTO 상세 fixture와 기존 fixture differential, 실패·동시성·deadline 테스트를 추가한다.
+6. Worker/Functions 전체 test·lint·build와 fixture corpus를 실행한다.
+7. 별도 배포 승인 후 Development candidate Worker와 Functions를 배포하고 AMOMENTO 새 job 15개·대표 이미지·앱 표시·queue/error를 실제 QA한다.
+
+완료 기준:
+
+- 후보 개수, 제목, URL과 순서가 대표 이미지 유무로 바뀌지 않는다.
+- 목록 이미지가 항상 우선하고, 상세 페이지에서는 실제 시즌 콘텐츠 영역의 최상단 첫 유효 이미지만 fallback된다.
+- 상세 보강 실패가 discovery 실패나 issue를 만들지 않는다.
+- 최대 30개, 동시 3개, 15초와 public HTTP 안전 경계가 자동 테스트로 고정된다.
+- candidate/job 관찰 필드와 집계 불변식이 검증된다.
+- Functions/Worker contract 3, 전체 test·fixture·lint·build가 통과한다.
+- adapter 없는 Generic fixture와 Development AMOMENTO 실제 15개·앱 대표 이미지 QA가 통과하고 Production은 변경하지 않는다.
+
+검증 방법:
+
+- Worker 순수·orchestration unit test와 fixture corpus 전체.
+- adapter 없는 Generic 상세와 Cafe24 Platform 상세의 동일 결과 계약, header/banner/footer/related 제외 fixture.
+- Functions season discovery contract test와 전체 test·lint·build.
+- Development iOS build 및 실제 AMOMENTO 신규 시즌 선택 화면 수동 QA.
+- Development Worker/Functions 로그와 Cloud Tasks backlog 확인.
+
+의존성·충돌 가능성:
+
+- `processor.ts`의 이미지 후보 추출을 공유하므로 기존 season image import와 같은 service 경계를 건드린다. 분리와 discovery 통합을 병렬 구현하지 않고 순차 진행한다.
+- Functions canonical revision과 Worker 배포 환경 revision은 한 phase에서 동일하게 변경한다.
+- Swift DTO/UI는 기존 nullable `coverImageURL`을 이미 지원하므로 앱 코드 변경은 예상하지 않는다.
+- MVVM-C/Repository/UseCase/DI/Coordinator 변경은 없다.
+
+논의 필요 사항:
+
+- 없음. 상세 계약은 `phase-7-season-cover-enrichment.md`로 확정했다.
+- 코드 구현은 사용자 승인으로 완료했다. Development 배포와 Production rollout은 각각 별도 승인 범위다.

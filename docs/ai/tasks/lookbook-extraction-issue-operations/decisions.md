@@ -129,3 +129,35 @@
 - 후보 누락·수량·coverage 계열은 expected count 또는 candidate key ground truth 없이는 `fixed`를 열지 않는다.
 - 통과한 검증 영수증은 `lookbookExtractionFixVerificationRuns`에 24시간 보존하고, release projection 진행 상태는 별도 release record로 60일 보존한다.
 - verifier 한 번의 요청에서 Production traffic/runtime contract/smoke/CAS를 연속 검증하며 별도 임의 smoke run ID를 신뢰하지 않는다.
+
+## D-019. 시즌 후보 identity와 대표 이미지 표시를 분리한다
+
+- 상태: 확정.
+- 시즌 후보 채택·정렬은 URL, 제목, score, page order로만 결정하고 `coverImageURL` 유무는 사용하지 않는다.
+- 목록 대표 이미지가 2개 이상이라는 이유로 이미지 없는 유효 후보를 제거하는 기존 필터는 삭제한다.
+- 대표 이미지 보강 실패는 시즌 discovery status, failure reason과 issue fingerprint를 바꾸지 않는다.
+
+## D-020. 대표 이미지는 목록 우선, 검증된 상세 콘텐츠 첫 이미지를 차선으로 사용한다
+
+- 상태: 확정.
+- 목록 행에 유효 이미지가 있으면 그대로 사용하고 상세 페이지를 조회하거나 덮어쓰지 않는다.
+- 목록 이미지가 없으면 platform adapter 유무와 관계없이 확정된 시즌 상세 페이지를 조회한다.
+- Generic → Platform → Domain content-section 규칙으로 실제 시즌 콘텐츠 영역을 식별하고, specificity/confidence 우선·동률 DOM order로 영역을 고른 뒤 그 안의 최상단 첫 유효 이미지를 사용한다.
+- header 로고, navigation/menu, 광고·배너, 아이콘, footer, related product와 low-confidence 전체 페이지 후보는 제외한다. 콘텐츠 영역을 신뢰성 있게 식별하지 못하면 `null`을 유지한다.
+- Cafe24 규칙은 콘텐츠 영역 식별 정확도를 높이는 Platform 보강일 뿐 fallback 적용 조건이 아니며 AMOMENTO host 전용 분기는 사용하지 않는다.
+
+## D-021. 상세 대표 이미지 보강은 bounded best-effort 작업이다
+
+- 상태: 확정.
+- 저장 대상 후보 중 이미지 없는 page-order 앞 30개를 platform과 관계없이 조회하며 최대 동시 실행은 3개, 전체 보강 예산은 15초와 discovery 전체 deadline의 남은 시간 중 더 짧은 값이다.
+- 기존 `fetchPublicHTTP`, redirect 검증, HTML 5 MiB 상한을 재사용하고 이미지 파일 자체는 다운로드하지 않는다.
+- 404, timeout, adapter mismatch, 이미지 후보 없음과 예산 초과는 해당 후보를 이미지 없음으로 남길 뿐 전체 discovery를 실패시키지 않는다.
+
+## D-022. 대표 이미지 출처를 저장하고 season discovery contract를 3으로 올린다
+
+- 상태: 확정.
+- candidate에 `coverImageSource: list | detail | none`, `coverImageStrategy`를 추가하고 job에 최종/list/상세 시도·성공·실패·건너뜀 수를 집계한다.
+- 대표 이미지와 출처는 사용자가 확인하는 candidate snapshot의 일부이므로 snapshot hash에 포함한다.
+- candidate 출력 의미가 바뀌므로 Functions canonical revision과 Worker runtime을 `contract:3`으로 함께 올린다.
+- 기존 이미지 선택 규칙을 그대로 공유하는 한 image extractor `1.2.3`과 Cafe24 adapter `1.0.0`은 유지하며, 구현 중 규칙 자체를 변경할 때만 별도 version을 올린다.
+- 기존 성공 job은 자동 재실행하지 않고 Development의 일반 `다시 찾아오기`로 새 contract 3 job을 검증한다.

@@ -218,3 +218,11 @@ Worker의 IAM 비공개 `GET /runtime-contract`는 실행 중인 동일 필드�
 - Production 검증 전에는 앱 재시도 action이 절대 열리지 않는다.
 - 개별 occurrence는 7일, terminal job·cluster·대표 evidence는 확정된 60일 정책대로 정리된다.
 - 레거시 개선 요청 UI/API/필드를 새 코드에서 읽거나 쓰지 않는다.
+
+## 12. Phase 7 시즌 대표 이미지 보강 확장
+
+- 시즌 후보 identity와 대표 이미지 표시를 분리하고 모든 브랜드에 목록 이미지 우선, 시즌 상세 콘텐츠 영역의 최상단 첫 유효 이미지 fallback을 적용하는 확장 설계를 확정했다.
+- Cafe24 등 Platform/Domain 규칙은 Generic 콘텐츠 영역 식별을 보강할 뿐 적용 조건이 아니다. 페이지 전체 첫 이미지와 low-confidence 전체 페이지 후보는 사용하지 않는다.
+- 상세 보강은 후보 성공 판정과 분리된 bounded best-effort 작업이며, 후보 최대 30개·동시 3개·전체 15초 경계를 사용한다.
+- candidate provenance, job 집계, runtime `contract:3`, 테스트와 Development QA의 상세 계약은 `phase-7-season-cover-enrichment.md`를 source of truth로 사용한다.
+- 로컬 구현과 자동 검증을 완료했다. Development/Production 배포와 실제 URL QA는 별도 승인 전 수행하지 않았다.

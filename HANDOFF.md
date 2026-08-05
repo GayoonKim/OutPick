@@ -2,7 +2,7 @@
 
 ## 1. 최종 목표
 
-- 현재 핵심 task는 `lookbook-extraction-issue-operations`다. Phase 1~5 구현과 자동 검증, Phase 6 Development Functions/Firestore/IAM/Worker 통합과 backend 상태 전이 QA를 완료했다. 실제 extraction fix가 없는 상태에서 합성 `fixed`를 만들지 않으며, 첫 runtime 상승 시 두 stage의 실제 URL `fixed → retry → verified`를 필수 게이트로 수행한다. Production rollout과 기존 callable/data 정리는 각각 별도 승인 전 미수행이다.
+- 현재 핵심 task는 `lookbook-extraction-issue-operations`다. Phase 1~6과 AMOMENTO contract 2 실제 loop를 완료했고, Phase 7 `시즌 대표 이미지 보강`의 로컬 구현과 자동 검증도 완료했다. Development contract 3 배포·실데이터 QA와 Production rollout은 각각 별도 승인 전 미수행이다.
 - 하나의 Xcode 프로젝트와 app target을 유지하면서 Development 앱은 `GayoonKim.OutPick.dev`와 `outpick-test`, Production 앱은 `GayoonKim.OutPick`과 `outpick-664ae`를 사용한다.
 - 잘못된 Bundle ID·Firebase plist/project·Socket 조합은 build-time과 runtime에서 fail closed 처리한다.
 - Development 앱은 `OutPick DEV`로 표시하고 Production 앱과 같은 기기에 동시에 설치할 수 있어야 한다.
@@ -10,6 +10,30 @@
 - 코드·설정·백엔드·배포 계약 기준의 Development/Production 환경 분리는 PR #3 병합, Production Worker traffic 전환과 실제 import smoke까지 완료해 종료 처리했다.
 
 ## 2. 완료한 작업
+
+### Phase 7 시즌 대표 이미지 보강 — 로컬 구현·자동 검증 완료
+
+- 시즌 identity와 대표 이미지 표시를 분리하고 `coverImageURL` 유무로 유효 시즌 후보를 제거하지 않기로 확정했다.
+- 대표 이미지 우선순위는 모든 브랜드에 `목록 행 이미지 → 시즌 상세 콘텐츠 영역의 최상단 첫 유효 이미지 → 없음`으로 고정했다.
+- 상세 fallback은 platform adapter 유무와 관계없이 적용한다. Generic 규칙으로 실제 시즌 콘텐츠 영역을 찾고 Cafe24 등 Platform/Domain 규칙은 식별 정확도만 보강한다. header/navigation/banner/footer/related와 low-confidence 전체 페이지 후보는 제외한다.
+- 보강은 저장 대상 중 이미지 없는 앞 30개, 동시 3개, 전체 15초의 best-effort이며 실패는 후보 이미지만 `null`로 남기고 discovery 상태와 issue 판정을 바꾸지 않는다.
+- candidate provenance, job cover 집계, snapshot hash와 season discovery `contract:3` 경계를 확정했다. 이미지 규칙 자체가 바뀌지 않으면 extractor `1.2.3`, Cafe24 adapter `1.0.0`은 유지한다.
+- 기존 import 이미지 선택을 `image-candidates.ts` 순수 모듈로 분리하고, Generic 콘텐츠 영역과 Cafe24 상세 페이지 대표 이미지 fixture를 추가했다. 기존 import 선택 결과와 extractor/adapter version은 유지했다.
+- 이미지 없는 저장 대상 앞 30개만 동시 3개·전체 15초 안에서 best-effort로 상세 페이지를 읽는 `season-cover.ts`를 추가했다. 목록 이미지 우선, 후보 순서·identity 보존, 개별 실패 격리와 deadline skip을 테스트로 고정했다.
+- 시즌 후보의 cover 기반 제거를 삭제하고 candidate provenance, job cover 집계, snapshot hash와 Worker/Functions `contract:3` 저장 계약을 구현했다.
+- 로컬 검증은 Worker 114/114·fixture 8/8·lint/build, Functions 146/146·lint/build, iOS Development generic Simulator build가 모두 통과했다.
+- Development/Production 배포와 AMOMENTO 15개 실데이터 QA는 수행하지 않았다.
+
+### AMOMENTO 첫 실제 extraction fix — Development 실제 loop 완료
+
+- AMOMENTO archive가 링크가 아니라 `button.archive-modal-link[data-url]`로 15개 시즌을 제공해 기존 anchor-only discovery가 0건이 된 원인을 실페이지에서 확인했다.
+- Worker가 `button[data-url]`의 `collection-single.html`을 기존 URL 안전 검증과 후보 scoring으로 읽고, 버튼 본문의 끝자리 ISO 날짜를 제목에서 제거하도록 Cafe24 공통 로직을 보강했다. 브랜드 전용 adapter나 15개 모달 클릭은 추가하지 않았다.
+- 새 시즌 discovery job과 Worker runtime을 `contract:2`로 일치시키도록 Functions canonical revision과 Development/Production 공용 배포 script 값을 함께 올렸다. Production 배포는 수행하지 않았다.
+- 앱의 시즌 목록·이미지 issue 설명에서 `추출 로직/개선된 방식` 표현을 제거하고 `가져오지 못했어요/확인하고 있어요/다시 가져올 수 있어요`로 단순화했다.
+- 최종 검증은 Functions 145/145·lint/build, Worker 103/103·fixture 6/6·lint/build, iOS targeted test 12개와 Development Simulator build가 통과했다.
+- Development Worker `lookbook-import-worker-development-00008-foq`를 source `a9a57b5802f24eb83e051efb6733a8eb2deadbe4`, contract 2로 traffic 100% 전환했다. rollback은 `00006-pob`다.
+- AMOMENTO ground truth 15개 actual smoke로 cluster `fixed` version 5를 열고, Simulator 총 관리자 재시도 job `eK2fR8yhIZQ23gNDKuVs`가 후보 15개·contract 2로 성공한 뒤 cluster `verified` version 6을 확인했다. 관련 queue와 ERROR는 0건이다.
+- 통합 중 tag-only 0% traffic 오인, 삭제된 대표 job, 새 시즌 재시도 job의 fix projection 누락을 발견해 Functions에 회귀 테스트와 함께 보강했다. verifier 재배포 뒤 Development operator invoker binding도 정확한 전용 계정만 복구했다.
 
 ### 이전 Phase 2 변경 보존
 
@@ -120,6 +144,8 @@
 
 ## 3. 완료 범위 밖 후속 후보와 현재 설계 task
 
+- 최우선: Phase 7 contract 3의 정확한 Development 배포 범위와 현재 외부 상태를 재확인하고, 별도 사용자 승인 뒤 Worker/Functions를 배포해 AMOMENTO 15개 실데이터 QA를 수행한다.
+
 1. Development 실기기 App Attest는 Apple Developer Program 가입 후 외부 의존 후속 작업으로 재개한다.
 2. Production Google 실제 로그인과 provider별 계정 삭제 요청·취소 재인증 smoke는 출시 전 QA로 남는다.
 3. PITR·예약 백업·Storage soft delete·복구 훈련은 출시 운영 게이트로 남는다.
@@ -143,15 +169,30 @@
 
 ## 4. 수정한 파일 목록
 
-- 이번 상세 설계:
+- AMOMENTO 첫 실제 fix 완료·커밋 범위:
+  - `tools/lookbook-import-worker/src/season-discovery.ts`, `season-discovery.test.ts`, `src/fixture/corpus.test.ts`
+  - `tools/lookbook-import-worker/fixtures/discovery/platform/cafe24-modal-data-url/{input.html,metadata.json,expected.json}`
+  - `functions/src/shared/seasonDiscoveryCreation.ts`, `functions/src/lookbook/import/seasonDiscoveryContract.test.ts`
+  - `scripts/ai/deploy-lookbook-import-worker.sh`
+  - `OutPick/Features/Lookbook/Views/BrandDetail/{SeasonImportManagementView,LookbookExtractionReviewView}.swift`
+  - 관련 `docs/ai/architecture`, `entrypoints`, task progress/QA와 `HANDOFF.md`
+
+- Phase 7 구현·문서 갱신:
+  - `tools/lookbook-import-worker/src/extraction/{image-candidates,season-cover}.ts`와 대응 테스트
+  - `tools/lookbook-import-worker/src/{processor,season-discovery,season-discovery-processor}.ts`와 대응 테스트
+  - `tools/lookbook-import-worker/src/fixture/{types,manifest,corpus}.ts`, `corpus.test.ts`, `fixtures/season-cover/**`
+  - `functions/src/shared/seasonDiscoveryCreation.ts`
+  - `functions/src/lookbook/import/{functions,seasonCandidateParser,seasonCandidateDiscovery}.ts`와 대응 테스트
+  - `scripts/ai/deploy-lookbook-import-worker.sh`
+  - `docs/ai/tasks/lookbook-extraction-issue-operations/phase-7-season-cover-enrichment.md`
   - `docs/ai/tasks/lookbook-extraction-issue-operations/{design,decisions,plan,progress,qa-checklist}.md`
-  - `docs/ai/tasks/active.md`
-  - `docs/ai/tasks/lookbook-discovery-learning-loop/plan.md`
   - `docs/ai/ENTRYPOINTS.md`
   - `docs/ai/DATA_SCHEMA.md`
   - `docs/ai/entrypoints/{FIREBASE,LOOKBOOK}.md`
+  - `docs/ai/entrypoints/TESTS.md`
+  - `docs/ai/architecture/LOOKBOOK_IMPORT_WORKER.md`
   - `HANDOFF.md`
-- 이번 단계에는 코드 변경과 배포가 없다.
+- 이번 단계에는 로컬 코드·fixture·테스트·하네스 변경이 있으며 외부 배포는 없다.
 
 - 이전 Phase 2 커밋 완료:
   - `OutPick/Features/Lookbook/ViewModels/LookbookExtractionReviewViewModel.swift`
@@ -182,6 +223,22 @@
   - `docs/ai/{ENTRYPOINTS.md,DATA_SCHEMA.md}`, 관련 Firebase/Lookbook/Test/Worker 진입점 문서와 task 하네스
 
 ## 5. 중요한 아키텍처 결정
+
+### Cafe24 modal data-url을 공통 시즌 후보로 처리
+
+- 선택: 모달을 15번 클릭하거나 AMOMENTO domain adapter를 만들지 않고, 정적 HTML의 `button[data-url]`을 anchor와 같은 URL 후보 파이프라인에 합친다.
+- 이유: 실제 상세 URL과 제목이 이미 정적 DOM에 있고, public URL/비시즌 경로/score 검증을 재사용하면 네트워크·시간 비용과 사이트별 결합을 줄일 수 있다.
+- 트레이드오프: strategy 이름 `staticAnchors`는 기존 golden 호환을 위해 유지돼 실제 입력 종류를 완전히 표현하지는 않는다. evidence와 contract revision 2가 변경 경계를 대신한다.
+- 보류한 대안: 모든 모달을 Playwright로 열어 DOM을 수집하는 방식은 느리고 이미지 요청이 많으며, AMOMENTO 전용 adapter는 같은 Cafe24 템플릿 재사용 가능성을 불필요하게 제한해 보류했다.
+- 재검토 조건: `data-url`이 실제 상세 URL이 아니거나 별도 API 토큰·POST가 필요한 Cafe24 변형이 확인되면 platform interaction rule 또는 fixture가 고정된 domain adapter를 검토한다.
+
+### 시즌 identity와 대표 이미지 보강 분리
+
+- 선택: 시즌 후보 채택·순서는 URL/제목/score/page order로 확정하고 대표 이미지는 그 뒤 별도 best-effort 단계에서 보강한다. 모든 브랜드에서 목록 이미지가 있으면 유지하고, 없으면 시즌 상세 콘텐츠 영역의 최상단 첫 유효 이미지를 사용한다.
+- 이유: 대표 이미지는 선택 화면의 보조 정보이므로 이미지 제공 여부가 정상 시즌 자체를 누락시키면 안 된다. 기존 이미지 extractor의 content-section/noise 규칙을 공유하면 페이지 로고를 대표 이미지로 오인하는 위험도 줄일 수 있다.
+- 트레이드오프: 이미지가 없는 후보마다 상세 HTML 요청이 추가되고 일시적 네트워크 상태에 따라 snapshot hash가 달라질 수 있다. 이를 30개·동시 3개·15초로 제한하고 cover를 표시 snapshot의 일부로 취급한다.
+- 보류한 대안: HTML 전체에서 처음 나온 이미지를 쓰는 무검증 fallback은 로고·배너 오탐 위험이 커서 제외했다. AMOMENTO host 전용 코드와 Cafe24-only gate도 다른 브랜드에 공통 규칙이 적용되지 않아 제외했다. 모든 상세 이미지를 Worker가 다운로드·저장하는 방식도 비용과 책임 범위를 늘려 제외했다.
+- 재검토 조건: 검증된 다른 플랫폼 상세 구조가 fixture로 추가되거나 외부 이미지 URL 만료가 실제 문제로 확인될 때 adapter 규칙 또는 asset 저장 정책을 별도로 설계한다.
 
 ### 하나의 app target과 명시적 환경 configuration
 
@@ -249,19 +306,22 @@
 
 ## 6. 다시 확인해야 할 불확실한 부분
 
+- AMOMENTO 실페이지 ground truth 15개와 Development contract 2 실제 재시도 성공은 확인 완료했다. 이후 사이트 목록이 바뀌면 새 ground truth 판단이 필요할 수 있다.
+- Phase 7의 기존 fixture 회귀와 새 상세 대표 이미지 fixture는 로컬에서 검증했다. Development AMOMENTO 15개 실페이지의 contract 3 결과, 앱 표시, queue/ERROR는 배포 전이라 아직 미검증이다.
+- Production에는 contract 2 Worker/Functions와 issue operations IAM/index/TTL을 아직 적용하지 않았다. 별도 명시 승인 전 변경하지 않는다.
+
 - Firebase/Google/Kakao Development 앱과 callback 등록은 완료했다.
 - Development 실기기 App Attest의 Apple App ID·entitlement·Firebase provider 등록은 Apple Developer Program 가입 후 재확인한다.
 - `outpick-test` Functions 74개와 scheduled trigger의 감사·승인·배포, 실제 import/materialization smoke와 smoke 데이터 정리를 완료했다.
 - Production Worker `lookbook-import-worker-00024-fow` traffic 100%, rollback `00023-879`, 전환 후 ERROR·queue pending 0건을 확인했다.
-- Phase 4A 코드는 아직 Firebase/Worker/인덱스에 배포하지 않았다. 수동 QA도 사용자 결정에 따라 구현 완료 뒤 한 번에 수행한다.
-- Phase 4B의 API/data/security/보존/revision verifier 계약은 상세 하네스로 모두 확정했다. Phase 1~2 구현과 자동 검증은 완료했으며 이후 Production IAM/배포/data cleanup은 각각 승인이 필요하다.
+- Phase 4B의 API/data/security/보존/revision verifier 계약과 Phase 1~6 Development 검증은 완료했다. Production IAM/배포/data cleanup은 각각 승인이 필요하다.
 
 ## 7. 다음 턴에서 바로 실행해야 할 작업
 
-1. `lookbook-extraction-issue-operations` Phase 6에서 두 stage의 Development 실제 운영 loop와 Simulator 문구/action을 통합 QA한다.
-2. 기존 `lookbook-discovery-learning-loop`의 Phase 3A/4A 통합 QA도 같은 Development 검증에서 함께 확인한다.
-3. Production IAM·Functions/Worker 배포, traffic 전환, 기존 callable 삭제와 legacy 데이터 cleanup은 각각 별도 명시 승인 전까지 수행하지 않는다.
-4. OUTSTANDING 실제 결과의 44개 후보와 두 failure reason은 실제 extractor 보강 issue가 선택될 때 ground truth와 fixture 범위를 확정한다.
+1. Phase 7 contract 3의 Development Worker/Functions 배포 대상과 현재 traffic/runtime contract를 read-only로 재확인한다.
+2. 사용자가 Development 배포를 별도로 승인하면 candidate Worker와 Functions를 contract 3으로 배포하고 revision/traffic 경계를 검증한다.
+3. AMOMENTO 새 job 15개, 상세 첫 이미지, 앱 표시, queue/ERROR를 실제 QA하고 결과를 Phase 7 QA 문서에 기록한다.
+4. Production 반영은 Development 실제 QA 완료 후에도 별도 승인 전 변경하지 않는다.
 
 Phase 3 완료 메모: private read/write Functions, strict allowlist API, CAS/idempotent audit와 job projection, 고정 환경 CLI를 구현했다. Development operator IAM, Firestore projection index/audit TTL과 두 Function을 배포했으며 Functions 134/134, CLI 7/7과 lint/build를 통과했다. 실제 Development endpoint는 무인증 403, operator read 성공, 데이터 변경 없는 write 404 smoke를 통과했다. 목록에서 `brandID` filter 및 최근 브랜드/job 사례는 제거했고 정확한 영향 job은 fingerprint projection으로 조회한다. Production IAM·index·Function은 변경하지 않았다. 운영 절차는 `docs/ai/runbooks/LOOKBOOK_EXTRACTION_ISSUE_OPERATIONS.md`를 따른다.
 

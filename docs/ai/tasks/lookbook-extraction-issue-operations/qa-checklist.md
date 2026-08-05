@@ -77,3 +77,23 @@
 - [ ] PR 승인 뒤에만 Production traffic을 전환했다.
 - [ ] Production verifier가 live 100% revision을 확인했다.
 - [ ] 기존 callable 삭제와 legacy 데이터 cleanup은 각각 별도 승인받았다.
+
+## Phase 7 시즌 대표 이미지 보강
+
+- [x] 대표 이미지가 2개 이상이어도 이미지 없는 유효 시즌 후보를 제거하지 않는다.
+- [x] 목록 대표 이미지를 상세 fallback이 조회하거나 덮어쓰지 않는다.
+- [x] platform adapter가 없어도 목록 이미지 없는 유효 시즌 상세는 Generic fallback 대상이 된다.
+- [x] header logo/navigation/banner/footer/related/noise와 low-confidence 전체 페이지 이미지를 거부한다.
+- [x] specificity/confidence로 실제 시즌 콘텐츠 영역을 고르고 그 안의 최상단 첫 유효 이미지를 대표 이미지로 선택한다.
+- [x] Cafe24 Platform 규칙은 Generic 계약의 정확도만 보강하고 적용 여부를 제한하지 않는다.
+- [x] 404, timeout, invalid content type와 이미지 없음이 discovery 성공을 실패로 바꾸지 않는다.
+- [x] 상세 시도 최대 30개, 동시 실행 최대 3개, 전체 15초 예산을 지킨다.
+- [x] candidate cover 출처와 job 집계 불변식이 맞는다.
+- [x] Functions/Worker가 season discovery contract 3으로 일치한다.
+- [x] Worker 전체 test·fixture corpus·lint·build가 통과한다.
+- [x] Functions 전체 test·lint·build가 통과한다.
+- [ ] Development AMOMENTO 후보 15개와 각 상세 첫 이미지, 앱 표시를 실제 확인한다.
+- [x] adapter 없는 Generic fixture에서 같은 fallback 계약을 확인한다.
+- [ ] 목록 이미지가 있는 기존 브랜드의 대표 이미지는 바뀌지 않는다.
+- [ ] Development 관련 queue pending과 Worker/Functions 신규 ERROR가 0건이다.
+- [x] Production은 별도 승인 전 변경하지 않는다.

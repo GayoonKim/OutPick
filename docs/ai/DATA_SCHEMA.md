@@ -153,6 +153,7 @@
 - extraction cache는 candidate/hash/quality뿐 아니라 extractor와 platform/domain adapter key/version 전체가 현재 registry와 일치할 때만 재사용한다.
 - discovery diagnostic은 같은 의미의 `candidateEvidence`, `extractionVersions`를 반환한다.
 - 일반 시즌 discovery의 source of truth는 `brands/{brandID}/seasonDiscoveryJobs/{jobID}`다. 후보는 job 하위 `candidates`, 관리자 동일성 결정은 `reviews`에 저장한다. 브랜드 문서의 active/published job·generation·snapshot hash는 빠른 진입용 projection이다.
+- Phase 7 candidate는 기존 `coverImageURL`과 함께 `coverImageSource: list | detail | none`, `coverImageStrategy`를 저장한다. job에는 `coverImageCount`, `listCoverImageCount`, `detailCoverAttemptCount/SuccessCount/FailureCount/SkippedCount`를 관찰용으로 저장한다. 이 값은 discovery status와 issue fingerprint를 결정하지 않으며 candidate snapshot hash에는 포함된다. 로컬 contract 3 구현은 완료했고 배포 runtime은 별도 승인 전 contract 2를 유지한다.
 - 브랜드 projection의 `discoveryStatus`는 구형 경로의 `idle/queued/running/success/failed`와 durable 경로의 `succeeded/awaitingReview/correctionRequired/cancelled/superseded`를 모두 읽을 수 있어야 한다. 세부 작업 상태와 action 판단의 source of truth는 job 문서다.
 - discovery job은 현재 비교 가능한 단조 증가 정수 `extractionContractRevision`을 가진다. 후속 `lookbook-extraction-issue-operations` 구현에서는 Functions compile-time 상수를 extractor readiness 기준에서 제외하고 server-only runtime registry와 Worker runtime contract를 source of truth로 사용한다.
 - Phase 4A의 버튼 기반 `improvementRequested*` UI/API 읽기·쓰기는 제거했다. 기존 개발 데이터의 필드는 파괴적으로 일괄 삭제하지 않는다. 시즌 discovery와 이미지 import는 로직 불충분 판정 시 공통 redacted 40자 fingerprint cluster를 자동 기록한다.

@@ -255,6 +255,7 @@ npm run build
 | HTTP server | `tools/lookbook-import-worker/src/server.ts` |
 | Cloud Run IAM·경로별 OIDC 검증 | `tools/lookbook-import-worker/src/oidc-auth.ts`, `config.ts` |
 | 시즌 discovery | `tools/lookbook-import-worker/src/season-discovery.ts` |
+| 시즌 대표 이미지 보강 Phase 7 | `tools/lookbook-import-worker/src/extraction/{image-candidates,season-cover}.ts`, `season-discovery.ts`, `season-discovery-processor.ts` |
 | durable 시즌 discovery 접수/dispatch/watchdog/review | `functions/src/lookbook/import/seasonDiscoveryJobs.ts`, `functions/src/shared/seasonDiscoveryCreation.ts` |
 | durable 시즌 discovery Worker/publish/동일성 | `tools/lookbook-import-worker/src/season-discovery-processor.ts`, `season-identity.ts`, `server.ts`의 `/tasks/discover-seasons` |
 | import 처리 | `tools/lookbook-import-worker/src/processor.ts` |
@@ -372,6 +373,7 @@ git diff --check -- firebase.json storage.rules
 - 시즌 목록 discovery는 이미지 import와 분리된 `lookbook-discovery-jobs` queue를 사용한다. `createBrand` transaction이 최초 job을 만들며, 수동 요청은 같은 fingerprint의 active job에 coalesce된다. Worker는 lease와 generation을 재검증하고 candidate snapshot 전체 저장 뒤 brand published pointer를 전환한다.
 - 2026-08-05 Development 배포 기준 Worker는 `lookbook-import-worker-development-00008-foq` traffic 100%, 직전 rollback은 `00006-pob`이다. runtime은 source `a9a57b5802f24eb83e051efb6733a8eb2deadbe4`, discovery contract 2, image extractor 1.2.3이며 전환 후 ERROR 0건·두 queue task 0건을 확인했다. discovery queue는 초당 1건·동시 1건·최대 3회다.
 - 2026-08-05 AMOMENTO Cafe24 모달 목록 보강은 새 시즌 discovery job과 Worker runtime을 `contract:2`로 맞춘다. `functions/src/shared/seasonDiscoveryCreation.ts`가 새 job 계약을, `scripts/ai/deploy-lookbook-import-worker.sh`가 Worker 환경 계약을 소유한다. Development 실제 공개 URL smoke 15개로 cluster를 `fixed`로 열고, 총 관리자 Simulator 재시도 job `eK2fR8yhIZQ23gNDKuVs`가 후보 15개·contract 2로 성공해 cluster `verified` version 6을 확인했다. Production은 변경하지 않았다.
+- Phase 7 로컬 구현은 모든 브랜드에 `목록 대표 이미지 우선 → 시즌 상세 콘텐츠 영역의 최상단 첫 유효 이미지 fallback`을 `contract:3`으로 묶는다. Functions canonical revision과 Worker 배포 script를 함께 3으로 올리고 candidate provenance/job 집계/snapshot hash를 연결했다. Worker 114/114·fixture 8/8·Functions 146/146과 각 lint/build가 통과했으며 Development/Production 배포와 기존 성공 job 재실행은 수행하지 않았다.
 - discovery callable은 `requestSeasonDiscovery`, `retrySeasonDiscovery`, `retrySeasonDiscoveryAfterExtractionFix`, `cancelSeasonDiscovery`, `resolveSeasonDiscoveryCandidate`다. enqueue trigger는 `onSeasonDiscoveryQueued`, watchdog은 `reconcileSeasonDiscoveryJobs`다.
 - 환경 변수는 기존 Worker URL/service account/audience를 재사용하고, discovery queue/location만 `OUTPICK_LOOKBOOK_DISCOVERY_TASKS_QUEUE`, `OUTPICK_LOOKBOOK_DISCOVERY_TASKS_LOCATION`으로 분리한다.
 - watchdog의 `collectionGroup("seasonDiscoveryJobs").where("status", "in", ...)`는 `firestore.indexes.json`의 `seasonDiscoveryJobs.status` ASCENDING/COLLECTION_GROUP field override가 필수다. Development에서 `READY` 확인 뒤 실제 stale job 재dispatch를 통과했으며 `functions/src/index.contract.test.ts`가 이 배포 계약을 고정한다.

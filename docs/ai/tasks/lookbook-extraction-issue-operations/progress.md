@@ -6,6 +6,7 @@
 - 공식 Cloud Run 인증 계약 점검에서 사용자 `gcloud` ID token의 audience 부재를 확인했고, Production은 환경별 전용 operator service account impersonation으로 확정했다.
 - 2026-08-05 Phase 1 공통 계약, Phase 2 자동 기록, Phase 3 IAM 운영 API·CLI, Phase 4 runtime/smoke/verifier, Phase 5 iOS 단순 상태·레거시 제거를 완료했다. Phase 6 Development 인프라 통합과 상태 전이 QA도 완료했으며 실제 fix loop는 첫 추출 로직 수정 시 배포 게이트로 남겼다.
 - 2026-08-05 첫 실제 fix 대상으로 AMOMENTO 시즌 discovery fingerprint `dea8279b10822fa379277cf56048492303616e89`를 선택했다. Cafe24 모달 행의 `button[data-url]`을 공통 후보로 읽는 contract 2를 Development에 배포하고 ground truth 15개 actual smoke, 총 관리자 재시도 성공, cluster `verified`까지 완료했다. Production은 변경하지 않았다.
+- 2026-08-05 Phase 7의 `목록 이미지 우선 → 시즌 상세 콘텐츠 영역의 최상단 첫 유효 이미지 fallback`을 로컬 구현했다. 공통 이미지 추출을 순수 모듈로 분리하고 Generic/Cafe24 대표 이미지 선택, 30개·동시 3개·15초 best-effort 보강, candidate provenance/job 집계와 contract 3을 연결했다. Development/Production 배포와 실제 URL QA는 수행하지 않았다.
 
 ## 완료
 
@@ -47,14 +48,17 @@
 
 ## 남은 작업
 
-1. 이미지 extraction stage의 첫 실제 로직 수정에서 `fixed → retry success → verified` 실제 URL 검증.
-2. 별도 승인 기반 Production rollout과 기존 callable/data 정리.
+1. 별도 배포 승인 후 Development contract 3 Worker/Functions를 배포한다.
+2. Development AMOMENTO 15개·대표 이미지·앱 표시·queue/ERROR를 실제 QA한다.
+3. 이미지 extraction stage의 첫 실제 로직 수정에서 `fixed → retry success → verified` 실제 URL 검증.
+4. 별도 승인 기반 Production rollout과 기존 callable/data 정리.
 
 ## 현재 위험
 
 - Production IAM principal, Cloud Run revision과 실제 smoke 대상은 배포 시점의 외부 상태이므로 구현 설계값으로 고정하지 않는다.
 - Production 읽기 전용 점검에서 legacy cluster/evidence/import job 각 3건을 확인했다. 모두 성공·승인된 과거 데이터이므로 자동 변경하지 않았다.
 - 배포된 기존 callable 삭제는 되돌리기 어려우므로 replacement 검증과 별도 승인이 필요하다.
+- 상세 대표 이미지 보강은 외부 사이트 응답 시간에 영향을 받으므로 30개·동시 3개·15초의 best-effort 경계를 넘기지 않는다. 실패는 이미지 없음으로만 남기고 시즌 후보 성공을 바꾸지 않는다.
 
 ## 검증
 
@@ -84,3 +88,4 @@
 - Production 읽기 전용 diff에서 기존 Worker `lookbook-import-worker-00024-fow` traffic 100%와 rollback 후보 이력을 확인했다. Production Worker에는 새 runtime metadata가 없고 issue operations Functions, extraction projection index, audit/fix TTL도 아직 없다. Production은 변경하지 않았으며 이 차이 전체가 별도 승인 rollout 대상이다.
 - AMOMENTO contract 2 최종 검증은 Functions 145/145·lint/build, Worker 103/103·fixture 6/6·lint/build, iOS targeted test 12개와 Development build가 통과했다. Worker `00008-foq` traffic 100%에서 실제 공개 URL 후보 15개, `fixed` version 5, Simulator 총 관리자 재시도 job 후보 문서 15개·contract 2·`succeeded`, cluster `verified` version 6을 확인했다. 두 queue와 관련 신규 ERROR는 0건이다.
 - 통합 중 Cloud Run tag-only 0% traffic을 활성 traffic으로 오인하는 verifier, 삭제된 대표 job을 fallback하지 못하는 verifier, 새 시즌 재시도 job에 fix projection이 승계되지 않는 세 결함을 발견해 테스트와 함께 보강했다. 이미 성공한 Development job은 엄격한 성공·contract·fingerprint 전제 확인 후 동일 공통 verified 로직으로 한 번 보정했다.
+- Phase 7 로컬 검증은 Worker 114/114·fixture 8/8·lint/build, Functions 146/146·lint/build, `OutPick-Development` Development-Debug generic Simulator build가 통과했다. 기존 season-image extractor `1.2.3`과 Cafe24 adapter `1.0.0` 결과를 유지했고 contract만 3으로 올렸다. Development/Production 배포와 실제 URL QA는 수행하지 않았다.
