@@ -4,7 +4,7 @@
 
 - 제품·운영·API·data·security·release 상세 설계 완료.
 - Phase 1 공통 계약과 Phase 2 자동 occurrence/cluster/대표 evidence 구현 완료.
-- Phase 7 시즌 대표 이미지 보강의 상세 설계와 구현 계획을 확정했으며 구현 승인을 기다린다.
+- Phase 7 시즌 대표 이미지 보강의 구현, Development contract 3 배포와 AMOMENTO 15개 실제 QA를 완료했다. Production은 별도 승인 전 미변경이다.
 - 각 phase의 Production 배포와 데이터 cleanup은 별도 명시 승인을 받는다.
 
 ## Phase 1. 공통 계약과 순수 테스트
@@ -185,7 +185,7 @@
 
 ## Phase 7. 시즌 대표 이미지 보강
 
-상태: 로컬 구현·자동 검증 완료. Development 배포·실제 QA 승인 대기.
+상태: Development 구현·배포·AMOMENTO 실제 QA 완료. Production 별도 승인 대기.
 
 목표:
 
@@ -220,7 +220,7 @@
 4. candidate provenance와 job 집계를 저장하고 snapshot/runtime 계약을 `contract:3`으로 맞춘다.
 5. adapter 없는 Generic 상세 fixture, AMOMENTO 상세 fixture와 기존 fixture differential, 실패·동시성·deadline 테스트를 추가한다.
 6. Worker/Functions 전체 test·lint·build와 fixture corpus를 실행한다.
-7. 별도 배포 승인 후 Development candidate Worker와 Functions를 배포하고 AMOMENTO 새 job 15개·대표 이미지·앱 표시·queue/error를 실제 QA한다.
+7. Development candidate Worker와 Functions를 배포하고 AMOMENTO 새 job 15개·대표 이미지·앱 표시·queue/error를 실제 QA한다. 완료.
 
 완료 기준:
 
@@ -250,4 +250,4 @@
 논의 필요 사항:
 
 - 없음. 상세 계약은 `phase-7-season-cover-enrichment.md`로 확정했다.
-- 코드 구현은 사용자 승인으로 완료했다. Development 배포와 Production rollout은 각각 별도 승인 범위다.
+- 코드 구현과 Development 배포·실제 QA는 사용자 승인으로 완료했다. Production rollout은 별도 승인 범위다.

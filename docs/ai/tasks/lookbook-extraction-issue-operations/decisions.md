@@ -159,5 +159,12 @@
 - candidate에 `coverImageSource: list | detail | none`, `coverImageStrategy`를 추가하고 job에 최종/list/상세 시도·성공·실패·건너뜀 수를 집계한다.
 - 대표 이미지와 출처는 사용자가 확인하는 candidate snapshot의 일부이므로 snapshot hash에 포함한다.
 - candidate 출력 의미가 바뀌므로 Functions canonical revision과 Worker runtime을 `contract:3`으로 함께 올린다.
-- 기존 이미지 선택 규칙을 그대로 공유하는 한 image extractor `1.2.3`과 Cafe24 adapter `1.0.0`은 유지하며, 구현 중 규칙 자체를 변경할 때만 별도 version을 올린다.
+- 기존 이미지 선택 규칙을 그대로 공유하는 한 image extractor `1.2.3`과 Cafe24 adapter version을 유지한다. Development 실제 QA에서 구형 `collection-images` 직접 영역 규칙을 추가했으므로 Cafe24 adapter만 `1.0.1`로 올렸다.
 - 기존 성공 job은 자동 재실행하지 않고 Development의 일반 `다시 찾아오기`로 새 contract 3 job을 검증한다.
+
+## D-023. Development Worker QA는 OIDC ID token 전용 권한만 영구 유지한다
+
+- 상태: 확정.
+- 1인 Development 운영자 `gayunkim.1@gmail.com`에는 Functions 기본 Compute 계정과 Lookbook Task 계정 각각의 서비스 계정 리소스에만 `roles/iam.serviceAccountOpenIdTokenCreator`를 부여한다.
+- candidate QA는 사용자 access token으로 IAM Credentials `generateIdToken`을 호출하며 발급 token을 파일·로그·하네스에 남기지 않는다.
+- access token, JWT와 blob 서명까지 허용하는 사용자 `roles/iam.serviceAccountTokenCreator`, 서비스 계정 key, project-level binding과 Production 영구 binding은 사용하지 않는다.

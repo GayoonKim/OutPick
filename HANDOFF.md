@@ -2,7 +2,7 @@
 
 ## 1. 최종 목표
 
-- 현재 핵심 task는 `lookbook-extraction-issue-operations`다. Phase 1~6과 AMOMENTO contract 2 실제 loop를 완료했고, Phase 7 `시즌 대표 이미지 보강`의 로컬 구현과 자동 검증도 완료했다. Development contract 3 배포·실데이터 QA와 Production rollout은 각각 별도 승인 전 미수행이다.
+- 현재 핵심 task는 `lookbook-extraction-issue-operations`다. Phase 1~6, AMOMENTO contract 2 실제 loop와 Phase 7 `시즌 대표 이미지 보강`의 Development contract 3 배포·실데이터 QA를 완료했다. Production rollout은 별도 승인 전 미수행이다.
 - 하나의 Xcode 프로젝트와 app target을 유지하면서 Development 앱은 `GayoonKim.OutPick.dev`와 `outpick-test`, Production 앱은 `GayoonKim.OutPick`과 `outpick-664ae`를 사용한다.
 - 잘못된 Bundle ID·Firebase plist/project·Socket 조합은 build-time과 runtime에서 fail closed 처리한다.
 - Development 앱은 `OutPick DEV`로 표시하고 Production 앱과 같은 기기에 동시에 설치할 수 있어야 한다.
@@ -11,18 +11,20 @@
 
 ## 2. 완료한 작업
 
-### Phase 7 시즌 대표 이미지 보강 — 로컬 구현·자동 검증 완료
+### Phase 7 시즌 대표 이미지 보강 — Development 배포·실데이터 QA 완료
 
 - 시즌 identity와 대표 이미지 표시를 분리하고 `coverImageURL` 유무로 유효 시즌 후보를 제거하지 않기로 확정했다.
 - 대표 이미지 우선순위는 모든 브랜드에 `목록 행 이미지 → 시즌 상세 콘텐츠 영역의 최상단 첫 유효 이미지 → 없음`으로 고정했다.
 - 상세 fallback은 platform adapter 유무와 관계없이 적용한다. Generic 규칙으로 실제 시즌 콘텐츠 영역을 찾고 Cafe24 등 Platform/Domain 규칙은 식별 정확도만 보강한다. header/navigation/banner/footer/related와 low-confidence 전체 페이지 후보는 제외한다.
 - 보강은 저장 대상 중 이미지 없는 앞 30개, 동시 3개, 전체 15초의 best-effort이며 실패는 후보 이미지만 `null`로 남기고 discovery 상태와 issue 판정을 바꾸지 않는다.
-- candidate provenance, job cover 집계, snapshot hash와 season discovery `contract:3` 경계를 확정했다. 이미지 규칙 자체가 바뀌지 않으면 extractor `1.2.3`, Cafe24 adapter `1.0.0`은 유지한다.
+- candidate provenance, job cover 집계, snapshot hash와 season discovery `contract:3` 경계를 확정했다. extractor는 `1.2.3`을 유지했고 실제 QA에서 구형 `collection-images` 직접 영역을 보강해 Cafe24 adapter를 `1.0.1`로 올렸다.
 - 기존 import 이미지 선택을 `image-candidates.ts` 순수 모듈로 분리하고, Generic 콘텐츠 영역과 Cafe24 상세 페이지 대표 이미지 fixture를 추가했다. 기존 import 선택 결과와 extractor/adapter version은 유지했다.
 - 이미지 없는 저장 대상 앞 30개만 동시 3개·전체 15초 안에서 best-effort로 상세 페이지를 읽는 `season-cover.ts`를 추가했다. 목록 이미지 우선, 후보 순서·identity 보존, 개별 실패 격리와 deadline skip을 테스트로 고정했다.
 - 시즌 후보의 cover 기반 제거를 삭제하고 candidate provenance, job cover 집계, snapshot hash와 Worker/Functions `contract:3` 저장 계약을 구현했다.
-- 로컬 검증은 Worker 114/114·fixture 8/8·lint/build, Functions 146/146·lint/build, iOS Development generic Simulator build가 모두 통과했다.
-- Development/Production 배포와 AMOMENTO 15개 실데이터 QA는 수행하지 않았다.
+- 최종 로컬 검증은 Worker 115/115·fixture 9/9·lint/build, Functions 146/146·lint/build, iOS Development Simulator build가 모두 통과했다.
+- Development Functions 9개를 contract 3으로 배포했고 Worker `00012-fih` source `3597b2b`, contract 3, extractor `1.2.3`, Cafe24 `1.0.1`로 traffic 100% 전환했다. rollback은 `00010-hiq`다.
+- 앱에서 생성한 최종 AMOMENTO job `GwToZCXiZ9iUfKp4tDMg`은 후보 15개·대표 이미지 15개·상세 실패 0으로 성공했다. 저장 URL 15개와 실제 상세 첫 유효 이미지가 모두 일치하고 Simulator 카드 전체 이미지, queue pending 0과 신규 ERROR 0을 확인했다.
+- Development OIDC QA는 두 정확한 서비스 계정에 사용자 `roles/iam.serviceAccountOpenIdTokenCreator`만 영구 유지한다. Production은 변경하지 않았다.
 
 ### AMOMENTO 첫 실제 extraction fix — Development 실제 loop 완료
 
@@ -144,7 +146,7 @@
 
 ## 3. 완료 범위 밖 후속 후보와 현재 설계 task
 
-- 최우선: Phase 7 contract 3의 정확한 Development 배포 범위와 현재 외부 상태를 재확인하고, 별도 사용자 승인 뒤 Worker/Functions를 배포해 AMOMENTO 15개 실데이터 QA를 수행한다.
+- 최우선: Phase 7 Development contract 3 배포·AMOMENTO 15개 실데이터 QA는 완료했다. 목록 cover 기존 브랜드의 Development 회귀 QA와 Production rollout은 각각 별도 후속이다.
 
 1. Development 실기기 App Attest는 Apple Developer Program 가입 후 외부 의존 후속 작업으로 재개한다.
 2. Production Google 실제 로그인과 provider별 계정 삭제 요청·취소 재인증 smoke는 출시 전 QA로 남는다.
@@ -307,7 +309,7 @@
 ## 6. 다시 확인해야 할 불확실한 부분
 
 - AMOMENTO 실페이지 ground truth 15개와 Development contract 2 실제 재시도 성공은 확인 완료했다. 이후 사이트 목록이 바뀌면 새 ground truth 판단이 필요할 수 있다.
-- Phase 7의 기존 fixture 회귀와 새 상세 대표 이미지 fixture는 로컬에서 검증했다. Development AMOMENTO 15개 실페이지의 contract 3 결과, 앱 표시, queue/ERROR는 배포 전이라 아직 미검증이다.
+- Phase 7 AMOMENTO 15개 실페이지의 contract 3 결과, 실제 첫 이미지 일치, 앱 표시와 queue/ERROR는 검증 완료했다. 목록 이미지를 제공하는 기존 브랜드의 Development 재탐색 회귀는 아직 미검증이다.
 - Production에는 contract 2 Worker/Functions와 issue operations IAM/index/TTL을 아직 적용하지 않았다. 별도 명시 승인 전 변경하지 않는다.
 
 - Firebase/Google/Kakao Development 앱과 callback 등록은 완료했다.
@@ -318,10 +320,9 @@
 
 ## 7. 다음 턴에서 바로 실행해야 할 작업
 
-1. Phase 7 contract 3의 Development Worker/Functions 배포 대상과 현재 traffic/runtime contract를 read-only로 재확인한다.
-2. 사용자가 Development 배포를 별도로 승인하면 candidate Worker와 Functions를 contract 3으로 배포하고 revision/traffic 경계를 검증한다.
-3. AMOMENTO 새 job 15개, 상세 첫 이미지, 앱 표시, queue/ERROR를 실제 QA하고 결과를 Phase 7 QA 문서에 기록한다.
-4. Production 반영은 Development 실제 QA 완료 후에도 별도 승인 전 변경하지 않는다.
+1. 목록 이미지를 제공하는 기존 브랜드의 Development 재탐색에서 목록 cover가 유지되는지 실제 QA한다.
+2. Phase 7 Production 반영 범위와 현재 contract 2 runtime을 read-only로 감사한다.
+3. Production 반영은 별도 사용자 승인 전 변경하지 않는다.
 
 Phase 3 완료 메모: private read/write Functions, strict allowlist API, CAS/idempotent audit와 job projection, 고정 환경 CLI를 구현했다. Development operator IAM, Firestore projection index/audit TTL과 두 Function을 배포했으며 Functions 134/134, CLI 7/7과 lint/build를 통과했다. 실제 Development endpoint는 무인증 403, operator read 성공, 데이터 변경 없는 write 404 smoke를 통과했다. 목록에서 `brandID` filter 및 최근 브랜드/job 사례는 제거했고 정확한 영향 job은 fingerprint projection으로 조회한다. Production IAM·index·Function은 변경하지 않았다. 운영 절차는 `docs/ai/runbooks/LOOKBOOK_EXTRACTION_ISSUE_OPERATIONS.md`를 따른다.
 

@@ -2,7 +2,7 @@
 
 ## 현재 상태
 
-- 현재 핵심 task는 `lookbook-extraction-issue-operations`다. Phase 1~6과 AMOMENTO contract 2 실제 fix loop를 완료했고, Phase 7 시즌 대표 이미지 보강의 로컬 구현·자동 검증을 완료했다. 다음은 별도 승인 기반 Development contract 3 배포와 실제 AMOMENTO 15개 QA다.
+- 현재 핵심 task는 `lookbook-extraction-issue-operations`다. Phase 1~6과 AMOMENTO contract 2 실제 fix loop, Phase 7 시즌 대표 이미지 보강의 Development contract 3 배포와 AMOMENTO 15개 실제 QA를 완료했다. Production rollout은 별도 승인 전 미변경이다.
 - 다음 핵심 task 후보는 `lookbook-discovery-learning-loop`의 남은 Phase 3A/4A 통합 수동 QA와 현재 배포 상태 재확인이다.
 - 이전 핵심 task `style-mood-personalization-account-privacy`의 Phase 1~8은 완료 처리했다. Apple Developer Program 가입 후 App Attest 실기기 QA와 운영 백업 설정은 출시 운영 게이트로 분리하고, 개발 데이터 전체 삭제는 마지막 Phase의 별도 승인 전까지 진행하지 않는다.
 - `lookbook-discovery-learning-loop`는 사용자 승인으로 task 문서를 생성했다. 동일 active 요청 병합, latest generation publish, 기존 시즌 동일성, 7/30/60일 retention, failure action, watchdog 복구, 관리자 review와 fixture/version gate를 설계 기준으로 확정했다.
@@ -26,7 +26,7 @@
   - [현재 상태](lookbook-extraction-issue-operations/progress.md)
   - [QA 기준](lookbook-extraction-issue-operations/qa-checklist.md)
   - [Phase 7 상세](lookbook-extraction-issue-operations/phase-7-season-cover-enrichment.md)
-  - 상태: Phase 1~6·AMOMENTO contract 2 actual loop 완료, Phase 7 로컬 구현·자동 검증 완료, Development 배포·actual QA 대기.
+  - 상태: Phase 1~6·AMOMENTO contract 2 actual loop 완료, Phase 7 Development contract 3 배포·AMOMENTO 15개 actual QA 완료, Production 별도 승인 대기.
 
 ## 이전 핵심 작업
 
