@@ -58,7 +58,7 @@
 - Production 읽기 전용 점검에서 legacy cluster/evidence/import job 각 3건을 확인했다. 모두 성공·승인된 과거 데이터이므로 자동 변경하지 않았다.
 - 배포된 기존 callable 삭제는 되돌리기 어려우므로 replacement 검증과 별도 승인이 필요하다.
 - 상세 대표 이미지 보강은 외부 사이트 응답 시간에 영향을 받으므로 30개·동시 3개·15초의 best-effort 경계를 넘기지 않는다. 실패는 이미지 없음으로만 남기고 시즌 후보 성공을 바꾸지 않는다.
-- OUTSTANDING 회귀 QA 브랜드 `Mb9JqermkE2ZalNAPJXH`와 두 discovery job은 Development에 남아 있다. 삭제는 파괴 작업이라 이번 QA 범위에서 수행하지 않았으며, 정리 시 이 정확한 브랜드 subtree만 별도 승인 후 대상으로 삼는다.
+- OUTSTANDING 회귀 QA 브랜드 `Mb9JqermkE2ZalNAPJXH`는 사용자 파괴적 삭제 승인 후 정확한 subtree와 전용 evidence/cluster/Storage 범위만 영구 삭제했다.
 
 ## 검증
 
@@ -93,3 +93,4 @@
 - iPhone 17 Pro Max iOS 26.2 Simulator의 신규 시즌 선택 화면을 상단·중간·하단까지 확인해 15개 카드의 대표 이미지 렌더링을 확인했다. 실제 QA 시작 이후 두 queue pending과 Worker/Functions 신규 ERROR는 0이고 배포 Functions 9개는 모두 ACTIVE다.
 - Development candidate QA는 사용자 `gayunkim.1@gmail.com`에 두 정확한 Development 서비스 계정 리소스의 `roles/iam.serviceAccountOpenIdTokenCreator`만 영구 부여하고 IAM Credentials `generateIdToken`을 사용한다. 사용자 Token Creator, 서비스 계정 key와 Production 영구 binding은 사용하지 않는다.
 - OUTSTANDING 실데이터 회귀 QA는 Development 브랜드 `Mb9JqermkE2ZalNAPJXH`에서 contract 3 generation 1 `xr4zoCHdp3vr0AXQXMcE`, generation 2 `Yl9353dPQLywApLqrZTU`로 실행했다. 두 결과 모두 후보 44개·목록 cover 44개·상세 시도 0개였고 전체 candidate payload hash `bdd585264d9d7b3d2fbf020c39f76c5d144f4fc586507e2ad3b8d081ad15e53b`가 일치했다. 저장 이미지 44개 HTTP 성공, 두 queue pending 0, QA 시작 `2026-08-05T15:08:48Z` 이후 Worker/Functions ERROR 0을 확인했다.
+- 회귀 QA 정리는 브랜드 subtree 91문서, `lookbookExtractionEvidence` 2문서, 이 두 occurrence만 가진 cluster `6431e0eea9c3b5245880b06351f12b3f0653f636` 1문서, occurrence/대표 evidence Storage 객체 3개를 삭제했다. 브랜드·하위 문서·name index·evidence·cluster·Storage 잔존은 모두 0건이며 두 queue와 삭제 이후 신규 ERROR도 0건이다.
