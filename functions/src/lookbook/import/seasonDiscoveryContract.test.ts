@@ -33,7 +33,7 @@ const baseInput = {
 };
 
 test("discovery fingerprint는 URL과 limits 순서를 정규화한다", () => {
-  assert.equal(SEASON_DISCOVERY_CONTRACT_REVISION, 2);
+  assert.equal(SEASON_DISCOVERY_CONTRACT_REVISION, 3);
   const first = seasonDiscoveryRequestFingerprint(baseInput);
   const second = seasonDiscoveryRequestFingerprint({
     ...baseInput,

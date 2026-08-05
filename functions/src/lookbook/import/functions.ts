@@ -316,6 +316,8 @@ type DiagnosticSeasonCandidate = {
   title: string;
   seasonURL: string;
   coverImageURL: string | null;
+  coverImageSource: "list" | "detail" | "none";
+  coverImageStrategy: string | null;
   score: number;
 };
 
@@ -334,6 +336,14 @@ type SeasonDiscoveryWorkerDiagnostic = {
   renderedFallbackUsed: boolean;
   parserStrategy: string;
   adapterKey: string | null;
+  coverImages: {
+    coverImageCount: number;
+    listCoverImageCount: number;
+    detailCoverAttemptCount: number;
+    detailCoverSuccessCount: number;
+    detailCoverFailureCount: number;
+    detailCoverSkippedCount: number;
+  };
   failureReasons: LookbookExtractionFailureReason[];
   suggestedFixScope: LookbookExtractionSuggestedFixScope;
   suggestedFixes: LookbookExtractionSuggestedFix[];
@@ -532,6 +542,8 @@ async function replaceDiagnosticSeasonCandidates(
       title: candidate.title,
       seasonURL: candidate.seasonURL,
       coverImageURL: candidate.coverImageURL,
+      coverImageSource: candidate.coverImageSource,
+      coverImageStrategy: candidate.coverImageStrategy,
       sourceArchiveURL: archiveURL,
       extractionScore: candidate.score,
       sortIndex: index,
@@ -598,6 +610,7 @@ function diagnosticSummary(
       renderedFallbackUsed: seasonDiscovery.renderedFallbackUsed === true,
       parserStrategy: seasonDiscovery.parserStrategy ?? "unknown",
       adapterKey: seasonDiscovery.adapterKey ?? null,
+      coverImages: seasonDiscovery.coverImages ?? null,
     };
   }
   if (seasonImageImport) {
@@ -1214,6 +1227,7 @@ async function runSeasonDiscoveryDiagnostic(
       renderedFallbackUsed: diagnostic.renderedFallbackUsed,
       parserStrategy: diagnostic.parserStrategy,
       adapterKey: diagnostic.adapterKey,
+      coverImages: diagnostic.coverImages,
       limits: LOOKBOOK_DIAGNOSTIC_LIMITS,
     },
     seasonImageImport: null,
