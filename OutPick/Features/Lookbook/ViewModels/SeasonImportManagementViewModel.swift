@@ -118,22 +118,12 @@ final class SeasonImportManagementViewModel: ObservableObject {
         }
     }
 
-    func requestDiscoveryImprovement() async {
-        guard let discoveryResult else { return }
-        await mutateDiscovery(errorText: "추출 개선을 요청하지 못했습니다.") {
-            try await self.discoveryRepository.requestSeasonDiscoveryImprovement(
-                brandID: self.brandID,
-                job: discoveryResult
-            )
-            self.discoveryResult = discoveryResult.markingImprovementRequested()
-        }
-    }
-
-    func reanalyzeDiscovery() async {
-        guard let discoveryResult else { return }
+    func retryDiscoveryAfterExtractionFix() async {
+        guard let discoveryResult,
+              discoveryResult.canRetryExtractionAfterFix else { return }
         await mutateDiscovery(errorText: "시즌 목록을 다시 가져오지 못했습니다.") {
             self.discoveryResult = try await self.discoveryRepository
-                .reanalyzeSeasonDiscoveryWithLatestExtractor(
+                .retrySeasonDiscoveryAfterExtractionFix(
                     brandID: self.brandID,
                     job: discoveryResult
                 )

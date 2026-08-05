@@ -19,7 +19,7 @@ protocol ManageLookbookExtractionReviewUseCaseProtocol {
         note: String?
     ) async throws -> LookbookExtractionReviewReceipt
 
-    func reanalyze(
+    func retryAfterExtractionFix(
         brandID: BrandID,
         jobID: String
     ) async throws -> LookbookExtractionReviewReceipt
@@ -73,10 +73,10 @@ final class ManageLookbookExtractionReviewUseCase:
         )
     }
 
-    func reanalyze(
+    func retryAfterExtractionFix(
         brandID: BrandID,
         jobID: String
     ) async throws -> LookbookExtractionReviewReceipt {
-        try await repository.requestReanalysis(brandID: brandID, jobID: jobID)
+        try await repository.retryAfterExtractionFix(brandID: brandID, jobID: jobID)
     }
 }
