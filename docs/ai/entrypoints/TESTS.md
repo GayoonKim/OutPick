@@ -33,8 +33,8 @@ xcodebuild -scheme OutPick-Development -destination 'generic/platform=iOS Simula
 - 좋아요 탭 tests: `OutPickTests/LikedViewModelTests.swift`, `OutPickTests/LoadLikedSeasonsUseCaseTests.swift`
   - 자동 회귀: 섹션별 초기 로드·부분 실패·pagination·좋아요 취소와 무효화 store 연동은 ViewModel 테스트로 검증한다.
   - 수동 QA: `SAVED EDITS` 헤더, 브랜드/시즌 가로 카드, 포스트 2열 그리드, 섹션별 로딩·빈 상태·실패 패널, 메뉴·상세 이동·pull-to-refresh를 Simulator에서 확인한다.
-- 브랜드 생성 로고 tests: `OutPickTests/CreateBrandViewModelTests.swift`, `firestore-tests/brand-storage.rules.test.mjs`
-  - ViewModel은 두 로고 업로드·경로 패치 완료 대기, 실패 후 같은 브랜드 문서 재시도, detail 실패 시 thumb rollback을 검증한다.
+- 브랜드 생성·관리자 편집 로고 tests: `OutPickTests/CreateBrandViewModelTests.swift`, `OutPickTests/AdminBrandManagementViewModelTests.swift`, `firestore-tests/brand-storage.rules.test.mjs`
+  - ViewModel은 두 로고 업로드·경로 패치 완료 대기, 실패 후 같은 브랜드 문서 재시도, 양 화면에서 내부 오류를 제외한 동일 사용자 문구, detail 실패 시 thumb rollback을 검증한다.
   - Storage emulator는 active 총 관리자·브랜드 관리자의 로고 업로드 허용과 inactive/무권한 사용자 거부를 검증한다.
 - 삭제 요청 관리 pagination/retry tests: `OutPickTests/AdminLookbookDeletionManagementViewModelTests.swift`
 - Firestore 문서 ID 경계: `OutPickTests/FirestoreDocumentIDBoundaryTests.swift`
@@ -101,6 +101,7 @@ Firebase Functions tests/build entry:
 - `functions/package.json`의 `npm test`는 clean build 후 `lib/` 아래 `*.test.js`를 재귀 발견해 실행하며 0개면 실패한다.
 - 실행: `cd functions && npm test`
 - extraction issue operations Phase 1~4: 양 런타임 공통 계약과 Phase 2 recorder/cleanup, Phase 3 IAM API/CLI 테스트에 더해 Worker `runtime-contract.test.ts`·server route와 Functions `release{Contract,Service}.test.ts`가 runtime/source revision, partial traffic, stale CAS, 실제 smoke/ground truth와 verified 전이를 검증한다. 2026-08-05 기준 Functions 139/139, Worker 102/102, fixture 5/5, CLI 8/8과 전체 lint/build가 통과했다.
+- AMOMENTO Cafe24 모달 시즌 목록 회귀는 Worker `season-discovery.test.ts`와 `fixtures/discovery/platform/cafe24-modal-data-url/`이 `button[data-url]`, `collection-single.html`, 끝자리 날짜 제거, navigation 제외와 후보 순서를 고정한다. 2026-08-05 로컬 기준 Worker 103/103·fixture 6/6·lint/build, Functions contract 2 전체 142/142·lint/build와 Development generic Simulator build가 통과했다.
 - durable 시즌 discovery: `functions/src/lookbook/import/seasonDiscoveryContract.test.ts`, `functions/src/index.contract.test.ts`에서 fingerprint/status/retention/task ID, review 연결 대상의 삭제 lifecycle, revision readiness·legacy fingerprint 호환, enqueue 후 terminal 상태 덮어쓰기 방지, 현재 published snapshot import gate, 76개 export metadata와 watchdog/readiness collection-group index 설정을 검증한다. 2026-08-05 기준 전체 113/113 통과.
 - 브랜드 discovery projection 호환성: `OutPickTests/FirestoreDocumentIDBoundaryTests.swift`가 구형 `success`와 durable pipeline의 `succeeded/awaitingReview/correctionRequired/cancelled/superseded`를 포함한 모든 영속 상태의 Firestore 디코딩을 검증한다. iPhone 17 Pro Max iOS 26.2에서 suite 4/4가 통과했다.
 - 개선 요청 구현은 Functions 순수 계약 테스트로 `extractionContractRevision` 경계와 legacy 호환을, iOS fake Repository로 요청됨·higher revision ready·새 queued generation 전이를 검증한다. callable의 실제 권한·중복·stale snapshot·transaction 경합과 진행 묶음 중앙 배치는 마지막 Development 통합 QA에서 확인한다.

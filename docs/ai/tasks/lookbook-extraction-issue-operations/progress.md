@@ -5,6 +5,7 @@
 - 2026-08-05 제품·운영 방향과 상세 API/data/release 설계를 확정했다.
 - 공식 Cloud Run 인증 계약 점검에서 사용자 `gcloud` ID token의 audience 부재를 확인했고, Production은 환경별 전용 operator service account impersonation으로 확정했다.
 - 2026-08-05 Phase 1 공통 계약, Phase 2 자동 기록, Phase 3 IAM 운영 API·CLI, Phase 4 runtime/smoke/verifier, Phase 5 iOS 단순 상태·레거시 제거를 완료했다. Phase 6 Development 인프라 통합과 상태 전이 QA도 완료했으며 실제 fix loop는 첫 추출 로직 수정 시 배포 게이트로 남겼다.
+- 2026-08-05 첫 실제 fix 대상으로 AMOMENTO 시즌 discovery fingerprint `dea8279b10822fa379277cf56048492303616e89`를 선택했다. Cafe24 모달 행의 `button[data-url]`을 공통 후보로 읽는 contract 2 구현, ground truth 15개 확인, 단순 사용자 문구와 로컬 자동 검증을 완료했다. Development Functions/Worker 배포와 `fixed → retry success → verified`는 진행 전이며 Production은 변경하지 않았다.
 
 ## 완료
 
@@ -81,3 +82,4 @@
 - 실제 cleanup Scheduler 수동 실행은 fixture 외 기존 만료 evidence까지 함께 삭제할 수 있어 수행하지 않았다. 생성했던 만료/비만료 cleanup fixture와 Storage 객체는 즉시 정확히 삭제했고 잔존 0건을 확인했다. 격리 cleanup 단위 테스트와 TTL `ACTIVE` 상태를 검증 근거로 유지한다.
 - 실제 extraction fix가 없고 Development cluster도 0건이므로 가짜 `fixed` 성공을 합성하지 않는다. 실제 `fixed → retry → verified`는 첫 runtime 상승이 있는 로직 수정에서 필수로 검증한다.
 - Production 읽기 전용 diff에서 기존 Worker `lookbook-import-worker-00024-fow` traffic 100%와 rollback 후보 이력을 확인했다. Production Worker에는 새 runtime metadata가 없고 issue operations Functions, extraction projection index, audit/fix TTL도 아직 없다. Production은 변경하지 않았으며 이 차이 전체가 별도 승인 rollout 대상이다.
+- AMOMENTO contract 2 로컬 검증은 Functions 142/142·lint/build, Worker 103/103·fixture 6/6·lint/build, 실제 공개 URL 정적 후보 15개와 Development generic Simulator build가 통과했다. Functions/Worker Development 배포와 상태 전이는 아직 수행하지 않았다.

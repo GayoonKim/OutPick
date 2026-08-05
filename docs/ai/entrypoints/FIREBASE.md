@@ -341,6 +341,7 @@ durable 시즌 discovery의 enqueue 완료 기록은 job을 transaction으로 �
 - 기본 deny 후 path별 read/write 권한을 허용한다.
 - Chat `rooms/{roomID}` write는 member/creator와 active 계정, profile write는 owner와 active 계정, Lookbook `brands/{brandID}` write는 총 관리자 또는 브랜드 owner/admin 기준이다.
 - cross-service `firestore.get/exists`를 사용하는 rules는 Storage service agent의 Firestore Rules 권한도 확인한다.
+- Development `outpick-test`에서는 `service-86635107099@gcp-sa-firebasestorage.iam.gserviceaccount.com`에 `roles/firebaserules.firestoreServiceAgent`가 필요하다. 이 역할이 없으면 Auth·App Check·Firestore 문서가 정상이더라도 Storage rules의 교차 조회가 실패해 브랜드 로고 업로드가 403으로 거부된다.
 - 운영 release ID, 과거 전역 허용 rules, 배포 당시 QA 상세는 task/운영 기록에서 확인하고 이 인덱스에는 복사하지 않는다.
 
 검증 예시:
@@ -370,6 +371,7 @@ git diff --check -- firebase.json storage.rules
 - phase 상태·배포·QA: 관련 task `progress.md`와 `qa-checklist.md`.
 - 시즌 목록 discovery는 이미지 import와 분리된 `lookbook-discovery-jobs` queue를 사용한다. `createBrand` transaction이 최초 job을 만들며, 수동 요청은 같은 fingerprint의 active job에 coalesce된다. Worker는 lease와 generation을 재검증하고 candidate snapshot 전체 저장 뒤 brand published pointer를 전환한다.
 - 2026-08-05 Development 배포 기준 Worker는 `lookbook-import-worker-development-00006-pob` traffic 100%, rollback은 `00004-xal`이다. runtime은 source `bd9bfb7e8fc96daad36d8a205bc044ac6fa689fa`, discovery contract 1, image extractor 1.2.3이며 candidate IAM/OIDC smoke와 전환 후 ERROR 0건·두 queue task 0건을 확인했다. discovery queue는 초당 1건·동시 1건·최대 3회다.
+- 2026-08-05 AMOMENTO Cafe24 모달 목록 보강은 새 시즌 discovery job과 Worker runtime을 `contract:2`로 맞춘다. `functions/src/shared/seasonDiscoveryCreation.ts`가 새 job 계약을, `scripts/ai/deploy-lookbook-import-worker.sh`가 Worker 환경 계약을 소유한다. 로컬 Functions 142/142·lint/build와 Worker 103/103·fixture 6/6·lint/build, 실제 AMOMENTO 공개 URL 15개 정적 후보 smoke는 통과했으며 Development Functions/Worker 배포와 release verifier 상태 전이는 아직 수행 전이다. Production은 변경하지 않는다.
 - discovery callable은 `requestSeasonDiscovery`, `retrySeasonDiscovery`, `retrySeasonDiscoveryAfterExtractionFix`, `cancelSeasonDiscovery`, `resolveSeasonDiscoveryCandidate`다. enqueue trigger는 `onSeasonDiscoveryQueued`, watchdog은 `reconcileSeasonDiscoveryJobs`다.
 - 환경 변수는 기존 Worker URL/service account/audience를 재사용하고, discovery queue/location만 `OUTPICK_LOOKBOOK_DISCOVERY_TASKS_QUEUE`, `OUTPICK_LOOKBOOK_DISCOVERY_TASKS_LOCATION`으로 분리한다.
 - watchdog의 `collectionGroup("seasonDiscoveryJobs").where("status", "in", ...)`는 `firestore.indexes.json`의 `seasonDiscoveryJobs.status` ASCENDING/COLLECTION_GROUP field override가 필수다. Development에서 `READY` 확인 뒤 실제 stale job 재dispatch를 통과했으며 `functions/src/index.contract.test.ts`가 이 배포 계약을 고정한다.
