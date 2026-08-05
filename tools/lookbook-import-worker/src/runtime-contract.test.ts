@@ -29,7 +29,7 @@ test("runtime contract는 실행 revision과 extractor/adapter 버전을 고정�
     seasonDiscoveryContractRevision: 1,
     seasonDiscoveryExtractorVersion: "season-discovery-v1",
     imageExtractorVersion: "1.2.3",
-    adapterVersions: {cafe24: "1.0.0"},
+    adapterVersions: {cafe24: "1.0.1"},
   });
 });
 

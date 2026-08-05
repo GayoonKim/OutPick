@@ -38,6 +38,24 @@ test("Cafe24의 구체적인 콘텐츠 영역을 Generic 영역보다 우선한�
   });
 });
 
+test("Cafe24 collection-images 직접 영역의 첫 이미지를 선택한다", () => {
+  const result = extractSeasonCoverImageCandidate(`
+    <html><body>
+      <div class="collection-images">
+        <img src="/archive/first.jpg" alt="First">
+        <img src="/archive/second.jpg" alt="Second">
+      </div>
+      <div class="collection-view"><img src="/wrong.jpg"></div>
+      <div class="xans-product-listnormal"></div>
+    </body></html>
+  `, "https://brand.example/product/collection-single.html?product_no=3234");
+
+  assert.deepEqual(result, {
+    sourceURL: "https://brand.example/archive/first.jpg",
+    strategy: "cafe24CollectionImages",
+  });
+});
+
 test("low-confidence 전체 페이지와 main 영역만 있으면 선택하지 않는다", () => {
   assert.equal(extractSeasonCoverImageCandidate(
     "<main><img src='/possible-banner.jpg'></main>",

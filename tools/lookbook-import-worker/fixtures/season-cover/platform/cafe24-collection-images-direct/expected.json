@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "candidates": [
+    {"type": "exact", "key": "https://brand.example/renewal/archive/collection/25pf/1.jpg"}
+  ],
+  "negativeCandidateKeys": ["https://brand.example/wrong-generic.jpg"],
+  "orderPolicy": "strict",
+  "strategy": "cafe24CollectionImages",
+  "adapter": {"platformKey": "cafe24", "domainKey": null},
+  "quality": null
+}
