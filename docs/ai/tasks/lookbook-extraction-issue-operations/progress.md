@@ -2,6 +2,7 @@
 
 ## 현재 상태
 
+- 2026-08-06 현재 task는 Development 구현·배포·실데이터 QA 완료로 종료했다. Production rollout은 `lookbook-extraction-issue-operations-production-rollout`으로 분리했고, 실제 이미지 extraction fix loop는 결함 발생 시 이벤트 기반 운영 게이트로 유지한다.
 - 2026-08-05 제품·운영 방향과 상세 API/data/release 설계를 확정했다.
 - 공식 Cloud Run 인증 계약 점검에서 사용자 `gcloud` ID token의 audience 부재를 확인했고, Production은 환경별 전용 operator service account impersonation으로 확정했다.
 - 2026-08-05 Phase 1 공통 계약, Phase 2 자동 기록, Phase 3 IAM 운영 API·CLI, Phase 4 runtime/smoke/verifier, Phase 5 iOS 단순 상태·레거시 제거를 완료했다. Phase 6 Development 인프라 통합과 상태 전이 QA도 완료했으며 실제 fix loop는 첫 추출 로직 수정 시 배포 게이트로 남겼다.
@@ -47,10 +48,11 @@
 - 시즌 목록과 이미지의 재시도 callable을 `retrySeasonDiscoveryAfterExtractionFix`, `retryLookbookExtractionAfterFix`로 교체하고 서버에서도 fixed/runtime 경계를 다시 검증한다. 기존 개선 요청·즉시 재분석 callable/export와 `improvementRequested*` 앱 계약은 제거했다.
 - `wontFix` 사유를 job에 투영하며 source unavailable/access restricted 시즌 목록 문제는 기존 URL 수정 action만 제공한다. 이미지 import 행은 season/source title을 사용하고 job ID를 표시하지 않는다.
 
-## 남은 작업
+## 분리한 후속 작업
 
-1. 이미지 extraction stage의 첫 실제 로직 수정에서 `fixed → retry success → verified` 실제 URL 검증.
-2. 별도 승인 기반 Production rollout과 기존 callable/data 정리.
+1. 이미지 extraction stage의 첫 실제 로직 수정에서 `fixed → retry success → verified` 실제 URL 검증은 이벤트 기반 운영 게이트로 수행한다.
+2. Production 반영은 별도 핵심 task에서 진행한다.
+3. 기존 callable 삭제와 legacy data cleanup은 Production rollout 성공 뒤에도 각각 별도 승인받는다.
 
 ## 현재 위험
 

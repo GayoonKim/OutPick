@@ -1,5 +1,12 @@
 # Lookbook Extraction Issue Operations QA Checklist
 
+## 종료 판정
+
+- [x] 2026-08-06 구현과 Development contract 3 배포·실데이터 QA 범위를 완료했다.
+- [x] 실제 이미지 extraction fix loop는 결함 발생 시 이벤트 기반 운영 게이트로 분리했다.
+- [x] Production rollout과 legacy callable/data cleanup은 별도 승인 task로 분리했다.
+- 아래 미체크 항목은 허위 완료 처리하지 않으며 새 Production rollout의 preflight 또는 이벤트 기반 QA에서 재분류한다.
+
 ## 자동 계약 테스트
 
 - [x] 두 stage의 로직 불충분만 issue 대상이 된다.

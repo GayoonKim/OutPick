@@ -2,10 +2,13 @@
 
 ## 전체 상태
 
+- 2026-08-06 Development 구현·배포·실데이터 QA 완료로 이 task를 종료했다.
+- 이벤트 기반 이미지 extraction fix loop는 실제 결함 발생 시 운영 게이트로 유지한다.
+- Production 반영은 `lookbook-extraction-issue-operations-production-rollout` 별도 task로 이동했다.
 - 제품·운영·API·data·security·release 상세 설계 완료.
 - Phase 1 공통 계약과 Phase 2 자동 occurrence/cluster/대표 evidence 구현 완료.
 - Phase 7 시즌 대표 이미지 보강의 구현, Development contract 3 배포와 AMOMENTO 15개 실제 QA를 완료했다. Production은 별도 승인 전 미변경이다.
-- 각 phase의 Production 배포와 데이터 cleanup은 별도 명시 승인을 받는다.
+- Production 배포와 legacy data/callable cleanup은 각각 별도 명시 승인을 받는다.
 
 ## Phase 1. 공통 계약과 순수 테스트
 
