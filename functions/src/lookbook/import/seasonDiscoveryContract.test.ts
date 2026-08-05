@@ -15,6 +15,7 @@ import {
 } from "./seasonDiscoveryContract.js";
 import {
   seasonDiscoveryCreationFingerprint,
+  SEASON_DISCOVERY_CONTRACT_REVISION,
   SEASON_DISCOVERY_EXTRACTOR_VERSION,
   SEASON_DISCOVERY_LIMITS,
   SEASON_DISCOVERY_SCHEMA_VERSION,
@@ -32,6 +33,7 @@ const baseInput = {
 };
 
 test("discovery fingerprint는 URL과 limits 순서를 정규화한다", () => {
+  assert.equal(SEASON_DISCOVERY_CONTRACT_REVISION, 2);
   const first = seasonDiscoveryRequestFingerprint(baseInput);
   const second = seasonDiscoveryRequestFingerprint({
     ...baseInput,
@@ -43,6 +45,7 @@ test("discovery fingerprint는 URL과 limits 순서를 정규화한다", () => {
     seasonDiscoveryRequestFingerprint({
       ...baseInput,
       extractorVersion: SEASON_DISCOVERY_EXTRACTOR_VERSION,
+      extractionContractRevision: SEASON_DISCOVERY_CONTRACT_REVISION,
       schemaVersion: SEASON_DISCOVERY_SCHEMA_VERSION,
       limits: SEASON_DISCOVERY_LIMITS,
     }),
@@ -56,7 +59,7 @@ test("discovery fingerprint는 URL과 limits 순서를 정규화한다", () => {
   }));
   assert.notEqual(first, seasonDiscoveryRequestFingerprint({
     ...baseInput,
-    extractionContractRevision: 2,
+    extractionContractRevision: 3,
   }));
   assert.equal(
     canonicalDiscoveryURL(baseInput.sourceArchiveURL),

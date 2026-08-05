@@ -68,7 +68,7 @@ env_vars+=",OUTPICK_IMPORT_OIDC_AUDIENCE=$oidc_audience"
 env_vars+=",OUTPICK_IMPORT_TASKS_SERVICE_ACCOUNT_EMAIL=$task_service_account"
 env_vars+=",OUTPICK_IMPORT_FUNCTIONS_SERVICE_ACCOUNT_EMAIL=$functions_service_account"
 env_vars+=",OUTPICK_WORKER_SOURCE_REVISION=$source_revision"
-env_vars+=",OUTPICK_SEASON_DISCOVERY_CONTRACT_REVISION=1"
+env_vars+=",OUTPICK_SEASON_DISCOVERY_CONTRACT_REVISION=2"
 env_vars+=",OUTPICK_SEASON_DISCOVERY_EXTRACTOR_VERSION=season-discovery-v1"
 
 deploy_command=(
