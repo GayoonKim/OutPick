@@ -50,15 +50,16 @@ node src/index.js list --environment development --limit 20
 
 - read: `list`, `show`, `show-batch`
 - mutation: `start`, `needs-ground-truth`, `ground-truth`, `reopen`, `wont-fix`
-- release: `verify-fix`—Production traffic/runtime/source revision과 실제 대표 job smoke를 한 번에 검증한다.
+- release: `verify-fix`—선택한 환경의 traffic/runtime/source revision과 실제 대표 job smoke를 한 번에 검증한다. Production만 추가 확인값을 요구한다.
 
 `ground-truth`의 `sourceClassification`은 `completeGallery | partialGallery | nonGallery | unknown`, `wont-fix` 사유는 `sourceUnavailable | accessRestricted | ambiguousGroundTruth | unsupportedStructure | lowOperationalValue`만 허용한다.
 
 ## Development 배포 상태와 검증
 
-- Firestore의 season discovery/import job `extractionIssueFingerprint` collection-group index와 audit `expiresAt` TTL을 `outpick-test`에 적용했다.
-- read/write Functions를 `outpick-test`에 배포하고 Development operator에 Cloud Run invoker를 부여했다.
-- 로컬 회귀와 실제 operator identity smoke를 Phase 3 progress/QA에 기록한다.
+- Firestore의 season discovery/import job `extractionIssueFingerprint` collection-group index와 audit/fix verification/fix release `expiresAt` TTL을 `outpick-test`에 적용했다.
+- read/write/release/reconcile Functions를 `outpick-test`에 배포하고 Development operator와 verifier execution identity에 최소 Cloud Run 권한을 부여했다.
+- Worker `lookbook-import-worker-development-00006-pob`는 traffic 100%이며 rollback은 `00004-xal`이다. candidate identity smoke와 전환 후 ERROR/queue 0건을 확인했다.
+- 실제 extraction fix가 없는 운영 시스템 QA에서 합성 `fixed`를 만들지 않는다. 첫 실제 runtime 상승 때 두 stage의 verifier→retry→verified를 이 runbook의 필수 게이트로 수행한다.
 
 ## Production 게이트
 

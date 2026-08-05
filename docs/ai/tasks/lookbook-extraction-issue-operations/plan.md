@@ -155,6 +155,8 @@
 
 ## Phase 6. Development 통합·문서·Production 준비
 
+상태: Development 인프라 통합과 상태 전이 QA 완료. 실제 extraction fix가 없는 상태에서 가짜 `fixed`를 만들지 않기로 확정했으며, 두 stage의 `fixed → retry success → verified`는 첫 실제 로직 수정과 runtime 상승 시 필수 배포 게이트로 수행한다.
+
 목표:
 
 - 전체 운영 loop를 Development에서 검증하고 Production 배포 가능한 상태로 마감한다.
@@ -166,9 +168,10 @@
 
 완료 기준:
 
-- 두 stage에서 `open → inProgress → fixed → retry success → verified`가 실제로 통과한다.
+- Development Worker candidate와 환경별 verifier/IAM/TTL/index/Functions 계약이 실제 환경에서 통과한다.
 - `needsGroundTruth`, `wontFix`, 재발 reopen, evidence cleanup과 권한 거부를 확인한다.
 - queue/Worker/Functions 오류와 임시 fixture/evidence 잔존이 없다.
+- 두 stage의 `open → inProgress → fixed → retry success → verified`는 실제 extraction 로직 수정과 상위 runtime이 존재할 때 통과해야 하며, 운영 시스템 자체 QA를 위해 이를 합성하지 않는다.
 
 검증:
 

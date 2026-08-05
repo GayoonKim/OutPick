@@ -2,7 +2,7 @@
 
 ## 1. 최종 목표
 
-- 최근 완료한 핵심 task는 `development-production-environment-separation`이다. 현재 핵심 task는 `lookbook-discovery-learning-loop`이며 durable backend, iOS 생성 플로우 접합부, 관리자 전용 review/re-entry UI와 Phase 4A 개선 요청·revision readiness·총 관리자 재분석 구현 및 자동 검증까지 완료했다. Phase 3A/4A 통합 수동 QA와 현재 배포 상태 재확인이 남아 있다. 다음 핵심 task는 `lookbook-extraction-issue-operations`로 등록했다.
+- 현재 핵심 task는 `lookbook-extraction-issue-operations`다. Phase 1~5 구현과 자동 검증, Phase 6 Development Functions/Firestore/IAM/Worker 통합과 backend 상태 전이 QA를 완료했다. 실제 extraction fix가 없는 상태에서 합성 `fixed`를 만들지 않으며, 첫 runtime 상승 시 두 stage의 실제 URL `fixed → retry → verified`를 필수 게이트로 수행한다. Production rollout과 기존 callable/data 정리는 각각 별도 승인 전 미수행이다.
 - 하나의 Xcode 프로젝트와 app target을 유지하면서 Development 앱은 `GayoonKim.OutPick.dev`와 `outpick-test`, Production 앱은 `GayoonKim.OutPick`과 `outpick-664ae`를 사용한다.
 - 잘못된 Bundle ID·Firebase plist/project·Socket 조합은 build-time과 runtime에서 fail closed 처리한다.
 - Development 앱은 `OutPick DEV`로 표시하고 Production 앱과 같은 기기에 동시에 설치할 수 있어야 한다.

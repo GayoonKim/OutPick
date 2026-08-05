@@ -4,7 +4,7 @@
 
 - 2026-08-05 제품·운영 방향과 상세 API/data/release 설계를 확정했다.
 - 공식 Cloud Run 인증 계약 점검에서 사용자 `gcloud` ID token의 audience 부재를 확인했고, Production은 환경별 전용 operator service account impersonation으로 확정했다.
-- 2026-08-05 Phase 1 공통 계약, Phase 2 자동 기록, Phase 3 IAM 운영 API·CLI와 Development 배포, Phase 4 runtime/smoke/verifier, Phase 5 iOS 단순 상태·레거시 제거의 로컬 구현을 완료했다.
+- 2026-08-05 Phase 1 공통 계약, Phase 2 자동 기록, Phase 3 IAM 운영 API·CLI, Phase 4 runtime/smoke/verifier, Phase 5 iOS 단순 상태·레거시 제거를 완료했다. Phase 6 Development 인프라 통합과 상태 전이 QA도 완료했으며 실제 fix loop는 첫 추출 로직 수정 시 배포 게이트로 남겼다.
 
 ## 완료
 
@@ -46,7 +46,8 @@
 
 ## 남은 작업
 
-1. Phase 6 Development 통합 QA 및 별도 승인 기반 Production rollout.
+1. 첫 실제 추출 로직 수정에서 두 stage별 `fixed → retry success → verified` 실제 URL 검증.
+2. 별도 승인 기반 Production rollout과 기존 callable/data 정리.
 
 ## 현재 위험
 
@@ -71,3 +72,12 @@
 - Phase 5 Worker 검증: 102/102, lint/build 통과. sandbox의 localhost listen 제한으로 HTTP 테스트 3개가 실패한 첫 실행은 권한 있는 동일 재실행에서 모두 통과했다.
 - Phase 5 iOS 검증: `OutPick-Development` generic Simulator build 통과, 관련 4개 suite 22개 targeted test 통과. 기존 Swift 6 actor isolation/deprecated API/library search path 경고는 남아 있으나 이번 변경 관련 실패는 없다.
 - Phase 5 Functions/Worker 배포, index 삭제, 기존 callable 운영 삭제와 Production 변경은 수행하지 않았다.
+- Phase 6 Functions 최종 검증은 142/142, CLI는 8/8, Worker는 102/102와 fixture corpus 5/5가 통과했고 각 lint/build가 통과했다.
+- Development Firestore projection index와 audit/fix verification/fix release TTL을 적용했다. 구 `seasonDiscoveryJobs(status, improvementRequested)` index는 Development에서만 제거했다.
+- Development release/read/write/retry/reconcile 관련 Functions를 배포하고 환경별 Worker service 매핑, runtime project fail-closed, release audience와 최소 IAM을 적용했다. Functions 재배포로 사라진 read/write invoker는 실제 403 확인 후 정확한 operator binding만 복구했다.
+- Worker candidate `lookbook-import-worker-development-00006-pob`는 no-traffic 상태에서 Ready, `/readyz` 200, `/runtime-contract` 200, Functions diagnostic 빈 payload 500, Task import 빈 payload 500, Functions→Task 경계 403을 통과했다. runtime은 `outpick-test`, source `bd9bfb7e8fc96daad36d8a205bc044ac6fa689fa`, discovery contract 1, image extractor 1.2.3이다.
+- 후보 검증에만 현재 개발자에게 두 Development service account의 Token Creator를 일시 부여했고 검증 직후 모두 회수했다. `00006-pob`를 Development traffic 100%로 전환했으며 rollback은 `00004-xal`이다. 전환 후 신규 ERROR와 두 queue pending은 0건이다.
+- Development 전용 fixture로 `open → inProgress → needsGroundTruth → inProgress → wontFix → open`, stale CAS 거부, 무인증 403, job projection과 audit 5건을 실제 API에서 확인했다. fixture cluster/job/audit는 모두 삭제해 잔존 0건이다.
+- 실제 cleanup Scheduler 수동 실행은 fixture 외 기존 만료 evidence까지 함께 삭제할 수 있어 수행하지 않았다. 생성했던 만료/비만료 cleanup fixture와 Storage 객체는 즉시 정확히 삭제했고 잔존 0건을 확인했다. 격리 cleanup 단위 테스트와 TTL `ACTIVE` 상태를 검증 근거로 유지한다.
+- 실제 extraction fix가 없고 Development cluster도 0건이므로 가짜 `fixed` 성공을 합성하지 않는다. 실제 `fixed → retry → verified`는 첫 runtime 상승이 있는 로직 수정에서 필수로 검증한다.
+- Production 읽기 전용 diff에서 기존 Worker `lookbook-import-worker-00024-fow` traffic 100%와 rollback 후보 이력을 확인했다. Production Worker에는 새 runtime metadata가 없고 issue operations Functions, extraction projection index, audit/fix TTL도 아직 없다. Production은 변경하지 않았으며 이 차이 전체가 별도 승인 rollout 대상이다.

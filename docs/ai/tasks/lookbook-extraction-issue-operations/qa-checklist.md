@@ -62,12 +62,12 @@
 
 - [ ] 실제 시즌 discovery 실패가 버튼 없이 open cluster를 만든다.
 - [ ] 실제 이미지 extraction 실패가 같은 계약으로 기록된다.
-- [x] Codex CLI가 실제 Development operator identity로 목록을 민감정보 없이 요약한다. 단일·batch 실제 데이터 QA는 cluster 생성 후 Phase 6에서 확인한다.
-- [ ] start/needsGroundTruth/resume 상태가 앱에 실시간 반영된다.
+- [x] Codex CLI가 실제 Development operator identity로 목록을 민감정보 없이 요약하고 Development fixture 단일 데이터를 조회한다.
+- [x] backend에서 start/needsGroundTruth/resume/wontFix/reopen, stale CAS 거부와 정확한 job projection을 실제 Development API로 확인했다. 앱 실시간 반영 수동 QA는 별도다.
 - [ ] Worker candidate와 실제 URL smoke 후 verifier가 fixed를 연다.
 - [ ] 관리자가 명시 재시도하고 성공 뒤 verified가 된다.
-- [ ] 7일/60일 cleanup fixture가 대상 외 데이터를 삭제하지 않는다.
-- [ ] Functions/Worker ERROR, queue backlog와 임시 fixture/evidence 잔존이 없다.
+- [ ] 7일/60일 cleanup fixture가 대상 외 데이터를 삭제하지 않는다. 실제 Scheduler 수동 실행은 기존 만료 데이터도 삭제하므로 보류했고 격리 단위 테스트와 TTL ACTIVE를 확인했다.
+- [x] Functions/Worker 신규 ERROR, queue backlog와 임시 fixture/evidence 잔존이 없다.
 
 ## Production 게이트
 
