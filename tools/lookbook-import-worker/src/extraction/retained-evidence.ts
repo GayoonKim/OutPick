@@ -1,5 +1,3 @@
-import {createHash} from "node:crypto";
-
 import type {ExtractionCandidateEvidence} from "./core.js";
 import {
   extractionSourceEvidence,
@@ -12,6 +10,11 @@ import type {
   ExtractionQualityStatus,
 } from "./quality.js";
 import type {ExtractionVersionSet} from "./version.js";
+import {
+  extractionIssueOccurrenceKey,
+  extractionIssueFingerprint,
+  type ExtractionIssueStage,
+} from "./issue-contract.js";
 
 const RETENTION_DAYS = 7;
 const MAX_ELEMENTS = 120;
@@ -41,7 +44,7 @@ export type RetainedElementEvidence = {
 export type RetainedExtractionEvidence = {
   schemaVersion: 1;
   status: Extract<ExtractionQualityStatus, "failed" | "needsReview">;
-  stage: string;
+  stage: ExtractionIssueStage;
   source: ExtractionSourceEvidence;
   strategy: string;
   failureReasons: string[];
@@ -57,23 +60,13 @@ export type RetainedExtractionEvidence = {
 
 export type ExtractionIssueIdentity = {
   fingerprint: string;
-  stage: string;
+  stage: ExtractionIssueStage;
   platform: string;
   strategy: string;
   failureReasons: string[];
   qualityReasons: string[];
   templateSignature: string;
   extractorMajorVersion: string;
-};
-
-export type ExtractionIssueClusterState = {
-  occurrenceCount: number;
-  affectedDomains: string[];
-  affectedDomainCount: number;
-  sampleEvidenceIDs: string[];
-  status: string;
-  recurrenceCount: number;
-  isRecurrence: boolean;
 };
 
 export function evidenceShouldBeRetained(
@@ -88,7 +81,7 @@ export function evidenceExpiresAt(now = new Date()): Date {
 
 export function buildRetainedExtractionEvidence(input: {
   status: "failed" | "needsReview";
-  stage: string;
+  stage: ExtractionIssueStage;
   sourceURL: string;
   html?: string | null;
   strategy: string;
@@ -133,38 +126,43 @@ export function extractionIssueIdentity(
   const identity = {
     stage: evidence.stage,
     platform,
-    strategy: evidence.strategy,
+    parserStrategy: evidence.strategy,
     failureReasons: normalizedReasons(evidence.failureReasons),
     qualityReasons: normalizedReasons(evidence.qualityReasons),
     templateSignature: evidence.templateSignature,
     extractorMajorVersion,
   };
   return {
-    fingerprint: createHash("sha256")
-      .update(JSON.stringify(identity))
-      .digest("hex")
-      .slice(0, 40),
-    ...identity,
+    fingerprint: extractionIssueFingerprint({
+      stage: identity.stage,
+      platform: identity.platform,
+      parserStrategy: identity.parserStrategy,
+      failureReasons: identity.failureReasons,
+      qualityReasons: identity.qualityReasons,
+      templateSignature: identity.templateSignature,
+      extractorVersion: evidence.versions.extractorVersion,
+    }),
+    stage: identity.stage,
+    platform: identity.platform,
+    strategy: identity.parserStrategy,
+    failureReasons: identity.failureReasons,
+    qualityReasons: identity.qualityReasons,
+    templateSignature: identity.templateSignature,
+    extractorMajorVersion: identity.extractorMajorVersion,
   };
 }
 
 export function extractionEvidenceID(input: {
-  brandID: string;
-  jobID: string;
-  dispatchGeneration: number;
-  stage: string;
+  jobPath: string;
+  generation: number;
+  stage: ExtractionIssueStage;
   fingerprint: string;
 }): string {
-  return createHash("sha256")
-    .update([
-      input.brandID,
-      input.jobID,
-      input.dispatchGeneration,
-      input.stage,
-      input.fingerprint,
-    ].join(":"))
-    .digest("hex")
-    .slice(0, 40);
+  return extractionIssueOccurrenceKey({
+    jobPath: input.jobPath,
+    generation: input.generation,
+    evidenceID: input.fingerprint,
+  });
 }
 
 export function extractionEvidenceStoragePath(evidenceID: string): string {
@@ -172,58 +170,6 @@ export function extractionEvidenceStoragePath(evidenceID: string): string {
     throw new Error("evidence ID가 올바르지 않습니다.");
   }
   return `lookbook-extraction-evidence/${evidenceID}.json`;
-}
-
-export function versionIsAtLeast(current: string, fixed: string): boolean {
-  const currentParts = numericVersion(current);
-  const fixedParts = numericVersion(fixed);
-  for (let index = 0; index < 3; index += 1) {
-    const currentPart = currentParts[index] ?? 0;
-    const fixedPart = fixedParts[index] ?? 0;
-    if (currentPart !== fixedPart) {
-      return currentPart > fixedPart;
-    }
-  }
-  return true;
-}
-
-export function nextExtractionIssueClusterState(input: {
-  previous?: {
-    occurrenceCount?: unknown;
-    affectedDomains?: unknown;
-    sampleEvidenceIDs?: unknown;
-    status?: unknown;
-    recurrenceCount?: unknown;
-    fixedInExtractorVersion?: unknown;
-  };
-  sourceHost: string;
-  evidenceID: string;
-  extractorVersion: string;
-}): ExtractionIssueClusterState {
-  const previous = input.previous ?? {};
-  const affectedDomains = Array.from(new Set([
-    ...stringValues(previous.affectedDomains),
-    input.sourceHost.toLowerCase(),
-  ])).sort().slice(0, 200);
-  const sampleEvidenceIDs = Array.from(new Set([
-    ...stringValues(previous.sampleEvidenceIDs),
-    input.evidenceID,
-  ])).slice(-20);
-  const fixedVersion = typeof previous.fixedInExtractorVersion === "string" ?
-    previous.fixedInExtractorVersion.trim() :
-    "";
-  const isRecurrence = fixedVersion.length > 0 &&
-    versionIsAtLeast(input.extractorVersion, fixedVersion);
-  return {
-    occurrenceCount: nonNegativeNumber(previous.occurrenceCount) + 1,
-    affectedDomains,
-    affectedDomainCount: affectedDomains.length,
-    sampleEvidenceIDs,
-    status: isRecurrence ? "open" : stringOr(previous.status, "open"),
-    recurrenceCount: nonNegativeNumber(previous.recurrenceCount) +
-      (isRecurrence ? 1 : 0),
-    isRecurrence,
-  };
 }
 
 function retainedElements(
@@ -323,33 +269,4 @@ function shortText(value: string | null, maxLength: number): string | null {
     .replace(/\s+/g, " ")
     .trim() ?? "";
   return normalized.length === 0 ? null : normalized.slice(0, maxLength);
-}
-
-function numericVersion(value: string): number[] {
-  return value.split(".").slice(0, 3).map((part) => {
-    const parsed = Number.parseInt(part, 10);
-    return Number.isFinite(parsed) ? parsed : 0;
-  });
-}
-
-function stringValues(value: unknown): string[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value
-    .filter((item): item is string => typeof item === "string")
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function stringOr(value: unknown, fallback: string): string {
-  return typeof value === "string" && value.trim().length > 0 ?
-    value.trim() :
-    fallback;
-}
-
-function nonNegativeNumber(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value) ?
-    Math.max(0, Math.floor(value)) :
-    0;
 }

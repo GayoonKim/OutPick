@@ -1,5 +1,6 @@
 import {
   CAFE24_ADAPTER_KEY,
+  CAFE24_ADAPTER_VERSION,
   cafe24Adapter,
 } from "./cafe24.js";
 import type {
@@ -115,6 +116,9 @@ export function currentAdapterVersionsMatch(input: {
 
 export const CURRENT_EXTRACTOR_VERSION = EXTRACTOR_VERSION;
 export const CURRENT_PLATFORM_ADAPTER_KEYS = [CAFE24_ADAPTER_KEY] as const;
+export const CURRENT_ADAPTER_VERSIONS = Object.freeze({
+  [CAFE24_ADAPTER_KEY]: CAFE24_ADAPTER_VERSION,
+});
 
 function validateRegistry(
   platformAdapters: PlatformExtractionAdapter[],

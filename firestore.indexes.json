@@ -1,20 +1,6 @@
 {
   "indexes": [
     {
-      "collectionGroup": "seasonDiscoveryJobs",
-      "queryScope": "COLLECTION_GROUP",
-      "fields": [
-        {
-          "fieldPath": "status",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "improvementRequested",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
       "collectionGroup": "candidates",
       "queryScope": "COLLECTION",
       "fields": [
@@ -713,6 +699,44 @@
           "queryScope": "COLLECTION_GROUP"
         }
       ]
+    },
+    {
+      "collectionGroup": "seasonDiscoveryJobs",
+      "fieldPath": "extractionIssueFingerprint",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "importJobs",
+      "fieldPath": "extractionIssueFingerprint",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "lookbookExtractionIssueAuditLogs",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "lookbookExtractionFixVerificationRuns",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "lookbookExtractionFixReleases",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": []
     },
     {
       "collectionGroup": "seasonDiscoveryJobs",

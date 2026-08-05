@@ -89,8 +89,6 @@ export function initialSeasonDiscoveryJob(
     requestReason: "brandCreated",
     coalescedRequestCount: 0,
     recommendedAction: "none",
-    improvementRequested: false,
-    availableExtractionContractRevision: null,
     resolvedByJobID: null,
     leaseOwner: null,
     leaseExpiresAt: null,

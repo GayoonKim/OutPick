@@ -1,5 +1,6 @@
 /* eslint-disable max-len */
 import type {Page} from "playwright";
+import {createHash} from "node:crypto";
 
 import {
   extractionResult,
@@ -11,6 +12,11 @@ import {
 import {selectExtractionAdapters} from "./extraction/adapters/registry.js";
 import {extractionCandidateKey} from "./extraction/evidence.js";
 import type {ExtractionVersionSet} from "./extraction/version.js";
+import {extractionStructureTokens} from "./extraction/review.js";
+import {
+  buildRetainedExtractionEvidence,
+  type RetainedExtractionEvidence,
+} from "./extraction/retained-evidence.js";
 import {
   assertPublicHTTPURL,
   fetchPublicHTTP,
@@ -75,6 +81,8 @@ type RenderedDiscovery = DiscoveryExtraction & {
   loadMoreClickCount: number;
   infiniteScrollAttempted: boolean;
   scrollAttemptCount: number;
+  finalLoadMoreDetected: boolean;
+  retainedHTML: string;
 };
 
 export type DiscoverSeasonsDiagnosticRequest = {
@@ -89,6 +97,7 @@ export type DiscoverSeasonsDiagnosticResponse = {
   status: "passed" | "failed" | "needsReview";
   sourceURL: string;
   candidates: SeasonCandidate[];
+  issueEvidence?: RetainedExtractionEvidence | null;
   diagnostic: {
     staticCandidateCount: number;
     renderedCandidateCount: number | null;
@@ -107,6 +116,7 @@ export type DiscoverSeasonsDiagnosticResponse = {
     candidateEvidence: ExtractionCandidateEvidence[];
     extractionVersions: ExtractionVersionSet;
     failureReasons: FailureReason[];
+    unresolvedExpansion?: boolean;
     suggestedFixScope: SuggestedFixScope;
     suggestedFixes: SuggestedFix[];
     summaryMessage: string | null;
@@ -378,6 +388,12 @@ async function runDiscovery(
   const renderedImproved =
     renderedExtraction !== null &&
     renderedExtraction.candidates.length > staticExtraction.candidates.length;
+  const unresolvedExpansion = renderedExtraction !== null &&
+    (
+      renderedExtraction.finalLoadMoreDetected ||
+      renderedExtraction.loadMoreClickCount >= limits.maxLoadMoreClicks ||
+      renderedExtraction.scrollAttemptCount >= limits.maxScrollAttempts
+    );
   const classification = classifyDiscovery({
     candidateCount: mergedCandidates.length,
     loadMoreDetected:
@@ -389,11 +405,36 @@ async function runDiscovery(
     renderedFallbackUsed: renderedExtraction !== null,
     renderedImproved,
   });
+  const retainedHTML = renderedExtraction?.retainedHTML ?? html;
+  const structureTokens = extractionStructureTokens(retainedHTML);
+  const templateSignature = createHash("sha256")
+    .update(JSON.stringify({
+      stage: "seasonDiscovery",
+      strategy: selectedStrategy,
+      structureTokens,
+    }))
+    .digest("hex")
+    .slice(0, 32);
+  const issueEvidence = classification.status === "passed" ?
+    null :
+    buildRetainedExtractionEvidence({
+      status: classification.status,
+      stage: "seasonDiscovery",
+      sourceURL,
+      html: retainedHTML,
+      strategy: selectedStrategy,
+      failureReasons: classification.failureReasons,
+      templateSignature,
+      candidateEvidence: selectedExtraction.candidateEvidence,
+      structureTokens,
+      versions: selectedExtraction.versions,
+    });
 
   return {
     status: classification.status,
     sourceURL,
     candidates: storedCandidates,
+    issueEvidence,
     diagnostic: {
       staticCandidateCount: staticExtraction.candidates.length,
       renderedCandidateCount: renderedExtraction?.candidates.length ?? null,
@@ -418,6 +459,7 @@ async function runDiscovery(
       candidateEvidence: selectedExtraction.candidateEvidence,
       extractionVersions: selectedExtraction.versions,
       failureReasons: classification.failureReasons,
+      unresolvedExpansion,
       suggestedFixScope: classification.suggestedFixScope,
       suggestedFixes: classification.suggestedFixes,
       summaryMessage: classification.summaryMessage,
@@ -545,6 +587,8 @@ async function renderedDiscovery(
         loadMoreClickCount: interaction.loadMoreClickCount,
         infiniteScrollAttempted: interaction.scrollAttemptCount > 0,
         scrollAttemptCount: interaction.scrollAttemptCount,
+        finalLoadMoreDetected: finalExtraction.loadMoreDetected,
+        retainedHTML: finalHTML,
         loadMoreDetected:
           beforeExtraction.loadMoreDetected ||
           finalExtraction.loadMoreDetected ||

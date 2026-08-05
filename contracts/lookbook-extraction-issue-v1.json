@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "fingerprintCases": [
+    {
+      "name": "season discovery",
+      "input": {
+        "stage": "seasonDiscovery",
+        "platform": "Cafe24",
+        "parserStrategy": "archiveAnchors",
+        "failureReasons": [
+          "load_more_detected",
+          "dynamic_rendering_detected",
+          "load_more_detected"
+        ],
+        "qualityReasons": [],
+        "templateSignature": "sig-discovery-v1",
+        "extractorVersion": "2.4.1"
+      },
+      "expectedFingerprint": "50413f1af349a12e1da7f96ed24020f4bc27c6f1"
+    },
+    {
+      "name": "season image import",
+      "input": {
+        "stage": "seasonImageImport",
+        "platform": null,
+        "parserStrategy": "mainContent",
+        "failureReasons": [
+          "no_candidates_found"
+        ],
+        "qualityReasons": [
+          "raw_candidate_drop",
+          "expected_count_mismatch"
+        ],
+        "templateSignature": "sig-images-v1",
+        "extractorVersion": "1.9.0"
+      },
+      "expectedFingerprint": "3cf85663823aaee596efcc2d8dbcf3a4d0175cfb"
+    }
+  ],
+  "occurrenceCases": [
+    {
+      "input": {
+        "jobPath": "brands/brand-a/seasonDiscoveryJobs/job-a",
+        "generation": 3,
+        "evidenceID": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "expectedKey": "5b690dfea60c75558ded40e5710ae0250dab8cef"
+    },
+    {
+      "input": {
+        "jobPath": "lookbookImportJobs/job-b",
+        "generation": 7,
+        "evidenceID": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "expectedKey": "49a4ede10af1f2ec96bbc0744403e56cdf56a937"
+    }
+  ]
+}

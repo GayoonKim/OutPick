@@ -71,7 +71,7 @@ export {
   getLatestLookbookExtractionDiagnostic,
   onSeasonImportQueued,
   previewLookbookSeasonRepair,
-  requestLookbookExtractionReanalysis,
+  retryLookbookExtractionAfterFix,
   requestLookbookSeasonRepair,
   requestSeasonAssetRetry,
   requestSeasonCandidateImportJobs,
@@ -83,12 +83,19 @@ export {
   cancelSeasonDiscovery,
   onSeasonDiscoveryQueued,
   reconcileSeasonDiscoveryJobs,
-  reanalyzeSeasonDiscoveryWithLatestExtractor,
-  requestSeasonDiscoveryImprovement,
+  retrySeasonDiscoveryAfterExtractionFix,
   resolveSeasonDiscoveryCandidate,
   retrySeasonDiscovery,
   requestSeasonDiscovery,
 } from "./lookbook/import/seasonDiscoveryJobs.js";
+export {
+  lookbookExtractionIssueOpsRead,
+  lookbookExtractionIssueOpsWrite,
+} from "./lookbook/issueOperations/functions.js";
+export {
+  reconcileLookbookExtractionFixReleases,
+  verifyLookbookExtractionFix,
+} from "./lookbook/issueOperations/releaseFunctions.js";
 export {
   createStyleMood,
   updateStyleMood,

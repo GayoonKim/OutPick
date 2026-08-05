@@ -27,13 +27,12 @@ import {
   SEASON_DISCOVERY_LIMITS,
   SEASON_DISCOVERY_SCHEMA_VERSION,
 } from "../../shared/seasonDiscoveryCreation.js";
+import {isExtractionFixRetryEligible} from "./extractionIssueContract.js";
 import {
   canRecordSeasonDiscoveryDispatch,
   deterministicSeasonDiscoveryTaskID,
   isActiveSeasonDiscoveryStatus,
   isSeasonAvailableForDiscoveryReview,
-  normalizedSeasonDiscoveryIssueFingerprint,
-  seasonDiscoveryBlockedRevision,
   seasonDiscoveryExpiresAt,
   type SeasonDiscoveryStatus,
 } from "./seasonDiscoveryContract.js";
@@ -346,87 +345,7 @@ export const resolveSeasonDiscoveryCandidate = onCall(
   }
 );
 
-export const requestSeasonDiscoveryImprovement = onCall(
-  {region: FUNCTIONS_REGION},
-  async (request) => {
-    const uid = requiredAuthUID(request.auth?.uid);
-    const data = recordData(request.data);
-    const brandID = requiredDocumentID(requiredString(data, "brandID", 128), "brandID");
-    const jobID = requiredDocumentID(requiredString(data, "jobID", 128), "jobID");
-    const generation = integerInput(data.generation, "generation");
-    const snapshotHash = requiredString(data, "candidateSnapshotHash", 128);
-    await assertBrandWriteAccess(uid, brandID);
-
-    const brandRef = db.collection("brands").doc(brandID);
-    const jobRef = brandRef.collection("seasonDiscoveryJobs").doc(jobID);
-    return db.runTransaction(async (transaction) => {
-      const [brandSnap, jobSnap] = await Promise.all([
-        transaction.get(brandRef), transaction.get(jobRef),
-      ]);
-      const brand = brandSnap.data();
-      const job = jobSnap.data();
-      if (!brandSnap.exists || !jobSnap.exists) {
-        throw new HttpsError("not-found", "개선 요청할 탐색 결과를 찾을 수 없습니다.");
-      }
-      const issueFingerprint = normalizedSeasonDiscoveryIssueFingerprint(
-        job?.issueFingerprint
-      );
-      if ((brand?.deletionStatus && brand.deletionStatus !== "active") ||
-          brand?.publishedSeasonDiscoveryJobID !== jobID ||
-          job?.status !== "correctionRequired" ||
-          integer(job?.generation, -1) !== generation ||
-          job?.candidateSnapshotHash !== snapshotHash ||
-          typeof job?.resolvedByJobID === "string" || issueFingerprint === null) {
-        throw new HttpsError("failed-precondition", "최신 추출 결과에만 개선을 요청할 수 있습니다.");
-      }
-      if (job?.improvementRequested === true) {
-        return {brandID, jobID, accepted: true, duplicate: true};
-      }
-
-      const clusterRef = db.collection("lookbookExtractionIssueClusters")
-        .doc(issueFingerprint);
-      const clusterSnap = await transaction.get(clusterRef);
-      const cluster = clusterSnap.data() ?? {};
-      const blockedRevision = seasonDiscoveryBlockedRevision({
-        blockedRevision: job?.blockedByExtractionContractRevision,
-        extractionContractRevision: job?.extractionContractRevision,
-        currentRevision: SEASON_DISCOVERY_CONTRACT_REVISION,
-      });
-      const revisionReady = SEASON_DISCOVERY_CONTRACT_REVISION > blockedRevision;
-      const sourceHost = new URL(String(job?.sourceArchiveURL)).hostname.toLowerCase();
-      const sampleJobPath = jobRef.path;
-      const sampleJobPaths = boundedUniqueStrings(cluster.sampleJobPaths, sampleJobPath, 20);
-      const affectedDomains = boundedUniqueStrings(cluster.affectedDomains, sourceHost, 20);
-      const now = FieldValue.serverTimestamp();
-      transaction.update(jobRef, {
-        issueFingerprint,
-        improvementRequested: true,
-        improvementRequestedAt: now,
-        improvementRequestedBy: uid,
-        availableExtractionContractRevision: revisionReady ?
-          SEASON_DISCOVERY_CONTRACT_REVISION : null,
-        recommendedAction: revisionReady ?
-          "reanalyzeWithNewVersion" : "waitForExtractorFix",
-        updatedAt: now,
-      });
-      transaction.set(clusterRef, {
-        fingerprint: issueFingerprint,
-        stage: "seasonDiscovery",
-        status: "open",
-        improvementRequestCount: integer(cluster.improvementRequestCount, 0) + 1,
-        sampleJobPaths,
-        affectedDomains,
-        affectedDomainCount: affectedDomains.length,
-        firstImprovementRequestedAt: cluster.firstImprovementRequestedAt ?? now,
-        lastImprovementRequestedAt: now,
-        updatedAt: now,
-      }, {merge: true});
-      return {brandID, jobID, accepted: true, duplicate: false};
-    });
-  }
-);
-
-export const reanalyzeSeasonDiscoveryWithLatestExtractor = onCall(
+export const retrySeasonDiscoveryAfterExtractionFix = onCall(
   {region: FUNCTIONS_REGION},
   async (request): Promise<JobReceipt> => {
     const uid = requiredAuthUID(request.auth?.uid);
@@ -472,20 +391,14 @@ export const reanalyzeSeasonDiscoveryWithLatestExtractor = onCall(
       const sourceArchiveURL = normalizedHTTPURL(sourceValue, "lookbookArchiveURL");
       const originalSourceURL = typeof job?.sourceArchiveURL === "string" ?
         job.sourceArchiveURL : "";
-      const blockedRevision = seasonDiscoveryBlockedRevision({
-        blockedRevision: job?.blockedByExtractionContractRevision,
-        extractionContractRevision: job?.extractionContractRevision,
-        currentRevision: SEASON_DISCOVERY_CONTRACT_REVISION,
-      });
       if ((brand?.deletionStatus && brand.deletionStatus !== "active") ||
           typeof brand?.activeSeasonDiscoveryJobID === "string" ||
           brand?.publishedSeasonDiscoveryJobID !== jobID ||
           job?.status !== "correctionRequired" ||
-          job?.improvementRequested !== true ||
           integer(job?.generation, -1) !== generation ||
           job?.candidateSnapshotHash !== snapshotHash ||
           canonicalDiscoveryURL(sourceArchiveURL) !== canonicalDiscoveryURL(originalSourceURL) ||
-          SEASON_DISCOVERY_CONTRACT_REVISION <= blockedRevision) {
+          !hasVerifiedRetryRuntime(job)) {
         throw new HttpsError(
           "failed-precondition",
           "개선된 추출 방식이 준비된 최신 결과만 다시 가져올 수 있습니다."
@@ -651,43 +564,6 @@ export const reconcileSeasonDiscoveryJobs = onSchedule(
         });
       });
     }
-
-    const improvementSnapshot = await db.collectionGroup("seasonDiscoveryJobs")
-      .where("status", "==", "correctionRequired")
-      .where("improvementRequested", "==", true)
-      .limit(100)
-      .get();
-    for (const document of improvementSnapshot.docs) {
-      const data = document.data();
-      const blockedRevision = seasonDiscoveryBlockedRevision({
-        blockedRevision: data.blockedByExtractionContractRevision,
-        extractionContractRevision: data.extractionContractRevision,
-        currentRevision: SEASON_DISCOVERY_CONTRACT_REVISION,
-      });
-      if (SEASON_DISCOVERY_CONTRACT_REVISION <= blockedRevision ||
-          integer(data.availableExtractionContractRevision, 0) >=
-            SEASON_DISCOVERY_CONTRACT_REVISION &&
-          data.recommendedAction === "reanalyzeWithNewVersion") continue;
-      await db.runTransaction(async (transaction) => {
-        const fresh = await transaction.get(document.ref);
-        const job = fresh.data();
-        const freshBlockedRevision = seasonDiscoveryBlockedRevision({
-          blockedRevision: job?.blockedByExtractionContractRevision,
-          extractionContractRevision: job?.extractionContractRevision,
-          currentRevision: SEASON_DISCOVERY_CONTRACT_REVISION,
-        });
-        if (!fresh.exists || job?.status !== "correctionRequired" ||
-            job?.improvementRequested !== true ||
-            typeof job?.resolvedByJobID === "string" ||
-            SEASON_DISCOVERY_CONTRACT_REVISION <= freshBlockedRevision) return;
-        transaction.update(document.ref, {
-          availableExtractionContractRevision: SEASON_DISCOVERY_CONTRACT_REVISION,
-          recommendedAction: "reanalyzeWithNewVersion",
-          improvementAvailabilityUpdatedAt: FieldValue.serverTimestamp(),
-          updatedAt: FieldValue.serverTimestamp(),
-        });
-      });
-    }
   }
 );
 
@@ -715,8 +591,6 @@ function jobData(input: {
     requestReason: input.reason,
     coalescedRequestCount: 0,
     recommendedAction: "none",
-    improvementRequested: false,
-    availableExtractionContractRevision: null,
     resolvedByJobID: null,
     leaseOwner: null,
     leaseExpiresAt: null,
@@ -725,6 +599,15 @@ function jobData(input: {
     lastRequestedAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   };
+}
+
+function hasVerifiedRetryRuntime(job: Record<string, unknown>): boolean {
+  return isExtractionFixRetryEligible({
+    issueStatus: job.extractionIssueStatus,
+    blockedRuntimeVersion: job.blockedRuntimeVersion,
+    retryAvailableRuntimeVersion: job.retryAvailableRuntimeVersion,
+    stage: "seasonDiscovery",
+  });
 }
 
 function requestFingerprint(brandID: string, sourceArchiveURL: string): string {
@@ -811,16 +694,6 @@ function terminalize(
 function requestReason(value: unknown): RequestReason {
   if (value === "manualRefresh" || value === "archiveURLChanged") return value;
   throw new HttpsError("invalid-argument", "requestReason 값이 올바르지 않습니다.");
-}
-function boundedUniqueStrings(
-  existingValue: unknown,
-  appendedValue: string,
-  limit: number
-): string[] {
-  const existing = Array.isArray(existingValue) ? existingValue.filter(
-    (value): value is string => typeof value === "string" && value.length > 0
-  ) : [];
-  return Array.from(new Set([...existing, appendedValue])).slice(-limit);
 }
 function reviewDecision(
   value: unknown
