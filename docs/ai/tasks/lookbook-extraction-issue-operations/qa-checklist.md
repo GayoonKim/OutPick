@@ -94,6 +94,6 @@
 - [x] Functions 전체 test·lint·build가 통과한다.
 - [x] Development AMOMENTO 후보 15개와 각 상세 첫 이미지, 앱 표시를 실제 확인한다.
 - [x] adapter 없는 Generic fixture에서 같은 fallback 계약을 확인한다.
-- [ ] 목록 이미지가 있는 기존 브랜드의 대표 이미지는 바뀌지 않는다.
+- [x] 목록 이미지가 있는 기존 브랜드의 대표 이미지는 바뀌지 않는다. Development OUTSTANDING generation 1·2의 44개 candidate ID·제목·시즌 URL·대표 URL·source·strategy snapshot hash가 동일했고, 전부 `list/listElementImage`, 상세 fallback 0회, 실제 이미지 HTTP 성공 44/44였다.
 - [x] Development 관련 queue pending과 Worker/Functions 신규 ERROR가 0건이다.
 - [x] Production은 별도 승인 전 변경하지 않는다.

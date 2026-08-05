@@ -7,6 +7,7 @@
 - 2026-08-05 Phase 1 공통 계약, Phase 2 자동 기록, Phase 3 IAM 운영 API·CLI, Phase 4 runtime/smoke/verifier, Phase 5 iOS 단순 상태·레거시 제거를 완료했다. Phase 6 Development 인프라 통합과 상태 전이 QA도 완료했으며 실제 fix loop는 첫 추출 로직 수정 시 배포 게이트로 남겼다.
 - 2026-08-05 첫 실제 fix 대상으로 AMOMENTO 시즌 discovery fingerprint `dea8279b10822fa379277cf56048492303616e89`를 선택했다. Cafe24 모달 행의 `button[data-url]`을 공통 후보로 읽는 contract 2를 Development에 배포하고 ground truth 15개 actual smoke, 총 관리자 재시도 성공, cluster `verified`까지 완료했다. Production은 변경하지 않았다.
 - 2026-08-05 Phase 7의 `목록 이미지 우선 → 시즌 상세 콘텐츠 영역의 최상단 첫 유효 이미지 fallback`을 구현하고 Development 배포·실제 URL QA까지 완료했다. 첫 contract 3 job은 최신 5개만 채워 구형 `collection-images` 직접 영역 fixture 누락을 발견했고, Cafe24 adapter `1.0.1`로 보강한 뒤 AMOMENTO 후보·대표 이미지 15/15와 앱 렌더링을 확인했다. Production은 변경하지 않았다.
+- 2026-08-06 목록 이미지를 제공하는 OUTSTANDING Development 실데이터 회귀 QA를 완료했다. generation 1 `xr4zoCHdp3vr0AXQXMcE`과 generation 2 `Yl9353dPQLywApLqrZTU`의 후보 44개 snapshot hash가 동일했고 누락·추가·변경 0건, 목록 대표 이미지 44개, 상세 fallback 0회, 실제 이미지 HTTP 성공 44/44였다. 기존 동적 페이지 failure reason 때문에 두 job은 예상대로 `correctionRequired`이며, queue와 신규 ERROR는 0건이다.
 
 ## 완료
 
@@ -48,9 +49,8 @@
 
 ## 남은 작업
 
-1. 목록 이미지를 제공하는 기존 브랜드의 Development 재탐색 시 목록 cover가 유지되는지 실제 QA한다.
-2. 이미지 extraction stage의 첫 실제 로직 수정에서 `fixed → retry success → verified` 실제 URL 검증.
-3. 별도 승인 기반 Production rollout과 기존 callable/data 정리.
+1. 이미지 extraction stage의 첫 실제 로직 수정에서 `fixed → retry success → verified` 실제 URL 검증.
+2. 별도 승인 기반 Production rollout과 기존 callable/data 정리.
 
 ## 현재 위험
 
@@ -58,6 +58,7 @@
 - Production 읽기 전용 점검에서 legacy cluster/evidence/import job 각 3건을 확인했다. 모두 성공·승인된 과거 데이터이므로 자동 변경하지 않았다.
 - 배포된 기존 callable 삭제는 되돌리기 어려우므로 replacement 검증과 별도 승인이 필요하다.
 - 상세 대표 이미지 보강은 외부 사이트 응답 시간에 영향을 받으므로 30개·동시 3개·15초의 best-effort 경계를 넘기지 않는다. 실패는 이미지 없음으로만 남기고 시즌 후보 성공을 바꾸지 않는다.
+- OUTSTANDING 회귀 QA 브랜드 `Mb9JqermkE2ZalNAPJXH`와 두 discovery job은 Development에 남아 있다. 삭제는 파괴 작업이라 이번 QA 범위에서 수행하지 않았으며, 정리 시 이 정확한 브랜드 subtree만 별도 승인 후 대상으로 삼는다.
 
 ## 검증
 
@@ -91,3 +92,4 @@
 - 첫 앱 재탐색 job `eyE4A6dz5N7xFE1Ax1zF`은 후보 15개를 유지했지만 대표 이미지 5/15여서 구형 AMOMENTO `collection-images` 직접 영역 누락을 발견했다. 공통 Cafe24 규칙과 incident fixture를 보강한 뒤 앱에서 생성한 job `GwToZCXiZ9iUfKp4tDMg`은 후보 15개·상세 성공 15·실패 0으로 성공했고 저장 URL 15개가 각 실제 상세의 첫 유효 이미지와 모두 일치했다.
 - iPhone 17 Pro Max iOS 26.2 Simulator의 신규 시즌 선택 화면을 상단·중간·하단까지 확인해 15개 카드의 대표 이미지 렌더링을 확인했다. 실제 QA 시작 이후 두 queue pending과 Worker/Functions 신규 ERROR는 0이고 배포 Functions 9개는 모두 ACTIVE다.
 - Development candidate QA는 사용자 `gayunkim.1@gmail.com`에 두 정확한 Development 서비스 계정 리소스의 `roles/iam.serviceAccountOpenIdTokenCreator`만 영구 부여하고 IAM Credentials `generateIdToken`을 사용한다. 사용자 Token Creator, 서비스 계정 key와 Production 영구 binding은 사용하지 않는다.
+- OUTSTANDING 실데이터 회귀 QA는 Development 브랜드 `Mb9JqermkE2ZalNAPJXH`에서 contract 3 generation 1 `xr4zoCHdp3vr0AXQXMcE`, generation 2 `Yl9353dPQLywApLqrZTU`로 실행했다. 두 결과 모두 후보 44개·목록 cover 44개·상세 시도 0개였고 전체 candidate payload hash `bdd585264d9d7b3d2fbf020c39f76c5d144f4fc586507e2ad3b8d081ad15e53b`가 일치했다. 저장 이미지 44개 HTTP 성공, 두 queue pending 0, QA 시작 `2026-08-05T15:08:48Z` 이후 Worker/Functions ERROR 0을 확인했다.
