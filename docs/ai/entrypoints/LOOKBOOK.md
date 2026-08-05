@@ -195,6 +195,7 @@ Repository가 `DocumentSnapshot.documentID`를 같은 snapshot에서 decode한 D
 - `correctionRequired`는 job projection의 issue status를 `개선 대기 중`, `개선 처리 중`, `다시 가져오기 가능`, `추가 작업 필요`로 표시한다. 앱은 issue 목록·fingerprint·fixture·PR·배포 정보를 노출하지 않는다.
 - issue 상태 설명은 내부 용어인 `추출 로직/개선된 방식`을 노출하지 않는다. 시즌 목록은 `가져오지 못했어요/다시 가져올 수 있도록 확인하고 있어요/다시 가져올 수 있어요`, 이미지는 같은 어조의 짧은 문구를 사용하며 상태 chip은 기존 값을 유지한다.
 - 시즌 목록과 이미지 재시도는 총 관리자에게만 보이며 `fixed`와 상위 동일-stage runtime이 모두 있어야 한다. 앱 ViewModel과 callable 서버가 이 조건을 각각 검사하며 기존 개선 요청 버튼과 동일-version 즉시 재분석 경로는 제거했다.
+- 시즌 목록 fix 재시도는 새 discovery job을 만들 때 원본의 서버 검증 fingerprint와 runtime projection을 승계한다. 그래야 contract 2 이상의 실제 성공 job이 cluster를 `verified`로 닫을 수 있다. 2026-08-05 AMOMENTO Development 재시도에서 후보 15개와 해당 전이를 확인했다.
 - `wontFix` 중 원본 부재·접근 제한인 시즌 목록 문제는 기존 룩북 목록 URL 수정 action만 제공한다. 상세 구현 기준은 `docs/ai/tasks/lookbook-extraction-issue-operations/`다.
 - `awaitingReview` 후보는 `SeasonDiscoveryReviewView`에서 신규 유지, 제외, 기존 시즌 연결 중 하나로 결정한다. 기존 시즌 연결 대상은 시즌명으로 표시하며 job ID는 운영 화면에 노출하지 않는다.
 - `awaitingReview`여도 안전하게 `newSeason`으로 분류된 후보는 검토 완료를 기다리지 않고 별도 선택할 수 있다.

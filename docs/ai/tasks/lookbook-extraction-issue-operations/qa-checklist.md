@@ -64,8 +64,8 @@
 - [ ] 실제 이미지 extraction 실패가 같은 계약으로 기록된다.
 - [x] Codex CLI가 실제 Development operator identity로 목록을 민감정보 없이 요약하고 Development fixture 단일 데이터를 조회한다.
 - [x] backend에서 start/needsGroundTruth/resume/wontFix/reopen, stale CAS 거부와 정확한 job projection을 실제 Development API로 확인했다. 앱 실시간 반영 수동 QA는 별도다.
-- [ ] contract 2 Worker candidate와 AMOMENTO 15개 실제 URL smoke 후 verifier가 fixed를 연다.
-- [ ] 관리자가 명시 재시도하고 성공 뒤 verified가 된다.
+- [x] contract 2 Worker `00008-foq`와 AMOMENTO 15개 실제 URL smoke 후 verifier가 fixed를 열었다.
+- [x] Development Simulator의 총 관리자가 명시 재시도하고 후보 15개·contract 2 성공 뒤 cluster verified version 6을 확인했다.
 - [ ] 7일/60일 cleanup fixture가 대상 외 데이터를 삭제하지 않는다. 실제 Scheduler 수동 실행은 기존 만료 데이터도 삭제하므로 보류했고 격리 단위 테스트와 TTL ACTIVE를 확인했다.
 - [x] Functions/Worker 신규 ERROR, queue backlog와 임시 fixture/evidence 잔존이 없다.
 
@@ -73,7 +73,7 @@
 
 - [ ] 필요한 index/TTL/IAM diff를 사전 확인하고 별도 승인을 받았다.
 - [ ] Worker no-traffic candidate와 rollback revision을 확보했다.
-- [ ] 전체 fixture differential 6/6은 통과했다. Development 배포 revision의 실제 URL QA와 상태 전이는 남아 있다.
+- [x] 전체 fixture differential 6/6과 Development 배포 revision의 실제 URL QA·상태 전이가 통과했다.
 - [ ] PR 승인 뒤에만 Production traffic을 전환했다.
 - [ ] Production verifier가 live 100% revision을 확인했다.
 - [ ] 기존 callable 삭제와 legacy 데이터 cleanup은 각각 별도 승인받았다.
