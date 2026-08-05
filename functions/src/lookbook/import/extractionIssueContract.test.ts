@@ -8,6 +8,7 @@ import {
   compareExtractionRuntimeVersions,
   encodeExtractionRuntimeVersion,
   encodeExtractionRuntimeVersionForStage,
+  extractionFixRetryProjection,
   extractionIssueExpiresAt,
   extractionIssueFingerprint,
   extractionIssueOccurrenceKey,
@@ -160,6 +161,29 @@ test("fixed와 더 높은 같은 stage runtime만 앱 재시도를 허용한다"
     retryAvailableRuntimeVersion: "extractor:1.3.0",
     stage: "seasonDiscovery",
   }), false);
+});
+
+test("새 시즌 재시도 job은 verified 전이에 필요한 fix 정보를 승계한다", () => {
+  const retryAvailableAt = {seconds: 1};
+  assert.deepEqual(extractionFixRetryProjection({
+    extractionIssueFingerprint: "a".repeat(40),
+    extractionIssueStatus: "fixed",
+    blockedRuntimeVersion: "contract:1",
+    retryAvailableRuntimeVersion: "contract:2",
+    retryAvailableAt,
+  }, "seasonDiscovery"), {
+    extractionIssueFingerprint: "a".repeat(40),
+    extractionIssueStatus: "fixed",
+    blockedRuntimeVersion: "contract:1",
+    retryAvailableRuntimeVersion: "contract:2",
+    retryAvailableAt,
+  });
+  assert.throws(() => extractionFixRetryProjection({
+    extractionIssueFingerprint: "invalid",
+    extractionIssueStatus: "fixed",
+    blockedRuntimeVersion: "contract:1",
+    retryAvailableRuntimeVersion: "contract:2",
+  }, "seasonDiscovery"), /검증된/);
 });
 
 test("운영 action은 CAS와 허용 상태 전이를 강제한다", () => {

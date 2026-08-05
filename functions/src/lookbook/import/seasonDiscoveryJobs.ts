@@ -27,7 +27,10 @@ import {
   SEASON_DISCOVERY_LIMITS,
   SEASON_DISCOVERY_SCHEMA_VERSION,
 } from "../../shared/seasonDiscoveryCreation.js";
-import {isExtractionFixRetryEligible} from "./extractionIssueContract.js";
+import {
+  extractionFixRetryProjection,
+  isExtractionFixRetryEligible,
+} from "./extractionIssueContract.js";
 import {
   canRecordSeasonDiscoveryDispatch,
   deterministicSeasonDiscoveryTaskID,
@@ -421,7 +424,7 @@ export const retrySeasonDiscoveryAfterExtractionFix = onCall(
         sourceArchiveURL,
         requestedBy: uid,
         reason: "extractorImproved",
-      }));
+      }, extractionFixRetryProjection(job, "seasonDiscovery")));
       transaction.update(jobRef, {
         status: "superseded",
         phase: "completed",
@@ -570,7 +573,7 @@ export const reconcileSeasonDiscoveryJobs = onSchedule(
 function jobData(input: {
   brandID: string; generation: number; fingerprint: string;
   sourceArchiveURL: string; requestedBy: string; reason: RequestReason;
-}): Record<string, unknown> {
+}, additional: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     brandID: input.brandID,
     generation: input.generation,
@@ -598,6 +601,7 @@ function jobData(input: {
     createdAt: FieldValue.serverTimestamp(),
     lastRequestedAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
+    ...additional,
   };
 }
 

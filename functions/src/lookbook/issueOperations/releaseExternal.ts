@@ -54,10 +54,7 @@ export class GoogleReleaseExternalVerifier implements ReleaseExternalVerifier {
       uri: requiredHTTPSURL(body.uri),
       ready: terminal?.state === "CONDITION_SUCCEEDED",
       reconciling: body.reconciling === true,
-      traffic: Array.isArray(body.trafficStatuses) ? body.trafficStatuses.map((item) => {
-        const record = item as Record<string, unknown>;
-        return {revision: String(record.revision ?? ""), percent: Number(record.percent ?? 0)};
-      }) : [],
+      traffic: activeTrafficStatuses(body.trafficStatuses),
     };
   }
 
@@ -83,6 +80,20 @@ export class GoogleReleaseExternalVerifier implements ReleaseExternalVerifier {
     });
     return jsonResponse(response, `Worker ${path}`);
   }
+}
+
+export function activeTrafficStatuses(
+  value: unknown,
+): Array<{revision: string; percent: number}> {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (item === null || typeof item !== "object" || Array.isArray(item)) return [];
+    const record = item as Record<string, unknown>;
+    const revision = typeof record.revision === "string" ? record.revision : "";
+    const percent = typeof record.percent === "number" ? record.percent : 0;
+    // Cloud Run v2는 tag만 유지된 0% revision도 trafficStatuses에 포함한다.
+    return revision && Number.isFinite(percent) && percent > 0 ? [{revision, percent}] : [];
+  });
 }
 
 export function releaseWorkerServiceResource(projectID: string): string {

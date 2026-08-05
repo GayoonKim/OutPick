@@ -182,6 +182,33 @@ export function isExtractionFixRetryEligible(input: {
     ) === -1;
 }
 
+export function extractionFixRetryProjection(
+  job: Record<string, unknown>,
+  stage: ExtractionIssueStage
+): Record<string, unknown> {
+  if (
+    typeof job.extractionIssueFingerprint !== "string" ||
+    !FINGERPRINT_PATTERN.test(job.extractionIssueFingerprint) ||
+    !isExtractionFixRetryEligible({
+      issueStatus: job.extractionIssueStatus,
+      blockedRuntimeVersion: job.blockedRuntimeVersion,
+      retryAvailableRuntimeVersion: job.retryAvailableRuntimeVersion,
+      stage,
+    })
+  ) {
+    throw new Error("검증된 extraction fix 재시도 정보가 아닙니다.");
+  }
+  return {
+    extractionIssueFingerprint: job.extractionIssueFingerprint,
+    extractionIssueStatus: "fixed",
+    blockedRuntimeVersion: job.blockedRuntimeVersion,
+    retryAvailableRuntimeVersion: job.retryAvailableRuntimeVersion,
+    ...(job.retryAvailableAt === undefined ? {} : {
+      retryAvailableAt: job.retryAvailableAt,
+    }),
+  };
+}
+
 export function extractionRuntimeVersionIsAtLeast(
   current: string,
   fixed: string

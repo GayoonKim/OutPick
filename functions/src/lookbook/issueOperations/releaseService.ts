@@ -311,21 +311,40 @@ function requiresGroundTruth(cluster: Record<string, unknown>, stage: Extraction
   ].includes(reason));
 }
 
-async function sourceJob(firestore: Firestore, cluster: Record<string, unknown>, stage: ExtractionIssueStage): Promise<{jobPath: string; sourceURL: string}> {
+export async function sourceJob(firestore: Firestore, cluster: Record<string, unknown>, stage: ExtractionIssueStage): Promise<{jobPath: string; sourceURL: string}> {
   const path = cluster.representativeJobPath;
   const pattern = stage === "seasonDiscovery" ?
     /^brands\/[A-Za-z0-9_-]+\/seasonDiscoveryJobs\/[A-Za-z0-9_-]+$/ :
     /^brands\/[A-Za-z0-9_-]+\/importJobs\/[A-Za-z0-9_-]+$/;
-  if (typeof path !== "string" || !pattern.test(path)) {
-    throw serviceError("source_job_missing", "대표 source job 경로가 없습니다.");
+  if (typeof path === "string" && pattern.test(path)) {
+    const snapshot = await firestore.doc(path).get();
+    const sourceURL = sourceURLFromJobData(snapshot.data(), stage);
+    if (snapshot.exists && sourceURL !== null) return {jobPath: path, sourceURL};
   }
-  const snapshot = await firestore.doc(path).get();
-  const data = snapshot.data() ?? {};
-  const sourceURL = stage === "seasonDiscovery" ? data.sourceArchiveURL ?? data.archiveURL : data.sourceURL;
-  if (!snapshot.exists || typeof sourceURL !== "string" || !/^https:\/\//.test(sourceURL)) {
-    throw serviceError("source_job_missing", "대표 source job URL을 확인할 수 없습니다.");
+
+  const fingerprint = cluster.fingerprint;
+  if (typeof fingerprint === "string" && /^[a-f0-9]{40}$/.test(fingerprint)) {
+    const collection = stage === "seasonDiscovery" ? "seasonDiscoveryJobs" : "importJobs";
+    const affected = await firestore.collectionGroup(collection)
+      .where("extractionIssueFingerprint", "==", fingerprint)
+      .limit(100)
+      .get();
+    for (const document of affected.docs) {
+      if (!pattern.test(document.ref.path)) continue;
+      const sourceURL = sourceURLFromJobData(document.data(), stage);
+      if (sourceURL !== null) return {jobPath: document.ref.path, sourceURL};
+    }
   }
-  return {jobPath: path, sourceURL};
+  throw serviceError("source_job_missing", "검증할 source job URL을 확인할 수 없습니다.");
+}
+
+function sourceURLFromJobData(
+  data: Record<string, unknown> | undefined,
+  stage: ExtractionIssueStage,
+): string | null {
+  const value = stage === "seasonDiscovery" ?
+    data?.sourceArchiveURL ?? data?.archiveURL : data?.sourceURL;
+  return typeof value === "string" && /^https:\/\//.test(value) ? value : null;
 }
 
 function groundTruthValue(value: unknown): GroundTruthInput | null {
