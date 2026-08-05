@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "platform-cafe24-modal-data-url-discovery",
+  "kind": "discovery",
+  "classification": "platform",
+  "sourceURL": "https://brand.example/product/archive.html?cate_no=134",
+  "inputFile": "input.html",
+  "provenance": {
+    "kind": "incident_minimized",
+    "issue": "AMOMENTO Cafe24 목록의 링크 없는 모달 버튼 data-url 회귀"
+  }
+}

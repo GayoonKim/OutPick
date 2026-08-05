@@ -178,16 +178,14 @@ export function extractSeasonCandidates(
   limit = DEFAULT_LIMITS.maxDiagnosticCandidates,
 ): SeasonCandidate[] {
   const candidateMap = new Map<string, AnchorCandidate>();
-  const anchorPattern =
-    /<a\b[^>]*href\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>[\s\S]*?<\/a>/gi;
+  const candidateElements = seasonURLCandidateElements(html);
   let pageOrder = 0;
 
-  for (const match of html.matchAll(anchorPattern)) {
-    const anchorHTML = match[0];
+  for (const element of candidateElements) {
+    const anchorHTML = element.html;
     const currentPageOrder = pageOrder;
     pageOrder += 1;
-    const href = match[2] ?? match[3] ?? match[4] ?? "";
-    const seasonURL = normalizedCandidateURL(href, archiveURL);
+    const seasonURL = normalizedCandidateURL(element.rawURL, archiveURL);
     if (!seasonURL || isIgnoredHref(seasonURL)) {
       continue;
     }
@@ -245,6 +243,22 @@ export function extractSeasonCandidates(
   const candidatesWithCover = candidates.filter((item) => item.coverImageURL !== null);
   const selected = candidatesWithCover.length >= 2 ? candidatesWithCover : candidates;
   return selected.slice(0, limit);
+}
+
+function seasonURLCandidateElements(
+  html: string,
+): Array<{html: string; rawURL: string; index: number}> {
+  const patterns = [
+    /<a\b[^>]*href\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>[\s\S]*?<\/a>/gi,
+    /<button\b[^>]*data-url\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>[\s\S]*?<\/button>/gi,
+  ];
+  return patterns.flatMap((pattern) =>
+    Array.from(html.matchAll(pattern), (match) => ({
+      html: match[0],
+      rawURL: match[2] ?? match[3] ?? match[4] ?? "",
+      index: match.index,
+    })),
+  ).sort((lhs, rhs) => lhs.index - rhs.index);
 }
 
 export function shouldUseRenderedDiscovery(
@@ -877,6 +891,7 @@ function normalizedSeasonTitleText(rawValue: string): string | null {
   value = value
     .replace(/^(?:상품명|product\s*name)\s*:?\s*/i, "")
     .replace(/\s*(?:상품요약정보|summary|판매가|price)\s*:.*$/i, "")
+    .replace(/\s+\d{4}-\d{2}-\d{2}$/, "")
     .trim();
   value = stripImageDescriptionSuffix(value);
 
@@ -1022,7 +1037,8 @@ function isLikelySeasonCandidateURL(
   try {
     const url = new URL(rawURL);
     if (
-      /\/(?:product|lookbook|archive|collection|campaigns?)(?:\/|_)(?:archive[-_])?detail(?:_basic|_new)?\.html$/i
+      /\/product\/collection-single\.html$/i.test(url.pathname) ||
+      /\/(?:product|lookbook|archive|collection|campaigns?)(?:\/|_)(?:(?:archive[-_])?detail(?:_basic|_new)?|single)\.html$/i
         .test(url.pathname)
     ) {
       return true;

@@ -32,6 +32,28 @@ test("정적 HTML에서 시즌 후보를 추출한다", () => {
   );
 });
 
+test("Cafe24 모달 버튼의 data-url에서 시즌 후보를 추출한다", () => {
+  const candidates = extractSeasonCandidates(
+    [
+      "<button class=\"archive-modal-link\" ",
+      "data-url=\"/product/collection-single.html?" +
+        "product_no=4007&amp;cate_no=134\">",
+      "<span class=\"ar-title\">2026 Spring-Summer Collection</span>",
+      "<span class=\"date\">2026-04-14</span>",
+      "</button>",
+    ].join(""),
+    "https://amomento.co/product/archive.html?cate_no=134",
+  );
+
+  assert.equal(candidates.length, 1);
+  assert.equal(candidates[0].title, "2026 Spring-Summer Collection");
+  assert.equal(
+    candidates[0].seasonURL,
+    "https://amomento.co/product/collection-single.html?product_no=4007&cate_no=134",
+  );
+  assert.equal(candidates[0].coverImageURL, null);
+});
+
 test("이미지 alt와 상품명 라벨에서 시즌명을 정리한다", () => {
   const candidates = extractSeasonCandidates(
     [

@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "candidates": [
+    {
+      "type": "exact",
+      "key": "https://brand.example/product/collection-single.html?product_no=4007&cate_no=134&display_group=1",
+      "title": "2026 Spring-Summer Collection"
+    },
+    {
+      "type": "exact",
+      "key": "https://brand.example/product/collection-single.html?product_no=3901&cate_no=134&display_group=1",
+      "title": "2026 Pre-Spring Collection"
+    },
+    {
+      "type": "exact",
+      "key": "https://brand.example/product/collection-single.html?product_no=3702&cate_no=134&display_group=1",
+      "title": "2025 Fall-Winter Collection"
+    }
+  ],
+  "negativeCandidateKeys": [
+    "https://brand.example/cart"
+  ],
+  "orderPolicy": "strict",
+  "strategy": "staticAnchors",
+  "adapter": {
+    "platformKey": "cafe24",
+    "domainKey": null
+  },
+  "quality": null
+}
