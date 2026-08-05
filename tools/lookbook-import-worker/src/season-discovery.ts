@@ -23,11 +23,18 @@ import {
   responseBytes,
   retryableStatusError,
 } from "./public-http.js";
+import {
+  enrichSeasonCovers,
+  type CoverImageSource,
+  type SeasonCoverSummary,
+} from "./extraction/season-cover.js";
 
-type SeasonCandidate = {
+export type SeasonCandidate = {
   title: string;
   seasonURL: string;
   coverImageURL: string | null;
+  coverImageSource: CoverImageSource;
+  coverImageStrategy: string | null;
   score: number;
 };
 
@@ -113,6 +120,7 @@ export type DiscoverSeasonsDiagnosticResponse = {
     renderedFallbackUsed: boolean;
     parserStrategy: string;
     adapterKey: string | null;
+    coverImages: SeasonCoverSummary;
     candidateEvidence: ExtractionCandidateEvidence[];
     extractionVersions: ExtractionVersionSet;
     failureReasons: FailureReason[];
@@ -165,8 +173,9 @@ export async function processDiscoverSeasonsDiagnosticRequest(
   );
   const limits = diagnosticLimits(request.limits);
 
+  const deadlineAt = Date.now() + limits.timeoutMs;
   return withTimeout(
-    runDiscovery(sourceURL, limits),
+    runDiscovery(sourceURL, limits, deadlineAt),
     limits.timeoutMs,
     sourceURL,
   );
@@ -210,6 +219,8 @@ export function extractSeasonCandidates(
           title,
           seasonURL,
           coverImageURL: image,
+          coverImageSource: image === null ? "none" : "list",
+          coverImageStrategy: image === null ? null : "listElementImage",
           score,
           linkText,
           pageOrder: currentPageOrder,
@@ -220,6 +231,8 @@ export function extractSeasonCandidates(
         title,
         seasonURL,
         coverImageURL: image,
+        coverImageSource: image === null ? "none" : "list",
+        coverImageStrategy: image === null ? null : "listElementImage",
         score,
         linkText,
         pageOrder: currentPageOrder,
@@ -234,15 +247,22 @@ export function extractSeasonCandidates(
       }
       return lhs.seasonURL.localeCompare(rhs.seasonURL);
     })
-    .map(({title, seasonURL, coverImageURL, score}) => ({
+    .map(({
       title,
       seasonURL,
       coverImageURL,
+      coverImageSource,
+      coverImageStrategy,
+      score,
+    }) => ({
+      title,
+      seasonURL,
+      coverImageURL,
+      coverImageSource,
+      coverImageStrategy,
       score,
     }));
-  const candidatesWithCover = candidates.filter((item) => item.coverImageURL !== null);
-  const selected = candidatesWithCover.length >= 2 ? candidatesWithCover : candidates;
-  return selected.slice(0, limit);
+  return candidates.slice(0, limit);
 }
 
 function seasonURLCandidateElements(
@@ -369,6 +389,7 @@ export function classifyDiscovery(
 async function runDiscovery(
   sourceURL: string,
   limits: DiagnosticLimits,
+  deadlineAt: number,
 ): Promise<DiscoverSeasonsDiagnosticResponse> {
   const html = await fetchHTML(sourceURL, limits.timeoutMs);
   const staticExtraction = extractionFromHTML(html, sourceURL, limits);
@@ -382,7 +403,13 @@ async function runDiscovery(
     renderedCandidates,
     limits.maxDiagnosticCandidates,
   );
-  const storedCandidates = mergedCandidates.slice(0, limits.maxStoredCandidates);
+  const storedCandidateInputs = mergedCandidates.slice(0, limits.maxStoredCandidates);
+  const coverEnrichment = await enrichSeasonCovers({
+    candidates: storedCandidateInputs,
+    overallDeadlineAt: deadlineAt,
+    fetchHTML: fetchDetailHTML,
+  });
+  const storedCandidates = coverEnrichment.candidates;
   const selectedStrategy = renderedExtraction?.strategy ?? staticExtraction.strategy;
   const selectedVersions = mergeExtractionVersionSets([
     staticExtraction.versions,
@@ -470,6 +497,7 @@ async function runDiscovery(
       renderedFallbackUsed: renderedExtraction !== null,
       parserStrategy: selectedStrategy,
       adapterKey: selectedVersions.platformAdapterKey,
+      coverImages: coverEnrichment.summary,
       candidateEvidence: selectedExtraction.candidateEvidence,
       extractionVersions: selectedExtraction.versions,
       failureReasons: classification.failureReasons,
@@ -507,6 +535,30 @@ async function fetchHTML(sourceURL: string, timeoutMs: number): Promise<string> 
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function fetchDetailHTML(
+  sourceURL: string,
+  signal: AbortSignal,
+): Promise<string> {
+  const response = await fetchPublicHTTP(sourceURL, {
+    signal,
+    headers: {
+      "user-agent": USER_AGENT,
+      "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    },
+  });
+  if (!response.ok) {
+    throw retryableStatusError(
+      response.status,
+      `시즌 상세 URL 응답 실패: HTTP ${response.status}`,
+    );
+  }
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.toLowerCase().includes("text/html")) {
+    throw new Error(`HTML 응답이 아닙니다: ${contentType || "unknown"}`);
+  }
+  return (await responseBytes(response, HTML_MAX_BYTES, "HTML")).toString("utf8");
 }
 
 function extractionFromHTML(
@@ -787,11 +839,14 @@ function mergedAnchorCandidate(
 ): AnchorCandidate {
   const previousHasMeaningfulTitle = !isFallbackSeasonTitle(previous.title);
   const nextHasMeaningfulTitle = !isFallbackSeasonTitle(next.title);
+  const coverCandidate = previous.coverImageURL !== null ? previous : next;
 
   if (previousHasMeaningfulTitle !== nextHasMeaningfulTitle) {
     return {
       ...(nextHasMeaningfulTitle ? next : previous),
-      coverImageURL: next.coverImageURL ?? previous.coverImageURL,
+      coverImageURL: coverCandidate.coverImageURL,
+      coverImageSource: coverCandidate.coverImageSource,
+      coverImageStrategy: coverCandidate.coverImageStrategy,
       score: Math.max(previous.score, next.score),
       pageOrder: Math.min(previous.pageOrder, next.pageOrder),
     };
@@ -805,7 +860,9 @@ function mergedAnchorCandidate(
   )) {
     return {
       ...next,
-      coverImageURL: next.coverImageURL ?? previous.coverImageURL,
+      coverImageURL: coverCandidate.coverImageURL,
+      coverImageSource: coverCandidate.coverImageSource,
+      coverImageStrategy: coverCandidate.coverImageStrategy,
       score: Math.max(previous.score, next.score),
       pageOrder: Math.min(previous.pageOrder, next.pageOrder),
     };
@@ -813,7 +870,9 @@ function mergedAnchorCandidate(
 
   return {
     ...previous,
-    coverImageURL: previous.coverImageURL ?? next.coverImageURL,
+    coverImageURL: coverCandidate.coverImageURL,
+    coverImageSource: coverCandidate.coverImageSource,
+    coverImageStrategy: coverCandidate.coverImageStrategy,
     score: Math.max(previous.score, next.score),
     pageOrder: Math.min(previous.pageOrder, next.pageOrder),
   };

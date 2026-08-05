@@ -33,6 +33,10 @@ validate_plan_with_worker_config() {
     OUTPICK_IMPORT_OIDC_AUDIENCE="$(plan_value "$plan_path" oidc_audience)" \
     OUTPICK_IMPORT_TASKS_SERVICE_ACCOUNT_EMAIL="$(plan_value "$plan_path" task_service_account)" \
     OUTPICK_IMPORT_FUNCTIONS_SERVICE_ACCOUNT_EMAIL="$(plan_value "$plan_path" functions_service_account)" \
+    K_REVISION="lookbook-import-worker-contract-test" \
+    OUTPICK_WORKER_SOURCE_REVISION="$(plan_value "$plan_path" source_revision)" \
+    OUTPICK_SEASON_DISCOVERY_CONTRACT_REVISION="$(plan_value "$plan_path" season_discovery_contract_revision)" \
+    OUTPICK_SEASON_DISCOVERY_EXTRACTOR_VERSION="$(plan_value "$plan_path" season_discovery_extractor_version)" \
     node --input-type=module -e \
       'import {loadConfig} from "./lib/config.js"; loadConfig(process.env);'
   )
@@ -58,6 +62,8 @@ if (( ${#development_tag} + ${#development_service_name} + 1 > 46 )); then
   exit 1
 fi
 grep -Fq "functions_service_account=86635107099-compute@developer.gserviceaccount.com" "$development_plan"
+grep -Fq "season_discovery_contract_revision=3" "$development_plan"
+grep -Fq "season_discovery_extractor_version=season-discovery-v1" "$development_plan"
 
 grep -Fq "project=outpick-664ae" "$production_plan"
 grep -Fq "service=lookbook-import-worker" "$production_plan"
@@ -66,6 +72,8 @@ grep -Fq "worker_service_account=lookbook-import-worker@outpick-664ae.iam.gservi
 grep -Fq "oidc_audience=https://lookbook-import-worker-715386497547.asia-northeast3.run.app" "$production_plan"
 grep -Fq "task_service_account=lookbook-import-task-invoker@outpick-664ae.iam.gserviceaccount.com" "$production_plan"
 grep -Fq "functions_service_account=715386497547-compute@developer.gserviceaccount.com" "$production_plan"
+grep -Fq "season_discovery_contract_revision=3" "$production_plan"
+grep -Fq "season_discovery_extractor_version=season-discovery-v1" "$production_plan"
 grep -Fq -- "--no-traffic" "$production_plan"
 grep -Fq -- "--no-allow-unauthenticated" "$production_plan"
 

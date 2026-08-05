@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "platform-cafe24-season-detail-cover",
+  "kind": "season_cover",
+  "classification": "platform",
+  "sourceURL": "https://brand.example/product/collection-single.html?product_no=4007&cate_no=134",
+  "inputFile": "input.html",
+  "provenance": {
+    "kind": "incident_minimized",
+    "issue": "AMOMENTO Cafe24 상세 콘텐츠 첫 이미지 대표 이미지 보강"
+  }
+}

@@ -7,6 +7,10 @@ import {collectExpectedCountEvidence} from "../extraction/expected-count.js";
 import {detectProgrammaticGallery} from "../extraction/programmatic-gallery.js";
 import {evaluateExtractionQuality} from "../extraction/quality.js";
 import {extractImageCandidates} from "../processor.js";
+import {
+  extractSeasonCoverImageCandidate,
+} from "../extraction/image-candidates.js";
+import {selectExtractionAdapters} from "../extraction/adapters/registry.js";
 import {extractSeasonCandidateResult} from "../season-discovery.js";
 import {
   differentialIsEmpty,
@@ -30,8 +34,8 @@ export async function evaluateFixtureCorpus(
 
 export function evaluateFixtureCase(fixture: FixtureCase): FixtureEvaluation {
   const current = fixture.metadata.kind === "discovery" ?
-    discoverySnapshot(fixture) :
-    seasonImageSnapshot(fixture);
+    discoverySnapshot(fixture) : fixture.metadata.kind === "season_cover" ?
+      seasonCoverSnapshot(fixture) : seasonImageSnapshot(fixture);
   const baseline = expectedSnapshot(fixture.expected);
   const differential = fixtureDifferential(baseline, current);
   const expectedCandidates = expandExpectedCandidates(
@@ -147,6 +151,28 @@ function seasonImageSnapshot(fixture: FixtureCase): FixtureSnapshot {
       domainKey: selectedExtraction.versions.domainAdapterKey,
     },
     quality,
+  };
+}
+
+function seasonCoverSnapshot(fixture: FixtureCase): FixtureSnapshot {
+  const candidate = extractSeasonCoverImageCandidate(
+    fixture.inputHTML,
+    fixture.metadata.sourceURL,
+  );
+  const adapter = selectExtractionAdapters({
+    html: fixture.inputHTML,
+    sourceURL: fixture.metadata.sourceURL,
+    kind: "season_images",
+  });
+  return {
+    candidateKeys: candidate === null ? [] : [candidate.sourceURL],
+    candidateTitles: {},
+    strategy: candidate?.strategy ?? "none",
+    adapter: {
+      platformKey: adapter.versions.platformAdapterKey,
+      domainKey: adapter.versions.domainAdapterKey,
+    },
+    quality: null,
   };
 }
 

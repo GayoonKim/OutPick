@@ -64,7 +64,9 @@ function parseMetadata(text: string): FixtureMetadata {
   if (
     value.schemaVersion !== 1 ||
     typeof value.id !== "string" ||
-    (value.kind !== "discovery" && value.kind !== "season_images") ||
+    !["discovery", "season_images", "season_cover"].includes(
+      value.kind ?? "",
+    ) ||
     !["generic", "platform", "incident"].includes(value.classification ?? "") ||
     typeof value.sourceURL !== "string" ||
     typeof value.inputFile !== "string" ||

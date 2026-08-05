@@ -240,6 +240,8 @@ async function publishDiscovery(input: {
       title: candidate.title,
       seasonURL: candidate.seasonURL,
       coverImageURL: candidate.coverImageURL,
+      coverImageSource: candidate.coverImageSource,
+      coverImageStrategy: candidate.coverImageStrategy,
       extractionScore: candidate.score,
       sortIndex,
       normalizedTitleKey: resolution?.normalizedTitleKey ?? null,
@@ -247,9 +249,7 @@ async function publishDiscovery(input: {
       matchedSeasonID: resolution?.matchedSeasonID ?? null,
     };
   });
-  const snapshotHash = createHash("sha256")
-    .update(JSON.stringify(snapshotPayload))
-    .digest("hex");
+  const snapshotHash = seasonDiscoverySnapshotHash(snapshotPayload);
   const hasReview = resolutions.some((item) => item.resolution.startsWith("awaitingReview"));
   const extractionIncomplete = input.diagnostic.status !== "passed" || snapshotPayload.length === 0;
   const status = extractionIncomplete ? "correctionRequired" : hasReview ? "awaitingReview" : "succeeded";
@@ -339,6 +339,17 @@ async function publishDiscovery(input: {
       candidateSnapshotHash: snapshotHash,
       parserStrategy: input.diagnostic.diagnostic.parserStrategy,
       adapterKey: input.diagnostic.diagnostic.adapterKey,
+      coverImageCount: input.diagnostic.diagnostic.coverImages.coverImageCount,
+      listCoverImageCount:
+        input.diagnostic.diagnostic.coverImages.listCoverImageCount,
+      detailCoverAttemptCount:
+        input.diagnostic.diagnostic.coverImages.detailCoverAttemptCount,
+      detailCoverSuccessCount:
+        input.diagnostic.diagnostic.coverImages.detailCoverSuccessCount,
+      detailCoverFailureCount:
+        input.diagnostic.diagnostic.coverImages.detailCoverFailureCount,
+      detailCoverSkippedCount:
+        input.diagnostic.diagnostic.coverImages.detailCoverSkippedCount,
       failureReasons: input.diagnostic.diagnostic.failureReasons,
       failureClass: extractionIncomplete ? "extractionInsufficient" : null,
       resolvedByJobID: null,
@@ -420,6 +431,10 @@ async function publishDiscovery(input: {
 
 function candidateID(url: string): string {
   return createHash("sha256").update(url).digest("hex").slice(0, 24);
+}
+
+export function seasonDiscoverySnapshotHash(payload: unknown): string {
+  return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
 }
 function isPermanentFailure(error: unknown): boolean {
   return /invalid|올바르지|HTML 응답이 아닙니다|HTTP 4(?:00|01|03|04)/i.test(errorMessage(error));

@@ -52,6 +52,32 @@ test("Cafe24 모달 버튼의 data-url에서 시즌 후보를 추출한다", () 
     "https://amomento.co/product/collection-single.html?product_no=4007&cate_no=134",
   );
   assert.equal(candidates[0].coverImageURL, null);
+  assert.equal(candidates[0].coverImageSource, "none");
+  assert.equal(candidates[0].coverImageStrategy, null);
+});
+
+test("대표 이미지가 있는 후보가 둘 이상이어도 이미지 없는 시즌을 유지한다", () => {
+  const candidates = extractSeasonCandidates(
+    [
+      "<a href='/product/archive-detail.html?product_no=1'>" +
+        "<img src='/fw.jpg'>FW 2026</a>",
+      "<a href='/product/archive-detail.html?product_no=2'>" +
+        "<img src='/ss.jpg'>SS 2026</a>",
+      "<a href='/product/archive-detail.html?product_no=3'>FW 2025</a>",
+    ].join(""),
+    "https://brand.example/lookbook",
+  );
+
+  assert.deepEqual(candidates.map((item) => item.title), [
+    "FW 2026",
+    "SS 2026",
+    "FW 2025",
+  ]);
+  assert.deepEqual(candidates.map((item) => item.coverImageSource), [
+    "list",
+    "list",
+    "none",
+  ]);
 });
 
 test("이미지 alt와 상품명 라벨에서 시즌명을 정리한다", () => {
@@ -133,6 +159,8 @@ test("load-more 신호가 있으면 rendered discovery 대상이다", () => {
         title: "FW 2026",
         seasonURL: "https://brand.example/product/archive-detail.html?product_no=1",
         coverImageURL: null,
+        coverImageSource: "none",
+        coverImageStrategy: null,
         score: 70,
       }],
       strategy: "staticAnchors",
@@ -151,18 +179,24 @@ test("충분한 정적 후보는 rendered discovery 대상이 아니다", () => 
           title: "FW 2026",
           seasonURL: "https://brand.example/product/archive-detail.html?product_no=1",
           coverImageURL: "https://brand.example/1.jpg",
+          coverImageSource: "list",
+          coverImageStrategy: "listElementImage",
           score: 90,
         },
         {
           title: "SS 2026",
           seasonURL: "https://brand.example/product/archive-detail.html?product_no=2",
           coverImageURL: "https://brand.example/2.jpg",
+          coverImageSource: "list",
+          coverImageStrategy: "listElementImage",
           score: 90,
         },
         {
           title: "FW 2025",
           seasonURL: "https://brand.example/product/archive-detail.html?product_no=3",
           coverImageURL: "https://brand.example/3.jpg",
+          coverImageSource: "list",
+          coverImageStrategy: "listElementImage",
           score: 90,
         },
       ],

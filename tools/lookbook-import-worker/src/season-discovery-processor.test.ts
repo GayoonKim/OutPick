@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   canClaimSeasonDiscoveryJob,
   isCurrentSeasonDiscoveryAttempt,
+  seasonDiscoverySnapshotHash,
 } from "./season-discovery-processor.js";
 
 const request = {
@@ -47,4 +48,25 @@ test("현재 brand pointer와 dispatch lease가 같은 attempt만 확정한다",
   assert.equal(isCurrentSeasonDiscoveryAttempt(
     brand, {...job, dispatchGeneration: 2}, attempt,
   ), false);
+});
+
+test("대표 이미지 출처와 strategy는 candidate snapshot hash에 포함된다", () => {
+  const base = [{
+    candidateID: "candidate-1",
+    title: "FW 2026",
+    seasonURL: "https://brand.example/fw-2026",
+    coverImageURL: "https://brand.example/cover.jpg",
+    coverImageSource: "list",
+    coverImageStrategy: "listElementImage",
+  }];
+  const detail = [{
+    ...base[0],
+    coverImageSource: "detail",
+    coverImageStrategy: "lookbookContent",
+  }];
+
+  assert.notEqual(
+    seasonDiscoverySnapshotHash(base),
+    seasonDiscoverySnapshotHash(detail),
+  );
 });
