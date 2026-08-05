@@ -380,15 +380,15 @@ struct LookbookExtractionReviewView: View {
     private func extractionIssueMessage(_ review: LookbookExtractionReview) -> String {
         switch review.extractionIssueUserState {
         case .waiting:
-            return "개선 대기 중 · 이미지 추출 로직의 개선을 기다리고 있어요."
+            return "개선 대기 중 · 이미지를 가져오지 못했어요. 확인이 필요해요."
         case .processing:
-            return "개선 처리 중 · 이미지 추출 로직을 개선하고 있어요."
+            return "개선 처리 중 · 이미지를 다시 가져올 수 있도록 확인하고 있어요."
         case .retryReady:
-            return "다시 가져오기 가능 · 개선된 방식으로 이미지를 다시 확인할 수 있어요."
+            return "다시 가져오기 가능 · 이미지를 다시 가져올 수 있어요."
         case .wontFix:
             return "자동 개선 대상에서 제외되어 원본 페이지를 수동으로 확인해야 해요."
         case .unavailable:
-            return "이미지 개선 상태를 확인할 수 없어요."
+            return "이미지 상태를 확인할 수 없어요."
         }
     }
 

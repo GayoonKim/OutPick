@@ -333,18 +333,18 @@ struct SeasonImportManagementView: View {
     ) -> String {
         switch result.extractionIssueUserState {
         case .waiting:
-            return "시즌 목록 추출 로직의 개선을 기다리고 있어요."
+            return "시즌 목록을 가져오지 못했어요. 확인이 필요해요."
         case .processing:
-            return "시즌 목록 추출 로직을 개선하고 있어요."
+            return "시즌 목록을 다시 가져올 수 있도록 확인하고 있어요."
         case .retryReady:
             if brandAdminSessionStore.isTotalAdmin {
-                return "개선된 방식으로 시즌 목록을 다시 확인할 수 있어요."
+                return "시즌 목록을 다시 가져올 수 있어요."
             }
-            return "개선된 방식이 준비됐어요. 총 관리자가 다시 가져오기를 진행할 수 있어요."
+            return "시즌 목록을 다시 가져올 수 있어요. 총 관리자에게 요청해 주세요."
         case .wontFix:
             return wontFixMessage(result.extractionIssueWontFixReason)
         case .unavailable:
-            return "시즌 목록 개선 상태를 확인할 수 없어요."
+            return "현재 상태를 확인할 수 없어요."
         }
     }
 
