@@ -4,7 +4,6 @@ import test from "node:test";
 import {
   canClaimSeasonDiscoveryJob,
   isCurrentSeasonDiscoveryAttempt,
-  seasonDiscoveryIssueFingerprint,
 } from "./season-discovery-processor.js";
 
 const request = {
@@ -29,22 +28,6 @@ test("queued와 dispatching의 정확한 generation만 claim한다", () => {
   assert.equal(canClaimSeasonDiscoveryJob(
     {...job, generation: 3}, request,
   ), false);
-});
-
-test("시즌 discovery issue fingerprint는 redacted 40자 계약을 따른다", () => {
-  const fingerprint = seasonDiscoveryIssueFingerprint({
-    status: "needsReview",
-    sourceURL: "https://example.com/lookbooks?private=value",
-    candidates: [],
-    diagnostic: {
-      parserStrategy: "anchor_scan",
-      adapterKey: null,
-      failureReasons: ["no_candidates_found"],
-      errorMessage: null,
-    },
-  } as never);
-  assert.match(fingerprint, /^[a-f0-9]{40}$/);
-  assert.equal(fingerprint.includes("private"), false);
 });
 
 test("현재 brand pointer와 dispatch lease가 같은 attempt만 확정한다", () => {

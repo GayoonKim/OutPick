@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {extractionEvidenceCleanupTarget} from "./evidenceCleanup.js";
+import {
+  extractionEvidenceCleanupTarget,
+  extractionIssueClusterCleanupTarget,
+} from "./evidenceCleanup.js";
 
 test("evidence cleanup은 결정적 전용 prefix만 허용한다", () => {
   const evidenceID = "a".repeat(40);
@@ -14,6 +17,34 @@ test("evidence cleanup은 결정적 전용 prefix만 허용한다", () => {
       evidenceID,
       storagePath: `lookbook-extraction-evidence/${evidenceID}.json`,
     }
+  );
+});
+
+test("cluster cleanup은 대표 증거 전용 prefix만 허용한다", () => {
+  const fingerprint = "c".repeat(40);
+  const evidenceID = "d".repeat(40);
+  const representativeStoragePath =
+    `lookbook-extraction-cluster-evidence/${fingerprint}/${evidenceID}.json`;
+  assert.deepEqual(
+    extractionIssueClusterCleanupTarget({
+      fingerprint,
+      representativeEvidenceID: evidenceID,
+      representativeStoragePath,
+    }),
+    {
+      fingerprint,
+      representativeEvidenceID: evidenceID,
+      representativeStoragePath,
+    }
+  );
+  assert.equal(
+    extractionIssueClusterCleanupTarget({
+      fingerprint,
+      representativeEvidenceID: evidenceID,
+      representativeStoragePath:
+        `lookbook-extraction-evidence/${fingerprint}.json`,
+    }),
+    null
   );
 });
 

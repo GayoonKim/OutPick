@@ -5,8 +5,8 @@ import Testing
 
 @MainActor
 struct SeasonDiscoveryManagementViewModelTests {
-    @Test func improvementReadyRequiresRevisionHigherThanBlockedRevision() {
-        let result = SeasonCandidateDiscoveryResult(
+    @Test func extractionIssueStatusMapsToThreeUserStatesAndWontFix() {
+        let base = SeasonCandidateDiscoveryResult(
             brandID: BrandID(value: "brand-1"),
             jobID: "job-1",
             generation: 1,
@@ -14,13 +14,20 @@ struct SeasonDiscoveryManagementViewModelTests {
             sourceURL: "https://example.com/lookbooks",
             candidateCount: 1,
             candidateSnapshotHash: "snapshot",
-            recommendedAction: "reanalyzeWithNewVersion",
-            improvementRequested: true,
-            blockedByExtractionContractRevision: 1,
-            availableExtractionContractRevision: 2
+            extractionIssueStatus: .open
         )
-
-        #expect(result.improvementState == .ready)
+        #expect(base.extractionIssueUserState == .waiting)
+        #expect(makeResult(status: .correctionRequired, issueStatus: .inProgress)
+            .extractionIssueUserState == .processing)
+        #expect(makeResult(status: .correctionRequired, issueStatus: .needsGroundTruth)
+            .extractionIssueUserState == .processing)
+        #expect(makeResult(
+            status: .correctionRequired,
+            issueStatus: .fixed,
+            retryRuntime: "contract:2"
+        ).canRetryExtractionAfterFix)
+        #expect(makeResult(status: .correctionRequired, issueStatus: .wontFix)
+            .extractionIssueUserState == .wontFix)
     }
 
     @Test func monitorReflectsLatestDiscoveryStateUntilCompletion() async {
@@ -63,27 +70,14 @@ struct SeasonDiscoveryManagementViewModelTests {
         #expect(!viewModel.isMutatingDiscovery)
     }
 
-    @Test func improvementRequestImmediatelyMarksCurrentResultAsRequested() async {
+    @Test func fixedRetryReplacesCorrectionResultWithNewQueuedGeneration() async {
         let repository = SeasonDiscoveryRepositoryFake()
-        repository.observedResults = [makeResult(status: .correctionRequired)]
-        let viewModel = SeasonImportManagementViewModel(
-            brandID: BrandID(value: "brand-1"),
-            useCase: SeasonImportManagementUseCaseFake(),
-            discoveryRepository: repository
-        )
-        await viewModel.monitor()
-
-        await viewModel.requestDiscoveryImprovement()
-
-        #expect(repository.improvementRequestedJobIDs == ["job-1"])
-        #expect(viewModel.discoveryResult?.improvementState == .requested)
-        #expect(viewModel.presentedErrorMessage == nil)
-    }
-
-    @Test func reanalysisReplacesCorrectionResultWithNewQueuedGeneration() async {
-        let repository = SeasonDiscoveryRepositoryFake()
-        repository.observedResults = [makeResult(status: .correctionRequired)]
-        repository.reanalysisResult = SeasonCandidateDiscoveryResult(
+        repository.observedResults = [makeResult(
+            status: .correctionRequired,
+            issueStatus: .fixed,
+            retryRuntime: "contract:2"
+        )]
+        repository.fixedRetryResult = SeasonCandidateDiscoveryResult(
             brandID: BrandID(value: "brand-1"),
             jobID: "job-2",
             generation: 2,
@@ -99,11 +93,29 @@ struct SeasonDiscoveryManagementViewModelTests {
         )
         await viewModel.monitor()
 
-        await viewModel.reanalyzeDiscovery()
+        await viewModel.retryDiscoveryAfterExtractionFix()
 
-        #expect(repository.reanalyzedJobIDs == ["job-1"])
+        #expect(repository.fixedRetryJobIDs == ["job-1"])
         #expect(viewModel.discoveryResult?.jobID == "job-2")
         #expect(viewModel.discoveryResult?.status == .queued)
+    }
+
+    @Test func retryAfterFixIsIgnoredUntilFixedRuntimeIsAvailable() async {
+        let repository = SeasonDiscoveryRepositoryFake()
+        repository.observedResults = [makeResult(
+            status: .correctionRequired,
+            issueStatus: .inProgress
+        )]
+        let viewModel = SeasonImportManagementViewModel(
+            brandID: BrandID(value: "brand-1"),
+            useCase: SeasonImportManagementUseCaseFake(),
+            discoveryRepository: repository
+        )
+        await viewModel.monitor()
+
+        await viewModel.retryDiscoveryAfterExtractionFix()
+
+        #expect(repository.fixedRetryJobIDs.isEmpty)
     }
 
     @Test func reviewResolutionRemovesCandidateAndCompletesOnlyWhenEmpty() async throws {
@@ -168,7 +180,9 @@ struct SeasonDiscoveryManagementViewModelTests {
     private func makeResult(
         status: SeasonDiscoveryJobStatus,
         phase: String? = nil,
-        candidateCount: Int = 0
+        candidateCount: Int = 0,
+        issueStatus: ExtractionIssueStatus? = nil,
+        retryRuntime: String? = nil
     ) -> SeasonCandidateDiscoveryResult {
         SeasonCandidateDiscoveryResult(
             brandID: BrandID(value: "brand-1"),
@@ -178,7 +192,9 @@ struct SeasonDiscoveryManagementViewModelTests {
             sourceURL: "https://example.com/lookbooks",
             candidateCount: candidateCount,
             candidateSnapshotHash: "snapshot",
-            phase: phase
+            phase: phase,
+            extractionIssueStatus: issueStatus,
+            retryAvailableRuntimeVersion: retryRuntime
         )
     }
 }
@@ -218,9 +234,8 @@ private final class SeasonDiscoveryRepositoryFake:
     var latestObservationCount = 0
     var retriedJobIDs: [String] = []
     var cancelledJobIDs: [String] = []
-    var improvementRequestedJobIDs: [String] = []
-    var reanalyzedJobIDs: [String] = []
-    var reanalysisResult: SeasonCandidateDiscoveryResult?
+    var fixedRetryJobIDs: [String] = []
+    var fixedRetryResult: SeasonCandidateDiscoveryResult?
     var resolutions: [Resolution] = []
     var shouldFailResolution = false
 
@@ -263,19 +278,12 @@ private final class SeasonDiscoveryRepositoryFake:
         cancelledJobIDs.append(jobID)
     }
 
-    func requestSeasonDiscoveryImprovement(
-        brandID: BrandID,
-        job: SeasonCandidateDiscoveryResult
-    ) async throws {
-        improvementRequestedJobIDs.append(job.jobID)
-    }
-
-    func reanalyzeSeasonDiscoveryWithLatestExtractor(
+    func retrySeasonDiscoveryAfterExtractionFix(
         brandID: BrandID,
         job: SeasonCandidateDiscoveryResult
     ) async throws -> SeasonCandidateDiscoveryResult {
-        reanalyzedJobIDs.append(job.jobID)
-        return reanalysisResult ?? requestResult
+        fixedRetryJobIDs.append(job.jobID)
+        return fixedRetryResult ?? requestResult
     }
 
     func fetchReviewCandidates(

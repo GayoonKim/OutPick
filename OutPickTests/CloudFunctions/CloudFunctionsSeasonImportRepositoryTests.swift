@@ -73,7 +73,9 @@ struct CloudFunctionsSeasonImportRepositoryTests {
                 "reviewSnapshotHash": "snapshot",
                 "qualityReasons": ["programmatic_gallery_requires_review"],
                 "expectedCountEvidence": [["value": 2]],
-                "canReanalyze": false,
+                "extractionIssueStatus": "fixed",
+                "retryAvailableRuntimeVersion": "extractor:1.3.0",
+                "canRetryAfterFix": true,
                 "candidates": [
                     [
                         "candidateKey": "candidate-1",
@@ -100,7 +102,7 @@ struct CloudFunctionsSeasonImportRepositoryTests {
             expectedCandidateCount: nil,
             note: nil
         )
-        _ = try await repository.requestReanalysis(
+        _ = try await repository.retryAfterExtractionFix(
             brandID: brandID,
             jobID: "job-1"
         )
@@ -108,7 +110,7 @@ struct CloudFunctionsSeasonImportRepositoryTests {
         #expect(transport.calls.map(\.name) == [
             "getLookbookExtractionReview",
             "reviewLookbookExtraction",
-            "requestLookbookExtractionReanalysis"
+            "retryLookbookExtractionAfterFix"
         ])
         #expect(review.candidates.map(\.candidateKey) == ["candidate-1"])
         #expect(transport.calls[1].data["reviewGeneration"] as? Int == 1)

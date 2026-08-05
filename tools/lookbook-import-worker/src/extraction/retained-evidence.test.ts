@@ -8,8 +8,6 @@ import {
   extractionEvidenceID,
   extractionEvidenceStoragePath,
   extractionIssueIdentity,
-  nextExtractionIssueClusterState,
-  versionIsAtLeast,
 } from "./retained-evidence.js";
 import {CURRENT_EXTRACTION_VERSIONS} from "./version.js";
 
@@ -22,7 +20,7 @@ test("failed와 needsReview만 evidence 저장 대상이다", () => {
 test("최소 DOM evidence는 URL value와 script/cookie를 보존하지 않는다", () => {
   const evidence = buildRetainedExtractionEvidence({
     status: "needsReview",
-    stage: "parsing",
+    stage: "seasonImageImport",
     sourceURL: "https://brand.example/lookbook?token=source-secret",
     html: [
       "<script>const token = 'script-secret';" +
@@ -55,7 +53,7 @@ test("최소 DOM evidence는 URL value와 script/cookie를 보존하지 않는�
 test("issue fingerprint는 순서와 무관하고 signature를 분리한다", () => {
   const base = buildRetainedExtractionEvidence({
     status: "needsReview",
-    stage: "parsing",
+    stage: "seasonImageImport",
     sourceURL: "https://brand.example/lookbook",
     strategy: "mainContent",
     failureReasons: ["b", "a"],
@@ -85,10 +83,9 @@ test("issue fingerprint는 순서와 무관하고 signature를 분리한다", ()
 
 test("evidence ID와 경로, 7일 expiry가 결정적이다", () => {
   const input = {
-    brandID: "brand",
-    jobID: "job",
-    dispatchGeneration: 2,
-    stage: "parsing",
+    jobPath: "brands/brand/importJobs/job",
+    generation: 2,
+    stage: "seasonImageImport" as const,
     fingerprint: "a".repeat(40),
   };
   const evidenceID = extractionEvidenceID(input);
@@ -101,34 +98,4 @@ test("evidence ID와 경로, 7일 expiry가 결정적이다", () => {
     evidenceExpiresAt(new Date("2026-07-23T00:00:00.000Z")).toISOString(),
     "2026-07-30T00:00:00.000Z",
   );
-});
-
-test("fixed version 이후 재발 여부를 semver 숫자로 비교한다", () => {
-  assert.equal(versionIsAtLeast("1.10.0", "1.2.0"), true);
-  assert.equal(versionIsAtLeast("1.1.9", "1.2.0"), false);
-  assert.equal(versionIsAtLeast("2.0.0", "1.9.9"), true);
-});
-
-test("같은 cluster 재발은 occurrence와 fixed 이후 recurrence를 증가시킨다", () => {
-  const first = nextExtractionIssueClusterState({
-    sourceHost: "brand.example",
-    evidenceID: "a".repeat(40),
-    extractorVersion: "1.1.0",
-  });
-  const second = nextExtractionIssueClusterState({
-    previous: {
-      ...first,
-      fixedInExtractorVersion: "1.1.0",
-      status: "fixed",
-    },
-    sourceHost: "other.example",
-    evidenceID: "b".repeat(40),
-    extractorVersion: "1.2.0",
-  });
-
-  assert.equal(second.occurrenceCount, 2);
-  assert.equal(second.affectedDomainCount, 2);
-  assert.equal(second.recurrenceCount, 1);
-  assert.equal(second.isRecurrence, true);
-  assert.equal(second.status, "open");
 });

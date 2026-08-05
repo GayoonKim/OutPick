@@ -53,6 +53,9 @@ struct SeasonImportJobRepairStateTests {
             repairStatus: repairStatus,
             repairGeneration: 1,
             extractionQualityReasons: [],
+            extractionIssueStatus: nil,
+            retryAvailableRuntimeVersion: nil,
+            extractionIssueWontFixReason: nil,
             createdAt: .distantPast,
             updatedAt: .distantPast
         )

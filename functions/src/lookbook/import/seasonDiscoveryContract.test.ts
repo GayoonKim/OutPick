@@ -10,15 +10,11 @@ import {
   isCurrentPublishedSeasonDiscoverySnapshot,
   isTerminalSeasonDiscoveryStatus,
   seasonDiscoveryExpiresAt,
-  seasonDiscoveryBlockedRevision,
-  normalizedSeasonDiscoveryIssueFingerprint,
-  seasonDiscoveryImprovementDisposition,
   seasonDiscoveryRecommendedAction,
   seasonDiscoveryRequestFingerprint,
 } from "./seasonDiscoveryContract.js";
 import {
   seasonDiscoveryCreationFingerprint,
-  SEASON_DISCOVERY_CONTRACT_REVISION,
   SEASON_DISCOVERY_EXTRACTOR_VERSION,
   SEASON_DISCOVERY_LIMITS,
   SEASON_DISCOVERY_SCHEMA_VERSION,
@@ -68,50 +64,6 @@ test("discovery fingerprint는 URL과 limits 순서를 정규화한다", () => {
   );
 });
 
-test("개선 요청은 같은 revision 재시도 없이 준비 상태로 전이한다", () => {
-  const legacyFingerprint = "a".repeat(64);
-  assert.equal(
-    normalizedSeasonDiscoveryIssueFingerprint(legacyFingerprint),
-    "a".repeat(40)
-  );
-  assert.equal(normalizedSeasonDiscoveryIssueFingerprint("a".repeat(39)), null);
-  assert.equal(seasonDiscoveryBlockedRevision({
-    blockedRevision: undefined,
-    extractionContractRevision: undefined,
-    currentRevision: 1,
-  }), 1);
-  assert.equal(seasonDiscoveryBlockedRevision({
-    blockedRevision: undefined,
-    extractionContractRevision: 2,
-    currentRevision: 3,
-  }), 2);
-  assert.equal(seasonDiscoveryImprovementDisposition({
-    status: "correctionRequired",
-    improvementRequested: false,
-    blockedRevision: SEASON_DISCOVERY_CONTRACT_REVISION,
-    availableRevision: null,
-  }), "requestable");
-  assert.equal(seasonDiscoveryImprovementDisposition({
-    status: "correctionRequired",
-    improvementRequested: true,
-    blockedRevision: 1,
-    availableRevision: 1,
-  }), "requested");
-  assert.equal(seasonDiscoveryImprovementDisposition({
-    status: "correctionRequired",
-    improvementRequested: true,
-    blockedRevision: 1,
-    availableRevision: 2,
-  }), "ready");
-  assert.equal(seasonDiscoveryImprovementDisposition({
-    status: "correctionRequired",
-    improvementRequested: true,
-    blockedRevision: 1,
-    availableRevision: 2,
-    resolvedByJobID: "job-2",
-  }), "notEligible");
-});
-
 test("상태 그룹과 lifecycle retention이 계약대로 분리된다", () => {
   assert.equal(isActiveSeasonDiscoveryStatus("running"), true);
   assert.equal(isActionRequiredSeasonDiscoveryStatus("awaitingReview"), true);
@@ -141,7 +93,7 @@ test("실패와 검토 상태는 관리자 action으로 결정적으로 변환�
   }), "reviewCandidates");
   assert.equal(seasonDiscoveryRecommendedAction({
     status: "correctionRequired",
-  }), "waitForExtractorFix");
+  }), "none");
 });
 
 test("discovery task ID는 dispatch generation을 포함한다", () => {

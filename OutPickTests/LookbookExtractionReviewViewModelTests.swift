@@ -50,6 +50,34 @@ struct LookbookExtractionReviewViewModelTests {
         #expect(viewModel.disablesInteractivePop == false)
     }
 
+    @Test func retryAfterFixRunsOnlyForFixedReview() async {
+        let repository = ExtractionReviewRepositoryFake()
+        repository.review = makeReview(
+            reviewStatus: .correctionRequired,
+            extractionIssueStatus: .inProgress
+        )
+        let viewModel = LookbookExtractionReviewViewModel(
+            brandID: BrandID(value: "brand-1"),
+            jobID: "job-1",
+            useCase: ManageLookbookExtractionReviewUseCase(repository: repository),
+            onCompleted: {}
+        )
+        await viewModel.load()
+
+        await viewModel.retryAfterExtractionFix()
+        #expect(repository.retryAfterFixCount == 0)
+
+        repository.review = makeReview(
+            reviewStatus: .correctionRequired,
+            extractionIssueStatus: .fixed,
+            canRetryAfterFix: true
+        )
+        await viewModel.load()
+        await viewModel.retryAfterExtractionFix()
+
+        #expect(repository.retryAfterFixCount == 1)
+    }
+
     @Test func excludesCandidateAndApprovesThroughUseCase() async {
         let repository = ExtractionReviewRepositoryFake()
         let review = makeReview()
@@ -204,7 +232,9 @@ struct LookbookExtractionReviewViewModelTests {
     private func makeReview(
         expectedCounts: [Int] = [0],
         qualityReasons: [String] = ["expected_count_mismatch"],
-        reviewStatus: SeasonImportReviewStatus = .pending
+        reviewStatus: SeasonImportReviewStatus = .pending,
+        extractionIssueStatus: ExtractionIssueStatus? = nil,
+        canRetryAfterFix: Bool = false
     ) -> LookbookExtractionReview {
         LookbookExtractionReview(
             jobID: "job-1",
@@ -222,7 +252,11 @@ struct LookbookExtractionReviewViewModelTests {
                     alt: nil
                 )
             ],
-            canReanalyze: false
+            extractionIssueStatus: extractionIssueStatus ??
+                (reviewStatus == .correctionRequired ? .open : nil),
+            retryAvailableRuntimeVersion: canRetryAfterFix ? "extractor:2" : nil,
+            extractionIssueWontFixReason: nil,
+            canRetryAfterFix: canRetryAfterFix
         )
     }
 }
@@ -240,6 +274,7 @@ private final class ExtractionReviewRepositoryFake:
     var shouldFailSubmit = false
     var submittedDecision: LookbookExtractionReviewDecision?
     var submittedExcludedKeys: [String] = []
+    var retryAfterFixCount = 0
     var submittedExpectedCount: Int?
 
     func loadReview(
@@ -270,10 +305,11 @@ private final class ExtractionReviewRepositoryFake:
         return LookbookExtractionReviewReceipt(status: "queued", duplicate: false)
     }
 
-    func requestReanalysis(
+    func retryAfterExtractionFix(
         brandID: BrandID,
         jobID: String
     ) async throws -> LookbookExtractionReviewReceipt {
-        LookbookExtractionReviewReceipt(status: "queued", duplicate: false)
+        retryAfterFixCount += 1
+        return LookbookExtractionReviewReceipt(status: "queued", duplicate: false)
     }
 }
