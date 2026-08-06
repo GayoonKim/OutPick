@@ -3,9 +3,9 @@
 ## 현재 상태
 
 - 2026-08-06 `lookbook-extraction-issue-operations`를 Development 구현·QA 완료로 종료하고 Production rollout을 별도 핵심 task로 분리했다.
-- Phase 1 읽기 전용 감사와 Phase 2 candidate 범위 승인을 완료했다. Phase 3 Worker candidate 검증 중이다.
+- Phase 1 읽기 전용 감사, Phase 2 candidate 범위 승인과 Phase 3 Worker candidate 검증을 완료했다. Phase 4 Worker traffic 전환 별도 승인 대기다.
 - Production Worker `lookbook-import-worker-00026-qes`를 source `1dbe6e1774686fe8186dc79b9551de779e7c4b60`, contract 3, traffic 0%로 생성했다. live `00024-fow` traffic 100%와 rollback `00023-879`는 유지했다.
-- Production IAM/index/TTL/Functions/queue와 traffic은 변경하지 않았다.
+- Production task/functions service account 두 리소스에 사용자 `gayunkim.1@gmail.com`의 `roles/iam.serviceAccountOpenIdTokenCreator`만 영구 부여했다. index/TTL/Functions/queue와 traffic은 변경하지 않았다.
 
 ## 완료
 
@@ -21,18 +21,22 @@
 - 2026-08-05 이후 Production Worker/Functions severity ERROR는 0건이다.
 - 따라서 queue pause/drain 없이 Worker contract 3 candidate 검증·traffic 전환을 먼저 하고 durable discovery backend/Functions를 뒤에 활성화하는 순서를 확정했다.
 - candidate 배포 전 Worker 115/115, lint, fixture 9/9가 통과했다. revision은 Ready이고 env/source/contract/runtime identity와 image digest를 확인했으며 신규 severity ERROR는 0건이다.
-- 사용자 `gayunkim.1@gmail.com`에는 Production task/functions service account의 ID token 생성 권한이 없어 OIDC 경계 검증이 중단됐다. IAM을 임의 변경하지 않았으며 두 exact service account의 임시 `roles/iam.serviceAccountOpenIdTokenCreator` 승인 후 검증하고 즉시 회수해야 한다.
+- 사용자 승인으로 Production task/functions service account 두 exact 리소스에 좁은 `roles/iam.serviceAccountOpenIdTokenCreator`를 영구 부여했다. IAM Credentials `generateIdToken` 직접 호출만 사용했으며 access token impersonation·signing·key는 만들지 않았다.
+- candidate OIDC matrix는 task identity의 `/readyz` 200, import/discovery task 빈 payload 500, runtime 403과 functions identity의 runtime 200, diagnostic 빈 payload 500, import/discovery task 403으로 caller 분리를 확인했다.
+- `/runtime-contract`는 Worker `00026-qes`, source `1dbe6e1`, contract 3, extractor `1.2.3`, Cafe24 `1.0.1`과 일치했다.
+- 기존 Production 해칭룸 성공 import job의 실제 URL로 `seasonImageImport` smoke가 HTTP 200, 후보 12개, logic issue false, failure 0이었다.
+- 기존 Production 해칭룸 archive URL의 실제 discovery diagnostic은 HTTP 200, 후보 20개·목록 대표 이미지 20개, 상세 fallback 0, `passed`, failure 0이었다.
+- caller matrix의 의도한 빈 payload 500 세 요청만 Cloud Run request ERROR로 기록됐다. 해당 시점 이후 actual smoke의 unexpected ERROR는 0건이고 import queue pending도 0건이며 live traffic은 `00024-fow` 100%다.
 
 ## 다음 작업
 
-1. Production task/functions service account 두 리소스의 임시 OIDC token 생성 권한 승인.
-2. candidate OIDC caller 경계, `/runtime-contract`와 read-only actual extraction smoke 완료 후 권한 즉시 회수.
-3. candidate 성공 뒤 Worker traffic 전환 별도 승인.
-4. backend prerequisite/Functions와 실제 smoke 범위 승인.
+1. candidate `00026-qes`로 Worker traffic 100% 전환 별도 승인.
+2. 전환 후 live runtime·queue·ERROR와 rollback `00024-fow` 유효성 확인.
+3. backend prerequisite/Functions와 실제 smoke 범위 승인.
 
 ## 현재 위험
 
 - 신규 durable discovery Functions를 Worker contract 3보다 먼저 배포하면 호출 계약이 맞지 않으므로 순서를 바꾸면 안 된다.
 - Production operator와 신규 private Functions IAM은 아직 없으므로 배포 전 exact resource binding 검증이 필요하다.
-- candidate 검증용 Production OIDC token은 현재 권한이 없어 발급할 수 없다. project-level 역할이나 key 대신 두 exact service account의 임시 resource-level 권한만 사용한다.
+- 영구 OIDC binding은 두 exact runtime service account identity로 Worker endpoint를 호출할 수 있으므로 사용자 Google 계정 MFA/passkey와 계정 보안에 의존한다. 운영 구조가 바뀌면 전용 QA identity로 분리한다.
 - legacy 데이터와 callable은 자동 정리하지 않는다.

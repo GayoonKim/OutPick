@@ -2,8 +2,8 @@
 
 ## 전체 상태
 
-- 상태: Phase 1·2 완료, Phase 3 candidate 생성 완료·OIDC QA 임시 IAM 승인 대기.
-- Production mutation: Worker `00026-qes`를 traffic 0% candidate로 생성했다. live traffic·Functions·Firestore·queue·IAM은 변경하지 않았다.
+- 상태: Phase 1~3 완료, Phase 4 Worker traffic 전환 별도 승인 대기.
+- Production mutation: Worker `00026-qes` traffic 0% candidate와 두 exact service account의 좁은 OIDC QA binding을 적용했다. live traffic·Functions·Firestore·queue는 변경하지 않았다.
 
 ## Phase 1. Production 읽기 전용 감사
 
@@ -67,7 +67,7 @@
 
 ## Phase 3. Production no-traffic Worker candidate
 
-상태: candidate Ready·traffic 0%·로컬 게이트 완료. OIDC caller 경계와 actual smoke는 임시 Production 토큰 생성 권한 승인 대기.
+상태: 완료. candidate Ready·traffic 0%, OIDC caller 경계, runtime contract와 두 stage actual read-only smoke를 검증했다.
 
 목표:
 
@@ -118,17 +118,17 @@
 
 목표:
 
-- 실제 대표 URL로 end-to-end 상태를 확인하고 임시 권한을 회수한다.
+- 실제 대표 URL로 end-to-end 상태를 확인한다.
 
 변경 범위:
 
-- 승인된 smoke 데이터와 임시 IAM 정리.
+- 승인된 smoke 데이터 정리와 장기 IAM 최소 범위 재확인.
 
 완료 기준:
 
 - 실제 discovery 결과, 대표 이미지, queue 0, 신규 ERROR 0.
 - smoke 데이터 정리 범위를 확인하고 승인된 데이터만 삭제.
-- 임시 사용자 IAM 회수.
+- 사용자 OIDC binding이 승인된 두 exact service account의 좁은 역할로만 유지됨을 확인.
 
 검증:
 

@@ -13,13 +13,13 @@
 ## 로컬·candidate 게이트
 
 - [x] Worker test 115/115·lint·build와 fixture corpus 9/9가 통과한다.
-- [ ] 민감 evidence redaction과 token 비로그 계약을 확인한다.
-- [ ] cursor projection reconciler와 iOS wontFix/title 미체크 항목을 재분류한다.
+- [x] fixture의 민감 query 차단과 실제 candidate 응답의 마스킹 evidence를 확인했고 OIDC token을 출력·기록하지 않았다.
+- [x] cursor projection reconciler와 iOS wontFix/title 검증은 Worker candidate 차단 조건이 아니며 backend/app end-to-end 단계로 재분류했다.
 - [x] Worker no-traffic candidate `00026-qes`와 live `00024-fow`·rollback `00023-879`를 확보한다.
-- [ ] candidate `/readyz`와 `/runtime-contract`가 일치한다. Ready/env/source는 확인했고 OIDC 호출은 임시 IAM 승인 대기다.
-- [ ] Functions/Task caller OIDC 경계가 기대 상태 코드를 반환한다.
-- [ ] candidate actual extraction smoke가 통과한다.
-- [x] candidate 배포 후 신규 severity ERROR가 0건이고 live traffic은 기존 revision 100%다.
+- [x] candidate `/readyz`와 `/runtime-contract`가 source·contract·extractor·adapter까지 일치한다.
+- [x] Functions/Task caller OIDC 경계가 기대 상태 코드 200/403/500을 반환한다.
+- [x] 해칭룸 실제 discovery 20개·대표 이미지 20개와 이미지 extraction 12개 read-only smoke가 통과한다.
+- [x] 의도한 빈 payload ERROR 3건 이후 unexpected ERROR 0건, import queue pending 0건이고 live traffic은 기존 revision 100%다.
 
 ## Production cutover
 
@@ -29,7 +29,7 @@
 - [ ] live traffic 100%와 runtime contract를 재확인한다.
 - [ ] 실제 Production discovery smoke가 성공한다.
 - [ ] queue backlog와 신규 Worker/Functions ERROR가 0건이다.
-- [ ] 임시 사용자 IAM binding을 회수한다.
+- [x] 사용자 영구 OIDC binding은 승인된 두 exact service account의 `roles/iam.serviceAccountOpenIdTokenCreator`만 사용한다.
 
 ## 제외·후속
 

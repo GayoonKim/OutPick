@@ -21,11 +21,13 @@
 - 실제 `seasonImageImport` 로직 결함과 상위 runtime이 생겼을 때만 `open → fixed → retry success → verified`를 실행한다.
 - 시스템 QA를 위해 가짜 실패나 가짜 fixed 상태를 만들지 않는다.
 
-## D-005. Production 인증은 key 없이 최소·임시 권한을 사용한다
+## D-005. Production 인증은 key 없이 exact resource의 최소 권한을 사용한다
 
 - exact Production operator/service account resource에 OIDC ID token 생성에 필요한 최소 권한만 사용한다.
 - 서비스 계정 key와 project-level 광범위 binding을 만들지 않는다.
-- 임시 사용자 binding은 QA 종료 후 회수한다.
+- 1인 운영자인 사용자 `gayunkim.1@gmail.com`에는 반복 QA를 위해 task/functions service account 두 리소스의 `roles/iam.serviceAccountOpenIdTokenCreator`만 영구 유지한다.
+- 이 역할은 `generateIdToken` 직접 호출에만 사용하고 access token·signing·일반 `roles/iam.serviceAccountTokenCreator`로 확장하지 않는다.
+- 운영자 계정 변경, 운영 인력 추가, CI 전환 또는 계정 보안 사고 시 영구 binding을 재검토한다.
 
 ## D-006. contract cutover는 queue와 active job을 먼저 감사한다
 

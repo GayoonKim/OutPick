@@ -13,7 +13,7 @@
 - Worker는 `--no-traffic` candidate로 먼저 만들고 `/readyz`, `/runtime-contract`, OIDC caller 분리, 실제 read-only extraction smoke를 검증한다.
 - Production Functions의 exact 배포 목록과 canonical season discovery contract revision은 감사 결과로 확정한다.
 - Production은 durable discovery 도입 전 레거시 Worker/Functions 상태임을 실제 배포 소스로 확인했다. 기존 경로와 호환되는 contract 3 Worker를 먼저 no-traffic candidate로 검증·전환한 뒤 durable discovery Functions와 backend prerequisite를 도입한다.
-- Production operator identity는 key 없이 exact service account resource의 좁은 OIDC ID token 생성 권한만 임시 사용하고 완료 후 회수하는 방향을 우선한다.
+- 1인 운영자인 사용자 `gayunkim.1@gmail.com`에는 Development와 같은 방식으로 Production task/functions service account 두 리소스의 좁은 OIDC ID token 생성 권한만 영구 유지한다.
 
 ## 3. 제약 조건
 
@@ -30,7 +30,7 @@
 - Worker candidate가 no-traffic 상태에서 runtime/source/contract/OIDC/smoke 검증을 통과한다.
 - 승인된 cutover 뒤 Production Worker와 Functions가 동일 contract를 사용한다.
 - 실제 Production 대표 URL smoke가 성공하고 queue backlog와 신규 Worker/Functions ERROR가 0건이다.
-- 임시 IAM은 회수되고 Production에 장기 key가 남지 않는다.
+- Production OIDC QA 권한이 두 exact service account의 resource-level `roles/iam.serviceAccountOpenIdTokenCreator`로 제한되고 장기 key가 남지 않는다.
 - legacy 삭제·cleanup은 수행하지 않았음을 명확히 기록한다.
 
 ## 5. 구현 가능성
@@ -54,7 +54,7 @@
 4. no-traffic Worker candidate를 검증한다.
 5. 사용자가 Worker traffic 전환을 별도 승인하고 contract 3으로 전환한다.
 6. durable discovery Functions·queue·index/TTL·최소 IAM을 적용하고 실제 smoke를 수행한다.
-7. queue, ERROR와 rollback 가능 상태를 확인하고 임시 IAM을 회수한다.
+7. queue, ERROR와 rollback 가능 상태를 확인하고 task를 종료한다.
 
 ## 8. 화면 설계
 

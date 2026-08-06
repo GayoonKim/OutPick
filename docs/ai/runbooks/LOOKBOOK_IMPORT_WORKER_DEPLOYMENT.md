@@ -72,7 +72,7 @@ scripts/ai/deploy-lookbook-import-worker.sh production --deploy-candidate
 6. Functions 계정으로 `/tasks/import-job`을 호출하면 403인지 확인한다.
 7. Candidate revision의 ERROR 로그가 0건인지 확인한다.
 
-서비스 계정 ID token은 해당 환경의 canonical audience로 발급해야 한다. OIDC 검증만 필요한 운영자에게 광범위한 `roles/iam.serviceAccountTokenCreator`를 부여하지 않는다. Development의 승인된 1인 운영자는 Functions/Task 서비스 계정 각각의 리소스에만 `roles/iam.serviceAccountOpenIdTokenCreator`를 유지하고, 사용자 access token으로 IAM Credentials `generateIdToken`을 직접 호출한다. Production은 이 영구 binding 대상이 아니며 별도 승인된 임시 권한 또는 권한 있는 실행 환경을 사용한다. 임의 계정, 사용자 ID token, 서비스 계정 key로 대체하지 않는다.
+서비스 계정 ID token은 해당 환경의 canonical audience로 발급해야 한다. OIDC 검증만 필요한 운영자에게 광범위한 `roles/iam.serviceAccountTokenCreator`를 부여하지 않는다. 승인된 1인 운영자는 Development와 Production의 Functions/Task 서비스 계정 각각의 exact 리소스에만 `roles/iam.serviceAccountOpenIdTokenCreator`를 유지하고, 사용자 access token으로 IAM Credentials `generateIdToken`을 직접 호출한다. 이 좁은 역할은 `gcloud --impersonate-service-account`용 access token 권한을 포함하지 않으므로 아래 REST 호출을 사용한다. 임의 계정, 사용자 ID token, 서비스 계정 key로 대체하지 않는다. 운영자 계정 변경, 운영 인력 추가, CI 전환 또는 계정 보안 사고 시 binding을 재검토한다.
 
 ```bash
 operator_access_token="$(gcloud auth print-access-token --account=gayunkim.1@gmail.com)"
