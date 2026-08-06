@@ -5,6 +5,41 @@ import Testing
 
 @MainActor
 struct SeasonDiscoveryManagementViewModelTests {
+    @Test func createBrandDiscoveryFailureHidesInfrastructureError() async throws {
+        let infrastructureMessage = "Missing or insufficient permissions."
+        let repository = SeasonDiscoveryRepositoryFake()
+        repository.discoveryError = NSError(
+            domain: "FIRFirestoreErrorDomain",
+            code: 7,
+            userInfo: [NSLocalizedDescriptionKey: infrastructureMessage]
+        )
+        let viewModel = CreateBrandDiscoveryViewModel(repository: repository)
+
+        viewModel.start(brandID: BrandID(value: "brand-1"))
+        try await waitUntil { viewModel.errorMessage != nil }
+
+        #expect(
+            viewModel.errorMessage ==
+                "시즌 목록을 불러오지 못했어요. 브랜드 등록을 마친 뒤 다시 찾아올 수 있어요."
+        )
+        #expect(viewModel.errorMessage?.contains(infrastructureMessage) == false)
+        #expect(viewModel.result == nil)
+    }
+
+    @Test func createBrandDiscoverySuccessPublishesResultWithoutError() async throws {
+        let repository = SeasonDiscoveryRepositoryFake()
+        let viewModel = CreateBrandDiscoveryViewModel(repository: repository)
+
+        viewModel.start(
+            brandID: BrandID(value: "brand-1"),
+            existingJobID: "job-1"
+        )
+        try await waitUntil { viewModel.result != nil }
+
+        #expect(viewModel.result?.jobID == "job-1")
+        #expect(viewModel.errorMessage == nil)
+    }
+
     @Test func extractionIssueStatusMapsToThreeUserStatesAndWontFix() {
         let base = SeasonCandidateDiscoveryResult(
             brandID: BrandID(value: "brand-1"),
@@ -197,6 +232,17 @@ struct SeasonDiscoveryManagementViewModelTests {
             retryAvailableRuntimeVersion: retryRuntime
         )
     }
+
+    private func waitUntil(
+        timeout: TimeInterval = 1,
+        _ predicate: @escaping @MainActor () -> Bool
+    ) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while predicate() == false && Date() < deadline {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        #expect(predicate())
+    }
 }
 
 private final class SeasonImportManagementUseCaseFake:
@@ -236,6 +282,7 @@ private final class SeasonDiscoveryRepositoryFake:
     var cancelledJobIDs: [String] = []
     var fixedRetryJobIDs: [String] = []
     var fixedRetryResult: SeasonCandidateDiscoveryResult?
+    var discoveryError: Error?
     var resolutions: [Resolution] = []
     var shouldFailResolution = false
 
@@ -249,14 +296,20 @@ private final class SeasonDiscoveryRepositoryFake:
     func discoverSeasonCandidates(
         brandID: BrandID
     ) async throws -> SeasonCandidateDiscoveryResult {
-        requestResult
+        if let discoveryError {
+            throw discoveryError
+        }
+        return requestResult
     }
 
     func observeSeasonDiscovery(
         brandID: BrandID,
         jobID: String
     ) async throws -> SeasonCandidateDiscoveryResult {
-        requestResult
+        if let discoveryError {
+            throw discoveryError
+        }
+        return requestResult
     }
 
     func observeLatestSeasonDiscovery(
