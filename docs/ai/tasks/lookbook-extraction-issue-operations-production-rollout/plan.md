@@ -2,8 +2,8 @@
 
 ## 전체 상태
 
-- 상태: Phase 1~3 완료, Phase 4 Worker traffic 전환 별도 승인 대기.
-- Production mutation: Worker `00026-qes` traffic 0% candidate와 두 exact service account의 좁은 OIDC QA binding을 적용했다. live traffic·Functions·Firestore·queue는 변경하지 않았다.
+- 상태: Phase 1~3과 Phase 4 Worker traffic 전환 완료. Phase 4 backend prerequisite/Functions 배포 승인 대기.
+- Production mutation: Worker `00026-qes` traffic 100% 전환과 두 exact service account의 좁은 OIDC QA binding을 적용했다. Functions·Firestore·queue는 변경하지 않았다.
 
 ## Phase 1. Production 읽기 전용 감사
 
@@ -91,6 +91,8 @@
 - candidate 검증 실패 시 traffic 전환 금지.
 
 ## Phase 4. Worker traffic과 backend cutover
+
+상태: Worker traffic 전환과 live 검증 완료. backend prerequisite/Functions는 미승인·미수행.
 
 목표:
 

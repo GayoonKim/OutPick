@@ -24,11 +24,11 @@
 ## Production cutover
 
 - [ ] 사용자에게 exact mutation 범위 승인을 받는다.
-- [ ] Worker traffic/canonical contract 전환을 별도 승인받는다.
+- [x] Worker traffic/canonical contract 전환을 별도 승인받았다.
 - [ ] 승인된 순서로 Functions/Worker contract를 일치시킨다.
-- [ ] live traffic 100%와 runtime contract를 재확인한다.
+- [x] Worker live traffic `00026-qes` 100%와 runtime contract를 재확인했다.
 - [ ] 실제 Production discovery smoke가 성공한다.
-- [ ] queue backlog와 신규 Worker/Functions ERROR가 0건이다.
+- [ ] backend 배포 후 queue backlog와 신규 Worker/Functions ERROR가 0건이다. Worker 전환 시점에는 import queue·unexpected ERROR 모두 0건이다.
 - [x] 사용자 영구 OIDC binding은 승인된 두 exact service account의 `roles/iam.serviceAccountOpenIdTokenCreator`만 사용한다.
 
 ## 제외·후속

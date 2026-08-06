@@ -3,8 +3,8 @@
 ## 현재 상태
 
 - 2026-08-06 `lookbook-extraction-issue-operations`를 Development 구현·QA 완료로 종료하고 Production rollout을 별도 핵심 task로 분리했다.
-- Phase 1 읽기 전용 감사, Phase 2 candidate 범위 승인과 Phase 3 Worker candidate 검증을 완료했다. Phase 4 Worker traffic 전환 별도 승인 대기다.
-- Production Worker `lookbook-import-worker-00026-qes`를 source `1dbe6e1774686fe8186dc79b9551de779e7c4b60`, contract 3, traffic 0%로 생성했다. live `00024-fow` traffic 100%와 rollback `00023-879`는 유지했다.
+- Phase 1 읽기 전용 감사, Phase 2 candidate 범위 승인, Phase 3 candidate 검증과 Phase 4 Worker traffic 전환을 완료했다. backend prerequisite/Functions 배포 승인 대기다.
+- Production Worker `lookbook-import-worker-00026-qes`를 source `1dbe6e1774686fe8186dc79b9551de779e7c4b60`, contract 3, traffic 100%로 전환했다. `00024-fow`를 rollback revision으로 보존했다.
 - Production task/functions service account 두 리소스에 사용자 `gayunkim.1@gmail.com`의 `roles/iam.serviceAccountOpenIdTokenCreator`만 영구 부여했다. index/TTL/Functions/queue와 traffic은 변경하지 않았다.
 
 ## 완료
@@ -26,13 +26,17 @@
 - `/runtime-contract`는 Worker `00026-qes`, source `1dbe6e1`, contract 3, extractor `1.2.3`, Cafe24 `1.0.1`과 일치했다.
 - 기존 Production 해칭룸 성공 import job의 실제 URL로 `seasonImageImport` smoke가 HTTP 200, 후보 12개, logic issue false, failure 0이었다.
 - 기존 Production 해칭룸 archive URL의 실제 discovery diagnostic은 HTTP 200, 후보 20개·목록 대표 이미지 20개, 상세 fallback 0, `passed`, failure 0이었다.
-- caller matrix의 의도한 빈 payload 500 세 요청만 Cloud Run request ERROR로 기록됐다. 해당 시점 이후 actual smoke의 unexpected ERROR는 0건이고 import queue pending도 0건이며 live traffic은 `00024-fow` 100%다.
+- candidate QA 당시 caller matrix의 의도한 빈 payload 500 세 요청만 Cloud Run request ERROR로 기록됐다. 해당 시점 이후 actual smoke의 unexpected ERROR는 0건이고 import queue pending도 0건이었으며 당시 live traffic은 `00024-fow` 100%였다.
+- traffic 전환 직전 candidate Ready, live `00024-fow` 100%, queue pending 0, actual smoke 이후 unexpected ERROR 0을 재확인하고 `00026-qes=100`만 적용했다.
+- 전환 후 canonical service URL의 `/readyz`, `/runtime-contract`, 해칭룸 실제 `seasonImageImport` smoke가 모두 HTTP 200이었다. runtime은 `00026-qes`·source `1dbe6e1`·contract 3·extractor `1.2.3`·Cafe24 `1.0.1`, 후보 12개·logic issue false·failure 0이었다.
+- 최종 traffic `00026-qes` 100%, import queue pending 0, 전환 검증 시작 이후 severity ERROR 0을 확인했다. `00024-fow`는 traffic 0% rollback으로 유지한다.
 
 ## 다음 작업
 
-1. candidate `00026-qes`로 Worker traffic 100% 전환 별도 승인.
-2. 전환 후 live runtime·queue·ERROR와 rollback `00024-fow` 유효성 확인.
-3. backend prerequisite/Functions와 실제 smoke 범위 승인.
+1. backend prerequisite/Functions exact mutation 범위 승인.
+2. `lookbook-discovery-jobs`, Firestore field override 9개와 Production operator/minimum IAM 적용.
+3. Function 12개 배포와 live contract·queue·ERROR 검증.
+4. 실제 Production end-to-end smoke 대상과 데이터 정리 범위 승인.
 
 ## 현재 위험
 
