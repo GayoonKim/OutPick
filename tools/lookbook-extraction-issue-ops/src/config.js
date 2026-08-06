@@ -2,12 +2,14 @@ export const ENVIRONMENTS = Object.freeze({
   development: Object.freeze({
     projectID: "outpick-test",
     region: "asia-northeast3",
+    callerEmail: "gayunkim.1@gmail.com",
     operatorEmail:
       "outpick-extraction-ops-dev@outpick-test.iam.gserviceaccount.com",
   }),
   production: Object.freeze({
     projectID: "outpick-664ae",
     region: "asia-northeast3",
+    callerEmail: "gayunkim.1@gmail.com",
     operatorEmail:
       "outpick-extraction-ops-prod@outpick-664ae.iam.gserviceaccount.com",
   }),

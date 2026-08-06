@@ -5,7 +5,10 @@ import {resolveInvocation} from "./gcloud.js";
 
 try {
   const command = parseArguments(process.argv.slice(2));
-  const invocation = resolveInvocation(command.environment, command.endpoint);
+  const invocation = await resolveInvocation(
+    command.environment,
+    command.endpoint,
+  );
   const body = await callIssueOperations({
     command,
     uri: invocation.uri,
