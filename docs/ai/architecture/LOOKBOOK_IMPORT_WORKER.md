@@ -70,7 +70,7 @@ Cloud Run worker:
 - Phase 6 `extraction/reconcile.ts`는 기존 post와 새 후보의 canonical URL/content hash 매칭, deterministic add ID, keep/add/reorder/remove-candidate와 snapshot hash를 순수 계산한다.
 - repair preview는 `importJobs/{jobID}/repairs/{repairGeneration}`에 고정되고, 적용 후 같은 job이 `materializing`부터 재개돼 기존 asset sync/failure 경로로 수렴한다.
 - repair diff의 add/reorder/remove-candidate가 모두 0이면 audit만 `noChanges`로 고정하고 job을 `succeeded/completed`로 종료한다. 이 경로는 season/post를 쓰거나 `awaitingReview`에 진입하지 않는다.
-- issue fingerprint는 stage/platform/strategy/failure·quality reason/template signature/extractor major로 만들고 root cluster에 occurrence, 영향 domain과 fixed-version recurrence를 transaction으로 누적한다.
+- issue fingerprint는 stage/platform/strategy/failure·quality reason/template signature/extractor major로 만들고 root cluster에 occurrence와 fixed-version recurrence를 transaction으로 누적한다. 배포 경합으로 구형 runtime occurrence가 늦게 도착해도 cluster blocked runtime은 같은 종류 안에서 단조 증가하며, fixed/verified보다 낮은 runtime의 늦은 job에는 검증된 fixed runtime을 retry-ready로 투영한다.
 - HTTP server scaffold는 Express를 사용한다.
 - `/tasks/discover-seasons`는 task identity만 허용한다. Worker는 job lease, generation, `extractionContractRevision`을 재검증하고 immutable candidate snapshot을 모두 쓴 뒤 latest pointer를 원자적으로 공개한다. rollout 호환을 위해 revision 필드가 없는 기존 task/job만 최초 revision 1로 해석하며 명시된 revision은 exact match한다.
 - 시즌 discovery 품질 불충분 fingerprint는 원본 query/HTML을 저장하지 않는 40자 SHA-256 prefix다. 배포 전 64자 job은 개선 요청 callable이 같은 prefix 40자로 정규화한다.

@@ -3,6 +3,7 @@ import {FieldValue, Timestamp} from "firebase-admin/firestore";
 import type {Storage} from "firebase-admin/storage";
 
 import {
+  compareExtractionRuntimeVersions,
   extractionRuntimeVersionIsAtLeast,
   extractionIssueOccurrenceKey,
   isExtractionIssueEligible,
@@ -118,7 +119,8 @@ export async function recordExtractionIssueOccurrence(
       const cluster = clusterSnapshot.data() ?? {};
       if (ledgerSnapshot.exists) {
         const status = issueStatus(cluster.status);
-        transaction.set(jobRef, jobIssueProjection({
+        transaction.set(jobRef, jobIssueProjectionForCluster({
+          cluster,
           fingerprint: issue.fingerprint,
           status,
           blockedRuntimeVersion: input.blockedRuntimeVersion,
@@ -146,6 +148,10 @@ export async function recordExtractionIssueOccurrence(
       });
       const now = FieldValue.serverTimestamp();
       const expiresAt = Timestamp.fromDate(expiresAtDate);
+      const clusterBlockedRuntimeVersion = latestBlockedRuntimeVersion(
+        cluster.blockedRuntimeVersion,
+        input.blockedRuntimeVersion,
+      );
       transaction.create(evidenceRef, {
         evidenceID,
         occurrenceKey,
@@ -170,7 +176,7 @@ export async function recordExtractionIssueOccurrence(
         qualityReasons: issue.qualityReasons,
         templateSignature: issue.templateSignature,
         extractorMajorVersion: issue.extractorMajorVersion,
-        blockedRuntimeVersion: input.blockedRuntimeVersion,
+        blockedRuntimeVersion: clusterBlockedRuntimeVersion,
         status: clusterState.status,
         stateVersion: clusterState.stateVersion,
         occurrenceCount: clusterState.occurrenceCount,
@@ -190,7 +196,8 @@ export async function recordExtractionIssueOccurrence(
           representativeEvidenceUpdatedAt: now,
         } : {}),
       }, {merge: true});
-      transaction.set(jobRef, jobIssueProjection({
+      transaction.set(jobRef, jobIssueProjectionForCluster({
+        cluster,
         fingerprint: issue.fingerprint,
         status: clusterState.status,
         blockedRuntimeVersion: input.blockedRuntimeVersion,
@@ -274,7 +281,7 @@ export async function markExtractionIssueVerifiedIfEligible(input: {
     const cluster = clusterSnapshot.data() ?? {};
     if (
       !clusterSnapshot.exists ||
-      cluster.status !== "fixed" ||
+      (cluster.status !== "fixed" && cluster.status !== "verified") ||
       typeof cluster.fixedRuntimeVersion !== "string" ||
       !extractionRuntimeVersionIsAtLeast(
         input.runtimeVersion,
@@ -284,17 +291,19 @@ export async function markExtractionIssueVerifiedIfEligible(input: {
       return false;
     }
     const now = FieldValue.serverTimestamp();
-    transaction.update(clusterRef, {
-      status: "verified",
-      stateVersion: nonNegativeInteger(cluster.stateVersion, 1) + 1,
-      verifiedAt: now,
-      verifiedByJobPath: input.jobPath,
-      verifiedByGeneration: input.generation,
-      updatedAt: now,
-      expiresAt: Timestamp.fromMillis(
-        Date.now() + 60 * 24 * 60 * 60 * 1000,
-      ),
-    });
+    if (cluster.status === "fixed") {
+      transaction.update(clusterRef, {
+        status: "verified",
+        stateVersion: nonNegativeInteger(cluster.stateVersion, 1) + 1,
+        verifiedAt: now,
+        verifiedByJobPath: input.jobPath,
+        verifiedByGeneration: input.generation,
+        updatedAt: now,
+        expiresAt: Timestamp.fromMillis(
+          Date.now() + 60 * 24 * 60 * 60 * 1000,
+        ),
+      });
+    }
     transaction.set(jobRef, {
       extractionIssueStatus: FieldValue.delete(),
       extractionIssueWontFixReason: FieldValue.delete(),
@@ -400,20 +409,64 @@ function jobIssueProjection(input: {
   evidenceID: string;
   storagePath: string;
   expiresAt: unknown;
+  retryAvailableRuntimeVersion?: string | null;
+  retryAvailableAt?: unknown;
 }): Record<string, unknown> {
   return {
     extractionIssueFingerprint: input.fingerprint,
     extractionIssueStatus: input.status,
     extractionIssueWontFixReason: null,
     blockedRuntimeVersion: input.blockedRuntimeVersion,
-    retryAvailableRuntimeVersion: null,
-    retryAvailableAt: null,
+    retryAvailableRuntimeVersion:
+      input.retryAvailableRuntimeVersion ?? null,
+    retryAvailableAt: input.retryAvailableAt ?? null,
     evidenceRetentionStatus: "stored",
     evidenceID: input.evidenceID,
     evidenceStoragePath: input.storagePath,
     evidenceExpiresAt: input.expiresAt,
     updatedAt: FieldValue.serverTimestamp(),
   };
+}
+
+function jobIssueProjectionForCluster(input: {
+  cluster: Record<string, unknown>;
+  fingerprint: string;
+  status: string;
+  blockedRuntimeVersion: string;
+  evidenceID: string;
+  storagePath: string;
+  expiresAt: unknown;
+}): Record<string, unknown> {
+  const fixedRuntimeVersion = typeof input.cluster.fixedRuntimeVersion ===
+    "string" ? input.cluster.fixedRuntimeVersion : null;
+  const fixedForOccurrence =
+    (input.status === "fixed" || input.status === "verified") &&
+    fixedRuntimeVersion !== null &&
+    compareExtractionRuntimeVersions(
+      input.blockedRuntimeVersion,
+      fixedRuntimeVersion,
+    ) === -1;
+  return jobIssueProjection({
+    fingerprint: input.fingerprint,
+    status: fixedForOccurrence ? "fixed" : input.status,
+    blockedRuntimeVersion: input.blockedRuntimeVersion,
+    evidenceID: input.evidenceID,
+    storagePath: input.storagePath,
+    expiresAt: input.expiresAt,
+    retryAvailableRuntimeVersion:
+      fixedForOccurrence ? fixedRuntimeVersion : null,
+    retryAvailableAt: fixedForOccurrence ?
+      input.cluster.fixedAt ?? FieldValue.serverTimestamp() : null,
+  });
+}
+
+function latestBlockedRuntimeVersion(
+  previous: unknown,
+  occurrence: string,
+): string {
+  if (typeof previous !== "string") return occurrence;
+  return compareExtractionRuntimeVersions(previous, occurrence) === -1 ?
+    occurrence : previous;
 }
 
 function issueStatus(value: unknown): string {

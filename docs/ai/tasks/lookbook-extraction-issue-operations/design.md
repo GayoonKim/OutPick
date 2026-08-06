@@ -104,6 +104,8 @@ stage
 
 `verified`는 성공한 새 job/generation이 화면의 기준이므로 기존 실패 job에 표시하지 않는다.
 
+배포 전 구형 Worker 요청이 release projection 완료 뒤 늦게 도착할 수 있다. occurrence transaction은 cluster `blockedRuntimeVersion`을 같은 runtime 종류 안에서 단조 증가시키고, `fixed/verified` cluster보다 낮은 runtime의 늦은 job 또는 duplicate에는 job 상태 `fixed`와 cluster의 `fixedRuntimeVersion/fixedAt`을 retry-ready projection으로 기록한다. 이미 `verified`인 cluster에서 이 늦은 job의 실제 재시도가 성공하면 cluster terminal 상태와 최초 검증 이력은 유지하고 해당 job projection만 해결한다.
+
 ### runtime registry
 
 서버 전용 `lookbookExtractionRuntime/current`:

@@ -168,6 +168,82 @@ test("대표 evidence 저장 실패는 occurrence를 실패시키지 않는다",
   assert.equal(fake.objects.size, 1);
 });
 
+test("늦게 도착한 구형 occurrence가 cluster blocked runtime을 낮추지 않는다", async () => {
+  const fake = new FakePersistence();
+  const first = await recordExtractionIssueOccurrence(fake.dependencies(), {
+    brandID: "brand-a",
+    jobPath: "brands/brand-a/importJobs/job-new",
+    generation: 1,
+    disposition: "extractionLogicInsufficient",
+    blockedRuntimeVersion: "extractor:1.3.0",
+    evidence: issueEvidence(),
+  });
+  await recordExtractionIssueOccurrence(fake.dependencies(), {
+    brandID: "brand-a",
+    jobPath: "brands/brand-a/importJobs/job-old",
+    generation: 1,
+    disposition: "extractionLogicInsufficient",
+    blockedRuntimeVersion: "extractor:1.2.0",
+    evidence: issueEvidence(),
+  });
+
+  const cluster = fake.documents.get(
+    `lookbookExtractionIssueClusters/${first.fingerprint}`,
+  );
+  assert.equal(cluster?.blockedRuntimeVersion, "extractor:1.3.0");
+  assert.equal(cluster?.occurrenceCount, 2);
+  assert.equal(
+    fake.documents.get("brands/brand-a/importJobs/job-old")
+      ?.blockedRuntimeVersion,
+    "extractor:1.2.0",
+  );
+});
+
+test("fixed 뒤 도착한 구형 occurrence와 duplicate에 재시도 runtime을 투영한다", async () => {
+  const fake = new FakePersistence();
+  const originalInput = {
+    brandID: "brand-a",
+    jobPath: "brands/brand-a/importJobs/job-original",
+    generation: 1,
+    disposition: "extractionLogicInsufficient" as const,
+    blockedRuntimeVersion: "extractor:1.2.0",
+    evidence: issueEvidence(),
+  };
+  const original = await recordExtractionIssueOccurrence(
+    fake.dependencies(),
+    originalInput,
+  );
+  const clusterPath =
+    `lookbookExtractionIssueClusters/${original.fingerprint}`;
+  fake.documents.set(clusterPath, {
+    ...fake.documents.get(clusterPath),
+    status: "fixed",
+    stateVersion: 2,
+    fixedRuntimeVersion: "extractor:1.3.0",
+    fixedAt: "fixed-at",
+  });
+
+  const lateJobPath = "brands/brand-a/importJobs/job-late";
+  await recordExtractionIssueOccurrence(fake.dependencies(), {
+    ...originalInput,
+    jobPath: lateJobPath,
+  });
+  await recordExtractionIssueOccurrence(fake.dependencies(), originalInput);
+
+  for (const jobPath of [lateJobPath, originalInput.jobPath]) {
+    const job = fake.documents.get(jobPath);
+    assert.equal(job?.extractionIssueStatus, "fixed");
+    assert.equal(job?.blockedRuntimeVersion, "extractor:1.2.0");
+    assert.equal(job?.retryAvailableRuntimeVersion, "extractor:1.3.0");
+    assert.equal(job?.retryAvailableAt, "fixed-at");
+  }
+  assert.equal(fake.documents.get(clusterPath)?.status, "fixed");
+  assert.equal(
+    fake.documents.get(clusterPath)?.blockedRuntimeVersion,
+    "extractor:1.2.0",
+  );
+});
+
 test("fixed runtime의 실제 재추출 성공만 cluster를 verified로 바꾼다", async () => {
   const fake = new FakePersistence();
   const fingerprint = "f".repeat(40);
@@ -194,4 +270,62 @@ test("fixed runtime의 실제 재추출 성공만 cluster를 verified로 바꾼�
   assert.equal(cluster?.status, "verified");
   assert.equal(cluster?.stateVersion, 5);
   assert.equal(cluster?.verifiedByJobPath, jobPath);
+});
+
+test("이미 verified인 cluster의 늦은 재시도 성공은 job projection만 닫는다", async () => {
+  const fake = new FakePersistence();
+  const original = await recordExtractionIssueOccurrence(fake.dependencies(), {
+    brandID: "brand-a",
+    jobPath: "brands/brand-a/importJobs/job-original",
+    generation: 1,
+    disposition: "extractionLogicInsufficient",
+    blockedRuntimeVersion: "extractor:1.2.0",
+    evidence: issueEvidence(),
+  });
+  assert.ok(original.fingerprint);
+  const fingerprint = original.fingerprint;
+  const jobPath = "brands/brand-a/importJobs/job-late";
+  fake.documents.set(`lookbookExtractionIssueClusters/${fingerprint}`, {
+    ...fake.documents.get(`lookbookExtractionIssueClusters/${fingerprint}`),
+    status: "verified",
+    stateVersion: 5,
+    fixedRuntimeVersion: "extractor:1.3.0",
+    fixedAt: "fixed-at",
+    verifiedByJobPath: "brands/brand-b/importJobs/job-first",
+  });
+  await recordExtractionIssueOccurrence(fake.dependencies(), {
+    brandID: "brand-a",
+    jobPath,
+    generation: 1,
+    disposition: "extractionLogicInsufficient",
+    blockedRuntimeVersion: "extractor:1.2.0",
+    evidence: issueEvidence(),
+  });
+  assert.equal(
+    fake.documents.get(jobPath)?.extractionIssueStatus,
+    "fixed",
+  );
+  assert.equal(
+    fake.documents.get(jobPath)?.retryAvailableRuntimeVersion,
+    "extractor:1.3.0",
+  );
+
+  assert.equal(await markExtractionIssueVerifiedIfEligible({
+    firestore: fake.firestore as unknown as Firestore,
+    jobPath,
+    generation: 8,
+    runtimeVersion: "extractor:1.3.0",
+  }), true);
+  const cluster = fake.documents.get(
+    `lookbookExtractionIssueClusters/${fingerprint}`,
+  );
+  assert.equal(cluster?.status, "verified");
+  assert.equal(cluster?.stateVersion, 5);
+  assert.equal(
+    cluster?.verifiedByJobPath,
+    "brands/brand-b/importJobs/job-first",
+  );
+  const job = fake.documents.get(jobPath);
+  assert.equal(job?.resolvedByGeneration, 8);
+  assert.notEqual(job?.extractionIssueStatus, "fixed");
 });
