@@ -43,7 +43,11 @@ struct CreateBrandViewModelTests {
         #expect(firstResult == nil)
         #expect(viewModel.createdBrandDocument?.id.value == "brand-1")
         #expect(viewModel.createdBrandDocument?.hasLogoAsset == false)
-        #expect(viewModel.message?.contains("로고를 저장하지 못했습니다") == true)
+        #expect(
+            viewModel.message ==
+                "로고 저장에 실패했습니다. 다시 시도해주세요."
+        )
+        #expect(viewModel.message?.contains("테스트 업로드 실패") == false)
         #expect(await brandStore.createCallCount == 1)
 
         let retryResult = await viewModel.saveBrand()

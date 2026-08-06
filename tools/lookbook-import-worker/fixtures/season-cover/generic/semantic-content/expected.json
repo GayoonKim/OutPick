@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "candidates": [
+    {"type": "exact", "key": "https://generic.example/images/season-cover.jpg"}
+  ],
+  "negativeCandidateKeys": [
+    "https://generic.example/assets/header-logo.png",
+    "https://generic.example/assets/footer-banner.jpg"
+  ],
+  "orderPolicy": "strict",
+  "strategy": "lookbookContent",
+  "adapter": {"platformKey": null, "domainKey": null},
+  "quality": null
+}

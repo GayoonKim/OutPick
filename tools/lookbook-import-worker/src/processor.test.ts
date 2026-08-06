@@ -94,7 +94,7 @@ test("이미지 후보에 extraction evidence와 version을 연결한다", () =>
   assert.deepEqual(extraction.versions, {
     extractorVersion: "1.2.3",
     platformAdapterKey: "cafe24",
-    platformAdapterVersion: "1.0.0",
+    platformAdapterVersion: "1.0.1",
     domainAdapterKey: null,
     domainAdapterVersion: null,
   });

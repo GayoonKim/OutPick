@@ -151,22 +151,12 @@ struct CloudFunctionsSeasonCandidateDiscoveryRepository: SeasonCandidateDiscover
         )
     }
 
-    func requestSeasonDiscoveryImprovement(
-        brandID: BrandID,
-        job: SeasonCandidateDiscoveryResult
-    ) async throws {
-        _ = try await transport.call(
-            "requestSeasonDiscoveryImprovement",
-            data: try mutationPayload(brandID: brandID, job: job)
-        )
-    }
-
-    func reanalyzeSeasonDiscoveryWithLatestExtractor(
+    func retrySeasonDiscoveryAfterExtractionFix(
         brandID: BrandID,
         job: SeasonCandidateDiscoveryResult
     ) async throws -> SeasonCandidateDiscoveryResult {
         let response = try await transport.call(
-            "reanalyzeSeasonDiscoveryWithLatestExtractor",
+            "retrySeasonDiscoveryAfterExtractionFix",
             data: try mutationPayload(brandID: brandID, job: job)
         )
         let decoder = CloudFunctionResponseDecoder(dictionary: response)
@@ -280,11 +270,12 @@ struct CloudFunctionsSeasonCandidateDiscoveryRepository: SeasonCandidateDiscover
             errorMessage: data["errorMessage"] as? String,
             retryable: data["retryable"] as? Bool ?? false,
             recommendedAction: data["recommendedAction"] as? String ?? "none",
-            improvementRequested: data["improvementRequested"] as? Bool ?? false,
-            blockedByExtractionContractRevision:
-                data["blockedByExtractionContractRevision"] as? Int,
-            availableExtractionContractRevision:
-                data["availableExtractionContractRevision"] as? Int,
+            extractionIssueStatus: (data["extractionIssueStatus"] as? String)
+                .flatMap(ExtractionIssueStatus.init(rawValue:)),
+            retryAvailableRuntimeVersion:
+                data["retryAvailableRuntimeVersion"] as? String,
+            extractionIssueWontFixReason:
+                data["extractionIssueWontFixReason"] as? String,
             requestedAt: (data["lastRequestedAt"] as? Timestamp)?.dateValue(),
             completedAt: (data["completedAt"] as? Timestamp)?.dateValue()
         )
@@ -296,7 +287,7 @@ struct CloudFunctionsSeasonCandidateDiscoveryRepository: SeasonCandidateDiscover
     ) throws -> [String: Any] {
         guard let snapshotHash = job.candidateSnapshotHash else {
             throw SeasonCandidateDiscoveryError.failed(
-                message: "개선 요청할 시즌 목록의 식별 정보가 없습니다."
+                message: "다시 가져올 시즌 목록의 식별 정보가 없습니다."
             )
         }
         return [

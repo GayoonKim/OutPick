@@ -212,17 +212,16 @@ struct SeasonImportManagementView: View {
                 .font(.footnote)
                 .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
-            switch result.improvementState {
-            case .requestable:
-                discoveryButton("추출 개선 요청") {
-                    await viewModel.requestDiscoveryImprovement()
-                }
-            case .ready where brandAdminSessionStore.isTotalAdmin:
+            if result.canRetryExtractionAfterFix &&
+                brandAdminSessionStore.isTotalAdmin {
                 discoveryButton("다시 가져오기") {
-                    await viewModel.reanalyzeDiscovery()
+                    await viewModel.retryDiscoveryAfterExtractionFix()
                 }
-            case .unavailable, .requested, .ready:
-                EmptyView()
+            } else if result.extractionIssueUserState == .wontFix &&
+                        canUpdateSourceURL(for: result) {
+                discoveryButton("룩북 목록 URL 수정", prominent: false) {
+                    onUpdateSourceURL()
+                }
             }
         case .failed:
             if result.retryable || result.recommendedAction == "retry" {
@@ -300,11 +299,12 @@ struct SeasonImportManagementView: View {
         case .succeeded: return "완료"
         case .awaitingReview: return "검토 필요"
         case .correctionRequired:
-            switch result.improvementState {
-            case .requestable: return "확인 필요"
-            case .requested: return "개선 요청됨"
-            case .ready: return "다시 가져오기 가능"
-            case .unavailable: return "확인 필요"
+            switch result.extractionIssueUserState {
+            case .waiting: return "개선 대기 중"
+            case .processing: return "개선 처리 중"
+            case .retryReady: return "다시 가져오기 가능"
+            case .wontFix: return "추가 작업 필요"
+            case .unavailable: return "상태 확인 필요"
             }
         case .failed: return "실패"
         case .cancelled: return "취소됨"
@@ -314,8 +314,11 @@ struct SeasonImportManagementView: View {
     }
 
     private func discoveryStatusColor(_ result: SeasonCandidateDiscoveryResult) -> Color {
-        if result.improvementState == .ready {
+        if result.extractionIssueUserState == .retryReady {
             return OutPickTheme.SwiftUIColor.success
+        }
+        if result.extractionIssueUserState == .processing {
+            return OutPickTheme.SwiftUIColor.accent
         }
         switch result.status {
         case .succeeded: return OutPickTheme.SwiftUIColor.success
@@ -328,19 +331,45 @@ struct SeasonImportManagementView: View {
     private func correctionRequiredMessage(
         _ result: SeasonCandidateDiscoveryResult
     ) -> String {
-        switch result.improvementState {
-        case .requestable:
-            return "일부 시즌이 누락됐을 수 있어 결과를 확정하지 않았어요."
-        case .requested:
-            return "더 정확하게 가져올 수 있도록 개선 요청을 등록했어요."
-        case .ready:
+        switch result.extractionIssueUserState {
+        case .waiting:
+            return "시즌 목록을 가져오지 못했어요. 확인이 필요해요."
+        case .processing:
+            return "시즌 목록을 다시 가져올 수 있도록 확인하고 있어요."
+        case .retryReady:
             if brandAdminSessionStore.isTotalAdmin {
-                return "개선된 방식으로 시즌 목록을 다시 확인할 수 있어요."
+                return "시즌 목록을 다시 가져올 수 있어요."
             }
-            return "개선된 방식이 준비됐어요. 총 관리자가 다시 가져오기를 진행할 수 있어요."
+            return "시즌 목록을 다시 가져올 수 있어요. 총 관리자에게 요청해 주세요."
+        case .wontFix:
+            return wontFixMessage(result.extractionIssueWontFixReason)
         case .unavailable:
-            return "시즌 목록 결과를 확인해 주세요."
+            return "현재 상태를 확인할 수 없어요."
         }
+    }
+
+    private func wontFixMessage(_ reason: String?) -> String {
+        switch reason {
+        case "sourceUnavailable":
+            return "원본 페이지를 확인할 수 없어요. 룩북 목록 URL을 확인해 주세요."
+        case "accessRestricted":
+            return "원본 페이지 접근이 제한되어 자동으로 다시 가져올 수 없어요."
+        case "ambiguousGroundTruth":
+            return "정확한 시즌 목록을 판단하기 어려워 수동 확인이 필요해요."
+        case "unsupportedStructure":
+            return "현재 지원하지 않는 페이지 구조예요."
+        case "lowOperationalValue":
+            return "자동 추출 개선 대상에서 제외됐어요."
+        default:
+            return "자동으로 다시 가져올 수 없어 원본 정보를 확인해 주세요."
+        }
+    }
+
+    private func canUpdateSourceURL(
+        for result: SeasonCandidateDiscoveryResult
+    ) -> Bool {
+        result.extractionIssueWontFixReason == "sourceUnavailable" ||
+            result.extractionIssueWontFixReason == "accessRestricted"
     }
 
     private func discoveryPhaseText(_ phase: String?) -> String {
@@ -441,12 +470,7 @@ struct SeasonImportManagementView: View {
     }
 
     private func jobTitle(_ job: SeasonImportJob) -> String {
-        switch job.jobType {
-        case .importSeasonFromURL:
-            return job.displayTitle
-        case .retrySeasonAssets:
-            return "이미지 재시도"
-        }
+        job.displayTitle
     }
 
     private func statusText(_ status: SeasonImportJobStatus) -> String {

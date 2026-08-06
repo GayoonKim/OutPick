@@ -2,7 +2,8 @@
 
 ## 현재 상태
 
-- 현재 핵심 task는 `lookbook-discovery-learning-loop`다. 시즌 후보 discovery의 durable server background job, 최신 snapshot publish, 기존 시즌 동일성, iOS 생성 플로우와 관리자 review/re-entry UI 구현을 완료했다. Development 통합 배포와 실제 URL 수동 QA는 남아 있다.
+- 현재 핵심 task는 `lookbook-extraction-issue-operations-production-rollout`이다. 이전 task의 Development 구현·contract 3 배포·AMOMENTO 15개 상세 fallback·OUTSTANDING 44개 목록 cover 회귀 QA를 완료했고, Production은 읽기 전용 감사 전 미변경이다.
+- 다음 핵심 task 후보는 `lookbook-discovery-learning-loop`의 남은 Phase 3A/4A 통합 수동 QA와 현재 배포 상태 재확인이다.
 - 이전 핵심 task `style-mood-personalization-account-privacy`의 Phase 1~8은 완료 처리했다. Apple Developer Program 가입 후 App Attest 실기기 QA와 운영 백업 설정은 출시 운영 게이트로 분리하고, 개발 데이터 전체 삭제는 마지막 Phase의 별도 승인 전까지 진행하지 않는다.
 - `lookbook-discovery-learning-loop`는 사용자 승인으로 task 문서를 생성했다. 동일 active 요청 병합, latest generation publish, 기존 시즌 동일성, 7/30/60일 retention, failure action, watchdog 복구, 관리자 review와 fixture/version gate를 설계 기준으로 확정했다.
 - `socket-ingress-ordering-hardening`은 Phase 1~6 구현, 자동 회귀와 실제 Firebase/Simulator 핵심 QA를 완료하고 2026-07-17 종료했다.
@@ -18,6 +19,30 @@
 
 ## 현재 핵심 작업
 
+- `lookbook-extraction-issue-operations-production-rollout`
+  - [설계](lookbook-extraction-issue-operations-production-rollout/design.md)
+  - [결정](lookbook-extraction-issue-operations-production-rollout/decisions.md)
+  - [Phase 계획](lookbook-extraction-issue-operations-production-rollout/plan.md)
+  - [현재 상태](lookbook-extraction-issue-operations-production-rollout/progress.md)
+  - [QA 기준](lookbook-extraction-issue-operations-production-rollout/qa-checklist.md)
+  - 상태: Phase 1 Production 읽기 전용 감사 대기. Production mutation은 미승인·미수행.
+
+## 이전 핵심 작업
+
+- `lookbook-extraction-issue-operations`
+  - [설계](lookbook-extraction-issue-operations/design.md)
+  - [현재 상태](lookbook-extraction-issue-operations/progress.md)
+  - [QA 기준](lookbook-extraction-issue-operations/qa-checklist.md)
+  - 상태: Phase 1~7 구현, Development contract 3 배포와 실제 상세/목록 cover QA 완료. 이벤트 기반 이미지 fix QA와 Production rollout을 후속 경계로 분리하고 2026-08-06 종료.
+
+- `development-production-environment-separation`
+  - [앱 환경 진입점](../entrypoints/APP.md)
+  - [Firebase·worker 환경 진입점](../entrypoints/FIREBASE.md)
+  - [PR #3](https://github.com/GayoonKim/OutPick/pull/3)
+  - 상태: Phase 1~4, Production 인증 Function identity 전환, Development/Production import smoke, PR #3 병합과 Production Worker traffic 전환 완료. 실기기 App Attest만 Apple Developer Program 가입 후 외부 의존 후속 작업으로 유지.
+
+## 다음 핵심 작업
+
 - `lookbook-discovery-learning-loop`
   - [설계](lookbook-discovery-learning-loop/design.md)
   - [결정](lookbook-discovery-learning-loop/decisions.md)
@@ -26,15 +51,7 @@
   - [QA 기준](lookbook-discovery-learning-loop/qa-checklist.md)
   - 상태: Phase 1·3 완료, Phase 2 핵심 구현 완료·통합 배포 대기, Phase 4 backend review 완료·learning UI 일부 대기.
 
-## 이전 핵심 작업
-
-- `development-production-environment-separation`
-  - [앱 환경 진입점](../entrypoints/APP.md)
-  - [Firebase·worker 환경 진입점](../entrypoints/FIREBASE.md)
-  - [PR #3](https://github.com/GayoonKim/OutPick/pull/3)
-  - 상태: Phase 1~4, Production 인증 Function identity 전환, Development/Production import smoke, PR #3 병합과 Production Worker traffic 전환 완료. 실기기 App Attest만 Apple Developer Program 가입 후 외부 의존 후속 작업으로 유지.
-
-## 현재 핵심 작업 상세
+## 다음 핵심 작업 상세
 
 - `lookbook-discovery-learning-loop`
   - 범위: 브랜드 생성 직후 시즌 후보를 자동 추출하고, 관리자 확인 후 선택한 시즌의 이미지만 추출하는 흐름을 유지한다. season discovery의 구조 evidence, issue cluster, 관리자 정상/누락/오탐 피드백, 최소 fixture 승격, extractor version gate를 포함한다.
@@ -49,6 +66,7 @@
 
 | 작업 | 상태 | 핵심 결과 | 상세 |
 | --- | --- | --- | --- |
+| `lookbook-extraction-issue-operations` | 완료·Development contract 3 배포·실데이터 QA | IAM issue operations, runtime verifier, 안전 retry 상태, AMOMENTO 15개 상세 fallback과 OUTSTANDING 44개 목록 cover 회귀 | [progress](lookbook-extraction-issue-operations/progress.md), [qa](lookbook-extraction-issue-operations/qa-checklist.md) |
 | `development-production-environment-separation` | 완료·PR #3 병합·Production Worker traffic 100% | 두 scheme/네 configuration, Firebase·Socket·Worker fail-fast, 환경별 auth/OIDC identity, Development/Production import smoke | [APP](../entrypoints/APP.md), [FIREBASE](../entrypoints/FIREBASE.md), [PR #3](https://github.com/GayoonKim/OutPick/pull/3) |
 | `lookbook-extraction-learning-loop` | 완료·Phase 1~8·운영 worker 배포와 실제 URL smoke·YOUTH 데이터 정리 완료 | silent under-extraction 차단, review/trust/evidence/repair, Generic→Cafe24 adapter와 fixture differential | [progress](lookbook-extraction-learning-loop/progress.md), [qa](lookbook-extraction-learning-loop/qa-checklist.md) |
 | `chat-route-lifecycle-hardening` | 완료·Phase 6~9 자동 회귀와 Simulator/실기기 QA 완료 | 탭별 Chat stack, same-stack 교체, stack별 request 경쟁, terminal/transient lifecycle, UIKit edge-pop과 Chat gesture 책임 정리 | [progress](chat-route-lifecycle-hardening/progress.md), [qa](chat-route-lifecycle-hardening/qa-checklist.md) |

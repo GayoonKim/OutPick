@@ -95,16 +95,19 @@ final class LookbookExtractionReviewViewModel: ObservableObject {
         }
     }
 
-    func reanalyze() async {
-        guard !isSubmitting else { return }
+    func retryAfterExtractionFix() async {
+        guard review?.canRetryAfterFix == true, !isSubmitting else { return }
         isSubmitting = true
         errorMessage = nil
         defer { isSubmitting = false }
         do {
-            _ = try await useCase.reanalyze(brandID: brandID, jobID: jobID)
+            _ = try await useCase.retryAfterExtractionFix(
+                brandID: brandID,
+                jobID: jobID
+            )
             onCompleted()
         } catch {
-            errorMessage = "재분석을 요청하지 못했습니다."
+            errorMessage = "이미지를 다시 가져오지 못했습니다."
         }
     }
 

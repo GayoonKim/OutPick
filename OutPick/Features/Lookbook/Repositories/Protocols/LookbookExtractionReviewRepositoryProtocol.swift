@@ -15,7 +15,7 @@ protocol LookbookExtractionReviewRepositoryProtocol {
         note: String?
     ) async throws -> LookbookExtractionReviewReceipt
 
-    func requestReanalysis(
+    func retryAfterExtractionFix(
         brandID: BrandID,
         jobID: String
     ) async throws -> LookbookExtractionReviewReceipt

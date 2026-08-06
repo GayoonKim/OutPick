@@ -2,6 +2,7 @@
 import {createHash, randomUUID} from "node:crypto";
 import type {Firestore} from "firebase-admin/firestore";
 import {FieldValue, Timestamp} from "firebase-admin/firestore";
+import type {Storage} from "firebase-admin/storage";
 
 import {RetryableImportError} from "./import-error.js";
 import {
@@ -12,6 +13,12 @@ import {
   resolveSeasonCandidateIdentities,
   type ExistingSeasonIdentity,
 } from "./season-identity.js";
+import {encodeExtractionRuntimeVersionForStage} from "./extraction/issue-contract.js";
+import {seasonDiscoveryIssueDisposition} from "./extraction/issue-policy.js";
+import {
+  markExtractionIssueVerifiedIfEligible,
+  recordExtractionIssueOccurrence,
+} from "./extraction/issue-recorder.js";
 
 const LEGACY_SEASON_DISCOVERY_CONTRACT_REVISION = 1;
 
@@ -33,10 +40,11 @@ type ProcessResult = {
 };
 
 export async function processSeasonDiscoveryTaskRequest(
-  firestore: Firestore,
+  dependencies: {firestore: Firestore; storage: Storage},
   request: SeasonDiscoveryTaskRequest,
   taskRetryCount: number,
 ): Promise<ProcessResult> {
+  const {firestore} = dependencies;
   const brandID = documentID(request.brandID, "brandID");
   const jobID = documentID(request.jobID, "jobID");
   const generation = integer(request.generation, "generation");
@@ -86,7 +94,7 @@ export async function processSeasonDiscoveryTaskRequest(
       limits: claim.limits,
     });
     return await publishDiscovery({
-      firestore, brandID, jobID, generation, dispatchGeneration,
+      ...dependencies, brandID, jobID, generation, dispatchGeneration,
       extractionContractRevision, leaseOwner,
       sourceArchiveURL: claim.sourceArchiveURL, diagnostic,
     });
@@ -197,6 +205,7 @@ async function finalizeFailure(input: {
 
 async function publishDiscovery(input: {
   firestore: Firestore;
+  storage: Storage;
   brandID: string;
   jobID: string;
   generation: number;
@@ -231,6 +240,8 @@ async function publishDiscovery(input: {
       title: candidate.title,
       seasonURL: candidate.seasonURL,
       coverImageURL: candidate.coverImageURL,
+      coverImageSource: candidate.coverImageSource,
+      coverImageStrategy: candidate.coverImageStrategy,
       extractionScore: candidate.score,
       sortIndex,
       normalizedTitleKey: resolution?.normalizedTitleKey ?? null,
@@ -238,9 +249,7 @@ async function publishDiscovery(input: {
       matchedSeasonID: resolution?.matchedSeasonID ?? null,
     };
   });
-  const snapshotHash = createHash("sha256")
-    .update(JSON.stringify(snapshotPayload))
-    .digest("hex");
+  const snapshotHash = seasonDiscoverySnapshotHash(snapshotPayload);
   const hasReview = resolutions.some((item) => item.resolution.startsWith("awaitingReview"));
   const extractionIncomplete = input.diagnostic.status !== "passed" || snapshotPayload.length === 0;
   const status = extractionIncomplete ? "correctionRequired" : hasReview ? "awaitingReview" : "succeeded";
@@ -330,14 +339,19 @@ async function publishDiscovery(input: {
       candidateSnapshotHash: snapshotHash,
       parserStrategy: input.diagnostic.diagnostic.parserStrategy,
       adapterKey: input.diagnostic.diagnostic.adapterKey,
+      coverImageCount: input.diagnostic.diagnostic.coverImages.coverImageCount,
+      listCoverImageCount:
+        input.diagnostic.diagnostic.coverImages.listCoverImageCount,
+      detailCoverAttemptCount:
+        input.diagnostic.diagnostic.coverImages.detailCoverAttemptCount,
+      detailCoverSuccessCount:
+        input.diagnostic.diagnostic.coverImages.detailCoverSuccessCount,
+      detailCoverFailureCount:
+        input.diagnostic.diagnostic.coverImages.detailCoverFailureCount,
+      detailCoverSkippedCount:
+        input.diagnostic.diagnostic.coverImages.detailCoverSkippedCount,
       failureReasons: input.diagnostic.diagnostic.failureReasons,
       failureClass: extractionIncomplete ? "extractionInsufficient" : null,
-      issueFingerprint: extractionIncomplete ?
-        seasonDiscoveryIssueFingerprint(input.diagnostic) : null,
-      blockedByExtractionContractRevision: extractionIncomplete ?
-        input.extractionContractRevision : null,
-      improvementRequested: false,
-      availableExtractionContractRevision: null,
       resolvedByJobID: null,
       retryable: false,
       recommendedAction: extractionIncomplete ? "waitForExtractorFix" : hasReview ? "reviewCandidates" : "none",
@@ -360,6 +374,54 @@ async function publishDiscovery(input: {
     });
     return true;
   });
+  if (
+    published &&
+    status === "correctionRequired" &&
+    input.diagnostic.issueEvidence !== null &&
+    input.diagnostic.issueEvidence !== undefined
+  ) {
+    const disposition = seasonDiscoveryIssueDisposition({
+      failureReasons: input.diagnostic.diagnostic.failureReasons,
+      unresolvedExpansion:
+        input.diagnostic.diagnostic.unresolvedExpansion === true,
+    });
+    try {
+      await recordExtractionIssueOccurrence(input, {
+        brandID: input.brandID,
+        jobPath: jobRef.path,
+        generation: input.generation,
+        disposition,
+        blockedRuntimeVersion: encodeExtractionRuntimeVersionForStage({
+          stage: "seasonDiscovery",
+          value: input.extractionContractRevision,
+        }),
+        evidence: input.diagnostic.issueEvidence,
+      });
+    } catch (error) {
+      console.error(
+        "[lookbook-import-worker] season discovery evidence retention failed",
+        {brandID: input.brandID, jobID: input.jobID, errorMessage: errorMessage(error)},
+      );
+      await jobRef.set({
+        evidenceRetentionStatus: "failed",
+        evidenceRetentionErrorMessage: errorMessage(error),
+        updatedAt: FieldValue.serverTimestamp(),
+      }, {merge: true}).catch(() => {
+        // 추출 결과 자체는 확정됐으므로 보조 증거 상태 기록 실패를 전파하지 않는다.
+      });
+    }
+  }
+  if (published && status !== "correctionRequired") {
+    await markExtractionIssueVerifiedIfEligible({
+      firestore: input.firestore,
+      jobPath: jobRef.path,
+      generation: input.generation,
+      runtimeVersion: encodeExtractionRuntimeVersionForStage({
+        stage: "seasonDiscovery",
+        value: input.extractionContractRevision,
+      }),
+    });
+  }
   return {
     accepted: true,
     status: published ? status : "superseded",
@@ -367,18 +429,12 @@ async function publishDiscovery(input: {
   };
 }
 
-export function seasonDiscoveryIssueFingerprint(
-  response: DiscoverSeasonsDiagnosticResponse,
-): string {
-  return createHash("sha256").update(JSON.stringify({
-    failureReasons: [...response.diagnostic.failureReasons].sort(),
-    parserStrategy: response.diagnostic.parserStrategy,
-    adapterKey: response.diagnostic.adapterKey,
-    sourceHost: new URL(response.sourceURL).hostname.toLowerCase(),
-  })).digest("hex").slice(0, 40);
-}
 function candidateID(url: string): string {
   return createHash("sha256").update(url).digest("hex").slice(0, 24);
+}
+
+export function seasonDiscoverySnapshotHash(payload: unknown): string {
+  return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
 }
 function isPermanentFailure(error: unknown): boolean {
   return /invalid|올바르지|HTML 응답이 아닙니다|HTTP 4(?:00|01|03|04)/i.test(errorMessage(error));

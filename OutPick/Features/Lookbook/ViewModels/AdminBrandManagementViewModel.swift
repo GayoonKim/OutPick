@@ -389,7 +389,7 @@ final class AdminBrandManagementViewModel: ObservableObject {
             onBrandUpdated?(updatedBrand)
             message = "로고를 저장했습니다."
         } catch {
-            message = "로고 저장 실패: \(error.localizedDescription)"
+            message = "로고 저장에 실패했습니다. 다시 시도해주세요."
         }
     }
 
@@ -649,7 +649,7 @@ private extension AdminBrandManagementViewModel {
         }
 
         if message.hasPrefix("브랜드 저장 실패:") ||
-            message.hasPrefix("로고 저장 실패:") ||
+            message == "로고 저장에 실패했습니다. 다시 시도해주세요." ||
             message.hasPrefix("관리자 변경 실패:") {
             return FeedbackDismissDelay.failure
         }

@@ -32,55 +32,8 @@ export type SeasonDiscoveryRecommendedAction =
   | "retry"
   | "updateSourceURL"
   | "reviewCandidates"
-  | "waitForExtractorFix"
-  | "reanalyzeWithNewVersion"
   | "cancel"
   | "none";
-
-export type SeasonDiscoveryImprovementDisposition =
-  | "notEligible"
-  | "requestable"
-  | "requested"
-  | "ready";
-
-export function seasonDiscoveryBlockedRevision(input: {
-  blockedRevision: unknown;
-  extractionContractRevision: unknown;
-  currentRevision: number;
-}): number {
-  if (Number.isInteger(input.blockedRevision)) {
-    return Number(input.blockedRevision);
-  }
-  if (Number.isInteger(input.extractionContractRevision)) {
-    return Number(input.extractionContractRevision);
-  }
-  return input.currentRevision;
-}
-
-export function normalizedSeasonDiscoveryIssueFingerprint(
-  value: unknown
-): string | null {
-  if (typeof value !== "string" || !/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(value)) {
-    return null;
-  }
-  return value.slice(0, 40);
-}
-
-export function seasonDiscoveryImprovementDisposition(input: {
-  status: SeasonDiscoveryStatus;
-  improvementRequested: boolean;
-  blockedRevision: number;
-  availableRevision: number | null;
-  resolvedByJobID?: string | null;
-}): SeasonDiscoveryImprovementDisposition {
-  if (input.status !== "correctionRequired" || input.resolvedByJobID) {
-    return "notEligible";
-  }
-  if (!input.improvementRequested) return "requestable";
-  if (input.availableRevision !== null &&
-      input.availableRevision > input.blockedRevision) return "ready";
-  return "requested";
-}
 
 const ACTIVE_STATUSES = new Set<SeasonDiscoveryStatus>([
   "queued", "dispatching", "running",
@@ -128,7 +81,7 @@ export function seasonDiscoveryRecommendedAction(input: {
   retryable?: boolean;
 }): SeasonDiscoveryRecommendedAction {
   if (input.status === "awaitingReview") return "reviewCandidates";
-  if (input.status === "correctionRequired") return "waitForExtractorFix";
+  if (input.status === "correctionRequired") return "none";
   if (input.status !== "failed") return "none";
   if (input.retryable) return "retry";
   if (input.errorCode === "invalid_source_url" ||

@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "candidates": [
+    {"type": "exact", "key": "https://brand.example/web/upload/NNEditor/2026/cover.jpg"}
+  ],
+  "negativeCandidateKeys": ["https://brand.example/wrong-generic.jpg"],
+  "orderPolicy": "strict",
+  "strategy": "cafe24ProductAdditional",
+  "adapter": {"platformKey": "cafe24", "domainKey": null},
+  "quality": null
+}

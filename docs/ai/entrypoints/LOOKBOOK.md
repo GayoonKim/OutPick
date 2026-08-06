@@ -73,6 +73,8 @@ Repository가 `DocumentSnapshot.documentID`를 같은 snapshot에서 decode한 D
 
 경로 prefix는 `OutPick/Features/Lookbook/`이다.
 
+- 시즌 후보 카드의 대표 이미지는 기존 nullable `coverImageURL`과 placeholder를 그대로 사용한다. Phase 7 backend는 목록 이미지 우선, 시즌 상세 콘텐츠 영역의 최상단 첫 유효 이미지 차선으로 URL을 채우며 SwiftUI 화면·Coordinator·DI는 변경하지 않는다. Worker 진입점은 `extraction/{image-candidates,season-cover}.ts`와 `season-discovery.ts`이고 상세 계약은 task의 `phase-7-season-cover-enrichment.md`다.
+
 ### 좋아요 탭
 
 - 화면 조립: `LookbookCompositionRoot.makeLikedRoot` → `LookbookContainer.makeLikedView` → `Views/Liked/LikedView.swift`
@@ -86,7 +88,8 @@ Repository가 `DocumentSnapshot.documentID`를 같은 snapshot에서 decode한 D
 - 흐름: `CreateBrandFlowView` → `CreateBrandView` → `CreateBrandViewModel.saveBrand()` → `CloudFunctionsBrandStore.createBrand` → `LookbookStorageService` → `CloudFunctionsBrandStore.updateLogoPaths`.
 - 완료 기준: 로고를 선택한 경우 `brands/{brandID}/logo/thumb.jpg`, `detail.jpg` 업로드와 두 경로의 단일 패치가 모두 성공해야 생성 완료 단계로 이동한다.
 - 실패 기준: 업로드 또는 경로 패치 실패 시 성공한 업로드 객체를 rollback하고, 생성된 브랜드 ID를 `createdBrandDocument`로 유지해 같은 문서에 재시도한다. 재시도 중 브랜드 기본 입력은 잠근다.
-- Storage 권한: `storage.rules`의 브랜드 쓰기는 계정 문서와 총 관리자/브랜드 관리자 문서만 조회해 Storage rules의 Firestore 교차 조회 2문서 한도를 지킨다. 총 관리자는 신뢰된 운영 주체이므로 별도 브랜드 존재 조회를 하지 않으며, 클라이언트 경로는 생성된 brandID로 고정한다.
+- 브랜드 생성과 관리자 편집의 로고 실패 문구는 내부 Storage error/path를 노출하지 않고 `로고 저장에 실패했습니다. 다시 시도해주세요.`로 고정한다.
+- Storage 권한: `storage.rules`의 브랜드 쓰기는 계정 문서와 총 관리자/브랜드 관리자 문서만 조회해 Storage rules의 Firestore 교차 조회 2문서 한도를 지킨다. 총 관리자는 신뢰된 운영 주체이므로 별도 브랜드 존재 조회를 하지 않으며, 클라이언트 경로는 생성된 brandID로 고정한다. 실행 프로젝트의 Storage service agent에는 교차 조회용 `roles/firebaserules.firestoreServiceAgent`가 반드시 필요하다.
 
 ## 자주 수정하는 흐름
 
@@ -191,9 +194,11 @@ Repository가 `DocumentSnapshot.documentID`를 같은 snapshot에서 decode한 D
 - discovery 요청은 즉시 job receipt를 반환하고, 화면은 브랜드의 최신 job을 Firestore stream으로 관찰한다. 화면 종료는 관찰만 끝내며 서버 job을 취소하지 않는다.
 - 상태 카드는 queued/dispatching/running, succeeded, awaitingReview, correctionRequired, failed, cancelled, superseded를 구분하고 각 상태에 맞는 취소·재시도·URL 수정·후보 선택·동일성 검토 진입점만 제공한다. active 본문은 `ProgressView + 주 문구 + 보조 문구` 묶음 전체를 카드 본문 중앙에 두고 취소 action은 하단에 분리한다.
 - Phase 3A 구현은 `SeasonImportManagementView.activeDiscoveryContent`와 `discoveryPhaseText`에서 확인한다. 카드 본문 최소 높이 안에서 묶음 전체를 중앙 정렬하며 dispatching/fetching/rendering/parsing/matching/publishing을 사용자 문구로 변환한다.
-- `correctionRequired`는 `추출 개선 요청 → 개선 요청됨 → 다시 가져오기 가능`으로 구현됐다. 개선 요청은 같은 issue cluster에 멱등 등록하며 같은 revision을 재시도하지 않는다. 더 높은 extraction contract가 준비된 뒤 총 관리자만 새 generation 재분석을 실행한다. 앱 진입점은 `SeasonCandidateDiscoveryResult.improvementState`, Repository의 두 mutation, `SeasonImportManagementViewModel`, `SeasonImportManagementView.discoveryActions`다.
-- 위 문장은 현재 Phase 4A 구현 상태다. 확정된 Phase 4B에서는 `추출 개선 요청` 버튼을 제거하고 서버가 시즌 목록·시즌 이미지 추출 로직 불충분을 자동 기록한다.
-- Phase 4B 앱은 해당 job 카드에 `개선 대기 중`, Codex claim 뒤 `개선 처리 중`, Production revision 검증 뒤 `다시 가져오기 가능`만 표시한다. 일반 관리자에게 issue 목록·fingerprint·fixture·PR·배포 정보를 노출하지 않고, 총 관리자에게 필요한 job에서만 ground truth 검토 진입점을 제공한다. 관련 Entity/Repository/ViewModel 변경은 아직 구현되지 않았다.
+- `correctionRequired`는 job projection의 issue status를 `개선 대기 중`, `개선 처리 중`, `다시 가져오기 가능`, `추가 작업 필요`로 표시한다. 앱은 issue 목록·fingerprint·fixture·PR·배포 정보를 노출하지 않는다.
+- issue 상태 설명은 내부 용어인 `추출 로직/개선된 방식`을 노출하지 않는다. 시즌 목록은 `가져오지 못했어요/다시 가져올 수 있도록 확인하고 있어요/다시 가져올 수 있어요`, 이미지는 같은 어조의 짧은 문구를 사용하며 상태 chip은 기존 값을 유지한다.
+- 시즌 목록과 이미지 재시도는 총 관리자에게만 보이며 `fixed`와 상위 동일-stage runtime이 모두 있어야 한다. 앱 ViewModel과 callable 서버가 이 조건을 각각 검사하며 기존 개선 요청 버튼과 동일-version 즉시 재분석 경로는 제거했다.
+- 시즌 목록 fix 재시도는 새 discovery job을 만들 때 원본의 서버 검증 fingerprint와 runtime projection을 승계한다. 그래야 contract 2 이상의 실제 성공 job이 cluster를 `verified`로 닫을 수 있다. 2026-08-05 AMOMENTO Development 재시도에서 후보 15개와 해당 전이를 확인했다.
+- `wontFix` 중 원본 부재·접근 제한인 시즌 목록 문제는 기존 룩북 목록 URL 수정 action만 제공한다. 상세 구현 기준은 `docs/ai/tasks/lookbook-extraction-issue-operations/`다.
 - `awaitingReview` 후보는 `SeasonDiscoveryReviewView`에서 신규 유지, 제외, 기존 시즌 연결 중 하나로 결정한다. 기존 시즌 연결 대상은 시즌명으로 표시하며 job ID는 운영 화면에 노출하지 않는다.
 - `awaitingReview`여도 안전하게 `newSeason`으로 분류된 후보는 검토 완료를 기다리지 않고 별도 선택할 수 있다.
 - 이미지 import job 행의 기본 식별값은 `SeasonImportJob.displayTitle`이다. `seasonTitle`을 우선하고 `sourceTitle`을 보조로 사용하며 내부 import job ID를 제목으로 표시하지 않는다.

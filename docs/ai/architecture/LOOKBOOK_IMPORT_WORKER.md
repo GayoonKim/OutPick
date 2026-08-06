@@ -50,11 +50,15 @@ Cloud Run worker:
 - worker는 독립 `package.json`을 가진 Node.js/TypeScript 패키지로 시작한다.
 - `src/extraction/core.ts`는 candidate 배열과 strategy/evidence/version 결과 계약을 소유하고, `evidence.ts`는 query value를 제거한 source fingerprint, `version.ts`는 deterministic extractor/adapter version set을 소유한다.
 - `processor.ts`와 `season-discovery.ts`는 기존 parser/fallback 동작을 유지하면서 공통 extraction 결과 계약과 `extraction/adapters/registry.ts`의 동일 adapter 선택 결과를 소비한다.
-- Phase 7은 Generic → Platform → Domain 경계를 production 추출 경로에 연결했다. Cafe24의 `xans-product-additional`, `archive-source-detail`, `NNEditor`, Cafe24 관리 asset 제외 규칙은 `cafe24@1.0.0`에 격리되며 다른 플랫폼에는 적용하지 않는다. 실제 domain adapter는 아직 없고 등록 시 정확한 host와 registry가 확인한 fixture ID가 필수다.
+- Phase 7은 Generic → Platform → Domain 경계를 production 추출 경로에 연결했다. Cafe24의 `xans-product-additional`, 직접 `collection-images`, `archive-source-detail`, `NNEditor`, Cafe24 관리 asset 제외 규칙은 `cafe24@1.0.1`에 격리되며 다른 플랫폼에는 적용하지 않는다. 실제 domain adapter는 아직 없고 등록 시 정확한 host와 registry가 확인한 fixture ID가 필수다.
 - extractor `1.2.0`부터 cache 재사용은 extractor뿐 아니라 platform/domain adapter key/version 전체가 현재 registry와 일치해야 한다. adapter/version 변화는 scoped trust와 cache 경계를 모두 새로 만든다.
 - extractor `1.2.1`은 Cafe24 목록의 `collection_detail.html` 같은 underscore-detail 경로를 공통 시즌 상세 URL로 인식한다. 이미지 anchor와 제목 anchor가 같은 URL로 분리돼도 후보 병합 전에 경로가 탈락하지 않으며, 최소 platform fixture가 이 계약을 고정한다.
 - extractor `1.2.2`는 content hash 중복 제거 후 최종 후보 수를 expected-count evidence와 비교한다. 하나라도 일치하고 hash 확인이 완료됐으면 첫 signature도 자동 materialization하며, 예상 수 미확인·수량 불일치·hash 미완료만 review gate로 남긴다. raw 후보 감소와 programmatic 구조 자체는 진단 evidence로만 유지한다.
 - extractor `1.2.3`은 여러 시즌 grid 설정을 공유하는 상세 페이지에서 실제 DOM에 존재하는 grid ID의 config만 declared total로 채택한다. 활성 grid 밖의 정적 고유 후보 수를 더한 scoped candidate total도 evidence로 남겨 programmatic gallery와 정적 후보가 합쳐지는 최종 기대 수를 표현한다. 현재 Production Worker는 `lookbook-import-worker-00024-fow`, rollback은 `lookbook-import-worker-00023-879`이다.
+- 시즌 discovery contract `2`는 Cafe24 목록의 `<button data-url>` 모달 행을 정적 시즌 후보로 읽는다. URL은 기존 public HTTP·noise·시즌 상세 경로 검증을 그대로 통과해야 하며, 버튼 본문의 끝자리 ISO 날짜는 시즌 제목에서 제거한다. AMOMENTO 최소 incident fixture와 실제 공개 URL 15개 smoke가 이 계약을 고정한다. Development Worker `lookbook-import-worker-development-00008-foq`에서 실제 재시도 15개 성공을 확인했으며 Production에는 아직 적용하지 않았다.
+- 로컬 season discovery contract `3` 구현은 시즌 identity와 대표 이미지 표시를 분리한다. `extraction/image-candidates.ts`가 기존 season-image content-section/noise 선택을 부작용 없이 공유하고, `extraction/season-cover.ts`가 목록 이미지 없는 후보만 최대 30개·동시 3개·15초로 보강한다. Generic 규칙이 기본이고 Cafe24 등 Platform/Domain 규칙은 식별 정확도만 높이며 header/navigation/banner/footer/related/low-confidence 후보는 거부한다. candidate provenance/job 집계와 snapshot hash까지 연결했지만 Development/Production 배포 runtime은 별도 승인 전 contract 2를 유지한다.
+- release verifier는 Cloud Run v2 `trafficStatuses`에서 tag만 남은 0% revision을 제외한 실제 유입 traffic이 정확히 한 revision 100%인지 검사한다. 대표 job이 삭제된 경우에도 사용자가 URL을 주입하게 하지 않고, 같은 fingerprint가 투영된 현존 job 중 서버 저장 URL만 검증 입력으로 사용한다.
+- 시즌 fix 재시도는 새 job을 만들므로 원본의 검증된 `extractionIssueFingerprint`, blocked/fixed runtime projection을 새 job에 승계한다. Worker 성공 후 공통 verified 전이가 이 새 job과 cluster를 함께 닫는다.
 - Phase 2는 script declared total과 programmatic DOM gallery 신호가 함께 있으면 strong static section이 있어도 rendered fallback을 실행한다. 정적/rendered 후보를 canonical URL로 병합한 뒤 image bytes hash가 확인된 중복만 first-wins로 제거한다.
 - Phase 3 fixture corpus는 브랜드 수가 아닌 `generic/platform/incident` 실패 구조로 분류한다. `src/fixture/`가 manifest load, current snapshot, golden differential을 담당하며 `fixtures/`에는 최소 HTML과 expected 계약만 둔다. 새 extractor 변경은 `npm run test:fixtures`로 후보·순서·title·strategy·adapter·quality diff를 확인한다.
 - hash 조회 실패는 asset 실패와 구분해 후보를 보존하고 `content_hash_incomplete` quality reason을 남긴다.
@@ -66,7 +70,7 @@ Cloud Run worker:
 - Phase 6 `extraction/reconcile.ts`는 기존 post와 새 후보의 canonical URL/content hash 매칭, deterministic add ID, keep/add/reorder/remove-candidate와 snapshot hash를 순수 계산한다.
 - repair preview는 `importJobs/{jobID}/repairs/{repairGeneration}`에 고정되고, 적용 후 같은 job이 `materializing`부터 재개돼 기존 asset sync/failure 경로로 수렴한다.
 - repair diff의 add/reorder/remove-candidate가 모두 0이면 audit만 `noChanges`로 고정하고 job을 `succeeded/completed`로 종료한다. 이 경로는 season/post를 쓰거나 `awaitingReview`에 진입하지 않는다.
-- issue fingerprint는 stage/platform/strategy/failure·quality reason/template signature/extractor major로 만들고 root cluster에 occurrence, 영향 domain과 fixed-version recurrence를 transaction으로 누적한다.
+- issue fingerprint는 stage/platform/strategy/failure·quality reason/template signature/extractor major로 만들고 root cluster에 occurrence와 fixed-version recurrence를 transaction으로 누적한다. 배포 경합으로 구형 runtime occurrence가 늦게 도착해도 cluster blocked runtime은 같은 종류 안에서 단조 증가하며, fixed/verified보다 낮은 runtime의 늦은 job에는 검증된 fixed runtime을 retry-ready로 투영한다.
 - HTTP server scaffold는 Express를 사용한다.
 - `/tasks/discover-seasons`는 task identity만 허용한다. Worker는 job lease, generation, `extractionContractRevision`을 재검증하고 immutable candidate snapshot을 모두 쓴 뒤 latest pointer를 원자적으로 공개한다. rollout 호환을 위해 revision 필드가 없는 기존 task/job만 최초 revision 1로 해석하며 명시된 revision은 exact match한다.
 - 시즌 discovery 품질 불충분 fingerprint는 원본 query/HTML을 저장하지 않는 40자 SHA-256 prefix다. 배포 전 64자 job은 개선 요청 callable이 같은 prefix 40자로 정규화한다.

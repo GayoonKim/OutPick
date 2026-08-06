@@ -3,7 +3,7 @@ import type {
   ExtractionQualityStatus,
 } from "../extraction/quality.js";
 
-export type FixtureKind = "discovery" | "season_images";
+export type FixtureKind = "discovery" | "season_images" | "season_cover";
 export type FixtureClassification = "generic" | "platform" | "incident";
 
 export type FixtureMetadata = {

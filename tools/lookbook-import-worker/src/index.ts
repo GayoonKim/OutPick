@@ -4,6 +4,7 @@ import {loadConfig} from "./config.js";
 import {initializeFirebaseClients} from "./firebase.js";
 import {GoogleOIDCTokenVerifier} from "./oidc-auth.js";
 import {createServer} from "./server.js";
+import {workerRuntimeContract} from "./runtime-contract.js";
 
 let httpServer: Server | null = null;
 
@@ -23,6 +24,7 @@ async function main(): Promise<void> {
       functionsServiceAccountEmail: config.functionsServiceAccountEmail,
       verifier: new GoogleOIDCTokenVerifier(),
     },
+    runtime: workerRuntimeContract(config),
   });
 
   httpServer = app.listen(config.port, () => {

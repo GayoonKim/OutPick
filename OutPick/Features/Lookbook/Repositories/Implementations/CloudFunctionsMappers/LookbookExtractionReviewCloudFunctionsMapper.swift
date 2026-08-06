@@ -38,7 +38,13 @@ enum LookbookExtractionReviewCloudFunctionsMapper {
             qualityReasons: decoder.stringArray("qualityReasons"),
             expectedCandidateCounts: expectedCounts,
             candidates: candidates,
-            canReanalyze: try decoder.bool("canReanalyze")
+            extractionIssueStatus: decoder.optionalString("extractionIssueStatus")
+                .flatMap(ExtractionIssueStatus.init(rawValue:)),
+            retryAvailableRuntimeVersion:
+                decoder.optionalString("retryAvailableRuntimeVersion"),
+            extractionIssueWontFixReason:
+                decoder.optionalString("extractionIssueWontFixReason"),
+            canRetryAfterFix: try decoder.bool("canRetryAfterFix")
         )
     }
 

@@ -29,12 +29,17 @@ import {
   type WorkerAuthConfig,
   type WorkerCaller,
 } from "./oidc-auth.js";
+import {
+  processExtractionSmoke,
+  type WorkerRuntimeContract,
+} from "./runtime-contract.js";
 
 interface ServerDependencies {
   projectID: string;
   assetSyncConcurrency: number;
   firebase: FirebaseClients;
   auth: WorkerAuthConfig & {verifier: OIDCTokenVerifier};
+  runtime: WorkerRuntimeContract;
 }
 
 export function createServer(dependencies: ServerDependencies): Express {
@@ -49,6 +54,31 @@ export function createServer(dependencies: ServerDependencies): Express {
       projectID: dependencies.projectID,
     });
   });
+
+  app.get(
+    "/runtime-contract",
+    requireCaller("functions", dependencies.auth),
+    (_request: Request, response: Response) => {
+      response.status(200).json(dependencies.runtime);
+    },
+  );
+
+  app.post(
+    "/smoke/extraction",
+    requireCaller("functions", dependencies.auth),
+    async (request: Request, response: Response) => {
+      try {
+        response.status(200).json(await processExtractionSmoke(
+          request.body, dependencies.runtime,
+        ));
+      } catch (error) {
+        response.status(400).json({
+          accepted: false,
+          errorMessage: errorMessage(error),
+        });
+      }
+    },
+  );
 
   app.post(
     "/wake",
@@ -104,7 +134,10 @@ export function createServer(dependencies: ServerDependencies): Express {
     async (request: Request, response: Response) => {
       try {
         const result = await processSeasonDiscoveryTaskRequest(
-          dependencies.firebase.firestore,
+          {
+            firestore: dependencies.firebase.firestore,
+            storage: dependencies.firebase.storage,
+          },
           request.body as SeasonDiscoveryTaskRequest,
           cloudTasksRetryCount(request),
         );

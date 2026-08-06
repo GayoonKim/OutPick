@@ -1,5 +1,6 @@
 /* eslint-disable max-len */
 import type {Page} from "playwright";
+import {createHash} from "node:crypto";
 
 import {
   extractionResult,
@@ -11,17 +12,29 @@ import {
 import {selectExtractionAdapters} from "./extraction/adapters/registry.js";
 import {extractionCandidateKey} from "./extraction/evidence.js";
 import type {ExtractionVersionSet} from "./extraction/version.js";
+import {extractionStructureTokens} from "./extraction/review.js";
+import {
+  buildRetainedExtractionEvidence,
+  type RetainedExtractionEvidence,
+} from "./extraction/retained-evidence.js";
 import {
   assertPublicHTTPURL,
   fetchPublicHTTP,
   responseBytes,
   retryableStatusError,
 } from "./public-http.js";
+import {
+  enrichSeasonCovers,
+  type CoverImageSource,
+  type SeasonCoverSummary,
+} from "./extraction/season-cover.js";
 
-type SeasonCandidate = {
+export type SeasonCandidate = {
   title: string;
   seasonURL: string;
   coverImageURL: string | null;
+  coverImageSource: CoverImageSource;
+  coverImageStrategy: string | null;
   score: number;
 };
 
@@ -75,6 +88,8 @@ type RenderedDiscovery = DiscoveryExtraction & {
   loadMoreClickCount: number;
   infiniteScrollAttempted: boolean;
   scrollAttemptCount: number;
+  finalLoadMoreDetected: boolean;
+  retainedHTML: string;
 };
 
 export type DiscoverSeasonsDiagnosticRequest = {
@@ -89,6 +104,7 @@ export type DiscoverSeasonsDiagnosticResponse = {
   status: "passed" | "failed" | "needsReview";
   sourceURL: string;
   candidates: SeasonCandidate[];
+  issueEvidence?: RetainedExtractionEvidence | null;
   diagnostic: {
     staticCandidateCount: number;
     renderedCandidateCount: number | null;
@@ -104,9 +120,11 @@ export type DiscoverSeasonsDiagnosticResponse = {
     renderedFallbackUsed: boolean;
     parserStrategy: string;
     adapterKey: string | null;
+    coverImages: SeasonCoverSummary;
     candidateEvidence: ExtractionCandidateEvidence[];
     extractionVersions: ExtractionVersionSet;
     failureReasons: FailureReason[];
+    unresolvedExpansion?: boolean;
     suggestedFixScope: SuggestedFixScope;
     suggestedFixes: SuggestedFix[];
     summaryMessage: string | null;
@@ -155,8 +173,9 @@ export async function processDiscoverSeasonsDiagnosticRequest(
   );
   const limits = diagnosticLimits(request.limits);
 
+  const deadlineAt = Date.now() + limits.timeoutMs;
   return withTimeout(
-    runDiscovery(sourceURL, limits),
+    runDiscovery(sourceURL, limits, deadlineAt),
     limits.timeoutMs,
     sourceURL,
   );
@@ -168,16 +187,14 @@ export function extractSeasonCandidates(
   limit = DEFAULT_LIMITS.maxDiagnosticCandidates,
 ): SeasonCandidate[] {
   const candidateMap = new Map<string, AnchorCandidate>();
-  const anchorPattern =
-    /<a\b[^>]*href\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>[\s\S]*?<\/a>/gi;
+  const candidateElements = seasonURLCandidateElements(html);
   let pageOrder = 0;
 
-  for (const match of html.matchAll(anchorPattern)) {
-    const anchorHTML = match[0];
+  for (const element of candidateElements) {
+    const anchorHTML = element.html;
     const currentPageOrder = pageOrder;
     pageOrder += 1;
-    const href = match[2] ?? match[3] ?? match[4] ?? "";
-    const seasonURL = normalizedCandidateURL(href, archiveURL);
+    const seasonURL = normalizedCandidateURL(element.rawURL, archiveURL);
     if (!seasonURL || isIgnoredHref(seasonURL)) {
       continue;
     }
@@ -202,6 +219,8 @@ export function extractSeasonCandidates(
           title,
           seasonURL,
           coverImageURL: image,
+          coverImageSource: image === null ? "none" : "list",
+          coverImageStrategy: image === null ? null : "listElementImage",
           score,
           linkText,
           pageOrder: currentPageOrder,
@@ -212,6 +231,8 @@ export function extractSeasonCandidates(
         title,
         seasonURL,
         coverImageURL: image,
+        coverImageSource: image === null ? "none" : "list",
+        coverImageStrategy: image === null ? null : "listElementImage",
         score,
         linkText,
         pageOrder: currentPageOrder,
@@ -226,15 +247,38 @@ export function extractSeasonCandidates(
       }
       return lhs.seasonURL.localeCompare(rhs.seasonURL);
     })
-    .map(({title, seasonURL, coverImageURL, score}) => ({
+    .map(({
       title,
       seasonURL,
       coverImageURL,
+      coverImageSource,
+      coverImageStrategy,
+      score,
+    }) => ({
+      title,
+      seasonURL,
+      coverImageURL,
+      coverImageSource,
+      coverImageStrategy,
       score,
     }));
-  const candidatesWithCover = candidates.filter((item) => item.coverImageURL !== null);
-  const selected = candidatesWithCover.length >= 2 ? candidatesWithCover : candidates;
-  return selected.slice(0, limit);
+  return candidates.slice(0, limit);
+}
+
+function seasonURLCandidateElements(
+  html: string,
+): Array<{html: string; rawURL: string; index: number}> {
+  const patterns = [
+    /<a\b[^>]*href\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>[\s\S]*?<\/a>/gi,
+    /<button\b[^>]*data-url\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>[\s\S]*?<\/button>/gi,
+  ];
+  return patterns.flatMap((pattern) =>
+    Array.from(html.matchAll(pattern), (match) => ({
+      html: match[0],
+      rawURL: match[2] ?? match[3] ?? match[4] ?? "",
+      index: match.index,
+    })),
+  ).sort((lhs, rhs) => lhs.index - rhs.index);
 }
 
 export function shouldUseRenderedDiscovery(
@@ -345,6 +389,7 @@ export function classifyDiscovery(
 async function runDiscovery(
   sourceURL: string,
   limits: DiagnosticLimits,
+  deadlineAt: number,
 ): Promise<DiscoverSeasonsDiagnosticResponse> {
   const html = await fetchHTML(sourceURL, limits.timeoutMs);
   const staticExtraction = extractionFromHTML(html, sourceURL, limits);
@@ -358,7 +403,13 @@ async function runDiscovery(
     renderedCandidates,
     limits.maxDiagnosticCandidates,
   );
-  const storedCandidates = mergedCandidates.slice(0, limits.maxStoredCandidates);
+  const storedCandidateInputs = mergedCandidates.slice(0, limits.maxStoredCandidates);
+  const coverEnrichment = await enrichSeasonCovers({
+    candidates: storedCandidateInputs,
+    overallDeadlineAt: deadlineAt,
+    fetchHTML: fetchDetailHTML,
+  });
+  const storedCandidates = coverEnrichment.candidates;
   const selectedStrategy = renderedExtraction?.strategy ?? staticExtraction.strategy;
   const selectedVersions = mergeExtractionVersionSets([
     staticExtraction.versions,
@@ -378,6 +429,12 @@ async function runDiscovery(
   const renderedImproved =
     renderedExtraction !== null &&
     renderedExtraction.candidates.length > staticExtraction.candidates.length;
+  const unresolvedExpansion = renderedExtraction !== null &&
+    (
+      renderedExtraction.finalLoadMoreDetected ||
+      renderedExtraction.loadMoreClickCount >= limits.maxLoadMoreClicks ||
+      renderedExtraction.scrollAttemptCount >= limits.maxScrollAttempts
+    );
   const classification = classifyDiscovery({
     candidateCount: mergedCandidates.length,
     loadMoreDetected:
@@ -389,11 +446,36 @@ async function runDiscovery(
     renderedFallbackUsed: renderedExtraction !== null,
     renderedImproved,
   });
+  const retainedHTML = renderedExtraction?.retainedHTML ?? html;
+  const structureTokens = extractionStructureTokens(retainedHTML);
+  const templateSignature = createHash("sha256")
+    .update(JSON.stringify({
+      stage: "seasonDiscovery",
+      strategy: selectedStrategy,
+      structureTokens,
+    }))
+    .digest("hex")
+    .slice(0, 32);
+  const issueEvidence = classification.status === "passed" ?
+    null :
+    buildRetainedExtractionEvidence({
+      status: classification.status,
+      stage: "seasonDiscovery",
+      sourceURL,
+      html: retainedHTML,
+      strategy: selectedStrategy,
+      failureReasons: classification.failureReasons,
+      templateSignature,
+      candidateEvidence: selectedExtraction.candidateEvidence,
+      structureTokens,
+      versions: selectedExtraction.versions,
+    });
 
   return {
     status: classification.status,
     sourceURL,
     candidates: storedCandidates,
+    issueEvidence,
     diagnostic: {
       staticCandidateCount: staticExtraction.candidates.length,
       renderedCandidateCount: renderedExtraction?.candidates.length ?? null,
@@ -415,9 +497,11 @@ async function runDiscovery(
       renderedFallbackUsed: renderedExtraction !== null,
       parserStrategy: selectedStrategy,
       adapterKey: selectedVersions.platformAdapterKey,
+      coverImages: coverEnrichment.summary,
       candidateEvidence: selectedExtraction.candidateEvidence,
       extractionVersions: selectedExtraction.versions,
       failureReasons: classification.failureReasons,
+      unresolvedExpansion,
       suggestedFixScope: classification.suggestedFixScope,
       suggestedFixes: classification.suggestedFixes,
       summaryMessage: classification.summaryMessage,
@@ -451,6 +535,30 @@ async function fetchHTML(sourceURL: string, timeoutMs: number): Promise<string> 
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function fetchDetailHTML(
+  sourceURL: string,
+  signal: AbortSignal,
+): Promise<string> {
+  const response = await fetchPublicHTTP(sourceURL, {
+    signal,
+    headers: {
+      "user-agent": USER_AGENT,
+      "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    },
+  });
+  if (!response.ok) {
+    throw retryableStatusError(
+      response.status,
+      `시즌 상세 URL 응답 실패: HTTP ${response.status}`,
+    );
+  }
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.toLowerCase().includes("text/html")) {
+    throw new Error(`HTML 응답이 아닙니다: ${contentType || "unknown"}`);
+  }
+  return (await responseBytes(response, HTML_MAX_BYTES, "HTML")).toString("utf8");
 }
 
 function extractionFromHTML(
@@ -545,6 +653,8 @@ async function renderedDiscovery(
         loadMoreClickCount: interaction.loadMoreClickCount,
         infiniteScrollAttempted: interaction.scrollAttemptCount > 0,
         scrollAttemptCount: interaction.scrollAttemptCount,
+        finalLoadMoreDetected: finalExtraction.loadMoreDetected,
+        retainedHTML: finalHTML,
         loadMoreDetected:
           beforeExtraction.loadMoreDetected ||
           finalExtraction.loadMoreDetected ||
@@ -729,11 +839,14 @@ function mergedAnchorCandidate(
 ): AnchorCandidate {
   const previousHasMeaningfulTitle = !isFallbackSeasonTitle(previous.title);
   const nextHasMeaningfulTitle = !isFallbackSeasonTitle(next.title);
+  const coverCandidate = previous.coverImageURL !== null ? previous : next;
 
   if (previousHasMeaningfulTitle !== nextHasMeaningfulTitle) {
     return {
       ...(nextHasMeaningfulTitle ? next : previous),
-      coverImageURL: next.coverImageURL ?? previous.coverImageURL,
+      coverImageURL: coverCandidate.coverImageURL,
+      coverImageSource: coverCandidate.coverImageSource,
+      coverImageStrategy: coverCandidate.coverImageStrategy,
       score: Math.max(previous.score, next.score),
       pageOrder: Math.min(previous.pageOrder, next.pageOrder),
     };
@@ -747,7 +860,9 @@ function mergedAnchorCandidate(
   )) {
     return {
       ...next,
-      coverImageURL: next.coverImageURL ?? previous.coverImageURL,
+      coverImageURL: coverCandidate.coverImageURL,
+      coverImageSource: coverCandidate.coverImageSource,
+      coverImageStrategy: coverCandidate.coverImageStrategy,
       score: Math.max(previous.score, next.score),
       pageOrder: Math.min(previous.pageOrder, next.pageOrder),
     };
@@ -755,7 +870,9 @@ function mergedAnchorCandidate(
 
   return {
     ...previous,
-    coverImageURL: previous.coverImageURL ?? next.coverImageURL,
+    coverImageURL: coverCandidate.coverImageURL,
+    coverImageSource: coverCandidate.coverImageSource,
+    coverImageStrategy: coverCandidate.coverImageStrategy,
     score: Math.max(previous.score, next.score),
     pageOrder: Math.min(previous.pageOrder, next.pageOrder),
   };
@@ -833,6 +950,7 @@ function normalizedSeasonTitleText(rawValue: string): string | null {
   value = value
     .replace(/^(?:상품명|product\s*name)\s*:?\s*/i, "")
     .replace(/\s*(?:상품요약정보|summary|판매가|price)\s*:.*$/i, "")
+    .replace(/\s+\d{4}-\d{2}-\d{2}$/, "")
     .trim();
   value = stripImageDescriptionSuffix(value);
 
@@ -978,7 +1096,8 @@ function isLikelySeasonCandidateURL(
   try {
     const url = new URL(rawURL);
     if (
-      /\/(?:product|lookbook|archive|collection|campaigns?)(?:\/|_)(?:archive[-_])?detail(?:_basic|_new)?\.html$/i
+      /\/product\/collection-single\.html$/i.test(url.pathname) ||
+      /\/(?:product|lookbook|archive|collection|campaigns?)(?:\/|_)(?:(?:archive[-_])?detail(?:_basic|_new)?|single)\.html$/i
         .test(url.pathname)
     ) {
       return true;

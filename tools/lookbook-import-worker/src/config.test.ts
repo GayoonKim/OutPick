@@ -12,6 +12,10 @@ const baseEnv = {
     "outpick-lookbook-task-dev@outpick-test.iam.gserviceaccount.com",
   OUTPICK_IMPORT_FUNCTIONS_SERVICE_ACCOUNT_EMAIL:
     "86635107099-compute@developer.gserviceaccount.com",
+  K_REVISION: "lookbook-import-worker-development-00001-test",
+  OUTPICK_WORKER_SOURCE_REVISION: "a".repeat(40),
+  OUTPICK_SEASON_DISCOVERY_CONTRACT_REVISION: "1",
+  OUTPICK_SEASON_DISCOVERY_EXTRACTOR_VERSION: "season-discovery-v1",
 };
 
 test("asset sync concurrency는 미설정 시 기본값 3을 사용한다", () => {
@@ -108,6 +112,7 @@ test("Development project에 Production Storage bucket을 주입하면 거부한
 test("Production project에 Development Storage bucket을 주입하면 거부한다", () => {
   assert.throws(
     () => loadConfig({
+      ...baseEnv,
       OUTPICK_FIREBASE_PROJECT_ID: "outpick-664ae",
       OUTPICK_FIREBASE_STORAGE_BUCKET: "outpick-test.firebasestorage.app",
       OUTPICK_IMPORT_OIDC_AUDIENCE:
@@ -123,6 +128,7 @@ test("Production project에 Development Storage bucket을 주입하면 거부한
 
 test("Production worker 환경 계약도 정확한 조합만 허용한다", () => {
   const config = loadConfig({
+    ...baseEnv,
     OUTPICK_FIREBASE_PROJECT_ID: "outpick-664ae",
     OUTPICK_FIREBASE_STORAGE_BUCKET: "outpick-664ae.appspot.com",
     OUTPICK_IMPORT_OIDC_AUDIENCE:

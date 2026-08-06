@@ -27,7 +27,11 @@ import {
   nextGeneration,
   requiredReviewDecision,
 } from "./reviewContract.js";
-import {extractionEvidenceCleanupTarget} from "./evidenceCleanup.js";
+import {isExtractionFixRetryEligible} from "./extractionIssueContract.js";
+import {
+  extractionEvidenceCleanupTarget,
+  extractionIssueClusterCleanupTarget,
+} from "./evidenceCleanup.js";
 import {
   repairRequestDisposition,
   seasonRepairPlan,
@@ -49,6 +53,7 @@ const LOOKBOOK_ASSET_RETRY_MODE = "assetFailureRetry";
 const LOOKBOOK_EXTRACTION_DIAGNOSTIC_RETENTION_DAYS = 60;
 const LOOKBOOK_EXTRACTION_DIAGNOSTIC_CLEANUP_LIMIT = 100;
 const LOOKBOOK_EXTRACTION_EVIDENCE_CLEANUP_LIMIT = 100;
+const LOOKBOOK_EXTRACTION_ISSUE_CLUSTER_CLEANUP_LIMIT = 100;
 const LOOKBOOK_DIAGNOSTIC_LIMITS = {
   maxLoadMoreClicks: 20,
   maxScrollAttempts: 20,
@@ -311,6 +316,8 @@ type DiagnosticSeasonCandidate = {
   title: string;
   seasonURL: string;
   coverImageURL: string | null;
+  coverImageSource: "list" | "detail" | "none";
+  coverImageStrategy: string | null;
   score: number;
 };
 
@@ -329,6 +336,14 @@ type SeasonDiscoveryWorkerDiagnostic = {
   renderedFallbackUsed: boolean;
   parserStrategy: string;
   adapterKey: string | null;
+  coverImages: {
+    coverImageCount: number;
+    listCoverImageCount: number;
+    detailCoverAttemptCount: number;
+    detailCoverSuccessCount: number;
+    detailCoverFailureCount: number;
+    detailCoverSkippedCount: number;
+  };
   failureReasons: LookbookExtractionFailureReason[];
   suggestedFixScope: LookbookExtractionSuggestedFixScope;
   suggestedFixes: LookbookExtractionSuggestedFix[];
@@ -527,6 +542,8 @@ async function replaceDiagnosticSeasonCandidates(
       title: candidate.title,
       seasonURL: candidate.seasonURL,
       coverImageURL: candidate.coverImageURL,
+      coverImageSource: candidate.coverImageSource,
+      coverImageStrategy: candidate.coverImageStrategy,
       sourceArchiveURL: archiveURL,
       extractionScore: candidate.score,
       sortIndex: index,
@@ -593,6 +610,7 @@ function diagnosticSummary(
       renderedFallbackUsed: seasonDiscovery.renderedFallbackUsed === true,
       parserStrategy: seasonDiscovery.parserStrategy ?? "unknown",
       adapterKey: seasonDiscovery.adapterKey ?? null,
+      coverImages: seasonDiscovery.coverImages ?? null,
     };
   }
   if (seasonImageImport) {
@@ -1209,6 +1227,7 @@ async function runSeasonDiscoveryDiagnostic(
       renderedFallbackUsed: diagnostic.renderedFallbackUsed,
       parserStrategy: diagnostic.parserStrategy,
       adapterKey: diagnostic.adapterKey,
+      coverImages: diagnostic.coverImages,
       limits: LOOKBOOK_DIAGNOSTIC_LIMITS,
     },
     seasonImageImport: null,
@@ -1736,6 +1755,8 @@ export const getLookbookExtractionReview = onCall(
     const imageCandidates = Array.isArray(job.imageCandidates) ?
       job.imageCandidates :
       [];
+    const canRetryAfterFix = await isTotalBrandAdmin(uid) &&
+      hasVerifiedExtractionRetryRuntime(job);
     return {
       jobID,
       brandID,
@@ -1747,7 +1768,10 @@ export const getLookbookExtractionReview = onCall(
       qualityReasons: job.extractionQualityReasons ?? [],
       expectedCountEvidence: job.expectedCountEvidence ?? [],
       templateSignature: job.templateSignature ?? null,
-      canReanalyze: await isTotalBrandAdmin(uid),
+      extractionIssueStatus: job.extractionIssueStatus ?? null,
+      retryAvailableRuntimeVersion: job.retryAvailableRuntimeVersion ?? null,
+      extractionIssueWontFixReason: job.extractionIssueWontFixReason ?? null,
+      canRetryAfterFix,
       candidates: imageCandidates.map((candidate, index) => {
         const item = candidate as Record<string, unknown>;
         return {
@@ -1987,7 +2011,7 @@ export const reviewLookbookExtraction = onCall(
   }
 );
 
-export const requestLookbookExtractionReanalysis = onCall(
+export const retryLookbookExtractionAfterFix = onCall(
   {region: FUNCTIONS_REGION},
   async (request) => {
     const uid = requiredAuthUID(request.auth?.uid);
@@ -2013,11 +2037,12 @@ export const requestLookbookExtractionReanalysis = onCall(
       }
       if (
         job.status !== "awaitingReview" ||
-        job.reviewStatus !== "correctionRequired"
+        job.reviewStatus !== "correctionRequired" ||
+        !hasVerifiedExtractionRetryRuntime(job)
       ) {
         throw new HttpsError(
           "failed-precondition",
-          "이미지 부족 상태의 job만 재분석할 수 있습니다."
+          "개선 검증이 끝난 이미지 부족 job만 다시 가져올 수 있습니다."
         );
       }
       const reviewGeneration = nextGeneration(job.reviewGeneration);
@@ -2043,11 +2068,20 @@ export const requestLookbookExtractionReanalysis = onCall(
         status: "queued",
         reviewGeneration,
         dispatchGeneration,
-        extractorVersionUnchanged: true,
+        retryRuntimeVersion: job.retryAvailableRuntimeVersion,
       };
     });
   }
 );
+
+function hasVerifiedExtractionRetryRuntime(job: Record<string, unknown>): boolean {
+  return isExtractionFixRetryEligible({
+    issueStatus: job.extractionIssueStatus,
+    blockedRuntimeVersion: job.blockedRuntimeVersion,
+    retryAvailableRuntimeVersion: job.retryAvailableRuntimeVersion,
+    stage: "seasonImageImport",
+  });
+}
 
 export const requestLookbookSeasonRepair = onCall(
   {region: FUNCTIONS_REGION},
@@ -2594,7 +2628,6 @@ export const cleanupExpiredLookbookExtractionEvidence = onSchedule(
       console.log(
         "[cleanupExpiredLookbookExtractionEvidence] No expired evidence."
       );
-      return;
     }
 
     const targets = snapshot.docs.map((document) => ({
@@ -2637,6 +2670,59 @@ export const cleanupExpiredLookbookExtractionEvidence = onSchedule(
     console.log("[cleanupExpiredLookbookExtractionEvidence] Completed", {
       candidateCount: snapshot.size,
       deletedCount: deleted.length,
+    });
+
+    const clusterSnapshot = await db
+      .collection("lookbookExtractionIssueClusters")
+      .where("expiresAt", "<=", now)
+      .limit(LOOKBOOK_EXTRACTION_ISSUE_CLUSTER_CLEANUP_LIMIT)
+      .get();
+    const clusterTargets = clusterSnapshot.docs.map((document) => ({
+      document,
+      target: extractionIssueClusterCleanupTarget({
+        fingerprint: document.id,
+        representativeEvidenceID: document.data().representativeEvidenceID,
+        representativeStoragePath:
+          document.data().representativeEvidenceStoragePath,
+      }),
+    }));
+    const clusterResults = await mapWithConcurrency(
+      clusterTargets,
+      10,
+      async (item) => {
+        if (item.target === null) {
+          console.error(
+            "[cleanupExpiredLookbookExtractionEvidence] Invalid cluster storage path",
+            {fingerprint: item.document.id}
+          );
+          return {document: item.document, deleted: false};
+        }
+        try {
+          await defaultStorageBucket()
+            .file(item.target.representativeStoragePath)
+            .delete({ignoreNotFound: true});
+          return {document: item.document, deleted: true};
+        } catch (error) {
+          console.error(
+            "[cleanupExpiredLookbookExtractionEvidence] Cluster storage delete failed",
+            {
+              fingerprint: item.document.id,
+              errorMessage: messageFromError(error),
+            }
+          );
+          return {document: item.document, deleted: false};
+        }
+      }
+    );
+    const deletedClusters = clusterResults.filter((result) => result.deleted);
+    if (deletedClusters.length > 0) {
+      const batch = db.batch();
+      deletedClusters.forEach((result) => batch.delete(result.document.ref));
+      await batch.commit();
+    }
+    console.log("[cleanupExpiredLookbookExtractionEvidence] Cluster cleanup completed", {
+      candidateCount: clusterSnapshot.size,
+      deletedCount: deletedClusters.length,
     });
   }
 );

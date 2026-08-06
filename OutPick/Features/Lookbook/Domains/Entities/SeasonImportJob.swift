@@ -7,6 +7,35 @@
 
 import Foundation
 
+enum ExtractionIssueStatus: String, Codable, Equatable {
+    case open
+    case inProgress
+    case needsGroundTruth
+    case fixed
+    case wontFix
+
+    var userState: ExtractionIssueUserState {
+        switch self {
+        case .open:
+            return .waiting
+        case .inProgress, .needsGroundTruth:
+            return .processing
+        case .fixed:
+            return .retryReady
+        case .wontFix:
+            return .wontFix
+        }
+    }
+}
+
+enum ExtractionIssueUserState: Equatable {
+    case unavailable
+    case waiting
+    case processing
+    case retryReady
+    case wontFix
+}
+
 enum SeasonImportJobType: String, Codable, Equatable {
     case importSeasonFromURL
     case retrySeasonAssets
@@ -113,6 +142,9 @@ struct SeasonImportJob: Equatable, Identifiable, Codable {
     let repairStatus: SeasonRepairStatus?
     let repairGeneration: Int
     let extractionQualityReasons: [String]
+    let extractionIssueStatus: ExtractionIssueStatus?
+    let retryAvailableRuntimeVersion: String?
+    let extractionIssueWontFixReason: String?
     let createdAt: Date
     let updatedAt: Date
 
@@ -130,6 +162,16 @@ struct SeasonImportJob: Equatable, Identifiable, Codable {
 
     var needsExtractionReview: Bool {
         status == .awaitingReview && repairStatus != .previewReady
+    }
+
+    var extractionIssueUserState: ExtractionIssueUserState {
+        extractionIssueStatus?.userState ?? .unavailable
+    }
+
+    var canRetryExtractionAfterFix: Bool {
+        reviewStatus == .correctionRequired &&
+            extractionIssueStatus == .fixed &&
+            retryAvailableRuntimeVersion?.isEmpty == false
     }
 
     var canRequestSeasonRepair: Bool {

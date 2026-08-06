@@ -25,10 +25,18 @@ struct LookbookExtractionReview: Equatable {
     let qualityReasons: [String]
     let expectedCandidateCounts: [Int]
     let candidates: [LookbookExtractionReviewCandidate]
-    let canReanalyze: Bool
+    let extractionIssueStatus: ExtractionIssueStatus?
+    let retryAvailableRuntimeVersion: String?
+    let extractionIssueWontFixReason: String?
+    let canRetryAfterFix: Bool
 
     var isCorrectionRequired: Bool {
         reviewStatus == .correctionRequired
+    }
+
+    var extractionIssueUserState: ExtractionIssueUserState {
+        guard isCorrectionRequired else { return .unavailable }
+        return extractionIssueStatus?.userState ?? .unavailable
     }
 
     var expectedCandidateCount: Int? {

@@ -26,7 +26,6 @@ import {
   extractionResultWithStrategy,
   mergeExtractionResults,
   selectExtractionCandidates,
-  type ExtractionResult,
 } from "./extraction/core.js";
 import {
   canonicalCandidateURL,
@@ -62,22 +61,30 @@ import {
 } from "./extraction/reconcile.js";
 import {
   buildRetainedExtractionEvidence,
-  evidenceExpiresAt,
-  extractionEvidenceID,
-  extractionEvidenceStoragePath,
-  extractionIssueIdentity,
-  nextExtractionIssueClusterState,
   type RetainedExtractionEvidence,
 } from "./extraction/retained-evidence.js";
+import {
+  encodeExtractionRuntimeVersionForStage,
+} from "./extraction/issue-contract.js";
+import {
+  imageExtractionIssueDisposition,
+} from "./extraction/issue-policy.js";
+import {
+  markExtractionIssueVerifiedIfEligible,
+  recordExtractionIssueOccurrence,
+} from "./extraction/issue-recorder.js";
 import {selectExtractionAdapters} from "./extraction/adapters/registry.js";
-import type {
-  ContentSectionRule,
-  ImageExtractionRules,
-} from "./extraction/adapters/types.js";
+import {
+  extractImageCandidates,
+  type ImageCandidate,
+  type ImageExtractionResult,
+} from "./extraction/image-candidates.js";
 import {
   CURRENT_EXTRACTION_VERSIONS,
   isReusableExtractionCache,
 } from "./extraction/version.js";
+
+export {extractImageCandidates} from "./extraction/image-candidates.js";
 
 type WorkerStatus = ImportJobLifecycle;
 
@@ -88,13 +95,6 @@ export function requiresApprovedReviewSnapshot(input: {
   return input.resumeFrom === "materializing" &&
     input.repairTargetSeasonID === null;
 }
-
-type ImageCandidate = {
-  sourceURL: string;
-  alt: string | null;
-};
-
-type ImageExtractionResult = ExtractionResult<ImageCandidate>;
 
 type EvaluatedImageExtraction = {
   extraction: ImageExtractionResult;
@@ -320,7 +320,6 @@ const MAX_BATCH_SIZE = 20;
 const LEASE_DURATION_MS = 5 * 60 * 1000;
 const LEASE_REFRESH_MS = 90 * 1000;
 const MAX_IMAGE_CANDIDATES_TO_STORE = 120;
-const MIN_STRONG_SECTION_WEIGHT = 240;
 const MIN_DYNAMIC_PARTIAL_CANDIDATES = 10;
 const MIN_RAW_CANDIDATES_FOR_DROP_CHECK = 8;
 const FETCH_HTML_TIMEOUT_MS = 15_000;
@@ -329,52 +328,6 @@ const PLAYWRIGHT_NAVIGATION_TIMEOUT_MS = 20_000;
 const PLAYWRIGHT_RENDER_SETTLE_MS = 1_500;
 const HTML_MAX_BYTES = 5 * 1024 * 1024;
 const REMOTE_IMAGE_MAX_BYTES = 25 * 1024 * 1024;
-const GENERIC_CONTENT_SECTION_RULES: ContentSectionRule[] = [
-  {
-    label: "productDetailContent",
-    pattern:
-      /prdDetail|detail[_-]?content|detailArea|product[_-]?detail[_-]?area/i,
-    weight: 300,
-  },
-  {
-    label: "editorContent",
-    pattern: /fr-view|se-main-container|editor|edibot/i,
-    weight: 260,
-  },
-  {
-    label: "lookbookContent",
-    pattern:
-      /lookbook|collection[_-]?detail|collection[_-]?view|campaign|season/i,
-    weight: 180,
-  },
-  {
-    label: "mainContent",
-    pattern: /\bmain\b|article|content/i,
-    weight: 80,
-  },
-];
-
-const NOISE_IMAGE_URL_PATTERNS = [
-  /\/(?:M_banner|banner|banners|icon|icons|logo|favicon|layout)\//i,
-  /\/web\/product\/(?:tiny|small|medium|list)\//i,
-  /(?:btn_count_|btn_price_delete|ico_pay_point|icon_(?:facebook|twitter))\.(?:gif|png|jpg|jpeg|webp)(?:\?|$)/i,
-  /(?:sprite|blank|placeholder|loading)\.(?:gif|png|svg)(?:\?|$)/i,
-];
-const HARD_NOISE_IMAGE_URL_PATTERNS = [
-  /(?:^|\/\/)(?:www\.)?facebook\.com\/tr\?/i,
-  /(?:^|\/\/)(?:www\.)?(?:googletagmanager|google-analytics|googleadservices)\.com\//i,
-  /(?:^|\/\/)(?:www\.)?(?:channel|charlla)\.io\//i,
-  /(?:chat|talk|kakao)[_-]?icon[^/]*\.(?:gif|png|svg|webp)(?:\?|$)/i,
-  /(?:logo|favicon)[^/]*\.(?:gif|png|svg|webp)(?:\?|$)/i,
-  /(?:social|sns|facebook|kakao|naver|instagram|twitter|fb_icon|insta_icon)/i,
-  /\/img\/common\/global\/[^/?#]*_32x24\.png(?:[?#]|$)/i,
-  /\/[^/?#]*(?:bg[_-]?search|youtube[_-]?icon|ic[_-]?(?:arr|star))[^/?#]*\.(?:gif|jpe?g|png|svg|webp)(?:[?#]|$)/i,
-  /\/[^/?#]*(?:btn|button|icon-plus|count_|page_(?:first|prev|next)|close|share|menu|copy[_-]?icon|icon[_-]?copy)[^/?#]*\.(?:gif|jpe?g|png|svg|webp)(?:[?#]|$)/i,
-  /(?:cursor|txt_progress|img_loading|top_banner|topbanner)/i,
-];
-
-const NOISE_CONTEXT_PATTERN =
-  /product\/list\.html|category\/|view all|gnb|lnb|menu|header|footer|basket|cart|order|payment|purchase|quantity|option|결제|주문|장바구니|수량|옵션/i;
 const DYNAMIC_RENDERING_SIGNAL_PATTERNS = [
   /__NEXT_DATA__/i,
   /__NUXT__|__NUXT_DATA__|\bnuxt(?:App|State)?\b/i,
@@ -627,6 +580,15 @@ async function processJob(
           parseStatus: "failed",
         }));
       }
+      await markExtractionIssueVerifiedIfEligible({
+        firestore: db,
+        jobPath: jobRef.path,
+        generation: claimedJob.dispatchGeneration,
+        runtimeVersion: encodeExtractionRuntimeVersionForStage({
+          stage: "seasonImageImport",
+          value: CURRENT_EXTRACTION_VERSIONS.extractorVersion,
+        }),
+      });
       if (parseResult.retainedEvidence !== null) {
         await retainExtractionEvidenceSafely(
           dependencies,
@@ -745,12 +707,12 @@ async function processJob(
         const source = extractionSourceEvidence(claimedJob.sourceURL);
         const retainedEvidence = buildRetainedExtractionEvidence({
           status: "failed",
-          stage: "parsing",
+          stage: "seasonImageImport",
           sourceURL: claimedJob.sourceURL,
           strategy: "unknown",
           failureReasons: ["retry_exhausted"],
           templateSignature: createHash("sha256")
-            .update(JSON.stringify({stage: "parsing", source}))
+            .update(JSON.stringify({stage: "seasonImageImport", source}))
             .digest("hex")
             .slice(0, 32),
           versions: CURRENT_EXTRACTION_VERSIONS,
@@ -1198,7 +1160,7 @@ async function ensureParsed(
       retainedEvidence: cachedReview.quality.status === "needsReview" ?
         buildRetainedExtractionEvidence({
           status: "needsReview",
-          stage: "parsing",
+          stage: "seasonImageImport",
           sourceURL: claim.sourceURL,
           strategy: stringValue(data?.imageExtractionStrategy, "cached"),
           qualityReasons: cachedReview.quality.reasons,
@@ -1349,7 +1311,7 @@ async function ensureParsed(
       retainedEvidence: quality.status === "needsReview" ?
         buildRetainedExtractionEvidence({
           status: "needsReview",
-          stage: "parsing",
+          stage: "seasonImageImport",
           sourceURL: claim.sourceURL,
           html,
           strategy: extraction.strategy,
@@ -1378,7 +1340,7 @@ async function ensureParsed(
         kind: "season_images",
       }).versions;
     const templateSignature = createHash("sha256")
-      .update(JSON.stringify({stage: "parsing", structureTokens}))
+      .update(JSON.stringify({stage: "seasonImageImport", structureTokens}))
       .digest("hex")
       .slice(0, 32);
     return {
@@ -1386,7 +1348,7 @@ async function ensureParsed(
       errorMessage: errorMessage(error),
       retainedEvidence: buildRetainedExtractionEvidence({
         status: "failed",
-        stage: "parsing",
+        stage: "seasonImageImport",
         sourceURL: claim.sourceURL,
         html: retainedHTML,
         strategy: "unknown",
@@ -1406,8 +1368,19 @@ async function retainExtractionEvidenceSafely(
   claim: ClaimedJob,
   evidence: RetainedExtractionEvidence,
 ): Promise<void> {
+  const disposition = imageExtractionIssueDisposition(evidence);
   try {
-    await retainExtractionEvidence(dependencies, jobRef, claim, evidence);
+    await recordExtractionIssueOccurrence(dependencies, {
+      brandID: claim.brandID,
+      jobPath: jobRef.path,
+      generation: claim.dispatchGeneration,
+      disposition,
+      blockedRuntimeVersion: encodeExtractionRuntimeVersionForStage({
+        stage: "seasonImageImport",
+        value: evidence.versions.extractorVersion,
+      }),
+      evidence,
+    });
   } catch (error) {
     console.warn("[lookbook-import-worker] evidence retention failed", {
       brandID: claim.brandID,
@@ -1420,122 +1393,6 @@ async function retainExtractionEvidenceSafely(
       updatedAt: FieldValue.serverTimestamp(),
     });
   }
-}
-
-async function retainExtractionEvidence(
-  dependencies: ProcessorDependencies,
-  jobRef: FirebaseFirestore.DocumentReference,
-  claim: ClaimedJob,
-  evidence: RetainedExtractionEvidence,
-): Promise<void> {
-  const issue = extractionIssueIdentity(evidence);
-  const evidenceID = extractionEvidenceID({
-    brandID: claim.brandID,
-    jobID: claim.jobID,
-    dispatchGeneration: claim.dispatchGeneration,
-    stage: evidence.stage,
-    fingerprint: issue.fingerprint,
-  });
-  const storagePath = extractionEvidenceStoragePath(evidenceID);
-  const evidenceRef = dependencies.firestore
-    .collection("lookbookExtractionEvidence")
-    .doc(evidenceID);
-  const existingEvidence = await evidenceRef.get();
-  if (existingEvidence.exists) {
-    await jobRef.update({
-      evidenceRetentionStatus: "stored",
-      evidenceID,
-      evidenceStoragePath: storagePath,
-      evidenceExpiresAt: existingEvidence.data()?.expiresAt ?? null,
-      issueFingerprint: issue.fingerprint,
-      updatedAt: FieldValue.serverTimestamp(),
-    });
-    return;
-  }
-
-  const nowDate = new Date();
-  const expiresAtDate = evidenceExpiresAt(nowDate);
-  const expiresAt = Timestamp.fromDate(expiresAtDate);
-  const payload = Buffer.from(JSON.stringify({
-    evidenceID,
-    createdAt: nowDate.toISOString(),
-    expiresAt: expiresAtDate.toISOString(),
-    evidence,
-  }));
-  await dependencies.storage.bucket().file(storagePath).save(payload, {
-    resumable: false,
-    contentType: "application/json",
-    metadata: {
-      cacheControl: "private, no-store",
-      metadata: {
-        evidenceID,
-        expiresAt: expiresAtDate.toISOString(),
-      },
-    },
-  });
-
-  const clusterRef = dependencies.firestore
-    .collection("lookbookExtractionIssueClusters")
-    .doc(issue.fingerprint);
-  await dependencies.firestore.runTransaction(async (transaction) => {
-    const [ledgerSnapshot, clusterSnapshot] = await Promise.all([
-      transaction.get(evidenceRef),
-      transaction.get(clusterRef),
-    ]);
-    if (ledgerSnapshot.exists) {
-      return;
-    }
-    const cluster = clusterSnapshot.data() ?? {};
-    const sourceHost = new URL(evidence.source.origin).hostname.toLowerCase();
-    const clusterState = nextExtractionIssueClusterState({
-      previous: cluster,
-      sourceHost,
-      evidenceID,
-      extractorVersion: evidence.versions.extractorVersion,
-    });
-    const now = FieldValue.serverTimestamp();
-
-    transaction.create(evidenceRef, {
-      evidenceID,
-      brandID: claim.brandID,
-      jobID: claim.jobID,
-      dispatchGeneration: claim.dispatchGeneration,
-      status: evidence.status,
-      stage: evidence.stage,
-      issueFingerprint: issue.fingerprint,
-      storagePath,
-      expiresAt,
-      createdAt: now,
-      updatedAt: now,
-    });
-    transaction.set(clusterRef, {
-      fingerprint: issue.fingerprint,
-      stage: issue.stage,
-      platform: issue.platform,
-      parserStrategy: issue.strategy,
-      failureReasons: issue.failureReasons,
-      qualityReasons: issue.qualityReasons,
-      templateSignature: issue.templateSignature,
-      extractorMajorVersion: issue.extractorMajorVersion,
-      occurrenceCount: clusterState.occurrenceCount,
-      affectedDomains: clusterState.affectedDomains,
-      affectedDomainCount: clusterState.affectedDomainCount,
-      sampleEvidenceIDs: clusterState.sampleEvidenceIDs,
-      status: clusterState.status,
-      recurrenceCount: clusterState.recurrenceCount,
-      firstSeenAt: cluster.firstSeenAt ?? now,
-      lastSeenAt: now,
-      updatedAt: now,
-    }, {merge: true});
-    transaction.update(jobRef, {
-      evidenceRetentionStatus: "stored",
-      evidenceID,
-      evidenceStoragePath: storagePath,
-      evidenceExpiresAt: expiresAt,
-      issueFingerprint: issue.fingerprint,
-      updatedAt: now,
-    });
-  });
 }
 
 async function pauseForReviewIfNeeded(
@@ -2477,72 +2334,96 @@ async function fetchHTML(url: string): Promise<string> {
   }
 }
 
-export function extractImageCandidates(
-  html: string,
-  baseURL: string,
-): ImageExtractionResult {
-  const adapterSelection = selectExtractionAdapters({
-    html,
-    sourceURL: baseURL,
-    kind: "season_images",
-  });
-  const rules = adapterSelection.imageRules;
-  const rawCandidates = collectImageCandidates(
-    html,
-    baseURL,
-    false,
-    true,
-    rules,
-  );
-  const sections = contentSections(
-    html,
-    [...rules.contentSectionRules, ...GENERIC_CONTENT_SECTION_RULES],
-  )
-    .map((section) => {
-      const candidates = collectImageCandidates(
-        section.html,
-        baseURL,
-        true,
-        false,
-        rules,
+export async function runImageExtractionSmoke(sourceURL: string): Promise<{
+  candidateKeys: string[];
+  evidence: RetainedExtractionEvidence;
+}> {
+  let html: string | null = null;
+  try {
+    html = await withImmediateRetry(() => fetchHTML(sourceURL));
+    const staticExtraction = extractImageCandidates(html, sourceURL);
+    const expectedCountEvidence = collectExpectedCountEvidence(
+      html, sourceURL, staticExtraction.candidates.length,
+    );
+    const programmaticGalleryEvidence = detectProgrammaticGallery(html);
+    const fallbackReason = fallbackReasonForExtraction(
+      staticExtraction, html, programmaticGalleryEvidence,
+    );
+    const fallback = fallbackReason === null ?
+      {extraction: staticExtraction, renderedCandidateCount: null} :
+      await extractionWithPlaywrightFallback(
+        sourceURL, staticExtraction, fallbackReason,
       );
-      return {
-        candidates,
-        label: section.label,
-        score: section.weight + candidates.length * 10,
-      };
-    })
-    .filter((section) => section.candidates.length > 0)
-    .sort((lhs, rhs) => rhs.score - lhs.score);
-  const bestSection = sections[0];
-  if (
-    bestSection &&
-    (bestSection.score >= MIN_STRONG_SECTION_WEIGHT || bestSection.candidates.length >= 2)
-  ) {
-    return extractionResult({
-      candidates: bestSection.candidates,
-      strategy: bestSection.label,
-      rawCandidateCount: rawCandidates.length,
-      sourceURL: baseURL,
-      candidateKey: (candidate) => extractionCandidateKey(candidate.sourceURL),
-      versions: adapterSelection.versions,
+    const deduped = await resolveContentHashDedupe({
+      candidates: fallback.extraction.candidates,
+      concurrency: 4,
+      loadBytes: async (candidate) => {
+        try {
+          return await fetchRemoteImageBytes(candidate.sourceURL, sourceURL);
+        } catch {
+          return null;
+        }
+      },
     });
+    const extraction = selectExtractionCandidates({
+      result: fallback.extraction,
+      candidates: deduped.candidates,
+      candidateKey: (candidate) => canonicalCandidateURL(candidate.sourceURL),
+    });
+    const quality = evaluateExtractionQuality({
+      candidateCount: extraction.candidates.length,
+      rawCandidateCount: extraction.rawCandidateCount,
+      staticCandidateCount: staticExtraction.candidates.length,
+      renderedCandidateCount: fallback.renderedCandidateCount,
+      expectedCountEvidence,
+      programmaticGalleryDetected: programmaticGalleryEvidence.detected,
+      contentHashComplete: deduped.complete,
+    });
+    const templateSignature = createHash("sha256")
+      .update(JSON.stringify({
+        stage: "seasonImageImport",
+        structureTokens: extractionStructureTokens(html),
+      }))
+      .digest("hex")
+      .slice(0, 32);
+    return {
+      candidateKeys: extraction.candidateEvidence.map((item) => item.candidateKey),
+      evidence: buildRetainedExtractionEvidence({
+        status: quality.status === "failed" ? "failed" : "needsReview",
+        stage: "seasonImageImport",
+        sourceURL,
+        html,
+        strategy: extraction.strategy,
+        qualityReasons: quality.reasons,
+        templateSignature,
+        candidateEvidence: extraction.candidateEvidence,
+        expectedCountEvidence,
+        programmaticGalleryEvidence,
+        structureTokens: extractionStructureTokens(html),
+        versions: extraction.versions,
+      }),
+    };
+  } catch (error) {
+    if (isRetryableImportError(error)) throw error;
+    const structureTokens = html === null ? [] : extractionStructureTokens(html);
+    return {
+      candidateKeys: [],
+      evidence: buildRetainedExtractionEvidence({
+        status: "failed",
+        stage: "seasonImageImport",
+        sourceURL,
+        html,
+        strategy: "unknown",
+        failureReasons: ["parse_failed"],
+        qualityReasons: ["no_candidates"],
+        templateSignature: createHash("sha256")
+          .update(JSON.stringify({stage: "seasonImageImport", structureTokens}))
+          .digest("hex").slice(0, 32),
+        structureTokens,
+        versions: CURRENT_EXTRACTION_VERSIONS,
+      }),
+    };
   }
-  const filteredCandidates = collectImageCandidates(
-    html,
-    baseURL,
-    true,
-    false,
-    rules,
-  );
-  return extractionResult({
-    candidates: filteredCandidates.length > 0 ? filteredCandidates : rawCandidates,
-    strategy: filteredCandidates.length > 0 ? "filteredPageImages" : "allPageImages",
-    rawCandidateCount: rawCandidates.length,
-    sourceURL: baseURL,
-    candidateKey: (candidate) => extractionCandidateKey(candidate.sourceURL),
-    versions: adapterSelection.versions,
-  });
 }
 
 export function fallbackReasonForExtraction(
@@ -2698,259 +2579,6 @@ function dynamicRenderingSignalCount(html: string): number {
     const flags = pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`;
     return count + Array.from(html.matchAll(new RegExp(pattern.source, flags))).length;
   }, 0);
-}
-
-function collectImageCandidates(
-  html: string,
-  baseURL: string,
-  applyNoiseFilter: boolean,
-  includeMetaImages: boolean,
-  adapterRules: ImageExtractionRules,
-): ImageCandidate[] {
-  const candidates: ImageCandidate[] = [];
-  const seen = new Set<string>();
-  for (const match of html.matchAll(/<img\b[^>]*>/gi)) {
-    const tag = match[0];
-    appendURLs(
-      candidates,
-      seen,
-      imageURLValues(tag),
-      baseURL,
-      attributeValue(tag, "alt"),
-      tagContext(html, match.index ?? 0),
-      applyNoiseFilter,
-      adapterRules,
-    );
-  }
-  for (const match of html.matchAll(/<source\b[^>]*>/gi)) {
-    const tag = match[0];
-    appendURLs(
-      candidates,
-      seen,
-      [
-        ...srcsetURLs(attributeValue(tag, "srcset")),
-        ...srcsetURLs(attributeValue(tag, "data-srcset")),
-      ],
-      baseURL,
-      null,
-      tagContext(html, match.index ?? 0),
-      applyNoiseFilter,
-      adapterRules,
-    );
-  }
-  if (!includeMetaImages) {
-    return candidates;
-  }
-  for (const match of html.matchAll(/<meta\b[^>]*>/gi)) {
-    const tag = match[0];
-    const property = attributeValue(tag, "property") ?? attributeValue(tag, "name");
-    if (property?.toLowerCase() !== "og:image") {
-      continue;
-    }
-    appendURLs(
-      candidates,
-      seen,
-      [attributeValue(tag, "content")],
-      baseURL,
-      null,
-      tag,
-      applyNoiseFilter,
-      adapterRules,
-    );
-  }
-  return candidates;
-}
-
-function contentSections(
-  html: string,
-  rules: ContentSectionRule[],
-): Array<{
-  html: string;
-  index: number;
-  label: string;
-  weight: number;
-}> {
-  const sections: Array<{
-    html: string;
-    index: number;
-    label: string;
-    weight: number;
-  }> = [];
-  for (const match of html.matchAll(/<(main|article|section|div)\b[^>]*>/gi)) {
-    const rule = rules.find((item) => item.pattern.test(match[0]));
-    if (!rule) {
-      continue;
-    }
-    const sectionHTML = sliceElementHTML(html, match.index ?? 0, match[1]);
-    if (!sectionHTML || Array.from(sectionHTML.matchAll(/<img\b[^>]*>/gi)).length === 0) {
-      continue;
-    }
-    sections.push({
-      html: sectionHTML,
-      index: match.index ?? 0,
-      label: rule.label,
-      weight: rule.weight,
-    });
-  }
-  return sections.sort((lhs, rhs) => lhs.index - rhs.index);
-}
-
-function sliceElementHTML(html: string, startIndex: number, tagName: string): string {
-  const tokenPattern = new RegExp(`<\\/?${tagName}\\b[^>]*>`, "gi");
-  tokenPattern.lastIndex = startIndex;
-  let depth = 0;
-  for (;;) {
-    const match = tokenPattern.exec(html);
-    if (!match) {
-      return html.slice(startIndex);
-    }
-    if (match[0].startsWith("</")) {
-      depth -= 1;
-    } else if (!match[0].endsWith("/>")) {
-      depth += 1;
-    }
-    if (depth === 0) {
-      return html.slice(startIndex, match.index + match[0].length);
-    }
-  }
-}
-
-function imageURLValues(tag: string): Array<string | null> {
-  return [
-    attributeValue(tag, "ec-data-src"),
-    attributeValue(tag, "data-src"),
-    attributeValue(tag, "data-original"),
-    attributeValue(tag, "data-original-src"),
-    attributeValue(tag, "data-lazy-src"),
-    attributeValue(tag, "data-zoom-image"),
-    attributeValue(tag, "src"),
-    ...srcsetURLs(attributeValue(tag, "srcset")),
-    ...srcsetURLs(attributeValue(tag, "data-srcset")),
-  ];
-}
-
-function appendURLs(
-  candidates: ImageCandidate[],
-  seen: Set<string>,
-  rawValues: Array<string | null>,
-  baseURL: string,
-  alt: string | null,
-  context: string,
-  applyNoiseFilter: boolean,
-  adapterRules: ImageExtractionRules,
-): void {
-  for (const rawValue of rawValues) {
-    const normalizedURL = normalizedImageURL(rawValue, baseURL);
-    if (
-      !normalizedURL ||
-      seen.has(normalizedURL) ||
-      isHardNoiseImage(normalizedURL, adapterRules) ||
-      (
-        applyNoiseFilter &&
-        isLikelyNoiseImage(normalizedURL, context, adapterRules)
-      )
-    ) {
-      continue;
-    }
-    seen.add(normalizedURL);
-    candidates.push({sourceURL: normalizedURL, alt});
-  }
-}
-
-function attributeValue(tag: string, attributeName: string): string | null {
-  const pattern = new RegExp(
-    `${attributeName}\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s>]+))`,
-    "i",
-  );
-  const match = tag.match(pattern);
-  return match?.[2] ?? match?.[3] ?? match?.[4] ?? null;
-}
-
-function srcsetURLs(srcset: string | null): string[] {
-  if (!srcset) {
-    return [];
-  }
-  return srcset
-    .split(",")
-    .map((candidate) => candidate.trim().split(/\s+/)[0])
-    .filter((candidate) => candidate.length > 0);
-}
-
-function tagContext(html: string, index: number): string {
-  return html.slice(Math.max(0, index - 500), Math.min(html.length, index + 500));
-}
-
-function normalizedImageURL(rawValue: string | null, baseURL: string): string | null {
-  if (!rawValue) {
-    return null;
-  }
-  const trimmed = rawValue.trim();
-  if (!trimmed || trimmed.startsWith("data:")) {
-    return null;
-  }
-  const decoded = htmlDecode(decodeURIComponentSafe(trimmed));
-  if (isTemplateImageValue(decoded)) {
-    return null;
-  }
-  try {
-    const url = new URL(trimmed, baseURL);
-    if (url.protocol !== "http:" && url.protocol !== "https:") {
-      return null;
-    }
-    if (isTemplateImageValue(htmlDecode(decodeURIComponentSafe(url.toString())))) {
-      return null;
-    }
-    return url.toString();
-  } catch {
-    return null;
-  }
-}
-
-function isTemplateImageValue(value: string): boolean {
-  return (
-    /{{|}}|\$\{?image|image_url|image_medium|image_small|\+\s*src\s*\+/i.test(value) ||
-    /\$\([^)]*\)\.attr\((?:'|")src(?:'|")\)/i.test(value) ||
-    /(?:'\s*\+|"\s*\+|\+\s*'|\+\s*")/.test(value)
-  );
-}
-
-function decodeURIComponentSafe(value: string): string {
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
-}
-
-function htmlDecode(value: string): string {
-  return value
-    .replace(/&amp;/g, "&")
-    .replace(/&quot;/g, "\"")
-    .replace(/&#039;|&apos;/g, "'")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">");
-}
-
-function isLikelyNoiseImage(
-  imageURL: string,
-  context: string,
-  adapterRules: ImageExtractionRules,
-): boolean {
-  return [
-    ...NOISE_IMAGE_URL_PATTERNS,
-    ...adapterRules.noiseImageURLPatterns,
-  ].some((pattern) => pattern.test(imageURL)) ||
-    NOISE_CONTEXT_PATTERN.test(context);
-}
-
-function isHardNoiseImage(
-  imageURL: string,
-  adapterRules: ImageExtractionRules,
-): boolean {
-  return [
-    ...HARD_NOISE_IMAGE_URL_PATTERNS,
-    ...adapterRules.hardNoiseImageURLPatterns,
-  ].some((pattern) => pattern.test(imageURL));
 }
 
 async function seasonMetadata(

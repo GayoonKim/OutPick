@@ -364,16 +364,31 @@ struct LookbookExtractionReviewView: View {
 
     private func correctionActions(_ review: LookbookExtractionReview) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("누락된 이미지가 있어 등록을 잠시 멈췄어요.")
+            Text(extractionIssueMessage(review))
                 .font(.subheadline)
                 .foregroundStyle(OutPickTheme.SwiftUIColor.warning)
-            if review.canReanalyze {
-                Button("이미지 다시 찾기") {
-                    Task { await viewModel.reanalyze() }
+            if review.canRetryAfterFix {
+                Button("다시 가져오기") {
+                    Task { await viewModel.retryAfterExtractionFix() }
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(viewModel.isSubmitting)
             }
+        }
+    }
+
+    private func extractionIssueMessage(_ review: LookbookExtractionReview) -> String {
+        switch review.extractionIssueUserState {
+        case .waiting:
+            return "개선 대기 중 · 이미지를 가져오지 못했어요. 확인이 필요해요."
+        case .processing:
+            return "개선 처리 중 · 이미지를 다시 가져올 수 있도록 확인하고 있어요."
+        case .retryReady:
+            return "다시 가져오기 가능 · 이미지를 다시 가져올 수 있어요."
+        case .wontFix:
+            return "자동 개선 대상에서 제외되어 원본 페이지를 수동으로 확인해야 해요."
+        case .unavailable:
+            return "이미지 상태를 확인할 수 없어요."
         }
     }
 

@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "generic-season-detail-cover",
+  "kind": "season_cover",
+  "classification": "generic",
+  "sourceURL": "https://generic.example/collections/fw-2026",
+  "inputFile": "input.html",
+  "provenance": {
+    "kind": "synthetic",
+    "issue": "adapter 없는 시즌 상세 콘텐츠의 대표 이미지 fallback"
+  }
+}

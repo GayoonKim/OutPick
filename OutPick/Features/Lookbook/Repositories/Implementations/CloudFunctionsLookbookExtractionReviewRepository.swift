@@ -48,12 +48,12 @@ struct CloudFunctionsLookbookExtractionReviewRepository:
         return try LookbookExtractionReviewCloudFunctionsMapper.receipt(response)
     }
 
-    func requestReanalysis(
+    func retryAfterExtractionFix(
         brandID: BrandID,
         jobID: String
     ) async throws -> LookbookExtractionReviewReceipt {
         let response = try await transport.call(
-            "requestLookbookExtractionReanalysis",
+            "retryLookbookExtractionAfterFix",
             data: ["brandID": brandID.value, "jobID": jobID]
         )
         return try LookbookExtractionReviewCloudFunctionsMapper.receipt(response)

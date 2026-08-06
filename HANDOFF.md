@@ -2,7 +2,8 @@
 
 ## 1. 최종 목표
 
-- 최근 완료한 핵심 task는 `development-production-environment-separation`이다. 현재 진행 중인 핵심 task는 없다.
+- 핵심 task `lookbook-extraction-issue-operations-production-rollout`은 Production 읽기 전용 감사, contract 3 Worker candidate QA·traffic 100% 전환, backend prerequisite/Functions, exact Firestore rules, canonical 앱 E2E, 앱 원문 오류 문구 교정, QA·legacy cleanup까지 완료해 2026-08-06 종료했다.
+- 이전 `lookbook-extraction-issue-operations`도 Phase 1~7 구현, Development contract 3 배포와 AMOMENTO/OUTSTANDING 실데이터 QA 완료로 종료 상태다.
 - 하나의 Xcode 프로젝트와 app target을 유지하면서 Development 앱은 `GayoonKim.OutPick.dev`와 `outpick-test`, Production 앱은 `GayoonKim.OutPick`과 `outpick-664ae`를 사용한다.
 - 잘못된 Bundle ID·Firebase plist/project·Socket 조합은 build-time과 runtime에서 fail closed 처리한다.
 - Development 앱은 `OutPick DEV`로 표시하고 Production 앱과 같은 기기에 동시에 설치할 수 있어야 한다.
@@ -10,6 +11,89 @@
 - 코드·설정·백엔드·배포 계약 기준의 Development/Production 환경 분리는 PR #3 병합, Production Worker traffic 전환과 실제 import smoke까지 완료해 종료 처리했다.
 
 ## 2. 완료한 작업
+
+### Production Worker contract 3 no-traffic candidate QA 완료
+
+- 사용자 승인으로 Production Worker `lookbook-import-worker-00026-qes`를 source `1dbe6e1`, contract 3, traffic 0%로 배포했다. live `00024-fow` traffic 100%와 기존 rollback `00023-879`는 유지했다.
+- 배포 전 Worker 115/115, lint/build와 fixture 9/9를 통과했다. candidate는 Ready이며 runtime은 source `1dbe6e1`, contract 3, extractor `1.2.3`, Cafe24 `1.0.1`이다.
+- 사용자 `gayunkim.1@gmail.com`에 Production task/functions service account 두 exact 리소스의 `roles/iam.serviceAccountOpenIdTokenCreator`만 영구 부여했다. `generateIdToken` 직접 호출만 사용하며 project-level Token Creator, access token impersonation, signing과 key는 사용하지 않는다.
+- OIDC caller matrix에서 task identity는 `/readyz` 200, import/discovery 빈 payload 500, runtime 403이었고 functions identity는 runtime 200, diagnostic 빈 payload 500, import/discovery 403이었다.
+- 기존 Production 해칭룸 실제 URL로 discovery 후보 20개·목록 대표 이미지 20개, image extraction 후보 12개를 확인했다. 두 stage 모두 HTTP 200, failure 0, logic issue 없음이었다.
+- caller matrix의 의도한 빈 payload 세 요청만 request ERROR로 기록됐고 이후 actual smoke의 unexpected ERROR와 import queue pending은 0건이다.
+- token response와 candidate QA 임시 파일, 배포용 임시 clean worktree를 정리했다.
+
+### Production Worker contract 3 traffic 전환 완료
+
+- 전환 직전 candidate Ready, 기존 `00024-fow` traffic 100%, import queue pending 0과 actual smoke 이후 unexpected ERROR 0을 재확인했다.
+- 사용자 명시 승인으로 `lookbook-import-worker-00026-qes=100`만 적용했다. `00024-fow`는 traffic 0% rollback revision으로 보존했다.
+- canonical service URL의 `/readyz`, `/runtime-contract`와 기존 해칭룸 성공 import job의 실제 image smoke가 모두 HTTP 200이었다.
+- live runtime은 `00026-qes`, source `1dbe6e1`, contract 3, extractor `1.2.3`, Cafe24 `1.0.1`이고 image 후보 12개·logic issue false·failure 0이었다.
+- 전환 후 import queue pending 0, 검증 시작 이후 severity ERROR 0을 확인했다.
+
+### Production durable discovery/issue operations backend 완료
+
+- Firestore `candidates(resolution ASC, sortIndex ASC)` composite 1개, collection-group field override 3개, TTL 6개를 배포해 모두 `READY`/`ACTIVE`를 확인했다. `--force`를 사용하지 않아 기존 remote override 5개는 보존했다.
+- `lookbook-discovery-jobs`를 초당 1건·동시 1건·최대 3회·30~300초 backoff·1시간 retry duration으로 생성했고 `RUNNING`을 확인했다.
+- Production operator `outpick-extraction-ops-prod@outpick-664ae.iam.gserviceaccount.com`과 exact 최소 IAM을 적용했다. 사용자에게 operator OIDC ID token 생성 역할만, operator에게 private read/write/release invoker만 부여했고 public invoker는 없다.
+- durable discovery 7개, issue operations 4개와 `createBrand`를 합친 Function 12개를 배포했다. 모두 ACTIVE/Node 24이며 실제 URI·audience와 10분 scheduler 2개가 일치한다.
+- 운영 CLI는 broad `gcloud --impersonate-service-account`를 제거하고 고정 사용자 access token으로 exact operator IAM Credentials `generateIdToken`만 직접 호출하도록 교정했다. CLI 9/9·lint/build, Functions 146/146·lint/build가 통과했다.
+- Production private API는 무인증 read 403, operator read 성공, 존재하지 않는 fingerprint write 404로 데이터 변경 없이 검증했다. 배포 후 두 queue task 0, `seasonDiscoveryJobs` 0, Worker/Function 12개 신규 severity ERROR 0이다.
+
+### Production Phase 5 첫 smoke와 rules blocker
+
+- Production Simulator build가 성공했고 Kakao 총 관리자 `kakao:3647141989`로 앱 로그인했다. Google 앱 계정에는 `brandAdmins`가 없으며 새 권한을 추가하지 않았다.
+- QA 브랜드 `PC1aBgoDY9PbWHCroRXq`, job `NBNCRkQ6Q8m9gA4kJ0EN`을 생성했다. job은 contract 3·attempt 1·retry 0 `succeeded`, candidate 80·list cover 80이다.
+- 앱은 candidate 조회에서 `Missing or insufficient permissions`를 표시했다. Production ruleset과 로컬 전체 diff는 `seasonDiscoveryJobs`, `candidates`, `reviews`의 `hasBrandWriteAccess` read와 client write deny 15줄뿐이다.
+- rules emulator는 rules 30/30, transaction 7/7과 seed 재-dry-run 변경 0을 통과했다. Firebase CLI wrapper는 성공적인 정리 뒤 unexpected error로 exit 2였으므로 명령 전체 종료는 미통과다.
+- 최초 URL로 `/archive`를 사용한 것은 판단 오류다. 현재 상품 목록 80개를 반환하므로 이 결과는 유효한 시즌 QA가 아니다. 기존 Production 해칭룸의 canonical URL `https://hatchingroom.com/product/archive-list.html?cate_no=226`로 교정해야 한다.
+- 첫 smoke 이후 import/discovery queue task 0, Worker/Functions severity ERROR 0을 확인했다.
+- 첫 smoke 시점에는 QA 데이터를 삭제하지 않았고 rules 배포, URL 교정, 재검증과 cleanup을 각각 별도 승인 게이트로 유지했다. 이후 승인된 cleanup까지 완료했다.
+
+### Production Phase 5 canonical smoke 완료
+
+- 사용자 승인으로 exact `firestore.rules`를 Production에 배포했다. 새 ruleset은 `bce94c07-bb86-4f9c-a74e-e14dc954085c`이며 로컬·운영 SHA-256 `d1978d27b63a73ae5bc230c3fed4bf9c3b0484b6fd44f7305fd8372ffb59cc74`가 일치한다.
+- QA 브랜드 `PC1aBgoDY9PbWHCroRXq`의 archive URL을 canonical 해칭룸 URL로 교정하고 job `x7JF1V6Y9byFJI6NyStR`을 요청했다. 후보 20·대표 이미지 20·목록 대표 이미지 20으로 성공했고 Kakao 총 관리자 앱 카드에서 실제 이미지와 제목을 확인했다.
+- 재검증 뒤 discovery queue는 `RUNNING`·task 0, smoke 이후 Worker/Functions severity ERROR 0이다.
+- `CreateBrandDiscoveryViewModel`은 Firebase/infrastructure 원문을 내부 진단 로그로만 남기고 화면에는 `시즌 목록을 불러오지 못했어요. 브랜드 등록을 마친 뒤 다시 찾아올 수 있어요.`를 전달하도록 교정했다. 실패 원문 비노출과 성공 결과 발행 targeted 테스트를 추가해 관련 9/9와 Production Simulator 구성을 빌드 통과했다.
+- 이후 빠른 화면 조작·시각 QA는 사용자가 체크리스트로 수행하고, Codex는 Simulator를 직접 조작하지 않는다. Codex는 코드 변경, 자동 테스트·빌드, backend/log 자동 검증을 담당한다.
+- 사용자 파괴 승인으로 QA 브랜드 부모 1개, 두 job과 후보 100개를 포함한 하위 102개, `brandNameIndex` 1개를 영구 삭제했다. Firestore·Storage 잔존은 0건이다.
+- 코드·앱 참조가 제거된 `requestLookbookExtractionReanalysis`를 삭제하고 현재 fixed/runtime 경계를 강제하는 `retryLookbookExtractionAfterFix` 하나를 exact 배포해 ACTIVE를 확인했다. 삭제 뒤 replacement 미배포 상태를 발견해 보완했으며 Functions lint/build와 전체 146/146이 통과했다.
+- 7일 retention 만료 후 legacy cluster 3개, evidence 문서 3개와 대응 Storage JSON 3개를 영구 삭제해 잔존 0건을 확인했다. 게시된 시즌이 참조하는 해칭룸·언어팩티드·이그노타 import job 3개와 시즌·포스트는 보존했다.
+- 최종 검증은 두 queue task 0, 2026-08-06T07:14:00Z 이후 Cloud Run ERROR 0, replacement ACTIVE, legacy callable 404, 보존 import job·시즌 3쌍 200이다.
+
+### Lookbook extraction issue operations — Development 범위 종료
+
+- 이전 task를 Development 구현·배포·실데이터 QA 완료로 종료했다.
+- 실제 `seasonImageImport` 결함의 `fixed → retry success → verified`는 결함 발생 시 이벤트 기반 운영 게이트로 유지한다.
+- Production rollout은 별도 핵심 task로, legacy callable/data cleanup은 rollout과도 분리된 파괴 승인 작업으로 전환했다.
+- 새 task 하네스는 `docs/ai/tasks/lookbook-extraction-issue-operations-production-rollout/`에 작성했다.
+
+### Phase 7 시즌 대표 이미지 보강 — Development 배포·실데이터 QA 완료
+
+- 시즌 identity와 대표 이미지 표시를 분리하고 `coverImageURL` 유무로 유효 시즌 후보를 제거하지 않기로 확정했다.
+- 대표 이미지 우선순위는 모든 브랜드에 `목록 행 이미지 → 시즌 상세 콘텐츠 영역의 최상단 첫 유효 이미지 → 없음`으로 고정했다.
+- 상세 fallback은 platform adapter 유무와 관계없이 적용한다. Generic 규칙으로 실제 시즌 콘텐츠 영역을 찾고 Cafe24 등 Platform/Domain 규칙은 식별 정확도만 보강한다. header/navigation/banner/footer/related와 low-confidence 전체 페이지 후보는 제외한다.
+- 보강은 저장 대상 중 이미지 없는 앞 30개, 동시 3개, 전체 15초의 best-effort이며 실패는 후보 이미지만 `null`로 남기고 discovery 상태와 issue 판정을 바꾸지 않는다.
+- candidate provenance, job cover 집계, snapshot hash와 season discovery `contract:3` 경계를 확정했다. extractor는 `1.2.3`을 유지했고 실제 QA에서 구형 `collection-images` 직접 영역을 보강해 Cafe24 adapter를 `1.0.1`로 올렸다.
+- 기존 import 이미지 선택을 `image-candidates.ts` 순수 모듈로 분리하고, Generic 콘텐츠 영역과 Cafe24 상세 페이지 대표 이미지 fixture를 추가했다. 기존 import 선택 결과와 extractor/adapter version은 유지했다.
+- 이미지 없는 저장 대상 앞 30개만 동시 3개·전체 15초 안에서 best-effort로 상세 페이지를 읽는 `season-cover.ts`를 추가했다. 목록 이미지 우선, 후보 순서·identity 보존, 개별 실패 격리와 deadline skip을 테스트로 고정했다.
+- 시즌 후보의 cover 기반 제거를 삭제하고 candidate provenance, job cover 집계, snapshot hash와 Worker/Functions `contract:3` 저장 계약을 구현했다.
+- 최종 로컬 검증은 Worker 115/115·fixture 9/9·lint/build, Functions 146/146·lint/build, iOS Development Simulator build가 모두 통과했다.
+- Development Functions 9개를 contract 3으로 배포했고 Worker `00012-fih` source `3597b2b`, contract 3, extractor `1.2.3`, Cafe24 `1.0.1`로 traffic 100% 전환했다. rollback은 `00010-hiq`다.
+- 앱에서 생성한 최종 AMOMENTO job `GwToZCXiZ9iUfKp4tDMg`은 후보 15개·대표 이미지 15개·상세 실패 0으로 성공했다. 저장 URL 15개와 실제 상세 첫 유효 이미지가 모두 일치하고 Simulator 카드 전체 이미지, queue pending 0과 신규 ERROR 0을 확인했다.
+- 목록 cover 회귀는 Development OUTSTANDING 브랜드 `Mb9JqermkE2ZalNAPJXH`의 generation 1 `xr4zoCHdp3vr0AXQXMcE`과 generation 2 `Yl9353dPQLywApLqrZTU`로 확인했다. 후보 44개 snapshot hash가 동일하고 누락·추가·변경 0건, 전부 `list/listElementImage`, 상세 fallback 0회, 실제 이미지 HTTP 성공 44/44였다. 기존 동적 페이지 감지 때문에 상태는 예상대로 `correctionRequired`이며 두 queue와 신규 ERROR는 0건이다. 사용자 삭제 승인 후 브랜드 subtree 91문서, QA evidence 2문서, 전용 cluster 1문서와 Storage 객체 3개를 영구 삭제했고 잔존 0건을 확인했다.
+- Development와 Production OIDC QA는 각각 두 exact task/functions 서비스 계정 리소스에 사용자 `gayunkim.1@gmail.com`의 `roles/iam.serviceAccountOpenIdTokenCreator`만 영구 유지한다. project-level Token Creator와 서비스 계정 key는 사용하지 않는다.
+
+### AMOMENTO 첫 실제 extraction fix — Development 실제 loop 완료
+
+- AMOMENTO archive가 링크가 아니라 `button.archive-modal-link[data-url]`로 15개 시즌을 제공해 기존 anchor-only discovery가 0건이 된 원인을 실페이지에서 확인했다.
+- Worker가 `button[data-url]`의 `collection-single.html`을 기존 URL 안전 검증과 후보 scoring으로 읽고, 버튼 본문의 끝자리 ISO 날짜를 제목에서 제거하도록 Cafe24 공통 로직을 보강했다. 브랜드 전용 adapter나 15개 모달 클릭은 추가하지 않았다.
+- 새 시즌 discovery job과 Worker runtime을 `contract:2`로 일치시키도록 Functions canonical revision과 Development/Production 공용 배포 script 값을 함께 올렸다. Production 배포는 수행하지 않았다.
+- 앱의 시즌 목록·이미지 issue 설명에서 `추출 로직/개선된 방식` 표현을 제거하고 `가져오지 못했어요/확인하고 있어요/다시 가져올 수 있어요`로 단순화했다.
+- 최종 검증은 Functions 145/145·lint/build, Worker 103/103·fixture 6/6·lint/build, iOS targeted test 12개와 Development Simulator build가 통과했다.
+- Development Worker `lookbook-import-worker-development-00008-foq`를 source `a9a57b5802f24eb83e051efb6733a8eb2deadbe4`, contract 2로 traffic 100% 전환했다. rollback은 `00006-pob`다.
+- AMOMENTO ground truth 15개 actual smoke로 cluster `fixed` version 5를 열고, Simulator 총 관리자 재시도 job `eK2fR8yhIZQ23gNDKuVs`가 후보 15개·contract 2로 성공한 뒤 cluster `verified` version 6을 확인했다. 관련 queue와 ERROR는 0건이다.
+- 통합 중 tag-only 0% traffic 오인, 삭제된 대표 job, 새 시즌 재시도 job의 fix projection 누락을 발견해 Functions에 회귀 테스트와 함께 보강했다. verifier 재배포 뒤 Development operator invoker binding도 정확한 전용 계정만 복구했다.
 
 ### 이전 Phase 2 변경 보존
 
@@ -118,13 +202,65 @@
 - smoke Firestore tree·Storage 12개·evidence ledger/JSON·단독 issue cluster를 삭제했다. 전환 후 Worker ERROR, queue pending, smoke 데이터 잔존은 모두 0건이다.
 - 운영 결과는 문서 전용 PR #4의 커밋 `6a88016`과 merge commit `9d6a7db`로 `main`에 반영했다.
 
-## 3. 완료 범위 밖 후속 후보
+## 3. 완료 범위 밖 후속 후보와 현재 설계 task
+
+- 최우선: Production Worker `00026-qes` traffic 100% 전환을 완료했다. 다음은 backend prerequisite/Functions exact mutation 승인을 받은 뒤 durable discovery/issue operations를 활성화하는 것이다.
 
 1. Development 실기기 App Attest는 Apple Developer Program 가입 후 외부 의존 후속 작업으로 재개한다.
 2. Production Google 실제 로그인과 provider별 계정 삭제 요청·취소 재인증 smoke는 출시 전 QA로 남는다.
 3. PITR·예약 백업·Storage soft delete·복구 훈련은 출시 운영 게이트로 남는다.
+4. 후속 후보 `lookbook-discovery-learning-loop`는 브랜드 생성 직후 시즌 후보를 자동 추출하고 관리자 확인 후 선택 시즌 이미지를 추출하는 흐름을 유지한다. 2026-08-04 사용자 승인으로 Firestore job + 전용 Cloud Tasks + Cloud Run Worker의 핵심 구현과 iOS 관찰 접합부를 완료했다. 앱은 화면 종료 시 서버 job을 취소하지 않으며 최초 job ID 또는 published pointer로 상태를 복원한다.
+5. 같은 후속 후보의 시즌 동일성은 URL을 우선하되, URL이 달라도 동일 브랜드 안에서 정규화한 시즌 이름이 기존 시즌 하나와 유일하게 일치하면 기존 시즌으로 연결하고 최신 source URL만 갱신한다. 모호한 일반명이나 복수 일치는 관리자 검토로 보내며 URL 변경만으로 이미지 재추출을 자동 시작하지 않는다.
+6. 추출 규칙 변경은 계층과 무관하게 전체 fixture corpus를 실행하고 Domain/Platform/Generic 영향 범위별 추가 증거를 요구한다. 기존 성공 결과의 후보 수·집합·순서·제목·strategy·adapter·quality에 예상하지 못한 differential이 생기면 배포를 중단한다. 의도된 개선만 ground truth, golden 갱신, version bump, Development 실제 URL smoke와 사용자 승인 뒤 Production으로 전환하며, CI required check와 직접 배포·traffic 전환 우회 차단을 후속 설계 범위에 포함한다.
+7. fixture는 브랜드별로 무조건 추가하지 않고 같은 platform/template/strategy/reason/구조 원인은 기존 issue cluster와 대표 fixture에 통합한다. 수정 버전 이상에서 같은 fingerprint가 재발하면 `open`/recurrence로 처리해 우선 조사하며, 기존 fixture 재실패는 회귀와 배포 중단·rollback, fixture 통과 후 실제 URL 실패는 불충분 fixture·새 변형·adapter 미선택·잘못된 계층·네트워크/차단 문제로 분류한다. cluster 통합은 중복 fixture 방지일 뿐 재발 무시나 자동 승인이 아니다.
+8. 동일 brand/canonical archive URL/extraction contract의 active 요청은 하나의 job으로 합치고 다른 입력만 새 generation으로 처리한다. candidate snapshot과 일반 완료 job은 30일, 실패 요약과 관리자 검토 audit은 60일, evidence는 7일 보존하며 active와 `awaitingReview/correctionRequired`에는 TTL을 두지 않는다.
+9. 최초 discovery job은 `createBrand` transaction에서 브랜드와 함께 생성한다. active job은 watchdog이 누락 task·만료 lease·stale generation·retry 소진을 감시해 복구 또는 `failed/cancelled/superseded`로 수렴시키며, `awaitingReview/correctionRequired`는 TTL이 아니라 관리자 판단·로직 보강 후 재분석·취소로 닫는다.
+10. 추출 로직 보강 뒤 시즌 목록은 새 discovery generation으로, 특정 시즌 이미지는 기존 import job의 새 review/dispatch generation으로 다시 분석한다. transient 재시도, URL 수정, 관리자 검토, 보강 대기, 재분석, 취소를 원인별 action으로 구분하고 모든 과거 실패를 자동 재실행하지 않는다.
+11. 2026-08-04 Development `outpick-test`에 `lookbook-discovery-jobs`, 관련 Functions 8개, rules/index/TTL과 Worker `lookbook-import-worker-development-00004-xal`을 배포했다. OUTSTANDING 실제 URL 2회와 동일 callable 3건 병합을 통과했고 queue·ERROR·QA 데이터 잔존은 0건이다.
+12. 실제 OUTSTANDING 페이지는 후보 44개와 `load_more_detected`/`dynamic_rendering_detected`로 `correctionRequired`가 됐다. 파이프라인은 안전하게 동작했지만 extractor/fixture ground truth 보강이 필요하다.
+13. active 상태 카드의 `ProgressView + 주 문구 + 보조 문구` 묶음 전체는 카드 본문 중앙에 두고 header와 취소 action은 분리한다. 고정 pixel offset 대신 작은 화면과 Dynamic Type에서 검증한다.
+14. 현재 Phase 4A의 `correctionRequired`는 `추출 개선 요청 → 개선 요청됨 → 다시 가져오기 가능`으로 구현돼 있다. 확정된 Phase 4B에서는 버튼을 제거하고 시즌 목록·시즌 이미지 추출 로직 불충분을 서버가 자동 기록하며, 앱은 `개선 대기 중 → 개선 처리 중 → 다시 가져오기 가능`만 표시한다.
+15. 개선 준비 판정은 문자열 version이 아니라 단조 증가 정수 `extractionContractRevision`을 사용한다. Worker candidate 검증과 환경 traffic 준비가 끝난 뒤 Functions canonical revision을 올리는 순서를 강제한다.
+16. Phase 3A는 `SeasonImportManagementView.activeDiscoveryContent`에서 spinner·주 문구·보조 문구 묶음 전체를 카드 본문 중앙에 배치하고, phase를 사용자 언어로 바꿨다. Development build/install/launch는 통과했지만 이전 QA fixture와 임시 총관리자 권한을 삭제한 상태라 새 데이터 mutation 없이 시각 QA는 보류했다.
+17. Phase 4A는 개선 요청 callable, 총 관리자 재분석 callable, 10분 readiness reconciler의 별도 bounded query, `status + improvementRequested` 복합 인덱스, Worker revision/fingerprint 계약과 iOS 3단계 UI를 구현했다. 기존 무필드 task/job은 최초 revision 1로, 기존 64자 issue fingerprint는 앞 40자로 호환한다. Functions 111개, Worker 89개, iOS targeted 7개와 `git diff --check`가 통과했다.
+18. Phase 4B 방향은 `실패 자동 기록 → Codex 내부 운영 API/CLI 조회·분류 → 사용자 보강 승인 → 기존 코드·fixture·Development·PR·Production 하네스 → revision 검증 → 다시 가져오기 활성화`로 확정했다. 완전 자동 code-generation·PR·Production rollout은 제외하며 기존 실패 job도 자동 재실행하지 않는다.
+19. 현재 1인 운영 범위는 cluster 실패 목록 요약과 선택 issue 처리뿐이다. 상태는 `open/inProgress/needsGroundTruth/fixed/verified/wontFix`로 제한하고 담당자·연차별 할당, Jira, 댓글·멘션, SLA, 칸반 보드와 전역 issue UI는 제외한다. Codex는 여러 fingerprint의 상세를 bounded batch로 비교할 수 있다.
+20. 2026-08-05 `lookbook-extraction-issue-operations` 상세 하네스를 작성했다. IAM private read/write/release API, 공통 fingerprint, runtime registry와 Worker `/runtime-contract`, Production 100% traffic·실제 URL smoke verifier, job retry projection을 확정했다. occurrence evidence는 7일, cluster 대표 evidence 한 개는 미해결 동안 유지하고 `verified/wontFix` 뒤 60일 보존한다. `fixed`는 Production 검증, `verified`는 새 revision 실제 재시도 성공이며 재발 시 자동 reopen한다. 앱이 배포된 적 없으므로 레거시 개선 요청 호환 계층은 만들지 않는다. 공식 문서 점검 결과를 반영해 Production identity는 환경별 전용 operator service account impersonation으로 확정했다.
 
 ## 4. 수정한 파일 목록
+
+- 이번 task 전환:
+  - `docs/ai/tasks/lookbook-extraction-issue-operations/{plan,progress,qa-checklist}.md`
+  - `docs/ai/tasks/lookbook-extraction-issue-operations-production-rollout/{design,decisions,plan,progress,qa-checklist}.md`
+  - `docs/ai/tasks/active.md`
+  - `HANDOFF.md`
+  - 운영 CLI OIDC 경계: `tools/lookbook-extraction-issue-ops/src/{config,gcloud,index}.js`, `gcloud.test.js`
+  - Production 외부 상태: Worker traffic, Firestore index/TTL, discovery queue, operator/minimum IAM, Function 12개
+
+- AMOMENTO 첫 실제 fix 완료·커밋 범위:
+  - `tools/lookbook-import-worker/src/season-discovery.ts`, `season-discovery.test.ts`, `src/fixture/corpus.test.ts`
+  - `tools/lookbook-import-worker/fixtures/discovery/platform/cafe24-modal-data-url/{input.html,metadata.json,expected.json}`
+  - `functions/src/shared/seasonDiscoveryCreation.ts`, `functions/src/lookbook/import/seasonDiscoveryContract.test.ts`
+  - `scripts/ai/deploy-lookbook-import-worker.sh`
+  - `OutPick/Features/Lookbook/Views/BrandDetail/{SeasonImportManagementView,LookbookExtractionReviewView}.swift`
+  - 관련 `docs/ai/architecture`, `entrypoints`, task progress/QA와 `HANDOFF.md`
+
+- Phase 7 구현·문서 갱신:
+  - `tools/lookbook-import-worker/src/extraction/{image-candidates,season-cover}.ts`와 대응 테스트
+  - `tools/lookbook-import-worker/src/{processor,season-discovery,season-discovery-processor}.ts`와 대응 테스트
+  - `tools/lookbook-import-worker/src/fixture/{types,manifest,corpus}.ts`, `corpus.test.ts`, `fixtures/season-cover/**`
+  - `functions/src/shared/seasonDiscoveryCreation.ts`
+  - `functions/src/lookbook/import/{functions,seasonCandidateParser,seasonCandidateDiscovery}.ts`와 대응 테스트
+  - `scripts/ai/deploy-lookbook-import-worker.sh`
+  - `docs/ai/tasks/lookbook-extraction-issue-operations/phase-7-season-cover-enrichment.md`
+  - `docs/ai/tasks/lookbook-extraction-issue-operations/{design,decisions,plan,progress,qa-checklist}.md`
+  - `docs/ai/ENTRYPOINTS.md`
+  - `docs/ai/DATA_SCHEMA.md`
+  - `docs/ai/entrypoints/{FIREBASE,LOOKBOOK}.md`
+  - `docs/ai/entrypoints/TESTS.md`
+  - `docs/ai/architecture/LOOKBOOK_IMPORT_WORKER.md`
+  - `HANDOFF.md`
+- 이번 단계에는 로컬 코드·fixture·테스트·하네스 변경이 있으며 외부 배포는 없다.
 
 - 이전 Phase 2 커밋 완료:
   - `OutPick/Features/Lookbook/ViewModels/LookbookExtractionReviewViewModel.swift`
@@ -135,8 +271,50 @@
   - `docs/ai/tasks/active.md`
 - 환경 분리 구현·테스트·tracked 문서는 PR #3에, Production Worker 배포 결과 문서는 PR #4에 병합했다. 이 closure 갱신 전 working tree에는 `HANDOFF.md` 수정만 남아 있었다. task `progress.md`와 `qa-checklist.md`는 `.git/info/exclude` 대상 로컬 하네스다.
 - `firebase-debug.log`는 Firebase CLI 인증 실패로 생성된 임시 로그라 삭제했고 커밋하지 않았다.
+- `lookbook-discovery-learning-loop` 설계 하네스 생성:
+  - `docs/ai/tasks/lookbook-discovery-learning-loop/design.md`
+  - `docs/ai/tasks/lookbook-discovery-learning-loop/decisions.md`
+  - `docs/ai/tasks/lookbook-discovery-learning-loop/plan.md`
+  - `docs/ai/tasks/lookbook-discovery-learning-loop/progress.md`
+  - `docs/ai/tasks/lookbook-discovery-learning-loop/qa-checklist.md`
+  - `docs/ai/tasks/active.md`
+  - `HANDOFF.md`
+- Phase 4A 핵심 변경:
+  - `functions/src/lookbook/import/seasonDiscoveryJobs.ts`, `seasonDiscoveryContract.ts`, `functions/src/shared/seasonDiscoveryCreation.ts`, `functions/src/index.ts`
+  - `tools/lookbook-import-worker/src/season-discovery-processor.ts`와 관련 Functions/Worker 테스트
+  - `firestore.indexes.json`
+  - `OutPick/Features/Lookbook/Domains/Entities/SeasonCandidateDiscoveryResult.swift`
+  - `OutPick/Features/Lookbook/Repositories/{Protocols,Implementations}`의 season discovery Repository
+  - `OutPick/Features/Lookbook/ViewModels/SeasonImportManagementViewModel.swift`
+  - `OutPick/Features/Lookbook/Views/BrandDetail/SeasonImportManagementView.swift`
+  - `OutPickTests/SeasonDiscoveryManagementViewModelTests.swift`
+  - `docs/ai/{ENTRYPOINTS.md,DATA_SCHEMA.md}`, 관련 Firebase/Lookbook/Test/Worker 진입점 문서와 task 하네스
 
 ## 5. 중요한 아키텍처 결정
+
+### Development 구현 종료와 Production rollout 분리
+
+- 선택: 기존 task는 Development 구현·QA 완료로 종료하고 Production rollout을 별도 핵심 task로 관리한다. 실제 이미지 extraction fix loop는 결함 발생 시 운영 게이트로 남긴다.
+- 이유: Production 외부 상태, IAM, contract cutover와 rollback은 구현 완료 여부와 다른 승인·위험 경계를 가진다. 실제 결함이 없는 이미지 stage에 가짜 실패를 만드는 것도 운영 의미가 없다.
+- 트레이드오프: task가 하나 늘지만 완료 상태를 과장하지 않고 Production mutation과 이벤트 기반 QA의 조건을 명확히 분리할 수 있다.
+- 보류한 대안: 기존 task를 Production 배포까지 계속 active로 두는 방식은 완료된 Development 작업과 승인 대기를 혼합해 다음 작업의 경계를 흐리므로 사용하지 않는다.
+- 재검토 조건: Production 읽기 전용 감사에서 코드 계약 자체의 gap이 발견되면 rollout을 중단하고 변경 설계와 검증 범위를 별도로 논의한다.
+
+### Cafe24 modal data-url을 공통 시즌 후보로 처리
+
+- 선택: 모달을 15번 클릭하거나 AMOMENTO domain adapter를 만들지 않고, 정적 HTML의 `button[data-url]`을 anchor와 같은 URL 후보 파이프라인에 합친다.
+- 이유: 실제 상세 URL과 제목이 이미 정적 DOM에 있고, public URL/비시즌 경로/score 검증을 재사용하면 네트워크·시간 비용과 사이트별 결합을 줄일 수 있다.
+- 트레이드오프: strategy 이름 `staticAnchors`는 기존 golden 호환을 위해 유지돼 실제 입력 종류를 완전히 표현하지는 않는다. evidence와 contract revision 2가 변경 경계를 대신한다.
+- 보류한 대안: 모든 모달을 Playwright로 열어 DOM을 수집하는 방식은 느리고 이미지 요청이 많으며, AMOMENTO 전용 adapter는 같은 Cafe24 템플릿 재사용 가능성을 불필요하게 제한해 보류했다.
+- 재검토 조건: `data-url`이 실제 상세 URL이 아니거나 별도 API 토큰·POST가 필요한 Cafe24 변형이 확인되면 platform interaction rule 또는 fixture가 고정된 domain adapter를 검토한다.
+
+### 시즌 identity와 대표 이미지 보강 분리
+
+- 선택: 시즌 후보 채택·순서는 URL/제목/score/page order로 확정하고 대표 이미지는 그 뒤 별도 best-effort 단계에서 보강한다. 모든 브랜드에서 목록 이미지가 있으면 유지하고, 없으면 시즌 상세 콘텐츠 영역의 최상단 첫 유효 이미지를 사용한다.
+- 이유: 대표 이미지는 선택 화면의 보조 정보이므로 이미지 제공 여부가 정상 시즌 자체를 누락시키면 안 된다. 기존 이미지 extractor의 content-section/noise 규칙을 공유하면 페이지 로고를 대표 이미지로 오인하는 위험도 줄일 수 있다.
+- 트레이드오프: 이미지가 없는 후보마다 상세 HTML 요청이 추가되고 일시적 네트워크 상태에 따라 snapshot hash가 달라질 수 있다. 이를 30개·동시 3개·15초로 제한하고 cover를 표시 snapshot의 일부로 취급한다.
+- 보류한 대안: HTML 전체에서 처음 나온 이미지를 쓰는 무검증 fallback은 로고·배너 오탐 위험이 커서 제외했다. AMOMENTO host 전용 코드와 Cafe24-only gate도 다른 브랜드에 공통 규칙이 적용되지 않아 제외했다. 모든 상세 이미지를 Worker가 다운로드·저장하는 방식도 비용과 책임 범위를 늘려 제외했다.
+- 재검토 조건: 검증된 다른 플랫폼 상세 구조가 fixture로 추가되거나 외부 이미지 URL 만료가 실제 문제로 확인될 때 adapter 규칙 또는 asset 저장 정책을 별도로 설계한다.
 
 ### 하나의 app target과 명시적 환경 configuration
 
@@ -187,15 +365,41 @@
 - 트레이드오프: 배포 단계가 늘지만 rollback revision을 전환 전에 고정하고 실제 OIDC·import smoke를 수행할 수 있다.
 - 보류한 대안: PR 머지 직후 검증 없이 바로 source deploy하는 방식은 Production IAM·환경값·실제 import 회귀를 사전에 차단하지 못한다.
 
+### 실패 자동 기록과 Codex 수동 보강
+
+- 선택: 추출 로직 불충분은 서버가 issue cluster와 redacted evidence에 자동 기록하고, 사용자가 요청할 때 Codex가 IAM 내부 운영 API/CLI로 정리한다. 승인된 issue만 Codex가 기존 하네스에 따라 코드·fixture·Development·PR·Production 작업을 수행한다.
+- 이유: 브랜드·시즌 추가 빈도가 낮은 1인 개발·출시 전 환경에서 완전 자동화 인프라보다 사람의 ground truth 판단과 명시적 작업 승인이 더 안전하고 운영 비용이 작다.
+- 트레이드오프: 사용자가 Codex에 요청하기 전에는 보강이 시작되지 않지만 불필요한 AI 실행·배포와 잘못된 자동 수정 위험을 제거한다.
+- 앱 경계: 전역 issue 목록과 개선 요청 버튼을 제거하고 해당 job 카드에 `개선 대기 중/개선 처리 중/다시 가져오기 가능`만 표시한다. 실제 claim 전에는 `처리 중`이라고 표현하지 않는다.
+- 안전 경계: Production Firestore Admin SDK를 무제한 직접 읽지 않고 API가 path/field를 allowlist한다. 실제 Production revision verifier만 fixed 상태를 기록하고, 과거 실패 job은 관리자가 명시적으로 재분석한다.
+- 보류한 대안: 버튼 기반 자동 patch·Development·PR·Production orchestration은 현재 요청량 대비 복잡도와 위험이 커서 제외했다.
+- 1인 운영 단순화: 담당자/Jira/보드 없이 issue cluster 목록 요약과 선택 처리만 제공하며 불필요한 `triaged/fixReady` 중간 상태도 두지 않는다.
+- 보존: 개별 redacted occurrence는 7일만 두고 cluster 대표 evidence 한 개는 미해결 동안 보존한다. 해결 뒤에도 회귀·배포 추적을 위해 cluster와 대표 evidence를 60일 유지한 후 삭제한다.
+- release source of truth: Functions compile-time revision 대신 server-only runtime registry와 Worker의 인증된 runtime contract를 사용한다. `fixed`와 retry-ready는 live Production 100% traffic과 실제 URL smoke를 서버가 검증한 뒤에만 기록한다.
+- 레거시: 앱 출시 이력이 없으므로 개선 요청 projection/no-op callable/구형 UI 호환을 만들지 않는다. 기존 데이터 필드는 즉시 파괴적으로 삭제하지 않고 새 코드가 읽고 쓰지 않게 한다.
+- 재검토 조건: 월별 issue 수, 반복 유형과 수동 운영 시간이 실제로 증가하면 분류, fixture 생성, Development 검증 순서로 일부 자동화를 검토한다.
+- Phase 2 구현: 이미지의 `expected_count_unverified` 단독 검토는 issue에서 제외하고, 두 stage의 확정된 로직 불충분만 Worker 공통 recorder가 자동 기록한다. cluster는 영향 domain/brand 표본과 부정확한 count를 저장하지 않고 adapter scope·원인·대표 evidence를 유지한다. 대표 선택은 결정적 정보 tuple을 사용하며 고유 `fingerprint/evidenceID` Storage 경로로 동시 교체를 안전하게 처리한다.
+
 ## 6. 다시 확인해야 할 불확실한 부분
+
+- AMOMENTO 실페이지 ground truth 15개와 Development contract 2 실제 재시도 성공은 확인 완료했다. 이후 사이트 목록이 바뀌면 새 ground truth 판단이 필요할 수 있다.
+- Phase 7 AMOMENTO 15개 실페이지의 contract 3 결과, 실제 첫 이미지 일치, 앱 표시와 queue/ERROR를 검증했다. OUTSTANDING 목록 cover 재탐색도 44개 snapshot 완전 일치와 실제 이미지 HTTP 성공으로 검증 완료했다.
+- Production Worker `00024-fow`는 durable discovery 도입 전 레거시 runtime으로 확인됐고 현재 traffic 0% rollback으로 보존한다. live `00026-qes`와 Functions는 contract 3이며 operator/index/TTL/discovery queue/Function/rules와 canonical 앱 표시 E2E를 완료했다.
 
 - Firebase/Google/Kakao Development 앱과 callback 등록은 완료했다.
 - Development 실기기 App Attest의 Apple App ID·entitlement·Firebase provider 등록은 Apple Developer Program 가입 후 재확인한다.
 - `outpick-test` Functions 74개와 scheduled trigger의 감사·승인·배포, 실제 import/materialization smoke와 smoke 데이터 정리를 완료했다.
-- Production Worker `lookbook-import-worker-00024-fow` traffic 100%, rollback `00023-879`, 전환 후 ERROR·queue pending 0건을 확인했다.
+- Production Worker `lookbook-import-worker-00026-qes` traffic 100%, rollback `00024-fow`, 전환 후 ERROR·queue pending 0건을 확인했다.
+- Phase 4B의 API/data/security/보존/revision verifier 계약, Phase 1~6 Development 검증과 Production backend IAM/Functions/index/TTL/queue 적용, 실제 Production smoke와 승인된 cleanup을 완료했다.
 
 ## 7. 다음 턴에서 바로 실행해야 할 작업
 
-1. 환경 분리 작업은 종료됐으므로 추가 구현을 시작하지 않는다.
-2. 다음 외부 의존 인증 작업은 Apple Developer Program 가입 후 Development 실기기 App Attest다.
-3. 출시 전 별도 승인 범위에서 Production Google 로그인, provider별 계정 삭제 재인증, 백업·복구 운영 게이트를 진행한다.
+1. 이 핵심 task에는 남은 필수 작업이 없다. 다음 제품 task를 별도로 선택한다.
+2. 실제 `seasonImageImport` 결함이 발생할 때만 이벤트 기반 `fixed → retry success → verified` 운영 게이트를 실행한다.
+3. 화면 조작·시각 QA는 사용자가 재현 가능한 시나리오의 체크리스트로 수행하고, Codex는 코드·자동 테스트·빌드·backend/log 검증을 담당한다.
+
+Phase 3 완료 메모: private read/write Functions, strict allowlist API, CAS/idempotent audit와 job projection, 고정 환경 CLI를 구현했다. Development operator IAM, Firestore projection index/audit TTL과 두 Function을 배포했으며 Functions 134/134, CLI 7/7과 lint/build를 통과했다. 실제 Development endpoint는 무인증 403, operator read 성공, 데이터 변경 없는 write 404 smoke를 통과했다. 목록에서 `brandID` filter 및 최근 브랜드/job 사례는 제거했고 정확한 영향 job은 fingerprint projection으로 조회한다. Production IAM·index·Function은 변경하지 않았다. 운영 절차는 `docs/ai/runbooks/LOOKBOOK_EXTRACTION_ISSUE_OPERATIONS.md`를 따른다.
+
+Phase 4 완료 메모: Worker runtime/source/extractor/adapter contract와 두 stage read-only actual extraction smoke, Production Cloud Run v2 traffic/runtime/smoke/CAS verifier, 24시간 verification run, transaction 기반 cursor release projection, 실제 retry 성공 verified 전이를 구현했다. Functions 140/140, Worker 102/102, CLI 8/8, fixture 5/5와 lint/build를 통과했다. Phase 4 Worker/Functions/index/IAM은 배포하지 않았으며 Production traffic·data도 변경하지 않았다.
+
+Phase 5 완료 메모: iOS를 `개선 대기/처리 중/다시 가져오기 가능/추가 작업 필요`로 단순화하고, 시즌 목록·이미지 모두 fixed와 상위 동일-stage runtime에서만 총 관리자 재시도를 허용했다. 서버도 같은 경계를 재검증하며 기존 개선 요청·즉시 재분석 callable/export와 앱의 `improvementRequested*` 계약을 제거했다. Functions 141/141, Worker 102/102, iOS 관련 4개 suite 22개 및 Development Simulator build가 통과했다. 배포와 운영 callable/index 삭제는 수행하지 않았다.

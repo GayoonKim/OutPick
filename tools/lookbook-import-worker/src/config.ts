@@ -6,6 +6,10 @@ export interface WorkerConfig {
   oidcAudience: string;
   taskServiceAccountEmail: string;
   functionsServiceAccountEmail: string;
+  workerRevision: string;
+  workerSourceRevision: string;
+  seasonDiscoveryContractRevision: number;
+  seasonDiscoveryExtractorVersion: string;
 }
 
 type WorkerEnvironmentContract = Pick<
@@ -74,6 +78,20 @@ export function loadConfig(env: NodeJS.ProcessEnv): WorkerConfig {
     environmentContract.functionsServiceAccountEmail,
     "OUTPICK_IMPORT_FUNCTIONS_SERVICE_ACCOUNT_EMAIL",
   );
+  const workerRevision = requiredEnv(env, "K_REVISION");
+  const workerSourceRevision = requiredRevision(
+    env, "OUTPICK_WORKER_SOURCE_REVISION",
+  );
+  const seasonDiscoveryContractRevision = parseBoundedInteger(
+    env.OUTPICK_SEASON_DISCOVERY_CONTRACT_REVISION,
+    "OUTPICK_SEASON_DISCOVERY_CONTRACT_REVISION",
+    1,
+    1,
+    Number.MAX_SAFE_INTEGER,
+  );
+  const seasonDiscoveryExtractorVersion = requiredEnv(
+    env, "OUTPICK_SEASON_DISCOVERY_EXTRACTOR_VERSION",
+  );
 
   return {
     projectID,
@@ -83,7 +101,19 @@ export function loadConfig(env: NodeJS.ProcessEnv): WorkerConfig {
     oidcAudience,
     taskServiceAccountEmail,
     functionsServiceAccountEmail,
+    workerRevision,
+    workerSourceRevision,
+    seasonDiscoveryContractRevision,
+    seasonDiscoveryExtractorVersion,
   };
+}
+
+function requiredRevision(env: NodeJS.ProcessEnv, key: string): string {
+  const value = requiredEnv(env, key).toLowerCase();
+  if (!/^[a-f0-9]{7,40}$/.test(value)) {
+    throw new Error(`${key} 환경 변수는 git revision이어야 합니다.`);
+  }
+  return value;
 }
 
 function requiredEnvironmentContract(

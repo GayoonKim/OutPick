@@ -441,12 +441,7 @@ private final class LookbookUITestFixtureStore:
         throw FixtureError.unsupported
     }
 
-    func requestSeasonDiscoveryImprovement(
-        brandID: BrandID,
-        job: SeasonCandidateDiscoveryResult
-    ) async throws { throw FixtureError.unsupported }
-
-    func reanalyzeSeasonDiscoveryWithLatestExtractor(
+    func retrySeasonDiscoveryAfterExtractionFix(
         brandID: BrandID,
         job: SeasonCandidateDiscoveryResult
     ) async throws -> SeasonCandidateDiscoveryResult { throw FixtureError.unsupported }

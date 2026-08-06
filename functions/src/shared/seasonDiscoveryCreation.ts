@@ -4,7 +4,7 @@ import {FieldValue} from "firebase-admin/firestore";
 
 export const SEASON_DISCOVERY_SCHEMA_VERSION = 1;
 export const SEASON_DISCOVERY_EXTRACTOR_VERSION = "season-discovery-v1";
-export const SEASON_DISCOVERY_CONTRACT_REVISION = 1;
+export const SEASON_DISCOVERY_CONTRACT_REVISION = 3;
 export const SEASON_DISCOVERY_LIMITS = Object.freeze({
   maxLoadMoreClicks: 20,
   maxScrollAttempts: 20,
@@ -89,8 +89,6 @@ export function initialSeasonDiscoveryJob(
     requestReason: "brandCreated",
     coalescedRequestCount: 0,
     recommendedAction: "none",
-    improvementRequested: false,
-    availableExtractionContractRevision: null,
     resolvedByJobID: null,
     leaseOwner: null,
     leaseExpiresAt: null,

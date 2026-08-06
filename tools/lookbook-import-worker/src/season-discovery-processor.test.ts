@@ -4,7 +4,7 @@ import test from "node:test";
 import {
   canClaimSeasonDiscoveryJob,
   isCurrentSeasonDiscoveryAttempt,
-  seasonDiscoveryIssueFingerprint,
+  seasonDiscoverySnapshotHash,
 } from "./season-discovery-processor.js";
 
 const request = {
@@ -31,22 +31,6 @@ test("queued와 dispatching의 정확한 generation만 claim한다", () => {
   ), false);
 });
 
-test("시즌 discovery issue fingerprint는 redacted 40자 계약을 따른다", () => {
-  const fingerprint = seasonDiscoveryIssueFingerprint({
-    status: "needsReview",
-    sourceURL: "https://example.com/lookbooks?private=value",
-    candidates: [],
-    diagnostic: {
-      parserStrategy: "anchor_scan",
-      adapterKey: null,
-      failureReasons: ["no_candidates_found"],
-      errorMessage: null,
-    },
-  } as never);
-  assert.match(fingerprint, /^[a-f0-9]{40}$/);
-  assert.equal(fingerprint.includes("private"), false);
-});
-
 test("현재 brand pointer와 dispatch lease가 같은 attempt만 확정한다", () => {
   const attempt = {...request, jobID: "job-1", leaseOwner: "lease-1"};
   const brand = {
@@ -64,4 +48,25 @@ test("현재 brand pointer와 dispatch lease가 같은 attempt만 확정한다",
   assert.equal(isCurrentSeasonDiscoveryAttempt(
     brand, {...job, dispatchGeneration: 2}, attempt,
   ), false);
+});
+
+test("대표 이미지 출처와 strategy는 candidate snapshot hash에 포함된다", () => {
+  const base = [{
+    candidateID: "candidate-1",
+    title: "FW 2026",
+    seasonURL: "https://brand.example/fw-2026",
+    coverImageURL: "https://brand.example/cover.jpg",
+    coverImageSource: "list",
+    coverImageStrategy: "listElementImage",
+  }];
+  const detail = [{
+    ...base[0],
+    coverImageSource: "detail",
+    coverImageStrategy: "lookbookContent",
+  }];
+
+  assert.notEqual(
+    seasonDiscoverySnapshotHash(base),
+    seasonDiscoverySnapshotHash(detail),
+  );
 });

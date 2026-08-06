@@ -5,6 +5,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 WORKER_DIR="$ROOT_DIR/tools/lookbook-import-worker"
 REGION="asia-northeast3"
+season_discovery_contract_revision="3"
+season_discovery_extractor_version="season-discovery-v1"
 
 usage() {
   cat <<'EOF'
@@ -60,12 +62,16 @@ esac
 # Cloud Run은 service명과 traffic tag의 결합 길이를 46자로 제한한다.
 # Development service명이 길어 분 단위 UTC timestamp를 포함한 11자 tag를 사용한다.
 candidate_tag="c$(date -u +%y%m%d%H%M)"
+source_revision="$(git -C "$ROOT_DIR" rev-parse HEAD)"
 env_vars="OUTPICK_FIREBASE_PROJECT_ID=$project_id"
 env_vars+=",OUTPICK_FIREBASE_STORAGE_BUCKET=$storage_bucket"
 env_vars+=",OUTPICK_IMPORT_ASSET_SYNC_CONCURRENCY=3"
 env_vars+=",OUTPICK_IMPORT_OIDC_AUDIENCE=$oidc_audience"
 env_vars+=",OUTPICK_IMPORT_TASKS_SERVICE_ACCOUNT_EMAIL=$task_service_account"
 env_vars+=",OUTPICK_IMPORT_FUNCTIONS_SERVICE_ACCOUNT_EMAIL=$functions_service_account"
+env_vars+=",OUTPICK_WORKER_SOURCE_REVISION=$source_revision"
+env_vars+=",OUTPICK_SEASON_DISCOVERY_CONTRACT_REVISION=$season_discovery_contract_revision"
+env_vars+=",OUTPICK_SEASON_DISCOVERY_EXTRACTOR_VERSION=$season_discovery_extractor_version"
 
 deploy_command=(
   gcloud run deploy "$service_name"
@@ -91,6 +97,9 @@ print_contract() {
   printf 'task_service_account=%s\n' "$task_service_account"
   printf 'functions_service_account=%s\n' "$functions_service_account"
   printf 'candidate_tag=%s\n' "$candidate_tag"
+  printf 'source_revision=%s\n' "$source_revision"
+  printf 'season_discovery_contract_revision=%s\n' "$season_discovery_contract_revision"
+  printf 'season_discovery_extractor_version=%s\n' "$season_discovery_extractor_version"
   printf 'command='
   printf '%q ' "${deploy_command[@]}"
   printf '\n'
@@ -100,6 +109,12 @@ print_contract
 
 if [[ "$action" == "--plan" ]]; then
   exit 0
+fi
+
+if ! git -C "$ROOT_DIR" diff --quiet ||
+   ! git -C "$ROOT_DIR" diff --cached --quiet; then
+  echo "candidate 배포는 commit된 clean worktree에서만 허용합니다." >&2
+  exit 1
 fi
 
 expected_confirmation="$project_id/$service_name"

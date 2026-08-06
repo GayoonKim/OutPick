@@ -17,10 +17,14 @@ test("전체 fixture corpus가 golden 계약을 통과한다", async () => {
   assert.deepEqual(
     results.map((result) => result.fixtureID),
     [
+      "generic-season-detail-cover",
       "incident-youth-programmatic-gallery",
+      "platform-cafe24-collection-images-direct-cover",
       "platform-cafe24-hatchingroom-archive-source",
+      "platform-cafe24-modal-data-url-discovery",
       "platform-cafe24-outstanding-discovery",
       "platform-cafe24-outstanding-nneditor",
+      "platform-cafe24-season-detail-cover",
       "platform-cafe24-underscore-detail-discovery",
     ],
   );

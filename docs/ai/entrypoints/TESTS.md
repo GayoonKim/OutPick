@@ -22,6 +22,11 @@ xcodebuild -scheme OutPick-Development -destination 'generic/platform=iOS Simula
 
 ## Lookbook
 
+- 브랜드 생성 시즌 discovery 오류 문구: `OutPickTests/SeasonDiscoveryManagementViewModelTests.swift`
+  - repository의 Firebase/infrastructure 오류 원문을 화면 상태에 노출하지 않고 고정된 한국어 문구를 발행하는지, 성공 시 기존 job 결과를 정상 발행하는지 검증한다.
+  - 실행: `xcodebuild -project OutPick.xcodeproj -scheme OutPick-Development -destination 'platform=iOS Simulator,id={simulator-id}' -only-testing:OutPickTests/SeasonDiscoveryManagementViewModelTests test`.
+  - 2026-08-06 관련 9/9와 `OutPick-Production`/`Production-Debug` Simulator build가 통과했다. 실패 화면의 줄바꿈·버튼 시각 QA는 안전한 재현 시 사용자가 수행한다.
+
 - iOS Cloud Functions 계약 테스트: `OutPickTests/CloudFunctions/`
   - 공통 decoder와 transport spy, Auth/Admin capability, Brand/Request, Engagement/Comment, Import/Deletion의 사용 callable 38개를 검증한다.
   - 실제 Firebase 서버를 호출하지 않고 function name, payload, response mapping과 오류 보존을 고정한다.
@@ -33,8 +38,8 @@ xcodebuild -scheme OutPick-Development -destination 'generic/platform=iOS Simula
 - 좋아요 탭 tests: `OutPickTests/LikedViewModelTests.swift`, `OutPickTests/LoadLikedSeasonsUseCaseTests.swift`
   - 자동 회귀: 섹션별 초기 로드·부분 실패·pagination·좋아요 취소와 무효화 store 연동은 ViewModel 테스트로 검증한다.
   - 수동 QA: `SAVED EDITS` 헤더, 브랜드/시즌 가로 카드, 포스트 2열 그리드, 섹션별 로딩·빈 상태·실패 패널, 메뉴·상세 이동·pull-to-refresh를 Simulator에서 확인한다.
-- 브랜드 생성 로고 tests: `OutPickTests/CreateBrandViewModelTests.swift`, `firestore-tests/brand-storage.rules.test.mjs`
-  - ViewModel은 두 로고 업로드·경로 패치 완료 대기, 실패 후 같은 브랜드 문서 재시도, detail 실패 시 thumb rollback을 검증한다.
+- 브랜드 생성·관리자 편집 로고 tests: `OutPickTests/CreateBrandViewModelTests.swift`, `OutPickTests/AdminBrandManagementViewModelTests.swift`, `firestore-tests/brand-storage.rules.test.mjs`
+  - ViewModel은 두 로고 업로드·경로 패치 완료 대기, 실패 후 같은 브랜드 문서 재시도, 양 화면에서 내부 오류를 제외한 동일 사용자 문구, detail 실패 시 thumb rollback을 검증한다.
   - Storage emulator는 active 총 관리자·브랜드 관리자의 로고 업로드 허용과 inactive/무권한 사용자 거부를 검증한다.
 - 삭제 요청 관리 pagination/retry tests: `OutPickTests/AdminLookbookDeletionManagementViewModelTests.swift`
 - Firestore 문서 ID 경계: `OutPickTests/FirestoreDocumentIDBoundaryTests.swift`
@@ -100,6 +105,9 @@ Firebase Functions tests/build entry:
 - 기능 단위 테스트: `functions/src/{auth,brand,chat,lookbook}/**/*.test.ts`
 - `functions/package.json`의 `npm test`는 clean build 후 `lib/` 아래 `*.test.js`를 재귀 발견해 실행하며 0개면 실패한다.
 - 실행: `cd functions && npm test`
+- extraction issue operations Phase 1~4: 양 런타임 공통 계약과 Phase 2 recorder/cleanup, Phase 3 IAM API/CLI 테스트에 더해 Worker `runtime-contract.test.ts`·server route와 Functions `release{Contract,Service}.test.ts`가 runtime/source revision, partial traffic, stale CAS, 실제 smoke/ground truth와 verified 전이를 검증한다. Worker `issue-recorder.test.ts`는 구형 occurrence 지연 도착 시 cluster blocked runtime 단조 증가, fixed job retry projection, duplicate 재투영과 verified cluster terminal 보존도 검증한다. 2026-08-06 지연 occurrence 보완 기준 Worker lint/build, 118/118과 fixture 9/9가 통과했다.
+- AMOMENTO Cafe24 모달 시즌 목록 회귀는 Worker `season-discovery.test.ts`와 `fixtures/discovery/platform/cafe24-modal-data-url/`이 `button[data-url]`, `collection-single.html`, 끝자리 날짜 제거, navigation 제외와 후보 순서를 고정한다. release 회귀는 0% tag traffic 제외, 삭제된 대표 job의 동일 fingerprint 현존 job fallback, 새 시즌 재시도 job의 fix projection 승계를 고정한다. 2026-08-05 최종 기준 Worker 103/103·fixture 6/6·lint/build, Functions 145/145·lint/build, iOS 관련 12개 targeted test와 Development Simulator build가 통과했다. Development 실제 AMOMENTO 재시도는 후보 15개·contract 2·cluster verified를 확인했다.
+- Phase 7은 adapter 없는 Generic 상세 fixture와 Cafe24 최신 `xans-product-additional`·구형 직접 `collection-images` fixture로 목록 이미지 우선, 실제 시즌 콘텐츠 영역의 최상단 첫 유효 이미지 fallback, header/navigation/banner/footer/related 제외, cover 기반 후보 제거 금지, 실패 격리와 30개·동시 3개·15초 경계를 검증한다.
 - durable 시즌 discovery: `functions/src/lookbook/import/seasonDiscoveryContract.test.ts`, `functions/src/index.contract.test.ts`에서 fingerprint/status/retention/task ID, review 연결 대상의 삭제 lifecycle, revision readiness·legacy fingerprint 호환, enqueue 후 terminal 상태 덮어쓰기 방지, 현재 published snapshot import gate, 76개 export metadata와 watchdog/readiness collection-group index 설정을 검증한다. 2026-08-05 기준 전체 113/113 통과.
 - 브랜드 discovery projection 호환성: `OutPickTests/FirestoreDocumentIDBoundaryTests.swift`가 구형 `success`와 durable pipeline의 `succeeded/awaitingReview/correctionRequired/cancelled/superseded`를 포함한 모든 영속 상태의 Firestore 디코딩을 검증한다. iPhone 17 Pro Max iOS 26.2에서 suite 4/4가 통과했다.
 - 개선 요청 구현은 Functions 순수 계약 테스트로 `extractionContractRevision` 경계와 legacy 호환을, iOS fake Repository로 요청됨·higher revision ready·새 queued generation 전이를 검증한다. callable의 실제 권한·중복·stale snapshot·transaction 경합과 진행 묶음 중앙 배치는 마지막 Development 통합 QA에서 확인한다.
@@ -231,6 +239,7 @@ Firebase Functions tests/build entry:
   - Phase 8 Chat gesture는 UIKit touch arbitration 전용 추상화를 추가하지 않고 기존 `ChatRoomViewModelMessageActionTests`, `ChatMessageActionPolicyTests`를 회귀 대상으로 유지한다. 제거 symbol 참조 0건, `git diff --check`, generic Simulator build가 통과했고 기존 테스트 실행은 보류했다. iPhone 17 Pro Max iOS 26.2에서 keyboard/attachment/message menu background dismiss, input/attachment control 보존, message/announcement long press, settings dim, Lookbook과 retry cell tap이 통과했다. 마지막 media/profile cell tap도 사용자의 실제 Simulator 확인으로 통과해 Phase 8 수동 QA를 완료했다.
   - Phase 9 최종 회귀에서 위 5개 suite 24/24를 재실행했다. 이어 `ChatRoomSessionActorTests`, `RealtimeChatIngressOrderingTests`, `RealtimeSocketRoomSummaryOwnershipTests`, `RealtimeSocketListenerBinderTests`, `ChatReadStateStoreTests`, `ChatRoomReadStateStoreTests`, `ChatUnreadCatchUpStateTests`, `ChatMessageWindowStoreTests`, `ChatRoomViewModelMessageActionTests` 86/86과 최신 Debug build/install/launch가 통과했다.
   - 실제 Simulator에서 검색 prefix 보존, RoomCreate 취소 흐름, Lookbook 공유 완료 후 명시적 Chat 이동, 참여중/Lookbook stack 복원을 확인했다. 실제 Firebase 완료 순서 역전은 fetch가 빨라 수동 재현하지 않았고 request state/registry 자동 테스트를 최종 판정 근거로 사용한다.
+- 시즌 대표 이미지 보강 Phase 7: Worker `src/extraction/{image-candidates,season-cover}.test.ts`, `season-discovery.test.ts`, `season-discovery-processor.test.ts`, fixture `fixtures/season-cover/`; Functions `seasonCandidateParser.test.ts`, `seasonDiscoveryContract.test.ts`. 최종 Worker 115/115·fixture 9/9, Functions 146/146·각 lint/build와 Development Simulator build가 통과했다. Development AMOMENTO 실제 후보·대표 이미지 15/15, 저장 URL과 상세 첫 이미지 일치, 앱 카드 렌더링, queue/ERROR 0을 확인했다.
 
 ### Chat route 테스트 파일 지도
 
@@ -314,8 +323,8 @@ xcodebuild -scheme OutPick-Development -destination 'id={simulator-id}' test -on
 xcodebuild -scheme OutPick-Development -destination 'id={simulator-id}' test -only-testing:OutPickTests/ChatRoomExitUseCaseTests -only-testing:OutPickTests/JoinedRoomsSessionStoreTests
 ```
 
-- 시즌 discovery learning-loop 테스트:
-  - Functions `seasonDiscoveryContract.test.ts`는 canonical fingerprint, legacy 64→40 issue fingerprint, revision readiness와 retention 계약을 검증한다. `index.contract.test.ts`는 callable export와 `status + improvementRequested` 복합 인덱스를 고정한다.
-  - Worker `season-discovery-processor.test.ts`는 명시 revision exact claim, 무필드 legacy revision 1 호환, 40자 redacted issue fingerprint를 검증한다.
-  - iOS `SeasonDiscoveryManagementViewModelTests.swift`는 개선 요청 직후 requested 전이, higher revision ready 판정, 재분석 뒤 새 queued generation 교체를 fake Repository로 검증한다.
-  - 2026-08-04 Functions lint/build 및 111개, Worker lint/build 및 89개, iOS targeted 7개가 통과했다.
+- 시즌 extraction issue 운영 테스트:
+  - Functions `extractionIssueContract.test.ts`는 fixed와 상위 동일-stage runtime만 재시도를 허용하며, `index.contract.test.ts`는 새 callable export와 projection 인덱스를 고정한다.
+  - Worker `issue-recorder.test.ts`는 자동 occurrence, terminal 재발, fixed runtime 실제 성공의 verified 전이를 검증한다.
+  - iOS `SeasonDiscoveryManagementViewModelTests.swift`, `LookbookExtractionReviewViewModelTests.swift`, `CloudFunctionsSeasonImportRepositoryTests.swift`는 상태 매핑, fixed-only action과 callable 계약을 fake Repository/transport로 검증한다.
+  - 2026-08-05 Functions 141개, Worker 102개, iOS 관련 4개 suite 22개와 양 TypeScript lint/build, Development Simulator build가 통과했다.

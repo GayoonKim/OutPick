@@ -146,10 +146,32 @@ struct AdminBrandManagementViewModelTests {
         #expect(viewModel.visibleSeasons.isEmpty)
     }
 
+    @Test func logoUploadFailureHidesInternalError() async {
+        let viewModel = makeViewModel(
+            initialBrand: makeBrand(),
+            storageService: StorageServiceStub(
+                uploadError: AdminBrandManagementTestError.uploadFailed
+            )
+        )
+        viewModel.setPickedLogo(
+            image: UIImage(),
+            data: Data([0xff, 0xd8, 0xff, 0xd9])
+        )
+
+        await viewModel.uploadLogo()
+
+        #expect(
+            viewModel.message ==
+                "로고 저장에 실패했습니다. 다시 시도해주세요."
+        )
+        #expect(viewModel.message?.contains("내부 업로드 오류") == false)
+    }
+
     private func makeViewModel(
         initialBrand: Brand? = nil,
         initialBrandID: BrandID? = nil,
-        seasonRepository: SeasonRepositoryProtocol = SeasonRepositoryStub()
+        seasonRepository: SeasonRepositoryProtocol = SeasonRepositoryStub(),
+        storageService: StorageServiceProtocol = StorageServiceStub()
     ) -> AdminBrandManagementViewModel {
         AdminBrandManagementViewModel(
             initialBrand: initialBrand,
@@ -157,7 +179,7 @@ struct AdminBrandManagementViewModelTests {
             brandRepository: BrandRepositoryStub(),
             searchUseCase: SearchBrandsUseCaseStub(),
             brandStore: BrandStoringRepositoryStub(),
-            storageService: StorageServiceStub(),
+            storageService: storageService,
             brandImageCache: BrandImageCacheStub(),
             thumbnailer: ImageThumbnailerStub(),
             moodRepository: AdminStyleMoodRepositoryStub(),
@@ -377,7 +399,16 @@ private struct BrandStoringRepositoryStub: BrandStoringRepository {
 }
 
 private struct StorageServiceStub: StorageServiceProtocol {
-    func uploadImage(data: Data, to path: String) async throws -> String { path }
+    let uploadError: Error?
+
+    init(uploadError: Error? = nil) {
+        self.uploadError = uploadError
+    }
+
+    func uploadImage(data: Data, to path: String) async throws -> String {
+        if let uploadError { throw uploadError }
+        return path
+    }
     func uploadImageFileWithRetryAndDataFallback(
         from fileURL: URL,
         to path: String,
@@ -395,6 +426,14 @@ private struct StorageServiceStub: StorageServiceProtocol {
         for path: String,
         metadata: StorageMetadata
     ) async throws -> StorageMetadata { metadata }
+}
+
+private enum AdminBrandManagementTestError: LocalizedError {
+    case uploadFailed
+
+    var errorDescription: String? {
+        "내부 업로드 오류"
+    }
 }
 
 private struct BrandImageCacheStub: BrandImageCacheProtocol {

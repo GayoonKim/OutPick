@@ -27,11 +27,7 @@ protocol SeasonCandidateDiscoveryRepositoryProtocol {
 
     func retrySeasonDiscovery(brandID: BrandID, jobID: String) async throws
     func cancelSeasonDiscovery(brandID: BrandID, jobID: String) async throws
-    func requestSeasonDiscoveryImprovement(
-        brandID: BrandID,
-        job: SeasonCandidateDiscoveryResult
-    ) async throws
-    func reanalyzeSeasonDiscoveryWithLatestExtractor(
+    func retrySeasonDiscoveryAfterExtractionFix(
         brandID: BrandID,
         job: SeasonCandidateDiscoveryResult
     ) async throws -> SeasonCandidateDiscoveryResult

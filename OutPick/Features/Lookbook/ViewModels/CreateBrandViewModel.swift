@@ -222,7 +222,7 @@ final class CreateBrandViewModel: ObservableObject {
             createdBrandDocument = completedBrand
             return completedBrand
         } catch {
-            message = "브랜드는 생성됐지만 로고를 저장하지 못했습니다. 다시 시도해주세요: \(error.localizedDescription)"
+            message = "로고 저장에 실패했습니다. 다시 시도해주세요."
             return nil
         }
     }

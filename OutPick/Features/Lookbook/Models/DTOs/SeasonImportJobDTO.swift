@@ -29,6 +29,9 @@ struct SeasonImportJobDTO: Decodable {
     let repairStatus: SeasonRepairStatus?
     let repairGeneration: Int?
     let extractionQualityReasons: [String]?
+    let extractionIssueStatus: ExtractionIssueStatus?
+    let retryAvailableRuntimeVersion: String?
+    let extractionIssueWontFixReason: String?
     let createdAt: Timestamp?
     let updatedAt: Timestamp?
 
@@ -60,6 +63,9 @@ struct SeasonImportJobDTO: Decodable {
             repairStatus: repairStatus,
             repairGeneration: repairGeneration ?? 0,
             extractionQualityReasons: extractionQualityReasons ?? [],
+            extractionIssueStatus: extractionIssueStatus,
+            retryAvailableRuntimeVersion: retryAvailableRuntimeVersion,
+            extractionIssueWontFixReason: extractionIssueWontFixReason,
             createdAt: createdAt?.dateValue() ?? Date(timeIntervalSince1970: 0),
             updatedAt: updatedAt?.dateValue() ?? Date(timeIntervalSince1970: 0)
         )

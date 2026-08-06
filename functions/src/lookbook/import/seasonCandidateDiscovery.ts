@@ -134,6 +134,8 @@ async function replaceStoredCandidates(
       title: candidate.title,
       seasonURL: candidate.seasonURL,
       coverImageURL: candidate.coverImageURL,
+      coverImageSource: candidate.coverImageSource,
+      coverImageStrategy: candidate.coverImageStrategy,
       sourceArchiveURL: archiveURL,
       extractionScore: candidate.score,
       sortIndex: index,

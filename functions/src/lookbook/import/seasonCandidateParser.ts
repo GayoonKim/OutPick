@@ -7,6 +7,8 @@ export type SeasonCandidate = {
   title: string;
   seasonURL: string;
   coverImageURL: string | null;
+  coverImageSource: "list" | "none";
+  coverImageStrategy: string | null;
   score: number;
 };
 
@@ -129,6 +131,8 @@ export function extractSeasonCandidates(
         title,
         seasonURL,
         coverImageURL: image?.sourceURL ?? null,
+        coverImageSource: image === null ? "none" : "list",
+        coverImageStrategy: image === null ? null : "listElementImage",
         score,
         linkText,
         pageOrder: currentPageOrder,
@@ -147,16 +151,11 @@ export function extractSeasonCandidates(
       title: candidate.title,
       seasonURL: candidate.seasonURL,
       coverImageURL: candidate.coverImageURL,
+      coverImageSource: candidate.coverImageSource,
+      coverImageStrategy: candidate.coverImageStrategy,
       score: candidate.score,
     }));
-
-  const candidatesWithCover = candidates.filter((candidate) => {
-    return candidate.coverImageURL !== null;
-  });
-
-  // 한국어 주석: 룩북 목록 페이지에서 커버 이미지가 충분히 잡히면
-  // 메뉴/드롭다운의 텍스트 링크 후보는 저장하지 않습니다.
-  return candidatesWithCover.length >= 2 ? candidatesWithCover : candidates;
+  return candidates;
 }
 
 /**

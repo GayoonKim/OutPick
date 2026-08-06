@@ -15,6 +15,7 @@ type Endpoint = {
   serviceAccountEmail?: string;
   region?: string[];
   callableTrigger?: Record<string, unknown>;
+  httpsTrigger?: {invoker?: string[]};
   eventTrigger?: {
     eventType?: string;
     eventFilterPathPatterns?: {document?: string};
@@ -81,13 +82,12 @@ const callableNames = [
   "requestSeasonAssetRetry",
   "requestSeasonCandidateImportJobs",
   "requestSeasonDiscovery",
-  "requestSeasonDiscoveryImprovement",
-  "reanalyzeSeasonDiscoveryWithLatestExtractor",
+  "retrySeasonDiscoveryAfterExtractionFix",
   "resolveSeasonDiscoveryCandidate",
   "retrySeasonDiscovery",
   "getLookbookExtractionReview",
   "reviewLookbookExtraction",
-  "requestLookbookExtractionReanalysis",
+  "retryLookbookExtractionAfterFix",
   "requestLookbookSeasonRepair",
   "previewLookbookSeasonRepair",
   "applyLookbookSeasonRepair",
@@ -160,6 +160,12 @@ const scheduleEndpoints = {
     timeoutSeconds: null,
     availableMemoryMb: null,
   },
+  reconcileLookbookExtractionFixReleases: {
+    schedule: "every 10 minutes",
+    timeZone: "Asia/Seoul",
+    timeoutSeconds: 300,
+    availableMemoryMb: 512,
+  },
 } as const;
 
 const callableOverrides = {
@@ -185,14 +191,35 @@ function runtimeNumber(value: unknown): number | null {
   return typeof value === "number" ? value : null;
 }
 
-test("Firebase deployment export 이름 76개를 유지한다", () => {
+test("Firebase deployment export 이름 79개를 유지한다", () => {
   const expected = [
     ...callableNames,
     ...Object.keys(firestoreEndpoints),
     ...Object.keys(scheduleEndpoints),
+    "lookbookExtractionIssueOpsRead",
+    "lookbookExtractionIssueOpsWrite",
+    "verifyLookbookExtractionFix",
   ].sort();
-  assert.equal(expected.length, 76);
+  assert.equal(expected.length, 79);
   assert.deepEqual(Object.keys(exportedFunctions).sort(), expected);
+});
+
+test("extraction issue 운영 HTTP API는 private invoker를 유지한다", () => {
+  for (const name of [
+    "lookbookExtractionIssueOpsRead",
+    "lookbookExtractionIssueOpsWrite",
+  ]) {
+    const value = endpoint(name);
+    assertCommonMetadata(name, value);
+    assert.deepEqual(value.httpsTrigger?.invoker, ["private"]);
+    assert.equal(runtimeNumber(value.timeoutSeconds), 60);
+    assert.equal(runtimeNumber(value.availableMemoryMb), 512);
+  }
+  const release = endpoint("verifyLookbookExtractionFix");
+  assertCommonMetadata("verifyLookbookExtractionFix", release);
+  assert.deepEqual(release.httpsTrigger?.invoker, ["private"]);
+  assert.equal(runtimeNumber(release.timeoutSeconds), 300);
+  assert.equal(runtimeNumber(release.availableMemoryMb), 1024);
 });
 
 test("callable runtime metadata를 유지한다", () => {
@@ -250,6 +277,7 @@ test("시즌 탐색 watchdog 상태 조회용 컬렉션 그룹 인덱스를 유�
     fieldOverrides?: Array<{
       collectionGroup?: string;
       fieldPath?: string;
+      ttl?: boolean;
       indexes?: Array<{order?: string; queryScope?: string}>;
     }>;
   };
@@ -269,13 +297,44 @@ test("시즌 탐색 watchdog 상태 조회용 컬렉션 그룹 인덱스를 유�
     ),
     "watchdog collectionGroup 조회용 ASCENDING 인덱스가 필요합니다."
   );
-  assert.ok(
-    indexConfig.indexes?.some((index) =>
-      index.collectionGroup === "seasonDiscoveryJobs" &&
-      index.queryScope === "COLLECTION_GROUP" &&
-      index.fields?.map((field) => field.fieldPath).join(",") ===
-        "status,improvementRequested"
-    ),
-    "개선 요청 reconciler용 복합 인덱스가 필요합니다."
-  );
+});
+
+test("extraction issue 운영 projection·audit 인덱스를 유지한다", () => {
+  const config = JSON.parse(
+    readFileSync("../firestore.indexes.json", "utf8")
+  ) as {
+    indexes?: Array<{
+      collectionGroup?: string;
+      queryScope?: string;
+      fields?: Array<{fieldPath?: string; order?: string}>;
+    }>;
+    fieldOverrides?: Array<{
+      collectionGroup?: string;
+      fieldPath?: string;
+      ttl?: boolean;
+      indexes?: Array<{order?: string; queryScope?: string}>;
+    }>;
+  };
+  for (const collectionGroup of ["seasonDiscoveryJobs", "importJobs"]) {
+    assert.ok(config.fieldOverrides?.some((override) =>
+      override.collectionGroup === collectionGroup &&
+      override.fieldPath === "extractionIssueFingerprint" &&
+      override.indexes?.some((index) =>
+        index.order === "ASCENDING" &&
+        index.queryScope === "COLLECTION_GROUP")
+    ));
+  }
+  assert.ok(config.fieldOverrides?.some((override) =>
+    override.collectionGroup === "lookbookExtractionIssueAuditLogs" &&
+    override.fieldPath === "expiresAt" && override.ttl === true
+  ));
+  for (const collectionGroup of [
+    "lookbookExtractionFixVerificationRuns",
+    "lookbookExtractionFixReleases",
+  ]) {
+    assert.ok(config.fieldOverrides?.some((override) =>
+      override.collectionGroup === collectionGroup &&
+      override.fieldPath === "expiresAt" && override.ttl === true
+    ));
+  }
 });

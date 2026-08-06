@@ -4,7 +4,7 @@ import type {
 } from "./types.js";
 
 export const CAFE24_ADAPTER_KEY = "cafe24";
-export const CAFE24_ADAPTER_VERSION = "1.0.0";
+export const CAFE24_ADAPTER_VERSION = "1.0.1";
 
 const STRONG_CAFE24_MARKERS = [
   /\bxans-[a-z0-9_-]+/i,
@@ -29,6 +29,11 @@ export const cafe24Adapter: PlatformExtractionAdapter = {
         pattern:
           /xans-product-additional|prdDetailContentLazy|product-additional/i,
         weight: 360,
+      },
+      {
+        label: "cafe24CollectionImages",
+        pattern: /collection[_-]?images/i,
+        weight: 350,
       },
       {
         label: "cafe24NNEditor",

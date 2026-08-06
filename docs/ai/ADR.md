@@ -50,6 +50,7 @@ ADR에 기록하지 않을 것:
 | ADR-020 | accepted | Firestore 문서 identity는 문서 경로 ID를 단일 기준으로 사용한다. | [상세](adr/ADR-020-firestore-문서-identity는-문서-경로-id를-단일-기준으로-사용한다.md) |
 | ADR-021 | accepted | 사용자 계정과 앱 내 공개 프로필을 분리하고 서버가 쓰기를 통제한다. | [상세](adr/ADR-021-사용자-계정과-앱내-공개-프로필을-분리한다.md) |
 | ADR-022 | accepted | 브랜드·시즌·사용자는 공용 스타일 무드 ID를 사용한다. | [상세](adr/ADR-022-브랜드-시즌-사용자는-공용-스타일-무드-id를-사용한다.md) |
+| ADR-023 | accepted | 추출 fix는 Production runtime과 실제 input smoke로 검증한다. | [상세](adr/ADR-023-추출-fix는-production-runtime과-실제-input-smoke로-검증한다.md) |
 
 ## 새 ADR 추가 절차
 
