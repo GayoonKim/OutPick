@@ -2,8 +2,8 @@
 
 ## 전체 상태
 
-- 상태: Phase 1 완료, Phase 2 exact mutation 승인 대기.
-- Production mutation: 미승인·미수행.
+- 상태: Phase 1·2 완료, Phase 3 candidate 생성 완료·OIDC QA 임시 IAM 승인 대기.
+- Production mutation: Worker `00026-qes`를 traffic 0% candidate로 생성했다. live traffic·Functions·Firestore·queue·IAM은 변경하지 않았다.
 
 ## Phase 1. Production 읽기 전용 감사
 
@@ -66,6 +66,8 @@
 - Production mutation 승인 필수.
 
 ## Phase 3. Production no-traffic Worker candidate
+
+상태: candidate Ready·traffic 0%·로컬 게이트 완료. OIDC caller 경계와 actual smoke는 임시 Production 토큰 생성 권한 승인 대기.
 
 목표:
 

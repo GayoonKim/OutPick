@@ -12,13 +12,14 @@
 
 ## 로컬·candidate 게이트
 
-- [ ] Functions/Worker/CLI test·lint·build와 fixture corpus가 통과한다.
+- [x] Worker test 115/115·lint·build와 fixture corpus 9/9가 통과한다.
 - [ ] 민감 evidence redaction과 token 비로그 계약을 확인한다.
 - [ ] cursor projection reconciler와 iOS wontFix/title 미체크 항목을 재분류한다.
-- [ ] Worker no-traffic candidate와 rollback revision을 확보한다.
-- [ ] candidate `/readyz`와 `/runtime-contract`가 일치한다.
+- [x] Worker no-traffic candidate `00026-qes`와 live `00024-fow`·rollback `00023-879`를 확보한다.
+- [ ] candidate `/readyz`와 `/runtime-contract`가 일치한다. Ready/env/source는 확인했고 OIDC 호출은 임시 IAM 승인 대기다.
 - [ ] Functions/Task caller OIDC 경계가 기대 상태 코드를 반환한다.
 - [ ] candidate actual extraction smoke가 통과한다.
+- [x] candidate 배포 후 신규 severity ERROR가 0건이고 live traffic은 기존 revision 100%다.
 
 ## Production cutover
 
