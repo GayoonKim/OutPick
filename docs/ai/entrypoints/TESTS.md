@@ -22,6 +22,11 @@ xcodebuild -scheme OutPick-Development -destination 'generic/platform=iOS Simula
 
 ## Lookbook
 
+- 브랜드 생성 시즌 discovery 오류 문구: `OutPickTests/SeasonDiscoveryManagementViewModelTests.swift`
+  - repository의 Firebase/infrastructure 오류 원문을 화면 상태에 노출하지 않고 고정된 한국어 문구를 발행하는지, 성공 시 기존 job 결과를 정상 발행하는지 검증한다.
+  - 실행: `xcodebuild -project OutPick.xcodeproj -scheme OutPick-Development -destination 'platform=iOS Simulator,id={simulator-id}' -only-testing:OutPickTests/SeasonDiscoveryManagementViewModelTests test`.
+  - 2026-08-06 관련 9/9와 `OutPick-Production`/`Production-Debug` Simulator build가 통과했다. 실패 화면의 줄바꿈·버튼 시각 QA는 안전한 재현 시 사용자가 수행한다.
+
 - iOS Cloud Functions 계약 테스트: `OutPickTests/CloudFunctions/`
   - 공통 decoder와 transport spy, Auth/Admin capability, Brand/Request, Engagement/Comment, Import/Deletion의 사용 callable 38개를 검증한다.
   - 실제 Firebase 서버를 호출하지 않고 function name, payload, response mapping과 오류 보존을 고정한다.

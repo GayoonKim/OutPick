@@ -288,7 +288,7 @@ durable 시즌 discovery의 enqueue 완료 기록은 job을 transaction으로 �
 
 - `getLookbookExtractionReview({brandID, jobID})`: 현재 generation/hash와 고정 후보를 조회한다.
 - `reviewLookbookExtraction({brandID, jobID, reviewGeneration, reviewSnapshotHash, decision, excludedCandidateKeys?, expectedCandidateCount?, note?})`: 정상/오탐 제외/이미지 부족 결정을 generation별 audit로 기록한다.
-- `requestLookbookExtractionReanalysis({brandID, jobID})`: 총 관리자만 correctionRequired job의 review/dispatch generation을 증가시켜 같은 job을 parsing부터 재실행한다.
+- `retryLookbookExtractionAfterFix({brandID, jobID})`: 총 관리자라도 `fixed` issue와 검증된 상위 동일-stage runtime이 있는 correctionRequired job만 review/dispatch generation을 증가시켜 다시 실행한다. Production legacy `requestLookbookExtractionReanalysis`는 2026-08-06 삭제했다.
 - 안전한 정상 승인만 scoped trust baseline을 자동 등록한다. 별도 trust checkbox는 없고 review audit/trust baseline은 server-only다.
 - Phase 5 evidence는 Worker가 전용 Storage prefix와 `lookbookExtractionEvidence` ledger에 7일 expiry로 저장한다. Phase 2 issue operations recorder는 로직 불충분만 `lookbookExtractionIssueClusters`에 transaction 집계하고 job projection을 함께 기록한다.
 - `cleanupExpiredLookbookExtractionEvidence`는 매일 04:45 만료 ledger의 결정적 occurrence object를 먼저 삭제하고, terminal `expiresAt`이 지난 cluster의 현재 대표 object를 먼저 삭제한 뒤 성공한 Firestore 문서만 제거한다.

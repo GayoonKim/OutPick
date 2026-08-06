@@ -2,7 +2,7 @@
 
 ## 전체 상태
 
-- 상태: Phase 1~4 완료. Phase 5 실제 Production discovery smoke 대상과 정리 범위 승인 대기.
+- 상태: Phase 1~5, canonical Production discovery·앱 대표 이미지 표시와 승인된 QA·legacy cleanup까지 완료해 2026-08-06 종료했다.
 - Production mutation: Worker `00026-qes` traffic 100%, Firestore composite 1개·field override 3개·TTL 6개, `lookbook-discovery-jobs`, Production operator/minimum IAM, durable discovery/issue operations와 `createBrand` Function 12개를 적용했다.
 
 ## Phase 1. Production 읽기 전용 감사
@@ -119,6 +119,8 @@
 
 ## Phase 5. 실제 Production smoke와 종료
 
+상태: 완료. exact rules 배포, canonical archive 재탐색, 앱 카드, 승인된 cleanup과 최종 queue/ERROR 검증을 통과했다.
+
 목표:
 
 - 실제 대표 URL로 end-to-end 상태를 확인한다.
@@ -139,4 +141,5 @@
 
 논의 필요 사항:
 
-- smoke 대상과 데이터 삭제는 실행 전에 확정한다.
+- QA 브랜드와 두 discovery generation은 읽기 전용 감사와 별도 파괴 승인 뒤 정확히 삭제했다.
+- Firebase 원문 오류는 내부 진단 로그로만 남기고 브랜드 등록 화면에는 안정된 사용자 문구를 표시한다. 실패 원문 비노출과 성공 경로를 targeted ViewModel 테스트로 고정하며, 시각·조작 QA는 사용자가 체크리스트로 수행한다.
