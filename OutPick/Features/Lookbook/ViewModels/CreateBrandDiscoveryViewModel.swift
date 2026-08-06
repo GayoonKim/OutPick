@@ -7,6 +7,9 @@ import Foundation
 
 @MainActor
 final class CreateBrandDiscoveryViewModel: ObservableObject {
+    static let userFacingLoadFailureMessage =
+        "시즌 목록을 불러오지 못했어요. 브랜드 등록을 마친 뒤 다시 찾아올 수 있어요."
+
     @Published private(set) var result: SeasonCandidateDiscoveryResult?
     @Published private(set) var errorMessage: String?
 
@@ -34,7 +37,13 @@ final class CreateBrandDiscoveryViewModel: ObservableObject {
             } catch is CancellationError {
                 return
             } catch {
-                errorMessage = error.localizedDescription
+                let nsError = error as NSError
+                print(
+                    "[CreateBrandDiscoveryViewModel] 시즌 목록 조회 실패 " +
+                    "domain=\(nsError.domain) code=\(nsError.code) " +
+                    "description=\(nsError.localizedDescription)"
+                )
+                errorMessage = Self.userFacingLoadFailureMessage
             }
         }
     }
