@@ -2,8 +2,8 @@
 
 ## 전체 상태
 
-- 상태: Phase 1~3과 Phase 4 Worker traffic 전환 완료. Phase 4 backend prerequisite/Functions 배포 승인 대기.
-- Production mutation: Worker `00026-qes` traffic 100% 전환과 두 exact service account의 좁은 OIDC QA binding을 적용했다. Functions·Firestore·queue는 변경하지 않았다.
+- 상태: Phase 1~4 완료. Phase 5 실제 Production discovery smoke 대상과 정리 범위 승인 대기.
+- Production mutation: Worker `00026-qes` traffic 100%, Firestore composite 1개·field override 3개·TTL 6개, `lookbook-discovery-jobs`, Production operator/minimum IAM, durable discovery/issue operations와 `createBrand` Function 12개를 적용했다.
 
 ## Phase 1. Production 읽기 전용 감사
 
@@ -48,7 +48,8 @@
 
 1. Worker contract 3 no-traffic candidate 생성과 read-only 검증.
 2. 별도 확인 뒤 live traffic을 candidate 100%로 전환하고 `00024-fow`를 rollback으로 보존.
-3. `lookbook-discovery-jobs` queue, Firestore field override 9개, Production operator와 최소 IAM 생성.
+3. `lookbook-discovery-jobs` queue, Firestore composite 1개·field override 9개, Production operator와 최소 IAM 생성.
+   - composite: `candidates(resolution ASC, sortIndex ASC)`.
    - index: `seasonDiscoveryJobs.status`, `seasonDiscoveryJobs.extractionIssueFingerprint`, `importJobs.extractionIssueFingerprint`.
    - TTL: `lookbookExtractionIssueAuditLogs.expiresAt`, `lookbookExtractionFixVerificationRuns.expiresAt`, `lookbookExtractionFixReleases.expiresAt`, `seasonDiscoveryJobs.expiresAt`, `candidates.expiresAt`, `reviews.expiresAt`.
 4. 다음 Function 12개를 exact target으로 배포.
@@ -92,7 +93,7 @@
 
 ## Phase 4. Worker traffic과 backend cutover
 
-상태: Worker traffic 전환과 live 검증 완료. backend prerequisite/Functions는 미승인·미수행.
+상태: 완료. Worker traffic, backend prerequisite, 최소 IAM과 Function 12개를 적용하고 live contract·queue·ERROR를 검증했다.
 
 목표:
 
@@ -100,7 +101,7 @@
 
 변경 범위:
 
-- Worker traffic, Firestore field override, discovery queue, 최소 IAM과 승인된 Functions deployment.
+- Worker traffic, Firestore composite·field override, discovery queue, 최소 IAM과 승인된 Functions deployment.
 - queue pause/resume은 수행하지 않는다.
 
 완료 기준:
@@ -114,7 +115,7 @@
 
 논의 필요 사항:
 
-- traffic/canonical contract 전환 직전 사용자 명시 승인.
+- 없음. 승인된 exact mutation을 완료했다.
 
 ## Phase 5. 실제 Production smoke와 종료
 

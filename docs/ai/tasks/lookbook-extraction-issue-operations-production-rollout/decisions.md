@@ -38,7 +38,7 @@
 ## D-007. Phase 1 exact diff를 승인 단위로 분리한다
 
 - Worker candidate 생성과 검증, Worker traffic 전환, backend prerequisite/Functions 배포, 실제 smoke를 각각 관찰 가능한 게이트로 둔다.
-- Firestore는 local contract의 field override 9개(필드 index 3개, TTL 6개)를 exact diff로 적용한다.
+- Firestore는 local contract의 composite index 1개와 field override 9개(필드 index 3개, TTL 6개)를 exact diff로 적용한다. 최초 감사에서 누락된 `candidates(resolution, sortIndex)` composite는 실제 iOS review/published candidate 쿼리에 필수이므로 backend prerequisite에 포함한다.
 - discovery queue는 Development 검증값인 동시 실행 1, 초당 1, 최대 3회, 30~300초 backoff, retry duration 1시간으로 생성한다.
 - Production operator `outpick-extraction-ops-prod@outpick-664ae.iam.gserviceaccount.com`은 현재 없으므로 생성과 최소 OIDC/invoker IAM을 별도 승인 resource로 둔다.
 - 신규 durable discovery/issue operations Function 11개와 초기 job 생성을 연결하는 기존 `createBrand` 재배포를 합쳐 Function 12개를 exact target으로 둔다.

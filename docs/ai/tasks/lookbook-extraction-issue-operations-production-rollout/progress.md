@@ -3,9 +3,9 @@
 ## 현재 상태
 
 - 2026-08-06 `lookbook-extraction-issue-operations`를 Development 구현·QA 완료로 종료하고 Production rollout을 별도 핵심 task로 분리했다.
-- Phase 1 읽기 전용 감사, Phase 2 candidate 범위 승인, Phase 3 candidate 검증과 Phase 4 Worker traffic 전환을 완료했다. backend prerequisite/Functions 배포 승인 대기다.
+- Phase 1~4를 완료했다. Worker traffic과 Production backend prerequisite/Functions를 적용했으며 Phase 5 실제 데이터 end-to-end smoke만 별도 승인 대기다.
 - Production Worker `lookbook-import-worker-00026-qes`를 source `1dbe6e1774686fe8186dc79b9551de779e7c4b60`, contract 3, traffic 100%로 전환했다. `00024-fow`를 rollback revision으로 보존했다.
-- Production task/functions service account 두 리소스에 사용자 `gayunkim.1@gmail.com`의 `roles/iam.serviceAccountOpenIdTokenCreator`만 영구 부여했다. index/TTL/Functions/queue와 traffic은 변경하지 않았다.
+- Production task/functions service account와 operator exact 리소스에 사용자 `gayunkim.1@gmail.com`의 `roles/iam.serviceAccountOpenIdTokenCreator`만 영구 부여했다. project-level Token Creator, access token impersonation, signing과 key는 사용하지 않는다.
 
 ## 완료
 
@@ -30,17 +30,23 @@
 - traffic 전환 직전 candidate Ready, live `00024-fow` 100%, queue pending 0, actual smoke 이후 unexpected ERROR 0을 재확인하고 `00026-qes=100`만 적용했다.
 - 전환 후 canonical service URL의 `/readyz`, `/runtime-contract`, 해칭룸 실제 `seasonImageImport` smoke가 모두 HTTP 200이었다. runtime은 `00026-qes`·source `1dbe6e1`·contract 3·extractor `1.2.3`·Cafe24 `1.0.1`, 후보 12개·logic issue false·failure 0이었다.
 - 최종 traffic `00026-qes` 100%, import queue pending 0, 전환 검증 시작 이후 severity ERROR 0을 확인했다. `00024-fow`는 traffic 0% rollback으로 유지한다.
+- Functions는 배포 전 test 146/146, lint/build를 통과했다. CLI는 직접 IAM Credentials `generateIdToken` 경로와 fail-closed 회귀 테스트를 포함해 9/9, lint/build를 통과했다.
+- Firestore `candidates(resolution ASC, sortIndex ASC)` composite, collection-group field override 3개, TTL 6개를 배포해 모두 `READY`/`ACTIVE`를 확인했다. `--force`를 사용하지 않아 로컬에 없는 기존 remote override 5개는 보존했다.
+- `lookbook-discovery-jobs`를 초당 1건·동시 1건·최대 3회·30~300초 backoff·1시간 retry duration·로그 100%로 생성했고 `RUNNING`을 확인했다.
+- `outpick-extraction-ops-prod@outpick-664ae.iam.gserviceaccount.com`을 만들고 사용자에게 exact operator 리소스의 좁은 OIDC 역할만, operator에게 read/write/release 세 private Cloud Run service의 invoker만 부여했다. 공개 invoker는 없다.
+- durable discovery 7개, issue operations 4개, `createBrand`를 합친 Function 12개가 모두 ACTIVE/Node 24다. 실제 URI와 read/write/release audience가 일치하고 두 10분 scheduler가 ENABLED임을 확인했다.
+- 운영 CLI가 `gcloud --impersonate-service-account`로 광범위한 access token 권한을 요구하던 구현을 제거했다. 고정 사용자 access token으로 exact operator의 IAM Credentials `generateIdToken`만 직접 호출하며 token은 출력·저장하지 않는다.
+- Production private API smoke는 무인증 read 403, operator read 성공, 존재하지 않는 fingerprint write 404 fail-closed로 데이터 변경 없이 통과했다.
+- 배포 후 import/discovery queue task 0, `seasonDiscoveryJobs` 0, Worker와 Function 12개의 신규 severity ERROR 0을 확인했다.
 
 ## 다음 작업
 
-1. backend prerequisite/Functions exact mutation 범위 승인.
-2. `lookbook-discovery-jobs`, Firestore field override 9개와 Production operator/minimum IAM 적용.
-3. Function 12개 배포와 live contract·queue·ERROR 검증.
-4. 실제 Production end-to-end smoke 대상과 데이터 정리 범위 승인.
+1. 실제 Production end-to-end discovery smoke 브랜드/URL과 생성 데이터 범위를 승인한다.
+2. 승인된 smoke에서 대표 이미지·앱 표시·queue/ERROR를 검증한다.
+3. smoke 데이터 삭제 대상과 방법을 별도로 승인한 뒤 승인된 항목만 정리한다.
 
 ## 현재 위험
 
-- 신규 durable discovery Functions를 Worker contract 3보다 먼저 배포하면 호출 계약이 맞지 않으므로 순서를 바꾸면 안 된다.
-- Production operator와 신규 private Functions IAM은 아직 없으므로 배포 전 exact resource binding 검증이 필요하다.
+- 실제 durable discovery job을 Production에서 생성하지 않았으므로 신규 경로의 데이터 생성부터 앱 표시까지 end-to-end 증거는 아직 없다.
 - 영구 OIDC binding은 두 exact runtime service account identity로 Worker endpoint를 호출할 수 있으므로 사용자 Google 계정 MFA/passkey와 계정 보안에 의존한다. 운영 구조가 바뀌면 전용 QA identity로 분리한다.
 - legacy 데이터와 callable은 자동 정리하지 않는다.

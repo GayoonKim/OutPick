@@ -14,9 +14,9 @@
 | Development | `outpick-test` | `outpick-extraction-ops-dev@outpick-test.iam.gserviceaccount.com` |
 | Production | `outpick-664ae` | `outpick-extraction-ops-prod@outpick-664ae.iam.gserviceaccount.com` |
 
-Development principal과 IAM은 생성·적용했다. Production principal/IAM은 별도 명시 승인 전까지 생성하거나 변경하지 않는다.
+Development와 Production principal/IAM을 생성·적용했다.
 
-개발자에게는 operator service account의 `roles/iam.serviceAccountTokenCreator`, operator에게는 read/write Cloud Run service의 `roles/run.invoker`가 필요하다. Functions 내부에서도 project, environment, audience, verified email을 다시 검증한다.
+승인된 1인 운영자에게는 operator service account exact 리소스의 `roles/iam.serviceAccountOpenIdTokenCreator`, operator에게는 read/write/release Cloud Run service의 `roles/run.invoker`가 필요하다. IAM Credentials `generateIdToken`을 직접 사용하며 project-level Token Creator, access token impersonation, signing과 서비스 계정 key는 사용하지 않는다. Functions 내부에서도 project, environment, audience, verified email을 다시 검증한다.
 
 ## Audience 설정
 
@@ -34,7 +34,7 @@ gcloud functions describe lookbookExtractionIssueOpsRead \
 - `OUTPICK_EXTRACTION_OPS_WRITE_AUDIENCE`
 - `OUTPICK_EXTRACTION_OPS_RELEASE_AUDIENCE`
 
-CLI는 호출 때마다 고정 function의 실제 URI를 조회하고 그 URI를 audience로 한 단기 identity token을 impersonation으로 발급한다. token과 Authorization header는 출력하지 않는다.
+CLI는 호출 때마다 고정 Function의 실제 URI를 조회하고, 고정 사용자 access token으로 exact operator service account의 IAM Credentials `generateIdToken`을 직접 호출한다. 그 URI를 audience로 한 단기 identity token만 사용하며 token과 Authorization header는 출력하지 않는다.
 
 ## CLI
 
@@ -61,15 +61,11 @@ node src/index.js list --environment development --limit 20
 - Worker `lookbook-import-worker-development-00006-pob`는 traffic 100%이며 rollback은 `00004-xal`이다. candidate identity smoke와 전환 후 ERROR/queue 0건을 확인했다.
 - 실제 extraction fix가 없는 운영 시스템 QA에서 합성 `fixed`를 만들지 않는다. 첫 실제 runtime 상승 때 두 stage의 verifier→retry→verified를 이 runbook의 필수 게이트로 수행한다.
 
-## Production 게이트
+## Production 상태와 남은 게이트
 
-다음 항목은 각각 별도 사용자 승인이 필요하다.
-
-1. Production operator service account 생성과 개발자 impersonation 권한 부여.
-2. Production read/write/release Functions 환경 변수·배포와 Cloud Run invoker 부여.
-3. release Function 실행 service account에 Production Worker `roles/run.invoker`와 Cloud Run 조회용 `roles/run.viewer` 부여.
-4. Worker candidate에 `OUTPICK_WORKER_SOURCE_REVISION`, discovery contract/extractor env를 고정하고 `/runtime-contract`, `/smoke/extraction`을 no-traffic 상태에서 검증.
-5. Production Firestore verification run/release TTL 적용.
-6. 실제 Production mutation, Worker traffic 전환, fix smoke, legacy callable/data 정리.
+- Production operator, private read/write/release Function과 exact invoker IAM을 적용했다.
+- release Function 실행 계정에 Production Worker invoker와 해당 Worker service 한정 viewer를 적용했다.
+- Worker contract 3 candidate 검증과 traffic 100% 전환, Firestore index/TTL, discovery queue와 durable discovery/issue operations Function 배포를 완료했다.
+- 남은 별도 승인 항목은 실제 Production discovery/fix 데이터 mutation smoke, 생성 데이터 정리와 legacy callable/data 정리다.
 
 Production write CLI는 `--confirm-production outpick-664ae`도 요구한다. 이 문자열은 실수 방지 장치일 뿐 위 승인을 대체하지 않는다.
