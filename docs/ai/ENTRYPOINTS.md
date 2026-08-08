@@ -77,6 +77,8 @@
 - iOS 발신 ACK 수렴: `ChatMessageSendReceipt.swift`, `ChatViewController.reconcileServerConfirmedOutgoingMessage`, `LookbookChatShareViewModel`의 동일 ID retry
 - Socket room summary 단일 소유권: `Socket/src/messages/sequenceStore.js`가 seq transaction 안에서 `Rooms.lastMessage*`를 갱신하며, iOS `RealtimeSocketService`의 ACK 경로는 room summary를 직접 쓰지 않는다.
 - Socket 자동 검증: `Socket/test/`, `Socket/scripts/run-tests.mjs`
+- Chat UGC safety/moderation v1 계약: `contracts/chat-moderation-v1.json` → ADR-024 → `docs/ai/tasks/chat-ugc-safety-room-moderation/{decisions,plan,progress,qa-checklist}.md`
+- Chat moderation Phase 1 구현·Development rollout: iOS `CloudFunctionsCurrentUserModerationRepository`/`LoadCurrentUserBootstrapUseCase`/`AppCoordinator`/`ModerationNoticeViewController`, Functions `src/moderation/`와 `scripts/backfill-moderation-principals.mjs`, Socket `src/moderation/capabilities.js`, `firestore.rules`/`storage.rules` → 상세 `entrypoints/APP.md`, `entrypoints/CHAT.md`, `entrypoints/FIREBASE.md`, `entrypoints/TESTS.md`
 - Phase 6 통합 회귀/배포 gate: `docs/ai/tasks/core-infrastructure-modularization/phases/phase-6-integration-tests.md`, `docs/ai/tasks/core-infrastructure-modularization/phases/phase-6-deployment.md`
 - Firestore rules: `firestore.rules`
 - Firestore indexes: `firestore.indexes.json`
@@ -119,6 +121,7 @@
 | 스타일 무드/seed | 현재 task decisions/seed spec → `DATA_SCHEMA.md` 스타일 무드 계약 → `functions/src/styleMoods/` → `firestore.rules`/indexes → rules test |
 | 새 사용자 온보딩/프로필 | 현재 task progress → `PROFILE.md` → `AppCoordinator.swift` → Profile UseCase/Repository → Functions profile module/rules |
 | Chat membership/cache | `CHAT.md` → `DATA_SCHEMA.md` Chat 계약 → 관련 task decisions/progress |
+| Chat 신고·차단·삭제·room ban·계정 제재·게시 전 필터 | `tasks/chat-ugc-safety-room-moderation/decisions.md` → `contracts/chat-moderation-v1.json` → ADR-024 → `CHAT.md`/`FIREBASE.md`/`TESTS.md` → task plan/progress/QA |
 | Chat route/lifecycle/gesture 완료 변경 | `CHAT.md`의 `Route/lifecycle/gesture 변경 파일 빠른 지도` → `tasks/chat-route-lifecycle-hardening/progress.md` → `TESTS.md`의 Chat route lifecycle hardening tests → task QA checklist |
 | Firestore 문서 identity | ADR-020 → `DATA_SCHEMA.md` → `CHAT.md`/`LOOKBOOK.md` 문서 ID 경계 → `DATA.md` Repository boundary → `FIREBASE.md` rules → `TESTS.md` 경계 테스트 → task progress/QA |
 | Chat 대규모 unread/read frontier | `tasks/active.md` → `tasks/socket-ingress-ordering-hardening/phase-6-unread-catch-up-read-frontier.md` → `CHAT.md` read frontier/realtime-only 3초 preview·즉시 persistence 및 진단 계측 진입점 → `TESTS.md` Phase 6-A~C 회귀·Phase 6-D QA |

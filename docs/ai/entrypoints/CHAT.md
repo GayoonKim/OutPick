@@ -257,3 +257,46 @@ Explicit read 진단은 `ChatRoomViewModel.persistExplicitLatestJumpForCurrentUs
 - 2026-07-03 Socket Cloud Run, Firestore rules, Functions 운영 배포를 완료했다.
 - `firestore:indexes` 운영 배포와 legacy participant index 삭제는 2026-07-03 완료했다.
 - 확인 완료: 설정 화면 참여자 목록은 실제 코드에서 GRDB 전체 member cache가 아니라 members pagination만 source로 사용한다.
+
+## UGC safety와 room moderation v1 계약
+
+- exact contract: `contracts/chat-moderation-v1.json`
+- 설계 결정: ADR-024, `docs/ai/tasks/chat-ugc-safety-room-moderation/decisions.md`
+- 구현 순서: 같은 task의 `plan.md`
+- Phase 0 검증: 같은 task의 `qa-checklist.md`, `progress.md`
+
+### iOS Phase 1 구현 진입점
+
+- principal binding adapter: `CloudFunctionsCurrentUserModerationRepository` → `getMyModerationState`
+- bootstrap domain: `CurrentUserModerationState`와 `LoadCurrentUserBootstrapUseCase`
+- DI/routing: `AppCompositionRoot` → `AppCoordinator` → `ModerationNoticeViewController`
+- suspended는 account/profile Firestore read 전에 차단하고 계정 삭제·로그아웃을 제공한다. restricted 기존 계정은 main read 흐름을 유지하되 서버 write capability와 안내를 적용한다.
+
+### Phase 2 이후 예정 iOS 진입점
+
+- 신고·삭제 long press: `ChatMessageActionPolicy.swift` → `ChatRoomViewModel` → `ChatViewController` → `ChatCoordinator`
+- 방 신고·내보내기·ban 해제: `ChatRoomSettingViewController`/ViewModel → 신규 moderation UseCase/Repository → `ChatCoordinator`
+- 전역 차단 visibility: 공통 block Store/UseCase → `RealtimeSocketService` admission → `ChatMessageWindowStore`·검색·gallery·reply·공지·room preview·banner
+- 미디어 검사 UI: `ChatMediaUploadUseCase`·`ChatPendingMediaUploadStore`가 reservation/scanning/retry 상태를 소유하고 서버 ready ACK 뒤에만 confirmed message로 수렴한다.
+
+### 서버·데이터 Phase 1 구현 진입점
+
+- Functions: `functions/src/moderation/{contracts,identity,state,functions}.ts`, `functions/src/shared/accountStatus.ts`
+- Socket: `Socket/src/moderation/capabilities.js`, auth middleware, user projection watch, message/media/room handlers
+- Rules: `firestore.rules`, `storage.rules`의 `moderationAccounts/{uid}` fail-closed read/write 판정과 moderation 내부 collection deny
+- tests: Functions moderation/accountStatus, Socket moderation/auth/watch/lifecycle, `firestore-tests/moderation-{capabilities.rules,principal.emulator}.test.mjs`, iOS bootstrap test
+
+### Phase 2 이후 예정 서버 진입점
+
+- Functions: 신규 `functions/src/moderation/{identity,capability,reports,admin,audit}/`, chat delete/room ban/owner succession service
+- Socket: auth capability, room access/ban, text policy/rate limit, media inspection-ready 경계와 push block 제외
+- Rules: `moderationAccounts` capability, server-only moderation collection, room ban/lifecycle, quarantine/ready Storage
+- authoritative identity: 콘텐츠·membership은 UID, 장기 제재·room ban만 `moderationPrincipalID`
+
+### 고정 사용자 동작
+
+- 신고 대상은 사용자 또는 방이다. 메시지 long press 신고는 sender 사용자 신고이며 `triggerMessageID`는 문맥일 뿐 case identity가 아니다.
+- 차단은 단방향 콘텐츠 visibility다. hidden message payload는 저장하지 않지만 seq는 소비한다.
+- message delete는 seq tombstone을 유지하고 공개 payload·projection·Storage를 서버 cleanup으로 정리한다.
+- room ban은 membership 제거와 별개로 같은 provider 재가입을 막으며 unban은 membership을 자동 복원하지 않는다.
+- 검사 중 미디어는 공개되지 않고 seq도 없다. 검사 통과 transaction에서만 ready message와 seq가 생긴다.

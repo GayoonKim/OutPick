@@ -2,8 +2,8 @@
 
 ## 현재 상태
 
-- 현재 핵심 task는 `lookbook-extraction-issue-operations-production-rollout`이다. 이전 task의 Development 구현·contract 3 배포·AMOMENTO 15개 상세 fallback·OUTSTANDING 44개 목록 cover 회귀 QA를 완료했고, Production은 읽기 전용 감사 전 미변경이다.
-- 다음 핵심 task 후보는 `lookbook-discovery-learning-loop`의 남은 Phase 3A/4A 통합 수동 QA와 현재 배포 상태 재확인이다.
+- 현재 핵심 task는 `chat-ugc-safety-room-moderation`이다. Phase 0 계약과 Phase 1 moderation principal·account capability 구현, Development 배포, Google·Kakao 실제 탈퇴·재가입 제재 복원과 제한 안내 root QA를 완료했다.
+- 다음 단계는 승인된 설계에 따라 Phase 1-P Production readiness 구현 계획을 확인받는 것이다. 구현·Production mutation·배포는 아직 미승인이며 완료 후 Phase 2로 이동한다. Sign in with Apple은 별도 후속 작업이다.
 - 이전 핵심 task `style-mood-personalization-account-privacy`의 Phase 1~8은 완료 처리했다. Apple Developer Program 가입 후 App Attest 실기기 QA와 운영 백업 설정은 출시 운영 게이트로 분리하고, 개발 데이터 전체 삭제는 마지막 Phase의 별도 승인 전까지 진행하지 않는다.
 - `lookbook-discovery-learning-loop`는 사용자 승인으로 task 문서를 생성했다. 동일 active 요청 병합, latest generation publish, 기존 시즌 동일성, 7/30/60일 retention, failure action, watchdog 복구, 관리자 review와 fixture/version gate를 설계 기준으로 확정했다.
 - `socket-ingress-ordering-hardening`은 Phase 1~6 구현, 자동 회귀와 실제 Firebase/Simulator 핵심 QA를 완료하고 2026-07-17 종료했다.
@@ -19,13 +19,12 @@
 
 ## 현재 핵심 작업
 
-- `lookbook-extraction-issue-operations-production-rollout`
-  - [설계](lookbook-extraction-issue-operations-production-rollout/design.md)
-  - [결정](lookbook-extraction-issue-operations-production-rollout/decisions.md)
-  - [Phase 계획](lookbook-extraction-issue-operations-production-rollout/plan.md)
-  - [현재 상태](lookbook-extraction-issue-operations-production-rollout/progress.md)
-  - [QA 기준](lookbook-extraction-issue-operations-production-rollout/qa-checklist.md)
-  - 상태: Phase 1 Production 읽기 전용 감사 대기. Production mutation은 미승인·미수행.
+- `chat-ugc-safety-room-moderation`
+  - [결정](chat-ugc-safety-room-moderation/decisions.md)
+  - [Phase 계획](chat-ugc-safety-room-moderation/plan.md)
+  - [현재 상태](chat-ugc-safety-room-moderation/progress.md)
+  - [QA 기준](chat-ugc-safety-room-moderation/qa-checklist.md)
+  - 상태: Phase 0·1과 Development Google·Kakao 탈퇴·재가입 QA 완료. Phase 1-P의 내부 active smoke 정책과 Kakao Admin API 검증 migration 방식 승인, 구현·Production mutation·배포 미승인. 이후 Phase 2 진행.
 
 ## 이전 핵심 작업
 
@@ -50,6 +49,33 @@
   - [현재 상태](lookbook-discovery-learning-loop/progress.md)
   - [QA 기준](lookbook-discovery-learning-loop/qa-checklist.md)
   - 상태: Phase 1·3 완료, Phase 2 핵심 구현 완료·통합 배포 대기, Phase 4 backend review 완료·learning UI 일부 대기.
+
+## 논의 완료·착수 대기 핵심 작업
+
+- `customer-support-https-page`
+  - 상태: App Store 제출·외부 사용자 배포 전에 HTTPS 고객지원 페이지를 제공하는 후속 작업. 문의 수단, 계정 제한 이의제기, 신고 처리 문의, 개인정보 처리방침과 계정 삭제 안내가 범위 후보이며 요구사항·호스팅·URL·구현 계획은 미확정·미승인.
+- `sign-in-with-apple-account-lifecycle`
+  - 상태: Sign in with Apple 로그인·재인증·계정 삭제·동일 provider 재가입 moderation principal 복원을 별도 후속 작업으로 기록했다. 정책·콘솔·제품 흐름·아키텍처 요구사항 미논의, 계획 미작성, 구현 미승인.
+- `chat-room-moderator-delegation`
+  - [현재 경계](chat-room-moderator-delegation/decisions.md)
+  - 상태: 방 생성자가 다른 참여자에게 관리자 권한을 임명·회수하는 기능을 별도 작업으로 분리. 채팅 안전 작업의 공통 room moderation authorization을 선행 조건으로 하며 세부 제품·권한 설계 미확정·구현 미승인.
+- `admin-web-operations-migration`
+  - [확정 결정](admin-web-operations-migration/decisions.md)
+  - 상태: 총관리자 전용 관리자 웹의 운영 범위와 브랜드 권리 확인 흐름 기록 완료. 웹 기술 스택·구현 계획 미작성·구현 미승인.
+- `ios-admin-console-removal`
+  - [확정 결정](ios-admin-console-removal/decisions.md)
+  - 상태: 모든 iOS 환경·구성에서 관리자 콘솔을 제거하는 범위 기록 완료. 관리자 웹 운영 기능 동등성 검증 뒤 착수하며 구현 계획 미작성·구현 미승인.
+
+### 권장 진행 순서
+
+1. `chat-ugc-safety-room-moderation`: 서버 권위의 room moderation authorization, 메시지 삭제, 신고·차단·필터링, 내보내기·재입장 차단을 먼저 확립한다.
+2. `customer-support-https-page`: 외부 배포 전에 공개 문의·제한 이의제기·신고 처리·개인정보·계정 삭제 경로를 준비한다. 내부 QA 중에는 병렬 후속 준비가 가능하다.
+3. `chat-room-moderator-delegation`: 앞 작업의 공통 권한 판정에 관리자 membership을 추가해 다른 채팅·웹 범위에 영향을 퍼뜨리지 않는다.
+4. `admin-web-operations-migration`: 준비된 채팅 신고·제재 API와 기존 룩북 운영 API를 소비하는 총관리자 웹을 구축하고 운영 동등성을 검증한다.
+5. `ios-admin-console-removal`: 관리자 웹 운영 전환이 끝난 뒤 모든 iOS 구성에서 내부 관리자 콘솔을 제거한다.
+
+- 필수 의존성은 `chat-ugc-safety-room-moderation → chat-room-moderator-delegation`, `chat-ugc-safety-room-moderation의 신고·제재 API → admin-web-operations-migration의 채팅 운영 화면`, `admin-web-operations-migration 동등성 검증 → ios-admin-console-removal`이다.
+- `chat-room-moderator-delegation`은 관리자 웹과 iOS 관리자 콘솔 제거의 필수 선행 조건은 아니지만, 채팅 권한 도메인을 연속해서 안정화하고 회귀 범위를 닫기 위해 두 번째 순서를 권장한다.
 
 ## 다음 핵심 작업 상세
 

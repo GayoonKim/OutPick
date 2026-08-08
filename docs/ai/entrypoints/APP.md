@@ -26,6 +26,10 @@
   - 로그인 여부 확인, 로그인/프로필/메인 탭 루트 전환, 강제 로그아웃 라우팅을 담당한다.
   - Lookbook/Chat Container를 메인 탭 수명 동안 유지한다.
   - 인증 세션 runtime 시작/정지, 같은 realtime service 주입, 같은 avatar manager 주입 흐름을 연결한다.
+- Moderation notice: `OutPick/App/ModerationNoticeViewController.swift`
+  - restricted 재가입 계정처럼 아직 account/profile이 없거나 suspended인 사용자의 전용 root다.
+  - warning 색상 hairline, serif 제목, monospaced 상태, action row의 에디토리얼 경고 화면을 표시한다.
+  - 고객지원 URL이 있을 때만 지원 CTA와 관련 문구를 표시하고, 계정 삭제 확인 화면과 로그아웃 경로는 항상 유지한다.
 - SceneDelegate: `OutPick/App/SceneDelegate.swift`
   - UIWindow 생성, throwable AppCoordinator 생성, Kakao/Google URL callback, notification route 전달을 담당한다.
   - DB bootstrap 실패 시 성공하지 않은 Coordinator는 보관하지 않고 독립 실패 화면을 root로 표시하며 수동 재시도를 연결한다.

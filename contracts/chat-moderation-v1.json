@@ -1,0 +1,887 @@
+{
+  "contract": "chat-moderation",
+  "schemaVersion": 1,
+  "status": "accepted",
+  "authorities": {
+    "accountLifecycle": "users/{uid}.accountStatus",
+    "moderationLedger": "moderationPrincipals/{moderationPrincipalID}",
+    "currentUIDProjection": "moderationAccounts/{uid}",
+    "providerAlias": "moderationPrincipalAliases/{aliasID}",
+    "platformAdmin": "platformAdmins/{uid}",
+    "globalBlock": "users/{uid}/blockedUsers/{blockedUID}",
+    "roomMembership": "Rooms/{roomID}/members/{uid}",
+    "roomBan": "Rooms/{roomID}/bans/{moderationPrincipalID}",
+    "roomLifecycle": "Rooms/{roomID}.lifecycleStatus",
+    "message": "Rooms/{roomID}/Messages/{messageID}",
+    "mediaReservation": "Rooms/{roomID}/MediaUploads/{uploadID}",
+    "userReport": "moderationUserReports/{targetModerationPrincipalID}",
+    "roomReport": "moderationRoomReports/{roomID}",
+    "audit": "moderationAuditLogs/{actionID}",
+    "messageCleanupJob": "chatMessageCleanupJobs/{jobID}",
+    "roomCleanupJob": "moderationRoomCleanupJobs/{roomID}"
+  },
+  "identifiers": {
+    "moderationPrincipalID": {
+      "format": "server-generated opaque Firestore document ID",
+      "clientAuthoritative": false
+    },
+    "aliasID": {
+      "format": "v{keyVersion}_{base64url(HMAC-SHA-256(secret, provider + ':' + providerSubject))}",
+      "clientAuthoritative": false
+    },
+    "submissionID": {
+      "format": "SHA-256(reporterPrincipalID + ':' + targetType + ':' + targetID + ':' + clientRequestID)",
+      "clientAuthoritative": false
+    },
+    "clientRequestID": {
+      "format": "UUID string",
+      "maxLength": 64
+    }
+  },
+  "enums": {
+    "accountStatus": [
+      "active",
+      "deletionPending"
+    ],
+    "moderationStatus": [
+      "active",
+      "restricted",
+      "suspended"
+    ],
+    "reviewState": [
+      "open",
+      "inReview",
+      "resolved",
+      "dismissed"
+    ],
+    "reportTargetType": [
+      "user",
+      "room"
+    ],
+    "reportReason": [
+      "harassment",
+      "hate",
+      "sexual",
+      "spam",
+      "privacy",
+      "illegalDangerous",
+      "other"
+    ],
+    "roomLifecycleStatus": [
+      "active",
+      "closedByModeration"
+    ],
+    "mediaKind": [
+      "images",
+      "video"
+    ],
+    "mediaInspectionStatus": [
+      "reserved",
+      "uploaded",
+      "scanning",
+      "ready",
+      "rejected",
+      "failed",
+      "expired"
+    ],
+    "mediaCleanupStatus": [
+      "none",
+      "pending",
+      "completed",
+      "failed"
+    ],
+    "blockSource": [
+      "comment",
+      "reply",
+      "profile",
+      "chat"
+    ],
+    "moderationAction": [
+      "startReview",
+      "resolveReview",
+      "dismissReview",
+      "deleteMessage",
+      "temporarilyRestrictAccount",
+      "permanentlySuspendAccount",
+      "liftAccountModeration",
+      "closeRoomByModeration",
+      "removeRoomMember",
+      "unbanRoomMember"
+    ],
+    "cleanupJobStatus": [
+      "pending",
+      "processing",
+      "retryPending",
+      "completed",
+      "failed"
+    ]
+  },
+  "capabilities": {
+    "active": {
+      "readAppContent": true,
+      "createUGC": true,
+      "updateUGC": true,
+      "deleteOwnUGC": true,
+      "createRoom": true,
+      "joinRoom": true,
+      "moderateOwnedRoom": true,
+      "report": true,
+      "block": true,
+      "unblock": true,
+      "support": true,
+      "deleteAccount": true
+    },
+    "restricted": {
+      "readAppContent": true,
+      "createUGC": false,
+      "updateUGC": false,
+      "deleteOwnUGC": true,
+      "createRoom": false,
+      "joinRoom": false,
+      "moderateOwnedRoom": false,
+      "report": true,
+      "block": true,
+      "unblock": true,
+      "support": true,
+      "deleteAccount": true
+    },
+    "suspended": {
+      "readAppContent": false,
+      "createUGC": false,
+      "updateUGC": false,
+      "deleteOwnUGC": false,
+      "createRoom": false,
+      "joinRoom": false,
+      "moderateOwnedRoom": false,
+      "report": false,
+      "block": false,
+      "unblock": false,
+      "support": true,
+      "deleteAccount": true
+    }
+  },
+  "documents": {
+    "moderationPrincipals/{moderationPrincipalID}": {
+      "clientRead": false,
+      "clientWrite": false,
+      "requiredFields": {
+        "schemaVersion": "integer:1",
+        "moderationStatus": "moderationStatus",
+        "restrictedUntil": "timestamp|null",
+        "stateVersion": "positive integer",
+        "createdAt": "timestamp",
+        "updatedAt": "timestamp",
+        "expiresAt": "timestamp|null"
+      }
+    },
+    "moderationPrincipalAliases/{aliasID}": {
+      "clientRead": false,
+      "clientWrite": false,
+      "requiredFields": {
+        "schemaVersion": "integer:1",
+        "moderationPrincipalID": "document ID",
+        "provider": "google|apple|kakao",
+        "keyVersion": "positive integer",
+        "createdAt": "timestamp",
+        "expiresAt": "timestamp|null"
+      },
+      "forbiddenFields": [
+        "email",
+        "providerSubject",
+        "providerToken"
+      ]
+    },
+    "moderationAccounts/{uid}": {
+      "clientRead": false,
+      "clientWrite": false,
+      "requiredFields": {
+        "schemaVersion": "integer:1",
+        "moderationPrincipalID": "document ID",
+        "moderationStatus": "moderationStatus",
+        "restrictedUntil": "timestamp|null",
+        "stateVersion": "positive integer",
+        "updatedAt": "timestamp"
+      }
+    },
+    "platformAdmins/{uid}": {
+      "clientRead": false,
+      "clientWrite": false,
+      "requiredFields": {
+        "schemaVersion": "integer:1",
+        "isActive": "boolean",
+        "createdAt": "timestamp",
+        "updatedAt": "timestamp",
+        "revokedAt": "timestamp|null"
+      }
+    },
+    "users/{uid}/blockedUsers/{blockedUID}": {
+      "clientRead": "owner only",
+      "clientWrite": false,
+      "requiredFields": {
+        "blockerUserID": "owner uid",
+        "blockedUserID": "blockedUID",
+        "blockedUserNicknameSnapshot": "string|null, max 80 Unicode scalars",
+        "source": "blockSource",
+        "createdAt": "timestamp",
+        "updatedAt": "timestamp"
+      }
+    },
+    "moderationUserReports/{targetModerationPrincipalID}": {
+      "clientRead": false,
+      "clientWrite": false,
+      "requiredFields": {
+        "schemaVersion": "integer:1",
+        "reviewState": "reviewState",
+        "reviewRevision": "non-negative integer",
+        "caseVersion": "positive integer",
+        "uniqueReporterCount": "non-negative integer",
+        "totalSubmissionCount": "non-negative integer",
+        "reasonCounts": "map<reportReason, non-negative integer>",
+        "priorityClass": "urgent|general",
+        "slaDueAt": "timestamp",
+        "firstReportedAt": "timestamp",
+        "lastReportedAt": "timestamp",
+        "updatedAt": "timestamp",
+        "expiresAt": "timestamp|null"
+      }
+    },
+    "moderationUserReports/{target}/submissions/{submissionID}": {
+      "clientRead": false,
+      "clientWrite": false,
+      "requiredFields": {
+        "schemaVersion": "integer:1",
+        "reporterModerationPrincipalID": "document ID",
+        "reason": "reportReason",
+        "detail": "string|null, max 500 Unicode scalars",
+        "roomID": "string|null",
+        "triggerMessageID": "string|null",
+        "textSnapshot": "string|null, max 4000 UTF-8 bytes",
+        "mediaKind": "mediaKind|null",
+        "mediaInspectionSummary": "map|null",
+        "createdAt": "timestamp",
+        "expiresAt": "timestamp|null"
+      },
+      "forbiddenFields": [
+        "mediaCopyPath",
+        "email",
+        "providerSubject"
+      ]
+    },
+    "moderationUserReports/{target}/reporters/{reporterModerationPrincipalID}": {
+      "clientRead": false,
+      "clientWrite": false,
+      "requiredFields": {
+        "schemaVersion": "integer:1",
+        "firstReportedAt": "timestamp",
+        "lastReportedAt": "timestamp",
+        "submissionCount": "positive integer",
+        "expiresAt": "timestamp|null"
+      }
+    },
+    "moderationRoomReports/{roomID}": {
+      "clientRead": false,
+      "clientWrite": false,
+      "sameShapeAs": "moderationUserReports/{targetModerationPrincipalID}"
+    },
+    "moderationRoomReports/{roomID}/submissions/{submissionID}": {
+      "clientRead": false,
+      "clientWrite": false,
+      "sameShapeAs": "moderationUserReports/{target}/submissions/{submissionID}"
+    },
+    "moderationRoomReports/{roomID}/reporters/{reporterModerationPrincipalID}": {
+      "clientRead": false,
+      "clientWrite": false,
+      "sameShapeAs": "moderationUserReports/{target}/reporters/{reporterModerationPrincipalID}"
+    },
+    "Rooms/{roomID}/bans/{moderationPrincipalID}": {
+      "clientRead": false,
+      "clientWrite": false,
+      "requiredFields": {
+        "schemaVersion": "integer:1",
+        "bannedAt": "timestamp",
+        "bannedByUID": "uid",
+        "reasonCode": "string",
+        "stateVersion": "positive integer",
+        "expiresAt": "timestamp|null"
+      }
+    },
+    "Rooms/{roomID}": {
+      "moderationExtensionFields": {
+        "lifecycleStatus": "roomLifecycleStatus",
+        "lifecycleVersion": "positive integer",
+        "moderationClosedAt": "timestamp|null",
+        "moderationClosureNoticeCode": "string|null"
+      }
+    },
+    "Rooms/{roomID}/Messages/{messageID}": {
+      "moderationExtensionFields": {
+        "isDeleted": "boolean",
+        "message": "removed when isDeleted is true",
+        "attachments": "empty or removed when isDeleted is true"
+      },
+      "invariants": {
+        "seq": "immutable positive integer",
+        "senderUID": "immutable uid",
+        "deletedTombstone": "retained"
+      }
+    },
+    "chatMessageCleanupJobs/{jobID}": {
+      "clientRead": false,
+      "clientWrite": false,
+      "requiredFields": {
+        "schemaVersion": "integer:1",
+        "roomID": "string",
+        "messageID": "string",
+        "status": "cleanupJobStatus",
+        "attempt": "non-negative integer",
+        "nextAttemptAt": "timestamp",
+        "lastErrorCode": "string|null",
+        "createdAt": "timestamp",
+        "updatedAt": "timestamp",
+        "expiresAt": "timestamp|null"
+      },
+      "idempotency": "deterministic jobID from roomID + messageID"
+    },
+    "moderationRoomCleanupJobs/{roomID}": {
+      "clientRead": false,
+      "clientWrite": false,
+      "requiredFields": {
+        "schemaVersion": "integer:1",
+        "lifecycleVersion": "positive integer",
+        "status": "cleanupJobStatus",
+        "attempt": "non-negative integer",
+        "nextAttemptAt": "timestamp",
+        "lastErrorCode": "string|null",
+        "createdAt": "timestamp",
+        "updatedAt": "timestamp",
+        "expiresAt": "timestamp|null"
+      },
+      "idempotency": "roomID + lifecycleVersion"
+    },
+    "moderationAuditLogs/{actionID}": {
+      "clientRead": false,
+      "clientWrite": false,
+      "appendOnly": true,
+      "requiredFields": {
+        "schemaVersion": "integer:1",
+        "actorUID": "uid",
+        "action": "moderationAction",
+        "targetType": "user|room|message|roomMember",
+        "targetID": "string",
+        "before": "bounded map|null",
+        "after": "bounded map|null",
+        "reasonCode": "string",
+        "reportTargetType": "reportTargetType|null",
+        "reportTargetID": "string|null",
+        "requestID": "string",
+        "createdAt": "timestamp",
+        "expiresAt": "timestamp|null"
+      }
+    },
+    "Rooms/{roomID}/MediaUploads/{uploadID}": {
+      "clientRead": false,
+      "clientWrite": false,
+      "requiredFields": {
+        "schemaVersion": "integer:1",
+        "clientMutationID": "string",
+        "senderUID": "uid",
+        "moderationPrincipalID": "document ID",
+        "kind": "mediaKind",
+        "attachmentCount": "1...30 for images, exactly 1 for video",
+        "quarantinePaths": "bounded string array",
+        "inspectionStatus": "mediaInspectionStatus",
+        "inspectionAttempt": "non-negative integer",
+        "inspectionDeadlineAt": "timestamp",
+        "inspectionPolicyVersion": "positive integer",
+        "inspectionResult": "bounded likelihood map|null",
+        "cleanupStatus": "mediaCleanupStatus",
+        "createdAt": "timestamp",
+        "updatedAt": "timestamp",
+        "expiresAt": "timestamp"
+      }
+    }
+  },
+  "stateTransitions": {
+    "reportReview": {
+      "initial": "open",
+      "invariants": {
+        "reasonCounts": "counts all accepted submissions per reason",
+        "uniqueReporterCount": "counts distinct reporter moderation principals",
+        "caseVersion": "increments on every accepted submission and every admin mutation",
+        "reviewRevision": "increments only when a terminal review reopens because of a new submission"
+      },
+      "allowed": {
+        "open": [
+          "inReview",
+          "resolved",
+          "dismissed"
+        ],
+        "inReview": [
+          "resolved",
+          "dismissed"
+        ],
+        "resolved": [
+          "open"
+        ],
+        "dismissed": [
+          "open"
+        ]
+      },
+      "newSubmissionAfterTerminal": {
+        "reviewState": "open",
+        "increment": [
+          "reviewRevision",
+          "caseVersion"
+        ]
+      }
+    },
+    "mediaInspection": {
+      "initial": "reserved",
+      "allowed": {
+        "reserved": [
+          "uploaded",
+          "expired"
+        ],
+        "uploaded": [
+          "scanning",
+          "expired"
+        ],
+        "scanning": [
+          "ready",
+          "rejected",
+          "failed"
+        ],
+        "failed": [
+          "scanning",
+          "expired"
+        ],
+        "ready": [],
+        "rejected": [],
+        "expired": []
+      },
+      "messageCreation": "only on scanning -> ready",
+      "sequenceAllocation": "same transaction as ready message creation",
+      "failedSequenceTombstone": false
+    }
+  },
+  "mediaSafetyPolicy": {
+    "policyVersion": 1,
+    "imageProvider": "Google Cloud Vision SafeSearch",
+    "videoProviders": [
+      "Google Cloud Video Intelligence Explicit Content Detection",
+      "Google Cloud Vision SafeSearch on sampled frames"
+    ],
+    "thresholds": {
+      "adult": "LIKELY",
+      "violence": "LIKELY",
+      "racy": "VERY_LIKELY"
+    },
+    "diagnosticOnly": [
+      "medical",
+      "spoof"
+    ],
+    "unknownOrProviderFailure": "bounded retry then fail closed",
+    "reportEvidenceCopy": false
+  },
+  "storage": {
+    "quarantinePath": "chatModerationQuarantine/{roomID}/{senderUID}/{uploadID}/{objectName}",
+    "readyPath": "rooms/{roomID}/{messageID}/{objectName}",
+    "quarantineRead": "server only",
+    "quarantineWrite": "reservation owner only with exact path/content constraints",
+    "readyRead": "authorized room reader and lifecycle/ban checks",
+    "readyWrite": "server only",
+    "reportEvidencePath": null
+  },
+  "api": {
+    "getMyModerationState": {
+      "transport": "Firebase callable",
+      "authorization": "authenticated user",
+      "request": {},
+      "response": {
+        "moderationStatus": "moderationStatus",
+        "restrictedUntil": "timestamp|null",
+        "allowedCapabilities": "string array",
+        "noticeReasonCode": "string|null",
+        "supportURL": "string|null"
+      }
+    },
+    "submitUserReport": {
+      "transport": "Firebase callable",
+      "authorization": "active or restricted reporter",
+      "request": {
+        "targetUID": "uid",
+        "reason": "reportReason",
+        "detail": "string|null",
+        "roomID": "string|null",
+        "triggerMessageID": "string|null",
+        "clientRequestID": "UUID string"
+      },
+      "response": {
+        "submissionID": "string",
+        "deduplicated": "boolean",
+        "receivedAt": "timestamp"
+      },
+      "idempotency": "reporter + user target + clientRequestID"
+    },
+    "submitRoomReport": {
+      "transport": "Firebase callable",
+      "authorization": "active or restricted reporter with room context",
+      "request": {
+        "roomID": "string",
+        "reason": "reportReason",
+        "detail": "string|null",
+        "triggerMessageID": "string|null",
+        "clientRequestID": "UUID string"
+      },
+      "response": {
+        "submissionID": "string",
+        "deduplicated": "boolean",
+        "receivedAt": "timestamp"
+      },
+      "idempotency": "reporter + room target + clientRequestID"
+    },
+    "blockUser": {
+      "transport": "Firebase callable",
+      "authorization": "active or restricted user",
+      "request": {
+        "targetUID": "uid",
+        "source": "blockSource",
+        "targetNicknameSnapshot": "string|null, max 80 Unicode scalars",
+        "clientRequestID": "UUID string"
+      },
+      "response": {
+        "blocked": "true",
+        "updatedAt": "timestamp"
+      },
+      "idempotency": "owner UID + target UID"
+    },
+    "unblockUser": {
+      "transport": "Firebase callable",
+      "authorization": "active or restricted user",
+      "request": {
+        "targetUID": "uid",
+        "clientRequestID": "UUID string"
+      },
+      "response": {
+        "blocked": "false",
+        "updatedAt": "timestamp"
+      },
+      "idempotency": "owner UID + target UID"
+    },
+    "deleteChatMessage": {
+      "transport": "Firebase callable",
+      "authorization": "author, active room creator, or platform admin",
+      "request": {
+        "roomID": "string",
+        "messageID": "string",
+        "reasonCode": "string|null",
+        "clientRequestID": "UUID string"
+      },
+      "response": {
+        "messageID": "string",
+        "isDeleted": "true",
+        "cleanupStatus": "completed|pending",
+        "deduplicated": "boolean"
+      },
+      "idempotency": "roomID + messageID"
+    },
+    "removeRoomMember": {
+      "transport": "Firebase callable",
+      "authorization": "active room creator",
+      "request": {
+        "roomID": "string",
+        "targetUID": "uid",
+        "reasonCode": "string",
+        "clientRequestID": "UUID string"
+      },
+      "response": {
+        "removed": "true",
+        "roomBanned": "true",
+        "memberCount": "non-negative integer"
+      },
+      "idempotency": "roomID + target moderation principal"
+    },
+    "unbanRoomMember": {
+      "transport": "Firebase callable",
+      "authorization": "active room creator",
+      "request": {
+        "roomID": "string",
+        "banEntryToken": "opaque room-scoped token returned by listRoomBans",
+        "clientRequestID": "UUID string"
+      },
+      "response": {
+        "roomBanned": "false",
+        "membershipRestored": "false"
+      },
+      "idempotency": "roomID + target moderation principal"
+    },
+    "listRoomBans": {
+      "transport": "Firebase callable",
+      "authorization": "active room creator",
+      "request": {
+        "roomID": "string",
+        "pageSize": "1...50",
+        "cursor": "opaque string|null"
+      },
+      "response": {
+        "items": "safe ban-list item array with room-scoped banEntryToken and public profile summary, without moderationPrincipalID",
+        "nextCursor": "opaque string|null"
+      }
+    },
+    "listModerationReports": {
+      "transport": "Firebase callable",
+      "authorization": "active platform admin",
+      "request": {
+        "targetType": "reportTargetType",
+        "reviewState": "reviewState|null",
+        "priorityClass": "urgent|general|null",
+        "pageSize": "1...100",
+        "cursor": "opaque string|null"
+      },
+      "response": {
+        "items": "safe report summary array",
+        "nextCursor": "opaque string|null"
+      }
+    },
+    "getModerationReportDetail": {
+      "transport": "Firebase callable",
+      "authorization": "active platform admin",
+      "request": {
+        "targetType": "reportTargetType",
+        "targetID": "string",
+        "submissionPageSize": "1...100",
+        "submissionCursor": "opaque string|null"
+      },
+      "response": {
+        "aggregate": "safe aggregate",
+        "submissions": "safe submission array",
+        "nextSubmissionCursor": "opaque string|null"
+      }
+    },
+    "mutateModerationReview": {
+      "transport": "Firebase callable",
+      "authorization": "active platform admin",
+      "request": {
+        "targetType": "reportTargetType",
+        "targetID": "string",
+        "action": "startReview|resolveReview|dismissReview",
+        "expectedCaseVersion": "positive integer",
+        "reasonCode": "string",
+        "clientRequestID": "UUID string"
+      },
+      "response": {
+        "reviewState": "reviewState",
+        "reviewRevision": "non-negative integer",
+        "caseVersion": "positive integer"
+      }
+    },
+    "mutateAccountModeration": {
+      "transport": "Firebase callable",
+      "authorization": "active platform admin with auth_time within 5 minutes",
+      "request": {
+        "targetUID": "uid",
+        "action": "temporarilyRestrictAccount|permanentlySuspendAccount|liftAccountModeration",
+        "restrictedUntil": "timestamp|null",
+        "reasonCode": "string",
+        "reportTargetType": "reportTargetType|null",
+        "reportTargetID": "string|null",
+        "expectedStateVersion": "positive integer",
+        "clientRequestID": "UUID string"
+      },
+      "response": {
+        "moderationStatus": "moderationStatus",
+        "restrictedUntil": "timestamp|null",
+        "stateVersion": "positive integer"
+      },
+      "forbiddenTargets": [
+        "caller UID",
+        "active platform admin"
+      ]
+    },
+    "closeRoomByModeration": {
+      "transport": "Firebase callable",
+      "authorization": "active platform admin with auth_time within 5 minutes",
+      "request": {
+        "roomID": "string",
+        "reasonCode": "string",
+        "reportTargetID": "string|null",
+        "expectedLifecycleVersion": "positive integer",
+        "clientRequestID": "UUID string"
+      },
+      "response": {
+        "lifecycleStatus": "closedByModeration",
+        "cleanupStatus": "completed|pending",
+        "lifecycleVersion": "positive integer"
+      }
+    },
+    "chat:mediaPreflight": {
+      "transport": "Socket ACK",
+      "authorization": "active room member without room ban",
+      "request": {
+        "roomID": "string",
+        "clientMutationID": "UUID string",
+        "kind": "mediaKind",
+        "attachmentCount": "bounded integer",
+        "expectedPathCount": "bounded integer"
+      },
+      "response": {
+        "uploadID": "string",
+        "quarantinePaths": "string array",
+        "expiresAt": "timestamp"
+      }
+    },
+    "chat:mediaFinalize": {
+      "transport": "Socket ACK",
+      "authorization": "active reservation owner without room ban",
+      "request": {
+        "roomID": "string",
+        "uploadID": "string",
+        "clientMutationID": "UUID string",
+        "attachments": "bounded media metadata array"
+      },
+      "response": {
+        "inspectionStatus": "uploaded|scanning|ready|rejected|failed|expired",
+        "messageID": "string|null",
+        "seq": "positive integer|null",
+        "retryable": "boolean"
+      },
+      "idempotency": "roomID + clientMutationID"
+    },
+    "chat:mediaInspectionStatus": {
+      "transport": "Socket ACK",
+      "authorization": "reservation owner",
+      "request": {
+        "roomID": "string",
+        "uploadID": "string",
+        "clientMutationID": "UUID string"
+      },
+      "response": {
+        "inspectionStatus": "mediaInspectionStatus",
+        "messageID": "string|null",
+        "seq": "positive integer|null",
+        "retryable": "boolean"
+      }
+    },
+    "chat:mediaRetryInspection": {
+      "transport": "Socket ACK",
+      "authorization": "active reservation owner without room ban",
+      "request": {
+        "roomID": "string",
+        "uploadID": "string",
+        "clientMutationID": "UUID string"
+      },
+      "response": {
+        "inspectionStatus": "scanning|ready|rejected|failed|expired",
+        "messageID": "string|null",
+        "seq": "positive integer|null",
+        "retryable": "boolean"
+      },
+      "idempotency": "roomID + uploadID + current inspectionAttempt"
+    }
+  },
+  "errors": {
+    "AUTH_REQUIRED": "unauthenticated",
+    "APP_CHECK_REQUIRED": "unauthenticated",
+    "PRINCIPAL_BINDING_REQUIRED": "failed-precondition",
+    "ACCOUNT_DELETION_PENDING": "failed-precondition",
+    "ACCOUNT_RESTRICTED": "permission-denied",
+    "ACCOUNT_SUSPENDED": "permission-denied",
+    "SELF_REPORT_NOT_ALLOWED": "invalid-argument",
+    "SELF_BLOCK_NOT_ALLOWED": "invalid-argument",
+    "TARGET_NOT_FOUND": "not-found",
+    "ROOM_NOT_FOUND": "not-found",
+    "MESSAGE_NOT_FOUND": "not-found",
+    "ROOM_MEMBERSHIP_REQUIRED": "permission-denied",
+    "ROOM_MODERATOR_REQUIRED": "permission-denied",
+    "ROOM_BANNED": "permission-denied",
+    "ROOM_CLOSED_BY_MODERATION": "failed-precondition",
+    "PLATFORM_ADMIN_REQUIRED": "permission-denied",
+    "RECENT_AUTH_REQUIRED": "unauthenticated",
+    "PROTECTED_ADMIN_TARGET": "failed-precondition",
+    "STALE_CASE_VERSION": "aborted",
+    "STALE_STATE_VERSION": "aborted",
+    "IDEMPOTENCY_CONFLICT": "already-exists",
+    "MEDIA_INSPECTION_PENDING": "failed-precondition",
+    "MEDIA_REJECTED": "permission-denied",
+    "MEDIA_INSPECTION_FAILED": "unavailable",
+    "MEDIA_RESERVATION_EXPIRED": "deadline-exceeded",
+    "RATE_LIMITED": "resource-exhausted",
+    "INVALID_ARGUMENT": "invalid-argument"
+  },
+  "indexes": [
+    {
+      "collection": "moderationUserReports",
+      "fields": [
+        "reviewState ASC",
+        "priorityClass ASC",
+        "slaDueAt ASC",
+        "lastReportedAt DESC"
+      ]
+    },
+    {
+      "collection": "moderationRoomReports",
+      "fields": [
+        "reviewState ASC",
+        "priorityClass ASC",
+        "slaDueAt ASC",
+        "lastReportedAt DESC"
+      ]
+    },
+    {
+      "collection": "moderationAccounts",
+      "fields": [
+        "moderationStatus ASC",
+        "restrictedUntil ASC"
+      ]
+    },
+    {
+      "collectionGroup": "MediaUploads",
+      "fields": [
+        "inspectionStatus ASC",
+        "expiresAt ASC"
+      ]
+    },
+    {
+      "collection": "chatMessageCleanupJobs",
+      "fields": [
+        "status ASC",
+        "nextAttemptAt ASC"
+      ]
+    },
+    {
+      "collection": "moderationRoomCleanupJobs",
+      "fields": [
+        "status ASC",
+        "nextAttemptAt ASC"
+      ]
+    }
+  ],
+  "retention": {
+    "moderationLedgerProductionTTLActivation": "blocked until legal and privacy review approves purpose and duration",
+    "mediaReservationOperationalCleanup": "expired or terminal quarantine objects are cleaned independently of moderation ledger retention",
+    "readyInspectionMetadata": "retained only for an approved bounded period; Production release is blocked until that period is set",
+    "developmentFixtures": "delete after QA",
+    "reportedMediaCopy": "not retained",
+    "deletedMessageSequenceTombstone": "retained with public payload removed"
+  },
+  "reportOperations": {
+    "urgentReasons": [
+      "sexual",
+      "privacy",
+      "illegalDangerous"
+    ],
+    "urgentInternalSLOHours": 24,
+    "generalInternalSLOHours": 72,
+    "userFacingLegalDeadline": false
+  },
+  "releaseGates": [
+    "moderation principal and room ban legal retention basis and duration",
+    "provider subject verification and Kakao User ID Fixed reconnect QA",
+    "Google Cloud media processing privacy disclosure and App Privacy response",
+    "minor access scope and illegal or sexual content escalation",
+    "support URL and staffed urgent/general report operations",
+    "Development media false-positive corpus",
+    "platform admin bootstrap, recent-auth, and break-glass runbook",
+    "App Review demo accounts and recovery paths"
+  ]
+}
