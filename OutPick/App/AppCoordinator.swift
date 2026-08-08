@@ -207,6 +207,26 @@ final class AppCoordinator {
 
             await MainActor.run { self.showMainTab() }
 
+            case .restricted(let state, let account, let publicProfile):
+                print("[AppCoordinator] account activity is restricted.")
+                if let account, let publicProfile {
+                    await MainActor.run {
+                        self.currentUserSessionStore.replaceProfile(publicProfile)
+                        self.currentUserStylePreferenceStore.replace(
+                            selectedMoodIDs: account.selectedMoodIDs
+                        )
+                        _ = self.ensureChatContainer()
+                        self.showMainTab()
+                        self.showRestrictionNotice(state)
+                    }
+                } else {
+                    await MainActor.run { self.showModerationNotice(state) }
+                }
+
+            case .suspended(let state):
+                print("[AppCoordinator] account is suspended.")
+                await MainActor.run { self.showModerationNotice(state) }
+
             case .needsOnboarding:
                 print("[AppCoordinator] account is missing/incomplete. Showing onboarding.")
                 await MainActor.run { self.showProfileFlow(userID: userID) }
@@ -392,6 +412,58 @@ final class AppCoordinator {
             }
         }
         setRoot(failure, animated: true)
+    }
+
+    @MainActor
+    private func showRestrictionNotice(_ state: CurrentUserModerationState) {
+        guard let presenter = mainTabController else { return }
+        let message: String
+        if let restrictedUntil = state.restrictedUntil {
+            message = "새 게시물과 메시지 작성은 \(restrictedUntil.formatted(date: .long, time: .shortened))까지 제한돼요."
+        } else {
+            message = "새 게시물과 메시지 작성이 일시적으로 제한돼요."
+        }
+        let alert = UIAlertController(
+            title: "활동이 제한되었어요",
+            message: message,
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "확인", style: .default))
+        presenter.present(alert, animated: true)
+    }
+
+    @MainActor
+    private func showModerationNotice(_ state: CurrentUserModerationState) {
+        clearAuthenticatedRuntimeForDeletionPending()
+        let navigationController = UINavigationController()
+        let notice = ModerationNoticeViewController(
+            state: state,
+            onDeleteAccount: { [weak self, weak navigationController] in
+                guard let self,
+                      let navigationController,
+                      let authenticatedUser = LoginManager.shared.authenticatedUser else { return }
+                let viewModel = AccountDeletionViewModel(
+                    expectedUser: authenticatedUser,
+                    requestUseCase: self.requestAccountDeletionUseCase
+                )
+                viewModel.onAccepted = { [weak self] outcome, expectedUser in
+                    self?.handleAccountDeletionAccepted(
+                        outcome: outcome,
+                        expectedUser: expectedUser
+                    )
+                }
+                navigationController.pushViewController(
+                    AccountDeletionConfirmationViewController(viewModel: viewModel),
+                    animated: true
+                )
+            },
+            onLogout: { [weak self] in
+                LoginManager.shared.logout()
+                self?.routeToLoginAfterLogout()
+            }
+        )
+        navigationController.setViewControllers([notice], animated: false)
+        setRoot(navigationController, animated: true)
     }
 
     @MainActor
