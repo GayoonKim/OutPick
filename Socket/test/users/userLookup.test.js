@@ -40,3 +40,30 @@ test("account status listener는 inactive와 조회 실패를 전달한다", () 
   assert.deepEqual(errors, ["watch-failed"]);
   assert.equal(unsubscribed, true);
 });
+
+test("moderation account listener는 상태 문서와 누락을 전달한다", () => {
+  let snapshotHandler;
+  const db = {
+    collection: (name) => ({
+      doc: () => ({
+        onSnapshot(onSnapshot) {
+          assert.equal(name, "moderationAccounts");
+          snapshotHandler = onSnapshot;
+          return () => {};
+        }
+      })
+    })
+  };
+  const values = [];
+  const { watchModerationAccount } = createUserLookup({ db });
+  watchModerationAccount("uid-a", (value) => values.push(value));
+  snapshotHandler({
+    exists: true,
+    data: () => ({ moderationStatus: "restricted", stateVersion: 2 })
+  });
+  snapshotHandler({ exists: false });
+  assert.deepEqual(values, [
+    { moderationStatus: "restricted", stateVersion: 2 },
+    null
+  ]);
+});

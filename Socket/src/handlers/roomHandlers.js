@@ -1,4 +1,8 @@
 import { normalizeUID } from "../utils/strings.js";
+import {
+  rejectMissingCapability,
+  socketHasCapability
+} from "../moderation/capabilities.js";
 
 export function registerRoomHandlers({
   socket,
@@ -11,6 +15,7 @@ export function registerRoomHandlers({
   logger = console
 }) {
   socket.on("create room", (roomID, callback) => {
+    if (rejectMissingCapability(socket, "createRoom", callback)) return;
     if (!roomID || !isValidRoomID(roomID)) {
       callback?.({ ok: false, message: "invalid_room_id" });
       return;
@@ -28,6 +33,7 @@ export function registerRoomHandlers({
   });
 
   socket.on("join room", async (roomID, callback) => {
+    if (rejectMissingCapability(socket, "readAppContent", callback)) return;
     const username = socket.username || "Anonymous";
     logger.log(`Join request: ${username} → ${roomID}`);
 
@@ -87,7 +93,11 @@ export function registerRoomHandlers({
     }
 
     try {
-      const result = await leaveOrCloseRoom({ roomID, userUID });
+      const result = await leaveOrCloseRoom({
+        roomID,
+        userUID,
+        allowRoomModeration: socketHasCapability(socket, "moderateOwnedRoom")
+      });
       if (!result.ok) {
         const fallback = result.mode === "closed" ? "close_failed" : "leave_failed";
         callback?.({ ok: false, error: result.error || fallback });

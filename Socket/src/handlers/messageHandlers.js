@@ -5,6 +5,7 @@ import {
 } from "../config.js";
 import { buildTextMessageDocument } from "../messages/messagePayload.js";
 import { normalizeEmail, normalizeUID } from "../utils/strings.js";
+import { rejectMissingCapability } from "../moderation/capabilities.js";
 
 export function registerMessageHandlers({
   socket,
@@ -21,6 +22,7 @@ export function registerMessageHandlers({
   logger = console
 }) {
   socket.on("chat message", async (data, callback) => {
+    if (rejectMissingCapability(socket, "createUGC", callback)) return;
     try {
       const roomID = data?.roomID || data?.roomName;
       const msg = typeof data?.msg === "string"
@@ -132,6 +134,7 @@ export function registerMessageHandlers({
   });
 
   socket.on("chat:lookbookShare", async (data, callback) => {
+    if (rejectMissingCapability(socket, "createUGC", callback)) return;
     return handleLookbookShare(socket, data, callback);
   });
 }

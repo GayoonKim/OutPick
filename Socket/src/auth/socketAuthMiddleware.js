@@ -4,6 +4,7 @@ import {
   getClientKey
 } from "./handshake.js";
 import { normalizeEmail } from "../utils/strings.js";
+import { moderationSession } from "../moderation/capabilities.js";
 
 export function createReconnectAttemptMiddleware({
   clock,
@@ -41,6 +42,7 @@ export function createReconnectAttemptMiddleware({
 export function createFirebaseAuthMiddleware({
   verifyIDToken,
   findUserByUID,
+  findModerationAccount,
   logger = console
 }) {
   return async function firebaseAuthMiddleware(socket, next) {
@@ -83,12 +85,30 @@ export function createFirebaseAuthMiddleware({
         };
         return next(error);
       }
+      const moderationAccount = await findModerationAccount(userUID);
+      const session = moderationSession(moderationAccount?.data);
+      if (!session || !session.allowedCapabilities.includes("readAppContent")) {
+        logger.warn("[auth] moderation account rejected", {
+          userUID,
+          moderationStatus: session?.moderationStatus || "missing"
+        });
+        const error = new Error("moderation_access_denied");
+        error.data = {
+          message: "현재 계정 상태에서는 채팅에 연결할 수 없습니다.",
+          error: "moderation_access_denied"
+        };
+        return next(error);
+      }
       const profileEmail = normalizeEmail(userProfile?.data?.email);
 
       socket.userUID = userUID;
       socket.userDocumentID = userProfile?.ref?.id || userUID;
       socket.userEmail = profileEmail || tokenEmail || "";
       socket.userEmailSource = profileEmail ? "profile" : "token";
+      socket.moderationStatus = session.moderationStatus;
+      socket.moderationPrincipalID = session.moderationPrincipalID;
+      socket.moderationStateVersion = session.stateVersion;
+      socket.allowedCapabilities = [...session.allowedCapabilities];
       return next();
     } catch (error) {
       logger.warn("[auth] Firebase ID Token verification failed", {
