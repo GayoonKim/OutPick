@@ -8,6 +8,7 @@ struct LoadCurrentUserBootstrapUseCaseTests {
         let accountRepository = CurrentUserAccountRepositoryFake(account: nil)
         let publicRepository = UserPublicProfileRepositoryFake()
         let useCase = LoadCurrentUserBootstrapUseCase(
+            moderationRepository: CurrentUserModerationRepositoryFake(),
             accountRepository: accountRepository,
             publicProfileRepository: publicRepository
         )
@@ -22,6 +23,7 @@ struct LoadCurrentUserBootstrapUseCaseTests {
     func outdatedOnboardingVersionRequiresOnboarding() async throws {
         let account = makeAccount(onboardingVersion: 0)
         let useCase = LoadCurrentUserBootstrapUseCase(
+            moderationRepository: CurrentUserModerationRepositoryFake(),
             accountRepository: CurrentUserAccountRepositoryFake(account: account),
             publicProfileRepository: UserPublicProfileRepositoryFake()
         )
@@ -33,6 +35,7 @@ struct LoadCurrentUserBootstrapUseCaseTests {
     func deletionPendingAccountBlocksMainFlow() async throws {
         let account = makeAccount(accountStatus: .deletionPending)
         let useCase = LoadCurrentUserBootstrapUseCase(
+            moderationRepository: CurrentUserModerationRepositoryFake(),
             accountRepository: CurrentUserAccountRepositoryFake(account: account),
             publicProfileRepository: UserPublicProfileRepositoryFake()
         )
@@ -52,6 +55,7 @@ struct LoadCurrentUserBootstrapUseCaseTests {
             updatedAt: nil
         )
         let useCase = LoadCurrentUserBootstrapUseCase(
+            moderationRepository: CurrentUserModerationRepositoryFake(),
             accountRepository: CurrentUserAccountRepositoryFake(account: account),
             publicProfileRepository: UserPublicProfileRepositoryFake(profile: profile)
         )
@@ -59,6 +63,58 @@ struct LoadCurrentUserBootstrapUseCaseTests {
         #expect(
             try await useCase.execute(userID: "user-1")
                 == .ready(account: account, publicProfile: profile)
+        )
+    }
+
+    @Test
+    func suspendedStopsBeforeReadingAccountOrProfile() async throws {
+        let accountRepository = CurrentUserAccountRepositoryFake(account: makeAccount())
+        let publicRepository = UserPublicProfileRepositoryFake()
+        let state = makeModerationState(status: .suspended)
+        let useCase = LoadCurrentUserBootstrapUseCase(
+            moderationRepository: CurrentUserModerationRepositoryFake(state: state),
+            accountRepository: accountRepository,
+            publicProfileRepository: publicRepository
+        )
+
+        #expect(try await useCase.execute(userID: "user-1") == .suspended(state: state))
+        #expect(accountRepository.requestedUserIDs.isEmpty)
+        #expect(publicRepository.requestedUserIDs.isEmpty)
+    }
+
+    @Test
+    func restrictedCompleteAccountLoadsReadOnlyBootstrapData() async throws {
+        let account = makeAccount()
+        let profile = UserPublicProfile(
+            userID: "user-1",
+            nickname: "아웃피커",
+            avatarThumbPath: nil,
+            avatarOriginalPath: nil,
+            createdAt: nil,
+            updatedAt: nil
+        )
+        let state = makeModerationState(status: .restricted)
+        let useCase = LoadCurrentUserBootstrapUseCase(
+            moderationRepository: CurrentUserModerationRepositoryFake(state: state),
+            accountRepository: CurrentUserAccountRepositoryFake(account: account),
+            publicProfileRepository: UserPublicProfileRepositoryFake(profile: profile)
+        )
+
+        #expect(
+            try await useCase.execute(userID: "user-1")
+                == .restricted(state: state, account: account, publicProfile: profile)
+        )
+    }
+
+    private func makeModerationState(
+        status: AccountModerationStatus = .active
+    ) -> CurrentUserModerationState {
+        CurrentUserModerationState(
+            status: status,
+            restrictedUntil: nil,
+            allowedCapabilities: status == .active ? [.readAppContent, .createUGC] : [],
+            noticeReasonCode: nil,
+            supportURL: nil
         )
     }
 
@@ -80,13 +136,34 @@ struct LoadCurrentUserBootstrapUseCaseTests {
 
 private final class CurrentUserAccountRepositoryFake: CurrentUserAccountRepositoryProtocol {
     let account: UserAccount?
+    private(set) var requestedUserIDs: [String] = []
 
     init(account: UserAccount?) {
         self.account = account
     }
 
     func fetchAccount(userID: String) async throws -> UserAccount? {
-        account
+        requestedUserIDs.append(userID)
+        return account
+    }
+}
+
+private struct CurrentUserModerationRepositoryFake:
+    CurrentUserModerationRepositoryProtocol {
+    let state: CurrentUserModerationState
+
+    init(state: CurrentUserModerationState = CurrentUserModerationState(
+        status: .active,
+        restrictedUntil: nil,
+        allowedCapabilities: [.readAppContent, .createUGC],
+        noticeReasonCode: nil,
+        supportURL: nil
+    )) {
+        self.state = state
+    }
+
+    func fetchAndBindCurrentState() async throws -> CurrentUserModerationState {
+        state
     }
 }
 

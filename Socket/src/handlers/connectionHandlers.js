@@ -1,4 +1,5 @@
 import { getClientKey } from "../auth/handshake.js";
+import { moderationSession } from "../moderation/capabilities.js";
 
 export function registerConnectionHandlers({
   socket,
@@ -7,6 +8,7 @@ export function registerConnectionHandlers({
   clock,
   reconnectPolicy,
   watchUserAccountStatus,
+  watchModerationAccount,
   logger = console
 }) {
   logger.log("User connected:", socket.userUID);
@@ -55,6 +57,33 @@ export function registerConnectionHandlers({
     }
   );
 
+  const stopModerationWatch = watchModerationAccount?.(
+    socket.userUID,
+    (data) => {
+      const nextSession = moderationSession(data);
+      const changed = !nextSession ||
+        nextSession.moderationStatus !== socket.moderationStatus ||
+        nextSession.stateVersion !== socket.moderationStateVersion;
+      if (!changed) return;
+      logger.warn("[moderation] changed socket disconnected", {
+        userUID: socket.userUID,
+        moderationStatus: nextSession?.moderationStatus || "missing",
+        socketID: socket.id
+      });
+      socket.emit("moderation:changed", {
+        moderationStatus: nextSession?.moderationStatus || "missing"
+      });
+      socket.disconnect(true);
+    },
+    (error) => {
+      logger.error("[moderation] status watch failed; disconnecting", {
+        userUID: socket.userUID,
+        message: error?.message
+      });
+      socket.disconnect(true);
+    }
+  );
+
   socket.on("set username", (username) => {
     socket.username = username || "Anonymous";
     logger.log(`Username set: ${socket.username}`);
@@ -63,6 +92,7 @@ export function registerConnectionHandlers({
 
   socket.on("disconnect", () => {
     stopAccountStatusWatch?.();
+    stopModerationWatch?.();
     logger.log("User disconnected:", socket.id);
     for (const roomID in rooms) {
       rooms[roomID] = rooms[roomID].filter((user) => user !== socket.username);

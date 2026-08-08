@@ -185,6 +185,46 @@ Firebase Functions tests/build entry:
 
 ## Chat / Realtime
 
+### Chat UGC safety/moderation 테스트
+
+- exact behavior: `contracts/chat-moderation-v1.json`
+- Phase 1 완료:
+  - Functions `moderation/{identity,state}.test.ts`, `shared/accountStatus.test.ts`: versioned HMAC alias, provider claim, capability matrix, 제한 만료.
+  - Emulator `moderation-principal.emulator.test.mjs`: 동시 재가입 UID 수렴, suspended 복원, old/new key alias 회전.
+  - Socket `moderation/capabilities.test.js`, auth/userLookup/room lifecycle tests: restricted read-only, suspended 거부, projection watch와 owner close 차단.
+  - Rules `moderation-capabilities.rules.test.mjs`, profile/brand/room rule fixtures: projection fail-closed, restricted read와 write deny, 내부 문서 deny, active/restricted 재가입자의 missing own-account 단일 get 허용과 cross-user/list/suspended deny.
+  - iOS `LoadCurrentUserBootstrapUseCaseTests.swift`: active/deletionPending/restricted/suspended 및 suspended 선행 read 차단.
+  - Functions backfill `moderation/backfill.test.ts`, `scripts/backfill-moderation-principals.mjs`: Development/Production project allowlist, dry-run 기본, Kakao Admin API ID exact match, 비숫자·불일치·미연결·HTTP 실패 unresolved, 식별자 비노출 summary, Production 확인 문자열·예상 건수·unresolved apply 차단을 검증한다. 2026-08-07 Phase 1-P 구현 뒤 Functions 전체 164/164와 lint/build가 통과했다.
+  - 2026-08-07 Development 실제 dry-run은 Google 1명 resolved/unresolved 0, apply 후 account/principal/alias 각각 1개와 민감 필드 0개를 확인했다. Phase 1-P Production은 total 2/Google 1/Kakao 1/Apple 0/unresolved 0 dry-run과 exact-gated apply를 통과했고, account/principal/alias 각 2개·active·참조 무결성·민감 원문 0개를 확인했다.
+  - `test-admin-server/src/seed/lookbook{Basic,Comments}Seed.ts`는 표시용 Firestore fixture만 생성하고 `uitest-*` Firebase Auth 사용자를 만들지 않는다. 실제 Development 로그인은 Google 계정을 사용한다.
+  - 2026-08-07 Development 배포 후 `getMyModerationState` ACTIVE·Secret v1 연결, Socket revision `outpick-socket-development-00002-hal` traffic 100%·canonical `/readyz` 정상·ERROR 0건을 확인했다. 실제 provider 탈퇴·재가입 QA는 미완료다.
+  - Google restricted 실제 재가입에서 신규 UID→기존 principal 서버 binding은 성공했으나 missing `users/{uid}` get이 거부되는 Rules 회귀를 발견했다. 본인 bootstrap get만 허용하는 수정 후 전체 Rules 35/35·transaction 11/11을 통과하고 Development Rules를 재배포했다.
+- Phase 2 이후 Functions 후보:
+  - 사용자·방 신고 submission idempotency, unique reporter/total count, reopen revision과 stale caseVersion
+  - 메시지 삭제 cleanup, room ban transaction, owner succession과 관리자 audit
+  - 미디어 inspection retry/fail-closed/ready message+seq 단일 생성
+- Socket unit test 후보:
+  - restricted/suspended handshake와 기존 연결 disconnect
+  - room ban join/read/push 거부, 전역 차단 recipient push 제외
+  - principal+room+messageKind rate key와 reconnect 회귀
+  - 검사 통과 전 broadcast 없음과 ready 이후 단일 broadcast/seq
+- Firestore·Storage emulator 후보:
+  - moderation collection client read/write 거부
+  - restricted safe action 허용과 UGC write 거부
+  - room ban/lifecycle read·join·write 거부
+  - quarantine exact owner upload와 다른 사용자 read/ready direct write 거부
+- iOS unit test 후보:
+  - bootstrap active/deletionPending/restricted/suspended routing
+  - 신고·차단·삭제 ViewModel state와 Coordinator route spy
+  - hidden seq 소비·payload/FTS/cache 미저장·unblock remote 복원
+  - pending media relaunch/retry/failure와 ready ACK 수렴
+- 수동 QA:
+  - 메시지/프로필/참여자/방 설정 신고 진입과 문구·접근성
+  - 두 계정 block/unblock, background/banner/push, creator remove/unban
+  - Google·Kakao 재인증·탈퇴·재가입과 동일 restricted principal 복원은 2026-08-07 Development에서 통과했다. Apple은 로그인 구현 전이라 미완료이며 Production Kakao User ID Fixed 콘솔 확인은 출시 gate다.
+  - 허용 패션/성적/폭력/UNKNOWN 이미지·동영상 corpus
+- Phase 0에서는 테스트 코드를 추가·실행하지 않는다. 이후 Phase는 실패 비용이 큰 인증·삭제·Rules·Storage 계약이므로 해당 Phase 완료 전에 자동 테스트와 build를 실행한다.
+
 - Phase 6-A read frontier/catch-up state: `OutPickTests/ChatReadStateStoreTests.swift`, `OutPickTests/ChatUnreadCatchUpStateTests.swift`
   - seeded monotonic frontier, visible candidate의 연속 상한, explicit gap 승인과 window 없는 final frontier를 검증한다.
   - scalar unread count, 고정 target, generation 기반 stale/중복/실패 거부와 10,000개 latest event payload 비보관을 검증한다.

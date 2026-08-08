@@ -1,5 +1,4 @@
 import type {Express, Request, Response} from "express";
-import type {ServerConfig} from "../config.js";
 import type {FirebaseAdminContext} from "../firebaseAdmin.js";
 import {
   seedLookbookBasic,
@@ -9,16 +8,12 @@ import {seedLookbookComments} from "../seed/lookbookCommentsSeed.js";
 
 export function registerLookbookSeedRoute(
   app: Express,
-  config: ServerConfig,
   firebaseAdmin: FirebaseAdminContext
 ): void {
   app.post("/seed/lookbook-basic", async (request: Request, response: Response) => {
-    const password = requireTestUserPassword(config);
     const seedRequest = parseSeedRequest(request.body);
     const result = await seedLookbookBasic(
       firebaseAdmin.firestore,
-      firebaseAdmin.auth,
-      password,
       seedRequest
     );
 
@@ -29,12 +24,9 @@ export function registerLookbookSeedRoute(
   });
 
   app.post("/seed/lookbook-comments", async (request: Request, response: Response) => {
-    const password = requireTestUserPassword(config);
     const seedRequest = parseSeedRequest(request.body);
     const result = await seedLookbookComments(
       firebaseAdmin.firestore,
-      firebaseAdmin.auth,
-      password,
       seedRequest
     );
 
@@ -54,14 +46,6 @@ function parseSeedRequest(body: unknown): LookbookBasicSeedRequest {
   return {
     testRunId: stringValue(objectBody.testRunId)
   };
-}
-
-function requireTestUserPassword(config: ServerConfig): string {
-  if (config.testUserPassword === undefined) {
-    throw new Error("TEST_FIREBASE_TEST_USER_PASSWORD 환경 변수가 필요합니다.");
-  }
-
-  return config.testUserPassword;
 }
 
 function stringValue(value: unknown): string | undefined {

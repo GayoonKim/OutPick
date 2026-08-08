@@ -5,7 +5,7 @@ export function createRoomLifecycleService({
   closeRoomImmediately,
   leaveRoomMembership
 }) {
-  async function leaveOrClose({ roomID, userUID }) {
+  async function leaveOrClose({ roomID, userUID, allowRoomModeration = true }) {
     const normalizedUID = normalizeUID(userUID);
     const roomRef = db.collection("Rooms").doc(roomID);
     const snapshot = await roomRef.get();
@@ -25,6 +25,13 @@ export function createRoomLifecycleService({
       : null;
 
     if (creatorUID && creatorUID === normalizedUID) {
+      if (!allowRoomModeration) {
+        return {
+          ok: false,
+          mode: "closed",
+          error: "moderation_capability_denied"
+        };
+      }
       const closeResult = await closeRoomImmediately({
         roomID,
         closedByUID: normalizedUID

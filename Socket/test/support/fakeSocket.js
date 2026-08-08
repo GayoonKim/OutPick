@@ -7,6 +7,12 @@ export function createFakeSocket(overrides = {}) {
     id: "socket-1",
     handshake: { auth: {}, headers: {}, query: {}, address: "127.0.0.1" },
     rooms: new Set(),
+    moderationStatus: "active",
+    moderationStateVersion: 1,
+    allowedCapabilities: [
+      "readAppContent", "createUGC", "createRoom", "joinRoom",
+      "moderateOwnedRoom"
+    ],
     on(event, handler) {
       handlers.set(event, handler);
     },

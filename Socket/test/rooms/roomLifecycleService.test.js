@@ -59,3 +59,23 @@ test("이미 삭제된 room을 별도 socket side effect 없는 closed 결과로
     }
   );
 });
+
+test("restricted owner는 room close를 수행할 수 없다", async () => {
+  let closeCount = 0;
+  const service = createRoomLifecycleService({
+    db: makeDB({ exists: true, creatorUID: "owner" }),
+    closeRoomImmediately: async () => { closeCount += 1; return { ok: true }; },
+    leaveRoomMembership: async () => ({ ok: true })
+  });
+
+  assert.deepEqual(await service.leaveOrClose({
+    roomID: "room",
+    userUID: "owner",
+    allowRoomModeration: false
+  }), {
+    ok: false,
+    mode: "closed",
+    error: "moderation_capability_denied"
+  });
+  assert.equal(closeCount, 0);
+});

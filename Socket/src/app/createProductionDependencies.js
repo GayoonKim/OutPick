@@ -34,7 +34,12 @@ export function createProductionDependencies({
   const { allowRate } = createRateLimiter({ clock });
   const messageDeliverySingleFlight = createMessageDeliverySingleFlight();
   const mediaUploadService = createMediaUploadService({ db, admin, clock });
-  const { findUserByUID, watchUserAccountStatus } = createUserLookup({ db });
+  const {
+    findUserByUID,
+    findModerationAccount,
+    watchUserAccountStatus,
+    watchModerationAccount
+  } = createUserLookup({ db });
   const { rooms, fetchRoomsFromFirebase, ensureRoomLoaded } = createRoomRegistry({
     db,
     isValidRoomID
@@ -77,6 +82,7 @@ export function createProductionDependencies({
   const firebaseAuthMiddleware = createFirebaseAuthMiddleware({
     verifyIDToken: (idToken) => admin.auth().verifyIdToken(idToken, true),
     findUserByUID,
+    findModerationAccount,
     logger
   });
 
@@ -88,6 +94,7 @@ export function createProductionDependencies({
       clock,
       reconnectPolicy: RECONNECT_POLICY,
       watchUserAccountStatus,
+      watchModerationAccount,
       logger
     });
     registerRoomHandlers({

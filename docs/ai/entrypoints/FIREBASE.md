@@ -144,7 +144,7 @@ npm run build
 - 출시 전 보류 상태:
   - PITR 비활성, 예약 백업 0개, Storage soft delete 7일
   - Production Kakao 실제 로그인은 callback → `exchangeKakaoToken` HTTP 200 → 기존 프로필 복원 → 앱 로그아웃까지 완료했고 기존 Auth/Firestore를 보존했다.
-  - Production Google 실제 로그인과 provider별 계정 삭제 요청·취소 재인증 smoke는 미완료
+  - Production Google·Kakao active 로그인 → 메인 탭 → 기본 read/write smoke는 2026-08-08 완료했다. provider별 계정 삭제 요청·취소 재인증 smoke는 출시 전 QA로 남긴다.
   - Apple Developer Program 가입 후 Team ID 발급·Firebase App Attest 등록·지원되는 iPhone 실기기 검증
   - 실제 앱 출시 게이트에서 PITR·예약 백업·30일 soft delete·별도 export/복구 훈련을 적용·검증한다.
 - 2026-07-29 운영 반영:
@@ -387,3 +387,86 @@ git diff --check -- firebase.json storage.rules
 - Phase 4는 Worker IAM 전용 `/runtime-contract`, `/smoke/extraction`과 Functions `verifyLookbookExtractionFix`, 10분 projection reconciler를 사용한다. verifier는 요청 environment와 runtime project/service를 fail closed하고 Cloud Run v2 observed traffic 100%, runtime/source revision, 대표 job 실제 재추출과 ground truth를 통과한 경우만 fixed/retry-ready를 기록한다. Development와 Production 모두 Worker Invoker와 해당 Worker service 한정 Viewer를 적용했다.
 - Functions 재배포 뒤 private HTTP Function의 operator `roles/run.invoker`가 제거될 수 있으므로 배포 후 IAM smoke와 정확한 환경별 operator binding을 재확인한다. 2026-08-05 Development `verifyLookbookExtractionFix` 재배포에서는 `outpick-extraction-ops-dev` binding만 복원했고 공개 invoker는 추가하지 않았다.
 - occurrence evidence는 7일, cluster 대표 evidence 한 개는 미해결 동안 보존하며 `verified/wontFix` 뒤 cluster와 함께 60일 보존한다. 상세 계약은 `docs/ai/tasks/lookbook-extraction-issue-operations/`를 따른다.
+
+## Chat UGC safety/moderation v1 계약
+
+- exact contract: `contracts/chat-moderation-v1.json`
+- 장기 결정: ADR-024
+- task: `docs/ai/tasks/chat-ugc-safety-room-moderation/`
+
+### Server authority
+
+- `moderationPrincipals/{moderationPrincipalID}`: 장기 제재 원장.
+- `moderationPrincipalAliases/{aliasID}`: provider subject의 versioned HMAC alias. raw subject/email/token 저장 금지.
+- `moderationAccounts/{uid}`: Rules·Functions·Socket·Storage용 현재 UID capability projection.
+- `moderationUserReports`, `moderationRoomReports`, `moderationAuditLogs`: client direct read/write 금지, callable admin/user API만 사용.
+- `Rooms/{roomID}/bans/{moderationPrincipalID}`: creator 전용 서버 mutation, client direct read/write 금지.
+- `Rooms.lifecycleStatus=closedByModeration`: join/read/write/Socket/push 차단 source.
+- `chatMessageCleanupJobs`, `moderationRoomCleanupJobs`: transaction 밖 Storage·projection 물리 정리의 deterministic retry source.
+- `Rooms/{roomID}/MediaUploads/{uploadID}`: quarantine inspection 상태 머신. `scanning → ready` 전에는 message/seq 없음.
+
+### Phase 1 구현 Functions·Socket·Rules 경계
+
+- `getMyModerationState`: `functions/src/moderation/functions.ts` → provider identity → versioned HMAC alias → principal/account transaction.
+- HMAC current/previous key 조회 경계는 `functions/src/moderation/state.ts`, safe capability DTO는 `contracts.ts`가 소유한다.
+- 기존 Auth 계정 dry-run/backfill은 `functions/scripts/backfill-moderation-principals.mjs`를 사용한다. `outpick-test`와 `outpick-664ae`만 허용하고 기본은 dry-run이며, unresolved가 1명이라도 있으면 `--apply`를 중단한다. Google·Apple은 단일 Firebase `providerData`, Kakao는 `kakao:{숫자 ID}` 후보와 `KAKAO_ADMIN_KEY`의 `/v2/user/me` 응답 ID가 정확히 일치할 때만 resolve한다.
+- Production apply는 `--confirm-production APPLY_MODERATION_PRINCIPAL_BACKFILL_TO_OUTPICK_664AE`와 `--expected-total`, `--expected-google`, `--expected-kakao`를 모두 요구한다. expected total과 두 provider 합계, 실제 건수가 다르거나 canonical Secret 이름이 아니면 HMAC Secret 조회와 Firestore write 전에 중단한다. Admin Key·HMAC Secret은 gcloud stdout을 프로세스 메모리에서만 읽고 출력하지 않으며 summary는 provider·unresolved reason별 건수만 포함한다.
+- `functions/src/shared/accountStatus.ts`는 기존 `users.accountStatus`와 `moderationAccounts`를 함께 판정한다.
+- Socket `moderation/capabilities.js`와 auth/watch/handler가 restricted read-only, suspended deny, stateVersion 변경 disconnect를 적용한다.
+- Firestore·Storage Rules는 projection 누락을 fail closed하고 restricted read와 active write를 분리한다.
+- iOS는 `getMyModerationState` 호출 뒤에만 사용자 문서와 앱 콘텐츠를 읽는다.
+- `accountDeletion/cleanup.removePrivateState`는 삭제 완료 시 `moderationAccounts/{uid}`를 제거하고 principal·alias는 보존한다. 재가입 projection은 bootstrap callable이 다시 만든다.
+
+### Phase 1 Development rollout — 2026-08-07
+
+- project: `outpick-test`; Production `outpick-664ae` 미변경.
+- Secret: `MODERATION_PRINCIPAL_HMAC_KEY_V1` version 1.
+- backfill: Google 1명 resolved, unresolved 0; moderation account/principal/alias 각각 1개, raw subject·email·token 필드 0개.
+- Functions: `getMyModerationState`와 capability 영향을 받는 기존 callable/scheduler 15개 배포.
+- Firestore·Storage Rules: Development 배포 완료.
+- Socket: revision `outpick-socket-development-00002-hal`, traffic 100%, canonical `/readyz` 정상, 배포 직후 ERROR 0건.
+- 실제 Kakao QA: restricted·stateVersion 2 전환 → 앱 재인증 삭제 예약 → 승인된 단일 요청 grace 만료 → finalizer 1회 completed → Auth/users/moderationAccounts 제거와 alias/principal 보존 → 동일 Kakao 재연결 뒤 기존 principal의 restricted projection 복원까지 통과했다. 보존되는 moderation alias/principal의 raw email·subject·token·providerUserID 필드는 0개다.
+- Kakao Auth custom-token의 요청 token claim은 bootstrap에 사용되지만 Firebase Admin `UserRecord.customClaims`에 영구 보관되지 않는다. Phase 1-P migration helper는 이 값을 영구 보강하지 않고 UID 후보를 Kakao Admin API로 재검증해 메모리에서만 binding 입력으로 사용한다. 실제 신규/재가입 binding 검증은 `getMyModerationState` 호출 뒤 `moderationAccounts`와 provider별 HMAC alias를 기준으로 한다.
+
+### Phase 1-P Production readiness — 2026-08-07
+
+- Auth 읽기 전용 dry-run: total 2/resolved 2/unresolved 0, Google 1/Kakao 1/Apple 0.
+- `MODERATION_PRINCIPAL_HMAC_KEY_V1`: 원문 출력·로컬 저장 없이 생성, version 1 enabled.
+- `getMyModerationState`: Production exact target 단일 배포, Node.js 24 Gen 2 ACTIVE, Secret version 1 binding. 무인증·App Check 없는 POST는 401 `UNAUTHENTICATED`, 배포 후 ERROR 0건.
+- backfill: apply 직전 total 2/Google 1/Kakao 1/unresolved 0 재확인 뒤 exact gate로 처리. account/principal/alias 각각 2개, 모두 active, 참조 무결성 정상, 금지 필드·Auth 민감 원문 값 0개.
+- capability 영향 Functions: profile 4/engagement 4/comment 3/safety 3/account deletion finalizer 1의 exact target 15개 배포. 15/15 Node.js 24 Gen 2 ACTIVE, ERROR 0, finalizer scheduler ENABLED, 이전 source generation 15개 보존.
+- Firestore Rules: 배포 직전 Emulator Rules 35/35·transaction 11/11 통과. 새 ruleset `82942b4b-d110-4ab0-8f09-ab0b4e5aad62`와 로컬 SHA-256 일치, 이전 `bce94c07-bb86-4f9c-a74e-e14dc954085c` 보존.
+- Storage Rules: 새 ruleset `599b1ae1-21b0-4be1-a2f6-aa576369221a`와 로컬 SHA-256 일치, 이전 `e0e75181-a23b-4dcf-a13c-df95bb9a70c6` 보존.
+- Socket candidate: build `2719bc50-1c06-45d6-923a-1549ad2d7ffe`, revision `outpick-socket-moderation-p1p`, digest `sha256:403ecf364fbfa0ff3d040fed7d888b000a63539f485ea9c88387f3e949fe8ccd`, traffic 0%, Ready/readiness 200/ERROR 0. live `outpick-socket-00008-4wl` 100% 유지.
+- Socket traffic blocker: candidate의 `socket.io-parser 4.2.6`이 high GHSA-2m8v-j782-fhvr에 해당한다. 4.2.7 lockfile patch·69/69·audit·새 candidate 전 traffic 전환 금지.
+- Socket high patch: `package-lock.json`만 4.2.7로 갱신, check·69/69·production audit high 0/critical 0. 기존 4.2.6 candidate는 traffic 금지.
+- Socket patched candidate: build `3c6db117-22f6-46a9-93fb-112f6a0f64ae`, revision `outpick-socket-moderation-p1p-r2`, digest `sha256:a7c0a095c64adf0b83459f16a0caf3f68378ce3fffdaea0e919555a1da3b7dc5`, traffic 0%, Ready/readiness 200/ERROR 0. live `outpick-socket-00008-4wl` 100% 유지.
+- Production Socket runtime identity `outpick-socket@outpick-664ae.iam.gserviceaccount.com`은 revoked/disabled Firebase ID Token 확인용 project custom role `projects/outpick-664ae/roles/outpickSocketFirebaseAuthVerifier`를 사용한다. 포함 permission은 `firebaseauth.users.get` 하나다. 2026-08-07 기존 Google QA 계정으로 patched candidate Socket.IO 인증 handshake를 통과했고 테스트 Token Creator binding은 회수했다.
+- 같은 runtime identity의 기존 predefined 역할은 `roles/datastore.user`, `roles/storage.objectAdmin`, `roles/firebasecloudmessaging.admin`이다. 실제 Socket 사용 범위는 Firestore document query/listener/transaction/write/delete, 방 Storage prefix list/delete, FCM message create이며 최소 권한 축소는 live와 분리한 candidate identity에서 검증 후 적용한다.
+- Production 최소 권한 Socket runtime role은 `projects/outpick-664ae/roles/outpickSocketRuntime`이며 Auth `firebaseauth.users.get`, Firestore `datastore.databases.get`과 entity allocate/create/delete/get/list/update, Storage object list/delete, FCM message create 총 11개 permission을 포함한다. 새 identity `outpick-socket-runtime-v2@outpick-664ae.iam.gserviceaccount.com`에는 이 role 하나만 있다.
+- 최소 권한 revision `outpick-socket-moderation-p1p-r3-lp`, tag `moderation-p1p-r3-lp-qa`는 patched r2와 같은 digest를 사용하며 Production traffic 100%, Ready/canonical readiness 200이다. 기존 Google QA 인증과 격리 Firestore read/write/delete·Storage list/delete·FCM fanout smoke를 통과했고 ERROR/잔존 QA 데이터는 0건이다.
+- 새 live identity `outpick-socket-runtime-v2@...`와 rollback revision의 기존 `outpick-socket@...`은 모두 `outpickSocketRuntime` role 하나만 사용한다. 기존 identity의 broad Datastore User·Storage Object Admin·Firebase Cloud Messaging Admin와 구 Auth verifier binding은 제거했고 구 verifier role은 soft-delete했다.
+- 2026-08-08 Production Simulator active smoke: Google·Kakao 모두 bootstrap과 메인 탭 기본 read를 통과했고 Kakao 세션의 브랜드 좋아요 `0→1→0`으로 write·원복을 확인했다. QA용 App Check debug token은 원문 비노출로 임시 등록하고 로그아웃 뒤 삭제했으며 기존 등록 1개만 남았다.
+
+### Phase 2 이후 예정 Functions·Socket·Rules 경계
+
+- Functions 신규 경계: `functions/src/moderation/{identity,capability,reports,admin,audit}/`와 chat delete/ban/succession service.
+- Socket 경계: `Socket/src/auth`, `users/userLookup`, `rooms/roomAccess`, message/media handlers, `push/chatPushService`.
+- Firestore Rules는 current UID의 `moderationAccounts`와 room ban/lifecycle을 읽고, safe action 외 UGC write를 capability matrix로 거부한다.
+- Storage Rules는 quarantine owner의 exact reservation write만 허용하고 ready materialization은 서버만 수행한다.
+- platform admin API는 `platformAdmins/{uid}`, App Check, expected version과 고위험 action의 5분 이내 `auth_time`을 검증한다.
+
+### Index·retention
+
+- 신고 queue: reviewState + priorityClass + slaDueAt + lastReportedAt.
+- 제한 만료 정규화: moderationStatus + restrictedUntil.
+- 미디어 cleanup: collection group MediaUploads의 inspectionStatus + expiresAt.
+- message/room cleanup: status + nextAttemptAt.
+- Production TTL은 개인정보 보존 목적·기간 승인 전 활성화하지 않는다. 신고 미디어 evidence copy는 만들지 않는다.
+
+### 검증 진입점
+
+- Functions identity/capability/report/idempotency/admin concurrency tests.
+- Socket auth disconnect/room ban/block push/rate reconnect/media ready tests.
+- `firestore-tests`의 moderation Firestore·Storage Rules emulator tests.
+- 실제 provider 재연결과 Google Cloud media 검사는 Development 수동 QA.

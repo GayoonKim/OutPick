@@ -19,6 +19,7 @@ import {
   validateMediaUploadContract
 } from "../media/mediaUploadService.js";
 import { normalizeEmail, normalizeUID } from "../utils/strings.js";
+import { rejectMissingCapability } from "../moderation/capabilities.js";
 
 export function registerMediaHandlers({
   socket,
@@ -36,6 +37,7 @@ export function registerMediaHandlers({
   logger = console
 }) {
   socket.on("chat:mediaPreflight", async (data, callback) => {
+    if (rejectMissingCapability(socket, "createUGC", callback)) return;
     try {
       const { roomID, messageID, kind, attachmentCount, expectedPathCount } = data || {};
       if (!roomID || !isValidRoomID(String(roomID))) {
@@ -450,6 +452,7 @@ export function registerMediaHandlers({
   }
 
   socket.on("chat:mediaFinalize", async (data, callback) => {
+    if (rejectMissingCapability(socket, "createUGC", callback)) return;
     return handleMediaFinalize(data, callback);
   });
 }

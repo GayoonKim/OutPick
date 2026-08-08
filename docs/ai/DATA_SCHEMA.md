@@ -26,6 +26,7 @@
 | 인증·사용자 | Firebase Auth UID, `users/{uid}`, `userPublicProfiles/{uid}` | ADR-021, [FIREBASE](entrypoints/FIREBASE.md), [DATA](entrypoints/DATA.md) |
 | Chat room/membership | `Rooms/{roomID}`, `Rooms/{roomID}/members/{uid}`, `users/{uid}/joinedRooms/{roomID}` | [CHAT](entrypoints/CHAT.md), ADR 관련 task |
 | Chat message/cache | `Rooms/{roomID}/Messages/{messageID}`, GRDB `chatMessage`, `LocalChatUser`, `RoomProfileDisplayCache` | [CHAT](entrypoints/CHAT.md), [DATA](entrypoints/DATA.md) |
+| UGC safety/moderation | `moderationPrincipals`, `moderationPrincipalAliases`, `moderationAccounts`, `moderationUserReports`, `moderationRoomReports`, `moderationAuditLogs`, room `bans` | [계약](../../contracts/chat-moderation-v1.json), ADR-024, [CHAT](entrypoints/CHAT.md), [FIREBASE](entrypoints/FIREBASE.md) |
 | Lookbook | `brands/{brandID}/seasons/{seasonID}/posts/{postID}` | [LOOKBOOK](entrypoints/LOOKBOOK.md) |
 | 브랜드 관리 | `brandAdmins/{uid}`, `brands/{brandID}/admins/{uid}` | [LOOKBOOK](entrypoints/LOOKBOOK.md), [FIREBASE](entrypoints/FIREBASE.md) |
 | 스타일 무드 | `styleMoods`, `styleMoodTermIndex`, `styleMoodSeedMetadata` | [FIREBASE](entrypoints/FIREBASE.md), ADR-022 |
@@ -36,6 +37,7 @@
 ## 인증과 사용자 식별
 
 - canonical user key는 Firebase Auth `uid`다.
+- 앱 콘텐츠의 작성자·membership·공개 프로필 identity는 계속 Firebase Auth UID를 사용한다. 탈퇴·재가입 뒤 제재와 room ban을 복원하는 안전 identity만 canonical `moderationPrincipalID`를 사용하며 일반 콘텐츠 문서 ID를 대체하지 않는다.
 - 문서상 `userID == canonicalUserID == Firebase Auth uid`다.
 - 비공개 계정 경로는 `users/{uid}`, 앱 내 공개 프로필 경로는 `userPublicProfiles/{uid}`다.
 - 이메일/provider fallback query는 사용하지 않고 관리자 이메일 조회는 Firebase Auth를 사용한다.
@@ -65,6 +67,35 @@
 
 ## Chat 핵심 계약
 
+### Moderation identity와 capability
+
+- `users/{uid}.accountStatus`는 기존 `active | deletionPending` 계정 생명주기만 소유한다.
+- `moderationPrincipals/{moderationPrincipalID}`는 장기 제재의 canonical 원장이고 `moderationStatus: active | restricted | suspended`, `restrictedUntil`, `stateVersion`을 가진다.
+- `moderationPrincipalAliases/{aliasID}`는 versioned HMAC alias를 principal에 연결한다. alias ID 형식은 `v{keyVersion}_{base64urlHmac}`이며 원본 provider subject·email·token을 저장하지 않는다.
+- `moderationAccounts/{uid}`는 현재 UID의 principal·status·restrictedUntil·stateVersion을 Rules·Functions·Socket·Storage가 읽는 서버 전용 projection이다.
+- restricted 사용자는 read·report·block/unblock·자기 UGC 삭제·지원·계정 삭제만 허용하고, suspended 사용자는 제재 안내·지원·계정 삭제만 허용한다.
+- `getMyModerationState.supportURL`은 운영 고객지원 경로 주입 전에는 `null`이며, 클라이언트는 값이 있을 때만 외부 고객지원 action을 노출한다.
+- exact 필드와 capability matrix는 `contracts/chat-moderation-v1.json`, 선택 이유는 ADR-024를 따른다.
+
+### 신고·audit
+
+- 사용자 신고 aggregate: `moderationUserReports/{targetModerationPrincipalID}`.
+- 방 신고 aggregate: `moderationRoomReports/{roomID}`.
+- 사건별 신고는 각 aggregate의 `submissions/{submissionID}`, 고유 신고자 dedupe는 `reporters/{reporterModerationPrincipalID}`에 저장한다. aggregate에 무제한 reporter·room 배열을 두지 않는다.
+- aggregate의 누적 통계와 관리자 `reviewState`를 분리한다. terminal 상태 뒤 새 사건은 `reviewState=open`, `reviewRevision + 1`, `caseVersion + 1`로 전환한다.
+- `caseVersion`은 신고 횟수가 아니라 관리자 optimistic concurrency version이다.
+- 텍스트 snapshot은 최대 4000 UTF-8 bytes로 제한한다. 신고된 이미지·동영상은 별도 evidence Storage에 복사하지 않고 message ID·종류·사전검사 결과만 남긴다.
+- `moderationAuditLogs/{actionID}`는 서버 append-only이며 actor, action, bounded before/after, reason, report reference와 request ID를 기록한다.
+- 신고·audit·principal·room ban과 ready 검사 metadata의 Production TTL은 개인정보 보존 기간 승인 전 활성화하지 않는다. 만료·실패 quarantine object cleanup은 별도 운영 안전장치로 유지한다.
+
+### 메시지 삭제·room ban·방 lifecycle
+
+- 메시지 삭제는 서버 API만 수행한다. `Messages/{messageID}.isDeleted`와 seq tombstone은 유지하고 공개 payload·attachments·reply/announcement/room summary·media index·Storage는 idempotent cleanup으로 정리한다.
+- transaction 밖 cleanup은 deterministic `chatMessageCleanupJobs/{jobID}`와 `moderationRoomCleanupJobs/{roomID}`가 `pending | processing | retryPending | completed | failed`로 수렴시킨다.
+- `Rooms/{roomID}/bans/{moderationPrincipalID}`가 room ban source다. client read/write는 금지하고 creator 전용 서버 API로 내보내기·해제한다.
+- 관리자 방 폐쇄는 `Rooms.lifecycleStatus = closedByModeration`을 먼저 기록해 join/read/write/Socket/push를 차단하고 물리 cleanup은 별도 재시도 상태로 수렴시킨다.
+- 수동 creator leave는 기존 방 삭제, creator 계정 삭제·영구 정지는 oldest eligible active member 승계, 적격자 없음 폐쇄를 사용한다.
+
 ### Membership와 참여중 목록
 
 - authoritative membership: `Rooms/{roomID}/members/{uid}`. 나가면 member 문서를 hard delete한다.
@@ -81,6 +112,21 @@
 - `ChatRoomReadStateStore`는 앱 실행 중 unread/preview 공유 상태이며 영속 source가 아니다.
 - 앱 재실행 시 Firestore `Rooms`와 joinedRooms projection에서 복원한다.
 - snapshot은 `latestSeq`, `lastReadSeq`, `lastMessageSenderUID`, `latestMessagePreview`, `latestMessageAt`를 가진다.
+
+### 전역 차단과 로컬 redaction
+
+- `users/{uid}/blockedUsers/{blockedUID}`는 Chat·Lookbook·Profile이 공유하는 전역 차단 source다.
+- A가 B를 차단하면 A만 B 콘텐츠를 숨기고 B는 공동방의 A 콘텐츠를 계속 본다. profile/direct interaction은 양쪽 모두 차단한다.
+- hidden Chat event는 strict seq를 소비하지만 본문·첨부·FTS·미디어 cache를 새로 저장하지 않는다. 필요 시 GRDB에는 ordering에 필요한 최소 redacted marker만 둔다.
+- 차단 해제 뒤 과거 메시지는 Firestore 재조회 때 복원할 수 있다.
+
+### 게시 전 미디어 검사
+
+- `Rooms/{roomID}/MediaUploads/{uploadID}`는 ADR-016의 reservation을 `reserved → uploaded → scanning → ready | rejected | failed | expired` 상태 머신으로 확장한다.
+- quarantine 경로는 `chatModerationQuarantine/{roomID}/{senderUID}/{uploadID}/{objectName}`, ready 경로는 `rooms/{roomID}/{messageID}/{objectName}`다.
+- 검사 전에는 message document와 seq를 만들지 않는다. `scanning → ready` transaction에서만 message·seq·media index·room summary를 생성한 뒤 Socket·push를 수행한다.
+- 검사 실패·거부·만료는 seq tombstone을 만들지 않고 quarantine cleanup으로 끝낸다.
+- 이미지 threshold는 adult/violence `LIKELY`, racy `VERY_LIKELY` 이상 차단이며 medical/spoof는 진단만 기록한다. `UNKNOWN`·provider 장애는 bounded retry 뒤 fail closed다.
 
 ## 계정 삭제 계약
 

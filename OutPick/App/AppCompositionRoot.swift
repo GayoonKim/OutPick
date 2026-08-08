@@ -33,11 +33,15 @@ enum AppCompositionRoot {
         )
         let cloudFunctionsTransport = FirebaseCloudFunctionsTransport()
         let accountRepository = FirestoreCurrentUserAccountRepository(db: db)
+        let moderationRepository = CloudFunctionsCurrentUserModerationRepository(
+            transport: cloudFunctionsTransport
+        )
         let profileMutationRepository = CloudFunctionsProfileMutationRepository(
             transport: cloudFunctionsTransport
         )
         let styleMoodRepository = FirestoreStyleMoodRepository(db: db)
         let loadCurrentUserBootstrapUseCase = LoadCurrentUserBootstrapUseCase(
+            moderationRepository: moderationRepository,
             accountRepository: accountRepository,
             publicProfileRepository: publicProfileRepository
         )

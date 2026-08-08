@@ -2,7 +2,10 @@
 import {onCall} from "firebase-functions/v2/https";
 import {requiredAuthUID} from "../core/callable.js";
 import {FUNCTIONS_REGION} from "../core/runtime.js";
-import {assertAccountActive} from "../shared/accountStatus.js";
+import {
+  assertAccountActive,
+  assertModerationCapability,
+} from "../shared/accountStatus.js";
 import {
   parseCompleteOnboardingInput,
   parseNicknameAvailabilityInput,
@@ -18,6 +21,7 @@ import {
 
 interface ProfileFunctionDependencies {
   assertActive: typeof assertAccountActive;
+  assertCanCreateAccount: typeof assertModerationCapability;
   checkNicknameAvailability: typeof checkNicknameAvailabilityRecord;
   completeRecord: typeof completeOnboardingRecord;
   updatePublicRecord: typeof updatePublicProfileRecord;
@@ -26,6 +30,7 @@ interface ProfileFunctionDependencies {
 
 const liveDependencies: ProfileFunctionDependencies = {
   assertActive: assertAccountActive,
+  assertCanCreateAccount: assertModerationCapability,
   checkNicknameAvailability: checkNicknameAvailabilityRecord,
   completeRecord: completeOnboardingRecord,
   updatePublicRecord: updatePublicProfileRecord,
@@ -38,6 +43,7 @@ export async function handleCheckNicknameAvailability(
   dependencies = liveDependencies,
 ) {
   const uid = requiredAuthUID(authUID);
+  await dependencies.assertCanCreateAccount(uid, "createUGC");
   const nickname = parseNicknameAvailabilityInput(data);
   return dependencies.checkNicknameAvailability(uid, nickname);
 }
@@ -48,6 +54,7 @@ export async function handleCompleteOnboarding(
   dependencies = liveDependencies,
 ) {
   const uid = requiredAuthUID(authUID);
+  await dependencies.assertCanCreateAccount(uid, "createUGC");
   const input = parseCompleteOnboardingInput(data, uid);
   return dependencies.completeRecord(uid, input);
 }

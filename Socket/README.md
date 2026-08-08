@@ -80,29 +80,29 @@ docker run --rm -p 8080:8080 -e PORT=8080 outpick-socket:local
 
 Run these commands only after confirming the deployment window.
 
-Service account:
+Least-privilege runtime role and service account:
 
 ```bash
-gcloud iam service-accounts create outpick-socket \
+gcloud iam roles create outpickSocketRuntime \
   --project=outpick-664ae \
-  --display-name="OutPick Socket Cloud Run"
+  --title="OutPick Socket Runtime" \
+  --permissions="firebaseauth.users.get,datastore.databases.get,datastore.entities.allocateIds,datastore.entities.create,datastore.entities.delete,datastore.entities.get,datastore.entities.list,datastore.entities.update,storage.objects.delete,storage.objects.list,cloudmessaging.messages.create" \
+  --stage=GA
+
+gcloud iam service-accounts create outpick-socket-runtime-v2 \
+  --project=outpick-664ae \
+  --display-name="OutPick Socket Runtime v2"
+
+gcloud projects add-iam-policy-binding outpick-664ae \
+  --member="serviceAccount:outpick-socket-runtime-v2@outpick-664ae.iam.gserviceaccount.com" \
+  --role="projects/outpick-664ae/roles/outpickSocketRuntime"
 ```
 
-Minimum runtime IAM candidates:
-
-```bash
-gcloud projects add-iam-policy-binding outpick-664ae \
-  --member="serviceAccount:outpick-socket@outpick-664ae.iam.gserviceaccount.com" \
-  --role="roles/datastore.user"
-
-gcloud projects add-iam-policy-binding outpick-664ae \
-  --member="serviceAccount:outpick-socket@outpick-664ae.iam.gserviceaccount.com" \
-  --role="roles/firebasecloudmessaging.admin"
-
-gcloud projects add-iam-policy-binding outpick-664ae \
-  --member="serviceAccount:outpick-socket@outpick-664ae.iam.gserviceaccount.com" \
-  --role="roles/storage.objectAdmin"
-```
+`outpickSocketRuntime` is the single runtime role for Firebase Auth revoked/disabled
+checks, Firestore chat state, room Storage prefix cleanup, and FCM message delivery.
+Do not replace it with broad Firebase Auth Viewer, Datastore User, Storage Object
+Admin, or Firebase Cloud Messaging Admin roles. Validate a new identity on a
+no-traffic candidate before changing the live revision identity.
 
 The socket server initializes Firebase Admin with `OUTPICK_FIREBASE_STORAGE_BUCKET`
 or `FIREBASE_STORAGE_BUCKET` when provided. The production default is
@@ -120,7 +120,7 @@ gcloud run deploy outpick-socket \
   --project=outpick-664ae \
   --region=asia-northeast3 \
   --image=asia-northeast3-docker.pkg.dev/outpick-664ae/cloud-run-source-deploy/outpick-socket:manual \
-  --service-account=outpick-socket@outpick-664ae.iam.gserviceaccount.com \
+  --service-account=outpick-socket-runtime-v2@outpick-664ae.iam.gserviceaccount.com \
   --allow-unauthenticated \
   --min-instances=0 \
   --max-instances=1 \

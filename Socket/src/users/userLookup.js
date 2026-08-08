@@ -28,6 +28,14 @@ export function createUserLookup({ db }) {
     };
   }
 
+  async function findModerationAccount(uid) {
+    const normalizedUID = typeof uid === "string" ? uid.trim() : "";
+    if (!normalizedUID || normalizedUID.includes("/")) return null;
+    const ref = db.collection("moderationAccounts").doc(normalizedUID);
+    const snapshot = await ref.get();
+    return snapshot.exists ? { ref, data: snapshot.data() || {} } : null;
+  }
+
   function watchUserAccountStatus(uid, onInactive, onError = () => {}) {
     const normalizedUID = typeof uid === "string" ? uid.trim() : "";
     if (!normalizedUID || normalizedUID.includes("/")) return () => {};
@@ -40,8 +48,19 @@ export function createUserLookup({ db }) {
     );
   }
 
+  function watchModerationAccount(uid, onChange, onError = () => {}) {
+    const normalizedUID = typeof uid === "string" ? uid.trim() : "";
+    if (!normalizedUID || normalizedUID.includes("/")) return () => {};
+    return db.collection("moderationAccounts").doc(normalizedUID).onSnapshot(
+      (snapshot) => onChange(snapshot.exists ? snapshot.data() || {} : null),
+      onError
+    );
+  }
+
   return {
     findUserByUID,
-    watchUserAccountStatus
+    findModerationAccount,
+    watchUserAccountStatus,
+    watchModerationAccount
   };
 }

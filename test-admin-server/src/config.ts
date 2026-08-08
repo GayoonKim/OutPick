@@ -3,7 +3,6 @@ export interface ServerConfig {
   readonly port: number;
   readonly firebaseProjectID: string;
   readonly serviceAccountPath: string;
-  readonly testUserPassword?: string;
 }
 
 const defaultHost = "127.0.0.1";
@@ -19,7 +18,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
       env.TEST_FIREBASE_SERVICE_ACCOUNT_PATH,
       "TEST_FIREBASE_SERVICE_ACCOUNT_PATH"
     ),
-    testUserPassword: optionalString(env.TEST_FIREBASE_TEST_USER_PASSWORD)
   };
 }
 
@@ -54,9 +52,4 @@ function parseRequiredString(
   }
 
   return trimmed;
-}
-
-function optionalString(value: string | undefined): string | undefined {
-  const trimmed = value?.trim() ?? "";
-  return trimmed.length > 0 ? trimmed : undefined;
 }

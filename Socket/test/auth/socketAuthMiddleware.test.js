@@ -64,6 +64,13 @@ test("Firebase auth middleware는 profile email을 우선해 socket identity를 
       ref: { id: "document-1" },
       data: { email: "profile@example.com", accountStatus: "active" }
     }),
+    findModerationAccount: async () => ({
+      data: {
+        moderationPrincipalID: "principal-1",
+        moderationStatus: "restricted",
+        stateVersion: 2
+      }
+    }),
     logger: silentLogger()
   });
 
@@ -74,6 +81,27 @@ test("Firebase auth middleware는 profile email을 우선해 socket identity를 
   assert.equal(socket.userDocumentID, "document-1");
   assert.equal(socket.userEmail, "profile@example.com");
   assert.equal(socket.userEmailSource, "profile");
+  assert.equal(socket.moderationStatus, "restricted");
+  assert.equal(socket.allowedCapabilities.includes("createUGC"), false);
+});
+
+test("Firebase auth middleware는 suspended moderation 계정 연결을 거부한다", async () => {
+  const middleware = createFirebaseAuthMiddleware({
+    verifyIDToken: async () => ({ uid: "user-1" }),
+    findUserByUID: async () => ({
+      ref: { id: "user-1" }, data: { accountStatus: "active" }
+    }),
+    findModerationAccount: async () => ({
+      data: { moderationStatus: "suspended", stateVersion: 3 }
+    }),
+    logger: silentLogger()
+  });
+  let received;
+  await middleware(
+    { handshake: { auth: { idToken: "token" }, headers: {} } },
+    (error) => { received = error; }
+  );
+  assert.equal(received.message, "moderation_access_denied");
 });
 
 test("Firebase auth middleware는 pending 계정 연결을 거부한다", async () => {

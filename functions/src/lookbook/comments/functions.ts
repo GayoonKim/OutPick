@@ -14,7 +14,10 @@ import {
   hasBrandWriteAccessData,
   isTotalBrandAdmin,
 } from "../../shared/brandAuthorization.js";
-import {assertAccountActive} from "../../shared/accountStatus.js";
+import {
+  assertAccountActive,
+  assertAccountCapability,
+} from "../../shared/accountStatus.js";
 
 function numericMetric(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
@@ -230,7 +233,7 @@ export const deleteComment = onCall(
   {region: FUNCTIONS_REGION},
   async (request) => {
     const uid = requiredAuthUID(request.auth?.uid);
-    await assertAccountActive(uid);
+    await assertAccountCapability(uid, "deleteOwnUGC");
     const data = recordData(request.data);
 
     const brandID = requiredDocumentID(
