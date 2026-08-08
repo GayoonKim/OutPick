@@ -48,6 +48,12 @@ beforeEach(async () => {
         onboardingVersion: 1,
         selectedMoodIDs: ["minimal"],
       }),
+      setDoc(doc(firestore, "moderationAccounts", ownerUID), {
+        moderationStatus: "active", stateVersion: 1,
+      }),
+      setDoc(doc(firestore, "moderationAccounts", otherUID), {
+        moderationStatus: "active", stateVersion: 1,
+      }),
       setDoc(doc(firestore, "userPublicProfiles", ownerUID), {
         nickname: "아웃픽",
         avatarThumbPath: null,

@@ -60,6 +60,11 @@ beforeEach(async () => {
       setDoc(doc(firestore, "users", otherUID), {
         accountStatus: "active",
       }),
+      ...[totalAdminUID, brandManagerUID, inactiveAdminUID, otherUID].map(
+        (uid) => setDoc(doc(firestore, "moderationAccounts", uid), {
+          moderationStatus: "active", stateVersion: 1,
+        }),
+      ),
       setDoc(doc(firestore, "brandAdmins", totalAdminUID), {
         isActive: true,
       }),

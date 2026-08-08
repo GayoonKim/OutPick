@@ -10,10 +10,57 @@ service cloud.firestore {
       return /databases/$(database)/documents/users/$(uid);
     }
 
+    function moderationAccountPath(uid) {
+      return /databases/$(database)/documents/moderationAccounts/$(uid);
+    }
+
+    function hasModerationProjection() {
+      return signedIn()
+        && exists(moderationAccountPath(request.auth.uid));
+    }
+
+    function moderationRestrictionExpired() {
+      return hasModerationProjection()
+        && get(moderationAccountPath(request.auth.uid)).data.moderationStatus == "restricted"
+        && "restrictedUntil" in get(moderationAccountPath(request.auth.uid)).data
+        && get(moderationAccountPath(request.auth.uid)).data.restrictedUntil is timestamp
+        && get(moderationAccountPath(request.auth.uid)).data.restrictedUntil <= request.time;
+    }
+
+    function canReadAppContent() {
+      return hasModerationProjection()
+        && (
+          get(moderationAccountPath(request.auth.uid)).data.moderationStatus in ["active", "restricted"]
+          || moderationRestrictionExpired()
+        );
+    }
+
+    function canCreateUGC() {
+      return hasModerationProjection()
+        && (
+          get(moderationAccountPath(request.auth.uid)).data.moderationStatus == "active"
+          || moderationRestrictionExpired()
+        );
+    }
+
     function isAccountActive() {
       return signedIn()
         && exists(userPath(request.auth.uid))
-        && get(userPath(request.auth.uid)).data.accountStatus == "active";
+        && get(userPath(request.auth.uid)).data.accountStatus == "active"
+        && canCreateUGC();
+    }
+
+    function isReadableAccount() {
+      return signedIn()
+        && exists(userPath(request.auth.uid))
+        && get(userPath(request.auth.uid)).data.accountStatus == "active"
+        && canReadAppContent();
+    }
+
+    function canReadOwnAccountBootstrap(userID) {
+      return signedIn()
+        && request.auth.uid == userID
+        && canReadAppContent();
     }
 
     function brandPath(brandID) {
@@ -148,6 +195,34 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    match /moderationPrincipals/{principalID} {
+      allow read, write: if false;
+    }
+
+    match /moderationPrincipalAliases/{aliasID} {
+      allow read, write: if false;
+    }
+
+    match /moderationAccounts/{userID} {
+      allow read, write: if false;
+    }
+
+    match /platformAdmins/{adminID} {
+      allow read, write: if false;
+    }
+
+    match /moderationAuditLogs/{actionID} {
+      allow read, write: if false;
+    }
+
+    match /moderationUserReports/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /moderationRoomReports/{document=**} {
+      allow read, write: if false;
+    }
+
     match /brandRequests/{requestID} {
       allow read, write: if false;
     }
@@ -253,41 +328,43 @@ service cloud.firestore {
     }
 
     match /users/{userID} {
-      allow read: if signedIn() && request.auth.uid == userID;
+      // 신규·재가입 사용자는 문서가 없어도 본인 단일 get으로 onboarding/제재 분기를 판단해야 한다.
+      allow get: if canReadOwnAccountBootstrap(userID);
+      allow list: if false;
       allow create, update, delete: if false;
 
       match /postStates/{stateID} {
-        allow read: if signedIn() && request.auth.uid == userID;
+        allow read: if isReadableAccount() && request.auth.uid == userID;
         allow create, update, delete: if false;
       }
 
       match /brandStates/{stateID} {
-        allow read: if signedIn() && request.auth.uid == userID;
+        allow read: if isReadableAccount() && request.auth.uid == userID;
         allow create, update, delete: if false;
       }
 
       match /seasonStates/{stateID} {
-        allow read: if signedIn() && request.auth.uid == userID;
+        allow read: if isReadableAccount() && request.auth.uid == userID;
         allow create, update, delete: if false;
       }
 
       match /commentStates/{stateID} {
-        allow read: if signedIn() && request.auth.uid == userID;
+        allow read: if isReadableAccount() && request.auth.uid == userID;
         allow create, update, delete: if false;
       }
 
       match /blockedUsers/{blockedUserID} {
-        allow read: if signedIn() && request.auth.uid == userID;
+        allow read: if isReadableAccount() && request.auth.uid == userID;
         allow create, update, delete: if false;
       }
 
       match /roomStates/{roomID} {
-        allow read: if signedIn() && request.auth.uid == userID;
+        allow read: if isReadableAccount() && request.auth.uid == userID;
         allow create, update, delete: if false;
       }
 
       match /joinedRooms/{roomID} {
-        allow read: if signedIn() && request.auth.uid == userID;
+        allow read: if isReadableAccount() && request.auth.uid == userID;
         allow create: if validJoinedRoomCreate(userID, roomID);
         allow update: if isAccountActive()
           && request.auth.uid == userID
@@ -298,12 +375,12 @@ service cloud.firestore {
       }
 
       match /meta/session {
-        allow read: if signedIn() && request.auth.uid == userID;
+        allow read: if isReadableAccount() && request.auth.uid == userID;
         allow write: if isAccountActive() && request.auth.uid == userID;
       }
 
       match /devices/{deviceID} {
-        allow read: if signedIn() && request.auth.uid == userID;
+        allow read: if isReadableAccount() && request.auth.uid == userID;
         allow write: if isAccountActive() && request.auth.uid == userID;
       }
 
@@ -313,7 +390,7 @@ service cloud.firestore {
     }
 
     match /userPublicProfiles/{userID} {
-      allow read: if isAccountActive()
+      allow read: if isReadableAccount()
         && exists(userPath(userID))
         && get(userPath(userID)).data.accountStatus == "active";
       allow create, update, delete: if false;
@@ -328,7 +405,7 @@ service cloud.firestore {
     }
 
     match /Rooms/{roomID} {
-      allow read: if isAccountActive();
+      allow read: if isReadableAccount();
       allow create: if isAccountActive()
         && request.resource.data.creatorUID == request.auth.uid
         && !request.resource.data.keys().hasAny(["participantUIDs"])
@@ -357,12 +434,12 @@ service cloud.firestore {
       allow delete: if false;
 
       match /Messages/{messageID} {
-        allow read: if isAccountActive();
+        allow read: if isReadableAccount();
         allow write: if isAccountActive() && isRoomParticipant(roomID);
       }
 
       match /mediaIndex/{mediaID} {
-        allow read: if isAccountActive();
+        allow read: if isReadableAccount();
         allow write: if isAccountActive() && isRoomParticipant(roomID);
       }
 

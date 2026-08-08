@@ -50,6 +50,12 @@ beforeEach(async () => {
       setDoc(doc(context.firestore(), "users", otherUID), {
         accountStatus: "active",
       }),
+      setDoc(doc(context.firestore(), "moderationAccounts", ownerUID), {
+        moderationStatus: "active", stateVersion: 1,
+      }),
+      setDoc(doc(context.firestore(), "moderationAccounts", otherUID), {
+        moderationStatus: "active", stateVersion: 1,
+      }),
     ]);
   });
 });
@@ -122,5 +128,21 @@ describe("profile storage boundary", () => {
     });
 
     await assertFails(avatarReference(other).getDownloadURL());
+  });
+
+  test("restricted는 기존 이미지를 읽되 새 이미지를 업로드하지 못한다", async () => {
+    const owner = testEnvironment.authenticatedContext(ownerUID);
+    const reference = avatarReference(owner);
+    await assertSucceeds(uploadAvatar(reference));
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await updateDoc(doc(context.firestore(), "moderationAccounts", ownerUID), {
+        moderationStatus: "restricted",
+      });
+    });
+
+    await assertSucceeds(reference.getDownloadURL());
+    await assertFails(uploadAvatar(owner.storage().ref(
+      `profileImage/${ownerUID}/original/restricted.jpg`,
+    )));
   });
 });

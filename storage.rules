@@ -10,10 +10,51 @@ service firebase.storage {
       return /databases/(default)/documents/users/$(uid);
     }
 
+    function moderationAccountPath(uid) {
+      return /databases/(default)/documents/moderationAccounts/$(uid);
+    }
+
+    function hasModerationProjection() {
+      return signedIn()
+        && firestore.exists(moderationAccountPath(request.auth.uid));
+    }
+
+    function moderationRestrictionExpired() {
+      return hasModerationProjection()
+        && firestore.get(moderationAccountPath(request.auth.uid)).data.moderationStatus == "restricted"
+        && "restrictedUntil" in firestore.get(moderationAccountPath(request.auth.uid)).data
+        && firestore.get(moderationAccountPath(request.auth.uid)).data.restrictedUntil is timestamp
+        && firestore.get(moderationAccountPath(request.auth.uid)).data.restrictedUntil <= request.time;
+    }
+
+    function canReadAppContent() {
+      return hasModerationProjection()
+        && (
+          firestore.get(moderationAccountPath(request.auth.uid)).data.moderationStatus in ["active", "restricted"]
+          || moderationRestrictionExpired()
+        );
+    }
+
+    function canCreateUGC() {
+      return hasModerationProjection()
+        && (
+          firestore.get(moderationAccountPath(request.auth.uid)).data.moderationStatus == "active"
+          || moderationRestrictionExpired()
+        );
+    }
+
     function isAccountActive() {
       return signedIn()
         && firestore.exists(userPath(request.auth.uid))
-        && firestore.get(userPath(request.auth.uid)).data.accountStatus == "active";
+        && firestore.get(userPath(request.auth.uid)).data.accountStatus == "active"
+        && canCreateUGC();
+    }
+
+    function isReadableAccount() {
+      return signedIn()
+        && firestore.exists(userPath(request.auth.uid))
+        && firestore.get(userPath(request.auth.uid)).data.accountStatus == "active"
+        && canReadAppContent();
     }
 
     function roomPath(roomID) {
@@ -87,21 +128,21 @@ service firebase.storage {
     }
 
     match /rooms/{roomID}/cover/thumb/{fileName} {
-      allow get: if isAccountActive();
+      allow get: if isReadableAccount();
       allow create, update: if isRoomCreator(roomID) && isJpegUpload(5 * 1024 * 1024);
       allow delete: if isRoomCreator(roomID);
       allow list: if false;
     }
 
     match /rooms/{roomID}/cover/original/{fileName} {
-      allow get: if isAccountActive();
+      allow get: if isReadableAccount();
       allow create, update: if isRoomCreator(roomID) && isJpegUpload(30 * 1024 * 1024);
       allow delete: if isRoomCreator(roomID);
       allow list: if false;
     }
 
     match /rooms/{roomID}/messages/{messageID}/images/{imageID}/{fileName} {
-      allow get: if isAccountActive() && fileName in ['thumb.jpg', 'original.jpg'];
+      allow get: if isReadableAccount() && fileName in ['thumb.jpg', 'original.jpg'];
       allow create, update: if isRoomParticipant(roomID)
         && (
           (fileName == 'thumb.jpg' && isJpegUpload(5 * 1024 * 1024))
@@ -112,21 +153,21 @@ service firebase.storage {
     }
 
     match /rooms/{roomID}/messages/{messageID}/video/thumb.jpg {
-      allow get: if isAccountActive();
+      allow get: if isReadableAccount();
       allow create, update: if isRoomParticipant(roomID) && isJpegUpload(5 * 1024 * 1024);
       allow delete: if isRoomParticipant(roomID);
       allow list: if false;
     }
 
     match /rooms/{roomID}/messages/{messageID}/video/{fileName} {
-      allow get: if isAccountActive();
+      allow get: if isReadableAccount();
       allow create, update: if isRoomParticipant(roomID) && isVideoUpload(350 * 1024 * 1024);
       allow delete: if isRoomParticipant(roomID);
       allow list: if false;
     }
 
     match /profileImage/{userID}/{variant}/{fileName} {
-      allow get: if isAccountActive()
+      allow get: if isReadableAccount()
         && firestore.exists(userPath(userID))
         && firestore.get(userPath(userID)).data.accountStatus == "active";
       allow create, update: if isAccountActive()
@@ -138,7 +179,7 @@ service firebase.storage {
     }
 
     match /brands/{brandID}/{assetPath=**} {
-      allow get: if isAccountActive();
+      allow get: if isReadableAccount();
       allow create, update: if hasBrandWriteAccess(brandID)
         && (
           isImageUpload(30 * 1024 * 1024)

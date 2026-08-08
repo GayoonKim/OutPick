@@ -39,6 +39,10 @@ beforeEach(async () => {
     await setDoc(doc(context.firestore(), "users", ownerUID), {
       accountStatus: "active",
     });
+    await setDoc(doc(context.firestore(), "moderationAccounts", ownerUID), {
+      moderationStatus: "active",
+      stateVersion: 1,
+    });
   });
 });
 
