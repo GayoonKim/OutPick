@@ -545,7 +545,10 @@ export async function scrubAssociationPage(uid: string): Promise<boolean> {
 }
 
 export async function removePrivateState(uid: string): Promise<void> {
-  await db.recursiveDelete(db.collection("users").doc(uid));
+  await Promise.all([
+    db.recursiveDelete(db.collection("users").doc(uid)),
+    db.collection("moderationAccounts").doc(uid).delete(),
+  ]);
 }
 
 export async function hasRemainingUIDReferences(uid: string): Promise<boolean> {

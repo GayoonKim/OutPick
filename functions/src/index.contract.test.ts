@@ -30,6 +30,7 @@ type ExportedFunction = {__endpoint?: Endpoint};
 
 const callableNames = [
   "exchangeKakaoToken",
+  "getMyModerationState",
   "getBrandAdminCapabilities",
   "createStyleMood",
   "updateStyleMood",
@@ -191,7 +192,7 @@ function runtimeNumber(value: unknown): number | null {
   return typeof value === "number" ? value : null;
 }
 
-test("Firebase deployment export 이름 79개를 유지한다", () => {
+test("Firebase deployment export 이름 80개를 유지한다", () => {
   const expected = [
     ...callableNames,
     ...Object.keys(firestoreEndpoints),
@@ -200,7 +201,7 @@ test("Firebase deployment export 이름 79개를 유지한다", () => {
     "lookbookExtractionIssueOpsWrite",
     "verifyLookbookExtractionFix",
   ].sort();
-  assert.equal(expected.length, 79);
+  assert.equal(expected.length, 80);
   assert.deepEqual(Object.keys(exportedFunctions).sort(), expected);
 });
 

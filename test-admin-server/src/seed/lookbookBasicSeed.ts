@@ -1,10 +1,8 @@
 import {Timestamp, type Firestore} from "firebase-admin/firestore";
-import type {Auth} from "firebase-admin/auth";
 import {
   lookbookTestEmails,
   lookbookTestIDs,
   markerFields,
-  upsertAuthUser,
   userProfileDocument
 } from "./lookbookSeedSupport.js";
 
@@ -17,14 +15,11 @@ export interface LookbookBasicSeedResult {
   readonly seasonID: string;
   readonly postID: string;
   readonly userIDs: string[];
-  readonly authUserEmails: string[];
   readonly testRunId?: string;
 }
 
 export async function seedLookbookBasic(
   firestore: Firestore,
-  auth: Auth,
-  password: string,
   request: LookbookBasicSeedRequest
 ): Promise<LookbookBasicSeedResult> {
   const {
@@ -38,9 +33,6 @@ export async function seedLookbookBasic(
     currentUserEmail,
     authorUserEmail
   } = lookbookTestEmails;
-
-  await upsertAuthUser(auth, currentUserID, currentUserEmail, password, "UI 테스트");
-  await upsertAuthUser(auth, authorUserID, authorUserEmail, password, "UI 테스트 작성자");
 
   const now = Timestamp.fromDate(new Date("2026-05-20T00:00:00.000Z"));
   const marker = markerFields(request.testRunId);
@@ -136,7 +128,6 @@ export async function seedLookbookBasic(
     seasonID,
     postID,
     userIDs: [currentUserID, authorUserID],
-    authUserEmails: [currentUserEmail, authorUserEmail],
     testRunId: request.testRunId
   };
 }

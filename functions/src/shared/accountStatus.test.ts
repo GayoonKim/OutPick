@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   assertAccountActive,
+  assertAccountCapability,
   requireActiveAccountData,
 } from "./accountStatus.js";
 
@@ -28,9 +29,12 @@ test("account 문서를 읽어 active 상태를 확인한다", async () => {
           requested.push(uid);
           return {
             async get() {
+              const data = name === "users" ?
+                {accountStatus: "active"} :
+                {moderationStatus: "active"};
               return {
                 exists: true,
-                data: () => ({accountStatus: "active"}),
+                data: () => data,
               };
             },
           };
@@ -40,5 +44,35 @@ test("account 문서를 읽어 active 상태를 확인한다", async () => {
   };
 
   await assert.doesNotReject(assertAccountActive("user-a", store));
-  assert.deepEqual(requested, ["users", "user-a"]);
+  assert.deepEqual(requested, [
+    "users", "user-a", "moderationAccounts", "user-a",
+  ]);
+});
+
+test("restricted 계정은 신고할 수 있지만 UGC를 만들 수 없다", async () => {
+  const store = {
+    collection(name: string) {
+      return {
+        doc() {
+          return {
+            async get() {
+              return {
+                exists: true,
+                data: () => name === "users" ?
+                  {accountStatus: "active"} :
+                  {moderationStatus: "restricted"},
+              };
+            },
+          };
+        },
+      };
+    },
+  };
+  await assert.doesNotReject(
+    assertAccountCapability("user-a", "report", store),
+  );
+  await assert.rejects(
+    assertAccountCapability("user-a", "createUGC", store),
+    (error: {code?: string}) => error.code === "permission-denied",
+  );
 });

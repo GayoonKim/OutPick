@@ -15,7 +15,7 @@ export function makeApp(
 
   registerHealthRoute(app, config, firebaseAdmin);
   registerResetRoute(app, firebaseAdmin);
-  registerLookbookSeedRoute(app, config, firebaseAdmin);
+  registerLookbookSeedRoute(app, firebaseAdmin);
 
   return app;
 }

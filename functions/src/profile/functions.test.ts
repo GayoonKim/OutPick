@@ -13,6 +13,9 @@ function dependencies() {
     assertActive: async (uid: string) => {
       void uid;
     },
+    assertCanCreateAccount: async (uid: string) => {
+      void uid;
+    },
     checkNicknameAvailability: async (uid: string, nickname: string) => ({
       isAvailable: uid === "user-a" && nickname === "아웃픽",
     }),

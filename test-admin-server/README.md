@@ -32,7 +32,6 @@
 
 ```bash
 TEST_FIREBASE_SERVICE_ACCOUNT_PATH=/absolute/path/to/outpick-test-service-account.json
-TEST_FIREBASE_TEST_USER_PASSWORD=local-test-password
 ```
 
 선택:
@@ -52,7 +51,6 @@ cd test-admin-server
 npm install
 npm run build
 TEST_FIREBASE_SERVICE_ACCOUNT_PATH=/absolute/path/to/outpick-test-service-account.json \
-TEST_FIREBASE_TEST_USER_PASSWORD=local-test-password \
 npm run dev
 ```
 
@@ -118,9 +116,7 @@ curl -X POST http://127.0.0.1:45731/reset \
 
 생성 대상:
 
-- Firebase Auth user 2명
-  - `uitest-user`
-  - `uitest-author`
+- Firebase Auth 사용자는 생성하지 않는다. 실제 Development 인증은 Google 계정을 사용한다.
 - Firestore user profile 2개
   - `users/uitest-user`
   - `users/uitest-author`
@@ -163,9 +159,7 @@ curl -X POST http://127.0.0.1:45731/seed/lookbook-basic \
 - 댓글/답글 작성자 user profile 2개
   - `users/uitest-commenter`
   - `users/uitest-replier`
-- Firebase Auth user 2명
-  - `uitest-commenter`
-  - `uitest-replier`
+- Firebase Auth 사용자는 생성하지 않는다. 댓글 작성자 UID는 표시용 Firestore fixture로만 유지한다.
 - 현재 사용자 댓글 좋아요 상태 1개
   - `users/uitest-user/commentStates/{brandID}_{seasonID}_{postID}_{commentID}`
 - post `metrics.commentCount`

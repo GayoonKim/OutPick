@@ -1,11 +1,9 @@
-import type {Auth} from "firebase-admin/auth";
 import {Timestamp, type Firestore} from "firebase-admin/firestore";
 import {
   commentStateDocumentID,
   lookbookTestEmails,
   lookbookTestIDs,
   markerFields,
-  upsertAuthUser,
   userProfileDocument
 } from "./lookbookSeedSupport.js";
 import {
@@ -24,7 +22,6 @@ export interface LookbookCommentsSeedResult {
   readonly rootCommentIDs: string[];
   readonly replyIDs: string[];
   readonly userIDs: string[];
-  readonly authUserEmails: string[];
   readonly commentUserStateIDs: string[];
   readonly commentCount: number;
   readonly testRunId?: string;
@@ -32,11 +29,9 @@ export interface LookbookCommentsSeedResult {
 
 export async function seedLookbookComments(
   firestore: Firestore,
-  auth: Auth,
-  password: string,
   request: LookbookBasicSeedRequest
 ): Promise<LookbookCommentsSeedResult> {
-  await seedLookbookBasic(firestore, auth, password, request);
+  await seedLookbookBasic(firestore, request);
 
   const {
     brandID,
@@ -51,21 +46,6 @@ export async function seedLookbookComments(
     replierUserEmail
   } = lookbookTestEmails;
   const marker = markerFields(request.testRunId);
-
-  await upsertAuthUser(
-    auth,
-    commenterUserID,
-    commenterUserEmail,
-    password,
-    "UI 테스트 댓글러"
-  );
-  await upsertAuthUser(
-    auth,
-    replierUserID,
-    replierUserEmail,
-    password,
-    "UI 테스트 답글러"
-  );
 
   await firestore.collection("users").doc(commenterUserID).set({
     ...userProfileDocument(commenterUserEmail, "UI 테스트 댓글러"),
@@ -182,7 +162,6 @@ export async function seedLookbookComments(
     rootCommentIDs: [pinnedCommentID, representativeCommentID],
     replyIDs: [replyID],
     userIDs: [commenterUserID, replierUserID],
-    authUserEmails: [commenterUserEmail, replierUserEmail],
     commentUserStateIDs: [commentUserStateRef.id],
     commentCount: 3,
     testRunId: request.testRunId
