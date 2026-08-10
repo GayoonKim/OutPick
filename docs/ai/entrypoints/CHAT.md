@@ -33,7 +33,7 @@ Chat 기능 수정 시 관련 화면, ViewModel, UseCase, Repository, 검색 인
 - 메시지 발신자 avatar: `OutPick/Features/Chat/Services/ImageLoading/AvatarImageService.swift`
 - 이미지 메모리/디스크 캐시: `OutPick/Infra/Cache/ImageCache/ImageCachePipeline.swift`
 
-전체 채팅방 목록은 `Rooms.lastMessageAt DESC` 기준으로 방을 가져오고, 각 방의 최근 메시지 3개를 함께 불러와 미리보기로 표시한다. 메시지 문서의 sender snapshot은 fallback으로 보존하되 `RoomListUseCase`가 `ChatProfileSyncManager`를 통해 sender UID별 최신 `UserPublicProfile`을 화면 표시값에 overlay한다. 프로필 변경 전·후 메시지는 같은 현재 닉네임·아바타를 사용하며 서버 메시지 문서는 다시 쓰지 않는다. 목록 진입과 pull-to-refresh에서 profile을 갱신하고, `RoomListsCollectionViewController`는 최대 30개 방 snapshot을 reload해 동일 room ID의 셀도 다시 구성한다. `ChatCoordinator`는 room/avatar image manager를 목록 화면에 주입한다. `RoomListsCollectionViewController`는 `UICollectionViewDataSourcePrefetching`으로 곧 보일 방의 커버 이미지와 상대방 메시지 `senderAvatarPath`를 미리 캐시에 적재한다. 셀 구성 시 `RoomListCollectionViewCell`은 주입받은 room/avatar image manager를 사용해 캐시를 먼저 확인하고, 없으면 Storage에서 로드한다. 내 메시지 미리보기는 avatar를 숨기고, 상대방 메시지 미리보기만 avatar를 표시한다. 이미지 캐시 정책은 `RoomImageService`/`AvatarImageService`가 `ImageCachePipeline`을 통해 메모리와 전용 디스크 캐시에 저장하는 흐름을 따른다. 컬렉션 뷰 하단은 메인 탭 바와 겹치지 않도록 `view.safeAreaLayoutGuide.bottomAnchor`에 맞춘다.
+전체 채팅방 목록은 `Rooms.isClosed == false`, `Rooms.lifecycleStatus == active`, `Rooms.lastMessageAt DESC` 기준으로 활성 방만 가져오고, 각 방의 최근 메시지 3개를 함께 불러와 미리보기로 표시한다. 같은 활성 조건은 `FirebaseChatRoomRepository.activeRoomsQuery()`를 통해 전체 목록, 참여방 ID 일괄 조회, 검색, 방 이름 중복 조회에 공통 적용한다. 메시지 문서의 sender snapshot은 fallback으로 보존하되 `RoomListUseCase`가 `ChatProfileSyncManager`를 통해 sender UID별 최신 `UserPublicProfile`을 화면 표시값에 overlay한다. 프로필 변경 전·후 메시지는 같은 현재 닉네임·아바타를 사용하며 서버 메시지 문서는 다시 쓰지 않는다. 목록 진입과 pull-to-refresh에서 profile을 갱신하고, `RoomListsCollectionViewController`는 최대 30개 방 snapshot을 reload해 동일 room ID의 셀도 다시 구성한다. `ChatCoordinator`는 room/avatar image manager를 목록 화면에 주입한다. `RoomListsCollectionViewController`는 `UICollectionViewDataSourcePrefetching`으로 곧 보일 방의 커버 이미지와 상대방 메시지 `senderAvatarPath`를 미리 캐시에 적재한다. 셀 구성 시 `RoomListCollectionViewCell`은 주입받은 room/avatar image manager를 사용해 캐시를 먼저 확인하고, 없으면 Storage에서 로드한다. 내 메시지 미리보기는 avatar를 숨기고, 상대방 메시지 미리보기만 avatar를 표시한다. 이미지 캐시 정책은 `RoomImageService`/`AvatarImageService`가 `ImageCachePipeline`을 통해 메모리와 전용 디스크 캐시에 저장하는 흐름을 따른다. 컬렉션 뷰 하단은 메인 탭 바와 겹치지 않도록 `view.safeAreaLayoutGuide.bottomAnchor`에 맞춘다.
 
 ## 비참여 채팅방 Preview
 
@@ -58,7 +58,7 @@ Chat 기능 수정 시 관련 화면, ViewModel, UseCase, Repository, 검색 인
 - App-running banner stream: `OutPick/Infra/Banner/BannerManager.swift`
 - 하단 레이아웃: `OutPick/Features/Chat/Controllers/JoinedRoomsViewController.swift`
 
-참여중 채팅방 목록은 Firestore realtime listener를 사용하지 않는다. 화면 진입/앱 재실행 시 단발 fetch로 authoritative snapshot을 만들고, 사용자가 pull-to-refresh로 재동기화한다. 앱 실행 중 참여중 방에 새 메시지가 도착하는 경우에는 `BannerManager`의 socket stream이 `ChatRoomReadStateStore`와 `FirebaseChatRoomRepository`의 local preview cache를 갱신해 목록 화면에 unread/마지막 메시지를 즉시 반영한다. 현재 목록 source는 `users/{uid}/joinedRooms/{roomID}` projection이며, 해당 roomID로 `Rooms` 문서를 batch fetch한 뒤 클라이언트에서 `Rooms.lastMessageAt DESC`로 정렬한다.
+참여중 채팅방 목록은 Firestore realtime listener를 사용하지 않는다. 화면 진입/앱 재실행 시 단발 fetch로 authoritative snapshot을 만들고, 사용자가 pull-to-refresh로 재동기화한다. 앱 실행 중 참여중 방에 새 메시지가 도착하는 경우에는 `BannerManager`의 socket stream이 `ChatRoomReadStateStore`와 `FirebaseChatRoomRepository`의 local preview cache를 갱신해 목록 화면에 unread/마지막 메시지를 즉시 반영한다. 현재 목록 source는 `users/{uid}/joinedRooms/{roomID}` projection이며, 해당 roomID로 `Rooms` 문서를 `isClosed == false`, `lifecycleStatus == active` 조건과 함께 batch fetch한 뒤 클라이언트에서 `Rooms.lastMessageAt DESC`로 정렬한다.
 
 대형 membership 전환 후 현재 계약:
 
@@ -272,7 +272,22 @@ Explicit read 진단은 `ChatRoomViewModel.persistExplicitLatestJumpForCurrentUs
 - DI/routing: `AppCompositionRoot` → `AppCoordinator` → `ModerationNoticeViewController`
 - suspended는 account/profile Firestore read 전에 차단하고 계정 삭제·로그아웃을 제공한다. restricted 기존 계정은 main read 흐름을 유지하되 서버 write capability와 안내를 적용한다.
 
-### Phase 2 이후 예정 iOS 진입점
+### iOS Phase 2 구현 진입점
+
+- 신고 모델·명령·접수 결과: `OutPick/Features/Chat/Domain/Models/ChatModerationReport.swift`
+- 사용자·방 신고 callable adapter: `OutPick/Features/Chat/Repositories/ChatModerationReportingRepository.swift`
+- 앱 입력 경계: `OutPick/Features/Chat/Domain/UseCases/SubmitChatModerationReportUseCase.swift`
+- Phase 2는 후속 화면이 의존할 thin contract만 추가했다. 화면·ViewModel·Coordinator·Container 연결은 Phase 8 전까지 추가하지 않는다.
+
+### Phase 3 iOS 삭제·폐쇄 진입점
+
+- 서버 권위 삭제/방장 폐쇄/안내 projection: `ChatModerationLifecycleRepository.swift`.
+- 메시지 삭제: `ChatRoomViewModel` → `ChatRoomMessageUseCase` → `ChatMessageManager` → `deleteChatMessage`; 성공 뒤 GRDB tombstone·FTS/media local cleanup을 적용한다.
+- 방장 폐쇄: `ChatRoomSettingViewModel` → `ChatRoomExitUseCase` → `DefaultChatRoomExitRepository`; 방장은 `closeOwnedChatRoom`, 일반 member는 기존 Socket leave를 사용한다.
+- 종료 안내: `JoinedRoomsViewModel`이 사용자별 `roomClosureNotices`를 읽고 `JoinedRoomsViewController`가 방 이름을 포함한 확인 알림을 표시한다. 확인 성공 시 해당 notice 문서를 즉시 삭제하며, 취소된 이전 fetch와 현재 앱 세션에서 이미 확인한 room ID를 걸러 중복 표시를 막는다.
+- 현재 방 배너 억제: `ChatViewController.viewWillAppear/viewWillDisappear`가 `ChatRoomViewModel` → `ChatRoomRuntimeUseCase` → `DefaultChatRoomVisibilityRuntimeManager`를 동기 호출해 화면 수명주기 순서대로 `BannerManager` visible room을 갱신한다. Presence 원격 갱신만 별도 비동기 작업으로 수행한다.
+
+### Phase 4 이후 예정 iOS 진입점
 
 - 신고·삭제 long press: `ChatMessageActionPolicy.swift` → `ChatRoomViewModel` → `ChatViewController` → `ChatCoordinator`
 - 방 신고·내보내기·ban 해제: `ChatRoomSettingViewController`/ViewModel → 신규 moderation UseCase/Repository → `ChatCoordinator`
@@ -286,9 +301,18 @@ Explicit read 진단은 `ChatRoomViewModel.persistExplicitLatestJumpForCurrentUs
 - Rules: `firestore.rules`, `storage.rules`의 `moderationAccounts/{uid}` fail-closed read/write 판정과 moderation 내부 collection deny
 - tests: Functions moderation/accountStatus, Socket moderation/auth/watch/lifecycle, `firestore-tests/moderation-{capabilities.rules,principal.emulator}.test.mjs`, iOS bootstrap test
 
-### Phase 2 이후 예정 서버 진입점
+### 서버·데이터 Phase 2 구현 진입점
 
-- Functions: 신규 `functions/src/moderation/{identity,capability,reports,admin,audit}/`, chat delete/room ban/owner succession service
+- 사용자 신고: `functions/src/moderation/reports/{contracts,service,functions}.ts`의 `submitUserReport`, `submitRoomReport`.
+- 관리자 신고 처리: `functions/src/moderation/admin/{contracts,service,functions}.ts`의 목록·상세·review mutation·계정 제재 callable.
+- 감사 idempotency: `functions/src/moderation/audit/contracts.ts`와 append-only `moderationAuditLogs`.
+- 사용자 신고는 같은 `clientRequestID`를 rate count 전에 dedupe하고 principal당 UTC 1분 10건의 짧은 burst만 제한한다. 일/대상별 hard cap은 없다.
+- server-only rate bucket은 `moderationReportRateLimitBuckets`, `moderationAdminRateLimitBuckets`이며 TTL은 2일이다.
+- client direct access 차단은 `firestore.rules`, 관리자 queue composite index와 rate bucket TTL은 `firestore.indexes.json`이 소유한다.
+
+### Phase 3 이후 예정 서버 진입점
+
+- Functions: chat delete/room ban/owner succession service
 - Socket: auth capability, room access/ban, text policy/rate limit, media inspection-ready 경계와 push block 제외
 - Rules: `moderationAccounts` capability, server-only moderation collection, room ban/lifecycle, quarantine/ready Storage
 - authoritative identity: 콘텐츠·membership은 UID, 장기 제재·room ban만 `moderationPrincipalID`

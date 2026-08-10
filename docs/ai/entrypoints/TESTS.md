@@ -199,25 +199,35 @@ Firebase Functions tests/build entry:
   - `test-admin-server/src/seed/lookbook{Basic,Comments}Seed.ts`는 표시용 Firestore fixture만 생성하고 `uitest-*` Firebase Auth 사용자를 만들지 않는다. 실제 Development 로그인은 Google 계정을 사용한다.
   - 2026-08-07 Development 배포 후 `getMyModerationState` ACTIVE·Secret v1 연결, Socket revision `outpick-socket-development-00002-hal` traffic 100%·canonical `/readyz` 정상·ERROR 0건을 확인했다. 실제 provider 탈퇴·재가입 QA는 미완료다.
   - Google restricted 실제 재가입에서 신규 UID→기존 principal 서버 binding은 성공했으나 missing `users/{uid}` get이 거부되는 Rules 회귀를 발견했다. 본인 bootstrap get만 허용하는 수정 후 전체 Rules 35/35·transaction 11/11을 통과하고 Development Rules를 재배포했다.
-- Phase 2 이후 Functions 후보:
-  - 사용자·방 신고 submission idempotency, unique reporter/total count, reopen revision과 stale caseVersion
-  - 메시지 삭제 cleanup, room ban transaction, owner succession과 관리자 audit
+- Phase 2 완료 범위:
+  - Functions `moderation/reports/contracts.test.ts`, `moderation/admin/contracts.test.ts`, `index.contract.test.ts`: submission ID, unique/total count, reopen revision, 1분 10건 burst, recent auth, review transition과 callable export를 검증한다.
+  - Functions `moderation/admin/platformAdminOperations.test.ts`: provider 분류, Production exact confirmation·전체 Auth/provider 예상 건수와 audit apply 차단을 검증한다.
+  - 2026-08-10 최종 자동 검증은 Functions lint/build·177/177, Rules 35/35, Firestore transaction 17/17, iOS 대상 6개와 generic Simulator build를 통과했다. Production exact Function 6개와 rules/index 배포 후 index `READY`, Function `ACTIVE`, 무인증 401, 활성 Kakao 관리자 목록 성공, Google 비관리자 `PERMISSION_DENIED`, ERROR 0건을 확인했다. smoke rate bucket·임시 App Check token·Token Creator binding 잔존은 모두 0건이다.
+  - Emulator `moderation-reports.emulator.test.mjs`: 동시 동일 신고의 submission/rate 단일 수렴, 10/11건 경계, terminal reopen, 동시 stale `caseVersion` 관리자 mutation을 실제 Firestore transaction으로 검증한다.
+  - Rules `moderation-capabilities.rules.test.mjs`: 신고 aggregate와 사용자·관리자 rate bucket의 client direct read/write deny를 검증한다.
+  - iOS `CloudFunctionsChatModerationReportingRepositoryTests.swift`, `CloudFunctionResponseDecoderTests.swift`: 사용자·방 callable payload/receipt와 소수점 포함 ISO-8601 응답 날짜를 검증한다.
+- Phase 3 Functions/cleanup 완료:
+  - `functions/src/chat/moderation/contracts.test.ts`: message seq·신고 참조·room lifecycle·관리자 사유 입력 계약.
+  - `firestore-tests/chat-moderation.emulator.test.mjs`: 실제 message tombstone, last summary, reply/media/Storage cleanup, owner close, 사용자별 30일 안내, 물리 room 삭제와 삭제 후 idempotent replay.
+  - `functions/src/index.contract.test.ts`: 신규 callable 3개, trigger 2개, 5분 scheduler와 cleanup due-query/TTL index 계약.
   - 미디어 inspection retry/fail-closed/ready message+seq 단일 생성
 - Socket unit test 후보:
   - restricted/suspended handshake와 기존 연결 disconnect
   - room ban join/read/push 거부, 전역 차단 recipient push 제외
   - principal+room+messageKind rate key와 reconnect 회귀
   - 검사 통과 전 broadcast 없음과 ready 이후 단일 broadcast/seq
-- Firestore·Storage emulator 후보:
-  - moderation collection client read/write 거부
-  - restricted safe action 허용과 UGC write 거부
-  - room ban/lifecycle read·join·write 거부
-  - quarantine exact owner upload와 다른 사용자 read/ready direct write 거부
+- Firestore·Storage emulator Phase 3 완료:
+  - message direct update와 room lifecycle direct update 거부, 폐쇄 room read 차단, 폐쇄 안내 본인 read/delete와 타인 접근·client create/update 거부.
+  - room ban은 후속 Phase 범위다.
+  - `chat-media-storage.rules.test.mjs`는 활성 계정의 서버 reservation 일치 업로드·이미지 read를 허용하고, reservation 누락/만료/종류·sender 불일치와 deletionPending 계정의 read를 거부한다.
+  - account capability v2 보정 후 최종 회귀는 Functions 185/185, Socket 70/70, Rules 40/40, transaction 20/20과 JSON/dry-run compile을 통과했다. 170명 추가 참여자 방 종료로 closure notice/projection write가 Firestore batch 500 한도 안에서 분할됨을 검증한다.
 - iOS unit test 후보:
   - bootstrap active/deletionPending/restricted/suspended routing
   - 신고·차단·삭제 ViewModel state와 Coordinator route spy
   - hidden seq 소비·payload/FTS/cache 미저장·unblock remote 복원
   - pending media relaunch/retry/failure와 ready ACK 수렴
+- iOS Phase 3: `CloudFunctionsChatModerationLifecycleRepositoryTests`, `ChatRoomExitUseCaseTests`, `ChatRoomMessageUseCaseTests`, `ChatRoomFirestoreMapperTests`, `JoinedRoomsClosureNoticeTests`가 callable payload, lifecycle version, 서버 성공 후 local cleanup 위임, legacy room 기본 version, 종료 안내 문구와 확인 후 stale fetch 중복 방지를 검증한다. `BannerPresentationQueueStateTests`는 이전 화면의 stale leave가 현재 visible room을 해제하지 않는 계약을 검증한다.
+- Socket Phase 3: `roomClosureWatcher.test.js`가 pending/completed job의 단일 emit과 강제 leave, 잘못된 job 무시를 검증한다.
 - 수동 QA:
   - 메시지/프로필/참여자/방 설정 신고 진입과 문구·접근성
   - 두 계정 block/unblock, background/banner/push, creator remove/unban

@@ -393,13 +393,18 @@ git diff --check -- firebase.json storage.rules
 - exact contract: `contracts/chat-moderation-v1.json`
 - 장기 결정: ADR-024
 - task: `docs/ai/tasks/chat-ugc-safety-room-moderation/`
+- Phase 3 Functions는 `chat/moderation/{contracts,service,functions}.ts`의 `deleteChatMessage`, `closeOwnedChatRoom`, `closeRoomByModeration`과 `chat/cleanup/moderationCleanup{,Functions}.ts`의 생성 trigger·5분 drain scheduler가 소유한다.
+- `chatMessageCleanupJobs`와 `moderationRoomCleanupJobs`는 `status + nextAttemptAt` due query index와 completed 7일 TTL을 사용한다. `roomClosureNotices` schema v2는 `roomName`을 포함하고 미확인 최대 30일 TTL이다. `closedByOwner`는 creator 안내를 생략하고 `closedByModeration`은 creator를 포함한다.
+- Socket `roomClosureWatcher.js`는 cleanup job을 단일 listener로 관찰해 `room:closed` emit·registry 제거·socket leave를 수행한다. completed job도 관찰해 빠른 cleanup과의 경합에서 이벤트를 놓치지 않는다.
+- Phase 3 Functions/Rules/Indexes/Storage/Socket의 Production 배포를 완료했다. 이후 폐쇄 방 read Rules와 최상위 `Rooms` query가 불일치해 앱 목록·검색·참여방 ID 조회·방 이름 중복 확인에 `isClosed == false`, `lifecycleStatus == active` 조건을 공통 적용했다. 배포 전 전체 원격 구성 감사에서 기존 원격 전용 index/field override가 0개임을 확인하고, 기존 검색 index 2개는 보존한 채 활성 검색 index 2개와 활성 목록 index 1개만 추가 배포했다. 신규 3개는 모두 `READY`이며 변경된 Production Kakao QA 앱의 오픈채팅 목록 진입에서 권한·index 오류가 없음을 확인했다.
 
 ### Server authority
 
 - `moderationPrincipals/{moderationPrincipalID}`: 장기 제재 원장.
 - `moderationPrincipalAliases/{aliasID}`: provider subject의 versioned HMAC alias. raw subject/email/token 저장 금지.
-- `moderationAccounts/{uid}`: Rules·Functions·Socket·Storage용 현재 UID capability projection.
+- `moderationAccounts/{uid}` schema v2: `accountStatus`와 moderation principal/status를 함께 가진 Rules·Functions·Socket·Storage용 현재 UID capability projection.
 - `moderationUserReports`, `moderationRoomReports`, `moderationAuditLogs`: client direct read/write 금지, callable admin/user API만 사용.
+- `moderationReportRateLimitBuckets`, `moderationAdminRateLimitBuckets`: server-only 분 단위 burst counter. detail·message snapshot·provider identity는 저장하지 않고 TTL 2일로 정리한다.
 - `Rooms/{roomID}/bans/{moderationPrincipalID}`: creator 전용 서버 mutation, client direct read/write 금지.
 - `Rooms.lifecycleStatus=closedByModeration`: join/read/write/Socket/push 차단 source.
 - `chatMessageCleanupJobs`, `moderationRoomCleanupJobs`: transaction 밖 Storage·projection 물리 정리의 deterministic retry source.
@@ -411,11 +416,23 @@ git diff --check -- firebase.json storage.rules
 - HMAC current/previous key 조회 경계는 `functions/src/moderation/state.ts`, safe capability DTO는 `contracts.ts`가 소유한다.
 - 기존 Auth 계정 dry-run/backfill은 `functions/scripts/backfill-moderation-principals.mjs`를 사용한다. `outpick-test`와 `outpick-664ae`만 허용하고 기본은 dry-run이며, unresolved가 1명이라도 있으면 `--apply`를 중단한다. Google·Apple은 단일 Firebase `providerData`, Kakao는 `kakao:{숫자 ID}` 후보와 `KAKAO_ADMIN_KEY`의 `/v2/user/me` 응답 ID가 정확히 일치할 때만 resolve한다.
 - Production apply는 `--confirm-production APPLY_MODERATION_PRINCIPAL_BACKFILL_TO_OUTPICK_664AE`와 `--expected-total`, `--expected-google`, `--expected-kakao`를 모두 요구한다. expected total과 두 provider 합계, 실제 건수가 다르거나 canonical Secret 이름이 아니면 HMAC Secret 조회와 Firestore write 전에 중단한다. Admin Key·HMAC Secret은 gcloud stdout을 프로세스 메모리에서만 읽고 출력하지 않으며 summary는 provider·unresolved reason별 건수만 포함한다.
-- `functions/src/shared/accountStatus.ts`는 기존 `users.accountStatus`와 `moderationAccounts`를 함께 판정한다.
-- Socket `moderation/capabilities.js`와 auth/watch/handler가 restricted read-only, suspended deny, stateVersion 변경 disconnect를 적용한다.
-- Firestore·Storage Rules는 projection 누락을 fail closed하고 restricted read와 active write를 분리한다.
+- `functions/src/shared/accountStatus.ts`는 `moderationAccounts` 한 문서에서 `accountStatus`와 moderation capability를 함께 판정한다. 계정 삭제 요청·취소와 principal binding은 `users.accountStatus` 원본과 projection을 같은 transaction에서 갱신한다.
+- Socket `moderation/capabilities.js`와 auth/watch/handler는 단일 `moderationAccounts` 조회/listener로 deletionPending·restricted·suspended와 stateVersion 변경을 처리한다.
+- Firestore·Storage Rules는 단일 projection 누락을 fail closed하고 restricted read와 active write를 분리한다. Storage media read는 account projection + active room, upload는 Socket이 capability/room access 확인 뒤 만든 `Rooms/{roomID}/MediaUploads/{messageID}` pending reservation + active room을 읽어 Rules의 Firestore 문서 조회 2개 제한 안에 머문다.
 - iOS는 `getMyModerationState` 호출 뒤에만 사용자 문서와 앱 콘텐츠를 읽는다.
 - `accountDeletion/cleanup.removePrivateState`는 삭제 완료 시 `moderationAccounts/{uid}`를 제거하고 principal·alias는 보존한다. 재가입 projection은 bootstrap callable이 다시 만든다.
+- schema v2 운영 backfill은 `functions/scripts/backfill-account-capabilities.mjs`를 사용한다. 기본 dry-run이며 Production apply는 확인 문자열과 예상 사용자/ projection 건수 일치를 요구한다. 원격 Rules와 index/TTL 전체 구성 감사는 각각 `audit-firebase-rules.mjs`, `audit-firestore-indexes.mjs`를 사용한다.
+
+### Phase 2 신고·관리자 처리 경계
+
+- 일반 사용자 callable: `submitUserReport`, `submitRoomReport` → `functions/src/moderation/reports/`.
+- 플랫폼 관리자 callable: `listModerationReports`, `getModerationReportDetail`, `mutateModerationReview`, `mutateAccountModeration` → `functions/src/moderation/admin/`.
+- 모든 callable은 App Check와 account capability를 확인한다. 관리자 API는 active `platformAdmins/{uid}`를 추가 확인하고 계정 제재는 5분 이내 `auth_time`을 요구한다.
+- 신고 transaction은 aggregate/submission/reporter/rate bucket을 원자적으로 갱신한다. 동일 submission을 먼저 확인하므로 retry는 quota를 소비하지 않는다.
+- 관리자 mutation은 `caseVersion`/`stateVersion`, deterministic audit ID와 append-only audit으로 동시 처리와 재전송을 수렴시킨다.
+- index/TTL: `firestore.indexes.json`; client deny: `firestore.rules`; transaction 회귀: `firestore-tests/moderation-reports.emulator.test.mjs`.
+- 2026-08-10 Production 승인으로 Phase 2 index/rules와 exact Function 6개를 `outpick-664ae`에 배포했다. 기존 원격 index/TTL은 유지됐고 신규 신고 index 2개는 `READY`, Function 6개는 `ACTIVE`, 무인증 direct POST는 401이다. 별도 승인된 임시 Token Creator/App Check debug token 절차로 활성 Kakao 관리자의 목록 성공과 Google 비관리자의 `PERMISSION_DENIED`를 확인했다. smoke rate bucket은 원복했고 임시 debug token·IAM binding과 최근 ERROR 로그 잔존은 모두 0건이다.
+- platform admin 최초 등록·회수는 `functions/scripts/manage-platform-admin.mjs`와 `docs/ai/runbooks/PLATFORM_ADMIN_OPERATIONS.md`를 사용한다. Production은 provider별 단일 계정, 전체 Auth 예상 건수와 exact confirmation이 모두 맞아야 쓰기 전에 gate를 통과한다.
 
 ### Phase 1 Development rollout — 2026-08-07
 

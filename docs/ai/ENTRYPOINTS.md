@@ -23,11 +23,11 @@
 - 로컬 DB/데이터 schema: `docs/ai/entrypoints/DATA.md`
 - Firebase Functions flat export: `functions/src/index.ts`
 - Firebase Functions 공통 runtime/callable: `functions/src/core/`
-- Firebase Functions 기능 구현: `functions/src/{auth,brand,chat,lookbook,profile,styleMoods}/`
+- Firebase Functions 기능 구현: `functions/src/{auth,brand,chat,lookbook,moderation,profile,styleMoods}/`
 - Kakao custom-token 함수·전용 runtime identity: `functions/src/auth/{functions,kakaoService,runtime}.ts`
 - 계정·공개 프로필 서버 경계: `functions/src/profile/`, `functions/src/shared/accountStatus.ts`
 - 계정 삭제 서버 상태 머신·정리 worker: `functions/src/accountDeletion/` → `firestore.rules`/`storage.rules`/`firestore.indexes.json`
-- 계정 삭제 Socket 차단: `Socket/src/users/userLookup.js` → `Socket/src/auth/socketAuthMiddleware.js` → `Socket/src/handlers/connectionHandlers.js`
+- 계정 capability·삭제 차단: `functions/src/shared/accountStatus.ts`/`functions/src/accountDeletion/repository.ts` → `moderationAccounts/{uid}` schema v2 → `firestore.rules`/`storage.rules`와 `Socket/src/auth/socketAuthMiddleware.js`/`Socket/src/handlers/connectionHandlers.js`
 - 스타일 무드 서버·seed·할당: `functions/src/styleMoods/`, `functions/src/shared/styleMoodAssignmentPolicy.ts`, `functions/src/lookbook/admin/seasonMoodFunctions.ts`, `functions/seeds/style-moods.v1.json`
 - 브랜드·채팅 개발 데이터 선택 초기화: `functions/src/developmentReset/brandChatManifest.ts` → `functions/scripts/audit-brand-chat-reset.mjs` → 승인 후 `functions/scripts/reset-brand-chat-data.mjs`
 - iOS 스타일 키워드 관리자·검색: `LookbookAdminHomeView.swift` → `LookbookCoordinator.pushStyleMoodManagement()` → `StyleMoodManagementViewModel.swift` / `StyleMoodManagementView.swift`
@@ -79,6 +79,10 @@
 - Socket 자동 검증: `Socket/test/`, `Socket/scripts/run-tests.mjs`
 - Chat UGC safety/moderation v1 계약: `contracts/chat-moderation-v1.json` → ADR-024 → `docs/ai/tasks/chat-ugc-safety-room-moderation/{decisions,plan,progress,qa-checklist}.md`
 - Chat moderation Phase 1 구현·Development rollout: iOS `CloudFunctionsCurrentUserModerationRepository`/`LoadCurrentUserBootstrapUseCase`/`AppCoordinator`/`ModerationNoticeViewController`, Functions `src/moderation/`와 `scripts/backfill-moderation-principals.mjs`, Socket `src/moderation/capabilities.js`, `firestore.rules`/`storage.rules` → 상세 `entrypoints/APP.md`, `entrypoints/CHAT.md`, `entrypoints/FIREBASE.md`, `entrypoints/TESTS.md`
+- Chat moderation Phase 2 신고·관리자 API: iOS `ChatModerationReport.swift` → `ChatModerationReportingRepository.swift` → `SubmitChatModerationReportUseCase.swift`; Functions `src/moderation/{reports,admin,audit}/`; Rules/index/transaction QA `firestore.rules`, `firestore.indexes.json`, `firestore-tests/moderation-{capabilities.rules,reports.emulator}.test.mjs`
+- Chat moderation Phase 3 삭제·폐쇄: iOS `ChatModerationLifecycleRepository.swift` → `ChatMessageManager`/`ChatRoomExitUseCase`/`JoinedRoomsViewModel`; Functions `src/chat/{moderation,cleanup}/`; Socket `roomClosureWatcher.js`; Rules/index/transaction QA `firestore-tests/{moderation-capabilities.rules,chat-moderation.emulator}.test.mjs`
+- Chat account capability v2·Storage reservation 보정: `functions/scripts/backfill-account-capabilities.mjs`, `functions/scripts/audit-{firebase-rules,firestore-indexes}.mjs`; Rules 회귀 `firestore-tests/chat-media-storage.rules.test.mjs`
+- Platform admin 운영: `functions/scripts/manage-platform-admin.mjs` → `functions/src/moderation/admin/platformAdminOperations.ts` → `docs/ai/runbooks/PLATFORM_ADMIN_OPERATIONS.md`
 - Phase 6 통합 회귀/배포 gate: `docs/ai/tasks/core-infrastructure-modularization/phases/phase-6-integration-tests.md`, `docs/ai/tasks/core-infrastructure-modularization/phases/phase-6-deployment.md`
 - Firestore rules: `firestore.rules`
 - Firestore indexes: `firestore.indexes.json`
