@@ -14,6 +14,7 @@ import { createSequenceStore } from "../messages/sequenceStore.js";
 import { createChatPushService } from "../push/chatPushService.js";
 import { createRoomAccess } from "../rooms/roomAccess.js";
 import { createRoomCleanup } from "../rooms/roomCleanup.js";
+import { createRoomClosureWatcher } from "../rooms/roomClosureWatcher.js";
 import { createRoomLifecycleService } from "../rooms/roomLifecycleService.js";
 import { createRoomRegistry } from "../rooms/roomRegistry.js";
 import { createSocketRoomAuthorizer } from "../rooms/socketRoomAuthorizer.js";
@@ -37,7 +38,6 @@ export function createProductionDependencies({
   const {
     findUserByUID,
     findModerationAccount,
-    watchUserAccountStatus,
     watchModerationAccount
   } = createUserLookup({ db });
   const { rooms, fetchRoomsFromFirebase, ensureRoomLoaded } = createRoomRegistry({
@@ -45,6 +45,13 @@ export function createProductionDependencies({
     isValidRoomID
   });
   const { loadRoomAccess } = createRoomAccess({ db });
+  const { start: startRoomClosureWatcher } = createRoomClosureWatcher({
+    db,
+    io,
+    rooms,
+    logger
+  });
+  startRoomClosureWatcher();
   const { closeRoomImmediately, leaveRoomMembership } = createRoomCleanup({ db, admin });
   const { leaveOrClose } = createRoomLifecycleService({
     db,
@@ -93,7 +100,6 @@ export function createProductionDependencies({
       rooms,
       clock,
       reconnectPolicy: RECONNECT_POLICY,
-      watchUserAccountStatus,
       watchModerationAccount,
       logger
     });

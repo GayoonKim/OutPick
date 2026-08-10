@@ -8,7 +8,7 @@
 import Foundation
 import FirebaseFirestore
 
-final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, ChatDeletedLastMessageSummaryUpdating {
+final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol {
     private let db: Firestore
     
     // 채팅방 목록 캐시
@@ -72,7 +72,9 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
     
     @MainActor
     func fetchTopRoomsPage(after lastSnapshot: DocumentSnapshot? = nil, limit: Int = 30) async throws {
-        var query: Query = db.collection("Rooms").order(by: "lastMessageAt", descending: true).limit(to: limit)
+        var query: Query = activeRoomsQuery()
+            .order(by: "lastMessageAt", descending: true)
+            .limit(to: limit)
         
         if let lastSnapshot {
             query = query.start(afterDocument: lastSnapshot)
@@ -191,42 +193,6 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
         }
     }
 
-    func updateDeletedLastMessageSummaryIfCurrent(
-        roomID: String,
-        deletedMessageSeq: Int64,
-        deletedPreview: String
-    ) async throws {
-        let trimmedRoomID = roomID.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedPreview = deletedPreview.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedRoomID.isEmpty,
-              deletedMessageSeq > 0,
-              !trimmedPreview.isEmpty else {
-            return
-        }
-
-        let roomRef = db.collection("Rooms").document(trimmedRoomID)
-        _ = try await db.runTransaction { transaction, errorPointer -> Any? in
-            do {
-                let roomSnap = try transaction.getDocument(roomRef)
-                let data = roomSnap.data()
-                let currentSeq = Self.toInt64(data?["seq"])
-                    ?? Self.toInt64(data?["lastMessageSeq"])
-                    ?? 0
-
-                guard currentSeq == deletedMessageSeq else { return nil }
-
-                transaction.updateData([
-                    "lastMessage": trimmedPreview,
-                    "updatedAt": FieldValue.serverTimestamp()
-                ], forDocument: roomRef)
-                return nil
-            } catch {
-                errorPointer?.pointee = error as NSError
-                return nil
-            }
-        }
-    }
-    
     func updateRoomMetadata(
         roomID: String,
         roomName: String,
@@ -348,8 +314,7 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
             let chunk = Array(ids[start..<end])
             start = end
             
-            let snap = try await db
-                .collection("Rooms")
+            let snap = try await activeRoomsQuery()
                 .whereField(FieldPath.documentID(), in: chunk)
                 .getDocuments()
             
@@ -385,7 +350,7 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
             currentSearchKeyword = trimmedKeyword
         }
         
-        var indexedQuery: Query = db.collection("Rooms")
+        var indexedQuery: Query = activeRoomsQuery()
             .whereField(tokenQuery.field, arrayContains: tokenQuery.token)
             .order(by: "lastMessageAt", descending: true)
             .limit(to: limit)
@@ -501,18 +466,20 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
     }
     
     func checkRoomName(roomName: String, completion: @escaping (Bool, Error?) -> Void) {
-        db.collection("Rooms").whereField("roomName", isEqualTo: roomName).getDocuments { snapshot, error in
-            if let error = error {
-                completion(false, error)
-                return
+        activeRoomsQuery()
+            .whereField("roomName", isEqualTo: roomName)
+            .getDocuments { snapshot, error in
+                if let error = error {
+                    completion(false, error)
+                    return
+                }
+
+                if let snapshot = snapshot, snapshot.isEmpty {
+                    completion(false, nil)
+                } else {
+                    completion(true, nil)
+                }
             }
-            
-            if let snapshot = snapshot, snapshot.isEmpty {
-                completion(false, nil)
-            } else {
-                completion(true, nil)
-            }
-        }
     }
 
     func checkRoomNameDuplicate(roomName: String) async throws -> Bool {
@@ -525,6 +492,12 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol, Chat
                 continuation.resume(returning: isDuplicate)
             }
         }
+    }
+
+    private func activeRoomsQuery() -> Query {
+        db.collection("Rooms")
+            .whereField("isClosed", isEqualTo: false)
+            .whereField("lifecycleStatus", isEqualTo: "active")
     }
     
     func addRoomParticipantReturningRoom(roomID: String) async throws -> ChatRoom {

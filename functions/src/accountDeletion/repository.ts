@@ -15,6 +15,7 @@ import {
   deletionRequestID,
   sha256,
 } from "./policy.js";
+import {MODERATION_ACCOUNT_SCHEMA_VERSION} from "../moderation/contracts.js";
 
 function timestampOrNull(value: unknown): Timestamp | null {
   return value instanceof Timestamp ? value : null;
@@ -41,14 +42,20 @@ export async function createDeletionIntent(
   nowMillis: number,
 ) {
   const userRef = db.collection("users").doc(context.uid);
+  const moderationAccountRef = db.collection("moderationAccounts").doc(context.uid);
   const intentID = randomUUID();
   const nonce = randomBytes(32).toString("base64url");
   const intentRef = db.collection("accountDeletionIntents").doc(intentID);
   let generation = "";
 
   await db.runTransaction(async (transaction) => {
-    const userSnapshot = await transaction.get(userRef);
-    if (!userSnapshot.exists || userSnapshot.data()?.accountStatus !== "active") {
+    const [userSnapshot, moderationAccountSnapshot] = await Promise.all([
+      transaction.get(userRef),
+      transaction.get(moderationAccountRef),
+    ]);
+    if (!userSnapshot.exists || userSnapshot.data()?.accountStatus !== "active" ||
+      !moderationAccountSnapshot.exists ||
+      moderationAccountSnapshot.data()?.accountStatus !== "active") {
       throw new HttpsError(
         "failed-precondition",
         "삭제할 수 있는 활성 계정이 없습니다.",
@@ -89,14 +96,16 @@ export async function requestDeletion(
   nowMillis: number,
 ) {
   const userRef = db.collection("users").doc(context.uid);
+  const moderationAccountRef = db.collection("moderationAccounts").doc(context.uid);
   const intentRef = db.collection("accountDeletionIntents").doc(input.intentID);
   const receiptToken = randomBytes(32).toString("base64url");
   let requestID = "";
   let cancelableUntilMillis = 0;
 
   await db.runTransaction(async (transaction) => {
-    const [userSnapshot, intentSnapshot] = await Promise.all([
+    const [userSnapshot, moderationAccountSnapshot, intentSnapshot] = await Promise.all([
       transaction.get(userRef),
+      transaction.get(moderationAccountRef),
       transaction.get(intentRef),
     ]);
     const userData = userSnapshot.data();
@@ -110,6 +119,13 @@ export async function requestDeletion(
       throw new HttpsError(
         "failed-precondition",
         "삭제할 수 있는 활성 계정이 없습니다.",
+      );
+    }
+    if (!moderationAccountSnapshot.exists ||
+      moderationAccountSnapshot.data()?.accountStatus !== "active") {
+      throw new HttpsError(
+        "failed-precondition",
+        "계정 권한 상태를 확인할 수 없습니다.",
       );
     }
 
@@ -153,6 +169,11 @@ export async function requestDeletion(
     transaction.update(userRef, {
       accountStatus: "deletionPending",
       deletionRequestedAt: Timestamp.fromMillis(nowMillis),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    transaction.update(moderationAccountRef, {
+      schemaVersion: MODERATION_ACCOUNT_SCHEMA_VERSION,
+      accountStatus: "deletionPending",
       updatedAt: FieldValue.serverTimestamp(),
     });
     transaction.set(requestRef, {
@@ -220,9 +241,13 @@ export async function cancelDeletion(
   nowMillis: number,
 ) {
   const userRef = db.collection("users").doc(context.uid);
+  const moderationAccountRef = db.collection("moderationAccounts").doc(context.uid);
 
   return db.runTransaction(async (transaction) => {
-    const userSnapshot = await transaction.get(userRef);
+    const [userSnapshot, moderationAccountSnapshot] = await Promise.all([
+      transaction.get(userRef),
+      transaction.get(moderationAccountRef),
+    ]);
     const generation = userSnapshot.data()?.accountGenerationID;
     if (
       !userSnapshot.exists ||
@@ -231,6 +256,13 @@ export async function cancelDeletion(
       generation.length === 0
     ) {
       throw new HttpsError("failed-precondition", "취소할 삭제 요청이 없습니다.");
+    }
+    if (!moderationAccountSnapshot.exists ||
+      moderationAccountSnapshot.data()?.accountStatus !== "deletionPending") {
+      throw new HttpsError(
+        "failed-precondition",
+        "계정 권한 상태를 확인할 수 없습니다.",
+      );
     }
     const requestID = deletionRequestID(context.uid, generation);
     const requestRef = db.collection("accountDeletionRequests").doc(requestID);
@@ -253,6 +285,11 @@ export async function cancelDeletion(
     transaction.update(userRef, {
       accountStatus: "active",
       deletionRequestedAt: FieldValue.delete(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    transaction.update(moderationAccountRef, {
+      schemaVersion: MODERATION_ACCOUNT_SCHEMA_VERSION,
+      accountStatus: "active",
       updatedAt: FieldValue.serverTimestamp(),
     });
     transaction.update(requestRef, {

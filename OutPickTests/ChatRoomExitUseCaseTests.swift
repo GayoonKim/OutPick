@@ -107,12 +107,12 @@ private final class ChatRoomExitRepositoryFake: ChatRoomExitRepositoryProtocol {
         self.error = error
     }
 
-    func leaveOrClose(roomID: String) async throws -> ChatRoomExitResult {
-        requestedRoomIDs.append(roomID)
+    func leaveOrClose(room: ChatRoom) async throws -> ChatRoomExitResult {
+        requestedRoomIDs.append(room.id)
         if let error {
             throw error
         }
-        return result ?? ChatRoomExitResult(roomID: roomID, mode: .unknown(nil))
+        return result ?? ChatRoomExitResult(roomID: room.id, mode: .unknown(nil))
     }
 }
 

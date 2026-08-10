@@ -37,7 +37,7 @@ export const onRoomClosed = onDocumentUpdated(
       return;
     }
     console.log(
-      "[onRoomClosed] Room close cleanup is handled synchronously by the Socket close path. Skip trigger cleanup.",
+      "[onRoomClosed] Room close cleanup is handled by moderationRoomCleanupJobs. Skip legacy trigger cleanup.",
       {roomId: event.params.roomId}
     );
   }

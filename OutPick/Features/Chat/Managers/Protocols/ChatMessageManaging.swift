@@ -57,5 +57,4 @@ protocol ChatMessageManaging {
     func setupDeletionListener(roomID: String, onDeleted: @escaping (String) -> Void) -> AnyCancellable
     
     /// 메시지 저장
-    func saveMessage(_ message: ChatMessage, room: ChatRoom) async throws
 }

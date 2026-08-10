@@ -72,7 +72,7 @@
 - `users/{uid}.accountStatus`는 기존 `active | deletionPending` 계정 생명주기만 소유한다.
 - `moderationPrincipals/{moderationPrincipalID}`는 장기 제재의 canonical 원장이고 `moderationStatus: active | restricted | suspended`, `restrictedUntil`, `stateVersion`을 가진다.
 - `moderationPrincipalAliases/{aliasID}`는 versioned HMAC alias를 principal에 연결한다. alias ID 형식은 `v{keyVersion}_{base64urlHmac}`이며 원본 provider subject·email·token을 저장하지 않는다.
-- `moderationAccounts/{uid}`는 현재 UID의 principal·status·restrictedUntil·stateVersion을 Rules·Functions·Socket·Storage가 읽는 서버 전용 projection이다.
+- `moderationAccounts/{uid}` schema v2는 현재 UID의 `accountStatus`, principal, `moderationStatus`, `restrictedUntil`, `stateVersion`을 Rules·Functions·Socket·Storage가 한 번에 읽는 서버 전용 capability projection이다. `users/{uid}.accountStatus`는 사용자 계정 데이터의 원본으로 유지하되, 권한 판정 hot path에서는 이 projection만 사용한다.
 - restricted 사용자는 read·report·block/unblock·자기 UGC 삭제·지원·계정 삭제만 허용하고, suspended 사용자는 제재 안내·지원·계정 삭제만 허용한다.
 - `getMyModerationState.supportURL`은 운영 고객지원 경로 주입 전에는 `null`이며, 클라이언트는 값이 있을 때만 외부 고객지원 action을 노출한다.
 - exact 필드와 capability matrix는 `contracts/chat-moderation-v1.json`, 선택 이유는 ADR-024를 따른다.
@@ -86,11 +86,16 @@
 - `caseVersion`은 신고 횟수가 아니라 관리자 optimistic concurrency version이다.
 - 텍스트 snapshot은 최대 4000 UTF-8 bytes로 제한한다. 신고된 이미지·동영상은 별도 evidence Storage에 복사하지 않고 message ID·종류·사전검사 결과만 남긴다.
 - `moderationAuditLogs/{actionID}`는 서버 append-only이며 actor, action, bounded before/after, reason, report reference와 request ID를 기록한다.
+- `moderationReportRateLimitBuckets/{principalID_minute}`는 같은 submission dedupe 뒤에만 증가하는 사용자 신고 burst counter다. principal당 UTC 1분 10건만 제한하며 일/대상별 hard cap은 두지 않는다.
+- `moderationAdminRateLimitBuckets/{actorUID_kind_minute}`는 관리자 read/mutation burst counter다. 두 rate collection은 server-only이고 detail·message snapshot·provider identity를 저장하지 않으며 `expiresAt` TTL 2일을 사용한다.
 - 신고·audit·principal·room ban과 ready 검사 metadata의 Production TTL은 개인정보 보존 기간 승인 전 활성화하지 않는다. 만료·실패 quarantine object cleanup은 별도 운영 안전장치로 유지한다.
 
 ### 메시지 삭제·room ban·방 lifecycle
 
 - 메시지 삭제는 서버 API만 수행한다. `Messages/{messageID}.isDeleted`와 seq tombstone은 유지하고 공개 payload·attachments·reply/announcement/room summary·media index·Storage는 idempotent cleanup으로 정리한다.
+- `chatMessageCleanupJobs/{sha256(roomID:messageID)}`는 reply preview·media index·고정 message Storage prefix를 재시도한다. completed는 7일 TTL, 20회 실패는 TTL 없이 남긴다.
+- 방 폐쇄는 `active → closedByOwner | closedByModeration`과 증가하는 `lifecycleVersion`으로 표현한다. `moderationRoomCleanupJobs/{roomID}`가 사용자 안내 생성과 projection·하위 collection·`rooms/{roomID}/` Storage·room 문서 삭제를 수행한다.
+- `users/{uid}/roomClosureNotices/{roomID}` schema v2는 안내 맥락을 위한 `roomName`과 `closureType`, `closureNoticeCode`, `closedAt`, `expiresAt`만 보존한다. 방장 삭제는 삭제를 수행한 creator를 제외한 당시 member에게, 관리자 종료는 creator를 포함한 당시 member에게 생성한다. 확인 시 client owner delete를 허용하고 미확인 notice는 30일 TTL로 삭제한다. 방 콘텐츠 자체는 30일간 보존하지 않는다.
 - transaction 밖 cleanup은 deterministic `chatMessageCleanupJobs/{jobID}`와 `moderationRoomCleanupJobs/{roomID}`가 `pending | processing | retryPending | completed | failed`로 수렴시킨다.
 - `Rooms/{roomID}/bans/{moderationPrincipalID}`가 room ban source다. client read/write는 금지하고 creator 전용 서버 API로 내보내기·해제한다.
 - 관리자 방 폐쇄는 `Rooms.lifecycleStatus = closedByModeration`을 먼저 기록해 join/read/write/Socket/push를 차단하고 물리 cleanup은 별도 재시도 상태로 수렴시킨다.

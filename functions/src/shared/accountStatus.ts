@@ -64,11 +64,18 @@ export async function assertAccountCapability(
   store: AccountStore = db,
   now = new Date(),
 ): Promise<void> {
-  const accountSnapshot = await store.collection("users").doc(uid).get();
+  const accountSnapshot = await store.collection("moderationAccounts").doc(uid).get();
   requireActiveAccountData(
     accountSnapshot.exists ? accountSnapshot.data() : undefined,
   );
-  await assertModerationCapability(uid, capability, store, now);
+  const status = effectiveStatus(accountSnapshot.data(), now);
+  const capabilities: readonly string[] = status ? moderationCapabilities[status] : [];
+  if (!status || !capabilities.includes(capability)) {
+    throw new HttpsError(
+      "permission-denied",
+      "현재 계정 상태에서는 이 작업을 수행할 수 없습니다.",
+    );
+  }
 }
 
 export async function assertModerationCapability(

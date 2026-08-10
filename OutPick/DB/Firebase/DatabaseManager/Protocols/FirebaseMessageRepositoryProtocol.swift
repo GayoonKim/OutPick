@@ -10,14 +10,8 @@ import FirebaseFirestore
 
 /// 메시지 관련 데이터베이스 작업을 위한 프로토콜
 protocol FirebaseMessageRepositoryProtocol {
-    /// 메시지 저장
-    func saveMessage(_ message: ChatMessage, _ room: ChatRoom) async throws
-    
     /// 삭제된 메시지 감지 리스너
     func listenToDeletedMessages(roomID: String, onDeleted: @escaping (String) -> Void) -> ListenerRegistration
-    
-    /// 메시지 삭제 상태 업데이트
-    func updateMessageIsDeleted(roomID: String, messageID: String) async throws
     
     /// 여러 메시지의 삭제 상태 일괄 조회
     func fetchDeletionStates(roomID: String, messageIDs: [String]) async throws -> [String: Bool]

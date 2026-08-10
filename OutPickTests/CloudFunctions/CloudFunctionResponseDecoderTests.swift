@@ -26,11 +26,16 @@ struct CloudFunctionResponseDecoderTests {
     @Test func decodesMillisecondAndISO8601Dates() throws {
         let decoder = CloudFunctionResponseDecoder(dictionary: [
             "required": NSNumber(value: 2_000),
-            "optional": "1970-01-01T00:00:03Z"
+            "optional": "1970-01-01T00:00:03Z",
+            "fractional": "1970-01-01T00:00:04.125Z"
         ])
 
         #expect(try decoder.date("required") == Date(timeIntervalSince1970: 2))
         #expect(decoder.optionalDate("optional") == Date(timeIntervalSince1970: 3))
+        #expect(
+            decoder.optionalDate("fractional") ==
+                Date(timeIntervalSince1970: 4.125)
+        )
     }
 
     @Test func requiredFieldReportsItsKey() {

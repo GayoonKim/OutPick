@@ -39,6 +39,7 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
     
     var roomImages: [String:UIImage] = [:]
     private var roomImageKeys: [String: String] = [:]
+    private var presentedClosureNoticeID: String?
 
     // MARK: - Navigation callbacks (Coordinator)
     var onOpenRoom: ((ChatRoom) -> Void)?
@@ -84,7 +85,43 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
             self.unreadCounts = state.unreadCounts
             self.applyRooms(state.rooms, animated: true)
             Task { await self.syncRoomImages(for: state.rooms) }
+            self.presentNextClosureNoticeIfNeeded(state.closureNotices)
         }
+    }
+
+    private func presentNextClosureNoticeIfNeeded(_ notices: [ChatRoomClosureNotice]) {
+        guard presentedViewController == nil, presentedClosureNoticeID == nil,
+              let notice = notices.first else { return }
+        presentedClosureNoticeID = notice.roomID
+        let alert = UIAlertController(
+            title: notice.title,
+            message: notice.message,
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "확인", style: .default) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                do {
+                    try await self.viewModel.acknowledgeClosureNotice(notice)
+                } catch {
+                    self.presentClosureNoticeFailureAlert()
+                }
+                self.presentedClosureNoticeID = nil
+                self.viewModel.notifyCurrentState()
+            }
+        })
+        present(alert, animated: true)
+    }
+
+    private func presentClosureNoticeFailureAlert() {
+        let alert = UIAlertController(
+            title: "확인 처리에 실패했어요",
+            message: "잠시 후 다시 확인해 주세요.",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "확인", style: .default))
+        present(alert, animated: true)
     }
 
     @MainActor

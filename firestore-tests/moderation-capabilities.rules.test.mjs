@@ -6,7 +6,7 @@ import {
   assertSucceeds,
   initializeTestEnvironment,
 } from "@firebase/rules-unit-testing";
-import {doc, getDoc, setDoc} from "firebase/firestore";
+import {deleteDoc, doc, getDoc, setDoc, updateDoc} from "firebase/firestore";
 
 const projectId = "outpick-rules-test";
 const rules = readFileSync(new URL("../firestore.rules", import.meta.url), "utf8");
@@ -31,6 +31,7 @@ beforeEach(async () => {
       "suspended-new",
     ].map(
       (uid) => setDoc(doc(firestore, "moderationAccounts", uid), {
+        accountStatus: "active",
         moderationPrincipalID: `principal-${uid}`,
         moderationStatus: uid.split("-")[0],
         restrictedUntil: null,
@@ -39,6 +40,10 @@ beforeEach(async () => {
     ));
     await setDoc(doc(firestore, "Rooms", "room"), {
       creatorUID: "active", memberCount: 1, isClosed: false,
+      lifecycleStatus: "active", lifecycleVersion: 1,
+    });
+    await setDoc(doc(firestore, "Rooms", "room", "members", "active"), {
+      joinedAt: new Date(),
     });
   });
 });
@@ -83,5 +88,67 @@ describe("moderation capability rules", () => {
     await assertFails(getDoc(doc(
       firestore, "moderationPrincipals", "principal-active",
     )));
+    await assertFails(getDoc(doc(
+      firestore, "moderationUserReports", "principal-target",
+    )));
+    await assertFails(setDoc(doc(
+      firestore, "moderationRoomReports", "room",
+    ), {reviewState: "open"}));
+    await assertFails(getDoc(doc(
+      firestore,
+      "moderationReportRateLimitBuckets",
+      "principal-active_1",
+    )));
+    await assertFails(getDoc(doc(
+      firestore,
+      "moderationAdminRateLimitBuckets",
+      "active_read_1",
+    )));
+  });
+
+  test("메시지 tombstone과 방 lifecycle은 클라이언트가 직접 변경할 수 없다", async () => {
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "Rooms", "room", "Messages", "message"), {
+        ID: "message", roomID: "room", senderUID: "active", seq: 1,
+        msg: "원문", isDeleted: false,
+      });
+    });
+    const firestore = testEnvironment.authenticatedContext("active").firestore();
+    await assertSucceeds(getDoc(doc(firestore, "Rooms", "room", "Messages", "message")));
+    await assertFails(updateDoc(
+      doc(firestore, "Rooms", "room", "Messages", "message"),
+      {isDeleted: true},
+    ));
+    await assertFails(updateDoc(doc(firestore, "Rooms", "room"), {
+      isClosed: true,
+      lifecycleStatus: "closedByOwner",
+      lifecycleVersion: 2,
+    }));
+  });
+
+  test("폐쇄 방은 즉시 읽을 수 없고 사용자 안내는 본인만 읽고 삭제한다", async () => {
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      const firestore = context.firestore();
+      await updateDoc(doc(firestore, "Rooms", "room"), {
+        isClosed: true,
+        lifecycleStatus: "closedByModeration",
+        lifecycleVersion: 2,
+      });
+      await setDoc(doc(firestore, "users", "active", "roomClosureNotices", "room"), {
+        roomID: "room",
+        closureType: "closedByModeration",
+        closureNoticeCode: "communityGuidelineViolation",
+        closedAt: new Date(),
+        expiresAt: new Date(),
+      });
+    });
+    const owner = testEnvironment.authenticatedContext("active").firestore();
+    const other = testEnvironment.authenticatedContext("restricted").firestore();
+    const notice = doc(owner, "users", "active", "roomClosureNotices", "room");
+    await assertFails(getDoc(doc(owner, "Rooms", "room")));
+    await assertSucceeds(getDoc(notice));
+    await assertFails(getDoc(doc(other, "users", "active", "roomClosureNotices", "room")));
+    await assertFails(setDoc(notice, {closureType: "closedByOwner"}));
+    await assertSucceeds(deleteDoc(notice));
   });
 });

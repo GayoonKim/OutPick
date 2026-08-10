@@ -231,12 +231,12 @@ final class ChatRoomViewModel {
         return runtimeUseCase.observeRoomClosed(roomID: roomID, onClosed: onClosed)
     }
 
-    func handleRoomWillAppear() async {
-        await runtimeUseCase.enterVisibleRoom(roomID: roomID)
+    func handleRoomWillAppear() {
+        runtimeUseCase.enterVisibleRoom(roomID: roomID)
     }
 
-    func handleRoomWillDisappear() async {
-        await runtimeUseCase.leaveVisibleRoom()
+    func handleRoomWillDisappear() {
+        runtimeUseCase.leaveVisibleRoom(roomID: roomID)
     }
 
     func cleanTransientLocalRoomData(roomID: String) async {

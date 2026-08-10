@@ -10,7 +10,8 @@ export function createRoomAccess({ db }) {
     }
 
     const roomData = snap.data() || {};
-    if (roomData.isClosed === true) {
+    if (roomData.isClosed === true ||
+        (roomData.lifecycleStatus && roomData.lifecycleStatus !== "active")) {
       return { ok: false, error: "room_closed" };
     }
 

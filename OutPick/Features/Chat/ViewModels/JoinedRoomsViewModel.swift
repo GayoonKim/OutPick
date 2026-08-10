@@ -14,13 +14,18 @@ final class JoinedRoomsViewModel {
         var unreadCounts: [String: Int64] = [:]
         var isLoading: Bool = false
         var errorMessage: String?
+        var closureNotices: [ChatRoomClosureNotice] = []
     }
 
     private let useCase: JoinedRoomsUseCaseProtocol
     private let roomReadStateStore: ChatRoomReadStateStore?
     private let joinedRoomsStore: JoinedRoomsSessionStoring?
+    private let moderationLifecycleRepository: ChatModerationLifecycleRepositoryProtocol?
     private var readStateTask: Task<Void, Never>?
     private var joinedRoomsStoreTask: Task<Void, Never>?
+    private var closureNoticeTask: Task<Void, Never>?
+    private var closureNoticeGeneration = 0
+    private var acknowledgedClosureNoticeIDs: Set<String> = []
     private var isBoundReadState = false
     private var isBoundJoinedRoomsStore = false
     private var joinedItems: [JoinedRoomListItem] = []
@@ -34,11 +39,13 @@ final class JoinedRoomsViewModel {
     init(
         useCase: JoinedRoomsUseCaseProtocol,
         roomReadStateStore: ChatRoomReadStateStore? = nil,
-        joinedRoomsStore: JoinedRoomsSessionStoring? = nil
+        joinedRoomsStore: JoinedRoomsSessionStoring? = nil,
+        moderationLifecycleRepository: ChatModerationLifecycleRepositoryProtocol? = nil
     ) {
         self.useCase = useCase
         self.roomReadStateStore = roomReadStateStore
         self.joinedRoomsStore = joinedRoomsStore
+        self.moderationLifecycleRepository = moderationLifecycleRepository
         self.state = State()
     }
 
@@ -47,6 +54,12 @@ final class JoinedRoomsViewModel {
         bindJoinedRoomsStoreIfNeeded()
         pruneRoomsNotInSessionStore(joinedRoomsStore?.joined ?? [])
         Task { await reloadJoinedRooms() }
+        closureNoticeGeneration += 1
+        let generation = closureNoticeGeneration
+        closureNoticeTask?.cancel()
+        closureNoticeTask = Task { @MainActor [weak self] in
+            await self?.loadClosureNotices(generation: generation)
+        }
     }
 
     func stop() {
@@ -54,6 +67,9 @@ final class JoinedRoomsViewModel {
         readStateTask = nil
         joinedRoomsStoreTask?.cancel()
         joinedRoomsStoreTask = nil
+        closureNoticeGeneration += 1
+        closureNoticeTask?.cancel()
+        closureNoticeTask = nil
         isBoundReadState = false
         isBoundJoinedRoomsStore = false
     }
@@ -84,6 +100,26 @@ final class JoinedRoomsViewModel {
 
     func reloadJoinedRooms() async {
         await bootstrapJoinedRooms()
+    }
+
+    func acknowledgeClosureNotice(_ notice: ChatRoomClosureNotice) async throws {
+        guard let moderationLifecycleRepository else { return }
+        try await moderationLifecycleRepository.acknowledgeClosureNotice(roomID: notice.roomID)
+        acknowledgedClosureNoticeIDs.insert(notice.roomID)
+        state.closureNotices.removeAll { $0.roomID == notice.roomID }
+    }
+
+    private func loadClosureNotices(generation: Int) async {
+        guard let moderationLifecycleRepository else { return }
+        do {
+            let notices = try await moderationLifecycleRepository.fetchClosureNotices()
+            guard !Task.isCancelled, generation == closureNoticeGeneration else { return }
+            state.closureNotices = notices.filter {
+                !acknowledgedClosureNoticeIDs.contains($0.roomID)
+            }
+        } catch {
+            // 참여방 목록은 안내 projection 조회 실패와 독립적으로 계속 표시한다.
+        }
     }
 
     private func bindReadStateIfNeeded() {

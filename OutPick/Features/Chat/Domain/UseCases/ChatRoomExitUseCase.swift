@@ -44,7 +44,7 @@ final class ChatRoomExitUseCase: ChatRoomExitUseCaseProtocol {
             throw ChatRoomExitError.missingRoomID
         }
 
-        let result = try await repository.leaveOrClose(roomID: roomID)
+        let result = try await repository.leaveOrClose(room: room)
         do {
             try await localCleaner.cleanLocalRoomDataAfterExit(roomID: roomID)
         } catch {

@@ -66,6 +66,7 @@ test("Firebase auth middleware는 profile email을 우선해 socket identity를 
     }),
     findModerationAccount: async () => ({
       data: {
+        accountStatus: "active",
         moderationPrincipalID: "principal-1",
         moderationStatus: "restricted",
         stateVersion: 2
@@ -92,7 +93,7 @@ test("Firebase auth middleware는 suspended moderation 계정 연결을 거부�
       ref: { id: "user-1" }, data: { accountStatus: "active" }
     }),
     findModerationAccount: async () => ({
-      data: { moderationStatus: "suspended", stateVersion: 3 }
+      data: { accountStatus: "active", moderationStatus: "suspended", stateVersion: 3 }
     }),
     logger: silentLogger()
   });
@@ -107,9 +108,9 @@ test("Firebase auth middleware는 suspended moderation 계정 연결을 거부�
 test("Firebase auth middleware는 pending 계정 연결을 거부한다", async () => {
   const middleware = createFirebaseAuthMiddleware({
     verifyIDToken: async () => ({ uid: "user-1" }),
-    findUserByUID: async () => ({
-      ref: { id: "user-1" },
-      data: { accountStatus: "deletionPending" }
+    findUserByUID: async () => ({ ref: { id: "user-1" }, data: {} }),
+    findModerationAccount: async () => ({
+      data: { accountStatus: "deletionPending", moderationStatus: "active" }
     }),
     logger: silentLogger()
   });

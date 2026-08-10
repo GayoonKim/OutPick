@@ -35,6 +35,8 @@ describe("moderation principal binding transaction", () => {
     ]);
     assert.equal(accountA.data()?.moderationPrincipalID,
       accountB.data()?.moderationPrincipalID);
+    assert.equal(accountA.data()?.accountStatus, "active");
+    assert.equal(accountA.data()?.schemaVersion, 2);
     assert.equal(alias.data()?.moderationPrincipalID,
       accountA.data()?.moderationPrincipalID);
     assert.equal(JSON.stringify(alias.data()).includes(identity.subject), false);

@@ -56,39 +56,15 @@ struct ChatRoomMessageUseCaseTests {
         #expect(repository.calls.first?.room.id == "room-1")
     }
 
-    @Test func deleteMessageUpdatesDeletedLastMessageSummaryWhenMessageHasSeq() async throws {
+    @Test func deleteMessageDelegatesServerAuthoritativeDeletionToManager() async throws {
         let messageManager = ChatMessageDeleteManagerSpy()
-        let summaryUpdater = DeletedLastMessageSummaryUpdaterSpy()
-        let useCase = makeUseCase(
-            messageManager: messageManager,
-            deletedLastMessageSummaryUpdater: summaryUpdater
-        )
+        let useCase = makeUseCase(messageManager: messageManager)
         let room = makeRoom(id: "room-1")
         let message = makeMessage(id: "message-1", roomID: "room-1", seq: 7)
 
         try await useCase.deleteMessage(message: message, room: room)
 
         #expect(messageManager.deletedMessages.map(\.ID) == ["message-1"])
-        #expect(summaryUpdater.calls.count == 1)
-        #expect(summaryUpdater.calls.first?.roomID == "room-1")
-        #expect(summaryUpdater.calls.first?.deletedMessageSeq == 7)
-        #expect(summaryUpdater.calls.first?.deletedPreview == "삭제된 메시지입니다.")
-    }
-
-    @Test func deleteMessageSkipsSummaryUpdateWhenMessageSeqIsMissing() async throws {
-        let messageManager = ChatMessageDeleteManagerSpy()
-        let summaryUpdater = DeletedLastMessageSummaryUpdaterSpy()
-        let useCase = makeUseCase(
-            messageManager: messageManager,
-            deletedLastMessageSummaryUpdater: summaryUpdater
-        )
-        let room = makeRoom(id: "room-1")
-        let message = makeMessage(id: "message-1", roomID: "room-1", seq: 0)
-
-        try await useCase.deleteMessage(message: message, room: room)
-
-        #expect(messageManager.deletedMessages.map(\.ID) == ["message-1"])
-        #expect(summaryUpdater.calls.isEmpty)
     }
 
     @Test func latestWindowAndIncomingReconcileOnlyAfterManagerSucceeds() async throws {
@@ -113,13 +89,11 @@ struct ChatRoomMessageUseCaseTests {
     private func makeUseCase(
         messageManager: ChatMessageManaging = ChatMessageManagerStub(),
         repository: ChatMessageSendingRepositorySpy = ChatMessageSendingRepositorySpy(),
-        deletedLastMessageSummaryUpdater: ChatDeletedLastMessageSummaryUpdating? = nil,
         serverConfirmedMessageReconciler: ChatServerConfirmedMessageReconciling? = nil
     ) -> ChatRoomMessageUseCase {
         ChatRoomMessageUseCase(
             messageManager: messageManager,
             sendingRepository: repository,
-            deletedLastMessageSummaryUpdater: deletedLastMessageSummaryUpdater,
             serverConfirmedMessageReconciler: serverConfirmedMessageReconciler,
             currentUserProvider: {
                 ChatMessageSenderSnapshot(
@@ -335,29 +309,5 @@ private final class ChatMessageDeleteManagerSpy: ChatMessageManaging {
 
     private enum StubError: Error {
         case unimplemented
-    }
-}
-
-private final class DeletedLastMessageSummaryUpdaterSpy: ChatDeletedLastMessageSummaryUpdating {
-    struct Call {
-        let roomID: String
-        let deletedMessageSeq: Int64
-        let deletedPreview: String
-    }
-
-    private(set) var calls: [Call] = []
-
-    func updateDeletedLastMessageSummaryIfCurrent(
-        roomID: String,
-        deletedMessageSeq: Int64,
-        deletedPreview: String
-    ) async throws {
-        calls.append(
-            Call(
-                roomID: roomID,
-                deletedMessageSeq: deletedMessageSeq,
-                deletedPreview: deletedPreview
-            )
-        )
     }
 }

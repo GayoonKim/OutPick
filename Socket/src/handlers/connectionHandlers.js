@@ -7,7 +7,6 @@ export function registerConnectionHandlers({
   rooms,
   clock,
   reconnectPolicy,
-  watchUserAccountStatus,
   watchModerationAccount,
   logger = console
 }) {
@@ -35,31 +34,21 @@ export function registerConnectionHandlers({
 
   socket.emit("room list", Object.keys(rooms));
 
-  const stopAccountStatusWatch = watchUserAccountStatus?.(
-    socket.userUID,
-    (accountStatus) => {
-      logger.warn("[account] inactive socket disconnected", {
-        userUID: socket.userUID,
-        accountStatus: accountStatus || "missing",
-        socketID: socket.id
-      });
-      socket.emit("account:inactive", {
-        accountStatus: accountStatus || "missing"
-      });
-      socket.disconnect(true);
-    },
-    (error) => {
-      logger.error("[account] status watch failed; disconnecting", {
-        userUID: socket.userUID,
-        message: error?.message
-      });
-      socket.disconnect(true);
-    }
-  );
-
   const stopModerationWatch = watchModerationAccount?.(
     socket.userUID,
     (data) => {
+      if (data?.accountStatus !== "active") {
+        logger.warn("[account] inactive socket disconnected", {
+          userUID: socket.userUID,
+          accountStatus: data?.accountStatus || "missing",
+          socketID: socket.id
+        });
+        socket.emit("account:inactive", {
+          accountStatus: data?.accountStatus || "missing"
+        });
+        socket.disconnect(true);
+        return;
+      }
       const nextSession = moderationSession(data);
       const changed = !nextSession ||
         nextSession.moderationStatus !== socket.moderationStatus ||
@@ -91,7 +80,6 @@ export function registerConnectionHandlers({
   });
 
   socket.on("disconnect", () => {
-    stopAccountStatusWatch?.();
     stopModerationWatch?.();
     logger.log("User disconnected:", socket.id);
     for (const roomID in rooms) {

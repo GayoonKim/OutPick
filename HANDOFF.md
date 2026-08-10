@@ -2,6 +2,8 @@
 
 ## 1. 최종 목표
 
+- 현재 핵심 task `chat-ugc-safety-room-moderation`은 Phase 0~3 구현, Phase 1-P/2/3 Production backend rollout, 활성 Rooms query·계정 capability v2·Storage reservation 보정과 실제 앱 이미지/오프라인 종료 안내 QA까지 완료했다. 다음 구현 후보는 미착수 Phase 4 전역 차단이며 설계·구현 승인이 필요하다.
+- Sign in with Apple은 현재 iOS 로그인 진입점이 없어 사용자 결정으로 별도 후속 작업으로 분리했다. Production moderation rollout과 개인정보 보존 gate도 Phase 1 Development 완료와 분리한다.
 - 핵심 task `lookbook-extraction-issue-operations-production-rollout`은 Production 읽기 전용 감사, contract 3 Worker candidate QA·traffic 100% 전환, backend prerequisite/Functions, exact Firestore rules, canonical 앱 E2E, 앱 원문 오류 문구 교정, QA·legacy cleanup까지 완료해 2026-08-06 종료했다.
 - 이전 `lookbook-extraction-issue-operations`도 Phase 1~7 구현, Development contract 3 배포와 AMOMENTO/OUTSTANDING 실데이터 QA 완료로 종료 상태다.
 - 하나의 Xcode 프로젝트와 app target을 유지하면서 Development 앱은 `GayoonKim.OutPick.dev`와 `outpick-test`, Production 앱은 `GayoonKim.OutPick`과 `outpick-664ae`를 사용한다.
@@ -11,6 +13,41 @@
 - 코드·설정·백엔드·배포 계약 기준의 Development/Production 환경 분리는 PR #3 병합, Production Worker traffic 전환과 실제 import smoke까지 완료해 종료 처리했다.
 
 ## 2. 완료한 작업
+
+### Chat UGC Safety Phase 2~3 — Production 보정·실제 앱 QA 완료
+
+- 신고·관리자 처리 Phase 2와 서버 권위 메시지 삭제·방 종료 lifecycle Phase 3을 구현하고 Production Functions·Rules·Indexes·Socket에 반영했다.
+- 폐쇄 방을 제외하는 활성 `Rooms` query를 전체 목록·검색·참여방 ID·이름 중복 확인에 공통 적용하고 필요한 index 3개를 배포했다.
+- 이미지 메시지 403 원인이 Storage Rules의 Firestore 문서 조회 3개로 인한 플랫폼 한도 2개 초과임을 확인했다. `moderationAccounts/{uid}` schema v2에 `accountStatus`를 포함해 Rules·Functions·Socket·Storage capability를 한 문서로 통합하고, 계정 삭제 transaction이 `users` 원본과 projection을 함께 갱신하도록 교정했다.
+- 채팅 media read는 account projection + active room을 확인한다. upload는 Socket capability/room access를 통과해 발급된 짧은 TTL의 서버 전용 pending `MediaUploads/{messageID}` reservation + active room에서 sender·kind·path·expiry가 일치할 때만 허용한다.
+- Production 사용자/projection 2건을 privacy-safe gate로 schema v2 backfill했고 사후 update/missing/unresolved는 0건이다. 원격 index 41개·field override 29개는 로컬과 완전히 일치해 이번 보정에서 index는 배포하지 않았다.
+- 최종 Firestore ruleset은 `943f0af9-d161-4f2c-ac01-cf376a4631b6`, Storage ruleset은 `808a41e6-88f7-459a-b2fe-67fe6d351c04`이며 로컬·운영 source hash가 일치한다. 직전 두 ruleset도 rollback용으로 보존한다.
+- capability 영향 Function 27개는 모두 ACTIVE다. Socket build `0f7842a6-c16a-4ae7-9436-bcc4d5f244a5`, revision `outpick-socket-account-cap-v2-0810`을 readiness·ERROR 0 뒤 traffic 100%로 전환했고 이전 `outpick-socket-moderation-p3-0810`은 0% rollback으로 보존한다.
+- Functions lint/build·185/185, Socket check·70/70, Rules 40/40, transaction 20/20, JSON parse와 Production Rules dry-run을 통과했다. 170명 추가 참여자 방 종료도 Firestore batch 한도 안에서 완료됐다. 기존 Functions non-null assertion warning 9개 외 오류는 없다.
+- PR 전 리뷰에서 대규모 closure notice batch 한도 초과 가능성, invalid roomName 때문에 물리 삭제가 중단될 가능성, exact contract schema 불일치를 발견해 모두 교정했다.
+- 실제 Production 앱에서 이미지 메시지 정상 표시를 확인했다. 참여자 오프라인 중 관리자 종료 후 `“{방 이름}” 채팅방이 종료됐어요`가 정확히 한 번 표시되고, 확인 즉시 notice 삭제·재진입 중복 없음도 확인했다.
+- QA room/job/audit/notice/Storage와 임시 App Check debug token을 정리했다. 최종 Production Cloud Run 최근 1시간 severity ERROR는 0건이다.
+
+### Chat UGC Safety Phase 1 — Development 완료
+
+- versioned HMAC alias, canonical moderation principal, current UID capability projection과 active/restricted/suspended 판정을 Functions·Rules·Storage·Socket·iOS bootstrap에 연결했다.
+- Functions 154/154, Socket 69/69, Firestore·Storage Rules 35/35, transaction 11/11, iOS bootstrap targeted 6개와 Development generic Simulator build를 통과했다.
+- Development Google 실제 제한 → 탈퇴 finalizer → 재가입에서 기존 restricted principal과 제한 안내 root 복원을 확인했다. 재가입 missing users 문서 read 경계도 Rules 보완·Emulator·Development 재배포 후 통과했다.
+- Development Kakao 실제 로그인 → 제한 → 앱 재인증 삭제 예약 → 사용자 승인 단일 요청 즉시 finalizer → 동일 Kakao 재연결에서 HMAC alias 1개와 기존 restricted principal·stateVersion 2 복원을 확인했다. finalizer는 1회 completed·오류 0이며 Auth/users/moderationAccounts 삭제와 alias/principal 보존, 보존 원장의 민감 원문 필드 0개를 확인했다.
+- 제한 안내 root를 경고성 패션 매거진 스타일로 교정하고 사용자 피드백에 따라 좌상단 원형 느낌표를 제거했다. `supportURL`이 없을 때 고객지원 문구/CTA를 함께 숨기고 계정 삭제·로그아웃은 유지한다.
+- Apple 실제 QA는 현재 로그인 UI·Repository·재인증 진입점이 없어 별도 `sign-in-with-apple-account-lifecycle` 후속 작업으로 분리했다. Phase 1은 현재 지원 provider인 Google·Kakao 기준으로 완료 처리했다.
+- Phase 1-P는 Kakao UID 숫자 후보를 Admin API `/v2/user/me` 응답 ID와 대조하는 helper, privacy-safe 건수 summary, Production exact 확인 문자열·expected total/Google/Kakao·unresolved 0 apply gate를 구현했다. persistent custom claims는 추가하지 않는다. 신규 10개를 포함한 Functions 164/164와 lint/build가 통과했으며 Production 환경은 변경하지 않았다.
+- Production Auth dry-run은 total 2/resolved 2/unresolved 0, Google 1/Kakao 1/Apple 0으로 기대값과 일치했다. `--apply` 없이 종료했으며 Secret·Auth·Firestore·Functions·Rules·Storage·Socket 변경은 없었다.
+- 사용자 별도 승인으로 Production `MODERATION_PRINCIPAL_HMAC_KEY_V1`을 256-bit 난수로 생성했다. 원문은 출력·로컬 저장하지 않았고 version 1 enabled를 metadata로 확인했다.
+- Production `getMyModerationState` exact target만 배포했다. Node.js 24 Gen 2 ACTIVE, Secret version 1 binding과 해당 compute service account accessor를 확인했다. 무인증·App Check 없는 요청은 401로 거부됐고 배포 후 service ERROR는 0건이며, 인증 callable 호출은 아직 수행하지 않았다.
+- Production backfill apply 직전 dry-run은 total 2/Google 1/Kakao 1/unresolved 0으로 재확인했고 exact gate로 2명을 처리했다. account/principal/alias는 각각 2개, Google/Kakao alias 각 1개, 모두 active이고 참조 무결성 정상, 금지 필드·Auth 민감 원문 값 0개다.
+- Production capability 영향 callable 14개와 `finalizeExpiredAccountDeletions`를 exact target으로 배포했다. 15/15 Node.js 24 Gen 2 ACTIVE, 배포 후 ERROR 0, finalizer scheduler ENABLED이고 배포 전 source generation 15개가 모두 보존돼 있다. exact generation은 task `progress.md`에 기록했다.
+- Production Firestore Rules는 배포 직전 Emulator Rules 35/35·transaction 11/11을 통과했다. 새 ruleset `82942b4b-d110-4ab0-8f09-ab0b4e5aad62`의 source hash는 로컬과 일치하고 이전 `bce94c07-bb86-4f9c-a74e-e14dc954085c`도 보존돼 있다.
+- Production Storage Rules 새 ruleset `599b1ae1-21b0-4be1-a2f6-aa576369221a`의 source hash는 로컬과 일치하고 이전 `e0e75181-a23b-4dcf-a13c-df95bb9a70c6`도 보존돼 있다.
+- Socket preflight `check`·69/69 통과 후 Cloud Build `2719bc50-1c06-45d6-923a-1549ad2d7ffe` image로 `outpick-socket-moderation-p1p` 0% tagged candidate를 배포했다. Ready/readiness 200/ERROR 0이고 live `outpick-socket-00008-4wl`은 100%다.
+- Candidate `npm audit`에서 `socket.io-parser 4.2.6`의 비인증 원격 메모리 고갈 high GHSA-2m8v-j782-fhvr가 확인됐다. 패치 4.2.7은 현재 Socket.IO 허용 범위 안이므로 lockfile patch·69/69·audit·새 0% candidate 전 traffic 전환을 금지한다. moderate 8의 firebase-admin 전이 경로는 npm이 major downgrade만 제시해 별도 분석이 필요하다.
+- 사용자 승인으로 `Socket/package-lock.json`의 parser만 4.2.7로 올렸다. `npm ci`, check·69/69, 설치 버전 4.2.7, production audit high 0/critical 0/moderate 8을 확인했다. 기존 4.2.6 candidate는 traffic 금지다.
+- 패치 Cloud Build `3c6db117-22f6-46a9-93fb-112f6a0f64ae`, digest `sha256:a7c0a095c64adf0b83459f16a0caf3f68378ce3fffdaea0e919555a1da3b7dc5`로 `outpick-socket-moderation-p1p-r2` 0% candidate를 배포했다. Ready/readiness 200/ERROR 0이고 live `00008-4wl`은 100%다. 인증 handshake와 traffic 전환은 미수행이다.
 
 ### Production Worker contract 3 no-traffic candidate QA 완료
 
@@ -204,7 +241,7 @@
 
 ## 3. 완료 범위 밖 후속 후보와 현재 설계 task
 
-- 최우선: Production Worker `00026-qes` traffic 100% 전환을 완료했다. 다음은 backend prerequisite/Functions exact mutation 승인을 받은 뒤 durable discovery/issue operations를 활성화하는 것이다.
+- 최우선: `chat-ugc-safety-room-moderation` Phase 3 Production rollout과 실제 앱 QA를 완료했다. 다음은 Phase 4 전역 차단 설계의 남은 쟁점과 구현 승인 범위를 사용자와 논의하는 것이다.
 
 1. Development 실기기 App Attest는 Apple Developer Program 가입 후 외부 의존 후속 작업으로 재개한다.
 2. Production Google 실제 로그인과 provider별 계정 삭제 요청·취소 재인증 smoke는 출시 전 QA로 남는다.
@@ -226,8 +263,34 @@
 18. Phase 4B 방향은 `실패 자동 기록 → Codex 내부 운영 API/CLI 조회·분류 → 사용자 보강 승인 → 기존 코드·fixture·Development·PR·Production 하네스 → revision 검증 → 다시 가져오기 활성화`로 확정했다. 완전 자동 code-generation·PR·Production rollout은 제외하며 기존 실패 job도 자동 재실행하지 않는다.
 19. 현재 1인 운영 범위는 cluster 실패 목록 요약과 선택 issue 처리뿐이다. 상태는 `open/inProgress/needsGroundTruth/fixed/verified/wontFix`로 제한하고 담당자·연차별 할당, Jira, 댓글·멘션, SLA, 칸반 보드와 전역 issue UI는 제외한다. Codex는 여러 fingerprint의 상세를 bounded batch로 비교할 수 있다.
 20. 2026-08-05 `lookbook-extraction-issue-operations` 상세 하네스를 작성했다. IAM private read/write/release API, 공통 fingerprint, runtime registry와 Worker `/runtime-contract`, Production 100% traffic·실제 URL smoke verifier, job retry projection을 확정했다. occurrence evidence는 7일, cluster 대표 evidence 한 개는 미해결 동안 유지하고 `verified/wontFix` 뒤 60일 보존한다. `fixed`는 Production 검증, `verified`는 새 revision 실제 재시도 성공이며 재발 시 자동 reopen한다. 앱이 배포된 적 없으므로 레거시 개선 요청 호환 계층은 만들지 않는다. 공식 문서 점검 결과를 반영해 Production identity는 환경별 전용 operator service account impersonation으로 확정했다.
+21. 착수 대기 핵심 작업 `chat-ugc-safety-room-moderation`을 등록했다. 메시지 서버 삭제, 신고·차단·규칙 기반 필터링, 방 생성자의 사용자 내보내기·재입장 금지와 총관리자 제재 결정을 `docs/ai/tasks/chat-ugc-safety-room-moderation/decisions.md`에 기록했다. 계획·구현은 미승인이다.
+22. 착수 대기 핵심 작업 `admin-web-operations-migration`을 등록했다. 브랜드 요청 수요, 권리 확인 뒤 등록, 브랜드·시즌·이미지·스타일·신고 운영의 총관리자 웹 이전 범위를 `docs/ai/tasks/admin-web-operations-migration/decisions.md`에 기록했다. 웹 기술 스택·계획·구현은 미확정 또는 미승인이다.
+23. 착수 대기 핵심 작업 `ios-admin-console-removal`을 등록했다. 관리자 웹 필수 기능 동등성 검증 뒤 Development/Production과 Debug/Release 모든 구성에서 iOS 관리자 콘솔을 제거하는 결정을 `docs/ai/tasks/ios-admin-console-removal/decisions.md`에 기록했다. 계획·구현은 미승인이다.
+24. 착수 대기 핵심 작업 `chat-room-moderator-delegation`을 별도로 등록했다. 최초 방 관리자는 방 생성자로 유지하고, 다른 참여자의 관리자 임명·회수는 `chat-ugc-safety-room-moderation`이 마련할 공통 room moderation authorization 경계를 확장하는 후속 작업으로 기록했다. 임명 수·세부 권한·소유권 이전 등은 미확정이며 계획·구현도 미승인이다.
+25. `sign-in-with-apple-account-lifecycle`을 후속 작업으로 기록했다. Apple/Firebase 콘솔, 로그인 UI, Repository/UseCase/DI, 계정 삭제 재인증과 동일 Apple provider 재가입 principal 복원이 범위 후보이며 요구사항·계획·구현은 미승인이다.
+26. Production Kakao Auth migration은 persistent custom claims 대신 UID 숫자 후보를 Kakao Admin API로 재검증하는 방식으로 보완했다. Production dry-run과 backfill에서 Kakao 1명이 unresolved 없이 처리됐고, 신규 로그인 bootstrap과 Development 실제 탈퇴·재가입 복원도 통과했다.
+27. Production 앱은 현재 개발자·내부 QA 전용이다. 고객지원 URL/이메일은 아직 없으므로 `customer-support-https-page` 후속 작업으로 분리했다. `supportURL: null`은 내부 smoke에만 허용하고 restricted/suspended 실제 운영, App Store 제출·외부 TestFlight·일반 사용자 배포는 HTTPS 지원 페이지 연결 전까지 금지한다.
+28. 사용자는 Phase 1-P에서 내부 계정의 active HMAC principal/alias 생성과 active smoke만 수행하고 restricted/suspended·Production 탈퇴/재가입은 하지 않는 임시 정책을 승인했다. 계정 삭제 후 HMAC 보존 기간·법적 근거·고지는 외부 공개 전에 별도 확정한다.
+29. 사용자는 기존 Production Kakao 계정을 persistent custom claims로 보강하지 않고, UID 후보를 Kakao Admin API로 재검증해 메모리에서만 HMAC binding하는 migration 방식을 승인했다. Production apply는 예상 total/provider 건수와 확인 문자열을 요구하고 unresolved 시 전체 중단한다.
 
 ## 4. 수정한 파일 목록
+
+- Chat UGC Safety Phase 2~3와 account capability v2 핵심 변경:
+  - iOS Chat repository/use case/view model/controller, closure notice·visible room banner 회귀 테스트
+  - `functions/src/{moderation,chat,accountDeletion,shared}/`, `functions/scripts/{backfill-account-capabilities,audit-firebase-rules,audit-firestore-indexes}.mjs`
+  - `Socket/src/{auth,handlers,rooms,users}/`와 대응 테스트
+  - `firestore.rules`, `storage.rules`, `firestore.indexes.json`, `firestore-tests/`
+  - `contracts/chat-moderation-v1.json`
+  - `docs/ai/{ENTRYPOINTS,DATA_SCHEMA}.md`, `docs/ai/entrypoints/{CHAT,FIREBASE,TESTS}.md`, task 하네스와 `HANDOFF.md`
+- 이 task의 구현·테스트·문서 변경은 backend/iOS/tests/docs 단위 커밋으로 정리해 `codex/chat-ugc-safety-phase-2-3` 브랜치에 push했다. 기존 `docs/portfolio/` 미추적 항목은 작업 범위에서 제외했다.
+
+- 착수 대기 핵심 작업 기록:
+  - `docs/ai/tasks/chat-ugc-safety-room-moderation/decisions.md`
+  - `docs/ai/tasks/chat-room-moderator-delegation/decisions.md`
+  - `docs/ai/tasks/admin-web-operations-migration/decisions.md`
+  - `docs/ai/tasks/ios-admin-console-removal/decisions.md`
+  - `docs/ai/tasks/active.md`
+  - `HANDOFF.md`
 
 - 이번 task 전환:
   - `docs/ai/tasks/lookbook-extraction-issue-operations/{plan,progress,qa-checklist}.md`
@@ -291,6 +354,14 @@
   - `docs/ai/{ENTRYPOINTS.md,DATA_SCHEMA.md}`, 관련 Firebase/Lookbook/Test/Worker 진입점 문서와 task 하네스
 
 ## 5. 중요한 아키텍처 결정
+
+### 계정 capability 단일 projection과 Storage reservation
+
+- 선택: `users.accountStatus`는 계정 데이터 원본으로 유지하되 권한 판정은 `moderationAccounts` schema v2의 `accountStatus + moderationStatus` 한 문서에서 수행한다. media read는 projection + room, upload는 Socket capability로 발급한 서버 reservation + room 계약으로 제한한다.
+- 이유: 정상 가입과 제재 여부는 하나의 capability 판단이며, Storage Rules가 허용하는 Firestore 문서 조회 2개 안에서 안전하게 room까지 검증해야 한다.
+- 트레이드오프: 계정 상태를 projection에 중복 저장하므로 계정 삭제 요청·취소와 bootstrap transaction의 동기화 책임이 생긴다. 대신 모든 runtime의 판정이 단순해지고 3문서 조회 403을 제거한다.
+- 보류한 대안: Storage Rules를 완화하거나 room 검증을 제거하는 방식은 권한 우회를 만들며, 사용자 문서와 moderation projection을 계속 따로 읽는 방식은 조회 한도를 초과하므로 사용하지 않는다.
+- 재검토 조건: capability 필드가 더 늘어 projection 크기·동기화 오류가 관측되거나 Storage Rules 조회 한도/구조가 바뀔 때 versioned projection을 다시 설계한다.
 
 ### Development 구현 종료와 Production rollout 분리
 
@@ -382,21 +453,29 @@
 
 ## 6. 다시 확인해야 할 불확실한 부분
 
+- account capability v2와 실제 이미지/오프라인 관리자 종료 안내는 Production에서 확인 완료했다. 외부 TestFlight/App Store artifact 업로드는 수행하지 않았으며 고객지원 URL·정책 gate 전에는 일반 사용자 외부 배포가 금지된 기존 결정이 유지된다.
+
 - AMOMENTO 실페이지 ground truth 15개와 Development contract 2 실제 재시도 성공은 확인 완료했다. 이후 사이트 목록이 바뀌면 새 ground truth 판단이 필요할 수 있다.
 - Phase 7 AMOMENTO 15개 실페이지의 contract 3 결과, 실제 첫 이미지 일치, 앱 표시와 queue/ERROR를 검증했다. OUTSTANDING 목록 cover 재탐색도 44개 snapshot 완전 일치와 실제 이미지 HTTP 성공으로 검증 완료했다.
 - Production Worker `00024-fow`는 durable discovery 도입 전 레거시 runtime으로 확인됐고 현재 traffic 0% rollback으로 보존한다. live `00026-qes`와 Functions는 contract 3이며 operator/index/TTL/discovery queue/Function/rules와 canonical 앱 표시 E2E를 완료했다.
 
 - Firebase/Google/Kakao Development 앱과 callback 등록은 완료했다.
 - Development 실기기 App Attest의 Apple App ID·entitlement·Firebase provider 등록은 Apple Developer Program 가입 후 재확인한다.
+- Sign in with Apple의 실제 제품 범위, Apple/Firebase 콘솔 상태, 로그인·재인증 UX와 App Review 요구사항은 후속 작업 착수 시 공식 문서 기준으로 재확인한다.
+- HTTPS 고객지원 페이지의 문의 채널, 호스팅, 개인정보 처리방침 URL과 moderation `supportURL`은 `customer-support-https-page` 착수 시 재확인한다.
+- 현재 로그인한 Kakao Developers 계정에서는 Production 앱만 확인됐다. Development Kakao 앱의 콘솔 소유 계정·팀은 재확인 필요하지만, 구성된 Development 키의 실제 연결 해제·재연결에서 동일 principal 복원은 확인했다.
 - `outpick-test` Functions 74개와 scheduled trigger의 감사·승인·배포, 실제 import/materialization smoke와 smoke 데이터 정리를 완료했다.
 - Production Worker `lookbook-import-worker-00026-qes` traffic 100%, rollback `00024-fow`, 전환 후 ERROR·queue pending 0건을 확인했다.
 - Phase 4B의 API/data/security/보존/revision verifier 계약, Phase 1~6 Development 검증과 Production backend IAM/Functions/index/TTL/queue 적용, 실제 Production smoke와 승인된 cleanup을 완료했다.
 
 ## 7. 다음 턴에서 바로 실행해야 할 작업
 
-1. 이 핵심 task에는 남은 필수 작업이 없다. 다음 제품 task를 별도로 선택한다.
-2. 실제 `seasonImageImport` 결함이 발생할 때만 이벤트 기반 `fixed → retry success → verified` 운영 게이트를 실행한다.
-3. 화면 조작·시각 QA는 사용자가 재현 가능한 시나리오의 체크리스트로 수행하고, Codex는 코드·자동 테스트·빌드·backend/log 검증을 담당한다.
+1. `chat-ugc-safety-room-moderation` Phase 3 Production backend와 실제 앱 QA는 완료됐다. 다음은 Phase 4 전역 차단의 제품 흐름·데이터/API·Socket/push/cache 범위와 구현 승인 범위를 논의한다. 승인 전 코드는 수정하지 않는다.
+2. Apple 로그인을 선택하면 `sign-in-with-apple-account-lifecycle`의 정책·콘솔·사용자 흐름·아키텍처 설계 하네스부터 진행하며 바로 구현하지 않는다.
+3. Production HMAC Secret·backfill·영향 Functions·Firestore·Storage Rules·최소 권한 Socket traffic 100% 전환과 앱 active smoke까지 완료했다. 제한·정지·계정 삭제 Production QA는 `supportURL`과 출시 gate가 준비되기 전까지 수행하지 않는다.
+4. `supportURL: null` Production은 내부 active-account smoke만 수행하고 restricted/suspended 상태 적용이나 외부 배포를 하지 않는다.
+5. 실제 `seasonImageImport` 결함이 발생할 때만 이벤트 기반 `fixed → retry success → verified` 운영 게이트를 실행한다.
+6. 화면 조작·시각 QA는 사용자가 재현 가능한 시나리오의 체크리스트로 수행하고, Codex는 코드·자동 테스트·빌드·backend/log 검증을 담당한다.
 
 Phase 3 완료 메모: private read/write Functions, strict allowlist API, CAS/idempotent audit와 job projection, 고정 환경 CLI를 구현했다. Development operator IAM, Firestore projection index/audit TTL과 두 Function을 배포했으며 Functions 134/134, CLI 7/7과 lint/build를 통과했다. 실제 Development endpoint는 무인증 403, operator read 성공, 데이터 변경 없는 write 404 smoke를 통과했다. 목록에서 `brandID` filter 및 최근 브랜드/job 사례는 제거했고 정확한 영향 job은 fingerprint projection으로 조회한다. Production IAM·index·Function은 변경하지 않았다. 운영 절차는 `docs/ai/runbooks/LOOKBOOK_EXTRACTION_ISSUE_OPERATIONS.md`를 따른다.
 

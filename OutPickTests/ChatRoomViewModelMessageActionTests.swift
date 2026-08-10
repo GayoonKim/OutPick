@@ -586,9 +586,9 @@ private struct ChatRoomRuntimeUseCaseStub: ChatRoomRuntimeUseCaseProtocol {
         ChatRoomRuntimeSubscription()
     }
 
-    func enterVisibleRoom(roomID: String) async {}
+    func enterVisibleRoom(roomID: String) {}
 
-    func leaveVisibleRoom() async {}
+    func leaveVisibleRoom(roomID: String) {}
 
     func cleanTransientLocalRoomData(roomID: String) async {}
 }

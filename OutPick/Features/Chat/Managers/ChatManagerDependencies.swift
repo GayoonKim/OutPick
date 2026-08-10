@@ -22,6 +22,8 @@ struct ChatManagerProvider {
         roomImageManager: RoomImageManaging? = nil,
         searchManager: ChatSearchManaging? = nil,
         profileSyncManager: ChatProfileSyncManaging? = nil,
+        moderationLifecycleRepository: ChatModerationLifecycleRepositoryProtocol =
+            CloudFunctionsChatModerationLifecycleRepository(),
         networkStatusProvider: NetworkStatusProviding = NWPathNetworkStatusProvider()
     ) {
         let resolvedNetworkStatusProvider = networkStatusProvider
@@ -33,7 +35,7 @@ struct ChatManagerProvider {
 
         self.messageManager = messageManager ?? ChatMessageManager(
             messageRepository: repositories.messageRepository,
-            imageStorageRepository: repositories.imageStorageRepository,
+            moderationLifecycleRepository: moderationLifecycleRepository,
             messagePersistence: persistence.messageStore,
             profileCache: persistence.profileStore
         )

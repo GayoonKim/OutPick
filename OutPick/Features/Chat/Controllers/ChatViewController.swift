@@ -376,17 +376,13 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         guard isParticipantPreviewMode == false else { return }
-        Task { @MainActor [chatRoomViewModel] in
-            await chatRoomViewModel.handleRoomWillAppear()
-        }
+        chatRoomViewModel.handleRoomWillAppear()
     }
     
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         if isParticipantPreviewMode == false {
-            Task { @MainActor [chatRoomViewModel] in
-                await chatRoomViewModel.handleRoomWillDisappear()
-            }
+            chatRoomViewModel.handleRoomWillDisappear()
         }
         flushLastReadSeq(trigger: "viewWillDisappear")
         routeLifecycleState.willDisappear(

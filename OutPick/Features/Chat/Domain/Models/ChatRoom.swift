@@ -34,6 +34,9 @@ struct ChatRoom {
     /// 방이 종료된 상태인지 나타냅니다.
     var isClosed: Bool = false
 
+    /// 서버 room lifecycle의 낙관적 잠금 버전입니다.
+    var lifecycleVersion: Int = 1
+
     var activeAnnouncementID: String?
     var activeAnnouncement: AnnouncementPayload?
     var announcementUpdatedAt: Date?
