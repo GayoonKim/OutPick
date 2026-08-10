@@ -70,6 +70,17 @@ struct BannerPresentationQueueStateTests {
 }
 
 struct BannerSubscriptionRetryPolicyTests {
+    @Test @MainActor func staleRoomLeaveDoesNotClearCurrentVisibleRoom() {
+        let manager = BannerManager()
+
+        manager.setVisibleRoom("room-new")
+        manager.clearVisibleRoom(ifMatching: "room-old")
+
+        #expect(manager.isVisibleRoom("room-new"))
+        manager.clearVisibleRoom(ifMatching: "room-new")
+        #expect(!manager.isVisibleRoom("room-new"))
+    }
+
     @Test func exponentialDelayIsCapped() {
         let policy = BannerSubscriptionRetryPolicy(baseDelay: 0.5, maxDelay: 8)
 

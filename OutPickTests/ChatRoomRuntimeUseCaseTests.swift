@@ -70,7 +70,7 @@ struct ChatRoomRuntimeUseCaseTests {
         #expect(cleaner.cleanedRoomIDs == ["room-1"])
     }
 
-    @Test func visibleRoomLifecycleDelegatesToRuntimeManager() async {
+    @Test func visibleRoomLifecycleDelegatesToRuntimeManager() {
         let repository = ChatRoomRuntimeRepositorySpy()
         let visibilityRuntimeManager = ChatRoomVisibilityRuntimeManagerSpy()
         let cleaner = ChatRoomTransientLocalDataCleanerSpy()
@@ -80,11 +80,11 @@ struct ChatRoomRuntimeUseCaseTests {
             transientLocalDataCleaner: cleaner
         )
 
-        await useCase.enterVisibleRoom(roomID: "room-1")
-        await useCase.leaveVisibleRoom()
+        useCase.enterVisibleRoom(roomID: "room-1")
+        useCase.leaveVisibleRoom(roomID: "room-1")
 
         #expect(visibilityRuntimeManager.enteredRoomIDs == ["room-1"])
-        #expect(visibilityRuntimeManager.leaveCallCount == 1)
+        #expect(visibilityRuntimeManager.leftRoomIDs == ["room-1"])
     }
 }
 
@@ -123,14 +123,14 @@ private final class ChatRoomTransientLocalDataCleanerSpy: ChatRoomTransientLocal
 @MainActor
 private final class ChatRoomVisibilityRuntimeManagerSpy: ChatRoomVisibilityRuntimeManaging {
     private(set) var enteredRoomIDs: [String] = []
-    private(set) var leaveCallCount = 0
+    private(set) var leftRoomIDs: [String] = []
 
-    func enterVisibleRoom(roomID: String) async {
+    func enterVisibleRoom(roomID: String) {
         enteredRoomIDs.append(roomID)
     }
 
-    func leaveVisibleRoom() async {
-        leaveCallCount += 1
+    func leaveVisibleRoom(roomID: String) {
+        leftRoomIDs.append(roomID)
     }
 }
 
