@@ -4,7 +4,9 @@ import {HttpsError} from "firebase-functions/v2/https";
 import {db} from "../core/firebase.js";
 import {
   MODERATION_HMAC_KEY_VERSION,
+  MODERATION_ACCOUNT_SCHEMA_VERSION,
   MODERATION_SCHEMA_VERSION,
+  AccountStatus,
   ModerationHmacKey,
   ModerationState,
   ModerationStatus,
@@ -22,6 +24,11 @@ function storedStatus(value: unknown): ModerationStatus {
     return value;
   }
   throw new HttpsError("failed-precondition", "제재 상태 문서가 올바르지 않습니다.");
+}
+
+function accountStatus(value: unknown): AccountStatus {
+  if (value === "active" || value === "deletionPending") return value;
+  throw new HttpsError("failed-precondition", "계정 상태 문서가 올바르지 않습니다.");
 }
 
 export function effectiveModerationState(
@@ -62,6 +69,7 @@ export async function bindModerationPrincipal(
     moderationAliasID(identity, key.secret, key.version)
   );
   const accountRef = database.collection("moderationAccounts").doc(uid);
+  const userRef = database.collection("users").doc(uid);
   const aliasRefs = aliasIDs.map((aliasID) =>
     database.collection("moderationPrincipalAliases").doc(aliasID)
   );
@@ -70,10 +78,13 @@ export async function bindModerationPrincipal(
   const nowTimestamp = Timestamp.fromDate(now);
 
   return database.runTransaction(async (transaction) => {
-    const [accountSnapshot, ...aliasSnapshots] = await transaction.getAll(
+    const [accountSnapshot, userSnapshot, ...aliasSnapshots] = await transaction.getAll(
       accountRef,
+      userRef,
       ...aliasRefs,
     );
+    const projectedAccountStatus = userSnapshot.exists ?
+      accountStatus(userSnapshot.get("accountStatus")) : "active";
     const accountPrincipalID = accountSnapshot.exists ?
       accountSnapshot.get("moderationPrincipalID") : null;
     const aliasPrincipalIDs = aliasSnapshots
@@ -133,7 +144,8 @@ export async function bindModerationPrincipal(
       expiresAt: null,
     });
     transaction.set(accountRef, {
-      schemaVersion: MODERATION_SCHEMA_VERSION,
+      schemaVersion: MODERATION_ACCOUNT_SCHEMA_VERSION,
+      accountStatus: projectedAccountStatus,
       moderationPrincipalID: principalID,
       moderationStatus: normalizedState.moderationStatus,
       restrictedUntil: normalizedState.restrictedUntil ?

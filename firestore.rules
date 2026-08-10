@@ -45,15 +45,15 @@ service cloud.firestore {
 
     function isAccountActive() {
       return signedIn()
-        && exists(userPath(request.auth.uid))
-        && get(userPath(request.auth.uid)).data.accountStatus == "active"
+        && hasModerationProjection()
+        && get(moderationAccountPath(request.auth.uid)).data.accountStatus == "active"
         && canCreateUGC();
     }
 
     function isReadableAccount() {
       return signedIn()
-        && exists(userPath(request.auth.uid))
-        && get(userPath(request.auth.uid)).data.accountStatus == "active"
+        && hasModerationProjection()
+        && get(moderationAccountPath(request.auth.uid)).data.accountStatus == "active"
         && canReadAppContent();
     }
 
@@ -101,9 +101,19 @@ service cloud.firestore {
       return /databases/$(database)/documents/Rooms/$(roomID)/members/$(uid);
     }
 
+    function roomDataIsActive(data) {
+      return data.isClosed != true
+        && (!("lifecycleStatus" in data) || data.lifecycleStatus == "active");
+    }
+
+    function roomIsActive(roomID) {
+      return exists(roomPath(roomID))
+        && roomDataIsActive(get(roomPath(roomID)).data);
+    }
+
     function isRoomParticipant(roomID) {
       return signedIn()
-        && exists(roomPath(roomID))
+        && roomIsActive(roomID)
         && exists(roomMemberPath(roomID, request.auth.uid));
     }
 
@@ -128,6 +138,7 @@ service cloud.firestore {
           "updatedAt"
         ])
         && existsAfter(roomPath(roomID))
+        && roomDataIsActive(getAfter(roomPath(roomID)).data)
         && (
           (
             getAfter(roomPath(roomID)).data.creatorUID == uid
@@ -220,6 +231,22 @@ service cloud.firestore {
     }
 
     match /moderationRoomReports/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /moderationReportRateLimitBuckets/{bucketID} {
+      allow read, write: if false;
+    }
+
+    match /moderationAdminRateLimitBuckets/{bucketID} {
+      allow read, write: if false;
+    }
+
+    match /chatMessageCleanupJobs/{jobID} {
+      allow read, write: if false;
+    }
+
+    match /moderationRoomCleanupJobs/{jobID} {
       allow read, write: if false;
     }
 
@@ -363,6 +390,12 @@ service cloud.firestore {
         allow create, update, delete: if false;
       }
 
+      match /roomClosureNotices/{roomID} {
+        allow read: if signedIn() && request.auth.uid == userID;
+        allow delete: if signedIn() && request.auth.uid == userID;
+        allow create, update: if false;
+      }
+
       match /joinedRooms/{roomID} {
         allow read: if isReadableAccount() && request.auth.uid == userID;
         allow create: if validJoinedRoomCreate(userID, roomID);
@@ -405,11 +438,14 @@ service cloud.firestore {
     }
 
     match /Rooms/{roomID} {
-      allow read: if isReadableAccount();
+      allow read: if isReadableAccount() && roomDataIsActive(resource.data);
       allow create: if isAccountActive()
         && request.resource.data.creatorUID == request.auth.uid
         && !request.resource.data.keys().hasAny(["participantUIDs"])
         && roomCreateHasNoDocumentIDFields()
+        && roomDataIsActive(request.resource.data)
+        && (!("lifecycleVersion" in request.resource.data)
+          || request.resource.data.lifecycleVersion == 1)
         && request.resource.data.keys().hasAll([
           "creatorUID",
           "memberCount",
@@ -426,7 +462,14 @@ service cloud.firestore {
               "seq",
               "lastMessage",
               "lastMessageAt",
-              "lastMessageSeq"
+              "lastMessageSeq",
+              "isClosed",
+              "lifecycleStatus",
+              "lifecycleVersion",
+              "closedAt",
+              "closureNoticeCode",
+              "moderationClosedAt",
+              "moderationClosureNoticeCode"
             ])
           )
           || validRoomMemberCountUpdate(roomID)
@@ -434,13 +477,13 @@ service cloud.firestore {
       allow delete: if false;
 
       match /Messages/{messageID} {
-        allow read: if isReadableAccount();
-        allow write: if isAccountActive() && isRoomParticipant(roomID);
+        allow read: if isReadableAccount() && roomIsActive(roomID);
+        allow create, update, delete: if false;
       }
 
       match /mediaIndex/{mediaID} {
-        allow read: if isReadableAccount();
-        allow write: if isAccountActive() && isRoomParticipant(roomID);
+        allow read: if isReadableAccount() && roomIsActive(roomID);
+        allow create, update, delete: if false;
       }
 
       match /members/{uid} {
@@ -454,7 +497,7 @@ service cloud.firestore {
 
       match /{document=**} {
         allow read: if isRoomParticipant(roomID);
-        allow write: if isAccountActive() && isRoomParticipant(roomID);
+        allow write: if false;
       }
     }
 

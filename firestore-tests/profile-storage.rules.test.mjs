@@ -51,10 +51,10 @@ beforeEach(async () => {
         accountStatus: "active",
       }),
       setDoc(doc(context.firestore(), "moderationAccounts", ownerUID), {
-        moderationStatus: "active", stateVersion: 1,
+        accountStatus: "active", moderationStatus: "active", stateVersion: 1,
       }),
       setDoc(doc(context.firestore(), "moderationAccounts", otherUID), {
-        moderationStatus: "active", stateVersion: 1,
+        accountStatus: "active", moderationStatus: "active", stateVersion: 1,
       }),
     ]);
   });
@@ -93,7 +93,7 @@ describe("profile storage boundary", () => {
     await assertSucceeds(uploadAvatar(reference));
 
     await testEnvironment.withSecurityRulesDisabled(async (context) => {
-      await updateDoc(doc(context.firestore(), "users", ownerUID), {
+      await updateDoc(doc(context.firestore(), "moderationAccounts", ownerUID), {
         accountStatus: "deletionPending",
       });
     });
@@ -122,7 +122,7 @@ describe("profile storage boundary", () => {
     const reference = avatarReference(owner);
     await assertSucceeds(uploadAvatar(reference));
     await testEnvironment.withSecurityRulesDisabled(async (context) => {
-      await updateDoc(doc(context.firestore(), "users", ownerUID), {
+      await updateDoc(doc(context.firestore(), "moderationAccounts", ownerUID), {
         accountStatus: "deletionPending",
       });
     });

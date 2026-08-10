@@ -62,6 +62,7 @@ beforeEach(async () => {
       }),
       ...[totalAdminUID, brandManagerUID, inactiveAdminUID, otherUID].map(
         (uid) => setDoc(doc(firestore, "moderationAccounts", uid), {
+          accountStatus: uid === inactiveAdminUID ? "deletionPending" : "active",
           moderationStatus: "active", stateVersion: 1,
         }),
       ),

@@ -16,9 +16,12 @@
     "mediaReservation": "Rooms/{roomID}/MediaUploads/{uploadID}",
     "userReport": "moderationUserReports/{targetModerationPrincipalID}",
     "roomReport": "moderationRoomReports/{roomID}",
+    "reportRateLimit": "moderationReportRateLimitBuckets/{bucketID}",
+    "adminRateLimit": "moderationAdminRateLimitBuckets/{bucketID}",
     "audit": "moderationAuditLogs/{actionID}",
     "messageCleanupJob": "chatMessageCleanupJobs/{jobID}",
-    "roomCleanupJob": "moderationRoomCleanupJobs/{roomID}"
+    "roomCleanupJob": "moderationRoomCleanupJobs/{roomID}",
+    "roomClosureNotice": "users/{uid}/roomClosureNotices/{roomID}"
   },
   "identifiers": {
     "moderationPrincipalID": {
@@ -69,6 +72,11 @@
     ],
     "roomLifecycleStatus": [
       "active",
+      "closedByOwner",
+      "closedByModeration"
+    ],
+    "roomClosureType": [
+      "closedByOwner",
       "closedByModeration"
     ],
     "mediaKind": [
@@ -195,7 +203,8 @@
       "clientRead": false,
       "clientWrite": false,
       "requiredFields": {
-        "schemaVersion": "integer:1",
+        "schemaVersion": "integer:2",
+        "accountStatus": "active|deletionPending",
         "moderationPrincipalID": "document ID",
         "moderationStatus": "moderationStatus",
         "restrictedUntil": "timestamp|null",
@@ -293,6 +302,43 @@
       "clientWrite": false,
       "sameShapeAs": "moderationUserReports/{target}/reporters/{reporterModerationPrincipalID}"
     },
+    "moderationReportRateLimitBuckets/{bucketID}": {
+      "clientRead": false,
+      "clientWrite": false,
+      "requiredFields": {
+        "schemaVersion": "integer:1",
+        "reporterModerationPrincipalID": "document ID",
+        "minuteBucket": "non-negative integer",
+        "acceptedCount": "1...10",
+        "updatedAt": "timestamp",
+        "expiresAt": "timestamp"
+      },
+      "forbiddenFields": [
+        "detail",
+        "textSnapshot",
+        "providerSubject",
+        "email"
+      ]
+    },
+    "moderationAdminRateLimitBuckets/{bucketID}": {
+      "clientRead": false,
+      "clientWrite": false,
+      "requiredFields": {
+        "schemaVersion": "integer:1",
+        "actorUID": "uid",
+        "kind": "read|mutation",
+        "minuteBucket": "non-negative integer",
+        "requestCount": "positive integer",
+        "updatedAt": "timestamp",
+        "expiresAt": "timestamp"
+      },
+      "forbiddenFields": [
+        "reasonCode",
+        "reportTargetID",
+        "detail",
+        "textSnapshot"
+      ]
+    },
     "Rooms/{roomID}/bans/{moderationPrincipalID}": {
       "clientRead": false,
       "clientWrite": false,
@@ -309,6 +355,8 @@
       "moderationExtensionFields": {
         "lifecycleStatus": "roomLifecycleStatus",
         "lifecycleVersion": "positive integer",
+        "closedAt": "timestamp|null",
+        "closureNoticeCode": "string|null",
         "moderationClosedAt": "timestamp|null",
         "moderationClosureNoticeCode": "string|null"
       }
@@ -316,6 +364,7 @@
     "Rooms/{roomID}/Messages/{messageID}": {
       "moderationExtensionFields": {
         "isDeleted": "boolean",
+        "deletedAt": "timestamp|null",
         "message": "removed when isDeleted is true",
         "attachments": "empty or removed when isDeleted is true"
       },
@@ -332,6 +381,8 @@
         "schemaVersion": "integer:1",
         "roomID": "string",
         "messageID": "string",
+        "expectedSeq": "positive integer",
+        "storagePrefixes": "bounded server-derived string array",
         "status": "cleanupJobStatus",
         "attempt": "non-negative integer",
         "nextAttemptAt": "timestamp",
@@ -347,7 +398,10 @@
       "clientWrite": false,
       "requiredFields": {
         "schemaVersion": "integer:1",
+        "roomID": "string",
         "lifecycleVersion": "positive integer",
+        "closureType": "roomClosureType",
+        "closureNoticeCode": "string",
         "status": "cleanupJobStatus",
         "attempt": "non-negative integer",
         "nextAttemptAt": "timestamp",
@@ -357,6 +411,28 @@
         "expiresAt": "timestamp|null"
       },
       "idempotency": "roomID + lifecycleVersion"
+    },
+    "users/{uid}/roomClosureNotices/{roomID}": {
+      "clientRead": "owner only",
+      "clientCreateOrUpdate": false,
+      "clientDelete": "owner acknowledgment only",
+      "requiredFields": {
+        "schemaVersion": "integer:2",
+        "roomID": "string",
+        "roomName": "optional trimmed string, 1...20 chars",
+        "closureType": "roomClosureType",
+        "closureNoticeCode": "string",
+        "closedAt": "timestamp",
+        "expiresAt": "timestamp, closedAt + 30 days"
+      },
+      "forbiddenFields": [
+        "message",
+        "attachments",
+        "actorUID",
+        "reasonCode",
+        "reportTargetID"
+      ],
+      "recipientPolicy": "closedByOwner excludes creatorUID; closedByModeration includes creatorUID and all members"
     },
     "moderationAuditLogs/{actionID}": {
       "clientRead": false,
@@ -521,7 +597,8 @@
         "deduplicated": "boolean",
         "receivedAt": "timestamp"
       },
-      "idempotency": "reporter + user target + clientRequestID"
+      "idempotency": "reporter + user target + clientRequestID",
+      "rateLimit": "no daily hard cap; 10 accepted unique submissions per reporter moderation principal per UTC minute; duplicate clientRequestID does not consume quota; RATE_LIMITED includes retryAt"
     },
     "submitRoomReport": {
       "transport": "Firebase callable",
@@ -538,7 +615,8 @@
         "deduplicated": "boolean",
         "receivedAt": "timestamp"
       },
-      "idempotency": "reporter + room target + clientRequestID"
+      "idempotency": "reporter + room target + clientRequestID",
+      "rateLimit": "shares the reporter moderation principal UTC-minute bucket with user reports"
     },
     "blockUser": {
       "transport": "Firebase callable",
@@ -574,16 +652,47 @@
       "request": {
         "roomID": "string",
         "messageID": "string",
+        "expectedSeq": "positive integer",
         "reasonCode": "string|null",
+        "reportTargetType": "reportTargetType|null",
+        "reportTargetID": "string|null",
         "clientRequestID": "UUID string"
       },
       "response": {
         "messageID": "string",
+        "seq": "positive integer",
         "isDeleted": "true",
         "cleanupStatus": "completed|pending",
-        "deduplicated": "boolean"
+        "deduplicated": "boolean",
+        "deletedAt": "timestamp"
       },
-      "idempotency": "roomID + messageID"
+      "idempotency": "actor UID + clientRequestID; a new request for an already deleted message converges without restoring payload"
+    },
+    "closeOwnedChatRoom": {
+      "transport": "Firebase callable",
+      "authorization": "active room creator",
+      "request": {
+        "roomID": "string",
+        "expectedLifecycleVersion": "positive integer",
+        "clientRequestID": "UUID string"
+      },
+      "response": {
+        "lifecycleStatus": "closedByOwner",
+        "cleanupStatus": "completed|pending",
+        "lifecycleVersion": "positive integer"
+      },
+      "idempotency": "owner UID + clientRequestID"
+    },
+    "acknowledgeRoomClosureNotice": {
+      "transport": "Firestore owner delete",
+      "authorization": "notice owner",
+      "request": {
+        "roomID": "string"
+      },
+      "response": {
+        "acknowledged": "true"
+      },
+      "idempotency": "missing notice is already acknowledged"
     },
     "removeRoomMember": {
       "transport": "Firebase callable",
@@ -813,18 +922,20 @@
       "collection": "moderationUserReports",
       "fields": [
         "reviewState ASC",
-        "priorityClass ASC",
+        "priorityClass DESC",
         "slaDueAt ASC",
-        "lastReportedAt DESC"
+        "lastReportedAt DESC",
+        "__name__ ASC"
       ]
     },
     {
       "collection": "moderationRoomReports",
       "fields": [
         "reviewState ASC",
-        "priorityClass ASC",
+        "priorityClass DESC",
         "slaDueAt ASC",
-        "lastReportedAt DESC"
+        "lastReportedAt DESC",
+        "__name__ ASC"
       ]
     },
     {
@@ -862,7 +973,10 @@
     "readyInspectionMetadata": "retained only for an approved bounded period; Production release is blocked until that period is set",
     "developmentFixtures": "delete after QA",
     "reportedMediaCopy": "not retained",
-    "deletedMessageSequenceTombstone": "retained with public payload removed"
+    "deletedMessageSequenceTombstone": "retained with public payload removed",
+    "roomClosureNotice": "deleted immediately after owner acknowledgment; unacknowledged notice expires after 30 days",
+    "completedCleanupJob": "expires seven days after completion; failed jobs do not expire automatically",
+    "reportRateLimitBucket": "operational metadata only, expiresAt two days after the bucket; contains no report detail or evidence"
   },
   "reportOperations": {
     "urgentReasons": [

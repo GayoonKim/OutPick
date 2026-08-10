@@ -31,6 +31,12 @@ type ExportedFunction = {__endpoint?: Endpoint};
 const callableNames = [
   "exchangeKakaoToken",
   "getMyModerationState",
+  "submitUserReport",
+  "submitRoomReport",
+  "listModerationReports",
+  "getModerationReportDetail",
+  "mutateModerationReview",
+  "mutateAccountModeration",
   "getBrandAdminCapabilities",
   "createStyleMood",
   "updateStyleMood",
@@ -95,6 +101,9 @@ const callableNames = [
   "runLookbookExtractionDiagnostic",
   "getLatestLookbookExtractionDiagnostic",
   "discoverSeasonCandidates",
+  "deleteChatMessage",
+  "closeOwnedChatRoom",
+  "closeRoomByModeration",
 ] as const;
 
 const firestoreEndpoints = {
@@ -119,6 +128,18 @@ const firestoreEndpoints = {
   onRoomClosed: {
     eventType: "google.cloud.firestore.document.v1.updated",
     document: "Rooms/{roomId}",
+    timeoutSeconds: null,
+    availableMemoryMb: null,
+  },
+  onChatMessageCleanupQueued: {
+    eventType: "google.cloud.firestore.document.v1.created",
+    document: "chatMessageCleanupJobs/{jobID}",
+    timeoutSeconds: null,
+    availableMemoryMb: null,
+  },
+  onModerationRoomCleanupQueued: {
+    eventType: "google.cloud.firestore.document.v1.created",
+    document: "moderationRoomCleanupJobs/{roomID}",
     timeoutSeconds: null,
     availableMemoryMb: null,
   },
@@ -167,6 +188,12 @@ const scheduleEndpoints = {
     timeoutSeconds: 300,
     availableMemoryMb: 512,
   },
+  drainChatModerationCleanupJobs: {
+    schedule: "every 5 minutes",
+    timeZone: "Asia/Seoul",
+    timeoutSeconds: null,
+    availableMemoryMb: null,
+  },
 } as const;
 
 const callableOverrides = {
@@ -192,7 +219,7 @@ function runtimeNumber(value: unknown): number | null {
   return typeof value === "number" ? value : null;
 }
 
-test("Firebase deployment export 이름 80개를 유지한다", () => {
+test("Firebase deployment export 이름 92개를 유지한다", () => {
   const expected = [
     ...callableNames,
     ...Object.keys(firestoreEndpoints),
@@ -201,7 +228,7 @@ test("Firebase deployment export 이름 80개를 유지한다", () => {
     "lookbookExtractionIssueOpsWrite",
     "verifyLookbookExtractionFix",
   ].sort();
-  assert.equal(expected.length, 80);
+  assert.equal(expected.length, 92);
   assert.deepEqual(Object.keys(exportedFunctions).sort(), expected);
 });
 
@@ -336,6 +363,81 @@ test("extraction issue 운영 projection·audit 인덱스를 유지한다", () =
     assert.ok(config.fieldOverrides?.some((override) =>
       override.collectionGroup === collectionGroup &&
       override.fieldPath === "expiresAt" && override.ttl === true
+    ));
+  }
+});
+
+test("chat moderation cleanup due query와 TTL 인덱스를 유지한다", () => {
+  const config = JSON.parse(
+    readFileSync("../firestore.indexes.json", "utf8")
+  ) as {
+    indexes?: Array<{
+      collectionGroup?: string;
+      queryScope?: string;
+      fields?: Array<{fieldPath?: string; order?: string}>;
+    }>;
+    fieldOverrides?: Array<{
+      collectionGroup?: string;
+      fieldPath?: string;
+      ttl?: boolean;
+    }>;
+  };
+  for (const collectionGroup of [
+    "chatMessageCleanupJobs",
+    "moderationRoomCleanupJobs",
+  ]) {
+    assert.ok(config.indexes?.some((index) =>
+      index.collectionGroup === collectionGroup &&
+      index.queryScope === "COLLECTION" &&
+      index.fields?.[0]?.fieldPath === "status" &&
+      index.fields?.[1]?.fieldPath === "nextAttemptAt"
+    ));
+    assert.ok(config.fieldOverrides?.some((override) =>
+      override.collectionGroup === collectionGroup &&
+      override.fieldPath === "expiresAt" && override.ttl === true
+    ));
+  }
+  assert.ok(config.fieldOverrides?.some((override) =>
+    override.collectionGroup === "roomClosureNotices" &&
+    override.fieldPath === "expiresAt" && override.ttl === true
+  ));
+});
+
+test("active Rooms 목록·검색 query 인덱스를 유지한다", () => {
+  const config = JSON.parse(
+    readFileSync("../firestore.indexes.json", "utf8")
+  ) as {
+    indexes?: Array<{
+      collectionGroup?: string;
+      queryScope?: string;
+      fields?: Array<{
+        fieldPath?: string;
+        order?: string;
+        arrayConfig?: string;
+      }>;
+    }>;
+  };
+  const roomIndexes = config.indexes?.filter((index) =>
+    index.collectionGroup === "Rooms" && index.queryScope === "COLLECTION"
+  ) ?? [];
+  const hasActivePrefix = (index: typeof roomIndexes[number]) =>
+    index.fields?.[0]?.fieldPath === "isClosed" &&
+    index.fields?.[0]?.order === "ASCENDING" &&
+    index.fields?.[1]?.fieldPath === "lifecycleStatus" &&
+    index.fields?.[1]?.order === "ASCENDING";
+
+  assert.ok(roomIndexes.some((index) =>
+    hasActivePrefix(index) &&
+    index.fields?.[2]?.fieldPath === "lastMessageAt" &&
+    index.fields?.[2]?.order === "DESCENDING"
+  ));
+  for (const searchField of ["roomSearchChars", "roomSearchNgrams2"]) {
+    assert.ok(roomIndexes.some((index) =>
+      hasActivePrefix(index) &&
+      index.fields?.[2]?.fieldPath === searchField &&
+      index.fields?.[2]?.arrayConfig === "CONTAINS" &&
+      index.fields?.[3]?.fieldPath === "lastMessageAt" &&
+      index.fields?.[3]?.order === "DESCENDING"
     ));
   }
 });

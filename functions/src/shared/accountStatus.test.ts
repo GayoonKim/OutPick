@@ -19,7 +19,7 @@ test("active 계정만 사용자 mutation을 수행할 수 있다", () => {
   );
 });
 
-test("account 문서를 읽어 active 상태를 확인한다", async () => {
+test("통합 moderation account 문서 한 번으로 active와 capability를 확인한다", async () => {
   const requested: string[] = [];
   const store = {
     collection(name: string) {
@@ -29,9 +29,10 @@ test("account 문서를 읽어 active 상태를 확인한다", async () => {
           requested.push(uid);
           return {
             async get() {
-              const data = name === "users" ?
-                {accountStatus: "active"} :
-                {moderationStatus: "active"};
+              const data = {
+                accountStatus: "active",
+                moderationStatus: "active",
+              };
               return {
                 exists: true,
                 data: () => data,
@@ -44,23 +45,22 @@ test("account 문서를 읽어 active 상태를 확인한다", async () => {
   };
 
   await assert.doesNotReject(assertAccountActive("user-a", store));
-  assert.deepEqual(requested, [
-    "users", "user-a", "moderationAccounts", "user-a",
-  ]);
+  assert.deepEqual(requested, ["moderationAccounts", "user-a"]);
 });
 
 test("restricted 계정은 신고할 수 있지만 UGC를 만들 수 없다", async () => {
   const store = {
-    collection(name: string) {
+    collection() {
       return {
         doc() {
           return {
             async get() {
               return {
                 exists: true,
-                data: () => name === "users" ?
-                  {accountStatus: "active"} :
-                  {moderationStatus: "restricted"},
+                data: () => ({
+                  accountStatus: "active",
+                  moderationStatus: "restricted",
+                }),
               };
             },
           };

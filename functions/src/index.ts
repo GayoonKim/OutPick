@@ -1,6 +1,21 @@
 export {exchangeKakaoToken} from "./auth/functions.js";
 export {getMyModerationState} from "./moderation/functions.js";
 export {
+  submitRoomReport,
+  submitUserReport,
+} from "./moderation/reports/functions.js";
+export {
+  getModerationReportDetail,
+  listModerationReports,
+  mutateAccountModeration,
+  mutateModerationReview,
+} from "./moderation/admin/functions.js";
+export {
+  closeOwnedChatRoom,
+  closeRoomByModeration,
+  deleteChatMessage,
+} from "./chat/moderation/functions.js";
+export {
   cancelAccountDeletion,
   getAccountDeletionStatus,
   prepareAccountDeletion,
@@ -33,6 +48,11 @@ export {
   cleanupExpiredChatMediaUploads,
   onRoomClosed,
 } from "./chat/cleanup/functions.js";
+export {
+  drainChatModerationCleanupJobs,
+  onChatMessageCleanupQueued,
+  onModerationRoomCleanupQueued,
+} from "./chat/cleanup/moderationCleanupFunctions.js";
 export {
   batchSoftDeletePosts,
   batchSoftDeleteSeasons,

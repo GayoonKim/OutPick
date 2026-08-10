@@ -49,10 +49,10 @@ beforeEach(async () => {
         selectedMoodIDs: ["minimal"],
       }),
       setDoc(doc(firestore, "moderationAccounts", ownerUID), {
-        moderationStatus: "active", stateVersion: 1,
+        accountStatus: "active", moderationStatus: "active", stateVersion: 1,
       }),
       setDoc(doc(firestore, "moderationAccounts", otherUID), {
-        moderationStatus: "active", stateVersion: 1,
+        accountStatus: "active", moderationStatus: "active", stateVersion: 1,
       }),
       setDoc(doc(firestore, "userPublicProfiles", ownerUID), {
         nickname: "아웃픽",
@@ -107,6 +107,9 @@ describe("profile document boundary", () => {
     await testEnvironment.withSecurityRulesDisabled(async (context) => {
       await Promise.all([
         updateDoc(doc(context.firestore(), "users", ownerUID), {
+          accountStatus: "deletionPending",
+        }),
+        updateDoc(doc(context.firestore(), "moderationAccounts", ownerUID), {
           accountStatus: "deletionPending",
         }),
         setDoc(doc(context.firestore(), "accountDeletionRequests", "request"), {

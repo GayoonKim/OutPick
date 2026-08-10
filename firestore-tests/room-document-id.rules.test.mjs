@@ -40,6 +40,7 @@ beforeEach(async () => {
       accountStatus: "active",
     });
     await setDoc(doc(context.firestore(), "moderationAccounts", ownerUID), {
+      accountStatus: "active",
       moderationStatus: "active",
       stateVersion: 1,
     });
@@ -149,7 +150,7 @@ describe("Rooms document ID boundary", () => {
 
   test("deletionPending 계정은 새 채팅방을 만들 수 없다", async () => {
     await testEnvironment.withSecurityRulesDisabled(async (context) => {
-      await updateDoc(doc(context.firestore(), "users", ownerUID), {
+      await updateDoc(doc(context.firestore(), "moderationAccounts", ownerUID), {
         accountStatus: "deletionPending",
       });
     });

@@ -6,6 +6,9 @@ export function createRoomRegistry({ db, isValidRoomID }) {
     const snapshot = await roomsCollection.get();
 
     snapshot.forEach((doc) => {
+      const data = doc.data() || {};
+      if (data.isClosed === true ||
+          (data.lifecycleStatus && data.lifecycleStatus !== "active")) return;
       const roomID = doc.id;
       if (!rooms[roomID]) {
         rooms[roomID] = [];
@@ -27,6 +30,12 @@ export function createRoomRegistry({ db, isValidRoomID }) {
     try {
       const roomSnapshot = await db.collection("Rooms").doc(roomID).get();
       if (!roomSnapshot.exists) {
+        return false;
+      }
+
+      const data = roomSnapshot.data() || {};
+      if (data.isClosed === true ||
+          (data.lifecycleStatus && data.lifecycleStatus !== "active")) {
         return false;
       }
 

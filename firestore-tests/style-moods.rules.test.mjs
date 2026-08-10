@@ -71,10 +71,10 @@ beforeEach(async () => {
         accountStatus: "active",
       }),
       setDoc(doc(firestore, "moderationAccounts", "total-admin"), {
-        moderationStatus: "active", stateVersion: 1,
+        accountStatus: "active", moderationStatus: "active", stateVersion: 1,
       }),
       setDoc(doc(firestore, "moderationAccounts", "brand-admin"), {
-        moderationStatus: "active", stateVersion: 1,
+        accountStatus: "active", moderationStatus: "active", stateVersion: 1,
       }),
       setDoc(doc(firestore, "brands", "brand-1"), {
         name: "Brand",

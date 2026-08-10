@@ -6,10 +6,6 @@ service firebase.storage {
       return request.auth != null;
     }
 
-    function userPath(uid) {
-      return /databases/(default)/documents/users/$(uid);
-    }
-
     function moderationAccountPath(uid) {
       return /databases/(default)/documents/moderationAccounts/$(uid);
     }
@@ -45,15 +41,15 @@ service firebase.storage {
 
     function isAccountActive() {
       return signedIn()
-        && firestore.exists(userPath(request.auth.uid))
-        && firestore.get(userPath(request.auth.uid)).data.accountStatus == "active"
+        && hasModerationProjection()
+        && firestore.get(moderationAccountPath(request.auth.uid)).data.accountStatus == "active"
         && canCreateUGC();
     }
 
     function isReadableAccount() {
       return signedIn()
-        && firestore.exists(userPath(request.auth.uid))
-        && firestore.get(userPath(request.auth.uid)).data.accountStatus == "active"
+        && hasModerationProjection()
+        && firestore.get(moderationAccountPath(request.auth.uid)).data.accountStatus == "active"
         && canReadAppContent();
     }
 
@@ -61,14 +57,29 @@ service firebase.storage {
       return /databases/(default)/documents/Rooms/$(roomID);
     }
 
-    function roomMemberPath(roomID, uid) {
-      return /databases/(default)/documents/Rooms/$(roomID)/members/$(uid);
+    function mediaUploadPath(roomID, messageID) {
+      return /databases/(default)/documents/Rooms/$(roomID)/MediaUploads/$(messageID);
     }
 
-    function isRoomParticipant(roomID) {
+    function hasValidMediaUploadReservation(roomID, messageID, kind) {
       return signedIn()
-        && firestore.exists(roomPath(roomID))
-        && firestore.exists(roomMemberPath(roomID, request.auth.uid));
+        && roomIsActive(roomID)
+        && firestore.exists(mediaUploadPath(roomID, messageID))
+        && firestore.get(mediaUploadPath(roomID, messageID)).data.senderUID == request.auth.uid
+        && firestore.get(mediaUploadPath(roomID, messageID)).data.kind == kind
+        && firestore.get(mediaUploadPath(roomID, messageID)).data.status == "pending"
+        && firestore.get(mediaUploadPath(roomID, messageID)).data.storagePrefix == "rooms/" + roomID + "/messages/" + messageID
+        && firestore.get(mediaUploadPath(roomID, messageID)).data.expiresAt is timestamp
+        && firestore.get(mediaUploadPath(roomID, messageID)).data.expiresAt > request.time;
+    }
+
+    function roomIsActive(roomID) {
+      return firestore.exists(roomPath(roomID))
+        && firestore.get(roomPath(roomID)).data.isClosed != true
+        && (
+          !("lifecycleStatus" in firestore.get(roomPath(roomID)).data)
+          || firestore.get(roomPath(roomID)).data.lifecycleStatus == "active"
+        );
     }
 
     function isRoomCreator(roomID) {
@@ -128,48 +139,53 @@ service firebase.storage {
     }
 
     match /rooms/{roomID}/cover/thumb/{fileName} {
-      allow get: if isReadableAccount();
-      allow create, update: if isRoomCreator(roomID) && isJpegUpload(5 * 1024 * 1024);
-      allow delete: if isRoomCreator(roomID);
+      allow get: if isReadableAccount() && roomIsActive(roomID);
+      allow create, update: if isAccountActive() && isRoomCreator(roomID)
+        && isJpegUpload(5 * 1024 * 1024);
+      allow delete: if isAccountActive() && isRoomCreator(roomID);
       allow list: if false;
     }
 
     match /rooms/{roomID}/cover/original/{fileName} {
-      allow get: if isReadableAccount();
-      allow create, update: if isRoomCreator(roomID) && isJpegUpload(30 * 1024 * 1024);
-      allow delete: if isRoomCreator(roomID);
+      allow get: if isReadableAccount() && roomIsActive(roomID);
+      allow create, update: if isAccountActive() && isRoomCreator(roomID)
+        && isJpegUpload(30 * 1024 * 1024);
+      allow delete: if isAccountActive() && isRoomCreator(roomID);
       allow list: if false;
     }
 
     match /rooms/{roomID}/messages/{messageID}/images/{imageID}/{fileName} {
-      allow get: if isReadableAccount() && fileName in ['thumb.jpg', 'original.jpg'];
-      allow create, update: if isRoomParticipant(roomID)
+      allow get: if isReadableAccount() && roomIsActive(roomID)
+        && fileName in ['thumb.jpg', 'original.jpg'];
+      allow create, update: if hasValidMediaUploadReservation(roomID, messageID, "images")
         && (
           (fileName == 'thumb.jpg' && isJpegUpload(5 * 1024 * 1024))
           || (fileName == 'original.jpg' && isJpegUpload(30 * 1024 * 1024))
         );
-      allow delete: if isRoomParticipant(roomID);
+      allow delete: if false;
       allow list: if false;
     }
 
     match /rooms/{roomID}/messages/{messageID}/video/thumb.jpg {
-      allow get: if isReadableAccount();
-      allow create, update: if isRoomParticipant(roomID) && isJpegUpload(5 * 1024 * 1024);
-      allow delete: if isRoomParticipant(roomID);
+      allow get: if isReadableAccount() && roomIsActive(roomID);
+      allow create, update: if hasValidMediaUploadReservation(roomID, messageID, "video")
+        && isJpegUpload(5 * 1024 * 1024);
+      allow delete: if false;
       allow list: if false;
     }
 
     match /rooms/{roomID}/messages/{messageID}/video/{fileName} {
-      allow get: if isReadableAccount();
-      allow create, update: if isRoomParticipant(roomID) && isVideoUpload(350 * 1024 * 1024);
-      allow delete: if isRoomParticipant(roomID);
+      allow get: if isReadableAccount() && roomIsActive(roomID);
+      allow create, update: if hasValidMediaUploadReservation(roomID, messageID, "video")
+        && isVideoUpload(350 * 1024 * 1024);
+      allow delete: if false;
       allow list: if false;
     }
 
     match /profileImage/{userID}/{variant}/{fileName} {
       allow get: if isReadableAccount()
-        && firestore.exists(userPath(userID))
-        && firestore.get(userPath(userID)).data.accountStatus == "active";
+        && firestore.exists(moderationAccountPath(userID))
+        && firestore.get(moderationAccountPath(userID)).data.accountStatus == "active";
       allow create, update: if isAccountActive()
         && request.auth.uid == userID
         && variant in ['thumb', 'original']

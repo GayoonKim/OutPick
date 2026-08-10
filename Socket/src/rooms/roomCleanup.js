@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { normalizeUID } from "../utils/strings.js";
 
 const WRITE_BATCH_LIMIT = 400;
@@ -147,33 +148,57 @@ export function createRoomCleanup({ db, admin }) {
       return { ok: false, error: "not_owner" };
     }
 
-    const memberUIDs = await loadMemberUIDs(roomRef);
-    if (!memberUIDs.includes(normalizedUID)) {
-      memberUIDs.push(normalizedUID);
-    }
-
-    await deleteRoomStoragePrefix({ admin, roomID });
-
-    const deletedUsers = await deleteUserRoomState({
-      db,
-      roomID,
-      userUIDs: memberUIDs
+    const result = await db.runTransaction(async (transaction) => {
+      const current = await transaction.get(roomRef);
+      if (!current.exists) return { alreadyDeleted: true, lifecycleVersion: null };
+      const data = current.data() || {};
+      if (normalizeUID(data.creatorUID) !== normalizedUID) {
+        return { error: "not_owner" };
+      }
+      if (data.isClosed === true ||
+          (data.lifecycleStatus && data.lifecycleStatus !== "active")) {
+        return {
+          alreadyDeleted: false,
+          lifecycleVersion: Number(data.lifecycleVersion || 1)
+        };
+      }
+      const currentVersion = Number.isSafeInteger(data.lifecycleVersion) &&
+        data.lifecycleVersion > 0 ? data.lifecycleVersion : 1;
+      const lifecycleVersion = currentVersion + 1;
+      const now = admin.firestore.Timestamp.now();
+      const jobRef = db.collection("moderationRoomCleanupJobs").doc(roomID);
+      transaction.update(roomRef, {
+        isClosed: true,
+        lifecycleStatus: "closedByOwner",
+        lifecycleVersion,
+        closedAt: now,
+        closureNoticeCode: "ownerDeleted",
+        updatedAt: now
+      });
+      transaction.set(jobRef, {
+        schemaVersion: 1,
+        roomID,
+        lifecycleVersion,
+        closureType: "closedByOwner",
+        closureNoticeCode: "ownerDeleted",
+        legacySocketRequestID: randomUUID(),
+        status: "pending",
+        attempt: 0,
+        nextAttemptAt: now,
+        leaseExpiresAt: null,
+        lastErrorCode: null,
+        createdAt: now,
+        updatedAt: now,
+        expiresAt: null
+      }, { merge: false });
+      return { alreadyDeleted: false, lifecycleVersion };
     });
-
-    const deletedSubcollections = {};
-    for (const name of ROOM_SUBCOLLECTIONS) {
-      deletedSubcollections[name] = await deleteCollectionPageByPage(
-        roomRef.collection(name)
-      );
-    }
-
-    await roomRef.delete();
-
+    if (result.error) return { ok: false, error: result.error };
     return {
       ok: true,
-      memberUIDs,
-      deletedUsers,
-      deletedSubcollections
+      alreadyDeleted: result.alreadyDeleted === true,
+      lifecycleVersion: result.lifecycleVersion,
+      cleanupStatus: "pending"
     };
   }
 

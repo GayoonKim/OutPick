@@ -72,11 +72,14 @@ export function createFirebaseAuthMiddleware({
       }
 
       const tokenEmail = emailFromDecodedToken(decodedToken);
-      const userProfile = await findUserByUID(userUID);
-      if (!userProfile || userProfile.data?.accountStatus !== "active") {
+      const [userProfile, moderationAccount] = await Promise.all([
+        findUserByUID(userUID),
+        findModerationAccount(userUID)
+      ]);
+      if (!moderationAccount || moderationAccount.data?.accountStatus !== "active") {
         logger.warn("[auth] inactive account rejected", {
           userUID,
-          accountStatus: userProfile?.data?.accountStatus || "missing"
+          accountStatus: moderationAccount?.data?.accountStatus || "missing"
         });
         const error = new Error("account_inactive");
         error.data = {
@@ -85,7 +88,6 @@ export function createFirebaseAuthMiddleware({
         };
         return next(error);
       }
-      const moderationAccount = await findModerationAccount(userUID);
       const session = moderationSession(moderationAccount?.data);
       if (!session || !session.allowedCapabilities.includes("readAppContent")) {
         logger.warn("[auth] moderation account rejected", {

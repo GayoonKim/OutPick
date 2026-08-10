@@ -1,10 +1,12 @@
 /* eslint-disable require-jsdoc */
 
 export const MODERATION_SCHEMA_VERSION = 1;
+export const MODERATION_ACCOUNT_SCHEMA_VERSION = 2;
 export const MODERATION_HMAC_KEY_VERSION = 1;
 
 export type ModerationProvider = "google" | "apple" | "kakao";
 export type ModerationStatus = "active" | "restricted" | "suspended";
+export type AccountStatus = "active" | "deletionPending";
 
 export const moderationCapabilities = {
   active: [

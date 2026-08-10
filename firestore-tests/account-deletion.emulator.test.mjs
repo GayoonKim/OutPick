@@ -19,6 +19,7 @@ const context = {
 beforeEach(async () => {
   await Promise.all([
     db.recursiveDelete(db.collection("users").doc(uid)),
+    db.recursiveDelete(db.collection("moderationAccounts").doc(uid)),
     db.recursiveDelete(db.collection("accountDeletionIntents")),
     db.recursiveDelete(db.collection("accountDeletionRequests")),
     db.recursiveDelete(db.collection("accountDeletionNotificationOutbox")),
@@ -27,11 +28,18 @@ beforeEach(async () => {
     accountStatus: "active",
     accountGenerationID: "generation-a",
   });
+  await db.collection("moderationAccounts").doc(uid).set({
+    schemaVersion: 2,
+    accountStatus: "active",
+    moderationStatus: "active",
+    stateVersion: 1,
+  });
 });
 
 after(async () => {
   await Promise.all([
     db.recursiveDelete(db.collection("users").doc(uid)),
+    db.recursiveDelete(db.collection("moderationAccounts").doc(uid)),
     db.recursiveDelete(db.collection("accountDeletionIntents")),
     db.recursiveDelete(db.collection("accountDeletionRequests")),
     db.recursiveDelete(db.collection("accountDeletionNotificationOutbox")),
@@ -49,6 +57,8 @@ describe("account deletion transactions", () => {
 
     const userAfterRequest = await db.collection("users").doc(uid).get();
     assert.equal(userAfterRequest.data()?.accountStatus, "deletionPending");
+    const capabilityAfterRequest = await db.collection("moderationAccounts").doc(uid).get();
+    assert.equal(capabilityAfterRequest.data()?.accountStatus, "deletionPending");
     assert.equal(
       Date.parse(result.cancelableUntil) - Date.parse(result.requestedAt),
       DELETION_PROCESSING_MS,
@@ -62,6 +72,8 @@ describe("account deletion transactions", () => {
     assert.equal(cancellation.accountStatus, "active");
     const userAfterCancel = await db.collection("users").doc(uid).get();
     assert.equal(userAfterCancel.data()?.accountStatus, "active");
+    const capabilityAfterCancel = await db.collection("moderationAccounts").doc(uid).get();
+    assert.equal(capabilityAfterCancel.data()?.accountStatus, "active");
   });
 
   test("정확한 cancelableUntil 시각부터 취소를 거부한다", async () => {

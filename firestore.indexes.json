@@ -1,6 +1,74 @@
 {
   "indexes": [
     {
+      "collectionGroup": "chatMessageCleanupJobs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "nextAttemptAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "moderationRoomCleanupJobs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "nextAttemptAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "moderationUserReports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "reviewState",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "priorityClass",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "slaDueAt",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lastReportedAt",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "moderationRoomReports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "reviewState",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "priorityClass",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "slaDueAt",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lastReportedAt",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "candidates",
       "queryScope": "COLLECTION",
       "fields": [
@@ -145,6 +213,68 @@
         {
           "fieldPath": "roomSearchNgrams2",
           "arrayConfig": "CONTAINS"
+        },
+        {
+          "fieldPath": "lastMessageAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "Rooms",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "isClosed",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lifecycleStatus",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "roomSearchChars",
+          "arrayConfig": "CONTAINS"
+        },
+        {
+          "fieldPath": "lastMessageAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "Rooms",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "isClosed",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lifecycleStatus",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "roomSearchNgrams2",
+          "arrayConfig": "CONTAINS"
+        },
+        {
+          "fieldPath": "lastMessageAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "Rooms",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "isClosed",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lifecycleStatus",
+          "order": "ASCENDING"
         },
         {
           "fieldPath": "lastMessageAt",
@@ -590,6 +720,131 @@
     }
   ],
   "fieldOverrides": [
+    {
+      "collectionGroup": "accountDeletionAuditLogs",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "DESCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "arrayConfig": "CONTAINS",
+          "queryScope": "COLLECTION"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "accountDeletionIntents",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "DESCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "arrayConfig": "CONTAINS",
+          "queryScope": "COLLECTION"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "accountDeletionNotificationOutbox",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "DESCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "arrayConfig": "CONTAINS",
+          "queryScope": "COLLECTION"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "accountDeletionRequests",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "DESCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "arrayConfig": "CONTAINS",
+          "queryScope": "COLLECTION"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "brandRequestDays",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "DESCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "arrayConfig": "CONTAINS",
+          "queryScope": "COLLECTION"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "moderationReportRateLimitBuckets",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "moderationAdminRateLimitBuckets",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "chatMessageCleanupJobs",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "moderationRoomCleanupJobs",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "roomClosureNotices",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": []
+    },
     {
       "collectionGroup": "Messages",
       "fieldPath": "senderUID",
