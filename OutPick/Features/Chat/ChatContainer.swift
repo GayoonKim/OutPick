@@ -35,6 +35,7 @@ final class ChatContainer {
     private let chatRoomSearchUseCase: ChatRoomSearchUseCaseProtocol
     private let chatRoomLifecycleUseCase: ChatRoomLifecycleUseCaseProtocol
     private let chatRoomExitUseCase: ChatRoomExitUseCaseProtocol
+    private let moderationLifecycleRepository: ChatModerationLifecycleRepositoryProtocol
     private let chatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol
     private let chatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol
     private let attachmentImageLoader: ChatAttachmentImageLoading
@@ -69,10 +70,15 @@ final class ChatContainer {
             imageStorageRepository: repositories.imageStorageRepository
         )
         self.attachmentImageLoader = attachmentImageLoader
+        let moderationLifecycleRepository = CloudFunctionsChatModerationLifecycleRepository(
+            currentUserID: { currentUserProvider.canonicalUserID }
+        )
+        self.moderationLifecycleRepository = moderationLifecycleRepository
         let managers = ChatManagerProvider(
             repositories: repositories,
             publicProfileRepository: publicProfileRepository,
-            persistence: persistence
+            persistence: persistence,
+            moderationLifecycleRepository: moderationLifecycleRepository
         )
         self.managers = managers
         self.avatarImageManager = avatarImageManager
@@ -95,7 +101,11 @@ final class ChatContainer {
             profileSyncManager: managers.profileSyncManager
         )
         self.chatRoomExitUseCase = ChatRoomExitUseCase(
-            repository: SocketChatRoomExitRepository(socket: realtimeSocketService),
+            repository: DefaultChatRoomExitRepository(
+                socket: realtimeSocketService,
+                moderationLifecycleRepository: moderationLifecycleRepository,
+                currentUserID: { currentUserProvider.canonicalUserID }
+            ),
             localCleaner: DefaultChatRoomLocalExitCleaner(
                 localDataStore: persistence.roomLocalDataStore,
                 joinedRoomsStore: joinedRoomsStore,
@@ -123,7 +133,6 @@ final class ChatContainer {
         self.chatRoomMessageUseCase = ChatRoomMessageUseCase(
             messageManager: managers.messageManager,
             sendingRepository: chatMessageSendingRepository,
-            deletedLastMessageSummaryUpdater: self.roomRepository as? ChatDeletedLastMessageSummaryUpdating,
             serverConfirmedMessageReconciler: chatOutgoingOutboxUseCase,
             currentUserProvider: {
                 ChatMessageSenderSnapshot(
@@ -215,7 +224,8 @@ final class ChatContainer {
         JoinedRoomsViewModel(
             useCase: joinedRoomsUseCase,
             roomReadStateStore: roomReadStateStore,
-            joinedRoomsStore: joinedRoomsStore
+            joinedRoomsStore: joinedRoomsStore,
+            moderationLifecycleRepository: moderationLifecycleRepository
         )
     }
 

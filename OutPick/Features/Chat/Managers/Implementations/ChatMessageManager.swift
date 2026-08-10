@@ -10,19 +10,19 @@ import Combine
 
 final class ChatMessageManager: ChatMessageManaging {
     private let messageRepository: FirebaseMessageRepositoryProtocol
-    private let imageStorageRepository: FirebaseImageStorageRepositoryProtocol
+    private let moderationLifecycleRepository: ChatModerationLifecycleRepositoryProtocol
     private let messagePersistence: ChatMessagePersisting
     private let profileCache: ChatProfileCachePersisting
     private let profileDisplayCacheLimit = 20
     
     init(
         messageRepository: FirebaseMessageRepositoryProtocol = FirebaseRepositoryProvider.shared.messageRepository,
-        imageStorageRepository: FirebaseImageStorageRepositoryProtocol = FirebaseRepositoryProvider.shared.imageStorageRepository,
+        moderationLifecycleRepository: ChatModerationLifecycleRepositoryProtocol = CloudFunctionsChatModerationLifecycleRepository(),
         messagePersistence: ChatMessagePersisting,
         profileCache: ChatProfileCachePersisting
     ) {
         self.messageRepository = messageRepository
-        self.imageStorageRepository = imageStorageRepository
+        self.moderationLifecycleRepository = moderationLifecycleRepository
         self.messagePersistence = messagePersistence
         self.profileCache = profileCache
     }
@@ -291,29 +291,13 @@ final class ChatMessageManager: ChatMessageManaging {
         let messageID = message.ID
         let roomID = room.id
         
-        // 1. GRDB 업데이트
+        _ = try await moderationLifecycleRepository.deleteMessage(
+            roomID: roomID,
+            messageID: messageID,
+            expectedSeq: message.seq,
+            reasonCode: "chatMessageDeletion"
+        )
         try await applyLocalDeletion([messageID], inRoom: roomID)
-        
-        // 2. Firestore 업데이트
-        try await messageRepository.updateMessageIsDeleted(roomID: roomID, messageID: messageID)
-        
-        // 3. Storage 파일 삭제
-        let rawPaths = message.attachments.flatMap { [$0.pathThumb, $0.pathOriginal] }
-            .compactMap { $0 }
-            .filter { !$0.isEmpty }
-        
-        guard !rawPaths.isEmpty else { return }
-        
-        var seen = Set<String>()
-        let uniquePaths = rawPaths.filter { seen.insert($0).inserted }
-        
-        await withTaskGroup(of: Void.self) { group in
-            for path in uniquePaths {
-                group.addTask { [imageStorageRepository] in
-                    imageStorageRepository.deleteImageFromStorage(path: path)
-                }
-            }
-        }
     }
     
     func handleIncomingMessage(_ message: ChatMessage, room: ChatRoom) async throws {
@@ -342,16 +326,6 @@ final class ChatMessageManager: ChatMessageManaging {
             throw err
         }
         
-        // 내가 보낸 정상 메시지면 Firebase 기록
-        if !message.isFailed, message.senderUID == LoginManager.shared.canonicalUserID {
-            Task(priority: .utility) {
-                do {
-                    try await messageRepository.saveMessage(message, room)
-                } catch {
-                    print("⚠️ Firebase saveMessage 실패(비차단): \(error)")
-                }
-            }
-        }
     }
     
     func setupDeletionListener(roomID: String, onDeleted: @escaping (String) -> Void) -> AnyCancellable {
@@ -374,10 +348,6 @@ final class ChatMessageManager: ChatMessageManaging {
         }
     }
     
-    func saveMessage(_ message: ChatMessage, room: ChatRoom) async throws {
-        try await messageRepository.saveMessage(message, room)
-    }
-
     private func applyLocalDeletion(_ messageIDs: [String], inRoom roomID: String) async throws {
         guard !messageIDs.isEmpty, !roomID.isEmpty else { return }
 

@@ -3,6 +3,14 @@ import Foundation
 struct CloudFunctionResponseDecoder {
     let dictionary: [String: Any]
 
+    private static let fractionalISO8601Formatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private static let standardISO8601Formatter = ISO8601DateFormatter()
+
     static func dictionary(from value: Any?) throws -> [String: Any] {
         guard let dictionary = value as? [String: Any] else {
             throw CloudFunctionsClientError.invalidResponse
@@ -122,7 +130,8 @@ struct CloudFunctionResponseDecoder {
             return Date(timeIntervalSince1970: value / 1_000)
         }
         if let value = value as? String {
-            return ISO8601DateFormatter().date(from: value)
+            return Self.fractionalISO8601Formatter.date(from: value)
+                ?? Self.standardISO8601Formatter.date(from: value)
         }
         return nil
     }

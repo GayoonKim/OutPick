@@ -166,6 +166,15 @@ final class BannerManager {
         currentVisibleRoomID = roomID
     }
 
+    func clearVisibleRoom(ifMatching roomID: String) {
+        guard currentVisibleRoomID == roomID else { return }
+        setVisibleRoom(nil)
+    }
+
+    func isVisibleRoom(_ roomID: String) -> Bool {
+        currentVisibleRoomID == roomID
+    }
+
     nonisolated private static func shouldRetrySubscription(after error: Error) -> Bool {
         let nsError = error as NSError
         return !(nsError.domain == "SocketIO" && nsError.code == -1003)
@@ -181,7 +190,7 @@ final class BannerManager {
         #endif
 
         // 현재 방 보고 있으면 배너 X (화면이 실시간 UI 반영)
-        if currentVisibleRoomID == roomID {
+        if isVisibleRoom(roomID) {
             #if DEBUG
             print("[BannerManager] skip banner (visible room) room=\(roomID)")
             #endif

@@ -47,6 +47,7 @@ enum ChatRoomFirestoreMapper {
             memberCount: dto.memberCount ?? participants.count,
             seq: dto.seq ?? 0,
             isClosed: dto.isClosed ?? false,
+            lifecycleVersion: dto.lifecycleVersion ?? 1,
             activeAnnouncementID: dto.activeAnnouncementID,
             activeAnnouncement: dto.activeAnnouncement,
             announcementUpdatedAt: dto.announcementUpdatedAt
@@ -67,6 +68,8 @@ enum ChatRoomFirestoreMapper {
             "memberCount": max(1, room.memberCount),
             "seq": room.seq,
             "isClosed": room.isClosed,
+            "lifecycleStatus": "active",
+            "lifecycleVersion": max(1, room.lifecycleVersion),
             "roomSearchNormalized": searchIndex.normalizedText,
             "roomSearchChars": searchIndex.searchChars,
             "roomSearchNgrams2": searchIndex.searchNgrams2,

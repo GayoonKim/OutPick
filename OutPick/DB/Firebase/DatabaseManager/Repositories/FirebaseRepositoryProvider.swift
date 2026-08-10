@@ -53,10 +53,7 @@ struct FirebaseRepositoryProvider: FirebaseRepositoryProviding {
             chatRoomRepository: FirebaseChatRoomRepository(db: db),
             imageStorageRepository: FirebaseImageStorageRepository.shared,
             videoStorageRepository: FirebaseVideoStorageRepository.shared,
-            messageRepository: FirebaseMessageRepository(
-                db: db,
-                mediaIndexRepository: mediaIndexRepository
-            ),
+            messageRepository: FirebaseMessageRepository(db: db),
             mediaIndexRepository: mediaIndexRepository,
             announcementRepository: FirebaseAnnouncementRepository(db: db)
         )

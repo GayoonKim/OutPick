@@ -10,39 +10,10 @@ import FirebaseFirestore
 
 final class FirebaseMessageRepository: FirebaseMessageRepositoryProtocol {
     private let db: Firestore
-    private let mediaIndexRepository: FirebaseChatRoomMediaIndexRepositoryProtocol
     private var lastFetchedMessageSnapshot: DocumentSnapshot?
     
-    init(
-        db: Firestore,
-        paginationStateRepository: PaginationStateRepositoryProtocol? = nil,
-        mediaIndexRepository: FirebaseChatRoomMediaIndexRepositoryProtocol? = nil
-    ) {
+    init(db: Firestore) {
         self.db = db
-        self.mediaIndexRepository = mediaIndexRepository ?? FirebaseChatRoomMediaIndexRepository(db: db)
-    }
-    
-    func saveMessage(_ message: ChatMessage, _ room: ChatRoom) async throws {
-        do {
-            let roomID = room.id
-            guard !roomID.isEmpty else {
-                throw FirebaseError.FailedToFetchRoom
-            }
-            let messageRef = db.collection("Rooms")
-                .document(roomID)
-                .collection("Messages")
-                .document(message.ID)
-
-            let batch = db.batch()
-            batch.setData(message.toDict(), forDocument: messageRef)
-            mediaIndexRepository.addMediaIndexWrites(for: message, in: batch)
-            try await batch.commit()
-            
-            print("메시지 저장 성공 => \(message)")
-        } catch {
-            print("메시지 전송 및 저장 실패")
-            throw error
-        }
     }
     
     func listenToDeletedMessages(roomID: String,
@@ -67,34 +38,6 @@ final class FirebaseMessageRepository: FirebaseMessageRepositoryProtocol {
                     }
                 }
             }
-    }
-    
-    func updateMessageIsDeleted(roomID: String, messageID: String) async throws {
-        guard !roomID.isEmpty, !messageID.isEmpty else {
-            throw FirebaseError.FailedToFetchRoom
-        }
-        do {
-            let query = db.collection("Rooms")
-                .document(roomID)
-                .collection("Messages")
-                .whereField("ID", isEqualTo: messageID)
-                .limit(to: 10)
-            let snapshot = try await query.getDocuments()
-            guard snapshot.isEmpty == false else {
-                print("⚠️ 메시지 문서를 찾을 수 없음 (roomID=\(roomID), messageID=\(messageID))")
-                throw FirebaseError.FailedToFetchRoom
-            }
-            let batch = db.batch()
-            for doc in snapshot.documents {
-                batch.updateData(["isDeleted": true], forDocument: doc.reference)
-                print("✅ 메시지 삭제 업데이트 성공: docID=\(doc.documentID), messageID=\(messageID)")
-            }
-            try await batch.commit()
-            try await mediaIndexRepository.markMediaIndexDeleted(roomID: roomID, messageID: messageID)
-        } catch {
-            print("🔥 메시지 삭제 업데이트 실패: \(error)")
-            throw error
-        }
     }
     
     func fetchDeletionStates(roomID: String, messageIDs: [String]) async throws -> [String: Bool] {

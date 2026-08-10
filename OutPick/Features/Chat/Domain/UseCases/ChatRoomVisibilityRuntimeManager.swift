@@ -9,8 +9,8 @@ import Foundation
 
 @MainActor
 protocol ChatRoomVisibilityRuntimeManaging {
-    func enterVisibleRoom(roomID: String) async
-    func leaveVisibleRoom() async
+    func enterVisibleRoom(roomID: String)
+    func leaveVisibleRoom(roomID: String)
 }
 
 @MainActor
@@ -31,14 +31,18 @@ final class DefaultChatRoomVisibilityRuntimeManager: ChatRoomVisibilityRuntimeMa
         self.presenceManager = presenceManager
     }
 
-    func enterVisibleRoom(roomID: String) async {
+    func enterVisibleRoom(roomID: String) {
         bannerManager.setVisibleRoom(roomID)
         guard !roomID.isEmpty else { return }
-        await presenceManager.enterRoom(roomID)
+        Task { @MainActor [presenceManager] in
+            await presenceManager.enterRoom(roomID)
+        }
     }
 
-    func leaveVisibleRoom() async {
-        bannerManager.setVisibleRoom(nil)
-        await presenceManager.leaveCurrentRoom()
+    func leaveVisibleRoom(roomID: String) {
+        bannerManager.clearVisibleRoom(ifMatching: roomID)
+        Task { @MainActor [presenceManager] in
+            await presenceManager.leaveCurrentRoom()
+        }
     }
 }
