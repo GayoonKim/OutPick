@@ -282,7 +282,7 @@
   - `firestore.rules`, `storage.rules`, `firestore.indexes.json`, `firestore-tests/`
   - `contracts/chat-moderation-v1.json`
   - `docs/ai/{ENTRYPOINTS,DATA_SCHEMA}.md`, `docs/ai/entrypoints/{CHAT,FIREBASE,TESTS}.md`, task 하네스와 `HANDOFF.md`
-- working tree에는 이 task의 구현·테스트·문서 변경과 기존 `docs/portfolio/` 미추적 항목이 함께 있다. 커밋·stage는 수행하지 않았다.
+- 이 task의 구현·테스트·문서 변경은 backend/iOS/tests/docs 단위 커밋으로 정리해 `codex/chat-ugc-safety-phase-2-3` 브랜치에 push했다. 기존 `docs/portfolio/` 미추적 항목은 작업 범위에서 제외했다.
 
 - 착수 대기 핵심 작업 기록:
   - `docs/ai/tasks/chat-ugc-safety-room-moderation/decisions.md`
