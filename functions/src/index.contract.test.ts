@@ -84,6 +84,7 @@ const callableNames = [
   "deleteComment",
   "reportComment",
   "blockUser",
+  "unblockUser",
   "loadHiddenCommentUserIDs",
   "requestSeasonImport",
   "requestSeasonAssetRetry",
@@ -220,7 +221,7 @@ function runtimeNumber(value: unknown): number | null {
   return typeof value === "number" ? value : null;
 }
 
-test("Firebase deployment export 이름 93개를 유지한다", () => {
+test("Firebase deployment export 이름 94개를 유지한다", () => {
   const expected = [
     ...callableNames,
     ...Object.keys(firestoreEndpoints),
@@ -229,7 +230,7 @@ test("Firebase deployment export 이름 93개를 유지한다", () => {
     "lookbookExtractionIssueOpsWrite",
     "verifyLookbookExtractionFix",
   ].sort();
-  assert.equal(expected.length, 93);
+  assert.equal(expected.length, 94);
   assert.deepEqual(Object.keys(exportedFunctions).sort(), expected);
 });
 

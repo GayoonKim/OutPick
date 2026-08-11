@@ -42,6 +42,21 @@
       "maxLength": 64
     }
   },
+  "globalBlockVisibility": {
+    "direction": "blocked-by-owner only",
+    "participantListAndProfile": "unchanged for both users; never reveal the block",
+    "directInteraction": "the blocker must unblock first; notify the blocker only",
+    "chatCurrentWindow": "messages admitted before block success remain until the room screen session ends",
+    "chatNewAdmission": "filter by current blocked UID set without blockedAt comparison",
+    "ordering": "hidden messages consume realtime seq and raw pagination cursor",
+    "localPayload": "do not retroactively delete GRDB, FTS, attachments, or media cache",
+    "secondarySurfaces": "filter search, gallery, reply, user announcement, room preview, banner, unread, and push",
+    "systemEvents": "room lifecycle and moderation events remain visible",
+    "lookbook": "hide the blocked author's current comments and replies immediately",
+    "unblock": "do not force a room reload; future admission is visible and history returns through ordinary reload",
+    "bootstrap": "load account snapshot into memory then replace from owner-only server relation; no snapshot plus server failure fails closed",
+    "rollout": "latest app and server contract only"
+  },
   "enums": {
     "accountStatus": [
       "active",

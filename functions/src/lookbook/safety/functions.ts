@@ -12,6 +12,7 @@ import {
 import {db} from "../../core/firebase.js";
 import {FUNCTIONS_REGION} from "../../core/runtime.js";
 import {assertAccountCapability} from "../../shared/accountStatus.js";
+import {parseBlockUserInput, parseUnblockUserInput} from "./blockContracts.js";
 function lookbookPostDocument(
   brandID: string,
   seasonID: string,
@@ -208,58 +209,61 @@ export const blockUser = onCall(
   async (request) => {
     const uid = requiredAuthUID(request.auth?.uid);
     await assertAccountCapability(uid, "block");
-    const data = recordData(request.data);
+    const input = parseBlockUserInput(request.data);
 
-    const blockerUserID = requiredDocumentID(
-      requiredString(data, "blockerUserID", 128),
-      "blockerUserID"
-    );
-    const blockedUserID = requiredDocumentID(
-      requiredString(data, "blockedUserID", 128),
-      "blockedUserID"
-    );
-    const blockedUserNicknameSnapshot = optionalString(
-      data,
-      "blockedUserNicknameSnapshot",
-      80
-    );
-    const source = requiredString(data, "source", 16);
-
-    if (blockerUserID !== uid) {
-      throw new HttpsError("permission-denied", "차단 요청자 정보가 올바르지 않습니다.");
-    }
-    if (blockedUserID === uid) {
+    if (input.targetUID === uid) {
       throw new HttpsError("failed-precondition", "본인은 차단할 수 없습니다.");
     }
-    if (source !== "comment" && source !== "reply" && source !== "profile") {
-      throw new HttpsError("invalid-argument", "source 값이 올바르지 않습니다.");
+
+    const updatedAt = new Date().toISOString();
+    const now = FieldValue.serverTimestamp();
+    const blockRef = db
+      .collection("users")
+      .doc(uid)
+      .collection("blockedUsers")
+      .doc(input.targetUID);
+
+    await db.runTransaction(async (transaction) => {
+      const existing = await transaction.get(blockRef);
+      transaction.set(blockRef, {
+        blockerUserID: uid,
+        blockedUserID: input.targetUID,
+        blockedUserNicknameSnapshot: input.targetNicknameSnapshot,
+        source: input.source,
+        createdAt: existing.exists ? existing.get("createdAt") ?? now : now,
+        updatedAt: now,
+      },
+      {merge: true});
+    });
+
+    return {
+      blocked: true,
+      updatedAt,
+    };
+  }
+);
+
+export const unblockUser = onCall(
+  {region: FUNCTIONS_REGION},
+  async (request) => {
+    const uid = requiredAuthUID(request.auth?.uid);
+    await assertAccountCapability(uid, "unblock");
+    const input = parseUnblockUserInput(request.data);
+
+    if (input.targetUID === uid) {
+      throw new HttpsError("failed-precondition", "본인은 차단 해제 대상이 될 수 없습니다.");
     }
 
-    const createdAtMillis = Date.now();
-    const now = FieldValue.serverTimestamp();
     await db
       .collection("users")
       .doc(uid)
       .collection("blockedUsers")
-      .doc(blockedUserID)
-      .set(
-        {
-          blockerUserID: uid,
-          blockedUserID,
-          blockedUserNicknameSnapshot,
-          source,
-          createdAt: now,
-          updatedAt: now,
-        },
-        {merge: true}
-      );
+      .doc(input.targetUID)
+      .delete();
 
     return {
-      blockerUserID: uid,
-      blockedUserID,
-      blockedUserNicknameSnapshot,
-      source,
-      createdAtMillis,
+      blocked: false,
+      updatedAt: new Date().toISOString(),
     };
   }
 );
@@ -286,19 +290,8 @@ export const loadHiddenCommentUserIDs = onCall(
       .get();
     const blockedByMeIDs = blockedByMeSnapshot.docs.map((doc) => doc.id);
 
-    const blockingMeSnapshot = await db
-      .collectionGroup("blockedUsers")
-      .where("blockedUserID", "==", uid)
-      .get();
-    const blockingMeIDs = blockingMeSnapshot.docs
-      .map((doc) => doc.data().blockerUserID)
-      .filter(
-        (value): value is string =>
-          typeof value === "string" && value.length > 0
-      );
-
     return {
-      hiddenUserIDs: Array.from(new Set([...blockedByMeIDs, ...blockingMeIDs])),
+      hiddenUserIDs: blockedByMeIDs,
     };
   }
 );

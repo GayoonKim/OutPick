@@ -83,6 +83,7 @@ export {
   blockUser,
   loadHiddenCommentUserIDs,
   reportComment,
+  unblockUser,
 } from "./lookbook/safety/functions.js";
 export {
   applyLookbookSeasonRepair,
