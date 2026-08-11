@@ -2,7 +2,8 @@
 
 ## 1. 최종 목표
 
-- 현재 핵심 task `chat-ugc-safety-room-moderation`은 Phase 0~3 구현, Phase 1-P/2/3 Production backend rollout, 활성 Rooms query·계정 capability v2·Storage reservation 보정과 실제 앱 이미지/오프라인 종료 안내 QA까지 완료했다. 다음 구현 후보는 미착수 Phase 4 전역 차단이며 설계·구현 승인이 필요하다.
+- 현재 핵심 task `chat-ugc-safety-room-moderation`은 Phase 0~4 구현·자동 검증·Production rollout과 실제 앱 핵심 QA까지 완료했다. Phase 4는 전역 차단 단방향 visibility, 계정별 UID snapshot/메모리 Store, 채팅 current-window 유지, 룩북 즉시 숨김, push 제외와 앱 종료 혼합 visible unread 보정을 포함해 종료 처리한다.
+- 실제 기기 background FCM/APNs 검증은 Apple Developer Program 가입·APNs 설정 후 수행하는 출시 전 외부 gate이며 Phase 4 완료를 막지 않는다.
 - Sign in with Apple은 현재 iOS 로그인 진입점이 없어 사용자 결정으로 별도 후속 작업으로 분리했다. Production moderation rollout과 개인정보 보존 gate도 Phase 1 Development 완료와 분리한다.
 - 핵심 task `lookbook-extraction-issue-operations-production-rollout`은 Production 읽기 전용 감사, contract 3 Worker candidate QA·traffic 100% 전환, backend prerequisite/Functions, exact Firestore rules, canonical 앱 E2E, 앱 원문 오류 문구 교정, QA·legacy cleanup까지 완료해 2026-08-06 종료했다.
 - 이전 `lookbook-extraction-issue-operations`도 Phase 1~7 구현, Development contract 3 배포와 AMOMENTO/OUTSTANDING 실데이터 QA 완료로 종료 상태다.
@@ -13,6 +14,36 @@
 - 코드·설정·백엔드·배포 계약 기준의 Development/Production 환경 분리는 PR #3 병합, Production Worker traffic 전환과 실제 import smoke까지 완료해 종료 처리했다.
 
 ## 2. 완료한 작업
+
+### Chat UGC Safety Phase 4 — 전역 사용자 차단 완료
+
+- 기존 `users/{uid}/blockedUsers/{targetUID}`를 채팅·룩북·프로필의 단방향 visibility source로 통일했다. 계정별 마지막 성공 UID snapshot을 세션 시작 시 메모리 Store에 올리고 서버 응답으로 원자 교체하며, block/unblock 성공 직후 Store와 snapshot을 동기화한다.
+- 채팅은 차단 성공 전 현재 window를 유지하고 이후 live/pagination/재진입/검색/reply/공지/room preview/banner/gallery admission에서 차단 작성자를 제외한다. hidden seq와 raw cursor는 소비하며 기존 GRDB·FTS·미디어 cache는 소급 삭제하지 않는다.
+- 앱 종료 중 unread는 joined projection의 `lastReadSeq...latestSeq` 고정 구간을 page 단위로 조회해 차단·본인·삭제 메시지를 제외한다. 성공 방만 visible unread와 최신 visible preview로 교체하고 실패 시 raw unread를 유지하며 전역 seq와 서버 read frontier는 변경하지 않는다.
+- 룩북은 차단 성공 즉시 현재 댓글·답글을 숨기고, 채팅 current window는 강제 reload하지 않는다. 프로필·참여자·공동방은 유지하며 차단 대상에게 답장하려는 사용자에게만 해제 안내를 표시한다.
+- Production Functions `blockUser`/`unblockUser`와 Socket revision `outpick-socket-p4-block-0811`을 반영했다. 두 계정 QA에서 차단 전 window 유지, 차단 뒤 live 제외, 참여자 유지, unblock 재진입 복원과 future live 수신을 통과했다.
+- Production 앱 종료 혼합 QA는 `lastReadSeq=1`, 차단 `seq=2`, 비차단 `seq=3`에서 목록 visible unread 1·비차단 preview와 방 재진입 차단 메시지 제외를 확인했다. QA 방·메시지·projection·차단 relation·Storage는 잔존 0건으로 정리했다.
+- 최종 리뷰에서 이전 계정 bootstrap 실패가 새 계정 Store를 비우는 경쟁 조건, hidden seq 뒤 정상 메시지에서 read frontier가 멈추는 결함, 룩북 댓글 프로필의 차단 UseCase 주입 누락을 발견해 계정 guard·visible/hidden 합집합 연속 계산·공용 프로필 DI와 회귀 테스트로 보정했다.
+- iOS visible unread/기존 closure 회귀 대상 테스트와 Production build가 통과했다. Phase 4 전체 기존 검증은 Functions 188/188, Socket 72/72와 관련 iOS/GRDB 테스트를 통과했다.
+- Phase 4 변경과 최종 리뷰 기록은 PR #11에서 관리한다. 실제 기기 background FCM/APNs 외부 gate 외에 Phase 4 잔여 구현은 없다.
+
+### Chat UGC Safety Phase 3.1 — 공용 종료 tombstone Production 배포 완료
+
+- 신규 사용자별 종료 notice 생성을 제거하고 공용 `Rooms/{roomID}` tombstone 하나를 최대 14일 유지한다. 방 콘텐츠·Messages/media·Storage·이미지 경로는 즉시 정리하며 목록 마지막 메시지에 종료 문구를 넣지 않는다.
+- `acknowledgeRoomClosure` callable은 확인 사용자의 member/joinedRooms/roomStates와 legacy notice를 멱등 정리한다. 활성 방은 거부하고 방장 삭제 creator는 안내 없이 즉시 정리한다.
+- `moderationRoomCleanupJobs` schema v2는 `content → retention`으로 전이하며 `awaitingExpiry` 상태와 기존 `status + nextAttemptAt` index를 사용한다. 14일 만료 정리는 150명 단위, 최대 450 writes로 나눈다.
+- Firestore Rules는 본인 joinedRooms projection이 남은 활성 계정만 종료 tombstone을 단건 읽게 하고 Messages/media read는 거부한다.
+- iOS는 오프라인 종료 방을 참여중 목록에서 일반 방과 같은 cell로 복원하고, 행 선택 시에만 방 이름 포함 안내를 표시한다. 접속 중에는 Socket 종료 유형을 Coordinator까지 전달해 확인 후 공통 local cleaner로 정리한다.
+- Functions lint/build와 185/185, Socket check·70/70, Firestore·Storage Rules 40/40과 transaction 21/21, iOS targeted 10개와 Production generic Simulator build를 통과했다. 기존 Functions non-null assertion warning 9개 외 오류는 없다.
+- 배포 전 원격 index 41개·field override/TTL 29개가 로컬과 완전히 일치함을 확인했다. Storage Rules도 일치했고 Firestore Rules는 이전 `HEAD`와 정확히 같아 Phase 3.1 diff만 배포 대상으로 확정했다.
+- Production Functions 5개는 hash `793eb4c2cbdaee4f6c57751deb9e3834537b83f4`, Node.js 24, asia-northeast3에서 모두 `ACTIVE`다. 신규 `acknowledgeRoomClosure`와 owner/admin close, room cleanup trigger/scheduler만 exact 배포했다.
+- Firestore Rules 새 ruleset은 `d1a9ab22-d85b-4794-964c-8a9b9bc1197c`, source SHA-256 `5a298ab24098dc44179c805cde4720f4de5d807ee5f4f2222789fa551e9e8865`로 로컬과 일치한다. 이전 `943f0af9-d161-4f2c-ac01-cf376a4631b6`은 rollback 기준이다.
+- Index/TTL, Storage Rules와 iOS artifact는 변경하지 않았다. 5분 cleanup scheduler는 `ENABLED`이고 배포 대상 서비스 최근 30분 ERROR는 0건이다.
+- 2026-08-11 접속 중 방장 종료 QA에서 확인 후 채팅 route가 남는 문제와 Socket 즉시 이벤트의 종료 유형 누락을 보정했다. Socket build `a97273b4-46b5-4134-a82f-39a95e9b8eb0`, digest `sha256:29ddb169d993b5623fe3f7a9b8cf5bf2ac3ac2d508275a35604e7b47598ae379`, revision `outpick-socket-p31-owner-close-0811`을 candidate readiness·ERROR 0 확인 뒤 Production traffic 100%로 전환했다. 이전 `outpick-socket-account-cap-v2-0810`은 0% rollback으로 보존한다.
+- 재QA에서 방장 종료 안내가 두 번 교체되고 확인 뒤 route가 남는 현상을 다시 확인했다. Socket 종료 side effect를 cleanup watcher 하나로 통일하고, iOS 전달·표시의 동일 room 중복을 차단하며 확인 탭 즉시 route를 제거하도록 재보정했다. Socket 70/70, iOS 대상 suite와 Production generic Simulator build가 통과했다.
+- Socket build `74f8b018-1b4c-46ea-97de-9a226518d257`, digest `sha256:7cb2082aea3755a9f7bb395551bfe499cf0dfbb787e590a530a15e7103738fda`, revision `outpick-socket-p31-close-dedupe-0811`을 0% candidate readiness·ERROR 0 확인 뒤 Production traffic 100%로 전환했다. 직전 `outpick-socket-p31-owner-close-0811`은 0% rollback으로 보존한다.
+- 오프라인 방장 삭제와 접속 중 방장 삭제 QA를 통과했다. 접속 중 관리자 종료에서 발견한 Google 참여중 목록 stale row는 retained 목록 즉시 제거와 stale fetch 재삽입 차단으로 보정했고, 변경 앱 재QA에서 Google/Kakao 모두 안내 1회·정확한 문구·확인 즉시 목록 복귀·pull-to-refresh 없는 방 제거를 통과했다. 오프라인 관리자 종료에서 발견한 서버 왕복 뒤 행 제거 지연도 확인 즉시 optimistic 제거·stale 재삽입 차단·서버 실패 복원으로 보정했다. 새 Production 방의 Google/Kakao 순차 재QA에서 안내 1회·확인 즉시 행 제거·재실행 미복원을 모두 통과했고, 사후 Production Auth 2개 전체 기준 member/joinedRooms/roomStates 0건, cleanup `awaitingExpiry`/`retention`과 정확한 14일 예약, 관련 ERROR 0건을 확인했다.
+- Phase 3.1 변경은 4개 커밋으로 정리해 PR #10에서 리뷰했으며, 2026-08-11 merge commit `96111b8`로 `main`에 반영했다. TestFlight/App Store 앱 배포는 수행하지 않았다.
 
 ### Chat UGC Safety Phase 2~3 — Production 보정·실제 앱 QA 완료
 
@@ -241,14 +272,15 @@
 
 ## 3. 완료 범위 밖 후속 후보와 현재 설계 task
 
-- 최우선: `chat-ugc-safety-room-moderation` Phase 3 Production rollout과 실제 앱 QA를 완료했다. 다음은 Phase 4 전역 차단 설계의 남은 쟁점과 구현 승인 범위를 사용자와 논의하는 것이다.
+- 최우선: `chat-ugc-safety-room-moderation` Phase 4까지 완료했다. 다음 핵심 task는 사용자 우선순위 결정 후 착수한다.
 
 1. Development 실기기 App Attest는 Apple Developer Program 가입 후 외부 의존 후속 작업으로 재개한다.
-2. Production Google 실제 로그인과 provider별 계정 삭제 요청·취소 재인증 smoke는 출시 전 QA로 남는다.
-3. PITR·예약 백업·Storage soft delete·복구 훈련은 출시 운영 게이트로 남는다.
-4. 후속 후보 `lookbook-discovery-learning-loop`는 브랜드 생성 직후 시즌 후보를 자동 추출하고 관리자 확인 후 선택 시즌 이미지를 추출하는 흐름을 유지한다. 2026-08-04 사용자 승인으로 Firestore job + 전용 Cloud Tasks + Cloud Run Worker의 핵심 구현과 iOS 관찰 접합부를 완료했다. 앱은 화면 종료 시 서버 job을 취소하지 않으며 최초 job ID 또는 published pointer로 상태를 복원한다.
-5. 같은 후속 후보의 시즌 동일성은 URL을 우선하되, URL이 달라도 동일 브랜드 안에서 정규화한 시즌 이름이 기존 시즌 하나와 유일하게 일치하면 기존 시즌으로 연결하고 최신 source URL만 갱신한다. 모호한 일반명이나 복수 일치는 관리자 검토로 보내며 URL 변경만으로 이미지 재추출을 자동 시작하지 않는다.
-6. 추출 규칙 변경은 계층과 무관하게 전체 fixture corpus를 실행하고 Domain/Platform/Generic 영향 범위별 추가 증거를 요구한다. 기존 성공 결과의 후보 수·집합·순서·제목·strategy·adapter·quality에 예상하지 못한 differential이 생기면 배포를 중단한다. 의도된 개선만 ground truth, golden 갱신, version bump, Development 실제 URL smoke와 사용자 승인 뒤 Production으로 전환하며, CI required check와 직접 배포·traffic 전환 우회 차단을 후속 설계 범위에 포함한다.
+2. Phase 4 실제 기기 background FCM/APNs와 답장 안내 접근성 표시는 Apple Developer Program 가입·APNs 설정 후 출시 전 외부 gate에서 확인한다.
+3. Production Google 실제 로그인과 provider별 계정 삭제 요청·취소 재인증 smoke는 출시 전 QA로 남는다.
+4. PITR·예약 백업·Storage soft delete·복구 훈련은 출시 운영 게이트로 남는다.
+5. 후속 후보 `lookbook-discovery-learning-loop`는 브랜드 생성 직후 시즌 후보를 자동 추출하고 관리자 확인 후 선택 시즌 이미지를 추출하는 흐름을 유지한다. 2026-08-04 사용자 승인으로 Firestore job + 전용 Cloud Tasks + Cloud Run Worker의 핵심 구현과 iOS 관찰 접합부를 완료했다. 앱은 화면 종료 시 서버 job을 취소하지 않으며 최초 job ID 또는 published pointer로 상태를 복원한다.
+6. 같은 후속 후보의 시즌 동일성은 URL을 우선하되, URL이 달라도 동일 브랜드 안에서 정규화한 시즌 이름이 기존 시즌 하나와 유일하게 일치하면 기존 시즌으로 연결하고 최신 source URL만 갱신한다. 모호한 일반명이나 복수 일치는 관리자 검토로 보내며 URL 변경만으로 이미지 재추출을 자동 시작하지 않는다.
+7. 추출 규칙 변경은 계층과 무관하게 전체 fixture corpus를 실행하고 Domain/Platform/Generic 영향 범위별 추가 증거를 요구한다. 기존 성공 결과의 후보 수·집합·순서·제목·strategy·adapter·quality에 예상하지 못한 differential이 생기면 배포를 중단한다. 의도된 개선만 ground truth, golden 갱신, version bump, Development 실제 URL smoke와 사용자 승인 뒤 Production으로 전환하며, CI required check와 직접 배포·traffic 전환 우회 차단을 후속 설계 범위에 포함한다.
 7. fixture는 브랜드별로 무조건 추가하지 않고 같은 platform/template/strategy/reason/구조 원인은 기존 issue cluster와 대표 fixture에 통합한다. 수정 버전 이상에서 같은 fingerprint가 재발하면 `open`/recurrence로 처리해 우선 조사하며, 기존 fixture 재실패는 회귀와 배포 중단·rollback, fixture 통과 후 실제 URL 실패는 불충분 fixture·새 변형·adapter 미선택·잘못된 계층·네트워크/차단 문제로 분류한다. cluster 통합은 중복 fixture 방지일 뿐 재발 무시나 자동 승인이 아니다.
 8. 동일 brand/canonical archive URL/extraction contract의 active 요청은 하나의 job으로 합치고 다른 입력만 새 generation으로 처리한다. candidate snapshot과 일반 완료 job은 30일, 실패 요약과 관리자 검토 audit은 60일, evidence는 7일 보존하며 active와 `awaitingReview/correctionRequired`에는 TTL을 두지 않는다.
 9. 최초 discovery job은 `createBrand` transaction에서 브랜드와 함께 생성한다. active job은 watchdog이 누락 task·만료 lease·stale generation·retry 소진을 감시해 복구 또는 `failed/cancelled/superseded`로 수렴시키며, `awaitingReview/correctionRequired`는 TTL이 아니라 관리자 판단·로직 보강 후 재분석·취소로 닫는다.
@@ -274,6 +306,19 @@
 29. 사용자는 기존 Production Kakao 계정을 persistent custom claims로 보강하지 않고, UID 후보를 Kakao Admin API로 재검증해 메모리에서만 HMAC binding하는 migration 방식을 승인했다. Production apply는 예상 total/provider 건수와 확인 문자열을 요구하고 unresolved 시 전체 중단한다.
 
 ## 4. 수정한 파일 목록
+
+- Phase 4 tracked 변경:
+  - iOS: `OutPick/Features/Moderation/`, Chat/Lookbook/Profile/MyPage visibility·block/unblock 흐름, `AppCompositionRoot`, `BannerManager`, `RealtimeSocketService`
+  - iOS 테스트: `UserBlockSessionControllerTests.swift`, `ChatVisibleUnreadUseCaseTests.swift`, action policy·GRDB migration/media visibility 회귀
+  - backend: `functions/src/lookbook/safety/` block contract와 callable, `Socket/src/push/chatPushService.js`와 recipient block test
+  - 계약/진입점: `contracts/chat-moderation-v1.json`, `docs/ai/{DATA_SCHEMA,ENTRYPOINTS}.md`, `docs/ai/entrypoints/{APP,CHAT,FIREBASE,TESTS}.md`, ADR-024, `HANDOFF.md`
+- Phase 4 로컬 하네스: `docs/ai/tasks/chat-ugc-safety-room-moderation/{decisions,plan,progress,qa-checklist}.md`는 `.git/info/exclude` 대상이라 로컬 완료 상태만 갱신한다. 기존 미추적 `docs/portfolio/`는 사용자 작업으로 보고 커밋 대상에서 제외한다.
+
+- Phase 3.1 tracked 변경:
+  - iOS: `OutPick/Features/Chat/`, `OutPick/Infra/Realtime/RealtimeSocketService.swift`, `OutPick/Features/Login/Application/LoginManager+Bootstrapping.swift`, Firestore room DTO/mapper/repository와 관련 테스트
+  - backend: `functions/src/chat/{moderation,cleanup}/`, `functions/src/index.ts`, `firestore.rules`, `firestore-tests/`
+  - 계약/진입점: `contracts/chat-moderation-v1.json`, `docs/ai/DATA_SCHEMA.md`, `docs/ai/entrypoints/{CHAT,FIREBASE}.md`, `HANDOFF.md`
+- Phase 3.1 로컬 하네스: `docs/ai/tasks/chat-ugc-safety-room-moderation/{decisions,plan,progress,qa-checklist}.md`는 `.git/info/exclude` 대상이라 tracked status에는 나타나지 않는다. 기존 미추적 `docs/portfolio/`는 사용자 작업으로 보고 건드리지 않았다.
 
 - Chat UGC Safety Phase 2~3와 account capability v2 핵심 변경:
   - iOS Chat repository/use case/view model/controller, closure notice·visible room banner 회귀 테스트
@@ -354,6 +399,22 @@
   - `docs/ai/{ENTRYPOINTS.md,DATA_SCHEMA.md}`, 관련 Firebase/Lookbook/Test/Worker 진입점 문서와 task 하네스
 
 ## 5. 중요한 아키텍처 결정
+
+### 전역 차단 Store와 표시 시점 admission
+
+- 선택: 별도 채팅 차단 collection 없이 기존 차단 UID 목록만 계정별 snapshot과 메모리 Store로 유지하고, 각 UI admission 경계에서 sender UID를 판정한다. 채팅 current window는 유지하고 룩북 댓글·답글만 즉시 숨긴다.
+- 이유: 차단 사실을 상대에게 노출하거나 membership/seq를 변경하지 않으면서 채팅·룩북·프로필의 기준을 하나로 유지한다. 대량 과거 메시지와 캐시를 차단 시점에 삭제하는 비용도 피한다.
+- 트레이드오프: 기존 로컬 원문은 남고 모든 재표시 경계가 Store를 사용해야 한다. 앱 종료 unread는 원본 메시지 page 조회가 추가되지만 정확한 visible count와 정상 메시지 보존을 얻는다.
+- 보류한 대안: `blockedAt` 시각 비교, 기존 메시지·FTS·미디어 일괄 삭제, 차단 메시지의 전역 seq 미할당, unblock 직후 열린 방 강제 reload는 각각 시계 의존·대량 I/O·다른 참여자 ordering 영향·불필요한 네트워크 재조회 때문에 제외했다.
+- 재검토 조건: 사용자당 unread 구간이 커져 목록 bootstrap page 조회 비용이 실제 병목으로 관측되면 서버의 사용자별 visible unread projection을 검토한다.
+
+### 공용 room tombstone과 사용자별 확인
+
+- 선택: 종료 이벤트는 사용자별 notice를 새로 만들지 않고 공용 room tombstone 하나와 각 사용자의 기존 membership을 확인 상태로 사용한다. 확인 시 본인 projection만 지우고, 14일 뒤 scheduler가 잔여 membership과 tombstone을 정리한다.
+- 이유: 오프라인 사용자가 방이 오류로 사라진 것이 아니라 종료됐음을 확인할 수 있으면서, 참여자 수만큼 안내 문서를 복제하지 않고 일반 참여방 목록 UX를 유지할 수 있다.
+- 트레이드오프: 모든 사용자가 일찍 확인해도 tombstone은 scheduler 만료 전까지 남을 수 있고, 참여방 조회에서 종료 후보를 단건 복원하는 추가 read가 생긴다. 대신 전 사용자 확인 카운터와 동시성 추적을 만들지 않아 lifecycle이 단순하다.
+- 보류한 대안: 사용자별 notice 재생성은 중복 데이터·정리 비용이 크고, 즉시 모든 membership 삭제는 오프라인 설명 가능성을 잃으며, room `expiresAt` 직접 Firestore TTL은 membership보다 tombstone을 먼저 지워 orphan projection을 만들 수 있어 제외했다.
+- 재검토 조건: 한 사용자에게 동시에 종료 방이 다수 누적돼 단건 복원 지연이 관측되거나 14일 내 미확인 비율·저장 비용이 의미 있게 커질 때 bounded batch read/projection 구조를 재검토한다.
 
 ### 계정 capability 단일 projection과 Storage reservation
 
@@ -470,12 +531,14 @@
 
 ## 7. 다음 턴에서 바로 실행해야 할 작업
 
-1. `chat-ugc-safety-room-moderation` Phase 3 Production backend와 실제 앱 QA는 완료됐다. 다음은 Phase 4 전역 차단의 제품 흐름·데이터/API·Socket/push/cache 범위와 구현 승인 범위를 논의한다. 승인 전 코드는 수정하지 않는다.
-2. Apple 로그인을 선택하면 `sign-in-with-apple-account-lifecycle`의 정책·콘솔·사용자 흐름·아키텍처 설계 하네스부터 진행하며 바로 구현하지 않는다.
-3. Production HMAC Secret·backfill·영향 Functions·Firestore·Storage Rules·최소 권한 Socket traffic 100% 전환과 앱 active smoke까지 완료했다. 제한·정지·계정 삭제 Production QA는 `supportURL`과 출시 gate가 준비되기 전까지 수행하지 않는다.
-4. `supportURL: null` Production은 내부 active-account smoke만 수행하고 restricted/suspended 상태 적용이나 외부 배포를 하지 않는다.
-5. 실제 `seasonImageImport` 결함이 발생할 때만 이벤트 기반 `fixed → retry success → verified` 운영 게이트를 실행한다.
-6. 화면 조작·시각 QA는 사용자가 재현 가능한 시나리오의 체크리스트로 수행하고, Codex는 코드·자동 테스트·빌드·backend/log 검증을 담당한다.
+1. Phase 4 구현·최종 리뷰·검증·커밋과 PR #11 정리를 완료했다. 다음 핵심 task 우선순위를 사용자와 정한다.
+2. 실제 기기 background FCM/APNs는 Apple Developer Program 가입 후 출시 전 gate에서 재개한다.
+3. Phase 3.1 종료 tombstone은 14일 scheduler 만료 시 자동 정리되며 즉시 추가 조치는 없다.
+4. Apple 로그인을 선택하면 `sign-in-with-apple-account-lifecycle`의 정책·콘솔·사용자 흐름·아키텍처 설계 하네스부터 진행하며 바로 구현하지 않는다.
+5. Production HMAC Secret·backfill·영향 Functions·Firestore·Storage Rules·최소 권한 Socket traffic 100% 전환과 앱 active smoke까지 완료했다. 제한·정지·계정 삭제 Production QA는 `supportURL`과 출시 gate가 준비되기 전까지 수행하지 않는다.
+6. `supportURL: null` Production은 내부 active-account smoke만 수행하고 restricted/suspended 상태 적용이나 외부 배포를 하지 않는다.
+7. 실제 `seasonImageImport` 결함이 발생할 때만 이벤트 기반 `fixed → retry success → verified` 운영 게이트를 실행한다.
+8. 화면 조작·시각 QA는 사용자가 재현 가능한 시나리오의 체크리스트로 수행하고, Codex는 코드·자동 테스트·빌드·backend/log 검증을 담당한다.
 
 Phase 3 완료 메모: private read/write Functions, strict allowlist API, CAS/idempotent audit와 job projection, 고정 환경 CLI를 구현했다. Development operator IAM, Firestore projection index/audit TTL과 두 Function을 배포했으며 Functions 134/134, CLI 7/7과 lint/build를 통과했다. 실제 Development endpoint는 무인증 403, operator read 성공, 데이터 변경 없는 write 404 smoke를 통과했다. 목록에서 `brandID` filter 및 최근 브랜드/job 사례는 제거했고 정확한 영향 job은 fingerprint projection으로 조회한다. Production IAM·index·Function은 변경하지 않았다. 운영 절차는 `docs/ai/runbooks/LOOKBOOK_EXTRACTION_ISSUE_OPERATIONS.md`를 따른다.
 

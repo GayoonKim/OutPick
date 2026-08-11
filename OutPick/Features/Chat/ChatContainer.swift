@@ -20,11 +20,13 @@ final class ChatContainer {
     let roomReadStateStore: ChatRoomReadStateStore
     let currentUserProvider: CurrentUserProviding
     let realtimeSocketService: RealtimeSocketService
+    let userBlockVisibilityStore: any UserBlockVisibilityChecking
 
     private let managers: ChatManagerProvider
     private let avatarImageManager: AvatarImageManaging
     private let roomListUseCase: RoomListUseCaseProtocol
     private let joinedRoomsUseCase: JoinedRoomsUseCaseProtocol
+    private let chatVisibleUnreadUseCase: any ChatVisibleUnreadUseCaseProtocol
     private let roomSearchUseCase: RoomSearchUseCaseProtocol
     private let chatRoomMessageUseCase: ChatRoomMessageUseCaseProtocol
     private let chatMessageSendingRepository: ChatMessageSendingRepositoryProtocol
@@ -50,6 +52,7 @@ final class ChatContainer {
     private let mediaProcessor: MediaProcessingServiceProtocol
     private let loadShareableJoinedRoomsUseCase: LoadShareableJoinedRoomsUseCaseProtocol
     private let shareLookbookContentToChatUseCase: ShareLookbookContentToChatUseCaseProtocol
+    private let blockUserUseCase: any BlockUserUseCaseProtocol
 
     init(
         persistence: ChatPersistenceProvider,
@@ -61,6 +64,9 @@ final class ChatContainer {
         currentUserProvider: CurrentUserProviding,
         realtimeSocketService: RealtimeSocketService,
         avatarImageManager: AvatarImageManaging,
+        userBlockVisibilityStore: any UserBlockVisibilityChecking = UserBlockVisibilityStore(),
+        userBlockRepository: any UserBlockRepositoryProtocol = CloudFunctionsUserBlockRepository(),
+        userBlockSessionSynchronizer: (any UserBlockSessionSynchronizing)? = nil,
         roomReadStateStore: ChatRoomReadStateStore? = nil,
         announcementRepository: FirebaseAnnouncementRepositoryProtocol? = nil,
         repositories: FirebaseRepositoryProviding = FirebaseRepositoryProvider.shared
@@ -90,6 +96,11 @@ final class ChatContainer {
         self.joinedRoomsRuntime = joinedRoomsRuntime
         self.currentUserProvider = currentUserProvider
         self.realtimeSocketService = realtimeSocketService
+        self.userBlockVisibilityStore = userBlockVisibilityStore
+        self.blockUserUseCase = BlockUserUseCase(
+            repository: userBlockRepository,
+            sessionSynchronizer: userBlockSessionSynchronizer
+        )
         let resolvedRoomReadStateStore = roomReadStateStore ?? ChatRoomReadStateStore()
         self.roomReadStateStore = resolvedRoomReadStateStore
         BannerManager.shared.configure(
@@ -124,6 +135,9 @@ final class ChatContainer {
             roomRepository: self.roomRepository,
             userProfileRepository: self.userProfileRepository,
             exitUseCase: self.chatRoomExitUseCase
+        )
+        self.chatVisibleUnreadUseCase = ChatVisibleUnreadUseCase(
+            messageRepository: repositories.messageRepository
         )
         self.roomSearchUseCase = RoomSearchUseCase(roomRepository: self.roomRepository)
         self.chatMessageSendingRepository = SocketChatMessageSendingRepository(
@@ -232,7 +246,9 @@ final class ChatContainer {
             roomReadStateStore: roomReadStateStore,
             joinedRoomsStore: joinedRoomsStore,
             moderationLifecycleRepository: moderationLifecycleRepository,
-            closureAcknowledgementUseCase: roomClosureAcknowledgementUseCase
+            closureAcknowledgementUseCase: roomClosureAcknowledgementUseCase,
+            userBlockVisibilityStore: userBlockVisibilityStore,
+            visibleUnreadUseCase: chatVisibleUnreadUseCase
         )
     }
 
@@ -251,7 +267,9 @@ final class ChatContainer {
             runtimeUseCase: chatRoomRuntimeUseCase,
             currentUserProvider: currentUserProvider,
             joinedRoomsStore: joinedRoomsStore,
-            roomReadStateStore: roomReadStateStore
+            roomReadStateStore: roomReadStateStore,
+            userBlockVisibilityStore: userBlockVisibilityStore,
+            blockUserUseCase: blockUserUseCase
         )
     }
 
@@ -265,6 +283,10 @@ final class ChatContainer {
 
     func makeChatRoomExitUseCase() -> ChatRoomExitUseCaseProtocol {
         chatRoomExitUseCase
+    }
+
+    func makeBlockUserUseCase() -> any BlockUserUseCaseProtocol {
+        blockUserUseCase
     }
 
     func makeChatMediaUploadUseCase() -> ChatMediaUploadUseCaseProtocol {

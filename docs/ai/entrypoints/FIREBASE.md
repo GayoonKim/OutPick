@@ -313,6 +313,13 @@ durable 시즌 discovery의 enqueue 완료 기록은 job을 transaction으로 �
 
 ## Firestore
 
+### 전역 사용자 차단
+
+- owner-only source는 `users/{uid}/blockedUsers/{blockedUID}`이며 기존 Rules로 본인 read만 허용하고 client write는 막는다. 이번 Phase 4에는 Rules/index 변경이 없다.
+- callable `blockUser`/`unblockUser`는 `functions/src/lookbook/safety/blockContracts.ts`의 exact payload 검증과 `functions.ts`의 인증 UID 권위 mutation을 사용한다. 자기 차단과 unknown field를 거부하고 차단 최초 `createdAt`을 보존한다.
+- iOS 서버 최신화는 본인 blockedUsers collection을 직접 읽고, 룩북 hidden author 조회는 더 이상 `blockingMe` collection-group을 합치지 않는다.
+- Socket push는 `Socket/src/push/chatPushService.js`가 recipient의 blockedUsers relation을 전송 직전에 조회한다. 조회 실패도 해당 recipient에 대해 fail closed하며 room broadcast 자체는 유지한다.
+
 ### Rules
 
 - 클라이언트 접근은 Firebase Auth UID와 authoritative admin/member 문서로 검증한다.

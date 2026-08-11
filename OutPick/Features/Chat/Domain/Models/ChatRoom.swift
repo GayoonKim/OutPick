@@ -11,7 +11,15 @@ import Foundation
 struct AnnouncementPayload: Codable, Hashable {
     let text: String
     let authorID: String
+    let authorUID: String?
     let createdAt: Date
+
+    init(text: String, authorID: String, authorUID: String? = nil, createdAt: Date) {
+        self.text = text
+        self.authorID = authorID
+        self.authorUID = authorUID
+        self.createdAt = createdAt
+    }
 }
 
 struct ChatRoom {

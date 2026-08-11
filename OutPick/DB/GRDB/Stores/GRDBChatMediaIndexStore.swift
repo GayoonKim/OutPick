@@ -60,17 +60,17 @@ final class GRDBChatMediaIndexStore: ChatMediaIndexPersisting {
                 case .image:
                     try db.execute(sql: """
                         INSERT OR REPLACE INTO imageIndex
-                        (roomID, messageID, idx, thumbKey, originalKey, thumbURL, originalURL, width, height, bytesOriginal, hash, isFailed, localThumb, sentAt)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, arguments: [entry.roomID, entry.messageID, entry.idx, entry.thumbKey, entry.originalKey,
+                        (roomID, messageID, senderUID, idx, thumbKey, originalKey, thumbURL, originalURL, width, height, bytesOriginal, hash, isFailed, localThumb, sentAt)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, arguments: [entry.roomID, entry.messageID, entry.senderUID, entry.idx, entry.thumbKey, entry.originalKey,
                                       entry.thumbURL, entry.originalURL, entry.width, entry.height, entry.bytesOriginal,
                                       entry.hash, false, nil, entry.sentAt])
                 case .video:
                     try db.execute(sql: """
                         INSERT OR REPLACE INTO videoIndex
-                        (roomID, messageID, idx, thumbKey, originalKey, thumbURL, originalURL, width, height, bytesOriginal, duration, approxBitrateMbps, preset, hash, isFailed, localThumb, sentAt)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, arguments: [entry.roomID, entry.messageID, entry.idx, entry.thumbKey, entry.originalKey,
+                        (roomID, messageID, senderUID, idx, thumbKey, originalKey, thumbURL, originalURL, width, height, bytesOriginal, duration, approxBitrateMbps, preset, hash, isFailed, localThumb, sentAt)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, arguments: [entry.roomID, entry.messageID, entry.senderUID, entry.idx, entry.thumbKey, entry.originalKey,
                                       entry.thumbURL, entry.originalURL, entry.width, entry.height, entry.bytesOriginal,
                                       entry.duration, nil, nil, entry.hash, false, nil, entry.sentAt])
                 }

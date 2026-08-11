@@ -16,6 +16,8 @@ struct PostCommentsSheetView: View {
     private let avatarImageManager: AvatarImageManaging
     private let currentUserProvider: any CurrentUserProviding
     private let firebaseRepositories: any FirebaseRepositoryProviding
+    private let blockUserUseCase: any BlockUserUseCaseProtocol
+    private let userBlockVisibilityStore: any UserBlockVisibilityChecking
     @ObservedObject private var coordinator: PostCommentCoordinator
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var brandAdminSessionStore: BrandAdminSessionStore
@@ -32,7 +34,9 @@ struct PostCommentsSheetView: View {
         coordinator: PostCommentCoordinator,
         avatarImageManager: AvatarImageManaging,
         currentUserProvider: any CurrentUserProviding,
-        firebaseRepositories: any FirebaseRepositoryProviding
+        firebaseRepositories: any FirebaseRepositoryProviding,
+        blockUserUseCase: any BlockUserUseCaseProtocol,
+        userBlockVisibilityStore: any UserBlockVisibilityChecking
     ) {
         _viewModel = StateObject(wrappedValue: viewModel)
         self.navigationCoordinator = navigationCoordinator
@@ -43,6 +47,8 @@ struct PostCommentsSheetView: View {
         self.avatarImageManager = avatarImageManager
         self.currentUserProvider = currentUserProvider
         self.firebaseRepositories = firebaseRepositories
+        self.blockUserUseCase = blockUserUseCase
+        self.userBlockVisibilityStore = userBlockVisibilityStore
     }
 
     var body: some View {
@@ -340,6 +346,8 @@ struct PostCommentsSheetView: View {
                 avatarImageManager: avatarImageManager,
                 currentUserProvider: currentUserProvider,
                 repositories: firebaseRepositories,
+                blockUserUseCase: blockUserUseCase,
+                userBlockVisibilityStore: userBlockVisibilityStore,
                 onBack: {
                     coordinator.dismissProfile()
                 }

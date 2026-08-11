@@ -290,11 +290,16 @@ Explicit read 진단은 `ChatRoomViewModel.persistExplicitLatestJumpForCurrentUs
 - 실시간 종료: Socket의 `roomClosureWatcher`만 cleanup job을 관찰해 `room:closed`를 발행한다. `RealtimeSocketService`는 같은 room의 권위 종료를 최초 한 번만 `RealtimeRoomClosureEvent` → `SocketChatRoomRuntimeRepository` → `ChatRoomRuntimeUseCase` → `ChatRoomViewModel` → `ChatCoordinator.handleRoomClosure`로 전달하고, Coordinator도 같은 room 안내를 한 번만 표시한다. 종료 유형 fallback은 중복 본문 없이 제목만 표시한다. 참여자가 확인하면 서버 acknowledgement 완료를 기다리지 않고 Coordinator가 현재 채팅 route를 먼저 제거해 원래 목록으로 복귀한다. 이때 retained `RoomListsCollectionViewController`/`JoinedRoomsViewController`는 `ChatRoomClosureListUpdating`으로 해당 room을 즉시 제거하고, `JoinedRoomsViewModel`은 같은 세션의 stale fetch가 종료 room을 복원하지 못하게 막는다. 확인 API는 백그라운드에서 멱등 처리하며 자기 방 삭제 creator는 안내 없이 같은 route·목록 정리 흐름을 사용한다.
 - 현재 방 배너 억제: `ChatViewController.viewWillAppear/viewWillDisappear`가 `ChatRoomViewModel` → `ChatRoomRuntimeUseCase` → `DefaultChatRoomVisibilityRuntimeManager`를 동기 호출해 화면 수명주기 순서대로 `BannerManager` visible room을 갱신한다. Presence 원격 갱신만 별도 비동기 작업으로 수행한다.
 
-### Phase 4 이후 예정 iOS 진입점
+### Phase 4 iOS 구현 진입점
 
 - 신고·삭제 long press: `ChatMessageActionPolicy.swift` → `ChatRoomViewModel` → `ChatViewController` → `ChatCoordinator`
 - 방 신고·내보내기·ban 해제: `ChatRoomSettingViewController`/ViewModel → 신규 moderation UseCase/Repository → `ChatCoordinator`
-- 전역 차단 visibility: 공통 block Store/UseCase → `RealtimeSocketService` admission → `ChatMessageWindowStore`·검색·gallery·reply·공지·room preview·banner
+- 전역 차단 visibility: 계정별 마지막 성공 UID snapshot Repository → 메모리 block Store/UseCase → `RealtimeSocketService` ordering 뒤 admission → `ChatMessageWindowStore`·검색·gallery·reply·사용자 공지·room preview·banner. 차단 성공 전 현재 window와 기존 GRDB/FTS/media 원문은 유지하며 이후 새 admission만 제외한다. 서버 lifecycle system event는 제외하지 않는다.
+  - raw pagination cursor와 hidden seq는 계속 전진한다. 한 번의 UI 요청은 최대 3개 원본 page만 스캔해 차단 메시지가 긴 방에서 전체 이력을 한 번에 읽지 않는다.
+  - 앱 재실행/목록 bootstrap의 unread는 `ChatVisibleUnreadUseCase`가 joined projection의 `lastReadSeq`부터 fetch 시점의 room `latestSeq`까지 메시지를 page 단위로 조회해 현재 차단 UID·본인·삭제 메시지를 제외한다. `JoinedRoomsViewModel`은 조회 전/실패 시 raw unread를 유지하고 성공 방만 visible unread와 최신 visible preview로 교체한다. 전역 seq와 서버 read frontier는 건드리지 않는다.
+  - media index의 nullable `senderUID`는 `addSenderUIDToMediaIndexes` GRDB migration이 `chatMessage`에서 backfill하고, 신규 local/remote media admission은 공용 Store로 필터링한다.
+  - 프로필과 참여자 목록은 유지한다. 답장 등 차단 대상 직접 상호작용은 차단자에게만 `먼저 차단을 해제해 주세요`를 표시한다.
+  - 차단 해제 목록은 MyPage `BlockedUsersViewController`이며 성공 후 Store/snapshot만 갱신하고 열린 채팅방을 강제 재조회하지 않는다.
 - 미디어 검사 UI: `ChatMediaUploadUseCase`·`ChatPendingMediaUploadStore`가 reservation/scanning/retry 상태를 소유하고 서버 ready ACK 뒤에만 confirmed message로 수렴한다.
 
 ### 서버·데이터 Phase 1 구현 진입점
@@ -323,7 +328,9 @@ Explicit read 진단은 `ChatRoomViewModel.persistExplicitLatestJumpForCurrentUs
 ### 고정 사용자 동작
 
 - 신고 대상은 사용자 또는 방이다. 메시지 long press 신고는 sender 사용자 신고이며 `triggerMessageID`는 문맥일 뿐 case identity가 아니다.
-- 차단은 단방향 콘텐츠 visibility다. hidden message payload는 저장하지 않지만 seq는 소비한다.
+- 차단은 blocked-by-me 단방향 콘텐츠 visibility다. 채팅 current window는 유지하고 이후 새 admission만 제외하며 hidden seq와 원본 pagination cursor는 소비한다. 기존 로컬 원문은 소급 삭제하지 않고 새 UI admission에서 필터링한다. 룩북 댓글·답글은 차단 성공 즉시 숨긴다.
+- 2026-08-11 Phase 4 Production은 Functions `blockUser`/`unblockUser`와 Socket revision `outpick-socket-p4-block-0811`을 반영했다. 두 계정 QA에서 current-window 유지, 차단 후 live admission 제외, 참여자 유지, unblock 후 재진입 복원과 future live 수신을 확인했다. 실제 기기 background push는 추가 QA 항목이다.
+- 2026-08-11~12 Production 앱 종료 혼합 unread QA에서 `lastReadSeq=1`, 차단 `seq=2`, 비차단 `seq=3` 조건으로 재실행 목록의 visible unread 1·비차단 preview와 재진입 차단 메시지 제외를 확인했다. Production 제3자 계정을 추가하지 않고 QA 방 한정 합성 발신자를 사용했으며 방·projection·차단 relation·Storage를 잔존 0건으로 정리했다.
 - message delete는 seq tombstone을 유지하고 공개 payload·projection·Storage를 서버 cleanup으로 정리한다.
 - room ban은 membership 제거와 별개로 같은 provider 재가입을 막으며 unban은 membership을 자동 복원하지 않는다.
 - 검사 중 미디어는 공개되지 않고 seq도 없다. 검사 통과 transaction에서만 ready message와 seq가 생긴다.

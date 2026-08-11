@@ -35,14 +35,22 @@ protocol LoadHiddenCommentUserIDsUseCaseProtocol {
 
 final class LoadHiddenCommentUserIDsUseCase: LoadHiddenCommentUserIDsUseCaseProtocol {
     private let repository: any UserBlockRepositoryProtocol
+    private let visibilityStore: (any UserBlockVisibilityChecking)?
 
-    init(repository: any UserBlockRepositoryProtocol) {
+    init(
+        repository: any UserBlockRepositoryProtocol,
+        visibilityStore: (any UserBlockVisibilityChecking)? = nil
+    ) {
         self.repository = repository
+        self.visibilityStore = visibilityStore
     }
 
     func execute(
         currentUserID: UserID
     ) async throws -> Set<UserID> {
-        try await repository.fetchHiddenCommentUserIDs(currentUserID: currentUserID)
+        if let visibilityStore {
+            return Set(visibilityStore.blockedUserIDs().map(UserID.init(value:)))
+        }
+        return try await repository.fetchHiddenCommentUserIDs(currentUserID: currentUserID)
     }
 }

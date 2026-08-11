@@ -51,6 +51,8 @@ final class ChatRoomViewModel {
     private let currentUserProvider: CurrentUserProviding
     private let joinedRoomsStore: JoinedRoomsSessionStoring?
     private let roomReadStateStore: ChatRoomReadStateStore?
+    private let userBlockVisibilityStore: any UserBlockVisibilityChecking
+    private let blockUserUseCase: (any BlockUserUseCaseProtocol)?
 
     private(set) var isInitialLoading: Bool = true
     private(set) var isLoadingOlder: Bool = false
@@ -95,6 +97,9 @@ final class ChatRoomViewModel {
     private var lastReadFlushTask: Task<Void, Never>?
     private var searchMessagesTask: Task<Void, Never>?
     private var searchGeneration: Int = 0
+    private var olderRawCursor: String?
+    private var newerRawCursor: String?
+    private var admittedHiddenSeqs = Set<Int64>()
     private let lastReadFlushDebounceNanoseconds: UInt64 = 3_000_000_000
 
     let minTriggerDistance: Int = 3
@@ -133,7 +138,9 @@ final class ChatRoomViewModel {
         runtimeUseCase: ChatRoomRuntimeUseCaseProtocol,
         currentUserProvider: CurrentUserProviding,
         joinedRoomsStore: JoinedRoomsSessionStoring? = nil,
-        roomReadStateStore: ChatRoomReadStateStore? = nil
+        roomReadStateStore: ChatRoomReadStateStore? = nil,
+        userBlockVisibilityStore: any UserBlockVisibilityChecking = UserBlockVisibilityStore(),
+        blockUserUseCase: (any BlockUserUseCaseProtocol)? = nil
     ) {
         self.room = room
         self.initialLoadUseCase = initialLoadUseCase
@@ -145,6 +152,8 @@ final class ChatRoomViewModel {
         self.currentUserProvider = currentUserProvider
         self.joinedRoomsStore = joinedRoomsStore
         self.roomReadStateStore = roomReadStateStore
+        self.userBlockVisibilityStore = userBlockVisibilityStore
+        self.blockUserUseCase = blockUserUseCase
         seedRoomReadLatest(from: room)
     }
 
@@ -254,6 +263,7 @@ final class ChatRoomViewModel {
                 }
 
                 self.isInitialLoading = true
+                self.admittedHiddenSeqs.removeAll()
                 defer {
                     self.isInitialLoading = false
                     continuation.finish()
@@ -288,11 +298,25 @@ final class ChatRoomViewModel {
         isLoadingOlder = true
         defer { isLoadingOlder = false }
 
-        let loaded = try await messageUseCase.loadOlderMessages(room: room, before: messageID)
-        if loaded.isEmpty {
-            hasMoreOlder = false
+        var cursor = olderRawCursor ?? messageID
+        // 차단 메시지만 이어지는 긴 구간을 한 번의 스크롤로 끝까지 조회하지 않는다.
+        // 원본 커서는 계속 전진하므로 다음 페이지 요청에서 자연스럽게 이어진다.
+        for _ in 0..<3 where hasMoreOlder {
+            let loaded = try await messageUseCase.loadOlderMessages(room: room, before: cursor)
+            guard !loaded.isEmpty else {
+                hasMoreOlder = false
+                return []
+            }
+            guard let nextCursor = loaded.first?.ID, nextCursor != cursor else {
+                hasMoreOlder = false
+                return admitVisibleMessages(from: loaded)
+            }
+            cursor = nextCursor
+            olderRawCursor = nextCursor
+            let visible = admitVisibleMessages(from: loaded)
+            if !visible.isEmpty { return visible }
         }
-        return loaded
+        return []
     }
 
     func loadNewerMessages(after messageID: String?) async throws -> NewerMessagesResult {
@@ -303,21 +327,33 @@ final class ChatRoomViewModel {
         isLoadingNewer = true
         defer { isLoadingNewer = false }
 
-        let loaded = try await messageUseCase.loadNewerMessages(room: room, after: messageID)
-
-        if loaded.isEmpty {
-            hasMoreNewer = false
+        var cursor = newerRawCursor ?? messageID
+        // 새 메시지 방향도 한 번에 조회하는 원본 페이지 수를 제한한다.
+        for _ in 0..<3 where hasMoreNewer {
+            let loaded = try await messageUseCase.loadNewerMessages(room: room, after: cursor)
+            guard !loaded.isEmpty else {
+                hasMoreNewer = false
+                return NewerMessagesResult(messages: [])
+            }
+            guard let nextCursor = loaded.last?.ID, nextCursor != cursor else {
+                hasMoreNewer = false
+                return NewerMessagesResult(messages: admitVisibleMessages(from: loaded))
+            }
+            cursor = nextCursor
+            newerRawCursor = nextCursor
+            if let pageMax = loaded.last?.seq, pageMax > windowMaxSeq {
+                windowMaxSeq = pageMax
+            }
+            if liveMode == .catchingUp && windowMaxSeq >= unreadCatchUpState.knownLatestSeq {
+                liveMode = .live
+                hasMoreNewer = false
+            }
+            let visible = admitVisibleMessages(from: loaded)
+            if !visible.isEmpty || !hasMoreNewer {
+                return NewerMessagesResult(messages: visible)
+            }
         }
-        if let pageMax = loaded.last?.seq, pageMax > windowMaxSeq {
-            windowMaxSeq = pageMax
-        }
-
-        if liveMode == .catchingUp && windowMaxSeq >= unreadCatchUpState.knownLatestSeq {
-            liveMode = .live
-            hasMoreNewer = false
-        }
-
-        return NewerMessagesResult(messages: loaded)
+        return NewerMessagesResult(messages: [])
     }
 
     func loadLatestMessageWindow(targetSeq: Int64) async throws -> ChatLatestMessageWindow {
@@ -404,12 +440,73 @@ final class ChatRoomViewModel {
         }
     }
 
+    func shouldAdmitMessage(_ message: ChatMessage) -> Bool {
+        !userBlockVisibilityStore.isBlocked(message.senderUID)
+    }
+
+    func visibleMessages(from messages: [ChatMessage]) -> [ChatMessage] {
+        messages.filter(shouldAdmitMessage)
+    }
+
+    func admitVisibleMessages(from messages: [ChatMessage]) -> [ChatMessage] {
+        for message in messages where !shouldAdmitMessage(message) && message.seq > 0 {
+            admittedHiddenSeqs.insert(message.seq)
+        }
+        return visibleMessages(from: messages)
+    }
+
+    func contiguousLoadedThroughSeq(
+        visibleLoadedSeqs: Set<Int64>,
+        after frontierSeq: Int64
+    ) -> Int64 {
+        var contiguous = max(Int64(0), frontierSeq)
+        while contiguous < Int64.max {
+            let next = contiguous + 1
+            guard visibleLoadedSeqs.contains(next) || admittedHiddenSeqs.contains(next) else {
+                break
+            }
+            contiguous += 1
+        }
+        return contiguous
+    }
+
+    func consumeHiddenLiveMessage(_ message: ChatMessage) {
+        guard message.seq > 0 else { return }
+        admittedHiddenSeqs.insert(message.seq)
+        guard liveMode == .live, message.seq == readStateStore.frontierSeq + 1 else { return }
+        seedRoomReadLatest(from: message)
+        windowMaxSeq = max(windowMaxSeq, message.seq)
+        if let candidate = readStateStore.queueVisibleCandidate(
+            message.seq,
+            contiguousLoadedThroughSeq: message.seq
+        ) {
+            unreadCatchUpState.syncReadFrontier(candidate)
+            scheduleDebouncedLastReadFlush(userUID: currentUserDocumentID)
+        }
+    }
+
+    func isBlockedUser(_ userID: String) -> Bool {
+        userBlockVisibilityStore.isBlocked(userID)
+    }
+
+    func blockMessageAuthor(_ message: ChatMessage) async throws {
+        guard let blockUserUseCase else { return }
+        _ = try await blockUserUseCase.execute(
+            blockerUserID: UserID(value: currentUserUID),
+            blockedUserID: UserID(value: message.senderUID),
+            blockedUserNicknameSnapshot: message.senderNickname,
+            source: .chat
+        )
+    }
+
     func applyInitialMessageSyncState(_ state: ChatInitialSessionState) {
         entryTailSeq = state.latestSeq
         windowMaxSeq = state.windowMaxSeq
         initialReadBoundarySeq = state.readBoundarySeq
         hasMoreOlder = state.hasMoreOlder
         hasMoreNewer = state.hasMoreNewer
+        olderRawCursor = nil
+        newerRawCursor = nil
         liveMode = (windowMaxSeq >= entryTailSeq) ? .live : .catchingUp
         let persistedFrontier = state.readBoundarySeq ?? 0
         readStateStore.reset(persistedLastReadSeq: persistedFrontier)
@@ -499,10 +596,10 @@ final class ChatRoomViewModel {
     }
 
     func applySearchResult(_ result: ChatMessageSearchResult) {
-        let hits = result.hits
+        let hits = result.hits.filter { shouldAdmitMessage($0.message) }
         searchSession = SearchSessionState(
             keyword: result.keyword,
-            totalCount: result.totalCount,
+            totalCount: hits.count,
             source: result.source,
             isAuthoritative: result.isAuthoritative,
             hits: hits,
@@ -546,12 +643,13 @@ final class ChatRoomViewModel {
         beforeLimit: Int = 60,
         afterLimit: Int = 60
     ) async throws -> [ChatMessage] {
-        try await messageUseCase.loadMessagesAroundAnchor(
+        let messages = try await messageUseCase.loadMessagesAroundAnchor(
             room: room,
             anchor: anchor,
             beforeLimit: beforeLimit,
             afterLimit: afterLimit
         )
+        return visibleMessages(from: messages)
     }
 
     func applyVisibleWindowAfterSearchJump(_ messages: [ChatMessage]) {
@@ -580,6 +678,7 @@ final class ChatRoomViewModel {
         let payload = AnnouncementPayload(
             text: message.msg ?? "",
             authorID: authorID,
+            authorUID: currentUserUID,
             createdAt: Date()
         )
         try await lifecycleUseCase.setActiveAnnouncement(
@@ -591,6 +690,12 @@ final class ChatRoomViewModel {
 
     func clearAnnouncement() async throws {
         try await lifecycleUseCase.clearActiveAnnouncement(roomID: roomID)
+    }
+
+    func visibleAnnouncement(_ payload: AnnouncementPayload?) -> AnnouncementPayload? {
+        guard let payload else { return nil }
+        guard let authorUID = payload.authorUID else { return payload }
+        return userBlockVisibilityStore.isBlocked(authorUID) ? nil : payload
     }
 
     func finalLastReadSeqForSessionEnd() -> Int64 {

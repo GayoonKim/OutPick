@@ -26,6 +26,11 @@
   - 로그인 여부 확인, 로그인/프로필/메인 탭 루트 전환, 강제 로그아웃 라우팅을 담당한다.
   - Lookbook/Chat Container를 메인 탭 수명 동안 유지한다.
   - 인증 세션 runtime 시작/정지, 같은 realtime service 주입, 같은 avatar manager 주입 흐름을 연결한다.
+  - UGC 진입 전 `UserBlockSessionController`가 계정별 로컬 UID snapshot을 메모리 `UserBlockVisibilityStore`에 적용하고 서버 최신값으로 교체한다. snapshot 없이 서버 조회도 실패하면 bootstrap 실패 화면으로 fail closed한다.
+- Global block session: `OutPick/Features/Moderation/`
+  - `UserBlockVisibilityStore.swift`: Chat·Lookbook·Profile·MyPage가 공유하는 메모리 UID Set이다.
+  - `UserBlockSnapshotStore.swift`: UserDefaults의 계정별 마지막 성공 snapshot만 보관한다.
+  - `UserBlockSessionController.swift`: 로그인 bootstrap, 서버 mutation 성공 후 Store/snapshot 동기화, 로그아웃 clear를 소유한다.
 - Moderation notice: `OutPick/App/ModerationNoticeViewController.swift`
   - restricted 재가입 계정처럼 아직 account/profile이 없거나 suspended인 사용자의 전용 root다.
   - warning 색상 hairline, serif 제목, monospaced 상태, action row의 에디토리얼 경고 화면을 표시한다.

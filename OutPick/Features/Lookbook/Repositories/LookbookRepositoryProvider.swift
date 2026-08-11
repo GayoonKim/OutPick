@@ -12,7 +12,8 @@ final class LookbookRepositoryProvider {
     static let shared = LookbookRepositoryProvider.live()
 
     static func live(
-        transport: any CloudFunctionsTransporting = FirebaseCloudFunctionsTransport()
+        transport: any CloudFunctionsTransporting = FirebaseCloudFunctionsTransport(),
+        userBlockRepository: (any UserBlockRepositoryProtocol)? = nil
     ) -> LookbookRepositoryProvider {
         LookbookRepositoryProvider(
             brandSearchRepository: CloudFunctionsBrandSearchRepository(transport: transport),
@@ -41,7 +42,8 @@ final class LookbookRepositoryProvider {
             commentWritingRepository: CloudFunctionsCommentWritingRepository(transport: transport),
             commentEngagementRepository: CloudFunctionsCommentEngagementRepository(transport: transport),
             commentSafetyRepository: CloudFunctionsCommentSafetyRepository(transport: transport),
-            userBlockRepository: CloudFunctionsUserBlockRepository(transport: transport)
+            userBlockRepository: userBlockRepository
+                ?? CloudFunctionsUserBlockRepository(transport: transport)
         )
     }
 

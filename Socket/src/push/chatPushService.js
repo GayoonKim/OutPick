@@ -72,6 +72,31 @@ function buildChatPushMulticast({
 }
 
 export function createChatPushService({ db, admin, clock }) {
+  async function blockedPushReason({ recipientUID, senderUID }) {
+    const normalizedRecipientUID = normalizeUID(recipientUID);
+    const normalizedSenderUID = normalizeUID(senderUID);
+    if (!normalizedRecipientUID || !normalizedSenderUID) return "invalid_block_relation";
+    if (normalizedRecipientUID.includes("/") || normalizedSenderUID.includes("/")) {
+      return "invalid_block_relation";
+    }
+
+    try {
+      const relation = await db.collection("users")
+        .doc(normalizedRecipientUID)
+        .collection("blockedUsers")
+        .doc(normalizedSenderUID)
+        .get();
+      return relation.exists ? "sender_blocked" : null;
+    } catch (error) {
+      console.error("[push] block relation lookup failed", {
+        recipientUID: normalizedRecipientUID,
+        senderUID: normalizedSenderUID,
+        error
+      });
+      return "block_lookup_failed";
+    }
+  }
+
   async function loadDeviceDocsByUserUID(userUID) {
     const normalizedUID = normalizeUID(userUID);
     if (!normalizedUID || normalizedUID.includes("/")) return [];
@@ -112,6 +137,14 @@ export function createChatPushService({ db, admin, clock }) {
     senderNickname,
     preview
   }) {
+    const blockReason = await blockedPushReason({
+      recipientUID: userUID,
+      senderUID
+    });
+    if (blockReason) {
+      return { sent: 0, skippedReason: blockReason };
+    }
+
     const devices = await loadDeviceDocsByUserUID(userUID);
     if (!devices.length) {
       return { sent: 0, skippedReason: "no_devices" };

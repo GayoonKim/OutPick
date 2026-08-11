@@ -29,6 +29,9 @@ final class AppCoordinator {
     private let avatarImageManager: AvatarImageManaging
     private let appSessionRuntime: AppSessionRuntime
     private let chatPersistence: ChatPersistenceProvider
+    private let userBlockVisibilityStore: UserBlockVisibilityStore
+    private let userBlockSessionController: UserBlockSessionController
+    private let userBlockRepository: any UserBlockRepositoryProtocol
     private var sessionResetTask: Task<Void, Never>?
     
     private var profileCoordinator: ProfileCoordinator?
@@ -76,7 +79,10 @@ final class AppCoordinator {
         realtimeSocketService: RealtimeSocketService,
         avatarImageManager: AvatarImageManaging,
         appSessionRuntime: AppSessionRuntime,
-        chatPersistence: ChatPersistenceProvider
+        chatPersistence: ChatPersistenceProvider,
+        userBlockVisibilityStore: UserBlockVisibilityStore,
+        userBlockSessionController: UserBlockSessionController,
+        userBlockRepository: any UserBlockRepositoryProtocol
     ) {
         self.window = window
         self.lookbookProvider = lookbookProvider
@@ -103,6 +109,9 @@ final class AppCoordinator {
         self.avatarImageManager = avatarImageManager
         self.appSessionRuntime = appSessionRuntime
         self.chatPersistence = chatPersistence
+        self.userBlockVisibilityStore = userBlockVisibilityStore
+        self.userBlockSessionController = userBlockSessionController
+        self.userBlockRepository = userBlockRepository
         self.window.backgroundColor = OutPickTheme.ColorToken.backgroundBase
         Self.activeCoordinator = self
     }
@@ -174,6 +183,10 @@ final class AppCoordinator {
         do {
             let userID = try await LoginManager.shared.ensureUserDocumentID()
             let outcome = try await loadCurrentUserBootstrapUseCase.execute(userID: userID)
+
+            if outcome.canEnterUserGeneratedContent {
+                try await userBlockSessionController.bootstrap(userID: userID)
+            }
 
             switch outcome {
             case .ready(let account, let publicProfile):
@@ -277,6 +290,7 @@ final class AppCoordinator {
         self.appSessionRuntime.clearJoinedRooms()
         self.currentUserSessionStore.clear()
         self.currentUserStylePreferenceStore.clear()
+        self.userBlockSessionController.stop()
 
         sessionResetTask?.cancel()
         sessionResetTask = Task { @MainActor [weak self] in
@@ -502,6 +516,7 @@ final class AppCoordinator {
         appSessionRuntime.clearJoinedRooms()
         currentUserSessionStore.clear()
         currentUserStylePreferenceStore.clear()
+        userBlockSessionController.stop()
         brandAdminSessionStore.reset()
         profileCoordinator = nil
         lookbookContainer = nil
@@ -569,7 +584,9 @@ final class AppCoordinator {
             currentUserProvider: currentUserProvider,
             stylePreferenceStore: currentUserStylePreferenceStore,
             publicProfileRepository: publicProfileRepository,
-            avatarImageManager: avatarImageManager
+            avatarImageManager: avatarImageManager,
+            blockSessionSynchronizer: userBlockSessionController,
+            userBlockVisibilityStore: userBlockVisibilityStore
         )
         self.lookbookContainer = created
         return created
@@ -593,7 +610,9 @@ final class AppCoordinator {
             sessionStore: currentUserSessionStore,
             stylePreferenceStore: currentUserStylePreferenceStore,
             currentUserProvider: currentUserProvider,
-            avatarImageManager: avatarImageManager
+            avatarImageManager: avatarImageManager,
+            userBlockRepository: userBlockRepository,
+            userBlockSessionSynchronizer: userBlockSessionController
         )
     }
 
@@ -610,7 +629,10 @@ final class AppCoordinator {
             joinedRoomsRuntime: appSessionRuntime,
             currentUserProvider: currentUserProvider,
             realtimeSocketService: realtimeSocketService,
-            avatarImageManager: avatarImageManager
+            avatarImageManager: avatarImageManager,
+            userBlockVisibilityStore: userBlockVisibilityStore,
+            userBlockRepository: userBlockRepository,
+            userBlockSessionSynchronizer: userBlockSessionController
         )
         self.chatContainer = created
         return created

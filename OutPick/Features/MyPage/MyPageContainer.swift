@@ -17,6 +17,8 @@ final class MyPageContainer {
     let stylePreferenceStore: CurrentUserStylePreferenceStore
     let currentUserProvider: CurrentUserProviding
     let avatarImageManager: AvatarImageManaging
+    let userBlockRepository: any UserBlockRepositoryProtocol
+    let unblockUserUseCase: any UnblockUserUseCaseProtocol
     private(set) weak var appContentRouter: (any AppContentRouting)?
 
     init(
@@ -34,7 +36,9 @@ final class MyPageContainer {
         sessionStore: CurrentUserSessionStore,
         stylePreferenceStore: CurrentUserStylePreferenceStore,
         currentUserProvider: CurrentUserProviding,
-        avatarImageManager: AvatarImageManaging
+        avatarImageManager: AvatarImageManaging,
+        userBlockRepository: any UserBlockRepositoryProtocol,
+        userBlockSessionSynchronizer: (any UserBlockSessionSynchronizing)? = nil
     ) {
         self.userID = userID
         self.accountRepository = accountRepository
@@ -48,6 +52,11 @@ final class MyPageContainer {
         self.stylePreferenceStore = stylePreferenceStore
         self.currentUserProvider = currentUserProvider
         self.avatarImageManager = avatarImageManager
+        self.userBlockRepository = userBlockRepository
+        self.unblockUserUseCase = UnblockUserUseCase(
+            repository: userBlockRepository,
+            sessionSynchronizer: userBlockSessionSynchronizer
+        )
     }
 
     func configureAppContentRouter(_ appContentRouter: (any AppContentRouting)?) {

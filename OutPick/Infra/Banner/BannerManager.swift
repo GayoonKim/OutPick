@@ -28,6 +28,7 @@ final class BannerManager {
     private var realtimeSocketService: (any RealtimeBackgroundRoomSessionOpening)?
     private var roomReadStateStore: ChatRoomReadStateStore?
     private var roomRepository: FirebaseChatRoomRepositoryProtocol?
+    private var userBlockVisibilityStore: (any UserBlockVisibilityChecking)?
     private let retryPolicy: BannerSubscriptionRetryPolicy
     private let retrySleep: @Sendable (TimeInterval) async -> Void
 
@@ -67,8 +68,12 @@ final class BannerManager {
         self.roomRepository = roomRepository
     }
 
-    func configure(realtimeSocketService: any RealtimeBackgroundRoomSessionOpening) {
+    func configure(
+        realtimeSocketService: any RealtimeBackgroundRoomSessionOpening,
+        userBlockVisibilityStore: (any UserBlockVisibilityChecking)? = nil
+    ) {
         self.realtimeSocketService = realtimeSocketService
+        self.userBlockVisibilityStore = userBlockVisibilityStore
     }
 
     /// 배너용 구독 시작(참여 중인 모든 방)
@@ -181,6 +186,7 @@ final class BannerManager {
     }
 
     private func handleIncomingMessage(_ msg: ChatMessage, roomID: String) async {
+        guard userBlockVisibilityStore?.isBlocked(msg.senderUID) != true else { return }
         let text = bannerText(from: msg)
         roomReadStateStore?.seedIncomingMessage(msg)
         roomRepository?.applyLocalIncomingMessagePreview(msg)

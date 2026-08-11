@@ -9,6 +9,7 @@ struct LocalChatUser: Codable, Hashable {
 struct ImageIndexMeta: Decodable, Equatable {
     let roomID: String
     let messageID: String
+    let senderUID: String?
     let idx: Int
     let thumbKey: String?
     let originalKey: String?
@@ -26,6 +27,7 @@ struct ImageIndexMeta: Decodable, Equatable {
 struct VideoIndexMeta: Decodable, Equatable {
     let roomID: String
     let messageID: String
+    let senderUID: String?
     let idx: Int
     let thumbKey: String?
     let originalKey: String?

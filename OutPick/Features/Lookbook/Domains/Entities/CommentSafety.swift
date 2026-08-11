@@ -49,6 +49,7 @@ enum UserBlockSource: String, Codable, Hashable {
     case comment
     case reply
     case profile
+    case chat
 }
 
 struct CommentReportTarget: Codable, Hashable {

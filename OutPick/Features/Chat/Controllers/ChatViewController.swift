@@ -527,7 +527,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     @MainActor
     private func setMessageWindow(_ window: ChatInitialWindow) async {
         let items = messageWindowStore.reset(
-            messages: window.messages,
+            messages: chatRoomViewModel.admitVisibleMessages(from: window.messages),
             readBoundarySeq: window.readBoundarySeq
         )
 
@@ -862,7 +862,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         let highestVisibleSeq = visibleSeqs.max()
         guard let highestVisibleSeq else { return }
 
-        let contiguousLoadedThroughSeq = messageWindowStore.highestContiguousSeq(
+        let visibleLoadedSeqs = Set(messageWindowStore.visibleMessages.lazy.map(\.seq))
+        let contiguousLoadedThroughSeq = chatRoomViewModel.contiguousLoadedThroughSeq(
+            visibleLoadedSeqs: visibleLoadedSeqs,
             after: chatRoomViewModel.readFrontierSeq
         )
         if chatRoomViewModel.recordVisibleMessage(
@@ -1090,6 +1092,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private func handleIncomingMessage(_ message: ChatMessage) async {
         guard self.room != nil else { return }
         if message.roomID != chatRoomViewModel.roomID { return }
+        guard chatRoomViewModel.shouldAdmitMessage(message) else {
+            chatRoomViewModel.consumeHiddenLiveMessage(message)
+            return
+        }
 
         let wasNearBottom = isNearBottom()
         let action = chatRoomViewModel.handleIncomingMessage(message)
@@ -1418,7 +1424,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         guard let old = old else {
             updateNavigationTitle(with: new)
             setupAnnouncementBannerIfNeeded()
-            updateAnnouncementBanner(with: new.activeAnnouncement)
+            updateAnnouncementBanner(with: chatRoomViewModel.visibleAnnouncement(new.activeAnnouncement))
             return
         }
         
@@ -1437,7 +1443,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }()
         if announcementChanged {
             setupAnnouncementBannerIfNeeded()
-            updateAnnouncementBanner(with: new.activeAnnouncement)
+            updateAnnouncementBanner(with: chatRoomViewModel.visibleAnnouncement(new.activeAnnouncement))
         }
     }
     
@@ -1461,7 +1467,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             chatUIView.isHidden = false
             joinRoomBtn.isHidden = true
             self.setupAnnouncementBannerIfNeeded()
-            self.updateAnnouncementBanner(with: currentRoom.activeAnnouncement)
+            self.updateAnnouncementBanner(
+                with: self.chatRoomViewModel.visibleAnnouncement(currentRoom.activeAnnouncement)
+            )
         } else {
             setJoinRoombtn()
             joinRoomBtn.isHidden = false
@@ -1975,6 +1983,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             canCopy: policy.canCopy,
             canDelete: policy.canDelete,
             canReport: policy.canReport,
+            canBlock: policy.canBlock,
             canAnnounce: policy.canAnnounce
         )
     }
@@ -2022,6 +2031,20 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         case .report:
             handleReport(message: message)
             dismissCustomMenu()
+        case .block:
+            guard !chatRoomViewModel.isBlockedUser(message.senderUID) else {
+                showSuccess("먼저 차단을 해제해 주세요")
+                dismissCustomMenu()
+                return
+            }
+            ConfirmView.present(
+                in: view,
+                message: "이 사용자의 새 메시지를 더 이상 표시하지 않습니다.",
+                onConfirm: { [weak self] in
+                    self?.performBlockUser(message: message)
+                }
+            )
+            dismissCustomMenu()
         case .announce:
             print(#function, "공지:", message.msg ?? "")
             ConfirmView.presentAnnouncement(in: view, onConfirm: { [weak self] in
@@ -2043,9 +2066,26 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         // 필요 시 UI 피드백
         showSuccess("메시지가 신고되었습니다.")
     }
+
+    @MainActor
+    private func performBlockUser(message: ChatMessage) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                try await self.chatRoomViewModel.blockMessageAuthor(message)
+                self.showSuccess("사용자를 차단했습니다")
+            } catch {
+                self.showSuccess("사용자를 차단하지 못했습니다")
+            }
+        }
+    }
     
     @MainActor
     private func handleReply(message: ChatMessage) {
+        guard !chatRoomViewModel.isBlockedUser(message.senderUID) else {
+            showSuccess("먼저 차단을 해제해 주세요")
+            return
+        }
         print(#function, "답장:", message)
         let replyText = message.isLookbookShareMessage ? message.lookbookSharePreviewText : (message.msg ?? "")
         self.replyMessage = ReplyPreview(messageID: message.ID, sender: message.senderNickname, text: replyText, isDeleted: false)

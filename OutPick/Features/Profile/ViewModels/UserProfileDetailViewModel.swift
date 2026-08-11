@@ -12,6 +12,7 @@ final class UserProfileDetailViewModel {
         var avatarSource: AvatarImageSource
         var isLoading: Bool = false
         var isCurrentUser: Bool = false
+        var isBlocked: Bool = false
     }
 
     private(set) var state: State {
@@ -23,6 +24,7 @@ final class UserProfileDetailViewModel {
     private let userID: String
     private let currentUserID: String?
     private let loadUserProfileDetailUseCase: LoadUserProfileDetailUseCaseProtocol
+    private let blockUserUseCase: (any BlockUserUseCaseProtocol)?
     private let onBack: () -> Void
     private var hasLoaded = false
 
@@ -32,11 +34,15 @@ final class UserProfileDetailViewModel {
         seedAvatarSource: AvatarImageSource,
         currentUserID: String?,
         loadUserProfileDetailUseCase: LoadUserProfileDetailUseCaseProtocol,
+        blockUserUseCase: (any BlockUserUseCaseProtocol)? = nil,
+        userBlockVisibilityStore: (any UserBlockVisibilityChecking)? = nil,
         onBack: @escaping () -> Void
     ) {
         self.userID = userID
-        self.currentUserID = currentUserID?.normalizedForComparison
+        let canonicalCurrentUserID = currentUserID?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.currentUserID = canonicalCurrentUserID?.isEmpty == false ? canonicalCurrentUserID : nil
         self.loadUserProfileDetailUseCase = loadUserProfileDetailUseCase
+        self.blockUserUseCase = blockUserUseCase
         self.onBack = onBack
 
         let fallbackNickname = seedNickname.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -46,7 +52,8 @@ final class UserProfileDetailViewModel {
             isCurrentUser: Self.isCurrentUser(
                 userID: userID,
                 currentUserID: self.currentUserID
-            )
+            ),
+            isBlocked: userBlockVisibilityStore?.isBlocked(userID) == true
         )
     }
 
@@ -58,6 +65,19 @@ final class UserProfileDetailViewModel {
 
     func backTapped() {
         onBack()
+    }
+
+    func blockUser() async throws {
+        guard let blockUserUseCase, let currentUserID else {
+            throw UserProfileDetailError.blockUnavailable
+        }
+        _ = try await blockUserUseCase.execute(
+            blockerUserID: UserID(value: currentUserID),
+            blockedUserID: UserID(value: userID),
+            blockedUserNicknameSnapshot: state.nickname,
+            source: .profile
+        )
+        state.isBlocked = true
     }
 
     private func loadProfile() async {
@@ -88,8 +108,12 @@ final class UserProfileDetailViewModel {
         userID: String,
         currentUserID: String?
     ) -> Bool {
-        userID.normalizedForComparison == currentUserID
+        userID.normalizedForComparison == currentUserID?.normalizedForComparison
     }
+}
+
+private enum UserProfileDetailError: Error {
+    case blockUnavailable
 }
 
 private extension String {

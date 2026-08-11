@@ -9,6 +9,7 @@ import Foundation
 
 struct ChatRoomSettingMediaItem: Hashable {
     let messageID: String
+    let senderUID: String?
     let idx: Int
     let hash: String?
     let thumbKey: String?

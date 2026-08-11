@@ -18,6 +18,7 @@ class ChatCustomPopUpMenu: UIView {
         let canCopy: Bool
         let canDelete: Bool
         let canReport: Bool
+        let canBlock: Bool
         let canAnnounce: Bool
     }
     
@@ -36,6 +37,12 @@ class ChatCustomPopUpMenu: UIView {
     private lazy var copyButton = UIButton.menuButton(title: "복사", systemImageName: "document.on.clipboard")
     private lazy var deleteButton = UIButton.menuButton(title: "삭제", systemImageName: "trash", tintColor: OutPickTheme.ColorToken.destructive, isDestructive: true)
     private lazy var announceButton = UIButton.menuButton(title: "공지", systemImageName: "megaphone.fill")
+    private lazy var blockButton = UIButton.menuButton(
+        title: "차단",
+        systemImageName: "person.crop.circle.badge.xmark",
+        tintColor: OutPickTheme.ColorToken.destructive,
+        isDestructive: true
+    )
 
     private func setPrimaryAction(_ mode: PrimaryActionMode) {
         self.primaryActionMode = mode
@@ -60,6 +67,7 @@ class ChatCustomPopUpMenu: UIView {
                 canCopy: true,
                 canDelete: canDelete,
                 canReport: !canDelete,
+                canBlock: !canDelete,
                 canAnnounce: canAnnounce
             )
         )
@@ -74,6 +82,9 @@ class ChatCustomPopUpMenu: UIView {
 
         announceButton.isHidden = !configuration.canAnnounce
         sep3.isHidden = !configuration.canAnnounce || !(configuration.canDelete || configuration.canReport)
+
+        blockButton.isHidden = !configuration.canBlock
+        sep4.isHidden = !configuration.canBlock
 
         if configuration.canDelete {
             setPrimaryAction(.delete)
@@ -96,6 +107,7 @@ class ChatCustomPopUpMenu: UIView {
     private lazy var sep1: UIView = makeSeparator()
     private lazy var sep2: UIView = makeSeparator()
     private lazy var sep3: UIView = makeSeparator()
+    private lazy var sep4: UIView = makeSeparator()
     
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -119,6 +131,8 @@ class ChatCustomPopUpMenu: UIView {
         mainSV.addArrangedSubview(announceButton)
         mainSV.addArrangedSubview(sep3)
         mainSV.addArrangedSubview(deleteButton)
+        mainSV.addArrangedSubview(sep4)
+        mainSV.addArrangedSubview(blockButton)
         
         NSLayoutConstraint.activate([
             mainSV.topAnchor.constraint(equalTo: topAnchor, constant: 8),
@@ -130,10 +144,12 @@ class ChatCustomPopUpMenu: UIView {
             copyButton.widthAnchor.constraint(equalToConstant: UIScreen.main.bounds.width * 0.4),
             announceButton.widthAnchor.constraint(equalToConstant: UIScreen.main.bounds.width * 0.4),
             deleteButton.widthAnchor.constraint(equalToConstant: UIScreen.main.bounds.width * 0.4),
+            blockButton.widthAnchor.constraint(equalToConstant: UIScreen.main.bounds.width * 0.4),
             replyButton.heightAnchor.constraint(equalToConstant: UIScreen.main.bounds.width * 0.05),
             copyButton.heightAnchor.constraint(equalTo: replyButton.heightAnchor),
             announceButton.heightAnchor.constraint(equalTo: replyButton.heightAnchor),
             deleteButton.heightAnchor.constraint(equalTo: replyButton.heightAnchor),
+            blockButton.heightAnchor.constraint(equalTo: replyButton.heightAnchor),
         ])
     }
     
@@ -142,6 +158,7 @@ class ChatCustomPopUpMenu: UIView {
         copyButton.addTarget(self, action: #selector(copyTapped), for: .touchUpInside)
         deleteButton.addTarget(self, action: #selector(deleteTapped), for: .touchUpInside)
         announceButton.addTarget(self, action: #selector(announceTapped), for: .touchUpInside)
+        blockButton.addTarget(self, action: #selector(blockTapped), for: .touchUpInside)
     }
     
     @objc private func replyTapped() {
@@ -163,6 +180,10 @@ class ChatCustomPopUpMenu: UIView {
     
     @objc private func announceTapped() {
         onActionSelected?(.announce)
+    }
+
+    @objc private func blockTapped() {
+        onActionSelected?(.block)
     }
 }
 

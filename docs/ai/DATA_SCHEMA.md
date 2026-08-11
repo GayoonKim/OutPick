@@ -123,9 +123,10 @@
 ### 전역 차단과 로컬 redaction
 
 - `users/{uid}/blockedUsers/{blockedUID}`는 Chat·Lookbook·Profile이 공유하는 전역 차단 source다.
-- A가 B를 차단하면 A만 B 콘텐츠를 숨기고 B는 공동방의 A 콘텐츠를 계속 본다. profile/direct interaction은 양쪽 모두 차단한다.
-- hidden Chat event는 strict seq를 소비하지만 본문·첨부·FTS·미디어 cache를 새로 저장하지 않는다. 필요 시 GRDB에는 ordering에 필요한 최소 redacted marker만 둔다.
-- 차단 해제 뒤 과거 메시지는 Firestore 재조회 때 복원할 수 있다.
+- A가 B를 차단하면 A만 새로 admission되는 B 콘텐츠를 숨긴다. B의 참여자 목록·프로필·공동방은 바꾸지 않고 차단 사실을 알리지 않는다. A가 B에게 직접 상호작용할 때만 A에게 차단 해제를 안내한다.
+- Chat은 차단 성공 전에 현재 화면 window에 들어온 메시지를 세션 동안 유지한다. hidden event는 strict seq와 원본 pagination cursor를 소비하지만 별도 redacted marker를 만들거나 기존 본문·첨부·FTS·미디어 cache를 소급 삭제하지 않는다.
+- 계정별 마지막 성공 UID snapshot을 메모리 Store의 초기값으로 사용한 뒤 owner-only 서버 relation으로 교체한다. snapshot 없이 서버 조회가 실패하면 UGC 진입을 fail closed한다.
+- 차단 해제 뒤 현재 방을 강제 재조회하지 않는다. 이후 메시지는 즉시 admission하고 과거 메시지는 재진입·pagination·일반 동기화에서 자연 복원한다.
 
 ### 게시 전 미디어 검사
 
