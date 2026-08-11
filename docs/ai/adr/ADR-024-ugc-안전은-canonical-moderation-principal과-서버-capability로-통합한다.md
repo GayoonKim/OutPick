@@ -11,7 +11,7 @@ accepted
 - Google·Apple·Kakao의 검증된 provider subject는 원문으로 저장하지 않고 versioned HMAC alias로 canonical principal에 연결한다.
 - Rules·Functions·Socket·Storage가 읽는 현재 UID projection은 서버 전용 `moderationAccounts/{uid}`로 통일한다.
 - 신고 aggregate·submission·audit, 메시지 삭제, room ban과 계정 제재는 클라이언트 직접 write가 아니라 서버 API가 authoritative writer가 된다.
-- 차단은 장기 제재가 아니라 기존 `users/{uid}/blockedUsers/{blockedUID}` 전역 관계를 유지하며, 단방향 콘텐츠 visibility 정책으로 적용한다.
+- 차단은 장기 제재가 아니라 기존 `users/{uid}/blockedUsers/{blockedUID}` 전역 관계를 유지하며, blocked-by-me 단방향 콘텐츠 visibility 정책으로 적용한다. 채팅은 차단 성공 전 현재 window를 보존하고 이후 admission부터 제외하며, 룩북은 현재 댓글·답글을 즉시 숨긴다. 참여자 목록·프로필과 B의 경험은 유지한다.
 - 미디어 reservation은 ADR-016을 확장해 상태 머신으로 사용한다. 검사 통과 transaction 전에는 message document와 room seq를 만들지 않는다.
 - exact schema, enum, API, 오류, 상태 전이와 index 계약은 `contracts/chat-moderation-v1.json`을 기준으로 한다.
 

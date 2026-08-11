@@ -224,8 +224,15 @@ Firebase Functions tests/build entry:
 - iOS unit test 후보:
   - bootstrap active/deletionPending/restricted/suspended routing
   - 신고·차단·삭제 ViewModel state와 Coordinator route spy
-  - hidden seq 소비·payload/FTS/cache 미저장·unblock remote 복원
+  - 현재 window 보존, hidden seq·pagination cursor 소비, 기존 payload/FTS/cache 유지와 재표시 차단, unblock 뒤 강제 재조회 없는 자연 복원
   - pending media relaunch/retry/failure와 ready ACK 수렴
+- Phase 4 전역 차단 자동 검증:
+  - `UserBlockSessionControllerTests.swift`: cache 선적용 뒤 서버 교체, 서버 실패 cache fallback, snapshot 없는 실패의 UGC fail-closed, block/unblock mutation 뒤 메모리·계정별 snapshot 동기화와 이전 계정의 지연 실패가 새 계정 Store를 지우지 않는 경쟁 조건을 검증한다.
+  - `ChatVisibleUnreadUseCaseTests.swift`: 앱 종료 중 누적된 혼합 발신자 메시지를 page 단위로 필터링하고, 전부 숨김·고정 latestSeq·목록 visible unread/preview 교체·조회 실패 raw unread fallback을 검증한다.
+  - `ChatMessageActionPolicyTests.swift`: 타인 메시지의 block action과 기존 reply/copy/delete/report/announcement 권한 회귀를 검증한다.
+  - `ChatRoomViewModelMessageActionTests.swift`: hidden seq와 현재 window의 visible seq를 합쳐 read frontier 연속 구간을 계산해 숨김 뒤 정상 메시지도 읽음 처리되는지 검증한다.
+  - `AppDatabaseMigrationTests.swift`, `GRDBChatMediaIndexStoreTests.swift`, `OutPickTests.swift`: 16번째 media sender UID migration, 저장/페이지 순서, local/remote dedupe와 차단 visibility용 sender UID 계약을 검증한다.
+  - Functions `lookbook/safety/blockContracts.test.ts`와 전체 suite는 exact block/unblock payload, 자기 차단·unknown field 거부, 신규 callable export를 검증한다. Socket `push/chatPushService.test.js`는 recipient 차단과 relation lookup 실패 시 push fail-closed를 검증한다.
 - iOS Phase 3: `CloudFunctionsChatModerationLifecycleRepositoryTests`, `ChatRoomExitUseCaseTests`, `ChatRoomMessageUseCaseTests`, `ChatRoomFirestoreMapperTests`, `JoinedRoomsClosureNoticeTests`가 callable payload, lifecycle version, 서버 성공 후 local cleanup 위임, legacy room 기본 version, 종료 안내 문구와 확인 후 stale fetch 중복 방지를 검증한다. `BannerPresentationQueueStateTests`는 이전 화면의 stale leave가 현재 visible room을 해제하지 않는 계약을 검증한다.
 - Socket Phase 3: `roomClosureWatcher.test.js`가 pending/completed job의 단일 emit과 강제 leave, 잘못된 job 무시를 검증하고 `roomHandlers.test.js`가 방장 종료 handler는 ACK만 반환하며 watcher의 단일 종료 side effect와 경합하지 않음을 검증한다.
 - Phase 3.1 공용 종료 tombstone: `chat-moderation.emulator.test.mjs`가 콘텐츠 즉시 정리, 방장 즉시 cleanup, 확인 사용자만 membership 제거, active room 확인 거부, 멱등 재확인과 170명/14일 batch 정리를 검증한다. `moderation-capabilities.rules.test.mjs`는 joined projection 보유자만 tombstone을 읽고 Messages는 읽지 못함을 검증한다. iOS는 `ChatRoomRuntimeUseCaseTests`와 `CloudFunctionsChatModerationLifecycleRepositoryTests`에서 종료 payload 전달과 `acknowledgeRoomClosure` callable을, `ChatNavigationStackPolicyTests`에서 종료 확인 뒤 목록 복귀·생성 route 제거·같은 방 안내 1회 제한을, `RealtimeSocketListenerBinderTests`에서 권위 종료 최초 1회 수용과 방 재생성 reset을 검증한다. `JoinedRoomsClosureNoticeTests`는 실시간·오프라인 확인 직후 제거된 방의 stale fetch 재삽입 차단, 서버 응답 전 optimistic 제거, 서버 실패 시 목록 복원을 검증한다. 2026-08-11 오프라인 보정 뒤 해당 suite 5개가 iPhone 17 Pro Simulator에서 통과했다.
@@ -233,6 +240,7 @@ Firebase Functions tests/build entry:
   - Phase 3.1 방장 접속 중·오프라인 종료와 관리자 접속 중·오프라인 종료를 Google/Kakao Production 계정으로 완료했다. 마지막 오프라인 관리자 종료는 양 계정 모두 안내 1회·확인 즉시 행 제거·재실행 미복원을 통과했고 member/joinedRooms/roomStates 0건, 14일 retention 예약과 관련 ERROR 0건을 확인했다.
   - 메시지/프로필/참여자/방 설정 신고 진입과 문구·접근성
   - 두 계정 block/unblock, background/banner/push, creator remove/unban
+  - 2026-08-11~12 Production 앱 종료 혼합 unread는 기존 두 계정과 QA 방 한정 비차단 합성 발신자로 `lastReadSeq=1`, 차단 `seq=2`, 비차단 `seq=3`을 구성해 목록 unread 1·비차단 preview·재진입 차단 메시지 제외를 통과했다. 방/메시지/projection/block/Storage 잔존은 0건이다.
   - Google·Kakao 재인증·탈퇴·재가입과 동일 restricted principal 복원은 2026-08-07 Development에서 통과했다. Apple은 로그인 구현 전이라 미완료이며 Production Kakao User ID Fixed 콘솔 확인은 출시 gate다.
   - 허용 패션/성적/폭력/UNKNOWN 이미지·동영상 corpus
 - Phase 0에서는 테스트 코드를 추가·실행하지 않는다. 이후 Phase는 실패 비용이 큰 인증·삭제·Rules·Storage 계약이므로 해당 Phase 완료 전에 자동 테스트와 build를 실행한다.
