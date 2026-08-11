@@ -582,7 +582,10 @@ private struct ChatRoomSearchUseCaseStub: ChatRoomSearchUseCaseProtocol {
 
 @MainActor
 private struct ChatRoomRuntimeUseCaseStub: ChatRoomRuntimeUseCaseProtocol {
-    func observeRoomClosed(roomID: String, onClosed: @escaping (String) -> Void) -> ChatRoomRuntimeSubscription {
+    func observeRoomClosed(
+        roomID: String,
+        onClosed: @escaping (RealtimeRoomClosureEvent) -> Void
+    ) -> ChatRoomRuntimeSubscription {
         ChatRoomRuntimeSubscription()
     }
 

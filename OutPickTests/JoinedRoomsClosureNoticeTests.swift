@@ -10,7 +10,7 @@ struct JoinedRoomsClosureNoticeTests {
 
         #expect(ownerNotice.title == "“QA 채팅방” 채팅방이 종료됐어요")
         #expect(ownerNotice.message == "방장이 채팅방을 삭제했어요.")
-        #expect(moderationNotice.message == "운영 정책에 따라 채팅방 이용이 종료됐어요.")
+        #expect(moderationNotice.message == "운영 정책에 따라 이용이 종료됐어요.")
     }
 
     @Test func acknowledgedNoticeIsNotRestoredByLaterStaleFetch() async throws {
@@ -31,6 +31,80 @@ struct JoinedRoomsClosureNoticeTests {
         #expect(viewModel.state.closureNotices.isEmpty)
         #expect(repository.acknowledgedRoomIDs == ["room-1"])
         viewModel.stop()
+    }
+
+    @Test func realtimeClosedRoomIsNotRestoredByStaleJoinedRoomsReload() async {
+        let room = closedRoom()
+        let useCase = StaleJoinedRoomsUseCaseFake(room: room)
+        let viewModel = JoinedRoomsViewModel(useCase: useCase)
+
+        await viewModel.reloadJoinedRooms()
+        #expect(viewModel.state.rooms.map(\.id) == ["room-1"])
+
+        viewModel.removeRoomAfterRealtimeClosure(roomID: "room-1")
+        #expect(viewModel.state.rooms.isEmpty)
+
+        await viewModel.reloadJoinedRooms()
+        #expect(viewModel.state.rooms.isEmpty)
+    }
+
+    @Test func offlineConfirmationIsOptimistic() async throws {
+        let room = closedRoom()
+        let acknowledgement = DeferredClosureAcknowledgementFake()
+        let viewModel = JoinedRoomsViewModel(
+            useCase: StaleJoinedRoomsUseCaseFake(room: room),
+            closureAcknowledgementUseCase: acknowledgement
+        )
+
+        await viewModel.reloadJoinedRooms()
+        let acknowledgementTask = Task {
+            try await viewModel.acknowledgeClosedRoom(room)
+        }
+        await waitUntil { acknowledgement.hasPendingRequest }
+
+        #expect(viewModel.state.rooms.isEmpty)
+        await viewModel.reloadJoinedRooms()
+        #expect(viewModel.state.rooms.isEmpty)
+
+        acknowledgement.complete()
+        try await acknowledgementTask.value
+    }
+
+    @Test func offlineConfirmationFailureRestoresRoom() async {
+        let room = closedRoom()
+        let acknowledgement = DeferredClosureAcknowledgementFake()
+        let viewModel = JoinedRoomsViewModel(
+            useCase: StaleJoinedRoomsUseCaseFake(room: room),
+            closureAcknowledgementUseCase: acknowledgement
+        )
+
+        await viewModel.reloadJoinedRooms()
+        let acknowledgementTask = Task {
+            try await viewModel.acknowledgeClosedRoom(room)
+        }
+        await waitUntil { acknowledgement.hasPendingRequest }
+        #expect(viewModel.state.rooms.isEmpty)
+
+        acknowledgement.fail()
+        do {
+            try await acknowledgementTask.value
+            Issue.record("서버 확인 실패가 호출자에게 전달되어야 합니다.")
+        } catch {
+            #expect(viewModel.state.rooms.map(\.id) == ["room-1"])
+        }
+    }
+
+    private func closedRoom() -> ChatRoom {
+        ChatRoom(
+            id: "room-1",
+            roomName: "QA 채팅방",
+            roomDescription: "",
+            participants: ["member-1"],
+            creatorUID: "owner-1",
+            createdAt: Date(timeIntervalSince1970: 1),
+            isClosed: true,
+            closureType: .closedByModeration
+        )
     }
 
     private static func notice(type: ChatRoomClosureType) -> ChatRoomClosureNotice {
@@ -116,6 +190,68 @@ private final class EmptyJoinedRoomsUseCaseFake: JoinedRoomsUseCaseProtocol {
     }
 }
 
+private final class StaleJoinedRoomsUseCaseFake: JoinedRoomsUseCaseProtocol {
+    private let item: JoinedRoomListItem
+
+    init(room: ChatRoom) {
+        self.item = JoinedRoomListItem(
+            room: room,
+            projection: JoinedRoomProjection(
+                documentID: room.id,
+                data: [
+                    "roomID": room.id,
+                    "lastReadSeq": room.seq,
+                    "isClosed": room.isClosed
+                ]
+            )!
+        )
+    }
+
+    func fetchJoinedRooms(limit: Int?) async throws -> [JoinedRoomListItem] { [item] }
+
+    func fetchUnreadCount(
+        roomID: String,
+        lastMessageSeqHint: Int64?,
+        lastMessageSenderUID: String?
+    ) async -> Int64 { 0 }
+
+    func fetchReadSnapshot(
+        roomID: String,
+        lastMessageSeqHint: Int64?,
+        lastMessageSenderUID: String?
+    ) async -> ChatRoomReadSnapshot? { nil }
+
+    func canLeaveFromList(room: ChatRoom) -> Bool { true }
+
+    func leave(room: ChatRoom) async throws -> ChatRoomExitResult {
+        throw ClosureNoticeTestError.unexpectedCall
+    }
+}
+
+@MainActor
+private final class DeferredClosureAcknowledgementFake: ChatRoomClosureAcknowledging {
+    private var continuation: CheckedContinuation<Void, any Error>?
+
+    var hasPendingRequest: Bool { continuation != nil }
+
+    func acknowledge(roomID: String) async throws {
+        try await withCheckedThrowingContinuation { continuation in
+            self.continuation = continuation
+        }
+    }
+
+    func complete() {
+        continuation?.resume()
+        continuation = nil
+    }
+
+    func fail() {
+        continuation?.resume(throwing: ClosureNoticeTestError.acknowledgementFailed)
+        continuation = nil
+    }
+}
+
 private enum ClosureNoticeTestError: Error {
     case unexpectedCall
+    case acknowledgementFailed
 }
