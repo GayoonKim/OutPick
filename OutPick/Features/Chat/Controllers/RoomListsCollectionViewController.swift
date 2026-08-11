@@ -215,6 +215,12 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
     }
 }
 
+extension RoomListsCollectionViewController: ChatRoomClosureListUpdating {
+    func removeClosedRoom(roomID: String) {
+        viewModel.removeLocalRoom(roomID: roomID)
+    }
+}
+
 private extension RoomListsCollectionViewController {
     @MainActor
     func setupNavigationBar() {

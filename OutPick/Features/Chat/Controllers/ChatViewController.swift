@@ -267,7 +267,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }()
     
     private var settingPanelVC: ChatRoomSettingViewController?
-    private var isHandlingRoomExit = false
     private lazy var dimView: UIView = {
         //        let v = UIControl(frame: .zero)
         let v = UIView()
@@ -1386,9 +1385,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         stopRoomClosedObservation()
         // 방 종료는 참여 상태가 아니라 route 생존 여부에 속한다.
         // 미참여 미리보기에서 같은 화면으로 참여 전환해도 observer를 유지해야 한다.
-        roomClosedSubscription = chatRoomViewModel.observeRoomClosed { [weak self] roomID in
+        roomClosedSubscription = chatRoomViewModel.observeRoomClosed { [weak self] event in
             guard let self else { return }
-            self.router?.handleRoomExit(from: self, roomID: roomID)
+            self.router?.handleRoomClosure(from: self, event: event)
         }
     }
     
@@ -1718,16 +1717,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         room?.id == roomID
     }
 
-    @MainActor
-    func dismissSettingPanelAndCloseRoom() {
-        guard !isHandlingRoomExit else { return }
-        isHandlingRoomExit = true
-
-        dismissSettingPanel { [weak self] in
-            self?.backButtonTapped()
-        }
-    }
-    
     @MainActor
     private func updateNavigationTitle(with room: ChatRoom) {
         // ✅ 커스텀 내비게이션 바 타이틀 업데이트

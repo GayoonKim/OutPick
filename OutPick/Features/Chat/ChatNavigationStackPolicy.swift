@@ -30,4 +30,15 @@ struct ChatNavigationStackPolicy {
             replacedChatIndices: replacedChatIndices
         )
     }
+
+    static func retainedIndicesAfterClosingRoom(
+        sourceIndex: Int,
+        isPrecededByRoomCreation: Bool
+    ) -> [Int] {
+        guard sourceIndex > 0 else { return [] }
+        let upperBound = isPrecededByRoomCreation
+            ? max(1, sourceIndex - 1)
+            : sourceIndex
+        return Array(0..<upperBound)
+    }
 }

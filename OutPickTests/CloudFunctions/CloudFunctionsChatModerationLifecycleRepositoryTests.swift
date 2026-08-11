@@ -61,4 +61,24 @@ struct CloudFunctionsChatModerationLifecycleRepositoryTests {
         #expect(transport.calls[0].data["expectedLifecycleVersion"] as? Int == 3)
         #expect(result == ChatRoomExitResult(roomID: "room-1", mode: .closed))
     }
+
+    @Test
+    func acknowledgeClosureUsesServerCallable() async throws {
+        let transport = CloudFunctionsTransportSpy()
+        transport.responses = [[
+            "acknowledged": true,
+            "deduplicated": false
+        ]]
+        let repository = CloudFunctionsChatModerationLifecycleRepository(
+            transport: transport,
+            currentUserID: { "member" }
+        )
+
+        try await repository.acknowledgeClosureNotice(roomID: "room-1")
+
+        #expect(transport.calls.count == 1)
+        #expect(transport.calls[0].name == "acknowledgeRoomClosure")
+        #expect(transport.calls[0].data["roomID"] as? String == "room-1")
+        #expect(transport.calls[0].data["clientRequestID"] as? String != nil)
+    }
 }

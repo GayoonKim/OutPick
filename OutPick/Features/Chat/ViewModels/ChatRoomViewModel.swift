@@ -226,7 +226,7 @@ final class ChatRoomViewModel {
         )
     }
 
-    func observeRoomClosed(onClosed: @escaping (String) -> Void) -> ChatRoomRuntimeSubscription? {
+    func observeRoomClosed(onClosed: @escaping (RealtimeRoomClosureEvent) -> Void) -> ChatRoomRuntimeSubscription? {
         guard !roomID.isEmpty else { return nil }
         return runtimeUseCase.observeRoomClosed(roomID: roomID, onClosed: onClosed)
     }

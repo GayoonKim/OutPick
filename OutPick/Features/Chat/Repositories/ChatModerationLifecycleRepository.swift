@@ -32,7 +32,7 @@ struct ChatRoomClosureNotice: Equatable, Identifiable {
         case .closedByOwner:
             return "방장이 채팅방을 삭제했어요."
         case .closedByModeration:
-            return "운영 정책에 따라 채팅방 이용이 종료됐어요."
+            return "운영 정책에 따라 이용이 종료됐어요."
         }
     }
 }
@@ -121,10 +121,17 @@ final class CloudFunctionsChatModerationLifecycleRepository:
     }
 
     func acknowledgeClosureNotice(roomID: String) async throws {
-        let uid = currentUserID().trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !uid.isEmpty else { throw CloudFunctionsClientError.invalidResponse }
-        try await firestore.collection("users").document(uid)
-            .collection("roomClosureNotices").document(roomID).delete()
+        let response = try await transport.call(
+            "acknowledgeRoomClosure",
+            data: [
+                "roomID": roomID,
+                "clientRequestID": UUID().uuidString.lowercased()
+            ]
+        )
+        let decoder = CloudFunctionResponseDecoder(dictionary: response)
+        guard try decoder.bool("acknowledged") else {
+            throw CloudFunctionsClientError.invalidResponse
+        }
     }
 
     private static func notice(_ document: QueryDocumentSnapshot) -> ChatRoomClosureNotice? {

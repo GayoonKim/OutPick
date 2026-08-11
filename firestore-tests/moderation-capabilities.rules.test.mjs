@@ -126,14 +126,16 @@ describe("moderation capability rules", () => {
     }));
   });
 
-  test("폐쇄 방은 즉시 읽을 수 없고 사용자 안내는 본인만 읽고 삭제한다", async () => {
+  test("종료 tombstone은 참여 projection 보유자만 읽고 콘텐츠는 읽지 못한다", async () => {
     await testEnvironment.withSecurityRulesDisabled(async (context) => {
       const firestore = context.firestore();
       await updateDoc(doc(firestore, "Rooms", "room"), {
         isClosed: true,
         lifecycleStatus: "closedByModeration",
         lifecycleVersion: 2,
+        tombstoneSchemaVersion: 1,
       });
+      await setDoc(doc(firestore, "users", "active", "joinedRooms", "room"), {roomID: "room"});
       await setDoc(doc(firestore, "users", "active", "roomClosureNotices", "room"), {
         roomID: "room",
         closureType: "closedByModeration",
@@ -145,7 +147,9 @@ describe("moderation capability rules", () => {
     const owner = testEnvironment.authenticatedContext("active").firestore();
     const other = testEnvironment.authenticatedContext("restricted").firestore();
     const notice = doc(owner, "users", "active", "roomClosureNotices", "room");
-    await assertFails(getDoc(doc(owner, "Rooms", "room")));
+    await assertSucceeds(getDoc(doc(owner, "Rooms", "room")));
+    await assertFails(getDoc(doc(other, "Rooms", "room")));
+    await assertFails(getDoc(doc(owner, "Rooms", "room", "Messages", "message")));
     await assertSucceeds(getDoc(notice));
     await assertFails(getDoc(doc(other, "users", "active", "roomClosureNotices", "room")));
     await assertFails(setDoc(notice, {closureType: "closedByOwner"}));

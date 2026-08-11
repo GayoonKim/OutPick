@@ -397,7 +397,7 @@
 				API_KEY = 934b7b2086ff3fa2bc0365cece7c892c;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = OutPick/OutPick.entitlements;
+				CODE_SIGN_ENTITLEMENTS = OutPick/OutPick.Debug.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -783,7 +783,7 @@
 				API_KEY = 934b7b2086ff3fa2bc0365cece7c892c;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = OutPick/OutPick.entitlements;
+				CODE_SIGN_ENTITLEMENTS = OutPick/OutPick.Debug.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;

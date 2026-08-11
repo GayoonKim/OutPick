@@ -30,6 +30,11 @@ export type CloseRoomByModerationInput = CloseOwnedChatRoomInput & {
   reportTargetID: string | null;
 };
 
+export type AcknowledgeRoomClosureInput = {
+  roomID: string;
+  clientRequestID: string;
+};
+
 function positiveInteger(data: Record<string, unknown>, key: string): number {
   const value = data[key];
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
@@ -103,6 +108,14 @@ export function parseCloseRoomByModerationInput(data: unknown): CloseRoomByModer
       optionalString(record, "reportTargetID", 128),
       "reportTargetID",
     ),
+    clientRequestID: clientRequestID(record),
+  };
+}
+
+export function parseAcknowledgeRoomClosureInput(data: unknown): AcknowledgeRoomClosureInput {
+  const record = recordData(data);
+  return {
+    roomID: roomID(record),
     clientRequestID: clientRequestID(record),
   };
 }

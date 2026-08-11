@@ -19,15 +19,20 @@ struct ChatRoomRuntimeUseCaseTests {
             visibilityRuntimeManager: ChatRoomVisibilityRuntimeManagerSpy(),
             transientLocalDataCleaner: cleaner
         )
-        var closedRoomIDs: [String] = []
+        var closureEvents: [RealtimeRoomClosureEvent] = []
 
-        _ = useCase.observeRoomClosed(roomID: "room-1") { roomID in
-            closedRoomIDs.append(roomID)
+        _ = useCase.observeRoomClosed(roomID: "room-1") { event in
+            closureEvents.append(event)
         }
-        repository.emitClosed(roomID: "room-1")
+        repository.emitClosed(RealtimeRoomClosureEvent(
+            roomID: "room-1",
+            closureType: ChatRoomClosureType.closedByModeration.rawValue,
+            noticeCode: "communityGuidelineViolation"
+        ))
 
         #expect(repository.observedRoomIDs == ["room-1"])
-        #expect(closedRoomIDs == ["room-1"])
+        #expect(closureEvents.map(\.roomID) == ["room-1"])
+        #expect(closureEvents.first?.closureType == ChatRoomClosureType.closedByModeration.rawValue)
     }
 
     @Test func runtimeSubscriptionStopsOnlyOnce() {
@@ -90,17 +95,20 @@ struct ChatRoomRuntimeUseCaseTests {
 
 @MainActor
 private final class ChatRoomRuntimeRepositorySpy: ChatRoomRuntimeRepositoryProtocol {
-    private var onClosed: ((String) -> Void)?
+    private var onClosed: ((RealtimeRoomClosureEvent) -> Void)?
     private(set) var observedRoomIDs: [String] = []
 
-    func observeRoomClosed(roomID: String, onClosed: @escaping (String) -> Void) -> ChatRoomRuntimeSubscription {
+    func observeRoomClosed(
+        roomID: String,
+        onClosed: @escaping (RealtimeRoomClosureEvent) -> Void
+    ) -> ChatRoomRuntimeSubscription {
         observedRoomIDs.append(roomID)
         self.onClosed = onClosed
         return ChatRoomRuntimeSubscription()
     }
 
-    func emitClosed(roomID: String) {
-        onClosed?(roomID)
+    func emitClosed(_ event: RealtimeRoomClosureEvent) {
+        onClosed?(event)
     }
 }
 

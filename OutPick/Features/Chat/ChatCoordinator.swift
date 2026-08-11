@@ -7,6 +7,20 @@
 
 import UIKit
 
+struct ChatRoomClosurePresentationState {
+    private var presentedRoomIDs = Set<String>()
+
+    mutating func begin(roomID: String) -> Bool {
+        guard !roomID.isEmpty else { return false }
+        return presentedRoomIDs.insert(roomID).inserted
+    }
+}
+
+@MainActor
+protocol ChatRoomClosureListUpdating: AnyObject {
+    func removeClosedRoom(roomID: String)
+}
+
 @MainActor
 protocol ChatRoomRouting: AnyObject {
     func showSettings(from source: ChatViewController)
@@ -21,6 +35,7 @@ protocol ChatRoomRouting: AnyObject {
     )
     func showVideoPlayer(from source: ChatViewController, path: String)
     func handleRoomExit(from source: ChatViewController, roomID: String)
+    func handleRoomClosure(from source: ChatViewController, event: RealtimeRoomClosureEvent)
 }
 
 @MainActor
@@ -38,6 +53,7 @@ final class ChatCoordinator {
     private let container: ChatContainer
     private var userProfileDetailCoordinator: UserProfileDetailCoordinator?
     private var navigationRevisions: [ObjectIdentifier: UInt64] = [:]
+    private var roomClosurePresentationState = ChatRoomClosurePresentationState()
     private let openRoomRequests = ChatOpenRoomRequestRegistry<
         ObjectIdentifier,
         NavigationSnapshot
@@ -319,6 +335,41 @@ final class ChatCoordinator {
         source.finishRouteLifecycleForCoordinator()
     }
 
+    private func closeRoomRoute(
+        from source: ChatViewController,
+        closedRoomID: String? = nil
+    ) {
+        guard let nav = source.navigationController,
+              let sourceIndex = nav.viewControllers.firstIndex(where: { $0 === source }) else {
+            source.dismissSettingPanel { [weak source] in
+                source?.dismiss(animated: true)
+            }
+            return
+        }
+
+        let isPrecededByRoomCreation = sourceIndex > 0 &&
+            nav.viewControllers[sourceIndex - 1] is RoomCreateViewController
+        let retainedIndices = ChatNavigationStackPolicy.retainedIndicesAfterClosingRoom(
+            sourceIndex: sourceIndex,
+            isPrecededByRoomCreation: isPrecededByRoomCreation
+        )
+        let retainedViewControllers = retainedIndices.map { nav.viewControllers[$0] }
+        guard retainedViewControllers.isEmpty == false else { return }
+
+        if let closedRoomID {
+            retainedViewControllers
+                .compactMap { $0 as? any ChatRoomClosureListUpdating }
+                .forEach { $0.removeClosedRoom(roomID: closedRoomID) }
+        }
+
+        source.dismissSettingPanel { [weak self, weak source, weak nav] in
+            guard let self, let source, let nav else { return }
+            self.finishChatRoute(source)
+            nav.setViewControllers(retainedViewControllers, animated: true)
+            self.incrementNavigationRevision(for: nav)
+        }
+    }
+
     private func navigationController(startingFrom source: UIViewController) -> UINavigationController? {
         if let nav = source.navigationController {
             return nav
@@ -472,6 +523,64 @@ extension ChatCoordinator: ChatRoomRouting {
             source.dismissSettingPanel()
             return
         }
-        source.dismissSettingPanelAndCloseRoom()
+        closeRoomRoute(from: source)
+    }
+
+    func handleRoomClosure(from source: ChatViewController, event: RealtimeRoomClosureEvent) {
+        if event.closureType == ChatRoomClosureType.closedByOwner.rawValue,
+           source.room?.creatorUID == container.currentUserProvider.canonicalUserID {
+            container.roomRepository.removeLocalRoom(roomID: event.roomID)
+            guard source.isCurrentRoom(roomID: event.roomID) else {
+                source.dismissSettingPanel()
+                return
+            }
+            closeRoomRoute(from: source, closedRoomID: event.roomID)
+            return
+        }
+        guard source.isCurrentRoom(roomID: event.roomID) else {
+            source.dismissSettingPanel()
+            return
+        }
+        guard roomClosurePresentationState.begin(roomID: event.roomID) else {
+            return
+        }
+        let roomName = source.room?.roomName ?? "채팅방"
+        let message: String?
+        switch event.closureType {
+        case ChatRoomClosureType.closedByModeration.rawValue:
+            message = "운영 정책에 따라 이용이 종료됐어요."
+        case ChatRoomClosureType.closedByOwner.rawValue:
+            message = "방장이 채팅방을 삭제했어요."
+        default:
+            message = nil
+        }
+        let alert = UIAlertController(
+            title: "“\(roomName)” 채팅방이 종료됐어요",
+            message: message,
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "확인", style: .default) { [weak self, weak source] _ in
+            guard let self, let source else { return }
+            self.container.roomRepository.removeLocalRoom(roomID: event.roomID)
+            self.closeRoomRoute(from: source, closedRoomID: event.roomID)
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                do {
+                    try await self.container.roomClosureAcknowledgementUseCase
+                        .acknowledge(roomID: event.roomID)
+                } catch {
+                    #if DEBUG
+                    print("[ChatCoordinator] 방 종료 확인 처리 실패 roomID=\(event.roomID): \(error)")
+                    #endif
+                }
+            }
+        })
+        if let presentedViewController = source.presentedViewController {
+            presentedViewController.dismiss(animated: true) { [weak source] in
+                source?.present(alert, animated: true)
+            }
+        } else {
+            source.present(alert, animated: true)
+        }
     }
 }

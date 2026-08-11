@@ -21,7 +21,8 @@
     "audit": "moderationAuditLogs/{actionID}",
     "messageCleanupJob": "chatMessageCleanupJobs/{jobID}",
     "roomCleanupJob": "moderationRoomCleanupJobs/{roomID}",
-    "roomClosureNotice": "users/{uid}/roomClosureNotices/{roomID}"
+    "roomClosureTombstone": "Rooms/{roomID}",
+    "legacyRoomClosureNotice": "users/{uid}/roomClosureNotices/{roomID}"
   },
   "identifiers": {
     "moderationPrincipalID": {
@@ -120,6 +121,7 @@
       "pending",
       "processing",
       "retryPending",
+      "awaitingExpiry",
       "completed",
       "failed"
     ]
@@ -359,6 +361,14 @@
         "closureNoticeCode": "string|null",
         "moderationClosedAt": "timestamp|null",
         "moderationClosureNoticeCode": "string|null"
+      },
+      "closedTombstone": {
+        "schemaVersionField": "tombstoneSchemaVersion: integer:1",
+        "clientRead": "current joinedRooms projection owner only",
+        "clientWrite": false,
+        "retainedFields": "roomName, creatorUID, createdAt, lastMessageAt, memberCount, seq and lifecycle fields",
+        "forbiddenFields": "lastMessage, image paths and message content",
+        "expiresAt": "closedAt + 14 days; cleanup scheduler due time, not direct Firestore TTL"
       }
     },
     "Rooms/{roomID}/Messages/{messageID}": {
@@ -397,11 +407,12 @@
       "clientRead": false,
       "clientWrite": false,
       "requiredFields": {
-        "schemaVersion": "integer:1",
+        "schemaVersion": "integer:2",
         "roomID": "string",
         "lifecycleVersion": "positive integer",
         "closureType": "roomClosureType",
         "closureNoticeCode": "string",
+        "cleanupPhase": "content|retention",
         "status": "cleanupJobStatus",
         "attempt": "non-negative integer",
         "nextAttemptAt": "timestamp",
@@ -410,12 +421,12 @@
         "updatedAt": "timestamp",
         "expiresAt": "timestamp|null"
       },
-      "idempotency": "roomID + lifecycleVersion"
+      "idempotency": "roomID + lifecycleVersion; content cleanup transitions to awaitingExpiry and retention cleanup removes remaining memberships and tombstone"
     },
     "users/{uid}/roomClosureNotices/{roomID}": {
       "clientRead": "owner only",
       "clientCreateOrUpdate": false,
-      "clientDelete": "owner acknowledgment only",
+      "clientDelete": "legacy compatibility only",
       "requiredFields": {
         "schemaVersion": "integer:2",
         "roomID": "string",
@@ -432,7 +443,7 @@
         "reasonCode",
         "reportTargetID"
       ],
-      "recipientPolicy": "closedByOwner excludes creatorUID; closedByModeration includes creatorUID and all members"
+      "recipientPolicy": "legacy schema only; Phase 3.1 creates no new per-user notices"
     },
     "moderationAuditLogs/{actionID}": {
       "clientRead": false,
@@ -683,16 +694,20 @@
       },
       "idempotency": "owner UID + clientRequestID"
     },
-    "acknowledgeRoomClosureNotice": {
-      "transport": "Firestore owner delete",
-      "authorization": "notice owner",
+    "acknowledgeRoomClosure": {
+      "transport": "Firebase callable",
+      "authorization": "authenticated user; room must be closed or already removed",
       "request": {
-        "roomID": "string"
+        "roomID": "string",
+        "clientRequestID": "UUID string"
       },
       "response": {
-        "acknowledged": "true"
+        "roomID": "string",
+        "acknowledged": "true",
+        "deduplicated": "boolean",
+        "clientRequestID": "UUID string"
       },
-      "idempotency": "missing notice is already acknowledged"
+      "idempotency": "missing membership and joined projection are already acknowledged"
     },
     "removeRoomMember": {
       "transport": "Firebase callable",
@@ -974,7 +989,8 @@
     "developmentFixtures": "delete after QA",
     "reportedMediaCopy": "not retained",
     "deletedMessageSequenceTombstone": "retained with public payload removed",
-    "roomClosureNotice": "deleted immediately after owner acknowledgment; unacknowledged notice expires after 30 days",
+    "roomClosureTombstone": "room content is removed immediately; shared tombstone and unacknowledged memberships remain at most 14 days, then the cleanup scheduler removes them in bounded batches",
+    "legacyRoomClosureNotice": "no longer created; existing notices keep their Production 30-day TTL and are deleted by the new acknowledgment callable when confirmed",
     "completedCleanupJob": "expires seven days after completion; failed jobs do not expire automatically",
     "reportRateLimitBucket": "operational metadata only, expiresAt two days after the bucket; contains no report detail or evidence"
   },

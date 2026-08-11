@@ -267,9 +267,19 @@ class JoinedRoomsViewController: UIViewController, ChatModalAnimatable {
     var dataSource: DataSourceType!
 }
 
+extension JoinedRoomsViewController: ChatRoomClosureListUpdating {
+    func removeClosedRoom(roomID: String) {
+        viewModel.removeRoomAfterRealtimeClosure(roomID: roomID)
+    }
+}
+
 extension JoinedRoomsViewController: UICollectionViewDelegate {
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         guard let room = dataSource.itemIdentifier(for: indexPath) else { return }
+        if room.isClosed {
+            presentClosedRoomAlert(room)
+            return
+        }
         guard let onOpenRoom else {
             assertionFailure("JoinedRoomsViewController requires coordinator-owned room routing.")
             return
@@ -279,6 +289,7 @@ extension JoinedRoomsViewController: UICollectionViewDelegate {
 
     func collectionView(_ collectionView: UICollectionView, trailingSwipeActionsConfigurationForItemAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {
         guard let room = dataSource.itemIdentifier(for: indexPath) else { return nil }
+        guard !room.isClosed else { return nil }
         let leave = UIContextualAction(style: .destructive, title: "나가기") { [weak self] _, _, completion in
             guard let self else {
                 completion(false)
@@ -315,6 +326,34 @@ extension JoinedRoomsViewController: UICollectionViewDelegate {
 }
 
 private extension JoinedRoomsViewController {
+    func presentClosedRoomAlert(_ room: ChatRoom) {
+        let message: String?
+        switch room.closureType {
+        case .closedByModeration:
+            message = "운영 정책에 따라 이용이 종료됐어요."
+        case .closedByOwner:
+            message = "방장이 채팅방을 삭제했어요."
+        case .none:
+            message = nil
+        }
+        let alert = UIAlertController(
+            title: "“\(room.roomName)” 채팅방이 종료됐어요",
+            message: message,
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "확인", style: .default) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                do {
+                    try await self.viewModel.acknowledgeClosedRoom(room)
+                } catch {
+                    self.presentClosureNoticeFailureAlert()
+                }
+            }
+        })
+        present(alert, animated: true)
+    }
+
     func presentOwnerLeaveFromListAlert() {
         let alert = UIAlertController(
             title: "설정에서 방을 닫아 주세요",

@@ -15,6 +15,28 @@ protocol ChatRoomExitUseCaseProtocol {
     func leaveOrClose(room: ChatRoom) async throws -> ChatRoomExitResult
 }
 
+protocol ChatRoomClosureAcknowledging {
+    func acknowledge(roomID: String) async throws
+}
+
+final class ChatRoomClosureAcknowledgementUseCase: ChatRoomClosureAcknowledging {
+    private let repository: ChatModerationLifecycleRepositoryProtocol
+    private let localCleaner: ChatRoomLocalExitCleaning
+
+    init(
+        repository: ChatModerationLifecycleRepositoryProtocol,
+        localCleaner: ChatRoomLocalExitCleaning
+    ) {
+        self.repository = repository
+        self.localCleaner = localCleaner
+    }
+
+    func acknowledge(roomID: String) async throws {
+        try await repository.acknowledgeClosureNotice(roomID: roomID)
+        try await localCleaner.cleanLocalRoomDataAfterExit(roomID: roomID)
+    }
+}
+
 enum ChatRoomExitError: LocalizedError, Equatable {
     case missingRoomID
 

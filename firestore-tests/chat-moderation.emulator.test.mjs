@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {after, beforeEach, describe, test} from "node:test";
 import {db} from "../functions/lib/core/firebase.js";
 import {
+  acknowledgeRoomClosureService,
   closeOwnedChatRoomService,
   deleteChatMessageService,
   messageCleanupJobID,
@@ -132,7 +133,7 @@ describe("chat moderation lifecycle transactions", () => {
     assert.deepEqual(deletedPrefixes, [`rooms/${roomID}/messages/${messageID}/`]);
   });
 
-  test("방장 폐쇄는 lifecycle을 닫고 참여자 안내를 만든 뒤 방을 삭제한다", async () => {
+  test("방장 종료는 공용 tombstone을 남기고 확인한 참여자만 정리한다", async () => {
     const deletedPrefixes = [];
     const result = await closeOwnedChatRoomService(ownerUID, {
       roomID,
@@ -147,25 +148,54 @@ describe("chat moderation lifecycle transactions", () => {
       deleteFiles: async ({prefix}) => deletedPrefixes.push(prefix),
     }, now);
     const roomAfterCleanup = await db.collection("Rooms").doc(roomID).get();
-    assert.equal(roomAfterCleanup.exists, false);
+    assert.equal(roomAfterCleanup.exists, true);
+    assert.equal(roomAfterCleanup.data()?.tombstoneSchemaVersion, 1);
+    assert.equal(roomAfterCleanup.data()?.roomName, "정리 테스트방");
+    assert.equal(roomAfterCleanup.data()?.lastMessage, undefined);
+    assert.equal(
+      roomAfterCleanup.data()?.expiresAt.toMillis() - roomAfterCleanup.data()?.closedAt.toMillis(),
+      14 * 24 * 60 * 60 * 1000,
+    );
     const replay = await closeOwnedChatRoomService(ownerUID, {
       roomID,
       expectedLifecycleVersion: 1,
       clientRequestID: requestID,
     }, now, db);
     assert.deepEqual(replay, result);
-    const ownerNotice = await db.collection("users").doc(ownerUID)
-      .collection("roomClosureNotices").doc(roomID).get();
-    assert.equal(ownerNotice.exists, false);
-    const memberNotice = await db.collection("users").doc(memberUID)
-      .collection("roomClosureNotices").doc(roomID).get();
-    assert.equal(memberNotice.data()?.closureType, "closedByOwner");
-    assert.equal(memberNotice.data()?.roomName, "정리 테스트방");
-    assert.equal(
-      memberNotice.data()?.expiresAt.toMillis() - memberNotice.data()?.closedAt.toMillis(),
-      30 * 24 * 60 * 60 * 1000,
-    );
+    assert.equal((await db.collection("users").doc(ownerUID)
+      .collection("joinedRooms").doc(roomID).get()).exists, false);
+    assert.equal((await db.collection("users").doc(memberUID)
+      .collection("joinedRooms").doc(roomID).get()).exists, true);
+    assert.equal((await roomAfterCleanup.ref.collection("members").doc(memberUID).get()).exists, true);
+
+    const acknowledged = await acknowledgeRoomClosureService(memberUID, {
+      roomID,
+      clientRequestID: "323e4567-e89b-42d3-a456-426614174000",
+    }, db);
+    assert.equal(acknowledged.acknowledged, true);
+    assert.equal((await db.collection("users").doc(memberUID)
+      .collection("joinedRooms").doc(roomID).get()).exists, false);
+    assert.equal((await roomAfterCleanup.ref.collection("members").doc(memberUID).get()).exists, false);
+    const replayedAcknowledgement = await acknowledgeRoomClosureService(memberUID, {
+      roomID,
+      clientRequestID: "423e4567-e89b-42d3-a456-426614174000",
+    }, db);
+    assert.equal(replayedAcknowledgement.deduplicated, true);
     assert.deepEqual(deletedPrefixes, [`rooms/${roomID}/`]);
+  });
+
+  test("활성 방은 종료 확인으로 참여 projection을 지울 수 없다", async () => {
+    await assert.rejects(
+      acknowledgeRoomClosureService(memberUID, {
+        roomID,
+        clientRequestID: "523e4567-e89b-42d3-a456-426614174000",
+      }, db),
+      (error) => error?.code === "failed-precondition",
+    );
+    assert.equal((await db.collection("users").doc(memberUID)
+      .collection("joinedRooms").doc(roomID).get()).exists, true);
+    assert.equal((await db.collection("Rooms").doc(roomID)
+      .collection("members").doc(memberUID).get()).exists, true);
   });
 
   test("대규모 참여자 방 종료도 Firestore batch write 한도 안에서 수렴한다", async () => {
@@ -173,6 +203,7 @@ describe("chat moderation lifecycle transactions", () => {
     const batch = db.batch();
     for (const uid of bulkMemberUIDs) {
       batch.set(room.collection("members").doc(uid), {role: "member"});
+      batch.set(db.collection("users").doc(uid).collection("joinedRooms").doc(roomID), {roomID});
     }
     await batch.commit();
 
@@ -181,16 +212,22 @@ describe("chat moderation lifecycle transactions", () => {
       expectedLifecycleVersion: 1,
       clientRequestID: "223e4567-e89b-42d3-a456-426614174000",
     }, now, db);
-    const completed = await processRoomCleanupJob(roomID, db, {
+    const retained = await processRoomCleanupJob(roomID, db, {
       deleteFiles: async () => {},
     }, now);
 
+    assert.equal(retained, true);
+    assert.equal((await room.get()).exists, true);
+    const afterFourteenDays = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+    const completed = await processRoomCleanupJob(roomID, db, {
+      deleteFiles: async () => {},
+    }, afterFourteenDays);
     assert.equal(completed, true);
     assert.equal((await room.get()).exists, false);
     for (const uid of [bulkMemberUIDs[0], bulkMemberUIDs.at(-1)]) {
-      const notice = await db.collection("users").doc(uid)
-        .collection("roomClosureNotices").doc(roomID).get();
-      assert.equal(notice.data()?.roomName, "정리 테스트방");
+      const joined = await db.collection("users").doc(uid)
+        .collection("joinedRooms").doc(roomID).get();
+      assert.equal(joined.exists, false);
     }
   });
 });

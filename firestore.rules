@@ -101,6 +101,10 @@ service cloud.firestore {
       return /databases/$(database)/documents/Rooms/$(roomID)/members/$(uid);
     }
 
+    function joinedRoomPath(uid, roomID) {
+      return /databases/$(database)/documents/users/$(uid)/joinedRooms/$(roomID);
+    }
+
     function roomDataIsActive(data) {
       return data.isClosed != true
         && (!("lifecycleStatus" in data) || data.lifecycleStatus == "active");
@@ -109,6 +113,13 @@ service cloud.firestore {
     function roomIsActive(roomID) {
       return exists(roomPath(roomID))
         && roomDataIsActive(get(roomPath(roomID)).data);
+    }
+
+    function canReadClosedRoomTombstone(roomID, data) {
+      return signedIn()
+        && data.isClosed == true
+        && data.tombstoneSchemaVersion == 1
+        && exists(joinedRoomPath(request.auth.uid, roomID));
     }
 
     function isRoomParticipant(roomID) {
@@ -438,7 +449,9 @@ service cloud.firestore {
     }
 
     match /Rooms/{roomID} {
-      allow read: if isReadableAccount() && roomDataIsActive(resource.data);
+      allow read: if isReadableAccount()
+        && (roomDataIsActive(resource.data)
+          || canReadClosedRoomTombstone(roomID, resource.data));
       allow create: if isAccountActive()
         && request.resource.data.creatorUID == request.auth.uid
         && !request.resource.data.keys().hasAny(["participantUIDs"])

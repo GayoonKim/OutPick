@@ -27,12 +27,17 @@ struct RealtimeSocketListenerBinderTests {
         var state = RealtimeAuthoritativeRoomClosureState()
 
         #expect(!state.isClosed("room"))
-        state.markClosed("room")
+        let firstClosure = state.markClosed("room")
+        #expect(firstClosure)
         #expect(state.isClosed("room"))
         #expect(!state.isClosed("other"))
+        let duplicateClosure = state.markClosed("room")
+        #expect(!duplicateClosure)
 
         state.markCreated("room")
         #expect(!state.isClosed("room"))
+        let closureAfterRecreation = state.markClosed("room")
+        #expect(closureAfterRecreation)
     }
 
     @Test func firstBindRegistersExpectedEventSurfaceOnce() {

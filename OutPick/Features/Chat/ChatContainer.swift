@@ -35,6 +35,7 @@ final class ChatContainer {
     private let chatRoomSearchUseCase: ChatRoomSearchUseCaseProtocol
     private let chatRoomLifecycleUseCase: ChatRoomLifecycleUseCaseProtocol
     private let chatRoomExitUseCase: ChatRoomExitUseCaseProtocol
+    let roomClosureAcknowledgementUseCase: ChatRoomClosureAcknowledging
     private let moderationLifecycleRepository: ChatModerationLifecycleRepositoryProtocol
     private let chatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol
     private let chatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol
@@ -100,19 +101,24 @@ final class ChatContainer {
             roomRepository: self.roomRepository,
             profileSyncManager: managers.profileSyncManager
         )
+        let roomLocalExitCleaner = DefaultChatRoomLocalExitCleaner(
+            localDataStore: persistence.roomLocalDataStore,
+            joinedRoomsStore: joinedRoomsStore,
+            joinedRoomsRuntime: joinedRoomsRuntime,
+            roomRepository: self.roomRepository,
+            currentUserProvider: currentUserProvider
+        )
         self.chatRoomExitUseCase = ChatRoomExitUseCase(
             repository: DefaultChatRoomExitRepository(
                 socket: realtimeSocketService,
                 moderationLifecycleRepository: moderationLifecycleRepository,
                 currentUserID: { currentUserProvider.canonicalUserID }
             ),
-            localCleaner: DefaultChatRoomLocalExitCleaner(
-                localDataStore: persistence.roomLocalDataStore,
-                joinedRoomsStore: joinedRoomsStore,
-                joinedRoomsRuntime: joinedRoomsRuntime,
-                roomRepository: self.roomRepository,
-                currentUserProvider: currentUserProvider
-            )
+            localCleaner: roomLocalExitCleaner
+        )
+        self.roomClosureAcknowledgementUseCase = ChatRoomClosureAcknowledgementUseCase(
+            repository: moderationLifecycleRepository,
+            localCleaner: roomLocalExitCleaner
         )
         self.joinedRoomsUseCase = JoinedRoomsUseCase(
             roomRepository: self.roomRepository,
@@ -225,7 +231,8 @@ final class ChatContainer {
             useCase: joinedRoomsUseCase,
             roomReadStateStore: roomReadStateStore,
             joinedRoomsStore: joinedRoomsStore,
-            moderationLifecycleRepository: moderationLifecycleRepository
+            moderationLifecycleRepository: moderationLifecycleRepository,
+            closureAcknowledgementUseCase: roomClosureAcknowledgementUseCase
         )
     }
 

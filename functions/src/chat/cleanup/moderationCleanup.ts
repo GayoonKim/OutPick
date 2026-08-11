@@ -5,16 +5,15 @@ import {
   Timestamp,
 } from "firebase-admin/firestore";
 
-// 참여자마다 안내 1건과 projection 삭제 2건까지 발생하므로 batch 500 writes 안에 둔다.
+// 참여자마다 member·joinedRooms·roomStates 3건을 삭제하므로 150명 × 3 = 450 writes로 제한한다.
 const MEMBER_BATCH_LIMIT = 150;
 const PAGE_LIMIT = 300;
 const LEASE_MILLIS = 10 * 60 * 1000;
 const COMPLETED_JOB_TTL_MILLIS = 7 * 24 * 60 * 60 * 1000;
-const CLOSURE_NOTICE_TTL_MILLIS = 30 * 24 * 60 * 60 * 1000;
+export const ROOM_TOMBSTONE_TTL_MILLIS = 14 * 24 * 60 * 60 * 1000;
 const MAX_ATTEMPTS = 20;
 
 type CleanupKind = "message" | "room";
-type RoomClosureType = "closedByOwner" | "closedByModeration";
 
 type StorageBucket = {
   deleteFiles(options: {prefix: string; force: boolean}): Promise<unknown>;
@@ -32,14 +31,6 @@ export function normalizedClosureRoomName(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const normalized = value.trim();
   return normalized.length > 0 && normalized.length <= 20 ? normalized : null;
-}
-
-export function shouldCreateClosureNotice(
-  uid: string,
-  creatorUID: string,
-  closureType: RoomClosureType,
-): boolean {
-  return closureType === "closedByModeration" || uid !== creatorUID;
 }
 
 async function claimJob(
@@ -77,6 +68,22 @@ async function markCompleted(reference: DocumentReference, now: Date): Promise<v
     lastErrorCode: null,
     updatedAt: Timestamp.fromDate(now),
     expiresAt: Timestamp.fromMillis(now.getTime() + COMPLETED_JOB_TTL_MILLIS),
+  }, {merge: true});
+}
+
+async function markAwaitingExpiry(
+  reference: DocumentReference,
+  expiresAt: Timestamp,
+  now: Date,
+): Promise<void> {
+  await reference.set({
+    cleanupPhase: "retention",
+    status: "awaitingExpiry",
+    nextAttemptAt: expiresAt,
+    leaseExpiresAt: null,
+    lastErrorCode: null,
+    updatedAt: Timestamp.fromDate(now),
+    expiresAt: null,
   }, {merge: true});
 }
 
@@ -200,58 +207,45 @@ export async function processMessageCleanupJob(
   }
 }
 
-async function loadRoomMembers(
+async function removeMemberships(
   firestore: Firestore,
   roomID: string,
-): Promise<string[]> {
-  const members = firestore.collection("Rooms").doc(roomID).collection("members");
-  const result: string[] = [];
-  let cursor: FirebaseFirestore.QueryDocumentSnapshot | null = null;
-  let hasMore = true;
-  while (hasMore) {
-    let query = members.orderBy("__name__").limit(PAGE_LIMIT);
-    if (cursor) query = query.startAfter(cursor);
-    const snapshot = await query.get();
-    if (snapshot.empty) break;
-    for (const document of snapshot.docs) {
-      if (validDocumentID(document.id)) result.push(document.id);
-    }
-    cursor = snapshot.docs.at(-1) ?? null;
-    hasMore = snapshot.size === PAGE_LIMIT;
-  }
-  return [...new Set(result)];
-}
-
-async function createClosureNoticesAndRemoveProjections(
-  firestore: Firestore,
-  roomID: string,
-  memberUIDs: string[],
-  creatorUID: string,
-  roomName: string | null,
-  closureType: RoomClosureType,
-  closureNoticeCode: string,
-  closedAt: Timestamp,
 ): Promise<void> {
-  for (let index = 0; index < memberUIDs.length; index += MEMBER_BATCH_LIMIT) {
+  const members = firestore.collection("Rooms").doc(roomID).collection("members");
+  let hasMembers = true;
+  while (hasMembers) {
+    const snapshot = await members.orderBy("__name__").limit(MEMBER_BATCH_LIMIT).get();
+    if (snapshot.empty) {
+      hasMembers = false;
+      continue;
+    }
     const batch = firestore.batch();
-    for (const uid of memberUIDs.slice(index, index + MEMBER_BATCH_LIMIT)) {
-      const user = firestore.collection("users").doc(uid);
-      if (shouldCreateClosureNotice(uid, creatorUID, closureType)) {
-        batch.set(user.collection("roomClosureNotices").doc(roomID), {
-          schemaVersion: 2,
-          roomID,
-          ...(roomName ? {roomName} : {}),
-          closureType,
-          closureNoticeCode,
-          closedAt,
-          expiresAt: Timestamp.fromMillis(closedAt.toMillis() + CLOSURE_NOTICE_TTL_MILLIS),
-        });
+    for (const document of snapshot.docs) {
+      const uid = document.id;
+      if (!validDocumentID(uid)) {
+        batch.delete(document.ref);
+        continue;
       }
+      const user = firestore.collection("users").doc(uid);
       batch.delete(user.collection("joinedRooms").doc(roomID));
       batch.delete(user.collection("roomStates").doc(roomID));
+      batch.delete(document.ref);
     }
     await batch.commit();
   }
+}
+
+async function removeOwnerMembership(
+  firestore: Firestore,
+  roomID: string,
+  creatorUID: string,
+): Promise<void> {
+  const batch = firestore.batch();
+  const user = firestore.collection("users").doc(creatorUID);
+  batch.delete(user.collection("joinedRooms").doc(roomID));
+  batch.delete(user.collection("roomStates").doc(roomID));
+  batch.delete(firestore.collection("Rooms").doc(roomID).collection("members").doc(creatorUID));
+  await batch.commit();
 }
 
 export async function processRoomCleanupJob(
@@ -271,28 +265,48 @@ export async function processRoomCleanupJob(
     }
     const roomRef = firestore.collection("Rooms").doc(roomID);
     const room = await roomRef.get();
+    if (job.cleanupPhase === "retention") {
+      if (room.exists) {
+        await removeMemberships(firestore, roomID);
+        await roomRef.delete();
+      }
+      await markCompleted(reference, now);
+      return true;
+    }
     if (room.exists) {
       const closedAt = room.get("closedAt") instanceof Timestamp ? room.get("closedAt") : Timestamp.fromDate(now);
-      const memberUIDs = await loadRoomMembers(firestore, roomID);
       const creatorUID = room.get("creatorUID");
-      const roomName = normalizedClosureRoomName(room.get("roomName"));
       if (!validDocumentID(creatorUID)) throw new Error("invalid_room_identity");
-      if (!memberUIDs.includes(creatorUID)) memberUIDs.push(creatorUID);
-      await createClosureNoticesAndRemoveProjections(
-        firestore,
-        roomID,
-        memberUIDs,
-        creatorUID,
-        roomName,
-        job.closureType,
-        job.closureNoticeCode,
-        closedAt,
-      );
-      for (const subcollection of ["Messages", "mediaIndex", "MediaUploads", "members", "bans"]) {
+      if (job.closureType === "closedByOwner") {
+        await removeOwnerMembership(firestore, roomID, creatorUID);
+      }
+      for (const subcollection of ["Messages", "mediaIndex", "MediaUploads", "bans"]) {
         await deleteCollection(roomRef.collection(subcollection));
       }
       await bucket.deleteFiles({prefix: `rooms/${roomID}/`, force: true});
-      await roomRef.delete();
+      const createdAt = room.get("createdAt") instanceof Timestamp ? room.get("createdAt") : closedAt;
+      const lastMessageAt = room.get("lastMessageAt") instanceof Timestamp ? room.get("lastMessageAt") : createdAt;
+      const expiresAt = Timestamp.fromMillis(closedAt.toMillis() + ROOM_TOMBSTONE_TTL_MILLIS);
+      const tombstone: Record<string, unknown> = {
+        tombstoneSchemaVersion: 1,
+        roomName: normalizedClosureRoomName(room.get("roomName")) ?? "채팅방",
+        roomDescription: "",
+        creatorUID,
+        createdAt,
+        lastMessageAt,
+        memberCount: Math.max(0, Number(room.get("memberCount")) || 0),
+        seq: Math.max(0, Number(room.get("seq")) || 0),
+        isClosed: true,
+        lifecycleStatus: job.closureType,
+        lifecycleVersion: Number(job.lifecycleVersion) || 1,
+        closureNoticeCode: job.closureNoticeCode,
+        closedAt,
+        expiresAt,
+        updatedAt: Timestamp.fromDate(now),
+      };
+      await roomRef.set(tombstone);
+      await markAwaitingExpiry(reference, expiresAt, now);
+      return true;
     }
     await markCompleted(reference, now);
     return true;
@@ -311,7 +325,7 @@ export async function dueCleanupJobIDs(
   limit = 25,
 ): Promise<string[]> {
   const snapshot = await firestore.collection(collection)
-    .where("status", "in", ["pending", "retryPending", "processing"])
+    .where("status", "in", ["pending", "retryPending", "processing", "awaitingExpiry"])
     .where("nextAttemptAt", "<=", Timestamp.fromDate(now))
     .orderBy("nextAttemptAt")
     .limit(limit)

@@ -21,7 +21,10 @@ struct ChatRoomFirestoreDTO: Decodable {
     let memberCount: Int?
     let seq: Int64?
     let isClosed: Bool?
+    let lifecycleStatus: String?
     let lifecycleVersion: Int?
+    let closureNoticeCode: String?
+    let closedAt: Date?
     let activeAnnouncementID: String?
     let activeAnnouncement: AnnouncementPayload?
     let announcementUpdatedAt: Date?

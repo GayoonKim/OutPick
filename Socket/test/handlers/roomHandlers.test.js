@@ -66,7 +66,7 @@ test("create/join/leave room ACK와 registry side effect를 유지한다", async
   assert.deepEqual(fixture.rooms.room, ["Bob"]);
 });
 
-test("owner close는 room:closed, registry 삭제, room socket leave 후 ACK한다", async () => {
+test("owner close는 watcher에 종료 side effect를 맡기고 ACK만 반환한다", async () => {
   const fixture = register({
     leaveOrCloseRoom: async () => ({ ok: true, mode: "closed", alreadyDeleted: false })
   });
@@ -78,9 +78,9 @@ test("owner close는 room:closed, registry 삭제, room socket leave 후 ACK한�
   );
 
   assert.deepEqual(ack, { ok: true, mode: "closed", alreadyDeleted: false });
-  assert.equal(fixture.fakeIO.roomEmits[0].event, "room:closed");
-  assert.equal(fixture.rooms.room, undefined);
-  assert.deepEqual(fixture.fakeIO.memberSocket.left, ["room"]);
+  assert.equal(fixture.fakeIO.roomEmits.length, 0);
+  assert.notEqual(fixture.rooms.room, undefined);
+  assert.deepEqual(fixture.fakeIO.memberSocket.left, []);
 });
 
 test("이미 삭제된 room은 기존처럼 socket close side effect 없이 성공한다", async () => {

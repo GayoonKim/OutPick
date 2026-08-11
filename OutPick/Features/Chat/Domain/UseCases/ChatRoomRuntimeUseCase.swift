@@ -9,7 +9,7 @@ import Foundation
 
 @MainActor
 protocol ChatRoomRuntimeUseCaseProtocol {
-    func observeRoomClosed(roomID: String, onClosed: @escaping (String) -> Void) -> ChatRoomRuntimeSubscription
+    func observeRoomClosed(roomID: String, onClosed: @escaping (RealtimeRoomClosureEvent) -> Void) -> ChatRoomRuntimeSubscription
     func enterVisibleRoom(roomID: String)
     func leaveVisibleRoom(roomID: String)
     func cleanTransientLocalRoomData(roomID: String) async
@@ -31,7 +31,7 @@ final class ChatRoomRuntimeUseCase: ChatRoomRuntimeUseCaseProtocol {
         self.transientLocalDataCleaner = transientLocalDataCleaner
     }
 
-    func observeRoomClosed(roomID: String, onClosed: @escaping (String) -> Void) -> ChatRoomRuntimeSubscription {
+    func observeRoomClosed(roomID: String, onClosed: @escaping (RealtimeRoomClosureEvent) -> Void) -> ChatRoomRuntimeSubscription {
         repository.observeRoomClosed(roomID: roomID, onClosed: onClosed)
     }
 
