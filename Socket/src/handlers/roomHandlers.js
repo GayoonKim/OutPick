@@ -105,21 +105,6 @@ export function registerRoomHandlers({
       }
 
       if (result.mode === "closed") {
-        if (result.skipSocketCloseEffects !== true) {
-          io.to(roomID).emit("room:closed", {
-            roomID,
-            closedByUID: userUID
-          });
-          if (rooms[roomID]) delete rooms[roomID];
-
-          const roomSet = io.sockets.adapter.rooms.get(roomID);
-          if (roomSet) {
-            for (const socketID of roomSet) {
-              io.sockets.sockets.get(socketID)?.leave(roomID);
-            }
-          }
-        }
-
         callback?.({
           ok: true,
           mode: "closed",

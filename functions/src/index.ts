@@ -11,6 +11,7 @@ export {
   mutateModerationReview,
 } from "./moderation/admin/functions.js";
 export {
+  acknowledgeRoomClosure,
   closeOwnedChatRoom,
   closeRoomByModeration,
   deleteChatMessage,

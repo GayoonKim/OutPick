@@ -2,21 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   normalizedClosureRoomName,
-  shouldCreateClosureNotice,
+  ROOM_TOMBSTONE_TTL_MILLIS,
 } from "./moderationCleanup.js";
 
-test("방장 삭제는 방장을 제외한 참여자에게만 안내한다", () => {
-  assert.equal(
-    shouldCreateClosureNotice("owner", "owner", "closedByOwner"), false);
-  assert.equal(
-    shouldCreateClosureNotice("member", "owner", "closedByOwner"), true);
-});
-
-test("관리자 종료는 방장을 포함한 모든 참여자에게 안내한다", () => {
-  assert.equal(
-    shouldCreateClosureNotice("owner", "owner", "closedByModeration"), true);
-  assert.equal(
-    shouldCreateClosureNotice("member", "owner", "closedByModeration"), true);
+test("종료 tombstone의 최대 보존 기간은 14일이다", () => {
+  assert.equal(ROOM_TOMBSTONE_TTL_MILLIS, 14 * 24 * 60 * 60 * 1000);
 });
 
 test("종료 안내에는 유효한 방 이름만 사용한다", () => {

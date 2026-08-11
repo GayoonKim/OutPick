@@ -6,11 +6,13 @@ import {assertActivePlatformAdmin} from "../../moderation/admin/service.js";
 import {requireRecentAdminAuth} from "../../moderation/admin/contracts.js";
 import {assertAccountCapability} from "../../shared/accountStatus.js";
 import {
+  parseAcknowledgeRoomClosureInput,
   parseCloseOwnedChatRoomInput,
   parseCloseRoomByModerationInput,
   parseDeleteChatMessageInput,
 } from "./contracts.js";
 import {
+  acknowledgeRoomClosureService,
   closeOwnedChatRoomService,
   closeRoomByModerationService,
   deleteChatMessageService,
@@ -58,5 +60,17 @@ export const closeRoomByModeration = onCall(options, async (request) => {
     );
   } catch (error) {
     return callableError(error, "closeRoomByModeration");
+  }
+});
+
+export const acknowledgeRoomClosure = onCall(options, async (request) => {
+  try {
+    const uid = requiredAuthUID(request.auth?.uid);
+    return await acknowledgeRoomClosureService(
+      uid,
+      parseAcknowledgeRoomClosureInput(request.data),
+    );
+  } catch (error) {
+    return callableError(error, "acknowledgeRoomClosure");
   }
 });

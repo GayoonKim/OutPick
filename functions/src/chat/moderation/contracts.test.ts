@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {HttpsError} from "firebase-functions/v2/https";
 import {
+  parseAcknowledgeRoomClosureInput,
   parseCloseOwnedChatRoomInput,
   parseCloseRoomByModerationInput,
   parseDeleteChatMessageInput,
@@ -74,4 +75,14 @@ test("owner와 moderation room close 계약은 lifecycle version과 관리자 �
     expectedLifecycleVersion: 2,
     clientRequestID: requestID,
   }), HttpsError);
+});
+
+test("room closure 확인 계약은 room과 request ID를 정규화한다", () => {
+  assert.deepEqual(parseAcknowledgeRoomClosureInput({
+    roomID: "room-1",
+    clientRequestID: requestID.toUpperCase(),
+  }), {
+    roomID: "room-1",
+    clientRequestID: requestID,
+  });
 });

@@ -14,6 +14,7 @@ import {
   ModerationAuditAction,
 } from "../../moderation/audit/contracts.js";
 import {
+  AcknowledgeRoomClosureInput,
   CloseOwnedChatRoomInput,
   CloseRoomByModerationInput,
   DeleteChatMessageInput,
@@ -317,11 +318,12 @@ async function closeRoomService(
       updatedAt: nowTimestamp,
     });
     transaction.create(jobRef, {
-      schemaVersion: 1,
+      schemaVersion: 2,
       roomID: input.roomID,
       lifecycleVersion: nextVersion,
       closureType,
       closureNoticeCode,
+      cleanupPhase: "content",
       status: "pending",
       attempt: 0,
       nextAttemptAt: nowTimestamp,
@@ -347,6 +349,44 @@ async function closeRoomService(
       expiresAt: null,
     });
     return result;
+  });
+}
+
+export async function acknowledgeRoomClosureService(
+  actorUID: string,
+  input: AcknowledgeRoomClosureInput,
+  firestore: Firestore = db,
+): Promise<Record<string, unknown>> {
+  const roomRef = firestore.collection("Rooms").doc(input.roomID);
+  const memberRef = roomRef.collection("members").doc(actorUID);
+  const userRef = firestore.collection("users").doc(actorUID);
+  const joinedRef = userRef.collection("joinedRooms").doc(input.roomID);
+  const roomStateRef = userRef.collection("roomStates").doc(input.roomID);
+  const legacyNoticeRef = userRef.collection("roomClosureNotices").doc(input.roomID);
+
+  return firestore.runTransaction(async (transaction) => {
+    const [room, member, joined, legacyNotice] = await Promise.all([
+      transaction.get(roomRef),
+      transaction.get(memberRef),
+      transaction.get(joinedRef),
+      transaction.get(legacyNoticeRef),
+    ]);
+    const roomData = room.data();
+    if (room.exists && roomData && roomIsActive(roomData)) {
+      throw new HttpsError("failed-precondition", "종료되지 않은 채팅방입니다.", {
+        errorCode: "ROOM_ACTIVE",
+      });
+    }
+    if (member.exists) transaction.delete(memberRef);
+    if (joined.exists) transaction.delete(joinedRef);
+    transaction.delete(roomStateRef);
+    if (legacyNotice.exists) transaction.delete(legacyNoticeRef);
+    return {
+      roomID: input.roomID,
+      acknowledged: true,
+      deduplicated: !member.exists && !joined.exists && !legacyNotice.exists,
+      clientRequestID: input.clientRequestID,
+    };
   });
 }
 
