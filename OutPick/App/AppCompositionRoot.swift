@@ -88,13 +88,28 @@ enum AppCompositionRoot {
             repository: accountDeletionRepository,
             receiptStore: accountDeletionReceiptStore
         )
+        let userBlockVisibilityStore = UserBlockVisibilityStore()
+        let userBlockRepository = CloudFunctionsUserBlockRepository(
+            transport: cloudFunctionsTransport,
+            db: db
+        )
+        let userBlockSessionController = UserBlockSessionController(
+            repository: userBlockRepository,
+            snapshotStore: UserDefaultsUserBlockSnapshotStore(),
+            visibilityStore: userBlockVisibilityStore
+        )
         let lookbookProvider = LookbookRepositoryProvider.live(
-            transport: cloudFunctionsTransport
+            transport: cloudFunctionsTransport,
+            userBlockRepository: userBlockRepository
         )
         let realtimeSocketService = RealtimeSocketService(
-            gapRecoveryLoader: FirebaseChatRealtimeGapRecoveryLoader(db: db)
+            gapRecoveryLoader: FirebaseChatRealtimeGapRecoveryLoader(db: db),
+            userBlockVisibilityStore: userBlockVisibilityStore
         )
-        BannerManager.shared.configure(realtimeSocketService: realtimeSocketService)
+        BannerManager.shared.configure(
+            realtimeSocketService: realtimeSocketService,
+            userBlockVisibilityStore: userBlockVisibilityStore
+        )
         let joinedRoomsStore = JoinedRoomsSessionStore()
         let brandAdminSessionStore = BrandAdminSessionStore(
             capabilitiesClient: BrandAdminCapabilitiesCloudFunctionsClient(
@@ -135,7 +150,10 @@ enum AppCompositionRoot {
             realtimeSocketService: realtimeSocketService,
             avatarImageManager: avatarImageManager,
             appSessionRuntime: appSessionRuntime,
-            chatPersistence: chatPersistence
+            chatPersistence: chatPersistence,
+            userBlockVisibilityStore: userBlockVisibilityStore,
+            userBlockSessionController: userBlockSessionController,
+            userBlockRepository: userBlockRepository
         )
     }
 }

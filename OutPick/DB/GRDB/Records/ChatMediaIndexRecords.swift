@@ -6,6 +6,7 @@ struct ImageIndexRecord: Codable, FetchableRecord, PersistableRecord {
 
     let roomID: String
     let messageID: String
+    let senderUID: String?
     let idx: Int
     let thumbKey: String?
     let originalKey: String?
@@ -25,6 +26,7 @@ struct VideoIndexRecord: Codable, FetchableRecord, PersistableRecord {
 
     let roomID: String
     let messageID: String
+    let senderUID: String?
     let idx: Int
     let thumbKey: String?
     let originalKey: String?

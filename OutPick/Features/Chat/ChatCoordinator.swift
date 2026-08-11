@@ -401,6 +401,8 @@ final class ChatCoordinator {
             currentUserProvider: container.currentUserProvider,
             publicProfileRepository: container.publicProfileRepository,
             photoLibrarySaver: container.makePhotoLibrarySaver(),
+            blockUserUseCase: container.makeBlockUserUseCase(),
+            userBlockVisibilityStore: container.userBlockVisibilityStore,
             onFinish: { [weak self] in
                 self?.userProfileDetailCoordinator = nil
             }
@@ -429,6 +431,7 @@ extension ChatCoordinator: ChatRoomRouting {
             currentUserProvider: container.currentUserProvider,
             networkStatusProvider: container.makeNetworkStatusProvider(),
             exitUseCase: container.makeChatRoomExitUseCase(),
+            userBlockVisibilityStore: container.userBlockVisibilityStore,
             onEvent: { [weak self, weak source] event in
                 switch event {
                 case .roomUpdated(let updatedRoom):

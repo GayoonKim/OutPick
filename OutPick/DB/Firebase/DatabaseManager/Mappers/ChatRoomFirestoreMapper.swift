@@ -106,10 +106,14 @@ enum ChatRoomFirestoreMapper {
     }
 
     static func announcementData(_ announcement: AnnouncementPayload) -> [String: Any] {
-        [
+        var data: [String: Any] = [
             "text": announcement.text,
             "authorID": announcement.authorID,
             "createdAt": Timestamp(date: announcement.createdAt)
         ]
+        if let authorUID = announcement.authorUID, !authorUID.isEmpty {
+            data["authorUID"] = authorUID
+        }
+        return data
     }
 }

@@ -12,6 +12,7 @@ enum ChatMessageAction: Equatable, Hashable, Sendable {
     case copy
     case delete
     case report
+    case block
     case announce
 }
 
@@ -25,6 +26,7 @@ struct ChatMessageActionPolicy: Equatable, Sendable {
     let canCopy: Bool
     let canDelete: Bool
     let canReport: Bool
+    let canBlock: Bool
     let canAnnounce: Bool
 
     func allows(_ action: ChatMessageAction) -> Bool {
@@ -37,6 +39,8 @@ struct ChatMessageActionPolicy: Equatable, Sendable {
             canDelete
         case .report:
             canReport
+        case .block:
+            canBlock
         case .announce:
             canAnnounce
         }
@@ -57,6 +61,7 @@ struct ChatMessageActionPolicy: Equatable, Sendable {
                 canCopy: false,
                 canDelete: canDelete,
                 canReport: !canDelete,
+                canBlock: !isOwner,
                 canAnnounce: false
             )
         }
@@ -66,6 +71,7 @@ struct ChatMessageActionPolicy: Equatable, Sendable {
             canCopy: true,
             canDelete: canDelete,
             canReport: !canDelete,
+            canBlock: !isOwner,
             canAnnounce: isAdmin
         )
     }

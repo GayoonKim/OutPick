@@ -735,6 +735,10 @@ private final class LookbookUITestFixtureStore:
 
     func fetchBlockedUserIDs(blockerUserID: UserID) async throws -> Set<UserID> { [] }
 
+    func fetchBlockedUsers(blockerUserID: UserID) async throws -> [UserBlock] { [] }
+
+    func unblockUser(blockerUserID: UserID, blockedUserID: UserID) async throws {}
+
     func fetchHiddenCommentUserIDs(currentUserID: UserID) async throws -> Set<UserID> { [] }
 
     func fetchPostUserState(

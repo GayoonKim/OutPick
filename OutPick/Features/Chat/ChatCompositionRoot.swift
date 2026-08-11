@@ -51,6 +51,7 @@ enum ChatCompositionRoot {
         currentUserProvider: any CurrentUserProviding,
         networkStatusProvider: NetworkStatusProviding,
         exitUseCase: ChatRoomExitUseCaseProtocol,
+        userBlockVisibilityStore: any UserBlockVisibilityChecking = UserBlockVisibilityStore(),
         onEvent: @escaping (ChatRoomSettingEvent) -> Void = { _ in }
     ) -> ChatRoomSettingViewController {
         let remoteMediaRepository = FirebaseChatRoomMediaIndexAdapter(
@@ -63,7 +64,8 @@ enum ChatCompositionRoot {
         )
         let mediaUseCase = LoadChatRoomMediaUseCase(
             localMediaRepository: localMediaRepository,
-            remoteMediaRepository: remoteMediaRepository
+            remoteMediaRepository: remoteMediaRepository,
+            userBlockVisibilityStore: userBlockVisibilityStore
         )
         let initialParticipants = (
             try? participantsUseCase.loadLocalInitial(room: room)

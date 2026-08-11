@@ -8,7 +8,7 @@
 import Foundation
 import FirebaseFirestore
 
-final class CloudFunctionsUserBlockRepository: UserBlockRepositoryProtocol {
+final class CloudFunctionsUserBlockRepository: UserBlockRepositoryProtocol, UserBlockRelationReading {
     private let transport: any CloudFunctionsTransporting
     private let db: Firestore
 
@@ -27,40 +27,79 @@ final class CloudFunctionsUserBlockRepository: UserBlockRepositoryProtocol {
         source: UserBlockSource
     ) async throws -> UserBlock {
         var data: [String: Any] = [
-            "blockerUserID": blockerUserID.value,
-            "blockedUserID": blockedUserID.value,
-            "source": source.rawValue
+            "targetUID": blockedUserID.value,
+            "source": source.rawValue,
+            "clientRequestID": UUID().uuidString
         ]
         if let blockedUserNicknameSnapshot {
-            data["blockedUserNicknameSnapshot"] = blockedUserNicknameSnapshot
+            data["targetNicknameSnapshot"] = blockedUserNicknameSnapshot
         }
         let response = try await transport.call("blockUser", data: data)
-        return try CommentCloudFunctionsMapper.userBlock(response)
+        let decoder = CloudFunctionResponseDecoder(dictionary: response)
+        guard try decoder.bool("blocked") else {
+            throw CloudFunctionsClientError.invalidResponse
+        }
+        return UserBlock(
+            blockerUserID: blockerUserID,
+            blockedUserID: blockedUserID,
+            blockedUserNicknameSnapshot: blockedUserNicknameSnapshot,
+            source: source,
+            createdAt: decoder.optionalDate("updatedAt") ?? Date()
+        )
     }
 
-    func fetchBlockedUserIDs(
+    func unblockUser(
+        blockerUserID: UserID,
+        blockedUserID: UserID
+    ) async throws {
+        let response = try await transport.call("unblockUser", data: [
+            "targetUID": blockedUserID.value,
+            "clientRequestID": UUID().uuidString
+        ])
+        let decoder = CloudFunctionResponseDecoder(dictionary: response)
+        guard try decoder.bool("blocked") == false else {
+            throw CloudFunctionsClientError.invalidResponse
+        }
+    }
+
+    func fetchBlockedUsers(
         blockerUserID: UserID
-    ) async throws -> Set<UserID> {
+    ) async throws -> [UserBlock] {
         let snapshot = try await db
             .collection("users")
             .document(blockerUserID.value)
             .collection("blockedUsers")
             .getDocuments()
 
-        return Set(snapshot.documents.map { UserID(value: $0.documentID) })
+        return snapshot.documents.compactMap { document in
+            let data = document.data()
+            let source = (data["source"] as? String)
+                .flatMap(UserBlockSource.init(rawValue:)) ?? .profile
+            let createdAt = (data["createdAt"] as? Timestamp)?.dateValue()
+                ?? (data["updatedAt"] as? Timestamp)?.dateValue()
+                ?? .distantPast
+            return UserBlock(
+                blockerUserID: blockerUserID,
+                blockedUserID: UserID(value: document.documentID),
+                blockedUserNicknameSnapshot: data["blockedUserNicknameSnapshot"] as? String,
+                source: source,
+                createdAt: createdAt
+            )
+        }.sorted { lhs, rhs in
+            if lhs.createdAt != rhs.createdAt { return lhs.createdAt > rhs.createdAt }
+            return lhs.blockedUserID.value < rhs.blockedUserID.value
+        }
+    }
+
+    func fetchBlockedUserIDs(
+        blockerUserID: UserID
+    ) async throws -> Set<UserID> {
+        Set(try await fetchBlockedUsers(blockerUserID: blockerUserID).map(\.blockedUserID))
     }
 
     func fetchHiddenCommentUserIDs(
         currentUserID: UserID
     ) async throws -> Set<UserID> {
-        let response = try await transport.call(
-            "loadHiddenCommentUserIDs",
-            data: ["currentUserID": currentUserID.value]
-        )
-        return Set(
-            CloudFunctionResponseDecoder(dictionary: response)
-                .stringArray("hiddenUserIDs")
-                .map(UserID.init(value:))
-        )
+        try await fetchBlockedUserIDs(blockerUserID: currentUserID)
     }
 }

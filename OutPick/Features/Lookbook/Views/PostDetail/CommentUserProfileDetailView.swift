@@ -14,6 +14,8 @@ struct CommentUserProfileDetailView: UIViewControllerRepresentable {
     let avatarImageManager: AvatarImageManaging
     let currentUserProvider: any CurrentUserProviding
     let repositories: any FirebaseRepositoryProviding
+    let blockUserUseCase: any BlockUserUseCaseProtocol
+    let userBlockVisibilityStore: any UserBlockVisibilityChecking
     let onBack: () -> Void
 
     func makeUIViewController(context: Context) -> UserProfileDetailViewController {
@@ -24,6 +26,8 @@ struct CommentUserProfileDetailView: UIViewControllerRepresentable {
             avatarImageManager: avatarImageManager,
             currentUserProvider: currentUserProvider,
             publicProfileRepository: FirestoreUserPublicProfileRepository(db: .firestore()),
+            blockUserUseCase: blockUserUseCase,
+            userBlockVisibilityStore: userBlockVisibilityStore,
             onBack: onBack
         )
     }

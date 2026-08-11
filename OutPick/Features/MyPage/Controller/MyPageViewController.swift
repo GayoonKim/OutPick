@@ -232,6 +232,12 @@ final class MyPageViewController: UIViewController {
     private func makeSettingsMenu() -> UIMenu {
         UIMenu(children: [
             UIAction(
+                title: "차단한 사용자",
+                image: UIImage(systemName: "person.crop.circle.badge.xmark")
+            ) { [weak self] _ in
+                self?.viewModel.blockedUsersTapped()
+            },
+            UIAction(
                 title: "로그아웃",
                 image: UIImage(systemName: "rectangle.portrait.and.arrow.right")
             ) { [weak self] _ in

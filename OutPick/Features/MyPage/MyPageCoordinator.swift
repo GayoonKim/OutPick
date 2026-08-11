@@ -35,6 +35,9 @@ final class MyPageCoordinator {
         viewModel.onOpenBrandRequests = { [weak self] in
             self?.showBrandRequests()
         }
+        viewModel.onOpenBlockedUsers = { [weak self] in
+            self?.showBlockedUsers()
+        }
         viewModel.onDeleteAccount = { [weak self] in
             self?.showAccountDeletion()
         }
@@ -100,6 +103,17 @@ final class MyPageCoordinator {
                 self?.presentBrandRequestsRouteError()
             }
         }
+    }
+
+    private func showBlockedUsers() {
+        let viewModel = BlockedUsersViewModel(
+            currentUserID: container.userID,
+            repository: container.userBlockRepository,
+            unblockUserUseCase: container.unblockUserUseCase
+        )
+        let viewController = BlockedUsersViewController(viewModel: viewModel)
+        viewController.hidesBottomBarWhenPushed = true
+        navigationController.pushViewController(viewController, animated: true)
     }
 
     private func showAccountDeletion() {

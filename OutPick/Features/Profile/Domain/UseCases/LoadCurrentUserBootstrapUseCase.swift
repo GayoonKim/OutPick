@@ -12,6 +12,19 @@ enum CurrentUserBootstrapOutcome: Equatable {
     case deletionPending
 }
 
+extension CurrentUserBootstrapOutcome {
+    var canEnterUserGeneratedContent: Bool {
+        switch self {
+        case .ready:
+            return true
+        case .restricted(_, let account, let publicProfile):
+            return account != nil && publicProfile != nil
+        case .needsOnboarding, .suspended, .deletionPending:
+            return false
+        }
+    }
+}
+
 struct LoadCurrentUserBootstrapUseCase {
     static let currentOnboardingVersion = 1
 

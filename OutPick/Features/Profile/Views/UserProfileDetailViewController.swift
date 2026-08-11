@@ -195,6 +195,10 @@ final class UserProfileDetailViewController: UIViewController, ChatModalAnimatab
     private func setupActions() {
         let tapGesture = UITapGestureRecognizer(target: self, action: #selector(profileImageTapped))
         profileImageView.addGestureRecognizer(tapGesture)
+        blockActionStack.isUserInteractionEnabled = true
+        blockActionStack.addGestureRecognizer(
+            UITapGestureRecognizer(target: self, action: #selector(blockTapped))
+        )
 
         let edgeDismissGesture = UIScreenEdgePanGestureRecognizer(
             target: self,
@@ -223,6 +227,8 @@ final class UserProfileDetailViewController: UIViewController, ChatModalAnimatab
 
         loadAvatarIfNeeded(source: state.avatarSource)
         actionStack.isHidden = state.isCurrentUser
+        blockLabel.text = state.isBlocked ? "차단됨" : "차단"
+        blockActionStack.isUserInteractionEnabled = !state.isBlocked
     }
 
     private func loadAvatarIfNeeded(source: AvatarImageSource) {
@@ -266,6 +272,34 @@ final class UserProfileDetailViewController: UIViewController, ChatModalAnimatab
 
     @objc private func profileImageTapped() {
         presentAvatarViewerIfPossible()
+    }
+
+    @objc private func blockTapped() {
+        let alert = UIAlertController(
+            title: "이 사용자를 차단할까요?",
+            message: "상대방에게 차단 사실을 알리지 않으며, 새로 불러오는 콘텐츠부터 숨깁니다.",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "취소", style: .cancel))
+        alert.addAction(UIAlertAction(title: "차단", style: .destructive) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                do {
+                    try await self.viewModel.blockUser()
+                    self.blockLabel.text = "차단됨"
+                    self.blockActionStack.isUserInteractionEnabled = false
+                } catch {
+                    let failure = UIAlertController(
+                        title: "차단하지 못했어요",
+                        message: "잠시 후 다시 시도해 주세요.",
+                        preferredStyle: .alert
+                    )
+                    failure.addAction(UIAlertAction(title: "확인", style: .default))
+                    self.present(failure, animated: true)
+                }
+            }
+        })
+        present(alert, animated: true)
     }
 
     private func presentAvatarViewerIfPossible() {

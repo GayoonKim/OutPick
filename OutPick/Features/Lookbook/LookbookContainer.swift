@@ -36,6 +36,8 @@ final class LookbookContainer {
     private let deleteCommentUseCase: any DeleteCommentUseCaseProtocol
     private let reportCommentUseCase: any ReportCommentUseCaseProtocol
     private let blockUserUseCase: any BlockUserUseCaseProtocol
+    private let unblockUserUseCase: any UnblockUserUseCaseProtocol
+    private let userBlockVisibilityStore: any UserBlockVisibilityChecking
     private let loadHiddenCommentUserIDsUseCase: any LoadHiddenCommentUserIDsUseCaseProtocol
     private let filterHiddenCommentAuthorsUseCase: FilterHiddenCommentAuthorsUseCase
     private let loadSeasonDetailUseCase: any LoadSeasonDetailUseCaseProtocol
@@ -63,6 +65,8 @@ final class LookbookContainer {
         publicProfileRepository: UserPublicProfileRepositoryProtocol =
             FirestoreUserPublicProfileRepository(db: .firestore()),
         avatarImageManager: AvatarImageManaging,
+        blockSessionSynchronizer: (any UserBlockSessionSynchronizing)? = nil,
+        userBlockVisibilityStore: (any UserBlockVisibilityChecking)? = nil,
         remotePreviewImageLoader: any LookbookRemotePreviewImageLoading =
             LookbookRemotePreviewImageLoader()
     ) {
@@ -107,12 +111,20 @@ final class LookbookContainer {
             repository: provider.commentSafetyRepository,
             debugFailureInjectionStore: debugFailureInjectionStore
         )
+        let resolvedUserBlockVisibilityStore = userBlockVisibilityStore ?? UserBlockVisibilityStore()
+        self.userBlockVisibilityStore = resolvedUserBlockVisibilityStore
         self.blockUserUseCase = BlockUserUseCase(
             repository: provider.userBlockRepository,
+            sessionSynchronizer: blockSessionSynchronizer,
             debugFailureInjectionStore: debugFailureInjectionStore
         )
+        self.unblockUserUseCase = UnblockUserUseCase(
+            repository: provider.userBlockRepository,
+            sessionSynchronizer: blockSessionSynchronizer
+        )
         self.loadHiddenCommentUserIDsUseCase = LoadHiddenCommentUserIDsUseCase(
-            repository: provider.userBlockRepository
+            repository: provider.userBlockRepository,
+            visibilityStore: resolvedUserBlockVisibilityStore
         )
         self.filterHiddenCommentAuthorsUseCase = FilterHiddenCommentAuthorsUseCase()
         self.loadSeasonDetailUseCase = LoadSeasonDetailUseCase(
@@ -760,7 +772,9 @@ final class LookbookContainer {
             coordinator: commentCoordinator,
             avatarImageManager: avatarImageManager,
             currentUserProvider: currentUserProvider,
-            firebaseRepositories: firebaseRepositories
+            firebaseRepositories: firebaseRepositories,
+            blockUserUseCase: blockUserUseCase,
+            userBlockVisibilityStore: userBlockVisibilityStore
         )
     }
 
@@ -779,7 +793,9 @@ final class LookbookContainer {
             ),
             avatarImageManager: avatarImageManager,
             currentUserProvider: currentUserProvider,
-            firebaseRepositories: firebaseRepositories
+            firebaseRepositories: firebaseRepositories,
+            blockUserUseCase: blockUserUseCase,
+            userBlockVisibilityStore: userBlockVisibilityStore
         )
     }
 

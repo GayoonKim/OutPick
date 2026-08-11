@@ -16,7 +16,8 @@ enum GRDBMigrationRegistry {
         "rebuildChatMessageSenderUIDSchema",
         "createImageIndex",
         "createVideoIndex",
-        "createChatOutgoingOutbox"
+        "createChatOutgoingOutbox",
+        "addSenderUIDToMediaIndexes"
     ]
 
     static func migrate(_ writer: some DatabaseWriter) throws {
@@ -121,6 +122,23 @@ enum GRDBMigrationRegistry {
             }
             try db.create(index: "idx_chatOutgoingOutbox_room_updated", on: "chatOutgoingOutbox", columns: ["roomID", "updatedAt"], ifNotExists: true)
         }
+        migrator.registerMigration("addSenderUIDToMediaIndexes") { db in
+            for tableName in ["imageIndex", "videoIndex"] {
+                try addColumnIfMissing("senderUID", to: tableName, in: db) {
+                    $0.add(column: "senderUID", .text)
+                }
+                try db.execute(sql: """
+                    UPDATE \(tableName)
+                       SET senderUID = (
+                           SELECT senderUID
+                             FROM chatMessage
+                            WHERE chatMessage.roomID = \(tableName).roomID
+                              AND chatMessage.id = \(tableName).messageID
+                       )
+                     WHERE senderUID IS NULL
+                """)
+            }
+        }
 
         return migrator
     }
@@ -190,6 +208,7 @@ enum GRDBMigrationRegistry {
     private static func addCommonMediaColumns(to table: TableDefinition, includeSentAt: Bool = true) {
         table.column("roomID", .text).notNull()
         table.column("messageID", .text).notNull()
+        table.column("senderUID", .text)
         table.column("idx", .integer).notNull()
         table.column("thumbKey", .text)
         table.column("originalKey", .text)

@@ -15,6 +15,8 @@ enum UserProfileDetailCompositionRoot {
         currentUserProvider: CurrentUserProviding,
         publicProfileRepository: UserPublicProfileRepositoryProtocol,
         photoLibrarySaver: PhotoLibrarySaving = DefaultPhotoLibrarySaver(),
+        blockUserUseCase: (any BlockUserUseCaseProtocol)? = nil,
+        userBlockVisibilityStore: (any UserBlockVisibilityChecking)? = nil,
         onBack: @escaping () -> Void
     ) -> UserProfileDetailViewController {
         let repository = UserProfileDetailRepository(
@@ -27,6 +29,8 @@ enum UserProfileDetailCompositionRoot {
             seedAvatarSource: AvatarImageSource(seedPath: seedAvatarPath),
             currentUserID: currentUserProvider.canonicalUserID,
             loadUserProfileDetailUseCase: useCase,
+            blockUserUseCase: blockUserUseCase,
+            userBlockVisibilityStore: userBlockVisibilityStore,
             onBack: onBack
         )
         let viewController = UserProfileDetailViewController(

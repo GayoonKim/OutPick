@@ -32,7 +32,7 @@ struct CommentBlockConfirmationSheetView: View {
             .padding(.top, 22)
 
             VStack(alignment: .leading, spacing: 8) {
-                Label("차단하면 서로의 댓글, 답글, 프로필 활동이 앱에서 보이지 않습니다.", systemImage: "eye.slash")
+                Label("차단하면 내 화면에서 해당 사용자의 댓글과 답글이 즉시 숨겨집니다.", systemImage: "eye.slash")
                 Label("상대방에게 차단 사실을 알리지 않습니다.", systemImage: "bell.slash")
                 Label("설정에서 언제든지 차단을 해제할 수 있습니다.", systemImage: "gearshape")
             }

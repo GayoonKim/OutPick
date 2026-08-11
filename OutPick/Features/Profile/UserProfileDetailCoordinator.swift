@@ -14,6 +14,8 @@ final class UserProfileDetailCoordinator {
     private let currentUserProvider: CurrentUserProviding
     private let publicProfileRepository: UserPublicProfileRepositoryProtocol
     private let photoLibrarySaver: PhotoLibrarySaving
+    private let blockUserUseCase: (any BlockUserUseCaseProtocol)?
+    private let userBlockVisibilityStore: (any UserBlockVisibilityChecking)?
     private let onFinish: () -> Void
 
     init(
@@ -22,6 +24,8 @@ final class UserProfileDetailCoordinator {
         currentUserProvider: CurrentUserProviding,
         publicProfileRepository: UserPublicProfileRepositoryProtocol,
         photoLibrarySaver: PhotoLibrarySaving,
+        blockUserUseCase: (any BlockUserUseCaseProtocol)? = nil,
+        userBlockVisibilityStore: (any UserBlockVisibilityChecking)? = nil,
         onFinish: @escaping () -> Void
     ) {
         self.presentingViewController = presentingViewController
@@ -29,6 +33,8 @@ final class UserProfileDetailCoordinator {
         self.currentUserProvider = currentUserProvider
         self.publicProfileRepository = publicProfileRepository
         self.photoLibrarySaver = photoLibrarySaver
+        self.blockUserUseCase = blockUserUseCase
+        self.userBlockVisibilityStore = userBlockVisibilityStore
         self.onFinish = onFinish
     }
 
@@ -44,6 +50,8 @@ final class UserProfileDetailCoordinator {
             currentUserProvider: currentUserProvider,
             publicProfileRepository: publicProfileRepository,
             photoLibrarySaver: photoLibrarySaver,
+            blockUserUseCase: blockUserUseCase,
+            userBlockVisibilityStore: userBlockVisibilityStore,
             onBack: { [weak self] in
                 self?.dismiss()
             }

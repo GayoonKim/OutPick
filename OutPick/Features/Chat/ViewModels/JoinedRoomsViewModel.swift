@@ -22,15 +22,20 @@ final class JoinedRoomsViewModel {
     private let joinedRoomsStore: JoinedRoomsSessionStoring?
     private let moderationLifecycleRepository: ChatModerationLifecycleRepositoryProtocol?
     private let closureAcknowledgementUseCase: ChatRoomClosureAcknowledging?
+    private let userBlockVisibilityStore: any UserBlockVisibilityChecking
+    private let visibleUnreadUseCase: (any ChatVisibleUnreadUseCaseProtocol)?
     private var readStateTask: Task<Void, Never>?
     private var joinedRoomsStoreTask: Task<Void, Never>?
     private var closureNoticeTask: Task<Void, Never>?
+    private var visibleUnreadTask: Task<Void, Never>?
+    private var visibleUnreadGeneration = 0
     private var closureNoticeGeneration = 0
     private var acknowledgedClosureNoticeIDs: Set<String> = []
     private var locallyConfirmedClosureRoomIDs: Set<String> = []
     private var isBoundReadState = false
     private var isBoundJoinedRoomsStore = false
     private var joinedItems: [JoinedRoomListItem] = []
+    private var visibleUnreadSummaries: [String: ChatVisibleUnreadSummary] = [:]
 
     private(set) var state: State {
         didSet { onStateChanged?(state) }
@@ -43,13 +48,17 @@ final class JoinedRoomsViewModel {
         roomReadStateStore: ChatRoomReadStateStore? = nil,
         joinedRoomsStore: JoinedRoomsSessionStoring? = nil,
         moderationLifecycleRepository: ChatModerationLifecycleRepositoryProtocol? = nil,
-        closureAcknowledgementUseCase: ChatRoomClosureAcknowledging? = nil
+        closureAcknowledgementUseCase: ChatRoomClosureAcknowledging? = nil,
+        userBlockVisibilityStore: any UserBlockVisibilityChecking = UserBlockVisibilityStore(),
+        visibleUnreadUseCase: (any ChatVisibleUnreadUseCaseProtocol)? = nil
     ) {
         self.useCase = useCase
         self.roomReadStateStore = roomReadStateStore
         self.joinedRoomsStore = joinedRoomsStore
         self.moderationLifecycleRepository = moderationLifecycleRepository
         self.closureAcknowledgementUseCase = closureAcknowledgementUseCase
+        self.userBlockVisibilityStore = userBlockVisibilityStore
+        self.visibleUnreadUseCase = visibleUnreadUseCase
         self.state = State()
     }
 
@@ -74,6 +83,9 @@ final class JoinedRoomsViewModel {
         closureNoticeGeneration += 1
         closureNoticeTask?.cancel()
         closureNoticeTask = nil
+        visibleUnreadGeneration += 1
+        visibleUnreadTask?.cancel()
+        visibleUnreadTask = nil
         isBoundReadState = false
         isBoundJoinedRoomsStore = false
     }
@@ -132,7 +144,7 @@ final class JoinedRoomsViewModel {
         } catch {
             locallyConfirmedClosureRoomIDs.remove(room.id)
             joinedItems = sortItems(joinedItems + removedItems)
-            state.rooms = joinedItems.map(\.room)
+            state.rooms = renderedRooms()
             if let removedUnreadCount {
                 state.unreadCounts[room.id] = removedUnreadCount
             }
@@ -151,6 +163,7 @@ final class JoinedRoomsViewModel {
         joinedItems.removeAll { $0.roomID == roomID }
         state.rooms.removeAll { $0.id == roomID }
         state.unreadCounts.removeValue(forKey: roomID)
+        visibleUnreadSummaries.removeValue(forKey: roomID)
         state.closureNotices.removeAll { $0.roomID == roomID }
     }
 
@@ -202,14 +215,17 @@ final class JoinedRoomsViewModel {
 
         do {
             let items = try await useCase.fetchJoinedRooms(limit: nil)
+            visibleUnreadSummaries.removeAll()
             applyJoinedItems(items, updateUnread: false)
 
             state.unreadCounts = computeUnreadCounts(from: joinedItems)
+            scheduleVisibleUnreadRefresh(for: joinedItems)
         } catch {
             state.errorMessage = "참여중인 방을 불러오지 못했습니다."
             state.rooms = []
             state.unreadCounts = [:]
             joinedItems = []
+            visibleUnreadSummaries.removeAll()
         }
 
         state.isLoading = false
@@ -222,9 +238,10 @@ final class JoinedRoomsViewModel {
             return (roomID, (room.seq, room.lastMessageAt, room.lastMessage, room.lastMessageSenderUID))
         })
 
-        joinedItems = sortItems(items.filter { !locallyConfirmedClosureRoomIDs.contains($0.roomID) })
+        joinedItems = sortItems(items
+            .filter { !locallyConfirmedClosureRoomIDs.contains($0.roomID) })
         seedReadState(from: joinedItems)
-        state.rooms = joinedItems.map(\.room)
+        state.rooms = renderedRooms()
 
         guard updateUnread else { return }
         let changedRooms = joinedItems.map(\.room).filter { room in
@@ -357,7 +374,7 @@ final class JoinedRoomsViewModel {
                 return JoinedRoomListItem(room: room, projection: item.projection)
             }
             joinedItems = sortItems(joinedItems)
-            state.rooms = sortItems(joinedItems).map(\.room)
+            state.rooms = renderedRooms()
         }
     }
 
@@ -375,6 +392,7 @@ final class JoinedRoomsViewModel {
         }
         for roomID in removedRoomIDs {
             state.unreadCounts.removeValue(forKey: roomID)
+            visibleUnreadSummaries.removeValue(forKey: roomID)
         }
     }
 
@@ -382,6 +400,77 @@ final class JoinedRoomsViewModel {
         items.sorted { lhs, rhs in
             (lhs.room.lastMessageAt ?? lhs.room.createdAt) > (rhs.room.lastMessageAt ?? rhs.room.createdAt)
         }
+    }
+
+    private func scheduleVisibleUnreadRefresh(for items: [JoinedRoomListItem]) {
+        visibleUnreadGeneration += 1
+        let generation = visibleUnreadGeneration
+        visibleUnreadTask?.cancel()
+
+        guard let visibleUnreadUseCase else { return }
+        let blockedUserIDs = userBlockVisibilityStore.blockedUserIDs()
+        guard !blockedUserIDs.isEmpty else {
+            visibleUnreadSummaries.removeAll()
+            state.rooms = renderedRooms()
+            return
+        }
+
+        let currentUserID = LoginManager.shared.canonicalUserID
+        visibleUnreadTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            var resolved: [String: ChatVisibleUnreadSummary] = [:]
+
+            for item in items where !item.room.isClosed {
+                if Task.isCancelled { return }
+                let lastReadSeq = item.projection.lastReadSeq
+                let latestSeq = item.room.seq
+                guard latestSeq > lastReadSeq else { continue }
+
+                do {
+                    let summary = try await visibleUnreadUseCase.execute(
+                        room: item.room,
+                        after: lastReadSeq,
+                        through: latestSeq,
+                        currentUserID: currentUserID,
+                        blockedUserIDs: blockedUserIDs
+                    )
+                    resolved[item.roomID] = summary
+                } catch is CancellationError {
+                    return
+                } catch {
+                    // 조회 실패 시 기존 raw unread를 유지해 정상 메시지를 누락하지 않는다.
+                }
+            }
+
+            guard generation == self.visibleUnreadGeneration else { return }
+            self.visibleUnreadSummaries = resolved
+            for summary in resolved.values {
+                self.state.unreadCounts[summary.roomID] = summary.visibleUnreadCount
+            }
+            self.state.rooms = self.renderedRooms()
+        }
+    }
+
+    private func renderedRooms() -> [ChatRoom] {
+        let renderedItems = joinedItems.map { item -> JoinedRoomListItem in
+            var room = item.room
+            guard let senderUID = room.lastMessageSenderUID,
+                  userBlockVisibilityStore.isBlocked(senderUID) else {
+                return item
+            }
+
+            if let visibleMessage = visibleUnreadSummaries[item.roomID]?.latestVisibleMessage {
+                room.lastMessage = visibleMessage.previewTextForRoomList
+                room.lastMessageSenderUID = visibleMessage.senderUID
+                room.lastMessageAt = visibleMessage.sentAt
+            } else {
+                room.lastMessage = nil
+                room.lastMessageSenderUID = nil
+                room.lastMessageAt = nil
+            }
+            return JoinedRoomListItem(room: room, projection: item.projection)
+        }
+        return sortItems(renderedItems).map(\.room)
     }
 
 }

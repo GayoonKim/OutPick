@@ -48,6 +48,7 @@ final class AccountDeletionLocalDataScrubber: AccountDeletionLocalDataScrubbing 
             "isRecentSearchEnabled",
             "profileAvatarCleanup.pendingPaths"
         ].forEach(defaults.removeObject(forKey:))
+        UserDefaultsUserBlockSnapshotStore(defaults: defaults).removeAllSnapshots()
 
         await ImageCachePipeline.removeAllRegisteredCaches()
         for folderName in [

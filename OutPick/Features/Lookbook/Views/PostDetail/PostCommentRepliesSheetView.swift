@@ -12,6 +12,8 @@ struct PostCommentRepliesSheetView: View {
     private let avatarImageManager: AvatarImageManaging
     private let currentUserProvider: any CurrentUserProviding
     private let firebaseRepositories: any FirebaseRepositoryProviding
+    private let blockUserUseCase: any BlockUserUseCaseProtocol
+    private let userBlockVisibilityStore: any UserBlockVisibilityChecking
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var brandAdminSessionStore: BrandAdminSessionStore
     @State private var profileAuthor: CommentAuthorDisplay?
@@ -23,12 +25,16 @@ struct PostCommentRepliesSheetView: View {
         viewModel: PostCommentRepliesViewModel,
         avatarImageManager: AvatarImageManaging,
         currentUserProvider: any CurrentUserProviding,
-        firebaseRepositories: any FirebaseRepositoryProviding
+        firebaseRepositories: any FirebaseRepositoryProviding,
+        blockUserUseCase: any BlockUserUseCaseProtocol,
+        userBlockVisibilityStore: any UserBlockVisibilityChecking
     ) {
         _viewModel = StateObject(wrappedValue: viewModel)
         self.avatarImageManager = avatarImageManager
         self.currentUserProvider = currentUserProvider
         self.firebaseRepositories = firebaseRepositories
+        self.blockUserUseCase = blockUserUseCase
+        self.userBlockVisibilityStore = userBlockVisibilityStore
     }
 
     var body: some View {
@@ -132,7 +138,7 @@ struct PostCommentRepliesSheetView: View {
     }
 
     private var hiddenParentCommentView: some View {
-        Text("차단한 사용자의 댓글입니다.")
+        Text("이 댓글은 보이지 않습니다.")
             .font(.footnote)
             .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
             .frame(maxWidth: .infinity, minHeight: 72, alignment: .center)
@@ -383,6 +389,8 @@ struct PostCommentRepliesSheetView: View {
                 avatarImageManager: avatarImageManager,
                 currentUserProvider: currentUserProvider,
                 repositories: firebaseRepositories,
+                blockUserUseCase: blockUserUseCase,
+                userBlockVisibilityStore: userBlockVisibilityStore,
                 onBack: {
                     self.profileAuthor = nil
                 }

@@ -23,6 +23,7 @@ final class LoadChatRoomMediaUseCase: LoadChatRoomMediaUseCaseProtocol {
     private let localMediaRepository: ChatRoomMediaIndexRepositoryProtocol
     private let remoteMediaRepository: RemoteChatRoomMediaIndexRepositoryProtocol
     private let pageSize: Int
+    private let userBlockVisibilityStore: any UserBlockVisibilityChecking
 
     private var activeRoomID: String?
     private var imageIndexItems: [ImageIndexMeta] = []
@@ -40,10 +41,12 @@ final class LoadChatRoomMediaUseCase: LoadChatRoomMediaUseCaseProtocol {
     init(
         localMediaRepository: ChatRoomMediaIndexRepositoryProtocol,
         remoteMediaRepository: RemoteChatRoomMediaIndexRepositoryProtocol,
+        userBlockVisibilityStore: any UserBlockVisibilityChecking = UserBlockVisibilityStore(),
         pageSize: Int = 60
     ) {
         self.localMediaRepository = localMediaRepository
         self.remoteMediaRepository = remoteMediaRepository
+        self.userBlockVisibilityStore = userBlockVisibilityStore
         self.pageSize = pageSize
     }
 
@@ -95,6 +98,7 @@ final class LoadChatRoomMediaUseCase: LoadChatRoomMediaUseCaseProtocol {
             .map {
                 ChatRoomSettingMediaItem(
                     messageID: $0.messageID,
+                    senderUID: $0.senderUID,
                     idx: $0.idx,
                     hash: $0.hash,
                     thumbKey: $0.thumbKey,
@@ -111,6 +115,7 @@ final class LoadChatRoomMediaUseCase: LoadChatRoomMediaUseCaseProtocol {
             .map {
                 ChatRoomSettingMediaItem(
                     messageID: $0.messageID,
+                    senderUID: $0.senderUID,
                     idx: $0.idx,
                     hash: $0.hash,
                     thumbKey: $0.thumbKey,
@@ -337,6 +342,7 @@ final class LoadChatRoomMediaUseCase: LoadChatRoomMediaUseCaseProtocol {
     private func makeMediaItem(from entry: ChatRoomMediaIndexEntry) -> ChatRoomSettingMediaItem {
         ChatRoomSettingMediaItem(
             messageID: entry.messageID,
+            senderUID: entry.senderUID,
             idx: entry.idx,
             hash: entry.hash,
             thumbKey: entry.thumbKey,
@@ -354,6 +360,10 @@ final class LoadChatRoomMediaUseCase: LoadChatRoomMediaUseCaseProtocol {
         knownIDs: inout Set<String>,
         knownContentKeys: inout Set<String>
     ) -> Bool {
+        if let senderUID = item.senderUID,
+           userBlockVisibilityStore.isBlocked(senderUID) {
+            return false
+        }
         guard knownIDs.insert(item.id).inserted else { return false }
 
         let dedupeKeys = item.dedupeKeys

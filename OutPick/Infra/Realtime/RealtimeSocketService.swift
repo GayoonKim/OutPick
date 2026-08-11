@@ -630,6 +630,7 @@ actor RealtimeSocketService {
     private var admissionState = RealtimeSocketAdmissionState()
     private var routingState = RealtimeRoomRoutingState()
     private let gapRecoveryLoader: ChatRealtimeGapRecoveryLoading
+    private let userBlockVisibilityStore: any UserBlockVisibilityChecking
     private let orderingClock: RealtimeOrderingClock
     private let reconnectIdentityRefresher: @Sendable (SocketSessionIdentity) async throws -> SocketSessionIdentity
     private struct RoomClosedObserver {
@@ -652,12 +653,14 @@ actor RealtimeSocketService {
     }()
     init(
         gapRecoveryLoader: ChatRealtimeGapRecoveryLoading,
+        userBlockVisibilityStore: any UserBlockVisibilityChecking = UserBlockVisibilityStore(),
         orderingClock: RealtimeOrderingClock = LiveRealtimeOrderingClock(),
         reconnectIdentityRefresher: @escaping @Sendable (SocketSessionIdentity) async throws -> SocketSessionIdentity = {
             try await SocketSessionIdentity.refreshingIDToken(for: $0)
         }
     ) {
         self.gapRecoveryLoader = gapRecoveryLoader
+        self.userBlockVisibilityStore = userBlockVisibilityStore
         self.orderingClock = orderingClock
         self.reconnectIdentityRefresher = reconnectIdentityRefresher
         startPathMonitor()
@@ -1592,6 +1595,7 @@ actor RealtimeSocketService {
                     roomID: roomID,
                     seq: message.seq
                 ) else { return }
+                guard !userBlockVisibilityStore.isBlocked(message.senderUID) else { return }
                 guard let backgroundActor = backgroundSessionActors[roomID] else { return }
                 await backgroundActor.publishIncoming(message)
             case .visible(let lease):
@@ -1601,7 +1605,8 @@ actor RealtimeSocketService {
 
                 // visible 방도 방 목록 preview/read metadata는 계속 갱신해야 한다.
                 // background actor는 느슨한 high-watermark만 적용하고 BannerManager가 UI 표시만 억제한다.
-                if routingState.acceptBackground(roomID: roomID, seq: message.seq),
+                if !userBlockVisibilityStore.isBlocked(message.senderUID),
+                   routingState.acceptBackground(roomID: roomID, seq: message.seq),
                    let backgroundActor = backgroundSessionActors[roomID] {
                     await backgroundActor.publishIncoming(message)
                 }

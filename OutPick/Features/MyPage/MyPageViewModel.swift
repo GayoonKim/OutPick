@@ -18,6 +18,7 @@ final class MyPageViewModel {
     var onEditProfile: ((UserPublicProfile) -> Void)?
     var onEditStyles: (([String]) -> Void)?
     var onOpenBrandRequests: (() -> Void)?
+    var onOpenBlockedUsers: (() -> Void)?
     var onDeleteAccount: (() -> Void)?
 
     private let userID: String
@@ -90,6 +91,10 @@ final class MyPageViewModel {
 
     func brandRequestsTapped() {
         onOpenBrandRequests?()
+    }
+
+    func blockedUsersTapped() {
+        onOpenBlockedUsers?()
     }
 
     func deleteAccountTapped() {
