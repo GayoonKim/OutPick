@@ -133,7 +133,7 @@ Firebase Functions tests/build entry:
   - `AccountDeletionReceiptStoreTests.swift`: 고유 Keychain service에서 opaque receipt 저장·조회·삭제를 검증한다.
   - `GRDB/AccountDeletionLocalDataCleanupTests.swift`: message/FTS/media/outbox/profile cache 7개 테이블의 원자 정리를 검증한다.
   - `GoogleAccountDeletionReauthenticationPolicyTests.swift`: pending scrub 후 세션 없음 sign-in, 같은 UID reauthenticate, 다른 UID 거부를 검증한다.
-  - `OutPickAppCheckProviderPolicyTests.swift`: Simulator Debug Provider와 실기기 App Attest 분기를 검증한다.
+  - `OutPickAppCheckProviderPolicyTests.swift`: Debug 구성의 기기 공통 Debug Provider와 Release의 Simulator Debug Provider/실기기 App Attest 분기를 검증한다.
   - 2026-07-29 iPhone 17 Pro Max Simulator에서 신규 targeted 9/9와 앱 build/install/launch가 통과했다.
   - App Check와 Google pending 취소 보완 후 관련 targeted 14/14, Simulator build/run, Kakao AD-1·Google AD-2 운영 요청/취소 QA가 통과했다.
   - 전체 회귀는 422 passed, 18 skipped, 3 failed이며 실패는 Phase 8 비관련 관심 스타일 비동기·media dedupe·기존 문구 기대값이다.
@@ -227,8 +227,10 @@ Firebase Functions tests/build entry:
   - hidden seq 소비·payload/FTS/cache 미저장·unblock remote 복원
   - pending media relaunch/retry/failure와 ready ACK 수렴
 - iOS Phase 3: `CloudFunctionsChatModerationLifecycleRepositoryTests`, `ChatRoomExitUseCaseTests`, `ChatRoomMessageUseCaseTests`, `ChatRoomFirestoreMapperTests`, `JoinedRoomsClosureNoticeTests`가 callable payload, lifecycle version, 서버 성공 후 local cleanup 위임, legacy room 기본 version, 종료 안내 문구와 확인 후 stale fetch 중복 방지를 검증한다. `BannerPresentationQueueStateTests`는 이전 화면의 stale leave가 현재 visible room을 해제하지 않는 계약을 검증한다.
-- Socket Phase 3: `roomClosureWatcher.test.js`가 pending/completed job의 단일 emit과 강제 leave, 잘못된 job 무시를 검증한다.
+- Socket Phase 3: `roomClosureWatcher.test.js`가 pending/completed job의 단일 emit과 강제 leave, 잘못된 job 무시를 검증하고 `roomHandlers.test.js`가 방장 종료 handler는 ACK만 반환하며 watcher의 단일 종료 side effect와 경합하지 않음을 검증한다.
+- Phase 3.1 공용 종료 tombstone: `chat-moderation.emulator.test.mjs`가 콘텐츠 즉시 정리, 방장 즉시 cleanup, 확인 사용자만 membership 제거, active room 확인 거부, 멱등 재확인과 170명/14일 batch 정리를 검증한다. `moderation-capabilities.rules.test.mjs`는 joined projection 보유자만 tombstone을 읽고 Messages는 읽지 못함을 검증한다. iOS는 `ChatRoomRuntimeUseCaseTests`와 `CloudFunctionsChatModerationLifecycleRepositoryTests`에서 종료 payload 전달과 `acknowledgeRoomClosure` callable을, `ChatNavigationStackPolicyTests`에서 종료 확인 뒤 목록 복귀·생성 route 제거·같은 방 안내 1회 제한을, `RealtimeSocketListenerBinderTests`에서 권위 종료 최초 1회 수용과 방 재생성 reset을 검증한다. `JoinedRoomsClosureNoticeTests`는 실시간·오프라인 확인 직후 제거된 방의 stale fetch 재삽입 차단, 서버 응답 전 optimistic 제거, 서버 실패 시 목록 복원을 검증한다. 2026-08-11 오프라인 보정 뒤 해당 suite 5개가 iPhone 17 Pro Simulator에서 통과했다.
 - 수동 QA:
+  - Phase 3.1 방장 접속 중·오프라인 종료와 관리자 접속 중·오프라인 종료를 Google/Kakao Production 계정으로 완료했다. 마지막 오프라인 관리자 종료는 양 계정 모두 안내 1회·확인 즉시 행 제거·재실행 미복원을 통과했고 member/joinedRooms/roomStates 0건, 14일 retention 예약과 관련 ERROR 0건을 확인했다.
   - 메시지/프로필/참여자/방 설정 신고 진입과 문구·접근성
   - 두 계정 block/unblock, background/banner/push, creator remove/unban
   - Google·Kakao 재인증·탈퇴·재가입과 동일 restricted principal 복원은 2026-08-07 Development에서 통과했다. Apple은 로그인 구현 전이라 미완료이며 Production Kakao User ID Fixed 콘솔 확인은 출시 gate다.

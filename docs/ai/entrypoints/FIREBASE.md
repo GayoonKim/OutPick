@@ -133,7 +133,8 @@ npm run build
 - 검증: Functions 97/97, Socket 64/64, Rules 26/26, account/profile transaction 7/7.
 - iOS App Check 진입점:
   - `OutPick/App/Firebase/OutPickAppCheckProviderFactory.swift`
-  - 시뮬레이터는 Debug Provider, 모든 실기기는 App Attest를 사용한다.
+  - Debug 구성은 시뮬레이터와 실기기 모두 Debug Provider를 사용하고 `OutPick.Debug.entitlements`에서 App Attest entitlement를 제외한다.
+  - Release 구성은 시뮬레이터에서 Debug Provider를 유지하고, 실기기에서 App Attest와 `OutPick.entitlements`를 사용한다.
   - `AppDelegate.configureFirebaseApp`이 `FirebaseApp.configure`보다 먼저 Provider Factory를 등록한다.
   - `OutPick/OutPick.entitlements`의 App Attest environment는 Firebase 요구에 따라 `production`이다.
 - 2026-07-29 부분 운영 반영:
@@ -393,9 +394,12 @@ git diff --check -- firebase.json storage.rules
 - exact contract: `contracts/chat-moderation-v1.json`
 - 장기 결정: ADR-024
 - task: `docs/ai/tasks/chat-ugc-safety-room-moderation/`
-- Phase 3 Functions는 `chat/moderation/{contracts,service,functions}.ts`의 `deleteChatMessage`, `closeOwnedChatRoom`, `closeRoomByModeration`과 `chat/cleanup/moderationCleanup{,Functions}.ts`의 생성 trigger·5분 drain scheduler가 소유한다.
-- `chatMessageCleanupJobs`와 `moderationRoomCleanupJobs`는 `status + nextAttemptAt` due query index와 completed 7일 TTL을 사용한다. `roomClosureNotices` schema v2는 `roomName`을 포함하고 미확인 최대 30일 TTL이다. `closedByOwner`는 creator 안내를 생략하고 `closedByModeration`은 creator를 포함한다.
+- Phase 3.1 Functions는 `chat/moderation/{contracts,service,functions}.ts`의 `acknowledgeRoomClosure`를 추가하고, `chat/cleanup/moderationCleanup.ts`가 방 콘텐츠 즉시 정리와 14일 후 잔여 membership/tombstone 정리를 소유한다.
+- `moderationRoomCleanupJobs` schema v2는 `cleanupPhase: content | retention`과 `status: awaitingExpiry`를 사용한다. 기존 `status + nextAttemptAt` index로 14일 due 작업을 조회하며, 완료 뒤 job 자체는 기존 7일 TTL을 사용한다.
+- 종료 방은 `Rooms/{roomID}.tombstoneSchemaVersion = 1` 공용 문서로 최대 14일 남는다. Rules는 활성 계정이면서 본인 `joinedRooms/{roomID}` projection이 남은 경우의 단건 read만 허용하고, Messages/media 접근은 계속 거부한다. 기존 `roomClosureNotices` TTL은 legacy 자연 만료용으로 유지한다.
 - Socket `roomClosureWatcher.js`는 cleanup job을 단일 listener로 관찰해 `room:closed` emit·registry 제거·socket leave를 수행한다. completed job도 관찰해 빠른 cleanup과의 경합에서 이벤트를 놓치지 않는다.
+- 2026-08-11 접속 중 방장 종료 즉시 이벤트에 `closureType: closedByOwner`, `closureNoticeCode: ownerDeleted`를 추가했다. Production Socket build `a97273b4-46b5-4134-a82f-39a95e9b8eb0`, revision `outpick-socket-p31-owner-close-0811`, digest `sha256:29ddb169d993b5623fe3f7a9b8cf5bf2ac3ac2d508275a35604e7b47598ae379`가 traffic 100%이며 canonical readiness 정상·배포 직후 ERROR 0이다. 직전 `outpick-socket-account-cap-v2-0810`은 0% rollback으로 보존한다.
+- 후속 재QA에서 handler 직접 emit과 cleanup watcher emit의 중복 가능성을 확인해 handler가 ACK만 반환하고 watcher가 종료 emit·registry 제거·socket leave를 단독 소유하도록 바꿨다. Socket 70/70 뒤 Production build `74f8b018-1b4c-46ea-97de-9a226518d257`, revision `outpick-socket-p31-close-dedupe-0811`, digest `sha256:7cb2082aea3755a9f7bb395551bfe499cf0dfbb787e590a530a15e7103738fda`를 readiness·ERROR 0 확인 후 traffic 100%로 전환했다. 직전 `outpick-socket-p31-owner-close-0811`은 0% rollback이다.
 - Phase 3 Functions/Rules/Indexes/Storage/Socket의 Production 배포를 완료했다. 이후 폐쇄 방 read Rules와 최상위 `Rooms` query가 불일치해 앱 목록·검색·참여방 ID 조회·방 이름 중복 확인에 `isClosed == false`, `lifecycleStatus == active` 조건을 공통 적용했다. 배포 전 전체 원격 구성 감사에서 기존 원격 전용 index/field override가 0개임을 확인하고, 기존 검색 index 2개는 보존한 채 활성 검색 index 2개와 활성 목록 index 1개만 추가 배포했다. 신규 3개는 모두 `READY`이며 변경된 Production Kakao QA 앱의 오픈채팅 목록 진입에서 권한·index 오류가 없음을 확인했다.
 
 ### Server authority

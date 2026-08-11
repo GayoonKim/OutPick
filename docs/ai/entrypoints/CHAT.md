@@ -281,10 +281,13 @@ Explicit read 진단은 `ChatRoomViewModel.persistExplicitLatestJumpForCurrentUs
 
 ### Phase 3 iOS 삭제·폐쇄 진입점
 
-- 서버 권위 삭제/방장 폐쇄/안내 projection: `ChatModerationLifecycleRepository.swift`.
+- 서버 권위 삭제/방장 종료/종료 확인 callable: `ChatModerationLifecycleRepository.swift`.
 - 메시지 삭제: `ChatRoomViewModel` → `ChatRoomMessageUseCase` → `ChatMessageManager` → `deleteChatMessage`; 성공 뒤 GRDB tombstone·FTS/media local cleanup을 적용한다.
 - 방장 폐쇄: `ChatRoomSettingViewModel` → `ChatRoomExitUseCase` → `DefaultChatRoomExitRepository`; 방장은 `closeOwnedChatRoom`, 일반 member는 기존 Socket leave를 사용한다.
-- 종료 안내: `JoinedRoomsViewModel`이 사용자별 `roomClosureNotices`를 읽고 `JoinedRoomsViewController`가 방 이름을 포함한 확인 알림을 표시한다. 확인 성공 시 해당 notice 문서를 즉시 삭제하며, 취소된 이전 fetch와 현재 앱 세션에서 이미 확인한 room ID를 걸러 중복 표시를 막는다.
+- Phase 3.1 종료 lifecycle: `FirebaseChatRoomRepository.fetchJoinedRoomList`가 활성 방 일괄 조회에서 빠진 ID의 공용 `Rooms/{roomID}` tombstone을 단건 복원한다. 목록 cell은 별도 종료 배지·색·마지막 메시지 문구를 추가하지 않고, 행 선택 시 `JoinedRoomsViewController`가 방 이름을 포함한 확인 알림을 표시한다.
+- 오프라인 종료 확인: `JoinedRoomsViewModel.acknowledgeClosedRoom`은 확인 탭 즉시 종료 행·unread·notice를 optimistic 제거하고 `acknowledgeRoomClosure`를 비동기로 기다린다. 확인 중 같은 세션의 stale 참여방 조회가 와도 종료 행을 다시 넣지 않으며, 서버 확인이 실패하면 제거 전 상태를 복원해 오류 안내 후 재시도할 수 있게 한다.
+- 확인 처리: `JoinedRoomsViewModel` → `ChatRoomClosureAcknowledgementUseCase` → `acknowledgeRoomClosure` callable → `DefaultChatRoomLocalExitCleaner` 순서로 본인 membership projection과 로컬 상태를 정리한다. 기존 `roomClosureNotices` 읽기는 Production legacy 문서 자연 만료 기간만 호환한다.
+- 실시간 종료: Socket의 `roomClosureWatcher`만 cleanup job을 관찰해 `room:closed`를 발행한다. `RealtimeSocketService`는 같은 room의 권위 종료를 최초 한 번만 `RealtimeRoomClosureEvent` → `SocketChatRoomRuntimeRepository` → `ChatRoomRuntimeUseCase` → `ChatRoomViewModel` → `ChatCoordinator.handleRoomClosure`로 전달하고, Coordinator도 같은 room 안내를 한 번만 표시한다. 종료 유형 fallback은 중복 본문 없이 제목만 표시한다. 참여자가 확인하면 서버 acknowledgement 완료를 기다리지 않고 Coordinator가 현재 채팅 route를 먼저 제거해 원래 목록으로 복귀한다. 이때 retained `RoomListsCollectionViewController`/`JoinedRoomsViewController`는 `ChatRoomClosureListUpdating`으로 해당 room을 즉시 제거하고, `JoinedRoomsViewModel`은 같은 세션의 stale fetch가 종료 room을 복원하지 못하게 막는다. 확인 API는 백그라운드에서 멱등 처리하며 자기 방 삭제 creator는 안내 없이 같은 route·목록 정리 흐름을 사용한다.
 - 현재 방 배너 억제: `ChatViewController.viewWillAppear/viewWillDisappear`가 `ChatRoomViewModel` → `ChatRoomRuntimeUseCase` → `DefaultChatRoomVisibilityRuntimeManager`를 동기 호출해 화면 수명주기 순서대로 `BannerManager` visible room을 갱신한다. Presence 원격 갱신만 별도 비동기 작업으로 수행한다.
 
 ### Phase 4 이후 예정 iOS 진입점

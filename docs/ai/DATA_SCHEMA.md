@@ -94,9 +94,11 @@
 
 - 메시지 삭제는 서버 API만 수행한다. `Messages/{messageID}.isDeleted`와 seq tombstone은 유지하고 공개 payload·attachments·reply/announcement/room summary·media index·Storage는 idempotent cleanup으로 정리한다.
 - `chatMessageCleanupJobs/{sha256(roomID:messageID)}`는 reply preview·media index·고정 message Storage prefix를 재시도한다. completed는 7일 TTL, 20회 실패는 TTL 없이 남긴다.
-- 방 폐쇄는 `active → closedByOwner | closedByModeration`과 증가하는 `lifecycleVersion`으로 표현한다. `moderationRoomCleanupJobs/{roomID}`가 사용자 안내 생성과 projection·하위 collection·`rooms/{roomID}/` Storage·room 문서 삭제를 수행한다.
-- `users/{uid}/roomClosureNotices/{roomID}` schema v2는 안내 맥락을 위한 `roomName`과 `closureType`, `closureNoticeCode`, `closedAt`, `expiresAt`만 보존한다. 방장 삭제는 삭제를 수행한 creator를 제외한 당시 member에게, 관리자 종료는 creator를 포함한 당시 member에게 생성한다. 확인 시 client owner delete를 허용하고 미확인 notice는 30일 TTL로 삭제한다. 방 콘텐츠 자체는 30일간 보존하지 않는다.
-- transaction 밖 cleanup은 deterministic `chatMessageCleanupJobs/{jobID}`와 `moderationRoomCleanupJobs/{roomID}`가 `pending | processing | retryPending | completed | failed`로 수렴시킨다.
+- 방 종료는 `active → closedByOwner | closedByModeration`과 증가하는 `lifecycleVersion`으로 표현한다. `moderationRoomCleanupJobs/{roomID}` schema v2가 콘텐츠 즉시 정리와 14일 보존 종료 정리를 `content → retention` 두 단계로 수렴시킨다.
+- 콘텐츠 정리 뒤 `Rooms/{roomID}`는 공용 `tombstoneSchemaVersion: 1` 문서가 된다. 방 이름·생성자·정렬용 시각·종료 유형/코드/시각과 `expiresAt = closedAt + 14일`만 남기며, 메시지·마지막 메시지·이미지 경로·하위 콘텐츠·Storage는 즉시 제거한다. `expiresAt`은 Firestore TTL이 아니라 scheduler due time이다.
+- 아직 `users/{uid}/joinedRooms/{roomID}`가 남은 사용자만 종료 tombstone을 단건 읽을 수 있다. `acknowledgeRoomClosure`가 본인 member/joinedRooms/roomStates와 기존 legacy notice를 멱등 삭제한다. 방장 삭제를 수행한 creator는 즉시 정리하며 안내하지 않는다.
+- 기존 Production `users/{uid}/roomClosureNotices/{roomID}` schema v2는 새로 만들지 않고, 기존 30일 TTL과 앱 호환 읽기만 유지해 자연 만료시킨다.
+- transaction 밖 cleanup은 deterministic `chatMessageCleanupJobs/{jobID}`와 `moderationRoomCleanupJobs/{roomID}`가 `pending | processing | retryPending | awaitingExpiry | completed | failed`로 수렴시킨다.
 - `Rooms/{roomID}/bans/{moderationPrincipalID}`가 room ban source다. client read/write는 금지하고 creator 전용 서버 API로 내보내기·해제한다.
 - 관리자 방 폐쇄는 `Rooms.lifecycleStatus = closedByModeration`을 먼저 기록해 join/read/write/Socket/push를 차단하고 물리 cleanup은 별도 재시도 상태로 수렴시킨다.
 - 수동 creator leave는 기존 방 삭제, creator 계정 삭제·영구 정지는 oldest eligible active member 승계, 적격자 없음 폐쇄를 사용한다.
