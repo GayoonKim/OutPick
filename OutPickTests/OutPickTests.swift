@@ -91,7 +91,7 @@ struct OutPickTests {
             ]
         )
         let remoteRepository = RemoteMediaRepositoryStub(
-            latestEntries: [
+            olderEntries: [
                 makeRemoteEntry(
                     roomID: "room-2",
                     messageID: "remote-storage-duplicate",
@@ -121,7 +121,7 @@ struct OutPickTests {
             "local-storage-primary#0",
             "remote-unique#0"
         ])
-        #expect(remoteRepository.latestFetchCalls == 1)
+        #expect(remoteRepository.olderFetchCalls == 1)
     }
 
 }
@@ -251,6 +251,7 @@ private func makeImageMeta(
     ImageIndexMeta(
         roomID: "room",
         messageID: messageID,
+        senderUID: nil,
         idx: idx,
         thumbKey: hash,
         originalKey: hash.map { "\($0):orig" },

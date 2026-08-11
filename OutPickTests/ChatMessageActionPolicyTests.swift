@@ -29,6 +29,7 @@ struct ChatMessageActionPolicyTests {
         #expect(policy.canAnnounce == false)
         #expect(policy.canDelete == false)
         #expect(policy.canReport)
+        #expect(policy.canBlock)
     }
 
     @Test func lookbookShareKeepsDeletePermissionForOwnerOrAdmin() {
@@ -46,6 +47,7 @@ struct ChatMessageActionPolicyTests {
         )
         #expect(ownerPolicy.canDelete)
         #expect(ownerPolicy.canReport == false)
+        #expect(ownerPolicy.canBlock == false)
 
         let adminPolicy = ChatMessageActionPolicy.make(
             for: message,
@@ -54,6 +56,7 @@ struct ChatMessageActionPolicyTests {
         )
         #expect(adminPolicy.canDelete)
         #expect(adminPolicy.canReport == false)
+        #expect(adminPolicy.canBlock)
         #expect(adminPolicy.canAnnounce == false)
     }
 

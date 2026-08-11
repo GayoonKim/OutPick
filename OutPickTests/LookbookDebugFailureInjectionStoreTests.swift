@@ -456,6 +456,12 @@ private final class UserBlockRepositorySpy: UserBlockRepositoryProtocol {
         []
     }
 
+    func fetchBlockedUsers(blockerUserID: UserID) async throws -> [UserBlock] {
+        []
+    }
+
+    func unblockUser(blockerUserID: UserID, blockedUserID: UserID) async throws {}
+
     func fetchHiddenCommentUserIDs(
         currentUserID: UserID
     ) async throws -> Set<UserID> {

@@ -233,6 +233,32 @@ struct ChatRoomViewModelMessageActionTests {
         #expect(viewModel.finalLastReadSeqForSessionEnd() == 15)
     }
 
+    @Test func hiddenSeqBetweenFrontierAndVisibleMessageKeepsReadRangeContiguous() {
+        let visibilityStore = UserBlockVisibilityStore(blockedUserIDs: ["blocked"])
+        let viewModel = makeViewModel(userBlockVisibilityStore: visibilityStore)
+        viewModel.applyInitialMessageSyncState(
+            ChatInitialSessionState(window: ChatInitialWindow(
+                messages: [],
+                readBoundarySeq: 10,
+                latestSeq: 12,
+                hasMoreOlder: true,
+                hasMoreNewer: false
+            ))
+        )
+
+        let admitted = viewModel.admitVisibleMessages(from: [
+            makeMessage(senderUID: "blocked", msg: "숨김", seq: 11),
+            makeMessage(senderUID: "visible", msg: "표시", seq: 12)
+        ])
+        let contiguous = viewModel.contiguousLoadedThroughSeq(
+            visibleLoadedSeqs: Set(admitted.map(\.seq)),
+            after: 10
+        )
+
+        #expect(admitted.map(\.seq) == [12])
+        #expect(contiguous == 12)
+    }
+
     @Test func latestJumpApprovesOnlyFrozenDisplayedTarget() throws {
         let viewModel = makeViewModel(
             currentUserProvider: CurrentUserProviderStub(canonicalUserID: "me-uid")
@@ -368,7 +394,8 @@ struct ChatRoomViewModelMessageActionTests {
         messageUseCase: ChatRoomMessageUseCaseProtocol = ChatRoomMessageUseCaseSpy(),
         lifecycleUseCase: ChatRoomLifecycleUseCaseProtocol = ChatRoomLifecycleUseCaseSpy(),
         currentUserProvider: CurrentUserProviding = CurrentUserProviderStub(),
-        roomReadStateStore: ChatRoomReadStateStore? = nil
+        roomReadStateStore: ChatRoomReadStateStore? = nil,
+        userBlockVisibilityStore: any UserBlockVisibilityChecking = UserBlockVisibilityStore()
     ) -> ChatRoomViewModel {
         ChatRoomViewModel(
             room: room ?? makeRoom(id: "room-1", creatorUID: "owner@example.com"),
@@ -379,7 +406,8 @@ struct ChatRoomViewModelMessageActionTests {
             realtimeUseCase: ChatRoomRealtimeUseCaseStub(),
             runtimeUseCase: ChatRoomRuntimeUseCaseStub(),
             currentUserProvider: currentUserProvider,
-            roomReadStateStore: roomReadStateStore
+            roomReadStateStore: roomReadStateStore,
+            userBlockVisibilityStore: userBlockVisibilityStore
         )
     }
 
