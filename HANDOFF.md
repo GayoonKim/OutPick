@@ -25,6 +25,7 @@
 - Production 앱 종료 혼합 QA는 `lastReadSeq=1`, 차단 `seq=2`, 비차단 `seq=3`에서 목록 visible unread 1·비차단 preview와 방 재진입 차단 메시지 제외를 확인했다. QA 방·메시지·projection·차단 relation·Storage는 잔존 0건으로 정리했다.
 - 최종 리뷰에서 이전 계정 bootstrap 실패가 새 계정 Store를 비우는 경쟁 조건, hidden seq 뒤 정상 메시지에서 read frontier가 멈추는 결함, 룩북 댓글 프로필의 차단 UseCase 주입 누락을 발견해 계정 guard·visible/hidden 합집합 연속 계산·공용 프로필 DI와 회귀 테스트로 보정했다.
 - iOS visible unread/기존 closure 회귀 대상 테스트와 Production build가 통과했다. Phase 4 전체 기존 검증은 Functions 188/188, Socket 72/72와 관련 iOS/GRDB 테스트를 통과했다.
+- Phase 4 변경과 최종 리뷰 기록은 PR #11에서 관리한다. 실제 기기 background FCM/APNs 외부 gate 외에 Phase 4 잔여 구현은 없다.
 
 ### Chat UGC Safety Phase 3.1 — 공용 종료 tombstone Production 배포 완료
 
@@ -530,7 +531,7 @@
 
 ## 7. 다음 턴에서 바로 실행해야 할 작업
 
-1. Phase 4 변경의 최종 리뷰·검증·커밋·PR·머지를 완료한 뒤 다음 핵심 task 우선순위를 사용자와 정한다.
+1. Phase 4 구현·최종 리뷰·검증·커밋과 PR #11 정리를 완료했다. 다음 핵심 task 우선순위를 사용자와 정한다.
 2. 실제 기기 background FCM/APNs는 Apple Developer Program 가입 후 출시 전 gate에서 재개한다.
 3. Phase 3.1 종료 tombstone은 14일 scheduler 만료 시 자동 정리되며 즉시 추가 조치는 없다.
 4. Apple 로그인을 선택하면 `sign-in-with-apple-account-lifecycle`의 정책·콘솔·사용자 흐름·아키텍처 설계 하네스부터 진행하며 바로 구현하지 않는다.
