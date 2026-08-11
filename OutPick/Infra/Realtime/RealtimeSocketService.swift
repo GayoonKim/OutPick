@@ -9,6 +9,12 @@ import Foundation
 import FirebaseAuth
 import Network
 import SocketIO
+
+struct RealtimeRoomClosureEvent: Equatable, Sendable {
+    let roomID: String
+    let closureType: String?
+    let noticeCode: String?
+}
 import UIKit
 
 struct SocketSessionIdentity: Equatable, Sendable {
@@ -347,9 +353,10 @@ enum RealtimeRoomJoinAckMapper {
 struct RealtimeAuthoritativeRoomClosureState {
     private var closedRoomIDs = Set<String>()
 
-    mutating func markClosed(_ roomID: String) {
-        guard !roomID.isEmpty else { return }
-        closedRoomIDs.insert(roomID)
+    @discardableResult
+    mutating func markClosed(_ roomID: String) -> Bool {
+        guard !roomID.isEmpty else { return false }
+        return closedRoomIDs.insert(roomID).inserted
     }
 
     mutating func markCreated(_ roomID: String) {
@@ -627,7 +634,7 @@ actor RealtimeSocketService {
     private let reconnectIdentityRefresher: @Sendable (SocketSessionIdentity) async throws -> SocketSessionIdentity
     private struct RoomClosedObserver {
         let roomID: String
-        let continuation: AsyncStream<String>.Continuation
+        let continuation: AsyncStream<RealtimeRoomClosureEvent>.Continuation
     }
 
     private var roomClosedObservers = [UUID: RoomClosedObserver]()
@@ -849,7 +856,11 @@ actor RealtimeSocketService {
     func joinRoom(_ roomID: String) {
         guard !roomID.isEmpty else { return }
         guard !authoritativeRoomClosureState.isClosed(roomID) else {
-            publishRoomClosed(roomID)
+            publishRoomClosed(RealtimeRoomClosureEvent(
+                roomID: roomID,
+                closureType: nil,
+                noticeCode: nil
+            ))
             return
         }
         joinedRooms.insert(roomID)
@@ -885,7 +896,7 @@ actor RealtimeSocketService {
         }
     }
 
-    func observeRoomClosed(roomID: String) -> AsyncStream<String> {
+    func observeRoomClosed(roomID: String) -> AsyncStream<RealtimeRoomClosureEvent> {
         AsyncStream { continuation in
             guard !roomID.isEmpty else {
                 continuation.finish()
@@ -897,7 +908,11 @@ actor RealtimeSocketService {
                 continuation: continuation
             )
             if authoritativeRoomClosureState.isClosed(roomID) {
-                continuation.yield(roomID)
+                continuation.yield(RealtimeRoomClosureEvent(
+                    roomID: roomID,
+                    closureType: nil,
+                    noticeCode: nil
+                ))
             }
 
             continuation.onTermination = { [weak self] _ in
@@ -1491,18 +1506,33 @@ actor RealtimeSocketService {
             let dict = data.first as? [String: Any],
             let closedRoomID = dict["roomID"] as? String
         else { return }
-        await handleAuthoritativeRoomClosure(closedRoomID)
+        await handleAuthoritativeRoomClosure(
+            closedRoomID,
+            event: RealtimeRoomClosureEvent(
+                roomID: closedRoomID,
+                closureType: dict["closureType"] as? String,
+                noticeCode: dict["closureNoticeCode"] as? String
+            )
+        )
     }
 
-    private func handleAuthoritativeRoomClosure(_ roomID: String) async {
-        authoritativeRoomClosureState.markClosed(roomID)
+    private func handleAuthoritativeRoomClosure(
+        _ roomID: String,
+        event: RealtimeRoomClosureEvent? = nil
+    ) async {
+        let isFirstClosure = authoritativeRoomClosureState.markClosed(roomID)
         await removeRealtimeRoomState(roomID)
-        publishRoomClosed(roomID)
+        guard isFirstClosure else { return }
+        publishRoomClosed(event ?? RealtimeRoomClosureEvent(
+            roomID: roomID,
+            closureType: nil,
+            noticeCode: nil
+        ))
     }
 
-    private func publishRoomClosed(_ roomID: String) {
-        for observer in roomClosedObservers.values where observer.roomID == roomID {
-            observer.continuation.yield(roomID)
+    private func publishRoomClosed(_ event: RealtimeRoomClosureEvent) {
+        for observer in roomClosedObservers.values where observer.roomID == event.roomID {
+            observer.continuation.yield(event)
         }
     }
 
@@ -1696,7 +1726,11 @@ actor RealtimeSocketService {
     private func joinRoomAwaitingAck(_ roomID: String) async throws {
         guard !roomID.isEmpty else { throw SocketError.invalidRoomID }
         guard !authoritativeRoomClosureState.isClosed(roomID) else {
-            publishRoomClosed(roomID)
+            publishRoomClosed(RealtimeRoomClosureEvent(
+                roomID: roomID,
+                closureType: nil,
+                noticeCode: nil
+            ))
             throw Self.makeSocketError(
                 code: -1003,
                 message: "이미 종료된 채팅방입니다."

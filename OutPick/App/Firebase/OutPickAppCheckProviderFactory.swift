@@ -7,16 +7,33 @@ enum OutPickAppCheckProviderMode: Equatable {
 }
 
 enum OutPickAppCheckProviderPolicy {
-    static func mode(isSimulator: Bool) -> OutPickAppCheckProviderMode {
-        isSimulator ? .debug : .appAttest
+    static func mode(
+        isDebugBuild: Bool,
+        isSimulator: Bool
+    ) -> OutPickAppCheckProviderMode {
+        if isDebugBuild || isSimulator {
+            return .debug
+        }
+        return .appAttest
     }
 
     static var currentMode: OutPickAppCheckProviderMode {
-        #if targetEnvironment(simulator)
-        return mode(isSimulator: true)
+        #if DEBUG
+        let isDebugBuild = true
         #else
-        return mode(isSimulator: false)
+        let isDebugBuild = false
         #endif
+
+        #if targetEnvironment(simulator)
+        let isSimulator = true
+        #else
+        let isSimulator = false
+        #endif
+
+        return mode(
+            isDebugBuild: isDebugBuild,
+            isSimulator: isSimulator
+        )
     }
 }
 

@@ -34,8 +34,14 @@ struct ChatRoom {
     /// 방이 종료된 상태인지 나타냅니다.
     var isClosed: Bool = false
 
+    /// 종료 tombstone이 보존하는 종료 주체입니다.
+    var closureType: ChatRoomClosureType?
+
     /// 서버 room lifecycle의 낙관적 잠금 버전입니다.
     var lifecycleVersion: Int = 1
+
+    var closureNoticeCode: String?
+    var closedAt: Date?
 
     var activeAnnouncementID: String?
     var activeAnnouncement: AnnouncementPayload?

@@ -394,7 +394,24 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol {
         }
         guard !projections.isEmpty else { return [] }
 
-        let rooms = try await fetchRoomsWithIDs(byIDs: projections.map(\.roomID))
+        let roomIDs = projections.map(\.roomID)
+        var rooms = try await fetchRoomsWithIDs(byIDs: roomIDs)
+        let activeRoomIDs = Set(rooms.map(\.id))
+        for roomID in roomIDs where !activeRoomIDs.contains(roomID) {
+            do {
+                let snapshot = try await db.collection("Rooms").document(roomID).getDocument()
+                guard snapshot.exists,
+                      snapshot.data()?["isClosed"] as? Bool == true,
+                      let room = try? createRoom(from: snapshot),
+                      !(room.closureType == .closedByOwner && room.creatorUID == normalizedUID) else {
+                    continue
+                }
+                rooms.append(room)
+            } catch {
+                // 만료 cleanup과 목록 조회가 경합하면 이미 사라진 tombstone은 건너뛴다.
+                continue
+            }
+        }
         let roomByID = Dictionary(uniqueKeysWithValues: rooms.map { ($0.id, $0) })
 
         return projections.compactMap { projection in

@@ -21,11 +21,13 @@ final class JoinedRoomsViewModel {
     private let roomReadStateStore: ChatRoomReadStateStore?
     private let joinedRoomsStore: JoinedRoomsSessionStoring?
     private let moderationLifecycleRepository: ChatModerationLifecycleRepositoryProtocol?
+    private let closureAcknowledgementUseCase: ChatRoomClosureAcknowledging?
     private var readStateTask: Task<Void, Never>?
     private var joinedRoomsStoreTask: Task<Void, Never>?
     private var closureNoticeTask: Task<Void, Never>?
     private var closureNoticeGeneration = 0
     private var acknowledgedClosureNoticeIDs: Set<String> = []
+    private var locallyConfirmedClosureRoomIDs: Set<String> = []
     private var isBoundReadState = false
     private var isBoundJoinedRoomsStore = false
     private var joinedItems: [JoinedRoomListItem] = []
@@ -40,12 +42,14 @@ final class JoinedRoomsViewModel {
         useCase: JoinedRoomsUseCaseProtocol,
         roomReadStateStore: ChatRoomReadStateStore? = nil,
         joinedRoomsStore: JoinedRoomsSessionStoring? = nil,
-        moderationLifecycleRepository: ChatModerationLifecycleRepositoryProtocol? = nil
+        moderationLifecycleRepository: ChatModerationLifecycleRepositoryProtocol? = nil,
+        closureAcknowledgementUseCase: ChatRoomClosureAcknowledging? = nil
     ) {
         self.useCase = useCase
         self.roomReadStateStore = roomReadStateStore
         self.joinedRoomsStore = joinedRoomsStore
         self.moderationLifecycleRepository = moderationLifecycleRepository
+        self.closureAcknowledgementUseCase = closureAcknowledgementUseCase
         self.state = State()
     }
 
@@ -103,10 +107,51 @@ final class JoinedRoomsViewModel {
     }
 
     func acknowledgeClosureNotice(_ notice: ChatRoomClosureNotice) async throws {
-        guard let moderationLifecycleRepository else { return }
-        try await moderationLifecycleRepository.acknowledgeClosureNotice(roomID: notice.roomID)
+        if let closureAcknowledgementUseCase {
+            try await closureAcknowledgementUseCase.acknowledge(roomID: notice.roomID)
+        } else if let moderationLifecycleRepository {
+            try await moderationLifecycleRepository.acknowledgeClosureNotice(roomID: notice.roomID)
+        }
         acknowledgedClosureNoticeIDs.insert(notice.roomID)
         state.closureNotices.removeAll { $0.roomID == notice.roomID }
+    }
+
+    func acknowledgeClosedRoom(_ room: ChatRoom) async throws {
+        guard room.isClosed else { return }
+        let removedItems = joinedItems.filter { $0.roomID == room.id }
+        let removedUnreadCount = state.unreadCounts[room.id]
+        let removedNotices = state.closureNotices.filter { $0.roomID == room.id }
+        hideClosedRoom(roomID: room.id)
+
+        do {
+            if let closureAcknowledgementUseCase {
+                try await closureAcknowledgementUseCase.acknowledge(roomID: room.id)
+            } else if let moderationLifecycleRepository {
+                try await moderationLifecycleRepository.acknowledgeClosureNotice(roomID: room.id)
+            }
+        } catch {
+            locallyConfirmedClosureRoomIDs.remove(room.id)
+            joinedItems = sortItems(joinedItems + removedItems)
+            state.rooms = joinedItems.map(\.room)
+            if let removedUnreadCount {
+                state.unreadCounts[room.id] = removedUnreadCount
+            }
+            state.closureNotices.append(contentsOf: removedNotices)
+            throw error
+        }
+    }
+
+    func removeRoomAfterRealtimeClosure(roomID: String) {
+        guard !roomID.isEmpty else { return }
+        hideClosedRoom(roomID: roomID)
+    }
+
+    private func hideClosedRoom(roomID: String) {
+        locallyConfirmedClosureRoomIDs.insert(roomID)
+        joinedItems.removeAll { $0.roomID == roomID }
+        state.rooms.removeAll { $0.id == roomID }
+        state.unreadCounts.removeValue(forKey: roomID)
+        state.closureNotices.removeAll { $0.roomID == roomID }
     }
 
     private func loadClosureNotices(generation: Int) async {
@@ -115,7 +160,8 @@ final class JoinedRoomsViewModel {
             let notices = try await moderationLifecycleRepository.fetchClosureNotices()
             guard !Task.isCancelled, generation == closureNoticeGeneration else { return }
             state.closureNotices = notices.filter {
-                !acknowledgedClosureNoticeIDs.contains($0.roomID)
+                !acknowledgedClosureNoticeIDs.contains($0.roomID) &&
+                    !locallyConfirmedClosureRoomIDs.contains($0.roomID)
             }
         } catch {
             // 참여방 목록은 안내 projection 조회 실패와 독립적으로 계속 표시한다.
@@ -176,12 +222,13 @@ final class JoinedRoomsViewModel {
             return (roomID, (room.seq, room.lastMessageAt, room.lastMessage, room.lastMessageSenderUID))
         })
 
-        joinedItems = sortItems(items)
+        joinedItems = sortItems(items.filter { !locallyConfirmedClosureRoomIDs.contains($0.roomID) })
         seedReadState(from: joinedItems)
         state.rooms = joinedItems.map(\.room)
 
         guard updateUnread else { return }
         let changedRooms = joinedItems.map(\.room).filter { room in
+            guard !room.isClosed else { return false }
             let roomID = room.id
             guard let old = previousSummaryByID[roomID] else { return true }
             return old.seq != room.seq ||
@@ -213,6 +260,7 @@ final class JoinedRoomsViewModel {
         let currentUserID = LoginManager.shared.canonicalUserID
         var result: [String: Int64] = [:]
         for item in items {
+            guard !item.room.isClosed else { continue }
             let snapshot = item.readSnapshot()
             let resolvedSnapshot = roomReadStateStore?.seed(snapshot) ?? snapshot
             if let unread = resolvedSnapshot.unreadCount(currentUserID: currentUserID) {
@@ -225,7 +273,7 @@ final class JoinedRoomsViewModel {
     private func fetchReadSnapshots(for rooms: [ChatRoom]) async -> [ChatRoomReadSnapshot] {
         let currentUserID = LoginManager.shared.canonicalUserID
         return await withTaskGroup(of: ChatRoomReadSnapshot?.self, returning: [ChatRoomReadSnapshot].self) { group in
-            for room in rooms {
+            for room in rooms where !room.isClosed {
                 let roomID = room.id
                 if let snapshot = roomReadStateStore?.snapshot(for: roomID),
                    snapshot.unreadCount(currentUserID: currentUserID) != nil {
@@ -257,7 +305,7 @@ final class JoinedRoomsViewModel {
 
     private func seedReadState(from items: [JoinedRoomListItem]) {
         guard let roomReadStateStore else { return }
-        for item in items {
+        for item in items where !item.room.isClosed {
             roomReadStateStore.seed(item.readSnapshot())
         }
     }
@@ -315,7 +363,8 @@ final class JoinedRoomsViewModel {
 
     private func pruneRoomsNotInSessionStore(_ joinedRoomIDs: Set<String>) {
         guard !joinedRoomIDs.isEmpty || !state.rooms.isEmpty else { return }
-        let removedRoomIDs = Set(state.rooms.map(\.id)).subtracting(joinedRoomIDs)
+        let removedRoomIDs = Set(state.rooms.filter { !$0.isClosed }.map(\.id))
+            .subtracting(joinedRoomIDs)
         guard !removedRoomIDs.isEmpty else { return }
 
         joinedItems.removeAll { item in

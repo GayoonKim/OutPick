@@ -47,7 +47,10 @@ enum ChatRoomFirestoreMapper {
             memberCount: dto.memberCount ?? participants.count,
             seq: dto.seq ?? 0,
             isClosed: dto.isClosed ?? false,
+            closureType: dto.lifecycleStatus.flatMap(ChatRoomClosureType.init(rawValue:)),
             lifecycleVersion: dto.lifecycleVersion ?? 1,
+            closureNoticeCode: dto.closureNoticeCode,
+            closedAt: dto.closedAt,
             activeAnnouncementID: dto.activeAnnouncementID,
             activeAnnouncement: dto.activeAnnouncement,
             announcementUpdatedAt: dto.announcementUpdatedAt

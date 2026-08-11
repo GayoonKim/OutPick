@@ -22,6 +22,7 @@ extension LoginManager: LoginBootstrappingProtocol {
         // 1) 참여 방 선 주입
         let joinedRoomIDs = try await FirebaseRepositoryProvider.shared.chatRoomRepository
             .fetchJoinedRoomList(userUID: canonicalUserID)
+            .filter { !$0.room.isClosed }
             .map(\.roomID)
 
         await MainActor.run {
