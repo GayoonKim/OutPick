@@ -8,6 +8,15 @@ import {
   messageCleanupJobID,
 } from "../functions/lib/chat/moderation/service.js";
 import {
+  getMyRoomAccessService,
+  listRoomBansService,
+  removeRoomMemberService,
+  unbanRoomMemberService,
+} from "../functions/lib/chat/moderation/roomBanService.js";
+import {
+  resolveRoomMembershipPage,
+} from "../functions/lib/chat/moderation/roomMembershipSweep.js";
+import {
   processMessageCleanupJob,
   processRoomCleanupJob,
 } from "../functions/lib/chat/cleanup/moderationCleanup.js";
@@ -29,6 +38,8 @@ async function clearFixtures() {
     db.recursiveDelete(db.collection("users").doc(ownerUID)),
     db.recursiveDelete(db.collection("users").doc(memberUID)),
     db.recursiveDelete(db.collection("moderationAccounts").doc(ownerUID)),
+    db.recursiveDelete(db.collection("moderationAccounts").doc(memberUID)),
+    db.recursiveDelete(db.collection("userPublicProfiles").doc(memberUID)),
     db.recursiveDelete(db.collection("chatMessageCleanupJobs")),
     db.recursiveDelete(db.collection("moderationRoomCleanupJobs")),
     db.recursiveDelete(db.collection("moderationAuditLogs")),
@@ -46,6 +57,13 @@ async function seedFixtures() {
       moderationStatus: "active",
       stateVersion: 1,
     }),
+    db.collection("moderationAccounts").doc(memberUID).set({
+      accountStatus: "active",
+      moderationPrincipalID: "principal-chat-member",
+      moderationStatus: "active",
+      stateVersion: 1,
+    }),
+    db.collection("userPublicProfiles").doc(memberUID).set({nickname: "참여자"}),
   ]);
   const room = db.collection("Rooms").doc(roomID);
   await room.set({
@@ -57,10 +75,15 @@ async function seedFixtures() {
     seq: 2,
     lastMessageSeq: 1,
     lastMessage: "삭제 대상",
+    memberCount: 2,
   });
   await Promise.all([
-    room.collection("members").doc(ownerUID).set({role: "owner"}),
-    room.collection("members").doc(memberUID).set({role: "member"}),
+    room.collection("members").doc(ownerUID).set({
+      role: "owner", userID: ownerUID, joinedAt: new Date("2026-01-01T00:00:00Z"),
+    }),
+    room.collection("members").doc(memberUID).set({
+      role: "member", userID: memberUID, joinedAt: new Date("2026-01-02T00:00:00Z"),
+    }),
     db.collection("users").doc(ownerUID).collection("joinedRooms").doc(roomID).set({roomID}),
     db.collection("users").doc(memberUID).collection("joinedRooms").doc(roomID).set({roomID}),
     room.collection("Messages").doc(messageID).set({
@@ -95,6 +118,100 @@ beforeEach(async () => {
 after(clearFixtures);
 
 describe("chat moderation lifecycle transactions", () => {
+  test("계정 삭제 시 가장 오래된 유효 참여자에게 방장을 승계하고 기존 소유자를 제거한다", async () => {
+    const completed = await resolveRoomMembershipPage(
+      ownerUID,
+      "accountDeletion",
+      now,
+      db,
+    );
+    assert.equal(completed, false);
+    const room = await db.collection("Rooms").doc(roomID).get();
+    assert.equal(room.data()?.creatorUID, memberUID);
+    assert.equal(room.data()?.memberCount, 1);
+    assert.equal((await room.ref.collection("members").doc(ownerUID).get()).exists, false);
+    assert.equal((await room.ref.collection("members").doc(memberUID).get()).data()?.role, "owner");
+    assert.equal((await db.collection("users").doc(memberUID)
+      .collection("joinedRooms").doc(roomID).get()).data()?.role, "owner");
+  });
+
+  test("영구 정지된 단독 방장은 방을 moderation 종료시키고 정리 작업을 남긴다", async () => {
+    const room = db.collection("Rooms").doc(roomID);
+    await room.collection("members").doc(memberUID).delete();
+    await db.collection("users").doc(memberUID).collection("joinedRooms").doc(roomID).delete();
+    await room.update({memberCount: 1});
+
+    const completed = await resolveRoomMembershipPage(
+      ownerUID,
+      "permanentSuspension",
+      now,
+      db,
+    );
+    assert.equal(completed, false);
+    const closed = await room.get();
+    assert.equal(closed.data()?.lifecycleStatus, "closedByModeration");
+    assert.equal(closed.data()?.memberCount, 0);
+    assert.equal((await room.collection("members").doc(ownerUID).get()).exists, false);
+    const job = await db.collection("moderationRoomCleanupJobs").doc(roomID).get();
+    assert.equal(job.data()?.closureType, "closedByModeration");
+    assert.equal(job.data()?.status, "pending");
+  });
+
+  test("방장 추방은 밴과 참여 projection을 원자적으로 갱신하고 해제 후 재가입만 허용한다", async () => {
+    assert.deepEqual(await getMyRoomAccessService(memberUID, {roomID}, db), {status: "member"});
+    const removed = await removeRoomMemberService(ownerUID, {
+      roomID,
+      targetUID: memberUID,
+      reasonCode: "harassment",
+      clientRequestID: "623e4567-e89b-42d3-a456-426614174000",
+    }, now, db);
+    assert.deepEqual(removed, {removed: true, roomBanned: true, memberCount: 1});
+
+    const room = db.collection("Rooms").doc(roomID);
+    const banRef = room.collection("bans").doc("principal-chat-member");
+    assert.equal((await room.collection("members").doc(memberUID).get()).exists, false);
+    assert.equal((await db.collection("users").doc(memberUID)
+      .collection("joinedRooms").doc(roomID).get()).exists, false);
+    assert.equal((await room.get()).data()?.memberCount, 1);
+    assert.equal((await banRef.get()).data()?.stateVersion, 1);
+    assert.deepEqual(await getMyRoomAccessService(memberUID, {roomID}, db), {status: "banned"});
+
+    const replay = await removeRoomMemberService(ownerUID, {
+      roomID,
+      targetUID: memberUID,
+      reasonCode: "harassment",
+      clientRequestID: "623e4567-e89b-42d3-a456-426614174000",
+    }, now, db);
+    assert.deepEqual(replay, removed);
+    assert.equal((await room.get()).data()?.memberCount, 1);
+
+    const listed = await listRoomBansService(ownerUID, {
+      roomID,
+      pageSize: 10,
+      cursor: null,
+    }, db);
+    assert.equal(listed.items.length, 1);
+    assert.equal(listed.items[0].displayNameSnapshot, "참여자");
+    assert.equal("moderationPrincipalID" in listed.items[0], false);
+    assert.equal("currentUID" in listed.items[0], false);
+
+    const unbanned = await unbanRoomMemberService(ownerUID, {
+      roomID,
+      banEntryToken: listed.items[0].banEntryToken,
+      clientRequestID: "723e4567-e89b-42d3-a456-426614174000",
+    }, new Date(now.getTime() + 1_000), db);
+    assert.deepEqual(unbanned, {roomBanned: false, membershipRestored: false});
+    assert.equal((await banRef.get()).data()?.isActive, false);
+    assert.equal((await banRef.get()).data()?.stateVersion, 2);
+    assert.deepEqual(await getMyRoomAccessService(memberUID, {roomID}, db), {status: "joinable"});
+    assert.equal((await room.collection("members").doc(memberUID).get()).exists, false);
+    assert.equal((await listRoomBansService(ownerUID, {
+      roomID,
+      pageSize: 10,
+      cursor: null,
+    }, db)).items.length, 0);
+  });
+
   test("메시지 삭제는 tombstone을 유지하고 공개 projection과 Storage를 수렴시킨다", async () => {
     const deletedPrefixes = [];
     const bucket = {

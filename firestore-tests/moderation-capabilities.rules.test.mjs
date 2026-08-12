@@ -65,6 +65,54 @@ describe("moderation capability rules", () => {
     await assertFails(getDoc(doc(missing, "users", "missing")));
   });
 
+  test("방 밴 사용자는 공개 채팅을 읽되 member 재생성과 ban 문서 읽기는 거부된다", async () => {
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      const firestore = context.firestore();
+      await setDoc(doc(firestore, "Rooms", "room", "bans", "principal-active-new"), {
+        schemaVersion: 1,
+        isActive: true,
+        banEntryToken: "server-only-token",
+        bannedAt: new Date(),
+        bannedByUID: "active",
+        reasonCode: "harassment",
+        displayNameSnapshot: "차단 사용자",
+        stateVersion: 1,
+        unbannedAt: null,
+        expiresAt: null,
+      });
+      await setDoc(doc(firestore, "Rooms", "room", "Messages", "visible"), {
+        ID: "visible", roomID: "room", senderUID: "active", seq: 1, msg: "읽기 허용",
+      });
+    });
+    const firestore = testEnvironment.authenticatedContext("active-new").firestore();
+    await assertSucceeds(getDoc(doc(firestore, "Rooms", "room")));
+    await assertSucceeds(getDoc(doc(firestore, "Rooms", "room", "Messages", "visible")));
+    await assertFails(getDoc(doc(
+      firestore, "Rooms", "room", "bans", "principal-active-new",
+    )));
+    const memberData = {
+      userID: "active-new",
+      role: "member",
+      joinedAt: new Date(),
+      displayNameSnapshot: "재가입",
+      avatarPathSnapshot: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    await assertFails(setDoc(doc(
+      firestore, "Rooms", "room", "members", "active-new",
+    ), memberData));
+
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await updateDoc(doc(
+        context.firestore(), "Rooms", "room", "bans", "principal-active-new",
+      ), {isActive: false, stateVersion: 2});
+    });
+    await assertSucceeds(setDoc(doc(
+      firestore, "Rooms", "room", "members", "active-new",
+    ), memberData));
+  });
+
   test("active와 restricted 재가입자는 없는 본인 account 문서를 단일 get할 수 있다", async () => {
     for (const uid of ["active-new", "restricted-new"]) {
       const firestore = testEnvironment.authenticatedContext(uid).firestore();
