@@ -99,9 +99,11 @@
 - 아직 `users/{uid}/joinedRooms/{roomID}`가 남은 사용자만 종료 tombstone을 단건 읽을 수 있다. `acknowledgeRoomClosure`가 본인 member/joinedRooms/roomStates와 기존 legacy notice를 멱등 삭제한다. 방장 삭제를 수행한 creator는 즉시 정리하며 안내하지 않는다.
 - 기존 Production `users/{uid}/roomClosureNotices/{roomID}` schema v2는 새로 만들지 않고, 기존 30일 TTL과 앱 호환 읽기만 유지해 자연 만료시킨다.
 - transaction 밖 cleanup은 deterministic `chatMessageCleanupJobs/{jobID}`와 `moderationRoomCleanupJobs/{roomID}`가 `pending | processing | retryPending | awaitingExpiry | completed | failed`로 수렴시킨다.
-- `Rooms/{roomID}/bans/{moderationPrincipalID}`가 room ban source다. client read/write는 금지하고 creator 전용 서버 API로 내보내기·해제한다.
+- `Rooms/{roomID}/bans/{moderationPrincipalID}`가 room ban source다. client read/write는 금지하고 creator 전용 서버 API로 내보내기·해제한다. ban은 활성 방 list/search/preview/message/media read를 막지 않고 membership 생성·재가입과 참여자 전용 Socket/message/media write만 거부한다.
+- ban entry는 자유 입력 없이 canonical 사유, ban 시점 최소 표시 snapshot과 증가하는 stateVersion을 저장한다. ban 목록은 재가입 새 UID의 최신 프로필을 역연결하지 않고 room-scoped opaque token만 반환한다.
 - 관리자 방 폐쇄는 `Rooms.lifecycleStatus = closedByModeration`을 먼저 기록해 join/read/write/Socket/push를 차단하고 물리 cleanup은 별도 재시도 상태로 수렴시킨다.
-- 수동 creator leave는 기존 방 삭제, creator 계정 삭제·영구 정지는 oldest eligible active member 승계, 적격자 없음 폐쇄를 사용한다.
+- 수동 creator leave는 기존 방 삭제를 사용한다. 일시 제한·deletionPending은 승계하지 않고, creator 계정 삭제 최종 확정·영구 정지는 durable membership sweep과 방별 transaction으로 oldest eligible active member에게 승계한다.
+- 영구 정지 사용자는 모든 room membership·joinedRooms에서 제거하며 해제 뒤 자동 복구하지 않는다. 승계 중 방은 active로 운영하지만 기존 owner capability는 즉시 차단한다. 적격자 없음은 삭제 시 `closedByOwner`, 영구 정지 시 `closedByModeration`으로 기존 종료 lifecycle에 수렴시킨다.
 
 ### Membership와 참여중 목록
 

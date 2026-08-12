@@ -2,8 +2,8 @@
 
 ## 현재 상태
 
-- 현재 핵심 task는 `chat-ugc-safety-room-moderation`이다. Phase 0 계약과 Phase 1 moderation principal·account capability 구현, Development 배포, Google·Kakao 실제 탈퇴·재가입 제재 복원과 제한 안내 root QA를 완료했다.
-- 다음 단계는 승인된 설계에 따라 Phase 1-P Production readiness 구현 계획을 확인받는 것이다. 구현·Production mutation·배포는 아직 미승인이며 완료 후 Phase 2로 이동한다. Sign in with Apple은 별도 후속 작업이다.
+- 현재 핵심 task는 `chat-ugc-safety-room-moderation`이다. Phase 0~5 Production rollout과 자동 검증을 완료했다. Phase 5 운영 감사 결과 active room·기존 ban/succession job이 0이라 별도 데이터 migration은 필요하지 않았다.
+- Phase 5 Production 두 계정 앱 QA와 보충 UX QA, 대용량 pending upload 취소, 같은 provider 재로그인, Firestore·Storage emulator 재검증까지 완료했다. 다음 단계는 Phase 6 텍스트 정책·rate limit 설계 확인이다. Sign in with Apple은 별도 후속 작업이다.
 - 이전 핵심 task `style-mood-personalization-account-privacy`의 Phase 1~8은 완료 처리했다. Apple Developer Program 가입 후 App Attest 실기기 QA와 운영 백업 설정은 출시 운영 게이트로 분리하고, 개발 데이터 전체 삭제는 마지막 Phase의 별도 승인 전까지 진행하지 않는다.
 - `lookbook-discovery-learning-loop`는 사용자 승인으로 task 문서를 생성했다. 동일 active 요청 병합, latest generation publish, 기존 시즌 동일성, 7/30/60일 retention, failure action, watchdog 복구, 관리자 review와 fixture/version gate를 설계 기준으로 확정했다.
 - `socket-ingress-ordering-hardening`은 Phase 1~6 구현, 자동 회귀와 실제 Firebase/Simulator 핵심 QA를 완료하고 2026-07-17 종료했다.
@@ -24,7 +24,7 @@
   - [Phase 계획](chat-ugc-safety-room-moderation/plan.md)
   - [현재 상태](chat-ugc-safety-room-moderation/progress.md)
   - [QA 기준](chat-ugc-safety-room-moderation/qa-checklist.md)
-  - 상태: Phase 0·1과 Development Google·Kakao 탈퇴·재가입 QA 완료. Phase 1-P의 내부 active smoke 정책과 Kakao Admin API 검증 migration 방식 승인, 구현·Production mutation·배포 미승인. 이후 Phase 2 진행.
+  - 상태: Phase 0~5 구현·자동 검증·Production rollout·두 계정 앱 QA 완료. Phase 5는 room ban read-only 경계, 내보내기/해제 UX, pending upload 취소, 같은 provider 재로그인, owner succession을 검증했고 다음은 Phase 6 설계 확인이다.
 
 ## 이전 핵심 작업
 

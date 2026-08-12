@@ -213,23 +213,31 @@ Firebase Functions tests/build entry:
   - 미디어 inspection retry/fail-closed/ready message+seq 단일 생성
 - Socket unit test 후보:
   - restricted/suspended handshake와 기존 연결 disconnect
-  - room ban join/read/push 거부, 전역 차단 recipient push 제외
+  - room ban 사용자의 active room read 비회귀, membership/participant Socket join/message-media write 거부, 전역 차단 recipient push 제외
   - principal+room+messageKind rate key와 reconnect 회귀
   - 검사 통과 전 broadcast 없음과 ready 이후 단일 broadcast/seq
 - Firestore·Storage emulator Phase 3 완료:
   - message direct update와 room lifecycle direct update 거부, 폐쇄 room read 차단, 폐쇄 안내 본인 read/delete와 타인 접근·client create/update 거부.
-  - room ban은 후속 Phase 범위다.
+  - room ban은 후속 Phase 범위다. active room read는 유지하고 membership create·message/media write만 principal ban으로 거부한다.
   - `chat-media-storage.rules.test.mjs`는 활성 계정의 서버 reservation 일치 업로드·이미지 read를 허용하고, reservation 누락/만료/종류·sender 불일치와 deletionPending 계정의 read를 거부한다.
   - account capability v2 보정 후 최종 회귀는 Functions 185/185, Socket 70/70, Rules 40/40, transaction 20/20과 JSON/dry-run compile을 통과했다. 170명 추가 참여자 방 종료로 closure notice/projection write가 Firestore batch 500 한도 안에서 분할됨을 검증한다.
 - iOS unit test 후보:
   - bootstrap active/deletionPending/restricted/suspended routing
   - 신고·차단·삭제 ViewModel state와 Coordinator route spy
+  - room remove 뒤 non-member 읽기 전용 전환, pending outbox·미완료 upload 취소와 기존 message/FTS/media cache 유지
   - 현재 window 보존, hidden seq·pagination cursor 소비, 기존 payload/FTS/cache 유지와 재표시 차단, unblock 뒤 강제 재조회 없는 자연 복원
   - pending media relaunch/retry/failure와 ready ACK 수렴
+- Phase 5 Functions/transaction 자동 검증:
+  - remove/unban idempotency와 ban generation, member/joinedRooms/memberCount 단일 변경
+  - 영구 정지 전체 membership page sweep 재실행과 정지 해제 뒤 자동 복구 없음
+  - 방별 successor joinedAt/UID tie-break, 부적격 후보 race 재선정, 동시 leave/remove/suspension에서 owner 중복 0
+  - 적격자 없음의 account deletion `closedByOwner`, permanent suspension `closedByModeration` 수렴
+  - 2026-08-12 최종 Functions lint/build·191/191, Socket check·76/76, Rules 41/41, transaction 24/24, iOS 관련 suite와 Production Simulator build 통과. Production rollout과 두 계정 앱 QA, 대용량 pending upload 취소, 같은 provider 재로그인까지 완료했다.
 - Phase 4 전역 차단 자동 검증:
   - `UserBlockSessionControllerTests.swift`: cache 선적용 뒤 서버 교체, 서버 실패 cache fallback, snapshot 없는 실패의 UGC fail-closed, block/unblock mutation 뒤 메모리·계정별 snapshot 동기화와 이전 계정의 지연 실패가 새 계정 Store를 지우지 않는 경쟁 조건을 검증한다.
   - `ChatVisibleUnreadUseCaseTests.swift`: 앱 종료 중 누적된 혼합 발신자 메시지를 page 단위로 필터링하고, 전부 숨김·고정 latestSeq·목록 visible unread/preview 교체·조회 실패 raw unread fallback을 검증한다.
   - `ChatMessageActionPolicyTests.swift`: 타인 메시지의 block action과 기존 reply/copy/delete/report/announcement 권한 회귀를 검증한다.
+  - `ChatRoomBannedUsersViewModelTests.swift`: 강퇴 사용자 첫 페이지·pagination 중복 제거, 선택 항목 강퇴 해제 성공 제거, 실패 시 목록·작업 상태 보존을 fake UseCase로 검증한다.
   - `ChatRoomViewModelMessageActionTests.swift`: hidden seq와 현재 window의 visible seq를 합쳐 read frontier 연속 구간을 계산해 숨김 뒤 정상 메시지도 읽음 처리되는지 검증한다.
   - `AppDatabaseMigrationTests.swift`, `GRDBChatMediaIndexStoreTests.swift`, `OutPickTests.swift`: 16번째 media sender UID migration, 저장/페이지 순서, local/remote dedupe와 차단 visibility용 sender UID 계약을 검증한다.
   - Functions `lookbook/safety/blockContracts.test.ts`와 전체 suite는 exact block/unblock payload, 자기 차단·unknown field 거부, 신규 callable export를 검증한다. Socket `push/chatPushService.test.js`는 recipient 차단과 relation lookup 실패 시 push fail-closed를 검증한다.

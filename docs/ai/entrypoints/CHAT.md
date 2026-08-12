@@ -206,6 +206,7 @@ Explicit read 진단은 `ChatRoomViewModel.persistExplicitLatestJumpForCurrentUs
 ## 방 정보 수정 반영
 
 - 설정 화면: `OutPick/Features/Chat/Controllers/ChatRoomSettingViewController.swift`
+- 방장 전용 차단 사용자 화면: `OutPick/Features/Chat/Controllers/ChatRoomBannedUsersViewController.swift` + `ViewModels/ChatRoomBannedUsersViewModel.swift`; 설정의 나가기 옆 `차단 사용자` 버튼은 `ChatRoomSettingEvent.requestShowBannedUsers`를 보내고 `ChatCoordinator`가 설정 패널 위에 독립 화면을 full-screen present한다. 독립 화면의 뒤로 가기는 화면만 dismiss해 기존 설정 패널로 복귀한다.
 - 수정 UseCase: `OutPick/Features/Chat/Domain/UseCases/RoomEditUseCase.swift`
 - 화면 라우팅/이벤트: `OutPick/Features/Chat/ChatCoordinator.swift`
 - Chat navigation edge-pop: `OutPick/Features/Chat/ChatNavigationController.swift`
@@ -293,7 +294,12 @@ Explicit read 진단은 `ChatRoomViewModel.persistExplicitLatestJumpForCurrentUs
 ### Phase 4 iOS 구현 진입점
 
 - 신고·삭제 long press: `ChatMessageActionPolicy.swift` → `ChatRoomViewModel` → `ChatViewController` → `ChatCoordinator`
-- 방 신고·내보내기·ban 해제: `ChatRoomSettingViewController`/ViewModel → 신규 moderation UseCase/Repository → `ChatCoordinator`
+- 방 신고·내보내기·ban 해제: `ChatRoomSettingViewController`/`ChatRoomBannedUsersViewModel` → moderation UseCase/Repository → `ChatCoordinator`
+- 방장 내보내기 진입은 다른 사용자의 메시지 long press `내보내기`와 설정 참여자 행의 별도 `…` 버튼이다. 참여자 행 자체 탭은 권한과 무관하게 프로필을 연다. 사유 enum은 `ChatRoomMemberRemovalReason` 하나를 공유한다.
+- 방장에게만 설정 하단 나가기 옆 `차단 사용자` 버튼을 노출한다. 독립 화면은 `Default_Profile` 기본 이미지와 displayName snapshot·canonical 사유·시각, pagination, 빈 상태, retry와 `해제` 확인을 담당한다. 방 이름이 포함된 부제는 표시하지 않으며 일반 참여자에게는 진입 버튼을 만들지 않는다.
+- owner 종료 안내는 `방장이 채팅방을 종료했어요.`로 Repository notice, 실시간 Coordinator alert, 참여방 목록 offline alert에서 동일하게 사용한다.
+- 비참여 채팅 화면은 `ChatRoomViewModel.loadMyRoomAccess` → `ChatRoomMemberModerationUseCase` → `CloudFunctionsChatModerationLifecycleRepository.getMyRoomAccess`로 서버 상태를 조회한 뒤 참여 버튼을 표시한다. 앱 진입·foreground에서 재조회하며 별도 Socket 이벤트를 추가하지 않는다. active ban은 `재입장이 제한된 채팅방입니다`, 조회 실패는 `참여 상태 다시 확인`으로 표시하고 실패한 참여 시 기존 메시지 목록을 제거하지 않는다.
+- 미디어 전송 실패 안내는 서버 ACK/timeout 원문을 노출하지 않는다. 전송 실패 시 room access를 재확인해 ban이면 `채팅방 참여가 제한되어 전송을 중단했어요.`, 그 외에는 재시도 가능한 일반 문구를 사용한다.
 - 전역 차단 visibility: 계정별 마지막 성공 UID snapshot Repository → 메모리 block Store/UseCase → `RealtimeSocketService` ordering 뒤 admission → `ChatMessageWindowStore`·검색·gallery·reply·사용자 공지·room preview·banner. 차단 성공 전 현재 window와 기존 GRDB/FTS/media 원문은 유지하며 이후 새 admission만 제외한다. 서버 lifecycle system event는 제외하지 않는다.
   - raw pagination cursor와 hidden seq는 계속 전진한다. 한 번의 UI 요청은 최대 3개 원본 page만 스캔해 차단 메시지가 긴 방에서 전체 이력을 한 번에 읽지 않는다.
   - 앱 재실행/목록 bootstrap의 unread는 `ChatVisibleUnreadUseCase`가 joined projection의 `lastReadSeq`부터 fetch 시점의 room `latestSeq`까지 메시지를 page 단위로 조회해 현재 차단 UID·본인·삭제 메시지를 제외한다. `JoinedRoomsViewModel`은 조회 전/실패 시 raw unread를 유지하고 성공 방만 visible unread와 최신 visible preview로 교체한다. 전역 seq와 서버 read frontier는 건드리지 않는다.
@@ -318,11 +324,14 @@ Explicit read 진단은 `ChatRoomViewModel.persistExplicitLatestJumpForCurrentUs
 - server-only rate bucket은 `moderationReportRateLimitBuckets`, `moderationAdminRateLimitBuckets`이며 TTL은 2일이다.
 - client direct access 차단은 `firestore.rules`, 관리자 queue composite index와 rate bucket TTL은 `firestore.indexes.json`이 소유한다.
 
-### Phase 3 이후 예정 서버 진입점
+### Phase 5 room ban·owner succession 진입점
 
-- Functions: chat delete/room ban/owner succession service
-- Socket: auth capability, room access/ban, text policy/rate limit, media inspection-ready 경계와 push block 제외
-- Rules: `moderationAccounts` capability, server-only moderation collection, room ban/lifecycle, quarantine/ready Storage
+- Functions callable: `functions/src/chat/moderation/{roomBanService,functions}.ts`의 `removeRoomMember`, `unbanRoomMember`, `listRoomBans`.
+- Functions account sweep: `functions/src/chat/moderation/{roomMembershipSweep,roomMembershipSweepFunctions}.ts`; 계정 삭제는 `functions/src/accountDeletion/cleanup.ts`, 영구 정지는 `functions/src/moderation/admin/service.ts`가 durable job을 시작한다.
+- Socket: `Socket/src/rooms/roomAccess.js`의 principal ban admission과 `roomBanWatcher.js`의 대상 연결 강제 퇴장·`room:membership-removed` 발행.
+- iOS runtime: `RealtimeSocketListenerBinder` → `RealtimeSocketService` → `ChatRoomRuntimeRepository`/UseCase/ViewModel → `ChatViewController`의 read-only 전환과 room-scoped outbox/upload 취소.
+- iOS 방 관리: `ChatRoomSettingViewController`/`ChatRoomBannedUsersViewModel` → `ChatRoomMemberModerationUseCase` → `ChatModerationLifecycleRepository`.
+- Rules/index: `firestore.rules`의 ban read deny·membership create 거부, `firestore.indexes.json`의 bans/succession job query와 TTL.
 - authoritative identity: 콘텐츠·membership은 UID, 장기 제재·room ban만 `moderationPrincipalID`
 
 ### 고정 사용자 동작
@@ -332,5 +341,6 @@ Explicit read 진단은 `ChatRoomViewModel.persistExplicitLatestJumpForCurrentUs
 - 2026-08-11 Phase 4 Production은 Functions `blockUser`/`unblockUser`와 Socket revision `outpick-socket-p4-block-0811`을 반영했다. 두 계정 QA에서 current-window 유지, 차단 후 live admission 제외, 참여자 유지, unblock 후 재진입 복원과 future live 수신을 확인했다. 실제 기기 background push는 추가 QA 항목이다.
 - 2026-08-11~12 Production 앱 종료 혼합 unread QA에서 `lastReadSeq=1`, 차단 `seq=2`, 비차단 `seq=3` 조건으로 재실행 목록의 visible unread 1·비차단 preview와 재진입 차단 메시지 제외를 확인했다. Production 제3자 계정을 추가하지 않고 QA 방 한정 합성 발신자를 사용했으며 방·projection·차단 relation·Storage를 잔존 0건으로 정리했다.
 - message delete는 seq tombstone을 유지하고 공개 payload·projection·Storage를 서버 cleanup으로 정리한다.
-- room ban은 membership 제거와 별개로 같은 provider 재가입을 막으며 unban은 membership을 자동 복원하지 않는다.
+- room ban은 활성 방 읽기 visibility를 바꾸지 않고 membership 제거와 같은 provider 재가입·참여자 전용 Socket/message/media write만 막는다. 내보내기 뒤 현재 화면은 기존 읽기 cache를 유지한 non-member 상태가 되고 pending outbox·미완료 upload만 취소한다. unban은 membership을 자동 복원하지 않는다.
+- creator 계정 삭제 최종 확정·영구 정지는 공용 durable membership sweep과 방별 succession transaction을 사용한다. 영구 정지는 모든 room membership을 제거하고 해제 뒤 자동 복구하지 않으며, 승계 중 일반 채팅은 유지하되 기존 owner capability는 즉시 차단한다.
 - 검사 중 미디어는 공개되지 않고 seq도 없다. 검사 통과 transaction에서만 ready message와 seq가 생긴다.
