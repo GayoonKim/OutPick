@@ -51,6 +51,7 @@ enum ChatCompositionRoot {
         currentUserProvider: any CurrentUserProviding,
         networkStatusProvider: NetworkStatusProviding,
         exitUseCase: ChatRoomExitUseCaseProtocol,
+        memberModerationUseCase: ChatRoomMemberModerationUseCaseProtocol,
         userBlockVisibilityStore: any UserBlockVisibilityChecking = UserBlockVisibilityStore(),
         onEvent: @escaping (ChatRoomSettingEvent) -> Void = { _ in }
     ) -> ChatRoomSettingViewController {
@@ -78,6 +79,7 @@ enum ChatCompositionRoot {
             loadParticipantsUseCase: participantsUseCase,
             loadMediaUseCase: mediaUseCase,
             exitUseCase: exitUseCase,
+            memberModerationUseCase: memberModerationUseCase,
             networkStatusProvider: networkStatusProvider
         )
         let settingVC = ChatRoomSettingViewController(

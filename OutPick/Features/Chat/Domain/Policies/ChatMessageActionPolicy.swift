@@ -14,6 +14,7 @@ enum ChatMessageAction: Equatable, Hashable, Sendable {
     case report
     case block
     case announce
+    case removeMember
 }
 
 enum ChatMessageServerAction: Equatable, Sendable {
@@ -28,6 +29,7 @@ struct ChatMessageActionPolicy: Equatable, Sendable {
     let canReport: Bool
     let canBlock: Bool
     let canAnnounce: Bool
+    let canRemoveMember: Bool
 
     func allows(_ action: ChatMessageAction) -> Bool {
         switch action {
@@ -43,6 +45,8 @@ struct ChatMessageActionPolicy: Equatable, Sendable {
             canBlock
         case .announce:
             canAnnounce
+        case .removeMember:
+            canRemoveMember
         }
     }
 
@@ -54,6 +58,7 @@ struct ChatMessageActionPolicy: Equatable, Sendable {
         let isOwner = currentUserID == message.senderUID
         let isAdmin = roomCreatorID == currentUserID
         let canDelete = isOwner || isAdmin
+        let canRemoveMember = isAdmin && !isOwner && !message.senderUID.isEmpty
 
         if message.isLookbookShareMessage {
             return ChatMessageActionPolicy(
@@ -62,7 +67,8 @@ struct ChatMessageActionPolicy: Equatable, Sendable {
                 canDelete: canDelete,
                 canReport: !canDelete,
                 canBlock: !isOwner,
-                canAnnounce: false
+                canAnnounce: false,
+                canRemoveMember: canRemoveMember
             )
         }
 
@@ -72,7 +78,8 @@ struct ChatMessageActionPolicy: Equatable, Sendable {
             canDelete: canDelete,
             canReport: !canDelete,
             canBlock: !isOwner,
-            canAnnounce: isAdmin
+            canAnnounce: isAdmin,
+            canRemoveMember: canRemoveMember
         )
     }
 }

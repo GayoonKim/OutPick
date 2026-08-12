@@ -29,10 +29,12 @@ final class ChatRoomRuntimeSubscription {
 @MainActor
 protocol ChatRoomRuntimeRepositoryProtocol {
     func observeRoomClosed(roomID: String, onClosed: @escaping (RealtimeRoomClosureEvent) -> Void) -> ChatRoomRuntimeSubscription
+    func observeRoomMembershipRemoved(roomID: String, onRemoved: @escaping (RealtimeRoomMembershipRemovalEvent) -> Void) -> ChatRoomRuntimeSubscription
 }
 
 protocol ChatRoomRuntimeSocketObserving {
     func observeRoomClosed(roomID: String) async -> AsyncStream<RealtimeRoomClosureEvent>
+    func observeRoomMembershipRemoved(roomID: String) async -> AsyncStream<RealtimeRoomMembershipRemovalEvent>
 }
 
 @MainActor
@@ -57,6 +59,19 @@ final class SocketChatRoomRuntimeRepository: ChatRoomRuntimeRepositoryProtocol {
         return ChatRoomRuntimeSubscription {
             task.cancel()
         }
+    }
+
+    func observeRoomMembershipRemoved(
+        roomID: String,
+        onRemoved: @escaping (RealtimeRoomMembershipRemovalEvent) -> Void
+    ) -> ChatRoomRuntimeSubscription {
+        let task = Task { [socketObserver] in
+            let stream = await socketObserver.observeRoomMembershipRemoved(roomID: roomID)
+            for await event in stream where event.roomID == roomID {
+                await MainActor.run { onRemoved(event) }
+            }
+        }
+        return ChatRoomRuntimeSubscription { task.cancel() }
     }
 }
 

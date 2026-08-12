@@ -332,7 +332,7 @@ private extension JoinedRoomsViewController {
         case .closedByModeration:
             message = "운영 정책에 따라 이용이 종료됐어요."
         case .closedByOwner:
-            message = "방장이 채팅방을 삭제했어요."
+            message = "방장이 채팅방을 종료했어요."
         case .none:
             message = nil
         }

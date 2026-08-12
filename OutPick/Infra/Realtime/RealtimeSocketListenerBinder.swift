@@ -79,6 +79,7 @@ struct RealtimeSocketListenerCallbacks {
     let imagesReceived: ([Any]) -> Void
     let videoReceived: ([Any]) -> Void
     let roomClosed: ([Any]) -> Void
+    let roomMembershipRemoved: ([Any]) -> Void
 }
 
 final class RealtimeSocketListenerBinder {
@@ -87,6 +88,7 @@ final class RealtimeSocketListenerBinder {
     static let imagesReceivedEvent = "receiveImages"
     static let videoReceivedEvent = "receiveVideo"
     static let roomClosedEvent = "room:closed"
+    static let roomMembershipRemovedEvent = "room:membership-removed"
 
     private(set) var isBound = false
 
@@ -106,6 +108,7 @@ final class RealtimeSocketListenerBinder {
         listener.on(Self.imagesReceivedEvent, callback: callbacks.imagesReceived)
         listener.on(Self.videoReceivedEvent, callback: callbacks.videoReceived)
         listener.on(Self.roomClosedEvent, callback: callbacks.roomClosed)
+        listener.on(Self.roomMembershipRemovedEvent, callback: callbacks.roomMembershipRemoved)
         return true
     }
 }

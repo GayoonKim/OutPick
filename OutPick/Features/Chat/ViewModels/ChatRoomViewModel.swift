@@ -53,6 +53,7 @@ final class ChatRoomViewModel {
     private let roomReadStateStore: ChatRoomReadStateStore?
     private let userBlockVisibilityStore: any UserBlockVisibilityChecking
     private let blockUserUseCase: (any BlockUserUseCaseProtocol)?
+    private let memberModerationUseCase: ChatRoomMemberModerationUseCaseProtocol?
 
     private(set) var isInitialLoading: Bool = true
     private(set) var isLoadingOlder: Bool = false
@@ -140,7 +141,8 @@ final class ChatRoomViewModel {
         joinedRoomsStore: JoinedRoomsSessionStoring? = nil,
         roomReadStateStore: ChatRoomReadStateStore? = nil,
         userBlockVisibilityStore: any UserBlockVisibilityChecking = UserBlockVisibilityStore(),
-        blockUserUseCase: (any BlockUserUseCaseProtocol)? = nil
+        blockUserUseCase: (any BlockUserUseCaseProtocol)? = nil,
+        memberModerationUseCase: ChatRoomMemberModerationUseCaseProtocol? = nil
     ) {
         self.room = room
         self.initialLoadUseCase = initialLoadUseCase
@@ -154,6 +156,7 @@ final class ChatRoomViewModel {
         self.roomReadStateStore = roomReadStateStore
         self.userBlockVisibilityStore = userBlockVisibilityStore
         self.blockUserUseCase = blockUserUseCase
+        self.memberModerationUseCase = memberModerationUseCase
         seedRoomReadLatest(from: room)
     }
 
@@ -217,6 +220,24 @@ final class ChatRoomViewModel {
         return updatedRoom
     }
 
+    func loadMyRoomAccess() async throws -> ChatRoomAccessStatus {
+        guard let memberModerationUseCase else {
+            return isCurrentUserParticipant ? .member : .joinable
+        }
+        return try await memberModerationUseCase.loadMyRoomAccess(roomID: roomID)
+    }
+
+    func removeRoomMember(targetUID: String, reason: ChatRoomMemberRemovalReason) async throws {
+        guard let memberModerationUseCase else {
+            throw CloudFunctionsClientError.invalidResponse
+        }
+        _ = try await memberModerationUseCase.removeMember(
+            roomID: roomID,
+            targetUID: targetUID,
+            reasonCode: reason.rawValue
+        )
+    }
+
     func makeOutgoingTextMessage(text: String, replyPreview: ReplyPreview?) -> ChatMessage? {
         messageUseCase.makeTextMessage(text: text, replyPreview: replyPreview, room: room)
     }
@@ -238,6 +259,17 @@ final class ChatRoomViewModel {
     func observeRoomClosed(onClosed: @escaping (RealtimeRoomClosureEvent) -> Void) -> ChatRoomRuntimeSubscription? {
         guard !roomID.isEmpty else { return nil }
         return runtimeUseCase.observeRoomClosed(roomID: roomID, onClosed: onClosed)
+    }
+
+    func observeRoomMembershipRemoved(
+        onRemoved: @escaping (RealtimeRoomMembershipRemovalEvent) -> Void
+    ) -> ChatRoomRuntimeSubscription? {
+        guard !roomID.isEmpty else { return nil }
+        return runtimeUseCase.observeRoomMembershipRemoved(roomID: roomID, onRemoved: onRemoved)
+    }
+
+    func handleCurrentUserMembershipRemoved() {
+        joinedRoomsStore?.remove(roomID)
     }
 
     func handleRoomWillAppear() {

@@ -293,14 +293,21 @@ extension ChatViewController {
                 self.finishPendingImageUpload(messageID: messageID)
             }
         } catch {
+            let wasRemovedInMemory = await MainActor.run {
+                self.isMembershipRemovedByModeration
+            }
+            let serverAccess = await loadRoomAccessAfterOutgoingFailure()
+            let wasRemovedByModeration = wasRemovedInMemory || serverAccess == .banned
             await mediaUploadUseCase.cacheFailedImageThumbnails(pairs)
-            if let message = await MainActor.run(body: {
+            if !wasRemovedByModeration, let message = await MainActor.run(body: {
                 self.stagedMessageForOutbox(messageID: messageID)
             }) {
                 await markOutgoingMessageFailed(message, error: error)
             }
             await MainActor.run {
-                self.markPendingImageUploadFailed(messageID: messageID)
+                if !wasRemovedByModeration {
+                    self.markPendingImageUploadFailed(messageID: messageID)
+                }
             }
             print("업로드 실패:", error)
         }
@@ -343,23 +350,32 @@ extension ChatViewController {
                 self.finishPendingVideoUpload(messageID: messageID)
             }
         } catch {
-            // 업로드 실패 안내(미리보기 표시 후 노출)
+            let wasRemovedInMemory = await MainActor.run {
+                self.isMembershipRemovedByModeration
+            }
+            let serverAccess = await loadRoomAccessAfterOutgoingFailure()
+            let wasRemovedByModeration = wasRemovedInMemory || serverAccess == .banned
             await MainActor.run {
                 AlertManager.showAlertNoHandler(
-                    title: "업로드 실패",
-                    message: error.localizedDescription,
+                    title: wasRemovedByModeration ? "전송을 중단했어요" : "동영상 전송 실패",
+                    message: wasRemovedByModeration
+                        ? "채팅방 참여가 제한되어 전송을 중단했어요."
+                        : "동영상을 전송하지 못했어요. 잠시 후 다시 시도해 주세요.",
                     viewController: self
                 )
             }
             
-            if let message = await MainActor.run(body: {
+            if !wasRemovedByModeration, let message = await MainActor.run(body: {
                 self.stagedMessageForOutbox(messageID: messageID)
             }) {
                 await markOutgoingMessageFailed(message, error: error)
             }
             await MainActor.run {
-                self.markPendingVideoUploadFailed(messageID: messageID)
+                if !wasRemovedByModeration {
+                    self.markPendingVideoUploadFailed(messageID: messageID)
+                }
             }
+            print("동영상 업로드 실패:", error)
         }
     }
 

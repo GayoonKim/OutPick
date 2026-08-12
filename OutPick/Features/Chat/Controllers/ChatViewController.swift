@@ -142,6 +142,18 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private var needsTransientBindingsRestore = false
     
     private var roomClosedSubscription: ChatRoomRuntimeSubscription?
+    private var roomMembershipRemovedSubscription: ChatRoomRuntimeSubscription?
+    private(set) var isMembershipRemovedByModeration = false
+    private enum RoomAccessPresentation: Equatable {
+        case checking
+        case joinable
+        case banned
+        case closed
+        case unavailable
+    }
+    private var roomAccessPresentation: RoomAccessPresentation = .checking
+    private var roomAccessTask: Task<Void, Never>?
+    private var roomAccessGeneration = 0
     private var appLifecycleObservers: [NSObjectProtocol] = []
     
     deinit {
@@ -151,6 +163,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
         convertImagesTask?.cancel()
         convertVideosTask?.cancel()
+        roomAccessTask?.cancel()
         latestJumpTask?.cancel()
         latestJumpErrorTask?.cancel()
         latestJumpPreviewImageTask?.cancel()
@@ -176,6 +189,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         appLifecycleObservers.removeAll()
 
         stopRoomClosedObservation()
+        stopRoomMembershipRemovedObservation()
     }
     
     private lazy var containerView: UIView = {
@@ -366,7 +380,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         bindKeyboardPublisher()
         bindSearchEvents()
         bindRoomClosedEvent()
+        bindRoomMembershipRemovedEvent()
         bindAppLifecycleForLastRead()
+        refreshRoomAccessIfNeeded()
         
         chatMessageCollectionView.delegate = self
         
@@ -374,7 +390,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        guard isParticipantPreviewMode == false else { return }
+        guard isParticipantPreviewMode == false else {
+            refreshRoomAccessIfNeeded()
+            return
+        }
         chatRoomViewModel.handleRoomWillAppear()
     }
     
@@ -420,6 +439,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         
         // 참여하지 않은 방이면 로컬 메시지 삭제 처리 (메인 바깥에서 비동기 실행)
         if let room = self.room,
+           !isMembershipRemovedByModeration,
            !chatRoomViewModel.isCurrentUserParticipant(in: room) {
             let roomID = room.id
             Task(priority: .utility) { [chatRoomViewModel] in
@@ -1401,6 +1421,39 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         roomClosedSubscription?.stop()
         roomClosedSubscription = nil
     }
+
+    private func bindRoomMembershipRemovedEvent() {
+        stopRoomMembershipRemovedObservation()
+        roomMembershipRemovedSubscription = chatRoomViewModel
+            .observeRoomMembershipRemoved { [weak self] event in
+                self?.handleRoomMembershipRemoved(event)
+            }
+    }
+
+    private func stopRoomMembershipRemovedObservation() {
+        roomMembershipRemovedSubscription?.stop()
+        roomMembershipRemovedSubscription = nil
+    }
+
+    @MainActor
+    private func handleRoomMembershipRemoved(_ event: RealtimeRoomMembershipRemovalEvent) {
+        guard event.roomID == room?.id, event.reason == "room_banned" else { return }
+        isMembershipRemovedByModeration = true
+        roomAccessPresentation = .banned
+        chatRoomViewModel.handleCurrentUserMembershipRemoved()
+        chatRoomViewModel.handleRoomWillDisappear()
+        isUserInCurrentRoom = false
+        convertImagesTask?.cancel()
+        convertVideosTask?.cancel()
+        pendingMediaUploadStore.cancelAndRemove(roomID: event.roomID)
+        Task { [outgoingOutboxUseCase] in
+            await outgoingOutboxUseCase.cancelPendingMessages(roomID: event.roomID)
+        }
+        decideJoinUI()
+        joinRoomBtn.setTitle("재입장이 제한된 채팅방입니다", for: .normal)
+        joinRoomBtn.isEnabled = false
+        joinRoomBtn.alpha = 0.6
+    }
     
     @MainActor
     private func restoreTransientBindingsIfNeeded() {
@@ -1461,7 +1514,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     @MainActor
     private func decideJoinUI() {
         let currentRoom = chatRoomViewModel.room
-        
+
         if chatRoomViewModel.isCurrentUserParticipant {
             setupChatUI()
             chatUIView.isHidden = false
@@ -1475,6 +1528,28 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             joinRoomBtn.isHidden = false
             chatUIView.isHidden = true
             self.customNavigationBar.rightStack.isUserInteractionEnabled = false
+            switch roomAccessPresentation {
+            case .banned:
+                joinRoomBtn.setTitle("재입장이 제한된 채팅방입니다", for: .normal)
+                joinRoomBtn.isEnabled = false
+                joinRoomBtn.alpha = 0.6
+            case .closed:
+                joinRoomBtn.setTitle("종료된 채팅방입니다", for: .normal)
+                joinRoomBtn.isEnabled = false
+                joinRoomBtn.alpha = 0.6
+            case .checking:
+                joinRoomBtn.setTitle("참여 가능 여부 확인 중…", for: .normal)
+                joinRoomBtn.isEnabled = false
+                joinRoomBtn.alpha = 0.6
+            case .unavailable:
+                joinRoomBtn.setTitle("참여 상태 다시 확인", for: .normal)
+                joinRoomBtn.isEnabled = true
+                joinRoomBtn.alpha = 1
+            case .joinable:
+                joinRoomBtn.setTitle("채팅 참여하기", for: .normal)
+                joinRoomBtn.isEnabled = true
+                joinRoomBtn.alpha = 1
+            }
         }
         
         updateNavigationTitle(with: currentRoom)
@@ -1537,21 +1612,21 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     @MainActor
     @objc private func joinRoomBtnTapped(_ sender: UIButton) {
+        if roomAccessPresentation == .unavailable {
+            refreshRoomAccessIfNeeded(force: true)
+            return
+        }
         // Prevent double taps / duplicated HUDs
-        guard !isJoiningRoom else { return }
+        guard !isJoiningRoom,
+              !isMembershipRemovedByModeration,
+              roomAccessPresentation == .joinable else { return }
         isJoiningRoom = true
 
         LoadingIndicator.shared.stop()
         LoadingIndicator.shared.start(on: self)
 
-        joinRoomBtn.isHidden = true
-        customNavigationBar.rightStack.isUserInteractionEnabled = true
-
-        NSLayoutConstraint.deactivate(joinConsraints)
-        joinConsraints.removeAll()
-        if chatMessageCollectionView.superview != nil {
-            chatMessageCollectionView.removeFromSuperview()
-        }
+        joinRoomBtn.isEnabled = false
+        joinRoomBtn.setTitle("참여 중…", for: .normal)
 
         Task {
             do {
@@ -1564,6 +1639,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                     self.chatMessageCollectionView.isHidden = false
                     self.setupInitialMessages()
                     self.view.layoutIfNeeded()
+                    self.roomAccessPresentation = .joinable
+                    self.customNavigationBar.rightStack.isUserInteractionEnabled = true
                 }
                 self.isJoiningRoom = false
                 print(#function, "✅ 방 참여 성공, UI 업데이트 완료")
@@ -1575,9 +1652,54 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                     self.customNavigationBar.rightStack.isUserInteractionEnabled = false
                     LoadingIndicator.shared.stop()
                     self.isJoiningRoom = false
+                    self.roomAccessPresentation = .checking
+                    self.refreshRoomAccessIfNeeded(force: true)
                 }
             }
         }
+    }
+
+    @MainActor
+    private func refreshRoomAccessIfNeeded(force: Bool = false) {
+        guard chatRoomViewModel.isCurrentUserParticipant == false else { return }
+        guard force || roomAccessTask == nil else { return }
+        roomAccessTask?.cancel()
+        roomAccessGeneration += 1
+        let generation = roomAccessGeneration
+        roomAccessPresentation = .checking
+        decideJoinUI()
+        roomAccessTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                if self.roomAccessGeneration == generation {
+                    self.roomAccessTask = nil
+                }
+            }
+            do {
+                let status = try await self.chatRoomViewModel.loadMyRoomAccess()
+                guard !Task.isCancelled else { return }
+                switch status {
+                case .banned:
+                    self.isMembershipRemovedByModeration = true
+                    self.roomAccessPresentation = .banned
+                case .closed:
+                    self.roomAccessPresentation = .closed
+                case .joinable, .member:
+                    self.isMembershipRemovedByModeration = false
+                    self.roomAccessPresentation = .joinable
+                }
+            } catch {
+                guard !Task.isCancelled else { return }
+                print("❌ 채팅방 참여 상태 확인 실패: \(error)")
+                self.roomAccessPresentation = .unavailable
+            }
+            self.decideJoinUI()
+        }
+    }
+
+    @MainActor
+    func loadRoomAccessAfterOutgoingFailure() async -> ChatRoomAccessStatus? {
+        try? await chatRoomViewModel.loadMyRoomAccess()
     }
     
     //MARK: 커스텀 내비게이션 바
@@ -1984,7 +2106,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             canDelete: policy.canDelete,
             canReport: policy.canReport,
             canBlock: policy.canBlock,
-            canAnnounce: policy.canAnnounce
+            canAnnounce: policy.canAnnounce,
+            canRemoveMember: policy.canRemoveMember
         )
     }
 
@@ -2057,7 +2180,44 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 )
             })
             dismissCustomMenu()
+        case .removeMember:
+            presentRemovalReasons(for: message)
+            dismissCustomMenu()
         }
+    }
+
+    @MainActor
+    private func presentRemovalReasons(for message: ChatMessage) {
+        let displayName = message.senderNickname.trimmingCharacters(in: .whitespacesAndNewlines)
+        let sheet = UIAlertController(
+            title: "내보내기 사유",
+            message: displayName.isEmpty
+                ? "이 사용자는 해제하기 전까지 다시 참여할 수 없어요."
+                : "\(displayName)님은 해제하기 전까지 다시 참여할 수 없어요.",
+            preferredStyle: .actionSheet
+        )
+        for reason in ChatRoomMemberRemovalReason.allCases {
+            sheet.addAction(UIAlertAction(title: reason.title, style: .destructive) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    do {
+                        try await self.chatRoomViewModel.removeRoomMember(
+                            targetUID: message.senderUID,
+                            reason: reason
+                        )
+                        self.showSuccess("내보냈어요.")
+                    } catch {
+                        AlertManager.showAlertNoHandler(
+                            title: "처리하지 못했어요",
+                            message: "잠시 후 다시 시도해 주세요.",
+                            viewController: self
+                        )
+                    }
+                }
+            })
+        }
+        sheet.addAction(UIAlertAction(title: "취소", style: .cancel))
+        present(sheet, animated: true)
     }
 
     @MainActor
@@ -3600,12 +3760,19 @@ extension ChatViewController {
         let names: [Notification.Name] = [
             UIApplication.willResignActiveNotification,
             UIApplication.didEnterBackgroundNotification,
-            UIApplication.willTerminateNotification
+            UIApplication.willTerminateNotification,
+            UIApplication.didBecomeActiveNotification
         ]
 
         for name in names {
             let observer = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                self?.flushLastReadSeq(trigger: name.rawValue)
+                if name == UIApplication.didBecomeActiveNotification {
+                    Task { @MainActor [weak self] in
+                        self?.refreshRoomAccessIfNeeded(force: true)
+                    }
+                } else {
+                    self?.flushLastReadSeq(trigger: name.rawValue)
+                }
             }
             appLifecycleObservers.append(observer)
         }

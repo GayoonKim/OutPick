@@ -38,6 +38,7 @@ final class ChatRoomSettingViewModel {
     private let loadParticipantsUseCase: LoadChatRoomParticipantsUseCaseProtocol
     private let loadMediaUseCase: LoadChatRoomMediaUseCaseProtocol
     private let exitUseCase: ChatRoomExitUseCaseProtocol
+    private let memberModerationUseCase: ChatRoomMemberModerationUseCaseProtocol
     private let attachmentImageLoader: ChatAttachmentImageLoading
     private let avatarImageManager: AvatarImageManaging
     private let networkStatusProvider: NetworkStatusProviding
@@ -59,6 +60,7 @@ final class ChatRoomSettingViewModel {
         loadParticipantsUseCase: LoadChatRoomParticipantsUseCaseProtocol,
         loadMediaUseCase: LoadChatRoomMediaUseCaseProtocol,
         exitUseCase: ChatRoomExitUseCaseProtocol,
+        memberModerationUseCase: ChatRoomMemberModerationUseCaseProtocol,
         networkStatusProvider: NetworkStatusProviding
     ) {
         self.roomInfo = room
@@ -71,6 +73,7 @@ final class ChatRoomSettingViewModel {
         self.loadParticipantsUseCase = loadParticipantsUseCase
         self.loadMediaUseCase = loadMediaUseCase
         self.exitUseCase = exitUseCase
+        self.memberModerationUseCase = memberModerationUseCase
         self.networkStatusProvider = networkStatusProvider
     }
 
@@ -80,6 +83,16 @@ final class ChatRoomSettingViewModel {
 
     func leaveOrCloseRoom() async throws -> ChatRoomExitResult {
         try await exitUseCase.leaveOrClose(room: roomInfo)
+    }
+
+    func removeParticipant(_ user: LocalChatUser, reasonCode: String) async throws {
+        let receipt = try await memberModerationUseCase.removeMember(
+            roomID: roomInfo.id,
+            targetUID: user.userID,
+            reasonCode: reasonCode
+        )
+        localUsers.removeAll { $0.userID == user.userID }
+        roomInfo.memberCount = receipt.memberCount
     }
 
     func loadInitialParticipants() async {

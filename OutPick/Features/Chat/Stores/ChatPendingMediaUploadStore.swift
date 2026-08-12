@@ -219,6 +219,23 @@ final class ChatPendingMediaUploadStore {
         videoUploads.removeAll()
     }
 
+    func cancelAndRemove(roomID: String) {
+        let imageIDs = imageUploads.values
+            .filter { $0.roomID == roomID }
+            .map(\.messageID)
+        let videoIDs = videoUploads.values
+            .filter { $0.roomID == roomID }
+            .map(\.messageID)
+        for messageID in imageIDs {
+            imageUploads[messageID]?.task?.cancel()
+            imageUploads.removeValue(forKey: messageID)
+        }
+        for messageID in videoIDs {
+            videoUploads[messageID]?.task?.cancel()
+            videoUploads.removeValue(forKey: messageID)
+        }
+    }
+
     func stageVideoUpload(
         roomID: String,
         messageID: String,
