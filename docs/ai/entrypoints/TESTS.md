@@ -232,7 +232,7 @@ Firebase Functions tests/build entry:
   - 영구 정지 전체 membership page sweep 재실행과 정지 해제 뒤 자동 복구 없음
   - 방별 successor joinedAt/UID tie-break, 부적격 후보 race 재선정, 동시 leave/remove/suspension에서 owner 중복 0
   - 적격자 없음의 account deletion `closedByOwner`, permanent suspension `closedByModeration` 수렴
-  - 2026-08-12 최종 Functions lint/build·191/191, Socket check·76/76, Rules 41/41, transaction 24/24, iOS 관련 suite와 Production Simulator build 통과. Production rollout과 두 계정 앱 QA, 대용량 pending upload 취소, 같은 provider 재로그인까지 완료했다.
+  - 2026-08-12 최종 Functions lint/build·191/191, Socket check·76/76, Rules 41/41, transaction 25/25, iOS 관련 suite와 Production Simulator build 통과. transaction suite는 최대 시도에서 lease가 만료된 succession job의 `failed` 종결도 검증한다. Production rollout과 두 계정 앱 QA, 대용량 pending upload 취소, 같은 provider 재로그인까지 완료했다.
 - Phase 4 전역 차단 자동 검증:
   - `UserBlockSessionControllerTests.swift`: cache 선적용 뒤 서버 교체, 서버 실패 cache fallback, snapshot 없는 실패의 UGC fail-closed, block/unblock mutation 뒤 메모리·계정별 snapshot 동기화와 이전 계정의 지연 실패가 새 계정 Store를 지우지 않는 경쟁 조건을 검증한다.
   - `ChatVisibleUnreadUseCaseTests.swift`: 앱 종료 중 누적된 혼합 발신자 메시지를 page 단위로 필터링하고, 전부 숨김·고정 latestSeq·목록 visible unread/preview 교체·조회 실패 raw unread fallback을 검증한다.
