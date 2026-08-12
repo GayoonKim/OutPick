@@ -14,6 +14,7 @@ import {
   unbanRoomMemberService,
 } from "../functions/lib/chat/moderation/roomBanService.js";
 import {
+  processRoomOwnershipSuccessionJob,
   resolveRoomMembershipPage,
 } from "../functions/lib/chat/moderation/roomMembershipSweep.js";
 import {
@@ -42,6 +43,7 @@ async function clearFixtures() {
     db.recursiveDelete(db.collection("userPublicProfiles").doc(memberUID)),
     db.recursiveDelete(db.collection("chatMessageCleanupJobs")),
     db.recursiveDelete(db.collection("moderationRoomCleanupJobs")),
+    db.recursiveDelete(db.collection("roomOwnershipSuccessionJobs")),
     db.recursiveDelete(db.collection("moderationAuditLogs")),
     ...bulkMemberUIDs.map((uid) => db.recursiveDelete(db.collection("users").doc(uid))),
   ]);
@@ -155,6 +157,29 @@ describe("chat moderation lifecycle transactions", () => {
     const job = await db.collection("moderationRoomCleanupJobs").doc(roomID).get();
     assert.equal(job.data()?.closureType, "closedByModeration");
     assert.equal(job.data()?.status, "pending");
+  });
+
+  test("최대 시도에서 lease가 만료된 승계 작업은 failed로 종결한다", async () => {
+    const jobRef = db.collection("roomOwnershipSuccessionJobs").doc("max-attempt-job");
+    await jobRef.set({
+      targetUID: ownerUID,
+      cause: "permanentSuspension",
+      status: "processing",
+      attempt: 20,
+      nextAttemptAt: new Date(now.getTime() - 2_000),
+      leaseOwner: "crashed-worker",
+      leaseExpiresAt: new Date(now.getTime() - 1_000),
+      updatedAt: new Date(now.getTime() - 2_000),
+    });
+
+    assert.equal(await processRoomOwnershipSuccessionJob(jobRef.id, db, now), false);
+    const job = await jobRef.get();
+    assert.equal(job.data()?.status, "failed");
+    assert.equal(job.data()?.attempt, 20);
+    assert.equal(job.data()?.leaseOwner, null);
+    assert.equal(job.data()?.leaseExpiresAt, null);
+    assert.equal(job.data()?.nextAttemptAt, null);
+    assert.equal(job.data()?.lastErrorCode, "max_attempts_exceeded");
   });
 
   test("방장 추방은 밴과 참여 projection을 원자적으로 갱신하고 해제 후 재가입만 허용한다", async () => {
