@@ -11,6 +11,7 @@
     "globalBlock": "users/{uid}/blockedUsers/{blockedUID}",
     "roomMembership": "Rooms/{roomID}/members/{uid}",
     "roomBan": "Rooms/{roomID}/bans/{moderationPrincipalID}",
+    "roomOwnershipSuccessionJob": "roomOwnershipSuccessionJobs/{jobID}",
     "roomLifecycle": "Rooms/{roomID}.lifecycleStatus",
     "message": "Rooms/{roomID}/Messages/{messageID}",
     "mediaReservation": "Rooms/{roomID}/MediaUploads/{uploadID}",
@@ -56,6 +57,16 @@
     "unblock": "do not force a room reload; future admission is visible and history returns through ordinary reload",
     "bootstrap": "load account snapshot into memory then replace from owner-only server relation; no snapshot plus server failure fails closed",
     "rollout": "latest app and server contract only"
+  },
+  "roomBanAccess": {
+    "activeRoomRead": "allow list, search, preview, message and public media read",
+    "membership": "deny create or rejoin while the canonical moderation principal is banned",
+    "write": "deny participant socket join and message or media writes",
+    "projectionEffects": "remove member and joinedRooms; joined-only push, banner and share targets disappear",
+    "localAfterRemoval": "keep message, FTS and completed media cache; cancel pending outbox and unfinished uploads; transition to read-only non-member",
+    "unban": "allow a future explicit join without restoring membership",
+    "identityPrivacy": "ban lists use the ban-time minimum display snapshot and never resolve a rejoined UID profile",
+    "selfAccessQuery": "getMyRoomAccess returns member|joinable|banned|closed without moderationPrincipalID or ban document data"
   },
   "enums": {
     "accountStatus": [
@@ -361,12 +372,40 @@
       "clientWrite": false,
       "requiredFields": {
         "schemaVersion": "integer:1",
+        "isActive": "boolean",
+        "banEntryToken": "opaque string when active; absent when inactive",
         "bannedAt": "timestamp",
         "bannedByUID": "uid",
-        "reasonCode": "string",
-        "stateVersion": "positive integer",
+        "reasonCode": "reportReason",
+        "displayNameSnapshot": "bounded string|null",
+        "stateVersion": "positive integer incremented on every ban and unban transition",
+        "unbannedAt": "timestamp|null",
         "expiresAt": "timestamp|null"
-      }
+      },
+      "forbiddenFields": [
+        "providerSubject",
+        "email",
+        "currentUID",
+        "freeTextReason"
+      ]
+    },
+    "roomOwnershipSuccessionJobs/{jobID}": {
+      "clientRead": false,
+      "clientWrite": false,
+      "requiredFields": {
+        "schemaVersion": "integer:1",
+        "targetUID": "uid",
+        "cause": "accountDeletion|permanentSuspension",
+        "expectedStateVersion": "positive integer",
+        "status": "cleanupJobStatus",
+        "attempt": "non-negative integer",
+        "nextAttemptAt": "timestamp",
+        "lastErrorCode": "string|null",
+        "createdAt": "timestamp",
+        "updatedAt": "timestamp",
+        "expiresAt": "timestamp|null"
+      },
+      "idempotency": "deterministic jobID from targetUID + cause + expectedStateVersion; each room converges in its own transaction"
     },
     "Rooms/{roomID}": {
       "moderationExtensionFields": {
@@ -730,7 +769,7 @@
       "request": {
         "roomID": "string",
         "targetUID": "uid",
-        "reasonCode": "string",
+        "reasonCode": "reportReason",
         "clientRequestID": "UUID string"
       },
       "response": {
@@ -738,7 +777,7 @@
         "roomBanned": "true",
         "memberCount": "non-negative integer"
       },
-      "idempotency": "roomID + target moderation principal"
+      "idempotency": "actor UID + clientRequestID; the current room ban stateVersion distinguishes a later rejoin and removal generation"
     },
     "unbanRoomMember": {
       "transport": "Firebase callable",
@@ -752,7 +791,7 @@
         "roomBanned": "false",
         "membershipRestored": "false"
       },
-      "idempotency": "roomID + target moderation principal"
+      "idempotency": "actor UID + clientRequestID + current ban stateVersion"
     },
     "listRoomBans": {
       "transport": "Firebase callable",
@@ -763,7 +802,7 @@
         "cursor": "opaque string|null"
       },
       "response": {
-        "items": "safe ban-list item array with room-scoped banEntryToken and public profile summary, without moderationPrincipalID",
+        "items": "safe ban-list item array with room-scoped banEntryToken and ban-time minimum display snapshot, without moderationPrincipalID or rejoined UID linkage",
         "nextCursor": "opaque string|null"
       }
     },

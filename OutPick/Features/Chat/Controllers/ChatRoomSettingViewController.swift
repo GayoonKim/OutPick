@@ -14,6 +14,7 @@ enum ChatRoomSettingEvent {
     case roomExited(roomID: String)
     case requestEditRoom(ChatRoom)
     case requestShowUserProfile(LocalChatUser)
+    case requestShowBannedUsers
 }
 
 class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecognizerDelegate, UINavigationControllerDelegate/*, ChatModalAnimatable*/ {
@@ -44,7 +45,21 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
         b.addTarget(self, action: #selector(didTapFloatingNotice), for: .touchUpInside)
         return b
     }()
-    
+
+    private lazy var floatingBanButton: UIButton = {
+        var config = UIButton.Configuration.plain()
+        config.image = UIImage(systemName: "person.crop.circle.badge.xmark")
+        config.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 14, bottom: 8, trailing: 14)
+        let button = UIButton(configuration: config)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.tintColor = OutPickTheme.ColorToken.destructive
+        button.backgroundColor = OutPickTheme.ColorToken.surfaceBase
+        button.layer.cornerRadius = 12
+        button.accessibilityLabel = "차단 사용자"
+        button.addTarget(self, action: #selector(didTapFloatingBan), for: .touchUpInside)
+        return button
+    }()
+
     var interactiveTransition: UIPercentDrivenInteractiveTransition?
     
     private let viewModel: ChatRoomSettingViewModel
@@ -150,6 +165,9 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
         let guide = view.safeAreaLayoutGuide
         view.addSubview(floatingLeaveButton)
         view.addSubview(floatingNoticeButton)
+        if roomInfo.creatorUID == currentUserProvider.canonicalUserID {
+            view.addSubview(floatingBanButton)
+        }
 
         NSLayoutConstraint.activate([
             floatingLeaveButton.leadingAnchor.constraint(equalTo: guide.leadingAnchor, constant: 16),
@@ -160,7 +178,13 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
             floatingNoticeButton.bottomAnchor.constraint(equalTo: guide.bottomAnchor, constant: -12),
             floatingNoticeButton.heightAnchor.constraint(equalToConstant: 44)
         ])
-
+        if floatingBanButton.superview != nil {
+            NSLayoutConstraint.activate([
+                floatingBanButton.leadingAnchor.constraint(equalTo: floatingLeaveButton.trailingAnchor, constant: 8),
+                floatingBanButton.bottomAnchor.constraint(equalTo: guide.bottomAnchor, constant: -12),
+                floatingBanButton.heightAnchor.constraint(equalToConstant: 44)
+            ])
+        }
         updateInsetsForBottomButtons()
     }
 
@@ -170,6 +194,10 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
 
     @objc private func didTapFloatingNotice() {
         noticeTapped()
+    }
+
+    @objc private func didTapFloatingBan() {
+        onEvent(.requestShowBannedUsers)
     }
 
     private func updateInsetsForBottomButtons() {
@@ -242,6 +270,7 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
                 let section = NSCollectionLayoutSection(group: group)
                 section.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 10, bottom: 16, trailing: 10)
                 return section
+
             }
         }
     }
@@ -306,10 +335,12 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
                 let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ParticipantsSectionParticipantCell.reuseIdentifier, for: indexPath) as! ParticipantsSectionParticipantCell
                 cell.configureCell(localUsers, avatarImageManager: self.avatarImageManager)
                 cell.onSelectParticipant = { [weak self] user in
-                    self?.onEvent(.requestShowUserProfile(user))
+                    self?.handleParticipantSelection(user)
                 }
+                self.configureParticipantModeration(on: cell)
 
                 return cell
+
             }
         }
         return dataSource
@@ -472,10 +503,59 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
                let cell = self.collectionView.cellForItem(at: indexPath) as? ParticipantsSectionParticipantCell {
                 cell.configureCell(localUsers, avatarImageManager: self.avatarImageManager)
                 cell.onSelectParticipant = { [weak self] user in
-                    self?.onEvent(.requestShowUserProfile(user))
+                    self?.handleParticipantSelection(user)
                 }
+                self.configureParticipantModeration(on: cell)
             }
         }
+    }
+
+    private func handleParticipantSelection(_ user: LocalChatUser) {
+        onEvent(.requestShowUserProfile(user))
+    }
+
+
+    private func configureParticipantModeration(on cell: ParticipantsSectionParticipantCell) {
+        cell.canModerateParticipant = { [weak self] user in
+            guard let self else { return false }
+            return self.roomInfo.creatorUID == self.currentUserProvider.canonicalUserID
+                && user.userID != self.currentUserProvider.canonicalUserID
+        }
+        cell.onModerateParticipant = { [weak self] user in
+            self?.presentRemovalReasons(for: user)
+        }
+    }
+
+    private func presentRemovalReasons(for user: LocalChatUser) {
+        let sheet = UIAlertController(
+            title: "내보내기 사유",
+            message: "이 사용자는 해제하기 전까지 다시 참여할 수 없어요.",
+            preferredStyle: .actionSheet
+        )
+        for reason in ChatRoomMemberRemovalReason.allCases {
+            sheet.addAction(UIAlertAction(title: reason.title, style: .destructive) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    do {
+                        try await viewModel.removeParticipant(user, reasonCode: reason.rawValue)
+                    } catch {
+                        presentModerationFailureAlert()
+                    }
+                }
+            })
+        }
+        sheet.addAction(UIAlertAction(title: "취소", style: .cancel))
+        present(sheet, animated: true)
+    }
+
+    private func presentModerationFailureAlert() {
+        let alert = UIAlertController(
+            title: "처리하지 못했어요",
+            message: "잠시 후 다시 시도해 주세요.",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "확인", style: .default))
+        present(alert, animated: true)
     }
     
     private func leaveRoomTapped() {

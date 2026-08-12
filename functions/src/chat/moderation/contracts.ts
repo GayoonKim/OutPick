@@ -7,7 +7,11 @@ import {
   requiredDocumentID,
   requiredString,
 } from "../../core/callable.js";
-import {ReportTargetType} from "../../moderation/reports/contracts.js";
+import {
+  ReportReason,
+  ReportTargetType,
+  requiredReportReason,
+} from "../../moderation/reports/contracts.js";
 
 export type DeleteChatMessageInput = {
   roomID: string;
@@ -33,6 +37,29 @@ export type CloseRoomByModerationInput = CloseOwnedChatRoomInput & {
 export type AcknowledgeRoomClosureInput = {
   roomID: string;
   clientRequestID: string;
+};
+
+export type RemoveRoomMemberInput = {
+  roomID: string;
+  targetUID: string;
+  reasonCode: ReportReason;
+  clientRequestID: string;
+};
+
+export type UnbanRoomMemberInput = {
+  roomID: string;
+  banEntryToken: string;
+  clientRequestID: string;
+};
+
+export type ListRoomBansInput = {
+  roomID: string;
+  pageSize: number;
+  cursor: string | null;
+};
+
+export type GetMyRoomAccessInput = {
+  roomID: string;
 };
 
 function positiveInteger(data: Record<string, unknown>, key: string): number {
@@ -118,4 +145,44 @@ export function parseAcknowledgeRoomClosureInput(data: unknown): AcknowledgeRoom
     roomID: roomID(record),
     clientRequestID: clientRequestID(record),
   };
+}
+
+export function parseRemoveRoomMemberInput(data: unknown): RemoveRoomMemberInput {
+  const record = recordData(data);
+  return {
+    roomID: roomID(record),
+    targetUID: requiredDocumentID(
+      requiredString(record, "targetUID", 128),
+      "targetUID",
+    ),
+    reasonCode: requiredReportReason(requiredString(record, "reasonCode", 32)),
+    clientRequestID: clientRequestID(record),
+  };
+}
+
+export function parseUnbanRoomMemberInput(data: unknown): UnbanRoomMemberInput {
+  const record = recordData(data);
+  return {
+    roomID: roomID(record),
+    banEntryToken: requiredString(record, "banEntryToken", 128),
+    clientRequestID: clientRequestID(record),
+  };
+}
+
+export function parseListRoomBansInput(data: unknown): ListRoomBansInput {
+  const record = recordData(data);
+  const rawPageSize = record.pageSize;
+  if (typeof rawPageSize !== "number" || !Number.isSafeInteger(rawPageSize) ||
+    rawPageSize < 1 || rawPageSize > 50) {
+    throw new HttpsError("invalid-argument", "pageSize 값이 올바르지 않습니다.");
+  }
+  return {
+    roomID: roomID(record),
+    pageSize: rawPageSize,
+    cursor: optionalString(record, "cursor", 512),
+  };
+}
+
+export function parseGetMyRoomAccessInput(data: unknown): GetMyRoomAccessInput {
+  return {roomID: roomID(recordData(data))};
 }

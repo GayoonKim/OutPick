@@ -81,4 +81,68 @@ struct CloudFunctionsChatModerationLifecycleRepositoryTests {
         #expect(transport.calls[0].data["roomID"] as? String == "room-1")
         #expect(transport.calls[0].data["clientRequestID"] as? String != nil)
     }
+
+    @Test
+    func fetchMyRoomAccessMapsServerOnlyStatus() async throws {
+        let transport = CloudFunctionsTransportSpy()
+        transport.responses = [["status": "banned"]]
+        let repository = CloudFunctionsChatModerationLifecycleRepository(
+            transport: transport,
+            currentUserID: { "member" }
+        )
+
+        let status = try await repository.fetchMyRoomAccess(roomID: "room-1")
+
+        #expect(status == .banned)
+        #expect(transport.calls.count == 1)
+        #expect(transport.calls[0].name == "getMyRoomAccess")
+        #expect(transport.calls[0].data["roomID"] as? String == "room-1")
+    }
+
+
+    @Test
+    func roomMemberRemovalAndBanManagementMapSafeCallableContracts() async throws {
+        let transport = CloudFunctionsTransportSpy()
+        transport.responses = [
+            ["removed": true, "roomBanned": true, "memberCount": 3],
+            [
+                "items": [[
+                    "banEntryToken": "token-1",
+                    "reasonCode": "spam",
+                    "displayNameSnapshot": "사용자",
+                    "bannedAt": "2026-08-12T00:00:00.000Z"
+                ]],
+                "nextCursor": NSNull()
+            ],
+            ["roomBanned": false, "membershipRestored": false]
+        ]
+        let repository = CloudFunctionsChatModerationLifecycleRepository(
+            transport: transport,
+            currentUserID: { "owner" }
+        )
+
+        let receipt = try await repository.removeRoomMember(
+            roomID: "room-1",
+            targetUID: "member-1",
+            reasonCode: "spam"
+        )
+        let page = try await repository.listRoomBans(
+            roomID: "room-1",
+            pageSize: 50,
+            cursor: nil
+        )
+        try await repository.unbanRoomMember(
+            roomID: "room-1",
+            banEntryToken: "token-1"
+        )
+
+        #expect(receipt.memberCount == 3)
+        #expect(page.items.map(\.token) == ["token-1"])
+        #expect(page.items.first?.displayName == "사용자")
+        #expect(transport.calls.map(\.name) == [
+            "removeRoomMember", "listRoomBans", "unbanRoomMember"
+        ])
+        #expect(transport.calls[0].data["targetUID"] as? String == "member-1")
+        #expect(transport.calls[2].data["banEntryToken"] as? String == "token-1")
+    }
 }

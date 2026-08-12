@@ -103,9 +103,13 @@ const callableNames = [
   "getLatestLookbookExtractionDiagnostic",
   "discoverSeasonCandidates",
   "deleteChatMessage",
+  "getMyRoomAccess",
   "acknowledgeRoomClosure",
   "closeOwnedChatRoom",
   "closeRoomByModeration",
+  "removeRoomMember",
+  "unbanRoomMember",
+  "listRoomBans",
 ] as const;
 
 const firestoreEndpoints = {
@@ -142,6 +146,12 @@ const firestoreEndpoints = {
   onModerationRoomCleanupQueued: {
     eventType: "google.cloud.firestore.document.v1.created",
     document: "moderationRoomCleanupJobs/{roomID}",
+    timeoutSeconds: null,
+    availableMemoryMb: null,
+  },
+  onRoomOwnershipSuccessionQueued: {
+    eventType: "google.cloud.firestore.document.v1.created",
+    document: "roomOwnershipSuccessionJobs/{jobID}",
     timeoutSeconds: null,
     availableMemoryMb: null,
   },
@@ -196,6 +206,12 @@ const scheduleEndpoints = {
     timeoutSeconds: null,
     availableMemoryMb: null,
   },
+  drainRoomOwnershipSuccessionJobs: {
+    schedule: "every 5 minutes",
+    timeZone: "Asia/Seoul",
+    timeoutSeconds: null,
+    availableMemoryMb: null,
+  },
 } as const;
 
 const callableOverrides = {
@@ -221,7 +237,7 @@ function runtimeNumber(value: unknown): number | null {
   return typeof value === "number" ? value : null;
 }
 
-test("Firebase deployment export 이름 94개를 유지한다", () => {
+test("Firebase deployment export 이름 100개를 유지한다", () => {
   const expected = [
     ...callableNames,
     ...Object.keys(firestoreEndpoints),
@@ -230,7 +246,7 @@ test("Firebase deployment export 이름 94개를 유지한다", () => {
     "lookbookExtractionIssueOpsWrite",
     "verifyLookbookExtractionFix",
   ].sort();
-  assert.equal(expected.length, 94);
+  assert.equal(expected.length, 100);
   assert.deepEqual(Object.keys(exportedFunctions).sort(), expected);
 });
 

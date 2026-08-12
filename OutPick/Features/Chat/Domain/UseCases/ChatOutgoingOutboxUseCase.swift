@@ -25,6 +25,7 @@ protocol ChatOutgoingOutboxUseCaseProtocol {
     func retryPayload(for message: ChatMessage, room: ChatRoom) async -> ChatOutgoingOutboxRetryPayload?
     func completeServerConfirmedMessage(_ message: ChatMessage) async
     func deleteLocalFailedMessage(_ message: ChatMessage) async
+    func cancelPendingMessages(roomID: String) async
 }
 
 protocol ChatServerConfirmedMessageReconciling {
@@ -262,6 +263,19 @@ final class ChatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol, ChatSe
         try? await outboxPersistence.deleteOutgoingOutboxRecord(messageID: message.ID)
         deleteLocalOutboxFiles(roomID: message.roomID, messageID: message.ID)
         deleteUploadedStorageFiles(message: message, record: record)
+    }
+
+    func cancelPendingMessages(roomID: String) async {
+        guard let records = try? await outboxPersistence.fetchOutgoingOutboxRecords(roomID: roomID),
+              !records.isEmpty else { return }
+        try? await outboxPersistence.deleteOutgoingOutboxRecords(roomID: roomID)
+        for record in records {
+            try? await messagePersistence.hardDeleteMessage(
+                id: record.messageID,
+                inRoom: record.roomID
+            )
+            deleteLocalOutboxFiles(roomID: record.roomID, messageID: record.messageID)
+        }
     }
 
     private func saveRecord(

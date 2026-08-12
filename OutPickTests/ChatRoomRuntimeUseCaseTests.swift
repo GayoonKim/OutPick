@@ -47,6 +47,24 @@ struct ChatRoomRuntimeUseCaseTests {
         #expect(stopCount == 1)
     }
 
+    @Test func observeRoomMembershipRemovedDelegatesToRepository() {
+        let repository = ChatRoomRuntimeRepositorySpy()
+        let useCase = ChatRoomRuntimeUseCase(
+            repository: repository,
+            visibilityRuntimeManager: ChatRoomVisibilityRuntimeManagerSpy(),
+            transientLocalDataCleaner: ChatRoomTransientLocalDataCleanerSpy()
+        )
+        var events: [RealtimeRoomMembershipRemovalEvent] = []
+        _ = useCase.observeRoomMembershipRemoved(roomID: "room-1") { events.append($0) }
+        repository.emitMembershipRemoved(RealtimeRoomMembershipRemovalEvent(
+            roomID: "room-1",
+            reason: "room_banned",
+            stateVersion: 1
+        ))
+        #expect(repository.observedMembershipRoomIDs == ["room-1"])
+        #expect(events.map(\.reason) == ["room_banned"])
+    }
+
     @Test func cleanTransientLocalRoomDataDelegatesToCleaner() async {
         let repository = ChatRoomRuntimeRepositorySpy()
         let cleaner = ChatRoomTransientLocalDataCleanerSpy()
@@ -97,6 +115,8 @@ struct ChatRoomRuntimeUseCaseTests {
 private final class ChatRoomRuntimeRepositorySpy: ChatRoomRuntimeRepositoryProtocol {
     private var onClosed: ((RealtimeRoomClosureEvent) -> Void)?
     private(set) var observedRoomIDs: [String] = []
+    private var onMembershipRemoved: ((RealtimeRoomMembershipRemovalEvent) -> Void)?
+    private(set) var observedMembershipRoomIDs: [String] = []
 
     func observeRoomClosed(
         roomID: String,
@@ -109,6 +129,19 @@ private final class ChatRoomRuntimeRepositorySpy: ChatRoomRuntimeRepositoryProto
 
     func emitClosed(_ event: RealtimeRoomClosureEvent) {
         onClosed?(event)
+    }
+
+    func observeRoomMembershipRemoved(
+        roomID: String,
+        onRemoved: @escaping (RealtimeRoomMembershipRemovalEvent) -> Void
+    ) -> ChatRoomRuntimeSubscription {
+        observedMembershipRoomIDs.append(roomID)
+        onMembershipRemoved = onRemoved
+        return ChatRoomRuntimeSubscription()
+    }
+
+    func emitMembershipRemoved(_ event: RealtimeRoomMembershipRemovalEvent) {
+        onMembershipRemoved?(event)
     }
 }
 

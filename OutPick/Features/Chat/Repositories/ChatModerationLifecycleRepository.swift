@@ -8,6 +8,31 @@ struct ChatMessageDeletionReceipt: Equatable {
     let isDeduplicated: Bool
 }
 
+struct ChatRoomMemberRemovalReceipt: Equatable {
+    let memberCount: Int
+}
+
+enum ChatRoomAccessStatus: String, Equatable {
+    case member
+    case joinable
+    case banned
+    case closed
+}
+
+struct ChatRoomBanEntry: Equatable, Identifiable {
+    let token: String
+    let reasonCode: String
+    let displayName: String?
+    let bannedAt: Date?
+
+    var id: String { token }
+}
+
+struct ChatRoomBanPage: Equatable {
+    let items: [ChatRoomBanEntry]
+    let nextCursor: String?
+}
+
 enum ChatRoomClosureType: String, Equatable {
     case closedByOwner
     case closedByModeration
@@ -30,7 +55,7 @@ struct ChatRoomClosureNotice: Equatable, Identifiable {
     var message: String {
         switch closureType {
         case .closedByOwner:
-            return "방장이 채팅방을 삭제했어요."
+            return "방장이 채팅방을 종료했어요."
         case .closedByModeration:
             return "운영 정책에 따라 이용이 종료됐어요."
         }
@@ -52,6 +77,10 @@ protocol ChatModerationLifecycleRepositoryProtocol {
 
     func fetchClosureNotices() async throws -> [ChatRoomClosureNotice]
     func acknowledgeClosureNotice(roomID: String) async throws
+    func fetchMyRoomAccess(roomID: String) async throws -> ChatRoomAccessStatus
+    func removeRoomMember(roomID: String, targetUID: String, reasonCode: String) async throws -> ChatRoomMemberRemovalReceipt
+    func listRoomBans(roomID: String, pageSize: Int, cursor: String?) async throws -> ChatRoomBanPage
+    func unbanRoomMember(roomID: String, banEntryToken: String) async throws
 }
 
 final class CloudFunctionsChatModerationLifecycleRepository:
@@ -130,6 +159,72 @@ final class CloudFunctionsChatModerationLifecycleRepository:
         )
         let decoder = CloudFunctionResponseDecoder(dictionary: response)
         guard try decoder.bool("acknowledged") else {
+            throw CloudFunctionsClientError.invalidResponse
+        }
+    }
+
+    func fetchMyRoomAccess(roomID: String) async throws -> ChatRoomAccessStatus {
+        let response = try await transport.call("getMyRoomAccess", data: ["roomID": roomID])
+        let rawStatus = try CloudFunctionResponseDecoder(dictionary: response).string("status")
+        guard let status = ChatRoomAccessStatus(rawValue: rawStatus) else {
+            throw CloudFunctionsClientError.invalidResponse
+        }
+        return status
+    }
+
+    func removeRoomMember(
+        roomID: String,
+        targetUID: String,
+        reasonCode: String
+    ) async throws -> ChatRoomMemberRemovalReceipt {
+        let response = try await transport.call("removeRoomMember", data: [
+            "roomID": roomID,
+            "targetUID": targetUID,
+            "reasonCode": reasonCode,
+            "clientRequestID": UUID().uuidString.lowercased()
+        ])
+        return ChatRoomMemberRemovalReceipt(
+            memberCount: try CloudFunctionResponseDecoder(dictionary: response).int("memberCount")
+        )
+    }
+
+    func listRoomBans(
+        roomID: String,
+        pageSize: Int = 50,
+        cursor: String? = nil
+    ) async throws -> ChatRoomBanPage {
+        var request: [String: Any] = ["roomID": roomID, "pageSize": pageSize]
+        if let cursor { request["cursor"] = cursor }
+        let response = try await transport.call("listRoomBans", data: request)
+        guard let rawItems = response["items"] as? [[String: Any]] else {
+            throw CloudFunctionsClientError.invalidResponse
+        }
+        let formatter = ISO8601DateFormatter()
+        let items = try rawItems.map { item in
+            guard let token = item["banEntryToken"] as? String,
+                  let reasonCode = item["reasonCode"] as? String else {
+                throw CloudFunctionsClientError.invalidResponse
+            }
+            return ChatRoomBanEntry(
+                token: token,
+                reasonCode: reasonCode,
+                displayName: item["displayNameSnapshot"] as? String,
+                bannedAt: (item["bannedAt"] as? String).flatMap(formatter.date(from:))
+            )
+        }
+        return ChatRoomBanPage(
+            items: items,
+            nextCursor: response["nextCursor"] as? String
+        )
+    }
+
+    func unbanRoomMember(roomID: String, banEntryToken: String) async throws {
+        let response = try await transport.call("unbanRoomMember", data: [
+            "roomID": roomID,
+            "banEntryToken": banEntryToken,
+            "clientRequestID": UUID().uuidString.lowercased()
+        ])
+        guard try CloudFunctionResponseDecoder(dictionary: response).bool("roomBanned") == false else {
             throw CloudFunctionsClientError.invalidResponse
         }
     }

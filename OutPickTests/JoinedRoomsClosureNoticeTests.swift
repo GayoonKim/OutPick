@@ -9,7 +9,7 @@ struct JoinedRoomsClosureNoticeTests {
         let moderationNotice = notice(type: .closedByModeration)
 
         #expect(ownerNotice.title == "“QA 채팅방” 채팅방이 종료됐어요")
-        #expect(ownerNotice.message == "방장이 채팅방을 삭제했어요.")
+        #expect(ownerNotice.message == "방장이 채팅방을 종료했어요.")
         #expect(moderationNotice.message == "운영 정책에 따라 이용이 종료됐어요.")
     }
 
@@ -134,6 +134,7 @@ struct JoinedRoomsClosureNoticeTests {
 
 @MainActor
 private final class ClosureNoticeRepositoryFake: ChatModerationLifecycleRepositoryProtocol {
+    func fetchMyRoomAccess(roomID: String) async throws -> ChatRoomAccessStatus { .joinable }
     private let notices: [ChatRoomClosureNotice]
     private(set) var fetchCount = 0
     private(set) var acknowledgedRoomIDs: [String] = []
@@ -165,6 +166,18 @@ private final class ClosureNoticeRepositoryFake: ChatModerationLifecycleReposito
 
     func acknowledgeClosureNotice(roomID: String) async throws {
         acknowledgedRoomIDs.append(roomID)
+    }
+
+    func removeRoomMember(roomID: String, targetUID: String, reasonCode: String) async throws -> ChatRoomMemberRemovalReceipt {
+        throw ClosureNoticeTestError.unexpectedCall
+    }
+
+    func listRoomBans(roomID: String, pageSize: Int, cursor: String?) async throws -> ChatRoomBanPage {
+        throw ClosureNoticeTestError.unexpectedCall
+    }
+
+    func unbanRoomMember(roomID: String, banEntryToken: String) async throws {
+        throw ClosureNoticeTestError.unexpectedCall
     }
 }
 

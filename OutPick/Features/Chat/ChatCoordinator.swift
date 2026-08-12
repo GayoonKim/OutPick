@@ -194,6 +194,17 @@ final class ChatCoordinator {
         source.present(editVC, animated: true)
     }
 
+    private func showBannedUsers(from source: ChatViewController, room: ChatRoom) {
+        let viewController = ChatRoomBannedUsersViewController(
+            viewModel: container.makeChatRoomBannedUsersViewModel(roomID: room.id)
+        )
+        viewController.modalPresentationStyle = .fullScreen
+        viewController.onBack = { [weak viewController] in
+            viewController?.dismiss(animated: true)
+        }
+        source.present(viewController, animated: true)
+    }
+
     private func makeChatRoomViewController(room: ChatRoom, isRoomSaving: Bool) -> ChatViewController {
         let chatRoomVC = ChatViewController(
             mediaUploadUseCase: container.makeChatMediaUploadUseCase(),
@@ -431,6 +442,7 @@ extension ChatCoordinator: ChatRoomRouting {
             currentUserProvider: container.currentUserProvider,
             networkStatusProvider: container.makeNetworkStatusProvider(),
             exitUseCase: container.makeChatRoomExitUseCase(),
+            memberModerationUseCase: container.makeChatRoomMemberModerationUseCase(),
             userBlockVisibilityStore: container.userBlockVisibilityStore,
             onEvent: { [weak self, weak source] event in
                 switch event {
@@ -453,6 +465,10 @@ extension ChatCoordinator: ChatRoomRouting {
                         nickname: user.nickname,
                         avatarPath: user.profileImagePath
                     )
+
+                case .requestShowBannedUsers:
+                    guard let self, let source else { return }
+                    self.showBannedUsers(from: source, room: room)
                 }
             }
         )
@@ -553,7 +569,7 @@ extension ChatCoordinator: ChatRoomRouting {
         case ChatRoomClosureType.closedByModeration.rawValue:
             message = "운영 정책에 따라 이용이 종료됐어요."
         case ChatRoomClosureType.closedByOwner.rawValue:
-            message = "방장이 채팅방을 삭제했어요."
+            message = "방장이 채팅방을 종료했어요."
         default:
             message = nil
         }

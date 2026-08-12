@@ -10,6 +10,10 @@ import {
   parseCloseOwnedChatRoomInput,
   parseCloseRoomByModerationInput,
   parseDeleteChatMessageInput,
+  parseGetMyRoomAccessInput,
+  parseListRoomBansInput,
+  parseRemoveRoomMemberInput,
+  parseUnbanRoomMemberInput,
 } from "./contracts.js";
 import {
   acknowledgeRoomClosureService,
@@ -17,6 +21,12 @@ import {
   closeRoomByModerationService,
   deleteChatMessageService,
 } from "./service.js";
+import {
+  getMyRoomAccessService,
+  listRoomBansService,
+  removeRoomMemberService,
+  unbanRoomMemberService,
+} from "./roomBanService.js";
 
 const options = {region: FUNCTIONS_REGION, enforceAppCheck: true};
 
@@ -72,5 +82,41 @@ export const acknowledgeRoomClosure = onCall(options, async (request) => {
     );
   } catch (error) {
     return callableError(error, "acknowledgeRoomClosure");
+  }
+});
+
+export const removeRoomMember = onCall(options, async (request) => {
+  try {
+    const uid = requiredAuthUID(request.auth?.uid);
+    return await removeRoomMemberService(uid, parseRemoveRoomMemberInput(request.data));
+  } catch (error) {
+    return callableError(error, "removeRoomMember");
+  }
+});
+
+export const unbanRoomMember = onCall(options, async (request) => {
+  try {
+    const uid = requiredAuthUID(request.auth?.uid);
+    return await unbanRoomMemberService(uid, parseUnbanRoomMemberInput(request.data));
+  } catch (error) {
+    return callableError(error, "unbanRoomMember");
+  }
+});
+
+export const listRoomBans = onCall(options, async (request) => {
+  try {
+    const uid = requiredAuthUID(request.auth?.uid);
+    return await listRoomBansService(uid, parseListRoomBansInput(request.data));
+  } catch (error) {
+    return callableError(error, "listRoomBans");
+  }
+});
+
+export const getMyRoomAccess = onCall(options, async (request) => {
+  try {
+    const uid = requiredAuthUID(request.auth?.uid);
+    return await getMyRoomAccessService(uid, parseGetMyRoomAccessInput(request.data));
+  } catch (error) {
+    return callableError(error, "getMyRoomAccess");
   }
 });

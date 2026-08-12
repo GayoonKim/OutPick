@@ -15,6 +15,12 @@ struct RealtimeRoomClosureEvent: Equatable, Sendable {
     let closureType: String?
     let noticeCode: String?
 }
+
+struct RealtimeRoomMembershipRemovalEvent: Equatable, Sendable {
+    let roomID: String
+    let reason: String
+    let stateVersion: Int
+}
 import UIKit
 
 struct SocketSessionIdentity: Equatable, Sendable {
@@ -638,7 +644,14 @@ actor RealtimeSocketService {
         let continuation: AsyncStream<RealtimeRoomClosureEvent>.Continuation
     }
 
+    private struct RoomMembershipRemovedObserver {
+        let roomID: String
+        let continuation: AsyncStream<RealtimeRoomMembershipRemovalEvent>.Continuation
+    }
+
     private var roomClosedObservers = [UUID: RoomClosedObserver]()
+    private var roomMembershipRemovedObservers = [UUID: RoomMembershipRemovedObserver]()
+    private var removedMembershipEvents = [String: RealtimeRoomMembershipRemovalEvent]()
     private var authoritativeRoomClosureState = RealtimeAuthoritativeRoomClosureState()
 
     #if DEBUG
@@ -922,6 +935,28 @@ actor RealtimeSocketService {
                 Task {
                     await self?.removeRoomClosedContinuation(id)
                 }
+            }
+        }
+    }
+
+    func observeRoomMembershipRemoved(
+        roomID: String
+    ) -> AsyncStream<RealtimeRoomMembershipRemovalEvent> {
+        AsyncStream { continuation in
+            guard !roomID.isEmpty else {
+                continuation.finish()
+                return
+            }
+            let id = UUID()
+            roomMembershipRemovedObservers[id] = RoomMembershipRemovedObserver(
+                roomID: roomID,
+                continuation: continuation
+            )
+            if let event = removedMembershipEvents[roomID] {
+                continuation.yield(event)
+            }
+            continuation.onTermination = { [weak self] _ in
+                Task { await self?.removeRoomMembershipRemovedContinuation(id) }
             }
         }
     }
@@ -1428,6 +1463,12 @@ actor RealtimeSocketService {
                         guard await self?.isCurrentSocketGeneration(generation) == true else { return }
                         await self?.handleRoomClosedData(data)
                     }
+                },
+                roomMembershipRemoved: { [weak self] data in
+                    Task {
+                        guard await self?.isCurrentSocketGeneration(generation) == true else { return }
+                        await self?.handleRoomMembershipRemovedData(data)
+                    }
                 }
             )
         )
@@ -1533,6 +1574,22 @@ actor RealtimeSocketService {
         ))
     }
 
+    private func handleRoomMembershipRemovedData(_ data: [Any]) async {
+        guard let dict = data.first as? [String: Any],
+              let roomID = dict["roomID"] as? String,
+              let reason = dict["reason"] as? String else { return }
+        let event = RealtimeRoomMembershipRemovalEvent(
+            roomID: roomID,
+            reason: reason,
+            stateVersion: dict["stateVersion"] as? Int ?? 0
+        )
+        removedMembershipEvents[roomID] = event
+        await removeRealtimeRoomState(roomID)
+        for observer in roomMembershipRemovedObservers.values where observer.roomID == roomID {
+            observer.continuation.yield(event)
+        }
+    }
+
     private func publishRoomClosed(_ event: RealtimeRoomClosureEvent) {
         for observer in roomClosedObservers.values where observer.roomID == event.roomID {
             observer.continuation.yield(event)
@@ -1542,6 +1599,11 @@ actor RealtimeSocketService {
     private func removeRoomClosedContinuation(_ id: UUID) {
         roomClosedObservers[id]?.continuation.finish()
         roomClosedObservers.removeValue(forKey: id)
+    }
+
+    private func removeRoomMembershipRemovedContinuation(_ id: UUID) {
+        roomMembershipRemovedObservers[id]?.continuation.finish()
+        roomMembershipRemovedObservers.removeValue(forKey: id)
     }
 
     private func handleIncomingData(_ data: [Any], event: String) async {
@@ -1706,6 +1768,7 @@ actor RealtimeSocketService {
         ) else { return }
 
         if succeeded {
+            removedMembershipEvents.removeValue(forKey: roomID)
             pendingRooms.remove(roomID)
             resumeRoomJoinWaiters(roomID: roomID)
             if let strictSession = visibleStrictSession,

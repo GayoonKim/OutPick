@@ -10,6 +10,7 @@ import Foundation
 @MainActor
 protocol ChatRoomRuntimeUseCaseProtocol {
     func observeRoomClosed(roomID: String, onClosed: @escaping (RealtimeRoomClosureEvent) -> Void) -> ChatRoomRuntimeSubscription
+    func observeRoomMembershipRemoved(roomID: String, onRemoved: @escaping (RealtimeRoomMembershipRemovalEvent) -> Void) -> ChatRoomRuntimeSubscription
     func enterVisibleRoom(roomID: String)
     func leaveVisibleRoom(roomID: String)
     func cleanTransientLocalRoomData(roomID: String) async
@@ -33,6 +34,13 @@ final class ChatRoomRuntimeUseCase: ChatRoomRuntimeUseCaseProtocol {
 
     func observeRoomClosed(roomID: String, onClosed: @escaping (RealtimeRoomClosureEvent) -> Void) -> ChatRoomRuntimeSubscription {
         repository.observeRoomClosed(roomID: roomID, onClosed: onClosed)
+    }
+
+    func observeRoomMembershipRemoved(
+        roomID: String,
+        onRemoved: @escaping (RealtimeRoomMembershipRemovalEvent) -> Void
+    ) -> ChatRoomRuntimeSubscription {
+        repository.observeRoomMembershipRemoved(roomID: roomID, onRemoved: onRemoved)
     }
 
     func enterVisibleRoom(roomID: String) {

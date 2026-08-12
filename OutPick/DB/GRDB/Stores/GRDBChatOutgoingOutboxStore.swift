@@ -57,6 +57,27 @@ final class GRDBChatOutgoingOutboxStore: ChatOutgoingOutboxPersisting {
         }
     }
 
+    func fetchOutgoingOutboxRecords(roomID: String) async throws -> [ChatOutgoingOutboxRecord] {
+        try await database.dbPool.read { db in
+            let rows = try Row.fetchAll(
+                db,
+                sql: "SELECT * FROM chatOutgoingOutbox WHERE roomID = ?",
+                arguments: [roomID]
+            )
+            return rows.map { row in
+                ChatOutgoingOutboxRecord(
+                    messageID: row["messageID"], roomID: row["roomID"],
+                    kind: ChatOutgoingOutboxKind(rawValue: row["kind"] as String) ?? .text,
+                    stage: ChatOutgoingOutboxStage(rawValue: row["stage"] as String) ?? .failed,
+                    createdAt: row["createdAt"], updatedAt: row["updatedAt"],
+                    localPayloadJSON: row["localPayloadJSON"],
+                    uploadedPayloadJSON: row["uploadedPayloadJSON"],
+                    lastError: row["lastError"]
+                )
+            }
+        }
+    }
+
     func deleteOutgoingOutboxRecord(messageID: String) async throws {
         try await database.dbPool.write { db in
             try db.execute(sql: "DELETE FROM chatOutgoingOutbox WHERE messageID = ?", arguments: [messageID])
@@ -70,6 +91,15 @@ final class GRDBChatOutgoingOutboxStore: ChatOutgoingOutboxPersisting {
             try db.execute(
                 sql: "DELETE FROM chatOutgoingOutbox WHERE messageID IN (\(placeholders))",
                 arguments: StatementArguments(messageIDs)
+            )
+        }
+    }
+
+    func deleteOutgoingOutboxRecords(roomID: String) async throws {
+        try await database.dbPool.write { db in
+            try db.execute(
+                sql: "DELETE FROM chatOutgoingOutbox WHERE roomID = ?",
+                arguments: [roomID]
             )
         }
     }

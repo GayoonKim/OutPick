@@ -15,7 +15,15 @@ export {
   closeOwnedChatRoom,
   closeRoomByModeration,
   deleteChatMessage,
+  getMyRoomAccess,
+  listRoomBans,
+  removeRoomMember,
+  unbanRoomMember,
 } from "./chat/moderation/functions.js";
+export {
+  drainRoomOwnershipSuccessionJobs,
+  onRoomOwnershipSuccessionQueued,
+} from "./chat/moderation/roomMembershipSweepFunctions.js";
 export {
   cancelAccountDeletion,
   getAccountDeletionStatus,

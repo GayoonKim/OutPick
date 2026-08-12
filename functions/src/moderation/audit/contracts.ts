@@ -9,6 +9,8 @@ export type ModerationAuditAction =
   "deleteMessage" |
   "closeRoomByOwner" |
   "closeRoomByModeration" |
+  "removeRoomMember" |
+  "unbanRoomMember" |
   "temporarilyRestrictAccount" |
   "permanentlySuspendAccount" |
   "liftAccountModeration";

@@ -617,6 +617,13 @@ private struct ChatRoomRuntimeUseCaseStub: ChatRoomRuntimeUseCaseProtocol {
         ChatRoomRuntimeSubscription()
     }
 
+    func observeRoomMembershipRemoved(
+        roomID: String,
+        onRemoved: @escaping (RealtimeRoomMembershipRemovalEvent) -> Void
+    ) -> ChatRoomRuntimeSubscription {
+        ChatRoomRuntimeSubscription()
+    }
+
     func enterVisibleRoom(roomID: String) {}
 
     func leaveVisibleRoom(roomID: String) {}

@@ -155,6 +155,22 @@ struct ChatPendingMediaUploadStoreTests {
         #expect(retryPayload.storagePath == payload.storagePath)
     }
 
+    @Test func cancelAndRemoveOnlyRemovesTargetRoomUploads() throws {
+        let store = ChatPendingMediaUploadStore()
+        _ = store.stageImageUpload(
+            room: makeRoom(id: "room-1"), roomID: "room-1",
+            messageID: "image-1", pairs: [try makeProcessedImage()]
+        )
+        _ = store.stageVideoUpload(
+            roomID: "room-2", messageID: "video-2", prepared: try makePreparedVideo()
+        )
+
+        store.cancelAndRemove(roomID: "room-1")
+
+        #expect(store.uploadState(for: "image-1") == nil)
+        #expect(store.uploadState(for: "video-2") == .uploading(0))
+    }
+
     private func makeProcessedImage() throws -> ProcessedImage {
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)

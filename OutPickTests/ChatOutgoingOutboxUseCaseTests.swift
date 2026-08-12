@@ -102,6 +102,22 @@ struct ChatOutgoingOutboxUseCaseTests {
         #expect(await persistence.record(messageID: "text-3") != nil)
     }
 
+    @Test func cancelPendingMessagesDeletesOnlyTargetRoomOutboxAndFailedMessages() async {
+        let persistence = ChatOutgoingOutboxPersistenceFake()
+        let useCase = makeUseCase(persistence: persistence)
+        let removedRoomMessage = makeMessage(id: "removed-room", roomID: "room-1", isFailed: true)
+        let otherRoomMessage = makeMessage(id: "other-room", roomID: "room-2", isFailed: true)
+
+        await useCase.stageTextMessage(removedRoomMessage)
+        await useCase.stageTextMessage(otherRoomMessage)
+        await useCase.cancelPendingMessages(roomID: "room-1")
+
+        #expect(await persistence.record(messageID: "removed-room") == nil)
+        #expect(await persistence.message(messageID: "removed-room", roomID: "room-1") == nil)
+        #expect(await persistence.record(messageID: "other-room") != nil)
+        #expect(await persistence.message(messageID: "other-room", roomID: "room-2")?.isFailed == true)
+    }
+
     private func makeUseCase(
         persistence: ChatOutgoingOutboxPersistenceFake
     ) -> ChatOutgoingOutboxUseCase {
@@ -118,11 +134,15 @@ struct ChatOutgoingOutboxUseCaseTests {
         )
     }
 
-    private func makeMessage(id: String, isFailed: Bool = false) -> ChatMessage {
+    private func makeMessage(
+        id: String,
+        roomID: String = "room-1",
+        isFailed: Bool = false
+    ) -> ChatMessage {
         ChatMessage(
             ID: id,
             seq: 0,
-            roomID: "room-1",
+            roomID: roomID,
             senderUID: "me@example.com",
             senderEmail: nil,
             senderNickname: "나",
@@ -217,6 +237,10 @@ private actor ChatOutgoingOutboxPersistenceFake: ChatOutgoingOutboxPersisting, C
         messageIDs.compactMap { records[$0] }
     }
 
+    func fetchOutgoingOutboxRecords(roomID: String) async throws -> [ChatOutgoingOutboxRecord] {
+        records.values.filter { $0.roomID == roomID }
+    }
+
     func deleteOutgoingOutboxRecord(messageID: String) async throws {
         records.removeValue(forKey: messageID)
     }
@@ -225,6 +249,10 @@ private actor ChatOutgoingOutboxPersistenceFake: ChatOutgoingOutboxPersisting, C
         for messageID in messageIDs {
             records.removeValue(forKey: messageID)
         }
+    }
+
+    func deleteOutgoingOutboxRecords(roomID: String) async throws {
+        records = records.filter { $0.value.roomID != roomID }
     }
 
     func record(messageID: String) -> ChatOutgoingOutboxRecord? {

@@ -13,6 +13,8 @@ class ParticipantsSectionParticipantCell: UICollectionViewCell {
     private var userProfiles: [LocalChatUser] = []
     private var avatarImageManager: AvatarImageManaging?
     var onSelectParticipant: ((LocalChatUser) -> Void)?
+    var canModerateParticipant: ((LocalChatUser) -> Bool)?
+    var onModerateParticipant: ((LocalChatUser) -> Void)?
     
     private lazy var participantLabel: UILabel = {
         let label = UILabel()
@@ -80,6 +82,8 @@ class ParticipantsSectionParticipantCell: UICollectionViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         onSelectParticipant = nil
+        canModerateParticipant = nil
+        onModerateParticipant = nil
         userProfiles = []
         avatarImageManager = nil
     }
@@ -122,6 +126,10 @@ extension ParticipantsSectionParticipantCell: UICollectionViewDataSource, UIColl
             )
         } else {
             cell.configureCell(userProfile: self.userProfiles[indexPath.item])
+        }
+        let user = userProfiles[indexPath.item]
+        cell.configureModeration(isVisible: canModerateParticipant?(user) == true) { [weak self] in
+            self?.onModerateParticipant?(user)
         }
         
         return cell

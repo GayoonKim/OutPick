@@ -498,3 +498,11 @@ git diff --check -- firebase.json storage.rules
 - Socket auth disconnect/room ban/block push/rate reconnect/media ready tests.
 - `firestore-tests`의 moderation Firestore·Storage Rules emulator tests.
 - 실제 provider 재연결과 Google Cloud media 검사는 Development 수동 QA.
+
+### Phase 5 Production rollout — 2026-08-12
+
+- Firestore: room ban 목록, succession due-job, owner active-room composite index 3개가 `READY`이고 succession job TTL이 `ACTIVE`다. 개인정보 보존 기간 승인 전 `bans.expiresAt` TTL은 활성화하지 않았다.
+- Functions: 기존 Phase 5 대상 7개와 비참여 화면 서버 권위 상태 조회 `getMyRoomAccess`까지 8개가 asia-northeast3 Node.js 24 `ACTIVE`다. `getMyRoomAccess`는 인증 UID로 member와 canonical principal ban을 확인하고 `member | joinable | banned | closed`만 반환한다. retry scheduler는 5분·Asia/Seoul `ENABLED`다.
+- Socket: Cloud Build `21bc669c-10e5-4f5e-85fd-b44e34b11bf6`, revision `outpick-socket-p5-ban-0812`, digest `sha256:3ed111783e176674719d11f17e0aec0298e41b562208099b46b0bb4512f49868`가 traffic 100%다. canonical readiness와 배포 직후 ERROR 0을 확인했고 `outpick-socket-p4-block-0811`은 0% rollback으로 유지한다.
+- Production 데이터 감사는 closed Rooms 11, active room 0, bans 0, succession jobs 0이었다. 기존 방은 모두 `isClosed`·lifecycle 필드를 가져 backfill/migration이 필요하지 않았다.
+- 신규 callable 3개는 올바른 무인증 envelope에서 HTTP 401을 반환했다. succession scheduler는 빈 queue에서 수동 1회 성공했고 이후 Functions·Socket·Scheduler ERROR와 ban/job 잔존은 0건이다. 최초 잘못된 envelope 3건의 `Invalid request` 로그는 검증 입력 오류로 구분해 기록했다.

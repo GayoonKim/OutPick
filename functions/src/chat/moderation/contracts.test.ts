@@ -7,6 +7,10 @@ import {
   parseCloseOwnedChatRoomInput,
   parseCloseRoomByModerationInput,
   parseDeleteChatMessageInput,
+  parseGetMyRoomAccessInput,
+  parseListRoomBansInput,
+  parseRemoveRoomMemberInput,
+  parseUnbanRoomMemberInput,
 } from "./contracts.js";
 
 const requestID = "123e4567-e89b-42d3-a456-426614174000";
@@ -85,4 +89,54 @@ test("room closure 확인 계약은 room과 request ID를 정규화한다", () =
     roomID: "room-1",
     clientRequestID: requestID,
   });
+});
+
+test("room member remove와 unban 계약은 고정 사유와 opaque token을 검증한다", () => {
+  assert.deepEqual(parseRemoveRoomMemberInput({
+    roomID: "room-1",
+    targetUID: "target-uid",
+    reasonCode: "harassment",
+    clientRequestID: requestID.toUpperCase(),
+  }), {
+    roomID: "room-1",
+    targetUID: "target-uid",
+    reasonCode: "harassment",
+    clientRequestID: requestID,
+  });
+  assert.deepEqual(parseUnbanRoomMemberInput({
+    roomID: "room-1",
+    banEntryToken: "room-scoped-token",
+    clientRequestID: requestID,
+  }), {
+    roomID: "room-1",
+    banEntryToken: "room-scoped-token",
+    clientRequestID: requestID,
+  });
+  assert.throws(() => parseRemoveRoomMemberInput({
+    roomID: "room-1",
+    targetUID: "target-uid",
+    reasonCode: "free-form-reason",
+    clientRequestID: requestID,
+  }), HttpsError);
+});
+
+test("room ban 목록 계약은 1~50 page와 비식별 cursor만 허용한다", () => {
+  assert.deepEqual(parseListRoomBansInput({
+    roomID: "room-1",
+    pageSize: 20,
+    cursor: "opaque-cursor",
+  }), {
+    roomID: "room-1",
+    pageSize: 20,
+    cursor: "opaque-cursor",
+  });
+  assert.throws(() => parseListRoomBansInput({
+    roomID: "room-1",
+    pageSize: 51,
+  }), HttpsError);
+});
+
+test("본인 room access 계약은 room ID만 허용한다", () => {
+  assert.deepEqual(parseGetMyRoomAccessInput({roomID: "room-1"}), {roomID: "room-1"});
+  assert.throws(() => parseGetMyRoomAccessInput({roomID: "invalid/room"}), HttpsError);
 });

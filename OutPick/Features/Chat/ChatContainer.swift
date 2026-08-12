@@ -269,7 +269,8 @@ final class ChatContainer {
             joinedRoomsStore: joinedRoomsStore,
             roomReadStateStore: roomReadStateStore,
             userBlockVisibilityStore: userBlockVisibilityStore,
-            blockUserUseCase: blockUserUseCase
+            blockUserUseCase: blockUserUseCase,
+            memberModerationUseCase: makeChatRoomMemberModerationUseCase()
         )
     }
 
@@ -283,6 +284,17 @@ final class ChatContainer {
 
     func makeChatRoomExitUseCase() -> ChatRoomExitUseCaseProtocol {
         chatRoomExitUseCase
+    }
+
+    func makeChatRoomMemberModerationUseCase() -> ChatRoomMemberModerationUseCaseProtocol {
+        ChatRoomMemberModerationUseCase(repository: moderationLifecycleRepository)
+    }
+
+    func makeChatRoomBannedUsersViewModel(roomID: String) -> ChatRoomBannedUsersViewModel {
+        ChatRoomBannedUsersViewModel(
+            roomID: roomID,
+            useCase: makeChatRoomMemberModerationUseCase()
+        )
     }
 
     func makeBlockUserUseCase() -> any BlockUserUseCaseProtocol {

@@ -66,6 +66,15 @@ test("create/join/leave room ACK와 registry side effect를 유지한다", async
   assert.deepEqual(fixture.rooms.room, ["Bob"]);
 });
 
+test("읽기 권한만 있고 joinRoom 권한이 없으면 participant socket 입장을 거부한다", async () => {
+  const fixture = register();
+  fixture.fakeSocket.socket.allowedCapabilities = ["readAppContent"];
+  let ack;
+  await fixture.fakeSocket.handlers.get("join room")("room", (value) => { ack = value; });
+  assert.equal(ack.ok, false);
+  assert.equal(fixture.fakeSocket.joined.length, 0);
+});
+
 test("owner close는 watcher에 종료 side effect를 맡기고 ACK만 반환한다", async () => {
   const fixture = register({
     leaveOrCloseRoom: async () => ({ ok: true, mode: "closed", alreadyDeleted: false })
