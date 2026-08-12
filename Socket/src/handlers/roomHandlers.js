@@ -33,7 +33,7 @@ export function registerRoomHandlers({
   });
 
   socket.on("join room", async (roomID, callback) => {
-    if (rejectMissingCapability(socket, "readAppContent", callback)) return;
+    if (rejectMissingCapability(socket, "joinRoom", callback)) return;
     const username = socket.username || "Anonymous";
     logger.log(`Join request: ${username} → ${roomID}`);
 

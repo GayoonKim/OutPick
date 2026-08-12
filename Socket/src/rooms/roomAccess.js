@@ -20,6 +20,18 @@ export function createRoomAccess({ db }) {
       return { ok: false, error: "not_joined" };
     }
 
+    const moderationAccount = await db.collection("moderationAccounts")
+      .doc(normalizedSenderUID)
+      .get();
+    const moderationPrincipalID = moderationAccount.data()?.moderationPrincipalID;
+    if (typeof moderationPrincipalID === "string" && moderationPrincipalID &&
+        !moderationPrincipalID.includes("/")) {
+      const ban = await roomRef.collection("bans").doc(moderationPrincipalID).get();
+      if (ban.exists && ban.data()?.isActive === true) {
+        return { ok: false, error: "room_banned" };
+      }
+    }
+
     const memberSnap = await roomRef
       .collection("members")
       .doc(normalizedSenderUID)

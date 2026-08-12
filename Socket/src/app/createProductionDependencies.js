@@ -13,6 +13,7 @@ import { createMessageDeliverySingleFlight } from "../messages/messageDeliverySi
 import { createSequenceStore } from "../messages/sequenceStore.js";
 import { createChatPushService } from "../push/chatPushService.js";
 import { createRoomAccess } from "../rooms/roomAccess.js";
+import { createRoomBanWatcher } from "../rooms/roomBanWatcher.js";
 import { createRoomCleanup } from "../rooms/roomCleanup.js";
 import { createRoomClosureWatcher } from "../rooms/roomClosureWatcher.js";
 import { createRoomLifecycleService } from "../rooms/roomLifecycleService.js";
@@ -52,6 +53,13 @@ export function createProductionDependencies({
     logger
   });
   startRoomClosureWatcher();
+  const { start: startRoomBanWatcher } = createRoomBanWatcher({
+    db,
+    io,
+    rooms,
+    logger
+  });
+  startRoomBanWatcher();
   const { closeRoomImmediately, leaveRoomMembership } = createRoomCleanup({ db, admin });
   const { leaveOrClose } = createRoomLifecycleService({
     db,
