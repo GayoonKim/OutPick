@@ -287,8 +287,9 @@ export async function processRoomOwnershipSuccessionJob(
     const leaseExpiresAt = job.get("leaseExpiresAt");
     const due = nextAttemptAt instanceof Timestamp && nextAttemptAt.toMillis() <= now.getTime();
     const stale = leaseExpiresAt instanceof Timestamp && leaseExpiresAt.toMillis() <= now.getTime();
-    if (!["pending", "retryPending", "processing"].includes(status) ||
-      (!due && !(status === "processing" && stale))) return null;
+    const claimable = status === "processing" ? stale :
+      (status === "pending" || status === "retryPending") && due;
+    if (!claimable) return null;
     const attempt = Number(job.get("attempt")) + 1;
     if (!Number.isSafeInteger(attempt) || attempt > JOB_MAX_ATTEMPTS) {
       transaction.update(ref, {

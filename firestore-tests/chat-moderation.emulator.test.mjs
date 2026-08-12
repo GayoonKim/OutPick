@@ -182,6 +182,28 @@ describe("chat moderation lifecycle transactions", () => {
     assert.equal(job.data()?.lastErrorCode, "max_attempts_exceeded");
   });
 
+  test("유효한 lease의 processing 승계 작업은 due여도 재점유하지 않는다", async () => {
+    const jobRef = db.collection("roomOwnershipSuccessionJobs").doc("active-lease-job");
+    const leaseExpiresAt = new Date(now.getTime() + 60_000);
+    await jobRef.set({
+      targetUID: ownerUID,
+      cause: "permanentSuspension",
+      status: "processing",
+      attempt: 3,
+      nextAttemptAt: new Date(now.getTime() - 2_000),
+      leaseOwner: "active-worker",
+      leaseExpiresAt,
+      updatedAt: new Date(now.getTime() - 2_000),
+    });
+
+    assert.equal(await processRoomOwnershipSuccessionJob(jobRef.id, db, now), false);
+    const job = await jobRef.get();
+    assert.equal(job.data()?.status, "processing");
+    assert.equal(job.data()?.attempt, 3);
+    assert.equal(job.data()?.leaseOwner, "active-worker");
+    assert.equal(job.data()?.leaseExpiresAt.toMillis(), leaseExpiresAt.getTime());
+  });
+
   test("방장 추방은 밴과 참여 projection을 원자적으로 갱신하고 해제 후 재가입만 허용한다", async () => {
     assert.deepEqual(await getMyRoomAccessService(memberUID, {roomID}, db), {status: "member"});
     const removed = await removeRoomMemberService(ownerUID, {
