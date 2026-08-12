@@ -101,6 +101,24 @@ service cloud.firestore {
       return /databases/$(database)/documents/Rooms/$(roomID)/members/$(uid);
     }
 
+    function roomBanPath(roomID, moderationPrincipalID) {
+      return /databases/$(database)/documents/Rooms/$(roomID)/bans/$(moderationPrincipalID);
+    }
+
+    function isCurrentUserRoomBanned(roomID) {
+      return hasModerationProjection()
+        && "moderationPrincipalID" in get(moderationAccountPath(request.auth.uid)).data
+        && get(moderationAccountPath(request.auth.uid)).data.moderationPrincipalID is string
+        && exists(roomBanPath(
+          roomID,
+          get(moderationAccountPath(request.auth.uid)).data.moderationPrincipalID
+        ))
+        && get(roomBanPath(
+          roomID,
+          get(moderationAccountPath(request.auth.uid)).data.moderationPrincipalID
+        )).data.isActive == true;
+    }
+
     function joinedRoomPath(uid, roomID) {
       return /databases/$(database)/documents/users/$(uid)/joinedRooms/$(roomID);
     }
@@ -136,6 +154,7 @@ service cloud.firestore {
 
     function createsRoomMember(roomID, uid) {
       return isAccountActive()
+        && !isCurrentUserRoomBanned(roomID)
         && uid == request.auth.uid
         && request.resource.data.userID == uid
         && request.resource.data.role in ["owner", "member"]
@@ -499,6 +518,11 @@ service cloud.firestore {
         allow create, update, delete: if false;
       }
 
+      match /messages/{messageID} {
+        allow read: if isReadableAccount() && roomIsActive(roomID);
+        allow create, update, delete: if false;
+      }
+
       match /members/{uid} {
         allow read: if isRoomParticipant(roomID);
         allow create: if createsRoomMember(roomID, uid);
@@ -508,9 +532,12 @@ service cloud.firestore {
         allow update: if false;
       }
 
+      match /bans/{moderationPrincipalID} {
+        allow read, write: if false;
+      }
+
       match /{document=**} {
-        allow read: if isRoomParticipant(roomID);
-        allow write: if false;
+        allow read, write: if false;
       }
     }
 

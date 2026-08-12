@@ -1,6 +1,7 @@
 /* eslint-disable require-jsdoc, max-len */
 import {FieldValue} from "firebase-admin/firestore";
 import {db, defaultStorageBucket} from "../core/firebase.js";
+import {resolveRoomMembershipPage} from "../chat/moderation/roomMembershipSweep.js";
 
 const PAGE_SIZE = 100;
 // 연관 컬렉션은 한 번에 여러 쿼리 결과를 단일 batch로 합치므로
@@ -302,95 +303,7 @@ async function activeUserIDs(userIDs: string[]): Promise<Set<string>> {
 }
 
 export async function resolveRoomPage(uid: string): Promise<boolean> {
-  const members = await db
-    .collectionGroup("members")
-    .where("userID", "==", uid)
-    .limit(25)
-    .get();
-  if (members.empty) return true;
-
-  for (const member of members.docs) {
-    const roomRef = member.ref.parent.parent;
-    if (!roomRef) continue;
-    const roomSnapshot = await roomRef.get();
-    if (!roomSnapshot.exists) {
-      await member.ref.delete();
-      continue;
-    }
-    const roomData = roomSnapshot.data();
-    if (roomData?.creatorUID !== uid) {
-      const batch = db.batch();
-      batch.delete(member.ref);
-      batch.delete(db.collection("users").doc(uid).collection("joinedRooms").doc(roomRef.id));
-      batch.delete(db.collection("users").doc(uid).collection("roomStates").doc(roomRef.id));
-      batch.update(roomRef, {
-        memberCount: FieldValue.increment(-1),
-        updatedAt: FieldValue.serverTimestamp(),
-      });
-      await batch.commit();
-      continue;
-    }
-
-    const candidates = await roomRef.collection("members").get();
-    const candidateDocs = candidates.docs
-      .filter((candidate) => candidate.id !== uid)
-      .sort((lhs, rhs) => {
-        const left = lhs.data().joinedAt?.toMillis?.() ?? Number.MAX_SAFE_INTEGER;
-        const right = rhs.data().joinedAt?.toMillis?.() ?? Number.MAX_SAFE_INTEGER;
-        return left === right ? lhs.id.localeCompare(rhs.id) : left - right;
-      });
-    const active = await activeUserIDs(candidateDocs.map((document) => document.id));
-    const successor = candidateDocs.find((document) => active.has(document.id));
-    if (!successor) {
-      await db.recursiveDelete(roomRef);
-      const [files] = await defaultStorageBucket().getFiles({
-        prefix: `rooms/${roomRef.id}/`,
-      });
-      await Promise.all(files.map((file) => file.delete().catch((error) => {
-        const code = (error as {code?: number | string})?.code;
-        if (code !== 404 && code !== "404") throw error;
-      })));
-      continue;
-    }
-
-    await db.runTransaction(async (transaction) => {
-      const [currentRoom, currentMember, currentSuccessor] = await Promise.all([
-        transaction.get(roomRef),
-        transaction.get(member.ref),
-        transaction.get(successor.ref),
-      ]);
-      if (!currentRoom.exists || !currentMember.exists) return;
-      if (
-        currentRoom.data()?.creatorUID !== uid ||
-        !currentSuccessor.exists ||
-        !active.has(successor.id)
-      ) {
-        throw new Error("room_ownership_changed");
-      }
-      transaction.update(roomRef, {
-        creatorUID: successor.id,
-        memberCount: FieldValue.increment(-1),
-        updatedAt: FieldValue.serverTimestamp(),
-      });
-      transaction.update(successor.ref, {
-        role: "owner",
-        updatedAt: FieldValue.serverTimestamp(),
-      });
-      transaction.set(
-        db.collection("users").doc(successor.id).collection("joinedRooms").doc(roomRef.id),
-        {role: "owner", updatedAt: FieldValue.serverTimestamp()},
-        {merge: true},
-      );
-      transaction.delete(member.ref);
-      transaction.delete(
-        db.collection("users").doc(uid).collection("joinedRooms").doc(roomRef.id),
-      );
-      transaction.delete(
-        db.collection("users").doc(uid).collection("roomStates").doc(roomRef.id),
-      );
-    });
-  }
-  return members.size < 25;
+  return resolveRoomMembershipPage(uid, "accountDeletion", new Date(), db);
 }
 
 export async function removeRolePage(uid: string): Promise<boolean> {

@@ -1,6 +1,31 @@
 {
   "indexes": [
     {
+      "collectionGroup": "bans",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "isActive", "order": "ASCENDING" },
+        { "fieldPath": "bannedAt", "order": "DESCENDING" },
+        { "fieldPath": "__name__", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "roomOwnershipSuccessionJobs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "nextAttemptAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "Rooms",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "creatorUID", "order": "ASCENDING" },
+        { "fieldPath": "isClosed", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "chatMessageCleanupJobs",
       "queryScope": "COLLECTION",
       "fields": [
@@ -835,6 +860,12 @@
     },
     {
       "collectionGroup": "moderationRoomCleanupJobs",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "roomOwnershipSuccessionJobs",
       "fieldPath": "expiresAt",
       "ttl": true,
       "indexes": []

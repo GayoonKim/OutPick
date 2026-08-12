@@ -7,6 +7,7 @@ import {
 } from "firebase-admin/firestore";
 import {HttpsError} from "firebase-functions/v2/https";
 import {db} from "../../core/firebase.js";
+import {roomOwnershipSuccessionJobID} from "../../chat/moderation/roomMembershipSweep.js";
 import {
   assertAuditReplay,
   moderationAuditActionID,
@@ -418,6 +419,29 @@ export async function mutateAccountModerationService(
         noticeReasonCode: input.reasonCode,
         updatedAt: nowTimestamp,
       });
+      if (input.action === "permanentlySuspendAccount") {
+        const jobID = roomOwnershipSuccessionJobID(
+          account.id,
+          "permanentSuspension",
+          result.stateVersion,
+        );
+        transaction.create(firestore.collection("roomOwnershipSuccessionJobs").doc(jobID), {
+          schemaVersion: 1,
+          targetUID: account.id,
+          cause: "permanentSuspension",
+          expectedStateVersion: result.stateVersion,
+          status: "pending",
+          attempt: 0,
+          nextAttemptAt: nowTimestamp,
+          leaseOwner: null,
+          leaseExpiresAt: null,
+          lastErrorCode: null,
+          createdAt: nowTimestamp,
+          updatedAt: nowTimestamp,
+          completedAt: null,
+          expiresAt: null,
+        });
+      }
     }
     transaction.create(auditRef, {
       schemaVersion: 1,
