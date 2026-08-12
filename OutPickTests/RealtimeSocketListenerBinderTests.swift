@@ -54,7 +54,8 @@ struct RealtimeSocketListenerBinderTests {
             RealtimeSocketListenerBinder.chatMessageEvent,
             RealtimeSocketListenerBinder.imagesReceivedEvent,
             RealtimeSocketListenerBinder.videoReceivedEvent,
-            RealtimeSocketListenerBinder.roomClosedEvent
+            RealtimeSocketListenerBinder.roomClosedEvent,
+            RealtimeSocketListenerBinder.roomMembershipRemovedEvent
         ])
     }
 
@@ -66,7 +67,7 @@ struct RealtimeSocketListenerBinderTests {
         #expect(binder.bind(to: listener, callbacks: callbacks))
         #expect(!binder.bind(to: listener, callbacks: callbacks))
         #expect(listener.clientEvents.count == 3)
-        #expect(listener.namedEvents.count == 5)
+        #expect(listener.namedEvents.count == 6)
     }
 
     @Test func repeatedConnectCallbackDoesNotChangeRegistrationCount() {
@@ -80,7 +81,7 @@ struct RealtimeSocketListenerBinderTests {
 
         #expect(callbacks.connectedPayloads.count == 2)
         #expect(listener.clientEvents.count == 3)
-        #expect(listener.namedEvents.count == 5)
+        #expect(listener.namedEvents.count == 6)
     }
 
     @Test func newBinderRegistersAnIndependentSocketSurface() {
@@ -91,9 +92,9 @@ struct RealtimeSocketListenerBinderTests {
         RealtimeSocketListenerBinder().bind(to: secondListener, callbacks: .spy())
 
         #expect(firstListener.clientEvents.count == 3)
-        #expect(firstListener.namedEvents.count == 5)
+        #expect(firstListener.namedEvents.count == 6)
         #expect(secondListener.clientEvents.count == 3)
-        #expect(secondListener.namedEvents.count == 5)
+        #expect(secondListener.namedEvents.count == 6)
     }
 
     @Test func namedEventsForwardPayloadsToTheirActorBridgeCallbacks() {
@@ -106,12 +107,14 @@ struct RealtimeSocketListenerBinderTests {
         listener.emit(namedEvent: RealtimeSocketListenerBinder.imagesReceivedEvent, data: ["images"])
         listener.emit(namedEvent: RealtimeSocketListenerBinder.videoReceivedEvent, data: ["video"])
         listener.emit(namedEvent: RealtimeSocketListenerBinder.roomClosedEvent, data: ["closed"])
+        listener.emit(namedEvent: RealtimeSocketListenerBinder.roomMembershipRemovedEvent, data: ["removed"])
 
         #expect(callbacks.serverReadyPayloads.count == 1)
         #expect(callbacks.chatPayloads.count == 1)
         #expect(callbacks.imagePayloads.count == 1)
         #expect(callbacks.videoPayloads.count == 1)
         #expect(callbacks.roomClosedPayloads.count == 1)
+        #expect(callbacks.roomMembershipRemovedPayloads.count == 1)
     }
 
     @Test func messageIngressQueuePreservesMixedEventEnqueueOrder() async {
@@ -295,6 +298,7 @@ private final class ListenerCallbackSpy {
     private(set) var imagePayloads: [[Any]] = []
     private(set) var videoPayloads: [[Any]] = []
     private(set) var roomClosedPayloads: [[Any]] = []
+    private(set) var roomMembershipRemovedPayloads: [[Any]] = []
 
     lazy var callbacks = RealtimeSocketListenerCallbacks(
         connected: { [weak self] in self?.connectedPayloads.append($0) },
@@ -304,7 +308,8 @@ private final class ListenerCallbackSpy {
         chatMessage: { [weak self] in self?.chatPayloads.append($0) },
         imagesReceived: { [weak self] in self?.imagePayloads.append($0) },
         videoReceived: { [weak self] in self?.videoPayloads.append($0) },
-        roomClosed: { [weak self] in self?.roomClosedPayloads.append($0) }
+        roomClosed: { [weak self] in self?.roomClosedPayloads.append($0) },
+        roomMembershipRemoved: { [weak self] in self?.roomMembershipRemovedPayloads.append($0) }
     )
 }
 
@@ -318,7 +323,8 @@ private extension RealtimeSocketListenerCallbacks {
             chatMessage: { _ in },
             imagesReceived: { _ in },
             videoReceived: { _ in },
-            roomClosed: { _ in }
+            roomClosed: { _ in },
+            roomMembershipRemoved: { _ in }
         )
     }
 }

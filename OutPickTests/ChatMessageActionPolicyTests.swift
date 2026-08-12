@@ -30,6 +30,7 @@ struct ChatMessageActionPolicyTests {
         #expect(policy.canDelete == false)
         #expect(policy.canReport)
         #expect(policy.canBlock)
+        #expect(policy.canRemoveMember == false)
     }
 
     @Test func lookbookShareKeepsDeletePermissionForOwnerOrAdmin() {
@@ -58,6 +59,7 @@ struct ChatMessageActionPolicyTests {
         #expect(adminPolicy.canReport == false)
         #expect(adminPolicy.canBlock)
         #expect(adminPolicy.canAnnounce == false)
+        #expect(adminPolicy.canRemoveMember)
     }
 
     @Test func regularMessageKeepsExistingCopyAndAdminAnnouncementPolicy() {
@@ -79,6 +81,31 @@ struct ChatMessageActionPolicyTests {
         #expect(policy.canDelete)
         #expect(policy.canReport == false)
         #expect(policy.canAnnounce)
+        #expect(policy.canRemoveMember)
+    }
+
+    @Test func onlyRoomOwnerCanRemoveAnotherMessageAuthor() {
+        let message = makeMessage(
+            senderUID: "member@example.com",
+            messageType: .text,
+            msg: "안녕",
+            sharedContent: nil
+        )
+
+        let memberPolicy = ChatMessageActionPolicy.make(
+            for: message,
+            currentUserID: "viewer@example.com",
+            roomCreatorID: "owner@example.com"
+        )
+        let senderPolicy = ChatMessageActionPolicy.make(
+            for: message,
+            currentUserID: "member@example.com",
+            roomCreatorID: "owner@example.com"
+        )
+
+        #expect(memberPolicy.canRemoveMember == false)
+        #expect(senderPolicy.canRemoveMember == false)
+        #expect(memberPolicy.allows(.removeMember) == false)
     }
 
     @Test func lookbookSharePreviewUsesMessageTextThenFallback() {
