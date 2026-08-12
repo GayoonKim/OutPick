@@ -290,7 +290,17 @@ export async function processRoomOwnershipSuccessionJob(
     if (!["pending", "retryPending", "processing"].includes(status) ||
       (!due && !(status === "processing" && stale))) return null;
     const attempt = Number(job.get("attempt")) + 1;
-    if (!Number.isSafeInteger(attempt) || attempt > JOB_MAX_ATTEMPTS) return null;
+    if (!Number.isSafeInteger(attempt) || attempt > JOB_MAX_ATTEMPTS) {
+      transaction.update(ref, {
+        status: "failed",
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        nextAttemptAt: null,
+        lastErrorCode: "max_attempts_exceeded",
+        updatedAt: Timestamp.fromDate(now),
+      });
+      return null;
+    }
     transaction.update(ref, {
       status: "processing",
       attempt,
