@@ -41,6 +41,10 @@ export function moderationSession(data, nowMillis = Date.now()) {
   };
 }
 
+export function isValidModerationPrincipalID(value) {
+  return typeof value === "string" && value.trim().length > 0 && !value.includes("/");
+}
+
 export function socketHasCapability(socket, capability) {
   return Array.isArray(socket.allowedCapabilities) &&
     socket.allowedCapabilities.includes(capability);

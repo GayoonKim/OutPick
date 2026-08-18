@@ -1,4 +1,9 @@
-import { RECONNECT_POLICY } from "../config.js";
+import {
+  RATE_BUCKET_IDLE_TTL_MS,
+  RATE_BUCKET_SWEEP_INTERVAL_MS,
+  RATE_MAX_ACTIVE_BUCKETS,
+  RECONNECT_POLICY
+} from "../config.js";
 import {
   createFirebaseAuthMiddleware,
   createReconnectAttemptMiddleware
@@ -33,7 +38,18 @@ export function createProductionDependencies({
   logger = console
 }) {
   const generateMessageID = createMessageIDGenerator({ clock });
-  const { allowRate } = createRateLimiter({ clock });
+  const { allowRate } = createRateLimiter({
+    clock,
+    idleTTLms: RATE_BUCKET_IDLE_TTL_MS,
+    sweepIntervalMs: RATE_BUCKET_SWEEP_INTERVAL_MS,
+    maxActiveBuckets: RATE_MAX_ACTIVE_BUCKETS,
+    onCapacity: ({ activeBuckets, maxActiveBuckets }) => {
+      logger.warn?.("[rate-limit] active bucket capacity reached", {
+        activeBuckets,
+        maxActiveBuckets
+      });
+    }
+  });
   const messageDeliverySingleFlight = createMessageDeliverySingleFlight();
   const mediaUploadService = createMediaUploadService({ db, admin, clock });
   const {

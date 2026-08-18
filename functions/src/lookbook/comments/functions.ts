@@ -15,9 +15,13 @@ import {
   isTotalBrandAdmin,
 } from "../../shared/brandAuthorization.js";
 import {
-  assertAccountActive,
   assertAccountCapability,
 } from "../../shared/accountStatus.js";
+import {
+  parseCreateCommentInput,
+  parseCreateReplyInput,
+} from "./contracts.js";
+import {createCommentWriteService} from "./service.js";
 
 function numericMetric(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
@@ -68,68 +72,11 @@ export const createComment = onCall(
   {region: FUNCTIONS_REGION},
   async (request) => {
     const uid = requiredAuthUID(request.auth?.uid);
-    await assertAccountActive(uid);
-    const data = recordData(request.data);
-
-    const brandID = requiredDocumentID(
-      requiredString(data, "brandID", 128),
-      "brandID"
+    return createCommentWriteService(
+      uid,
+      "createComment",
+      parseCreateCommentInput(request.data),
     );
-    const seasonID = requiredDocumentID(
-      requiredString(data, "seasonID", 128),
-      "seasonID"
-    );
-    const postID = requiredDocumentID(
-      requiredString(data, "postID", 128),
-      "postID"
-    );
-    const message = requiredString(data, "message", 1000);
-
-    const postRef = lookbookPostDocument(brandID, seasonID, postID);
-    const commentRef = postRef.collection("comments").doc();
-
-    return await db.runTransaction(async (transaction) => {
-      const postSnap = await transaction.get(postRef);
-      if (!postSnap.exists) {
-        throw new HttpsError("not-found", "포스트를 찾을 수 없습니다.");
-      }
-
-      const metrics = postMetrics(postSnap.data());
-      const nextCommentCount = metrics.commentCount + 1;
-      const now = FieldValue.serverTimestamp();
-
-      transaction.set(commentRef, {
-        postID,
-        userID: uid,
-        createdBy: uid,
-        message,
-        createdAt: now,
-        updatedAt: now,
-        isDeleted: false,
-        likeCount: 0,
-        replyCount: 0,
-        isPinned: false,
-        pinnedAt: null,
-        pinnedBy: null,
-        parentCommentID: null,
-        attachments: [],
-      });
-      transaction.update(postRef, {
-        "metrics.commentCount": nextCommentCount,
-        "metricsUpdatedAt": now,
-      });
-
-      return {
-        brandID,
-        seasonID,
-        postID,
-        commentID: commentRef.id,
-        userID: uid,
-        parentCommentID: null,
-        commentCount: nextCommentCount,
-        replyCount: 0,
-      };
-    });
   }
 );
 
@@ -137,95 +84,11 @@ export const createReply = onCall(
   {region: FUNCTIONS_REGION},
   async (request) => {
     const uid = requiredAuthUID(request.auth?.uid);
-    await assertAccountActive(uid);
-    const data = recordData(request.data);
-
-    const brandID = requiredDocumentID(
-      requiredString(data, "brandID", 128),
-      "brandID"
+    return createCommentWriteService(
+      uid,
+      "createReply",
+      parseCreateReplyInput(request.data),
     );
-    const seasonID = requiredDocumentID(
-      requiredString(data, "seasonID", 128),
-      "seasonID"
-    );
-    const postID = requiredDocumentID(
-      requiredString(data, "postID", 128),
-      "postID"
-    );
-    const parentCommentID = requiredDocumentID(
-      requiredString(data, "parentCommentID", 128),
-      "parentCommentID"
-    );
-    const message = requiredString(data, "message", 1000);
-
-    const postRef = lookbookPostDocument(brandID, seasonID, postID);
-    const parentCommentRef = postRef
-      .collection("comments")
-      .doc(parentCommentID);
-    const replyRef = postRef.collection("comments").doc();
-
-    return await db.runTransaction(async (transaction) => {
-      const postSnap = await transaction.get(postRef);
-      if (!postSnap.exists) {
-        throw new HttpsError("not-found", "포스트를 찾을 수 없습니다.");
-      }
-
-      const parentSnap = await transaction.get(parentCommentRef);
-      if (!parentSnap.exists) {
-        throw new HttpsError("not-found", "원댓글을 찾을 수 없습니다.");
-      }
-
-      const parentData = parentSnap.data();
-      if (parentData?.isDeleted === true) {
-        throw new HttpsError("failed-precondition", "삭제된 댓글에는 답글을 달 수 없습니다.");
-      }
-      if (parentData?.parentCommentID !== null &&
-        parentData?.parentCommentID !== undefined) {
-        throw new HttpsError("failed-precondition", "답글에는 다시 답글을 달 수 없습니다.");
-      }
-
-      const metrics = postMetrics(postSnap.data());
-      const currentReplyCount = numericRootValue(parentData, "replyCount");
-      const nextCommentCount = metrics.commentCount + 1;
-      const nextReplyCount = currentReplyCount + 1;
-      const now = FieldValue.serverTimestamp();
-
-      transaction.set(replyRef, {
-        postID,
-        userID: uid,
-        createdBy: uid,
-        message,
-        createdAt: now,
-        updatedAt: now,
-        isDeleted: false,
-        likeCount: 0,
-        replyCount: 0,
-        isPinned: false,
-        pinnedAt: null,
-        pinnedBy: null,
-        parentCommentID,
-        attachments: [],
-      });
-      transaction.update(parentCommentRef, {
-        replyCount: nextReplyCount,
-        updatedAt: now,
-      });
-      transaction.update(postRef, {
-        "metrics.commentCount": nextCommentCount,
-        "metricsUpdatedAt": now,
-      });
-
-      return {
-        brandID,
-        seasonID,
-        postID,
-        commentID: replyRef.id,
-        userID: uid,
-        parentCommentID,
-        commentCount: nextCommentCount,
-        replyCount: nextReplyCount,
-      };
-    });
   }
 );
 

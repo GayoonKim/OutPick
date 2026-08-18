@@ -4,7 +4,7 @@ import {
   RATE_WINDOW_MS
 } from "../config.js";
 import { buildTextMessageDocument } from "../messages/messagePayload.js";
-import { normalizeEmail, normalizeUID } from "../utils/strings.js";
+import { normalizeUID } from "../utils/strings.js";
 import { rejectMissingCapability } from "../moderation/capabilities.js";
 
 export function registerMessageHandlers({
@@ -30,10 +30,13 @@ export function registerMessageHandlers({
         : (typeof data?.message === "string" ? data.message : "");
       const nickname = data?.senderNickname || data?.senderNickName || "";
       const senderUID = normalizeUID(socket.userUID);
-      const senderEmail = normalizeEmail(socket.userEmail);
 
       if (!roomID || msg.trim().length === 0) {
-        logger.error("[Chat] Invalid data received:", data);
+        logger.warn?.("[Chat] invalid payload", {
+          event: "chat message",
+          hasRoomID: Boolean(roomID),
+          payloadBytes: Buffer.byteLength(msg, "utf8")
+        });
         callback?.({ ok: false, message: "Invalid data", error: "invalid_data" });
         return;
       }
@@ -69,19 +72,19 @@ export function registerMessageHandlers({
         });
         return;
       }
-      if (!allowRate(`${socket.id}:${roomID}:chat`, RATE_MAX_CHAT, RATE_WINDOW_MS)) {
+      const messageID = String(data?.ID || generateMessageID());
+      const rateKey = `${socket.moderationPrincipalID}:${roomID}:text`;
+      if (!allowRate(rateKey, RATE_MAX_CHAT, RATE_WINDOW_MS, messageID)) {
         callback?.({ ok: false, message: "rate_limited", error: "rate_limited" });
         return;
       }
 
-      const messageID = String(data?.ID || generateMessageID());
       const messageDocument = buildTextMessageDocument({
         data,
         roomID,
         messageID,
         msg,
         senderUID,
-        senderEmail,
         nickname,
         nowDate: clock.nowDate()
       });
@@ -102,10 +105,13 @@ export function registerMessageHandlers({
           if (outcome.created) {
             io.to(roomID).emit("chat message", serverMessage);
             void fanoutChatPush({ roomID, messageData: serverMessage });
-            logger.log(
-              `[Chat][${roomID}] ${nickname || "Anonymous"}: ${msg}`,
-              serverMessage
-            );
+            logger.log("[Chat] message persisted", {
+              event: "chat message",
+              roomID,
+              messageID,
+              seq: outcome.seq,
+              payloadBytes: Buffer.byteLength(msg, "utf8")
+            });
           }
           return outcome;
         });

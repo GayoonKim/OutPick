@@ -18,6 +18,7 @@
     "userReport": "moderationUserReports/{targetModerationPrincipalID}",
     "roomReport": "moderationRoomReports/{roomID}",
     "reportRateLimit": "moderationReportRateLimitBuckets/{bucketID}",
+    "commentWriteRateLimit": "moderationCommentWriteRateLimitBuckets/{bucketID}",
     "adminRateLimit": "moderationAdminRateLimitBuckets/{bucketID}",
     "audit": "moderationAuditLogs/{actionID}",
     "messageCleanupJob": "chatMessageCleanupJobs/{jobID}",
@@ -41,6 +42,10 @@
     "clientRequestID": {
       "format": "UUID string",
       "maxLength": 64
+    },
+    "lookbookCommentID": {
+      "format": "SHA-256(moderationPrincipalID + ':' + operation + ':' + clientRequestID) within the post comments path",
+      "clientAuthoritative": false
     }
   },
   "globalBlockVisibility": {
@@ -605,6 +610,105 @@
       "failedSequenceTombstone": false
     }
   },
+  "textWriteSafety": {
+    "contentMeaningFilter": "none",
+    "handledBy": [
+      "user report",
+      "user block",
+      "room creator remove and rejoin ban",
+      "platform admin post-review sanction"
+    ],
+    "lengthLimits": {
+      "chatAndLookbookUTF8Bytes": 4000,
+      "commentAndReplyUTF16CodeUnitsAfterTrim": 1000,
+      "clientCounterVisible": false,
+      "clientOverLimitInputAccepted": false,
+      "preserveInputAfterServerRejection": true
+    },
+    "socketRateLimit": {
+      "deployment": "single instance process memory",
+      "key": "moderationPrincipalID + roomID + messageKind",
+      "principalMissing": "fail closed without UID or email fallback",
+      "windowMilliseconds": 2000,
+      "limits": {
+        "text": 12,
+        "lookbookShare": 6,
+        "imagePreflight": 4,
+        "imageFinalize": 4,
+        "videoPreflight": 4,
+        "videoFinalize": 4
+      },
+      "sameMessageIDRetryConsumesQuota": false,
+      "finalIdempotencyAuthority": "existing Firestore message transaction",
+      "additionalClientRoundTrip": false,
+      "additionalNormalPathFirestoreRead": false,
+      "idleTTLSeconds": 60,
+      "sweepIntervalSeconds": 30,
+      "maxActiveBuckets": 50000,
+      "newBucketAtCapacity": "fail closed and emit content-free metric",
+      "restartResetAccepted": true,
+      "cloudRunMaxInstances": 1
+    },
+    "commentReplyRateLimit": {
+      "scope": "comments and replies combined globally per moderationPrincipalID",
+      "limitPerUTCMinute": 20,
+      "storage": "server-only Firestore transaction bucket",
+      "clientRequestIDRequired": true,
+      "deterministicCommentID": "SHA-256(moderationPrincipalID + ':' + operation + ':' + clientRequestID) within the post comments path",
+      "sameClientRequestIDConsumesQuota": false,
+      "sameIDMatchingAuthorParentAndMessage": "return existing commentID and current count projection",
+      "sameIDWithDifferentPayload": "IDEMPOTENCY_CONFLICT/already-exists",
+      "clientRequestIDLifecycle": "create UUID on submit; keep across network retries; replace after edit, cancel, success, or a new submission",
+      "response": "RATE_LIMITED/resource-exhausted with retryAt",
+      "automaticRetry": false,
+      "rateLimitedUX": "preserve input, show a wait message, and allow user-initiated retry after retryAt",
+      "contentStoredInBucket": false,
+      "expiresAfterDays": 2
+    },
+    "senderEmail": {
+      "newMessageFirestore": false,
+      "socketPayload": false,
+      "fcmDataPayload": false,
+      "iosModelAndGRDB": false,
+      "clientSubmittedValueAuthoritative": false,
+      "legacyClientCompatibility": false
+    },
+    "logging": {
+      "rawMessageOrReply": false,
+      "senderEmail": false,
+      "wholePayload": false,
+      "allowedMetadata": [
+        "event",
+        "stable error code",
+        "message ID",
+        "sequence",
+        "payload byte size",
+        "duration"
+      ],
+      "historicalInternalQALogs": "natural Cloud Logging retention; no retrospective deletion or new export"
+    },
+    "redis": {
+      "introducedNow": false,
+      "transitionTriggers": [
+        "more than one Socket instance",
+        "single-instance connection, CPU, memory, or latency limit",
+        "observed cross-process limiter inconsistency or abuse"
+      ],
+      "futureRole": "Socket.IO adapter and PubSub plus shared rate limiter with separate keyspaces and TTLs",
+      "durableSource": "Firestore"
+    },
+    "adminQueue": {
+      "phase6Sort": "reviewState, priorityClass, slaDueAt, lastReportedAt",
+      "arbitraryCountOrSanctionHistorySort": "deferred to admin-web-operations-migration",
+      "automaticSanctionFromReportCount": false
+    },
+    "moderationScope": {
+      "textChatLookbookCommentReply": "no automatic meaning filter; report, block, room operation, and administrator post-review",
+      "textSentToExternalModerationProvider": false,
+      "commentAndReplyMediaCreation": "not supported in Phase 6",
+      "chatImageAndVideo": "Phase 7 quarantine and inspection before ready publication"
+    }
+  },
   "mediaSafetyPolicy": {
     "policyVersion": 1,
     "imageProvider": "Google Cloud Vision SafeSearch",
@@ -1046,7 +1150,8 @@
     "roomClosureTombstone": "room content is removed immediately; shared tombstone and unacknowledged memberships remain at most 14 days, then the cleanup scheduler removes them in bounded batches",
     "legacyRoomClosureNotice": "no longer created; existing notices keep their Production 30-day TTL and are deleted by the new acknowledgment callable when confirmed",
     "completedCleanupJob": "expires seven days after completion; failed jobs do not expire automatically",
-    "reportRateLimitBucket": "operational metadata only, expiresAt two days after the bucket; contains no report detail or evidence"
+    "reportRateLimitBucket": "operational metadata only, expiresAt two days after the bucket; contains no report detail or evidence",
+    "commentWriteRateLimitBucket": "operational metadata only, expiresAt two days after the bucket; contains no comment, reply, target detail, or provider identity"
   },
   "reportOperations": {
     "urgentReasons": [
@@ -1061,6 +1166,8 @@
   "releaseGates": [
     "moderation principal and room ban legal retention basis and duration",
     "provider subject verification and Kakao User ID Fixed reconnect QA",
+    "active moderation principal projection audit and Socket max-instances=1 verification",
+    "new message senderEmail removal across Firestore, Socket, FCM, iOS model, and GRDB",
     "Google Cloud media processing privacy disclosure and App Privacy response",
     "minor access scope and illegal or sexual content escalation",
     "support URL and staffed urgent/general report operations",

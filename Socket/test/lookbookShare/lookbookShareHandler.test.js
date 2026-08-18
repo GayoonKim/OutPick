@@ -70,6 +70,21 @@ test("Lookbook winner는 persist→emit→push 뒤 duplicate false ACK한다", a
   });
   assert.equal(fixture.roomEmits[0].event, "chat message");
   assert.equal(fixture.roomEmits[0].payload.messageType, "lookbookShare");
+  assert.equal(Object.hasOwn(fixture.roomEmits[0].payload, "senderEmail"), false);
+});
+
+test("Lookbook limiter는 principal/room/kind와 messageID를 사용한다", async () => {
+  const calls = [];
+  const fixture = createFixture({
+    allowRate: (...args) => { calls.push(args); return true; }
+  });
+  await fixture.handler(fixture.fakeSocket.socket, payload, () => {});
+  assert.deepEqual(calls, [[
+    "principal-1:room:lookbookShare",
+    6,
+    2000,
+    "lookbook-message"
+  ]]);
 });
 
 test("동일 Lookbook 요청은 persist/emit/push를 한 번만 수행한다", async () => {

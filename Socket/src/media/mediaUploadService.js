@@ -131,7 +131,6 @@ export function createMediaUploadService({ db, admin, clock }) {
     roomID,
     messageID,
     senderUID,
-    senderEmail,
     kind,
     contract
   }) {
@@ -183,7 +182,6 @@ export function createMediaUploadService({ db, admin, clock }) {
       roomID,
       messageID,
       senderUID,
-      ...(senderEmail ? { senderEmail } : {}),
       kind,
       status: "pending",
       storagePrefix: prefix,

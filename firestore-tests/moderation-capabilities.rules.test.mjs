@@ -152,6 +152,11 @@ describe("moderation capability rules", () => {
       "moderationAdminRateLimitBuckets",
       "active_read_1",
     )));
+    await assertFails(getDoc(doc(
+      firestore,
+      "moderationCommentWriteRateLimitBuckets",
+      "principal-active_1",
+    )));
   });
 
   test("메시지 tombstone과 방 lifecycle은 클라이언트가 직접 변경할 수 없다", async () => {

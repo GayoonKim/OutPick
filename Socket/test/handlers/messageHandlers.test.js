@@ -61,7 +61,7 @@ test("text message 성공은 persist→emit→push→ACK 순서와 ACK key를 �
     messageID: "generated-id"
   });
   assert.equal(fixture.roomEmits[0].event, "chat message");
-  assert.equal(fixture.roomEmits[0].payload.senderEmail, "user@example.com");
+  assert.equal(Object.hasOwn(fixture.roomEmits[0].payload, "senderEmail"), false);
   assert.equal(fixture.roomEmits[0].payload.sentAt, "2026-07-14T00:00:00.000Z");
 });
 
@@ -167,6 +167,42 @@ test("text validation/access/rate error 계약을 유지한다", async () => {
     (value) => { limitedACK = value; }
   );
   assert.equal(limitedACK.error, "rate_limited");
+});
+
+test("text limiter는 principal/room/kind와 messageID를 사용한다", async () => {
+  const calls = [];
+  const fixture = register({
+    allowRate: (...args) => { calls.push(args); return true; }
+  });
+  await fixture.fakeSocket.handlers.get("chat message")(
+    { roomID: "room", ID: "message-1", msg: "hello" },
+    () => {}
+  );
+  assert.deepEqual(calls, [["principal-1:room:text", 12, 2000, "message-1"]]);
+});
+
+test("text 성공·invalid 로그는 원문과 사용자 식별 정보·email payload를 기록하지 않는다", async () => {
+  const logs = [];
+  const logger = {
+    log: (...args) => logs.push(args),
+    warn: (...args) => logs.push(args),
+    error: (...args) => logs.push(args)
+  };
+  const fixture = register({ logger });
+  await fixture.fakeSocket.handlers.get("chat message")(
+    { roomID: "room", ID: "message", msg: "secret-message" },
+    () => {}
+  );
+  await fixture.fakeSocket.handlers.get("chat message")(
+    { roomID: "", msg: "invalid-secret", senderEmail: "secret@example.com" },
+    () => {}
+  );
+
+  const serialized = JSON.stringify(logs);
+  assert.equal(serialized.includes("secret-message"), false);
+  assert.equal(serialized.includes("invalid-secret"), false);
+  assert.equal(serialized.includes("secret@example.com"), false);
+  assert.equal(serialized.includes("user-1"), false);
 });
 
 test("text 보호 검증 실패는 single-flight에 참여하지 않는다", async () => {
