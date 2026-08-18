@@ -75,7 +75,6 @@ final class ChatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol {
         currentUserProvider: @escaping () -> ChatMessageSenderSnapshot = {
             ChatMessageSenderSnapshot(
                 senderUID: LoginManager.shared.canonicalUserID,
-                senderEmail: LoginManager.shared.getUserEmail,
                 senderNickname: "",
                 senderAvatarPath: nil
             )
@@ -111,7 +110,6 @@ final class ChatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol {
             seq: 0,
             roomID: roomID,
             senderUID: sender.senderUID,
-            senderEmail: sender.senderEmail,
             senderNickname: sender.senderNickname,
             senderAvatarPath: sender.senderAvatarPath,
             msg: "",
@@ -138,7 +136,6 @@ final class ChatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol {
             seq: 0,
             roomID: roomID,
             senderUID: sender.senderUID,
-            senderEmail: sender.senderEmail,
             senderNickname: sender.senderNickname,
             senderAvatarPath: sender.senderAvatarPath,
             msg: "",
@@ -304,7 +301,6 @@ final class ChatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol {
         sendingRepository.sendFailedVideo(
             roomID: roomID,
             senderUID: sender.senderUID,
-            senderEmail: sender.senderEmail,
             senderNickname: sender.senderNickname,
             localURL: prepared.compressedFileURL,
             thumbData: prepared.thumbnailData,

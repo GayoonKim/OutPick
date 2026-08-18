@@ -43,6 +43,21 @@ struct ChatRoomMessageUseCaseTests {
         #expect(useCase.makeTextMessage(text: "안녕", replyPreview: nil, room: makeRoom(id: "   ")) == nil)
     }
 
+    @Test func makeTextMessageEnforcesUTF8ByteLimit() {
+        let useCase = makeUseCase()
+
+        #expect(useCase.makeTextMessage(
+            text: String(repeating: "a", count: ChatTextInputPolicy.maximumUTF8Bytes),
+            replyPreview: nil,
+            room: makeRoom(id: "room-1")
+        ) != nil)
+        #expect(useCase.makeTextMessage(
+            text: String(repeating: "가", count: 1_334),
+            replyPreview: nil,
+            room: makeRoom(id: "room-1")
+        ) == nil)
+    }
+
     @Test func sendPreparedMessageDelegatesToRepository() async throws {
         let repository = ChatMessageSendingRepositorySpy()
         let useCase = makeUseCase(repository: repository)
@@ -98,7 +113,6 @@ struct ChatRoomMessageUseCaseTests {
             currentUserProvider: {
                 ChatMessageSenderSnapshot(
                     senderUID: "me@example.com",
-                    senderEmail: nil,
                     senderNickname: "나",
                     senderAvatarPath: "avatars/me.jpg"
                 )
@@ -135,7 +149,6 @@ struct ChatRoomMessageUseCaseTests {
             seq: seq,
             roomID: roomID,
             senderUID: "me@example.com",
-            senderEmail: nil,
             senderNickname: "나",
             senderAvatarPath: nil,
             msg: "삭제할 메시지",

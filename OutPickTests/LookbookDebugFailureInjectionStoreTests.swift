@@ -77,7 +77,8 @@ struct LookbookDebugFailureInjectionStoreTests {
                 brandID: brandID,
                 seasonID: seasonID,
                 postID: postID,
-                message: " 댓글 "
+                message: " 댓글 ",
+                clientRequestID: UUID()
             )
         }
 
@@ -91,7 +92,8 @@ struct LookbookDebugFailureInjectionStoreTests {
                 seasonID: seasonID,
                 postID: postID,
                 parentCommentID: commentID,
-                message: " 답글 "
+                message: " 답글 ",
+                clientRequestID: UUID()
             )
         }
 
@@ -350,7 +352,8 @@ private final class CommentWritingRepositorySpy: CommentWritingRepositoryProtoco
         brandID: BrandID,
         seasonID: SeasonID,
         postID: PostID,
-        message: String
+        message: String,
+        clientRequestID: UUID
     ) async throws -> CommentMutationResult {
         createCommentCallCount += 1
         return CommentMutationResult(
@@ -370,7 +373,8 @@ private final class CommentWritingRepositorySpy: CommentWritingRepositoryProtoco
         seasonID: SeasonID,
         postID: PostID,
         parentCommentID: CommentID,
-        message: String
+        message: String,
+        clientRequestID: UUID
     ) async throws -> CommentMutationResult {
         createReplyCallCount += 1
         return CommentMutationResult(

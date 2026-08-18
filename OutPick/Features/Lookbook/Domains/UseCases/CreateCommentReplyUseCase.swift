@@ -13,7 +13,8 @@ protocol CreateCommentReplyUseCaseProtocol {
         seasonID: SeasonID,
         postID: PostID,
         parentCommentID: CommentID,
-        message: String
+        message: String,
+        clientRequestID: UUID
     ) async throws -> CommentMutationResult
 }
 
@@ -34,11 +35,15 @@ final class CreateCommentReplyUseCase: CreateCommentReplyUseCaseProtocol {
         seasonID: SeasonID,
         postID: PostID,
         parentCommentID: CommentID,
-        message: String
+        message: String,
+        clientRequestID: UUID
     ) async throws -> CommentMutationResult {
         let normalizedMessage = message.trimmingCharacters(in: .whitespacesAndNewlines)
         guard normalizedMessage.isEmpty == false else {
             throw CommentSubmissionError.emptyMessage
+        }
+        guard normalizedMessage.utf16.count <= CommentInputPolicy.maximumUTF16Length else {
+            throw CommentSubmissionError.messageTooLong
         }
 
         try debugFailureInjectionStore?.throwIfNeeded(.createReply)
@@ -47,7 +52,8 @@ final class CreateCommentReplyUseCase: CreateCommentReplyUseCaseProtocol {
             seasonID: seasonID,
             postID: postID,
             parentCommentID: parentCommentID,
-            message: normalizedMessage
+            message: normalizedMessage,
+            clientRequestID: clientRequestID
         )
     }
 }

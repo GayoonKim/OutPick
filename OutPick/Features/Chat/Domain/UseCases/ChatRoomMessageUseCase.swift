@@ -8,6 +8,10 @@
 import Foundation
 import Combine
 
+enum ChatTextInputPolicy {
+    static let maximumUTF8Bytes = 4_000
+}
+
 protocol ChatRoomMessageUseCaseProtocol {
     func makeTextMessage(text: String, replyPreview: ReplyPreview?, room: ChatRoom) -> ChatMessage?
     func sendPreparedMessage(
@@ -30,7 +34,6 @@ protocol ChatRoomMessageUseCaseProtocol {
 
 struct ChatMessageSenderSnapshot: Equatable {
     let senderUID: String
-    let senderEmail: String?
     let senderNickname: String
     let senderAvatarPath: String?
 }
@@ -50,7 +53,6 @@ final class ChatRoomMessageUseCase: ChatRoomMessageUseCaseProtocol {
         currentUserProvider: @escaping () -> ChatMessageSenderSnapshot = {
             ChatMessageSenderSnapshot(
                 senderUID: LoginManager.shared.canonicalUserID,
-                senderEmail: LoginManager.shared.getUserEmail,
                 senderNickname: "",
                 senderAvatarPath: nil
             )
@@ -69,7 +71,9 @@ final class ChatRoomMessageUseCase: ChatRoomMessageUseCaseProtocol {
     func makeTextMessage(text: String, replyPreview: ReplyPreview?, room: ChatRoom) -> ChatMessage? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let roomID = room.id.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !roomID.isEmpty else {
+        guard !trimmed.isEmpty,
+              trimmed.utf8.count <= ChatTextInputPolicy.maximumUTF8Bytes,
+              !roomID.isEmpty else {
             return nil
         }
 
@@ -79,7 +83,6 @@ final class ChatRoomMessageUseCase: ChatRoomMessageUseCaseProtocol {
             seq: 0,
             roomID: roomID,
             senderUID: sender.senderUID,
-            senderEmail: sender.senderEmail,
             senderNickname: sender.senderNickname,
             senderAvatarPath: sender.senderAvatarPath,
             msg: trimmed,

@@ -157,7 +157,6 @@ final class ChatContainer {
             currentUserProvider: {
                 ChatMessageSenderSnapshot(
                     senderUID: currentUserProvider.canonicalUserID,
-                    senderEmail: currentUserProvider.email,
                     senderNickname: currentUserProvider.nickname ?? "",
                     senderAvatarPath: currentUserProvider.avatarPath
                 )
@@ -201,7 +200,6 @@ final class ChatContainer {
             currentUserProvider: {
                 ChatMessageSenderSnapshot(
                     senderUID: currentUserProvider.canonicalUserID,
-                    senderEmail: currentUserProvider.email,
                     senderNickname: currentUserProvider.nickname ?? "",
                     senderAvatarPath: currentUserProvider.avatarPath
                 )

@@ -131,7 +131,6 @@ struct ChatMessageEmitAckMapperTests {
             seq: 0,
             roomID: "room-1",
             senderUID: "sender-1",
-            senderEmail: nil,
             senderNickname: "sender",
             msg: "message",
             sentAt: .distantPast,

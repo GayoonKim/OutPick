@@ -22,9 +22,8 @@ struct CloudFunctionsCommentRepositoryTests {
             ],
             [
                 "blockerUserID": "user-1", "blockedUserID": "user-2", "source": "comment",
-                "createdAtMillis": 1_700_000_000_000 as NSNumber
-            ],
-            ["hiddenUserIDs": ["user-2", "user-3"]]
+                "createdAtMillis": 1_700_000_000_000 as NSNumber, "blocked": true
+            ]
         ]
         let writing = CloudFunctionsCommentWritingRepository(transport: transport)
         let safety = CloudFunctionsCommentSafetyRepository(transport: transport)
@@ -35,14 +34,19 @@ struct CloudFunctionsCommentRepositoryTests {
         let commentID = CommentID(value: "comment-1")
 
         _ = try await writing.createComment(
-            brandID: brandID, seasonID: seasonID, postID: postID, message: "comment"
+            brandID: brandID,
+            seasonID: seasonID,
+            postID: postID,
+            message: "comment",
+            clientRequestID: UUID(uuidString: "123e4567-e89b-12d3-a456-426614174000")!
         )
         _ = try await writing.createReply(
             brandID: brandID,
             seasonID: seasonID,
             postID: postID,
             parentCommentID: commentID,
-            message: "reply"
+            message: "reply",
+            clientRequestID: UUID(uuidString: "123e4567-e89b-12d3-a456-426614174001")!
         )
         _ = try await writing.deleteComment(
             brandID: brandID,
@@ -74,17 +78,16 @@ struct CloudFunctionsCommentRepositoryTests {
             blockedUserNicknameSnapshot: nil,
             source: .comment
         )
-        let hidden = try await blocking.fetchHiddenCommentUserIDs(
-            currentUserID: UserID(value: "user-1")
-        )
-
         #expect(transport.calls.map(\.name) == [
             "createComment", "createReply", "deleteComment", "reportComment",
-            "blockUser", "loadHiddenCommentUserIDs"
+            "blockUser"
         ])
         #expect(transport.calls[2].data["reason"] == nil)
+        #expect(transport.calls[0].data["clientRequestID"] as? String ==
+            "123e4567-e89b-12d3-a456-426614174000")
+        #expect(transport.calls[1].data["clientRequestID"] as? String ==
+            "123e4567-e89b-12d3-a456-426614174001")
         #expect(transport.calls[3].data["targetAuthorID"] == nil)
-        #expect(hidden == Set([UserID(value: "user-2"), UserID(value: "user-3")]))
     }
 
     private static func mutation(

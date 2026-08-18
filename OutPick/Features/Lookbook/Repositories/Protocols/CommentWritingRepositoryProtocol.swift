@@ -12,7 +12,8 @@ protocol CommentWritingRepositoryProtocol {
         brandID: BrandID,
         seasonID: SeasonID,
         postID: PostID,
-        message: String
+        message: String,
+        clientRequestID: UUID
     ) async throws -> CommentMutationResult
 
     func createReply(
@@ -20,7 +21,8 @@ protocol CommentWritingRepositoryProtocol {
         seasonID: SeasonID,
         postID: PostID,
         parentCommentID: CommentID,
-        message: String
+        message: String,
+        clientRequestID: UUID
     ) async throws -> CommentMutationResult
 
     func deleteComment(

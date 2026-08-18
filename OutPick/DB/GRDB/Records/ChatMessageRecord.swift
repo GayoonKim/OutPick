@@ -8,7 +8,6 @@ struct ChatMessageRecord: Codable, FetchableRecord, PersistableRecord {
     let seq: Int64
     let roomID: String
     let senderUID: String
-    let senderEmail: String?
     let senderNickname: String
     let senderAvatarPath: String?
     let messageType: String?

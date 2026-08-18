@@ -589,7 +589,6 @@ private func makeMessage(seq: Int64) -> ChatMessage {
         seq: seq,
         roomID: "room",
         senderUID: "sender",
-        senderEmail: nil,
         senderNickname: "Sender",
         senderAvatarPath: nil,
         messageType: .text,

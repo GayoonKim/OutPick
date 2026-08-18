@@ -254,7 +254,6 @@ struct ChatMediaUploadUseCaseTests {
             currentUserProvider: {
                 ChatMessageSenderSnapshot(
                     senderUID: "me@example.com",
-                    senderEmail: nil,
                     senderNickname: "나",
                     senderAvatarPath: "avatars/me.jpg"
                 )
@@ -459,7 +458,6 @@ private final class ChatMediaMessageSendingRepositorySpy: ChatMediaMessageSendin
     struct FailedVideoCall {
         let roomID: String
         let senderUID: String
-        let senderEmail: String?
         let senderNickname: String
         let localURL: URL
         let thumbData: Data?
@@ -529,7 +527,6 @@ private final class ChatMediaMessageSendingRepositorySpy: ChatMediaMessageSendin
     func sendFailedVideo(
         roomID: String,
         senderUID: String,
-        senderEmail: String?,
         senderNickname: String,
         localURL: URL,
         thumbData: Data?,
@@ -541,7 +538,6 @@ private final class ChatMediaMessageSendingRepositorySpy: ChatMediaMessageSendin
         failedVideoCalls.append(FailedVideoCall(
             roomID: roomID,
             senderUID: senderUID,
-            senderEmail: senderEmail,
             senderNickname: senderNickname,
             localURL: localURL,
             thumbData: thumbData,

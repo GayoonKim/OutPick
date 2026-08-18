@@ -58,7 +58,6 @@ struct RoomPreviewProfileOverlayTests {
             seq: 1,
             roomID: "room-1",
             senderUID: "user-1",
-            senderEmail: nil,
             senderNickname: nickname,
             senderAvatarPath: avatarPath,
             messageType: .text,

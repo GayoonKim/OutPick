@@ -42,7 +42,8 @@ struct PostCommentInputBarView: View {
                     text: $text,
                     measuredHeight: $inputHeight,
                     minHeight: Constants.minInputHeight,
-                    maxHeight: Constants.maxInputHeight
+                    maxHeight: Constants.maxInputHeight,
+                    maximumUTF16Length: CommentInputPolicy.maximumUTF16Length
                 )
                 .frame(height: inputHeight)
                 .padding(.horizontal, 12)
@@ -111,6 +112,7 @@ private struct GrowingCommentTextView: UIViewRepresentable {
 
     let minHeight: CGFloat
     let maxHeight: CGFloat
+    let maximumUTF16Length: Int
 
     func makeUIView(context: Context) -> LayoutAwareTextView {
         let textView = LayoutAwareTextView()
@@ -162,6 +164,16 @@ private struct GrowingCommentTextView: UIViewRepresentable {
         func textViewDidChange(_ textView: UITextView) {
             parent.text = textView.text
             updateHeight(for: textView)
+        }
+
+        func textView(
+            _ textView: UITextView,
+            shouldChangeTextIn range: NSRange,
+            replacementText text: String
+        ) -> Bool {
+            guard let swiftRange = Range(range, in: textView.text) else { return false }
+            let nextText = textView.text.replacingCharacters(in: swiftRange, with: text)
+            return nextText.utf16.count <= parent.maximumUTF16Length
         }
 
         func updateHeight(for textView: UITextView) {

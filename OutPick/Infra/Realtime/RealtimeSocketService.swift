@@ -1023,8 +1023,7 @@ actor RealtimeSocketService {
             "kind": kind,
             "attachmentCount": attachmentCount,
             "expectedPathCount": expectedPathCount,
-            "senderUID": identity?.uid ?? "",
-            "senderEmail": identity?.email ?? ""
+            "senderUID": identity?.uid ?? ""
         ]
 
         try await emitAck(event: "chat:mediaPreflight", body, timeout: ackTimeout, failureMessage: "미디어 업로드 사전 확인 실패 또는 timeout")
@@ -1046,7 +1045,6 @@ actor RealtimeSocketService {
 
         let roomID = room.id
         let senderUID = identity?.uid ?? ""
-        let senderEmail = identity?.email ?? ""
         let senderNickname = identity?.nickname ?? ""
         let resolvedClientMessageID = clientMessageID?.isEmpty == false ? clientMessageID! : UUID().uuidString
         let now = Date()
@@ -1060,7 +1058,6 @@ actor RealtimeSocketService {
             "msg": "",
             "attachments": attachments,
             "senderUID": senderUID,
-            "senderEmail": senderEmail,
             "senderNickname": senderNickname,
             "sentAt": isoSentAt
         ]
@@ -1126,7 +1123,6 @@ actor RealtimeSocketService {
             "approxBitrateMbps": payload.approxBitrateMbps,
             "preset": payload.preset,
             "senderUID": identity?.uid ?? "",
-            "senderEmail": identity?.email ?? "",
             "senderNickname": identity?.nickname ?? "",
             "kind": "video"
         ]
@@ -1194,7 +1190,6 @@ actor RealtimeSocketService {
             "msg": trimmedMessageText,
             "sentAt": Self.isoFormatter.string(from: now),
             "senderUID": identity?.uid ?? "",
-            "senderEmail": identity?.email ?? "",
             "senderNickname": identity?.nickname ?? "",
             "attachments": [],
             "sharedContent": sharedContent.toDict()
@@ -1239,7 +1234,6 @@ actor RealtimeSocketService {
     func sendFailedVideos(
         roomID: String,
         senderUID: String,
-        senderEmail: String?,
         senderNickname: String,
         localURL: URL,
         thumbData: Data?,
@@ -1284,7 +1278,6 @@ actor RealtimeSocketService {
             seq: 0,
             roomID: roomID,
             senderUID: senderUID,
-            senderEmail: senderEmail,
             senderNickname: senderNickname,
             msg: "",
             sentAt: Date(),

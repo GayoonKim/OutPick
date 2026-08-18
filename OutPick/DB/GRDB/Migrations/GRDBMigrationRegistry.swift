@@ -17,7 +17,8 @@ enum GRDBMigrationRegistry {
         "createImageIndex",
         "createVideoIndex",
         "createChatOutgoingOutbox",
-        "addSenderUIDToMediaIndexes"
+        "addSenderUIDToMediaIndexes",
+        "removeSenderEmailFromChatMessage"
     ]
 
     static func migrate(_ writer: some DatabaseWriter) throws {
@@ -139,6 +140,9 @@ enum GRDBMigrationRegistry {
                 """)
             }
         }
+        migrator.registerMigration("removeSenderEmailFromChatMessage") { db in
+            try ChatMessageSenderUIDSchemaRebuilder.rebuildIfNeeded(in: db)
+        }
 
         return migrator
     }
@@ -149,7 +153,6 @@ enum GRDBMigrationRegistry {
             table.column("seq", .integer).notNull().defaults(to: 0)
             table.column("roomID", .text).notNull()
             table.column("senderUID", .text).notNull()
-            table.column("senderEmail", .text)
             table.column("senderNickname", .text).notNull()
             table.column("senderAvatarPath", .text)
             table.column("messageType", .text)

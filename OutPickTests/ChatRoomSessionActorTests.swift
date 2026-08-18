@@ -140,7 +140,6 @@ struct ChatRoomSessionActorTests {
             seq: seq,
             roomID: "room",
             senderUID: "sender",
-            senderEmail: nil,
             senderNickname: "Sender",
             senderAvatarPath: nil,
             messageType: type,

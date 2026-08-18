@@ -47,7 +47,6 @@ struct ImageViewerPagePolicyTests {
             seq: 1,
             roomID: "room-1",
             senderUID: "sender@example.com",
-            senderEmail: nil,
             senderNickname: "sender",
             senderAvatarPath: nil,
             msg: nil,
