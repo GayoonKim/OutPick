@@ -92,7 +92,6 @@ struct ChatRoomReadStateStoreTests {
             seq: 11,
             roomID: "room-1",
             senderUID: "other@example.com",
-            senderEmail: nil,
             senderNickname: "Other",
             msg: "새 메시지",
             sentAt: sentAt,

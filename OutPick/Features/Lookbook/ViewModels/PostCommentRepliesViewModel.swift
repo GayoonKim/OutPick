@@ -19,7 +19,13 @@ final class PostCommentRepliesViewModel: ObservableObject {
     @Published private(set) var errorMessage: String?
     @Published private(set) var submissionErrorMessage: String?
     @Published private(set) var actionErrorMessage: String?
-    @Published var draftMessage: String = ""
+    @Published var draftMessage: String = "" {
+        didSet {
+            if pendingSubmission?.draft != draftMessage {
+                pendingSubmission = nil
+            }
+        }
+    }
 
     @Published private(set) var parentComment: Comment
     @Published private(set) var isParentCommentHidden: Bool = false
@@ -53,16 +59,21 @@ final class PostCommentRepliesViewModel: ObservableObject {
     private var pinnedCommentIDs: Set<CommentID> = []
     private var commentPinScopes: [CommentID: InteractionPinScope] = [:]
     private var commentStateInvalidationTask: Task<Void, Never>?
+    private var pendingSubmission: (draft: String, message: String, requestID: UUID)?
 
     var hasMoreReplies: Bool {
         nextCursor != nil
     }
 
     var canSubmitReply: Bool {
-        draftMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false &&
+        let message = draftMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        return message.isEmpty == false &&
+            message.utf16.count <= CommentInputPolicy.maximumUTF16Length &&
             isSubmittingReply == false &&
             isParentCommentHidden == false
     }
+
+    var draftUTF16Length: Int { draftMessage.utf16.count }
 
     var currentBrandID: BrandID {
         brandID
@@ -337,6 +348,15 @@ final class PostCommentRepliesViewModel: ObservableObject {
 
         isSubmittingReply = true
         submissionErrorMessage = nil
+        let submittedDraft = draftMessage
+        let requestID: UUID
+        if pendingSubmission?.draft == submittedDraft,
+           pendingSubmission?.message == message {
+            requestID = pendingSubmission?.requestID ?? UUID()
+        } else {
+            requestID = UUID()
+            pendingSubmission = (submittedDraft, message, requestID)
+        }
         defer {
             isSubmittingReply = false
         }
@@ -347,16 +367,26 @@ final class PostCommentRepliesViewModel: ObservableObject {
                 seasonID: seasonID,
                 postID: postID,
                 parentCommentID: parentComment.id,
-                message: message
+                message: message,
+                clientRequestID: requestID
             )
+            pendingSubmission = nil
             parentComment.replyCount = result.replyCount
             commentInteractionStore.applyCommentMutation(result)
-            draftMessage = ""
+            if draftMessage == submittedDraft {
+                draftMessage = ""
+            }
             authorProfileStore.seedCurrentUserProfileIfPossible()
             syncAuthorDisplays()
             loadedKey = nil
             await loadPage(reset: true)
             return result
+        } catch CloudFunctionsTransportError.rateLimited {
+            submissionErrorMessage = "잠시 후 다시 시도해주세요."
+            return nil
+        } catch let error as CommentSubmissionError {
+            submissionErrorMessage = error.localizedDescription
+            return nil
         } catch {
             submissionErrorMessage = "답글을 등록하지 못했어요."
             return nil

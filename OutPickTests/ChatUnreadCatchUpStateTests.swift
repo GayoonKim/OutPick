@@ -244,7 +244,6 @@ struct ChatUnreadCatchUpStateTests {
             seq: seq,
             roomID: "room-1",
             senderUID: "sender-uid",
-            senderEmail: nil,
             senderNickname: "sender",
             senderAvatarPath: nil,
             msg: text,

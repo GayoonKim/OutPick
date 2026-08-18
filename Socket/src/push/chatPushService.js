@@ -29,13 +29,12 @@ function uniqueMemberUIDFromDoc(doc) {
   return dataUID || docUID;
 }
 
-function buildChatPushMulticast({
+export function buildChatPushMulticast({
   roomID,
   roomName,
   messageID,
   messageType,
   senderUID,
-  senderEmail,
   senderNickname,
   preview,
   tokens
@@ -56,7 +55,6 @@ function buildChatPushMulticast({
       roomName: String(roomName || ""),
       messageID: String(messageID || ""),
       senderUID: String(senderUID || ""),
-      senderEmail: String(senderEmail || ""),
       senderNickname: String(senderNickname || ""),
       messageType: String(messageType || "Text"),
       preview: String(safePreview)
@@ -133,7 +131,6 @@ export function createChatPushService({ db, admin, clock }) {
     messageID,
     messageType,
     senderUID,
-    senderEmail,
     senderNickname,
     preview
   }) {
@@ -187,7 +184,6 @@ export function createChatPushService({ db, admin, clock }) {
         messageID,
         messageType,
         senderUID,
-        senderEmail,
         senderNickname,
         preview,
         tokens: chunk.map((item) => item.token)
@@ -253,7 +249,6 @@ export function createChatPushService({ db, admin, clock }) {
             messageID: messageData?.ID,
             messageType: messageData?.messageType,
             senderUID: messageData?.senderUID,
-            senderEmail: messageData?.senderEmail,
             senderNickname: messageData?.senderNickname,
             preview
           });

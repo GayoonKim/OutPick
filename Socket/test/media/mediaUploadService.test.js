@@ -70,7 +70,6 @@ test("preflight는 신규 pending reservation field와 24시간 TTL을 유지한
     roomID: "room",
     messageID: "message",
     senderUID: "user",
-    senderEmail: "user@example.com",
     kind: "images",
     contract: { attachmentCount: 2, expectedPathCount: 4 }
   });

@@ -18,7 +18,8 @@ final class CloudFunctionsCommentWritingRepository: CommentWritingRepositoryProt
         brandID: BrandID,
         seasonID: SeasonID,
         postID: PostID,
-        message: String
+        message: String,
+        clientRequestID: UUID
     ) async throws -> CommentMutationResult {
         let response = try await transport.call(
             "createComment",
@@ -26,7 +27,8 @@ final class CloudFunctionsCommentWritingRepository: CommentWritingRepositoryProt
                 "brandID": brandID.value,
                 "seasonID": seasonID.value,
                 "postID": postID.value,
-                "message": message
+                "message": message,
+                "clientRequestID": clientRequestID.uuidString.lowercased()
             ]
         )
         return try CommentCloudFunctionsMapper.mutation(response)
@@ -37,7 +39,8 @@ final class CloudFunctionsCommentWritingRepository: CommentWritingRepositoryProt
         seasonID: SeasonID,
         postID: PostID,
         parentCommentID: CommentID,
-        message: String
+        message: String,
+        clientRequestID: UUID
     ) async throws -> CommentMutationResult {
         let response = try await transport.call(
             "createReply",
@@ -46,7 +49,8 @@ final class CloudFunctionsCommentWritingRepository: CommentWritingRepositoryProt
                 "seasonID": seasonID.value,
                 "postID": postID.value,
                 "parentCommentID": parentCommentID.value,
-                "message": message
+                "message": message,
+                "clientRequestID": clientRequestID.uuidString.lowercased()
             ]
         )
         return try CommentCloudFunctionsMapper.mutation(response)

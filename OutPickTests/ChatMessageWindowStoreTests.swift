@@ -282,7 +282,6 @@ struct ChatMessageWindowStoreTests {
             seq: seq,
             roomID: "room-1",
             senderUID: "sender@example.com",
-            senderEmail: nil,
             senderNickname: "보낸 사람",
             senderAvatarPath: nil,
             msg: text,

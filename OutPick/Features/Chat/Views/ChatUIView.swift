@@ -11,7 +11,7 @@ import UIKit
 class ChatUIView: UIView {
     var onButtonTapped: ((String) -> Void)?
     private let placeholderText = "메시지 입력"
-    
+
     private(set) var attachmentButton: UIButton = {
         let button = UIButton(type: .system)
         button.setImage(UIImage(systemName: "plus"), for: .normal)
@@ -168,7 +168,6 @@ extension ChatUIView: UITextViewDelegate {
                 textView.textColor = OutPickTheme.ColorToken.textPrimary
             }
             textView.layer.borderColor = OutPickTheme.ColorToken.accent.cgColor
-            
             self.updateHeight()
         }
     }
@@ -185,5 +184,15 @@ extension ChatUIView: UITextViewDelegate {
             
             self.updateHeight()
         }
+    }
+
+    func textView(
+        _ textView: UITextView,
+        shouldChangeTextIn range: NSRange,
+        replacementText text: String
+    ) -> Bool {
+        guard let swiftRange = Range(range, in: textView.text) else { return false }
+        let nextText = textView.text.replacingCharacters(in: swiftRange, with: text)
+        return nextText.utf8.count <= ChatTextInputPolicy.maximumUTF8Bytes
     }
 }

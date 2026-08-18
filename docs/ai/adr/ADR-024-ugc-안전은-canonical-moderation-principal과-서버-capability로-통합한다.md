@@ -14,6 +14,11 @@ accepted
 - room ban은 활성 방 콘텐츠의 읽기 visibility를 바꾸지 않고 membership·참여자 전용 Socket·메시지/미디어 write만 차단한다. 내보내기 뒤 기존 읽기 cache는 유지하고 pending write만 취소한다.
 - 영구 정지와 계정 삭제 최종 확정의 membership 정리·owner 승계는 계정 전체 단일 transaction이 아니라 durable sweep과 방별 transaction으로 수렴시킨다. 승계 중 일반 채팅은 유지하되 기존 owner capability는 즉시 차단한다.
 - 차단은 장기 제재가 아니라 기존 `users/{uid}/blockedUsers/{blockedUID}` 전역 관계를 유지하며, blocked-by-me 단방향 콘텐츠 visibility 정책으로 적용한다. 채팅은 차단 성공 전 현재 window를 보존하고 이후 admission부터 제외하며, 룩북은 현재 댓글·답글을 즉시 숨긴다. 참여자 목록·프로필과 B의 경험은 유지한다.
+- 텍스트 UGC는 욕설·혐오·위협·금칙어·광고·링크·반복이나 Unicode/공백/기호 우회를 자동 판정하지 않는다. 콘텐츠 안전은 신고·사용자 차단·방 생성자 내보내기와 플랫폼 관리자 사후 검토·제재로 운영하고, 신고 누적은 조사 우선순위에만 사용한다.
+- 텍스트 서버 경계에는 의미 판정 대신 타입·빈 값·권한·최대 길이와 canonical moderation principal 기반 기술적 burst limit만 적용한다. Socket는 현재 `max-instances=1` process memory bucket, 댓글·답글은 Functions 인스턴스가 공유하는 Firestore minute bucket을 사용하고 Redis는 보류한다.
+- 신규 메시지는 Firestore·Socket·FCM·iOS model·GRDB에 `senderEmail`을 저장·전송하지 않는다. 정상 메시지 원문과 sender payload를 Cloud Logging에 복제하지 않으며 내부 QA 과거 로그는 기존 retention으로 자연 만료시킨다.
+- 댓글·답글은 현재 텍스트 전용이므로 채팅 텍스트와 동일한 신고·차단·관리자 사후 검수 모델을 사용한다. 텍스트 UGC는 외부 moderation provider로 전송하지 않고 이미지·동영상 채팅만 Phase 7에서 게시 전 검사한다.
+- 댓글·답글 최대 길이는 기존 JavaScript `String.length`와 맞춘 trim 이후 UTF-16 code unit 1,000으로 고정하고 iOS도 `String.UTF16View.count`를 사용한다. `clientRequestID`는 동일 네트워크 재시도 동안 유지하되 입력 수정·취소·성공 후 새 작성에는 재사용하지 않는다.
 - 미디어 reservation은 ADR-016을 확장해 상태 머신으로 사용한다. 검사 통과 transaction 전에는 message document와 room seq를 만들지 않는다.
 - exact schema, enum, API, 오류, 상태 전이와 index 계약은 `contracts/chat-moderation-v1.json`을 기준으로 한다.
 
@@ -34,6 +39,9 @@ accepted
 - HMAC 원장과 room ban은 가명정보이므로 계정 삭제 후 보존 목적·기간과 접근 통제를 별도로 승인해야 한다.
 - ban 사용자의 active room read를 유지하므로 room ban은 기밀성 경계가 아니다. 비공개 방이나 member-only read가 필요해지면 별도 접근 제어 계약이 필요하다.
 - 계정 전체 승계는 순간적으로 원자적이지 않다. 대신 owner 중복과 부적격 owner 권한 행사를 방별 transaction·capability로 막고 bounded retry 안의 수렴을 운영 불변식으로 사용한다.
+- 자동 텍스트 필터의 오탐과 표현 제한은 피하지만, Apple App Review Guidelines 1.2의 게시 방지 필터 요구를 신고·차단·방 운영·관리자 대응만으로 충족한다고 보장할 수 없는 심사 불확실성을 수용한다.
+- Socket process restart 때 짧은 limiter 상태가 초기화된다. 현재 단일 인스턴스 규모에서는 60초 idle TTL·30초 sweep·50,000 cap으로 메모리를 제한하고 이 작은 보호 공백을 수용한다.
+- 댓글·답글 write마다 Firestore minute bucket transaction 비용이 추가되지만, Functions 다중 인스턴스에서도 principal당 20/분을 일관되게 적용하기 위해 수용한다.
 
 ## 보류한 대안
 
@@ -42,6 +50,11 @@ accepted
 - Firebase Auth disable만 사용하는 방식은 신고·지원·계정 삭제 경로까지 차단하므로 선택하지 않았다.
 - room ban 사용자의 list/search/message/media read를 차단하는 방식은 현재 공개 방 읽기 사용자 흐름에 비해 과도하므로 선택하지 않았다.
 - owner 승계 중 방 전체를 잠그는 lifecycle은 정상 참여자의 채팅까지 중단하므로 선택하지 않았다.
+- 모든 메시지·댓글·답글에 금칙어/Unicode/URL/반복 normalization을 적용하는 방식은 문맥 없는 오탐, 표현 제한과 지속적인 우회 규칙 유지 비용 때문에 선택하지 않았다.
+- 현재 규모에서 Redis/Memorystore를 먼저 도입하는 방식은 운영 복잡도와 비용이 이점보다 커서 선택하지 않았다.
+- Socket와 동일하게 댓글·답글도 process memory로 제한하는 방식은 Functions 다중 인스턴스 간 quota가 분리되므로 선택하지 않았다.
+- 과거 내부 QA Cloud Logging 원문을 별도 삭제하는 방식은 운영 데이터가 없고 기존 retention으로 만료되므로 선택하지 않았다.
+- Phase 6에서 관리자 신고 수·과거 제재 이력의 임의 정렬 projection을 추가하는 방식은 관리자 웹 운영 task와 책임이 겹쳐 보류했다.
 - 신고된 모든 미디어를 moderation Storage에 복사하는 방식은 MVP의 개인정보·보존 비용에 비해 필요성이 입증되지 않아 선택하지 않았다.
 - 검사 중 message document에 pending 상태를 저장하는 방식은 서버 ready message와 로컬 pending UI 책임을 섞으므로 선택하지 않았다.
 
@@ -50,5 +63,6 @@ accepted
 - 서로 다른 provider 계정의 명시적 연결 UX를 추가할 때 canonical principal alias 연결 계약을 확장한다.
 - 법률·개인정보 검토에서 HMAC 원장 또는 room ban 보존이 허용되지 않거나 별도 동의가 필요하다고 판단할 때 retention과 재가입 방지 범위를 조정한다.
 - 삭제 후 증거 인멸이 실제 운영 문제로 확인될 때 제한적 미디어 evidence 보존을 별도 승인한다.
-- Socket를 다중 인스턴스로 전환하거나 reconnect abuse가 관측될 때 rate limiter를 분산 저장소로 옮긴다.
+- Socket를 다중 인스턴스로 전환하거나 단일 인스턴스 연결/CPU/메모리/latency 한계, reconnect abuse 또는 프로세스 간 limiter 불일치가 관측될 때 Socket.IO adapter/PubSub와 rate limiter를 Redis/Memorystore의 분리된 keyspace·TTL로 옮긴다.
+- App Review가 자동 필터 부재를 문제로 지적하거나 실제 운영에서 신고·차단·사후 대응만으로 안전을 유지하기 어렵다는 근거가 생기면 게시 전 필터 범위를 사용자와 다시 논의한다.
 - 미디어 검사 latency·비용 또는 false positive가 허용 범위를 넘을 때 provider, threshold와 영상 상한을 재검토한다.

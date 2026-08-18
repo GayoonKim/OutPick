@@ -4,7 +4,9 @@ enum ChatMessageSenderUIDSchemaRebuilder {
     static func rebuildIfNeeded(in db: Database) throws {
         guard try db.tableExists("chatMessage") else { return }
         let columnNames = Set(try db.columns(in: "chatMessage").map(\.name))
-        guard columnNames.contains("senderID") else { return }
+        guard columnNames.contains("senderID") || columnNames.contains("senderEmail") else {
+            return
+        }
 
         func expression(_ column: String, fallback: String = "NULL") -> String {
             columnNames.contains(column) ? column : fallback
@@ -22,13 +24,12 @@ enum ChatMessageSenderUIDSchemaRebuilder {
 
         try db.execute(sql: """
             INSERT OR REPLACE INTO chatMessage
-            (id, seq, roomID, senderUID, senderEmail, senderNickname, senderAvatarPath, messageType, msg, sentAt, attachments, sharedContent, isFailed, replyPreview, isDeleted)
+            (id, seq, roomID, senderUID, senderNickname, senderAvatarPath, messageType, msg, sentAt, attachments, sharedContent, isFailed, replyPreview, isDeleted)
             SELECT
                 id,
                 COALESCE(\(expression("seq", fallback: "0")), 0),
                 roomID,
                 \(senderExpression),
-                \(expression("senderEmail")),
                 COALESCE(\(expression("senderNickname", fallback: "''")), ''),
                 \(expression("senderAvatarPath")),
                 \(expression("messageType")),

@@ -83,7 +83,6 @@ struct ChatVideoAssetServiceTests {
             seq: 1,
             roomID: "room-1",
             senderUID: "me@example.com",
-            senderEmail: nil,
             senderNickname: "나",
             senderAvatarPath: nil,
             msg: "",

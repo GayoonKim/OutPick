@@ -54,7 +54,6 @@ struct ChatLatestMessageWindowTests {
             seq: seq,
             roomID: "room-1",
             senderUID: "sender-1",
-            senderEmail: nil,
             senderNickname: "sender",
             senderAvatarPath: nil,
             msg: id,

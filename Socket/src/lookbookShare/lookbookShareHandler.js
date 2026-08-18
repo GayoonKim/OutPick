@@ -8,7 +8,6 @@ import {
 import { lookbookShareFallbackPreview } from "../messages/preview.js";
 import { sanitizeLookbookSharedContent } from "./sharedContentValidator.js";
 import {
-  normalizeEmail,
   normalizeUID,
   normalizeSentAt,
   trimString,
@@ -22,7 +21,6 @@ function buildServerLookbookShareMessage({
   msg,
   sharedContent,
   senderUID,
-  senderEmail,
   senderNickname,
   senderAvatarPath,
   sentAt
@@ -32,7 +30,6 @@ function buildServerLookbookShareMessage({
     roomID,
     roomName: roomID,
     senderUID,
-    ...(senderEmail ? { senderEmail } : {}),
     senderNickname,
     ...(senderAvatarPath ? { senderAvatarPath } : {}),
     msg,
@@ -114,7 +111,6 @@ export function createLookbookShareHandler({
       }
 
       const senderUID = normalizeUID(socket.userUID);
-      const senderEmail = normalizeEmail(socket.userEmail);
       if (!senderUID) {
         return callback && callback({
           ok: false,
@@ -156,8 +152,16 @@ export function createLookbookShareHandler({
 
       const finalMsg = trimmedMsg || lookbookShareFallbackPreview(normalizedSharedContent.contentType);
 
-      const shareRateKey = `${socket.id}:${roomID}:lookbookShare`;
-      if (!allowRate(shareRateKey, RATE_MAX_LOOKBOOK_SHARE, RATE_WINDOW_MS)) {
+      const effectiveMessageID = String(
+        rawMessageID || ID || generateMessageID()
+      );
+      const shareRateKey = `${socket.moderationPrincipalID}:${roomID}:lookbookShare`;
+      if (!allowRate(
+        shareRateKey,
+        RATE_MAX_LOOKBOOK_SHARE,
+        RATE_WINDOW_MS,
+        effectiveMessageID
+      )) {
         return callback && callback({
           ok: false,
           message: "rate_limited",
@@ -165,9 +169,6 @@ export function createLookbookShareHandler({
         });
       }
 
-      const effectiveMessageID = String(
-        rawMessageID || ID || generateMessageID()
-      );
       const sentAtISO = normalizeSentAt(sentAt) || clock.nowDate().toISOString();
       const nickname = senderNickname || senderNickName || "";
       const messageDoc = buildServerLookbookShareMessage({
@@ -176,7 +177,6 @@ export function createLookbookShareHandler({
         msg: finalMsg,
         sharedContent: normalizedSharedContent,
         senderUID,
-        senderEmail,
         senderNickname: nickname,
         senderAvatarPath,
         sentAt: sentAtISO

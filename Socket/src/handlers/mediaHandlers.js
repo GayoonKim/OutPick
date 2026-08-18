@@ -18,7 +18,7 @@ import {
   validateExistingMediaMessage,
   validateMediaUploadContract
 } from "../media/mediaUploadService.js";
-import { normalizeEmail, normalizeUID } from "../utils/strings.js";
+import { normalizeUID } from "../utils/strings.js";
 import { rejectMissingCapability } from "../moderation/capabilities.js";
 
 export function registerMediaHandlers({
@@ -57,7 +57,6 @@ export function registerMediaHandlers({
       if (!contract.ok) return callback?.({ ok: false, error: contract.error });
 
       const senderUID = normalizeUID(socket.userUID);
-      const senderEmail = normalizeEmail(socket.userEmail);
       const access = await authorizeSocketRoom({
         socket,
         roomID,
@@ -66,9 +65,9 @@ export function registerMediaHandlers({
       });
       if (!access.ok) return callback?.({ ok: false, error: access.error });
 
-      const rateKey = `${socket.id}:${roomID}:mediaPreflight:${mediaKind}`;
+      const rateKey = `${socket.moderationPrincipalID}:${roomID}:mediaPreflight:${mediaKind}`;
       const rateMax = mediaKind === "video" ? RATE_MAX_VIDEOS : RATE_MAX_IMAGES;
-      if (!allowRate(rateKey, rateMax, RATE_WINDOW_MS)) {
+      if (!allowRate(rateKey, rateMax, RATE_WINDOW_MS, String(messageID))) {
         return callback?.({ ok: false, error: "rate_limited" });
       }
 
@@ -76,7 +75,6 @@ export function registerMediaHandlers({
         roomID,
         messageID: String(messageID),
         senderUID,
-        senderEmail,
         kind: mediaKind,
         contract
       });
@@ -104,7 +102,6 @@ export function registerMediaHandlers({
 
       if (!roomID) return callback?.({ ok: false, error: "invalid_room_id" });
       const senderUID = normalizeUID(socket.userUID);
-      const senderEmail = normalizeEmail(socket.userEmail);
       const roomAccess = await authorizeSocketRoom({
         socket,
         roomID,
@@ -120,13 +117,17 @@ export function registerMediaHandlers({
       if (incoming.length > MAX_IMAGES_PER_MESSAGE) {
         return callback?.({ ok: false, error: "invalid_attachment_count" });
       }
-      if (!allowRate(`${socket.id}:${roomID}:images`, RATE_MAX_IMAGES, RATE_WINDOW_MS)) {
-        return callback?.({ ok: false, error: "rate_limited" });
-      }
-
       const effectiveMessageID = (messageID && String(messageID)) ||
         (clientMessageID && String(clientMessageID)) ||
         generateMessageID();
+      if (!allowRate(
+        `${socket.moderationPrincipalID}:${roomID}:images`,
+        RATE_MAX_IMAGES,
+        RATE_WINDOW_MS,
+        effectiveMessageID
+      )) {
+        return callback?.({ ok: false, error: "rate_limited" });
+      }
 
       const prepared = Array.isArray(attachments)
         ? incoming
@@ -240,7 +241,6 @@ export function registerMediaHandlers({
         msg: typeof msg === "string" ? msg : "",
         attachments: normalized,
         senderUID,
-        senderEmail,
         senderNickname: senderNickname || senderNickName || "",
         senderAvatarPath,
         sentAt: when.toISOString()
@@ -306,7 +306,6 @@ export function registerMediaHandlers({
 
       if (!roomID) return callback?.({ ok: false, error: "invalid_room_id" });
       const senderUID = normalizeUID(socket.userUID);
-      const senderEmail = normalizeEmail(socket.userEmail);
       const roomAccess = await authorizeSocketRoom({
         socket,
         roomID,
@@ -314,11 +313,15 @@ export function registerMediaHandlers({
         context: "chat:mediaFinalize/video"
       });
       if (!roomAccess.ok) return callback?.({ ok: false, error: roomAccess.error });
-      if (!allowRate(`${socket.id}:${roomID}:video`, RATE_MAX_VIDEOS, RATE_WINDOW_MS)) {
+      const effectiveMessageID = (messageID && String(messageID)) || generateMessageID();
+      if (!allowRate(
+        `${socket.moderationPrincipalID}:${roomID}:video`,
+        RATE_MAX_VIDEOS,
+        RATE_WINDOW_MS,
+        effectiveMessageID
+      )) {
         return callback?.({ ok: false, error: "rate_limited" });
       }
-
-      const effectiveMessageID = (messageID && String(messageID)) || generateMessageID();
 
       const storagePaths = [storagePath, thumbnailPath];
       const contract = validateMediaUploadContract(
@@ -399,7 +402,6 @@ export function registerMediaHandlers({
           preset
         }],
         senderUID,
-        senderEmail,
         senderNickname: senderNickname || senderNickName || "",
         senderAvatarPath,
         sentAt

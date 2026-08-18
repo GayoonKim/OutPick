@@ -29,7 +29,6 @@ export function buildTextMessageDocument({
   messageID,
   msg,
   senderUID,
-  senderEmail,
   nickname,
   nowDate
 }) {
@@ -41,7 +40,6 @@ export function buildTextMessageDocument({
     roomID,
     roomName: roomID,
     senderUID,
-    ...(senderEmail ? { senderEmail } : {}),
     senderNickname: nickname,
     ...(data?.senderAvatarPath ? { senderAvatarPath: data.senderAvatarPath } : {}),
     msg,

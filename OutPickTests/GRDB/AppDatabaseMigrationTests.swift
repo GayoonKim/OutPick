@@ -3,17 +3,19 @@ import Testing
 @testable import OutPick
 
 struct AppDatabaseMigrationTests {
-    @Test func freshDatabaseAppliesSixteenMigrationsWithoutLegacyRoomImage() throws {
+    @Test func freshDatabaseAppliesSeventeenMigrationsWithoutLegacyColumns() throws {
         let database = try TemporaryAppDatabase.make()
 
         try database.dbPool.read { db in
             let identifiers = try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid")
             #expect(identifiers == GRDBMigrationRegistry.identifiers)
-            #expect(identifiers.count == 16)
+            #expect(identifiers.count == 17)
             #expect(try db.tableExists("roomImage") == false)
             #expect(try db.tableExists("LocalChatUser"))
             #expect(try db.tableExists("RoomProfileDisplayCache"))
             #expect(try db.tableExists("chatMessage"))
+            let chatMessageColumns = try db.columns(in: "chatMessage").map(\.name)
+            #expect(!chatMessageColumns.contains("senderEmail"))
             #expect(try db.tableExists("chatMessageFTS"))
             #expect(try db.tableExists("imageIndex"))
             #expect(try db.tableExists("videoIndex"))
@@ -49,6 +51,7 @@ struct AppDatabaseMigrationTests {
             let columns = try db.columns(in: "chatMessage").map(\.name)
             #expect(columns.contains("senderUID"))
             #expect(!columns.contains("senderID"))
+            #expect(!columns.contains("senderEmail"))
             let row = try Row.fetchOne(db, sql: "SELECT senderUID, seq FROM chatMessage WHERE id = ?", arguments: ["message-1"])
             #expect(row?["senderUID"] as String? == "legacy-sender")
             #expect(row?["seq"] as Int64? == 12)

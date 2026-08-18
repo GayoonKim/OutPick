@@ -35,7 +35,6 @@ struct ChatRoomRealtimeUseCaseTests {
             seq: 1,
             roomID: roomID,
             senderUID: "sender@example.com",
-            senderEmail: nil,
             senderNickname: "Sender",
             senderAvatarPath: nil,
             msg: "안녕",

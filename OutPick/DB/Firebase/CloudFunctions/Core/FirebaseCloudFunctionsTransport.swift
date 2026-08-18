@@ -17,7 +17,13 @@ final class FirebaseCloudFunctionsTransport: CloudFunctionsTransporting {
         try await withCheckedThrowingContinuation { continuation in
             functions.httpsCallable(name).call(data) { result, error in
                 if let error {
-                    continuation.resume(throwing: error)
+                    let nsError = error as NSError
+                    if nsError.domain == FunctionsErrorDomain,
+                       nsError.code == FunctionsErrorCode.resourceExhausted.rawValue {
+                        continuation.resume(throwing: CloudFunctionsTransportError.rateLimited)
+                    } else {
+                        continuation.resume(throwing: error)
+                    }
                     return
                 }
 

@@ -146,7 +146,6 @@ struct ChatMessageActionPolicyTests {
             seq: 1,
             roomID: "room-1",
             senderUID: senderUID,
-            senderEmail: nil,
             senderNickname: "sender",
             senderAvatarPath: nil,
             messageType: messageType,

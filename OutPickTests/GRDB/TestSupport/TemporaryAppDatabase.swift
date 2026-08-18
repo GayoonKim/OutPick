@@ -27,7 +27,6 @@ enum GRDBTestFixtures {
             seq: seq,
             roomID: roomID,
             senderUID: senderUID,
-            senderEmail: nil,
             senderNickname: "User",
             senderAvatarPath: nil,
             messageType: .text,

@@ -272,6 +272,10 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    match /moderationCommentWriteRateLimitBuckets/{bucketID} {
+      allow read, write: if false;
+    }
+
     match /chatMessageCleanupJobs/{jobID} {
       allow read, write: if false;
     }

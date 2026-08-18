@@ -42,7 +42,6 @@ enum ChatOutgoingMessageReceiptMerger {
             seq: resolvedSeq,
             roomID: message.roomID,
             senderUID: message.senderUID,
-            senderEmail: message.senderEmail,
             senderNickname: message.senderNickname,
             senderAvatarPath: message.senderAvatarPath,
             messageType: message.messageType,

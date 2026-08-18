@@ -43,6 +43,7 @@ const result = spawnSync(
       "&& node --test --test-concurrency=1 profile-transactions.emulator.test.mjs " +
       "account-deletion.emulator.test.mjs moderation-principal.emulator.test.mjs " +
       "moderation-reports.emulator.test.mjs " +
+      "comment-write-rate-limit.emulator.test.mjs " +
       "chat-moderation.emulator.test.mjs " +
       "&& node ../functions/scripts/seed-style-moods.mjs " +
       "--apply --project outpick-rules-test " +

@@ -449,7 +449,6 @@ struct ChatRoomViewModelMessageActionTests {
             seq: seq,
             roomID: "room-1",
             senderUID: senderUID,
-            senderEmail: nil,
             senderNickname: senderNickname,
             senderAvatarPath: nil,
             msg: msg,

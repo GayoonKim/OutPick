@@ -421,6 +421,22 @@ test("chat moderation cleanup due query와 TTL 인덱스를 유지한다", () =>
   ));
 });
 
+test("댓글·답글 rate bucket TTL 인덱스를 유지한다", () => {
+  const config = JSON.parse(
+    readFileSync("../firestore.indexes.json", "utf8")
+  ) as {
+    fieldOverrides?: Array<{
+      collectionGroup?: string;
+      fieldPath?: string;
+      ttl?: boolean;
+    }>;
+  };
+  assert.ok(config.fieldOverrides?.some((override) =>
+    override.collectionGroup === "moderationCommentWriteRateLimitBuckets" &&
+    override.fieldPath === "expiresAt" && override.ttl === true
+  ));
+});
+
 test("active Rooms 목록·검색 query 인덱스를 유지한다", () => {
   const config = JSON.parse(
     readFileSync("../firestore.indexes.json", "utf8")

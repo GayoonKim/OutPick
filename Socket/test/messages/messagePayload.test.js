@@ -34,7 +34,6 @@ test("text server document 기본 field를 유지한다", () => {
     messageID: "message",
     msg: "hello",
     senderUID: "user",
-    senderEmail: "user@example.com",
     nickname: "Alice",
     nowDate: new Date("2026-07-14T00:00:00.000Z")
   });
@@ -44,7 +43,6 @@ test("text server document 기본 field를 유지한다", () => {
     roomID: "room",
     roomName: "room",
     senderUID: "user",
-    senderEmail: "user@example.com",
     senderNickname: "Alice",
     senderAvatarPath: "avatar",
     msg: "hello",

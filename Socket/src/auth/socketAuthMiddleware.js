@@ -4,7 +4,10 @@ import {
   getClientKey
 } from "./handshake.js";
 import { normalizeEmail } from "../utils/strings.js";
-import { moderationSession } from "../moderation/capabilities.js";
+import {
+  isValidModerationPrincipalID,
+  moderationSession
+} from "../moderation/capabilities.js";
 
 export function createReconnectAttemptMiddleware({
   clock,
@@ -98,6 +101,15 @@ export function createFirebaseAuthMiddleware({
         error.data = {
           message: "현재 계정 상태에서는 채팅에 연결할 수 없습니다.",
           error: "moderation_access_denied"
+        };
+        return next(error);
+      }
+      if (!isValidModerationPrincipalID(session.moderationPrincipalID)) {
+        logger.warn("[auth] moderation principal binding missing", { userUID });
+        const error = new Error("principal_binding_required");
+        error.data = {
+          message: "안전 계정 연결 정보가 필요합니다.",
+          error: "principal_binding_required"
         };
         return next(error);
       }

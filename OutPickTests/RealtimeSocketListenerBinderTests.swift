@@ -255,7 +255,6 @@ private func makeAdmissionMessage(
         seq: seq,
         roomID: roomID,
         senderUID: "sender",
-        senderEmail: nil,
         senderNickname: "Sender",
         senderAvatarPath: nil,
         messageType: .text,

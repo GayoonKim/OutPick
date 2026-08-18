@@ -65,10 +65,20 @@ export async function assertAccountCapability(
   now = new Date(),
 ): Promise<void> {
   const accountSnapshot = await store.collection("moderationAccounts").doc(uid).get();
-  requireActiveAccountData(
+  requireAccountCapabilityData(
     accountSnapshot.exists ? accountSnapshot.data() : undefined,
+    capability,
+    now,
   );
-  const status = effectiveStatus(accountSnapshot.data(), now);
+}
+
+export function requireAccountCapabilityData(
+  data: FirebaseFirestore.DocumentData | undefined,
+  capability: ModerationCapability,
+  now = new Date(),
+): FirebaseFirestore.DocumentData {
+  requireActiveAccountData(data);
+  const status = effectiveStatus(data, now);
   const capabilities: readonly string[] = status ? moderationCapabilities[status] : [];
   if (!status || !capabilities.includes(capability)) {
     throw new HttpsError(
@@ -76,6 +86,7 @@ export async function assertAccountCapability(
       "현재 계정 상태에서는 이 작업을 수행할 수 없습니다.",
     );
   }
+  return data as FirebaseFirestore.DocumentData;
 }
 
 export async function assertModerationCapability(

@@ -32,7 +32,6 @@ protocol ChatMediaMessageSendingRepositoryProtocol {
     func sendFailedVideo(
         roomID: String,
         senderUID: String,
-        senderEmail: String?,
         senderNickname: String,
         localURL: URL,
         thumbData: Data?,
@@ -71,7 +70,6 @@ protocol ChatMediaSocketSending {
     func sendFailedVideos(
         roomID: String,
         senderUID: String,
-        senderEmail: String?,
         senderNickname: String,
         localURL: URL,
         thumbData: Data?,
@@ -137,7 +135,6 @@ final class SocketChatMediaMessageSendingRepository: ChatMediaMessageSendingRepo
     func sendFailedVideo(
         roomID: String,
         senderUID: String,
-        senderEmail: String?,
         senderNickname: String,
         localURL: URL,
         thumbData: Data?,
@@ -150,7 +147,6 @@ final class SocketChatMediaMessageSendingRepository: ChatMediaMessageSendingRepo
             await socketManager.sendFailedVideos(
                 roomID: roomID,
                 senderUID: senderUID,
-                senderEmail: senderEmail,
                 senderNickname: senderNickname,
                 localURL: localURL,
                 thumbData: thumbData,

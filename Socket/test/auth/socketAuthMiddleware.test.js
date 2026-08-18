@@ -105,6 +105,28 @@ test("Firebase auth middleware는 suspended moderation 계정 연결을 거부�
   assert.equal(received.message, "moderation_access_denied");
 });
 
+test("Firebase auth middleware는 principal binding 누락을 fail closed한다", async () => {
+  const middleware = createFirebaseAuthMiddleware({
+    verifyIDToken: async () => ({ uid: "user-1" }),
+    findUserByUID: async () => ({ ref: { id: "user-1" }, data: {} }),
+    findModerationAccount: async () => ({
+      data: {
+        accountStatus: "active",
+        moderationStatus: "active",
+        moderationPrincipalID: ""
+      }
+    }),
+    logger: silentLogger()
+  });
+  let received;
+  await middleware(
+    { handshake: { auth: { idToken: "token" }, headers: {} } },
+    (error) => { received = error; }
+  );
+  assert.equal(received.message, "principal_binding_required");
+  assert.equal(received.data.error, "principal_binding_required");
+});
+
 test("Firebase auth middleware는 pending 계정 연결을 거부한다", async () => {
   const middleware = createFirebaseAuthMiddleware({
     verifyIDToken: async () => ({ uid: "user-1" }),

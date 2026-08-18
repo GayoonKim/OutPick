@@ -1,5 +1,9 @@
 import Foundation
 
+enum CloudFunctionsTransportError: Error {
+    case rateLimited
+}
+
 protocol CloudFunctionsTransporting {
     func call(
         _ name: String,

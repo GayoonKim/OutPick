@@ -144,7 +144,6 @@ struct ChatOutgoingOutboxUseCaseTests {
             seq: 0,
             roomID: roomID,
             senderUID: "me@example.com",
-            senderEmail: nil,
             senderNickname: "나",
             msg: "",
             sentAt: Date(timeIntervalSince1970: 100),

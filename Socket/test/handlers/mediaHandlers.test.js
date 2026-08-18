@@ -85,6 +85,34 @@ test("media preflight는 service 결과 ACK를 그대로 반환한다", async ()
   assert.equal(ack.storagePrefix, "rooms/room/messages/message");
 });
 
+test("media limiter는 principal/room/kind와 messageID를 사용한다", async () => {
+  const calls = [];
+  const fixture = register({
+    allowRate: (...args) => { calls.push(args); return true; }
+  });
+  await fixture.fakeSocket.handlers.get("chat:mediaPreflight")({
+    roomID: "room",
+    messageID: "preflight-message",
+    kind: "video",
+    attachmentCount: 1,
+    expectedPathCount: 2
+  }, () => {});
+  await fixture.fakeSocket.handlers.get("chat:mediaFinalize")(
+    imagePayload,
+    () => {}
+  );
+  await fixture.fakeSocket.handlers.get("chat:mediaFinalize")(
+    videoPayload,
+    () => {}
+  );
+
+  assert.deepEqual(calls, [
+    ["principal-1:room:mediaPreflight:video", 4, 2000, "preflight-message"],
+    ["principal-1:room:images", 4, 2000, "message"],
+    ["principal-1:room:video", 4, 2000, "video-message"]
+  ]);
+});
+
 test("image finalize winner는 persist→emit→push→ACK를 한 번 수행한다", async () => {
   const fixture = register();
   let ack;
@@ -103,6 +131,7 @@ test("image finalize winner는 persist→emit→push→ACK를 한 번 수행한�
   });
   assert.equal(fixture.roomEmits[0].event, "receiveImages");
   assert.equal(fixture.roomEmits[0].payload.seq, 3);
+  assert.equal(Object.hasOwn(fixture.roomEmits[0].payload, "senderEmail"), false);
 });
 
 test("video persist 실패는 emit/push/success ACK를 수행하지 않는다", async () => {

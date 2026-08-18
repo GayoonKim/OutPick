@@ -22,7 +22,13 @@ final class PostCommentsViewModel: ObservableObject {
     @Published private(set) var errorMessage: String?
     @Published private(set) var submissionErrorMessage: String?
     @Published private(set) var actionErrorMessage: String?
-    @Published var draftMessage: String = ""
+    @Published var draftMessage: String = "" {
+        didSet {
+            if pendingSubmission?.draft != draftMessage {
+                pendingSubmission = nil
+            }
+        }
+    }
 
     private let brandID: BrandID
     private let seasonID: SeasonID
@@ -53,15 +59,20 @@ final class PostCommentsViewModel: ObservableObject {
     private var pinnedCommentIDs: Set<CommentID> = []
     private var commentPinScopes: [CommentID: InteractionPinScope] = [:]
     private var commentStateInvalidationTask: Task<Void, Never>?
+    private var pendingSubmission: (draft: String, message: String, requestID: UUID)?
 
     var hasMoreRootComments: Bool {
         nextCursor != nil
     }
 
     var canSubmitComment: Bool {
-        draftMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false &&
+        let message = draftMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        return message.isEmpty == false &&
+            message.utf16.count <= CommentInputPolicy.maximumUTF16Length &&
             isSubmittingComment == false
     }
+
+    var draftUTF16Length: Int { draftMessage.utf16.count }
 
     init(
         brandID: BrandID,
@@ -350,6 +361,15 @@ final class PostCommentsViewModel: ObservableObject {
 
         isSubmittingComment = true
         submissionErrorMessage = nil
+        let submittedDraft = draftMessage
+        let requestID: UUID
+        if pendingSubmission?.draft == submittedDraft,
+           pendingSubmission?.message == message {
+            requestID = pendingSubmission?.requestID ?? UUID()
+        } else {
+            requestID = UUID()
+            pendingSubmission = (submittedDraft, message, requestID)
+        }
         defer {
             isSubmittingComment = false
         }
@@ -359,15 +379,25 @@ final class PostCommentsViewModel: ObservableObject {
                 brandID: brandID,
                 seasonID: seasonID,
                 postID: postID,
-                message: message
+                message: message,
+                clientRequestID: requestID
             )
-            draftMessage = ""
+            pendingSubmission = nil
+            if draftMessage == submittedDraft {
+                draftMessage = ""
+            }
             commentInteractionStore.applyCommentMutation(result)
             authorProfileStore.seedCurrentUserProfileIfPossible()
             syncAuthorDisplays()
             loadedKey = nil
             await loadPage(reset: true)
             return result
+        } catch CloudFunctionsTransportError.rateLimited {
+            submissionErrorMessage = "잠시 후 다시 시도해주세요."
+            return nil
+        } catch let error as CommentSubmissionError {
+            submissionErrorMessage = error.localizedDescription
+            return nil
         } catch {
             submissionErrorMessage = "댓글을 등록하지 못했어요."
             return nil

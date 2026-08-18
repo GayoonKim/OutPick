@@ -8,6 +8,7 @@ export function createFakeSocket(overrides = {}) {
     handshake: { auth: {}, headers: {}, query: {}, address: "127.0.0.1" },
     rooms: new Set(),
     moderationStatus: "active",
+    moderationPrincipalID: "principal-1",
     moderationStateVersion: 1,
     allowedCapabilities: [
       "readAppContent", "createUGC", "createRoom", "joinRoom",

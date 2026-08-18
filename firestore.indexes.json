@@ -853,6 +853,12 @@
       "indexes": []
     },
     {
+      "collectionGroup": "moderationCommentWriteRateLimitBuckets",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
       "collectionGroup": "chatMessageCleanupJobs",
       "fieldPath": "expiresAt",
       "ttl": true,

@@ -1,6 +1,23 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createChatPushService } from "../../src/push/chatPushService.js";
+import {
+  buildChatPushMulticast,
+  createChatPushService
+} from "../../src/push/chatPushService.js";
+
+test("FCM data payload는 senderEmail을 포함하지 않는다", () => {
+  const payload = buildChatPushMulticast({
+    roomID: "room",
+    roomName: "Room",
+    messageID: "message",
+    messageType: "Text",
+    senderUID: "sender",
+    senderNickname: "Sender",
+    preview: "hello",
+    tokens: ["token"]
+  });
+  assert.equal(Object.hasOwn(payload.data, "senderEmail"), false);
+});
 
 function makeDB({ isBlocked = false, relationError = null } = {}) {
   const relationGet = async () => {
