@@ -233,6 +233,12 @@ Firebase Functions tests/build entry:
   - 방별 successor joinedAt/UID tie-break, 부적격 후보 race 재선정, 동시 leave/remove/suspension에서 owner 중복 0
   - 적격자 없음의 account deletion `closedByOwner`, permanent suspension `closedByModeration` 수렴
   - 2026-08-13 최종 Functions lint/build·191/191, Socket check·76/76, Rules 41/41, transaction 26/26, iOS 관련 suite와 Production Simulator build 통과. transaction suite는 유효 lease의 `processing` succession job 재점유 금지와 최대 시도·만료 lease의 `failed` 종결을 검증한다. Production rollout과 두 계정 앱 QA, 대용량 pending upload 취소, 같은 provider 재로그인까지 완료했다.
+- Phase 6 텍스트·rate-limit 자동 검증:
+  - `functions/src/lookbook/comments/contracts.test.ts`는 UTF-16 1,000 경계, UUID, 결정적 comment ID, UTC minute/retryAt과 20회 quota를 검증한다.
+  - `firestore-tests/comment-write-rate-limit.emulator.test.mjs`는 동시 replay가 comment/metric/quota를 한 번만 소비하는지, 댓글·답글 합산 20회와 멱등 충돌을 transaction으로 검증한다. Rules suite는 client의 rate bucket read/write 금지를 검증한다.
+  - Socket handler/payload/push/rateLimiter tests는 canonical principal key, 종류별 limit, 같은 message ID 재소비 방지, idle sweep/cap fail-closed와 `senderEmail`·원문 로그 비노출을 검증한다.
+  - iOS는 `CloudFunctionsCommentRepositoryTests`, chat/GRDB 관련 기존 suite와 Development Simulator build로 UUID payload, 입력 정책, 모델·DB schema의 email 제거 회귀를 검증한다.
+  - 2026-08-18 Socket check·85/85, Functions lint/build·197/197, Rules 41/41, transaction 29/29, iOS 관련 6개 suite 고유 테스트 26개와 Development build-for-testing이 통과했다.
 - Phase 4 전역 차단 자동 검증:
   - `UserBlockSessionControllerTests.swift`: cache 선적용 뒤 서버 교체, 서버 실패 cache fallback, snapshot 없는 실패의 UGC fail-closed, block/unblock mutation 뒤 메모리·계정별 snapshot 동기화와 이전 계정의 지연 실패가 새 계정 Store를 지우지 않는 경쟁 조건을 검증한다.
   - `ChatVisibleUnreadUseCaseTests.swift`: 앱 종료 중 누적된 혼합 발신자 메시지를 page 단위로 필터링하고, 전부 숨김·고정 latestSeq·목록 visible unread/preview 교체·조회 실패 raw unread fallback을 검증한다.

@@ -161,6 +161,10 @@ npm run build
 - service account의 Storage 객체 권한은 Development bucket 하나에만 부여한다.
 - Cloud Run transport는 iOS 접속을 허용하지만 Socket.IO handshake에서 Development Firebase ID Token과 active account를 검증한다.
 - Socket 전용 App Check 검증은 아직 없으며 별도 보안 강화 후보다.
+- 2026-08-18 Phase 6 Development rollout에서 `createComment`·`createReply`, Firestore Rules와 `moderationCommentWriteRateLimitBuckets.expiresAt` exact TTL을 반영했다. 전체 index manifest는 Development 원격 전용 composite 2개 삭제 위험 때문에 배포하지 않았다.
+- 첫 방 생성 수동 QA에서 Development의 구버전 `getMyModerationState`가 `moderationAccounts.accountStatus`를 쓰지 않아 최신 Rules의 `isAccountActive()`가 생성을 거부하는 버전 불일치를 확인했다. 최신 함수는 `users.accountStatus`를 projection에 포함하므로 코드 변경 없이 해당 함수만 2026-08-18 Development exact target으로 재배포했다. 앱 bootstrap 재호출이 기존 누락 projection을 자동 보정한다.
+- 방 생성 성공 후 오픈채팅 목록의 `isClosed + lifecycleStatus + lastMessageAt desc` composite가 Development에 없어 원격 쿼리가 `FAILED_PRECONDITION`으로 실패했다. 전체 index manifest 대신 해당 index `CICAgOi3z5wK` 하나만 exact 생성해 기존 원격 전용 index를 보존했으며, `READY` 후 동일 쿼리의 실제 방 반환을 확인했다.
+- Socket revision `outpick-socket-development-00004-rud`, image digest `sha256:4e2c78775ad7d066e29bf0a87abbc463e49074941e3dc8982f281a06d96870d2`가 traffic 100%이며 이전 `00002-hal`은 rollback이다. canonical readiness 200, 배포 후 ERROR 0건이다.
 
 ## 브랜드 권한과 요청
 
@@ -416,6 +420,8 @@ git diff --check -- firebase.json storage.rules
 - `moderationAccounts/{uid}` schema v2: `accountStatus`와 moderation principal/status를 함께 가진 Rules·Functions·Socket·Storage용 현재 UID capability projection.
 - `moderationUserReports`, `moderationRoomReports`, `moderationAuditLogs`: client direct read/write 금지, callable admin/user API만 사용.
 - `moderationReportRateLimitBuckets`, `moderationAdminRateLimitBuckets`: server-only 분 단위 burst counter. detail·message snapshot·provider identity는 저장하지 않고 TTL 2일로 정리한다.
+- `moderationCommentWriteRateLimitBuckets`: `functions/src/lookbook/comments/service.ts` transaction이 canonical principal 기준 댓글·답글 합산 UTC 분당 20회를 집계하는 server-only bucket이다. 본문·post/comment ID는 저장하지 않고 `expiresAt` TTL 2일을 사용한다. createComment/createReply는 UUID `clientRequestID`와 결정적 SHA-256 comment ID로 replay를 quota 소비 없이 멱등 처리한다.
+- client Rules는 댓글 rate bucket read/write를 모두 거부하며 TTL field override는 `firestore.indexes.json`이 소유한다. 배포 대상은 Functions·Rules·Indexes로 분리하고 이 구현 단계에서는 배포하지 않는다.
 - `Rooms/{roomID}/bans/{moderationPrincipalID}`: creator 전용 서버 mutation, client direct read/write 금지.
 - `Rooms.lifecycleStatus=closedByModeration`: join/read/write/Socket/push 차단 source.
 - `chatMessageCleanupJobs`, `moderationRoomCleanupJobs`: transaction 밖 Storage·projection 물리 정리의 deterministic retry source.
@@ -498,6 +504,12 @@ git diff --check -- firebase.json storage.rules
 - Socket auth disconnect/room ban/block push/rate reconnect/media ready tests.
 - `firestore-tests`의 moderation Firestore·Storage Rules emulator tests.
 - 실제 provider 재연결과 Google Cloud media 검사는 Development 수동 QA.
+
+### Phase 6 Production rollout — 2026-08-18
+
+- Functions: `createComment`, `createReply` exact target이 asia-northeast3 Node.js 24 `ACTIVE`다. 배포 이후 ERROR 0을 확인했다.
+- Firestore: `moderationCommentWriteRateLimitBuckets.expiresAt` TTL이 `ACTIVE`다. Rules는 server-only rate bucket의 client read/write deny를 포함해 Production에 release했으며 Storage Rules와 composite indexes는 변경하지 않았다.
+- Socket: 최종 로그 최소화 보정 Cloud Build `de071fbc-21f9-4f9f-81d4-87e8d94ca292`, revision `outpick-socket-p6-log-min-0818`, digest `sha256:c558c3b383185a00d395c660344d33ea29d37de23a243fd401e4e0531405022c`가 traffic 100%다. canonical readiness 200과 ERROR 0을 확인했고 `outpick-socket-p6-text-rate-0818`은 0% rollback으로 유지한다.
 
 ### Phase 5 Production rollout — 2026-08-12
 

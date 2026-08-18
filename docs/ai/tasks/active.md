@@ -2,8 +2,8 @@
 
 ## 현재 상태
 
-- 현재 핵심 task는 `chat-ugc-safety-room-moderation`이다. Phase 0~5 Production rollout과 자동 검증을 완료했다. Phase 5 운영 감사 결과 active room·기존 ban/succession job이 0이라 별도 데이터 migration은 필요하지 않았다.
-- Phase 5 Production 두 계정 앱 QA와 보충 UX QA, 대용량 pending upload 취소, 같은 provider 재로그인, Firestore·Storage emulator 재검증까지 완료했다. 다음 단계는 Phase 6 텍스트 정책·rate limit 설계 확인이다. Sign in with Apple은 별도 후속 작업이다.
+- 현재 핵심 task는 `chat-ugc-safety-room-moderation`이다. Phase 0~6 구현·자동 검증·Development QA와 Production backend rollout을 완료했다. Phase 6 운영 감사 결과 Production active principal 2건은 모두 유효했고 message·senderEmail·댓글 rate bucket이 0이라 데이터 migration은 필요하지 않았다.
+- Phase 6은 채팅·룩북 공유·텍스트 전용 댓글/답글의 자동 필터 미도입, 단일 Socket 인스턴스 메모리 limiter, 댓글·답글 Firestore 20/분 bucket·UTF-16 1,000 units·재시도 UUID 수명, 신규 메시지 senderEmail 제거와 원문 로그 최소화를 반영했다. 길이 counter 없이 상한 초과 입력만 차단한다. Redis는 보류한다. 이미지·동영상 게시 전 검사는 Phase 7이고 Sign in with Apple은 별도 후속 작업이다.
 - 이전 핵심 task `style-mood-personalization-account-privacy`의 Phase 1~8은 완료 처리했다. Apple Developer Program 가입 후 App Attest 실기기 QA와 운영 백업 설정은 출시 운영 게이트로 분리하고, 개발 데이터 전체 삭제는 마지막 Phase의 별도 승인 전까지 진행하지 않는다.
 - `lookbook-discovery-learning-loop`는 사용자 승인으로 task 문서를 생성했다. 동일 active 요청 병합, latest generation publish, 기존 시즌 동일성, 7/30/60일 retention, failure action, watchdog 복구, 관리자 review와 fixture/version gate를 설계 기준으로 확정했다.
 - `socket-ingress-ordering-hardening`은 Phase 1~6 구현, 자동 회귀와 실제 Firebase/Simulator 핵심 QA를 완료하고 2026-07-17 종료했다.
@@ -24,7 +24,7 @@
   - [Phase 계획](chat-ugc-safety-room-moderation/plan.md)
   - [현재 상태](chat-ugc-safety-room-moderation/progress.md)
   - [QA 기준](chat-ugc-safety-room-moderation/qa-checklist.md)
-  - 상태: Phase 0~5 구현·자동 검증·Production rollout·두 계정 앱 QA 완료. Phase 5는 room ban read-only 경계, 내보내기/해제 UX, pending upload 취소, 같은 provider 재로그인, owner succession을 검증했고 다음은 Phase 6 설계 확인이다.
+  - 상태: Phase 0~6 구현·자동 검증·Development 사용자 QA와 Production Functions·Rules·exact TTL·Socket rollout 완료. Production iOS binary 배포와 외부 출시 운영 gate는 별도다.
 
 ## 이전 핵심 작업
 
@@ -68,7 +68,7 @@
 
 ### 권장 진행 순서
 
-1. `chat-ugc-safety-room-moderation`: 서버 권위의 room moderation authorization, 메시지 삭제, 신고·차단·필터링, 내보내기·재입장 차단을 먼저 확립한다.
+1. `chat-ugc-safety-room-moderation`: 서버 권위의 room moderation authorization, 메시지 삭제, 신고·차단, 기술적 전송 남용 방어, 내보내기·재입장 차단을 먼저 확립한다.
 2. `customer-support-https-page`: 외부 배포 전에 공개 문의·제한 이의제기·신고 처리·개인정보·계정 삭제 경로를 준비한다. 내부 QA 중에는 병렬 후속 준비가 가능하다.
 3. `chat-room-moderator-delegation`: 앞 작업의 공통 권한 판정에 관리자 membership을 추가해 다른 채팅·웹 범위에 영향을 퍼뜨리지 않는다.
 4. `admin-web-operations-migration`: 준비된 채팅 신고·제재 API와 기존 룩북 운영 API를 소비하는 총관리자 웹을 구축하고 운영 동등성을 검증한다.

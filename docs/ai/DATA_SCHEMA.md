@@ -26,7 +26,7 @@
 | 인증·사용자 | Firebase Auth UID, `users/{uid}`, `userPublicProfiles/{uid}` | ADR-021, [FIREBASE](entrypoints/FIREBASE.md), [DATA](entrypoints/DATA.md) |
 | Chat room/membership | `Rooms/{roomID}`, `Rooms/{roomID}/members/{uid}`, `users/{uid}/joinedRooms/{roomID}` | [CHAT](entrypoints/CHAT.md), ADR 관련 task |
 | Chat message/cache | `Rooms/{roomID}/Messages/{messageID}`, GRDB `chatMessage`, `LocalChatUser`, `RoomProfileDisplayCache` | [CHAT](entrypoints/CHAT.md), [DATA](entrypoints/DATA.md) |
-| UGC safety/moderation | `moderationPrincipals`, `moderationPrincipalAliases`, `moderationAccounts`, `moderationUserReports`, `moderationRoomReports`, `moderationAuditLogs`, room `bans` | [계약](../../contracts/chat-moderation-v1.json), ADR-024, [CHAT](entrypoints/CHAT.md), [FIREBASE](entrypoints/FIREBASE.md) |
+| UGC safety/moderation | `moderationPrincipals`, `moderationPrincipalAliases`, `moderationAccounts`, `moderationUserReports`, `moderationRoomReports`, `moderationAuditLogs`, `moderationCommentWriteRateLimitBuckets`, room `bans` | [계약](../../contracts/chat-moderation-v1.json), ADR-024, [CHAT](entrypoints/CHAT.md), [FIREBASE](entrypoints/FIREBASE.md) |
 | Lookbook | `brands/{brandID}/seasons/{seasonID}/posts/{postID}` | [LOOKBOOK](entrypoints/LOOKBOOK.md) |
 | 브랜드 관리 | `brandAdmins/{uid}`, `brands/{brandID}/admins/{uid}` | [LOOKBOOK](entrypoints/LOOKBOOK.md), [FIREBASE](entrypoints/FIREBASE.md) |
 | 스타일 무드 | `styleMoods`, `styleMoodTermIndex`, `styleMoodSeedMetadata` | [FIREBASE](entrypoints/FIREBASE.md), ADR-022 |
@@ -88,7 +88,16 @@
 - `moderationAuditLogs/{actionID}`는 서버 append-only이며 actor, action, bounded before/after, reason, report reference와 request ID를 기록한다.
 - `moderationReportRateLimitBuckets/{principalID_minute}`는 같은 submission dedupe 뒤에만 증가하는 사용자 신고 burst counter다. principal당 UTC 1분 10건만 제한하며 일/대상별 hard cap은 두지 않는다.
 - `moderationAdminRateLimitBuckets/{actorUID_kind_minute}`는 관리자 read/mutation burst counter다. 두 rate collection은 server-only이고 detail·message snapshot·provider identity를 저장하지 않으며 `expiresAt` TTL 2일을 사용한다.
+- `moderationCommentWriteRateLimitBuckets/{principalID_utcMinute}`는 댓글·답글을 합산하는 server-only burst counter다. canonical principal당 UTC 1분 20건이며 `count`, `minuteBucket`, `updatedAt`, `expiresAt`만 저장하고 본문·post/comment/reply ID와 provider identity를 저장하지 않는다. post의 comment document ID는 `SHA-256(moderationPrincipalID + ":" + operation + ":" + clientRequestID)`로 결정하며, 같은 ID의 author·parent·message가 일치하는 replay는 counter를 소비하지 않고 불일치는 `IDEMPOTENCY_CONFLICT`다. `expiresAt` TTL 2일을 사용한다.
+- 댓글·답글 본문은 trim 이후 UTF-16 code unit 1,000을 상한으로 하며 iOS도 `String.UTF16View.count`로 동일하게 계산한다. `clientRequestID`는 네트워크 retry 동안만 유지하고 입력 수정·취소·성공 후 새 작성에는 새 UUID를 사용한다.
 - 신고·audit·principal·room ban과 ready 검사 metadata의 Production TTL은 개인정보 보존 기간 승인 전 활성화하지 않는다. 만료·실패 quarantine object cleanup은 별도 운영 안전장치로 유지한다.
+
+### Phase 6 텍스트 메시지 개인정보·limiter 계약
+
+- 신규 `Rooms/{roomID}/Messages/{messageID}`와 Socket/FCM/iOS/GRDB message projection은 `senderUID`와 필요한 공개 표시 snapshot만 사용하고 `senderEmail`을 저장·전송하지 않는다. 클라이언트가 제출한 email은 권위 값으로 사용하지 않는다.
+- Socket process-memory bucket은 durable data가 아니다. key는 `moderationPrincipalID + roomID + messageKind`, value는 2초 window timestamps와 최근 계산한 message ID이며 60초 idle TTL·30초 sweep·50,000 active bucket cap을 갖는다. deploy/restart 초기화는 메시지 원장이나 멱등성 source를 변경하지 않는다.
+- Socket message 중복의 최종 원장은 기존 Firestore message transaction이다. 메모리의 최근 message ID는 같은 process retry가 quota를 중복 소비하지 않게 하는 짧은 최적화일 뿐 durable idempotency record가 아니다.
+- 텍스트 채팅·룩북 공유·댓글·답글은 자동 의미 필터나 외부 moderation provider 저장소를 만들지 않는다. 현재 댓글·답글 생성은 `attachments: []`인 텍스트 전용이고, 이미지·동영상 채팅만 Phase 7의 quarantine/inspection metadata를 사용한다.
 
 ### 메시지 삭제·room ban·방 lifecycle
 

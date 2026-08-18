@@ -73,6 +73,10 @@ Repository가 `DocumentSnapshot.documentID`를 같은 snapshot에서 decode한 D
 
 경로 prefix는 `OutPick/Features/Lookbook/`이다.
 
+- Phase 6 댓글·답글 생성 경로는 ViewModel이 본문별 pending UUID를 소유하고 `CreatePostCommentUseCase`/`CreateCommentReplyUseCase` → `CommentWritingRepositoryProtocol` → `CloudFunctionsCommentWritingRepository`로 전달한다. 같은 본문 네트워크 재시도는 UUID를 유지하고 입력 변경·성공·화면 종료 뒤 새 작성은 새 UUID를 쓴다.
+- 댓글 입력은 trim 후 UTF-16 1,000 code unit 상한이며 `PostCommentInputBarView`가 길이 표시 없이 초과 입력을 막는다. 서버의 최종 상한·멱등·분당 20회 합산 quota는 `functions/src/lookbook/comments/{contracts,service}.ts`가 소유한다.
+- 댓글·답글 텍스트 의미 자동 필터는 두지 않고 기존 신고·차단·운영자 검수 흐름을 유지한다. 현재 comment attachment는 빈 배열인 텍스트 전용이다.
+
 - 시즌 후보 카드의 대표 이미지는 기존 nullable `coverImageURL`과 placeholder를 그대로 사용한다. Phase 7 backend는 목록 이미지 우선, 시즌 상세 콘텐츠 영역의 최상단 첫 유효 이미지 차선으로 URL을 채우며 SwiftUI 화면·Coordinator·DI는 변경하지 않는다. Worker 진입점은 `extraction/{image-candidates,season-cover}.ts`와 `season-discovery.ts`이고 상세 계약은 task의 `phase-7-season-cover-enrichment.md`다.
 
 ### 좋아요 탭

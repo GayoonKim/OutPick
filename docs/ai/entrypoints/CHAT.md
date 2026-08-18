@@ -83,6 +83,9 @@ Chat 기능 수정 시 관련 화면, ViewModel, UseCase, Repository, 검색 인
 - Socket message single-flight/outcome: `Socket/src/messages/messageDeliverySingleFlight.js`, `Socket/src/messages/sequenceStore.js`
 - Socket lifecycle/runtime: `Socket/src/lifecycle/`, `Socket/src/runtime/`
 - Socket 검증: `Socket/test/`, `Socket/scripts/run-tests.mjs`
+- Phase 6 process-memory burst guard는 `Socket/src/utils/rateLimit.js`가 소유한다. key는 `moderationPrincipalID + roomID + messageKind`, text 12/2초·Lookbook 6/2초·media 4/2초이며 같은 message ID 재시도는 quota를 다시 소비하지 않는다. bucket은 60초 idle TTL, 30초 lazy sweep, 최대 50,000개이고 cap 초과 신규 key는 fail closed한다. auth principal 누락도 fail closed한다.
+- 신규 message payload·FCM·iOS `ChatMessage`·GRDB current schema에는 `senderEmail`이 없다. `RealtimeSocketService`는 email을 message event에 싣지 않으며 `GRDBMigrationRegistry`의 `removeSenderEmailFromChatMessage`가 이전 로컬 column을 rebuild로 제거한다.
+- 채팅/Lookbook-share 본문은 UTF-8 4,000 bytes 상한이다. `ChatRoomMessageUseCase`와 `ChatUIView`도 같은 byte 기준으로 전송·입력을 막되 길이 counter나 제한 임박 경고는 표시하지 않는다. 텍스트 의미 자동 필터는 두지 않고 신고·차단·방 운영·사후 제재를 사용한다.
 - 현재 채팅방 stream 연결: `OutPick/Features/Chat/Controllers/ChatViewController.swift`
 - 읽음/안 읽음 shared store: `OutPick/Features/Chat/Stores/ChatRoomReadStateStore.swift`
 - 화면 read frontier 순수 상태: `OutPick/Features/Chat/Stores/ChatReadStateStore.swift`
