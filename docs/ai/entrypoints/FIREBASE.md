@@ -77,7 +77,8 @@ npm run build
 - 기본 bucket Rules와 Emulator는 root `firebase.json`을 사용한다. Phase 7 전용 bucket은 `firebase.chat-media.json`의 target config로 분리하며 Development ready Rules는 `firebase deploy --config firebase.chat-media.json --only storage:chatMediaReady --project outpick-test`로 배포한다. 이 config를 지정하지 않으면 전용 target은 배포 대상에 포함되지 않는다.
 - Development queue는 `chat-media-image-processing`, `chat-media-video-processing`이고 모두 max concurrent 1/QPS 1이다. Job은 `outpick-chat-media-image-development`(timeout 2400초)와 `outpick-chat-media-video-development`(timeout 720초)이며 2 vCPU·1 GiB, task/parallelism 1, retry 0을 사용한다.
 - Development 전용 identity는 orchestrator `outpick-chat-media-orch-dev`, cleanup `outpick-chat-media-cleanup-dev`, worker `outpick-chat-media-worker-dev`, task `outpick-chat-media-task-dev`다. orchestrator·cleanup에는 Firestore trigger 수신을 위해 project-level `roles/eventarc.eventReceiver`와 각자 전달하는 trigger Run service 한정 `roles/run.invoker`를 부여했다. task identity는 dispatcher Run service 한정 `roles/run.invoker`를 가진다. Gen2 Function 재배포가 underlying Run service의 수동 invoker binding을 제거할 수 있으므로 media Functions 배포 뒤 이 exact binding을 반드시 재감사한다. orchestrator는 이미지 Service 한정 `roles/run.invoker`와 영상 Job 한정 `roles/run.jobsExecutorWithOverrides`를 사용해야 한다. Socket identity에는 Tasks/Run Admin을 부여하지 않으며 Quarantine bucket 한정 `roles/storage.objectUser`와 자기 서비스 계정 한정 `roles/iam.serviceAccountTokenCreator`를 사용해 signed PUT target 발급·cleanup과 V4 `signBlob`을 수행한다.
-- worker image는 `asia-northeast3-docker.pkg.dev/outpick-test/outpick-runtime/chat-media-processing-worker@sha256:4741213f15d40de2ba8d916203df6f57523c2133fcbd4da6a4d34de687d56a4f`다. image/video Development Job 모두 같은 digest를 사용한다. Production bucket/IAM/queue/Job은 변경하지 않았다.
+- Development worker image는 `asia-northeast3-docker.pkg.dev/outpick-test/outpick-runtime/chat-media-processing-worker@sha256:4741213f15d40de2ba8d916203df6f57523c2133fcbd4da6a4d34de687d56a4f`다. image/video Development Job 모두 같은 digest를 사용한다.
+- 2026-08-20 Production은 merge SHA `e5100643f67500cc79dd9f7a7df03a69f0ff8078` 기준 worker digest `sha256:8663f9d93c85b6a06f1658c289fc21450d44c5b077d12932e02c8256e3958501`을 image Service와 video Job에 동일 적용했다. 두 전용 bucket·queue·네 service account와 최소 범위 IAM을 구성했고, Socket revision `outpick-socket-p73-prod-0820`이 traffic 100%를 담당한다.
 
 ### Chat media Phase 7.2 서버 진입점
 
@@ -85,7 +86,8 @@ npm run build
 - `reconcileChatMediaObjectCleanup`: 15분마다 terminal `MediaUploads.cleanupStatus`를 수렴시킨다.
 - `chatMediaDeliveryJobs`: client deny, Socket Admin SDK watcher 전용이며 `expiresAt` 7일 TTL이다.
 - 일반 media `storage.rules`: `attachments/{attachmentID}/{display|thumbnail}`은 account capability와 대응 visible v2 message 두 문서만 조회해 `readyAttachmentIDs`를 확인한다. message 없는 staging·고아 객체, 삭제·비노출 message, 비활성 account는 읽을 수 없다.
-- Development에는 관련 Firestore/Storage Rules, media exact composite index 4개, `MediaUploads.expiresAt`·`chatMediaDeliveryJobs.expiresAt` TTL과 Phase 7.1/7.2 Function 9개를 반영했다. 두 Firestore trigger를 포함한 Function은 모두 `ACTIVE`다. 배포 후 기존 cleanup scheduler 감사에서 원격에만 빠져 있던 `chatMessageCleanupJobs(status, nextAttemptAt)`, `moderationRoomCleanupJobs(status, nextAttemptAt)` manifest index 2개도 exact 생성해 `READY`로 만들었고 다음 자동 실행은 HTTP 200이었다. Production은 변경하지 않았다.
+- Development에는 관련 Firestore/Storage Rules, media exact composite index 4개, `MediaUploads.expiresAt`·`chatMediaDeliveryJobs.expiresAt` TTL과 Phase 7.1/7.2 Function 9개를 반영했다. 두 Firestore trigger를 포함한 Function은 모두 `ACTIVE`다. 배포 후 기존 cleanup scheduler 감사에서 원격에만 빠져 있던 `chatMessageCleanupJobs(status, nextAttemptAt)`, `moderationRoomCleanupJobs(status, nextAttemptAt)` manifest index 2개도 exact 생성해 `READY`로 만들었고 다음 자동 실행은 HTTP 200이었다.
+- Production에는 신규 media Function 5개와 변경 cleanup Function 3개를 exact 배포했고 모두 `ACTIVE`다. 관련 composite index 7개는 `READY`, `MediaUploads`·`chatMediaDeliveryJobs` TTL은 `ACTIVE`, 두 scheduler는 자동 실행 HTTP 200, 두 queue는 `RUNNING`이다. Gen2 재배포 뒤 Eventarc receiver와 underlying Run invoker binding을 재감사했다.
 
 ### 환경별 Kakao custom-token runtime
 

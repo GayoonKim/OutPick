@@ -56,3 +56,12 @@ Production 변경 전 Functions·Socket·Worker·Rules·iOS 자동 검증과 사
 - Rules 문제는 기록한 이전 ruleset을 release에 다시 연결한다. 보안 규칙을 완화해 우회하지 않는다.
 - Worker 문제는 Service/Job을 직전 digest로 되돌린다. queued upload는 watchdog과 Cloud Tasks retry가 수렴하므로 원장을 직접 수정하지 않는다.
 - 버킷·service account·queue는 rollback 중 삭제하지 않는다. 신규 자원 삭제는 잔존 object/job과 참조 0을 별도 감사하고 다시 승인받는다.
+
+## 2026-08-20 실제 배포 기록
+
+- 코드 기준: PR #15, PR #16 병합 완료. 최종 merge SHA `e5100643f67500cc79dd9f7a7df03a69f0ff8078`.
+- Worker: Cloud Build `ab30f3de-c85f-467a-b081-6a315d6afb14`, digest `sha256:8663f9d93c85b6a06f1658c289fc21450d44c5b077d12932e02c8256e3958501`. image Service와 video Job이 같은 digest·worker identity를 사용한다.
+- Backend: 신규 media Function 5개와 변경 cleanup Function 3개 `ACTIVE`, scheduler 자동 실행 HTTP 200, queue 2개 `RUNNING`, composite index 7개 `READY`, TTL 2개 `ACTIVE`. 신규 media 계층의 배포 후 ERROR는 0건이었다.
+- Socket: image `sha256:55dddf2265c93f67ace2cb2be6b3b87df5daaad3c84f2251fc9218bb8df9b5a9`의 revision `outpick-socket-p73-prod-0820`을 traffic 100%로 전환했다. candidate/live `/readyz` 200, Production 앱 인증 handshake 101, 전환 이후 ERROR 0건을 확인했다. rollback revision은 `outpick-socket-p6-log-min-0818`이다.
+- iOS: 정확한 SHA의 `Production-Release` iPhone arm64 build는 성공했다. 개인 개발팀의 Production App Attest entitlement 제한 때문에 Release 설치는 불가했고, 같은 Production 스킴의 `Production-Debug`를 개인 개발 서명으로 iPhone 14에 설치·실행해 스모크했다.
+- E2E: 사용자 단건 JPEG와 영상이 앱에서 최종 전송 완료됐다. 운영 로그에서 JPEG image Service HTTP 200, video Job `exit(0)`, dispatcher·worker-completion 2xx와 전체 관련 ERROR 0건을 확인했다. QA Firestore/Storage 식별자는 서비스 계정의 broad 조회를 사용하지 않고 사용자 완료 UI와 식별자 비노출 로그로 판정했다.
