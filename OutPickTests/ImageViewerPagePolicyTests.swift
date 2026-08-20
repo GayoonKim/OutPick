@@ -7,6 +7,9 @@
 
 import Testing
 import UIKit
+import ImageIO
+import UniformTypeIdentifiers
+import Kingfisher
 @testable import OutPick
 
 struct ImageViewerPagePolicyTests {
@@ -91,6 +94,21 @@ struct ImageViewerPagePolicyTests {
         #expect(page.thumbnailPath == "thumb.jpg")
         #expect(page.originalPath == "original.jpg")
         #expect(page.shouldAlwaysResolveThumbnail)
+        #expect(page.isAnimated == false)
+    }
+
+    @Test func animatedGIFPageUsesLazyFrameImageContract() throws {
+        let data = try #require(makeAnimatedGIFData())
+        let image = try #require(SimpleImageViewerVC.makeAnimatedImage(from: data))
+        let page = ImageViewerPage(
+            thumbnailPath: "thumbnail",
+            originalPath: "display",
+            isAnimated: true
+        )
+
+        #expect(page.isAnimated)
+        #expect(image.kf.imageFrameCount == 2)
+        #expect(image.images == nil)
     }
 
     private func makeAttachment(
@@ -117,6 +135,39 @@ struct ImageViewerPagePolicyTests {
         return renderer.image { context in
             UIColor.blue.setFill()
             context.fill(CGRect(x: 0, y: 0, width: 1, height: 1))
+        }
+    }
+
+    private func makeAnimatedGIFData() -> Data? {
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(
+            data,
+            UTType.gif.identifier as CFString,
+            2,
+            nil
+        ), let first = makeImage(color: .red)?.cgImage,
+           let second = makeImage(color: .blue)?.cgImage else {
+            return nil
+        }
+
+        let frameProperties = [
+            kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFDelayTime: 0.1]
+        ] as CFDictionary
+        let containerProperties = [
+            kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFLoopCount: 0]
+        ] as CFDictionary
+        CGImageDestinationSetProperties(destination, containerProperties)
+        CGImageDestinationAddImage(destination, first, frameProperties)
+        CGImageDestinationAddImage(destination, second, frameProperties)
+        guard CGImageDestinationFinalize(destination) else { return nil }
+        return data as Data
+    }
+
+    private func makeImage(color: UIColor) -> UIImage? {
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 2, height: 2))
+        return renderer.image { context in
+            color.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 2, height: 2))
         }
     }
 }

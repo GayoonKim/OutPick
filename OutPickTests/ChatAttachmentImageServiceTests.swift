@@ -28,6 +28,21 @@ struct ChatAttachmentImageServiceTests {
         #expect(image.size.height > 0)
     }
 
+    @Test func loadImageDownsamplesLargeLocalUploadSourceForChatRendering() async throws {
+        let service = makeService()
+        let imageData = try #require(makeImageData(size: CGSize(width: 2_400, height: 1_600)))
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ChatAttachmentImageServiceTests-\(UUID().uuidString)")
+            .appendingPathExtension("jpg")
+        try imageData.write(to: fileURL)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+
+        let image = try await service.loadImage(for: fileURL.absoluteString, maxBytes: 20 * 1024 * 1024)
+
+        #expect(max(image.size.width, image.size.height) <= 1_024)
+        #expect(max(image.size.width, image.size.height) >= 1_000)
+    }
+
     @Test func outgoingPreviewStoreCanBeReadBackByKey() async throws {
         let service = makeService()
         let imageData = try #require(makeImageData())
@@ -38,6 +53,26 @@ struct ChatAttachmentImageServiceTests {
 
         #expect(image?.size.width ?? 0 > 0)
         #expect(image?.size.height ?? 0 > 0)
+    }
+
+    @Test func attachmentResourcePathPreservesReadyBucket() {
+        let attachment = Attachment(
+            type: .image,
+            index: 0,
+            bucketThumb: "outpick-test-chat-media",
+            bucketOriginal: "outpick-test-chat-media",
+            pathThumb: "rooms/room/messages/message/attachments/a/thumbnail",
+            pathOriginal: "rooms/room/messages/message/attachments/a/display",
+            width: 10,
+            height: 10,
+            bytesOriginal: 100,
+            hash: "hash"
+        )
+
+        #expect(attachment.thumbResourcePath ==
+            "gs://outpick-test-chat-media/rooms/room/messages/message/attachments/a/thumbnail")
+        #expect(attachment.originalResourcePath ==
+            "gs://outpick-test-chat-media/rooms/room/messages/message/attachments/a/display")
     }
 
     private func makeService() -> ChatAttachmentImageService {
@@ -57,12 +92,12 @@ struct ChatAttachmentImageServiceTests {
         )
     }
 
-    private func makeImageData() -> Data? {
-        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1))
+    private func makeImageData(size: CGSize = CGSize(width: 1, height: 1)) -> Data? {
+        let renderer = UIGraphicsImageRenderer(size: size)
         return renderer.image { context in
             UIColor.red.setFill()
-            context.fill(CGRect(x: 0, y: 0, width: 1, height: 1))
-        }.pngData()
+            context.fill(CGRect(origin: .zero, size: size))
+        }.jpegData(compressionQuality: 0.92)
     }
 }
 

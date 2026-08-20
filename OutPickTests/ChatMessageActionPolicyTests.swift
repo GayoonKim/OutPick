@@ -10,6 +10,30 @@ import Testing
 @testable import OutPick
 
 struct ChatMessageActionPolicyTests {
+    @Test func unconfirmedLocalMessageExposesNoServerMessageActions() {
+        let message = makeMessage(
+            senderUID: "sender@example.com",
+            messageType: .image,
+            msg: nil,
+            sharedContent: nil,
+            seq: 0
+        )
+
+        let policy = ChatMessageActionPolicy.make(
+            for: message,
+            currentUserID: "sender@example.com",
+            roomCreatorID: "sender@example.com"
+        )
+
+        #expect(policy.canReply == false)
+        #expect(policy.canCopy == false)
+        #expect(policy.canDelete == false)
+        #expect(policy.canReport == false)
+        #expect(policy.canBlock == false)
+        #expect(policy.canAnnounce == false)
+        #expect(policy.canRemoveMember == false)
+    }
+
     @Test func lookbookShareAllowsReplyButBlocksCopyAndAnnounce() {
         let message = makeMessage(
             senderUID: "sender@example.com",
@@ -139,11 +163,12 @@ struct ChatMessageActionPolicyTests {
         senderUID: String,
         messageType: ChatMessageType?,
         msg: String?,
-        sharedContent: LookbookSharedContent?
+        sharedContent: LookbookSharedContent?,
+        seq: Int64 = 1
     ) -> ChatMessage {
         ChatMessage(
             ID: "message-1",
-            seq: 1,
+            seq: seq,
             roomID: "room-1",
             senderUID: senderUID,
             senderNickname: "sender",

@@ -29,6 +29,31 @@ struct ChatMessageWindowStoreTests {
         #expect(readMarkerIndex < secondMessageIndex)
     }
 
+    @Test func resetKeepsRepeatedDateSeparatorIdentifiersUniqueForRestoredFailure() {
+        var store = makeStore()
+        let firstDay = Date(timeIntervalSince1970: 100)
+        let secondDay = firstDay.addingTimeInterval(86_400)
+        var restoredFailure = makeMessage(
+            id: "failed",
+            seq: 0,
+            sentAt: firstDay.addingTimeInterval(120)
+        )
+        restoredFailure.isFailed = true
+
+        let items = store.reset(
+            messages: [
+                makeMessage(id: "m1", seq: 1, sentAt: firstDay),
+                makeMessage(id: "m2", seq: 2, sentAt: secondDay),
+                restoredFailure
+            ],
+            readBoundarySeq: nil
+        )
+
+        #expect(messageIDs(in: items) == ["m1", "m2", "failed"])
+        #expect(items.filter(isDateSeparator).count == 3)
+        #expect(Set(items).count == items.count)
+    }
+
     @Test func applyDedupesIncomingMessagesAndReconfiguresExistingMessage() throws {
         var store = makeStore()
         let sentAt = Date(timeIntervalSince1970: 100)
