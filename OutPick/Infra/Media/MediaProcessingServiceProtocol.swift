@@ -14,6 +14,9 @@ protocol MediaProcessingServiceProtocol: AnyObject {
     /// 이미지 여러 장 가공 (썸네일 + 원본 안전 URL + 메타)
     func prepareImages(_ results: [PHPickerResult]) async throws -> [ProcessedImage]
 
+    /// Phase 7 v2 채팅 업로드용 metadata-free transport source 한 개를 만든다.
+    func prepareChatImage(_ result: PHPickerResult, index: Int) async throws -> ProcessedImage
+
     /// 기존 채팅 방 생성/편집 경로의 ProcessedImage 기반 API.
     func preparePairs(_ results: [PHPickerResult]) async throws -> [ProcessedImage]
 

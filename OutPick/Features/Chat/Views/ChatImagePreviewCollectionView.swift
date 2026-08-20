@@ -16,7 +16,7 @@ struct ChatImagePreviewItem: Hashable {
 
     var previewPaths: [String] {
         var seen = Set<String>()
-        return [attachment.pathThumb, attachment.pathOriginal].compactMap { path in
+        return [attachment.thumbResourcePath, attachment.originalResourcePath].compactMap { path in
             guard !path.isEmpty else { return nil }
             guard seen.insert(path).inserted else { return nil }
             return path
@@ -25,6 +25,10 @@ struct ChatImagePreviewItem: Hashable {
 
     var isVideo: Bool {
         attachment.type == .video
+    }
+
+    var isAnimatedGIF: Bool {
+        attachment.isAnimatedGIF
     }
 }
 

@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import ImageIO
 import UIKit
 
 struct ChatAttachmentImagePipelines {
@@ -23,11 +24,14 @@ final class ChatAttachmentImageService: ChatAttachmentImageLoading {
     )
 
     private let pipelines: ChatAttachmentImagePipelines
+    private let imageStorageRepository: FirebaseImageStorageRepositoryProtocol
+    private let imageDataCache = NSCache<NSString, NSData>()
 
     init(
         imageStorageRepository: FirebaseImageStorageRepositoryProtocol,
         pipelines: ChatAttachmentImagePipelines? = nil
     ) {
+        self.imageStorageRepository = imageStorageRepository
         if let pipelines {
             self.pipelines = pipelines
         } else if imageStorageRepository is FirebaseImageStorageRepository {
@@ -35,6 +39,7 @@ final class ChatAttachmentImageService: ChatAttachmentImageLoading {
         } else {
             self.pipelines = Self.makePipelines(imageStorageRepository: imageStorageRepository)
         }
+        imageDataCache.totalCostLimit = 45 * 1024 * 1024
     }
 
     func cacheImagesIfNeeded(for message: ChatMessage, maxBytes: Int) async -> [UIImage] {
@@ -84,6 +89,30 @@ final class ChatAttachmentImageService: ChatAttachmentImageLoading {
         return try await pipelines.remote.loadImage(path: path, maxBytes: maxBytes)
     }
 
+    func loadImageData(for path: String, maxBytes: Int) async throws -> Data {
+        guard !path.isEmpty else { throw URLError(.badURL) }
+
+        if let fileURL = path.localFileURL {
+            return try Data(contentsOf: fileURL, options: [.mappedIfSafe])
+        }
+
+        let cacheKey = path as NSString
+        if let cached = imageDataCache.object(forKey: cacheKey) {
+            let data = cached as Data
+            guard data.count <= maxBytes else { throw URLError(.dataLengthExceedsMaximum) }
+            return data
+        }
+
+        guard isStoragePath(path) else { throw URLError(.badURL) }
+        let data = try await imageStorageRepository.fetchImageDataFromStorage(
+            image: path,
+            location: .roomImage,
+            maxBytes: maxBytes
+        )
+        imageDataCache.setObject(data as NSData, forKey: cacheKey, cost: data.count)
+        return data
+    }
+
     func prefetchThumbnails(for messages: [ChatMessage], maxBytes: Int, maxConcurrent: Int) async {
         let paths = messages.flatMap { thumbnailPaths(for: $0) }
         await prefetchImages(paths: paths, maxBytes: maxBytes, maxConcurrent: maxConcurrent)
@@ -108,7 +137,7 @@ final class ChatAttachmentImageService: ChatAttachmentImageLoading {
         var seen = Set<String>()
         return message.displayableAttachments
             .compactMap { attachment in
-                let path = attachment.normalizedThumbPath
+                let path = attachment.thumbResourcePath
                 guard !path.isEmpty, seen.insert(path).inserted else { return nil }
                 return path
             }
@@ -120,11 +149,19 @@ final class ChatAttachmentImageService: ChatAttachmentImageLoading {
 
     private func loadLocalImage(from path: String) -> UIImage? {
         guard let fileURL = path.localFileURL else { return nil }
-        guard let data = try? Data(contentsOf: fileURL),
-              let image = UIImage(data: data) else {
+        guard let source = CGImageSourceCreateWithURL(fileURL as CFURL, nil) else {
             return nil
         }
-        return image
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: 1_024,
+            kCGImageSourceShouldCacheImmediately: true
+        ]
+        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            return nil
+        }
+        return UIImage(cgImage: image)
     }
 
     private func outgoingPreviewKey(for key: String) -> String {

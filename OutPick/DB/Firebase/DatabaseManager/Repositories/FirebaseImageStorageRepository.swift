@@ -240,7 +240,7 @@ final class FirebaseImageStorageRepository: FirebaseImageStorageRepositoryProtoc
 
     func fetchImageDataFromStorage(image: String, location: ImageLocation, maxBytes: Int) async throws -> Data {
         let _ = location
-        let ref = storage.reference(withPath: image)
+        let ref = storageReference(for: image)
         return try await ref.data(maxSize: Int64(max(1, maxBytes)))
     }
 
@@ -316,5 +316,15 @@ final class FirebaseImageStorageRepository: FirebaseImageStorageRepositoryProtoc
         case .video:
             return "video"
         }
+    }
+
+    private func storageReference(for resourcePath: String) -> StorageReference {
+        guard resourcePath.hasPrefix("gs://"),
+              let separator = resourcePath.dropFirst(5).firstIndex(of: "/") else {
+            return storage.reference(withPath: resourcePath)
+        }
+        let bucket = String(resourcePath[resourcePath.index(resourcePath.startIndex, offsetBy: 5)..<separator])
+        let path = String(resourcePath[resourcePath.index(after: separator)...])
+        return Storage.storage(url: "gs://\(bucket)").reference(withPath: path)
     }
 }

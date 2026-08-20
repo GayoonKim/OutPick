@@ -16,7 +16,7 @@ enum ChatMessageWindowUpdateType {
 
 enum ChatMessageListItem: Hashable {
     case message(ChatMessage)
-    case dateSeparator(Date)
+    case dateSeparator(Date, occurrence: Int)
     case readMarker
 
     var messageID: String? {
@@ -294,11 +294,21 @@ struct ChatMessageWindowStore {
 
     private mutating func buildItems(from messages: [ChatMessage]) -> [ChatMessageListItem] {
         var builtItems: [ChatMessageListItem] = []
+        var separatorOccurrences: [Date: Int] = [:]
+        for item in items {
+            guard case let .dateSeparator(date, occurrence) = item else { continue }
+            separatorOccurrences[date] = max(
+                separatorOccurrences[date, default: 0],
+                occurrence + 1
+            )
+        }
         for message in messages {
             messagesByID[message.ID] = message
             let messageDate = day(for: message)
             if lastMessageDate == nil || lastMessageDate != messageDate {
-                builtItems.append(.dateSeparator(messageDate))
+                let occurrence = separatorOccurrences[messageDate, default: 0]
+                separatorOccurrences[messageDate] = occurrence + 1
+                builtItems.append(.dateSeparator(messageDate, occurrence: occurrence))
                 lastMessageDate = messageDate
             }
             builtItems.append(.message(message))
@@ -457,7 +467,7 @@ struct ChatMessageWindowStore {
         )
 
         items.removeAll { item in
-            guard case let .dateSeparator(date) = item else { return false }
+            guard case let .dateSeparator(date, _) = item else { return false }
             return !presentMessageDates.contains(calendar.startOfDay(for: date))
         }
     }

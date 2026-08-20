@@ -18,7 +18,9 @@ enum GRDBMigrationRegistry {
         "createVideoIndex",
         "createChatOutgoingOutbox",
         "addSenderUIDToMediaIndexes",
-        "removeSenderEmailFromChatMessage"
+        "removeSenderEmailFromChatMessage",
+        "extendChatOutgoingOutboxForMediaV2",
+        "storeChatMediaUploadSession"
     ]
 
     static func migrate(_ writer: some DatabaseWriter) throws {
@@ -142,6 +144,20 @@ enum GRDBMigrationRegistry {
         }
         migrator.registerMigration("removeSenderEmailFromChatMessage") { db in
             try ChatMessageSenderUIDSchemaRebuilder.rebuildIfNeeded(in: db)
+        }
+        migrator.registerMigration("extendChatOutgoingOutboxForMediaV2") { db in
+            try addColumnIfMissing("uploadID", to: "chatOutgoingOutbox", in: db) { $0.add(column: "uploadID", .text) }
+            try addColumnIfMissing("clientMutationID", to: "chatOutgoingOutbox", in: db) { $0.add(column: "clientMutationID", .text) }
+            try addColumnIfMissing("processingStatus", to: "chatOutgoingOutbox", in: db) { $0.add(column: "processingStatus", .text) }
+            try addColumnIfMissing("statusCheckedAt", to: "chatOutgoingOutbox", in: db) { $0.add(column: "statusCheckedAt", .datetime) }
+            try addColumnIfMissing("terminalAt", to: "chatOutgoingOutbox", in: db) { $0.add(column: "terminalAt", .datetime) }
+            try addColumnIfMissing("expiresAt", to: "chatOutgoingOutbox", in: db) { $0.add(column: "expiresAt", .datetime) }
+            try db.create(index: "idx_chatOutgoingOutbox_expiry", on: "chatOutgoingOutbox", columns: ["expiresAt"], ifNotExists: true)
+        }
+        migrator.registerMigration("storeChatMediaUploadSession") { db in
+            try addColumnIfMissing("sessionPayloadJSON", to: "chatOutgoingOutbox", in: db) {
+                $0.add(column: "sessionPayloadJSON", .text)
+            }
         }
 
         return migrator

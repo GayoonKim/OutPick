@@ -9,9 +9,49 @@ import Foundation
 
 enum ChatMediaUploadError: Error {
     case emptyImageAttachments
+    case invalidUploadContract
+    case uploadRetryLimitExceeded
 }
 
 protocol ChatMediaUploadUseCaseProtocol {
+    func enqueueImageProcessing(
+        pairs: [ProcessedImage],
+        roomID: String,
+        uploadID: String,
+        clientMutationID: String,
+        onWaitingForSlot: @escaping () async -> Void,
+        onReservation: @escaping (ChatMediaUploadReservation) async -> Void,
+        onProgress: @escaping (Double) -> Void
+    ) async throws -> ChatMediaProcessingSnapshot
+
+    func enqueueVideoProcessing(
+        prepared: PreparedVideo,
+        roomID: String,
+        uploadID: String,
+        clientMutationID: String,
+        onWaitingForSlot: @escaping () async -> Void,
+        onReservation: @escaping (ChatMediaUploadReservation) async -> Void,
+        onProgress: @escaping (Double) -> Void
+    ) async throws -> ChatMediaProcessingSnapshot
+
+    func mediaProcessingStatus(
+        roomID: String,
+        uploadID: String,
+        clientMutationID: String
+    ) async throws -> ChatMediaProcessingSnapshot
+
+    func cancelMediaProcessing(
+        roomID: String,
+        uploadID: String,
+        clientMutationID: String
+    ) async throws -> ChatMediaProcessingSnapshot
+
+    func reconcileRestoredMediaProcessing(
+        roomID: String,
+        uploadID: String,
+        clientMutationID: String
+    ) async -> ChatMediaRestoreReconciliationResult
+
     func makePendingImageMessage(
         roomID: String,
         messageID: String,
@@ -55,22 +95,71 @@ protocol ChatMediaUploadUseCaseProtocol {
         ensureReservation: Bool
     ) async throws -> ChatMessageSendReceipt
     func sendFailedVideo(roomID: String, prepared: PreparedVideo)
+
+    func finishImageUploadTurn(uploadID: String) async
+    func finishVideoUploadTurn(uploadID: String) async
+}
+
+extension ChatMediaUploadUseCaseProtocol {
+    func enqueueImageProcessing(
+        pairs: [ProcessedImage],
+        roomID: String,
+        uploadID: String,
+        clientMutationID: String,
+        onReservation: @escaping (ChatMediaUploadReservation) async -> Void,
+        onProgress: @escaping (Double) -> Void
+    ) async throws -> ChatMediaProcessingSnapshot {
+        try await enqueueImageProcessing(
+            pairs: pairs,
+            roomID: roomID,
+            uploadID: uploadID,
+            clientMutationID: clientMutationID,
+            onWaitingForSlot: {},
+            onReservation: onReservation,
+            onProgress: onProgress
+        )
+    }
+
+    func enqueueVideoProcessing(
+        prepared: PreparedVideo,
+        roomID: String,
+        uploadID: String,
+        clientMutationID: String,
+        onReservation: @escaping (ChatMediaUploadReservation) async -> Void,
+        onProgress: @escaping (Double) -> Void
+    ) async throws -> ChatMediaProcessingSnapshot {
+        try await enqueueVideoProcessing(
+            prepared: prepared,
+            roomID: roomID,
+            uploadID: uploadID,
+            clientMutationID: clientMutationID,
+            onWaitingForSlot: {},
+            onReservation: onReservation,
+            onProgress: onProgress
+        )
+    }
 }
 
 final class ChatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol {
     private let imageStorageRepository: FirebaseImageStorageRepositoryProtocol
     private let videoStorageRepository: FirebaseVideoStorageRepositoryProtocol
     private let sendingRepository: ChatMediaMessageSendingRepositoryProtocol
+    private let foregroundUploader: ChatMediaForegroundUploading
     private let attachmentImageLoader: ChatAttachmentImageLoading
     private let currentUserProvider: () -> ChatMessageSenderSnapshot
     private let dateProvider: () -> Date
     private let previewDirectoryProvider: () -> URL?
     private let fileManager: FileManager
+    private let uploadTurnQueue: ChatMediaUploadTurnQueueProtocol
+    private let slotRetryDelays: [UInt64]
+    private let restoreStatusRetryDelays: [UInt64]
+    private let sleep: @Sendable (UInt64) async throws -> Void
 
     init(
         imageStorageRepository: FirebaseImageStorageRepositoryProtocol,
         videoStorageRepository: FirebaseVideoStorageRepositoryProtocol,
         sendingRepository: ChatMediaMessageSendingRepositoryProtocol = SocketChatMediaMessageSendingRepository(),
+        foregroundUploader: ChatMediaForegroundUploading = URLSessionChatMediaForegroundUploader(),
         attachmentImageLoader: ChatAttachmentImageLoading,
         currentUserProvider: @escaping () -> ChatMessageSenderSnapshot = {
             ChatMessageSenderSnapshot(
@@ -83,16 +172,293 @@ final class ChatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol {
         previewDirectoryProvider: @escaping () -> URL? = {
             FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
         },
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        uploadTurnQueue: ChatMediaUploadTurnQueueProtocol = ChatMediaUploadTurnQueue(),
+        slotRetryDelays: [UInt64] = [2, 4, 8, 15, 30],
+        restoreStatusRetryDelays: [UInt64] = [2, 4, 8],
+        sleep: @escaping @Sendable (UInt64) async throws -> Void = { seconds in
+            try await Task.sleep(nanoseconds: seconds * 1_000_000_000)
+        }
     ) {
         self.imageStorageRepository = imageStorageRepository
         self.videoStorageRepository = videoStorageRepository
         self.sendingRepository = sendingRepository
+        self.foregroundUploader = foregroundUploader
         self.attachmentImageLoader = attachmentImageLoader
         self.currentUserProvider = currentUserProvider
         self.dateProvider = dateProvider
         self.previewDirectoryProvider = previewDirectoryProvider
         self.fileManager = fileManager
+        self.uploadTurnQueue = uploadTurnQueue
+        self.slotRetryDelays = slotRetryDelays
+        self.restoreStatusRetryDelays = restoreStatusRetryDelays
+        self.sleep = sleep
+    }
+
+    func enqueueImageProcessing(
+        pairs: [ProcessedImage],
+        roomID: String,
+        uploadID: String,
+        clientMutationID: String,
+        onWaitingForSlot: @escaping () async -> Void,
+        onReservation: @escaping (ChatMediaUploadReservation) async -> Void,
+        onProgress: @escaping (Double) -> Void
+    ) async throws -> ChatMediaProcessingSnapshot {
+        let sources = pairs.sorted(by: { $0.index < $1.index }).map {
+            ChatMediaSourceDescriptor(
+                index: $0.index,
+                fileURL: $0.originalFileURL,
+                contentType: $0.contentType,
+                sizeBytes: Int64($0.bytesOriginal),
+                sha256: $0.sha256,
+                mediaFormat: $0.mediaFormat,
+                isAnimated: $0.isAnimated
+            )
+        }
+        try await uploadTurnQueue.acquire(lane: .images, uploadID: uploadID)
+        do {
+            try Task.checkCancellation()
+            return try await enqueueProcessing(
+                sources: sources,
+                roomID: roomID,
+                uploadID: uploadID,
+                clientMutationID: clientMutationID,
+                kind: "images",
+                onWaitingForSlot: onWaitingForSlot,
+                onReservation: onReservation,
+                onProgress: onProgress
+            )
+        } catch {
+            await uploadTurnQueue.release(lane: .images, uploadID: uploadID)
+            throw error
+        }
+    }
+
+    func enqueueVideoProcessing(
+        prepared: PreparedVideo,
+        roomID: String,
+        uploadID: String,
+        clientMutationID: String,
+        onWaitingForSlot: @escaping () async -> Void,
+        onReservation: @escaping (ChatMediaUploadReservation) async -> Void,
+        onProgress: @escaping (Double) -> Void
+    ) async throws -> ChatMediaProcessingSnapshot {
+        let source = ChatMediaSourceDescriptor(
+            index: 0,
+            fileURL: prepared.compressedFileURL,
+            contentType: "video/mp4",
+            sizeBytes: prepared.sizeBytes,
+            sha256: prepared.sha256,
+            mediaFormat: "mp4",
+            isAnimated: false
+        )
+        try await uploadTurnQueue.acquire(lane: .video, uploadID: uploadID)
+        do {
+            try Task.checkCancellation()
+            return try await enqueueProcessing(
+                sources: [source],
+                roomID: roomID,
+                uploadID: uploadID,
+                clientMutationID: clientMutationID,
+                kind: "video",
+                onWaitingForSlot: onWaitingForSlot,
+                onReservation: onReservation,
+                onProgress: onProgress
+            )
+        } catch {
+            await uploadTurnQueue.release(lane: .video, uploadID: uploadID)
+            throw error
+        }
+    }
+
+    func mediaProcessingStatus(
+        roomID: String,
+        uploadID: String,
+        clientMutationID: String
+    ) async throws -> ChatMediaProcessingSnapshot {
+        try await sendingRepository.mediaProcessingStatus(
+            roomID: roomID,
+            uploadID: uploadID,
+            clientMutationID: clientMutationID
+        )
+    }
+
+    func cancelMediaProcessing(
+        roomID: String,
+        uploadID: String,
+        clientMutationID: String
+    ) async throws -> ChatMediaProcessingSnapshot {
+        return try await sendingRepository.cancelMediaUpload(
+            roomID: roomID,
+            uploadID: uploadID,
+            clientMutationID: clientMutationID
+        )
+    }
+
+    func reconcileRestoredMediaProcessing(
+        roomID: String,
+        uploadID: String,
+        clientMutationID: String
+    ) async -> ChatMediaRestoreReconciliationResult {
+        var retryIndex = 0
+        while true {
+            do {
+                let snapshot = try await sendingRepository.mediaProcessingStatus(
+                    roomID: roomID,
+                    uploadID: uploadID,
+                    clientMutationID: clientMutationID
+                )
+                switch snapshot.processingStatus {
+                case .queued, .processing, .ready:
+                    return .resume(snapshot)
+                case .failed, .canceled, .expired:
+                    return .manualRetry
+                case .uploading:
+                    break
+                }
+            } catch {
+                // 재실행 복원에서는 파일을 자동 재업로드하지 않고 status만 제한적으로 재확인한다.
+            }
+
+            guard retryIndex < restoreStatusRetryDelays.count else {
+                return await resolveRestoredUploadAfterStatusRetries(
+                    roomID: roomID,
+                    uploadID: uploadID,
+                    clientMutationID: clientMutationID
+                )
+            }
+            let delay = restoreStatusRetryDelays[retryIndex]
+            retryIndex += 1
+            do {
+                try await sleep(delay)
+                try Task.checkCancellation()
+            } catch {
+                return .manualRetry
+            }
+        }
+    }
+
+    private func resolveRestoredUploadAfterStatusRetries(
+        roomID: String,
+        uploadID: String,
+        clientMutationID: String
+    ) async -> ChatMediaRestoreReconciliationResult {
+        guard let snapshot = try? await sendingRepository.cancelMediaUpload(
+            roomID: roomID,
+            uploadID: uploadID,
+            clientMutationID: clientMutationID
+        ) else {
+            return .manualRetry
+        }
+        switch snapshot.processingStatus {
+        case .queued, .processing, .ready:
+            return .resume(snapshot)
+        case .uploading, .failed, .canceled, .expired:
+            return .manualRetry
+        }
+    }
+
+    private func enqueueProcessing(
+        sources: [ChatMediaSourceDescriptor],
+        roomID: String,
+        uploadID: String,
+        clientMutationID: String,
+        kind: String,
+        onWaitingForSlot: @escaping () async -> Void,
+        onReservation: @escaping (ChatMediaUploadReservation) async -> Void,
+        onProgress: @escaping (Double) -> Void
+    ) async throws -> ChatMediaProcessingSnapshot {
+        let orderedSources = sources.sorted(by: { $0.index < $1.index })
+        var retryIndex = 0
+        let reservation: ChatMediaUploadReservation
+        while true {
+            do {
+                reservation = try await sendingRepository.reserveMediaUpload(
+                    roomID: roomID,
+                    uploadID: uploadID,
+                    clientMutationID: clientMutationID,
+                    kind: kind,
+                    sources: orderedSources
+                )
+                break
+            } catch ChatMediaUploadReservationError.activeUploadLimit {
+                await onWaitingForSlot()
+                let fallbackDelay = slotRetryDelays.last ?? 30
+                let delay = slotRetryDelays.isEmpty
+                    ? fallbackDelay
+                    : slotRetryDelays[min(retryIndex, slotRetryDelays.count - 1)]
+                retryIndex += 1
+                try await sleep(delay)
+                try Task.checkCancellation()
+            }
+        }
+        try Task.checkCancellation()
+        await onReservation(reservation)
+
+        do {
+            guard !orderedSources.isEmpty else { throw ChatMediaUploadError.invalidUploadContract }
+            let sourcesByIndex = Dictionary(uniqueKeysWithValues: orderedSources.map { ($0.index, $0) })
+            let totalSourceCount = orderedSources.count
+
+            var reconciliation = reservation
+            var cycle = 0
+            while !reconciliation.targets.isEmpty {
+                guard cycle < 4 else { throw ChatMediaUploadError.uploadRetryLimitExceeded }
+                cycle += 1
+                let initialCompletedCount = max(0, totalSourceCount - reconciliation.targets.count)
+                for (offset, target) in reconciliation.targets.enumerated() {
+                    try Task.checkCancellation()
+                    guard let source = sourcesByIndex[target.sourceIndex],
+                          source.sizeBytes == target.sizeBytes,
+                          source.sha256 == target.sha256 else {
+                        throw ChatMediaUploadError.invalidUploadContract
+                    }
+                    do {
+                        _ = try await foregroundUploader.upload(
+                            source: source,
+                            target: target
+                        ) { progress in
+                            let completed = Double(initialCompletedCount + offset)
+                            onProgress((completed + progress) / Double(totalSourceCount))
+                        }
+                    } catch {
+                        // PUT 응답 유실과 실제 실패를 서버 객체 조회로 구분한다.
+                        break
+                    }
+                }
+                reconciliation = try await sendingRepository.refreshMediaUploadTargets(
+                    roomID: roomID,
+                    uploadID: uploadID,
+                    clientMutationID: clientMutationID
+                )
+            }
+            onProgress(1)
+            return try await sendingRepository.finalizeMediaUpload(
+                roomID: roomID,
+                uploadID: uploadID,
+                clientMutationID: clientMutationID,
+                kind: kind
+            )
+        } catch {
+            // 예약 이후의 로컬/전송 실패는 server slot과 source를 즉시 정리한다.
+            // cancel/ready 경합에서 ready가 이기면 실패 버블로 만들지 않고 그대로 수렴한다.
+            if let canceled = try? await sendingRepository.cancelMediaUpload(
+                roomID: roomID,
+                uploadID: uploadID,
+                clientMutationID: clientMutationID
+            ), canceled.processingStatus == .ready {
+                return canceled
+            }
+            throw error
+        }
+    }
+
+    func finishImageUploadTurn(uploadID: String) async {
+        await uploadTurnQueue.release(lane: .images, uploadID: uploadID)
+    }
+
+    func finishVideoUploadTurn(uploadID: String) async {
+        await uploadTurnQueue.release(lane: .video, uploadID: uploadID)
     }
 
     func makePendingImageMessage(
@@ -315,36 +681,26 @@ final class ChatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol {
         messageID: String,
         pairs: [ProcessedImage]
     ) -> [Attachment] {
-        guard let cachesDir = previewDirectoryProvider() else { return [] }
-        let baseDir = cachesDir
-            .appendingPathComponent("pending-image-preview", isDirectory: true)
-            .appendingPathComponent(messageID, isDirectory: true)
-        try? fileManager.createDirectory(at: baseDir, withIntermediateDirectories: true)
-
         var attachments: [Attachment] = []
         attachments.reserveCapacity(pairs.count)
 
         for pair in pairs.sorted(by: { $0.index < $1.index }) {
-            let fileName = "\(pair.index)_\(pair.sha256).jpg"
-            let fileURL = baseDir.appendingPathComponent(fileName)
-            do {
-                try pair.thumbData.write(to: fileURL, options: .atomic)
-                let localPath = fileURL.absoluteString
-                attachments.append(Attachment(
-                    type: .image,
-                    index: pair.index,
-                    pathThumb: localPath,
-                    pathOriginal: localPath,
-                    width: pair.originalWidth,
-                    height: pair.originalHeight,
-                    bytesOriginal: pair.bytesOriginal,
-                    hash: pair.sha256,
-                    blurhash: nil,
-                    duration: nil
-                ))
-            } catch {
-                print("pending preview write 실패: \(error)")
-            }
+            guard fileManager.fileExists(atPath: pair.originalFileURL.path) else { continue }
+            let sourcePath = pair.originalFileURL.absoluteString
+            attachments.append(Attachment(
+                type: .image,
+                index: pair.index,
+                pathThumb: sourcePath,
+                pathOriginal: sourcePath,
+                width: pair.originalWidth,
+                height: pair.originalHeight,
+                bytesOriginal: pair.bytesOriginal,
+                hash: pair.sha256,
+                blurhash: nil,
+                duration: nil,
+                mediaFormat: pair.mediaFormat,
+                isAnimated: pair.isAnimated
+            ))
         }
         return attachments
     }

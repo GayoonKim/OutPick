@@ -8,8 +8,26 @@
 import Foundation
 
 enum ChatPendingMediaUploadState: Equatable {
+    case waitingForSlot
     case uploading(Double)
+    case queued
+    case processing
     case failed
+    case expired
+
+    var presentationState: ChatPendingMediaPresentationState {
+        switch self {
+        case .waitingForSlot, .uploading, .queued, .processing:
+            return .silent
+        case .failed, .expired:
+            return .failure
+        }
+    }
+}
+
+enum ChatPendingMediaPresentationState: Equatable {
+    case silent
+    case failure
 }
 
 struct ChatPendingImageUploadPayload {

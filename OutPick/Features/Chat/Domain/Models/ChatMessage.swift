@@ -396,8 +396,13 @@ extension ChatMessage {
         }
 
         return Attachment(
+            attachmentID: dict["attachmentID"] as? String,
             type: type,
             index: parseInt(dict["index"]) ?? fallbackIndex,
+            bucketThumb: (dict["bucketThumb"] as? String)
+                ?? (dict["thumbnailBucket"] as? String),
+            bucketOriginal: (dict["bucketOriginal"] as? String)
+                ?? (dict["displayBucket"] as? String),
             pathThumb: pathThumb,
             pathOriginal: pathOriginal,
             width: parseInt(dict["w"]) ?? parseInt(dict["width"]) ?? 0,
@@ -407,7 +412,9 @@ extension ChatMessage {
             blurhash: dict["blurhash"] as? String,
             duration: parseDouble(dict["duration"]),
             approxBitrateMbps: parseDouble(dict["approxBitrateMbps"]),
-            preset: dict["preset"] as? String
+            preset: dict["preset"] as? String,
+            mediaFormat: dict["mediaFormat"] as? String,
+            isAnimated: (dict["animated"] as? Bool) ?? (dict["isAnimated"] as? Bool)
         )
     }
 

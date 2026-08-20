@@ -12,14 +12,14 @@ struct ChatMessageCellCommands {
     var openMedia: (_ messageID: String, _ attachmentIndex: Int) -> Void = { _, _ in }
     var openSenderProfile: (_ messageID: String) -> Void = { _ in }
     var retryUpload: (_ messageID: String) -> Void = { _ in }
+    var deleteUpload: (_ messageID: String) -> Void = { _ in }
     var openLookbookShare: (_ content: LookbookSharedContent) -> Void = { _ in }
 }
 
 class ChatMessageCell: UICollectionViewCell {
     static let reuseIdentifier = "ChatMessageCell"
-    enum ImageUploadOverlayState: Equatable {
+    enum MediaUploadRecoveryState: Equatable {
         case none
-        case uploading(Double)
         case failed
     }
 
@@ -106,33 +106,48 @@ class ChatMessageCell: UICollectionViewCell {
         return view
     }()
 
-    private let imageUploadOverlayView: UIView = {
-        let view = UIView()
-        view.translatesAutoresizingMaskIntoConstraints = false
-        view.backgroundColor = UIColor.black.withAlphaComponent(0.3)
-        view.isHidden = true
-        return view
-    }()
-
-    private let imageUploadProgressRing: CircularProgressRingView = {
-        let view = CircularProgressRingView()
-        view.translatesAutoresizingMaskIntoConstraints = false
-        view.isHidden = true
-        return view
-    }()
-
     private let imageUploadRetryButton: UIButton = {
         let button = UIButton(type: .system)
         button.translatesAutoresizingMaskIntoConstraints = false
-        var config = UIButton.Configuration.filled()
-        config.title = "다시 시도"
-        config.baseBackgroundColor = UIColor.black.withAlphaComponent(0.55)
-        config.baseForegroundColor = .white
-        config.cornerStyle = .capsule
-        config.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12)
+        button.accessibilityIdentifier = "chat.mediaUpload.action"
+        button.accessibilityLabel = "이미지 다시 시도"
+        var config = UIButton.Configuration.plain()
+        config.image = UIImage(
+            systemName: "arrow.clockwise.circle.fill",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold)
+        )
+        config.baseForegroundColor = OutPickTheme.ColorToken.accent
+        config.contentInsets = .zero
         button.configuration = config
         button.isHidden = true
         return button
+    }()
+
+    private let imageUploadDeleteButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.accessibilityIdentifier = "chat.mediaUpload.delete"
+        button.accessibilityLabel = "실패한 이미지 삭제"
+        var config = UIButton.Configuration.plain()
+        config.image = UIImage(
+            systemName: "trash.circle.fill",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold)
+        )
+        config.baseForegroundColor = OutPickTheme.ColorToken.destructive
+        config.contentInsets = .zero
+        button.configuration = config
+        button.isHidden = true
+        return button
+    }()
+
+    private lazy var imageUploadRecoveryStack: UIStackView = {
+        let stack = UIStackView(arrangedSubviews: [imageUploadRetryButton, imageUploadDeleteButton])
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.axis = .horizontal
+        stack.alignment = .center
+        stack.spacing = 0
+        stack.isHidden = true
+        return stack
     }()
     
     private let failedIconImageView: UIImageView = {
@@ -238,6 +253,8 @@ class ChatMessageCell: UICollectionViewCell {
     private var timeBottomConstraint: NSLayoutConstraint?
     private var timeRightOfHostLeading: NSLayoutConstraint?
     private var timeLeftOfHostTrailing: NSLayoutConstraint?
+    private var mediaRecoveryBottomConstraint: NSLayoutConstraint?
+    private var mediaRecoveryTrailingConstraint: NSLayoutConstraint?
 
     private var videoBadgeConstraints: [NSLayoutConstraint] = []
     private var representedLookbookSharedContent: LookbookSharedContent?
@@ -251,12 +268,10 @@ class ChatMessageCell: UICollectionViewCell {
         contentView.addSubview(imagesPreviewCollectionView)
         contentView.addSubview(lookbookShareContentView)
         contentView.addSubview(timeLabel)
+        contentView.addSubview(imageUploadRecoveryStack)
         contentView.addSubview(failedIconImageView)
         bubbleView.addSubview(replyPreviewContainer)
         bubbleView.addSubview(messageLabel)
-        imagesPreviewCollectionView.addSubview(imageUploadOverlayView)
-        imageUploadOverlayView.addSubview(imageUploadProgressRing)
-        imageUploadOverlayView.addSubview(imageUploadRetryButton)
         
         messageLabelTopConsraint = messageLabel.topAnchor.constraint(equalTo: bubbleView.topAnchor, constant: 10)
         NSLayoutConstraint.activate([
@@ -281,19 +296,10 @@ class ChatMessageCell: UICollectionViewCell {
             
             failedIconImageView.widthAnchor.constraint(equalToConstant: 20),
             failedIconImageView.heightAnchor.constraint(equalToConstant: 20),
-
-            imageUploadOverlayView.leadingAnchor.constraint(equalTo: imagesPreviewCollectionView.leadingAnchor),
-            imageUploadOverlayView.trailingAnchor.constraint(equalTo: imagesPreviewCollectionView.trailingAnchor),
-            imageUploadOverlayView.topAnchor.constraint(equalTo: imagesPreviewCollectionView.topAnchor),
-            imageUploadOverlayView.bottomAnchor.constraint(equalTo: imagesPreviewCollectionView.bottomAnchor),
-
-            imageUploadProgressRing.centerXAnchor.constraint(equalTo: imageUploadOverlayView.centerXAnchor),
-            imageUploadProgressRing.centerYAnchor.constraint(equalTo: imageUploadOverlayView.centerYAnchor),
-            imageUploadProgressRing.widthAnchor.constraint(equalToConstant: 46),
-            imageUploadProgressRing.heightAnchor.constraint(equalToConstant: 46),
-
-            imageUploadRetryButton.centerXAnchor.constraint(equalTo: imageUploadOverlayView.centerXAnchor),
-            imageUploadRetryButton.centerYAnchor.constraint(equalTo: imageUploadOverlayView.centerYAnchor)
+            imageUploadRetryButton.widthAnchor.constraint(equalToConstant: 44),
+            imageUploadRetryButton.heightAnchor.constraint(equalToConstant: 44),
+            imageUploadDeleteButton.widthAnchor.constraint(equalToConstant: 44),
+            imageUploadDeleteButton.heightAnchor.constraint(equalToConstant: 44)
         ])
         
         // Time label priorities to avoid truncation
@@ -323,6 +329,7 @@ class ChatMessageCell: UICollectionViewCell {
         lookbookShareCellTapGR.cancelsTouchesInView = false
         contentView.addGestureRecognizer(lookbookShareCellTapGR)
         imageUploadRetryButton.addTarget(self, action: #selector(handleRetryTap), for: .touchUpInside)
+        imageUploadDeleteButton.addTarget(self, action: #selector(handleDeleteTap), for: .touchUpInside)
         let failedIconTapGR = UITapGestureRecognizer(target: self, action: #selector(handleRetryTap))
         failedIconImageView.addGestureRecognizer(failedIconTapGR)
         
@@ -363,7 +370,7 @@ class ChatMessageCell: UICollectionViewCell {
         messageLabel.textColor = OutPickTheme.ColorToken.textPrimary
         highlightView?.removeFromSuperview()
         highlightView = nil
-        applyImageUploadOverlay(.none)
+        applyMediaUploadRecoveryState(.none)
         lookbookShareContentView.prepareForReuse()
         lookbookShareContentView.isHidden = true
         representedLookbookSharedContent = nil
@@ -433,6 +440,7 @@ class ChatMessageCell: UICollectionViewCell {
         timeBottomConstraint = nil
         timeRightOfHostLeading = nil
         timeLeftOfHostTrailing = nil
+        resetMediaUploadRecoveryConstraints()
     }
     
     func showVideoBadge(durationText: String?) {
@@ -498,6 +506,7 @@ class ChatMessageCell: UICollectionViewCell {
         failedIconImageViewCenterYConstraint = nil
         failedIconImageViewTrainlingConstraint = nil
         failedIconImageView.isHidden = true
+        resetMediaUploadRecoveryConstraints()
     }
     
     func configureWithMessage(
@@ -817,7 +826,7 @@ class ChatMessageCell: UICollectionViewCell {
         imagesPreviewCollectionView.isHidden = true
         imagesPreviewCollectionView.updateCollectionView([], 0, [], thumbnailLoader: nil)
         hideVideoBadge()
-        applyImageUploadOverlay(.none)
+        applyMediaUploadRecoveryState(.none)
 
         if message.isDeleted {
             configureWithMessage(with: message, avatarLoader: avatarLoader)
@@ -1062,6 +1071,11 @@ class ChatMessageCell: UICollectionViewCell {
         commands.retryUpload(representedMessageID)
     }
 
+    @objc private func handleDeleteTap() {
+        guard let representedMessageID else { return }
+        commands.deleteUpload(representedMessageID)
+    }
+
     @objc private func handleLookbookShareCellTap(_ gesture: UITapGestureRecognizer) {
         guard gesture.state == .ended,
               !lookbookShareContentView.isHidden,
@@ -1075,25 +1089,49 @@ class ChatMessageCell: UICollectionViewCell {
         imagesPreviewCollectionView.currentImages()
     }
 
-    func applyImageUploadOverlay(_ state: ImageUploadOverlayState) {
+    func applyMediaUploadRecoveryState(_ state: MediaUploadRecoveryState) {
         switch state {
         case .none:
-            imageUploadOverlayView.isHidden = true
-            imageUploadProgressRing.isHidden = true
+            resetMediaUploadRecoveryConstraints()
+            imageUploadRecoveryStack.isHidden = true
             imageUploadRetryButton.isHidden = true
-            imageUploadProgressRing.setProgress(0)
-        case .uploading(let progress):
-            imageUploadOverlayView.isHidden = false
-            imageUploadOverlayView.backgroundColor = UIColor.black.withAlphaComponent(0.36)
-            imageUploadProgressRing.isHidden = false
-            imageUploadRetryButton.isHidden = true
-            imageUploadProgressRing.setProgress(CGFloat(max(0, min(1, progress))))
+            imageUploadDeleteButton.isHidden = true
         case .failed:
-            imageUploadOverlayView.isHidden = false
-            imageUploadOverlayView.backgroundColor = UIColor.black.withAlphaComponent(0.42)
-            imageUploadProgressRing.isHidden = true
-            imageUploadRetryButton.isHidden = true
+            timeLabel.isHidden = true
+            NSLayoutConstraint.deactivate([
+                timeBottomConstraint,
+                timeRightOfHostLeading,
+                timeLeftOfHostTrailing
+            ].compactMap { $0 })
+            imageUploadRecoveryStack.isHidden = false
+            imageUploadRetryButton.isHidden = false
+            imageUploadDeleteButton.isHidden = false
+            failedIconImageView.isHidden = true
+            mountMediaUploadRecoveryActions(on: imagesPreviewCollectionView)
         }
+    }
+
+    private func mountMediaUploadRecoveryActions(on host: UIView) {
+        resetMediaUploadRecoveryConstraints()
+        mediaRecoveryBottomConstraint = imageUploadRecoveryStack.bottomAnchor.constraint(equalTo: host.bottomAnchor)
+        mediaRecoveryTrailingConstraint = imageUploadRecoveryStack.trailingAnchor.constraint(
+            equalTo: host.leadingAnchor,
+            constant: -4
+        )
+        NSLayoutConstraint.activate([
+            mediaRecoveryBottomConstraint,
+            mediaRecoveryTrailingConstraint
+        ].compactMap { $0 })
+        contentView.bringSubviewToFront(imageUploadRecoveryStack)
+    }
+
+    private func resetMediaUploadRecoveryConstraints() {
+        NSLayoutConstraint.deactivate([
+            mediaRecoveryBottomConstraint,
+            mediaRecoveryTrailingConstraint
+        ].compactMap { $0 })
+        mediaRecoveryBottomConstraint = nil
+        mediaRecoveryTrailingConstraint = nil
     }
 
     // MARK: - Time Label Helpers
@@ -1191,54 +1229,5 @@ class ChatMessageCell: UICollectionViewCell {
         } else {
             return String(format: "%d:%02d", m, s)
         }
-    }
-}
-
-private final class CircularProgressRingView: UIView {
-    private let trackLayer = CAShapeLayer()
-    private let progressLayer = CAShapeLayer()
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        isOpaque = false
-        backgroundColor = UIColor.black.withAlphaComponent(0.24)
-        layer.cornerRadius = 23
-
-        trackLayer.fillColor = UIColor.clear.cgColor
-        trackLayer.strokeColor = UIColor.white.withAlphaComponent(0.25).cgColor
-        trackLayer.lineWidth = 4
-        layer.addSublayer(trackLayer)
-
-        progressLayer.fillColor = UIColor.clear.cgColor
-        progressLayer.strokeColor = OutPickTheme.ColorToken.accent.cgColor
-        progressLayer.lineWidth = 4
-        progressLayer.lineCap = .round
-        progressLayer.strokeEnd = 0
-        layer.addSublayer(progressLayer)
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        let inset: CGFloat = 6
-        let rect = bounds.insetBy(dx: inset, dy: inset)
-        let start = -CGFloat.pi / 2
-        let end = start + (CGFloat.pi * 2)
-        let path = UIBezierPath(arcCenter: CGPoint(x: rect.midX, y: rect.midY),
-                                radius: rect.width / 2,
-                                startAngle: start,
-                                endAngle: end,
-                                clockwise: true)
-        trackLayer.frame = bounds
-        progressLayer.frame = bounds
-        trackLayer.path = path.cgPath
-        progressLayer.path = path.cgPath
-    }
-
-    func setProgress(_ progress: CGFloat) {
-        progressLayer.strokeEnd = max(0, min(1, progress))
     }
 }

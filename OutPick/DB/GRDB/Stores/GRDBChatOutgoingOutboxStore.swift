@@ -11,12 +11,15 @@ final class GRDBChatOutgoingOutboxStore: ChatOutgoingOutboxPersisting {
         try await database.dbPool.write { db in
             try db.execute(sql: """
                 INSERT OR REPLACE INTO chatOutgoingOutbox
-                (messageID, roomID, kind, stage, createdAt, updatedAt, localPayloadJSON, uploadedPayloadJSON, lastError)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (messageID, roomID, kind, stage, createdAt, updatedAt, localPayloadJSON, uploadedPayloadJSON, lastError,
+                 uploadID, clientMutationID, processingStatus, statusCheckedAt, terminalAt, expiresAt, sessionPayloadJSON)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, arguments: [
                 record.messageID, record.roomID, record.kind.rawValue, record.stage.rawValue,
                 record.createdAt, record.updatedAt, record.localPayloadJSON,
-                record.uploadedPayloadJSON, record.lastError
+                record.uploadedPayloadJSON, record.lastError, record.uploadID,
+                record.clientMutationID, record.processingStatus, record.statusCheckedAt,
+                record.terminalAt, record.expiresAt, record.sessionPayloadJSON
             ])
         }
     }
@@ -30,7 +33,10 @@ final class GRDBChatOutgoingOutboxStore: ChatOutgoingOutboxPersisting {
                 stage: ChatOutgoingOutboxStage(rawValue: row["stage"] as String) ?? .failed,
                 createdAt: row["createdAt"], updatedAt: row["updatedAt"],
                 localPayloadJSON: row["localPayloadJSON"], uploadedPayloadJSON: row["uploadedPayloadJSON"],
-                lastError: row["lastError"]
+                lastError: row["lastError"], uploadID: row["uploadID"],
+                clientMutationID: row["clientMutationID"], processingStatus: row["processingStatus"],
+                statusCheckedAt: row["statusCheckedAt"], terminalAt: row["terminalAt"], expiresAt: row["expiresAt"],
+                sessionPayloadJSON: row["sessionPayloadJSON"]
             )
         }
     }
@@ -51,7 +57,10 @@ final class GRDBChatOutgoingOutboxStore: ChatOutgoingOutboxPersisting {
                     stage: ChatOutgoingOutboxStage(rawValue: row["stage"] as String) ?? .failed,
                     createdAt: row["createdAt"], updatedAt: row["updatedAt"],
                     localPayloadJSON: row["localPayloadJSON"], uploadedPayloadJSON: row["uploadedPayloadJSON"],
-                    lastError: row["lastError"]
+                    lastError: row["lastError"], uploadID: row["uploadID"],
+                    clientMutationID: row["clientMutationID"], processingStatus: row["processingStatus"],
+                    statusCheckedAt: row["statusCheckedAt"], terminalAt: row["terminalAt"], expiresAt: row["expiresAt"],
+                    sessionPayloadJSON: row["sessionPayloadJSON"]
                 )
             }
         }
@@ -72,7 +81,10 @@ final class GRDBChatOutgoingOutboxStore: ChatOutgoingOutboxPersisting {
                     createdAt: row["createdAt"], updatedAt: row["updatedAt"],
                     localPayloadJSON: row["localPayloadJSON"],
                     uploadedPayloadJSON: row["uploadedPayloadJSON"],
-                    lastError: row["lastError"]
+                    lastError: row["lastError"], uploadID: row["uploadID"],
+                    clientMutationID: row["clientMutationID"], processingStatus: row["processingStatus"],
+                    statusCheckedAt: row["statusCheckedAt"], terminalAt: row["terminalAt"], expiresAt: row["expiresAt"],
+                    sessionPayloadJSON: row["sessionPayloadJSON"]
                 )
             }
         }

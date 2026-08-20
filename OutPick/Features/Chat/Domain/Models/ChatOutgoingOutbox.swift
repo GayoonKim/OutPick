@@ -15,8 +15,13 @@ enum ChatOutgoingOutboxKind: String, Codable, Equatable, Sendable {
 
 enum ChatOutgoingOutboxStage: String, Codable, Equatable, Sendable {
     case needsUpload
+    case uploading
     case uploaded
+    case queued
+    case processing
     case sending
+    case canceled
+    case expired
     case failed
 }
 
@@ -30,10 +35,30 @@ struct ChatOutgoingOutboxRecord: Codable, Equatable, Sendable {
     var localPayloadJSON: String?
     var uploadedPayloadJSON: String?
     var lastError: String?
+    var uploadID: String? = nil
+    var clientMutationID: String? = nil
+    var processingStatus: String? = nil
+    var statusCheckedAt: Date? = nil
+    var terminalAt: Date? = nil
+    var expiresAt: Date? = nil
+    var sessionPayloadJSON: String? = nil
+
+    var requiresManualMediaRetryAfterRestore: Bool {
+        switch stage {
+        case .needsUpload, .uploaded, .failed:
+            return true
+        case .uploading, .queued, .processing, .sending, .canceled, .expired:
+            return false
+        }
+    }
 }
 
 struct ChatOutgoingOutboxImagePayload: Codable, Equatable, Sendable {
     struct Item: Codable, Equatable, Sendable {
+        private enum CodingKeys: String, CodingKey {
+            case index, originalFilePath, thumbFilePath, originalWidth, originalHeight
+            case bytesOriginal, sha256, contentType, mediaFormat, isAnimated
+        }
         let index: Int
         let originalFilePath: String
         let thumbFilePath: String
@@ -41,6 +66,47 @@ struct ChatOutgoingOutboxImagePayload: Codable, Equatable, Sendable {
         let originalHeight: Int
         let bytesOriginal: Int
         let sha256: String
+        let contentType: String
+        let mediaFormat: String
+        let isAnimated: Bool
+
+        init(
+            index: Int,
+            originalFilePath: String,
+            thumbFilePath: String,
+            originalWidth: Int,
+            originalHeight: Int,
+            bytesOriginal: Int,
+            sha256: String,
+            contentType: String = "image/jpeg",
+            mediaFormat: String = "jpeg",
+            isAnimated: Bool = false
+        ) {
+            self.index = index
+            self.originalFilePath = originalFilePath
+            self.thumbFilePath = thumbFilePath
+            self.originalWidth = originalWidth
+            self.originalHeight = originalHeight
+            self.bytesOriginal = bytesOriginal
+            self.sha256 = sha256
+            self.contentType = contentType
+            self.mediaFormat = mediaFormat
+            self.isAnimated = isAnimated
+        }
+
+        init(from decoder: Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            index = try values.decode(Int.self, forKey: .index)
+            originalFilePath = try values.decode(String.self, forKey: .originalFilePath)
+            thumbFilePath = try values.decode(String.self, forKey: .thumbFilePath)
+            originalWidth = try values.decode(Int.self, forKey: .originalWidth)
+            originalHeight = try values.decode(Int.self, forKey: .originalHeight)
+            bytesOriginal = try values.decode(Int.self, forKey: .bytesOriginal)
+            sha256 = try values.decode(String.self, forKey: .sha256)
+            contentType = try values.decodeIfPresent(String.self, forKey: .contentType) ?? "image/jpeg"
+            mediaFormat = try values.decodeIfPresent(String.self, forKey: .mediaFormat) ?? "jpeg"
+            isAnimated = try values.decodeIfPresent(Bool.self, forKey: .isAnimated) ?? false
+        }
     }
 
     let items: [Item]
@@ -60,4 +126,11 @@ struct ChatOutgoingOutboxVideoPayload: Codable, Equatable, Sendable {
 
 struct ChatOutgoingOutboxUploadedImagesPayload: Codable, Equatable, Sendable {
     let attachments: [Attachment]
+}
+
+struct ChatMediaUploadSessionPayload: Codable, Equatable, Sendable {
+    let uploadID: String
+    let clientMutationID: String
+    let kind: String
+    let expiresAt: Date
 }

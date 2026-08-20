@@ -1005,6 +1005,123 @@ actor RealtimeSocketService {
         }
     }
 
+    func reserveMediaUploadAwaitingAck(
+        roomID: String,
+        uploadID: String,
+        clientMutationID: String,
+        kind: String,
+        sources: [ChatMediaSourceDescriptor],
+        ackTimeout: Double = 10
+    ) async throws -> ChatMediaUploadReservation {
+        let body: [String: Any] = [
+            "contractVersion": 2,
+            "roomID": roomID,
+            "uploadID": uploadID,
+            "clientMutationID": clientMutationID,
+            "kind": kind,
+            "attachmentCount": sources.count,
+            "expectedPathCount": sources.count,
+            "sources": sources.sorted(by: { $0.index < $1.index }).map {
+                [
+                    "index": $0.index,
+                    "contentType": $0.contentType,
+                    "sizeBytes": $0.sizeBytes,
+                    "sha256": $0.sha256,
+                    "mediaFormat": $0.mediaFormat,
+                    "isAnimated": $0.isAnimated
+                ] as [String: Any]
+            }
+        ]
+        let payload = try await emitPayloadAck(
+            event: "chat:mediaPreflight",
+            body,
+            timeout: ackTimeout,
+            failureMessage: "미디어 업로드 예약에 실패했습니다."
+        )
+        return try Self.mediaUploadReservation(
+            from: payload,
+            uploadID: uploadID,
+            clientMutationID: clientMutationID
+        )
+    }
+
+    func refreshMediaUploadTargetsAwaitingAck(
+        roomID: String,
+        uploadID: String,
+        clientMutationID: String,
+        ackTimeout: Double = 10
+    ) async throws -> ChatMediaUploadReservation {
+        let payload = try await emitPayloadAck(
+            event: "chat:mediaRefreshUploadTargets",
+            [
+                "contractVersion": 2,
+                "roomID": roomID,
+                "uploadID": uploadID,
+                "clientMutationID": clientMutationID
+            ],
+            timeout: ackTimeout,
+            failureMessage: "미디어 업로드 상태 확인에 실패했습니다."
+        )
+        return try Self.mediaUploadReservation(
+            from: payload,
+            uploadID: uploadID,
+            clientMutationID: clientMutationID
+        )
+    }
+
+    func finalizeMediaUploadAwaitingAck(
+        roomID: String,
+        uploadID: String,
+        clientMutationID: String,
+        kind: String,
+        ackTimeout: Double = 15
+    ) async throws -> ChatMediaProcessingSnapshot {
+        let body: [String: Any] = [
+            "contractVersion": 2,
+            "roomID": roomID,
+            "uploadID": uploadID,
+            "clientMutationID": clientMutationID,
+            "kind": kind
+        ]
+        let payload = try await emitPayloadAck(
+            event: "chat:mediaFinalize",
+            body,
+            timeout: ackTimeout,
+            failureMessage: "미디어 처리 요청에 실패했습니다."
+        )
+        return try Self.processingSnapshot(from: payload, fallbackUploadID: uploadID)
+    }
+
+    func mediaProcessingStatusAwaitingAck(
+        roomID: String,
+        uploadID: String,
+        clientMutationID: String,
+        ackTimeout: Double = 5
+    ) async throws -> ChatMediaProcessingSnapshot {
+        let payload = try await emitPayloadAck(
+            event: "chat:mediaProcessingStatus",
+            ["roomID": roomID, "uploadID": uploadID, "clientMutationID": clientMutationID],
+            timeout: ackTimeout,
+            failureMessage: "미디어 처리 상태 확인에 실패했습니다."
+        )
+        return try Self.processingSnapshot(from: payload, fallbackUploadID: uploadID)
+    }
+
+    func cancelMediaUploadAwaitingAck(
+        roomID: String,
+        uploadID: String,
+        clientMutationID: String,
+        ackTimeout: Double = 5
+    ) async throws -> ChatMediaProcessingSnapshot {
+        let payload = try await emitPayloadAck(
+            event: "chat:mediaCancel",
+            ["roomID": roomID, "uploadID": uploadID, "clientMutationID": clientMutationID],
+            timeout: ackTimeout,
+            failureMessage: "미디어 업로드 취소에 실패했습니다."
+        )
+        return try Self.processingSnapshot(from: payload, fallbackUploadID: uploadID)
+    }
+
     func preflightMediaUploadAwaitingAck(
         roomID: String,
         messageID: String,
@@ -1898,6 +2015,103 @@ actor RealtimeSocketService {
         }
     }
 
+    private func emitPayloadAck(
+        event: String,
+        _ body: [String: Any],
+        timeout: Double,
+        failureMessage: String
+    ) async throws -> [String: Any] {
+        guard let socket, socket.status == .connected else {
+            throw Self.makeSocketError(code: -1009, message: "소켓이 연결되어 있지 않습니다.")
+        }
+        return try await withCheckedThrowingContinuation { continuation in
+            socket.emitWithAck(event, body).timingOut(after: timeout) { items in
+                guard let payload = items.first as? [String: Any],
+                      payload["ok"] as? Bool == true else {
+                    let code = (items.first as? [String: Any])?["error"] as? String ?? "unknown"
+                    continuation.resume(
+                        throwing: Self.makeSocketError(
+                            code: -1,
+                            message: "\(failureMessage) (\(code))",
+                            serverErrorCode: code
+                        )
+                    )
+                    return
+                }
+                continuation.resume(returning: payload)
+            }
+        }
+    }
+
+    private static func processingSnapshot(
+        from payload: [String: Any],
+        fallbackUploadID: String
+    ) throws -> ChatMediaProcessingSnapshot {
+        guard let rawStatus = payload["processingStatus"] as? String,
+              let status = ChatMediaServerProcessingStatus(rawValue: rawStatus) else {
+            throw makeSocketError(code: -1, message: "미디어 처리 상태 응답이 올바르지 않습니다.")
+        }
+        return ChatMediaProcessingSnapshot(
+            uploadID: payload["uploadID"] as? String ?? fallbackUploadID,
+            processingStatus: status,
+            messageID: payload["messageID"] as? String,
+            seq: int64(payload["seq"]),
+            retryable: payload["retryable"] as? Bool ?? false,
+            failureCode: payload["failureCode"] as? String
+        )
+    }
+
+    private static func mediaUploadReservation(
+        from payload: [String: Any],
+        uploadID: String,
+        clientMutationID: String
+    ) throws -> ChatMediaUploadReservation {
+        guard let status = payload["processingStatus"] as? String,
+              let processingStatus = ChatMediaServerProcessingStatus(rawValue: status),
+              let uploadEntries = payload["uploads"] as? [[String: Any]],
+              let expiresMillis = int64(payload["expiresAtMillis"]) else {
+            throw makeSocketError(code: -1, message: "미디어 업로드 예약 응답이 올바르지 않습니다.")
+        }
+        let targets = try uploadEntries.map { entry -> ChatMediaUploadTarget in
+            guard let attachmentID = entry["attachmentID"] as? String,
+                  let sourceIndex = int64(entry["sourceIndex"]),
+                  let path = entry["path"] as? String,
+                  let rawURL = entry["signedURL"] as? String,
+                  let signedURL = URL(string: rawURL),
+                  let requiredHeaders = entry["requiredHeaders"] as? [String: String],
+                  let contentType = entry["contentType"] as? String,
+                  let sizeBytes = int64(entry["sizeBytes"]),
+                  let sha256 = entry["sha256"] as? String else {
+                throw makeSocketError(code: -1, message: "미디어 업로드 대상 응답이 올바르지 않습니다.")
+            }
+            return ChatMediaUploadTarget(
+                attachmentID: attachmentID,
+                sourceIndex: Int(sourceIndex),
+                path: path,
+                signedURL: signedURL,
+                requiredHeaders: requiredHeaders,
+                contentType: contentType,
+                sizeBytes: sizeBytes,
+                sha256: sha256
+            )
+        }
+        return ChatMediaUploadReservation(
+            uploadID: uploadID,
+            clientMutationID: clientMutationID,
+            processingStatus: processingStatus,
+            targets: targets,
+            expiresAt: Date(timeIntervalSince1970: Double(expiresMillis) / 1_000)
+        )
+    }
+
+    private static func int64(_ value: Any?) -> Int64? {
+        if let value = value as? Int64 { return value }
+        if let value = value as? Int { return Int64(value) }
+        if let value = value as? NSNumber { return value.int64Value }
+        if let value = value as? Double, value.isFinite { return Int64(value) }
+        return nil
+    }
+
     private func normalizeIncomingPayload(_ payload: [String: Any], event: String) -> [String: Any] {
         var normalized = payload
 
@@ -1975,11 +2189,19 @@ actor RealtimeSocketService {
         waiters.forEach { $0.resume(throwing: error) }
     }
 
-    private static func makeSocketError(code: Int, message: String) -> NSError {
-        NSError(
+    private static func makeSocketError(
+        code: Int,
+        message: String,
+        serverErrorCode: String? = nil
+    ) -> NSError {
+        var userInfo: [String: Any] = [NSLocalizedDescriptionKey: message]
+        if let serverErrorCode {
+            userInfo["serverErrorCode"] = serverErrorCode
+        }
+        return NSError(
             domain: "SocketIO",
             code: code,
-            userInfo: [NSLocalizedDescriptionKey: message]
+            userInfo: userInfo
         )
     }
 

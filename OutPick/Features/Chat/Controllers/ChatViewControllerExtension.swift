@@ -171,33 +171,33 @@ extension ChatViewController: PHPickerViewControllerDelegate {
         if !resultsForImages.isEmpty {
             let imageResults = resultsForImages
             
-            // 30장씩 배치 전송
-            let total = imageResults.count
-            let chunkSize = PickerConst.maxImagesPerMessage
-            let chunks: [[PHPickerResult]] = stride(from: 0, to: total, by: chunkSize).map { start in
-                let end = min(start + chunkSize, total)
-                return Array(imageResults[start..<end])
-            }
-            
-            if chunks.count > 1 {
-                Task { @MainActor in
-                    let lastCount = total % chunkSize == 0 ? chunkSize : total % chunkSize
-                    AlertManager.showAlertNoHandler(
-                        title: "이미지 다중 전송",
-                        message: "총 \(total)장을 \(chunkSize)장 + \(lastCount)장으로 나눠 \(chunks.count)개의 메시지로 전송합니다.",
-                        viewController: self
-                    )
-                }
-            }
-            
             convertImagesTask = Task {
-                do {
-                    for chunk in chunks {
+                var normalized: [ProcessedImage] = []
+                var rejectedCount = 0
+                for (index, result) in imageResults.enumerated() {
+                    do {
                         try Task.checkCancellation()
-                        
-                        // 1) PHPickerResult 배열 -> [ProcessedImage] (썸네일 Data + 원본 파일URL + 메타)
-                        let pairs = try await self.mediaProcessor.prepareImages(chunk)
-                        
+                        normalized.append(try await self.mediaProcessor.prepareChatImage(result, index: index))
+                    } catch is CancellationError {
+                        return
+                    } catch {
+                        rejectedCount += 1
+                    }
+                }
+                let chunks = ChatMediaSelectionChunker.chunks(normalized)
+                if rejectedCount > 0 {
+                    await MainActor.run {
+                        AlertManager.showAlertNoHandler(
+                            title: "일부 이미지를 제외했어요",
+                            message: "지원하지 않거나 제한을 초과한 \(rejectedCount)장은 제외했습니다. 전송 가능한 이미지 \(normalized.count)장을 전송합니다.",
+                            viewController: self
+                        )
+                    }
+                }
+                var stagedChunks: [(roomID: String, messageID: String, pairs: [ProcessedImage])] = []
+                for pairs in chunks {
+                    do {
+                        try Task.checkCancellation()
                         // 2) 메시지/폴더 경로 식별자 준비
                         guard let room = self.room else {
                             self.cleanupPendingImageOriginalFiles(pairs)
@@ -218,19 +218,23 @@ extension ChatViewController: PHPickerViewControllerDelegate {
                         }) {
                             await self.stageOutgoingImageOutbox(message: pendingMessage, pairs: pairs)
                         }
-
-                        await MainActor.run {
-                            self.schedulePendingImageUpload(room: room, roomID: roomID, messageID: messageID, pairs: pairs)
-                        }
+                        stagedChunks.append((roomID, messageID, pairs))
+                    } catch is CancellationError {
+                        self.cleanupPendingImageOriginalFiles(pairs)
+                        return
                     }
-                } catch MediaError.failedToConvertImage {
-                    AlertManager.showAlertNoHandler(title: "이미지 변환 실패", message: "이미지를 다시 선택해 주세요/", viewController: self)
-                } catch FirebaseStorageError.FailedToUploadImage {
-                    print("이미지 업로드 실패")
-                } catch FirebaseStorageError.FailedToFetchImage {
-                    print("이미지 불러오기 실패")
-                } catch {
-                    print("알 수 없는 오류: \(error)")
+                }
+                // 여러 메시지로 분할된 선택은 모든 로컬 버블을 먼저 만든 뒤
+                // 앞 chunk가 terminal이 되어 principal slot을 반환할 때까지 순차 실행한다.
+                for staged in stagedChunks {
+                    guard !Task.isCancelled else { return }
+                    let clientMutationID = UUID().uuidString
+                    await self.uploadPendingImageMessage(
+                        roomID: staged.roomID,
+                        messageID: staged.messageID,
+                        pairs: staged.pairs,
+                        clientMutationID: clientMutationID
+                    )
                 }
             }
         }
@@ -255,16 +259,52 @@ extension ChatViewController: UIImagePickerControllerDelegate {
 // MARK: -  video 관련
 extension ChatViewController {
     func uploadPendingImageMessage(
-        room: ChatRoom,
         roomID: String,
         messageID: String,
-        pairs: [ProcessedImage]
+        pairs: [ProcessedImage],
+        clientMutationID: String = UUID().uuidString
     ) async {
+        guard let snapshot = await enqueuePendingImageMessage(
+            roomID: roomID,
+            messageID: messageID,
+            pairs: pairs,
+            clientMutationID: clientMutationID
+        ) else {
+            return
+        }
+        await monitorMediaProcessing(
+            roomID: roomID,
+            messageID: messageID,
+            clientMutationID: clientMutationID,
+            isVideo: false,
+            initial: snapshot
+        )
+        await mediaUploadUseCase.finishImageUploadTurn(uploadID: messageID)
+    }
+
+    func enqueuePendingImageMessage(
+        roomID: String,
+        messageID: String,
+        pairs: [ProcessedImage],
+        clientMutationID: String
+    ) async -> ChatMediaProcessingSnapshot? {
         do {
-            let attachments = try await mediaUploadUseCase.uploadPendingImages(
+            let snapshot = try await mediaUploadUseCase.enqueueImageProcessing(
                 pairs: pairs,
                 roomID: roomID,
-                messageID: messageID,
+                uploadID: messageID,
+                clientMutationID: clientMutationID,
+                onWaitingForSlot: { [weak self] in
+                    await MainActor.run {
+                        self?.setPendingImageUploadState(.waitingForSlot, for: messageID)
+                    }
+                },
+                onReservation: { [weak self] reservation in
+                    await self?.markOutgoingMediaReservation(
+                        messageID: messageID,
+                        reservation: reservation
+                    )
+                },
                 onProgress: { [weak self] fraction in
                     guard let self else { return }
                     Task { @MainActor in
@@ -272,26 +312,8 @@ extension ChatViewController {
                     }
                 }
             )
-
-            await MainActor.run {
-                self.setUploadedImageAttachments(attachments, for: messageID)
-            }
-            await markOutgoingImageUploadCompleted(messageID: messageID, attachments: attachments)
-            let receipt = try await mediaUploadUseCase.sendUploadedImages(
-                room: room,
-                attachments: attachments,
-                clientMessageID: messageID,
-                ensureReservation: false
-            )
-
-            await reconcileServerConfirmedOutgoingMessage(
-                receipt: receipt,
-                confirmedAttachments: attachments
-            )
-
-            await MainActor.run {
-                self.finishPendingImageUpload(messageID: messageID)
-            }
+            await markOutgoingMediaProcessing(messageID: messageID, snapshot: snapshot)
+            return snapshot
         } catch {
             let wasRemovedInMemory = await MainActor.run {
                 self.isMembershipRemovedByModeration
@@ -310,19 +332,33 @@ extension ChatViewController {
                 }
             }
             print("업로드 실패:", error)
+            return nil
         }
     }
     
     func uploadPendingVideoMessage(
         roomID: String,
         messageID: String,
-        prepared: PreparedVideo
+        prepared: PreparedVideo,
+        clientMutationID: String = UUID().uuidString
     ) async {
         do {
-            let payload = try await mediaUploadUseCase.uploadVideo(
-                roomID: roomID,
-                messageID: messageID,
+            let snapshot = try await mediaUploadUseCase.enqueueVideoProcessing(
                 prepared: prepared,
+                roomID: roomID,
+                uploadID: messageID,
+                clientMutationID: clientMutationID,
+                onWaitingForSlot: { [weak self] in
+                    await MainActor.run {
+                        self?.setPendingVideoUploadState(.waitingForSlot, for: messageID)
+                    }
+                },
+                onReservation: { [weak self] reservation in
+                    await self?.markOutgoingMediaReservation(
+                        messageID: messageID,
+                        reservation: reservation
+                    )
+                },
                 onProgress: { [weak self] fraction in
                     guard let self else { return }
                     Task { @MainActor in
@@ -330,39 +366,29 @@ extension ChatViewController {
                     }
                 }
             )
-
-            await MainActor.run {
-                self.setUploadedVideoPayload(payload, for: messageID)
-            }
-            await markOutgoingVideoUploadCompleted(messageID: messageID, payload: payload)
-            let receipt = try await mediaUploadUseCase.sendUploadedVideo(
+            await markOutgoingMediaProcessing(messageID: messageID, snapshot: snapshot)
+            await monitorMediaProcessing(
                 roomID: roomID,
-                payload: payload,
-                ensureReservation: false
+                messageID: messageID,
+                clientMutationID: clientMutationID,
+                isVideo: true,
+                initial: snapshot
             )
-
-            await reconcileServerConfirmedOutgoingMessage(
-                receipt: receipt,
-                confirmedAttachments: [payload.confirmedAttachment]
-            )
-
-            await MainActor.run {
-                self.finishPendingVideoUpload(messageID: messageID)
-            }
+            await mediaUploadUseCase.finishVideoUploadTurn(uploadID: messageID)
         } catch {
             let wasRemovedInMemory = await MainActor.run {
                 self.isMembershipRemovedByModeration
             }
             let serverAccess = await loadRoomAccessAfterOutgoingFailure()
             let wasRemovedByModeration = wasRemovedInMemory || serverAccess == .banned
-            await MainActor.run {
-                AlertManager.showAlertNoHandler(
-                    title: wasRemovedByModeration ? "전송을 중단했어요" : "동영상 전송 실패",
-                    message: wasRemovedByModeration
-                        ? "채팅방 참여가 제한되어 전송을 중단했어요."
-                        : "동영상을 전송하지 못했어요. 잠시 후 다시 시도해 주세요.",
-                    viewController: self
-                )
+            if wasRemovedByModeration {
+                await MainActor.run {
+                    AlertManager.showAlertNoHandler(
+                        title: "전송을 중단했어요",
+                        message: "채팅방 참여가 제한되어 전송을 중단했어요.",
+                        viewController: self
+                    )
+                }
             }
             
             if !wasRemovedByModeration, let message = await MainActor.run(body: {
@@ -376,6 +402,69 @@ extension ChatViewController {
                 }
             }
             print("동영상 업로드 실패:", error)
+        }
+    }
+
+    func monitorMediaProcessing(
+        roomID: String,
+        messageID: String,
+        clientMutationID: String,
+        isVideo: Bool,
+        initial: ChatMediaProcessingSnapshot
+    ) async {
+        var snapshot = initial
+        let delays: [UInt64] = [2, 4, 8, 15, 30]
+        var attempt = 0
+        while !Task.isCancelled {
+            await markOutgoingMediaProcessing(messageID: messageID, snapshot: snapshot)
+            let isTerminal = await MainActor.run { () -> Bool in
+                let setState: (ChatPendingMediaUploadState) -> Void = { state in
+                    if isVideo {
+                        self.setPendingVideoUploadState(state, for: messageID)
+                    } else {
+                        self.setPendingImageUploadState(state, for: messageID)
+                    }
+                }
+                switch snapshot.processingStatus {
+                case .uploading:
+                    setState(.uploading(1))
+                    return false
+                case .queued:
+                    setState(.queued)
+                    return false
+                case .processing:
+                    setState(.processing)
+                    return false
+                case .ready:
+                    if isVideo {
+                        self.finishPendingVideoUpload(messageID: messageID)
+                    } else {
+                        self.finishPendingImageUpload(messageID: messageID)
+                    }
+                    return true
+                case .failed, .canceled:
+                    setState(.failed)
+                    return true
+                case .expired:
+                    setState(.expired)
+                    return true
+                }
+            }
+            if isTerminal { return }
+
+            let delay = delays[min(attempt, delays.count - 1)]
+            attempt += 1
+            try? await Task.sleep(nanoseconds: delay * 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            do {
+                snapshot = try await mediaUploadUseCase.mediaProcessingStatus(
+                    roomID: roomID,
+                    uploadID: messageID,
+                    clientMutationID: clientMutationID
+                )
+            } catch {
+                // 일시적인 연결 실패는 다음 backoff 주기에 다시 조회한다.
+            }
         }
     }
 

@@ -12,6 +12,8 @@ extension AVAssetExportSession: @unchecked @retroactive Sendable {}
 /// FYVideoCompressor 대신, iOS 순정 `AVAssetExportSession` 프리셋으로 720p 압축을 테스트하기 위한 구현
 /// - 주의: 실제 제품 적용 전에는 결과 품질/회전 메타/오디오 싱크/진행률 표시 등 케이스를 충분히 확인해야 함
 enum AVAssetExportVideoCompressor {
+    static let maxChatSourceBytes: Int64 = 350 * 1024 * 1024
+    static let minimumVideoBitrateMbps = 0.6
 
     enum ExportError: Error {
         case cannotCreateExporter
@@ -28,8 +30,26 @@ enum AVAssetExportVideoCompressor {
     ) async throws -> URL {
         let asset = AVAsset(url: inputURL)
 
-        // 720p 프리셋(1280x720)
-        let preset = AVAssetExportPreset1280x720
+        let duration = CMTimeGetSeconds(asset.duration)
+        guard duration.isFinite, duration > 0 else {
+            throw ExportError.failedToExport(underlying: nil)
+        }
+        let safeBudgetBits = Double(maxChatSourceBytes) * 8 * 0.95
+        let audioBitsPerSecond = 128_000.0
+        let videoBitrateMbps = (safeBudgetBits / duration - audioBitsPerSecond) / 1_000_000
+        guard videoBitrateMbps >= minimumVideoBitrateMbps else {
+            throw MediaError.videoQualityTooLow
+        }
+
+        // 길이에 따라 허용 가능한 bitrate가 낮아질수록 해상도 프리셋도 단계적으로 낮춘다.
+        // exporter의 fileLengthLimit가 최종 350MiB 상한을 강제한다.
+        let preset: String
+        switch videoBitrateMbps {
+        case ..<1.2: preset = AVAssetExportPresetLowQuality
+        case ..<2.0: preset = AVAssetExportPreset640x480
+        case ..<3.0: preset = AVAssetExportPreset960x540
+        default: preset = AVAssetExportPreset1280x720
+        }
 
         guard let exporter = AVAssetExportSession(asset: asset, presetName: preset) else {
             throw ExportError.cannotCreateExporter
@@ -54,6 +74,7 @@ enum AVAssetExportVideoCompressor {
         exporter.outputURL = outURL
         exporter.outputFileType = outputType
         exporter.shouldOptimizeForNetworkUse = true
+        exporter.fileLengthLimit = maxChatSourceBytes
 
         // export 실행
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
@@ -75,6 +96,13 @@ enum AVAssetExportVideoCompressor {
             }
         }
 
+        let outputBytes = Int64(
+            (try? fm.attributesOfItem(atPath: outURL.path)[.size] as? NSNumber)?.int64Value ?? 0
+        )
+        guard outputBytes > 0, outputBytes <= maxChatSourceBytes else {
+            try? fm.removeItem(at: outURL)
+            throw MediaError.sourceTooLarge
+        }
         return outURL
     }
 }

@@ -31,7 +31,7 @@ final class ChatVideoAssetService: ChatVideoAssetLoading {
         guard await preparedRegistry.markStartedIfNeeded(messageID: message.ID) else { return }
 
         for attachment in videoAttachments {
-            let thumbPath = attachment.pathThumb
+            let thumbPath = attachment.thumbResourcePath
             if !thumbPath.isEmpty {
                 _ = try? await attachmentImageLoader.loadImage(
                     for: thumbPath,
@@ -39,7 +39,7 @@ final class ChatVideoAssetService: ChatVideoAssetLoading {
                 )
             }
 
-            let originalPath = attachment.pathOriginal
+            let originalPath = attachment.originalResourcePath
             if isStoragePath(originalPath) {
                 _ = try? await storageURLResolver.url(for: originalPath)
             }
