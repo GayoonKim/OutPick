@@ -16,7 +16,7 @@ test("Development와 Production media identity를 환경별로 분리한다", ()
   );
   assert.equal(
     chatMediaServiceAccountEmailForProject("outpick-664ae", "orchestrator"),
-    "outpick-chat-media-orchestrator@outpick-664ae.iam.gserviceaccount.com"
+    "outpick-chat-media-orch@outpick-664ae.iam.gserviceaccount.com"
   );
   assert.equal(
     chatMediaServiceAccountEmailForProject("outpick-664ae", "cleanup"),
