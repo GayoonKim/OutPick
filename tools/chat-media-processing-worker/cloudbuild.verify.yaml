@@ -1,0 +1,26 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --target
+      - verification
+      - --tag
+      - chat-media-processing-worker-verification:${BUILD_ID}
+      - .
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --target
+      - runtime
+      - --tag
+      - chat-media-processing-worker-runtime:${BUILD_ID}
+      - .
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - run
+      - --rm
+      - --entrypoint
+      - node
+      - chat-media-processing-worker-runtime:${BUILD_ID}
+      - lib/runtimeVerification.js
+timeout: 1200s
