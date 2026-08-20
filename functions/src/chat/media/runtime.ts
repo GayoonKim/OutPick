@@ -10,7 +10,7 @@ const SERVICE_ACCOUNTS: Record<string, Record<ChatMediaRuntimeIdentity, string>>
     cleanup: "outpick-chat-media-cleanup-dev@outpick-test.iam.gserviceaccount.com",
   },
   [PRODUCTION_PROJECT_ID]: {
-    orchestrator: "outpick-chat-media-orchestrator@outpick-664ae.iam.gserviceaccount.com",
+    orchestrator: "outpick-chat-media-orch@outpick-664ae.iam.gserviceaccount.com",
     cleanup: "outpick-chat-media-cleanup@outpick-664ae.iam.gserviceaccount.com",
   },
 };

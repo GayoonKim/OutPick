@@ -15,7 +15,7 @@ Production 변경 전 Functions·Socket·Worker·Rules·iOS 자동 검증과 사
 | Artifact Registry | `outpick-workers` |
 | Image Service / video Job | `outpick-chat-media-image` / `outpick-chat-media-video` |
 | Cloud Tasks | `chat-media-image-processing` / `chat-media-video-processing` |
-| Orchestrator / cleanup SA | `outpick-chat-media-orchestrator` / `outpick-chat-media-cleanup` |
+| Orchestrator / cleanup SA | `outpick-chat-media-orch` / `outpick-chat-media-cleanup` |
 | Worker / task SA | `outpick-chat-media-worker` / `outpick-chat-media-task` |
 | Socket runtime SA | 기존 `outpick-socket-runtime-v2` |
 
