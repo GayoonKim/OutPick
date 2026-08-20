@@ -9,7 +9,7 @@ Firebase 변경 시 Functions, Firestore, Storage의 실제 경계를 찾기 위
 | Functions | `functions/src/index.ts`, `functions/src/{core,shared,auth,brand,chat,lookbook,profile,styleMoods}/` | `.codex/skills/firebase-functions-workflow/SKILL.md` |
 | Firestore rules | `firestore.rules` | `.codex/skills/firestore-workflow/SKILL.md` |
 | Firestore indexes | `firestore.indexes.json` | `.codex/skills/firestore-workflow/SKILL.md` |
-| Storage rules | `storage.rules`, root `firebase.json` | 배포 전 rules dry-run과 운영 권한 확인 |
+| Storage rules | 기본 bucket `storage.rules`; Phase 7 Quarantine 전용 bucket `storage.chat-media-quarantine.rules` | bucket target 연결 후 rules dry-run과 운영 권한 확인 |
 | iOS callable transport | `OutPick/DB/Firebase/CloudFunctions/Core/FirebaseCloudFunctionsTransport.swift` | 기능별 Repository/Client와 mapper를 함께 확인 |
 
 - 운영 배포 revision과 일회성 QA 로그는 관련 task의 `progress.md`에 기록한다.
@@ -54,6 +54,7 @@ Phase 6 전체 회귀와 운영 배포는 `docs/ai/tasks/core-infrastructure-mod
 | extraction evidence cleanup | `functions/src/lookbook/import/functions.ts`, `evidenceCleanup.ts` |
 | existing-season repair preview/apply | `functions/src/lookbook/import/functions.ts`, `repairContract.ts` |
 | Chat room cleanup | `functions/src/chat/cleanup/functions.ts`, `cleanupService.ts` |
+| Chat media v2 queue·dispatcher·watchdog·ready cleanup | `functions/src/chat/media/{contracts,functions,orchestrationService,readyService}.ts` |
 
 기본 검증:
 
@@ -65,6 +66,26 @@ npm run build
 ```
 
 운영 배포는 사용자 승인 후 workflow가 지정한 명령을 사용한다.
+
+### Chat media Phase 7.1 환경 계약
+
+- Socket: `CHAT_MEDIA_QUARANTINE_BUCKET`.
+- Functions queue trigger/dispatcher: `CHAT_MEDIA_DISPATCHER_URL`, `CHAT_MEDIA_IMAGE_TASKS_QUEUE`, `CHAT_MEDIA_VIDEO_TASKS_QUEUE`, `CHAT_MEDIA_TASKS_SERVICE_ACCOUNT_EMAIL`, 선택 `CHAT_MEDIA_DISPATCHER_AUDIENCE`, `CHAT_MEDIA_IMAGE_SERVICE_URL`, 선택 `CHAT_MEDIA_IMAGE_SERVICE_AUDIENCE`, `CHAT_MEDIA_VIDEO_JOB_NAME`, `CHAT_MEDIA_QUARANTINE_BUCKET`. Gen2 private dispatcher와 이미지 Service의 URL/audience는 IAM 보호 대상인 실제 `run.app` service URI를 사용한다.
+- Cloud Run worker: 이미지 Service는 인증된 `POST /process` body로 upload path·lease token을 받고, 영상 Job은 dispatcher override의 `CHAT_MEDIA_UPLOAD_PATH`, `CHAT_MEDIA_LEASE_TOKEN`, `CHAT_MEDIA_KIND`를 사용한다. 둘 다 고정 env `CHAT_MEDIA_READY_BUCKET`을 가진다.
+- Development `outpick-test`에는 Quarantine `outpick-test-chat-media-quarantine`과 일반 media `outpick-test-chat-media` bucket을 분리했다. Quarantine은 `asia-northeast3` Standard, soft delete/versioning off, age 1 lifecycle이며 일반 media는 실제 `display/thumbnail` 저장소다. Firebase Storage target은 각각 `chatMediaQuarantine`, `chatMediaReady`다.
+- Production canonical 자원명은 Quarantine `outpick-664ae-chat-media-quarantine`, ready `outpick-664ae-chat-media`, image Service `outpick-chat-media-image`, video Job `outpick-chat-media-video`, queue `chat-media-image-processing`/`chat-media-video-processing`, identity `outpick-chat-media-orchestrator`/`outpick-chat-media-cleanup`/`outpick-chat-media-worker`/`outpick-chat-media-task`다. 생성·IAM·배포 순서와 rollback은 `docs/ai/runbooks/CHAT_MEDIA_PRODUCTION_ROLLOUT.md`를 따른다.
+- 기본 bucket Rules와 Emulator는 root `firebase.json`을 사용한다. Phase 7 전용 bucket은 `firebase.chat-media.json`의 target config로 분리하며 Development ready Rules는 `firebase deploy --config firebase.chat-media.json --only storage:chatMediaReady --project outpick-test`로 배포한다. 이 config를 지정하지 않으면 전용 target은 배포 대상에 포함되지 않는다.
+- Development queue는 `chat-media-image-processing`, `chat-media-video-processing`이고 모두 max concurrent 1/QPS 1이다. Job은 `outpick-chat-media-image-development`(timeout 2400초)와 `outpick-chat-media-video-development`(timeout 720초)이며 2 vCPU·1 GiB, task/parallelism 1, retry 0을 사용한다.
+- Development 전용 identity는 orchestrator `outpick-chat-media-orch-dev`, cleanup `outpick-chat-media-cleanup-dev`, worker `outpick-chat-media-worker-dev`, task `outpick-chat-media-task-dev`다. orchestrator·cleanup에는 Firestore trigger 수신을 위해 project-level `roles/eventarc.eventReceiver`와 각자 전달하는 trigger Run service 한정 `roles/run.invoker`를 부여했다. task identity는 dispatcher Run service 한정 `roles/run.invoker`를 가진다. Gen2 Function 재배포가 underlying Run service의 수동 invoker binding을 제거할 수 있으므로 media Functions 배포 뒤 이 exact binding을 반드시 재감사한다. orchestrator는 이미지 Service 한정 `roles/run.invoker`와 영상 Job 한정 `roles/run.jobsExecutorWithOverrides`를 사용해야 한다. Socket identity에는 Tasks/Run Admin을 부여하지 않으며 Quarantine bucket 한정 `roles/storage.objectUser`와 자기 서비스 계정 한정 `roles/iam.serviceAccountTokenCreator`를 사용해 signed PUT target 발급·cleanup과 V4 `signBlob`을 수행한다.
+- worker image는 `asia-northeast3-docker.pkg.dev/outpick-test/outpick-runtime/chat-media-processing-worker@sha256:4741213f15d40de2ba8d916203df6f57523c2133fcbd4da6a4d34de687d56a4f`다. image/video Development Job 모두 같은 digest를 사용한다. Production bucket/IAM/queue/Job은 변경하지 않았다.
+
+### Chat media Phase 7.2 서버 진입점
+
+- `onChatMediaWorkerCompleted`: normalized manifest 최초 기록을 감지해 ready transaction을 수행한다.
+- `reconcileChatMediaObjectCleanup`: 15분마다 terminal `MediaUploads.cleanupStatus`를 수렴시킨다.
+- `chatMediaDeliveryJobs`: client deny, Socket Admin SDK watcher 전용이며 `expiresAt` 7일 TTL이다.
+- 일반 media `storage.rules`: `attachments/{attachmentID}/{display|thumbnail}`은 account capability와 대응 visible v2 message 두 문서만 조회해 `readyAttachmentIDs`를 확인한다. message 없는 staging·고아 객체, 삭제·비노출 message, 비활성 account는 읽을 수 없다.
+- Development에는 관련 Firestore/Storage Rules, media exact composite index 4개, `MediaUploads.expiresAt`·`chatMediaDeliveryJobs.expiresAt` TTL과 Phase 7.1/7.2 Function 9개를 반영했다. 두 Firestore trigger를 포함한 Function은 모두 `ACTIVE`다. 배포 후 기존 cleanup scheduler 감사에서 원격에만 빠져 있던 `chatMessageCleanupJobs(status, nextAttemptAt)`, `moderationRoomCleanupJobs(status, nextAttemptAt)` manifest index 2개도 exact 생성해 `READY`로 만들었고 다음 자동 실행은 HTTP 200이었다. Production은 변경하지 않았다.
 
 ### 환경별 Kakao custom-token runtime
 
@@ -425,7 +446,8 @@ git diff --check -- firebase.json storage.rules
 - `Rooms/{roomID}/bans/{moderationPrincipalID}`: creator 전용 서버 mutation, client direct read/write 금지.
 - `Rooms.lifecycleStatus=closedByModeration`: join/read/write/Socket/push 차단 source.
 - `chatMessageCleanupJobs`, `moderationRoomCleanupJobs`: transaction 밖 Storage·projection 물리 정리의 deterministic retry source.
-- `Rooms/{roomID}/MediaUploads/{uploadID}`: quarantine inspection 상태 머신. `scanning → ready` 전에는 message/seq 없음.
+- `Rooms/{roomID}/MediaUploads/{uploadID}`: Phase 7 quarantine 기술 검증 상태 머신 후보. `uploading → queued → processing → ready | canceled | failed | expired`이며 ready 전에는 message/seq가 없다.
+- Phase 7 상세 Functions·Cloud Tasks·Cloud Run Job·IAM·evidence 구현 순서는 `docs/ai/tasks/chat-ugc-safety-room-moderation/phase-7-implementation-plan.md`를 따른다.
 
 ### Phase 1 구현 Functions·Socket·Rules 경계
 
@@ -494,16 +516,16 @@ git diff --check -- firebase.json storage.rules
 
 - 신고 queue: reviewState + priorityClass + slaDueAt + lastReportedAt.
 - 제한 만료 정규화: moderationStatus + restrictedUntil.
-- 미디어 cleanup: collection group MediaUploads의 inspectionStatus + expiresAt.
+- 미디어 cleanup: collection group MediaUploads의 processing/terminal 상태 + expiresAt, 실패한 로컬 outbox 7일 계약과 서버 quarantine cleanup을 분리한다.
 - message/room cleanup: status + nextAttemptAt.
-- Production TTL은 개인정보 보존 목적·기간 승인 전 활성화하지 않는다. 신고 미디어 evidence copy는 만들지 않는다.
+- Production TTL은 개인정보 보존 목적·기간 승인 전 활성화하지 않는다. Phase 7은 신고자가 선택한 attachment만 결정적 evidence bundle로 복사하고 처리 결과별 retention cleanup을 사용한다.
 
 ### 검증 진입점
 
 - Functions identity/capability/report/idempotency/admin concurrency tests.
 - Socket auth disconnect/room ban/block push/rate reconnect/media ready tests.
 - `firestore-tests`의 moderation Firestore·Storage Rules emulator tests.
-- 실제 provider 재연결과 Google Cloud media 검사는 Development 수동 QA.
+- 실제 provider 재연결과 전용 Cloud Run media 기술 검증·metadata 제거는 Development 수동 QA다.
 
 ### Phase 6 Production rollout — 2026-08-18
 

@@ -17,9 +17,11 @@ accepted
 - 텍스트 UGC는 욕설·혐오·위협·금칙어·광고·링크·반복이나 Unicode/공백/기호 우회를 자동 판정하지 않는다. 콘텐츠 안전은 신고·사용자 차단·방 생성자 내보내기와 플랫폼 관리자 사후 검토·제재로 운영하고, 신고 누적은 조사 우선순위에만 사용한다.
 - 텍스트 서버 경계에는 의미 판정 대신 타입·빈 값·권한·최대 길이와 canonical moderation principal 기반 기술적 burst limit만 적용한다. Socket는 현재 `max-instances=1` process memory bucket, 댓글·답글은 Functions 인스턴스가 공유하는 Firestore minute bucket을 사용하고 Redis는 보류한다.
 - 신규 메시지는 Firestore·Socket·FCM·iOS model·GRDB에 `senderEmail`을 저장·전송하지 않는다. 정상 메시지 원문과 sender payload를 Cloud Logging에 복제하지 않으며 내부 QA 과거 로그는 기존 retention으로 자연 만료시킨다.
-- 댓글·답글은 현재 텍스트 전용이므로 채팅 텍스트와 동일한 신고·차단·관리자 사후 검수 모델을 사용한다. 텍스트 UGC는 외부 moderation provider로 전송하지 않고 이미지·동영상 채팅만 Phase 7에서 게시 전 검사한다.
+- 댓글·답글은 현재 텍스트 전용이며 모든 UGC는 신고·차단·관리자 사후 검수 모델을 사용한다. 이미지·동영상도 외부 의미 판정 provider로 보내지 않고 Phase 7 전용 worker의 기술 검증·metadata 제거만 거친다.
 - 댓글·답글 최대 길이는 기존 JavaScript `String.length`와 맞춘 trim 이후 UTF-16 code unit 1,000으로 고정하고 iOS도 `String.UTF16View.count`를 사용한다. `clientRequestID`는 동일 네트워크 재시도 동안 유지하되 입력 수정·취소·성공 후 새 작성에는 재사용하지 않는다.
-- 미디어 reservation은 ADR-016을 확장해 상태 머신으로 사용한다. 검사 통과 transaction 전에는 message document와 room seq를 만들지 않는다.
+- 미디어 reservation은 ADR-016을 확장해 상태 머신으로 사용한다. 기술 검증·정규화 완료 transaction 전에는 message document와 room seq를 만들지 않는다.
+- Phase 7 미디어는 환경별 quarantine·일반 media·evidence bucket으로 분리한다. quarantine은 soft delete/versioning을 끈 1일 수명 임시 입력이며 공개·evidence에는 raw source를 사용하지 않는다.
+- reservation과 processing이 1:1이므로 `MediaUploads`가 lease·attempt·execution·retry까지 통합 소유한다. kind별 Cloud Tasks와 Firestore 고정 slot으로 Production 초기 이미지 4·영상 1 execution만 허용하고 Cloud Run Job 자체 retry는 0으로 둔다.
 - exact schema, enum, API, 오류, 상태 전이와 index 계약은 `contracts/chat-moderation-v1.json`을 기준으로 한다.
 
 ## 이유
@@ -28,7 +30,8 @@ accepted
 - HMAC 결과 자체를 제재 ID로 사용하면 key 회전 때 제재와 ban 참조를 모두 바꿔야 하므로 canonical principal과 alias를 분리해야 한다.
 - 계정 삭제, 제한, 영구 정지는 허용 capability가 다르므로 단일 `active/inactive` 판정으로는 신고·지원·자기 콘텐츠 삭제·계정 삭제 예외를 안전하게 보존할 수 없다.
 - 신고와 삭제를 클라이언트 write로 두면 집계 idempotency, 관리자 동시 처리, audit와 Storage cleanup을 신뢰할 수 없다.
-- 미디어 검사 전에 seq를 할당하면 검사 실패가 영구 gap 또는 불필요한 tombstone을 만든다.
+- 미디어 기술 검증·정규화 전에 seq를 할당하면 처리 실패가 영구 gap 또는 불필요한 tombstone을 만든다.
+- 단명 source와 공개·신고 객체의 bucket을 분리하면 soft delete, lifecycle, IAM과 보존 정책을 각 목적에 맞게 적용할 수 있다. 고정 slot은 Cloud Tasks dispatcher가 반환된 뒤에도 실행 중인 Cloud Run Job 수를 제한한다.
 
 ## 트레이드오프
 
@@ -55,14 +58,14 @@ accepted
 - Socket와 동일하게 댓글·답글도 process memory로 제한하는 방식은 Functions 다중 인스턴스 간 quota가 분리되므로 선택하지 않았다.
 - 과거 내부 QA Cloud Logging 원문을 별도 삭제하는 방식은 운영 데이터가 없고 기존 retention으로 만료되므로 선택하지 않았다.
 - Phase 6에서 관리자 신고 수·과거 제재 이력의 임의 정렬 projection을 추가하는 방식은 관리자 웹 운영 task와 책임이 겹쳐 보류했다.
-- 신고된 모든 미디어를 moderation Storage에 복사하는 방식은 MVP의 개인정보·보존 비용에 비해 필요성이 입증되지 않아 선택하지 않았다.
-- 검사 중 message document에 pending 상태를 저장하는 방식은 서버 ready message와 로컬 pending UI 책임을 섞으므로 선택하지 않았다.
+- 신고 메시지의 모든 첨부를 일괄 복사하는 방식은 개인정보·보존 비용이 크므로 선택하지 않았다. 신고자가 지정한 안정적 `attachmentID`만 결정적 evidence bundle로 보존한다.
+- processing 중 message document에 pending 상태를 저장하는 방식은 서버 ready message와 로컬 pending UI 책임을 섞으므로 선택하지 않았다.
 
 ## 재검토 조건
 
 - 서로 다른 provider 계정의 명시적 연결 UX를 추가할 때 canonical principal alias 연결 계약을 확장한다.
 - 법률·개인정보 검토에서 HMAC 원장 또는 room ban 보존이 허용되지 않거나 별도 동의가 필요하다고 판단할 때 retention과 재가입 방지 범위를 조정한다.
-- 삭제 후 증거 인멸이 실제 운영 문제로 확인될 때 제한적 미디어 evidence 보존을 별도 승인한다.
+- 선택 미디어 evidence의 접근·삭제 경합·처리 결과별 retention을 Phase 7 계약으로 적용한다. 실제 byte 전달 방식은 관리자 웹 구현 시 재검토한다.
 - Socket를 다중 인스턴스로 전환하거나 단일 인스턴스 연결/CPU/메모리/latency 한계, reconnect abuse 또는 프로세스 간 limiter 불일치가 관측될 때 Socket.IO adapter/PubSub와 rate limiter를 Redis/Memorystore의 분리된 keyspace·TTL로 옮긴다.
 - App Review가 자동 필터 부재를 문제로 지적하거나 실제 운영에서 신고·차단·사후 대응만으로 안전을 유지하기 어렵다는 근거가 생기면 게시 전 필터 범위를 사용자와 다시 논의한다.
-- 미디어 검사 latency·비용 또는 false positive가 허용 범위를 넘을 때 provider, threshold와 영상 상한을 재검토한다.
+- animated GIF의 frame/decode/memory/CPU 기술 상한은 구현 fixture 결과로 고정한다. App Review가 자동 필터 부재를 문제로 지적하면 의미 판정 도입을 별도 제품 결정으로 재논의한다.
