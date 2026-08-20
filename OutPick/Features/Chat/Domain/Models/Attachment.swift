@@ -15,8 +15,11 @@ struct Attachment: Codable, Hashable, Sendable {
     }
 
     // MARK: - Meta-only fields (no binary payloads)
+    let attachmentID: String?
     let type: AttachmentType
     let index: Int                       // 정렬 보장용
+    let bucketThumb: String?
+    let bucketOriginal: String?
     let pathThumb: String                // Storage 경로 또는 상대 경로
     let pathOriginal: String             // Storage 경로 또는 상대 경로
     let width: Int                       // 원본 w
@@ -28,10 +31,15 @@ struct Attachment: Codable, Hashable, Sendable {
     let duration: Double?
     let approxBitrateMbps: Double?
     let preset: String?
+    let mediaFormat: String?
+    let isAnimated: Bool?
 
     init(
+        attachmentID: String? = nil,
         type: AttachmentType,
         index: Int,
+        bucketThumb: String? = nil,
+        bucketOriginal: String? = nil,
         pathThumb: String,
         pathOriginal: String,
         width: Int,
@@ -41,10 +49,15 @@ struct Attachment: Codable, Hashable, Sendable {
         blurhash: String? = nil,
         duration: Double? = nil,
         approxBitrateMbps: Double? = nil,
-        preset: String? = nil
+        preset: String? = nil,
+        mediaFormat: String? = nil,
+        isAnimated: Bool? = nil
     ) {
+        self.attachmentID = attachmentID
         self.type = type
         self.index = index
+        self.bucketThumb = bucketThumb
+        self.bucketOriginal = bucketOriginal
         self.pathThumb = pathThumb
         self.pathOriginal = pathOriginal
         self.width = width
@@ -55,6 +68,8 @@ struct Attachment: Codable, Hashable, Sendable {
         self.duration = duration
         self.approxBitrateMbps = approxBitrateMbps
         self.preset = preset
+        self.mediaFormat = mediaFormat
+        self.isAnimated = isAnimated
     }
 
     // MARK: - Convenience (직렬화 제외)
@@ -62,8 +77,15 @@ struct Attachment: Codable, Hashable, Sendable {
     var originalCacheKey: String { "att:\(hash):original" }
     var normalizedThumbPath: String { Self.normalizedPath(pathThumb) }
     var normalizedOriginalPath: String { Self.normalizedPath(pathOriginal) }
-    var preferredDisplayPath: String { normalizedThumbPath.isEmpty ? normalizedOriginalPath : normalizedThumbPath }
+    var thumbResourcePath: String { Self.resourcePath(bucket: bucketThumb, path: normalizedThumbPath) }
+    var originalResourcePath: String { Self.resourcePath(bucket: bucketOriginal, path: normalizedOriginalPath) }
+    var preferredDisplayPath: String { thumbResourcePath.isEmpty ? originalResourcePath : thumbResourcePath }
     var hasDisplayablePayload: Bool { !preferredDisplayPath.isEmpty }
+    var isAnimatedGIF: Bool {
+        type == .image &&
+        mediaFormat?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "gif" &&
+        isAnimated == true
+    }
 
     // Socket/Firestore로 보낼 딕셔너리
     func toDict() -> [String: Any] {
@@ -77,6 +99,11 @@ struct Attachment: Codable, Hashable, Sendable {
             "bytesOriginal": bytesOriginal,
             "hash": hash
         ]
+        if let attachmentID { dict["attachmentID"] = attachmentID }
+        if let bucketThumb { dict["bucketThumb"] = bucketThumb }
+        if let bucketOriginal { dict["bucketOriginal"] = bucketOriginal }
+        if let mediaFormat { dict["mediaFormat"] = mediaFormat }
+        if let isAnimated { dict["animated"] = isAnimated }
         if let b = blurhash { dict["blurhash"] = b }
         if type == .video, let d = duration {
             dict["duration"] = d
@@ -105,5 +132,15 @@ struct Attachment: Codable, Hashable, Sendable {
 
     private static func normalizedPath(_ path: String) -> String {
         path.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func resourcePath(bucket: String?, path: String) -> String {
+        guard !path.isEmpty else { return "" }
+        guard let bucket = bucket?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !bucket.isEmpty,
+              !path.hasPrefix("/") && !path.hasPrefix("file://") else {
+            return path
+        }
+        return "gs://\(bucket)/\(path)"
     }
 }

@@ -5,7 +5,8 @@ export function createGracefulShutdown({
   scheduleTimeout = (callback, milliseconds) => setTimeout(callback, milliseconds),
   clearScheduledTimeout = (timer) => clearTimeout(timer),
   logger = console,
-  forceTimeoutMs = 10_000
+  forceTimeoutMs = 10_000,
+  onShutdown = () => {}
 }) {
   let shuttingDown = false;
   let forceTimer = null;
@@ -34,6 +35,12 @@ export function createGracefulShutdown({
       exit(1);
     }, forceTimeoutMs);
     forceTimer?.unref?.();
+
+    try {
+      onShutdown?.();
+    } catch (error) {
+      logger.error("[shutdown] background service cleanup failed:", error);
+    }
 
     io.close(() => {
       if (server.listening) {

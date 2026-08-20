@@ -1,0 +1,83 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function moderationAccountPath(uid) {
+      return /databases/(default)/documents/moderationAccounts/$(uid);
+    }
+
+    function mediaUploadPath(roomID, uploadID) {
+      return /databases/(default)/documents/Rooms/$(roomID)/MediaUploads/$(uploadID);
+    }
+
+    function isActiveMediaSender(senderUID) {
+      return signedIn()
+        && request.auth.uid == senderUID
+        && firestore.exists(moderationAccountPath(request.auth.uid))
+        && firestore.get(moderationAccountPath(request.auth.uid)).data.accountStatus == "active"
+        && (
+          firestore.get(moderationAccountPath(request.auth.uid)).data.moderationStatus == "active"
+          || (
+            firestore.get(moderationAccountPath(request.auth.uid)).data.moderationStatus == "restricted"
+            && "restrictedUntil" in firestore.get(moderationAccountPath(request.auth.uid)).data
+            && firestore.get(moderationAccountPath(request.auth.uid)).data.restrictedUntil is timestamp
+            && firestore.get(moderationAccountPath(request.auth.uid)).data.restrictedUntil <= request.time
+          )
+        );
+    }
+
+    function hasV2Reservation(roomID, senderUID, uploadID, attachmentID) {
+      return firestore.exists(mediaUploadPath(roomID, uploadID))
+        && firestore.get(mediaUploadPath(roomID, uploadID)).data.contractVersion == 2
+        && firestore.get(mediaUploadPath(roomID, uploadID)).data.processingStatus == "uploading"
+        && firestore.get(mediaUploadPath(roomID, uploadID)).data.senderUID == senderUID
+        && firestore.get(mediaUploadPath(roomID, uploadID)).data.attachmentIDs is list
+        && firestore.get(mediaUploadPath(roomID, uploadID)).data.attachmentIDs.hasAny([attachmentID])
+        && firestore.get(mediaUploadPath(roomID, uploadID)).data.uploadExpiresAt is timestamp
+        && firestore.get(mediaUploadPath(roomID, uploadID)).data.uploadExpiresAt > request.time;
+    }
+
+    function validImageSource() {
+      return request.resource != null
+        && request.resource.size > 0
+        && request.resource.size <= 15 * 1024 * 1024
+        && request.resource.contentType in [
+          "image/jpeg",
+          "image/png",
+          "image/gif"
+        ];
+    }
+
+    function validVideoSource() {
+      return request.resource != null
+        && request.resource.size > 0
+        && request.resource.size <= 350 * 1024 * 1024
+        && request.resource.contentType == "video/mp4";
+    }
+
+    match /{roomID}/{senderUID}/{uploadID}/{attachmentID}/source {
+      allow create: if resource == null
+        && isActiveMediaSender(senderUID)
+        && hasV2Reservation(roomID, senderUID, uploadID, attachmentID)
+        && (
+          (
+            firestore.get(mediaUploadPath(roomID, uploadID)).data.kind == "images"
+            && validImageSource()
+          )
+          || (
+            firestore.get(mediaUploadPath(roomID, uploadID)).data.kind == "video"
+            && validVideoSource()
+          )
+        );
+      allow get, list, update, delete: if false;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

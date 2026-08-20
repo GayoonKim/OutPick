@@ -21,8 +21,14 @@ protocol ChatOutgoingOutboxUseCaseProtocol {
     func stageVideoMessage(_ message: ChatMessage, prepared: PreparedVideo) async
     func markImageUploadCompleted(messageID: String, attachments: [Attachment]) async
     func markVideoUploadCompleted(messageID: String, payload: VideoMetaPayload) async
+    func markMediaReservation(messageID: String, reservation: ChatMediaUploadReservation) async
+    func markMediaProcessing(messageID: String, snapshot: ChatMediaProcessingSnapshot) async
+    func markMediaRestoreRequiresManualRetry(messageID: String) async
+    func mediaSessionPayload(messageID: String) async -> ChatMediaUploadSessionPayload?
+    func pendingMediaRecords(roomID: String) async -> [ChatOutgoingOutboxRecord]
     func markFailed(message: ChatMessage, error: Error?) async
     func retryPayload(for message: ChatMessage, room: ChatRoom) async -> ChatOutgoingOutboxRetryPayload?
+    func retryPayload(messageID: String, room: ChatRoom) async -> ChatOutgoingOutboxRetryPayload?
     func completeServerConfirmedMessage(_ message: ChatMessage) async
     func deleteLocalFailedMessage(_ message: ChatMessage) async
     func cancelPendingMessages(roomID: String) async
@@ -33,6 +39,7 @@ protocol ChatServerConfirmedMessageReconciling {
 }
 
 final class ChatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol, ChatServerConfirmedMessageReconciling {
+    private static let failedMediaRetentionInterval: TimeInterval = 7 * 24 * 60 * 60
     private let outboxPersistence: ChatOutgoingOutboxPersisting
     private let messagePersistence: ChatFailedOutgoingMessagePersisting
     private let imageStorageRepository: FirebaseImageStorageRepositoryProtocol
@@ -181,6 +188,111 @@ final class ChatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol, ChatSe
         }
     }
 
+    func markMediaReservation(messageID: String, reservation: ChatMediaUploadReservation) async {
+        guard var updated = try? await outboxPersistence.fetchOutgoingOutboxRecord(messageID: messageID) else { return }
+        let record = updated
+        let localPaths: [String]
+        switch record.kind {
+        case .images:
+            let payload: ChatOutgoingOutboxImagePayload? = decodeFromString(record.localPayloadJSON)
+            localPaths = payload?.items.sorted(by: { $0.index < $1.index }).map(\.originalFilePath) ?? []
+        case .video:
+            let payload: ChatOutgoingOutboxVideoPayload? = decodeFromString(record.localPayloadJSON)
+            localPaths = payload.map { [$0.compressedFilePath] } ?? []
+        case .text:
+            return
+        }
+        guard !localPaths.isEmpty,
+              reservation.targets.allSatisfy({ localPaths.indices.contains($0.sourceIndex) }) else { return }
+        let session = ChatMediaUploadSessionPayload(
+            uploadID: reservation.uploadID,
+            clientMutationID: reservation.clientMutationID,
+            kind: record.kind == .video ? "video" : "images",
+            expiresAt: reservation.expiresAt
+        )
+        updated.stage = .uploading
+        updated.updatedAt = dateProvider()
+        updated.uploadID = reservation.uploadID
+        updated.clientMutationID = reservation.clientMutationID
+        updated.processingStatus = reservation.processingStatus.rawValue
+        updated.statusCheckedAt = dateProvider()
+        updated.expiresAt = reservation.expiresAt
+        updated.sessionPayloadJSON = encodeToString(session)
+        updated.terminalAt = nil
+        updated.lastError = nil
+        try? await outboxPersistence.saveOutgoingOutboxRecord(updated)
+    }
+
+    func markMediaProcessing(messageID: String, snapshot: ChatMediaProcessingSnapshot) async {
+        guard var record = try? await outboxPersistence.fetchOutgoingOutboxRecord(messageID: messageID) else { return }
+        record.processingStatus = snapshot.processingStatus.rawValue
+        record.statusCheckedAt = dateProvider()
+        record.updatedAt = dateProvider()
+        record.lastError = snapshot.failureCode
+        switch snapshot.processingStatus {
+        case .uploading: record.stage = .uploading
+        case .queued: record.stage = .queued
+        case .processing: record.stage = .processing
+        case .ready:
+            record.stage = .sending
+            record.terminalAt = dateProvider()
+        case .canceled:
+            record.stage = .canceled
+            record.terminalAt = dateProvider()
+            record.sessionPayloadJSON = nil
+        case .failed:
+            record.stage = .failed
+            record.terminalAt = dateProvider()
+            record.sessionPayloadJSON = nil
+        case .expired:
+            record.stage = .expired
+            record.terminalAt = dateProvider()
+            record.sessionPayloadJSON = nil
+        }
+        try? await outboxPersistence.saveOutgoingOutboxRecord(record)
+    }
+
+    func markMediaRestoreRequiresManualRetry(messageID: String) async {
+        guard var record = try? await outboxPersistence.fetchOutgoingOutboxRecord(messageID: messageID) else {
+            return
+        }
+        record.stage = .failed
+        record.updatedAt = dateProvider()
+        record.terminalAt = dateProvider()
+        record.processingStatus = ChatMediaServerProcessingStatus.failed.rawValue
+        record.statusCheckedAt = dateProvider()
+        record.sessionPayloadJSON = nil
+        record.lastError = "restore_requires_manual_retry"
+        try? await outboxPersistence.saveOutgoingOutboxRecord(record)
+    }
+
+    func mediaSessionPayload(messageID: String) async -> ChatMediaUploadSessionPayload? {
+        guard let record = try? await outboxPersistence.fetchOutgoingOutboxRecord(messageID: messageID) else {
+            return nil
+        }
+        return decodeFromString(record.sessionPayloadJSON)
+    }
+
+    func pendingMediaRecords(roomID: String) async -> [ChatOutgoingOutboxRecord] {
+        let records = (try? await outboxPersistence.fetchOutgoingOutboxRecords(roomID: roomID)) ?? []
+        let retentionCutoff = dateProvider().addingTimeInterval(-Self.failedMediaRetentionInterval)
+        let expiredFailures = records.filter { record in
+            guard record.kind != .text, record.stage == .failed else { return false }
+            return (record.terminalAt ?? record.updatedAt) <= retentionCutoff
+        }
+        for record in expiredFailures {
+            try? await messagePersistence.hardDeleteMessage(id: record.messageID, inRoom: record.roomID)
+            try? await outboxPersistence.deleteOutgoingOutboxRecord(messageID: record.messageID)
+            deleteLocalOutboxFiles(roomID: record.roomID, messageID: record.messageID)
+        }
+        let expiredIDs = Set(expiredFailures.map(\.messageID))
+        return records.filter {
+            $0.kind != .text
+                && !expiredIDs.contains($0.messageID)
+                && ![.canceled, .expired].contains($0.stage)
+        }
+    }
+
     func markFailed(message: ChatMessage, error: Error?) async {
         guard var record = try? await outboxPersistence.fetchOutgoingOutboxRecord(messageID: message.ID) else {
             var failedMessage = message
@@ -193,8 +305,11 @@ final class ChatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol, ChatSe
         failedMessage.attachments = displayAttachments(for: record, fallback: message.attachments)
         await persistFailedMessage(failedMessage)
 
+        let now = dateProvider()
         record.stage = record.uploadedPayloadJSON == nil ? .failed : .uploaded
-        record.updatedAt = dateProvider()
+        record.updatedAt = now
+        record.terminalAt = record.stage == .failed ? now : nil
+        record.sessionPayloadJSON = nil
         record.lastError = error?.localizedDescription
         try? await outboxPersistence.saveOutgoingOutboxRecord(record)
     }
@@ -229,6 +344,13 @@ final class ChatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol, ChatSe
                   let prepared = makePreparedVideo(from: local) else { return nil }
             return .uploadVideo(roomID: record.roomID, messageID: record.messageID, prepared: prepared)
         }
+    }
+
+    func retryPayload(messageID: String, room: ChatRoom) async -> ChatOutgoingOutboxRetryPayload? {
+        guard let message = try? await messagePersistence.fetchMessage(id: messageID, inRoom: room.id) else {
+            return nil
+        }
+        return await retryPayload(for: message, room: room)
     }
 
     func completeServerConfirmedMessage(_ message: ChatMessage) async {
@@ -298,7 +420,14 @@ final class ChatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol, ChatSe
             updatedAt: now,
             localPayloadJSON: localPayloadJSON ?? existing?.localPayloadJSON,
             uploadedPayloadJSON: uploadedPayloadJSON ?? existing?.uploadedPayloadJSON,
-            lastError: error
+            lastError: error,
+            uploadID: existing?.uploadID,
+            clientMutationID: existing?.clientMutationID,
+            processingStatus: existing?.processingStatus,
+            statusCheckedAt: existing?.statusCheckedAt,
+            terminalAt: existing?.terminalAt,
+            expiresAt: existing?.expiresAt,
+            sessionPayloadJSON: existing?.sessionPayloadJSON
         )
         try? await outboxPersistence.saveOutgoingOutboxRecord(record)
     }
@@ -317,7 +446,13 @@ final class ChatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol, ChatSe
         try fileManager.createDirectory(at: imageDir, withIntermediateDirectories: true)
 
         let items = try pairs.sorted(by: { $0.index < $1.index }).map { pair in
-            let originalURL = imageDir.appendingPathComponent("\(pair.index)_original.jpg")
+            let sourceExtension: String
+            switch pair.mediaFormat {
+            case "png": sourceExtension = "png"
+            case "gif": sourceExtension = "gif"
+            default: sourceExtension = "jpg"
+            }
+            let originalURL = imageDir.appendingPathComponent("\(pair.index)_original.\(sourceExtension)")
             let thumbURL = imageDir.appendingPathComponent("\(pair.index)_thumb.jpg")
 
             if fileManager.fileExists(atPath: originalURL.path) {
@@ -325,6 +460,8 @@ final class ChatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol, ChatSe
             }
             try fileManager.copyItem(at: pair.originalFileURL, to: originalURL)
             try pair.thumbData.write(to: thumbURL, options: .atomic)
+            try ChatOutboxFilePolicy.apply(to: originalURL, fileManager: fileManager)
+            try ChatOutboxFilePolicy.apply(to: thumbURL, fileManager: fileManager)
 
             return ChatOutgoingOutboxImagePayload.Item(
                 index: pair.index,
@@ -333,7 +470,10 @@ final class ChatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol, ChatSe
                 originalWidth: pair.originalWidth,
                 originalHeight: pair.originalHeight,
                 bytesOriginal: pair.bytesOriginal,
-                sha256: pair.sha256
+                sha256: pair.sha256,
+                contentType: pair.contentType,
+                mediaFormat: pair.mediaFormat,
+                isAnimated: pair.isAnimated
             )
         }
 
@@ -356,6 +496,8 @@ final class ChatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol, ChatSe
         }
         try fileManager.copyItem(at: prepared.compressedFileURL, to: videoURL)
         try prepared.thumbnailData.write(to: thumbURL, options: .atomic)
+        try ChatOutboxFilePolicy.apply(to: videoURL, fileManager: fileManager)
+        try ChatOutboxFilePolicy.apply(to: thumbURL, fileManager: fileManager)
 
         return ChatOutgoingOutboxVideoPayload(
             compressedFilePath: relativeOutboxPath(for: videoURL),
@@ -378,6 +520,7 @@ final class ChatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol, ChatSe
             .appendingPathComponent(roomID, isDirectory: true)
             .appendingPathComponent(messageID, isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        try ChatOutboxFilePolicy.apply(to: directory, fileManager: fileManager)
         return directory
     }
 
@@ -397,7 +540,10 @@ final class ChatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol, ChatSe
                 originalWidth: item.originalWidth,
                 originalHeight: item.originalHeight,
                 bytesOriginal: item.bytesOriginal,
-                sha256: item.sha256
+                sha256: item.sha256,
+                contentType: item.contentType,
+                mediaFormat: item.mediaFormat,
+                isAnimated: item.isAnimated
             ))
         }
         return pairs
@@ -453,17 +599,20 @@ final class ChatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol, ChatSe
 
     private func makeImageAttachments(from payload: ChatOutgoingOutboxImagePayload) -> [Attachment] {
         payload.items.sorted(by: { $0.index < $1.index }).map { item in
-            Attachment(
+            let sourcePath = displayPath(from: item.originalFilePath)
+            return Attachment(
                 type: .image,
                 index: item.index,
-                pathThumb: displayPath(from: item.thumbFilePath),
-                pathOriginal: displayPath(from: item.originalFilePath),
+                pathThumb: sourcePath,
+                pathOriginal: sourcePath,
                 width: item.originalWidth,
                 height: item.originalHeight,
                 bytesOriginal: item.bytesOriginal,
                 hash: item.sha256,
                 blurhash: nil,
-                duration: nil
+                duration: nil,
+                mediaFormat: item.mediaFormat,
+                isAnimated: item.isAnimated
             )
         }
     }

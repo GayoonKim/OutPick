@@ -47,7 +47,7 @@
 - `Rooms.participantUIDs`, 사용자 문서의 legacy `joinedRooms` 배열, `roomStates`는 신규 source로 사용하지 않는다.
 - GRDB `LocalChatUser.userID`, `RoomProfileDisplayCache.userID`, `chatMessage.senderUID`도 같은 UID 의미다.
 - 개발 DB에서 재현된 legacy `chatMessage.senderID NOT NULL` schema만 migration으로 현재 schema로 재작성한다.
-- 현재 구현은 앱 미배포 clean break를 적용한 fresh 15개 migration이다. legacy no-op 3개와 `createRoomImage`/`roomImage` table/API는 제거했으며 Phase 3 이전 개발 DB는 앱 삭제·재설치로 초기화한다.
+- 현재 구현은 앱 미배포 clean break를 적용한 fresh 19개 migration이다. Phase 7.3은 `chatOutgoingOutbox`에 upload identity·processing 상태·terminal/expiry·재시도용 session identity를 추가한다. signed PUT URL·필수 header 같은 bearer credential은 로컬 DB에 저장하지 않는다. legacy no-op 3개와 `createRoomImage`/`roomImage` table/API는 제거했으며 Phase 3 이전 개발 DB는 앱 삭제·재설치로 초기화한다.
 - 메시지 저장 중 FTS 오류는 삼키지 않고 message/FTS/media transaction 전체를 rollback한다. 상세 결정은 `docs/ai/tasks/core-infrastructure-modularization/decisions/phase-3-grdb.md`를 따른다.
 
 ### 비공개 계정과 공개 프로필
@@ -84,20 +84,20 @@
 - 사건별 신고는 각 aggregate의 `submissions/{submissionID}`, 고유 신고자 dedupe는 `reporters/{reporterModerationPrincipalID}`에 저장한다. aggregate에 무제한 reporter·room 배열을 두지 않는다.
 - aggregate의 누적 통계와 관리자 `reviewState`를 분리한다. terminal 상태 뒤 새 사건은 `reviewState=open`, `reviewRevision + 1`, `caseVersion + 1`로 전환한다.
 - `caseVersion`은 신고 횟수가 아니라 관리자 optimistic concurrency version이다.
-- 텍스트 snapshot은 최대 4000 UTF-8 bytes로 제한한다. 신고된 이미지·동영상은 별도 evidence Storage에 복사하지 않고 message ID·종류·사전검사 결과만 남긴다.
+- 텍스트 snapshot은 최대 4000 UTF-8 bytes로 제한한다. Phase 7 미디어 신고는 선택한 안정적 `attachmentID`만 결정적 evidence bundle로 복사하고 동영상은 정규화 원본 전체 1개와 `reportedAtSeconds`를 남긴다.
 - `moderationAuditLogs/{actionID}`는 서버 append-only이며 actor, action, bounded before/after, reason, report reference와 request ID를 기록한다.
 - `moderationReportRateLimitBuckets/{principalID_minute}`는 같은 submission dedupe 뒤에만 증가하는 사용자 신고 burst counter다. principal당 UTC 1분 10건만 제한하며 일/대상별 hard cap은 두지 않는다.
 - `moderationAdminRateLimitBuckets/{actorUID_kind_minute}`는 관리자 read/mutation burst counter다. 두 rate collection은 server-only이고 detail·message snapshot·provider identity를 저장하지 않으며 `expiresAt` TTL 2일을 사용한다.
 - `moderationCommentWriteRateLimitBuckets/{principalID_utcMinute}`는 댓글·답글을 합산하는 server-only burst counter다. canonical principal당 UTC 1분 20건이며 `count`, `minuteBucket`, `updatedAt`, `expiresAt`만 저장하고 본문·post/comment/reply ID와 provider identity를 저장하지 않는다. post의 comment document ID는 `SHA-256(moderationPrincipalID + ":" + operation + ":" + clientRequestID)`로 결정하며, 같은 ID의 author·parent·message가 일치하는 replay는 counter를 소비하지 않고 불일치는 `IDEMPOTENCY_CONFLICT`다. `expiresAt` TTL 2일을 사용한다.
 - 댓글·답글 본문은 trim 이후 UTF-16 code unit 1,000을 상한으로 하며 iOS도 `String.UTF16View.count`로 동일하게 계산한다. `clientRequestID`는 네트워크 retry 동안만 유지하고 입력 수정·취소·성공 후 새 작성에는 새 UUID를 사용한다.
-- 신고·audit·principal·room ban과 ready 검사 metadata의 Production TTL은 개인정보 보존 기간 승인 전 활성화하지 않는다. 만료·실패 quarantine object cleanup은 별도 운영 안전장치로 유지한다.
+- 신고·audit·principal·room ban의 Production TTL은 개인정보 보존 기간 승인 전 활성화하지 않는다. evidence는 기각·삭제만·경고만이면 처리 직후 cleanup을 enqueue하고 계정 제재 근거면 30일 이의제기 계약을 적용한다. 만료·실패 quarantine cleanup은 별도 운영 안전장치다.
 
 ### Phase 6 텍스트 메시지 개인정보·limiter 계약
 
 - 신규 `Rooms/{roomID}/Messages/{messageID}`와 Socket/FCM/iOS/GRDB message projection은 `senderUID`와 필요한 공개 표시 snapshot만 사용하고 `senderEmail`을 저장·전송하지 않는다. 클라이언트가 제출한 email은 권위 값으로 사용하지 않는다.
 - Socket process-memory bucket은 durable data가 아니다. key는 `moderationPrincipalID + roomID + messageKind`, value는 2초 window timestamps와 최근 계산한 message ID이며 60초 idle TTL·30초 sweep·50,000 active bucket cap을 갖는다. deploy/restart 초기화는 메시지 원장이나 멱등성 source를 변경하지 않는다.
 - Socket message 중복의 최종 원장은 기존 Firestore message transaction이다. 메모리의 최근 message ID는 같은 process retry가 quota를 중복 소비하지 않게 하는 짧은 최적화일 뿐 durable idempotency record가 아니다.
-- 텍스트 채팅·룩북 공유·댓글·답글은 자동 의미 필터나 외부 moderation provider 저장소를 만들지 않는다. 현재 댓글·답글 생성은 `attachments: []`인 텍스트 전용이고, 이미지·동영상 채팅만 Phase 7의 quarantine/inspection metadata를 사용한다.
+- 모든 UGC는 자동 의미 필터나 외부 moderation provider 저장소를 만들지 않는다. 현재 댓글·답글 생성은 `attachments: []`인 텍스트 전용이고, 이미지·동영상 채팅만 Phase 7의 quarantine/technical-validation metadata를 사용한다.
 
 ### 메시지 삭제·room ban·방 lifecycle
 
@@ -139,13 +139,23 @@
 - 계정별 마지막 성공 UID snapshot을 메모리 Store의 초기값으로 사용한 뒤 owner-only 서버 relation으로 교체한다. snapshot 없이 서버 조회가 실패하면 UGC 진입을 fail closed한다.
 - 차단 해제 뒤 현재 방을 강제 재조회하지 않는다. 이후 메시지는 즉시 admission하고 과거 메시지는 재진입·pagination·일반 동기화에서 자연 복원한다.
 
-### 게시 전 미디어 검사
+### 미디어 격리·정규화·신고 evidence
 
-- `Rooms/{roomID}/MediaUploads/{uploadID}`는 ADR-016의 reservation을 `reserved → uploaded → scanning → ready | rejected | failed | expired` 상태 머신으로 확장한다.
-- quarantine 경로는 `chatModerationQuarantine/{roomID}/{senderUID}/{uploadID}/{objectName}`, ready 경로는 `rooms/{roomID}/{messageID}/{objectName}`다.
-- 검사 전에는 message document와 seq를 만들지 않는다. `scanning → ready` transaction에서만 message·seq·media index·room summary를 생성한 뒤 Socket·push를 수행한다.
-- 검사 실패·거부·만료는 seq tombstone을 만들지 않고 quarantine cleanup으로 끝낸다.
-- 이미지 threshold는 adult/violence `LIKELY`, racy `VERY_LIKELY` 이상 차단이며 medical/spoof는 진단만 기록한다. `UNKNOWN`·provider 장애는 bounded retry 뒤 fail closed다.
+- `Rooms/{roomID}/MediaUploads/{uploadID}`는 ADR-016의 reservation을 `uploading → queued → processing → ready | canceled | failed | expired` 상태 머신으로 확장한다.
+- 별도 processing 문서는 만들지 않는다. `MediaUploads`가 `clientMutationID`, attachment별 단일 quarantine `uploadSources`, attempt, `leaseToken/leaseExpiresAt`, `executionName`, `processingSlotID`, `nextAttemptAt`, retry/failure와 normalized manifest를 함께 소유한다. 업로드 예약과 서버가 발급한 signed target은 24시간, 처리 deadline은 finalize가 source 검증을 마친 뒤부터 6시간이며 terminal 상태에는 최소 멱등 결과만 남겨 7일 뒤 TTL 삭제한다. 앱 outbox에는 signed target 자체를 영속화하지 않는다.
+- quarantine은 환경별 `asia-northeast3` Standard 전용 bucket의 `{roomID}/{senderUID}/{uploadID}/{attachmentID}/source`다. soft delete·versioning을 끄고 1일 lifecycle을 비정상 잔존 객체 cleanup 안전망으로 둔다. source는 ready/canceled/final failed/expired 확정 즉시 삭제한다. ready는 일반 media bucket의 `rooms/{roomID}/messages/{messageID}/attachments/{attachmentID}/{display|thumbnail}`, evidence는 별도 bucket의 `{bundleID}/{attachmentID}/display`다.
+- processing 완료 전에는 message document와 seq를 만들지 않는다. `processing → ready` transaction에서만 message·room seq·media index·room summary·`chatMediaDeliveryJobs/{roomID_messageID}`를 함께 생성하고 두 processing slot을 반환한다. text Socket transaction과 동일한 `Rooms.seq` 문서를 읽고 쓰므로 경합은 Firestore가 재시도하며 seq 중복·gap을 만들지 않는다.
+- 전용 Cloud Run은 실제 MIME·codec·크기·해상도·duration·track을 검증하고 불필요 metadata를 제거한다. 외부 유해성 의미 판정은 수행하지 않는다.
+- 이미지는 메시지당 최대 30장, quarantine source 각 15 MiB·합산 150 MiB·긴 변 4096px다. iOS는 정적 이미지의 방향 bake, sRGB, metadata 제거를 적용하고 HEIC/HEIF·JPEG는 JPEG quality 0.92, PNG는 초기 투명/비투명 모두 PNG로 보존한다. GIF animation은 그대로 유지한다. 서버 transport는 JPEG·PNG·animated GIF만 허용하며 raw HEIC/HEIF는 거부한다. 입력은 정적 64M pixel, GIF 200 frame·frame당 16,777,216 pixel·총 100M decoded pixel, 이미지당 60초로 제한한다. 동영상은 iOS가 720p H.264/AAC MP4 source를 준비하고 메시지당 1개·350 MiB·길이 제한 없음·remux 10분 timeout을 적용한다. 이미지와 영상 모두 attachment당 하나의 V4 signed PUT으로 quarantine source에 전송하고 서버가 SHA-256·크기·MIME를 검증한다. 서버가 `min(1초, duration/2)`에서 512px JPEG thumbnail을 생성하며 실패는 `invalidMedia`다. 이미지는 private Cloud Run Service(min 0, concurrency 1), 영상은 Cloud Run Job에서 각각 2 vCPU·1 GiB로 처리한다.
+- `moderationMediaSignals/{roomID_messageID}`는 review revision별 고유 신고 principal·사유 class·visibility/evidence 상태를 서버 전용으로 집계한다. 긴급 2명 또는 일반 3명의 24시간 threshold와 관리자 수동 조치만 전역 `hiddenPendingReview`를 만든다.
+- Evidence 원본은 클라이언트에 공개되지 않으며 활성 플랫폼 관리자가 서버 인증을 거쳐 특정 객체만 제한적으로 조회한다. 신고/삭제는 first transaction commit wins이고 evidence bundle·cleanup은 결정적 ID로 멱등 처리한다.
+- `chatMediaProcessingSlots/{slotID}`은 전역 server-only 고정 execution lease다. Development는 image 1/video 1, Production 초기값은 image 4/video 1이며 dispatcher가 slot을 얻은 경우에만 Job execution을 시작한다. 별도 principal upload slot은 canonical principal마다 image 2/video 1을 transaction 점유하며 `uploading|queued|processing` 동안만 유지한다. terminal 즉시 반환하므로 이는 누적 전송량이나 최대 60장 총량 제한이 아니라 순차 backpressure다. 24시간 byte hard cap은 초기값을 두지 않는다.
+- Phase 7.1 worker 성공은 같은 processing lease에 `technicalValidationResult`, `normalizedManifest`, `metadataRemovalVersion`, `workerCompletedAt`을 기록한다. 이 시점의 ready bucket 객체는 staging 상태라 클라이언트에 공개되지 않으며, Phase 7.2의 lease 재검증·message/seq transaction이 `ready`를 확정한 뒤에만 공개·source cleanup·slot 반환이 일어난다. 확정 message attachment와 `mediaIndex`는 worker가 검증한 display content type과 `frameCount`·`animated`를 근거로 `mediaFormat: jpeg|png|gif|mp4`와 `animated: Bool`을 저장한다. GIF UI는 `mediaFormat == gif && animated == true`일 때만 확정 표시한다.
+- v2 message는 `mediaContractVersion: 2`, server-only `mediaUploadPath`, `readyAttachmentIDs`를 가진다. 일반 media Storage Rules는 공개 message가 존재하고 visible·미삭제이며 요청 attachment가 `readyAttachmentIDs`에 포함된 경우만 `display/thumbnail` get을 허용한다. `ready` source cleanup은 즉시 시도하고 15분 scheduler가 `pending|failed`를 재시도한다. canceled/failed/expired의 normalized ready 객체는 고아 객체로 함께 삭제한다.
+- v2 attachment와 `mediaIndex`는 `bucketOriginal/pathOriginal`, `bucketThumb/pathThumb`을 함께 저장한다. Phase 7 정규화 결과는 환경별 일반 media bucket을 명시하고, 출시 이력 없는 v2 계약에서 bucket 추론을 하지 않는다. 기존 v1 attachment cleanup에만 기본 Firebase Storage bucket fallback을 유지한다.
+- 메시지/방 cleanup job schema v2는 `storageTargets: [{bucket, prefix}]`로 실제 bucket과 prefix를 보존한다. schema v1의 `storagePrefixes`는 기본 bucket 대상으로만 해석해 기존 cleanup과 호환한다.
+- `chatMediaDeliveryJobs`는 Socket watcher가 60초 lease로 claim한다. 기존 `receiveImages/receiveVideo`와 FCM fan-out이 끝나면 `completed`, 실패하면 지수 backoff `retryPending`으로 돌아간다. 전달은 at-least-once이며 messageID/seq가 수신측 first-wins dedupe key다. job은 7일 TTL이다.
+- 로컬 `chatOutgoingOutbox`는 `uploadID`, `clientMutationID`, `processingStatus`, `statusCheckedAt`, `terminalAt`, `expiresAt`, `sessionPayloadJSON`을 저장한다. session payload는 재조회에 필요한 upload identity·종류·만료 시각만 포함하고 signed PUT URL·필수 header는 저장하거나 로그에 남기지 않는다. 보호된 local source 경로는 별도 outbox payload에 유지한다. 전송 중 네트워크 단절·방 이탈·앱 종료는 로컬 실패로 처리하고 source는 Application Support의 전용 outbox 경로에 backup 제외·`completeUntilFirstUserAuthentication`으로 보존해 재시도/삭제를 제공한다.
 
 ## 계정 삭제 계약
 

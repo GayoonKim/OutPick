@@ -188,6 +188,29 @@ Firebase Functions tests/build entry:
 ### Chat UGC safety/moderation 테스트
 
 - exact behavior: `contracts/chat-moderation-v1.json`
+- Phase 7.0 worker: `tools/chat-media-processing-worker/src/{imageProcessor,videoProcessor}.test.ts`, `runtimeVerification.ts`, `benchmark.ts`.
+  - 실행: `cd tools/chat-media-processing-worker && npm test`, container codec 확인은 `npm run verify:runtime`, 30장/GIF 측정은 `npm run benchmark`.
+  - 2026-08-18 실제 HEVC HEIC decoder 부재를 확인한 뒤 iOS HEIC/HEIF→JPEG·서버 raw HEIC/HEIF 거부로 확정해 계약을 보정했다. Node.js 24.19.0 build와 12/12, runtime verification, 1시간 video remux·metadata/부가 track 제거가 통과했다.
+  - 로컬 benchmark: 4096x4096 JPEG 30장 10.537초, 190-frame 1024x512 GIF 99,614,720 decoded pixel 3.750초, peak RSS 약 393 MiB. 201-frame GIF는 decode 전에 `resourceLimit`으로 거부했다.
+  - Development Cloud Build `c57a715a-2948-45ea-b464-21437cf474c7`: Linux verification image와 최종 runtime image에서 Node.js 24.19.0, sharp 0.35.3, libvips 8.18.3, ffmpeg/ffprobe 5.1.9를 확인했다. 12/12, runtime verification과 최종 image 재검증이 통과했다. Linux benchmark는 JPEG 30장 32.992초, GIF 9.538초, peak RSS 약 336 MiB였다. 이에 상한과 2 vCPU·1 GiB·task 내 순차 처리를 확정했다.
+- Phase 7.1 로컬 lifecycle:
+  - Socket `test/{handlers,media,contracts}`가 v2 UUID preflight/finalize/status/cancel, exact manifest, principal image 2/video 1 slot, v1 호환과 ready 전 message/seq/emit/push 0을 검증한다.
+  - Functions `src/chat/media/*.test.ts`와 `index.contract.test.ts`가 deterministic task ID, 환경별 execution slot, duplicate claim, stale lease retry/terminal 7일 TTL, private dispatcher·trigger·watchdog export와 index를 검증한다.
+  - worker `cloudJob.test.ts`와 processor integration test가 Cloud Job env/ready path, 이미지/GIF 정규화와 1시간 video remux·512px thumbnail을 검증한다.
+  - `firestore-tests/chat-media-quarantine-storage.rules.test.mjs`가 예약 owner의 exact source 최초 create만 허용하고 타인·read/delete·잘못된 MIME·terminal/expired 업로드를 거부한다. 실행은 기존 `cd firestore-tests && npm test` 전체 Emulator 회귀에 포함된다.
+- Phase 7.2 ready/delivery/cleanup:
+  - Functions `readyService.test.ts`가 message/seq/index/preview/delivery/slot 반환 원자성, worker 완료 replay, cancel 선행과 message ID 충돌 fail-closed를 검증한다.
+  - Socket `mediaDeliveryWatcher.test.js`가 lease 후 emit→push→completed와 emit 실패 retry 후 동일 messageID/seq 재전달을 검증한다.
+  - `chat-media-storage.rules.test.mjs`가 message 생성 전 ready 객체 read 거부, visible attachment 허용, 전역 비노출 이후 거부를 검증한다.
+  - 같은 Rules test는 ready media read가 account + message 두 문서 한도 안에서 동작하도록 room 문서 제거 뒤 허용, 비활성 account·비노출 message 거부를 함께 검증한다.
+  - `OutPickTests/ChatMessageMediaAttachmentMappingTests.swift`가 v2 attachment의 전용 bucket·path·ID·format metadata 보존을 검증한다.
+  - 2026-08-19 Development 반영 전후 Functions lint/build와 213/213, Socket check와 96/96, worker 16/16가 통과했다. Firestore·Storage Rules 45/45와 transaction 29/29도 통과했고 media exact index 4개와 기존 cleanup exact index 2개는 `READY`, TTL 2개는 `ACTIVE`, Phase 7 Function 9개는 `ACTIVE`다.
+  - 2026-08-20 GIF 중복 frame 회귀 보정 뒤 worker 17/17이 통과했다. 신규 integration test는 빨강 25 + 파랑 25의 연속 중복 50프레임 fixture를 처리해 input/output frame 수, 전체 delay 배열과 loop가 동일한지 검증한다. 로컬 runtime verification은 번들 ffmpeg/ffprobe 경로 지정 후 통과했고, Linux Cloud Build `89daa082-3e7b-4e0e-b7b2-b5717b5e19a0`와 배포 image build `d1d238d9-1f96-41ae-bc71-7cf099b20069`도 test·runtime verification·benchmark를 통과했다.
+  - 2026-08-20 GIF 표시 계약 보정은 Functions 전체 test·lint(오류 0, 기존 moderation warning 17)·build, Development generic Simulator build를 통과했다. `readyService.test.ts`가 GIF `mediaFormat`·`animated`의 message/media index 투영을 검증하고, `ChatMessageMediaAttachmentMappingTests`와 `ImageViewerPagePolicyTests`의 대상 7개 시나리오가 부팅된 Simulator에서 통과했다. animated viewer test는 2-frame GIF를 lazy frame source로 만들고 전체 frame 선로딩이 없음을 검증한다. `onChatMediaWorkerCompleted` Development exact 배포 뒤 `ACTIVE`와 ERROR 0건, iPhone 14용 Development build·설치·실행 성공도 확인했다. 새 seq 20 GIF는 attempt 1 ready·cleanup completed, message/mediaIndex의 gif·animated metadata, 정적 badge·viewer animation·정적 thumbnail 복귀까지 실기기 QA를 통과했다.
+  - 2026-08-20 첫 31장 QA와 finalize-only 순차화 재QA에서 각각 마지막 1장이 reservation 전 실패한 원인을 보정했고, 세 번째 iPhone 14 QA에서 30+1 모두 전송 성공했다. 후속 대량 전송은 `ChatMediaUploadTurnQueueTests`가 kind별 FIFO·image/video lane 독립성·취소 waiter 제거를, `ChatMediaUploadUseCaseTests`가 `active_upload_limit` 동일 identity 재시도와 비비용량 오류 즉시 실패를 검증한다. `ChatMediaSelectionChunkerTests`는 60→30+30과 70→30+30+10의 순서·index 보존을 추가로 검증했으며 네 suite targeted Simulator test와 Development device build·설치가 통과했다. 새 설치본의 iPhone 14에서 70장 30+30+10 세 메시지가 모두 실패 없이 최종 전송됐다. 60장은 자동 경계 검증과 70장 상위 시나리오 성공을 근거로 별도 실기기 반복을 생략했다.
+  - 2026-08-20 영상 앱 종료 QA에서 재실행 직후 왼쪽 실패 표시가 노출된 뒤 server finalize 완료로 성공 전환되는 restore race를 확인했다. `ChatMediaUploadUseCaseTests`에 status-only `uploading → queued`, cancel/ready race, retry 소진 manual retry, status 오류 시 foreground PUT 미호출 4개를 추가하고 `ChatOutgoingOutboxUseCaseTests`에 session credential 제거·local retry payload 보존을 추가했다. 두 suite 26개 targeted Simulator test와 iPhone 14 Development build·설치가 통과했으며 silent pending 선복원의 실제 실패 표시 미노출 재QA는 남아 있다.
+  - 교체 전 조각형 signed PUT backend E2E는 276-byte JPEG 단건과 31,364,213-byte MP4 두 조각에서 preflight/PUT/reconciliation/Compose/finalize→Job→ready→part/source cleanup을 통과했다. image/video execution은 각각 8.49초/10.49초, attempt 1이었다. 현 단일 source foreground 계약의 Development E2E는 image Service IAM·Functions 전환 뒤 다시 수행한다.
+  - 첫 cleanup scheduler 자동 실행에서 Development 원격에 없던 기존 manifest index 2개가 순차적으로 드러났다. 두 index를 exact 생성한 뒤 `drainChatModerationCleanupJobs`의 다음 5분 자동 실행이 HTTP 200으로 끝났으며 수동 cleanup mutation은 실행하지 않았다.
 - Phase 1 완료:
   - Functions `moderation/{identity,state}.test.ts`, `shared/accountStatus.test.ts`: versioned HMAC alias, provider claim, capability matrix, 제한 만료.
   - Emulator `moderation-principal.emulator.test.mjs`: 동시 재가입 UID 수렴, suspended 복원, old/new key alias 회전.
@@ -210,12 +233,13 @@ Firebase Functions tests/build entry:
   - `functions/src/chat/moderation/contracts.test.ts`: message seq·신고 참조·room lifecycle·관리자 사유 입력 계약.
   - `firestore-tests/chat-moderation.emulator.test.mjs`: 실제 message tombstone, last summary, reply/media/Storage cleanup, owner close, 사용자별 30일 안내, 물리 room 삭제와 삭제 후 idempotent replay.
   - `functions/src/index.contract.test.ts`: 신규 callable 3개, trigger 2개, 5분 scheduler와 cleanup due-query/TTL index 계약.
-  - 미디어 inspection retry/fail-closed/ready message+seq 단일 생성
+  - 미디어 technical validation retry/cancel race/ready message+seq 단일 생성, metadata 제거와 GIF resource-limit
+  - Phase 7 신규 worker/Functions/Socket/Rules/iOS 검증 matrix는 `docs/ai/tasks/chat-ugc-safety-room-moderation/phase-7-implementation-plan.md`의 테스트 계획을 기준으로 추가한다.
 - Socket unit test 후보:
   - restricted/suspended handshake와 기존 연결 disconnect
   - room ban 사용자의 active room read 비회귀, membership/participant Socket join/message-media write 거부, 전역 차단 recipient push 제외
   - principal+room+messageKind rate key와 reconnect 회귀
-  - 검사 통과 전 broadcast 없음과 ready 이후 단일 broadcast/seq
+  - ready 전 broadcast 없음과 ready 이후 단일 broadcast/seq, hiddenPendingReview/restore의 seq·unread 불변성
 - Firestore·Storage emulator Phase 3 완료:
   - message direct update와 room lifecycle direct update 거부, 폐쇄 room read 차단, 폐쇄 안내 본인 read/delete와 타인 접근·client create/update 거부.
   - room ban은 후속 Phase 범위다. active room read는 유지하고 membership create·message/media write만 principal ban으로 거부한다.
@@ -387,8 +411,27 @@ xcodebuild -scheme OutPick-Development -destination 'platform=iOS Simulator,name
 - Media upload tests: `OutPickTests/ChatMediaUploadUseCaseTests.swift`
   - image/video upload orchestration, preflight/finalize 실패, pending/outbox 연동을 확인한다.
   - 동기 socket connected guard가 아니라 preflight/finalize ACK 실패 경로를 검증한다.
+  - `active_upload_limit`이면 같은 `uploadID`·`clientMutationID`로 configured backoff 뒤 재예약하고, 다른 오류는 재시도하지 않는지 검증한다.
+  - 앱 재실행 session은 foreground PUT을 호출하지 않고 status만 2·4·8초 reconcile하며, server active 전환·cancel/ready·retry 소진·조회 오류가 각각 monitoring 또는 manual retry로 수렴하는지 검증한다.
+- Media upload turn queue tests: `OutPickTests/ChatMediaUploadTurnQueueTests.swift`
+  - image/video kind별 FIFO, 두 lane의 독립 진행, 취소된 waiter 제거와 다음 waiter 승계를 검증한다.
+- Media reservation error mapping tests: `OutPickTests/ChatMediaReservationErrorMappingTests.swift`
+  - Socket ACK의 `serverErrorCode == active_upload_limit`만 typed capacity error로 매핑하고 다른 오류 원문은 보존하는지 검증한다.
+- Pending media presentation tests: `OutPickTests/ChatPendingMediaUploadStoreTests.swift`, `OutPickTests/ChatMessageActionPolicyTests.swift`. 활성 상태 무표시·실패 상태 액션 분류와 미확정 로컬 메시지의 서버 액션 차단을 검증하며, 2026-08-20 시간 위치 아이콘 리팩토링 뒤 iPhone 17 Pro iOS 26.2 Simulator에서 14/14 통과했다. UIKit의 실제 아이콘 위치·터치 영역은 실기기 수동 QA 대상이다.
+  - uploading/queued/processing은 무표시, failed/expired만 사용자 복구 UI 대상이라는 상태 계약을 검증한다.
+  - 서버 확정 전 활성 `seq == 0` 로컬 미디어 메시지는 답장·복사·삭제·신고·차단·공지·내보내기 액션을 노출하지 않는지 검증한다.
+  - `ChatMediaUploadUseCaseTests`는 pending attachment가 upload source를 직접 가리키는지, `ChatOutgoingOutboxUseCaseTests`는 재실행 복원 attachment도 보존된 original source를 가리키는지 검증한다.
+  - `ChatAttachmentImageServiceTests`는 큰 local upload source를 원본 비율을 유지한 최대 1024px 이미지로 다운샘플링하는지 검증한다.
+- Restored failure window tests: `OutPickTests/ChatMessageWindowStoreTests.swift`
+  - server의 첫째 날·둘째 날 메시지 뒤 첫째 날 로컬 실패 메시지를 복원해도 반복 날짜 separator identifier가 유일하고 diffable initial snapshot이 중복 ID를 받지 않는지 검증한다.
+  - 2026-08-20 관련 window/pending/action suite 26/26을 iPhone 17 Pro iOS 26.2 Simulator에서 통과했다.
+  - `ChatOutgoingOutboxUseCaseTests.mediaReservationPersistsOnlySessionIdentityUntilTerminalFailure`는 reservation 뒤 session identity와 local retry payload는 보존하되 signed PUT URL·필수 header가 DB payload에 들어가지 않고, terminal 실패 뒤에도 재실행 실패 액션을 복원할 수 있는지 검증한다. 복원 수정 뒤 outbox/window/pending/action suite 34/34를 통과했다.
+- Media selection chunk tests: `OutPickTests/ChatMediaSelectionChunkerTests.swift`
+  - 30장 count 경계, 150 MiB aggregate 분할, 60장·70장 분할, 선택 순서와 각 메시지의 0-based attachment index 재부여를 검증한다.
 - Outgoing outbox tests: `OutPickTests/ChatOutgoingOutboxUseCaseTests.swift`
-  - 실패 message 복원, retry, local-only delete, uploaded media cleanup을 확인한다.
+  - 실패 message 복원, retry, local-only delete, 7일 실패 media/source 만료 정리, uploaded media cleanup과 v2 session identity 영속화, signed PUT URL·필수 header 비영속화, terminal/relaunch manual retry와 local payload 보존을 확인한다.
+- GRDB migration tests: `OutPickTests/GRDB/AppDatabaseMigrationTests.swift`
+  - fresh 19개 migration과 Phase 7.3 upload/session column 생성을 검증한다.
 
 최근 targeted test 예시:
 

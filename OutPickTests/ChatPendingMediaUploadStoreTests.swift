@@ -11,6 +11,15 @@ import Testing
 
 @MainActor
 struct ChatPendingMediaUploadStoreTests {
+    @Test func activeStatesAreSilentAndOnlyFailureStatesRequestUserAction() {
+        #expect(ChatPendingMediaUploadState.uploading(0).presentationState == .silent)
+        #expect(ChatPendingMediaUploadState.uploading(1).presentationState == .silent)
+        #expect(ChatPendingMediaUploadState.queued.presentationState == .silent)
+        #expect(ChatPendingMediaUploadState.processing.presentationState == .silent)
+        #expect(ChatPendingMediaUploadState.failed.presentationState == .failure)
+        #expect(ChatPendingMediaUploadState.expired.presentationState == .failure)
+    }
+
     @Test func stageImageUploadTracksInitialStateAndRetryPayloadAfterFailure() throws {
         let store = ChatPendingMediaUploadStore()
         let pair = try makeProcessedImage()

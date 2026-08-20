@@ -5,7 +5,7 @@ import {
   assertSucceeds,
   initializeTestEnvironment,
 } from "@firebase/rules-unit-testing";
-import {doc, setDoc, updateDoc} from "firebase/firestore";
+import {deleteDoc, doc, setDoc, updateDoc} from "firebase/firestore";
 
 const projectId = "outpick-rules-test";
 const senderUID = "media-sender";
@@ -74,6 +74,12 @@ function uploadJpeg(reference) {
   );
 }
 
+function readyReference(context, messageID, variant = "display") {
+  return context.storage().ref(
+    `rooms/${roomID}/messages/${messageID}/attachments/attachment-1/${variant}`,
+  );
+}
+
 async function seedReservation(messageID, overrides = {}) {
   await testEnvironment.withSecurityRulesDisabled(async (context) => {
     await setDoc(doc(
@@ -125,5 +131,38 @@ describe("chat media storage boundary", () => {
       });
     });
     await assertFails(imageReference(other, "readable").getDownloadURL());
+  });
+
+  test("v2 ready 객체는 계정·message 상태만으로 읽고 비노출 이후 거부한다", async () => {
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await uploadJpeg(readyReference(context, "ready-message"));
+    });
+    const sender = testEnvironment.authenticatedContext(senderUID);
+    await assertFails(readyReference(sender, "ready-message").getDownloadURL());
+
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(
+        context.firestore(), "Rooms", roomID, "Messages", "ready-message",
+      ), {
+        ID: "ready-message",
+        mediaContractVersion: 2,
+        readyAttachmentIDs: ["attachment-1"],
+        moderationVisibilityState: "visible",
+        isDeleted: false,
+      });
+    });
+    await assertSucceeds(readyReference(sender, "ready-message").getDownloadURL());
+
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await deleteDoc(doc(context.firestore(), "Rooms", roomID));
+    });
+    await assertSucceeds(readyReference(sender, "ready-message").getDownloadURL());
+
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await updateDoc(doc(
+        context.firestore(), "Rooms", roomID, "Messages", "ready-message",
+      ), {moderationVisibilityState: "hiddenPendingReview"});
+    });
+    await assertFails(readyReference(sender, "ready-message").getDownloadURL());
   });
 });

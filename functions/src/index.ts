@@ -58,6 +58,13 @@ export {
   onRoomClosed,
 } from "./chat/cleanup/functions.js";
 export {
+  dispatchChatMediaProcessing,
+  onChatMediaUploadQueued,
+  onChatMediaWorkerCompleted,
+  reconcileChatMediaObjectCleanup,
+  reconcileChatMediaProcessing,
+} from "./chat/media/functions.js";
+export {
   drainChatModerationCleanupJobs,
   onChatMessageCleanupQueued,
   onModerationRoomCleanupQueued,

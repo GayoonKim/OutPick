@@ -33,6 +33,14 @@ const bulkMemberUIDs = Array.from(
   (_, index) => `bulk-member-${String(index).padStart(3, "0")}`,
 );
 
+function cleanupBucketResolver(bucket) {
+  return {
+    defaultBucket: bucket,
+    bucket: () => bucket,
+    roomBuckets: [bucket],
+  };
+}
+
 async function clearFixtures() {
   await Promise.all([
     db.recursiveDelete(db.collection("Rooms").doc(roomID)),
@@ -274,7 +282,12 @@ describe("chat moderation lifecycle transactions", () => {
       clientRequestID: requestID,
     }, now, db);
     assert.equal(result.isDeleted, true);
-    await processMessageCleanupJob(messageCleanupJobID(roomID, messageID), db, bucket, now);
+    await processMessageCleanupJob(
+      messageCleanupJobID(roomID, messageID),
+      db,
+      cleanupBucketResolver(bucket),
+      now,
+    );
 
     const room = await db.collection("Rooms").doc(roomID).get();
     const message = await room.ref.collection("Messages").doc(messageID).get();
@@ -308,9 +321,9 @@ describe("chat moderation lifecycle transactions", () => {
     const closed = await db.collection("Rooms").doc(roomID).get();
     assert.equal(closed.data()?.isClosed, true);
 
-    await processRoomCleanupJob(roomID, db, {
+    await processRoomCleanupJob(roomID, db, cleanupBucketResolver({
       deleteFiles: async ({prefix}) => deletedPrefixes.push(prefix),
-    }, now);
+    }), now);
     const roomAfterCleanup = await db.collection("Rooms").doc(roomID).get();
     assert.equal(roomAfterCleanup.exists, true);
     assert.equal(roomAfterCleanup.data()?.tombstoneSchemaVersion, 1);
@@ -376,16 +389,16 @@ describe("chat moderation lifecycle transactions", () => {
       expectedLifecycleVersion: 1,
       clientRequestID: "223e4567-e89b-42d3-a456-426614174000",
     }, now, db);
-    const retained = await processRoomCleanupJob(roomID, db, {
+    const retained = await processRoomCleanupJob(roomID, db, cleanupBucketResolver({
       deleteFiles: async () => {},
-    }, now);
+    }), now);
 
     assert.equal(retained, true);
     assert.equal((await room.get()).exists, true);
     const afterFourteenDays = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
-    const completed = await processRoomCleanupJob(roomID, db, {
+    const completed = await processRoomCleanupJob(roomID, db, cleanupBucketResolver({
       deleteFiles: async () => {},
-    }, afterFourteenDays);
+    }), afterFourteenDays);
     assert.equal(completed, true);
     assert.equal((await room.get()).exists, false);
     for (const uid of [bulkMemberUIDs[0], bulkMemberUIDs.at(-1)]) {

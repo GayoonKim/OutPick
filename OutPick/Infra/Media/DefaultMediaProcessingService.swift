@@ -288,7 +288,20 @@ final class DefaultMediaProcessingService: @unchecked Sendable, MediaProcessingS
     // MARK: - MediaProcessingServiceProtocol 구현
 
     func prepareImages(_ results: [PHPickerResult]) async throws -> [ProcessedImage] {
-        try await preparePairs(results)
+        try await withThrowingTaskGroup(of: ProcessedImage.self) { group in
+            for (index, result) in results.enumerated() {
+                group.addTask {
+                    try await ChatImageTransportSourceNormalizer.prepare(result, index: index)
+                }
+            }
+            var ordered = Array<ProcessedImage?>(repeating: nil, count: results.count)
+            for try await image in group { ordered[image.index] = image }
+            return ordered.compactMap { $0 }
+        }
+    }
+
+    func prepareChatImage(_ result: PHPickerResult, index: Int) async throws -> ProcessedImage {
+        try await ChatImageTransportSourceNormalizer.prepare(result, index: index)
     }
 
     func prepareVideo(_ result: PHPickerResult,

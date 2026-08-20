@@ -6,6 +6,7 @@
 //
 
 import UIKit
+import Kingfisher
 
 struct ImageViewerPage {
     let initialImage: UIImage?
@@ -13,19 +14,22 @@ struct ImageViewerPage {
     let thumbnailPath: String?
     let originalPath: String?
     let shouldAlwaysResolveThumbnail: Bool
+    let isAnimated: Bool
 
     init(
         initialImage: UIImage? = nil,
         thumbnailImage: UIImage? = nil,
         thumbnailPath: String?,
         originalPath: String?,
-        shouldAlwaysResolveThumbnail: Bool = false
+        shouldAlwaysResolveThumbnail: Bool = false,
+        isAnimated: Bool = false
     ) {
         self.initialImage = initialImage
         self.thumbnailImage = thumbnailImage
         self.thumbnailPath = thumbnailPath
         self.originalPath = originalPath
         self.shouldAlwaysResolveThumbnail = shouldAlwaysResolveThumbnail
+        self.isAnimated = isAnimated
     }
 }
 
@@ -35,11 +39,13 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
     typealias ProgressivePage = ImageViewerPage
     typealias CachedImageProvider = (String) async -> UIImage?
     typealias LoadImageProvider = (String, Int) async -> UIImage?
+    typealias LoadImageDataProvider = (String, Int) async -> Data?
 
     private let pages: [ProgressivePage]
     let startIndex: Int
     private let cachedImageProvider: CachedImageProvider?
     private let loadImageProvider: LoadImageProvider?
+    private let loadImageDataProvider: LoadImageDataProvider?
     private let photoLibrarySaver: PhotoLibrarySaving
     private let onClose: (() -> Void)?
     private let thumbnailMaxBytes = 12 * 1024 * 1024
@@ -49,7 +55,7 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
     private let swipeDownVerticalDominanceRatio: CGFloat = 1.5
     private let minimumZoomEpsilon: CGFloat = 0.001
     private let scrollView = UIScrollView()
-    private var imageViews: [UIImageView] = []
+    private var imageViews: [AnimatedImageView] = []
     private var pageZoomScrolls: [UIScrollView] = []
     private var pageLoadTasks: [Int: Task<Void, Never>] = [:]
     private var pageLoadRoles: [Int: PageLoadRole] = [:]
@@ -78,6 +84,7 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
         startIndex: Int,
         cachedImageProvider: CachedImageProvider?,
         loadImageProvider: LoadImageProvider?,
+        loadImageDataProvider: LoadImageDataProvider? = nil,
         photoLibrarySaver: PhotoLibrarySaving,
         onClose: (() -> Void)? = nil
     ) {
@@ -85,6 +92,7 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
         self.startIndex = startIndex
         self.cachedImageProvider = cachedImageProvider
         self.loadImageProvider = loadImageProvider
+        self.loadImageDataProvider = loadImageDataProvider
         self.photoLibrarySaver = photoLibrarySaver
         self.onClose = onClose
         super.init(nibName: nil, bundle: nil)
@@ -149,9 +157,13 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
                 zsv.heightAnchor.constraint(equalTo: view.heightAnchor)
             ])
 
-            let iv = UIImageView()
+            let iv = AnimatedImageView()
             iv.contentMode = .scaleAspectFit
             iv.clipsToBounds = true
+            iv.autoPlayAnimatedImage = false
+            iv.framePreloadCount = 3
+            iv.needsPrescaling = true
+            iv.runLoopMode = .default
             iv.translatesAutoresizingMaskIntoConstraints = false
             zsv.addSubview(iv)
 
@@ -196,8 +208,14 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
         }
     }
 
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        updateAnimatedPlayback(activeIndex: currentIndex())
+    }
+
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
+        imageViews.forEach { $0.stopAnimating() }
         if isBeingDismissed || navigationController?.isBeingDismissed == true {
             cancelAllPageLoadTasks()
         }
@@ -216,6 +234,7 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
                 }
             }
             scheduleProgressiveLoads(around: clamped)
+            updateAnimatedPlayback(activeIndex: clamped)
             lastReportedPage = clamped
         }
     }
@@ -572,16 +591,27 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
     private func loadOriginalCached(
         for page: ProgressivePage
     ) async -> UIImage? {
-        await cachedImageFromPath(page.originalPath)
+        guard !page.isAnimated else { return nil }
+        return await cachedImageFromPath(page.originalPath)
     }
 
     private func loadOriginalNetwork(
         for page: ProgressivePage
     ) async -> UIImage? {
+        if page.isAnimated {
+            return await loadAnimatedImage(for: page)
+        }
         if let cached = await loadOriginalCached(for: page) {
             return cached
         }
         return await loadImageFromPath(page.originalPath, maxBytes: originalMaxBytes)
+    }
+
+    private func loadAnimatedImage(for page: ProgressivePage) async -> UIImage? {
+        guard let data = await loadImageDataFromPath(page.originalPath, maxBytes: originalMaxBytes) else {
+            return nil
+        }
+        return Self.makeAnimatedImage(from: data)
     }
 
     private func loadThumbnail(
@@ -632,6 +662,21 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
         return nil
     }
 
+    private func loadImageDataFromPath(_ path: String?, maxBytes: Int) async -> Data? {
+        guard let path, !path.isEmpty else { return nil }
+        if let fileURL = localFileURL(from: path) {
+            return try? Data(contentsOf: fileURL, options: [.mappedIfSafe])
+        }
+        return await loadImageDataProvider?(path, maxBytes)
+    }
+
+    static func makeAnimatedImage(from data: Data) -> UIImage? {
+        KingfisherWrapper<UIImage>.animatedImage(
+            data: data,
+            options: ImageCreatingOptions(preloadAll: false, onlyFirstFrame: false)
+        )
+    }
+
     private func localFileURL(from path: String?) -> URL? {
         guard let path, !path.isEmpty else { return nil }
         if path.hasPrefix("file://") {
@@ -656,6 +701,18 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
     private func setImage(_ image: UIImage, at index: Int) {
         guard index >= 0, index < imageViews.count else { return }
         imageViews[index].image = image
+        updateAnimatedPlayback(activeIndex: currentIndex())
+    }
+
+    @MainActor
+    private func updateAnimatedPlayback(activeIndex: Int) {
+        for (index, imageView) in imageViews.enumerated() {
+            if index == activeIndex, index < pages.count, pages[index].isAnimated {
+                imageView.startAnimating()
+            } else {
+                imageView.stopAnimating()
+            }
+        }
     }
 
     @MainActor

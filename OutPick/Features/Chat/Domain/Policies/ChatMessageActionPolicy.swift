@@ -55,6 +55,18 @@ struct ChatMessageActionPolicy: Equatable, Sendable {
         currentUserID: String,
         roomCreatorID: String?
     ) -> ChatMessageActionPolicy {
+        if message.seq <= 0 && !message.isFailed {
+            return ChatMessageActionPolicy(
+                canReply: false,
+                canCopy: false,
+                canDelete: false,
+                canReport: false,
+                canBlock: false,
+                canAnnounce: false,
+                canRemoveMember: false
+            )
+        }
+
         let isOwner = currentUserID == message.senderUID
         let isAdmin = roomCreatorID == currentUserID
         let canDelete = isOwner || isAdmin

@@ -39,6 +39,11 @@ struct ChatOutgoingOutboxUseCaseTests {
 
         await useCase.stageImageMessage(message, pairs: [pair])
 
+        let restoredMessage = try #require(await persistence.message(messageID: "image-2", roomID: "room-1"))
+        let restoredAttachment = try #require(restoredMessage.attachments.first)
+        #expect(restoredAttachment.pathThumb == restoredAttachment.pathOriginal)
+        #expect(restoredAttachment.pathOriginal.contains("_original.jpg"))
+
         let payload = await useCase.retryPayload(for: message, room: makeRoom())
 
         guard case let .uploadImages(_, messageID, pairs) = payload else {
@@ -118,10 +123,132 @@ struct ChatOutgoingOutboxUseCaseTests {
         #expect(await persistence.message(messageID: "other-room", roomID: "room-2")?.isFailed == true)
     }
 
-    private func makeUseCase(
-        persistence: ChatOutgoingOutboxPersistenceFake
-    ) -> ChatOutgoingOutboxUseCase {
+    @Test func failedMediaIsRemovedAfterSevenDayRetention() async throws {
+        let persistence = ChatOutgoingOutboxPersistenceFake()
         let outboxRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ChatOutgoingOutboxRetentionTests-\(UUID().uuidString)", isDirectory: true)
+        let initial = makeUseCase(
+            persistence: persistence,
+            now: Date(timeIntervalSince1970: 100),
+            outboxRoot: outboxRoot
+        )
+        let message = makeMessage(id: "expired-image", isFailed: true)
+        await initial.stageImageMessage(message, pairs: [try makeProcessedImage()])
+        await initial.markFailed(message: message, error: TestError.unimplemented)
+
+        let afterRetention = makeUseCase(
+            persistence: persistence,
+            now: Date(timeIntervalSince1970: 100 + 7 * 24 * 60 * 60 + 1),
+            outboxRoot: outboxRoot
+        )
+        let pending = await afterRetention.pendingMediaRecords(roomID: "room-1")
+
+        #expect(pending.isEmpty)
+        #expect(await persistence.record(messageID: message.ID) == nil)
+        #expect(await persistence.message(messageID: message.ID, roomID: message.roomID) == nil)
+    }
+
+    @Test func mediaReservationPersistsOnlySessionIdentityUntilTerminalFailure() async throws {
+        let persistence = ChatOutgoingOutboxPersistenceFake()
+        let useCase = makeUseCase(persistence: persistence)
+        let message = makeMessage(id: "image-session")
+        let pair = try makeProcessedImage()
+        await useCase.stageImageMessage(message, pairs: [pair])
+        let reservation = ChatMediaUploadReservation(
+            uploadID: message.ID,
+            clientMutationID: "mutation-1",
+            processingStatus: .uploading,
+            targets: [ChatMediaUploadTarget(
+                attachmentID: "attachment-1",
+                sourceIndex: 0,
+                path: "room/user/upload/attachment-1/source",
+                signedURL: URL(string: "https://storage.example/signed-put")!,
+                requiredHeaders: ["Content-Type": "image/jpeg"],
+                contentType: "image/jpeg",
+                sizeBytes: 3,
+                sha256: String(repeating: "a", count: 64)
+            )],
+            expiresAt: Date(timeIntervalSince1970: 7_200)
+        )
+
+        await useCase.markMediaReservation(messageID: message.ID, reservation: reservation)
+
+        let active = try #require(await persistence.record(messageID: message.ID))
+        #expect(active.stage == .uploading)
+        #expect(active.clientMutationID == "mutation-1")
+        #expect(active.sessionPayloadJSON?.contains("signed-put") == false)
+        #expect(active.sessionPayloadJSON?.contains("requiredHeaders") == false)
+
+        await useCase.markMediaProcessing(
+            messageID: message.ID,
+            snapshot: ChatMediaProcessingSnapshot(
+                uploadID: message.ID,
+                processingStatus: .failed,
+                messageID: nil,
+                seq: nil,
+                retryable: true,
+                failureCode: "worker_failed"
+            )
+        )
+        let failed = try #require(await persistence.record(messageID: message.ID))
+        #expect(failed.stage == .failed)
+        #expect(failed.sessionPayloadJSON == nil)
+        #expect(failed.requiresManualMediaRetryAfterRestore == true)
+
+        let pending = await useCase.pendingMediaRecords(roomID: message.roomID)
+        #expect(pending.map(\.messageID) == [message.ID])
+        #expect(await useCase.mediaSessionPayload(messageID: message.ID) == nil)
+        guard case let .uploadImages(_, retryMessageID, pairs) = await useCase.retryPayload(
+            messageID: message.ID,
+            room: makeRoom()
+        ) else {
+            Issue.record("terminal media failure는 session 없이 local retry payload로 복원돼야 합니다.")
+            return
+        }
+        #expect(retryMessageID == message.ID)
+        #expect(pairs.count == 1)
+    }
+
+    @Test func restoreManualRetryClearsSessionAndKeepsLocalRetryPayload() async throws {
+        let persistence = ChatOutgoingOutboxPersistenceFake()
+        let useCase = makeUseCase(persistence: persistence)
+        let message = makeMessage(id: "restore-manual")
+        await useCase.stageImageMessage(message, pairs: [try makeProcessedImage()])
+        await useCase.markMediaReservation(
+            messageID: message.ID,
+            reservation: ChatMediaUploadReservation(
+                uploadID: message.ID,
+                clientMutationID: "mutation-restore",
+                processingStatus: .uploading,
+                targets: [],
+                expiresAt: Date(timeIntervalSince1970: 7_200)
+            )
+        )
+
+        await useCase.markMediaRestoreRequiresManualRetry(messageID: message.ID)
+
+        let failed = try #require(await persistence.record(messageID: message.ID))
+        #expect(failed.stage == .failed)
+        #expect(failed.processingStatus == ChatMediaServerProcessingStatus.failed.rawValue)
+        #expect(failed.sessionPayloadJSON == nil)
+        #expect(failed.requiresManualMediaRetryAfterRestore)
+        guard case let .uploadImages(_, restoredID, pairs) = await useCase.retryPayload(
+            messageID: message.ID,
+            room: makeRoom()
+        ) else {
+            Issue.record("복원 실패는 local source 기반 수동 재시도를 유지해야 합니다.")
+            return
+        }
+        #expect(restoredID == message.ID)
+        #expect(pairs.count == 1)
+    }
+
+    private func makeUseCase(
+        persistence: ChatOutgoingOutboxPersistenceFake,
+        now: Date = Date(timeIntervalSince1970: 123),
+        outboxRoot: URL? = nil
+    ) -> ChatOutgoingOutboxUseCase {
+        let resolvedOutboxRoot = outboxRoot ?? FileManager.default.temporaryDirectory
             .appendingPathComponent("ChatOutgoingOutboxUseCaseTests-\(UUID().uuidString)", isDirectory: true)
         return ChatOutgoingOutboxUseCase(
             outboxPersistence: persistence,
@@ -129,8 +256,8 @@ struct ChatOutgoingOutboxUseCaseTests {
             imageStorageRepository: FirebaseImageStorageRepositoryFake(),
             videoStorageRepository: FirebaseVideoStorageRepositoryFake(),
             fileManager: .default,
-            dateProvider: { Date(timeIntervalSince1970: 123) },
-            outboxRootProvider: { outboxRoot }
+            dateProvider: { now },
+            outboxRootProvider: { resolvedOutboxRoot }
         )
     }
 

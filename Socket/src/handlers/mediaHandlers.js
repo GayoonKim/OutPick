@@ -16,10 +16,17 @@ import {
 import {
   normalizeMediaKind,
   validateExistingMediaMessage,
-  validateMediaUploadContract
+  validateMediaUploadContract,
+  validateMediaUploadContractV2
 } from "../media/mediaUploadService.js";
 import { normalizeUID } from "../utils/strings.js";
 import { rejectMissingCapability } from "../moderation/capabilities.js";
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isValidClientMutationID(value) {
+  return typeof value === "string" && UUID_PATTERN.test(value);
+}
 
 export function registerMediaHandlers({
   socket,
@@ -39,17 +46,32 @@ export function registerMediaHandlers({
   socket.on("chat:mediaPreflight", async (data, callback) => {
     if (rejectMissingCapability(socket, "createUGC", callback)) return;
     try {
-      const { roomID, messageID, kind, attachmentCount, expectedPathCount } = data || {};
+      const {
+        roomID,
+        messageID,
+        uploadID,
+        clientMutationID,
+        contractVersion,
+        kind,
+        attachmentCount,
+        expectedPathCount,
+        sources
+      } = data || {};
       if (!roomID || !isValidRoomID(String(roomID))) {
         return callback?.({ ok: false, error: "invalid_room_id" });
       }
-      if (!messageID || String(messageID).includes("/")) {
+      const effectiveUploadID = uploadID || messageID;
+      if (!effectiveUploadID || String(effectiveUploadID).includes("/")) {
         return callback?.({ ok: false, error: "invalid_message_id" });
       }
 
       const mediaKind = normalizeMediaKind(kind);
       if (!mediaKind) return callback?.({ ok: false, error: "invalid_media_kind" });
-      const contract = validateMediaUploadContract(
+      const isV2 = Number(contractVersion) === 2;
+      if (isV2 && !isValidClientMutationID(String(clientMutationID || ""))) {
+        return callback?.({ ok: false, error: "invalid_client_mutation_id" });
+      }
+      const contract = (isV2 ? validateMediaUploadContractV2 : validateMediaUploadContract)(
         mediaKind,
         attachmentCount,
         expectedPathCount
@@ -67,17 +89,28 @@ export function registerMediaHandlers({
 
       const rateKey = `${socket.moderationPrincipalID}:${roomID}:mediaPreflight:${mediaKind}`;
       const rateMax = mediaKind === "video" ? RATE_MAX_VIDEOS : RATE_MAX_IMAGES;
-      if (!allowRate(rateKey, rateMax, RATE_WINDOW_MS, String(messageID))) {
+      if (!allowRate(rateKey, rateMax, RATE_WINDOW_MS, String(effectiveUploadID))) {
         return callback?.({ ok: false, error: "rate_limited" });
       }
 
-      const result = await mediaUploadService.preflight({
-        roomID,
-        messageID: String(messageID),
-        senderUID,
-        kind: mediaKind,
-        contract
-      });
+      const result = isV2
+        ? await mediaUploadService.preflightV2({
+          roomID: String(roomID),
+          uploadID: String(effectiveUploadID),
+          clientMutationID: String(clientMutationID),
+          senderUID,
+          moderationPrincipalID: socket.moderationPrincipalID,
+          kind: mediaKind,
+          contract,
+          sources
+        })
+        : await mediaUploadService.preflight({
+          roomID,
+          messageID: String(effectiveUploadID),
+          senderUID,
+          kind: mediaKind,
+          contract
+        });
       return callback?.(result);
     } catch (error) {
       logger.error("[chat:mediaPreflight] handler error:", error);
@@ -455,6 +488,124 @@ export function registerMediaHandlers({
 
   socket.on("chat:mediaFinalize", async (data, callback) => {
     if (rejectMissingCapability(socket, "createUGC", callback)) return;
+    if (Number(data?.contractVersion) === 2) {
+      try {
+        const roomID = String(data?.roomID || "");
+        const uploadID = String(data?.uploadID || data?.messageID || "");
+        const clientMutationID = String(data?.clientMutationID || "");
+        if (!roomID || !isValidRoomID(roomID)) {
+          return callback?.({ ok: false, error: "invalid_room_id" });
+        }
+        if (!uploadID || uploadID.includes("/") ||
+            !isValidClientMutationID(clientMutationID)) {
+          return callback?.({ ok: false, error: "invalid_request" });
+        }
+        const senderUID = normalizeUID(socket.userUID);
+        const access = await authorizeSocketRoom({
+          socket,
+          roomID,
+          senderUID,
+          context: "chat:mediaFinalize/v2"
+        });
+        if (!access.ok) return callback?.({ ok: false, error: access.error });
+        const mediaKind = normalizeMediaKind(data?.kind || data?.mediaKind || data?.type);
+        if (!mediaKind) return callback?.({ ok: false, error: "invalid_media_kind" });
+        if (!allowRate(
+          `${socket.moderationPrincipalID}:${roomID}:${mediaKind}`,
+          mediaKind === "video" ? RATE_MAX_VIDEOS : RATE_MAX_IMAGES,
+          RATE_WINDOW_MS,
+          uploadID
+        )) {
+          return callback?.({ ok: false, error: "rate_limited" });
+        }
+        const result = await mediaUploadService.finalizeV2({
+          roomID,
+          uploadID,
+          clientMutationID,
+          senderUID,
+          moderationPrincipalID: socket.moderationPrincipalID
+        });
+        return callback?.(result);
+      } catch (error) {
+        logger.error("[chat:mediaFinalize/v2] handler error:", error);
+        return callback?.({ ok: false, error: "internal_error" });
+      }
+    }
     return handleMediaFinalize(data, callback);
+  });
+
+  socket.on("chat:mediaRefreshUploadTargets", async (data, callback) => {
+    if (rejectMissingCapability(socket, "createUGC", callback)) return;
+    try {
+      const roomID = String(data?.roomID || "");
+      const uploadID = String(data?.uploadID || "");
+      const clientMutationID = String(data?.clientMutationID || "");
+      if (!roomID || !isValidRoomID(roomID) || !uploadID || uploadID.includes("/") ||
+          !isValidClientMutationID(clientMutationID)) {
+        return callback?.({ok: false, error: "invalid_request"});
+      }
+      const senderUID = normalizeUID(socket.userUID);
+      const access = await authorizeSocketRoom({
+        socket,
+        roomID,
+        senderUID,
+        context: "chat:mediaRefreshUploadTargets"
+      });
+      if (!access.ok) return callback?.({ok: false, error: access.error});
+      return callback?.(await mediaUploadService.refreshUploadTargetsV2({
+        roomID,
+        uploadID,
+        clientMutationID,
+        senderUID,
+        moderationPrincipalID: socket.moderationPrincipalID
+      }));
+    } catch (error) {
+      logger.error("[chat:mediaRefreshUploadTargets] handler error:", error);
+      return callback?.({ok: false, error: "internal_error"});
+    }
+  });
+
+  socket.on("chat:mediaProcessingStatus", async (data, callback) => {
+    try {
+      const roomID = String(data?.roomID || "");
+      const uploadID = String(data?.uploadID || "");
+      const clientMutationID = String(data?.clientMutationID || "");
+      if (!roomID || !isValidRoomID(roomID) || !uploadID || uploadID.includes("/") ||
+          !isValidClientMutationID(clientMutationID)) {
+        return callback?.({ ok: false, error: "invalid_request" });
+      }
+      return callback?.(await mediaUploadService.statusV2({
+        roomID,
+        uploadID,
+        clientMutationID,
+        senderUID: normalizeUID(socket.userUID),
+        moderationPrincipalID: socket.moderationPrincipalID
+      }));
+    } catch (error) {
+      logger.error("[chat:mediaProcessingStatus] handler error:", error);
+      return callback?.({ ok: false, error: "internal_error" });
+    }
+  });
+
+  socket.on("chat:mediaCancel", async (data, callback) => {
+    try {
+      const roomID = String(data?.roomID || "");
+      const uploadID = String(data?.uploadID || "");
+      const clientMutationID = String(data?.clientMutationID || "");
+      if (!roomID || !isValidRoomID(roomID) || !uploadID || uploadID.includes("/") ||
+          !isValidClientMutationID(clientMutationID)) {
+        return callback?.({ ok: false, error: "invalid_request" });
+      }
+      return callback?.(await mediaUploadService.cancelV2({
+        roomID,
+        uploadID,
+        clientMutationID,
+        senderUID: normalizeUID(socket.userUID),
+        moderationPrincipalID: socket.moderationPrincipalID
+      }));
+    } catch (error) {
+      logger.error("[chat:mediaCancel] handler error:", error);
+      return callback?.({ ok: false, error: "internal_error" });
+    }
   });
 }

@@ -31,7 +31,8 @@ protocol ChatRoomRouting: AnyObject {
         pages: [SimpleImageViewerVC.ProgressivePage],
         startIndex: Int,
         cachedImageProvider: SimpleImageViewerVC.CachedImageProvider?,
-        loadImageProvider: SimpleImageViewerVC.LoadImageProvider?
+        loadImageProvider: SimpleImageViewerVC.LoadImageProvider?,
+        loadImageDataProvider: SimpleImageViewerVC.LoadImageDataProvider?
     )
     func showVideoPlayer(from source: ChatViewController, path: String)
     func handleRoomExit(from source: ChatViewController, roomID: String)
@@ -497,7 +498,8 @@ extension ChatCoordinator: ChatRoomRouting {
         pages: [SimpleImageViewerVC.ProgressivePage],
         startIndex: Int,
         cachedImageProvider: SimpleImageViewerVC.CachedImageProvider?,
-        loadImageProvider: SimpleImageViewerVC.LoadImageProvider?
+        loadImageProvider: SimpleImageViewerVC.LoadImageProvider?,
+        loadImageDataProvider: SimpleImageViewerVC.LoadImageDataProvider?
     ) {
         guard !pages.isEmpty else { return }
         let viewer = SimpleImageViewerVC(
@@ -505,6 +507,7 @@ extension ChatCoordinator: ChatRoomRouting {
             startIndex: startIndex,
             cachedImageProvider: cachedImageProvider,
             loadImageProvider: loadImageProvider,
+            loadImageDataProvider: loadImageDataProvider,
             photoLibrarySaver: container.makePhotoLibrarySaver()
         )
         viewer.modalPresentationStyle = .fullScreen

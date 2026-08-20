@@ -471,6 +471,18 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    match /chatMediaProcessingSlots/{slotID} {
+      allow read, write: if false;
+    }
+
+    match /chatMediaPrincipalUploadSlots/{slotID} {
+      allow read, write: if false;
+    }
+
+    match /chatMediaDeliveryJobs/{jobID} {
+      allow read, write: if false;
+    }
+
     match /Rooms/{roomID} {
       allow read: if isReadableAccount()
         && (roomDataIsActive(resource.data)

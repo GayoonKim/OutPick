@@ -55,6 +55,22 @@ class ChatImagePreviewCell: UICollectionViewCell {
         return label
     }()
 
+    private let gifBadgeLabel: UILabel = {
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.text = "GIF"
+        label.textColor = .white
+        label.font = .systemFont(ofSize: 10, weight: .bold)
+        label.textAlignment = .center
+        label.backgroundColor = UIColor.black.withAlphaComponent(0.55)
+        label.layer.cornerRadius = 6
+        label.clipsToBounds = true
+        label.isHidden = true
+        label.isAccessibilityElement = true
+        label.accessibilityLabel = "GIF 이미지"
+        return label
+    }()
+
     private var representedItemID: String?
     private var loadTask: Task<Void, Never>?
 
@@ -69,6 +85,7 @@ class ChatImagePreviewCell: UICollectionViewCell {
         videoBadgeView.isHidden = true
         videoDurationLabel.isHidden = true
         videoDurationLabel.text = nil
+        gifBadgeLabel.isHidden = true
     }
     
     override init(frame: CGRect) {
@@ -81,6 +98,7 @@ class ChatImagePreviewCell: UICollectionViewCell {
         contentView.addSubview(placeholderImageView)
         contentView.addSubview(loadingIndicator)
         contentView.addSubview(videoBadgeView)
+        contentView.addSubview(gifBadgeLabel)
         videoBadgeView.addSubview(videoIconView)
         videoBadgeView.addSubview(videoDurationLabel)
         imageView.translatesAutoresizingMaskIntoConstraints = false
@@ -109,7 +127,12 @@ class ChatImagePreviewCell: UICollectionViewCell {
 
             videoDurationLabel.leadingAnchor.constraint(equalTo: videoIconView.trailingAnchor, constant: 5),
             videoDurationLabel.trailingAnchor.constraint(equalTo: videoBadgeView.trailingAnchor, constant: -7),
-            videoDurationLabel.centerYAnchor.constraint(equalTo: videoBadgeView.centerYAnchor)
+            videoDurationLabel.centerYAnchor.constraint(equalTo: videoBadgeView.centerYAnchor),
+
+            gifBadgeLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -6),
+            gifBadgeLabel.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -6),
+            gifBadgeLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 32),
+            gifBadgeLabel.heightAnchor.constraint(equalToConstant: 22)
         ])
         imageView.contentMode = .scaleAspectFill
         imageView.clipsToBounds = true
@@ -144,6 +167,7 @@ class ChatImagePreviewCell: UICollectionViewCell {
             videoDurationLabel.text = nil
             videoDurationLabel.isHidden = true
         }
+        gifBadgeLabel.isHidden = !item.isAnimatedGIF
 
         guard image == nil, let thumbnailLoader else { return }
         loadingIndicator.startAnimating()

@@ -2,8 +2,8 @@
 
 ## 현재 상태
 
-- 현재 핵심 task는 `chat-ugc-safety-room-moderation`이다. Phase 0~6 구현·자동 검증·Development QA와 Production backend rollout을 완료했다. Phase 6 운영 감사 결과 Production active principal 2건은 모두 유효했고 message·senderEmail·댓글 rate bucket이 0이라 데이터 migration은 필요하지 않았다.
-- Phase 6은 채팅·룩북 공유·텍스트 전용 댓글/답글의 자동 필터 미도입, 단일 Socket 인스턴스 메모리 limiter, 댓글·답글 Firestore 20/분 bucket·UTF-16 1,000 units·재시도 UUID 수명, 신규 메시지 senderEmail 제거와 원문 로그 최소화를 반영했다. 길이 counter 없이 상한 초과 입력만 차단한다. Redis는 보류한다. 이미지·동영상 게시 전 검사는 Phase 7이고 Sign in with Apple은 별도 후속 작업이다.
+- 현재 핵심 task는 `chat-ugc-safety-room-moderation`이다. Phase 0~6 구현·자동 검증·Development QA와 Production backend rollout을 완료했다. Phase 7.0~7.3 attachment별 단일 signed PUT 구현과 Development backend rollout, JPEG·HEIC·PNG·GIF, 31장·70장 FIFO, 영상 앱 종료·방 이탈 후 복구 실기기 QA를 완료했다. 350 MiB 정확 경계·초과와 실제 1시간 영상은 자동 통합 검증을 통과했다. 현재 Phase 7.3 릴리스 후보를 Production에 반영한 뒤 Phase 7.4 evidence backend로 진행한다.
+- Phase 6은 자동 의미 필터 미도입, 전송 burst guard, 입력 상한, senderEmail 제거와 로그 최소화를 반영했다. Phase 7은 전용 Cloud Run 기술 검증·metadata 제거, 이미지 30장/GIF, 350 MiB·길이 제한 없는 동영상, 선택 첨부 evidence, 개인/전역 비노출·복원·retention 세부 설계를 확정했다. Phase 7.3 pending UX는 정규화 직후 upload source 기반 1024px 메모리 다운샘플링 로컬 버블, 활성 상태 무표시, 실패·만료에만 시간 위치의 소형 재시도/삭제 아이콘으로 고정했다. GIF badge/viewer, 이미지·영상 실패의 재시도/삭제 전용 표시, 네트워크 재연결, 앱 종료·방 이탈 복원, 70장 30+30+10 FIFO 실기기 QA를 완료했고, 실패 outbox 재실행의 반복 날짜 separator diffable ID 크래시도 occurrence identity와 회귀 테스트로 보정했다. Production backend·Production 구성 빌드 및 smoke가 현재 승인된 배포 gate이며 Sign in with Apple은 별도 후속 작업이다.
 - 이전 핵심 task `style-mood-personalization-account-privacy`의 Phase 1~8은 완료 처리했다. Apple Developer Program 가입 후 App Attest 실기기 QA와 운영 백업 설정은 출시 운영 게이트로 분리하고, 개발 데이터 전체 삭제는 마지막 Phase의 별도 승인 전까지 진행하지 않는다.
 - `lookbook-discovery-learning-loop`는 사용자 승인으로 task 문서를 생성했다. 동일 active 요청 병합, latest generation publish, 기존 시즌 동일성, 7/30/60일 retention, failure action, watchdog 복구, 관리자 review와 fixture/version gate를 설계 기준으로 확정했다.
 - `socket-ingress-ordering-hardening`은 Phase 1~6 구현, 자동 회귀와 실제 Firebase/Simulator 핵심 QA를 완료하고 2026-07-17 종료했다.
@@ -24,7 +24,7 @@
   - [Phase 계획](chat-ugc-safety-room-moderation/plan.md)
   - [현재 상태](chat-ugc-safety-room-moderation/progress.md)
   - [QA 기준](chat-ugc-safety-room-moderation/qa-checklist.md)
-  - 상태: Phase 0~6 구현·자동 검증·Development 사용자 QA와 Production Functions·Rules·exact TTL·Socket rollout 완료. Production iOS binary 배포와 외부 출시 운영 gate는 별도다.
+  - 상태: Phase 0~6 구현·자동 검증·Development 사용자 QA와 Production Functions·Rules·exact TTL·Socket rollout 완료. Phase 7.0 worker·Linux fixture, Phase 7.1 격리·job lifecycle, Phase 7.2 ready·delivery·cleanup, Phase 7.3 attachment별 단일 signed PUT과 형식·GIF·31/70장 FIFO·종료/이탈 복구 QA 완료. 현재 승인된 Phase 7.3 Production backend rollout과 Production 구성 빌드·smoke 후 Phase 7.4 evidence backend로 전환한다.
 
 ## 이전 핵심 작업
 

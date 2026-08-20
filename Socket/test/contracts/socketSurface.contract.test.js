@@ -41,15 +41,18 @@ test("HTTP route 계약은 /, /healthz, /readyz 세 개다", async () => {
   );
 });
 
-test("Socket client event 등록 계약은 11개와 disconnect다", async () => {
+test("Socket client event 등록 계약은 media v2 상태·취소와 disconnect를 포함한다", async () => {
   const source = await productionSource();
   assert.deepEqual(
     captures(source, /socket\.on\(\s*["']([^"']+)["']/g),
     [
       "chat message",
       "chat:lookbookShare",
+      "chat:mediaCancel",
       "chat:mediaFinalize",
       "chat:mediaPreflight",
+      "chat:mediaProcessingStatus",
+      "chat:mediaRefreshUploadTargets",
       "client:hello",
       "client:ping",
       "create room",

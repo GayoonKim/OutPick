@@ -25,7 +25,15 @@ actor StorageDownloadURLCache: StorageDownloadURLResolving {
             return cached
         }
 
-        let ref = Storage.storage().reference(withPath: path)
+        let ref: StorageReference
+        if path.hasPrefix("gs://"),
+           let separator = path.dropFirst(5).firstIndex(of: "/") {
+            let bucket = String(path[path.index(path.startIndex, offsetBy: 5)..<separator])
+            let objectPath = String(path[path.index(after: separator)...])
+            ref = Storage.storage(url: "gs://\(bucket)").reference(withPath: objectPath)
+        } else {
+            ref = Storage.storage().reference(withPath: path)
+        }
         let url = try await withCheckedThrowingContinuation { continuation in
             ref.downloadURL { url, error in
                 if let url {
