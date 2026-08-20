@@ -30,6 +30,7 @@ export function createSocketApplication({
   const shutdownController = createGracefulShutdown({
     io,
     server,
+    onShutdown: dependencies.stopBackgroundServices,
     ...shutdownDependencies
   });
 

@@ -14,6 +14,7 @@ import { registerMessageHandlers } from "../handlers/messageHandlers.js";
 import { registerRoomHandlers } from "../handlers/roomHandlers.js";
 import { createLookbookShareHandler } from "../lookbookShare/lookbookShareHandler.js";
 import { createMediaUploadService } from "../media/mediaUploadService.js";
+import { createMediaDeliveryWatcher } from "../media/mediaDeliveryWatcher.js";
 import { createMessageDeliverySingleFlight } from "../messages/messageDeliverySingleFlight.js";
 import { createSequenceStore } from "../messages/sequenceStore.js";
 import { createChatPushService } from "../push/chatPushService.js";
@@ -51,7 +52,66 @@ export function createProductionDependencies({
     }
   });
   const messageDeliverySingleFlight = createMessageDeliverySingleFlight();
-  const mediaUploadService = createMediaUploadService({ db, admin, clock });
+  const quarantineBucketName = String(env.CHAT_MEDIA_QUARANTINE_BUCKET || "").trim();
+  const quarantineBucket = quarantineBucketName
+    ? admin.storage().bucket(quarantineBucketName)
+    : null;
+  const mediaUploadService = createMediaUploadService({
+    db,
+    admin,
+    clock,
+    quarantineBucketName,
+    loadQuarantineObject: quarantineBucket
+      ? async (path) => {
+        const [metadata] = await quarantineBucket.file(path).getMetadata();
+        return {
+          generation: metadata.generation,
+          sizeBytes: Number(metadata.size),
+          contentType: metadata.contentType,
+          metadata: metadata.metadata || {}
+        };
+      }
+      : undefined,
+    deleteQuarantineObject: quarantineBucket
+      ? async (path) => {
+        await quarantineBucket.file(path).delete({ ignoreNotFound: true });
+      }
+      : undefined,
+    createQuarantineSignedUploadTarget: quarantineBucket
+      ? async ({
+        path,
+        attachmentID,
+        uploadID,
+        contentType,
+        sizeBytes,
+        sha256,
+        expiresAtMillis
+      }) => {
+        const metadataHeaders = {
+          "x-goog-if-generation-match": "0",
+          "x-goog-meta-attachment-id": attachmentID,
+          "x-goog-meta-upload-id": uploadID,
+          "x-goog-meta-declared-size-bytes": String(sizeBytes),
+          "x-goog-meta-sha256": sha256,
+          "x-goog-meta-contract-version": "2"
+        };
+        const [signedURL] = await quarantineBucket.file(path).getSignedUrl({
+          version: "v4",
+          action: "write",
+          expires: new Date(expiresAtMillis),
+          contentType,
+          extensionHeaders: metadataHeaders
+        });
+        return {
+          signedURL,
+          requiredHeaders: {
+            "content-type": contentType,
+            ...metadataHeaders
+          }
+        };
+      }
+      : undefined
+  });
   const {
     findUserByUID,
     findModerationAccount,
@@ -68,14 +128,14 @@ export function createProductionDependencies({
     rooms,
     logger
   });
-  startRoomClosureWatcher();
+  const stopRoomClosureWatcher = startRoomClosureWatcher();
   const { start: startRoomBanWatcher } = createRoomBanWatcher({
     db,
     io,
     rooms,
     logger
   });
-  startRoomBanWatcher();
+  const stopRoomBanWatcher = startRoomBanWatcher();
   const { closeRoomImmediately, leaveRoomMembership } = createRoomCleanup({ db, admin });
   const { leaveOrClose } = createRoomLifecycleService({
     db,
@@ -90,6 +150,15 @@ export function createProductionDependencies({
   });
   const { allocateSeqAndPersist } = createSequenceStore({ db, admin });
   const { fanoutChatPush } = createChatPushService({ db, admin, clock });
+  const { start: startMediaDeliveryWatcher } = createMediaDeliveryWatcher({
+    db,
+    admin,
+    io,
+    clock,
+    fanoutChatPush,
+    logger
+  });
+  const stopMediaDeliveryWatcher = startMediaDeliveryWatcher();
   const handleLookbookShare = createLookbookShareHandler({
     io,
     rooms,
@@ -173,6 +242,11 @@ export function createProductionDependencies({
     firebaseAuthMiddleware,
     reconnectMiddleware,
     registerSocketHandlers,
-    rooms
+    rooms,
+    stopBackgroundServices() {
+      stopRoomClosureWatcher?.();
+      stopRoomBanWatcher?.();
+      stopMediaDeliveryWatcher?.();
+    }
   };
 }

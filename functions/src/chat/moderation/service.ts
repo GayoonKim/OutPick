@@ -39,20 +39,32 @@ function roomIsActive(data: FirebaseFirestore.DocumentData): boolean {
     (data.lifecycleStatus === undefined || data.lifecycleStatus === "active");
 }
 
-function storagePrefixes(
+export type MessageStorageTarget = {bucket: string | null; prefix: string};
+
+export function messageStorageTargets(
   roomID: string,
   messageID: string,
   data: FirebaseFirestore.DocumentData,
-): string[] {
+): MessageStorageTarget[] {
   const attachments = Array.isArray(data.attachments) ? data.attachments : [];
   const expected = `rooms/${roomID}/messages/${messageID}`;
-  const hasExpectedPath = attachments.some((attachment) => {
-    if (!attachment || typeof attachment !== "object") return false;
-    const values = [attachment.pathThumb, attachment.pathOriginal];
-    return values.some((value) => typeof value === "string" &&
-      (value === expected || value.startsWith(`${expected}/`)));
-  });
-  return hasExpectedPath ? [expected] : [];
+  const targets = new Map<string, MessageStorageTarget>();
+  for (const attachment of attachments) {
+    if (!attachment || typeof attachment !== "object") continue;
+    for (const [pathField, bucketField] of [
+      ["pathThumb", "bucketThumb"],
+      ["pathOriginal", "bucketOriginal"],
+    ] as const) {
+      const value = attachment[pathField];
+      if (typeof value !== "string" ||
+          (value !== expected && !value.startsWith(`${expected}/`))) continue;
+      const bucketValue = attachment[bucketField];
+      const bucket = typeof bucketValue === "string" && bucketValue.length > 0 ?
+        bucketValue : null;
+      targets.set(bucket ?? "__default__", {bucket, prefix: expected});
+    }
+  }
+  return [...targets.values()];
 }
 
 export function messageCleanupJobID(roomID: string, messageID: string): string {
@@ -180,7 +192,7 @@ export async function deleteChatMessageService(
         message.deletedAt.toDate().toISOString() : now.toISOString(),
     };
     if (message.isDeleted !== true) {
-      const prefixes = storagePrefixes(input.roomID, input.messageID, message);
+      const storageTargets = messageStorageTargets(input.roomID, input.messageID, message);
       transaction.update(messageRef, {
         isDeleted: true,
         deletedAt: nowTimestamp,
@@ -213,11 +225,14 @@ export async function deleteChatMessageService(
       }
       if (!currentJob.exists) {
         transaction.create(jobRef, {
-          schemaVersion: 1,
+          schemaVersion: 2,
           roomID: input.roomID,
           messageID: input.messageID,
           expectedSeq: input.expectedSeq,
-          storagePrefixes: prefixes,
+          storageTargets,
+          storagePrefixes: storageTargets
+            .filter((target) => target.bucket === null)
+            .map((target) => target.prefix),
           status: "pending",
           attempt: 0,
           nextAttemptAt: nowTimestamp,

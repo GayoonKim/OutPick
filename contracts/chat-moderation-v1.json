@@ -15,6 +15,9 @@
     "roomLifecycle": "Rooms/{roomID}.lifecycleStatus",
     "message": "Rooms/{roomID}/Messages/{messageID}",
     "mediaReservation": "Rooms/{roomID}/MediaUploads/{uploadID}",
+    "mediaProcessingSlot": "chatMediaProcessingSlots/{slotID}",
+    "mediaPrincipalUploadSlot": "chatMediaPrincipalUploadSlots/{principalID_kind_slotIndex}",
+    "mediaDeliveryJob": "chatMediaDeliveryJobs/{roomID_messageID}",
     "userReport": "moderationUserReports/{targetModerationPrincipalID}",
     "roomReport": "moderationRoomReports/{roomID}",
     "reportRateLimit": "moderationReportRateLimitBuckets/{bucketID}",
@@ -115,12 +118,12 @@
       "images",
       "video"
     ],
-    "mediaInspectionStatus": [
-      "reserved",
-      "uploaded",
-      "scanning",
+    "mediaProcessingStatus": [
+      "uploading",
+      "queued",
+      "processing",
       "ready",
-      "rejected",
+      "canceled",
       "failed",
       "expired"
     ],
@@ -299,12 +302,15 @@
         "triggerMessageID": "string|null",
         "textSnapshot": "string|null, max 4000 UTF-8 bytes",
         "mediaKind": "mediaKind|null",
-        "mediaInspectionSummary": "map|null",
+        "selectedAttachmentIDs": "bounded stable attachment ID array|null",
+        "reportedAtSeconds": "non-negative number|null, video only",
+        "evidenceStatus": "pending|available|unavailable|deleting|deleted|null",
+        "evidenceUnavailableReason": "deletedBeforeSubmission|null",
         "createdAt": "timestamp",
         "expiresAt": "timestamp|null"
       },
       "forbiddenFields": [
-        "mediaCopyPath",
+        "clientAccessibleEvidenceURL",
         "email",
         "providerSubject"
       ]
@@ -441,6 +447,12 @@
         "seq": "immutable positive integer",
         "senderUID": "immutable uid",
         "deletedTombstone": "retained"
+      },
+      "mediaV2Fields": {
+        "mediaContractVersion": "integer:2",
+        "mediaUploadPath": "server-only source MediaUploads document path",
+        "readyAttachmentIDs": "bounded stable attachment ID array used by Storage read authorization",
+        "moderationVisibilityState": "visible|hiddenPendingReview|deleted"
       }
     },
     "chatMessageCleanupJobs/{jobID}": {
@@ -524,27 +536,114 @@
         "expiresAt": "timestamp|null"
       }
     },
+    "moderationMediaSignals/{roomID_messageID}": {
+      "clientRead": false,
+      "clientWrite": false,
+      "requiredFields": {
+        "schemaVersion": "positive integer",
+        "roomID": "string",
+        "messageID": "string",
+        "reviewRevision": "positive integer",
+        "urgentDistinctReporterCount24h": "non-negative integer",
+        "generalDistinctReporterCount24h": "non-negative integer",
+        "visibilityState": "visible|hiddenPendingReview|deleted",
+        "evidenceState": "none|copyPending|available|unavailable|deleting|deleted",
+        "updatedAt": "timestamp"
+      }
+    },
+    "moderationMediaEvidence/{bundleID}": {
+      "clientRead": false,
+      "clientWrite": false,
+      "requiredFields": {
+        "schemaVersion": "positive integer",
+        "roomID": "string",
+        "messageID": "string",
+        "selectedAttachmentIDs": "bounded stable attachment ID array",
+        "objectPaths": "server-only bounded evidence object path array",
+        "reportedAtSeconds": "non-negative number|null",
+        "state": "copyPending|available|unavailable|deleting|deleted",
+        "retentionClass": "reviewOpen|deleteAfterDecision|sanctionAppeal30Days|appealOpen|legalHold",
+        "createdAt": "timestamp",
+        "deleteAfter": "timestamp|null",
+        "updatedAt": "timestamp"
+      },
+      "access": "active platform administrator through server-authenticated specific-object retrieval with audit; never directly exposed to clients"
+    },
     "Rooms/{roomID}/MediaUploads/{uploadID}": {
       "clientRead": false,
       "clientWrite": false,
       "requiredFields": {
         "schemaVersion": "integer:1",
+        "contractVersion": "integer:1|2; v2 uses V4 signed PUT targets and does not publish before ready",
         "clientMutationID": "string",
         "senderUID": "uid",
         "moderationPrincipalID": "document ID",
         "kind": "mediaKind",
         "attachmentCount": "1...30 for images, exactly 1 for video",
         "quarantinePaths": "bounded string array",
-        "inspectionStatus": "mediaInspectionStatus",
-        "inspectionAttempt": "non-negative integer",
-        "inspectionDeadlineAt": "timestamp",
-        "inspectionPolicyVersion": "positive integer",
-        "inspectionResult": "bounded likelihood map|null",
+        "uploadParts": "server-only ordered image source or 16 MiB video part descriptors with path, size, sha256, generation and completion state",
+        "processingStatus": "mediaProcessingStatus",
+        "processingAttempt": "non-negative integer, maximum automatic retries 3",
+        "processingDeadlineAt": "timestamp",
+        "leaseToken": "opaque string|null",
+        "leaseExpiresAt": "timestamp|null",
+        "executionName": "string|null",
+        "processingSlotID": "image-0...image-3|video-0|null in initial Production configuration",
+        "nextAttemptAt": "timestamp|null",
+        "retryable": "boolean",
+        "failureCode": "bounded stable error code|null",
+        "technicalValidationResult": "bounded MIME/codec/dimensions/size/duration/track map|null",
+        "normalizedManifest": "bounded display/thumbnail object manifest|null",
+        "metadataRemovalVersion": "positive integer",
         "cleanupStatus": "mediaCleanupStatus",
         "createdAt": "timestamp",
         "updatedAt": "timestamp",
         "expiresAt": "timestamp"
       }
+    },
+    "chatMediaProcessingSlots/{slotID}": {
+      "clientRead": false,
+      "clientWrite": false,
+      "requiredFields": {
+        "kind": "images|video",
+        "leaseToken": "opaque string|null",
+        "leaseOwnerUploadPath": "MediaUploads document path|null",
+        "leaseExpiresAt": "timestamp|null",
+        "updatedAt": "timestamp"
+      }
+    },
+    "chatMediaPrincipalUploadSlots/{principalID_kind_slotIndex}": {
+      "clientRead": false,
+      "clientWrite": false,
+      "requiredFields": {
+        "moderationPrincipalID": "document ID",
+        "kind": "images|video",
+        "slotIndex": "0|1 for images, 0 for video",
+        "ownerUploadPath": "MediaUploads document path|null",
+        "clientMutationID": "UUID string|null",
+        "leaseExpiresAt": "timestamp|null",
+        "updatedAt": "timestamp"
+      }
+    },
+    "chatMediaDeliveryJobs/{roomID_messageID}": {
+      "clientRead": false,
+      "clientWrite": false,
+      "requiredFields": {
+        "schemaVersion": "integer:1",
+        "roomID": "document ID",
+        "messageID": "document ID",
+        "seq": "positive integer",
+        "eventKind": "receiveImages|receiveVideo",
+        "status": "pending|processing|retryPending|completed",
+        "attempt": "non-negative integer",
+        "nextAttemptAt": "timestamp|null",
+        "leaseToken": "opaque string|null",
+        "leaseExpiresAt": "timestamp|null",
+        "createdAt": "timestamp",
+        "updatedAt": "timestamp",
+        "expiresAt": "timestamp; terminal retention 7 days"
+      },
+      "delivery": "at-least-once; Socket and iOS deduplicate by messageID and seq"
     }
   },
   "stateTransitions": {
@@ -581,31 +680,33 @@
         ]
       }
     },
-    "mediaInspection": {
-      "initial": "reserved",
+    "mediaProcessing": {
+      "initial": "uploading",
       "allowed": {
-        "reserved": [
-          "uploaded",
+        "uploading": [
+          "queued",
+          "canceled",
           "expired"
         ],
-        "uploaded": [
-          "scanning",
+        "queued": [
+          "processing",
+          "canceled",
           "expired"
         ],
-        "scanning": [
+        "processing": [
           "ready",
-          "rejected",
-          "failed"
+          "failed",
+          "canceled"
         ],
         "failed": [
-          "scanning",
+          "queued",
           "expired"
         ],
         "ready": [],
-        "rejected": [],
+        "canceled": [],
         "expired": []
       },
-      "messageCreation": "only on scanning -> ready",
+      "messageCreation": "only on processing -> ready",
       "sequenceAllocation": "same transaction as ready message creation",
       "failedSequenceTombstone": false
     }
@@ -706,36 +807,101 @@
       "textChatLookbookCommentReply": "no automatic meaning filter; report, block, room operation, and administrator post-review",
       "textSentToExternalModerationProvider": false,
       "commentAndReplyMediaCreation": "not supported in Phase 6",
-      "chatImageAndVideo": "Phase 7 quarantine and inspection before ready publication"
+      "chatImageAndVideo": "Phase 7 quarantine, technical validation, metadata removal, and normalization before ready publication; no external meaning filter"
     }
   },
   "mediaSafetyPolicy": {
     "policyVersion": 1,
-    "imageProvider": "Google Cloud Vision SafeSearch",
-    "videoProviders": [
-      "Google Cloud Video Intelligence Explicit Content Detection",
-      "Google Cloud Vision SafeSearch on sampled frames"
-    ],
-    "thresholds": {
-      "adult": "LIKELY",
-      "violence": "LIKELY",
-      "racy": "VERY_LIKELY"
+    "externalMeaningProvider": "none",
+    "dedicatedCloudRunRole": "actual MIME/codec/dimensions/size/duration/track validation, metadata removal, and normalization",
+    "imageLimits": "maximum 30 attachments per message; quarantine source 15 MiB each and 150 MiB aggregate; long edge 4096px",
+    "supportedImageSelections": "JPEG, HEIC, PNG, animated GIF; iOS creates a transport source with orientation baked, 4096px long edge, sRGB, and unnecessary metadata removed; HEIC/HEIF and JPEG use JPEG quality 0.92; transparent and initially non-transparent PNG remain PNG; GIF animation is preserved",
+    "acceptedImageTransportFormats": "JPEG, PNG, animated GIF; raw HEIC/HEIF is rejected as unsupportedMedia",
+    "imageResourceLimits": {
+      "maxStaticInputPixels": 64000000,
+      "maxAnimatedFrames": 200,
+      "maxAnimatedFramePixels": 16777216,
+      "maxAnimatedDecodedPixels": 100000000,
+      "maxProcessingSecondsPerImage": 60
     },
-    "diagnosticOnly": [
-      "medical",
-      "spoof"
+    "videoLimits": "one 720p H.264/AAC MP4 transport source per message; 350 MiB source and server-result limit; no duration limit",
+    "videoThumbnail": "client local thumbnail is pending-UI only and is not uploaded; worker extracts a metadata-free 512px JPEG at min(1 second, duration/2); extraction failure is invalidMedia",
+    "videoRemuxTimeoutSeconds": 600,
+    "cloudRunJobRuntime": "2 vCPU; 1024 MiB memory; one task; parallelism 1; attachments processed sequentially; platform retries 0",
+    "automaticRetryLimit": 3,
+    "failedLocalOutboxRetentionDays": 7,
+    "reportEvidenceCopy": "selected stable attachment IDs only; deterministic dedupe; full normalized video once with reportedAtSeconds"
+  },
+  "mediaProcessingCapacityPolicy": {
+    "developmentSlots": {
+      "images": 1,
+      "video": 1
+    },
+    "initialProductionSlots": {
+      "images": 4,
+      "video": 1
+    },
+    "imageQueue": {
+      "maxDispatchesPerSecond": 1,
+      "maxConcurrentDispatches": 4,
+      "cloudRunTaskTimeoutSeconds": 2400
+    },
+    "videoQueue": {
+      "maxDispatchesPerSecond": 0.2,
+      "maxConcurrentDispatches": 1,
+      "cloudRunTaskTimeoutSeconds": 720
+    },
+    "globalExecutionAuthority": "a dispatcher must acquire a fixed Firestore slot lease before starting a Cloud Run Job; Cloud Tasks concurrency alone is not authoritative",
+    "activeUploadsPerPrincipal": {
+      "imageMessages": 2,
+      "videoMessages": 1,
+      "meaning": "concurrent uploading, queued, or processing messages only; terminal releases the fixed principal slot; not a cumulative or daily transfer limit",
+      "idempotency": "the same clientMutationID retry does not acquire another slot"
+    },
+    "iosLocalUploadQueue": {
+      "scope": "canonical principal, independent FIFO lane per media kind, shared by ChatContainer",
+      "localConcurrency": "one active message per image lane and one per video lane from reservation through terminal",
+      "capacityResponse": "chat:mediaPreflight active_upload_limit is waiting, not failure",
+      "retryBackoffSeconds": [2, 4, 8, 15, 30],
+      "retryTailSeconds": 30,
+      "identity": "retry the same uploadID and clientMutationID while waiting for a slot",
+      "exitBehavior": "app exit or room leave cancels waiting/active foreground tasks and never restarts file PUT automatically; relaunch stages the local bubble as silent pending before network status lookup, resumes monitoring when the server already committed queued/processing/ready, and polls an uploading session status-only after 2/4/8 seconds before cancel plus manual retry/delete",
+      "failurePresentation": "ordinary image and video failures show retry/delete only in the failed bubble without a global popup; a room-ban interruption keeps the explicit participation-restriction alert",
+      "serverQueue": "not created; no reservation document or signed URL exists while waiting locally"
+    },
+    "dailyByteLimit": "not set initially; decide from observed usage and abuse metrics before increasing capacity"
+  },
+  "mediaReportVisibilityPolicy": {
+    "reporterImmediateHide": "selected attachments only; hide whole message when every image is selected or the message is video; persists after admin dismissal",
+    "globalHideState": "hiddenPendingReview on the same message ID and sequence",
+    "urgentReasons": [
+      "sexual",
+      "privacy",
+      "illegalDangerous"
     ],
-    "unknownOrProviderFailure": "bounded retry then fail closed",
-    "reportEvidenceCopy": false
+    "urgentThreshold": "2 distinct canonical moderation principals within 24 hours in the same review revision",
+    "generalThreshold": "3 distinct canonical moderation principals within 24 hours in the same review revision",
+    "manualGlobalHide": "active platform administrator",
+    "automaticSanction": false,
+    "dismissalRestore": "same message ID and sequence; no new push, banner, latestSeq, read-frontier rollback, or synthetic unread",
+    "confirmedViolation": "convert the existing sequence to a deleted tombstone",
+    "reportDeleteRace": "first Firestore transaction commit wins",
+    "deletedBeforeSubmission": "evidence unavailable; accepted into target aggregate but excluded from global-hide thresholds and sole sanction evidence"
   },
   "storage": {
-    "quarantinePath": "chatModerationQuarantine/{roomID}/{senderUID}/{uploadID}/{objectName}",
-    "readyPath": "rooms/{roomID}/{messageID}/{objectName}",
+    "quarantineBucket": "environment-specific dedicated Standard bucket in asia-northeast3; soft delete and object versioning disabled; one-day lifecycle backstop",
+    "quarantinePath": "{roomID}/{senderUID}/{uploadID}/{attachmentID}/source",
+    "readyBucket": "existing environment-specific application media bucket",
+    "readyPath": "rooms/{roomID}/messages/{messageID}/attachments/{attachmentID}/{display|thumbnail}",
+    "evidenceBucket": "environment-specific dedicated moderation evidence bucket",
+    "reportEvidencePath": "{bundleID}/{attachmentID}/display",
     "quarantineRead": "server only",
     "quarantineWrite": "reservation owner only with exact path/content constraints",
+    "quarantineUploadTransport": "iOS uploads the prepared source directly to Cloud Storage; Socket and Functions receive metadata only",
     "readyRead": "authorized room reader and lifecycle/ban checks",
     "readyWrite": "server only",
-    "reportEvidencePath": null
+    "evidenceReadWrite": "server-only audited APIs; never direct client access",
+    "evidenceSource": "copy the normalized display actually shown to users, never the raw quarantine source"
   },
   "api": {
     "getMyModerationState": {
@@ -1000,17 +1166,39 @@
       "transport": "Socket ACK",
       "authorization": "active room member without room ban",
       "request": {
+        "contractVersion": "integer:1|2; v2 signed PUT preferred and v1 retained only until Phase 7.3 cutover",
         "roomID": "string",
+        "uploadID": "string; new identity for each user-initiated retry",
         "clientMutationID": "UUID string",
         "kind": "mediaKind",
         "attachmentCount": "bounded integer",
-        "expectedPathCount": "bounded integer"
+        "expectedPathCount": "v2 equals attachmentCount because each attachment has one quarantine source",
+        "sources": "ordered descriptors containing index, contentType, sizeBytes, sha256, mediaFormat, isAnimated and image single-part or video 16 MiB part descriptors"
       },
       "response": {
         "uploadID": "string",
-        "quarantinePaths": "string array",
-        "expiresAt": "timestamp"
-      }
+        "processingStatus": "uploading",
+        "uploads": "ordered incomplete target descriptors containing attachmentID, sourceIndex, partIndex, path, signedURL, method PUT, requiredHeaders, contentType, sizeBytes and sha256",
+        "expiresAtMillis": "epoch milliseconds"
+      },
+      "capacityError": "active_upload_limit; retryable by the FIFO head with the same uploadID and clientMutationID",
+      "terminalErrors": "authorization, room access, invalid contract/media descriptor, and identity conflict errors are not converted to slot waiting"
+    },
+    "chat:mediaRefreshUploadTargets": {
+      "transport": "Socket ACK",
+      "authorization": "active uploading reservation owner without room ban",
+      "request": {
+        "roomID": "string",
+        "uploadID": "string",
+        "clientMutationID": "UUID string"
+      },
+      "response": {
+        "processingStatus": "uploading|queued|processing|ready|canceled|failed|expired",
+        "completedParts": "ordered attachmentID, partIndex, path, generation, sizeBytes and sha256 descriptors",
+        "uploads": "signed PUT targets valid until reservation expiry for missing parts only",
+        "expiresAtMillis": "epoch milliseconds"
+      },
+      "idempotency": "roomID + uploadID + clientMutationID; object generation and checksum are authoritative"
     },
     "chat:mediaFinalize": {
       "transport": "Socket ACK",
@@ -1022,14 +1210,14 @@
         "attachments": "bounded media metadata array"
       },
       "response": {
-        "inspectionStatus": "uploaded|scanning|ready|rejected|failed|expired",
+        "processingStatus": "queued|processing|ready|canceled|failed|expired",
         "messageID": "string|null",
         "seq": "positive integer|null",
         "retryable": "boolean"
       },
       "idempotency": "roomID + clientMutationID"
     },
-    "chat:mediaInspectionStatus": {
+    "chat:mediaProcessingStatus": {
       "transport": "Socket ACK",
       "authorization": "reservation owner",
       "request": {
@@ -1038,27 +1226,26 @@
         "clientMutationID": "UUID string"
       },
       "response": {
-        "inspectionStatus": "mediaInspectionStatus",
+        "processingStatus": "mediaProcessingStatus",
         "messageID": "string|null",
         "seq": "positive integer|null",
         "retryable": "boolean"
       }
     },
-    "chat:mediaRetryInspection": {
+    "chat:mediaCancel": {
       "transport": "Socket ACK",
-      "authorization": "active reservation owner without room ban",
+      "authorization": "active reservation owner before ready",
       "request": {
         "roomID": "string",
         "uploadID": "string",
         "clientMutationID": "UUID string"
       },
       "response": {
-        "inspectionStatus": "scanning|ready|rejected|failed|expired",
+        "processingStatus": "canceled|processing|ready|failed|expired",
         "messageID": "string|null",
-        "seq": "positive integer|null",
-        "retryable": "boolean"
+        "seq": "positive integer|null"
       },
-      "idempotency": "roomID + uploadID + current inspectionAttempt"
+      "concurrency": "first committed ready or cancel transaction wins"
     }
   },
   "errors": {
@@ -1121,8 +1308,8 @@
     {
       "collectionGroup": "MediaUploads",
       "fields": [
-        "inspectionStatus ASC",
-        "expiresAt ASC"
+        "processingStatus ASC",
+        "nextAttemptAt ASC"
       ]
     },
     {
@@ -1142,10 +1329,13 @@
   ],
   "retention": {
     "moderationLedgerProductionTTLActivation": "blocked until legal and privacy review approves purpose and duration",
-    "mediaReservationOperationalCleanup": "expired or terminal quarantine objects are cleaned independently of moderation ledger retention",
-    "readyInspectionMetadata": "retained only for an approved bounded period; Production release is blocked until that period is set",
+    "mediaReservationOperationalCleanup": "upload reservation expires after two hours and the processing deadline is six hours; ready, canceled, final failed, or expired immediately releases execution/principal leases and deletes quarantine source independently of moderation ledger retention",
+    "mediaUploadTerminalDocument": "expires seven days after ready, canceled, failed, or expired to preserve idempotent outbox replay",
+    "quarantineObject": "delete immediately after ready, canceled, final failed, or expired terminal cleanup; the one-day lifecycle is only a backstop for objects left by crashes, IAM/network errors, or cleanup bugs; soft delete is disabled",
+    "readyTechnicalValidationMetadata": "retained only for an approved bounded period; Production release is blocked until that period is set",
     "developmentFixtures": "delete after QA",
-    "reportedMediaCopy": "not retained",
+    "reportedMediaEvidence": "open or inReview until decision; dismissal, content-delete-only, or warning-only enqueues immediate asynchronous deletion; account sanction evidence is retained for a 30-day appeal window and, if appealed in time, until appeal resolution",
+    "reportedMediaEvidenceAccess": "not exposed to clients; an active platform administrator may retrieve only a specific evidence object through server authentication and audited authorization; delivery method is revisited by admin-web-operations-migration",
     "deletedMessageSequenceTombstone": "retained with public payload removed",
     "roomClosureTombstone": "room content is removed immediately; shared tombstone and unacknowledged memberships remain at most 14 days, then the cleanup scheduler removes them in bounded batches",
     "legacyRoomClosureNotice": "no longer created; existing notices keep their Production 30-day TTL and are deleted by the new acknowledgment callable when confirmed",
@@ -1168,10 +1358,10 @@
     "provider subject verification and Kakao User ID Fixed reconnect QA",
     "active moderation principal projection audit and Socket max-instances=1 verification",
     "new message senderEmail removal across Firestore, Socket, FCM, iOS model, and GRDB",
-    "Google Cloud media processing privacy disclosure and App Privacy response",
+    "reported media evidence legal basis, privacy disclosure, retention, and App Privacy response",
     "minor access scope and illegal or sexual content escalation",
     "support URL and staffed urgent/general report operations",
-    "Development media false-positive corpus",
+    "Development MIME, metadata removal, animated GIF resource-limit, and long-video fixtures",
     "platform admin bootstrap, recent-auth, and break-glass runbook",
     "App Review demo accounts and recovery paths"
   ]

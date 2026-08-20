@@ -208,7 +208,8 @@ export function createChatPushService({ db, admin, clock }) {
 
   async function fanoutChatPush({
     roomID,
-    messageData
+    messageData,
+    throwOnError = false
   }) {
     try {
       const roomSnapshot = await db.collection("Rooms").doc(roomID).get();
@@ -285,6 +286,7 @@ export function createChatPushService({ db, admin, clock }) {
         messageID: messageData?.ID,
         error
       });
+      if (throwOnError) throw error;
     }
   }
 

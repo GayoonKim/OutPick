@@ -1,0 +1,12 @@
+{
+  "storage": [
+    {
+      "target": "chatMediaReady",
+      "rules": "storage.rules"
+    },
+    {
+      "target": "chatMediaQuarantine",
+      "rules": "storage.chat-media-quarantine.rules"
+    }
+  ]
+}

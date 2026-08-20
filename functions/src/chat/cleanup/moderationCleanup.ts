@@ -19,6 +19,12 @@ type StorageBucket = {
   deleteFiles(options: {prefix: string; force: boolean}): Promise<unknown>;
 };
 
+export type CleanupBucketResolver = {
+  defaultBucket: StorageBucket;
+  bucket: (name: string) => StorageBucket;
+  roomBuckets: StorageBucket[];
+};
+
 function retryDelayMillis(attempt: number): number {
   return Math.min(6 * 60 * 60 * 1000, Math.max(60_000, 2 ** Math.min(attempt, 8) * 30_000));
 }
@@ -180,7 +186,7 @@ async function deleteMediaIndex(
 export async function processMessageCleanupJob(
   jobID: string,
   firestore: Firestore,
-  bucket: StorageBucket,
+  buckets: CleanupBucketResolver,
   now = new Date(),
 ): Promise<boolean> {
   const reference = firestore.collection("chatMessageCleanupJobs").doc(jobID);
@@ -193,10 +199,22 @@ export async function processMessageCleanupJob(
     await scrubReplyPreviews(firestore, job.roomID, job.messageID);
     await deleteMediaIndex(firestore, job.roomID, job.messageID);
     const expectedPrefix = `rooms/${job.roomID}/messages/${job.messageID}`;
-    const prefixes = Array.isArray(job.storagePrefixes) ? job.storagePrefixes : [];
-    for (const prefix of prefixes) {
-      if (prefix !== expectedPrefix) throw new Error("storage_prefix_mismatch");
-      await bucket.deleteFiles({prefix: `${prefix}/`, force: true});
+    const targets = Array.isArray(job.storageTargets) ? job.storageTargets : null;
+    if (targets) {
+      for (const target of targets) {
+        if (!target || typeof target !== "object" || target.prefix !== expectedPrefix) {
+          throw new Error("storage_target_mismatch");
+        }
+        const targetBucket = typeof target.bucket === "string" && target.bucket ?
+          buckets.bucket(target.bucket) : buckets.defaultBucket;
+        await targetBucket.deleteFiles({prefix: `${target.prefix}/`, force: true});
+      }
+    } else {
+      const prefixes = Array.isArray(job.storagePrefixes) ? job.storagePrefixes : [];
+      for (const prefix of prefixes) {
+        if (prefix !== expectedPrefix) throw new Error("storage_prefix_mismatch");
+        await buckets.defaultBucket.deleteFiles({prefix: `${prefix}/`, force: true});
+      }
     }
     await markCompleted(reference, now);
     return true;
@@ -251,7 +269,7 @@ async function removeOwnerMembership(
 export async function processRoomCleanupJob(
   roomID: string,
   firestore: Firestore,
-  bucket: StorageBucket,
+  buckets: CleanupBucketResolver,
   now = new Date(),
 ): Promise<boolean> {
   const reference = firestore.collection("moderationRoomCleanupJobs").doc(roomID);
@@ -283,7 +301,9 @@ export async function processRoomCleanupJob(
       for (const subcollection of ["Messages", "mediaIndex", "MediaUploads", "bans"]) {
         await deleteCollection(roomRef.collection(subcollection));
       }
-      await bucket.deleteFiles({prefix: `rooms/${roomID}/`, force: true});
+      for (const bucket of buckets.roomBuckets) {
+        await bucket.deleteFiles({prefix: `rooms/${roomID}/`, force: true});
+      }
       const createdAt = room.get("createdAt") instanceof Timestamp ? room.get("createdAt") : closedAt;
       const lastMessageAt = room.get("lastMessageAt") instanceof Timestamp ? room.get("lastMessageAt") : createdAt;
       const expiresAt = Timestamp.fromMillis(closedAt.toMillis() + ROOM_TOMBSTONE_TTL_MILLIS);

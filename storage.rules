@@ -61,6 +61,23 @@ service firebase.storage {
       return /databases/(default)/documents/Rooms/$(roomID)/MediaUploads/$(messageID);
     }
 
+    function messagePath(roomID, messageID) {
+      return /databases/(default)/documents/Rooms/$(roomID)/Messages/$(messageID);
+    }
+
+    function canReadReadyMedia(roomID, messageID, attachmentID) {
+      return isReadableAccount()
+        && firestore.exists(messagePath(roomID, messageID))
+        && firestore.get(messagePath(roomID, messageID)).data.mediaContractVersion == 2
+        && firestore.get(messagePath(roomID, messageID)).data.readyAttachmentIDs is list
+        && attachmentID in firestore.get(messagePath(roomID, messageID)).data.readyAttachmentIDs
+        && firestore.get(messagePath(roomID, messageID)).data.isDeleted != true
+        && (
+          !("moderationVisibilityState" in firestore.get(messagePath(roomID, messageID)).data)
+          || firestore.get(messagePath(roomID, messageID)).data.moderationVisibilityState == "visible"
+        );
+    }
+
     function hasValidMediaUploadReservation(roomID, messageID, kind) {
       return signedIn()
         && roomIsActive(roomID)
@@ -180,6 +197,12 @@ service firebase.storage {
         && isVideoUpload(350 * 1024 * 1024);
       allow delete: if false;
       allow list: if false;
+    }
+
+    match /rooms/{roomID}/messages/{messageID}/attachments/{attachmentID}/{variant} {
+      allow get: if variant in ['display', 'thumbnail']
+        && canReadReadyMedia(roomID, messageID, attachmentID);
+      allow create, update, delete, list: if false;
     }
 
     match /profileImage/{userID}/{variant}/{fileName} {
